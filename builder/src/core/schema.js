@@ -1,0 +1,232 @@
+import { genId } from "./ids.js";
+import { DISPLAY_MODES, ensureDisplayModeForType, normalizeDisplayMode, toImportantFlag } from "./displayModes.js";
+
+const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" : label || "");
+
+export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
+export const MAX_DEPTH = 6;
+
+export const sampleSchema = () => [
+  {
+    id: genId(),
+    type: "checkboxes",
+    label: "好きな果物？",
+    options: [
+      { id: genId(), label: "リンゴ" },
+      { id: genId(), label: "みかん" },
+      { id: genId(), label: "ぶどう" },
+    ],
+    childrenByValue: {
+      "リンゴ": [
+        { id: genId(), type: "regex", label: "どれくらい食べる？", pattern: "^.+$", required: false, placeholder: "例: 1日1個" },
+      ],
+      "みかん": [
+        {
+          id: genId(),
+          type: "select",
+          label: "何個食べる？",
+          options: [
+            { id: genId(), label: "１個" },
+            { id: genId(), label: "２個" },
+            { id: genId(), label: "３個以上" },
+          ],
+        },
+      ],
+    },
+  },
+];
+
+export const deepClone = (value) => {
+  if (typeof structuredClone === "function") return structuredClone(value);
+  return JSON.parse(JSON.stringify(value));
+};
+
+export const normalizeSchemaIDs = (nodes) => {
+  const walk = (arr) => (arr || []).map((field) => {
+    const id = field.id || genId();
+    const base = { ...field, id };
+
+    if (["radio", "select", "checkboxes"].includes(base.type)) {
+      base.options = (base.options || []).map((opt) => ({
+        id: opt?.id || genId(),
+        label: sanitizeOptionLabel(opt?.label),
+      }));
+      delete base.pattern;
+      delete base.defaultNow;
+    } else if (base.type === "regex") {
+      delete base.options;
+      base.pattern = typeof base.pattern === "string" ? base.pattern : "";
+      delete base.defaultNow;
+    } else if (["date", "time"].includes(base.type)) {
+      delete base.options;
+      delete base.pattern;
+      base.defaultNow = !!base.defaultNow;
+    } else {
+      delete base.options;
+      delete base.pattern;
+      delete base.defaultNow;
+    }
+
+    if (base.childrenByValue && typeof base.childrenByValue === "object") {
+      const fixed = {};
+      Object.keys(base.childrenByValue).forEach((key) => {
+        fixed[key] = walk(base.childrenByValue[key]);
+      });
+      base.childrenByValue = fixed;
+    }
+
+    const normalizedDisplayMode = ensureDisplayModeForType(
+      normalizeDisplayMode(base.displayMode, { importantFlag: !!base.important }),
+      base.type,
+    );
+    base.displayMode = normalizedDisplayMode;
+    base.important = toImportantFlag(normalizedDisplayMode);
+
+    // _savedChoiceStateを保持する
+    if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
+      const savedOptions = base._savedChoiceState.options ? 
+        base._savedChoiceState.options.map((opt) => ({
+          id: opt?.id || genId(),
+          label: sanitizeOptionLabel(opt?.label),
+        })) : undefined;
+      
+      const savedChildrenByValue = base._savedChoiceState.childrenByValue && typeof base._savedChoiceState.childrenByValue === "object" ?
+        (() => {
+          const fixed = {};
+          Object.keys(base._savedChoiceState.childrenByValue).forEach((key) => {
+            fixed[key] = walk(base._savedChoiceState.childrenByValue[key]);
+          });
+          return fixed;
+        })() : undefined;
+      
+      base._savedChoiceState = {
+        options: savedOptions,
+        childrenByValue: savedChildrenByValue
+      };
+    }
+
+    return base;
+  });
+
+  return walk(Array.isArray(nodes) ? nodes : []);
+};;;
+
+/**
+ * エクスポート用にスキーマからIDフィールドを除去する
+ * @param {Array} nodes - スキーマ配列
+ * @returns {Array} IDが除去されたスキーマ
+ */
+export const stripSchemaIDs = (nodes) => {
+  const walk = (arr) => (arr || []).map((field) => {
+    const { id, ...rest } = field;
+    const base = { ...rest };
+
+    // options配列からもIDを除去
+    if (["radio", "select", "checkboxes"].includes(base.type) && Array.isArray(base.options)) {
+      base.options = base.options.map(({ id: optId, ...optRest }) => optRest);
+    }
+
+    // childrenByValueからも再帰的にIDを除去
+    if (base.childrenByValue && typeof base.childrenByValue === "object") {
+      const fixed = {};
+      Object.keys(base.childrenByValue).forEach((key) => {
+        fixed[key] = walk(base.childrenByValue[key]);
+      });
+      base.childrenByValue = fixed;
+    }
+
+    // _savedChoiceStateからもIDを除去
+    if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
+      const savedState = { ...base._savedChoiceState };
+      
+      if (Array.isArray(savedState.options)) {
+        savedState.options = savedState.options.map(({ id: optId, ...optRest }) => optRest);
+      }
+      
+      if (savedState.childrenByValue && typeof savedState.childrenByValue === "object") {
+        const fixed = {};
+        Object.keys(savedState.childrenByValue).forEach((key) => {
+          fixed[key] = walk(savedState.childrenByValue[key]);
+        });
+        savedState.childrenByValue = fixed;
+      }
+      
+      base._savedChoiceState = savedState;
+    }
+
+    return base;
+  });
+
+  return walk(Array.isArray(nodes) ? nodes : []);
+};
+
+export const maxDepthOf = (fields, depth = 1) => {
+  let max = depth - 1;
+  (fields || []).forEach((field) => {
+    max = Math.max(max, depth);
+    if (field?.childrenByValue && typeof field.childrenByValue === "object") {
+      Object.values(field.childrenByValue).forEach((children) => {
+        max = Math.max(max, maxDepthOf(children, depth + 1));
+      });
+    }
+  });
+  return max;
+};
+
+export const validateMaxDepth = (fields, max = MAX_DEPTH) => {
+  const depth = maxDepthOf(fields, 1);
+  return depth <= max ? { ok: true, depth } : { ok: false, depth };
+};
+
+export const validateUniqueLabels = (fields) => {
+  const seen = new Set();
+  for (const field of fields || []) {
+    const label = (field.label || "").trim();
+    if (!label) continue;
+    if (seen.has(label)) return { ok: false, dup: label };
+    seen.add(label);
+  }
+  return { ok: true };
+};
+
+export const computeSchemaHash = (schema) => {
+  const json = JSON.stringify(schema);
+  let hash = 0;
+  for (let i = 0; i < json.length; i += 1) {
+    hash = (hash << 5) - hash + json.charCodeAt(i);
+    hash |= 0;
+  }
+  return `v1-${Math.abs(hash)}`;
+};
+
+/**
+ * フォーム保存時に一時保存データをクリーンアップする
+ * @param {Array} schema - スキーマ配列
+ * @returns {Array} クリーンアップされたスキーマ
+ */
+export const cleanupTempData = (schema) => {
+  const walk = (arr) => (arr || []).map((field) => {
+    const cleaned = { ...field };
+
+    // 一時保存データを削除
+    if (cleaned._savedChildrenForChoice) {
+      delete cleaned._savedChildrenForChoice;
+    }
+    if (cleaned._savedDisplayModeForChoice) {
+      delete cleaned._savedDisplayModeForChoice;
+    }
+
+    // 子要素も再帰的にクリーンアップ
+    if (cleaned.childrenByValue && typeof cleaned.childrenByValue === "object") {
+      const fixed = {};
+      Object.keys(cleaned.childrenByValue).forEach((key) => {
+        fixed[key] = walk(cleaned.childrenByValue[key]);
+      });
+      cleaned.childrenByValue = fixed;
+    }
+
+    return cleaned;
+  });
+
+  return walk(Array.isArray(schema) ? schema : []);
+};

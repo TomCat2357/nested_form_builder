@@ -1,0 +1,52 @@
+import { DISPLAY_MODES, ensureDisplayModeForType, normalizeDisplayMode } from "../core/displayModes.js";
+
+const normalizeLabel = (label) => (typeof label === "string" ? label.trim() : "");
+
+const joinPath = (base, label) => {
+  const next = normalizeLabel(label);
+  return next ? (base ? `${base}|${next}` : next) : base;
+};
+
+const resolveFieldDisplayMode = (field) => {
+  const normalized = normalizeDisplayMode(field?.displayMode, { importantFlag: !!field?.important });
+  return ensureDisplayModeForType(normalized, field?.type);
+};
+
+export const collectDisplayFieldSettings = (schema) => {
+  const collected = [];
+
+  const walk = (fields, basePath) => {
+    (fields || []).forEach((field) => {
+      const label = normalizeLabel(field?.label);
+      if (!label) return;
+      const path = joinPath(basePath, label);
+      const mode = resolveFieldDisplayMode(field);
+      if (mode !== DISPLAY_MODES.NONE) {
+        collected.push({
+          path,
+          mode,
+          type: field?.type || "",
+        });
+      }
+      if (field?.childrenByValue && typeof field.childrenByValue === "object") {
+        Object.values(field.childrenByValue).forEach((childFields) => {
+          walk(childFields, path);
+        });
+      }
+    });
+  };
+
+  walk(Array.isArray(schema) ? schema : [], "");
+
+  return collected.sort((a, b) => String(a?.path || "").localeCompare(String(b?.path || ""), "ja"));
+};
+
+export const collectImportantFieldPaths = (schema) => collectDisplayFieldSettings(schema).map((item) => item.path);
+
+export const splitFieldPath = (path) => {
+  if (!path) return [];
+  return String(path)
+    .split("|")
+    .map((part) => part.trim())
+    .filter((part) => part);
+};
