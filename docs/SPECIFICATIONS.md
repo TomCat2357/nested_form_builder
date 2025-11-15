@@ -3,12 +3,12 @@
 ## 1. システム概要
 
 ### 1.1 目的
-階層構造を持つフォームをブラウザだけで設計し、スタンドアロンHTML・GAS Webアプリを通じてGoogle Sheetsに回答を保存・検索できる環境を提供する。
+階層構造を持つフォームをブラウザだけで設計し、GAS Webアプリを通じてGoogle Sheetsに回答を保存・検索できる環境を提供する。
 
 ### 1.2 現行の主要機能
 - **ビジュアルフォームエディタ**: 6階層までのネスト、条件分岐（`childrenByValue`）、displayMode（none/normal/compact）、必須/正規表現/placeholderなどをUIで編集。
 - **フォーム/スキーマ管理**: アーカイブ、複数選択操作、JSON/ZIPエクスポート、インポート時の重複解決、localStorageへの永続化。
-- **スタンドアロンHTML生成**: `generators/pure_form` でCSS/JS同梱の単一HTMLを生成し、`window.__NFB_CONFIG__`・`window.__NFB_SCHEMA__`で設定を受け渡し。
+- **スキーマエクスポート**: JSON形式でフォーム構造をダウンロード可能。
 - **GAS連携**: `Code.gs`＋`sheets.gs`で回答の保存・取得・削除・一覧を提供し、IndexedDBキャッシュや `google.script.run` バックエンドもサポート。
 - **検索UI**: `SearchPage` がスプレッドシートヘッダー行やスキーマから列を構築し、AND/OR/比較/正規表現クエリ・ページネーション・削除オペレーションを提供。IndexedDB (`recordsCache`) へ全件キャッシュ。
 - **回答編集/再送信**: `FormPage` から既存回答を再読込し、`submitResponses` で再投入。`PreviewPage` も同じレンダラーを共有。
@@ -24,7 +24,7 @@
   - Google Sheets: 永続データソース。ヘッダー6行＋動的列。
 
 ### 1.4 主なディレクトリ
-- `builder/`: Reactアプリ（`src/app`, `src/features`, `src/generators`, `src/services`）。
+- `builder/`: Reactアプリ（`src/app`, `src/features`, `src/services`）。
 - `gas/`: `Code.gs`, `model.gs`, `sheets.gs`, `settings.gs`, `Index.html`, `appsscript.json`。
 - `shared/`: `payload_contract.md`, `schema_examples/basic.json`。
 - `samples/form.json`: UIで読み込めるデモスキーマ。
@@ -97,7 +97,7 @@ interface FormRecord {
 | --- | --- |
 | `type` | `text`, `textarea`, `number`, `date`, `time`, `select`, `radio`, `checkboxes`, `regex` |
 | `label` | 表示ラベル。`validateUniqueLabels` で重複チェック。 |
-| `required` | 必須フラグ。`PreviewPage` とスタンドアロンHTMLでバリデーション。 |
+| `required` | 必須フラグ。`PreviewPage` でバリデーション。 |
 | `placeholder`/`showPlaceholder` | `QuestionCard` のトグルで設定。 |
 | `pattern` | `regex` 型用。`buildSafeRegex` で検証し、保存時に保持。 |
 | `options` | 選択肢。各optionにも `id` が振られ、`normalizeSchemaIDs` が不足分を補う。 |
@@ -113,7 +113,6 @@ interface FormSettings {
   sheetName: string;      // default "Responses"
   gasUrl: string;         // google.script.run不可環境で使用
   pageSize: number;       // SearchPage の1ページ表示件数
-  apiToken?: string;      // standalone runtime向け。存在しない場合は空文字
 }
 ```
 - localStorageキー: `nested_form_builder_settings_v1` (`DEFAULT_SETTINGS` とマージ)。
@@ -255,10 +254,7 @@ Content-Type: text/plain;charset=utf-8
   - `beforeunload` で未保存警告。`ConfirmDialog` で保存/破棄を選べる。
   - 保存時は `PreviewPage` の `submit({ silent: true })` を呼び、`submitResponses` + `dataStore.upsertEntry` を連携。
 
-### 5.6 エクスポート/スタンドアロンHTML
-- `ExportFormHtmlButton` → `createFormHtmlString(schema, settings)`：
-  - `computeSchemaHash` を含む `window.__NFB_CONFIG__` を埋め込み、`normalizeSpreadsheetId` でURLをID化。
-  - `runtime.inline.js` は custom alert、recordId生成、`collectResponses`、`collectAllPossiblePaths`、`sortResponsesMap` を埋め込み、`fetch` or `google.script.run` の両方をサポート。
+### 5.6 エクスポート
 - `ExportSchemaButton` は `stripSchemaIDs` 済みスキーマと設定をJSON保存。複数フォームは `AdminDashboard` からZIP出力可。
 
 ### 5.7 検索UI (`SearchPage`/`features/search/searchTable.js`)
@@ -282,11 +278,10 @@ Content-Type: text/plain;charset=utf-8
 ## 6. 代表的なデータフロー
 
 1. **フォーム作成/編集**: `MainPage` → `/admin` → `/admin/forms/new|:id/edit` → `FormBuilderWorkspace`（編集/プレビュー/保存）→ `dataStore.(create|update)` → localStorage更新 → `AppDataProvider.refreshForms()`。
-2. **フォーム配布**: `Admin` で `ExportFormHtmlButton`/`ExportSchemaButton` を使用し、単一HTMLまたはJSONを共有。HTMLはGoogle Drive等に配置しても単独動作する。
-3. **回答送信（ビルダー上）**: `FormPage` → `PreviewPage.submit` → `collectResponses` → `submitResponses` (`gasClient`経由) → GAS `SubmitResponses_` → `Sheets_upsertRecordById_`。成功後 `dataStore.upsertEntry` がローカルキャッシュ更新 → IndexedDBへ同期。
-4. **回答送信（スタンドアロンHTML）**: runtimeが `fetch` で `action=save` をPOST。`order` は全パス（空回答含む）を生成して送信し、列順を維持。
-5. **回答一覧/検索**: `SearchPage` → `dataStore.listEntries`。`forms.settings.spreadsheetId` があればGAS→IndexedDBへ全件保存→`computeRowValues`でテーブル化。キャッシュのみで済む場合はIndexedDBから即座に描画。
-6. **回答削除**: `SearchPage` の行アクション→`dataStore.deleteEntry`→`gasClient.deleteEntry`→GAS `DeleteRecord_`。成功後 localStorage/IndexedDB キャッシュも削除。
+2. **フォーム配布**: `Admin` で `ExportSchemaButton` を使用し、JSONとして共有。
+3. **回答送信**: `FormPage` → `PreviewPage.submit` → `collectResponses` → `submitResponses` (`gasClient`経由) → GAS `SubmitResponses_` → `Sheets_upsertRecordById_`。成功後 `dataStore.upsertEntry` がローカルキャッシュ更新 → IndexedDBへ同期。
+4. **回答一覧/検索**: `SearchPage` → `dataStore.listEntries`。`forms.settings.spreadsheetId` があればGAS→IndexedDBへ全件保存→`computeRowValues`でテーブル化。キャッシュのみで済む場合はIndexedDBから即座に描画。
+5. **回答削除**: `SearchPage` の行アクション→`dataStore.deleteEntry`→`gasClient.deleteEntry`→GAS `DeleteRecord_`。成功後 localStorage/IndexedDB キャッシュも削除。
 
 ---
 
@@ -335,7 +330,7 @@ Content-Type: text/plain;charset=utf-8
 | スクリプト | 内容 |
 | --- | --- |
 | `npm run builder:install` | builder配下の依存関係をインストール |
-| `npm run builder:build` | Viteビルド（単一HTML生成） |
+| `npm run builder:build` | Viteビルド（GAS配信用バンドル生成） |
 | `npm run builder:dev` | ローカル開発サーバ |
 | `npm run clasp:login/push/pull` | Apps Script への操作 |
 

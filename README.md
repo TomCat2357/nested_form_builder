@@ -1,6 +1,6 @@
 # Nested Form Builder
 
-ネストされたフォームを設計し、スタンドアロンHTMLとして出力、Google Sheetsに回答を保存できるフォームビルダーです。
+ネストされたフォームを設計し、Google Sheetsに回答を保存できるフォームビルダーです。
 
 ## 概要
 
@@ -11,14 +11,14 @@ Nested Form Builderは、階層構造を持つアンケートフォームを視�
 - **ビジュアルフォームエディタ**: 直感的なUIで質問を追加・編集し、リアルタイムでプレビュー
 - **ネスト構造・条件分岐**: 最大6階層までの入れ子と、選択肢ごとの `childrenByValue` をサポート
 - **質問タイプと表示モード**: テキスト/数値/日付/時間/選択肢/チェックボックス/正規表現に加え、重要列と `displayMode`（none/normal/compact）を指定可能
-- **フォームインポート/エクスポート**: JSONによるスキーマの読み込み/書き出し、`generators/pure_form` を使った単一HTML出力
+- **フォームインポート/エクスポート**: JSONによるスキーマの読み込み/書き出し
 - **Google Sheets連携**: 回答を自動でスプレッドシートに保存し、二分探索+IndexedDBキャッシュで高速取得
 - **高度な検索機能**: 条件式/正規表現/AND・ORを組み合わせたレコード検索、重要項目の一覧表示
 - **レコード管理**: 単一レコード取得、編集、削除、アーカイブ管理、ページネーション
 
 ### 現在の状態
 
-- `builder/` は React 19 + Vite 7 + `vite-plugin-singlefile` で構築し、`features/export` と `generators/pure_form/` を通じてスタンドアロンHTMLを生成します。
+- `builder/` は React 19 + Vite 7 + `vite-plugin-singlefile` で構築しています。
 - `deploy.sh` が `npm --prefix builder install` → `builder` ビルド → `scripts/bundle-gas.js` → `dist/` 配置 → `clasp push/deploy` を一括実行し、`.gas-deployment.json` にデプロイ情報をキャッシュします。
 - `docs/`（仕様書・ユーザーマニュアル・検索ガイド）、`shared/`（payload契約 & スキーマ例）、`samples/form.json`（ヒグマフォーム）が揃っており、Playwrightの設定/成果物（`test-results/`）も含まれます。
 
@@ -37,7 +37,6 @@ nested_form_builder/
 │   ├── src/app/             # アプリ全体の状態/レイアウト
 │   ├── src/core/            # スキーマ検証・displayModes・storage
 │   ├── src/features/        # admin/editor/export/preview/search/settings
-│   ├── src/generators/      # 単一HTML生成（pure_form）
 │   ├── src/pages/           # 画面コンポーネント
 │   ├── src/services/        # GAS APIクライアント
 │   └── src/utils/           # download/spreadsheetユーティリティ
@@ -62,7 +61,7 @@ nested_form_builder/
 
 主な補足:
 
-- `builder/src/features/export/`…フォームHTMLのダウンロードやスキーマエクスポートUI
+- `builder/src/features/export/`…スキーマJSONのダウンロードUI
 - `builder/src/features/admin/SearchPreviewPanel.jsx`…重要項目・表示モードの確認
 - `scripts/bundle-gas.js`…`gas/*.gs` を `dist/Bundle.gs` に結合し、`deploy.sh` から呼び出されます
 - `docs/user_manual.md` / `docs/SPECIFICATIONS.md` / `docs/検索機能の使い方.md`…ユーザー/開発者向けドキュメント
@@ -130,7 +129,7 @@ npm run builder:dev
 
 ブラウザで `http://localhost:5173` を開きます。
 
-### 単一HTML生成とGASバンドル
+### ビルドとGASバンドル
 
 ```bash
 npm run builder:build
@@ -182,7 +181,7 @@ npx playwright test
 ### データフロー
 
 1. **フォーム設計**: Reactアプリでフォームスキーマを作成
-2. **HTML生成**: スキーマから単一HTMLファイルを生成
+2. **ビルド/デプロイ**: Reactアプリをビルドし、GAS経由で公開
 3. **回答送信**: 生成されたフォームからGAS WebアプリへPOST
 4. **データ保存**: GASがGoogle Sheetsにデータを正規化して保存
 5. **データ取得**: React管理画面からGAS経由でデータを取得・検索

@@ -41,8 +41,6 @@ export const collectDisplayFieldSettings = (schema) => {
   return collected.sort((a, b) => String(a?.path || "").localeCompare(String(b?.path || ""), "ja"));
 };
 
-export const collectImportantFieldPaths = (schema) => collectDisplayFieldSettings(schema).map((item) => item.path);
-
 export const splitFieldPath = (path) => {
   if (!path) return [];
   return String(path)
