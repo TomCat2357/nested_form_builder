@@ -16,6 +16,8 @@ import {
   compareByColumn,
   matchesKeyword,
 } from "../features/search/searchTable.js";
+import { DISPLAY_MODES } from "../core/displayModes.js";
+import { splitFieldPath } from "../utils/formPaths.js";
 import {
   saveRecordsToCache,
   getRecordsFromCache,
@@ -443,7 +445,13 @@ export default function SearchPage() {
                   {columns.map((column) => {
                     // __actions列はスキップ
                     if (column.key === "__actions") return null;
-                    const displayText = values[column.key]?.display ?? "";
+                    const rawDisplayText = values[column.key]?.display ?? "";
+                    const isCompact = column.displayMode === DISPLAY_MODES.COMPACT;
+                    const leafLabel = isCompact ? splitFieldPath(column.path).slice(-1)[0] || "" : "";
+                    // 簡略表示では最下段ラベルをデータ側に持ってくるが、値があれば優先して表示
+                    const displayText = isCompact
+                      ? (rawDisplayText || leafLabel)
+                      : rawDisplayText;
                     return (
                       <td key={`${entry.id}_${column.key}`} style={tdStyle}>
                         {displayText}

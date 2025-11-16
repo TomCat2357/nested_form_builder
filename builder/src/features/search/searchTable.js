@@ -522,26 +522,11 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
     if (visibleIndices.length === 0) return [];
   }
 
-  // 空でない行のみをフィルタリング
+  // 対象列（表示する列のみ）を確定
   const indicesToProcess = visibleIndices || Array.from({ length: multiHeaderRows[0]?.length || 0 }, (_, i) => i);
-  const nonEmptyRowIndices = [];
 
-  for (let rowIndex = 0; rowIndex < multiHeaderRows.length; rowIndex++) {
-    const csvRow = multiHeaderRows[rowIndex] || [];
-    // 表示対象の列のいずれかに値があるかチェック
-    const hasValue = indicesToProcess.some(colIndex => {
-      const cellValue = csvRow[colIndex];
-      return cellValue !== null && cellValue !== undefined && cellValue !== "";
-    });
-    if (hasValue) {
-      nonEmptyRowIndices.push(rowIndex);
-    }
-  }
-
-  // 空の行しかない場合は空配列を返す
-  if (nonEmptyRowIndices.length === 0) return [];
-
-  const rows = [];
+  // 変換後のヘッダ行（簡略表示で最下段を落とす処理用）
+  const transformedRows = multiHeaderRows.map((row) => (row ? [...row] : []));
 
   // headerMatrixの第1行から各列に対応するcolumnオブジェクトを構築
   const firstRow = multiHeaderRows[0] || [];
@@ -579,6 +564,38 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
     columnMapping[i] = matchedColumn;
   }
 
+  // 簡略表示: 対応する列の「一番下のヘッダーセル」を空欄にする
+  const findDeepestRowWithValue = (colIndex) => {
+    for (let r = transformedRows.length - 1; r >= 0; r -= 1) {
+      const val = transformedRows[r]?.[colIndex];
+      if (val !== null && val !== undefined && val !== "") return r;
+    }
+    return -1;
+  };
+  indicesToProcess.forEach((colIndex) => {
+    const mappedColumn = columnMapping[colIndex];
+    if (mappedColumn?.displayMode === DISPLAY_MODES.COMPACT) {
+      const deepest = findDeepestRowWithValue(colIndex);
+      if (deepest >= 0) {
+        transformedRows[deepest][colIndex] = "";
+      }
+    }
+  });
+
+  // 簡略処理後に空でない行のみをフィルタリング
+  const nonEmptyRowIndices = [];
+  for (let rowIndex = 0; rowIndex < transformedRows.length; rowIndex++) {
+    const row = transformedRows[rowIndex] || [];
+    const hasValue = indicesToProcess.some((colIndex) => {
+      const cellValue = row[colIndex];
+      return cellValue !== null && cellValue !== undefined && cellValue !== "";
+    });
+    if (hasValue) nonEmptyRowIndices.push(rowIndex);
+  }
+
+  if (nonEmptyRowIndices.length === 0) return [];
+
+  const rows = [];
   const lastNonEmptyRowIndex = nonEmptyRowIndices[nonEmptyRowIndices.length - 1];
 
   // 各列の統合されたパス(全行を結合したもの)を事前に計算
@@ -593,9 +610,10 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
 
   // 空でない行のみを処理
   for (const rowIndex of nonEmptyRowIndices) {
-    const csvRow = multiHeaderRows[rowIndex] || [];
+    const csvRow = transformedRows[rowIndex] || [];
     const row = [];
     let displayIndex = 0;
+    let lastRenderedLabel = "";
 
     for (let i = 0; i < indicesToProcess.length; i++) {
       const colIndex = indicesToProcess[i];
@@ -607,7 +625,9 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
         cellValue = "最終更新日時";
       }
 
-      if (mappedColumn?.displayMode === DISPLAY_MODES.COMPACT && rowIndex > 0) {
+      const isCompactColumn = mappedColumn?.displayMode === DISPLAY_MODES.COMPACT;
+      if (isCompactColumn && rowIndex === lastNonEmptyRowIndex) {
+        // 簡略表示では最下段のヘッダーは省略し、データ側で表示する
         cellValue = "";
       }
 
@@ -629,36 +649,10 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
       // 最終行の場合のみcolumnオブジェクトを付与
       const column = isLastRow ? mappedColumn : null;
 
-      // すべての行で、同じ文字列が連続するときは一番左以外を空白化
+      // すべての行で、左に同じ文字列があれば空白化（連続重複を抑止）
       let displayLabel = cellValue;
-      if (i > 0) {
-        // 統合されたパスを使用して空白化判定
-        const currentFullPath = columnFullPaths[i];
-        const prevFullPath = columnFullPaths[i - 1];
-
-        // 全階層を比較して、左から同じ部分を削除
-        const currentParts = currentFullPath.split("|");
-        const prevParts = prevFullPath.split("|");
-
-        // 左から何階層まで同じかを数える
-        let sameDepth = 0;
-        const minLength = Math.min(currentParts.length, prevParts.length);
-        for (let depth = 0; depth < minLength; depth++) {
-          if (currentParts[depth] === prevParts[depth]) {
-            sameDepth++;
-          } else {
-            break;
-          }
-        }
-
-        // この行の深さ（rowIndexに対応）での値を確認
-        // rowIndex行目に対応する階層の値を取得
-        if (sameDepth > rowIndex && rowIndex < currentParts.length && rowIndex < prevParts.length) {
-          // この行（rowIndex）の階層で、左と同じ値の場合は空白化
-          if (currentParts[rowIndex] === prevParts[rowIndex]) {
-            displayLabel = "";
-          }
-        }
+      if (displayLabel && lastRenderedLabel === displayLabel) {
+        displayLabel = "";
       }
 
       row.push({
@@ -671,13 +665,19 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
       });
 
       displayIndex += colSpan;
+      if (displayLabel) {
+        lastRenderedLabel = displayLabel;
+      }
       i += colSpan - 1;
     }
 
     if (row.length > 0) rows.push(row);
   }
 
-  return rows;
+  // すべて空ラベルの行は除外（簡略表示で最下段を省いた場合の余白を削除）
+  const filteredRows = rows.filter((row) => row.some((cell) => cell.label));
+
+  return filteredRows;
 };
 
 export const computeRowValues = (entry, columns) => {
