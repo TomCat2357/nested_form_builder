@@ -2,26 +2,8 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { viteSingleFile } from "vite-plugin-singlefile";
 
-// Custom plugin to preserve console.log in template strings
-const preserveConsoleLog = () => ({
-  name: 'preserve-console-log',
-  transform(code, id) {
-    // Don't minify the runtime.inline.js file at all
-    if (id.includes('runtime.inline.js')) {
-      return {
-        code,
-        map: null,
-      };
-    }
-  },
-  renderChunk(code) {
-    // Ensure console.log is not removed from any bundled code
-    return code;
-  },
-});
-
 export default defineConfig({
-  plugins: [react(), viteSingleFile(), preserveConsoleLog()],
+  plugins: [react(), viteSingleFile()],
   root: "./",
   build: {
     outDir: "../dist",

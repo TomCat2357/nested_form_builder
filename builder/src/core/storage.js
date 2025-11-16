@@ -1,5 +1,3 @@
-import { normalizeSchemaIDs } from "./schema.js";
-
 export const SETTINGS_STORAGE_KEY = "nested_form_builder_settings_v1";
 
 const readLocalJson = (key) => {
