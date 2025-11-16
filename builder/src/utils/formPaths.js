@@ -29,8 +29,9 @@ export const collectDisplayFieldSettings = (schema) => {
         });
       }
       if (field?.childrenByValue && typeof field.childrenByValue === "object") {
-        Object.values(field.childrenByValue).forEach((childFields) => {
-          walk(childFields, path);
+        Object.entries(field.childrenByValue).forEach(([key, childFields]) => {
+          const valuePath = joinPath(path, key);
+          walk(childFields, valuePath);
         });
       }
     });
