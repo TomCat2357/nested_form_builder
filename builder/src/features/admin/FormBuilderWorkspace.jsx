@@ -39,47 +39,68 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   const [schema, setSchema] = useState(() => normalizeSchemaIDs(initialSchema || []));
   const [responses, setResponses] = useState({});
   const { settings, replaceSettings, updateSetting } = useBuilderSettings();
-  const initialSchemaRef = useRef(schema);
+  const initialSchemaRef = useRef(null);
   const initialSettingsRef = useRef(null);
-  const waitingForBaselineRef = useRef(false);
-  const latestSettingsRef = useRef(settings);
   const [questionControl, setQuestionControl] = useState(null);
+  const [isInitialized, setIsInitialized] = useState(false);
 
   useEffect(() => {
     runSelfTests();
   }, []);
 
+  // initialSchema/initialSettingsが変わったら、リセット
   useEffect(() => {
-    latestSettingsRef.current = settings;
-  }, [settings]);
-
-  useEffect(() => {
+    console.log('[FormBuilderWorkspace] initialSchema/initialSettings changed');
+    console.log('  initialSettings:', initialSettings);
     const normalized = normalizeSchemaIDs(initialSchema || []);
     setSchema(normalized);
-
-    const mergedSettings = replaceSettings(initialSettings || {});
-    const awaitingSync = latestSettingsRef.current !== mergedSettings;
+    replaceSettings(initialSettings || {});
 
     initialSchemaRef.current = normalized;
-    initialSettingsRef.current = mergedSettings;
-    waitingForBaselineRef.current = awaitingSync;
-    if (!awaitingSync) {
-      onDirtyChange?.(false);
-    }
-  }, [initialSchema, initialSettings, replaceSettings, onDirtyChange]);
+    setIsInitialized(false); // 初期化フラグをリセット
+    console.log('  isInitialized set to false');
+  }, [initialSchema, initialSettings, replaceSettings]);
 
+  // settingsが更新されたら初期値を記録（初期化時のみ）
   useEffect(() => {
-    // 編集モードに入ったタイミングで schema/settings のスナップショットを保存し、
-    // それが確定するまでは dirty 判定をスキップする。
-    if (initialSettingsRef.current === null) return;
-    if (waitingForBaselineRef.current) {
-      if (settings !== initialSettingsRef.current) return;
-      waitingForBaselineRef.current = false;
+    console.log('[FormBuilderWorkspace] settings updated:', { isInitialized, settings });
+    if (!isInitialized && settings) {
+      console.log('  Recording initial settings:', settings);
+      initialSettingsRef.current = settings;
+      setIsInitialized(true);
       onDirtyChange?.(false);
+      console.log('  isInitialized set to true, dirty=false');
     }
-    const dirty = !shallowEqual(initialSchemaRef.current, schema) || !shallowEqual(initialSettingsRef.current, settings);
+  }, [settings, isInitialized, onDirtyChange]);
+
+  // schema/settingsが変わったらdirty判定（初期化完了後のみ）
+  useEffect(() => {
+    console.log('[FormBuilderWorkspace] dirty check:', { isInitialized, hasInitialSchema: initialSchemaRef.current !== null, hasInitialSettings: initialSettingsRef.current !== null });
+    if (!isInitialized) {
+      console.log('  Skipping: not initialized');
+      return;
+    }
+    if (initialSchemaRef.current === null || initialSettingsRef.current === null) {
+      console.log('  Skipping: no initial values');
+      return;
+    }
+
+    const schemaDirty = !shallowEqual(initialSchemaRef.current, schema);
+    const settingsDirty = !shallowEqual(initialSettingsRef.current, settings);
+    const dirty = schemaDirty || settingsDirty;
+
+    console.log('  Schema dirty:', schemaDirty);
+    if (schemaDirty) {
+      console.log('  Initial schema:', JSON.stringify(initialSchemaRef.current));
+      console.log('  Current schema:', JSON.stringify(schema));
+    }
+    console.log('  Settings dirty:', settingsDirty);
+    console.log('  Initial settings:', initialSettingsRef.current);
+    console.log('  Current settings:', settings);
+    console.log('  Overall dirty:', dirty);
+
     onDirtyChange?.(dirty);
-  }, [schema, settings, onDirtyChange]);
+  }, [schema, settings, isInitialized, onDirtyChange]);
 
   const handleSchemaChange = (nextSchema) => {
     const normalized = normalizeSchemaIDs(nextSchema);
@@ -94,10 +115,9 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   const handleSave = useCallback(() => {
     initialSchemaRef.current = schema;
     initialSettingsRef.current = settings;
-    waitingForBaselineRef.current = false;
     onDirtyChange?.(false);
     onSave?.({ schema, settings });
-  }, [onSave, schema, settings]);
+  }, [onSave, schema, settings, onDirtyChange]);
 
   useImperativeHandle(
     ref,

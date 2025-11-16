@@ -82,6 +82,11 @@ export const normalizeSchemaIDs = (nodes) => {
     base.displayMode = normalizedDisplayMode;
     base.important = toImportantFlag(normalizedDisplayMode);
 
+    // showPlaceholderのデフォルト値を設定
+    if (base.placeholder !== undefined && base.showPlaceholder === undefined) {
+      base.showPlaceholder = true;
+    }
+
     // _savedChoiceStateを保持する
     if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
       const savedOptions = base._savedChoiceState.options ? 
@@ -208,12 +213,42 @@ export const cleanupTempData = (schema) => {
   const walk = (arr) => (arr || []).map((field) => {
     const cleaned = { ...field };
 
-    // 一時保存データを削除
-    if (cleaned._savedChildrenForChoice) {
-      delete cleaned._savedChildrenForChoice;
-    }
-    if (cleaned._savedDisplayModeForChoice) {
-      delete cleaned._savedDisplayModeForChoice;
+    // 一時データは無条件削除
+    delete cleaned._savedChildrenForChoice;
+    delete cleaned._savedDisplayModeForChoice;
+
+    // typeに応じて、UIで見えていないフィールドを削除
+    if (["radio", "select", "checkboxes"].includes(cleaned.type)) {
+      // 選択肢型：options/childrenByValueは保持、他は削除
+      delete cleaned.pattern;
+      delete cleaned.defaultNow;
+      delete cleaned.placeholder;
+      delete cleaned.showPlaceholder;
+    } else {
+      // 非選択肢型：options/childrenByValue/_savedChoiceStateを削除
+      delete cleaned.options;
+      delete cleaned.childrenByValue;
+      delete cleaned._savedChoiceState;
+
+      if (cleaned.type === "regex") {
+        // regex型：patternは保持、placeholderはshowPlaceholder次第
+        delete cleaned.defaultNow;
+        if (!cleaned.showPlaceholder) {
+          delete cleaned.placeholder;
+        }
+      } else if (["date", "time"].includes(cleaned.type)) {
+        // date/time型：defaultNowは保持、placeholderなし
+        delete cleaned.pattern;
+        delete cleaned.placeholder;
+        delete cleaned.showPlaceholder;
+      } else {
+        // その他（text, numberなど）：placeholderはshowPlaceholder次第
+        delete cleaned.pattern;
+        delete cleaned.defaultNow;
+        if (!cleaned.showPlaceholder) {
+          delete cleaned.placeholder;
+        }
+      }
     }
 
     // 子要素も再帰的にクリーンアップ

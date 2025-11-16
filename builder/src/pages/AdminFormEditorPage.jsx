@@ -45,7 +45,6 @@ export default function AdminFormEditorPage() {
   const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
   const builderRef = useRef(null);
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
-  const initialSettingsRef = useRef(form?.settings || { formTitle: initialMetaRef.current.name });
 
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
@@ -73,7 +72,6 @@ export default function AdminFormEditorPage() {
   useEffect(() => {
     if (!form) return;
     initialMetaRef.current = { name: form.name || "", description: form.description || "" };
-    initialSettingsRef.current = form.settings || { formTitle: form.name || "" };
     setName(form.name || "");
     setDescription(form.description || "");
     setNameError("");
@@ -306,7 +304,7 @@ export default function AdminFormEditorPage() {
       <FormBuilderWorkspace
         ref={builderRef}
         initialSchema={form?.schema || []}
-        initialSettings={initialSettingsRef.current}
+        initialSettings={form?.settings || { formTitle: name || "" }}
         formTitle={name || "フォーム"}
         onDirtyChange={setBuilderDirty}
         showToolbarSave={false}
