@@ -49,8 +49,8 @@ export const useBuilderSettings = () => {
 
   const replaceSettings = useCallback(
     (next = {}) => {
+      let merged = { ...DEFAULT_SETTINGS, ...defaultsRef.current, ...next };
       setSettings((prev) => {
-        const merged = { ...DEFAULT_SETTINGS, ...defaultsRef.current, ...next };
         const prevObj = prev || {};
         const keys = new Set([...Object.keys(prevObj), ...Object.keys(merged)]);
         for (const key of keys) {
@@ -58,8 +58,10 @@ export const useBuilderSettings = () => {
             return merged;
           }
         }
+        merged = prevObj;
         return prev;
       });
+      return merged;
     },
     [defaultsRef, setSettings],
   );

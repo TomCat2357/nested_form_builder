@@ -40,7 +40,9 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   const [responses, setResponses] = useState({});
   const { settings, replaceSettings, updateSetting } = useBuilderSettings();
   const initialSchemaRef = useRef(schema);
-  const initialSettingsRef = useRef(initialSettings || {});
+  const initialSettingsRef = useRef(null);
+  const waitingForBaselineRef = useRef(false);
+  const latestSettingsRef = useRef(settings);
   const [questionControl, setQuestionControl] = useState(null);
 
   useEffect(() => {
@@ -48,20 +50,33 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   }, []);
 
   useEffect(() => {
-    replaceSettings(initialSettings || {});
-  }, [initialSettings, replaceSettings]);
+    latestSettingsRef.current = settings;
+  }, [settings]);
 
   useEffect(() => {
     const normalized = normalizeSchemaIDs(initialSchema || []);
     setSchema(normalized);
+
+    const mergedSettings = replaceSettings(initialSettings || {});
+    const awaitingSync = latestSettingsRef.current !== mergedSettings;
+
     initialSchemaRef.current = normalized;
-  }, [initialSchema]);
+    initialSettingsRef.current = mergedSettings;
+    waitingForBaselineRef.current = awaitingSync;
+    if (!awaitingSync) {
+      onDirtyChange?.(false);
+    }
+  }, [initialSchema, initialSettings, replaceSettings, onDirtyChange]);
 
   useEffect(() => {
-    initialSettingsRef.current = initialSettings || {};
-  }, [initialSettings]);
-
-  useEffect(() => {
+    // 編集モードに入ったタイミングで schema/settings のスナップショットを保存し、
+    // それが確定するまでは dirty 判定をスキップする。
+    if (initialSettingsRef.current === null) return;
+    if (waitingForBaselineRef.current) {
+      if (settings !== initialSettingsRef.current) return;
+      waitingForBaselineRef.current = false;
+      onDirtyChange?.(false);
+    }
     const dirty = !shallowEqual(initialSchemaRef.current, schema) || !shallowEqual(initialSettingsRef.current, settings);
     onDirtyChange?.(dirty);
   }, [schema, settings, onDirtyChange]);
@@ -79,6 +94,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   const handleSave = useCallback(() => {
     initialSchemaRef.current = schema;
     initialSettingsRef.current = settings;
+    waitingForBaselineRef.current = false;
     onDirtyChange?.(false);
     onSave?.({ schema, settings });
   }, [onSave, schema, settings]);
