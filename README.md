@@ -155,7 +155,31 @@ npm run clasp:push
 
 ## テスト
 
-### Playwright E2E
+### Playwright 本番環境テスト（推奨）
+
+**MCP Code Executionパターン**に基づいた効率的なテストスクリプトです。大量のDOM情報ではなく、**ページの要点のみ**を抽出して表示します。
+
+```bash
+npm run test:playwright
+```
+
+**特徴**:
+- ✅ 軽量な出力（カウント、存在確認のみ）
+- ✅ ロバスト（データがなくても適切にスキップ）
+- ✅ 本番環境のGAS Webアプリをテスト
+
+**テスト項目**:
+1. フォーム一覧ページ
+2. 管理画面
+3. フォーム編集画面
+4. プレビュー機能
+5. 検索機能（キーワード、比較演算子）
+6. ネストフィールド動的表示
+7. コンソールエラーチェック
+
+詳細は [`docs/playwright-testing.md`](docs/playwright-testing.md) を参照してください。
+
+### Playwright E2E（ローカル開発用）
 
 ルートに `playwright.config.js` を配置しています。初回のみブラウザをインストールしてください。
 

@@ -9,7 +9,8 @@
     "builder:preview": "npm --prefix builder run preview",
     "clasp:login": "npx --yes @google/clasp login",
     "clasp:push": "npx --yes @google/clasp push",
-    "clasp:pull": "npx --yes @google/clasp pull"
+    "clasp:pull": "npx --yes @google/clasp pull",
+    "test:playwright": "node scripts/test-playwright.js"
   },
   "devDependencies": {
     "@google/clasp": "^3.0.6-alpha",
