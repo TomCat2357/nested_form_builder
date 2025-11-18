@@ -24,13 +24,14 @@ import {
   hasCachedRecords,
 } from "../app/state/recordsCache.js";
 
-const tableStyle = {
+const createTableStyle = (maxWidth) => ({
   width: "100%",
+  maxWidth: maxWidth ? `${maxWidth}px` : "none",
   borderCollapse: "collapse",
   background: "#fff",
   borderRadius: 12,
   overflow: "hidden",
-};
+});
 
 const thStyle = {
   textAlign: "left",
@@ -92,6 +93,7 @@ export default function SearchPage() {
   const [selectedEntries, setSelectedEntries] = useState(new Set());
 
   const PAGE_SIZE = Number(settings?.pageSize) || 20;
+  const TABLE_MAX_WIDTH = settings?.searchTableMaxWidth ? Number(settings.searchTableMaxWidth) : null;
 
   const form = useMemo(() => (formId ? getFormById(formId) : null), [formId, getFormById]);
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
@@ -375,8 +377,8 @@ export default function SearchPage() {
       {loading ? (
         <p style={{ color: "#6B7280" }}>読み込み中...</p>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={tableStyle}>
+        <div style={{ overflowX: "auto", width: "100%" }}>
+          <table style={createTableStyle(TABLE_MAX_WIDTH)}>
             <thead>
               {headerRows.map((headerRow, rowIndex) => {
                 const isLastRow = rowIndex === headerRows.length - 1;
