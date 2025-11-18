@@ -30,4 +30,11 @@ export const SETTINGS_FIELDS = [
     required: false,
     type: "number",
   },
+  {
+    key: "searchTableMaxWidth",
+    label: "検索結果テーブルの最大幅（px）",
+    placeholder: "1200",
+    required: false,
+    type: "number",
+  },
 ];;
