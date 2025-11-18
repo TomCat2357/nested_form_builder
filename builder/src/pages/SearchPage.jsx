@@ -25,8 +25,7 @@ import {
 } from "../app/state/recordsCache.js";
 
 const createTableStyle = (maxWidth) => ({
-  width: "100%",
-  maxWidth: maxWidth ? `${maxWidth}px` : "none",
+  width: maxWidth ? `${maxWidth}px` : "100%",
   borderCollapse: "collapse",
   background: "#fff",
   borderRadius: 12,
