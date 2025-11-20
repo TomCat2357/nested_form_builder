@@ -25,7 +25,7 @@ const handleFetchError = (res, json) => {
   throw new Error(json?.error || `${res.status} ${res.statusText}`);
 };
 
-const callScriptRun = (functionName, payload) =>
+export const callScriptFunction = (functionName, payload) =>
   new Promise((resolve, reject) => {
     if (!hasScriptRun()) {
       reject(new Error("google.script.run is not available"));
@@ -39,7 +39,7 @@ const callScriptRun = (functionName, payload) =>
 export const loadUserSettings = async () => {
   if (!hasScriptRun()) return null;
   try {
-    const result = await callScriptRun("nfbLoadUserSettings");
+    const result = await callScriptFunction("nfbLoadUserSettings");
     if (result && typeof result === "object") return result;
     return null;
   } catch (error) {
@@ -51,7 +51,7 @@ export const loadUserSettings = async () => {
 export const saveUserSettings = async (settings) => {
   if (!hasScriptRun()) return null;
   try {
-    const result = await callScriptRun("nfbSaveUserSettings", settings || {});
+    const result = await callScriptFunction("nfbSaveUserSettings", settings || {});
     return result && typeof result === "object" ? result : null;
   } catch (error) {
     console.warn("[gasClient] saveUserSettings failed", error);
@@ -65,7 +65,7 @@ export const submitResponses = async ({ gasUrl, spreadsheetId, sheetName = "Resp
   const body = { ...(payload || {}), spreadsheetId, sheetName };
 
   if (hasScriptRun()) {
-    const result = await callScriptRun("saveResponses", body);
+    const result = await callScriptFunction("saveResponses", body);
     if (!result || result.ok === false) {
       throw new Error(result?.error || "Apps Script call failed");
     }
@@ -103,7 +103,7 @@ export const deleteEntry = async ({ gasUrl, spreadsheetId, sheetName = "Response
   };
 
   if (hasScriptRun()) {
-    const result = await callScriptRun("deleteRecord", payload);
+    const result = await callScriptFunction("deleteRecord", payload);
     if (!result || result.ok === false) {
       throw new Error(result?.error || "Delete failed");
     }
@@ -142,7 +142,7 @@ export const getEntry = async ({ gasUrl, spreadsheetId, sheetName = "Responses",
   };
 
   if (hasScriptRun()) {
-    const result = await callScriptRun("getRecord", payload);
+    const result = await callScriptFunction("getRecord", payload);
     if (!result || result.ok === false) {
       throw new Error(result?.error || "Get record failed");
     }
@@ -179,7 +179,7 @@ export const listEntries = async ({ gasUrl, spreadsheetId, sheetName = "Response
   };
 
   if (hasScriptRun()) {
-    const result = await callScriptRun("listRecords", payload);
+    const result = await callScriptFunction("listRecords", payload);
     if (!result || result.ok === false) {
       console.error("[gasClient] Result validation failed - result:", result);
       throw new Error(result?.error || "List failed");

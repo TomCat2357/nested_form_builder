@@ -21,6 +21,7 @@ const FILE_ORDER = [
   'settings.gs',  // 定数・設定
   'model.gs',     // モデル関数
   'sheets.gs',    // Sheets操作
+  'forms.gs',     // Drive保存/ロード
   'Code.gs',      // メインエントリーポイント
 ];
 

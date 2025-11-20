@@ -1,7 +1,13 @@
 import { computeSchemaHash, stripSchemaIDs } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
-import { deleteEntry as deleteEntryFromGas, listEntries as listEntriesFromGas, getEntry as getEntryFromGas } from "../../services/gasClient.js";
+import {
+  deleteEntry as deleteEntryFromGas,
+  listEntries as listEntriesFromGas,
+  getEntry as getEntryFromGas,
+  hasScriptRun,
+} from "../../services/gasClient.js";
+import { importFormsFromDrive, loadFormsFromDrive, saveFormsToDrive } from "../../services/formsDriveClient.js";
 
 const FORMS_STORAGE_KEY = "nfb.forms.v1";
 const ENTRIES_STORAGE_KEY = "nfb.entries.v1";
@@ -37,14 +43,25 @@ const ensureDisplayInfo = (form) => {
   };
 };
 
-const loadForms = () => {
+const loadFormsFromLocal = () => {
   const forms = readStorage(FORMS_STORAGE_KEY, []);
-  return (Array.isArray(forms) ? forms : []).map((form) => ensureDisplayInfo(form));
+  return normalizeFormsList(forms);
 };
 const loadEntries = () => readStorage(ENTRIES_STORAGE_KEY, {});
 
-const saveForms = (forms) => writeStorage(FORMS_STORAGE_KEY, forms);
+const saveFormsToLocal = (forms) => writeStorage(FORMS_STORAGE_KEY, forms);
 const saveEntries = (entries) => writeStorage(ENTRIES_STORAGE_KEY, entries);
+const normalizeFormsList = (forms) =>
+  (Array.isArray(forms) ? forms : []).map((form) => {
+    const normalized = ensureDisplayInfo(form);
+    const activeDriveUrl = driveFormsUrl || (typeof normalized.driveFileUrl === "string" ? normalized.driveFileUrl : "");
+    return {
+      ...normalized,
+      driveFileUrl: activeDriveUrl,
+    };
+  });
+let cachedForms = null;
+let driveFormsUrl = "";
 
 const clone = (value) => (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
 
@@ -65,6 +82,7 @@ const buildFormRecord = (input) => {
     modifiedAt: now,
     archived: !!input.archived,
     schemaVersion: Number.isFinite(input.schemaVersion) ? input.schemaVersion : 1,
+    driveFileUrl: typeof input.driveFileUrl === "string" ? input.driveFileUrl : driveFormsUrl,
   };
 };
 
@@ -73,10 +91,61 @@ const getEntriesForForm = (entriesByForm, formId) => {
   return list.slice();
 };
 
-const persistForms = (producer) => {
-  const forms = loadForms();
-  const nextForms = producer(forms.slice());
-  saveForms(nextForms);
+const loadFormsFromDriveIfAvailable = async () => {
+  if (!hasScriptRun()) return null;
+  try {
+    const result = await loadFormsFromDrive();
+    if (result?.fileUrl) {
+      driveFormsUrl = result.fileUrl;
+    }
+    const normalized = normalizeFormsList(result?.forms);
+    cachedForms = normalized;
+    saveFormsToLocal(normalized);
+    return normalized;
+  } catch (error) {
+    console.warn("[dataStore] Failed to load forms from Drive", error);
+    return null;
+  }
+};
+
+const loadFormsWithCache = async () => {
+  if (cachedForms) return cachedForms;
+  const local = loadFormsFromLocal();
+  cachedForms = local;
+  const remote = await loadFormsFromDriveIfAvailable();
+  return remote || cachedForms;
+};
+
+const syncFormsToDrive = async (forms) => {
+  if (!hasScriptRun()) return;
+  try {
+    const result = await saveFormsToDrive({ forms, fileUrl: driveFormsUrl });
+    if (result?.fileUrl) {
+      driveFormsUrl = result.fileUrl;
+      return result;
+    }
+  } catch (error) {
+    console.warn("[dataStore] Failed to save forms to Drive", error);
+  }
+  return null;
+};
+
+const persistForms = async (producer, { fileUrl } = {}) => {
+  if (typeof fileUrl === "string") {
+    driveFormsUrl = fileUrl.trim();
+  }
+  const forms = await loadFormsWithCache();
+  const nextForms = normalizeFormsList(producer(forms.slice()));
+  cachedForms = nextForms;
+  saveFormsToLocal(nextForms);
+  const syncResult = await syncFormsToDrive(nextForms);
+  if (syncResult?.fileUrl && syncResult.fileUrl !== driveFormsUrl) {
+    driveFormsUrl = syncResult.fileUrl;
+    const withUpdatedDriveUrl = normalizeFormsList(nextForms);
+    cachedForms = withUpdatedDriveUrl;
+    saveFormsToLocal(withUpdatedDriveUrl);
+    return withUpdatedDriveUrl;
+  }
   return nextForms;
 };
 
@@ -89,26 +158,30 @@ const persistEntries = (producer) => {
 
 export const dataStore = {
   async listForms({ includeArchived = false } = {}) {
-    const forms = loadForms();
+    const forms = await loadFormsWithCache();
     return forms.filter((form) => includeArchived || !form.archived);
   },
+  async getDriveFileUrl() {
+    if (!cachedForms) await loadFormsWithCache();
+    return driveFormsUrl;
+  },
   async getForm(formId) {
-    const forms = loadForms();
+    const forms = await loadFormsWithCache();
     return forms.find((form) => form.id === formId) || null;
   },
   async createForm(payload) {
     let created = null;
-    persistForms((forms) => {
+    const nextForms = await persistForms((forms) => {
       const record = buildFormRecord({ ...payload, id: genId() });
       created = record;
       forms.push(record);
       return forms;
-    });
-    return created;
+    }, { fileUrl: payload?.driveFileUrl });
+    return nextForms.find((form) => form.id === created.id) || created;
   },
   async updateForm(formId, updates) {
     let updated = null;
-    persistForms((forms) => {
+    const nextForms = await persistForms((forms) => {
       const index = forms.findIndex((form) => form.id === formId);
       if (index === -1) return forms;
       const current = forms[index];
@@ -123,12 +196,12 @@ export const dataStore = {
       updated = next;
       forms[index] = next;
       return forms;
-    });
-    return updated;
+    }, { fileUrl: updates?.driveFileUrl });
+    return nextForms.find((form) => form.id === updated?.id) || updated;
   },
   async setFormArchivedState(formId, archived) {
     let updated = null;
-    persistForms((forms) => {
+    await persistForms((forms) => {
       const index = forms.findIndex((form) => form.id === formId);
       if (index === -1) return forms;
       const current = forms[index];
@@ -146,7 +219,7 @@ export const dataStore = {
     return this.setFormArchivedState(formId, false);
   },
   async deleteForm(formId) {
-    persistForms((forms) => forms.filter((form) => form.id !== formId));
+    await persistForms((forms) => forms.filter((form) => form.id !== formId));
     persistEntries((entries) => {
       delete entries[formId];
       return entries;
@@ -308,7 +381,7 @@ export const dataStore = {
   },
   async importForms(jsonList) {
     const created = [];
-    persistForms((forms) => {
+    await persistForms((forms) => {
       jsonList.forEach((item) => {
         if (!item) return;
         const record = buildFormRecord({
@@ -324,8 +397,12 @@ export const dataStore = {
     });
     return created;
   },
+  async importFormsFromDrive(targetUrl) {
+    const { forms } = await importFormsFromDrive({ targetUrl });
+    return forms || [];
+  },
   async exportForms(formIds) {
-    const forms = loadForms();
+    const forms = await loadFormsWithCache();
     const selected = forms.filter((form) => formIds.includes(form.id));
     return selected.map((form) => {
       const {

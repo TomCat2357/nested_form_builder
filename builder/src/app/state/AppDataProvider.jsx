@@ -6,13 +6,20 @@ const AppDataContext = createContext(null);
 export function AppDataProvider({ children }) {
   const [forms, setForms] = useState([]);
   const [loadingForms, setLoadingForms] = useState(true);
+  const [driveFileUrl, setDriveFileUrl] = useState("");
+
+  const refreshDriveFileUrl = useCallback(async () => {
+    const url = await dataStore.getDriveFileUrl();
+    setDriveFileUrl(url || "");
+  }, []);
 
   const refreshForms = useCallback(async () => {
     setLoadingForms(true);
     const list = await dataStore.listForms({ includeArchived: true });
     setForms(list);
     setLoadingForms(false);
-  }, []);
+    await refreshDriveFileUrl();
+  }, [refreshDriveFileUrl]);
 
   useEffect(() => {
     refreshForms();
@@ -64,6 +71,7 @@ export function AppDataProvider({ children }) {
     () => ({
       forms,
       loadingForms,
+      driveFileUrl,
       refreshForms,
       createForm,
       updateForm,
@@ -74,7 +82,7 @@ export function AppDataProvider({ children }) {
       exportForms,
       getFormById,
     }),
-    [forms, loadingForms, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, deleteForm, importForms, exportForms, getFormById],
+    [forms, loadingForms, driveFileUrl, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, deleteForm, importForms, exportForms, getFormById],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;

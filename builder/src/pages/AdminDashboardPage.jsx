@@ -69,7 +69,6 @@ export default function AdminDashboardPage() {
   const [selected, setSelected] = useState(() => new Set());
   const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null });
   const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null });
-  const fileInputRef = useRef(null);
   const conflictResolverRef = useRef(null);
   const [conflictDialog, setConflictDialog] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -153,9 +152,28 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const handleImport = () => {
+  const handleImport = async () => {
     if (importing) return;
-    fileInputRef.current?.click();
+    const promptText = [
+      "DriveのファイルURLまたはフォルダURLを入力してください。",
+      "ファイルの場合はその1件だけ、フォルダの場合はフォルダ内の.jsonを読み込みます。",
+      "空欄またはキャンセルで中止します。",
+    ].join("\n");
+    const targetUrl = window.prompt(promptText, "");
+    if (targetUrl === null) return;
+    const trimmed = (targetUrl || "").trim();
+    if (!trimmed) return;
+
+    setImporting(true);
+    try {
+      const formsFromDrive = await dataStore.importFormsFromDrive(trimmed);
+      await startImportWorkflow(formsFromDrive);
+    } catch (error) {
+      console.error(error);
+      showAlert(error?.message || "Driveからのインポートに失敗しました");
+    } finally {
+      setImporting(false);
+    }
   };
 
   const generateUniqueName = useCallback((baseName, existingNames) => {
@@ -223,7 +241,6 @@ export default function AdminDashboardPage() {
         return;
       }
 
-      setImporting(true);
       let applyChoice = null;
       let overwritten = 0;
       let normalSaved = 0; // 通常保存（同名が存在しない場合）
@@ -367,43 +384,10 @@ export default function AdminDashboardPage() {
       } catch (error) {
         console.error(error);
         showAlert(error?.message || "スキーマの取り込み中にエラーが発生しました");
-      } finally {
-        setImporting(false);
       }
     },
     [forms, generateUniqueName, refreshForms],
   );
-
-  const onFilesSelected = async (event) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
-    try {
-      const contents = await Promise.all(
-        files.map(
-          (file) =>
-            new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => {
-                try {
-                  const value = JSON.parse(reader.result);
-                  resolve(value);
-                } catch (error) {
-                  reject(new Error(`${file.name}: JSON解析に失敗しました`));
-                }
-              };
-              reader.onerror = () => reject(new Error(`${file.name}: 読み込みに失敗しました`));
-              reader.readAsText(file);
-            }),
-        ),
-      );
-      await startImportWorkflow(contents);
-    } catch (error) {
-      console.error(error);
-      showAlert(error.message || "スキーマの取り込みに失敗しました");
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
 
   const confirmArchiveAction = async () => {
     if (!confirmArchive.formId) return;
@@ -497,7 +481,6 @@ export default function AdminDashboardPage() {
           >
             削除
           </button>
-          <input ref={fileInputRef} type="file" accept="application/json" multiple style={{ display: "none" }} onChange={onFilesSelected} />
         </>
       }
     >

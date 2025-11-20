@@ -37,17 +37,22 @@ const fallbackPath = (locationState) => (locationState?.from ? locationState.fro
 export default function AdminFormEditorPage() {
   const { formId } = useParams();
   const isEdit = Boolean(formId);
-  const { forms, getFormById, createForm, updateForm } = useAppData();
+  const { forms, getFormById, createForm, updateForm, driveFileUrl: sharedDriveFileUrl } = useAppData();
   const form = isEdit ? getFormById(formId) : null;
   const navigate = useNavigate();
   const location = useLocation();
   const { alertState, showAlert, closeAlert } = useAlert();
   const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
   const builderRef = useRef(null);
-  const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
+  const initialMetaRef = useRef({
+    name: form?.name || "新規フォーム",
+    description: form?.description || "",
+    driveFileUrl: form?.driveFileUrl || sharedDriveFileUrl || "",
+  });
 
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
+  const [driveFileUrl, setDriveFileUrl] = useState(initialMetaRef.current.driveFileUrl);
   const [builderDirty, setBuilderDirty] = useState(false);
   const [confirmState, setConfirmState] = useState(false);
   const [confirmSave, setConfirmSave] = useState(false);
@@ -71,13 +76,42 @@ export default function AdminFormEditorPage() {
 
   useEffect(() => {
     if (!form) return;
-    initialMetaRef.current = { name: form.name || "", description: form.description || "" };
+    initialMetaRef.current = {
+      name: form.name || "",
+      description: form.description || "",
+      driveFileUrl: form.driveFileUrl || sharedDriveFileUrl || "",
+    };
     setName(form.name || "");
     setDescription(form.description || "");
+    setDriveFileUrl(form.driveFileUrl || sharedDriveFileUrl || "");
     setNameError("");
-  }, [form]);
+  }, [form, sharedDriveFileUrl]);
 
-  const metaDirty = useMemo(() => name !== initialMetaRef.current.name || description !== initialMetaRef.current.description, [name, description]);
+  useEffect(() => {
+    if (isEdit) return;
+    if (builderDirty) return;
+    if (
+      name !== initialMetaRef.current.name ||
+      description !== initialMetaRef.current.description ||
+      driveFileUrl !== initialMetaRef.current.driveFileUrl
+    )
+      return;
+    const trimmedSharedUrl = sharedDriveFileUrl || "";
+    if (driveFileUrl === trimmedSharedUrl) return;
+    initialMetaRef.current = {
+      ...initialMetaRef.current,
+      driveFileUrl: trimmedSharedUrl,
+    };
+    setDriveFileUrl(trimmedSharedUrl);
+  }, [builderDirty, description, driveFileUrl, isEdit, name, sharedDriveFileUrl]);
+
+  const metaDirty = useMemo(
+    () =>
+      name !== initialMetaRef.current.name ||
+      description !== initialMetaRef.current.description ||
+      driveFileUrl !== initialMetaRef.current.driveFileUrl,
+    [name, description, driveFileUrl],
+  );
   const isDirty = builderDirty || metaDirty;
 
   useEffect(() => {
@@ -124,6 +158,7 @@ export default function AdminFormEditorPage() {
     const schema = builderRef.current.getSchema();
     const settings = builderRef.current.getSettings();
     const trimmedName = (name || "").trim();
+    const trimmedDriveFileUrl = (driveFileUrl || "").trim();
 
     // 一時保存データをクリーンアップ
     const cleanedSchema = cleanupTempData(schema);
@@ -131,15 +166,20 @@ export default function AdminFormEditorPage() {
     const payload = {
       name: trimmedName,
       description,
+      driveFileUrl: trimmedDriveFileUrl,
       schema: cleanedSchema,
       settings: { ...settings, formTitle: settings?.formTitle || trimmedName },
     };
     try {
       setIsSaving(true);
-      if (isEdit) await updateForm(formId, payload);
-      else await createForm(payload);
-      initialMetaRef.current = { name: payload.name, description: payload.description || "" };
+      const saved = isEdit ? await updateForm(formId, payload) : await createForm(payload);
+      initialMetaRef.current = {
+        name: saved?.name || payload.name,
+        description: saved?.description || payload.description || "",
+        driveFileUrl: saved?.driveFileUrl || payload.driveFileUrl || "",
+      };
       setBuilderDirty(false);
+      setDriveFileUrl(initialMetaRef.current.driveFileUrl);
       setIsSaving(false);
       navigate("/admin", { replace: true });
     } catch (error) {
@@ -298,6 +338,18 @@ export default function AdminFormEditorPage() {
         <div style={fieldStyle}>
           <label>説明</label>
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} style={{ ...inputStyle, minHeight: 80 }} placeholder="説明" />
+        </div>
+        <div style={fieldStyle}>
+          <label>保存先URL (Drive)</label>
+          <input
+            value={driveFileUrl}
+            onChange={(event) => setDriveFileUrl(event.target.value)}
+            style={inputStyle}
+            placeholder="例: https://drive.google.com/drive/folders/... または ファイルURL"
+          />
+          <p style={{ color: "#6B7280", fontSize: 12, margin: 0, lineHeight: 1.5 }}>
+            ファイルURLを入力するとそのファイルを使用します。フォルダURLのみの場合はランダムな名前のファイルをそのフォルダに作成して保存します。空白のときはマイドライブ直下に保存します。
+          </p>
         </div>
       </section>
 

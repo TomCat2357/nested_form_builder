@@ -5,6 +5,7 @@ var NFB_USER_SETTINGS_KEYS = {
   sheetName: NFB_USER_SETTINGS_PREFIX + "SHEET_NAME",
   gasUrl: NFB_USER_SETTINGS_PREFIX + "GAS_URL",
   pageSize: NFB_USER_SETTINGS_PREFIX + "PAGE_SIZE",
+  formsFileUrl: NFB_USER_SETTINGS_PREFIX + "FORMS_FILE_URL",
 };
 
 function nfbNormalizeSettings_(input) {
@@ -15,6 +16,7 @@ function nfbNormalizeSettings_(input) {
     sheetName: String(input.sheetName || "Responses"),
     gasUrl: String(input.gasUrl || ""),
     pageSize: Number(input.pageSize) || 20,
+    formsFileUrl: String(input.formsFileUrl || ""),
   };
 }
 
@@ -26,6 +28,7 @@ function nfbLoadUserSettings() {
     sheetName: props.getProperty(NFB_USER_SETTINGS_KEYS.sheetName) || "Responses",
     gasUrl: props.getProperty(NFB_USER_SETTINGS_KEYS.gasUrl) || "",
     pageSize: Number(props.getProperty(NFB_USER_SETTINGS_KEYS.pageSize)) || 20,
+    formsFileUrl: props.getProperty(NFB_USER_SETTINGS_KEYS.formsFileUrl) || "",
   };
 }
 
@@ -38,6 +41,9 @@ function nfbSaveUserSettings(settings) {
   payload[NFB_USER_SETTINGS_KEYS.sheetName] = normalized.sheetName;
   payload[NFB_USER_SETTINGS_KEYS.gasUrl] = normalized.gasUrl;
   payload[NFB_USER_SETTINGS_KEYS.pageSize] = String(normalized.pageSize);
+  if (normalized.formsFileUrl) {
+    payload[NFB_USER_SETTINGS_KEYS.formsFileUrl] = normalized.formsFileUrl;
+  }
   props.setProperties(payload, true);
   return nfbLoadUserSettings();
 }
