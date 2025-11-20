@@ -48,6 +48,7 @@ export default function AdminFormEditorPage() {
 
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
+  const [saveUrl, setSaveUrl] = useState("");
   const [builderDirty, setBuilderDirty] = useState(false);
   const [confirmState, setConfirmState] = useState(false);
   const [confirmSave, setConfirmSave] = useState(false);
@@ -134,6 +135,12 @@ export default function AdminFormEditorPage() {
       schema: cleanedSchema,
       settings: { ...settings, formTitle: settings?.formTitle || trimmedName },
     };
+
+    // 新規作成時のみsaveUrlを追加
+    if (!isEdit) {
+      payload.saveUrl = saveUrl;
+    }
+
     try {
       setIsSaving(true);
       if (isEdit) await updateForm(formId, payload);
@@ -299,6 +306,20 @@ export default function AdminFormEditorPage() {
           <label>説明</label>
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} style={{ ...inputStyle, minHeight: 80 }} placeholder="説明" />
         </div>
+        {!isEdit && (
+          <div style={fieldStyle}>
+            <label>保存先URL（オプション）</label>
+            <input
+              value={saveUrl}
+              onChange={(event) => setSaveUrl(event.target.value)}
+              style={inputStyle}
+              placeholder="https://drive.google.com/drive/folders/... または空白でマイドライブ"
+            />
+            <p style={{ fontSize: 12, color: "#6B7280", margin: "4px 0 0 0" }}>
+              フォルダURL: デフォルトファイル名で保存 / ファイルURL: そのファイル名で保存 / 空白: マイドライブに保存
+            </p>
+          </div>
+        )}
       </section>
 
       <FormBuilderWorkspace

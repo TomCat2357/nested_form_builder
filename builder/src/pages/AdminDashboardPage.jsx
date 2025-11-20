@@ -9,6 +9,7 @@ import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { DISPLAY_MODES, DISPLAY_MODE_LABELS } from "../core/displayModes.js";
+import { importFormByUrl, getAutoDetectedGasUrl } from "../services/gasClient.js";
 
 const tableStyle = {
   width: "100%",
@@ -63,15 +64,13 @@ const buttonStyle = {
 const labelMuted = { fontSize: 12, color: "#6B7280" };
 
 export default function AdminDashboardPage() {
-  const { forms, loadingForms, archiveForm, unarchiveForm, deleteForm, refreshForms, exportForms } = useAppData();
+  const { forms, loadingForms, error, archiveForm, unarchiveForm, deleteForm, refreshForms, exportForms } = useAppData();
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
   const [selected, setSelected] = useState(() => new Set());
   const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null });
   const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null });
-  const fileInputRef = useRef(null);
-  const conflictResolverRef = useRef(null);
-  const [conflictDialog, setConflictDialog] = useState(null);
+  const [importDialog, setImportDialog] = useState({ open: false, fileUrl: "" });
   const [importing, setImporting] = useState(false);
 
   const sortedForms = useMemo(() => {
@@ -155,253 +154,39 @@ export default function AdminDashboardPage() {
 
   const handleImport = () => {
     if (importing) return;
-    fileInputRef.current?.click();
+    setImportDialog({ open: true, fileUrl: "" });
   };
 
-  const generateUniqueName = useCallback((baseName, existingNames) => {
-    const trimmed = (baseName || "").trim();
-    if (!trimmed) return "";
-    if (!existingNames.has(trimmed)) return trimmed;
-    const base = trimmed.replace(/\s\(\d+\)$/u, "");
-    let counter = 2;
-    let candidate = `${base} (${counter})`;
-    while (existingNames.has(candidate)) {
-      counter += 1;
-      candidate = `${base} (${counter})`;
+  const handleImportSubmit = async () => {
+    const { fileUrl } = importDialog;
+    if (!fileUrl || !fileUrl.trim()) {
+      showAlert("ファイルURLを入力してください");
+      return;
     }
-    return candidate;
-  }, []);
 
-  const openConflictDialog = useCallback((payload) => {
-    setConflictDialog(payload);
-    return new Promise((resolve) => {
-      conflictResolverRef.current = resolve;
-    });
-  }, []);
-
-  const closeConflictDialog = useCallback((result) => {
-    const resolver = conflictResolverRef.current;
-    conflictResolverRef.current = null;
-    setConflictDialog(null);
-    if (resolver) resolver(result);
-  }, []);
-
-  const sanitizeImportedForm = (raw) => {
-    if (!raw || typeof raw !== "object") return null;
-    const schema = Array.isArray(raw.schema) ? raw.schema : [];
-    return {
-      name: typeof raw.name === "string" ? raw.name : "",
-      description: typeof raw.description === "string" ? raw.description : "",
-      schema,
-      settings: raw && typeof raw.settings === "object" && !Array.isArray(raw.settings) ? raw.settings : {},
-      archived: !!raw.archived,
-      schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1,
-    };
-  };
-
-  const flattenImportedContents = (contents) => {
-    const list = [];
-    contents.forEach((item) => {
-      if (Array.isArray(item)) {
-        item.forEach((child) => {
-          const sanitized = sanitizeImportedForm(child);
-          if (sanitized) list.push(sanitized);
-        });
-      } else {
-        const sanitized = sanitizeImportedForm(item);
-        if (sanitized) list.push(sanitized);
-      }
-    });
-    return list;
-  };
-
-  const startImportWorkflow = useCallback(
-    async (parsedContents) => {
-      const queue = flattenImportedContents(parsedContents);
-      if (!queue.length) {
-        showAlert("有効なフォームがありませんでした。");
-        return;
-      }
-
-      setImporting(true);
-      let applyChoice = null;
-      let overwritten = 0;
-      let normalSaved = 0; // 通常保存（同名が存在しない場合）
-      let savedAs = 0; // 別名保存（同名が存在して別名で保存した場合）
-      let aborted = false;
-
-      const existingMap = new Map();
-      const existingNames = new Set();
-      forms.forEach((form) => {
-        existingMap.set(form.name, form);
-        existingNames.add(form.name);
-      });
-
-      const ensureUnique = (name) => generateUniqueName(name, existingNames);
-
-      try {
-        for (let index = 0; index < queue.length; index += 1) {
-          const item = queue[index];
-          const baseName = (item.name || "").trim();
-          if (!baseName) {
-            continue;
-          }
-
-          const conflict = existingNames.has(baseName);
-          let action = conflict ? "overwrite" : "saveas";
-          let renameMode = conflict ? "auto" : "custom";
-          let targetName = baseName;
-
-          if (conflict) {
-            let choice = applyChoice;
-            if (!choice) {
-              const suggestedName = ensureUnique(baseName);
-              choice = await openConflictDialog({
-                name: baseName,
-                index: index + 1,
-                total: queue.length,
-                suggestedName,
-              });
-
-              if (!choice) {
-                aborted = true;
-                break;
-              }
-
-              if (choice.action === "abort") {
-                // チェックボックスがONの場合は全件中止、OFFの場合はこのファイルだけスキップ
-                if (choice.applyToRest) {
-                  aborted = true;
-                  break;
-                } else {
-                  // このファイルだけスキップして次へ
-                  continue;
-                }
-              }
-
-              if (choice.applyToRest) {
-                applyChoice = choice;
-              }
-            }
-
-            action = choice.action;
-            renameMode = choice.renameMode || "auto";
-
-            if (action === "abort") {
-              // applyToRestがtrueの場合は全件中止済み、falseの場合はこのファイルだけスキップ
-              continue;
-            }
-
-            if (action === "saveas") {
-              if (renameMode === "auto") {
-                targetName = ensureUnique(baseName);
-              } else {
-                targetName = ensureUnique(choice.newName || baseName);
-              }
-            }
-          } else {
-            targetName = ensureUnique(baseName);
-          }
-
-          if (aborted) break;
-
-          const payload = {
-            name: targetName,
-            description: item.description,
-            schema: item.schema,
-            settings: item.settings,
-            archived: item.archived,
-            schemaVersion: item.schemaVersion,
-          };
-
-          if (conflict && action === "overwrite") {
-            const existing = existingMap.get(baseName);
-            if (existing) {
-              await dataStore.updateForm(existing.id, {
-                ...payload,
-                name: existing.name,
-                archived: existing.archived,
-              });
-              overwritten += 1;
-            }
-          } else if (action === "saveas") {
-            const createdForm = await dataStore.createForm({ ...payload, name: targetName, archived: false });
-            if (createdForm?.name) {
-              existingMap.set(createdForm.name, createdForm);
-              existingNames.add(createdForm.name);
-            } else {
-              existingNames.add(targetName);
-            }
-            // 同名が存在しない場合は通常保存、存在する場合は別名保存
-            if (conflict) {
-              savedAs += 1;
-            } else {
-              normalSaved += 1;
-            }
-          } else if (action === "overwrite") {
-            // conflict resolution might have set overwrite without existing (should not happen)
-            const existing = existingMap.get(baseName);
-            if (existing) {
-              await dataStore.updateForm(existing.id, {
-                ...payload,
-                name: existing.name,
-                archived: existing.archived,
-              });
-              overwritten += 1;
-            }
-          }
-
-          if (!conflict || action === "saveas") {
-            existingNames.add(targetName);
-          }
-        }
-
-        await refreshForms();
-        setSelected(new Set());
-
-        if (aborted) {
-          showAlert(`アップロードを中止しました（上書き ${overwritten} 件、通常保存 ${normalSaved} 件、別名保存 ${savedAs} 件）。`);
-        } else {
-          showAlert(`アップロードが完了しました（上書き ${overwritten} 件、通常保存 ${normalSaved} 件、別名保存 ${savedAs} 件）。`);
-        }
-      } catch (error) {
-        console.error(error);
-        showAlert(error?.message || "スキーマの取り込み中にエラーが発生しました");
-      } finally {
-        setImporting(false);
-      }
-    },
-    [forms, generateUniqueName, refreshForms],
-  );
-
-  const onFilesSelected = async (event) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
+    setImporting(true);
     try {
-      const contents = await Promise.all(
-        files.map(
-          (file) =>
-            new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => {
-                try {
-                  const value = JSON.parse(reader.result);
-                  resolve(value);
-                } catch (error) {
-                  reject(new Error(`${file.name}: JSON解析に失敗しました`));
-                }
-              };
-              reader.onerror = () => reject(new Error(`${file.name}: 読み込みに失敗しました`));
-              reader.readAsText(file);
-            }),
-        ),
-      );
-      await startImportWorkflow(contents);
+      console.log('[AdminDashboardPage] インポート開始:', { fileUrl: fileUrl.trim() });
+      const gasUrl = getAutoDetectedGasUrl();
+      console.log('[AdminDashboardPage] GAS URL:', gasUrl);
+
+      const result = await importFormByUrl({ gasUrl, fileUrl: fileUrl.trim() });
+      console.log('[AdminDashboardPage] インポート成功:', result);
+
+      await refreshForms();
+      showAlert("フォームをインポートしました");
+      setImportDialog({ open: false, fileUrl: "" });
     } catch (error) {
-      console.error(error);
-      showAlert(error.message || "スキーマの取り込みに失敗しました");
+      console.error('[AdminDashboardPage] インポートエラー:', error);
+      console.error('[AdminDashboardPage] エラー詳細:', {
+        name: error?.name,
+        message: error?.message,
+        stack: error?.stack,
+        cause: error?.cause
+      });
+      showAlert(error?.message || "インポートに失敗しました");
     } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      setImporting(false);
     }
   };
 
@@ -471,7 +256,7 @@ export default function AdminDashboardPage() {
           <button type="button" style={sidebarButtonStyle} onClick={handleCreateNew}>
             新規作成
           </button>
-          <button type="button" style={sidebarButtonStyle} onClick={handleImport}>
+          <button type="button" style={sidebarButtonStyle} onClick={handleImport} disabled={importing}>
             {importing ? "インポート中..." : "インポート"}
           </button>
           <button type="button" style={sidebarButtonStyle} onClick={handleExport} disabled={selected.size === 0}>
@@ -497,10 +282,30 @@ export default function AdminDashboardPage() {
           >
             削除
           </button>
-          <input ref={fileInputRef} type="file" accept="application/json" multiple style={{ display: "none" }} onChange={onFilesSelected} />
         </>
       }
     >
+      {/* エラー表示（GAS URL未設定） */}
+      {error && (
+        <div
+          style={{
+            margin: "20px",
+            padding: "20px",
+            border: "2px solid #dc2626",
+            borderRadius: "8px",
+            backgroundColor: "#fef2f2",
+            color: "#991b1b",
+          }}
+        >
+          <h3 style={{ margin: "0 0 10px 0", fontSize: "16px", fontWeight: "bold" }}>
+            ⚠️ エラー
+          </h3>
+          <p style={{ margin: 0, fontSize: "14px" }}>
+            {error}
+          </p>
+        </div>
+      )}
+
       {loadingForms ? (
         <p style={{ color: "#6B7280" }}>読み込み中...</p>
       ) : (
@@ -515,6 +320,7 @@ export default function AdminDashboardPage() {
                 <th style={thStyle}>更新日時</th>
                 <th style={thStyle}>表示項目</th>
                 <th style={thStyle}>状態</th>
+                <th style={thStyle}>ファイルURL</th>
               </tr>
             </thead>
             <tbody>
@@ -538,12 +344,25 @@ export default function AdminDashboardPage() {
                       {summary ? summary : <span style={labelMuted}>設定なし</span>}
                     </td>
                     <td style={tdStyle}>{form.archived ? <span style={{ color: "#DC2626" }}>アーカイブ済み</span> : <span style={{ color: "#16A34A" }}>公開中</span>}</td>
+                    <td
+                      style={{ ...tdStyle, color: "#2563EB", cursor: "pointer", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (form.fileUrl) {
+                          navigator.clipboard.writeText(form.fileUrl);
+                          showAlert("URLをコピーしました");
+                        }
+                      }}
+                      title={form.fileUrl || "URLなし"}
+                    >
+                      {form.fileUrl ? "クリックでコピー" : <span style={labelMuted}>-</span>}
+                    </td>
                   </tr>
                 );
               })}
               {sortedForms.length === 0 && (
                 <tr>
-                  <td style={{ ...tdStyle, textAlign: "center" }} colSpan={5}>
+                  <td style={{ ...tdStyle, textAlign: "center" }} colSpan={6}>
                     フォームが登録されていません。
                   </td>
                 </tr>
@@ -595,102 +414,52 @@ export default function AdminDashboardPage() {
         ]}
       />
 
-      {conflictDialog && (
-        <ImportConflictDialog
-          {...conflictDialog}
-          onSubmit={(result) => closeConflictDialog(result)}
-          onCancel={() => closeConflictDialog(null)}
-        />
+      {/* Import Dialog */}
+      {importDialog.open && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+        >
+          <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: "min(520px, 90vw)", boxShadow: "0 20px 45px rgba(15,23,42,0.25)" }}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>フォームをインポート</h3>
+            <p style={{ marginBottom: 16, color: "#475569", fontSize: 14 }}>
+              Google DriveのフォームファイルURLを入力してください。
+            </p>
+            <input
+              type="text"
+              value={importDialog.fileUrl}
+              onChange={(e) => setImportDialog({ ...importDialog, fileUrl: e.target.value })}
+              placeholder="https://drive.google.com/file/d/..."
+              style={{
+                width: "100%",
+                border: "1px solid #CBD5E1",
+                borderRadius: 8,
+                padding: "10px 12px",
+                fontSize: 14,
+                marginBottom: 16,
+              }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                type="button"
+                style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff" }}
+                onClick={() => setImportDialog({ open: false, fileUrl: "" })}
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#2563EB", color: "#fff" }}
+                onClick={handleImportSubmit}
+                disabled={importing}
+              >
+                {importing ? "インポート中..." : "インポート"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
     </AppLayout>
-  );
-}
-
-function ImportConflictDialog({ name, index, total, suggestedName, onSubmit, onCancel }) {
-  const [action, setAction] = useState("overwrite");
-  const [newName, setNewName] = useState(suggestedName);
-  const [applyToRest, setApplyToRest] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    setAction("overwrite");
-    setNewName(suggestedName);
-    setApplyToRest(false);
-    setError("");
-  }, [name, index, total, suggestedName]);
-
-  const handleConfirm = () => {
-    if (action === "saveas") {
-      const trimmed = (newName || "").trim();
-      if (!trimmed) {
-        setError("別名を入力してください");
-        return;
-      }
-      const renameMode = trimmed === suggestedName ? "auto" : "custom";
-      onSubmit({ action, newName: trimmed, applyToRest, renameMode });
-      return;
-    }
-    onSubmit({ action, applyToRest });
-  };
-
-  return (
-    <div
-      style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
-    >
-      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: "min(520px, 90vw)", boxShadow: "0 20px 45px rgba(15,23,42,0.25)" }}>
-        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>フォーム名が重複しています</h3>
-        <p style={{ marginBottom: 16, color: "#475569" }}>
-          「{name}」は既に存在します（{index}/{total}）。処理を選択してください。
-        </p>
-
-        <div style={{ display: "grid", gap: 12 }}>
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="radio" name="import-conflict-action" value="overwrite" checked={action === "overwrite"} onChange={() => setAction("overwrite")} />
-            <span>上書き</span>
-          </label>
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="radio" name="import-conflict-action" value="saveas" checked={action === "saveas"} onChange={() => setAction("saveas")} />
-            <span>別名保存</span>
-          </label>
-          {action === "saveas" && (
-            <div style={{ marginLeft: 24 }}>
-              <input
-                type="text"
-                value={newName}
-                onChange={(event) => setNewName(event.target.value)}
-                style={{ width: "100%", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px" }}
-                placeholder={`${name} (2)`}
-              />
-              {error && <p style={{ marginTop: 6, color: "#DC2626", fontSize: 12 }}>{error}</p>}
-              <p style={{ marginTop: 6, color: "#64748B", fontSize: 12 }}>既存の名称と重複する場合は自動的に番号が付与されます。</p>
-            </div>
-          )}
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="radio" name="import-conflict-action" value="abort" checked={action === "abort"} onChange={() => setAction("abort")} />
-            <span>アップロード中止</span>
-          </label>
-        </div>
-
-        <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 16 }}>
-          <input type="checkbox" checked={applyToRest} onChange={(event) => setApplyToRest(event.target.checked)} />
-          <span>この選択を残り全件に適用する</span>
-        </label>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
-          <button type="button" style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff" }} onClick={onCancel}>
-            キャンセル
-          </button>
-          <button
-            type="button"
-            style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#2563EB", color: "#fff" }}
-            onClick={handleConfirm}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }

@@ -1,6 +1,16 @@
 function doGet() {
   // Serve the built single-page app via HtmlService.
-  return HtmlService.createHtmlOutputFromFile("Index")
+  var html = HtmlService.createHtmlOutputFromFile("Index");
+
+  // GAS WebApp URLを取得してHTMLに注入
+  var webAppUrl = ScriptApp.getService().getUrl();
+  var htmlContent = html.getContent();
+
+  // </head>の直前にscriptタグを挿入してGAS URLをグローバル変数として設定
+  var injectedScript = '<script>window.__GAS_WEBAPP_URL__ = "' + webAppUrl + '";</script>';
+  htmlContent = htmlContent.replace('</head>', injectedScript + '</head>');
+
+  return HtmlService.createHtmlOutput(htmlContent)
     .setTitle("Nested Form Builder")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -10,21 +20,48 @@ function doPost(e) {
     var ctx = Model_parseRequest_(e);
     var action = (ctx.raw && ctx.raw.action) || "save";
 
-    if (!ctx.spreadsheetId) {
-      return JsonOutput_({ ok: false, error: "no spreadsheetId" }, 400);
-    }
-
     try {
       var payload;
-      if (action === "delete") {
+
+      // フォーム管理API
+      if (action === "forms_list") {
+        payload = FormsApi_List_(ctx);
+      } else if (action === "forms_get") {
+        payload = FormsApi_Get_(ctx);
+      } else if (action === "forms_create") {
+        payload = FormsApi_Create_(ctx);
+      } else if (action === "forms_import") {
+        payload = FormsApi_Import_(ctx);
+      } else if (action === "forms_update") {
+        payload = FormsApi_Update_(ctx);
+      } else if (action === "forms_delete") {
+        payload = FormsApi_Delete_(ctx);
+      } else if (action === "forms_archive") {
+        payload = FormsApi_SetArchived_(ctx);
+      }
+      // スプレッドシートレコード管理API
+      else if (action === "delete") {
+        if (!ctx.spreadsheetId) {
+          return JsonOutput_({ ok: false, error: "no spreadsheetId" }, 400);
+        }
         payload = DeleteRecord_(ctx);
       } else if (action === "list") {
+        if (!ctx.spreadsheetId) {
+          return JsonOutput_({ ok: false, error: "no spreadsheetId" }, 400);
+        }
         payload = ListRecords_(ctx);
       } else if (action === "get") {
+        if (!ctx.spreadsheetId) {
+          return JsonOutput_({ ok: false, error: "no spreadsheetId" }, 400);
+        }
         payload = GetRecord_(ctx);
       } else {
+        if (!ctx.spreadsheetId) {
+          return JsonOutput_({ ok: false, error: "no spreadsheetId" }, 400);
+        }
         payload = SubmitResponses_(ctx);
       }
+
       return JsonOutput_(payload, 200);
     } catch (err) {
       return JsonOutput_({ ok: false, error: (err && err.message) || String(err) }, 500);
@@ -89,6 +126,74 @@ function listRecords(payload) {
   }
 
   return result;
+}
+
+// ========================================
+// google.script.run用のフォーム管理関数
+// ========================================
+
+/**
+ * フォーム一覧取得（google.script.run用）
+ * @param {Object} payload - { includeArchived: boolean }
+ * @return {Object} フォーム一覧
+ */
+function nfbListForms(payload) {
+  try {
+    var urlMap = GetFormUrls_();
+    var includeArchived = payload && payload.includeArchived;
+    var forms = ListFormsFromUrls_(urlMap, includeArchived);
+
+    return {
+      ok: true,
+      forms: forms,
+      count: forms.length
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      error: error.message || String(error)
+    };
+  }
+}
+
+/**
+ * フォームインポート（google.script.run用）
+ * @param {Object} payload - { fileUrl: string }
+ * @return {Object} インポート結果
+ */
+function nfbImportForm(payload) {
+  try {
+    if (!payload || !payload.fileUrl) {
+      throw new Error('fileUrl is required');
+    }
+
+    Logger.log('[nfbImportForm] Starting import from: ' + payload.fileUrl);
+
+    // ファイルからフォームデータを取得
+    var formData = GetFormByUrl_(payload.fileUrl);
+    if (!formData || !formData.id) {
+      throw new Error('フォームデータにIDフィールドがありません。正しいフォームファイルか確認してください。');
+    }
+
+    Logger.log('[nfbImportForm] Form data loaded: ' + formData.id);
+
+    // URLマップに追加
+    var result = AddFormUrl_(formData.id, payload.fileUrl);
+
+    Logger.log('[nfbImportForm] Import successful: ' + formData.id);
+
+    return {
+      ok: true,
+      form: formData,
+      message: result.message
+    };
+  } catch (error) {
+    Logger.log('[nfbImportForm] Import failed: ' + error.message);
+    return {
+      ok: false,
+      error: error.message || String(error)
+    };
+  }
 }
 
 function SubmitResponses_(ctx) {
@@ -180,4 +285,176 @@ function Cors_applyHeaders_(output, origin, isPreflight) {
     output.setHeader("Access-Control-Max-Age", "3600");
   }
   return output;
+}
+
+// ========================================
+// フォーム管理API
+// ========================================
+
+/**
+ * フォーム一覧取得API
+ * @param {Object} ctx - リクエストコンテキスト
+ * @return {Object} APIレスポンス
+ */
+function FormsApi_List_(ctx) {
+  var urlMap = GetFormUrls_();
+  var includeArchived = ctx.raw && ctx.raw.includeArchived;
+  var forms = ListFormsFromUrls_(urlMap, includeArchived);
+
+  return {
+    ok: true,
+    forms: forms,
+    count: forms.length
+  };
+}
+
+/**
+ * 単一フォーム取得API
+ * @param {Object} ctx - リクエストコンテキスト
+ * @return {Object} APIレスポンス
+ */
+function FormsApi_Get_(ctx) {
+  var formId = ctx.raw && ctx.raw.formId;
+  if (!formId) {
+    return { ok: false, error: "フォームIDが指定されていません" };
+  }
+
+  var fileUrl = GetFormUrl_(formId);
+  if (!fileUrl) {
+    return { ok: false, error: "フォームが見つかりません" };
+  }
+
+  var form = GetFormByUrl_(fileUrl);
+  if (!form) {
+    return { ok: false, error: "フォームの取得に失敗しました" };
+  }
+
+  return {
+    ok: true,
+    form: form
+  };
+}
+
+/**
+ * フォーム作成API
+ * @param {Object} ctx - リクエストコンテキスト
+ * @return {Object} APIレスポンス
+ */
+function FormsApi_Create_(ctx) {
+  var formData = ctx.raw && ctx.raw.formData;
+  var saveUrl = ctx.raw && ctx.raw.saveUrl;
+
+  if (!formData || !formData.id) {
+    return { ok: false, error: "フォームデータが不正です" };
+  }
+
+  // 新しいファイルを作成（保存先URL指定）
+  var result = CreateFormFile_(formData, saveUrl);
+
+  // URLマップに追加
+  AddFormUrl_(result.formData.id, result.fileUrl);
+
+  return {
+    ok: true,
+    form: result.formData
+  };
+}
+
+/**
+ * フォームインポートAPI
+ * @param {Object} ctx - リクエストコンテキスト
+ * @return {Object} APIレスポンス
+ */
+function FormsApi_Import_(ctx) {
+  var fileUrl = ctx.raw && ctx.raw.fileUrl;
+  if (!fileUrl) {
+    return { ok: false, error: "ファイルURLが指定されていません" };
+  }
+
+  // ファイルからフォームデータを取得
+  var formData = GetFormByUrl_(fileUrl);
+  if (!formData || !formData.id) {
+    return { ok: false, error: "フォームデータの取得に失敗しました" };
+  }
+
+  // URLマップに追加
+  var result = AddFormUrl_(formData.id, fileUrl);
+
+  return {
+    ok: true,
+    form: formData,
+    message: result.message
+  };
+}
+
+/**
+ * フォーム更新API
+ * @param {Object} ctx - リクエストコンテキスト
+ * @return {Object} APIレスポンス
+ */
+function FormsApi_Update_(ctx) {
+  var formId = ctx.raw && ctx.raw.formId;
+  var updates = ctx.raw && ctx.raw.updates;
+
+  if (!formId || !updates) {
+    return { ok: false, error: "フォームIDまたは更新内容が指定されていません" };
+  }
+
+  var fileUrl = GetFormUrl_(formId);
+  if (!fileUrl) {
+    return { ok: false, error: "フォームが見つかりません" };
+  }
+
+  var updatedForm = UpdateFormByUrl_(fileUrl, updates);
+
+  return {
+    ok: true,
+    form: updatedForm
+  };
+}
+
+/**
+ * フォーム削除API（URLマップから削除のみ、ファイルは削除しない）
+ * @param {Object} ctx - リクエストコンテキスト
+ * @return {Object} APIレスポンス
+ */
+function FormsApi_Delete_(ctx) {
+  var formId = ctx.raw && ctx.raw.formId;
+  if (!formId) {
+    return { ok: false, error: "フォームIDが指定されていません" };
+  }
+
+  var result = RemoveFormUrl_(formId);
+
+  return {
+    ok: true,
+    message: result.message,
+    formId: formId
+  };
+}
+
+/**
+ * フォームアーカイブ/アンアーカイブAPI
+ * @param {Object} ctx - リクエストコンテキスト
+ * @return {Object} APIレスポンス
+ */
+function FormsApi_SetArchived_(ctx) {
+  var formId = ctx.raw && ctx.raw.formId;
+  var archived = ctx.raw && ctx.raw.archived;
+
+  if (!formId || archived === undefined) {
+    return { ok: false, error: "フォームIDまたはアーカイブ状態が指定されていません" };
+  }
+
+  var fileUrl = GetFormUrl_(formId);
+  if (!fileUrl) {
+    return { ok: false, error: "フォームが見つかりません" };
+  }
+
+  var updatedForm = UpdateFormByUrl_(fileUrl, { archived: archived });
+
+  return {
+    ok: true,
+    form: updatedForm
+  };
 }

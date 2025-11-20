@@ -1,20 +1,30 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { dataStore } from "./dataStore.js";
+import { dataStore, syncFromDrive } from "./dataStore.js";
 
 const AppDataContext = createContext(null);
 
 export function AppDataProvider({ children }) {
   const [forms, setForms] = useState([]);
   const [loadingForms, setLoadingForms] = useState(true);
+  const [error, setError] = useState(null);
 
   const refreshForms = useCallback(async () => {
     setLoadingForms(true);
-    const list = await dataStore.listForms({ includeArchived: true });
-    setForms(list);
-    setLoadingForms(false);
+    setError(null);
+    try {
+      const list = await dataStore.listForms({ includeArchived: true });
+      setForms(list);
+    } catch (err) {
+      console.error("[AppDataProvider] フォーム取得エラー:", err);
+      setError(err.message || "フォームの取得に失敗しました");
+      setForms([]); // エラー時は空配列
+    } finally {
+      setLoadingForms(false);
+    }
   }, []);
 
   useEffect(() => {
+    // 起動時にフォームを読み込む（Drive完全移行モードでは常にDriveから取得）
     refreshForms();
   }, [refreshForms]);
 
@@ -64,6 +74,7 @@ export function AppDataProvider({ children }) {
     () => ({
       forms,
       loadingForms,
+      error,
       refreshForms,
       createForm,
       updateForm,
@@ -74,7 +85,7 @@ export function AppDataProvider({ children }) {
       exportForms,
       getFormById,
     }),
-    [forms, loadingForms, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, deleteForm, importForms, exportForms, getFormById],
+    [forms, loadingForms, error, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, deleteForm, importForms, exportForms, getFormById],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;

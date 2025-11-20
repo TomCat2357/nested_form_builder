@@ -18,10 +18,12 @@ const OUTPUT_FILE = path.join(DIST_DIR, 'Bundle.gs');
 
 // 結合順序（依存関係順）
 const FILE_ORDER = [
-  'settings.gs',  // 定数・設定
-  'model.gs',     // モデル関数
-  'sheets.gs',    // Sheets操作
-  'Code.gs',      // メインエントリーポイント
+  'properties.gs',  // UserProperties操作
+  'drive.gs',       // Google Drive操作
+  'settings.gs',    // 定数・設定
+  'model.gs',       // モデル関数
+  'sheets.gs',      // Sheets操作
+  'Code.gs',        // メインエントリーポイント
 ];
 
 /**
