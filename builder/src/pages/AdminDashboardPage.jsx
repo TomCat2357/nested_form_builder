@@ -9,6 +9,7 @@ import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { DISPLAY_MODES, DISPLAY_MODE_LABELS } from "../core/displayModes.js";
+import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
 
 const tableStyle = {
   width: "100%",
@@ -69,7 +70,8 @@ export default function AdminDashboardPage() {
   const [selected, setSelected] = useState(() => new Set());
   const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null });
   const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null });
-  const fileInputRef = useRef(null);
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
   const conflictResolverRef = useRef(null);
   const [conflictDialog, setConflictDialog] = useState(null);
   const [importing, setImporting] = useState(false);
@@ -155,7 +157,12 @@ export default function AdminDashboardPage() {
 
   const handleImport = () => {
     if (importing) return;
-    fileInputRef.current?.click();
+    if (!hasScriptRun()) {
+      showAlert("インポート機能はGoogle Apps Script環境でのみ利用可能です");
+      return;
+    }
+    setImportUrl("");
+    setImportDialogOpen(true);
   };
 
   const generateUniqueName = useCallback((baseName, existingNames) => {
@@ -374,34 +381,41 @@ export default function AdminDashboardPage() {
     [forms, generateUniqueName, refreshForms],
   );
 
-  const onFilesSelected = async (event) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
+  const handleImportFromDrive = async () => {
+    const url = importUrl?.trim();
+    if (!url) {
+      showAlert("Google Drive URLを入力してください");
+      return;
+    }
+
+    setImportDialogOpen(false);
+    setImporting(true);
+
     try {
-      const contents = await Promise.all(
-        files.map(
-          (file) =>
-            new Promise((resolve, reject) => {
-              const reader = new FileReader();
-              reader.onload = () => {
-                try {
-                  const value = JSON.parse(reader.result);
-                  resolve(value);
-                } catch (error) {
-                  reject(new Error(`${file.name}: JSON解析に失敗しました`));
-                }
-              };
-              reader.onerror = () => reject(new Error(`${file.name}: 読み込みに失敗しました`));
-              reader.readAsText(file);
-            }),
-        ),
-      );
-      await startImportWorkflow(contents);
+      // Google DriveからフォームデータをAPI経由で取得
+      const result = await importFormsFromDrive(url);
+      const { forms: importedForms, skipped } = result;
+
+      if (!importedForms || importedForms.length === 0) {
+        if (skipped > 0) {
+          showAlert(`${skipped}件のフォームは既に存在するためスキップされました。新規追加はありませんでした。`);
+        } else {
+          showAlert("有効なフォームがありませんでした。");
+        }
+        setImporting(false);
+        return;
+      }
+
+      // インポートワークフローを実行
+      await startImportWorkflow(importedForms);
+
+      if (skipped > 0) {
+        showAlert(`${importedForms.length}件のフォームをインポートしました。${skipped}件は既に存在するためスキップされました。`);
+      }
     } catch (error) {
       console.error(error);
-      showAlert(error.message || "スキーマの取り込みに失敗しました");
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      showAlert(error?.message || "Google Driveからのインポートに失敗しました");
+      setImporting(false);
     }
   };
 
@@ -497,7 +511,6 @@ export default function AdminDashboardPage() {
           >
             削除
           </button>
-          <input ref={fileInputRef} type="file" accept="application/json" multiple style={{ display: "none" }} onChange={onFilesSelected} />
         </>
       }
     >
@@ -603,6 +616,14 @@ export default function AdminDashboardPage() {
         />
       )}
 
+      <ImportUrlDialog
+        open={importDialogOpen}
+        url={importUrl}
+        onUrlChange={setImportUrl}
+        onImport={handleImportFromDrive}
+        onCancel={() => setImportDialogOpen(false)}
+      />
+
       <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
     </AppLayout>
   );
@@ -688,6 +709,76 @@ function ImportConflictDialog({ name, index, total, suggestedName, onSubmit, onC
             onClick={handleConfirm}
           >
             OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportUrlDialog({ open, url, onUrlChange, onImport, onCancel }) {
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setError("");
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const handleImport = () => {
+    const trimmed = (url || "").trim();
+    if (!trimmed) {
+      setError("Google Drive URLを入力してください");
+      return;
+    }
+    setError("");
+    onImport();
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+    >
+      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: "min(520px, 90vw)", boxShadow: "0 20px 45px rgba(15,23,42,0.25)" }}>
+        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Google Driveからインポート</h3>
+        <p style={{ marginBottom: 16, color: "#475569", fontSize: 14 }}>
+          ファイルURLまたはフォルダURLを入力してください。
+        </p>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
+            Google Drive URL
+          </label>
+          <input
+            type="text"
+            value={url}
+            onChange={(event) => {
+              onUrlChange(event.target.value);
+              if (error) setError("");
+            }}
+            style={{ width: "100%", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px", fontSize: 14 }}
+            placeholder="https://drive.google.com/file/d/... または https://drive.google.com/drive/folders/..."
+          />
+          {error && <p style={{ marginTop: 6, color: "#DC2626", fontSize: 12 }}>{error}</p>}
+          <p style={{ marginTop: 6, color: "#64748B", fontSize: 11 }}>
+            ・ファイルURL: そのフォームのみをインポート<br />
+            ・フォルダURL: フォルダ内の全ての.jsonファイルをインポート<br />
+            ・既にプロパティサービスに存在するフォームIDは自動的にスキップされます
+          </p>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
+          <button type="button" style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff" }} onClick={onCancel}>
+            キャンセル
+          </button>
+          <button
+            type="button"
+            style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#2563EB", color: "#fff" }}
+            onClick={handleImport}
+          >
+            インポート
           </button>
         </div>
       </div>

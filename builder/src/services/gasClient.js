@@ -323,3 +323,21 @@ export const unarchiveForm = async (formId) => {
     throw error;
   }
 };
+
+export const importFormsFromDrive = async (url) => {
+  if (!hasScriptRun()) {
+    throw new Error("Form management is only available in google.script.run environment");
+  }
+  if (!url) throw new Error("Google Drive URL is required");
+
+  try {
+    const result = await callScriptRun("nfbImportFormsFromDrive", url);
+    if (!result || result.ok === false) {
+      throw new Error(result?.error || "Import from Drive failed");
+    }
+    return { forms: result.forms || [], skipped: result.skipped || 0 };
+  } catch (error) {
+    console.error("[gasClient] importFormsFromDrive failed", error);
+    throw error;
+  }
+};

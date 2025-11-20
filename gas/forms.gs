@@ -406,3 +406,110 @@ function nfbUnarchiveForm(formId) {
     };
   }
 }
+
+/**
+ * Google DriveのURL（ファイルまたはフォルダ）からフォームをインポート
+ * @param {string} url - Google DriveのURL
+ * @return {Object} { ok: true, forms: Array, skipped: number }
+ */
+function Forms_importFromDrive_(url) {
+  if (!url || typeof url !== "string") {
+    throw new Error("URLが必要です");
+  }
+
+  var parsed = Forms_parseGoogleDriveUrl_(url);
+  if (!parsed.type) {
+    throw new Error("無効なGoogle Drive URLです");
+  }
+
+  var mapping = Forms_getMapping_();
+  var existingFormIds = Object.keys(mapping);
+  var forms = [];
+  var skipped = 0;
+
+  if (parsed.type === "file") {
+    // ファイルの場合：そのファイルを読み込む
+    try {
+      var file = DriveApp.getFileById(parsed.id);
+      var fileName = file.getName();
+
+      // .jsonファイルかチェック
+      if (!fileName.toLowerCase().endsWith(".json")) {
+        throw new Error("JSONファイルではありません: " + fileName);
+      }
+
+      var content = file.getBlob().getDataAsString();
+      var formData = JSON.parse(content);
+
+      // formIdが既に存在するかチェック
+      if (formData.id && existingFormIds.indexOf(formData.id) !== -1) {
+        skipped += 1;
+      } else {
+        forms.push(formData);
+      }
+    } catch (err) {
+      throw new Error("ファイルの読み込みに失敗しました: " + err.message);
+    }
+  } else if (parsed.type === "folder") {
+    // フォルダの場合：フォルダ内の.jsonファイルを全て読み込む
+    try {
+      var folder = DriveApp.getFolderById(parsed.id);
+      var files = folder.getFilesByType(MimeType.PLAIN_TEXT);
+
+      while (files.hasNext()) {
+        var file = files.next();
+        var fileName = file.getName();
+
+        // .jsonファイルのみ処理
+        if (!fileName.toLowerCase().endsWith(".json")) {
+          continue;
+        }
+
+        try {
+          var content = file.getBlob().getDataAsString();
+          var formData = JSON.parse(content);
+
+          // 有効なフォームデータかチェック（最低限nameとschemaがあるか）
+          if (!formData || typeof formData !== "object") {
+            Logger.log("Invalid form data in file: " + fileName);
+            continue;
+          }
+
+          // formIdが既に存在するかチェック
+          if (formData.id && existingFormIds.indexOf(formData.id) !== -1) {
+            skipped += 1;
+          } else {
+            forms.push(formData);
+          }
+        } catch (parseErr) {
+          Logger.log("Failed to parse JSON file: " + fileName + " - " + parseErr.message);
+          continue;
+        }
+      }
+    } catch (err) {
+      throw new Error("フォルダの読み込みに失敗しました: " + err.message);
+    }
+  }
+
+  return {
+    ok: true,
+    forms: forms,
+    skipped: skipped,
+  };
+}
+
+/**
+ * Google DriveからフォームをインポートするAPI
+ * @param {string} url - Google DriveのURL（ファイルまたはフォルダ）
+ * @return {Object} { ok: true, forms: Array, skipped: number }
+ */
+function nfbImportFormsFromDrive(url) {
+  try {
+    return Forms_importFromDrive_(url);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err.message || String(err),
+    };
+  }
+}
