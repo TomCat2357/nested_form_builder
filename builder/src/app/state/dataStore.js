@@ -129,14 +129,19 @@ export const dataStore = {
     const forms = loadForms();
     return forms.find((form) => form.id === formId) || null;
   },
-  async createForm(payload) {
+  async createForm(payload, targetUrl = null) {
     const record = buildFormRecord({ ...payload, id: genId() });
 
     // Try to save to Google Drive via GAS
     if (hasScriptRun()) {
       try {
-        const savedForm = await saveFormToGas(record);
-        return savedForm ? ensureDisplayInfo(savedForm) : record;
+        const result = await saveFormToGas(record, targetUrl);
+        const savedForm = result?.form || result;
+        const fileUrl = result?.fileUrl;
+
+        // fileUrlをフォームに保存
+        const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
+        return formWithUrl ? ensureDisplayInfo(formWithUrl) : record;
       } catch (error) {
         console.warn("[dataStore] Failed to save form to Google Drive, falling back to localStorage:", error);
       }
@@ -149,7 +154,7 @@ export const dataStore = {
     });
     return record;
   },
-  async updateForm(formId, updates) {
+  async updateForm(formId, updates, targetUrl = null) {
     // First get the current form
     const current = await this.getForm(formId);
     if (!current) {
@@ -163,13 +168,19 @@ export const dataStore = {
       createdAt: current.createdAt,
       archived: updates.archived ?? current.archived,
       schemaVersion: updates.schemaVersion ?? current.schemaVersion,
+      driveFileUrl: current.driveFileUrl, // 既存のURLを保持
     });
 
     // Try to save to Google Drive via GAS
     if (hasScriptRun()) {
       try {
-        const savedForm = await saveFormToGas(next);
-        return savedForm ? ensureDisplayInfo(savedForm) : next;
+        const result = await saveFormToGas(next, targetUrl);
+        const savedForm = result?.form || result;
+        const fileUrl = result?.fileUrl;
+
+        // fileUrlをフォームに保存（新しいURLが返された場合は更新）
+        const formWithUrl = { ...savedForm, driveFileUrl: fileUrl || next.driveFileUrl };
+        return formWithUrl ? ensureDisplayInfo(formWithUrl) : next;
       } catch (error) {
         console.warn("[dataStore] Failed to update form in Google Drive, falling back to localStorage:", error);
       }

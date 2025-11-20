@@ -6,6 +6,68 @@ var FORMS_FOLDER_NAME = "Nested Form Builder - Forms";
 var FORMS_PROPERTY_KEY = "nfb.forms.mapping"; // formId -> fileId mapping
 
 /**
+ * Google DriveのURLからIDを抽出
+ * @param {string} url - Google DriveのURL
+ * @return {Object} { type: "file"|"folder"|null, id: string|null }
+ */
+function Forms_parseGoogleDriveUrl_(url) {
+  if (!url || typeof url !== "string") {
+    return { type: null, id: null };
+  }
+
+  var trimmed = url.trim();
+  if (!trimmed) {
+    return { type: null, id: null };
+  }
+
+  // ファイルURL: https://drive.google.com/file/d/{fileId}/view
+  var fileMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileMatch) {
+    return { type: "file", id: fileMatch[1] };
+  }
+
+  // フォルダURL: https://drive.google.com/drive/folders/{folderId}
+  var folderMatch = trimmed.match(/\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) {
+    return { type: "folder", id: folderMatch[1] };
+  }
+
+  // open?id= 形式: https://drive.google.com/open?id={id}
+  var openMatch = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (openMatch) {
+    // ファイルかフォルダか判定が必要
+    try {
+      var item = DriveApp.getFileById(openMatch[1]);
+      return { type: "file", id: openMatch[1] };
+    } catch (e) {
+      try {
+        var folder = DriveApp.getFolderById(openMatch[1]);
+        return { type: "folder", id: openMatch[1] };
+      } catch (e2) {
+        return { type: null, id: null };
+      }
+    }
+  }
+
+  // IDのみが渡された場合も試す
+  if (/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+    try {
+      var testFile = DriveApp.getFileById(trimmed);
+      return { type: "file", id: trimmed };
+    } catch (e) {
+      try {
+        var testFolder = DriveApp.getFolderById(trimmed);
+        return { type: "folder", id: trimmed };
+      } catch (e2) {
+        return { type: null, id: null };
+      }
+    }
+  }
+
+  return { type: null, id: null };
+}
+
+/**
  * プロパティサービスから全フォームマッピングを取得
  * @return {Object} formId -> fileId のマッピング
  */
@@ -45,17 +107,19 @@ function Forms_getOrCreateFolder_() {
 /**
  * フォームをGoogle Driveに保存（新規作成または更新）
  * @param {Object} form - フォームオブジェクト
+ * @param {string} targetUrl - 保存先URL（オプション）
  * @return {Object} { ok: true, fileId, fileUrl, form }
  */
-function Forms_saveForm_(form) {
+function Forms_saveForm_(form, targetUrl) {
   if (!form || !form.id) {
     throw new Error("Form ID is required");
   }
 
   var mapping = Forms_getMapping_();
-  var fileId = mapping[form.id];
+  var existingFileId = mapping[form.id];
   var file;
   var now = new Date().toISOString();
+  var fileId = null;
 
   // タイムスタンプを追加
   var formWithTimestamp = {
@@ -76,27 +140,57 @@ function Forms_saveForm_(form) {
   var content = JSON.stringify(formWithTimestamp, null, 2);
   var fileName = "form_" + form.id + ".json";
 
-  // 既存ファイルがあれば更新
-  if (fileId) {
-    try {
-      file = DriveApp.getFileById(fileId);
-      file.setContent(content);
-      file.setName(fileName);
-    } catch (err) {
-      // ファイルが存在しない場合は新規作成
-      Logger.log("File not found, creating new: " + err);
-      fileId = null;
+  // targetUrlが指定されている場合、その場所に保存
+  if (targetUrl) {
+    var parsed = Forms_parseGoogleDriveUrl_(targetUrl);
+
+    if (parsed.type === "file") {
+      // 既存ファイルに上書き
+      try {
+        file = DriveApp.getFileById(parsed.id);
+        file.setContent(content);
+        fileId = parsed.id;
+      } catch (err) {
+        throw new Error("指定されたファイルにアクセスできません: " + err.message);
+      }
+    } else if (parsed.type === "folder") {
+      // 指定フォルダに新規作成
+      try {
+        var folder = DriveApp.getFolderById(parsed.id);
+        file = folder.createFile(fileName, content, MimeType.PLAIN_TEXT);
+        fileId = file.getId();
+      } catch (err) {
+        throw new Error("指定されたフォルダにアクセスできません: " + err.message);
+      }
+    } else {
+      throw new Error("無効なGoogle Drive URLです");
+    }
+  } else {
+    // targetUrlが未指定の場合、既存ファイルの更新または新規作成
+    if (existingFileId) {
+      // 既存ファイルがあれば更新
+      try {
+        file = DriveApp.getFileById(existingFileId);
+        file.setContent(content);
+        file.setName(fileName);
+        fileId = existingFileId;
+      } catch (err) {
+        Logger.log("既存ファイルが見つからないため新規作成: " + err);
+        existingFileId = null;
+      }
+    }
+
+    // 既存ファイルがない場合、デフォルトフォルダに作成
+    if (!existingFileId) {
+      var defaultFolder = Forms_getOrCreateFolder_();
+      file = defaultFolder.createFile(fileName, content, MimeType.PLAIN_TEXT);
+      fileId = file.getId();
     }
   }
 
-  // 新規作成
-  if (!fileId) {
-    var folder = Forms_getOrCreateFolder_();
-    file = folder.createFile(fileName, content, MimeType.PLAIN_TEXT);
-    fileId = file.getId();
-    mapping[form.id] = fileId;
-    Forms_saveMapping_(mapping);
-  }
+  // マッピングを更新
+  mapping[form.id] = fileId;
+  Forms_saveMapping_(mapping);
 
   return {
     ok: true,
@@ -255,10 +349,13 @@ function nfbGetForm(formId) {
 
 /**
  * フォームを保存（新規作成または更新）
+ * @param {Object} payload - { form: Object, targetUrl: string }
  */
-function nfbSaveForm(form) {
+function nfbSaveForm(payload) {
   try {
-    var result = Forms_saveForm_(form);
+    var form = payload.form || payload;
+    var targetUrl = payload.targetUrl || null;
+    var result = Forms_saveForm_(form, targetUrl);
     return result;
   } catch (err) {
     return {

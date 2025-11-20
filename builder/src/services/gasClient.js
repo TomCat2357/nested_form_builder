@@ -251,18 +251,19 @@ export const getForm = async (formId) => {
   }
 };
 
-export const saveForm = async (form) => {
+export const saveForm = async (form, targetUrl = null) => {
   if (!hasScriptRun()) {
     throw new Error("Form management is only available in google.script.run environment");
   }
   if (!form || !form.id) throw new Error("Form with ID is required");
 
   try {
-    const result = await callScriptRun("nfbSaveForm", form);
+    const payload = { form, targetUrl };
+    const result = await callScriptRun("nfbSaveForm", payload);
     if (!result || result.ok === false) {
       throw new Error(result?.error || "Save form failed");
     }
-    return result.form || null;
+    return { form: result.form, fileUrl: result.fileUrl };
   } catch (error) {
     console.error("[gasClient] saveForm failed", error);
     throw error;

@@ -48,6 +48,7 @@ export default function AdminFormEditorPage() {
 
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
+  const [driveUrl, setDriveUrl] = useState(form?.driveFileUrl || "");
   const [builderDirty, setBuilderDirty] = useState(false);
   const [confirmState, setConfirmState] = useState(false);
   const [confirmSave, setConfirmSave] = useState(false);
@@ -74,6 +75,7 @@ export default function AdminFormEditorPage() {
     initialMetaRef.current = { name: form.name || "", description: form.description || "" };
     setName(form.name || "");
     setDescription(form.description || "");
+    setDriveUrl(form.driveFileUrl || "");
     setNameError("");
   }, [form]);
 
@@ -134,10 +136,14 @@ export default function AdminFormEditorPage() {
       schema: cleanedSchema,
       settings: { ...settings, formTitle: settings?.formTitle || trimmedName },
     };
+
+    // driveUrlが指定されている場合、それを使用
+    const targetUrl = driveUrl?.trim() || null;
+
     try {
       setIsSaving(true);
-      if (isEdit) await updateForm(formId, payload);
-      else await createForm(payload);
+      if (isEdit) await updateForm(formId, payload, targetUrl);
+      else await createForm(payload, targetUrl);
       initialMetaRef.current = { name: payload.name, description: payload.description || "" };
       setBuilderDirty(false);
       setIsSaving(false);
@@ -298,6 +304,23 @@ export default function AdminFormEditorPage() {
         <div style={fieldStyle}>
           <label>説明</label>
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} style={{ ...inputStyle, minHeight: 80 }} placeholder="説明" />
+        </div>
+        <div style={fieldStyle}>
+          <label>Google Drive保存先URL（オプション）</label>
+          <input
+            value={driveUrl}
+            onChange={(event) => setDriveUrl(event.target.value)}
+            style={inputStyle}
+            placeholder="空白: ルートディレクトリ / フォルダURL: ランダム名で保存 / ファイルURL: そのファイルに保存"
+          />
+          <p style={{ fontSize: 11, color: "#6B7280", marginTop: 4, marginBottom: 0 }}>
+            空白の場合はルートディレクトリに保存されます。フォルダURLを指定するとそのフォルダにランダム名で保存、ファイルURLを指定するとそのファイルに保存されます。
+          </p>
+          {isEdit && driveUrl && (
+            <p style={{ fontSize: 11, color: "#2563EB", marginTop: 4, marginBottom: 0 }}>
+              変更すると新しい場所に保存され、元のファイルはそのまま残ります。
+            </p>
+          )}
         </div>
       </section>
 
