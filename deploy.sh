@@ -132,7 +132,7 @@ fi
 
 # プロジェクトをプッシュ
 echo "📤 プロジェクトファイルをGoogle Apps Scriptにプッシュ中..."
-clasp push
+npx --yes @google/clasp push
 
 if [ $? -eq 0 ]; then
     echo "✅ プッシュが完了しました"
@@ -150,7 +150,7 @@ if [ -n "$EXISTING_DEPLOYMENT_ID" ]; then
     DEPLOY_ARGS+=("--deploymentId" "$EXISTING_DEPLOYMENT_ID")
 fi
 
-DEPLOY_JSON=$(clasp deploy "${DEPLOY_ARGS[@]}" --json 2>/dev/null)
+DEPLOY_JSON=$(npx --yes @google/clasp deploy "${DEPLOY_ARGS[@]}" --json 2>/dev/null)
 DEPLOY_STATUS=$?
 
 DEPLOYMENT_ID=""
@@ -166,7 +166,7 @@ if [ $DEPLOY_STATUS -eq 0 ] && echo "$DEPLOY_JSON" | grep -q '^[{\[]'; then
     fi
 else
     # JSON出力が使えないclaspの場合のフォールバック
-    DEPLOY_OUTPUT=$(clasp deploy "${DEPLOY_ARGS[@]}")
+    DEPLOY_OUTPUT=$(npx --yes @google/clasp deploy "${DEPLOY_ARGS[@]}")
     if [ $? -ne 0 ]; then
         echo "❌ デプロイに失敗しました"
         exit 1

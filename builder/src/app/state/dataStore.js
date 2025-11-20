@@ -1,7 +1,18 @@
 import { computeSchemaHash, stripSchemaIDs } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
-import { deleteEntry as deleteEntryFromGas, listEntries as listEntriesFromGas, getEntry as getEntryFromGas } from "../../services/gasClient.js";
+import {
+  deleteEntry as deleteEntryFromGas,
+  listEntries as listEntriesFromGas,
+  getEntry as getEntryFromGas,
+  listForms as listFormsFromGas,
+  getForm as getFormFromGas,
+  saveForm as saveFormToGas,
+  deleteFormFromDrive as deleteFormFromGas,
+  archiveForm as archiveFormInGas,
+  unarchiveForm as unarchiveFormInGas,
+  hasScriptRun,
+} from "../../services/gasClient.js";
 
 const FORMS_STORAGE_KEY = "nfb.forms.v1";
 const ENTRIES_STORAGE_KEY = "nfb.entries.v1";
@@ -89,37 +100,86 @@ const persistEntries = (producer) => {
 
 export const dataStore = {
   async listForms({ includeArchived = false } = {}) {
+    // Try to fetch from Google Drive via GAS
+    if (hasScriptRun()) {
+      try {
+        const forms = await listFormsFromGas({ includeArchived });
+        return forms.map((form) => ensureDisplayInfo(form));
+      } catch (error) {
+        console.warn("[dataStore] Failed to fetch forms from Google Drive, falling back to localStorage:", error);
+      }
+    }
+
+    // Fallback to localStorage
     const forms = loadForms();
     return forms.filter((form) => includeArchived || !form.archived);
   },
   async getForm(formId) {
+    // Try to fetch from Google Drive via GAS
+    if (hasScriptRun()) {
+      try {
+        const form = await getFormFromGas(formId);
+        return form ? ensureDisplayInfo(form) : null;
+      } catch (error) {
+        console.warn("[dataStore] Failed to fetch form from Google Drive, falling back to localStorage:", error);
+      }
+    }
+
+    // Fallback to localStorage
     const forms = loadForms();
     return forms.find((form) => form.id === formId) || null;
   },
   async createForm(payload) {
-    let created = null;
+    const record = buildFormRecord({ ...payload, id: genId() });
+
+    // Try to save to Google Drive via GAS
+    if (hasScriptRun()) {
+      try {
+        const savedForm = await saveFormToGas(record);
+        return savedForm ? ensureDisplayInfo(savedForm) : record;
+      } catch (error) {
+        console.warn("[dataStore] Failed to save form to Google Drive, falling back to localStorage:", error);
+      }
+    }
+
+    // Fallback to localStorage
     persistForms((forms) => {
-      const record = buildFormRecord({ ...payload, id: genId() });
-      created = record;
       forms.push(record);
       return forms;
     });
-    return created;
+    return record;
   },
   async updateForm(formId, updates) {
+    // First get the current form
+    const current = await this.getForm(formId);
+    if (!current) {
+      throw new Error("Form not found: " + formId);
+    }
+
+    const next = buildFormRecord({
+      ...current,
+      ...updates,
+      id: current.id,
+      createdAt: current.createdAt,
+      archived: updates.archived ?? current.archived,
+      schemaVersion: updates.schemaVersion ?? current.schemaVersion,
+    });
+
+    // Try to save to Google Drive via GAS
+    if (hasScriptRun()) {
+      try {
+        const savedForm = await saveFormToGas(next);
+        return savedForm ? ensureDisplayInfo(savedForm) : next;
+      } catch (error) {
+        console.warn("[dataStore] Failed to update form in Google Drive, falling back to localStorage:", error);
+      }
+    }
+
+    // Fallback to localStorage
     let updated = null;
     persistForms((forms) => {
       const index = forms.findIndex((form) => form.id === formId);
       if (index === -1) return forms;
-      const current = forms[index];
-      const next = buildFormRecord({
-        ...current,
-        ...updates,
-        id: current.id,
-        createdAt: current.createdAt,
-        archived: updates.archived ?? current.archived,
-        schemaVersion: updates.schemaVersion ?? current.schemaVersion,
-      });
       updated = next;
       forms[index] = next;
       return forms;
@@ -127,6 +187,17 @@ export const dataStore = {
     return updated;
   },
   async setFormArchivedState(formId, archived) {
+    // Try to use GAS API
+    if (hasScriptRun()) {
+      try {
+        const savedForm = archived ? await archiveFormInGas(formId) : await unarchiveFormInGas(formId);
+        return savedForm ? ensureDisplayInfo(savedForm) : null;
+      } catch (error) {
+        console.warn("[dataStore] Failed to update form archive state in Google Drive, falling back to localStorage:", error);
+      }
+    }
+
+    // Fallback to localStorage
     let updated = null;
     persistForms((forms) => {
       const index = forms.findIndex((form) => form.id === formId);
@@ -146,6 +217,16 @@ export const dataStore = {
     return this.setFormArchivedState(formId, false);
   },
   async deleteForm(formId) {
+    // Try to delete from Google Drive via GAS
+    if (hasScriptRun()) {
+      try {
+        await deleteFormFromGas(formId);
+      } catch (error) {
+        console.warn("[dataStore] Failed to delete form from Google Drive, falling back to localStorage:", error);
+      }
+    }
+
+    // Also delete from localStorage
     persistForms((forms) => forms.filter((form) => form.id !== formId));
     persistEntries((entries) => {
       delete entries[formId];
@@ -325,8 +406,10 @@ export const dataStore = {
     return created;
   },
   async exportForms(formIds) {
-    const forms = loadForms();
-    const selected = forms.filter((form) => formIds.includes(form.id));
+    // Get forms from current source (Google Drive or localStorage)
+    const allForms = await this.listForms({ includeArchived: true });
+    const selected = allForms.filter((form) => formIds.includes(form.id));
+
     return selected.map((form) => {
       const {
         id,
