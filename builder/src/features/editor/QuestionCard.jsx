@@ -199,13 +199,11 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
 
   // 選択肢の選択状態を親に伝達（質問の上下移動とは別の制御）
   React.useEffect(() => {
-    console.log('[QuestionCard] useEffect triggered:', { isSelected, isChoice, selectedOptionIndex });
     if (isChoice && selectedOptionIndex !== null) {
       // 選択肢が選択されている場合は、その情報を含めて親に通知
       const canMoveUp = selectedOptionIndex > 0;
       const canMoveDown = selectedOptionIndex < (field.options?.length || 0) - 1;
       const optionLabel = field.options?.[selectedOptionIndex]?.label || `選択肢 ${selectedOptionIndex + 1}`;
-      console.log('[QuestionCard] Option selected:', { selectedOptionIndex, canMoveUp, canMoveDown, optionsLength: field.options?.length });
       // onFocusに選択肢情報を含めることで、QuestionListが適切に処理できるようにする
       onFocus({
         type: 'option',
@@ -229,7 +227,6 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
           value={field.label || ""}
           onChange={(event) => onChange({ ...field, label: event.target.value })}
           onFocus={() => {
-            console.log('[QuestionCard] Question input focused, clearing option selection');
             setSelectedOptionIndex(null);
             onFocus();
           }}
@@ -348,7 +345,6 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
                 }
               }}
               onFocus={() => {
-                console.log('[QuestionCard] Option focus, setting selectedOptionIndex to:', index);
                 setSelectedOptionIndex(index);
                 // 選択肢がフォーカスされた時は、質問カード全体は選択しない
               }}
