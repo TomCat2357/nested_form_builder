@@ -63,6 +63,16 @@ const buttonStyle = {
 
 const labelMuted = { fontSize: 12, color: "#6B7280" };
 
+const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
+  const parts = [];
+  if (skipped > 0) {
+    const label = useRegisteredLabel ? "登録済みスキップ" : "スキップ";
+    parts.push(`${label} ${skipped} 件`);
+  }
+  if (parseFailed > 0) parts.push(`読込失敗 ${parseFailed} 件`);
+  return parts.length > 0 ? `（${parts.join("、")}）` : "";
+};
+
 export default function AdminDashboardPage() {
   const { forms, loadingForms, archiveForm, unarchiveForm, deleteForm, refreshForms, exportForms } = useAppData();
   const navigate = useNavigate();
@@ -220,12 +230,8 @@ export default function AdminDashboardPage() {
   const startImportWorkflow = useCallback(
     async (parsedContents, { skipped = 0, parseFailed = 0 } = {}) => {
       const queue = flattenImportedContents(parsedContents);
+      const detail = buildImportDetail(skipped, parseFailed, { useRegisteredLabel: true });
       if (!queue.length) {
-        console.log(`[DriveImport] no importable forms (alreadyRegistered=${skipped}, parseFailed=${parseFailed})`);
-        const msgs = [];
-        if (skipped > 0) msgs.push(`スキップ ${skipped} 件`);
-        if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
-        const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
         showAlert(`取り込めるフォームはありませんでした${detail}。`);
         return;
       }
@@ -252,29 +258,21 @@ export default function AdminDashboardPage() {
 
         // 結果メッセージ
         if (imported > 0) {
-          const extras = [];
-          if (skipped > 0) extras.push(`登録済みスキップ ${skipped} 件`);
-          if (parseFailed > 0) extras.push(`読込失敗 ${parseFailed} 件`);
-          const extraMsg = extras.length > 0 ? `（${extras.join("、")}）` : "";
-          showAlert(`${imported} 件のフォームを取り込みました${extraMsg}。`);
+          showAlert(`${imported} 件のフォームを取り込みました${detail}。`);
         } else {
-          const msgs = [];
-          if (skipped > 0) msgs.push(`登録済みスキップ ${skipped} 件`);
-          if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
-          const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
           showAlert(`取り込めるフォームはありませんでした${detail}。`);
         }
         console.log(
           `[DriveImport] success=${imported}, alreadyRegistered=${skipped}, parseFailed=${parseFailed}`,
         );
       } catch (error) {
-        console.error(error);
+        console.error("[DriveImport] import workflow failed", error);
         showAlert(error?.message || "スキーマの取り込み中にエラーが発生しました");
       } finally {
         setImporting(false);
       }
     },
-    [forms, refreshForms],
+    [refreshForms, showAlert],
   );
 
   const handleImportFromDrive = async () => {
@@ -291,12 +289,9 @@ export default function AdminDashboardPage() {
       // Google DriveからフォームデータをAPI経由で取得
       const result = await importFormsFromDrive(url);
       const { forms: importedForms, skipped = 0, parseFailed = 0 } = result;
+      const detail = buildImportDetail(skipped, parseFailed);
 
       if (!importedForms || importedForms.length === 0) {
-        const msgs = [];
-        if (skipped > 0) msgs.push(`スキップ ${skipped} 件`);
-        if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
-        const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
         showAlert(`有効なフォームがありませんでした${detail}。`);
         setImporting(false);
         return;
@@ -305,7 +300,7 @@ export default function AdminDashboardPage() {
       // インポートワークフローを実行
       await startImportWorkflow(importedForms, { skipped, parseFailed });
     } catch (error) {
-      console.error(error);
+      console.error("[DriveImport] import from Drive failed", error);
       showAlert(error?.message || "Google Driveからのインポートに失敗しました");
       setImporting(false);
     }

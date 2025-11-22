@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { dataStore, syncFromDrive } from "./dataStore.js";
+import { dataStore } from "./dataStore.js";
 
 const AppDataContext = createContext(null);
 
