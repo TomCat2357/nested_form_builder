@@ -328,7 +328,7 @@ export default function SearchPage() {
 
   return (
     <AppLayout
-      title={`検索 - ${form.name}`}
+      title={`検索 - ${form.settings?.formTitle || "(無題)"}`}
       fallbackPath="/"
       sidebarActions={
         <>

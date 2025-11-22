@@ -38,12 +38,12 @@ export function AppDataProvider({ children }) {
   );
 
   const createForm = useCallback(
-    createOperationWithRefresh((payload) => dataStore.createForm(payload)),
+    createOperationWithRefresh((payload, targetUrl) => dataStore.createForm(payload, targetUrl)),
     [createOperationWithRefresh],
   );
 
   const updateForm = useCallback(
-    createOperationWithRefresh((formId, updates) => dataStore.updateForm(formId, updates)),
+    createOperationWithRefresh((formId, updates, targetUrl) => dataStore.updateForm(formId, updates, targetUrl)),
     [createOperationWithRefresh],
   );
 

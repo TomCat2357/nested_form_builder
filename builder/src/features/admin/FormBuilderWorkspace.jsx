@@ -50,28 +50,16 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
 
   // initialSchema/initialSettingsが変わったら、リセット
   useEffect(() => {
-    console.log('[FormBuilderWorkspace] initialSchema/initialSettings changed');
-    console.log('  initialSettings:', initialSettings);
     const normalized = normalizeSchemaIDs(initialSchema || []);
     setSchema(normalized);
-    replaceSettings(initialSettings || {});
+    // replaceSettingsはマージ後の値を返すので、それを初期値として記録
+    const mergedSettings = replaceSettings(initialSettings || {});
 
     initialSchemaRef.current = normalized;
-    setIsInitialized(false); // 初期化フラグをリセット
-    console.log('  isInitialized set to false');
-  }, [initialSchema, initialSettings, replaceSettings]);
-
-  // settingsが更新されたら初期値を記録（初期化時のみ）
-  useEffect(() => {
-    console.log('[FormBuilderWorkspace] settings updated:', { isInitialized, settings });
-    if (!isInitialized && settings) {
-      console.log('  Recording initial settings:', settings);
-      initialSettingsRef.current = settings;
-      setIsInitialized(true);
-      onDirtyChange?.(false);
-      console.log('  isInitialized set to true, dirty=false');
-    }
-  }, [settings, isInitialized, onDirtyChange]);
+    initialSettingsRef.current = mergedSettings;
+    setIsInitialized(true);
+    onDirtyChange?.(false);
+  }, [initialSchema, initialSettings, replaceSettings, onDirtyChange]);
 
   // schema/settingsが変わったらdirty判定（初期化完了後のみ）
   useEffect(() => {

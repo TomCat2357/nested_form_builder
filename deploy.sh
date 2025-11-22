@@ -57,7 +57,7 @@ npm --prefix builder run build || { echo "❌ builder のビルドに失敗し�
 
 # GASファイルの結合
 echo "🔧 GASファイルを結合中..."
-node scripts/bundle-gas.js || { echo "❌ GASファイルの結合に失敗しました"; exit 1; }
+node gas/scripts/bundle.js || { echo "❌ GASファイルの結合に失敗しました"; exit 1; }
 
 # distディレクトリへのファイル配置
 echo "📄 デプロイファイルを準備中..."

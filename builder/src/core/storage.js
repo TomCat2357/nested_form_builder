@@ -20,10 +20,8 @@ const writeLocalJson = (key, value) => {
 };
 
 export const DEFAULT_SETTINGS = {
-  formTitle: "受付フォーム",
   spreadsheetId: "",
   sheetName: "Responses",
-  gasUrl: "",
   pageSize: 20,
 };
 

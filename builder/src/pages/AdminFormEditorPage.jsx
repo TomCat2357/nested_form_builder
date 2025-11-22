@@ -45,10 +45,12 @@ export default function AdminFormEditorPage() {
   const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
   const builderRef = useRef(null);
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
+  const defaultSettings = useMemo(() => ({}), []);
+  const defaultSchema = useMemo(() => [], []);
 
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
-  const [saveUrl, setSaveUrl] = useState("");
+  const [driveUrl, setDriveUrl] = useState(form?.driveFileUrl || "");
   const [builderDirty, setBuilderDirty] = useState(false);
   const [confirmState, setConfirmState] = useState(false);
   const [confirmSave, setConfirmSave] = useState(false);
@@ -72,9 +74,11 @@ export default function AdminFormEditorPage() {
 
   useEffect(() => {
     if (!form) return;
-    initialMetaRef.current = { name: form.name || "", description: form.description || "" };
-    setName(form.name || "");
+    const formTitle = form.settings?.formTitle || "";
+    initialMetaRef.current = { name: formTitle, description: form.description || "" };
+    setName(formTitle);
     setDescription(form.description || "");
+    setDriveUrl(form.driveFileUrl || "");
     setNameError("");
   }, [form]);
 
@@ -107,11 +111,6 @@ export default function AdminFormEditorPage() {
       setNameError("フォーム名を入力してください");
       return;
     }
-    const duplicate = forms.some((existing) => existing.name === trimmedName && existing.id !== (form?.id || null));
-    if (duplicate) {
-      setNameError(`「${trimmedName}」は既に存在します。別の名称を入力してください。`);
-      return;
-    }
     setNameError("");
 
     // 確認ダイアログを表示
@@ -130,21 +129,22 @@ export default function AdminFormEditorPage() {
     const cleanedSchema = cleanupTempData(schema);
 
     const payload = {
-      name: trimmedName,
+      // Include existing form data for fallback when getForm fails
+      ...(isEdit && form ? { id: form.id, createdAt: form.createdAt, driveFileUrl: form.driveFileUrl } : {}),
       description,
       schema: cleanedSchema,
-      settings: { ...settings, formTitle: settings?.formTitle || trimmedName },
+      settings: { ...settings, formTitle: trimmedName },
+      archived: form?.archived ?? false,
+      schemaVersion: form?.schemaVersion ?? 1,
     };
 
-    // 新規作成時のみsaveUrlを追加
-    if (!isEdit) {
-      payload.saveUrl = saveUrl;
-    }
+    // driveUrlが指定されている場合、それを使用
+    const targetUrl = driveUrl?.trim() || null;
 
     try {
       setIsSaving(true);
-      if (isEdit) await updateForm(formId, payload);
-      else await createForm(payload);
+      if (isEdit) await updateForm(formId, payload, targetUrl);
+      else await createForm(payload, targetUrl);
       initialMetaRef.current = { name: payload.name, description: payload.description || "" };
       setBuilderDirty(false);
       setIsSaving(false);
@@ -306,26 +306,29 @@ export default function AdminFormEditorPage() {
           <label>説明</label>
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} style={{ ...inputStyle, minHeight: 80 }} placeholder="説明" />
         </div>
-        {!isEdit && (
-          <div style={fieldStyle}>
-            <label>保存先URL（オプション）</label>
-            <input
-              value={saveUrl}
-              onChange={(event) => setSaveUrl(event.target.value)}
-              style={inputStyle}
-              placeholder="https://drive.google.com/drive/folders/... または空白でマイドライブ"
-            />
-            <p style={{ fontSize: 12, color: "#6B7280", margin: "4px 0 0 0" }}>
-              フォルダURL: デフォルトファイル名で保存 / ファイルURL: そのファイル名で保存 / 空白: マイドライブに保存
+        <div style={fieldStyle}>
+          <label>Google Drive保存先URL（オプション）</label>
+          <input
+            value={driveUrl}
+            onChange={(event) => setDriveUrl(event.target.value)}
+            style={inputStyle}
+            placeholder="空白: ルートディレクトリ / フォルダURL: ランダム名で保存 / ファイルURL: そのファイルに保存"
+          />
+          <p style={{ fontSize: 11, color: "#6B7280", marginTop: 4, marginBottom: 0 }}>
+            空白の場合はルートディレクトリに保存されます。フォルダURLを指定するとそのフォルダにランダム名で保存、ファイルURLを指定するとそのファイルに保存されます。
+          </p>
+          {isEdit && driveUrl && (
+            <p style={{ fontSize: 11, color: "#2563EB", marginTop: 4, marginBottom: 0 }}>
+              変更すると新しい場所に保存され、元のファイルはそのまま残ります。
             </p>
-          </div>
-        )}
+          )}
+        </div>
       </section>
 
       <FormBuilderWorkspace
         ref={builderRef}
-        initialSchema={form?.schema || []}
-        initialSettings={form?.settings || { formTitle: name || "" }}
+        initialSchema={form?.schema || defaultSchema}
+        initialSettings={form?.settings || defaultSettings}
         formTitle={name || "フォーム"}
         onDirtyChange={setBuilderDirty}
         showToolbarSave={false}

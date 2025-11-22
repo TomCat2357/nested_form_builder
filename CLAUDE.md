@@ -31,13 +31,19 @@ nested_form_builder/
 │   ├── sheets.gs        # Sheets操作ロジック（二分探索最適化）
 │   ├── model.gs         # リクエストパース・正規化
 │   ├── settings.gs      # 設定管理
-│   └── appsscript.json  # GASプロジェクト設定（ベース）
+│   ├── appsscript.json  # GASプロジェクト設定（ベース）
+│   └── scripts/
+│       └── bundle.js    # GASファイルを結合するスクリプト
 ├── dist/                 # ビルド成果物・デプロイ用ディレクトリ
 │   ├── Bundle.gs        # GASファイル結合版（自動生成）
 │   ├── Index.html       # Reactビルド成果物（自動生成）
 │   └── appsscript.json  # GAS設定（gas/からコピー）
-├── scripts/
-│   └── bundle-gas.js    # GASファイルを結合するスクリプト
+├── tests/                # テスト・ツールスクリプト
+│   ├── test-playwright.js           # アプリ動作テスト
+│   ├── test-new-form-question-add.js # 質問追加テスト
+│   └── capture_manual.js            # ドキュメント用スクリーンショット
+├── .local/               # ローカル環境専用（.gitignore）
+│   └── experiments/     # 実験的スクリプト
 ├── docs/                # ドキュメント
 │   ├── SPECIFICATIONS.md     # 技術仕様
 │   ├── user_manual.md        # ユーザーマニュアル
@@ -83,7 +89,7 @@ npm run builder:preview
 # 手動操作の場合
 npm run clasp:login    # 初回のみ
 npm run builder:build  # 1. Reactアプリビルド
-node scripts/bundle-gas.js  # 2. GASファイル結合
+node gas/scripts/bundle.js  # 2. GASファイル結合
 npm run clasp:push     # 3. Google Apps Scriptへプッシュ
 npx clasp deploy       # 4. Webアプリとしてデプロイ
 ```
@@ -93,7 +99,7 @@ npx clasp deploy       # 4. Webアプリとしてデプロイ
 `./deploy.sh` は以下を自動実行します：
 
 1. `builder` のビルド（Vite）
-2. GASファイルの結合（`scripts/bundle-gas.js`）
+2. GASファイルの結合（`gas/scripts/bundle.js`）
 3. `dist/` ディレクトリへの配置
    - `Index.html`（Reactアプリ、`<base target="_top">` タグ追加）
    - `Bundle.gs`（結合されたGASコード）
@@ -266,7 +272,7 @@ cat .clasp.json
 
 - **deploy.sh**: デプロイ自動化スクリプト（最も重要）
 - **.clasp.json**: clasp設定（`rootDir: "dist"`を変更しない）
-- **scripts/bundle-gas.js**: GASファイル結合スクリプト
+- **gas/scripts/bundle.js**: GASファイル結合スクリプト
 - **builder/src/core/schema.js**: フォームスキーマ定義とバリデーション
 - **builder/src/core/displayModes.js**: 表示モード管理（NEW）
 - **gas/sheets.gs**: スプレッドシート操作の中核（二分探索実装）

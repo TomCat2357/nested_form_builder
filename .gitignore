@@ -95,8 +95,8 @@ samples/
 audit.json
 **/audit.json
 
-# 開発用スクリプト
-scripts/open_example_playwright.js
+# 開発用スクリプト・実験的コード
+.local/
 
 # 一時ファイル・ディレクトリ
 tmp/

@@ -66,7 +66,7 @@ export default function MainPage() {
         <div style={listStyle}>
           {activeForms.map((form) => (
             <div key={form.id} style={cardStyle} onClick={() => handleSelect(form.id)}>
-              <h2 style={titleStyle}>{form.name}</h2>
+              <h2 style={titleStyle}>{form.settings?.formTitle || "(無題)"}</h2>
               {form.description && <p style={{ margin: 0, color: "#475569" }}>{form.description}</p>}
               <div style={metaStyle}>最終更新: {new Date(form.modifiedAt).toLocaleString()}</div>
             </div>

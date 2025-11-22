@@ -9,7 +9,7 @@ import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { DISPLAY_MODES, DISPLAY_MODE_LABELS } from "../core/displayModes.js";
-import { importFormByUrl, getAutoDetectedGasUrl } from "../services/gasClient.js";
+import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
 
 const tableStyle = {
   width: "100%",
@@ -64,13 +64,16 @@ const buttonStyle = {
 const labelMuted = { fontSize: 12, color: "#6B7280" };
 
 export default function AdminDashboardPage() {
-  const { forms, loadingForms, error, archiveForm, unarchiveForm, deleteForm, refreshForms, exportForms } = useAppData();
+  const { forms, loadingForms, archiveForm, unarchiveForm, deleteForm, refreshForms, exportForms } = useAppData();
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
   const [selected, setSelected] = useState(() => new Set());
   const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null });
   const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null });
-  const [importDialog, setImportDialog] = useState({ open: false, fileUrl: "" });
+  const [importDialogOpen, setImportDialogOpen] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const conflictResolverRef = useRef(null);
+  const [conflictDialog, setConflictDialog] = useState(null);
   const [importing, setImporting] = useState(false);
 
   const sortedForms = useMemo(() => {
@@ -137,15 +140,17 @@ export default function AdminDashboardPage() {
     if (targets.length === 1) {
       // 1個の場合は.jsonファイルとして保存
       const form = targets[0];
-      const filename = `${form.name || form.id}.json`;
-      const blob = new Blob([JSON.stringify(form, null, 2)], { type: "application/json" });
+      const filename = `${form.settings?.formTitle || form.id}.json`;
+      const { id, ...formWithoutId } = form;
+      const blob = new Blob([JSON.stringify(formWithoutId, null, 2)], { type: "application/json" });
       saveAs(blob, filename);
     } else {
       // 複数の場合はZIPファイルとして保存
       const zip = new JSZip();
       targets.forEach((form) => {
-        const filename = `${form.name || form.id}.json`;
-        zip.file(filename, JSON.stringify(form, null, 2));
+        const filename = `${form.settings?.formTitle || form.id}.json`;
+        const { id, ...formWithoutId } = form;
+        zip.file(filename, JSON.stringify(formWithoutId, null, 2));
       });
       const blob = await zip.generateAsync({ type: "blob" });
       saveAs(blob, `forms_${new Date().toISOString().replace(/[:.-]/g, "")}.zip`);
@@ -154,38 +159,154 @@ export default function AdminDashboardPage() {
 
   const handleImport = () => {
     if (importing) return;
-    setImportDialog({ open: true, fileUrl: "" });
+    if (!hasScriptRun()) {
+      showAlert("インポート機能はGoogle Apps Script環境でのみ利用可能です");
+      return;
+    }
+    setImportUrl("");
+    setImportDialogOpen(true);
   };
 
-  const handleImportSubmit = async () => {
-    const { fileUrl } = importDialog;
-    if (!fileUrl || !fileUrl.trim()) {
-      showAlert("ファイルURLを入力してください");
+
+  const openConflictDialog = useCallback((payload) => {
+    setConflictDialog(payload);
+    return new Promise((resolve) => {
+      conflictResolverRef.current = resolve;
+    });
+  }, []);
+
+  const closeConflictDialog = useCallback((result) => {
+    const resolver = conflictResolverRef.current;
+    conflictResolverRef.current = null;
+    setConflictDialog(null);
+    if (resolver) resolver(result);
+  }, []);
+
+  const sanitizeImportedForm = (raw) => {
+    if (!raw || typeof raw !== "object") return null;
+    const schema = Array.isArray(raw.schema) ? raw.schema : [];
+    const settings = raw && typeof raw.settings === "object" && !Array.isArray(raw.settings) ? raw.settings : {};
+
+    // 旧形式のnameフィールドがある場合、settings.formTitleに移行
+    if (!settings.formTitle && typeof raw.name === "string") {
+      settings.formTitle = raw.name;
+    }
+
+    return {
+      description: typeof raw.description === "string" ? raw.description : "",
+      schema,
+      settings,
+      archived: !!raw.archived,
+      schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1,
+    };
+  };
+
+  const flattenImportedContents = (contents) => {
+    const list = [];
+    contents.forEach((item) => {
+      if (Array.isArray(item)) {
+        item.forEach((child) => {
+          const sanitized = sanitizeImportedForm(child);
+          if (sanitized) list.push(sanitized);
+        });
+      } else {
+        const sanitized = sanitizeImportedForm(item);
+        if (sanitized) list.push(sanitized);
+      }
+    });
+    return list;
+  };
+
+  const startImportWorkflow = useCallback(
+    async (parsedContents, { skipped = 0, parseFailed = 0 } = {}) => {
+      const queue = flattenImportedContents(parsedContents);
+      if (!queue.length) {
+        console.log(`[DriveImport] no importable forms (alreadyRegistered=${skipped}, parseFailed=${parseFailed})`);
+        const msgs = [];
+        if (skipped > 0) msgs.push(`スキップ ${skipped} 件`);
+        if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
+        const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
+        showAlert(`取り込めるフォームはありませんでした${detail}。`);
+        return;
+      }
+
+      setImporting(true);
+      let imported = 0;
+
+      try {
+        for (const item of queue) {
+          const payload = {
+            description: item.description,
+            schema: item.schema,
+            settings: item.settings,
+            archived: item.archived,
+            schemaVersion: item.schemaVersion,
+          };
+
+          await dataStore.createForm({ ...payload });
+          imported += 1;
+        }
+
+        await refreshForms();
+        setSelected(new Set());
+
+        // 結果メッセージ
+        if (imported > 0) {
+          const extras = [];
+          if (skipped > 0) extras.push(`登録済みスキップ ${skipped} 件`);
+          if (parseFailed > 0) extras.push(`読込失敗 ${parseFailed} 件`);
+          const extraMsg = extras.length > 0 ? `（${extras.join("、")}）` : "";
+          showAlert(`${imported} 件のフォームを取り込みました${extraMsg}。`);
+        } else {
+          const msgs = [];
+          if (skipped > 0) msgs.push(`登録済みスキップ ${skipped} 件`);
+          if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
+          const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
+          showAlert(`取り込めるフォームはありませんでした${detail}。`);
+        }
+        console.log(
+          `[DriveImport] success=${imported}, alreadyRegistered=${skipped}, parseFailed=${parseFailed}`,
+        );
+      } catch (error) {
+        console.error(error);
+        showAlert(error?.message || "スキーマの取り込み中にエラーが発生しました");
+      } finally {
+        setImporting(false);
+      }
+    },
+    [forms, refreshForms],
+  );
+
+  const handleImportFromDrive = async () => {
+    const url = importUrl?.trim();
+    if (!url) {
+      showAlert("Google Drive URLを入力してください");
       return;
     }
 
+    setImportDialogOpen(false);
     setImporting(true);
+
     try {
-      console.log('[AdminDashboardPage] インポート開始:', { fileUrl: fileUrl.trim() });
-      const gasUrl = getAutoDetectedGasUrl();
-      console.log('[AdminDashboardPage] GAS URL:', gasUrl);
+      // Google DriveからフォームデータをAPI経由で取得
+      const result = await importFormsFromDrive(url);
+      const { forms: importedForms, skipped = 0, parseFailed = 0 } = result;
 
-      const result = await importFormByUrl({ gasUrl, fileUrl: fileUrl.trim() });
-      console.log('[AdminDashboardPage] インポート成功:', result);
+      if (!importedForms || importedForms.length === 0) {
+        const msgs = [];
+        if (skipped > 0) msgs.push(`スキップ ${skipped} 件`);
+        if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
+        const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
+        showAlert(`有効なフォームがありませんでした${detail}。`);
+        setImporting(false);
+        return;
+      }
 
-      await refreshForms();
-      showAlert("フォームをインポートしました");
-      setImportDialog({ open: false, fileUrl: "" });
+      // インポートワークフローを実行
+      await startImportWorkflow(importedForms, { skipped, parseFailed });
     } catch (error) {
-      console.error('[AdminDashboardPage] インポートエラー:', error);
-      console.error('[AdminDashboardPage] エラー詳細:', {
-        name: error?.name,
-        message: error?.message,
-        stack: error?.stack,
-        cause: error?.cause
-      });
-      showAlert(error?.message || "インポートに失敗しました");
-    } finally {
+      console.error(error);
+      showAlert(error?.message || "Google Driveからのインポートに失敗しました");
       setImporting(false);
     }
   };
@@ -256,7 +377,7 @@ export default function AdminDashboardPage() {
           <button type="button" style={sidebarButtonStyle} onClick={handleCreateNew}>
             新規作成
           </button>
-          <button type="button" style={sidebarButtonStyle} onClick={handleImport} disabled={importing}>
+          <button type="button" style={sidebarButtonStyle} onClick={handleImport}>
             {importing ? "インポート中..." : "インポート"}
           </button>
           <button type="button" style={sidebarButtonStyle} onClick={handleExport} disabled={selected.size === 0}>
@@ -285,27 +406,6 @@ export default function AdminDashboardPage() {
         </>
       }
     >
-      {/* エラー表示（GAS URL未設定） */}
-      {error && (
-        <div
-          style={{
-            margin: "20px",
-            padding: "20px",
-            border: "2px solid #dc2626",
-            borderRadius: "8px",
-            backgroundColor: "#fef2f2",
-            color: "#991b1b",
-          }}
-        >
-          <h3 style={{ margin: "0 0 10px 0", fontSize: "16px", fontWeight: "bold" }}>
-            ⚠️ エラー
-          </h3>
-          <p style={{ margin: 0, fontSize: "14px" }}>
-            {error}
-          </p>
-        </div>
-      )}
-
       {loadingForms ? (
         <p style={{ color: "#6B7280" }}>読み込み中...</p>
       ) : (
@@ -320,7 +420,6 @@ export default function AdminDashboardPage() {
                 <th style={thStyle}>更新日時</th>
                 <th style={thStyle}>表示項目</th>
                 <th style={thStyle}>状態</th>
-                <th style={thStyle}>ファイルURL</th>
               </tr>
             </thead>
             <tbody>
@@ -336,7 +435,7 @@ export default function AdminDashboardPage() {
                       <input type="checkbox" checked={selected.has(form.id)} onChange={() => toggleSelect(form.id)} />
                     </td>
                     <td style={tdStyle}>
-                      <div style={{ fontWeight: 600 }}>{form.name}</div>
+                      <div style={{ fontWeight: 600 }}>{form.settings?.formTitle || "(無題)"}</div>
                       {form.description && <div style={{ color: "#475569", fontSize: 12 }}>{form.description}</div>}
                     </td>
                     <td style={tdStyle}>{new Date(form.modifiedAt).toLocaleString()}</td>
@@ -344,25 +443,12 @@ export default function AdminDashboardPage() {
                       {summary ? summary : <span style={labelMuted}>設定なし</span>}
                     </td>
                     <td style={tdStyle}>{form.archived ? <span style={{ color: "#DC2626" }}>アーカイブ済み</span> : <span style={{ color: "#16A34A" }}>公開中</span>}</td>
-                    <td
-                      style={{ ...tdStyle, color: "#2563EB", cursor: "pointer", maxWidth: "200px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        if (form.fileUrl) {
-                          navigator.clipboard.writeText(form.fileUrl);
-                          showAlert("URLをコピーしました");
-                        }
-                      }}
-                      title={form.fileUrl || "URLなし"}
-                    >
-                      {form.fileUrl ? "クリックでコピー" : <span style={labelMuted}>-</span>}
-                    </td>
                   </tr>
                 );
               })}
               {sortedForms.length === 0 && (
                 <tr>
-                  <td style={{ ...tdStyle, textAlign: "center" }} colSpan={6}>
+                  <td style={{ ...tdStyle, textAlign: "center" }} colSpan={5}>
                     フォームが登録されていません。
                   </td>
                 </tr>
@@ -414,52 +500,180 @@ export default function AdminDashboardPage() {
         ]}
       />
 
-      {/* Import Dialog */}
-      {importDialog.open && (
-        <div
-          style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
-        >
-          <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: "min(520px, 90vw)", boxShadow: "0 20px 45px rgba(15,23,42,0.25)" }}>
-            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>フォームをインポート</h3>
-            <p style={{ marginBottom: 16, color: "#475569", fontSize: 14 }}>
-              Google DriveのフォームファイルURLを入力してください。
-            </p>
-            <input
-              type="text"
-              value={importDialog.fileUrl}
-              onChange={(e) => setImportDialog({ ...importDialog, fileUrl: e.target.value })}
-              placeholder="https://drive.google.com/file/d/..."
-              style={{
-                width: "100%",
-                border: "1px solid #CBD5E1",
-                borderRadius: 8,
-                padding: "10px 12px",
-                fontSize: 14,
-                marginBottom: 16,
-              }}
-            />
-            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
-              <button
-                type="button"
-                style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff" }}
-                onClick={() => setImportDialog({ open: false, fileUrl: "" })}
-              >
-                キャンセル
-              </button>
-              <button
-                type="button"
-                style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#2563EB", color: "#fff" }}
-                onClick={handleImportSubmit}
-                disabled={importing}
-              >
-                {importing ? "インポート中..." : "インポート"}
-              </button>
-            </div>
-          </div>
-        </div>
+      {conflictDialog && (
+        <ImportConflictDialog
+          {...conflictDialog}
+          onSubmit={(result) => closeConflictDialog(result)}
+          onCancel={() => closeConflictDialog(null)}
+        />
       )}
+
+      <ImportUrlDialog
+        open={importDialogOpen}
+        url={importUrl}
+        onUrlChange={setImportUrl}
+        onImport={handleImportFromDrive}
+        onCancel={() => setImportDialogOpen(false)}
+      />
 
       <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
     </AppLayout>
+  );
+}
+
+function ImportConflictDialog({ name, index, total, suggestedName, onSubmit, onCancel }) {
+  const [action, setAction] = useState("overwrite");
+  const [newName, setNewName] = useState(suggestedName);
+  const [applyToRest, setApplyToRest] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setAction("overwrite");
+    setNewName(suggestedName);
+    setApplyToRest(false);
+    setError("");
+  }, [name, index, total, suggestedName]);
+
+  const handleConfirm = () => {
+    if (action === "saveas") {
+      const trimmed = (newName || "").trim();
+      if (!trimmed) {
+        setError("別名を入力してください");
+        return;
+      }
+      const renameMode = trimmed === suggestedName ? "auto" : "custom";
+      onSubmit({ action, newName: trimmed, applyToRest, renameMode });
+      return;
+    }
+    onSubmit({ action, applyToRest });
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+    >
+      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: "min(520px, 90vw)", boxShadow: "0 20px 45px rgba(15,23,42,0.25)" }}>
+        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>フォーム名が重複しています</h3>
+        <p style={{ marginBottom: 16, color: "#475569" }}>
+          「{name}」は既に存在します（{index}/{total}）。処理を選択してください。
+        </p>
+
+        <div style={{ display: "grid", gap: 12 }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="radio" name="import-conflict-action" value="overwrite" checked={action === "overwrite"} onChange={() => setAction("overwrite")} />
+            <span>既存フォームを置換</span>
+          </label>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="radio" name="import-conflict-action" value="saveas" checked={action === "saveas"} onChange={() => setAction("saveas")} />
+            <span>新規として追加</span>
+          </label>
+          {action === "saveas" && (
+            <div style={{ marginLeft: 24 }}>
+              <input
+                type="text"
+                value={newName}
+                onChange={(event) => setNewName(event.target.value)}
+                style={{ width: "100%", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px" }}
+                placeholder={`${name} (2)`}
+              />
+              {error && <p style={{ marginTop: 6, color: "#DC2626", fontSize: 12 }}>{error}</p>}
+              <p style={{ marginTop: 6, color: "#64748B", fontSize: 12 }}>既存の名称と重複する場合は自動的に番号が付与されます。</p>
+            </div>
+          )}
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input type="radio" name="import-conflict-action" value="abort" checked={action === "abort"} onChange={() => setAction("abort")} />
+            <span>アップロード中止</span>
+          </label>
+        </div>
+
+        <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 16 }}>
+          <input type="checkbox" checked={applyToRest} onChange={(event) => setApplyToRest(event.target.checked)} />
+          <span>この選択を残り全件に適用する</span>
+        </label>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
+          <button type="button" style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff" }} onClick={onCancel}>
+            キャンセル
+          </button>
+          <button
+            type="button"
+            style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#2563EB", color: "#fff" }}
+            onClick={handleConfirm}
+          >
+            OK
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ImportUrlDialog({ open, url, onUrlChange, onImport, onCancel }) {
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) {
+      setError("");
+    }
+  }, [open]);
+
+  if (!open) return null;
+
+  const handleImport = () => {
+    const trimmed = (url || "").trim();
+    if (!trimmed) {
+      setError("Google Drive URLを入力してください");
+      return;
+    }
+    setError("");
+    onImport();
+  };
+
+  return (
+    <div
+      style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+    >
+      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: "min(520px, 90vw)", boxShadow: "0 20px 45px rgba(15,23,42,0.25)" }}>
+        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Google Driveからインポート</h3>
+        <p style={{ marginBottom: 16, color: "#475569", fontSize: 14 }}>
+          ファイルURLまたはフォルダURLを入力してください。
+        </p>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
+            Google Drive URL
+          </label>
+          <input
+            type="text"
+            value={url}
+            onChange={(event) => {
+              onUrlChange(event.target.value);
+              if (error) setError("");
+            }}
+            style={{ width: "100%", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px", fontSize: 14 }}
+            placeholder="https://drive.google.com/file/d/... または https://drive.google.com/drive/folders/..."
+          />
+          {error && <p style={{ marginTop: 6, color: "#DC2626", fontSize: 12 }}>{error}</p>}
+          <p style={{ marginTop: 6, color: "#64748B", fontSize: 11 }}>
+            ・ファイルURL: そのフォームのみをインポート<br />
+            ・フォルダURL: フォルダ内の全ての.jsonファイルをインポート<br />
+            ・既にプロパティサービスに存在するフォームIDは自動的にスキップされます
+          </p>
+        </div>
+
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
+          <button type="button" style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff" }} onClick={onCancel}>
+            キャンセル
+          </button>
+          <button
+            type="button"
+            style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#2563EB", color: "#fff" }}
+            onClick={handleImport}
+          >
+            インポート
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

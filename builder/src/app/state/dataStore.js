@@ -7,18 +7,14 @@ import {
   getEntry as getEntryFromGas,
   listForms as listFormsFromGas,
   getForm as getFormFromGas,
-  createForm as createFormInGas,
-  updateForm as updateFormInGas,
-  deleteForm as deleteFormFromGas,
-  setFormArchived as setFormArchivedInGas,
-  getAutoDetectedGasUrl
+  saveForm as saveFormToGas,
+  deleteFormFromDrive as deleteFormFromGas,
+  archiveForm as archiveFormInGas,
+  unarchiveForm as unarchiveFormInGas,
+  hasScriptRun,
 } from "../../services/gasClient.js";
 
-// ========================================
-// ストレージキー
-// ========================================
-// フォーム管理はGoogle Driveに完全移行
-// エントリキャッシュのみlocalStorageを使用（パフォーマンスのため）
+const FORMS_STORAGE_KEY = "nfb.forms.v1";
 const ENTRIES_STORAGE_KEY = "nfb.entries.v1";
 
 const nowIso = () => new Date().toISOString();
@@ -52,8 +48,13 @@ const ensureDisplayInfo = (form) => {
   };
 };
 
-// エントリ（回答データ）のキャッシュ管理（パフォーマンスのため）
+const loadForms = () => {
+  const forms = readStorage(FORMS_STORAGE_KEY, []);
+  return (Array.isArray(forms) ? forms : []).map((form) => ensureDisplayInfo(form));
+};
 const loadEntries = () => readStorage(ENTRIES_STORAGE_KEY, {});
+
+const saveForms = (forms) => writeStorage(FORMS_STORAGE_KEY, forms);
 const saveEntries = (entries) => writeStorage(ENTRIES_STORAGE_KEY, entries);
 
 const clone = (value) => (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
@@ -62,12 +63,18 @@ const buildFormRecord = (input) => {
   const now = nowIso();
   const schema = Array.isArray(input.schema) ? input.schema : [];
   const displayFieldSettings = collectDisplayFieldSettings(schema);
+  
+  // settings内にformTitleを確保
+  const settings = input.settings || {};
+  if (!settings.formTitle) {
+    settings.formTitle = input.name || "無題のフォーム";
+  }
+  
   return {
     id: input.id || genId(),
-    name: input.name || "無題のフォーム",
     description: input.description || "",
     schema,
-    settings: input.settings || {},
+    settings,
     schemaHash: computeSchemaHash(schema),
     importantFields: displayFieldSettings.map((item) => item.path),
     displayFieldSettings,
@@ -76,11 +83,18 @@ const buildFormRecord = (input) => {
     archived: !!input.archived,
     schemaVersion: Number.isFinite(input.schemaVersion) ? input.schemaVersion : 1,
   };
-};
+};;
 
 const getEntriesForForm = (entriesByForm, formId) => {
   const list = Array.isArray(entriesByForm[formId]) ? entriesByForm[formId] : [];
   return list.slice();
+};
+
+const persistForms = (producer) => {
+  const forms = loadForms();
+  const nextForms = producer(forms.slice());
+  saveForms(nextForms);
+  return nextForms;
 };
 
 const persistEntries = (producer) => {
@@ -92,69 +106,135 @@ const persistEntries = (producer) => {
 
 export const dataStore = {
   async listForms({ includeArchived = false } = {}) {
-    // Google DriveからフォームList取得（自動検出URL使用）
-    const gasUrl = getAutoDetectedGasUrl();
-
-    try {
-      const forms = await listFormsFromGas({ gasUrl, includeArchived});
-      return forms.map((form) => ensureDisplayInfo(form));
-    } catch (error) {
-      console.error("[dataStore.listForms] Drive取得エラー:", error);
-      throw new Error(`フォーム一覧の取得に失敗しました: ${error.message}`);
+    // Try to fetch from Google Drive via GAS
+    if (hasScriptRun()) {
+      try {
+        const forms = await listFormsFromGas({ includeArchived });
+        return forms.map((form) => ensureDisplayInfo(form));
+      } catch (error) {
+        console.warn("[dataStore] Failed to fetch forms from Google Drive, falling back to localStorage:", error);
+      }
     }
+
+    // Fallback to localStorage
+    const forms = loadForms();
+    return forms.filter((form) => includeArchived || !form.archived);
   },
   async getForm(formId) {
-    // Google Driveから単一フォームを取得（自動検出URL使用）
-    const gasUrl = getAutoDetectedGasUrl();
-
-    try {
-      const form = await getFormFromGas({ gasUrl, formId });
-      return form ? ensureDisplayInfo(form) : null;
-    } catch (error) {
-      console.error("[dataStore.getForm] Drive取得エラー:", error);
-      throw new Error(`フォームの取得に失敗しました: ${error.message}`);
+    // Try to fetch from Google Drive via GAS
+    if (hasScriptRun()) {
+      try {
+        const form = await getFormFromGas(formId);
+        return form ? ensureDisplayInfo(form) : null;
+      } catch (error) {
+        console.warn("[dataStore] Failed to fetch form from Google Drive, falling back to localStorage:", error);
+      }
     }
-  },
-  async createForm(payload) {
-    // Google Driveに直接保存（自動検出URL使用）
-    const gasUrl = getAutoDetectedGasUrl();
 
+    // Fallback to localStorage
+    const forms = loadForms();
+    return forms.find((form) => form.id === formId) || null;
+  },
+  async createForm(payload, targetUrl = null) {
     const record = buildFormRecord({ ...payload, id: genId() });
-    const saveUrl = payload.saveUrl || "";
 
-    try {
-      // Driveに保存（保存先URL指定）
-      const savedForm = await createFormInGas({ gasUrl, formData: record, saveUrl });
-      return ensureDisplayInfo(savedForm);
-    } catch (error) {
-      console.error("[dataStore.createForm] Drive保存エラー:", error);
-      throw new Error(`フォームの作成に失敗しました: ${error.message}`);
+    // Try to save to Google Drive via GAS
+    if (hasScriptRun()) {
+      try {
+        const result = await saveFormToGas(record, targetUrl);
+        const savedForm = result?.form || result;
+        const fileUrl = result?.fileUrl;
+
+        // fileUrlをフォームに保存
+        const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
+        return formWithUrl ? ensureDisplayInfo(formWithUrl) : record;
+      } catch (error) {
+        console.warn("[dataStore] Failed to save form to Google Drive, falling back to localStorage:", error);
+      }
     }
+
+    // Fallback to localStorage
+    persistForms((forms) => {
+      forms.push(record);
+      return forms;
+    });
+    return record;
   },
-  async updateForm(formId, updates) {
-    // Google Driveで直接更新（自動検出URL使用）
-    const gasUrl = getAutoDetectedGasUrl();
+  async updateForm(formId, updates, targetUrl = null) {
+    // First get the current form
+    let current = await this.getForm(formId);
 
-    try {
-      // Driveで更新
-      const savedForm = await updateFormInGas({ gasUrl, formId, updates });
-      return ensureDisplayInfo(savedForm);
-    } catch (error) {
-      console.error("[dataStore.updateForm] Drive更新エラー:", error);
-      throw new Error(`フォームの更新に失敗しました: ${error.message}`);
+    // If getForm failed (returns null), try to use existing form data from updates
+    // This handles the case where GAS getForm fails but we already have the form in memory
+    if (!current) {
+      // If updates contains enough data to reconstruct the form, use it
+      if (updates && updates.id === formId && updates.createdAt) {
+        console.log("[dataStore] getForm returned null, using updates as base form");
+        current = updates;
+      } else {
+        throw new Error("Form not found: " + formId);
+      }
     }
+
+    const next = buildFormRecord({
+      ...current,
+      ...updates,
+      id: current.id,
+      createdAt: current.createdAt,
+      archived: updates.archived ?? current.archived,
+      schemaVersion: updates.schemaVersion ?? current.schemaVersion,
+      driveFileUrl: current.driveFileUrl, // 既存のURLを保持
+    });
+
+    // Try to save to Google Drive via GAS
+    if (hasScriptRun()) {
+      try {
+        const result = await saveFormToGas(next, targetUrl);
+        const savedForm = result?.form || result;
+        const fileUrl = result?.fileUrl;
+
+        // fileUrlをフォームに保存（新しいURLが返された場合は更新）
+        const formWithUrl = { ...savedForm, driveFileUrl: fileUrl || next.driveFileUrl };
+        return formWithUrl ? ensureDisplayInfo(formWithUrl) : next;
+      } catch (error) {
+        console.warn("[dataStore] Failed to update form in Google Drive, falling back to localStorage:", error);
+      }
+    }
+
+    // Fallback to localStorage
+    let updated = null;
+    persistForms((forms) => {
+      const index = forms.findIndex((form) => form.id === formId);
+      if (index === -1) return forms;
+      updated = next;
+      forms[index] = next;
+      return forms;
+    });
+    return updated;
   },
   async setFormArchivedState(formId, archived) {
-    // Google Driveでアーカイブ状態を更新（自動検出URL使用）
-    const gasUrl = getAutoDetectedGasUrl();
-
-    try {
-      const savedForm = await setFormArchivedInGas({ gasUrl, formId, archived });
-      return ensureDisplayInfo(savedForm);
-    } catch (error) {
-      console.error("[dataStore.setFormArchivedState] Driveアーカイブエラー:", error);
-      throw new Error(`アーカイブ状態の変更に失敗しました: ${error.message}`);
+    // Try to use GAS API
+    if (hasScriptRun()) {
+      try {
+        const savedForm = archived ? await archiveFormInGas(formId) : await unarchiveFormInGas(formId);
+        return savedForm ? ensureDisplayInfo(savedForm) : null;
+      } catch (error) {
+        console.warn("[dataStore] Failed to update form archive state in Google Drive, falling back to localStorage:", error);
+      }
     }
+
+    // Fallback to localStorage
+    let updated = null;
+    persistForms((forms) => {
+      const index = forms.findIndex((form) => form.id === formId);
+      if (index === -1) return forms;
+      const current = forms[index];
+      const next = { ...current, archived, modifiedAt: nowIso() };
+      updated = next;
+      forms[index] = next;
+      return forms;
+    });
+    return updated;
   },
   async archiveForm(formId) {
     return this.setFormArchivedState(formId, true);
@@ -163,20 +243,21 @@ export const dataStore = {
     return this.setFormArchivedState(formId, false);
   },
   async deleteForm(formId) {
-    // Google Driveから削除（自動検出URL使用）
-    const gasUrl = getAutoDetectedGasUrl();
-
-    try {
-      await deleteFormFromGas({ gasUrl, formId });
-      // エントリキャッシュも削除
-      persistEntries((entries) => {
-        delete entries[formId];
-        return entries;
-      });
-    } catch (error) {
-      console.error("[dataStore.deleteForm] Drive削除エラー:", error);
-      throw new Error(`フォームの削除に失敗しました: ${error.message}`);
+    // Try to delete from Google Drive via GAS
+    if (hasScriptRun()) {
+      try {
+        await deleteFormFromGas(formId);
+      } catch (error) {
+        console.warn("[dataStore] Failed to delete form from Google Drive, falling back to localStorage:", error);
+      }
     }
+
+    // Also delete from localStorage
+    persistForms((forms) => forms.filter((form) => form.id !== formId));
+    persistEntries((entries) => {
+      delete entries[formId];
+      return entries;
+    });
   },
   async upsertEntry(formId, payload) {
     let saved = null;
@@ -226,7 +307,6 @@ export const dataStore = {
     if (form?.settings?.spreadsheetId) {
       try {
         const gasResult = await listEntriesFromGas({
-          gasUrl: form.settings.gasUrl || "",
           spreadsheetId: form.settings.spreadsheetId,
           sheetName: form.settings.sheetName || "Responses",
         });
@@ -278,7 +358,6 @@ export const dataStore = {
     if (form?.settings?.spreadsheetId) {
       try {
         const record = await getEntryFromGas({
-          gasUrl: form.settings.gasUrl || "",
           spreadsheetId: form.settings.spreadsheetId,
           sheetName: form.settings.sheetName || "Responses",
           entryId,
@@ -314,7 +393,6 @@ export const dataStore = {
     if (form?.settings?.spreadsheetId) {
       try {
         await deleteEntryFromGas({
-          gasUrl: form.settings.gasUrl || "",
           spreadsheetId: form.settings.spreadsheetId,
           sheetName: form.settings.sheetName || "Responses",
           entryId,
@@ -333,97 +411,46 @@ export const dataStore = {
     });
   },
   async importForms(jsonList) {
-    // Google Driveに直接インポート（自動検出URL使用）
-    const gasUrl = getAutoDetectedGasUrl();
-
     const created = [];
-    for (const item of jsonList) {
-      if (!item) continue;
-
-      const record = buildFormRecord({
-        ...item,
-        id: genId(),
-        createdAt: item.createdAt,
-        schemaVersion: item.schemaVersion,
+    persistForms((forms) => {
+      jsonList.forEach((item) => {
+        if (!item) return;
+        const record = buildFormRecord({
+          ...item,
+          id: genId(),
+          createdAt: item.createdAt,
+          schemaVersion: item.schemaVersion,
+        });
+        created.push(record);
+        forms.push(record);
       });
-
-      try {
-        // Driveに保存（マイドライブルートにデフォルト保存）
-        const savedForm = await createFormInGas({ gasUrl, formData: record, saveUrl: "" });
-        created.push(ensureDisplayInfo(savedForm));
-      } catch (error) {
-        console.warn(`[dataStore.importForms] フォーム ${record.id} のDrive保存エラー:`, error);
-        // エラーでもスキップして続行
-      }
-    }
-
+      return forms;
+    });
     return created;
   },
   async exportForms(formIds) {
-    // Google Driveから取得してエクスポート（自動検出URL使用）
-    const gasUrl = getAutoDetectedGasUrl();
+    // Get forms from current source (Google Drive or localStorage)
+    const allForms = await this.listForms({ includeArchived: true });
+    const selected = allForms.filter((form) => formIds.includes(form.id));
 
-    try {
-      const allForms = await listFormsFromGas({ gasUrl, includeArchived: true });
-      const selected = allForms.filter((form) => formIds.includes(form.id));
-      return selected.map((form) => {
-        const {
-          id,
-          schemaHash,
-          importantFields,
-          displayFieldSettings,
-          createdAt,
-          modifiedAt,
-          archived,
-          schemaVersion,
-          ...rest
-        } = form;
-        // スキーマからもIDを除去
-        const cleaned = {
-          ...rest,
-          schema: stripSchemaIDs(rest.schema || []),
-        };
-        return clone(cleaned);
-      });
-    } catch (error) {
-      console.error("[dataStore.exportForms] Driveエクスポートエラー:", error);
-      throw new Error(`フォームのエクスポートに失敗しました: ${error.message}`);
-    }
+    return selected.map((form) => {
+      const {
+        id,
+        schemaHash,
+        importantFields,
+        displayFieldSettings,
+        createdAt,
+        modifiedAt,
+        archived,
+        schemaVersion,
+        ...rest
+      } = form;
+      // スキーマからもIDを除去
+      const cleaned = {
+        ...rest,
+        schema: stripSchemaIDs(rest.schema || []),
+      };
+      return clone(cleaned);
+    });
   },
-};
-
-// ========================================
-// Google Drive同期API（互換性のため残す、実際は常にDriveベース）
-// ========================================
-
-/**
- * フォーム一覧を再取得（Drive完全移行モードでは常にDriveから取得）
- * @returns {Promise<Object>} 同期結果
- */
-export const syncFromDrive = async () => {
-  const gasUrl = getAutoDetectedGasUrl();
-
-  try {
-    // Driveから全フォーム取得（アーカイブ含む）
-    const driveForms = await listFormsFromGas({ gasUrl, includeArchived: true });
-
-    return {
-      success: true,
-      count: driveForms.length,
-    };
-  } catch (error) {
-    console.error("[syncFromDrive] エラー:", error);
-    throw new Error(`Drive同期エラー: ${error.message}`);
-  }
-};
-
-/**
- * Drive完全移行モードでは不要（互換性のため残す）
- * @returns {Promise<Object>} 同期結果
- */
-export const syncToDrive = async () => {
-  return {
-    success: true,
-    message: "Drive完全移行モードでは、すべての操作が自動的にDriveに反映されます",
-  };
 };

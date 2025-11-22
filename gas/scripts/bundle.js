@@ -12,18 +12,17 @@ const fs = require('fs');
 const path = require('path');
 
 // パス設定
-const GAS_SOURCE_DIR = path.join(__dirname, '..', 'gas');
-const DIST_DIR = path.join(__dirname, '..', 'dist');
+const GAS_SOURCE_DIR = path.join(__dirname, '..');  // gas/scripts/.. → gas
+const DIST_DIR = path.join(__dirname, '..', '..', 'dist');  // gas/scripts/../../dist → dist
 const OUTPUT_FILE = path.join(DIST_DIR, 'Bundle.gs');
 
 // 結合順序（依存関係順）
 const FILE_ORDER = [
-  'properties.gs',  // UserProperties操作
-  'drive.gs',       // Google Drive操作
-  'settings.gs',    // 定数・設定
-  'model.gs',       // モデル関数
-  'sheets.gs',      // Sheets操作
-  'Code.gs',        // メインエントリーポイント
+  'settings.gs',  // 定数・設定
+  'forms.gs',     // フォーム管理（Google Drive）
+  'model.gs',     // モデル関数
+  'sheets.gs',    // Sheets操作
+  'Code.gs',      // メインエントリーポイント
 ];
 
 /**
