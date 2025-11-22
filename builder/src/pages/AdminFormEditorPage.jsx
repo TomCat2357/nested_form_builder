@@ -45,8 +45,6 @@ export default function AdminFormEditorPage() {
   const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
   const builderRef = useRef(null);
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
-  const defaultSettings = useMemo(() => ({}), []);
-  const defaultSchema = useMemo(() => [], []);
 
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
@@ -64,7 +62,6 @@ export default function AdminFormEditorPage() {
       if (builderRef.current) {
         const control = builderRef.current.getQuestionControl?.();
         if (control !== questionControl) {
-          console.log('[AdminFormEditorPage] questionControl updated:', control);
           setQuestionControl(control);
         }
       }
@@ -327,8 +324,8 @@ export default function AdminFormEditorPage() {
 
       <FormBuilderWorkspace
         ref={builderRef}
-        initialSchema={form?.schema || defaultSchema}
-        initialSettings={form?.settings || defaultSettings}
+        initialSchema={form?.schema || []}
+        initialSettings={form?.settings || {}}
         formTitle={name || "フォーム"}
         onDirtyChange={setBuilderDirty}
         showToolbarSave={false}

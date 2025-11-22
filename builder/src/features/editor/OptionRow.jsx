@@ -11,10 +11,7 @@ export default function OptionRow({ option, onChange, onDelete, onFocus, isSelec
           placeholder="選択肢"
           value={option.label}
           onChange={(event) => onChange({ ...option, label: event.target.value })}
-          onFocus={() => {
-            console.log('[OptionRow] onFocus called for option:', option.label);
-            onFocus();
-          }}
+          onFocus={onFocus}
         />
         <button type="button" onClick={onAddChild} style={{ ...s.btn, flexShrink: 0 }} disabled={!canAddChild}>子質問追加</button>
       </div>

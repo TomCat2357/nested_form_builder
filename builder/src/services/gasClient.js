@@ -127,128 +127,67 @@ export const listEntries = async ({ spreadsheetId, sheetName = "Responses" }) =>
 // Form Management APIs (Google Drive)
 // ========================================
 
-export const listForms = async (options = {}) => {
+/**
+ * フォーム管理API呼び出しの共通ヘルパー
+ * @param {string} functionName - GAS関数名
+ * @param {*} args - 引数
+ * @param {string} errorMessage - エラーメッセージ
+ * @returns {Promise<*>} - API結果
+ */
+const callFormApi = async (functionName, args, errorMessage) => {
   if (!hasScriptRun()) {
     throw new Error("Form management is only available in google.script.run environment");
   }
 
   try {
-    const result = await callScriptRun("nfbListForms", options);
+    const result = await callScriptRun(functionName, args);
     if (!result || result.ok === false) {
-      throw new Error(result?.error || "List forms failed");
-    }
-    return result.forms || [];
-  } catch (error) {
-    console.error("[gasClient] listForms failed", error);
-    throw error;
-  }
-};
-
-export const getForm = async (formId) => {
-  if (!hasScriptRun()) {
-    throw new Error("Form management is only available in google.script.run environment");
-  }
-  if (!formId) throw new Error("formId is required");
-
-  try {
-    const result = await callScriptRun("nfbGetForm", formId);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Get form failed");
-    }
-    return result.form || null;
-  } catch (error) {
-    console.error("[gasClient] getForm failed", error);
-    throw error;
-  }
-};
-
-export const saveForm = async (form, targetUrl = null) => {
-  if (!hasScriptRun()) {
-    throw new Error("Form management is only available in google.script.run environment");
-  }
-  if (!form || !form.id) throw new Error("Form with ID is required");
-
-  try {
-    const payload = { form, targetUrl };
-    const result = await callScriptRun("nfbSaveForm", payload);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Save form failed");
-    }
-    return { form: result.form, fileUrl: result.fileUrl };
-  } catch (error) {
-    console.error("[gasClient] saveForm failed", error);
-    throw error;
-  }
-};
-
-export const deleteFormFromDrive = async (formId) => {
-  if (!hasScriptRun()) {
-    throw new Error("Form management is only available in google.script.run environment");
-  }
-  if (!formId) throw new Error("formId is required");
-
-  try {
-    const result = await callScriptRun("nfbDeleteForm", formId);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Delete form failed");
+      throw new Error(result?.error || errorMessage);
     }
     return result;
   } catch (error) {
-    console.error("[gasClient] deleteFormFromDrive failed", error);
+    console.error(`[gasClient] ${functionName} failed`, error);
     throw error;
   }
+};
+
+export const listForms = async (options = {}) => {
+  const result = await callFormApi("nfbListForms", options, "List forms failed");
+  return result.forms || [];
+};
+
+export const getForm = async (formId) => {
+  if (!formId) throw new Error("formId is required");
+  const result = await callFormApi("nfbGetForm", formId, "Get form failed");
+  return result.form || null;
+};
+
+export const saveForm = async (form, targetUrl = null) => {
+  if (!form || !form.id) throw new Error("Form with ID is required");
+  const payload = { form, targetUrl };
+  const result = await callFormApi("nfbSaveForm", payload, "Save form failed");
+  return { form: result.form, fileUrl: result.fileUrl };
+};
+
+export const deleteFormFromDrive = async (formId) => {
+  if (!formId) throw new Error("formId is required");
+  return await callFormApi("nfbDeleteForm", formId, "Delete form failed");
 };
 
 export const archiveForm = async (formId) => {
-  if (!hasScriptRun()) {
-    throw new Error("Form management is only available in google.script.run environment");
-  }
   if (!formId) throw new Error("formId is required");
-
-  try {
-    const result = await callScriptRun("nfbArchiveForm", formId);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Archive form failed");
-    }
-    return result.form || null;
-  } catch (error) {
-    console.error("[gasClient] archiveForm failed", error);
-    throw error;
-  }
+  const result = await callFormApi("nfbArchiveForm", formId, "Archive form failed");
+  return result.form || null;
 };
 
 export const unarchiveForm = async (formId) => {
-  if (!hasScriptRun()) {
-    throw new Error("Form management is only available in google.script.run environment");
-  }
   if (!formId) throw new Error("formId is required");
-
-  try {
-    const result = await callScriptRun("nfbUnarchiveForm", formId);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Unarchive form failed");
-    }
-    return result.form || null;
-  } catch (error) {
-    console.error("[gasClient] unarchiveForm failed", error);
-    throw error;
-  }
+  const result = await callFormApi("nfbUnarchiveForm", formId, "Unarchive form failed");
+  return result.form || null;
 };
 
 export const importFormsFromDrive = async (url) => {
-  if (!hasScriptRun()) {
-    throw new Error("Form management is only available in google.script.run environment");
-  }
   if (!url) throw new Error("Google Drive URL is required");
-
-  try {
-    const result = await callScriptRun("nfbImportFormsFromDrive", url);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Import from Drive failed");
-    }
-    return { forms: result.forms || [], skipped: result.skipped || 0 };
-  } catch (error) {
-    console.error("[gasClient] importFormsFromDrive failed", error);
-    throw error;
-  }
+  const result = await callFormApi("nfbImportFormsFromDrive", url, "Import from Drive failed");
+  return { forms: result.forms || [], skipped: result.skipped || 0 };
 };
