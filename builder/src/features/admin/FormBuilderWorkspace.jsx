@@ -25,7 +25,6 @@ const shallowEqual = (a, b) => {
   try {
     return JSON.stringify(a) === JSON.stringify(b);
   } catch (error) {
-    console.warn("shallowEqual fallback", error);
     return false;
   }
 };
@@ -63,31 +62,17 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
 
   // schema/settingsが変わったらdirty判定（初期化完了後のみ）
   useEffect(() => {
-    console.log('[FormBuilderWorkspace] dirty check:', { isInitialized, hasInitialSchema: initialSchemaRef.current !== null, hasInitialSettings: initialSettingsRef.current !== null });
     if (!isInitialized) {
-      console.log('  Skipping: not initialized');
       return;
     }
     if (initialSchemaRef.current === null || initialSettingsRef.current === null) {
-      console.log('  Skipping: no initial values');
       return;
     }
 
     const schemaDirty = !shallowEqual(initialSchemaRef.current, schema);
     const settingsDirty = !shallowEqual(initialSettingsRef.current, settings);
-    const dirty = schemaDirty || settingsDirty;
 
-    console.log('  Schema dirty:', schemaDirty);
-    if (schemaDirty) {
-      console.log('  Initial schema:', JSON.stringify(initialSchemaRef.current));
-      console.log('  Current schema:', JSON.stringify(schema));
-    }
-    console.log('  Settings dirty:', settingsDirty);
-    console.log('  Initial settings:', initialSettingsRef.current);
-    console.log('  Current settings:', settings);
-    console.log('  Overall dirty:', dirty);
-
-    onDirtyChange?.(dirty);
+    onDirtyChange?.(schemaDirty || settingsDirty);
   }, [schema, settings, isInitialized, onDirtyChange]);
 
   const handleSchemaChange = (nextSchema) => {

@@ -83,7 +83,7 @@ const buildFormRecord = (input) => {
     archived: !!input.archived,
     schemaVersion: Number.isFinite(input.schemaVersion) ? input.schemaVersion : 1,
   };
-};;
+};
 
 const getEntriesForForm = (entriesByForm, formId) => {
   const list = Array.isArray(entriesByForm[formId]) ? entriesByForm[formId] : [];
@@ -169,7 +169,6 @@ export const dataStore = {
     if (!current) {
       // If updates contains enough data to reconstruct the form, use it
       if (updates && updates.id === formId && updates.createdAt) {
-        console.log("[dataStore] getForm returned null, using updates as base form");
         current = updates;
       } else {
         throw new Error("Form not found: " + formId);
