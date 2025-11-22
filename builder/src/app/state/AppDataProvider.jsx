@@ -1,5 +1,6 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { dataStore, syncFromDrive } from "./dataStore.js";
+import { dataStore } from "./dataStore.js";
+import { debugGetMapping } from "../../services/gasClient.js";
 
 const AppDataContext = createContext(null);
 
@@ -7,17 +8,31 @@ export function AppDataProvider({ children }) {
   const [forms, setForms] = useState([]);
   const [loadingForms, setLoadingForms] = useState(true);
   const [error, setError] = useState(null);
+  const [loadFailures, setLoadFailures] = useState([]);
 
   const refreshForms = useCallback(async () => {
     setLoadingForms(true);
     setError(null);
     try {
-      const list = await dataStore.listForms({ includeArchived: true });
-      setForms(list);
+      // Debug: PropertiesServiceのマッピングを取得して出力
+      try {
+        const debugResult = await debugGetMapping();
+        console.log("[DEBUG] PropertiesService Mapping:", debugResult);
+        console.log("[DEBUG] Raw JSON:", debugResult.rawJson);
+        console.log("[DEBUG] Mapping object:", JSON.stringify(debugResult.mapping, null, 2));
+        console.log("[DEBUG] Total forms in mapping:", debugResult.totalForms);
+        console.log("[DEBUG] Legacy info:", JSON.stringify(debugResult.legacyInfo, null, 2));
+      } catch (debugErr) {
+        console.warn("[DEBUG] Failed to get mapping:", debugErr);
+      }
+
+      const result = await dataStore.listForms({ includeArchived: true });
+      setForms(result.forms || []);
+      setLoadFailures(result.loadFailures || []);
     } catch (err) {
       console.error("[AppDataProvider] フォーム取得エラー:", err);
       setError(err.message || "フォームの取得に失敗しました");
-      setForms([]); // エラー時は空配列
+      // エラー時は既存のフォームリストを保持（空配列に設定しない）
     } finally {
       setLoadingForms(false);
     }
@@ -57,9 +72,14 @@ export function AppDataProvider({ children }) {
     [createOperationWithRefresh],
   );
 
-  const deleteForm = useCallback(
-    createOperationWithRefresh((formId) => dataStore.deleteForm(formId)),
+  const deleteForms = useCallback(
+    createOperationWithRefresh((formIds) => dataStore.deleteForms(formIds)),
     [createOperationWithRefresh],
+  );
+
+  const deleteForm = useCallback(
+    (formId) => deleteForms([formId]),
+    [deleteForms],
   );
 
   const importForms = useCallback(
@@ -73,6 +93,7 @@ export function AppDataProvider({ children }) {
   const memoValue = useMemo(
     () => ({
       forms,
+      loadFailures,
       loadingForms,
       error,
       refreshForms,
@@ -80,12 +101,13 @@ export function AppDataProvider({ children }) {
       updateForm,
       archiveForm,
       unarchiveForm,
+      deleteForms,
       deleteForm,
       importForms,
       exportForms,
       getFormById,
     }),
-    [forms, loadingForms, error, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, deleteForm, importForms, exportForms, getFormById],
+    [forms, loadFailures, loadingForms, error, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, deleteForms, deleteForm, importForms, exportForms, getFormById],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
@@ -52,6 +52,13 @@ const formatDisplayFieldsSummary = (form) => {
     .join(", ");
 };
 
+const formatDate = (value) => {
+  if (!value) return "---";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "---";
+  return date.toLocaleString();
+};
+
 const buttonStyle = {
   padding: "6px 12px",
   borderRadius: 8,
@@ -63,17 +70,25 @@ const buttonStyle = {
 
 const labelMuted = { fontSize: 12, color: "#6B7280" };
 
+const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
+  const parts = [];
+  if (skipped > 0) {
+    const label = useRegisteredLabel ? "登録済みスキップ" : "スキップ";
+    parts.push(`${label} ${skipped} 件`);
+  }
+  if (parseFailed > 0) parts.push(`読込失敗 ${parseFailed} 件`);
+  return parts.length > 0 ? `（${parts.join("、")}）` : "";
+};
+
 export default function AdminDashboardPage() {
-  const { forms, loadingForms, archiveForm, unarchiveForm, deleteForm, refreshForms, exportForms } = useAppData();
+  const { forms, loadFailures, loadingForms, archiveForm, unarchiveForm, deleteForms, refreshForms, exportForms, createForm } = useAppData();
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
   const [selected, setSelected] = useState(() => new Set());
-  const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null });
-  const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null });
+  const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
+  const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null, targetIds: [], multiple: false });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importUrl, setImportUrl] = useState("");
-  const conflictResolverRef = useRef(null);
-  const [conflictDialog, setConflictDialog] = useState(null);
   const [importing, setImporting] = useState(false);
 
   const sortedForms = useMemo(() => {
@@ -81,6 +96,21 @@ export default function AdminDashboardPage() {
     list.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
     return list;
   }, [forms]);
+
+  const loadFailureRows = useMemo(() => {
+    const rows = (loadFailures || []).map((item) => ({
+      id: item.id,
+      archived: true,
+      settings: {},
+      description: "",
+      modifiedAt: item.lastTriedAt,
+      loadError: item,
+    }));
+    rows.sort((a, b) => new Date(b.modifiedAt || 0).getTime() - new Date(a.modifiedAt || 0).getTime());
+    return rows;
+  }, [loadFailures]);
+
+  const adminForms = useMemo(() => [...sortedForms, ...loadFailureRows], [sortedForms, loadFailureRows]);
 
   const toggleSelect = (formId) => {
     setSelected((prev) => {
@@ -92,28 +122,38 @@ export default function AdminDashboardPage() {
   };
 
   const selectAll = (checked) => {
-    if (checked) setSelected(new Set(sortedForms.map((form) => form.id)));
+    if (checked) setSelected(new Set(adminForms.map((form) => form.id)));
     else setSelected(new Set());
   };
 
+  const clearSelectionByIds = useCallback((ids = []) => {
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+  }, []);
+
   const handleArchiveSelected = () => {
-    if (!selected.size) {
-      showAlert("アーカイブするフォームを選択してください。");
+    const selectedForms = sortedForms.filter((form) => selected.has(form.id));
+    if (!selectedForms.length) {
+      showAlert("アーカイブ可能なフォームを選択してください。（読み込みエラーの項目は削除のみ可能です）");
       return;
     }
 
-    // 選択されたフォームの状態をチェック
-    const selectedForms = sortedForms.filter((form) => selected.has(form.id));
     const allArchived = selectedForms.every((form) => form.archived);
     const hasPublished = selectedForms.some((form) => !form.archived);
 
-    const firstId = Array.from(selected)[0];
+    const targetIds = selectedForms.map((form) => form.id);
+    const firstId = targetIds[0];
     setConfirmArchive({
       open: true,
       formId: firstId,
-      multiple: selected.size > 1,
+      targetIds,
+      multiple: targetIds.length > 1,
       allArchived,
-      hasPublished
+      hasPublished,
     });
   };
 
@@ -122,8 +162,9 @@ export default function AdminDashboardPage() {
       showAlert("削除するフォームを選択してください。");
       return;
     }
-    const firstId = Array.from(selected)[0];
-    setConfirmDelete({ open: true, formId: firstId, multiple: selected.size > 1 });
+    const targetIds = Array.from(selected);
+    const firstId = targetIds[0];
+    setConfirmDelete({ open: true, formId: firstId, multiple: targetIds.length > 1, targetIds });
   };
 
   const handleExport = async () => {
@@ -166,22 +207,6 @@ export default function AdminDashboardPage() {
     setImportUrl("");
     setImportDialogOpen(true);
   };
-
-
-  const openConflictDialog = useCallback((payload) => {
-    setConflictDialog(payload);
-    return new Promise((resolve) => {
-      conflictResolverRef.current = resolve;
-    });
-  }, []);
-
-  const closeConflictDialog = useCallback((result) => {
-    const resolver = conflictResolverRef.current;
-    conflictResolverRef.current = null;
-    setConflictDialog(null);
-    if (resolver) resolver(result);
-  }, []);
-
   const sanitizeImportedForm = (raw) => {
     if (!raw || typeof raw !== "object") return null;
     const schema = Array.isArray(raw.schema) ? raw.schema : [];
@@ -193,11 +218,14 @@ export default function AdminDashboardPage() {
     }
 
     return {
+      id: raw.id, // IDを保持（重要）
       description: typeof raw.description === "string" ? raw.description : "",
       schema,
       settings,
       archived: !!raw.archived,
       schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1,
+      createdAt: raw.createdAt, // 作成日時を保持
+      modifiedAt: raw.modifiedAt, // 更新日時を保持
     };
   };
 
@@ -220,12 +248,8 @@ export default function AdminDashboardPage() {
   const startImportWorkflow = useCallback(
     async (parsedContents, { skipped = 0, parseFailed = 0 } = {}) => {
       const queue = flattenImportedContents(parsedContents);
+      const detail = buildImportDetail(skipped, parseFailed, { useRegisteredLabel: true });
       if (!queue.length) {
-        console.log(`[DriveImport] no importable forms (alreadyRegistered=${skipped}, parseFailed=${parseFailed})`);
-        const msgs = [];
-        if (skipped > 0) msgs.push(`スキップ ${skipped} 件`);
-        if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
-        const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
         showAlert(`取り込めるフォームはありませんでした${detail}。`);
         return;
       }
@@ -236,45 +260,39 @@ export default function AdminDashboardPage() {
       try {
         for (const item of queue) {
           const payload = {
+            id: item.id, // IDを保持（重要）
             description: item.description,
             schema: item.schema,
             settings: item.settings,
             archived: item.archived,
             schemaVersion: item.schemaVersion,
+            createdAt: item.createdAt, // 作成日時を保持
+            modifiedAt: item.modifiedAt, // 更新日時を保持
           };
 
-          await dataStore.createForm({ ...payload });
+          await createForm(payload);
           imported += 1;
         }
 
-        await refreshForms();
         setSelected(new Set());
 
         // 結果メッセージ
         if (imported > 0) {
-          const extras = [];
-          if (skipped > 0) extras.push(`登録済みスキップ ${skipped} 件`);
-          if (parseFailed > 0) extras.push(`読込失敗 ${parseFailed} 件`);
-          const extraMsg = extras.length > 0 ? `（${extras.join("、")}）` : "";
-          showAlert(`${imported} 件のフォームを取り込みました${extraMsg}。`);
+          showAlert(`${imported} 件のフォームを取り込みました${detail}。`);
         } else {
-          const msgs = [];
-          if (skipped > 0) msgs.push(`登録済みスキップ ${skipped} 件`);
-          if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
-          const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
           showAlert(`取り込めるフォームはありませんでした${detail}。`);
         }
         console.log(
           `[DriveImport] success=${imported}, alreadyRegistered=${skipped}, parseFailed=${parseFailed}`,
         );
       } catch (error) {
-        console.error(error);
+        console.error("[DriveImport] import workflow failed", error);
         showAlert(error?.message || "スキーマの取り込み中にエラーが発生しました");
       } finally {
         setImporting(false);
       }
     },
-    [forms, refreshForms],
+    [createForm, showAlert],
   );
 
   const handleImportFromDrive = async () => {
@@ -291,12 +309,9 @@ export default function AdminDashboardPage() {
       // Google DriveからフォームデータをAPI経由で取得
       const result = await importFormsFromDrive(url);
       const { forms: importedForms, skipped = 0, parseFailed = 0 } = result;
+      const detail = buildImportDetail(skipped, parseFailed);
 
       if (!importedForms || importedForms.length === 0) {
-        const msgs = [];
-        if (skipped > 0) msgs.push(`スキップ ${skipped} 件`);
-        if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
-        const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
         showAlert(`有効なフォームがありませんでした${detail}。`);
         setImporting(false);
         return;
@@ -305,52 +320,46 @@ export default function AdminDashboardPage() {
       // インポートワークフローを実行
       await startImportWorkflow(importedForms, { skipped, parseFailed });
     } catch (error) {
-      console.error(error);
+      console.error("[DriveImport] import from Drive failed", error);
       showAlert(error?.message || "Google Driveからのインポートに失敗しました");
       setImporting(false);
     }
   };
 
   const confirmArchiveAction = async () => {
-    if (!confirmArchive.formId) return;
+    const targetIds = (confirmArchive.targetIds && confirmArchive.targetIds.length
+      ? confirmArchive.targetIds
+      : confirmArchive.formId
+        ? [confirmArchive.formId]
+        : []);
+    if (!targetIds.length) return;
 
-    // すべてアーカイブ済みの場合は解除処理
     if (confirmArchive.allArchived) {
-      if (confirmArchive.multiple) {
-        for (const formId of selected) {
-          await unarchiveForm(formId);
-        }
-        setSelected(new Set());
-      } else {
-        await unarchiveForm(confirmArchive.formId);
+      for (const formId of targetIds) {
+        await unarchiveForm(formId);
       }
     } else {
-      // それ以外はアーカイブ処理
-      if (confirmArchive.multiple) {
-        for (const formId of selected) {
-          await archiveForm(formId);
-        }
-        setSelected(new Set());
-      } else {
-        await archiveForm(confirmArchive.formId);
+      for (const formId of targetIds) {
+        await archiveForm(formId);
       }
     }
-    setConfirmArchive({ open: false, formId: null, multiple: false, allArchived: false, hasPublished: false });
+
+    clearSelectionByIds(targetIds);
+    setConfirmArchive({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
   };
 
   const confirmDeleteAction = async () => {
-    if (!confirmDelete.formId) return;
-    if (confirmDelete.multiple) {
-      // 複数選択時は全件削除
-      for (const formId of selected) {
-        await deleteForm(formId);
-      }
-      setSelected(new Set());
-    } else {
-      // 単一削除
-      await deleteForm(confirmDelete.formId);
-    }
-    setConfirmDelete({ open: false, formId: null, multiple: false });
+    const targetIds = (confirmDelete.targetIds && confirmDelete.targetIds.length
+      ? confirmDelete.targetIds
+      : confirmDelete.formId
+        ? [confirmDelete.formId]
+        : []);
+    if (!targetIds.length) return;
+
+    await deleteForms(targetIds);
+
+    clearSelectionByIds(targetIds);
+    setConfirmDelete({ open: false, formId: null, targetIds: [], multiple: false });
   };
 
   const goToEditor = (formId) => {
@@ -414,7 +423,7 @@ export default function AdminDashboardPage() {
             <thead>
               <tr>
                 <th style={thStyle}>
-                  <input type="checkbox" checked={selected.size === sortedForms.length && sortedForms.length > 0} onChange={(event) => selectAll(event.target.checked)} />
+                  <input type="checkbox" checked={adminForms.length > 0 && selected.size === adminForms.length} onChange={(event) => selectAll(event.target.checked)} />
                 </th>
                 <th style={thStyle}>名称</th>
                 <th style={thStyle}>更新日時</th>
@@ -423,30 +432,79 @@ export default function AdminDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {sortedForms.map((form) => {
-                const summary = formatDisplayFieldsSummary(form);
+              {adminForms.map((form) => {
+                const isLoadError = !!form.loadError;
+                const summary = isLoadError ? "" : formatDisplayFieldsSummary(form);
+                const loadError = form.loadError || null;
+                const lastUpdated = isLoadError ? formatDate(loadError?.lastTriedAt) : formatDate(form.modifiedAt);
                 return (
                   <tr
                     key={form.id}
-                    style={{ cursor: "pointer" }}
-                    onClick={() => goToEditor(form.id)}
+                    style={{ cursor: isLoadError ? "default" : "pointer", background: isLoadError ? "#FEF2F2" : undefined }}
+                    onClick={() => {
+                      if (!isLoadError) {
+                        goToEditor(form.id);
+                      }
+                    }}
                   >
                     <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selected.has(form.id)} onChange={() => toggleSelect(form.id)} />
+                      {isLoadError && <div style={{ color: "#B91C1C", fontSize: 11, marginTop: 4 }}>削除のみ可能</div>}
                     </td>
                     <td style={tdStyle}>
-                      <div style={{ fontWeight: 600 }}>{form.settings?.formTitle || "(無題)"}</div>
-                      {form.description && <div style={{ color: "#475569", fontSize: 12 }}>{form.description}</div>}
+                      {isLoadError ? (
+                        <>
+                          <div style={{ fontWeight: 600, color: "#B91C1C" }}>{loadError?.fileName || "(名称不明)"}</div>
+                          <div style={{ color: "#991B1B", fontSize: 12 }}>フォームID: {form.id}</div>
+                          {loadError?.fileId && <div style={{ color: "#991B1B", fontSize: 12 }}>ファイルID: {loadError.fileId}</div>}
+                          {loadError?.driveFileUrl && (
+                            <div style={{ marginTop: 6 }}>
+                              <a
+                                href={loadError.driveFileUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                onClick={(event) => event.stopPropagation()}
+                                style={{ color: "#2563EB", textDecoration: "underline", fontSize: 12 }}
+                              >
+                                Driveで確認
+                              </a>
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <div style={{ fontWeight: 600 }}>{form.settings?.formTitle || "(無題)"}</div>
+                          {form.description && <div style={{ color: "#475569", fontSize: 12 }}>{form.description}</div>}
+                        </>
+                      )}
                     </td>
-                    <td style={tdStyle}>{new Date(form.modifiedAt).toLocaleString()}</td>
+                    <td style={tdStyle}>{lastUpdated}</td>
                     <td style={tdStyle}>
-                      {summary ? summary : <span style={labelMuted}>設定なし</span>}
+                      {isLoadError ? (
+                        <>
+                          <div style={{ color: "#B91C1C", fontWeight: 600 }}>読み込みエラー</div>
+                          <div style={{ color: "#991B1B", fontSize: 12 }}>{loadError?.errorMessage || "読み込みに失敗しました"}</div>
+                          {loadError?.errorStage && <div style={{ color: "#991B1B", fontSize: 11, marginTop: 4 }}>ステージ: {loadError.errorStage}</div>}
+                        </>
+                      ) : summary ? (
+                        summary
+                      ) : (
+                        <span style={labelMuted}>設定なし</span>
+                      )}
                     </td>
-                    <td style={tdStyle}>{form.archived ? <span style={{ color: "#DC2626" }}>アーカイブ済み</span> : <span style={{ color: "#16A34A" }}>公開中</span>}</td>
+                    <td style={tdStyle}>
+                      {isLoadError ? (
+                        <span style={{ color: "#DC2626", fontWeight: 600 }}>読み込みエラー</span>
+                      ) : form.archived ? (
+                        <span style={{ color: "#DC2626" }}>アーカイブ済み</span>
+                      ) : (
+                        <span style={{ color: "#16A34A" }}>公開中</span>
+                      )}
+                    </td>
                   </tr>
                 );
               })}
-              {sortedForms.length === 0 && (
+              {adminForms.length === 0 && (
                 <tr>
                   <td style={{ ...tdStyle, textAlign: "center" }} colSpan={5}>
                     フォームが登録されていません。
@@ -470,7 +528,7 @@ export default function AdminDashboardPage() {
           {
             label: "キャンセル",
             value: "cancel",
-            onSelect: () => setConfirmArchive({ open: false, formId: null }),
+            onSelect: () => setConfirmArchive({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false }),
           },
           {
             label: confirmArchive.allArchived ? "解除" : "アーカイブ",
@@ -484,12 +542,16 @@ export default function AdminDashboardPage() {
       <ConfirmDialog
         open={confirmDelete.open}
         title="フォームを削除"
-        message="アーカイブ済みフォームを完全に削除します。元に戻すことはできません。よろしいですか？"
+        message={
+          confirmDelete.multiple
+            ? "選択したフォームをまとめて削除します。元に戻すことはできません。よろしいですか？"
+            : "このフォームを削除します。元に戻すことはできません。よろしいですか？"
+        }
         options={[
           {
             label: "キャンセル",
             value: "cancel",
-            onSelect: () => setConfirmDelete({ open: false, formId: null }),
+            onSelect: () => setConfirmDelete({ open: false, formId: null, targetIds: [], multiple: false }),
           },
           {
             label: "削除",
@@ -499,14 +561,6 @@ export default function AdminDashboardPage() {
           },
         ]}
       />
-
-      {conflictDialog && (
-        <ImportConflictDialog
-          {...conflictDialog}
-          onSubmit={(result) => closeConflictDialog(result)}
-          onCancel={() => closeConflictDialog(null)}
-        />
-      )}
 
       <ImportUrlDialog
         open={importDialogOpen}
@@ -518,93 +572,6 @@ export default function AdminDashboardPage() {
 
       <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
     </AppLayout>
-  );
-}
-
-function ImportConflictDialog({ name, index, total, suggestedName, onSubmit, onCancel }) {
-  const [action, setAction] = useState("overwrite");
-  const [newName, setNewName] = useState(suggestedName);
-  const [applyToRest, setApplyToRest] = useState(false);
-  const [error, setError] = useState("");
-
-  useEffect(() => {
-    setAction("overwrite");
-    setNewName(suggestedName);
-    setApplyToRest(false);
-    setError("");
-  }, [name, index, total, suggestedName]);
-
-  const handleConfirm = () => {
-    if (action === "saveas") {
-      const trimmed = (newName || "").trim();
-      if (!trimmed) {
-        setError("別名を入力してください");
-        return;
-      }
-      const renameMode = trimmed === suggestedName ? "auto" : "custom";
-      onSubmit({ action, newName: trimmed, applyToRest, renameMode });
-      return;
-    }
-    onSubmit({ action, applyToRest });
-  };
-
-  return (
-    <div
-      style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
-    >
-      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: "min(520px, 90vw)", boxShadow: "0 20px 45px rgba(15,23,42,0.25)" }}>
-        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>フォーム名が重複しています</h3>
-        <p style={{ marginBottom: 16, color: "#475569" }}>
-          「{name}」は既に存在します（{index}/{total}）。処理を選択してください。
-        </p>
-
-        <div style={{ display: "grid", gap: 12 }}>
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="radio" name="import-conflict-action" value="overwrite" checked={action === "overwrite"} onChange={() => setAction("overwrite")} />
-            <span>既存フォームを置換</span>
-          </label>
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="radio" name="import-conflict-action" value="saveas" checked={action === "saveas"} onChange={() => setAction("saveas")} />
-            <span>新規として追加</span>
-          </label>
-          {action === "saveas" && (
-            <div style={{ marginLeft: 24 }}>
-              <input
-                type="text"
-                value={newName}
-                onChange={(event) => setNewName(event.target.value)}
-                style={{ width: "100%", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px" }}
-                placeholder={`${name} (2)`}
-              />
-              {error && <p style={{ marginTop: 6, color: "#DC2626", fontSize: 12 }}>{error}</p>}
-              <p style={{ marginTop: 6, color: "#64748B", fontSize: 12 }}>既存の名称と重複する場合は自動的に番号が付与されます。</p>
-            </div>
-          )}
-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input type="radio" name="import-conflict-action" value="abort" checked={action === "abort"} onChange={() => setAction("abort")} />
-            <span>アップロード中止</span>
-          </label>
-        </div>
-
-        <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 16 }}>
-          <input type="checkbox" checked={applyToRest} onChange={(event) => setApplyToRest(event.target.checked)} />
-          <span>この選択を残り全件に適用する</span>
-        </label>
-
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
-          <button type="button" style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff" }} onClick={onCancel}>
-            キャンセル
-          </button>
-          <button
-            type="button"
-            style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#2563EB", color: "#fff" }}
-            onClick={handleConfirm}
-          >
-            OK
-          </button>
-        </div>
-      </div>
-    </div>
   );
 }
 

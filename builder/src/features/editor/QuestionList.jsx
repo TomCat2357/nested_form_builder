@@ -94,11 +94,9 @@ export default function QuestionList({ fields, onChange, depth = 1, onQuestionCo
 
       // 選択肢が選択されている場合は、選択肢の制御情報を使う
       if (optionControl && optionControl.type === 'option') {
-        console.log('[QuestionList] optionControl detected:', optionControl);
         controlInfo = buildOptionControlInfo(selectedIndex, optionControl, normalized);
       } else {
         // 質問が選択されている場合
-        console.log('[QuestionList] question selected:', { selectedIndex });
         controlInfo = buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown);
       }
 

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
@@ -7,6 +7,7 @@ import FormBuilderWorkspace from "../features/admin/FormBuilderWorkspace.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
+import { validateSpreadsheet } from "../services/gasClient.js";
 import { cleanupTempData } from "../core/schema.js";
 
 const headerButtonStyle = {
@@ -45,8 +46,8 @@ export default function AdminFormEditorPage() {
   const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
   const builderRef = useRef(null);
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
-  const defaultSettings = useMemo(() => ({}), []);
-  const defaultSchema = useMemo(() => [], []);
+  const initialSchema = useMemo(() => (form?.schema ? form.schema : []), [form]);
+  const initialSettings = useMemo(() => (form?.settings ? form.settings : {}), [form]);
 
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
@@ -64,7 +65,6 @@ export default function AdminFormEditorPage() {
       if (builderRef.current) {
         const control = builderRef.current.getQuestionControl?.();
         if (control !== questionControl) {
-          console.log('[AdminFormEditorPage] questionControl updated:', control);
           setQuestionControl(control);
         }
       }
@@ -103,7 +103,30 @@ export default function AdminFormEditorPage() {
     navigate(fallback, { replace: true });
   };
 
-  const handleSaveClick = () => {
+  const checkSpreadsheet = useCallback(async (spreadsheetIdOrUrl) => {
+    const trimmed = (spreadsheetIdOrUrl || "").trim();
+    if (!trimmed) {
+      showAlert("Spreadsheet ID / URL を入力してください");
+      return false;
+    }
+    try {
+      const result = await validateSpreadsheet(trimmed);
+      if (!result?.canView) {
+        showAlert("閲覧権限がありません。アクセス権を確認してください");
+        return false;
+      }
+      if (!result.canEdit) {
+        showAlert("閲覧権限のみで続行します。保存に失敗する場合は編集権限を付与してください。");
+      }
+      return true;
+    } catch (error) {
+      console.error("[AdminFormEditorPage] validateSpreadsheet failed", error);
+      showAlert(error?.message || "スプレッドシートを確認できません");
+      return false;
+    }
+  }, [showAlert]);
+
+  const handleSaveClick = async () => {
     // バリデーションのみ実行
     if (!builderRef.current) return;
     const trimmedName = (name || "").trim();
@@ -112,6 +135,11 @@ export default function AdminFormEditorPage() {
       return;
     }
     setNameError("");
+
+    const settings = builderRef.current.getSettings?.() || {};
+    const spreadsheetId = settings.spreadsheetId || "";
+    const spreadsheetOk = await checkSpreadsheet(spreadsheetId);
+    if (!spreadsheetOk) return;
 
     // 確認ダイアログを表示
     setConfirmSave(true);
@@ -124,6 +152,13 @@ export default function AdminFormEditorPage() {
     const schema = builderRef.current.getSchema();
     const settings = builderRef.current.getSettings();
     const trimmedName = (name || "").trim();
+
+    const spreadsheetOk = await checkSpreadsheet(settings?.spreadsheetId || "");
+    if (!spreadsheetOk) {
+      setConfirmSave(false);
+      setIsSaving(false);
+      return;
+    }
 
     // 一時保存データをクリーンアップ
     const cleanedSchema = cleanupTempData(schema);
@@ -145,7 +180,7 @@ export default function AdminFormEditorPage() {
       setIsSaving(true);
       if (isEdit) await updateForm(formId, payload, targetUrl);
       else await createForm(payload, targetUrl);
-      initialMetaRef.current = { name: payload.name, description: payload.description || "" };
+      initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
       setBuilderDirty(false);
       setIsSaving(false);
       navigate("/admin", { replace: true });
@@ -327,8 +362,8 @@ export default function AdminFormEditorPage() {
 
       <FormBuilderWorkspace
         ref={builderRef}
-        initialSchema={form?.schema || defaultSchema}
-        initialSettings={form?.settings || defaultSettings}
+        initialSchema={initialSchema}
+        initialSettings={initialSettings}
         formTitle={name || "フォーム"}
         onDirtyChange={setBuilderDirty}
         showToolbarSave={false}

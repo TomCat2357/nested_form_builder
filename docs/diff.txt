@@ -1,0 +1,1711 @@
+diff --git a/builder/src/app/state/AppDataProvider.jsx b/builder/src/app/state/AppDataProvider.jsx
+index 9bfe3c9..5ec056d 100644
+--- a/builder/src/app/state/AppDataProvider.jsx
++++ b/builder/src/app/state/AppDataProvider.jsx
+@@ -1,5 +1,6 @@
+ import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+-import { dataStore, syncFromDrive } from "./dataStore.js";
++import { dataStore } from "./dataStore.js";
++import { debugGetMapping } from "../../services/gasClient.js";
+ 
+ const AppDataContext = createContext(null);
+ 
+@@ -7,17 +8,31 @@ export function AppDataProvider({ children }) {
+   const [forms, setForms] = useState([]);
+   const [loadingForms, setLoadingForms] = useState(true);
+   const [error, setError] = useState(null);
++  const [loadFailures, setLoadFailures] = useState([]);
+ 
+   const refreshForms = useCallback(async () => {
+     setLoadingForms(true);
+     setError(null);
+     try {
+-      const list = await dataStore.listForms({ includeArchived: true });
+-      setForms(list);
++      // Debug: PropertiesServiceのマッピングを取得して出力
++      try {
++        const debugResult = await debugGetMapping();
++        console.log("[DEBUG] PropertiesService Mapping:", debugResult);
++        console.log("[DEBUG] Raw JSON:", debugResult.rawJson);
++        console.log("[DEBUG] Mapping object:", JSON.stringify(debugResult.mapping, null, 2));
++        console.log("[DEBUG] Total forms in mapping:", debugResult.totalForms);
++        console.log("[DEBUG] Legacy info:", JSON.stringify(debugResult.legacyInfo, null, 2));
++      } catch (debugErr) {
++        console.warn("[DEBUG] Failed to get mapping:", debugErr);
++      }
++
++      const result = await dataStore.listForms({ includeArchived: true });
++      setForms(result.forms || []);
++      setLoadFailures(result.loadFailures || []);
+     } catch (err) {
+       console.error("[AppDataProvider] フォーム取得エラー:", err);
+       setError(err.message || "フォームの取得に失敗しました");
+-      setForms([]); // エラー時は空配列
++      // エラー時は既存のフォームリストを保持（空配列に設定しない）
+     } finally {
+       setLoadingForms(false);
+     }
+@@ -73,6 +88,7 @@ export function AppDataProvider({ children }) {
+   const memoValue = useMemo(
+     () => ({
+       forms,
++      loadFailures,
+       loadingForms,
+       error,
+       refreshForms,
+@@ -85,7 +101,7 @@ export function AppDataProvider({ children }) {
+       exportForms,
+       getFormById,
+     }),
+-    [forms, loadingForms, error, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, deleteForm, importForms, exportForms, getFormById],
++    [forms, loadFailures, loadingForms, error, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, deleteForm, importForms, exportForms, getFormById],
+   );
+ 
+   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;
+diff --git a/builder/src/app/state/dataStore.js b/builder/src/app/state/dataStore.js
+index b8fce79..5d6ae08 100644
+--- a/builder/src/app/state/dataStore.js
++++ b/builder/src/app/state/dataStore.js
+@@ -12,12 +12,14 @@ import {
+   archiveForm as archiveFormInGas,
+   unarchiveForm as unarchiveFormInGas,
+   hasScriptRun,
++  debugGetMapping,
+ } from "../../services/gasClient.js";
+ 
+ const FORMS_STORAGE_KEY = "nfb.forms.v1";
+ const ENTRIES_STORAGE_KEY = "nfb.entries.v1";
+ 
+ const nowIso = () => new Date().toISOString();
++const DEFAULT_SHEET_NAME = "Responses";
+ 
+ const readStorage = (key, fallback) => {
+   try {
+@@ -48,6 +50,32 @@ const ensureDisplayInfo = (form) => {
+   };
+ };
+ 
++const getSheetConfig = (form) => {
++  const spreadsheetId = form?.settings?.spreadsheetId;
++  if (!spreadsheetId) return null;
++
++  return {
++    spreadsheetId,
++    sheetName: form?.settings?.sheetName || DEFAULT_SHEET_NAME,
++  };
++};
++
++const mapSheetRecordToEntry = (record, formId) => ({
++  id: record.id,
++  "No.": record["No."],
++  formId,
++  createdAt: record.createdAt,
++  modifiedAt: record.modifiedAt,
++  data: record.data || {},
++  order: Object.keys(record.data || {}),
++});
++
++const cacheEntries = (formId, entries) =>
++  persistEntries((entriesByForm) => {
++    entriesByForm[formId] = entries;
++    return entriesByForm;
++  });
++
+ const loadForms = () => {
+   const forms = readStorage(FORMS_STORAGE_KEY, []);
+   return (Array.isArray(forms) ? forms : []).map((form) => ensureDisplayInfo(form));
+@@ -83,7 +111,7 @@ const buildFormRecord = (input) => {
+     archived: !!input.archived,
+     schemaVersion: Number.isFinite(input.schemaVersion) ? input.schemaVersion : 1,
+   };
+-};;
++};
+ 
+ const getEntriesForForm = (entriesByForm, formId) => {
+   const list = Array.isArray(entriesByForm[formId]) ? entriesByForm[formId] : [];
+@@ -109,8 +137,18 @@ export const dataStore = {
+     // Try to fetch from Google Drive via GAS
+     if (hasScriptRun()) {
+       try {
+-        const forms = await listFormsFromGas({ includeArchived });
+-        return forms.map((form) => ensureDisplayInfo(form));
++        const result = await listFormsFromGas({ includeArchived });
++        const forms = Array.isArray(result.forms) ? result.forms : [];
++        const loadFailures = Array.isArray(result.loadFailures) ? result.loadFailures : [];
++        console.log("[dataStore.listForms] Fetched from GAS:", {
++          count: forms.length,
++          formIds: forms.map((f) => f.id),
++          loadFailures: loadFailures.length,
++        });
++        return {
++          forms: forms.map((form) => ensureDisplayInfo(form)),
++          loadFailures,
++        };
+       } catch (error) {
+         console.warn("[dataStore] Failed to fetch forms from Google Drive, falling back to localStorage:", error);
+       }
+@@ -118,7 +156,12 @@ export const dataStore = {
+ 
+     // Fallback to localStorage
+     const forms = loadForms();
+-    return forms.filter((form) => includeArchived || !form.archived);
++    console.log("[dataStore.listForms] Using localStorage:", { count: forms.length });
++    const filtered = forms.filter((form) => includeArchived || !form.archived);
++    return {
++      forms: filtered,
++      loadFailures: [],
++    };
+   },
+   async getForm(formId) {
+     // Try to fetch from Google Drive via GAS
+@@ -136,12 +179,38 @@ export const dataStore = {
+     return forms.find((form) => form.id === formId) || null;
+   },
+   async createForm(payload, targetUrl = null) {
+-    const record = buildFormRecord({ ...payload, id: genId() });
++    // buildFormRecordにID生成を委ねる（payloadにidがあればそれを使用、なければ生成）
++    const record = buildFormRecord(payload);
++    console.log("[dataStore.createForm] Creating form:", { id: record.id, hasPayloadId: !!payload.id, targetUrl });
+ 
+     // Try to save to Google Drive via GAS
+     if (hasScriptRun()) {
+       try {
++        // Debug: 保存前のマッピングを取得
++        let beforeMapping = null;
++        try {
++          beforeMapping = await debugGetMapping();
++          console.log("[DEBUG] BEFORE createForm - Mapping:", beforeMapping);
++          console.log("[DEBUG] BEFORE createForm - Legacy info:", JSON.stringify(beforeMapping?.legacyInfo, null, 2));
++        } catch (debugErr) {
++          console.warn("[DEBUG] Failed to get before-mapping:", debugErr);
++        }
++
+         const result = await saveFormToGas(record, targetUrl);
++        console.log("[dataStore.createForm] GAS result:", { formId: result?.form?.id, fileUrl: result?.fileUrl });
++        console.log("[dataStore.createForm] GAS debugRawJsonBefore:", result?.debugRawJsonBefore);
++        console.log("[dataStore.createForm] GAS debugRawJsonAfter:", result?.debugRawJsonAfter);
++        console.log("[dataStore.createForm] GAS debugMappingStr:", result?.debugMappingStr);
++
++        // Debug: 保存後のマッピングを取得
++        try {
++          const afterMapping = await debugGetMapping();
++          console.log("[DEBUG] AFTER createForm - Mapping:", afterMapping);
++          console.log("[DEBUG] Mapping changed from", beforeMapping?.totalForms, "to", afterMapping?.totalForms, "forms");
++        } catch (debugErr) {
++          console.warn("[DEBUG] Failed to get after-mapping:", debugErr);
++        }
++
+         const savedForm = result?.form || result;
+         const fileUrl = result?.fileUrl;
+ 
+@@ -169,7 +238,6 @@ export const dataStore = {
+     if (!current) {
+       // If updates contains enough data to reconstruct the form, use it
+       if (updates && updates.id === formId && updates.createdAt) {
+-        console.log("[dataStore] getForm returned null, using updates as base form");
+         current = updates;
+       } else {
+         throw new Error("Form not found: " + formId);
+@@ -300,32 +368,13 @@ export const dataStore = {
+     return saved;
+   },
+   async listEntries(formId) {
+-    // First, get the form to check if we should fetch from GAS
+     const form = await this.getForm(formId);
++    const sheetConfig = getSheetConfig(form);
+ 
+-    // Fetch from GAS if settings are configured
+-    if (form?.settings?.spreadsheetId) {
++    if (sheetConfig) {
+       try {
+-        const gasResult = await listEntriesFromGas({
+-          spreadsheetId: form.settings.spreadsheetId,
+-          sheetName: form.settings.sheetName || "Responses",
+-        });
+-
+-        const gasRecords = gasResult.records || [];
+-        const headerMatrix = gasResult.headerMatrix || [];
+-
+-        // Transform GAS records to our entry format
+-        const entries = gasRecords.map((record) => {
+-          return {
+-            id: record.id,
+-            "No.": record["No."],
+-            formId,
+-            createdAt: record.createdAt,
+-            modifiedAt: record.modifiedAt,
+-            data: record.data || {},
+-            order: Object.keys(record.data || {}),
+-          };
+-        });
++        const gasResult = await listEntriesFromGas(sheetConfig);
++        const entries = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
+ 
+         // Sort by ID in ascending order when fetching from spreadsheet
+         entries.sort((a, b) => {
+@@ -334,76 +383,45 @@ export const dataStore = {
+           return 0;
+         });
+ 
+-        // Update local storage with fetched data
+-        persistEntries((entriesByForm) => {
+-          entriesByForm[formId] = entries;
+-          return entriesByForm;
+-        });
+-
+-        return { entries, headerMatrix };
++        cacheEntries(formId, entries);
++        return { entries, headerMatrix: gasResult.headerMatrix || [] };
+       } catch (error) {
+         console.error("[dataStore] Failed to fetch from Google Sheets:", error);
+       }
+     }
+ 
+-    // Fall back to local storage
+     const entries = loadEntries();
+     return { entries: getEntriesForForm(entries, formId), headerMatrix: [] };
+   },
+   async getEntry(formId, entryId) {
+-    // First, get the form to check if we should fetch from GAS
+     const form = await this.getForm(formId);
++    const sheetConfig = getSheetConfig(form);
+ 
+-    // Fetch from GAS if settings are configured
+-    if (form?.settings?.spreadsheetId) {
++    if (sheetConfig) {
+       try {
+-        const record = await getEntryFromGas({
+-          spreadsheetId: form.settings.spreadsheetId,
+-          sheetName: form.settings.sheetName || "Responses",
+-          entryId,
+-        });
+-
+-        if (record) {
+-          return {
+-            id: record.id,
+-            "No.": record["No."],
+-            formId,
+-            createdAt: record.createdAt,
+-            modifiedAt: record.modifiedAt,
+-            data: record.data || {},
+-            order: Object.keys(record.data || {}),
+-          };
+-        }
+-
+-        return null;
++        const record = await getEntryFromGas({ ...sheetConfig, entryId });
++        return record ? mapSheetRecordToEntry(record, formId) : null;
+       } catch (error) {
+         console.error("[dataStore.getEntry] Spreadsheet取得エラー:", error);
+       }
+     }
+ 
+-    // Fall back to local storage
+     const entries = loadEntries();
+     return getEntriesForForm(entries, formId).find((entry) => entry.id === entryId) || null;
+   },
+   async deleteEntry(formId, entryId) {
+-    // First, get the form to check if we need to call GAS
+     const form = await this.getForm(formId);
++    const sheetConfig = getSheetConfig(form);
+ 
+-    // Delete from GAS if settings are configured
+-    if (form?.settings?.spreadsheetId) {
++    if (sheetConfig) {
+       try {
+-        await deleteEntryFromGas({
+-          spreadsheetId: form.settings.spreadsheetId,
+-          sheetName: form.settings.sheetName || "Responses",
+-          entryId,
+-        });
++        await deleteEntryFromGas({ ...sheetConfig, entryId });
+       } catch (error) {
+         console.error("[dataStore] Failed to delete from Google Sheets:", error);
+         throw new Error(`スプレッドシートからの削除に失敗しました: ${error.message}`);
+       }
+     }
+ 
+-    // Then delete from local storage
+     persistEntries((entriesByForm) => {
+       const list = getEntriesForForm(entriesByForm, formId).filter((entry) => entry.id !== entryId);
+       entriesByForm[formId] = list;
+@@ -415,9 +433,9 @@ export const dataStore = {
+     persistForms((forms) => {
+       jsonList.forEach((item) => {
+         if (!item) return;
++        // buildFormRecordにID生成を委ねる（itemにidがあればそれを使用、なければ生成）
+         const record = buildFormRecord({
+           ...item,
+-          id: genId(),
+           createdAt: item.createdAt,
+           schemaVersion: item.schemaVersion,
+         });
+@@ -430,7 +448,7 @@ export const dataStore = {
+   },
+   async exportForms(formIds) {
+     // Get forms from current source (Google Drive or localStorage)
+-    const allForms = await this.listForms({ includeArchived: true });
++    const { forms: allForms } = await this.listForms({ includeArchived: true });
+     const selected = allForms.filter((form) => formIds.includes(form.id));
+ 
+     return selected.map((form) => {
+diff --git a/builder/src/features/admin/FormBuilderWorkspace.jsx b/builder/src/features/admin/FormBuilderWorkspace.jsx
+index 6fa97be..5efca7e 100644
+--- a/builder/src/features/admin/FormBuilderWorkspace.jsx
++++ b/builder/src/features/admin/FormBuilderWorkspace.jsx
+@@ -25,7 +25,6 @@ const shallowEqual = (a, b) => {
+   try {
+     return JSON.stringify(a) === JSON.stringify(b);
+   } catch (error) {
+-    console.warn("shallowEqual fallback", error);
+     return false;
+   }
+ };
+@@ -63,31 +62,17 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
+ 
+   // schema/settingsが変わったらdirty判定（初期化完了後のみ）
+   useEffect(() => {
+-    console.log('[FormBuilderWorkspace] dirty check:', { isInitialized, hasInitialSchema: initialSchemaRef.current !== null, hasInitialSettings: initialSettingsRef.current !== null });
+     if (!isInitialized) {
+-      console.log('  Skipping: not initialized');
+       return;
+     }
+     if (initialSchemaRef.current === null || initialSettingsRef.current === null) {
+-      console.log('  Skipping: no initial values');
+       return;
+     }
+ 
+     const schemaDirty = !shallowEqual(initialSchemaRef.current, schema);
+     const settingsDirty = !shallowEqual(initialSettingsRef.current, settings);
+-    const dirty = schemaDirty || settingsDirty;
+ 
+-    console.log('  Schema dirty:', schemaDirty);
+-    if (schemaDirty) {
+-      console.log('  Initial schema:', JSON.stringify(initialSchemaRef.current));
+-      console.log('  Current schema:', JSON.stringify(schema));
+-    }
+-    console.log('  Settings dirty:', settingsDirty);
+-    console.log('  Initial settings:', initialSettingsRef.current);
+-    console.log('  Current settings:', settings);
+-    console.log('  Overall dirty:', dirty);
+-
+-    onDirtyChange?.(dirty);
++    onDirtyChange?.(schemaDirty || settingsDirty);
+   }, [schema, settings, isInitialized, onDirtyChange]);
+ 
+   const handleSchemaChange = (nextSchema) => {
+diff --git a/builder/src/features/editor/OptionRow.jsx b/builder/src/features/editor/OptionRow.jsx
+index 63d0db2..0000c6c 100644
+--- a/builder/src/features/editor/OptionRow.jsx
++++ b/builder/src/features/editor/OptionRow.jsx
+@@ -11,10 +11,7 @@ export default function OptionRow({ option, onChange, onDelete, onFocus, isSelec
+           placeholder="選択肢"
+           value={option.label}
+           onChange={(event) => onChange({ ...option, label: event.target.value })}
+-          onFocus={() => {
+-            console.log('[OptionRow] onFocus called for option:', option.label);
+-            onFocus();
+-          }}
++          onFocus={onFocus}
+         />
+         <button type="button" onClick={onAddChild} style={{ ...s.btn, flexShrink: 0 }} disabled={!canAddChild}>子質問追加</button>
+       </div>
+diff --git a/builder/src/features/editor/QuestionCard.jsx b/builder/src/features/editor/QuestionCard.jsx
+index 69ae147..8a3ceb3 100644
+--- a/builder/src/features/editor/QuestionCard.jsx
++++ b/builder/src/features/editor/QuestionCard.jsx
+@@ -199,13 +199,11 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
+ 
+   // 選択肢の選択状態を親に伝達（質問の上下移動とは別の制御）
+   React.useEffect(() => {
+-    console.log('[QuestionCard] useEffect triggered:', { isSelected, isChoice, selectedOptionIndex });
+     if (isChoice && selectedOptionIndex !== null) {
+       // 選択肢が選択されている場合は、その情報を含めて親に通知
+       const canMoveUp = selectedOptionIndex > 0;
+       const canMoveDown = selectedOptionIndex < (field.options?.length || 0) - 1;
+       const optionLabel = field.options?.[selectedOptionIndex]?.label || `選択肢 ${selectedOptionIndex + 1}`;
+-      console.log('[QuestionCard] Option selected:', { selectedOptionIndex, canMoveUp, canMoveDown, optionsLength: field.options?.length });
+       // onFocusに選択肢情報を含めることで、QuestionListが適切に処理できるようにする
+       onFocus({
+         type: 'option',
+@@ -229,7 +227,6 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
+           value={field.label || ""}
+           onChange={(event) => onChange({ ...field, label: event.target.value })}
+           onFocus={() => {
+-            console.log('[QuestionCard] Question input focused, clearing option selection');
+             setSelectedOptionIndex(null);
+             onFocus();
+           }}
+@@ -348,7 +345,6 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
+                 }
+               }}
+               onFocus={() => {
+-                console.log('[QuestionCard] Option focus, setting selectedOptionIndex to:', index);
+                 setSelectedOptionIndex(index);
+                 // 選択肢がフォーカスされた時は、質問カード全体は選択しない
+               }}
+diff --git a/builder/src/features/editor/QuestionList.jsx b/builder/src/features/editor/QuestionList.jsx
+index 06d9fb9..7e71ccd 100644
+--- a/builder/src/features/editor/QuestionList.jsx
++++ b/builder/src/features/editor/QuestionList.jsx
+@@ -94,11 +94,9 @@ export default function QuestionList({ fields, onChange, depth = 1, onQuestionCo
+ 
+       // 選択肢が選択されている場合は、選択肢の制御情報を使う
+       if (optionControl && optionControl.type === 'option') {
+-        console.log('[QuestionList] optionControl detected:', optionControl);
+         controlInfo = buildOptionControlInfo(selectedIndex, optionControl, normalized);
+       } else {
+         // 質問が選択されている場合
+-        console.log('[QuestionList] question selected:', { selectedIndex });
+         controlInfo = buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown);
+       }
+ 
+diff --git a/builder/src/pages/AdminDashboardPage.jsx b/builder/src/pages/AdminDashboardPage.jsx
+index 3de6a22..6439fce 100644
+--- a/builder/src/pages/AdminDashboardPage.jsx
++++ b/builder/src/pages/AdminDashboardPage.jsx
+@@ -1,4 +1,4 @@
+-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
++import React, { useCallback, useEffect, useMemo, useState } from "react";
+ import { useNavigate } from "react-router-dom";
+ import JSZip from "jszip";
+ import { saveAs } from "file-saver";
+@@ -52,6 +52,13 @@ const formatDisplayFieldsSummary = (form) => {
+     .join(", ");
+ };
+ 
++const formatDate = (value) => {
++  if (!value) return "---";
++  const date = new Date(value);
++  if (Number.isNaN(date.getTime())) return "---";
++  return date.toLocaleString();
++};
++
+ const buttonStyle = {
+   padding: "6px 12px",
+   borderRadius: 8,
+@@ -63,17 +70,25 @@ const buttonStyle = {
+ 
+ const labelMuted = { fontSize: 12, color: "#6B7280" };
+ 
++const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
++  const parts = [];
++  if (skipped > 0) {
++    const label = useRegisteredLabel ? "登録済みスキップ" : "スキップ";
++    parts.push(`${label} ${skipped} 件`);
++  }
++  if (parseFailed > 0) parts.push(`読込失敗 ${parseFailed} 件`);
++  return parts.length > 0 ? `（${parts.join("、")}）` : "";
++};
++
+ export default function AdminDashboardPage() {
+-  const { forms, loadingForms, archiveForm, unarchiveForm, deleteForm, refreshForms, exportForms } = useAppData();
++  const { forms, loadFailures, loadingForms, archiveForm, unarchiveForm, deleteForm, refreshForms, exportForms, createForm } = useAppData();
+   const navigate = useNavigate();
+   const { alertState, showAlert, closeAlert } = useAlert();
+   const [selected, setSelected] = useState(() => new Set());
+-  const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null });
+-  const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null });
++  const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
++  const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null, targetIds: [], multiple: false });
+   const [importDialogOpen, setImportDialogOpen] = useState(false);
+   const [importUrl, setImportUrl] = useState("");
+-  const conflictResolverRef = useRef(null);
+-  const [conflictDialog, setConflictDialog] = useState(null);
+   const [importing, setImporting] = useState(false);
+ 
+   const sortedForms = useMemo(() => {
+@@ -82,6 +97,21 @@ export default function AdminDashboardPage() {
+     return list;
+   }, [forms]);
+ 
++  const loadFailureRows = useMemo(() => {
++    const rows = (loadFailures || []).map((item) => ({
++      id: item.id,
++      archived: true,
++      settings: {},
++      description: "",
++      modifiedAt: item.lastTriedAt,
++      loadError: item,
++    }));
++    rows.sort((a, b) => new Date(b.modifiedAt || 0).getTime() - new Date(a.modifiedAt || 0).getTime());
++    return rows;
++  }, [loadFailures]);
++
++  const adminForms = useMemo(() => [...sortedForms, ...loadFailureRows], [sortedForms, loadFailureRows]);
++
+   const toggleSelect = (formId) => {
+     setSelected((prev) => {
+       const next = new Set(prev);
+@@ -92,28 +122,38 @@ export default function AdminDashboardPage() {
+   };
+ 
+   const selectAll = (checked) => {
+-    if (checked) setSelected(new Set(sortedForms.map((form) => form.id)));
++    if (checked) setSelected(new Set(adminForms.map((form) => form.id)));
+     else setSelected(new Set());
+   };
+ 
++  const clearSelectionByIds = useCallback((ids = []) => {
++    if (!Array.isArray(ids) || ids.length === 0) return;
++    setSelected((prev) => {
++      const next = new Set(prev);
++      ids.forEach((id) => next.delete(id));
++      return next;
++    });
++  }, []);
++
+   const handleArchiveSelected = () => {
+-    if (!selected.size) {
+-      showAlert("アーカイブするフォームを選択してください。");
++    const selectedForms = sortedForms.filter((form) => selected.has(form.id));
++    if (!selectedForms.length) {
++      showAlert("アーカイブ可能なフォームを選択してください。（読み込みエラーの項目は削除のみ可能です）");
+       return;
+     }
+ 
+-    // 選択されたフォームの状態をチェック
+-    const selectedForms = sortedForms.filter((form) => selected.has(form.id));
+     const allArchived = selectedForms.every((form) => form.archived);
+     const hasPublished = selectedForms.some((form) => !form.archived);
+ 
+-    const firstId = Array.from(selected)[0];
++    const targetIds = selectedForms.map((form) => form.id);
++    const firstId = targetIds[0];
+     setConfirmArchive({
+       open: true,
+       formId: firstId,
+-      multiple: selected.size > 1,
++      targetIds,
++      multiple: targetIds.length > 1,
+       allArchived,
+-      hasPublished
++      hasPublished,
+     });
+   };
+ 
+@@ -122,8 +162,9 @@ export default function AdminDashboardPage() {
+       showAlert("削除するフォームを選択してください。");
+       return;
+     }
+-    const firstId = Array.from(selected)[0];
+-    setConfirmDelete({ open: true, formId: firstId, multiple: selected.size > 1 });
++    const targetIds = Array.from(selected);
++    const firstId = targetIds[0];
++    setConfirmDelete({ open: true, formId: firstId, multiple: targetIds.length > 1, targetIds });
+   };
+ 
+   const handleExport = async () => {
+@@ -166,22 +207,6 @@ export default function AdminDashboardPage() {
+     setImportUrl("");
+     setImportDialogOpen(true);
+   };
+-
+-
+-  const openConflictDialog = useCallback((payload) => {
+-    setConflictDialog(payload);
+-    return new Promise((resolve) => {
+-      conflictResolverRef.current = resolve;
+-    });
+-  }, []);
+-
+-  const closeConflictDialog = useCallback((result) => {
+-    const resolver = conflictResolverRef.current;
+-    conflictResolverRef.current = null;
+-    setConflictDialog(null);
+-    if (resolver) resolver(result);
+-  }, []);
+-
+   const sanitizeImportedForm = (raw) => {
+     if (!raw || typeof raw !== "object") return null;
+     const schema = Array.isArray(raw.schema) ? raw.schema : [];
+@@ -193,11 +218,14 @@ export default function AdminDashboardPage() {
+     }
+ 
+     return {
++      id: raw.id, // IDを保持（重要）
+       description: typeof raw.description === "string" ? raw.description : "",
+       schema,
+       settings,
+       archived: !!raw.archived,
+       schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1,
++      createdAt: raw.createdAt, // 作成日時を保持
++      modifiedAt: raw.modifiedAt, // 更新日時を保持
+     };
+   };
+ 
+@@ -220,12 +248,8 @@ export default function AdminDashboardPage() {
+   const startImportWorkflow = useCallback(
+     async (parsedContents, { skipped = 0, parseFailed = 0 } = {}) => {
+       const queue = flattenImportedContents(parsedContents);
++      const detail = buildImportDetail(skipped, parseFailed, { useRegisteredLabel: true });
+       if (!queue.length) {
+-        console.log(`[DriveImport] no importable forms (alreadyRegistered=${skipped}, parseFailed=${parseFailed})`);
+-        const msgs = [];
+-        if (skipped > 0) msgs.push(`スキップ ${skipped} 件`);
+-        if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
+-        const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
+         showAlert(`取り込めるフォームはありませんでした${detail}。`);
+         return;
+       }
+@@ -236,45 +260,39 @@ export default function AdminDashboardPage() {
+       try {
+         for (const item of queue) {
+           const payload = {
++            id: item.id, // IDを保持（重要）
+             description: item.description,
+             schema: item.schema,
+             settings: item.settings,
+             archived: item.archived,
+             schemaVersion: item.schemaVersion,
++            createdAt: item.createdAt, // 作成日時を保持
++            modifiedAt: item.modifiedAt, // 更新日時を保持
+           };
+ 
+-          await dataStore.createForm({ ...payload });
++          await createForm(payload);
+           imported += 1;
+         }
+ 
+-        await refreshForms();
+         setSelected(new Set());
+ 
+         // 結果メッセージ
+         if (imported > 0) {
+-          const extras = [];
+-          if (skipped > 0) extras.push(`登録済みスキップ ${skipped} 件`);
+-          if (parseFailed > 0) extras.push(`読込失敗 ${parseFailed} 件`);
+-          const extraMsg = extras.length > 0 ? `（${extras.join("、")}）` : "";
+-          showAlert(`${imported} 件のフォームを取り込みました${extraMsg}。`);
++          showAlert(`${imported} 件のフォームを取り込みました${detail}。`);
+         } else {
+-          const msgs = [];
+-          if (skipped > 0) msgs.push(`登録済みスキップ ${skipped} 件`);
+-          if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
+-          const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
+           showAlert(`取り込めるフォームはありませんでした${detail}。`);
+         }
+         console.log(
+           `[DriveImport] success=${imported}, alreadyRegistered=${skipped}, parseFailed=${parseFailed}`,
+         );
+       } catch (error) {
+-        console.error(error);
++        console.error("[DriveImport] import workflow failed", error);
+         showAlert(error?.message || "スキーマの取り込み中にエラーが発生しました");
+       } finally {
+         setImporting(false);
+       }
+     },
+-    [forms, refreshForms],
++    [createForm, showAlert],
+   );
+ 
+   const handleImportFromDrive = async () => {
+@@ -291,12 +309,9 @@ export default function AdminDashboardPage() {
+       // Google DriveからフォームデータをAPI経由で取得
+       const result = await importFormsFromDrive(url);
+       const { forms: importedForms, skipped = 0, parseFailed = 0 } = result;
++      const detail = buildImportDetail(skipped, parseFailed);
+ 
+       if (!importedForms || importedForms.length === 0) {
+-        const msgs = [];
+-        if (skipped > 0) msgs.push(`スキップ ${skipped} 件`);
+-        if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
+-        const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
+         showAlert(`有効なフォームがありませんでした${detail}。`);
+         setImporting(false);
+         return;
+@@ -305,52 +320,48 @@ export default function AdminDashboardPage() {
+       // インポートワークフローを実行
+       await startImportWorkflow(importedForms, { skipped, parseFailed });
+     } catch (error) {
+-      console.error(error);
++      console.error("[DriveImport] import from Drive failed", error);
+       showAlert(error?.message || "Google Driveからのインポートに失敗しました");
+       setImporting(false);
+     }
+   };
+ 
+   const confirmArchiveAction = async () => {
+-    if (!confirmArchive.formId) return;
++    const targetIds = (confirmArchive.targetIds && confirmArchive.targetIds.length
++      ? confirmArchive.targetIds
++      : confirmArchive.formId
++        ? [confirmArchive.formId]
++        : []);
++    if (!targetIds.length) return;
+ 
+-    // すべてアーカイブ済みの場合は解除処理
+     if (confirmArchive.allArchived) {
+-      if (confirmArchive.multiple) {
+-        for (const formId of selected) {
+-          await unarchiveForm(formId);
+-        }
+-        setSelected(new Set());
+-      } else {
+-        await unarchiveForm(confirmArchive.formId);
++      for (const formId of targetIds) {
++        await unarchiveForm(formId);
+       }
+     } else {
+-      // それ以外はアーカイブ処理
+-      if (confirmArchive.multiple) {
+-        for (const formId of selected) {
+-          await archiveForm(formId);
+-        }
+-        setSelected(new Set());
+-      } else {
+-        await archiveForm(confirmArchive.formId);
++      for (const formId of targetIds) {
++        await archiveForm(formId);
+       }
+     }
+-    setConfirmArchive({ open: false, formId: null, multiple: false, allArchived: false, hasPublished: false });
++
++    clearSelectionByIds(targetIds);
++    setConfirmArchive({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
+   };
+ 
+   const confirmDeleteAction = async () => {
+-    if (!confirmDelete.formId) return;
+-    if (confirmDelete.multiple) {
+-      // 複数選択時は全件削除
+-      for (const formId of selected) {
+-        await deleteForm(formId);
+-      }
+-      setSelected(new Set());
+-    } else {
+-      // 単一削除
+-      await deleteForm(confirmDelete.formId);
++    const targetIds = (confirmDelete.targetIds && confirmDelete.targetIds.length
++      ? confirmDelete.targetIds
++      : confirmDelete.formId
++        ? [confirmDelete.formId]
++        : []);
++    if (!targetIds.length) return;
++
++    for (const formId of targetIds) {
++      await deleteForm(formId);
+     }
+-    setConfirmDelete({ open: false, formId: null, multiple: false });
++
++    clearSelectionByIds(targetIds);
++    setConfirmDelete({ open: false, formId: null, targetIds: [], multiple: false });
+   };
+ 
+   const goToEditor = (formId) => {
+@@ -414,7 +425,7 @@ export default function AdminDashboardPage() {
+             <thead>
+               <tr>
+                 <th style={thStyle}>
+-                  <input type="checkbox" checked={selected.size === sortedForms.length && sortedForms.length > 0} onChange={(event) => selectAll(event.target.checked)} />
++                  <input type="checkbox" checked={adminForms.length > 0 && selected.size === adminForms.length} onChange={(event) => selectAll(event.target.checked)} />
+                 </th>
+                 <th style={thStyle}>名称</th>
+                 <th style={thStyle}>更新日時</th>
+@@ -423,30 +434,79 @@ export default function AdminDashboardPage() {
+               </tr>
+             </thead>
+             <tbody>
+-              {sortedForms.map((form) => {
+-                const summary = formatDisplayFieldsSummary(form);
++              {adminForms.map((form) => {
++                const isLoadError = !!form.loadError;
++                const summary = isLoadError ? "" : formatDisplayFieldsSummary(form);
++                const loadError = form.loadError || null;
++                const lastUpdated = isLoadError ? formatDate(loadError?.lastTriedAt) : formatDate(form.modifiedAt);
+                 return (
+                   <tr
+                     key={form.id}
+-                    style={{ cursor: "pointer" }}
+-                    onClick={() => goToEditor(form.id)}
++                    style={{ cursor: isLoadError ? "default" : "pointer", background: isLoadError ? "#FEF2F2" : undefined }}
++                    onClick={() => {
++                      if (!isLoadError) {
++                        goToEditor(form.id);
++                      }
++                    }}
+                   >
+                     <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
+                       <input type="checkbox" checked={selected.has(form.id)} onChange={() => toggleSelect(form.id)} />
++                      {isLoadError && <div style={{ color: "#B91C1C", fontSize: 11, marginTop: 4 }}>削除のみ可能</div>}
++                    </td>
++                    <td style={tdStyle}>
++                      {isLoadError ? (
++                        <>
++                          <div style={{ fontWeight: 600, color: "#B91C1C" }}>{loadError?.fileName || "(名称不明)"}</div>
++                          <div style={{ color: "#991B1B", fontSize: 12 }}>フォームID: {form.id}</div>
++                          {loadError?.fileId && <div style={{ color: "#991B1B", fontSize: 12 }}>ファイルID: {loadError.fileId}</div>}
++                          {loadError?.driveFileUrl && (
++                            <div style={{ marginTop: 6 }}>
++                              <a
++                                href={loadError.driveFileUrl}
++                                target="_blank"
++                                rel="noreferrer"
++                                onClick={(event) => event.stopPropagation()}
++                                style={{ color: "#2563EB", textDecoration: "underline", fontSize: 12 }}
++                              >
++                                Driveで確認
++                              </a>
++                            </div>
++                          )}
++                        </>
++                      ) : (
++                        <>
++                          <div style={{ fontWeight: 600 }}>{form.settings?.formTitle || "(無題)"}</div>
++                          {form.description && <div style={{ color: "#475569", fontSize: 12 }}>{form.description}</div>}
++                        </>
++                      )}
+                     </td>
++                    <td style={tdStyle}>{lastUpdated}</td>
+                     <td style={tdStyle}>
+-                      <div style={{ fontWeight: 600 }}>{form.settings?.formTitle || "(無題)"}</div>
+-                      {form.description && <div style={{ color: "#475569", fontSize: 12 }}>{form.description}</div>}
++                      {isLoadError ? (
++                        <>
++                          <div style={{ color: "#B91C1C", fontWeight: 600 }}>読み込みエラー</div>
++                          <div style={{ color: "#991B1B", fontSize: 12 }}>{loadError?.errorMessage || "読み込みに失敗しました"}</div>
++                          {loadError?.errorStage && <div style={{ color: "#991B1B", fontSize: 11, marginTop: 4 }}>ステージ: {loadError.errorStage}</div>}
++                        </>
++                      ) : summary ? (
++                        summary
++                      ) : (
++                        <span style={labelMuted}>設定なし</span>
++                      )}
+                     </td>
+-                    <td style={tdStyle}>{new Date(form.modifiedAt).toLocaleString()}</td>
+                     <td style={tdStyle}>
+-                      {summary ? summary : <span style={labelMuted}>設定なし</span>}
++                      {isLoadError ? (
++                        <span style={{ color: "#DC2626", fontWeight: 600 }}>読み込みエラー</span>
++                      ) : form.archived ? (
++                        <span style={{ color: "#DC2626" }}>アーカイブ済み</span>
++                      ) : (
++                        <span style={{ color: "#16A34A" }}>公開中</span>
++                      )}
+                     </td>
+-                    <td style={tdStyle}>{form.archived ? <span style={{ color: "#DC2626" }}>アーカイブ済み</span> : <span style={{ color: "#16A34A" }}>公開中</span>}</td>
+                   </tr>
+                 );
+               })}
+-              {sortedForms.length === 0 && (
++              {adminForms.length === 0 && (
+                 <tr>
+                   <td style={{ ...tdStyle, textAlign: "center" }} colSpan={5}>
+                     フォームが登録されていません。
+@@ -470,7 +530,7 @@ export default function AdminDashboardPage() {
+           {
+             label: "キャンセル",
+             value: "cancel",
+-            onSelect: () => setConfirmArchive({ open: false, formId: null }),
++            onSelect: () => setConfirmArchive({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false }),
+           },
+           {
+             label: confirmArchive.allArchived ? "解除" : "アーカイブ",
+@@ -489,7 +549,7 @@ export default function AdminDashboardPage() {
+           {
+             label: "キャンセル",
+             value: "cancel",
+-            onSelect: () => setConfirmDelete({ open: false, formId: null }),
++            onSelect: () => setConfirmDelete({ open: false, formId: null, targetIds: [], multiple: false }),
+           },
+           {
+             label: "削除",
+@@ -500,14 +560,6 @@ export default function AdminDashboardPage() {
+         ]}
+       />
+ 
+-      {conflictDialog && (
+-        <ImportConflictDialog
+-          {...conflictDialog}
+-          onSubmit={(result) => closeConflictDialog(result)}
+-          onCancel={() => closeConflictDialog(null)}
+-        />
+-      )}
+-
+       <ImportUrlDialog
+         open={importDialogOpen}
+         url={importUrl}
+@@ -521,93 +573,6 @@ export default function AdminDashboardPage() {
+   );
+ }
+ 
+-function ImportConflictDialog({ name, index, total, suggestedName, onSubmit, onCancel }) {
+-  const [action, setAction] = useState("overwrite");
+-  const [newName, setNewName] = useState(suggestedName);
+-  const [applyToRest, setApplyToRest] = useState(false);
+-  const [error, setError] = useState("");
+-
+-  useEffect(() => {
+-    setAction("overwrite");
+-    setNewName(suggestedName);
+-    setApplyToRest(false);
+-    setError("");
+-  }, [name, index, total, suggestedName]);
+-
+-  const handleConfirm = () => {
+-    if (action === "saveas") {
+-      const trimmed = (newName || "").trim();
+-      if (!trimmed) {
+-        setError("別名を入力してください");
+-        return;
+-      }
+-      const renameMode = trimmed === suggestedName ? "auto" : "custom";
+-      onSubmit({ action, newName: trimmed, applyToRest, renameMode });
+-      return;
+-    }
+-    onSubmit({ action, applyToRest });
+-  };
+-
+-  return (
+-    <div
+-      style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+-    >
+-      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: "min(520px, 90vw)", boxShadow: "0 20px 45px rgba(15,23,42,0.25)" }}>
+-        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>フォーム名が重複しています</h3>
+-        <p style={{ marginBottom: 16, color: "#475569" }}>
+-          「{name}」は既に存在します（{index}/{total}）。処理を選択してください。
+-        </p>
+-
+-        <div style={{ display: "grid", gap: 12 }}>
+-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+-            <input type="radio" name="import-conflict-action" value="overwrite" checked={action === "overwrite"} onChange={() => setAction("overwrite")} />
+-            <span>既存フォームを置換</span>
+-          </label>
+-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+-            <input type="radio" name="import-conflict-action" value="saveas" checked={action === "saveas"} onChange={() => setAction("saveas")} />
+-            <span>新規として追加</span>
+-          </label>
+-          {action === "saveas" && (
+-            <div style={{ marginLeft: 24 }}>
+-              <input
+-                type="text"
+-                value={newName}
+-                onChange={(event) => setNewName(event.target.value)}
+-                style={{ width: "100%", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px" }}
+-                placeholder={`${name} (2)`}
+-              />
+-              {error && <p style={{ marginTop: 6, color: "#DC2626", fontSize: 12 }}>{error}</p>}
+-              <p style={{ marginTop: 6, color: "#64748B", fontSize: 12 }}>既存の名称と重複する場合は自動的に番号が付与されます。</p>
+-            </div>
+-          )}
+-          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
+-            <input type="radio" name="import-conflict-action" value="abort" checked={action === "abort"} onChange={() => setAction("abort")} />
+-            <span>アップロード中止</span>
+-          </label>
+-        </div>
+-
+-        <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 16 }}>
+-          <input type="checkbox" checked={applyToRest} onChange={(event) => setApplyToRest(event.target.checked)} />
+-          <span>この選択を残り全件に適用する</span>
+-        </label>
+-
+-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
+-          <button type="button" style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff" }} onClick={onCancel}>
+-            キャンセル
+-          </button>
+-          <button
+-            type="button"
+-            style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#2563EB", color: "#fff" }}
+-            onClick={handleConfirm}
+-          >
+-            OK
+-          </button>
+-        </div>
+-      </div>
+-    </div>
+-  );
+-}
+-
+ function ImportUrlDialog({ open, url, onUrlChange, onImport, onCancel }) {
+   const [error, setError] = useState("");
+ 
+diff --git a/builder/src/pages/AdminFormEditorPage.jsx b/builder/src/pages/AdminFormEditorPage.jsx
+index 60a4eb3..ee31fd1 100644
+--- a/builder/src/pages/AdminFormEditorPage.jsx
++++ b/builder/src/pages/AdminFormEditorPage.jsx
+@@ -1,4 +1,4 @@
+-import React, { useEffect, useMemo, useRef, useState } from "react";
++import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+ import { useLocation, useNavigate, useParams } from "react-router-dom";
+ import AppLayout from "../app/components/AppLayout.jsx";
+ import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
+@@ -45,8 +45,6 @@ export default function AdminFormEditorPage() {
+   const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
+   const builderRef = useRef(null);
+   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
+-  const defaultSettings = useMemo(() => ({}), []);
+-  const defaultSchema = useMemo(() => [], []);
+ 
+   const [name, setName] = useState(initialMetaRef.current.name);
+   const [description, setDescription] = useState(initialMetaRef.current.description);
+@@ -64,7 +62,6 @@ export default function AdminFormEditorPage() {
+       if (builderRef.current) {
+         const control = builderRef.current.getQuestionControl?.();
+         if (control !== questionControl) {
+-          console.log('[AdminFormEditorPage] questionControl updated:', control);
+           setQuestionControl(control);
+         }
+       }
+@@ -145,7 +142,7 @@ export default function AdminFormEditorPage() {
+       setIsSaving(true);
+       if (isEdit) await updateForm(formId, payload, targetUrl);
+       else await createForm(payload, targetUrl);
+-      initialMetaRef.current = { name: payload.name, description: payload.description || "" };
++      initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
+       setBuilderDirty(false);
+       setIsSaving(false);
+       navigate("/admin", { replace: true });
+@@ -327,8 +324,8 @@ export default function AdminFormEditorPage() {
+ 
+       <FormBuilderWorkspace
+         ref={builderRef}
+-        initialSchema={form?.schema || defaultSchema}
+-        initialSettings={form?.settings || defaultSettings}
++        initialSchema={form?.schema || []}
++        initialSettings={form?.settings || {}}
+         formTitle={name || "フォーム"}
+         onDirtyChange={setBuilderDirty}
+         showToolbarSave={false}
+diff --git a/builder/src/services/gasClient.js b/builder/src/services/gasClient.js
+index cff4a3a..705a529 100644
+--- a/builder/src/services/gasClient.js
++++ b/builder/src/services/gasClient.js
+@@ -127,128 +127,102 @@ export const listEntries = async ({ spreadsheetId, sheetName = "Responses" }) =>
+ // Form Management APIs (Google Drive)
+ // ========================================
+ 
+-export const listForms = async (options = {}) => {
++/**
++ * フォーム管理API呼び出しの共通ヘルパー
++ * @param {string} functionName - GAS関数名
++ * @param {*} args - 引数
++ * @param {string} errorMessage - エラーメッセージ
++ * @returns {Promise<*>} - API結果
++ */
++const callFormApi = async (functionName, args, errorMessage) => {
+   if (!hasScriptRun()) {
+     throw new Error("Form management is only available in google.script.run environment");
+   }
+ 
+   try {
+-    const result = await callScriptRun("nfbListForms", options);
++    const result = await callScriptRun(functionName, args);
+     if (!result || result.ok === false) {
+-      throw new Error(result?.error || "List forms failed");
++      throw new Error(result?.error || errorMessage);
+     }
+-    return result.forms || [];
++    return result;
+   } catch (error) {
+-    console.error("[gasClient] listForms failed", error);
++    console.error(`[gasClient] ${functionName} failed`, error);
+     throw error;
+   }
+ };
+ 
++export const listForms = async (options = {}) => {
++  const result = await callFormApi("nfbListForms", options, "List forms failed");
++  return {
++    forms: result.forms || [],
++    loadFailures: result.loadFailures || [],
++  };
++};
++
+ export const getForm = async (formId) => {
+-  if (!hasScriptRun()) {
+-    throw new Error("Form management is only available in google.script.run environment");
+-  }
+   if (!formId) throw new Error("formId is required");
+-
+-  try {
+-    const result = await callScriptRun("nfbGetForm", formId);
+-    if (!result || result.ok === false) {
+-      throw new Error(result?.error || "Get form failed");
+-    }
+-    return result.form || null;
+-  } catch (error) {
+-    console.error("[gasClient] getForm failed", error);
+-    throw error;
+-  }
++  const result = await callFormApi("nfbGetForm", formId, "Get form failed");
++  return result.form || null;
+ };
+ 
+ export const saveForm = async (form, targetUrl = null) => {
+-  if (!hasScriptRun()) {
+-    throw new Error("Form management is only available in google.script.run environment");
+-  }
+   if (!form || !form.id) throw new Error("Form with ID is required");
+-
+-  try {
+-    const payload = { form, targetUrl };
+-    const result = await callScriptRun("nfbSaveForm", payload);
+-    if (!result || result.ok === false) {
+-      throw new Error(result?.error || "Save form failed");
+-    }
+-    return { form: result.form, fileUrl: result.fileUrl };
+-  } catch (error) {
+-    console.error("[gasClient] saveForm failed", error);
+-    throw error;
+-  }
++  const payload = { form, targetUrl };
++  const result = await callFormApi("nfbSaveForm", payload, "Save form failed");
++  return { form: result.form, fileUrl: result.fileUrl };
+ };
+ 
+ export const deleteFormFromDrive = async (formId) => {
+-  if (!hasScriptRun()) {
+-    throw new Error("Form management is only available in google.script.run environment");
+-  }
+   if (!formId) throw new Error("formId is required");
+-
+-  try {
+-    const result = await callScriptRun("nfbDeleteForm", formId);
+-    if (!result || result.ok === false) {
+-      throw new Error(result?.error || "Delete form failed");
+-    }
+-    return result;
+-  } catch (error) {
+-    console.error("[gasClient] deleteFormFromDrive failed", error);
+-    throw error;
+-  }
++  return await callFormApi("nfbDeleteForm", formId, "Delete form failed");
+ };
+ 
+ export const archiveForm = async (formId) => {
+-  if (!hasScriptRun()) {
+-    throw new Error("Form management is only available in google.script.run environment");
+-  }
+   if (!formId) throw new Error("formId is required");
+-
+-  try {
+-    const result = await callScriptRun("nfbArchiveForm", formId);
+-    if (!result || result.ok === false) {
+-      throw new Error(result?.error || "Archive form failed");
+-    }
+-    return result.form || null;
+-  } catch (error) {
+-    console.error("[gasClient] archiveForm failed", error);
+-    throw error;
+-  }
++  const result = await callFormApi("nfbArchiveForm", formId, "Archive form failed");
++  return result.form || null;
+ };
+ 
+ export const unarchiveForm = async (formId) => {
+-  if (!hasScriptRun()) {
+-    throw new Error("Form management is only available in google.script.run environment");
+-  }
+   if (!formId) throw new Error("formId is required");
++  const result = await callFormApi("nfbUnarchiveForm", formId, "Unarchive form failed");
++  return result.form || null;
++};
++
++export const importFormsFromDrive = async (url) => {
++  if (!url) throw new Error("Google Drive URL is required");
++  const result = await callFormApi("nfbImportFormsFromDrive", url, "Import from Drive failed");
++  return { forms: result.forms || [], skipped: result.skipped || 0 };
++};
+ 
++export const debugGetMapping = async () => {
++  if (!hasScriptRun()) {
++    throw new Error("Debug function is only available in google.script.run environment");
++  }
+   try {
+-    const result = await callScriptRun("nfbUnarchiveForm", formId);
++    const result = await callScriptRun("nfbDebugGetMapping", {});
+     if (!result || result.ok === false) {
+-      throw new Error(result?.error || "Unarchive form failed");
++      throw new Error(result?.error || "Debug get mapping failed");
+     }
+-    return result.form || null;
++    return result;
+   } catch (error) {
+-    console.error("[gasClient] unarchiveForm failed", error);
++    console.error(`[gasClient] debugGetMapping failed`, error);
+     throw error;
+   }
+ };
+ 
+-export const importFormsFromDrive = async (url) => {
++export const debugCallGetMapping = async () => {
+   if (!hasScriptRun()) {
+-    throw new Error("Form management is only available in google.script.run environment");
++    throw new Error("Debug function is only available in google.script.run environment");
+   }
+-  if (!url) throw new Error("Google Drive URL is required");
+-
+   try {
+-    const result = await callScriptRun("nfbImportFormsFromDrive", url);
++    const result = await callScriptRun("nfbDebugCallGetMapping", {});
+     if (!result || result.ok === false) {
+-      throw new Error(result?.error || "Import from Drive failed");
++      throw new Error(result?.error || "Debug call get mapping failed");
+     }
+-    return { forms: result.forms || [], skipped: result.skipped || 0 };
++    return result;
+   } catch (error) {
+-    console.error("[gasClient] importFormsFromDrive failed", error);
++    console.error(`[gasClient] debugCallGetMapping failed`, error);
+     throw error;
+   }
+ };
+diff --git a/gas/Code.gs b/gas/Code.gs
+index cba96d2..f4db8f8 100644
+--- a/gas/Code.gs
++++ b/gas/Code.gs
+@@ -128,74 +128,6 @@ function listRecords(payload) {
+   return result;
+ }
+ 
+-// ========================================
+-// google.script.run用のフォーム管理関数
+-// ========================================
+-
+-/**
+- * フォーム一覧取得（google.script.run用）
+- * @param {Object} payload - { includeArchived: boolean }
+- * @return {Object} フォーム一覧
+- */
+-function nfbListForms(payload) {
+-  try {
+-    var urlMap = GetFormUrls_();
+-    var includeArchived = payload && payload.includeArchived;
+-    var forms = ListFormsFromUrls_(urlMap, includeArchived);
+-
+-    return {
+-      ok: true,
+-      forms: forms,
+-      count: forms.length
+-    };
+-  } catch (error) {
+-    return {
+-      ok: false,
+-      error: error.message || String(error)
+-    };
+-  }
+-}
+-
+-/**
+- * フォームインポート（google.script.run用）
+- * @param {Object} payload - { fileUrl: string }
+- * @return {Object} インポート結果
+- */
+-function nfbImportForm(payload) {
+-  try {
+-    if (!payload || !payload.fileUrl) {
+-      throw new Error('fileUrl is required');
+-    }
+-
+-    Logger.log('[nfbImportForm] Starting import from: ' + payload.fileUrl);
+-
+-    // ファイルからフォームデータを取得
+-    var formData = GetFormByUrl_(payload.fileUrl);
+-    if (!formData || !formData.id) {
+-      throw new Error('フォームデータにIDフィールドがありません。正しいフォームファイルか確認してください。');
+-    }
+-
+-    Logger.log('[nfbImportForm] Form data loaded: ' + formData.id);
+-
+-    // URLマップに追加
+-    var result = AddFormUrl_(formData.id, payload.fileUrl);
+-
+-    Logger.log('[nfbImportForm] Import successful: ' + formData.id);
+-
+-    return {
+-      ok: true,
+-      form: formData,
+-      message: result.message
+-    };
+-  } catch (error) {
+-    Logger.log('[nfbImportForm] Import failed: ' + error.message);
+-    return {
+-      ok: false,
+-      error: error.message || String(error)
+-    };
+-  }
+-}
+-
+ function SubmitResponses_(ctx) {
+   var sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
+   var result = Sheets_upsertRecordById_(sheet, ctx.order, ctx);
+diff --git a/gas/forms.gs b/gas/forms.gs
+index 0edd76a..6573c27 100644
+--- a/gas/forms.gs
++++ b/gas/forms.gs
+@@ -5,6 +5,25 @@
+ var FORMS_FOLDER_NAME = "Nested Form Builder - Forms";
+ var FORMS_PROPERTY_KEY = "nfb.forms.mapping"; // formId -> fileId mapping
+ 
++function Forms_getScriptProps_() {
++  return PropertiesService.getScriptProperties();
++}
++
++function Forms_getUserProps_() {
++  return PropertiesService.getUserProperties();
++}
++
++function Forms_parseMappingJson_(json, label) {
++  if (!json) return {};
++  try {
++    var parsed = JSON.parse(json) || {};
++    return parsed;
++  } catch (err) {
++    Logger.log("[Forms_parseMappingJson_] Failed to parse " + label + ": " + err);
++    return {};
++  }
++}
++
+ /**
+  * Google DriveのURLからIDを抽出
+  * @param {string} url - Google DriveのURL
+@@ -72,15 +91,61 @@ function Forms_parseGoogleDriveUrl_(url) {
+  * @return {Object} formId -> fileId のマッピング
+  */
+ function Forms_getMapping_() {
+-  var props = PropertiesService.getUserProperties();
+-  var json = props.getProperty(FORMS_PROPERTY_KEY);
+-  if (!json) return {};
+-  try {
+-    return JSON.parse(json);
+-  } catch (err) {
+-    Logger.log("Forms_getMapping_ parse error: " + err);
+-    return {};
++  var scriptProps = Forms_getScriptProps_();
++  var userProps = Forms_getUserProps_();
++
++  var scriptJson = scriptProps.getProperty(FORMS_PROPERTY_KEY);
++  var userJson = userProps.getProperty(FORMS_PROPERTY_KEY);
++  Logger.log("[Forms_getMapping_] Raw JSON (script): " + scriptJson);
++  Logger.log("[Forms_getMapping_] Raw JSON (user): " + userJson);
++
++  var mapping = Forms_parseMappingJson_(scriptJson, "script");
++  var merged = false;
++
++  if (userJson) {
++    var userMapping = Forms_parseMappingJson_(userJson, "user");
++    for (var formId in userMapping) {
++      if (!userMapping.hasOwnProperty(formId)) continue;
++      if (mapping[formId]) continue;
++      mapping[formId] = userMapping[formId];
++      merged = true;
++    }
++  }
++
++  // 旧FORM_URLS_MAPに保存されているフォーム（URL形式）をマージ
++  if (typeof GetFormUrls_ === "function") {
++    var legacy = GetFormUrls_() || {};
++    Logger.log("[Forms_getMapping_] Legacy forms count: " + Object.keys(legacy).length);
++
++    for (var legacyFormId in legacy) {
++      if (!legacy.hasOwnProperty(legacyFormId)) continue;
++      if (mapping[legacyFormId]) continue;
++
++      var fileUrl = legacy[legacyFormId];
++      var legacyFileId = null;
++      if (typeof ExtractFileIdFromUrl_ === "function") {
++        legacyFileId = ExtractFileIdFromUrl_(fileUrl);
++      }
++
++      if (legacyFileId) {
++        mapping[legacyFormId] = legacyFileId;
++        merged = true;
++      }
++    }
+   }
++
++  if (merged) {
++    Logger.log("[Forms_getMapping_] Mapping merged from user/legacy sources. Saving to script properties");
++    Forms_saveMapping_(mapping);
++  }
++
++  Logger.log("[Forms_getMapping_] Returning mapping: " + JSON.stringify(mapping));
++  return mapping;
++}
++
++function Forms_buildDriveFileUrlFromId_(fileId) {
++  if (!fileId) return null;
++  return "https://drive.google.com/file/d/" + fileId + "/view";
+ }
+ 
+ /**
+@@ -88,8 +153,21 @@ function Forms_getMapping_() {
+  * @param {Object} mapping - formId -> fileId のマッピング
+  */
+ function Forms_saveMapping_(mapping) {
+-  var props = PropertiesService.getUserProperties();
+-  props.setProperty(FORMS_PROPERTY_KEY, JSON.stringify(mapping || {}));
++  var mappingStr = JSON.stringify(mapping || {});
++  Logger.log("[Forms_saveMapping_] Saving mapping: " + mappingStr);
++
++  var scriptProps = Forms_getScriptProps_();
++  scriptProps.setProperty(FORMS_PROPERTY_KEY, mappingStr);
++
++  // 互換性のためユーザープロパティにも書き込む
++  var userProps = Forms_getUserProps_();
++  try {
++    userProps.setProperty(FORMS_PROPERTY_KEY, mappingStr);
++  } catch (err) {
++    Logger.log("[Forms_saveMapping_] Failed to write user properties: " + err);
++  }
++
++  Logger.log("[Forms_saveMapping_] Saved successfully. Total forms: " + Object.keys(mapping || {}).length);
+ }
+ 
+ /**
+@@ -115,8 +193,22 @@ function Forms_saveForm_(form, targetUrl) {
+     throw new Error("Form ID is required");
+   }
+ 
++  Logger.log("[Forms_saveForm_] Starting save for formId: " + form.id);
++
++  // DEBUG: PropertiesServiceを直接読んで確認（script propertiesを参照）
++  var scriptProps = Forms_getScriptProps_();
++  var rawJsonBeforeGetMapping = scriptProps.getProperty(FORMS_PROPERTY_KEY);
++  Logger.log("[Forms_saveForm_] DEBUG: Raw JSON from PropertiesService BEFORE Forms_getMapping_: " + rawJsonBeforeGetMapping);
++
+   var mapping = Forms_getMapping_();
++  Logger.log("[Forms_saveForm_] Current mapping before save: " + JSON.stringify(mapping));
++
++  // DEBUG: もう一度PropertiesServiceを直接読んで確認
++  var rawJsonAfterGetMapping = scriptProps.getProperty(FORMS_PROPERTY_KEY);
++  Logger.log("[Forms_saveForm_] DEBUG: Raw JSON from PropertiesService AFTER Forms_getMapping_: " + rawJsonAfterGetMapping);
++
+   var existingFileId = mapping[form.id];
++  Logger.log("[Forms_saveForm_] Existing fileId for this form: " + existingFileId);
+   var file;
+   var now = new Date().toISOString();
+   var fileId = null;
+@@ -124,7 +216,6 @@ function Forms_saveForm_(form, targetUrl) {
+   // 仮のフォームオブジェクトを作成（driveFileUrlなし）
+   var formWithTimestamp = {
+     id: form.id,
+-    name: form.name || "無題のフォーム",
+     description: form.description || "",
+     schema: form.schema || [],
+     settings: form.settings || {},
+@@ -199,13 +290,18 @@ function Forms_saveForm_(form, targetUrl) {
+ 
+   // マッピングを更新
+   mapping[form.id] = fileId;
++  Logger.log("[Forms_saveForm_] Updated mapping, about to save: " + JSON.stringify(mapping));
+   Forms_saveMapping_(mapping);
++  Logger.log("[Forms_saveForm_] Mapping saved. FormId: " + form.id + ", FileId: " + fileId);
+ 
+   return {
+     ok: true,
+     fileId: fileId,
+     fileUrl: fileUrl,
+     form: formWithTimestamp,
++    debugRawJsonBefore: rawJsonBeforeGetMapping,
++    debugRawJsonAfter: rawJsonAfterGetMapping,
++    debugMappingStr: JSON.stringify(mapping),
+   };
+ }
+ 
+@@ -217,33 +313,68 @@ function Forms_saveForm_(form, targetUrl) {
+ function Forms_listForms_(options) {
+   var includeArchived = !!(options && options.includeArchived);
+   var mapping = Forms_getMapping_();
++  Logger.log("[Forms_listForms_] Retrieved mapping: " + JSON.stringify(mapping));
++  Logger.log("[Forms_listForms_] Total forms in mapping: " + Object.keys(mapping).length);
+   var forms = [];
++  var loadFailures = [];
+ 
+   for (var formId in mapping) {
+     if (!mapping.hasOwnProperty(formId)) continue;
+     var fileId = mapping[formId];
++    Logger.log("[Forms_listForms_] Processing formId: " + formId + ", fileId: " + fileId);
++    var file = null;
++    var fileName = null;
++    var fileUrl = null;
++    var stage = "fileId";
++
+     try {
+-      var file = DriveApp.getFileById(fileId);
++      if (!fileId) {
++        throw new Error("プロパティサービスにファイルIDが登録されていません");
++      }
++
++      stage = "getFile";
++      file = DriveApp.getFileById(fileId);
++      fileName = file.getName();
++      fileUrl = file.getUrl();
++
++      stage = "read";
+       var content = file.getBlob().getDataAsString();
++
++      stage = "parse";
+       var form = JSON.parse(content);
+ 
+       // driveFileUrlがない場合は動的に追加
+       if (!form.driveFileUrl) {
+-        form.driveFileUrl = file.getUrl();
++        form.driveFileUrl = fileUrl;
+       }
+ 
+       // アーカイブフィルタリング
+       if (!includeArchived && form.archived) {
++        Logger.log("[Forms_listForms_] Skipping archived form: " + formId);
+         continue;
+       }
+ 
+       forms.push(form);
++      Logger.log("[Forms_listForms_] Added form to list: " + formId);
+     } catch (err) {
+-      Logger.log("Error loading form " + formId + ": " + err);
++      Logger.log("Error loading form " + formId + ": " + err + " (stage=" + stage + ")");
++      loadFailures.push({
++        id: formId,
++        fileId: fileId,
++        fileName: fileName,
++        driveFileUrl: fileUrl || Forms_buildDriveFileUrlFromId_(fileId),
++        errorStage: stage,
++        errorMessage: err && err.message ? err.message : String(err),
++        lastTriedAt: new Date().toISOString(),
++      });
+     }
+   }
+ 
+-  return forms;
++  Logger.log("[Forms_listForms_] Returning " + forms.length + " forms (loadFailures=" + loadFailures.length + ")");
++  return {
++    forms: forms,
++    loadFailures: loadFailures,
++  };
+ }
+ 
+ /**
+@@ -331,10 +462,11 @@ function Forms_setFormArchivedState_(formId, archived) {
+  */
+ function nfbListForms(options) {
+   try {
+-    var forms = Forms_listForms_(options || {});
++    var result = Forms_listForms_(options || {});
+     return {
+       ok: true,
+-      forms: forms,
++      forms: result.forms || [],
++      loadFailures: result.loadFailures || [],
+     };
+   } catch (err) {
+     return {
+@@ -377,6 +509,10 @@ function nfbSaveForm(payload) {
+     var form = payload.form || payload;
+     var targetUrl = payload.targetUrl || null;
+     var result = Forms_saveForm_(form, targetUrl);
++    Logger.log("[nfbSaveForm] Result before return: " + JSON.stringify(result));
++    Logger.log("[nfbSaveForm] Result.debugRawJsonBefore: " + result.debugRawJsonBefore);
++    Logger.log("[nfbSaveForm] Result.debugRawJsonAfter: " + result.debugRawJsonAfter);
++    Logger.log("[nfbSaveForm] Result.debugMappingStr: " + result.debugMappingStr);
+     return result;
+   } catch (err) {
+     return {
+@@ -566,6 +702,75 @@ function nfbImportFormsFromDrive(url) {
+   }
+ }
+ 
++/**
++ * デバッグ用：Forms_getMapping_()を直接呼び出してその結果を返す
++ * @return {Object} { ok: true, mapping: Object }
++ */
++function nfbDebugCallGetMapping() {
++  try {
++    var mapping = Forms_getMapping_();
++    return {
++      ok: true,
++      mapping: mapping,
++      totalForms: Object.keys(mapping).length,
++    };
++  } catch (err) {
++    return {
++      ok: false,
++      error: err.message || String(err),
++    };
++  }
++}
++
++/**
++ * デバッグ用：PropertiesServiceのマッピングを取得
++ * @return {Object} { ok: true, mapping: Object, rawJson: string }
++ */
++function nfbDebugGetMapping() {
++  try {
++    var scriptProps = Forms_getScriptProps_();
++    var userProps = Forms_getUserProps_();
++    var rawJson = scriptProps.getProperty(FORMS_PROPERTY_KEY);
++    var mapping = Forms_parseMappingJson_(rawJson, "script");
++    var userRawJson = userProps.getProperty(FORMS_PROPERTY_KEY);
++    var legacyInfo = { hasLegacy: false, legacyCount: 0, migratedCount: 0 };
++
++    // 旧システムからのマイグレーション情報をチェック
++    if (typeof GetFormUrls_ === "function") {
++      try {
++        var legacy = GetFormUrls_() || {};
++        legacyInfo.hasLegacy = true;
++        legacyInfo.legacyCount = Object.keys(legacy).length;
++        legacyInfo.legacyForms = legacy; // レガシーフォームの内容も含める
++
++        var migratedCount = 0;
++        for (var formId in legacy) {
++          if (legacy.hasOwnProperty(formId) && !mapping[formId]) {
++            migratedCount++;
++          }
++        }
++        legacyInfo.migratedCount = migratedCount;
++      } catch (legacyErr) {
++        legacyInfo.error = legacyErr.message;
++      }
++    }
++
++    return {
++      ok: true,
++      mapping: mapping,
++      rawJson: rawJson,
++      userRawJson: userRawJson,
++      totalForms: Object.keys(mapping).length,
++      legacyInfo: legacyInfo,
++    };
++  } catch (err) {
++    return {
++      ok: false,
++      error: err.message || String(err),
++    };
++  }
++}
++
+ /**
+  * フォーム内容からハッシュ値を計算（同じ内容なら同じハッシュ）
+  * タイムスタンプとdriveFileUrlを除いた内容でハッシュを計算
+@@ -576,7 +781,6 @@ function Forms_computeContentHash_(form) {
+   // ハッシュ計算用にタイムスタンプとURL以外の内容を抽出
+   var hashContent = {
+     id: form.id || "",
+-    name: form.name || "",
+     description: form.description || "",
+     schema: form.schema || [],
+     settings: form.settings || {},
+diff --git a/gas/scripts/bundle.js b/gas/scripts/bundle.js
+index dad35d3..c3bd6ed 100644
+--- a/gas/scripts/bundle.js
++++ b/gas/scripts/bundle.js
+@@ -18,11 +18,13 @@ const OUTPUT_FILE = path.join(DIST_DIR, 'Bundle.gs');
+ 
+ // 結合順序（依存関係順）
+ const FILE_ORDER = [
+-  'settings.gs',  // 定数・設定
+-  'forms.gs',     // フォーム管理（Google Drive）
+-  'model.gs',     // モデル関数
+-  'sheets.gs',    // Sheets操作
+-  'Code.gs',      // メインエントリーポイント
++  'settings.gs',    // 定数・設定
++  'properties.gs',  // プロパティサービス管理
++  'drive.gs',       // Google Drive操作
++  'forms.gs',       // フォーム管理（Google Drive）
++  'model.gs',       // モデル関数
++  'sheets.gs',      // Sheets操作
++  'Code.gs',        // メインエントリーポイント
+ ];
+ 
+ /**

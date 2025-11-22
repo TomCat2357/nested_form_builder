@@ -1,0 +1,6 @@
+①修正後は./deploy.shでデプロイすること
+②playwrightはスクリプト経由ではなく、mcpサーバーで直接操作すること
+③playwrightテスト接続先　https://script.google.com/macros/s/AKfycbzFCYP79BCMQ3CFi3bO6OqW0R5jv35D3UrI3ILtEph9AxZ_gs6t5GfNYHt6V
+62r472E/exec
+④テストで使う用のgdriveフォルダ１　https://drive.google.com/drive/u/0/folders/1aMFYDLuQ86fKM9AhUvLlb8Y0QK4krjcY
+⑤テストで使う用のgdriveフォルダ２　https://drive.google.com/drive/u/0/folders/1prBDiRinhAw2mRJir_1BwGv4tSINJc28

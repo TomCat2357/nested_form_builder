@@ -10,6 +10,7 @@ import { restoreResponsesFromData, hasDirtyChanges } from "../utils/responses.js
 import { submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { normalizeSchemaIDs } from "../core/schema.js";
 
 const buttonStyle = {
   padding: "8px 14px",
@@ -33,6 +34,7 @@ export default function FormPage() {
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
   const form = formId ? getFormById(formId) : null;
+  const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form]);
   const [entry, setEntry] = useState(null);
   const [loading, setLoading] = useState(true);
   const [responses, setResponses] = useState({});
@@ -61,7 +63,7 @@ export default function FormPage() {
       const data = await dataStore.getEntry(formId, entryId);
       if (!mounted) return;
       setEntry(data);
-      const restored = restoreResponsesFromData(form?.schema || [], data?.data || {});
+      const restored = restoreResponsesFromData(normalizedSchema, data?.data || {});
       initialResponsesRef.current = restored;
       setResponses(restored);
       setCurrentRecordId(data?.id || entryId);
@@ -106,27 +108,31 @@ export default function FormPage() {
     const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
     const sheetName = settings.sheetName || "Responses";
 
+    let resolvedId = payload.id;
     if (spreadsheetId) {
       if (!hasScriptRun()) {
         throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
       }
-      await submitResponses({
+      const res = await submitResponses({
         spreadsheetId,
         sheetName,
         payload,
       });
+      if (res && res.id) {
+        resolvedId = res.id;
+      }
     } else {
       console.warn("[FormPage] No spreadsheetId configured, skipping spreadsheet save");
     }
 
     // 次にIndexedDBにキャッシュとして保存
     const saved = await dataStore.upsertEntry(form.id, {
-      id: payload.id,
+      id: resolvedId,
       data: payload.responses,
       order: payload.order,
     });
     setCurrentRecordId(saved.id);
-    const restored = restoreResponsesFromData(form.schema || [], saved.data || {});
+    const restored = restoreResponsesFromData(normalizedSchema, saved.data || {});
     initialResponsesRef.current = restored;
     setResponses(restored);
     setEntry(saved);
@@ -240,7 +246,7 @@ export default function FormPage() {
       ) : (
         <PreviewPage
           ref={previewRef}
-          schema={form.schema || []}
+          schema={normalizedSchema}
           responses={responses}
           setResponses={setResponses}
           settings={{ ...(form.settings || {}), recordId: currentRecordId }}
