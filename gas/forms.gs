@@ -121,7 +121,7 @@ function Forms_saveForm_(form, targetUrl) {
   var now = new Date().toISOString();
   var fileId = null;
 
-  // タイムスタンプを追加
+  // 仮のフォームオブジェクトを作成（driveFileUrlなし）
   var formWithTimestamp = {
     id: form.id,
     name: form.name || "無題のフォーム",
@@ -138,7 +138,9 @@ function Forms_saveForm_(form, targetUrl) {
   };
 
   var content = JSON.stringify(formWithTimestamp, null, 2);
-  var fileName = "form_" + form.id + ".json";
+  // ファイル名はフォーム内容のハッシュ値（同じ内容なら同じファイル名）
+  var contentHash = Forms_computeContentHash_(formWithTimestamp);
+  var fileName = contentHash + ".json";
 
   // targetUrlが指定されている場合、その場所に保存
   if (targetUrl) {
@@ -188,6 +190,13 @@ function Forms_saveForm_(form, targetUrl) {
     }
   }
 
+  // ファイルURLを取得してフォームオブジェクトに追加
+  var fileUrl = file.getUrl();
+  formWithTimestamp.driveFileUrl = fileUrl;
+
+  // driveFileUrlを含めて再度ファイルに書き込み
+  file.setContent(JSON.stringify(formWithTimestamp, null, 2));
+
   // マッピングを更新
   mapping[form.id] = fileId;
   Forms_saveMapping_(mapping);
@@ -195,7 +204,7 @@ function Forms_saveForm_(form, targetUrl) {
   return {
     ok: true,
     fileId: fileId,
-    fileUrl: file.getUrl(),
+    fileUrl: fileUrl,
     form: formWithTimestamp,
   };
 }
@@ -217,6 +226,11 @@ function Forms_listForms_(options) {
       var file = DriveApp.getFileById(fileId);
       var content = file.getBlob().getDataAsString();
       var form = JSON.parse(content);
+
+      // driveFileUrlがない場合は動的に追加
+      if (!form.driveFileUrl) {
+        form.driveFileUrl = file.getUrl();
+      }
 
       // アーカイブフィルタリング
       if (!includeArchived && form.archived) {
@@ -248,7 +262,14 @@ function Forms_getForm_(formId) {
   try {
     var file = DriveApp.getFileById(fileId);
     var content = file.getBlob().getDataAsString();
-    return JSON.parse(content);
+    var form = JSON.parse(content);
+
+    // driveFileUrlがない場合は動的に追加
+    if (!form.driveFileUrl) {
+      form.driveFileUrl = file.getUrl();
+    }
+
+    return form;
   } catch (err) {
     Logger.log("Error loading form " + formId + ": " + err);
     return null;
@@ -427,8 +448,20 @@ function Forms_importFromDrive_(url) {
   var forms = [];
   var skipped = 0;
 
+  // ファイルIDがプロパティサービスに既に登録されているかチェック
+  var existingFileIds = [];
+  for (var fid in mapping) {
+    if (mapping.hasOwnProperty(fid)) {
+      existingFileIds.push(mapping[fid]);
+    }
+  }
+
   if (parsed.type === "file") {
-    // ファイルの場合：そのファイルを読み込む
+    // ファイルの場合：既に登録済みのファイルIDかチェック
+    if (existingFileIds.indexOf(parsed.id) !== -1) {
+      throw new Error("このファイルは既にプロパティサービスに登録されています");
+    }
+
     try {
       var file = DriveApp.getFileById(parsed.id);
       var fileName = file.getName();
@@ -443,15 +476,18 @@ function Forms_importFromDrive_(url) {
 
       // formIdが既に存在するかチェック
       if (formData.id && existingFormIds.indexOf(formData.id) !== -1) {
-        skipped += 1;
-      } else {
-        forms.push(formData);
+        throw new Error("このフォームID(" + formData.id + ")は既に登録されています");
       }
+
+      forms.push(formData);
     } catch (err) {
       throw new Error("ファイルの読み込みに失敗しました: " + err.message);
     }
   } else if (parsed.type === "folder") {
     // フォルダの場合：フォルダ内の.jsonファイルを全て読み込む
+    var parseFailed = 0;
+    var totalFiles = 0;
+
     try {
       var folder = DriveApp.getFolderById(parsed.id);
       var files = folder.getFilesByType(MimeType.PLAIN_TEXT);
@@ -459,9 +495,19 @@ function Forms_importFromDrive_(url) {
       while (files.hasNext()) {
         var file = files.next();
         var fileName = file.getName();
+        var fileId = file.getId();
 
         // .jsonファイルのみ処理
         if (!fileName.toLowerCase().endsWith(".json")) {
+          continue;
+        }
+
+        totalFiles += 1;
+
+        // ファイルIDが既に登録済みかチェック
+        if (existingFileIds.indexOf(fileId) !== -1) {
+          skipped += 1;
+          Logger.log("Skipped (already registered fileId): " + fileName);
           continue;
         }
 
@@ -472,17 +518,21 @@ function Forms_importFromDrive_(url) {
           // 有効なフォームデータかチェック（最低限nameとschemaがあるか）
           if (!formData || typeof formData !== "object") {
             Logger.log("Invalid form data in file: " + fileName);
+            parseFailed += 1;
             continue;
           }
 
           // formIdが既に存在するかチェック
           if (formData.id && existingFormIds.indexOf(formData.id) !== -1) {
             skipped += 1;
-          } else {
-            forms.push(formData);
+            Logger.log("Skipped (already registered formId): " + fileName);
+            continue;
           }
+
+          forms.push(formData);
         } catch (parseErr) {
           Logger.log("Failed to parse JSON file: " + fileName + " - " + parseErr.message);
+          parseFailed += 1;
           continue;
         }
       }
@@ -495,6 +545,8 @@ function Forms_importFromDrive_(url) {
     ok: true,
     forms: forms,
     skipped: skipped,
+    parseFailed: parseFailed || 0,
+    totalFiles: totalFiles || 0,
   };
 }
 
@@ -512,4 +564,37 @@ function nfbImportFormsFromDrive(url) {
       error: err.message || String(err),
     };
   }
+}
+
+/**
+ * フォーム内容からハッシュ値を計算（同じ内容なら同じハッシュ）
+ * タイムスタンプとdriveFileUrlを除いた内容でハッシュを計算
+ * @param {Object} form - フォームオブジェクト
+ * @return {string} ハッシュ値（16進数、先頭16文字）
+ */
+function Forms_computeContentHash_(form) {
+  // ハッシュ計算用にタイムスタンプとURL以外の内容を抽出
+  var hashContent = {
+    id: form.id || "",
+    name: form.name || "",
+    description: form.description || "",
+    schema: form.schema || [],
+    settings: form.settings || {},
+    importantFields: form.importantFields || [],
+    displayFieldSettings: form.displayFieldSettings || [],
+    archived: !!form.archived,
+    schemaVersion: form.schemaVersion || 1,
+  };
+
+  var contentStr = JSON.stringify(hashContent);
+  var rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, contentStr);
+
+  // バイト配列を16進数文字列に変換
+  var hexHash = rawHash.map(function(byte) {
+    var hex = (byte < 0 ? byte + 256 : byte).toString(16);
+    return hex.length === 1 ? "0" + hex : hex;
+  }).join("");
+
+  // 先頭16文字を返す（ファイル名として扱いやすい長さに）
+  return hexHash.substring(0, 16);
 }

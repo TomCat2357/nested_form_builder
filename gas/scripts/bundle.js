@@ -12,8 +12,8 @@ const fs = require('fs');
 const path = require('path');
 
 // パス設定
-const GAS_SOURCE_DIR = path.join(__dirname, '..', 'gas');
-const DIST_DIR = path.join(__dirname, '..', 'dist');
+const GAS_SOURCE_DIR = path.join(__dirname, '..');  // gas/scripts/.. → gas
+const DIST_DIR = path.join(__dirname, '..', '..', 'dist');  // gas/scripts/../../dist → dist
 const OUTPUT_FILE = path.join(DIST_DIR, 'Bundle.gs');
 
 // 結合順序（依存関係順）

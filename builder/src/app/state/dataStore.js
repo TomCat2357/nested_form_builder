@@ -63,12 +63,18 @@ const buildFormRecord = (input) => {
   const now = nowIso();
   const schema = Array.isArray(input.schema) ? input.schema : [];
   const displayFieldSettings = collectDisplayFieldSettings(schema);
+  
+  // settings内にformTitleを確保
+  const settings = input.settings || {};
+  if (!settings.formTitle) {
+    settings.formTitle = input.name || "無題のフォーム";
+  }
+  
   return {
     id: input.id || genId(),
-    name: input.name || "無題のフォーム",
     description: input.description || "",
     schema,
-    settings: input.settings || {},
+    settings,
     schemaHash: computeSchemaHash(schema),
     importantFields: displayFieldSettings.map((item) => item.path),
     displayFieldSettings,
@@ -77,7 +83,7 @@ const buildFormRecord = (input) => {
     archived: !!input.archived,
     schemaVersion: Number.isFinite(input.schemaVersion) ? input.schemaVersion : 1,
   };
-};
+};;
 
 const getEntriesForForm = (entriesByForm, formId) => {
   const list = Array.isArray(entriesByForm[formId]) ? entriesByForm[formId] : [];
@@ -156,9 +162,18 @@ export const dataStore = {
   },
   async updateForm(formId, updates, targetUrl = null) {
     // First get the current form
-    const current = await this.getForm(formId);
+    let current = await this.getForm(formId);
+
+    // If getForm failed (returns null), try to use existing form data from updates
+    // This handles the case where GAS getForm fails but we already have the form in memory
     if (!current) {
-      throw new Error("Form not found: " + formId);
+      // If updates contains enough data to reconstruct the form, use it
+      if (updates && updates.id === formId && updates.createdAt) {
+        console.log("[dataStore] getForm returned null, using updates as base form");
+        current = updates;
+      } else {
+        throw new Error("Form not found: " + formId);
+      }
     }
 
     const next = buildFormRecord({
@@ -292,7 +307,6 @@ export const dataStore = {
     if (form?.settings?.spreadsheetId) {
       try {
         const gasResult = await listEntriesFromGas({
-          gasUrl: form.settings.gasUrl || "",
           spreadsheetId: form.settings.spreadsheetId,
           sheetName: form.settings.sheetName || "Responses",
         });
@@ -344,7 +358,6 @@ export const dataStore = {
     if (form?.settings?.spreadsheetId) {
       try {
         const record = await getEntryFromGas({
-          gasUrl: form.settings.gasUrl || "",
           spreadsheetId: form.settings.spreadsheetId,
           sheetName: form.settings.sheetName || "Responses",
           entryId,
@@ -380,7 +393,6 @@ export const dataStore = {
     if (form?.settings?.spreadsheetId) {
       try {
         await deleteEntryFromGas({
-          gasUrl: form.settings.gasUrl || "",
           spreadsheetId: form.settings.spreadsheetId,
           sheetName: form.settings.sheetName || "Responses",
           entryId,

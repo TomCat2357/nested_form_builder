@@ -45,6 +45,8 @@ export default function AdminFormEditorPage() {
   const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
   const builderRef = useRef(null);
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
+  const defaultSettings = useMemo(() => ({}), []);
+  const defaultSchema = useMemo(() => [], []);
 
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
@@ -72,8 +74,9 @@ export default function AdminFormEditorPage() {
 
   useEffect(() => {
     if (!form) return;
-    initialMetaRef.current = { name: form.name || "", description: form.description || "" };
-    setName(form.name || "");
+    const formTitle = form.settings?.formTitle || "";
+    initialMetaRef.current = { name: formTitle, description: form.description || "" };
+    setName(formTitle);
     setDescription(form.description || "");
     setDriveUrl(form.driveFileUrl || "");
     setNameError("");
@@ -108,11 +111,6 @@ export default function AdminFormEditorPage() {
       setNameError("フォーム名を入力してください");
       return;
     }
-    const duplicate = forms.some((existing) => existing.name === trimmedName && existing.id !== (form?.id || null));
-    if (duplicate) {
-      setNameError(`「${trimmedName}」は既に存在します。別の名称を入力してください。`);
-      return;
-    }
     setNameError("");
 
     // 確認ダイアログを表示
@@ -131,10 +129,13 @@ export default function AdminFormEditorPage() {
     const cleanedSchema = cleanupTempData(schema);
 
     const payload = {
-      name: trimmedName,
+      // Include existing form data for fallback when getForm fails
+      ...(isEdit && form ? { id: form.id, createdAt: form.createdAt, driveFileUrl: form.driveFileUrl } : {}),
       description,
       schema: cleanedSchema,
-      settings: { ...settings, formTitle: settings?.formTitle || trimmedName },
+      settings: { ...settings, formTitle: trimmedName },
+      archived: form?.archived ?? false,
+      schemaVersion: form?.schemaVersion ?? 1,
     };
 
     // driveUrlが指定されている場合、それを使用
@@ -326,8 +327,8 @@ export default function AdminFormEditorPage() {
 
       <FormBuilderWorkspace
         ref={builderRef}
-        initialSchema={form?.schema || []}
-        initialSettings={form?.settings || { formTitle: name || "" }}
+        initialSchema={form?.schema || defaultSchema}
+        initialSettings={form?.settings || defaultSettings}
         formTitle={name || "フォーム"}
         onDirtyChange={setBuilderDirty}
         showToolbarSave={false}

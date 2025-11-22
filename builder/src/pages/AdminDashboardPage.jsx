@@ -140,15 +140,17 @@ export default function AdminDashboardPage() {
     if (targets.length === 1) {
       // 1個の場合は.jsonファイルとして保存
       const form = targets[0];
-      const filename = `${form.name || form.id}.json`;
-      const blob = new Blob([JSON.stringify(form, null, 2)], { type: "application/json" });
+      const filename = `${form.settings?.formTitle || form.id}.json`;
+      const { id, ...formWithoutId } = form;
+      const blob = new Blob([JSON.stringify(formWithoutId, null, 2)], { type: "application/json" });
       saveAs(blob, filename);
     } else {
       // 複数の場合はZIPファイルとして保存
       const zip = new JSZip();
       targets.forEach((form) => {
-        const filename = `${form.name || form.id}.json`;
-        zip.file(filename, JSON.stringify(form, null, 2));
+        const filename = `${form.settings?.formTitle || form.id}.json`;
+        const { id, ...formWithoutId } = form;
+        zip.file(filename, JSON.stringify(formWithoutId, null, 2));
       });
       const blob = await zip.generateAsync({ type: "blob" });
       saveAs(blob, `forms_${new Date().toISOString().replace(/[:.-]/g, "")}.zip`);
@@ -165,19 +167,6 @@ export default function AdminDashboardPage() {
     setImportDialogOpen(true);
   };
 
-  const generateUniqueName = useCallback((baseName, existingNames) => {
-    const trimmed = (baseName || "").trim();
-    if (!trimmed) return "";
-    if (!existingNames.has(trimmed)) return trimmed;
-    const base = trimmed.replace(/\s\(\d+\)$/u, "");
-    let counter = 2;
-    let candidate = `${base} (${counter})`;
-    while (existingNames.has(candidate)) {
-      counter += 1;
-      candidate = `${base} (${counter})`;
-    }
-    return candidate;
-  }, []);
 
   const openConflictDialog = useCallback((payload) => {
     setConflictDialog(payload);
@@ -196,11 +185,17 @@ export default function AdminDashboardPage() {
   const sanitizeImportedForm = (raw) => {
     if (!raw || typeof raw !== "object") return null;
     const schema = Array.isArray(raw.schema) ? raw.schema : [];
+    const settings = raw && typeof raw.settings === "object" && !Array.isArray(raw.settings) ? raw.settings : {};
+
+    // 旧形式のnameフィールドがある場合、settings.formTitleに移行
+    if (!settings.formTitle && typeof raw.name === "string") {
+      settings.formTitle = raw.name;
+    }
+
     return {
-      name: typeof raw.name === "string" ? raw.name : "",
       description: typeof raw.description === "string" ? raw.description : "",
       schema,
-      settings: raw && typeof raw.settings === "object" && !Array.isArray(raw.settings) ? raw.settings : {},
+      settings,
       archived: !!raw.archived,
       schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1,
     };
@@ -223,97 +218,24 @@ export default function AdminDashboardPage() {
   };
 
   const startImportWorkflow = useCallback(
-    async (parsedContents) => {
+    async (parsedContents, { skipped = 0, parseFailed = 0 } = {}) => {
       const queue = flattenImportedContents(parsedContents);
       if (!queue.length) {
-        showAlert("有効なフォームがありませんでした。");
+        console.log(`[DriveImport] no importable forms (alreadyRegistered=${skipped}, parseFailed=${parseFailed})`);
+        const msgs = [];
+        if (skipped > 0) msgs.push(`スキップ ${skipped} 件`);
+        if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
+        const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
+        showAlert(`取り込めるフォームはありませんでした${detail}。`);
         return;
       }
 
       setImporting(true);
-      let applyChoice = null;
-      let overwritten = 0;
-      let normalSaved = 0; // 通常保存（同名が存在しない場合）
-      let savedAs = 0; // 別名保存（同名が存在して別名で保存した場合）
-      let aborted = false;
-
-      const existingMap = new Map();
-      const existingNames = new Set();
-      forms.forEach((form) => {
-        existingMap.set(form.name, form);
-        existingNames.add(form.name);
-      });
-
-      const ensureUnique = (name) => generateUniqueName(name, existingNames);
+      let imported = 0;
 
       try {
-        for (let index = 0; index < queue.length; index += 1) {
-          const item = queue[index];
-          const baseName = (item.name || "").trim();
-          if (!baseName) {
-            continue;
-          }
-
-          const conflict = existingNames.has(baseName);
-          let action = conflict ? "overwrite" : "saveas";
-          let renameMode = conflict ? "auto" : "custom";
-          let targetName = baseName;
-
-          if (conflict) {
-            let choice = applyChoice;
-            if (!choice) {
-              const suggestedName = ensureUnique(baseName);
-              choice = await openConflictDialog({
-                name: baseName,
-                index: index + 1,
-                total: queue.length,
-                suggestedName,
-              });
-
-              if (!choice) {
-                aborted = true;
-                break;
-              }
-
-              if (choice.action === "abort") {
-                // チェックボックスがONの場合は全件中止、OFFの場合はこのファイルだけスキップ
-                if (choice.applyToRest) {
-                  aborted = true;
-                  break;
-                } else {
-                  // このファイルだけスキップして次へ
-                  continue;
-                }
-              }
-
-              if (choice.applyToRest) {
-                applyChoice = choice;
-              }
-            }
-
-            action = choice.action;
-            renameMode = choice.renameMode || "auto";
-
-            if (action === "abort") {
-              // applyToRestがtrueの場合は全件中止済み、falseの場合はこのファイルだけスキップ
-              continue;
-            }
-
-            if (action === "saveas") {
-              if (renameMode === "auto") {
-                targetName = ensureUnique(baseName);
-              } else {
-                targetName = ensureUnique(choice.newName || baseName);
-              }
-            }
-          } else {
-            targetName = ensureUnique(baseName);
-          }
-
-          if (aborted) break;
-
+        for (const item of queue) {
           const payload = {
-            name: targetName,
             description: item.description,
             schema: item.schema,
             settings: item.settings,
@@ -321,56 +243,30 @@ export default function AdminDashboardPage() {
             schemaVersion: item.schemaVersion,
           };
 
-          if (conflict && action === "overwrite") {
-            const existing = existingMap.get(baseName);
-            if (existing) {
-              await dataStore.updateForm(existing.id, {
-                ...payload,
-                name: existing.name,
-                archived: existing.archived,
-              });
-              overwritten += 1;
-            }
-          } else if (action === "saveas") {
-            const createdForm = await dataStore.createForm({ ...payload, name: targetName, archived: false });
-            if (createdForm?.name) {
-              existingMap.set(createdForm.name, createdForm);
-              existingNames.add(createdForm.name);
-            } else {
-              existingNames.add(targetName);
-            }
-            // 同名が存在しない場合は通常保存、存在する場合は別名保存
-            if (conflict) {
-              savedAs += 1;
-            } else {
-              normalSaved += 1;
-            }
-          } else if (action === "overwrite") {
-            // conflict resolution might have set overwrite without existing (should not happen)
-            const existing = existingMap.get(baseName);
-            if (existing) {
-              await dataStore.updateForm(existing.id, {
-                ...payload,
-                name: existing.name,
-                archived: existing.archived,
-              });
-              overwritten += 1;
-            }
-          }
-
-          if (!conflict || action === "saveas") {
-            existingNames.add(targetName);
-          }
+          await dataStore.createForm({ ...payload });
+          imported += 1;
         }
 
         await refreshForms();
         setSelected(new Set());
 
-        if (aborted) {
-          showAlert(`アップロードを中止しました（上書き ${overwritten} 件、通常保存 ${normalSaved} 件、別名保存 ${savedAs} 件）。`);
+        // 結果メッセージ
+        if (imported > 0) {
+          const extras = [];
+          if (skipped > 0) extras.push(`登録済みスキップ ${skipped} 件`);
+          if (parseFailed > 0) extras.push(`読込失敗 ${parseFailed} 件`);
+          const extraMsg = extras.length > 0 ? `（${extras.join("、")}）` : "";
+          showAlert(`${imported} 件のフォームを取り込みました${extraMsg}。`);
         } else {
-          showAlert(`アップロードが完了しました（上書き ${overwritten} 件、通常保存 ${normalSaved} 件、別名保存 ${savedAs} 件）。`);
+          const msgs = [];
+          if (skipped > 0) msgs.push(`登録済みスキップ ${skipped} 件`);
+          if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
+          const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
+          showAlert(`取り込めるフォームはありませんでした${detail}。`);
         }
+        console.log(
+          `[DriveImport] success=${imported}, alreadyRegistered=${skipped}, parseFailed=${parseFailed}`,
+        );
       } catch (error) {
         console.error(error);
         showAlert(error?.message || "スキーマの取り込み中にエラーが発生しました");
@@ -378,7 +274,7 @@ export default function AdminDashboardPage() {
         setImporting(false);
       }
     },
-    [forms, generateUniqueName, refreshForms],
+    [forms, refreshForms],
   );
 
   const handleImportFromDrive = async () => {
@@ -394,24 +290,20 @@ export default function AdminDashboardPage() {
     try {
       // Google DriveからフォームデータをAPI経由で取得
       const result = await importFormsFromDrive(url);
-      const { forms: importedForms, skipped } = result;
+      const { forms: importedForms, skipped = 0, parseFailed = 0 } = result;
 
       if (!importedForms || importedForms.length === 0) {
-        if (skipped > 0) {
-          showAlert(`${skipped}件のフォームは既に存在するためスキップされました。新規追加はありませんでした。`);
-        } else {
-          showAlert("有効なフォームがありませんでした。");
-        }
+        const msgs = [];
+        if (skipped > 0) msgs.push(`スキップ ${skipped} 件`);
+        if (parseFailed > 0) msgs.push(`読込失敗 ${parseFailed} 件`);
+        const detail = msgs.length > 0 ? `（${msgs.join("、")}）` : "";
+        showAlert(`有効なフォームがありませんでした${detail}。`);
         setImporting(false);
         return;
       }
 
       // インポートワークフローを実行
-      await startImportWorkflow(importedForms);
-
-      if (skipped > 0) {
-        showAlert(`${importedForms.length}件のフォームをインポートしました。${skipped}件は既に存在するためスキップされました。`);
-      }
+      await startImportWorkflow(importedForms, { skipped, parseFailed });
     } catch (error) {
       console.error(error);
       showAlert(error?.message || "Google Driveからのインポートに失敗しました");
@@ -543,7 +435,7 @@ export default function AdminDashboardPage() {
                       <input type="checkbox" checked={selected.has(form.id)} onChange={() => toggleSelect(form.id)} />
                     </td>
                     <td style={tdStyle}>
-                      <div style={{ fontWeight: 600 }}>{form.name}</div>
+                      <div style={{ fontWeight: 600 }}>{form.settings?.formTitle || "(無題)"}</div>
                       {form.description && <div style={{ color: "#475569", fontSize: 12 }}>{form.description}</div>}
                     </td>
                     <td style={tdStyle}>{new Date(form.modifiedAt).toLocaleString()}</td>
@@ -669,11 +561,11 @@ function ImportConflictDialog({ name, index, total, suggestedName, onSubmit, onC
         <div style={{ display: "grid", gap: 12 }}>
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input type="radio" name="import-conflict-action" value="overwrite" checked={action === "overwrite"} onChange={() => setAction("overwrite")} />
-            <span>上書き</span>
+            <span>既存フォームを置換</span>
           </label>
           <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input type="radio" name="import-conflict-action" value="saveas" checked={action === "saveas"} onChange={() => setAction("saveas")} />
-            <span>別名保存</span>
+            <span>新規として追加</span>
           </label>
           {action === "saveas" && (
             <div style={{ marginLeft: 24 }}>

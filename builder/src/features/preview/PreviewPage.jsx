@@ -300,9 +300,9 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         showAlert("Spreadsheet ID / URL が未入力です");
         throw new Error("missing_spreadsheet_id");
       }
-      if (!scriptRunAvailable && !settings.gasUrl) {
-        showAlert("GAS WebApp URL が設定されていません");
-        throw new Error("missing_gas_url");
+      if (!scriptRunAvailable) {
+        showAlert("この機能はGoogle Apps Script環境でのみ利用可能です");
+        throw new Error("missing_script_run");
       }
     }
 
@@ -328,7 +328,6 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         return result ?? payload;
       }
       const res = await submitResponses({
-        gasUrl: settings.gasUrl,
         spreadsheetId,
         sheetName: settings.sheetName || "Responses",
         payload,

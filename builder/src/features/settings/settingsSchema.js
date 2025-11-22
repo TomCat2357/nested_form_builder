@@ -1,11 +1,5 @@
 export const SETTINGS_FIELDS = [
   {
-    key: "formTitle",
-    label: "受付フォームのタイトル",
-    placeholder: "例: 来場者受付",
-    required: true,
-  },
-  {
     key: "spreadsheetId",
     label: "Spreadsheet ID / URL",
     placeholder: "1AbCdEf... または https://docs.google.com/...",
@@ -15,12 +9,6 @@ export const SETTINGS_FIELDS = [
     key: "sheetName",
     label: "Sheet Name",
     placeholder: "Responses",
-    required: false,
-  },
-  {
-    key: "gasUrl",
-    label: "GAS WebApp URL",
-    placeholder: "https://script.google.com/macros/s/.../exec",
     required: false,
   },
   {
@@ -37,4 +25,4 @@ export const SETTINGS_FIELDS = [
     required: false,
     type: "number",
   },
-];;
+];

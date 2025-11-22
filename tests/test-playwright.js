@@ -32,6 +32,41 @@ async function checkElementExists(locator, name) {
   }
 }
 
+async function dismissBlockingDialog(frame, page) {
+  const dialog = frame.locator('[role="dialog"][aria-modal="true"]');
+  if ((await dialog.count()) === 0) {
+    return false;
+  }
+
+  const patterns = [
+    /保存せずに戻る/,
+    /保存して続行/,
+    /保存しない/,
+    /破棄/,
+    /OK/,
+    /キャンセル/,
+    /閉じる/,
+  ];
+
+  for (const pattern of patterns) {
+    const button = dialog.getByRole('button', { name: pattern });
+    if (await button.count()) {
+      await button.first().click();
+      await page.waitForTimeout(500);
+      return true;
+    }
+  }
+
+  const fallback = dialog.locator('button').first();
+  if (await fallback.count()) {
+    await fallback.click();
+    await page.waitForTimeout(500);
+    return true;
+  }
+
+  return false;
+}
+
 /**
  * テスト1: フォーム一覧ページ
  */
@@ -205,6 +240,7 @@ async function testSearchPage(page) {
   // 管理画面に戻る（キャンセル）
   await cancelButton.click();
   await page.waitForTimeout(500);
+  await dismissBlockingDialog(frame, page);
 
   // フォーム一覧に戻る
   const backButton = frame.getByRole('button', { name: '← 戻る' });
@@ -212,6 +248,7 @@ async function testSearchPage(page) {
   if (hasBackButton) {
     await backButton.click();
     await page.waitForTimeout(500);
+    await dismissBlockingDialog(frame, page);
   }
 
   // フォームカードをクリック
@@ -223,6 +260,7 @@ async function testSearchPage(page) {
     return { success: true, skipped: true };
   }
 
+  await dismissBlockingDialog(frame, page);
   await formCard.click();
   await page.waitForTimeout(2000);
 

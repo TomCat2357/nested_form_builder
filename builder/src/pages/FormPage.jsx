@@ -7,7 +7,7 @@ import PreviewPage from "../features/preview/PreviewPage.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { restoreResponsesFromData, hasDirtyChanges } from "../utils/responses.js";
-import { submitResponses } from "../services/gasClient.js";
+import { submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 
@@ -104,12 +104,13 @@ export default function FormPage() {
     // まずスプレッドシートに保存（主データソース）
     const settings = form.settings || {};
     const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
-    const gasUrl = settings.gasUrl || "";
     const sheetName = settings.sheetName || "Responses";
 
     if (spreadsheetId) {
+      if (!hasScriptRun()) {
+        throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
+      }
       await submitResponses({
-        gasUrl,
         spreadsheetId,
         sheetName,
         payload,
@@ -219,7 +220,7 @@ export default function FormPage() {
 
   return (
     <AppLayout
-      title={`${form.name} - フォーム入力`}
+      title={`${form.settings?.formTitle || "(無題)"} - フォーム入力`}
       fallbackPath={fallbackPath}
       onBack={handleBack}
       backHidden={true}
@@ -242,7 +243,7 @@ export default function FormPage() {
           schema={form.schema || []}
           responses={responses}
           setResponses={setResponses}
-          settings={{ ...(form.settings || {}), formTitle: form.name, recordId: currentRecordId }}
+          settings={{ ...(form.settings || {}), recordId: currentRecordId }}
           onSave={handleSaveToStore}
           showOutputJson={false}
           showSaveButton={false}

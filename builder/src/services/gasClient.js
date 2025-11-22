@@ -15,16 +15,6 @@ const normalizeScriptRunError = (err) => {
   }
 };
 
-const handleFetchError = (res, json) => {
-  if (res.status === 401 || res.status === 403) {
-    throw new Error("GAS WebApp へのアクセスが許可されていません。デプロイの公開範囲が『全員』になっているか確認してください。");
-  }
-  if (res.type === "opaqueredirect") {
-    throw new Error("GAS WebApp がリダイレクトを返しました。アクセス権限またはURLを確認してください。");
-  }
-  throw new Error(json?.error || `${res.status} ${res.statusText}`);
-};
-
 const callScriptRun = (functionName, payload) =>
   new Promise((resolve, reject) => {
     if (!hasScriptRun()) {
@@ -59,40 +49,22 @@ export const saveUserSettings = async (settings) => {
   }
 };
 
-export const submitResponses = async ({ gasUrl, spreadsheetId, sheetName = "Responses", payload }) => {
+export const submitResponses = async ({ spreadsheetId, sheetName = "Responses", payload }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
+  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
 
   const body = { ...(payload || {}), spreadsheetId, sheetName };
-
-  if (hasScriptRun()) {
-    const result = await callScriptRun("saveResponses", body);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Apps Script call failed");
-    }
-    return result;
+  const result = await callScriptRun("saveResponses", body);
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Apps Script call failed");
   }
-
-  if (!gasUrl) throw new Error("GAS URL is required");
-
-  const res = await fetch(gasUrl, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(body),
-    mode: "cors",
-  });
-
-  const json = await res.json().catch(() => ({}));
-
-  if (!res.ok || json?.ok === false) {
-    handleFetchError(res, json);
-  }
-
-  return json;
+  return result;
 };
 
-export const deleteEntry = async ({ gasUrl, spreadsheetId, sheetName = "Responses", entryId }) => {
+export const deleteEntry = async ({ spreadsheetId, sheetName = "Responses", entryId }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
   if (!entryId) throw new Error("entryId is required");
+  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
 
   const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
 
@@ -102,36 +74,17 @@ export const deleteEntry = async ({ gasUrl, spreadsheetId, sheetName = "Response
     id: entryId,
   };
 
-  if (hasScriptRun()) {
-    const result = await callScriptRun("deleteRecord", payload);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Delete failed");
-    }
-    return result;
+  const result = await callScriptRun("deleteRecord", payload);
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Delete failed");
   }
-
-  if (!gasUrl) throw new Error("GAS URL is required when not in google.script.run environment");
-
-  const body = { action: "delete", ...payload };
-  const res = await fetch(gasUrl, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(body),
-    mode: "cors",
-  });
-
-  const json = await res.json().catch(() => ({}));
-
-  if (!res.ok || json?.ok === false) {
-    handleFetchError(res, json);
-  }
-
-  return json;
+  return result;
 };
 
-export const getEntry = async ({ gasUrl, spreadsheetId, sheetName = "Responses", entryId }) => {
+export const getEntry = async ({ spreadsheetId, sheetName = "Responses", entryId }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
   if (!entryId) throw new Error("entryId is required");
+  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
 
   const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
 
@@ -141,35 +94,16 @@ export const getEntry = async ({ gasUrl, spreadsheetId, sheetName = "Responses",
     id: entryId,
   };
 
-  if (hasScriptRun()) {
-    const result = await callScriptRun("getRecord", payload);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Get record failed");
-    }
-    return result.record || null;
+  const result = await callScriptRun("getRecord", payload);
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Get record failed");
   }
-
-  if (!gasUrl) throw new Error("GAS URL is required when not in google.script.run environment");
-
-  const body = { action: "get", ...payload };
-  const res = await fetch(gasUrl, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(body),
-    mode: "cors",
-  });
-
-  const json = await res.json().catch(() => ({}));
-
-  if (!res.ok || json?.ok === false) {
-    handleFetchError(res, json);
-  }
-
-  return json.record || null;
+  return result.record || null;
 };
 
-export const listEntries = async ({ gasUrl, spreadsheetId, sheetName = "Responses" }) => {
+export const listEntries = async ({ spreadsheetId, sheetName = "Responses" }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
+  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
 
   const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
 
@@ -178,37 +112,14 @@ export const listEntries = async ({ gasUrl, spreadsheetId, sheetName = "Response
     sheetName,
   };
 
-  if (hasScriptRun()) {
-    const result = await callScriptRun("listRecords", payload);
-    if (!result || result.ok === false) {
-      console.error("[gasClient] Result validation failed - result:", result);
-      throw new Error(result?.error || "List failed");
-    }
-    return {
-      records: result.records || [],
-      headerMatrix: result.headerMatrix || []
-    };
+  const result = await callScriptRun("listRecords", payload);
+  if (!result || result.ok === false) {
+    console.error("[gasClient] Result validation failed - result:", result);
+    throw new Error(result?.error || "List failed");
   }
-
-  if (!gasUrl) throw new Error("GAS URL is required when not in google.script.run environment");
-
-  const body = { action: "list", ...payload };
-  const res = await fetch(gasUrl, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(body),
-    mode: "cors",
-  });
-
-  const json = await res.json().catch(() => ({}));
-
-  if (!res.ok || json?.ok === false) {
-    handleFetchError(res, json);
-  }
-
   return {
-    records: json.records || [],
-    headerMatrix: json.headerMatrix || []
+    records: result.records || [],
+    headerMatrix: result.headerMatrix || []
   };
 };
 
