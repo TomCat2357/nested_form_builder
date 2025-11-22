@@ -18,6 +18,7 @@ const FORMS_STORAGE_KEY = "nfb.forms.v1";
 const ENTRIES_STORAGE_KEY = "nfb.entries.v1";
 
 const nowIso = () => new Date().toISOString();
+const DEFAULT_SHEET_NAME = "Responses";
 
 const readStorage = (key, fallback) => {
   try {
@@ -47,6 +48,32 @@ const ensureDisplayInfo = (form) => {
     importantFields: displayFieldSettings.map((item) => item.path),
   };
 };
+
+const getSheetConfig = (form) => {
+  const spreadsheetId = form?.settings?.spreadsheetId;
+  if (!spreadsheetId) return null;
+
+  return {
+    spreadsheetId,
+    sheetName: form?.settings?.sheetName || DEFAULT_SHEET_NAME,
+  };
+};
+
+const mapSheetRecordToEntry = (record, formId) => ({
+  id: record.id,
+  "No.": record["No."],
+  formId,
+  createdAt: record.createdAt,
+  modifiedAt: record.modifiedAt,
+  data: record.data || {},
+  order: Object.keys(record.data || {}),
+});
+
+const cacheEntries = (formId, entries) =>
+  persistEntries((entriesByForm) => {
+    entriesByForm[formId] = entries;
+    return entriesByForm;
+  });
 
 const loadForms = () => {
   const forms = readStorage(FORMS_STORAGE_KEY, []);
@@ -300,32 +327,13 @@ export const dataStore = {
     return saved;
   },
   async listEntries(formId) {
-    // First, get the form to check if we should fetch from GAS
     const form = await this.getForm(formId);
+    const sheetConfig = getSheetConfig(form);
 
-    // Fetch from GAS if settings are configured
-    if (form?.settings?.spreadsheetId) {
+    if (sheetConfig) {
       try {
-        const gasResult = await listEntriesFromGas({
-          spreadsheetId: form.settings.spreadsheetId,
-          sheetName: form.settings.sheetName || "Responses",
-        });
-
-        const gasRecords = gasResult.records || [];
-        const headerMatrix = gasResult.headerMatrix || [];
-
-        // Transform GAS records to our entry format
-        const entries = gasRecords.map((record) => {
-          return {
-            id: record.id,
-            "No.": record["No."],
-            formId,
-            createdAt: record.createdAt,
-            modifiedAt: record.modifiedAt,
-            data: record.data || {},
-            order: Object.keys(record.data || {}),
-          };
-        });
+        const gasResult = await listEntriesFromGas(sheetConfig);
+        const entries = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
 
         // Sort by ID in ascending order when fetching from spreadsheet
         entries.sort((a, b) => {
@@ -334,76 +342,45 @@ export const dataStore = {
           return 0;
         });
 
-        // Update local storage with fetched data
-        persistEntries((entriesByForm) => {
-          entriesByForm[formId] = entries;
-          return entriesByForm;
-        });
-
-        return { entries, headerMatrix };
+        cacheEntries(formId, entries);
+        return { entries, headerMatrix: gasResult.headerMatrix || [] };
       } catch (error) {
         console.error("[dataStore] Failed to fetch from Google Sheets:", error);
       }
     }
 
-    // Fall back to local storage
     const entries = loadEntries();
     return { entries: getEntriesForForm(entries, formId), headerMatrix: [] };
   },
   async getEntry(formId, entryId) {
-    // First, get the form to check if we should fetch from GAS
     const form = await this.getForm(formId);
+    const sheetConfig = getSheetConfig(form);
 
-    // Fetch from GAS if settings are configured
-    if (form?.settings?.spreadsheetId) {
+    if (sheetConfig) {
       try {
-        const record = await getEntryFromGas({
-          spreadsheetId: form.settings.spreadsheetId,
-          sheetName: form.settings.sheetName || "Responses",
-          entryId,
-        });
-
-        if (record) {
-          return {
-            id: record.id,
-            "No.": record["No."],
-            formId,
-            createdAt: record.createdAt,
-            modifiedAt: record.modifiedAt,
-            data: record.data || {},
-            order: Object.keys(record.data || {}),
-          };
-        }
-
-        return null;
+        const record = await getEntryFromGas({ ...sheetConfig, entryId });
+        return record ? mapSheetRecordToEntry(record, formId) : null;
       } catch (error) {
         console.error("[dataStore.getEntry] Spreadsheet取得エラー:", error);
       }
     }
 
-    // Fall back to local storage
     const entries = loadEntries();
     return getEntriesForForm(entries, formId).find((entry) => entry.id === entryId) || null;
   },
   async deleteEntry(formId, entryId) {
-    // First, get the form to check if we need to call GAS
     const form = await this.getForm(formId);
+    const sheetConfig = getSheetConfig(form);
 
-    // Delete from GAS if settings are configured
-    if (form?.settings?.spreadsheetId) {
+    if (sheetConfig) {
       try {
-        await deleteEntryFromGas({
-          spreadsheetId: form.settings.spreadsheetId,
-          sheetName: form.settings.sheetName || "Responses",
-          entryId,
-        });
+        await deleteEntryFromGas({ ...sheetConfig, entryId });
       } catch (error) {
         console.error("[dataStore] Failed to delete from Google Sheets:", error);
         throw new Error(`スプレッドシートからの削除に失敗しました: ${error.message}`);
       }
     }
 
-    // Then delete from local storage
     persistEntries((entriesByForm) => {
       const list = getEntriesForForm(entriesByForm, formId).filter((entry) => entry.id !== entryId);
       entriesByForm[formId] = list;
