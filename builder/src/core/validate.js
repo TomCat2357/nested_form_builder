@@ -26,6 +26,20 @@ export const hasValidationErrors = (fields, responses) => {
   let hasError = false;
   const regexCache = new Map();
 
+  const isEmpty = (field, value) => {
+    if (value === undefined || value === null) return true;
+    if (["text", "textarea", "regex", "date", "time", "select", "radio"].includes(field.type)) {
+      return value === "";
+    }
+    if (field.type === "number") {
+      return value === "";
+    }
+    if (field.type === "checkboxes") {
+      return !Array.isArray(value) || value.length === 0;
+    }
+    return false;
+  };
+
   const getRegexResult = (pattern) => {
     const key = pattern || "";
     if (!regexCache.has(key)) {
@@ -36,6 +50,9 @@ export const hasValidationErrors = (fields, responses) => {
 
   const walk = (arr) => (arr || []).forEach((field) => {
     const value = responses?.[field.id];
+    if (field.required && isEmpty(field, value)) {
+      hasError = true;
+    }
     if (field.type === "regex") {
       const regexResult = getRegexResult(field.pattern);
       if (regexResult.error) {
@@ -46,7 +63,17 @@ export const hasValidationErrors = (fields, responses) => {
       if (!result.ok) hasError = true;
     }
     if (field.childrenByValue) {
-      Object.keys(field.childrenByValue).forEach((key) => walk(field.childrenByValue[key]));
+      if (field.type === "checkboxes" && Array.isArray(value)) {
+        value.forEach((lbl) => {
+          if (field.childrenByValue[lbl]) {
+            walk(field.childrenByValue[lbl]);
+          }
+        });
+      } else if (["radio", "select"].includes(field.type) && value && field.childrenByValue[value]) {
+        walk(field.childrenByValue[value]);
+      } else if (!["checkboxes", "radio", "select"].includes(field.type)) {
+        Object.keys(field.childrenByValue).forEach((key) => walk(field.childrenByValue[key]));
+      }
     }
   });
 
