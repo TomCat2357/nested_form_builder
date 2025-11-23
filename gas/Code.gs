@@ -83,28 +83,49 @@ function deleteRecord(payload) {
 }
 
 function SerializeValue_(value) {
-  if (value instanceof Date) return value.toISOString();
   if (value === undefined || value === null) return "";
+  if (value instanceof Date) return value.toISOString();
   if (typeof value === "object") return JSON.stringify(value);
   return String(value);
 }
 
+function SerializeDateLike_(value) {
+  var date = Sheets_parseDateLikeToJstDate_(value);
+  if (date) {
+    return { iso: date.toISOString(), unixMs: date.getTime() };
+  }
+  return { iso: SerializeValue_(value), unixMs: null };
+}
+
 function SerializeRecord_(record) {
   var serializedData = {};
+  var serializedDataUnixMs = {};
+
   if (record.data && typeof record.data === "object") {
     for (var key in record.data) {
       if (record.data.hasOwnProperty(key)) {
-        serializedData[key] = SerializeValue_(record.data[key]);
+        var value = record.data[key];
+        var dateInfo = SerializeDateLike_(value);
+        serializedData[key] = dateInfo.iso;
+        if (dateInfo.unixMs !== null) {
+          serializedDataUnixMs[key] = dateInfo.unixMs;
+        }
       }
     }
   }
 
+  var createdInfo = SerializeDateLike_(record.createdAt);
+  var modifiedInfo = SerializeDateLike_(record.modifiedAt);
+
   return {
     id: String(record.id || ""),
     "No.": record["No."] != null ? record["No."] : "",
-    createdAt: SerializeValue_(record.createdAt),
-    modifiedAt: SerializeValue_(record.modifiedAt),
-    data: serializedData
+    createdAt: createdInfo.iso, // 互換用: 従来のISO文字列
+    modifiedAt: modifiedInfo.iso, // 互換用
+    createdAtUnixMs: createdInfo.unixMs,
+    modifiedAtUnixMs: modifiedInfo.unixMs,
+    data: serializedData,
+    dataUnixMs: serializedDataUnixMs
   };
 }
 

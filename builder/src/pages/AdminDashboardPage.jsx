@@ -10,6 +10,7 @@ import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { DISPLAY_MODES } from "../core/displayModes.js";
 import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
+import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
 
 const tableStyle = {
   width: "100%",
@@ -48,10 +49,9 @@ const formatDisplayFieldsSummary = (form) => {
 };
 
 const formatDate = (value) => {
-  if (!value) return "---";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "---";
-  return date.toLocaleString();
+  const ms = Number.isFinite(value) ? value : toUnixMs(value);
+  if (!Number.isFinite(ms)) return "---";
+  return formatUnixMsDateTime(ms);
 };
 
 const buttonStyle = {
@@ -88,7 +88,10 @@ export default function AdminDashboardPage() {
 
   const sortedForms = useMemo(() => {
     const list = forms.slice();
-    list.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+    list.sort(
+      (a, b) => (Number.isFinite(b.modifiedAtUnixMs) ? b.modifiedAtUnixMs : toUnixMs(b.modifiedAt)) -
+        (Number.isFinite(a.modifiedAtUnixMs) ? a.modifiedAtUnixMs : toUnixMs(a.modifiedAt))
+    );
     return list;
   }, [forms]);
 
@@ -101,7 +104,10 @@ export default function AdminDashboardPage() {
       modifiedAt: item.lastTriedAt,
       loadError: item,
     }));
-    rows.sort((a, b) => new Date(b.modifiedAt || 0).getTime() - new Date(a.modifiedAt || 0).getTime());
+    rows.sort(
+      (a, b) => (Number.isFinite(b.modifiedAtUnixMs) ? b.modifiedAtUnixMs : toUnixMs(b.modifiedAt || 0)) -
+        (Number.isFinite(a.modifiedAtUnixMs) ? a.modifiedAtUnixMs : toUnixMs(a.modifiedAt || 0))
+    );
     return rows;
   }, [loadFailures]);
 
@@ -221,6 +227,8 @@ export default function AdminDashboardPage() {
       schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1,
       createdAt: raw.createdAt, // 作成日時を保持
       modifiedAt: raw.modifiedAt, // 更新日時を保持
+      createdAtUnixMs: Number.isFinite(raw.createdAtUnixMs) ? raw.createdAtUnixMs : toUnixMs(raw.createdAt),
+      modifiedAtUnixMs: Number.isFinite(raw.modifiedAtUnixMs) ? raw.modifiedAtUnixMs : toUnixMs(raw.modifiedAt),
     };
   };
 

@@ -1,8 +1,8 @@
-import { convertIsoDateToLocal, convertIsoTimeToLocal } from "./dateTime.js";
+import { formatUnixMsDate, formatUnixMsTime, toUnixMs } from "./dateTime.js";
 
 const buildKey = (prefix, label) => (prefix ? `${prefix}|${label}` : label);
 
-export const restoreResponsesFromData = (schema, data = {}) => {
+export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => {
   const responses = {};
   const walk = (fields, prefix) => {
     (fields || []).forEach((field) => {
@@ -36,20 +36,20 @@ export const restoreResponsesFromData = (schema, data = {}) => {
         }
       } else {
         let value = data[baseKey];
-        if (value !== undefined) {
-          // 時間・日付フィールドの場合はISO形式から適切な形式に変換
+        const unix = dataUnixMs[baseKey];
+        if (Number.isFinite(unix)) {
+          value = field.type === "time" ? formatUnixMsTime(unix) : field.type === "date" ? formatUnixMsDate(unix) : value;
+        } else if (value !== undefined) {
           if (field.type === "time") {
-            value = convertIsoTimeToLocal(value);
+            const ms = toUnixMs(value);
+            value = Number.isFinite(ms) ? formatUnixMsTime(ms) : value;
           } else if (field.type === "date") {
-            value = convertIsoDateToLocal(value);
-          } else if (typeof value === "string") {
-            const normalizedTime = convertIsoTimeToLocal(value);
-            if (normalizedTime !== value) {
-              value = normalizedTime;
-            } else {
-              value = convertIsoDateToLocal(value);
-            }
+            const ms = toUnixMs(value);
+            value = Number.isFinite(ms) ? formatUnixMsDate(ms) : value;
           }
+          responses[field.id] = value;
+        }
+        if (value !== undefined && value !== null) {
           responses[field.id] = value;
         }
       }

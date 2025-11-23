@@ -336,7 +336,8 @@ function Forms_saveForm_(form, targetUrl) {
   var existingFileId = mappingEntry.fileId;
   Logger.log("[Forms_saveForm_] Existing fileId for this form: " + existingFileId);
   var file;
-  var now = new Date().toISOString();
+  var nowDate = new Date();
+  var now = nowDate.toISOString();
   var fileId = null;
 
   // 仮のフォームオブジェクトを作成（driveFileUrlなし）
@@ -350,6 +351,8 @@ function Forms_saveForm_(form, targetUrl) {
     displayFieldSettings: form.displayFieldSettings || [],
     createdAt: form.createdAt || now,
     modifiedAt: now,
+    createdAtUnixMs: form.createdAt ? Sheets_toUnixMs_(form.createdAt) : nowDate.getTime(),
+    modifiedAtUnixMs: nowDate.getTime(),
     archived: !!form.archived,
     schemaVersion: form.schemaVersion || 1,
   };
@@ -498,6 +501,10 @@ function Forms_listForms_(options) {
       if (!form.driveFileUrl) {
         form.driveFileUrl = driveFileUrlFromMap || fileUrl;
       }
+
+      // createdAt/modifiedAt の Unix ms を付与（既存データが文字列の場合の後方互換用）
+      form.createdAtUnixMs = Sheets_toUnixMs_(form.createdAt);
+      form.modifiedAtUnixMs = Sheets_toUnixMs_(form.modifiedAt);
 
       // アーカイブフィルタリング
       if (!includeArchived && form.archived) {

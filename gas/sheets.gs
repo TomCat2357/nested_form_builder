@@ -1,5 +1,71 @@
 var NFB_HEADER_DEPTH = 6;
 var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"]];
+var NFB_TZ = "Asia/Tokyo"; // 想定タイムゾーン（JST固定）
+
+function Sheets_isValidDate_(date) {
+  return date instanceof Date && !isNaN(date.getTime());
+}
+
+function Sheets_parseDateLikeToJstDate_(value) {
+  if (Sheets_isValidDate_(value)) return value;
+  if (value === null || value === undefined) return null;
+
+  if (typeof value === "number" && !isNaN(value)) {
+    var numDate = new Date(value);
+    return Sheets_isValidDate_(numDate) ? numDate : null;
+  }
+
+  if (typeof value !== "string") return null;
+  var str = value.trim();
+  if (!str) return null;
+
+  // ISO 8601 (タイムゾーン付き/なし) はそのままDateへ
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(str)) {
+    var isoDate = new Date(str);
+    return Sheets_isValidDate_(isoDate) ? isoDate : null;
+  }
+
+  // YYYY-MM-DD HH:mm[:ss]
+  var dateTimeMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (dateTimeMatch) {
+    var parts = dateTimeMatch;
+    var dt = new Date(
+      parseInt(parts[1], 10),
+      parseInt(parts[2], 10) - 1,
+      parseInt(parts[3], 10),
+      parseInt(parts[4], 10),
+      parseInt(parts[5], 10),
+      parts[6] ? parseInt(parts[6], 10) : 0
+    );
+    return Sheets_isValidDate_(dt) ? dt : null;
+  }
+
+  // YYYY-MM-DD
+  var dateOnlyMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnlyMatch) {
+    var d = new Date(parseInt(dateOnlyMatch[1], 10), parseInt(dateOnlyMatch[2], 10) - 1, parseInt(dateOnlyMatch[3], 10), 0, 0, 0);
+    return Sheets_isValidDate_(d) ? d : null;
+  }
+
+  // HH:mm[:ss] を基準日(1970-01-01)のJSTで扱う
+  var timeOnlyMatch = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (timeOnlyMatch) {
+    var t = new Date(1970, 0, 1, parseInt(timeOnlyMatch[1], 10), parseInt(timeOnlyMatch[2], 10), timeOnlyMatch[3] ? parseInt(timeOnlyMatch[3], 10) : 0);
+    return Sheets_isValidDate_(t) ? t : null;
+  }
+
+  return null;
+}
+
+function Sheets_toDateOrOriginal_(value) {
+  var parsed = Sheets_parseDateLikeToJstDate_(value);
+  return parsed || value;
+}
+
+function Sheets_toUnixMs_(value) {
+  var d = Sheets_parseDateLikeToJstDate_(value);
+  return d ? d.getTime() : null;
+}
 
 function Sheets_getOrCreateSheet_(spreadsheetId, sheetName) {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
@@ -295,7 +361,8 @@ function Sheets_writeDataToRow_(sheet, rowIndex, orderKeys, responses, keyToColu
     if (!columnIndex) continue;
     var value = responses && Object.prototype.hasOwnProperty.call(responses, key) ? responses[key] : "";
     if (value === undefined || value === null) value = "";
-    sheet.getRange(rowIndex, columnIndex).setValue(value);
+    var normalized = Sheets_toDateOrOriginal_(value);
+    sheet.getRange(rowIndex, columnIndex).setValue(normalized);
   }
 }
 
@@ -362,7 +429,10 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     "No.": rowData[1] || "",
     createdAt: rowData[2] || "",
     modifiedAt: rowData[3] || "",
-    data: {}
+    createdAtUnixMs: Sheets_toUnixMs_(rowData[2]),
+    modifiedAtUnixMs: Sheets_toUnixMs_(rowData[3]),
+    data: {},
+    dataUnixMs: {}
   };
 
   var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true };
@@ -372,6 +442,10 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     var value = rowData[colInfo.index];
     if (value != null && value !== "" && !reservedKeys[colInfo.key]) {
       record.data[colInfo.key] = value;
+      var unix = Sheets_toUnixMs_(value);
+      if (unix !== null) {
+        record.dataUnixMs[colInfo.key] = unix;
+      }
     }
   }
 

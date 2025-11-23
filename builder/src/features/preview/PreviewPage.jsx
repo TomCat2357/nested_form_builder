@@ -7,19 +7,10 @@ import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
+import { formatUnixMsDate, formatUnixMsTime } from "../../utils/dateTime.js";
 
-const formatDateLocal = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-
-const formatTimeLocal = (date) => {
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
-};
+const formatDateLocal = (date) => formatUnixMsDate(date.getTime());
+const formatTimeLocal = (date) => formatUnixMsTime(date.getTime());
 
 const generateRecordId = () => {
   if (window.crypto?.getRandomValues) {

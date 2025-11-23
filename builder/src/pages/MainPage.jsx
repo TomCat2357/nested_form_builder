@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
+import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
 
 const listStyle = {
   display: "grid",
@@ -68,7 +69,9 @@ export default function MainPage() {
             <div key={form.id} style={cardStyle} onClick={() => handleSelect(form.id)}>
               <h2 style={titleStyle}>{form.settings?.formTitle || "(無題)"}</h2>
               {form.description && <p style={{ margin: 0, color: "#475569" }}>{form.description}</p>}
-              <div style={metaStyle}>最終更新: {new Date(form.modifiedAt).toLocaleString()}</div>
+              <div style={metaStyle}>
+                最終更新: {formatUnixMsDateTime(form.modifiedAtUnixMs ?? toUnixMs(form.modifiedAt))}
+              </div>
             </div>
           ))}
         </div>

@@ -1,6 +1,6 @@
 import { splitFieldPath } from "../../utils/formPaths.js";
 import { DISPLAY_MODES } from "../../core/displayModes.js";
-import { formatIsoDateTimeDisplay, isoDateTimeToTimestamp } from "../../utils/dateTime.js";
+import { formatUnixMsDateTime, toUnixMs } from "../../utils/dateTime.js";
 
 export const MAX_HEADER_DEPTH = 6;
 
@@ -57,44 +57,35 @@ const matchBaseDisplayColumn = (columns, fullPath) => {
 
 const columnDisplayMode = (column) => (column?.displayMode === DISPLAY_MODES.COMPACT ? DISPLAY_MODES.COMPACT : DISPLAY_MODES.NORMAL);
 
-const valueToDisplayString = (value) => {
+const valueToDisplayString = (value, unixMs) => {
   if (Array.isArray(value)) {
-    return value.map((item) => valueToDisplayString(item)).filter(Boolean).join("、");
+    return value.map((item) => valueToDisplayString(item, unixMs)).filter(Boolean).join("、");
   }
   if (FALSY_SET.has(value)) return "";
   if (value === null || value === undefined) return "";
 
-  // ISO 8601形式の時間データを検出（例: "1899-12-30T02:25:00.000Z"）
-  const strValue = String(value);
-  const formatted = formatIsoDateTimeDisplay(strValue);
-  return formatted;
+  if (Number.isFinite(unixMs)) return formatUnixMsDateTime(unixMs);
+  if (value instanceof Date) return formatUnixMsDateTime(value.getTime());
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?/.test(value)) {
+    const parsed = toUnixMs(value);
+    if (Number.isFinite(parsed)) return formatUnixMsDateTime(parsed);
+  }
+
+  return String(value);
 };
 
-export const formatDateTime = (iso) => {
-  if (!iso) return "";
-  try {
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return String(iso);
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, "0");
-    const dd = String(date.getDate()).padStart(2, "0");
-    const hh = String(date.getHours()).padStart(2, "0");
-    const mi = String(date.getMinutes()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
-  } catch (error) {
-    return String(iso);
-  }
-};
+export const formatDateTime = (unixMs) => formatUnixMsDateTime(Number.isFinite(unixMs) ? unixMs : toUnixMs(unixMs));
 
 const normalizeSearchText = (text) => String(text || "").toLowerCase();
 
 const collectImportantFieldValue = (entry, path) => {
   const data = entry?.data || {};
+  const dataUnixMs = entry?.dataUnixMs || {};
 
   const values = [];
   const rawValues = [];
-  const addValue = (raw) => {
-    const display = valueToDisplayString(raw);
+  const addValue = (raw, unixMs) => {
+    const display = valueToDisplayString(raw, unixMs);
     if (!display) return;
     values.push(display);
     rawValues.push(raw);
@@ -104,7 +95,7 @@ const collectImportantFieldValue = (entry, path) => {
   const hasDirectValue = Object.prototype.hasOwnProperty.call(data, path);
 
   if (hasDirectValue) {
-    addValue(data[path]);
+    addValue(data[path], dataUnixMs[path]);
   } else {
     // 直接値がない場合のみ、option値を探す
     const prefix = `${path}|`;
@@ -124,7 +115,7 @@ const collectImportantFieldValue = (entry, path) => {
 
     if (optionValues.length) {
       // 値を表示用文字列に変換して追加
-      optionValues.forEach(v => addValue(v));
+      optionValues.forEach((v) => addValue(v));
     }
   }
 
@@ -144,10 +135,10 @@ const collectImportantFieldValue = (entry, path) => {
     } else if (typeof raw === 'number') {
       sortValue = raw;
     } else {
-      // 日付形式の文字列は元の値を保持（ISO 8601またはYYYY-MM-DD形式）
-      const strRaw = String(raw);
-      if (/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?/.test(strRaw)) {
-        sortValue = strRaw;
+      // 日付形式はUnix msを優先
+      const unix = dataUnixMs[path] ?? toUnixMs(raw);
+      if (Number.isFinite(unix)) {
+        sortValue = unix;
       } else {
         // それ以外で数値に変換できる場合は数値として扱う
         const num = parseFloat(raw);
@@ -209,12 +200,12 @@ const createBaseColumns = () => [
     sortable: true,
     searchable: true,
     getValue: (entry) => {
-      const iso = entry?.modifiedAt || "";
-      const display = formatDateTime(iso);
+      const unix = Number.isFinite(entry?.modifiedAtUnixMs) ? entry.modifiedAtUnixMs : toUnixMs(entry?.modifiedAt);
+      const display = formatDateTime(unix);
       return {
         display,
-        search: normalizeSearchText(display || iso),
-        sort: iso || "",
+        search: normalizeSearchText(display || unix || ""),
+        sort: Number.isFinite(unix) ? unix : 0,
       };
     },
   },
@@ -913,56 +904,8 @@ const findColumnByName = (columns, colName) => {
  * @returns {number|null} - タイムスタンプ（ミリ秒）またはnull
  */
 const parseJSTDateTime = (dateStr) => {
-  if (!dateStr || typeof dateStr !== 'string') return null;
-
-  const str = dateStr.trim();
-
-  // ISO 8601形式の検出（例: "2025-10-21T22:30:00.000Z"）
-  // すでにタイムゾーン情報を持っているのでそのまま解釈
-  const isoTimestamp = isoDateTimeToTimestamp(str);
-  if (isoTimestamp !== null) {
-    return isoTimestamp;
-  }
-
-  // YYYY-MM-DD HH:MM形式（例: "2025-10-21 20:00"）
-  // JSTのローカルタイムとして解釈
-  const dateTimeMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})$/);
-  if (dateTimeMatch) {
-    const [, year, month, day, hour, minute] = dateTimeMatch;
-    // new Date()でローカルタイムとして解釈（JSTで動作している前提）
-    const date = new Date(
-      parseInt(year, 10),
-      parseInt(month, 10) - 1, // 月は0-11
-      parseInt(day, 10),
-      parseInt(hour, 10),
-      parseInt(minute, 10),
-      0
-    );
-    if (!Number.isNaN(date.getTime())) {
-      return date.getTime();
-    }
-  }
-
-  // YYYY-MM-DD形式（例: "2025-10-21"）
-  // JSTの00:00:00として解釈
-  const dateMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (dateMatch) {
-    const [, year, month, day] = dateMatch;
-    // new Date()でローカルタイムとして解釈
-    const date = new Date(
-      parseInt(year, 10),
-      parseInt(month, 10) - 1,
-      parseInt(day, 10),
-      0,
-      0,
-      0
-    );
-    if (!Number.isNaN(date.getTime())) {
-      return date.getTime();
-    }
-  }
-
-  return null;
+  const ms = toUnixMs(dateStr);
+  return Number.isFinite(ms) ? ms : null;
 };
 
 /**

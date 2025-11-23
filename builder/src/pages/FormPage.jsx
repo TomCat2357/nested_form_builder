@@ -63,7 +63,7 @@ export default function FormPage() {
       const data = await dataStore.getEntry(formId, entryId);
       if (!mounted) return;
       setEntry(data);
-      const restored = restoreResponsesFromData(normalizedSchema, data?.data || {});
+      const restored = restoreResponsesFromData(normalizedSchema, data?.data || {}, data?.dataUnixMs || {});
       initialResponsesRef.current = restored;
       setResponses(restored);
       setCurrentRecordId(data?.id || entryId);
@@ -132,7 +132,7 @@ export default function FormPage() {
       order: payload.order,
     });
     setCurrentRecordId(saved.id);
-    const restored = restoreResponsesFromData(normalizedSchema, saved.data || {});
+    const restored = restoreResponsesFromData(normalizedSchema, saved.data || {}, saved.dataUnixMs || {});
     initialResponsesRef.current = restored;
     setResponses(restored);
     setEntry(saved);

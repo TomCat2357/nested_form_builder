@@ -20,6 +20,7 @@ const FORMS_STORAGE_KEY = "nfb.forms.v1";
 const ENTRIES_STORAGE_KEY = "nfb.entries.v1";
 
 const nowIso = () => new Date().toISOString();
+const nowUnixMs = () => Date.now();
 const DEFAULT_SHEET_NAME = "Responses";
 
 const readStorage = (key, fallback) => {
@@ -67,7 +68,10 @@ const mapSheetRecordToEntry = (record, formId) => ({
   formId,
   createdAt: record.createdAt,
   modifiedAt: record.modifiedAt,
+  createdAtUnixMs: record.createdAtUnixMs ?? null,
+  modifiedAtUnixMs: record.modifiedAtUnixMs ?? null,
   data: record.data || {},
+  dataUnixMs: record.dataUnixMs || {},
   order: Object.keys(record.data || {}),
 });
 
@@ -90,6 +94,7 @@ const clone = (value) => (typeof structuredClone === 'function' ? structuredClon
 
 const buildFormRecord = (input) => {
   const now = nowIso();
+  const nowMs = nowUnixMs();
   const schema = Array.isArray(input.schema) ? input.schema : [];
   const displayFieldSettings = collectDisplayFieldSettings(schema);
   
@@ -109,6 +114,8 @@ const buildFormRecord = (input) => {
     displayFieldSettings,
     createdAt: input.createdAt || now,
     modifiedAt: now,
+    createdAtUnixMs: Number.isFinite(input.createdAtUnixMs) ? input.createdAtUnixMs : nowMs,
+    modifiedAtUnixMs: nowMs,
     archived: !!input.archived,
     schemaVersion: Number.isFinite(input.schemaVersion) ? input.schemaVersion : 1,
   };
@@ -282,6 +289,7 @@ export const dataStore = {
     return updated;
   },
   async setFormArchivedState(formId, archived) {
+    const nowMs = nowUnixMs();
     // Try to use GAS API
     if (hasScriptRun()) {
       try {
@@ -298,7 +306,7 @@ export const dataStore = {
       const index = forms.findIndex((form) => form.id === formId);
       if (index === -1) return forms;
       const current = forms[index];
-      const next = { ...current, archived, modifiedAt: nowIso() };
+      const next = { ...current, archived, modifiedAt: nowIso(), modifiedAtUnixMs: nowMs };
       updated = next;
       forms[index] = next;
       return forms;
@@ -349,6 +357,7 @@ export const dataStore = {
     persistEntries((entriesByForm) => {
       const list = getEntriesForForm(entriesByForm, formId);
       const now = nowIso();
+      const nowMs = nowUnixMs();
       if (payload.id) {
         const idx = list.findIndex((entry) => entry.id === payload.id);
         if (idx !== -1) {
@@ -359,8 +368,11 @@ export const dataStore = {
             id: current.id,
             formId,
             createdAt: current.createdAt,
+            createdAtUnixMs: current.createdAtUnixMs ?? nowMs,
             modifiedAt: now,
+            modifiedAtUnixMs: nowMs,
             data: payload.data || current.data,
+            dataUnixMs: payload.dataUnixMs || current.dataUnixMs || {},
             order: payload.order || current.order || Object.keys(payload.data || current.data || {}),
           };
           list[idx] = next;
@@ -372,8 +384,11 @@ export const dataStore = {
           id: payload.id || genId(),
           formId,
           createdAt: now,
+          createdAtUnixMs: nowMs,
           modifiedAt: now,
+          modifiedAtUnixMs: nowMs,
           data: payload.data || {},
+          dataUnixMs: payload.dataUnixMs || {},
           order: payload.order || Object.keys(payload.data || {}),
         };
         list.unshift(record);
