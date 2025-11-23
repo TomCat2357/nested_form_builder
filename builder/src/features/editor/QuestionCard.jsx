@@ -2,7 +2,7 @@ import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
 import { deepClone, normalizeSchemaIDs, MAX_DEPTH } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
-import { DISPLAY_MODES, isCompactDisplaySupported, toImportantFlag } from "../../core/displayModes.js";
+import { DISPLAY_MODES, ensureDisplayModeForType, toImportantFlag } from "../../core/displayModes.js";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
 
@@ -10,24 +10,21 @@ import OptionRow from "./OptionRow.jsx";
 const CHOICE_TYPES = ["radio", "select", "checkboxes"];
 const INPUT_TYPES = ["text", "textarea", "number"];
 const DATE_TIME_TYPES = ["date", "time"];
-const DISPLAY_MODE_OPTIONS = [
-  { value: DISPLAY_MODES.NONE, label: "表示なし" },
-  { value: DISPLAY_MODES.NORMAL, label: "通常表示" },
-  { value: DISPLAY_MODES.COMPACT, label: "簡略表示" },
-];
+const resolveDisplayModeForType = (type, displayed) => (displayed ? ensureDisplayModeForType(DISPLAY_MODES.NORMAL, type) : DISPLAY_MODES.NONE);
+const DISPLAY_LABEL = "表示";
 
 // ヘルパー関数
 const isChoiceType = (type) => CHOICE_TYPES.includes(type);
 const isInputType = (type) => INPUT_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 const getDisplayMode = (field) => {
-  if (field && typeof field.displayMode === "string" && DISPLAY_MODE_OPTIONS.some((option) => option.value === field.displayMode)) {
-    return field.displayMode;
-  }
-  return field?.important ? DISPLAY_MODES.NORMAL : DISPLAY_MODES.NONE;
+  const rawMode = typeof field?.displayMode === "string"
+    ? field.displayMode
+    : (field?.important ? DISPLAY_MODES.NORMAL : DISPLAY_MODES.NONE);
+  return ensureDisplayModeForType(rawMode, field?.type);
 };
 const applyDisplayMode = (target, mode) => {
-  const nextMode = DISPLAY_MODE_OPTIONS.some((option) => option.value === mode) ? mode : DISPLAY_MODES.NONE;
+  const nextMode = ensureDisplayModeForType(mode, target.type);
   target.displayMode = nextMode;
   target.important = toImportantFlag(nextMode);
 };
@@ -40,8 +37,7 @@ function handleTypeChange(field, newType) {
   const next = deepClone(field);
   const oldType = field.type;
   next.type = newType;
-  const currentDisplayMode = getDisplayMode(next);
-  const newSupportsCompact = isCompactDisplaySupported(newType);
+  const wasDisplayed = getDisplayMode(next) !== DISPLAY_MODES.NONE;
 
   const oldIsChoice = isChoiceType(oldType);
   const newIsChoice = isChoiceType(newType);
@@ -111,15 +107,7 @@ function handleTypeChange(field, newType) {
     }
   }
 
-  if (!newSupportsCompact && currentDisplayMode === DISPLAY_MODES.COMPACT) {
-    next._savedDisplayModeForChoice = DISPLAY_MODES.COMPACT;
-    applyDisplayMode(next, DISPLAY_MODES.NORMAL);
-  } else if (newSupportsCompact && next._savedDisplayModeForChoice === DISPLAY_MODES.COMPACT) {
-    applyDisplayMode(next, DISPLAY_MODES.COMPACT);
-    delete next._savedDisplayModeForChoice;
-  } else {
-    applyDisplayMode(next, currentDisplayMode);
-  }
+  applyDisplayMode(next, resolveDisplayModeForType(newType, wasDisplayed));
 
   return next;
 }
@@ -164,13 +152,10 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
   const regexCheck = isRegex ? buildSafeRegex(field.pattern || "") : { error: null };
   const [selectedOptionIndex, setSelectedOptionIndex] = React.useState(null);
   const displayMode = getDisplayMode(field);
-  const compactSupported = isCompactDisplaySupported(field.type);
-  const handleDisplayModeChange = (mode) => {
+  const isDisplayed = displayMode !== DISPLAY_MODES.NONE;
+  const handleDisplayToggle = (checked) => {
     const nextField = { ...field };
-    applyDisplayMode(nextField, mode);
-    if (mode !== DISPLAY_MODES.COMPACT && nextField._savedDisplayModeForChoice) {
-      delete nextField._savedDisplayModeForChoice;
-    }
+    applyDisplayMode(nextField, resolveDisplayModeForType(nextField.type, checked));
     onChange(nextField);
   };
 
@@ -258,20 +243,13 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
           />
           必須
         </label>
-        <label style={{ display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-          表示
-          <select
-            value={displayMode}
-            style={{ ...s.input, width: "auto" }}
-            onChange={(event) => handleDisplayModeChange(event.target.value)}
-          >
-            {DISPLAY_MODE_OPTIONS.map((option) => (
-              <option key={option.value} value={option.value} disabled={option.value === DISPLAY_MODES.COMPACT && !compactSupported}>
-                {option.label}
-                {option.value === DISPLAY_MODES.COMPACT && !compactSupported ? " (ラジオ/ドロップダウンのみ)" : ""}
-              </option>
-            ))}
-          </select>
+        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <input
+            type="checkbox"
+            checked={isDisplayed}
+            onChange={(event) => handleDisplayToggle(event.target.checked)}
+          />
+          {DISPLAY_LABEL}
         </label>
       </div>
 

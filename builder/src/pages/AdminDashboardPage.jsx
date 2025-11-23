@@ -8,7 +8,7 @@ import AlertDialog from "../app/components/AlertDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
-import { DISPLAY_MODES, DISPLAY_MODE_LABELS } from "../core/displayModes.js";
+import { DISPLAY_MODES } from "../core/displayModes.js";
 import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
 
 const tableStyle = {
@@ -43,12 +43,7 @@ const formatDisplayFieldsSummary = (form) => {
   if (!settings.length) return "";
   return settings
     .filter((item) => item?.path)
-    .map((item) => {
-      if (item.mode === DISPLAY_MODES.COMPACT) {
-        return `${item.path}（${DISPLAY_MODE_LABELS[DISPLAY_MODES.COMPACT]}）`;
-      }
-      return item.path;
-    })
+    .map((item) => item.path)
     .join(", ");
 };
 
