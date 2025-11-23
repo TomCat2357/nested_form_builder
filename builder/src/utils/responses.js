@@ -2,13 +2,23 @@ import { formatUnixMsDate, formatUnixMsTime, toUnixMs } from "./dateTime.js";
 
 const buildKey = (prefix, label) => (prefix ? `${prefix}|${label}` : label);
 
+const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
+  if (field.type !== "time" && field.type !== "date") return rawValue;
+
+  const unixMs = Number.isFinite(unixMsValue) ? unixMsValue : toUnixMs(rawValue);
+  if (!Number.isFinite(unixMs)) return rawValue;
+
+  return field.type === "time" ? formatUnixMsTime(unixMs) : formatUnixMsDate(unixMs);
+};
+
 export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => {
   const responses = {};
   const walk = (fields, prefix) => {
     (fields || []).forEach((field) => {
       const label = field?.label || "";
-      const baseKey = buildKey(prefix, label);
       if (!label) return;
+
+      const baseKey = buildKey(prefix, label);
 
       if (field.type === "checkboxes") {
         const values = [];
@@ -35,22 +45,9 @@ export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => 
           }
         }
       } else {
-        let value = data[baseKey];
-        const unix = dataUnixMs[baseKey];
-        if (Number.isFinite(unix)) {
-          value = field.type === "time" ? formatUnixMsTime(unix) : field.type === "date" ? formatUnixMsDate(unix) : value;
-        } else if (value !== undefined) {
-          if (field.type === "time") {
-            const ms = toUnixMs(value);
-            value = Number.isFinite(ms) ? formatUnixMsTime(ms) : value;
-          } else if (field.type === "date") {
-            const ms = toUnixMs(value);
-            value = Number.isFinite(ms) ? formatUnixMsDate(ms) : value;
-          }
-          responses[field.id] = value;
-        }
-        if (value !== undefined && value !== null) {
-          responses[field.id] = value;
+        const normalized = normalizeTemporalValue(field, data[baseKey], dataUnixMs[baseKey]);
+        if (normalized !== undefined && normalized !== null) {
+          responses[field.id] = normalized;
         }
       }
     });
