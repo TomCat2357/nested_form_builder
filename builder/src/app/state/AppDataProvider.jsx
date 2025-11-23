@@ -1,6 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { dataStore } from "./dataStore.js";
-import { debugGetMapping } from "../../services/gasClient.js";
 
 const AppDataContext = createContext(null);
 
@@ -10,29 +9,29 @@ export function AppDataProvider({ children }) {
   const [error, setError] = useState(null);
   const [loadFailures, setLoadFailures] = useState([]);
 
-  const refreshForms = useCallback(async () => {
+  const refreshForms = useCallback(async (source = "unknown") => {
     setLoadingForms(true);
     setError(null);
+    const startedAt = new Date().toISOString();
+    console.log("[AppDataProvider] refreshForms start", { source, startedAt });
     try {
-      // Debug: PropertiesServiceのマッピングを取得して出力
-      try {
-        const debugResult = await debugGetMapping();
-        console.log("[DEBUG] PropertiesService Mapping:", debugResult);
-        console.log("[DEBUG] Raw JSON:", debugResult.rawJson);
-        console.log("[DEBUG] Mapping object:", JSON.stringify(debugResult.mapping, null, 2));
-        console.log("[DEBUG] Total forms in mapping:", debugResult.totalForms);
-        console.log("[DEBUG] Legacy info:", JSON.stringify(debugResult.legacyInfo, null, 2));
-      } catch (debugErr) {
-        console.warn("[DEBUG] Failed to get mapping:", debugErr);
-      }
-
       const result = await dataStore.listForms({ includeArchived: true });
       setForms(result.forms || []);
       setLoadFailures(result.loadFailures || []);
+      const finishedAt = new Date().toISOString();
+      console.log("[AppDataProvider] refreshForms success", {
+        source,
+        startedAt,
+        finishedAt,
+        formCount: (result.forms || []).length,
+        loadFailures: (result.loadFailures || []).length,
+      });
     } catch (err) {
       console.error("[AppDataProvider] フォーム取得エラー:", err);
       setError(err.message || "フォームの取得に失敗しました");
       // エラー時は既存のフォームリストを保持（空配列に設定しない）
+      const finishedAt = new Date().toISOString();
+      console.log("[AppDataProvider] refreshForms fail", { source, startedAt, finishedAt, error: err?.message });
     } finally {
       setLoadingForms(false);
     }
@@ -40,52 +39,66 @@ export function AppDataProvider({ children }) {
 
   useEffect(() => {
     // 起動時にフォームを読み込む（Drive完全移行モードでは常にDriveから取得）
-    refreshForms();
+    refreshForms("startup");
   }, [refreshForms]);
 
-  const createOperationWithRefresh = useCallback(
-    (operation) => async (...args) => {
-      const result = await operation(...args);
-      await refreshForms();
-      return result;
-    },
-    [refreshForms],
-  );
+  const upsertFormsState = useCallback((nextForm) => {
+    if (!nextForm || !nextForm.id) return;
+    setForms((prev) => {
+      const next = prev.slice();
+      const index = next.findIndex((form) => form.id === nextForm.id);
+      if (index === -1) {
+        next.unshift(nextForm);
+      } else {
+        next[index] = nextForm;
+      }
+      return next;
+    });
+  }, []);
 
-  const createForm = useCallback(
-    createOperationWithRefresh((payload, targetUrl) => dataStore.createForm(payload, targetUrl)),
-    [createOperationWithRefresh],
-  );
+  const removeFormsState = useCallback((formIds) => {
+    if (!Array.isArray(formIds) || formIds.length === 0) return;
+    setForms((prev) => prev.filter((form) => !formIds.includes(form.id)));
+  }, []);
 
-  const updateForm = useCallback(
-    createOperationWithRefresh((formId, updates, targetUrl) => dataStore.updateForm(formId, updates, targetUrl)),
-    [createOperationWithRefresh],
-  );
+  const createForm = useCallback(async (payload, targetUrl) => {
+    const result = await dataStore.createForm(payload, targetUrl);
+    upsertFormsState(result);
+    return result;
+  }, [upsertFormsState]);
 
-  const archiveForm = useCallback(
-    createOperationWithRefresh((formId) => dataStore.archiveForm(formId)),
-    [createOperationWithRefresh],
-  );
+  const updateForm = useCallback(async (formId, updates, targetUrl) => {
+    const result = await dataStore.updateForm(formId, updates, targetUrl);
+    upsertFormsState(result);
+    return result;
+  }, [upsertFormsState]);
 
-  const unarchiveForm = useCallback(
-    createOperationWithRefresh((formId) => dataStore.unarchiveForm(formId)),
-    [createOperationWithRefresh],
-  );
+  const archiveForm = useCallback(async (formId) => {
+    const result = await dataStore.archiveForm(formId);
+    upsertFormsState(result);
+    return result;
+  }, [upsertFormsState]);
 
-  const deleteForms = useCallback(
-    createOperationWithRefresh((formIds) => dataStore.deleteForms(formIds)),
-    [createOperationWithRefresh],
-  );
+  const unarchiveForm = useCallback(async (formId) => {
+    const result = await dataStore.unarchiveForm(formId);
+    upsertFormsState(result);
+    return result;
+  }, [upsertFormsState]);
 
-  const deleteForm = useCallback(
-    (formId) => deleteForms([formId]),
-    [deleteForms],
-  );
+  const deleteForms = useCallback(async (formIds) => {
+    await dataStore.deleteForms(formIds);
+    removeFormsState(formIds);
+  }, [removeFormsState]);
 
-  const importForms = useCallback(
-    createOperationWithRefresh((jsonList) => dataStore.importForms(jsonList)),
-    [createOperationWithRefresh],
-  );
+  const deleteForm = useCallback((formId) => deleteForms([formId]), [deleteForms]);
+
+  const importForms = useCallback(async (jsonList) => {
+    const created = await dataStore.importForms(jsonList);
+    if (Array.isArray(created)) {
+      created.forEach((form) => upsertFormsState(form));
+    }
+    return created;
+  }, [upsertFormsState]);
 
   const exportForms = useCallback(async (formIds) => dataStore.exportForms(formIds), []);
   const getFormById = useCallback((formId) => forms.find((form) => form.id === formId) || null, [forms]);

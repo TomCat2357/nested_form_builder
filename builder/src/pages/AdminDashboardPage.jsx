@@ -386,6 +386,9 @@ export default function AdminDashboardPage() {
       fallbackPath="/"
       sidebarActions={
         <>
+          <button type="button" style={sidebarButtonStyle} onClick={() => refreshForms("manual:admin-dashboard")} disabled={loadingForms}>
+            {loadingForms ? "再読み込み中..." : "再読み込み"}
+          </button>
           <button type="button" style={sidebarButtonStyle} onClick={handleCreateNew}>
             新規作成
           </button>
