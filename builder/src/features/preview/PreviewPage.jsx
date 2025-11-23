@@ -72,7 +72,10 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         <input
           type="number"
           value={value ?? ""}
-          onChange={(event) => onChange(event.target.value)}
+          onChange={(event) => {
+            const val = event.target.value;
+            onChange(val === "" ? "" : Number(val));
+          }}
           style={s.input}
           placeholder={field.placeholder || ""}
         />
