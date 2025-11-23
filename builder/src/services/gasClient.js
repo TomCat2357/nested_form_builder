@@ -231,19 +231,3 @@ export const debugGetMapping = async () => {
     throw error;
   }
 };
-
-export const debugCallGetMapping = async () => {
-  if (!hasScriptRun()) {
-    throw new Error("Debug function is only available in google.script.run environment");
-  }
-  try {
-    const result = await callScriptRun("nfbDebugCallGetMapping", {});
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Debug call get mapping failed");
-    }
-    return result;
-  } catch (error) {
-    console.error(`[gasClient] debugCallGetMapping failed`, error);
-    throw error;
-  }
-};
