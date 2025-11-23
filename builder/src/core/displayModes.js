@@ -25,20 +25,29 @@ export const normalizeDisplayMode = (mode, { importantFlag = false } = {}) => {
 
 export const isCompactDisplaySupported = (type) => COMPACT_SUPPORTED_TYPES.has(type);
 
-export const ensureDisplayModeForType = (mode, type) => {
+export const ensureDisplayModeForType = (mode, type, { explicit = false } = {}) => {
   if (mode === DISPLAY_MODES.NONE) {
     return DISPLAY_MODES.NONE;
   }
 
-  // ラジオ/ドロップダウンは表示する場合は常に簡略表示に統一
-  if (isCompactDisplaySupported(type)) {
-    return DISPLAY_MODES.COMPACT;
+  const compactCapable = isCompactDisplaySupported(type);
+
+  if (mode === DISPLAY_MODES.COMPACT) {
+    return compactCapable ? DISPLAY_MODES.COMPACT : DISPLAY_MODES.NORMAL;
   }
 
-  if (mode === DISPLAY_MODES.COMPACT && !isCompactDisplaySupported(type)) {
+  if (mode === DISPLAY_MODES.NORMAL) {
+    // 未指定の場合のみ従来の簡略表示デフォルトを維持し、明示指定は尊重する
+    if (compactCapable && !explicit) {
+      return DISPLAY_MODES.COMPACT;
+    }
     return DISPLAY_MODES.NORMAL;
   }
 
+  // フォールバック: 選択式は簡略表示を既定、明示指定なら通常表示
+  if (compactCapable && !explicit) {
+    return DISPLAY_MODES.COMPACT;
+  }
   return DISPLAY_MODES.NORMAL;
 };
 

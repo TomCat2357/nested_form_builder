@@ -19,7 +19,6 @@ import {
   parseSearchCellDisplayLimit,
 } from "../features/search/searchTable.js";
 import { DISPLAY_MODES } from "../core/displayModes.js";
-import { splitFieldPath } from "../utils/formPaths.js";
 import {
   saveRecordsToCache,
   getRecordsFromCache,
@@ -102,7 +101,7 @@ export default function SearchPage() {
   const cellDisplayLimit = parseSearchCellDisplayLimit(form?.settings?.searchCellMaxChars);
 
   const baseColumns = useMemo(() => {
-    const result = buildSearchColumns(form, { includeOperations: true });
+    const result = buildSearchColumns(form, { includeOperations: false });
     return result;
   }, [form]);
 
@@ -117,15 +116,14 @@ export default function SearchPage() {
   }, [headerMatrix, baseColumns]);
 
   const headerRows = useMemo(() => {
-    // If we have a headerMatrix from spreadsheet, use it
     if (headerMatrix && headerMatrix.length > 0) {
-      const rows = buildHeaderRowsFromCsv(headerMatrix, baseColumns);
-      return rows;
+      const rows = buildHeaderRowsFromCsv(headerMatrix, columns);
+      if (rows && rows.length > 0) {
+        return rows;
+      }
     }
-    // Otherwise fall back to building from columns
-    const rows = buildHeaderRows(columns);
-    return rows;
-  }, [columns, baseColumns, headerMatrix]);
+    return buildHeaderRows(columns);
+  }, [columns, headerMatrix]);
 
   // データを全件取得してキャッシュに保存する関数
   const fetchAndCacheData = useCallback(async () => {
@@ -449,12 +447,7 @@ export default function SearchPage() {
                     // __actions列はスキップ
                     if (column.key === "__actions") return null;
                     const rawDisplayText = values[column.key]?.display ?? "";
-                    const isCompact = column.displayMode === DISPLAY_MODES.COMPACT;
-                    const leafLabel = isCompact ? splitFieldPath(column.path).slice(-1)[0] || "" : "";
-                    // 簡略表示では最下段ラベルをデータ側に持ってくるが、値があれば優先して表示
-                    const displayText = isCompact
-                      ? (rawDisplayText || leafLabel)
-                      : rawDisplayText;
+                    const displayText = rawDisplayText || "";
                     const limitedText = applyDisplayLengthLimit(displayText, cellDisplayLimit);
                     return (
                       <td key={`${entry.id}_${column.key}`} style={tdStyle}>

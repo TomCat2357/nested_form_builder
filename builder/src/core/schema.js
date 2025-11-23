@@ -75,9 +75,11 @@ export const normalizeSchemaIDs = (nodes) => {
       base.childrenByValue = fixed;
     }
 
+    const hasExplicitDisplayMode = Object.prototype.hasOwnProperty.call(base, "displayMode");
     const normalizedDisplayMode = ensureDisplayModeForType(
       normalizeDisplayMode(base.displayMode, { importantFlag: !!base.important }),
       base.type,
+      { explicit: hasExplicitDisplayMode },
     );
     base.displayMode = normalizedDisplayMode;
     base.important = toImportantFlag(normalizedDisplayMode);

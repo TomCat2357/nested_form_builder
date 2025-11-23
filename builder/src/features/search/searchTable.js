@@ -247,7 +247,7 @@ const collectCompactFieldValue = (entry, path) => {
   };
 };
 
-const createDisplayColumn = (path, mode = DISPLAY_MODES.NORMAL) => {
+const createDisplayColumn = (path, mode = DISPLAY_MODES.NORMAL, sourceType = "") => {
   const segments = splitFieldPath(path).slice(0, MAX_HEADER_DEPTH);
   if (segments.length === 0) segments.push("回答");
   const key = `display:${path}`;
@@ -259,6 +259,7 @@ const createDisplayColumn = (path, mode = DISPLAY_MODES.NORMAL) => {
     searchable: true,
     path,
     displayMode: mode,
+    sourceType,
     getValue: (entry) => (isCompact ? collectCompactFieldValue(entry, path) : collectImportantFieldValue(entry, path)),
   };
 };
@@ -288,9 +289,9 @@ const resolveDisplayFieldSettings = (form) => {
 
 export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
   const columns = createBaseColumns();
-  resolveDisplayFieldSettings(form).forEach(({ path, mode }) => {
+  resolveDisplayFieldSettings(form).forEach(({ path, mode, type }) => {
     if (!path) return;
-    columns.push(createDisplayColumn(path, mode));
+    columns.push(createDisplayColumn(path, mode, type));
   });
   if (includeOperations) columns.push(actionsColumn);
   return columns;
@@ -470,11 +471,11 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
       if (!basePath || resolvedBasePaths.has(basePath)) {
         continue;
       }
-      pushColumn(createDisplayColumn(basePath, DISPLAY_MODES.COMPACT));
+      pushColumn(createDisplayColumn(basePath, DISPLAY_MODES.COMPACT, baseColumn.sourceType));
       resolvedBasePaths.add(basePath);
       debugLog("buildColumnsFromHeaderMatrix:compact", { basePath, columnIndex: colIndex });
     } else {
-      pushColumn(createDisplayColumn(fullPath, baseColumn.displayMode));
+      pushColumn(createDisplayColumn(fullPath, baseColumn.displayMode, baseColumn.sourceType));
       if (baseColumn.path) {
         resolvedBasePaths.add(String(baseColumn.path));
       }
@@ -490,10 +491,10 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
     if (resolvedBasePaths.has(basePath)) return;
     if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT) {
       resolvedBasePaths.add(basePath);
-      pushColumn(createDisplayColumn(basePath, DISPLAY_MODES.COMPACT));
+      pushColumn(createDisplayColumn(basePath, DISPLAY_MODES.COMPACT, baseColumn.sourceType));
     } else {
       resolvedBasePaths.add(basePath);
-      pushColumn(createDisplayColumn(basePath, baseColumn.displayMode));
+      pushColumn(createDisplayColumn(basePath, baseColumn.displayMode, baseColumn.sourceType));
     }
   });
 
@@ -542,9 +543,9 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
             const baseColumn = matchBaseDisplayColumn(columns, fullPath);
             if (baseColumn) {
               if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT) {
-                matchedColumn = createDisplayColumn(baseColumn.path, DISPLAY_MODES.COMPACT);
+                matchedColumn = createDisplayColumn(baseColumn.path, DISPLAY_MODES.COMPACT, baseColumn.sourceType);
               } else {
-                matchedColumn = createDisplayColumn(fullPath, baseColumn.displayMode);
+                matchedColumn = createDisplayColumn(fullPath, baseColumn.displayMode, baseColumn.sourceType);
               }
             }
           }
@@ -573,21 +574,11 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
     }
   });
 
-  // 簡略処理後に空でない行のみをフィルタリング
-  const nonEmptyRowIndices = [];
-  for (let rowIndex = 0; rowIndex < transformedRows.length; rowIndex++) {
-    const row = transformedRows[rowIndex] || [];
-    const hasValue = indicesToProcess.some((colIndex) => {
-      const cellValue = row[colIndex];
-      return cellValue !== null && cellValue !== undefined && cellValue !== "";
-    });
-    if (hasValue) nonEmptyRowIndices.push(rowIndex);
-  }
-
-  if (nonEmptyRowIndices.length === 0) return [];
+  // 全段表示が原則のため、行はすべて処理する
+  const nonEmptyRowIndices = Array.from({ length: transformedRows.length }, (_, idx) => idx);
 
   const rows = [];
-  const lastNonEmptyRowIndex = nonEmptyRowIndices[nonEmptyRowIndices.length - 1];
+  const lastNonEmptyRowIndex = transformedRows.length - 1;
 
   // 各列の統合されたパス(全行を結合したもの)を事前に計算
   const columnFullPaths = indicesToProcess.map((colIndex) => {
@@ -620,6 +611,16 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
       if (isCompactColumn && rowIndex === lastNonEmptyRowIndex) {
         // 簡略表示では最下段のヘッダーは省略し、データ側で表示する
         cellValue = "";
+      }
+
+      // ラジオ/セレクトの選択肢行はヘッダー表示しない（データ側で表示されるため）
+      if (mappedColumn?.sourceType && (mappedColumn.sourceType === "radio" || mappedColumn.sourceType === "select")) {
+        const fullPath = columnFullPaths[i] || "";
+        const segments = splitFieldPath(fullPath);
+        const expectedLabel = segments[rowIndex] || "";
+        if (expectedLabel && cellValue === expectedLabel && rowIndex === segments.length - 1) {
+          cellValue = "";
+        }
       }
 
       // 最終行の場合は各列を個別に処理(ソート対応のため)

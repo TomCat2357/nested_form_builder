@@ -8,8 +8,9 @@ const joinPath = (base, label) => {
 };
 
 const resolveFieldDisplayMode = (field) => {
+  const hasExplicitMode = Object.prototype.hasOwnProperty.call(field || {}, "displayMode");
   const normalized = normalizeDisplayMode(field?.displayMode, { importantFlag: !!field?.important });
-  return ensureDisplayModeForType(normalized, field?.type);
+  return ensureDisplayModeForType(normalized, field?.type, { explicit: hasExplicitMode });
 };
 
 export const collectDisplayFieldSettings = (schema) => {

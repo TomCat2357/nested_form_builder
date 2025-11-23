@@ -10,7 +10,9 @@ import OptionRow from "./OptionRow.jsx";
 const CHOICE_TYPES = ["radio", "select", "checkboxes"];
 const INPUT_TYPES = ["text", "textarea", "number"];
 const DATE_TIME_TYPES = ["date", "time"];
-const resolveDisplayModeForType = (type, displayed) => (displayed ? ensureDisplayModeForType(DISPLAY_MODES.NORMAL, type) : DISPLAY_MODES.NONE);
+const resolveDisplayModeForType = (type, displayed) => (
+  displayed ? ensureDisplayModeForType(DISPLAY_MODES.NORMAL, type, { explicit: true }) : DISPLAY_MODES.NONE
+);
 const DISPLAY_LABEL = "表示";
 
 // ヘルパー関数
@@ -18,13 +20,14 @@ const isChoiceType = (type) => CHOICE_TYPES.includes(type);
 const isInputType = (type) => INPUT_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 const getDisplayMode = (field) => {
+  const hasExplicitMode = Object.prototype.hasOwnProperty.call(field || {}, "displayMode");
   const rawMode = typeof field?.displayMode === "string"
     ? field.displayMode
     : (field?.important ? DISPLAY_MODES.NORMAL : DISPLAY_MODES.NONE);
-  return ensureDisplayModeForType(rawMode, field?.type);
+  return ensureDisplayModeForType(rawMode, field?.type, { explicit: hasExplicitMode });
 };
 const applyDisplayMode = (target, mode) => {
-  const nextMode = ensureDisplayModeForType(mode, target.type);
+  const nextMode = ensureDisplayModeForType(mode, target.type, { explicit: true });
   target.displayMode = nextMode;
   target.important = toImportantFlag(nextMode);
 };
