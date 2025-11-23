@@ -74,9 +74,44 @@ const valueToDisplayString = (value, unixMs) => {
   return String(value);
 };
 
+const deriveChoiceLabels = (key, value) => {
+  if (!TRUTHY_SET.has(value)) return null;
+  if (typeof key !== "string" || !key.includes("|")) return null;
+
+  const segments = key.split("|").filter(Boolean);
+  if (segments.length === 0) return null;
+
+  const optionLabel = segments[segments.length - 1];
+  const questionLabel = segments.slice(0, -1).join("|");
+  const combinedLabel = questionLabel ? `${questionLabel}:${optionLabel}` : optionLabel;
+
+  return {
+    optionLabel,
+    combinedLabel,
+  };
+};
+
 export const formatDateTime = (unixMs) => formatUnixMsDateTime(Number.isFinite(unixMs) ? unixMs : toUnixMs(unixMs));
 
 const normalizeSearchText = (text) => String(text || "").toLowerCase();
+
+const buildSearchableCandidates = (key, value, unixMs = undefined) => {
+  const candidates = [];
+  const displayValue = valueToDisplayString(value, unixMs);
+  if (displayValue) {
+    candidates.push(displayValue);
+  }
+
+  const choiceLabels = deriveChoiceLabels(key, value);
+  if (choiceLabels?.optionLabel) {
+    candidates.push(choiceLabels.optionLabel);
+    if (choiceLabels.combinedLabel && choiceLabels.combinedLabel !== choiceLabels.optionLabel) {
+      candidates.push(choiceLabels.combinedLabel);
+    }
+  }
+
+  return candidates;
+};
 
 const collectImportantFieldValue = (entry, path) => {
   const data = entry?.data || {};
@@ -1026,11 +1061,15 @@ const evaluateAST = (ast, row, columns) => {
 
       // 表示列で見つからなかった場合、全データフィールドを検索
       const entryData = row?.entry?.data || {};
-      return Object.values(entryData).some((value) => {
-        const displayValue = valueToDisplayString(value);
-        if (!displayValue) return false;
-        const normalized = normalizeSearchText(displayValue);
-        return normalized.includes(keyword);
+      const entryDataUnixMs = row?.entry?.dataUnixMs || {};
+
+      return Object.entries(entryData).some(([key, value]) => {
+        const unixMs = entryDataUnixMs[key];
+        return buildSearchableCandidates(key, value, unixMs).some((candidate) => {
+          if (!candidate) return false;
+          const normalized = normalizeSearchText(candidate);
+          return normalized.includes(keyword);
+        });
       });
     }
 
@@ -1049,6 +1088,7 @@ const evaluateAST = (ast, row, columns) => {
 
       // 表示列にない場合、データフィールドから直接検索
       const entryData = row?.entry?.data || {};
+      const entryDataUnixMs = row?.entry?.dataUnixMs || {};
       const normalizedColName = ast.column.toLowerCase();
 
       // データフィールドのキーで検索（完全一致または部分一致）
@@ -1059,11 +1099,14 @@ const evaluateAST = (ast, row, columns) => {
 
       if (matchingKey) {
         const value = entryData[matchingKey];
-        const displayValue = valueToDisplayString(value);
-        if (!displayValue) return false;
-        const normalized = normalizeSearchText(displayValue);
+        const unixMs = entryDataUnixMs[matchingKey];
         const keyword = normalizeSearchText(ast.keyword);
-        return normalized.includes(keyword);
+
+        return buildSearchableCandidates(matchingKey, value, unixMs).some((candidate) => {
+          if (!candidate) return false;
+          const normalized = normalizeSearchText(candidate);
+          return normalized.includes(keyword);
+        });
       }
 
       return false;
@@ -1086,6 +1129,7 @@ const evaluateAST = (ast, row, columns) => {
 
       // 表示列にない場合、データフィールドから直接取得
       const entryData = row?.entry?.data || {};
+      const entryDataUnixMs = row?.entry?.dataUnixMs || {};
       const normalizedColName = ast.column.toLowerCase();
 
       // データフィールドのキーで検索
@@ -1096,13 +1140,14 @@ const evaluateAST = (ast, row, columns) => {
 
       if (matchingKey) {
         const value = entryData[matchingKey];
-        const displayValue = valueToDisplayString(value);
+        const unixMs = entryDataUnixMs[matchingKey];
 
-        // 数値変換を試みる
-        const numValue = parseFloat(displayValue);
-        const rowValue = !Number.isNaN(numValue) ? numValue : displayValue;
-
-        return compareValue(rowValue, ast.operator, ast.value);
+        return buildSearchableCandidates(matchingKey, value, unixMs).some((candidate) => {
+          if (candidate === undefined || candidate === null || candidate === "") return false;
+          const numValue = parseFloat(candidate);
+          const rowValue = !Number.isNaN(numValue) ? numValue : candidate;
+          return compareValue(rowValue, ast.operator, ast.value);
+        });
       }
 
       return false;
@@ -1128,6 +1173,7 @@ const evaluateAST = (ast, row, columns) => {
 
       // 表示列にない場合、データフィールドから直接検索
       const entryData = row?.entry?.data || {};
+      const entryDataUnixMs = row?.entry?.dataUnixMs || {};
       const normalizedColName = ast.column.toLowerCase();
 
       // データフィールドのキーで検索
@@ -1138,11 +1184,14 @@ const evaluateAST = (ast, row, columns) => {
 
       if (matchingKey) {
         const value = entryData[matchingKey];
-        const displayValue = valueToDisplayString(value);
+        const unixMs = entryDataUnixMs[matchingKey];
 
         try {
           const regex = new RegExp(ast.pattern, 'i');
-          return regex.test(displayValue);
+          return buildSearchableCandidates(matchingKey, value, unixMs).some((candidate) => {
+            if (!candidate) return false;
+            return regex.test(candidate);
+          });
         } catch (error) {
           console.warn('Invalid regex pattern:', ast.pattern, error);
           return false;
