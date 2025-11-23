@@ -125,6 +125,12 @@ function Sheets_ensureHeaderMatrix_(sheet, order) {
     sheet.setFrozenRows(NFB_HEADER_DEPTH);
   }
 
+  // Move/insert columns will fail if any part of the column (not just header rows) is merged.
+  // Unmerge the full used range up-front to avoid "結合したセルの一部だけを含む列は移動できません" errors.
+  var maxCols = Math.max(sheet.getMaxColumns(), 1);
+  var maxRows = Math.max(sheet.getMaxRows(), NFB_HEADER_DEPTH);
+  sheet.getRange(1, 1, maxRows, maxCols).breakApart();
+
   var matrix = Sheets_readHeaderMatrix_(sheet);
   var existingPaths = Sheets_extractColumnPaths_(matrix);
   var desired = Sheets_buildDesiredPaths_(order, existingPaths);
