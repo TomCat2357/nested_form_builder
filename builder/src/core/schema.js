@@ -194,6 +194,27 @@ export const validateUniqueLabels = (fields) => {
   return { ok: true };
 };
 
+/**
+ * 全ての質問がラベルを持っているか検証する
+ */
+export const validateRequiredLabels = (fields) => {
+  const walk = (nodes) => {
+    for (const field of nodes || []) {
+      const label = (field?.label || "").trim();
+      if (!label) return false;
+
+      if (field?.childrenByValue && typeof field.childrenByValue === "object") {
+        for (const children of Object.values(field.childrenByValue)) {
+          if (!walk(children)) return false;
+        }
+      }
+    }
+    return true;
+  };
+
+  return walk(fields) ? { ok: true } : { ok: false };
+};
+
 export const computeSchemaHash = (schema) => {
   const json = JSON.stringify(schema);
   let hash = 0;

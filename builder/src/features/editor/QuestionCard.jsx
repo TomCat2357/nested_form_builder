@@ -210,6 +210,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
           style={{ ...s.input, width: "auto", flex: "1 1 200px", minWidth: 0 }}
           placeholder="項目名を入力"
           value={field.label || ""}
+          required
           onChange={(event) => onChange({ ...field, label: event.target.value })}
           onFocus={() => {
             setSelectedOptionIndex(null);
