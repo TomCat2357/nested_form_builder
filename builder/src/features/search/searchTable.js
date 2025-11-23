@@ -107,8 +107,8 @@ const collectImportantFieldValue = (entry, path) => {
       const [head, ...rest] = remainder.split("|");
       if (!head || rest.length > 0) return;
       if (TRUTHY_SET.has(value)) {
-        // オプションラベル(head)ではなく、実際の値(value)を追加
-        optionValues.push(value);
+        // チェックボックスの場合はラベル(head)を表示・検索・ソート用に使用
+        optionValues.push(head);
         return;
       }
     });
