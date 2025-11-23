@@ -25,4 +25,11 @@ export const SETTINGS_FIELDS = [
     required: false,
     type: "number",
   },
+  {
+    key: "searchCellMaxChars",
+    label: "検索結果セルの表示文字数上限",
+    placeholder: "50",
+    required: false,
+    type: "number",
+  },
 ];

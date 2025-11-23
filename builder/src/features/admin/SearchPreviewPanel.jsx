@@ -5,6 +5,8 @@ import {
   buildSearchColumns,
   buildHeaderRows,
   computeRowValues,
+  applyDisplayLengthLimit,
+  parseSearchCellDisplayLimit,
 } from "../search/searchTable.js";
 
 const panelStyle = {
@@ -44,7 +46,7 @@ const hasAnyValue = (values, columns) =>
     return typeof display === "string" && display.trim().length > 0;
   });
 
-export default function SearchPreviewPanel({ schema, responses }) {
+export default function SearchPreviewPanel({ schema, responses, settings }) {
   const displayFieldSettings = useMemo(() => collectDisplayFieldSettings(schema), [schema]);
   const form = useMemo(
     () => ({
@@ -53,6 +55,8 @@ export default function SearchPreviewPanel({ schema, responses }) {
     }),
     [displayFieldSettings],
   );
+
+  const displayLengthLimit = parseSearchCellDisplayLimit(settings?.searchCellMaxChars);
 
   const sampleEntry = useMemo(() => {
     const data = collectResponses(schema, responses);
@@ -115,7 +119,10 @@ export default function SearchPreviewPanel({ schema, responses }) {
                     <tr>
                       {columns.map((column) => (
                         <td key={`preview-${column.key}`} style={tdStyle}>
-                          {previewRow.values?.[column.key]?.display ?? ""}
+                          {applyDisplayLengthLimit(
+                            previewRow.values?.[column.key]?.display ?? "",
+                            displayLengthLimit,
+                          )}
                         </td>
                       ))}
                     </tr>

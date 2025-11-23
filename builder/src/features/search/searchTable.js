@@ -704,6 +704,20 @@ export const compareByColumn = (a, b, column, order = "asc") => {
 
 export const buildDisplayText = (value) => valueToDisplayString(value);
 
+export const applyDisplayLengthLimit = (text, limit) => {
+  if (typeof text !== "string") return text ?? "";
+  const maxLength = Number(limit);
+  if (!Number.isFinite(maxLength) || maxLength <= 0) return text;
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}…`;
+};
+
+export const parseSearchCellDisplayLimit = (rawValue) => {
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+};
+
 /**
  * 検索クエリをトークン化
  * 例: '氏名:"山田" and (年齢>=20 or 性別:男性)'

@@ -15,6 +15,8 @@ import {
   computeRowValues,
   compareByColumn,
   matchesKeyword,
+  applyDisplayLengthLimit,
+  parseSearchCellDisplayLimit,
 } from "../features/search/searchTable.js";
 import { DISPLAY_MODES } from "../core/displayModes.js";
 import { splitFieldPath } from "../utils/formPaths.js";
@@ -91,13 +93,13 @@ export default function SearchPage() {
   const [useCache, setUseCache] = useState(false);
   const [selectedEntries, setSelectedEntries] = useState(new Set());
 
-  const PAGE_SIZE = Number(settings?.pageSize) || 20;
-  const TABLE_MAX_WIDTH = settings?.searchTableMaxWidth ? Number(settings.searchTableMaxWidth) : null;
-
   const form = useMemo(() => (formId ? getFormById(formId) : null), [formId, getFormById]);
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
   const query = searchParams.get("q") || "";
   const page = Math.max(1, Number(searchParams.get("page") || 1));
+  const PAGE_SIZE = Number(settings?.pageSize) || 20;
+  const TABLE_MAX_WIDTH = settings?.searchTableMaxWidth ? Number(settings.searchTableMaxWidth) : null;
+  const cellDisplayLimit = parseSearchCellDisplayLimit(form?.settings?.searchCellMaxChars);
 
   const baseColumns = useMemo(() => {
     const result = buildSearchColumns(form, { includeOperations: true });
@@ -453,9 +455,10 @@ export default function SearchPage() {
                     const displayText = isCompact
                       ? (rawDisplayText || leafLabel)
                       : rawDisplayText;
+                    const limitedText = applyDisplayLengthLimit(displayText, cellDisplayLimit);
                     return (
                       <td key={`${entry.id}_${column.key}`} style={tdStyle}>
-                        {displayText}
+                        {limitedText}
                       </td>
                     );
                   })}

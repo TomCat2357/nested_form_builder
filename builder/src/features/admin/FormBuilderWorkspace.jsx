@@ -139,7 +139,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
             showOutputJson={false}
             showSaveButton={false}
           />
-          <SearchPreviewPanel schema={schema} responses={responses} />
+          <SearchPreviewPanel schema={schema} responses={responses} settings={settings} />
         </>
       )}
       <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />

@@ -23,6 +23,7 @@ export const DEFAULT_SETTINGS = {
   spreadsheetId: "",
   sheetName: "Responses",
   pageSize: 20,
+  searchCellMaxChars: "",
 };
 
 export const loadSettingsFromStorage = () => {
