@@ -7,13 +7,8 @@ function Sheets_isValidDate_(date) {
 }
 
 function Sheets_parseDateLikeToJstDate_(value) {
-  if (Sheets_isValidDate_(value)) return value;
   if (value === null || value === undefined) return null;
-
-  if (typeof value === "number" && !isNaN(value)) {
-    var numDate = new Date(value);
-    return Sheets_isValidDate_(numDate) ? numDate : null;
-  }
+  if (Sheets_isValidDate_(value)) return value;
 
   if (typeof value !== "string") return null;
   var str = value.trim();
@@ -329,17 +324,17 @@ function Sheets_createNewRow_(sheet, id) {
     }
   }
 
-  sheet.getRange(rowIndex, 1).setValue(nextId);
-  sheet.getRange(rowIndex, 2).setValue(maxNo + 1);
-  sheet.getRange(rowIndex, 3).setValue(now);
-  sheet.getRange(rowIndex, 4).setValue(now);
+  sheet.getRange(rowIndex, 1).setValue(String(nextId));
+  sheet.getRange(rowIndex, 2).setValue(String(maxNo + 1));
+  sheet.getRange(rowIndex, 3).setValue(now.toISOString());
+  sheet.getRange(rowIndex, 4).setValue(now.toISOString());
 
   return { rowIndex: rowIndex, id: nextId };
 }
 
 function Sheets_updateExistingRow_(sheet, rowIndex) {
   Sheets_ensureRowCapacity_(sheet, rowIndex);
-  sheet.getRange(rowIndex, 4).setValue(new Date());
+  sheet.getRange(rowIndex, 4).setValue(new Date().toISOString());
 }
 
 function Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys) {
@@ -361,8 +356,7 @@ function Sheets_writeDataToRow_(sheet, rowIndex, orderKeys, responses, keyToColu
     if (!columnIndex) continue;
     var value = responses && Object.prototype.hasOwnProperty.call(responses, key) ? responses[key] : "";
     if (value === undefined || value === null) value = "";
-    var normalized = Sheets_toDateOrOriginal_(value);
-    sheet.getRange(rowIndex, columnIndex).setValue(normalized);
+    sheet.getRange(rowIndex, columnIndex).setValue(String(value));
   }
 }
 

@@ -1,11 +1,34 @@
-import { splitFieldPath } from "../../utils/formPaths.js";
+import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import { DISPLAY_MODES } from "../../core/displayModes.js";
-import { formatUnixMsDateTime, toUnixMs } from "../../utils/dateTime.js";
+import { formatUnixMsDateTime } from "../../utils/dateTime.js";
 
 export const MAX_HEADER_DEPTH = 6;
 
-const TRUTHY_SET = new Set([true, "true", "TRUE", "True", 1, "1", "●"]);
-const FALSY_SET = new Set([false, "false", "FALSE", "False", 0, "0", null, undefined, ""]);
+const FALSE_LIKE_VALUES = new Set([null, undefined, "", false, 0, "0"]);
+
+const toBooleanLike = (value) => {
+  if (Array.isArray(value)) {
+    return value.some((item) => toBooleanLike(item));
+  }
+  return !FALSE_LIKE_VALUES.has(value);
+};
+
+const columnType = (column) => column?.sourceType || column?.type || "";
+const isBooleanColumn = (column) => {
+  const type = columnType(column);
+  return type === "checkboxes" || type === "radio" || type === "select";
+};
+const isNumericColumn = (column) => columnType(column) === "number";
+const isDateLikeColumn = (column) => {
+  const type = columnType(column);
+  return type === "date" || type === "time";
+};
+const toNumericValue = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+};
 
 const isDevEnvironment = (() => {
   try {
@@ -57,25 +80,21 @@ const matchBaseDisplayColumn = (columns, fullPath) => {
 
 const columnDisplayMode = (column) => (column?.displayMode === DISPLAY_MODES.COMPACT ? DISPLAY_MODES.COMPACT : DISPLAY_MODES.NORMAL);
 
-const valueToDisplayString = (value, unixMs) => {
+const valueToDisplayString = (value) => {
   if (Array.isArray(value)) {
-    return value.map((item) => valueToDisplayString(item, unixMs)).filter(Boolean).join("、");
+    return value
+      .map((item) => valueToDisplayString(item))
+      .filter((item) => item !== "" && item !== null && item !== undefined)
+      .join("、");
   }
-  if (FALSY_SET.has(value)) return "";
   if (value === null || value === undefined) return "";
-
-  if (Number.isFinite(unixMs)) return formatUnixMsDateTime(unixMs);
-  if (value instanceof Date) return formatUnixMsDateTime(value.getTime());
-  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?/.test(value)) {
-    const parsed = toUnixMs(value);
-    if (Number.isFinite(parsed)) return formatUnixMsDateTime(parsed);
-  }
+  if (value === "") return "";
 
   return String(value);
 };
 
 const deriveChoiceLabels = (key, value) => {
-  if (!TRUTHY_SET.has(value)) return null;
+  if (!toBooleanLike(value)) return null;
   if (typeof key !== "string" || !key.includes("|")) return null;
 
   const segments = key.split("|").filter(Boolean);
@@ -91,7 +110,12 @@ const deriveChoiceLabels = (key, value) => {
   };
 };
 
-export const formatDateTime = (unixMs) => formatUnixMsDateTime(Number.isFinite(unixMs) ? unixMs : toUnixMs(unixMs));
+export const formatDateTime = (value) => {
+  if (typeof value === "string") return value;
+  if (value instanceof Date) return formatUnixMsDateTime(value.getTime());
+  if (Number.isFinite(value)) return String(value);
+  return "";
+};
 
 const normalizeSearchText = (text) => String(text || "").toLowerCase();
 
@@ -113,7 +137,27 @@ const buildSearchableCandidates = (key, value, unixMs = undefined) => {
   return candidates;
 };
 
-const collectImportantFieldValue = (entry, path) => {
+const deriveBooleanValue = (rawValues) => toBooleanLike(rawValues.length ? rawValues : undefined);
+
+const resolveSortValue = ({ rawValues, display, dataUnixMs, path, column }) => {
+  if (isBooleanColumn(column)) {
+    return deriveBooleanValue(rawValues) ? 1 : 0;
+  }
+
+  if (rawValues.length === 0) return "";
+  if (rawValues.length > 1) return display;
+
+  const raw = rawValues[0];
+
+  if (isNumericColumn(column)) {
+    const num = toNumericValue(raw);
+    if (num !== null) return num;
+  }
+
+  return display;
+};
+
+const collectImportantFieldValue = (entry, path, column) => {
   const data = entry?.data || {};
   const dataUnixMs = entry?.dataUnixMs || {};
 
@@ -121,7 +165,7 @@ const collectImportantFieldValue = (entry, path) => {
   const rawValues = [];
   const addValue = (raw, unixMs) => {
     const display = valueToDisplayString(raw, unixMs);
-    if (!display) return;
+    if (display === "" || display === null || display === undefined) return;
     values.push(display);
     rawValues.push(raw);
   };
@@ -141,10 +185,9 @@ const collectImportantFieldValue = (entry, path) => {
       if (!remainder) return;
       const [head, ...rest] = remainder.split("|");
       if (!head || rest.length > 0) return;
-      if (TRUTHY_SET.has(value)) {
+      if (toBooleanLike(value)) {
         // チェックボックスの場合はラベル(head)を表示・検索・ソート用に使用
         optionValues.push(head);
-        return;
       }
     });
 
@@ -155,42 +198,15 @@ const collectImportantFieldValue = (entry, path) => {
   }
 
   const display = values.join("、");
-
-  // ソート用の値を決定
-  let sortValue;
-  if (rawValues.length === 0) {
-    sortValue = "";
-  } else if (rawValues.length === 1) {
-    const raw = rawValues[0];
-    // ブーリアン値の場合
-    if (TRUTHY_SET.has(raw)) {
-      sortValue = 1;
-    } else if (FALSY_SET.has(raw)) {
-      sortValue = 0;
-    } else if (typeof raw === 'number') {
-      sortValue = raw;
-    } else {
-      // 日付形式はUnix msを優先
-      const unix = dataUnixMs[path] ?? toUnixMs(raw);
-      if (Number.isFinite(unix)) {
-        sortValue = unix;
-      } else {
-        // それ以外で数値に変換できる場合は数値として扱う
-        const num = parseFloat(raw);
-        sortValue = !Number.isNaN(num) ? num : display;
-      }
-    }
-  } else {
-    // 複数の値がある場合は表示文字列をソート値とする
-    sortValue = display;
-  }
+  const sortValue = resolveSortValue({ rawValues, display, dataUnixMs, path, column });
 
   return {
     display,
     search: normalizeSearchText(values.join(" ")),
     sort: sortValue,
+    boolean: deriveBooleanValue(rawValues),
   };
-};;;
+};
 
 const compareStrings = (a, b) => {
   const aa = String(a || "");
@@ -235,25 +251,28 @@ const createBaseColumns = () => [
     sortable: true,
     searchable: true,
     getValue: (entry) => {
-      const unix = Number.isFinite(entry?.modifiedAtUnixMs) ? entry.modifiedAtUnixMs : toUnixMs(entry?.modifiedAt);
-      const display = formatDateTime(unix);
+      const raw = entry?.modifiedAt ?? "";
+      const display = formatDateTime(raw);
       return {
         display,
-        search: normalizeSearchText(display || unix || ""),
-        sort: Number.isFinite(unix) ? unix : 0,
+        search: normalizeSearchText(display || raw || ""),
+        sort: display || "",
       };
     },
   },
 ];
 
-const collectCompactFieldValue = (entry, path) => {
+const collectCompactFieldValue = (entry, path, column) => {
   const data = entry?.data || {};
+  const dataUnixMs = entry?.dataUnixMs || {};
   const values = [];
+  const rawValues = [];
 
   const addValue = (raw) => {
     const display = valueToDisplayString(raw);
-    if (!display) return;
+    if (display === "" || display === null || display === undefined) return;
     values.push(display);
+    rawValues.push(raw);
   };
 
   const hasDirectValue = Object.prototype.hasOwnProperty.call(data, path);
@@ -265,7 +284,7 @@ const collectCompactFieldValue = (entry, path) => {
       if (!key.startsWith(prefix) || key === path) return;
       const remainder = key.slice(prefix.length);
       if (!remainder || remainder.includes("|")) return;
-      if (TRUTHY_SET.has(value)) {
+      if (toBooleanLike(value)) {
         addValue(remainder);
       }
     });
@@ -273,12 +292,13 @@ const collectCompactFieldValue = (entry, path) => {
 
   const display = values.join("、");
   const primary = values[0] || "";
-  const sortValue = values.length <= 1 ? primary : display;
+  const sortValue = resolveSortValue({ rawValues, display: values.length <= 1 ? primary : display, dataUnixMs, path, column });
 
   return {
     display,
     search: normalizeSearchText(values.join(" ")),
     sort: sortValue,
+    boolean: deriveBooleanValue(rawValues),
   };
 };
 
@@ -295,7 +315,7 @@ const createDisplayColumn = (path, mode = DISPLAY_MODES.NORMAL, sourceType = "")
     path,
     displayMode: mode,
     sourceType,
-    getValue: (entry) => (isCompact ? collectCompactFieldValue(entry, path) : collectImportantFieldValue(entry, path)),
+    getValue: (entry, column) => (isCompact ? collectCompactFieldValue(entry, path, column) : collectImportantFieldValue(entry, path, column)),
   };
 };
 
@@ -314,12 +334,17 @@ const resolveDisplayFieldSettings = (form) => {
       .map((item) => ({
         path: String(item.path),
         mode: item.mode === DISPLAY_MODES.COMPACT ? DISPLAY_MODES.COMPACT : DISPLAY_MODES.NORMAL,
+        type: item.type || "",
       }));
   }
   const fallback = Array.isArray(form?.importantFields) ? form.importantFields : [];
+  const collected = collectDisplayFieldSettings(form?.schema || []);
   return fallback
     .filter((path) => path)
-    .map((path) => ({ path: String(path), mode: DISPLAY_MODES.NORMAL }));
+    .map((path) => {
+      const matched = collected.find((item) => item.path === path);
+      return { path: String(path), mode: DISPLAY_MODES.NORMAL, type: matched?.type || "" };
+    });
 };
 
 export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
@@ -753,11 +778,16 @@ const tokenizeSearchQuery = (query) => {
   if (!query || typeof query !== 'string') return [];
 
   const tokens = [];
+  const normalizedQuery = query.replace(/==/g, "=");
   let i = 0;
-  const len = query.length;
+  const len = normalizedQuery.length;
+
+  const pushAlwaysFalse = () => {
+    tokens.push({ type: 'ALWAYS_FALSE' });
+  };
 
   while (i < len) {
-    const char = query[i];
+    const char = normalizedQuery[i];
 
     // 空白をスキップ
     if (/\s/.test(char)) {
@@ -772,8 +802,17 @@ const tokenizeSearchQuery = (query) => {
       continue;
     }
 
+    // NOT演算子（後続が空白または括弧のみ許容）
+    const remainingForNot = normalizedQuery.slice(i);
+    const notMatch = remainingForNot.match(/^(not)(?=[\s(])/i);
+    if (notMatch) {
+      tokens.push({ type: 'NOT', value: 'not' });
+      i += notMatch[0].length;
+      continue;
+    }
+
     // AND/OR演算子
-    const remaining = query.slice(i);
+    const remaining = normalizedQuery.slice(i);
     if (/^(and|AND)\b/i.test(remaining)) {
       tokens.push({ type: 'AND', value: 'and' });
       i += 3;
@@ -796,30 +835,66 @@ const tokenizeSearchQuery = (query) => {
       continue;
     }
 
-    // パターン2: 列名[演算子]値
+    // パターン2: 列名[演算子]値（数値・等価比較用。":" "=" "==" 同義）
     // 引用符で囲まれた値はスペースを含めて全体を取得
-    let operatorMatch = remaining.match(/^([^:()]+?)(>=|<=|<>|><|!=|>|<|=)"([^"]+)"(?=\s|$|and|AND|or|OR|\))/i);
+    let operatorMatch = remaining.match(/^([^:()]+?)(>=|<=|<>|><|!=|>|<|=|:|==)"([^"]*)"(?=\s|$|and|AND|or|OR|\))/i);
     if (!operatorMatch) {
-      operatorMatch = remaining.match(/^([^:()]+?)(>=|<=|<>|><|!=|>|<|=)'([^']+)'(?=\s|$|and|AND|or|OR|\))/i);
+      operatorMatch = remaining.match(/^([^:()]+?)(>=|<=|<>|><|!=|>|<|=|:|==)'([^']*)'(?=\s|$|and|AND|or|OR|\))/i);
     }
     if (!operatorMatch) {
-      operatorMatch = remaining.match(/^([^:()]+?)(>=|<=|<>|><|!=|>|<|=)(.+?)(?=\s|$|and|AND|or|OR|\))/i);
+      operatorMatch = remaining.match(/^([^:()]+?)(>=|<=|<>|><|!=|>|<|=|:|==)(.+?)(?=\s|$|and|AND|or|OR|\))/i);
     }
     if (operatorMatch) {
       const colName = operatorMatch[1].trim().replace(/^["']|["']$/g, '');
       const operator = operatorMatch[2];
       let value = operatorMatch[3].trim().replace(/^["']|["']$/g, '');
-      tokens.push({ type: 'COMPARE', column: colName, operator, value });
+      if (value === "") {
+        pushAlwaysFalse();
+        i += operatorMatch[0].length;
+        continue;
+      }
+      const normalized = value.toLowerCase();
+      const op = operator === ":" || operator === "==" ? "=" : operator;
+
+      // 真偽指定（=のみ）
+      if ((normalized === "true" || normalized === "false") && (op === "=")) {
+        tokens.push({ type: 'COLUMN_BOOL', column: colName, value: normalized === "true" });
+        i += operatorMatch[0].length;
+        continue;
+      }
+
+      // 数値比較か判定（= / > / < 等でも数値優先）
+      const num = Number(value);
+      const isNumeric = Number.isFinite(num);
+      if (!isNumeric && op === "=") {
+        // 文字列として扱う → COLUMN_PARTIAL（含有）に回す
+        tokens.push({ type: 'COLUMN_PARTIAL', column: colName, keyword: value });
+        i += operatorMatch[0].length;
+        continue;
+      }
+
+      tokens.push({ type: 'COMPARE', column: colName, operator: op, value });
       i += operatorMatch[0].length;
       continue;
     }
 
     // パターン3: 列名:部分一致ワード
-    const colonMatch = remaining.match(/^([^:()]+?):(.+?)(?=\s|$|and|AND|or|OR|\))/i);
+    const colonMatch = remaining.match(/^([^:()]+?):(.*?)(?=\s|$|and|AND|or|OR|\))/i);
     if (colonMatch) {
       const colName = colonMatch[1].trim().replace(/^["']|["']$/g, '');
-      const keyword = colonMatch[2].trim().replace(/^["']|["']$/g, '');
-      tokens.push({ type: 'COLUMN_PARTIAL', column: colName, keyword });
+      const keywordRaw = colonMatch[2].trim();
+      const keyword = keywordRaw.replace(/^["']|["']$/g, '');
+      if (!keyword) {
+        pushAlwaysFalse();
+        i += colonMatch[0].length;
+        continue;
+      }
+      const normalized = keyword.toLowerCase();
+      if (normalized === "true" || normalized === "false") {
+        tokens.push({ type: 'COLUMN_BOOL', column: colName, value: normalized === "true" });
+      } else {
+        tokens.push({ type: 'COLUMN_PARTIAL', column: colName, keyword });
+      }
       i += colonMatch[0].length;
       continue;
     }
@@ -879,6 +954,12 @@ const parseTokens = (tokens) => {
       return { type: 'EMPTY' };
     }
 
+    if (token.type === 'NOT') {
+      pos++;
+      const expr = parseFactor();
+      return { type: 'NOT', value: expr };
+    }
+
     // 括弧で囲まれた式
     if (token.type === 'LPAREN') {
       pos++; // '('をスキップ
@@ -890,7 +971,7 @@ const parseTokens = (tokens) => {
     }
 
     // 条件
-    if (['PARTIAL', 'COLUMN_PARTIAL', 'COMPARE', 'REGEX'].includes(token.type)) {
+    if (['PARTIAL', 'COLUMN_PARTIAL', 'COMPARE', 'REGEX', 'COLUMN_BOOL', 'ALWAYS_FALSE'].includes(token.type)) {
       pos++;
       return token;
     }
@@ -939,57 +1020,23 @@ const findColumnByName = (columns, colName) => {
  * @param {string} dateStr - 日時文字列（ISO 8601、YYYY-MM-DD、YYYY-MM-DD HH:MM形式）
  * @returns {number|null} - タイムスタンプ（ミリ秒）またはnull
  */
-const parseJSTDateTime = (dateStr) => {
-  const ms = toUnixMs(dateStr);
-  return Number.isFinite(ms) ? ms : null;
-};
-
 /**
  * 値の比較（数値/文字列/日時を適切に処理）
  */
-const compareValue = (rowValue, operator, targetValue) => {
+const compareValue = (rowValue, operator, targetValue, { allowNumeric = true } = {}) => {
   // 値の正規化
   const normalizeValue = (val) => {
     if (val === null || val === undefined || val === '') return '';
     return String(val);
   };
 
+  let normalizedOperator = operator;
+  if (operator === ':' || operator === '==') normalizedOperator = '=';
+  if (operator === '!=') normalizedOperator = '<>';
+  if (operator === '><') normalizedOperator = '<>';
+
   const rowStr = normalizeValue(rowValue);
   const targetStr = normalizeValue(targetValue);
-
-  // 日時比較を試みる
-  const rowTimestamp = parseJSTDateTime(rowStr);
-  const targetTimestamp = parseJSTDateTime(targetStr);
-
-  if (rowTimestamp !== null && targetTimestamp !== null) {
-    // 両方が日時として解釈できる場合は、タイムスタンプで数値比較
-    let result;
-    switch (operator) {
-      case '=':
-        result = rowTimestamp === targetTimestamp;
-        break;
-      case '!=':
-      case '<>':
-      case '><':
-        result = rowTimestamp !== targetTimestamp;
-        break;
-      case '>':
-        result = rowTimestamp > targetTimestamp;
-        break;
-      case '>=':
-        result = rowTimestamp >= targetTimestamp;
-        break;
-      case '<':
-        result = rowTimestamp < targetTimestamp;
-        break;
-      case '<=':
-        result = rowTimestamp <= targetTimestamp;
-        break;
-      default:
-        result = false;
-    }
-    return result;
-  }
 
   // 両方が数値として解釈できる場合は数値比較
   const rowNum = parseFloat(rowStr);
@@ -999,36 +1046,76 @@ const compareValue = (rowValue, operator, targetValue) => {
   // 引用符で囲まれていない数値の場合は数値比較
   const isQuoted = /^["']/.test(targetValue);
 
-  switch (operator) {
+  if (allowNumeric && normalizedOperator !== '=' && normalizedOperator !== '<>' && normalizedOperator !== '><') {
+    if (!bothNumbers || isQuoted) {
+      return false;
+    }
+  }
+
+  switch (normalizedOperator) {
     case '=':
-      if (bothNumbers && !isQuoted) return rowNum === targetNum;
+      if (allowNumeric && bothNumbers && !isQuoted) return rowNum === targetNum;
       return rowStr === targetStr;
 
-    case '!=':
     case '<>':
     case '><':
-      if (bothNumbers && !isQuoted) return rowNum !== targetNum;
+      if (allowNumeric && bothNumbers && !isQuoted) return rowNum !== targetNum;
       return rowStr !== targetStr;
 
     case '>':
-      if (bothNumbers && !isQuoted) return rowNum > targetNum;
+      if (allowNumeric && bothNumbers && !isQuoted) return rowNum > targetNum;
       return rowStr > targetStr;
 
     case '>=':
-      if (bothNumbers && !isQuoted) return rowNum >= targetNum;
+      if (allowNumeric && bothNumbers && !isQuoted) return rowNum >= targetNum;
       return rowStr >= targetStr;
 
     case '<':
-      if (bothNumbers && !isQuoted) return rowNum < targetNum;
+      if (allowNumeric && bothNumbers && !isQuoted) return rowNum < targetNum;
       return rowStr < targetStr;
 
     case '<=':
-      if (bothNumbers && !isQuoted) return rowNum <= targetNum;
+      if (allowNumeric && bothNumbers && !isQuoted) return rowNum <= targetNum;
       return rowStr <= targetStr;
 
     default:
       return false;
   }
+};
+
+const resolveBooleanValueForRow = (row, column, columnName) => {
+  const collectFromEntry = (entryData, target) => {
+    const targetLower = String(target || "").toLowerCase();
+    let found = false;
+    let truthy = false;
+    Object.entries(entryData || {}).forEach(([key, value]) => {
+      const lower = String(key).toLowerCase();
+      if (lower === targetLower || lower.startsWith(`${targetLower}|`)) {
+        found = true;
+        if (toBooleanLike(value)) truthy = true;
+      }
+    });
+    if (!found) return null;
+    return truthy;
+  };
+
+  if (column) {
+    const cellValue = row?.values?.[column.key];
+    if (typeof cellValue?.boolean === "boolean") return cellValue.boolean;
+    if (isBooleanColumn(column)) {
+      if (cellValue?.sort === 1) return true;
+      if (cellValue?.sort === 0) return false;
+    }
+    if (cellValue && Object.prototype.hasOwnProperty.call(cellValue, "display")) {
+      return toBooleanLike(cellValue.display);
+    }
+  }
+
+  const entryData = row?.entry?.data || {};
+  const boolFromEntry = collectFromEntry(entryData, columnName);
+  if (boolFromEntry !== null) return boolFromEntry;
+
+  return false;
 };
 
 /**
@@ -1038,6 +1125,9 @@ const evaluateAST = (ast, row, columns) => {
   if (!ast || ast.type === 'EMPTY') return true;
 
   switch (ast.type) {
+    case 'NOT':
+      return !evaluateAST(ast.value, row, columns);
+
     case 'AND':
       return evaluateAST(ast.left, row, columns) && evaluateAST(ast.right, row, columns);
 
@@ -1076,6 +1166,7 @@ const evaluateAST = (ast, row, columns) => {
     case 'COLUMN_PARTIAL': {
       // 指定列に対して部分一致検索
       const column = findColumnByName(columns, ast.column);
+      if (!ast.keyword) return false;
 
       // 表示列から検索
       if (column) {
@@ -1112,18 +1203,27 @@ const evaluateAST = (ast, row, columns) => {
       return false;
     }
 
+    case 'COLUMN_BOOL': {
+      const column = findColumnByName(columns, ast.column);
+      const boolValue = resolveBooleanValueForRow(row, column, ast.column);
+      return boolValue === ast.value;
+    }
+
     case 'COMPARE': {
       // 指定列に対して比較演算
       const column = findColumnByName(columns, ast.column);
+      if (ast.value === "") return false;
 
       // 表示列から取得
       if (column) {
         const cellValue = row?.values?.[column.key];
         // sort値を使用（数値の場合は数値、文字列の場合は文字列）
         const rowValue = cellValue?.sort ?? cellValue?.display ?? '';
+        const numericPossible = Number.isFinite(Number(rowValue)) && Number.isFinite(Number(ast.value));
+        const allowNumeric = isNumericColumn(column) || typeof rowValue === "number" || numericPossible;
 
         if (rowValue !== '') {
-          return compareValue(rowValue, ast.operator, ast.value);
+          return compareValue(rowValue, ast.operator, ast.value, { allowNumeric });
         }
       }
 
@@ -1144,9 +1244,10 @@ const evaluateAST = (ast, row, columns) => {
 
         return buildSearchableCandidates(matchingKey, value, unixMs).some((candidate) => {
           if (candidate === undefined || candidate === null || candidate === "") return false;
-          const numValue = parseFloat(candidate);
-          const rowValue = !Number.isNaN(numValue) ? numValue : candidate;
-          return compareValue(rowValue, ast.operator, ast.value);
+          const numCandidate = Number(candidate);
+          const numTarget = Number(ast.value);
+          const allowNumericCandidate = Number.isFinite(numCandidate) && Number.isFinite(numTarget);
+          return compareValue(candidate, ast.operator, ast.value, { allowNumeric: allowNumericCandidate });
         });
       }
 
@@ -1156,6 +1257,7 @@ const evaluateAST = (ast, row, columns) => {
     case 'REGEX': {
       // 指定列に対して正規表現検索
       const column = findColumnByName(columns, ast.column);
+      if (!ast.pattern) return false;
 
       // 表示列から検索
       if (column) {
@@ -1202,6 +1304,7 @@ const evaluateAST = (ast, row, columns) => {
     }
 
     default:
+      if (ast.type === 'ALWAYS_FALSE') return false;
       return true;
   }
 };
