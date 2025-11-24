@@ -5,7 +5,7 @@ import { formatUnixMsDateTime, toUnixMs } from "../../utils/dateTime.js";
 export const MAX_HEADER_DEPTH = 6;
 
 const TRUTHY_SET = new Set([true, "true", "TRUE", "True", 1, "1", "●"]);
-const FALSY_SET = new Set([false, "false", "FALSE", "False", 0, "0", null, undefined, ""]);
+const FALSY_SET = new Set([false, "false", "FALSE", "False", null, undefined, ""]);
 
 const isDevEnvironment = (() => {
   try {
@@ -96,21 +96,36 @@ export const formatDateTime = (unixMs) => formatUnixMsDateTime(Number.isFinite(u
 const normalizeSearchText = (text) => String(text || "").toLowerCase();
 
 const buildSearchableCandidates = (key, value, unixMs = undefined) => {
-  const candidates = [];
+  const candidateSet = new Set();
   const displayValue = valueToDisplayString(value, unixMs);
   if (displayValue) {
-    candidates.push(displayValue);
+    candidateSet.add(displayValue);
   }
+
+  const addRawValueCandidate = (raw) => {
+    if (Array.isArray(raw)) {
+      raw.forEach((item) => addRawValueCandidate(item));
+      return;
+    }
+    if (raw === null || raw === undefined) return;
+    if (!FALSY_SET.has(raw)) return;
+    const str = String(raw);
+    if (str) {
+      candidateSet.add(str);
+    }
+  };
+
+  addRawValueCandidate(value);
 
   const choiceLabels = deriveChoiceLabels(key, value);
   if (choiceLabels?.optionLabel) {
-    candidates.push(choiceLabels.optionLabel);
+    candidateSet.add(choiceLabels.optionLabel);
     if (choiceLabels.combinedLabel && choiceLabels.combinedLabel !== choiceLabels.optionLabel) {
-      candidates.push(choiceLabels.combinedLabel);
+      candidateSet.add(choiceLabels.combinedLabel);
     }
   }
 
-  return candidates;
+  return Array.from(candidateSet);
 };
 
 const collectImportantFieldValue = (entry, path) => {

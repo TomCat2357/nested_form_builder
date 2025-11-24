@@ -13785,6 +13785,43 @@ function useSearchParams(defaultInit) {
   return [searchParams, setSearchParams];
 }
 const genId = () => `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+const DISPLAY_MODES = {
+  NONE: "none",
+  NORMAL: "normal",
+  COMPACT: "compact"
+};
+const VALID_MODES = new Set(Object.values(DISPLAY_MODES));
+const COMPACT_SUPPORTED_TYPES = /* @__PURE__ */ new Set(["radio", "select"]);
+const normalizeDisplayMode = (mode, { importantFlag = false } = {}) => {
+  if (typeof mode === "string") {
+    const lower = mode.toLowerCase();
+    if (VALID_MODES.has(lower)) {
+      return lower;
+    }
+  }
+  return importantFlag ? DISPLAY_MODES.NORMAL : DISPLAY_MODES.NONE;
+};
+const isCompactDisplaySupported = (type) => COMPACT_SUPPORTED_TYPES.has(type);
+const ensureDisplayModeForType = (mode, type, { explicit = false } = {}) => {
+  if (mode === DISPLAY_MODES.NONE) {
+    return DISPLAY_MODES.NONE;
+  }
+  const compactCapable = isCompactDisplaySupported(type);
+  if (mode === DISPLAY_MODES.COMPACT) {
+    return compactCapable ? DISPLAY_MODES.COMPACT : DISPLAY_MODES.NORMAL;
+  }
+  if (mode === DISPLAY_MODES.NORMAL) {
+    if (compactCapable && !explicit) {
+      return DISPLAY_MODES.COMPACT;
+    }
+    return DISPLAY_MODES.NORMAL;
+  }
+  if (compactCapable && !explicit) {
+    return DISPLAY_MODES.COMPACT;
+  }
+  return DISPLAY_MODES.NORMAL;
+};
+const toImportantFlag = (mode) => mode !== DISPLAY_MODES.NONE;
 const sanitizeOptionLabel = (label) => /^選択肢\d+$/.test(label || "") ? "" : label || "";
 const MAX_DEPTH = 6;
 const deepClone = (value) => {
@@ -13822,6 +13859,66 @@ const normalizeSchemaIDs = (nodes) => {
       });
       base.childrenByValue = fixed;
     }
+    const hasExplicitDisplayMode = Object.prototype.hasOwnProperty.call(base, "displayMode");
+    const normalizedDisplayMode = ensureDisplayModeForType(
+      normalizeDisplayMode(base.displayMode, { importantFlag: !!base.important }),
+      base.type,
+      { explicit: hasExplicitDisplayMode }
+    );
+    base.displayMode = normalizedDisplayMode;
+    base.important = toImportantFlag(normalizedDisplayMode);
+    if (base.placeholder !== void 0 && base.showPlaceholder === void 0) {
+      base.showPlaceholder = true;
+    }
+    if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
+      const savedOptions = base._savedChoiceState.options ? base._savedChoiceState.options.map((opt) => ({
+        id: opt?.id || genId(),
+        label: sanitizeOptionLabel(opt?.label)
+      })) : void 0;
+      const savedChildrenByValue = base._savedChoiceState.childrenByValue && typeof base._savedChoiceState.childrenByValue === "object" ? (() => {
+        const fixed = {};
+        Object.keys(base._savedChoiceState.childrenByValue).forEach((key) => {
+          fixed[key] = walk(base._savedChoiceState.childrenByValue[key]);
+        });
+        return fixed;
+      })() : void 0;
+      base._savedChoiceState = {
+        options: savedOptions,
+        childrenByValue: savedChildrenByValue
+      };
+    }
+    return base;
+  });
+  return walk(Array.isArray(nodes) ? nodes : []);
+};
+const stripSchemaIDs = (nodes) => {
+  const walk = (arr) => (arr || []).map((field) => {
+    const { id, ...rest } = field;
+    const base = { ...rest };
+    if (["radio", "select", "checkboxes"].includes(base.type) && Array.isArray(base.options)) {
+      base.options = base.options.map(({ id: optId, ...optRest }) => optRest);
+    }
+    if (base.childrenByValue && typeof base.childrenByValue === "object") {
+      const fixed = {};
+      Object.keys(base.childrenByValue).forEach((key) => {
+        fixed[key] = walk(base.childrenByValue[key]);
+      });
+      base.childrenByValue = fixed;
+    }
+    if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
+      const savedState = { ...base._savedChoiceState };
+      if (Array.isArray(savedState.options)) {
+        savedState.options = savedState.options.map(({ id: optId, ...optRest }) => optRest);
+      }
+      if (savedState.childrenByValue && typeof savedState.childrenByValue === "object") {
+        const fixed = {};
+        Object.keys(savedState.childrenByValue).forEach((key) => {
+          fixed[key] = walk(savedState.childrenByValue[key]);
+        });
+        savedState.childrenByValue = fixed;
+      }
+      base._savedChoiceState = savedState;
+    }
     return base;
   });
   return walk(Array.isArray(nodes) ? nodes : []);
@@ -13852,6 +13949,21 @@ const validateUniqueLabels = (fields) => {
   }
   return { ok: true };
 };
+const validateRequiredLabels = (fields) => {
+  const walk = (nodes) => {
+    for (const field of nodes || []) {
+      const label = (field?.label || "").trim();
+      if (!label) return false;
+      if (field?.childrenByValue && typeof field.childrenByValue === "object") {
+        for (const children of Object.values(field.childrenByValue)) {
+          if (!walk(children)) return false;
+        }
+      }
+    }
+    return true;
+  };
+  return walk(fields) ? { ok: true } : { ok: false };
+};
 const computeSchemaHash = (schema) => {
   const json = JSON.stringify(schema);
   let hash = 0;
@@ -13861,43 +13973,97 @@ const computeSchemaHash = (schema) => {
   }
   return `v1-${Math.abs(hash)}`;
 };
+const cleanupTempData = (schema) => {
+  const walk = (arr) => (arr || []).map((field) => {
+    const cleaned = { ...field };
+    delete cleaned._savedChildrenForChoice;
+    delete cleaned._savedDisplayModeForChoice;
+    if (["radio", "select", "checkboxes"].includes(cleaned.type)) {
+      delete cleaned.pattern;
+      delete cleaned.defaultNow;
+      delete cleaned.placeholder;
+      delete cleaned.showPlaceholder;
+    } else {
+      delete cleaned.options;
+      delete cleaned.childrenByValue;
+      delete cleaned._savedChoiceState;
+      if (cleaned.type === "regex") {
+        delete cleaned.defaultNow;
+        if (!cleaned.showPlaceholder) {
+          delete cleaned.placeholder;
+        }
+      } else if (["date", "time"].includes(cleaned.type)) {
+        delete cleaned.pattern;
+        delete cleaned.placeholder;
+        delete cleaned.showPlaceholder;
+      } else {
+        delete cleaned.pattern;
+        delete cleaned.defaultNow;
+        if (!cleaned.showPlaceholder) {
+          delete cleaned.placeholder;
+        }
+      }
+    }
+    if (cleaned.childrenByValue && typeof cleaned.childrenByValue === "object") {
+      const fixed = {};
+      Object.keys(cleaned.childrenByValue).forEach((key) => {
+        fixed[key] = walk(cleaned.childrenByValue[key]);
+      });
+      cleaned.childrenByValue = fixed;
+    }
+    return cleaned;
+  });
+  return walk(Array.isArray(schema) ? schema : []);
+};
 const normalizeLabel = (label) => typeof label === "string" ? label.trim() : "";
 const joinPath = (base, label) => {
   const next = normalizeLabel(label);
   return next ? base ? `${base}|${next}` : next : base;
 };
-const collectImportantFieldPaths = (schema) => {
-  const collected = /* @__PURE__ */ new Set();
+const resolveFieldDisplayMode = (field) => {
+  const hasExplicitMode = Object.prototype.hasOwnProperty.call(field || {}, "displayMode");
+  const normalized = normalizeDisplayMode(field?.displayMode, { importantFlag: !!field?.important });
+  return ensureDisplayModeForType(normalized, field?.type, { explicit: hasExplicitMode });
+};
+const collectDisplayFieldSettings = (schema) => {
+  const collected = [];
   const walk = (fields, basePath) => {
     (fields || []).forEach((field) => {
       const label = normalizeLabel(field?.label);
       if (!label) return;
       const path = joinPath(basePath, label);
-      if (field?.important) {
-        collected.add(path);
+      const mode = resolveFieldDisplayMode(field);
+      if (mode !== DISPLAY_MODES.NONE) {
+        collected.push({
+          path,
+          mode,
+          type: field?.type || ""
+        });
       }
       if (field?.childrenByValue && typeof field.childrenByValue === "object") {
-        Object.values(field.childrenByValue).forEach((childFields) => {
-          walk(childFields, path);
+        Object.entries(field.childrenByValue).forEach(([key, childFields]) => {
+          const valuePath = joinPath(path, key);
+          walk(childFields, valuePath);
         });
       }
     });
   };
   walk(Array.isArray(schema) ? schema : [], "");
-  return Array.from(collected).sort((a, b) => String(a).localeCompare(String(b), "ja"));
+  return collected.sort((a, b) => String(a?.path || "").localeCompare(String(b?.path || ""), "ja"));
 };
 const splitFieldPath = (path) => {
   if (!path) return [];
   return String(path).split("|").map((part) => part.trim()).filter((part) => part);
 };
-const hasScriptRun = () => typeof google !== "undefined" && google?.script?.run;
-const extractSpreadsheetId = (input) => {
-  if (!input) return "";
-  const str = String(input);
-  if (!str.includes("/")) return str;
-  const match = str.match(/\/d\/([a-zA-Z0-9-_]+)/);
-  return match ? match[1] : str;
+const normalizeSpreadsheetId = (input = "") => {
+  const s = String(input).trim();
+  if (/^https?:\/\//i.test(s)) {
+    const idMatch = s.match(/\/d\/([a-zA-Z0-9-_]+)/);
+    return idMatch?.[1] || s.match(/[?&]key=([a-zA-Z0-9-_]+)/)?.[1] || s;
+  }
+  return s;
 };
+const hasScriptRun = () => typeof google !== "undefined" && google?.script?.run;
 const normalizeScriptRunError = (err) => {
   if (err instanceof Error) return err;
   if (typeof err === "string") return new Error(err);
@@ -13915,6 +14081,19 @@ const callScriptRun = (functionName, payload) => new Promise((resolve, reject) =
   }
   google.script.run.withSuccessHandler((result) => resolve(result)).withFailureHandler((error) => reject(normalizeScriptRunError(error)))[functionName](payload);
 });
+const validateSpreadsheet = async (spreadsheetIdOrUrl) => {
+  if (!hasScriptRun()) {
+    throw new Error("Spreadsheet validation is only available in google.script.run environment");
+  }
+  if (!spreadsheetIdOrUrl) {
+    throw new Error("Spreadsheet URL/ID is required");
+  }
+  const result = await callScriptRun("nfbValidateSpreadsheet", spreadsheetIdOrUrl);
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Spreadsheet validation failed");
+  }
+  return result;
+};
 const loadUserSettings = async () => {
   if (!hasScriptRun()) return null;
   try {
@@ -13936,151 +14115,144 @@ const saveUserSettings = async (settings) => {
     return null;
   }
 };
-const submitResponses = async ({ gasUrl, spreadsheetId, sheetName = "Responses", payload }) => {
+const submitResponses = async ({ spreadsheetId, sheetName = "Responses", payload }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
+  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
   const body = { ...payload || {}, spreadsheetId, sheetName };
-  if (hasScriptRun()) {
-    const result = await callScriptRun("saveResponses", body);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Apps Script call failed");
-    }
-    return result;
+  const result = await callScriptRun("saveResponses", body);
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Apps Script call failed");
   }
-  if (!gasUrl) throw new Error("GAS URL is required");
-  const res = await fetch(gasUrl, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(body),
-    mode: "cors"
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok || json?.ok === false) {
-    if (res.status === 401 || res.status === 403) {
-      throw new Error("GAS WebApp へのアクセスが許可されていません。デプロイの公開範囲が『全員』になっているか確認してください。");
-    }
-    if (res.type === "opaqueredirect") {
-      throw new Error("GAS WebApp がリダイレクトを返しました。アクセス権限またはURLを確認してください。");
-    }
-    throw new Error(json?.error || `${res.status} ${res.statusText}`);
-  }
-  return json;
+  return result;
 };
-const deleteEntry = async ({ gasUrl, spreadsheetId, sheetName = "Responses", entryId }) => {
+const deleteEntry = async ({ spreadsheetId, sheetName = "Responses", entryId }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
   if (!entryId) throw new Error("entryId is required");
-  const cleanSpreadsheetId = extractSpreadsheetId(spreadsheetId);
+  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
+  const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
   const payload = {
     spreadsheetId: cleanSpreadsheetId,
     sheetName,
     id: entryId
   };
-  if (hasScriptRun()) {
-    const result = await callScriptRun("deleteRecord", payload);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Delete failed");
-    }
-    return result;
+  const result = await callScriptRun("deleteRecord", payload);
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Delete failed");
   }
-  if (!gasUrl) throw new Error("GAS URL is required when not in google.script.run environment");
-  const body = { action: "delete", ...payload };
-  const res = await fetch(gasUrl, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(body),
-    mode: "cors"
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok || json?.ok === false) {
-    if (res.status === 401 || res.status === 403) {
-      throw new Error("GAS WebApp へのアクセスが許可されていません。デプロイの公開範囲が『全員』になっているか確認してください。");
-    }
-    if (res.type === "opaqueredirect") {
-      throw new Error("GAS WebApp がリダイレクトを返しました。アクセス権限またはURLを確認してください。");
-    }
-    throw new Error(json?.error || `${res.status} ${res.statusText}`);
-  }
-  return json;
+  return result;
 };
-const getEntry = async ({ gasUrl, spreadsheetId, sheetName = "Responses", entryId }) => {
+const getEntry = async ({ spreadsheetId, sheetName = "Responses", entryId }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
   if (!entryId) throw new Error("entryId is required");
-  const cleanSpreadsheetId = extractSpreadsheetId(spreadsheetId);
+  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
+  const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
   const payload = {
     spreadsheetId: cleanSpreadsheetId,
     sheetName,
     id: entryId
   };
-  if (hasScriptRun()) {
-    const result = await callScriptRun("getRecord", payload);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Get record failed");
-    }
-    return result.record || null;
+  const result = await callScriptRun("getRecord", payload);
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Get record failed");
   }
-  if (!gasUrl) throw new Error("GAS URL is required when not in google.script.run environment");
-  const body = { action: "get", ...payload };
-  const res = await fetch(gasUrl, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(body),
-    mode: "cors"
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok || json?.ok === false) {
-    if (res.status === 401 || res.status === 403) {
-      throw new Error("GAS WebApp へのアクセスが許可されていません。デプロイの公開範囲が『全員』になっているか確認してください。");
-    }
-    if (res.type === "opaqueredirect") {
-      throw new Error("GAS WebApp がリダイレクトを返しました。アクセス権限またはURLを確認してください。");
-    }
-    throw new Error(json?.error || `${res.status} ${res.statusUrl}`);
-  }
-  return json.record || null;
+  return result.record || null;
 };
-const listEntries = async ({ gasUrl, spreadsheetId, sheetName = "Responses" }) => {
+const listEntries = async ({ spreadsheetId, sheetName = "Responses" }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
-  const cleanSpreadsheetId = extractSpreadsheetId(spreadsheetId);
+  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
+  const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
   const payload = {
     spreadsheetId: cleanSpreadsheetId,
     sheetName
   };
-  if (hasScriptRun()) {
-    const result = await callScriptRun("listRecords", payload);
-    if (!result || result.ok === false) {
-      console.error("[gasClient] Result validation failed - result:", result);
-      throw new Error(result?.error || "List failed");
-    }
-    return {
-      records: result.records || [],
-      headerMatrix: result.headerMatrix || []
-    };
-  }
-  if (!gasUrl) throw new Error("GAS URL is required when not in google.script.run environment");
-  const body = { action: "list", ...payload };
-  const res = await fetch(gasUrl, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(body),
-    mode: "cors"
-  });
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok || json?.ok === false) {
-    if (res.status === 401 || res.status === 403) {
-      throw new Error("GAS WebApp へのアクセスが許可されていません。デプロイの公開範囲が『全員』になっているか確認してください。");
-    }
-    if (res.type === "opaqueredirect") {
-      throw new Error("GAS WebApp がリダイレクトを返しました。アクセス権限またはURLを確認してください。");
-    }
-    throw new Error(json?.error || `${res.status} ${res.statusText}`);
+  const result = await callScriptRun("listRecords", payload);
+  if (!result || result.ok === false) {
+    console.error("[gasClient] Result validation failed - result:", result);
+    throw new Error(result?.error || "List failed");
   }
   return {
-    records: json.records || [],
-    headerMatrix: json.headerMatrix || []
+    records: result.records || [],
+    headerMatrix: result.headerMatrix || []
   };
+};
+const callFormApi = async (functionName, args, errorMessage) => {
+  if (!hasScriptRun()) {
+    throw new Error("Form management is only available in google.script.run environment");
+  }
+  try {
+    const result = await callScriptRun(functionName, args);
+    if (!result || result.ok === false) {
+      throw new Error(result?.error || errorMessage);
+    }
+    return result;
+  } catch (error) {
+    console.error(`[gasClient] ${functionName} failed`, error);
+    throw error;
+  }
+};
+const listForms = async (options = {}) => {
+  const result = await callFormApi("nfbListForms", options, "List forms failed");
+  return {
+    forms: result.forms || [],
+    loadFailures: result.loadFailures || []
+  };
+};
+const getForm = async (formId) => {
+  if (!formId) throw new Error("formId is required");
+  const result = await callFormApi("nfbGetForm", formId, "Get form failed");
+  return result.form || null;
+};
+const saveForm = async (form, targetUrl = null) => {
+  if (!form || !form.id) throw new Error("Form with ID is required");
+  const payload = { form, targetUrl };
+  const result = await callFormApi("nfbSaveForm", payload, "Save form failed");
+  return { form: result.form, fileUrl: result.fileUrl };
+};
+const deleteFormFromDrive = async (formId) => {
+  if (!formId) throw new Error("formId is required");
+  return await callFormApi("nfbDeleteForm", formId, "Delete form failed");
+};
+const deleteFormsFromDrive = async (formIds) => {
+  if (!Array.isArray(formIds) || formIds.length === 0) {
+    throw new Error("formIds array is required");
+  }
+  return await callFormApi("nfbDeleteForms", formIds, "Batch delete forms failed");
+};
+const archiveForm = async (formId) => {
+  if (!formId) throw new Error("formId is required");
+  const result = await callFormApi("nfbArchiveForm", formId, "Archive form failed");
+  return result.form || null;
+};
+const unarchiveForm = async (formId) => {
+  if (!formId) throw new Error("formId is required");
+  const result = await callFormApi("nfbUnarchiveForm", formId, "Unarchive form failed");
+  return result.form || null;
+};
+const importFormsFromDrive = async (url) => {
+  if (!url) throw new Error("Google Drive URL is required");
+  const result = await callFormApi("nfbImportFormsFromDrive", url, "Import from Drive failed");
+  return { forms: result.forms || [], skipped: result.skipped || 0 };
+};
+const debugGetMapping = async () => {
+  if (!hasScriptRun()) {
+    throw new Error("Debug function is only available in google.script.run environment");
+  }
+  try {
+    const result = await callScriptRun("nfbDebugGetMapping", {});
+    if (!result || result.ok === false) {
+      throw new Error(result?.error || "Debug get mapping failed");
+    }
+    return result;
+  } catch (error) {
+    console.error(`[gasClient] debugGetMapping failed`, error);
+    throw error;
+  }
 };
 const FORMS_STORAGE_KEY = "nfb.forms.v1";
 const ENTRIES_STORAGE_KEY = "nfb.entries.v1";
 const nowIso = () => (/* @__PURE__ */ new Date()).toISOString();
+const nowUnixMs = () => Date.now();
+const DEFAULT_SHEET_NAME = "Responses";
 const readStorage = (key, fallback) => {
   try {
     const raw = window.localStorage.getItem(key);
@@ -14098,24 +14270,68 @@ const writeStorage = (key, value) => {
     console.warn(`failed to write localStorage key ${key}`, error);
   }
 };
-const loadForms = () => readStorage(FORMS_STORAGE_KEY, []);
+const ensureDisplayInfo = (form) => {
+  const schema = Array.isArray(form?.schema) ? form.schema : [];
+  const displayFieldSettings = collectDisplayFieldSettings(schema);
+  return {
+    ...form,
+    displayFieldSettings,
+    importantFields: displayFieldSettings.map((item) => item.path)
+  };
+};
+const getSheetConfig = (form) => {
+  const spreadsheetId = form?.settings?.spreadsheetId;
+  if (!spreadsheetId) return null;
+  return {
+    spreadsheetId,
+    sheetName: form?.settings?.sheetName || DEFAULT_SHEET_NAME
+  };
+};
+const mapSheetRecordToEntry = (record, formId) => ({
+  id: record.id,
+  "No.": record["No."],
+  formId,
+  createdAt: record.createdAt,
+  modifiedAt: record.modifiedAt,
+  createdAtUnixMs: record.createdAtUnixMs ?? null,
+  modifiedAtUnixMs: record.modifiedAtUnixMs ?? null,
+  data: record.data || {},
+  dataUnixMs: record.dataUnixMs || {},
+  order: Object.keys(record.data || {})
+});
+const cacheEntries = (formId, entries) => persistEntries((entriesByForm) => {
+  entriesByForm[formId] = entries;
+  return entriesByForm;
+});
+const loadForms = () => {
+  const forms = readStorage(FORMS_STORAGE_KEY, []);
+  return (Array.isArray(forms) ? forms : []).map((form) => ensureDisplayInfo(form));
+};
 const loadEntries = () => readStorage(ENTRIES_STORAGE_KEY, {});
 const saveForms = (forms) => writeStorage(FORMS_STORAGE_KEY, forms);
 const saveEntries = (entries) => writeStorage(ENTRIES_STORAGE_KEY, entries);
 const clone = (value) => typeof structuredClone === "function" ? structuredClone(value) : JSON.parse(JSON.stringify(value));
 const buildFormRecord = (input) => {
   const now = nowIso();
+  const nowMs = nowUnixMs();
   const schema = Array.isArray(input.schema) ? input.schema : [];
+  const displayFieldSettings = collectDisplayFieldSettings(schema);
+  const settings = input.settings || {};
+  if (!settings.formTitle) {
+    settings.formTitle = input.name || "無題のフォーム";
+  }
   return {
     id: input.id || genId(),
-    name: input.name || "無題のフォーム",
     description: input.description || "",
     schema,
-    settings: input.settings || {},
+    settings,
     schemaHash: computeSchemaHash(schema),
-    importantFields: collectImportantFieldPaths(schema),
+    importantFields: displayFieldSettings.map((item) => item.path),
+    displayFieldSettings,
     createdAt: input.createdAt || now,
     modifiedAt: now,
+    createdAtUnixMs: Number.isFinite(input.createdAtUnixMs) ? input.createdAtUnixMs : nowMs,
+    modifiedAtUnixMs: nowMs,
     archived: !!input.archived,
     schemaVersion: Number.isFinite(input.schemaVersion) ? input.schemaVersion : 1
   };
@@ -14138,37 +14354,117 @@ const persistEntries = (producer) => {
 };
 const dataStore = {
   async listForms({ includeArchived = false } = {}) {
+    if (hasScriptRun()) {
+      try {
+        const result = await listForms({ includeArchived });
+        const forms2 = Array.isArray(result.forms) ? result.forms : [];
+        const loadFailures = Array.isArray(result.loadFailures) ? result.loadFailures : [];
+        console.log("[dataStore.listForms] Fetched from GAS:", {
+          count: forms2.length,
+          formIds: forms2.map((f) => f.id),
+          loadFailures: loadFailures.length
+        });
+        return {
+          forms: forms2.map((form) => ensureDisplayInfo(form)),
+          loadFailures
+        };
+      } catch (error) {
+        console.warn("[dataStore] Failed to fetch forms from Google Drive, falling back to localStorage:", error);
+      }
+    }
     const forms = loadForms();
-    return forms.filter((form) => includeArchived || !form.archived);
+    console.log("[dataStore.listForms] Using localStorage:", { count: forms.length });
+    const filtered = forms.filter((form) => includeArchived || !form.archived);
+    return {
+      forms: filtered,
+      loadFailures: []
+    };
   },
   async getForm(formId) {
+    if (hasScriptRun()) {
+      try {
+        const form = await getForm(formId);
+        return form ? ensureDisplayInfo(form) : null;
+      } catch (error) {
+        console.warn("[dataStore] Failed to fetch form from Google Drive, falling back to localStorage:", error);
+      }
+    }
     const forms = loadForms();
     return forms.find((form) => form.id === formId) || null;
   },
-  async createForm(payload) {
-    let created = null;
+  async createForm(payload, targetUrl = null) {
+    const record = buildFormRecord(payload);
+    console.log("[dataStore.createForm] Creating form:", { id: record.id, hasPayloadId: !!payload.id, targetUrl });
+    if (hasScriptRun()) {
+      try {
+        let beforeMapping = null;
+        try {
+          beforeMapping = await debugGetMapping();
+          console.log("[DEBUG] BEFORE createForm - Mapping:", beforeMapping);
+          console.log("[DEBUG] BEFORE createForm - Legacy info:", JSON.stringify(beforeMapping?.legacyInfo, null, 2));
+        } catch (debugErr) {
+          console.warn("[DEBUG] Failed to get before-mapping:", debugErr);
+        }
+        const result = await saveForm(record, targetUrl);
+        console.log("[dataStore.createForm] GAS result:", { formId: result?.form?.id, fileUrl: result?.fileUrl });
+        console.log("[dataStore.createForm] GAS debugRawJsonBefore:", result?.debugRawJsonBefore);
+        console.log("[dataStore.createForm] GAS debugRawJsonAfter:", result?.debugRawJsonAfter);
+        console.log("[dataStore.createForm] GAS debugMappingStr:", result?.debugMappingStr);
+        try {
+          const afterMapping = await debugGetMapping();
+          console.log("[DEBUG] AFTER createForm - Mapping:", afterMapping);
+          console.log("[DEBUG] Mapping changed from", beforeMapping?.totalForms, "to", afterMapping?.totalForms, "forms");
+        } catch (debugErr) {
+          console.warn("[DEBUG] Failed to get after-mapping:", debugErr);
+        }
+        const savedForm = result?.form || result;
+        const fileUrl = result?.fileUrl;
+        const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
+        return formWithUrl ? ensureDisplayInfo(formWithUrl) : record;
+      } catch (error) {
+        console.warn("[dataStore] Failed to save form to Google Drive, falling back to localStorage:", error);
+      }
+    }
     persistForms((forms) => {
-      const record = buildFormRecord({ ...payload, id: genId() });
-      created = record;
       forms.push(record);
       return forms;
     });
-    return created;
+    return record;
   },
-  async updateForm(formId, updates) {
+  async updateForm(formId, updates, targetUrl = null) {
+    let current = await this.getForm(formId);
+    if (!current) {
+      if (updates && updates.id === formId && updates.createdAt) {
+        current = updates;
+      } else {
+        throw new Error("Form not found: " + formId);
+      }
+    }
+    const next = buildFormRecord({
+      ...current,
+      ...updates,
+      id: current.id,
+      createdAt: current.createdAt,
+      archived: updates.archived ?? current.archived,
+      schemaVersion: updates.schemaVersion ?? current.schemaVersion,
+      driveFileUrl: current.driveFileUrl
+      // 既存のURLを保持
+    });
+    if (hasScriptRun()) {
+      try {
+        const result = await saveForm(next, targetUrl);
+        const savedForm = result?.form || result;
+        const fileUrl = result?.fileUrl;
+        const formWithUrl = { ...savedForm, driveFileUrl: fileUrl || next.driveFileUrl };
+        return formWithUrl ? ensureDisplayInfo(formWithUrl) : next;
+      } catch (error) {
+        console.warn("[dataStore] Failed to update form in Google Drive, falling back to localStorage:", error);
+      }
+    }
     let updated = null;
     persistForms((forms) => {
       const index = forms.findIndex((form) => form.id === formId);
       if (index === -1) return forms;
-      const current = forms[index];
-      const next = buildFormRecord({
-        ...current,
-        ...updates,
-        id: current.id,
-        createdAt: current.createdAt,
-        archived: updates.archived ?? current.archived,
-        schemaVersion: updates.schemaVersion ?? current.schemaVersion
-      });
       updated = next;
       forms[index] = next;
       return forms;
@@ -14176,12 +14472,21 @@ const dataStore = {
     return updated;
   },
   async setFormArchivedState(formId, archived) {
+    const nowMs = nowUnixMs();
+    if (hasScriptRun()) {
+      try {
+        const savedForm = archived ? await archiveForm(formId) : await unarchiveForm(formId);
+        return savedForm ? ensureDisplayInfo(savedForm) : null;
+      } catch (error) {
+        console.warn("[dataStore] Failed to update form archive state in Google Drive, falling back to localStorage:", error);
+      }
+    }
     let updated = null;
     persistForms((forms) => {
       const index = forms.findIndex((form) => form.id === formId);
       if (index === -1) return forms;
       const current = forms[index];
-      const next = { ...current, archived, modifiedAt: nowIso() };
+      const next = { ...current, archived, modifiedAt: nowIso(), modifiedAtUnixMs: nowMs };
       updated = next;
       forms[index] = next;
       return forms;
@@ -14194,18 +14499,41 @@ const dataStore = {
   async unarchiveForm(formId) {
     return this.setFormArchivedState(formId, false);
   },
-  async deleteForm(formId) {
-    persistForms((forms) => forms.filter((form) => form.id !== formId));
+  async deleteForms(formIds) {
+    const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
+    if (!targetIds.length) return;
+    if (hasScriptRun()) {
+      try {
+        await deleteFormsFromDrive(targetIds);
+      } catch (batchError) {
+        console.warn("[dataStore] Failed to batch delete forms via GAS, fallback to single delete:", batchError);
+        for (const formId of targetIds) {
+          try {
+            await deleteFormFromDrive(formId);
+          } catch (singleError) {
+            console.warn(`[dataStore] Failed to delete form ${formId} via GAS`, singleError);
+          }
+        }
+      }
+    }
+    persistForms((forms) => forms.filter((form) => !targetIds.includes(form.id)));
     persistEntries((entries) => {
-      delete entries[formId];
-      return entries;
+      const next = { ...entries };
+      targetIds.forEach((formId) => {
+        delete next[formId];
+      });
+      return next;
     });
+  },
+  async deleteForm(formId) {
+    await this.deleteForms([formId]);
   },
   async upsertEntry(formId, payload) {
     let saved = null;
     persistEntries((entriesByForm) => {
       const list = getEntriesForForm(entriesByForm, formId);
       const now = nowIso();
+      const nowMs = nowUnixMs();
       if (payload.id) {
         const idx = list.findIndex((entry) => entry.id === payload.id);
         if (idx !== -1) {
@@ -14216,8 +14544,11 @@ const dataStore = {
             id: current.id,
             formId,
             createdAt: current.createdAt,
+            createdAtUnixMs: current.createdAtUnixMs ?? nowMs,
             modifiedAt: now,
+            modifiedAtUnixMs: nowMs,
             data: payload.data || current.data,
+            dataUnixMs: payload.dataUnixMs || current.dataUnixMs || {},
             order: payload.order || current.order || Object.keys(payload.data || current.data || {})
           };
           list[idx] = next;
@@ -14229,8 +14560,11 @@ const dataStore = {
           id: payload.id || genId(),
           formId,
           createdAt: now,
+          createdAtUnixMs: nowMs,
           modifiedAt: now,
+          modifiedAtUnixMs: nowMs,
           data: payload.data || {},
+          dataUnixMs: payload.dataUnixMs || {},
           order: payload.order || Object.keys(payload.data || {})
         };
         list.unshift(record);
@@ -14243,36 +14577,18 @@ const dataStore = {
   },
   async listEntries(formId) {
     const form = await this.getForm(formId);
-    if (form?.settings?.spreadsheetId) {
+    const sheetConfig = getSheetConfig(form);
+    if (sheetConfig) {
       try {
-        const gasResult = await listEntries({
-          gasUrl: form.settings.gasUrl || "",
-          spreadsheetId: form.settings.spreadsheetId,
-          sheetName: form.settings.sheetName || "Responses"
-        });
-        const gasRecords = gasResult.records || [];
-        const headerMatrix = gasResult.headerMatrix || [];
-        const entries2 = gasRecords.map((record) => {
-          return {
-            id: record.id,
-            "No.": record["No."],
-            formId,
-            createdAt: record.createdAt,
-            modifiedAt: record.modifiedAt,
-            data: record.data || {},
-            order: Object.keys(record.data || {})
-          };
-        });
+        const gasResult = await listEntries(sheetConfig);
+        const entries2 = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
         entries2.sort((a, b) => {
           if (a.id < b.id) return -1;
           if (a.id > b.id) return 1;
           return 0;
         });
-        persistEntries((entriesByForm) => {
-          entriesByForm[formId] = entries2;
-          return entriesByForm;
-        });
-        return { entries: entries2, headerMatrix };
+        cacheEntries(formId, entries2);
+        return { entries: entries2, headerMatrix: gasResult.headerMatrix || [] };
       } catch (error) {
         console.error("[dataStore] Failed to fetch from Google Sheets:", error);
       }
@@ -14282,26 +14598,11 @@ const dataStore = {
   },
   async getEntry(formId, entryId) {
     const form = await this.getForm(formId);
-    if (form?.settings?.spreadsheetId) {
+    const sheetConfig = getSheetConfig(form);
+    if (sheetConfig) {
       try {
-        const record = await getEntry({
-          gasUrl: form.settings.gasUrl || "",
-          spreadsheetId: form.settings.spreadsheetId,
-          sheetName: form.settings.sheetName || "Responses",
-          entryId
-        });
-        if (record) {
-          return {
-            id: record.id,
-            "No.": record["No."],
-            formId,
-            createdAt: record.createdAt,
-            modifiedAt: record.modifiedAt,
-            data: record.data || {},
-            order: Object.keys(record.data || {})
-          };
-        }
-        return null;
+        const record = await getEntry({ ...sheetConfig, entryId });
+        return record ? mapSheetRecordToEntry(record, formId) : null;
       } catch (error) {
         console.error("[dataStore.getEntry] Spreadsheet取得エラー:", error);
       }
@@ -14311,14 +14612,10 @@ const dataStore = {
   },
   async deleteEntry(formId, entryId) {
     const form = await this.getForm(formId);
-    if (form?.settings?.spreadsheetId) {
+    const sheetConfig = getSheetConfig(form);
+    if (sheetConfig) {
       try {
-        await deleteEntry({
-          gasUrl: form.settings.gasUrl || "",
-          spreadsheetId: form.settings.spreadsheetId,
-          sheetName: form.settings.sheetName || "Responses",
-          entryId
-        });
+        await deleteEntry({ ...sheetConfig, entryId });
       } catch (error) {
         console.error("[dataStore] Failed to delete from Google Sheets:", error);
         throw new Error(`スプレッドシートからの削除に失敗しました: ${error.message}`);
@@ -14337,7 +14634,6 @@ const dataStore = {
         if (!item) return;
         const record = buildFormRecord({
           ...item,
-          id: genId(),
           createdAt: item.createdAt,
           schemaVersion: item.schemaVersion
         });
@@ -14349,73 +14645,132 @@ const dataStore = {
     return created;
   },
   async exportForms(formIds) {
-    const forms = loadForms();
-    const selected = forms.filter((form) => formIds.includes(form.id));
-    return selected.map((form) => clone(form));
+    const { forms: allForms } = await this.listForms({ includeArchived: true });
+    const selected = allForms.filter((form) => formIds.includes(form.id));
+    return selected.map((form) => {
+      const {
+        id,
+        schemaHash,
+        importantFields,
+        displayFieldSettings,
+        createdAt,
+        modifiedAt,
+        archived,
+        schemaVersion,
+        ...rest
+      } = form;
+      const cleaned = {
+        ...rest,
+        schema: stripSchemaIDs(rest.schema || [])
+      };
+      return clone(cleaned);
+    });
   }
 };
 const AppDataContext = reactExports.createContext(null);
 function AppDataProvider({ children }) {
   const [forms, setForms] = reactExports.useState([]);
   const [loadingForms, setLoadingForms] = reactExports.useState(true);
-  const refreshForms = reactExports.useCallback(async () => {
+  const [error, setError] = reactExports.useState(null);
+  const [loadFailures, setLoadFailures] = reactExports.useState([]);
+  const refreshForms = reactExports.useCallback(async (source = "unknown") => {
     setLoadingForms(true);
-    const list = await dataStore.listForms({ includeArchived: true });
-    setForms(list);
-    setLoadingForms(false);
+    setError(null);
+    const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+    console.log("[AppDataProvider] refreshForms start", { source, startedAt });
+    try {
+      const result = await dataStore.listForms({ includeArchived: true });
+      setForms(result.forms || []);
+      setLoadFailures(result.loadFailures || []);
+      const finishedAt = (/* @__PURE__ */ new Date()).toISOString();
+      console.log("[AppDataProvider] refreshForms success", {
+        source,
+        startedAt,
+        finishedAt,
+        formCount: (result.forms || []).length,
+        loadFailures: (result.loadFailures || []).length
+      });
+    } catch (err) {
+      console.error("[AppDataProvider] フォーム取得エラー:", err);
+      setError(err.message || "フォームの取得に失敗しました");
+      const finishedAt = (/* @__PURE__ */ new Date()).toISOString();
+      console.log("[AppDataProvider] refreshForms fail", { source, startedAt, finishedAt, error: err?.message });
+    } finally {
+      setLoadingForms(false);
+    }
   }, []);
   reactExports.useEffect(() => {
-    refreshForms();
+    refreshForms("startup");
   }, [refreshForms]);
-  const createOperationWithRefresh = reactExports.useCallback(
-    (operation) => async (...args) => {
-      const result = await operation(...args);
-      await refreshForms();
-      return result;
-    },
-    [refreshForms]
-  );
-  const createForm = reactExports.useCallback(
-    createOperationWithRefresh((payload) => dataStore.createForm(payload)),
-    [createOperationWithRefresh]
-  );
-  const updateForm = reactExports.useCallback(
-    createOperationWithRefresh((formId, updates) => dataStore.updateForm(formId, updates)),
-    [createOperationWithRefresh]
-  );
-  const archiveForm = reactExports.useCallback(
-    createOperationWithRefresh((formId) => dataStore.archiveForm(formId)),
-    [createOperationWithRefresh]
-  );
-  const unarchiveForm = reactExports.useCallback(
-    createOperationWithRefresh((formId) => dataStore.unarchiveForm(formId)),
-    [createOperationWithRefresh]
-  );
-  const deleteForm = reactExports.useCallback(
-    createOperationWithRefresh((formId) => dataStore.deleteForm(formId)),
-    [createOperationWithRefresh]
-  );
-  const importForms = reactExports.useCallback(
-    createOperationWithRefresh((jsonList) => dataStore.importForms(jsonList)),
-    [createOperationWithRefresh]
-  );
+  const upsertFormsState = reactExports.useCallback((nextForm) => {
+    if (!nextForm || !nextForm.id) return;
+    setForms((prev) => {
+      const next = prev.slice();
+      const index = next.findIndex((form) => form.id === nextForm.id);
+      if (index === -1) {
+        next.unshift(nextForm);
+      } else {
+        next[index] = nextForm;
+      }
+      return next;
+    });
+  }, []);
+  const removeFormsState = reactExports.useCallback((formIds) => {
+    if (!Array.isArray(formIds) || formIds.length === 0) return;
+    setForms((prev) => prev.filter((form) => !formIds.includes(form.id)));
+  }, []);
+  const createForm = reactExports.useCallback(async (payload, targetUrl) => {
+    const result = await dataStore.createForm(payload, targetUrl);
+    upsertFormsState(result);
+    return result;
+  }, [upsertFormsState]);
+  const updateForm = reactExports.useCallback(async (formId, updates, targetUrl) => {
+    const result = await dataStore.updateForm(formId, updates, targetUrl);
+    upsertFormsState(result);
+    return result;
+  }, [upsertFormsState]);
+  const archiveForm2 = reactExports.useCallback(async (formId) => {
+    const result = await dataStore.archiveForm(formId);
+    upsertFormsState(result);
+    return result;
+  }, [upsertFormsState]);
+  const unarchiveForm2 = reactExports.useCallback(async (formId) => {
+    const result = await dataStore.unarchiveForm(formId);
+    upsertFormsState(result);
+    return result;
+  }, [upsertFormsState]);
+  const deleteForms = reactExports.useCallback(async (formIds) => {
+    await dataStore.deleteForms(formIds);
+    removeFormsState(formIds);
+  }, [removeFormsState]);
+  const deleteForm = reactExports.useCallback((formId) => deleteForms([formId]), [deleteForms]);
+  const importForms = reactExports.useCallback(async (jsonList) => {
+    const created = await dataStore.importForms(jsonList);
+    if (Array.isArray(created)) {
+      created.forEach((form) => upsertFormsState(form));
+    }
+    return created;
+  }, [upsertFormsState]);
   const exportForms = reactExports.useCallback(async (formIds) => dataStore.exportForms(formIds), []);
   const getFormById = reactExports.useCallback((formId) => forms.find((form) => form.id === formId) || null, [forms]);
   const memoValue = reactExports.useMemo(
     () => ({
       forms,
+      loadFailures,
       loadingForms,
+      error,
       refreshForms,
       createForm,
       updateForm,
-      archiveForm,
-      unarchiveForm,
+      archiveForm: archiveForm2,
+      unarchiveForm: unarchiveForm2,
+      deleteForms,
       deleteForm,
       importForms,
       exportForms,
       getFormById
     }),
-    [forms, loadingForms, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, deleteForm, importForms, exportForms, getFormById]
+    [forms, loadFailures, loadingForms, error, refreshForms, createForm, updateForm, archiveForm2, unarchiveForm2, deleteForms, deleteForm, importForms, exportForms, getFormById]
   );
   return /* @__PURE__ */ jsxRuntimeExports.jsx(AppDataContext.Provider, { value: memoValue, children });
 }
@@ -14460,7 +14815,16 @@ const containerStyle$1 = {
   display: "flex",
   height: "calc(100vh - 49px)"
 };
-function AppLayout({ title, fallbackPath: fallbackPath2 = "/", onBack, backHidden = false, actions, sidebarActions, children }) {
+const badgeStyle = {
+  fontSize: 11,
+  padding: "4px 8px",
+  borderRadius: 6,
+  background: "#DBEAFE",
+  color: "#1E40AF",
+  fontWeight: 600,
+  marginLeft: 8
+};
+function AppLayout({ title, fallbackPath: fallbackPath2 = "/", onBack, backHidden = false, actions, sidebarActions, badge, children }) {
   const navigate = useNavigate();
   const resolveTarget = (input) => {
     if (!input) return null;
@@ -14497,7 +14861,10 @@ function AppLayout({ title, fallbackPath: fallbackPath2 = "/", onBack, backHidde
   ] });
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { minHeight: "100vh", background: "#F3F4F6" }, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsxs("header", { style: headerStyle, children: [
-      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", alignItems: "center", gap: 12 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { style: { margin: 0, fontSize: 18 }, children: title }) }),
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", alignItems: "center", gap: 12 }, children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h1", { style: { margin: 0, fontSize: 18 }, children: title }),
+        badge && /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: badgeStyle, children: badge })
+      ] }),
       /* @__PURE__ */ jsxRuntimeExports.jsx("div", { children: actions })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: containerStyle$1, children: [
@@ -14509,6 +14876,86 @@ function AppLayout({ title, fallbackPath: fallbackPath2 = "/", onBack, backHidde
     ] })
   ] });
 }
+const TIME_ZONE = "Asia/Tokyo";
+const DEFAULT_LOCALE = "ja-JP";
+const pad2 = (value) => String(value).padStart(2, "0");
+const isValidDate = (d) => d instanceof Date && !Number.isNaN(d.getTime());
+const buildDateFromParts = (year, month, day, hour, minute, second) => new Date(year, month, day, hour || 0, minute || 0, second || 0);
+const parseStringToDate = (value) => {
+  if (typeof value !== "string") return null;
+  const str = value.trim();
+  if (!str) return null;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(str)) {
+    const iso = new Date(str);
+    return isValidDate(iso) ? iso : null;
+  }
+  const dt = str.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (dt) {
+    const date = buildDateFromParts(
+      parseInt(dt[1], 10),
+      parseInt(dt[2], 10) - 1,
+      parseInt(dt[3], 10),
+      parseInt(dt[4], 10),
+      parseInt(dt[5], 10),
+      dt[6] ? parseInt(dt[6], 10) : 0
+    );
+    return isValidDate(date) ? date : null;
+  }
+  const d = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (d) {
+    const dateOnly = buildDateFromParts(parseInt(d[1], 10), parseInt(d[2], 10) - 1, parseInt(d[3], 10));
+    return isValidDate(dateOnly) ? dateOnly : null;
+  }
+  const t = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (t) {
+    const timeOnly = buildDateFromParts(1970, 0, 1, parseInt(t[1], 10), parseInt(t[2], 10), t[3] ? parseInt(t[3], 10) : 0);
+    return isValidDate(timeOnly) ? timeOnly : null;
+  }
+  return null;
+};
+const toUnixMs = (value) => {
+  if (value === null || value === void 0) return null;
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (value instanceof Date) return value.getTime();
+  const parsed = parseStringToDate(String(value));
+  return parsed ? parsed.getTime() : null;
+};
+const buildFormatter = (options) => new Intl.DateTimeFormat(DEFAULT_LOCALE, { timeZone: TIME_ZONE, hour12: false, ...options });
+const formatFromParts = (formatter, unixMs) => {
+  if (!Number.isFinite(unixMs)) return "";
+  try {
+    const parts = formatter.formatToParts(new Date(unixMs));
+    const get = (type) => parts.find((p) => p.type === type)?.value || "";
+    const yyyy = get("year");
+    const mm = get("month");
+    const dd = get("day");
+    const hh = get("hour");
+    const mi = get("minute");
+    if (hh !== "" && mi !== "") {
+      return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+    }
+    return `${yyyy}-${mm}-${dd}`;
+  } catch (error) {
+    return "";
+  }
+};
+const formatterDateTime = buildFormatter({ year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+const formatterDate = buildFormatter({ year: "numeric", month: "2-digit", day: "2-digit" });
+const formatterTime = buildFormatter({ hour: "2-digit", minute: "2-digit" });
+const formatUnixMsDateTime = (unixMs) => formatFromParts(formatterDateTime, unixMs);
+const formatUnixMsDate = (unixMs) => formatFromParts(formatterDate, unixMs);
+const formatUnixMsTime = (unixMs) => {
+  if (!Number.isFinite(unixMs)) return "";
+  try {
+    const parts = formatterTime.formatToParts(new Date(unixMs));
+    const get = (type) => parts.find((p) => p.type === type)?.value || "";
+    const hh = get("hour");
+    const mi = get("minute");
+    return hh && mi ? `${pad2(hh)}:${pad2(mi)}` : "";
+  } catch (error) {
+    return "";
+  }
+};
 const listStyle = {
   display: "grid",
   gap: 16
@@ -14553,11 +15000,11 @@ function MainPage() {
       backHidden: true,
       sidebarActions: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: handleGoAdmin, style: sidebarButtonStyle, children: "管理画面へ" }),
       children: loadingForms ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6B7280" }, children: "読み込み中..." }) : activeForms.length === 0 ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6B7280" }, children: "登録済みのフォームがありません。管理画面から作成してください。" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: listStyle, children: activeForms.map((form) => /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: cardStyle, onClick: () => handleSelect(form.id), children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: titleStyle$2, children: form.name }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h2", { style: titleStyle$2, children: form.settings?.formTitle || "(無題)" }),
         form.description && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { margin: 0, color: "#475569" }, children: form.description }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: metaStyle, children: [
           "最終更新: ",
-          new Date(form.modifiedAt).toLocaleString()
+          formatUnixMsDateTime(form.modifiedAtUnixMs ?? toUnixMs(form.modifiedAt))
         ] })
       ] }, form.id)) })
     }
@@ -14686,11 +15133,10 @@ const writeLocalJson = (key, value) => {
   }
 };
 const DEFAULT_SETTINGS = {
-  formTitle: "受付フォーム",
   spreadsheetId: "",
   sheetName: "Responses",
-  gasUrl: "",
-  pageSize: 20
+  pageSize: 20,
+  searchCellMaxChars: ""
 };
 const loadSettingsFromStorage = () => {
   const loaded = readLocalJson(SETTINGS_STORAGE_KEY);
@@ -14743,8 +15189,8 @@ const useBuilderSettings = () => {
   );
   const replaceSettings = reactExports.useCallback(
     (next = {}) => {
+      let merged = { ...DEFAULT_SETTINGS, ...defaultsRef.current, ...next };
       setSettings((prev) => {
-        const merged = { ...DEFAULT_SETTINGS, ...defaultsRef.current, ...next };
         const prevObj = prev || {};
         const keys = /* @__PURE__ */ new Set([...Object.keys(prevObj), ...Object.keys(merged)]);
         for (const key of keys) {
@@ -14752,8 +15198,10 @@ const useBuilderSettings = () => {
             return merged;
           }
         }
+        merged = prevObj;
         return prev;
       });
+      return merged;
     },
     [defaultsRef, setSettings]
   );
@@ -14769,69 +15217,126 @@ function useAlert() {
   }, []);
   return { alertState, showAlert, closeAlert };
 }
+const __vite_import_meta_env__ = { "BASE_URL": "/", "DEV": false, "MODE": "production", "PROD": true, "SSR": false };
+var define_process_env_default = {};
 const MAX_HEADER_DEPTH = 6;
 const TRUTHY_SET = /* @__PURE__ */ new Set([true, "true", "TRUE", "True", 1, "1", "●"]);
-const FALSY_SET = /* @__PURE__ */ new Set([false, "false", "FALSE", "False", 0, "0", null, void 0, ""]);
-const valueToDisplayString = (value) => {
+const FALSY_SET = /* @__PURE__ */ new Set([false, "false", "FALSE", "False", null, void 0, ""]);
+const isDevEnvironment = (() => {
+  try {
+    if (typeof import.meta !== "undefined" && __vite_import_meta_env__ && true) {
+      return false;
+    }
+  } catch (error) {
+  }
+  if (typeof process !== "undefined" && define_process_env_default && true) {
+    return false;
+  }
+  return false;
+})();
+const debugLog = (...args) => {
+  if (!isDevEnvironment) return;
+  console.debug("[searchTable]", ...args);
+};
+const buildHeaderFullPath = (matrix, columnIndex) => {
+  const parts = [];
+  for (let rowIdx = 0; rowIdx < matrix.length; rowIdx += 1) {
+    const val = matrix[rowIdx]?.[columnIndex];
+    if (val !== null && val !== void 0 && val !== "") {
+      parts.push(String(val));
+    }
+  }
+  return parts.join("|");
+};
+const matchBaseDisplayColumn = (columns, fullPath) => {
+  if (!columns || !fullPath) return null;
+  for (const column of columns) {
+    if (!column || !column.path) continue;
+    const pathStr = String(column.path);
+    if (fullPath === pathStr) {
+      return column;
+    }
+    if (fullPath.startsWith(`${pathStr}|`)) {
+      const remainder = fullPath.slice(pathStr.length + 1);
+      if (remainder && !remainder.includes("|")) {
+        return column;
+      }
+    }
+  }
+  return null;
+};
+const columnDisplayMode = (column) => column?.displayMode === DISPLAY_MODES.COMPACT ? DISPLAY_MODES.COMPACT : DISPLAY_MODES.NORMAL;
+const valueToDisplayString = (value, unixMs) => {
   if (Array.isArray(value)) {
-    return value.map((item) => valueToDisplayString(item)).filter(Boolean).join("、");
+    return value.map((item) => valueToDisplayString(item, unixMs)).filter(Boolean).join("、");
   }
   if (FALSY_SET.has(value)) return "";
   if (value === null || value === void 0) return "";
-  const strValue = String(value);
-  if (strValue.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-    try {
-      const date = new Date(strValue);
-      if (!Number.isNaN(date.getTime())) {
-        if (date.getFullYear() === 1899 || date.getFullYear() === 1900) {
-          const hh2 = String(date.getHours()).padStart(2, "0");
-          const mi2 = String(date.getMinutes()).padStart(2, "0");
-          return `${hh2}:${mi2}`;
-        }
-        const yyyy = date.getFullYear();
-        const mm = String(date.getMonth() + 1).padStart(2, "0");
-        const dd = String(date.getDate()).padStart(2, "0");
-        const hh = String(date.getHours()).padStart(2, "0");
-        const mi = String(date.getMinutes()).padStart(2, "0");
-        if (hh === "00" && mi === "00") {
-          return `${yyyy}-${mm}-${dd}`;
-        }
-        return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
-      }
-    } catch (error) {
+  if (Number.isFinite(unixMs)) return formatUnixMsDateTime(unixMs);
+  if (value instanceof Date) return formatUnixMsDateTime(value.getTime());
+  if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2})?/.test(value)) {
+    const parsed = toUnixMs(value);
+    if (Number.isFinite(parsed)) return formatUnixMsDateTime(parsed);
+  }
+  return String(value);
+};
+const deriveChoiceLabels = (key, value) => {
+  if (!TRUTHY_SET.has(value)) return null;
+  if (typeof key !== "string" || !key.includes("|")) return null;
+  const segments = key.split("|").filter(Boolean);
+  if (segments.length === 0) return null;
+  const optionLabel = segments[segments.length - 1];
+  const questionLabel = segments.slice(0, -1).join("|");
+  const combinedLabel = questionLabel ? `${questionLabel}:${optionLabel}` : optionLabel;
+  return {
+    optionLabel,
+    combinedLabel
+  };
+};
+const formatDateTime = (unixMs) => formatUnixMsDateTime(Number.isFinite(unixMs) ? unixMs : toUnixMs(unixMs));
+const normalizeSearchText = (text) => String(text || "").toLowerCase();
+const buildSearchableCandidates = (key, value, unixMs = void 0) => {
+  const candidateSet = /* @__PURE__ */ new Set();
+  const displayValue = valueToDisplayString(value, unixMs);
+  if (displayValue) {
+    candidateSet.add(displayValue);
+  }
+  const addRawValueCandidate = (raw) => {
+    if (Array.isArray(raw)) {
+      raw.forEach((item) => addRawValueCandidate(item));
+      return;
+    }
+    if (raw === null || raw === void 0) return;
+    if (!FALSY_SET.has(raw)) return;
+    const str = String(raw);
+    if (str) {
+      candidateSet.add(str);
+    }
+  };
+  addRawValueCandidate(value);
+  const choiceLabels = deriveChoiceLabels(key, value);
+  if (choiceLabels?.optionLabel) {
+    candidateSet.add(choiceLabels.optionLabel);
+    if (choiceLabels.combinedLabel && choiceLabels.combinedLabel !== choiceLabels.optionLabel) {
+      candidateSet.add(choiceLabels.combinedLabel);
     }
   }
-  return strValue;
+  return Array.from(candidateSet);
 };
-const formatDateTime = (iso) => {
-  if (!iso) return "";
-  try {
-    const date = new Date(iso);
-    if (Number.isNaN(date.getTime())) return String(iso);
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, "0");
-    const dd = String(date.getDate()).padStart(2, "0");
-    const hh = String(date.getHours()).padStart(2, "0");
-    const mi = String(date.getMinutes()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
-  } catch (error) {
-    return String(iso);
-  }
-};
-const normalizeSearchText = (text) => String(text || "").toLowerCase();
 const collectImportantFieldValue = (entry, path) => {
   const data = entry?.data || {};
+  const dataUnixMs = entry?.dataUnixMs || {};
   const values = [];
   const rawValues = [];
-  const addValue = (raw) => {
-    const display2 = valueToDisplayString(raw);
+  const addValue = (raw, unixMs) => {
+    const display2 = valueToDisplayString(raw, unixMs);
     if (!display2) return;
     values.push(display2);
     rawValues.push(raw);
   };
   const hasDirectValue = Object.prototype.hasOwnProperty.call(data, path);
   if (hasDirectValue) {
-    addValue(data[path]);
+    addValue(data[path], dataUnixMs[path]);
   } else {
     const prefix = `${path}|`;
     const optionValues = [];
@@ -14842,7 +15347,7 @@ const collectImportantFieldValue = (entry, path) => {
       const [head, ...rest] = remainder.split("|");
       if (!head || rest.length > 0) return;
       if (TRUTHY_SET.has(value)) {
-        optionValues.push(value);
+        optionValues.push(head);
         return;
       }
     });
@@ -14863,9 +15368,9 @@ const collectImportantFieldValue = (entry, path) => {
     } else if (typeof raw === "number") {
       sortValue = raw;
     } else {
-      const strRaw = String(raw);
-      if (/^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?/.test(strRaw)) {
-        sortValue = strRaw;
+      const unix = dataUnixMs[path] ?? toUnixMs(raw);
+      if (Number.isFinite(unix)) {
+        sortValue = unix;
       } else {
         const num = parseFloat(raw);
         sortValue = !Number.isNaN(num) ? num : display;
@@ -14918,27 +15423,61 @@ const createBaseColumns = () => [
     sortable: true,
     searchable: true,
     getValue: (entry) => {
-      const iso = entry?.modifiedAt || "";
-      const display = formatDateTime(iso);
+      const unix = Number.isFinite(entry?.modifiedAtUnixMs) ? entry.modifiedAtUnixMs : toUnixMs(entry?.modifiedAt);
+      const display = formatDateTime(unix);
       return {
         display,
-        search: normalizeSearchText(display || iso),
-        sort: iso || ""
+        search: normalizeSearchText(display || unix || ""),
+        sort: Number.isFinite(unix) ? unix : 0
       };
     }
   }
 ];
-const createImportantColumn = (path) => {
+const collectCompactFieldValue = (entry, path) => {
+  const data = entry?.data || {};
+  const values = [];
+  const addValue = (raw) => {
+    const display2 = valueToDisplayString(raw);
+    if (!display2) return;
+    values.push(display2);
+  };
+  const hasDirectValue = Object.prototype.hasOwnProperty.call(data, path);
+  if (hasDirectValue) {
+    addValue(data[path]);
+  } else {
+    const prefix = `${path}|`;
+    Object.entries(data).forEach(([key, value]) => {
+      if (!key.startsWith(prefix) || key === path) return;
+      const remainder = key.slice(prefix.length);
+      if (!remainder || remainder.includes("|")) return;
+      if (TRUTHY_SET.has(value)) {
+        addValue(remainder);
+      }
+    });
+  }
+  const display = values.join("、");
+  const primary = values[0] || "";
+  const sortValue = values.length <= 1 ? primary : display;
+  return {
+    display,
+    search: normalizeSearchText(values.join(" ")),
+    sort: sortValue
+  };
+};
+const createDisplayColumn = (path, mode = DISPLAY_MODES.NORMAL, sourceType = "") => {
   const segments = splitFieldPath(path).slice(0, MAX_HEADER_DEPTH);
   if (segments.length === 0) segments.push("回答");
-  const key = `important:${path}`;
+  const key = `display:${path}`;
+  const isCompact = mode === DISPLAY_MODES.COMPACT;
   return {
     key,
     segments,
     sortable: true,
     searchable: true,
     path,
-    getValue: (entry) => collectImportantFieldValue(entry, path)
+    displayMode: mode,
+    sourceType,
+    getValue: (entry) => isCompact ? collectCompactFieldValue(entry, path) : collectImportantFieldValue(entry, path)
   };
 };
 const actionsColumn = {
@@ -14948,11 +15487,21 @@ const actionsColumn = {
   searchable: false,
   getValue: () => ({ display: "", search: "", sort: "" })
 };
+const resolveDisplayFieldSettings = (form) => {
+  if (Array.isArray(form?.displayFieldSettings) && form.displayFieldSettings.length) {
+    return form.displayFieldSettings.filter((item) => item && item.path).map((item) => ({
+      path: String(item.path),
+      mode: item.mode === DISPLAY_MODES.COMPACT ? DISPLAY_MODES.COMPACT : DISPLAY_MODES.NORMAL
+    }));
+  }
+  const fallback = Array.isArray(form?.importantFields) ? form.importantFields : [];
+  return fallback.filter((path) => path).map((path) => ({ path: String(path), mode: DISPLAY_MODES.NORMAL }));
+};
 const buildSearchColumns = (form, { includeOperations = true } = {}) => {
   const columns = createBaseColumns();
-  (form?.importantFields || []).forEach((path) => {
+  resolveDisplayFieldSettings(form).forEach(({ path, mode, type }) => {
     if (!path) return;
-    columns.push(createImportantColumn(path));
+    columns.push(createDisplayColumn(path, mode, type));
   });
   if (includeOperations) columns.push(actionsColumn);
   return columns;
@@ -15018,84 +15567,93 @@ const filterVisibleColumnIndices = (multiHeaderRows, columns) => {
   if (!multiHeaderRows || multiHeaderRows.length === 0 || !columns) return [];
   const firstRow = multiHeaderRows[0] || [];
   const visibleIndices = [];
-  const requiredPaths = columns.filter((col) => col.key !== "__actions").map((col) => {
-    if (col.key === "modifiedAt") return "modifiedAt";
-    if (col.path) return col.path;
-    return col.key;
-  });
-  for (let i = 0; i < firstRow.length; i++) {
+  const compactResolvedPaths = /* @__PURE__ */ new Set();
+  for (let i = 0; i < firstRow.length; i += 1) {
     const headerValue = firstRow[i];
     const headerValueStr = String(headerValue);
     if (headerValueStr === "No." || headerValueStr === "modifiedAt") {
       visibleIndices.push(i);
       continue;
     }
-    const parts = [];
-    for (let rowIdx = 0; rowIdx < multiHeaderRows.length; rowIdx++) {
-      const val = multiHeaderRows[rowIdx][i];
-      if (val !== null && val !== void 0 && val !== "") {
-        parts.push(String(val));
+    const fullPath = buildHeaderFullPath(multiHeaderRows, i);
+    if (!fullPath) continue;
+    const baseColumn = matchBaseDisplayColumn(columns, fullPath);
+    if (!baseColumn) continue;
+    if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT) {
+      const basePath = baseColumn.path ? String(baseColumn.path) : "";
+      if (!basePath || compactResolvedPaths.has(basePath)) {
+        continue;
       }
+      compactResolvedPaths.add(basePath);
     }
-    const fullPath = parts.join("|");
-    const isRequired = requiredPaths.some((path) => {
-      const pathStr = String(path);
-      if (fullPath === pathStr) return true;
-      if (fullPath.startsWith(pathStr + "|")) {
-        const remainder = fullPath.substring(pathStr.length + 1);
-        return !remainder.includes("|");
-      }
-      return false;
-    });
-    if (isRequired) {
-      visibleIndices.push(i);
-    }
+    visibleIndices.push(i);
   }
+  debugLog("filterVisibleColumnIndices", {
+    visibleCount: visibleIndices.length,
+    sample: visibleIndices.slice(0, 10)
+  });
   return visibleIndices;
 };
 const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
   if (!multiHeaderRows || multiHeaderRows.length === 0) return baseColumns || [];
   const firstRow = multiHeaderRows[0] || [];
   const result = [];
-  for (let colIndex = 0; colIndex < firstRow.length; colIndex++) {
+  const seenKeys = /* @__PURE__ */ new Set();
+  const resolvedBasePaths = /* @__PURE__ */ new Set();
+  const safeBaseColumns = Array.isArray(baseColumns) ? baseColumns : [];
+  const pushColumn = (column) => {
+    if (!column) return;
+    if (column.key && seenKeys.has(column.key)) return;
+    result.push(column);
+    if (column.key) seenKeys.add(column.key);
+  };
+  const findBaseColumnByKey = (key) => safeBaseColumns.find((col) => col?.key === key) || null;
+  for (let colIndex = 0; colIndex < firstRow.length; colIndex += 1) {
     const headerValue = firstRow[colIndex];
     const headerValueStr = String(headerValue);
     if (headerValueStr === "No.") {
-      const col = baseColumns.find((c) => c.key === "No.");
-      if (col) result.push(col);
+      pushColumn(findBaseColumnByKey("No."));
       continue;
     }
     if (headerValueStr === "modifiedAt") {
-      const col = baseColumns.find((c) => c.key === "modifiedAt");
-      if (col) result.push(col);
+      pushColumn(findBaseColumnByKey("modifiedAt"));
       continue;
     }
-    const parts = [];
-    for (let rowIdx = 0; rowIdx < multiHeaderRows.length; rowIdx++) {
-      const val = multiHeaderRows[rowIdx][colIndex];
-      if (val !== null && val !== void 0 && val !== "") {
-        parts.push(String(val));
+    const fullPath = buildHeaderFullPath(multiHeaderRows, colIndex);
+    if (!fullPath) continue;
+    const baseColumn = matchBaseDisplayColumn(safeBaseColumns, fullPath);
+    if (!baseColumn) continue;
+    if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT) {
+      const basePath = baseColumn.path ? String(baseColumn.path) : "";
+      if (!basePath || resolvedBasePaths.has(basePath)) {
+        continue;
       }
-    }
-    const fullPath = parts.join("|");
-    if (fullPath) {
-      const isImportant = baseColumns.some((col) => {
-        if (!col.path) return false;
-        const pathStr = String(col.path);
-        if (fullPath === pathStr) return true;
-        if (fullPath.startsWith(pathStr + "|")) {
-          const remainder = fullPath.substring(pathStr.length + 1);
-          return !remainder.includes("|");
-        }
-        return false;
-      });
-      if (isImportant) {
-        result.push(createImportantColumn(fullPath));
+      pushColumn(createDisplayColumn(basePath, DISPLAY_MODES.COMPACT, baseColumn.sourceType));
+      resolvedBasePaths.add(basePath);
+      debugLog("buildColumnsFromHeaderMatrix:compact", { basePath, columnIndex: colIndex });
+    } else {
+      pushColumn(createDisplayColumn(fullPath, baseColumn.displayMode, baseColumn.sourceType));
+      if (baseColumn.path) {
+        resolvedBasePaths.add(String(baseColumn.path));
       }
     }
   }
-  const actionsCol = baseColumns.find((c) => c.key === "__actions");
-  if (actionsCol) result.push(actionsCol);
+  safeBaseColumns.forEach((baseColumn) => {
+    if (!baseColumn) return;
+    if (baseColumn.key === "__actions" || baseColumn.key === "No." || baseColumn.key === "modifiedAt") return;
+    if (!baseColumn.path) return;
+    const basePath = String(baseColumn.path);
+    if (resolvedBasePaths.has(basePath)) return;
+    if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT) {
+      resolvedBasePaths.add(basePath);
+      pushColumn(createDisplayColumn(basePath, DISPLAY_MODES.COMPACT, baseColumn.sourceType));
+    } else {
+      resolvedBasePaths.add(basePath);
+      pushColumn(createDisplayColumn(basePath, baseColumn.displayMode, baseColumn.sourceType));
+    }
+  });
+  pushColumn(findBaseColumnByKey("__actions"));
+  debugLog("buildColumnsFromHeaderMatrix:result", { total: result.length });
   return result;
 };
 const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
@@ -15106,81 +15664,87 @@ const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
     if (visibleIndices.length === 0) return [];
   }
   const indicesToProcess = visibleIndices || Array.from({ length: multiHeaderRows[0]?.length || 0 }, (_, i) => i);
-  const nonEmptyRowIndices = [];
-  for (let rowIndex = 0; rowIndex < multiHeaderRows.length; rowIndex++) {
-    const csvRow = multiHeaderRows[rowIndex] || [];
-    const hasValue = indicesToProcess.some((colIndex) => {
-      const cellValue = csvRow[colIndex];
-      return cellValue !== null && cellValue !== void 0 && cellValue !== "";
-    });
-    if (hasValue) {
-      nonEmptyRowIndices.push(rowIndex);
-    }
-  }
-  if (nonEmptyRowIndices.length === 0) return [];
-  const rows = [];
+  const transformedRows = multiHeaderRows.map((row) => row ? [...row] : []);
   const firstRow = multiHeaderRows[0] || [];
   const columnMapping = [];
-  for (let i = 0; i < firstRow.length; i++) {
+  for (let i = 0; i < firstRow.length; i += 1) {
     const headerValue = firstRow[i];
     const headerValueStr = String(headerValue);
     let matchedColumn = null;
     if (columns) {
       if (headerValueStr === "No.") {
-        matchedColumn = columns.find((col) => col.key === "No.");
+        matchedColumn = columns.find((col) => col.key === "No.") || null;
       } else if (headerValueStr === "modifiedAt") {
-        matchedColumn = columns.find((col) => col.key === "modifiedAt");
+        matchedColumn = columns.find((col) => col.key === "modifiedAt") || null;
       } else {
-        const parts = [];
-        for (let rowIdx = 0; rowIdx < multiHeaderRows.length; rowIdx++) {
-          const val = multiHeaderRows[rowIdx][i];
-          if (val !== null && val !== void 0 && val !== "") {
-            parts.push(String(val));
-          }
-        }
-        const fullPath = parts.join("|");
-        matchedColumn = columns.find(
-          (col) => col.path === fullPath
-        );
-        if (!matchedColumn && fullPath) {
-          const baseColumn = columns.find((col) => {
-            if (!col.path) return false;
-            const pathStr = String(col.path);
-            if (fullPath === pathStr) return true;
-            if (fullPath.startsWith(pathStr + "|")) {
-              const remainder = fullPath.substring(pathStr.length + 1);
-              return !remainder.includes("|");
+        const fullPath = buildHeaderFullPath(multiHeaderRows, i);
+        if (fullPath) {
+          matchedColumn = columns.find((col) => col.path === fullPath) || null;
+          if (!matchedColumn) {
+            const baseColumn = matchBaseDisplayColumn(columns, fullPath);
+            if (baseColumn) {
+              if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT) {
+                matchedColumn = createDisplayColumn(baseColumn.path, DISPLAY_MODES.COMPACT, baseColumn.sourceType);
+              } else {
+                matchedColumn = createDisplayColumn(fullPath, baseColumn.displayMode, baseColumn.sourceType);
+              }
             }
-            return false;
-          });
-          if (baseColumn) {
-            matchedColumn = createImportantColumn(fullPath);
           }
         }
       }
     }
     columnMapping[i] = matchedColumn;
   }
-  const lastNonEmptyRowIndex = nonEmptyRowIndices[nonEmptyRowIndices.length - 1];
-  const columnFullPaths = indicesToProcess.map((colIndex) => {
-    const parts = [];
-    for (let rowIdx = 0; rowIdx < multiHeaderRows.length; rowIdx++) {
-      const val = multiHeaderRows[rowIdx][colIndex];
-      if (val !== null && val !== void 0 && val !== "") {
-        parts.push(String(val));
+  const findDeepestRowWithValue = (colIndex) => {
+    for (let r = transformedRows.length - 1; r >= 0; r -= 1) {
+      const val = transformedRows[r]?.[colIndex];
+      if (val !== null && val !== void 0 && val !== "") return r;
+    }
+    return -1;
+  };
+  indicesToProcess.forEach((colIndex) => {
+    const mappedColumn = columnMapping[colIndex];
+    if (mappedColumn?.displayMode === DISPLAY_MODES.COMPACT) {
+      const deepest = findDeepestRowWithValue(colIndex);
+      if (deepest >= 0) {
+        transformedRows[deepest][colIndex] = "";
       }
     }
-    return parts.join("|");
+  });
+  const nonEmptyRowIndices = Array.from({ length: transformedRows.length }, (_, idx) => idx);
+  const rows = [];
+  const lastNonEmptyRowIndex = transformedRows.length - 1;
+  const columnFullPaths = indicesToProcess.map((colIndex) => {
+    let fullPath = buildHeaderFullPath(multiHeaderRows, colIndex);
+    const mappedColumn = columnMapping[colIndex];
+    if (mappedColumn?.displayMode === DISPLAY_MODES.COMPACT && mappedColumn.path) {
+      fullPath = mappedColumn.path;
+    }
+    return fullPath;
   });
   for (const rowIndex of nonEmptyRowIndices) {
-    const csvRow = multiHeaderRows[rowIndex] || [];
+    const csvRow = transformedRows[rowIndex] || [];
     const row = [];
     let displayIndex = 0;
+    let lastRenderedLabel = "";
     for (let i = 0; i < indicesToProcess.length; i++) {
       const colIndex = indicesToProcess[i];
+      const mappedColumn = columnMapping[colIndex];
       let cellValue = csvRow[colIndex] || "";
       if (rowIndex === 0 && cellValue === "modifiedAt") {
         cellValue = "最終更新日時";
+      }
+      const isCompactColumn = mappedColumn?.displayMode === DISPLAY_MODES.COMPACT;
+      if (isCompactColumn && rowIndex === lastNonEmptyRowIndex) {
+        cellValue = "";
+      }
+      if (mappedColumn?.sourceType && (mappedColumn.sourceType === "radio" || mappedColumn.sourceType === "select")) {
+        const fullPath = columnFullPaths[i] || "";
+        const segments = splitFieldPath(fullPath);
+        const expectedLabel = segments[rowIndex] || "";
+        if (expectedLabel && cellValue === expectedLabel && rowIndex === segments.length - 1) {
+          cellValue = "";
+        }
       }
       const isLastRow = rowIndex === lastNonEmptyRowIndex;
       let colSpan = 1;
@@ -15189,27 +15753,10 @@ const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
           colSpan += 1;
         }
       }
-      const column = isLastRow ? columnMapping[colIndex] : null;
+      const column = isLastRow ? mappedColumn : null;
       let displayLabel = cellValue;
-      if (i > 0) {
-        const currentFullPath = columnFullPaths[i];
-        const prevFullPath = columnFullPaths[i - 1];
-        const currentParts = currentFullPath.split("|");
-        const prevParts = prevFullPath.split("|");
-        let sameDepth = 0;
-        const minLength = Math.min(currentParts.length, prevParts.length);
-        for (let depth = 0; depth < minLength; depth++) {
-          if (currentParts[depth] === prevParts[depth]) {
-            sameDepth++;
-          } else {
-            break;
-          }
-        }
-        if (sameDepth > rowIndex && rowIndex < currentParts.length && rowIndex < prevParts.length) {
-          if (currentParts[rowIndex] === prevParts[rowIndex]) {
-            displayLabel = "";
-          }
-        }
+      if (displayLabel && lastRenderedLabel === displayLabel) {
+        displayLabel = "";
       }
       row.push({
         label: displayLabel,
@@ -15221,11 +15768,15 @@ const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
         // ソート用に元のラベルを保持
       });
       displayIndex += colSpan;
+      if (displayLabel) {
+        lastRenderedLabel = displayLabel;
+      }
       i += colSpan - 1;
     }
     if (row.length > 0) rows.push(row);
   }
-  return rows;
+  const filteredRows = rows.filter((row) => row.some((cell) => cell.label));
+  return filteredRows;
 };
 const computeRowValues = (entry, columns) => {
   const values = {};
@@ -15246,6 +15797,18 @@ const compareByColumn = (a, b, column, order = "asc") => {
   const result = compareValues(sortableA, sortableB);
   const finalResult = order === "asc" ? result : -result;
   return finalResult;
+};
+const applyDisplayLengthLimit = (text, limit) => {
+  if (typeof text !== "string") return text ?? "";
+  const maxLength = Number(limit);
+  if (!Number.isFinite(maxLength) || maxLength <= 0) return text;
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, maxLength)}…`;
+};
+const parseSearchCellDisplayLimit = (rawValue) => {
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
 };
 const tokenizeSearchQuery = (query) => {
   if (!query || typeof query !== "string") return [];
@@ -15378,46 +15941,8 @@ const findColumnByName = (columns, colName) => {
   });
 };
 const parseJSTDateTime = (dateStr) => {
-  if (!dateStr || typeof dateStr !== "string") return null;
-  const str = dateStr.trim();
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/.test(str)) {
-    const date = new Date(str);
-    if (!Number.isNaN(date.getTime())) {
-      return date.getTime();
-    }
-  }
-  const dateTimeMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})$/);
-  if (dateTimeMatch) {
-    const [, year, month, day, hour, minute] = dateTimeMatch;
-    const date = new Date(
-      parseInt(year, 10),
-      parseInt(month, 10) - 1,
-      // 月は0-11
-      parseInt(day, 10),
-      parseInt(hour, 10),
-      parseInt(minute, 10),
-      0
-    );
-    if (!Number.isNaN(date.getTime())) {
-      return date.getTime();
-    }
-  }
-  const dateMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (dateMatch) {
-    const [, year, month, day] = dateMatch;
-    const date = new Date(
-      parseInt(year, 10),
-      parseInt(month, 10) - 1,
-      parseInt(day, 10),
-      0,
-      0,
-      0
-    );
-    if (!Number.isNaN(date.getTime())) {
-      return date.getTime();
-    }
-  }
-  return null;
+  const ms = toUnixMs(dateStr);
+  return Number.isFinite(ms) ? ms : null;
 };
 const compareValue = (rowValue, operator, targetValue) => {
   const normalizeValue = (val) => {
@@ -15503,11 +16028,14 @@ const evaluateAST = (ast, row, columns) => {
       });
       if (matchesInColumns) return true;
       const entryData = row?.entry?.data || {};
-      return Object.values(entryData).some((value) => {
-        const displayValue = valueToDisplayString(value);
-        if (!displayValue) return false;
-        const normalized = normalizeSearchText(displayValue);
-        return normalized.includes(keyword);
+      const entryDataUnixMs = row?.entry?.dataUnixMs || {};
+      return Object.entries(entryData).some(([key, value]) => {
+        const unixMs = entryDataUnixMs[key];
+        return buildSearchableCandidates(key, value, unixMs).some((candidate) => {
+          if (!candidate) return false;
+          const normalized = normalizeSearchText(candidate);
+          return normalized.includes(keyword);
+        });
       });
     }
     case "COLUMN_PARTIAL": {
@@ -15520,17 +16048,20 @@ const evaluateAST = (ast, row, columns) => {
         }
       }
       const entryData = row?.entry?.data || {};
+      const entryDataUnixMs = row?.entry?.dataUnixMs || {};
       const normalizedColName = ast.column.toLowerCase();
       const matchingKey = Object.keys(entryData).find(
         (key) => key.toLowerCase() === normalizedColName || key.toLowerCase().includes(normalizedColName)
       );
       if (matchingKey) {
         const value = entryData[matchingKey];
-        const displayValue = valueToDisplayString(value);
-        if (!displayValue) return false;
-        const normalized = normalizeSearchText(displayValue);
+        const unixMs = entryDataUnixMs[matchingKey];
         const keyword = normalizeSearchText(ast.keyword);
-        return normalized.includes(keyword);
+        return buildSearchableCandidates(matchingKey, value, unixMs).some((candidate) => {
+          if (!candidate) return false;
+          const normalized = normalizeSearchText(candidate);
+          return normalized.includes(keyword);
+        });
       }
       return false;
     }
@@ -15544,16 +16075,20 @@ const evaluateAST = (ast, row, columns) => {
         }
       }
       const entryData = row?.entry?.data || {};
+      const entryDataUnixMs = row?.entry?.dataUnixMs || {};
       const normalizedColName = ast.column.toLowerCase();
       const matchingKey = Object.keys(entryData).find(
         (key) => key.toLowerCase() === normalizedColName || key.toLowerCase().includes(normalizedColName)
       );
       if (matchingKey) {
         const value = entryData[matchingKey];
-        const displayValue = valueToDisplayString(value);
-        const numValue = parseFloat(displayValue);
-        const rowValue = !Number.isNaN(numValue) ? numValue : displayValue;
-        return compareValue(rowValue, ast.operator, ast.value);
+        const unixMs = entryDataUnixMs[matchingKey];
+        return buildSearchableCandidates(matchingKey, value, unixMs).some((candidate) => {
+          if (candidate === void 0 || candidate === null || candidate === "") return false;
+          const numValue = parseFloat(candidate);
+          const rowValue = !Number.isNaN(numValue) ? numValue : candidate;
+          return compareValue(rowValue, ast.operator, ast.value);
+        });
       }
       return false;
     }
@@ -15572,16 +16107,20 @@ const evaluateAST = (ast, row, columns) => {
         }
       }
       const entryData = row?.entry?.data || {};
+      const entryDataUnixMs = row?.entry?.dataUnixMs || {};
       const normalizedColName = ast.column.toLowerCase();
       const matchingKey = Object.keys(entryData).find(
         (key) => key.toLowerCase() === normalizedColName || key.toLowerCase().includes(normalizedColName)
       );
       if (matchingKey) {
         const value = entryData[matchingKey];
-        const displayValue = valueToDisplayString(value);
+        const unixMs = entryDataUnixMs[matchingKey];
         try {
           const regex = new RegExp(ast.pattern, "i");
-          return regex.test(displayValue);
+          return buildSearchableCandidates(matchingKey, value, unixMs).some((candidate) => {
+            if (!candidate) return false;
+            return regex.test(candidate);
+          });
         } catch (error) {
           console.warn("Invalid regex pattern:", ast.pattern, error);
           return false;
@@ -15660,13 +16199,13 @@ async function hasCachedRecords() {
     return false;
   }
 }
-const tableStyle$2 = {
-  width: "100%",
+const createTableStyle = (maxWidth) => ({
+  width: maxWidth ? `${maxWidth}px` : "100%",
   borderCollapse: "collapse",
   background: "#fff",
   borderRadius: 12,
   overflow: "hidden"
-};
+});
 const thStyle$2 = {
   textAlign: "left",
   padding: "12px 16px",
@@ -15720,13 +16259,15 @@ function SearchPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = reactExports.useState({ open: false, entryIds: [] });
   const [useCache, setUseCache] = reactExports.useState(false);
   const [selectedEntries, setSelectedEntries] = reactExports.useState(/* @__PURE__ */ new Set());
-  const PAGE_SIZE = Number(settings?.pageSize) || 20;
   const form = reactExports.useMemo(() => formId ? getFormById(formId) : null, [formId, getFormById]);
   const activeSort = reactExports.useMemo(() => buildInitialSort(searchParams), [searchParams]);
   const query = searchParams.get("q") || "";
   const page = Math.max(1, Number(searchParams.get("page") || 1));
+  const PAGE_SIZE = Number(settings?.pageSize) || 20;
+  const TABLE_MAX_WIDTH = settings?.searchTableMaxWidth ? Number(settings.searchTableMaxWidth) : null;
+  const cellDisplayLimit = parseSearchCellDisplayLimit(form?.settings?.searchCellMaxChars);
   const baseColumns = reactExports.useMemo(() => {
-    const result = buildSearchColumns(form, { includeOperations: true });
+    const result = buildSearchColumns(form, { includeOperations: false });
     return result;
   }, [form]);
   const columns = reactExports.useMemo(() => {
@@ -15738,12 +16279,13 @@ function SearchPage() {
   }, [headerMatrix, baseColumns]);
   const headerRows = reactExports.useMemo(() => {
     if (headerMatrix && headerMatrix.length > 0) {
-      const rows2 = buildHeaderRowsFromCsv(headerMatrix, baseColumns);
-      return rows2;
+      const rows = buildHeaderRowsFromCsv(headerMatrix, columns);
+      if (rows && rows.length > 0) {
+        return rows;
+      }
     }
-    const rows = buildHeaderRows(columns);
-    return rows;
-  }, [columns, baseColumns, headerMatrix]);
+    return buildHeaderRows(columns);
+  }, [columns, headerMatrix]);
   const fetchAndCacheData = reactExports.useCallback(async () => {
     if (!formId) return;
     setLoading(true);
@@ -15903,7 +16445,7 @@ function SearchPage() {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
     AppLayout,
     {
-      title: `検索 - ${form.name}`,
+      title: `検索 - ${form.settings?.formTitle || "(無題)"}`,
       fallbackPath: "/",
       sidebarActions: /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", style: sidebarButtonStyle, onClick: handleCreateNew, children: "新規入力" }),
@@ -15948,7 +16490,7 @@ function SearchPage() {
             style: { ...inputStyle$2, flex: "1 0 220px" }
           }
         ) }),
-        loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6B7280" }, children: "読み込み中..." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { style: tableStyle$2, children: [
+        loading ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6B7280" }, children: "読み込み中..." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { overflowX: "auto", width: "100%" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { style: createTableStyle(TABLE_MAX_WIDTH), children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { children: headerRows.map((headerRow, rowIndex) => {
             rowIndex === headerRows.length - 1;
             return /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { children: [
@@ -16017,8 +16559,10 @@ function SearchPage() {
                   ),
                   columns.map((column) => {
                     if (column.key === "__actions") return null;
-                    const displayText = values[column.key]?.display ?? "";
-                    return /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle$2, children: displayText }, `${entry.id}_${column.key}`);
+                    const rawDisplayText = values[column.key]?.display ?? "";
+                    const displayText = rawDisplayText || "";
+                    const limitedText = applyDisplayLengthLimit(displayText, cellDisplayLimit);
+                    return /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle$2, children: limitedText }, `${entry.id}_${column.key}`);
                   })
                 ]
               },
@@ -16146,9 +16690,9 @@ const buildSafeRegex = (pattern) => {
     return { re: null, error: err instanceof Error ? err.message : String(err) };
   }
 };
-const validateByPattern = (field, value) => {
+const validateByPattern = (field, value, cachedRegex = null) => {
   if (field.type !== "regex") return { ok: true, message: "" };
-  const { re, error } = buildSafeRegex(field.pattern || "");
+  const { re, error } = cachedRegex || buildSafeRegex(field.pattern || "");
   if (error) return { ok: false, message: `正規表現が不正です: ${error}` };
   const strValue = value ?? "";
   if (field.required && strValue === "") return { ok: false, message: "入力は必須です" };
@@ -16157,28 +16701,57 @@ const validateByPattern = (field, value) => {
 };
 const hasValidationErrors = (fields, responses) => {
   let hasError = false;
+  const regexCache = /* @__PURE__ */ new Map();
+  const isEmpty = (field, value) => {
+    if (value === void 0 || value === null) return true;
+    if (["text", "textarea", "regex", "date", "time", "select", "radio"].includes(field.type)) {
+      return value === "";
+    }
+    if (field.type === "number") {
+      return value === "";
+    }
+    if (field.type === "checkboxes") {
+      return !Array.isArray(value) || value.length === 0;
+    }
+    return false;
+  };
+  const getRegexResult = (pattern) => {
+    const key = pattern || "";
+    if (!regexCache.has(key)) {
+      regexCache.set(key, buildSafeRegex(key));
+    }
+    return regexCache.get(key);
+  };
   const walk = (arr) => (arr || []).forEach((field) => {
     const value = responses?.[field.id];
+    if (field.required && isEmpty(field, value)) {
+      hasError = true;
+    }
     if (field.type === "regex") {
-      const { error } = buildSafeRegex(field.pattern || "");
-      if (error) hasError = true;
-      const result = validateByPattern(field, value);
+      const regexResult = getRegexResult(field.pattern);
+      if (regexResult.error) {
+        hasError = true;
+        return;
+      }
+      const result = validateByPattern(field, value, regexResult);
       if (!result.ok) hasError = true;
     }
     if (field.childrenByValue) {
-      Object.keys(field.childrenByValue).forEach((key) => walk(field.childrenByValue[key]));
+      if (field.type === "checkboxes" && Array.isArray(value)) {
+        value.forEach((lbl) => {
+          if (field.childrenByValue[lbl]) {
+            walk(field.childrenByValue[lbl]);
+          }
+        });
+      } else if (["radio", "select"].includes(field.type) && value && field.childrenByValue[value]) {
+        walk(field.childrenByValue[value]);
+      } else if (!["checkboxes", "radio", "select"].includes(field.type)) {
+        Object.keys(field.childrenByValue).forEach((key) => walk(field.childrenByValue[key]));
+      }
     }
   });
   walk(fields);
   return hasError;
-};
-const normalizeSpreadsheetId = (input = "") => {
-  const s = String(input).trim();
-  if (/^https?:\/\//i.test(s)) {
-    const idMatch = s.match(/\/d\/([a-zA-Z0-9-_]+)/);
-    return idMatch?.[1] || s.match(/[?&]key=([a-zA-Z0-9-_]+)/)?.[1] || s;
-  }
-  return s;
 };
 const styles = {
   input: { width: "100%", boxSizing: "border-box", border: "1px solid #CBD5E1", borderRadius: 8, padding: 8 },
@@ -16194,17 +16767,8 @@ const styles = {
     background: "#fff"
   })
 };
-const formatDateLocal = (date) => {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
-const formatTimeLocal = (date) => {
-  const hours = String(date.getHours()).padStart(2, "0");
-  const minutes = String(date.getMinutes()).padStart(2, "0");
-  return `${hours}:${minutes}`;
-};
+const formatDateLocal = (date) => formatUnixMsDate(date.getTime());
+const formatTimeLocal = (date) => formatUnixMsTime(date.getTime());
 const generateRecordId = () => {
   if (window.crypto?.getRandomValues) {
     const bytes = new Uint8Array(12);
@@ -16243,7 +16807,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         value: value ?? "",
         onChange: (event) => onChange(event.target.value),
         style: styles.input,
-        placeholder: "入力"
+        placeholder: field.placeholder || "入力"
       }
     ),
     field.type === "textarea" && /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -16252,7 +16816,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         value: value ?? "",
         onChange: (event) => onChange(event.target.value),
         style: { ...styles.input, height: 96 },
-        placeholder: "入力"
+        placeholder: field.placeholder || "入力"
       }
     ),
     field.type === "number" && /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -16260,8 +16824,12 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
       {
         type: "number",
         value: value ?? "",
-        onChange: (event) => onChange(event.target.value),
-        style: styles.input
+        onChange: (event) => {
+          const val = event.target.value;
+          onChange(val === "" ? "" : Number(val));
+        },
+        style: styles.input,
+        placeholder: field.placeholder || ""
       }
     ),
     field.type === "regex" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
@@ -16275,7 +16843,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
             ...styles.input,
             borderColor: validation.ok ? styles.input.borderColor : "#EF4444"
           },
-          placeholder: "入力"
+          placeholder: field.placeholder || "入力"
         }
       ),
       !validation.ok && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#B91C1C", fontSize: 12, marginTop: 4 }, children: validation.message })
@@ -16400,6 +16968,7 @@ const PreviewPage = React.forwardRef(function PreviewPage2({ schema, responses, 
     }
   }, [initialRecordId]);
   reactExports.useEffect(() => {
+    if (settings.recordId || settings.currentRecordId) return;
     if (!defaultNowMap || Object.keys(defaultNowMap).length === 0) return;
     setResponses((prev) => {
       const current = prev || {};
@@ -16414,7 +16983,7 @@ const PreviewPage = React.forwardRef(function PreviewPage2({ schema, responses, 
       });
       return changed ? next : current;
     });
-  }, [defaultNowMap, setResponses]);
+  }, [defaultNowMap, setResponses, settings.recordId, settings.currentRecordId]);
   const sortedData = reactExports.useMemo(() => {
     const raw = collectResponses(schema, responses);
     return sortResponses(raw, schema);
@@ -16436,9 +17005,9 @@ const PreviewPage = React.forwardRef(function PreviewPage2({ schema, responses, 
         showAlert("Spreadsheet ID / URL が未入力です");
         throw new Error("missing_spreadsheet_id");
       }
-      if (!scriptRunAvailable && !settings.gasUrl) {
-        showAlert("GAS WebApp URL が設定されていません");
-        throw new Error("missing_gas_url");
+      if (!scriptRunAvailable) {
+        showAlert("この機能はGoogle Apps Script環境でのみ利用可能です");
+        throw new Error("missing_script_run");
       }
     }
     const payload = {
@@ -16462,7 +17031,6 @@ const PreviewPage = React.forwardRef(function PreviewPage2({ schema, responses, 
         return result ?? payload;
       }
       const res = await submitResponses({
-        gasUrl: settings.gasUrl,
         spreadsheetId,
         sheetName: settings.sheetName || "Responses",
         payload
@@ -16517,47 +17085,19 @@ const PreviewPage = React.forwardRef(function PreviewPage2({ schema, responses, 
   ] });
 });
 const buildKey = (prefix, label) => prefix ? `${prefix}|${label}` : label;
-const convertIsoTimeToLocal = (isoString) => {
-  if (!isoString || typeof isoString !== "string") return isoString;
-  if (!isoString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-    return isoString;
-  }
-  try {
-    const date = new Date(isoString);
-    if (Number.isNaN(date.getTime())) return isoString;
-    if (date.getFullYear() === 1899 || date.getFullYear() === 1900) {
-      const hh = String(date.getHours()).padStart(2, "0");
-      const mi = String(date.getMinutes()).padStart(2, "0");
-      return `${hh}:${mi}`;
-    }
-    return isoString;
-  } catch (error) {
-    return isoString;
-  }
+const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
+  if (field.type !== "time" && field.type !== "date") return rawValue;
+  const unixMs = Number.isFinite(unixMsValue) ? unixMsValue : toUnixMs(rawValue);
+  if (!Number.isFinite(unixMs)) return rawValue;
+  return field.type === "time" ? formatUnixMsTime(unixMs) : formatUnixMsDate(unixMs);
 };
-const convertIsoDateToLocal = (isoString) => {
-  if (!isoString || typeof isoString !== "string") return isoString;
-  if (!isoString.match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/)) {
-    return isoString;
-  }
-  try {
-    const date = new Date(isoString);
-    if (Number.isNaN(date.getTime())) return isoString;
-    const yyyy = date.getFullYear();
-    const mm = String(date.getMonth() + 1).padStart(2, "0");
-    const dd = String(date.getDate()).padStart(2, "0");
-    return `${yyyy}-${mm}-${dd}`;
-  } catch (error) {
-    return isoString;
-  }
-};
-const restoreResponsesFromData = (schema, data = {}) => {
+const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => {
   const responses = {};
   const walk = (fields, prefix) => {
     (fields || []).forEach((field) => {
       const label = field?.label || "";
-      const baseKey = buildKey(prefix, label);
       if (!label) return;
+      const baseKey = buildKey(prefix, label);
       if (field.type === "checkboxes") {
         const values = [];
         (field.options || []).forEach((opt) => {
@@ -16583,14 +17123,9 @@ const restoreResponsesFromData = (schema, data = {}) => {
           }
         }
       } else {
-        let value = data[baseKey];
-        if (value !== void 0) {
-          if (field.type === "time") {
-            value = convertIsoTimeToLocal(value);
-          } else if (field.type === "date") {
-            value = convertIsoDateToLocal(value);
-          }
-          responses[field.id] = value;
+        const normalized = normalizeTemporalValue(field, data[baseKey], dataUnixMs[baseKey]);
+        if (normalized !== void 0 && normalized !== null) {
+          responses[field.id] = normalized;
         }
       }
     });
@@ -16625,6 +17160,7 @@ function FormPage() {
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
   const form = formId ? getFormById(formId) : null;
+  const normalizedSchema = reactExports.useMemo(() => normalizeSchemaIDs(form?.schema || []), [form]);
   const [entry, setEntry] = reactExports.useState(null);
   const [loading, setLoading] = reactExports.useState(true);
   const [responses, setResponses] = reactExports.useState({});
@@ -16651,7 +17187,7 @@ function FormPage() {
       const data = await dataStore.getEntry(formId, entryId);
       if (!mounted) return;
       setEntry(data);
-      const restored = restoreResponsesFromData(form?.schema || [], data?.data || {});
+      const restored = restoreResponsesFromData(normalizedSchema, data?.data || {}, data?.dataUnixMs || {});
       initialResponsesRef.current = restored;
       setResponses(restored);
       setCurrentRecordId(data?.id || entryId);
@@ -16688,25 +17224,30 @@ function FormPage() {
     if (!form) throw new Error("form_not_found");
     const settings = form.settings || {};
     const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
-    const gasUrl = settings.gasUrl || "";
     const sheetName = settings.sheetName || "Responses";
+    let resolvedId = payload.id;
     if (spreadsheetId) {
-      await submitResponses({
-        gasUrl,
+      if (!hasScriptRun()) {
+        throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
+      }
+      const res = await submitResponses({
         spreadsheetId,
         sheetName,
         payload
       });
+      if (res && res.id) {
+        resolvedId = res.id;
+      }
     } else {
       console.warn("[FormPage] No spreadsheetId configured, skipping spreadsheet save");
     }
     const saved = await dataStore.upsertEntry(form.id, {
-      id: payload.id,
+      id: resolvedId,
       data: payload.responses,
       order: payload.order
     });
     setCurrentRecordId(saved.id);
-    const restored = restoreResponsesFromData(form.schema || [], saved.data || {});
+    const restored = restoreResponsesFromData(normalizedSchema, saved.data || {}, saved.dataUnixMs || {});
     initialResponsesRef.current = restored;
     setResponses(restored);
     setEntry(saved);
@@ -16789,7 +17330,7 @@ function FormPage() {
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(
     AppLayout,
     {
-      title: `${form.name} - フォーム入力`,
+      title: `${form.settings?.formTitle || "(無題)"} - フォーム入力`,
       fallbackPath: fallbackPath2,
       onBack: handleBack,
       backHidden: true,
@@ -16802,10 +17343,10 @@ function FormPage() {
           PreviewPage,
           {
             ref: previewRef,
-            schema: form.schema || [],
+            schema: normalizedSchema,
             responses,
             setResponses,
-            settings: { ...form.settings || {}, formTitle: form.name, recordId: currentRecordId },
+            settings: { ...form.settings || {}, recordId: currentRecordId },
             onSave: handleSaveToStore,
             showOutputJson: false,
             showSaveButton: false
@@ -19250,6 +19791,17 @@ const tdStyle$1 = {
   fontSize: 13,
   color: "#1F2937"
 };
+const formatDisplayFieldsSummary = (form) => {
+  if (!form) return "";
+  const settings = Array.isArray(form.displayFieldSettings) && form.displayFieldSettings.length ? form.displayFieldSettings : Array.isArray(form.importantFields) ? form.importantFields.map((path) => ({ path, mode: DISPLAY_MODES.NORMAL })) : [];
+  if (!settings.length) return "";
+  return settings.filter((item) => item?.path).map((item) => item.path).join(", ");
+};
+const formatDate = (value) => {
+  const ms = Number.isFinite(value) ? value : toUnixMs(value);
+  if (!Number.isFinite(ms)) return "---";
+  return formatUnixMsDateTime(ms);
+};
 const buttonStyle = {
   padding: "6px 12px",
   borderRadius: 8,
@@ -19259,22 +19811,47 @@ const buttonStyle = {
   fontSize: 13
 };
 const labelMuted = { fontSize: 12, color: "#6B7280" };
+const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
+  const parts = [];
+  if (skipped > 0) {
+    const label = useRegisteredLabel ? "登録済みスキップ" : "スキップ";
+    parts.push(`${label} ${skipped} 件`);
+  }
+  if (parseFailed > 0) parts.push(`読込失敗 ${parseFailed} 件`);
+  return parts.length > 0 ? `（${parts.join("、")}）` : "";
+};
 function AdminDashboardPage() {
-  const { forms, loadingForms, archiveForm, unarchiveForm, deleteForm, refreshForms, exportForms } = useAppData();
+  const { forms, loadFailures, loadingForms, archiveForm: archiveForm2, unarchiveForm: unarchiveForm2, deleteForms, refreshForms, exportForms, createForm } = useAppData();
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
   const [selected, setSelected] = reactExports.useState(() => /* @__PURE__ */ new Set());
-  const [confirmArchive, setConfirmArchive] = reactExports.useState({ open: false, formId: null });
-  const [confirmDelete, setConfirmDelete] = reactExports.useState({ open: false, formId: null });
-  const fileInputRef = reactExports.useRef(null);
-  const conflictResolverRef = reactExports.useRef(null);
-  const [conflictDialog, setConflictDialog] = reactExports.useState(null);
+  const [confirmArchive, setConfirmArchive] = reactExports.useState({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
+  const [confirmDelete, setConfirmDelete] = reactExports.useState({ open: false, formId: null, targetIds: [], multiple: false });
+  const [importDialogOpen, setImportDialogOpen] = reactExports.useState(false);
+  const [importUrl, setImportUrl] = reactExports.useState("");
   const [importing, setImporting] = reactExports.useState(false);
   const sortedForms = reactExports.useMemo(() => {
     const list = forms.slice();
-    list.sort((a, b) => new Date(b.modifiedAt).getTime() - new Date(a.modifiedAt).getTime());
+    list.sort(
+      (a, b) => (Number.isFinite(b.modifiedAtUnixMs) ? b.modifiedAtUnixMs : toUnixMs(b.modifiedAt)) - (Number.isFinite(a.modifiedAtUnixMs) ? a.modifiedAtUnixMs : toUnixMs(a.modifiedAt))
+    );
     return list;
   }, [forms]);
+  const loadFailureRows = reactExports.useMemo(() => {
+    const rows = (loadFailures || []).map((item) => ({
+      id: item.id,
+      archived: true,
+      settings: {},
+      description: "",
+      modifiedAt: item.lastTriedAt,
+      loadError: item
+    }));
+    rows.sort(
+      (a, b) => (Number.isFinite(b.modifiedAtUnixMs) ? b.modifiedAtUnixMs : toUnixMs(b.modifiedAt || 0)) - (Number.isFinite(a.modifiedAtUnixMs) ? a.modifiedAtUnixMs : toUnixMs(a.modifiedAt || 0))
+    );
+    return rows;
+  }, [loadFailures]);
+  const adminForms = reactExports.useMemo(() => [...sortedForms, ...loadFailureRows], [sortedForms, loadFailureRows]);
   const toggleSelect = (formId) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -19284,22 +19861,32 @@ function AdminDashboardPage() {
     });
   };
   const selectAll = (checked) => {
-    if (checked) setSelected(new Set(sortedForms.map((form) => form.id)));
+    if (checked) setSelected(new Set(adminForms.map((form) => form.id)));
     else setSelected(/* @__PURE__ */ new Set());
   };
+  const clearSelectionByIds = reactExports.useCallback((ids = []) => {
+    if (!Array.isArray(ids) || ids.length === 0) return;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => next.delete(id));
+      return next;
+    });
+  }, []);
   const handleArchiveSelected = () => {
-    if (!selected.size) {
-      showAlert("アーカイブするフォームを選択してください。");
+    const selectedForms = sortedForms.filter((form) => selected.has(form.id));
+    if (!selectedForms.length) {
+      showAlert("アーカイブ可能なフォームを選択してください。（読み込みエラーの項目は削除のみ可能です）");
       return;
     }
-    const selectedForms = sortedForms.filter((form) => selected.has(form.id));
     const allArchived = selectedForms.every((form) => form.archived);
     const hasPublished = selectedForms.some((form) => !form.archived);
-    const firstId = Array.from(selected)[0];
+    const targetIds = selectedForms.map((form) => form.id);
+    const firstId = targetIds[0];
     setConfirmArchive({
       open: true,
       formId: firstId,
-      multiple: selected.size > 1,
+      targetIds,
+      multiple: targetIds.length > 1,
       allArchived,
       hasPublished
     });
@@ -19309,8 +19896,9 @@ function AdminDashboardPage() {
       showAlert("削除するフォームを選択してください。");
       return;
     }
-    const firstId = Array.from(selected)[0];
-    setConfirmDelete({ open: true, formId: firstId, multiple: selected.size > 1 });
+    const targetIds = Array.from(selected);
+    const firstId = targetIds[0];
+    setConfirmDelete({ open: true, formId: firstId, multiple: targetIds.length > 1, targetIds });
   };
   const handleExport = async () => {
     if (!selected.size) {
@@ -19324,14 +19912,16 @@ function AdminDashboardPage() {
     }
     if (targets.length === 1) {
       const form = targets[0];
-      const filename = `${form.name || form.id}.json`;
-      const blob = new Blob([JSON.stringify(form, null, 2)], { type: "application/json" });
+      const filename = `${form.settings?.formTitle || form.id}.json`;
+      const { id, ...formWithoutId } = form;
+      const blob = new Blob([JSON.stringify(formWithoutId, null, 2)], { type: "application/json" });
       FileSaver_minExports.saveAs(blob, filename);
     } else {
       const zip = new JSZip();
       targets.forEach((form) => {
-        const filename = `${form.name || form.id}.json`;
-        zip.file(filename, JSON.stringify(form, null, 2));
+        const filename = `${form.settings?.formTitle || form.id}.json`;
+        const { id, ...formWithoutId } = form;
+        zip.file(filename, JSON.stringify(formWithoutId, null, 2));
       });
       const blob = await zip.generateAsync({ type: "blob" });
       FileSaver_minExports.saveAs(blob, `forms_${(/* @__PURE__ */ new Date()).toISOString().replace(/[:.-]/g, "")}.zip`);
@@ -19339,43 +19929,34 @@ function AdminDashboardPage() {
   };
   const handleImport = () => {
     if (importing) return;
-    fileInputRef.current?.click();
-  };
-  const generateUniqueName = reactExports.useCallback((baseName, existingNames) => {
-    const trimmed = (baseName || "").trim();
-    if (!trimmed) return "";
-    if (!existingNames.has(trimmed)) return trimmed;
-    const base = trimmed.replace(/\s\(\d+\)$/u, "");
-    let counter = 2;
-    let candidate = `${base} (${counter})`;
-    while (existingNames.has(candidate)) {
-      counter += 1;
-      candidate = `${base} (${counter})`;
+    if (!hasScriptRun()) {
+      showAlert("インポート機能はGoogle Apps Script環境でのみ利用可能です");
+      return;
     }
-    return candidate;
-  }, []);
-  const openConflictDialog = reactExports.useCallback((payload) => {
-    setConflictDialog(payload);
-    return new Promise((resolve) => {
-      conflictResolverRef.current = resolve;
-    });
-  }, []);
-  const closeConflictDialog = reactExports.useCallback((result) => {
-    const resolver = conflictResolverRef.current;
-    conflictResolverRef.current = null;
-    setConflictDialog(null);
-    if (resolver) resolver(result);
-  }, []);
+    setImportUrl("");
+    setImportDialogOpen(true);
+  };
   const sanitizeImportedForm = (raw) => {
     if (!raw || typeof raw !== "object") return null;
     const schema = Array.isArray(raw.schema) ? raw.schema : [];
+    const settings = raw && typeof raw.settings === "object" && !Array.isArray(raw.settings) ? raw.settings : {};
+    if (!settings.formTitle && typeof raw.name === "string") {
+      settings.formTitle = raw.name;
+    }
     return {
-      name: typeof raw.name === "string" ? raw.name : "",
+      id: raw.id,
+      // IDを保持（重要）
       description: typeof raw.description === "string" ? raw.description : "",
       schema,
-      settings: raw && typeof raw.settings === "object" && !Array.isArray(raw.settings) ? raw.settings : {},
+      settings,
       archived: !!raw.archived,
-      schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1
+      schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1,
+      createdAt: raw.createdAt,
+      // 作成日時を保持
+      modifiedAt: raw.modifiedAt,
+      // 更新日時を保持
+      createdAtUnixMs: Number.isFinite(raw.createdAtUnixMs) ? raw.createdAtUnixMs : toUnixMs(raw.createdAt),
+      modifiedAtUnixMs: Number.isFinite(raw.modifiedAtUnixMs) ? raw.modifiedAtUnixMs : toUnixMs(raw.modifiedAt)
     };
   };
   const flattenImportedContents = (contents) => {
@@ -19394,203 +19975,96 @@ function AdminDashboardPage() {
     return list;
   };
   const startImportWorkflow = reactExports.useCallback(
-    async (parsedContents) => {
+    async (parsedContents, { skipped = 0, parseFailed = 0 } = {}) => {
       const queue = flattenImportedContents(parsedContents);
+      const detail = buildImportDetail(skipped, parseFailed, { useRegisteredLabel: true });
       if (!queue.length) {
-        showAlert("有効なフォームがありませんでした。");
+        showAlert(`取り込めるフォームはありませんでした${detail}。`);
         return;
       }
       setImporting(true);
-      let applyChoice = null;
-      let overwritten = 0;
-      let normalSaved = 0;
-      let savedAs = 0;
-      let aborted = false;
-      const existingMap = /* @__PURE__ */ new Map();
-      const existingNames = /* @__PURE__ */ new Set();
-      forms.forEach((form) => {
-        existingMap.set(form.name, form);
-        existingNames.add(form.name);
-      });
-      const ensureUnique = (name) => generateUniqueName(name, existingNames);
+      let imported = 0;
       try {
-        for (let index = 0; index < queue.length; index += 1) {
-          const item = queue[index];
-          const baseName = (item.name || "").trim();
-          if (!baseName) {
-            continue;
-          }
-          const conflict = existingNames.has(baseName);
-          let action = conflict ? "overwrite" : "saveas";
-          let renameMode = conflict ? "auto" : "custom";
-          let targetName = baseName;
-          if (conflict) {
-            let choice = applyChoice;
-            if (!choice) {
-              const suggestedName = ensureUnique(baseName);
-              choice = await openConflictDialog({
-                name: baseName,
-                index: index + 1,
-                total: queue.length,
-                suggestedName
-              });
-              if (!choice) {
-                aborted = true;
-                break;
-              }
-              if (choice.action === "abort") {
-                if (choice.applyToRest) {
-                  aborted = true;
-                  break;
-                } else {
-                  continue;
-                }
-              }
-              if (choice.applyToRest) {
-                applyChoice = choice;
-              }
-            }
-            action = choice.action;
-            renameMode = choice.renameMode || "auto";
-            if (action === "abort") {
-              continue;
-            }
-            if (action === "saveas") {
-              if (renameMode === "auto") {
-                targetName = ensureUnique(baseName);
-              } else {
-                targetName = ensureUnique(choice.newName || baseName);
-              }
-            }
-          } else {
-            targetName = ensureUnique(baseName);
-          }
-          if (aborted) break;
+        for (const item of queue) {
           const payload = {
-            name: targetName,
+            id: item.id,
+            // IDを保持（重要）
             description: item.description,
             schema: item.schema,
             settings: item.settings,
             archived: item.archived,
-            schemaVersion: item.schemaVersion
+            schemaVersion: item.schemaVersion,
+            createdAt: item.createdAt,
+            // 作成日時を保持
+            modifiedAt: item.modifiedAt
+            // 更新日時を保持
           };
-          if (conflict && action === "overwrite") {
-            const existing = existingMap.get(baseName);
-            if (existing) {
-              await dataStore.updateForm(existing.id, {
-                ...payload,
-                name: existing.name,
-                archived: existing.archived
-              });
-              overwritten += 1;
-            }
-          } else if (action === "saveas") {
-            const createdForm = await dataStore.createForm({ ...payload, name: targetName, archived: false });
-            if (createdForm?.name) {
-              existingMap.set(createdForm.name, createdForm);
-              existingNames.add(createdForm.name);
-            } else {
-              existingNames.add(targetName);
-            }
-            if (conflict) {
-              savedAs += 1;
-            } else {
-              normalSaved += 1;
-            }
-          } else if (action === "overwrite") {
-            const existing = existingMap.get(baseName);
-            if (existing) {
-              await dataStore.updateForm(existing.id, {
-                ...payload,
-                name: existing.name,
-                archived: existing.archived
-              });
-              overwritten += 1;
-            }
-          }
-          if (!conflict || action === "saveas") {
-            existingNames.add(targetName);
-          }
+          await createForm(payload);
+          imported += 1;
         }
-        await refreshForms();
         setSelected(/* @__PURE__ */ new Set());
-        if (aborted) {
-          showAlert(`アップロードを中止しました（上書き ${overwritten} 件、通常保存 ${normalSaved} 件、別名保存 ${savedAs} 件）。`);
+        if (imported > 0) {
+          showAlert(`${imported} 件のフォームを取り込みました${detail}。`);
         } else {
-          showAlert(`アップロードが完了しました（上書き ${overwritten} 件、通常保存 ${normalSaved} 件、別名保存 ${savedAs} 件）。`);
+          showAlert(`取り込めるフォームはありませんでした${detail}。`);
         }
+        console.log(
+          `[DriveImport] success=${imported}, alreadyRegistered=${skipped}, parseFailed=${parseFailed}`
+        );
       } catch (error) {
-        console.error(error);
+        console.error("[DriveImport] import workflow failed", error);
         showAlert(error?.message || "スキーマの取り込み中にエラーが発生しました");
       } finally {
         setImporting(false);
       }
     },
-    [forms, generateUniqueName, refreshForms]
+    [createForm, showAlert]
   );
-  const onFilesSelected = async (event) => {
-    const files = Array.from(event.target.files || []);
-    if (!files.length) return;
+  const handleImportFromDrive = async () => {
+    const url = importUrl?.trim();
+    if (!url) {
+      showAlert("Google Drive URLを入力してください");
+      return;
+    }
+    setImportDialogOpen(false);
+    setImporting(true);
     try {
-      const contents = await Promise.all(
-        files.map(
-          (file) => new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => {
-              try {
-                const value = JSON.parse(reader.result);
-                resolve(value);
-              } catch (error) {
-                reject(new Error(`${file.name}: JSON解析に失敗しました`));
-              }
-            };
-            reader.onerror = () => reject(new Error(`${file.name}: 読み込みに失敗しました`));
-            reader.readAsText(file);
-          })
-        )
-      );
-      await startImportWorkflow(contents);
+      const result = await importFormsFromDrive(url);
+      const { forms: importedForms, skipped = 0, parseFailed = 0 } = result;
+      const detail = buildImportDetail(skipped, parseFailed);
+      if (!importedForms || importedForms.length === 0) {
+        showAlert(`有効なフォームがありませんでした${detail}。`);
+        setImporting(false);
+        return;
+      }
+      await startImportWorkflow(importedForms, { skipped, parseFailed });
     } catch (error) {
-      console.error(error);
-      showAlert(error.message || "スキーマの取り込みに失敗しました");
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
+      console.error("[DriveImport] import from Drive failed", error);
+      showAlert(error?.message || "Google Driveからのインポートに失敗しました");
+      setImporting(false);
     }
   };
   const confirmArchiveAction = async () => {
-    if (!confirmArchive.formId) return;
+    const targetIds = confirmArchive.targetIds && confirmArchive.targetIds.length ? confirmArchive.targetIds : confirmArchive.formId ? [confirmArchive.formId] : [];
+    if (!targetIds.length) return;
     if (confirmArchive.allArchived) {
-      if (confirmArchive.multiple) {
-        for (const formId of selected) {
-          await unarchiveForm(formId);
-        }
-        setSelected(/* @__PURE__ */ new Set());
-      } else {
-        await unarchiveForm(confirmArchive.formId);
+      for (const formId of targetIds) {
+        await unarchiveForm2(formId);
       }
     } else {
-      if (confirmArchive.multiple) {
-        for (const formId of selected) {
-          await archiveForm(formId);
-        }
-        setSelected(/* @__PURE__ */ new Set());
-      } else {
-        await archiveForm(confirmArchive.formId);
+      for (const formId of targetIds) {
+        await archiveForm2(formId);
       }
     }
-    setConfirmArchive({ open: false, formId: null, multiple: false, allArchived: false, hasPublished: false });
+    clearSelectionByIds(targetIds);
+    setConfirmArchive({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
   };
   const confirmDeleteAction = async () => {
-    if (!confirmDelete.formId) return;
-    if (confirmDelete.multiple) {
-      for (const formId of selected) {
-        await deleteForm(formId);
-      }
-      setSelected(/* @__PURE__ */ new Set());
-    } else {
-      await deleteForm(confirmDelete.formId);
-    }
-    setConfirmDelete({ open: false, formId: null, multiple: false });
+    const targetIds = confirmDelete.targetIds && confirmDelete.targetIds.length ? confirmDelete.targetIds : confirmDelete.formId ? [confirmDelete.formId] : [];
+    if (!targetIds.length) return;
+    await deleteForms(targetIds);
+    clearSelectionByIds(targetIds);
+    setConfirmDelete({ open: false, formId: null, targetIds: [], multiple: false });
   };
   const goToEditor = (formId) => {
     navigate(`/admin/forms/${formId}/edit`);
@@ -19607,8 +20081,10 @@ function AdminDashboardPage() {
     AppLayout,
     {
       title: "フォーム管理",
+      badge: "管理",
       fallbackPath: "/",
       sidebarActions: /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", style: sidebarButtonStyle, onClick: () => refreshForms("manual:admin-dashboard"), disabled: loadingForms, children: loadingForms ? "再読み込み中..." : "再読み込み" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", style: sidebarButtonStyle, onClick: handleCreateNew, children: "新規作成" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", style: sidebarButtonStyle, onClick: handleImport, children: importing ? "インポート中..." : "インポート" }),
         /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", style: sidebarButtonStyle, onClick: handleExport, disabled: selected.size === 0, children: "エクスポート" }),
@@ -19635,38 +20111,78 @@ function AdminDashboardPage() {
             disabled: selected.size === 0,
             children: "削除"
           }
-        ),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("input", { ref: fileInputRef, type: "file", accept: "application/json", multiple: true, style: { display: "none" }, onChange: onFilesSelected })
+        )
       ] }),
       children: [
         loadingForms ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6B7280" }, children: "読み込み中..." }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { style: tableStyle$1, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { children: /* @__PURE__ */ jsxRuntimeExports.jsxs("tr", { children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: thStyle$1, children: /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: selected.size === sortedForms.length && sortedForms.length > 0, onChange: (event) => selectAll(event.target.checked) }) }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: thStyle$1, children: /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: adminForms.length > 0 && selected.size === adminForms.length, onChange: (event) => selectAll(event.target.checked) }) }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: thStyle$1, children: "名称" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: thStyle$1, children: "更新日時" }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: thStyle$1, children: "重要項目" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: thStyle$1, children: "表示項目" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("th", { style: thStyle$1, children: "状態" })
           ] }) }),
           /* @__PURE__ */ jsxRuntimeExports.jsxs("tbody", { children: [
-            sortedForms.map((form) => /* @__PURE__ */ jsxRuntimeExports.jsxs(
-              "tr",
-              {
-                style: { cursor: "pointer" },
-                onClick: () => goToEditor(form.id),
-                children: [
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle$1, onClick: (e) => e.stopPropagation(), children: /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: selected.has(form.id), onChange: () => toggleSelect(form.id) }) }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: tdStyle$1, children: [
-                    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: 600 }, children: form.name }),
-                    form.description && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#475569", fontSize: 12 }, children: form.description })
-                  ] }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle$1, children: new Date(form.modifiedAt).toLocaleString() }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle$1, children: form.importantFields?.length ? form.importantFields.join(", ") : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: labelMuted, children: "設定なし" }) }),
-                  /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle$1, children: form.archived ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#DC2626" }, children: "アーカイブ済み" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#16A34A" }, children: "公開中" }) })
-                ]
-              },
-              form.id
-            )),
-            sortedForms.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { children: /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { ...tdStyle$1, textAlign: "center" }, colSpan: 5, children: "フォームが登録されていません。" }) })
+            adminForms.map((form) => {
+              const isLoadError = !!form.loadError;
+              const summary = isLoadError ? "" : formatDisplayFieldsSummary(form);
+              const loadError = form.loadError || null;
+              const lastUpdated = isLoadError ? formatDate(loadError?.lastTriedAt) : formatDate(form.modifiedAt);
+              return /* @__PURE__ */ jsxRuntimeExports.jsxs(
+                "tr",
+                {
+                  style: { cursor: isLoadError ? "default" : "pointer", background: isLoadError ? "#FEF2F2" : void 0 },
+                  onClick: () => {
+                    if (!isLoadError) {
+                      goToEditor(form.id);
+                    }
+                  },
+                  children: [
+                    /* @__PURE__ */ jsxRuntimeExports.jsxs("td", { style: tdStyle$1, onClick: (e) => e.stopPropagation(), children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: selected.has(form.id), onChange: () => toggleSelect(form.id) }),
+                      isLoadError && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#B91C1C", fontSize: 11, marginTop: 4 }, children: "削除のみ可能" })
+                    ] }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle$1, children: isLoadError ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: 600, color: "#B91C1C" }, children: loadError?.fileName || "(名称不明)" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { color: "#991B1B", fontSize: 12 }, children: [
+                        "フォームID: ",
+                        form.id
+                      ] }),
+                      loadError?.fileId && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { color: "#991B1B", fontSize: 12 }, children: [
+                        "ファイルID: ",
+                        loadError.fileId
+                      ] }),
+                      loadError?.driveFileUrl && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { marginTop: 6 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+                        "a",
+                        {
+                          href: loadError.driveFileUrl,
+                          target: "_blank",
+                          rel: "noreferrer",
+                          onClick: (event) => event.stopPropagation(),
+                          style: { color: "#2563EB", textDecoration: "underline", fontSize: 12 },
+                          children: "Driveで確認"
+                        }
+                      ) })
+                    ] }) : /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontWeight: 600 }, children: form.settings?.formTitle || "(無題)" }),
+                      form.description && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#475569", fontSize: 12 }, children: form.description })
+                    ] }) }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle$1, children: lastUpdated }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle$1, children: isLoadError ? /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#B91C1C", fontWeight: 600 }, children: "読み込みエラー" }),
+                      /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { color: "#991B1B", fontSize: 12 }, children: loadError?.errorMessage || "読み込みに失敗しました" }),
+                      loadError?.errorStage && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { color: "#991B1B", fontSize: 11, marginTop: 4 }, children: [
+                        "ステージ: ",
+                        loadError.errorStage
+                      ] })
+                    ] }) : summary ? summary : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: labelMuted, children: "設定なし" }) }),
+                    /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle$1, children: isLoadError ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#DC2626", fontWeight: 600 }, children: "読み込みエラー" }) : form.archived ? /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#DC2626" }, children: "アーカイブ済み" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { color: "#16A34A" }, children: "公開中" }) })
+                  ]
+                },
+                form.id
+              );
+            }),
+            adminForms.length === 0 && /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { children: /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { ...tdStyle$1, textAlign: "center" }, colSpan: 5, children: "フォームが登録されていません。" }) })
           ] })
         ] }) }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
@@ -19679,7 +20195,7 @@ function AdminDashboardPage() {
               {
                 label: "キャンセル",
                 value: "cancel",
-                onSelect: () => setConfirmArchive({ open: false, formId: null })
+                onSelect: () => setConfirmArchive({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false })
               },
               {
                 label: confirmArchive.allArchived ? "解除" : "アーカイブ",
@@ -19695,12 +20211,12 @@ function AdminDashboardPage() {
           {
             open: confirmDelete.open,
             title: "フォームを削除",
-            message: "アーカイブ済みフォームを完全に削除します。元に戻すことはできません。よろしいですか？",
+            message: confirmDelete.multiple ? "選択したフォームをまとめて削除します。元に戻すことはできません。よろしいですか？" : "このフォームを削除します。元に戻すことはできません。よろしいですか？",
             options: [
               {
                 label: "キャンセル",
                 value: "cancel",
-                onSelect: () => setConfirmDelete({ open: false, formId: null })
+                onSelect: () => setConfirmDelete({ open: false, formId: null, targetIds: [], multiple: false })
               },
               {
                 label: "削除",
@@ -19711,12 +20227,14 @@ function AdminDashboardPage() {
             ]
           }
         ),
-        conflictDialog && /* @__PURE__ */ jsxRuntimeExports.jsx(
-          ImportConflictDialog,
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          ImportUrlDialog,
           {
-            ...conflictDialog,
-            onSubmit: (result) => closeConflictDialog(result),
-            onCancel: () => closeConflictDialog(null)
+            open: importDialogOpen,
+            url: importUrl,
+            onUrlChange: setImportUrl,
+            onImport: handleImportFromDrive,
+            onCancel: () => setImportDialogOpen(false)
           }
         ),
         /* @__PURE__ */ jsxRuntimeExports.jsx(AlertDialog, { open: alertState.open, title: alertState.title, message: alertState.message, onClose: closeAlert })
@@ -19724,76 +20242,53 @@ function AdminDashboardPage() {
     }
   );
 }
-function ImportConflictDialog({ name, index, total, suggestedName, onSubmit, onCancel }) {
-  const [action, setAction] = reactExports.useState("overwrite");
-  const [newName, setNewName] = reactExports.useState(suggestedName);
-  const [applyToRest, setApplyToRest] = reactExports.useState(false);
+function ImportUrlDialog({ open: open2, url, onUrlChange, onImport, onCancel }) {
   const [error, setError] = reactExports.useState("");
   reactExports.useEffect(() => {
-    setAction("overwrite");
-    setNewName(suggestedName);
-    setApplyToRest(false);
-    setError("");
-  }, [name, index, total, suggestedName]);
-  const handleConfirm = () => {
-    if (action === "saveas") {
-      const trimmed = (newName || "").trim();
-      if (!trimmed) {
-        setError("別名を入力してください");
-        return;
-      }
-      const renameMode = trimmed === suggestedName ? "auto" : "custom";
-      onSubmit({ action, newName: trimmed, applyToRest, renameMode });
+    if (!open2) {
+      setError("");
+    }
+  }, [open2]);
+  if (!open2) return null;
+  const handleImport = () => {
+    const trimmed = (url || "").trim();
+    if (!trimmed) {
+      setError("Google Drive URLを入力してください");
       return;
     }
-    onSubmit({ action, applyToRest });
+    setError("");
+    onImport();
   };
   return /* @__PURE__ */ jsxRuntimeExports.jsx(
     "div",
     {
       style: { position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1e3 },
       children: /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { background: "#fff", borderRadius: 12, padding: 24, width: "min(520px, 90vw)", boxShadow: "0 20px 45px rgba(15,23,42,0.25)" }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { style: { fontSize: 18, fontWeight: 700, marginBottom: 8 }, children: "フォーム名が重複しています" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { marginBottom: 16, color: "#475569" }, children: [
-          "「",
-          name,
-          "」は既に存在します（",
-          index,
-          "/",
-          total,
-          "）。処理を選択してください。"
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gap: 12 }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "radio", name: "import-conflict-action", value: "overwrite", checked: action === "overwrite", onChange: () => setAction("overwrite") }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "上書き" })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "radio", name: "import-conflict-action", value: "saveas", checked: action === "saveas", onChange: () => setAction("saveas") }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "別名保存" })
-          ] }),
-          action === "saveas" && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginLeft: 24 }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx(
-              "input",
-              {
-                type: "text",
-                value: newName,
-                onChange: (event) => setNewName(event.target.value),
-                style: { width: "100%", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px" },
-                placeholder: `${name} (2)`
-              }
-            ),
-            error && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { marginTop: 6, color: "#DC2626", fontSize: 12 }, children: error }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { marginTop: 6, color: "#64748B", fontSize: 12 }, children: "既存の名称と重複する場合は自動的に番号が付与されます。" })
-          ] }),
-          /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
-            /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "radio", name: "import-conflict-action", value: "abort", checked: action === "abort", onChange: () => setAction("abort") }),
-            /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "アップロード中止" })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("h3", { style: { fontSize: 18, fontWeight: 700, marginBottom: 8 }, children: "Google Driveからインポート" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { marginBottom: 16, color: "#475569", fontSize: 14 }, children: "ファイルURLまたはフォルダURLを入力してください。" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginBottom: 16 }, children: [
+          /* @__PURE__ */ jsxRuntimeExports.jsx("label", { style: { display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600 }, children: "Google Drive URL" }),
+          /* @__PURE__ */ jsxRuntimeExports.jsx(
+            "input",
+            {
+              type: "text",
+              value: url,
+              onChange: (event) => {
+                onUrlChange(event.target.value);
+                if (error) setError("");
+              },
+              style: { width: "100%", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px", fontSize: 14 },
+              placeholder: "https://drive.google.com/file/d/... または https://drive.google.com/drive/folders/..."
+            }
+          ),
+          error && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { marginTop: 6, color: "#DC2626", fontSize: 12 }, children: error }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("p", { style: { marginTop: 6, color: "#64748B", fontSize: 11 }, children: [
+            "・ファイルURL: そのフォームのみをインポート",
+            /* @__PURE__ */ jsxRuntimeExports.jsx("br", {}),
+            "・フォルダURL: フォルダ内の全ての.jsonファイルをインポート",
+            /* @__PURE__ */ jsxRuntimeExports.jsx("br", {}),
+            "・既にプロパティサービスに存在するフォームIDは自動的にスキップされます"
           ] })
-        ] }),
-        /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", gap: 8, alignItems: "center", marginTop: 16 }, children: [
-          /* @__PURE__ */ jsxRuntimeExports.jsx("input", { type: "checkbox", checked: applyToRest, onChange: (event) => setApplyToRest(event.target.checked) }),
-          /* @__PURE__ */ jsxRuntimeExports.jsx("span", { children: "この選択を残り全件に適用する" })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }, children: [
           /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", style: { padding: "8px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff" }, onClick: onCancel, children: "キャンセル" }),
@@ -19802,8 +20297,8 @@ function ImportConflictDialog({ name, index, total, suggestedName, onSubmit, onC
             {
               type: "button",
               style: { padding: "8px 16px", borderRadius: 8, border: "none", background: "#2563EB", color: "#fff" },
-              onClick: handleConfirm,
-              children: "OK"
+              onClick: handleImport,
+              children: "インポート"
             }
           )
         ] })
@@ -19811,70 +20306,211 @@ function ImportConflictDialog({ name, index, total, suggestedName, onSubmit, onC
     }
   );
 }
-function OptionRow({ option, onChange, onDelete, onAddChild, childrenArea, canAddChild = true }) {
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { border: "1px solid #E5E7EB", borderRadius: 8, padding: 8, marginBottom: 8 }, children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "1fr auto", gap: 8, alignItems: "center" }, children: [
+function OptionRow({ option, onChange, onDelete, onFocus, isSelected, onAddChild, childrenArea, canAddChild = true }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { border: isSelected ? "2px solid #3B82F6" : "1px solid #E5E7EB", borderRadius: 8, padding: 8, marginBottom: 8 }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: onDelete, style: { ...styles.btnDanger, padding: "4px 8px", fontSize: 12, flexShrink: 0 }, children: "削除" }),
       /* @__PURE__ */ jsxRuntimeExports.jsx(
         "input",
         {
-          style: styles.input,
+          style: { ...styles.input, flex: 1 },
           placeholder: "選択肢",
           value: option.label,
-          onChange: (event) => onChange({ ...option, label: event.target.value })
+          onChange: (event) => onChange({ ...option, label: event.target.value }),
+          onFocus
         }
       ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8 }, children: [
-        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: onAddChild, style: styles.btn, disabled: !canAddChild, children: "子質問追加" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: onDelete, style: styles.btnDanger, children: "削除" })
-      ] })
+      /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", onClick: onAddChild, style: { ...styles.btn, flexShrink: 0 }, disabled: !canAddChild, children: "子質問追加" })
     ] }),
     childrenArea
   ] });
 }
-function QuestionCard({ field, onChange, onAddBelow, onDelete, QuestionListComponent, depth = 1 }) {
-  const isChoice = ["radio", "select", "checkboxes"].includes(field.type);
-  const isRegex = field.type === "regex";
-  const isDateOrTime = ["date", "time"].includes(field.type);
-  const canAddChild = depth < MAX_DEPTH;
-  const regexCheck = isRegex ? buildSafeRegex(field.pattern || "") : { error: null };
-  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: styles.card(0), children: [
-    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "grid", gridTemplateColumns: "2fr 1fr auto auto", gap: 8, alignItems: "center" }, children: [
+const CHOICE_TYPES = ["radio", "select", "checkboxes"];
+const INPUT_TYPES = ["text", "textarea", "number"];
+const DATE_TIME_TYPES = ["date", "time"];
+const resolveDisplayModeForType = (type, displayed) => displayed ? ensureDisplayModeForType(DISPLAY_MODES.NORMAL, type, { explicit: true }) : DISPLAY_MODES.NONE;
+const DISPLAY_LABEL = "表示";
+const isChoiceType = (type) => CHOICE_TYPES.includes(type);
+const isInputType = (type) => INPUT_TYPES.includes(type);
+const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
+const getDisplayMode = (field) => {
+  const hasExplicitMode = Object.prototype.hasOwnProperty.call(field || {}, "displayMode");
+  const rawMode = typeof field?.displayMode === "string" ? field.displayMode : field?.important ? DISPLAY_MODES.NORMAL : DISPLAY_MODES.NONE;
+  return ensureDisplayModeForType(rawMode, field?.type, { explicit: hasExplicitMode });
+};
+const applyDisplayMode = (target, mode) => {
+  const nextMode = ensureDisplayModeForType(mode, target.type, { explicit: true });
+  target.displayMode = nextMode;
+  target.important = toImportantFlag(nextMode);
+};
+function handleTypeChange(field, newType) {
+  const next = deepClone(field);
+  const oldType = field.type;
+  next.type = newType;
+  const wasDisplayed = getDisplayMode(next) !== DISPLAY_MODES.NONE;
+  const oldIsChoice = isChoiceType(oldType);
+  const newIsChoice = isChoiceType(newType);
+  if (newIsChoice) {
+    delete next.pattern;
+    delete next.defaultNow;
+    if (oldIsChoice) {
+      next.options = next.options?.length ? next.options : [{ id: genId(), label: "" }];
+    } else {
+      if (field._savedChoiceState) {
+        next.options = deepClone(field._savedChoiceState.options);
+        next.childrenByValue = deepClone(field._savedChoiceState.childrenByValue);
+        delete next._savedChoiceState;
+      } else {
+        next.options = next.options?.length ? next.options : [{ id: genId(), label: "" }];
+      }
+    }
+  } else if (newType === "regex") {
+    next.pattern = typeof next.pattern === "string" ? next.pattern : "";
+    delete next.defaultNow;
+    if (oldIsChoice) {
+      next._savedChoiceState = {
+        options: deepClone(field.options),
+        childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : void 0
+      };
+      delete next.options;
+      delete next.childrenByValue;
+    } else {
+      delete next.options;
+    }
+  } else if (isDateOrTimeType(newType)) {
+    delete next.pattern;
+    next.defaultNow = !!next.defaultNow;
+    if (oldIsChoice) {
+      next._savedChoiceState = {
+        options: deepClone(field.options),
+        childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : void 0
+      };
+      delete next.options;
+      delete next.childrenByValue;
+    } else {
+      delete next.options;
+    }
+  } else {
+    delete next.pattern;
+    delete next.defaultNow;
+    if (oldIsChoice) {
+      next._savedChoiceState = {
+        options: deepClone(field.options),
+        childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : void 0
+      };
+      delete next.options;
+      delete next.childrenByValue;
+    } else {
+      delete next.options;
+    }
+  }
+  applyDisplayMode(next, resolveDisplayModeForType(newType, wasDisplayed));
+  return next;
+}
+function PlaceholderInput({ field, onChange, onFocus }) {
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginTop: 8 }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: field.showPlaceholder ? 4 : 0 }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(
         "input",
         {
-          style: styles.input,
-          placeholder: "項目",
+          type: "checkbox",
+          checked: !!field.showPlaceholder,
+          onChange: (event) => {
+            onChange({ ...field, showPlaceholder: event.target.checked });
+          }
+        }
+      ),
+      "プレースホルダー"
+    ] }),
+    field.showPlaceholder && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", gap: 8, alignItems: "center" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+      "input",
+      {
+        style: { ...styles.input, flex: 1 },
+        placeholder: "例: 入力例を表示",
+        value: field.placeholder || "",
+        onChange: (event) => onChange({ ...field, placeholder: event.target.value }),
+        onFocus
+      }
+    ) })
+  ] });
+}
+function QuestionCard({ field, onChange, onAddBelow, onDelete, onFocus, isSelected, QuestionListComponent, depth = 1 }) {
+  const isChoice = isChoiceType(field.type);
+  const isRegex = field.type === "regex";
+  const isDateOrTime = isDateOrTimeType(field.type);
+  const isInput = isInputType(field.type);
+  const canAddChild = depth < MAX_DEPTH;
+  const regexCheck = isRegex ? buildSafeRegex(field.pattern || "") : { error: null };
+  const [selectedOptionIndex, setSelectedOptionIndex] = React.useState(null);
+  const displayMode = getDisplayMode(field);
+  const isDisplayed = displayMode !== DISPLAY_MODES.NONE;
+  const handleDisplayToggle = (checked) => {
+    const nextField = { ...field };
+    applyDisplayMode(nextField, resolveDisplayModeForType(nextField.type, checked));
+    onChange(nextField);
+  };
+  React.useEffect(() => {
+    if ((isInput || isRegex) && field.placeholder && !field.showPlaceholder) {
+      onChange({ ...field, showPlaceholder: true });
+    }
+  }, []);
+  const moveOptionUp = (index) => {
+    if (index === 0) return;
+    const next = deepClone(field);
+    [next.options[index - 1], next.options[index]] = [next.options[index], next.options[index - 1]];
+    onChange(next);
+    setSelectedOptionIndex(index - 1);
+  };
+  const moveOptionDown = (index) => {
+    if (index === field.options.length - 1) return;
+    const next = deepClone(field);
+    [next.options[index], next.options[index + 1]] = [next.options[index + 1], next.options[index]];
+    onChange(next);
+    setSelectedOptionIndex(index + 1);
+  };
+  React.useEffect(() => {
+    if (isChoice && selectedOptionIndex !== null) {
+      const canMoveUp = selectedOptionIndex > 0;
+      const canMoveDown = selectedOptionIndex < (field.options?.length || 0) - 1;
+      const optionLabel = field.options?.[selectedOptionIndex]?.label || `選択肢 ${selectedOptionIndex + 1}`;
+      onFocus({
+        type: "option",
+        optionIndex: selectedOptionIndex,
+        optionLabel,
+        canMoveUp,
+        canMoveDown,
+        moveUp: () => moveOptionUp(selectedOptionIndex),
+        moveDown: () => moveOptionDown(selectedOptionIndex)
+      });
+    }
+  }, [selectedOptionIndex, isChoice, field.options?.length]);
+  return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { ...styles.card(0), border: isSelected ? "2px solid #3B82F6" : styles.card(0).border }, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsx("span", { style: { fontSize: 13, fontWeight: 500, color: "#374151", flexShrink: 0 }, children: "項目名" }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(
+        "input",
+        {
+          style: { ...styles.input, width: "auto", flex: "1 1 200px", minWidth: 0 },
+          placeholder: "項目名を入力",
           value: field.label || "",
-          onChange: (event) => onChange({ ...field, label: event.target.value })
+          required: true,
+          onChange: (event) => onChange({ ...field, label: event.target.value }),
+          onFocus: () => {
+            setSelectedOptionIndex(null);
+            onFocus();
+          }
         }
       ),
       /* @__PURE__ */ jsxRuntimeExports.jsxs(
         "select",
         {
           value: field.type,
+          style: { ...styles.input, width: "auto", minWidth: 150, flex: "0 1 auto" },
           onChange: (event) => {
-            const next = deepClone(field);
-            next.type = event.target.value;
-            if (["radio", "select", "checkboxes"].includes(next.type)) {
-              next.options = next.options?.length ? next.options : [{ id: genId(), label: "" }];
-              delete next.pattern;
-              delete next.defaultNow;
-            } else if (next.type === "regex") {
-              delete next.options;
-              next.pattern = typeof next.pattern === "string" ? next.pattern : "";
-              delete next.defaultNow;
-            } else if (["date", "time"].includes(next.type)) {
-              delete next.options;
-              delete next.pattern;
-              next.defaultNow = !!next.defaultNow;
-            } else {
-              delete next.options;
-              delete next.pattern;
-              delete next.defaultNow;
-            }
+            const next = handleTypeChange(field, event.target.value);
             onChange(next);
           },
-          style: styles.input,
+          onFocus,
           children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "text", children: "テキスト" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("option", { value: "textarea", children: "テキスト（複数行）" }),
@@ -19888,7 +20524,7 @@ function QuestionCard({ field, onChange, onAddBelow, onDelete, QuestionListCompo
           ]
         }
       ),
-      /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
+      /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }, children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           "input",
           {
@@ -19904,13 +20540,14 @@ function QuestionCard({ field, onChange, onAddBelow, onDelete, QuestionListCompo
           "input",
           {
             type: "checkbox",
-            checked: !!field.important,
-            onChange: (event) => onChange({ ...field, important: event.target.checked })
+            checked: isDisplayed,
+            onChange: (event) => handleDisplayToggle(event.target.checked)
           }
         ),
-        "重要"
+        DISPLAY_LABEL
       ] })
     ] }),
+    isInput && /* @__PURE__ */ jsxRuntimeExports.jsx(PlaceholderInput, { field, onChange, onFocus }),
     isDateOrTime && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { marginTop: 8 }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("label", { style: { display: "flex", alignItems: "center", gap: 6 }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(
         "input",
@@ -19932,13 +20569,15 @@ function QuestionCard({ field, onChange, onAddBelow, onDelete, QuestionListCompo
           style: styles.input,
           placeholder: "例: ^[0-9]+$",
           value: field.pattern || "",
-          onChange: (event) => onChange({ ...field, pattern: event.target.value })
+          onChange: (event) => onChange({ ...field, pattern: event.target.value }),
+          onFocus
         }
       ),
       regexCheck.error && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { color: "#B91C1C", fontSize: 12, marginTop: 4 }, children: [
         "正規表現が不正です: ",
         regexCheck.error
-      ] })
+      ] }),
+      /* @__PURE__ */ jsxRuntimeExports.jsx(PlaceholderInput, { field, onChange, onFocus })
     ] }),
     isChoice && /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { marginTop: 8 }, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }, children: [
@@ -19971,7 +20610,16 @@ function QuestionCard({ field, onChange, onAddBelow, onDelete, QuestionListCompo
             const next = deepClone(field);
             next.options.splice(index, 1);
             onChange(next);
+            if (selectedOptionIndex === index) {
+              setSelectedOptionIndex(null);
+            } else if (selectedOptionIndex > index) {
+              setSelectedOptionIndex(selectedOptionIndex - 1);
+            }
           },
+          onFocus: () => {
+            setSelectedOptionIndex(index);
+          },
+          isSelected: selectedOptionIndex === index,
           onAddChild: () => {
             if (!canAddChild) return;
             const next = deepClone(field);
@@ -19982,18 +20630,21 @@ function QuestionCard({ field, onChange, onAddBelow, onDelete, QuestionListCompo
             onChange(next);
           },
           canAddChild,
-          childrenArea: field.childrenByValue && field.childrenByValue[opt.label]?.length ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { marginTop: 8, paddingLeft: 12, borderLeft: "2px solid #E5E7EB" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
-            QuestionListComponent,
-            {
-              fields: field.childrenByValue[opt.label],
-              onChange: (childFields) => {
-                const next = deepClone(field);
-                next.childrenByValue[opt.label] = normalizeSchemaIDs(childFields);
-                onChange(next);
-              },
-              depth: depth + 1
-            }
-          ) }) : null
+          childrenArea: (() => {
+            const hasChildren = field.childrenByValue && field.childrenByValue[opt.label]?.length;
+            return hasChildren ? /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { marginTop: 8, paddingLeft: 12, borderLeft: "2px solid #E5E7EB" }, children: /* @__PURE__ */ jsxRuntimeExports.jsx(
+              QuestionListComponent,
+              {
+                fields: field.childrenByValue[opt.label],
+                onChange: (childFields) => {
+                  const next = deepClone(field);
+                  next.childrenByValue[opt.label] = normalizeSchemaIDs(childFields);
+                  onChange(next);
+                },
+                depth: depth + 1
+              }
+            ) }) : null;
+          })()
         },
         opt.id
       ))
@@ -20005,19 +20656,84 @@ function QuestionCard({ field, onChange, onAddBelow, onDelete, QuestionListCompo
     ] })
   ] });
 }
-function QuestionList({ fields, onChange, depth = 1 }) {
+function validateSchema(schema) {
+  const labelResult = validateUniqueLabels(schema);
+  if (!labelResult.ok) {
+    return { ok: false, error: `重複する項目名: ${labelResult.dup}` };
+  }
+  const depthResult = validateMaxDepth(schema, MAX_DEPTH);
+  if (!depthResult.ok) {
+    return { ok: false, error: `入れ子(キー)の深さは ${MAX_DEPTH} 段までです(現在: ${depthResult.depth} 段)。` };
+  }
+  return { ok: true, error: null };
+}
+function swapItems(array, index1, index2) {
+  const next = deepClone(array);
+  [next[index1], next[index2]] = [next[index2], next[index1]];
+  return next;
+}
+function buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown) {
+  if (selectedIndex === null) {
+    return {
+      selectedIndex: null,
+      questionLabel: null,
+      canMoveUp: false,
+      canMoveDown: false,
+      moveUp: () => {
+      },
+      moveDown: () => {
+      },
+      isOption: false
+    };
+  }
+  const questionLabel = normalized[selectedIndex]?.label || `質問 ${selectedIndex + 1}`;
+  const canMoveUp = selectedIndex > 0;
+  const canMoveDown = selectedIndex < normalized.length - 1;
+  return {
+    selectedIndex,
+    questionLabel,
+    canMoveUp,
+    canMoveDown,
+    moveUp: () => moveUp(selectedIndex),
+    moveDown: () => moveDown(selectedIndex),
+    isOption: false
+  };
+}
+function buildOptionControlInfo(selectedIndex, optionControl, normalized) {
+  const questionLabel = selectedIndex !== null ? normalized[selectedIndex]?.label || `質問 ${selectedIndex + 1}` : null;
+  return {
+    selectedIndex,
+    questionLabel,
+    canMoveUp: optionControl.canMoveUp,
+    canMoveDown: optionControl.canMoveDown,
+    moveUp: optionControl.moveUp,
+    moveDown: optionControl.moveDown,
+    isOption: true,
+    optionIndex: optionControl.optionIndex,
+    optionLabel: optionControl.optionLabel
+  };
+}
+function QuestionList({ fields, onChange, depth = 1, onQuestionControlChange }) {
   const { alertState, showAlert, closeAlert } = useAlert();
   const normalized = normalizeSchemaIDs(fields);
+  const [selectedIndex, setSelectedIndex] = React.useState(null);
+  const [optionControl, setOptionControl] = React.useState(null);
+  React.useEffect(() => {
+    if (depth === 1 && onQuestionControlChange) {
+      let controlInfo;
+      if (optionControl && optionControl.type === "option") {
+        controlInfo = buildOptionControlInfo(selectedIndex, optionControl, normalized);
+      } else {
+        controlInfo = buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown);
+      }
+      onQuestionControlChange(controlInfo);
+    }
+  }, [selectedIndex, optionControl, normalized.length, depth]);
   const commit = (next) => {
     const fixed = normalizeSchemaIDs(next);
-    const result = validateUniqueLabels(fixed);
-    if (!result.ok) {
-      showAlert(`重複する項目名: ${result.dup}`);
-      return;
-    }
-    const depthCheck = validateMaxDepth(fixed, MAX_DEPTH);
-    if (!depthCheck.ok) {
-      showAlert(`入れ子（キー）の深さは ${MAX_DEPTH} 段までです（現在: ${depthCheck.depth} 段）。`);
+    const validation = validateSchema(fixed);
+    if (!validation.ok) {
+      showAlert(validation.error);
       return;
     }
     onChange(fixed);
@@ -20036,7 +20752,33 @@ function QuestionList({ fields, onChange, depth = 1 }) {
     const next = deepClone(normalized);
     next.splice(index, 1);
     commit(next);
+    if (selectedIndex === index) {
+      setSelectedIndex(null);
+    } else if (selectedIndex > index) {
+      setSelectedIndex(selectedIndex - 1);
+    }
   };
+  const moveUp = (index) => {
+    if (index === 0) return;
+    const next = swapItems(normalized, index - 1, index);
+    commit(next);
+    if (selectedIndex === index) {
+      setSelectedIndex(index - 1);
+    } else if (selectedIndex === index - 1) {
+      setSelectedIndex(index);
+    }
+  };
+  const moveDown = (index) => {
+    if (index === normalized.length - 1) return;
+    const next = swapItems(normalized, index, index + 1);
+    commit(next);
+    if (selectedIndex === index) {
+      setSelectedIndex(index + 1);
+    } else if (selectedIndex === index + 1) {
+      setSelectedIndex(index);
+    }
+  };
+  selectedIndex !== null && selectedIndex < normalized.length - 1;
   return /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", flexDirection: "column", gap: 12 }, children: normalized.map((field, index) => /* @__PURE__ */ jsxRuntimeExports.jsx(
       QuestionCard,
@@ -20045,6 +20787,16 @@ function QuestionList({ fields, onChange, depth = 1 }) {
         onChange: (nextField) => setOne(index, nextField),
         onAddBelow: () => insertAfter(index),
         onDelete: () => removeOne(index),
+        onFocus: (controlInfo) => {
+          if (controlInfo && typeof controlInfo === "object") {
+            setSelectedIndex(index);
+            setOptionControl(controlInfo);
+          } else {
+            setSelectedIndex(index);
+            setOptionControl(null);
+          }
+        },
+        isSelected: selectedIndex === index,
         QuestionListComponent: QuestionList,
         depth
       },
@@ -20054,12 +20806,6 @@ function QuestionList({ fields, onChange, depth = 1 }) {
   ] });
 }
 const SETTINGS_FIELDS = [
-  {
-    key: "formTitle",
-    label: "受付フォームのタイトル",
-    placeholder: "例: 来場者受付",
-    required: true
-  },
   {
     key: "spreadsheetId",
     label: "Spreadsheet ID / URL",
@@ -20073,15 +20819,23 @@ const SETTINGS_FIELDS = [
     required: false
   },
   {
-    key: "gasUrl",
-    label: "GAS WebApp URL",
-    placeholder: "https://script.google.com/macros/s/.../exec",
-    required: false
-  },
-  {
     key: "pageSize",
     label: "1画面あたりの表示件数",
     placeholder: "20",
+    required: false,
+    type: "number"
+  },
+  {
+    key: "searchTableMaxWidth",
+    label: "検索結果テーブルの最大幅（px）",
+    placeholder: "1200",
+    required: false,
+    type: "number"
+  },
+  {
+    key: "searchCellMaxChars",
+    label: "検索結果セルの表示文字数上限",
+    placeholder: "50",
     required: false,
     type: "number"
   }
@@ -20110,7 +20864,7 @@ function SettingsPanel({ settings, onSettingsChange }) {
     SETTINGS_FIELDS.map((field) => /* @__PURE__ */ jsxRuntimeExports.jsx(SettingsField, { field, value: settings[field.key], onChange: onSettingsChange }, field.key))
   ] });
 }
-function EditorPage({ schema, onSchemaChange, settings, onSettingsChange }) {
+function EditorPage({ schema, onSchemaChange, settings, onSettingsChange, onQuestionControlChange }) {
   const handleAddQuestion = () => {
     const next = normalizeSchemaIDs([...schema || []]);
     next.push({ id: genId(), type: "text", label: "" });
@@ -20126,7 +20880,7 @@ function EditorPage({ schema, onSchemaChange, settings, onSettingsChange }) {
         }
       }
     ),
-    /* @__PURE__ */ jsxRuntimeExports.jsx(QuestionList, { fields: schema, onChange: onSchemaChange }),
+    /* @__PURE__ */ jsxRuntimeExports.jsx(QuestionList, { fields: schema, onChange: onSchemaChange, onQuestionControlChange }),
     /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { display: "flex", justifyContent: "center", marginTop: 12 }, children: /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", style: styles.btn, onClick: handleAddQuestion, children: "質問を追加" }) })
   ] });
 }
@@ -20160,9 +20914,16 @@ const hasAnyValue = (values, columns) => (columns || []).some((column) => {
   const display = values?.[column.key]?.display;
   return typeof display === "string" && display.trim().length > 0;
 });
-function SearchPreviewPanel({ schema, responses }) {
-  const importantFields = reactExports.useMemo(() => collectImportantFieldPaths(schema), [schema]);
-  const form = reactExports.useMemo(() => ({ importantFields }), [importantFields]);
+function SearchPreviewPanel({ schema, responses, settings }) {
+  const displayFieldSettings = reactExports.useMemo(() => collectDisplayFieldSettings(schema), [schema]);
+  const form = reactExports.useMemo(
+    () => ({
+      displayFieldSettings,
+      importantFields: displayFieldSettings.map((item) => item.path)
+    }),
+    [displayFieldSettings]
+  );
+  const displayLengthLimit = parseSearchCellDisplayLimit(settings?.searchCellMaxChars);
   const sampleEntry = reactExports.useMemo(() => {
     const data = collectResponses(schema, responses);
     return {
@@ -20188,7 +20949,7 @@ function SearchPreviewPanel({ schema, responses }) {
   );
   return /* @__PURE__ */ jsxRuntimeExports.jsx("section", { style: { marginTop: 24 }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("details", { open: true, children: [
     /* @__PURE__ */ jsxRuntimeExports.jsx("summary", { style: { cursor: "pointer", fontWeight: 600, marginBottom: 12 }, children: "検索プレビュー" }),
-    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: panelStyle, children: !hasImportantColumns ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6B7280", fontSize: 12 }, children: "「重要」に設定された質問がありません。重要項目を設定すると検索プレビューが表示されます。" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { style: tableStyle, children: [
+    /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: panelStyle, children: !hasImportantColumns ? /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { color: "#6B7280", fontSize: 12 }, children: "「表示」に設定された質問がありません。表示項目を設定すると検索プレビューが表示されます。" }) : /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { overflowX: "auto" }, children: /* @__PURE__ */ jsxRuntimeExports.jsxs("table", { style: tableStyle, children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx("thead", { children: headerRows.map((row, rowIndex) => /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { children: row.map((cell, cellIndex) => /* @__PURE__ */ jsxRuntimeExports.jsx(
         "th",
         {
@@ -20199,7 +20960,10 @@ function SearchPreviewPanel({ schema, responses }) {
         },
         `preview-header-cell-${rowIndex}-${cellIndex}`
       )) }, `preview-header-${rowIndex}`)) }),
-      /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: hasResponses ? /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { children: columns.map((column) => /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle, children: previewRow.values?.[column.key]?.display ?? "" }, `preview-${column.key}`)) }) : /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { children: /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { ...tdStyle, textAlign: "center", color: "#6B7280" }, colSpan: columns.length || 1, children: "フォームに入力すると、重要項目の検索結果プレビューがここに表示されます。" }) }) })
+      /* @__PURE__ */ jsxRuntimeExports.jsx("tbody", { children: hasResponses ? /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { children: columns.map((column) => /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: tdStyle, children: applyDisplayLengthLimit(
+        previewRow.values?.[column.key]?.display ?? "",
+        displayLengthLimit
+      ) }, `preview-${column.key}`)) }) : /* @__PURE__ */ jsxRuntimeExports.jsx("tr", { children: /* @__PURE__ */ jsxRuntimeExports.jsx("td", { style: { ...tdStyle, textAlign: "center", color: "#6B7280" }, colSpan: columns.length || 1, children: "フォームに入力すると、表示項目の検索結果プレビューがここに表示されます。" }) }) })
     ] }) }) })
   ] }) });
 }
@@ -20217,8 +20981,27 @@ const runSelfTests = () => {
     ]);
     const responses = { [schema[0].id]: "赤", [schema[1].id]: "太郎" };
     const output = collectResponses(schema, responses);
-    console.assert(output["色|赤"] === true && output["名前"] === "太郎", "collectResponses basic");
+    console.assert(output["色|赤"] === "●" && output["名前"] === "太郎", "collectResponses basic");
     console.assert(typeof computeSchemaHash(schema) === "string", "schema hash returns string");
+    const requiredText = normalizeSchemaIDs([{ type: "text", label: "氏名", required: true }]);
+    console.assert(hasValidationErrors(requiredText, {}) === true, "required text should error when empty");
+    console.assert(hasValidationErrors(requiredText, { [requiredText[0].id]: "山田" }) === false, "required text should pass when filled");
+    const selectWithChild = normalizeSchemaIDs([
+      {
+        type: "select",
+        label: "カラー",
+        required: true,
+        options: [{ label: "赤" }, { label: "青" }],
+        childrenByValue: {
+          赤: [{ type: "text", label: "理由", required: true }]
+        }
+      }
+    ]);
+    const selectId = selectWithChild[0].id;
+    const reasonId = selectWithChild[0].childrenByValue["赤"][0].id;
+    console.assert(hasValidationErrors(selectWithChild, {}) === true, "required select should error when empty");
+    console.assert(hasValidationErrors(selectWithChild, { [selectId]: "赤" }) === true, "child required should error when empty");
+    console.assert(hasValidationErrors(selectWithChild, { [selectId]: "赤", [reasonId]: "好き" }) === false, "child required should pass when filled");
   } catch (err) {
     console.warn("[SelfTests] error:", err);
   }
@@ -20239,7 +21022,6 @@ const shallowEqual = (a, b) => {
   try {
     return JSON.stringify(a) === JSON.stringify(b);
   } catch (error) {
-    console.warn("shallowEqual fallback", error);
     return false;
   }
 };
@@ -20249,26 +21031,33 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace2({ i
   const [schema, setSchema] = reactExports.useState(() => normalizeSchemaIDs(initialSchema || []));
   const [responses, setResponses] = reactExports.useState({});
   const { settings, replaceSettings, updateSetting } = useBuilderSettings();
-  const initialSchemaRef = reactExports.useRef(schema);
-  const initialSettingsRef = reactExports.useRef(initialSettings || {});
+  const initialSchemaRef = reactExports.useRef(null);
+  const initialSettingsRef = reactExports.useRef(null);
+  const [questionControl, setQuestionControl] = reactExports.useState(null);
+  const [isInitialized, setIsInitialized] = reactExports.useState(false);
   reactExports.useEffect(() => {
     runSelfTests();
   }, []);
   reactExports.useEffect(() => {
-    replaceSettings(initialSettings || {});
-  }, [initialSettings, replaceSettings]);
-  reactExports.useEffect(() => {
     const normalized = normalizeSchemaIDs(initialSchema || []);
     setSchema(normalized);
+    const mergedSettings = replaceSettings(initialSettings || {});
     initialSchemaRef.current = normalized;
-  }, [initialSchema]);
+    initialSettingsRef.current = mergedSettings;
+    setIsInitialized(true);
+    onDirtyChange?.(false);
+  }, [initialSchema, initialSettings, replaceSettings, onDirtyChange]);
   reactExports.useEffect(() => {
-    initialSettingsRef.current = initialSettings || {};
-  }, [initialSettings]);
-  reactExports.useEffect(() => {
-    const dirty = !shallowEqual(initialSchemaRef.current, schema) || !shallowEqual(initialSettingsRef.current, settings);
-    onDirtyChange?.(dirty);
-  }, [schema, settings, onDirtyChange]);
+    if (!isInitialized) {
+      return;
+    }
+    if (initialSchemaRef.current === null || initialSettingsRef.current === null) {
+      return;
+    }
+    const schemaDirty = !shallowEqual(initialSchemaRef.current, schema);
+    const settingsDirty = !shallowEqual(initialSettingsRef.current, settings);
+    onDirtyChange?.(schemaDirty || settingsDirty);
+  }, [schema, settings, isInitialized, onDirtyChange]);
   const handleSchemaChange = (nextSchema) => {
     const normalized = normalizeSchemaIDs(nextSchema);
     const depthCheck = validateMaxDepth(normalized, MAX_DEPTH);
@@ -20279,20 +21068,26 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace2({ i
     setSchema(normalized);
   };
   const handleSave = reactExports.useCallback(() => {
+    const requiredCheck = validateRequiredLabels(schema);
+    if (!requiredCheck.ok) {
+      showAlert("項目名は入力必須です。すべての質問に名前を入力してください。");
+      return;
+    }
     initialSchemaRef.current = schema;
     initialSettingsRef.current = settings;
     onDirtyChange?.(false);
     onSave?.({ schema, settings });
-  }, [onSave, schema, settings]);
+  }, [onSave, schema, settings, onDirtyChange, showAlert]);
   reactExports.useImperativeHandle(
     ref,
     () => ({
       save: handleSave,
       getSchema: () => schema,
       getSettings: () => settings,
-      setMode: setActiveTab
+      setMode: setActiveTab,
+      getQuestionControl: () => questionControl
     }),
-    [handleSave, schema, settings]
+    [handleSave, schema, settings, questionControl]
   );
   const previewSettings = reactExports.useMemo(() => ({ ...settings, formTitle }), [settings, formTitle]);
   return /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: containerStyle, children: [
@@ -20304,7 +21099,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace2({ i
         showToolbarSave && /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", style: toolbarButtonStyle(false), onClick: handleSave, children: "保存" })
       ] })
     ] }),
-    activeTab === "editor" && /* @__PURE__ */ jsxRuntimeExports.jsx(EditorPage, { schema, onSchemaChange: handleSchemaChange, settings, onSettingsChange: updateSetting }),
+    activeTab === "editor" && /* @__PURE__ */ jsxRuntimeExports.jsx(EditorPage, { schema, onSchemaChange: handleSchemaChange, settings, onSettingsChange: updateSetting, onQuestionControlChange: setQuestionControl }),
     activeTab === "preview" && /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
       /* @__PURE__ */ jsxRuntimeExports.jsx(
         PreviewPage,
@@ -20317,7 +21112,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace2({ i
           showSaveButton: false
         }
       ),
-      /* @__PURE__ */ jsxRuntimeExports.jsx(SearchPreviewPanel, { schema, responses })
+      /* @__PURE__ */ jsxRuntimeExports.jsx(SearchPreviewPanel, { schema, responses, settings })
     ] }),
     /* @__PURE__ */ jsxRuntimeExports.jsx(AlertDialog, { open: alertState.open, title: alertState.title, message: alertState.message, onClose: closeAlert })
   ] });
@@ -20354,20 +21149,35 @@ function AdminFormEditorPage() {
   const fallback = reactExports.useMemo(() => fallbackPath(location2.state), [location2.state]);
   const builderRef = reactExports.useRef(null);
   const initialMetaRef = reactExports.useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
-  const initialSettingsRef = reactExports.useRef(form?.settings || { formTitle: initialMetaRef.current.name });
+  const initialSchema = reactExports.useMemo(() => form?.schema ? form.schema : [], [form]);
+  const initialSettings = reactExports.useMemo(() => form?.settings ? form.settings : {}, [form]);
   const [name, setName] = reactExports.useState(initialMetaRef.current.name);
   const [description, setDescription] = reactExports.useState(initialMetaRef.current.description);
+  const [driveUrl, setDriveUrl] = reactExports.useState(form?.driveFileUrl || "");
   const [builderDirty, setBuilderDirty] = reactExports.useState(false);
   const [confirmState, setConfirmState] = reactExports.useState(false);
   const [confirmSave, setConfirmSave] = reactExports.useState(false);
   const [isSaving, setIsSaving] = reactExports.useState(false);
   const [nameError, setNameError] = reactExports.useState("");
+  const [questionControl, setQuestionControl] = reactExports.useState(null);
+  reactExports.useEffect(() => {
+    const interval = setInterval(() => {
+      if (builderRef.current) {
+        const control = builderRef.current.getQuestionControl?.();
+        if (control !== questionControl) {
+          setQuestionControl(control);
+        }
+      }
+    }, 100);
+    return () => clearInterval(interval);
+  }, [questionControl]);
   reactExports.useEffect(() => {
     if (!form) return;
-    initialMetaRef.current = { name: form.name || "", description: form.description || "" };
-    initialSettingsRef.current = form.settings || { formTitle: form.name || "" };
-    setName(form.name || "");
+    const formTitle = form.settings?.formTitle || "";
+    initialMetaRef.current = { name: formTitle, description: form.description || "" };
+    setName(formTitle);
     setDescription(form.description || "");
+    setDriveUrl(form.driveFileUrl || "");
     setNameError("");
   }, [form]);
   const metaDirty = reactExports.useMemo(() => name !== initialMetaRef.current.name || description !== initialMetaRef.current.description, [name, description]);
@@ -20388,19 +21198,40 @@ function AdminFormEditorPage() {
     }
     navigate(fallback, { replace: true });
   };
-  const handleSaveClick = () => {
+  const checkSpreadsheet = reactExports.useCallback(async (spreadsheetIdOrUrl) => {
+    const trimmed = (spreadsheetIdOrUrl || "").trim();
+    if (!trimmed) {
+      showAlert("Spreadsheet ID / URL を入力してください");
+      return false;
+    }
+    try {
+      const result = await validateSpreadsheet(trimmed);
+      if (!result?.canView) {
+        showAlert("閲覧権限がありません。アクセス権を確認してください");
+        return false;
+      }
+      if (!result.canEdit) {
+        showAlert("閲覧権限のみで続行します。保存に失敗する場合は編集権限を付与してください。");
+      }
+      return true;
+    } catch (error) {
+      console.error("[AdminFormEditorPage] validateSpreadsheet failed", error);
+      showAlert(error?.message || "スプレッドシートを確認できません");
+      return false;
+    }
+  }, [showAlert]);
+  const handleSaveClick = async () => {
     if (!builderRef.current) return;
     const trimmedName = (name || "").trim();
     if (!trimmedName) {
       setNameError("フォーム名を入力してください");
       return;
     }
-    const duplicate = forms.some((existing) => existing.name === trimmedName && existing.id !== (form?.id || null));
-    if (duplicate) {
-      setNameError(`「${trimmedName}」は既に存在します。別の名称を入力してください。`);
-      return;
-    }
     setNameError("");
+    const settings = builderRef.current.getSettings?.() || {};
+    const spreadsheetId = settings.spreadsheetId || "";
+    const spreadsheetOk = await checkSpreadsheet(spreadsheetId);
+    if (!spreadsheetOk) return;
     setConfirmSave(true);
   };
   const handleSave = async () => {
@@ -20409,17 +21240,28 @@ function AdminFormEditorPage() {
     const schema = builderRef.current.getSchema();
     const settings = builderRef.current.getSettings();
     const trimmedName = (name || "").trim();
+    const spreadsheetOk = await checkSpreadsheet(settings?.spreadsheetId || "");
+    if (!spreadsheetOk) {
+      setConfirmSave(false);
+      setIsSaving(false);
+      return;
+    }
+    const cleanedSchema = cleanupTempData(schema);
     const payload = {
-      name: trimmedName,
+      // Include existing form data for fallback when getForm fails
+      ...isEdit && form ? { id: form.id, createdAt: form.createdAt, driveFileUrl: form.driveFileUrl } : {},
       description,
-      schema,
-      settings: { ...settings, formTitle: settings?.formTitle || trimmedName }
+      schema: cleanedSchema,
+      settings: { ...settings, formTitle: trimmedName },
+      archived: form?.archived ?? false,
+      schemaVersion: form?.schemaVersion ?? 1
     };
+    const targetUrl = driveUrl?.trim() || null;
     try {
       setIsSaving(true);
-      if (isEdit) await updateForm(formId, payload);
-      else await createForm(payload);
-      initialMetaRef.current = { name: payload.name, description: payload.description || "" };
+      if (isEdit) await updateForm(formId, payload, targetUrl);
+      else await createForm(payload, targetUrl);
+      initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
       setBuilderDirty(false);
       setIsSaving(false);
       navigate("/admin", { replace: true });
@@ -20443,6 +21285,18 @@ function AdminFormEditorPage() {
     } else {
       setConfirmState(true);
     }
+  };
+  const handleOpenSpreadsheet = () => {
+    if (!builderRef.current) return;
+    const settings = builderRef.current.getSettings();
+    const spreadsheetIdOrUrl = settings?.spreadsheetId || "";
+    if (!spreadsheetIdOrUrl) {
+      showAlert("スプレッドシートIDが設定されていません");
+      return;
+    }
+    const spreadsheetId = normalizeSpreadsheetId(spreadsheetIdOrUrl);
+    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+    window.open(url, "_blank", "noopener,noreferrer");
   };
   const confirmOptions = [
     {
@@ -20477,12 +21331,60 @@ function AdminFormEditorPage() {
     AppLayout,
     {
       title: isEdit ? "フォーム修正" : "フォーム新規作成",
+      badge: "管理",
       fallbackPath: fallback,
       onBack: handleBack,
       backHidden: true,
       sidebarActions: /* @__PURE__ */ jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [
         /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", style: sidebarButtonStyle, disabled: isSaving, onClick: handleSaveClick, children: "保存" }),
-        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", style: sidebarButtonStyle, onClick: handleCancel, children: "キャンセル" })
+        /* @__PURE__ */ jsxRuntimeExports.jsx("button", { type: "button", style: sidebarButtonStyle, onClick: handleCancel, children: "キャンセル" }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { height: 16 } }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            type: "button",
+            style: {
+              ...sidebarButtonStyle,
+              background: questionControl?.canMoveUp ? "#fff" : "#F3F4F6",
+              color: questionControl?.canMoveUp ? "#000" : "#9CA3AF",
+              cursor: questionControl?.canMoveUp ? "pointer" : "not-allowed"
+            },
+            disabled: !questionControl?.canMoveUp,
+            onClick: () => questionControl?.moveUp?.(),
+            children: "↑ 上へ"
+          }
+        ),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            type: "button",
+            style: {
+              ...sidebarButtonStyle,
+              background: questionControl?.canMoveDown ? "#fff" : "#F3F4F6",
+              color: questionControl?.canMoveDown ? "#000" : "#9CA3AF",
+              cursor: questionControl?.canMoveDown ? "pointer" : "not-allowed"
+            },
+            disabled: !questionControl?.canMoveDown,
+            onClick: () => questionControl?.moveDown?.(),
+            children: "↓ 下へ"
+          }
+        ),
+        questionControl?.selectedIndex !== null && /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { fontSize: 11, color: "#64748B", padding: "4px 8px", textAlign: "center", wordBreak: "break-word" }, children: questionControl?.isOption ? `${questionControl?.questionLabel || `質問 ${(questionControl?.selectedIndex ?? 0) + 1}`} > ${questionControl?.optionLabel || `選択肢 ${(questionControl?.optionIndex ?? 0) + 1}`}` : questionControl?.questionLabel || `質問 ${(questionControl?.selectedIndex ?? 0) + 1}` }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx("div", { style: { flex: 1 } }),
+        /* @__PURE__ */ jsxRuntimeExports.jsx(
+          "button",
+          {
+            type: "button",
+            style: {
+              ...sidebarButtonStyle,
+              marginTop: "auto",
+              background: "#E0F2FE",
+              borderColor: "#38BDF8"
+            },
+            onClick: handleOpenSpreadsheet,
+            children: "📊 スプレッドシートを開く"
+          }
+        )
       ] }),
       children: [
         /* @__PURE__ */ jsxRuntimeExports.jsxs("section", { style: { marginBottom: 24 }, children: [
@@ -20505,14 +21407,28 @@ function AdminFormEditorPage() {
           /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: fieldStyle, children: [
             /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "説明" }),
             /* @__PURE__ */ jsxRuntimeExports.jsx("textarea", { value: description, onChange: (event) => setDescription(event.target.value), style: { ...inputStyle, minHeight: 80 }, placeholder: "説明" })
+          ] }),
+          /* @__PURE__ */ jsxRuntimeExports.jsxs("div", { style: fieldStyle, children: [
+            /* @__PURE__ */ jsxRuntimeExports.jsx("label", { children: "Google Drive保存先URL（オプション）" }),
+            /* @__PURE__ */ jsxRuntimeExports.jsx(
+              "input",
+              {
+                value: driveUrl,
+                onChange: (event) => setDriveUrl(event.target.value),
+                style: inputStyle,
+                placeholder: "空白: ルートディレクトリ / フォルダURL: ランダム名で保存 / ファイルURL: そのファイルに保存"
+              }
+            ),
+            /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#6B7280", marginTop: 4, marginBottom: 0 }, children: "空白の場合はルートディレクトリに保存されます。フォルダURLを指定するとそのフォルダにランダム名で保存、ファイルURLを指定するとそのファイルに保存されます。" }),
+            isEdit && driveUrl && /* @__PURE__ */ jsxRuntimeExports.jsx("p", { style: { fontSize: 11, color: "#2563EB", marginTop: 4, marginBottom: 0 }, children: "変更すると新しい場所に保存され、元のファイルはそのまま残ります。" })
           ] })
         ] }),
         /* @__PURE__ */ jsxRuntimeExports.jsx(
           FormBuilderWorkspace,
           {
             ref: builderRef,
-            initialSchema: form?.schema || [],
-            initialSettings: initialSettingsRef.current,
+            initialSchema,
+            initialSettings,
             formTitle: name || "フォーム",
             onDirtyChange: setBuilderDirty,
             showToolbarSave: false
