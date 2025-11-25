@@ -91,12 +91,13 @@ const deleteEntriesForForm = (store, formId) =>
     request.onerror = () => reject(request.error);
   });
 
-const buildCacheRecord = (formId, record, cacheTimestamp, rowIndex) => ({
+const buildCacheRecord = (formId, record, lastSyncedAt, rowIndex) => ({
   ...record,
   compoundId: buildCompoundId(formId, record.id),
   formId,
   entryId: record.id,
-  _cacheTimestamp: cacheTimestamp,
+  _cacheTimestamp: lastSyncedAt,
+  lastSyncedAt,
   rowIndex,
 });
 
@@ -122,19 +123,19 @@ export async function saveRecordsToCache(formId, records, headerMatrix = [], { s
   const store = tx.objectStore(STORE_NAME);
   const metaStore = tx.objectStore(META_STORE_NAME);
 
-  const cacheTimestamp = Date.now();
+  const lastSyncedAt = Date.now();
   const entryIndexMap = buildEntryIndexMap(records || []);
   await deleteEntriesForForm(store, formId);
 
   for (let idx = 0; idx < records.length; idx++) {
     const record = records[idx];
-    await waitForRequest(store.put(buildCacheRecord(formId, record, cacheTimestamp, idx)));
+    await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, idx)));
   }
 
   await waitForRequest(metaStore.put({
     formId,
-    _cacheTimestamp: cacheTimestamp,
-    lastReloadedAt: cacheTimestamp,
+    _cacheTimestamp: lastSyncedAt,
+    lastSyncedAt,
     headerMatrix,
     schemaHash,
     entryIndexMap,
@@ -154,10 +155,11 @@ export async function updateRecordsMeta(formId, { entryIndexMap, lastReloadedAt,
   const metaStore = tx.objectStore(META_STORE_NAME);
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
 
+  const lastSyncedAt = lastReloadedAt ?? existingMeta?.lastSyncedAt ?? existingMeta?._cacheTimestamp ?? Date.now();
   const nextMeta = {
     formId,
-    _cacheTimestamp: existingMeta?._cacheTimestamp || Date.now(),
-    lastReloadedAt: lastReloadedAt ?? existingMeta?.lastReloadedAt ?? existingMeta?._cacheTimestamp ?? Date.now(),
+    _cacheTimestamp: existingMeta?._cacheTimestamp || lastSyncedAt,
+    lastSyncedAt,
     headerMatrix: headerMatrix ?? existingMeta?.headerMatrix ?? [],
     schemaHash: schemaHash ?? existingMeta?.schemaHash ?? null,
     entryIndexMap: entryIndexMap ?? existingMeta?.entryIndexMap ?? {},
@@ -179,10 +181,11 @@ export async function updateEntryIndex(formId, entryId, rowIndex) {
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
   const existingMap = existingMeta?.entryIndexMap || {};
   existingMap[entryId] = rowIndex;
+  const lastSyncedAt = existingMeta?.lastSyncedAt || existingMeta?._cacheTimestamp || Date.now();
   const nextMeta = {
     formId,
-    _cacheTimestamp: existingMeta?._cacheTimestamp || Date.now(),
-    lastReloadedAt: existingMeta?.lastReloadedAt || existingMeta?._cacheTimestamp || Date.now(),
+    _cacheTimestamp: existingMeta?._cacheTimestamp || lastSyncedAt,
+    lastSyncedAt,
     headerMatrix: existingMeta?.headerMatrix || [],
     schemaHash: existingMeta?.schemaHash || null,
     entryIndexMap: existingMap,
@@ -193,6 +196,7 @@ export async function updateEntryIndex(formId, entryId, rowIndex) {
 }
 
 const binarySearchById = (entries, entryId) => {
+  // Assumes entries are sorted ascending by id (ensured at fetch time)
   let low = 0;
   let high = entries.length - 1;
   while (low <= high) {
@@ -210,7 +214,7 @@ const binarySearchById = (entries, entryId) => {
  */
 export async function getCachedEntryWithIndex(formId, entryId) {
   if (!formId || !entryId) return { entry: null, rowIndex: null };
-  const { entries, cacheTimestamp, headerMatrix, schemaHash, lastReloadedAt, entryIndexMap } = await getRecordsFromCache(formId);
+  const { entries, cacheTimestamp, headerMatrix, schemaHash, lastSyncedAt, entryIndexMap } = await getRecordsFromCache(formId);
   let rowIndex = entryIndexMap?.[entryId];
   let entry = null;
 
@@ -230,7 +234,7 @@ export async function getCachedEntryWithIndex(formId, entryId) {
     }
   }
 
-  return { entry, rowIndex, cacheTimestamp, headerMatrix, schemaHash, lastReloadedAt, entryIndexMap };
+  return { entry, rowIndex, cacheTimestamp, headerMatrix, schemaHash, lastSyncedAt, entryIndexMap };
 }
 
 /**
@@ -243,15 +247,15 @@ export async function upsertRecordInCache(formId, record, { headerMatrix, rowInd
   const store = tx.objectStore(STORE_NAME);
   const metaStore = tx.objectStore(META_STORE_NAME);
 
-  const cacheTimestamp = Date.now();
+  const lastSyncedAt = Date.now();
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
   const nextRowIndex = Number.isInteger(rowIndex) ? rowIndex : existingMeta?.entryIndexMap?.[record.id];
-  await waitForRequest(store.put(buildCacheRecord(formId, record, cacheTimestamp, nextRowIndex)));
+  await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, nextRowIndex)));
 
   await waitForRequest(metaStore.put({
     formId,
-    _cacheTimestamp: cacheTimestamp,
-    lastReloadedAt: cacheTimestamp,
+    _cacheTimestamp: lastSyncedAt,
+    lastSyncedAt,
     headerMatrix: headerMatrix || existingMeta?.headerMatrix || [],
     schemaHash: schemaHash ?? existingMeta?.schemaHash ?? null,
     entryIndexMap: { ...(existingMeta?.entryIndexMap || {}), ...(Number.isInteger(nextRowIndex) ? { [record.id]: nextRowIndex } : {}) },
@@ -264,10 +268,10 @@ export async function upsertRecordInCache(formId, record, { headerMatrix, rowInd
 /**
  * Get all records for a form from IndexedDB
  * @param {string} formId
- * @returns {Promise<{entries: Array, headerMatrix: Array, cacheTimestamp: number|null}>}
+ * @returns {Promise<{entries: Array, headerMatrix: Array, cacheTimestamp: number|null, lastSyncedAt: number|null}>}
  */
 export async function getRecordsFromCache(formId) {
-  if (!formId) return { entries: [], headerMatrix: [], cacheTimestamp: null, schemaHash: null, lastReloadedAt: null, entryIndexMap: {} };
+  if (!formId) return { entries: [], headerMatrix: [], cacheTimestamp: null, schemaHash: null, lastSyncedAt: null, entryIndexMap: {} };
   const db = await openDB();
   const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
   const store = tx.objectStore(STORE_NAME);
@@ -289,7 +293,7 @@ export async function getRecordsFromCache(formId) {
     entries,
     headerMatrix: meta?.headerMatrix || [],
     cacheTimestamp: meta?._cacheTimestamp || null,
-    lastReloadedAt: meta?.lastReloadedAt || meta?._cacheTimestamp || null,
+    lastSyncedAt: meta?.lastSyncedAt || meta?._cacheTimestamp || null,
     schemaHash: meta?.schemaHash || null,
     entryIndexMap: meta?.entryIndexMap || {},
   };
@@ -344,10 +348,36 @@ export async function clearRecordsCache(formId) {
 export async function hasCachedRecords(formId) {
   if (!formId) return false;
   try {
-    const { entries, cacheTimestamp } = await getRecordsFromCache(formId);
-    return entries.length > 0 || !!cacheTimestamp;
+    const { entries, cacheTimestamp, lastSyncedAt } = await getRecordsFromCache(formId);
+    return entries.length > 0 || !!cacheTimestamp || !!lastSyncedAt;
   } catch (err) {
     console.error('Error checking cache:', err);
     return false;
   }
+}
+
+/**
+ * Remove a single record from cache (keeps meta but clears index map to force refresh)
+ */
+export async function deleteRecordFromCache(formId, entryId) {
+  if (!formId || !entryId) return;
+  const db = await openDB();
+  const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
+  const store = tx.objectStore(STORE_NAME);
+  const metaStore = tx.objectStore(META_STORE_NAME);
+
+  await waitForRequest(store.delete(buildCompoundId(formId, entryId)));
+  const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
+  const lastSyncedAt = Date.now();
+  const nextMeta = {
+    formId,
+    _cacheTimestamp: existingMeta?._cacheTimestamp || lastSyncedAt,
+    lastSyncedAt,
+    headerMatrix: existingMeta?.headerMatrix || [],
+    schemaHash: existingMeta?.schemaHash || null,
+    entryIndexMap: {}, // invalidate map to avoid stale indices
+  };
+  await waitForRequest(metaStore.put(nextMeta));
+  await waitForTransaction(tx);
+  db.close();
 }

@@ -1,17 +1,16 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { dataStore } from "./dataStore.js";
 import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
+import { CACHE_MAX_AGE_MS, CACHE_BACKGROUND_REFRESH_MS, evaluateCache } from "./cachePolicy.js";
 
 const AppDataContext = createContext(null);
-const FORMS_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours
-const FORMS_BACKGROUND_REFRESH_MS = 5 * 60 * 1000; // 5 minutes
-
 export function AppDataProvider({ children }) {
   const [forms, setForms] = useState([]);
   const [loadingForms, setLoadingForms] = useState(true);
   const [error, setError] = useState(null);
   const [loadFailures, setLoadFailures] = useState([]);
-  const [lastReloadedAt, setLastReloadedAt] = useState(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [cacheDisabled, setCacheDisabled] = useState(false);
 
   // キャッシュ更新用にformsとloadFailuresの最新値を保持
   const formsRef = useRef(forms);
@@ -49,13 +48,16 @@ export function AppDataProvider({ children }) {
 
       setForms(allForms);
       setLoadFailures(failures);
-      setLastReloadedAt(Date.now());
+      const syncedAt = Date.now();
+      setLastSyncedAt(syncedAt);
 
       try {
         await saveFormsToCache(allForms, failures);
+        setCacheDisabled(false);
         console.log("[perf][forms] saved to cache");
       } catch (cacheErr) {
         console.warn("[AppDataProvider] Failed to save to cache:", cacheErr);
+        setCacheDisabled(true);
       }
 
       const finishedAt = Date.now();
@@ -83,35 +85,36 @@ export function AppDataProvider({ children }) {
       let cacheApplied = false;
       let cachedForms = [];
       let cachedFailures = [];
-      let cacheTimestamp = null;
-      let cacheLastReloaded = null;
+      let cacheLastSyncedAt = null;
 
       try {
         // 1. キャッシュから即座に表示
         const cacheResult = await getFormsFromCache();
         cachedForms = cacheResult.forms || [];
         cachedFailures = cacheResult.loadFailures || [];
-        cacheTimestamp = cacheResult.cacheTimestamp || null;
-        cacheLastReloaded = cacheResult.lastReloadedAt || cacheTimestamp || null;
-        const cacheAge = cacheTimestamp ? Date.now() - cacheTimestamp : null;
-        const hasCachedData = cachedForms.length > 0 || cachedFailures.length > 0 || !!cacheTimestamp;
+        cacheLastSyncedAt = cacheResult.lastSyncedAt || cacheResult.cacheTimestamp || null;
+        const cacheAge = cacheLastSyncedAt ? Date.now() - cacheLastSyncedAt : null;
+        const hasCachedData = cachedForms.length > 0 || cachedFailures.length > 0 || !!cacheLastSyncedAt;
 
         if (hasCachedData) {
           console.log("[AppDataProvider] Loaded from cache:", cachedForms.length, "forms (age:", cacheAge, "ms)");
           setForms(cachedForms);
           setLoadFailures(cachedFailures);
-          setLastReloadedAt(cacheLastReloaded);
+          setLastSyncedAt(cacheLastSyncedAt);
           cacheApplied = true;
         }
 
-        const cacheAgeMs = cacheLastReloaded ? Date.now() - cacheLastReloaded : Infinity;
-        const shouldSync = !cacheApplied || cacheAgeMs >= FORMS_CACHE_MAX_AGE_MS;
-        const shouldBackground = cacheApplied && cacheAgeMs >= FORMS_BACKGROUND_REFRESH_MS;
+        const { age: cacheAgeMs, shouldSync, shouldBackground } = evaluateCache({
+          lastSyncedAt: cacheLastSyncedAt,
+          hasData: hasCachedData,
+          maxAgeMs: CACHE_MAX_AGE_MS,
+          backgroundAgeMs: CACHE_BACKGROUND_REFRESH_MS,
+        });
 
         console.log("[perf][forms] cache check", { cacheAgeMs, cacheApplied, shouldSync, shouldBackground });
 
         if (shouldSync) {
-          console.log("[AppDataProvider] Cache stale or missing; fetching synchronously", { cacheAgeMs, cacheTimestamp, hasCachedData });
+          console.log("[AppDataProvider] Cache stale or missing; fetching synchronously", { cacheAgeMs, cacheLastSyncedAt, hasCachedData });
           await refreshForms({ reason: "startup-sync", background: false });
           setLoadingForms(false);
           return;
@@ -133,6 +136,7 @@ export function AppDataProvider({ children }) {
       } catch (err) {
         console.error("[AppDataProvider] Startup error:", err);
         setError(err.message || "フォームの取得に失敗しました");
+        setCacheDisabled(true);
       } finally {
         if (!cacheApplied) {
           setLoadingForms(false);
@@ -155,7 +159,10 @@ export function AppDataProvider({ children }) {
       // キャッシュ更新（非同期だがawaitしない）
       saveFormsToCache(next, loadFailuresRef.current)
         .then(() => console.log("[upsertFormsState] Cache updated"))
-        .catch((err) => console.warn("[upsertFormsState] Failed to update cache:", err));
+        .catch((err) => {
+          console.warn("[upsertFormsState] Failed to update cache:", err);
+          setCacheDisabled(true);
+        });
 
       return next;
     });
@@ -169,7 +176,10 @@ export function AppDataProvider({ children }) {
       // キャッシュ更新（非同期だがawaitしない）
       saveFormsToCache(next, loadFailuresRef.current)
         .then(() => console.log("[removeFormsState] Cache updated"))
-        .catch((err) => console.warn("[removeFormsState] Failed to update cache:", err));
+        .catch((err) => {
+          console.warn("[removeFormsState] Failed to update cache:", err);
+          setCacheDisabled(true);
+        });
 
       return next;
     });
@@ -219,7 +229,10 @@ export function AppDataProvider({ children }) {
         // キャッシュ更新
         saveFormsToCache(next, loadFailuresRef.current)
           .then(() => console.log("[archiveForms] Cache updated"))
-          .catch((err) => console.warn("[archiveForms] Failed to update cache:", err));
+          .catch((err) => {
+            console.warn("[archiveForms] Failed to update cache:", err);
+            setCacheDisabled(true);
+          });
 
         return next;
       });
@@ -244,7 +257,10 @@ export function AppDataProvider({ children }) {
         // キャッシュ更新
         saveFormsToCache(next, loadFailuresRef.current)
           .then(() => console.log("[unarchiveForms] Cache updated"))
-          .catch((err) => console.warn("[unarchiveForms] Failed to update cache:", err));
+          .catch((err) => {
+            console.warn("[unarchiveForms] Failed to update cache:", err);
+            setCacheDisabled(true);
+          });
 
         return next;
       });
@@ -271,7 +287,10 @@ export function AppDataProvider({ children }) {
         // キャッシュ更新
         saveFormsToCache(next, loadFailuresRef.current)
           .then(() => console.log("[importForms] Cache updated"))
-          .catch((err) => console.warn("[importForms] Failed to update cache:", err));
+          .catch((err) => {
+            console.warn("[importForms] Failed to update cache:", err);
+            setCacheDisabled(true);
+          });
 
         return next;
       });
@@ -289,7 +308,8 @@ export function AppDataProvider({ children }) {
       loadFailures,
       loadingForms,
       error,
-      lastReloadedAt,
+      lastSyncedAt,
+      cacheDisabled,
       refreshForms,
       createForm,
       updateForm,
@@ -303,7 +323,7 @@ export function AppDataProvider({ children }) {
       exportForms,
       getFormById,
     }),
-    [forms, loadFailures, loadingForms, error, lastReloadedAt, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, deleteForm, importForms, exportForms, getFormById],
+    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, deleteForm, importForms, exportForms, getFormById],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;

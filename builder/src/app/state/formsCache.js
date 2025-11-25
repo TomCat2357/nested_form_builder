@@ -82,19 +82,20 @@ export async function saveFormsToCache(forms, loadFailures = []) {
   await waitForRequest(store.clear());
 
   // Insert all forms with cache metadata
-  const cacheTimestamp = Date.now();
+  const lastSyncedAt = Date.now();
   for (const form of forms) {
     await waitForRequest(store.put({
       ...form,
-      _cacheTimestamp: cacheTimestamp,
+      _cacheTimestamp: lastSyncedAt,
+      lastSyncedAt,
     }));
   }
 
   // Store metadata (always) so empty lists still carry timestamp/loadFailures
   await waitForRequest(store.put({
     id: META_KEY,
-    _cacheTimestamp: cacheTimestamp,
-    lastReloadedAt: cacheTimestamp,
+    _cacheTimestamp: lastSyncedAt,
+    lastSyncedAt,
     failures: loadFailures,
   }));
 
@@ -105,7 +106,7 @@ export async function saveFormsToCache(forms, loadFailures = []) {
 
 /**
  * Get all forms from IndexedDB cache
- * @returns {Promise<{forms: Array, loadFailures: Array, cacheTimestamp: number|null}>}
+ * @returns {Promise<{forms: Array, loadFailures: Array, lastSyncedAt: number|null}>}
  */
 export async function getFormsFromCache() {
   const db = await openDB();
@@ -118,27 +119,25 @@ export async function getFormsFromCache() {
       const allRecords = request.result || [];
       const forms = [];
       let loadFailures = [];
-      let cacheTimestamp = null;
-      let lastReloadedAt = null;
+      let lastSyncedAt = null;
 
       for (const record of allRecords) {
         if (record.id === META_KEY) {
           loadFailures = record.failures || [];
-          cacheTimestamp = record._cacheTimestamp || null;
-          lastReloadedAt = record.lastReloadedAt || record._cacheTimestamp || null;
+          lastSyncedAt = record.lastSyncedAt || record._cacheTimestamp || null;
         } else if (record.id !== undefined) {
           // Remove cache metadata before returning
           const { _cacheTimestamp, ...form } = record;
           forms.push(form);
-          if (!cacheTimestamp && _cacheTimestamp) {
-            cacheTimestamp = _cacheTimestamp;
+          if (!lastSyncedAt && _cacheTimestamp) {
+            lastSyncedAt = _cacheTimestamp;
           }
         }
       }
 
       db.close();
       console.log('[formsCache] Retrieved', forms.length, 'forms and', loadFailures.length, 'failures from cache');
-      resolve({ forms, loadFailures, cacheTimestamp, lastReloadedAt });
+      resolve({ forms, loadFailures, lastSyncedAt });
     };
     request.onerror = () => {
       db.close();
@@ -168,8 +167,8 @@ export async function clearFormsCache() {
  */
 export async function hasCachedForms() {
   try {
-    const { forms, cacheTimestamp, loadFailures } = await getFormsFromCache();
-    return forms.length > 0 || loadFailures.length > 0 || !!cacheTimestamp;
+    const { forms, lastSyncedAt, loadFailures } = await getFormsFromCache();
+    return forms.length > 0 || loadFailures.length > 0 || !!lastSyncedAt;
   } catch (err) {
     console.error('[formsCache] Error checking cache:', err);
     return false;
@@ -182,9 +181,9 @@ export async function hasCachedForms() {
  */
 export async function getCacheAge() {
   try {
-    const { cacheTimestamp } = await getFormsFromCache();
-    if (!cacheTimestamp) return null;
-    return Date.now() - cacheTimestamp;
+    const { lastSyncedAt } = await getFormsFromCache();
+    if (!lastSyncedAt) return null;
+    return Date.now() - lastSyncedAt;
   } catch (err) {
     console.error('[formsCache] Error getting cache age:', err);
     return null;

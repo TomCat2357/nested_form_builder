@@ -3,10 +3,10 @@ import { genId } from "../../core/ids.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import {
   getCachedEntryWithIndex,
-  clearRecordsCache,
   saveRecordsToCache,
   upsertRecordInCache,
   updateRecordsMeta,
+  deleteRecordFromCache,
 } from "./recordsCache.js";
 import {
   deleteEntry as deleteEntryFromGas,
@@ -272,6 +272,7 @@ export const dataStore = {
     const entries = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
 
     // Sort by ID in ascending order when fetching from spreadsheet
+    // (binary search in cache assumes ascending order)
     entries.sort((a, b) => {
       if (a.id < b.id) return -1;
       if (a.id > b.id) return 1;
@@ -282,11 +283,12 @@ export const dataStore = {
       entryIndexMap[item.id] = idx;
     });
 
+    const lastSyncedAt = Date.now();
     await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], { schemaHash: form.schemaHash });
-    await updateRecordsMeta(formId, { entryIndexMap });
+    await updateRecordsMeta(formId, { entryIndexMap, lastReloadedAt: lastSyncedAt });
     const finishedAt = Date.now();
     console.log("[perf][records] listEntries done", { formId, count: entries.length, durationMs: finishedAt - startedAt });
-    return { entries, headerMatrix: gasResult.headerMatrix || [], entryIndexMap, cacheTimestamp: Date.now() };
+    return { entries, headerMatrix: gasResult.headerMatrix || [], entryIndexMap, lastSyncedAt };
   },
   async getEntry(formId, entryId) {
     const form = await this.getForm(formId);
@@ -318,7 +320,7 @@ export const dataStore = {
       throw new Error("Spreadsheet not configured for this form");
     }
 
-    await clearRecordsCache(formId);
+    await deleteRecordFromCache(formId, entryId);
   },
   async importForms(jsonList) {
     if (!hasScriptRun()) {

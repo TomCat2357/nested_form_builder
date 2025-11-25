@@ -23,9 +23,7 @@ import {
   saveRecordsToCache,
   getRecordsFromCache,
 } from "../app/state/recordsCache.js";
-
-const RECORDS_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours
-const RECORDS_BACKGROUND_REFRESH_MS = 60 * 1000; // 1 minute
+import { evaluateCache, CACHE_MAX_AGE_MS, CACHE_BACKGROUND_REFRESH_MS } from "../app/state/cachePolicy.js";
 
 const createTableStyle = (maxWidth) => ({
   width: maxWidth ? `${maxWidth}px` : "100%",
@@ -93,7 +91,8 @@ export default function SearchPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [useCache, setUseCache] = useState(false);
   const [selectedEntries, setSelectedEntries] = useState(new Set());
-  const [lastReloadedAt, setLastReloadedAt] = useState(null);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [cacheDisabled, setCacheDisabled] = useState(false);
 
   const form = useMemo(() => (formId ? getFormById(formId) : null), [formId, getFormById]);
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
@@ -139,10 +138,17 @@ export default function SearchPage() {
       const fetchedEntries = result.entries || result || [];
       setEntries(fetchedEntries);
       setHeaderMatrix(result.headerMatrix || []);
-      setLastReloadedAt(result.cacheTimestamp || Date.now());
+      const syncedAt = result.lastSyncedAt || Date.now();
+      setLastSyncedAt(syncedAt);
 
       // IndexedDBにキャッシュ保存
-      await saveRecordsToCache(formId, fetchedEntries, result.headerMatrix || [], { schemaHash: form?.schemaHash });
+      try {
+        await saveRecordsToCache(formId, fetchedEntries, result.headerMatrix || [], { schemaHash: form?.schemaHash });
+        setCacheDisabled(false);
+      } catch (cacheErr) {
+        console.warn("[SearchPage] Failed to save records cache:", cacheErr);
+        setCacheDisabled(true);
+      }
       setUseCache(false);
     } catch (error) {
       console.error("[SearchPage] Failed to fetch and cache data:", error);
@@ -159,40 +165,43 @@ export default function SearchPage() {
     if (!formId) return;
 
     const loadData = async () => {
-      let cache = { entries: [], headerMatrix: [], lastReloadedAt: null };
+      let cache = { entries: [], headerMatrix: [], lastSyncedAt: null };
       try {
         cache = await getRecordsFromCache(formId);
       } catch (error) {
         console.warn("[SearchPage] Failed to load cache:", error);
+        setCacheDisabled(true);
       }
 
-      const cacheAge = cache.lastReloadedAt ? Date.now() - cache.lastReloadedAt : Infinity;
-      const hasCache = (cache.entries || []).length > 0;
+      const schemaMismatch = cache.schemaHash && form?.schemaHash && cache.schemaHash !== form.schemaHash;
+      const hasCache = (cache.entries || []).length > 0 && !schemaMismatch;
+      if (schemaMismatch) {
+        console.warn("[perf][search] cache schema mismatch detected; forcing sync", { cacheSchema: cache.schemaHash, formSchema: form?.schemaHash });
+      }
+      const forceSync = location.state?.saved === true || location.state?.deleted === true || location.state?.created === true;
+      const { age, shouldSync, shouldBackground } = evaluateCache({
+        lastSyncedAt: cache.lastSyncedAt,
+        hasData: hasCache,
+        forceSync,
+        maxAgeMs: CACHE_MAX_AGE_MS,
+        backgroundAgeMs: CACHE_BACKGROUND_REFRESH_MS,
+      });
 
-      const needsSync =
-        location.state?.saved === true ||
-        location.state?.deleted === true ||
-        location.state?.created === true ||
-        cacheAge >= RECORDS_CACHE_MAX_AGE_MS ||
-        !hasCache;
-
-      const needsBackground = !needsSync && cacheAge >= RECORDS_BACKGROUND_REFRESH_MS;
-
-      console.log("[perf][search] cache decision", { formId, cacheAge, hasCache, needsSync, needsBackground });
+      console.log("[perf][search] cache decision", { formId, cacheAge: age, hasCache, shouldSync, shouldBackground, cacheDisabled });
 
       if (hasCache) {
         setEntries(cache.entries);
         setHeaderMatrix(cache.headerMatrix || []);
-        setLastReloadedAt(cache.lastReloadedAt || cache.cacheTimestamp || null);
+        setLastSyncedAt(cache.lastSyncedAt || cache.cacheTimestamp || null);
         setUseCache(true);
       }
 
-      if (needsSync) {
+      if (shouldSync || cacheDisabled) {
         await fetchAndCacheData({ background: false });
         return;
       }
 
-      if (needsBackground) {
+      if (shouldBackground) {
         fetchAndCacheData({ background: true }).catch((error) => {
           console.error("[SearchPage] background refresh failed:", error);
           showAlert(`データの取得に失敗しました: ${error.message || error}`);
@@ -387,7 +396,7 @@ export default function SearchPage() {
           style={{ ...inputStyle, flex: "1 0 220px" }}
         />
         <span style={{ color: "#6B7280", fontSize: 12 }}>
-          最終更新: {lastReloadedAt ? new Date(lastReloadedAt).toLocaleString() : "未取得"} {useCache ? "(キャッシュ)" : ""}
+          最終更新: {lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : "未取得"} {useCache ? "(キャッシュ)" : cacheDisabled ? "(キャッシュ無効)" : ""}
         </span>
       </div>
 
