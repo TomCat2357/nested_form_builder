@@ -210,6 +210,20 @@ export const unarchiveForm = async (formId) => {
   return result.form || null;
 };
 
+export const archiveForms = async (formIds) => {
+  if (!Array.isArray(formIds) || formIds.length === 0) {
+    throw new Error("formIds array is required");
+  }
+  return await callFormApi("nfbArchiveForms", formIds, "Batch archive forms failed");
+};
+
+export const unarchiveForms = async (formIds) => {
+  if (!Array.isArray(formIds) || formIds.length === 0) {
+    throw new Error("formIds array is required");
+  }
+  return await callFormApi("nfbUnarchiveForms", formIds, "Batch unarchive forms failed");
+};
+
 export const importFormsFromDrive = async (url) => {
   if (!url) throw new Error("Google Drive URL is required");
   const result = await callFormApi("nfbImportFormsFromDrive", url, "Import from Drive failed");

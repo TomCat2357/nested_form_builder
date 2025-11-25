@@ -76,7 +76,7 @@ const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = 
 };
 
 export default function AdminDashboardPage() {
-  const { forms, loadFailures, loadingForms, archiveForm, unarchiveForm, deleteForms, refreshForms, exportForms, createForm } = useAppData();
+  const { forms, loadFailures, loadingForms, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, refreshForms, exportForms, createForm } = useAppData();
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
   const [selected, setSelected] = useState(() => new Set());
@@ -329,7 +329,7 @@ export default function AdminDashboardPage() {
     }
   };
 
-  const confirmArchiveAction = async () => {
+  const confirmArchiveAction = () => {
     const targetIds = (confirmArchive.targetIds && confirmArchive.targetIds.length
       ? confirmArchive.targetIds
       : confirmArchive.formId
@@ -337,18 +337,26 @@ export default function AdminDashboardPage() {
         : []);
     if (!targetIds.length) return;
 
-    if (confirmArchive.allArchived) {
-      for (const formId of targetIds) {
-        await unarchiveForm(formId);
-      }
-    } else {
-      for (const formId of targetIds) {
-        await archiveForm(formId);
-      }
-    }
+    // アーカイブ状態を保持
+    const shouldUnarchive = confirmArchive.allArchived;
 
+    // ダイアログを即座に閉じて選択をクリア
     clearSelectionByIds(targetIds);
     setConfirmArchive({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
+
+    // バックグラウンドで一括処理を実行
+    (async () => {
+      try {
+        if (shouldUnarchive) {
+          await unarchiveForms(targetIds);
+        } else {
+          await archiveForms(targetIds);
+        }
+      } catch (error) {
+        console.error("[AdminDashboard] Archive action failed:", error);
+        showAlert(`アーカイブ処理中にエラーが発生しました: ${error.message}`);
+      }
+    })();
   };
 
   const confirmDeleteAction = async () => {
@@ -387,7 +395,7 @@ export default function AdminDashboardPage() {
       sidebarActions={
         <>
           <button type="button" style={sidebarButtonStyle} onClick={() => refreshForms("manual:admin-dashboard")} disabled={loadingForms}>
-            {loadingForms ? "再読み込み中..." : "再読み込み"}
+            {loadingForms ? "同期中..." : "手動同期"}
           </button>
           <button type="button" style={sidebarButtonStyle} onClick={handleCreateNew}>
             新規作成

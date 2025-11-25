@@ -12,6 +12,8 @@ import {
   deleteFormsFromDrive as deleteFormsFromGas,
   archiveForm as archiveFormInGas,
   unarchiveForm as unarchiveFormInGas,
+  archiveForms as archiveFormsInGas,
+  unarchiveForms as unarchiveFormsInGas,
   hasScriptRun,
   debugGetMapping,
 } from "../../services/gasClient.js";
@@ -142,33 +144,30 @@ const persistEntries = (producer) => {
 
 export const dataStore = {
   async listForms({ includeArchived = false } = {}) {
-    // Try to fetch from Google Drive via GAS
-    if (hasScriptRun()) {
-      try {
-        const result = await listFormsFromGas({ includeArchived });
-        const forms = Array.isArray(result.forms) ? result.forms : [];
-        const loadFailures = Array.isArray(result.loadFailures) ? result.loadFailures : [];
-        console.log("[dataStore.listForms] Fetched from GAS:", {
-          count: forms.length,
-          formIds: forms.map((f) => f.id),
-          loadFailures: loadFailures.length,
-        });
-        return {
-          forms: forms.map((form) => ensureDisplayInfo(form)),
-          loadFailures,
-        };
-      } catch (error) {
-        console.warn("[dataStore] Failed to fetch forms from Google Drive, falling back to localStorage:", error);
-      }
+    // Always try to fetch from Google Drive via GAS (no localStorage fallback for list)
+    const gasAvailable = hasScriptRun();
+    if (gasAvailable) {
+      const result = await listFormsFromGas({ includeArchived });
+      const forms = Array.isArray(result.forms) ? result.forms : [];
+      const loadFailures = Array.isArray(result.loadFailures) ? result.loadFailures : [];
+      console.log("[dataStore.listForms] Fetched from GAS:", {
+        count: forms.length,
+        formIds: forms.map((f) => f.id),
+        loadFailures: loadFailures.length,
+      });
+      return {
+        forms: forms.map((form) => ensureDisplayInfo(form)),
+        loadFailures,
+        source: "gas",
+      };
     }
 
-    // Fallback to localStorage
-    const forms = loadForms();
-    console.log("[dataStore.listForms] Using localStorage:", { count: forms.length });
-    const filtered = forms.filter((form) => includeArchived || !form.archived);
+    // If GAS is not available, return empty (cache will be used by AppDataProvider)
+    console.warn("[dataStore.listForms] GAS not available, returning empty");
     return {
-      forms: filtered,
+      forms: [],
       loadFailures: [],
+      source: "unavailable",
     };
   },
   async getForm(formId) {
@@ -318,6 +317,66 @@ export const dataStore = {
   },
   async unarchiveForm(formId) {
     return this.setFormArchivedState(formId, false);
+  },
+  async archiveForms(formIds) {
+    const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
+    if (!targetIds.length) return { forms: [], updated: 0 };
+
+    // Try to use GAS batch API
+    if (hasScriptRun()) {
+      try {
+        const result = await archiveFormsInGas(targetIds);
+        return {
+          forms: (result.forms || []).map((form) => (form ? ensureDisplayInfo(form) : null)).filter(Boolean),
+          updated: result.updated || 0,
+          errors: result.errors || [],
+        };
+      } catch (error) {
+        console.warn("[dataStore] Failed to batch archive forms via GAS, falling back to individual calls:", error);
+      }
+    }
+
+    // Fallback to individual calls
+    const forms = [];
+    for (const formId of targetIds) {
+      try {
+        const form = await this.archiveForm(formId);
+        if (form) forms.push(form);
+      } catch (err) {
+        console.warn(`[dataStore] Failed to archive form ${formId}:`, err);
+      }
+    }
+    return { forms, updated: forms.length };
+  },
+  async unarchiveForms(formIds) {
+    const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
+    if (!targetIds.length) return { forms: [], updated: 0 };
+
+    // Try to use GAS batch API
+    if (hasScriptRun()) {
+      try {
+        const result = await unarchiveFormsInGas(targetIds);
+        return {
+          forms: (result.forms || []).map((form) => (form ? ensureDisplayInfo(form) : null)).filter(Boolean),
+          updated: result.updated || 0,
+          errors: result.errors || [],
+        };
+      } catch (error) {
+        console.warn("[dataStore] Failed to batch unarchive forms via GAS, falling back to individual calls:", error);
+      }
+    }
+
+    // Fallback to individual calls
+    const forms = [];
+    for (const formId of targetIds) {
+      try {
+        const form = await this.unarchiveForm(formId);
+        if (form) forms.push(form);
+      } catch (err) {
+        console.warn(`[dataStore] Failed to unarchive form ${formId}:`, err);
+      }
+    }
+    return { forms, updated: forms.length };
   },
   async deleteForms(formIds) {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);

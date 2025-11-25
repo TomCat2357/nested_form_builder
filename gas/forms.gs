@@ -448,23 +448,36 @@ function Forms_saveForm_(form, targetUrl) {
 }
 
 /**
- * 全フォームを取得
+ * 全フォームを取得（Drive API v3 バッチリクエスト最適化版）
  * @param {Object} options - { includeArchived: boolean }
  * @return {Array} フォーム配列
  */
 function Forms_listForms_(options) {
+  var startTime = new Date().getTime();
   var includeArchived = !!(options && options.includeArchived);
+
+  var mappingStartTime = new Date().getTime();
   var mapping = Forms_getMapping_();
+  var mappingEndTime = new Date().getTime();
+  var mappingDuration = mappingEndTime - mappingStartTime;
+
   Logger.log("[Forms_listForms_] Retrieved mapping: " + JSON.stringify(mapping));
   Logger.log("[Forms_listForms_] Total forms in mapping: " + Object.keys(mapping).length);
+  Logger.log("[Forms_listForms_] Mapping retrieval took: " + mappingDuration + "ms");
+
   var forms = [];
   var loadFailures = [];
+
+  // マッピングからfileIdリストを構築
+  var fileIdMap = {}; // { fileId: formId }
+  var formIdToMappingEntry = {}; // { formId: mappingEntry }
 
   for (var formId in mapping) {
     if (!mapping.hasOwnProperty(formId)) continue;
     var mappingEntry = mapping[formId] || {};
     var fileId = mappingEntry.fileId;
     var driveFileUrlFromMap = mappingEntry.driveFileUrl;
+
     if (!fileId && driveFileUrlFromMap) {
       var parsedFromUrl = Forms_parseGoogleDriveUrl_(driveFileUrlFromMap);
       if (parsedFromUrl.type === "file") {
@@ -472,67 +485,250 @@ function Forms_listForms_(options) {
       }
     }
 
-    Logger.log("[Forms_listForms_] Processing formId: " + formId + ", fileId: " + fileId);
-    var file = null;
-    var fileName = null;
-    var fileUrl = null;
-    var stage = "fileId";
-
-    try {
-      if (!fileId) {
-        throw new Error("プロパティサービスにファイルIDが登録されていません");
-      }
-
-      stage = "getFile";
-      file = DriveApp.getFileById(fileId);
-      fileName = file.getName();
-      fileUrl = file.getUrl();
-
-      stage = "read";
-      var content = file.getBlob().getDataAsString();
-
-      stage = "parse";
-      var form = JSON.parse(content);
-
-      // ファイルにidを含めないため、マッピングから補完
-      form.id = formId;
-
-      // driveFileUrlがない場合はマッピング/ファイルから補完
-      if (!form.driveFileUrl) {
-        form.driveFileUrl = driveFileUrlFromMap || fileUrl;
-      }
-
-      // createdAt/modifiedAt の Unix ms を付与（既存データが文字列の場合の後方互換用）
-      form.createdAtUnixMs = Sheets_toUnixMs_(form.createdAt);
-      form.modifiedAtUnixMs = Sheets_toUnixMs_(form.modifiedAt);
-
-      // アーカイブフィルタリング
-      if (!includeArchived && form.archived) {
-        Logger.log("[Forms_listForms_] Skipping archived form: " + formId);
-        continue;
-      }
-
-      forms.push(form);
-      Logger.log("[Forms_listForms_] Added form to list: " + formId);
-    } catch (err) {
-      Logger.log("Error loading form " + formId + ": " + err + " (stage=" + stage + ")");
+    if (fileId) {
+      fileIdMap[fileId] = formId;
+      formIdToMappingEntry[formId] = mappingEntry;
+    } else {
+      // fileIdがない場合はエラーとして記録
       loadFailures.push({
         id: formId,
-        fileId: fileId,
-        fileName: fileName,
-        driveFileUrl: driveFileUrlFromMap || fileUrl || Forms_buildDriveFileUrlFromId_(fileId),
-        errorStage: stage,
-        errorMessage: err && err.message ? err.message : String(err),
+        fileId: null,
+        fileName: null,
+        driveFileUrl: driveFileUrlFromMap || null,
+        errorStage: "fileId",
+        errorMessage: "プロパティサービスにファイルIDが登録されていません",
         lastTriedAt: new Date().toISOString(),
       });
     }
   }
 
+  var fileIds = Object.keys(fileIdMap);
+  Logger.log("[Forms_listForms_] Processing " + fileIds.length + " files with batch requests");
+
+  // Drive API v3 バッチリクエスト（最大100件ずつ）
+  var BATCH_SIZE = 100;
+  var batchStartTime = new Date().getTime();
+  var totalBatchTime = 0;
+
+  for (var i = 0; i < fileIds.length; i += BATCH_SIZE) {
+    var batchFileIds = fileIds.slice(i, i + BATCH_SIZE);
+    var batchStart = new Date().getTime();
+
+    // バッチリクエストで複数ファイルのメタデータとコンテンツを取得
+    try {
+      var batchResults = Forms_batchGetFiles_(batchFileIds);
+      var batchEnd = new Date().getTime();
+      totalBatchTime += (batchEnd - batchStart);
+
+      Logger.log("[Forms_listForms_] Batch " + (Math.floor(i / BATCH_SIZE) + 1) + " completed in " + (batchEnd - batchStart) + "ms (" + batchFileIds.length + " files)");
+
+      // バッチ結果を処理
+      for (var j = 0; j < batchResults.length; j++) {
+        var result = batchResults[j];
+        var fileId = result.fileId;
+        var formId = fileIdMap[fileId];
+        var mappingEntry = formIdToMappingEntry[formId];
+
+        if (result.error) {
+          // エラーケース
+          loadFailures.push({
+            id: formId,
+            fileId: fileId,
+            fileName: result.fileName || null,
+            driveFileUrl: mappingEntry.driveFileUrl || Forms_buildDriveFileUrlFromId_(fileId),
+            errorStage: result.errorStage || "unknown",
+            errorMessage: result.error,
+            lastTriedAt: new Date().toISOString(),
+          });
+        } else {
+          // 成功ケース
+          try {
+            var form = JSON.parse(result.content);
+            form.id = formId;
+
+            // driveFileUrlがない場合はマッピング/ファイルから補完
+            if (!form.driveFileUrl) {
+              form.driveFileUrl = mappingEntry.driveFileUrl || result.fileUrl;
+            }
+
+            // createdAt/modifiedAt の Unix ms を付与
+            form.createdAtUnixMs = Sheets_toUnixMs_(form.createdAt);
+            form.modifiedAtUnixMs = Sheets_toUnixMs_(form.modifiedAt);
+
+            // アーカイブフィルタリング
+            if (!includeArchived && form.archived) {
+              Logger.log("[Forms_listForms_] Skipping archived form: " + formId);
+              continue;
+            }
+
+            forms.push(form);
+          } catch (parseErr) {
+            loadFailures.push({
+              id: formId,
+              fileId: fileId,
+              fileName: result.fileName,
+              driveFileUrl: mappingEntry.driveFileUrl || result.fileUrl,
+              errorStage: "parse",
+              errorMessage: parseErr && parseErr.message ? parseErr.message : String(parseErr),
+              lastTriedAt: new Date().toISOString(),
+            });
+          }
+        }
+      }
+    } catch (batchErr) {
+      Logger.log("[Forms_listForms_] Batch request failed: " + batchErr);
+      // バッチ全体が失敗した場合は個別にフォールバック
+      for (var k = 0; k < batchFileIds.length; k++) {
+        var fbFileId = batchFileIds[k];
+        var fbFormId = fileIdMap[fbFileId];
+        loadFailures.push({
+          id: fbFormId,
+          fileId: fbFileId,
+          fileName: null,
+          driveFileUrl: formIdToMappingEntry[fbFormId].driveFileUrl || Forms_buildDriveFileUrlFromId_(fbFileId),
+          errorStage: "batch",
+          errorMessage: batchErr && batchErr.message ? batchErr.message : String(batchErr),
+          lastTriedAt: new Date().toISOString(),
+        });
+      }
+    }
+  }
+
+  var endTime = new Date().getTime();
+  var totalDuration = endTime - startTime;
+
+  Logger.log("[Forms_listForms_] === Performance Summary ===");
+  Logger.log("[Forms_listForms_] Total duration: " + totalDuration + "ms");
+  Logger.log("[Forms_listForms_] Mapping retrieval: " + mappingDuration + "ms (" + Math.round(mappingDuration / totalDuration * 100) + "%)");
+  Logger.log("[Forms_listForms_] Batch requests: " + totalBatchTime + "ms (" + Math.round(totalBatchTime / totalDuration * 100) + "%)");
+  Logger.log("[Forms_listForms_] Average per form: " + Math.round(totalDuration / fileIds.length) + "ms");
   Logger.log("[Forms_listForms_] Returning " + forms.length + " forms (loadFailures=" + loadFailures.length + ")");
+
   return {
     forms: forms,
     loadFailures: loadFailures,
   };
+}
+
+/**
+ * Drive API v3を使用して複数ファイルを一括取得
+ * @param {Array<string>} fileIds - ファイルIDの配列
+ * @return {Array<Object>} 結果の配列 [{ fileId, fileName, fileUrl, content, error, errorStage }]
+ */
+function Forms_batchGetFiles_(fileIds) {
+  var results = [];
+
+  // Drive API v3のbatch requestを使用
+  var boundary = "batch_boundary_" + new Date().getTime();
+  var batchBody = [];
+
+  for (var i = 0; i < fileIds.length; i++) {
+    var fileId = fileIds[i];
+    batchBody.push("--" + boundary);
+    batchBody.push("Content-Type: application/http");
+    batchBody.push("");
+    batchBody.push("GET /drive/v3/files/" + fileId + "?fields=id,name,webViewLink&alt=json");
+    batchBody.push("");
+  }
+  batchBody.push("--" + boundary + "--");
+
+  var batchPayload = batchBody.join("\r\n");
+
+  try {
+    var response = UrlFetchApp.fetch("https://www.googleapis.com/batch/drive/v3", {
+      method: "post",
+      contentType: "multipart/mixed; boundary=" + boundary,
+      headers: {
+        Authorization: "Bearer " + ScriptApp.getOAuthToken(),
+      },
+      payload: batchPayload,
+      muteHttpExceptions: true,
+    });
+
+    var responseText = response.getContentText();
+    var responseParts = responseText.split("--batch");
+
+    // バッチレスポンスをパース
+    var fileMetadataMap = {}; // { fileId: { name, webViewLink } }
+    for (var j = 0; j < responseParts.length; j++) {
+      var part = responseParts[j];
+      if (!part || part.trim() === "" || part.trim() === "--") continue;
+
+      // JSONペイロードを抽出
+      var jsonMatch = part.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
+          var metadata = JSON.parse(jsonMatch[0]);
+          if (metadata.id) {
+            fileMetadataMap[metadata.id] = {
+              name: metadata.name,
+              webViewLink: metadata.webViewLink,
+            };
+          }
+        } catch (parseErr) {
+          Logger.log("[Forms_batchGetFiles_] Failed to parse batch response part: " + parseErr);
+        }
+      }
+    }
+
+    // メタデータ取得後、各ファイルのコンテンツを取得（DriveApp使用）
+    for (var k = 0; k < fileIds.length; k++) {
+      var fid = fileIds[k];
+      var meta = fileMetadataMap[fid];
+
+      if (!meta) {
+        results.push({
+          fileId: fid,
+          error: "File not found in batch response",
+          errorStage: "batch",
+        });
+        continue;
+      }
+
+      try {
+        var file = DriveApp.getFileById(fid);
+        var content = file.getBlob().getDataAsString();
+        results.push({
+          fileId: fid,
+          fileName: meta.name,
+          fileUrl: meta.webViewLink,
+          content: content,
+        });
+      } catch (readErr) {
+        results.push({
+          fileId: fid,
+          fileName: meta.name,
+          fileUrl: meta.webViewLink,
+          error: readErr && readErr.message ? readErr.message : String(readErr),
+          errorStage: "read",
+        });
+      }
+    }
+  } catch (batchErr) {
+    Logger.log("[Forms_batchGetFiles_] Batch API call failed: " + batchErr);
+    // バッチ全体が失敗した場合は個別フォールバック
+    for (var m = 0; m < fileIds.length; m++) {
+      var fbId = fileIds[m];
+      try {
+        var fbFile = DriveApp.getFileById(fbId);
+        var fbContent = fbFile.getBlob().getDataAsString();
+        results.push({
+          fileId: fbId,
+          fileName: fbFile.getName(),
+          fileUrl: fbFile.getUrl(),
+          content: fbContent,
+        });
+      } catch (fbErr) {
+        results.push({
+          fileId: fbId,
+          error: fbErr && fbErr.message ? fbErr.message : String(fbErr),
+          errorStage: "fallback",
+        });
+      }
+    }
+  }
+
+  return results;
 }
 
 /**
@@ -670,6 +866,57 @@ function Forms_setFormArchivedState_(formId, archived) {
   return Forms_saveForm_(form);
 }
 
+/**
+ * 複数フォームのアーカイブ状態を一括変更
+ * @param {Array<string>} formIds
+ * @param {boolean} archived
+ * @return {Object} { ok: boolean, updated: number, errors: Array, forms: Array }
+ */
+function Forms_setFormsArchivedState_(formIds, archived) {
+  if (!formIds || !formIds.length) {
+    throw new Error("Form IDs are required");
+  }
+
+  var ids = Array.isArray(formIds) ? formIds.slice() : [formIds];
+  var errors = [];
+  var updated = 0;
+  var updatedForms = [];
+  var now = new Date().toISOString();
+
+  ids.forEach(function(formId) {
+    if (!formId) return;
+
+    try {
+      var form = Forms_getForm_(formId);
+      if (!form) {
+        errors.push({ formId: formId, error: "Form not found" });
+        return;
+      }
+
+      form.archived = !!archived;
+      form.modifiedAt = now;
+
+      var result = Forms_saveForm_(form);
+      if (result && result.ok) {
+        updated += 1;
+        updatedForms.push(result.form);
+      } else {
+        errors.push({ formId: formId, error: "Save failed" });
+      }
+    } catch (err) {
+      Logger.log("Error updating archive state for form " + formId + ": " + err);
+      errors.push({ formId: formId, error: err.message || String(err) });
+    }
+  });
+
+  return {
+    ok: errors.length === 0,
+    updated: updated,
+    errors: errors,
+    forms: updatedForms
+  };
+}
+
 // ========================================
 // Public API Functions (google.script.run経由で呼び出し可能)
 // ========================================
@@ -787,6 +1034,38 @@ function nfbArchiveForm(formId) {
 function nfbUnarchiveForm(formId) {
   try {
     return Forms_setFormArchivedState_(formId, false);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err.message || String(err),
+    };
+  }
+}
+
+/**
+ * 複数フォームをまとめてアーカイブ
+ * @param {Array<string>} formIds
+ * @return {Object} { ok: boolean, updated: number, errors: Array, forms: Array }
+ */
+function nfbArchiveForms(formIds) {
+  try {
+    return Forms_setFormsArchivedState_(formIds, true);
+  } catch (err) {
+    return {
+      ok: false,
+      error: err.message || String(err),
+    };
+  }
+}
+
+/**
+ * 複数フォームのアーカイブをまとめて解除
+ * @param {Array<string>} formIds
+ * @return {Object} { ok: boolean, updated: number, errors: Array, forms: Array }
+ */
+function nfbUnarchiveForms(formIds) {
+  try {
+    return Forms_setFormsArchivedState_(formIds, false);
   } catch (err) {
     return {
       ok: false,
