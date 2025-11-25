@@ -1,5 +1,5 @@
 var NFB_HEADER_DEPTH = 6;
-var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"]];
+var NFB_FIXED_HEADER_PATHS = [["__hash__"], ["id"], ["No."], ["createdAt"], ["modifiedAt"]];
 var NFB_TZ = "Asia/Tokyo"; // 想定タイムゾーン（JST固定）
 
 function Sheets_isValidDate_(date) {
@@ -234,7 +234,7 @@ function Sheets_findRowById_(sheet, id) {
   if (!id) return -1;
   var lastRow = sheet.getLastRow();
   if (lastRow <= NFB_HEADER_DEPTH) return -1;
-  var lookupRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, lastRow - NFB_HEADER_DEPTH, 1).getValues();
+  var lookupRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 2, lastRow - NFB_HEADER_DEPTH, 1).getValues();
 
   // 二分探索を試行（ID列がソート済みの場合に高速化）
   var binaryResult = Sheets_binarySearchById_(lookupRange, id);
@@ -315,7 +315,7 @@ function Sheets_createNewRow_(sheet, id) {
   var maxNo = 0;
   var lastRow = sheet.getLastRow();
   if (lastRow > NFB_HEADER_DEPTH) {
-    var noValues = sheet.getRange(NFB_HEADER_DEPTH + 1, 2, lastRow - NFB_HEADER_DEPTH, 1).getValues();
+    var noValues = sheet.getRange(NFB_HEADER_DEPTH + 1, 3, lastRow - NFB_HEADER_DEPTH, 1).getValues();
     for (var i = 0; i < noValues.length; i++) {
       var val = noValues[i][0];
       if (typeof val === 'number' && val > maxNo) {
@@ -324,17 +324,17 @@ function Sheets_createNewRow_(sheet, id) {
     }
   }
 
-  sheet.getRange(rowIndex, 1).setValue(String(nextId));
-  sheet.getRange(rowIndex, 2).setValue(String(maxNo + 1));
-  sheet.getRange(rowIndex, 3).setValue(now.toISOString());
+  sheet.getRange(rowIndex, 2).setValue(String(nextId));
+  sheet.getRange(rowIndex, 3).setValue(String(maxNo + 1));
   sheet.getRange(rowIndex, 4).setValue(now.toISOString());
+  sheet.getRange(rowIndex, 5).setValue(now.toISOString());
 
   return { rowIndex: rowIndex, id: nextId };
 }
 
 function Sheets_updateExistingRow_(sheet, rowIndex) {
   Sheets_ensureRowCapacity_(sheet, rowIndex);
-  sheet.getRange(rowIndex, 4).setValue(new Date().toISOString());
+  sheet.getRange(rowIndex, 5).setValue(new Date().toISOString());
 }
 
 function Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys) {
@@ -383,6 +383,18 @@ function Sheets_upsertRecordById_(sheet, order, ctx) {
 
   Sheets_writeDataToRow_(sheet, rowIndex, ctx.order, ctx.responses, keyToColumn, reservedHeaderKeys);
 
+  // 行ハッシュを計算しメタ列に保存（id + data を対象にする）
+  var hashColumn = keyToColumn["__hash__"];
+  if (hashColumn) {
+    var payloadForHash = {
+      id: String(ctx.id || ""),
+      data: ctx.responses || {},
+    };
+    var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, JSON.stringify(payloadForHash));
+    var hashStr = Utilities.base64Encode(digest);
+    sheet.getRange(rowIndex, hashColumn).setValue(hashStr);
+  }
+
   return { row: rowIndex, id: ctx.id };
 }
 
@@ -415,26 +427,29 @@ function Sheets_readColumnPaths_(sheet, lastColumn) {
 }
 
 function Sheets_buildRecordFromRow_(rowData, columnPaths) {
-  var id = rowData[0] ? String(rowData[0]) : "";
+  var id = rowData[1] ? String(rowData[1]) : "";
   if (!id) return null;
 
   var record = {
     id: id,
-    "No.": rowData[1] || "",
-    createdAt: rowData[2] || "",
-    modifiedAt: rowData[3] || "",
-    createdAtUnixMs: Sheets_toUnixMs_(rowData[2]),
-    modifiedAtUnixMs: Sheets_toUnixMs_(rowData[3]),
+    "No.": rowData[2] || "",
+    createdAt: rowData[3] || "",
+    modifiedAt: rowData[4] || "",
+    createdAtUnixMs: Sheets_toUnixMs_(rowData[3]),
+    modifiedAtUnixMs: Sheets_toUnixMs_(rowData[4]),
     data: {},
-    dataUnixMs: {}
+    dataUnixMs: {},
+    rowHash: rowData[0] ? String(rowData[0]) : ""
   };
 
-  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true };
+  var reservedKeys = { "__hash__": true, "id": true, "No.": true, "createdAt": true, "modifiedAt": true };
 
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];
     var value = rowData[colInfo.index];
-    if (value != null && value !== "" && !reservedKeys[colInfo.key]) {
+    if (colInfo.key === "__hash__") {
+      record.rowHash = value ? String(value) : "";
+    } else if (value != null && value !== "" && !reservedKeys[colInfo.key]) {
       record.data[colInfo.key] = value;
       var unix = Sheets_toUnixMs_(value);
       if (unix !== null) {
@@ -446,21 +461,63 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
   return record;
 }
 
-function Sheets_getRecordById_(sheet, id) {
-  if (!id) return null;
+function Sheets_getRecordById_(sheet, id, rowIndexHint, cachedRowHash) {
+  if (!id) return { ok: false, error: "Record ID is required" };
 
-  var rowIndex = Sheets_findRowById_(sheet, id);
-  if (rowIndex === -1) {
-    return null;
+  var lastRow = sheet.getLastRow();
+  var lastColumn = sheet.getLastColumn();
+  if (lastColumn === 0 || lastRow <= NFB_HEADER_DEPTH) {
+    return { ok: false, error: "Record not found" };
   }
 
-  var lastColumn = sheet.getLastColumn();
-  if (lastColumn === 0) return null;
+  var headerMatrix = Sheets_readHeaderMatrix_(sheet);
+  var hashColumn = Sheets_findColumnByPath_(headerMatrix, ["__hash__"]); // 1-based or -1
+
+  var resolvedRowIndex = -1;
+  var unchanged = false;
+
+  // 0-basedのデータ行indexをヒントとして受け取り、先頭ヘッダー行を考慮して変換
+  if (typeof rowIndexHint === "number" && rowIndexHint >= 0) {
+    var candidate = NFB_HEADER_DEPTH + 1 + rowIndexHint;
+    if (candidate <= lastRow) {
+      // A列（hash）とB列（id）を同時に読み取り
+      var rowCells = sheet.getRange(candidate, 1, 1, 2).getValues()[0];
+      var hashCell = rowCells[0];
+      var idCell = rowCells[1];
+
+      if (String(idCell) === String(id)) {
+        resolvedRowIndex = candidate;
+        if (hashColumn !== -1 && cachedRowHash) {
+          if (String(hashCell || "") === String(cachedRowHash || "")) {
+            unchanged = true;
+          }
+        }
+      }
+    }
+  }
+
+  if (resolvedRowIndex === -1) {
+    resolvedRowIndex = Sheets_findRowById_(sheet, id);
+  }
+
+  if (resolvedRowIndex === -1) {
+    return { ok: false, error: "Record not found" };
+  }
+
+  var dataRowIndex = resolvedRowIndex - (NFB_HEADER_DEPTH + 1);
+
+  if (unchanged) {
+    return { ok: true, record: null, rowIndex: dataRowIndex, unchanged: true, rowHash: cachedRowHash || "" };
+  }
 
   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
-  var rowData = sheet.getRange(rowIndex, 1, 1, lastColumn).getValues()[0];
+  var rowData = sheet.getRange(resolvedRowIndex, 1, 1, lastColumn).getValues()[0];
+  var record = Sheets_buildRecordFromRow_(rowData, columnPaths);
+  if (!record) {
+    return { ok: false, error: "Record not found" };
+  }
 
-  return Sheets_buildRecordFromRow_(rowData, columnPaths);
+  return { ok: true, record: record, rowIndex: dataRowIndex, unchanged: false, rowHash: record.rowHash || "" };
 }
 
 function Sheets_getAllRecords_(sheet) {
@@ -474,10 +531,10 @@ function Sheets_getAllRecords_(sheet) {
   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
   var dataRowCount = lastRow - NFB_HEADER_DEPTH;
 
-  // スプレッドシート側でID列(1列目)でソート
+  // スプレッドシート側でID列(2列目)でソート
   if (dataRowCount > 0) {
     var sortRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn);
-    sortRange.sort({column: 1, ascending: true});
+    sortRange.sort({column: 2, ascending: true});
   }
 
   var dataRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn).getValues();

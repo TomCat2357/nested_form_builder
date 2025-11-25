@@ -125,7 +125,8 @@ function SerializeRecord_(record) {
     createdAtUnixMs: createdInfo.unixMs,
     modifiedAtUnixMs: modifiedInfo.unixMs,
     data: serializedData,
-    dataUnixMs: serializedDataUnixMs
+    dataUnixMs: serializedDataUnixMs,
+    rowHash: record.rowHash || ""
   };
 }
 
@@ -188,15 +189,18 @@ function GetRecord_(ctx) {
   }
 
   var sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
-  var record = Sheets_getRecordById_(sheet, ctx.id);
+  var result = Sheets_getRecordById_(sheet, ctx.id, ctx.rowIndexHint, ctx.cachedRowHash);
 
-  if (!record) {
-    return { ok: false, error: "Record not found" };
+  if (!result || !result.ok) {
+    return result || { ok: false, error: "Record not found" };
   }
 
   return {
     ok: true,
-    record: SerializeRecord_(record),
+    record: result.record ? SerializeRecord_(result.record) : null,
+    rowIndex: result.rowIndex,
+    unchanged: result.unchanged,
+    rowHash: result.rowHash || "",
   };
 }
 

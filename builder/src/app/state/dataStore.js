@@ -60,6 +60,7 @@ const mapSheetRecordToEntry = (record, formId) => ({
   data: record.data || {},
   dataUnixMs: record.dataUnixMs || {},
   order: Object.keys(record.data || {}),
+  rowHash: record.rowHash || "",
 });
 
 const clone = (value) => (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
@@ -297,18 +298,37 @@ export const dataStore = {
       throw new Error("Spreadsheet not configured for this form");
     }
 
-    const { entry: cachedEntry, rowIndex } = await getCachedEntryWithIndex(formId, entryId);
+    const { entry: cachedEntry, rowIndex, rowHash: cachedRowHash } = await getCachedEntryWithIndex(formId, entryId);
     const startedAt = Date.now();
     console.log("[perf][records] getEntry start", { formId, entryId, rowIndexHint: rowIndex });
 
-    const record = await getEntryFromGas({ ...sheetConfig, entryId, rowIndexHint: rowIndex });
-    const mapped = record ? mapSheetRecordToEntry(record, formId) : null;
-    if (mapped) {
-      await upsertRecordInCache(formId, mapped, { rowIndex });
+    const result = await getEntryFromGas({
+      ...sheetConfig,
+      entryId,
+      rowIndexHint: rowIndex,
+      cachedRowHash: cachedRowHash || "",
+    });
+
+    if (result.unchanged && cachedEntry) {
+      const finishedAt = Date.now();
+      console.log("[perf][records] getEntry done", { formId, entryId, fromCache: true, durationMs: finishedAt - startedAt, unchanged: true });
+      return cachedEntry;
     }
+
+    const mapped = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
+    if (mapped) {
+      const nextRowIndex = typeof result.rowIndex === "number" ? result.rowIndex : rowIndex;
+      const nextRowHash = result.rowHash || mapped.rowHash || "";
+      mapped.rowHash = nextRowHash;
+      await upsertRecordInCache(formId, mapped, { rowIndex: nextRowIndex });
+      const finishedAt = Date.now();
+      console.log("[perf][records] getEntry done", { formId, entryId, fromCache: false, durationMs: finishedAt - startedAt, rowIndex: nextRowIndex });
+      return mapped;
+    }
+
     const finishedAt = Date.now();
-    console.log("[perf][records] getEntry done", { formId, entryId, fromCache: !mapped, durationMs: finishedAt - startedAt });
-    return mapped || cachedEntry;
+    console.log("[perf][records] getEntry done", { formId, entryId, fromCache: !!cachedEntry, durationMs: finishedAt - startedAt, fallbackCache: true });
+    return cachedEntry;
   },
   async deleteEntry(formId, entryId) {
     const form = await this.getForm(formId);

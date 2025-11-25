@@ -95,7 +95,7 @@ export const deleteEntry = async ({ spreadsheetId, sheetName = "Responses", entr
   return result;
 };
 
-export const getEntry = async ({ spreadsheetId, sheetName = "Responses", entryId }) => {
+export const getEntry = async ({ spreadsheetId, sheetName = "Responses", entryId, rowIndexHint = null, cachedRowHash = "" }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
   if (!entryId) throw new Error("entryId is required");
   if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
@@ -106,13 +106,20 @@ export const getEntry = async ({ spreadsheetId, sheetName = "Responses", entryId
     spreadsheetId: cleanSpreadsheetId,
     sheetName,
     id: entryId,
+    rowIndexHint,
+    cachedRowHash,
   };
 
   const result = await callScriptRun("getRecord", payload);
   if (!result || result.ok === false) {
     throw new Error(result?.error || "Get record failed");
   }
-  return result.record || null;
+  return {
+    record: result.record || null,
+    rowIndex: typeof result.rowIndex === "number" ? result.rowIndex : null,
+    unchanged: !!result.unchanged,
+    rowHash: result.rowHash || "",
+  };
 };
 
 export const listEntries = async ({ spreadsheetId, sheetName = "Responses" }) => {
