@@ -4,9 +4,22 @@ import { hasScriptRun, loadUserSettings, saveUserSettings } from "../../services
 
 export const useBuilderSettings = () => {
   const scriptRunAvailable = hasScriptRun();
-  const [settings, setSettings] = useState(() => loadSettingsFromStorage());
-  const [loading, setLoading] = useState(scriptRunAvailable);
+  const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS });
+  const [loadingLocal, setLoadingLocal] = useState(true);
   const defaultsRef = useRef({ ...DEFAULT_SETTINGS });
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const loaded = await loadSettingsFromStorage();
+      if (!active) return;
+      setSettings((prev) => ({ ...DEFAULT_SETTINGS, ...loaded, ...prev }));
+      setLoadingLocal(false);
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     if (!scriptRunAvailable) return;
@@ -22,7 +35,9 @@ export const useBuilderSettings = () => {
       } catch (error) {
         console.warn("[settings] failed to load user settings", error);
       } finally {
-        if (active) setLoading(false);
+        if (active) {
+          // remote load finished
+        }
       }
     })();
     return () => {
@@ -31,14 +46,16 @@ export const useBuilderSettings = () => {
   }, [scriptRunAvailable, defaultsRef]);
 
   useEffect(() => {
-    if (loading) return;
-    saveSettingsToStorage(settings);
+    if (loadingLocal) return;
+    (async () => {
+      await saveSettingsToStorage(settings);
+    })();
     if (scriptRunAvailable) {
       saveUserSettings(settings).catch((error) => {
         console.warn("[settings] failed to save user settings", error);
       });
     }
-  }, [settings, loading, scriptRunAvailable]);
+  }, [settings, loadingLocal, scriptRunAvailable]);
 
   const updateSetting = useCallback(
     (key, value) => {

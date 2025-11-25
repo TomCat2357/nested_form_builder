@@ -2,6 +2,13 @@ import { computeSchemaHash, stripSchemaIDs } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import {
+  getCachedEntryWithIndex,
+  clearRecordsCache,
+  saveRecordsToCache,
+  upsertRecordInCache,
+  updateRecordsMeta,
+} from "./recordsCache.js";
+import {
   deleteEntry as deleteEntryFromGas,
   listEntries as listEntriesFromGas,
   getEntry as getEntryFromGas,
@@ -18,31 +25,9 @@ import {
   debugGetMapping,
 } from "../../services/gasClient.js";
 
-const FORMS_STORAGE_KEY = "nfb.forms.v1";
-const ENTRIES_STORAGE_KEY = "nfb.entries.v1";
-
 const nowIso = () => new Date().toISOString();
 const nowUnixMs = () => Date.now();
 const DEFAULT_SHEET_NAME = "Responses";
-
-const readStorage = (key, fallback) => {
-  try {
-    const raw = window.localStorage.getItem(key);
-    if (!raw) return fallback;
-    return JSON.parse(raw);
-  } catch (error) {
-    console.warn(`failed to read localStorage key ${key}`, error);
-    return fallback;
-  }
-};
-
-const writeStorage = (key, value) => {
-  try {
-    window.localStorage.setItem(key, JSON.stringify(value));
-  } catch (error) {
-    console.warn(`failed to write localStorage key ${key}`, error);
-  }
-};
 
 const ensureDisplayInfo = (form) => {
   const schema = Array.isArray(form?.schema) ? form.schema : [];
@@ -77,21 +62,6 @@ const mapSheetRecordToEntry = (record, formId) => ({
   order: Object.keys(record.data || {}),
 });
 
-const cacheEntries = (formId, entries) =>
-  persistEntries((entriesByForm) => {
-    entriesByForm[formId] = entries;
-    return entriesByForm;
-  });
-
-const loadForms = () => {
-  const forms = readStorage(FORMS_STORAGE_KEY, []);
-  return (Array.isArray(forms) ? forms : []).map((form) => ensureDisplayInfo(form));
-};
-const loadEntries = () => readStorage(ENTRIES_STORAGE_KEY, {});
-
-const saveForms = (forms) => writeStorage(FORMS_STORAGE_KEY, forms);
-const saveEntries = (entries) => writeStorage(ENTRIES_STORAGE_KEY, entries);
-
 const clone = (value) => (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
 
 const buildFormRecord = (input) => {
@@ -123,67 +93,32 @@ const buildFormRecord = (input) => {
   };
 };
 
-const getEntriesForForm = (entriesByForm, formId) => {
-  const list = Array.isArray(entriesByForm[formId]) ? entriesByForm[formId] : [];
-  return list.slice();
-};
-
-const persistForms = (producer) => {
-  const forms = loadForms();
-  const nextForms = producer(forms.slice());
-  saveForms(nextForms);
-  return nextForms;
-};
-
-const persistEntries = (producer) => {
-  const entries = loadEntries();
-  const nextEntries = producer({ ...entries });
-  saveEntries(nextEntries);
-  return nextEntries;
-};
-
 export const dataStore = {
   async listForms({ includeArchived = false } = {}) {
-    // Always try to fetch from Google Drive via GAS (no localStorage fallback for list)
-    const gasAvailable = hasScriptRun();
-    if (gasAvailable) {
-      const result = await listFormsFromGas({ includeArchived });
-      const forms = Array.isArray(result.forms) ? result.forms : [];
-      const loadFailures = Array.isArray(result.loadFailures) ? result.loadFailures : [];
-      console.log("[dataStore.listForms] Fetched from GAS:", {
-        count: forms.length,
-        formIds: forms.map((f) => f.id),
-        loadFailures: loadFailures.length,
-      });
-      return {
-        forms: forms.map((form) => ensureDisplayInfo(form)),
-        loadFailures,
-        source: "gas",
-      };
+    if (!hasScriptRun()) {
+      throw new Error("GAS unavailable");
     }
 
-    // If GAS is not available, return empty (cache will be used by AppDataProvider)
-    console.warn("[dataStore.listForms] GAS not available, returning empty");
+    const result = await listFormsFromGas({ includeArchived });
+    const forms = Array.isArray(result.forms) ? result.forms : [];
+    const loadFailures = Array.isArray(result.loadFailures) ? result.loadFailures : [];
+    console.log("[dataStore.listForms] Fetched from GAS:", {
+      count: forms.length,
+      formIds: forms.map((f) => f.id),
+      loadFailures: loadFailures.length,
+    });
     return {
-      forms: [],
-      loadFailures: [],
-      source: "unavailable",
+      forms: forms.map((form) => ensureDisplayInfo(form)),
+      loadFailures,
+      source: "gas",
     };
   },
   async getForm(formId) {
-    // Try to fetch from Google Drive via GAS
-    if (hasScriptRun()) {
-      try {
-        const form = await getFormFromGas(formId);
-        return form ? ensureDisplayInfo(form) : null;
-      } catch (error) {
-        console.warn("[dataStore] Failed to fetch form from Google Drive, falling back to localStorage:", error);
-      }
+    if (!hasScriptRun()) {
+      throw new Error("GAS unavailable");
     }
-
-    // Fallback to localStorage
-    const forms = loadForms();
-    return forms.find((form) => form.id === formId) || null;
+    const form = await getFormFromGas(formId);
+    return form ? ensureDisplayInfo(form) : null;
   },
   async createForm(payload, targetUrl = null) {
     // buildFormRecordにID生成を委ねる（payloadにidがあればそれを使用、なければ生成）
@@ -191,65 +126,45 @@ export const dataStore = {
     console.log("[dataStore.createForm] Creating form:", { id: record.id, hasPayloadId: !!payload.id, targetUrl });
 
     // Try to save to Google Drive via GAS
-    if (hasScriptRun()) {
-      try {
-        // Debug: 保存前のマッピングを取得
-        let beforeMapping = null;
-        try {
-          beforeMapping = await debugGetMapping();
-          console.log("[DEBUG] BEFORE createForm - Mapping:", beforeMapping);
-          console.log("[DEBUG] BEFORE createForm - Legacy info:", JSON.stringify(beforeMapping?.legacyInfo, null, 2));
-        } catch (debugErr) {
-          console.warn("[DEBUG] Failed to get before-mapping:", debugErr);
-        }
-
-        const result = await saveFormToGas(record, targetUrl);
-        console.log("[dataStore.createForm] GAS result:", { formId: result?.form?.id, fileUrl: result?.fileUrl });
-        console.log("[dataStore.createForm] GAS debugRawJsonBefore:", result?.debugRawJsonBefore);
-        console.log("[dataStore.createForm] GAS debugRawJsonAfter:", result?.debugRawJsonAfter);
-        console.log("[dataStore.createForm] GAS debugMappingStr:", result?.debugMappingStr);
-
-        // Debug: 保存後のマッピングを取得
-        try {
-          const afterMapping = await debugGetMapping();
-          console.log("[DEBUG] AFTER createForm - Mapping:", afterMapping);
-          console.log("[DEBUG] Mapping changed from", beforeMapping?.totalForms, "to", afterMapping?.totalForms, "forms");
-        } catch (debugErr) {
-          console.warn("[DEBUG] Failed to get after-mapping:", debugErr);
-        }
-
-        const savedForm = result?.form || result;
-        const fileUrl = result?.fileUrl;
-
-        // fileUrlをフォームに保存
-        const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
-        return formWithUrl ? ensureDisplayInfo(formWithUrl) : record;
-      } catch (error) {
-        console.warn("[dataStore] Failed to save form to Google Drive, falling back to localStorage:", error);
-      }
+    if (!hasScriptRun()) {
+      throw new Error("GAS unavailable");
     }
 
-    // Fallback to localStorage
-    persistForms((forms) => {
-      forms.push(record);
-      return forms;
-    });
-    return record;
+    // Debug: 保存前のマッピングを取得
+    let beforeMapping = null;
+    try {
+      beforeMapping = await debugGetMapping();
+      console.log("[DEBUG] BEFORE createForm - Mapping:", beforeMapping);
+      console.log("[DEBUG] BEFORE createForm - Legacy info:", JSON.stringify(beforeMapping?.legacyInfo, null, 2));
+    } catch (debugErr) {
+      console.warn("[DEBUG] Failed to get before-mapping:", debugErr);
+    }
+
+    const result = await saveFormToGas(record, targetUrl);
+    console.log("[dataStore.createForm] GAS result:", { formId: result?.form?.id, fileUrl: result?.fileUrl });
+    console.log("[dataStore.createForm] GAS debugRawJsonBefore:", result?.debugRawJsonBefore);
+    console.log("[dataStore.createForm] GAS debugRawJsonAfter:", result?.debugRawJsonAfter);
+    console.log("[dataStore.createForm] GAS debugMappingStr:", result?.debugMappingStr);
+
+    // Debug: 保存後のマッピングを取得
+    try {
+      const afterMapping = await debugGetMapping();
+      console.log("[DEBUG] AFTER createForm - Mapping:", afterMapping);
+      console.log("[DEBUG] Mapping changed from", beforeMapping?.totalForms, "to", afterMapping?.totalForms, "forms");
+    } catch (debugErr) {
+      console.warn("[DEBUG] Failed to get after-mapping:", debugErr);
+    }
+
+    const savedForm = result?.form || result;
+    const fileUrl = result?.fileUrl;
+
+    // fileUrlをフォームに保存
+    const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
+    return formWithUrl ? ensureDisplayInfo(formWithUrl) : record;
   },
   async updateForm(formId, updates, targetUrl = null) {
     // First get the current form
-    let current = await this.getForm(formId);
-
-    // If getForm failed (returns null), try to use existing form data from updates
-    // This handles the case where GAS getForm fails but we already have the form in memory
-    if (!current) {
-      // If updates contains enough data to reconstruct the form, use it
-      if (updates && updates.id === formId && updates.createdAt) {
-        current = updates;
-      } else {
-        throw new Error("Form not found: " + formId);
-      }
-    }
+    const current = await this.getForm(formId);
 
     const next = buildFormRecord({
       ...current,
@@ -261,56 +176,23 @@ export const dataStore = {
       driveFileUrl: current.driveFileUrl, // 既存のURLを保持
     });
 
-    // Try to save to Google Drive via GAS
-    if (hasScriptRun()) {
-      try {
-        const result = await saveFormToGas(next, targetUrl);
-        const savedForm = result?.form || result;
-        const fileUrl = result?.fileUrl;
-
-        // fileUrlをフォームに保存（新しいURLが返された場合は更新）
-        const formWithUrl = { ...savedForm, driveFileUrl: fileUrl || next.driveFileUrl };
-        return formWithUrl ? ensureDisplayInfo(formWithUrl) : next;
-      } catch (error) {
-        console.warn("[dataStore] Failed to update form in Google Drive, falling back to localStorage:", error);
-      }
+    if (!hasScriptRun()) {
+      throw new Error("GAS unavailable");
     }
+    const result = await saveFormToGas(next, targetUrl);
+    const savedForm = result?.form || result;
+    const fileUrl = result?.fileUrl;
 
-    // Fallback to localStorage
-    let updated = null;
-    persistForms((forms) => {
-      const index = forms.findIndex((form) => form.id === formId);
-      if (index === -1) return forms;
-      updated = next;
-      forms[index] = next;
-      return forms;
-    });
-    return updated;
+    // fileUrlをフォームに保存（新しいURLが返された場合は更新）
+    const formWithUrl = { ...savedForm, driveFileUrl: fileUrl || next.driveFileUrl };
+    return formWithUrl ? ensureDisplayInfo(formWithUrl) : next;
   },
   async setFormArchivedState(formId, archived) {
-    const nowMs = nowUnixMs();
-    // Try to use GAS API
-    if (hasScriptRun()) {
-      try {
-        const savedForm = archived ? await archiveFormInGas(formId) : await unarchiveFormInGas(formId);
-        return savedForm ? ensureDisplayInfo(savedForm) : null;
-      } catch (error) {
-        console.warn("[dataStore] Failed to update form archive state in Google Drive, falling back to localStorage:", error);
-      }
+    if (!hasScriptRun()) {
+      throw new Error("GAS unavailable");
     }
-
-    // Fallback to localStorage
-    let updated = null;
-    persistForms((forms) => {
-      const index = forms.findIndex((form) => form.id === formId);
-      if (index === -1) return forms;
-      const current = forms[index];
-      const next = { ...current, archived, modifiedAt: nowIso(), modifiedAtUnixMs: nowMs };
-      updated = next;
-      forms[index] = next;
-      return forms;
-    });
-    return updated;
+    const savedForm = archived ? await archiveFormInGas(formId) : await unarchiveFormInGas(formId);
+    return savedForm ? ensureDisplayInfo(savedForm) : null;
   },
   async archiveForm(formId) {
     return this.setFormArchivedState(formId, true);
@@ -322,223 +204,142 @@ export const dataStore = {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
     if (!targetIds.length) return { forms: [], updated: 0 };
 
-    // Try to use GAS batch API
-    if (hasScriptRun()) {
-      try {
-        const result = await archiveFormsInGas(targetIds);
-        return {
-          forms: (result.forms || []).map((form) => (form ? ensureDisplayInfo(form) : null)).filter(Boolean),
-          updated: result.updated || 0,
-          errors: result.errors || [],
-        };
-      } catch (error) {
-        console.warn("[dataStore] Failed to batch archive forms via GAS, falling back to individual calls:", error);
-      }
+    if (!hasScriptRun()) {
+      throw new Error("GAS unavailable");
     }
 
-    // Fallback to individual calls
-    const forms = [];
-    for (const formId of targetIds) {
-      try {
-        const form = await this.archiveForm(formId);
-        if (form) forms.push(form);
-      } catch (err) {
-        console.warn(`[dataStore] Failed to archive form ${formId}:`, err);
-      }
-    }
-    return { forms, updated: forms.length };
+    const result = await archiveFormsInGas(targetIds);
+    return {
+      forms: (result.forms || []).map((form) => (form ? ensureDisplayInfo(form) : null)).filter(Boolean),
+      updated: result.updated || 0,
+      errors: result.errors || [],
+    };
   },
   async unarchiveForms(formIds) {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
     if (!targetIds.length) return { forms: [], updated: 0 };
 
-    // Try to use GAS batch API
-    if (hasScriptRun()) {
-      try {
-        const result = await unarchiveFormsInGas(targetIds);
-        return {
-          forms: (result.forms || []).map((form) => (form ? ensureDisplayInfo(form) : null)).filter(Boolean),
-          updated: result.updated || 0,
-          errors: result.errors || [],
-        };
-      } catch (error) {
-        console.warn("[dataStore] Failed to batch unarchive forms via GAS, falling back to individual calls:", error);
-      }
+    if (!hasScriptRun()) {
+      throw new Error("GAS unavailable");
     }
 
-    // Fallback to individual calls
-    const forms = [];
-    for (const formId of targetIds) {
-      try {
-        const form = await this.unarchiveForm(formId);
-        if (form) forms.push(form);
-      } catch (err) {
-        console.warn(`[dataStore] Failed to unarchive form ${formId}:`, err);
-      }
-    }
-    return { forms, updated: forms.length };
+    const result = await unarchiveFormsInGas(targetIds);
+    return {
+      forms: (result.forms || []).map((form) => (form ? ensureDisplayInfo(form) : null)).filter(Boolean),
+      updated: result.updated || 0,
+      errors: result.errors || [],
+    };
   },
   async deleteForms(formIds) {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
     if (!targetIds.length) return;
 
-    // Try to delete from Google Drive via GAS (batch first, fallback to single)
-    if (hasScriptRun()) {
-      try {
-        await deleteFormsFromGas(targetIds);
-      } catch (batchError) {
-        console.warn("[dataStore] Failed to batch delete forms via GAS, fallback to single delete:", batchError);
-        for (const formId of targetIds) {
-          try {
-            await deleteFormFromGas(formId);
-          } catch (singleError) {
-            console.warn(`[dataStore] Failed to delete form ${formId} via GAS`, singleError);
-          }
-        }
-      }
+    if (!hasScriptRun()) {
+      throw new Error("GAS unavailable");
     }
 
-    // Also delete from localStorage
-    persistForms((forms) => forms.filter((form) => !targetIds.includes(form.id)));
-    persistEntries((entries) => {
-      const next = { ...entries };
-      targetIds.forEach((formId) => {
-        delete next[formId];
-      });
-      return next;
-    });
+    await deleteFormsFromGas(targetIds);
   },
   async deleteForm(formId) {
     await this.deleteForms([formId]);
   },
   async upsertEntry(formId, payload) {
-    let saved = null;
-    persistEntries((entriesByForm) => {
-      const list = getEntriesForForm(entriesByForm, formId);
-      const now = nowIso();
-      const nowMs = nowUnixMs();
-      if (payload.id) {
-        const idx = list.findIndex((entry) => entry.id === payload.id);
-        if (idx !== -1) {
-          const current = list[idx];
-          const next = {
-            ...current,
-            ...payload,
-            id: current.id,
-            formId,
-            createdAt: current.createdAt,
-            createdAtUnixMs: current.createdAtUnixMs ?? nowMs,
-            modifiedAt: now,
-            modifiedAtUnixMs: nowMs,
-            data: payload.data || current.data,
-            dataUnixMs: payload.dataUnixMs || current.dataUnixMs || {},
-            order: payload.order || current.order || Object.keys(payload.data || current.data || {}),
-          };
-          list[idx] = next;
-          saved = next;
-        }
-      }
-      if (!saved) {
-        const record = {
-          id: payload.id || genId(),
-          formId,
-          createdAt: now,
-          createdAtUnixMs: nowMs,
-          modifiedAt: now,
-          modifiedAtUnixMs: nowMs,
-          data: payload.data || {},
-          dataUnixMs: payload.dataUnixMs || {},
-          order: payload.order || Object.keys(payload.data || {}),
-        };
-        list.unshift(record);
-        saved = record;
-      }
-      entriesByForm[formId] = list;
-      return entriesByForm;
-    });
-    return saved;
+    const now = nowIso();
+    const nowMs = nowUnixMs();
+    const record = {
+      id: payload.id || genId(),
+      formId,
+      createdAt: payload.createdAt || now,
+      createdAtUnixMs: Number.isFinite(payload.createdAtUnixMs) ? payload.createdAtUnixMs : nowMs,
+      modifiedAt: now,
+      modifiedAtUnixMs: nowMs,
+      data: payload.data || {},
+      dataUnixMs: payload.dataUnixMs || {},
+      order: payload.order || Object.keys(payload.data || {}),
+    };
+    await upsertRecordInCache(formId, record, { headerMatrix: payload.headerMatrix, rowIndex: payload.rowIndex });
+    return record;
   },
   async listEntries(formId) {
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
-
-    if (sheetConfig) {
-      try {
-        const gasResult = await listEntriesFromGas(sheetConfig);
-        const entries = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
-
-        // Sort by ID in ascending order when fetching from spreadsheet
-        entries.sort((a, b) => {
-          if (a.id < b.id) return -1;
-          if (a.id > b.id) return 1;
-          return 0;
-        });
-
-        cacheEntries(formId, entries);
-        return { entries, headerMatrix: gasResult.headerMatrix || [] };
-      } catch (error) {
-        console.error("[dataStore] Failed to fetch from Google Sheets:", error);
-      }
+    if (!sheetConfig) {
+      throw new Error("Spreadsheet not configured for this form");
     }
+    const startedAt = Date.now();
+    console.log("[perf][records] listEntries start", { formId, sheet: sheetConfig.sheetName, startedAt });
+    const gasResult = await listEntriesFromGas(sheetConfig);
+    const entries = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
 
-    const entries = loadEntries();
-    return { entries: getEntriesForForm(entries, formId), headerMatrix: [] };
+    // Sort by ID in ascending order when fetching from spreadsheet
+    entries.sort((a, b) => {
+      if (a.id < b.id) return -1;
+      if (a.id > b.id) return 1;
+      return 0;
+    });
+    const entryIndexMap = {};
+    entries.forEach((item, idx) => {
+      entryIndexMap[item.id] = idx;
+    });
+
+    await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], { schemaHash: form.schemaHash });
+    await updateRecordsMeta(formId, { entryIndexMap });
+    const finishedAt = Date.now();
+    console.log("[perf][records] listEntries done", { formId, count: entries.length, durationMs: finishedAt - startedAt });
+    return { entries, headerMatrix: gasResult.headerMatrix || [], entryIndexMap, cacheTimestamp: Date.now() };
   },
   async getEntry(formId, entryId) {
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
-
-    if (sheetConfig) {
-      try {
-        const record = await getEntryFromGas({ ...sheetConfig, entryId });
-        return record ? mapSheetRecordToEntry(record, formId) : null;
-      } catch (error) {
-        console.error("[dataStore.getEntry] Spreadsheet取得エラー:", error);
-      }
+    if (!sheetConfig) {
+      throw new Error("Spreadsheet not configured for this form");
     }
 
-    const entries = loadEntries();
-    return getEntriesForForm(entries, formId).find((entry) => entry.id === entryId) || null;
+    const { entry: cachedEntry, rowIndex } = await getCachedEntryWithIndex(formId, entryId);
+    const startedAt = Date.now();
+    console.log("[perf][records] getEntry start", { formId, entryId, rowIndexHint: rowIndex });
+
+    const record = await getEntryFromGas({ ...sheetConfig, entryId, rowIndexHint: rowIndex });
+    const mapped = record ? mapSheetRecordToEntry(record, formId) : null;
+    if (mapped) {
+      await upsertRecordInCache(formId, mapped, { rowIndex });
+    }
+    const finishedAt = Date.now();
+    console.log("[perf][records] getEntry done", { formId, entryId, fromCache: !mapped, durationMs: finishedAt - startedAt });
+    return mapped || cachedEntry;
   },
   async deleteEntry(formId, entryId) {
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
 
     if (sheetConfig) {
-      try {
-        await deleteEntryFromGas({ ...sheetConfig, entryId });
-      } catch (error) {
-        console.error("[dataStore] Failed to delete from Google Sheets:", error);
-        throw new Error(`スプレッドシートからの削除に失敗しました: ${error.message}`);
-      }
+      await deleteEntryFromGas({ ...sheetConfig, entryId });
+    } else {
+      throw new Error("Spreadsheet not configured for this form");
     }
 
-    persistEntries((entriesByForm) => {
-      const list = getEntriesForForm(entriesByForm, formId).filter((entry) => entry.id !== entryId);
-      entriesByForm[formId] = list;
-      return entriesByForm;
-    });
+    await clearRecordsCache(formId);
   },
   async importForms(jsonList) {
+    if (!hasScriptRun()) {
+      throw new Error("GAS unavailable");
+    }
     const created = [];
-    persistForms((forms) => {
-      jsonList.forEach((item) => {
-        if (!item) return;
-        // buildFormRecordにID生成を委ねる（itemにidがあればそれを使用、なければ生成）
-        const record = buildFormRecord({
-          ...item,
-          createdAt: item.createdAt,
-          schemaVersion: item.schemaVersion,
-        });
-        created.push(record);
-        forms.push(record);
+    for (const item of jsonList) {
+      if (!item) continue;
+      const record = buildFormRecord({
+        ...item,
+        createdAt: item.createdAt,
+        schemaVersion: item.schemaVersion,
       });
-      return forms;
-    });
+      const result = await saveFormToGas(record);
+      const savedForm = result?.form || result;
+      created.push(ensureDisplayInfo(savedForm));
+    }
     return created;
   },
   async exportForms(formIds) {
-    // Get forms from current source (Google Drive or localStorage)
+    // Get forms from GAS
     const { forms: allForms } = await this.listForms({ includeArchived: true });
     const selected = allForms.filter((form) => formIds.includes(form.id));
 

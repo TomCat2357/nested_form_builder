@@ -4,12 +4,14 @@ import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
 
 const AppDataContext = createContext(null);
 const FORMS_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours
+const FORMS_BACKGROUND_REFRESH_MS = 5 * 60 * 1000; // 5 minutes
 
 export function AppDataProvider({ children }) {
   const [forms, setForms] = useState([]);
   const [loadingForms, setLoadingForms] = useState(true);
   const [error, setError] = useState(null);
   const [loadFailures, setLoadFailures] = useState([]);
+  const [lastReloadedAt, setLastReloadedAt] = useState(null);
 
   // キャッシュ更新用にformsとloadFailuresの最新値を保持
   const formsRef = useRef(forms);
@@ -23,12 +25,13 @@ export function AppDataProvider({ children }) {
     loadFailuresRef.current = loadFailures;
   }, [loadFailures]);
 
-  const refreshForms = useCallback(async (source = "unknown") => {
-    setLoadingForms(true);
+  const refreshForms = useCallback(async ({ reason = "unknown", background = false } = {}) => {
+    if (!background) {
+      setLoadingForms(true);
+    }
     setError(null);
-    // キャッシュからの初期表示時以外はリセットしない
     const startedAt = Date.now();
-    console.log("[AppDataProvider] refreshForms start", { source, startedAt: new Date(startedAt).toISOString() });
+    console.log("[perf][forms] refresh start", { reason, background, startedAt });
 
     try {
       const apiCallStart = Date.now();
@@ -42,19 +45,15 @@ export function AppDataProvider({ children }) {
 
       const averagePerForm = allForms.length > 0 ? Math.round(apiCallDuration / allForms.length) : 0;
 
-      console.log("[AppDataProvider] === Performance Summary ===");
-      console.log("[AppDataProvider] API call duration:", apiCallDuration, "ms");
-      console.log("[AppDataProvider] Forms received:", allForms.length);
-      console.log("[AppDataProvider] Average per form:", averagePerForm, "ms");
+      console.log("[perf][forms] api duration ms:", apiCallDuration, "count:", allForms.length, "avg_per_form:", averagePerForm);
 
-      // 一括更新（順次追加は廃止）
       setForms(allForms);
       setLoadFailures(failures);
+      setLastReloadedAt(Date.now());
 
-      // キャッシュに保存
       try {
         await saveFormsToCache(allForms, failures);
-        console.log("[AppDataProvider] Saved to cache");
+        console.log("[perf][forms] saved to cache");
       } catch (cacheErr) {
         console.warn("[AppDataProvider] Failed to save to cache:", cacheErr);
       }
@@ -62,22 +61,17 @@ export function AppDataProvider({ children }) {
       const finishedAt = Date.now();
       const totalDuration = finishedAt - startedAt;
 
-      console.log("[AppDataProvider] Total duration:", totalDuration, "ms");
-      console.log("[AppDataProvider] API call:", Math.round(apiCallDuration / totalDuration * 100), "%");
-      console.log("[AppDataProvider] refreshForms success", {
-        source,
-        startedAt: new Date(startedAt).toISOString(),
-        finishedAt: new Date(finishedAt).toISOString(),
-        formCount: allForms.length,
-        loadFailures: failures.length,
-      });
+      console.log("[perf][forms] total ms:", totalDuration, "api_share_pct:", Math.round(apiCallDuration / totalDuration * 100));
+      console.log("[perf][forms] refresh success", { reason, formCount: allForms.length, loadFailures: failures.length, finishedAt });
     } catch (err) {
       console.error("[AppDataProvider] フォーム取得エラー:", err);
       setError(err.message || "フォームの取得に失敗しました");
       const finishedAt = Date.now();
-      console.log("[AppDataProvider] refreshForms fail", { source, startedAt: new Date(startedAt).toISOString(), finishedAt: new Date(finishedAt).toISOString(), error: err?.message });
+      console.log("[perf][forms] refresh fail", { reason, startedAt, finishedAt, error: err?.message });
     } finally {
-      setLoadingForms(false);
+      if (!background) {
+        setLoadingForms(false);
+      }
     }
   }, []);
 
@@ -90,6 +84,7 @@ export function AppDataProvider({ children }) {
       let cachedForms = [];
       let cachedFailures = [];
       let cacheTimestamp = null;
+      let cacheLastReloaded = null;
 
       try {
         // 1. キャッシュから即座に表示
@@ -97,6 +92,7 @@ export function AppDataProvider({ children }) {
         cachedForms = cacheResult.forms || [];
         cachedFailures = cacheResult.loadFailures || [];
         cacheTimestamp = cacheResult.cacheTimestamp || null;
+        cacheLastReloaded = cacheResult.lastReloadedAt || cacheTimestamp || null;
         const cacheAge = cacheTimestamp ? Date.now() - cacheTimestamp : null;
         const hasCachedData = cachedForms.length > 0 || cachedFailures.length > 0 || !!cacheTimestamp;
 
@@ -104,65 +100,32 @@ export function AppDataProvider({ children }) {
           console.log("[AppDataProvider] Loaded from cache:", cachedForms.length, "forms (age:", cacheAge, "ms)");
           setForms(cachedForms);
           setLoadFailures(cachedFailures);
+          setLastReloadedAt(cacheLastReloaded);
           cacheApplied = true;
         }
 
-        const isCacheFresh = cacheTimestamp && cacheAge !== null && cacheAge < FORMS_CACHE_MAX_AGE_MS && cachedForms.length > 0;
+        const cacheAgeMs = cacheLastReloaded ? Date.now() - cacheLastReloaded : Infinity;
+        const shouldSync = !cacheApplied || cacheAgeMs >= FORMS_CACHE_MAX_AGE_MS;
+        const shouldBackground = cacheApplied && cacheAgeMs >= FORMS_BACKGROUND_REFRESH_MS;
 
-        // 2. 12時間以上経過 or キャッシュなしなら同期取得
-        if (!isCacheFresh) {
-          console.log("[AppDataProvider] Cache stale or missing; fetching synchronously", { cacheAge, cacheTimestamp, hasCachedData });
-          const apiStart = Date.now();
-          const result = await dataStore.listForms({ includeArchived: true });
-          const apiEnd = Date.now();
-          const latestForms = result.forms || [];
-          const latestFailures = result.loadFailures || [];
+        console.log("[perf][forms] cache check", { cacheAgeMs, cacheApplied, shouldSync, shouldBackground });
 
-          setForms(latestForms);
-          setLoadFailures(latestFailures);
-
-          try {
-            await saveFormsToCache(latestForms, latestFailures);
-            console.log("[AppDataProvider] Saved to cache (sync refresh)");
-          } catch (cacheErr) {
-            console.warn("[AppDataProvider] Failed to save to cache (sync refresh):", cacheErr);
-          }
-
-          const finishedAt = Date.now();
-          console.log("[AppDataProvider] Startup sync fetch complete", {
-            duration: finishedAt - startedAt,
-            apiDuration: apiEnd - apiStart,
-            formCount: latestForms.length,
-            loadFailures: latestFailures.length,
-          });
+        if (shouldSync) {
+          console.log("[AppDataProvider] Cache stale or missing; fetching synchronously", { cacheAgeMs, cacheTimestamp, hasCachedData });
+          await refreshForms({ reason: "startup-sync", background: false });
           setLoadingForms(false);
           return;
         }
 
-        // 3. キャッシュが新鮮なら即表示しつつバックグラウンドで差分チェック
+        // cache is fresh enough for sync, stop loading spinner
         setLoadingForms(false);
 
-        console.log("[AppDataProvider] Cache is fresh; fetching latest in background");
-        const result = await dataStore.listForms({ includeArchived: true });
-        const latestForms = result.forms || [];
-        const latestFailures = result.loadFailures || [];
-
-        const hasChanges = JSON.stringify(latestForms) !== JSON.stringify(cachedForms) ||
-                          JSON.stringify(latestFailures) !== JSON.stringify(cachedFailures);
-
-        if (hasChanges) {
-          console.log("[AppDataProvider] Detected changes; updating state and cache");
-          setForms(latestForms);
-          setLoadFailures(latestFailures);
-
-          try {
-            await saveFormsToCache(latestForms, latestFailures);
-            console.log("[AppDataProvider] Saved to cache (background refresh)");
-          } catch (cacheErr) {
-            console.warn("[AppDataProvider] Failed to save to cache (background refresh):", cacheErr);
-          }
-        } else {
-          console.log("[AppDataProvider] No changes detected after background fetch");
+        if (shouldBackground) {
+          console.log("[AppDataProvider] Cache is fresh enough; background refresh scheduled");
+          refreshForms({ reason: "startup-background", background: true }).catch((err) => {
+            console.error("[AppDataProvider] Background refresh error:", err);
+            setError(err.message || "フォームの取得に失敗しました");
+          });
         }
 
         const finishedAt = Date.now();
@@ -215,26 +178,30 @@ export function AppDataProvider({ children }) {
   const createForm = useCallback(async (payload, targetUrl) => {
     const result = await dataStore.createForm(payload, targetUrl);
     upsertFormsState(result);
+    await refreshForms({ reason: "create-form", background: false });
     return result;
-  }, [upsertFormsState]);
+  }, [upsertFormsState, refreshForms]);
 
   const updateForm = useCallback(async (formId, updates, targetUrl) => {
     const result = await dataStore.updateForm(formId, updates, targetUrl);
     upsertFormsState(result);
+    await refreshForms({ reason: "update-form", background: false });
     return result;
-  }, [upsertFormsState]);
+  }, [upsertFormsState, refreshForms]);
 
   const archiveForm = useCallback(async (formId) => {
     const result = await dataStore.archiveForm(formId);
     upsertFormsState(result);
+    await refreshForms({ reason: "archive-form", background: false });
     return result;
-  }, [upsertFormsState]);
+  }, [upsertFormsState, refreshForms]);
 
   const unarchiveForm = useCallback(async (formId) => {
     const result = await dataStore.unarchiveForm(formId);
     upsertFormsState(result);
+    await refreshForms({ reason: "unarchive-form", background: false });
     return result;
-  }, [upsertFormsState]);
+  }, [upsertFormsState, refreshForms]);
 
   const archiveForms = useCallback(async (formIds) => {
     const result = await dataStore.archiveForms(formIds);
@@ -257,8 +224,9 @@ export function AppDataProvider({ children }) {
         return next;
       });
     }
+    await refreshForms({ reason: "archive-forms", background: false });
     return result;
-  }, []);
+  }, [refreshForms]);
 
   const unarchiveForms = useCallback(async (formIds) => {
     const result = await dataStore.unarchiveForms(formIds);
@@ -281,13 +249,15 @@ export function AppDataProvider({ children }) {
         return next;
       });
     }
+    await refreshForms({ reason: "unarchive-forms", background: false });
     return result;
-  }, []);
+  }, [refreshForms]);
 
   const deleteForms = useCallback(async (formIds) => {
     await dataStore.deleteForms(formIds);
     removeFormsState(formIds);
-  }, [removeFormsState]);
+    await refreshForms({ reason: "delete-forms", background: false });
+  }, [removeFormsState, refreshForms]);
 
   const deleteForm = useCallback((formId) => deleteForms([formId]), [deleteForms]);
 
@@ -306,8 +276,9 @@ export function AppDataProvider({ children }) {
         return next;
       });
     }
+    await refreshForms({ reason: "import-forms", background: false });
     return created;
-  }, []);
+  }, [refreshForms]);
 
   const exportForms = useCallback(async (formIds) => dataStore.exportForms(formIds), []);
   const getFormById = useCallback((formId) => forms.find((form) => form.id === formId) || null, [forms]);
@@ -318,6 +289,7 @@ export function AppDataProvider({ children }) {
       loadFailures,
       loadingForms,
       error,
+      lastReloadedAt,
       refreshForms,
       createForm,
       updateForm,
@@ -331,7 +303,7 @@ export function AppDataProvider({ children }) {
       exportForms,
       getFormById,
     }),
-    [forms, loadFailures, loadingForms, error, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, deleteForm, importForms, exportForms, getFormById],
+    [forms, loadFailures, loadingForms, error, lastReloadedAt, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, deleteForm, importForms, exportForms, getFormById],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;

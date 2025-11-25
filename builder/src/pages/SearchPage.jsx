@@ -22,8 +22,10 @@ import { DISPLAY_MODES } from "../core/displayModes.js";
 import {
   saveRecordsToCache,
   getRecordsFromCache,
-  hasCachedRecords,
 } from "../app/state/recordsCache.js";
+
+const RECORDS_CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000; // 12 hours
+const RECORDS_BACKGROUND_REFRESH_MS = 60 * 1000; // 1 minute
 
 const createTableStyle = (maxWidth) => ({
   width: maxWidth ? `${maxWidth}px` : "100%",
@@ -91,6 +93,7 @@ export default function SearchPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [useCache, setUseCache] = useState(false);
   const [selectedEntries, setSelectedEntries] = useState(new Set());
+  const [lastReloadedAt, setLastReloadedAt] = useState(null);
 
   const form = useMemo(() => (formId ? getFormById(formId) : null), [formId, getFormById]);
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
@@ -126,67 +129,79 @@ export default function SearchPage() {
   }, [columns, headerMatrix]);
 
   // データを全件取得してキャッシュに保存する関数
-  const fetchAndCacheData = useCallback(async () => {
+  const fetchAndCacheData = useCallback(async ({ background = false } = {}) => {
     if (!formId) return;
-    setLoading(true);
+    if (!background) setLoading(true);
+    const startedAt = Date.now();
+    console.log("[perf][search] fetch start", { formId, background, startedAt });
     try {
       const result = await dataStore.listEntries(formId);
       const fetchedEntries = result.entries || result || [];
       setEntries(fetchedEntries);
       setHeaderMatrix(result.headerMatrix || []);
+      setLastReloadedAt(result.cacheTimestamp || Date.now());
 
       // IndexedDBにキャッシュ保存
-      await saveRecordsToCache(fetchedEntries);
+      await saveRecordsToCache(formId, fetchedEntries, result.headerMatrix || [], { schemaHash: form?.schemaHash });
       setUseCache(false);
     } catch (error) {
       console.error("[SearchPage] Failed to fetch and cache data:", error);
+      showAlert(`データの取得に失敗しました: ${error.message || error}`);
     } finally {
-      setLoading(false);
+      const finishedAt = Date.now();
+      console.log("[perf][search] fetch done", { formId, background, durationMs: finishedAt - startedAt });
+      if (!background) setLoading(false);
     }
-  }, [formId]);
+  }, [formId, form, showAlert]);
 
   // データ読み込みロジック
   useEffect(() => {
     if (!formId) return;
 
     const loadData = async () => {
-      // フォーム一覧から遷移した場合は全件再取得
-      if (location.state?.fromMainPage === true) {
-        await fetchAndCacheData();
-        return;
+      let cache = { entries: [], headerMatrix: [], lastReloadedAt: null };
+      try {
+        cache = await getRecordsFromCache(formId);
+      } catch (error) {
+        console.warn("[SearchPage] Failed to load cache:", error);
       }
 
-      // 保存フラグがある場合は全件再取得
-      if (location.state?.saved === true) {
-        await fetchAndCacheData();
-        return;
-      }
+      const cacheAge = cache.lastReloadedAt ? Date.now() - cache.lastReloadedAt : Infinity;
+      const hasCache = (cache.entries || []).length > 0;
 
-      // 保存されていない場合はキャッシュを優先
-      const hasCache = await hasCachedRecords();
+      const needsSync =
+        location.state?.saved === true ||
+        location.state?.deleted === true ||
+        location.state?.created === true ||
+        cacheAge >= RECORDS_CACHE_MAX_AGE_MS ||
+        !hasCache;
+
+      const needsBackground = !needsSync && cacheAge >= RECORDS_BACKGROUND_REFRESH_MS;
+
+      console.log("[perf][search] cache decision", { formId, cacheAge, hasCache, needsSync, needsBackground });
 
       if (hasCache) {
-        // キャッシュがある場合はそれを使用
-        setLoading(true);
-        try {
-          const cachedRecords = await getRecordsFromCache();
-          setEntries(cachedRecords);
-          setUseCache(true);
-        } catch (error) {
-          console.error("[SearchPage] Failed to load from cache:", error);
-          // キャッシュ読み込み失敗時は全件取得
-          await fetchAndCacheData();
-        } finally {
-          setLoading(false);
-        }
-      } else {
-        // キャッシュがない場合は全件取得
-        await fetchAndCacheData();
+        setEntries(cache.entries);
+        setHeaderMatrix(cache.headerMatrix || []);
+        setLastReloadedAt(cache.lastReloadedAt || cache.cacheTimestamp || null);
+        setUseCache(true);
+      }
+
+      if (needsSync) {
+        await fetchAndCacheData({ background: false });
+        return;
+      }
+
+      if (needsBackground) {
+        fetchAndCacheData({ background: true }).catch((error) => {
+          console.error("[SearchPage] background refresh failed:", error);
+          showAlert(`データの取得に失敗しました: ${error.message || error}`);
+        });
       }
     };
 
     loadData();
-  }, [formId, location.key, fetchAndCacheData, location.state]);
+  }, [formId, location.key, fetchAndCacheData, location.state, showAlert]);
 
   const handleSearchChange = (event) => {
     const value = event.target.value;
@@ -371,6 +386,9 @@ export default function SearchPage() {
           onChange={handleSearchChange}
           style={{ ...inputStyle, flex: "1 0 220px" }}
         />
+        <span style={{ color: "#6B7280", fontSize: 12 }}>
+          最終更新: {lastReloadedAt ? new Date(lastReloadedAt).toLocaleString() : "未取得"} {useCache ? "(キャッシュ)" : ""}
+        </span>
       </div>
 
       {loading ? (

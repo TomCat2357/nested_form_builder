@@ -5,7 +5,8 @@
 
 const DB_NAME = 'NestedFormBuilder';
 const STORE_NAME = 'formsCache';
-const DB_VERSION = 2; // Increment version to add new store
+const SETTINGS_STORE_NAME = 'settingsStore';
+const DB_VERSION = 4; // Increment version when schema changes
 const META_KEY = '__metadata__';
 
 /**
@@ -29,9 +30,23 @@ function openDB() {
         store.createIndex('archived', 'archived', { unique: false });
       }
 
-      // Create recordsCache store if it doesn't exist (for compatibility)
-      if (!db.objectStoreNames.contains('recordsCache')) {
-        db.createObjectStore('recordsCache', { keyPath: 'id' });
+      // Create/refresh recordsCache store with indexes for per-form lookups
+      if (db.objectStoreNames.contains('recordsCache')) {
+        db.deleteObjectStore('recordsCache');
+      }
+      const recordsStore = db.createObjectStore('recordsCache', { keyPath: 'compoundId' });
+      recordsStore.createIndex('formId', 'formId', { unique: false });
+      recordsStore.createIndex('entryId', 'entryId', { unique: false });
+
+      // Metadata store for recordsCache (per form)
+      if (db.objectStoreNames.contains('recordsCacheMeta')) {
+        db.deleteObjectStore('recordsCacheMeta');
+      }
+      db.createObjectStore('recordsCacheMeta', { keyPath: 'formId' });
+
+      // Settings store
+      if (!db.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
+        db.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
       }
     };
   });
@@ -79,6 +94,7 @@ export async function saveFormsToCache(forms, loadFailures = []) {
   await waitForRequest(store.put({
     id: META_KEY,
     _cacheTimestamp: cacheTimestamp,
+    lastReloadedAt: cacheTimestamp,
     failures: loadFailures,
   }));
 
@@ -103,11 +119,13 @@ export async function getFormsFromCache() {
       const forms = [];
       let loadFailures = [];
       let cacheTimestamp = null;
+      let lastReloadedAt = null;
 
       for (const record of allRecords) {
         if (record.id === META_KEY) {
           loadFailures = record.failures || [];
           cacheTimestamp = record._cacheTimestamp || null;
+          lastReloadedAt = record.lastReloadedAt || record._cacheTimestamp || null;
         } else if (record.id !== undefined) {
           // Remove cache metadata before returning
           const { _cacheTimestamp, ...form } = record;
@@ -120,7 +138,7 @@ export async function getFormsFromCache() {
 
       db.close();
       console.log('[formsCache] Retrieved', forms.length, 'forms and', loadFailures.length, 'failures from cache');
-      resolve({ forms, loadFailures, cacheTimestamp });
+      resolve({ forms, loadFailures, cacheTimestamp, lastReloadedAt });
     };
     request.onerror = () => {
       db.close();
