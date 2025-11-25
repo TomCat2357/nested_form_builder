@@ -3,69 +3,9 @@
  * Caches all forms to provide instant loading on subsequent visits
  */
 
-const DB_NAME = 'NestedFormBuilder';
-const STORE_NAME = 'formsCache';
-const SETTINGS_STORE_NAME = 'settingsStore';
-const DB_VERSION = 4; // Increment version when schema changes
+import { openDB, waitForRequest, waitForTransaction, STORE_NAMES } from './dbHelpers.js';
+
 const META_KEY = '__metadata__';
-
-/**
- * Open IndexedDB connection
- * @returns {Promise<IDBDatabase>}
- */
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-
-      // Create formsCache store if it doesn't exist
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        const store = db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-        // Index for quick access by archived status
-        store.createIndex('archived', 'archived', { unique: false });
-      }
-
-      // Create/refresh recordsCache store with indexes for per-form lookups
-      if (db.objectStoreNames.contains('recordsCache')) {
-        db.deleteObjectStore('recordsCache');
-      }
-      const recordsStore = db.createObjectStore('recordsCache', { keyPath: 'compoundId' });
-      recordsStore.createIndex('formId', 'formId', { unique: false });
-      recordsStore.createIndex('entryId', 'entryId', { unique: false });
-
-      // Metadata store for recordsCache (per form)
-      if (db.objectStoreNames.contains('recordsCacheMeta')) {
-        db.deleteObjectStore('recordsCacheMeta');
-      }
-      db.createObjectStore('recordsCacheMeta', { keyPath: 'formId' });
-
-      // Settings store
-      if (!db.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
-        db.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
-      }
-    };
-  });
-}
-
-// Promisify IDBRequest so we can await operations
-const waitForRequest = (request) =>
-  new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-
-// Wait for a transaction to complete
-const waitForTransaction = (tx) =>
-  new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
 
 /**
  * Save all forms to IndexedDB cache
@@ -75,8 +15,8 @@ const waitForTransaction = (tx) =>
  */
 export async function saveFormsToCache(forms, loadFailures = []) {
   const db = await openDB();
-  const tx = db.transaction(STORE_NAME, 'readwrite');
-  const store = tx.objectStore(STORE_NAME);
+  const tx = db.transaction(STORE_NAMES.forms, 'readwrite');
+  const store = tx.objectStore(STORE_NAMES.forms);
 
   // Clear existing data
   await waitForRequest(store.clear());
@@ -86,7 +26,6 @@ export async function saveFormsToCache(forms, loadFailures = []) {
   for (const form of forms) {
     await waitForRequest(store.put({
       ...form,
-      _cacheTimestamp: lastSyncedAt,
       lastSyncedAt,
     }));
   }
@@ -94,7 +33,6 @@ export async function saveFormsToCache(forms, loadFailures = []) {
   // Store metadata (always) so empty lists still carry timestamp/loadFailures
   await waitForRequest(store.put({
     id: META_KEY,
-    _cacheTimestamp: lastSyncedAt,
     lastSyncedAt,
     failures: loadFailures,
   }));
@@ -110,8 +48,8 @@ export async function saveFormsToCache(forms, loadFailures = []) {
  */
 export async function getFormsFromCache() {
   const db = await openDB();
-  const tx = db.transaction(STORE_NAME, 'readonly');
-  const store = tx.objectStore(STORE_NAME);
+  const tx = db.transaction(STORE_NAMES.forms, 'readonly');
+  const store = tx.objectStore(STORE_NAMES.forms);
 
   return new Promise((resolve, reject) => {
     const request = store.getAll();
@@ -124,14 +62,11 @@ export async function getFormsFromCache() {
       for (const record of allRecords) {
         if (record.id === META_KEY) {
           loadFailures = record.failures || [];
-          lastSyncedAt = record.lastSyncedAt || record._cacheTimestamp || null;
+          lastSyncedAt = record.lastSyncedAt || null;
         } else if (record.id !== undefined) {
           // Remove cache metadata before returning
-          const { _cacheTimestamp, ...form } = record;
+          const { lastSyncedAt: _, ...form } = record;
           forms.push(form);
-          if (!lastSyncedAt && _cacheTimestamp) {
-            lastSyncedAt = _cacheTimestamp;
-          }
         }
       }
 
@@ -152,8 +87,8 @@ export async function getFormsFromCache() {
  */
 export async function clearFormsCache() {
   const db = await openDB();
-  const tx = db.transaction(STORE_NAME, 'readwrite');
-  const store = tx.objectStore(STORE_NAME);
+  const tx = db.transaction(STORE_NAMES.forms, 'readwrite');
+  const store = tx.objectStore(STORE_NAMES.forms);
 
   await waitForRequest(store.clear());
   await waitForTransaction(tx);

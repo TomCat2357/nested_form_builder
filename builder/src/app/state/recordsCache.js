@@ -4,74 +4,13 @@
  * - Stores header metadata per form
  */
 
-const DB_NAME = 'NestedFormBuilder';
-const STORE_NAME = 'recordsCache';
-const META_STORE_NAME = 'recordsCacheMeta';
-const SETTINGS_STORE_NAME = 'settingsStore';
-const DB_VERSION = 4;
+import { openDB, waitForRequest, waitForTransaction, STORE_NAMES } from './dbHelpers.js';
 
 const buildCompoundId = (formId, entryId) => `${formId}::${entryId}`;
 
-/**
- * Open IndexedDB connection
- * @returns {Promise<IDBDatabase>}
- */
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-    request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
-
-    request.onupgradeneeded = (event) => {
-      const db = event.target.result;
-
-      // Re-create recordsCache with indexes for fast lookups
-      if (db.objectStoreNames.contains(STORE_NAME)) {
-        db.deleteObjectStore(STORE_NAME);
-      }
-      const store = db.createObjectStore(STORE_NAME, { keyPath: 'compoundId' });
-      store.createIndex('formId', 'formId', { unique: false });
-      store.createIndex('entryId', 'entryId', { unique: false });
-
-      // Ensure formsCache store exists (if this module opens DB first)
-      if (!db.objectStoreNames.contains('formsCache')) {
-        const formsStore = db.createObjectStore('formsCache', { keyPath: 'id' });
-        formsStore.createIndex('archived', 'archived', { unique: false });
-      }
-
-      // Metadata per form (timestamp, headerMatrix, schemaHash, entryIndexMap)
-      if (db.objectStoreNames.contains(META_STORE_NAME)) {
-        db.deleteObjectStore(META_STORE_NAME);
-      }
-      db.createObjectStore(META_STORE_NAME, { keyPath: 'formId' });
-
-      // Settings store (shared with formsCache)
-      if (!db.objectStoreNames.contains(SETTINGS_STORE_NAME)) {
-        db.createObjectStore(SETTINGS_STORE_NAME, { keyPath: 'key' });
-      }
-    };
-  });
-}
-
-// Promisify IDBRequest so we can await operations
-const waitForRequest = (request) =>
-  new Promise((resolve, reject) => {
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-
-// Wait for a transaction to complete
-const waitForTransaction = (tx) =>
-  new Promise((resolve, reject) => {
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-    tx.onabort = () => reject(tx.error);
-  });
-
 const stripMetadata = (record) => {
   if (!record) return null;
-  const { compoundId, _cacheTimestamp, entryId, ...rest } = record;
+  const { compoundId, lastSyncedAt, entryId, ...rest } = record;
   return { ...rest, id: entryId };
 };
 
@@ -96,7 +35,6 @@ const buildCacheRecord = (formId, record, lastSyncedAt, rowIndex) => ({
   compoundId: buildCompoundId(formId, record.id),
   formId,
   entryId: record.id,
-  _cacheTimestamp: lastSyncedAt,
   lastSyncedAt,
   rowIndex,
 });
@@ -110,6 +48,20 @@ const buildEntryIndexMap = (records) => {
 };
 
 /**
+ * Build metadata object with defaults from existing metadata
+ */
+const buildMetadata = (formId, existingMeta, updates = {}) => {
+  const now = Date.now();
+  return {
+    formId,
+    lastSyncedAt: updates.lastSyncedAt ?? existingMeta?.lastSyncedAt ?? now,
+    headerMatrix: updates.headerMatrix ?? existingMeta?.headerMatrix ?? [],
+    schemaHash: updates.schemaHash ?? existingMeta?.schemaHash ?? null,
+    entryIndexMap: updates.entryIndexMap ?? existingMeta?.entryIndexMap ?? {},
+  };
+};
+
+/**
  * Save all records for a form to IndexedDB (replaces existing cache)
  * @param {string} formId
  * @param {Array} records
@@ -119,9 +71,9 @@ const buildEntryIndexMap = (records) => {
 export async function saveRecordsToCache(formId, records, headerMatrix = [], { schemaHash = null } = {}) {
   if (!formId) return;
   const db = await openDB();
-  const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
-  const store = tx.objectStore(STORE_NAME);
-  const metaStore = tx.objectStore(META_STORE_NAME);
+  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
+  const store = tx.objectStore(STORE_NAMES.records);
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
 
   const lastSyncedAt = Date.now();
   const entryIndexMap = buildEntryIndexMap(records || []);
@@ -132,14 +84,12 @@ export async function saveRecordsToCache(formId, records, headerMatrix = [], { s
     await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, idx)));
   }
 
-  await waitForRequest(metaStore.put({
-    formId,
-    _cacheTimestamp: lastSyncedAt,
+  await waitForRequest(metaStore.put(buildMetadata(formId, null, {
     lastSyncedAt,
     headerMatrix,
     schemaHash,
     entryIndexMap,
-  }));
+  })));
 
   await waitForTransaction(tx);
   db.close();
@@ -151,21 +101,17 @@ export async function saveRecordsToCache(formId, records, headerMatrix = [], { s
 export async function updateRecordsMeta(formId, { entryIndexMap, lastReloadedAt, schemaHash, headerMatrix } = {}) {
   if (!formId) return;
   const db = await openDB();
-  const tx = db.transaction(META_STORE_NAME, 'readwrite');
-  const metaStore = tx.objectStore(META_STORE_NAME);
+  const tx = db.transaction(STORE_NAMES.recordsMeta, 'readwrite');
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
 
-  const lastSyncedAt = lastReloadedAt ?? existingMeta?.lastSyncedAt ?? existingMeta?._cacheTimestamp ?? Date.now();
-  const nextMeta = {
-    formId,
-    _cacheTimestamp: existingMeta?._cacheTimestamp || lastSyncedAt,
-    lastSyncedAt,
-    headerMatrix: headerMatrix ?? existingMeta?.headerMatrix ?? [],
-    schemaHash: schemaHash ?? existingMeta?.schemaHash ?? null,
-    entryIndexMap: entryIndexMap ?? existingMeta?.entryIndexMap ?? {},
-  };
+  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
+    lastSyncedAt: lastReloadedAt,
+    headerMatrix,
+    schemaHash,
+    entryIndexMap,
+  })));
 
-  await waitForRequest(metaStore.put(nextMeta));
   await waitForTransaction(tx);
   db.close();
 }
@@ -176,21 +122,17 @@ export async function updateRecordsMeta(formId, { entryIndexMap, lastReloadedAt,
 export async function updateEntryIndex(formId, entryId, rowIndex) {
   if (!formId || !entryId || rowIndex === undefined || rowIndex === null) return;
   const db = await openDB();
-  const tx = db.transaction(META_STORE_NAME, 'readwrite');
-  const metaStore = tx.objectStore(META_STORE_NAME);
+  const tx = db.transaction(STORE_NAMES.recordsMeta, 'readwrite');
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
+
   const existingMap = existingMeta?.entryIndexMap || {};
   existingMap[entryId] = rowIndex;
-  const lastSyncedAt = existingMeta?.lastSyncedAt || existingMeta?._cacheTimestamp || Date.now();
-  const nextMeta = {
-    formId,
-    _cacheTimestamp: existingMeta?._cacheTimestamp || lastSyncedAt,
-    lastSyncedAt,
-    headerMatrix: existingMeta?.headerMatrix || [],
-    schemaHash: existingMeta?.schemaHash || null,
+
+  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
     entryIndexMap: existingMap,
-  };
-  await waitForRequest(metaStore.put(nextMeta));
+  })));
+
   await waitForTransaction(tx);
   db.close();
 }
@@ -243,23 +185,26 @@ export async function getCachedEntryWithIndex(formId, entryId) {
 export async function upsertRecordInCache(formId, record, { headerMatrix, rowIndex, schemaHash } = {}) {
   if (!formId || !record?.id) return;
   const db = await openDB();
-  const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
-  const store = tx.objectStore(STORE_NAME);
-  const metaStore = tx.objectStore(META_STORE_NAME);
+  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
+  const store = tx.objectStore(STORE_NAMES.records);
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
 
   const lastSyncedAt = Date.now();
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
   const nextRowIndex = Number.isInteger(rowIndex) ? rowIndex : existingMeta?.entryIndexMap?.[record.id];
   await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, nextRowIndex)));
 
-  await waitForRequest(metaStore.put({
-    formId,
-    _cacheTimestamp: lastSyncedAt,
+  const updatedIndexMap = { ...(existingMeta?.entryIndexMap || {}) };
+  if (Number.isInteger(nextRowIndex)) {
+    updatedIndexMap[record.id] = nextRowIndex;
+  }
+
+  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
     lastSyncedAt,
-    headerMatrix: headerMatrix || existingMeta?.headerMatrix || [],
-    schemaHash: schemaHash ?? existingMeta?.schemaHash ?? null,
-    entryIndexMap: { ...(existingMeta?.entryIndexMap || {}), ...(Number.isInteger(nextRowIndex) ? { [record.id]: nextRowIndex } : {}) },
-  }));
+    headerMatrix,
+    schemaHash,
+    entryIndexMap: updatedIndexMap,
+  })));
 
   await waitForTransaction(tx);
   db.close();
@@ -273,9 +218,9 @@ export async function upsertRecordInCache(formId, record, { headerMatrix, rowInd
 export async function getRecordsFromCache(formId) {
   if (!formId) return { entries: [], headerMatrix: [], cacheTimestamp: null, schemaHash: null, lastSyncedAt: null, entryIndexMap: {} };
   const db = await openDB();
-  const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readonly');
-  const store = tx.objectStore(STORE_NAME);
-  const metaStore = tx.objectStore(META_STORE_NAME);
+  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readonly');
+  const store = tx.objectStore(STORE_NAMES.records);
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
 
   const entriesRequest = store.index('formId').getAll(IDBKeyRange.only(formId));
   const metaRequest = metaStore.get(formId);
@@ -292,8 +237,8 @@ export async function getRecordsFromCache(formId) {
   return {
     entries,
     headerMatrix: meta?.headerMatrix || [],
-    cacheTimestamp: meta?._cacheTimestamp || null,
-    lastSyncedAt: meta?.lastSyncedAt || meta?._cacheTimestamp || null,
+    cacheTimestamp: meta?.lastSyncedAt || null,
+    lastSyncedAt: meta?.lastSyncedAt || null,
     schemaHash: meta?.schemaHash || null,
     entryIndexMap: meta?.entryIndexMap || {},
   };
@@ -308,8 +253,8 @@ export async function getRecordsFromCache(formId) {
 export async function getRecordFromCache(formId, entryId) {
   if (!formId || !entryId) return null;
   const db = await openDB();
-  const tx = db.transaction(STORE_NAME, 'readonly');
-  const store = tx.objectStore(STORE_NAME);
+  const tx = db.transaction(STORE_NAMES.records, 'readonly');
+  const store = tx.objectStore(STORE_NAMES.records);
 
   const result = await waitForRequest(store.get(buildCompoundId(formId, entryId)));
   await waitForTransaction(tx);
@@ -324,9 +269,9 @@ export async function getRecordFromCache(formId, entryId) {
  */
 export async function clearRecordsCache(formId) {
   const db = await openDB();
-  const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
-  const store = tx.objectStore(STORE_NAME);
-  const metaStore = tx.objectStore(META_STORE_NAME);
+  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
+  const store = tx.objectStore(STORE_NAMES.records);
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
 
   if (formId) {
     await deleteEntriesForForm(store, formId);
@@ -362,22 +307,18 @@ export async function hasCachedRecords(formId) {
 export async function deleteRecordFromCache(formId, entryId) {
   if (!formId || !entryId) return;
   const db = await openDB();
-  const tx = db.transaction([STORE_NAME, META_STORE_NAME], 'readwrite');
-  const store = tx.objectStore(STORE_NAME);
-  const metaStore = tx.objectStore(META_STORE_NAME);
+  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
+  const store = tx.objectStore(STORE_NAMES.records);
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
 
   await waitForRequest(store.delete(buildCompoundId(formId, entryId)));
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
-  const lastSyncedAt = Date.now();
-  const nextMeta = {
-    formId,
-    _cacheTimestamp: existingMeta?._cacheTimestamp || lastSyncedAt,
-    lastSyncedAt,
-    headerMatrix: existingMeta?.headerMatrix || [],
-    schemaHash: existingMeta?.schemaHash || null,
+
+  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
+    lastSyncedAt: Date.now(),
     entryIndexMap: {}, // invalidate map to avoid stale indices
-  };
-  await waitForRequest(metaStore.put(nextMeta));
+  })));
+
   await waitForTransaction(tx);
   db.close();
 }
