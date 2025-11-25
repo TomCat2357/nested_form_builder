@@ -157,46 +157,38 @@ const resolveSortValue = ({ rawValues, display, dataUnixMs, path, column }) => {
   return display;
 };
 
-const collectImportantFieldValue = (entry, path, column) => {
+const collectValuesForPath = (entry, path) => {
   const data = entry?.data || {};
   const dataUnixMs = entry?.dataUnixMs || {};
-
   const values = [];
   const rawValues = [];
-  const addValue = (raw, unixMs) => {
-    const display = valueToDisplayString(raw, unixMs);
+  const addValue = (raw) => {
+    const display = valueToDisplayString(raw);
     if (display === "" || display === null || display === undefined) return;
     values.push(display);
     rawValues.push(raw);
   };
 
-  // 直接値がある場合はそれを優先
   const hasDirectValue = Object.prototype.hasOwnProperty.call(data, path);
-
   if (hasDirectValue) {
-    addValue(data[path], dataUnixMs[path]);
+    addValue(data[path]);
   } else {
-    // 直接値がない場合のみ、option値を探す
     const prefix = `${path}|`;
-    const optionValues = [];
     Object.entries(data).forEach(([key, value]) => {
       if (!key.startsWith(prefix) || key === path) return;
       const remainder = key.slice(prefix.length);
-      if (!remainder) return;
-      const [head, ...rest] = remainder.split("|");
-      if (!head || rest.length > 0) return;
+      if (!remainder || remainder.includes("|")) return;
       if (toBooleanLike(value)) {
-        // チェックボックスの場合はラベル(head)を表示・検索・ソート用に使用
-        optionValues.push(head);
+        addValue(remainder);
       }
     });
-
-    if (optionValues.length) {
-      // 値を表示用文字列に変換して追加
-      optionValues.forEach((v) => addValue(v));
-    }
   }
 
+  return { values, rawValues, dataUnixMs };
+};
+
+const collectImportantFieldValue = (entry, path, column) => {
+  const { values, rawValues, dataUnixMs } = collectValuesForPath(entry, path);
   const display = values.join("、");
   const sortValue = resolveSortValue({ rawValues, display, dataUnixMs, path, column });
 
@@ -263,33 +255,7 @@ const createBaseColumns = () => [
 ];
 
 const collectCompactFieldValue = (entry, path, column) => {
-  const data = entry?.data || {};
-  const dataUnixMs = entry?.dataUnixMs || {};
-  const values = [];
-  const rawValues = [];
-
-  const addValue = (raw) => {
-    const display = valueToDisplayString(raw);
-    if (display === "" || display === null || display === undefined) return;
-    values.push(display);
-    rawValues.push(raw);
-  };
-
-  const hasDirectValue = Object.prototype.hasOwnProperty.call(data, path);
-  if (hasDirectValue) {
-    addValue(data[path]);
-  } else {
-    const prefix = `${path}|`;
-    Object.entries(data).forEach(([key, value]) => {
-      if (!key.startsWith(prefix) || key === path) return;
-      const remainder = key.slice(prefix.length);
-      if (!remainder || remainder.includes("|")) return;
-      if (toBooleanLike(value)) {
-        addValue(remainder);
-      }
-    });
-  }
-
+  const { values, rawValues, dataUnixMs } = collectValuesForPath(entry, path);
   const display = values.join("、");
   const primary = values[0] || "";
   const sortValue = resolveSortValue({ rawValues, display: values.length <= 1 ? primary : display, dataUnixMs, path, column });
@@ -753,8 +719,6 @@ export const compareByColumn = (a, b, column, order = "asc") => {
   const finalResult = order === "asc" ? result : -result;
   return finalResult;
 };
-
-export const buildDisplayText = (value) => valueToDisplayString(value);
 
 export const applyDisplayLengthLimit = (text, limit) => {
   if (typeof text !== "string") return text ?? "";

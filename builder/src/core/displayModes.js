@@ -7,12 +7,6 @@ export const DISPLAY_MODES = {
 const VALID_MODES = new Set(Object.values(DISPLAY_MODES));
 const COMPACT_SUPPORTED_TYPES = new Set(["radio", "select"]);
 
-export const DISPLAY_MODE_LABELS = {
-  [DISPLAY_MODES.NONE]: "表示なし",
-  [DISPLAY_MODES.NORMAL]: "表示",
-  [DISPLAY_MODES.COMPACT]: "表示",
-};
-
 export const normalizeDisplayMode = (mode, { importantFlag = false } = {}) => {
   if (typeof mode === "string") {
     const lower = mode.toLowerCase();
