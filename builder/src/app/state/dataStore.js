@@ -298,16 +298,23 @@ export const dataStore = {
       throw new Error("Spreadsheet not configured for this form");
     }
 
+    const tGetCacheStart = performance.now();
     const { entry: cachedEntry, rowIndex, rowHash: cachedRowHash } = await getCachedEntryWithIndex(formId, entryId);
+    const tGetCacheEnd = performance.now();
+    console.log(`[PERF] dataStore.getEntry getCachedEntryWithIndex - Time: ${(tGetCacheEnd - tGetCacheStart).toFixed(2)}ms`);
+
     const startedAt = Date.now();
     console.log("[perf][records] getEntry start", { formId, entryId, rowIndexHint: rowIndex });
 
+    const tBeforeGas = performance.now();
     const result = await getEntryFromGas({
       ...sheetConfig,
       entryId,
       rowIndexHint: rowIndex,
       cachedRowHash: cachedRowHash || "",
     });
+    const tAfterGas = performance.now();
+    console.log(`[PERF] dataStore.getEntry getEntryFromGas - Time: ${(tAfterGas - tBeforeGas).toFixed(2)}ms`);
 
     if (result.unchanged && cachedEntry) {
       const finishedAt = Date.now();
@@ -315,12 +322,21 @@ export const dataStore = {
       return cachedEntry;
     }
 
+    const tBeforeMap = performance.now();
     const mapped = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
+    const tAfterMap = performance.now();
+    console.log(`[PERF] dataStore.getEntry mapSheetRecordToEntry - Time: ${(tAfterMap - tBeforeMap).toFixed(2)}ms`);
+
     if (mapped) {
       const nextRowIndex = typeof result.rowIndex === "number" ? result.rowIndex : rowIndex;
       const nextRowHash = result.rowHash || mapped.rowHash || "";
       mapped.rowHash = nextRowHash;
+
+      const tBeforeUpsert = performance.now();
       await upsertRecordInCache(formId, mapped, { rowIndex: nextRowIndex });
+      const tAfterUpsert = performance.now();
+      console.log(`[PERF] dataStore.getEntry upsertRecordInCache - Time: ${(tAfterUpsert - tBeforeUpsert).toFixed(2)}ms`);
+
       const finishedAt = Date.now();
       console.log("[perf][records] getEntry done", { formId, entryId, fromCache: false, durationMs: finishedAt - startedAt, rowIndex: nextRowIndex });
       return mapped;

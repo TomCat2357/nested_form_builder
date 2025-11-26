@@ -49,6 +49,9 @@ export default function FormPage() {
   useEffect(() => {
     let mounted = true;
     const loadEntry = async () => {
+      const tStart = performance.now();
+      console.log(`[PERF] FormPage loadEntry START - formId: ${formId}, entryId: ${entryId}`);
+
       if (!formId || !form) {
         setLoading(false);
         return;
@@ -60,14 +63,30 @@ export default function FormPage() {
         return;
       }
       setLoading(true);
+
+      const tBeforeGetEntry = performance.now();
+      console.log(`[PERF] FormPage before dataStore.getEntry - Time from start: ${(tBeforeGetEntry - tStart).toFixed(2)}ms`);
+
       const data = await dataStore.getEntry(formId, entryId);
+
+      const tAfterGetEntry = performance.now();
+      console.log(`[PERF] FormPage after dataStore.getEntry - Time: ${(tAfterGetEntry - tBeforeGetEntry).toFixed(2)}ms`);
+
       if (!mounted) return;
       setEntry(data);
+
+      const tBeforeRestore = performance.now();
       const restored = restoreResponsesFromData(normalizedSchema, data?.data || {}, data?.dataUnixMs || {});
+      const tAfterRestore = performance.now();
+      console.log(`[PERF] FormPage restoreResponsesFromData - Time: ${(tAfterRestore - tBeforeRestore).toFixed(2)}ms`);
+
       initialResponsesRef.current = restored;
       setResponses(restored);
       setCurrentRecordId(data?.id || entryId);
       setLoading(false);
+
+      const tEnd = performance.now();
+      console.log(`[PERF] FormPage loadEntry COMPLETE - Total time: ${(tEnd - tStart).toFixed(2)}ms`);
     };
     loadEntry();
     return () => {

@@ -279,11 +279,15 @@ export default function SearchPage() {
 
   const handleRowClick = (entryId) => {
     if (!formId) return;
+    const t0 = performance.now();
+    console.log(`[PERF] handleRowClick START - entryId: ${entryId}`);
     navigate(`/form/${formId}/entry/${entryId}`, {
       state: {
         from: `${location.pathname}${location.search}`,
       },
     });
+    const t1 = performance.now();
+    console.log(`[PERF] handleRowClick navigate() called - Time: ${(t1 - t0).toFixed(2)}ms`);
   };
 
   const handleCreateNew = () => {
