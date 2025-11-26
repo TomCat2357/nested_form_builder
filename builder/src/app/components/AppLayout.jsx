@@ -52,6 +52,17 @@ const badgeStyle = {
   marginLeft: 8,
 };
 
+const badgeThemes = {
+  view: {
+    background: "#E5E7EB",
+    color: "#374151",
+  },
+  edit: {
+    background: "#DCFCE7",
+    color: "#166534",
+  },
+};
+
 export default function AppLayout({ title, fallbackPath = "/", onBack, backHidden = false, actions, sidebarActions, badge, children }) {
   const navigate = useNavigate();
 
@@ -93,12 +104,16 @@ export default function AppLayout({ title, fallbackPath = "/", onBack, backHidde
     </button>
   );
 
+  const resolvedBadge = typeof badge === "string" ? { label: badge } : badge;
+  const badgeVariantStyle = resolvedBadge?.variant ? badgeThemes[resolvedBadge.variant] || {} : {};
+  const finalBadgeStyle = { ...badgeStyle, ...(resolvedBadge?.style || {}), ...badgeVariantStyle };
+
   return (
     <div style={{ minHeight: "100vh", background: "#F3F4F6" }}>
       <header style={headerStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 18 }}>{title}</h1>
-          {badge && <span style={badgeStyle}>{badge}</span>}
+          {resolvedBadge?.label && <span style={finalBadgeStyle}>{resolvedBadge.label}</span>}
         </div>
         <div>{actions}</div>
       </header>

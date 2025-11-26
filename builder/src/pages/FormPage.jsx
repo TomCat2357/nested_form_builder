@@ -41,10 +41,17 @@ export default function FormPage() {
   const [currentRecordId, setCurrentRecordId] = useState(entryId || null);
   const [confirmState, setConfirmState] = useState({ open: false, intent: null });
   const [isSaving, setIsSaving] = useState(false);
+  const [mode, setMode] = useState(entryId ? "view" : "edit");
   const initialResponsesRef = useRef({});
   const previewRef = useRef(null);
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
+
+  useEffect(() => {
+    setMode(entryId ? "view" : "edit");
+  }, [entryId]);
+
+  const isViewMode = mode === "view";
 
   useEffect(() => {
     let mounted = true;
@@ -185,7 +192,18 @@ export default function FormPage() {
   const attemptLeave = (intent) => {
     if (isDirty) {
       setConfirmState({ open: true, intent });
-    } else if (intent === "back" || intent === "cancel") {
+      return;
+    }
+    if (intent === "back") {
+      navigateBack();
+      return;
+    }
+    if (intent === "cancel") {
+      if (entryId) {
+        setMode("view");
+        setResponses(initialResponsesRef.current);
+        return;
+      }
       navigateBack();
     }
   };
@@ -208,8 +226,14 @@ export default function FormPage() {
   }
 
   const handleConfirmAction = async (action) => {
+    const intent = confirmState.intent;
     setConfirmState({ open: false, intent: null });
     if (action === "discard") {
+      if (intent === "cancel" && entryId) {
+        setMode("view");
+        setResponses(initialResponsesRef.current);
+        return;
+      }
       navigateBack();
       return;
     }
@@ -237,6 +261,10 @@ export default function FormPage() {
     },
   ];
 
+  const confirmMessage = confirmState.intent === "cancel" && entryId
+    ? "保存せずに閲覧モードに戻りますか？"
+    : "保存せずに前の画面へ戻りますか？";
+
   const sidebarButtonStyle = {
     ...buttonStyle,
     width: "100%",
@@ -249,14 +277,28 @@ export default function FormPage() {
       fallbackPath={fallbackPath}
       onBack={handleBack}
       backHidden={true}
+      badge={{ label: isViewMode ? "閲覧モード" : "編集モード", variant: isViewMode ? "view" : "edit" }}
       sidebarActions={
         <>
-          <button type="button" style={sidebarButtonStyle} disabled={isSaving} onClick={() => triggerSave({ redirect: true })}>
-            保存
-          </button>
-          <button type="button" style={sidebarButtonStyle} onClick={() => attemptLeave("cancel")}>
-            キャンセル
-          </button>
+          {isViewMode ? (
+            <>
+              <button type="button" style={sidebarButtonStyle} onClick={() => setMode("edit")}>
+                編集
+              </button>
+              <button type="button" style={sidebarButtonStyle} onClick={() => navigateBack()}>
+                戻る
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" style={sidebarButtonStyle} disabled={isSaving} onClick={() => triggerSave({ redirect: true })}>
+                保存
+              </button>
+              <button type="button" style={sidebarButtonStyle} onClick={() => attemptLeave("cancel")}>
+                キャンセル
+              </button>
+            </>
+          )}
         </>
       }
     >
@@ -272,13 +314,14 @@ export default function FormPage() {
           onSave={handleSaveToStore}
           showOutputJson={false}
           showSaveButton={false}
+          readOnly={isViewMode}
         />
       )}
 
       <ConfirmDialog
         open={confirmState.open}
         title="未保存の変更があります"
-        message="保存せずに前の画面へ戻りますか？"
+        message={confirmMessage}
         options={confirmOptions}
       />
 

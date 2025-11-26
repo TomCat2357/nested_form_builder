@@ -37,7 +37,6 @@ const buildCacheRecord = (formId, record, lastSyncedAt, rowIndex) => ({
   entryId: record.id,
   lastSyncedAt,
   rowIndex,
-  rowHash: record.rowHash || "",
 });
 
 const buildEntryIndexMap = (records) => {
@@ -156,7 +155,7 @@ const binarySearchById = (entries, entryId) => {
  * Get cached entry with row index (fast path using map, fallback to binary search)
  */
 export async function getCachedEntryWithIndex(formId, entryId) {
-  if (!formId || !entryId) return { entry: null, rowIndex: null, rowHash: "" };
+  if (!formId || !entryId) return { entry: null, rowIndex: null };
   const { entries, cacheTimestamp, headerMatrix, schemaHash, lastSyncedAt, entryIndexMap } = await getRecordsFromCache(formId);
   let rowIndex = entryIndexMap?.[entryId];
   let entry = null;
@@ -177,7 +176,7 @@ export async function getCachedEntryWithIndex(formId, entryId) {
     }
   }
 
-  return { entry, rowIndex, cacheTimestamp, headerMatrix, schemaHash, lastSyncedAt, entryIndexMap, rowHash: entry?.rowHash || "" };
+  return { entry, rowIndex, cacheTimestamp, headerMatrix, schemaHash, lastSyncedAt, entryIndexMap };
 }
 
 /**

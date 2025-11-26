@@ -9,6 +9,11 @@ import {
   deleteRecordFromCache,
 } from "./recordsCache.js";
 import {
+  evaluateCache,
+  RECORD_CACHE_MAX_AGE_MS,
+  RECORD_CACHE_BACKGROUND_REFRESH_MS,
+} from "./cachePolicy.js";
+import {
   deleteEntry as deleteEntryFromGas,
   listEntries as listEntriesFromGas,
   getEntry as getEntryFromGas,
@@ -60,7 +65,6 @@ const mapSheetRecordToEntry = (record, formId) => ({
   data: record.data || {},
   dataUnixMs: record.dataUnixMs || {},
   order: Object.keys(record.data || {}),
-  rowHash: record.rowHash || "",
 });
 
 const clone = (value) => (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
@@ -299,9 +303,39 @@ export const dataStore = {
     }
 
     const tGetCacheStart = performance.now();
-    const { entry: cachedEntry, rowIndex, rowHash: cachedRowHash } = await getCachedEntryWithIndex(formId, entryId);
+    const { entry: cachedEntry, rowIndex, lastSyncedAt } = await getCachedEntryWithIndex(formId, entryId);
     const tGetCacheEnd = performance.now();
     console.log(`[PERF] dataStore.getEntry getCachedEntryWithIndex - Time: ${(tGetCacheEnd - tGetCacheStart).toFixed(2)}ms`);
+
+    const { age: cacheAge, shouldSync, shouldBackground } = evaluateCache({
+      lastSyncedAt,
+      hasData: !!cachedEntry,
+      maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
+      backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
+    });
+
+    if (!shouldSync && cachedEntry) {
+      if (shouldBackground) {
+        getEntryFromGas({
+          ...sheetConfig,
+          entryId,
+          rowIndexHint: rowIndex,
+        })
+          .then((result) => {
+            const mapped = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
+            if (!mapped) return;
+            const nextRowIndex = typeof result.rowIndex === "number" ? result.rowIndex : rowIndex;
+            upsertRecordInCache(formId, mapped, { rowIndex: nextRowIndex }).catch((err) => {
+              console.error("[perf][records] background cache update failed", err);
+            });
+          })
+          .catch((error) => {
+            console.error("[perf][records] background getEntry failed", error);
+          });
+      }
+      console.log("[perf][records] getEntry cache hit", { formId, entryId, cacheAge });
+      return cachedEntry;
+    }
 
     const startedAt = Date.now();
     console.log("[perf][records] getEntry start", { formId, entryId, rowIndexHint: rowIndex });
@@ -311,16 +345,9 @@ export const dataStore = {
       ...sheetConfig,
       entryId,
       rowIndexHint: rowIndex,
-      cachedRowHash: cachedRowHash || "",
     });
     const tAfterGas = performance.now();
     console.log(`[PERF] dataStore.getEntry getEntryFromGas - Time: ${(tAfterGas - tBeforeGas).toFixed(2)}ms`);
-
-    if (result.unchanged && cachedEntry) {
-      const finishedAt = Date.now();
-      console.log("[perf][records] getEntry done", { formId, entryId, fromCache: true, durationMs: finishedAt - startedAt, unchanged: true });
-      return cachedEntry;
-    }
 
     const tBeforeMap = performance.now();
     const mapped = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
@@ -329,9 +356,6 @@ export const dataStore = {
 
     if (mapped) {
       const nextRowIndex = typeof result.rowIndex === "number" ? result.rowIndex : rowIndex;
-      const nextRowHash = result.rowHash || mapped.rowHash || "";
-      mapped.rowHash = nextRowHash;
-
       const tBeforeUpsert = performance.now();
       await upsertRecordInCache(formId, mapped, { rowIndex: nextRowIndex });
       const tAfterUpsert = performance.now();

@@ -40,8 +40,51 @@ const collectDefaultNowResponses = (fields) => {
   return defaults;
 };
 
-const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildrenForOption }) => {
+const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildrenForOption, readOnly = false }) => {
   const validation = validateByPattern(field, value);
+  const readOnlyBoxStyle = {
+    ...s.input,
+    backgroundColor: "#F3F4F6",
+    color: "#374151",
+    cursor: "text",
+    userSelect: "text",
+  };
+
+  const renderReadOnlyValue = () => {
+    if (field.type === "checkboxes" && Array.isArray(value)) return value.join(", ");
+    if (Array.isArray(value)) return value.join(", ");
+    if (value === undefined || value === null || value === "") return "—";
+    return String(value);
+  };
+
+  if (readOnly) {
+    const childrenForCheckboxes =
+      field.type === "checkboxes" && renderChildrenForOption
+        ? (Array.isArray(value) ? value : []).map((label) => (
+            <div key={`ro_child_${field.id}_${label}`} style={s.child}>
+              {renderChildrenForOption(label)}
+            </div>
+          ))
+        : null;
+
+    const childrenCommon =
+      field.type !== "checkboxes" && renderChildrenAll
+        ? <div style={s.child}>{renderChildrenAll()}</div>
+        : null;
+
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>
+          {field.label || <span style={{ color: "#9CA3AF" }}>項目</span>}
+          {field.required && <span style={{ color: "#EF4444", marginLeft: 4 }}>*</span>}
+        </label>
+        <div style={readOnlyBoxStyle}>{renderReadOnlyValue()}</div>
+        {childrenForCheckboxes}
+        {childrenCommon}
+      </div>
+    );
+  }
+
   return (
     <div style={{ marginBottom: 16 }}>
       <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>
@@ -172,7 +215,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
   );
 };
 
-const RendererRecursive = ({ fields, responses, onChange, depth = 0 }) => {
+const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = false }) => {
   const renderChildrenAll = (field, fid) => () => {
     if (!field?.childrenByValue) return null;
     if (["radio", "select"].includes(field.type)) {
@@ -184,6 +227,7 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0 }) => {
           responses={responses}
           onChange={onChange}
           depth={depth + 1}
+          readOnly={readOnly}
         />
       );
     }
@@ -196,6 +240,7 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0 }) => {
           responses={responses}
           onChange={onChange}
           depth={depth + 1}
+          readOnly={readOnly}
         />
       ));
     }
@@ -227,6 +272,7 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0 }) => {
               onChange={(nextValue) => onChange((prev) => ({ ...(prev || {}), [fid]: nextValue }))}
               renderChildrenAll={renderChildrenAll(field, fid)}
               renderChildrenForOption={(label) => renderChildrenForOption(field, fid, label)}
+              readOnly={readOnly}
             />
           </div>
         );
@@ -236,7 +282,17 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0 }) => {
 };
 
 const PreviewPage = React.forwardRef(function PreviewPage(
-  { schema, responses, setResponses, settings = {}, showOutputJson = true, onSave, saveButtonLabel = "回答保存", showSaveButton = true },
+  {
+    schema,
+    responses,
+    setResponses,
+    settings = {},
+    showOutputJson = true,
+    onSave,
+    saveButtonLabel = "回答保存",
+    showSaveButton = true,
+    readOnly = false,
+  },
   ref,
 ) {
   const { alertState, showAlert, closeAlert } = useAlert();
@@ -281,6 +337,9 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSaveToSheet = async (options = {}) => {
+    if (readOnly) {
+      throw new Error("read_only_mode");
+    }
     if (hasValidationErrors(schema, responses)) {
       showAlert("正規表現のエラー、必須空、またはパターン不一致の回答があります。修正してください。");
       throw new Error("validation_failed");
@@ -359,7 +418,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>回答ID</label>
         <input type="text" value={recordIdRef.current} readOnly style={{ ...s.input, backgroundColor: "#F8FAFC", cursor: "not-allowed" }} />
       </div>
-      <RendererRecursive fields={schema} responses={responses} onChange={setResponses} />
+      <RendererRecursive fields={schema} responses={responses} onChange={setResponses} readOnly={readOnly} />
       {showOutputJson && (
         <div style={{ marginTop: 12 }}>
           <label style={{ display: "block", marginBottom: 6 }}>回答JSON</label>
@@ -375,7 +434,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
           />
         </div>
       )}
-      {showSaveButton && (
+      {showSaveButton && !readOnly && (
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12, gap: 8, alignItems: "center" }}>
           <button type="button" style={s.btn} onClick={handleSaveToSheet} disabled={isSaving}>
             {isSaving ? "保存中..." : saveButtonLabel}

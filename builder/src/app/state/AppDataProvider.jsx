@@ -1,7 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { dataStore } from "./dataStore.js";
 import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
-import { CACHE_MAX_AGE_MS, CACHE_BACKGROUND_REFRESH_MS, evaluateCache } from "./cachePolicy.js";
+import {
+  evaluateCache,
+  FORM_CACHE_MAX_AGE_MS,
+  FORM_CACHE_BACKGROUND_REFRESH_MS,
+} from "./cachePolicy.js";
 
 const AppDataContext = createContext(null);
 
@@ -120,8 +124,8 @@ export function AppDataProvider({ children }) {
         const { age: cacheAgeMs, shouldSync, shouldBackground } = evaluateCache({
           lastSyncedAt: cacheLastSyncedAt,
           hasData: hasCachedData,
-          maxAgeMs: CACHE_MAX_AGE_MS,
-          backgroundAgeMs: CACHE_BACKGROUND_REFRESH_MS,
+          maxAgeMs: FORM_CACHE_MAX_AGE_MS,
+          backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
         });
 
         console.log("[perf][forms] cache check", { cacheAgeMs, cacheApplied, shouldSync, shouldBackground });

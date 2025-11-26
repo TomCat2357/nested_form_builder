@@ -23,7 +23,11 @@ import {
   saveRecordsToCache,
   getRecordsFromCache,
 } from "../app/state/recordsCache.js";
-import { evaluateCache, CACHE_MAX_AGE_MS, CACHE_BACKGROUND_REFRESH_MS } from "../app/state/cachePolicy.js";
+import {
+  evaluateCache,
+  RECORD_CACHE_MAX_AGE_MS,
+  RECORD_CACHE_BACKGROUND_REFRESH_MS,
+} from "../app/state/cachePolicy.js";
 
 const createTableStyle = (maxWidth) => ({
   width: maxWidth ? `${maxWidth}px` : "100%",
@@ -179,13 +183,13 @@ export default function SearchPage() {
         console.warn("[perf][search] cache schema mismatch detected; forcing sync", { cacheSchema: cache.schemaHash, formSchema: form?.schemaHash });
       }
       const forceSync = location.state?.saved === true || location.state?.deleted === true || location.state?.created === true;
-      const { age, shouldSync, shouldBackground } = evaluateCache({
-        lastSyncedAt: cache.lastSyncedAt,
-        hasData: hasCache,
-        forceSync,
-        maxAgeMs: CACHE_MAX_AGE_MS,
-        backgroundAgeMs: CACHE_BACKGROUND_REFRESH_MS,
-      });
+        const { age, shouldSync, shouldBackground } = evaluateCache({
+          lastSyncedAt: cache.lastSyncedAt,
+          hasData: hasCache,
+          forceSync,
+          maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
+          backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
+        });
 
       console.log("[perf][search] cache decision", { formId, cacheAge: age, hasCache, shouldSync, shouldBackground, cacheDisabled });
 
