@@ -1,3 +1,5 @@
+// Module-level regex cache for better performance across validation calls
+const regexCache = new Map();
 
 export const buildSafeRegex = (pattern) => {
   if (!pattern) return { re: null, error: null };
@@ -24,7 +26,6 @@ export const validateByPattern = (field, value, cachedRegex = null) => {
 
 export const hasValidationErrors = (fields, responses) => {
   let hasError = false;
-  const regexCache = new Map();
 
   const isEmpty = (field, value) => {
     if (value === undefined || value === null) return true;

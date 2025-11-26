@@ -245,63 +245,6 @@ export async function getRecordsFromCache(formId) {
 }
 
 /**
- * Get a single record from cache
- * @param {string} formId
- * @param {string} entryId
- * @returns {Promise<object|null>}
- */
-export async function getRecordFromCache(formId, entryId) {
-  if (!formId || !entryId) return null;
-  const db = await openDB();
-  const tx = db.transaction(STORE_NAMES.records, 'readonly');
-  const store = tx.objectStore(STORE_NAMES.records);
-
-  const result = await waitForRequest(store.get(buildCompoundId(formId, entryId)));
-  await waitForTransaction(tx);
-  db.close();
-  return stripMetadata(result);
-}
-
-/**
- * Clear cached records (all forms or a specific form)
- * @param {string} [formId]
- * @returns {Promise<void>}
- */
-export async function clearRecordsCache(formId) {
-  const db = await openDB();
-  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
-  const store = tx.objectStore(STORE_NAMES.records);
-  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
-
-  if (formId) {
-    await deleteEntriesForForm(store, formId);
-    await waitForRequest(metaStore.delete(formId));
-  } else {
-    await waitForRequest(store.clear());
-    await waitForRequest(metaStore.clear());
-  }
-
-  await waitForTransaction(tx);
-  db.close();
-}
-
-/**
- * Check if cache exists for a form
- * @param {string} formId
- * @returns {Promise<boolean>}
- */
-export async function hasCachedRecords(formId) {
-  if (!formId) return false;
-  try {
-    const { entries, cacheTimestamp, lastSyncedAt } = await getRecordsFromCache(formId);
-    return entries.length > 0 || !!cacheTimestamp || !!lastSyncedAt;
-  } catch (err) {
-    console.error('Error checking cache:', err);
-    return false;
-  }
-}
-
-/**
  * Remove a single record from cache (keeps meta but clears index map to force refresh)
  */
 export async function deleteRecordFromCache(formId, entryId) {
