@@ -390,13 +390,10 @@ export default function AdminDashboardPage() {
   return (
     <AppLayout
       title="フォーム管理"
-      badge="管理"
+      badge="フォーム一覧"
       fallbackPath="/"
       sidebarActions={
         <>
-          <button type="button" style={sidebarButtonStyle} onClick={() => refreshForms("manual:admin-dashboard")} disabled={loadingForms}>
-            {loadingForms ? "同期中..." : "手動同期"}
-          </button>
           <button type="button" style={sidebarButtonStyle} onClick={handleCreateNew}>
             新規作成
           </button>
@@ -425,6 +422,18 @@ export default function AdminDashboardPage() {
             disabled={selected.size === 0}
           >
             削除
+          </button>
+          <button
+            type="button"
+            style={{
+              ...sidebarButtonStyle,
+              background: !loadingForms ? "#FEF3C7" : "#fff",
+              borderColor: !loadingForms ? "#F59E0B" : "#CBD5E1",
+            }}
+            onClick={() => refreshForms("manual:admin-dashboard")}
+            disabled={loadingForms}
+          >
+            {loadingForms ? "🔄 更新中..." : "🔄 更新"}
           </button>
         </>
       }

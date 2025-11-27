@@ -11,6 +11,8 @@ import { submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { normalizeSchemaIDs } from "../core/schema.js";
+import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
+import { evaluateCache, RECORD_CACHE_MAX_AGE_MS } from "../app/state/cachePolicy.js";
 
 const buttonStyle = {
   padding: "8px 14px",
@@ -42,6 +44,7 @@ export default function FormPage() {
   const [confirmState, setConfirmState] = useState({ open: false, intent: null });
   const [isSaving, setIsSaving] = useState(false);
   const [mode, setMode] = useState(entryId ? "view" : "edit");
+  const [isReloading, setIsReloading] = useState(false);
   const initialResponsesRef = useRef({});
   const previewRef = useRef(null);
 
@@ -74,32 +77,73 @@ export default function FormPage() {
       const tBeforeGetEntry = performance.now();
       console.log(`[PERF] FormPage before dataStore.getEntry - Time from start: ${(tBeforeGetEntry - tStart).toFixed(2)}ms`);
 
-      const data = await dataStore.getEntry(formId, entryId);
+      // まずキャッシュから取得を試みる
+      const { entry: cachedEntry, lastSyncedAt } = await getCachedEntryWithIndex(formId, entryId);
 
-      const tAfterGetEntry = performance.now();
-      console.log(`[PERF] FormPage after dataStore.getEntry - Time: ${(tAfterGetEntry - tBeforeGetEntry).toFixed(2)}ms`);
+      if (cachedEntry && mounted) {
+        // キャッシュがあれば即座に表示
+        setEntry(cachedEntry);
+        const restored = restoreResponsesFromData(normalizedSchema, cachedEntry?.data || {}, cachedEntry?.dataUnixMs || {});
+        initialResponsesRef.current = restored;
+        setResponses(restored);
+        setCurrentRecordId(cachedEntry?.id || entryId);
+        setLoading(false);
+        console.log(`[PERF] FormPage cache displayed - Time: ${(performance.now() - tStart).toFixed(2)}ms`);
 
-      if (!mounted) return;
-      setEntry(data);
+        // キャッシュ年齢を計算し、5分以上古い場合はバックグラウンド更新
+        const cacheAge = lastSyncedAt ? Date.now() - lastSyncedAt : Infinity;
+        const shouldBackground = cacheAge >= RECORD_CACHE_MAX_AGE_MS;
 
-      const tBeforeRestore = performance.now();
-      const restored = restoreResponsesFromData(normalizedSchema, data?.data || {}, data?.dataUnixMs || {});
-      const tAfterRestore = performance.now();
-      console.log(`[PERF] FormPage restoreResponsesFromData - Time: ${(tAfterRestore - tBeforeRestore).toFixed(2)}ms`);
+        if (shouldBackground) {
+          console.log(`[PERF] FormPage starting background refresh (cache age: ${cacheAge}ms, threshold: ${RECORD_CACHE_MAX_AGE_MS}ms)`);
+          setIsReloading(true);
+          dataStore.getEntry(formId, entryId).then((freshData) => {
+            if (!mounted) return;
+            if (freshData) {
+              setEntry(freshData);
+              const freshRestored = restoreResponsesFromData(normalizedSchema, freshData?.data || {}, freshData?.dataUnixMs || {});
+              initialResponsesRef.current = freshRestored;
+              setResponses(freshRestored);
+              setCurrentRecordId(freshData?.id || entryId);
+              console.log(`[PERF] FormPage background refresh complete - Total time: ${(performance.now() - tStart).toFixed(2)}ms`);
+            }
+            setIsReloading(false);
+          }).catch((error) => {
+            console.error("[FormPage] background refresh failed:", error);
+            setIsReloading(false);
+          });
+        } else {
+          console.log(`[PERF] FormPage cache is fresh (age: ${cacheAge}ms, threshold: ${RECORD_CACHE_MAX_AGE_MS}ms), no background refresh`);
+        }
+      } else {
+        // キャッシュがない場合は同期読み取り
+        const data = await dataStore.getEntry(formId, entryId);
 
-      initialResponsesRef.current = restored;
-      setResponses(restored);
-      setCurrentRecordId(data?.id || entryId);
-      setLoading(false);
+        const tAfterGetEntry = performance.now();
+        console.log(`[PERF] FormPage after dataStore.getEntry - Time: ${(tAfterGetEntry - tBeforeGetEntry).toFixed(2)}ms`);
 
-      const tEnd = performance.now();
-      console.log(`[PERF] FormPage loadEntry COMPLETE - Total time: ${(tEnd - tStart).toFixed(2)}ms`);
+        if (!mounted) return;
+        setEntry(data);
+
+        const tBeforeRestore = performance.now();
+        const restored = restoreResponsesFromData(normalizedSchema, data?.data || {}, data?.dataUnixMs || {});
+        const tAfterRestore = performance.now();
+        console.log(`[PERF] FormPage restoreResponsesFromData - Time: ${(tAfterRestore - tBeforeRestore).toFixed(2)}ms`);
+
+        initialResponsesRef.current = restored;
+        setResponses(restored);
+        setCurrentRecordId(data?.id || entryId);
+        setLoading(false);
+
+        const tEnd = performance.now();
+        console.log(`[PERF] FormPage loadEntry COMPLETE - Total time: ${(tEnd - tStart).toFixed(2)}ms`);
+      }
     };
     loadEntry();
     return () => {
       mounted = false;
     };
-  }, [formId, entryId, form]);
+  }, [formId, entryId, form, normalizedSchema]);
 
   const isDirty = useMemo(() => hasDirtyChanges(initialResponsesRef.current, responses), [responses]);
 
@@ -194,17 +238,33 @@ export default function FormPage() {
       setConfirmState({ open: true, intent });
       return;
     }
-    if (intent === "back") {
+    if (intent === "back" || intent === "cancel") {
       navigateBack();
       return;
     }
-    if (intent === "cancel") {
-      if (entryId) {
-        setMode("view");
-        setResponses(initialResponsesRef.current);
+  };
+
+  const handleEditMode = async () => {
+    if (!formId || !entryId) return;
+    setIsReloading(true);
+    setMode("edit");
+    try {
+      const data = await dataStore.getEntry(formId, entryId, { forceSync: true });
+      if (!data) {
+        showAlert("レコードが見つかりませんでした。削除された可能性があります。");
+        navigateBack();
         return;
       }
-      navigateBack();
+      setEntry(data);
+      const restored = restoreResponsesFromData(normalizedSchema, data?.data || {}, data?.dataUnixMs || {});
+      initialResponsesRef.current = restored;
+      setResponses(restored);
+      setCurrentRecordId(data?.id || entryId);
+    } catch (error) {
+      console.error("[FormPage] handleEditMode error:", error);
+      showAlert(`データの読み込みに失敗しました: ${error?.message || error}`);
+    } finally {
+      setIsReloading(false);
     }
   };
 
@@ -226,14 +286,8 @@ export default function FormPage() {
   }
 
   const handleConfirmAction = async (action) => {
-    const intent = confirmState.intent;
     setConfirmState({ open: false, intent: null });
     if (action === "discard") {
-      if (intent === "cancel" && entryId) {
-        setMode("view");
-        setResponses(initialResponsesRef.current);
-        return;
-      }
       navigateBack();
       return;
     }
@@ -261,9 +315,7 @@ export default function FormPage() {
     },
   ];
 
-  const confirmMessage = confirmState.intent === "cancel" && entryId
-    ? "保存せずに閲覧モードに戻りますか？"
-    : "保存せずに前の画面へ戻りますか？";
+  const confirmMessage = "保存せずに前の画面へ戻りますか？";
 
   const sidebarButtonStyle = {
     ...buttonStyle,
@@ -277,13 +329,16 @@ export default function FormPage() {
       fallbackPath={fallbackPath}
       onBack={handleBack}
       backHidden={true}
-      badge={{ label: isViewMode ? "閲覧モード" : "編集モード", variant: isViewMode ? "view" : "edit" }}
+      badge={{
+        label: (loading || isReloading) ? "読み取り中..." : (isViewMode ? "閲覧モード" : "編集モード"),
+        variant: (loading || isReloading) ? "loading" : (isViewMode ? "view" : "edit")
+      }}
       sidebarActions={
         <>
           {isViewMode ? (
             <>
-              <button type="button" style={sidebarButtonStyle} onClick={() => setMode("edit")}>
-                編集
+              <button type="button" style={sidebarButtonStyle} onClick={handleEditMode}>
+                {isReloading ? "読込中..." : "編集"}
               </button>
               <button type="button" style={sidebarButtonStyle} onClick={() => navigateBack()}>
                 戻る
@@ -291,7 +346,7 @@ export default function FormPage() {
             </>
           ) : (
             <>
-              <button type="button" style={sidebarButtonStyle} disabled={isSaving} onClick={() => triggerSave({ redirect: true })}>
+              <button type="button" style={sidebarButtonStyle} disabled={isSaving || isReloading} onClick={() => triggerSave({ redirect: true })}>
                 保存
               </button>
               <button type="button" style={sidebarButtonStyle} onClick={() => attemptLeave("cancel")}>

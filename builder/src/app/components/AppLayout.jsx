@@ -54,12 +54,16 @@ const badgeStyle = {
 
 const badgeThemes = {
   view: {
-    background: "#E5E7EB",
-    color: "#374151",
+    background: "#DBEAFE",
+    color: "#1E40AF",
   },
   edit: {
-    background: "#DCFCE7",
-    color: "#166534",
+    background: "#FEF3C7",
+    color: "#92400E",
+  },
+  loading: {
+    background: "#BFDBFE",
+    color: "#1E3A8A",
   },
 };
 

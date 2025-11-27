@@ -92,6 +92,7 @@ export default function SearchPage() {
   const [entries, setEntries] = useState([]);
   const [headerMatrix, setHeaderMatrix] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [useCache, setUseCache] = useState(false);
   const [selectedEntries, setSelectedEntries] = useState(new Set());
@@ -135,6 +136,7 @@ export default function SearchPage() {
   const fetchAndCacheData = useCallback(async ({ background = false } = {}) => {
     if (!formId) return;
     if (!background) setLoading(true);
+    else setBackgroundLoading(true);
     const startedAt = Date.now();
     console.log("[perf][search] fetch start", { formId, background, startedAt });
     try {
@@ -161,6 +163,7 @@ export default function SearchPage() {
       const finishedAt = Date.now();
       console.log("[perf][search] fetch done", { formId, background, durationMs: finishedAt - startedAt });
       if (!background) setLoading(false);
+      else setBackgroundLoading(false);
     }
   }, [formId, form, showAlert]);
 
@@ -200,12 +203,13 @@ export default function SearchPage() {
         setUseCache(true);
       }
 
-      if (shouldSync || cacheDisabled) {
+      // キャッシュがある場合は常に非同期読み取り、キャッシュがない場合のみ同期読み取り
+      if ((shouldSync || cacheDisabled) && !hasCache) {
         await fetchAndCacheData({ background: false });
         return;
       }
 
-      if (shouldBackground) {
+      if (shouldSync || shouldBackground) {
         fetchAndCacheData({ background: true }).catch((error) => {
           console.error("[SearchPage] background refresh failed:", error);
           showAlert(`データの取得に失敗しました: ${error.message || error}`);
@@ -358,10 +362,18 @@ export default function SearchPage() {
     textAlign: "left",
   };
 
+  const badge = useMemo(() => {
+    if (loading || backgroundLoading) {
+      return { label: "読み取り中...", variant: "loading" };
+    }
+    return { label: "検索画面", variant: "view" };
+  }, [loading, backgroundLoading]);
+
   return (
     <AppLayout
       title={`検索 - ${form.settings?.formTitle || "(無題)"}`}
       fallbackPath="/"
+      badge={badge}
       sidebarActions={
         <>
           <button type="button" style={sidebarButtonStyle} onClick={handleCreateNew}>

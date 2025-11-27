@@ -6,6 +6,7 @@ import {
   FORM_CACHE_MAX_AGE_MS,
   FORM_CACHE_BACKGROUND_REFRESH_MS,
 } from "./cachePolicy.js";
+import { perfLogger } from "../../utils/perfLogger.js";
 
 const AppDataContext = createContext(null);
 
@@ -62,6 +63,7 @@ export function AppDataProvider({ children }) {
       const averagePerForm = allForms.length > 0 ? Math.round(apiCallDuration / allForms.length) : 0;
 
       console.log("[perf][forms] api duration ms:", apiCallDuration, "count:", allForms.length, "avg_per_form:", averagePerForm);
+      perfLogger.logFormGasRead(apiCallDuration, allForms.length);
 
       setForms(allForms);
       setLoadFailures(failures);
@@ -69,7 +71,10 @@ export function AppDataProvider({ children }) {
       setLastSyncedAt(syncedAt);
 
       try {
+        const cacheStart = Date.now();
         await saveFormsToCache(allForms, failures);
+        const cacheDuration = Date.now() - cacheStart;
+        perfLogger.logFormCacheSave(cacheDuration, allForms.length);
         setCacheDisabled(false);
         console.log("[perf][forms] saved to cache");
       } catch (cacheErr) {
@@ -115,6 +120,7 @@ export function AppDataProvider({ children }) {
 
         if (hasCachedData) {
           console.log("[AppDataProvider] Loaded from cache:", cachedForms.length, "forms (age:", cacheAge, "ms)");
+          perfLogger.logFormCacheHit(cacheAge || 0, cachedForms.length);
           setForms(cachedForms);
           setLoadFailures(cachedFailures);
           setLastSyncedAt(cacheLastSyncedAt);

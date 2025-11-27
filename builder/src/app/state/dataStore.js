@@ -29,6 +29,7 @@ import {
   hasScriptRun,
   debugGetMapping,
 } from "../../services/gasClient.js";
+import { perfLogger } from "../../utils/perfLogger.js";
 
 const nowIso = () => new Date().toISOString();
 const nowUnixMs = () => Date.now();
@@ -292,10 +293,13 @@ export const dataStore = {
     await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], { schemaHash: form.schemaHash });
     await updateRecordsMeta(formId, { entryIndexMap, lastReloadedAt: lastSyncedAt });
     const finishedAt = Date.now();
-    console.log("[perf][records] listEntries done", { formId, count: entries.length, durationMs: finishedAt - startedAt });
+    const durationMs = finishedAt - startedAt;
+    console.log("[perf][records] listEntries done", { formId, count: entries.length, durationMs });
+    perfLogger.logRecordGasRead(durationMs, null, "list");
+    perfLogger.logRecordList(durationMs, entries.length, false);
     return { entries, headerMatrix: gasResult.headerMatrix || [], entryIndexMap, lastSyncedAt };
   },
-  async getEntry(formId, entryId) {
+  async getEntry(formId, entryId, { forceSync = false } = {}) {
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
     if (!sheetConfig) {
@@ -310,18 +314,22 @@ export const dataStore = {
     const { age: cacheAge, shouldSync, shouldBackground } = evaluateCache({
       lastSyncedAt,
       hasData: !!cachedEntry,
+      forceSync,
       maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
       backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
     });
 
     if (!shouldSync && cachedEntry) {
       if (shouldBackground) {
+        const backgroundStart = Date.now();
         getEntryFromGas({
           ...sheetConfig,
           entryId,
           rowIndexHint: rowIndex,
         })
           .then((result) => {
+            const backgroundDuration = Date.now() - backgroundStart;
+            perfLogger.logRecordGasRead(backgroundDuration, entryId, "single-background");
             const mapped = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
             if (!mapped) return;
             const nextRowIndex = typeof result.rowIndex === "number" ? result.rowIndex : rowIndex;
@@ -334,6 +342,7 @@ export const dataStore = {
           });
       }
       console.log("[perf][records] getEntry cache hit", { formId, entryId, cacheAge });
+      perfLogger.logRecordCacheHit(tGetCacheEnd - tGetCacheStart, entryId);
       return cachedEntry;
     }
 
@@ -362,12 +371,18 @@ export const dataStore = {
       console.log(`[PERF] dataStore.getEntry upsertRecordInCache - Time: ${(tAfterUpsert - tBeforeUpsert).toFixed(2)}ms`);
 
       const finishedAt = Date.now();
-      console.log("[perf][records] getEntry done", { formId, entryId, fromCache: false, durationMs: finishedAt - startedAt, rowIndex: nextRowIndex });
+      const durationMs = finishedAt - startedAt;
+      console.log("[perf][records] getEntry done", { formId, entryId, fromCache: false, durationMs, rowIndex: nextRowIndex });
+      perfLogger.logRecordGasRead(tAfterGas - tBeforeGas, entryId, "single-sync");
+      perfLogger.logRecordCacheUpdate(tAfterUpsert - tBeforeUpsert, entryId);
       return mapped;
     }
 
     const finishedAt = Date.now();
     console.log("[perf][records] getEntry done", { formId, entryId, fromCache: !!cachedEntry, durationMs: finishedAt - startedAt, fallbackCache: true });
+    if (cachedEntry) {
+      perfLogger.logRecordCacheHit(tGetCacheEnd - tGetCacheStart, entryId);
+    }
     return cachedEntry;
   },
   async deleteEntry(formId, entryId) {
