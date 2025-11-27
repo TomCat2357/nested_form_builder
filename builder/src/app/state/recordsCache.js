@@ -245,7 +245,7 @@ export async function getRecordsFromCache(formId) {
 }
 
 /**
- * Remove a single record from cache (keeps meta but clears index map to force refresh)
+ * Remove a single record from cache (removes only the deleted entry from index map)
  */
 export async function deleteRecordFromCache(formId, entryId) {
   if (!formId || !entryId) return;
@@ -257,9 +257,13 @@ export async function deleteRecordFromCache(formId, entryId) {
   await waitForRequest(store.delete(buildCompoundId(formId, entryId)));
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
 
+  // 削除対象のentryIdのみをindexMapから除去（他のエントリは保持）
+  const updatedIndexMap = { ...(existingMeta?.entryIndexMap || {}) };
+  delete updatedIndexMap[entryId];
+
   await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
     lastSyncedAt: Date.now(),
-    entryIndexMap: {}, // invalidate map to avoid stale indices
+    entryIndexMap: updatedIndexMap,
   })));
 
   await waitForTransaction(tx);

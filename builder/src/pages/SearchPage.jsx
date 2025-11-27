@@ -183,7 +183,13 @@ export default function SearchPage() {
       const schemaMismatch = cache.schemaHash && form?.schemaHash && cache.schemaHash !== form.schemaHash;
       const hasCache = (cache.entries || []).length > 0 && !schemaMismatch;
       if (schemaMismatch) {
-        console.warn("[perf][search] cache schema mismatch detected; forcing sync", { cacheSchema: cache.schemaHash, formSchema: form?.schemaHash });
+        console.warn("[perf][search] cache schema mismatch detected; forcing sync and clearing cache", { cacheSchema: cache.schemaHash, formSchema: form?.schemaHash });
+        // スキーマが変更された場合、古いキャッシュを明示的にクリア
+        try {
+          await saveRecordsToCache(formId, [], [], { schemaHash: form?.schemaHash });
+        } catch (clearErr) {
+          console.warn("[SearchPage] Failed to clear stale cache:", clearErr);
+        }
       }
       const forceSync = location.state?.saved === true || location.state?.deleted === true || location.state?.created === true;
         const { age, shouldSync, shouldBackground } = evaluateCache({

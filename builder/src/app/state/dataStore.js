@@ -299,7 +299,7 @@ export const dataStore = {
     perfLogger.logRecordList(durationMs, entries.length, false);
     return { entries, headerMatrix: gasResult.headerMatrix || [], entryIndexMap, lastSyncedAt };
   },
-  async getEntry(formId, entryId, { forceSync = false } = {}) {
+  async getEntry(formId, entryId, { forceSync = false, rowIndexHint = undefined } = {}) {
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
     if (!sheetConfig) {
@@ -307,9 +307,12 @@ export const dataStore = {
     }
 
     const tGetCacheStart = performance.now();
-    const { entry: cachedEntry, rowIndex, lastSyncedAt } = await getCachedEntryWithIndex(formId, entryId);
+    const { entry: cachedEntry, rowIndex: cachedRowIndex, lastSyncedAt } = await getCachedEntryWithIndex(formId, entryId);
     const tGetCacheEnd = performance.now();
     console.log(`[PERF] dataStore.getEntry getCachedEntryWithIndex - Time: ${(tGetCacheEnd - tGetCacheStart).toFixed(2)}ms`);
+
+    // rowIndexHintが明示的に渡された場合はそれを優先、なければキャッシュから取得したものを使用
+    const effectiveRowIndex = rowIndexHint !== undefined ? rowIndexHint : cachedRowIndex;
 
     const { age: cacheAge, shouldSync, shouldBackground } = evaluateCache({
       lastSyncedAt,
@@ -325,14 +328,14 @@ export const dataStore = {
         getEntryFromGas({
           ...sheetConfig,
           entryId,
-          rowIndexHint: rowIndex,
+          rowIndexHint: effectiveRowIndex,
         })
           .then((result) => {
             const backgroundDuration = Date.now() - backgroundStart;
             perfLogger.logRecordGasRead(backgroundDuration, entryId, "single-background");
             const mapped = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
             if (!mapped) return;
-            const nextRowIndex = typeof result.rowIndex === "number" ? result.rowIndex : rowIndex;
+            const nextRowIndex = typeof result.rowIndex === "number" ? result.rowIndex : effectiveRowIndex;
             upsertRecordInCache(formId, mapped, { rowIndex: nextRowIndex }).catch((err) => {
               console.error("[perf][records] background cache update failed", err);
             });
@@ -341,19 +344,19 @@ export const dataStore = {
             console.error("[perf][records] background getEntry failed", error);
           });
       }
-      console.log("[perf][records] getEntry cache hit", { formId, entryId, cacheAge });
+      console.log("[perf][records] getEntry cache hit", { formId, entryId, cacheAge, rowIndexHint: effectiveRowIndex });
       perfLogger.logRecordCacheHit(tGetCacheEnd - tGetCacheStart, entryId);
       return cachedEntry;
     }
 
     const startedAt = Date.now();
-    console.log("[perf][records] getEntry start", { formId, entryId, rowIndexHint: rowIndex });
+    console.log("[perf][records] getEntry start", { formId, entryId, rowIndexHint: effectiveRowIndex });
 
     const tBeforeGas = performance.now();
     const result = await getEntryFromGas({
       ...sheetConfig,
       entryId,
-      rowIndexHint: rowIndex,
+      rowIndexHint: effectiveRowIndex,
     });
     const tAfterGas = performance.now();
     console.log(`[PERF] dataStore.getEntry getEntryFromGas - Time: ${(tAfterGas - tBeforeGas).toFixed(2)}ms`);
@@ -364,7 +367,7 @@ export const dataStore = {
     console.log(`[PERF] dataStore.getEntry mapSheetRecordToEntry - Time: ${(tAfterMap - tBeforeMap).toFixed(2)}ms`);
 
     if (mapped) {
-      const nextRowIndex = typeof result.rowIndex === "number" ? result.rowIndex : rowIndex;
+      const nextRowIndex = typeof result.rowIndex === "number" ? result.rowIndex : effectiveRowIndex;
       const tBeforeUpsert = performance.now();
       await upsertRecordInCache(formId, mapped, { rowIndex: nextRowIndex });
       const tAfterUpsert = performance.now();

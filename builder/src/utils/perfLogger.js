@@ -170,8 +170,8 @@ if (typeof window !== "undefined") {
   console.log("💡 パフォーマンスサマリーを表示するには、コンソールで window.showPerfSummary() を実行してください");
 }
 
-// 開発時に自動サマリーを有効化（オプション）
-if (typeof window !== "undefined" && window.location.hostname !== "localhost") {
-  // 本番環境でも有効にする場合はコメントアウトを外す
-  // perfLogger.enableAutoSummary(60000); // 1分ごと
+// 開発時に自動サマリーを有効化
+if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
+  perfLogger.enableAutoSummary(60000); // 1分ごと
+  console.log("🔍 パフォーマンス自動サマリーが有効です（1分ごと）");
 }

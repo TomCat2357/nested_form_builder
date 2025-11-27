@@ -168,8 +168,9 @@ export function AppDataProvider({ children }) {
     })();
   }, []);
 
-  const upsertFormsState = useCallback((nextForm) => {
+  const upsertFormsState = useCallback(async (nextForm) => {
     if (!nextForm || !nextForm.id) return;
+    let updatedForms;
     setForms((prev) => {
       const next = prev.slice();
       const index = next.findIndex((form) => form.id === nextForm.id);
@@ -178,50 +179,51 @@ export function AppDataProvider({ children }) {
       } else {
         next[index] = nextForm;
       }
-
-      // キャッシュ更新（非同期だがawaitしない）
-      saveCacheWithErrorHandling(next, loadFailuresRef.current, setCacheDisabled, "upsertFormsState");
-
+      updatedForms = next;
       return next;
     });
+
+    // キャッシュ更新の完了を待つ
+    await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, "upsertFormsState");
   }, []);
 
-  const removeFormsState = useCallback((formIds) => {
+  const removeFormsState = useCallback(async (formIds) => {
     if (!Array.isArray(formIds) || formIds.length === 0) return;
+    let updatedForms;
     setForms((prev) => {
       const next = prev.filter((form) => !formIds.includes(form.id));
-
-      // キャッシュ更新（非同期だがawaitしない）
-      saveCacheWithErrorHandling(next, loadFailuresRef.current, setCacheDisabled, "removeFormsState");
-
+      updatedForms = next;
       return next;
     });
+
+    // キャッシュ更新の完了を待つ
+    await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, "removeFormsState");
   }, []);
 
   const createForm = useCallback(async (payload, targetUrl) => {
     const result = await dataStore.createForm(payload, targetUrl);
-    upsertFormsState(result);
+    await upsertFormsState(result);
     await refreshForms({ reason: "create-form", background: false });
     return result;
   }, [upsertFormsState, refreshForms]);
 
   const updateForm = useCallback(async (formId, updates, targetUrl) => {
     const result = await dataStore.updateForm(formId, updates, targetUrl);
-    upsertFormsState(result);
+    await upsertFormsState(result);
     await refreshForms({ reason: "update-form", background: false });
     return result;
   }, [upsertFormsState, refreshForms]);
 
   const archiveForm = useCallback(async (formId) => {
     const result = await dataStore.archiveForm(formId);
-    upsertFormsState(result);
+    await upsertFormsState(result);
     await refreshForms({ reason: "archive-form", background: false });
     return result;
   }, [upsertFormsState, refreshForms]);
 
   const unarchiveForm = useCallback(async (formId) => {
     const result = await dataStore.unarchiveForm(formId);
-    upsertFormsState(result);
+    await upsertFormsState(result);
     await refreshForms({ reason: "unarchive-form", background: false });
     return result;
   }, [upsertFormsState, refreshForms]);
@@ -230,6 +232,7 @@ export function AppDataProvider({ children }) {
     const result = await dataStore.archiveForms(formIds);
     if (result.forms && Array.isArray(result.forms)) {
       // 複数フォームを一括更新してキャッシュも1回だけ更新
+      let updatedForms;
       setForms((prev) => {
         const next = prev.slice();
         result.forms.forEach((form) => {
@@ -238,12 +241,12 @@ export function AppDataProvider({ children }) {
             next[index] = form;
           }
         });
-
-        // キャッシュ更新
-        saveCacheWithErrorHandling(next, loadFailuresRef.current, setCacheDisabled, "archiveForms");
-
+        updatedForms = next;
         return next;
       });
+
+      // キャッシュ更新の完了を待つ
+      await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, "archiveForms");
     }
     await refreshForms({ reason: "archive-forms", background: false });
     return result;
@@ -253,6 +256,7 @@ export function AppDataProvider({ children }) {
     const result = await dataStore.unarchiveForms(formIds);
     if (result.forms && Array.isArray(result.forms)) {
       // 複数フォームを一括更新してキャッシュも1回だけ更新
+      let updatedForms;
       setForms((prev) => {
         const next = prev.slice();
         result.forms.forEach((form) => {
@@ -261,12 +265,12 @@ export function AppDataProvider({ children }) {
             next[index] = form;
           }
         });
-
-        // キャッシュ更新
-        saveCacheWithErrorHandling(next, loadFailuresRef.current, setCacheDisabled, "unarchiveForms");
-
+        updatedForms = next;
         return next;
       });
+
+      // キャッシュ更新の完了を待つ
+      await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, "unarchiveForms");
     }
     await refreshForms({ reason: "unarchive-forms", background: false });
     return result;

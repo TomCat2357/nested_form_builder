@@ -531,10 +531,24 @@ function Sheets_getAllRecords_(sheet) {
   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
   var dataRowCount = lastRow - NFB_HEADER_DEPTH;
 
-  // スプレッドシート側でID列(2列目)でソート
+  // スプレッドシート側でID列(2列目)でソート（既にソート済みの場合はスキップ）
   if (dataRowCount > 0) {
-    var sortRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn);
-    sortRange.sort({column: 2, ascending: true});
+    // ID列（2列目）を読み取ってソート済みかチェック
+    var idColumn = sheet.getRange(NFB_HEADER_DEPTH + 1, 2, dataRowCount, 1).getValues();
+    var needsSort = false;
+    for (var i = 1; i < idColumn.length; i++) {
+      var prevId = String(idColumn[i - 1][0] || "");
+      var currId = String(idColumn[i][0] || "");
+      if (prevId > currId) {
+        needsSort = true;
+        break;
+      }
+    }
+
+    if (needsSort) {
+      var sortRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn);
+      sortRange.sort({column: 2, ascending: true});
+    }
   }
 
   var dataRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn).getValues();

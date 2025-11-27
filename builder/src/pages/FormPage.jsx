@@ -78,7 +78,7 @@ export default function FormPage() {
       console.log(`[PERF] FormPage before dataStore.getEntry - Time from start: ${(tBeforeGetEntry - tStart).toFixed(2)}ms`);
 
       // まずキャッシュから取得を試みる
-      const { entry: cachedEntry, lastSyncedAt } = await getCachedEntryWithIndex(formId, entryId);
+      const { entry: cachedEntry, rowIndex, lastSyncedAt } = await getCachedEntryWithIndex(formId, entryId);
 
       if (cachedEntry && mounted) {
         // キャッシュがあれば即座に表示
@@ -88,16 +88,16 @@ export default function FormPage() {
         setResponses(restored);
         setCurrentRecordId(cachedEntry?.id || entryId);
         setLoading(false);
-        console.log(`[PERF] FormPage cache displayed - Time: ${(performance.now() - tStart).toFixed(2)}ms`);
+        console.log(`[PERF] FormPage cache displayed - Time: ${(performance.now() - tStart).toFixed(2)}ms, rowIndex: ${rowIndex}`);
 
         // キャッシュ年齢を計算し、5分以上古い場合はバックグラウンド更新
         const cacheAge = lastSyncedAt ? Date.now() - lastSyncedAt : Infinity;
         const shouldBackground = cacheAge >= RECORD_CACHE_MAX_AGE_MS;
 
         if (shouldBackground) {
-          console.log(`[PERF] FormPage starting background refresh (cache age: ${cacheAge}ms, threshold: ${RECORD_CACHE_MAX_AGE_MS}ms)`);
+          console.log(`[PERF] FormPage starting background refresh (cache age: ${cacheAge}ms, threshold: ${RECORD_CACHE_MAX_AGE_MS}ms, rowIndexHint: ${rowIndex})`);
           setIsReloading(true);
-          dataStore.getEntry(formId, entryId).then((freshData) => {
+          dataStore.getEntry(formId, entryId, { rowIndexHint: rowIndex }).then((freshData) => {
             if (!mounted) return;
             if (freshData) {
               setEntry(freshData);
@@ -116,11 +116,11 @@ export default function FormPage() {
           console.log(`[PERF] FormPage cache is fresh (age: ${cacheAge}ms, threshold: ${RECORD_CACHE_MAX_AGE_MS}ms), no background refresh`);
         }
       } else {
-        // キャッシュがない場合は同期読み取り
-        const data = await dataStore.getEntry(formId, entryId);
+        // キャッシュがない場合は同期読み取り（rowIndexがある場合は渡す）
+        const data = await dataStore.getEntry(formId, entryId, rowIndex !== undefined ? { rowIndexHint: rowIndex } : {});
 
         const tAfterGetEntry = performance.now();
-        console.log(`[PERF] FormPage after dataStore.getEntry - Time: ${(tAfterGetEntry - tBeforeGetEntry).toFixed(2)}ms`);
+        console.log(`[PERF] FormPage after dataStore.getEntry - Time: ${(tAfterGetEntry - tBeforeGetEntry).toFixed(2)}ms, rowIndexHint: ${rowIndex}`);
 
         if (!mounted) return;
         setEntry(data);
