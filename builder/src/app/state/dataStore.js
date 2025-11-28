@@ -1,4 +1,4 @@
-import { computeSchemaHash, stripSchemaIDs } from "../../core/schema.js";
+import { computeSchemaHash, stripSchemaIDs, deepClone } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import {
@@ -67,8 +67,6 @@ const mapSheetRecordToEntry = (record, formId) => ({
   dataUnixMs: record.dataUnixMs || {},
   order: Object.keys(record.data || {}),
 });
-
-const clone = (value) => (typeof structuredClone === 'function' ? structuredClone(value) : JSON.parse(JSON.stringify(value)));
 
 const buildFormRecord = (input) => {
   const now = nowIso();
@@ -440,7 +438,7 @@ export const dataStore = {
         ...rest,
         schema: stripSchemaIDs(rest.schema || []),
       };
-      return clone(cleaned);
+      return deepClone(cleaned);
     });
   },
 };

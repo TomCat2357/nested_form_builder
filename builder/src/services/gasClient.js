@@ -18,7 +18,7 @@ const normalizeScriptRunError = (err) => {
 const callScriptRun = (functionName, payload) =>
   new Promise((resolve, reject) => {
     if (!hasScriptRun()) {
-      reject(new Error("google.script.run is not available"));
+      reject(new Error("この機能はGoogle Apps Script環境でのみ利用可能です"));
       return;
     }
     google.script.run
@@ -27,9 +27,6 @@ const callScriptRun = (functionName, payload) =>
   });
 
 export const validateSpreadsheet = async (spreadsheetIdOrUrl) => {
-  if (!hasScriptRun()) {
-    throw new Error("Spreadsheet validation is only available in google.script.run environment");
-  }
   if (!spreadsheetIdOrUrl) {
     throw new Error("Spreadsheet URL/ID is required");
   }
@@ -65,7 +62,6 @@ export const saveUserSettings = async (settings) => {
 
 export const submitResponses = async ({ spreadsheetId, sheetName = "Responses", payload }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
-  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
 
   const body = { ...(payload || {}), spreadsheetId, sheetName };
   const result = await callScriptRun("saveResponses", body);
@@ -78,7 +74,6 @@ export const submitResponses = async ({ spreadsheetId, sheetName = "Responses", 
 export const deleteEntry = async ({ spreadsheetId, sheetName = "Responses", entryId }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
   if (!entryId) throw new Error("entryId is required");
-  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
 
   const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
 
@@ -98,7 +93,6 @@ export const deleteEntry = async ({ spreadsheetId, sheetName = "Responses", entr
 export const getEntry = async ({ spreadsheetId, sheetName = "Responses", entryId, rowIndexHint = null }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
   if (!entryId) throw new Error("entryId is required");
-  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
 
   const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
 
@@ -121,7 +115,6 @@ export const getEntry = async ({ spreadsheetId, sheetName = "Responses", entryId
 
 export const listEntries = async ({ spreadsheetId, sheetName = "Responses" }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
-  if (!hasScriptRun()) throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
 
   const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
 
@@ -235,9 +228,6 @@ export const importFormsFromDrive = async (url) => {
 };
 
 export const debugGetMapping = async () => {
-  if (!hasScriptRun()) {
-    throw new Error("Debug function is only available in google.script.run environment");
-  }
   try {
     const result = await callScriptRun("nfbDebugGetMapping", {});
     if (!result || result.ok === false) {

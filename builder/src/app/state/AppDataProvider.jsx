@@ -203,30 +203,26 @@ export function AppDataProvider({ children }) {
   const createForm = useCallback(async (payload, targetUrl) => {
     const result = await dataStore.createForm(payload, targetUrl);
     await upsertFormsState(result);
-    await refreshForms({ reason: "create-form", background: false });
     return result;
-  }, [upsertFormsState, refreshForms]);
+  }, [upsertFormsState]);
 
   const updateForm = useCallback(async (formId, updates, targetUrl) => {
     const result = await dataStore.updateForm(formId, updates, targetUrl);
     await upsertFormsState(result);
-    await refreshForms({ reason: "update-form", background: false });
     return result;
-  }, [upsertFormsState, refreshForms]);
+  }, [upsertFormsState]);
 
   const archiveForm = useCallback(async (formId) => {
     const result = await dataStore.archiveForm(formId);
     await upsertFormsState(result);
-    await refreshForms({ reason: "archive-form", background: false });
     return result;
-  }, [upsertFormsState, refreshForms]);
+  }, [upsertFormsState]);
 
   const unarchiveForm = useCallback(async (formId) => {
     const result = await dataStore.unarchiveForm(formId);
     await upsertFormsState(result);
-    await refreshForms({ reason: "unarchive-form", background: false });
     return result;
-  }, [upsertFormsState, refreshForms]);
+  }, [upsertFormsState]);
 
   const archiveForms = useCallback(async (formIds) => {
     const result = await dataStore.archiveForms(formIds);
@@ -248,9 +244,8 @@ export function AppDataProvider({ children }) {
       // キャッシュ更新の完了を待つ
       await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, "archiveForms");
     }
-    await refreshForms({ reason: "archive-forms", background: false });
     return result;
-  }, [refreshForms]);
+  }, []);
 
   const unarchiveForms = useCallback(async (formIds) => {
     const result = await dataStore.unarchiveForms(formIds);
@@ -272,15 +267,13 @@ export function AppDataProvider({ children }) {
       // キャッシュ更新の完了を待つ
       await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, "unarchiveForms");
     }
-    await refreshForms({ reason: "unarchive-forms", background: false });
     return result;
-  }, [refreshForms]);
+  }, []);
 
   const deleteForms = useCallback(async (formIds) => {
     await dataStore.deleteForms(formIds);
-    removeFormsState(formIds);
-    await refreshForms({ reason: "delete-forms", background: false });
-  }, [removeFormsState, refreshForms]);
+    await removeFormsState(formIds);
+  }, [removeFormsState]);
 
   const deleteForm = useCallback((formId) => deleteForms([formId]), [deleteForms]);
 
@@ -297,9 +290,8 @@ export function AppDataProvider({ children }) {
         return next;
       });
     }
-    await refreshForms({ reason: "import-forms", background: false });
     return created;
-  }, [refreshForms]);
+  }, []);
 
   const exportForms = useCallback(async (formIds) => dataStore.exportForms(formIds), []);
   const getFormById = useCallback((formId) => forms.find((form) => form.id === formId) || null, [forms]);
