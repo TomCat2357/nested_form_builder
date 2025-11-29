@@ -188,24 +188,43 @@ fi
 # Script IDは参照リンク用に取得
 SCRIPT_ID=$(grep '"scriptId"' .clasp.json | cut -d '"' -f4 | tr -d '\r')
 
+# デプロイメント一覧から@HEADのDeployment IDを確実に取得
+echo "📋 デプロイメント情報を取得中..."
+DEPLOYMENTS_OUTPUT=$(clasp deployments 2>/dev/null)
+if [ -n "$DEPLOYMENTS_OUTPUT" ]; then
+    # @HEADのDeployment IDを抽出（最初のAKfで始まる文字列）
+    HEAD_DEPLOYMENT_ID=$(echo "$DEPLOYMENTS_OUTPUT" | grep '@HEAD' | grep -Eo 'AKf[[:alnum:]_\-]+' | head -n1)
+    if [ -n "$HEAD_DEPLOYMENT_ID" ]; then
+        DEPLOYMENT_ID="$HEAD_DEPLOYMENT_ID"
+        WEB_APP_URL="https://script.google.com/macros/s/$HEAD_DEPLOYMENT_ID/exec"
+    fi
+fi
+
 echo ""
-echo "🌟 Webアプリケーションの情報:"
+echo "=========================================="
+echo "🌟 Webアプリケーションの情報"
+echo "=========================================="
 if [ -n "$DEPLOYMENT_ID" ]; then
     printf '%s %s\n' "🆔 Deployment ID:" "$DEPLOYMENT_ID"
 fi
 if [ -n "$WEB_APP_URL" ]; then
-    printf '%s %s\n' "🌐 Web App URL:" "$WEB_APP_URL"
+    echo ""
+    echo "🌐 Web App URL:"
+    echo "   $WEB_APP_URL"
+    echo ""
 elif [ -n "$DEPLOYMENT_ID" ]; then
     ADMIN_WEB_URL="https://script.google.com/macros/s/$DEPLOYMENT_ID/exec"
-    printf '%s %s\n' "🌐 Web App URL:" "$ADMIN_WEB_URL"
+    echo ""
+    echo "🌐 Web App URL:"
+    echo "   $ADMIN_WEB_URL"
+    echo ""
 fi
 if [ -n "$SCRIPT_ID" ]; then
     printf '%s %s\n' "📋 Script ID:" "$SCRIPT_ID"
     ADMIN_EDIT_URL="https://script.google.com/home/projects/$SCRIPT_ID/edit"
-    # 念のため既知の固定パスの二重文字を正規化（コピー時の異常対策）
-    #ADMIN_EDIT_URL=${ADMIN_EDIT_URL//projects/projects}
     printf '%s %s\n' "⚙️  管理画面:" "$ADMIN_EDIT_URL"
 fi
+echo "=========================================="
 
 echo ""
 echo "📖 次のステップ:"
