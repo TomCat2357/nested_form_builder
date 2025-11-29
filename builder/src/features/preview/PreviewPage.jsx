@@ -57,6 +57,27 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
     return String(value);
   };
 
+  // スタイル設定を適用
+  const styleSettings = field.styleSettings || {};
+  const labelStyle = {
+    display: "block",
+    fontWeight: 600,
+    marginBottom: 6,
+    fontSize: styleSettings.fontSize || undefined,
+    color: styleSettings.textColor || undefined,
+  };
+
+  // メッセージタイプの場合はラベルのみ表示
+  if (field.type === "message") {
+    return (
+      <div style={{ marginBottom: 16 }}>
+        <div style={labelStyle}>
+          {field.label || <span style={{ color: "#9CA3AF" }}>メッセージ</span>}
+        </div>
+      </div>
+    );
+  }
+
   if (readOnly) {
     const childrenForCheckboxes =
       field.type === "checkboxes" && renderChildrenForOption
@@ -74,7 +95,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
 
     return (
       <div style={{ marginBottom: 16 }}>
-        <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>
+        <label style={labelStyle}>
           {field.label || <span style={{ color: "#9CA3AF" }}>項目</span>}
           {field.required && <span style={{ color: "#EF4444", marginLeft: 4 }}>*</span>}
         </label>
@@ -87,7 +108,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
 
   return (
     <div style={{ marginBottom: 16 }}>
-      <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>
+      <label style={labelStyle}>
         {field.label || <span style={{ color: "#9CA3AF" }}>項目</span>}
         {field.required && <span style={{ color: "#EF4444", marginLeft: 4 }}>*</span>}
       </label>

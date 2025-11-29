@@ -61,6 +61,13 @@ export const normalizeSchemaIDs = (nodes) => {
       delete base.options;
       delete base.pattern;
       base.defaultNow = !!base.defaultNow;
+    } else if (base.type === "message") {
+      delete base.options;
+      delete base.pattern;
+      delete base.defaultNow;
+      delete base.required;
+      delete base.placeholder;
+      delete base.showPlaceholder;
     } else {
       delete base.options;
       delete base.pattern;
@@ -240,6 +247,12 @@ export const cleanupTempData = (schema) => {
     delete cleaned._savedChildrenForChoice;
     delete cleaned._savedDisplayModeForChoice;
 
+    // スタイル設定のクリーンアップ
+    if (!cleaned.showStyleSettings) {
+      delete cleaned.styleSettings;
+    }
+    delete cleaned.showStyleSettings;
+
     // typeに応じて、UIで見えていないフィールドを削除
     if (["radio", "select", "checkboxes"].includes(cleaned.type)) {
       // 選択肢型：options/childrenByValueは保持、他は削除
@@ -264,6 +277,13 @@ export const cleanupTempData = (schema) => {
         delete cleaned.pattern;
         delete cleaned.placeholder;
         delete cleaned.showPlaceholder;
+      } else if (cleaned.type === "message") {
+        // message型：すべての入力関連フィールドを削除
+        delete cleaned.pattern;
+        delete cleaned.defaultNow;
+        delete cleaned.placeholder;
+        delete cleaned.showPlaceholder;
+        delete cleaned.required;
       } else {
         // その他（text, numberなど）：placeholderはshowPlaceholder次第
         delete cleaned.pattern;

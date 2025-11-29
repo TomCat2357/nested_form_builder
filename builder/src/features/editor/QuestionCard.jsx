@@ -10,6 +10,7 @@ import OptionRow from "./OptionRow.jsx";
 const CHOICE_TYPES = ["radio", "select", "checkboxes"];
 const INPUT_TYPES = ["text", "textarea", "number"];
 const DATE_TIME_TYPES = ["date", "time"];
+const MESSAGE_TYPE = "message";
 const resolveDisplayModeForType = (type, displayed) => (
   displayed ? ensureDisplayModeForType(DISPLAY_MODES.NORMAL, type, { explicit: true }) : DISPLAY_MODES.NONE
 );
@@ -19,6 +20,7 @@ const DISPLAY_LABEL = "表示";
 const isChoiceType = (type) => CHOICE_TYPES.includes(type);
 const isInputType = (type) => INPUT_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
+const isMessageType = (type) => type === MESSAGE_TYPE;
 const getDisplayMode = (field) => {
   const hasExplicitMode = Object.prototype.hasOwnProperty.call(field || {}, "displayMode");
   const rawMode = typeof field?.displayMode === "string"
@@ -93,6 +95,22 @@ function handleTypeChange(field, newType) {
     } else {
       delete next.options;
     }
+  } else if (newType === MESSAGE_TYPE) {
+    // メッセージへの変更
+    delete next.pattern;
+    delete next.defaultNow;
+    delete next.required; // メッセージタイプは必須なし
+
+    if (oldIsChoice) {
+      next._savedChoiceState = {
+        options: deepClone(field.options),
+        childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : undefined
+      };
+      delete next.options;
+      delete next.childrenByValue;
+    } else {
+      delete next.options;
+    }
   } else {
     // テキスト、テキストエリア、数値への変更
     delete next.pattern;
@@ -146,11 +164,72 @@ function PlaceholderInput({ field, onChange, onFocus }) {
   );
 }
 
+/**
+ * スタイル設定入力UI
+ */
+function StyleSettingsInput({ field, onChange, onFocus }) {
+  const styleSettings = field.styleSettings || {};
+  return (
+    <div style={{ marginTop: 8 }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: field.showStyleSettings ? 4 : 0 }}>
+        <input
+          type="checkbox"
+          checked={!!field.showStyleSettings}
+          onChange={(event) => {
+            onChange({ ...field, showStyleSettings: event.target.checked });
+          }}
+        />
+        スタイル設定
+      </label>
+      {field.showStyleSettings && (
+        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 2, color: "#6B7280" }}>文字サイズ</label>
+            <select
+              style={{ ...s.input, width: "100%" }}
+              value={styleSettings.fontSize || "14px"}
+              onChange={(event) => onChange({
+                ...field,
+                styleSettings: { ...styleSettings, fontSize: event.target.value }
+              })}
+              onFocus={onFocus}
+            >
+              <option value="12px">小 (12px)</option>
+              <option value="14px">通常 (14px)</option>
+              <option value="18px">大 (18px)</option>
+              <option value="24px">特大 (24px)</option>
+            </select>
+          </div>
+          <div style={{ flex: 1 }}>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 2, color: "#6B7280" }}>文字色</label>
+            <select
+              style={{ ...s.input, width: "100%" }}
+              value={styleSettings.textColor || "#000000"}
+              onChange={(event) => onChange({
+                ...field,
+                styleSettings: { ...styleSettings, textColor: event.target.value }
+              })}
+              onFocus={onFocus}
+            >
+              <option value="#000000">黒（デフォルト）</option>
+              <option value="#DC2626">赤</option>
+              <option value="#2563EB">青</option>
+              <option value="#16A34A">緑</option>
+              <option value="#6B7280">グレー</option>
+            </select>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function QuestionCard({ field, onChange, onAddBelow, onDelete, onFocus, isSelected, QuestionListComponent, depth = 1 }) {
   const isChoice = isChoiceType(field.type);
   const isRegex = field.type === "regex";
   const isDateOrTime = isDateOrTimeType(field.type);
   const isInput = isInputType(field.type);
+  const isMessage = isMessageType(field.type);
   const canAddChild = depth < MAX_DEPTH;
   const regexCheck = isRegex ? buildSafeRegex(field.pattern || "") : { error: null };
   const [selectedOptionIndex, setSelectedOptionIndex] = React.useState(null);
@@ -166,6 +245,13 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
   React.useEffect(() => {
     if ((isInput || isRegex) && field.placeholder && !field.showPlaceholder) {
       onChange({ ...field, showPlaceholder: true });
+    }
+  }, []);
+
+  // 既存のstyleSettingsがある場合はshowStyleSettingsをtrueにする
+  React.useEffect(() => {
+    if (field.styleSettings && !field.showStyleSettings) {
+      onChange({ ...field, showStyleSettings: true });
     }
   }, []);
 
@@ -238,15 +324,18 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
           <option value="select">ドロップダウン</option>
           <option value="date">日付</option>
           <option value="time">時間</option>
+          <option value="message">メッセージ</option>
         </select>
-        <label style={{ display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
-          <input
-            type="checkbox"
-            checked={!!field.required}
-            onChange={(event) => onChange({ ...field, required: event.target.checked })}
-          />
-          必須
-        </label>
+        {!isMessage && (
+          <label style={{ display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+            <input
+              type="checkbox"
+              checked={!!field.required}
+              onChange={(event) => onChange({ ...field, required: event.target.checked })}
+            />
+            必須
+          </label>
+        )}
         <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
           <input
             type="checkbox"
@@ -256,6 +345,9 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
           {DISPLAY_LABEL}
         </label>
       </div>
+
+      {/* スタイル設定（全タイプで利用可能） */}
+      <StyleSettingsInput field={field} onChange={onChange} onFocus={onFocus} />
 
       {isInput && <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />}
 

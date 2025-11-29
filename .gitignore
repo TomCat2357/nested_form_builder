@@ -11,6 +11,8 @@ Index.html
 *.log
 npm-debug.log*
 
+appscript.json
+
 # 環境変数
 .env
 .env.local
