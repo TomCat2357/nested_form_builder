@@ -3,7 +3,7 @@ import EditorPage from "../editor/EditorPage.jsx";
 import PreviewPage from "../preview/PreviewPage.jsx";
 import SearchPreviewPanel from "./SearchPreviewPanel.jsx";
 import { useBuilderSettings } from "../settings/settingsStore.js";
-import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, MAX_DEPTH } from "../../core/schema.js";
+import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, MAX_DEPTH } from "../../core/schema.js";
 import { runSelfTests } from "../../core/selfTests.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
@@ -89,6 +89,12 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     const requiredCheck = validateRequiredLabels(schema);
     if (!requiredCheck.ok) {
       showAlert("項目名は入力必須です。すべての質問に名前を入力してください。");
+      return;
+    }
+
+    const uniqueCheck = validateUniqueLabels(schema);
+    if (!uniqueCheck.ok) {
+      showAlert(`重複する項目名: ${uniqueCheck.dup}`);
       return;
     }
 
