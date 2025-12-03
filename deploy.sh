@@ -68,15 +68,30 @@ if [ ! -f "dist/Index.html" ]; then
     exit 1
 fi
 
-# <base target="_top"> タグを追加
+# <base target="_top"> タグとデプロイ時刻を追加
+DEPLOY_TIMESTAMP=$(TZ=Asia/Tokyo date '+%Y-%m-%d %H:%M:%S JST')
+export DEPLOY_TIMESTAMP
 node - "dist/Index.html" <<'NODE'
 const fs = require('fs');
 const targetPath = process.argv[2];
+const deployTime = process.env.DEPLOY_TIMESTAMP || new Date().toISOString();
 let html = fs.readFileSync(targetPath, 'utf8');
+
+// <base target="_top"> タグを追加
 if (!html.includes('<base target="_top">')) {
   html = html.replace('<head>', '<head>\n  <base target="_top">');
-  fs.writeFileSync(targetPath, html);
 }
+
+// デプロイ時刻をmetaタグとして埋め込み（既存のものがあれば置換）
+const deployMeta = `<meta name="deploy-time" content="${deployTime}">`;
+if (html.includes('<meta name="deploy-time"')) {
+  html = html.replace(/<meta name="deploy-time".*?>/g, deployMeta);
+} else {
+  html = html.replace('<head>', `<head>\n  ${deployMeta}`);
+}
+
+fs.writeFileSync(targetPath, html);
+console.log('📅 デプロイ時刻:', deployTime);
 NODE
 
 # appsscript.json をコピー
@@ -204,6 +219,9 @@ echo ""
 echo "=========================================="
 echo "🌟 Webアプリケーションの情報"
 echo "=========================================="
+if [ -n "$DEPLOY_TIMESTAMP" ]; then
+    printf '%s %s\n' "📅 デプロイ時刻:" "$DEPLOY_TIMESTAMP"
+fi
 if [ -n "$DEPLOYMENT_ID" ]; then
     printf '%s %s\n' "🆔 Deployment ID:" "$DEPLOYMENT_ID"
 fi

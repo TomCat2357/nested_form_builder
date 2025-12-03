@@ -85,6 +85,15 @@ export default function AdminDashboardPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
+  const [deployTime, setDeployTime] = useState("");
+
+  // デプロイ時刻を読み取り
+  useEffect(() => {
+    const metaTag = document.querySelector('meta[name="deploy-time"]');
+    if (metaTag) {
+      setDeployTime(metaTag.getAttribute('content') || "");
+    }
+  }, []);
 
   const sortedForms = useMemo(() => {
     const list = forms.slice();
@@ -392,6 +401,7 @@ export default function AdminDashboardPage() {
       title="フォーム管理"
       badge="フォーム一覧"
       fallbackPath="/"
+      actions={deployTime && <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 400 }}>デプロイ: {deployTime}</div>}
       sidebarActions={
         <>
           <button type="button" style={sidebarButtonStyle} onClick={handleCreateNew}>

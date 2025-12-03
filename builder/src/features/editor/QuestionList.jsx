@@ -1,5 +1,5 @@
 import React from "react";
-import { deepClone, normalizeSchemaIDs, validateUniqueLabels, validateMaxDepth, MAX_DEPTH } from "../../core/schema.js";
+import { deepClone, normalizeSchemaIDs, validateMaxDepth, MAX_DEPTH } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import QuestionCard from "./QuestionCard.jsx";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
@@ -7,14 +7,10 @@ import { useAlert } from "../../app/hooks/useAlert.js";
 
 /**
  * スキーマのバリデーションを実行
+ * 入力中は深さチェックのみ行い、重複チェックは保存時のみ実施
  * @returns {object} { ok: boolean, error: string | null }
  */
 function validateSchema(schema) {
-  const labelResult = validateUniqueLabels(schema);
-  if (!labelResult.ok) {
-    return { ok: false, error: `重複する項目名: ${labelResult.dup}` };
-  }
-
   const depthResult = validateMaxDepth(schema, MAX_DEPTH);
   if (!depthResult.ok) {
     return { ok: false, error: `入れ子(キー)の深さは ${MAX_DEPTH} 段までです(現在: ${depthResult.depth} 段)。` };

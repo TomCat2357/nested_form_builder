@@ -89,19 +89,20 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     const requiredCheck = validateRequiredLabels(schema);
     if (!requiredCheck.ok) {
       showAlert("項目名は入力必須です。すべての質問に名前を入力してください。");
-      return;
+      return false;
     }
 
     const uniqueCheck = validateUniqueLabels(schema);
     if (!uniqueCheck.ok) {
       showAlert(`重複する項目名: ${uniqueCheck.dup}`);
-      return;
+      return false;
     }
 
     initialSchemaRef.current = schema;
     initialSettingsRef.current = settings;
     onDirtyChange?.(false);
     onSave?.({ schema, settings });
+    return true;
   }, [onSave, schema, settings, onDirtyChange, showAlert]);
 
   useImperativeHandle(

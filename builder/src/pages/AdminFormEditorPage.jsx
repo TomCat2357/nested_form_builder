@@ -148,7 +148,14 @@ export default function AdminFormEditorPage() {
   const handleSave = async () => {
     if (!builderRef.current) return;
 
-    builderRef.current.save();
+    // バリデーション実行（失敗時はfalseを返す）
+    const saveResult = builderRef.current.save();
+    if (saveResult === false) {
+      setConfirmSave(false);
+      setIsSaving(false);
+      return;
+    }
+
     const schema = builderRef.current.getSchema();
     const settings = builderRef.current.getSettings();
     const trimmedName = (name || "").trim();
