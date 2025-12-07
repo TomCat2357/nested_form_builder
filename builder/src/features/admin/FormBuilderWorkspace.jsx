@@ -86,7 +86,10 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   };
 
   const handleSave = useCallback(() => {
-    const requiredCheck = validateRequiredLabels(schema);
+    const requiredCheck = validateRequiredLabels(
+      schema,
+      { responses: activeTab === "preview" ? responses : null, visibleOnly: activeTab === "preview" }
+    );
     if (!requiredCheck.ok) {
       showAlert("項目名は入力必須です。すべての質問に名前を入力してください。");
       return false;
@@ -103,7 +106,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     onDirtyChange?.(false);
     onSave?.({ schema, settings });
     return true;
-  }, [onSave, schema, settings, onDirtyChange, showAlert]);
+  }, [onSave, schema, settings, onDirtyChange, showAlert, activeTab, responses]);
 
   useImperativeHandle(
     ref,

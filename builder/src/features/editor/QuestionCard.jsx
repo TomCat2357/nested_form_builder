@@ -15,6 +15,7 @@ const resolveDisplayModeForType = (type, displayed) => (
   displayed ? ensureDisplayModeForType(DISPLAY_MODES.NORMAL, type, { explicit: true }) : DISPLAY_MODES.NONE
 );
 const DISPLAY_LABEL = "表示";
+const DEFAULT_STYLE_SETTINGS = { fontSize: "14px", textColor: "#000000" };
 
 // ヘルパー関数
 const isChoiceType = (type) => CHOICE_TYPES.includes(type);
@@ -176,7 +177,13 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
           type="checkbox"
           checked={!!field.showStyleSettings}
           onChange={(event) => {
-            onChange({ ...field, showStyleSettings: event.target.checked });
+            const checked = event.target.checked;
+            const nextStyleSettings = checked ? { ...DEFAULT_STYLE_SETTINGS, ...styleSettings } : undefined;
+            onChange({
+              ...field,
+              showStyleSettings: checked,
+              styleSettings: nextStyleSettings,
+            });
           }}
         />
         スタイル設定
@@ -405,7 +412,20 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
               option={opt}
               onChange={(nextOpt) => {
                 const next = deepClone(field);
-                next.options[index] = { id: nextOpt.id || genId(), label: nextOpt.label || "" };
+                const prevLabel = opt.label || "";
+                const nextLabel = nextOpt.label || "";
+                next.options[index] = { id: nextOpt.id || genId(), label: nextLabel };
+
+                // ラベル変更時も子質問を維持する
+                if (prevLabel !== nextLabel && next.childrenByValue?.[prevLabel]) {
+                  next.childrenByValue = { ...next.childrenByValue };
+                  const movedChildren = next.childrenByValue[prevLabel];
+                  const existing = next.childrenByValue[nextLabel];
+                  next.childrenByValue[nextLabel] = existing
+                    ? normalizeSchemaIDs([...movedChildren, ...existing])
+                    : movedChildren;
+                  delete next.childrenByValue[prevLabel];
+                }
                 onChange(next);
               }}
               onDelete={() => {

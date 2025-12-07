@@ -206,14 +206,31 @@ export const validateUniqueLabels = (fields) => {
 /**
  * 全ての質問がラベルを持っているか検証する
  */
-export const validateRequiredLabels = (fields) => {
+export const validateRequiredLabels = (fields, { responses = null, visibleOnly = false } = {}) => {
   const walk = (nodes) => {
     for (const field of nodes || []) {
+      // 非表示の項目はスキップ
+      if (visibleOnly && field?.displayMode === DISPLAY_MODES.NONE) continue;
       const label = (field?.label || "").trim();
       if (!label) return false;
 
       if (field?.childrenByValue && typeof field.childrenByValue === "object") {
-        for (const children of Object.values(field.childrenByValue)) {
+        let childKeys = Object.keys(field.childrenByValue);
+
+        // visibleOnlyの場合、現在表示されている子質問のみをチェックする
+        if (visibleOnly && responses) {
+          const value = responses[field.id];
+          if (field.type === "checkboxes" && Array.isArray(value)) {
+            childKeys = value.filter((key) => Object.prototype.hasOwnProperty.call(field.childrenByValue, key));
+          } else if (["radio", "select"].includes(field.type) && typeof value === "string" && value) {
+            childKeys = field.childrenByValue[value] ? [value] : [];
+          } else {
+            childKeys = [];
+          }
+        }
+
+        for (const key of childKeys) {
+          const children = field.childrenByValue[key];
           if (!walk(children)) return false;
         }
       }
