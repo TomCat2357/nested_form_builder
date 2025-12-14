@@ -170,6 +170,30 @@ export default function AdminFormEditorPage() {
     // 一時保存データをクリーンアップ
     const cleanedSchema = cleanupTempData(schema);
 
+    const collectStyleStats = (schemaArr) => {
+      let totalQuestions = 0;
+      let showStyleSettingsTrue = 0;
+      let styleSettingsPresent = 0;
+      const walk = (arr) => {
+        (arr || []).forEach((field) => {
+          totalQuestions += 1;
+          if (field?.showStyleSettings === true) showStyleSettingsTrue += 1;
+          if (field?.styleSettings) styleSettingsPresent += 1;
+          if (field?.childrenByValue && typeof field.childrenByValue === "object") {
+            Object.values(field.childrenByValue).forEach((children) => walk(children));
+          }
+        });
+      };
+      walk(schemaArr);
+      return { totalQuestions, showStyleSettingsTrue, styleSettingsPresent };
+    };
+
+    console.log("[AdminFormEditorPage] style settings stats", {
+      formId,
+      beforeCleanup: collectStyleStats(schema),
+      afterCleanup: collectStyleStats(cleanedSchema),
+    });
+
     const payload = {
       // Include existing form data for fallback when getForm fails
       ...(isEdit && form ? { id: form.id, createdAt: form.createdAt, driveFileUrl: form.driveFileUrl } : {}),

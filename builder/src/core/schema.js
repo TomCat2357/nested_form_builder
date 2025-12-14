@@ -5,6 +5,7 @@ const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" 
 
 export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
 export const MAX_DEPTH = 6;
+const DEFAULT_STYLE_SETTINGS = { fontSize: "14px", textColor: "#000000" };
 
 export const sampleSchema = () => [
   {
@@ -94,6 +95,25 @@ export const normalizeSchemaIDs = (nodes) => {
     // showPlaceholderのデフォルト値を設定
     if (base.placeholder !== undefined && base.showPlaceholder === undefined) {
       base.showPlaceholder = true;
+    }
+
+    // スタイル設定の正規化（古いデータ/型ずれを吸収）
+    if (Object.prototype.hasOwnProperty.call(base, "showStyleSettings")) {
+      if (typeof base.showStyleSettings === "string") {
+        const lowered = base.showStyleSettings.toLowerCase();
+        if (lowered === "true") base.showStyleSettings = true;
+        else if (lowered === "false") base.showStyleSettings = false;
+        else base.showStyleSettings = !!base.showStyleSettings;
+      } else {
+        base.showStyleSettings = !!base.showStyleSettings;
+      }
+    } else if (base.styleSettings && typeof base.styleSettings === "object") {
+      // styleSettings が存在する場合は ON と推測
+      base.showStyleSettings = true;
+    }
+
+    if (base.showStyleSettings === true && (!base.styleSettings || typeof base.styleSettings !== "object")) {
+      base.styleSettings = { ...DEFAULT_STYLE_SETTINGS };
     }
 
     // _savedChoiceStateを保持する
@@ -263,12 +283,49 @@ export const cleanupTempData = (schema) => {
     // 一時データは無条件削除
     delete cleaned._savedChildrenForChoice;
     delete cleaned._savedDisplayModeForChoice;
+    delete cleaned._savedStyleSettings;
 
     // スタイル設定のクリーンアップ
-    if (!cleaned.showStyleSettings) {
+    // - showStyleSettings が boolean の場合はそれを優先（OFFで保存した場合は styleSettings をリセット）
+    // - showStyleSettings が未設定の場合は styleSettings の有無から推測（未表示/未マウントの質問でも保存で消えないように）
+    if (typeof cleaned.showStyleSettings === "string") {
+      const raw = cleaned.showStyleSettings;
+      const lowered = raw.trim().toLowerCase();
+      if (["true", "1", "yes", "on"].includes(lowered)) cleaned.showStyleSettings = true;
+      else if (["false", "0", "no", "off", ""].includes(lowered)) cleaned.showStyleSettings = false;
+      else {
+        console.warn("[cleanupTempData] showStyleSettings is a non-boolean string; coercing to true", {
+          id: cleaned.id,
+          label: cleaned.label,
+          value: raw,
+        });
+        cleaned.showStyleSettings = true;
+      }
+    }
+    const hasExplicitShowStyleSettings = typeof cleaned.showStyleSettings === "boolean";
+    const shouldKeepStyleSettings = hasExplicitShowStyleSettings ? cleaned.showStyleSettings : !!cleaned.styleSettings;
+
+    if (!shouldKeepStyleSettings) {
+      if (cleaned.styleSettings) {
+        console.log("[cleanupTempData] styleSettings removed (showStyleSettings is OFF)", {
+          id: cleaned.id,
+          label: cleaned.label,
+        });
+      }
       delete cleaned.styleSettings;
     }
-    delete cleaned.showStyleSettings;
+
+    if (hasExplicitShowStyleSettings) {
+      cleaned.showStyleSettings = !!cleaned.showStyleSettings;
+    } else if (cleaned.styleSettings) {
+      cleaned.showStyleSettings = true;
+      console.log("[cleanupTempData] showStyleSettings inferred as ON (styleSettings exists)", {
+        id: cleaned.id,
+        label: cleaned.label,
+      });
+    } else {
+      delete cleaned.showStyleSettings;
+    }
 
     // typeに応じて、UIで見えていないフィールドを削除
     if (["radio", "select", "checkboxes"].includes(cleaned.type)) {

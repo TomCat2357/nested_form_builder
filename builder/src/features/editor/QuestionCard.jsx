@@ -170,25 +170,48 @@ function PlaceholderInput({ field, onChange, onFocus }) {
  */
 function StyleSettingsInput({ field, onChange, onFocus }) {
   const styleSettings = field.styleSettings || {};
+  const isStyleSettingsEnabled = typeof field.showStyleSettings === "boolean"
+    ? field.showStyleSettings
+    : !!field.styleSettings;
   return (
     <div style={{ marginTop: 8 }}>
-      <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: field.showStyleSettings ? 4 : 0 }}>
+      <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: isStyleSettingsEnabled ? 4 : 0 }}>
         <input
           type="checkbox"
-          checked={!!field.showStyleSettings}
+          checked={isStyleSettingsEnabled}
           onChange={(event) => {
             const checked = event.target.checked;
-            const nextStyleSettings = checked ? { ...DEFAULT_STYLE_SETTINGS, ...styleSettings } : undefined;
-            onChange({
-              ...field,
-              showStyleSettings: checked,
-              styleSettings: nextStyleSettings,
+            if (checked) {
+              const restored = (field.styleSettings && typeof field.styleSettings === "object")
+                ? field.styleSettings
+                : (field._savedStyleSettings && typeof field._savedStyleSettings === "object" ? field._savedStyleSettings : {});
+              const nextStyleSettings = { ...DEFAULT_STYLE_SETTINGS, ...restored };
+              console.log("[StyleSettingsInput] toggle ON", {
+                id: field.id,
+                label: field.label,
+                restoredFrom: field.styleSettings ? "styleSettings" : (field._savedStyleSettings ? "_savedStyleSettings" : "default"),
+                nextStyleSettings
+              });
+              const nextField = { ...field, showStyleSettings: true, styleSettings: nextStyleSettings };
+              delete nextField._savedStyleSettings;
+              onChange(nextField);
+              return;
+            }
+            console.log("[StyleSettingsInput] toggle OFF (keep in-memory until save)", {
+              id: field.id,
+              label: field.label,
+              styleSettings: field.styleSettings,
             });
+            const nextField = { ...field, showStyleSettings: false };
+            if (field.styleSettings && typeof field.styleSettings === "object") {
+              nextField._savedStyleSettings = field.styleSettings;
+            }
+            onChange(nextField);
           }}
         />
         スタイル設定
       </label>
-      {field.showStyleSettings && (
+      {isStyleSettingsEnabled && (
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <div style={{ flex: 1 }}>
             <label style={{ display: "block", fontSize: 12, marginBottom: 2, color: "#6B7280" }}>文字サイズ</label>
@@ -252,13 +275,6 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
   React.useEffect(() => {
     if ((isInput || isRegex) && field.placeholder && !field.showPlaceholder) {
       onChange({ ...field, showPlaceholder: true });
-    }
-  }, []);
-
-  // 既存のstyleSettingsがある場合はshowStyleSettingsをtrueにする
-  React.useEffect(() => {
-    if (field.styleSettings && !field.showStyleSettings) {
-      onChange({ ...field, showStyleSettings: true });
     }
   }, []);
 
