@@ -921,30 +921,41 @@ function Forms_setFormsArchivedState_(formIds, archived) {
 // Public API Functions (google.script.run経由で呼び出し可能)
 // ========================================
 
+function nfbErrorToString_(err) {
+  return (err && err.message) ? err.message : String(err);
+}
+
+function nfbFail_(err) {
+  return { ok: false, error: nfbErrorToString_(err) };
+}
+
+function nfbSafeCall_(fn) {
+  try {
+    return fn();
+  } catch (err) {
+    return nfbFail_(err);
+  }
+}
+
 /**
  * フォーム一覧を取得
  */
 function nfbListForms(options) {
-  try {
+  return nfbSafeCall_(function() {
     var result = Forms_listForms_(options || {});
     return {
       ok: true,
       forms: result.forms || [],
       loadFailures: result.loadFailures || [],
     };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**
  * 特定フォームを取得
  */
 function nfbGetForm(formId) {
-  try {
+  return nfbSafeCall_(function() {
     var form = Forms_getForm_(formId);
     if (!form) {
       return {
@@ -956,12 +967,7 @@ function nfbGetForm(formId) {
       ok: true,
       form: form,
     };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**
@@ -969,7 +975,7 @@ function nfbGetForm(formId) {
  * @param {Object} payload - { form: Object, targetUrl: string }
  */
 function nfbSaveForm(payload) {
-  try {
+  return nfbSafeCall_(function() {
     var form = payload.form || payload;
     var targetUrl = payload.targetUrl || null;
     var result = Forms_saveForm_(form, targetUrl);
@@ -978,68 +984,43 @@ function nfbSaveForm(payload) {
     Logger.log("[nfbSaveForm] Result.debugRawJsonAfter: " + result.debugRawJsonAfter);
     Logger.log("[nfbSaveForm] Result.debugMappingStr: " + result.debugMappingStr);
     return result;
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**
  * フォームを削除
  */
 function nfbDeleteForm(formId) {
-  try {
+  return nfbSafeCall_(function() {
     return Forms_deleteForm_(formId);
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**
  * 複数フォームを削除（まとめてプロパティ更新）
  */
 function nfbDeleteForms(formIds) {
-  try {
+  return nfbSafeCall_(function() {
     return Forms_deleteForms_(formIds);
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**
  * フォームをアーカイブ
  */
 function nfbArchiveForm(formId) {
-  try {
+  return nfbSafeCall_(function() {
     return Forms_setFormArchivedState_(formId, true);
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**
  * フォームのアーカイブを解除
  */
 function nfbUnarchiveForm(formId) {
-  try {
+  return nfbSafeCall_(function() {
     return Forms_setFormArchivedState_(formId, false);
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**
@@ -1048,14 +1029,9 @@ function nfbUnarchiveForm(formId) {
  * @return {Object} { ok: boolean, updated: number, errors: Array, forms: Array }
  */
 function nfbArchiveForms(formIds) {
-  try {
+  return nfbSafeCall_(function() {
     return Forms_setFormsArchivedState_(formIds, true);
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**
@@ -1064,14 +1040,9 @@ function nfbArchiveForms(formIds) {
  * @return {Object} { ok: boolean, updated: number, errors: Array, forms: Array }
  */
 function nfbUnarchiveForms(formIds) {
-  try {
+  return nfbSafeCall_(function() {
     return Forms_setFormsArchivedState_(formIds, false);
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**

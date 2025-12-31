@@ -48,35 +48,30 @@ export async function saveFormsToCache(forms, loadFailures = []) {
  */
 export async function getFormsFromCache() {
   const db = await openDB();
-  const tx = db.transaction(STORE_NAMES.forms, 'readonly');
-  const store = tx.objectStore(STORE_NAMES.forms);
+  try {
+    const tx = db.transaction(STORE_NAMES.forms, 'readonly');
+    const store = tx.objectStore(STORE_NAMES.forms);
+    const allRecords = (await waitForRequest(store.getAll())) || [];
+    await waitForTransaction(tx);
 
-  return new Promise((resolve, reject) => {
-    const request = store.getAll();
-    request.onsuccess = () => {
-      const allRecords = request.result || [];
-      const forms = [];
-      let loadFailures = [];
-      let lastSyncedAt = null;
+    const forms = [];
+    let loadFailures = [];
+    let lastSyncedAt = null;
 
-      for (const record of allRecords) {
-        if (record.id === META_KEY) {
-          loadFailures = record.failures || [];
-          lastSyncedAt = record.lastSyncedAt || null;
-        } else if (record.id !== undefined) {
-          // Remove cache metadata before returning
-          const { lastSyncedAt: _, ...form } = record;
-          forms.push(form);
-        }
+    for (const record of allRecords) {
+      if (record.id === META_KEY) {
+        loadFailures = record.failures || [];
+        lastSyncedAt = record.lastSyncedAt || null;
+      } else if (record.id !== undefined) {
+        // Remove cache metadata before returning
+        const { lastSyncedAt: _, ...form } = record;
+        forms.push(form);
       }
+    }
 
-      db.close();
-      console.log('[formsCache] Retrieved', forms.length, 'forms and', loadFailures.length, 'failures from cache');
-      resolve({ forms, loadFailures, lastSyncedAt });
-    };
-    request.onerror = () => {
-      db.close();
-      reject(request.error);
-    };
-  });
+    console.log('[formsCache] Retrieved', forms.length, 'forms and', loadFailures.length, 'failures from cache');
+    return { forms, loadFailures, lastSyncedAt };
+  } finally {
+    db.close();
+  }
 }

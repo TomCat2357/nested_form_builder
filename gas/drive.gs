@@ -44,7 +44,7 @@ function ParseSaveUrl_(saveUrl, defaultFileName) {
       result.fileName = file.getName();
       return result;
     } catch (e) {
-      Logger.log('[ParseSaveUrl_] ファイルアクセスエラー: ' + e.message);
+      Logger.log('[ParseSaveUrl_] ファイルアクセスエラー: ' + nfbErrorToString_(e));
     }
   }
 
@@ -105,8 +105,8 @@ function CreateFormFile_(formData, saveUrl) {
       fileUrl: fileUrl
     };
   } catch (error) {
-    Logger.log('[CreateFormFile_] Error: ' + error.message);
-    throw new Error('フォームファイルの作成に失敗しました: ' + error.message);
+    Logger.log('[CreateFormFile_] Error: ' + nfbErrorToString_(error));
+    throw new Error('フォームファイルの作成に失敗しました: ' + nfbErrorToString_(error));
   }
 }
 
@@ -132,7 +132,7 @@ function GetFormByUrl_(fileUrl) {
     try {
       file = DriveApp.getFileById(fileId);
     } catch (accessError) {
-      Logger.log('[GetFormByUrl_] DriveApp.getFileById failed: ' + accessError.message);
+      Logger.log('[GetFormByUrl_] DriveApp.getFileById failed: ' + nfbErrorToString_(accessError));
       throw new Error('ファイルへのアクセスに失敗しました。ファイルが存在し、適切な共有設定がされているか確認してください。(File ID: ' + fileId + ')');
     }
 
@@ -140,16 +140,16 @@ function GetFormByUrl_(fileUrl) {
     try {
       content = file.getBlob().getDataAsString();
     } catch (readError) {
-      Logger.log('[GetFormByUrl_] File read failed: ' + readError.message);
-      throw new Error('ファイルの読み込みに失敗しました: ' + readError.message);
+      Logger.log('[GetFormByUrl_] File read failed: ' + nfbErrorToString_(readError));
+      throw new Error('ファイルの読み込みに失敗しました: ' + nfbErrorToString_(readError));
     }
 
     var formData;
     try {
       formData = JSON.parse(content);
     } catch (parseError) {
-      Logger.log('[GetFormByUrl_] JSON parse failed: ' + parseError.message);
-      throw new Error('ファイルの内容が不正なJSON形式です: ' + parseError.message);
+      Logger.log('[GetFormByUrl_] JSON parse failed: ' + nfbErrorToString_(parseError));
+      throw new Error('ファイルの内容が不正なJSON形式です: ' + nfbErrorToString_(parseError));
     }
 
     // ファイルURLをフォームデータに追加
@@ -157,7 +157,7 @@ function GetFormByUrl_(fileUrl) {
 
     return formData;
   } catch (error) {
-    Logger.log('[GetFormByUrl_] Error: ' + error.message);
+    Logger.log('[GetFormByUrl_] Error: ' + nfbErrorToString_(error));
     // エラーを呼び出し元に伝播させる（nullではなく）
     throw error;
   }
@@ -196,8 +196,8 @@ function ListFormsFromUrls_(urlMap, includeArchived) {
 
     return forms;
   } catch (error) {
-    Logger.log('[ListFormsFromUrls_] Error: ' + error.message);
-    throw new Error('フォーム一覧の取得に失敗しました: ' + error.message);
+    Logger.log('[ListFormsFromUrls_] Error: ' + nfbErrorToString_(error));
+    throw new Error('フォーム一覧の取得に失敗しました: ' + nfbErrorToString_(error));
   }
 }
 
@@ -237,8 +237,8 @@ function UpdateFormByUrl_(fileUrl, updates) {
     Logger.log('[UpdateFormByUrl_] Updated: ' + file.getName());
     return updatedData;
   } catch (error) {
-    Logger.log('[UpdateFormByUrl_] Error: ' + error.message);
-    throw new Error('フォームの更新に失敗しました: ' + error.message);
+    Logger.log('[UpdateFormByUrl_] Error: ' + nfbErrorToString_(error));
+    throw new Error('フォームの更新に失敗しました: ' + nfbErrorToString_(error));
   }
 }
 

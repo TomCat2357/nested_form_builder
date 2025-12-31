@@ -41,44 +41,40 @@ function doPost(e) {
       }
       // スプレッドシートレコード管理API
       else if (action === "delete") {
-        if (!ctx.spreadsheetId) {
-          return JsonOutput_({ ok: false, error: "no spreadsheetId" }, 400);
-        }
+        var missingSpreadsheetId = RequireSpreadsheetIdJson_(ctx);
+        if (missingSpreadsheetId) return missingSpreadsheetId;
         payload = DeleteRecord_(ctx);
       } else if (action === "list") {
-        if (!ctx.spreadsheetId) {
-          return JsonOutput_({ ok: false, error: "no spreadsheetId" }, 400);
-        }
+        var missingSpreadsheetId = RequireSpreadsheetIdJson_(ctx);
+        if (missingSpreadsheetId) return missingSpreadsheetId;
         payload = ListRecords_(ctx);
       } else if (action === "get") {
-        if (!ctx.spreadsheetId) {
-          return JsonOutput_({ ok: false, error: "no spreadsheetId" }, 400);
-        }
+        var missingSpreadsheetId = RequireSpreadsheetIdJson_(ctx);
+        if (missingSpreadsheetId) return missingSpreadsheetId;
         payload = GetRecord_(ctx);
       } else {
-        if (!ctx.spreadsheetId) {
-          return JsonOutput_({ ok: false, error: "no spreadsheetId" }, 400);
-        }
+        var missingSpreadsheetId = RequireSpreadsheetIdJson_(ctx);
+        if (missingSpreadsheetId) return missingSpreadsheetId;
         payload = SubmitResponses_(ctx);
       }
 
       return JsonOutput_(payload, 200);
     } catch (err) {
-      return JsonOutput_({ ok: false, error: (err && err.message) || String(err) }, 500);
+      return JsonInternalError_(err);
     }
   });
 }
 
 function saveResponses(payload) {
   var ctx = Model_fromScriptRunPayload_(payload);
-  if (!ctx.spreadsheetId) throw new Error("spreadsheetId is required");
+  RequireSpreadsheetId_(ctx);
   return SubmitResponses_(ctx);
 }
 
 function deleteRecord(payload) {
   var ctx = Model_fromScriptRunPayload_(payload);
-  if (!ctx.spreadsheetId) throw new Error("spreadsheetId is required");
-  if (!ctx.id) throw new Error("id is required");
+  RequireSpreadsheetId_(ctx);
+  RequireId_(ctx);
   return DeleteRecord_(ctx);
 }
 
@@ -132,15 +128,15 @@ function SerializeRecord_(record) {
 
 function getRecord(payload) {
   var ctx = Model_fromScriptRunPayload_(payload);
-  if (!ctx.spreadsheetId) throw new Error("spreadsheetId is required");
-  if (!ctx.id) throw new Error("id is required");
+  RequireSpreadsheetId_(ctx);
+  RequireId_(ctx);
   var result = GetRecord_(ctx);
   return result;
 }
 
 function listRecords(payload) {
   var ctx = Model_fromScriptRunPayload_(payload);
-  if (!ctx.spreadsheetId) throw new Error("spreadsheetId is required");
+  RequireSpreadsheetId_(ctx);
   var result = ListRecords_(ctx);
 
   if (result && Array.isArray(result.records)) {
@@ -165,9 +161,8 @@ function SubmitResponses_(ctx) {
 }
 
 function DeleteRecord_(ctx) {
-  if (!ctx.id) {
-    return { ok: false, error: "Record ID is required" };
-  }
+  var missingId = RequireRecordIdResult_(ctx);
+  if (missingId) return missingId;
 
   var sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
   var result = Sheets_deleteRecordById_(sheet, ctx.id);
@@ -184,9 +179,8 @@ function DeleteRecord_(ctx) {
 }
 
 function GetRecord_(ctx) {
-  if (!ctx.id) {
-    return { ok: false, error: "Record ID is required" };
-  }
+  var missingId = RequireRecordIdResult_(ctx);
+  if (missingId) return missingId;
 
   var sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
   var result = Sheets_getRecordById_(sheet, ctx.id, ctx.rowIndexHint, ctx.cachedRowHash);
@@ -223,6 +217,32 @@ function JsonOutput_(payload, status) {
     output.setStatusCode(status);
   }
   return output;
+}
+
+function JsonBadRequest_(message) {
+  return JsonOutput_({ ok: false, error: message }, 400);
+}
+
+function JsonInternalError_(err) {
+  return JsonOutput_({ ok: false, error: nfbErrorToString_(err) }, 500);
+}
+
+function RequireSpreadsheetIdJson_(ctx) {
+  if (ctx && ctx.spreadsheetId) return null;
+  return JsonBadRequest_("no spreadsheetId");
+}
+
+function RequireSpreadsheetId_(ctx) {
+  if (!ctx || !ctx.spreadsheetId) throw new Error("spreadsheetId is required");
+}
+
+function RequireId_(ctx) {
+  if (!ctx || !ctx.id) throw new Error("id is required");
+}
+
+function RequireRecordIdResult_(ctx) {
+  if (ctx && ctx.id) return null;
+  return { ok: false, error: "Record ID is required" };
 }
 
 function handleCors_(e, handler) {

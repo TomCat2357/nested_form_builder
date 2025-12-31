@@ -7,6 +7,7 @@ var FORM_URLS_KEY = 'FORM_URLS_MAP';
 
 /**
  * URLからGoogle DriveファイルIDを抽出
+ * Forms_parseGoogleDriveUrl_のラッパー関数（DRY原則に基づき統合）
  * @param {string} url - Google DriveファイルのURL
  * @return {string|null} ファイルID（抽出失敗時はnull）
  */
@@ -14,24 +15,9 @@ function ExtractFileIdFromUrl_(url) {
   if (!url || typeof url !== 'string') {
     return null;
   }
-
-  // パターン1: https://drive.google.com/file/d/{fileId}/view
-  // パターン2: https://drive.google.com/open?id={fileId}
-  // パターン3: 直接IDが渡された場合
-  var patterns = [
-    /\/file\/d\/([a-zA-Z0-9_-]+)/,
-    /[?&]id=([a-zA-Z0-9_-]+)/,
-    /^([a-zA-Z0-9_-]{25,})$/  // 直接ID（25文字以上の英数字とハイフン・アンダースコア）
-  ];
-
-  for (var i = 0; i < patterns.length; i++) {
-    var match = url.match(patterns[i]);
-    if (match && match[1]) {
-      return match[1];
-    }
-  }
-
-  return null;
+  var parsed = Forms_parseGoogleDriveUrl_(url);
+  // ファイルの場合のみIDを返す（フォルダの場合はnull）
+  return (parsed.type === 'file') ? parsed.id : null;
 }
 
 /**
@@ -49,7 +35,7 @@ function GetFormUrls_() {
 
     return JSON.parse(json);
   } catch (error) {
-    Logger.log('[GetFormUrls_] Error: ' + error.message);
+    Logger.log('[GetFormUrls_] Error: ' + nfbErrorToString_(error));
     return {};
   }
 }
@@ -64,8 +50,8 @@ function SaveFormUrls_(urlMap) {
     var json = JSON.stringify(urlMap || {});
     userProps.setProperty(FORM_URLS_KEY, json);
   } catch (error) {
-    Logger.log('[SaveFormUrls_] Error: ' + error.message);
-    throw new Error('フォームURLマップの保存に失敗しました: ' + error.message);
+    Logger.log('[SaveFormUrls_] Error: ' + nfbErrorToString_(error));
+    throw new Error('フォームURLマップの保存に失敗しました: ' + nfbErrorToString_(error));
   }
 }
 
@@ -91,7 +77,7 @@ function AddFormUrl_(formId, fileUrl) {
     try {
       DriveApp.getFileById(fileId);
     } catch (accessError) {
-      throw new Error('ファイルへのアクセス権限がありません: ' + accessError.message);
+      throw new Error('ファイルへのアクセス権限がありません: ' + nfbErrorToString_(accessError));
     }
 
     var urlMap = GetFormUrls_();
@@ -105,8 +91,8 @@ function AddFormUrl_(formId, fileUrl) {
       fileUrl: fileUrl
     };
   } catch (error) {
-    Logger.log('[AddFormUrl_] Error: ' + error.message);
-    throw new Error('フォームURLの追加に失敗しました: ' + error.message);
+    Logger.log('[AddFormUrl_] Error: ' + nfbErrorToString_(error));
+    throw new Error('フォームURLの追加に失敗しました: ' + nfbErrorToString_(error));
   }
 }
 
@@ -136,8 +122,8 @@ function RemoveFormUrl_(formId) {
       formId: formId
     };
   } catch (error) {
-    Logger.log('[RemoveFormUrl_] Error: ' + error.message);
-    throw new Error('フォームURLの削除に失敗しました: ' + error.message);
+    Logger.log('[RemoveFormUrl_] Error: ' + nfbErrorToString_(error));
+    throw new Error('フォームURLの削除に失敗しました: ' + nfbErrorToString_(error));
   }
 }
 
@@ -155,7 +141,7 @@ function GetFormUrl_(formId) {
     var urlMap = GetFormUrls_();
     return urlMap[formId] || null;
   } catch (error) {
-    Logger.log('[GetFormUrl_] Error: ' + error.message);
+    Logger.log('[GetFormUrl_] Error: ' + nfbErrorToString_(error));
     return null;
   }
 }
