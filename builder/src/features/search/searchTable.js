@@ -1,6 +1,6 @@
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import { DISPLAY_MODES } from "../../core/displayModes.js";
-import { formatUnixMsDateTime } from "../../utils/dateTime.js";
+import { formatUnixMsDateTime, formatUnixMsDate, formatUnixMsTime, toUnixMs } from "../../utils/dateTime.js";
 
 export const MAX_HEADER_DEPTH = 6;
 
@@ -22,6 +22,42 @@ const isNumericColumn = (column) => columnType(column) === "number";
 const isDateLikeColumn = (column) => {
   const type = columnType(column);
   return type === "date" || type === "time";
+};
+const parseStrictTimeValue = (value) => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return null;
+  const match = value.trim().match(/^(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = parseInt(match[1], 10);
+  const minute = parseInt(match[2], 10);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  const date = new Date(1970, 0, 1, hour, minute, 0);
+  if (date.getHours() !== hour || date.getMinutes() !== minute) return null;
+  return date.getTime();
+};
+const parseStrictDateOrDateTimeValue = (value) => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value !== "string") return null;
+  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:\/(\d{2}):(\d{2}))?$/);
+  if (!match) return null;
+  const year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+  const hour = match[4] ? parseInt(match[4], 10) : 0;
+  const minute = match[5] ? parseInt(match[5], 10) : 0;
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
+  const date = new Date(year, month - 1, day, hour, minute, 0);
+  if (
+    date.getFullYear() !== year ||
+    date.getMonth() !== month - 1 ||
+    date.getDate() !== day ||
+    date.getHours() !== hour ||
+    date.getMinutes() !== minute
+  ) {
+    return null;
+  }
+  return date.getTime();
 };
 const toNumericValue = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -93,6 +129,16 @@ const valueToDisplayString = (value) => {
   return String(value);
 };
 
+const formatTemporalValue = (rawValue, unixMs, column) => {
+  const type = columnType(column);
+  if (type !== "date" && type !== "time") return valueToDisplayString(rawValue);
+
+  const ms = Number.isFinite(unixMs) ? unixMs : toUnixMs(rawValue);
+  if (!Number.isFinite(ms)) return valueToDisplayString(rawValue);
+
+  return type === "time" ? formatUnixMsTime(ms) : formatUnixMsDate(ms);
+};
+
 const deriveChoiceLabels = (key, value) => {
   if (!toBooleanLike(value)) return null;
   if (typeof key !== "string" || !key.includes("|")) return null;
@@ -111,9 +157,10 @@ const deriveChoiceLabels = (key, value) => {
 };
 
 export const formatDateTime = (value) => {
-  if (typeof value === "string") return value;
   if (value instanceof Date) return formatUnixMsDateTime(value.getTime());
-  if (Number.isFinite(value)) return String(value);
+  const ms = Number.isFinite(value) ? value : toUnixMs(value);
+  if (Number.isFinite(ms)) return formatUnixMsDateTime(ms);
+  if (typeof value === "string") return value;
   return "";
 };
 
@@ -164,7 +211,7 @@ const collectImportantFieldValue = (entry, path, column) => {
   const values = [];
   const rawValues = [];
   const addValue = (raw, unixMs) => {
-    const display = valueToDisplayString(raw, unixMs);
+    const display = formatTemporalValue(raw, unixMs, column);
     if (display === "" || display === null || display === undefined) return;
     values.push(display);
     rawValues.push(raw);
@@ -268,8 +315,8 @@ const collectCompactFieldValue = (entry, path, column) => {
   const values = [];
   const rawValues = [];
 
-  const addValue = (raw) => {
-    const display = valueToDisplayString(raw);
+  const addValue = (raw, unixMs) => {
+    const display = formatTemporalValue(raw, unixMs, column);
     if (display === "" || display === null || display === undefined) return;
     values.push(display);
     rawValues.push(raw);
@@ -277,7 +324,7 @@ const collectCompactFieldValue = (entry, path, column) => {
 
   const hasDirectValue = Object.prototype.hasOwnProperty.call(data, path);
   if (hasDirectValue) {
-    addValue(data[path]);
+    addValue(data[path], dataUnixMs[path]);
   } else {
     const prefix = `${path}|`;
     Object.entries(data).forEach(([key, value]) => {
@@ -1229,6 +1276,15 @@ const evaluateAST = (ast, row, columns) => {
         const cellValue = row?.values?.[column.key];
         // sort値を使用（数値の場合は数値、文字列の場合は文字列）
         const rowValue = cellValue?.sort ?? cellValue?.display ?? '';
+        if (isDateLikeColumn(column)) {
+          const type = columnType(column);
+          const parser = type === "time" ? parseStrictTimeValue : parseStrictDateOrDateTimeValue;
+          const rowMs = parser(rowValue);
+          const targetMs = parser(ast.value);
+          if (!Number.isFinite(rowMs) || !Number.isFinite(targetMs)) return false;
+          return compareValue(rowMs, ast.operator, targetMs, { allowNumeric: true });
+        }
+
         const numericPossible = Number.isFinite(Number(rowValue)) && Number.isFinite(Number(ast.value));
         const allowNumeric = isNumericColumn(column) || typeof rowValue === "number" || numericPossible;
 

@@ -71,7 +71,7 @@ const formatFromParts = (formatter, unixMs) => {
     const hh = get("hour");
     const mi = get("minute");
     if (hh !== "" && mi !== "") {
-      return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
+      return `${yyyy}-${mm}-${dd}/${hh}:${mi}`;
     }
     return `${yyyy}-${mm}-${dd}`;
   } catch (error) {
