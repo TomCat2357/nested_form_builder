@@ -1015,6 +1015,31 @@ const findColumnByName = (columns, colName) => {
   });
 };
 
+const findMatchingEntryField = (row, columnName) => {
+  const entryData = row?.entry?.data || {};
+  const entryDataUnixMs = row?.entry?.dataUnixMs || {};
+  const normalizedColName = (columnName || "").toLowerCase();
+  if (!normalizedColName) return null;
+
+  const matchingKey = Object.keys(entryData).find((key) => {
+    const lower = key.toLowerCase();
+    return lower === normalizedColName || lower.includes(normalizedColName);
+  });
+
+  if (!matchingKey) return null;
+
+  return {
+    key: matchingKey,
+    value: entryData[matchingKey],
+    unixMs: entryDataUnixMs[matchingKey],
+  };
+};
+
+const candidateMatches = (field, predicate) => {
+  if (!field) return false;
+  return buildSearchableCandidates(field.key, field.value, field.unixMs).some(predicate);
+};
+
 /**
  * 日時文字列をタイムスタンプに変換（JSTとして扱う）
  * @param {string} dateStr - 日時文字列（ISO 8601、YYYY-MM-DD、YYYY-MM-DD HH:MM形式）
@@ -1178,29 +1203,14 @@ const evaluateAST = (ast, row, columns) => {
       }
 
       // 表示列にない場合、データフィールドから直接検索
-      const entryData = row?.entry?.data || {};
-      const entryDataUnixMs = row?.entry?.dataUnixMs || {};
-      const normalizedColName = ast.column.toLowerCase();
-
-      // データフィールドのキーで検索（完全一致または部分一致）
-      const matchingKey = Object.keys(entryData).find(key =>
-        key.toLowerCase() === normalizedColName ||
-        key.toLowerCase().includes(normalizedColName)
-      );
-
-      if (matchingKey) {
-        const value = entryData[matchingKey];
-        const unixMs = entryDataUnixMs[matchingKey];
-        const keyword = normalizeSearchText(ast.keyword);
-
-        return buildSearchableCandidates(matchingKey, value, unixMs).some((candidate) => {
-          if (!candidate) return false;
-          const normalized = normalizeSearchText(candidate);
-          return normalized.includes(keyword);
-        });
-      }
-
-      return false;
+      const entryField = findMatchingEntryField(row, ast.column);
+      if (!entryField) return false;
+      const keyword = normalizeSearchText(ast.keyword);
+      return candidateMatches(entryField, (candidate) => {
+        if (!candidate) return false;
+        const normalized = normalizeSearchText(candidate);
+        return normalized.includes(keyword);
+      });
     }
 
     case 'COLUMN_BOOL': {
@@ -1228,30 +1238,16 @@ const evaluateAST = (ast, row, columns) => {
       }
 
       // 表示列にない場合、データフィールドから直接取得
-      const entryData = row?.entry?.data || {};
-      const entryDataUnixMs = row?.entry?.dataUnixMs || {};
-      const normalizedColName = ast.column.toLowerCase();
+      const entryField = findMatchingEntryField(row, ast.column);
+      if (!entryField) return false;
 
-      // データフィールドのキーで検索
-      const matchingKey = Object.keys(entryData).find(key =>
-        key.toLowerCase() === normalizedColName ||
-        key.toLowerCase().includes(normalizedColName)
-      );
-
-      if (matchingKey) {
-        const value = entryData[matchingKey];
-        const unixMs = entryDataUnixMs[matchingKey];
-
-        return buildSearchableCandidates(matchingKey, value, unixMs).some((candidate) => {
-          if (candidate === undefined || candidate === null || candidate === "") return false;
-          const numCandidate = Number(candidate);
-          const numTarget = Number(ast.value);
-          const allowNumericCandidate = Number.isFinite(numCandidate) && Number.isFinite(numTarget);
-          return compareValue(candidate, ast.operator, ast.value, { allowNumeric: allowNumericCandidate });
-        });
-      }
-
-      return false;
+      return candidateMatches(entryField, (candidate) => {
+        if (candidate === undefined || candidate === null || candidate === "") return false;
+        const numCandidate = Number(candidate);
+        const numTarget = Number(ast.value);
+        const allowNumericCandidate = Number.isFinite(numCandidate) && Number.isFinite(numTarget);
+        return compareValue(candidate, ast.operator, ast.value, { allowNumeric: allowNumericCandidate });
+      });
     }
 
     case 'REGEX': {
@@ -1274,33 +1270,16 @@ const evaluateAST = (ast, row, columns) => {
       }
 
       // 表示列にない場合、データフィールドから直接検索
-      const entryData = row?.entry?.data || {};
-      const entryDataUnixMs = row?.entry?.dataUnixMs || {};
-      const normalizedColName = ast.column.toLowerCase();
+      const entryField = findMatchingEntryField(row, ast.column);
+      if (!entryField) return false;
 
-      // データフィールドのキーで検索
-      const matchingKey = Object.keys(entryData).find(key =>
-        key.toLowerCase() === normalizedColName ||
-        key.toLowerCase().includes(normalizedColName)
-      );
-
-      if (matchingKey) {
-        const value = entryData[matchingKey];
-        const unixMs = entryDataUnixMs[matchingKey];
-
-        try {
-          const regex = new RegExp(ast.pattern, 'i');
-          return buildSearchableCandidates(matchingKey, value, unixMs).some((candidate) => {
-            if (!candidate) return false;
-            return regex.test(candidate);
-          });
-        } catch (error) {
-          console.warn('Invalid regex pattern:', ast.pattern, error);
-          return false;
-        }
+      try {
+        const regex = new RegExp(ast.pattern, 'i');
+        return candidateMatches(entryField, (candidate) => (candidate ? regex.test(candidate) : false));
+      } catch (error) {
+        console.warn('Invalid regex pattern:', ast.pattern, error);
+        return false;
       }
-
-      return false;
     }
 
     default:
