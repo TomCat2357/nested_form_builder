@@ -1,14 +1,38 @@
 var NFB_HEADER_DEPTH = 6;
 var NFB_FIXED_HEADER_PATHS = [["__hash__"], ["id"], ["No."], ["createdAt"], ["modifiedAt"]];
 var NFB_TZ = "Asia/Tokyo"; // 想定タイムゾーン（JST固定）
+var NFB_MS_PER_DAY = 24 * 60 * 60 * 1000;
+var NFB_SHEETS_EPOCH_MS = new Date(1899, 11, 30, 0, 0, 0).getTime();
 
 function Sheets_isValidDate_(date) {
   return date instanceof Date && !isNaN(date.getTime());
 }
 
-function Sheets_parseDateLikeToJstDate_(value) {
+function Sheets_serialToDate_(serial) {
+  if (typeof serial !== "number" || !isFinite(serial)) return null;
+  var ms = NFB_SHEETS_EPOCH_MS + serial * NFB_MS_PER_DAY;
+  var d = new Date(ms);
+  return Sheets_isValidDate_(d) ? d : null;
+}
+
+function Sheets_parseDateLikeToJstDate_(value, allowSerialNumber) {
   if (value === null || value === undefined) return null;
   if (Sheets_isValidDate_(value)) return value;
+
+  if (allowSerialNumber) {
+    if (typeof value === "number" && isFinite(value)) {
+      return Sheets_serialToDate_(value);
+    }
+    if (typeof value === "string") {
+      var numeric = value.trim();
+      if (/^[-+]?\d+(?:\.\d+)?$/.test(numeric)) {
+        var numericValue = parseFloat(numeric);
+        if (isFinite(numericValue)) {
+          return Sheets_serialToDate_(numericValue);
+        }
+      }
+    }
+  }
 
   if (typeof value !== "string") return null;
   var str = value.trim();
@@ -20,8 +44,8 @@ function Sheets_parseDateLikeToJstDate_(value) {
     return Sheets_isValidDate_(isoDate) ? isoDate : null;
   }
 
-  // YYYY-MM-DD HH:mm[:ss]
-  var dateTimeMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  // YYYY-MM-DD[/ ]HH:mm[:ss]
+  var dateTimeMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:[\/\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)$/);
   if (dateTimeMatch) {
     var parts = dateTimeMatch;
     var dt = new Date(
@@ -42,10 +66,10 @@ function Sheets_parseDateLikeToJstDate_(value) {
     return Sheets_isValidDate_(d) ? d : null;
   }
 
-  // HH:mm[:ss] を基準日(1970-01-01)のJSTで扱う
+  // HH:mm[:ss] を基準日(1899-12-30)のJSTで扱う
   var timeOnlyMatch = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (timeOnlyMatch) {
-    var t = new Date(1970, 0, 1, parseInt(timeOnlyMatch[1], 10), parseInt(timeOnlyMatch[2], 10), timeOnlyMatch[3] ? parseInt(timeOnlyMatch[3], 10) : 0);
+    var t = new Date(1899, 11, 30, parseInt(timeOnlyMatch[1], 10), parseInt(timeOnlyMatch[2], 10), timeOnlyMatch[3] ? parseInt(timeOnlyMatch[3], 10) : 0);
     return Sheets_isValidDate_(t) ? t : null;
   }
 
@@ -57,9 +81,14 @@ function Sheets_toDateOrOriginal_(value) {
   return parsed || value;
 }
 
-function Sheets_toUnixMs_(value) {
-  var d = Sheets_parseDateLikeToJstDate_(value);
-  return d ? d.getTime() : null;
+function Sheets_dateToSerial_(date) {
+  if (!Sheets_isValidDate_(date)) return null;
+  return (date.getTime() - NFB_SHEETS_EPOCH_MS) / NFB_MS_PER_DAY;
+}
+
+function Sheets_toUnixMs_(value, allowSerialNumber) {
+  var d = Sheets_parseDateLikeToJstDate_(value, allowSerialNumber);
+  return d ? Sheets_dateToSerial_(d) : null;
 }
 
 function Sheets_getOrCreateSheet_(spreadsheetId, sheetName) {
@@ -324,17 +353,20 @@ function Sheets_createNewRow_(sheet, id) {
     }
   }
 
+  var nowSerial = Sheets_dateToSerial_(now);
+
   sheet.getRange(rowIndex, 2).setValue(String(nextId));
   sheet.getRange(rowIndex, 3).setValue(String(maxNo + 1));
-  sheet.getRange(rowIndex, 4).setValue(now.toISOString());
-  sheet.getRange(rowIndex, 5).setValue(now.toISOString());
+  sheet.getRange(rowIndex, 4).setValue(nowSerial);
+  sheet.getRange(rowIndex, 5).setValue(nowSerial);
 
   return { rowIndex: rowIndex, id: nextId };
 }
 
 function Sheets_updateExistingRow_(sheet, rowIndex) {
   Sheets_ensureRowCapacity_(sheet, rowIndex);
-  sheet.getRange(rowIndex, 5).setValue(new Date().toISOString());
+  var nowSerial = Sheets_dateToSerial_(new Date());
+  sheet.getRange(rowIndex, 5).setValue(nowSerial);
 }
 
 function Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys) {
@@ -435,8 +467,8 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     "No.": rowData[2] || "",
     createdAt: rowData[3] || "",
     modifiedAt: rowData[4] || "",
-    createdAtUnixMs: Sheets_toUnixMs_(rowData[3]),
-    modifiedAtUnixMs: Sheets_toUnixMs_(rowData[4]),
+    createdAtUnixMs: Sheets_toUnixMs_(rowData[3], true),
+    modifiedAtUnixMs: Sheets_toUnixMs_(rowData[4], true),
     data: {},
     dataUnixMs: {},
     rowHash: rowData[0] ? String(rowData[0]) : ""

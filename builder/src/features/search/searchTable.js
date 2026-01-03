@@ -3,6 +3,8 @@ import { DISPLAY_MODES } from "../../core/displayModes.js";
 import { formatUnixMsDateTime, formatUnixMsDate, formatUnixMsTime, toUnixMs } from "../../utils/dateTime.js";
 
 export const MAX_HEADER_DEPTH = 6;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const SERIAL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 
 const FALSE_LIKE_VALUES = new Set([null, undefined, "", false, 0, "0"]);
 
@@ -24,19 +26,18 @@ const isDateLikeColumn = (column) => {
   return type === "date" || type === "time";
 };
 const parseStrictTimeValue = (value) => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value !== "string") return null;
   const match = value.trim().match(/^(\d{2}):(\d{2})$/);
   if (!match) return null;
   const hour = parseInt(match[1], 10);
   const minute = parseInt(match[2], 10);
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  const date = new Date(1970, 0, 1, hour, minute, 0);
-  if (date.getHours() !== hour || date.getMinutes() !== minute) return null;
-  return date.getTime();
+  const utcMs = Date.UTC(1899, 11, 30, hour, minute, 0);
+  const date = new Date(utcMs);
+  if (date.getUTCHours() !== hour || date.getUTCMinutes() !== minute) return null;
+  return (utcMs - SERIAL_EPOCH_UTC_MS) / MS_PER_DAY;
 };
 const parseStrictDateOrDateTimeValue = (value) => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
   if (typeof value !== "string") return null;
   const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:\/(\d{2}):(\d{2}))?$/);
   if (!match) return null;
@@ -47,17 +48,18 @@ const parseStrictDateOrDateTimeValue = (value) => {
   const minute = match[5] ? parseInt(match[5], 10) : 0;
   if (month < 1 || month > 12 || day < 1 || day > 31) return null;
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  const date = new Date(year, month - 1, day, hour, minute, 0);
+  const utcMs = Date.UTC(year, month - 1, day, hour, minute, 0);
+  const date = new Date(utcMs);
   if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day ||
-    date.getHours() !== hour ||
-    date.getMinutes() !== minute
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month - 1 ||
+    date.getUTCDate() !== day ||
+    date.getUTCHours() !== hour ||
+    date.getUTCMinutes() !== minute
   ) {
     return null;
   }
-  return date.getTime();
+  return (utcMs - SERIAL_EPOCH_UTC_MS) / MS_PER_DAY;
 };
 const toNumericValue = (value) => {
   if (value === null || value === undefined || value === "") return null;

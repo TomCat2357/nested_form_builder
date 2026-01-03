@@ -30,9 +30,9 @@ import {
   debugGetMapping,
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
+import { toUnixMs } from "../../utils/dateTime.js";
 
-const nowIso = () => new Date().toISOString();
-const nowUnixMs = () => Date.now();
+const nowSerial = () => toUnixMs(Date.now());
 const DEFAULT_SHEET_NAME = "Responses";
 
 const ensureDisplayInfo = (form) => {
@@ -69,8 +69,11 @@ const mapSheetRecordToEntry = (record, formId) => ({
 });
 
 const buildFormRecord = (input) => {
-  const now = nowIso();
-  const nowMs = nowUnixMs();
+  const now = nowSerial();
+  const createdAtSerial = Number.isFinite(input.createdAt)
+    ? input.createdAt
+    : (Number.isFinite(input.createdAtUnixMs) ? input.createdAtUnixMs : toUnixMs(input.createdAt));
+  const resolvedCreatedAt = Number.isFinite(createdAtSerial) ? createdAtSerial : now;
   const schema = Array.isArray(input.schema) ? input.schema : [];
   const displayFieldSettings = collectDisplayFieldSettings(schema);
   
@@ -88,10 +91,10 @@ const buildFormRecord = (input) => {
     schemaHash: computeSchemaHash(schema),
     importantFields: displayFieldSettings.map((item) => item.path),
     displayFieldSettings,
-    createdAt: input.createdAt || now,
+    createdAt: resolvedCreatedAt,
     modifiedAt: now,
-    createdAtUnixMs: Number.isFinite(input.createdAtUnixMs) ? input.createdAtUnixMs : nowMs,
-    modifiedAtUnixMs: nowMs,
+    createdAtUnixMs: resolvedCreatedAt,
+    modifiedAtUnixMs: now,
     archived: !!input.archived,
     schemaVersion: Number.isFinite(input.schemaVersion) ? input.schemaVersion : 1,
   };
@@ -248,15 +251,18 @@ export const dataStore = {
     await this.deleteForms([formId]);
   },
   async upsertEntry(formId, payload) {
-    const now = nowIso();
-    const nowMs = nowUnixMs();
+    const now = nowSerial();
+    const createdAtSerial = Number.isFinite(payload.createdAt)
+      ? payload.createdAt
+      : (Number.isFinite(payload.createdAtUnixMs) ? payload.createdAtUnixMs : toUnixMs(payload.createdAt));
+    const resolvedCreatedAt = Number.isFinite(createdAtSerial) ? createdAtSerial : now;
     const record = {
       id: payload.id || genId(),
       formId,
-      createdAt: payload.createdAt || now,
-      createdAtUnixMs: Number.isFinite(payload.createdAtUnixMs) ? payload.createdAtUnixMs : nowMs,
+      createdAt: resolvedCreatedAt,
+      createdAtUnixMs: resolvedCreatedAt,
       modifiedAt: now,
-      modifiedAtUnixMs: nowMs,
+      modifiedAtUnixMs: now,
       data: payload.data || {},
       dataUnixMs: payload.dataUnixMs || {},
       order: payload.order || Object.keys(payload.data || {}),

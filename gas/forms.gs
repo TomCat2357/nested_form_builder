@@ -337,8 +337,12 @@ function Forms_saveForm_(form, targetUrl) {
   Logger.log("[Forms_saveForm_] Existing fileId for this form: " + existingFileId);
   var file;
   var nowDate = new Date();
-  var now = nowDate.toISOString();
+  var nowSerial = Sheets_dateToSerial_(nowDate);
   var fileId = null;
+  var createdAtSerial = Sheets_toUnixMs_(form.createdAt, true);
+  if (createdAtSerial === null) {
+    createdAtSerial = nowSerial;
+  }
 
   // 仮のフォームオブジェクトを作成（driveFileUrlなし）
   var formWithTimestamp = {
@@ -349,10 +353,10 @@ function Forms_saveForm_(form, targetUrl) {
     schemaHash: form.schemaHash || "",
     importantFields: form.importantFields || [],
     displayFieldSettings: form.displayFieldSettings || [],
-    createdAt: form.createdAt || now,
-    modifiedAt: now,
-    createdAtUnixMs: form.createdAt ? Sheets_toUnixMs_(form.createdAt) : nowDate.getTime(),
-    modifiedAtUnixMs: nowDate.getTime(),
+    createdAt: createdAtSerial,
+    modifiedAt: nowSerial,
+    createdAtUnixMs: createdAtSerial,
+    modifiedAtUnixMs: nowSerial,
     archived: !!form.archived,
     schemaVersion: form.schemaVersion || 1,
   };
@@ -552,8 +556,12 @@ function Forms_listForms_(options) {
             }
 
             // createdAt/modifiedAt の Unix ms を付与
-            form.createdAtUnixMs = Sheets_toUnixMs_(form.createdAt);
-            form.modifiedAtUnixMs = Sheets_toUnixMs_(form.modifiedAt);
+            var createdAtSerial = Sheets_toUnixMs_(form.createdAt, true);
+            var modifiedAtSerial = Sheets_toUnixMs_(form.modifiedAt, true);
+            if (createdAtSerial !== null) form.createdAt = createdAtSerial;
+            if (modifiedAtSerial !== null) form.modifiedAt = modifiedAtSerial;
+            form.createdAtUnixMs = createdAtSerial;
+            form.modifiedAtUnixMs = modifiedAtSerial;
 
             // アーカイブフィルタリング
             if (!includeArchived && form.archived) {
@@ -861,7 +869,9 @@ function Forms_setFormArchivedState_(formId, archived) {
   }
 
   form.archived = !!archived;
-  form.modifiedAt = new Date().toISOString();
+  var nowSerial = Sheets_dateToSerial_(new Date());
+  form.modifiedAt = nowSerial;
+  form.modifiedAtUnixMs = nowSerial;
 
   return Forms_saveForm_(form);
 }
@@ -881,7 +891,7 @@ function Forms_setFormsArchivedState_(formIds, archived) {
   var errors = [];
   var updated = 0;
   var updatedForms = [];
-  var now = new Date().toISOString();
+  var nowSerial = Sheets_dateToSerial_(new Date());
 
   ids.forEach(function(formId) {
     if (!formId) return;
@@ -894,7 +904,8 @@ function Forms_setFormsArchivedState_(formIds, archived) {
       }
 
       form.archived = !!archived;
-      form.modifiedAt = now;
+      form.modifiedAt = nowSerial;
+      form.modifiedAtUnixMs = nowSerial;
 
       var result = Forms_saveForm_(form);
       if (result && result.ok) {

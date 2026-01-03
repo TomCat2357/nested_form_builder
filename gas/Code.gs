@@ -85,10 +85,11 @@ function SerializeValue_(value) {
   return String(value);
 }
 
-function SerializeDateLike_(value) {
-  var date = Sheets_parseDateLikeToJstDate_(value);
+function SerializeDateLike_(value, options) {
+  var allowSerialNumber = options && options.allowSerialNumber === true;
+  var date = Sheets_parseDateLikeToJstDate_(value, allowSerialNumber);
   if (date) {
-    return { iso: date.toISOString(), unixMs: date.getTime() };
+    return { iso: date.toISOString(), unixMs: Sheets_toUnixMs_(date) };
   }
   return { iso: SerializeValue_(value), unixMs: null };
 }
@@ -110,14 +111,16 @@ function SerializeRecord_(record) {
     }
   }
 
-  var createdInfo = SerializeDateLike_(record.createdAt);
-  var modifiedInfo = SerializeDateLike_(record.modifiedAt);
+  var createdInfo = SerializeDateLike_(record.createdAt, { allowSerialNumber: true });
+  var modifiedInfo = SerializeDateLike_(record.modifiedAt, { allowSerialNumber: true });
+  var createdValue = createdInfo.unixMs !== null ? createdInfo.unixMs : createdInfo.iso;
+  var modifiedValue = modifiedInfo.unixMs !== null ? modifiedInfo.unixMs : modifiedInfo.iso;
 
   return {
     id: String(record.id || ""),
     "No.": record["No."] != null ? record["No."] : "",
-    createdAt: createdInfo.iso, // 互換用: 従来のISO文字列
-    modifiedAt: modifiedInfo.iso, // 互換用
+    createdAt: createdValue,
+    modifiedAt: modifiedValue,
     createdAtUnixMs: createdInfo.unixMs,
     modifiedAtUnixMs: modifiedInfo.unixMs,
     data: serializedData,

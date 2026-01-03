@@ -1,14 +1,36 @@
 const TIME_ZONE = "Asia/Tokyo";
 const DEFAULT_LOCALE = "ja-JP";
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+const SERIAL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+const SERIAL_EPOCH_JST_MS = SERIAL_EPOCH_UTC_MS - JST_OFFSET_MS;
 
 const pad2 = (value) => String(value).padStart(2, "0");
 
 const isValidDate = (d) => d instanceof Date && !Number.isNaN(d.getTime());
 
-const buildDateFromParts = (year, month, day, hour, minute, second) =>
-  new Date(year, month, day, hour || 0, minute || 0, second || 0);
+const isProbablyUnixMs = (value) => Math.abs(value) >= 100000000000;
 
-const parseStringToDate = (value) => {
+const unixMsToSerial = (unixMs) => (unixMs - SERIAL_EPOCH_JST_MS) / MS_PER_DAY;
+const serialToUnixMs = (serial) => SERIAL_EPOCH_JST_MS + serial * MS_PER_DAY;
+
+const buildUtcSerial = (year, month, day, hour, minute, second) => {
+  const utcMs = Date.UTC(year, month, day, hour || 0, minute || 0, second || 0);
+  const date = new Date(utcMs);
+  if (
+    date.getUTCFullYear() !== year ||
+    date.getUTCMonth() !== month ||
+    date.getUTCDate() !== day ||
+    date.getUTCHours() !== (hour || 0) ||
+    date.getUTCMinutes() !== (minute || 0) ||
+    date.getUTCSeconds() !== (second || 0)
+  ) {
+    return null;
+  }
+  return (utcMs - SERIAL_EPOCH_UTC_MS) / MS_PER_DAY;
+};
+
+const parseStringToSerial = (value) => {
   if (typeof value !== "string") return null;
   const str = value.trim();
   if (!str) return null;
@@ -16,35 +38,37 @@ const parseStringToDate = (value) => {
   // ISO（タイムゾーン付き/なし）
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(str)) {
     const iso = new Date(str);
-    return isValidDate(iso) ? iso : null;
+    return isValidDate(iso) ? unixMsToSerial(iso.getTime()) : null;
   }
 
-  // YYYY-MM-DD HH:MM[:SS]
-  const dt = str.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  // YYYY-MM-DD[/ ]HH:MM[:SS]
+  const dt = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:[\/\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (dt) {
-    const date = buildDateFromParts(
-      parseInt(dt[1], 10),
-      parseInt(dt[2], 10) - 1,
-      parseInt(dt[3], 10),
-      parseInt(dt[4], 10),
-      parseInt(dt[5], 10),
-      dt[6] ? parseInt(dt[6], 10) : 0
-    );
-    return isValidDate(date) ? date : null;
+    const year = parseInt(dt[1], 10);
+    const month = parseInt(dt[2], 10);
+    const day = parseInt(dt[3], 10);
+    const hour = dt[4] ? parseInt(dt[4], 10) : 0;
+    const minute = dt[5] ? parseInt(dt[5], 10) : 0;
+    const second = dt[6] ? parseInt(dt[6], 10) : 0;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) return null;
+    return buildUtcSerial(year, month - 1, day, hour, minute, second);
   }
 
-  // YYYY-MM-DD
-  const d = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (d) {
-    const dateOnly = buildDateFromParts(parseInt(d[1], 10), parseInt(d[2], 10) - 1, parseInt(d[3], 10));
-    return isValidDate(dateOnly) ? dateOnly : null;
-  }
-
-  // HH:MM[:SS] （基準日: 1970-01-01 JST）
+  // HH:MM[:SS] （基準日: 1899-12-30）
   const t = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (t) {
-    const timeOnly = buildDateFromParts(1970, 0, 1, parseInt(t[1], 10), parseInt(t[2], 10), t[3] ? parseInt(t[3], 10) : 0);
-    return isValidDate(timeOnly) ? timeOnly : null;
+    const hour = parseInt(t[1], 10);
+    const minute = parseInt(t[2], 10);
+    const second = t[3] ? parseInt(t[3], 10) : 0;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) return null;
+    return buildUtcSerial(1899, 11, 30, hour, minute, second);
+  }
+
+  if (/^[-+]?\d+(?:\.\d+)?$/.test(str)) {
+    const numeric = Number(str);
+    if (!Number.isFinite(numeric)) return null;
+    return isProbablyUnixMs(numeric) ? unixMsToSerial(numeric) : numeric;
   }
 
   return null;
@@ -52,15 +76,24 @@ const parseStringToDate = (value) => {
 
 export const toUnixMs = (value) => {
   if (value === null || value === undefined) return null;
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (value instanceof Date) return value.getTime();
-  const parsed = parseStringToDate(String(value));
-  return parsed ? parsed.getTime() : null;
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return isProbablyUnixMs(value) ? unixMsToSerial(value) : value;
+  }
+  if (value instanceof Date) return unixMsToSerial(value.getTime());
+  const parsed = parseStringToSerial(String(value));
+  return Number.isFinite(parsed) ? parsed : null;
 };
 
 const buildFormatter = (options) => new Intl.DateTimeFormat(DEFAULT_LOCALE, { timeZone: TIME_ZONE, hour12: false, ...options });
 
-const formatFromParts = (formatter, unixMs) => {
+const normalizeSerialForFormat = (value) => {
+  if (!Number.isFinite(value)) return null;
+  const serial = isProbablyUnixMs(value) ? unixMsToSerial(value) : value;
+  return serialToUnixMs(serial);
+};
+
+const formatFromParts = (formatter, serial) => {
+  const unixMs = normalizeSerialForFormat(serial);
   if (!Number.isFinite(unixMs)) return "";
   try {
     const parts = formatter.formatToParts(new Date(unixMs));
@@ -86,9 +119,10 @@ const formatterTime = buildFormatter({ hour: "2-digit", minute: "2-digit" });
 export const formatUnixMsDateTime = (unixMs) => formatFromParts(formatterDateTime, unixMs);
 export const formatUnixMsDate = (unixMs) => formatFromParts(formatterDate, unixMs);
 export const formatUnixMsTime = (unixMs) => {
-  if (!Number.isFinite(unixMs)) return "";
+  const normalized = normalizeSerialForFormat(unixMs);
+  if (!Number.isFinite(normalized)) return "";
   try {
-    const parts = formatterTime.formatToParts(new Date(unixMs));
+    const parts = formatterTime.formatToParts(new Date(normalized));
     const get = (type) => parts.find((p) => p.type === type)?.value || "";
     const hh = get("hour");
     const mi = get("minute");

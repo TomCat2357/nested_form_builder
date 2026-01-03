@@ -267,13 +267,14 @@ function MergeFormData_(current, updates) {
 
   // 不変フィールドを保護
   merged.id = current.id;
-  merged.createdAt = current.createdAt;
-  merged.createdAtUnixMs = Sheets_toUnixMs_(current.createdAt);
+  var createdAtSerial = Sheets_toUnixMs_(current.createdAt, true);
+  merged.createdAt = createdAtSerial !== null ? createdAtSerial : current.createdAt;
+  merged.createdAtUnixMs = createdAtSerial;
 
   // modifiedAtを更新
-  var nowDate = new Date();
-  merged.modifiedAt = nowDate.toISOString();
-  merged.modifiedAtUnixMs = nowDate.getTime();
+  var nowSerial = Sheets_dateToSerial_(new Date());
+  merged.modifiedAt = nowSerial;
+  merged.modifiedAtUnixMs = nowSerial;
 
   return merged;
 }
