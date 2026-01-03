@@ -6,6 +6,8 @@
 node_modules/
 .codegraph/
 Index.html
+*.diff
+#.rej
 
 # ログ
 *.log
