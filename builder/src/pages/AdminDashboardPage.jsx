@@ -8,6 +8,7 @@ import AlertDialog from "../app/components/AlertDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { theme } from "../app/theme/tokens.js";
 import { DISPLAY_MODES } from "../core/displayModes.js";
 import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
 import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
@@ -15,25 +16,25 @@ import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
 const tableStyle = {
   width: "100%",
   borderCollapse: "collapse",
-  background: "#fff",
-  borderRadius: 12,
+  background: theme.surface,
+  borderRadius: theme.radiusMd,
   overflow: "hidden",
 };
 
 const thStyle = {
   textAlign: "left",
   padding: "12px 16px",
-  borderBottom: "1px solid #E5E7EB",
-  background: "#F8FAFC",
+  borderBottom: `1px solid ${theme.border}`,
+  background: theme.surfaceSubtle,
   fontSize: 13,
   fontWeight: 600,
 };
 
 const tdStyle = {
   padding: "12px 16px",
-  borderBottom: "1px solid #F1F5F9",
+  borderBottom: `1px solid ${theme.borderSubtle}`,
   fontSize: 13,
-  color: "#1F2937",
+  color: theme.textStrong,
 };
 
 const formatDisplayFieldsSummary = (form) => {
@@ -56,14 +57,14 @@ const formatDate = (value) => {
 
 const buttonStyle = {
   padding: "6px 12px",
-  borderRadius: 8,
-  border: "1px solid #CBD5E1",
-  background: "#fff",
+  borderRadius: theme.radiusSm,
+  border: `1px solid ${theme.borderStrong}`,
+  background: theme.surface,
   cursor: "pointer",
   fontSize: 13,
 };
 
-const labelMuted = { fontSize: 12, color: "#6B7280" };
+const labelMuted = { fontSize: 12, color: theme.textSubtle };
 
 const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
   const parts = [];
@@ -401,7 +402,7 @@ export default function AdminDashboardPage() {
       title="フォーム管理"
       badge="フォーム一覧"
       fallbackPath="/"
-      actions={deployTime && <div style={{ fontSize: 11, color: "#6B7280", fontWeight: 400 }}>デプロイ: {deployTime}</div>}
+      actions={deployTime && <div style={{ fontSize: 11, color: theme.textSubtle, fontWeight: 400 }}>デプロイ: {deployTime}</div>}
       sidebarActions={
         <>
           <button type="button" style={sidebarButtonStyle} onClick={handleCreateNew}>
@@ -425,8 +426,8 @@ export default function AdminDashboardPage() {
             type="button"
             style={{
               ...sidebarButtonStyle,
-              borderColor: "#FCA5A5",
-              background: "#FEF2F2",
+              borderColor: theme.dangerBorder,
+              background: theme.dangerWeak,
             }}
             onClick={handleDeleteSelected}
             disabled={selected.size === 0}
@@ -437,8 +438,8 @@ export default function AdminDashboardPage() {
             type="button"
             style={{
               ...sidebarButtonStyle,
-              background: !loadingForms ? "#FEF3C7" : "#fff",
-              borderColor: !loadingForms ? "#F59E0B" : "#CBD5E1",
+              background: !loadingForms ? theme.warningWeak : theme.surface,
+              borderColor: !loadingForms ? theme.warning : theme.borderStrong,
             }}
             onClick={() => refreshForms("manual:admin-dashboard")}
             disabled={loadingForms}
@@ -449,7 +450,7 @@ export default function AdminDashboardPage() {
       }
     >
       {loadingForms ? (
-        <p style={{ color: "#6B7280" }}>読み込み中...</p>
+        <p style={{ color: theme.textSubtle }}>読み込み中...</p>
       ) : (
         <div style={{ overflowX: "auto" }}>
           <table style={tableStyle}>
@@ -473,7 +474,7 @@ export default function AdminDashboardPage() {
                 return (
                   <tr
                     key={form.id}
-                    style={{ cursor: isLoadError ? "default" : "pointer", background: isLoadError ? "#FEF2F2" : undefined }}
+                    style={{ cursor: isLoadError ? "default" : "pointer", background: isLoadError ? theme.dangerWeak : undefined }}
                     onClick={() => {
                       if (!isLoadError) {
                         goToEditor(form.id);
@@ -482,14 +483,14 @@ export default function AdminDashboardPage() {
                   >
                     <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selected.has(form.id)} onChange={() => toggleSelect(form.id)} />
-                      {isLoadError && <div style={{ color: "#B91C1C", fontSize: 11, marginTop: 4 }}>削除のみ可能</div>}
+                      {isLoadError && <div style={{ color: theme.dangerInk, fontSize: 11, marginTop: 4 }}>削除のみ可能</div>}
                     </td>
                     <td style={tdStyle}>
                       {isLoadError ? (
                         <>
-                          <div style={{ fontWeight: 600, color: "#B91C1C" }}>{loadError?.fileName || "(名称不明)"}</div>
-                          <div style={{ color: "#991B1B", fontSize: 12 }}>フォームID: {form.id}</div>
-                          {loadError?.fileId && <div style={{ color: "#991B1B", fontSize: 12 }}>ファイルID: {loadError.fileId}</div>}
+                          <div style={{ fontWeight: 600, color: theme.dangerInk }}>{loadError?.fileName || "(名称不明)"}</div>
+                          <div style={{ color: theme.dangerInkStrong, fontSize: 12 }}>フォームID: {form.id}</div>
+                          {loadError?.fileId && <div style={{ color: theme.dangerInkStrong, fontSize: 12 }}>ファイルID: {loadError.fileId}</div>}
                           {loadError?.driveFileUrl && (
                             <div style={{ marginTop: 6 }}>
                               <a
@@ -497,7 +498,7 @@ export default function AdminDashboardPage() {
                                 target="_blank"
                                 rel="noreferrer"
                                 onClick={(event) => event.stopPropagation()}
-                                style={{ color: "#2563EB", textDecoration: "underline", fontSize: 12 }}
+                                style={{ color: theme.primaryStrong, textDecoration: "underline", fontSize: 12 }}
                               >
                                 Driveで確認
                               </a>
@@ -507,7 +508,7 @@ export default function AdminDashboardPage() {
                       ) : (
                         <>
                           <div style={{ fontWeight: 600 }}>{form.settings?.formTitle || "(無題)"}</div>
-                          {form.description && <div style={{ color: "#475569", fontSize: 12 }}>{form.description}</div>}
+                          {form.description && <div style={{ color: theme.textMuted, fontSize: 12 }}>{form.description}</div>}
                         </>
                       )}
                     </td>
@@ -515,9 +516,9 @@ export default function AdminDashboardPage() {
                     <td style={tdStyle}>
                       {isLoadError ? (
                         <>
-                          <div style={{ color: "#B91C1C", fontWeight: 600 }}>読み込みエラー</div>
-                          <div style={{ color: "#991B1B", fontSize: 12 }}>{loadError?.errorMessage || "読み込みに失敗しました"}</div>
-                          {loadError?.errorStage && <div style={{ color: "#991B1B", fontSize: 11, marginTop: 4 }}>ステージ: {loadError.errorStage}</div>}
+                          <div style={{ color: theme.dangerInk, fontWeight: 600 }}>読み込みエラー</div>
+                          <div style={{ color: theme.dangerInkStrong, fontSize: 12 }}>{loadError?.errorMessage || "読み込みに失敗しました"}</div>
+                          {loadError?.errorStage && <div style={{ color: theme.dangerInkStrong, fontSize: 11, marginTop: 4 }}>ステージ: {loadError.errorStage}</div>}
                         </>
                       ) : summary ? (
                         summary
@@ -527,11 +528,11 @@ export default function AdminDashboardPage() {
                     </td>
                     <td style={tdStyle}>
                       {isLoadError ? (
-                        <span style={{ color: "#DC2626", fontWeight: 600 }}>読み込みエラー</span>
+                        <span style={{ color: theme.dangerStrong, fontWeight: 600 }}>読み込みエラー</span>
                       ) : form.archived ? (
-                        <span style={{ color: "#DC2626" }}>アーカイブ済み</span>
+                        <span style={{ color: theme.dangerStrong }}>アーカイブ済み</span>
                       ) : (
-                        <span style={{ color: "#16A34A" }}>公開中</span>
+                        <span style={{ color: theme.success }}>公開中</span>
                       )}
                     </td>
                   </tr>
@@ -631,11 +632,11 @@ function ImportUrlDialog({ open, url, onUrlChange, onImport, onCancel }) {
 
   return (
     <div
-      style={{ position: "fixed", inset: 0, background: "rgba(15, 23, 42, 0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      style={{ position: "fixed", inset: 0, background: theme.overlayStrong, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
     >
-      <div style={{ background: "#fff", borderRadius: 12, padding: 24, width: "min(520px, 90vw)", boxShadow: "0 20px 45px rgba(15,23,42,0.25)" }}>
+      <div style={{ background: theme.surface, borderRadius: theme.radiusMd, padding: 24, width: "min(520px, 90vw)", boxShadow: theme.shadowLg }}>
         <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Google Driveからインポート</h3>
-        <p style={{ marginBottom: 16, color: "#475569", fontSize: 14 }}>
+        <p style={{ marginBottom: 16, color: theme.textMuted, fontSize: 14 }}>
           ファイルURLまたはフォルダURLを入力してください。
         </p>
 
@@ -650,11 +651,11 @@ function ImportUrlDialog({ open, url, onUrlChange, onImport, onCancel }) {
               onUrlChange(event.target.value);
               if (error) setError("");
             }}
-            style={{ width: "100%", border: "1px solid #CBD5E1", borderRadius: 8, padding: "8px 10px", fontSize: 14 }}
+            style={{ width: "100%", border: `1px solid ${theme.borderStrong}`, borderRadius: theme.radiusSm, padding: "8px 10px", fontSize: 14, background: theme.surface }}
             placeholder="https://drive.google.com/file/d/... または https://drive.google.com/drive/folders/..."
           />
-          {error && <p style={{ marginTop: 6, color: "#DC2626", fontSize: 12 }}>{error}</p>}
-          <p style={{ marginTop: 6, color: "#64748B", fontSize: 11 }}>
+          {error && <p style={{ marginTop: 6, color: theme.dangerStrong, fontSize: 12 }}>{error}</p>}
+          <p style={{ marginTop: 6, color: theme.textMuted, fontSize: 11 }}>
             ・ファイルURL: そのフォームのみをインポート<br />
             ・フォルダURL: フォルダ内の全ての.jsonファイルをインポート<br />
             ・既にプロパティサービスに存在するフォームIDは自動的にスキップされます
@@ -662,12 +663,12 @@ function ImportUrlDialog({ open, url, onUrlChange, onImport, onCancel }) {
         </div>
 
         <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
-          <button type="button" style={{ padding: "8px 16px", borderRadius: 8, border: "1px solid #CBD5E1", background: "#fff" }} onClick={onCancel}>
+          <button type="button" style={{ padding: "8px 16px", borderRadius: theme.radiusSm, border: `1px solid ${theme.borderStrong}`, background: theme.surface }} onClick={onCancel}>
             キャンセル
           </button>
           <button
             type="button"
-            style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: "#2563EB", color: "#fff" }}
+            style={{ padding: "8px 16px", borderRadius: theme.radiusSm, border: "none", background: theme.primaryStrong, color: theme.surface }}
             onClick={handleImport}
           >
             インポート

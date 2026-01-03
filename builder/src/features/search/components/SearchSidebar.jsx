@@ -1,5 +1,6 @@
 import React from "react";
 import { sidebarButtonStyle } from "../searchStyles.js";
+import { theme } from "../../../app/theme/tokens.js";
 
 export default function SearchSidebar({
   onCreate,
@@ -18,8 +19,8 @@ export default function SearchSidebar({
         type="button"
         style={{
           ...sidebarButtonStyle,
-          borderColor: "#FCA5A5",
-          background: "#FEF2F2",
+          borderColor: theme.dangerBorder,
+          background: theme.dangerWeak,
         }}
         onClick={onDelete}
         disabled={selectedCount === 0}
@@ -30,8 +31,8 @@ export default function SearchSidebar({
         type="button"
         style={{
           ...sidebarButtonStyle,
-          background: useCache ? "#FEF3C7" : "#fff",
-          borderColor: useCache ? "#F59E0B" : "#CBD5E1",
+          background: useCache ? theme.warningWeak : theme.surface,
+          borderColor: useCache ? theme.warning : theme.borderStrong,
         }}
         onClick={onRefresh}
         disabled={loading}

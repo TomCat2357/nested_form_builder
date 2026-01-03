@@ -8,11 +8,12 @@ import {
   applyDisplayLengthLimit,
   parseSearchCellDisplayLimit,
 } from "../search/searchTable.js";
+import { theme } from "../../app/theme/tokens.js";
 
 const panelStyle = {
-  border: "1px solid #E5E7EB",
-  borderRadius: 12,
-  background: "#fff",
+  border: `1px solid ${theme.border}`,
+  borderRadius: theme.radiusMd,
+  background: theme.surface,
   padding: 12,
 };
 
@@ -24,17 +25,17 @@ const tableStyle = {
 const thStyle = {
   textAlign: "left",
   padding: "8px 12px",
-  borderBottom: "1px solid #E5E7EB",
-  background: "#F8FAFC",
+  borderBottom: `1px solid ${theme.border}`,
+  background: theme.surfaceSubtle,
   fontSize: 12,
   fontWeight: 600,
 };
 
 const tdStyle = {
   padding: "8px 12px",
-  borderBottom: "1px solid #F1F5F9",
+  borderBottom: `1px solid ${theme.borderSubtle}`,
   fontSize: 12,
-  color: "#1F2937",
+  color: theme.textStrong,
 };
 
 const BASE_KEYS = new Set(["id", "createdAt", "modifiedAt", "__actions"]);
@@ -92,7 +93,7 @@ export default function SearchPreviewPanel({ schema, responses, settings }) {
         </summary>
         <div style={panelStyle}>
           {!hasImportantColumns ? (
-            <p style={{ color: "#6B7280", fontSize: 12 }}>
+            <p style={{ color: theme.textSubtle, fontSize: 12 }}>
               「表示」に設定された質問がありません。表示項目を設定すると検索プレビューが表示されます。
             </p>
           ) : (
@@ -128,7 +129,7 @@ export default function SearchPreviewPanel({ schema, responses, settings }) {
                     </tr>
                   ) : (
                     <tr>
-                      <td style={{ ...tdStyle, textAlign: "center", color: "#6B7280" }} colSpan={columns.length || 1}>
+                      <td style={{ ...tdStyle, textAlign: "center", color: theme.textSubtle }} colSpan={columns.length || 1}>
                         フォームに入力すると、表示項目の検索結果プレビューがここに表示されます。
                       </td>
                     </tr>

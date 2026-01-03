@@ -1,7 +1,9 @@
 import React from "react";
 
 import { baseButtonStyle, dialogStyle, footerStyle, messageStyle, overlayStyle, titleStyle } from "./dialogStyles.js";
-const okButtonStyle = { ...baseButtonStyle, background: "#2563EB", borderColor: "#2563EB", color: "#fff" };
+import { theme } from "../theme/tokens.js";
+
+const okButtonStyle = { ...baseButtonStyle, background: theme.primaryStrong, borderColor: theme.primaryStrong, color: theme.surface };
 
 export default function AlertDialog({ open, title = "通知", message, onClose }) {
   if (!open) return null;

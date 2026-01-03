@@ -8,6 +8,7 @@ import { styles as s } from "../editor/styles.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { formatUnixMsDate, formatUnixMsTime } from "../../utils/dateTime.js";
+import { theme } from "../../app/theme/tokens.js";
 
 const formatDateLocal = (date) => formatUnixMsDate(date.getTime());
 const formatTimeLocal = (date) => formatUnixMsTime(date.getTime());
@@ -44,8 +45,8 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
   const validation = validateByPattern(field, value);
   const readOnlyBoxStyle = {
     ...s.input,
-    backgroundColor: "#F3F4F6",
-    color: "#374151",
+    backgroundColor: theme.surfaceAlt,
+    color: theme.textInk,
     cursor: "text",
     userSelect: "text",
   };
@@ -72,7 +73,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
     return (
       <div style={{ marginBottom: 16 }}>
         <div style={labelStyle}>
-          {field.label || <span style={{ color: "#9CA3AF" }}>メッセージ</span>}
+          {field.label || <span style={{ color: theme.textFaded }}>メッセージ</span>}
         </div>
       </div>
     );
@@ -96,8 +97,8 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
     return (
       <div style={{ marginBottom: 16 }}>
         <label style={labelStyle}>
-          {field.label || <span style={{ color: "#9CA3AF" }}>項目</span>}
-          {field.required && <span style={{ color: "#EF4444", marginLeft: 4 }}>*</span>}
+          {field.label || <span style={{ color: theme.textFaded }}>項目</span>}
+          {field.required && <span style={{ color: theme.dangerBright, marginLeft: 4 }}>*</span>}
         </label>
         <div style={readOnlyBoxStyle}>{renderReadOnlyValue()}</div>
         {childrenForCheckboxes}
@@ -109,8 +110,8 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
   return (
     <div style={{ marginBottom: 16 }}>
       <label style={labelStyle}>
-        {field.label || <span style={{ color: "#9CA3AF" }}>項目</span>}
-        {field.required && <span style={{ color: "#EF4444", marginLeft: 4 }}>*</span>}
+        {field.label || <span style={{ color: theme.textFaded }}>項目</span>}
+        {field.required && <span style={{ color: theme.dangerBright, marginLeft: 4 }}>*</span>}
       </label>
 
       {field.type === "text" && (
@@ -153,12 +154,12 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
             onChange={(event) => onChange(event.target.value)}
             style={{
               ...s.input,
-              borderColor: validation.ok ? s.input.borderColor : "#EF4444",
+              borderColor: validation.ok ? s.input.borderColor : theme.dangerBright,
             }}
             placeholder={field.placeholder || "入力"}
           />
           {!validation.ok && (
-            <div style={{ color: "#B91C1C", fontSize: 12, marginTop: 4 }}>{validation.message}</div>
+            <div style={{ color: theme.dangerInk, fontSize: 12, marginTop: 4 }}>{validation.message}</div>
           )}
         </>
       )}
@@ -433,11 +434,11 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   );
 
   return (
-    <div style={{ border: "1px solid #E5E7EB", borderRadius: 12, padding: 12, background: "#fff" }}>
+    <div style={{ border: `1px solid ${theme.border}`, borderRadius: theme.radiusMd, padding: 12, background: theme.surface }}>
       <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{formTitle}</h2>
       <div style={{ marginBottom: 12 }}>
         <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>回答ID</label>
-        <input type="text" value={recordIdRef.current} readOnly style={{ ...s.input, backgroundColor: "#F8FAFC", cursor: "not-allowed" }} />
+        <input type="text" value={recordIdRef.current} readOnly style={{ ...s.input, backgroundColor: theme.surfaceSubtle, cursor: "not-allowed" }} />
       </div>
       <RendererRecursive fields={schema} responses={responses} onChange={setResponses} readOnly={readOnly} />
       {showOutputJson && (

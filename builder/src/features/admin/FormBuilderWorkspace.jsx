@@ -7,13 +7,14 @@ import { normalizeSchemaIDs, validateMaxDepth, validateUniqueLabels, MAX_DEPTH }
 import { runSelfTests } from "../../core/selfTests.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
+import { theme } from "../../app/theme/tokens.js";
 
-const containerStyle = { border: "1px solid #E5E7EB", borderRadius: 12, background: "#fff", padding: 16 };
+const containerStyle = { border: `1px solid ${theme.border}`, borderRadius: theme.radiusMd, background: theme.surface, padding: 16 };
 const toolbarButtonStyle = (active) => ({
-  border: "1px solid #CBD5E1",
-  background: active ? "#DBEAFE" : "#F8FAFC",
+  border: `1px solid ${theme.borderStrong}`,
+  background: active ? theme.primarySoft : theme.surfaceSubtle,
   padding: "8px 12px",
-  borderRadius: 8,
+  borderRadius: theme.radiusSm,
   cursor: "pointer",
   fontWeight: active ? 600 : 500,
 });

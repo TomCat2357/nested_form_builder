@@ -5,6 +5,7 @@ import { genId } from "../../core/ids.js";
 import { DISPLAY_MODES, ensureDisplayModeForType, toImportantFlag } from "../../core/displayModes.js";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
+import { theme } from "../../app/theme/tokens.js";
 
 // 定数
 const CHOICE_TYPES = ["radio", "select", "checkboxes"];
@@ -214,7 +215,7 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
       {isStyleSettingsEnabled && (
         <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
           <div style={{ flex: 1 }}>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 2, color: "#6B7280" }}>文字サイズ</label>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 2, color: theme.textSubtle }}>文字サイズ</label>
             <select
               style={{ ...s.input, width: "100%" }}
               value={styleSettings.fontSize || "14px"}
@@ -231,7 +232,7 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
             </select>
           </div>
           <div style={{ flex: 1 }}>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 2, color: "#6B7280" }}>文字色</label>
+            <label style={{ display: "block", fontSize: 12, marginBottom: 2, color: theme.textSubtle }}>文字色</label>
             <select
               style={{ ...s.input, width: "100%" }}
               value={styleSettings.textColor || "#000000"}
@@ -315,9 +316,9 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
   }, [selectedOptionIndex, isChoice, field.options?.length]);
 
   return (
-    <div style={{ ...s.card(0), border: isSelected ? "2px solid #3B82F6" : s.card(0).border }}>
+    <div style={{ ...s.card(0), border: isSelected ? `2px solid ${theme.primary}` : s.card(0).border }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 13, fontWeight: 500, color: "#374151", flexShrink: 0 }}>項目名</span>
+        <span style={{ fontSize: 13, fontWeight: 500, color: theme.textInk, flexShrink: 0 }}>項目名</span>
         <input
           style={{ ...s.input, width: "auto", flex: "1 1 200px", minWidth: 0 }}
           placeholder="項目名を入力"
@@ -398,7 +399,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
             onFocus={onFocus}
           />
           {regexCheck.error && (
-            <div style={{ color: "#B91C1C", fontSize: 12, marginTop: 4 }}>正規表現が不正です: {regexCheck.error}</div>
+            <div style={{ color: theme.dangerInk, fontSize: 12, marginTop: 4 }}>正規表現が不正です: {regexCheck.error}</div>
           )}
           <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />
         </div>
@@ -473,7 +474,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
                 (() => {
                   const hasChildren = field.childrenByValue && field.childrenByValue[opt.label]?.length;
                   return hasChildren ? (
-                    <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: "2px solid #E5E7EB" }}>
+                    <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: `2px solid ${theme.border}` }}>
                       <QuestionListComponent
                       fields={field.childrenByValue[opt.label]}
                       onChange={(childFields) => {

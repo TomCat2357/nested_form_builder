@@ -6,6 +6,7 @@ import AlertDialog from "../app/components/AlertDialog.jsx";
 import PreviewPage from "../features/preview/PreviewPage.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
+import { theme } from "../app/theme/tokens.js";
 import { restoreResponsesFromData, hasDirtyChanges } from "../utils/responses.js";
 import { submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
@@ -16,9 +17,9 @@ import { evaluateCache, RECORD_CACHE_MAX_AGE_MS } from "../app/state/cachePolicy
 
 const buttonStyle = {
   padding: "8px 14px",
-  borderRadius: 8,
-  border: "1px solid #CBD5E1",
-  background: "#fff",
+  borderRadius: theme.radiusSm,
+  border: `1px solid ${theme.borderStrong}`,
+  background: theme.surface,
   cursor: "pointer",
   fontSize: 14,
 };
@@ -280,7 +281,7 @@ export default function FormPage() {
   if (!form) {
     return (
       <AppLayout title="フォーム" fallbackPath="/">
-        <p style={{ color: "#6B7280" }}>フォームが見つかりません。メイン画面からやり直してください。</p>
+        <p style={{ color: theme.textSubtle }}>フォームが見つかりません。メイン画面からやり直してください。</p>
       </AppLayout>
     );
   }
@@ -358,7 +359,7 @@ export default function FormPage() {
       }
     >
       {loading ? (
-        <p style={{ color: "#6B7280" }}>読み込み中...</p>
+        <p style={{ color: theme.textSubtle }}>読み込み中...</p>
       ) : (
         <PreviewPage
           ref={previewRef}

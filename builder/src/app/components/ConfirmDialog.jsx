@@ -1,13 +1,14 @@
 import React from "react";
 
 import { baseButtonStyle, dialogStyle, footerStyle, messageStyle, overlayStyle, titleStyle } from "./dialogStyles.js";
+import { theme } from "../theme/tokens.js";
 
 const getVariantStyle = (variant) => {
   if (variant === "primary") {
-    return { background: "#2563EB", borderColor: "#2563EB", color: "#fff" };
+    return { background: theme.primaryStrong, borderColor: theme.primaryStrong, color: theme.surface };
   }
   if (variant === "danger") {
-    return { background: "#DC2626", borderColor: "#DC2626", color: "#fff" };
+    return { background: theme.dangerStrong, borderColor: theme.dangerStrong, color: theme.surface };
   }
   return {};
 };

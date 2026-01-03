@@ -1,5 +1,6 @@
 import React from "react";
 import { inputStyle, searchBarStyle } from "../searchStyles.js";
+import { theme } from "../../../app/theme/tokens.js";
 
 export default function SearchToolbar({ query, onChange, lastSyncedAt, useCache, cacheDisabled }) {
   return (
@@ -11,7 +12,7 @@ export default function SearchToolbar({ query, onChange, lastSyncedAt, useCache,
         onChange={(event) => onChange(event.target.value)}
         style={{ ...inputStyle, flex: "1 0 220px" }}
       />
-      <span style={{ color: "#6B7280", fontSize: 12 }}>
+      <span style={{ color: theme.textSubtle, fontSize: 12 }}>
         最終更新: {lastSyncedAt ? new Date(lastSyncedAt).toLocaleString() : "未取得"} {useCache ? "(キャッシュ)" : cacheDisabled ? "(キャッシュ無効)" : ""}
       </span>
     </div>

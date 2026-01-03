@@ -1,6 +1,7 @@
 import React from "react";
 import { applyDisplayLengthLimit } from "../searchTable.js";
 import { createTableStyle, thStyle, tdStyle } from "../searchStyles.js";
+import { theme } from "../../../app/theme/tokens.js";
 
 const headerSortLabel = (activeSort, columnKey) => {
   if (activeSort.key !== columnKey) return "";
@@ -52,7 +53,7 @@ export default function SearchTable({
                     onClick={sortable ? () => onSortToggle(column.key) : undefined}
                   >
                     {cell.label}
-                    {sortable && <span style={{ marginLeft: 4, color: "#64748B" }}>{orderLabel}</span>}
+                    {sortable && <span style={{ marginLeft: 4, color: theme.textMuted }}>{orderLabel}</span>}
                   </th>
                 );
               })}

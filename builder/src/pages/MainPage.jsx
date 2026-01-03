@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
+import { theme } from "../app/theme/tokens.js";
 import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
 
 const listStyle = {
@@ -10,9 +11,9 @@ const listStyle = {
 };
 
 const cardStyle = {
-  background: "#fff",
-  borderRadius: 12,
-  border: "1px solid #E2E8F0",
+  background: theme.surface,
+  borderRadius: theme.radiusMd,
+  border: `1px solid ${theme.borderMuted}`,
   padding: 16,
   display: "flex",
   flexDirection: "column",
@@ -21,7 +22,7 @@ const cardStyle = {
 };
 
 const titleStyle = { fontSize: 16, fontWeight: 600, margin: 0 };
-const metaStyle = { fontSize: 12, color: "#6B7280" };
+const metaStyle = { fontSize: 12, color: theme.textSubtle };
 
 export default function MainPage() {
   const { forms, loadingForms } = useAppData();
@@ -41,9 +42,9 @@ export default function MainPage() {
 
   const sidebarButtonStyle = {
     padding: "8px 14px",
-    borderRadius: 8,
-    border: "1px solid #CBD5E1",
-    background: "#fff",
+    borderRadius: theme.radiusSm,
+    border: `1px solid ${theme.borderStrong}`,
+    background: theme.surface,
     cursor: "pointer",
     width: "100%",
     textAlign: "left",
@@ -60,15 +61,15 @@ export default function MainPage() {
       }
     >
       {loadingForms ? (
-        <p style={{ color: "#6B7280" }}>読み込み中...</p>
+        <p style={{ color: theme.textSubtle }}>読み込み中...</p>
       ) : activeForms.length === 0 ? (
-        <p style={{ color: "#6B7280" }}>登録済みのフォームがありません。管理画面から作成してください。</p>
+        <p style={{ color: theme.textSubtle }}>登録済みのフォームがありません。管理画面から作成してください。</p>
       ) : (
         <div style={listStyle}>
           {activeForms.map((form) => (
             <div key={form.id} style={cardStyle} onClick={() => handleSelect(form.id)}>
               <h2 style={titleStyle}>{form.settings?.formTitle || "(無題)"}</h2>
-              {form.description && <p style={{ margin: 0, color: "#475569" }}>{form.description}</p>}
+              {form.description && <p style={{ margin: 0, color: theme.textMuted }}>{form.description}</p>}
               <div style={metaStyle}>
                 最終更新: {formatUnixMsDateTime(form.modifiedAtUnixMs ?? toUnixMs(form.modifiedAt))}
               </div>

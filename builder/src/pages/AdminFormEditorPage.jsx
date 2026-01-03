@@ -6,15 +6,16 @@ import AlertDialog from "../app/components/AlertDialog.jsx";
 import FormBuilderWorkspace from "../features/admin/FormBuilderWorkspace.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { theme } from "../app/theme/tokens.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { validateSpreadsheet } from "../services/gasClient.js";
 import { cleanupTempData } from "../core/schema.js";
 
 const headerButtonStyle = {
   padding: "8px 14px",
-  borderRadius: 8,
-  border: "1px solid #CBD5E1",
-  background: "#fff",
+  borderRadius: theme.radiusSm,
+  border: `1px solid ${theme.borderStrong}`,
+  background: theme.surface,
   cursor: "pointer",
   fontSize: 14,
 };
@@ -28,9 +29,11 @@ const fieldStyle = {
 
 const inputStyle = {
   padding: "10px 12px",
-  borderRadius: 8,
-  border: "1px solid #CBD5E1",
+  borderRadius: theme.radiusSm,
+  border: `1px solid ${theme.borderStrong}`,
   fontSize: 14,
+  background: theme.surface,
+  color: theme.text,
 };
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/admin");
@@ -308,8 +311,8 @@ export default function AdminFormEditorPage() {
             type="button"
             style={{
               ...sidebarButtonStyle,
-              background: questionControl?.canMoveUp ? "#fff" : "#F3F4F6",
-              color: questionControl?.canMoveUp ? "#000" : "#9CA3AF",
+              background: questionControl?.canMoveUp ? theme.surface : theme.surfaceAlt,
+              color: questionControl?.canMoveUp ? theme.text : theme.textFaded,
               cursor: questionControl?.canMoveUp ? "pointer" : "not-allowed",
             }}
             disabled={!questionControl?.canMoveUp}
@@ -321,8 +324,8 @@ export default function AdminFormEditorPage() {
             type="button"
             style={{
               ...sidebarButtonStyle,
-              background: questionControl?.canMoveDown ? "#fff" : "#F3F4F6",
-              color: questionControl?.canMoveDown ? "#000" : "#9CA3AF",
+              background: questionControl?.canMoveDown ? theme.surface : theme.surfaceAlt,
+              color: questionControl?.canMoveDown ? theme.text : theme.textFaded,
               cursor: questionControl?.canMoveDown ? "pointer" : "not-allowed",
             }}
             disabled={!questionControl?.canMoveDown}
@@ -331,7 +334,7 @@ export default function AdminFormEditorPage() {
             ↓ 下へ
           </button>
           {questionControl?.selectedIndex !== null && (
-            <div style={{ fontSize: 11, color: "#64748B", padding: "4px 8px", textAlign: "center", wordBreak: "break-word" }}>
+            <div style={{ fontSize: 11, color: theme.textMuted, padding: "4px 8px", textAlign: "center", wordBreak: "break-word" }}>
               {questionControl?.isOption
                 ? `${questionControl?.questionLabel || `質問 ${(questionControl?.selectedIndex ?? 0) + 1}`} > ${questionControl?.optionLabel || `選択肢 ${(questionControl?.optionIndex ?? 0) + 1}`}`
                 : questionControl?.questionLabel || `質問 ${(questionControl?.selectedIndex ?? 0) + 1}`
@@ -344,8 +347,8 @@ export default function AdminFormEditorPage() {
             style={{
               ...sidebarButtonStyle,
               marginTop: "auto",
-              background: "#E0F2FE",
-              borderColor: "#38BDF8",
+              background: theme.infoWeak,
+              borderColor: theme.info,
             }}
             onClick={handleOpenSpreadsheet}
           >
@@ -366,7 +369,7 @@ export default function AdminFormEditorPage() {
             style={inputStyle}
             placeholder="フォーム名"
           />
-          {nameError && <p style={{ color: "#DC2626", fontSize: 12, margin: 0 }}>{nameError}</p>}
+          {nameError && <p style={{ color: theme.dangerStrong, fontSize: 12, margin: 0 }}>{nameError}</p>}
         </div>
         <div style={fieldStyle}>
           <label>説明</label>
@@ -380,11 +383,11 @@ export default function AdminFormEditorPage() {
             style={inputStyle}
             placeholder="空白: ルートディレクトリ / フォルダURL: ランダム名で保存 / ファイルURL: そのファイルに保存"
           />
-          <p style={{ fontSize: 11, color: "#6B7280", marginTop: 4, marginBottom: 0 }}>
+          <p style={{ fontSize: 11, color: theme.textSubtle, marginTop: 4, marginBottom: 0 }}>
             空白の場合はルートディレクトリに保存されます。フォルダURLを指定するとそのフォルダにランダム名で保存、ファイルURLを指定するとそのファイルに保存されます。
           </p>
           {isEdit && driveUrl && (
-            <p style={{ fontSize: 11, color: "#2563EB", marginTop: 4, marginBottom: 0 }}>
+            <p style={{ fontSize: 11, color: theme.primaryStrong, marginTop: 4, marginBottom: 0 }}>
               変更すると新しい場所に保存され、元のファイルはそのまま残ります。
             </p>
           )}

@@ -1,13 +1,14 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { theme } from "../theme/tokens.js";
 
 const headerStyle = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
   padding: "12px 16px",
-  borderBottom: "1px solid #E5E7EB",
-  background: "#F9FAFB",
+  borderBottom: `1px solid ${theme.border}`,
+  background: theme.appHeaderBg,
 };
 
 const buttonStyle = {
@@ -16,15 +17,15 @@ const buttonStyle = {
   gap: 6,
   padding: "6px 12px",
   borderRadius: 8,
-  border: "1px solid #CBD5E1",
-  background: "#fff",
+  border: `1px solid ${theme.borderStrong}`,
+  background: theme.surface,
   cursor: "pointer",
 };
 
 const sidebarStyle = {
   width: 200,
-  background: "#fff",
-  borderRight: "1px solid #E5E7EB",
+  background: theme.surface,
+  borderRight: `1px solid ${theme.border}`,
   padding: "16px",
   display: "flex",
   flexDirection: "column",
@@ -46,24 +47,24 @@ const badgeStyle = {
   fontSize: 11,
   padding: "4px 8px",
   borderRadius: 6,
-  background: "#DBEAFE",
-  color: "#1E40AF",
+  background: theme.primarySoft,
+  color: theme.primaryInk,
   fontWeight: 600,
   marginLeft: 8,
 };
 
 const badgeThemes = {
   view: {
-    background: "#DBEAFE",
-    color: "#1E40AF",
+    background: theme.primarySoft,
+    color: theme.primaryInk,
   },
   edit: {
-    background: "#FEF3C7",
-    color: "#92400E",
+    background: theme.warningWeak,
+    color: theme.warningInk,
   },
   loading: {
-    background: "#BFDBFE",
-    color: "#1E3A8A",
+    background: theme.primarySoftStrong,
+    color: theme.primaryInkStrong,
   },
 };
 
@@ -113,7 +114,7 @@ export default function AppLayout({ title, fallbackPath = "/", onBack, backHidde
   const finalBadgeStyle = { ...badgeStyle, ...(resolvedBadge?.style || {}), ...badgeVariantStyle };
 
   return (
-    <div style={{ minHeight: "100vh", background: "#F3F4F6" }}>
+    <div style={{ minHeight: "100vh", background: theme.appBg }}>
       <header style={headerStyle}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <h1 style={{ margin: 0, fontSize: 18 }}>{title}</h1>
