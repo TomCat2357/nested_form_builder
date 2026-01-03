@@ -203,15 +203,17 @@ fi
 # Script IDは参照リンク用に取得
 SCRIPT_ID=$(grep '"scriptId"' .clasp.json | cut -d '"' -f4 | tr -d '\r')
 
-# デプロイメント一覧から@HEADのDeployment IDを確実に取得
-echo "📋 デプロイメント情報を取得中..."
-DEPLOYMENTS_OUTPUT=$(clasp deployments 2>/dev/null)
-if [ -n "$DEPLOYMENTS_OUTPUT" ]; then
-    # @HEADのDeployment IDを抽出（最初のAKfで始まる文字列）
-    HEAD_DEPLOYMENT_ID=$(echo "$DEPLOYMENTS_OUTPUT" | grep '@HEAD' | grep -Eo 'AKf[[:alnum:]_\-]+' | head -n1)
-    if [ -n "$HEAD_DEPLOYMENT_ID" ]; then
-        DEPLOYMENT_ID="$HEAD_DEPLOYMENT_ID"
-        WEB_APP_URL="https://script.google.com/macros/s/$HEAD_DEPLOYMENT_ID/exec"
+# デプロイメント一覧から@HEADのDeployment IDを取得（既存IDが無い場合のみ）
+if [ -z "$DEPLOYMENT_ID" ] && [ -z "$WEB_APP_URL" ]; then
+    echo "📋 デプロイメント情報を取得中..."
+    DEPLOYMENTS_OUTPUT=$(clasp deployments 2>/dev/null)
+    if [ -n "$DEPLOYMENTS_OUTPUT" ]; then
+        # @HEADのDeployment IDを抽出（最初のAKfで始まる文字列）
+        HEAD_DEPLOYMENT_ID=$(echo "$DEPLOYMENTS_OUTPUT" | grep '@HEAD' | grep -Eo 'AKf[[:alnum:]_\-]+' | head -n1)
+        if [ -n "$HEAD_DEPLOYMENT_ID" ]; then
+            DEPLOYMENT_ID="$HEAD_DEPLOYMENT_ID"
+            WEB_APP_URL="https://script.google.com/macros/s/$HEAD_DEPLOYMENT_ID/exec"
+        fi
     fi
 fi
 
