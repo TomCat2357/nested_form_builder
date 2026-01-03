@@ -124,8 +124,7 @@ function SerializeRecord_(record) {
     createdAtUnixMs: createdInfo.unixMs,
     modifiedAtUnixMs: modifiedInfo.unixMs,
     data: serializedData,
-    dataUnixMs: serializedDataUnixMs,
-    rowHash: record.rowHash || ""
+    dataUnixMs: serializedDataUnixMs
   };
 }
 
@@ -186,7 +185,7 @@ function GetRecord_(ctx) {
   if (missingId) return missingId;
 
   var sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
-  var result = Sheets_getRecordById_(sheet, ctx.id, ctx.rowIndexHint, ctx.cachedRowHash);
+  var result = Sheets_getRecordById_(sheet, ctx.id, ctx.rowIndexHint);
 
   if (!result || !result.ok) {
     return result || { ok: false, error: "Record not found" };
@@ -195,15 +194,25 @@ function GetRecord_(ctx) {
   return {
     ok: true,
     record: result.record ? SerializeRecord_(result.record) : null,
-    rowIndex: result.rowIndex,
-    unchanged: result.unchanged,
-    rowHash: result.rowHash || "",
+    rowIndex: result.rowIndex
   };
 }
 
 function ListRecords_(ctx) {
   var sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
-  var records = Sheets_getAllRecords_(sheet);
+  var temporalTypeMap = null;
+  var formId = ctx && ctx.raw && ctx.raw.formId;
+  if (formId) {
+    try {
+      var form = Forms_getForm_(formId);
+      if (form && form.schema) {
+        temporalTypeMap = Sheets_collectTemporalPathMap_(form.schema);
+      }
+    } catch (err) {
+      Logger.log("[ListRecords_] Failed to load form schema for temporal formats: " + err);
+    }
+  }
+  var records = Sheets_getAllRecords_(sheet, temporalTypeMap);
   var headerMatrix = Sheets_readHeaderMatrix_(sheet);
 
   return {

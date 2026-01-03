@@ -5,8 +5,6 @@ function Model_normalizeContext_(body, params) {
   var responses = (body.responses && typeof body.responses === "object") ? body.responses : {};
   var order = (Array.isArray(body.order) && body.order.length) ? body.order : Object.keys(responses);
   var rowIndexHint = (typeof body.rowIndexHint === "number") ? body.rowIndexHint : (typeof params.rowIndexHint === "number" ? params.rowIndexHint : null);
-  var cachedRowHash = body.cachedRowHash || params.cachedRowHash || "";
-
   return {
     version: body.version || 1,
     formTitle: body.formTitle || "",
@@ -17,7 +15,6 @@ function Model_normalizeContext_(body, params) {
     responses: responses,
     order: order,
     rowIndexHint: rowIndexHint,
-    cachedRowHash: cachedRowHash,
     raw: body,
   };
 }

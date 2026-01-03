@@ -113,7 +113,7 @@ export const getEntry = async ({ spreadsheetId, sheetName = "Responses", entryId
   };
 };
 
-export const listEntries = async ({ spreadsheetId, sheetName = "Responses" }) => {
+export const listEntries = async ({ spreadsheetId, sheetName = "Responses", formId = null }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
 
   const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
@@ -122,6 +122,9 @@ export const listEntries = async ({ spreadsheetId, sheetName = "Responses" }) =>
     spreadsheetId: cleanSpreadsheetId,
     sheetName,
   };
+  if (formId) {
+    payload.formId = formId;
+  }
 
   const result = await callScriptRun("listRecords", payload);
   if (!result || result.ok === false) {

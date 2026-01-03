@@ -278,7 +278,7 @@ export const dataStore = {
     }
     const startedAt = Date.now();
     console.log("[perf][records] listEntries start", { formId, sheet: sheetConfig.sheetName, startedAt });
-    const gasResult = await listEntriesFromGas(sheetConfig);
+    const gasResult = await listEntriesFromGas({ ...sheetConfig, formId });
     const entries = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
 
     // Sort by ID in ascending order when fetching from spreadsheet

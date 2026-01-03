@@ -1,5 +1,5 @@
 var NFB_HEADER_DEPTH = 6;
-var NFB_FIXED_HEADER_PATHS = [["__hash__"], ["id"], ["No."], ["createdAt"], ["modifiedAt"]];
+var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"]];
 var NFB_TZ = "Asia/Tokyo"; // 想定タイムゾーン（JST固定）
 var NFB_MS_PER_DAY = 24 * 60 * 60 * 1000;
 var NFB_SHEETS_EPOCH_MS = new Date(1899, 11, 30, 0, 0, 0).getTime();
@@ -76,6 +76,117 @@ function Sheets_parseDateLikeToJstDate_(value, allowSerialNumber) {
   return null;
 }
 
+function Sheets_isDateString_(value) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
+function Sheets_isTimeString_(value) {
+  return /^\d{1,2}:\d{2}(?::\d{2})?$/.test(value);
+}
+
+function Sheets_detectTemporalColumnType_(values, columnIndex) {
+  var hasValue = false;
+  var allDate = true;
+  var allTime = true;
+
+  for (var i = 0; i < values.length; i++) {
+    var cell = values[i][columnIndex];
+    if (cell === null || cell === undefined || cell === "") continue;
+    hasValue = true;
+
+    if (cell instanceof Date) {
+      if (!Sheets_isValidDate_(cell)) return null;
+      var isBaseTime = cell.getFullYear() === 1899 && cell.getMonth() === 11 && cell.getDate() === 30;
+      var isMidnight = cell.getHours() === 0 && cell.getMinutes() === 0 && cell.getSeconds() === 0;
+      if (!isBaseTime) allTime = false;
+      if (!isMidnight) allDate = false;
+    } else if (typeof cell === "string") {
+      var trimmed = cell.trim();
+      if (!trimmed) continue;
+      if (!Sheets_isDateString_(trimmed)) allDate = false;
+      if (!Sheets_isTimeString_(trimmed)) allTime = false;
+    } else {
+      allDate = false;
+      allTime = false;
+    }
+
+    if (!allDate && !allTime) return null;
+  }
+
+  if (!hasValue) return null;
+  if (allTime) return "time";
+  if (allDate) return "date";
+  return null;
+}
+
+function Sheets_applyTemporalFormatToColumn_(sheet, columnIndex, values, dataRowCount, numberFormat) {
+  var converted = [];
+  for (var i = 0; i < dataRowCount; i++) {
+    var cell = values[i][columnIndex];
+    if (cell === null || cell === undefined || cell === "") {
+      converted.push([""]);
+      continue;
+    }
+    if (cell instanceof Date || (typeof cell === "number" && isFinite(cell))) {
+      converted.push([cell]);
+      continue;
+    }
+    var parsed = Sheets_parseDateLikeToJstDate_(cell);
+    converted.push([parsed || cell]);
+  }
+
+  var range = sheet.getRange(NFB_HEADER_DEPTH + 1, columnIndex + 1, dataRowCount, 1);
+  range.setValues(converted);
+  range.setNumberFormat(numberFormat);
+}
+
+function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, explicitTypeMap) {
+  if (!dataRowCount) return;
+
+  var keyToIndex = {};
+  for (var i = 0; i < columnPaths.length; i++) {
+    keyToIndex[columnPaths[i].key] = columnPaths[i].index;
+  }
+
+  var dateTimeFormat = "yyyy/MM/dd HH:mm:ss";
+  var dateFormat = "yyyy/MM/dd";
+  var timeFormat = "HH:mm";
+
+  var createdAtIndex = keyToIndex["createdAt"];
+  var modifiedAtIndex = keyToIndex["modifiedAt"];
+
+  if (typeof createdAtIndex === "number") {
+    Sheets_applyTemporalFormatToColumn_(sheet, createdAtIndex, values, dataRowCount, dateTimeFormat);
+  }
+  if (typeof modifiedAtIndex === "number") {
+    Sheets_applyTemporalFormatToColumn_(sheet, modifiedAtIndex, values, dataRowCount, dateTimeFormat);
+  }
+
+  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true };
+  var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";
+  for (var j = 0; j < columnPaths.length; j++) {
+    var colInfo = columnPaths[j];
+    if (reservedKeys[colInfo.key]) continue;
+    if (hasExplicitMap) {
+      var explicitType = explicitTypeMap[colInfo.key];
+      if (explicitType === "date") {
+        Sheets_applyTemporalFormatToColumn_(sheet, colInfo.index, values, dataRowCount, dateFormat);
+        continue;
+      }
+      if (explicitType === "time") {
+        Sheets_applyTemporalFormatToColumn_(sheet, colInfo.index, values, dataRowCount, timeFormat);
+        continue;
+      }
+    }
+    var temporalType = Sheets_detectTemporalColumnType_(values, colInfo.index);
+    if (temporalType === "date") {
+      Sheets_applyTemporalFormatToColumn_(sheet, colInfo.index, values, dataRowCount, dateFormat);
+    } else if (temporalType === "time") {
+      Sheets_applyTemporalFormatToColumn_(sheet, colInfo.index, values, dataRowCount, timeFormat);
+    }
+  }
+}
+
 function Sheets_toDateOrOriginal_(value) {
   var parsed = Sheets_parseDateLikeToJstDate_(value);
   return parsed || value;
@@ -149,6 +260,39 @@ function Sheets_extractColumnPaths_(matrix) {
 
 function Sheets_pathKey_(path) {
   return path.join("|");
+}
+
+function Sheets_collectTemporalPathMap_(schema) {
+  var map = {};
+
+  var walk = function(fields, basePath) {
+    if (!fields || !fields.length) return;
+
+    for (var i = 0; i < fields.length; i++) {
+      var field = fields[i];
+      if (!field) continue;
+      var label = field.label !== undefined && field.label !== null ? String(field.label) : "";
+      if (!label) continue;
+      var path = basePath ? basePath + "|" + label : label;
+
+      if (field.type === "date" || field.type === "time") {
+        map[path] = field.type;
+      }
+
+      if (field.childrenByValue && typeof field.childrenByValue === "object") {
+        for (var key in field.childrenByValue) {
+          if (!field.childrenByValue.hasOwnProperty(key)) continue;
+          var childFields = field.childrenByValue[key];
+          var optionLabel = String(key || "");
+          var nextPath = optionLabel ? path + "|" + optionLabel : path;
+          walk(childFields, nextPath);
+        }
+      }
+    }
+  };
+
+  walk(Array.isArray(schema) ? schema : [], "");
+  return map;
 }
 
 function Sheets_buildDesiredPaths_(order, existingPaths) {
@@ -263,7 +407,7 @@ function Sheets_findRowById_(sheet, id) {
   if (!id) return -1;
   var lastRow = sheet.getLastRow();
   if (lastRow <= NFB_HEADER_DEPTH) return -1;
-  var lookupRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 2, lastRow - NFB_HEADER_DEPTH, 1).getValues();
+  var lookupRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, lastRow - NFB_HEADER_DEPTH, 1).getValues();
 
   // 二分探索を試行（ID列がソート済みの場合に高速化）
   var binaryResult = Sheets_binarySearchById_(lookupRange, id);
@@ -344,7 +488,7 @@ function Sheets_createNewRow_(sheet, id) {
   var maxNo = 0;
   var lastRow = sheet.getLastRow();
   if (lastRow > NFB_HEADER_DEPTH) {
-    var noValues = sheet.getRange(NFB_HEADER_DEPTH + 1, 3, lastRow - NFB_HEADER_DEPTH, 1).getValues();
+    var noValues = sheet.getRange(NFB_HEADER_DEPTH + 1, 2, lastRow - NFB_HEADER_DEPTH, 1).getValues();
     for (var i = 0; i < noValues.length; i++) {
       var val = noValues[i][0];
       if (typeof val === 'number' && val > maxNo) {
@@ -355,10 +499,10 @@ function Sheets_createNewRow_(sheet, id) {
 
   var nowSerial = Sheets_dateToSerial_(now);
 
-  sheet.getRange(rowIndex, 2).setValue(String(nextId));
-  sheet.getRange(rowIndex, 3).setValue(String(maxNo + 1));
+  sheet.getRange(rowIndex, 1).setValue(String(nextId));
+  sheet.getRange(rowIndex, 2).setValue(String(maxNo + 1));
+  sheet.getRange(rowIndex, 3).setValue(nowSerial);
   sheet.getRange(rowIndex, 4).setValue(nowSerial);
-  sheet.getRange(rowIndex, 5).setValue(nowSerial);
 
   return { rowIndex: rowIndex, id: nextId };
 }
@@ -366,7 +510,7 @@ function Sheets_createNewRow_(sheet, id) {
 function Sheets_updateExistingRow_(sheet, rowIndex) {
   Sheets_ensureRowCapacity_(sheet, rowIndex);
   var nowSerial = Sheets_dateToSerial_(new Date());
-  sheet.getRange(rowIndex, 5).setValue(nowSerial);
+  sheet.getRange(rowIndex, 4).setValue(nowSerial);
 }
 
 function Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys) {
@@ -415,18 +559,6 @@ function Sheets_upsertRecordById_(sheet, order, ctx) {
 
   Sheets_writeDataToRow_(sheet, rowIndex, ctx.order, ctx.responses, keyToColumn, reservedHeaderKeys);
 
-  // 行ハッシュを計算しメタ列に保存（id + data を対象にする）
-  var hashColumn = keyToColumn["__hash__"];
-  if (hashColumn) {
-    var payloadForHash = {
-      id: String(ctx.id || ""),
-      data: ctx.responses || {},
-    };
-    var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, JSON.stringify(payloadForHash));
-    var hashStr = Utilities.base64Encode(digest);
-    sheet.getRange(rowIndex, hashColumn).setValue(hashStr);
-  }
-
   return { row: rowIndex, id: ctx.id };
 }
 
@@ -459,29 +591,26 @@ function Sheets_readColumnPaths_(sheet, lastColumn) {
 }
 
 function Sheets_buildRecordFromRow_(rowData, columnPaths) {
-  var id = rowData[1] ? String(rowData[1]) : "";
+  var id = rowData[0] ? String(rowData[0]) : "";
   if (!id) return null;
 
   var record = {
     id: id,
-    "No.": rowData[2] || "",
-    createdAt: rowData[3] || "",
-    modifiedAt: rowData[4] || "",
-    createdAtUnixMs: Sheets_toUnixMs_(rowData[3], true),
-    modifiedAtUnixMs: Sheets_toUnixMs_(rowData[4], true),
+    "No.": rowData[1] || "",
+    createdAt: rowData[2] || "",
+    modifiedAt: rowData[3] || "",
+    createdAtUnixMs: Sheets_toUnixMs_(rowData[2], true),
+    modifiedAtUnixMs: Sheets_toUnixMs_(rowData[3], true),
     data: {},
-    dataUnixMs: {},
-    rowHash: rowData[0] ? String(rowData[0]) : ""
+    dataUnixMs: {}
   };
 
-  var reservedKeys = { "__hash__": true, "id": true, "No.": true, "createdAt": true, "modifiedAt": true };
+  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true };
 
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];
     var value = rowData[colInfo.index];
-    if (colInfo.key === "__hash__") {
-      record.rowHash = value ? String(value) : "";
-    } else if (value != null && value !== "" && !reservedKeys[colInfo.key]) {
+    if (value != null && value !== "" && !reservedKeys[colInfo.key]) {
       record.data[colInfo.key] = value;
       var unix = Sheets_toUnixMs_(value);
       if (unix !== null) {
@@ -493,7 +622,7 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
   return record;
 }
 
-function Sheets_getRecordById_(sheet, id, rowIndexHint, cachedRowHash) {
+function Sheets_getRecordById_(sheet, id, rowIndexHint) {
   if (!id) return { ok: false, error: "Record ID is required" };
 
   var lastRow = sheet.getLastRow();
@@ -502,28 +631,16 @@ function Sheets_getRecordById_(sheet, id, rowIndexHint, cachedRowHash) {
     return { ok: false, error: "Record not found" };
   }
 
-  var headerMatrix = Sheets_readHeaderMatrix_(sheet);
-  var hashColumn = Sheets_findColumnByPath_(headerMatrix, ["__hash__"]); // 1-based or -1
-
   var resolvedRowIndex = -1;
-  var unchanged = false;
 
   // 0-basedのデータ行indexをヒントとして受け取り、先頭ヘッダー行を考慮して変換
   if (typeof rowIndexHint === "number" && rowIndexHint >= 0) {
     var candidate = NFB_HEADER_DEPTH + 1 + rowIndexHint;
     if (candidate <= lastRow) {
-      // A列（hash）とB列（id）を同時に読み取り
-      var rowCells = sheet.getRange(candidate, 1, 1, 2).getValues()[0];
-      var hashCell = rowCells[0];
-      var idCell = rowCells[1];
+      var idCell = sheet.getRange(candidate, 1, 1, 1).getValues()[0][0];
 
       if (String(idCell) === String(id)) {
         resolvedRowIndex = candidate;
-        if (hashColumn !== -1 && cachedRowHash) {
-          if (String(hashCell || "") === String(cachedRowHash || "")) {
-            unchanged = true;
-          }
-        }
       }
     }
   }
@@ -538,10 +655,6 @@ function Sheets_getRecordById_(sheet, id, rowIndexHint, cachedRowHash) {
 
   var dataRowIndex = resolvedRowIndex - (NFB_HEADER_DEPTH + 1);
 
-  if (unchanged) {
-    return { ok: true, record: null, rowIndex: dataRowIndex, unchanged: true, rowHash: cachedRowHash || "" };
-  }
-
   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
   var rowData = sheet.getRange(resolvedRowIndex, 1, 1, lastColumn).getValues()[0];
   var record = Sheets_buildRecordFromRow_(rowData, columnPaths);
@@ -549,10 +662,10 @@ function Sheets_getRecordById_(sheet, id, rowIndexHint, cachedRowHash) {
     return { ok: false, error: "Record not found" };
   }
 
-  return { ok: true, record: record, rowIndex: dataRowIndex, unchanged: false, rowHash: record.rowHash || "" };
+  return { ok: true, record: record, rowIndex: dataRowIndex };
 }
 
-function Sheets_getAllRecords_(sheet) {
+function Sheets_getAllRecords_(sheet, temporalTypeMap) {
   var lastRow = sheet.getLastRow();
   var lastColumn = sheet.getLastColumn();
 
@@ -563,27 +676,16 @@ function Sheets_getAllRecords_(sheet) {
   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
   var dataRowCount = lastRow - NFB_HEADER_DEPTH;
 
-  // スプレッドシート側でID列(2列目)でソート（既にソート済みの場合はスキップ）
+  // スプレッドシート側でID列(2列目)で必ずソート
   if (dataRowCount > 0) {
-    // ID列（2列目）を読み取ってソート済みかチェック
-    var idColumn = sheet.getRange(NFB_HEADER_DEPTH + 1, 2, dataRowCount, 1).getValues();
-    var needsSort = false;
-    for (var i = 1; i < idColumn.length; i++) {
-      var prevId = String(idColumn[i - 1][0] || "");
-      var currId = String(idColumn[i][0] || "");
-      if (prevId > currId) {
-        needsSort = true;
-        break;
-      }
-    }
-
-    if (needsSort) {
-      var sortRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn);
-      sortRange.sort({column: 2, ascending: true});
-    }
+    var sortRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn);
+    sortRange.sort({column: 2, ascending: true});
   }
 
   var dataRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn).getValues();
+  if (dataRowCount > 0) {
+    Sheets_applyTemporalFormats_(sheet, columnPaths, dataRange, dataRowCount, temporalTypeMap);
+  }
 
   var records = [];
   for (var i = 0; i < dataRange.length; i++) {
