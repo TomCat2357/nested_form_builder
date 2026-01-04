@@ -19,7 +19,7 @@ Nested Form Builderは、階層構造を持つアンケートフォームを視�
 ### 現在の状態
 
 - `builder/` は React 19 + Vite 7 + `vite-plugin-singlefile` で構築しています。
-- `deploy.sh` が `npm --prefix builder install` → `builder` ビルド → `scripts/bundle-gas.js` → `dist/` 配置 → `clasp push/deploy` を一括実行し、`.gas-deployment.json` にデプロイ情報をキャッシュします。
+- `deploy.sh` が `npm --prefix builder install` → `builder` ビルド → `gas/scripts/bundle.js` → `dist/` 配置 → `clasp push/deploy` を一括実行し、`.gas-deployment.json` にデプロイ情報をキャッシュします。
 - `docs/`（仕様書・ユーザーマニュアル・検索ガイド）、`shared/`（payload契約 & スキーマ例）、`samples/form.json`（ヒグマフォーム）が揃っており、Playwrightの設定/成果物（`test-results/`）も含まれます。
 
 ### 技術スタック
@@ -40,18 +40,17 @@ nested_form_builder/
 │   ├── src/pages/           # 画面コンポーネント
 │   ├── src/services/        # GAS APIクライアント
 │   └── src/utils/           # download/spreadsheetユーティリティ
-├── gas/                     # Google Apps Script ソース
+├── gas/                     # Google Apps Script ソース（分割ファイル）
 │   ├── Code.gs
 │   ├── model.gs
 │   ├── sheets.gs
 │   ├── settings.gs
-│   ├── Index.html
 │   └── README.md
 ├── dist/                    # deploy.sh が生成する clasp ルート (Bundle.gs, Index.html, appsscript.json)
 ├── docs/                    # SPEC, user_manual, 検索ガイド, スクリーンショット
 ├── shared/                  # payload_contract と schema_examples
 ├── samples/                 # form.json（ヒグマは好きかフォーム例）
-├── scripts/                 # bundle-gas.js（GAS結合ツール）
+├── gas/scripts/             # bundle.js（GAS結合ツール）
 ├── test-results/            # Playwright実行ログ/スクリーンショット
 ├── CLAUDE.md                # AIエージェント向けガイダンス
 ├── deploy.sh                # 自動デプロイスクリプト
@@ -63,7 +62,7 @@ nested_form_builder/
 
 - `builder/src/features/export/`…スキーマJSONのダウンロードUI
 - `builder/src/features/admin/SearchPreviewPanel.jsx`…重要項目・表示モードの確認
-- `scripts/bundle-gas.js`…`gas/*.gs` を `dist/Bundle.gs` に結合し、`deploy.sh` から呼び出されます
+- `gas/scripts/bundle.js`…`gas/*.gs` を `dist/Bundle.gs` に結合し、`deploy.sh` から呼び出されます
 - `docs/user_manual.md` / `docs/SPECIFICATIONS.md` / `docs/検索機能の使い方.md`…ユーザー/開発者向けドキュメント
 - `shared/payload_contract.md`…GASとのPOSTペイロード仕様、`shared/schema_examples/basic.json`…最小構成例
 
@@ -117,7 +116,7 @@ npx clasp create --type webapp --title "Nested Form Builder"
 ./deploy.sh
 ```
 
-`deploy.sh` は `builder` の依存関係インストール→ビルド→`scripts/bundle-gas.js` による `dist/Bundle.gs` 生成→`dist/Index.html` へ `<base target="_top">` 付与→`appsscript.json` コピー/上書き→`clasp push`→`clasp deploy` まで自動化し、`.gas-deployment.json` に Deployment ID/URL をキャッシュします。`--manifest-override <path>` を付与すると `gas/appsscript.json` に別JSONをマージしてから push できます。
+`deploy.sh` は `builder` の依存関係インストール→ビルド→`gas/scripts/bundle.js` による `dist/Bundle.gs` 生成→`dist/Index.html` へ `<base target="_top">` 付与→`appsscript.json` コピー/上書き→`clasp push`→`clasp deploy` まで自動化し、`.gas-deployment.json` に Deployment ID/URL をキャッシュします。`--manifest-override <path>` を付与すると `gas/appsscript.json` に別JSONをマージしてから push できます。
 
 ## 開発
 
@@ -133,13 +132,13 @@ npm run builder:dev
 
 ```bash
 npm run builder:build
-node scripts/bundle-gas.js
+node gas/scripts/bundle.js
 ls dist
 ```
 
-- `vite build` が `builder/dist` に成果物を出力後、`scripts/bundle-gas.js` が `gas/*.gs` を `dist/Bundle.gs` に結合します。
+- `vite build` が `builder/dist` に成果物を出力後、`gas/scripts/bundle.js` が `gas/*.gs` を `dist/Bundle.gs` に結合します。
 - `dist/Index.html` が GAS で配信されるReactアプリで、`deploy.sh` は `<base target="_top">` を自動付与します。
-- 手動で `node scripts/bundle-gas.js` を実行すれば `deploy.sh` なしでも `dist/` を最新化できます。
+- 手動で `node gas/scripts/bundle.js` を実行すれば `deploy.sh` なしでも `dist/` を最新化できます。
 
 ### Apps Scriptコードの編集
 
@@ -152,6 +151,14 @@ npm run clasp:push
 ```
 
 `.clasp.json` の `rootDir` は `dist/` です。`clasp:pull` を実行すると最新のGASコード/マニフェストが `dist/` に展開されるため、編集後は `scripts/bundle-gas.js` の出力を上書きしないよう注意してください。
+
+### テーマ設定
+
+設定パネル（基本設定）の「テーマ」から変更できます。現在の選択肢は `builder/src/app/theme/theme.js` の `THEME_OPTIONS` に定義されており、既定は `balanced` です。
+
+テーマは `<html data-theme="...">` を切り替える方式で、色や余白などのトークンは `builder/src/app/theme/theme.css` と `builder/src/app/theme/base.css` に定義されています。UIでの参照は `builder/src/app/theme/tokens.js` 経由です。
+
+保存先はローカル（IndexedDB: `nested_form_builder_settings_v1`）で、GASのユーザー設定には同期されません。初期表示時のみ `localStorage` の `nested_form_builder_theme` がフォールバックとして使われます。
 
 ## テスト
 

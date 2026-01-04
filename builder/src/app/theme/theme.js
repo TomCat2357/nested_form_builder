@@ -1,6 +1,9 @@
 const THEME_STORAGE_KEY = "nested_form_builder_theme";
 export const DEFAULT_THEME = "balanced";
-export const THEME_OPTIONS = [{ value: "balanced", label: "Balanced" }];
+export const THEME_OPTIONS = [
+  { value: "balanced", label: "Balanced" },
+  { value: "warm", label: "Warm" },
+];
 
 const safeStorageGet = (key) => {
   try {
