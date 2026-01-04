@@ -1,4 +1,6 @@
 const THEME_STORAGE_KEY = "nested_form_builder_theme";
+export const DEFAULT_THEME = "balanced";
+export const THEME_OPTIONS = [{ value: "balanced", label: "Balanced" }];
 
 const safeStorageGet = (key) => {
   try {
@@ -21,7 +23,7 @@ export const applyTheme = (name) => {
   document.documentElement.dataset.theme = name;
 };
 
-export const initTheme = (fallback = "balanced") => {
+export const initTheme = (fallback = DEFAULT_THEME) => {
   const saved = safeStorageGet(THEME_STORAGE_KEY);
   const theme = saved || fallback;
   applyTheme(theme);

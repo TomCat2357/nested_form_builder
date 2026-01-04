@@ -5,8 +5,6 @@ import { genId } from "../../core/ids.js";
 import { DISPLAY_MODES, ensureDisplayModeForType, toImportantFlag } from "../../core/displayModes.js";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
-import { theme } from "../../app/theme/tokens.js";
-
 // 定数
 const CHOICE_TYPES = ["radio", "select", "checkboxes"];
 const INPUT_TYPES = ["text", "textarea", "number"];
@@ -16,7 +14,29 @@ const resolveDisplayModeForType = (type, displayed) => (
   displayed ? ensureDisplayModeForType(DISPLAY_MODES.NORMAL, type, { explicit: true }) : DISPLAY_MODES.NONE
 );
 const DISPLAY_LABEL = "表示";
-const DEFAULT_STYLE_SETTINGS = { fontSize: "14px", textColor: "#000000" };
+const DEFAULT_STYLE_SETTINGS = { labelSize: "default", textColor: "#000000" };
+
+const normalizeLabelSize = (value) => {
+  if (value === "smaller" || value === "default" || value === "larger") return value;
+  return "default";
+};
+
+const normalizeStyleSettings = (input) => {
+  const next = { ...(input || {}) };
+  if (!next.labelSize && typeof next.fontSize === "string") {
+    const numeric = parseInt(next.fontSize, 10);
+    if (!Number.isNaN(numeric)) {
+      if (numeric <= 12) next.labelSize = "smaller";
+      else if (numeric >= 18) next.labelSize = "larger";
+      else next.labelSize = "default";
+    } else {
+      next.labelSize = "default";
+    }
+  }
+  next.labelSize = normalizeLabelSize(next.labelSize);
+  delete next.fontSize;
+  return next;
+};
 
 // ヘルパー関数
 const isChoiceType = (type) => CHOICE_TYPES.includes(type);
@@ -170,7 +190,7 @@ function PlaceholderInput({ field, onChange, onFocus }) {
  * スタイル設定入力UI
  */
 function StyleSettingsInput({ field, onChange, onFocus }) {
-  const styleSettings = field.styleSettings || {};
+  const styleSettings = normalizeStyleSettings(field.styleSettings || {});
   const isStyleSettingsEnabled = typeof field.showStyleSettings === "boolean"
     ? field.showStyleSettings
     : !!field.styleSettings;
@@ -186,7 +206,7 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
               const restored = (field.styleSettings && typeof field.styleSettings === "object")
                 ? field.styleSettings
                 : (field._savedStyleSettings && typeof field._savedStyleSettings === "object" ? field._savedStyleSettings : {});
-              const nextStyleSettings = { ...DEFAULT_STYLE_SETTINGS, ...restored };
+              const nextStyleSettings = { ...DEFAULT_STYLE_SETTINGS, ...normalizeStyleSettings(restored) };
               console.log("[StyleSettingsInput] toggle ON", {
                 id: field.id,
                 label: field.label,
@@ -218,17 +238,16 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
             <label className="nf-text-12 nf-mb-2 nf-text-subtle">文字サイズ</label>
             <select
               className={s.input.className}
-              value={styleSettings.fontSize || "14px"}
+              value={styleSettings.labelSize || "default"}
               onChange={(event) => onChange({
                 ...field,
-                styleSettings: { ...styleSettings, fontSize: event.target.value }
+                styleSettings: { ...styleSettings, labelSize: event.target.value }
               })}
               onFocus={onFocus}
             >
-              <option value="12px">小 (12px)</option>
-              <option value="14px">通常 (14px)</option>
-              <option value="18px">大 (18px)</option>
-              <option value="24px">特大 (24px)</option>
+              <option value="smaller">小さく</option>
+              <option value="default">標準</option>
+              <option value="larger">大きく</option>
             </select>
           </div>
           <div className="nf-flex-1">

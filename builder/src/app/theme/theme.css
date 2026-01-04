@@ -2,6 +2,10 @@
 :root[data-theme="balanced"] {
   --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
+  --label-font-size-base: 14px;
+  --label-size-offset-sm: -2px;
+  --label-size-offset-lg: 2px;
+
   --bg: #f6f7fb;
   --surface: #ffffff;
   --surface-elevated: #ffffff;

@@ -5,7 +5,32 @@ const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" 
 
 export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
 export const MAX_DEPTH = 6;
-const DEFAULT_STYLE_SETTINGS = { fontSize: "14px", textColor: "#000000" };
+const DEFAULT_STYLE_SETTINGS = { labelSize: "default", textColor: "#000000" };
+
+const normalizeLabelSize = (value) => {
+  if (value === "smaller" || value === "default" || value === "larger") return value;
+  return "default";
+};
+
+const normalizeStyleSettings = (input) => {
+  const next = { ...(input || {}) };
+  if (!next.labelSize && typeof next.fontSize === "string") {
+    const numeric = parseInt(next.fontSize, 10);
+    if (!Number.isNaN(numeric)) {
+      if (numeric <= 12) next.labelSize = "smaller";
+      else if (numeric >= 18) next.labelSize = "larger";
+      else next.labelSize = "default";
+    } else {
+      next.labelSize = "default";
+    }
+  }
+  next.labelSize = normalizeLabelSize(next.labelSize);
+  if (typeof next.textColor !== "string" || !next.textColor) {
+    next.textColor = DEFAULT_STYLE_SETTINGS.textColor;
+  }
+  delete next.fontSize;
+  return next;
+};
 
 export const sampleSchema = () => [
   {
@@ -114,6 +139,8 @@ export const normalizeSchemaIDs = (nodes) => {
 
     if (base.showStyleSettings === true && (!base.styleSettings || typeof base.styleSettings !== "object")) {
       base.styleSettings = { ...DEFAULT_STYLE_SETTINGS };
+    } else if (base.styleSettings && typeof base.styleSettings === "object") {
+      base.styleSettings = normalizeStyleSettings(base.styleSettings);
     }
 
     // _savedChoiceStateを保持する

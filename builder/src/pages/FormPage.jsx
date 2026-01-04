@@ -10,6 +10,7 @@ import { restoreResponsesFromData, hasDirtyChanges } from "../utils/responses.js
 import { submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { applyTheme, DEFAULT_THEME } from "../app/theme/theme.js";
 import { normalizeSchemaIDs } from "../core/schema.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
 import { evaluateCache, RECORD_CACHE_MAX_AGE_MS } from "../app/state/cachePolicy.js";
@@ -44,6 +45,10 @@ export default function FormPage() {
   useEffect(() => {
     setMode(entryId ? "view" : "edit");
   }, [entryId]);
+
+  useEffect(() => {
+    applyTheme(form?.settings?.theme || DEFAULT_THEME);
+  }, [form?.settings?.theme]);
 
   const isViewMode = mode === "view";
 

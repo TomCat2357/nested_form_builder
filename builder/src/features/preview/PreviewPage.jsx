@@ -12,6 +12,20 @@ import { formatUnixMsDate, formatUnixMsTime } from "../../utils/dateTime.js";
 const formatDateLocal = (date) => formatUnixMsDate(date.getTime());
 const formatTimeLocal = (date) => formatUnixMsTime(date.getTime());
 
+const resolveLabelSize = (styleSettings) => {
+  if (styleSettings?.labelSize === "smaller" || styleSettings?.labelSize === "default" || styleSettings?.labelSize === "larger") {
+    return styleSettings.labelSize;
+  }
+  if (typeof styleSettings?.fontSize === "string") {
+    const numeric = parseInt(styleSettings.fontSize, 10);
+    if (!Number.isNaN(numeric)) {
+      if (numeric <= 12) return "smaller";
+      if (numeric >= 18) return "larger";
+    }
+  }
+  return "default";
+};
+
 const generateRecordId = () => {
   if (window.crypto?.getRandomValues) {
     const bytes = new Uint8Array(12);
@@ -52,8 +66,10 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
 
   // スタイル設定を適用
   const styleSettings = field.styleSettings || {};
+  const labelSize = resolveLabelSize(styleSettings);
   const labelStyleVars = {
-    ...(styleSettings.fontSize ? { "--label-font-size": styleSettings.fontSize } : {}),
+    ...(labelSize === "smaller" ? { "--label-font-size-offset": "var(--label-size-offset-sm)" } : {}),
+    ...(labelSize === "larger" ? { "--label-font-size-offset": "var(--label-size-offset-lg)" } : {}),
     ...(styleSettings.textColor ? { "--label-color": styleSettings.textColor } : {}),
   };
 
