@@ -6,35 +6,9 @@ import AlertDialog from "../app/components/AlertDialog.jsx";
 import FormBuilderWorkspace from "../features/admin/FormBuilderWorkspace.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
-import { theme } from "../app/theme/tokens.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { validateSpreadsheet } from "../services/gasClient.js";
 import { cleanupTempData } from "../core/schema.js";
-
-const headerButtonStyle = {
-  padding: "8px 14px",
-  borderRadius: theme.radiusSm,
-  border: `1px solid ${theme.borderStrong}`,
-  background: theme.surface,
-  cursor: "pointer",
-  fontSize: 14,
-};
-
-const fieldStyle = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 6,
-  marginBottom: 16,
-};
-
-const inputStyle = {
-  padding: "10px 12px",
-  borderRadius: theme.radiusSm,
-  border: `1px solid ${theme.borderStrong}`,
-  fontSize: 14,
-  background: theme.surface,
-  color: theme.text,
-};
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/admin");
 
@@ -285,12 +259,6 @@ export default function AdminFormEditorPage() {
     },
   ];
 
-  const sidebarButtonStyle = {
-    ...headerButtonStyle,
-    width: "100%",
-    textAlign: "left",
-  };
-
   return (
     <AppLayout
       title={isEdit ? "フォーム修正" : "フォーム新規作成"}
@@ -300,21 +268,16 @@ export default function AdminFormEditorPage() {
       backHidden={true}
       sidebarActions={
         <>
-          <button type="button" style={sidebarButtonStyle} disabled={isSaving} onClick={handleSaveClick}>
+          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving} onClick={handleSaveClick}>
             保存
           </button>
-          <button type="button" style={sidebarButtonStyle} onClick={handleCancel}>
+          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleCancel}>
             キャンセル
           </button>
-          <div style={{ height: 16 }} />
+          <div className="nf-spacer-16" />
           <button
             type="button"
-            style={{
-              ...sidebarButtonStyle,
-              background: questionControl?.canMoveUp ? theme.surface : theme.surfaceAlt,
-              color: questionControl?.canMoveUp ? theme.text : theme.textFaded,
-              cursor: questionControl?.canMoveUp ? "pointer" : "not-allowed",
-            }}
+            className="nf-btn-outline nf-btn-sidebar nf-text-14 admin-move-btn"
             disabled={!questionControl?.canMoveUp}
             onClick={() => questionControl?.moveUp?.()}
           >
@@ -322,34 +285,24 @@ export default function AdminFormEditorPage() {
           </button>
           <button
             type="button"
-            style={{
-              ...sidebarButtonStyle,
-              background: questionControl?.canMoveDown ? theme.surface : theme.surfaceAlt,
-              color: questionControl?.canMoveDown ? theme.text : theme.textFaded,
-              cursor: questionControl?.canMoveDown ? "pointer" : "not-allowed",
-            }}
+            className="nf-btn-outline nf-btn-sidebar nf-text-14 admin-move-btn"
             disabled={!questionControl?.canMoveDown}
             onClick={() => questionControl?.moveDown?.()}
           >
             ↓ 下へ
           </button>
           {questionControl?.selectedIndex !== null && (
-            <div style={{ fontSize: 11, color: theme.textMuted, padding: "4px 8px", textAlign: "center", wordBreak: "break-word" }}>
+            <div className="nf-text-11 nf-text-muted nf-pad-4-8 nf-text-center nf-word-break">
               {questionControl?.isOption
                 ? `${questionControl?.questionLabel || `質問 ${(questionControl?.selectedIndex ?? 0) + 1}`} > ${questionControl?.optionLabel || `選択肢 ${(questionControl?.optionIndex ?? 0) + 1}`}`
                 : questionControl?.questionLabel || `質問 ${(questionControl?.selectedIndex ?? 0) + 1}`
               }
             </div>
           )}
-          <div style={{ flex: 1 }} />
+          <div className="nf-flex-1" />
           <button
             type="button"
-            style={{
-              ...sidebarButtonStyle,
-              marginTop: "auto",
-              background: theme.infoWeak,
-              borderColor: theme.info,
-            }}
+            className="nf-btn-outline nf-btn-sidebar nf-text-14 admin-info-btn"
             onClick={handleOpenSpreadsheet}
           >
             📊 スプレッドシートを開く
@@ -357,8 +310,8 @@ export default function AdminFormEditorPage() {
         </>
       }
     >
-      <section style={{ marginBottom: 24 }}>
-        <div style={fieldStyle}>
+      <section className="nf-mb-24">
+        <div className="nf-col nf-gap-6 nf-mb-16">
           <label>フォーム名</label>
           <input
             value={name}
@@ -366,28 +319,28 @@ export default function AdminFormEditorPage() {
               setName(event.target.value);
               if (nameError) setNameError("");
             }}
-            style={inputStyle}
+            className="nf-input admin-input"
             placeholder="フォーム名"
           />
-          {nameError && <p style={{ color: theme.dangerStrong, fontSize: 12, margin: 0 }}>{nameError}</p>}
+          {nameError && <p className="nf-text-danger-strong nf-text-12 nf-m-0">{nameError}</p>}
         </div>
-        <div style={fieldStyle}>
+        <div className="nf-col nf-gap-6 nf-mb-16">
           <label>説明</label>
-          <textarea value={description} onChange={(event) => setDescription(event.target.value)} style={{ ...inputStyle, minHeight: 80 }} placeholder="説明" />
+          <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="nf-input admin-input nf-min-h-80" placeholder="説明" />
         </div>
-        <div style={fieldStyle}>
+        <div className="nf-col nf-gap-6 nf-mb-16">
           <label>Google Drive保存先URL（オプション）</label>
           <input
             value={driveUrl}
             onChange={(event) => setDriveUrl(event.target.value)}
-            style={inputStyle}
+            className="nf-input admin-input"
             placeholder="空白: ルートディレクトリ / フォルダURL: ランダム名で保存 / ファイルURL: そのファイルに保存"
           />
-          <p style={{ fontSize: 11, color: theme.textSubtle, marginTop: 4, marginBottom: 0 }}>
+          <p className="nf-text-11 nf-text-subtle nf-mt-4 nf-mb-0">
             空白の場合はルートディレクトリに保存されます。フォルダURLを指定するとそのフォルダにランダム名で保存、ファイルURLを指定するとそのファイルに保存されます。
           </p>
           {isEdit && driveUrl && (
-            <p style={{ fontSize: 11, color: theme.primaryStrong, marginTop: 4, marginBottom: 0 }}>
+            <p className="nf-text-11 nf-text-primary-strong nf-mt-4 nf-mb-0">
               変更すると新しい場所に保存され、元のファイルはそのまま残ります。
             </p>
           )}

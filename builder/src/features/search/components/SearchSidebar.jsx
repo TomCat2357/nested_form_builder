@@ -1,7 +1,4 @@
 import React from "react";
-import { sidebarButtonStyle } from "../searchStyles.js";
-import { theme } from "../../../app/theme/tokens.js";
-
 export default function SearchSidebar({
   onCreate,
   onDelete,
@@ -12,16 +9,12 @@ export default function SearchSidebar({
 }) {
   return (
     <>
-      <button type="button" style={sidebarButtonStyle} onClick={onCreate}>
+      <button type="button" className="search-input search-sidebar-btn" onClick={onCreate}>
         新規入力
       </button>
       <button
         type="button"
-        style={{
-          ...sidebarButtonStyle,
-          borderColor: theme.dangerBorder,
-          background: theme.dangerWeak,
-        }}
+        className="search-input search-sidebar-btn search-sidebar-btn-danger"
         onClick={onDelete}
         disabled={selectedCount === 0}
       >
@@ -29,11 +22,7 @@ export default function SearchSidebar({
       </button>
       <button
         type="button"
-        style={{
-          ...sidebarButtonStyle,
-          background: useCache ? theme.warningWeak : theme.surface,
-          borderColor: useCache ? theme.warning : theme.borderStrong,
-        }}
+        className={`search-input search-sidebar-btn${useCache ? " search-sidebar-btn-warning" : ""}`}
         onClick={onRefresh}
         disabled={loading}
         title={useCache ? "キャッシュから表示中 - クリックで最新データを取得" : "最新データを取得"}

@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 import App from "./App.jsx";
 import "./theme/themes/balanced.css";
 import "./theme/system.css";
+import "./theme/components.css";
 import { initTheme } from "./theme/theme.js";
 
 initTheme("balanced");

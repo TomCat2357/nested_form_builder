@@ -28,8 +28,8 @@ export default function EditorPage({ schema, onSchemaChange, settings, onSetting
         }}
       />
       <QuestionList fields={schema} onChange={onSchemaChange} onQuestionControlChange={onQuestionControlChange} />
-      <div style={{ display: "flex", justifyContent: "center", marginTop: 12 }}>
-        <button type="button" style={s.btn} onClick={handleAddQuestion}>質問を追加</button>
+      <div className="nf-row-center nf-mt-12">
+        <button type="button" className={s.btn.className} onClick={handleAddQuestion}>質問を追加</button>
       </div>
     </div>
   );

@@ -1,6 +1,5 @@
 import React from "react";
 import { applyDisplayLengthLimit } from "../searchTable.js";
-import { createTableStyle, thStyle, tdStyle } from "../searchStyles.js";
 import { theme } from "../../../app/theme/tokens.js";
 
 const headerSortLabel = (activeSort, columnKey) => {
@@ -24,13 +23,13 @@ export default function SearchTable({
   const selectableColumns = columns.filter((column) => column.key !== "__actions");
 
   return (
-    <div style={{ overflowX: "auto", width: "100%" }}>
-      <table style={createTableStyle(tableMaxWidth)}>
+    <div className="search-table-wrap">
+      <table className="search-table" style={{ "--table-width": tableMaxWidth ? `${tableMaxWidth}px` : "100%" }}>
         <thead>
           {headerRows.map((headerRow, rowIndex) => (
             <tr key={`header-row-${rowIndex}`}>
               {rowIndex === 0 && (
-                <th style={{ ...thStyle, width: 50 }} rowSpan={headerRows.length}>
+                <th className="search-th search-td-narrow" rowSpan={headerRows.length}>
                   <input
                     type="checkbox"
                     checked={pagedEntries.length > 0 && selectedEntries.size === pagedEntries.length}
@@ -47,13 +46,14 @@ export default function SearchTable({
                 return (
                   <th
                     key={`header-cell-${rowIndex}-${cellIndex}`}
-                    style={{ ...thStyle, cursor: sortable ? "pointer" : "default" }}
+                    className="search-th"
+                    data-sortable={sortable ? "true" : "false"}
                     colSpan={cell.colSpan}
                     rowSpan={cell.rowSpan ?? 1}
                     onClick={sortable ? () => onSortToggle(column.key) : undefined}
                   >
                     {cell.label}
-                    {sortable && <span style={{ marginLeft: 4, color: theme.textMuted }}>{orderLabel}</span>}
+                    {sortable && <span className="nf-text-muted nf-ml-4">{orderLabel}</span>}
                   </th>
                 );
               })}
@@ -62,8 +62,8 @@ export default function SearchTable({
         </thead>
         <tbody>
           {pagedEntries.map(({ entry, values }) => (
-            <tr key={entry.id} style={{ cursor: "pointer" }} onClick={() => onRowClick(entry.id)}>
-              <td style={{ ...tdStyle, width: 50 }} onClick={(e) => e.stopPropagation()}>
+            <tr key={entry.id} className="search-row" onClick={() => onRowClick(entry.id)}>
+              <td className="search-td search-td-narrow" onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"
                   checked={selectedEntries.has(entry.id)}
@@ -74,7 +74,7 @@ export default function SearchTable({
                 const rawDisplayText = values[column.key]?.display ?? "";
                 const limitedText = applyDisplayLengthLimit(rawDisplayText || "", cellDisplayLimit);
                 return (
-                  <td key={`${entry.id}_${column.key}`} style={tdStyle}>
+                  <td key={`${entry.id}_${column.key}`} className="search-td">
                     {limitedText}
                   </td>
                 );
@@ -83,7 +83,7 @@ export default function SearchTable({
           ))}
           {pagedEntries.length === 0 && (
             <tr>
-              <td style={{ ...tdStyle, textAlign: "center" }} colSpan={selectableColumns.length + 1}>
+              <td className="search-td nf-text-center" colSpan={selectableColumns.length + 1}>
                 データがありません。
               </td>
             </tr>

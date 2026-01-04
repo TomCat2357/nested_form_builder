@@ -6,7 +6,6 @@ import AlertDialog from "../app/components/AlertDialog.jsx";
 import PreviewPage from "../features/preview/PreviewPage.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
-import { theme } from "../app/theme/tokens.js";
 import { restoreResponsesFromData, hasDirtyChanges } from "../utils/responses.js";
 import { submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
@@ -14,15 +13,6 @@ import { useAlert } from "../app/hooks/useAlert.js";
 import { normalizeSchemaIDs } from "../core/schema.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
 import { evaluateCache, RECORD_CACHE_MAX_AGE_MS } from "../app/state/cachePolicy.js";
-
-const buttonStyle = {
-  padding: "8px 14px",
-  borderRadius: theme.radiusSm,
-  border: `1px solid ${theme.borderStrong}`,
-  background: theme.surface,
-  cursor: "pointer",
-  fontSize: 14,
-};
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
@@ -281,7 +271,7 @@ export default function FormPage() {
   if (!form) {
     return (
       <AppLayout title="フォーム" fallbackPath="/">
-        <p style={{ color: theme.textSubtle }}>フォームが見つかりません。メイン画面からやり直してください。</p>
+        <p className="nf-text-subtle">フォームが見つかりません。メイン画面からやり直してください。</p>
       </AppLayout>
     );
   }
@@ -318,12 +308,6 @@ export default function FormPage() {
 
   const confirmMessage = "保存せずに前の画面へ戻りますか？";
 
-  const sidebarButtonStyle = {
-    ...buttonStyle,
-    width: "100%",
-    textAlign: "left",
-  };
-
   return (
     <AppLayout
       title={`${form.settings?.formTitle || "(無題)"} - フォーム入力`}
@@ -338,19 +322,19 @@ export default function FormPage() {
         <>
           {isViewMode ? (
             <>
-              <button type="button" style={sidebarButtonStyle} onClick={handleEditMode}>
+              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleEditMode}>
                 {isReloading ? "読込中..." : "編集"}
               </button>
-              <button type="button" style={sidebarButtonStyle} onClick={() => navigateBack()}>
+              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => navigateBack()}>
                 戻る
               </button>
             </>
           ) : (
             <>
-              <button type="button" style={sidebarButtonStyle} disabled={isSaving || isReloading} onClick={() => triggerSave({ redirect: true })}>
+              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReloading} onClick={() => triggerSave({ redirect: true })}>
                 保存
               </button>
-              <button type="button" style={sidebarButtonStyle} onClick={() => attemptLeave("cancel")}>
+              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => attemptLeave("cancel")}>
                 キャンセル
               </button>
             </>
@@ -359,7 +343,7 @@ export default function FormPage() {
       }
     >
       {loading ? (
-        <p style={{ color: theme.textSubtle }}>読み込み中...</p>
+        <p className="nf-text-subtle">読み込み中...</p>
       ) : (
         <PreviewPage
           ref={previewRef}

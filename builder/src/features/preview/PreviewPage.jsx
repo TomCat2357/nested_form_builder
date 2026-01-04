@@ -8,7 +8,6 @@ import { styles as s } from "../editor/styles.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { formatUnixMsDate, formatUnixMsTime } from "../../utils/dateTime.js";
-import { theme } from "../../app/theme/tokens.js";
 
 const formatDateLocal = (date) => formatUnixMsDate(date.getTime());
 const formatTimeLocal = (date) => formatUnixMsTime(date.getTime());
@@ -43,13 +42,6 @@ const collectDefaultNowResponses = (fields) => {
 
 const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildrenForOption, readOnly = false }) => {
   const validation = validateByPattern(field, value);
-  const readOnlyBoxStyle = {
-    ...s.input,
-    backgroundColor: theme.surfaceAlt,
-    color: theme.textInk,
-    cursor: "text",
-    userSelect: "text",
-  };
 
   const renderReadOnlyValue = () => {
     if (field.type === "checkboxes" && Array.isArray(value)) return value.join(", ");
@@ -60,20 +52,17 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
 
   // スタイル設定を適用
   const styleSettings = field.styleSettings || {};
-  const labelStyle = {
-    display: "block",
-    fontWeight: 600,
-    marginBottom: 6,
-    fontSize: styleSettings.fontSize || undefined,
-    color: styleSettings.textColor || undefined,
+  const labelStyleVars = {
+    ...(styleSettings.fontSize ? { "--label-font-size": styleSettings.fontSize } : {}),
+    ...(styleSettings.textColor ? { "--label-color": styleSettings.textColor } : {}),
   };
 
   // メッセージタイプの場合はラベルのみ表示
   if (field.type === "message") {
     return (
-      <div style={{ marginBottom: 16 }}>
-        <div style={labelStyle}>
-          {field.label || <span style={{ color: theme.textFaded }}>メッセージ</span>}
+      <div className="preview-field">
+        <div className="preview-label" style={labelStyleVars}>
+          {field.label || <span className="nf-text-faded">メッセージ</span>}
         </div>
       </div>
     );
@@ -83,7 +72,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
     const childrenForCheckboxes =
       field.type === "checkboxes" && renderChildrenForOption
         ? (Array.isArray(value) ? value : []).map((label) => (
-            <div key={`ro_child_${field.id}_${label}`} style={s.child}>
+            <div key={`ro_child_${field.id}_${label}`} className={s.child.className}>
               {renderChildrenForOption(label)}
             </div>
           ))
@@ -91,16 +80,16 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
 
     const childrenCommon =
       field.type !== "checkboxes" && renderChildrenAll
-        ? <div style={s.child}>{renderChildrenAll()}</div>
+        ? <div className={s.child.className}>{renderChildrenAll()}</div>
         : null;
 
     return (
-      <div style={{ marginBottom: 16 }}>
-        <label style={labelStyle}>
-          {field.label || <span style={{ color: theme.textFaded }}>項目</span>}
-          {field.required && <span style={{ color: theme.dangerBright, marginLeft: 4 }}>*</span>}
+      <div className="preview-field">
+        <label className="preview-label" style={labelStyleVars}>
+          {field.label || <span className="nf-text-faded">項目</span>}
+          {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
         </label>
-        <div style={readOnlyBoxStyle}>{renderReadOnlyValue()}</div>
+        <div className="nf-input nf-input--readonly">{renderReadOnlyValue()}</div>
         {childrenForCheckboxes}
         {childrenCommon}
       </div>
@@ -108,10 +97,10 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
   }
 
   return (
-    <div style={{ marginBottom: 16 }}>
-      <label style={labelStyle}>
-        {field.label || <span style={{ color: theme.textFaded }}>項目</span>}
-        {field.required && <span style={{ color: theme.dangerBright, marginLeft: 4 }}>*</span>}
+    <div className="preview-field">
+      <label className="preview-label" style={labelStyleVars}>
+        {field.label || <span className="nf-text-faded">項目</span>}
+        {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
       </label>
 
       {field.type === "text" && (
@@ -119,7 +108,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
           type="text"
           value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
-          style={s.input}
+          className={s.input.className}
           placeholder={field.placeholder || "入力"}
         />
       )}
@@ -128,7 +117,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         <textarea
           value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
-          style={{ ...s.input, height: 96 }}
+          className={`${s.input.className} nf-h-96`}
           placeholder={field.placeholder || "入力"}
         />
       )}
@@ -141,7 +130,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
             const val = event.target.value;
             onChange(val === "" ? "" : Number(val));
           }}
-          style={s.input}
+          className={s.input.className}
           placeholder={field.placeholder || ""}
         />
       )}
@@ -152,14 +141,11 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
             type="text"
             value={value ?? ""}
             onChange={(event) => onChange(event.target.value)}
-            style={{
-              ...s.input,
-              borderColor: validation.ok ? s.input.borderColor : theme.dangerBright,
-            }}
+            className={validation.ok ? s.input.className : `${s.input.className} nf-input--error`}
             placeholder={field.placeholder || "入力"}
           />
           {!validation.ok && (
-            <div style={{ color: theme.dangerInk, fontSize: 12, marginTop: 4 }}>{validation.message}</div>
+            <div className="nf-text-danger-ink nf-text-12 nf-mt-4">{validation.message}</div>
           )}
         </>
       )}
@@ -169,7 +155,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
           type="date"
           value={value ?? (field.defaultNow ? formatDateLocal(new Date()) : "")}
           onChange={(event) => onChange(event.target.value)}
-          style={s.input}
+          className={s.input.className}
         />
       )}
 
@@ -178,23 +164,23 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
           type="time"
           value={value ?? (field.defaultNow ? formatTimeLocal(new Date()) : "")}
           onChange={(event) => onChange(event.target.value)}
-          style={s.input}
+          className={s.input.className}
         />
       )}
 
       {field.type === "radio" && (
         <div>
           {(field.options || []).map((opt) => (
-            <label key={opt.id} style={{ display: "block", marginBottom: 4 }}>
+            <label key={opt.id} className="nf-block nf-mb-4">
               <input type="radio" name={field.id} checked={value === opt.label} onChange={() => onChange(opt.label)} />
-              <span style={{ marginLeft: 6 }}>{opt.label || "選択肢"}</span>
+              <span className="nf-ml-6">{opt.label || "選択肢"}</span>
             </label>
           ))}
         </div>
       )}
 
       {field.type === "select" && (
-        <select value={value ?? ""} onChange={(event) => onChange(event.target.value)} style={s.input}>
+        <select value={value ?? ""} onChange={(event) => onChange(event.target.value)} className={s.input.className}>
           <option value="">-- 未選択 --</option>
           {(field.options || []).map((opt) => (
             <option key={opt.id} value={opt.label}>
@@ -210,7 +196,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
             const arr = Array.isArray(value) ? value : [];
             const checked = arr.includes(opt.label);
             return (
-              <div key={opt.id} style={{ marginBottom: 4 }}>
+              <div key={opt.id} className="nf-mb-4">
                 <label>
                   <input
                     type="checkbox"
@@ -221,10 +207,10 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
                       onChange(Array.from(next));
                     }}
                   />
-                  <span style={{ marginLeft: 6 }}>{opt.label || "選択肢"}</span>
+                  <span className="nf-ml-6">{opt.label || "選択肢"}</span>
                 </label>
                 {checked && renderChildrenForOption && (
-                  <div style={s.child}>{renderChildrenForOption(opt.label)}</div>
+                  <div className={s.child.className}>{renderChildrenForOption(opt.label)}</div>
                 )}
               </div>
             );
@@ -232,7 +218,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         </div>
       )}
 
-      {renderChildrenAll && field.type !== "checkboxes" && <div style={s.child}>{renderChildrenAll()}</div>}
+      {renderChildrenAll && field.type !== "checkboxes" && <div className={s.child.className}>{renderChildrenAll()}</div>}
     </div>
   );
 };
@@ -286,8 +272,9 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
       {(fields || []).map((field, index) => {
         const fid = field?.id || `tmp_${depth}_${index}_${field?.label || ""}`;
         const value = (responses || {})[fid] ?? (responses || {})[field?.id];
+        const cardAttrs = s.card(depth, false);
         return (
-          <div key={`node_${fid}`} style={s.card(depth)}>
+          <div key={`node_${fid}`} className={cardAttrs.className} data-depth={cardAttrs["data-depth"]}>
             <FieldRenderer
               field={{ ...field, id: fid }}
               value={value}
@@ -434,31 +421,26 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   );
 
   return (
-    <div style={{ border: `1px solid ${theme.border}`, borderRadius: theme.radiusMd, padding: 12, background: theme.surface }}>
-      <h2 style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>{formTitle}</h2>
-      <div style={{ marginBottom: 12 }}>
-        <label style={{ display: "block", fontWeight: 600, marginBottom: 6 }}>回答ID</label>
-        <input type="text" value={recordIdRef.current} readOnly style={{ ...s.input, backgroundColor: theme.surfaceSubtle, cursor: "not-allowed" }} />
+    <div className="nf-card" data-depth="0">
+      <h2 className="preview-title">{formTitle}</h2>
+      <div className="nf-mb-12">
+        <label className="preview-label">回答ID</label>
+        <input type="text" value={recordIdRef.current} readOnly className="nf-input nf-input--readonly" />
       </div>
       <RendererRecursive fields={schema} responses={responses} onChange={setResponses} readOnly={readOnly} />
       {showOutputJson && (
-        <div style={{ marginTop: 12 }}>
-          <label style={{ display: "block", marginBottom: 6 }}>回答JSON</label>
+        <div className="nf-mt-12">
+          <label className="preview-label">回答JSON</label>
           <textarea
             readOnly
             value={JSON.stringify(output, null, 2)}
-            style={{
-              ...s.input,
-              height: 200,
-              fontFamily: "ui-monospace, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-              fontSize: 12,
-            }}
+            className={`${s.input.className} preview-json`}
           />
         </div>
       )}
       {showSaveButton && !readOnly && (
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12, gap: 8, alignItems: "center" }}>
-          <button type="button" style={s.btn} onClick={handleSaveToSheet} disabled={isSaving}>
+        <div className="nf-row nf-gap-8 nf-mt-12 nf-justify-end">
+          <button type="button" className={s.btn.className} onClick={handleSaveToSheet} disabled={isSaving}>
             {isSaving ? "保存中..." : saveButtonLabel}
           </button>
         </div>

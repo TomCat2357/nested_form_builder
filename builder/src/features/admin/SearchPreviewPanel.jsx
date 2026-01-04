@@ -8,36 +8,6 @@ import {
   applyDisplayLengthLimit,
   parseSearchCellDisplayLimit,
 } from "../search/searchTable.js";
-import { theme } from "../../app/theme/tokens.js";
-
-const panelStyle = {
-  border: `1px solid ${theme.border}`,
-  borderRadius: theme.radiusMd,
-  background: theme.surface,
-  padding: 12,
-};
-
-const tableStyle = {
-  width: "100%",
-  borderCollapse: "collapse",
-};
-
-const thStyle = {
-  textAlign: "left",
-  padding: "8px 12px",
-  borderBottom: `1px solid ${theme.border}`,
-  background: theme.surfaceSubtle,
-  fontSize: 12,
-  fontWeight: 600,
-};
-
-const tdStyle = {
-  padding: "8px 12px",
-  borderBottom: `1px solid ${theme.borderSubtle}`,
-  fontSize: 12,
-  color: theme.textStrong,
-};
-
 const BASE_KEYS = new Set(["id", "createdAt", "modifiedAt", "__actions"]);
 
 const hasAnyValue = (values, columns) =>
@@ -86,26 +56,26 @@ export default function SearchPreviewPanel({ schema, responses, settings }) {
   );
 
   return (
-    <section style={{ marginTop: 24 }}>
+    <section className="nf-mt-24">
       <details open>
-        <summary style={{ cursor: "pointer", fontWeight: 600, marginBottom: 12 }}>
+        <summary className="nf-cursor-pointer nf-fw-600 nf-mb-12">
           検索プレビュー
         </summary>
-        <div style={panelStyle}>
+        <div className="nf-card">
           {!hasImportantColumns ? (
-            <p style={{ color: theme.textSubtle, fontSize: 12 }}>
+            <p className="nf-text-subtle nf-text-12">
               「表示」に設定された質問がありません。表示項目を設定すると検索プレビューが表示されます。
             </p>
           ) : (
-            <div style={{ overflowX: "auto" }}>
-              <table style={tableStyle}>
+            <div className="search-table-wrap">
+              <table className="search-preview-table">
                 <thead>
                   {headerRows.map((row, rowIndex) => (
                     <tr key={`preview-header-${rowIndex}`}>
                       {row.map((cell, cellIndex) => (
                         <th
                           key={`preview-header-cell-${rowIndex}-${cellIndex}`}
-                          style={thStyle}
+                          className="search-preview-th"
                           colSpan={cell.colSpan}
                           rowSpan={cell.rowSpan ?? 1}
                         >
@@ -119,7 +89,7 @@ export default function SearchPreviewPanel({ schema, responses, settings }) {
                   {hasResponses ? (
                     <tr>
                       {columns.map((column) => (
-                        <td key={`preview-${column.key}`} style={tdStyle}>
+                        <td key={`preview-${column.key}`} className="search-preview-td">
                           {applyDisplayLengthLimit(
                             previewRow.values?.[column.key]?.display ?? "",
                             displayLengthLimit,
@@ -129,7 +99,7 @@ export default function SearchPreviewPanel({ schema, responses, settings }) {
                     </tr>
                   ) : (
                     <tr>
-                      <td style={{ ...tdStyle, textAlign: "center", color: theme.textSubtle }} colSpan={columns.length || 1}>
+                      <td className="search-preview-td nf-text-center nf-text-subtle" colSpan={columns.length || 1}>
                         フォームに入力すると、表示項目の検索結果プレビューがここに表示されます。
                       </td>
                     </tr>

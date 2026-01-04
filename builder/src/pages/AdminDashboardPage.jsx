@@ -8,34 +8,9 @@ import AlertDialog from "../app/components/AlertDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
-import { theme } from "../app/theme/tokens.js";
 import { DISPLAY_MODES } from "../core/displayModes.js";
 import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
 import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
-
-const tableStyle = {
-  width: "100%",
-  borderCollapse: "collapse",
-  background: theme.surface,
-  borderRadius: theme.radiusMd,
-  overflow: "hidden",
-};
-
-const thStyle = {
-  textAlign: "left",
-  padding: "12px 16px",
-  borderBottom: `1px solid ${theme.border}`,
-  background: theme.surfaceSubtle,
-  fontSize: 13,
-  fontWeight: 600,
-};
-
-const tdStyle = {
-  padding: "12px 16px",
-  borderBottom: `1px solid ${theme.borderSubtle}`,
-  fontSize: 13,
-  color: theme.textStrong,
-};
 
 const formatDisplayFieldsSummary = (form) => {
   if (!form) return "";
@@ -54,17 +29,6 @@ const formatDate = (value) => {
   if (!Number.isFinite(ms)) return "---";
   return formatUnixMsDateTime(ms);
 };
-
-const buttonStyle = {
-  padding: "6px 12px",
-  borderRadius: theme.radiusSm,
-  border: `1px solid ${theme.borderStrong}`,
-  background: theme.surface,
-  cursor: "pointer",
-  fontSize: 13,
-};
-
-const labelMuted = { fontSize: 12, color: theme.textSubtle };
 
 const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
   const parts = [];
@@ -391,32 +355,26 @@ export default function AdminDashboardPage() {
     navigate("/admin/forms/new");
   };
 
-  const sidebarButtonStyle = {
-    ...buttonStyle,
-    width: "100%",
-    textAlign: "left",
-  };
-
   return (
     <AppLayout
       title="フォーム管理"
       badge="フォーム一覧"
       fallbackPath="/"
-      actions={deployTime && <div style={{ fontSize: 11, color: theme.textSubtle, fontWeight: 400 }}>デプロイ: {deployTime}</div>}
+      actions={deployTime && <div className="nf-text-11 nf-text-subtle nf-fw-400">デプロイ: {deployTime}</div>}
       sidebarActions={
         <>
-          <button type="button" style={sidebarButtonStyle} onClick={handleCreateNew}>
+          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleCreateNew}>
             新規作成
           </button>
-          <button type="button" style={sidebarButtonStyle} onClick={handleImport}>
+          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleImport}>
             {importing ? "インポート中..." : "インポート"}
           </button>
-          <button type="button" style={sidebarButtonStyle} onClick={handleExport} disabled={selected.size === 0}>
+          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleExport} disabled={selected.size === 0}>
             エクスポート
           </button>
           <button
             type="button"
-            style={sidebarButtonStyle}
+            className="nf-btn-outline nf-btn-sidebar nf-text-13"
             onClick={handleArchiveSelected}
             disabled={selected.size === 0}
           >
@@ -424,11 +382,7 @@ export default function AdminDashboardPage() {
           </button>
           <button
             type="button"
-            style={{
-              ...sidebarButtonStyle,
-              borderColor: theme.dangerBorder,
-              background: theme.dangerWeak,
-            }}
+            className="nf-btn-outline nf-btn-sidebar nf-text-13 admin-danger-btn"
             onClick={handleDeleteSelected}
             disabled={selected.size === 0}
           >
@@ -436,11 +390,7 @@ export default function AdminDashboardPage() {
           </button>
           <button
             type="button"
-            style={{
-              ...sidebarButtonStyle,
-              background: !loadingForms ? theme.warningWeak : theme.surface,
-              borderColor: !loadingForms ? theme.warning : theme.borderStrong,
-            }}
+            className={`nf-btn-outline nf-btn-sidebar nf-text-13${!loadingForms ? " admin-refresh-btn" : ""}`}
             onClick={() => refreshForms("manual:admin-dashboard")}
             disabled={loadingForms}
           >
@@ -450,19 +400,19 @@ export default function AdminDashboardPage() {
       }
     >
       {loadingForms ? (
-        <p style={{ color: theme.textSubtle }}>読み込み中...</p>
+        <p className="nf-text-subtle">読み込み中...</p>
       ) : (
-        <div style={{ overflowX: "auto" }}>
-          <table style={tableStyle}>
+        <div className="search-table-wrap">
+          <table className="search-table">
             <thead>
               <tr>
-                <th style={thStyle}>
+                <th className="search-th">
                   <input type="checkbox" checked={adminForms.length > 0 && selected.size === adminForms.length} onChange={(event) => selectAll(event.target.checked)} />
                 </th>
-                <th style={thStyle}>名称</th>
-                <th style={thStyle}>更新日時</th>
-                <th style={thStyle}>表示項目</th>
-                <th style={thStyle}>状態</th>
+                <th className="search-th">名称</th>
+                <th className="search-th">更新日時</th>
+                <th className="search-th">表示項目</th>
+                <th className="search-th">状態</th>
               </tr>
             </thead>
             <tbody>
@@ -474,31 +424,33 @@ export default function AdminDashboardPage() {
                 return (
                   <tr
                     key={form.id}
-                    style={{ cursor: isLoadError ? "default" : "pointer", background: isLoadError ? theme.dangerWeak : undefined }}
+                    className="admin-row"
+                    data-clickable={isLoadError ? "false" : "true"}
+                    data-error={isLoadError ? "true" : "false"}
                     onClick={() => {
                       if (!isLoadError) {
                         goToEditor(form.id);
                       }
                     }}
                   >
-                    <td style={tdStyle} onClick={(e) => e.stopPropagation()}>
+                    <td className="search-td" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selected.has(form.id)} onChange={() => toggleSelect(form.id)} />
-                      {isLoadError && <div style={{ color: theme.dangerInk, fontSize: 11, marginTop: 4 }}>削除のみ可能</div>}
+                      {isLoadError && <div className="nf-text-danger-ink nf-text-11 nf-mt-4">削除のみ可能</div>}
                     </td>
-                    <td style={tdStyle}>
+                    <td className="search-td">
                       {isLoadError ? (
                         <>
-                          <div style={{ fontWeight: 600, color: theme.dangerInk }}>{loadError?.fileName || "(名称不明)"}</div>
-                          <div style={{ color: theme.dangerInkStrong, fontSize: 12 }}>フォームID: {form.id}</div>
-                          {loadError?.fileId && <div style={{ color: theme.dangerInkStrong, fontSize: 12 }}>ファイルID: {loadError.fileId}</div>}
+                          <div className="nf-fw-600 nf-text-danger-ink">{loadError?.fileName || "(名称不明)"}</div>
+                          <div className="nf-text-danger-ink-strong nf-text-12">フォームID: {form.id}</div>
+                          {loadError?.fileId && <div className="nf-text-danger-ink-strong nf-text-12">ファイルID: {loadError.fileId}</div>}
                           {loadError?.driveFileUrl && (
-                            <div style={{ marginTop: 6 }}>
+                            <div className="nf-mt-6">
                               <a
                                 href={loadError.driveFileUrl}
                                 target="_blank"
                                 rel="noreferrer"
                                 onClick={(event) => event.stopPropagation()}
-                                style={{ color: theme.primaryStrong, textDecoration: "underline", fontSize: 12 }}
+                                className="admin-link"
                               >
                                 Driveで確認
                               </a>
@@ -507,32 +459,32 @@ export default function AdminDashboardPage() {
                         </>
                       ) : (
                         <>
-                          <div style={{ fontWeight: 600 }}>{form.settings?.formTitle || "(無題)"}</div>
-                          {form.description && <div style={{ color: theme.textMuted, fontSize: 12 }}>{form.description}</div>}
+                          <div className="nf-fw-600">{form.settings?.formTitle || "(無題)"}</div>
+                          {form.description && <div className="nf-text-muted nf-text-12">{form.description}</div>}
                         </>
                       )}
                     </td>
-                    <td style={tdStyle}>{lastUpdated}</td>
-                    <td style={tdStyle}>
+                    <td className="search-td">{lastUpdated}</td>
+                    <td className="search-td">
                       {isLoadError ? (
                         <>
-                          <div style={{ color: theme.dangerInk, fontWeight: 600 }}>読み込みエラー</div>
-                          <div style={{ color: theme.dangerInkStrong, fontSize: 12 }}>{loadError?.errorMessage || "読み込みに失敗しました"}</div>
-                          {loadError?.errorStage && <div style={{ color: theme.dangerInkStrong, fontSize: 11, marginTop: 4 }}>ステージ: {loadError.errorStage}</div>}
+                          <div className="nf-text-danger-ink nf-fw-600">読み込みエラー</div>
+                          <div className="nf-text-danger-ink-strong nf-text-12">{loadError?.errorMessage || "読み込みに失敗しました"}</div>
+                          {loadError?.errorStage && <div className="nf-text-danger-ink-strong nf-text-11 nf-mt-4">ステージ: {loadError.errorStage}</div>}
                         </>
                       ) : summary ? (
                         summary
                       ) : (
-                        <span style={labelMuted}>設定なし</span>
+                        <span className="nf-text-subtle nf-text-12">設定なし</span>
                       )}
                     </td>
-                    <td style={tdStyle}>
+                    <td className="search-td">
                       {isLoadError ? (
-                        <span style={{ color: theme.dangerStrong, fontWeight: 600 }}>読み込みエラー</span>
+                        <span className="nf-text-danger-strong nf-fw-600">読み込みエラー</span>
                       ) : form.archived ? (
-                        <span style={{ color: theme.dangerStrong }}>アーカイブ済み</span>
+                        <span className="nf-text-danger-strong">アーカイブ済み</span>
                       ) : (
-                        <span style={{ color: theme.success }}>公開中</span>
+                        <span className="nf-text-success">公開中</span>
                       )}
                     </td>
                   </tr>
@@ -540,7 +492,7 @@ export default function AdminDashboardPage() {
               })}
               {adminForms.length === 0 && (
                 <tr>
-                  <td style={{ ...tdStyle, textAlign: "center" }} colSpan={5}>
+                  <td className="search-td nf-text-center" colSpan={5}>
                     フォームが登録されていません。
                   </td>
                 </tr>
@@ -631,17 +583,15 @@ function ImportUrlDialog({ open, url, onUrlChange, onImport, onCancel }) {
   };
 
   return (
-    <div
-      style={{ position: "fixed", inset: 0, background: theme.overlayStrong, display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
-    >
-      <div style={{ background: theme.surface, borderRadius: theme.radiusMd, padding: 24, width: "min(520px, 90vw)", boxShadow: theme.shadowLg }}>
-        <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Google Driveからインポート</h3>
-        <p style={{ marginBottom: 16, color: theme.textMuted, fontSize: 14 }}>
+    <div className="admin-import-overlay">
+      <div className="admin-import-panel">
+        <h3 className="nf-text-18 nf-fw-700 nf-mb-8">Google Driveからインポート</h3>
+        <p className="nf-mb-16 nf-text-muted nf-text-14">
           ファイルURLまたはフォルダURLを入力してください。
         </p>
 
-        <div style={{ marginBottom: 16 }}>
-          <label style={{ display: "block", marginBottom: 6, fontSize: 13, fontWeight: 600 }}>
+        <div className="nf-mb-16">
+          <label className="nf-block nf-mb-6 nf-text-13 nf-fw-600">
             Google Drive URL
           </label>
           <input
@@ -651,24 +601,24 @@ function ImportUrlDialog({ open, url, onUrlChange, onImport, onCancel }) {
               onUrlChange(event.target.value);
               if (error) setError("");
             }}
-            style={{ width: "100%", border: `1px solid ${theme.borderStrong}`, borderRadius: theme.radiusSm, padding: "8px 10px", fontSize: 14, background: theme.surface }}
+            className="nf-input admin-import-input"
             placeholder="https://drive.google.com/file/d/... または https://drive.google.com/drive/folders/..."
           />
-          {error && <p style={{ marginTop: 6, color: theme.dangerStrong, fontSize: 12 }}>{error}</p>}
-          <p style={{ marginTop: 6, color: theme.textMuted, fontSize: 11 }}>
+          {error && <p className="nf-mt-6 nf-text-danger-strong nf-text-12">{error}</p>}
+          <p className="nf-mt-6 nf-text-muted nf-text-11">
             ・ファイルURL: そのフォームのみをインポート<br />
             ・フォルダURL: フォルダ内の全ての.jsonファイルをインポート<br />
             ・既にプロパティサービスに存在するフォームIDは自動的にスキップされます
           </p>
         </div>
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 12, marginTop: 24 }}>
-          <button type="button" style={{ padding: "8px 16px", borderRadius: theme.radiusSm, border: `1px solid ${theme.borderStrong}`, background: theme.surface }} onClick={onCancel}>
+        <div className="nf-row nf-gap-12 nf-mt-24 nf-justify-end">
+          <button type="button" className="nf-btn-outline admin-import-btn" onClick={onCancel}>
             キャンセル
           </button>
           <button
             type="button"
-            style={{ padding: "8px 16px", borderRadius: theme.radiusSm, border: "none", background: theme.primaryStrong, color: theme.surface }}
+            className="admin-import-btn admin-import-btn-primary"
             onClick={handleImport}
           >
             インポート

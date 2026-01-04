@@ -95,4 +95,33 @@
   --if-chip-bg: rgba(255, 122, 89, 0.12);
   --if-chip-border: rgba(255, 122, 89, 0.18);
   --if-badge-border: rgba(22, 163, 74, 0.18);
+
+  --question-card-bg: var(--surface);
+  --question-card-border: var(--border);
+  --question-card-selected-border: var(--primary);
+  --question-card-shadow: var(--shadow-sm);
+  --card-radius: var(--radius-md);
+  --card-padding: 12px;
+
+  --option-row-bg: transparent;
+  --option-row-border: var(--border);
+  --option-row-selected-border: var(--primary);
+
+  --input-bg: var(--surface);
+  --input-text: var(--text);
+  --input-border: var(--border-strong);
+  --input-radius: var(--radius-sm);
+  --input-readonly-bg: var(--surface-subtle);
+  --input-readonly-text: var(--text-ink);
+  --input-error-border: var(--danger-bright);
+
+  --button-bg: var(--surface-subtle);
+  --button-text: var(--text);
+  --button-border: var(--border-strong);
+  --button-radius: var(--radius-sm);
+  --button-danger-bg: var(--danger-weak-strong);
+  --button-danger-text: var(--text);
+  --button-danger-border: var(--danger-border-strong);
+
+  --child-border: var(--border);
 }

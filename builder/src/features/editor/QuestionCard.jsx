@@ -140,8 +140,8 @@ function handleTypeChange(field, newType) {
  */
 function PlaceholderInput({ field, onChange, onFocus }) {
   return (
-    <div style={{ marginTop: 8 }}>
-      <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: field.showPlaceholder ? 4 : 0 }}>
+    <div className="nf-mt-8">
+      <label className={`nf-row nf-gap-6${field.showPlaceholder ? " nf-mb-4" : ""}`}>
         <input
           type="checkbox"
           checked={!!field.showPlaceholder}
@@ -152,9 +152,9 @@ function PlaceholderInput({ field, onChange, onFocus }) {
         プレースホルダー
       </label>
       {field.showPlaceholder && (
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <div className="nf-row nf-gap-8">
           <input
-            style={{ ...s.input, flex: 1 }}
+            className={s.input.className}
             placeholder="例: 入力例を表示"
             value={field.placeholder || ""}
             onChange={(event) => onChange({ ...field, placeholder: event.target.value })}
@@ -175,8 +175,8 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
     ? field.showStyleSettings
     : !!field.styleSettings;
   return (
-    <div style={{ marginTop: 8 }}>
-      <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: isStyleSettingsEnabled ? 4 : 0 }}>
+    <div className="nf-mt-8">
+      <label className={`nf-row nf-gap-6${isStyleSettingsEnabled ? " nf-mb-4" : ""}`}>
         <input
           type="checkbox"
           checked={isStyleSettingsEnabled}
@@ -213,11 +213,11 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
         スタイル設定
       </label>
       {isStyleSettingsEnabled && (
-        <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 2, color: theme.textSubtle }}>文字サイズ</label>
+        <div className="nf-row nf-gap-8 nf-mt-4">
+          <div className="nf-flex-1">
+            <label className="nf-text-12 nf-mb-2 nf-text-subtle">文字サイズ</label>
             <select
-              style={{ ...s.input, width: "100%" }}
+              className={s.input.className}
               value={styleSettings.fontSize || "14px"}
               onChange={(event) => onChange({
                 ...field,
@@ -231,10 +231,10 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
               <option value="24px">特大 (24px)</option>
             </select>
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={{ display: "block", fontSize: 12, marginBottom: 2, color: theme.textSubtle }}>文字色</label>
+          <div className="nf-flex-1">
+            <label className="nf-text-12 nf-mb-2 nf-text-subtle">文字色</label>
             <select
-              style={{ ...s.input, width: "100%" }}
+              className={s.input.className}
               value={styleSettings.textColor || "#000000"}
               onChange={(event) => onChange({
                 ...field,
@@ -304,7 +304,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
       const optionLabel = field.options?.[selectedOptionIndex]?.label || `選択肢 ${selectedOptionIndex + 1}`;
       // onFocusに選択肢情報を含めることで、QuestionListが適切に処理できるようにする
       onFocus({
-        type: 'option',
+        type: "option",
         optionIndex: selectedOptionIndex,
         optionLabel,
         canMoveUp,
@@ -315,12 +315,14 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
     }
   }, [selectedOptionIndex, isChoice, field.options?.length]);
 
+  const cardAttrs = s.card(0, isSelected);
+
   return (
-    <div style={{ ...s.card(0), border: isSelected ? `2px solid ${theme.primary}` : s.card(0).border }}>
-      <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
-        <span style={{ fontSize: 13, fontWeight: 500, color: theme.textInk, flexShrink: 0 }}>項目名</span>
+    <div className={cardAttrs.className} data-depth={cardAttrs["data-depth"]} data-selected={cardAttrs["data-selected"]}>
+      <div className="nf-row nf-gap-8 nf-mb-8 nf-wrap">
+        <span className="nf-text-13 nf-fw-500 nf-text-ink nf-shrink-0">項目名</span>
         <input
-          style={{ ...s.input, width: "auto", flex: "1 1 200px", minWidth: 0 }}
+          className={`${s.input.className} nf-w-auto nf-flex-1-1-200 nf-min-w-0`}
           placeholder="項目名を入力"
           value={field.label || ""}
           required
@@ -332,7 +334,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
         />
         <select
           value={field.type}
-          style={{ ...s.input, width: "auto", minWidth: 150, flex: "0 1 auto" }}
+          className={`${s.input.className} nf-w-auto nf-min-w-150 nf-flex-0-1-auto`}
           onChange={(event) => {
             const next = handleTypeChange(field, event.target.value);
             onChange(next);
@@ -351,7 +353,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
           <option value="message">メッセージ</option>
         </select>
         {!isMessage && (
-          <label style={{ display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+          <label className="nf-row nf-gap-4 nf-nowrap">
             <input
               type="checkbox"
               checked={!!field.required}
@@ -360,7 +362,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
             必須
           </label>
         )}
-        <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <label className="nf-row nf-gap-6">
           <input
             type="checkbox"
             checked={isDisplayed}
@@ -376,8 +378,8 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
       {isInput && <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />}
 
       {isDateOrTime && (
-        <div style={{ marginTop: 8 }}>
-          <label style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <div className="nf-mt-8">
+          <label className="nf-row nf-gap-6">
             <input
               type="checkbox"
               checked={!!field.defaultNow}
@@ -389,29 +391,29 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
       )}
 
       {isRegex && (
-        <div style={{ marginTop: 8 }}>
-          <label style={{ display: "block", fontWeight: 600, marginBottom: 4 }}>正規表現（任意）</label>
+        <div className="nf-mt-8">
+          <label className="nf-fw-600 nf-mb-4">正規表現（任意）</label>
           <input
-            style={s.input}
+            className={s.input.className}
             placeholder="例: ^[0-9]+$"
             value={field.pattern || ""}
             onChange={(event) => onChange({ ...field, pattern: event.target.value })}
             onFocus={onFocus}
           />
           {regexCheck.error && (
-            <div style={{ color: theme.dangerInk, fontSize: 12, marginTop: 4 }}>正規表現が不正です: {regexCheck.error}</div>
+            <div className="nf-text-danger-ink nf-text-12 nf-mt-4">正規表現が不正です: {regexCheck.error}</div>
           )}
           <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />
         </div>
       )}
 
       {isChoice && (
-        <div style={{ marginTop: 8 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+        <div className="nf-mt-8">
+          <div className="nf-row-between nf-mb-6">
             <strong>選択肢</strong>
             <button
               type="button"
-              style={s.btn}
+              className={s.btn.className}
               onClick={() => {
                 const next = deepClone(field);
                 next.options = next.options || [];
@@ -474,7 +476,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
                 (() => {
                   const hasChildren = field.childrenByValue && field.childrenByValue[opt.label]?.length;
                   return hasChildren ? (
-                    <div style={{ marginTop: 8, paddingLeft: 12, borderLeft: `2px solid ${theme.border}` }}>
+                    <div className={s.child.className}>
                       <QuestionListComponent
                       fields={field.childrenByValue[opt.label]}
                       onChange={(childFields) => {
@@ -493,10 +495,10 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-        <button type="button" style={s.btnDanger} onClick={onDelete}>削除</button>
-        <div style={{ flex: 1 }} />
-        <button type="button" style={s.btn} onClick={onAddBelow}>次の質問を追加</button>
+      <div className="nf-row nf-gap-8 nf-mt-12">
+        <button type="button" className={s.btnDanger.className} onClick={onDelete}>削除</button>
+        <div className="nf-flex-1" />
+        <button type="button" className={s.btn.className} onClick={onAddBelow}>次の質問を追加</button>
       </div>
     </div>
   );

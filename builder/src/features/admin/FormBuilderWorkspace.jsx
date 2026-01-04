@@ -7,17 +7,6 @@ import { normalizeSchemaIDs, validateMaxDepth, validateUniqueLabels, MAX_DEPTH }
 import { runSelfTests } from "../../core/selfTests.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
-import { theme } from "../../app/theme/tokens.js";
-
-const containerStyle = { border: `1px solid ${theme.border}`, borderRadius: theme.radiusMd, background: theme.surface, padding: 16 };
-const toolbarButtonStyle = (active) => ({
-  border: `1px solid ${theme.borderStrong}`,
-  background: active ? theme.primarySoft : theme.surfaceSubtle,
-  padding: "8px 12px",
-  borderRadius: theme.radiusSm,
-  cursor: "pointer",
-  fontWeight: active ? 600 : 500,
-});
 
 const shallowEqual = (a, b) => {
   if (a === b) return true;
@@ -115,18 +104,18 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   const previewSettings = useMemo(() => ({ ...settings, formTitle }), [settings, formTitle]);
 
   return (
-    <div style={containerStyle}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 8 }}>
-        <div style={{ fontSize: 16, fontWeight: 600 }}>{formTitle || "フォーム"}</div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <button type="button" style={toolbarButtonStyle(activeTab === "editor")} onClick={() => setActiveTab("editor")}>
+    <div className="form-builder">
+      <div className="form-builder-header">
+        <div className="form-builder-title">{formTitle || "フォーム"}</div>
+        <div className="form-builder-tabs">
+          <button type="button" className="form-builder-tab" data-active={activeTab === "editor" ? "true" : "false"} onClick={() => setActiveTab("editor")}>
             編集
           </button>
-          <button type="button" style={toolbarButtonStyle(activeTab === "preview")} onClick={() => setActiveTab("preview")}>
+          <button type="button" className="form-builder-tab" data-active={activeTab === "preview" ? "true" : "false"} onClick={() => setActiveTab("preview")}>
             プレビュー
           </button>
           {showToolbarSave && (
-            <button type="button" style={toolbarButtonStyle(false)} onClick={handleSave}>
+            <button type="button" className="form-builder-tab" data-active="false" onClick={handleSave}>
               保存
             </button>
           )}

@@ -7,7 +7,6 @@ import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
-import { theme } from "../app/theme/tokens.js";
 import {
   buildSearchColumns,
   buildHeaderRows,
@@ -184,7 +183,7 @@ export default function SearchPage() {
   if (!formId || !form) {
     return (
       <AppLayout title="検索" fallbackPath="/">
-        <p style={{ color: theme.textSubtle }}>フォームが選択されていません。メイン画面からフォームを選択してください。</p>
+        <p className="search-empty">フォームが選択されていません。メイン画面からフォームを選択してください。</p>
       </AppLayout>
     );
   }
@@ -219,7 +218,7 @@ export default function SearchPage() {
       />
 
       {loading ? (
-        <p style={{ color: theme.textSubtle }}>読み込み中...</p>
+        <p className="search-loading">読み込み中...</p>
       ) : (
         <SearchTable
           columns={columns}

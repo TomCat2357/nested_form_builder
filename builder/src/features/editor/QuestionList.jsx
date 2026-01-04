@@ -160,7 +160,7 @@ export default function QuestionList({ fields, onChange, depth = 1, onQuestionCo
 
   return (
     <>
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div className="nf-col nf-gap-12">
         {normalized.map((field, index) => (
           <QuestionCard
             key={field.id}

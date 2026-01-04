@@ -1,20 +1,18 @@
 import React from "react";
-import { inputStyle, paginationContainerStyle, paginationInfoStyle, paginationNavStyle } from "../searchStyles.js";
-
 export default function SearchPagination({ page, totalPages, totalEntries, startIndex, endIndex, onChange }) {
   return (
-    <div style={paginationContainerStyle}>
-      <span style={paginationInfoStyle}>
+    <div className="search-pagination">
+      <span className="search-pagination-info">
         {totalEntries} 件中 {startIndex} - {endIndex} 件
       </span>
-      <div style={paginationNavStyle}>
-        <button type="button" style={inputStyle} disabled={page <= 1} onClick={() => onChange(page - 1)}>
+      <div className="search-pagination-nav">
+        <button type="button" className="search-input" disabled={page <= 1} onClick={() => onChange(page - 1)}>
           前へ
         </button>
-        <span style={{ lineHeight: "32px" }}>
+        <span className="search-pagination-page">
           {page} / {totalPages}
         </span>
-        <button type="button" style={inputStyle} disabled={page >= totalPages} onClick={() => onChange(page + 1)}>
+        <button type="button" className="search-input" disabled={page >= totalPages} onClick={() => onChange(page + 1)}>
           次へ
         </button>
       </div>
