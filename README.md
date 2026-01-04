@@ -33,12 +33,21 @@ Nested Form Builderは、階層構造を持つアンケートフォームを視�
 
 ```
 nested_form_builder/
-├── builder/                  # Reactフロントエンド
-│   ├── src/app/             # アプリ全体の状態/レイアウト
+├── builder/                        # Reactフロントエンド
+│   ├── src/app/
+│   │   ├── theme/                  # テーマシステム
+│   │   │   ├── theme.js            # テーマ管理（選択・追加・削除）
+│   │   │   ├── theme.css           # CSS カスタムプロパティ定義
+│   │   │   ├── base.css            # ベーススタイル
+│   │   │   ├── tokens.js           # JSS トークンオブジェクト
+│   │   │   └── themes/
+│   │   │       └── default/        # デフォルトテーマ
+│   │   │           └── theme.css   # デフォルト具体値
+│   │   └── ...
 │   ├── src/core/            # スキーマ検証・displayModes・storage
 │   ├── src/features/        # admin/editor/export/preview/search/settings
-│   ├── src/pages/           # 画面コンポーネント
-│   ├── src/services/        # GAS APIクライアント
+│   ├── src/pages/           # 画面コンポーネント（ConfigPage: テーマ管理UI）
+│   ├── src/services/        # GAS APIクライアント（importThemeFromDrive）
 │   └── src/utils/           # download/spreadsheetユーティリティ
 ├── gas/                     # Google Apps Script ソース（分割ファイル）
 │   ├── Code.gs
@@ -60,6 +69,16 @@ nested_form_builder/
 
 主な補足:
 
+- `builder/src/app/theme/`…テーマシステムの中核
+  - `theme.js`：テーマの選択・追加・削除機能、localStorage管理
+  - `theme.css`：全テーマ共通のCSS変数定義
+  - `themes/default/theme.css`：デフォルトテーマの色・サイズ定義
+- `builder/src/pages/ConfigPage.jsx`…テーマ管理UI（設定ページ）
+  - テーマ選択ドロップダウン
+  - Google Drive からのテーマCSS インポート機能
+  - インポート済みテーマの削除機能
+- `builder/src/services/gasClient.js`…GAS APIクライアント
+  - `importThemeFromDrive()`：Google Drive URL からテーマCSS を取得
 - `builder/src/features/export/`…スキーマJSONのダウンロードUI
 - `builder/src/features/admin/SearchPreviewPanel.jsx`…重要項目・表示モードの確認
 - `gas/scripts/bundle.js`…`gas/*.gs` を `dist/Bundle.gs` に結合し、`deploy.sh` から呼び出されます
@@ -154,11 +173,77 @@ npm run clasp:push
 
 ### テーマ設定
 
-設定パネル（基本設定）の「テーマ」から変更できます。現在の選択肢は `builder/src/app/theme/theme.js` の `THEME_OPTIONS` に定義されており、既定は `balanced` です。
+#### テーマの選択・切り替え
 
-テーマは `<html data-theme="...">` を切り替える方式で、色や余白などのトークンは `builder/src/app/theme/theme.css` と `builder/src/app/theme/base.css` に定義されています。UIでの参照は `builder/src/app/theme/tokens.js` 経由です。
+ナビゲーションバーの **「設定」** ページ（歯車アイコン）で テーマ切り替えとインポート機能にアクセスできます。
 
-保存先はローカル（IndexedDB: `nested_form_builder_settings_v1`）で、GASのユーザー設定には同期されません。初期表示時のみ `localStorage` の `nested_form_builder_theme` がフォールバックとして使われます。
+- **デフォルトテーマ**: `default` が唯一のビルトインテーマとして利用可能です。
+- **カスタムテーマ**: インポートしたテーマは「テーマ選択」ドロップダウンに自動表示されます。
+
+選択したテーマは `<html data-theme="...">` 属性に反映され、全体の配色が切り替わります。
+
+#### テーマの作成とインポート
+
+**推奨フォーマット**: CSS ファイルは `:root[data-theme="テーマ名"]` セレクタを含める必要があります。
+
+##### 例：カスタムテーマ CSS の構造
+
+```css
+:root[data-theme="my-dark-theme"] {
+  --bg: #1a1a1a;
+  --surface: #2d2d2d;
+  --text: #f0f0f0;
+  --primary: #4a9eff;
+  --border: #404040;
+  /* その他のトークン... */
+}
+```
+
+利用可能な全トークン（カスタマイズ対象の変数）は `builder/src/app/theme/theme.css` に定義されています。
+
+##### インポート手順
+
+1. **Google Drive にテーマ CSS ファイルをアップロード**
+   - `.css` ファイルとして保存（例: `dark-theme.css`）
+   - 公開共有設定か、Google Apps Script が読み取れるように権限設定
+
+2. **設定ページでインポート**
+   - 「テーマをインポート」セクション → 「Google Drive URL」に貼り付け
+   - `https://drive.google.com/file/d/[FILE_ID]/view` 形式をサポート
+   - 「インポート」ボタンをクリック
+
+3. **テーマが自動追加**
+   - CSS 内の `data-theme` 値からテーマ名を自動抽出
+   - テーマドロップダウンに新しいテーマが表示されます
+   - 複数のテーマを同時にインポート可能
+
+#### テーマの削除
+
+設定ページの「インポート済みテーマ」セクションから、カスタムテーマ横の「削除」ボタンで削除できます。デフォルトテーマは削除できません。
+
+#### テーマ設定の保存先
+
+- **ローカル保存**: テーマ選択とカスタムテーマリストは `localStorage` (`nested_form_builder_theme`) に保存されます。
+- **ブラウザ/デバイス単位**: GAS のユーザー設定とは同期されず、ブラウザごとに独立した設定となります。
+- **キャッシュ**: カスタムテーマ CSS は `nested_form_builder_theme_custom_list_v1` キーで管理され、`<style id="nfb-custom-themes">` タグとしてDOMに注入されます。
+
+#### テーマの実装詳細
+
+- **テーマシステム**: `builder/src/app/theme/theme.js` で管理
+  - `THEME_OPTIONS`: ビルトインテーマ定義
+  - `setCustomTheme()`: カスタムテーマの追加
+  - `removeCustomTheme()`: カスタムテーマの削除
+  - `applyTheme()`: テーマの即時適用
+
+- **トークン定義**:
+  - `builder/src/app/theme/theme.css`: 全テーマ共通のカスタムプロパティベース
+  - `builder/src/app/theme/themes/default/theme.css`: デフォルトテーマの具体値
+  - `builder/src/app/theme/tokens.js`: React コンポーネント内で参照される JSS オブジェクト
+
+- **管理UI**: `builder/src/pages/ConfigPage.jsx`
+  - テーマ選択ドロップダウン
+  - Google Drive URL からのインポート
+  - 削除確認ダイアログ
 
 ## テスト
 
