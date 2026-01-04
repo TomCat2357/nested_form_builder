@@ -163,6 +163,7 @@ export async function getCachedEntryWithIndex(formId, entryId) {
   if (Number.isInteger(rowIndex) && rowIndex >= 0 && rowIndex < entries.length) {
     entry = entries[rowIndex];
     if (entry?.id !== entryId) {
+      entry = null;
       rowIndex = null;
     }
   }
@@ -234,6 +235,11 @@ export async function getRecordsFromCache(formId) {
   db.close();
 
   const entries = (rawEntries || []).map(stripMetadata);
+  entries.sort((a, b) => {
+    if (a?.id < b?.id) return -1;
+    if (a?.id > b?.id) return 1;
+    return 0;
+  });
   return {
     entries,
     headerMatrix: meta?.headerMatrix || [],

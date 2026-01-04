@@ -35,6 +35,12 @@ import { toUnixMs } from "../../utils/dateTime.js";
 const nowSerial = () => toUnixMs(Date.now());
 const DEFAULT_SHEET_NAME = "Responses";
 
+const omitThemeSetting = (settings) => {
+  if (!settings || typeof settings !== "object") return {};
+  const { theme, ...rest } = settings;
+  return rest;
+};
+
 const ensureDisplayInfo = (form) => {
   const schema = Array.isArray(form?.schema) ? form.schema : [];
   const displayFieldSettings = collectDisplayFieldSettings(schema);
@@ -78,7 +84,7 @@ const buildFormRecord = (input) => {
   const displayFieldSettings = collectDisplayFieldSettings(schema);
   
   // settings内にformTitleを確保
-  const settings = input.settings || {};
+  const settings = omitThemeSetting(input.settings || {});
   if (!settings.formTitle) {
     settings.formTitle = input.name || "無題のフォーム";
   }

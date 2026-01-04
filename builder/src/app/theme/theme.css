@@ -122,6 +122,7 @@
   --button-text: var(--text);
   --button-border: var(--border-strong);
   --button-radius: var(--radius-sm);
+  --button-solid-text: rgba(255, 255, 255, 0.96);
   --button-danger-bg: var(--danger-weak-strong);
   --button-danger-text: var(--text);
   --button-danger-border: var(--danger-border-strong);

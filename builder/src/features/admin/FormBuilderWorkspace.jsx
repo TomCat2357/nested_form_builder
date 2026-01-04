@@ -19,6 +19,12 @@ const shallowEqual = (a, b) => {
   }
 };
 
+const omitThemeSetting = (settings) => {
+  if (!settings || typeof settings !== "object") return {};
+  const { theme, ...rest } = settings;
+  return rest;
+};
+
 const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   { initialSchema, initialSettings, formTitle, onSave, onDirtyChange, showToolbarSave = true },
   ref,
@@ -60,7 +66,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     }
 
     const schemaDirty = !shallowEqual(initialSchemaRef.current, schema);
-    const settingsDirty = !shallowEqual(initialSettingsRef.current, settings);
+    const settingsDirty = !shallowEqual(omitThemeSetting(initialSettingsRef.current), omitThemeSetting(settings));
 
     onDirtyChange?.(schemaDirty || settingsDirty);
   }, [schema, settings, isInitialized, onDirtyChange]);

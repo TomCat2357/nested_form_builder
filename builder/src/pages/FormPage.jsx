@@ -323,7 +323,7 @@ export default function FormPage() {
           {isViewMode ? (
             <>
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleEditMode}>
-                {isReloading ? "読込中..." : "編集"}
+                編集
               </button>
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => navigateBack()}>
                 戻る

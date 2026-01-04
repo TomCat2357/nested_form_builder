@@ -16,6 +16,9 @@ export const useBuilderSettings = () => {
       if (!active) return;
       setSettings((prev) => {
         const merged = { ...DEFAULT_SETTINGS, ...loaded, ...prev };
+        if (loaded?.theme && prev?.theme === DEFAULT_SETTINGS.theme) {
+          merged.theme = loaded.theme;
+        }
         defaultsRef.current = merged;
         return merged;
       });
@@ -35,7 +38,13 @@ export const useBuilderSettings = () => {
         if (!active) return;
         if (remote && typeof remote === "object") {
           defaultsRef.current = { ...DEFAULT_SETTINGS, ...remote };
-          setSettings((prev) => ({ ...defaultsRef.current, ...prev }));
+          setSettings((prev) => {
+            const merged = { ...defaultsRef.current, ...prev };
+            if (remote?.theme && prev?.theme === DEFAULT_SETTINGS.theme) {
+              merged.theme = remote.theme;
+            }
+            return merged;
+          });
         }
       } catch (error) {
         console.warn("[settings] failed to load user settings", error);
@@ -61,6 +70,11 @@ export const useBuilderSettings = () => {
       });
     }
   }, [settings, loadingLocal, scriptRunAvailable]);
+
+  useEffect(() => {
+    if (loadingLocal) return;
+    defaultsRef.current = { ...DEFAULT_SETTINGS, ...settings };
+  }, [settings, loadingLocal, defaultsRef]);
 
   useEffect(() => {
     if (loadingLocal) return;

@@ -839,7 +839,7 @@ button:disabled {
 .admin-import-btn-primary {
   border: none;
   background: var(--primary-strong);
-  color: var(--surface);
+  color: var(--button-solid-text, #fff);
 }
 
 /* Search page */
@@ -1044,11 +1044,11 @@ button:disabled {
 .dialog-btn.primary {
   background: var(--primary-strong);
   border-color: var(--primary-strong);
-  color: var(--surface);
+  color: var(--button-solid-text, #fff);
 }
 
 .dialog-btn.danger {
   background: var(--danger-strong);
   border-color: var(--danger-strong);
-  color: var(--surface);
+  color: var(--button-solid-text, #fff);
 }

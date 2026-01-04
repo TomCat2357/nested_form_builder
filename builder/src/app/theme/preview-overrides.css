@@ -82,6 +82,19 @@ button[style*="background:var(--danger-strong)"] {
   color: rgba(255, 255, 255, 0.96) !important;
 }
 
+/* 3-2b) dialog button variants (avoid global button override) */
+.dialog-btn.primary {
+  background: linear-gradient(135deg, var(--primary), var(--primary-strong)) !important;
+  border-color: var(--primary-border-soft) !important;
+  color: var(--button-solid-text, #fff) !important;
+}
+
+.dialog-btn.danger {
+  background: linear-gradient(135deg, var(--danger-bright), var(--danger-strong)) !important;
+  border-color: rgba(225, 29, 72, 0.35) !important;
+  color: var(--button-solid-text, #fff) !important;
+}
+
 /* 3-3) Optional .btn class (preview primary button look) */
 .btn {
   display: inline-flex;

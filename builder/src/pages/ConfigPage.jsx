@@ -1,27 +1,17 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import AppLayout from "../app/components/AppLayout.jsx";
 import AlertDialog from "../app/components/AlertDialog.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import {
-  CUSTOM_THEME_ID,
   DEFAULT_THEME,
   THEME_OPTIONS,
-  clearCustomTheme,
-  getCustomThemeInfo,
+  getCustomThemes,
+  removeCustomTheme,
   setCustomTheme,
 } from "../app/theme/theme.js";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { hasScriptRun, importThemeFromDrive } from "../services/gasClient.js";
-
-const readCustomThemeSummary = () => {
-  const info = getCustomThemeInfo();
-  return {
-    name: info.name || "",
-    url: info.url || "",
-    hasCss: !!info.css,
-  };
-};
 
 const extractThemeName = (css, fallbackName = "") => {
   const match = String(css || "").match(/data-theme=(["'])([^"']+)\1/);
@@ -35,17 +25,25 @@ const extractThemeName = (css, fallbackName = "") => {
 export default function ConfigPage() {
   const { settings, updateSetting } = useBuilderSettings();
   const { alertState, showAlert, closeAlert } = useAlert();
-  const initialCustomTheme = readCustomThemeSummary();
-  const [customThemeInfo, setCustomThemeInfo] = useState(initialCustomTheme);
-  const [importUrl, setImportUrl] = useState(initialCustomTheme.url || "");
+  const [customThemes, setCustomThemes] = useState(() => getCustomThemes());
+  const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
-  const [confirmRemoveOpen, setConfirmRemoveOpen] = useState(false);
+  const [removeTarget, setRemoveTarget] = useState(null);
   const themeValue = settings?.theme || DEFAULT_THEME;
-  const hasCustomOption = customThemeInfo.hasCss || themeValue === CUSTOM_THEME_ID;
-  const customThemeLabel = customThemeInfo.name || "カスタムテーマ";
-  const themeOptions = hasCustomOption
-    ? [...THEME_OPTIONS, { value: CUSTOM_THEME_ID, label: customThemeLabel }]
-    : THEME_OPTIONS;
+  const themeOptions = useMemo(
+    () => [
+      ...THEME_OPTIONS,
+      ...customThemes.map((theme) => ({ value: theme.id, label: theme.name || "カスタムテーマ" })),
+    ],
+    [customThemes]
+  );
+
+  useEffect(() => {
+    const hasSelectedTheme = themeOptions.some((option) => option.value === themeValue);
+    if (!hasSelectedTheme && themeValue !== DEFAULT_THEME) {
+      updateSetting("theme", DEFAULT_THEME);
+    }
+  }, [themeOptions, themeValue, updateSetting]);
 
   const handleImportTheme = async () => {
     if (importing) return;
@@ -66,11 +64,14 @@ export default function ConfigPage() {
         throw new Error("テーマファイルが空です");
       }
       const name = extractThemeName(css, result?.fileName);
-      setCustomTheme({ css, name, url: result?.fileUrl || url });
-      const nextInfo = readCustomThemeSummary();
-      setCustomThemeInfo(nextInfo);
-      setImportUrl(nextInfo.url || url);
-      updateSetting("theme", CUSTOM_THEME_ID);
+      const theme = setCustomTheme({ css, name, url: result?.fileUrl || url });
+      if (!theme) {
+        throw new Error("テーマファイルが空です");
+      }
+      const nextThemes = getCustomThemes();
+      setCustomThemes(nextThemes);
+      setImportUrl(theme.url || "");
+      updateSetting("theme", theme.id);
       showAlert("テーマをインポートしました");
     } catch (error) {
       console.error("[ConfigPage] theme import failed", error);
@@ -80,24 +81,24 @@ export default function ConfigPage() {
     }
   };
 
-  const handleRemoveCustomTheme = () => {
-    if (!customThemeInfo.hasCss) return;
-    setConfirmRemoveOpen(true);
+  const handleRemoveCustomTheme = (theme) => {
+    if (!theme) return;
+    setRemoveTarget(theme);
   };
 
   const handleConfirmRemove = () => {
-    clearCustomTheme();
-    setCustomThemeInfo(readCustomThemeSummary());
-    setImportUrl("");
-    if ((settings?.theme || DEFAULT_THEME) === CUSTOM_THEME_ID) {
+    if (!removeTarget) return;
+    const nextThemes = removeCustomTheme(removeTarget.id);
+    setCustomThemes(nextThemes);
+    if ((settings?.theme || DEFAULT_THEME) === removeTarget.id) {
       updateSetting("theme", DEFAULT_THEME);
     }
-    setConfirmRemoveOpen(false);
+    setRemoveTarget(null);
     showAlert("インポートしたテーマを削除しました");
   };
 
   const removeOptions = [
-    { value: "cancel", label: "キャンセル", onSelect: () => setConfirmRemoveOpen(false) },
+    { value: "cancel", label: "キャンセル", onSelect: () => setRemoveTarget(null) },
     { value: "remove", label: "削除する", variant: "danger", onSelect: handleConfirmRemove },
   ];
 
@@ -147,32 +148,44 @@ export default function ConfigPage() {
           <p className="nf-mt-6 nf-text-11 nf-text-muted">
             推奨形式: <span className="nf-text-underline">:root[data-theme="..."]</span> を含むCSS
           </p>
-          {customThemeInfo.hasCss && (
+          {customThemes.length > 0 && (
             <div className="nf-mt-12">
-              <div className="nf-row nf-gap-12">
-                <div className="nf-flex-1 nf-min-w-0">
-                  <div className="nf-text-12 nf-text-muted">インポート済みテーマ</div>
-                  <div className="nf-fw-600">{customThemeInfo.name || "カスタムテーマ"}</div>
-                  {customThemeInfo.url && (
-                    <div className="nf-mt-4 nf-text-11 nf-text-muted">
-                      <a className="nf-text-underline" href={customThemeInfo.url} target="_blank" rel="noreferrer">
-                        {customThemeInfo.url}
-                      </a>
+              <div className="nf-text-12 nf-text-muted">インポート済みテーマ</div>
+              <div className="nf-col nf-gap-12 nf-mt-8">
+                {customThemes.map((theme) => (
+                  <div key={theme.id} className="nf-row nf-gap-12">
+                    <div className="nf-flex-1 nf-min-w-0">
+                      <div className="nf-fw-600">{theme.name || "カスタムテーマ"}</div>
+                      {theme.url && (
+                        <div className="nf-mt-4 nf-text-11 nf-text-muted">
+                          <a className="nf-text-underline" href={theme.url} target="_blank" rel="noreferrer">
+                            {theme.url}
+                          </a>
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
-                <button type="button" className="nf-btn-outline nf-nowrap" onClick={handleRemoveCustomTheme}>
-                  削除
-                </button>
+                    <button
+                      type="button"
+                      className="nf-btn-outline nf-nowrap"
+                      onClick={() => handleRemoveCustomTheme(theme)}
+                    >
+                      削除
+                    </button>
+                  </div>
+                ))}
               </div>
             </div>
           )}
         </div>
       </div>
       <ConfirmDialog
-        open={confirmRemoveOpen}
+        open={Boolean(removeTarget)}
         title="インポートテーマを削除しますか？"
-        message="削除するとこのテーマは一覧から消え、選択中の場合はDefaultに戻ります。"
+        message={
+          removeTarget
+            ? `削除すると「${removeTarget.name || "カスタムテーマ"}」は一覧から消え、選択中の場合はDefaultに戻ります。`
+            : ""
+        }
         options={removeOptions}
       />
       <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
