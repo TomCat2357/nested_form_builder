@@ -230,6 +230,19 @@ export const importFormsFromDrive = async (url) => {
   return { forms: result.forms || [], skipped: result.skipped || 0 };
 };
 
+export const importThemeFromDrive = async (url) => {
+  if (!url) throw new Error("Google Drive URL is required");
+  const result = await callScriptRun("nfbImportThemeFromDrive", url);
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Theme import failed");
+  }
+  return {
+    css: result.css || "",
+    fileName: result.fileName || "",
+    fileUrl: result.fileUrl || url,
+  };
+};
+
 export const debugGetMapping = async () => {
   try {
     const result = await callScriptRun("nfbDebugGetMapping", {});
