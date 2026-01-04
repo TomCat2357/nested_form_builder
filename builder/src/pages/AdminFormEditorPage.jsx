@@ -10,7 +10,13 @@ import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { validateSpreadsheet } from "../services/gasClient.js";
 import { cleanupTempData } from "../core/schema.js";
 
-const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/admin");
+const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/forms");
+
+const omitThemeSetting = (settings) => {
+  if (!settings || typeof settings !== "object") return {};
+  const { theme, ...rest } = settings;
+  return rest;
+};
 
 export default function AdminFormEditorPage() {
   const { formId } = useParams();
@@ -24,7 +30,7 @@ export default function AdminFormEditorPage() {
   const builderRef = useRef(null);
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
   const initialSchema = useMemo(() => (form?.schema ? form.schema : []), [form]);
-  const initialSettings = useMemo(() => (form?.settings ? form.settings : {}), [form]);
+  const initialSettings = useMemo(() => omitThemeSetting(form?.settings || {}), [form]);
 
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
@@ -135,6 +141,7 @@ export default function AdminFormEditorPage() {
 
     const schema = builderRef.current.getSchema();
     const settings = builderRef.current.getSettings();
+    const trimmedSettings = omitThemeSetting(settings);
     const trimmedName = (name || "").trim();
 
     const spreadsheetOk = await checkSpreadsheet(settings?.spreadsheetId || "");
@@ -176,7 +183,7 @@ export default function AdminFormEditorPage() {
       ...(isEdit && form ? { id: form.id, createdAt: form.createdAt, driveFileUrl: form.driveFileUrl } : {}),
       description,
       schema: cleanedSchema,
-      settings: { ...settings, formTitle: trimmedName },
+      settings: { ...trimmedSettings, formTitle: trimmedName },
       archived: form?.archived ?? false,
       schemaVersion: form?.schemaVersion ?? 1,
     };
@@ -191,7 +198,7 @@ export default function AdminFormEditorPage() {
       initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
       setBuilderDirty(false);
       setIsSaving(false);
-      navigate("/admin", { replace: true });
+      navigate("/forms", { replace: true });
     } catch (error) {
       console.error(error);
       setIsSaving(false);
@@ -262,7 +269,7 @@ export default function AdminFormEditorPage() {
   return (
     <AppLayout
       title={isEdit ? "フォーム修正" : "フォーム新規作成"}
-      badge="管理"
+      badge="フォーム管理"
       fallbackPath={fallback}
       onBack={handleBack}
       backHidden={true}

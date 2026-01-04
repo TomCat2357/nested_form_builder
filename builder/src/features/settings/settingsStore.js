@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_SETTINGS, loadSettingsFromStorage, saveSettingsToStorage } from "../../core/storage.js";
 import { hasScriptRun, loadUserSettings, saveUserSettings } from "../../services/gasClient.js";
+import { DEFAULT_THEME, setTheme } from "../../app/theme/theme.js";
 
 export const useBuilderSettings = () => {
   const scriptRunAvailable = hasScriptRun();
@@ -13,7 +14,11 @@ export const useBuilderSettings = () => {
     (async () => {
       const loaded = await loadSettingsFromStorage();
       if (!active) return;
-      setSettings((prev) => ({ ...DEFAULT_SETTINGS, ...loaded, ...prev }));
+      setSettings((prev) => {
+        const merged = { ...DEFAULT_SETTINGS, ...loaded, ...prev };
+        defaultsRef.current = merged;
+        return merged;
+      });
       setLoadingLocal(false);
     })();
     return () => {
@@ -56,6 +61,11 @@ export const useBuilderSettings = () => {
       });
     }
   }, [settings, loadingLocal, scriptRunAvailable]);
+
+  useEffect(() => {
+    if (loadingLocal) return;
+    setTheme(settings?.theme || DEFAULT_THEME);
+  }, [settings?.theme, loadingLocal]);
 
   const updateSetting = useCallback(
     (key, value) => {

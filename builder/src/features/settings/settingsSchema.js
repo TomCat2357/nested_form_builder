@@ -1,5 +1,3 @@
-import { THEME_OPTIONS } from "../../app/theme/theme.js";
-
 export const SETTINGS_FIELDS = [
   {
     key: "spreadsheetId",
@@ -12,13 +10,6 @@ export const SETTINGS_FIELDS = [
     label: "Sheet Name",
     placeholder: "Responses",
     required: false,
-  },
-  {
-    key: "theme",
-    label: "テーマ",
-    required: false,
-    type: "select",
-    options: THEME_OPTIONS,
   },
   {
     key: "pageSize",

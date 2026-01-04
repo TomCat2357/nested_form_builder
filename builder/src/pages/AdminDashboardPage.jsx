@@ -348,11 +348,11 @@ export default function AdminDashboardPage() {
   };
 
   const goToEditor = (formId) => {
-    navigate(`/admin/forms/${formId}/edit`);
+    navigate(`/forms/${formId}/edit`);
   };
 
   const handleCreateNew = () => {
-    navigate("/admin/forms/new");
+    navigate("/forms/new");
   };
 
   return (

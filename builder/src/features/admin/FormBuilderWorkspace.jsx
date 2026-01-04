@@ -7,7 +7,6 @@ import { normalizeSchemaIDs, validateMaxDepth, validateUniqueLabels, MAX_DEPTH }
 import { runSelfTests } from "../../core/selfTests.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
-import { applyTheme, DEFAULT_THEME } from "../../app/theme/theme.js";
 
 const shallowEqual = (a, b) => {
   if (a === b) return true;
@@ -37,10 +36,6 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   useEffect(() => {
     runSelfTests();
   }, []);
-
-  useEffect(() => {
-    applyTheme(settings?.theme || DEFAULT_THEME);
-  }, [settings?.theme]);
 
   // initialSchema/initialSettingsが変わったら、リセット
   useEffect(() => {

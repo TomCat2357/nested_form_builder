@@ -16,8 +16,12 @@ export default function MainPage() {
     });
   };
 
-  const handleGoAdmin = () => {
-    navigate("/admin");
+  const handleGoForms = () => {
+    navigate("/forms");
+  };
+
+  const handleGoConfig = () => {
+    navigate("/config");
   };
 
   return (
@@ -25,15 +29,20 @@ export default function MainPage() {
       title="フォーム一覧"
       backHidden
       sidebarActions={
-        <button type="button" onClick={handleGoAdmin} className="nf-btn-outline nf-btn-sidebar">
-          管理画面へ
-        </button>
+        <>
+          <button type="button" onClick={handleGoForms} className="nf-btn-outline nf-btn-sidebar">
+            フォーム管理へ
+          </button>
+          <button type="button" onClick={handleGoConfig} className="nf-btn-outline nf-btn-sidebar">
+            設定
+          </button>
+        </>
       }
     >
       {loadingForms ? (
         <p className="nf-text-subtle">読み込み中...</p>
       ) : activeForms.length === 0 ? (
-        <p className="nf-text-subtle">登録済みのフォームがありません。管理画面から作成してください。</p>
+        <p className="nf-text-subtle">登録済みのフォームがありません。フォーム管理から作成してください。</p>
       ) : (
         <div className="main-list">
           {activeForms.map((form) => (
