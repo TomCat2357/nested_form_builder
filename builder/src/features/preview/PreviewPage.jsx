@@ -440,6 +440,10 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     <div className="nf-card" data-depth="0">
       <h2 className="preview-title">{formTitle}</h2>
       <div className="nf-mb-12">
+        <label className="preview-label">No.</label>
+        <input type="text" value={settings.recordNo || ""} readOnly className="nf-input nf-input--readonly" />
+      </div>
+      <div className="nf-mb-12">
         <label className="preview-label">回答ID</label>
         <input type="text" value={recordIdRef.current} readOnly className="nf-input nf-input--readonly" />
       </div>

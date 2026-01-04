@@ -350,7 +350,7 @@ export default function FormPage() {
           schema={normalizedSchema}
           responses={responses}
           setResponses={setResponses}
-          settings={{ ...(form.settings || {}), recordId: currentRecordId }}
+          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: entry?.["No."] || "" }}
           onSave={handleSaveToStore}
           showOutputJson={false}
           showSaveButton={false}
