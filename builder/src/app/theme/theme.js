@@ -2,7 +2,6 @@ const THEME_STORAGE_KEY = "nested_form_builder_theme";
 export const DEFAULT_THEME = "default";
 export const THEME_OPTIONS = [
   { value: "default", label: "Default" },
-  { value: "warm", label: "Warm" },
 ];
 
 const CUSTOM_THEME_STYLE_ID = "nfb-custom-themes";
