@@ -1,0 +1,153 @@
+/* matcha theme overrides */
+:root[data-theme="matcha"] {
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --label-font-size-base: 14px;
+  --label-size-offset-sm: -2px;
+  --label-size-offset-lg: 2px;
+
+  /* Surfaces (soft mint) */
+  --bg: #f4fbf6;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-muted: #eaf7ef;
+  --surface-subtle: #f8fffb;
+  --surface-alt: #dff3e8;
+
+  /* Borders */
+  --border: #cfe8d7;
+  --border-muted: #d9efe1;
+  --border-subtle: #edf8f2;
+  --border-strong: #a7d7bc;
+
+  /* Text */
+  --text: #0f172a;
+  --text-strong: #111827;
+  --text-ink: #334155;
+  --text-muted: #64748b;
+  --text-subtle: #6b7280;
+  --text-faded: #94a3b8;
+
+  /* Primary (matcha green) */
+  --primary: #16a34a;
+  --primary-strong: #15803d;
+  --primary-ink: #14532d;
+  --primary-ink-strong: #052e16;
+  --primary-soft: #dcfce7;
+  --primary-soft-strong: #bbf7d0;
+  --primary-weak: rgba(22, 163, 74, 0.12);
+  --primary-weak-soft: rgba(22, 163, 74, 0.06);
+  --primary-border-soft: rgba(22, 163, 74, 0.24);
+
+  /* Warm accent (yuzu amber) */
+  --warm: #f59e0b;
+  --warm-weak: rgba(245, 158, 11, 0.12);
+  --warm-ink: #92400e;
+
+  /* Status */
+  --success: #10b981;
+  --success-ink: #065f46;
+  --success-weak: rgba(16, 185, 129, 0.10);
+
+  --danger: #dc2626;
+  --danger-bright: #ef4444;
+  --danger-strong: #b91c1c;
+  --danger-ink: #991b1b;
+  --danger-ink-strong: #7f1d1d;
+  --danger-weak: #fef2f2;
+  --danger-weak-strong: #fee2e2;
+  --danger-border: #fecaca;
+  --danger-border-strong: #fca5a5;
+
+  --warning: #f59e0b;
+  --warning-weak: #fef3c7;
+  --warning-ink: #92400e;
+
+  --info: #38bdf8;
+  --info-weak: #e0f2fe;
+
+  /* Shape + shadows (same “soft” profile as sakura) */
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+
+  --shadow-sm: 0 2px 10px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 16px 36px rgba(15, 23, 42, 0.13);
+  --shadow-lg: 0 20px 45px rgba(15, 23, 42, 0.22);
+
+  --overlay: rgba(15, 23, 42, 0.35);
+  --overlay-strong: rgba(15, 23, 42, 0.55);
+
+  /* App chrome */
+  --app-bg:
+    radial-gradient(900px 520px at 12% -10%, var(--primary-weak), transparent 60%),
+    radial-gradient(900px 520px at 92% 0%, var(--warm-weak), transparent 62%),
+    var(--bg);
+  --app-header-bg: rgba(244, 251, 246, 0.78);
+
+  /* Focus ring */
+  --input-border-focus: rgba(22, 163, 74, 0.35);
+  --input-focus-ring: rgba(22, 163, 74, 0.12);
+
+  /* Badges / logo / panels */
+  --badge-primary-bg: linear-gradient(135deg, rgba(22, 163, 74, 0.92), rgba(22, 163, 74, 0.76));
+  --badge-warm-bg: linear-gradient(135deg, rgba(245, 158, 11, 0.90), rgba(245, 158, 11, 0.76));
+  --badge-ghost-bg: rgba(22, 163, 74, 0.08);
+  --badge-ghost-border: rgba(22, 163, 74, 0.18);
+  --badge-text: rgba(255, 255, 255, 0.94);
+
+  --logo-gradient: linear-gradient(135deg, rgba(22, 163, 74, 0.92), rgba(245, 158, 11, 0.85));
+  --logo-shadow: 0 10px 26px rgba(22, 163, 74, 0.14), 0 10px 24px rgba(245, 158, 11, 0.10);
+
+  --panel-header-bg: linear-gradient(180deg, rgba(22, 163, 74, 0.06), transparent);
+  --card-hover-border: rgba(22, 163, 74, 0.20);
+  --btn-primary-bg: linear-gradient(180deg, var(--primary-weak), var(--primary-weak-soft));
+
+  /* Hierarchy rails (used by preview-overrides.css) */
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(22, 163, 74, 0),
+    rgba(22, 163, 74, 0.45),
+    rgba(245, 158, 11, 0.12),
+    rgba(22, 163, 74, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(22, 163, 74, 0.95), rgba(245, 158, 11, 0.85));
+  --rail-dot-shadow: 0 10px 18px rgba(22, 163, 74, 0.14), 0 12px 26px rgba(245, 158, 11, 0.12);
+
+  /* If box / chips */
+  --if-box-border: rgba(22, 163, 74, 0.18);
+  --if-box-bg: linear-gradient(135deg, rgba(22, 163, 74, 0.08), rgba(245, 158, 11, 0.10));
+  --if-chip-bg: rgba(245, 158, 11, 0.12);
+  --if-chip-border: rgba(245, 158, 11, 0.18);
+  --if-badge-border: rgba(16, 185, 129, 0.18);
+
+  /* Cards + inputs + buttons (theme-driven component vars) */
+  --question-card-bg: var(--surface);
+  --question-card-border: var(--border);
+  --question-card-selected-border: var(--primary);
+  --question-card-shadow: var(--shadow-sm);
+  --card-radius: var(--radius-md);
+  --card-padding: 12px;
+
+  --option-row-bg: transparent;
+  --option-row-border: var(--border);
+  --option-row-selected-border: var(--primary);
+
+  --input-bg: var(--surface);
+  --input-text: var(--text);
+  --input-border: var(--border-strong);
+  --input-radius: var(--radius-sm);
+  --input-readonly-bg: var(--surface-subtle);
+  --input-readonly-text: var(--text-ink);
+  --input-error-border: var(--danger-bright);
+
+  --button-bg: var(--surface-subtle);
+  --button-text: var(--text);
+  --button-border: var(--border-strong);
+  --button-radius: var(--radius-sm);
+  --button-danger-bg: var(--danger-weak-strong);
+  --button-danger-text: var(--text);
+  --button-danger-border: var(--danger-border-strong);
+
+  --child-border: var(--border);
+}

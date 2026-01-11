@@ -1,0 +1,128 @@
+/* sakura theme overrides */
+:root[data-theme="sakura"] {
+  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --label-font-size-base: 14px;
+  --label-size-offset-sm: -2px;
+  --label-size-offset-lg: 2px;
+
+  --bg: #fff7fb;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-muted: #fff1f7;
+  --surface-subtle: #fffbfd;
+  --surface-alt: #fde7f3;
+
+  --border: #f2dbe7;
+  --border-muted: #f6e6ee;
+  --border-subtle: #faeff4;
+  --border-strong: #d8b4c9;
+
+  --text: #0f172a;
+  --text-strong: #111827;
+  --text-ink: #334155;
+  --text-muted: #64748b;
+  --text-subtle: #6b7280;
+  --text-faded: #94a3b8;
+
+  --primary: #db2777;
+  --primary-strong: #be185d;
+  --primary-ink: #831843;
+  --primary-ink-strong: #500724;
+  --primary-soft: #fce7f3;
+  --primary-soft-strong: #fbcfe8;
+  --primary-weak: rgba(219, 39, 119, 0.12);
+  --primary-weak-soft: rgba(219, 39, 119, 0.06);
+  --primary-border-soft: rgba(219, 39, 119, 0.24);
+
+  --warm: #f59e0b;
+  --warm-weak: rgba(245, 158, 11, 0.12);
+  --warm-ink: #92400e;
+
+  --success: #16a34a;
+  --success-ink: #166534;
+  --success-weak: rgba(22, 163, 74, 0.10);
+
+  --danger: #dc2626;
+  --danger-bright: #ef4444;
+  --danger-strong: #b91c1c;
+  --danger-ink: #991b1b;
+  --danger-ink-strong: #7f1d1d;
+  --danger-weak: #fef2f2;
+  --danger-weak-strong: #fee2e2;
+  --danger-border: #fecaca;
+  --danger-border-strong: #fca5a5;
+
+  --warning: #f59e0b;
+  --warning-weak: #fef3c7;
+  --warning-ink: #92400e;
+
+  --info: #38bdf8;
+  --info-weak: #e0f2fe;
+
+  --radius-sm: 10px;
+  --radius-md: 14px;
+  --radius-lg: 18px;
+
+  --shadow-sm: 0 2px 10px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 16px 36px rgba(15, 23, 42, 0.13);
+  --shadow-lg: 0 20px 45px rgba(15, 23, 42, 0.22);
+
+  --overlay: rgba(15, 23, 42, 0.35);
+  --overlay-strong: rgba(15, 23, 42, 0.55);
+
+  --logo-gradient: linear-gradient(135deg, rgba(219, 39, 119, 0.92), rgba(245, 158, 11, 0.85));
+  --logo-shadow: 0 10px 26px rgba(219, 39, 119, 0.14), 0 10px 24px rgba(245, 158, 11, 0.10);
+
+  --app-bg: radial-gradient(900px 520px at 12% -10%, var(--primary-weak), transparent 60%),
+    radial-gradient(900px 520px at 92% 0%, var(--warm-weak), transparent 62%),
+    var(--bg);
+  --app-header-bg: rgba(255, 247, 251, 0.78);
+
+  --panel-header-bg: linear-gradient(180deg, rgba(219, 39, 119, 0.06), transparent);
+  --card-hover-border: rgba(219, 39, 119, 0.20);
+
+  --btn-primary-bg: linear-gradient(180deg, var(--primary-weak), var(--primary-weak-soft));
+
+  --badge-primary-bg: linear-gradient(135deg, rgba(219, 39, 119, 0.92), rgba(219, 39, 119, 0.76));
+  --badge-warm-bg: linear-gradient(135deg, rgba(245, 158, 11, 0.90), rgba(245, 158, 11, 0.76));
+  --badge-ghost-bg: rgba(219, 39, 119, 0.08);
+  --badge-ghost-border: rgba(219, 39, 119, 0.18);
+  --badge-text: rgba(255, 255, 255, 0.94);
+
+  --if-box-border: rgba(219, 39, 119, 0.18);
+  --if-box-bg: linear-gradient(135deg, rgba(219, 39, 119, 0.08), rgba(245, 158, 11, 0.10));
+  --if-chip-bg: rgba(245, 158, 11, 0.12);
+  --if-chip-border: rgba(245, 158, 11, 0.18);
+  --if-badge-border: rgba(22, 163, 74, 0.18);
+
+  --question-card-bg: var(--surface);
+  --question-card-border: var(--border);
+  --question-card-selected-border: var(--primary);
+  --question-card-shadow: var(--shadow-sm);
+  --card-radius: var(--radius-md);
+  --card-padding: 12px;
+
+  --option-row-bg: transparent;
+  --option-row-border: var(--border);
+  --option-row-selected-border: var(--primary);
+
+  --input-bg: var(--surface);
+  --input-text: var(--text);
+  --input-border: var(--border-strong);
+  --input-radius: var(--radius-sm);
+  --input-readonly-bg: var(--surface-subtle);
+  --input-readonly-text: var(--text-ink);
+  --input-error-border: var(--danger-bright);
+  --input-border-focus: rgba(219, 39, 119, 0.35);
+  --input-focus-ring: rgba(219, 39, 119, 0.12);
+
+  --button-bg: var(--surface-subtle);
+  --button-text: var(--text);
+  --button-border: var(--border-strong);
+  --button-radius: var(--radius-sm);
+  --button-danger-bg: var(--danger-weak-strong);
+  --button-danger-text: var(--text);
+  --button-danger-border: var(--danger-border-strong);
+
+  --child-border: var(--border);
+}

@@ -1,7 +1,10 @@
 const THEME_STORAGE_KEY = "nested_form_builder_theme";
-export const DEFAULT_THEME = "default";
+export const DEFAULT_THEME = "standard";
 export const THEME_OPTIONS = [
-  { value: "default", label: "Default" },
+  { value: "standard", label: "Standard" },
+  { value: "matcha", label: "Matcha" },
+  { value: "sakura", label: "Sakura" },
+  { value: "warm", label: "Warm" },
 ];
 
 const CUSTOM_THEME_STYLE_ID = "nfb-custom-themes";
@@ -145,9 +148,13 @@ export const applyTheme = (name) => {
 
 export const initTheme = (fallback = DEFAULT_THEME) => {
   const saved = safeStorageGet(THEME_STORAGE_KEY);
-  const theme = saved || fallback;
+  const resolvedTheme = saved === "default" ? DEFAULT_THEME : saved;
+  const theme = resolvedTheme || fallback;
   applyTheme(theme);
   restoreCustomThemes();
+  if (saved === "default") {
+    safeStorageSet(THEME_STORAGE_KEY, theme);
+  }
   return theme;
 };
 
