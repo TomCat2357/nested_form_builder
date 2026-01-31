@@ -19,15 +19,15 @@ Nested Form Builderは、階層構造を持つアンケートフォームを視�
 ### 現在の状態
 
 - `builder/` は React 19 + Vite 7 + `vite-plugin-singlefile` で構築しています。
-- `deploy.sh` が `npm --prefix builder install` → `builder` ビルド → `gas/scripts/bundle.js` → `dist/` 配置 → `clasp push/deploy` を一括実行し、`.gas-deployment.json` にデプロイ情報をキャッシュします。
-- `docs/`（仕様書・ユーザーマニュアル・検索ガイド）、`shared/`（payload契約 & スキーマ例）、`samples/form.json`（ヒグマフォーム）が揃っており、Playwrightの設定/成果物（`test-results/`）も含まれます。
+- `deploy.sh`（macOS/Linux）/ `deploy.ps1`（Windows）が `builder` のインストール/ビルド → `gas/scripts/bundle.js` → `dist/` 生成 → `<base target="_top">` と deploy-time メタ付与 → `clasp push/deploy` を実行し、`.gas-deployment.json` にデプロイ情報をキャッシュします。
+- `docs/` に `user_manual.md`/`user_manual.pdf` と `playwright-testing.md`、`shared/` に `payload_contract.md` と `schema_examples/`、`samples/form.json` にサンプルフォーム、`tests/` に Playwright スクリプトとスクリーンショットが揃っています。
 
 ### 技術スタック
 
 - **フロントエンド**: React 19 / Vite 7 / vite-plugin-singlefile
 - **バックエンド**: Google Apps Script（ES5互換）
-- **ストレージ**: Google Sheets、localStorage (`dataStore`)、IndexedDB (`recordsCache`)
-- **ビルド/デプロイ**: npm scripts、clasp、`deploy.sh`、`scripts/bundle-gas.js`
+- **ストレージ**: Google Sheets、IndexedDB（`formsCache` / `recordsCache` / `settingsStore`）
+- **ビルド/デプロイ**: npm scripts、clasp、`deploy.sh` / `deploy.ps1`、`gas/scripts/bundle.js`
 
 ## プロジェクト構成
 
@@ -39,10 +39,13 @@ nested_form_builder/
 │   │   │   ├── theme.js            # テーマ管理（選択・追加・削除）
 │   │   │   ├── theme.css           # CSS カスタムプロパティ定義
 │   │   │   ├── base.css            # ベーススタイル
+│   │   │   ├── preview-overrides.css # プレビュー用上書き
 │   │   │   ├── tokens.js           # JSS トークンオブジェクト
-│   │   │   └── themes/
-│   │   │       └── default/        # デフォルトテーマ
-│   │   │           └── theme.css   # デフォルト具体値
+│   │   │   └── themes/             # ビルトインテーマCSS
+│   │   │       ├── standard.css
+│   │   │       ├── matcha.css
+│   │   │       ├── sakura.css
+│   │   │       └── warm.css
 │   │   └── ...
 │   ├── src/core/            # スキーマ検証・displayModes・storage
 │   ├── src/features/        # admin/editor/export/preview/search/settings
@@ -51,18 +54,23 @@ nested_form_builder/
 │   └── src/utils/           # download/spreadsheetユーティリティ
 ├── gas/                     # Google Apps Script ソース（分割ファイル）
 │   ├── Code.gs
+│   ├── drive.gs
+│   ├── forms.gs
 │   ├── model.gs
+│   ├── properties.gs
 │   ├── sheets.gs
 │   ├── settings.gs
 │   └── README.md
-├── dist/                    # deploy.sh が生成する clasp ルート (Bundle.gs, Index.html, appsscript.json)
-├── docs/                    # SPEC, user_manual, 検索ガイド, スクリーンショット
+├── dist/                    # deploy.sh / deploy.ps1 が生成する clasp ルート (Bundle.gs, Index.html, appsscript.json)
+├── docs/                    # user_manual, playwright-testing, PDF
 ├── shared/                  # payload_contract と schema_examples
 ├── samples/                 # form.json（ヒグマは好きかフォーム例）
 ├── gas/scripts/             # bundle.js（GAS結合ツール）
-├── test-results/            # Playwright実行ログ/スクリーンショット
+├── tests/                   # Playwrightテスト/スクリプト/スクリーンショット
+├── playwright-report/       # Playwright HTMLレポート出力
 ├── CLAUDE.md                # AIエージェント向けガイダンス
 ├── deploy.sh                # 自動デプロイスクリプト
+├── deploy.ps1               # 自動デプロイスクリプト（PowerShell）
 ├── package.json             # ルートnpmスクリプト (clasp, playwright など)
 └── builder/package.json     # フロントエンド依存関係
 ```
@@ -70,9 +78,9 @@ nested_form_builder/
 主な補足:
 
 - `builder/src/app/theme/`…テーマシステムの中核
-  - `theme.js`：テーマの選択・追加・削除機能、localStorage管理
+  - `theme.js`：テーマの選択・追加・削除機能、IndexedDB（settingsStore）に保存
   - `theme.css`：全テーマ共通のCSS変数定義
-  - `themes/default/theme.css`：デフォルトテーマの色・サイズ定義
+  - `themes/*.css`：ビルトインテーマ（standard/matcha/sakura/warm）
 - `builder/src/pages/ConfigPage.jsx`…テーマ管理UI（設定ページ）
   - テーマ選択ドロップダウン
   - Google Drive からのテーマCSS インポート機能
@@ -81,8 +89,8 @@ nested_form_builder/
   - `importThemeFromDrive()`：Google Drive URL からテーマCSS を取得
 - `builder/src/features/export/`…スキーマJSONのダウンロードUI
 - `builder/src/features/admin/SearchPreviewPanel.jsx`…重要項目・表示モードの確認
-- `gas/scripts/bundle.js`…`gas/*.gs` を `dist/Bundle.gs` に結合し、`deploy.sh` から呼び出されます
-- `docs/user_manual.md` / `docs/SPECIFICATIONS.md` / `docs/検索機能の使い方.md`…ユーザー/開発者向けドキュメント
+- `gas/scripts/bundle.js`…`gas/*.gs` を `dist/Bundle.gs` に結合し、`deploy.sh` / `deploy.ps1` から呼び出されます
+- `docs/user_manual.md` / `docs/user_manual.pdf` / `docs/playwright-testing.md`…ユーザー/テスト向けドキュメント
 - `shared/payload_contract.md`…GASとのPOSTペイロード仕様、`shared/schema_examples/basic.json`…最小構成例
 
 ## セットアップ
@@ -132,10 +140,14 @@ npx clasp create --type webapp --title "Nested Form Builder"
 ### 4. デプロイ
 
 ```bash
+# macOS/Linux
 ./deploy.sh
+
+# Windows PowerShell
+.\deploy.ps1
 ```
 
-`deploy.sh` は `builder` の依存関係インストール→ビルド→`gas/scripts/bundle.js` による `dist/Bundle.gs` 生成→`dist/Index.html` へ `<base target="_top">` 付与→`appsscript.json` コピー/上書き→`clasp push`→`clasp deploy` まで自動化し、`.gas-deployment.json` に Deployment ID/URL をキャッシュします。`--manifest-override <path>` を付与すると `gas/appsscript.json` に別JSONをマージしてから push できます。
+`deploy.sh` / `deploy.ps1` は `builder` の依存関係インストール→ビルド→`gas/scripts/bundle.js` による `dist/Bundle.gs` 生成→`dist/Index.html` へ `<base target="_top">` と deploy-time メタ付与→`appsscript.json` コピー/上書き→`clasp push`→`clasp deploy` まで自動化し、`.gas-deployment.json` に Deployment ID/URL をキャッシュします。`--manifest-override <path>` を付与すると `gas/appsscript.json` に別JSONをマージしてから push できます。
 
 ## 開発
 
@@ -156,8 +168,8 @@ ls dist
 ```
 
 - `vite build` が `builder/dist` に成果物を出力後、`gas/scripts/bundle.js` が `gas/*.gs` を `dist/Bundle.gs` に結合します。
-- `dist/Index.html` が GAS で配信されるReactアプリで、`deploy.sh` は `<base target="_top">` を自動付与します。
-- 手動で `node gas/scripts/bundle.js` を実行すれば `deploy.sh` なしでも `dist/` を最新化できます。
+- `dist/Index.html` が GAS で配信されるReactアプリで、`deploy.sh` / `deploy.ps1` は `<base target="_top">` を自動付与します。
+- 手動で `node gas/scripts/bundle.js` を実行すれば `deploy.sh` / `deploy.ps1` なしでも `dist/` を最新化できます。
 
 ### Apps Scriptコードの編集
 
@@ -169,7 +181,7 @@ npm run clasp:pull
 npm run clasp:push
 ```
 
-`.clasp.json` の `rootDir` は `dist/` です。`clasp:pull` を実行すると最新のGASコード/マニフェストが `dist/` に展開されるため、編集後は `scripts/bundle-gas.js` の出力を上書きしないよう注意してください。
+`.clasp.json` の `rootDir` は `dist/` です。`clasp:pull` を実行すると最新のGASコード/マニフェストが `dist/` に展開されるため、編集後は `gas/scripts/bundle.js` の出力を上書きしないよう注意してください。
 
 ### テーマ設定
 
@@ -177,14 +189,14 @@ npm run clasp:push
 
 ナビゲーションバーの **「設定」** ページ（歯車アイコン）で テーマ切り替えとインポート機能にアクセスできます。
 
-- **デフォルトテーマ**: `default` が唯一のビルトインテーマとして利用可能です。
+- **ビルトインテーマ**: `standard`（既定） / `matcha` / `sakura` / `warm`
 - **カスタムテーマ**: インポートしたテーマは「テーマ選択」ドロップダウンに自動表示されます。
 
 選択したテーマは `<html data-theme="...">` 属性に反映され、全体の配色が切り替わります。
 
 #### テーマの作成とインポート
 
-**推奨フォーマット**: CSS ファイルは `:root[data-theme="テーマ名"]` セレクタを含める必要があります。
+**推奨フォーマット**: CSS ファイルは `:root[data-theme="テーマ名"]` セレクタを含める必要があります（`:root` のみでも自動補正されます）。
 
 ##### 例：カスタムテーマ CSS の構造
 
@@ -219,13 +231,13 @@ npm run clasp:push
 
 #### テーマの削除
 
-設定ページの「インポート済みテーマ」セクションから、カスタムテーマ横の「削除」ボタンで削除できます。デフォルトテーマは削除できません。
+設定ページの「インポート済みテーマ」セクションから、カスタムテーマ横の「削除」ボタンで削除できます。ビルトインテーマ（standard/matcha/sakura/warm）は削除できません。
 
 #### テーマ設定の保存先
 
-- **ローカル保存**: テーマ選択とカスタムテーマリストは `localStorage` (`nested_form_builder_theme`) に保存されます。
+- **ローカル保存**: テーマ選択とカスタムテーマリストは IndexedDB（`settingsStore`）に保存されます（`nested_form_builder_theme` / `nested_form_builder_theme_custom_list_v1`）。
 - **ブラウザ/デバイス単位**: GAS のユーザー設定とは同期されず、ブラウザごとに独立した設定となります。
-- **キャッシュ**: カスタムテーマ CSS は `nested_form_builder_theme_custom_list_v1` キーで管理され、`<style id="nfb-custom-themes">` タグとしてDOMに注入されます。
+- **キャッシュ**: カスタムテーマ CSS は `<style id="nfb-custom-themes">` としてDOMに注入されます（旧localStorageから自動移行あり）。
 
 #### テーマの実装詳細
 
@@ -237,7 +249,7 @@ npm run clasp:push
 
 - **トークン定義**:
   - `builder/src/app/theme/theme.css`: 全テーマ共通のカスタムプロパティベース
-  - `builder/src/app/theme/themes/default/theme.css`: デフォルトテーマの具体値
+  - `builder/src/app/theme/themes/*.css`: ビルトインテーマの具体値
   - `builder/src/app/theme/tokens.js`: React コンポーネント内で参照される JSS オブジェクト
 
 - **管理UI**: `builder/src/pages/ConfigPage.jsx`
@@ -285,9 +297,8 @@ npx playwright test
 
 ## ドキュメント & リソース
 
-- `docs/SPECIFICATIONS.md` … 技術仕様とレイヤー構成の詳細
-- `docs/user_manual.md` … 「ヒグマは好きか」サンプルを使った操作マニュアル（`docs/images/`, `docs/screenshots/` を参照）
-- `docs/検索機能の使い方.md` … クエリ構文のリファレンス
+- `docs/user_manual.md` / `docs/user_manual.pdf` … 「ヒグマは好きか」サンプルを使った操作マニュアル
+- `docs/playwright-testing.md` … Playwrightテストのガイド
 - `shared/payload_contract.md` … フォームHTML → GAS へのPOSTペイロード仕様
 - `shared/schema_examples/basic.json` / `samples/form.json` … スキーマの最小構成例と運用中フォーム（インポートに利用可能）
 - `gas/README.md` … Apps Script 側のエントリポイント/設定
@@ -311,8 +322,9 @@ npx playwright test
 - **FormPage**: フォーム入力画面
 - **SearchPage**: データ検索・閲覧
 - **PreviewPage**: フォームプレビュー
-- **dataStore**: フォーム・エントリの状態管理（localStorage）
+- **dataStore**: GASとのやり取りとフォーム/レコード処理の窓口（キャッシュ層と連携）
 - **gasClient**: GAS API呼び出し
+- **formsCache**: IndexedDBによるフォーム一覧キャッシュ
 - **recordsCache**: IndexedDBによるレコードキャッシュ
 
 #### GAS Backend
@@ -334,10 +346,14 @@ npx playwright test
   description: "説明",
   schemaHash: "v1-123456",    // 生成HTMLの整合性チェック
   schemaVersion: 1,
-  importantFields: ["氏名", "相談内容"],
+  importantFields: ["氏名", "相談内容|生物|動物種|ヒグマ"],
+  displayFieldSettings: [
+    { path: "氏名", mode: "normal", type: "text" },
+    { path: "相談内容|生物|動物種|ヒグマ", mode: "compact", type: "checkboxes" }
+  ],
   archived: false,
-  createdAt: "2024-05-01T12:00:00Z",
-  modifiedAt: "2024-05-04T09:30:00Z",
+  createdAt: 45234.12345,
+  modifiedAt: 45236.6789,
   schema: [
     {
       id: "q1",
@@ -361,13 +377,12 @@ npx playwright test
     formTitle: "受付フォーム",
     spreadsheetId: "1AbCdEf...",
     sheetName: "Responses",
-    gasUrl: "https://script.google.com/macros/s/xxxx/exec",
     pageSize: 100
   }
 }
 ```
 
-`displayMode` と `important` の組み合わせでデータ一覧での表示有無を制御し、`childrenByValue` により選択肢ごとのネスト質問を定義します。詳細は `builder/src/core/displayModes.js` と `docs/SPECIFICATIONS.md` を参照してください。
+`displayMode` と `important` の組み合わせでデータ一覧での表示有無を制御し、`childrenByValue` により選択肢ごとのネスト質問を定義します。詳細は `builder/src/core/displayModes.js` を参照してください。
 
 #### エントリーペイロード
 
@@ -424,7 +439,7 @@ keyword
 列名 ~ /パターン/
 ```
 
-詳細は `docs/検索機能の使い方.md` を参照してください。
+詳細はこのREADMEのクエリ例を参照してください。
 
 ## トラブルシューティング
 
