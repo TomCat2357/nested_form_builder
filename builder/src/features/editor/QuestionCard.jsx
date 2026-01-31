@@ -7,7 +7,7 @@ import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
 // 定数
 const CHOICE_TYPES = ["radio", "select", "checkboxes"];
-const INPUT_TYPES = ["text", "textarea", "number"];
+const INPUT_TYPES = ["text", "textarea", "number", "url"];
 const DATE_TIME_TYPES = ["date", "time"];
 const MESSAGE_TYPE = "message";
 const resolveDisplayModeForType = (type, displayed) => (
@@ -369,6 +369,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
           <option value="select">ドロップダウン</option>
           <option value="date">日付</option>
           <option value="time">時間</option>
+          <option value="url">URL</option>
           <option value="message">メッセージ</option>
         </select>
         {!isMessage && (

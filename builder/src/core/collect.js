@@ -20,7 +20,7 @@ export const collectResponses = (fields, responses, prefix = "", out = {}, order
       if (field.childrenByValue?.[value]) {
         collectResponses(field.childrenByValue[value], responses, `${base}|${value}`, out, orderList);
       }
-    } else if (["text", "textarea", "number", "regex", "date", "time"].includes(field.type) && value != null && value !== "") {
+    } else if (["text", "textarea", "number", "regex", "date", "time", "url"].includes(field.type) && value != null && value !== "") {
       out[base] = value;
       orderList.push(base);
     }
@@ -43,7 +43,7 @@ export const collectAllPossiblePaths = (fields, prefix = "", paths = []) => {
           collectAllPossiblePaths(field.childrenByValue[optionLabel], `${base}|${optionLabel}`, paths);
         }
       });
-    } else if (["text", "textarea", "number", "regex", "date", "time"].includes(field.type)) {
+    } else if (["text", "textarea", "number", "regex", "date", "time", "url"].includes(field.type)) {
       paths.push(base);
     }
   });

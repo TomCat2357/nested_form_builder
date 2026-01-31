@@ -61,6 +61,13 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
     if (field.type === "checkboxes" && Array.isArray(value)) return value.join(", ");
     if (Array.isArray(value)) return value.join(", ");
     if (value === undefined || value === null || value === "") return "—";
+    if (field.type === "url" && value) {
+      return (
+        <a href={value} target="_blank" rel="noopener noreferrer" className="nf-link">
+          {value}
+        </a>
+      );
+    }
     return String(value);
   };
 
@@ -181,6 +188,16 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
           value={value ?? (field.defaultNow ? formatTimeLocal(new Date()) : "")}
           onChange={(event) => onChange(event.target.value)}
           className={s.input.className}
+        />
+      )}
+
+      {field.type === "url" && (
+        <input
+          type="url"
+          value={value ?? ""}
+          onChange={(event) => onChange(event.target.value)}
+          className={s.input.className}
+          placeholder={field.placeholder || "https://example.com"}
         />
       )}
 

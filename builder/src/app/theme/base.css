@@ -1052,3 +1052,15 @@ button:disabled {
   border-color: var(--danger-strong);
   color: var(--button-solid-text, #fff);
 }
+
+/* Link style for URL fields */
+.nf-link {
+  color: var(--primary-strong);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.nf-link:hover {
+  color: var(--primary);
+  text-decoration: none;
+}

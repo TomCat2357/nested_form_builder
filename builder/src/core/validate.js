@@ -29,7 +29,7 @@ export const hasValidationErrors = (fields, responses) => {
 
   const isEmpty = (field, value) => {
     if (value === undefined || value === null) return true;
-    if (["text", "textarea", "regex", "date", "time", "select", "radio"].includes(field.type)) {
+    if (["text", "textarea", "regex", "date", "time", "select", "radio", "url"].includes(field.type)) {
       return value === "";
     }
     if (field.type === "number") {

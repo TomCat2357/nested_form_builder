@@ -73,9 +73,22 @@ export default function SearchTable({
               {selectableColumns.map((column) => {
                 const rawDisplayText = values[column.key]?.display ?? "";
                 const limitedText = applyDisplayLengthLimit(rawDisplayText || "", cellDisplayLimit);
+                const isUrl = column.sourceType === "url" && rawDisplayText;
                 return (
                   <td key={`${entry.id}_${column.key}`} className="search-td">
-                    {limitedText}
+                    {isUrl ? (
+                      <a
+                        href={rawDisplayText}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="nf-link"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {limitedText}
+                      </a>
+                    ) : (
+                      limitedText
+                    )}
                   </td>
                 );
               })}

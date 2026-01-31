@@ -354,7 +354,7 @@ export default function FormPage() {
           onSave={handleSaveToStore}
           showOutputJson={false}
           showSaveButton={false}
-          readOnly={isViewMode}
+          readOnly={isViewMode || isReloading}
         />
       )}
 
