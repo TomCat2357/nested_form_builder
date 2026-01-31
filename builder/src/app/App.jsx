@@ -1,6 +1,7 @@
-import React from "react";
-import { HashRouter, Route, Routes } from "react-router-dom";
+import React, { useEffect } from "react";
+import { HashRouter, Route, Routes, Navigate, useNavigate, useLocation } from "react-router-dom";
 import { AppDataProvider } from "./state/AppDataProvider.jsx";
+import { AuthProvider, useAuth } from "./state/authContext.jsx";
 import MainPage from "../pages/MainPage.jsx";
 import SearchPage from "../pages/SearchPage.jsx";
 import FormPage from "../pages/FormPage.jsx";
@@ -9,22 +10,170 @@ import AdminFormEditorPage from "../pages/AdminFormEditorPage.jsx";
 import ConfigPage from "../pages/ConfigPage.jsx";
 import NotFoundPage from "../pages/NotFoundPage.jsx";
 
+/**
+ * 管理者専用ルートのラッパー
+ * 管理者でない場合はリダイレクト
+ */
+function AdminRoute({ children }) {
+  const { isAdmin, formId } = useAuth();
+
+  if (!isAdmin) {
+    // 一般ユーザーは指定フォームの検索画面へリダイレクト
+    if (formId) {
+      return <Navigate to={`/search?formId=${formId}`} replace />;
+    }
+    // formIdもない場合は404
+    return <Navigate to="/not-found" replace />;
+  }
+
+  return children;
+}
+
+/**
+ * フォームが見つからないエラー画面
+ */
+function FormNotFoundPage() {
+  return (
+    <div className="app-root">
+      <header className="app-header">
+        <div className="app-header-left">
+          <h1 className="app-header-title">フォームが見つかりません</h1>
+        </div>
+      </header>
+      <div className="app-container">
+        <main className="app-main">
+          <div className="nf-card">
+            <p>指定されたフォームは存在しません。</p>
+            <p className="nf-text-muted nf-text-14 nf-mt-8">
+              URLが正しいか確認してください。
+            </p>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 一般ユーザー用の初期リダイレクト処理
+ */
+function UserRedirect() {
+  const { isAdmin, formId, authError } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    // ユーザーモードでformIdがある場合、検索画面へリダイレクト
+    if (!isAdmin && formId && !authError && location.pathname === "/") {
+      navigate(`/search?formId=${formId}`, { replace: true });
+    }
+  }, [isAdmin, formId, authError, navigate, location.pathname]);
+
+  // 認証エラーがある場合
+  if (authError === "form_not_found") {
+    return <FormNotFoundPage />;
+  }
+  if (authError === "access_denied") {
+    return <AccessDeniedPage />;
+  }
+
+  // 管理者はMainPageを表示
+  if (isAdmin) {
+    return <MainPage />;
+  }
+
+  // ユーザーモードでformIdがある場合はリダイレクト待ち
+  if (formId) {
+    return null;
+  }
+
+  // ここに到達することはないはずだが、念のためエラー画面
+  return <AccessDeniedPage />;
+}
+
+/**
+ * アクセス拒否ページ
+ */
+function AccessDeniedPage() {
+  return (
+    <div className="app-root">
+      <header className="app-header">
+        <div className="app-header-left">
+          <h1 className="app-header-title">アクセスできません</h1>
+        </div>
+      </header>
+      <div className="app-container">
+        <main className="app-main">
+          <div className="nf-card">
+            <p>このページにアクセスする権限がありません。</p>
+            <p className="nf-text-muted nf-text-14 nf-mt-8">
+              正しいURLでアクセスしているか確認してください。
+            </p>
+          </div>
+        </main>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * ルーティング本体
+ */
+function AppRoutes() {
+  const { isAdmin } = useAuth();
+
+  return (
+    <Routes>
+      <Route path="/" element={<UserRedirect />} />
+      <Route path="/search" element={<SearchPage />} />
+      <Route path="/form/:formId/new" element={<FormPage />} />
+      <Route path="/form/:formId/entry/:entryId" element={<FormPage />} />
+      <Route
+        path="/forms"
+        element={
+          <AdminRoute>
+            <AdminDashboardPage />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/forms/new"
+        element={
+          <AdminRoute>
+            <AdminFormEditorPage />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/forms/:formId/edit"
+        element={
+          <AdminRoute>
+            <AdminFormEditorPage />
+          </AdminRoute>
+        }
+      />
+      <Route
+        path="/config"
+        element={
+          <AdminRoute>
+            <ConfigPage />
+          </AdminRoute>
+        }
+      />
+      <Route path="/not-found" element={<NotFoundPage />} />
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
+  );
+}
+
 export default function App() {
   return (
-    <AppDataProvider>
-      <HashRouter>
-        <Routes>
-          <Route path="/" element={<MainPage />} />
-          <Route path="/search" element={<SearchPage />} />
-          <Route path="/form/:formId/new" element={<FormPage />} />
-          <Route path="/form/:formId/entry/:entryId" element={<FormPage />} />
-          <Route path="/forms" element={<AdminDashboardPage />} />
-          <Route path="/forms/new" element={<AdminFormEditorPage />} />
-          <Route path="/forms/:formId/edit" element={<AdminFormEditorPage />} />
-          <Route path="/config" element={<ConfigPage />} />
-          <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </HashRouter>
-    </AppDataProvider>
+    <AuthProvider>
+      <AppDataProvider>
+        <HashRouter>
+          <AppRoutes />
+        </HashRouter>
+      </AppDataProvider>
+    </AuthProvider>
   );
 }

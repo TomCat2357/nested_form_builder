@@ -1,4 +1,4 @@
-function doGet() {
+function doGet(e) {
   // Serve the built single-page app via HtmlService.
   var html = HtmlService.createHtmlOutputFromFile("Index");
 
@@ -6,8 +6,20 @@ function doGet() {
   var webAppUrl = ScriptApp.getService().getUrl();
   var htmlContent = html.getContent();
 
-  // </head>の直前にscriptタグを挿入してGAS URLをグローバル変数として設定
-  var injectedScript = '<script>window.__GAS_WEBAPP_URL__ = "' + webAppUrl + '";</script>';
+  // URLパラメータを取得
+  var formParam = (e && e.parameter && e.parameter.form) ? String(e.parameter.form) : "";
+  var adminkeyParam = (e && e.parameter && e.parameter.adminkey) ? String(e.parameter.adminkey) : "";
+
+  // 認証判定
+  var authResult = DetermineAccess_(formParam, adminkeyParam);
+
+  // </head>の直前にscriptタグを挿入してグローバル変数を設定
+  var injectedScript = '<script>' +
+    'window.__GAS_WEBAPP_URL__ = "' + webAppUrl + '";' +
+    'window.__IS_ADMIN__ = ' + (authResult.isAdmin ? 'true' : 'false') + ';' +
+    'window.__FORM_ID__ = "' + authResult.formId + '";' +
+    'window.__AUTH_ERROR__ = "' + authResult.authError + '";' +
+    '</script>';
   htmlContent = htmlContent.replace('</head>', injectedScript + '</head>');
 
   return HtmlService.createHtmlOutput(htmlContent)
@@ -20,11 +32,37 @@ function doPost(e) {
     var ctx = Model_parseRequest_(e);
     var action = (ctx.raw && ctx.raw.action) || "save";
 
+    // リクエストから管理者キーを取得して認証チェック
+    var formParam = (ctx.raw && ctx.raw.authKey) ? String(ctx.raw.authKey) : "";
+    var isAdmin = IsAdmin_(formParam);
+
+    // 管理者専用アクション
+    var adminOnlyActions = [
+      "forms_create",
+      "forms_update",
+      "forms_delete",
+      "forms_archive",
+      "admin_key_get",
+      "admin_key_set"
+    ];
+
     try {
       var payload;
 
+      // 管理者専用アクションのチェック
+      if (adminOnlyActions.indexOf(action) !== -1 && !isAdmin) {
+        return JsonOutput_({ ok: false, error: "管理者権限が必要です" }, 403);
+      }
+
+      // 管理者キー管理API
+      if (action === "admin_key_get") {
+        payload = { ok: true, adminKey: GetAdminKey_() };
+      } else if (action === "admin_key_set") {
+        var newKey = (ctx.raw && ctx.raw.adminKey !== undefined) ? ctx.raw.adminKey : "";
+        payload = SetAdminKey_(newKey);
+      }
       // フォーム管理API
-      if (action === "forms_list") {
+      else if (action === "forms_list") {
         payload = FormsApi_List_(ctx);
       } else if (action === "forms_get") {
         payload = FormsApi_Get_(ctx);

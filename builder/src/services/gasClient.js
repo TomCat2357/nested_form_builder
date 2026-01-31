@@ -255,3 +255,32 @@ export const debugGetMapping = async () => {
     throw error;
   }
 };
+
+// ========================================
+// 管理者キー管理API
+// ========================================
+
+/**
+ * 管理者キーを取得する
+ * @returns {Promise<string>} 管理者キー
+ */
+export const getAdminKey = async () => {
+  const result = await callScriptRun("nfbGetAdminKey", {});
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Get admin key failed");
+  }
+  return result.adminKey || "";
+};
+
+/**
+ * 管理者キーを設定する
+ * @param {string} newKey - 新しい管理者キー（空文字で認証無効化）
+ * @returns {Promise<string>} 設定後の管理者キー
+ */
+export const setAdminKey = async (newKey) => {
+  const result = await callScriptRun("nfbSetAdminKey", newKey);
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Set admin key failed");
+  }
+  return result.adminKey || "";
+};

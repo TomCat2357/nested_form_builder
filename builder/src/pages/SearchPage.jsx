@@ -4,6 +4,7 @@ import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import AlertDialog from "../app/components/AlertDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
+import { useAuth } from "../app/state/authContext.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
@@ -36,6 +37,7 @@ const buildInitialSort = (params) => {
 export default function SearchPage() {
   const { getFormById } = useAppData();
   const { settings } = useBuilderSettings();
+  const { isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -134,6 +136,11 @@ export default function SearchPage() {
   const startIndex = totalEntries === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const endIndex = totalEntries === 0 ? 0 : Math.min(page * PAGE_SIZE, totalEntries);
 
+  const badge = useMemo(() => {
+    if (loading || backgroundLoading) return { label: "読み取り中...", variant: "loading" };
+    return { label: "検索画面", variant: "view" };
+  }, [loading, backgroundLoading]);
+
   const handleRowClick = (entryId) => {
     if (!formId) return;
     navigate(`/form/${formId}/entry/${entryId}`, {
@@ -182,21 +189,21 @@ export default function SearchPage() {
 
   if (!formId || !form) {
     return (
-      <AppLayout title="検索" fallbackPath="/">
-        <p className="search-empty">フォームが選択されていません。メイン画面からフォームを選択してください。</p>
+      <AppLayout title="検索" fallbackPath={isAdmin ? "/" : null} backHidden={!isAdmin}>
+        <p className="search-empty">
+          {isAdmin
+            ? "フォームが選択されていません。メイン画面からフォームを選択してください。"
+            : "フォームが見つかりません。正しいURLでアクセスしているか確認してください。"}
+        </p>
       </AppLayout>
     );
   }
 
-  const badge = useMemo(() => {
-    if (loading || backgroundLoading) return { label: "読み取り中...", variant: "loading" };
-    return { label: "検索画面", variant: "view" };
-  }, [loading, backgroundLoading]);
-
   return (
     <AppLayout
       title={`検索 - ${form.settings?.formTitle || "(無題)"}`}
-      fallbackPath="/"
+      fallbackPath={isAdmin ? "/" : null}
+      backHidden={!isAdmin}
       badge={badge}
       sidebarActions={(
         <SearchSidebar

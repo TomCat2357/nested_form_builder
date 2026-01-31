@@ -50,6 +50,7 @@ export default function AdminDashboardPage() {
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
 
   const sortedForms = useMemo(() => {
     const list = forms.slice();
@@ -342,6 +343,19 @@ export default function AdminDashboardPage() {
     navigate(`/forms/${formId}/edit`);
   };
 
+  const handleCopyId = useCallback((formId, event) => {
+    event.stopPropagation();
+    const baseUrl = window.__GAS_WEBAPP_URL__ || window.location.origin;
+    const fullUrl = `${baseUrl}?form=${formId}`;
+    navigator.clipboard.writeText(fullUrl).then(() => {
+      setCopiedId(formId);
+      setTimeout(() => setCopiedId(null), 2000);
+    }).catch((error) => {
+      console.error("Failed to copy:", error);
+      showAlert("URLのコピーに失敗しました");
+    });
+  }, [showAlert]);
+
   const handleCreateNew = () => {
     navigate("/forms/new");
   };
@@ -401,6 +415,7 @@ export default function AdminDashboardPage() {
                   <input type="checkbox" checked={adminForms.length > 0 && selected.size === adminForms.length} onChange={(event) => selectAll(event.target.checked)} />
                 </th>
                 <th className="search-th">名称</th>
+                <th className="search-th">フォームID</th>
                 <th className="search-th">更新日時</th>
                 <th className="search-th">表示項目</th>
                 <th className="search-th">状態</th>
@@ -455,6 +470,19 @@ export default function AdminDashboardPage() {
                         </>
                       )}
                     </td>
+                    <td className="search-td" onClick={(e) => e.stopPropagation()}>
+                      <div className="nf-row nf-gap-6">
+                        <span className="admin-form-id">{form.id}</span>
+                        <button
+                          type="button"
+                          className="admin-copy-btn"
+                          onClick={(e) => handleCopyId(form.id, e)}
+                          title="URLをコピー"
+                        >
+                          {copiedId === form.id ? "✓" : "📋"}
+                        </button>
+                      </div>
+                    </td>
                     <td className="search-td">{lastUpdated}</td>
                     <td className="search-td">
                       {isLoadError ? (
@@ -483,7 +511,7 @@ export default function AdminDashboardPage() {
               })}
               {adminForms.length === 0 && (
                 <tr>
-                  <td className="search-td nf-text-center" colSpan={5}>
+                  <td className="search-td nf-text-center" colSpan={6}>
                     フォームが登録されていません。
                   </td>
                 </tr>

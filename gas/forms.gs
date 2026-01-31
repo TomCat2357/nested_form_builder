@@ -440,6 +440,13 @@ function Forms_saveForm_(form, targetUrl) {
   Forms_saveMapping_(mapping);
   Logger.log("[Forms_saveForm_] Mapping saved. FormId: " + form.id + ", FileId: " + fileId);
 
+  // 認証用URLマップにも登録（?form=xxx でアクセス可能にする）
+  try {
+    AddFormUrl_(form.id, fileUrl);
+  } catch (err) {
+    Logger.log("[Forms_saveForm_] AddFormUrl_ failed (non-critical): " + err);
+  }
+
   return {
     ok: true,
     fileId: fileId,

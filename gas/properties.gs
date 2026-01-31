@@ -139,7 +139,27 @@ function GetFormUrl_(formId) {
     }
 
     var urlMap = GetFormUrls_();
-    return urlMap[formId] || null;
+    var fileUrl = urlMap[formId] || null;
+    if (fileUrl) {
+      return fileUrl;
+    }
+
+    // legacy mapにない場合はScriptProperties側のマッピングを参照
+    if (typeof Forms_getMapping_ === "function") {
+      var mapping = Forms_getMapping_();
+      var entry = mapping[formId] || {};
+      if (entry.driveFileUrl) {
+        return entry.driveFileUrl;
+      }
+      if (entry.fileId) {
+        if (typeof Forms_buildDriveFileUrlFromId_ === "function") {
+          return Forms_buildDriveFileUrlFromId_(entry.fileId);
+        }
+        return "https://drive.google.com/file/d/" + entry.fileId + "/view";
+      }
+    }
+
+    return null;
   } catch (error) {
     Logger.log('[GetFormUrl_] Error: ' + nfbErrorToString_(error));
     return null;
