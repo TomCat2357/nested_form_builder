@@ -1,6 +1,6 @@
 /**
  * properties.gs
- * UserPropertiesを使用してユーザーごとのフォームURLマップを管理
+ * ScriptPropertiesを使用してフォームURLマップを管理
  */
 
 var FORM_URLS_KEY = 'FORM_URLS_MAP';
@@ -26,8 +26,17 @@ function ExtractFileIdFromUrl_(url) {
  */
 function GetFormUrls_() {
   try {
-    var userProps = PropertiesService.getUserProperties();
-    var json = userProps.getProperty(FORM_URLS_KEY);
+    var scriptProps = PropertiesService.getScriptProperties();
+    var json = scriptProps.getProperty(FORM_URLS_KEY);
+
+    if (!json) {
+      var userProps = PropertiesService.getUserProperties();
+      var legacyJson = userProps.getProperty(FORM_URLS_KEY);
+      if (legacyJson) {
+        scriptProps.setProperty(FORM_URLS_KEY, legacyJson);
+        json = legacyJson;
+      }
+    }
 
     if (!json) {
       return {};
@@ -46,9 +55,9 @@ function GetFormUrls_() {
  */
 function SaveFormUrls_(urlMap) {
   try {
-    var userProps = PropertiesService.getUserProperties();
+    var scriptProps = PropertiesService.getScriptProperties();
     var json = JSON.stringify(urlMap || {});
-    userProps.setProperty(FORM_URLS_KEY, json);
+    scriptProps.setProperty(FORM_URLS_KEY, json);
   } catch (error) {
     Logger.log('[SaveFormUrls_] Error: ' + nfbErrorToString_(error));
     throw new Error('フォームURLマップの保存に失敗しました: ' + nfbErrorToString_(error));

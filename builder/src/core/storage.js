@@ -20,6 +20,8 @@ const readJson = async (key) => {
   }
 };
 
+export const readSettingsValue = async (key) => readJson(key);
+
 const writeJson = async (key, value) => {
   try {
     const db = await openDB();
@@ -35,6 +37,8 @@ const writeJson = async (key, value) => {
     console.warn(`[storage] failed to write ${key}`, err);
   }
 };
+
+export const writeSettingsValue = async (key, value) => writeJson(key, value);
 
 export const DEFAULT_SETTINGS = {
   spreadsheetId: "",

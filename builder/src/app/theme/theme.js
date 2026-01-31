@@ -1,3 +1,5 @@
+import { readSettingsValue, writeSettingsValue } from "../../core/storage.js";
+
 const THEME_STORAGE_KEY = "nested_form_builder_theme";
 export const DEFAULT_THEME = "standard";
 export const THEME_OPTIONS = [
@@ -11,7 +13,7 @@ const CUSTOM_THEME_STYLE_ID = "nfb-custom-themes";
 const CUSTOM_THEMES_KEY = "nested_form_builder_theme_custom_list_v1";
 const CUSTOM_THEME_PREFIX = "drive-";
 
-const safeStorageGet = (key) => {
+const safeLegacyStorageGet = (key) => {
   try {
     return window?.localStorage?.getItem(key);
   } catch (error) {
@@ -19,11 +21,11 @@ const safeStorageGet = (key) => {
   }
 };
 
-const safeStorageSet = (key, value) => {
+const safeLegacyStorageRemove = (key) => {
   try {
-    window?.localStorage?.setItem(key, value);
+    window?.localStorage?.removeItem(key);
   } catch (error) {
-    // ignore storage failures (private mode, disabled)
+    // ignore legacy storage failures
   }
 };
 
@@ -65,28 +67,58 @@ const normalizeCustomThemeCss = (css, themeId) => {
   return `${themeSelector} {\n${normalized}\n}\n`;
 };
 
-const readCustomThemes = () => {
-  try {
-    const raw = safeStorageGet(CUSTOM_THEMES_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed
-      .filter((theme) => theme && typeof theme.id === "string" && typeof theme.css === "string")
-      .map((theme) => ({
-        id: theme.id,
-        name: theme.name || "",
-        url: theme.url || "",
-        css: theme.css || "",
-      }))
-      .filter((theme) => theme.id && theme.css);
-  } catch {
-    return [];
+const normalizeCustomThemes = (input) => {
+  if (!input) return [];
+  let parsed = input;
+  if (typeof parsed === "string") {
+    try {
+      parsed = JSON.parse(parsed);
+    } catch {
+      return [];
+    }
   }
+  if (!Array.isArray(parsed)) return [];
+  return parsed
+    .filter((theme) => theme && typeof theme.id === "string" && typeof theme.css === "string")
+    .map((theme) => ({
+      id: theme.id,
+      name: theme.name || "",
+      url: theme.url || "",
+      css: theme.css || "",
+    }))
+    .filter((theme) => theme.id && theme.css);
 };
 
-const writeCustomThemes = (themes) => {
-  safeStorageSet(CUSTOM_THEMES_KEY, JSON.stringify(themes || []));
+const readCustomThemes = async () => {
+  const stored = await readSettingsValue(CUSTOM_THEMES_KEY);
+  const normalized = normalizeCustomThemes(stored);
+  if (stored !== null && stored !== undefined) return normalized;
+
+  const legacy = normalizeCustomThemes(safeLegacyStorageGet(CUSTOM_THEMES_KEY));
+  if (legacy.length > 0) {
+    await writeSettingsValue(CUSTOM_THEMES_KEY, legacy);
+    safeLegacyStorageRemove(CUSTOM_THEMES_KEY);
+  }
+  return legacy;
+};
+
+const writeCustomThemes = async (themes) => {
+  await writeSettingsValue(CUSTOM_THEMES_KEY, themes || []);
+};
+
+const readThemeFromStorage = async () => {
+  const stored = await readSettingsValue(THEME_STORAGE_KEY);
+  let theme = typeof stored === "string" ? stored : "";
+  if (!theme) {
+    const legacy = safeLegacyStorageGet(THEME_STORAGE_KEY);
+    if (legacy) {
+      const resolvedLegacy = legacy === "default" ? DEFAULT_THEME : legacy;
+      await writeSettingsValue(THEME_STORAGE_KEY, resolvedLegacy);
+      safeLegacyStorageRemove(THEME_STORAGE_KEY);
+      theme = resolvedLegacy;
+    }
+  }
+  return theme || null;
 };
 
 const normalizeThemeName = (name) => {
@@ -107,10 +139,10 @@ const createThemeId = (name, existingIds) => {
   return id;
 };
 
-export const getCustomThemes = () => readCustomThemes();
+export const getCustomThemes = async () => readCustomThemes();
 
-export const setCustomTheme = ({ css, name, url } = {}) => {
-  const themes = readCustomThemes();
+export const setCustomTheme = async ({ css, name, url } = {}) => {
+  const themes = await readCustomThemes();
   const existingIds = new Set(themes.map((theme) => theme.id));
   const themeId = createThemeId(name || "custom", existingIds);
   const normalized = normalizeCustomThemeCss(css, themeId);
@@ -122,21 +154,21 @@ export const setCustomTheme = ({ css, name, url } = {}) => {
     css: normalized,
   };
   const next = [...themes, theme];
-  writeCustomThemes(next);
+  await writeCustomThemes(next);
   ensureCustomThemeStyle(next);
   return theme;
 };
 
-export const removeCustomTheme = (themeId) => {
-  const themes = readCustomThemes();
+export const removeCustomTheme = async (themeId) => {
+  const themes = await readCustomThemes();
   const next = themes.filter((theme) => theme.id !== themeId);
-  writeCustomThemes(next);
+  await writeCustomThemes(next);
   ensureCustomThemeStyle(next);
   return next;
 };
 
-export const restoreCustomThemes = () => {
-  const themes = readCustomThemes();
+export const restoreCustomThemes = async () => {
+  const themes = await readCustomThemes();
   ensureCustomThemeStyle(themes);
   return themes;
 };
@@ -147,18 +179,32 @@ export const applyTheme = (name) => {
 };
 
 export const initTheme = (fallback = DEFAULT_THEME) => {
-  const saved = safeStorageGet(THEME_STORAGE_KEY);
-  const resolvedTheme = saved === "default" ? DEFAULT_THEME : saved;
-  const theme = resolvedTheme || fallback;
-  applyTheme(theme);
-  restoreCustomThemes();
-  if (saved === "default") {
-    safeStorageSet(THEME_STORAGE_KEY, theme);
-  }
-  return theme;
+  const initialTheme = fallback || DEFAULT_THEME;
+  applyTheme(initialTheme);
+  void (async () => {
+    try {
+      const saved = await readThemeFromStorage();
+      const resolvedTheme = saved === "default" ? DEFAULT_THEME : saved;
+      const theme = resolvedTheme || initialTheme;
+      applyTheme(theme);
+      if (saved === "default") {
+        await writeSettingsValue(THEME_STORAGE_KEY, theme);
+      }
+    } catch (error) {
+      console.warn("[theme] failed to load theme from IndexedDB", error);
+    } finally {
+      try {
+        await restoreCustomThemes();
+      } catch (error) {
+        console.warn("[theme] failed to restore custom themes", error);
+      }
+    }
+  })();
+  return initialTheme;
 };
 
 export const setTheme = (name) => {
   applyTheme(name);
-  safeStorageSet(THEME_STORAGE_KEY, name);
+  if (!name) return;
+  void writeSettingsValue(THEME_STORAGE_KEY, name);
 };

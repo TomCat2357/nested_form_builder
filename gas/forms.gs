@@ -284,14 +284,6 @@ function Forms_saveMapping_(mapping) {
   var scriptProps = Forms_getScriptProps_();
   scriptProps.setProperty(FORMS_PROPERTY_KEY, mappingStr);
 
-  // 互換性のためユーザープロパティにも書き込む
-  var userProps = Forms_getUserProps_();
-  try {
-    userProps.setProperty(FORMS_PROPERTY_KEY, mappingStr);
-  } catch (err) {
-    Logger.log("[Forms_saveMapping_] Failed to write user properties: " + err);
-  }
-
   Logger.log("[Forms_saveMapping_] Saved successfully. Total forms: " + Object.keys(normalized || {}).length);
 }
 

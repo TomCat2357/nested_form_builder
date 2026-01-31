@@ -25,7 +25,7 @@ const extractThemeName = (css, fallbackName = "") => {
 export default function ConfigPage() {
   const { settings, updateSetting } = useBuilderSettings();
   const { alertState, showAlert, closeAlert } = useAlert();
-  const [customThemes, setCustomThemes] = useState(() => getCustomThemes());
+  const [customThemes, setCustomThemes] = useState([]);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
@@ -44,6 +44,19 @@ export default function ConfigPage() {
     ],
     [customThemes]
   );
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      const themes = await getCustomThemes();
+      if (active) {
+        setCustomThemes(themes);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     const hasSelectedTheme = themeOptions.some((option) => option.value === themeValue);
@@ -123,11 +136,11 @@ export default function ConfigPage() {
         throw new Error("テーマファイルが空です");
       }
       const name = extractThemeName(css, result?.fileName);
-      const theme = setCustomTheme({ css, name, url: result?.fileUrl || url });
+      const theme = await setCustomTheme({ css, name, url: result?.fileUrl || url });
       if (!theme) {
         throw new Error("テーマファイルが空です");
       }
-      const nextThemes = getCustomThemes();
+      const nextThemes = await getCustomThemes();
       setCustomThemes(nextThemes);
       setImportUrl(theme.url || "");
       updateSetting("theme", theme.id);
@@ -145,9 +158,9 @@ export default function ConfigPage() {
     setRemoveTarget(theme);
   };
 
-  const handleConfirmRemove = () => {
+  const handleConfirmRemove = async () => {
     if (!removeTarget) return;
-    const nextThemes = removeCustomTheme(removeTarget.id);
+    const nextThemes = await removeCustomTheme(removeTarget.id);
     setCustomThemes(nextThemes);
     if ((settings?.theme || DEFAULT_THEME) === removeTarget.id) {
       updateSetting("theme", DEFAULT_THEME);
