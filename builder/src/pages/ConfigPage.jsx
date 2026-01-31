@@ -26,6 +26,7 @@ export default function ConfigPage() {
   const { settings, updateSetting } = useBuilderSettings();
   const { alertState, showAlert, closeAlert } = useAlert();
   const [customThemes, setCustomThemes] = useState([]);
+  const [customThemesReady, setCustomThemesReady] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
@@ -48,9 +49,15 @@ export default function ConfigPage() {
   useEffect(() => {
     let active = true;
     (async () => {
-      const themes = await getCustomThemes();
-      if (active) {
-        setCustomThemes(themes);
+      try {
+        const themes = await getCustomThemes();
+        if (active) {
+          setCustomThemes(themes);
+        }
+      } finally {
+        if (active) {
+          setCustomThemesReady(true);
+        }
       }
     })();
     return () => {
@@ -59,11 +66,12 @@ export default function ConfigPage() {
   }, []);
 
   useEffect(() => {
+    if (!customThemesReady) return;
     const hasSelectedTheme = themeOptions.some((option) => option.value === themeValue);
     if (!hasSelectedTheme && themeValue !== DEFAULT_THEME) {
       updateSetting("theme", DEFAULT_THEME);
     }
-  }, [themeOptions, themeValue, updateSetting]);
+  }, [customThemesReady, themeOptions, themeValue, updateSetting]);
 
   // デプロイ時刻を読み取り
   useEffect(() => {
