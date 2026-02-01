@@ -91,6 +91,180 @@ function Forms_parseGoogleDriveUrl_(url) {
 }
 
 /**
+ * スプレッドシートまたはフォルダの指定を解決（ID/URLを受け取る）
+ * @param {string} input
+ * @return {{ type: "spreadsheet"|"folder"|null, id: string|null }}
+ */
+function Forms_parseSpreadsheetTarget_(input) {
+  if (!input || typeof input !== "string") {
+    return { type: null, id: null };
+  }
+
+  var trimmed = input.trim();
+  if (!trimmed) {
+    return { type: null, id: null };
+  }
+
+  var sheetMatch = trimmed.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (sheetMatch) {
+    return { type: "spreadsheet", id: sheetMatch[1] };
+  }
+
+  var folderMatch = trimmed.match(/\/drive\/folders\/([a-zA-Z0-9_-]+)/);
+  if (folderMatch) {
+    return { type: "folder", id: folderMatch[1] };
+  }
+
+  var fileMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (fileMatch) {
+    return Forms_resolveSpreadsheetIdOrFolder_(fileMatch[1]);
+  }
+
+  var openMatch = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+  if (openMatch) {
+    return Forms_resolveSpreadsheetIdOrFolder_(openMatch[1]);
+  }
+
+  if (/^[a-zA-Z0-9_-]{15,}$/.test(trimmed)) {
+    return Forms_resolveSpreadsheetIdOrFolder_(trimmed);
+  }
+
+  return { type: null, id: null };
+}
+
+/**
+ * IDがスプレッドシート/フォルダのどちらかを判定
+ * @param {string} id
+ * @return {{ type: "spreadsheet"|"folder"|null, id: string|null }}
+ */
+function Forms_resolveSpreadsheetIdOrFolder_(id) {
+  if (!id) {
+    return { type: null, id: null };
+  }
+
+  try {
+    SpreadsheetApp.openById(id);
+    return { type: "spreadsheet", id: id };
+  } catch (e) {
+    // ignore and try folder
+  }
+
+  try {
+    DriveApp.getFolderById(id);
+    return { type: "folder", id: id };
+  } catch (e2) {
+    // ignore
+  }
+
+  return { type: null, id: null };
+}
+
+/**
+ * スプレッドシート名を生成
+ * @param {Object} form
+ * @return {string}
+ */
+function Forms_buildSpreadsheetName_(form) {
+  var base = "";
+  if (form && form.settings && form.settings.formTitle) {
+    base = String(form.settings.formTitle || "");
+  }
+  if (!base && form && form.id) {
+    base = "form_" + form.id;
+  }
+  base = String(base || "Nested Form Builder");
+  base = base.replace(/[\r\n]/g, " ").replace(/\//g, "-").trim();
+  if (!base) {
+    base = "Nested Form Builder";
+  }
+  var name = "NFB Responses - " + base;
+  if (name.length > 120) {
+    name = name.substring(0, 120);
+  }
+  return name;
+}
+
+/**
+ * スプレッドシートを新規作成
+ * @param {string} name
+ * @param {string|null} folderId
+ * @return {{ spreadsheetId: string, spreadsheetUrl: string }}
+ */
+function Forms_createSpreadsheet_(name, folderId) {
+  var ss = SpreadsheetApp.create(name || "NFB Responses");
+  var spreadsheetId = ss.getId();
+
+  if (folderId) {
+    var folder = DriveApp.getFolderById(folderId);
+    var file = DriveApp.getFileById(spreadsheetId);
+    folder.addFile(file);
+    try {
+      DriveApp.getRootFolder().removeFile(file);
+    } catch (err) {
+      Logger.log("[Forms_createSpreadsheet_] Root remove failed: " + err);
+    }
+  }
+
+  return {
+    spreadsheetId: spreadsheetId,
+    spreadsheetUrl: ss.getUrl()
+  };
+}
+
+/**
+ * スプレッドシート設定を解決（空/フォルダ指定は新規作成）
+ * @param {Object} settings
+ * @param {Object} form
+ * @return {{ settings: Object, created: boolean, spreadsheetId: string|null, spreadsheetUrl: string|null }}
+ */
+function Forms_resolveSpreadsheetSetting_(settings, form) {
+  var nextSettings = (settings && typeof settings === "object") ? JSON.parse(JSON.stringify(settings)) : {};
+  var rawInput = String(nextSettings.spreadsheetId || "").trim();
+
+  if (!rawInput) {
+    var createdRoot = Forms_createSpreadsheet_(Forms_buildSpreadsheetName_(form), null);
+    nextSettings.spreadsheetId = createdRoot.spreadsheetUrl;
+    return {
+      settings: nextSettings,
+      created: true,
+      spreadsheetId: createdRoot.spreadsheetId,
+      spreadsheetUrl: createdRoot.spreadsheetUrl
+    };
+  }
+
+  var parsed = Forms_parseSpreadsheetTarget_(rawInput);
+  if (!parsed.type) {
+    throw new Error("無効なスプレッドシートURL/IDです");
+  }
+
+  if (parsed.type === "folder") {
+    var createdFolder = Forms_createSpreadsheet_(Forms_buildSpreadsheetName_(form), parsed.id);
+    nextSettings.spreadsheetId = createdFolder.spreadsheetUrl;
+    return {
+      settings: nextSettings,
+      created: true,
+      spreadsheetId: createdFolder.spreadsheetId,
+      spreadsheetUrl: createdFolder.spreadsheetUrl
+    };
+  }
+
+  // spreadsheet
+  try {
+    SpreadsheetApp.openById(parsed.id);
+  } catch (err) {
+    throw new Error("スプレッドシートにアクセスできません: " + (err && err.message ? err.message : String(err)));
+  }
+
+  nextSettings.spreadsheetId = rawInput;
+  return {
+    settings: nextSettings,
+    created: false,
+    spreadsheetId: parsed.id,
+    spreadsheetUrl: "https://docs.google.com/spreadsheets/d/" + parsed.id + "/edit"
+  };
+}
+
+/**
  * プロパティサービスから全フォームマッピングを取得
  * @return {Object} formId -> fileId のマッピング
  */
@@ -336,12 +510,19 @@ function Forms_saveForm_(form, targetUrl) {
     createdAtSerial = nowSerial;
   }
 
+  // スプレッドシート設定を解決（空/フォルダ指定は新規作成）
+  var settingsResult = Forms_resolveSpreadsheetSetting_(form.settings || {}, form);
+  if (settingsResult && settingsResult.created) {
+    Logger.log("[Forms_saveForm_] Created spreadsheet: " + settingsResult.spreadsheetUrl);
+  }
+  var settingsForSave = (settingsResult && settingsResult.settings) ? settingsResult.settings : (form.settings || {});
+
   // 仮のフォームオブジェクトを作成（driveFileUrlなし）
   var formWithTimestamp = {
     id: form.id,
     description: form.description || "",
     schema: form.schema || [],
-    settings: form.settings || {},
+    settings: settingsForSave,
     schemaHash: form.schemaHash || "",
     importantFields: form.importantFields || [],
     displayFieldSettings: form.displayFieldSettings || [],
@@ -1066,29 +1247,64 @@ function nfbValidateSpreadsheet(spreadsheetIdOrUrl) {
       return { ok: false, error: "Spreadsheet URL/ID is required" };
     }
 
-    var idMatch = String(spreadsheetIdOrUrl).match(/\/d\/([a-zA-Z0-9-_]+)/);
-    var spreadsheetId = idMatch && idMatch[1] ? idMatch[1] : String(spreadsheetIdOrUrl).trim();
+    var parsed = Forms_parseSpreadsheetTarget_(String(spreadsheetIdOrUrl));
+    if (!parsed.type) {
+      return { ok: false, error: "無効なスプレッドシートURL/IDです" };
+    }
 
+    var userEmail = Session.getEffectiveUser().getEmail();
+
+    if (parsed.type === "folder") {
+      var folder = DriveApp.getFolderById(parsed.id);
+      var canEdit = false;
+      var canView = true;
+      try {
+        var editors = folder.getEditors();
+        for (var i = 0; i < editors.length; i++) {
+          if (editors[i].getEmail() === userEmail) {
+            canEdit = true;
+            break;
+          }
+        }
+        if (!canEdit) {
+          canEdit = folder.getOwner().getEmail() === userEmail || folder.getSharingPermission() === DriveApp.Permission.EDIT;
+        }
+      } catch (permErr) {
+        Logger.log("[nfbValidateSpreadsheet] folder permission check failed: " + permErr);
+      }
+
+      return {
+        ok: true,
+        spreadsheetId: "",
+        title: folder.getName(),
+        sheetNames: [],
+        canEdit: canEdit,
+        canView: canView,
+        isFolder: true,
+        folderId: parsed.id,
+      };
+    }
+
+    var spreadsheetId = parsed.id;
     var ss = SpreadsheetApp.openById(spreadsheetId);
     var sheets = ss.getSheets();
     var file = DriveApp.getFileById(spreadsheetId);
-    var userEmail = Session.getEffectiveUser().getEmail();
 
-    var canEdit = false;
-    var canView = true; // openByIdが成功した時点で閲覧は可
+    var canEditSheet = false;
+    var canViewSheet = true; // openByIdが成功した時点で閲覧は可
     try {
-      var editors = file.getEditors();
-      for (var i = 0; i < editors.length; i++) {
-        if (editors[i].getEmail() === userEmail) {
-          canEdit = true;
+      var editorsSheet = file.getEditors();
+      for (var j = 0; j < editorsSheet.length; j++) {
+        if (editorsSheet[j].getEmail() === userEmail) {
+          canEditSheet = true;
           break;
         }
       }
-      if (!canEdit) {
-        canEdit = file.getOwner().getEmail() === userEmail || file.getSharingPermission() === DriveApp.Permission.EDIT;
+      if (!canEditSheet) {
+        canEditSheet = file.getOwner().getEmail() === userEmail || file.getSharingPermission() === DriveApp.Permission.EDIT;
       }
-    } catch (permErr) {
-      Logger.log("[nfbValidateSpreadsheet] permission check failed: " + permErr);
+    } catch (permErrSheet) {
+      Logger.log("[nfbValidateSpreadsheet] permission check failed: " + permErrSheet);
     }
 
     return {
@@ -1096,8 +1312,9 @@ function nfbValidateSpreadsheet(spreadsheetIdOrUrl) {
       spreadsheetId: spreadsheetId,
       title: ss.getName(),
       sheetNames: sheets.map(function(sheet) { return sheet.getName(); }),
-      canEdit: canEdit,
-      canView: canView,
+      canEdit: canEditSheet,
+      canView: canViewSheet,
+      isFolder: false,
     };
   } catch (err) {
     return {

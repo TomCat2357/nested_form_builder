@@ -6,9 +6,9 @@ export const SETTINGS_GROUPS = [
       {
         key: "spreadsheetId",
         label: "Spreadsheet ID / URL",
-        placeholder: "1AbCdEf... または https://docs.google.com/...",
+        placeholder: "1AbCdEf... / https://docs.google.com/... / https://drive.google.com/drive/folders/...",
         required: false,
-        description: "設定しない時はマイドライブの直下に新規作成されます",
+        description: "未設定/フォルダURLの場合はマイドライブ直下または指定フォルダに新規作成されます（保存後にURLが自動入力）",
       },
       {
         key: "sheetName",
