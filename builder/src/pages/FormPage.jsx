@@ -167,7 +167,7 @@ export default function FormPage() {
     // まずスプレッドシートに保存（主データソース）
     const settings = form.settings || {};
     const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
-    const sheetName = settings.sheetName || "Responses";
+    const sheetName = settings.sheetName || "Data";
 
     let resolvedId = payload.id;
     if (spreadsheetId) {

@@ -60,7 +60,7 @@ export const saveUserSettings = async (settings) => {
   }
 };
 
-export const submitResponses = async ({ spreadsheetId, sheetName = "Responses", payload }) => {
+export const submitResponses = async ({ spreadsheetId, sheetName = "Data", payload }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
 
   const body = { ...(payload || {}), spreadsheetId, sheetName };
@@ -71,7 +71,7 @@ export const submitResponses = async ({ spreadsheetId, sheetName = "Responses", 
   return result;
 };
 
-export const deleteEntry = async ({ spreadsheetId, sheetName = "Responses", entryId }) => {
+export const deleteEntry = async ({ spreadsheetId, sheetName = "Data", entryId }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
   if (!entryId) throw new Error("entryId is required");
 
@@ -90,7 +90,7 @@ export const deleteEntry = async ({ spreadsheetId, sheetName = "Responses", entr
   return result;
 };
 
-export const getEntry = async ({ spreadsheetId, sheetName = "Responses", entryId, rowIndexHint = null }) => {
+export const getEntry = async ({ spreadsheetId, sheetName = "Data", entryId, rowIndexHint = null }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
   if (!entryId) throw new Error("entryId is required");
 
@@ -113,7 +113,7 @@ export const getEntry = async ({ spreadsheetId, sheetName = "Responses", entryId
   };
 };
 
-export const listEntries = async ({ spreadsheetId, sheetName = "Responses", formId = null }) => {
+export const listEntries = async ({ spreadsheetId, sheetName = "Data", formId = null }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
 
   const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);

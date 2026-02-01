@@ -33,7 +33,7 @@ import { perfLogger } from "../../utils/perfLogger.js";
 import { toUnixMs } from "../../utils/dateTime.js";
 
 const nowSerial = () => toUnixMs(Date.now());
-const DEFAULT_SHEET_NAME = "Responses";
+const DEFAULT_SHEET_NAME = "Data";
 
 const omitThemeSetting = (settings) => {
   if (!settings || typeof settings !== "object") return {};
