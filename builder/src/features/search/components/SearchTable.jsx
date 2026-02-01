@@ -62,7 +62,18 @@ export default function SearchTable({
         </thead>
         <tbody>
           {pagedEntries.map(({ entry, values }) => (
-            <tr key={entry.id} className="search-row" onClick={() => onRowClick(entry.id)}>
+            <tr
+              key={entry.id}
+              className="search-row"
+              onClick={() => {
+                // テキストが選択されていたら（ドラッグ操作）遷移しない
+                const selection = window.getSelection();
+                if (selection && selection.toString().length > 0) {
+                  return;
+                }
+                onRowClick(entry.id);
+              }}
+            >
               <td className="search-td search-td-narrow" onClick={(e) => e.stopPropagation()}>
                 <input
                   type="checkbox"

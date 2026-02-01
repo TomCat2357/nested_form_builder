@@ -344,6 +344,13 @@ button:disabled {
   border-color: var(--input-error-border, var(--danger-bright));
 }
 
+.nf-textarea-readonly {
+  max-height: 120px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .nf-btn {
   border: 1px solid var(--button-border, var(--border-strong));
   background: var(--button-bg, var(--surface-subtle));

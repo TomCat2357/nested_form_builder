@@ -106,13 +106,16 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         ? <div className={s.child.className}>{renderChildrenAll()}</div>
         : null;
 
+    const readOnlyClassName =
+      field.type === "textarea" ? "nf-input nf-input--readonly nf-textarea-readonly" : "nf-input nf-input--readonly";
+
     return (
       <div className="preview-field">
         <label className="preview-label" style={labelStyleVars}>
           {field.label || <span className="nf-text-faded">項目</span>}
           {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
         </label>
-        <div className="nf-input nf-input--readonly">{renderReadOnlyValue()}</div>
+        <div className={readOnlyClassName}>{renderReadOnlyValue()}</div>
         {childrenForCheckboxes}
         {childrenCommon}
       </div>
