@@ -4,6 +4,7 @@ import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import AlertDialog from "../app/components/AlertDialog.jsx";
 import FormBuilderWorkspace from "../features/admin/FormBuilderWorkspace.jsx";
+import { SETTINGS_GROUPS } from "../features/settings/settingsSchema.js";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
@@ -35,6 +36,7 @@ export default function AdminFormEditorPage() {
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
   const [driveUrl, setDriveUrl] = useState(form?.driveFileUrl || "");
+  const [localSettings, setLocalSettings] = useState(initialSettings);
   const [builderDirty, setBuilderDirty] = useState(false);
   const [confirmState, setConfirmState] = useState(false);
   const [confirmSave, setConfirmSave] = useState(false);
@@ -62,6 +64,7 @@ export default function AdminFormEditorPage() {
     setName(formTitle);
     setDescription(form.description || "");
     setDriveUrl(form.driveFileUrl || "");
+    setLocalSettings(omitThemeSetting(form.settings || {}));
     setNameError("");
   }, [form]);
 
@@ -85,6 +88,11 @@ export default function AdminFormEditorPage() {
     }
     navigate(fallback, { replace: true });
   };
+
+  const handleSettingsChange = useCallback((key, value) => {
+    setLocalSettings((prev) => ({ ...prev, [key]: value }));
+    builderRef.current?.updateSetting?.(key, value);
+  }, []);
 
   const checkSpreadsheet = useCallback(async (spreadsheetIdOrUrl) => {
     const trimmed = (spreadsheetIdOrUrl || "").trim();
@@ -317,51 +325,98 @@ export default function AdminFormEditorPage() {
         </>
       }
     >
-      <section className="nf-mb-24">
-        <div className="nf-col nf-gap-6 nf-mb-16">
-          <label>フォーム名</label>
-          <input
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              if (nameError) setNameError("");
-            }}
-            className="nf-input admin-input"
-            placeholder="フォーム名"
-          />
-          {nameError && <p className="nf-text-danger-strong nf-text-12 nf-m-0">{nameError}</p>}
-        </div>
-        <div className="nf-col nf-gap-6 nf-mb-16">
-          <label>説明</label>
-          <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="nf-input admin-input nf-min-h-80" placeholder="説明" />
-        </div>
-        <div className="nf-col nf-gap-6 nf-mb-16">
-          <label>フォームのGoogle Drive保存先URL</label>
-          <input
-            value={driveUrl}
-            onChange={(event) => setDriveUrl(event.target.value)}
-            className="nf-input admin-input"
-            placeholder="空白: ルートディレクトリ / フォルダURL: ランダム名で保存 / ファイルURL: そのファイルに保存"
-          />
-          <p className="nf-text-11 nf-text-subtle nf-mt-4 nf-mb-0">
-            空白の場合はルートディレクトリに保存されます。フォルダURLを指定するとそのフォルダにランダム名で保存、ファイルURLを指定するとそのファイルに保存されます。
-          </p>
-          {isEdit && driveUrl && (
-            <p className="nf-text-11 nf-text-primary-strong nf-mt-4 nf-mb-0">
-              変更すると新しい場所に保存され、元のファイルはそのまま残ります。
-            </p>
-          )}
-        </div>
-      </section>
+      <div className="nf-card nf-mb-24">
+        <div className="nf-card nf-mb-16">
+          <h3 className="nf-settings-group-title nf-mb-16">フォームの基本情報</h3>
 
-      <FormBuilderWorkspace
-        ref={builderRef}
-        initialSchema={initialSchema}
-        initialSettings={initialSettings}
-        formTitle={name || "フォーム"}
-        onDirtyChange={setBuilderDirty}
-        showToolbarSave={false}
-      />
+          <div className="nf-col nf-gap-6 nf-mb-16">
+            <label className="nf-block nf-fw-600 nf-mb-6">フォーム名</label>
+            <input
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                if (nameError) setNameError("");
+              }}
+              className="nf-input admin-input"
+              placeholder="フォーム名"
+            />
+            {nameError && <p className="nf-text-danger-strong nf-text-12 nf-m-0">{nameError}</p>}
+          </div>
+
+          <div className="nf-col nf-gap-6 nf-mb-16">
+            <label className="nf-block nf-fw-600 nf-mb-6">フォームの説明</label>
+            <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="nf-input admin-input nf-min-h-80" placeholder="説明" />
+          </div>
+
+          <div className="nf-col nf-gap-6">
+            <label className="nf-block nf-fw-600 nf-mb-6">フォーム項目データのGoogle Drive保存先URL</label>
+            <input
+              value={driveUrl}
+              onChange={(event) => setDriveUrl(event.target.value)}
+              className="nf-input admin-input"
+              placeholder="空白: ルートディレクトリ / フォルダURL: ランダム名で保存 / ファイルURL: そのファイルに保存"
+            />
+            <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+              空白の場合はルートディレクトリに保存されます。フォルダURLを指定するとそのフォルダにランダム名で保存、ファイルURLを指定するとそのファイルに保存されます。
+            </p>
+            {isEdit && driveUrl && (
+              <p className="nf-text-11 nf-text-primary-strong nf-mt-4 nf-mb-0">
+                変更すると新しい場所に保存され、元のファイルはそのまま残ります。
+              </p>
+            )}
+          </div>
+        </div>
+
+        {SETTINGS_GROUPS.map((group) => (
+          <div key={group.key} className="nf-card nf-mb-16">
+            <div className="nf-settings-group-title nf-mb-12">{group.label}</div>
+            {group.fields.map((field) => {
+              const isSelect = field.type === "select" || Array.isArray(field.options);
+              return (
+                <div key={field.key} className="nf-mb-12">
+                  <label className="nf-block nf-fw-600 nf-mb-6">
+                    {field.label}
+                    {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
+                  </label>
+                  {isSelect ? (
+                    <select
+                      className="nf-input"
+                      value={localSettings[field.key] ?? ""}
+                      onChange={(event) => handleSettingsChange(field.key, event.target.value)}
+                    >
+                      {(field.options || []).map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <input
+                      className="nf-input"
+                      type={field.type || "text"}
+                      value={localSettings[field.key] ?? ""}
+                      placeholder={field.placeholder}
+                      onChange={(event) => handleSettingsChange(field.key, event.target.value)}
+                    />
+                  )}
+                  {field.description && (
+                    <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">{field.description}</p>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+
+        <FormBuilderWorkspace
+          ref={builderRef}
+          initialSchema={initialSchema}
+          initialSettings={initialSettings}
+          formTitle={name || "フォーム"}
+          onDirtyChange={setBuilderDirty}
+          showToolbarSave={false}
+        />
+      </div>
 
       <ConfirmDialog open={confirmState} title="未保存の変更があります" message="保存せずに離れますか？" options={confirmOptions} />
 

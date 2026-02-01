@@ -101,10 +101,11 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
       save: handleSave,
       getSchema: () => schema,
       getSettings: () => settings,
+      updateSetting: updateSetting,
       setMode: setActiveTab,
       getQuestionControl: () => questionControl,
     }),
-    [handleSave, schema, settings, questionControl],
+    [handleSave, schema, settings, updateSetting, questionControl],
   );
 
   const previewSettings = useMemo(() => ({ ...settings, formTitle }), [settings, formTitle]);
@@ -129,7 +130,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
       </div>
 
       {activeTab === "editor" && (
-        <EditorPage schema={schema} onSchemaChange={handleSchemaChange} settings={settings} onSettingsChange={updateSetting} onQuestionControlChange={setQuestionControl} />
+        <EditorPage schema={schema} onSchemaChange={handleSchemaChange} onQuestionControlChange={setQuestionControl} />
       )}
 
       {activeTab === "preview" && (

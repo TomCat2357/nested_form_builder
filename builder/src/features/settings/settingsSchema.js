@@ -1,7 +1,7 @@
 export const SETTINGS_GROUPS = [
   {
     key: "spreadsheet",
-    label: "保存先スプレッドシート",
+    label: "入力データ保存スプレッドシート",
     fields: [
       {
         key: "spreadsheetId",
@@ -13,14 +13,14 @@ export const SETTINGS_GROUPS = [
       {
         key: "sheetName",
         label: "Sheet Name",
-        placeholder: "Responses",
+        placeholder: "DATA",
         required: false,
       },
     ],
   },
   {
     key: "search",
-    label: "検索画面",
+    label: "検索画面設定",
     fields: [
       {
         key: "pageSize",
