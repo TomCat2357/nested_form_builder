@@ -13,7 +13,7 @@ export const SETTINGS_GROUPS = [
       {
         key: "sheetName",
         label: "Sheet Name",
-        placeholder: "DATA",
+        placeholder: "Data",
         required: false,
       },
     ],
