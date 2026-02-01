@@ -1,5 +1,5 @@
 import React from "react";
-import { SETTINGS_FIELDS } from "../settings/settingsSchema.js";
+import { SETTINGS_GROUPS } from "../settings/settingsSchema.js";
 
 const SettingsField = ({ field, value, onChange }) => {
   const isSelect = field.type === "select" || Array.isArray(field.options);
@@ -26,6 +26,9 @@ const SettingsField = ({ field, value, onChange }) => {
           onChange={(event) => onChange(field.key, event.target.value)}
         />
       )}
+      {field.description && (
+        <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">{field.description}</p>
+      )}
     </div>
   );
 };
@@ -33,9 +36,13 @@ const SettingsField = ({ field, value, onChange }) => {
 export default function SettingsPanel({ settings, onSettingsChange }) {
   return (
     <div className="nf-card">
-      <div className="nf-fw-600 nf-mb-8">基本設定</div>
-      {SETTINGS_FIELDS.map((field) => (
-        <SettingsField key={field.key} field={field} value={settings[field.key]} onChange={onSettingsChange} />
+      {SETTINGS_GROUPS.map((group) => (
+        <div key={group.key} className="nf-mb-16">
+          <div className="nf-settings-group-title nf-mb-12">{group.label}</div>
+          {group.fields.map((field) => (
+            <SettingsField key={field.key} field={field} value={settings[field.key]} onChange={onSettingsChange} />
+          ))}
+        </div>
       ))}
     </div>
   );

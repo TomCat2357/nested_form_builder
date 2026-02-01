@@ -203,11 +203,10 @@ export default function ConfigPage() {
         </div>
 
         <div className="nf-mt-16">
-          <div className="nf-fw-600 nf-mb-6">テーマをインポート</div>
+          <div className="nf-settings-group-title nf-mb-8">テーマをインポート</div>
           <p className="nf-mb-12 nf-text-12 nf-text-muted">
-            Google Drive内のテーマCSSファイルURLを指定してください。
+            インポートするGoogle Drive内CSSファイルURLを指定してください
           </p>
-          <label className="nf-block nf-fw-600 nf-mb-6">Google Drive URL</label>
           <div className="nf-row nf-gap-12">
             <input
               className="nf-input nf-flex-1 nf-min-w-0"
@@ -225,9 +224,6 @@ export default function ConfigPage() {
               {importing ? "インポート中..." : "インポート"}
             </button>
           </div>
-          <p className="nf-mt-6 nf-text-11 nf-text-muted">
-            推奨形式: <span className="nf-text-underline">:root[data-theme="..."]</span> を含むCSS
-          </p>
           {customThemes.length > 0 && (
             <div className="nf-mt-12">
               <div className="nf-text-12 nf-text-muted">インポート済みテーマ</div>
@@ -260,7 +256,7 @@ export default function ConfigPage() {
 
         {hasScriptRun() && (
           <div className="nf-mt-16 nf-pt-16" style={{ borderTop: "1px solid var(--nf-color-border)" }}>
-            <div className="nf-fw-600 nf-mb-6">アクセス制御</div>
+            <div className="nf-settings-group-title nf-mb-6">アクセス制御</div>
             <p className="nf-mb-12 nf-text-12 nf-text-muted">
               管理者キーを設定すると、URLパラメータ <code>?adminkey=キー</code> でアクセスした場合のみ管理者として認識されます。
               空欄にすると誰でも管理者としてアクセスできます。
@@ -297,7 +293,7 @@ export default function ConfigPage() {
 
         {deployTime && (
           <div className="nf-mt-16 nf-pt-16" style={{ borderTop: "1px solid var(--nf-color-border)" }}>
-            <div className="nf-fw-600 nf-mb-6">システム情報</div>
+            <div className="nf-settings-group-title nf-mb-6">システム情報</div>
             <div className="nf-text-12 nf-text-muted">
               <div>最終デプロイ: {deployTime}</div>
             </div>

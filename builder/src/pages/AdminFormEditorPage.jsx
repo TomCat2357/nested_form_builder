@@ -89,8 +89,8 @@ export default function AdminFormEditorPage() {
   const checkSpreadsheet = useCallback(async (spreadsheetIdOrUrl) => {
     const trimmed = (spreadsheetIdOrUrl || "").trim();
     if (!trimmed) {
-      showAlert("Spreadsheet ID / URL を入力してください");
-      return false;
+      // 未設定の場合はマイドライブに新規作成されるのでOK
+      return true;
     }
     try {
       const result = await validateSpreadsheet(trimmed);
@@ -336,7 +336,7 @@ export default function AdminFormEditorPage() {
           <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="nf-input admin-input nf-min-h-80" placeholder="説明" />
         </div>
         <div className="nf-col nf-gap-6 nf-mb-16">
-          <label>Google Drive保存先URL（オプション）</label>
+          <label>フォームのGoogle Drive保存先URL</label>
           <input
             value={driveUrl}
             onChange={(event) => setDriveUrl(event.target.value)}
