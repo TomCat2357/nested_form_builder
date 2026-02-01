@@ -206,8 +206,8 @@ function Sheets_getOrCreateSheet_(spreadsheetId, sheetName) {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
 
   var ss = SpreadsheetApp.openById(spreadsheetId);
-  var sheet = ss.getSheetByName(sheetName || "Responses");
-  return sheet || ss.insertSheet(sheetName || "Responses");
+  var sheet = ss.getSheetByName(sheetName || "Data");
+  return sheet || ss.insertSheet(sheetName || "Data");
 }
 
 function Sheets_generateRecordId_() {

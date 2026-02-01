@@ -10,7 +10,7 @@ function Model_normalizeContext_(body, params) {
     formTitle: body.formTitle || "",
     schemaHash: body.schemaHash || "",
     spreadsheetId: params.spreadsheetId || body.spreadsheetId || "",
-    sheetName: params.sheetName || body.sheetName || "Responses",
+    sheetName: params.sheetName || body.sheetName || "Data",
     id: body.id || params.id || "",
     responses: responses,
     order: order,

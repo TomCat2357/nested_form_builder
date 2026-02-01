@@ -27,7 +27,7 @@
 POST ボディ、もしくはクエリパラメータで以下を指定してください。
 
 - `spreadsheetId` – 保存先スプレッドシート ID（必須）
-- `sheetName` – シート名（省略時は `Responses`）
+- `sheetName` – シート名（省略時は `Data`）
 
 新しいシート名が指定された場合、存在しなければ自動で作成されます。
 
@@ -58,7 +58,7 @@ clasp deploy --description "Nested Form Builder"
 {
   "ok": true,
   "spreadsheetUrl": "https://docs.google.com/spreadsheets/d/xxxx",
-  "sheetName": "Responses",
+  "sheetName": "Data",
   "rowNumber": 5,
   "id": "r_1700000000000_xxxxxxxx"
 }

@@ -110,7 +110,7 @@ function nfbNormalizeSettings_(input) {
   return {
     formTitle: String(input.formTitle || ""),
     spreadsheetId: String(input.spreadsheetId || ""),
-    sheetName: String(input.sheetName || "Responses"),
+    sheetName: String(input.sheetName || "Data"),
     gasUrl: String(input.gasUrl || ""),
     pageSize: Number(input.pageSize) || 20,
   };
@@ -121,7 +121,7 @@ function nfbLoadUserSettings() {
   return {
     formTitle: props.getProperty(NFB_USER_SETTINGS_KEYS.formTitle) || "",
     spreadsheetId: props.getProperty(NFB_USER_SETTINGS_KEYS.spreadsheetId) || "",
-    sheetName: props.getProperty(NFB_USER_SETTINGS_KEYS.sheetName) || "Responses",
+    sheetName: props.getProperty(NFB_USER_SETTINGS_KEYS.sheetName) || "Data",
     gasUrl: props.getProperty(NFB_USER_SETTINGS_KEYS.gasUrl) || "",
     pageSize: Number(props.getProperty(NFB_USER_SETTINGS_KEYS.pageSize)) || 20,
   };
