@@ -382,39 +382,43 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const [isSaving, setIsSaving] = useState(false);
 
   const handleSaveToSheet = async (options = {}) => {
-    if (readOnly) {
-      throw new Error("read_only_mode");
-    }
-    if (hasValidationErrors(schema, responses)) {
-      showAlert("正規表現のエラー、必須空、またはパターン不一致の回答があります。修正してください。");
-      throw new Error("validation_failed");
-    }
-
-    let spreadsheetId = null;
-    if (!onSave) {
-      const scriptRunAvailable = hasScriptRun();
-      spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
-      if (!spreadsheetId) {
-        showAlert("Spreadsheet ID / URL が未入力です");
-        throw new Error("missing_spreadsheet_id");
-      }
-      if (!scriptRunAvailable) {
-        showAlert("この機能はGoogle Apps Script環境でのみ利用可能です");
-        throw new Error("missing_script_run");
-      }
-    }
-
-    const payload = {
-      version: 1,
-      formTitle,
-      schemaHash: computeSchemaHash(schema),
-      id: recordIdRef.current,
-      responses: output,
-      order: sortedKeys,
-    };
-
+    let alertShown = false;
     setIsSaving(true);
     try {
+      if (readOnly) {
+        throw new Error("read_only_mode");
+      }
+      if (hasValidationErrors(schema, responses)) {
+        showAlert("正規表現のエラー、必須空、またはパターン不一致の回答があります。修正してください。");
+        alertShown = true;
+        throw new Error("validation_failed");
+      }
+
+      let spreadsheetId = null;
+      if (!onSave) {
+        const scriptRunAvailable = hasScriptRun();
+        spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
+        if (!spreadsheetId) {
+          showAlert("Spreadsheet ID / URL が未入力です");
+          alertShown = true;
+          throw new Error("missing_spreadsheet_id");
+        }
+        if (!scriptRunAvailable) {
+          showAlert("この機能はGoogle Apps Script環境でのみ利用可能です");
+          alertShown = true;
+          throw new Error("missing_script_run");
+        }
+      }
+
+      const payload = {
+        version: 1,
+        formTitle,
+        schemaHash: computeSchemaHash(schema),
+        id: recordIdRef.current,
+        responses: output,
+        order: sortedKeys,
+      };
+
       if (onSave) {
         const result = await onSave({
           payload,
@@ -437,7 +441,12 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       return res;
     } catch (error) {
       console.error("[PreviewPage] Error in handleSaveToSheet:", error);
-      if (!options?.silent) {
+      const suppressAlert = alertShown
+        || error?.message === "validation_failed"
+        || error?.message === "missing_spreadsheet_id"
+        || error?.message === "missing_script_run"
+        || error?.message === "read_only_mode";
+      if (!options?.silent && !suppressAlert) {
         showAlert(`送信に失敗しました: ${error?.message || error}`);
       }
       throw error;

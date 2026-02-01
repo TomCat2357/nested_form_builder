@@ -39,7 +39,6 @@ export default function AdminFormEditorPage() {
   const [localSettings, setLocalSettings] = useState(initialSettings);
   const [builderDirty, setBuilderDirty] = useState(false);
   const [confirmState, setConfirmState] = useState(false);
-  const [confirmSave, setConfirmSave] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [nameError, setNameError] = useState("");
   const [questionControl, setQuestionControl] = useState(null);
@@ -117,32 +116,29 @@ export default function AdminFormEditorPage() {
     }
   }, [showAlert]);
 
-  const handleSaveClick = async () => {
-    // バリデーションのみ実行
+  const handleSave = async () => {
     if (!builderRef.current) return;
+    if (isSaving) return;
+    setIsSaving(true);
+
     const trimmedName = (name || "").trim();
     if (!trimmedName) {
       setNameError("フォーム名を入力してください");
+      setIsSaving(false);
       return;
     }
     setNameError("");
 
-    const settings = builderRef.current.getSettings?.() || {};
-    const spreadsheetId = settings.spreadsheetId || "";
-    const spreadsheetOk = await checkSpreadsheet(spreadsheetId);
-    if (!spreadsheetOk) return;
-
-    // 確認ダイアログを表示
-    setConfirmSave(true);
-  };
-
-  const handleSave = async () => {
-    if (!builderRef.current) return;
+    const settingsForCheck = builderRef.current.getSettings?.() || {};
+    const spreadsheetOk = await checkSpreadsheet(settingsForCheck.spreadsheetId || "");
+    if (!spreadsheetOk) {
+      setIsSaving(false);
+      return;
+    }
 
     // バリデーション実行（失敗時はfalseを返す）
     const saveResult = builderRef.current.save();
     if (saveResult === false) {
-      setConfirmSave(false);
       setIsSaving(false);
       return;
     }
@@ -150,15 +146,6 @@ export default function AdminFormEditorPage() {
     const schema = builderRef.current.getSchema();
     const settings = builderRef.current.getSettings();
     const trimmedSettings = omitThemeSetting(settings);
-    const trimmedName = (name || "").trim();
-
-    const spreadsheetOk = await checkSpreadsheet(settings?.spreadsheetId || "");
-    if (!spreadsheetOk) {
-      setConfirmSave(false);
-      setIsSaving(false);
-      return;
-    }
-
     // 一時保存データをクリーンアップ
     const cleanedSchema = cleanupTempData(schema);
 
@@ -200,7 +187,6 @@ export default function AdminFormEditorPage() {
     const targetUrl = driveUrl?.trim() || null;
 
     try {
-      setIsSaving(true);
       if (isEdit) await updateForm(formId, payload, targetUrl);
       else await createForm(payload, targetUrl);
       initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
@@ -283,7 +269,7 @@ export default function AdminFormEditorPage() {
       backHidden={true}
       sidebarActions={
         <>
-          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving} onClick={handleSaveClick}>
+          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving} onClick={handleSave}>
             保存
           </button>
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleCancel}>
@@ -419,28 +405,6 @@ export default function AdminFormEditorPage() {
       </div>
 
       <ConfirmDialog open={confirmState} title="未保存の変更があります" message="保存せずに離れますか？" options={confirmOptions} />
-
-      <ConfirmDialog
-        open={confirmSave}
-        title="フォームを保存"
-        message={isEdit ? "フォームを更新してよろしいですか？" : "フォームを作成してよろしいですか？"}
-        options={[
-          {
-            label: "キャンセル",
-            value: "cancel",
-            onSelect: () => setConfirmSave(false),
-          },
-          {
-            label: "保存",
-            value: "save",
-            variant: "primary",
-            onSelect: async () => {
-              setConfirmSave(false);
-              await handleSave();
-            },
-          },
-        ]}
-      />
 
       <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
     </AppLayout>
