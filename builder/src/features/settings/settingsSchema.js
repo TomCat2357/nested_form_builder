@@ -51,6 +51,14 @@ export const SETTINGS_GROUPS = [
     label: "アクセス制御",
     fields: [
       {
+        key: "showRecordNo",
+        label: "No.を表示する",
+        type: "checkbox",
+        required: false,
+        defaultValue: true,
+        description: "OFFにすると、検索画面・レコード画面でNo.列が非表示になります（回答状況の推測を防止）",
+      },
+      {
         key: "showOwnRecordsOnly",
         label: "自分の回答のみ表示",
         type: "checkbox",

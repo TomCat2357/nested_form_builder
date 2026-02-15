@@ -11,7 +11,7 @@ const SettingsField = ({ field, value, onChange }) => {
         <label className="nf-flex nf-items-center nf-gap-8" style={{ cursor: "pointer" }}>
           <input
             type="checkbox"
-            checked={!!value}
+            checked={value !== undefined ? !!value : !!field.defaultValue}
             onChange={(event) => onChange(field.key, event.target.checked)}
           />
           <span className="nf-fw-600">{field.label}</span>

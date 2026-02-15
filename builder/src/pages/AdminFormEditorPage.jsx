@@ -356,49 +356,63 @@ export default function AdminFormEditorPage() {
         {SETTINGS_GROUPS.map((group) => (
           <div key={group.key} className="nf-card nf-mb-16">
             <div className="nf-settings-group-title nf-mb-12">{group.label}</div>
-            {group.fields.map((field) => {
-              const isSelect = field.type === "select" || Array.isArray(field.options);
+            {(() => {
+              const checkboxFields = group.fields.filter((f) => f.type === "checkbox");
+              const otherFields = group.fields.filter((f) => f.type !== "checkbox");
               return (
-                <div key={field.key} className="nf-mb-12">
-                  <label className="nf-block nf-fw-600 nf-mb-6">
-                    {field.label}
-                    {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
-                  </label>
-                  {isSelect ? (
-                    <select
-                      className="nf-input"
-                      value={localSettings[field.key] ?? ""}
-                      onChange={(event) => handleSettingsChange(field.key, event.target.value)}
-                    >
-                      {(field.options || []).map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
+                <>
+                  {otherFields.map((field) => {
+                    const isSelect = field.type === "select" || Array.isArray(field.options);
+                    return (
+                      <div key={field.key} className="nf-mb-12">
+                        <label className="nf-block nf-fw-600 nf-mb-6">
+                          {field.label}
+                          {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
+                        </label>
+                        {isSelect ? (
+                          <select
+                            className="nf-input"
+                            value={localSettings[field.key] ?? ""}
+                            onChange={(event) => handleSettingsChange(field.key, event.target.value)}
+                          >
+                            {(field.options || []).map((option) => (
+                              <option key={option.value} value={option.value}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            className="nf-input"
+                            type={field.type || "text"}
+                            value={localSettings[field.key] ?? ""}
+                            placeholder={field.placeholder}
+                            onChange={(event) => handleSettingsChange(field.key, event.target.value)}
+                          />
+                        )}
+                        {field.description && (
+                          <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">{field.description}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {checkboxFields.length > 0 && (
+                    <div className="nf-flex nf-flex-wrap nf-gap-16 nf-mb-12">
+                      {checkboxFields.map((field) => (
+                        <label key={field.key} className="nf-flex nf-items-center nf-gap-8" style={{ cursor: "pointer" }}>
+                          <input
+                            type="checkbox"
+                            checked={localSettings[field.key] !== undefined ? !!localSettings[field.key] : !!field.defaultValue}
+                            onChange={(event) => handleSettingsChange(field.key, event.target.checked)}
+                          />
+                          <span className="nf-fw-600">{field.label}</span>
+                        </label>
                       ))}
-                    </select>
-                  ) : field.type === "checkbox" ? (
-                    <label className="nf-flex nf-align-center nf-gap-8">
-                      <input
-                        type="checkbox"
-                        checked={!!localSettings[field.key]}
-                        onChange={(event) => handleSettingsChange(field.key, event.target.checked)}
-                      />
-                    </label>
-                  ) : (
-                    <input
-                      className="nf-input"
-                      type={field.type || "text"}
-                      value={localSettings[field.key] ?? ""}
-                      placeholder={field.placeholder}
-                      onChange={(event) => handleSettingsChange(field.key, event.target.value)}
-                    />
+                    </div>
                   )}
-                  {field.description && (
-                    <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">{field.description}</p>
-                  )}
-                </div>
+                </>
               );
-            })}
+            })()}
           </div>
         ))}
 

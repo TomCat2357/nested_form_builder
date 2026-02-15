@@ -397,7 +397,8 @@ const resolveDisplayFieldSettings = (form) => {
 };
 
 export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
-  const columns = createBaseColumns();
+  const showRecordNo = form?.settings?.showRecordNo !== false;
+  const columns = showRecordNo ? createBaseColumns() : createBaseColumns().filter((col) => col.key !== "No.");
   resolveDisplayFieldSettings(form).forEach(({ path, mode, type }) => {
     if (!path) return;
     columns.push(createDisplayColumn(path, mode, type));
@@ -498,7 +499,9 @@ const filterVisibleColumnIndices = (multiHeaderRows, columns) => {
     const headerValueStr = String(headerValue);
 
     if (headerValueStr === "No." || headerValueStr === "modifiedAt") {
-      visibleIndices.push(i);
+      if (columns.some((col) => col?.key === headerValueStr)) {
+        visibleIndices.push(i);
+      }
       continue;
     }
 
