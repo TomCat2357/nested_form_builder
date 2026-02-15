@@ -462,6 +462,90 @@ function Forms_saveMapping_(mapping) {
 }
 
 /**
+ * formId配列を正規化（重複・空値を除外）
+ * @param {Array<string>|string} formIds
+ * @return {Array<string>}
+ */
+function Forms_normalizeFormIds_(formIds) {
+  var source = Array.isArray(formIds) ? formIds : [formIds];
+  var seen = {};
+  var normalized = [];
+
+  for (var i = 0; i < source.length; i++) {
+    var rawId = source[i];
+    if (!rawId) continue;
+    var formId = String(rawId);
+    if (seen[formId]) continue;
+    seen[formId] = true;
+    normalized.push(formId);
+  }
+
+  return normalized;
+}
+
+/**
+ * 旧FORM_URLS_MAPから指定formIdを削除
+ * @param {Array<string>|string} formIds
+ */
+function Forms_removeLegacyUrls_(formIds) {
+  if (typeof GetFormUrls_ !== "function" || typeof SaveFormUrls_ !== "function") {
+    return;
+  }
+
+  var ids = Forms_normalizeFormIds_(formIds);
+  if (!ids.length) return;
+
+  try {
+    var urlMap = GetFormUrls_() || {};
+    var changed = false;
+
+    ids.forEach(function(formId) {
+      if (!urlMap.hasOwnProperty(formId)) return;
+      delete urlMap[formId];
+      changed = true;
+    });
+
+    if (changed) {
+      SaveFormUrls_(urlMap);
+    }
+  } catch (err) {
+    Logger.log("[Forms_removeLegacyUrls_] Failed: " + err);
+  }
+}
+
+/**
+ * UserProperties側の旧nfb.forms.mappingから指定formIdを削除
+ * @param {Array<string>|string} formIds
+ */
+function Forms_removeUserMappingEntries_(formIds) {
+  var ids = Forms_normalizeFormIds_(formIds);
+  if (!ids.length) return;
+
+  try {
+    var userProps = Forms_getUserProps_();
+    var userJson = userProps.getProperty(FORMS_PROPERTY_KEY);
+    if (!userJson) return;
+
+    var userMapping = Forms_parseMappingJson_(userJson, "user");
+    var changed = false;
+
+    ids.forEach(function(formId) {
+      if (!userMapping.hasOwnProperty(formId)) return;
+      delete userMapping[formId];
+      changed = true;
+    });
+
+    if (changed) {
+      var normalized = Forms_normalizeMapping_(userMapping);
+      var mappingStr = JSON.stringify({ version: FORMS_PROPERTY_VERSION, mapping: normalized });
+      userProps.setProperty(FORMS_PROPERTY_KEY, mappingStr);
+    }
+  } catch (err) {
+    Logger.log("[Forms_removeUserMappingEntries_] Failed: " + err);
+  }
+}
+
+/**
  * フォーム保存用フォルダを取得または作成
  * @return {Folder}
  */
@@ -987,6 +1071,8 @@ function Forms_deleteForm_(formId) {
 
   delete mapping[formId];
   Forms_saveMapping_(mapping);
+  Forms_removeUserMappingEntries_([formId]);
+  Forms_removeLegacyUrls_([formId]);
 
   return { ok: true };
 }
@@ -1028,6 +1114,8 @@ function Forms_deleteForms_(formIds) {
   });
 
   Forms_saveMapping_(mapping);
+  Forms_removeUserMappingEntries_(ids);
+  Forms_removeLegacyUrls_(ids);
 
   return {
     ok: errors.length === 0,

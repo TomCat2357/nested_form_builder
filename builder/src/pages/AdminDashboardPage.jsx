@@ -333,10 +333,14 @@ export default function AdminDashboardPage() {
         : []);
     if (!targetIds.length) return;
 
-    await deleteForms(targetIds);
-
-    clearSelectionByIds(targetIds);
-    setConfirmDelete({ open: false, formId: null, targetIds: [], multiple: false });
+    try {
+      await deleteForms(targetIds);
+      clearSelectionByIds(targetIds);
+      setConfirmDelete({ open: false, formId: null, targetIds: [], multiple: false });
+    } catch (error) {
+      console.error("[AdminDashboard] Delete action failed:", error);
+      showAlert(error?.message || "フォームの削除中にエラーが発生しました");
+    }
   };
 
   const goToEditor = (formId) => {

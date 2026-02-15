@@ -195,7 +195,17 @@ export const deleteFormsFromDrive = async (formIds) => {
   if (!Array.isArray(formIds) || formIds.length === 0) {
     throw new Error("formIds array is required");
   }
-  return await callFormApi("nfbDeleteForms", formIds, "Batch delete forms failed");
+  const result = await callScriptRun("nfbDeleteForms", formIds);
+  if (!result) {
+    throw new Error("Batch delete forms failed");
+  }
+
+  const deleted = Number.isFinite(result.deleted) ? result.deleted : Number(result.deleted) || 0;
+  if (result.ok === false && deleted === 0) {
+    throw new Error(result?.error || "Batch delete forms failed");
+  }
+
+  return result;
 };
 
 export const archiveForm = async (formId) => {

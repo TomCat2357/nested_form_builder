@@ -189,15 +189,20 @@ export function AppDataProvider({ children }) {
 
   const removeFormsState = useCallback(async (formIds) => {
     if (!Array.isArray(formIds) || formIds.length === 0) return;
-    let updatedForms;
-    setForms((prev) => {
-      const next = prev.filter((form) => !formIds.includes(form.id));
-      updatedForms = next;
-      return next;
-    });
+    const targetIdSet = new Set(formIds.filter(Boolean));
+    if (!targetIdSet.size) return;
+
+    const nextForms = formsRef.current.filter((form) => !targetIdSet.has(form.id));
+    const nextLoadFailures = loadFailuresRef.current.filter((failure) => !targetIdSet.has(failure.id));
+
+    setForms(nextForms);
+    setLoadFailures(nextLoadFailures);
+
+    formsRef.current = nextForms;
+    loadFailuresRef.current = nextLoadFailures;
 
     // キャッシュ更新の完了を待つ
-    await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, "removeFormsState");
+    await saveCacheWithErrorHandling(nextForms, nextLoadFailures, setCacheDisabled, "removeFormsState");
   }, []);
 
   const createForm = useCallback(async (payload, targetUrl) => {
