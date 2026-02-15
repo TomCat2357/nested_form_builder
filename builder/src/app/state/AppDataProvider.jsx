@@ -229,8 +229,8 @@ export function AppDataProvider({ children }) {
     return result;
   }, [upsertFormsState]);
 
-  const archiveForms = useCallback(async (formIds) => {
-    const result = await dataStore.archiveForms(formIds);
+  const batchUpdateFormsState = useCallback(async (dataStoreFn, formIds, logPrefix) => {
+    const result = await dataStoreFn(formIds);
     if (result.forms && Array.isArray(result.forms)) {
       // 複数フォームを一括更新してキャッシュも1回だけ更新
       let updatedForms;
@@ -247,33 +247,20 @@ export function AppDataProvider({ children }) {
       });
 
       // キャッシュ更新の完了を待つ
-      await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, "archiveForms");
+      await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, logPrefix);
     }
     return result;
   }, []);
 
-  const unarchiveForms = useCallback(async (formIds) => {
-    const result = await dataStore.unarchiveForms(formIds);
-    if (result.forms && Array.isArray(result.forms)) {
-      // 複数フォームを一括更新してキャッシュも1回だけ更新
-      let updatedForms;
-      setForms((prev) => {
-        const next = prev.slice();
-        result.forms.forEach((form) => {
-          const index = next.findIndex((f) => f.id === form.id);
-          if (index !== -1) {
-            next[index] = form;
-          }
-        });
-        updatedForms = next;
-        return next;
-      });
+  const archiveForms = useCallback(
+    (formIds) => batchUpdateFormsState(dataStore.archiveForms.bind(dataStore), formIds, "archiveForms"),
+    [batchUpdateFormsState],
+  );
 
-      // キャッシュ更新の完了を待つ
-      await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, "unarchiveForms");
-    }
-    return result;
-  }, []);
+  const unarchiveForms = useCallback(
+    (formIds) => batchUpdateFormsState(dataStore.unarchiveForms.bind(dataStore), formIds, "unarchiveForms"),
+    [batchUpdateFormsState],
+  );
 
   const deleteForms = useCallback(async (formIds) => {
     await dataStore.deleteForms(formIds);

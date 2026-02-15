@@ -1,16 +1,10 @@
-import { DISPLAY_MODES, ensureDisplayModeForType, normalizeDisplayMode } from "../core/displayModes.js";
+import { DISPLAY_MODES, resolveFieldDisplayMode } from "../core/displayModes.js";
 
 const normalizeLabel = (label) => (typeof label === "string" ? label.trim() : "");
 
 const joinPath = (base, label) => {
   const next = normalizeLabel(label);
   return next ? (base ? `${base}|${next}` : next) : base;
-};
-
-const resolveFieldDisplayMode = (field) => {
-  const hasExplicitMode = Object.prototype.hasOwnProperty.call(field || {}, "displayMode");
-  const normalized = normalizeDisplayMode(field?.displayMode, { importantFlag: !!field?.important });
-  return ensureDisplayModeForType(normalized, field?.type, { explicit: hasExplicitMode });
 };
 
 export const collectDisplayFieldSettings = (schema) => {

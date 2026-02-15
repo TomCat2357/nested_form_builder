@@ -1,6 +1,7 @@
 import { computeSchemaHash, stripSchemaIDs, deepClone } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
+import { omitThemeSetting } from "../../utils/settings.js";
 import {
   getCachedEntryWithIndex,
   saveRecordsToCache,
@@ -34,12 +35,6 @@ import { toUnixMs } from "../../utils/dateTime.js";
 
 const nowSerial = () => toUnixMs(Date.now());
 const DEFAULT_SHEET_NAME = "Data";
-
-const omitThemeSetting = (settings) => {
-  if (!settings || typeof settings !== "object") return {};
-  const { theme, ...rest } = settings;
-  return rest;
-};
 
 const ensureDisplayInfo = (form) => {
   const schema = Array.isArray(form?.schema) ? form.schema : [];
@@ -214,7 +209,7 @@ export const dataStore = {
   async unarchiveForm(formId) {
     return this.setFormArchivedState(formId, false);
   },
-  async archiveForms(formIds) {
+  async _batchArchiveAction(formIds, gasFn) {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
     if (!targetIds.length) return { forms: [], updated: 0 };
 
@@ -222,27 +217,18 @@ export const dataStore = {
       throw new Error("GAS unavailable");
     }
 
-    const result = await archiveFormsInGas(targetIds);
+    const result = await gasFn(targetIds);
     return {
       forms: (result.forms || []).map((form) => (form ? ensureDisplayInfo(form) : null)).filter(Boolean),
       updated: result.updated || 0,
       errors: result.errors || [],
     };
   },
+  async archiveForms(formIds) {
+    return this._batchArchiveAction(formIds, archiveFormsInGas);
+  },
   async unarchiveForms(formIds) {
-    const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
-    if (!targetIds.length) return { forms: [], updated: 0 };
-
-    if (!hasScriptRun()) {
-      throw new Error("GAS unavailable");
-    }
-
-    const result = await unarchiveFormsInGas(targetIds);
-    return {
-      forms: (result.forms || []).map((form) => (form ? ensureDisplayInfo(form) : null)).filter(Boolean),
-      updated: result.updated || 0,
-      errors: result.errors || [],
-    };
+    return this._batchArchiveAction(formIds, unarchiveFormsInGas);
   },
   async deleteForms(formIds) {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);

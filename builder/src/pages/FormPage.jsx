@@ -10,6 +10,7 @@ import { restoreResponsesFromData, hasDirtyChanges } from "../utils/responses.js
 import { submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSchemaIDs } from "../core/schema.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
 import { evaluateCache, RECORD_CACHE_MAX_AGE_MS } from "../app/state/cachePolicy.js";
@@ -143,15 +144,7 @@ export default function FormPage() {
 
   const isDirty = useMemo(() => hasDirtyChanges(initialResponsesRef.current, responses), [responses]);
 
-  useEffect(() => {
-    const handleBeforeUnload = (event) => {
-      if (!isDirty) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [isDirty]);
+  useBeforeUnloadGuard(isDirty);
 
   const navigateBack = ({ saved = false } = {}) => {
     const state = saved ? { saved: true } : undefined;

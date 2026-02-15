@@ -52,3 +52,16 @@ export const ensureDisplayModeForType = (mode, type, { explicit = false } = {}) 
 };
 
 export const toImportantFlag = (mode) => mode !== DISPLAY_MODES.NONE;
+
+/**
+ * フィールドの displayMode を解決する（important フラグとの互換性を含む）
+ * formPaths.js の resolveFieldDisplayMode と QuestionCard.jsx の getDisplayMode を統合
+ */
+export const resolveFieldDisplayMode = (field) => {
+  const hasExplicitMode = Object.prototype.hasOwnProperty.call(field || {}, "displayMode");
+  const rawMode = typeof field?.displayMode === "string"
+    ? field.displayMode
+    : (field?.important ? DISPLAY_MODES.NORMAL : DISPLAY_MODES.NONE);
+  const normalized = normalizeDisplayMode(rawMode, { importantFlag: !!field?.important });
+  return ensureDisplayModeForType(normalized, field?.type, { explicit: hasExplicitMode });
+};

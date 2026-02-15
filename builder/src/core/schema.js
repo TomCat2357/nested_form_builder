@@ -1,35 +1,25 @@
 import { genId } from "./ids.js";
 import { DISPLAY_MODES, ensureDisplayModeForType, normalizeDisplayMode, toImportantFlag } from "./displayModes.js";
+import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
 
 const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" : label || "");
 
 export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
 export const MAX_DEPTH = 6;
-const DEFAULT_STYLE_SETTINGS = { labelSize: "default", textColor: "#000000" };
 
-const normalizeLabelSize = (value) => {
-  if (value === "smaller" || value === "default" || value === "larger") return value;
-  return "default";
-};
-
-const normalizeStyleSettings = (input) => {
-  const next = { ...(input || {}) };
-  if (!next.labelSize && typeof next.fontSize === "string") {
-    const numeric = parseInt(next.fontSize, 10);
-    if (!Number.isNaN(numeric)) {
-      if (numeric <= 12) next.labelSize = "smaller";
-      else if (numeric >= 18) next.labelSize = "larger";
-      else next.labelSize = "default";
-    } else {
-      next.labelSize = "default";
-    }
-  }
-  next.labelSize = normalizeLabelSize(next.labelSize);
-  if (typeof next.textColor !== "string" || !next.textColor) {
-    next.textColor = DEFAULT_STYLE_SETTINGS.textColor;
-  }
-  delete next.fontSize;
-  return next;
+/**
+ * childrenByValue を再帰的に走査し、各子配列に walkFn を適用する
+ * @param {object} childrenByValue
+ * @param {function} walkFn - 配列を受け取り変換した配列を返す関数
+ * @returns {object} 変換後の childrenByValue
+ */
+const mapChildrenByValue = (childrenByValue, walkFn) => {
+  if (!childrenByValue || typeof childrenByValue !== "object") return childrenByValue;
+  const fixed = {};
+  Object.keys(childrenByValue).forEach((key) => {
+    fixed[key] = walkFn(childrenByValue[key]);
+  });
+  return fixed;
 };
 
 export const sampleSchema = () => [
@@ -101,11 +91,7 @@ export const normalizeSchemaIDs = (nodes) => {
     }
 
     if (base.childrenByValue && typeof base.childrenByValue === "object") {
-      const fixed = {};
-      Object.keys(base.childrenByValue).forEach((key) => {
-        fixed[key] = walk(base.childrenByValue[key]);
-      });
-      base.childrenByValue = fixed;
+      base.childrenByValue = mapChildrenByValue(base.childrenByValue, walk);
     }
 
     const hasExplicitDisplayMode = Object.prototype.hasOwnProperty.call(base, "displayMode");
@@ -145,24 +131,14 @@ export const normalizeSchemaIDs = (nodes) => {
 
     // _savedChoiceStateを保持する
     if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
-      const savedOptions = base._savedChoiceState.options ? 
-        base._savedChoiceState.options.map((opt) => ({
-          id: opt?.id || genId(),
-          label: sanitizeOptionLabel(opt?.label),
-        })) : undefined;
-      
-      const savedChildrenByValue = base._savedChoiceState.childrenByValue && typeof base._savedChoiceState.childrenByValue === "object" ?
-        (() => {
-          const fixed = {};
-          Object.keys(base._savedChoiceState.childrenByValue).forEach((key) => {
-            fixed[key] = walk(base._savedChoiceState.childrenByValue[key]);
-          });
-          return fixed;
-        })() : undefined;
-      
       base._savedChoiceState = {
-        options: savedOptions,
-        childrenByValue: savedChildrenByValue
+        options: base._savedChoiceState.options
+          ? base._savedChoiceState.options.map((opt) => ({
+              id: opt?.id || genId(),
+              label: sanitizeOptionLabel(opt?.label),
+            }))
+          : undefined,
+        childrenByValue: mapChildrenByValue(base._savedChoiceState.childrenByValue, walk),
       };
     }
 
@@ -170,7 +146,7 @@ export const normalizeSchemaIDs = (nodes) => {
   });
 
   return walk(Array.isArray(nodes) ? nodes : []);
-};;;
+};
 
 /**
  * エクスポート用にスキーマからIDフィールドを除去する
@@ -189,30 +165,18 @@ export const stripSchemaIDs = (nodes) => {
 
     // childrenByValueからも再帰的にIDを除去
     if (base.childrenByValue && typeof base.childrenByValue === "object") {
-      const fixed = {};
-      Object.keys(base.childrenByValue).forEach((key) => {
-        fixed[key] = walk(base.childrenByValue[key]);
-      });
-      base.childrenByValue = fixed;
+      base.childrenByValue = mapChildrenByValue(base.childrenByValue, walk);
     }
 
     // _savedChoiceStateからもIDを除去
     if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
-      const savedState = { ...base._savedChoiceState };
-      
-      if (Array.isArray(savedState.options)) {
-        savedState.options = savedState.options.map(({ id: optId, ...optRest }) => optRest);
-      }
-      
-      if (savedState.childrenByValue && typeof savedState.childrenByValue === "object") {
-        const fixed = {};
-        Object.keys(savedState.childrenByValue).forEach((key) => {
-          fixed[key] = walk(savedState.childrenByValue[key]);
-        });
-        savedState.childrenByValue = fixed;
-      }
-      
-      base._savedChoiceState = savedState;
+      base._savedChoiceState = {
+        ...base._savedChoiceState,
+        options: Array.isArray(base._savedChoiceState.options)
+          ? base._savedChoiceState.options.map(({ id: optId, ...optRest }) => optRest)
+          : base._savedChoiceState.options,
+        childrenByValue: mapChildrenByValue(base._savedChoiceState.childrenByValue, walk),
+      };
     }
 
     return base;
@@ -397,11 +361,7 @@ export const cleanupTempData = (schema) => {
 
     // 子要素も再帰的にクリーンアップ
     if (cleaned.childrenByValue && typeof cleaned.childrenByValue === "object") {
-      const fixed = {};
-      Object.keys(cleaned.childrenByValue).forEach((key) => {
-        fixed[key] = walk(cleaned.childrenByValue[key]);
-      });
-      cleaned.childrenByValue = fixed;
+      cleaned.childrenByValue = mapChildrenByValue(cleaned.childrenByValue, walk);
     }
 
     return cleaned;

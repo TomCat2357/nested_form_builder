@@ -7,6 +7,7 @@ import { normalizeSchemaIDs, validateMaxDepth, validateUniqueLabels, MAX_DEPTH }
 import { runSelfTests } from "../../core/selfTests.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
+import { omitThemeSetting } from "../../utils/settings.js";
 
 const shallowEqual = (a, b) => {
   if (a === b) return true;
@@ -17,12 +18,6 @@ const shallowEqual = (a, b) => {
   } catch (error) {
     return false;
   }
-};
-
-const omitThemeSetting = (settings) => {
-  if (!settings || typeof settings !== "object") return {};
-  const { theme, ...rest } = settings;
-  return rest;
 };
 
 const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(

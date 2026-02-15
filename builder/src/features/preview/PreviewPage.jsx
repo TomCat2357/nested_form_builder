@@ -8,23 +8,10 @@ import { styles as s } from "../editor/styles.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { formatUnixMsDate, formatUnixMsTime } from "../../utils/dateTime.js";
+import { resolveLabelSize } from "../../core/styleSettings.js";
 
 const formatDateLocal = (date) => formatUnixMsDate(date.getTime());
 const formatTimeLocal = (date) => formatUnixMsTime(date.getTime());
-
-const resolveLabelSize = (styleSettings) => {
-  if (styleSettings?.labelSize === "smaller" || styleSettings?.labelSize === "default" || styleSettings?.labelSize === "larger") {
-    return styleSettings.labelSize;
-  }
-  if (typeof styleSettings?.fontSize === "string") {
-    const numeric = parseInt(styleSettings.fontSize, 10);
-    if (!Number.isNaN(numeric)) {
-      if (numeric <= 12) return "smaller";
-      if (numeric >= 18) return "larger";
-    }
-  }
-  return "default";
-};
 
 const generateRecordId = () => {
   if (window.crypto?.getRandomValues) {

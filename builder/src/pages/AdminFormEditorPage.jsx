@@ -7,17 +7,13 @@ import FormBuilderWorkspace from "../features/admin/FormBuilderWorkspace.jsx";
 import { SETTINGS_GROUPS } from "../features/settings/settingsSchema.js";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { validateSpreadsheet } from "../services/gasClient.js";
 import { cleanupTempData } from "../core/schema.js";
+import { omitThemeSetting } from "../utils/settings.js";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/forms");
-
-const omitThemeSetting = (settings) => {
-  if (!settings || typeof settings !== "object") return {};
-  const { theme, ...rest } = settings;
-  return rest;
-};
 
 export default function AdminFormEditorPage() {
   const { formId } = useParams();
@@ -70,15 +66,7 @@ export default function AdminFormEditorPage() {
   const metaDirty = useMemo(() => name !== initialMetaRef.current.name || description !== initialMetaRef.current.description, [name, description]);
   const isDirty = builderDirty || metaDirty;
 
-  useEffect(() => {
-    const handleBeforeUnload = (event) => {
-      if (!isDirty) return;
-      event.preventDefault();
-      event.returnValue = "";
-    };
-    window.addEventListener("beforeunload", handleBeforeUnload);
-    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
-  }, [isDirty]);
+  useBeforeUnloadGuard(isDirty);
 
   const navigateBack = () => {
     if (location.state?.from) {

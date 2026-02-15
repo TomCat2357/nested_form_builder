@@ -2,7 +2,8 @@ import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
 import { deepClone, normalizeSchemaIDs, MAX_DEPTH } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
-import { DISPLAY_MODES, ensureDisplayModeForType, toImportantFlag } from "../../core/displayModes.js";
+import { DISPLAY_MODES, ensureDisplayModeForType, toImportantFlag, resolveFieldDisplayMode } from "../../core/displayModes.js";
+import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "../../core/styleSettings.js";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
 // 定数
@@ -14,47 +15,33 @@ const resolveDisplayModeForType = (type, displayed) => (
   displayed ? ensureDisplayModeForType(DISPLAY_MODES.NORMAL, type, { explicit: true }) : DISPLAY_MODES.NONE
 );
 const DISPLAY_LABEL = "表示";
-const DEFAULT_STYLE_SETTINGS = { labelSize: "default", textColor: "#000000" };
-
-const normalizeLabelSize = (value) => {
-  if (value === "smaller" || value === "default" || value === "larger") return value;
-  return "default";
-};
-
-const normalizeStyleSettings = (input) => {
-  const next = { ...(input || {}) };
-  if (!next.labelSize && typeof next.fontSize === "string") {
-    const numeric = parseInt(next.fontSize, 10);
-    if (!Number.isNaN(numeric)) {
-      if (numeric <= 12) next.labelSize = "smaller";
-      else if (numeric >= 18) next.labelSize = "larger";
-      else next.labelSize = "default";
-    } else {
-      next.labelSize = "default";
-    }
-  }
-  next.labelSize = normalizeLabelSize(next.labelSize);
-  delete next.fontSize;
-  return next;
-};
 
 // ヘルパー関数
 const isChoiceType = (type) => CHOICE_TYPES.includes(type);
 const isInputType = (type) => INPUT_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 const isMessageType = (type) => type === MESSAGE_TYPE;
-const getDisplayMode = (field) => {
-  const hasExplicitMode = Object.prototype.hasOwnProperty.call(field || {}, "displayMode");
-  const rawMode = typeof field?.displayMode === "string"
-    ? field.displayMode
-    : (field?.important ? DISPLAY_MODES.NORMAL : DISPLAY_MODES.NONE);
-  return ensureDisplayModeForType(rawMode, field?.type, { explicit: hasExplicitMode });
-};
 const applyDisplayMode = (target, mode) => {
   const nextMode = ensureDisplayModeForType(mode, target.type, { explicit: true });
   target.displayMode = nextMode;
   target.important = toImportantFlag(nextMode);
 };
+
+/**
+ * 選択肢系から非選択肢系への変更時に、選択肢状態を退避してoptionsを削除する
+ */
+function saveAndClearChoiceState(next, field, oldIsChoice) {
+  if (oldIsChoice) {
+    next._savedChoiceState = {
+      options: deepClone(field.options),
+      childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : undefined
+    };
+    delete next.options;
+    delete next.childrenByValue;
+  } else {
+    delete next.options;
+  }
+}
 
 /**
  * タイプ変更時の状態を管理する関数
@@ -64,7 +51,7 @@ function handleTypeChange(field, newType) {
   const next = deepClone(field);
   const oldType = field.type;
   next.type = newType;
-  const wasDisplayed = getDisplayMode(next) !== DISPLAY_MODES.NONE;
+  const wasDisplayed = resolveFieldDisplayMode(next) !== DISPLAY_MODES.NONE;
 
   const oldIsChoice = isChoiceType(oldType);
   const newIsChoice = isChoiceType(newType);
@@ -91,63 +78,23 @@ function handleTypeChange(field, newType) {
     // 正規表現への変更
     next.pattern = typeof next.pattern === "string" ? next.pattern : "";
     delete next.defaultNow;
-
-    if (oldIsChoice) {
-      next._savedChoiceState = {
-        options: deepClone(field.options),
-        childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : undefined
-      };
-      delete next.options;
-      delete next.childrenByValue;
-    } else {
-      delete next.options;
-    }
+    saveAndClearChoiceState(next, field, oldIsChoice);
   } else if (isDateOrTimeType(newType)) {
     // 日付・時刻への変更
     delete next.pattern;
     next.defaultNow = !!next.defaultNow;
-
-    if (oldIsChoice) {
-      next._savedChoiceState = {
-        options: deepClone(field.options),
-        childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : undefined
-      };
-      delete next.options;
-      delete next.childrenByValue;
-    } else {
-      delete next.options;
-    }
+    saveAndClearChoiceState(next, field, oldIsChoice);
   } else if (newType === MESSAGE_TYPE) {
     // メッセージへの変更
     delete next.pattern;
     delete next.defaultNow;
-    delete next.required; // メッセージタイプは必須なし
-
-    if (oldIsChoice) {
-      next._savedChoiceState = {
-        options: deepClone(field.options),
-        childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : undefined
-      };
-      delete next.options;
-      delete next.childrenByValue;
-    } else {
-      delete next.options;
-    }
+    delete next.required;
+    saveAndClearChoiceState(next, field, oldIsChoice);
   } else {
     // テキスト、テキストエリア、数値への変更
     delete next.pattern;
     delete next.defaultNow;
-
-    if (oldIsChoice) {
-      next._savedChoiceState = {
-        options: deepClone(field.options),
-        childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : undefined
-      };
-      delete next.options;
-      delete next.childrenByValue;
-    } else {
-      delete next.options;
-    }
+    saveAndClearChoiceState(next, field, oldIsChoice);
   }
 
   applyDisplayMode(next, resolveDisplayModeForType(newType, wasDisplayed));
@@ -283,7 +230,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
   const canAddChild = depth < MAX_DEPTH;
   const regexCheck = isRegex ? buildSafeRegex(field.pattern || "") : { error: null };
   const [selectedOptionIndex, setSelectedOptionIndex] = React.useState(null);
-  const displayMode = getDisplayMode(field);
+  const displayMode = resolveFieldDisplayMode(field);
   const isDisplayed = displayMode !== DISPLAY_MODES.NONE;
   const handleDisplayToggle = (checked) => {
     const nextField = { ...field };
