@@ -46,6 +46,19 @@ export const SETTINGS_GROUPS = [
       },
     ],
   },
+  {
+    key: "access",
+    label: "アクセス制御",
+    fields: [
+      {
+        key: "showOwnRecordsOnly",
+        label: "自分の回答のみ表示",
+        type: "checkbox",
+        required: false,
+        description: "ONにすると、検索画面で自分が編集したレコードのみ表示されます（管理者は全件表示）",
+      },
+    ],
+  },
 ];
 
 // 後方互換のためフラット配列もエクスポート

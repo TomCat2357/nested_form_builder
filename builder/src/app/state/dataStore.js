@@ -64,6 +64,7 @@ const getSheetConfig = (form) => {
 const mapSheetRecordToEntry = (record, formId) => ({
   id: record.id,
   "No.": record["No."],
+  modifiedBy: record.modifiedBy || "",
   formId,
   createdAt: record.createdAt,
   modifiedAt: record.modifiedAt,

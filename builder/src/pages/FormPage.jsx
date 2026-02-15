@@ -41,6 +41,11 @@ export default function FormPage() {
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
 
+  const entryIds = location.state?.entryIds || [];
+  const currentIndex = entryId ? entryIds.indexOf(entryId) : -1;
+  const hasPrev = currentIndex > 0;
+  const hasNext = currentIndex >= 0 && currentIndex < entryIds.length - 1;
+
   useEffect(() => {
     setMode(entryId ? "view" : "edit");
   }, [entryId]);
@@ -276,14 +281,43 @@ export default function FormPage() {
     );
   }
 
+  const navigateToEntry = (targetEntryId) => {
+    if (isDirty) {
+      setConfirmState({ open: true, intent: `navigate:${targetEntryId}` });
+      return;
+    }
+    navigate(`/form/${formId}/entry/${targetEntryId}`, {
+      state: { from: location.state?.from, entryIds },
+      replace: true,
+    });
+  };
+
   const handleConfirmAction = async (action) => {
+    const intent = confirmState.intent;
     setConfirmState({ open: false, intent: null });
     if (action === "discard") {
-      navigateBack();
+      if (intent && intent.startsWith("navigate:")) {
+        const targetEntryId = intent.slice("navigate:".length);
+        navigate(`/form/${formId}/entry/${targetEntryId}`, {
+          state: { from: location.state?.from, entryIds },
+          replace: true,
+        });
+      } else {
+        navigateBack();
+      }
       return;
     }
     if (action === "save") {
-      await triggerSave({ redirect: true });
+      if (intent && intent.startsWith("navigate:")) {
+        const targetEntryId = intent.slice("navigate:".length);
+        await triggerSave();
+        navigate(`/form/${formId}/entry/${targetEntryId}`, {
+          state: { from: location.state?.from, entryIds },
+          replace: true,
+        });
+      } else {
+        await triggerSave({ redirect: true });
+      }
     }
   };
 
@@ -337,6 +371,20 @@ export default function FormPage() {
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => attemptLeave("cancel")}>
                 キャンセル
               </button>
+            </>
+          )}
+          {entryIds.length > 0 && (
+            <>
+              <hr className="nf-sidebar-divider" />
+              <div className="nf-flex nf-gap-8 nf-items-center">
+                <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={!hasPrev} onClick={() => navigateToEntry(entryIds[currentIndex - 1])}>
+                  ← 前へ
+                </button>
+                <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={!hasNext} onClick={() => navigateToEntry(entryIds[currentIndex + 1])}>
+                  次へ →
+                </button>
+              </div>
+              <span className="nf-text-11 nf-text-muted">{currentIndex + 1} / {entryIds.length}</span>
             </>
           )}
         </>

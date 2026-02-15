@@ -376,6 +376,14 @@ export default function AdminFormEditorPage() {
                         </option>
                       ))}
                     </select>
+                  ) : field.type === "checkbox" ? (
+                    <label className="nf-flex nf-align-center nf-gap-8">
+                      <input
+                        type="checkbox"
+                        checked={!!localSettings[field.key]}
+                        onChange={(event) => handleSettingsChange(field.key, event.target.checked)}
+                      />
+                    </label>
                   ) : (
                     <input
                       className="nf-input"

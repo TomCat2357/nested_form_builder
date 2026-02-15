@@ -8,6 +8,7 @@ const AuthContext = createContext({
   isAdmin: true,
   formId: "",
   authError: "",
+  userEmail: "",
 });
 
 /**
@@ -30,7 +31,11 @@ export function AuthProvider({ children }) {
       ? String(window.__AUTH_ERROR__)
       : "";
 
-    return { isAdmin, formId, authError };
+    const userEmail = typeof window !== "undefined" && window.__USER_EMAIL__
+      ? String(window.__USER_EMAIL__)
+      : "";
+
+    return { isAdmin, formId, authError, userEmail };
   }, []);
 
   return (
@@ -42,7 +47,7 @@ export function AuthProvider({ children }) {
 
 /**
  * 認証情報を取得するフック
- * @returns {{ isAdmin: boolean, formId: string, authError: string }}
+ * @returns {{ isAdmin: boolean, formId: string, authError: string, userEmail: string }}
  */
 export function useAuth() {
   return useContext(AuthContext);

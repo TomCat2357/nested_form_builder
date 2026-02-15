@@ -19,6 +19,7 @@ function doGet(e) {
     'window.__IS_ADMIN__ = ' + (authResult.isAdmin ? 'true' : 'false') + ';' +
     'window.__FORM_ID__ = "' + authResult.formId + '";' +
     'window.__AUTH_ERROR__ = "' + authResult.authError + '";' +
+    'window.__USER_EMAIL__ = "' + (Session.getActiveUser().getEmail() || "") + '";' +
     '</script>';
   htmlContent = htmlContent.replace('</head>', injectedScript + '</head>');
 
@@ -157,6 +158,7 @@ function SerializeRecord_(record) {
   return {
     id: String(record.id || ""),
     "No.": record["No."] != null ? record["No."] : "",
+    modifiedBy: record.modifiedBy || "",
     createdAt: createdValue,
     modifiedAt: modifiedValue,
     createdAtUnixMs: createdInfo.unixMs,

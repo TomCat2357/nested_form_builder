@@ -1,5 +1,5 @@
 var NFB_HEADER_DEPTH = 6;
-var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"]];
+var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["modifiedBy"]];
 var NFB_TZ = "Asia/Tokyo"; // 想定タイムゾーン（JST固定）
 var NFB_MS_PER_DAY = 24 * 60 * 60 * 1000;
 var NFB_SHEETS_EPOCH_MS = new Date(1899, 11, 30, 0, 0, 0).getTime();
@@ -162,7 +162,7 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
     Sheets_applyTemporalFormatToColumn_(sheet, modifiedAtIndex, values, dataRowCount, dateTimeFormat);
   }
 
-  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true };
+  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "modifiedBy": true };
   var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];
@@ -498,11 +498,13 @@ function Sheets_createNewRow_(sheet, id) {
   }
 
   var nowSerial = Sheets_dateToSerial_(now);
+  var email = Session.getActiveUser().getEmail() || "";
 
   sheet.getRange(rowIndex, 1).setValue(String(nextId));
   sheet.getRange(rowIndex, 2).setValue(String(maxNo + 1));
   sheet.getRange(rowIndex, 3).setValue(nowSerial);
   sheet.getRange(rowIndex, 4).setValue(nowSerial);
+  sheet.getRange(rowIndex, 5).setValue(email);
 
   return { rowIndex: rowIndex, id: nextId };
 }
@@ -510,7 +512,9 @@ function Sheets_createNewRow_(sheet, id) {
 function Sheets_updateExistingRow_(sheet, rowIndex) {
   Sheets_ensureRowCapacity_(sheet, rowIndex);
   var nowSerial = Sheets_dateToSerial_(new Date());
+  var email = Session.getActiveUser().getEmail() || "";
   sheet.getRange(rowIndex, 4).setValue(nowSerial);
+  sheet.getRange(rowIndex, 5).setValue(email);
 }
 
 function Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys) {
@@ -599,13 +603,14 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     "No.": rowData[1] || "",
     createdAt: rowData[2] || "",
     modifiedAt: rowData[3] || "",
+    modifiedBy: rowData[4] || "",
     createdAtUnixMs: Sheets_toUnixMs_(rowData[2], true),
     modifiedAtUnixMs: Sheets_toUnixMs_(rowData[3], true),
     data: {},
     dataUnixMs: {}
   };
 
-  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true };
+  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "modifiedBy": true };
 
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];

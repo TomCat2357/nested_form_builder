@@ -37,7 +37,7 @@ const buildInitialSort = (params) => {
 export default function SearchPage() {
   const { getFormById } = useAppData();
   const { settings } = useBuilderSettings();
-  const { isAdmin } = useAuth();
+  const { isAdmin, userEmail } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -111,11 +111,18 @@ export default function SearchPage() {
 
   const processedEntries = useMemo(() => entries.map((entry) => ({ entry, values: computeRowValues(entry, columns) })), [entries, columns]);
 
+  const ownerFilteredEntries = useMemo(() => {
+    if (isAdmin) return processedEntries;
+    if (!form?.settings?.showOwnRecordsOnly) return processedEntries;
+    if (!userEmail) return processedEntries;
+    return processedEntries.filter((row) => row.entry?.modifiedBy === userEmail);
+  }, [processedEntries, isAdmin, userEmail, form?.settings?.showOwnRecordsOnly]);
+
   const filteredEntries = useMemo(() => {
     const keyword = query.trim();
-    if (!keyword) return processedEntries;
-    return processedEntries.filter((row) => matchesKeyword(row, columns, keyword));
-  }, [processedEntries, columns, query]);
+    if (!keyword) return ownerFilteredEntries;
+    return ownerFilteredEntries.filter((row) => matchesKeyword(row, columns, keyword));
+  }, [ownerFilteredEntries, columns, query]);
 
   const sortedEntries = useMemo(() => {
     const list = filteredEntries.slice();
@@ -143,8 +150,9 @@ export default function SearchPage() {
 
   const handleRowClick = (entryId) => {
     if (!formId) return;
+    const entryIds = sortedEntries.map((row) => row.entry.id);
     navigate(`/form/${formId}/entry/${entryId}`, {
-      state: { from: `${location.pathname}${location.search}` },
+      state: { from: `${location.pathname}${location.search}`, entryIds },
     });
   };
 
