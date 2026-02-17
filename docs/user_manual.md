@@ -157,8 +157,11 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
    - **フォーム名**: フォームの識別名（例: 「顧客満足度調査」）
    - **説明**: フォームの目的や概要（任意）
    - **Google Drive保存先URL**: フォームデータを保存するGoogle DriveのフォルダまたはファイルURL（オプション）
-     - 例: `https://drive.google.com/drive/folders/1prBDiRinhAw2mRJir_1BwGv4tSINJc28`
-
+      - フォルダURLを設定した場合: そのフォルダ内に適当なファイル名でこのフォームが保存されます。
+      - ファイルURLを設定した場合: そのファイルにこのフォームが保存されます。
+※設定しない場合は、ルートディレクトリに保存されます。（後で移動できます）
+    　　
+   
 #### Step 2: Google Sheetsと連携
 
 フォームの回答を保存するGoogle Sheetsを設定します。
@@ -167,7 +170,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 2. **Spreadsheet ID / URL** フィールドに以下のいずれかの形式で貼り付けます：
    - フルURL: `https://docs.google.com/spreadsheets/d/1Lj48NIuhyyc85MmrkxDjGnmTNQbxcAjUJf6Gu3faH-M/edit`
    - スプレッドシートID: `1Lj48NIuhyyc85MmrkxDjGnmTNQbxcAjUJf6Gu3faH-M`
-3. **Sheet Name** を指定（デフォルト: `Responses`）
+3. **Sheet Name** を指定（デフォルト: `Data`）
 
 > **💡 ヒント**: スプレッドシートIDは、Google SheetsのURLの `/d/` と `/edit` の間にある長い文字列です（例: `1Lj48NIuhyyc85MmrkxDjGnmTNQbxcAjUJf6Gu3faH-M`）。
 
@@ -175,6 +178,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 - **1画面あたりの表示件数**: 検索結果の1ページあたりの表示件数（デフォルト: 20）
 - **検索結果テーブルの最大幅（px）**: テーブルの最大幅を指定（任意）
+**※空白だと、可変のテーブル幅** 
 - **検索結果セルの表示文字数上限**: セル内の文字数上限を指定（任意）
 
 #### フォーム編集画面の構成

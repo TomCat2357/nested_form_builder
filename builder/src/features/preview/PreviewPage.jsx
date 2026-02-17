@@ -166,7 +166,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
       {field.type === "date" && (
         <input
           type="date"
-          value={value ?? (field.defaultNow ? formatDateLocal(new Date()) : "")}
+          value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
           className={s.input.className}
         />
@@ -175,7 +175,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
       {field.type === "time" && (
         <input
           type="time"
-          value={value ?? (field.defaultNow ? formatTimeLocal(new Date()) : "")}
+          value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
           className={s.input.className}
         />
