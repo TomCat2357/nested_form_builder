@@ -1,10 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_SETTINGS, loadSettingsFromStorage, saveSettingsToStorage } from "../../core/storage.js";
-import { hasScriptRun, loadUserSettings, saveUserSettings } from "../../services/gasClient.js";
 import { DEFAULT_THEME, setTheme } from "../../app/theme/theme.js";
 
 export const useBuilderSettings = () => {
-  const scriptRunAvailable = hasScriptRun();
   const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS });
   const [loadingLocal, setLoadingLocal] = useState(true);
   const defaultsRef = useRef({ ...DEFAULT_SETTINGS });
@@ -30,46 +28,11 @@ export const useBuilderSettings = () => {
   }, []);
 
   useEffect(() => {
-    if (!scriptRunAvailable) return;
-    let active = true;
-    (async () => {
-      try {
-        const remote = await loadUserSettings();
-        if (!active) return;
-        if (remote && typeof remote === "object") {
-          defaultsRef.current = { ...DEFAULT_SETTINGS, ...remote };
-          setSettings((prev) => {
-            const merged = { ...defaultsRef.current, ...prev };
-            if (remote?.theme && prev?.theme === DEFAULT_SETTINGS.theme) {
-              merged.theme = remote.theme;
-            }
-            return merged;
-          });
-        }
-      } catch (error) {
-        console.warn("[settings] failed to load user settings", error);
-      } finally {
-        if (active) {
-          // remote load finished
-        }
-      }
-    })();
-    return () => {
-      active = false;
-    };
-  }, [scriptRunAvailable, defaultsRef]);
-
-  useEffect(() => {
     if (loadingLocal) return;
     (async () => {
       await saveSettingsToStorage(settings);
     })();
-    if (scriptRunAvailable) {
-      saveUserSettings(settings).catch((error) => {
-        console.warn("[settings] failed to save user settings", error);
-      });
-    }
-  }, [settings, loadingLocal, scriptRunAvailable]);
+  }, [settings, loadingLocal]);
 
   useEffect(() => {
     if (loadingLocal) return;

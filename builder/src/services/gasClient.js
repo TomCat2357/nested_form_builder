@@ -37,28 +37,6 @@ export const validateSpreadsheet = async (spreadsheetIdOrUrl) => {
   return result;
 };
 
-export const loadUserSettings = async () => {
-  if (!hasScriptRun()) return null;
-  try {
-    const result = await callScriptRun("nfbLoadUserSettings");
-    if (result && typeof result === "object") return result;
-    return null;
-  } catch (error) {
-    console.warn("[gasClient] loadUserSettings failed", error);
-    return null;
-  }
-};
-
-export const saveUserSettings = async (settings) => {
-  if (!hasScriptRun()) return null;
-  try {
-    const result = await callScriptRun("nfbSaveUserSettings", settings || {});
-    return result && typeof result === "object" ? result : null;
-  } catch (error) {
-    console.warn("[gasClient] saveUserSettings failed", error);
-    return null;
-  }
-};
 
 export const submitResponses = async ({ spreadsheetId, sheetName = "Data", payload }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");

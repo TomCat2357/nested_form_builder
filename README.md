@@ -412,6 +412,39 @@ npx playwright test
 - 固定列: `id`, `No.`, `createdAt`, `modifiedAt`
 - 動的列: 質問パスに基づく列（例: `parent|child|question`）
 
+### 保存先まとめ
+
+#### IndexedDB（DB名: `NestedFormBuilder`）
+
+| ストア名 | 何を保存するか | キー例 |
+|---|---|---|
+| `settingsStore` | ビルダー設定（pageSize、spreadsheetId 等） | `nested_form_builder_settings_v1` |
+| `settingsStore` | 選択中テーマ名 | `nested_form_builder_theme` |
+| `settingsStore` | カスタムテーマ一覧（CSS・URL を含む） | `nested_form_builder_theme_custom_list_v1` |
+| `formsCache` | フォーム一覧のローカルキャッシュ | formId |
+| `recordsCache` | レコードのローカルキャッシュ | entryId |
+| `recordsCacheMeta` | キャッシュのメタ情報 | formId |
+
+#### GAS ScriptProperties
+
+| キー | 何を保存するか |
+|---|---|
+| `nfb.forms.mapping` | formId → Google Drive ファイル ID/URL のマッピング |
+| `FORM_URLS_MAP` | 同上（旧形式、レガシー） |
+| `ADMIN_KEY` | 管理者キー |
+
+#### Google Drive（JSON ファイル）
+
+| 何 | 詳細 |
+|---|---|
+| フォームの構造データ本体 | `form_xxx.json`。スキーマ・設定（spreadsheetId 等）を含む |
+
+#### Google Sheets（スプレッドシート）
+
+| 何 | 詳細 |
+|---|---|
+| 回答レコード | フォームデータ内の `settings.spreadsheetId` が指すスプレッドシート |
+
 ## 検索機能
 
 高度な検索クエリをサポート：
