@@ -26,7 +26,7 @@ Nested Form Builderは、階層構造を持つアンケートフォームを視�
 ### 主な機能
 
 - **ビジュアルエディタ**: 直感的な操作で簡単にフォームを作成
-- **ネスト構造**: 条件に応じて次の質問を表示（最大6階層）
+- **多段構造**: 条件に応じて次の質問を表示（最大6階層）
 - **多様な質問タイプ**: テキスト、数値、日付、選択肢、チェックボックス、メッセージなど
 - **Google Sheets連携**: 回答を自動的にスプレッドシートに保存
 - **高度な検索機能**: AND/OR検索、比較演算、正規表現をサポート
@@ -47,7 +47,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 1. 管理者から提供されたWebアプリURLにアクセス
    - 例: `https://script.google.com/macros/s/AKfycbz.../exec`
-2. または、プロジェクトルートの `.gas-deployment.json` ファイルで確認できます
+
 
 > **💡 ヒント**: URLをブックマークしておくと、次回から簡単にアクセスできます。
 
@@ -61,7 +61,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 ブラウザでアクセスすると最初に表示されるメイン画面です。
 
-![フォーム一覧画面](images/01_form_list.png)
+![フォーム一覧画面](user_manual_images/01_form_list.png)
 
 | エリア | 説明 |
 |--------|------|
@@ -76,7 +76,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 フォーム一覧画面の左サイドバーにある「設定」ボタンから開きます。
 
-![設定画面](images/settings.png)
+![設定画面](user_manual_images/settings.png)
 
 | 設定項目 | 説明 |
 |----------|------|
@@ -91,7 +91,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 「フォーム管理へ」ボタンから開きます。フォームの作成・編集・管理を行う画面です。
 
-![フォーム管理画面](images/03_form_management.png)
+![フォーム管理画面](user_manual_images/03_form_management.png)
 
 **左サイドバーのアクションボタン**:
 
@@ -119,7 +119,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 フォーム管理画面で「新規作成」またはフォーム名をクリックすると開きます。
 
-![フォーム編集画面（基本情報）](images/form_editor_top.png)
+![フォーム編集画面（基本情報）](user_manual_images/form_editor_top.png)
 
 | エリア | 説明 |
 |--------|------|
@@ -133,7 +133,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 フォーム一覧画面でフォームカードをクリックすると表示されます。
 
-![検索画面](images/05_search_screen.png)
+![検索画面](user_manual_images/05_search_screen.png)
 
 **左サイドバー**:
 
@@ -154,7 +154,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 検索画面の「新規入力」ボタン、またはテーブルのレコードをクリックすると開きます。
 
-![フォーム入力画面](images/06_form_input.png)
+![フォーム入力画面](user_manual_images/06_form_input.png)
 
 | エリア | 説明 |
 |--------|------|
@@ -243,7 +243,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 ### 3.5 質問タイプ一覧
 
-![質問タイプドロップダウン](images/07_question_type_dropdown.png)
+![質問タイプドロップダウン](user_manual_images/07_question_type_dropdown.png)
 
 | タイプ | 説明 | 使用例 |
 |--------|------|--------|
@@ -265,7 +265,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 「スタイル設定」チェックボックスをオンにすると設定可能です。
 
-![スタイル設定](images/08_style_settings_expanded.png)
+![スタイル設定](user_manual_images/08_style_settings_expanded.png)
 
 | 設定項目 | 選択肢 |
 |----------|--------|
@@ -276,7 +276,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 「プレースホルダー」チェックボックスをオンにすると、入力欄にヒントテキストを表示できます。
 
-![プレースホルダー設定](images/09_placeholder_settings.png)
+![プレースホルダー設定](user_manual_images/09_placeholder_settings.png)
 
 - **対応タイプ**: テキスト、テキスト（複数行）、数値、正規表現、URL
 - **例**: 「例: 03-1234-5678」「お名前を入力してください」
@@ -297,7 +297,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 **選択肢タイプ（ラジオ/チェックボックス/ドロップダウン）**:
 
-![選択肢設定](images/11_radio_options_settings.png)
+![選択肢設定](user_manual_images/11_radio_options_settings.png)
 
 1. 「選択肢」セクションで **「選択肢を追加」** をクリックして選択肢を入力
 2. 各選択肢に **「子質問追加」** ボタンが表示され、選択肢ごとに異なる子質問を追加可能
@@ -310,7 +310,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 ### 3.7 ネスト構造と条件分岐
 
-![ネスト構造の例](images/10_nested_question_added.png)
+![ネスト構造の例](user_manual_images/10_nested_question_added.png)
 
 #### 基本的なネスト構造
 
@@ -344,7 +344,7 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 
 「プレビュー」ボタンをクリックすると、実際のフォームの見た目を確認できます。
 
-![プレビュー画面](images/07_preview.png)
+![プレビュー画面](user_manual_images/07_preview.png)
 
 - フォームの見た目を確認
 - テスト入力して動作確認
@@ -493,6 +493,21 @@ Nested Form Builderは、Google Apps ScriptでデプロイされたWebアプリ�
 > ⚠️ **注意**: 削除したレコードは復元できません。
 
 ---
+## とりあえずやってみよう
+### 6.1 フォームをつくってみよう
+
+1. フォーム一覧画面（初期画面）で「フォーム管理へ」ボタンを押す
+![alt text](image-1.png)
+<br><br>
+
+2. 「新規作成」ボタンを押す
+![alt text](image-2.png)
+<br><br>
+
+3. フォームの情報を入れていく
+![alt text](image-3.png)
+
+---
 
 ## よくある質問
 
@@ -597,13 +612,8 @@ Google Sheetsから直接Excelファイルをダウンロードできます：
 
 ---
 
-## さらに詳しい情報
 
-- **技術仕様書**: `docs/SPECIFICATIONS.md`
-- **検索機能の詳細**: `docs/検索機能の使い方.md`
-- **開発者向けガイド**: `CLAUDE.md`
 
----
 
 ## サポート
 
@@ -618,3 +628,4 @@ Google Sheetsから直接Excelファイルをダウンロードできます：
 
 **最終更新**: 2026年2月18日
 **作成**: Nested Form Builder Development Team
+

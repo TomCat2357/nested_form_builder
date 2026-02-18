@@ -230,6 +230,10 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
   const canAddChild = depth < MAX_DEPTH;
   const regexCheck = isRegex ? buildSafeRegex(field.pattern || "") : { error: null };
   const [selectedOptionIndex, setSelectedOptionIndex] = React.useState(null);
+  const latestFieldRef = React.useRef(field);
+  const latestOnChangeRef = React.useRef(onChange);
+  latestFieldRef.current = field;
+  latestOnChangeRef.current = onChange;
   const displayMode = resolveFieldDisplayMode(field);
   const isDisplayed = displayMode !== DISPLAY_MODES.NONE;
   const handleDisplayToggle = (checked) => {
@@ -246,18 +250,22 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
   }, []);
 
   const moveOptionUp = (index) => {
-    if (index === 0) return;
-    const next = deepClone(field);
+    const currentField = latestFieldRef.current;
+    if (!Array.isArray(currentField?.options)) return;
+    if (index <= 0 || index >= currentField.options.length) return;
+    const next = deepClone(currentField);
     [next.options[index - 1], next.options[index]] = [next.options[index], next.options[index - 1]];
-    onChange(next);
+    latestOnChangeRef.current(next);
     setSelectedOptionIndex(index - 1);
   };
 
   const moveOptionDown = (index) => {
-    if (index === field.options.length - 1) return;
-    const next = deepClone(field);
+    const currentField = latestFieldRef.current;
+    if (!Array.isArray(currentField?.options)) return;
+    if (index < 0 || index >= currentField.options.length - 1) return;
+    const next = deepClone(currentField);
     [next.options[index], next.options[index + 1]] = [next.options[index + 1], next.options[index]];
-    onChange(next);
+    latestOnChangeRef.current(next);
     setSelectedOptionIndex(index + 1);
   };
 
