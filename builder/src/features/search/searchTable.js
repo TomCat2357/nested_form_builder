@@ -186,6 +186,33 @@ const buildSearchableCandidates = (key, value, unixMs = undefined) => {
   return candidates;
 };
 
+const resolveChoiceDisplayValue = (path, rawValue, column) => {
+  const type = columnType(column);
+  if (type !== "radio" && type !== "select") return rawValue;
+  if (!toBooleanLike(rawValue)) return rawValue;
+  const choiceLabels = deriveChoiceLabels(path, rawValue);
+  if (!choiceLabels?.optionLabel) return rawValue;
+  return choiceLabels.optionLabel;
+};
+
+const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
+
+const collectDirectOptionLabels = (data, path) => {
+  const optionValues = [];
+  const prefix = `${path}|`;
+  Object.entries(data).forEach(([key, value]) => {
+    if (!key.startsWith(prefix) || key === path) return;
+    const remainder = key.slice(prefix.length);
+    if (!remainder) return;
+    const [head, ...rest] = remainder.split("|");
+    if (!head || rest.length > 0) return;
+    if (toBooleanLike(value)) {
+      optionValues.push(head);
+    }
+  });
+  return optionValues;
+};
+
 const deriveBooleanValue = (rawValues) => toBooleanLike(rawValues.length ? rawValues : undefined);
 
 const resolveSortValue = ({ rawValues, display, dataUnixMs, path, column }) => {
@@ -213,7 +240,8 @@ const collectImportantFieldValue = (entry, path, column) => {
   const values = [];
   const rawValues = [];
   const addValue = (raw, unixMs) => {
-    const display = formatTemporalValue(raw, unixMs, column);
+    const normalizedRaw = resolveChoiceDisplayValue(path, raw, column);
+    const display = formatTemporalValue(normalizedRaw, unixMs, column);
     if (display === "" || display === null || display === undefined) return;
     values.push(display);
     rawValues.push(raw);
@@ -221,25 +249,21 @@ const collectImportantFieldValue = (entry, path, column) => {
 
   // 直接値がある場合はそれを優先
   const hasDirectValue = Object.prototype.hasOwnProperty.call(data, path);
+  const optionValues = collectDirectOptionLabels(data, path);
 
   if (hasDirectValue) {
-    addValue(data[path], dataUnixMs[path]);
+    const directValue = data[path];
+    const shouldPreferOptionLabels =
+      (columnType(column) === "radio" || columnType(column) === "select") &&
+      isChoiceMarkerValue(directValue) &&
+      optionValues.length > 0;
+    if (shouldPreferOptionLabels) {
+      optionValues.forEach((v) => addValue(v));
+    } else {
+      addValue(directValue, dataUnixMs[path]);
+    }
   } else {
     // 直接値がない場合のみ、option値を探す
-    const prefix = `${path}|`;
-    const optionValues = [];
-    Object.entries(data).forEach(([key, value]) => {
-      if (!key.startsWith(prefix) || key === path) return;
-      const remainder = key.slice(prefix.length);
-      if (!remainder) return;
-      const [head, ...rest] = remainder.split("|");
-      if (!head || rest.length > 0) return;
-      if (toBooleanLike(value)) {
-        // チェックボックスの場合はラベル(head)を表示・検索・ソート用に使用
-        optionValues.push(head);
-      }
-    });
-
     if (optionValues.length) {
       // 値を表示用文字列に変換して追加
       optionValues.forEach((v) => addValue(v));
@@ -318,25 +342,28 @@ const collectCompactFieldValue = (entry, path, column) => {
   const rawValues = [];
 
   const addValue = (raw, unixMs) => {
-    const display = formatTemporalValue(raw, unixMs, column);
+    const normalizedRaw = resolveChoiceDisplayValue(path, raw, column);
+    const display = formatTemporalValue(normalizedRaw, unixMs, column);
     if (display === "" || display === null || display === undefined) return;
     values.push(display);
     rawValues.push(raw);
   };
 
   const hasDirectValue = Object.prototype.hasOwnProperty.call(data, path);
+  const optionValues = collectDirectOptionLabels(data, path);
   if (hasDirectValue) {
-    addValue(data[path], dataUnixMs[path]);
+    const directValue = data[path];
+    const shouldPreferOptionLabels =
+      (columnType(column) === "radio" || columnType(column) === "select") &&
+      isChoiceMarkerValue(directValue) &&
+      optionValues.length > 0;
+    if (shouldPreferOptionLabels) {
+      optionValues.forEach((v) => addValue(v));
+    } else {
+      addValue(directValue, dataUnixMs[path]);
+    }
   } else {
-    const prefix = `${path}|`;
-    Object.entries(data).forEach(([key, value]) => {
-      if (!key.startsWith(prefix) || key === path) return;
-      const remainder = key.slice(prefix.length);
-      if (!remainder || remainder.includes("|")) return;
-      if (toBooleanLike(value)) {
-        addValue(remainder);
-      }
-    });
+    optionValues.forEach((v) => addValue(v));
   }
 
   const display = values.join("、");
