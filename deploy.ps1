@@ -1,8 +1,9 @@
 # Google AppSheetスタイル データ管理アプリ デプロイスクリプト (PowerShell版)
-# Usage: .\deploy.ps1 [--manifest-override <path>] [-h|--help]
+# Usage: .\deploy.ps1 [--manifest-override <path>] [-BundleOnly] [-h|--help]
 
 param(
     [string]$ManifestOverride = "",
+    [switch]$BundleOnly,
     [switch]$h,
     [switch]$Help
 )
@@ -15,6 +16,7 @@ Usage: .\deploy.ps1 [options]
 
 Options:
   --manifest-override <path>  指定したJSONファイルで gas/appsscript.json を上書きしてから push/deploy します。
+  -BundleOnly                 ビルド＆バンドルのみ実行（clasp push/deploy はスキップ）。credential不要。
   -h, --help                  このヘルプを表示します。
 "@
 }
@@ -24,7 +26,11 @@ if ($h -or $Help) {
     exit 0
 }
 
-Write-Host "🚀 Google AppSheetスタイル データ管理アプリのデプロイを開始します..." -ForegroundColor Cyan
+if ($BundleOnly) {
+    Write-Host "🔧 BundleOnly モード: ビルド＆バンドルのみ実行します（clasp不要）" -ForegroundColor Cyan
+} else {
+    Write-Host "🚀 Google AppSheetスタイル データ管理アプリのデプロイを開始します..." -ForegroundColor Cyan
+}
 
 # 既存デプロイ情報の読み込み
 $DeployCacheFile = ".gas-deployment.json"
@@ -140,6 +146,13 @@ if ($ManifestOverride -ne "") {
     Write-Host "   - dist/appsscript.json (GAS設定, overrides: $ManifestOverride)"
 } else {
     Write-Host "   - dist/appsscript.json (GAS設定)"
+}
+
+# BundleOnlyモードの場合はここで終了
+if ($BundleOnly) {
+    Write-Host ""
+    Write-Host "✅ BundleOnly モード: ビルド＆バンドルが完了しました（clasp push/deploy はスキップ）" -ForegroundColor Green
+    exit 0
 }
 
 # プロジェクトをプッシュ
