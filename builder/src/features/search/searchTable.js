@@ -757,8 +757,8 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
         cellValue = "";
       }
 
-      // ラジオ/セレクトの選択肢行はヘッダー表示しない（データ側で表示されるため）
-      if (mappedColumn?.sourceType && (mappedColumn.sourceType === "radio" || mappedColumn.sourceType === "select")) {
+      // 選択系（ラジオ/セレクト/チェックボックス）の選択肢行はヘッダー表示しない（データ側で表示されるため）
+      if (mappedColumn?.sourceType && (mappedColumn.sourceType === "radio" || mappedColumn.sourceType === "select" || mappedColumn.sourceType === "checkboxes")) {
         const fullPath = columnFullPaths[i] || "";
         const segments = splitFieldPath(fullPath);
         const expectedLabel = segments[rowIndex] || "";
