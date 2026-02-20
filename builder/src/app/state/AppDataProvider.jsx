@@ -7,8 +7,41 @@ import {
   FORM_CACHE_BACKGROUND_REFRESH_MS,
 } from "./cachePolicy.js";
 import { perfLogger } from "../../utils/perfLogger.js";
+import { computeSchemaHash } from "../../core/schema.js";
+import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
+import { omitThemeSetting } from "../../utils/settings.js";
+import { genId } from "../../core/ids.js";
 
 const AppDataContext = createContext(null);
+
+const buildOptimisticForm = (source = {}, { fallbackId = genId(), fallbackCreatedAt = Date.now() } = {}) => {
+  const schema = Array.isArray(source.schema) ? source.schema : [];
+  const displayFieldSettings = collectDisplayFieldSettings(schema);
+  const createdAt = Number.isFinite(source.createdAt)
+    ? source.createdAt
+    : (Number.isFinite(source.createdAtUnixMs) ? source.createdAtUnixMs : fallbackCreatedAt);
+  const settings = omitThemeSetting(source.settings || {});
+  if (!settings.formTitle) {
+    settings.formTitle = source.name || "無題のフォーム";
+  }
+
+  return {
+    ...source,
+    id: source.id || fallbackId,
+    description: source.description || "",
+    schema,
+    settings,
+    schemaHash: computeSchemaHash(schema),
+    displayFieldSettings,
+    importantFields: displayFieldSettings.map((item) => item.path),
+    createdAt,
+    createdAtUnixMs: createdAt,
+    modifiedAt: Date.now(),
+    modifiedAtUnixMs: Date.now(),
+    archived: !!source.archived,
+    schemaVersion: Number.isFinite(source.schemaVersion) ? source.schemaVersion : 1,
+  };
+};
 
 /**
  * Helper to save forms cache with consistent error handling
@@ -206,15 +239,40 @@ export function AppDataProvider({ children }) {
   }, []);
 
   const createForm = useCallback(async (payload, targetUrl) => {
-    const result = await dataStore.createForm(payload, targetUrl);
-    await upsertFormsState(result);
-    return result;
+    const optimisticForm = buildOptimisticForm(payload);
+    await upsertFormsState(optimisticForm);
+
+    void dataStore.createForm({ ...payload, id: optimisticForm.id, createdAt: optimisticForm.createdAt }, targetUrl)
+      .then((savedForm) => upsertFormsState(savedForm))
+      .catch((err) => {
+        console.error("[AppDataProvider] Background createForm failed:", err);
+      });
+
+    return optimisticForm;
   }, [upsertFormsState]);
 
   const updateForm = useCallback(async (formId, updates, targetUrl) => {
-    const result = await dataStore.updateForm(formId, updates, targetUrl);
-    await upsertFormsState(result);
-    return result;
+    const existing = formsRef.current.find((form) => form.id === formId) || {};
+    const optimisticForm = buildOptimisticForm({
+      ...existing,
+      ...updates,
+      id: formId,
+      createdAt: existing.createdAt,
+      createdAtUnixMs: existing.createdAtUnixMs,
+    }, {
+      fallbackId: formId,
+      fallbackCreatedAt: existing.createdAt || Date.now(),
+    });
+
+    await upsertFormsState(optimisticForm);
+
+    void dataStore.updateForm(formId, updates, targetUrl)
+      .then((savedForm) => upsertFormsState(savedForm))
+      .catch((err) => {
+        console.error("[AppDataProvider] Background updateForm failed:", err);
+      });
+
+    return optimisticForm;
   }, [upsertFormsState]);
 
   const archiveForm = useCallback(async (formId) => {
