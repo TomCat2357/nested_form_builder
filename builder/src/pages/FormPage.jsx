@@ -162,34 +162,33 @@ export default function FormPage() {
   const handleSaveToStore = async ({ payload }) => {
     if (!form) throw new Error("form_not_found");
 
-    // まずスプレッドシートに保存（主データソース）
+    // まずIndexedDBに即時保存（体感レスポンスを優先）
+    const saved = await dataStore.upsertEntry(form.id, {
+      id: payload.id,
+      data: payload.responses,
+      order: payload.order,
+    });
+
+    // スプレッドシート保存はバックグラウンドで継続
     const settings = form.settings || {};
     const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
     const sheetName = settings.sheetName || "Data";
 
-    let resolvedId = payload.id;
     if (spreadsheetId) {
       if (!hasScriptRun()) {
-        throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
-      }
-      const res = await submitResponses({
-        spreadsheetId,
-        sheetName,
-        payload,
-      });
-      if (res && res.id) {
-        resolvedId = res.id;
+        console.warn("[FormPage] google.script.run unavailable; skipped background spreadsheet save");
+      } else {
+        void submitResponses({
+          spreadsheetId,
+          sheetName,
+          payload: { ...payload, id: saved.id },
+        }).catch((error) => {
+          console.error("[FormPage] Background spreadsheet save failed:", error);
+        });
       }
     } else {
       console.warn("[FormPage] No spreadsheetId configured, skipping spreadsheet save");
     }
-
-    // 次にIndexedDBにキャッシュとして保存
-    const saved = await dataStore.upsertEntry(form.id, {
-      id: resolvedId,
-      data: payload.responses,
-      order: payload.order,
-    });
     setCurrentRecordId(saved.id);
     const restored = restoreResponsesFromData(normalizedSchema, saved.data || {}, saved.dataUnixMs || {});
     initialResponsesRef.current = restored;

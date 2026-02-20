@@ -172,8 +172,28 @@ export const dataStore = {
     return formWithUrl ? ensureDisplayInfo(formWithUrl) : record;
   },
   async updateForm(formId, updates, targetUrl = null) {
-    // First get the current form
-    const current = await this.getForm(formId);
+    // First get the current form. If GAS fetch fails, fallback to provided updates.
+    let current = null;
+    try {
+      current = await this.getForm(formId);
+    } catch (error) {
+      console.warn("[dataStore.updateForm] Failed to fetch current form, fallback to updates:", error);
+    }
+
+    if (!current) {
+      if (updates?.id || updates?.schema || updates?.settings) {
+        current = {
+          id: formId,
+          createdAt: updates.createdAt,
+          archived: updates.archived,
+          schemaVersion: updates.schemaVersion,
+          driveFileUrl: updates.driveFileUrl,
+          ...updates,
+        };
+      } else {
+        throw new Error("Current form not found");
+      }
+    }
 
     const next = buildFormRecord({
       ...current,
