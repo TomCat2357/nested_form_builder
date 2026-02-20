@@ -90,10 +90,7 @@ desktop.ini
 # =============================================================================
 
 # 画像ファイル
-*.png
-*.jpeg
-*.jpg
-
+tests/screenshots/
 # サンプル・例示用ファイル
 shared/schema_examples/
 samples/
