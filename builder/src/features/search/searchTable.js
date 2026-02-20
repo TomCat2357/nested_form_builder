@@ -16,10 +16,11 @@ const toBooleanLike = (value) => {
 };
 
 const columnType = (column) => column?.sourceType || column?.type || "";
-const isBooleanColumn = (column) => {
+const isChoiceColumn = (column) => {
   const type = columnType(column);
   return type === "checkboxes" || type === "radio" || type === "select";
 };
+const isBooleanSortColumn = (column) => columnType(column) === "checkboxes";
 const isNumericColumn = (column) => columnType(column) === "number";
 const isDateLikeColumn = (column) => {
   const type = columnType(column);
@@ -141,8 +142,10 @@ const formatTemporalValue = (rawValue, unixMs, column) => {
   return type === "time" ? formatUnixMsTime(ms) : formatUnixMsDate(ms);
 };
 
+const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
+
 const deriveChoiceLabels = (key, value) => {
-  if (!toBooleanLike(value)) return null;
+  if (!isChoiceMarkerValue(value)) return null;
   if (typeof key !== "string" || !key.includes("|")) return null;
 
   const segments = key.split("|").filter(Boolean);
@@ -189,13 +192,11 @@ const buildSearchableCandidates = (key, value, unixMs = undefined) => {
 const resolveChoiceDisplayValue = (path, rawValue, column) => {
   const type = columnType(column);
   if (type !== "radio" && type !== "select") return rawValue;
-  if (!toBooleanLike(rawValue)) return rawValue;
+  if (!isChoiceMarkerValue(rawValue)) return rawValue;
   const choiceLabels = deriveChoiceLabels(path, rawValue);
   if (!choiceLabels?.optionLabel) return rawValue;
   return choiceLabels.optionLabel;
 };
-
-const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
 
 const collectDirectOptionLabels = (data, path) => {
   const optionValues = [];
@@ -216,7 +217,8 @@ const collectDirectOptionLabels = (data, path) => {
 const deriveBooleanValue = (rawValues) => toBooleanLike(rawValues.length ? rawValues : undefined);
 
 const resolveSortValue = ({ rawValues, display, dataUnixMs, path, column }) => {
-  if (isBooleanColumn(column)) {
+  // radio/select はラベル文字列で並び替えるため、真偽値ソートは checkboxes のみに限定する
+  if (isBooleanSortColumn(column)) {
     return deriveBooleanValue(rawValues) ? 1 : 0;
   }
 
@@ -498,6 +500,7 @@ export const buildHeaderRows = (columns) => {
         colSpan,
         rowSpan: cell.rowSpan,
         startIndex: colIndex,
+        column: colSpan === 1 ? columns[colIndex] || null : null,
       });
 
       colIndex += colSpan;
@@ -538,7 +541,7 @@ const filterVisibleColumnIndices = (multiHeaderRows, columns) => {
     const baseColumn = matchBaseDisplayColumn(columns, fullPath);
     if (!baseColumn) continue;
 
-    if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT) {
+    if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT || isChoiceColumn(baseColumn)) {
       const basePath = baseColumn.path ? String(baseColumn.path) : "";
       if (!basePath || compactResolvedPaths.has(basePath)) {
         continue;
@@ -605,12 +608,13 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
     const baseColumn = matchBaseDisplayColumn(safeBaseColumns, fullPath);
     if (!baseColumn) continue;
 
-    if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT) {
+    if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT || isChoiceColumn(baseColumn)) {
       const basePath = baseColumn.path ? String(baseColumn.path) : "";
       if (!basePath || resolvedBasePaths.has(basePath)) {
         continue;
       }
-      pushColumn(createDisplayColumn(basePath, DISPLAY_MODES.COMPACT, baseColumn.sourceType));
+      const mergedMode = columnDisplayMode(baseColumn);
+      pushColumn(createDisplayColumn(basePath, mergedMode, baseColumn.sourceType));
       resolvedBasePaths.add(basePath);
       debugLog("buildColumnsFromHeaderMatrix:compact", { basePath, columnIndex: colIndex });
     } else {
@@ -681,8 +685,9 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
           if (!matchedColumn) {
             const baseColumn = matchBaseDisplayColumn(columns, fullPath);
             if (baseColumn) {
-              if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT) {
-                matchedColumn = createDisplayColumn(baseColumn.path, DISPLAY_MODES.COMPACT, baseColumn.sourceType);
+              if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT || isChoiceColumn(baseColumn)) {
+                const mergedMode = columnDisplayMode(baseColumn);
+                matchedColumn = createDisplayColumn(baseColumn.path, mergedMode, baseColumn.sourceType);
               } else {
                 matchedColumn = createDisplayColumn(fullPath, baseColumn.displayMode, baseColumn.sourceType);
               }
@@ -1206,7 +1211,7 @@ const resolveBooleanValueForRow = (row, column, columnName) => {
   if (column) {
     const cellValue = row?.values?.[column.key];
     if (typeof cellValue?.boolean === "boolean") return cellValue.boolean;
-    if (isBooleanColumn(column)) {
+    if (isChoiceColumn(column)) {
       if (cellValue?.sort === 1) return true;
       if (cellValue?.sort === 0) return false;
     }

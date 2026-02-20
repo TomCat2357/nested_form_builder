@@ -1,4 +1,4 @@
-# Google AppSheetスタイル データ管理アプリ デプロイスクリプト (PowerShell版)
+﻿# Google AppSheetスタイル データ管理アプリ デプロイスクリプト (PowerShell版)
 # Usage: .\deploy.ps1 [--manifest-override <path>] [-BundleOnly] [-h|--help]
 
 param(

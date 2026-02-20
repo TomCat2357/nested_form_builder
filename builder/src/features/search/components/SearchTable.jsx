@@ -1,6 +1,5 @@
 import React from "react";
 import { applyDisplayLengthLimit } from "../searchTable.js";
-import { theme } from "../../../app/theme/tokens.js";
 
 const headerSortLabel = (activeSort, columnKey) => {
   if (activeSort.key !== columnKey) return "";
@@ -38,7 +37,8 @@ export default function SearchTable({
                 </th>
               )}
               {headerRow.map((cell, cellIndex) => {
-                const column = cell.column || null;
+                const fallbackColumn = cell.colSpan === 1 ? selectableColumns[cell.startIndex] || null : null;
+                const column = cell.column || fallbackColumn;
                 if (column && column.key === "__actions") return null;
                 const sortable = Boolean(column && column.sortable !== false);
                 const orderLabel = sortable ? headerSortLabel(activeSort, column.key) : "";
