@@ -62,8 +62,10 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
   const styleSettings = field.styleSettings || {};
   const labelSize = resolveLabelSize(styleSettings);
   const labelStyleVars = {
+    ...(labelSize === "smallest" ? { "--label-font-size-offset": "var(--label-size-offset-xs)" } : {}),
     ...(labelSize === "smaller" ? { "--label-font-size-offset": "var(--label-size-offset-sm)" } : {}),
     ...(labelSize === "larger" ? { "--label-font-size-offset": "var(--label-size-offset-lg)" } : {}),
+    ...(labelSize === "largest" ? { "--label-font-size-offset": "var(--label-size-offset-xl)" } : {}),
     ...(styleSettings.textColor ? { "--label-color": styleSettings.textColor } : {}),
   };
 

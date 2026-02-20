@@ -192,9 +192,11 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
               })}
               onFocus={onFocus}
             >
+              <option value="smallest">最も小さく</option>
               <option value="smaller">小さく</option>
               <option value="default">標準</option>
               <option value="larger">大きく</option>
+              <option value="largest">最も大きく</option>
             </select>
           </div>
           <div className="nf-flex-1">

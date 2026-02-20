@@ -3,8 +3,10 @@
   --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
   --label-font-size-base: 14px;
+  --label-size-offset-xs: -4px;
   --label-size-offset-sm: -2px;
   --label-size-offset-lg: 2px;
+  --label-size-offset-xl: 4px;
 
   --bg: #0b1020;
   --surface: rgba(255, 255, 255, 0.08);

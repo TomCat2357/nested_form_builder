@@ -291,14 +291,12 @@ export default function ConfigPage() {
           </div>
         )}
 
-        {deployTime && (
-          <div className="nf-mt-16 nf-pt-16" style={{ borderTop: "1px solid var(--nf-color-border)" }}>
-            <div className="nf-settings-group-title nf-mb-6">システム情報</div>
-            <div className="nf-text-12 nf-text-muted">
-              <div>最終デプロイ: {deployTime}</div>
-            </div>
+        <div className="nf-mt-16 nf-pt-16" style={{ borderTop: "1px solid var(--nf-color-border)" }}>
+          <div className="nf-settings-group-title nf-mb-6">システム情報</div>
+          <div className="nf-text-12 nf-text-muted">
+            <div>最終デプロイ: {deployTime || "情報なし"}</div>
           </div>
-        )}
+        </div>
       </div>
       <ConfirmDialog
         open={Boolean(removeTarget)}

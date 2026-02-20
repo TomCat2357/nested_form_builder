@@ -1,7 +1,7 @@
 export const DEFAULT_STYLE_SETTINGS = { labelSize: "default", textColor: "#000000" };
 
 export const normalizeLabelSize = (value) => {
-  if (value === "smaller" || value === "default" || value === "larger") return value;
+  if (value === "smallest" || value === "smaller" || value === "default" || value === "larger" || value === "largest") return value;
   return "default";
 };
 
@@ -30,7 +30,7 @@ export const normalizeStyleSettings = (input) => {
  * normalizeStyleSettings と同等だが textColor の正規化は行わない
  */
 export const resolveLabelSize = (styleSettings) => {
-  if (styleSettings?.labelSize === "smaller" || styleSettings?.labelSize === "default" || styleSettings?.labelSize === "larger") {
+  if (styleSettings?.labelSize === "smallest" || styleSettings?.labelSize === "smaller" || styleSettings?.labelSize === "default" || styleSettings?.labelSize === "larger" || styleSettings?.labelSize === "largest") {
     return styleSettings.labelSize;
   }
   if (typeof styleSettings?.fontSize === "string") {
