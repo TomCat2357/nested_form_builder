@@ -215,7 +215,12 @@ export const unarchiveForms = async (formIds) => {
 export const importFormsFromDrive = async (url) => {
   if (!url) throw new Error("Google Drive URL is required");
   const result = await callFormApi("nfbImportFormsFromDrive", url, "Import from Drive failed");
-  return { forms: result.forms || [], skipped: result.skipped || 0 };
+  return {
+    forms: result.forms || [],
+    skipped: result.skipped || 0,
+    parseFailed: result.parseFailed || 0,
+    totalFiles: result.totalFiles || 0,
+  };
 };
 
 export const importThemeFromDrive = async (url) => {

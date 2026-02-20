@@ -225,6 +225,7 @@ export default function AdminDashboardPage() {
 
       setImporting(true);
       let imported = 0;
+      let saveFailed = 0;
 
       try {
         for (const item of queue) {
@@ -239,20 +240,30 @@ export default function AdminDashboardPage() {
             modifiedAt: item.modifiedAt, // 更新日時を保持
           };
 
-          await createForm(payload);
-          imported += 1;
+          try {
+            await createForm(payload);
+            imported += 1;
+          } catch (error) {
+            saveFailed += 1;
+            console.warn("[DriveImport] failed to import one form", {
+              formId: item?.id,
+              title: item?.settings?.formTitle,
+              error: error?.message || error,
+            });
+          }
         }
 
         setSelected(new Set());
+        const saveFailedDetail = saveFailed > 0 ? `（保存失敗 ${saveFailed} 件）` : "";
 
         // 結果メッセージ
         if (imported > 0) {
-          showAlert(`${imported} 件のフォームを取り込みました${detail}。`);
+          showAlert(`${imported} 件のフォームを取り込みました${detail}${saveFailedDetail}。`);
         } else {
-          showAlert(`取り込めるフォームはありませんでした${detail}。`);
+          showAlert(`取り込めるフォームはありませんでした${detail}${saveFailedDetail}。`);
         }
         console.log(
-          `[DriveImport] success=${imported}, alreadyRegistered=${skipped}, parseFailed=${parseFailed}`,
+          `[DriveImport] success=${imported}, alreadyRegistered=${skipped}, parseFailed=${parseFailed}, saveFailed=${saveFailed}`,
         );
       } catch (error) {
         console.error("[DriveImport] import workflow failed", error);

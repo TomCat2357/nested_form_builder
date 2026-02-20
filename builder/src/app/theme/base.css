@@ -861,11 +861,14 @@ button:disabled {
 .admin-import-btn {
   padding: 8px 16px;
   border-radius: var(--radius-sm);
+  border: 1px solid var(--button-border, var(--border-strong));
+  background: var(--button-bg, var(--surface));
+  color: var(--button-text, var(--text));
 }
 
 .admin-import-btn-primary {
-  border: none;
-  background: var(--primary-strong);
+  border-color: var(--primary-border-soft, var(--primary-strong, var(--primary, #2563eb)));
+  background: var(--primary-strong, var(--primary, #2563eb));
   color: var(--button-solid-text, #fff);
 }
 
@@ -1006,8 +1009,9 @@ button:disabled {
 .nf-btn-outline {
   padding: 8px 14px;
   border-radius: var(--radius-sm);
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
+  border: 1px solid var(--button-border, var(--border-strong));
+  background: var(--button-bg, var(--surface));
+  color: var(--button-text, var(--text));
   cursor: pointer;
 }
 
@@ -1066,19 +1070,20 @@ button:disabled {
   padding: 8px 14px;
   font-size: 14px;
   cursor: pointer;
-  border: 1px solid var(--border-strong);
-  background: var(--surface);
+  border: 1px solid var(--button-border, var(--border-strong));
+  background: var(--button-bg, var(--surface));
+  color: var(--button-text, var(--text));
 }
 
 .dialog-btn.primary {
-  background: var(--primary-strong);
-  border-color: var(--primary-strong);
+  background: var(--primary-strong, var(--primary, #2563eb));
+  border-color: var(--primary-border-soft, var(--primary-strong, var(--primary, #2563eb)));
   color: var(--button-solid-text, #fff);
 }
 
 .dialog-btn.danger {
-  background: var(--danger-strong);
-  border-color: var(--danger-strong);
+  background: var(--danger-strong, var(--danger, #dc2626));
+  border-color: var(--danger-border-strong, var(--danger-strong, var(--danger, #dc2626)));
   color: var(--button-solid-text, #fff);
 }
 

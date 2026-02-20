@@ -34,6 +34,7 @@ button {
 
   border: 1px solid var(--border) !important;
   background: var(--surface) !important;
+  color: var(--button-text, var(--text, #1f2937)) !important;
   box-shadow: var(--shadow-sm) !important;
 
   font-size: 13px !important;
@@ -68,8 +69,8 @@ button:focus-visible {
 /* 3-1) primaryStrong-style buttons (inline background: var(--primary-strong)) */
 button[style*="background: var(--primary-strong)"],
 button[style*="background:var(--primary-strong)"] {
-  background: linear-gradient(135deg, var(--primary), var(--primary-strong)) !important;
-  border-color: var(--primary-border-soft) !important;
+  background: linear-gradient(135deg, var(--primary, #2f6fed), var(--primary-strong, var(--primary, #2563eb))) !important;
+  border-color: var(--primary-border-soft, rgba(47, 111, 237, 0.22)) !important;
   color: rgba(255, 255, 255, 0.96) !important;
   filter: saturate(1.02) !important;
 }
@@ -77,21 +78,27 @@ button[style*="background:var(--primary-strong)"] {
 /* 3-2) dangerStrong buttons */
 button[style*="background: var(--danger-strong)"],
 button[style*="background:var(--danger-strong)"] {
-  background: linear-gradient(135deg, var(--danger-bright), var(--danger-strong)) !important;
-  border-color: rgba(225, 29, 72, 0.35) !important;
+  background: linear-gradient(135deg, var(--danger-bright, #ef4444), var(--danger-strong, var(--danger, #dc2626))) !important;
+  border-color: var(--danger-border-strong, rgba(225, 29, 72, 0.35)) !important;
   color: rgba(255, 255, 255, 0.96) !important;
 }
 
 /* 3-2b) dialog button variants (avoid global button override) */
 .dialog-btn.primary {
-  background: linear-gradient(135deg, var(--primary), var(--primary-strong)) !important;
-  border-color: var(--primary-border-soft) !important;
+  background: linear-gradient(135deg, var(--primary, #2f6fed), var(--primary-strong, var(--primary, #2563eb))) !important;
+  border-color: var(--primary-border-soft, rgba(47, 111, 237, 0.22)) !important;
   color: var(--button-solid-text, #fff) !important;
 }
 
 .dialog-btn.danger {
-  background: linear-gradient(135deg, var(--danger-bright), var(--danger-strong)) !important;
-  border-color: rgba(225, 29, 72, 0.35) !important;
+  background: linear-gradient(135deg, var(--danger-bright, #ef4444), var(--danger-strong, var(--danger, #dc2626))) !important;
+  border-color: var(--danger-border-strong, rgba(225, 29, 72, 0.35)) !important;
+  color: var(--button-solid-text, #fff) !important;
+}
+
+.admin-import-btn-primary {
+  background: linear-gradient(135deg, var(--primary, #2f6fed), var(--primary-strong, var(--primary, #2563eb))) !important;
+  border-color: var(--primary-border-soft, rgba(47, 111, 237, 0.22)) !important;
   color: var(--button-solid-text, #fff) !important;
 }
 

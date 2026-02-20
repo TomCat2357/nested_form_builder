@@ -1480,7 +1480,8 @@ function Forms_importFromDrive_(url) {
 
     try {
       var folder = DriveApp.getFolderById(parsed.id);
-      var files = folder.getFilesByType(MimeType.PLAIN_TEXT);
+      // MIME type に依存せず、拡張子が .json のファイルを全件対象にする
+      var files = folder.getFiles();
 
       while (files.hasNext()) {
         var file = files.next();
