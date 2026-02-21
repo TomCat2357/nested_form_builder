@@ -334,15 +334,7 @@ button:disabled {
   color: var(--input-text, var(--text));
 }
 
-input.nf-input:disabled,
-select.nf-input:disabled,
-textarea.nf-input:disabled,
-input.nf-input:read-only,
-textarea.nf-input:read-only,
 .nf-input--readonly {
-  background: var(--input-readonly-bg, #e5e7eb);
-  border-color: var(--input-readonly-border, #cbd5e1);
-  color: var(--input-readonly-text, #475569);
   cursor: not-allowed;
 }
 

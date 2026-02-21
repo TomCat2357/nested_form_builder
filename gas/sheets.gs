@@ -1,5 +1,5 @@
 var NFB_HEADER_DEPTH = 6;
-var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["modifiedBy"], ["createdBy"]];
+var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["createdBy"], ["modifiedBy"]];
 var NFB_TZ = "Asia/Tokyo"; // 想定タイムゾーン（JST固定）
 var NFB_MS_PER_DAY = 24 * 60 * 60 * 1000;
 var NFB_SHEETS_EPOCH_MS = new Date(1899, 11, 30, 0, 0, 0).getTime();
@@ -162,7 +162,7 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
     Sheets_applyTemporalFormatToColumn_(sheet, modifiedAtIndex, values, dataRowCount, dateTimeFormat);
   }
 
-  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "modifiedBy": true, "createdBy": true };
+  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "createdBy": true, "modifiedBy": true };
   var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];
@@ -604,15 +604,15 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     "No.": rowData[1] || "",
     createdAt: rowData[2] || "",
     modifiedAt: rowData[3] || "",
-    modifiedBy: rowData[4] || "",
-    createdBy: rowData[5] || "",
+    createdBy: rowData[4] || "",
+    modifiedBy: rowData[5] || "",
     createdAtUnixMs: Sheets_toUnixMs_(rowData[2], true),
     modifiedAtUnixMs: Sheets_toUnixMs_(rowData[3], true),
     data: {},
     dataUnixMs: {}
   };
 
-  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "modifiedBy": true, "createdBy": true };
+  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "createdBy": true, "modifiedBy": true };
 
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];
