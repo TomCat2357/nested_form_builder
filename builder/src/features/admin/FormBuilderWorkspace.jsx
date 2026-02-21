@@ -8,17 +8,7 @@ import { runSelfTests } from "../../core/selfTests.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { omitThemeSetting } from "../../utils/settings.js";
-
-const shallowEqual = (a, b) => {
-  if (a === b) return true;
-  if (typeof a !== typeof b) return false;
-  if (typeof a !== "object" || !a || !b) return false;
-  try {
-    return JSON.stringify(a) === JSON.stringify(b);
-  } catch (error) {
-    return false;
-  }
-};
+import { deepEqual } from "../../utils/deepEqual.js";
 
 const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   { initialSchema, initialSettings, formTitle, onSave, onDirtyChange, showToolbarSave = true },
@@ -60,8 +50,8 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
       return;
     }
 
-    const schemaDirty = !shallowEqual(initialSchemaRef.current, schema);
-    const settingsDirty = !shallowEqual(omitThemeSetting(initialSettingsRef.current), omitThemeSetting(settings));
+    const schemaDirty = !deepEqual(initialSchemaRef.current, schema);
+    const settingsDirty = !deepEqual(omitThemeSetting(initialSettingsRef.current), omitThemeSetting(settings));
 
     onDirtyChange?.(schemaDirty || settingsDirty);
   }, [schema, settings, isInitialized, onDirtyChange]);

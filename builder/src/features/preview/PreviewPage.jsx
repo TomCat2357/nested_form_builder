@@ -7,11 +7,8 @@ import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
-import { formatUnixMsDate, formatUnixMsTime } from "../../utils/dateTime.js";
+import { collectDefaultNowResponses } from "../../utils/responses.js";
 import { resolveLabelSize } from "../../core/styleSettings.js";
-
-const formatDateLocal = (date) => formatUnixMsDate(date.getTime());
-const formatTimeLocal = (date) => formatUnixMsTime(date.getTime());
 
 const generateRecordId = () => {
   if (window.crypto?.getRandomValues) {
@@ -24,22 +21,6 @@ const generateRecordId = () => {
   return `r_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
 };
 
-const collectDefaultNowResponses = (fields) => {
-  const defaults = {};
-  const walk = (arr) => {
-    (arr || []).forEach((field) => {
-      if (["date", "time"].includes(field.type) && field.defaultNow) {
-        const now = new Date();
-        defaults[field.id] = field.type === "date" ? formatDateLocal(now) : formatTimeLocal(now);
-      }
-      if (field.childrenByValue) {
-        Object.keys(field.childrenByValue).forEach((key) => walk(field.childrenByValue[key]));
-      }
-    });
-  };
-  walk(fields);
-  return defaults;
-};
 
 const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildrenForOption, readOnly = false }) => {
   const validation = validateByPattern(field, value);

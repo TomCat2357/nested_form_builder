@@ -1,4 +1,5 @@
 import { formatUnixMsDate, formatUnixMsTime, toUnixMs } from "./dateTime.js";
+import { deepEqual } from "./deepEqual.js";
 
 const buildKey = (prefix, label) => (prefix ? `${prefix}|${label}` : label);
 
@@ -57,10 +58,26 @@ export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => 
   return responses;
 };
 
+export const collectDefaultNowResponses = (schema, now = new Date()) => {
+  const defaults = {};
+  const dateValue = formatUnixMsDate(now.getTime());
+  const timeValue = formatUnixMsTime(now.getTime());
+
+  const walk = (fields) => {
+    (fields || []).forEach((field) => {
+      if (["date", "time"].includes(field?.type) && field?.defaultNow && field?.id) {
+        defaults[field.id] = field.type === "date" ? dateValue : timeValue;
+      }
+      if (field?.childrenByValue && typeof field.childrenByValue === "object") {
+        Object.values(field.childrenByValue).forEach((children) => walk(children));
+      }
+    });
+  };
+
+  walk(schema);
+  return defaults;
+};
+
 export const hasDirtyChanges = (a, b) => {
-  try {
-    return JSON.stringify(a || {}) !== JSON.stringify(b || {});
-  } catch (error) {
-    return true;
-  }
+  return !deepEqual(a || {}, b || {});
 };

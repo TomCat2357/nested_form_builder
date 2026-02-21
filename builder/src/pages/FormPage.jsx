@@ -6,7 +6,7 @@ import AlertDialog from "../app/components/AlertDialog.jsx";
 import PreviewPage from "../features/preview/PreviewPage.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
-import { restoreResponsesFromData, hasDirtyChanges } from "../utils/responses.js";
+import { restoreResponsesFromData, hasDirtyChanges, collectDefaultNowResponses } from "../utils/responses.js";
 import { submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
@@ -64,8 +64,9 @@ export default function FormPage() {
         return;
       }
       if (!entryId) {
-        initialResponsesRef.current = {};
-        setResponses({});
+        const initialResponses = collectDefaultNowResponses(normalizedSchema);
+        initialResponsesRef.current = initialResponses;
+        setResponses(initialResponses);
         setLoading(false);
         return;
       }
