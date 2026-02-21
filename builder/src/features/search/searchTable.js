@@ -734,9 +734,40 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
     return fullPath;
   });
 
+  const resolveHeaderCellValue = (rowIndex, colIndex, displayColumnIndex) => {
+    const csvRow = transformedRows[rowIndex] || [];
+    const mappedColumn = columnMapping[colIndex];
+    let cellValue = csvRow[colIndex] || "";
+
+    // modifiedAtを「最終更新日時」に変換
+    if (rowIndex === 0 && cellValue === "modifiedAt") {
+      cellValue = "最終更新日時";
+    }
+
+    const isCompactColumn = mappedColumn?.displayMode === DISPLAY_MODES.COMPACT;
+    if (isCompactColumn && rowIndex === lastNonEmptyRowIndex) {
+      // 簡略表示では最下段のヘッダーは省略し、データ側で表示する
+      return "";
+    }
+
+    // 選択系（ラジオ/セレクト/チェックボックス）の選択肢行はヘッダー表示しない（データ側で表示されるため）
+    if (mappedColumn?.sourceType && (mappedColumn.sourceType === "radio" || mappedColumn.sourceType === "select" || mappedColumn.sourceType === "checkboxes")) {
+      const fullPath = columnFullPaths[displayColumnIndex] || "";
+      const segments = splitFieldPath(fullPath);
+      const expectedLabel = segments[rowIndex] || "";
+      if (expectedLabel && cellValue === expectedLabel && rowIndex === segments.length - 1) {
+        return "";
+      }
+    }
+
+    return cellValue;
+  };
+
   // 空でない行のみを処理
   for (const rowIndex of nonEmptyRowIndices) {
-    const csvRow = transformedRows[rowIndex] || [];
+    const rowCellValues = indicesToProcess.map((colIndex, displayColumnIndex) =>
+      resolveHeaderCellValue(rowIndex, colIndex, displayColumnIndex),
+    );
     const row = [];
     let displayIndex = 0;
     let lastRenderedLabel = "";
@@ -744,28 +775,7 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
     for (let i = 0; i < indicesToProcess.length; i++) {
       const colIndex = indicesToProcess[i];
       const mappedColumn = columnMapping[colIndex];
-      let cellValue = csvRow[colIndex] || "";
-
-      // modifiedAtを「最終更新日時」に変換
-      if (rowIndex === 0 && cellValue === "modifiedAt") {
-        cellValue = "最終更新日時";
-      }
-
-      const isCompactColumn = mappedColumn?.displayMode === DISPLAY_MODES.COMPACT;
-      if (isCompactColumn && rowIndex === lastNonEmptyRowIndex) {
-        // 簡略表示では最下段のヘッダーは省略し、データ側で表示する
-        cellValue = "";
-      }
-
-      // 選択系（ラジオ/セレクト/チェックボックス）の選択肢行はヘッダー表示しない（データ側で表示されるため）
-      if (mappedColumn?.sourceType && (mappedColumn.sourceType === "radio" || mappedColumn.sourceType === "select" || mappedColumn.sourceType === "checkboxes")) {
-        const fullPath = columnFullPaths[i] || "";
-        const segments = splitFieldPath(fullPath);
-        const expectedLabel = segments[rowIndex] || "";
-        if (expectedLabel && cellValue === expectedLabel && rowIndex === segments.length - 1) {
-          cellValue = "";
-        }
-      }
+      const cellValue = rowCellValues[i];
 
       // 最終行の場合は各列を個別に処理(ソート対応のため)
       const isLastRow = rowIndex === lastNonEmptyRowIndex;
@@ -773,10 +783,11 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
 
       if (!isLastRow) {
         // 最終行以外は同じ値が連続する場合はcolSpanでまとめる
+        // (表示変換後の値で判定し、列ごとの非表示ロジックを尊重する)
         while (
           i + colSpan < indicesToProcess.length &&
           indicesToProcess[i + colSpan] === indicesToProcess[i] + colSpan &&
-          (csvRow[indicesToProcess[i + colSpan]] || "") === (csvRow[colIndex] || "")
+          rowCellValues[i + colSpan] === rowCellValues[i]
         ) {
           colSpan += 1;
         }
