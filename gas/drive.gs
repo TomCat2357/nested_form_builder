@@ -9,7 +9,7 @@
  * @return {Object} { ok: true, css: string, fileName: string, fileUrl: string }
  */
 function nfbImportThemeFromDrive(url) {
-  try {
+  return nfbSafeCall_(function() {
     if (!url || typeof url !== "string") {
       throw new Error("Google Drive URLが指定されていません");
     }
@@ -37,8 +37,5 @@ function nfbImportThemeFromDrive(url) {
       fileName: file.getName(),
       fileUrl: file.getUrl(),
     };
-  } catch (error) {
-    Logger.log('[nfbImportThemeFromDrive] Error: ' + nfbErrorToString_(error));
-    throw new Error('テーマのインポートに失敗しました: ' + nfbErrorToString_(error));
-  }
+  });
 }

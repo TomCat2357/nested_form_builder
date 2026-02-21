@@ -658,7 +658,7 @@ function Forms_saveForm_(form, targetUrl) {
         file.setName(fileName);
         fileId = existingFileId;
       } catch (err) {
-        Logger.log("既存ファイルが見つからないため新規作成: " + err);
+        Logger.log("[Forms_saveForm_] 既存ファイルが見つからないため新規作成: " + err);
         existingFileId = null;
       }
     }
@@ -1041,7 +1041,7 @@ function Forms_getForm_(formId) {
 
     return form;
   } catch (err) {
-    Logger.log("Error loading form " + formId + ": " + err);
+    Logger.log("[Forms_getForm_] Error loading form " + formId + ": " + err);
     return null;
   }
 }
@@ -1065,7 +1065,7 @@ function Forms_deleteForm_(formId) {
       var file = DriveApp.getFileById(fileId);
       file.setTrashed(true);
     } catch (err) {
-      Logger.log("Error deleting file for form " + formId + ": " + err);
+      Logger.log("[Forms_deleteForm_] Error deleting file for form " + formId + ": " + err);
     }
   }
 
@@ -1102,7 +1102,7 @@ function Forms_deleteForms_(formIds) {
         var file = DriveApp.getFileById(fileId);
         file.setTrashed(true);
       } catch (err) {
-        Logger.log("Error deleting file for form " + formId + ": " + err);
+        Logger.log("[Forms_deleteForms_] Error deleting file for form " + formId + ": " + err);
         errors.push({ formId: formId, error: err.message || String(err) });
       }
     }
@@ -1183,7 +1183,7 @@ function Forms_setFormsArchivedState_(formIds, archived) {
         errors.push({ formId: formId, error: "Save failed" });
       }
     } catch (err) {
-      Logger.log("Error updating archive state for form " + formId + ": " + err);
+      Logger.log("[Forms_setFormsArchivedState_] Error updating archive state for form " + formId + ": " + err);
       errors.push({ formId: formId, error: err.message || String(err) });
     }
   });
@@ -1199,22 +1199,6 @@ function Forms_setFormsArchivedState_(formIds, archived) {
 // ========================================
 // Public API Functions (google.script.run経由で呼び出し可能)
 // ========================================
-
-function nfbErrorToString_(err) {
-  return (err && err.message) ? err.message : String(err);
-}
-
-function nfbFail_(err) {
-  return { ok: false, error: nfbErrorToString_(err) };
-}
-
-function nfbSafeCall_(fn) {
-  try {
-    return fn();
-  } catch (err) {
-    return nfbFail_(err);
-  }
-}
 
 /**
  * フォーム一覧を取得
@@ -1330,7 +1314,7 @@ function nfbUnarchiveForms(formIds) {
  * @return {Object} { ok, spreadsheetId, title, canEdit, canView, sheetNames }
  */
 function nfbValidateSpreadsheet(spreadsheetIdOrUrl) {
-  try {
+  return nfbSafeCall_(function() {
     if (!spreadsheetIdOrUrl) {
       return { ok: false, error: "Spreadsheet URL/ID is required" };
     }
@@ -1404,12 +1388,7 @@ function nfbValidateSpreadsheet(spreadsheetIdOrUrl) {
       canView: canViewSheet,
       isFolder: false,
     };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err && err.message ? err.message : String(err),
-    };
-  }
+  });
 }
 
 /**
@@ -1499,7 +1478,7 @@ function Forms_importFromDrive_(url) {
         // driveFileUrl / fileId が既に登録済みかチェック
         if (existingDriveFileUrls.indexOf(fileUrlInFolder) !== -1 || existingFileIds.indexOf(fileId) !== -1) {
           skipped += 1;
-          Logger.log("Skipped (already registered driveFileUrl/fileId): " + fileName);
+          Logger.log("[Forms_importFromDrive_] Skipped (already registered driveFileUrl/fileId): " + fileName);
           continue;
         }
 
@@ -1509,7 +1488,7 @@ function Forms_importFromDrive_(url) {
 
           // 有効なフォームデータかチェック（最低限nameとschemaがあるか）
           if (!formData || typeof formData !== "object") {
-            Logger.log("Invalid form data in file: " + fileName);
+            Logger.log("[Forms_importFromDrive_] Invalid form data in file: " + fileName);
             parseFailed += 1;
             continue;
           }
@@ -1517,7 +1496,7 @@ function Forms_importFromDrive_(url) {
           // 重複判定はdriveFileUrlのみ
           forms.push(formData);
         } catch (parseErr) {
-          Logger.log("Failed to parse JSON file: " + fileName + " - " + parseErr.message);
+          Logger.log("[Forms_importFromDrive_] Failed to parse JSON file: " + fileName + " - " + parseErr.message);
           parseFailed += 1;
           continue;
         }
@@ -1542,14 +1521,9 @@ function Forms_importFromDrive_(url) {
  * @return {Object} { ok: true, forms: Array, skipped: number }
  */
 function nfbImportFormsFromDrive(url) {
-  try {
+  return nfbSafeCall_(function() {
     return Forms_importFromDrive_(url);
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**
@@ -1557,19 +1531,14 @@ function nfbImportFormsFromDrive(url) {
  * @return {Object} { ok: true, mapping: Object }
  */
 function nfbDebugCallGetMapping() {
-  try {
+  return nfbSafeCall_(function() {
     var mapping = Forms_getMapping_();
     return {
       ok: true,
       mapping: mapping,
       totalForms: Object.keys(mapping).length,
     };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**
@@ -1577,7 +1546,7 @@ function nfbDebugCallGetMapping() {
  * @return {Object} { ok: true, mapping: Object, rawJson: string }
  */
 function nfbDebugGetMapping() {
-  try {
+  return nfbSafeCall_(function() {
     var scriptProps = Forms_getScriptProps_();
     var userProps = Forms_getUserProps_();
     var rawJson = scriptProps.getProperty(FORMS_PROPERTY_KEY);
@@ -1613,12 +1582,7 @@ function nfbDebugGetMapping() {
       totalForms: Object.keys(mapping).length,
       legacyInfo: legacyInfo,
     };
-  } catch (err) {
-    return {
-      ok: false,
-      error: err.message || String(err),
-    };
-  }
+  });
 }
 
 /**

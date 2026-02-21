@@ -25,7 +25,7 @@ function Model_parseRequest_(e) {
     try {
       body = JSON.parse(e.postData.contents);
     } catch (err) {
-      console.error("Model_parseRequest_ JSON parse error: " + nfbErrorToString_(err));
+      Logger.log("[Model_parseRequest_] JSON parse error: " + nfbErrorToString_(err));
     }
   }
 

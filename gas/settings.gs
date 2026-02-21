@@ -84,7 +84,9 @@ function DetermineAccess_(formParam, adminkeyParam) {
  * @return {Object} 管理者キー情報
  */
 function nfbGetAdminKey() {
-  return { ok: true, adminKey: GetAdminKey_() };
+  return nfbSafeCall_(function() {
+    return { ok: true, adminKey: GetAdminKey_() };
+  });
 }
 
 /**
@@ -93,6 +95,8 @@ function nfbGetAdminKey() {
  * @return {Object} 結果オブジェクト
  */
 function nfbSetAdminKey(newKey) {
-  return SetAdminKey_(newKey);
+  return nfbSafeCall_(function() {
+    return SetAdminKey_(newKey);
+  });
 }
 

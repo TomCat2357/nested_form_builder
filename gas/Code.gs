@@ -52,7 +52,7 @@ function doPost(e) {
 
       // 管理者専用アクションのチェック
       if (adminOnlyActions.indexOf(action) !== -1 && !isAdmin) {
-        return JsonOutput_({ ok: false, error: "管理者権限が必要です" }, 403);
+        return JsonForbidden_("管理者権限が必要です");
       }
 
       // 管理者キー管理API
@@ -80,20 +80,20 @@ function doPost(e) {
       }
       // スプレッドシートレコード管理API
       else if (action === "delete") {
-        var missingSpreadsheetId = RequireSpreadsheetIdJson_(ctx);
-        if (missingSpreadsheetId) return missingSpreadsheetId;
+        var ssErr = RequireSpreadsheetId_(ctx);
+        if (ssErr) return JsonBadRequest_(ssErr.error);
         payload = DeleteRecord_(ctx);
       } else if (action === "list") {
-        var missingSpreadsheetId = RequireSpreadsheetIdJson_(ctx);
-        if (missingSpreadsheetId) return missingSpreadsheetId;
+        var ssErr = RequireSpreadsheetId_(ctx);
+        if (ssErr) return JsonBadRequest_(ssErr.error);
         payload = ListRecords_(ctx);
       } else if (action === "get") {
-        var missingSpreadsheetId = RequireSpreadsheetIdJson_(ctx);
-        if (missingSpreadsheetId) return missingSpreadsheetId;
+        var ssErr = RequireSpreadsheetId_(ctx);
+        if (ssErr) return JsonBadRequest_(ssErr.error);
         payload = GetRecord_(ctx);
       } else {
-        var missingSpreadsheetId = RequireSpreadsheetIdJson_(ctx);
-        if (missingSpreadsheetId) return missingSpreadsheetId;
+        var ssErr = RequireSpreadsheetId_(ctx);
+        if (ssErr) return JsonBadRequest_(ssErr.error);
         payload = SubmitResponses_(ctx);
       }
 
@@ -105,16 +105,23 @@ function doPost(e) {
 }
 
 function saveResponses(payload) {
-  var ctx = Model_fromScriptRunPayload_(payload);
-  RequireSpreadsheetId_(ctx);
-  return SubmitResponses_(ctx);
+  return nfbSafeCall_(function() {
+    var ctx = Model_fromScriptRunPayload_(payload);
+    var ssErr = RequireSpreadsheetId_(ctx);
+    if (ssErr) return ssErr;
+    return SubmitResponses_(ctx);
+  });
 }
 
 function deleteRecord(payload) {
-  var ctx = Model_fromScriptRunPayload_(payload);
-  RequireSpreadsheetId_(ctx);
-  RequireId_(ctx);
-  return DeleteRecord_(ctx);
+  return nfbSafeCall_(function() {
+    var ctx = Model_fromScriptRunPayload_(payload);
+    var ssErr = RequireSpreadsheetId_(ctx);
+    if (ssErr) return ssErr;
+    var idErr = RequireRecordId_(ctx);
+    if (idErr) return idErr;
+    return DeleteRecord_(ctx);
+  });
 }
 
 function SerializeValue_(value) {
@@ -169,23 +176,29 @@ function SerializeRecord_(record) {
 }
 
 function getRecord(payload) {
-  var ctx = Model_fromScriptRunPayload_(payload);
-  RequireSpreadsheetId_(ctx);
-  RequireId_(ctx);
-  var result = GetRecord_(ctx);
-  return result;
+  return nfbSafeCall_(function() {
+    var ctx = Model_fromScriptRunPayload_(payload);
+    var ssErr = RequireSpreadsheetId_(ctx);
+    if (ssErr) return ssErr;
+    var idErr = RequireRecordId_(ctx);
+    if (idErr) return idErr;
+    return GetRecord_(ctx);
+  });
 }
 
 function listRecords(payload) {
-  var ctx = Model_fromScriptRunPayload_(payload);
-  RequireSpreadsheetId_(ctx);
-  var result = ListRecords_(ctx);
+  return nfbSafeCall_(function() {
+    var ctx = Model_fromScriptRunPayload_(payload);
+    var ssErr = RequireSpreadsheetId_(ctx);
+    if (ssErr) return ssErr;
 
-  if (result && Array.isArray(result.records)) {
-    result.records = result.records.map(SerializeRecord_);
-  }
+    var result = ListRecords_(ctx);
+    if (result && Array.isArray(result.records)) {
+      result.records = result.records.map(SerializeRecord_);
+    }
 
-  return result;
+    return result;
+  });
 }
 
 function SubmitResponses_(ctx) {
@@ -203,7 +216,7 @@ function SubmitResponses_(ctx) {
 }
 
 function DeleteRecord_(ctx) {
-  var missingId = RequireRecordIdResult_(ctx);
+  var missingId = RequireRecordId_(ctx);
   if (missingId) return missingId;
 
   var sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
@@ -221,7 +234,7 @@ function DeleteRecord_(ctx) {
 }
 
 function GetRecord_(ctx) {
-  var missingId = RequireRecordIdResult_(ctx);
+  var missingId = RequireRecordId_(ctx);
   if (missingId) return missingId;
 
   var sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
@@ -261,40 +274,6 @@ function ListRecords_(ctx) {
     count: records.length,
     headerMatrix: headerMatrix,
   };
-}
-
-function JsonOutput_(payload, status) {
-  var output = ContentService.createTextOutput(JSON.stringify(payload || {})).setMimeType(ContentService.MimeType.JSON);
-  if (typeof status === "number" && output.setStatusCode) {
-    output.setStatusCode(status);
-  }
-  return output;
-}
-
-function JsonBadRequest_(message) {
-  return JsonOutput_({ ok: false, error: message }, 400);
-}
-
-function JsonInternalError_(err) {
-  return JsonOutput_({ ok: false, error: nfbErrorToString_(err) }, 500);
-}
-
-function RequireSpreadsheetIdJson_(ctx) {
-  if (ctx && ctx.spreadsheetId) return null;
-  return JsonBadRequest_("no spreadsheetId");
-}
-
-function RequireSpreadsheetId_(ctx) {
-  if (!ctx || !ctx.spreadsheetId) throw new Error("spreadsheetId is required");
-}
-
-function RequireId_(ctx) {
-  if (!ctx || !ctx.id) throw new Error("id is required");
-}
-
-function RequireRecordIdResult_(ctx) {
-  if (ctx && ctx.id) return null;
-  return { ok: false, error: "Record ID is required" };
 }
 
 function handleCors_(e, handler) {
