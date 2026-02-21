@@ -27,7 +27,7 @@ export default function SearchSidebar({
         disabled={loading}
         title={useCache ? "キャッシュから表示中 - クリックで最新データを取得" : "最新データを取得"}
       >
-        {useCache ? "🔄 更新" : "更新"}
+        {"🔄 更新"}
       </button>
     </>
   );

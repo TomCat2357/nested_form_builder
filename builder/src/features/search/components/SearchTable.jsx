@@ -40,7 +40,7 @@ export default function SearchTable({
                 const fallbackColumn = cell.colSpan === 1 ? selectableColumns[cell.startIndex] || null : null;
                 const column = cell.column || fallbackColumn;
                 if (column && column.key === "__actions") return null;
-                const sortable = Boolean(column && column.sortable !== false);
+                const sortable = Boolean(cell.column && cell.column.sortable !== false);
                 const orderLabel = sortable ? headerSortLabel(activeSort, column.key) : "";
 
                 return (
