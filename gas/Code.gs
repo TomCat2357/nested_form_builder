@@ -12,20 +12,55 @@ function doGet(e) {
 
   // 認証判定
   var authResult = DetermineAccess_(formParam, adminkeyParam);
+  var userEmail = Session.getActiveUser().getEmail() || "";
+  var userName = ResolveActiveUserDisplayName_();
 
   // </head>の直前にscriptタグを挿入してグローバル変数を設定
   var injectedScript = '<script>' +
-    'window.__GAS_WEBAPP_URL__ = "' + webAppUrl + '";' +
+    'window.__GAS_WEBAPP_URL__ = "' + EscapeForInlineScript_(webAppUrl) + '";' +
     'window.__IS_ADMIN__ = ' + (authResult.isAdmin ? 'true' : 'false') + ';' +
-    'window.__FORM_ID__ = "' + authResult.formId + '";' +
-    'window.__AUTH_ERROR__ = "' + authResult.authError + '";' +
-    'window.__USER_EMAIL__ = "' + (Session.getActiveUser().getEmail() || "") + '";' +
+    'window.__FORM_ID__ = "' + EscapeForInlineScript_(authResult.formId) + '";' +
+    'window.__AUTH_ERROR__ = "' + EscapeForInlineScript_(authResult.authError) + '";' +
+    'window.__USER_EMAIL__ = "' + EscapeForInlineScript_(userEmail) + '";' +
+    'window.__USER_NAME__ = "' + EscapeForInlineScript_(userName) + '";' +
     '</script>';
   htmlContent = htmlContent.replace('</head>', injectedScript + '</head>');
 
   return HtmlService.createHtmlOutput(htmlContent)
     .setTitle("Nested Form Builder")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * 現在ユーザーの表示名を取得する（取得できない場合は空文字）
+ * NOTE: 実行環境によってはメールアドレスのみ取得可能なため、空文字フォールバックする。
+ */
+function ResolveActiveUserDisplayName_() {
+  var displayName = "";
+
+  try {
+    var raw = Session.getActiveUser().getEmail() || "";
+    var match = raw.match(/^(.*?)\s*<[^>]+>$/);
+    if (match && match[1]) {
+      displayName = String(match[1]).trim();
+    }
+  } catch (err) {
+    displayName = "";
+  }
+
+  return displayName;
+}
+
+/**
+ * インラインscript文字列として安全に埋め込めるようエスケープする。
+ */
+function EscapeForInlineScript_(value) {
+  return String(value == null ? "" : value)
+    .replace(/\\/g, "\\\\")
+    .replace(/"/g, '\\"')
+    .replace(/\r/g, "\\r")
+    .replace(/\n/g, "\\n")
+    .replace(/<\/script/gi, "<\\/script");
 }
 
 function doPost(e) {
@@ -166,6 +201,7 @@ function SerializeRecord_(record) {
     id: String(record.id || ""),
     "No.": record["No."] != null ? record["No."] : "",
     modifiedBy: record.modifiedBy || "",
+    createdBy: record.createdBy || "",
     createdAt: createdValue,
     modifiedAt: modifiedValue,
     createdAtUnixMs: createdInfo.unixMs,

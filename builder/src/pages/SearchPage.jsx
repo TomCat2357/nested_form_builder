@@ -115,7 +115,7 @@ export default function SearchPage() {
     if (isAdmin) return processedEntries;
     if (!form?.settings?.showOwnRecordsOnly) return processedEntries;
     if (!userEmail) return processedEntries;
-    return processedEntries.filter((row) => row.entry?.modifiedBy === userEmail);
+    return processedEntries.filter((row) => (row.entry?.createdBy || row.entry?.modifiedBy) === userEmail);
   }, [processedEntries, isAdmin, userEmail, form?.settings?.showOwnRecordsOnly]);
 
   const filteredEntries = useMemo(() => {

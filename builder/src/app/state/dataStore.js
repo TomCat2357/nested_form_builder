@@ -60,6 +60,7 @@ const mapSheetRecordToEntry = (record, formId) => ({
   id: record.id,
   "No.": record["No."],
   modifiedBy: record.modifiedBy || "",
+  createdBy: record.createdBy || "",
   formId,
   createdAt: record.createdAt,
   modifiedAt: record.modifiedAt,
@@ -240,6 +241,8 @@ export const dataStore = {
     const record = {
       id: payload.id || genId(),
       formId,
+      createdBy: payload.createdBy || "",
+      modifiedBy: payload.modifiedBy || "",
       createdAt: resolvedCreatedAt,
       createdAtUnixMs: resolvedCreatedAt,
       modifiedAt: now,

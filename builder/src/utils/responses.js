@@ -58,15 +58,19 @@ export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => 
   return responses;
 };
 
-export const collectDefaultNowResponses = (schema, now = new Date()) => {
+export const collectDefaultNowResponses = (schema, now = new Date(), options = {}) => {
   const defaults = {};
   const dateValue = formatUnixMsDate(now.getTime());
   const timeValue = formatUnixMsTime(now.getTime());
+  const userName = typeof options?.userName === "string" ? options.userName : "";
 
   const walk = (fields) => {
     (fields || []).forEach((field) => {
       if (["date", "time"].includes(field?.type) && field?.defaultNow && field?.id) {
         defaults[field.id] = field.type === "date" ? dateValue : timeValue;
+      }
+      if (field?.type === "userName" && field?.defaultNow && field?.id && userName) {
+        defaults[field.id] = userName;
       }
       if (field?.childrenByValue && typeof field.childrenByValue === "object") {
         Object.values(field.childrenByValue).forEach((children) => walk(children));

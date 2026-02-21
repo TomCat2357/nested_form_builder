@@ -99,13 +99,13 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
       </label>
 
-      {field.type === "text" && (
+      {(field.type === "text" || field.type === "userName") && (
         <input
           type="text"
           value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
           className={s.input.className}
-          placeholder={field.placeholder || "入力"}
+          placeholder={field.type === "userName" ? "入力ユーザー名" : (field.placeholder || "入力")}
         />
       )}
 
@@ -313,7 +313,11 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const { alertState, showAlert, closeAlert } = useAlert();
   const initialRecordId = settings.recordId || settings.currentRecordId;
   const recordIdRef = useRef(initialRecordId || generateRecordId());
-  const defaultNowMap = useMemo(() => collectDefaultNowResponses(schema), [schema]);
+  const currentUserName = typeof settings.userName === "string" ? settings.userName : "";
+  const defaultNowMap = useMemo(
+    () => collectDefaultNowResponses(schema, new Date(), { userName: currentUserName }),
+    [schema, currentUserName],
+  );
 
   useEffect(() => {
     if (initialRecordId && recordIdRef.current !== initialRecordId) {
@@ -322,7 +326,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   }, [initialRecordId]);
 
   useEffect(() => {
-    // 既往データ編集時は日付・時間の自動初期値設定をスキップ
+    // 既往データ編集時は日付・時間・入力ユーザー名の自動初期値設定をスキップ
     if (settings.recordId || settings.currentRecordId) return;
 
     if (!defaultNowMap || Object.keys(defaultNowMap).length === 0) return;

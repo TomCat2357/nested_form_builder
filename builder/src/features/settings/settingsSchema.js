@@ -63,7 +63,7 @@ export const SETTINGS_GROUPS = [
         label: "自分の回答のみ表示",
         type: "checkbox",
         required: false,
-        description: "ONにすると、検索画面で自分が編集したレコードのみ表示されます（管理者は全件表示）",
+        description: "ONにすると、検索画面で自分が作成したレコードのみ表示されます（管理者は全件表示）",
       },
     ],
   },

@@ -14,6 +14,7 @@ import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSchemaIDs } from "../core/schema.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
 import { evaluateCache, RECORD_CACHE_MAX_AGE_MS } from "../app/state/cachePolicy.js";
+import { useAuth } from "../app/state/authContext.jsx";
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
@@ -24,6 +25,7 @@ const fallbackForForm = (formId, locationState) => {
 export default function FormPage() {
   const { formId, entryId } = useParams();
   const { getFormById } = useAppData();
+  const { userName, userEmail } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
@@ -64,7 +66,7 @@ export default function FormPage() {
         return;
       }
       if (!entryId) {
-        const initialResponses = collectDefaultNowResponses(normalizedSchema);
+        const initialResponses = collectDefaultNowResponses(normalizedSchema, new Date(), { userName });
         initialResponsesRef.current = initialResponses;
         setResponses(initialResponses);
         setLoading(false);
@@ -141,7 +143,7 @@ export default function FormPage() {
     return () => {
       mounted = false;
     };
-  }, [formId, entryId, form, normalizedSchema]);
+  }, [formId, entryId, form, normalizedSchema, userName]);
 
   const isDirty = useMemo(() => hasDirtyChanges(initialResponsesRef.current, responses), [responses]);
 
@@ -162,12 +164,17 @@ export default function FormPage() {
 
   const handleSaveToStore = async ({ payload }) => {
     if (!form) throw new Error("form_not_found");
+    const isNewEntry = !entry?.id;
+    const createdBy = isNewEntry ? (userEmail || "") : (entry?.createdBy || "");
+    const modifiedBy = userEmail || entry?.modifiedBy || "";
 
     // まずIndexedDBに即時保存（体感レスポンスを優先）
     const saved = await dataStore.upsertEntry(form.id, {
       id: payload.id,
       data: payload.responses,
       order: payload.order,
+      createdBy,
+      modifiedBy,
     });
 
     // スプレッドシート保存はバックグラウンドで継続
@@ -391,7 +398,7 @@ export default function FormPage() {
           schema={normalizedSchema}
           responses={responses}
           setResponses={setResponses}
-          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: entry?.["No."] || "" }}
+          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: entry?.["No."] || "", userName }}
           onSave={handleSaveToStore}
           showOutputJson={false}
           showSaveButton={false}

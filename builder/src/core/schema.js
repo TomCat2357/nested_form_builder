@@ -77,6 +77,12 @@ export const normalizeSchemaIDs = (nodes) => {
       delete base.options;
       delete base.pattern;
       base.defaultNow = !!base.defaultNow;
+    } else if (base.type === "userName") {
+      delete base.options;
+      delete base.pattern;
+      delete base.placeholder;
+      delete base.showPlaceholder;
+      base.defaultNow = !!base.defaultNow;
     } else if (base.type === "message") {
       delete base.options;
       delete base.pattern;
@@ -348,8 +354,8 @@ export const cleanupTempData = (schema) => {
         if (!cleaned.showPlaceholder) {
           delete cleaned.placeholder;
         }
-      } else if (["date", "time"].includes(cleaned.type)) {
-        // date/time型：defaultNowは保持、placeholderなし
+      } else if (["date", "time", "userName"].includes(cleaned.type)) {
+        // date/time/userName型：defaultNowは保持、placeholderなし
         delete cleaned.pattern;
         delete cleaned.placeholder;
         delete cleaned.showPlaceholder;

@@ -11,6 +11,7 @@ const CHOICE_TYPES = ["radio", "select", "checkboxes"];
 const INPUT_TYPES = ["text", "textarea", "number", "url"];
 const DATE_TIME_TYPES = ["date", "time"];
 const MESSAGE_TYPE = "message";
+const USER_NAME_TYPE = "userName";
 const resolveDisplayModeForType = (type, displayed) => (
   displayed ? ensureDisplayModeForType(DISPLAY_MODES.NORMAL, type, { explicit: true }) : DISPLAY_MODES.NONE
 );
@@ -21,6 +22,7 @@ const isChoiceType = (type) => CHOICE_TYPES.includes(type);
 const isInputType = (type) => INPUT_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 const isMessageType = (type) => type === MESSAGE_TYPE;
+const isUserNameType = (type) => type === USER_NAME_TYPE;
 const applyDisplayMode = (target, mode) => {
   const nextMode = ensureDisplayModeForType(mode, target.type, { explicit: true });
   target.displayMode = nextMode;
@@ -82,6 +84,13 @@ function handleTypeChange(field, newType) {
   } else if (isDateOrTimeType(newType)) {
     // 日付・時刻への変更
     delete next.pattern;
+    next.defaultNow = !!next.defaultNow;
+    saveAndClearChoiceState(next, field, oldIsChoice);
+  } else if (newType === USER_NAME_TYPE) {
+    // 入力ユーザー名への変更
+    delete next.pattern;
+    delete next.placeholder;
+    delete next.showPlaceholder;
     next.defaultNow = !!next.defaultNow;
     saveAndClearChoiceState(next, field, oldIsChoice);
   } else if (newType === MESSAGE_TYPE) {
@@ -229,6 +238,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
   const isDateOrTime = isDateOrTimeType(field.type);
   const isInput = isInputType(field.type);
   const isMessage = isMessageType(field.type);
+  const isUserName = isUserNameType(field.type);
   const canAddChild = depth < MAX_DEPTH;
   const regexCheck = isRegex ? buildSafeRegex(field.pattern || "") : { error: null };
   const [selectedOptionIndex, setSelectedOptionIndex] = React.useState(null);
@@ -326,6 +336,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
           <option value="select">ドロップダウン</option>
           <option value="date">日付</option>
           <option value="time">時間</option>
+          <option value="userName">入力ユーザー名</option>
           <option value="url">URL</option>
           <option value="message">メッセージ</option>
         </select>
@@ -363,6 +374,19 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
               onChange={(event) => onChange({ ...field, defaultNow: event.target.checked })}
             />
             初期値を現在{field.type === "date" ? "の日付" : "の時刻"}にする
+          </label>
+        </div>
+      )}
+
+      {isUserName && (
+        <div className="nf-mt-8">
+          <label className="nf-row nf-gap-6">
+            <input
+              type="checkbox"
+              checked={!!field.defaultNow}
+              onChange={(event) => onChange({ ...field, defaultNow: event.target.checked })}
+            />
+            作成時に自動入力
           </label>
         </div>
       )}

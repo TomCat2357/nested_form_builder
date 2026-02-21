@@ -26,7 +26,7 @@ export const validateByPattern = (field, value, cachedRegex = null) => {
 
 const isEmpty = (field, value) => {
   if (value === undefined || value === null) return true;
-  if (["text", "textarea", "regex", "date", "time", "select", "radio", "url"].includes(field.type)) {
+  if (["text", "textarea", "regex", "date", "time", "select", "radio", "url", "userName"].includes(field.type)) {
     return value === "";
   }
   if (field.type === "number") {
