@@ -124,8 +124,9 @@
   --input-text: var(--text);
   --input-border: var(--border-strong);
   --input-radius: var(--radius-sm);
-  --input-readonly-bg: var(--surface-muted);
-  --input-readonly-text: var(--text-ink);
+  --input-readonly-bg: rgba(148, 163, 184, 0.26);
+  --input-readonly-border: rgba(148, 163, 184, 0.45);
+  --input-readonly-text: rgba(226, 232, 240, 0.92);
   --input-error-border: var(--danger-bright);
 
   --button-bg: var(--surface-muted);

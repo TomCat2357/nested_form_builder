@@ -116,8 +116,9 @@
   --input-text: var(--text);
   --input-border: var(--border-strong);
   --input-radius: var(--radius-sm);
-  --input-readonly-bg: var(--surface-subtle);
-  --input-readonly-text: var(--text-ink);
+  --input-readonly-bg: #e5e7eb;
+  --input-readonly-border: #cbd5e1;
+  --input-readonly-text: #475569;
   --input-error-border: var(--danger-bright);
 
   --button-bg: var(--surface-subtle);
