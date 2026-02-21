@@ -1,7 +1,7 @@
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { collectResponses, sortResponses } from "../../core/collect.js";
 import { computeSchemaHash } from "../../core/schema.js";
-import { hasValidationErrors, validateByPattern } from "../../core/validate.js";
+import { collectValidationErrors, formatValidationErrors, validateByPattern } from "../../core/validate.js";
 import { submitResponses, hasScriptRun } from "../../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
@@ -358,8 +358,9 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       if (readOnly) {
         throw new Error("read_only_mode");
       }
-      if (hasValidationErrors(schema, responses)) {
-        showAlert("正規表現のエラー、必須空、またはパターン不一致の回答があります。修正してください。");
+      const validationResult = collectValidationErrors(schema, responses);
+      if (validationResult.errors.length > 0) {
+        showAlert(formatValidationErrors(validationResult), "入力エラー");
         alertShown = true;
         throw new Error("validation_failed");
       }

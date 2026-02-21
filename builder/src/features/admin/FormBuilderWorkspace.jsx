@@ -3,7 +3,7 @@ import EditorPage from "../editor/EditorPage.jsx";
 import PreviewPage from "../preview/PreviewPage.jsx";
 import SearchPreviewPanel from "./SearchPreviewPanel.jsx";
 import { useBuilderSettings } from "../settings/settingsStore.js";
-import { normalizeSchemaIDs, validateMaxDepth, validateUniqueLabels, MAX_DEPTH } from "../../core/schema.js";
+import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, MAX_DEPTH } from "../../core/schema.js";
 import { runSelfTests } from "../../core/selfTests.js";
 import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
@@ -67,6 +67,13 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   };
 
   const handleSave = useCallback(() => {
+    const labelCheck = validateRequiredLabels(schema);
+    if (!labelCheck.ok) {
+      const items = (labelCheck.emptyLabels || []).map((entry, index) => `${index + 1}. ${entry.path}`).join("\n");
+      showAlert(`以下の質問にラベルが設定されていません:\n\n${items}`, "ラベル未設定");
+      return false;
+    }
+
     const uniqueCheck = validateUniqueLabels(schema);
     if (!uniqueCheck.ok) {
       showAlert(`重複する項目名: ${uniqueCheck.dup}`);

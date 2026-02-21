@@ -218,12 +218,22 @@ export const validateUniqueLabels = (fields) => {
  * 全ての質問がラベルを持っているか検証する
  */
 export const validateRequiredLabels = (fields, { responses = null, visibleOnly = false } = {}) => {
-  const walk = (nodes) => {
-    for (const field of nodes || []) {
+  const emptyLabels = [];
+
+  const walk = (nodes, pathSegments = [], indexTrail = []) => {
+    (nodes || []).forEach((field, index) => {
       // 非表示の項目はスキップ
-      if (visibleOnly && field?.displayMode === DISPLAY_MODES.NONE) continue;
+      if (visibleOnly && field?.displayMode === DISPLAY_MODES.NONE) return;
+
+      const nextIndexTrail = [...indexTrail, index + 1];
+      const fallbackLabel = `質問 ${nextIndexTrail.join(".")} (${field?.type || "unknown"})`;
       const label = (field?.label || "").trim();
-      if (!label) return false;
+      const segment = label || fallbackLabel;
+      const currentPath = [...pathSegments, segment];
+
+      if (!label) {
+        emptyLabels.push({ path: currentPath.join(" > ") });
+      }
 
       if (field?.childrenByValue && typeof field.childrenByValue === "object") {
         let childKeys = Object.keys(field.childrenByValue);
@@ -242,14 +252,15 @@ export const validateRequiredLabels = (fields, { responses = null, visibleOnly =
 
         for (const key of childKeys) {
           const children = field.childrenByValue[key];
-          if (!walk(children)) return false;
+          walk(children, [...currentPath, key], nextIndexTrail);
         }
       }
-    }
-    return true;
+    });
   };
 
-  return walk(fields) ? { ok: true } : { ok: false };
+  walk(fields);
+  if (emptyLabels.length > 0) return { ok: false, emptyLabels };
+  return { ok: true };
 };
 
 export const computeSchemaHash = (schema) => {

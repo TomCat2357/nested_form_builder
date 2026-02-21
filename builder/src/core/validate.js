@@ -24,60 +24,109 @@ export const validateByPattern = (field, value, cachedRegex = null) => {
     : { ok: false, message: `入力がパターンに一致しません: /${field.pattern}/` };
 };
 
-export const hasValidationErrors = (fields, responses) => {
-  let hasError = false;
+const isEmpty = (field, value) => {
+  if (value === undefined || value === null) return true;
+  if (["text", "textarea", "regex", "date", "time", "select", "radio", "url"].includes(field.type)) {
+    return value === "";
+  }
+  if (field.type === "number") {
+    return value === "";
+  }
+  if (field.type === "checkboxes") {
+    return !Array.isArray(value) || value.length === 0;
+  }
+  return false;
+};
 
-  const isEmpty = (field, value) => {
-    if (value === undefined || value === null) return true;
-    if (["text", "textarea", "regex", "date", "time", "select", "radio", "url"].includes(field.type)) {
-      return value === "";
-    }
-    if (field.type === "number") {
-      return value === "";
-    }
-    if (field.type === "checkboxes") {
-      return !Array.isArray(value) || value.length === 0;
-    }
-    return false;
-  };
+const getRegexResult = (pattern) => {
+  const key = pattern || "";
+  if (!regexCache.has(key)) {
+    regexCache.set(key, buildSafeRegex(key));
+  }
+  return regexCache.get(key);
+};
 
-  const getRegexResult = (pattern) => {
-    const key = pattern || "";
-    if (!regexCache.has(key)) {
-      regexCache.set(key, buildSafeRegex(key));
-    }
-    return regexCache.get(key);
-  };
+const normalizePathLabel = (field) => {
+  const label = (field?.label || "").trim();
+  return label || `無題 (${field?.type || "unknown"})`;
+};
 
-  const walk = (arr) => (arr || []).forEach((field) => {
+export const collectValidationErrors = (fields, responses) => {
+  const errors = [];
+
+  const walk = (arr, pathSegments = []) => (arr || []).forEach((field) => {
     const value = responses?.[field.id];
+    const currentPath = [...pathSegments, normalizePathLabel(field)];
+    const path = currentPath.join(" > ");
+    let hasRequiredError = false;
+
     if (field.required && isEmpty(field, value)) {
-      hasError = true;
+      errors.push({
+        fieldId: field.id,
+        path,
+        type: "required",
+        message: "必須項目が未入力です",
+      });
+      hasRequiredError = true;
     }
+
     if (field.type === "regex") {
       const regexResult = getRegexResult(field.pattern);
       if (regexResult.error) {
-        hasError = true;
-        return;
+        errors.push({
+          fieldId: field.id,
+          path,
+          type: "regex_invalid",
+          message: `正規表現が不正です: ${regexResult.error}`,
+        });
+      } else {
+        const result = validateByPattern(field, value, regexResult);
+        if (!result.ok && result.message !== "入力は必須です") {
+          errors.push({
+            fieldId: field.id,
+            path,
+            type: "regex_mismatch",
+            message: result.message,
+          });
+        } else if (!result.ok && !hasRequiredError) {
+          errors.push({
+            fieldId: field.id,
+            path,
+            type: "required",
+            message: "必須項目が未入力です",
+          });
+        }
       }
-      const result = validateByPattern(field, value, regexResult);
-      if (!result.ok) hasError = true;
     }
+
     if (field.childrenByValue) {
       if (field.type === "checkboxes" && Array.isArray(value)) {
-        value.forEach((lbl) => {
-          if (field.childrenByValue[lbl]) {
-            walk(field.childrenByValue[lbl]);
+        value.forEach((label) => {
+          if (field.childrenByValue[label]) {
+            walk(field.childrenByValue[label], [...currentPath, label]);
           }
         });
       } else if (["radio", "select"].includes(field.type) && value && field.childrenByValue[value]) {
-        walk(field.childrenByValue[value]);
+        walk(field.childrenByValue[value], [...currentPath, value]);
       } else if (!["checkboxes", "radio", "select"].includes(field.type)) {
-        Object.keys(field.childrenByValue).forEach((key) => walk(field.childrenByValue[key]));
+        Object.keys(field.childrenByValue).forEach((key) => walk(field.childrenByValue[key], [...currentPath, key]));
       }
     }
   });
 
   walk(fields);
-  return hasError;
+  return { errors };
 };
+
+export const formatValidationErrors = (result) => {
+  const errors = result?.errors || [];
+  if (errors.length === 0) return "";
+
+  const items = errors.map((error, index) => (
+    `${index + 1}. [${error.path}]\n   ${error.message}`
+  ));
+
+  return `以下の項目にエラーがあります:\n\n${items.join("\n\n")}`;
+};
+
+export const hasValidationErrors = (fields, responses) => collectValidationErrors(fields, responses).errors.length > 0;
