@@ -406,14 +406,17 @@ export const buildHeaderRows = (columns) => {
         colIndex += 1;
         continue;
       }
+      const isFirstRow = level === 0;
       let colSpan = 1;
-      while (
-        colIndex + colSpan < perLevel[level].length &&
-        perLevel[level][colIndex + colSpan] &&
-        perLevel[level][colIndex + colSpan].label === cell.label &&
-        perLevel[level][colIndex + colSpan].rowSpan === cell.rowSpan
-      ) {
-        colSpan += 1;
+      if (!isFirstRow) {
+        while (
+          colIndex + colSpan < perLevel[level].length &&
+          perLevel[level][colIndex + colSpan] &&
+          perLevel[level][colIndex + colSpan].label === cell.label &&
+          perLevel[level][colIndex + colSpan].rowSpan === cell.rowSpan
+        ) {
+          colSpan += 1;
+        }
       }
 
       row.push({
@@ -421,7 +424,7 @@ export const buildHeaderRows = (columns) => {
         colSpan,
         rowSpan: cell.rowSpan,
         startIndex: colIndex,
-        column: colSpan === 1 ? columns[colIndex] || null : null,
+        column: isFirstRow ? columns[colIndex] || null : null,
       });
 
       colIndex += colSpan;
@@ -698,12 +701,12 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
       const mappedColumn = columnMapping[colIndex];
       const cellValue = rowCellValues[i];
 
-      // 最終行の場合は各列を個別に処理(ソート対応のため)
-      const isLastRow = rowIndex === lastNonEmptyRowIndex;
+      // 1行目の場合は各列を個別に処理(ソート対応のため)
+      const isFirstRow = rowIndex === 0;
       let colSpan = 1;
 
-      if (!isLastRow) {
-        // 最終行以外は同じ値が連続する場合はcolSpanでまとめる
+      if (!isFirstRow) {
+        // 1行目以外は同じ値が連続する場合はcolSpanでまとめる
         // (表示変換後の値で判定し、列ごとの非表示ロジックを尊重する)
         while (
           i + colSpan < indicesToProcess.length &&
@@ -714,8 +717,8 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
         }
       }
 
-      // 最終行の場合のみcolumnオブジェクトを付与
-      const column = isLastRow ? mappedColumn : null;
+      // 1行目の場合のみcolumnオブジェクトを付与
+      const column = isFirstRow ? mappedColumn : null;
 
       // すべての行で、左に同じ文字列があれば空白化（連続重複を抑止）
       let displayLabel = cellValue;
