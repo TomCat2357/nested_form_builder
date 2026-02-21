@@ -1,10 +1,8 @@
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import { DISPLAY_MODES } from "../../core/displayModes.js";
-import { formatUnixMsDateTime, formatUnixMsDate, formatUnixMsTime, toUnixMs } from "../../utils/dateTime.js";
+import { formatUnixMsDateTime, formatUnixMsDate, formatUnixMsTime, toUnixMs, parseStringToSerial } from "../../utils/dateTime.js";
 
 export const MAX_HEADER_DEPTH = 6;
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const SERIAL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
 
 const FALSE_LIKE_VALUES = new Set([null, undefined, "", false, 0, "0"]);
 
@@ -25,42 +23,6 @@ const isNumericColumn = (column) => columnType(column) === "number";
 const isDateLikeColumn = (column) => {
   const type = columnType(column);
   return type === "date" || type === "time";
-};
-const parseStrictTimeValue = (value) => {
-  if (typeof value !== "string") return null;
-  const match = value.trim().match(/^(\d{2}):(\d{2})$/);
-  if (!match) return null;
-  const hour = parseInt(match[1], 10);
-  const minute = parseInt(match[2], 10);
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  const utcMs = Date.UTC(1899, 11, 30, hour, minute, 0);
-  const date = new Date(utcMs);
-  if (date.getUTCHours() !== hour || date.getUTCMinutes() !== minute) return null;
-  return (utcMs - SERIAL_EPOCH_UTC_MS) / MS_PER_DAY;
-};
-const parseStrictDateOrDateTimeValue = (value) => {
-  if (typeof value !== "string") return null;
-  const match = value.trim().match(/^(\d{4})-(\d{2})-(\d{2})(?:\/(\d{2}):(\d{2}))?$/);
-  if (!match) return null;
-  const year = parseInt(match[1], 10);
-  const month = parseInt(match[2], 10);
-  const day = parseInt(match[3], 10);
-  const hour = match[4] ? parseInt(match[4], 10) : 0;
-  const minute = match[5] ? parseInt(match[5], 10) : 0;
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null;
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return null;
-  const utcMs = Date.UTC(year, month - 1, day, hour, minute, 0);
-  const date = new Date(utcMs);
-  if (
-    date.getUTCFullYear() !== year ||
-    date.getUTCMonth() !== month - 1 ||
-    date.getUTCDate() !== day ||
-    date.getUTCHours() !== hour ||
-    date.getUTCMinutes() !== minute
-  ) {
-    return null;
-  }
-  return (utcMs - SERIAL_EPOCH_UTC_MS) / MS_PER_DAY;
 };
 const toNumericValue = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -235,7 +197,7 @@ const resolveSortValue = ({ rawValues, display, dataUnixMs, path, column }) => {
   return display;
 };
 
-const collectImportantFieldValue = (entry, path, column) => {
+const collectFieldValue = (entry, path, column, { compact = false } = {}) => {
   const data = entry?.data || {};
   const dataUnixMs = entry?.dataUnixMs || {};
 
@@ -273,7 +235,9 @@ const collectImportantFieldValue = (entry, path, column) => {
   }
 
   const display = values.join("、");
-  const sortValue = resolveSortValue({ rawValues, display, dataUnixMs, path, column });
+  const primary = values[0] || "";
+  const sortDisplay = compact && values.length <= 1 ? primary : display;
+  const sortValue = resolveSortValue({ rawValues, display: sortDisplay, dataUnixMs, path, column });
 
   return {
     display,
@@ -337,49 +301,6 @@ const createBaseColumns = () => [
   },
 ];
 
-const collectCompactFieldValue = (entry, path, column) => {
-  const data = entry?.data || {};
-  const dataUnixMs = entry?.dataUnixMs || {};
-  const values = [];
-  const rawValues = [];
-
-  const addValue = (raw, unixMs) => {
-    const normalizedRaw = resolveChoiceDisplayValue(path, raw, column);
-    const display = formatTemporalValue(normalizedRaw, unixMs, column);
-    if (display === "" || display === null || display === undefined) return;
-    values.push(display);
-    rawValues.push(raw);
-  };
-
-  const hasDirectValue = Object.prototype.hasOwnProperty.call(data, path);
-  const optionValues = collectDirectOptionLabels(data, path);
-  if (hasDirectValue) {
-    const directValue = data[path];
-    const shouldPreferOptionLabels =
-      (columnType(column) === "radio" || columnType(column) === "select") &&
-      isChoiceMarkerValue(directValue) &&
-      optionValues.length > 0;
-    if (shouldPreferOptionLabels) {
-      optionValues.forEach((v) => addValue(v));
-    } else {
-      addValue(directValue, dataUnixMs[path]);
-    }
-  } else {
-    optionValues.forEach((v) => addValue(v));
-  }
-
-  const display = values.join("、");
-  const primary = values[0] || "";
-  const sortValue = resolveSortValue({ rawValues, display: values.length <= 1 ? primary : display, dataUnixMs, path, column });
-
-  return {
-    display,
-    search: normalizeSearchText(values.join(" ")),
-    sort: sortValue,
-    boolean: deriveBooleanValue(rawValues),
-  };
-};
-
 const createDisplayColumn = (path, mode = DISPLAY_MODES.NORMAL, sourceType = "") => {
   const segments = splitFieldPath(path).slice(0, MAX_HEADER_DEPTH);
   if (segments.length === 0) segments.push("回答");
@@ -393,7 +314,7 @@ const createDisplayColumn = (path, mode = DISPLAY_MODES.NORMAL, sourceType = "")
     path,
     displayMode: mode,
     sourceType,
-    getValue: (entry, column) => (isCompact ? collectCompactFieldValue(entry, path, column) : collectImportantFieldValue(entry, path, column)),
+    getValue: (entry, column) => collectFieldValue(entry, path, column, { compact: isCompact }),
   };
 };
 
@@ -1325,10 +1246,9 @@ const evaluateAST = (ast, row, columns) => {
         // sort値を使用（数値の場合は数値、文字列の場合は文字列）
         const rowValue = cellValue?.sort ?? cellValue?.display ?? '';
         if (isDateLikeColumn(column)) {
-          const type = columnType(column);
-          const parser = type === "time" ? parseStrictTimeValue : parseStrictDateOrDateTimeValue;
-          const rowMs = parser(rowValue);
-          const targetMs = parser(ast.value);
+          const parser = parseStringToSerial;
+          const rowMs = parser(String(rowValue));
+          const targetMs = parser(String(ast.value));
           if (!Number.isFinite(rowMs) || !Number.isFinite(targetMs)) return false;
           return compareValue(rowMs, ast.operator, targetMs, { allowNumeric: true });
         }

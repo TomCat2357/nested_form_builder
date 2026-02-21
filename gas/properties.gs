@@ -106,37 +106,6 @@ function AddFormUrl_(formId, fileUrl) {
 }
 
 /**
- * フォームURLを削除
- * @param {string} formId - フォームID
- * @return {Object} 成功メッセージ
- */
-function RemoveFormUrl_(formId) {
-  try {
-    if (!formId) {
-      throw new Error('フォームIDが指定されていません');
-    }
-
-    var urlMap = GetFormUrls_();
-
-    if (!urlMap[formId]) {
-      throw new Error('指定されたフォームIDは登録されていません: ' + formId);
-    }
-
-    delete urlMap[formId];
-    SaveFormUrls_(urlMap);
-
-    return {
-      ok: true,
-      message: 'フォームURLを削除しました',
-      formId: formId
-    };
-  } catch (error) {
-    Logger.log('[RemoveFormUrl_] Error: ' + nfbErrorToString_(error));
-    throw new Error('フォームURLの削除に失敗しました: ' + nfbErrorToString_(error));
-  }
-}
-
-/**
  * 特定フォームのURLを取得
  * @param {string} formId - フォームID
  * @return {string|null} ファイルURL（存在しない場合はnull）

@@ -30,7 +30,7 @@ const buildUtcSerial = (year, month, day, hour, minute, second) => {
   return (utcMs - SERIAL_EPOCH_UTC_MS) / MS_PER_DAY;
 };
 
-const parseStringToSerial = (value) => {
+export const parseStringToSerial = (value) => {
   if (typeof value !== "string") return null;
   const str = value.trim();
   if (!str) return null;

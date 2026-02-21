@@ -1,7 +1,7 @@
-import { computeSchemaHash, stripSchemaIDs, deepClone } from "../../core/schema.js";
+import { stripSchemaIDs, deepClone } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
-import { omitThemeSetting } from "../../utils/settings.js";
+import { normalizeFormRecord } from "../../utils/formNormalize.js";
 import {
   getCachedEntryWithIndex,
   saveRecordsToCache,
@@ -70,38 +70,6 @@ const mapSheetRecordToEntry = (record, formId) => ({
   order: Object.keys(record.data || {}),
 });
 
-const buildFormRecord = (input) => {
-  const now = nowSerial();
-  const createdAtSerial = Number.isFinite(input.createdAt)
-    ? input.createdAt
-    : (Number.isFinite(input.createdAtUnixMs) ? input.createdAtUnixMs : toUnixMs(input.createdAt));
-  const resolvedCreatedAt = Number.isFinite(createdAtSerial) ? createdAtSerial : now;
-  const schema = Array.isArray(input.schema) ? input.schema : [];
-  const displayFieldSettings = collectDisplayFieldSettings(schema);
-  
-  // settings内にformTitleを確保
-  const settings = omitThemeSetting(input.settings || {});
-  if (!settings.formTitle) {
-    settings.formTitle = input.name || "無題のフォーム";
-  }
-  
-  return {
-    id: input.id || genId(),
-    description: input.description || "",
-    schema,
-    settings,
-    schemaHash: computeSchemaHash(schema),
-    importantFields: displayFieldSettings.map((item) => item.path),
-    displayFieldSettings,
-    createdAt: resolvedCreatedAt,
-    modifiedAt: now,
-    createdAtUnixMs: resolvedCreatedAt,
-    modifiedAtUnixMs: now,
-    archived: !!input.archived,
-    schemaVersion: Number.isFinite(input.schemaVersion) ? input.schemaVersion : 1,
-  };
-};
-
 export const dataStore = {
   async listForms({ includeArchived = false } = {}) {
     if (!hasScriptRun()) {
@@ -130,8 +98,8 @@ export const dataStore = {
     return form ? ensureDisplayInfo(form) : null;
   },
   async createForm(payload, targetUrl = null) {
-    // buildFormRecordにID生成を委ねる（payloadにidがあればそれを使用、なければ生成）
-    const record = buildFormRecord(payload);
+    // normalizeFormRecordにID生成を委ねる（payloadにidがあればそれを使用、なければ生成）
+    const record = normalizeFormRecord(payload);
     console.log("[dataStore.createForm] Creating form:", { id: record.id, hasPayloadId: !!payload.id, targetUrl });
 
     // Try to save to Google Drive via GAS
@@ -195,7 +163,7 @@ export const dataStore = {
       }
     }
 
-    const next = buildFormRecord({
+    const next = normalizeFormRecord({
       ...current,
       ...updates,
       id: current.id,
@@ -424,7 +392,7 @@ export const dataStore = {
     const created = [];
     for (const item of jsonList) {
       if (!item) continue;
-      const record = buildFormRecord({
+      const record = normalizeFormRecord({
         ...item,
         createdAt: item.createdAt,
         schemaVersion: item.schemaVersion,
