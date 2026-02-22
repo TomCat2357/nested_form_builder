@@ -26,20 +26,29 @@ export default function MainPage() {
     navigate("/config");
   };
 
+  const handleGoAdminSettings = () => {
+    navigate("/admin-settings");
+  };
+
   return (
     <AppLayout
       title="フォーム一覧"
       backHidden
       sidebarActions={
         <>
-          {isAdmin && (
-            <button type="button" onClick={handleGoForms} className="nf-btn-outline nf-btn-sidebar">
-              フォーム管理へ
-            </button>
-          )}
           <button type="button" onClick={handleGoConfig} className="nf-btn-outline nf-btn-sidebar">
             設定
           </button>
+          {isAdmin && (
+            <button type="button" onClick={handleGoAdminSettings} className="nf-btn-outline nf-btn-sidebar">
+              管理者設定
+            </button>
+          )}
+          {isAdmin && (
+            <button type="button" onClick={handleGoForms} className="nf-btn-outline nf-btn-sidebar">
+              フォーム管理
+            </button>
+          )}
         </>
       }
     >

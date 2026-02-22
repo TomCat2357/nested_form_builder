@@ -257,7 +257,7 @@ export const debugGetMapping = async () => {
 };
 
 // ========================================
-// 管理者キー管理API
+// 管理者設定API
 // ========================================
 
 /**
@@ -283,4 +283,29 @@ export const setAdminKey = async (newKey) => {
     throw new Error(result?.error || "Set admin key failed");
   }
   return result.adminKey || "";
+};
+
+/**
+ * 管理者メールを取得する
+ * @returns {Promise<string>} 管理者メール（";"区切り）
+ */
+export const getAdminEmail = async () => {
+  const result = await callScriptRun("nfbGetAdminEmail", {});
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Get admin email failed");
+  }
+  return result.adminEmail || "";
+};
+
+/**
+ * 管理者メールを設定する
+ * @param {string} newEmail - 新しい管理者メール（";"区切り）
+ * @returns {Promise<string>} 設定後の管理者メール（";"区切り）
+ */
+export const setAdminEmail = async (newEmail) => {
+  const result = await callScriptRun("nfbSetAdminEmail", newEmail);
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Set admin email failed");
+  }
+  return result.adminEmail || "";
 };

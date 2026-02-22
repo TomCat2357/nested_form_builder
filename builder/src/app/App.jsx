@@ -7,6 +7,7 @@ import SearchPage from "../pages/SearchPage.jsx";
 import FormPage from "../pages/FormPage.jsx";
 import AdminDashboardPage from "../pages/AdminDashboardPage.jsx";
 import AdminFormEditorPage from "../pages/AdminFormEditorPage.jsx";
+import AdminSettingsPage from "../pages/AdminSettingsPage.jsx";
 import ConfigPage from "../pages/ConfigPage.jsx";
 import NotFoundPage from "../pages/NotFoundPage.jsx";
 
@@ -22,8 +23,8 @@ function AdminRoute({ children }) {
     if (formId) {
       return <Navigate to={`/search?formId=${formId}`} replace />;
     }
-    // formIdもない場合は404
-    return <Navigate to="/not-found" replace />;
+    // formIdもない場合はアクセス拒否状態としてトップへ戻す
+    return <Navigate to="/" replace />;
   }
 
   return children;
@@ -133,6 +134,14 @@ function AppRoutes() {
       <Route
         path="/config"
         element={<ConfigPage />}
+      />
+      <Route
+        path="/admin-settings"
+        element={(
+          <AdminRoute>
+            <AdminSettingsPage />
+          </AdminRoute>
+        )}
       />
       <Route path="/not-found" element={<NotFoundPage />} />
       <Route path="*" element={<NotFoundPage />} />

@@ -9,11 +9,12 @@ function doGet(e) {
   // URLパラメータを取得
   var formParam = (e && e.parameter && e.parameter.form) ? String(e.parameter.form) : "";
   var adminkeyParam = (e && e.parameter && e.parameter.adminkey) ? String(e.parameter.adminkey) : "";
+  var userEmail = Session.getActiveUser().getEmail() || "";
 
   // 認証判定
-  var authResult = DetermineAccess_(formParam, adminkeyParam);
-  var userEmail = Session.getActiveUser().getEmail() || "";
+  var authResult = DetermineAccess_(formParam, adminkeyParam, userEmail);
   var userName = ResolveActiveUserDisplayName_();
+  var adminEmail = GetAdminEmail_();
 
   // </head>の直前にscriptタグを挿入してグローバル変数を設定
   var injectedScript = '<script>' +
@@ -23,6 +24,7 @@ function doGet(e) {
     'window.__AUTH_ERROR__ = "' + EscapeForInlineScript_(authResult.authError) + '";' +
     'window.__USER_EMAIL__ = "' + EscapeForInlineScript_(userEmail) + '";' +
     'window.__USER_NAME__ = "' + EscapeForInlineScript_(userName) + '";' +
+    'window.__ADMIN_EMAIL__ = "' + EscapeForInlineScript_(adminEmail) + '";' +
     '</script>';
   htmlContent = htmlContent.replace('</head>', injectedScript + '</head>');
 
@@ -69,8 +71,9 @@ function doPost(e) {
     var action = (ctx.raw && ctx.raw.action) || "save";
 
     // リクエストから管理者キーを取得して認証チェック
-    var formParam = (ctx.raw && ctx.raw.authKey) ? String(ctx.raw.authKey) : "";
-    var isAdmin = IsAdmin_(formParam);
+    var adminKeyParam = (ctx.raw && ctx.raw.authKey) ? String(ctx.raw.authKey) : "";
+    var userEmail = Session.getActiveUser().getEmail() || "";
+    var isAdmin = IsAdmin_(adminKeyParam, userEmail);
 
     // 管理者専用アクション
     var adminOnlyActions = [
@@ -79,7 +82,9 @@ function doPost(e) {
       "forms_delete",
       "forms_archive",
       "admin_key_get",
-      "admin_key_set"
+      "admin_key_set",
+      "admin_email_get",
+      "admin_email_set"
     ];
 
     try {
@@ -96,6 +101,11 @@ function doPost(e) {
       } else if (action === "admin_key_set") {
         var newKey = (ctx.raw && ctx.raw.adminKey !== undefined) ? ctx.raw.adminKey : "";
         payload = SetAdminKey_(newKey);
+      } else if (action === "admin_email_get") {
+        payload = { ok: true, adminEmail: GetAdminEmail_() };
+      } else if (action === "admin_email_set") {
+        var newEmail = (ctx.raw && ctx.raw.adminEmail !== undefined) ? ctx.raw.adminEmail : "";
+        payload = SetAdminEmail_(newEmail);
       }
       // フォーム管理API
       else if (action === "forms_list") {

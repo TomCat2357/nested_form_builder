@@ -163,6 +163,10 @@ export default function SearchPage() {
     });
   };
 
+  const handleBackToMain = () => {
+    navigate("/");
+  };
+
   const toggleSelectEntry = (entryId) => {
     setSelectedEntries((prev) => {
       const next = new Set(prev);
@@ -211,10 +215,12 @@ export default function SearchPage() {
     <AppLayout
       title={`検索 - ${form.settings?.formTitle || "(無題)"}`}
       fallbackPath="/"
-      backHidden={false}
+      backHidden
       badge={badge}
       sidebarActions={(
         <SearchSidebar
+          onBack={handleBackToMain}
+          showBack={isAdmin}
           onCreate={handleCreateNew}
           onConfig={handleOpenFormConfig}
           onDelete={handleDeleteSelected}
