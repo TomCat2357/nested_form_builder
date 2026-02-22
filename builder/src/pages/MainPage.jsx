@@ -1,16 +1,24 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { useAuth } from "../app/state/authContext.jsx";
+import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
+import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
 
 export default function MainPage() {
   const { forms, loadingForms } = useAppData();
   const { isAdmin } = useAuth();
+  const { settings } = useBuilderSettings();
   const navigate = useNavigate();
 
   const activeForms = useMemo(() => forms.filter((form) => !form.archived), [forms]);
+
+  useEffect(() => {
+    const globalTheme = settings?.theme || DEFAULT_THEME;
+    void applyThemeWithFallback(globalTheme, { persist: false });
+  }, [settings?.theme]);
 
   const handleSelect = (formId) => {
     navigate(`/search?formId=${formId}`, {

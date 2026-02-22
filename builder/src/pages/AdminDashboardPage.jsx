@@ -8,6 +8,8 @@ import AlertDialog from "../app/components/AlertDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
+import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
 import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
 
@@ -41,6 +43,7 @@ const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = 
 
 export default function AdminDashboardPage() {
   const { forms, loadFailures, loadingForms, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, refreshForms, exportForms, registerImportedForm } = useAppData();
+  const { settings } = useBuilderSettings();
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
   const [selected, setSelected] = useState(() => new Set());
@@ -50,6 +53,11 @@ export default function AdminDashboardPage() {
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+
+  useEffect(() => {
+    const globalTheme = settings?.theme || DEFAULT_THEME;
+    void applyThemeWithFallback(globalTheme, { persist: false });
+  }, [settings?.theme]);
 
   const sortedForms = useMemo(() => {
     const list = forms.slice();

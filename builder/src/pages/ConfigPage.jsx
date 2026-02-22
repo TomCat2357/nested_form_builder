@@ -100,7 +100,13 @@ export default function ConfigPage() {
   useEffect(() => {
     if (!isFormMode || !targetForm) return;
     void applyThemeWithFallback(formTheme, { persist: false });
-  }, [isFormMode, targetForm?.id, formTheme, rawGlobalTheme]);
+  }, [isFormMode, targetForm?.id, formTheme]);
+
+  // メイン設定では常にグローバルテーマを画面へ適用
+  useEffect(() => {
+    if (isFormMode) return;
+    void applyThemeWithFallback(globalTheme, { persist: false });
+  }, [isFormMode, globalTheme]);
 
   // テーマ欠損時のフォールバック（IndexedDBクリア等）
   useEffect(() => {
@@ -191,8 +197,7 @@ export default function ConfigPage() {
 
     setApplyingTheme(true);
     try {
-      const { updated, failed } = await applyThemeToAllForms(nextTheme);
-      showAlert(buildThemeApplyMessage(updated, failed));
+      await applyThemeToAllForms(nextTheme);
     } finally {
       setApplyingTheme(false);
     }
@@ -204,8 +209,7 @@ export default function ConfigPage() {
 
     setApplyingTheme(true);
     try {
-      const { updated, failed } = await applyThemeToAllForms(globalTheme);
-      showAlert(buildThemeApplyMessage(updated, failed));
+      await applyThemeToAllForms(globalTheme);
     } finally {
       setApplyingTheme(false);
     }

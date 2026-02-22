@@ -3,6 +3,8 @@ import AppLayout from "../app/components/AppLayout.jsx";
 import AlertDialog from "../app/components/AlertDialog.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
+import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { hasScriptRun, getAdminKey, setAdminKey, getAdminEmail, setAdminEmail } from "../services/gasClient.js";
 
 const normalizeAdminEmailInput = (value) => String(value || "")
@@ -13,6 +15,7 @@ const normalizeAdminEmailInput = (value) => String(value || "")
 
 export default function AdminSettingsPage() {
   const { alertState, showAlert, closeAlert } = useAlert();
+  const { settings } = useBuilderSettings();
   const [deployTime, setDeployTime] = useState("");
 
   const [adminKey, setAdminKeyState] = useState("");
@@ -30,6 +33,11 @@ export default function AdminSettingsPage() {
     () => normalizeAdminEmailInput(adminEmailInput),
     [adminEmailInput],
   );
+
+  useEffect(() => {
+    const globalTheme = settings?.theme || DEFAULT_THEME;
+    void applyThemeWithFallback(globalTheme, { persist: false });
+  }, [settings?.theme]);
 
   useEffect(() => {
     const metaTag = document.querySelector("meta[name=\"deploy-time\"]");
