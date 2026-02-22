@@ -100,7 +100,7 @@ export default function SearchPage() {
     if (!form) return;
     const theme = form?.settings?.theme || DEFAULT_THEME;
     void applyThemeWithFallback(theme, { persist: false });
-  }, [form?.id, form?.settings?.theme]);
+  }, [form?.id, form?.settings?.theme, settings?.theme]);
 
   const processedEntries = useMemo(() => entries.map((entry) => ({ entry, values: computeRowValues(entry, columns) })), [entries, columns]);
 

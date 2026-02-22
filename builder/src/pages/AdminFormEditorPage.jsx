@@ -12,6 +12,7 @@ import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { validateSpreadsheet } from "../services/gasClient.js";
 import { cleanupTempData } from "../core/schema.js";
 import { omitThemeSetting } from "../utils/settings.js";
+import { DEFAULT_THEME } from "../app/theme/theme.js";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/forms");
 
@@ -134,6 +135,7 @@ export default function AdminFormEditorPage() {
     const schema = builderRef.current.getSchema();
     const settings = builderRef.current.getSettings();
     const trimmedSettings = omitThemeSetting(settings);
+    const preservedTheme = form?.settings?.theme || DEFAULT_THEME;
     // 一時保存データをクリーンアップ
     const cleanedSchema = cleanupTempData(schema);
 
@@ -166,7 +168,7 @@ export default function AdminFormEditorPage() {
       ...(isEdit && form ? { id: form.id, createdAt: form.createdAt, driveFileUrl: form.driveFileUrl } : {}),
       description,
       schema: cleanedSchema,
-      settings: { ...trimmedSettings, formTitle: trimmedName },
+      settings: { ...trimmedSettings, theme: preservedTheme, formTitle: trimmedName },
       archived: form?.archived ?? false,
       schemaVersion: form?.schemaVersion ?? 1,
     };

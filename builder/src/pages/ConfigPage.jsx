@@ -45,8 +45,10 @@ export default function ConfigPage() {
     () => (requestedFormId ? getFormById(requestedFormId) : null),
     [requestedFormId, getFormById],
   );
-  const formTheme = targetForm?.settings?.theme || DEFAULT_THEME;
-  const globalTheme = settings?.theme || DEFAULT_THEME;
+  const rawFormTheme = targetForm?.settings?.theme;
+  const formTheme = rawFormTheme || DEFAULT_THEME;
+  const rawGlobalTheme = settings?.theme;
+  const globalTheme = rawGlobalTheme || DEFAULT_THEME;
   const themeValue = isFormMode ? formTheme : globalTheme;
 
   const [customThemes, setCustomThemes] = useState([]);
@@ -98,7 +100,7 @@ export default function ConfigPage() {
   useEffect(() => {
     if (!isFormMode || !targetForm) return;
     void applyThemeWithFallback(formTheme, { persist: false });
-  }, [isFormMode, targetForm?.id, formTheme]);
+  }, [isFormMode, targetForm?.id, formTheme, rawGlobalTheme]);
 
   // テーマ欠損時のフォールバック（IndexedDBクリア等）
   useEffect(() => {
@@ -106,8 +108,8 @@ export default function ConfigPage() {
 
     if (isFormMode) {
       if (!targetForm) return;
-      const resolved = resolveThemeName(formTheme, customThemes);
-      if (resolved !== formTheme) {
+      const resolved = resolveThemeName(rawFormTheme, customThemes);
+      if (resolved !== rawFormTheme) {
         void updateForm(targetForm.id, {
           settings: { ...(targetForm.settings || {}), theme: resolved },
         });
@@ -115,8 +117,8 @@ export default function ConfigPage() {
       return;
     }
 
-    const resolved = resolveThemeName(globalTheme, customThemes);
-    if (resolved !== globalTheme) {
+    const resolved = resolveThemeName(rawGlobalTheme, customThemes);
+    if (resolved !== rawGlobalTheme) {
       updateSetting("theme", resolved);
     }
   }, [
@@ -124,8 +126,8 @@ export default function ConfigPage() {
     isFormMode,
     targetForm?.id,
     targetForm?.settings,
-    formTheme,
-    globalTheme,
+    rawFormTheme,
+    rawGlobalTheme,
     customThemes,
     updateSetting,
     updateForm,
@@ -329,10 +331,10 @@ export default function ConfigPage() {
                 onChange={(event) => handleToggleSyncAllFormsTheme(event.target.checked)}
                 disabled={applyingTheme}
               />
-              <span className="nf-fw-600">全画面でテーマを統一</span>
+              <span className="nf-fw-600">フォームテーマも一括変更</span>
             </label>
             <p className="nf-mt-6 nf-text-12 nf-text-muted">
-              ONにすると、現在選択中のテーマを全フォームにも反映します。画面を開いた直後はOFFです。
+              ON時にテーマを変更すると、その時点の値で全フォームのテーマ設定を一括更新します。画面を開いた直後はOFFです。
             </p>
           </div>
         )}
