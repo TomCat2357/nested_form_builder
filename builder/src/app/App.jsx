@@ -21,7 +21,7 @@ function AdminRoute({ children }) {
   if (!isAdmin) {
     // 一般ユーザーは指定フォームの検索画面へリダイレクト
     if (formId) {
-      return <Navigate to={`/search?formId=${formId}`} replace />;
+      return <Navigate to={`/search?form=${formId}`} replace />;
     }
     // formIdもない場合はアクセス拒否状態としてトップへ戻す
     return <Navigate to="/" replace />;
@@ -70,7 +70,7 @@ function UserRedirect() {
   }
 
   if (formId) {
-    return <Navigate to={`/search?formId=${formId}`} replace />;
+    return <Navigate to={`/search?form=${formId}`} replace />;
   }
 
   return <MainPage />;

@@ -40,7 +40,7 @@ export default function SearchPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
-  const formId = (searchParams.get("formId") || "").trim();
+  const formId = (searchParams.get("form") || "").trim();
   const isScopedByQuery = scopedFormId !== "";
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [selectedEntries, setSelectedEntries] = useState(new Set());
@@ -159,7 +159,7 @@ export default function SearchPage() {
 
   const handleOpenFormConfig = () => {
     if (!formId) return;
-    navigate(`/config?formId=${encodeURIComponent(formId)}`, {
+    navigate(`/config?form=${encodeURIComponent(formId)}`, {
       state: { from: `${location.pathname}${location.search}` },
     });
   };
@@ -223,7 +223,7 @@ export default function SearchPage() {
           onBack={handleBackToMain}
           showBack={!isScopedByQuery}
           onCreate={handleCreateNew}
-          onConfig={handleOpenFormConfig}
+          onConfig={settings?.syncAllFormsTheme ? undefined : handleOpenFormConfig}
           onDelete={handleDeleteSelected}
           onRefresh={fetchAndCacheData}
           useCache={useCache}

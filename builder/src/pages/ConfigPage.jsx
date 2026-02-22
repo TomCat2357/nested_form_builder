@@ -34,10 +34,10 @@ const buildThemeApplyMessage = (updated, failed) => {
 
 export default function ConfigPage() {
   const [searchParams] = useSearchParams();
-  const requestedFormId = (searchParams.get("formId") || "").trim();
+  const requestedFormId = (searchParams.get("form") || "").trim();
   const isFormMode = requestedFormId !== "";
 
-  const { settings, updateSetting } = useBuilderSettings();
+  const { settings, updateSetting } = useBuilderSettings({ applyGlobalTheme: false });
   const { forms, getFormById, updateForm } = useAppData();
   const { alertState, showAlert, closeAlert } = useAlert();
 
@@ -50,6 +50,7 @@ export default function ConfigPage() {
   const rawGlobalTheme = settings?.theme;
   const globalTheme = rawGlobalTheme || DEFAULT_THEME;
   const themeValue = isFormMode ? formTheme : globalTheme;
+  const syncAllFormsTheme = settings?.syncAllFormsTheme ?? false;
 
   const [customThemes, setCustomThemes] = useState([]);
   const [customThemesReady, setCustomThemesReady] = useState(false);
@@ -57,7 +58,6 @@ export default function ConfigPage() {
   const [importing, setImporting] = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
   const [deployTime, setDeployTime] = useState("");
-  const [syncAllFormsTheme, setSyncAllFormsTheme] = useState(false);
   const [applyingTheme, setApplyingTheme] = useState(false);
 
   const themeOptions = useMemo(
@@ -72,7 +72,7 @@ export default function ConfigPage() {
     [themeOptions],
   );
   const selectThemeValue = availableThemeIds.has(themeValue) ? themeValue : DEFAULT_THEME;
-  const fallbackPath = isFormMode ? `/search?formId=${encodeURIComponent(requestedFormId)}` : "/";
+  const fallbackPath = isFormMode ? `/search?form=${encodeURIComponent(requestedFormId)}` : "/";
   const pageTitle = isFormMode
     ? `${targetForm?.settings?.formTitle || requestedFormId} - 設定`
     : "設定";
@@ -204,7 +204,7 @@ export default function ConfigPage() {
   };
 
   const handleToggleSyncAllFormsTheme = async (checked) => {
-    setSyncAllFormsTheme(checked);
+    updateSetting("syncAllFormsTheme", checked);
     if (!checked) return;
 
     setApplyingTheme(true);
@@ -338,7 +338,7 @@ export default function ConfigPage() {
               <span className="nf-fw-600">フォームテーマも一括変更</span>
             </label>
             <p className="nf-mt-6 nf-text-12 nf-text-muted">
-              ON時にテーマを変更すると、その時点の値で全フォームのテーマ設定を一括更新します。画面を開いた直後はOFFです。
+              ON時にテーマを変更すると、その時点の値で全フォームのテーマ設定を一括更新します。
             </p>
           </div>
         )}

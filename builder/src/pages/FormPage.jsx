@@ -19,7 +19,7 @@ import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
-  if (formId) return `/search?formId=${formId}`;
+  if (formId) return `/search?form=${formId}`;
   return "/";
 };
 

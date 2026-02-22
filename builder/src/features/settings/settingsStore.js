@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { DEFAULT_SETTINGS, loadSettingsFromStorage, saveSettingsToStorage } from "../../core/storage.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../../app/theme/theme.js";
 
-export const useBuilderSettings = () => {
+export const useBuilderSettings = (options = {}) => {
+  const applyGlobalTheme = options.applyGlobalTheme !== false;
   const [settings, setSettings] = useState({ ...DEFAULT_SETTINGS });
   const [loadingLocal, setLoadingLocal] = useState(true);
   const defaultsRef = useRef({ ...DEFAULT_SETTINGS });
@@ -41,8 +42,9 @@ export const useBuilderSettings = () => {
 
   useEffect(() => {
     if (loadingLocal) return;
+    if (!applyGlobalTheme) return;
     void applyThemeWithFallback(settings?.theme || DEFAULT_THEME, { persist: true });
-  }, [settings?.theme, loadingLocal]);
+  }, [settings?.theme, loadingLocal, applyGlobalTheme]);
 
   const updateSetting = useCallback(
     (key, value) => {

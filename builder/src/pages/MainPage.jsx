@@ -21,7 +21,7 @@ export default function MainPage() {
   }, [settings?.theme]);
 
   const handleSelect = (formId) => {
-    navigate(`/search?formId=${formId}`, {
+    navigate(`/search?form=${formId}`, {
       state: { fromMainPage: true }
     });
   };

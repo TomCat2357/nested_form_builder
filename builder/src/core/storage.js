@@ -46,6 +46,7 @@ export const DEFAULT_SETTINGS = {
   theme: "standard",
   pageSize: 20,
   searchCellMaxChars: "",
+  syncAllFormsTheme: false,
 };
 
 export const loadSettingsFromStorage = async () => {

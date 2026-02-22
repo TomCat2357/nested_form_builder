@@ -12,7 +12,8 @@ import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { validateSpreadsheet } from "../services/gasClient.js";
 import { cleanupTempData } from "../core/schema.js";
 import { omitThemeSetting } from "../utils/settings.js";
-import { DEFAULT_THEME } from "../app/theme/theme.js";
+import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
+import { useBuilderSettings } from "../features/settings/settingsStore.js";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/forms");
 
@@ -29,6 +30,13 @@ export default function AdminFormEditorPage() {
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
   const initialSchema = useMemo(() => (form?.schema ? form.schema : []), [form]);
   const initialSettings = useMemo(() => omitThemeSetting(form?.settings || {}), [form]);
+
+  const { settings } = useBuilderSettings();
+
+  useEffect(() => {
+    const globalTheme = settings?.theme || DEFAULT_THEME;
+    void applyThemeWithFallback(globalTheme, { persist: false });
+  }, [settings?.theme]);
 
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
