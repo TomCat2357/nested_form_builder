@@ -90,6 +90,53 @@ function Forms_parseGoogleDriveUrl_(url) {
   return { type: null, id: null };
 }
 
+function Forms_generateFormId_(mapping) {
+  var chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  var nextId = "";
+  do {
+    var randomChars = "";
+    for (var i = 0; i < 8; i++) {
+      randomChars += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    nextId = "f_" + new Date().getTime() + "_" + randomChars;
+  } while (mapping && mapping[nextId]);
+  return nextId;
+}
+
+function Forms_normalizeImportedFormData_(rawForm) {
+  if (!rawForm || typeof rawForm !== "object" || Array.isArray(rawForm)) {
+    return null;
+  }
+  if (!Array.isArray(rawForm.schema)) {
+    return null;
+  }
+
+  var normalized = {};
+  for (var key in rawForm) {
+    if (!rawForm.hasOwnProperty(key)) continue;
+    normalized[key] = rawForm[key];
+  }
+
+  var settings = rawForm.settings;
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) {
+    settings = {};
+  } else {
+    var copiedSettings = {};
+    for (var settingsKey in settings) {
+      if (!settings.hasOwnProperty(settingsKey)) continue;
+      copiedSettings[settingsKey] = settings[settingsKey];
+    }
+    settings = copiedSettings;
+  }
+
+  if (!settings.formTitle && typeof rawForm.name === "string" && rawForm.name.trim()) {
+    settings.formTitle = rawForm.name.trim();
+  }
+
+  normalized.settings = settings;
+  return normalized;
+}
+
 /**
  * スプレッドシートまたはフォルダの指定を解決（ID/URLを受け取る）
  * @param {string} input
@@ -561,14 +608,16 @@ function Forms_getOrCreateFolder_() {
  * フォームをGoogle Driveに保存（新規作成または更新）
  * @param {Object} form - フォームオブジェクト
  * @param {string} targetUrl - 保存先URL（オプション）
+ * @param {string} saveMode - 保存モード（auto|overwrite_existing|copy_to_root|copy_to_folder）
  * @return {Object} { ok: true, fileId, fileUrl, form }
  */
-function Forms_saveForm_(form, targetUrl) {
+function Forms_saveForm_(form, targetUrl, saveMode) {
   if (!form || !form.id) {
     throw new Error("Form ID is required");
   }
 
-  Logger.log("[Forms_saveForm_] Starting save for formId: " + form.id);
+  var requestedSaveMode = saveMode || "auto";
+  Logger.log("[Forms_saveForm_] Starting save for formId: " + form.id + ", requestedSaveMode: " + requestedSaveMode);
 
   // DEBUG: PropertiesServiceを直接読んで確認（script propertiesを参照）
   var scriptProps = Forms_getScriptProps_();
@@ -585,10 +634,11 @@ function Forms_saveForm_(form, targetUrl) {
   var mappingEntry = mapping[form.id] || {};
   var existingFileId = mappingEntry.fileId;
   Logger.log("[Forms_saveForm_] Existing fileId for this form: " + existingFileId);
+
   var file;
+  var fileId = null;
   var nowDate = new Date();
   var nowSerial = Sheets_dateToSerial_(nowDate);
-  var fileId = null;
   var createdAtSerial = Sheets_toUnixMs_(form.createdAt, true);
   if (createdAtSerial === null) {
     createdAtSerial = nowSerial;
@@ -619,60 +669,92 @@ function Forms_saveForm_(form, targetUrl) {
   };
 
   var content = JSON.stringify(formWithTimestamp, null, 2);
-  // ファイル名はフォーム内容のハッシュ値（同じ内容なら同じファイル名）
-  var contentHash = Forms_computeContentHash_(formWithTimestamp);
-  var fileName = contentHash + ".json";
+  var formTitle = (form.settings && form.settings.formTitle) || form.description || form.id;
+  var safeTitle = String(formTitle).replace(/[\\/:*?"<>|]/g, "_").substring(0, 100);
+  var fileName = safeTitle + ".json";
 
-  // targetUrlが指定されている場合、その場所に保存
+  var parsedTarget = null;
   if (targetUrl) {
-    var parsed = Forms_parseGoogleDriveUrl_(targetUrl);
-
-    if (parsed.type === "file") {
-      // 既存ファイルに上書き
-      try {
-        file = DriveApp.getFileById(parsed.id);
-        file.setContent(content);
-        fileId = parsed.id;
-      } catch (err) {
-        throw new Error("指定されたファイルにアクセスできません: " + err.message);
-      }
-    } else if (parsed.type === "folder") {
-      // 指定フォルダに新規作成
-      try {
-        var folder = DriveApp.getFolderById(parsed.id);
-        file = folder.createFile(fileName, content, MimeType.PLAIN_TEXT);
-        fileId = file.getId();
-      } catch (err) {
-        throw new Error("指定されたフォルダにアクセスできません: " + err.message);
-      }
-    } else {
-      throw new Error("無効なGoogle Drive URLです");
-    }
-  } else {
-    // targetUrlが未指定の場合、既存ファイルの更新または新規作成
-    if (existingFileId) {
-      // 既存ファイルがあれば更新
-      try {
-        file = DriveApp.getFileById(existingFileId);
-        file.setContent(content);
-        file.setName(fileName);
-        fileId = existingFileId;
-      } catch (err) {
-        Logger.log("[Forms_saveForm_] 既存ファイルが見つからないため新規作成: " + err);
-        existingFileId = null;
-      }
-    }
-
-    // 既存ファイルがない場合、デフォルトフォルダに作成
-    if (!existingFileId) {
-      var defaultFolder = Forms_getOrCreateFolder_();
-      file = defaultFolder.createFile(fileName, content, MimeType.PLAIN_TEXT);
-      fileId = file.getId();
+    parsedTarget = Forms_parseGoogleDriveUrl_(targetUrl);
+    if (!parsedTarget.type) {
+      throw new Error("[save-stage=parse-target] 無効なGoogle Drive URLです. formId=" + form.id + ", saveMode=" + requestedSaveMode);
     }
   }
 
-  // ファイルURLを取得してフォームオブジェクトに追加
-  var fileUrl = file.getUrl();
+  var effectiveSaveMode = requestedSaveMode;
+  if (effectiveSaveMode === "auto") {
+    if (parsedTarget && parsedTarget.type === "folder") {
+      effectiveSaveMode = "copy_to_folder";
+    } else if (parsedTarget && parsedTarget.type === "file") {
+      effectiveSaveMode = "overwrite_existing";
+    } else if (existingFileId) {
+      effectiveSaveMode = "overwrite_existing";
+    } else {
+      effectiveSaveMode = "copy_to_root";
+    }
+  }
+
+  if (effectiveSaveMode === "overwrite_existing") {
+    var overwriteFileId = null;
+    if (parsedTarget && parsedTarget.type === "file") {
+      overwriteFileId = parsedTarget.id;
+    } else if (existingFileId) {
+      overwriteFileId = existingFileId;
+    }
+
+    if (!overwriteFileId) {
+      throw new Error("[save-stage=resolve-overwrite-target] 上書き保存先のファイルIDを解決できません. formId=" + form.id + ", saveMode=" + effectiveSaveMode);
+    }
+
+    try {
+      file = DriveApp.getFileById(overwriteFileId);
+    } catch (errOpenFile) {
+      throw new Error("[save-stage=open-file] ファイルにアクセスできません. formId=" + form.id + ", fileId=" + overwriteFileId + ", saveMode=" + effectiveSaveMode + ", error=" + (errOpenFile && errOpenFile.message ? errOpenFile.message : String(errOpenFile)));
+    }
+
+    try {
+      file.setContent(content);
+      fileId = overwriteFileId;
+    } catch (errWriteFile) {
+      throw new Error("[save-stage=write-file] ファイル更新に失敗しました. formId=" + form.id + ", fileId=" + overwriteFileId + ", saveMode=" + effectiveSaveMode + ", error=" + (errWriteFile && errWriteFile.message ? errWriteFile.message : String(errWriteFile)));
+    }
+  } else if (effectiveSaveMode === "copy_to_folder") {
+    if (!parsedTarget || parsedTarget.type !== "folder") {
+      throw new Error("[save-stage=resolve-folder-target] copy_to_folder にはフォルダURLが必要です. formId=" + form.id + ", saveMode=" + effectiveSaveMode);
+    }
+
+    try {
+      var folder = DriveApp.getFolderById(parsedTarget.id);
+      file = folder.createFile(fileName, content, MimeType.PLAIN_TEXT);
+      fileId = file.getId();
+    } catch (errCreateInFolder) {
+      throw new Error("[save-stage=create-in-folder] 指定フォルダへの保存に失敗しました. formId=" + form.id + ", folderId=" + parsedTarget.id + ", saveMode=" + effectiveSaveMode + ", error=" + (errCreateInFolder && errCreateInFolder.message ? errCreateInFolder.message : String(errCreateInFolder)));
+    }
+  } else if (effectiveSaveMode === "copy_to_root") {
+    try {
+      file = DriveApp.createFile(fileName, content, MimeType.PLAIN_TEXT);
+      fileId = file.getId();
+    } catch (errCreateInRoot) {
+      throw new Error("[save-stage=create-in-root] マイドライブ直下への保存に失敗しました. formId=" + form.id + ", saveMode=" + effectiveSaveMode + ", error=" + (errCreateInRoot && errCreateInRoot.message ? errCreateInRoot.message : String(errCreateInRoot)));
+    }
+  } else {
+    throw new Error("[save-stage=resolve-mode] 未知のsaveModeです: " + effectiveSaveMode + ", formId=" + form.id);
+  }
+
+  if (!file && fileId) {
+    try {
+      file = DriveApp.getFileById(fileId);
+    } catch (errReload) {
+      throw new Error("[save-stage=reload-file] 保存後ファイルの再取得に失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + (errReload && errReload.message ? errReload.message : String(errReload)));
+    }
+  }
+
+  var fileUrl = null;
+  try {
+    fileUrl = file.getUrl();
+  } catch (errGetUrl) {
+    throw new Error("[save-stage=get-url] ファイルURLの取得に失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + (errGetUrl && errGetUrl.message ? errGetUrl.message : String(errGetUrl)));
+  }
   formWithTimestamp.driveFileUrl = fileUrl;
 
   // ダウンロード用ファイル内容からIDを除外（外部配布用にID非表示）
@@ -689,13 +771,17 @@ function Forms_saveForm_(form, targetUrl) {
   formForFile.driveFileUrl = fileUrl;
 
   // driveFileUrlを含めて再度ファイルに書き込み（IDなし）
-  file.setContent(JSON.stringify(formForFile, null, 2));
+  try {
+    file.setContent(JSON.stringify(formForFile, null, 2));
+  } catch (errWriteFinal) {
+    throw new Error("[save-stage=final-write] driveFileUrl反映書き込みに失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + (errWriteFinal && errWriteFinal.message ? errWriteFinal.message : String(errWriteFinal)));
+  }
 
   // マッピングを更新
   mapping[form.id] = { fileId: fileId, driveFileUrl: fileUrl };
   Logger.log("[Forms_saveForm_] Updated mapping, about to save: " + JSON.stringify(mapping));
   Forms_saveMapping_(mapping);
-  Logger.log("[Forms_saveForm_] Mapping saved. FormId: " + form.id + ", FileId: " + fileId);
+  Logger.log("[Forms_saveForm_] Mapping saved. FormId: " + form.id + ", FileId: " + fileId + ", saveMode: " + effectiveSaveMode);
 
   // 認証用URLマップにも登録（?form=xxx でアクセス可能にする）
   try {
@@ -708,6 +794,7 @@ function Forms_saveForm_(form, targetUrl) {
     ok: true,
     fileId: fileId,
     fileUrl: fileUrl,
+    saveMode: effectiveSaveMode,
     form: formWithTimestamp,
     debugRawJsonBefore: rawJsonBeforeGetMapping,
     debugRawJsonAfter: rawJsonAfterGetMapping,
@@ -1047,7 +1134,7 @@ function Forms_getForm_(formId) {
 }
 
 /**
- * フォームを削除
+ * フォームを削除（Driveファイルは削除せず、紐付けのみ解除）
  * @param {string} formId
  * @return {Object} { ok: true }
  */
@@ -1057,18 +1144,6 @@ function Forms_deleteForm_(formId) {
   }
 
   var mapping = Forms_getMapping_();
-  var mappingEntry = mapping[formId] || {};
-  var fileId = mappingEntry.fileId;
-
-  if (fileId) {
-    try {
-      var file = DriveApp.getFileById(fileId);
-      file.setTrashed(true);
-    } catch (err) {
-      Logger.log("[Forms_deleteForm_] Error deleting file for form " + formId + ": " + err);
-    }
-  }
-
   delete mapping[formId];
   Forms_saveMapping_(mapping);
   Forms_removeUserMappingEntries_([formId]);
@@ -1078,7 +1153,7 @@ function Forms_deleteForm_(formId) {
 }
 
 /**
- * 複数フォームを削除（マッピング更新を1回で実施）
+ * 複数フォームを削除（Driveファイルは削除せず、紐付けのみ解除）
  * @param {Array<string>} formIds
  * @return {Object} { ok: boolean, deleted: number, errors: Array }
  */
@@ -1089,23 +1164,10 @@ function Forms_deleteForms_(formIds) {
 
   var ids = Array.isArray(formIds) ? formIds.slice() : [formIds];
   var mapping = Forms_getMapping_();
-  var errors = [];
   var deleted = 0;
 
   ids.forEach(function(formId) {
     if (!formId) return;
-    var entry = mapping[formId] || {};
-    var fileId = entry.fileId;
-
-    if (fileId) {
-      try {
-        var file = DriveApp.getFileById(fileId);
-        file.setTrashed(true);
-      } catch (err) {
-        Logger.log("[Forms_deleteForms_] Error deleting file for form " + formId + ": " + err);
-        errors.push({ formId: formId, error: err.message || String(err) });
-      }
-    }
 
     if (mapping.hasOwnProperty(formId)) {
       delete mapping[formId];
@@ -1118,9 +1180,9 @@ function Forms_deleteForms_(formIds) {
   Forms_removeLegacyUrls_(ids);
 
   return {
-    ok: errors.length === 0,
+    ok: true,
     deleted: deleted,
-    errors: errors
+    errors: []
   };
 }
 
@@ -1235,13 +1297,14 @@ function nfbGetForm(formId) {
 
 /**
  * フォームを保存（新規作成または更新）
- * @param {Object} payload - { form: Object, targetUrl: string }
+ * @param {Object} payload - { form: Object, targetUrl: string, saveMode: string }
  */
 function nfbSaveForm(payload) {
   return nfbSafeCall_(function() {
     var form = payload.form || payload;
     var targetUrl = payload.targetUrl || null;
-    var result = Forms_saveForm_(form, targetUrl);
+    var saveMode = payload.saveMode || "auto";
+    var result = Forms_saveForm_(form, targetUrl, saveMode);
     Logger.log("[nfbSaveForm] Result before return: " + JSON.stringify(result));
     Logger.log("[nfbSaveForm] Result.debugRawJsonBefore: " + result.debugRawJsonBefore);
     Logger.log("[nfbSaveForm] Result.debugRawJsonAfter: " + result.debugRawJsonAfter);
@@ -1407,9 +1470,10 @@ function Forms_importFromDrive_(url) {
   }
 
   var mapping = Forms_getMapping_();
-  var existingFormIds = Object.keys(mapping);
   var forms = [];
   var skipped = 0;
+  var parseFailed = 0;
+  var totalFiles = 0;
 
   // 重複検出用
   var existingDriveFileUrls = [];
@@ -1446,17 +1510,18 @@ function Forms_importFromDrive_(url) {
 
       var content = file.getBlob().getDataAsString();
       var formData = JSON.parse(content);
+      var normalizedFormData = Forms_normalizeImportedFormData_(formData);
+      if (!normalizedFormData) {
+        throw new Error("フォーム形式として無効なJSONです: " + fileName);
+      }
 
-      // 重複判定はdriveFileUrlのみ
-      forms.push(formData);
+      // fileId / fileUrl を付与して返す（コピーなしで元ファイルを管理するため）
+      forms.push({ form: normalizedFormData, fileId: parsed.id, fileUrl: fileUrl });
     } catch (err) {
       throw new Error("ファイルの読み込みに失敗しました: " + err.message);
     }
   } else if (parsed.type === "folder") {
     // フォルダの場合：フォルダ内の.jsonファイルを全て読み込む
-    var parseFailed = 0;
-    var totalFiles = 0;
-
     try {
       var folder = DriveApp.getFolderById(parsed.id);
       // MIME type に依存せず、拡張子が .json のファイルを全件対象にする
@@ -1485,16 +1550,15 @@ function Forms_importFromDrive_(url) {
         try {
           var content = file.getBlob().getDataAsString();
           var formData = JSON.parse(content);
-
-          // 有効なフォームデータかチェック（最低限nameとschemaがあるか）
-          if (!formData || typeof formData !== "object") {
+          var normalizedFormData = Forms_normalizeImportedFormData_(formData);
+          if (!normalizedFormData) {
             Logger.log("[Forms_importFromDrive_] Invalid form data in file: " + fileName);
             parseFailed += 1;
             continue;
           }
 
-          // 重複判定はdriveFileUrlのみ
-          forms.push(formData);
+          // fileId / fileUrl を付与して返す（コピーなしで元ファイルを管理するため）
+          forms.push({ form: normalizedFormData, fileId: fileId, fileUrl: fileUrlInFolder });
         } catch (parseErr) {
           Logger.log("[Forms_importFromDrive_] Failed to parse JSON file: " + fileName + " - " + parseErr.message);
           parseFailed += 1;
@@ -1523,6 +1587,60 @@ function Forms_importFromDrive_(url) {
 function nfbImportFormsFromDrive(url) {
   return nfbSafeCall_(function() {
     return Forms_importFromDrive_(url);
+  });
+}
+
+/**
+ * インポートしたフォームをコピーなしでマッピングに登録する
+ * @param {Object} payload - { form: Object, fileId: string, fileUrl: string }
+ * @return {Object} { ok: true, form, fileId, fileUrl }
+ */
+function Forms_registerImportedForm_(payload) {
+  if (!payload || !payload.form || !payload.fileId) {
+    throw new Error("form と fileId が必要です");
+  }
+
+  var form = Forms_normalizeImportedFormData_(payload.form);
+  if (!form) {
+    throw new Error("フォームJSONが有効な形式ではありません");
+  }
+  var fileId = payload.fileId;
+  var fileUrl = payload.fileUrl || ("https://drive.google.com/file/d/" + fileId + "/view");
+
+  // マッピングに登録（ファイルのコピーは作らない）
+  var mapping = Forms_getMapping_();
+  var formId = form.id ? String(form.id) : "";
+  if (formId && mapping[formId] && mapping[formId].fileId && mapping[formId].fileId !== fileId) {
+    Logger.log("[Forms_registerImportedForm_] Existing form id conflict. Assigning new id: " + formId);
+    formId = "";
+  }
+  if (!formId) {
+    formId = Forms_generateFormId_(mapping);
+  }
+  form.id = formId;
+  form.driveFileUrl = fileUrl;
+
+  mapping[formId] = { fileId: fileId, driveFileUrl: fileUrl };
+  Forms_saveMapping_(mapping);
+
+  // AddFormUrl_ にも登録（?form=xxx でアクセス可能にする）
+  try {
+    AddFormUrl_(formId, fileUrl);
+  } catch (err) {
+    Logger.log("[Forms_registerImportedForm_] AddFormUrl_ failed (non-critical): " + err);
+  }
+
+  return { ok: true, form: form, fileId: fileId, fileUrl: fileUrl };
+}
+
+/**
+ * インポートフォーム登録API（コピーなし）
+ * @param {Object} payload - { form: Object, fileId: string, fileUrl: string }
+ * @return {Object} { ok: true, form, fileId, fileUrl }
+ */
+function nfbRegisterImportedForm(payload) {
+  return nfbSafeCall_(function() {
+    return Forms_registerImportedForm_(payload);
   });
 }
 

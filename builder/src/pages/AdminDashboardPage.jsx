@@ -41,7 +41,7 @@ const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = 
 };
 
 export default function AdminDashboardPage() {
-  const { forms, loadFailures, loadingForms, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, refreshForms, exportForms, createForm } = useAppData();
+  const { forms, loadFailures, loadingForms, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, refreshForms, exportForms, registerImportedForm } = useAppData();
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
   const [selected, setSelected] = useState(() => new Set());
@@ -200,23 +200,26 @@ export default function AdminDashboardPage() {
 
   const flattenImportedContents = (contents) => {
     const list = [];
-    contents.forEach((item) => {
-      if (Array.isArray(item)) {
-        item.forEach((child) => {
-          const sanitized = sanitizeImportedForm(child);
-          if (sanitized) list.push(sanitized);
-        });
+    let invalidPayloadCount = 0;
+    (Array.isArray(contents) ? contents : []).forEach((item) => {
+      // GASから返ってくる新形式: { form, fileId, fileUrl }
+      if (item && item.form && item.fileId) {
+        const sanitized = sanitizeImportedForm(item.form);
+        if (sanitized) {
+          list.push({ form: sanitized, fileId: item.fileId, fileUrl: item.fileUrl || null });
+        } else {
+          invalidPayloadCount += 1;
+        }
       } else {
-        const sanitized = sanitizeImportedForm(item);
-        if (sanitized) list.push(sanitized);
+        invalidPayloadCount += 1;
       }
     });
-    return list;
+    return { list, invalidPayloadCount };
   };
 
   const startImportWorkflow = useCallback(
     async (parsedContents, { skipped = 0, parseFailed = 0 } = {}) => {
-      const queue = flattenImportedContents(parsedContents);
+      const { list: queue, invalidPayloadCount } = flattenImportedContents(parsedContents);
       const detail = buildImportDetail(skipped, parseFailed, { useRegisteredLabel: true });
       if (!queue.length) {
         showAlert(`取り込めるフォームはありませんでした${detail}。`);
@@ -225,29 +228,23 @@ export default function AdminDashboardPage() {
 
       setImporting(true);
       let imported = 0;
-      let saveFailed = 0;
+      let saveFailed = invalidPayloadCount;
 
       try {
         for (const item of queue) {
-          const payload = {
-            id: item.id, // IDを保持（重要）
-            description: item.description,
-            schema: item.schema,
-            settings: item.settings,
-            archived: item.archived,
-            schemaVersion: item.schemaVersion,
-            createdAt: item.createdAt, // 作成日時を保持
-            modifiedAt: item.modifiedAt, // 更新日時を保持
-          };
-
           try {
-            await createForm(payload);
+            // fileIdがある場合はコピーなしで登録（元ファイルをそのまま管理）
+            await registerImportedForm({
+              form: item.form,
+              fileId: item.fileId,
+              fileUrl: item.fileUrl,
+            });
             imported += 1;
           } catch (error) {
             saveFailed += 1;
             console.warn("[DriveImport] failed to import one form", {
-              formId: item?.id,
-              title: item?.settings?.formTitle,
+              formId: item?.form?.id,
+              title: item?.form?.settings?.formTitle,
               error: error?.message || error,
             });
           }
@@ -272,7 +269,7 @@ export default function AdminDashboardPage() {
         setImporting(false);
       }
     },
-    [createForm, showAlert],
+    [registerImportedForm, showAlert],
   );
 
   const handleImportFromDrive = async () => {

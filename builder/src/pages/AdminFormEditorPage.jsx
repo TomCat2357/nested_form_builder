@@ -171,12 +171,39 @@ export default function AdminFormEditorPage() {
       schemaVersion: form?.schemaVersion ?? 1,
     };
 
-    // driveUrlが指定されている場合、それを使用
     const targetUrl = driveUrl?.trim() || null;
+    const isFileUrl = targetUrl ? /\/file\/d\/[a-zA-Z0-9_-]+/.test(targetUrl) : false;
+    const isFolderUrl = targetUrl ? /\/folders\/[a-zA-Z0-9_-]+/.test(targetUrl) : false;
+    let saveMode = "auto";
+
+    if (!targetUrl) {
+      saveMode = isEdit ? "auto" : "copy_to_root";
+    } else if (isFileUrl) {
+      saveMode = "overwrite_existing";
+    } else if (isFolderUrl) {
+      saveMode = "copy_to_folder";
+    }
+
+    // ファイルURLのバリデーション
+    if (targetUrl) {
+      if (!isEdit && isFileUrl) {
+        showAlert("新規作成時はファイルURLは指定できません。フォルダURLまたは空白にしてください。");
+        setIsSaving(false);
+        return;
+      }
+      if (isEdit && isFileUrl) {
+        const originalFileUrl = form?.driveFileUrl || "";
+        if (targetUrl !== originalFileUrl) {
+          showAlert("既存フォームの保存先には、元のファイルURL以外のファイルURLは指定できません。フォルダURLまたは空白にしてください。");
+          setIsSaving(false);
+          return;
+        }
+      }
+    }
 
     try {
-      if (isEdit) await updateForm(formId, payload, targetUrl);
-      else await createForm(payload, targetUrl);
+      if (isEdit) await updateForm(formId, payload, targetUrl, saveMode);
+      else await createForm(payload, targetUrl, saveMode);
       initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
       setBuilderDirty(false);
       setIsSaving(false);
@@ -328,16 +355,15 @@ export default function AdminFormEditorPage() {
               value={driveUrl}
               onChange={(event) => setDriveUrl(event.target.value)}
               className="nf-input admin-input"
-              placeholder="空白: ルートディレクトリ / フォルダURL: ランダム名で保存 / ファイルURL: そのファイルに保存"
+              placeholder={isEdit
+                ? "空白: マイドライブルートに新たにコピー / フォルダURL: 指定フォルダにコピー"
+                : "空白: マイドライブルート / フォルダURL: 指定フォルダに保存"}
             />
             <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
-              空白の場合はルートディレクトリに保存されます。フォルダURLを指定するとそのフォルダにランダム名で保存、ファイルURLを指定するとそのファイルに保存されます。
+              {isEdit
+                ? "現在のファイルURLが表示されています。空白にするとマイドライブルートに新たなコピーを作成します。フォルダURLに変更するとそのフォルダにコピーを作成します。ファイルURLは元のURL以外は指定できません。"
+                : "空白の場合はマイドライブのルートに保存されます。フォルダURLを指定するとそのフォルダに保存されます。ファイルURLは指定できません。"}
             </p>
-            {isEdit && driveUrl && (
-              <p className="nf-text-11 nf-text-primary-strong nf-mt-4 nf-mb-0">
-                変更すると新しい場所に保存され、元のファイルはそのまま残ります。
-              </p>
-            )}
           </div>
         </div>
 

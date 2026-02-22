@@ -206,11 +206,11 @@ export function AppDataProvider({ children }) {
     await saveCacheWithErrorHandling(nextForms, nextLoadFailures, setCacheDisabled, "removeFormsState");
   }, []);
 
-  const createForm = useCallback(async (payload, targetUrl) => {
+  const createForm = useCallback(async (payload, targetUrl, saveMode = "auto") => {
     const optimisticForm = normalizeFormRecord(payload, { preserveUnknownFields: true });
     await upsertFormsState(optimisticForm);
 
-    void dataStore.createForm({ ...payload, id: optimisticForm.id, createdAt: optimisticForm.createdAt }, targetUrl)
+    void dataStore.createForm({ ...payload, id: optimisticForm.id, createdAt: optimisticForm.createdAt }, targetUrl, saveMode)
       .then((savedForm) => upsertFormsState(savedForm))
       .catch((err) => {
         console.error("[AppDataProvider] Background createForm failed:", err);
@@ -219,7 +219,7 @@ export function AppDataProvider({ children }) {
     return optimisticForm;
   }, [upsertFormsState]);
 
-  const updateForm = useCallback(async (formId, updates, targetUrl) => {
+  const updateForm = useCallback(async (formId, updates, targetUrl, saveMode = "auto") => {
     const existing = formsRef.current.find((form) => form.id === formId) || {};
     const optimisticForm = normalizeFormRecord({
       ...existing,
@@ -235,7 +235,7 @@ export function AppDataProvider({ children }) {
 
     await upsertFormsState(optimisticForm);
 
-    void dataStore.updateForm(formId, updates, targetUrl)
+    void dataStore.updateForm(formId, updates, targetUrl, saveMode)
       .then((savedForm) => upsertFormsState(savedForm))
       .catch((err) => {
         console.error("[AppDataProvider] Background updateForm failed:", err);
@@ -315,6 +315,14 @@ export function AppDataProvider({ children }) {
   const exportForms = useCallback(async (formIds) => dataStore.exportForms(formIds), []);
   const getFormById = useCallback((formId) => forms.find((form) => form.id === formId) || null, [forms]);
 
+  const registerImportedForm = useCallback(async (payload) => {
+    const result = await dataStore.registerImportedForm(payload);
+    if (result) {
+      await upsertFormsState(result);
+    }
+    return result;
+  }, [upsertFormsState]);
+
   const memoValue = useMemo(
     () => ({
       forms,
@@ -335,8 +343,9 @@ export function AppDataProvider({ children }) {
       importForms,
       exportForms,
       getFormById,
+      registerImportedForm,
     }),
-    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, deleteForm, importForms, exportForms, getFormById],
+    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, deleteForm, importForms, exportForms, getFormById, registerImportedForm],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;

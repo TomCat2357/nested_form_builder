@@ -157,9 +157,9 @@ export const getForm = async (formId) => {
   return result.form || null;
 };
 
-export const saveForm = async (form, targetUrl = null) => {
+export const saveForm = async (form, targetUrl = null, saveMode = "auto") => {
   if (!form || !form.id) throw new Error("Form with ID is required");
-  const payload = { form, targetUrl };
+  const payload = { form, targetUrl, saveMode };
   const result = await callFormApi("nfbSaveForm", payload, "Save form failed");
   return { form: result.form, fileUrl: result.fileUrl };
 };
@@ -221,6 +221,13 @@ export const importFormsFromDrive = async (url) => {
     parseFailed: result.parseFailed || 0,
     totalFiles: result.totalFiles || 0,
   };
+};
+
+export const registerImportedForm = async (payload) => {
+  if (!payload || !payload.form || !payload.fileId) {
+    throw new Error("form and fileId are required");
+  }
+  return await callFormApi("nfbRegisterImportedForm", payload, "Register imported form failed");
 };
 
 export const importThemeFromDrive = async (url) => {

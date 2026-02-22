@@ -29,6 +29,7 @@ import {
   unarchiveForms as unarchiveFormsInGas,
   hasScriptRun,
   debugGetMapping,
+  registerImportedForm as registerImportedFormInGas,
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 import { toUnixMs } from "../../utils/dateTime.js";
@@ -98,7 +99,7 @@ export const dataStore = {
     const form = await getFormFromGas(formId);
     return form ? ensureDisplayInfo(form) : null;
   },
-  async createForm(payload, targetUrl = null) {
+  async createForm(payload, targetUrl = null, saveMode = "auto") {
     // normalizeFormRecordにID生成を委ねる（payloadにidがあればそれを使用、なければ生成）
     const record = normalizeFormRecord(payload);
     console.log("[dataStore.createForm] Creating form:", { id: record.id, hasPayloadId: !!payload.id, targetUrl });
@@ -118,7 +119,7 @@ export const dataStore = {
       console.warn("[DEBUG] Failed to get before-mapping:", debugErr);
     }
 
-    const result = await saveFormToGas(record, targetUrl);
+    const result = await saveFormToGas(record, targetUrl, saveMode);
     console.log("[dataStore.createForm] GAS result:", { formId: result?.form?.id, fileUrl: result?.fileUrl });
     console.log("[dataStore.createForm] GAS debugRawJsonBefore:", result?.debugRawJsonBefore);
     console.log("[dataStore.createForm] GAS debugRawJsonAfter:", result?.debugRawJsonAfter);
@@ -140,7 +141,17 @@ export const dataStore = {
     const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
     return formWithUrl ? ensureDisplayInfo(formWithUrl) : record;
   },
-  async updateForm(formId, updates, targetUrl = null) {
+  async registerImportedForm(payload) {
+    // payload: { form, fileId, fileUrl }
+    if (!hasScriptRun()) {
+      throw new Error("GAS unavailable");
+    }
+    const result = await registerImportedFormInGas(payload);
+    const form = result?.form;
+    const fileUrl = result?.fileUrl || payload.fileUrl;
+    return form ? ensureDisplayInfo({ ...form, driveFileUrl: fileUrl }) : null;
+  },
+  async updateForm(formId, updates, targetUrl = null, saveMode = "auto") {
     // First get the current form. If GAS fetch fails, fallback to provided updates.
     let current = null;
     try {
@@ -177,7 +188,7 @@ export const dataStore = {
     if (!hasScriptRun()) {
       throw new Error("GAS unavailable");
     }
-    const result = await saveFormToGas(next, targetUrl);
+    const result = await saveFormToGas(next, targetUrl, saveMode);
     const savedForm = result?.form || result;
     const fileUrl = result?.fileUrl;
 
