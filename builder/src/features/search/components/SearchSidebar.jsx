@@ -1,6 +1,7 @@
 import React from "react";
 export default function SearchSidebar({
   onCreate,
+  onConfig,
   onDelete,
   onRefresh,
   useCache,
@@ -12,6 +13,11 @@ export default function SearchSidebar({
       <button type="button" className="search-input search-sidebar-btn" onClick={onCreate}>
         新規入力
       </button>
+      {onConfig && (
+        <button type="button" className="search-input search-sidebar-btn" onClick={onConfig}>
+          設定
+        </button>
+      )}
       <button
         type="button"
         className="search-input search-sidebar-btn search-sidebar-btn-danger"

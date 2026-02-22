@@ -2,10 +2,12 @@ import React, { useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
+import { useAuth } from "../app/state/authContext.jsx";
 import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
 
 export default function MainPage() {
   const { forms, loadingForms } = useAppData();
+  const { isAdmin } = useAuth();
   const navigate = useNavigate();
 
   const activeForms = useMemo(() => forms.filter((form) => !form.archived), [forms]);
@@ -30,9 +32,11 @@ export default function MainPage() {
       backHidden
       sidebarActions={
         <>
-          <button type="button" onClick={handleGoForms} className="nf-btn-outline nf-btn-sidebar">
-            フォーム管理へ
-          </button>
+          {isAdmin && (
+            <button type="button" onClick={handleGoForms} className="nf-btn-outline nf-btn-sidebar">
+              フォーム管理へ
+            </button>
+          )}
           <button type="button" onClick={handleGoConfig} className="nf-btn-outline nf-btn-sidebar">
             設定
           </button>

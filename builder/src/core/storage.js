@@ -43,7 +43,7 @@ export const writeSettingsValue = async (key, value) => writeJson(key, value);
 export const DEFAULT_SETTINGS = {
   spreadsheetId: "",
   sheetName: "Data",
-  theme: "balanced",
+  theme: "standard",
   pageSize: 20,
   searchCellMaxChars: "",
 };

@@ -1,14 +1,19 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import AlertDialog from "../app/components/AlertDialog.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
+import { useAppData } from "../app/state/AppDataProvider.jsx";
+import { useAuth } from "../app/state/authContext.jsx";
 import {
   DEFAULT_THEME,
   THEME_OPTIONS,
   getCustomThemes,
   removeCustomTheme,
   setCustomTheme,
+  applyThemeWithFallback,
+  resolveThemeName,
 } from "../app/theme/theme.js";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { hasScriptRun, importThemeFromDrive, getAdminKey, setAdminKey } from "../services/gasClient.js";
@@ -22,29 +27,62 @@ const extractThemeName = (css, fallbackName = "") => {
   return "";
 };
 
+const buildThemeApplyMessage = (updated, failed) => {
+  if (updated === 0 && failed === 0) return "更新対象のフォームはありませんでした。";
+  if (failed === 0) return `${updated}件のフォームテーマを更新しました。`;
+  return `${updated}件のフォームテーマを更新し、${failed}件は更新に失敗しました。`;
+};
+
 export default function ConfigPage() {
+  const [searchParams] = useSearchParams();
+  const requestedFormId = (searchParams.get("formId") || "").trim();
+  const isFormMode = requestedFormId !== "";
+
   const { settings, updateSetting } = useBuilderSettings();
+  const { forms, getFormById, updateForm } = useAppData();
+  const { isAdmin } = useAuth();
   const { alertState, showAlert, closeAlert } = useAlert();
+
+  const targetForm = useMemo(
+    () => (requestedFormId ? getFormById(requestedFormId) : null),
+    [requestedFormId, getFormById],
+  );
+  const formTheme = targetForm?.settings?.theme || DEFAULT_THEME;
+  const globalTheme = settings?.theme || DEFAULT_THEME;
+  const themeValue = isFormMode ? formTheme : globalTheme;
+
   const [customThemes, setCustomThemes] = useState([]);
   const [customThemesReady, setCustomThemesReady] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
   const [deployTime, setDeployTime] = useState("");
-  const themeValue = settings?.theme || DEFAULT_THEME;
+  const [syncAllFormsTheme, setSyncAllFormsTheme] = useState(false);
+  const [applyingTheme, setApplyingTheme] = useState(false);
 
   // 管理者キー関連の状態
   const [adminKey, setAdminKeyState] = useState("");
   const [adminKeyInput, setAdminKeyInput] = useState("");
   const [adminKeyLoading, setAdminKeyLoading] = useState(false);
   const [adminKeyConfirm, setAdminKeyConfirm] = useState(false);
+  const canManageAdminKey = !isFormMode && isAdmin && hasScriptRun();
+
   const themeOptions = useMemo(
     () => [
       ...THEME_OPTIONS,
       ...customThemes.map((theme) => ({ value: theme.id, label: theme.name || "カスタムテーマ" })),
     ],
-    [customThemes]
+    [customThemes],
   );
+  const availableThemeIds = useMemo(
+    () => new Set(themeOptions.map((option) => option.value)),
+    [themeOptions],
+  );
+  const selectThemeValue = availableThemeIds.has(themeValue) ? themeValue : DEFAULT_THEME;
+  const fallbackPath = isFormMode ? `/search?formId=${encodeURIComponent(requestedFormId)}` : "/";
+  const pageTitle = isFormMode
+    ? `${targetForm?.settings?.formTitle || requestedFormId} - 設定`
+    : "設定";
 
   useEffect(() => {
     let active = true;
@@ -65,13 +103,42 @@ export default function ConfigPage() {
     };
   }, []);
 
+  // 個別フォーム設定では常に対象フォームのテーマを画面へ適用
+  useEffect(() => {
+    if (!isFormMode || !targetForm) return;
+    void applyThemeWithFallback(formTheme, { persist: false });
+  }, [isFormMode, targetForm?.id, formTheme]);
+
+  // テーマ欠損時のフォールバック（IndexedDBクリア等）
   useEffect(() => {
     if (!customThemesReady) return;
-    const hasSelectedTheme = themeOptions.some((option) => option.value === themeValue);
-    if (!hasSelectedTheme && themeValue !== DEFAULT_THEME) {
-      updateSetting("theme", DEFAULT_THEME);
+
+    if (isFormMode) {
+      if (!targetForm) return;
+      const resolved = resolveThemeName(formTheme, customThemes);
+      if (resolved !== formTheme) {
+        void updateForm(targetForm.id, {
+          settings: { ...(targetForm.settings || {}), theme: resolved },
+        });
+      }
+      return;
     }
-  }, [customThemesReady, themeOptions, themeValue, updateSetting]);
+
+    const resolved = resolveThemeName(globalTheme, customThemes);
+    if (resolved !== globalTheme) {
+      updateSetting("theme", resolved);
+    }
+  }, [
+    customThemesReady,
+    isFormMode,
+    targetForm?.id,
+    targetForm?.settings,
+    formTheme,
+    globalTheme,
+    customThemes,
+    updateSetting,
+    updateForm,
+  ]);
 
   // デプロイ時刻を読み取り
   useEffect(() => {
@@ -81,9 +148,9 @@ export default function ConfigPage() {
     }
   }, []);
 
-  // 管理者キーを読み込み
+  // 管理者キーを読み込み（メイン設定かつ管理者のみ）
   useEffect(() => {
-    if (!hasScriptRun()) return;
+    if (!canManageAdminKey) return;
     (async () => {
       try {
         const key = await getAdminKey();
@@ -93,14 +160,81 @@ export default function ConfigPage() {
         console.error("[ConfigPage] getAdminKey failed", error);
       }
     })();
-  }, []);
+  }, [canManageAdminKey]);
+
+  const applyThemeToAllForms = useCallback(
+    async (nextTheme) => {
+      const targets = forms.filter((form) => (form?.settings?.theme || DEFAULT_THEME) !== nextTheme);
+      let updated = 0;
+      let failed = 0;
+
+      for (const form of targets) {
+        try {
+          await updateForm(form.id, {
+            settings: { ...(form.settings || {}), theme: nextTheme },
+          });
+          updated += 1;
+        } catch (error) {
+          failed += 1;
+          console.error("[ConfigPage] applyThemeToAllForms failed", { formId: form.id, error });
+        }
+      }
+      return { updated, failed };
+    },
+    [forms, updateForm],
+  );
+
+  const handleChangeMainTheme = useCallback(async (nextTheme) => {
+    updateSetting("theme", nextTheme);
+  }, [updateSetting]);
+
+  const handleChangeFormTheme = useCallback(
+    async (nextTheme) => {
+      if (!targetForm) return;
+      await updateForm(targetForm.id, {
+        settings: { ...(targetForm.settings || {}), theme: nextTheme },
+      });
+      await applyThemeWithFallback(nextTheme, { persist: false });
+    },
+    [targetForm, updateForm],
+  );
+
+  const handleThemeChange = async (event) => {
+    const nextTheme = event.target.value;
+
+    if (isFormMode) {
+      await handleChangeFormTheme(nextTheme);
+      return;
+    }
+
+    await handleChangeMainTheme(nextTheme);
+    if (!syncAllFormsTheme) return;
+
+    setApplyingTheme(true);
+    try {
+      const { updated, failed } = await applyThemeToAllForms(nextTheme);
+      showAlert(buildThemeApplyMessage(updated, failed));
+    } finally {
+      setApplyingTheme(false);
+    }
+  };
+
+  const handleToggleSyncAllFormsTheme = async (checked) => {
+    setSyncAllFormsTheme(checked);
+    if (!checked) return;
+
+    setApplyingTheme(true);
+    try {
+      const { updated, failed } = await applyThemeToAllForms(globalTheme);
+      showAlert(buildThemeApplyMessage(updated, failed));
+    } finally {
+      setApplyingTheme(false);
+    }
+  };
 
   // 管理者キー保存処理
   const handleSaveAdminKey = async () => {
-    if (!hasScriptRun()) {
-      showAlert("管理者キーの変更はGoogle Apps Script環境でのみ利用可能です");
-      return;
-    }
+    if (!canManageAdminKey) return;
     setAdminKeyConfirm(false);
     setAdminKeyLoading(true);
     try {
@@ -144,14 +278,24 @@ export default function ConfigPage() {
         throw new Error("テーマファイルが空です");
       }
       const name = extractThemeName(css, result?.fileName);
-      const theme = await setCustomTheme({ css, name, url: result?.fileUrl || url });
+      const theme = await setCustomTheme({ css, name });
       if (!theme) {
         throw new Error("テーマファイルが空です");
       }
       const nextThemes = await getCustomThemes();
       setCustomThemes(nextThemes);
-      setImportUrl(theme.url || "");
-      updateSetting("theme", theme.id);
+      setImportUrl("");
+
+      if (isFormMode) {
+        await handleChangeFormTheme(theme.id);
+      } else {
+        await handleChangeMainTheme(theme.id);
+        if (syncAllFormsTheme) {
+          const { updated, failed } = await applyThemeToAllForms(theme.id);
+          showAlert(`テーマをインポートしました。${buildThemeApplyMessage(updated, failed)}`);
+          return;
+        }
+      }
       showAlert("テーマをインポートしました");
     } catch (error) {
       console.error("[ConfigPage] theme import failed", error);
@@ -170,11 +314,20 @@ export default function ConfigPage() {
     if (!removeTarget) return;
     const nextThemes = await removeCustomTheme(removeTarget.id);
     setCustomThemes(nextThemes);
-    if ((settings?.theme || DEFAULT_THEME) === removeTarget.id) {
-      updateSetting("theme", DEFAULT_THEME);
+    let syncMessage = "";
+    if (selectThemeValue === removeTarget.id) {
+      if (isFormMode && targetForm) {
+        await handleChangeFormTheme(DEFAULT_THEME);
+      } else {
+        await handleChangeMainTheme(DEFAULT_THEME);
+        if (syncAllFormsTheme) {
+          const { updated, failed } = await applyThemeToAllForms(DEFAULT_THEME);
+          syncMessage = ` ${buildThemeApplyMessage(updated, failed)}`;
+        }
+      }
     }
     setRemoveTarget(null);
-    showAlert("インポートしたテーマを削除しました");
+    showAlert(`インポートしたテーマを削除しました。${syncMessage}`.trim());
   };
 
   const removeOptions = [
@@ -182,16 +335,29 @@ export default function ConfigPage() {
     { value: "remove", label: "削除する", variant: "danger", onSelect: handleConfirmRemove },
   ];
 
+  if (isFormMode && !targetForm) {
+    return (
+      <AppLayout title="設定" fallbackPath={fallbackPath} badge="テーマ">
+        <div className="nf-card">
+          <p>指定されたフォームが見つかりません。</p>
+          <p className="nf-text-muted nf-text-14 nf-mt-8">メイン画面からフォームを選択してやり直してください。</p>
+        </div>
+        <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
+      </AppLayout>
+    );
+  }
+
   return (
-    <AppLayout title="設定" fallbackPath="/" badge="テーマ">
+    <AppLayout title={pageTitle} fallbackPath={fallbackPath} badge="テーマ">
       <div className="nf-card">
         <div className="nf-fw-600 nf-mb-8">テーマ設定</div>
         <div className="nf-mb-12">
           <label className="nf-block nf-fw-600 nf-mb-6">テーマ</label>
           <select
             className="nf-input"
-            value={themeValue}
-            onChange={(event) => updateSetting("theme", event.target.value)}
+            value={selectThemeValue}
+            onChange={handleThemeChange}
+            disabled={applyingTheme}
           >
             {themeOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -199,8 +365,27 @@ export default function ConfigPage() {
               </option>
             ))}
           </select>
-          <p className="nf-mt-6 nf-text-12 nf-text-muted">アプリ全体の配色が切り替わります。</p>
+          <p className="nf-mt-6 nf-text-12 nf-text-muted">
+            {isFormMode ? "このフォームにのみ適用されます。" : "フォーム以外の画面に適用されます。"}
+          </p>
         </div>
+
+        {!isFormMode && (
+          <div className="nf-mb-12">
+            <label className="nf-row nf-gap-8 nf-items-center">
+              <input
+                type="checkbox"
+                checked={syncAllFormsTheme}
+                onChange={(event) => handleToggleSyncAllFormsTheme(event.target.checked)}
+                disabled={applyingTheme}
+              />
+              <span className="nf-fw-600">全画面でテーマを統一</span>
+            </label>
+            <p className="nf-mt-6 nf-text-12 nf-text-muted">
+              ONにすると、現在選択中のテーマを全フォームにも反映します。画面を開いた直後はOFFです。
+            </p>
+          </div>
+        )}
 
         <div className="nf-mt-16">
           <div className="nf-settings-group-title nf-mb-8">テーマをインポート</div>
@@ -219,7 +404,7 @@ export default function ConfigPage() {
               type="button"
               className="nf-btn nf-nowrap"
               onClick={handleImportTheme}
-              disabled={importing}
+              disabled={importing || applyingTheme}
             >
               {importing ? "インポート中..." : "インポート"}
             </button>
@@ -232,13 +417,6 @@ export default function ConfigPage() {
                   <div key={theme.id} className="nf-row nf-gap-12">
                     <div className="nf-flex-1 nf-min-w-0">
                       <div className="nf-fw-600">{theme.name || "カスタムテーマ"}</div>
-                      {theme.url && (
-                        <div className="nf-mt-4 nf-text-11 nf-text-muted">
-                          <a className="nf-text-underline" href={theme.url} target="_blank" rel="noreferrer">
-                            {theme.url}
-                          </a>
-                        </div>
-                      )}
                     </div>
                     <button
                       type="button"
@@ -254,7 +432,7 @@ export default function ConfigPage() {
           )}
         </div>
 
-        {hasScriptRun() && (
+        {canManageAdminKey && (
           <div className="nf-mt-16 nf-pt-16" style={{ borderTop: "1px solid var(--nf-color-border)" }}>
             <div className="nf-settings-group-title nf-mb-6">アクセス制御</div>
             <p className="nf-mb-12 nf-text-12 nf-text-muted">

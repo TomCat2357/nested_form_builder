@@ -15,6 +15,7 @@ import { normalizeSchemaIDs } from "../core/schema.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
 import { RECORD_CACHE_MAX_AGE_MS } from "../app/state/cachePolicy.js";
 import { useAuth } from "../app/state/authContext.jsx";
+import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
@@ -43,6 +44,12 @@ export default function FormPage() {
   const previewRef = useRef(null);
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
+
+  useEffect(() => {
+    if (!form) return;
+    const theme = form?.settings?.theme || DEFAULT_THEME;
+    void applyThemeWithFallback(theme, { persist: false });
+  }, [form?.id, form?.settings?.theme]);
 
   const entryIds = location.state?.entryIds || [];
   const currentIndex = entryId ? entryIds.indexOf(entryId) : -1;

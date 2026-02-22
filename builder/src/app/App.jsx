@@ -1,5 +1,5 @@
-import React, { useEffect } from "react";
-import { HashRouter, Route, Routes, Navigate, useNavigate, useLocation } from "react-router-dom";
+import React from "react";
+import { HashRouter, Route, Routes, Navigate } from "react-router-dom";
 import { AppDataProvider } from "./state/AppDataProvider.jsx";
 import { AuthProvider, useAuth } from "./state/authContext.jsx";
 import MainPage from "../pages/MainPage.jsx";
@@ -58,16 +58,7 @@ function FormNotFoundPage() {
  * 一般ユーザー用の初期リダイレクト処理
  */
 function UserRedirect() {
-  const { isAdmin, formId, authError } = useAuth();
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  useEffect(() => {
-    // ユーザーモードでformIdがある場合、検索画面へリダイレクト
-    if (!isAdmin && formId && !authError && location.pathname === "/") {
-      navigate(`/search?formId=${formId}`, { replace: true });
-    }
-  }, [isAdmin, formId, authError, navigate, location.pathname]);
+  const { authError } = useAuth();
 
   // 認証エラーがある場合
   if (authError === "form_not_found") {
@@ -77,18 +68,7 @@ function UserRedirect() {
     return <AccessDeniedPage />;
   }
 
-  // 管理者はMainPageを表示
-  if (isAdmin) {
-    return <MainPage />;
-  }
-
-  // ユーザーモードでformIdがある場合はリダイレクト待ち
-  if (formId) {
-    return null;
-  }
-
-  // ここに到達することはないはずだが、念のためエラー画面
-  return <AccessDeniedPage />;
+  return <MainPage />;
 }
 
 /**
@@ -120,8 +100,6 @@ function AccessDeniedPage() {
  * ルーティング本体
  */
 function AppRoutes() {
-  const { isAdmin } = useAuth();
-
   return (
     <Routes>
       <Route path="/" element={<UserRedirect />} />
@@ -154,11 +132,7 @@ function AppRoutes() {
       />
       <Route
         path="/config"
-        element={
-          <AdminRoute>
-            <ConfigPage />
-          </AdminRoute>
-        }
+        element={<ConfigPage />}
       />
       <Route path="/not-found" element={<NotFoundPage />} />
       <Route path="*" element={<NotFoundPage />} />

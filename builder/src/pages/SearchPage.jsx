@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useCallback } from "react";
+import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
@@ -20,6 +20,7 @@ import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import SearchSidebar from "../features/search/components/SearchSidebar.jsx";
 import SearchTable from "../features/search/components/SearchTable.jsx";
 import SearchPagination from "../features/search/components/SearchPagination.jsx";
+import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 
 const buildInitialSort = (params) => {
   const raw = params.get("sort");
@@ -95,6 +96,12 @@ export default function SearchPage() {
     setSearchParams(next);
   };
 
+  useEffect(() => {
+    if (!form) return;
+    const theme = form?.settings?.theme || DEFAULT_THEME;
+    void applyThemeWithFallback(theme, { persist: false });
+  }, [form?.id, form?.settings?.theme]);
+
   const processedEntries = useMemo(() => entries.map((entry) => ({ entry, values: computeRowValues(entry, columns) })), [entries, columns]);
 
   const ownerFilteredEntries = useMemo(() => {
@@ -149,6 +156,13 @@ export default function SearchPage() {
     });
   };
 
+  const handleOpenFormConfig = () => {
+    if (!formId) return;
+    navigate(`/config?formId=${encodeURIComponent(formId)}`, {
+      state: { from: `${location.pathname}${location.search}` },
+    });
+  };
+
   const toggleSelectEntry = (entryId) => {
     setSelectedEntries((prev) => {
       const next = new Set(prev);
@@ -183,7 +197,7 @@ export default function SearchPage() {
 
   if (!formId || !form) {
     return (
-      <AppLayout title="検索" fallbackPath={isAdmin ? "/" : null} backHidden={!isAdmin}>
+      <AppLayout title="検索" fallbackPath="/" backHidden={false}>
         <p className="search-empty">
           {isAdmin
             ? "フォームが選択されていません。メイン画面からフォームを選択してください。"
@@ -196,12 +210,13 @@ export default function SearchPage() {
   return (
     <AppLayout
       title={`検索 - ${form.settings?.formTitle || "(無題)"}`}
-      fallbackPath={isAdmin ? "/" : null}
-      backHidden={!isAdmin}
+      fallbackPath="/"
+      backHidden={false}
       badge={badge}
       sidebarActions={(
         <SearchSidebar
           onCreate={handleCreateNew}
+          onConfig={handleOpenFormConfig}
           onDelete={handleDeleteSelected}
           onRefresh={fetchAndCacheData}
           useCache={useCache}

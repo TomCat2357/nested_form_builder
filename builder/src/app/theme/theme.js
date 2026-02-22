@@ -13,6 +13,7 @@ export const THEME_OPTIONS = [
 const CUSTOM_THEME_STYLE_ID = "nfb-custom-themes";
 const CUSTOM_THEMES_KEY = "nested_form_builder_theme_custom_list_v1";
 const CUSTOM_THEME_PREFIX = "drive-";
+const BUILT_IN_THEME_IDS = new Set(THEME_OPTIONS.map((option) => option.value));
 
 const safeLegacyStorageGet = (key) => {
   try {
@@ -93,7 +94,6 @@ const normalizeCustomThemes = (input) => {
     .map((theme) => ({
       id: theme.id,
       name: theme.name || "",
-      url: theme.url || "",
       css: theme.css || "",
     }))
     .filter((theme) => theme.id && theme.css);
@@ -143,7 +143,7 @@ const createThemeId = (name, existingIds) => {
   const base = `${CUSTOM_THEME_PREFIX}${normalizeThemeName(name)}`;
   let id = base;
   let index = 2;
-  const reservedIds = new Set(THEME_OPTIONS.map((option) => option.value));
+  const reservedIds = BUILT_IN_THEME_IDS;
   while (existingIds.has(id) || reservedIds.has(id)) {
     id = `${base}-${index}`;
     index += 1;
@@ -151,9 +151,17 @@ const createThemeId = (name, existingIds) => {
   return id;
 };
 
+export const resolveThemeName = (name, customThemes = []) => {
+  const candidate = String(name || "").trim();
+  if (!candidate) return DEFAULT_THEME;
+  if (BUILT_IN_THEME_IDS.has(candidate)) return candidate;
+  const customIds = new Set((customThemes || []).map((theme) => theme?.id).filter(Boolean));
+  return customIds.has(candidate) ? candidate : DEFAULT_THEME;
+};
+
 export const getCustomThemes = async () => readCustomThemes();
 
-export const setCustomTheme = async ({ css, name, url } = {}) => {
+export const setCustomTheme = async ({ css, name } = {}) => {
   const themes = await readCustomThemes();
   const existingIds = new Set(themes.map((theme) => theme.id));
   const themeId = createThemeId(name || "custom", existingIds);
@@ -162,7 +170,6 @@ export const setCustomTheme = async ({ css, name, url } = {}) => {
   const theme = {
     id: themeId,
     name: name || "",
-    url: url || "",
     css: normalized,
   };
   const next = [...themes, theme];
@@ -190,33 +197,37 @@ export const applyTheme = (name) => {
   document.documentElement.dataset.theme = name;
 };
 
+export const applyThemeWithFallback = async (name, options = {}) => {
+  const { persist = false } = options;
+  const customThemes = await readCustomThemes();
+  ensureCustomThemeStyle(customThemes);
+  const resolved = resolveThemeName(name, customThemes);
+  applyTheme(resolved);
+  if (persist) {
+    await writeSettingsValue(THEME_STORAGE_KEY, resolved);
+  }
+  return resolved;
+};
+
 export const initTheme = (fallback = DEFAULT_THEME) => {
   const initialTheme = fallback || DEFAULT_THEME;
   applyTheme(initialTheme);
   void (async () => {
     try {
       const saved = await readThemeFromStorage();
-      const resolvedTheme = saved === "default" ? DEFAULT_THEME : saved;
-      const theme = resolvedTheme || initialTheme;
-      applyTheme(theme);
-      if (saved === "default") {
-        await writeSettingsValue(THEME_STORAGE_KEY, theme);
-      }
+      const preferred = saved === "default" ? DEFAULT_THEME : (saved || initialTheme);
+      await applyThemeWithFallback(preferred, { persist: true });
     } catch (error) {
       console.warn("[theme] failed to load theme from IndexedDB", error);
-    } finally {
-      try {
-        await restoreCustomThemes();
-      } catch (error) {
-        console.warn("[theme] failed to restore custom themes", error);
-      }
     }
   })();
   return initialTheme;
 };
 
-export const setTheme = (name) => {
-  applyTheme(name);
-  if (!name) return;
-  void writeSettingsValue(THEME_STORAGE_KEY, name);
+export const setTheme = (name, options = {}) => {
+  const { persist = true } = options;
+  const resolved = name || DEFAULT_THEME;
+  applyTheme(resolved);
+  if (!persist) return;
+  void writeSettingsValue(THEME_STORAGE_KEY, resolved);
 };
