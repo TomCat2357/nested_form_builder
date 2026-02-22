@@ -323,12 +323,11 @@ const actionsColumn = {
 
 const resolveDisplayFieldSettings = (form) => {
   const collected = collectDisplayFieldSettings(form?.schema || []);
-  const resolveTypeByPath = (path) => {
-    const matched = collected.find((item) => item.path === path);
-    return matched?.type || "";
-  };
-
   if (Array.isArray(form?.displayFieldSettings) && form.displayFieldSettings.length) {
+    const resolveTypeByPath = (path) => {
+      const matched = collected.find((item) => item.path === path);
+      return matched?.type || "";
+    };
     return form.displayFieldSettings
       .filter((item) => item && item.path)
       .map((item) => ({
@@ -336,18 +335,19 @@ const resolveDisplayFieldSettings = (form) => {
         type: item.type || resolveTypeByPath(String(item.path)),
       }));
   }
-  const fallback = Array.isArray(form?.importantFields) ? form.importantFields : [];
-  return fallback
-    .filter((path) => path)
-    .map((path) => {
-      const normalizedPath = String(path);
-      return { path: normalizedPath, type: resolveTypeByPath(normalizedPath) };
-    });
+
+  return collected
+    .filter((item) => item && item.path)
+    .map((item) => ({
+      path: String(item.path),
+      type: item.type || "",
+    }));
 };
 
 export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
   const showRecordNo = form?.settings?.showRecordNo !== false;
-  const columns = showRecordNo ? createBaseColumns() : createBaseColumns().filter((col) => col.key !== "No.");
+  const baseColumns = createBaseColumns();
+  const columns = showRecordNo ? baseColumns : baseColumns.filter((col) => col.key !== "No.");
   resolveDisplayFieldSettings(form).forEach(({ path, type }) => {
     if (!path) return;
     columns.push(createDisplayColumn(path, type));
@@ -728,6 +728,26 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
   const filteredRows = rows.filter((row) => row.some((cell) => cell.label));
 
   return filteredRows;
+};
+
+export const buildSearchTableLayout = (form, { headerMatrix = null, includeOperations = true } = {}) => {
+  const baseColumns = buildSearchColumns(form, { includeOperations });
+  const hasHeaderMatrix = Array.isArray(headerMatrix) && headerMatrix.length > 0;
+  if (!hasHeaderMatrix) {
+    return {
+      columns: baseColumns,
+      headerRows: buildHeaderRows(baseColumns),
+    };
+  }
+
+  const columns = buildColumnsFromHeaderMatrix(headerMatrix, baseColumns);
+  const headerRowsFromCsv = buildHeaderRowsFromCsv(headerMatrix, columns);
+  return {
+    columns,
+    headerRows: headerRowsFromCsv && headerRowsFromCsv.length > 0
+      ? headerRowsFromCsv
+      : buildHeaderRows(columns),
+  };
 };
 
 export const computeRowValues = (entry, columns) => {

@@ -123,8 +123,5 @@ export const useEntriesWithCache = ({ formId, form, locationKey, locationState, 
     lastSyncedAt,
     cacheDisabled,
     fetchAndCacheData,
-    setEntries,
-    setHeaderMatrix,
-    setUseCache,
   };
 };

@@ -2,8 +2,7 @@ import React, { useMemo } from "react";
 import { collectResponses } from "../../core/collect.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import {
-  buildSearchColumns,
-  buildHeaderRows,
+  buildSearchTableLayout,
   computeRowValues,
   applyDisplayLengthLimit,
   parseSearchCellDisplayLimit,
@@ -22,7 +21,6 @@ export default function SearchPreviewPanel({ schema, responses, settings }) {
   const form = useMemo(
     () => ({
       displayFieldSettings,
-      importantFields: displayFieldSettings.map((item) => item.path),
     }),
     [displayFieldSettings],
   );
@@ -39,8 +37,10 @@ export default function SearchPreviewPanel({ schema, responses, settings }) {
     };
   }, [schema, responses]);
 
-  const columns = useMemo(() => buildSearchColumns(form, { includeOperations: false }), [form]);
-  const headerRows = useMemo(() => buildHeaderRows(columns), [columns]);
+  const { columns, headerRows } = useMemo(
+    () => buildSearchTableLayout(form, { includeOperations: false }),
+    [form],
+  );
   const previewRow = useMemo(
     () => ({ entry: sampleEntry, values: computeRowValues(sampleEntry, columns) }),
     [sampleEntry, columns],

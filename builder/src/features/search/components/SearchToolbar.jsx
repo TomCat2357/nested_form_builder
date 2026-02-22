@@ -1,5 +1,4 @@
 import React from "react";
-import { theme } from "../../../app/theme/tokens.js";
 
 export default function SearchToolbar({ query, onChange, lastSyncedAt, useCache, cacheDisabled }) {
   return (

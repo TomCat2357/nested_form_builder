@@ -311,7 +311,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   ref,
 ) {
   const { alertState, showAlert, closeAlert } = useAlert();
-  const initialRecordId = settings.recordId || settings.currentRecordId;
+  const initialRecordId = settings.recordId;
   const recordIdRef = useRef(initialRecordId || generateRecordId());
   const currentUserName = typeof settings.userName === "string" ? settings.userName : "";
   const defaultNowMap = useMemo(
@@ -327,7 +327,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 
   useEffect(() => {
     // 既往データ編集時は日付・時間・入力ユーザー名の自動初期値設定をスキップ
-    if (settings.recordId || settings.currentRecordId) return;
+    if (settings.recordId) return;
 
     if (!defaultNowMap || Object.keys(defaultNowMap).length === 0) return;
     setResponses((prev) => {
@@ -343,7 +343,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       });
       return changed ? next : current;
     });
-  }, [defaultNowMap, setResponses, settings.recordId, settings.currentRecordId]);
+  }, [defaultNowMap, setResponses, settings.recordId]);
 
   const sortedData = useMemo(() => {
     const raw = collectResponses(schema, responses);

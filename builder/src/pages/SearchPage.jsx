@@ -9,10 +9,7 @@ import { dataStore } from "../app/state/dataStore.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import {
-  buildSearchColumns,
-  buildHeaderRows,
-  buildHeaderRowsFromCsv,
-  buildColumnsFromHeaderMatrix,
+  buildSearchTableLayout,
   computeRowValues,
   compareByColumn,
   matchesKeyword,
@@ -71,21 +68,10 @@ export default function SearchPage() {
     showAlert,
   });
 
-  const columns = useMemo(() => {
-    const baseColumns = buildSearchColumns(form, { includeOperations: false });
-    if (headerMatrix && headerMatrix.length > 0) {
-      return buildColumnsFromHeaderMatrix(headerMatrix, baseColumns);
-    }
-    return baseColumns;
-  }, [form, headerMatrix]);
-
-  const headerRows = useMemo(() => {
-    if (headerMatrix && headerMatrix.length > 0) {
-      const rows = buildHeaderRowsFromCsv(headerMatrix, columns);
-      if (rows && rows.length > 0) return rows;
-    }
-    return buildHeaderRows(columns);
-  }, [columns, headerMatrix]);
+  const { columns, headerRows } = useMemo(
+    () => buildSearchTableLayout(form, { headerMatrix, includeOperations: false }),
+    [form, headerMatrix],
+  );
 
   const handleSearchChange = (value) => {
     const next = new URLSearchParams(searchParams);

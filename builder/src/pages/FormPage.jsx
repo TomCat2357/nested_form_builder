@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
@@ -13,7 +13,7 @@ import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSchemaIDs } from "../core/schema.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
-import { evaluateCache, RECORD_CACHE_MAX_AGE_MS } from "../app/state/cachePolicy.js";
+import { RECORD_CACHE_MAX_AGE_MS } from "../app/state/cachePolicy.js";
 import { useAuth } from "../app/state/authContext.jsx";
 
 const fallbackForForm = (formId, locationState) => {
@@ -54,6 +54,20 @@ export default function FormPage() {
   }, [entryId]);
 
   const isViewMode = mode === "view";
+  const applyEntryToState = useCallback((nextEntry, fallbackEntryId = null) => {
+    setEntry(nextEntry);
+    const restored = restoreResponsesFromData(normalizedSchema, nextEntry?.data || {}, nextEntry?.dataUnixMs || {});
+    initialResponsesRef.current = restored;
+    setResponses(restored);
+    setCurrentRecordId(nextEntry?.id || fallbackEntryId || null);
+  }, [normalizedSchema]);
+
+  const navigateToEntryById = useCallback((targetEntryId) => {
+    navigate(`/form/${formId}/entry/${targetEntryId}`, {
+      state: { from: location.state?.from, entryIds },
+      replace: true,
+    });
+  }, [navigate, formId, location.state?.from, entryIds]);
 
   useEffect(() => {
     let mounted = true;
@@ -82,11 +96,7 @@ export default function FormPage() {
 
       if (cachedEntry && mounted) {
         // キャッシュがあれば即座に表示
-        setEntry(cachedEntry);
-        const restored = restoreResponsesFromData(normalizedSchema, cachedEntry?.data || {}, cachedEntry?.dataUnixMs || {});
-        initialResponsesRef.current = restored;
-        setResponses(restored);
-        setCurrentRecordId(cachedEntry?.id || entryId);
+        applyEntryToState(cachedEntry, entryId);
         setLoading(false);
         console.log(`[PERF] FormPage cache displayed - Time: ${(performance.now() - tStart).toFixed(2)}ms, rowIndex: ${rowIndex}`);
 
@@ -100,11 +110,7 @@ export default function FormPage() {
           dataStore.getEntry(formId, entryId, { rowIndexHint: rowIndex }).then((freshData) => {
             if (!mounted) return;
             if (freshData) {
-              setEntry(freshData);
-              const freshRestored = restoreResponsesFromData(normalizedSchema, freshData?.data || {}, freshData?.dataUnixMs || {});
-              initialResponsesRef.current = freshRestored;
-              setResponses(freshRestored);
-              setCurrentRecordId(freshData?.id || entryId);
+              applyEntryToState(freshData, entryId);
               console.log(`[PERF] FormPage background refresh complete - Total time: ${(performance.now() - tStart).toFixed(2)}ms`);
             }
             setIsReloading(false);
@@ -123,16 +129,10 @@ export default function FormPage() {
         console.log(`[PERF] FormPage after dataStore.getEntry - Time: ${(tAfterGetEntry - tBeforeGetEntry).toFixed(2)}ms, rowIndexHint: ${rowIndex}`);
 
         if (!mounted) return;
-        setEntry(data);
-
-        const tBeforeRestore = performance.now();
-        const restored = restoreResponsesFromData(normalizedSchema, data?.data || {}, data?.dataUnixMs || {});
-        const tAfterRestore = performance.now();
-        console.log(`[PERF] FormPage restoreResponsesFromData - Time: ${(tAfterRestore - tBeforeRestore).toFixed(2)}ms`);
-
-        initialResponsesRef.current = restored;
-        setResponses(restored);
-        setCurrentRecordId(data?.id || entryId);
+        const tBeforeApply = performance.now();
+        applyEntryToState(data, entryId);
+        const tAfterApply = performance.now();
+        console.log(`[PERF] FormPage applyEntryToState - Time: ${(tAfterApply - tBeforeApply).toFixed(2)}ms`);
         setLoading(false);
 
         const tEnd = performance.now();
@@ -143,7 +143,7 @@ export default function FormPage() {
     return () => {
       mounted = false;
     };
-  }, [formId, entryId, form, normalizedSchema, userName]);
+  }, [formId, entryId, form, normalizedSchema, userName, applyEntryToState]);
 
   const isDirty = useMemo(() => hasDirtyChanges(initialResponsesRef.current, responses), [responses]);
 
@@ -197,11 +197,7 @@ export default function FormPage() {
     } else {
       console.warn("[FormPage] No spreadsheetId configured, skipping spreadsheet save");
     }
-    setCurrentRecordId(saved.id);
-    const restored = restoreResponsesFromData(normalizedSchema, saved.data || {}, saved.dataUnixMs || {});
-    initialResponsesRef.current = restored;
-    setResponses(restored);
-    setEntry(saved);
+    applyEntryToState(saved, saved.id);
     return saved;
   };
 
@@ -251,11 +247,7 @@ export default function FormPage() {
         navigateBack();
         return;
       }
-      setEntry(data);
-      const restored = restoreResponsesFromData(normalizedSchema, data?.data || {}, data?.dataUnixMs || {});
-      initialResponsesRef.current = restored;
-      setResponses(restored);
-      setCurrentRecordId(data?.id || entryId);
+      applyEntryToState(data, entryId);
     } catch (error) {
       console.error("[FormPage] handleEditMode error:", error);
       showAlert(`データの読み込みに失敗しました: ${error?.message || error}`);
@@ -286,10 +278,7 @@ export default function FormPage() {
       setConfirmState({ open: true, intent: `navigate:${targetEntryId}` });
       return;
     }
-    navigate(`/form/${formId}/entry/${targetEntryId}`, {
-      state: { from: location.state?.from, entryIds },
-      replace: true,
-    });
+    navigateToEntryById(targetEntryId);
   };
 
   const handleConfirmAction = async (action) => {
@@ -298,10 +287,7 @@ export default function FormPage() {
     if (action === "discard") {
       if (intent && intent.startsWith("navigate:")) {
         const targetEntryId = intent.slice("navigate:".length);
-        navigate(`/form/${formId}/entry/${targetEntryId}`, {
-          state: { from: location.state?.from, entryIds },
-          replace: true,
-        });
+        navigateToEntryById(targetEntryId);
       } else {
         navigateBack();
       }
@@ -311,10 +297,7 @@ export default function FormPage() {
       if (intent && intent.startsWith("navigate:")) {
         const targetEntryId = intent.slice("navigate:".length);
         await triggerSave();
-        navigate(`/form/${formId}/entry/${targetEntryId}`, {
-          state: { from: location.state?.from, entryIds },
-          replace: true,
-        });
+        navigateToEntryById(targetEntryId);
       } else {
         await triggerSave({ redirect: true });
       }
