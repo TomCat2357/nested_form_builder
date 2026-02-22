@@ -1,5 +1,5 @@
 import { genId } from "./ids.js";
-import { DISPLAY_MODES, ensureDisplayModeForType, normalizeDisplayMode, toImportantFlag } from "./displayModes.js";
+import { resolveIsDisplayed } from "./displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
 
 const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" : label || "");
@@ -100,14 +100,10 @@ export const normalizeSchemaIDs = (nodes) => {
       base.childrenByValue = mapChildrenByValue(base.childrenByValue, walk);
     }
 
-    const hasExplicitDisplayMode = Object.prototype.hasOwnProperty.call(base, "displayMode");
-    const normalizedDisplayMode = ensureDisplayModeForType(
-      normalizeDisplayMode(base.displayMode, { importantFlag: !!base.important }),
-      base.type,
-      { explicit: hasExplicitDisplayMode },
-    );
-    base.displayMode = normalizedDisplayMode;
-    base.important = toImportantFlag(normalizedDisplayMode);
+    base.isDisplayed = resolveIsDisplayed(base);
+    delete base.displayMode;
+    delete base.important;
+    delete base.compact;
 
     // showPlaceholderのデフォルト値を設定
     if (base.placeholder !== undefined && base.showPlaceholder === undefined) {
@@ -229,7 +225,7 @@ export const validateRequiredLabels = (fields, { responses = null, visibleOnly =
   const walk = (nodes, pathSegments = [], indexTrail = []) => {
     (nodes || []).forEach((field, index) => {
       // 非表示の項目はスキップ
-      if (visibleOnly && field?.displayMode === DISPLAY_MODES.NONE) return;
+      if (visibleOnly && field?.isDisplayed !== true) return;
 
       const nextIndexTrail = [...indexTrail, index + 1];
       const fallbackLabel = `質問 ${nextIndexTrail.join(".")} (${field?.type || "unknown"})`;
@@ -287,6 +283,12 @@ export const computeSchemaHash = (schema) => {
 export const cleanupTempData = (schema) => {
   const walk = (arr) => (arr || []).map((field) => {
     const cleaned = { ...field };
+
+    // 表示可否は isDisplayed のみを保持（旧キーは削除）
+    cleaned.isDisplayed = resolveIsDisplayed(cleaned);
+    delete cleaned.displayMode;
+    delete cleaned.important;
+    delete cleaned.compact;
 
     // 一時データは無条件削除
     delete cleaned._savedChildrenForChoice;

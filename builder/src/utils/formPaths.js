@@ -1,4 +1,4 @@
-import { DISPLAY_MODES, resolveFieldDisplayMode } from "../core/displayModes.js";
+import { resolveIsDisplayed } from "../core/displayModes.js";
 
 const normalizeLabel = (label) => (typeof label === "string" ? label.trim() : "");
 
@@ -15,11 +15,9 @@ export const collectDisplayFieldSettings = (schema) => {
       const label = normalizeLabel(field?.label);
       if (!label) return;
       const path = joinPath(basePath, label);
-      const mode = resolveFieldDisplayMode(field);
-      if (mode !== DISPLAY_MODES.NONE) {
+      if (resolveIsDisplayed(field)) {
         collected.push({
           path,
-          mode,
           type: field?.type || "",
         });
       }

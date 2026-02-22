@@ -2,7 +2,7 @@ import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
 import { deepClone, normalizeSchemaIDs, MAX_DEPTH } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
-import { DISPLAY_MODES, ensureDisplayModeForType, toImportantFlag, resolveFieldDisplayMode } from "../../core/displayModes.js";
+import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "../../core/styleSettings.js";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
@@ -12,9 +12,6 @@ const INPUT_TYPES = ["text", "textarea", "number", "url"];
 const DATE_TIME_TYPES = ["date", "time"];
 const MESSAGE_TYPE = "message";
 const USER_NAME_TYPE = "userName";
-const resolveDisplayModeForType = (type, displayed) => (
-  displayed ? ensureDisplayModeForType(DISPLAY_MODES.NORMAL, type, { explicit: true }) : DISPLAY_MODES.NONE
-);
 const DISPLAY_LABEL = "表示";
 
 // ヘルパー関数
@@ -23,10 +20,11 @@ const isInputType = (type) => INPUT_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 const isMessageType = (type) => type === MESSAGE_TYPE;
 const isUserNameType = (type) => type === USER_NAME_TYPE;
-const applyDisplayMode = (target, mode) => {
-  const nextMode = ensureDisplayModeForType(mode, target.type, { explicit: true });
-  target.displayMode = nextMode;
-  target.important = toImportantFlag(nextMode);
+const applyDisplayedFlag = (target, displayed) => {
+  target.isDisplayed = displayed === true;
+  delete target.displayMode;
+  delete target.important;
+  delete target.compact;
 };
 
 /**
@@ -53,7 +51,7 @@ function handleTypeChange(field, newType) {
   const next = deepClone(field);
   const oldType = field.type;
   next.type = newType;
-  const wasDisplayed = resolveFieldDisplayMode(next) !== DISPLAY_MODES.NONE;
+  const wasDisplayed = resolveIsDisplayed(next);
 
   const oldIsChoice = isChoiceType(oldType);
   const newIsChoice = isChoiceType(newType);
@@ -106,7 +104,7 @@ function handleTypeChange(field, newType) {
     saveAndClearChoiceState(next, field, oldIsChoice);
   }
 
-  applyDisplayMode(next, resolveDisplayModeForType(newType, wasDisplayed));
+  applyDisplayedFlag(next, wasDisplayed);
 
   return next;
 }
@@ -246,11 +244,10 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
   const latestOnChangeRef = React.useRef(onChange);
   latestFieldRef.current = field;
   latestOnChangeRef.current = onChange;
-  const displayMode = resolveFieldDisplayMode(field);
-  const isDisplayed = displayMode !== DISPLAY_MODES.NONE;
+  const isDisplayed = resolveIsDisplayed(field);
   const handleDisplayToggle = (checked) => {
     const nextField = { ...field };
-    applyDisplayMode(nextField, resolveDisplayModeForType(nextField.type, checked));
+    applyDisplayedFlag(nextField, checked);
     onChange(nextField);
   };
 

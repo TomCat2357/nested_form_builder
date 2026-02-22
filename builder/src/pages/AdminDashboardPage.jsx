@@ -8,7 +8,6 @@ import AlertDialog from "../app/components/AlertDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
-import { DISPLAY_MODES } from "../core/displayModes.js";
 import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
 import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
 
@@ -16,7 +15,7 @@ const formatDisplayFieldsSummary = (form) => {
   if (!form) return "";
   const settings = Array.isArray(form.displayFieldSettings) && form.displayFieldSettings.length
     ? form.displayFieldSettings
-    : (Array.isArray(form.importantFields) ? form.importantFields.map((path) => ({ path, mode: DISPLAY_MODES.NORMAL })) : []);
+    : (Array.isArray(form.importantFields) ? form.importantFields.map((path) => ({ path })) : []);
   if (!settings.length) return "";
   return settings
     .filter((item) => item?.path)

@@ -1,5 +1,4 @@
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
-import { DISPLAY_MODES } from "../../core/displayModes.js";
 import { formatUnixMsDateTime, formatUnixMsDate, formatUnixMsTime, toUnixMs, parseStringToSerial } from "../../utils/dateTime.js";
 
 export const MAX_HEADER_DEPTH = 6;
@@ -78,8 +77,6 @@ const matchBaseDisplayColumn = (columns, fullPath) => {
   }
   return null;
 };
-
-const columnDisplayMode = (column) => (column?.displayMode === DISPLAY_MODES.COMPACT ? DISPLAY_MODES.COMPACT : DISPLAY_MODES.NORMAL);
 
 const valueToDisplayString = (value) => {
   if (Array.isArray(value)) {
@@ -197,7 +194,7 @@ const resolveSortValue = ({ rawValues, display, dataUnixMs, path, column }) => {
   return display;
 };
 
-const collectFieldValue = (entry, path, column, { compact = false } = {}) => {
+const collectFieldValue = (entry, path, column) => {
   const data = entry?.data || {};
   const dataUnixMs = entry?.dataUnixMs || {};
 
@@ -236,7 +233,7 @@ const collectFieldValue = (entry, path, column, { compact = false } = {}) => {
 
   const display = values.join("、");
   const primary = values[0] || "";
-  const sortDisplay = compact && values.length <= 1 ? primary : display;
+  const sortDisplay = isChoiceColumn(column) && values.length <= 1 ? primary : display;
   const sortValue = resolveSortValue({ rawValues, display: sortDisplay, dataUnixMs, path, column });
 
   return {
@@ -301,20 +298,18 @@ const createBaseColumns = () => [
   },
 ];
 
-const createDisplayColumn = (path, mode = DISPLAY_MODES.NORMAL, sourceType = "") => {
+const createDisplayColumn = (path, sourceType = "") => {
   const segments = splitFieldPath(path).slice(0, MAX_HEADER_DEPTH);
   if (segments.length === 0) segments.push("回答");
   const key = `display:${path}`;
-  const isCompact = mode === DISPLAY_MODES.COMPACT;
   return {
     key,
     segments,
     sortable: true,
     searchable: true,
     path,
-    displayMode: mode,
     sourceType,
-    getValue: (entry, column) => collectFieldValue(entry, path, column, { compact: isCompact }),
+    getValue: (entry, column) => collectFieldValue(entry, path, column),
   };
 };
 
@@ -327,31 +322,35 @@ const actionsColumn = {
 };
 
 const resolveDisplayFieldSettings = (form) => {
+  const collected = collectDisplayFieldSettings(form?.schema || []);
+  const resolveTypeByPath = (path) => {
+    const matched = collected.find((item) => item.path === path);
+    return matched?.type || "";
+  };
+
   if (Array.isArray(form?.displayFieldSettings) && form.displayFieldSettings.length) {
     return form.displayFieldSettings
       .filter((item) => item && item.path)
       .map((item) => ({
         path: String(item.path),
-        mode: item.mode === DISPLAY_MODES.COMPACT ? DISPLAY_MODES.COMPACT : DISPLAY_MODES.NORMAL,
-        type: item.type || "",
+        type: item.type || resolveTypeByPath(String(item.path)),
       }));
   }
   const fallback = Array.isArray(form?.importantFields) ? form.importantFields : [];
-  const collected = collectDisplayFieldSettings(form?.schema || []);
   return fallback
     .filter((path) => path)
     .map((path) => {
-      const matched = collected.find((item) => item.path === path);
-      return { path: String(path), mode: DISPLAY_MODES.NORMAL, type: matched?.type || "" };
+      const normalizedPath = String(path);
+      return { path: normalizedPath, type: resolveTypeByPath(normalizedPath) };
     });
 };
 
 export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
   const showRecordNo = form?.settings?.showRecordNo !== false;
   const columns = showRecordNo ? createBaseColumns() : createBaseColumns().filter((col) => col.key !== "No.");
-  resolveDisplayFieldSettings(form).forEach(({ path, mode, type }) => {
+  resolveDisplayFieldSettings(form).forEach(({ path, type }) => {
     if (!path) return;
-    columns.push(createDisplayColumn(path, mode, type));
+    columns.push(createDisplayColumn(path, type));
   });
   if (includeOperations) columns.push(actionsColumn);
   return columns;
@@ -446,7 +445,7 @@ const filterVisibleColumnIndices = (multiHeaderRows, columns) => {
 
   const firstRow = multiHeaderRows[0] || [];
   const visibleIndices = [];
-  const compactResolvedPaths = new Set();
+  const choiceResolvedPaths = new Set();
 
   for (let i = 0; i < firstRow.length; i += 1) {
     const headerValue = firstRow[i];
@@ -465,12 +464,12 @@ const filterVisibleColumnIndices = (multiHeaderRows, columns) => {
     const baseColumn = matchBaseDisplayColumn(columns, fullPath);
     if (!baseColumn) continue;
 
-    if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT || isChoiceColumn(baseColumn)) {
+    if (isChoiceColumn(baseColumn)) {
       const basePath = baseColumn.path ? String(baseColumn.path) : "";
-      if (!basePath || compactResolvedPaths.has(basePath)) {
+      if (!basePath || choiceResolvedPaths.has(basePath)) {
         continue;
       }
-      compactResolvedPaths.add(basePath);
+      choiceResolvedPaths.add(basePath);
     }
 
     visibleIndices.push(i);
@@ -532,17 +531,16 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
     const baseColumn = matchBaseDisplayColumn(safeBaseColumns, fullPath);
     if (!baseColumn) continue;
 
-    if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT || isChoiceColumn(baseColumn)) {
+    if (isChoiceColumn(baseColumn)) {
       const basePath = baseColumn.path ? String(baseColumn.path) : "";
       if (!basePath || resolvedBasePaths.has(basePath)) {
         continue;
       }
-      const mergedMode = columnDisplayMode(baseColumn);
-      pushColumn(createDisplayColumn(basePath, mergedMode, baseColumn.sourceType));
+      pushColumn(createDisplayColumn(basePath, baseColumn.sourceType));
       resolvedBasePaths.add(basePath);
-      debugLog("buildColumnsFromHeaderMatrix:compact", { basePath, columnIndex: colIndex });
+      debugLog("buildColumnsFromHeaderMatrix:choice", { basePath, columnIndex: colIndex });
     } else {
-      pushColumn(createDisplayColumn(fullPath, baseColumn.displayMode, baseColumn.sourceType));
+      pushColumn(createDisplayColumn(fullPath, baseColumn.sourceType));
       if (baseColumn.path) {
         resolvedBasePaths.add(String(baseColumn.path));
       }
@@ -556,13 +554,8 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
     if (!baseColumn.path) return;
     const basePath = String(baseColumn.path);
     if (resolvedBasePaths.has(basePath)) return;
-    if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT) {
-      resolvedBasePaths.add(basePath);
-      pushColumn(createDisplayColumn(basePath, DISPLAY_MODES.COMPACT, baseColumn.sourceType));
-    } else {
-      resolvedBasePaths.add(basePath);
-      pushColumn(createDisplayColumn(basePath, baseColumn.displayMode, baseColumn.sourceType));
-    }
+    resolvedBasePaths.add(basePath);
+    pushColumn(createDisplayColumn(basePath, baseColumn.sourceType));
   });
 
   pushColumn(findBaseColumnByKey("__actions"));
@@ -609,11 +602,10 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
           if (!matchedColumn) {
             const baseColumn = matchBaseDisplayColumn(columns, fullPath);
             if (baseColumn) {
-              if (columnDisplayMode(baseColumn) === DISPLAY_MODES.COMPACT || isChoiceColumn(baseColumn)) {
-                const mergedMode = columnDisplayMode(baseColumn);
-                matchedColumn = createDisplayColumn(baseColumn.path, mergedMode, baseColumn.sourceType);
+              if (isChoiceColumn(baseColumn)) {
+                matchedColumn = createDisplayColumn(baseColumn.path, baseColumn.sourceType);
               } else {
-                matchedColumn = createDisplayColumn(fullPath, baseColumn.displayMode, baseColumn.sourceType);
+                matchedColumn = createDisplayColumn(fullPath, baseColumn.sourceType);
               }
             }
           }
@@ -624,7 +616,7 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
     columnMapping[i] = matchedColumn;
   }
 
-  // 簡略表示: 対応する列の「一番下のヘッダーセル」を空欄にする
+  // 選択系は常に縮退表示: 最下段の見出しセルを空欄化
   const findDeepestRowWithValue = (colIndex) => {
     for (let r = transformedRows.length - 1; r >= 0; r -= 1) {
       const val = transformedRows[r]?.[colIndex];
@@ -634,27 +626,20 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
   };
   indicesToProcess.forEach((colIndex) => {
     const mappedColumn = columnMapping[colIndex];
-    if (mappedColumn?.displayMode === DISPLAY_MODES.COMPACT) {
-      const deepest = findDeepestRowWithValue(colIndex);
-      if (deepest >= 0) {
-        transformedRows[deepest][colIndex] = "";
-      }
+    if (!isChoiceColumn(mappedColumn)) return;
+    const deepest = findDeepestRowWithValue(colIndex);
+    if (deepest >= 0) {
+      transformedRows[deepest][colIndex] = "";
     }
   });
 
   // 全段表示が原則のため、行はすべて処理する
   const nonEmptyRowIndices = Array.from({ length: transformedRows.length }, (_, idx) => idx);
-
   const rows = [];
-  const lastNonEmptyRowIndex = transformedRows.length - 1;
 
   // 各列の統合されたパス(全行を結合したもの)を事前に計算
   const columnFullPaths = indicesToProcess.map((colIndex) => {
-    let fullPath = buildHeaderFullPath(multiHeaderRows, colIndex);
-    const mappedColumn = columnMapping[colIndex];
-    if (mappedColumn?.displayMode === DISPLAY_MODES.COMPACT && mappedColumn.path) {
-      fullPath = mappedColumn.path;
-    }
+    const fullPath = buildHeaderFullPath(multiHeaderRows, colIndex);
     return fullPath;
   });
 
@@ -666,12 +651,6 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
     // modifiedAtを「最終更新日時」に変換
     if (rowIndex === 0 && cellValue === "modifiedAt") {
       cellValue = "最終更新日時";
-    }
-
-    const isCompactColumn = mappedColumn?.displayMode === DISPLAY_MODES.COMPACT;
-    if (isCompactColumn && rowIndex === lastNonEmptyRowIndex) {
-      // 簡略表示では最下段のヘッダーは省略し、データ側で表示する
-      return "";
     }
 
     // 選択系（ラジオ/セレクト/チェックボックス）の選択肢行はヘッダー表示しない（データ側で表示されるため）
