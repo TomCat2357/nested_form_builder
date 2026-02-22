@@ -7,6 +7,7 @@ export const THEME_OPTIONS = [
   { value: "matcha", label: "Matcha" },
   { value: "sakura", label: "Sakura" },
   { value: "warm", label: "Warm" },
+  { value: "ocean", label: "Ocean" },
 ];
 
 const CUSTOM_THEME_STYLE_ID = "nfb-custom-themes";
@@ -32,7 +33,10 @@ const safeLegacyStorageRemove = (key) => {
 const ensureCustomThemeStyle = (themes) => {
   if (typeof document === "undefined") return;
   const styleId = CUSTOM_THEME_STYLE_ID;
-  const css = (themes || []).map((theme) => theme.css).filter(Boolean).join("\n");
+  const css = (themes || [])
+    .map((theme) => theme.css)
+    .filter(Boolean)
+    .join("\n");
   let style = document.getElementById(styleId);
   if (!css) {
     if (style && style.parentNode) {
@@ -56,7 +60,10 @@ const normalizeCustomThemeCss = (css, themeId) => {
 
   const dataThemeRegex = /data-theme=(["'])(.*?)\1/;
   if (dataThemeRegex.test(normalized)) {
-    return normalized.replace(/data-theme=(["'])(.*?)\1/g, `data-theme="${themeId}"`);
+    return normalized.replace(
+      /data-theme=(["'])(.*?)\1/g,
+      `data-theme="${themeId}"`,
+    );
   }
 
   const rootRegex = /:root(?!\[data-theme\])/;
@@ -79,7 +86,10 @@ const normalizeCustomThemes = (input) => {
   }
   if (!Array.isArray(parsed)) return [];
   return parsed
-    .filter((theme) => theme && typeof theme.id === "string" && typeof theme.css === "string")
+    .filter(
+      (theme) =>
+        theme && typeof theme.id === "string" && typeof theme.css === "string",
+    )
     .map((theme) => ({
       id: theme.id,
       name: theme.name || "",
@@ -122,7 +132,9 @@ const readThemeFromStorage = async () => {
 };
 
 const normalizeThemeName = (name) => {
-  const normalized = String(name || "").trim().toLowerCase();
+  const normalized = String(name || "")
+    .trim()
+    .toLowerCase();
   const slug = normalized.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return slug || "custom";
 };

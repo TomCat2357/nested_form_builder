@@ -6,6 +6,7 @@ import "./theme/themes/standard.css";
 import "./theme/themes/matcha.css";
 import "./theme/themes/sakura.css";
 import "./theme/themes/warm.css";
+import "./theme/themes/ocean.css";
 import "./theme/base.css";
 import "./theme/preview-overrides.css";
 import { DEFAULT_THEME, initTheme } from "./theme/theme.js";
