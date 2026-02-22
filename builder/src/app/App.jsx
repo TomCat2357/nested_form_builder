@@ -59,7 +59,7 @@ function FormNotFoundPage() {
  * 一般ユーザー用の初期リダイレクト処理
  */
 function UserRedirect() {
-  const { authError } = useAuth();
+  const { authError, formId } = useAuth();
 
   // 認証エラーがある場合
   if (authError === "form_not_found") {
@@ -67,6 +67,10 @@ function UserRedirect() {
   }
   if (authError === "access_denied") {
     return <AccessDeniedPage />;
+  }
+
+  if (formId) {
+    return <Navigate to={`/search?formId=${formId}`} replace />;
   }
 
   return <MainPage />;

@@ -35,12 +35,13 @@ const buildInitialSort = (params) => {
 export default function SearchPage() {
   const { getFormById } = useAppData();
   const { settings } = useBuilderSettings();
-  const { isAdmin, userEmail } = useAuth();
+  const { isAdmin, userEmail, formId: scopedFormId } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
   const { alertState, showAlert, closeAlert } = useAlert();
-  const formId = searchParams.get("formId");
+  const formId = (searchParams.get("formId") || "").trim();
+  const isScopedByQuery = scopedFormId !== "";
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [selectedEntries, setSelectedEntries] = useState(new Set());
 
@@ -220,7 +221,7 @@ export default function SearchPage() {
       sidebarActions={(
         <SearchSidebar
           onBack={handleBackToMain}
-          showBack={isAdmin}
+          showBack={!isScopedByQuery}
           onCreate={handleCreateNew}
           onConfig={handleOpenFormConfig}
           onDelete={handleDeleteSelected}
