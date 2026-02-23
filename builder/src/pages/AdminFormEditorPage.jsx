@@ -9,7 +9,6 @@ import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { validateSpreadsheet } from "../services/gasClient.js";
-import { cleanupTempData } from "../core/schema.js";
 import { omitThemeSetting } from "../utils/settings.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
@@ -24,7 +23,7 @@ export default function AdminFormEditorPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const { showAlert } = useAlert();
-const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
+  const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
   const builderRef = useRef(null);
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
   const initialSchema = useMemo(() => (form?.schema ? form.schema : []), [form]);
@@ -143,38 +142,12 @@ const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
     const settings = builderRef.current.getSettings();
     const trimmedSettings = omitThemeSetting(settings);
     const preservedTheme = form?.settings?.theme || DEFAULT_THEME;
-    // 一時保存データをクリーンアップ
-    const cleanedSchema = cleanupTempData(schema);
-
-    const collectStyleStats = (schemaArr) => {
-      let totalQuestions = 0;
-      let showStyleSettingsTrue = 0;
-      let styleSettingsPresent = 0;
-      const walk = (arr) => {
-        (arr || []).forEach((field) => {
-          totalQuestions += 1;
-          if (field?.showStyleSettings === true) showStyleSettingsTrue += 1;
-          if (field?.styleSettings) styleSettingsPresent += 1;
-          if (field?.childrenByValue && typeof field.childrenByValue === "object") {
-            Object.values(field.childrenByValue).forEach((children) => walk(children));
-          }
-        });
-      };
-      walk(schemaArr);
-      return { totalQuestions, showStyleSettingsTrue, styleSettingsPresent };
-    };
-
-    console.log("[AdminFormEditorPage] style settings stats", {
-      formId,
-      beforeCleanup: collectStyleStats(schema),
-      afterCleanup: collectStyleStats(cleanedSchema),
-    });
 
     const payload = {
       // Include existing form data for fallback when getForm fails
       ...(isEdit && form ? { id: form.id, createdAt: form.createdAt, driveFileUrl: form.driveFileUrl } : {}),
       description,
-      schema: cleanedSchema,
+      schema,
       settings: { ...trimmedSettings, theme: preservedTheme, formTitle: trimmedName },
       archived: form?.archived ?? false,
       schemaVersion: form?.schemaVersion ?? 1,

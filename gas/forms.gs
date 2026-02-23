@@ -418,7 +418,7 @@ function Forms_normalizeMapping_(mapping) {
 }
 
 /**
- * スキーマからIDを除去（options/children/_savedChoiceState含む）
+ * スキーマからIDを除去（options/children含む）
  * @param {Array} schema
  * @return {Array}
  */
@@ -457,31 +457,11 @@ function Forms_stripSchemaIds_(schema) {
         base.childrenByValue = fixed;
       }
 
-      // _savedChoiceState 内もID除去
-      if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
-        var saved = base._savedChoiceState;
-        var savedFixed = {};
-        if (Array.isArray(saved.options)) {
-          savedFixed.options = saved.options.map(function(opt) {
-            var optBase = {};
-            for (var optKey2 in opt) {
-              if (!opt.hasOwnProperty(optKey2)) continue;
-              if (optKey2 === "id") continue;
-              optBase[optKey2] = opt[optKey2];
-            }
-            return optBase;
-          });
-        }
-        if (saved.childrenByValue && typeof saved.childrenByValue === "object") {
-          var childrenFixed = {};
-          for (var keyChild in saved.childrenByValue) {
-            if (!saved.childrenByValue.hasOwnProperty(keyChild)) continue;
-            childrenFixed[keyChild] = stripArray(saved.childrenByValue[keyChild]);
-          }
-          savedFixed.childrenByValue = childrenFixed;
-        }
-        base._savedChoiceState = savedFixed;
-      }
+      // 一時UI状態は保存対象外
+      delete base._savedChoiceState;
+      delete base._savedStyleSettings;
+      delete base._savedChildrenForChoice;
+      delete base._savedDisplayModeForChoice;
 
       return base;
     });

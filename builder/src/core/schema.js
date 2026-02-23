@@ -105,23 +105,28 @@ export const normalizeSchemaIDs = (nodes) => {
       base.showStyleSettings = true;
     }
 
-    if (base.showStyleSettings === true && (!base.styleSettings || typeof base.styleSettings !== "object")) {
+    const hasExplicitShowStyleSettings = typeof base.showStyleSettings === "boolean";
+    const shouldKeepStyleSettings = hasExplicitShowStyleSettings ? base.showStyleSettings : !!base.styleSettings;
+    if (shouldKeepStyleSettings && (!base.styleSettings || typeof base.styleSettings !== "object")) {
       base.styleSettings = { ...DEFAULT_STYLE_SETTINGS };
-    } else if (base.styleSettings && typeof base.styleSettings === "object") {
+    } else if (shouldKeepStyleSettings && base.styleSettings && typeof base.styleSettings === "object") {
       base.styleSettings = normalizeStyleSettings(base.styleSettings);
+    } else {
+      delete base.styleSettings;
     }
 
-    if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
-      base._savedChoiceState = {
-        options: base._savedChoiceState.options
-          ? base._savedChoiceState.options.map((opt) => ({
-              id: opt?.id || genId(),
-              label: sanitizeOptionLabel(opt?.label),
-            }))
-          : undefined,
-        childrenByValue: base._savedChoiceState.childrenByValue,
-      };
+    if (hasExplicitShowStyleSettings) {
+      base.showStyleSettings = !!base.showStyleSettings;
+    } else if (base.styleSettings) {
+      base.showStyleSettings = true;
+    } else {
+      delete base.showStyleSettings;
     }
+
+    delete base._savedChoiceState;
+    delete base._savedStyleSettings;
+    delete base._savedChildrenForChoice;
+    delete base._savedDisplayModeForChoice;
 
     return base;
   });
@@ -136,15 +141,10 @@ export const stripSchemaIDs = (nodes) => {
       base.options = base.options.map(({ id: optId, ...optRest }) => optRest);
     }
 
-    if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
-      base._savedChoiceState = {
-        ...base._savedChoiceState,
-        options: Array.isArray(base._savedChoiceState.options)
-          ? base._savedChoiceState.options.map(({ id: optId, ...optRest }) => optRest)
-          : base._savedChoiceState.options,
-        childrenByValue: base._savedChoiceState.childrenByValue,
-      };
-    }
+    delete base._savedChoiceState;
+    delete base._savedStyleSettings;
+    delete base._savedChildrenForChoice;
+    delete base._savedDisplayModeForChoice;
 
     return base;
   });
@@ -198,73 +198,4 @@ export const computeSchemaHash = (schema) => {
     hash |= 0;
   }
   return `v1-${Math.abs(hash)}`;
-};
-
-export const cleanupTempData = (schema) => {
-  return mapSchema(schema, (field) => {
-    const cleaned = { ...field };
-
-    cleaned.isDisplayed = resolveIsDisplayed(cleaned);
-    delete cleaned.displayMode;
-    delete cleaned.important;
-    delete cleaned.compact;
-
-    delete cleaned._savedChildrenForChoice;
-    delete cleaned._savedDisplayModeForChoice;
-    delete cleaned._savedStyleSettings;
-
-    if (typeof cleaned.showStyleSettings === "string") {
-      const raw = cleaned.showStyleSettings;
-      const lowered = raw.trim().toLowerCase();
-      if (["true", "1", "yes", "on"].includes(lowered)) cleaned.showStyleSettings = true;
-      else if (["false", "0", "no", "off", ""].includes(lowered)) cleaned.showStyleSettings = false;
-      else cleaned.showStyleSettings = true;
-    }
-    const hasExplicitShowStyleSettings = typeof cleaned.showStyleSettings === "boolean";
-    const shouldKeepStyleSettings = hasExplicitShowStyleSettings ? cleaned.showStyleSettings : !!cleaned.styleSettings;
-
-    if (!shouldKeepStyleSettings) {
-      delete cleaned.styleSettings;
-    }
-
-    if (hasExplicitShowStyleSettings) {
-      cleaned.showStyleSettings = !!cleaned.showStyleSettings;
-    } else if (cleaned.styleSettings) {
-      cleaned.showStyleSettings = true;
-    } else {
-      delete cleaned.showStyleSettings;
-    }
-
-    if (["radio", "select", "checkboxes"].includes(cleaned.type)) {
-      delete cleaned.pattern;
-      delete cleaned.defaultNow;
-      delete cleaned.placeholder;
-      delete cleaned.showPlaceholder;
-    } else {
-      delete cleaned.options;
-      delete cleaned.childrenByValue;
-      delete cleaned._savedChoiceState;
-
-      if (cleaned.type === "regex") {
-        delete cleaned.defaultNow;
-        if (!cleaned.showPlaceholder) delete cleaned.placeholder;
-      } else if (["date", "time", "userName"].includes(cleaned.type)) {
-        delete cleaned.pattern;
-        delete cleaned.placeholder;
-        delete cleaned.showPlaceholder;
-      } else if (cleaned.type === "message") {
-        delete cleaned.pattern;
-        delete cleaned.defaultNow;
-        delete cleaned.placeholder;
-        delete cleaned.showPlaceholder;
-        delete cleaned.required;
-      } else {
-        delete cleaned.pattern;
-        delete cleaned.defaultNow;
-        if (!cleaned.showPlaceholder) delete cleaned.placeholder;
-      }
-    }
-
-    return cleaned;
-  });
 };

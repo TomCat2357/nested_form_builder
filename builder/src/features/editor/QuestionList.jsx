@@ -77,9 +77,27 @@ function buildOptionControlInfo(selectedIndex, optionControl, normalized) {
   };
 }
 
-export default function QuestionList({ fields, onChange, depth = 1, onQuestionControlChange }) {
+function clearTempStateForField(field, clearTempState) {
+  if (!field || typeof field !== "object") return;
+  if (field.id) clearTempState?.(field.id);
+  if (field.childrenByValue && typeof field.childrenByValue === "object") {
+    Object.values(field.childrenByValue).forEach((children) => {
+      (children || []).forEach((child) => clearTempStateForField(child, clearTempState));
+    });
+  }
+}
+
+export default function QuestionList({
+  fields,
+  onChange,
+  depth = 1,
+  onQuestionControlChange,
+  getTempState,
+  setTempState,
+  clearTempState,
+}) {
   const { showAlert } = useAlert();
-const normalized = normalizeSchemaIDs(fields);
+  const normalized = normalizeSchemaIDs(fields);
   const [selectedIndex, setSelectedIndex] = React.useState(null);
   const [optionControl, setOptionControl] = React.useState(null);
 
@@ -123,7 +141,8 @@ const normalized = normalizeSchemaIDs(fields);
 
   const removeOne = (index) => {
     const next = deepClone(normalized);
-    next.splice(index, 1);
+    const [removed] = next.splice(index, 1);
+    clearTempStateForField(removed, clearTempState);
     commit(next);
     if (selectedIndex === index) {
       setSelectedIndex(null);
@@ -154,9 +173,6 @@ const normalized = normalizeSchemaIDs(fields);
     }
   };
 
-  const canMoveUp = selectedIndex !== null && selectedIndex > 0;
-  const canMoveDown = selectedIndex !== null && selectedIndex < normalized.length - 1;
-
   return (
     <>
       <div className="nf-col nf-gap-12">
@@ -181,6 +197,9 @@ const normalized = normalizeSchemaIDs(fields);
             isSelected={selectedIndex === index}
             QuestionListComponent={QuestionList}
             depth={depth}
+            getTempState={getTempState}
+            setTempState={setTempState}
+            clearTempState={clearTempState}
           />
         ))}
       </div>

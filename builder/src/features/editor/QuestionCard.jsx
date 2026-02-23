@@ -28,26 +28,26 @@ const applyDisplayedFlag = (target, displayed) => {
 };
 
 /**
- * 選択肢系から非選択肢系への変更時に、選択肢状態を退避してoptionsを削除する
+ * 選択肢系から非選択肢系への変更時に、選択肢状態をメモリへ退避してoptionsを削除する
  */
-function saveAndClearChoiceState(next, field, oldIsChoice) {
+function saveAndClearChoiceState(next, field, oldIsChoice, setTempState) {
   if (oldIsChoice) {
-    next._savedChoiceState = {
-      options: deepClone(field.options),
-      childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : undefined
-    };
-    delete next.options;
-    delete next.childrenByValue;
-  } else {
-    delete next.options;
+    setTempState?.(field.id, {
+      choiceState: {
+        options: deepClone(field.options || []),
+        childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : undefined,
+      },
+    });
   }
+  delete next.options;
+  delete next.childrenByValue;
 }
 
 /**
  * タイプ変更時の状態を管理する関数
  * 選択肢系⇔入力系の変換時にchildrenByValueの状態を保存・復元する
  */
-function handleTypeChange(field, newType) {
+function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
   const next = deepClone(field);
   const oldType = field.type;
   next.type = newType;
@@ -66,42 +66,47 @@ function handleTypeChange(field, newType) {
       next.options = next.options?.length ? next.options : [{ id: genId(), label: "" }];
     } else {
       // 入力系 → 選択肢系: 仮保存から復元
-      if (field._savedChoiceState) {
-        next.options = deepClone(field._savedChoiceState.options);
-        next.childrenByValue = deepClone(field._savedChoiceState.childrenByValue);
-        delete next._savedChoiceState;
+      const savedChoiceState = getTempState?.(field.id)?.choiceState;
+      if (savedChoiceState && Array.isArray(savedChoiceState.options) && savedChoiceState.options.length > 0) {
+        next.options = deepClone(savedChoiceState.options);
+        if (savedChoiceState.childrenByValue && typeof savedChoiceState.childrenByValue === "object") {
+          next.childrenByValue = deepClone(savedChoiceState.childrenByValue);
+        } else {
+          delete next.childrenByValue;
+        }
       } else {
         next.options = next.options?.length ? next.options : [{ id: genId(), label: "" }];
+        delete next.childrenByValue;
       }
     }
   } else if (newType === "regex") {
     // 正規表現への変更
     next.pattern = typeof next.pattern === "string" ? next.pattern : "";
     delete next.defaultNow;
-    saveAndClearChoiceState(next, field, oldIsChoice);
+    saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
   } else if (isDateOrTimeType(newType)) {
     // 日付・時刻への変更
     delete next.pattern;
     next.defaultNow = !!next.defaultNow;
-    saveAndClearChoiceState(next, field, oldIsChoice);
+    saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
   } else if (newType === USER_NAME_TYPE) {
     // 入力ユーザー名への変更
     delete next.pattern;
     delete next.placeholder;
     delete next.showPlaceholder;
     next.defaultNow = !!next.defaultNow;
-    saveAndClearChoiceState(next, field, oldIsChoice);
+    saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
   } else if (newType === MESSAGE_TYPE) {
     // メッセージへの変更
     delete next.pattern;
     delete next.defaultNow;
     delete next.required;
-    saveAndClearChoiceState(next, field, oldIsChoice);
+    saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
   } else {
     // テキスト、テキストエリア、数値への変更
     delete next.pattern;
     delete next.defaultNow;
-    saveAndClearChoiceState(next, field, oldIsChoice);
+    saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
   }
 
   applyDisplayedFlag(next, wasDisplayed);
@@ -143,11 +148,12 @@ function PlaceholderInput({ field, onChange, onFocus }) {
 /**
  * スタイル設定入力UI
  */
-function StyleSettingsInput({ field, onChange, onFocus }) {
+function StyleSettingsInput({ field, onChange, onFocus, getTempState, setTempState }) {
   const styleSettings = normalizeStyleSettings(field.styleSettings || {});
   const isStyleSettingsEnabled = typeof field.showStyleSettings === "boolean"
     ? field.showStyleSettings
     : !!field.styleSettings;
+  const savedStyleSettings = getTempState?.(field.id)?.savedStyleSettings;
   return (
     <div className="nf-mt-8">
       <label className={`nf-row nf-gap-6${isStyleSettingsEnabled ? " nf-mb-4" : ""}`}>
@@ -159,16 +165,16 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
             if (checked) {
               const restored = (field.styleSettings && typeof field.styleSettings === "object")
                 ? field.styleSettings
-                : (field._savedStyleSettings && typeof field._savedStyleSettings === "object" ? field._savedStyleSettings : {});
+                : (savedStyleSettings && typeof savedStyleSettings === "object" ? savedStyleSettings : {});
               const nextStyleSettings = { ...DEFAULT_STYLE_SETTINGS, ...normalizeStyleSettings(restored) };
               console.log("[StyleSettingsInput] toggle ON", {
                 id: field.id,
                 label: field.label,
-                restoredFrom: field.styleSettings ? "styleSettings" : (field._savedStyleSettings ? "_savedStyleSettings" : "default"),
+                restoredFrom: field.styleSettings ? "styleSettings" : (savedStyleSettings ? "tempState" : "default"),
                 nextStyleSettings
               });
               const nextField = { ...field, showStyleSettings: true, styleSettings: nextStyleSettings };
-              delete nextField._savedStyleSettings;
+              setTempState?.(field.id, { savedStyleSettings: undefined });
               onChange(nextField);
               return;
             }
@@ -179,8 +185,9 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
             });
             const nextField = { ...field, showStyleSettings: false };
             if (field.styleSettings && typeof field.styleSettings === "object") {
-              nextField._savedStyleSettings = field.styleSettings;
+              setTempState?.(field.id, { savedStyleSettings: deepClone(field.styleSettings) });
             }
+            delete nextField.styleSettings;
             onChange(nextField);
           }}
         />
@@ -230,7 +237,19 @@ function StyleSettingsInput({ field, onChange, onFocus }) {
   );
 }
 
-export default function QuestionCard({ field, onChange, onAddBelow, onDelete, onFocus, isSelected, QuestionListComponent, depth = 1 }) {
+export default function QuestionCard({
+  field,
+  onChange,
+  onAddBelow,
+  onDelete,
+  onFocus,
+  isSelected,
+  QuestionListComponent,
+  depth = 1,
+  getTempState,
+  setTempState,
+  clearTempState,
+}) {
   const isChoice = isChoiceType(field.type);
   const isRegex = field.type === "regex";
   const isDateOrTime = isDateOrTimeType(field.type);
@@ -319,7 +338,7 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
           value={field.type}
           className={`${s.input.className} nf-w-auto nf-min-w-150 nf-flex-0-1-auto`}
           onChange={(event) => {
-            const next = handleTypeChange(field, event.target.value);
+            const next = handleTypeChange(field, event.target.value, { getTempState, setTempState });
             onChange(next);
           }}
           onFocus={onFocus}
@@ -358,7 +377,13 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
       </div>
 
       {/* スタイル設定（全タイプで利用可能） */}
-      <StyleSettingsInput field={field} onChange={onChange} onFocus={onFocus} />
+      <StyleSettingsInput
+        field={field}
+        onChange={onChange}
+        onFocus={onFocus}
+        getTempState={getTempState}
+        setTempState={setTempState}
+      />
 
       {isInput && <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />}
 
@@ -483,6 +508,9 @@ export default function QuestionCard({ field, onChange, onAddBelow, onDelete, on
                         onChange(next);
                       }}
                       depth={depth + 1}
+                      getTempState={getTempState}
+                      setTempState={setTempState}
+                      clearTempState={clearTempState}
                     />
                   </div>
                   ) : null;
