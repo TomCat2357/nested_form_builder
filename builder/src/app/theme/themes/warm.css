@@ -111,3 +111,17 @@
 
 
 }
+/* nfb:select-popup-contrast:warm */
+:root[data-theme="warm"] {
+  color-scheme: dark;
+}
+
+/* Fallback: some browsers style the popup via option/optgroup */
+:root[data-theme="warm"] select {
+  color-scheme: dark;
+}
+:root[data-theme="warm"] select option,
+:root[data-theme="warm"] select optgroup {
+  background-color: var(--bg);
+  color: var(--text);
+}

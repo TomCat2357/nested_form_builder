@@ -165,3 +165,17 @@
     --if-chip-border: rgba(255, 255, 255, 0.14);
     --if-badge-border: rgba(52, 211, 153, 0.22);
 }
+/* nfb:select-popup-contrast:ocean */
+:root[data-theme="ocean"] {
+  color-scheme: dark;
+}
+
+/* Fallback: some browsers style the popup via option/optgroup */
+:root[data-theme="ocean"] select {
+  color-scheme: dark;
+}
+:root[data-theme="ocean"] select option,
+:root[data-theme="ocean"] select optgroup {
+  background-color: var(--bg);
+  color: var(--text);
+}
