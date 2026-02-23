@@ -33,11 +33,7 @@ const { settings } = useBuilderSettings();
     [adminEmailInput],
   );
 
-  useEffect(() => {
-    const globalTheme = settings?.theme || DEFAULT_THEME;
-    void applyThemeWithFallback(globalTheme, { persist: false });
-  }, [settings?.theme]);
-
+  
   useEffect(() => {
     const metaTag = document.querySelector("meta[name=\"deploy-time\"]");
     if (metaTag) {

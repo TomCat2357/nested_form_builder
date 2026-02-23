@@ -299,7 +299,7 @@ export default function FormPage() {
 
   if (!form) {
     return (
-      <AppLayout title="フォーム" fallbackPath="/">
+      <AppLayout themeOverride={form?.settings?.theme} title="フォーム" fallbackPath="/">
         <p className="nf-text-subtle">フォームが見つかりません。メイン画面からやり直してください。</p>
       </AppLayout>
     );
@@ -358,8 +358,7 @@ export default function FormPage() {
   const confirmMessage = "保存せずに前の画面へ戻りますか？";
 
   return (
-    <AppLayout
-      title={`${form.settings?.formTitle || "(無題)"} - フォーム入力`}
+    <AppLayout themeOverride={form?.settings?.theme}       title={`${form.settings?.formTitle || "(無題)"} - フォーム入力`}
       fallbackPath={fallbackPath}
       onBack={handleBack}
       backHidden={true}

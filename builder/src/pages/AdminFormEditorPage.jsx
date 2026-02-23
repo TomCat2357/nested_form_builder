@@ -31,11 +31,7 @@ export default function AdminFormEditorPage() {
 
   const { settings } = useBuilderSettings();
 
-  useEffect(() => {
-    const globalTheme = settings?.theme || DEFAULT_THEME;
-    void applyThemeWithFallback(globalTheme, { persist: false });
-  }, [settings?.theme]);
-
+  
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
   const [driveUrl, setDriveUrl] = useState(form?.driveFileUrl || "");

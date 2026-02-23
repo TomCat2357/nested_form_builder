@@ -53,11 +53,7 @@ const [selected, setSelected] = useState(() => new Set());
   const [importing, setImporting] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
 
-  useEffect(() => {
-    const globalTheme = settings?.theme || DEFAULT_THEME;
-    void applyThemeWithFallback(globalTheme, { persist: false });
-  }, [settings?.theme]);
-
+  
   const sortedForms = useMemo(() => {
     const list = forms.slice();
     list.sort(

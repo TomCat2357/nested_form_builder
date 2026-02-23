@@ -291,7 +291,7 @@ const targetForm = useMemo(
 
   if (isFormMode && !targetForm) {
     return (
-      <AppLayout title="設定" fallbackPath={fallbackPath} backHidden={false} badge="テーマ">
+      <AppLayout title="設定" fallbackPath={fallbackPath} backHidden={false} badge="テーマ" themeOverride={themeValue}>
         <div className="nf-card">
           <p>指定されたフォームが見つかりません。</p>
           <p className="nf-text-muted nf-text-14 nf-mt-8">メイン画面からフォームを選択してやり直してください。</p>
@@ -301,7 +301,7 @@ const targetForm = useMemo(
   }
 
   return (
-    <AppLayout title={pageTitle} fallbackPath={fallbackPath} backHidden={false} badge="テーマ">
+    <AppLayout title={pageTitle} fallbackPath={fallbackPath} backHidden={false} badge="テーマ" themeOverride={themeValue}>
       <div className="nf-card">
         <div className="nf-fw-600 nf-mb-8">テーマ設定</div>
         <div className="nf-mb-12">

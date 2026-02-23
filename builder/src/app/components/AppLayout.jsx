@@ -1,8 +1,17 @@
 import React from "react";
 import { useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { useBuilderSettings } from "../../features/settings/settingsStore.js";
+import { DEFAULT_THEME, applyThemeWithFallback } from "../theme/theme.js";
 
-export default function AppLayout({ title, fallbackPath = "/", onBack, backHidden = false, actions, sidebarActions, badge, children }) {
+export default function AppLayout({ themeOverride, title, fallbackPath = "/", onBack, backHidden = false, actions, sidebarActions, badge, children }) {
   const navigate = useNavigate();
+  const { settings } = useBuilderSettings();
+
+  useEffect(() => {
+    const themeToApply = themeOverride || settings?.theme || DEFAULT_THEME;
+    void applyThemeWithFallback(themeToApply, { persist: false });
+  }, [themeOverride, settings?.theme]);
 
   const resolveTarget = (input) => {
     if (!input) return null;

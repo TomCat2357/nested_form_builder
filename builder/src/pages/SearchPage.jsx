@@ -203,7 +203,7 @@ export default function SearchPage() {
 
   if (!formId || !form) {
     return (
-      <AppLayout title="検索" fallbackPath="/" backHidden={false}>
+      <AppLayout themeOverride={form?.settings?.theme} title="検索" fallbackPath="/" backHidden={false}>
         <p className="search-empty">
           {isAdmin
             ? "フォームが選択されていません。メイン画面からフォームを選択してください。"
@@ -214,8 +214,7 @@ export default function SearchPage() {
   }
 
   return (
-    <AppLayout
-      title={`検索 - ${form.settings?.formTitle || "(無題)"}`}
+    <AppLayout themeOverride={form?.settings?.theme}       title={`検索 - ${form.settings?.formTitle || "(無題)"}`}
       fallbackPath="/"
       backHidden
       badge={badge}

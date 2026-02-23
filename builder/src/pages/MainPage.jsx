@@ -15,11 +15,7 @@ export default function MainPage() {
 
   const activeForms = useMemo(() => forms.filter((form) => !form.archived), [forms]);
 
-  useEffect(() => {
-    const globalTheme = settings?.theme || DEFAULT_THEME;
-    void applyThemeWithFallback(globalTheme, { persist: false });
-  }, [settings?.theme]);
-
+  
   const handleSelect = (formId) => {
     navigate(`/search?form=${formId}`, {
       state: { fromMainPage: true }
