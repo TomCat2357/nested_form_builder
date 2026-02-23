@@ -1,6 +1,7 @@
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import { formatUnixMsDateTime, formatUnixMsDate, formatUnixMsTime, toUnixMs, parseStringToSerial } from "../../utils/dateTime.js";
 import { MAX_DEPTH as MAX_HEADER_DEPTH } from "../../core/constants.js";
+import { traverseSchema } from "../../core/schemaUtils.js";
 
 export { MAX_HEADER_DEPTH };
 
@@ -748,6 +749,74 @@ export const buildSearchTableLayout = (form, { headerMatrix = null, includeOpera
     headerRows: headerRowsFromCsv && headerRowsFromCsv.length > 0
       ? headerRowsFromCsv
       : buildHeaderRows(columns),
+  };
+};
+
+const padRowToLength = (row, length) => {
+  const base = Array.isArray(row) ? row.slice(0, length) : [];
+  while (base.length < length) base.push("");
+  return base.map((cell) => (cell === null || cell === undefined ? "" : String(cell)));
+};
+
+const expandHeaderRowsToMatrix = (headerRows, columnCount) => {
+  if (!Array.isArray(headerRows) || headerRows.length === 0 || columnCount <= 0) return [];
+  const matrix = Array.from({ length: headerRows.length }, () => Array(columnCount).fill(""));
+  headerRows.forEach((row, rowIndex) => {
+    (row || []).forEach((cell) => {
+      if (!cell) return;
+      const start = Number(cell.startIndex) || 0;
+      if (start < 0 || start >= columnCount) return;
+      matrix[rowIndex][start] = cell.label ?? "";
+    });
+  });
+  return matrix;
+};
+
+const collectAllFieldSettings = (schema) => {
+  const collected = [];
+  const seen = new Set();
+  traverseSchema(schema || [], (field, context) => {
+    const path = context?.pathSegments?.join("|") || "";
+    if (!path || seen.has(path)) return;
+    seen.add(path);
+    collected.push({
+      path,
+      type: field?.type || "",
+    });
+  });
+  return collected;
+};
+
+export const buildExportColumns = (form, { includeBaseColumns = true } = {}) => {
+  const columns = [];
+  if (includeBaseColumns) {
+    columns.push(...createBaseColumns());
+  }
+  collectAllFieldSettings(form?.schema || []).forEach(({ path, type }) => {
+    if (!path) return;
+    columns.push(createDisplayColumn(path, type));
+  });
+  return columns;
+};
+
+export const buildExportTableData = ({ form, entries }) => {
+  const columns = buildExportColumns(form, { includeBaseColumns: true });
+  const headerRows = buildHeaderRows(columns);
+  const headerMatrix = expandHeaderRowsToMatrix(headerRows, columns.length);
+  const normalizedHeaderRows = headerMatrix.map((row) => padRowToLength(row, columns.length));
+  const normalizedRows = (entries || []).map((entry) => {
+    const values = computeRowValues(entry, columns);
+    const row = columns.map((column) => {
+      const display = values?.[column.key]?.display;
+      if (display === null || display === undefined) return "";
+      return String(display);
+    });
+    return padRowToLength(row, columns.length);
+  });
+  return {
+    columns,
+    headerRows: normalizedHeaderRows,
+    rows: normalizedRows,
   };
 };
 

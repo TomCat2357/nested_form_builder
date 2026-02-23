@@ -10,7 +10,11 @@ export default function AlertDialog({ open, title = "通知", message, onClose }
 
   return (
     <BaseDialog open={open} title={title} footer={footer}>
-      {message && <p className="dialog-message dialog-message-pre">{message}</p>}
+      {message && (
+        typeof message === "string"
+          ? <p className="dialog-message dialog-message-pre">{message}</p>
+          : <div className="dialog-message">{message}</div>
+      )}
     </BaseDialog>
   );
 }

@@ -9,11 +9,13 @@ import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import {
   buildSearchTableLayout,
+  buildExportTableData,
   computeRowValues,
   compareByColumn,
   matchesKeyword,
   parseSearchCellDisplayLimit,
 } from "../features/search/searchTable.js";
+import { exportSearchResults } from "../services/gasClient.js";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import SearchSidebar from "../features/search/components/SearchSidebar.jsx";
@@ -45,6 +47,7 @@ export default function SearchPage() {
   const isScopedByAuth = scopedFormId !== "";
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [selectedEntries, setSelectedEntries] = useState(new Set());
+  const [exporting, setExporting] = useState(false);
 
   const form = useMemo(() => (effectiveFormId ? getFormById(effectiveFormId) : null), [effectiveFormId, getFormById]);
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
@@ -191,6 +194,44 @@ export default function SearchPage() {
     setShowDeleteConfirm({ open: true, entryIds: Array.from(selectedEntries) });
   };
 
+  const handleExportResults = useCallback(async () => {
+    if (sortedEntries.length === 0) return;
+    setExporting(true);
+    try {
+      const exportingEntries = sortedEntries.map((row) => row.entry);
+      const exportTable = buildExportTableData({ form, entries: exportingEntries });
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const spreadsheetTitle = `検索結果_${form?.settings?.formTitle || form?.id || "form"}_${timestamp}`;
+      const result = await exportSearchResults({
+        spreadsheetTitle,
+        headerRows: exportTable.headerRows,
+        rows: exportTable.rows,
+      });
+      if (result?.spreadsheetUrl) {
+        showAlert(
+          React.createElement("span", null,
+            `出力完了: ${result.exportedCount} 件を書き出しました。`,
+            React.createElement("br"),
+            React.createElement("a", {
+              href: result.spreadsheetUrl,
+              target: "_blank",
+              rel: "noopener noreferrer",
+              style: { color: "var(--accent-color, #1a73e8)", textDecoration: "underline" },
+            }, "スプレッドシートを開く"),
+          ),
+        );
+      } else {
+        showAlert(`出力完了: ${result.exportedCount} 件を書き出しました。`);
+      }
+    } catch (err) {
+      showAlert(`出力に失敗しました: ${err.message}`);
+    } finally {
+      setExporting(false);
+    }
+  }, [form, sortedEntries, showAlert]);
+
   const confirmDelete = useCallback(async () => {
     if (!effectiveFormId || showDeleteConfirm.entryIds.length === 0) return;
     for (const entryId of showDeleteConfirm.entryIds) {
@@ -226,9 +267,12 @@ export default function SearchPage() {
           onConfig={settings?.syncAllFormsTheme ? undefined : handleOpenFormConfig}
           onDelete={handleDeleteSelected}
           onRefresh={fetchAndCacheData}
+          onExport={handleExportResults}
           useCache={useCache}
           loading={loading}
+          exporting={exporting}
           selectedCount={selectedEntries.size}
+          filteredCount={sortedEntries.length}
         />
       )}
     >

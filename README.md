@@ -9,12 +9,14 @@ Nested Form Builderは、階層構造を持つアンケートフォームを視�
 ### 主な機能
 
 - **ビジュアルフォームエディタ**: 直感的なUIで質問を追加・編集し、リアルタイムでプレビュー
-- **ネスト構造・条件分岐**: 最大6階層までの入れ子と、選択肢ごとの `childrenByValue` をサポート
+- **ネスト構造・条件分岐**: 最大11階層までの入れ子と、選択肢ごとの `childrenByValue` をサポート
 - **質問タイプと表示モード**: テキスト/数値/日付/時間/選択肢/チェックボックス/正規表現に加え、重要列と `displayMode`（none/normal/compact）を指定可能
 - **フォームインポート/エクスポート**: JSONによるスキーマの読み込み/書き出し
 - **Google Sheets連携**: 回答を自動でスプレッドシートに保存し、二分探索+IndexedDBキャッシュで高速取得
 - **高度な検索機能**: 条件式/正規表現/AND・ORを組み合わせたレコード検索、重要項目の一覧表示
 - **レコード管理**: 単一レコード取得、編集、削除、アーカイブ管理、ページネーション
+- **一般ユーザーアクセス制限**: 管理者キー/メール設定時に、`?form=xxx` を指定しない一般ユーザーのアクセスを拒否する設定
+- **プロパティ保存モード**: GASのプロパティ保存先を ScriptProperties / UserProperties で切り替え可能
 
 ### 現在の状態
 
@@ -45,7 +47,14 @@ nested_form_builder/
 │   │   │       ├── standard.css
 │   │   │       ├── matcha.css
 │   │   │       ├── sakura.css
-│   │   │       └── warm.css
+│   │   │       ├── warm.css
+│   │   │       ├── ocean.css
+│   │   │       ├── dark.css
+│   │   │       ├── egypt.css
+│   │   │       ├── india.css
+│   │   │       ├── snow.css
+│   │   │       ├── christmas.css
+│   │   │       └── forest.css
 │   │   └── ...
 │   ├── src/core/            # スキーマ検証・displayModes・storage
 │   ├── src/features/        # admin/editor/export/preview/search/settings
@@ -80,7 +89,7 @@ nested_form_builder/
 - `builder/src/app/theme/`…テーマシステムの中核
   - `theme.js`：テーマの選択・追加・削除機能、IndexedDB（settingsStore）に保存
   - `theme.css`：全テーマ共通のCSS変数定義
-  - `themes/*.css`：ビルトインテーマ（standard/matcha/sakura/warm）
+  - `themes/*.css`：ビルトインテーマ（standard/matcha/sakura/warm/ocean/dark/egypt/india/snow/christmas/forest）
 - `builder/src/pages/ConfigPage.jsx`…テーマ管理UI（設定ページ）
   - テーマ選択ドロップダウン
   - Google Drive からのテーマCSS インポート機能
@@ -189,7 +198,7 @@ npm run clasp:push
 
 ナビゲーションバーの **「設定」** ページ（歯車アイコン）で テーマ切り替えとインポート機能にアクセスできます。
 
-- **ビルトインテーマ**: `standard`（既定） / `matcha` / `sakura` / `warm`
+- **ビルトインテーマ**: `standard`（既定） / `matcha` / `sakura` / `warm` / `ocean` / `dark` / `egypt` / `india` / `snow` / `christmas` / `forest`
 - **カスタムテーマ**: インポートしたテーマは「テーマ選択」ドロップダウンに自動表示されます。
 
 選択したテーマは `<html data-theme="...">` 属性に反映され、全体の配色が切り替わります。
@@ -242,18 +251,18 @@ npm run clasp:push
 #### テーマの実装詳細
 
 - **テーマシステム**: `builder/src/app/theme/theme.js` で管理
-  - `THEME_OPTIONS`: ビルトインテーマ定義
+  - `THEME_OPTIONS`: ビルトインテーマ定義（11テーマ）
   - `setCustomTheme()`: カスタムテーマの追加
   - `removeCustomTheme()`: カスタムテーマの削除
   - `applyTheme()`: テーマの即時適用
 
 - **トークン定義**:
   - `builder/src/app/theme/theme.css`: 全テーマ共通のカスタムプロパティベース
-  - `builder/src/app/theme/themes/*.css`: ビルトインテーマの具体値
+  - `builder/src/app/theme/themes/*.css`: ビルトインテーマ（各テーマは差分のみ定義）
   - `builder/src/app/theme/tokens.js`: React コンポーネント内で参照される JSS オブジェクト
 
 - **管理UI**: `builder/src/pages/ConfigPage.jsx`
-  - テーマ選択ドロップダウン
+  - テーマ選択ドロップダウン（フォームごと・全体で設定可能）
   - Google Drive URL からのインポート
   - 削除確認ダイアログ
 
@@ -408,7 +417,7 @@ npx playwright test
 
 #### スプレッドシートレイアウト
 
-- 行1-6: ヘッダー（最大6階層）
+- 行1-11: ヘッダー（最大11階層）
 - 固定列: `id`, `No.`, `createdAt`, `modifiedAt`
 - 動的列: 質問パスに基づく列（例: `parent|child|question`）
 
@@ -425,13 +434,18 @@ npx playwright test
 | `recordsCache` | レコードのローカルキャッシュ | entryId |
 | `recordsCacheMeta` | キャッシュのメタ情報 | formId |
 
-#### GAS ScriptProperties
+#### GAS ScriptProperties / UserProperties
+
+プロパティ保存先は管理者設定画面で **ScriptProperties**（スクリプト共有）/ **UserProperties**（ユーザー固有）を切り替えられます。
 
 | キー | 何を保存するか |
 |---|---|
 | `nfb.forms.mapping` | formId → Google Drive ファイル ID/URL のマッピング |
 | `FORM_URLS_MAP` | 同上（旧形式、レガシー） |
 | `ADMIN_KEY` | 管理者キー |
+| `ADMIN_EMAIL` | 管理者メールアドレス |
+| `RESTRICT_TO_FORM_ONLY` | 一般ユーザーを個別フォームのみに制限するフラグ |
+| `NFB_PROPERTY_STORE_MODE` | プロパティ保存先モード（`script` / `user`） |
 
 #### Google Drive（JSON ファイル）
 

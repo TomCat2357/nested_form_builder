@@ -7,10 +7,16 @@ export function AlertProvider({ children }) {
   const [alertState, setAlertState] = useState({ open: false, title: "", message: "" });
 
   const showAlert = useCallback((message, title = "通知") => {
+    const normalizedMessage =
+      message === undefined || message === null
+        ? ""
+        : typeof message === "string" || typeof message === "number"
+          ? String(message)
+          : message;
     setAlertState({
       open: true,
       title,
-      message: message === undefined || message === null ? "" : String(message),
+      message: normalizedMessage,
     });
   }, []);
 

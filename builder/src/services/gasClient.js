@@ -91,6 +91,36 @@ export const getEntry = async ({ spreadsheetId, sheetName = "Data", entryId, row
   };
 };
 
+export const exportSearchResults = async ({ spreadsheetTitle = "", headerRows, rows }) => {
+  if (!Array.isArray(headerRows) || headerRows.length === 0) throw new Error("headerRows is required");
+  if (!Array.isArray(rows)) throw new Error("rows must be an array");
+
+  const CHUNK_SIZE = 100;
+  const firstChunk = rows.slice(0, CHUNK_SIZE);
+
+  const result = await callScriptRun("nfbExportSearchResults", {
+    spreadsheetTitle,
+    headerRows,
+    rows: firstChunk,
+  });
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Export failed");
+  }
+
+  for (let i = CHUNK_SIZE; i < rows.length; i += CHUNK_SIZE) {
+    const chunk = rows.slice(i, i + CHUNK_SIZE);
+    const appendResult = await callScriptRun("nfbAppendExportRows", {
+      spreadsheetId: result.spreadsheetId,
+      rows: chunk,
+    });
+    if (!appendResult || appendResult.ok === false) {
+      throw new Error(appendResult?.error || "Append chunk failed");
+    }
+  }
+
+  return { ...result, exportedCount: rows.length };
+};
+
 export const listEntries = async ({ spreadsheetId, sheetName = "Data", formId = null }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
 

@@ -133,6 +133,30 @@ function getRecord(payload) {
   });
 }
 
+function nfbExportSearchResults(payload) {
+  return nfbSafeCall_(() => {
+    if (!payload || !payload.headerRows || !payload.headerRows.length) {
+      return { ok: false, error: "headerRows is required" };
+    }
+    if (!Array.isArray(payload.rows)) {
+      return { ok: false, error: "rows must be an array" };
+    }
+    return Sheets_exportResultMatrixToNewSpreadsheet_(payload.spreadsheetTitle || "", payload.headerRows, payload.rows);
+  });
+}
+
+function nfbAppendExportRows(payload) {
+  return nfbSafeCall_(() => {
+    if (!payload || !payload.spreadsheetId) {
+      return { ok: false, error: "spreadsheetId is required" };
+    }
+    if (!Array.isArray(payload.rows)) {
+      return { ok: false, error: "rows must be an array" };
+    }
+    return Sheets_appendRowsToSpreadsheet_(payload.spreadsheetId, payload.rows);
+  });
+}
+
 function listRecords(payload) {
   return nfbSafeCall_(() => {
     const ctx = Model_fromScriptRunPayload_(payload);

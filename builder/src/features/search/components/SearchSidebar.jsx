@@ -6,9 +6,12 @@ export default function SearchSidebar({
   onConfig,
   onDelete,
   onRefresh,
+  onExport,
   useCache,
   loading,
+  exporting,
   selectedCount,
+  filteredCount,
 }) {
   return (
     <>
@@ -36,6 +39,15 @@ export default function SearchSidebar({
         title={useCache ? "キャッシュから表示中 - クリックで最新データを取得" : "最新データを取得"}
       >
         {"🔄 更新"}
+      </button>
+      <button
+        type="button"
+        className="search-input search-sidebar-btn"
+        onClick={onExport}
+        disabled={exporting || filteredCount === 0}
+        title={filteredCount === 0 ? "出力するデータがありません" : `検索結果 ${filteredCount} 件を出力`}
+      >
+        {exporting ? "出力中..." : "検索結果を出力"}
       </button>
       {onConfig && (
         <button type="button" className="search-input search-sidebar-btn" onClick={onConfig}>
