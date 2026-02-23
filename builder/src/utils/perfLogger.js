@@ -2,9 +2,37 @@
  * パフォーマンス計測とサマリー出力
  */
 
+const resolveDefaultVerbose = () => {
+  try {
+    return Boolean(import.meta?.env?.DEV);
+  } catch {
+    return false;
+  }
+};
+
 class PerformanceLogger {
-  constructor() {
+  constructor({ verbose = resolveDefaultVerbose() } = {}) {
+    this.verbose = !!verbose;
+    this.autoSummaryTimer = null;
     this.reset();
+  }
+
+  setVerbose(enabled) {
+    this.verbose = !!enabled;
+  }
+
+  isVerbose() {
+    return this.verbose;
+  }
+
+  logVerbose(scope, message, payload) {
+    if (!this.verbose) return;
+    const prefix = scope ? `[perf][${scope}]` : "[perf]";
+    if (payload === undefined) {
+      console.log(`${prefix} ${message}`);
+      return;
+    }
+    console.log(`${prefix} ${message}`, payload);
   }
 
   reset() {
@@ -75,7 +103,8 @@ class PerformanceLogger {
   }
 
   // サマリー出力
-  printSummary() {
+  printSummary({ force = false } = {}) {
+    if (!force && !this.verbose) return;
     console.log("\n");
     console.log("╔════════════════════════════════════════════════════════╗");
     console.log("║        📊 パフォーマンスサマリー                      ║");
@@ -146,6 +175,10 @@ class PerformanceLogger {
   enableAutoSummary(intervalMs = 30000) {
     if (this.autoSummaryTimer) {
       clearInterval(this.autoSummaryTimer);
+      this.autoSummaryTimer = null;
+    }
+    if (!this.verbose) {
+      return;
     }
     this.autoSummaryTimer = setInterval(() => {
       this.printSummary();
@@ -166,12 +199,12 @@ export const perfLogger = new PerformanceLogger();
 // グローバルからアクセス可能にする
 if (typeof window !== "undefined") {
   window.perfLogger = perfLogger;
-  window.showPerfSummary = () => perfLogger.printSummary();
-  console.log("💡 パフォーマンスサマリーを表示するには、コンソールで window.showPerfSummary() を実行してください");
+  window.showPerfSummary = () => perfLogger.printSummary({ force: true });
+  perfLogger.logVerbose("logger", "window.showPerfSummary() でサマリーを表示できます");
 }
 
 // 開発時に自動サマリーを有効化
 if (typeof window !== "undefined" && (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1")) {
   perfLogger.enableAutoSummary(60000); // 1分ごと
-  console.log("🔍 パフォーマンス自動サマリーが有効です（1分ごと）");
+  perfLogger.logVerbose("logger", "自動サマリーを有効化しました（60秒間隔）");
 }

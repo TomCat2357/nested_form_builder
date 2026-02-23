@@ -1,6 +1,6 @@
 /**
  * properties.gs
- * ScriptPropertiesを使用してフォームURLマップを管理
+ * フォームURLを取得する補助関数群
  */
 
 
@@ -25,23 +25,29 @@ function ExtractFileIdFromUrl_(url) {
  */
 function GetFormUrls_() {
   try {
-    var scriptProps = PropertiesService.getScriptProperties();
-    var json = scriptProps.getProperty(FORM_URLS_KEY);
-
-    if (!json) {
-      var userProps = PropertiesService.getUserProperties();
-      var legacyJson = userProps.getProperty(FORM_URLS_KEY);
-      if (legacyJson) {
-        scriptProps.setProperty(FORM_URLS_KEY, legacyJson);
-        json = legacyJson;
-      }
-    }
-
-    if (!json) {
+    if (typeof Forms_getMapping_ !== 'function') {
       return {};
     }
 
-    return JSON.parse(json);
+    var mapping = Forms_getMapping_() || {};
+    var urlMap = {};
+    for (var formId in mapping) {
+      if (!mapping.hasOwnProperty(formId)) continue;
+      var entry = mapping[formId] || {};
+      var fileUrl = entry.driveFileUrl || null;
+      if (!fileUrl && entry.fileId) {
+        if (typeof Forms_buildDriveFileUrlFromId_ === 'function') {
+          fileUrl = Forms_buildDriveFileUrlFromId_(entry.fileId);
+        } else {
+          fileUrl = "https://drive.google.com/file/d/" + entry.fileId + "/view";
+        }
+      }
+      if (fileUrl) {
+        urlMap[formId] = fileUrl;
+      }
+    }
+
+    return urlMap;
   } catch (error) {
     Logger.log('[GetFormUrls_] Error: ' + nfbErrorToString_(error));
     return {};
@@ -54,9 +60,27 @@ function GetFormUrls_() {
  */
 function SaveFormUrls_(urlMap) {
   try {
-    var scriptProps = PropertiesService.getScriptProperties();
-    var json = JSON.stringify(urlMap || {});
-    scriptProps.setProperty(FORM_URLS_KEY, json);
+    if (typeof Forms_getMapping_ !== 'function' || typeof Forms_saveMapping_ !== 'function') {
+      throw new Error('Forms mapping functions are unavailable');
+    }
+
+    var source = urlMap || {};
+    var mapping = Forms_getMapping_() || {};
+
+    for (var formId in source) {
+      if (!source.hasOwnProperty(formId)) continue;
+      var fileUrl = source[formId];
+      if (!fileUrl) continue;
+
+      var fileId = ExtractFileIdFromUrl_(fileUrl);
+      var existing = mapping[formId] || {};
+      mapping[formId] = {
+        fileId: fileId || existing.fileId || null,
+        driveFileUrl: fileUrl
+      };
+    }
+
+    Forms_saveMapping_(mapping);
   } catch (error) {
     Logger.log('[SaveFormUrls_] Error: ' + nfbErrorToString_(error));
     throw new Error('フォームURLマップの保存に失敗しました: ' + nfbErrorToString_(error));
@@ -88,15 +112,24 @@ function AddFormUrl_(formId, fileUrl) {
       throw new Error('ファイルへのアクセス権限がありません: ' + nfbErrorToString_(accessError));
     }
 
-    var urlMap = GetFormUrls_();
-    urlMap[formId] = fileUrl;
-    SaveFormUrls_(urlMap);
+    if (typeof Forms_getMapping_ !== 'function' || typeof Forms_saveMapping_ !== 'function') {
+      throw new Error('Forms mapping functions are unavailable');
+    }
+
+    var mapping = Forms_getMapping_() || {};
+    var existing = mapping[formId] || {};
+    mapping[formId] = {
+      fileId: fileId || existing.fileId || null,
+      driveFileUrl: fileUrl
+    };
+    Forms_saveMapping_(mapping);
 
     return {
       ok: true,
       message: 'フォームURLを追加しました',
       formId: formId,
-      fileUrl: fileUrl
+      fileUrl: fileUrl,
+      fileId: fileId
     };
   } catch (error) {
     Logger.log('[AddFormUrl_] Error: ' + nfbErrorToString_(error));
@@ -115,25 +148,20 @@ function GetFormUrl_(formId) {
       return null;
     }
 
-    var urlMap = GetFormUrls_();
-    var fileUrl = urlMap[formId] || null;
-    if (fileUrl) {
-      return fileUrl;
+    if (typeof Forms_getMapping_ !== 'function') {
+      return null;
     }
 
-    // legacy mapにない場合はScriptProperties側のマッピングを参照
-    if (typeof Forms_getMapping_ === "function") {
-      var mapping = Forms_getMapping_();
-      var entry = mapping[formId] || {};
-      if (entry.driveFileUrl) {
-        return entry.driveFileUrl;
+    var mapping = Forms_getMapping_() || {};
+    var entry = mapping[formId] || {};
+    if (entry.driveFileUrl) {
+      return entry.driveFileUrl;
+    }
+    if (entry.fileId) {
+      if (typeof Forms_buildDriveFileUrlFromId_ === 'function') {
+        return Forms_buildDriveFileUrlFromId_(entry.fileId);
       }
-      if (entry.fileId) {
-        if (typeof Forms_buildDriveFileUrlFromId_ === "function") {
-          return Forms_buildDriveFileUrlFromId_(entry.fileId);
-        }
-        return "https://drive.google.com/file/d/" + entry.fileId + "/view";
-      }
+      return "https://drive.google.com/file/d/" + entry.fileId + "/view";
     }
 
     return null;

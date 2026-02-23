@@ -6,6 +6,7 @@ import {
   RECORD_CACHE_BACKGROUND_REFRESH_MS,
   RECORD_CACHE_MAX_AGE_MS,
 } from "../../app/state/cachePolicy.js";
+import { perfLogger } from "../../utils/perfLogger.js";
 
 const defaultAlert = { showAlert: (message) => console.warn("[useEntriesWithCache]", message) };
 
@@ -28,7 +29,7 @@ export const useEntriesWithCache = ({ formId, form, locationKey, locationState, 
     if (!background) setLoading(true);
     else setBackgroundLoading(true);
     const startedAt = Date.now();
-    console.log("[perf][search] fetch start", { formId, background, startedAt });
+    perfLogger.logVerbose("search", "fetch start", { formId, background, startedAt });
 
     try {
       const result = await dataStore.listEntries(formId);
@@ -51,7 +52,7 @@ export const useEntriesWithCache = ({ formId, form, locationKey, locationState, 
       showAlert(`データの取得に失敗しました: ${error.message || error}`);
     } finally {
       const finishedAt = Date.now();
-      console.log("[perf][search] fetch done", { formId, background, durationMs: finishedAt - startedAt });
+      perfLogger.logVerbose("search", "fetch done", { formId, background, durationMs: finishedAt - startedAt });
       if (!background) setLoading(false);
       else setBackgroundLoading(false);
     }
@@ -72,7 +73,10 @@ export const useEntriesWithCache = ({ formId, form, locationKey, locationState, 
       const schemaMismatch = cache.schemaHash && form?.schemaHash && cache.schemaHash !== form.schemaHash;
       const hasCache = (cache.entries || []).length > 0 && !schemaMismatch;
       if (schemaMismatch) {
-        console.warn("[perf][search] cache schema mismatch detected; forcing sync and clearing cache", { cacheSchema: cache.schemaHash, formSchema: form?.schemaHash });
+        perfLogger.logVerbose("search", "cache schema mismatch detected; forcing sync", {
+          cacheSchema: cache.schemaHash,
+          formSchema: form?.schemaHash,
+        });
         try {
           await saveRecordsToCache(formId, [], [], { schemaHash: form?.schemaHash });
         } catch (clearErr) {
@@ -89,7 +93,14 @@ export const useEntriesWithCache = ({ formId, form, locationKey, locationState, 
         backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
       });
 
-      console.log("[perf][search] cache decision", { formId, cacheAge: age, hasCache, shouldSync, shouldBackground, cacheDisabled });
+      perfLogger.logVerbose("search", "cache decision", {
+        formId,
+        cacheAge: age,
+        hasCache,
+        shouldSync,
+        shouldBackground,
+        cacheDisabled,
+      });
 
       if (hasCache) {
         setEntries(cache.entries);

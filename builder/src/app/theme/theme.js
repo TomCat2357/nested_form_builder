@@ -15,22 +15,6 @@ const CUSTOM_THEMES_KEY = "nested_form_builder_theme_custom_list_v1";
 const CUSTOM_THEME_PREFIX = "drive-";
 const BUILT_IN_THEME_IDS = new Set(THEME_OPTIONS.map((option) => option.value));
 
-const safeLegacyStorageGet = (key) => {
-  try {
-    return window?.localStorage?.getItem(key);
-  } catch (error) {
-    return null;
-  }
-};
-
-const safeLegacyStorageRemove = (key) => {
-  try {
-    window?.localStorage?.removeItem(key);
-  } catch (error) {
-    // ignore legacy storage failures
-  }
-};
-
 const ensureCustomThemeStyle = (themes) => {
   if (typeof document === "undefined") return;
   const styleId = CUSTOM_THEME_STYLE_ID;
@@ -101,15 +85,7 @@ const normalizeCustomThemes = (input) => {
 
 const readCustomThemes = async () => {
   const stored = await readSettingsValue(CUSTOM_THEMES_KEY);
-  const normalized = normalizeCustomThemes(stored);
-  if (stored !== null && stored !== undefined) return normalized;
-
-  const legacy = normalizeCustomThemes(safeLegacyStorageGet(CUSTOM_THEMES_KEY));
-  if (legacy.length > 0) {
-    await writeSettingsValue(CUSTOM_THEMES_KEY, legacy);
-    safeLegacyStorageRemove(CUSTOM_THEMES_KEY);
-  }
-  return legacy;
+  return normalizeCustomThemes(stored);
 };
 
 const writeCustomThemes = async (themes) => {
@@ -118,16 +94,7 @@ const writeCustomThemes = async (themes) => {
 
 const readThemeFromStorage = async () => {
   const stored = await readSettingsValue(THEME_STORAGE_KEY);
-  let theme = typeof stored === "string" ? stored : "";
-  if (!theme) {
-    const legacy = safeLegacyStorageGet(THEME_STORAGE_KEY);
-    if (legacy) {
-      const resolvedLegacy = legacy === "default" ? DEFAULT_THEME : legacy;
-      await writeSettingsValue(THEME_STORAGE_KEY, resolvedLegacy);
-      safeLegacyStorageRemove(THEME_STORAGE_KEY);
-      theme = resolvedLegacy;
-    }
-  }
+  const theme = typeof stored === "string" ? stored : "";
   return theme || null;
 };
 

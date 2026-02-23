@@ -334,32 +334,10 @@ function Forms_getMapping_() {
     }
   }
 
-  // 旧FORM_URLS_MAPに保存されているフォーム（URL形式）をマージ
-  if (typeof GetFormUrls_ === "function") {
-    var legacy = GetFormUrls_() || {};
-    Logger.log("[Forms_getMapping_] Legacy forms count: " + Object.keys(legacy).length);
-
-    for (var legacyFormId in legacy) {
-      if (!legacy.hasOwnProperty(legacyFormId)) continue;
-      if (mapping[legacyFormId]) continue;
-
-      var fileUrl = legacy[legacyFormId];
-      var legacyFileId = null;
-      if (typeof ExtractFileIdFromUrl_ === "function") {
-        legacyFileId = ExtractFileIdFromUrl_(fileUrl);
-      }
-
-      if (legacyFileId) {
-        mapping[legacyFormId] = legacyFileId;
-        merged = true;
-      }
-    }
-  }
-
   var normalized = Forms_normalizeMapping_(mapping);
 
   if (merged) {
-    Logger.log("[Forms_getMapping_] Mapping merged from user/legacy sources. Saving to script properties");
+    Logger.log("[Forms_getMapping_] Mapping merged from user properties. Saving to script properties");
     Forms_saveMapping_(normalized);
   }
 
@@ -505,36 +483,6 @@ function Forms_normalizeFormIds_(formIds) {
   }
 
   return normalized;
-}
-
-/**
- * 旧FORM_URLS_MAPから指定formIdを削除
- * @param {Array<string>|string} formIds
- */
-function Forms_removeLegacyUrls_(formIds) {
-  if (typeof GetFormUrls_ !== "function" || typeof SaveFormUrls_ !== "function") {
-    return;
-  }
-
-  var ids = Forms_normalizeFormIds_(formIds);
-  if (!ids.length) return;
-
-  try {
-    var urlMap = GetFormUrls_() || {};
-    var changed = false;
-
-    ids.forEach(function(formId) {
-      if (!urlMap.hasOwnProperty(formId)) return;
-      delete urlMap[formId];
-      changed = true;
-    });
-
-    if (changed) {
-      SaveFormUrls_(urlMap);
-    }
-  } catch (err) {
-    Logger.log("[Forms_removeLegacyUrls_] Failed: " + err);
-  }
 }
 
 /**
@@ -1124,7 +1072,6 @@ function Forms_deleteForm_(formId) {
   delete mapping[formId];
   Forms_saveMapping_(mapping);
   Forms_removeUserMappingEntries_([formId]);
-  Forms_removeLegacyUrls_([formId]);
 
   return { ok: true };
 }
@@ -1154,7 +1101,6 @@ function Forms_deleteForms_(formIds) {
 
   Forms_saveMapping_(mapping);
   Forms_removeUserMappingEntries_(ids);
-  Forms_removeLegacyUrls_(ids);
 
   return {
     ok: true,
@@ -1648,26 +1594,6 @@ function nfbDebugGetMapping() {
     var mapping = Forms_parseMappingJson_(rawJson, "script");
     var userRawJson = userProps.getProperty(FORMS_PROPERTY_KEY);
     var legacyInfo = { hasLegacy: false, legacyCount: 0, migratedCount: 0 };
-
-    // 旧システムからのマイグレーション情報をチェック
-    if (typeof GetFormUrls_ === "function") {
-      try {
-        var legacy = GetFormUrls_() || {};
-        legacyInfo.hasLegacy = true;
-        legacyInfo.legacyCount = Object.keys(legacy).length;
-        legacyInfo.legacyForms = legacy; // レガシーフォームの内容も含める
-
-        var migratedCount = 0;
-        for (var formId in legacy) {
-          if (legacy.hasOwnProperty(formId) && !mapping[formId]) {
-            migratedCount++;
-          }
-        }
-        legacyInfo.migratedCount = migratedCount;
-      } catch (legacyErr) {
-        legacyInfo.error = legacyErr.message;
-      }
-    }
 
     return {
       ok: true,

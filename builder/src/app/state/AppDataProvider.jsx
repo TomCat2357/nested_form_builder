@@ -49,7 +49,7 @@ export function AppDataProvider({ children }) {
     }
     setError(null);
     const startedAt = Date.now();
-    console.log("[perf][forms] refresh start", { reason, background, startedAt });
+    perfLogger.logVerbose("forms", "refresh start", { reason, background, startedAt });
 
     try {
       const apiCallStart = Date.now();
@@ -63,7 +63,11 @@ export function AppDataProvider({ children }) {
 
       const averagePerForm = allForms.length > 0 ? Math.round(apiCallDuration / allForms.length) : 0;
 
-      console.log("[perf][forms] api duration ms:", apiCallDuration, "count:", allForms.length, "avg_per_form:", averagePerForm);
+      perfLogger.logVerbose("forms", "api call done", {
+        apiDurationMs: apiCallDuration,
+        count: allForms.length,
+        avgPerFormMs: averagePerForm,
+      });
       perfLogger.logFormGasRead(apiCallDuration, allForms.length);
 
       setForms(allForms);
@@ -77,7 +81,7 @@ export function AppDataProvider({ children }) {
         const cacheDuration = Date.now() - cacheStart;
         perfLogger.logFormCacheSave(cacheDuration, allForms.length);
         setCacheDisabled(false);
-        console.log("[perf][forms] saved to cache");
+        perfLogger.logVerbose("forms", "saved to cache", { cacheDurationMs: cacheDuration, count: allForms.length });
       } catch (cacheErr) {
         console.warn("[AppDataProvider] Failed to save to cache:", cacheErr);
         setCacheDisabled(true);
@@ -86,13 +90,21 @@ export function AppDataProvider({ children }) {
       const finishedAt = Date.now();
       const totalDuration = finishedAt - startedAt;
 
-      console.log("[perf][forms] total ms:", totalDuration, "api_share_pct:", Math.round(apiCallDuration / totalDuration * 100));
-      console.log("[perf][forms] refresh success", { reason, formCount: allForms.length, loadFailures: failures.length, finishedAt });
+      perfLogger.logVerbose("forms", "refresh timing", {
+        totalDurationMs: totalDuration,
+        apiSharePct: Math.round(apiCallDuration / totalDuration * 100),
+      });
+      perfLogger.logVerbose("forms", "refresh success", {
+        reason,
+        formCount: allForms.length,
+        loadFailures: failures.length,
+        finishedAt,
+      });
     } catch (err) {
       console.error("[AppDataProvider] フォーム取得エラー:", err);
       setError(err.message || "フォームの取得に失敗しました");
       const finishedAt = Date.now();
-      console.log("[perf][forms] refresh fail", { reason, startedAt, finishedAt, error: err?.message });
+      perfLogger.logVerbose("forms", "refresh fail", { reason, startedAt, finishedAt, error: err?.message });
     } finally {
       if (!background) {
         setLoadingForms(false);
@@ -135,7 +147,12 @@ export function AppDataProvider({ children }) {
           backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
         });
 
-        console.log("[perf][forms] cache check", { cacheAgeMs, cacheApplied, shouldSync, shouldBackground });
+        perfLogger.logVerbose("forms", "cache check", {
+          cacheAgeMs,
+          cacheApplied,
+          shouldSync,
+          shouldBackground,
+        });
 
         if (shouldSync) {
           console.log("[AppDataProvider] Cache stale or missing; fetching synchronously", { cacheAgeMs, cacheLastSyncedAt, hasCachedData });

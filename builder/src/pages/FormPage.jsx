@@ -15,6 +15,7 @@ import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
 import { RECORD_CACHE_MAX_AGE_MS } from "../app/state/cachePolicy.js";
 import { useAuth } from "../app/state/authContext.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
+import { perfLogger } from "../utils/perfLogger.js";
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
@@ -29,7 +30,7 @@ export default function FormPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { showAlert } = useAlert();
-const form = formId ? getFormById(formId) : null;
+  const form = formId ? getFormById(formId) : null;
   const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form]);
   const [entry, setEntry] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -79,7 +80,7 @@ const form = formId ? getFormById(formId) : null;
     let mounted = true;
     const loadEntry = async () => {
       const tStart = performance.now();
-      console.log(`[PERF] FormPage loadEntry START - formId: ${formId}, entryId: ${entryId}`);
+      perfLogger.logVerbose("form-page", "loadEntry start", { formId, entryId });
 
       if (!formId || !form) {
         setLoading(false);
@@ -95,7 +96,11 @@ const form = formId ? getFormById(formId) : null;
       setLoading(true);
 
       const tBeforeGetEntry = performance.now();
-      console.log(`[PERF] FormPage before dataStore.getEntry - Time from start: ${(tBeforeGetEntry - tStart).toFixed(2)}ms`);
+      perfLogger.logVerbose("form-page", "before dataStore.getEntry", {
+        elapsedFromStartMs: Number((tBeforeGetEntry - tStart).toFixed(2)),
+        formId,
+        entryId,
+      });
 
       // まずキャッシュから取得を試みる
       const { entry: cachedEntry, rowIndex, lastSyncedAt } = await getCachedEntryWithIndex(formId, entryId);
@@ -104,20 +109,29 @@ const form = formId ? getFormById(formId) : null;
         // キャッシュがあれば即座に表示
         applyEntryToState(cachedEntry, entryId);
         setLoading(false);
-        console.log(`[PERF] FormPage cache displayed - Time: ${(performance.now() - tStart).toFixed(2)}ms, rowIndex: ${rowIndex}`);
+        perfLogger.logVerbose("form-page", "cache displayed", {
+          elapsedFromStartMs: Number((performance.now() - tStart).toFixed(2)),
+          rowIndex,
+        });
 
         // キャッシュ年齢を計算し、5分以上古い場合はバックグラウンド更新
         const cacheAge = lastSyncedAt ? Date.now() - lastSyncedAt : Infinity;
         const shouldBackground = cacheAge >= RECORD_CACHE_MAX_AGE_MS;
 
         if (shouldBackground) {
-          console.log(`[PERF] FormPage starting background refresh (cache age: ${cacheAge}ms, threshold: ${RECORD_CACHE_MAX_AGE_MS}ms, rowIndexHint: ${rowIndex})`);
+          perfLogger.logVerbose("form-page", "start background refresh", {
+            cacheAgeMs: cacheAge,
+            thresholdMs: RECORD_CACHE_MAX_AGE_MS,
+            rowIndexHint: rowIndex,
+          });
           setIsReloading(true);
           dataStore.getEntry(formId, entryId, { rowIndexHint: rowIndex }).then((freshData) => {
             if (!mounted) return;
             if (freshData) {
               applyEntryToState(freshData, entryId);
-              console.log(`[PERF] FormPage background refresh complete - Total time: ${(performance.now() - tStart).toFixed(2)}ms`);
+              perfLogger.logVerbose("form-page", "background refresh complete", {
+                elapsedFromStartMs: Number((performance.now() - tStart).toFixed(2)),
+              });
             }
             setIsReloading(false);
           }).catch((error) => {
@@ -125,24 +139,36 @@ const form = formId ? getFormById(formId) : null;
             setIsReloading(false);
           });
         } else {
-          console.log(`[PERF] FormPage cache is fresh (age: ${cacheAge}ms, threshold: ${RECORD_CACHE_MAX_AGE_MS}ms), no background refresh`);
+          perfLogger.logVerbose("form-page", "cache is fresh; skip background refresh", {
+            cacheAgeMs: cacheAge,
+            thresholdMs: RECORD_CACHE_MAX_AGE_MS,
+          });
         }
       } else {
         // キャッシュがない場合は同期読み取り（rowIndexがある場合は渡す）
         const data = await dataStore.getEntry(formId, entryId, rowIndex !== undefined ? { rowIndexHint: rowIndex } : {});
 
         const tAfterGetEntry = performance.now();
-        console.log(`[PERF] FormPage after dataStore.getEntry - Time: ${(tAfterGetEntry - tBeforeGetEntry).toFixed(2)}ms, rowIndexHint: ${rowIndex}`);
+        perfLogger.logVerbose("form-page", "after dataStore.getEntry", {
+          durationMs: Number((tAfterGetEntry - tBeforeGetEntry).toFixed(2)),
+          rowIndexHint: rowIndex,
+        });
 
         if (!mounted) return;
         const tBeforeApply = performance.now();
         applyEntryToState(data, entryId);
         const tAfterApply = performance.now();
-        console.log(`[PERF] FormPage applyEntryToState - Time: ${(tAfterApply - tBeforeApply).toFixed(2)}ms`);
+        perfLogger.logVerbose("form-page", "applyEntryToState", {
+          durationMs: Number((tAfterApply - tBeforeApply).toFixed(2)),
+        });
         setLoading(false);
 
         const tEnd = performance.now();
-        console.log(`[PERF] FormPage loadEntry COMPLETE - Total time: ${(tEnd - tStart).toFixed(2)}ms`);
+        perfLogger.logVerbose("form-page", "loadEntry complete", {
+          totalDurationMs: Number((tEnd - tStart).toFixed(2)),
+          formId,
+          entryId,
+        });
       }
     };
     loadEntry();

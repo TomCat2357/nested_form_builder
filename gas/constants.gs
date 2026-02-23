@@ -6,7 +6,6 @@ var NFB_ADMIN_EMAIL = "ADMIN_EMAIL";
 var FORMS_FOLDER_NAME = "Nested Form Builder - Forms";
 var FORMS_PROPERTY_KEY = "nfb.forms.mapping"; 
 var FORMS_PROPERTY_VERSION = 2; 
-var FORM_URLS_KEY = "FORM_URLS_MAP";
 
 // API/バッチ処理関連
 var NFB_DRIVE_API_BATCH_SIZE = 100;
