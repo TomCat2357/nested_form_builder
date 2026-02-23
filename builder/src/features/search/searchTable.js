@@ -1,7 +1,7 @@
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import { formatUnixMsDateTime, formatUnixMsDate, formatUnixMsTime, toUnixMs, parseStringToSerial } from "../../utils/dateTime.js";
 
-export const MAX_HEADER_DEPTH = 6;
+export const MAX_HEADER_DEPTH = 11;
 
 const FALSE_LIKE_VALUES = new Set([null, undefined, "", false, 0, "0"]);
 
@@ -436,7 +436,7 @@ export const buildHeaderRows = (columns) => {
 
 /**
  * headerMatrixから表示すべき列のインデックスを抽出
- * @param {Array<Array<string>>} multiHeaderRows - 6行×列数の2次元配列
+ * @param {Array<Array<string>>} multiHeaderRows - 11行×列数の2次元配列
  * @param {Array} columns - 表示する列の定義
  * @returns {Array<number>} - 表示する列のインデックス配列
  */
@@ -483,14 +483,14 @@ const filterVisibleColumnIndices = (multiHeaderRows, columns) => {
 };
 
 /**
- * CSVのマルチヘッダー構造（6行）からテーブルヘッダー行を生成
- * @param {Array<Array<string>>} multiHeaderRows - 6行×列数の2次元配列
+ * CSVのマルチヘッダー構造（11行）からテーブルヘッダー行を生成
+ * @param {Array<Array<string>>} multiHeaderRows - 11行×列数の2次元配列
  * @param {Array} columns - 表示する列の定義（オプション）
  * @returns {Array<Array<{label: string, colSpan: number, rowSpan: number, startIndex: number}>>}
  */
 /**
  * headerMatrixからスプレッドシートの実際の列に対応するcolumns配列を生成
- * @param {Array<Array<string>>} multiHeaderRows - 6行×列数の2次元配列
+ * @param {Array<Array<string>>} multiHeaderRows - 11行×列数の2次元配列
  * @param {Array} baseColumns - ベースとなる列定義（表示フィールドなど）
  * @returns {Array} スプレッドシートの列に対応するcolumns配列
  */

@@ -1,4 +1,4 @@
-var NFB_HEADER_DEPTH = 6;
+var NFB_HEADER_DEPTH = 11;
 var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["createdBy"], ["modifiedBy"]];
 var NFB_TZ = "Asia/Tokyo"; // 想定タイムゾーン（JST固定）
 var NFB_MS_PER_DAY = 24 * 60 * 60 * 1000;
