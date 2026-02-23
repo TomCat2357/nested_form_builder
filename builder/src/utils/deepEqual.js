@@ -6,21 +6,14 @@ export const deepEqual = (a, b) => {
 
   if (Array.isArray(a)) {
     if (!Array.isArray(b) || a.length !== b.length) return false;
-    for (let i = 0; i < a.length; i += 1) {
-      if (!deepEqual(a[i], b[i])) return false;
-    }
-    return true;
+    return a.every((val, i) => deepEqual(val, b[i]));
   }
 
   if (typeof a === "object") {
     const keysA = Object.keys(a);
     const keysB = Object.keys(b);
     if (keysA.length !== keysB.length) return false;
-    for (const key of keysA) {
-      if (!Object.prototype.hasOwnProperty.call(b, key)) return false;
-      if (!deepEqual(a[key], b[key])) return false;
-    }
-    return true;
+    return keysA.every((key) => Object.prototype.hasOwnProperty.call(b, key) && deepEqual(a[key], b[key]));
   }
 
   return false;
