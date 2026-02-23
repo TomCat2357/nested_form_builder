@@ -1,8 +1,3 @@
-var NFB_HEADER_DEPTH = 11;
-var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["createdBy"], ["modifiedBy"]];
-var NFB_TZ = "Asia/Tokyo"; // 想定タイムゾーン（JST固定）
-var NFB_MS_PER_DAY = 24 * 60 * 60 * 1000;
-var NFB_SHEETS_EPOCH_MS = new Date(1899, 11, 30, 0, 0, 0).getTime();
 
 function Sheets_isValidDate_(date) {
   return date instanceof Date && !isNaN(date.getTime());
@@ -206,8 +201,8 @@ function Sheets_getOrCreateSheet_(spreadsheetId, sheetName) {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
 
   var ss = SpreadsheetApp.openById(spreadsheetId);
-  var sheet = ss.getSheetByName(sheetName || "Data");
-  return sheet || ss.insertSheet(sheetName || "Data");
+  var sheet = ss.getSheetByName(sheetName || NFB_DEFAULT_SHEET_NAME);
+  return sheet || ss.insertSheet(sheetName || NFB_DEFAULT_SHEET_NAME);
 }
 
 function Sheets_generateRecordId_() {

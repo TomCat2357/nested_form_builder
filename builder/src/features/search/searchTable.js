@@ -1,7 +1,8 @@
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import { formatUnixMsDateTime, formatUnixMsDate, formatUnixMsTime, toUnixMs, parseStringToSerial } from "../../utils/dateTime.js";
+import { MAX_DEPTH as MAX_HEADER_DEPTH } from "../../core/constants.js";
 
-export const MAX_HEADER_DEPTH = 11;
+export { MAX_HEADER_DEPTH };
 
 const FALSE_LIKE_VALUES = new Set([null, undefined, "", false, 0, "0"]);
 

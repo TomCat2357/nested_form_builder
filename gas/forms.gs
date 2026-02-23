@@ -2,9 +2,6 @@
 // フォーム管理機能（Google Drive保存）
 // ========================================
 
-var FORMS_FOLDER_NAME = "Nested Form Builder - Forms";
-var FORMS_PROPERTY_KEY = "nfb.forms.mapping"; // formId -> mapping (v1: fileId string, v2: { fileId, driveFileUrl })
-var FORMS_PROPERTY_VERSION = 2; // v2からdriveFileUrlも保持
 
 function Forms_getScriptProps_() {
   return PropertiesService.getScriptProperties();
@@ -861,7 +858,7 @@ function Forms_listForms_(options) {
   Logger.log("[Forms_listForms_] Processing " + fileIds.length + " files with batch requests");
 
   // Drive API v3 バッチリクエスト（最大100件ずつ）
-  var BATCH_SIZE = 100;
+  var BATCH_SIZE = NFB_DRIVE_API_BATCH_SIZE;
   var batchStartTime = new Date().getTime();
   var totalBatchTime = 0;
 

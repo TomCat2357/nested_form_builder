@@ -1,8 +1,7 @@
+import { MS_PER_DAY, SERIAL_EPOCH_UTC_MS, JST_OFFSET_MS } from "../core/constants.js";
+
 const TIME_ZONE = "Asia/Tokyo";
 const DEFAULT_LOCALE = "ja-JP";
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const SERIAL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
-const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const SERIAL_EPOCH_JST_MS = SERIAL_EPOCH_UTC_MS - JST_OFFSET_MS;
 
 const pad2 = (value) => String(value).padStart(2, "0");

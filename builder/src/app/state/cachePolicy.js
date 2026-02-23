@@ -1,13 +1,19 @@
 // Shared cache policy for forms and records
 // SWR: show cache immediately, sync when stale, background refresh when older than background threshold
 
-// Records: 5min hard refresh, 1min background refresh
-export const RECORD_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
-export const RECORD_CACHE_BACKGROUND_REFRESH_MS = 1 * 60 * 1000;
+import {
+  RECORD_CACHE_MAX_AGE_MS,
+  RECORD_CACHE_BACKGROUND_REFRESH_MS,
+  FORM_CACHE_MAX_AGE_MS,
+  FORM_CACHE_BACKGROUND_REFRESH_MS,
+} from "../../core/constants.js";
 
-// Forms: 1h hard refresh, 10min background refresh
-export const FORM_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
-export const FORM_CACHE_BACKGROUND_REFRESH_MS = 10 * 60 * 1000;
+export {
+  RECORD_CACHE_MAX_AGE_MS,
+  RECORD_CACHE_BACKGROUND_REFRESH_MS,
+  FORM_CACHE_MAX_AGE_MS,
+  FORM_CACHE_BACKGROUND_REFRESH_MS,
+};
 
 export const evaluateCache = ({
   lastSyncedAt,

@@ -1,11 +1,12 @@
 import { genId } from "./ids.js";
 import { resolveIsDisplayed } from "./displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
+import { MAX_DEPTH } from "./constants.js";
 
 const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" : label || "");
 
 export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
-export const MAX_DEPTH = 11;
+export { MAX_DEPTH };
 
 /**
  * childrenByValue を再帰的に走査し、各子配列に walkFn を適用する

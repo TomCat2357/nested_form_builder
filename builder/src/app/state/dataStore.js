@@ -33,9 +33,9 @@ import {
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 import { toUnixMs } from "../../utils/dateTime.js";
+import { DEFAULT_SHEET_NAME } from "../../core/constants.js";
 
 const nowSerial = () => toUnixMs(Date.now());
-const DEFAULT_SHEET_NAME = "Data";
 
 const ensureDisplayInfo = (form) => {
   const schema = Array.isArray(form?.schema) ? form.schema : [];

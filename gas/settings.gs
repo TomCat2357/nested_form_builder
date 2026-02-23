@@ -1,8 +1,6 @@
 // ========================================
 // 管理者キー関連 (Script Properties)
 // ========================================
-var NFB_ADMIN_KEY = "ADMIN_KEY";
-var NFB_ADMIN_EMAIL = "ADMIN_EMAIL";
 
 /**
  * 管理者キーを取得する

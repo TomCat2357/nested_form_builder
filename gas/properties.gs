@@ -3,7 +3,6 @@
  * ScriptPropertiesを使用してフォームURLマップを管理
  */
 
-var FORM_URLS_KEY = 'FORM_URLS_MAP';
 
 /**
  * URLからGoogle DriveファイルIDを抽出

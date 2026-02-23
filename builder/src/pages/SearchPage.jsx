@@ -21,6 +21,7 @@ import SearchSidebar from "../features/search/components/SearchSidebar.jsx";
 import SearchTable from "../features/search/components/SearchTable.jsx";
 import SearchPagination from "../features/search/components/SearchPagination.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
+import { DEFAULT_PAGE_SIZE } from "../core/constants.js";
 
 const buildInitialSort = (params) => {
   const raw = params.get("sort");
@@ -49,7 +50,7 @@ export default function SearchPage() {
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
   const query = searchParams.get("q") || "";
   const page = Math.max(1, Number(searchParams.get("page") || 1));
-  const PAGE_SIZE = Number(settings?.pageSize) || 20;
+  const PAGE_SIZE = Number(settings?.pageSize) || DEFAULT_PAGE_SIZE;
   const TABLE_MAX_WIDTH = settings?.searchTableMaxWidth ? Number(settings.searchTableMaxWidth) : null;
   const cellDisplayLimit = parseSearchCellDisplayLimit(form?.settings?.searchCellMaxChars);
 

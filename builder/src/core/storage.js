@@ -1,4 +1,5 @@
 import { openDB, STORE_NAMES } from '../app/state/dbHelpers.js';
+import { DEFAULT_PAGE_SIZE, DEFAULT_SHEET_NAME } from './constants.js';
 
 export const SETTINGS_STORAGE_KEY = "nested_form_builder_settings_v1";
 
@@ -42,9 +43,9 @@ export const writeSettingsValue = async (key, value) => writeJson(key, value);
 
 export const DEFAULT_SETTINGS = {
   spreadsheetId: "",
-  sheetName: "Data",
+  sheetName: DEFAULT_SHEET_NAME,
   theme: "standard",
-  pageSize: 20,
+  pageSize: DEFAULT_PAGE_SIZE,
   searchCellMaxChars: "",
   syncAllFormsTheme: false,
 };

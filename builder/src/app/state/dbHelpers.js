@@ -2,14 +2,8 @@
  * Shared IndexedDB helpers for formsCache and recordsCache
  */
 
-export const DB_NAME = 'NestedFormBuilder';
-export const DB_VERSION = 4;
-export const STORE_NAMES = {
-  forms: 'formsCache',
-  records: 'recordsCache',
-  recordsMeta: 'recordsCacheMeta',
-  settings: 'settingsStore',
-};
+import { DB_NAME, DB_VERSION, STORE_NAMES } from "../../core/constants.js";
+export { STORE_NAMES };
 
 /**
  * Open IndexedDB connection with all required stores
