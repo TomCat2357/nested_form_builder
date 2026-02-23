@@ -1,0 +1,158 @@
+/* snow theme overrides */
+:root[data-theme="snow"] {
+    --font-sans:
+        "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+
+    --label-font-size-base: 14px;
+    --label-size-offset-xs: -4px;
+    --label-size-offset-sm: -2px;
+    --label-size-offset-lg: 2px;
+    --label-size-offset-xl: 4px;
+
+    --bg: #f6fbff;
+    --surface: #ffffff;
+    --surface-elevated: #ffffff;
+    --surface-muted: #eef6ff;
+    --surface-subtle: #f9fcff;
+    --surface-alt: #e6f1ff;
+
+    --border: #d7e6ff;
+    --border-muted: #e3efff;
+    --border-subtle: #f1f7ff;
+    --border-strong: #c0d6ff;
+
+    --text: #0f172a;
+    --text-strong: #0b1324;
+    --text-ink: #1f2a44;
+    --text-muted: #5b6b86;
+    --text-subtle: #6a7a94;
+    --text-faded: #94a3b8;
+
+    /* icy blue */
+    --primary: #2563eb;
+    --primary-strong: #1d4ed8;
+    --primary-ink: #1e3a8a;
+    --primary-ink-strong: #172554;
+    --primary-soft: #dbeafe;
+    --primary-soft-strong: #bfdbfe;
+    --primary-weak: rgba(37, 99, 235, 0.1);
+    --primary-weak-soft: rgba(37, 99, 235, 0.06);
+    --primary-border-soft: rgba(37, 99, 235, 0.22);
+
+    --warm: #0ea5e9;
+    --warm-weak: rgba(14, 165, 233, 0.1);
+    --warm-ink: #075985;
+
+    --success: #16a34a;
+    --success-ink: #166534;
+    --success-weak: rgba(22, 163, 74, 0.1);
+
+    --danger: #e11d48;
+    --danger-bright: #ef4444;
+    --danger-strong: #dc2626;
+    --danger-ink: #b91c1c;
+    --danger-ink-strong: #991b1b;
+    --danger-weak: #fef2f2;
+    --danger-weak-strong: #fee2e2;
+    --danger-border: #fecaca;
+    --danger-border-strong: #fca5a5;
+
+    --warning: #f59e0b;
+    --warning-weak: #fef3c7;
+    --warning-ink: #92400e;
+
+    --info: #38bdf8;
+    --info-weak: #e0f2fe;
+
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 18px;
+
+    --shadow-sm: 0 2px 10px rgba(15, 23, 42, 0.06);
+    --shadow-md: 0 16px 36px rgba(15, 23, 42, 0.12);
+    --shadow-lg: 0 20px 45px rgba(15, 23, 42, 0.18);
+
+    --overlay: rgba(15, 23, 42, 0.28);
+    --overlay-strong: rgba(15, 23, 42, 0.46);
+
+    --app-bg:
+        radial-gradient(
+            900px 520px at 12% -10%,
+            rgba(37, 99, 235, 0.16),
+            transparent 60%
+        ),
+        radial-gradient(
+            900px 520px at 92% 0%,
+            rgba(14, 165, 233, 0.12),
+            transparent 62%
+        ),
+        radial-gradient(
+            900px 520px at 52% 110%,
+            rgba(191, 219, 254, 0.6),
+            transparent 60%
+        ),
+        var(--bg);
+    --app-header-bg: rgba(246, 251, 255, 0.84);
+
+    --input-border-focus: rgba(37, 99, 235, 0.35);
+    --input-focus-ring: rgba(37, 99, 235, 0.12);
+
+    --badge-primary-bg: linear-gradient(
+        135deg,
+        rgba(37, 99, 235, 0.95),
+        rgba(14, 165, 233, 0.86)
+    );
+    --badge-warm-bg: linear-gradient(
+        135deg,
+        rgba(14, 165, 233, 0.92),
+        rgba(56, 189, 248, 0.8)
+    );
+    --badge-ghost-bg: rgba(37, 99, 235, 0.08);
+    --badge-ghost-border: rgba(37, 99, 235, 0.18);
+    --badge-text: rgba(255, 255, 255, 0.94);
+
+    --logo-gradient: linear-gradient(
+        135deg,
+        rgba(37, 99, 235, 0.92),
+        rgba(14, 165, 233, 0.9)
+    );
+    --logo-shadow:
+        0 10px 26px rgba(37, 99, 235, 0.14), 0 10px 24px rgba(14, 165, 233, 0.1);
+
+    --panel-header-bg: linear-gradient(
+        180deg,
+        rgba(37, 99, 235, 0.06),
+        transparent
+    );
+    --card-hover-border: rgba(37, 99, 235, 0.2);
+    --btn-primary-bg: linear-gradient(
+        180deg,
+        var(--primary-weak),
+        var(--primary-weak-soft)
+    );
+
+    --rail-gradient: linear-gradient(
+        180deg,
+        rgba(37, 99, 235, 0),
+        rgba(37, 99, 235, 0.4),
+        rgba(14, 165, 233, 0.14),
+        rgba(37, 99, 235, 0)
+    );
+    --rail-dot-bg: linear-gradient(
+        135deg,
+        rgba(37, 99, 235, 0.92),
+        rgba(14, 165, 233, 0.86)
+    );
+    --rail-dot-shadow: 0 10px 18px rgba(37, 99, 235, 0.1);
+
+    --if-box-border: rgba(37, 99, 235, 0.18);
+    --if-box-bg: linear-gradient(
+        135deg,
+        rgba(37, 99, 235, 0.1),
+        rgba(14, 165, 233, 0.06)
+    );
+    --if-chip-bg: rgba(37, 99, 235, 0.1);
+    --if-chip-border: rgba(37, 99, 235, 0.16);
+    --if-badge-border: rgba(22, 163, 74, 0.16);
+}

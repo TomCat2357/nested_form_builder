@@ -11,6 +11,9 @@ export const THEME_OPTIONS = [
   { value: "dark", label: "Dark" },
   { value: "egypt", label: "Egypt" },
   { value: "india", label: "India" },
+  { value: "snow", label: "Snow" },
+  { value: "christmas", label: "Christmas" },
+  { value: "forest", label: "Forest" },
 ];
 
 const CUSTOM_THEME_STYLE_ID = "nfb-custom-themes";

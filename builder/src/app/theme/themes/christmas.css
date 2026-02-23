@@ -1,0 +1,160 @@
+/* christmas theme overrides */
+:root[data-theme="christmas"] {
+    --font-sans:
+        "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+
+    --label-font-size-base: 14px;
+    --label-size-offset-xs: -4px;
+    --label-size-offset-sm: -2px;
+    --label-size-offset-lg: 2px;
+    --label-size-offset-xl: 4px;
+
+    /* warm ivory base */
+    --bg: #fff7ed;
+    --surface: #ffffff;
+    --surface-elevated: #ffffff;
+    --surface-muted: #fff1df;
+    --surface-subtle: #fffbf5;
+    --surface-alt: #ffe7d0;
+
+    --border: #f2d6c2;
+    --border-muted: #f6e3d4;
+    --border-subtle: #fff2e8;
+    --border-strong: #e9c2a6;
+
+    --text: #1f2937;
+    --text-strong: #111827;
+    --text-ink: #334155;
+    --text-muted: #6b7280;
+    --text-subtle: #7b8190;
+    --text-faded: #9ca3af;
+
+    /* holly red */
+    --primary: #dc2626;
+    --primary-strong: #b91c1c;
+    --primary-ink: #7f1d1d;
+    --primary-ink-strong: #450a0a;
+    --primary-soft: #fee2e2;
+    --primary-soft-strong: #fecaca;
+    --primary-weak: rgba(220, 38, 38, 0.1);
+    --primary-weak-soft: rgba(220, 38, 38, 0.06);
+    --primary-border-soft: rgba(220, 38, 38, 0.22);
+
+    /* evergreen */
+    --success: #16a34a;
+    --success-ink: #166534;
+    --success-weak: rgba(22, 163, 74, 0.1);
+
+    --warm: #f59e0b;
+    --warm-weak: rgba(245, 158, 11, 0.12);
+    --warm-ink: #92400e;
+
+    --danger: #dc2626;
+    --danger-bright: #ef4444;
+    --danger-strong: #991b1b;
+    --danger-ink: #7f1d1d;
+    --danger-ink-strong: #450a0a;
+    --danger-weak: #fef2f2;
+    --danger-weak-strong: #fee2e2;
+    --danger-border: #fecaca;
+    --danger-border-strong: #fca5a5;
+
+    --warning: #f59e0b;
+    --warning-weak: #fef3c7;
+    --warning-ink: #92400e;
+
+    --info: #38bdf8;
+    --info-weak: #e0f2fe;
+
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 18px;
+
+    --shadow-sm: 0 2px 10px rgba(31, 41, 55, 0.07);
+    --shadow-md: 0 16px 36px rgba(31, 41, 55, 0.14);
+    --shadow-lg: 0 20px 45px rgba(31, 41, 55, 0.2);
+
+    --overlay: rgba(17, 24, 39, 0.3);
+    --overlay-strong: rgba(17, 24, 39, 0.5);
+
+    --app-bg:
+        radial-gradient(
+            900px 520px at 10% -10%,
+            rgba(220, 38, 38, 0.14),
+            transparent 60%
+        ),
+        radial-gradient(
+            900px 520px at 92% 0%,
+            rgba(22, 163, 74, 0.12),
+            transparent 62%
+        ),
+        radial-gradient(
+            900px 520px at 56% 120%,
+            rgba(245, 158, 11, 0.1),
+            transparent 60%
+        ),
+        var(--bg);
+    --app-header-bg: rgba(255, 247, 237, 0.84);
+
+    --input-border-focus: rgba(220, 38, 38, 0.35);
+    --input-focus-ring: rgba(220, 38, 38, 0.12);
+
+    --badge-primary-bg: linear-gradient(
+        135deg,
+        rgba(220, 38, 38, 0.95),
+        rgba(22, 163, 74, 0.86)
+    );
+    --badge-warm-bg: linear-gradient(
+        135deg,
+        rgba(245, 158, 11, 0.92),
+        rgba(220, 38, 38, 0.84)
+    );
+    --badge-ghost-bg: rgba(220, 38, 38, 0.08);
+    --badge-ghost-border: rgba(220, 38, 38, 0.18);
+    --badge-text: rgba(255, 255, 255, 0.94);
+
+    --logo-gradient: linear-gradient(
+        135deg,
+        rgba(22, 163, 74, 0.92),
+        rgba(220, 38, 38, 0.9)
+    );
+    --logo-shadow:
+        0 10px 26px rgba(22, 163, 74, 0.12), 0 10px 24px rgba(220, 38, 38, 0.1);
+
+    --panel-header-bg: linear-gradient(
+        180deg,
+        rgba(22, 163, 74, 0.06),
+        transparent
+    );
+    --card-hover-border: rgba(22, 163, 74, 0.18);
+    --btn-primary-bg: linear-gradient(
+        180deg,
+        var(--primary-weak),
+        var(--primary-weak-soft)
+    );
+
+    --rail-gradient: linear-gradient(
+        180deg,
+        rgba(22, 163, 74, 0),
+        rgba(22, 163, 74, 0.35),
+        rgba(220, 38, 38, 0.18),
+        rgba(22, 163, 74, 0)
+    );
+    --rail-dot-bg: linear-gradient(
+        135deg,
+        rgba(220, 38, 38, 0.92),
+        rgba(22, 163, 74, 0.86)
+    );
+    --rail-dot-shadow: 0 10px 18px rgba(220, 38, 38, 0.1);
+
+    --if-box-border: rgba(22, 163, 74, 0.18);
+    --if-box-bg: linear-gradient(
+        135deg,
+        rgba(22, 163, 74, 0.08),
+        rgba(220, 38, 38, 0.06)
+    );
+    --if-chip-bg: rgba(22, 163, 74, 0.1);
+    --if-chip-border: rgba(22, 163, 74, 0.16);
+    --if-badge-border: rgba(245, 158, 11, 0.16);
+}
