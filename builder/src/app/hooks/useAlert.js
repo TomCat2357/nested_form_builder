@@ -1,15 +1,8 @@
-import { useState, useCallback } from "react";
+import { useContext } from "react";
+import { AlertContext } from "../state/AlertProvider.jsx";
 
 export function useAlert() {
-  const [alertState, setAlertState] = useState({ open: false, title: "", message: "" });
-
-  const showAlert = useCallback((message, title = "通知") => {
-    setAlertState({ open: true, title, message });
-  }, []);
-
-  const closeAlert = useCallback(() => {
-    setAlertState({ open: false, title: "", message: "" });
-  }, []);
-
-  return { alertState, showAlert, closeAlert };
+  const ctx = useContext(AlertContext);
+  if (!ctx) throw new Error("useAlert must be used within AlertProvider");
+  return ctx;
 }

@@ -5,7 +5,6 @@ import { collectValidationErrors, formatValidationErrors, validateByPattern } fr
 import { submitResponses, hasScriptRun } from "../../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
-import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { collectDefaultNowResponses } from "../../utils/responses.js";
 import { resolveLabelSize } from "../../core/styleSettings.js";
@@ -310,8 +309,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   },
   ref,
 ) {
-  const { alertState, showAlert, closeAlert } = useAlert();
-  const initialRecordId = settings.recordId;
+  const { showAlert } = useAlert();
+const initialRecordId = settings.recordId;
   const recordIdRef = useRef(initialRecordId || generateRecordId());
   const currentUserName = typeof settings.userName === "string" ? settings.userName : "";
   const defaultNowMap = useMemo(
@@ -471,8 +470,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
           </button>
         </div>
       )}
-      <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
-    </div>
+</div>
   );
 });
 

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
-import AlertDialog from "../app/components/AlertDialog.jsx";
 import FormBuilderWorkspace from "../features/admin/FormBuilderWorkspace.jsx";
 import { SETTINGS_GROUPS } from "../features/settings/settingsSchema.js";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
@@ -24,8 +23,8 @@ export default function AdminFormEditorPage() {
   const form = isEdit ? getFormById(formId) : null;
   const navigate = useNavigate();
   const location = useLocation();
-  const { alertState, showAlert, closeAlert } = useAlert();
-  const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
+  const { showAlert } = useAlert();
+const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
   const builderRef = useRef(null);
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
   const initialSchema = useMemo(() => (form?.schema ? form.schema : []), [form]);
@@ -452,7 +451,6 @@ export default function AdminFormEditorPage() {
 
       <ConfirmDialog open={confirmState} title="未保存の変更があります" message="保存せずに離れますか？" options={confirmOptions} />
 
-      <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
-    </AppLayout>
+</AppLayout>
   );
 }

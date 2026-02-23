@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
-import AlertDialog from "../app/components/AlertDialog.jsx";
 import PreviewPage from "../features/preview/PreviewPage.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
@@ -29,8 +28,8 @@ export default function FormPage() {
   const { userName, userEmail } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const { alertState, showAlert, closeAlert } = useAlert();
-  const form = formId ? getFormById(formId) : null;
+  const { showAlert } = useAlert();
+const form = formId ? getFormById(formId) : null;
   const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form]);
   const [entry, setEntry] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -403,7 +402,6 @@ export default function FormPage() {
         options={confirmOptions}
       />
 
-      <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
-    </AppLayout>
+</AppLayout>
   );
 }

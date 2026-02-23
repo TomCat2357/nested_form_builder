@@ -2,7 +2,6 @@ import React from "react";
 import { deepClone, normalizeSchemaIDs, validateMaxDepth, MAX_DEPTH } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import QuestionCard from "./QuestionCard.jsx";
-import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
 
 /**
@@ -79,8 +78,8 @@ function buildOptionControlInfo(selectedIndex, optionControl, normalized) {
 }
 
 export default function QuestionList({ fields, onChange, depth = 1, onQuestionControlChange }) {
-  const { alertState, showAlert, closeAlert } = useAlert();
-  const normalized = normalizeSchemaIDs(fields);
+  const { showAlert } = useAlert();
+const normalized = normalizeSchemaIDs(fields);
   const [selectedIndex, setSelectedIndex] = React.useState(null);
   const [optionControl, setOptionControl] = React.useState(null);
 
@@ -185,7 +184,6 @@ export default function QuestionList({ fields, onChange, depth = 1, onQuestionCo
           />
         ))}
       </div>
-      <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
-    </>
+</>
   );
 }

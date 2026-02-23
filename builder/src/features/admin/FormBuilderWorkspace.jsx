@@ -5,7 +5,6 @@ import SearchPreviewPanel from "./SearchPreviewPanel.jsx";
 import { useBuilderSettings } from "../settings/settingsStore.js";
 import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, MAX_DEPTH } from "../../core/schema.js";
 import { runSelfTests } from "../../core/selfTests.js";
-import AlertDialog from "../../app/components/AlertDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { omitThemeSetting } from "../../utils/settings.js";
 import { deepEqual } from "../../utils/deepEqual.js";
@@ -14,8 +13,8 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   { initialSchema, initialSettings, formTitle, onSave, onDirtyChange, showToolbarSave = true },
   ref,
 ) {
-  const { alertState, showAlert, closeAlert } = useAlert();
-  const [activeTab, setActiveTab] = useState("editor");
+  const { showAlert } = useAlert();
+const [activeTab, setActiveTab] = useState("editor");
   const [schema, setSchema] = useState(() => normalizeSchemaIDs(initialSchema || []));
   const [responses, setResponses] = useState({});
   const { settings, replaceSettings, updateSetting } = useBuilderSettings();
@@ -138,8 +137,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
           <SearchPreviewPanel schema={schema} responses={responses} settings={settings} />
         </>
       )}
-      <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
-    </div>
+</div>
   );
 });
 

@@ -4,7 +4,6 @@ import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
-import AlertDialog from "../app/components/AlertDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
@@ -45,8 +44,8 @@ export default function AdminDashboardPage() {
   const { forms, loadFailures, loadingForms, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, refreshForms, exportForms, registerImportedForm } = useAppData();
   const { settings } = useBuilderSettings();
   const navigate = useNavigate();
-  const { alertState, showAlert, closeAlert } = useAlert();
-  const [selected, setSelected] = useState(() => new Set());
+  const { showAlert } = useAlert();
+const [selected, setSelected] = useState(() => new Set());
   const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
   const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null, targetIds: [], multiple: false });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -594,8 +593,7 @@ export default function AdminDashboardPage() {
         onCancel={() => setImportDialogOpen(false)}
       />
 
-      <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
-    </AppLayout>
+</AppLayout>
   );
 }
 

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import AppLayout from "../app/components/AppLayout.jsx";
+import AlertDialog from "../app/components/AlertDialog.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
@@ -13,8 +14,8 @@ const normalizeAdminEmailInput = (value) => String(value || "")
   .join(";");
 
 export default function AdminSettingsPage() {
-  const { showAlert } = useAlert();
-const { settings } = useBuilderSettings();
+  const { alertState, showAlert, closeAlert } = useAlert();
+  const { settings } = useBuilderSettings();
   const [deployTime, setDeployTime] = useState("");
 
   const [adminKey, setAdminKeyState] = useState("");
@@ -219,6 +220,7 @@ const { settings } = useBuilderSettings();
         options={adminEmailConfirmOptions}
       />
 
-</AppLayout>
+      <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
+    </AppLayout>
   );
 }

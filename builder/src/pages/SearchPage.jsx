@@ -2,7 +2,6 @@ import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
-import AlertDialog from "../app/components/AlertDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { useAuth } from "../app/state/authContext.jsx";
 import { dataStore } from "../app/state/dataStore.js";
@@ -40,8 +39,8 @@ export default function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { alertState, showAlert, closeAlert } = useAlert();
-  const formId = (searchParams.get("form") || "").trim();
+  const { showAlert } = useAlert();
+const formId = (searchParams.get("form") || "").trim();
   const isScopedByQuery = scopedFormId !== "";
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [selectedEntries, setSelectedEntries] = useState(new Set());
@@ -278,7 +277,6 @@ export default function SearchPage() {
         ]}
       />
 
-      <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
-    </AppLayout>
+</AppLayout>
   );
 }

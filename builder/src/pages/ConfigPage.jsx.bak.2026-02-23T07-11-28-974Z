@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
+import AlertDialog from "../app/components/AlertDialog.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
@@ -38,8 +39,9 @@ export default function ConfigPage() {
 
   const { settings, updateSetting } = useBuilderSettings({ applyGlobalTheme: false });
   const { forms, getFormById, updateForm } = useAppData();
-  const { showAlert } = useAlert();
-const targetForm = useMemo(
+  const { alertState, showAlert, closeAlert } = useAlert();
+
+  const targetForm = useMemo(
     () => (requestedFormId ? getFormById(requestedFormId) : null),
     [requestedFormId, getFormById],
   );
@@ -296,7 +298,8 @@ const targetForm = useMemo(
           <p>指定されたフォームが見つかりません。</p>
           <p className="nf-text-muted nf-text-14 nf-mt-8">メイン画面からフォームを選択してやり直してください。</p>
         </div>
-</AppLayout>
+        <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
+      </AppLayout>
     );
   }
 
@@ -402,6 +405,7 @@ const targetForm = useMemo(
         }
         options={removeOptions}
       />
-</AppLayout>
+      <AlertDialog open={alertState.open} title={alertState.title} message={alertState.message} onClose={closeAlert} />
+    </AppLayout>
   );
 }
