@@ -1,36 +1,17 @@
 import { resolveIsDisplayed } from "../core/displayModes.js";
-
-const normalizeLabel = (label) => (typeof label === "string" ? label.trim() : "");
-
-const joinPath = (base, label) => {
-  const next = normalizeLabel(label);
-  return next ? (base ? `${base}|${next}` : next) : base;
-};
+import { traverseSchema } from "../core/schemaUtils.js";
 
 export const collectDisplayFieldSettings = (schema) => {
   const collected = [];
 
-  const walk = (fields, basePath) => {
-    (fields || []).forEach((field) => {
-      const label = normalizeLabel(field?.label);
-      if (!label) return;
-      const path = joinPath(basePath, label);
-      if (resolveIsDisplayed(field)) {
-        collected.push({
-          path,
-          type: field?.type || "",
-        });
-      }
-      if (field?.childrenByValue && typeof field.childrenByValue === "object") {
-        Object.entries(field.childrenByValue).forEach(([key, childFields]) => {
-          const valuePath = joinPath(path, key);
-          walk(childFields, valuePath);
-        });
-      }
-    });
-  };
-
-  walk(Array.isArray(schema) ? schema : [], "");
+  traverseSchema(schema, (field, context) => {
+    if (resolveIsDisplayed(field)) {
+      collected.push({
+        path: context.pathSegments.join("|"),
+        type: field.type || "",
+      });
+    }
+  });
 
   return collected.sort((a, b) => String(a?.path || "").localeCompare(String(b?.path || ""), "ja"));
 };

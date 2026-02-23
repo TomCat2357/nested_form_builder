@@ -1,7 +1,6 @@
 import { formatUnixMsDate, formatUnixMsTime, toUnixMs } from "./dateTime.js";
 import { deepEqual } from "./deepEqual.js";
-
-const buildKey = (prefix, label) => (prefix ? `${prefix}|${label}` : label);
+import { traverseSchema } from "../core/schemaUtils.js";
 
 const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
   if (field.type !== "time" && field.type !== "date") return rawValue;
@@ -14,47 +13,42 @@ const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
 
 export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => {
   const responses = {};
-  const walk = (fields, prefix) => {
-    (fields || []).forEach((field) => {
-      const label = field?.label || "";
-      if (!label) return;
 
-      const baseKey = buildKey(prefix, label);
+  traverseSchema(schema, (field, context) => {
+    const baseKey = context.pathSegments.join("|");
 
-      if (field.type === "checkboxes") {
-        const values = [];
-        (field.options || []).forEach((opt) => {
-          const key = buildKey(baseKey, opt.label || "");
-          if (data[key]) {
-            values.push(opt.label);
-            if (field.childrenByValue?.[opt.label]) {
-              walk(field.childrenByValue[opt.label], key);
-            }
-          }
-        });
-        if (values.length) responses[field.id] = values;
-      } else if (["radio", "select"].includes(field.type)) {
-        let selected = null;
-        (field.options || []).forEach((opt) => {
-          const key = buildKey(baseKey, opt.label || "");
-          if (data[key]) selected = opt.label;
-        });
-        if (selected) {
-          responses[field.id] = selected;
-          if (field.childrenByValue?.[selected]) {
-            walk(field.childrenByValue[selected], buildKey(baseKey, selected));
-          }
-        }
-      } else {
-        const normalized = normalizeTemporalValue(field, data[baseKey], dataUnixMs[baseKey]);
-        if (normalized !== undefined && normalized !== null) {
-          responses[field.id] = normalized;
-        }
+    if (field.type === "checkboxes") {
+      const values = [];
+      (field.options || []).forEach((opt) => {
+        const key = opt.label ? `${baseKey}|${opt.label}` : baseKey;
+        if (data[key]) values.push(opt.label);
+      });
+      if (values.length) Object.assign(responses, { [field.id]: values });
+    } else if (["radio", "select"].includes(field.type)) {
+      let selected = null;
+      (field.options || []).forEach((opt) => {
+        const key = opt.label ? `${baseKey}|${opt.label}` : baseKey;
+        if (data[key]) selected = opt.label;
+      });
+      if (selected) Object.assign(responses, { [field.id]: selected });
+    } else {
+      const normalized = normalizeTemporalValue(field, data[baseKey], dataUnixMs[baseKey]);
+      if (normalized !== undefined && normalized !== null) {
+        Object.assign(responses, { [field.id]: normalized });
       }
-    });
-  };
+    }
+  }, {
+    getChildKeys: (field) => {
+      const value = responses[field.id];
+      if (field.type === "checkboxes" && Array.isArray(value)) {
+        return value.filter(k => Object.prototype.hasOwnProperty.call(field.childrenByValue, k));
+      } else if (["radio", "select"].includes(field.type) && typeof value === "string" && value) {
+        return field.childrenByValue[value] ? [value] : [];
+      }
+      return [];
+    }
+  });
 
-  walk(schema, "");
   return responses;
 };
 
@@ -64,21 +58,15 @@ export const collectDefaultNowResponses = (schema, now = new Date(), options = {
   const timeValue = formatUnixMsTime(now.getTime());
   const userName = typeof options?.userName === "string" ? options.userName : "";
 
-  const walk = (fields) => {
-    (fields || []).forEach((field) => {
-      if (["date", "time"].includes(field?.type) && field?.defaultNow && field?.id) {
-        defaults[field.id] = field.type === "date" ? dateValue : timeValue;
-      }
-      if (field?.type === "userName" && field?.defaultNow && field?.id && userName) {
-        defaults[field.id] = userName;
-      }
-      if (field?.childrenByValue && typeof field.childrenByValue === "object") {
-        Object.values(field.childrenByValue).forEach((children) => walk(children));
-      }
-    });
-  };
+  traverseSchema(schema, (field) => {
+    if (["date", "time"].includes(field?.type) && field?.defaultNow && field?.id) {
+      defaults[field.id] = field.type === "date" ? dateValue : timeValue;
+    }
+    if (field?.type === "userName" && field?.defaultNow && field?.id && userName) {
+      defaults[field.id] = userName;
+    }
+  });
 
-  walk(schema);
   return defaults;
 };
 

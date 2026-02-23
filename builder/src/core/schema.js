@@ -2,26 +2,12 @@ import { genId } from "./ids.js";
 import { resolveIsDisplayed } from "./displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
 import { MAX_DEPTH } from "./constants.js";
+import { mapSchema, traverseSchema } from "./schemaUtils.js";
 
 const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" : label || "");
 
 export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
 export { MAX_DEPTH };
-
-/**
- * childrenByValue を再帰的に走査し、各子配列に walkFn を適用する
- * @param {object} childrenByValue
- * @param {function} walkFn - 配列を受け取り変換した配列を返す関数
- * @returns {object} 変換後の childrenByValue
- */
-const mapChildrenByValue = (childrenByValue, walkFn) => {
-  if (!childrenByValue || typeof childrenByValue !== "object") return childrenByValue;
-  const fixed = {};
-  Object.keys(childrenByValue).forEach((key) => {
-    fixed[key] = walkFn(childrenByValue[key]);
-  });
-  return fixed;
-};
 
 export const sampleSchema = () => [
   {
@@ -59,7 +45,7 @@ export const deepClone = (value) => {
 };
 
 export const normalizeSchemaIDs = (nodes) => {
-  const walk = (arr) => (arr || []).map((field) => {
+  return mapSchema(nodes, (field) => {
     const id = field.id || genId();
     const base = { ...field, id };
 
@@ -97,21 +83,15 @@ export const normalizeSchemaIDs = (nodes) => {
       delete base.defaultNow;
     }
 
-    if (base.childrenByValue && typeof base.childrenByValue === "object") {
-      base.childrenByValue = mapChildrenByValue(base.childrenByValue, walk);
-    }
-
     base.isDisplayed = resolveIsDisplayed(base);
     delete base.displayMode;
     delete base.important;
     delete base.compact;
 
-    // showPlaceholderのデフォルト値を設定
     if (base.placeholder !== undefined && base.showPlaceholder === undefined) {
       base.showPlaceholder = true;
     }
 
-    // スタイル設定の正規化（古いデータ/型ずれを吸収）
     if (Object.prototype.hasOwnProperty.call(base, "showStyleSettings")) {
       if (typeof base.showStyleSettings === "string") {
         const lowered = base.showStyleSettings.toLowerCase();
@@ -122,7 +102,6 @@ export const normalizeSchemaIDs = (nodes) => {
         base.showStyleSettings = !!base.showStyleSettings;
       }
     } else if (base.styleSettings && typeof base.styleSettings === "object") {
-      // styleSettings が存在する場合は ON と推測
       base.showStyleSettings = true;
     }
 
@@ -132,7 +111,6 @@ export const normalizeSchemaIDs = (nodes) => {
       base.styleSettings = normalizeStyleSettings(base.styleSettings);
     }
 
-    // _savedChoiceStateを保持する
     if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
       base._savedChoiceState = {
         options: base._savedChoiceState.options
@@ -141,68 +119,47 @@ export const normalizeSchemaIDs = (nodes) => {
               label: sanitizeOptionLabel(opt?.label),
             }))
           : undefined,
-        childrenByValue: mapChildrenByValue(base._savedChoiceState.childrenByValue, walk),
+        childrenByValue: base._savedChoiceState.childrenByValue,
       };
     }
 
     return base;
   });
-
-  return walk(Array.isArray(nodes) ? nodes : []);
 };
 
-/**
- * エクスポート用にスキーマからIDフィールドを除去する
- * @param {Array} nodes - スキーマ配列
- * @returns {Array} IDが除去されたスキーマ
- */
 export const stripSchemaIDs = (nodes) => {
-  const walk = (arr) => (arr || []).map((field) => {
+  return mapSchema(nodes, (field) => {
     const { id, ...rest } = field;
     const base = { ...rest };
 
-    // options配列からもIDを除去
     if (["radio", "select", "checkboxes"].includes(base.type) && Array.isArray(base.options)) {
       base.options = base.options.map(({ id: optId, ...optRest }) => optRest);
     }
 
-    // childrenByValueからも再帰的にIDを除去
-    if (base.childrenByValue && typeof base.childrenByValue === "object") {
-      base.childrenByValue = mapChildrenByValue(base.childrenByValue, walk);
-    }
-
-    // _savedChoiceStateからもIDを除去
     if (base._savedChoiceState && typeof base._savedChoiceState === "object") {
       base._savedChoiceState = {
         ...base._savedChoiceState,
         options: Array.isArray(base._savedChoiceState.options)
           ? base._savedChoiceState.options.map(({ id: optId, ...optRest }) => optRest)
           : base._savedChoiceState.options,
-        childrenByValue: mapChildrenByValue(base._savedChoiceState.childrenByValue, walk),
+        childrenByValue: base._savedChoiceState.childrenByValue,
       };
     }
 
     return base;
   });
-
-  return walk(Array.isArray(nodes) ? nodes : []);
 };
 
-export const maxDepthOf = (fields, depth = 1) => {
-  let max = depth - 1;
-  (fields || []).forEach((field) => {
-    max = Math.max(max, depth);
-    if (field?.childrenByValue && typeof field.childrenByValue === "object") {
-      Object.values(field.childrenByValue).forEach((children) => {
-        max = Math.max(max, maxDepthOf(children, depth + 1));
-      });
-    }
+export const maxDepthOf = (fields) => {
+  let max = 0;
+  traverseSchema(fields, (field, context) => {
+    max = Math.max(max, context.depth);
   });
   return max;
 };
 
 export const validateMaxDepth = (fields, max = MAX_DEPTH) => {
-  const depth = maxDepthOf(fields, 1);
+  const depth = maxDepthOf(fields);
   return depth <= max ? { ok: true, depth } : { ok: false, depth };
 };
 
@@ -217,51 +174,18 @@ export const validateUniqueLabels = (fields) => {
   return { ok: true };
 };
 
-/**
- * 全ての質問がラベルを持っているか検証する
- */
 export const validateRequiredLabels = (fields, { responses = null, visibleOnly = false } = {}) => {
   const emptyLabels = [];
 
-  const walk = (nodes, pathSegments = [], indexTrail = []) => {
-    (nodes || []).forEach((field, index) => {
-      // 非表示の項目はスキップ
-      if (visibleOnly && field?.isDisplayed !== true) return;
+  traverseSchema(fields, (field, context) => {
+    if (visibleOnly && field?.isDisplayed !== true) return false;
 
-      const nextIndexTrail = [...indexTrail, index + 1];
-      const fallbackLabel = `質問 ${nextIndexTrail.join(".")} (${field?.type || "unknown"})`;
-      const label = (field?.label || "").trim();
-      const segment = label || fallbackLabel;
-      const currentPath = [...pathSegments, segment];
+    const label = (field?.label || "").trim();
+    if (!label) {
+      emptyLabels.push({ path: context.pathSegments.join(" > ") });
+    }
+  }, { responses: visibleOnly ? responses : null });
 
-      if (!label) {
-        emptyLabels.push({ path: currentPath.join(" > ") });
-      }
-
-      if (field?.childrenByValue && typeof field.childrenByValue === "object") {
-        let childKeys = Object.keys(field.childrenByValue);
-
-        // visibleOnlyの場合、現在表示されている子質問のみをチェックする
-        if (visibleOnly && responses) {
-          const value = responses[field.id];
-          if (field.type === "checkboxes" && Array.isArray(value)) {
-            childKeys = value.filter((key) => Object.prototype.hasOwnProperty.call(field.childrenByValue, key));
-          } else if (["radio", "select"].includes(field.type) && typeof value === "string" && value) {
-            childKeys = field.childrenByValue[value] ? [value] : [];
-          } else {
-            childKeys = [];
-          }
-        }
-
-        for (const key of childKeys) {
-          const children = field.childrenByValue[key];
-          walk(children, [...currentPath, key], nextIndexTrail);
-        }
-      }
-    });
-  };
-
-  walk(fields);
   if (emptyLabels.length > 0) return { ok: false, emptyLabels };
   return { ok: true };
 };
@@ -276,53 +200,30 @@ export const computeSchemaHash = (schema) => {
   return `v1-${Math.abs(hash)}`;
 };
 
-/**
- * フォーム保存時に一時保存データをクリーンアップする
- * @param {Array} schema - スキーマ配列
- * @returns {Array} クリーンアップされたスキーマ
- */
 export const cleanupTempData = (schema) => {
-  const walk = (arr) => (arr || []).map((field) => {
+  return mapSchema(schema, (field) => {
     const cleaned = { ...field };
 
-    // 表示可否は isDisplayed のみを保持（旧キーは削除）
     cleaned.isDisplayed = resolveIsDisplayed(cleaned);
     delete cleaned.displayMode;
     delete cleaned.important;
     delete cleaned.compact;
 
-    // 一時データは無条件削除
     delete cleaned._savedChildrenForChoice;
     delete cleaned._savedDisplayModeForChoice;
     delete cleaned._savedStyleSettings;
 
-    // スタイル設定のクリーンアップ
-    // - showStyleSettings が boolean の場合はそれを優先（OFFで保存した場合は styleSettings をリセット）
-    // - showStyleSettings が未設定の場合は styleSettings の有無から推測（未表示/未マウントの質問でも保存で消えないように）
     if (typeof cleaned.showStyleSettings === "string") {
       const raw = cleaned.showStyleSettings;
       const lowered = raw.trim().toLowerCase();
       if (["true", "1", "yes", "on"].includes(lowered)) cleaned.showStyleSettings = true;
       else if (["false", "0", "no", "off", ""].includes(lowered)) cleaned.showStyleSettings = false;
-      else {
-        console.warn("[cleanupTempData] showStyleSettings is a non-boolean string; coercing to true", {
-          id: cleaned.id,
-          label: cleaned.label,
-          value: raw,
-        });
-        cleaned.showStyleSettings = true;
-      }
+      else cleaned.showStyleSettings = true;
     }
     const hasExplicitShowStyleSettings = typeof cleaned.showStyleSettings === "boolean";
     const shouldKeepStyleSettings = hasExplicitShowStyleSettings ? cleaned.showStyleSettings : !!cleaned.styleSettings;
 
     if (!shouldKeepStyleSettings) {
-      if (cleaned.styleSettings) {
-        console.log("[cleanupTempData] styleSettings removed (showStyleSettings is OFF)", {
-          id: cleaned.id,
-          label: cleaned.label,
-        });
-      }
       delete cleaned.styleSettings;
     }
 
@@ -330,62 +231,40 @@ export const cleanupTempData = (schema) => {
       cleaned.showStyleSettings = !!cleaned.showStyleSettings;
     } else if (cleaned.styleSettings) {
       cleaned.showStyleSettings = true;
-      console.log("[cleanupTempData] showStyleSettings inferred as ON (styleSettings exists)", {
-        id: cleaned.id,
-        label: cleaned.label,
-      });
     } else {
       delete cleaned.showStyleSettings;
     }
 
-    // typeに応じて、UIで見えていないフィールドを削除
     if (["radio", "select", "checkboxes"].includes(cleaned.type)) {
-      // 選択肢型：options/childrenByValueは保持、他は削除
       delete cleaned.pattern;
       delete cleaned.defaultNow;
       delete cleaned.placeholder;
       delete cleaned.showPlaceholder;
     } else {
-      // 非選択肢型：options/childrenByValue/_savedChoiceStateを削除
       delete cleaned.options;
       delete cleaned.childrenByValue;
       delete cleaned._savedChoiceState;
 
       if (cleaned.type === "regex") {
-        // regex型：patternは保持、placeholderはshowPlaceholder次第
         delete cleaned.defaultNow;
-        if (!cleaned.showPlaceholder) {
-          delete cleaned.placeholder;
-        }
+        if (!cleaned.showPlaceholder) delete cleaned.placeholder;
       } else if (["date", "time", "userName"].includes(cleaned.type)) {
-        // date/time/userName型：defaultNowは保持、placeholderなし
         delete cleaned.pattern;
         delete cleaned.placeholder;
         delete cleaned.showPlaceholder;
       } else if (cleaned.type === "message") {
-        // message型：すべての入力関連フィールドを削除
         delete cleaned.pattern;
         delete cleaned.defaultNow;
         delete cleaned.placeholder;
         delete cleaned.showPlaceholder;
         delete cleaned.required;
       } else {
-        // その他（text, numberなど）：placeholderはshowPlaceholder次第
         delete cleaned.pattern;
         delete cleaned.defaultNow;
-        if (!cleaned.showPlaceholder) {
-          delete cleaned.placeholder;
-        }
+        if (!cleaned.showPlaceholder) delete cleaned.placeholder;
       }
-    }
-
-    // 子要素も再帰的にクリーンアップ
-    if (cleaned.childrenByValue && typeof cleaned.childrenByValue === "object") {
-      cleaned.childrenByValue = mapChildrenByValue(cleaned.childrenByValue, walk);
     }
 
     return cleaned;
   });
-
-  return walk(Array.isArray(schema) ? schema : []);
 };

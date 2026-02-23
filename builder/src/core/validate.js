@@ -1,4 +1,5 @@
-// Module-level regex cache for better performance across validation calls
+import { traverseSchema } from "./schemaUtils.js";
+
 const regexCache = new Map();
 
 export const buildSafeRegex = (pattern) => {
@@ -46,18 +47,12 @@ const getRegexResult = (pattern) => {
   return regexCache.get(key);
 };
 
-const normalizePathLabel = (field) => {
-  const label = (field?.label || "").trim();
-  return label || `無題 (${field?.type || "unknown"})`;
-};
-
 export const collectValidationErrors = (fields, responses) => {
   const errors = [];
 
-  const walk = (arr, pathSegments = []) => (arr || []).forEach((field) => {
+  traverseSchema(fields, (field, context) => {
     const value = responses?.[field.id];
-    const currentPath = [...pathSegments, normalizePathLabel(field)];
-    const path = currentPath.join(" > ");
+    const path = context.pathSegments.join(" > ");
     let hasRequiredError = false;
 
     if (field.required && isEmpty(field, value)) {
@@ -98,23 +93,8 @@ export const collectValidationErrors = (fields, responses) => {
         }
       }
     }
+  }, { responses });
 
-    if (field.childrenByValue) {
-      if (field.type === "checkboxes" && Array.isArray(value)) {
-        value.forEach((label) => {
-          if (field.childrenByValue[label]) {
-            walk(field.childrenByValue[label], [...currentPath, label]);
-          }
-        });
-      } else if (["radio", "select"].includes(field.type) && value && field.childrenByValue[value]) {
-        walk(field.childrenByValue[value], [...currentPath, value]);
-      } else if (!["checkboxes", "radio", "select"].includes(field.type)) {
-        Object.keys(field.childrenByValue).forEach((key) => walk(field.childrenByValue[key], [...currentPath, key]));
-      }
-    }
-  });
-
-  walk(fields);
   return { errors };
 };
 
