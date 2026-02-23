@@ -141,7 +141,7 @@ function nfbExportSearchResults(payload) {
     if (!Array.isArray(payload.rows)) {
       return { ok: false, error: "rows must be an array" };
     }
-    return Sheets_exportResultMatrixToNewSpreadsheet_(payload.spreadsheetTitle || "", payload.headerRows, payload.rows);
+    return Sheets_exportResultMatrixToNewSpreadsheet_(payload.spreadsheetTitle || "", payload.headerRows, payload.rows, payload.themeColors || null);
   });
 }
 
@@ -153,7 +153,7 @@ function nfbAppendExportRows(payload) {
     if (!Array.isArray(payload.rows)) {
       return { ok: false, error: "rows must be an array" };
     }
-    return Sheets_appendRowsToSpreadsheet_(payload.spreadsheetId, payload.rows);
+    return Sheets_appendRowsToSpreadsheet_(payload.spreadsheetId, payload.rows, payload.themeColors || null, payload.headerCount || 0, payload.rowOffset || 0);
   });
 }
 
