@@ -104,8 +104,6 @@
     --app-header-bg: rgba(6, 14, 24, 0.68);
 
     /* Focus ring */
-    --input-border-focus: rgba(34, 211, 238, 0.45);
-    --input-focus-ring: rgba(34, 211, 238, 0.18);
 
     /* Badges / logo / panels */
     --badge-primary-bg: linear-gradient(
@@ -136,7 +134,6 @@
         rgba(255, 255, 255, 0.06),
         transparent
     );
-    --card-hover-border: rgba(255, 255, 255, 0.2);
     --btn-primary-bg: linear-gradient(
         135deg,
         rgba(34, 211, 238, 0.22),
@@ -167,35 +164,4 @@
     --if-chip-bg: rgba(255, 255, 255, 0.1);
     --if-chip-border: rgba(255, 255, 255, 0.14);
     --if-badge-border: rgba(52, 211, 153, 0.22);
-
-    /* Cards / options */
-    --question-card-bg: var(--surface);
-    --question-card-border: var(--border);
-    --question-card-selected-border: var(--primary);
-    --question-card-shadow: var(--shadow-sm);
-    --card-radius: var(--radius-md);
-    --card-padding: 12px;
-
-    --option-row-bg: transparent;
-    --option-row-border: var(--border);
-    --option-row-selected-border: var(--primary);
-
-    /* Inputs / buttons */
-    --input-bg: var(--surface);
-    --input-text: var(--text);
-    --input-border: var(--border-strong);
-    --input-radius: var(--radius-sm);
-    --input-readonly-bg: var(--surface-muted);
-    --input-readonly-text: var(--text-ink);
-    --input-error-border: var(--danger-bright);
-
-    --button-bg: var(--surface-muted);
-    --button-text: var(--text);
-    --button-border: var(--border-strong);
-    --button-radius: var(--radius-sm);
-    --button-danger-bg: var(--danger-weak-strong);
-    --button-danger-text: var(--text);
-    --button-danger-border: var(--danger-border-strong);
-
-    --child-border: var(--border);
 }
