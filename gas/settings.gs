@@ -138,6 +138,29 @@ function IsAdmin_(adminKeyParam, activeUserEmail) {
 }
 
 /**
+ * 個別フォーム限定フラグを取得する
+ * @return {boolean}
+ */
+function GetRestrictToFormOnly_() {
+  if (!Nfb_isAdminSettingsEnabled_()) return false;
+  var props = GetAdminProps_();
+  return props.getProperty(NFB_RESTRICT_TO_FORM_ONLY) === "true";
+}
+
+/**
+ * 個別フォーム限定フラグを設定する
+ * @param {*} value
+ * @return {Object}
+ */
+function SetRestrictToFormOnly_(value) {
+  EnsureAdminSettingsEnabled_();
+  var props = GetAdminProps_();
+  var flag = value === true || value === "true" || value === 1 || value === "1";
+  props.setProperty(NFB_RESTRICT_TO_FORM_ONLY, flag ? "true" : "false");
+  return { ok: true, restrictToFormOnly: flag };
+}
+
+/**
  * アクセス権限を判定する
  * @param {string} formParam - formパラメータ
  * @param {string} adminkeyParam - adminkeyパラメータ
@@ -163,17 +186,18 @@ function DetermineAccess_(formParam, adminkeyParam, activeUserEmail) {
     return { isAdmin: false, formId: "", authError: "" };
   }
 
+  var restrictToFormOnly = GetRestrictToFormOnly_();
   var adminKey = GetAdminKey_();
 
   // formパラメータがない場合は管理者モード判定
   // 管理者キー設定済みの場合は一致が必須
   if (adminKey !== "" && adminkeyParam !== adminKey) {
-    return { isAdmin: false, formId: "", authError: "" };
+    return { isAdmin: false, formId: "", authError: restrictToFormOnly ? "forbidden" : "" };
   }
 
   // 管理者メール設定済みの場合は一致が必須（大文字小文字は無視）
   if (!IsAdminEmailMatched_(activeUserEmail)) {
-    return { isAdmin: false, formId: "", authError: "" };
+    return { isAdmin: false, formId: "", authError: restrictToFormOnly ? "forbidden" : "" };
   }
 
   return { isAdmin: true, formId: "", authError: "" };
@@ -218,6 +242,27 @@ function nfbGetAdminEmail() {
 function nfbSetAdminEmail(newEmail) {
   return nfbSafeCall_(function() {
     return SetAdminEmail_(newEmail);
+  });
+}
+
+/**
+ * 個別フォーム限定フラグを取得するAPI
+ * @return {Object}
+ */
+function nfbGetRestrictToFormOnly() {
+  return nfbSafeCall_(function() {
+    return { ok: true, restrictToFormOnly: GetRestrictToFormOnly_() };
+  });
+}
+
+/**
+ * 個別フォーム限定フラグを設定するAPI
+ * @param {*} value
+ * @return {Object}
+ */
+function nfbSetRestrictToFormOnly(value) {
+  return nfbSafeCall_(function() {
+    return SetRestrictToFormOnly_(value);
   });
 }
 

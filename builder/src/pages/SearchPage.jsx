@@ -40,13 +40,13 @@ export default function SearchPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { showAlert } = useAlert();
-  const formId = (searchParams.get("form") || "").trim();
-  const hasFormQueryParam = formId !== "";
+  const queryFormId = (searchParams.get("form") || "").trim();
+  const effectiveFormId = queryFormId || scopedFormId;
   const isScopedByAuth = scopedFormId !== "";
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [selectedEntries, setSelectedEntries] = useState(new Set());
 
-  const form = useMemo(() => (formId ? getFormById(formId) : null), [formId, getFormById]);
+  const form = useMemo(() => (effectiveFormId ? getFormById(effectiveFormId) : null), [effectiveFormId, getFormById]);
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
   const query = searchParams.get("q") || "";
   const page = Math.max(1, Number(searchParams.get("page") || 1));
@@ -64,7 +64,7 @@ export default function SearchPage() {
     cacheDisabled,
     fetchAndCacheData,
   } = useEntriesWithCache({
-    formId,
+    formId: effectiveFormId,
     form,
     locationKey: location.key,
     locationState: location.state,
@@ -144,23 +144,23 @@ export default function SearchPage() {
   }, [loading, backgroundLoading]);
 
   const handleRowClick = (entryId) => {
-    if (!formId) return;
+    if (!effectiveFormId) return;
     const entryIds = sortedEntries.map((row) => row.entry.id);
-    navigate(`/form/${formId}/entry/${entryId}`, {
+    navigate(`/form/${effectiveFormId}/entry/${entryId}`, {
       state: { from: `${location.pathname}${location.search}`, entryIds },
     });
   };
 
   const handleCreateNew = () => {
-    if (!formId) return;
-    navigate(`/form/${formId}/new`, {
+    if (!effectiveFormId) return;
+    navigate(`/form/${effectiveFormId}/new`, {
       state: { from: `${location.pathname}${location.search}` },
     });
   };
 
   const handleOpenFormConfig = () => {
-    if (!formId) return;
-    navigate(`/config?form=${encodeURIComponent(formId)}`, {
+    if (!effectiveFormId) return;
+    navigate(`/config?form=${encodeURIComponent(effectiveFormId)}`, {
       state: { from: `${location.pathname}${location.search}` },
     });
   };
@@ -192,16 +192,16 @@ export default function SearchPage() {
   };
 
   const confirmDelete = useCallback(async () => {
-    if (!formId || showDeleteConfirm.entryIds.length === 0) return;
+    if (!effectiveFormId || showDeleteConfirm.entryIds.length === 0) return;
     for (const entryId of showDeleteConfirm.entryIds) {
-      await dataStore.deleteEntry(formId, entryId);
+      await dataStore.deleteEntry(effectiveFormId, entryId);
     }
     await fetchAndCacheData();
     setSelectedEntries(new Set());
     setShowDeleteConfirm({ open: false, entryIds: [] });
-  }, [formId, showDeleteConfirm.entryIds, fetchAndCacheData]);
+  }, [effectiveFormId, showDeleteConfirm.entryIds, fetchAndCacheData]);
 
-  if (!formId || !form) {
+  if (!effectiveFormId || !form) {
     return (
       <AppLayout themeOverride={form?.settings?.theme} title="検索" fallbackPath="/" backHidden={false}>
         <p className="search-empty">
@@ -221,7 +221,7 @@ export default function SearchPage() {
       sidebarActions={(
         <SearchSidebar
           onBack={handleBackToMain}
-          showBack={!hasFormQueryParam && !isScopedByAuth}
+          showBack={!isScopedByAuth}
           onCreate={handleCreateNew}
           onConfig={settings?.syncAllFormsTheme ? undefined : handleOpenFormConfig}
           onDelete={handleDeleteSelected}

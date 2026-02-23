@@ -4,7 +4,7 @@ import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
-import { hasScriptRun, getAdminKey, setAdminKey, getAdminEmail, setAdminEmail } from "../services/gasClient.js";
+import { hasScriptRun, getAdminKey, setAdminKey, getAdminEmail, setAdminEmail, getRestrictToFormOnly, setRestrictToFormOnly } from "../services/gasClient.js";
 
 const normalizeAdminEmailInput = (value) => String(value || "")
   .split(";")
@@ -27,6 +27,9 @@ const { settings } = useBuilderSettings();
   const [adminEmailLoading, setAdminEmailLoading] = useState(false);
   const [adminEmailConfirm, setAdminEmailConfirm] = useState(false);
 
+  const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
+  const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
+
   const canManageAdminSettings = hasScriptRun();
   const normalizedAdminEmailInput = useMemo(
     () => normalizeAdminEmailInput(adminEmailInput),
@@ -45,11 +48,12 @@ const { settings } = useBuilderSettings();
     if (!canManageAdminSettings) return;
     (async () => {
       try {
-        const [key, email] = await Promise.all([getAdminKey(), getAdminEmail()]);
+        const [key, email, restrict] = await Promise.all([getAdminKey(), getAdminEmail(), getRestrictToFormOnly()]);
         setAdminKeyState(key);
         setAdminKeyInput(key);
         setAdminEmailState(email);
         setAdminEmailInput(email);
+        setRestrictToFormOnlyState(restrict);
       } catch (error) {
         console.error("[AdminSettingsPage] load failed", error);
         showAlert(error?.message || "管理者設定の読み込みに失敗しました");
@@ -108,6 +112,21 @@ const { settings } = useBuilderSettings();
     { value: "cancel", label: "キャンセル", onSelect: () => setAdminEmailConfirm(false) },
     { value: "save", label: "保存する", variant: "primary", onSelect: handleSaveAdminEmail },
   ];
+
+  const handleToggleRestrictToFormOnly = async (event) => {
+    if (!canManageAdminSettings) return;
+    const newValue = event.target.checked;
+    setRestrictToFormOnlyLoading(true);
+    try {
+      const saved = await setRestrictToFormOnly(newValue);
+      setRestrictToFormOnlyState(saved);
+    } catch (error) {
+      console.error("[AdminSettingsPage] setRestrictToFormOnly failed", error);
+      showAlert(error?.message || "設定の保存に失敗しました");
+    } finally {
+      setRestrictToFormOnlyLoading(false);
+    }
+  };
 
   return (
     <AppLayout title="管理者設定" fallbackPath="/" badge="アクセス制御">
@@ -183,6 +202,25 @@ const { settings } = useBuilderSettings();
               )
               : "現在は管理者メールが未設定のため、メールアドレスによる管理者制限はありません。"}
           </p>
+        </div>
+
+        <div className="nf-mt-16 nf-pt-16" style={{ borderTop: "1px solid var(--nf-color-border)" }}>
+          <div className="nf-settings-group-title nf-mb-6">アクセス制限</div>
+          <p className="nf-mb-12 nf-text-12 nf-text-muted">
+            管理者キーまたは管理者メールが設定されている場合に有効です。ONにすると、<code>?form=xxx</code> を指定しない一般ユーザーはアクセス拒否されます。
+          </p>
+          <label className="nf-row nf-gap-8" style={{ alignItems: "center", cursor: restrictToFormOnlyLoading ? "default" : "pointer" }}>
+            <input
+              type="checkbox"
+              checked={restrictToFormOnly}
+              disabled={!canManageAdminSettings || restrictToFormOnlyLoading}
+              onChange={handleToggleRestrictToFormOnly}
+            />
+            <span className="nf-text-13">
+              一般ユーザーが行ける範囲を個別フォームのみとする
+            </span>
+            {restrictToFormOnlyLoading && <span className="nf-text-12 nf-text-muted">保存中...</span>}
+          </label>
         </div>
 
         <div className="nf-mt-16 nf-pt-16" style={{ borderTop: "1px solid var(--nf-color-border)" }}>

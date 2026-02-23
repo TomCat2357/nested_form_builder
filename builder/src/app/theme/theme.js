@@ -8,6 +8,9 @@ export const THEME_OPTIONS = [
   { value: "sakura", label: "Sakura" },
   { value: "warm", label: "Warm" },
   { value: "ocean", label: "Ocean" },
+  { value: "dark", label: "Dark" },
+  { value: "egypt", label: "Egypt" },
+  { value: "india", label: "India" },
 ];
 
 const CUSTOM_THEME_STYLE_ID = "nfb-custom-themes";
@@ -122,7 +125,9 @@ export const resolveThemeName = (name, customThemes = []) => {
   const candidate = String(name || "").trim();
   if (!candidate) return DEFAULT_THEME;
   if (BUILT_IN_THEME_IDS.has(candidate)) return candidate;
-  const customIds = new Set((customThemes || []).map((theme) => theme?.id).filter(Boolean));
+  const customIds = new Set(
+    (customThemes || []).map((theme) => theme?.id).filter(Boolean),
+  );
   return customIds.has(candidate) ? candidate : DEFAULT_THEME;
 };
 
@@ -182,7 +187,8 @@ export const initTheme = (fallback = DEFAULT_THEME) => {
   void (async () => {
     try {
       const saved = await readThemeFromStorage();
-      const preferred = saved === "default" ? DEFAULT_THEME : (saved || initialTheme);
+      const preferred =
+        saved === "default" ? DEFAULT_THEME : saved || initialTheme;
       await applyThemeWithFallback(preferred, { persist: true });
     } catch (error) {
       console.warn("[theme] failed to load theme from IndexedDB", error);

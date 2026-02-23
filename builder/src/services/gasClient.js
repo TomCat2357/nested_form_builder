@@ -309,3 +309,28 @@ export const setAdminEmail = async (newEmail) => {
   }
   return result.adminEmail || "";
 };
+
+/**
+ * 個別フォーム限定フラグを取得する
+ * @returns {Promise<boolean>}
+ */
+export const getRestrictToFormOnly = async () => {
+  const result = await callScriptRun("nfbGetRestrictToFormOnly", {});
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Get restrict to form only failed");
+  }
+  return Boolean(result.restrictToFormOnly);
+};
+
+/**
+ * 個別フォーム限定フラグを設定する
+ * @param {boolean} value
+ * @returns {Promise<boolean>} 設定後の値
+ */
+export const setRestrictToFormOnly = async (value) => {
+  const result = await callScriptRun("nfbSetRestrictToFormOnly", value);
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Set restrict to form only failed");
+  }
+  return Boolean(result.restrictToFormOnly);
+};

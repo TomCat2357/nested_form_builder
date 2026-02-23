@@ -91,7 +91,7 @@ function UserRedirect() {
   if (authError === "form_not_found") {
     return <FormNotFoundPage />;
   }
-  if (authError === "access_denied") {
+  if (authError === "access_denied" || authError === "forbidden") {
     return <AccessDeniedPage />;
   }
 

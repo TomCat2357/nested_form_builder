@@ -1,0 +1,175 @@
+/* dark theme overrides */
+:root[data-theme="dark"] {
+    --font-sans:
+        "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+        sans-serif;
+
+    --label-font-size-base: 14px;
+    --label-size-offset-xs: -4px;
+    --label-size-offset-sm: -2px;
+    --label-size-offset-lg: 2px;
+    --label-size-offset-xl: 4px;
+
+    --bg: #0b1020;
+    --surface: rgba(255, 255, 255, 0.07);
+    --surface-elevated: rgba(255, 255, 255, 0.1);
+    --surface-muted: rgba(255, 255, 255, 0.055);
+    --surface-subtle: rgba(255, 255, 255, 0.04);
+    --surface-alt: rgba(255, 255, 255, 0.12);
+
+    --border: rgba(255, 255, 255, 0.14);
+    --border-muted: rgba(255, 255, 255, 0.12);
+    --border-subtle: rgba(255, 255, 255, 0.08);
+    --border-strong: rgba(255, 255, 255, 0.18);
+
+    --text: #e5e7eb;
+    --text-strong: #f8fafc;
+    --text-ink: #cbd5e1;
+    --text-muted: rgba(203, 213, 225, 0.78);
+    --text-subtle: rgba(203, 213, 225, 0.7);
+    --text-faded: rgba(203, 213, 225, 0.58);
+
+    --primary: #60a5fa;
+    --primary-strong: #3b82f6;
+    --primary-ink: #bfdbfe;
+    --primary-ink-strong: #dbeafe;
+    --primary-soft: rgba(96, 165, 250, 0.22);
+    --primary-soft-strong: rgba(96, 165, 250, 0.32);
+    --primary-weak: rgba(96, 165, 250, 0.18);
+    --primary-weak-soft: rgba(96, 165, 250, 0.12);
+    --primary-border-soft: rgba(96, 165, 250, 0.38);
+
+    --warm: #f97316;
+    --warm-weak: rgba(249, 115, 22, 0.18);
+    --warm-ink: #fed7aa;
+
+    --success: #34d399;
+    --success-ink: #d1fae5;
+    --success-weak: rgba(52, 211, 153, 0.14);
+
+    --danger: #fb7185;
+    --danger-bright: #fb7185;
+    --danger-strong: #f43f5e;
+    --danger-ink: #fecdd3;
+    --danger-ink-strong: #fda4af;
+    --danger-weak: rgba(251, 113, 133, 0.16);
+    --danger-weak-strong: rgba(251, 113, 133, 0.22);
+    --danger-border: rgba(251, 113, 133, 0.3);
+    --danger-border-strong: rgba(251, 113, 133, 0.38);
+
+    --warning: #fbbf24;
+    --warning-weak: rgba(251, 191, 36, 0.16);
+    --warning-ink: #fde68a;
+
+    --info: #22d3ee;
+    --info-weak: rgba(34, 211, 238, 0.16);
+
+    --radius-sm: 10px;
+    --radius-md: 14px;
+    --radius-lg: 16px;
+
+    --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.22);
+    --shadow-md: 0 18px 45px rgba(0, 0, 0, 0.44);
+    --shadow-lg: 0 26px 60px rgba(0, 0, 0, 0.52);
+
+    --overlay: rgba(5, 8, 16, 0.62);
+    --overlay-strong: rgba(5, 8, 16, 0.78);
+
+    --app-bg:
+        radial-gradient(
+            900px 520px at 14% -10%,
+            rgba(96, 165, 250, 0.42),
+            transparent 60%
+        ),
+        radial-gradient(
+            900px 520px at 92% 6%,
+            rgba(249, 115, 22, 0.3),
+            transparent 62%
+        ),
+        radial-gradient(
+            700px 420px at 60% 120%,
+            rgba(34, 211, 238, 0.14),
+            transparent 60%
+        ),
+        var(--bg);
+    --app-header-bg: rgba(8, 12, 20, 0.72);
+
+    --input-border-focus: rgba(96, 165, 250, 0.48);
+    --input-focus-ring: rgba(96, 165, 250, 0.22);
+
+    --badge-primary-bg: linear-gradient(
+        135deg,
+        rgba(96, 165, 250, 0.95),
+        rgba(249, 115, 22, 0.9)
+    );
+    --badge-warm-bg: linear-gradient(
+        135deg,
+        rgba(249, 115, 22, 0.95),
+        rgba(251, 191, 36, 0.86)
+    );
+    --badge-ghost-bg: rgba(255, 255, 255, 0.08);
+    --badge-ghost-border: rgba(255, 255, 255, 0.16);
+    --badge-text: rgba(255, 255, 255, 0.92);
+
+    --logo-gradient: linear-gradient(
+        135deg,
+        rgba(96, 165, 250, 0.95),
+        rgba(249, 115, 22, 0.9)
+    );
+    --logo-shadow:
+        0 8px 24px rgba(96, 165, 250, 0.22),
+        0 10px 28px rgba(249, 115, 22, 0.16);
+
+    --panel-header-bg: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.06),
+        transparent
+    );
+    --card-hover-border: rgba(255, 255, 255, 0.22);
+    --btn-primary-bg: linear-gradient(
+        135deg,
+        rgba(96, 165, 250, 0.22),
+        rgba(249, 115, 22, 0.18)
+    );
+
+    --rail-gradient: linear-gradient(
+        180deg,
+        rgba(96, 165, 250, 0),
+        rgba(96, 165, 250, 0.55),
+        rgba(249, 115, 22, 0.4),
+        rgba(96, 165, 250, 0)
+    );
+    --rail-dot-bg: linear-gradient(
+        135deg,
+        rgba(96, 165, 250, 0.95),
+        rgba(249, 115, 22, 0.9)
+    );
+    --rail-dot-shadow:
+        0 10px 22px rgba(96, 165, 250, 0.18),
+        0 12px 26px rgba(249, 115, 22, 0.14);
+
+    --if-box-border: rgba(255, 255, 255, 0.12);
+    --if-box-bg: linear-gradient(
+        135deg,
+        rgba(96, 165, 250, 0.16),
+        rgba(249, 115, 22, 0.12)
+    );
+    --if-chip-bg: rgba(255, 255, 255, 0.1);
+    --if-chip-border: rgba(255, 255, 255, 0.14);
+    --if-badge-border: rgba(52, 211, 153, 0.22);
+}
+
+/* nfb:select-popup-contrast:dark */
+:root[data-theme="dark"] {
+    color-scheme: dark;
+}
+
+/* Fallback: some browsers style the popup via option/optgroup */
+:root[data-theme="dark"] select {
+    color-scheme: dark;
+}
+:root[data-theme="dark"] select option,
+:root[data-theme="dark"] select optgroup {
+    background-color: var(--bg);
+    color: var(--text);
+}
