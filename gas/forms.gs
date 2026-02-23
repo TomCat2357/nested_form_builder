@@ -2,13 +2,8 @@
 // フォーム管理機能（Google Drive保存）
 // ========================================
 
-
-function Forms_getScriptProps_() {
-  return PropertiesService.getScriptProperties();
-}
-
-function Forms_getUserProps_() {
-  return PropertiesService.getUserProperties();
+function Forms_getActiveProps_() {
+  return Nfb_getActiveProperties_();
 }
 
 function Forms_parseMappingJson_(json, label) {
@@ -313,33 +308,13 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
  * @return {Object} formId -> fileId のマッピング
  */
 function Forms_getMapping_() {
-  var scriptProps = Forms_getScriptProps_();
-  var userProps = Forms_getUserProps_();
+  var props = Forms_getActiveProps_();
+  var rawJson = props.getProperty(FORMS_PROPERTY_KEY);
+  var mode = Nfb_getPropertyStoreMode_();
+  Logger.log("[Forms_getMapping_] Raw JSON (" + mode + "): " + rawJson);
 
-  var scriptJson = scriptProps.getProperty(FORMS_PROPERTY_KEY);
-  var userJson = userProps.getProperty(FORMS_PROPERTY_KEY);
-  Logger.log("[Forms_getMapping_] Raw JSON (script): " + scriptJson);
-  Logger.log("[Forms_getMapping_] Raw JSON (user): " + userJson);
-
-  var mapping = Forms_parseMappingJson_(scriptJson, "script");
-  var merged = false;
-
-  if (userJson) {
-    var userMapping = Forms_parseMappingJson_(userJson, "user");
-    for (var formId in userMapping) {
-      if (!userMapping.hasOwnProperty(formId)) continue;
-      if (mapping[formId]) continue;
-      mapping[formId] = userMapping[formId];
-      merged = true;
-    }
-  }
-
+  var mapping = Forms_parseMappingJson_(rawJson, mode);
   var normalized = Forms_normalizeMapping_(mapping);
-
-  if (merged) {
-    Logger.log("[Forms_getMapping_] Mapping merged from user properties. Saving to script properties");
-    Forms_saveMapping_(normalized);
-  }
 
   Logger.log("[Forms_getMapping_] Returning mapping: " + JSON.stringify(normalized));
   return normalized;
@@ -457,8 +432,8 @@ function Forms_saveMapping_(mapping) {
   var mappingStr = JSON.stringify({ version: FORMS_PROPERTY_VERSION, mapping: normalized });
   Logger.log("[Forms_saveMapping_] Saving mapping: " + mappingStr);
 
-  var scriptProps = Forms_getScriptProps_();
-  scriptProps.setProperty(FORMS_PROPERTY_KEY, mappingStr);
+  var props = Forms_getActiveProps_();
+  props.setProperty(FORMS_PROPERTY_KEY, mappingStr);
 
   Logger.log("[Forms_saveMapping_] Saved successfully. Total forms: " + Object.keys(normalized || {}).length);
 }
@@ -483,38 +458,6 @@ function Forms_normalizeFormIds_(formIds) {
   }
 
   return normalized;
-}
-
-/**
- * UserProperties側の旧nfb.forms.mappingから指定formIdを削除
- * @param {Array<string>|string} formIds
- */
-function Forms_removeUserMappingEntries_(formIds) {
-  var ids = Forms_normalizeFormIds_(formIds);
-  if (!ids.length) return;
-
-  try {
-    var userProps = Forms_getUserProps_();
-    var userJson = userProps.getProperty(FORMS_PROPERTY_KEY);
-    if (!userJson) return;
-
-    var userMapping = Forms_parseMappingJson_(userJson, "user");
-    var changed = false;
-
-    ids.forEach(function(formId) {
-      if (!userMapping.hasOwnProperty(formId)) return;
-      delete userMapping[formId];
-      changed = true;
-    });
-
-    if (changed) {
-      var normalized = Forms_normalizeMapping_(userMapping);
-      var mappingStr = JSON.stringify({ version: FORMS_PROPERTY_VERSION, mapping: normalized });
-      userProps.setProperty(FORMS_PROPERTY_KEY, mappingStr);
-    }
-  } catch (err) {
-    Logger.log("[Forms_removeUserMappingEntries_] Failed: " + err);
-  }
 }
 
 /**
@@ -544,17 +487,18 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
   var requestedSaveMode = saveMode || "auto";
   Logger.log("[Forms_saveForm_] Starting save for formId: " + form.id + ", requestedSaveMode: " + requestedSaveMode);
 
-  // DEBUG: PropertiesServiceを直接読んで確認（script propertiesを参照）
-  var scriptProps = Forms_getScriptProps_();
-  var rawJsonBeforeGetMapping = scriptProps.getProperty(FORMS_PROPERTY_KEY);
-  Logger.log("[Forms_saveForm_] DEBUG: Raw JSON from PropertiesService BEFORE Forms_getMapping_: " + rawJsonBeforeGetMapping);
+  // DEBUG: 現在のプロパティ保存先を直接読んで確認
+  var activeProps = Forms_getActiveProps_();
+  var propertyStoreMode = Nfb_getPropertyStoreMode_();
+  var rawJsonBeforeGetMapping = activeProps.getProperty(FORMS_PROPERTY_KEY);
+  Logger.log("[Forms_saveForm_] DEBUG: Raw JSON from PropertiesService (" + propertyStoreMode + ") BEFORE Forms_getMapping_: " + rawJsonBeforeGetMapping);
 
   var mapping = Forms_getMapping_();
   Logger.log("[Forms_saveForm_] Current mapping before save: " + JSON.stringify(mapping));
 
   // DEBUG: もう一度PropertiesServiceを直接読んで確認
-  var rawJsonAfterGetMapping = scriptProps.getProperty(FORMS_PROPERTY_KEY);
-  Logger.log("[Forms_saveForm_] DEBUG: Raw JSON from PropertiesService AFTER Forms_getMapping_: " + rawJsonAfterGetMapping);
+  var rawJsonAfterGetMapping = activeProps.getProperty(FORMS_PROPERTY_KEY);
+  Logger.log("[Forms_saveForm_] DEBUG: Raw JSON from PropertiesService (" + propertyStoreMode + ") AFTER Forms_getMapping_: " + rawJsonAfterGetMapping);
 
   var mappingEntry = mapping[form.id] || {};
   var existingFileId = mappingEntry.fileId;
@@ -1071,7 +1015,6 @@ function Forms_deleteForm_(formId) {
   var mapping = Forms_getMapping_();
   delete mapping[formId];
   Forms_saveMapping_(mapping);
-  Forms_removeUserMappingEntries_([formId]);
 
   return { ok: true };
 }
@@ -1100,7 +1043,6 @@ function Forms_deleteForms_(formIds) {
   });
 
   Forms_saveMapping_(mapping);
-  Forms_removeUserMappingEntries_(ids);
 
   return {
     ok: true,
@@ -1588,18 +1530,17 @@ function nfbDebugCallGetMapping() {
  */
 function nfbDebugGetMapping() {
   return nfbSafeCall_(function() {
-    var scriptProps = Forms_getScriptProps_();
-    var userProps = Forms_getUserProps_();
-    var rawJson = scriptProps.getProperty(FORMS_PROPERTY_KEY);
-    var mapping = Forms_parseMappingJson_(rawJson, "script");
-    var userRawJson = userProps.getProperty(FORMS_PROPERTY_KEY);
+    var props = Forms_getActiveProps_();
+    var mode = Nfb_getPropertyStoreMode_();
+    var rawJson = props.getProperty(FORMS_PROPERTY_KEY);
+    var mapping = Forms_parseMappingJson_(rawJson, mode);
     var legacyInfo = { hasLegacy: false, legacyCount: 0, migratedCount: 0 };
 
     return {
       ok: true,
+      propertyStoreMode: mode,
       mapping: mapping,
       rawJson: rawJson,
-      userRawJson: userRawJson,
       totalForms: Object.keys(mapping).length,
       legacyInfo: legacyInfo,
     };

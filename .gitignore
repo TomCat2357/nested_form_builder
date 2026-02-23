@@ -4,6 +4,7 @@
 
 # 依存関係
 *.pdf
+.local/
 node_modules/
 .codegraph/
 Index.html

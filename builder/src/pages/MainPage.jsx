@@ -9,7 +9,7 @@ import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
 
 export default function MainPage() {
   const { forms, loadingForms } = useAppData();
-  const { isAdmin } = useAuth();
+  const { isAdmin, propertyStoreMode, adminSettingsEnabled } = useAuth();
   const { settings } = useBuilderSettings();
   const navigate = useNavigate();
 
@@ -38,6 +38,9 @@ export default function MainPage() {
     navigate("/admin-settings");
   };
 
+  const showAdminSettingsButton = isAdmin && adminSettingsEnabled;
+  const showFormsButton = propertyStoreMode === "user" || isAdmin;
+
   return (
     <AppLayout
       title="フォーム一覧"
@@ -47,12 +50,12 @@ export default function MainPage() {
           <button type="button" onClick={handleGoConfig} className="nf-btn-outline nf-btn-sidebar">
             設定
           </button>
-          {isAdmin && (
+          {showAdminSettingsButton && (
             <button type="button" onClick={handleGoAdminSettings} className="nf-btn-outline nf-btn-sidebar">
               管理者設定
             </button>
           )}
-          {isAdmin && (
+          {showFormsButton && (
             <button type="button" onClick={handleGoForms} className="nf-btn-outline nf-btn-sidebar">
               フォーム管理
             </button>

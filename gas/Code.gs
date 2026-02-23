@@ -15,6 +15,8 @@ function doGet(e) {
   var authResult = DetermineAccess_(formParam, adminkeyParam, userEmail);
   var userName = ResolveActiveUserDisplayName_();
   var adminEmail = GetAdminEmail_();
+  var propertyStoreMode = Nfb_getPropertyStoreMode_();
+  var adminSettingsEnabled = Nfb_isAdminSettingsEnabled_();
 
   // </head>の直前にscriptタグを挿入してグローバル変数を設定
   var injectedScript = '<script>' +
@@ -25,6 +27,8 @@ function doGet(e) {
     'window.__USER_EMAIL__ = "' + EscapeForInlineScript_(userEmail) + '";' +
     'window.__USER_NAME__ = "' + EscapeForInlineScript_(userName) + '";' +
     'window.__ADMIN_EMAIL__ = "' + EscapeForInlineScript_(adminEmail) + '";' +
+    'window.__PROPERTY_STORE_MODE__ = "' + EscapeForInlineScript_(propertyStoreMode) + '";' +
+    'window.__ADMIN_SETTINGS_ENABLED__ = ' + (adminSettingsEnabled ? 'true' : 'false') + ';' +
     '</script>';
   htmlContent = htmlContent.replace('</head>', injectedScript + '</head>');
 
@@ -69,18 +73,24 @@ function doPost(e) {
   return handleCors_(e, function() {
     var ctx = Model_parseRequest_(e);
     var action = (ctx.raw && ctx.raw.action) || "save";
+    var adminSettingsEnabled = Nfb_isAdminSettingsEnabled_();
 
     // リクエストから管理者キーを取得して認証チェック
     var adminKeyParam = (ctx.raw && ctx.raw.authKey) ? String(ctx.raw.authKey) : "";
     var userEmail = Session.getActiveUser().getEmail() || "";
-    var isAdmin = IsAdmin_(adminKeyParam, userEmail);
+    var isAdmin = adminSettingsEnabled ? IsAdmin_(adminKeyParam, userEmail) : false;
 
-    // 管理者専用アクション
-    var adminOnlyActions = [
+    // scriptモードでのみ管理者専用にするアクション
+    var formAdminOnlyActions = [
       "forms_create",
       "forms_update",
       "forms_delete",
+      "forms_import",
       "forms_archive",
+    ];
+
+    // 管理者設定API
+    var adminSettingsActions = [
       "admin_key_get",
       "admin_key_set",
       "admin_email_get",
@@ -90,8 +100,12 @@ function doPost(e) {
     try {
       var payload;
 
-      // 管理者専用アクションのチェック
-      if (adminOnlyActions.indexOf(action) !== -1 && !isAdmin) {
+      if (!adminSettingsEnabled && adminSettingsActions.indexOf(action) !== -1) {
+        return JsonForbidden_("管理者設定は現在のプロパティ保存モードでは利用できません");
+      }
+
+      // scriptモード時のみ管理者権限を要求
+      if (adminSettingsEnabled && (formAdminOnlyActions.indexOf(action) !== -1 || adminSettingsActions.indexOf(action) !== -1) && !isAdmin) {
         return JsonForbidden_("管理者権限が必要です");
       }
 

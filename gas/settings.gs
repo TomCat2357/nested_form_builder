@@ -3,11 +3,31 @@
 // ========================================
 
 /**
+ * 管理者設定が無効なときは例外を投げる
+ */
+function EnsureAdminSettingsEnabled_() {
+  if (!Nfb_isAdminSettingsEnabled_()) {
+    throw new Error("管理者設定は現在のプロパティ保存モードでは利用できません");
+  }
+}
+
+/**
+ * 管理者設定はscript propertiesで管理する
+ * @return {GoogleAppsScript.Properties.Properties}
+ */
+function GetAdminProps_() {
+  return PropertiesService.getScriptProperties();
+}
+
+/**
  * 管理者キーを取得する
  * @return {string} 管理者キー（未設定の場合は空文字）
  */
 function GetAdminKey_() {
-  var props = PropertiesService.getScriptProperties();
+  if (!Nfb_isAdminSettingsEnabled_()) {
+    return "";
+  }
+  var props = GetAdminProps_();
   return props.getProperty(NFB_ADMIN_KEY) || "";
 }
 
@@ -17,7 +37,8 @@ function GetAdminKey_() {
  * @return {Object} 結果オブジェクト
  */
 function SetAdminKey_(newKey) {
-  var props = PropertiesService.getScriptProperties();
+  EnsureAdminSettingsEnabled_();
+  var props = GetAdminProps_();
   var key = String(newKey || "");
   props.setProperty(NFB_ADMIN_KEY, key);
   return { ok: true, adminKey: key };
@@ -58,7 +79,10 @@ function ParseAdminEmails_(raw) {
  * @return {string}
  */
 function GetAdminEmail_() {
-  var props = PropertiesService.getScriptProperties();
+  if (!Nfb_isAdminSettingsEnabled_()) {
+    return "";
+  }
+  var props = GetAdminProps_();
   return props.getProperty(NFB_ADMIN_EMAIL) || "";
 }
 
@@ -68,7 +92,8 @@ function GetAdminEmail_() {
  * @return {Object}
  */
 function SetAdminEmail_(newEmail) {
-  var props = PropertiesService.getScriptProperties();
+  EnsureAdminSettingsEnabled_();
+  var props = GetAdminProps_();
   var normalized = ParseAdminEmails_(newEmail).join(";");
   props.setProperty(NFB_ADMIN_EMAIL, normalized);
   return { ok: true, adminEmail: normalized };
@@ -80,6 +105,9 @@ function SetAdminEmail_(newEmail) {
  * @return {boolean}
  */
 function IsAdminEmailMatched_(activeUserEmail) {
+  if (!Nfb_isAdminSettingsEnabled_()) {
+    return false;
+  }
   var adminEmails = ParseAdminEmails_(GetAdminEmail_());
   if (adminEmails.length === 0) {
     // 管理者メール未設定の場合は制限しない
@@ -99,6 +127,9 @@ function IsAdminEmailMatched_(activeUserEmail) {
  * @return {boolean} 管理者の場合はtrue
  */
 function IsAdmin_(adminKeyParam, activeUserEmail) {
+  if (!Nfb_isAdminSettingsEnabled_()) {
+    return false;
+  }
   var adminKey = GetAdminKey_();
   if (adminKey !== "" && String(adminKeyParam || "") !== adminKey) {
     return false;
@@ -114,8 +145,6 @@ function IsAdmin_(adminKeyParam, activeUserEmail) {
  * @return {{ isAdmin: boolean, formId: string, authError: string }}
  */
 function DetermineAccess_(formParam, adminkeyParam, activeUserEmail) {
-  var adminKey = GetAdminKey_();
-
   // formパラメータがある場合（form優先）
   if (formParam) {
     // フォームの存在確認
@@ -129,15 +158,22 @@ function DetermineAccess_(formParam, adminkeyParam, activeUserEmail) {
     }
   }
 
+  // userモード時は管理者設定を無効化し、常に通常モードで表示
+  if (!Nfb_isAdminSettingsEnabled_()) {
+    return { isAdmin: false, formId: "", authError: "" };
+  }
+
+  var adminKey = GetAdminKey_();
+
   // formパラメータがない場合は管理者モード判定
   // 管理者キー設定済みの場合は一致が必須
   if (adminKey !== "" && adminkeyParam !== adminKey) {
-    return { isAdmin: false, formId: "", authError: "access_denied" };
+    return { isAdmin: false, formId: "", authError: "" };
   }
 
   // 管理者メール設定済みの場合は一致が必須（大文字小文字は無視）
   if (!IsAdminEmailMatched_(activeUserEmail)) {
-    return { isAdmin: false, formId: "", authError: "access_denied" };
+    return { isAdmin: false, formId: "", authError: "" };
   }
 
   return { isAdmin: true, formId: "", authError: "" };

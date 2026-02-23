@@ -10,6 +10,8 @@ const AuthContext = createContext({
   authError: "",
   userEmail: "",
   userName: "",
+  propertyStoreMode: "script",
+  adminSettingsEnabled: true,
 });
 
 /**
@@ -40,7 +42,15 @@ export function AuthProvider({ children }) {
       ? String(window.__USER_NAME__)
       : "";
 
-    return { isAdmin, formId, authError, userEmail, userName };
+    const propertyStoreMode = typeof window !== "undefined" && window.__PROPERTY_STORE_MODE__
+      ? String(window.__PROPERTY_STORE_MODE__)
+      : "script";
+
+    const adminSettingsEnabled = typeof window !== "undefined" && window.__ADMIN_SETTINGS_ENABLED__ !== undefined
+      ? Boolean(window.__ADMIN_SETTINGS_ENABLED__)
+      : true;
+
+    return { isAdmin, formId, authError, userEmail, userName, propertyStoreMode, adminSettingsEnabled };
   }, []);
 
   return (
@@ -52,7 +62,7 @@ export function AuthProvider({ children }) {
 
 /**
  * 認証情報を取得するフック
- * @returns {{ isAdmin: boolean, formId: string, authError: string, userEmail: string, userName: string }}
+ * @returns {{ isAdmin: boolean, formId: string, authError: string, userEmail: string, userName: string, propertyStoreMode: string, adminSettingsEnabled: boolean }}
  */
 export function useAuth() {
   return useContext(AuthContext);

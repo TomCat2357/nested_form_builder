@@ -1,8 +1,39 @@
 /**
  * properties.gs
- * フォームURLを取得する補助関数群
+ * プロパティ操作とフォームURL補助関数群
  */
 
+
+/**
+ * プロパティ保存モードを取得する（script/user）
+ * @return {"script"|"user"}
+ */
+function Nfb_getPropertyStoreMode_() {
+  var rawMode = String(NFB_PROPERTY_STORE_MODE || "").trim().toLowerCase();
+  if (rawMode === NFB_PROPERTY_STORE_MODE_USER) {
+    return NFB_PROPERTY_STORE_MODE_USER;
+  }
+  return NFB_PROPERTY_STORE_MODE_SCRIPT;
+}
+
+/**
+ * 現在の保存モードに応じたPropertiesを取得
+ * @return {GoogleAppsScript.Properties.Properties}
+ */
+function Nfb_getActiveProperties_() {
+  if (Nfb_getPropertyStoreMode_() === NFB_PROPERTY_STORE_MODE_USER) {
+    return PropertiesService.getUserProperties();
+  }
+  return PropertiesService.getScriptProperties();
+}
+
+/**
+ * 管理者設定が有効か判定（scriptモード時のみ有効）
+ * @return {boolean}
+ */
+function Nfb_isAdminSettingsEnabled_() {
+  return Nfb_getPropertyStoreMode_() === NFB_PROPERTY_STORE_MODE_SCRIPT;
+}
 
 /**
  * URLからGoogle DriveファイルIDを抽出

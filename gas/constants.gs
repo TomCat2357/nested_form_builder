@@ -1,6 +1,9 @@
 // 管理者設定関連
 var NFB_ADMIN_KEY = "ADMIN_KEY";
 var NFB_ADMIN_EMAIL = "ADMIN_EMAIL";
+var NFB_PROPERTY_STORE_MODE = "__NFB_PROPERTY_STORE_MODE__";
+var NFB_PROPERTY_STORE_MODE_SCRIPT = "script";
+var NFB_PROPERTY_STORE_MODE_USER = "user";
 
 // フォーム管理関連（Google Drive）
 var FORMS_FOLDER_NAME = "Nested Form Builder - Forms";

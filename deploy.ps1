@@ -1,8 +1,10 @@
 ﻿# Google AppSheetスタイル データ管理アプリ デプロイスクリプト (PowerShell版)
-# Usage: .\deploy.ps1 [--manifest-override <path>] [-BundleOnly] [-h|--help]
+# Usage: .\deploy.ps1 [--manifest-override <path>] [-PropertyStore <script|user>] [-BundleOnly] [-h|--help]
 
 param(
     [string]$ManifestOverride = "",
+    [ValidateSet("script", "user")]
+    [string]$PropertyStore = "script",
     [switch]$BundleOnly,
     [switch]$h,
     [switch]$Help
@@ -16,6 +18,7 @@ Usage: .\deploy.ps1 [options]
 
 Options:
   --manifest-override <path>  指定したJSONファイルで gas/appsscript.json を上書きしてから push/deploy します。
+  -PropertyStore <script|user> フォームマッピングの保存先を指定します（既定: script）。
   -BundleOnly                 ビルド＆バンドルのみ実行（clasp push/deploy はスキップ）。credential不要。
   -h, --help                  このヘルプを表示します。
 "@
@@ -75,6 +78,23 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ GASファイルの結合に失敗しました" -ForegroundColor Red
     exit 1
 }
+
+# Bundle.gs 内のプロパティ保存先プレースホルダーを置換
+$BundleFile = "dist/Bundle.gs"
+if (-not (Test-Path $BundleFile)) {
+    Write-Host "❌ Bundle.gs が見つかりません: $BundleFile" -ForegroundColor Red
+    exit 1
+}
+
+$bundleContent = Get-Content $BundleFile -Raw -Encoding UTF8
+$modePlaceholder = "__NFB_PROPERTY_STORE_MODE__"
+if ($bundleContent.Contains($modePlaceholder)) {
+    $bundleContent = $bundleContent -replace [Regex]::Escape($modePlaceholder), $PropertyStore
+} else {
+    Write-Host "⚠️ プロパティ保存先プレースホルダーが見つかりません。既定値(script)で動作します。" -ForegroundColor Yellow
+}
+$bundleContent | Set-Content $BundleFile -Encoding UTF8 -NoNewline
+Write-Host "🗂 プロパティ保存先: $PropertyStore" -ForegroundColor Green
 
 # デプロイファイルの準備
 Write-Host "📄 デプロイファイルを準備中..." -ForegroundColor Yellow

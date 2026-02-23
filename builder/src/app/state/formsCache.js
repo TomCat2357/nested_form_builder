@@ -13,7 +13,7 @@ const META_KEY = '__metadata__';
  * @param {Array} loadFailures - Array of load failure objects
  * @returns {Promise<void>}
  */
-export async function saveFormsToCache(forms, loadFailures = []) {
+export async function saveFormsToCache(forms, loadFailures = [], propertyStoreMode = "") {
   const db = await openDB();
   const tx = db.transaction(STORE_NAMES.forms, 'readwrite');
   const store = tx.objectStore(STORE_NAMES.forms);
@@ -35,6 +35,7 @@ export async function saveFormsToCache(forms, loadFailures = []) {
     id: META_KEY,
     lastSyncedAt,
     failures: loadFailures,
+    propertyStoreMode,
   }));
 
   await waitForTransaction(tx);
@@ -57,11 +58,13 @@ export async function getFormsFromCache() {
     const forms = [];
     let loadFailures = [];
     let lastSyncedAt = null;
+    let propertyStoreMode = "";
 
     for (const record of allRecords) {
       if (record.id === META_KEY) {
         loadFailures = record.failures || [];
         lastSyncedAt = record.lastSyncedAt || null;
+        propertyStoreMode = record.propertyStoreMode || "";
       } else if (record.id !== undefined) {
         // Remove cache metadata before returning
         const { lastSyncedAt: _, ...form } = record;
@@ -70,7 +73,7 @@ export async function getFormsFromCache() {
     }
 
     console.log('[formsCache] Retrieved', forms.length, 'forms and', loadFailures.length, 'failures from cache');
-    return { forms, loadFailures, lastSyncedAt };
+    return { forms, loadFailures, lastSyncedAt, propertyStoreMode };
   } finally {
     db.close();
   }

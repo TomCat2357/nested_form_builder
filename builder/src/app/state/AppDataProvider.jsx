@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { dataStore } from "./dataStore.js";
 import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
+import { useAuth } from "./authContext.jsx";
 import {
   evaluateCache,
   FORM_CACHE_MAX_AGE_MS,
@@ -14,9 +15,9 @@ const AppDataContext = createContext(null);
 /**
  * Helper to save forms cache with consistent error handling
  */
-const saveCacheWithErrorHandling = async (forms, loadFailures, setCacheDisabled, logPrefix = "saveCache") => {
+const saveCacheWithErrorHandling = async (forms, loadFailures, setCacheDisabled, propertyStoreMode, logPrefix = "saveCache") => {
   try {
-    await saveFormsToCache(forms, loadFailures);
+    await saveFormsToCache(forms, loadFailures, propertyStoreMode);
     console.log(`[${logPrefix}] Cache updated`);
   } catch (err) {
     console.warn(`[${logPrefix}] Failed to update cache:`, err);
@@ -24,6 +25,9 @@ const saveCacheWithErrorHandling = async (forms, loadFailures, setCacheDisabled,
   }
 };
 export function AppDataProvider({ children }) {
+  const { propertyStoreMode } = useAuth();
+  const propertyStoreModeRef = useRef(propertyStoreMode);
+
   const [forms, setForms] = useState([]);
   const [loadingForms, setLoadingForms] = useState(true);
   const [error, setError] = useState(null);
@@ -77,7 +81,7 @@ export function AppDataProvider({ children }) {
 
       try {
         const cacheStart = Date.now();
-        await saveFormsToCache(allForms, failures);
+        await saveFormsToCache(allForms, failures, propertyStoreModeRef.current);
         const cacheDuration = Date.now() - cacheStart;
         perfLogger.logFormCacheSave(cacheDuration, allForms.length);
         setCacheDisabled(false);
@@ -128,8 +132,20 @@ export function AppDataProvider({ children }) {
         cachedForms = cacheResult.forms || [];
         cachedFailures = cacheResult.loadFailures || [];
         cacheLastSyncedAt = cacheResult.lastSyncedAt || cacheResult.cacheTimestamp || null;
+        const cachedPropertyStoreMode = cacheResult.propertyStoreMode || "";
         const cacheAge = cacheLastSyncedAt ? Date.now() - cacheLastSyncedAt : null;
         const hasCachedData = cachedForms.length > 0 || cachedFailures.length > 0 || !!cacheLastSyncedAt;
+
+        // プロパティ保存モードが変わった場合はキャッシュを無効化して強制再同期
+        if (hasCachedData && cachedPropertyStoreMode !== propertyStoreModeRef.current) {
+          console.log("[AppDataProvider] Property store mode changed; forcing fresh sync", {
+            cachedMode: cachedPropertyStoreMode,
+            currentMode: propertyStoreModeRef.current,
+          });
+          await refreshForms({ reason: "mode-changed", background: false });
+          setLoadingForms(false);
+          return;
+        }
 
         if (hasCachedData) {
           console.log("[AppDataProvider] Loaded from cache:", cachedForms.length, "forms (age:", cacheAge, "ms)");
@@ -202,7 +218,7 @@ export function AppDataProvider({ children }) {
     });
 
     // キャッシュ更新の完了を待つ
-    await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, "upsertFormsState");
+    await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, propertyStoreModeRef.current, "upsertFormsState");
   }, []);
 
   const removeFormsState = useCallback(async (formIds) => {
@@ -220,7 +236,7 @@ export function AppDataProvider({ children }) {
     loadFailuresRef.current = nextLoadFailures;
 
     // キャッシュ更新の完了を待つ
-    await saveCacheWithErrorHandling(nextForms, nextLoadFailures, setCacheDisabled, "removeFormsState");
+    await saveCacheWithErrorHandling(nextForms, nextLoadFailures, setCacheDisabled, propertyStoreModeRef.current, "removeFormsState");
   }, []);
 
   const createForm = useCallback(async (payload, targetUrl, saveMode = "auto") => {
@@ -291,7 +307,7 @@ export function AppDataProvider({ children }) {
       });
 
       // キャッシュ更新の完了を待つ
-      await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, logPrefix);
+      await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, propertyStoreModeRef.current, logPrefix);
     }
     return result;
   }, []);
@@ -321,7 +337,7 @@ export function AppDataProvider({ children }) {
         const next = [...created, ...prev];
 
         // キャッシュ更新
-        saveCacheWithErrorHandling(next, loadFailuresRef.current, setCacheDisabled, "importForms");
+        saveCacheWithErrorHandling(next, loadFailuresRef.current, setCacheDisabled, propertyStoreModeRef.current, "importForms");
 
         return next;
       });

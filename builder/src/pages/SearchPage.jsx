@@ -40,8 +40,9 @@ export default function SearchPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { showAlert } = useAlert();
-const formId = (searchParams.get("form") || "").trim();
-  const isScopedByQuery = scopedFormId !== "";
+  const formId = (searchParams.get("form") || "").trim();
+  const hasFormQueryParam = formId !== "";
+  const isScopedByAuth = scopedFormId !== "";
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [selectedEntries, setSelectedEntries] = useState(new Set());
 
@@ -221,7 +222,7 @@ const formId = (searchParams.get("form") || "").trim();
       sidebarActions={(
         <SearchSidebar
           onBack={handleBackToMain}
-          showBack={!isScopedByQuery}
+          showBack={!hasFormQueryParam && !isScopedByAuth}
           onCreate={handleCreateNew}
           onConfig={settings?.syncAllFormsTheme ? undefined : handleOpenFormConfig}
           onDelete={handleDeleteSelected}

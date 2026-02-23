@@ -13,11 +13,15 @@ import ConfigPage from "../pages/ConfigPage.jsx";
 import NotFoundPage from "../pages/NotFoundPage.jsx";
 
 /**
- * 管理者専用ルートのラッパー
- * 管理者でない場合はリダイレクト
+ * フォーム管理ルートのラッパー
+ * scriptモードは管理者のみ、userモードは全ユーザー許可
  */
-function AdminRoute({ children }) {
-  const { isAdmin, formId } = useAuth();
+function FormsRoute({ children }) {
+  const { isAdmin, formId, propertyStoreMode } = useAuth();
+
+  if (propertyStoreMode === "user") {
+    return children;
+  }
 
   if (!isAdmin) {
     // 一般ユーザーは指定フォームの検索画面へリダイレクト
@@ -25,6 +29,27 @@ function AdminRoute({ children }) {
       return <Navigate to={`/search?form=${formId}`} replace />;
     }
     // formIdもない場合はアクセス拒否状態としてトップへ戻す
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+}
+
+/**
+ * 管理者設定ルートのラッパー
+ * 管理者設定が有効かつ管理者の場合のみ許可
+ */
+function AdminSettingsRoute({ children }) {
+  const { isAdmin, formId, adminSettingsEnabled } = useAuth();
+
+  if (!adminSettingsEnabled) {
+    return <Navigate to="/" replace />;
+  }
+
+  if (!isAdmin) {
+    if (formId) {
+      return <Navigate to={`/search?form=${formId}`} replace />;
+    }
     return <Navigate to="/" replace />;
   }
 
@@ -115,25 +140,25 @@ function AppRoutes() {
       <Route
         path="/forms"
         element={
-          <AdminRoute>
+          <FormsRoute>
             <AdminDashboardPage />
-          </AdminRoute>
+          </FormsRoute>
         }
       />
       <Route
         path="/forms/new"
         element={
-          <AdminRoute>
+          <FormsRoute>
             <AdminFormEditorPage />
-          </AdminRoute>
+          </FormsRoute>
         }
       />
       <Route
         path="/forms/:formId/edit"
         element={
-          <AdminRoute>
+          <FormsRoute>
             <AdminFormEditorPage />
-          </AdminRoute>
+          </FormsRoute>
         }
       />
       <Route
@@ -143,9 +168,9 @@ function AppRoutes() {
       <Route
         path="/admin-settings"
         element={(
-          <AdminRoute>
+          <AdminSettingsRoute>
             <AdminSettingsPage />
-          </AdminRoute>
+          </AdminSettingsRoute>
         )}
       />
       <Route path="/not-found" element={<NotFoundPage />} />
