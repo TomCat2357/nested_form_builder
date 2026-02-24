@@ -93,8 +93,20 @@ function GetAdminEmail_() {
  */
 function SetAdminEmail_(newEmail) {
   EnsureAdminSettingsEnabled_();
+  var emails = ParseAdminEmails_(newEmail);
+  // メールリストが空でない場合は、現在のユーザーが含まれているか確認する
+  // （誤って誰も管理者画面に入れなくなることを防ぐ）
+  if (emails.length > 0) {
+    var currentUserEmail = NormalizeEmail_(Session.getActiveUser().getEmail() || "");
+    if (!currentUserEmail || emails.indexOf(currentUserEmail) === -1) {
+      throw new Error(
+        "現在のアカウント（" + (currentUserEmail || "不明") + "）が管理者リストに含まれていないため保存できません。" +
+        "自分自身をロックアウトしないよう、現在のメールアドレスをリストに含めてください。"
+      );
+    }
+  }
   var props = GetAdminProps_();
-  var normalized = ParseAdminEmails_(newEmail).join(";");
+  var normalized = emails.join(";");
   props.setProperty(NFB_ADMIN_EMAIL, normalized);
   return { ok: true, adminEmail: normalized };
 }
