@@ -1368,11 +1368,6 @@ function Forms_importFromDrive_(url) {
         throw new Error("このファイルは既にプロパティサービスに登録されています");
       }
 
-      // .jsonファイルかチェック
-      if (!fileName.toLowerCase().endsWith(".json")) {
-        throw new Error("JSONファイルではありません: " + fileName);
-      }
-
       var content = file.getBlob().getDataAsString();
       var formData = JSON.parse(content);
       var normalizedFormData = Forms_normalizeImportedFormData_(formData);
@@ -1398,8 +1393,11 @@ function Forms_importFromDrive_(url) {
         var fileId = file.getId();
         var fileUrlInFolder = file.getUrl();
 
-        // .jsonファイルのみ処理
-        if (!fileName.toLowerCase().endsWith(".json")) {
+        // 拡張子またはMIMEタイプでJSONと判断できるファイルのみ処理
+        var fileMimeType = file.getMimeType();
+        var isJsonByExt = fileName.toLowerCase().endsWith(".json");
+        var isJsonByMime = fileMimeType === "application/json" || fileMimeType === "text/plain";
+        if (!isJsonByExt && !isJsonByMime) {
           continue;
         }
 

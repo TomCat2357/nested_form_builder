@@ -732,7 +732,7 @@ function Sheets_exportResultMatrixToNewSpreadsheet_(spreadsheetTitle, headerRows
   var dataRowCount = normalizedRows.length;
   var primary = (themeColors && themeColors.primary) || "#2f6fed";
   var primarySoft = (themeColors && themeColors.primarySoft) || "#dbeafe";
-  var textColor = (themeColors && themeColors.text) || "#0f172a";
+  var textColor = "#1a1a2e";
   var borderColor = (themeColors && themeColors.border) || "#e6e8f0";
   var surface = (themeColors && themeColors.surface) || "#ffffff";
 
@@ -807,7 +807,7 @@ function Sheets_appendRowsToSpreadsheet_(spreadsheetId, rows, themeColors, heade
 
   var offset = typeof rowOffset === "number" ? rowOffset : 0;
   var primarySoft = (themeColors && themeColors.primarySoft) || "#dbeafe";
-  var textColor = (themeColors && themeColors.text) || "#0f172a";
+  var textColor = "#1a1a2e";
   var borderColor = (themeColors && themeColors.border) || "#e6e8f0";
   var surface = (themeColors && themeColors.surface) || "#ffffff";
 

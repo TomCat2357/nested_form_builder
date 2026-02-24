@@ -1,6 +1,6 @@
 const Nfb_getPropertyStoreMode_ = () => {
   const rawMode = String(NFB_PROPERTY_STORE_MODE || "").trim().toLowerCase();
-  return rawMode === NFB_PROPERTY_STORE_MODE_USER ? NFB_PROPERTY_STORE_MODE_USER : NFB_PROPERTY_STORE_MODE_SCRIPT;
+  return rawMode === NFB_PROPERTY_STORE_MODE_SCRIPT ? NFB_PROPERTY_STORE_MODE_SCRIPT : NFB_PROPERTY_STORE_MODE_USER;
 };
 
 const Nfb_getActiveProperties_ = () => Nfb_getPropertyStoreMode_() === NFB_PROPERTY_STORE_MODE_USER ? PropertiesService.getUserProperties() : PropertiesService.getScriptProperties();
