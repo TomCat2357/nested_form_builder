@@ -34,9 +34,10 @@ function doGet(e) {
 
 function ResolveActiveUserDisplayName_() {
   try {
-    const raw = Session.getActiveUser().getEmail() || "";
-    const match = raw.match(/^(.*?)\s*<[^>]+>$/);
-    return match && match[1] ? String(match[1]).trim() : "";
+    const person = People.People.get("people/me", { personFields: "names" });
+    if (!person?.names || !person.names.length) return "";
+    const displayName = person.names[0]?.displayName;
+    return displayName ? String(displayName).trim() : "";
   } catch (err) {
     return "";
   }
