@@ -772,6 +772,24 @@ const expandHeaderRowsToMatrix = (headerRows, columnCount) => {
   return matrix;
 };
 
+const suppressDuplicateHeaderLabels = (matrix) => {
+  if (!Array.isArray(matrix) || matrix.length === 0) return matrix;
+  return matrix.map((row) => {
+    if (!Array.isArray(row)) return row;
+    const result = [...row];
+    let lastRendered = "";
+    for (let i = 0; i < result.length; i += 1) {
+      const val = result[i] === null || result[i] === undefined ? "" : String(result[i]);
+      if (val && lastRendered === val) {
+        result[i] = "";
+      } else if (val) {
+        lastRendered = val;
+      }
+    }
+    return result;
+  });
+};
+
 const collectAllFieldSettings = (schema) => {
   const collected = [];
   const seen = new Set();
@@ -803,7 +821,8 @@ export const buildExportTableData = ({ form, entries }) => {
   const columns = buildExportColumns(form, { includeBaseColumns: true });
   const headerRows = buildHeaderRows(columns);
   const headerMatrix = expandHeaderRowsToMatrix(headerRows, columns.length);
-  const normalizedHeaderRows = headerMatrix.map((row) => padRowToLength(row, columns.length));
+  const deduped = suppressDuplicateHeaderLabels(headerMatrix);
+  const normalizedHeaderRows = deduped.map((row) => padRowToLength(row, columns.length));
   const normalizedRows = (entries || []).map((entry) => {
     const values = computeRowValues(entry, columns);
     const row = columns.map((column) => {
