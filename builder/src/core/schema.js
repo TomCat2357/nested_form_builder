@@ -70,6 +70,12 @@ export const normalizeSchemaIDs = (nodes) => {
       delete base.placeholder;
       delete base.showPlaceholder;
       base.defaultNow = !!base.defaultNow;
+    } else if (base.type === "email") {
+      delete base.options;
+      delete base.pattern;
+      delete base.placeholder;
+      delete base.showPlaceholder;
+      base.defaultNow = !!base.defaultNow;
     } else if (base.type === "message") {
       delete base.options;
       delete base.pattern;

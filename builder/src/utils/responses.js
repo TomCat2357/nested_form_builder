@@ -57,6 +57,7 @@ export const collectDefaultNowResponses = (schema, now = new Date(), options = {
   const dateValue = formatUnixMsDate(now.getTime());
   const timeValue = formatUnixMsTime(now.getTime());
   const userName = typeof options?.userName === "string" ? options.userName : "";
+  const userEmail = typeof options?.userEmail === "string" ? options.userEmail : "";
 
   traverseSchema(schema, (field) => {
     if (["date", "time"].includes(field?.type) && field?.defaultNow && field?.id) {
@@ -64,6 +65,9 @@ export const collectDefaultNowResponses = (schema, now = new Date(), options = {
     }
     if (field?.type === "userName" && field?.defaultNow && field?.id && userName) {
       defaults[field.id] = userName;
+    }
+    if (field?.type === "email" && field?.defaultNow && field?.id && userEmail) {
+      defaults[field.id] = userEmail;
     }
   });
 

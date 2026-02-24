@@ -23,9 +23,18 @@ const FILE_ORDER = [
   'settings.gs',    // 定数・設定
   'properties.gs',  // プロパティサービス管理
   'drive.gs',       // Google Drive操作
-  'forms.gs',       // フォーム管理（Google Drive）
+  'formsParsing.gs',
+  'formsMappingStore.gs',
+  'formsStorage.gs',
+  'formsCrud.gs',
+  'formsImport.gs',
+  'formsPublicApi.gs',
   'model.gs',       // モデル関数
-  'sheets.gs',      // Sheets操作
+  'sheetsDatetime.gs',
+  'sheetsHeaders.gs',
+  'sheetsRowOps.gs',
+  'sheetsRecords.gs',
+  'sheetsExport.gs',
   'Code.gs',        // メインエントリーポイント
 ];
 

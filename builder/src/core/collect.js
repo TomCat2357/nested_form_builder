@@ -18,7 +18,7 @@ export const collectResponses = (fields, responses) => {
       const key = `${base}|${value}`;
       out[key] = "●";
       orderList.push(key);
-    } else if (["text", "textarea", "number", "regex", "date", "time", "url", "userName"].includes(field.type) && value != null && value !== "") {
+    } else if (["text", "textarea", "number", "regex", "date", "time", "url", "userName", "email"].includes(field.type) && value != null && value !== "") {
       out[base] = value;
       orderList.push(base);
     }
@@ -38,7 +38,7 @@ export const collectAllPossiblePaths = (fields) => {
         const optionLabel = option.label || "";
         paths.push(`${base}|${optionLabel}`);
       });
-    } else if (["text", "textarea", "number", "regex", "date", "time", "url", "userName"].includes(field.type)) {
+    } else if (["text", "textarea", "number", "regex", "date", "time", "url", "userName", "email"].includes(field.type)) {
       paths.push(base);
     }
   });

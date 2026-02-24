@@ -12,6 +12,7 @@ const INPUT_TYPES = ["text", "textarea", "number", "url"];
 const DATE_TIME_TYPES = ["date", "time"];
 const MESSAGE_TYPE = "message";
 const USER_NAME_TYPE = "userName";
+const EMAIL_TYPE = "email";
 const DISPLAY_LABEL = "表示";
 
 // ヘルパー関数
@@ -20,6 +21,7 @@ const isInputType = (type) => INPUT_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 const isMessageType = (type) => type === MESSAGE_TYPE;
 const isUserNameType = (type) => type === USER_NAME_TYPE;
+const isEmailType = (type) => type === EMAIL_TYPE;
 const applyDisplayedFlag = (target, displayed) => {
   target.isDisplayed = displayed === true;
   delete target.displayMode;
@@ -89,7 +91,7 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
     delete next.pattern;
     next.defaultNow = !!next.defaultNow;
     saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
-  } else if (newType === USER_NAME_TYPE) {
+  } else if (newType === USER_NAME_TYPE || newType === EMAIL_TYPE) {
     // 入力ユーザー名への変更
     delete next.pattern;
     delete next.placeholder;
@@ -256,6 +258,7 @@ export default function QuestionCard({
   const isInput = isInputType(field.type);
   const isMessage = isMessageType(field.type);
   const isUserName = isUserNameType(field.type);
+  const isEmail = isEmailType(field.type);
   const canAddChild = depth < MAX_DEPTH;
   const regexCheck = isRegex ? buildSafeRegex(field.pattern || "") : { error: null };
   const [selectedOptionIndex, setSelectedOptionIndex] = React.useState(null);
@@ -352,7 +355,8 @@ export default function QuestionCard({
           <option value="select">ドロップダウン</option>
           <option value="date">日付</option>
           <option value="time">時間</option>
-          <option value="userName">入力ユーザー名</option>
+          <option value="userName">名前</option>
+          <option value="email">メールアドレス</option>
           <option value="url">URL</option>
           <option value="message">メッセージ</option>
         </select>
@@ -408,7 +412,19 @@ export default function QuestionCard({
               checked={!!field.defaultNow}
               onChange={(event) => onChange({ ...field, defaultNow: event.target.checked })}
             />
-            作成時に自動入力
+            作成時に入力ユーザーの氏名を自動入力
+          </label>
+        </div>
+      )}
+      {isEmail && (
+        <div className="nf-mt-8">
+          <label className="nf-row nf-gap-6">
+            <input
+              type="checkbox"
+              checked={!!field.defaultNow}
+              onChange={(event) => onChange({ ...field, defaultNow: event.target.checked })}
+            />
+            作成時に入力ユーザーのアドレスを自動入力
           </label>
         </div>
       )}

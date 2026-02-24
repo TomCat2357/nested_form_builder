@@ -1,6 +1,7 @@
 import { traverseSchema } from "./schemaUtils.js";
 
 const regexCache = new Map();
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 
 export const buildSafeRegex = (pattern) => {
   if (!pattern) return { re: null, error: null };
@@ -27,7 +28,7 @@ export const validateByPattern = (field, value, cachedRegex = null) => {
 
 const isEmpty = (field, value) => {
   if (value === undefined || value === null) return true;
-  if (["text", "textarea", "regex", "date", "time", "select", "radio", "url", "userName"].includes(field.type)) {
+  if (["text", "textarea", "regex", "date", "time", "select", "radio", "url", "userName", "email"].includes(field.type)) {
     return value === "";
   }
   if (field.type === "number") {
@@ -92,6 +93,15 @@ export const collectValidationErrors = (fields, responses) => {
           });
         }
       }
+    }
+
+    if (field.type === "email" && value && !EMAIL_REGEX.test(String(value))) {
+      errors.push({
+        fieldId: field.id,
+        path,
+        type: "email_invalid",
+        message: "メールアドレスの形式が正しくありません (例: user@example.com)",
+      });
     }
   }, { responses });
 

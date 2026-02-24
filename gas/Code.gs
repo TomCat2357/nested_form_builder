@@ -211,7 +211,12 @@ function SerializeRecord_(record) {
 }
 
 function SubmitResponses_(ctx) {
-  const sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
+  let sheet;
+  try {
+    sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
+  } catch (err) {
+    return { ok: false, error: Sheets_translateOpenError_(err, ctx.spreadsheetId) };
+  }
   const result = Sheets_upsertRecordById_(sheet, ctx.order, ctx);
   return {
     ok: true,
@@ -225,7 +230,12 @@ function SubmitResponses_(ctx) {
 function DeleteRecord_(ctx) {
   const idErr = RequireRecordId_(ctx);
   if (idErr) return idErr;
-  const sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
+  let sheet;
+  try {
+    sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
+  } catch (err) {
+    return { ok: false, error: Sheets_translateOpenError_(err, ctx.spreadsheetId) };
+  }
   const result = Sheets_deleteRecordById_(sheet, ctx.id);
   if (!result.ok) return result;
   return { ok: true, id: ctx.id, deletedRow: result.row };
@@ -234,14 +244,24 @@ function DeleteRecord_(ctx) {
 function GetRecord_(ctx) {
   const idErr = RequireRecordId_(ctx);
   if (idErr) return idErr;
-  const sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
+  let sheet;
+  try {
+    sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
+  } catch (err) {
+    return { ok: false, error: Sheets_translateOpenError_(err, ctx.spreadsheetId) };
+  }
   const result = Sheets_getRecordById_(sheet, ctx.id, ctx.rowIndexHint);
   if (!result?.ok) return result || { ok: false, error: "Record not found" };
   return { ok: true, record: result.record ? SerializeRecord_(result.record) : null, rowIndex: result.rowIndex };
 }
 
 function ListRecords_(ctx) {
-  const sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
+  let sheet;
+  try {
+    sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
+  } catch (err) {
+    return { ok: false, error: Sheets_translateOpenError_(err, ctx.spreadsheetId) };
+  }
   let temporalTypeMap = null;
   const formId = ctx?.raw?.formId;
   if (formId) {

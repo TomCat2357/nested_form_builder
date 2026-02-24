@@ -98,13 +98,15 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
       </label>
 
-      {(field.type === "text" || field.type === "userName") && (
+      {(field.type === "text" || field.type === "userName" || field.type === "email") && (
         <input
-          type="text"
+          type={field.type === "email" ? "email" : "text"}
           value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
           className={s.input.className}
-          placeholder={field.type === "userName" ? "入力ユーザー名" : (field.placeholder || "入力")}
+          placeholder={field.type === "userName"
+            ? "入力ユーザー名"
+            : (field.type === "email" ? "メールアドレス" : (field.placeholder || "入力"))}
         />
       )}
 
@@ -310,12 +312,13 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   ref,
 ) {
   const { showAlert } = useAlert();
-const initialRecordId = settings.recordId;
+  const initialRecordId = settings.recordId;
   const recordIdRef = useRef(initialRecordId || generateRecordId());
   const currentUserName = typeof settings.userName === "string" ? settings.userName : "";
+  const currentUserEmail = typeof settings.userEmail === "string" ? settings.userEmail : "";
   const defaultNowMap = useMemo(
-    () => collectDefaultNowResponses(schema, new Date(), { userName: currentUserName }),
-    [schema, currentUserName],
+    () => collectDefaultNowResponses(schema, new Date(), { userName: currentUserName, userEmail: currentUserEmail }),
+    [schema, currentUserName, currentUserEmail],
   );
 
   useEffect(() => {

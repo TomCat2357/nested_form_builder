@@ -87,7 +87,7 @@ export default function FormPage() {
         return;
       }
       if (!entryId) {
-        const initialResponses = collectDefaultNowResponses(normalizedSchema, new Date(), { userName });
+        const initialResponses = collectDefaultNowResponses(normalizedSchema, new Date(), { userName, userEmail });
         initialResponsesRef.current = initialResponses;
         setResponses(initialResponses);
         setLoading(false);
@@ -175,7 +175,7 @@ export default function FormPage() {
     return () => {
       mounted = false;
     };
-  }, [formId, entryId, form, normalizedSchema, userName, applyEntryToState]);
+  }, [formId, entryId, form, normalizedSchema, userName, userEmail, applyEntryToState]);
 
   const isDirty = useMemo(() => hasDirtyChanges(initialResponsesRef.current, responses), [responses]);
 
@@ -412,7 +412,7 @@ export default function FormPage() {
           schema={normalizedSchema}
           responses={responses}
           setResponses={setResponses}
-          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: entry?.["No."] || "", userName }}
+          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: entry?.["No."] || "", userName, userEmail }}
           onSave={handleSaveToStore}
           showOutputJson={false}
           showSaveButton={false}

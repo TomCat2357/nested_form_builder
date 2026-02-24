@@ -9,6 +9,7 @@ import {
   updateRecordsMeta,
   deleteRecordFromCache,
 } from "./recordsCache.js";
+import { getFormsFromCache } from "./formsCache.js";
 import {
   evaluateCache,
   RECORD_CACHE_MAX_AGE_MS,
@@ -93,6 +94,16 @@ export const dataStore = {
     };
   },
   async getForm(formId) {
+    try {
+      const { forms = [] } = await getFormsFromCache();
+      const cachedForm = forms.find((form) => form.id === formId);
+      if (cachedForm) {
+        return ensureDisplayInfo(cachedForm);
+      }
+    } catch (error) {
+      console.warn("[dataStore.getForm] Cache lookup failed, falling back to GAS:", error);
+    }
+
     if (!hasScriptRun()) {
       throw new Error("GAS unavailable");
     }
@@ -422,16 +433,15 @@ export const dataStore = {
     return cachedEntry;
   },
   async deleteEntry(formId, entryId) {
+    await deleteRecordFromCache(formId, entryId);
+
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
-
     if (sheetConfig) {
-      await deleteEntryFromGas({ ...sheetConfig, entryId });
-    } else {
-      throw new Error("Spreadsheet not configured for this form");
+      void deleteEntryFromGas({ ...sheetConfig, entryId }).catch((error) => {
+        console.error("[dataStore.deleteEntry] Background GAS delete failed:", error);
+      });
     }
-
-    await deleteRecordFromCache(formId, entryId);
   },
   async importForms(jsonList) {
     if (!hasScriptRun()) {

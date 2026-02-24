@@ -142,7 +142,7 @@ export const listEntries = async ({ spreadsheetId, sheetName = "Data", formId = 
   const result = await callScriptRun("listRecords", payload);
   if (!result || result.ok === false) {
     console.error("[gasClient] Result validation failed - result:", result);
-    throw new Error(result?.error || "List failed");
+    throw new Error(result?.error || "データ一覧の取得に失敗しました");
   }
   return {
     records: result.records || [],
