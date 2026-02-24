@@ -777,13 +777,13 @@ const suppressDuplicateHeaderLabels = (matrix) => {
   return matrix.map((row) => {
     if (!Array.isArray(row)) return row;
     const result = [...row];
-    let lastRendered = "";
     for (let i = 0; i < result.length; i += 1) {
       const val = result[i] === null || result[i] === undefined ? "" : String(result[i]);
-      if (val && lastRendered === val) {
+      const prev = i > 0
+        ? (row[i - 1] === null || row[i - 1] === undefined ? "" : String(row[i - 1]))
+        : "";
+      if (val && prev === val) {
         result[i] = "";
-      } else if (val) {
-        lastRendered = val;
       }
     }
     return result;
