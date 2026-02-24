@@ -5,6 +5,7 @@ import { useAlert } from "../app/hooks/useAlert.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { hasScriptRun, getAdminKey, setAdminKey, getAdminEmail, setAdminEmail, getRestrictToFormOnly, setRestrictToFormOnly } from "../services/gasClient.js";
+import { useAuth } from "../app/state/authContext.jsx";
 
 const normalizeAdminEmailInput = (value) => String(value || "")
   .split(";")
@@ -30,6 +31,7 @@ const { settings } = useBuilderSettings();
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
 
+  const { userEmail } = useAuth();
   const canManageAdminSettings = hasScriptRun();
   const normalizedAdminEmailInput = useMemo(
     () => normalizeAdminEmailInput(adminEmailInput),
@@ -107,6 +109,22 @@ const { settings } = useBuilderSettings();
     { value: "cancel", label: "キャンセル", onSelect: () => setAdminKeyConfirm(false) },
     { value: "save", label: "保存する", variant: "primary", onSelect: handleSaveAdminKey },
   ];
+
+  const handleOpenAdminEmailConfirm = () => {
+    // メールリストが空でない場合、現在のユーザーが含まれているか確認する
+    if (normalizedAdminEmailInput) {
+      const emails = normalizedAdminEmailInput.split(";").map((e) => e.trim().toLowerCase()).filter(Boolean);
+      const currentEmail = (userEmail || "").trim().toLowerCase();
+      if (!currentEmail || !emails.includes(currentEmail)) {
+        showAlert(
+          `現在のアカウント（${currentEmail || "不明"}）が管理者リストに含まれていません。\n` +
+          `自分自身をロックアウトしないよう、現在のメールアドレスをリストに含めてください。`
+        );
+        return;
+      }
+    }
+    setAdminEmailConfirm(true);
+  };
 
   const adminEmailConfirmOptions = [
     { value: "cancel", label: "キャンセル", onSelect: () => setAdminEmailConfirm(false) },
@@ -187,7 +205,7 @@ const { settings } = useBuilderSettings();
             <button
               type="button"
               className="nf-btn nf-nowrap"
-              onClick={() => setAdminEmailConfirm(true)}
+              onClick={handleOpenAdminEmailConfirm}
               disabled={adminEmailLoading || normalizedAdminEmailInput === adminEmail}
             >
               {adminEmailLoading ? "保存中..." : "保存"}
