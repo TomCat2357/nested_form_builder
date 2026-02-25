@@ -6,14 +6,29 @@ import { useAuth } from "../app/state/authContext.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
+import { evaluateCache, FORM_CACHE_MAX_AGE_MS, FORM_CACHE_BACKGROUND_REFRESH_MS } from "../app/state/cachePolicy.js";
 
 export default function MainPage() {
-  const { forms, loadingForms } = useAppData();
+  const { forms, loadingForms, refreshForms, lastSyncedAt } = useAppData();
   const { isAdmin, propertyStoreMode, adminSettingsEnabled } = useAuth();
   const { settings } = useBuilderSettings();
   const navigate = useNavigate();
 
   const activeForms = useMemo(() => forms.filter((form) => !form.archived), [forms]);
+
+  useEffect(() => {
+    const decision = evaluateCache({
+      lastSyncedAt,
+      hasData: forms.length > 0,
+      maxAgeMs: FORM_CACHE_MAX_AGE_MS,
+      backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
+    });
+    if (decision.shouldSync && !loadingForms) {
+      refreshForms({ reason: "main-mount-sync", background: false });
+    } else if (decision.shouldBackground && !loadingForms) {
+      refreshForms({ reason: "main-mount-background", background: true }).catch(console.error);
+    }
+  }, [lastSyncedAt, forms.length, loadingForms, refreshForms]);
 
   
   const handleSelect = (formId) => {

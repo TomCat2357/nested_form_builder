@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useLatestRef } from "../../app/hooks/useLatestRef.js";
 import { useOperationCacheTrigger } from "../../app/hooks/useOperationCacheTrigger.js";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { dataStore } from "../../app/state/dataStore.js";
@@ -41,17 +42,9 @@ export const useEntriesWithCache = ({
   const [useCache, setUseCache] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [cacheDisabled, setCacheDisabled] = useState(false);
-  const lastSyncedAtRef = useRef(lastSyncedAt);
+  const lastSyncedAtRef = useLatestRef(lastSyncedAt);
   const backgroundLoadingRef = useRef(false);
-  const loadingFormsRef = useRef(loadingForms);
-
-  useEffect(() => {
-    lastSyncedAtRef.current = lastSyncedAt;
-  }, [lastSyncedAt]);
-
-  useEffect(() => {
-    loadingFormsRef.current = loadingForms;
-  }, [loadingForms]);
+  const loadingFormsRef = useLatestRef(loadingForms);
 
   const fetchAndCacheData = useCallback(async ({ background = false, forceFullSync = false, reason = "unknown" } = {}) => {
     if (!formId) return;

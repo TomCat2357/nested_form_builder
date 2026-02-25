@@ -1,5 +1,4 @@
 import { genId } from "./ids.js";
-import { resolveIsDisplayed } from "./displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
 import { MAX_DEPTH } from "./constants.js";
 import { mapSchema, traverseSchema } from "./schemaUtils.js";
@@ -89,10 +88,7 @@ export const normalizeSchemaIDs = (nodes) => {
       delete base.defaultNow;
     }
 
-    base.isDisplayed = resolveIsDisplayed(base);
-    delete base.displayMode;
-    delete base.important;
-    delete base.compact;
+    base.isDisplayed = !!base.isDisplayed;
 
     if (base.placeholder !== undefined && base.showPlaceholder === undefined) {
       base.showPlaceholder = true;

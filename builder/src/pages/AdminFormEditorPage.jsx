@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLatestRef } from "../app/hooks/useLatestRef.js";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
@@ -50,21 +51,9 @@ export default function AdminFormEditorPage() {
   const { isReadLocked, withReadLock } = useEditLock();
   const [nameError, setNameError] = useState("");
   const [questionControl, setQuestionControl] = useState(null);
-  const isSavingRef = useRef(isSaving);
-  const isReadLockedRef = useRef(isReadLocked);
-  const loadingFormsRef = useRef(loadingForms);
-
-  useEffect(() => {
-    isSavingRef.current = isSaving;
-  }, [isSaving]);
-
-  useEffect(() => {
-    isReadLockedRef.current = isReadLocked;
-  }, [isReadLocked]);
-
-  useEffect(() => {
-    loadingFormsRef.current = loadingForms;
-  }, [loadingForms]);
+  const isSavingRef = useLatestRef(isSaving);
+  const isReadLockedRef = useLatestRef(isReadLocked);
+  const loadingFormsRef = useLatestRef(loadingForms);
 
   // QuestionControlの更新を監視
   useEffect(() => {

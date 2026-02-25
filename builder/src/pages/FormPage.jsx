@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLatestRef } from "../app/hooks/useLatestRef.js";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
@@ -65,31 +66,11 @@ export default function FormPage() {
   const currentIndex = entryId ? entryIds.indexOf(entryId) : -1;
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex >= 0 && currentIndex < entryIds.length - 1;
-  const loadingRef = useRef(loading);
-  const reloadingRef = useRef(isReloading);
-  const savingRef = useRef(isSaving);
-  const readLockRef = useRef(isReadLocked);
-  const loadingFormsRef = useRef(loadingForms);
-
-  useEffect(() => {
-    loadingRef.current = loading;
-  }, [loading]);
-
-  useEffect(() => {
-    reloadingRef.current = isReloading;
-  }, [isReloading]);
-
-  useEffect(() => {
-    savingRef.current = isSaving;
-  }, [isSaving]);
-
-  useEffect(() => {
-    readLockRef.current = isReadLocked;
-  }, [isReadLocked]);
-
-  useEffect(() => {
-    loadingFormsRef.current = loadingForms;
-  }, [loadingForms]);
+  const loadingRef = useLatestRef(loading);
+  const reloadingRef = useLatestRef(isReloading);
+  const savingRef = useLatestRef(isSaving);
+  const readLockRef = useLatestRef(isReadLocked);
+  const loadingFormsRef = useLatestRef(loadingForms);
 
   useEffect(() => {
     setMode(entryId ? "view" : "edit");

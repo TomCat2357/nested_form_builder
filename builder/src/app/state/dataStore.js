@@ -28,7 +28,6 @@ import {
   unarchiveForm as unarchiveFormInGas,
   archiveForms as archiveFormsInGas,
   unarchiveForms as unarchiveFormsInGas,
-  hasScriptRun,
   debugGetMapping,
   registerImportedForm as registerImportedFormInGas,
 } from "../../services/gasClient.js";
@@ -75,9 +74,6 @@ const mapSheetRecordToEntry = (record, formId) => ({
 
 export const dataStore = {
   async listForms({ includeArchived = false } = {}) {
-    if (!hasScriptRun()) {
-      throw new Error("GAS unavailable");
-    }
 
     const result = await listFormsFromGas({ includeArchived });
     const forms = Array.isArray(result.forms) ? result.forms : [];
@@ -103,10 +99,6 @@ export const dataStore = {
     } catch (error) {
       console.warn("[dataStore.getForm] Cache lookup failed, falling back to GAS:", error);
     }
-
-    if (!hasScriptRun()) {
-      throw new Error("GAS unavailable");
-    }
     const form = await getFormFromGas(formId);
     return form ? ensureDisplayInfo(form) : null;
   },
@@ -116,9 +108,6 @@ export const dataStore = {
     console.log("[dataStore.createForm] Creating form:", { id: record.id, hasPayloadId: !!payload.id, targetUrl });
 
     // Try to save to Google Drive via GAS
-    if (!hasScriptRun()) {
-      throw new Error("GAS unavailable");
-    }
 
     // Debug: 保存前のマッピングを取得
     let beforeMapping = null;
@@ -154,9 +143,6 @@ export const dataStore = {
   },
   async registerImportedForm(payload) {
     // payload: { form, fileId, fileUrl }
-    if (!hasScriptRun()) {
-      throw new Error("GAS unavailable");
-    }
     const result = await registerImportedFormInGas(payload);
     const form = result?.form;
     const fileUrl = result?.fileUrl || payload.fileUrl;
@@ -195,10 +181,6 @@ export const dataStore = {
       schemaVersion: updates.schemaVersion ?? current.schemaVersion,
       driveFileUrl: current.driveFileUrl, // 既存のURLを保持
     });
-
-    if (!hasScriptRun()) {
-      throw new Error("GAS unavailable");
-    }
     const result = await saveFormToGas(next, targetUrl, saveMode);
     const savedForm = result?.form || result;
     const fileUrl = result?.fileUrl;
@@ -208,9 +190,6 @@ export const dataStore = {
     return formWithUrl ? ensureDisplayInfo(formWithUrl) : next;
   },
   async setFormArchivedState(formId, archived) {
-    if (!hasScriptRun()) {
-      throw new Error("GAS unavailable");
-    }
     const savedForm = archived ? await archiveFormInGas(formId) : await unarchiveFormInGas(formId);
     return savedForm ? ensureDisplayInfo(savedForm) : null;
   },
@@ -223,10 +202,6 @@ export const dataStore = {
   async _batchArchiveAction(formIds, gasFn) {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
     if (!targetIds.length) return { forms: [], updated: 0 };
-
-    if (!hasScriptRun()) {
-      throw new Error("GAS unavailable");
-    }
 
     const result = await gasFn(targetIds);
     return {
@@ -244,10 +219,6 @@ export const dataStore = {
   async deleteForms(formIds) {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
     if (!targetIds.length) return;
-
-    if (!hasScriptRun()) {
-      throw new Error("GAS unavailable");
-    }
 
     await deleteFormsFromGas(targetIds);
   },
@@ -448,9 +419,6 @@ export const dataStore = {
     }
   },
   async importForms(jsonList) {
-    if (!hasScriptRun()) {
-      throw new Error("GAS unavailable");
-    }
     const created = [];
     for (const item of jsonList) {
       if (!item) continue;
