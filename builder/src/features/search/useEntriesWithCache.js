@@ -68,14 +68,7 @@ export const useEntriesWithCache = ({
       setHeaderMatrix(result.headerMatrix || []);
       const syncedAt = result.lastSyncedAt || Date.now();
       setLastSyncedAt(syncedAt);
-
-      try {
-        await saveRecordsToCache(formId, fetchedEntries, result.headerMatrix || [], { schemaHash: form?.schemaHash });
-        setCacheDisabled(false);
-      } catch (cacheErr) {
-        console.warn("[SearchPage] Failed to save records cache:", cacheErr);
-        setCacheDisabled(true);
-      }
+      setCacheDisabled(false);
       setUseCache(false);
     } catch (error) {
       console.error("[SearchPage] Failed to fetch and cache data:", error);

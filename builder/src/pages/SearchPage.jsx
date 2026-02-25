@@ -15,7 +15,7 @@ import {
   matchesKeyword,
   parseSearchCellDisplayLimit,
 } from "../features/search/searchTable.js";
-import { exportSearchResults } from "../services/gasClient.js";
+// exportSearchResults from gasClient is removed in favor of frontend Excel generation
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import SearchSidebar from "../features/search/components/SearchSidebar.jsx";
@@ -234,36 +234,74 @@ export default function SearchPage() {
     if (sortedEntries.length === 0) return;
     setExporting(true);
     try {
+      let ExcelJS;
+      try {
+        ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
+      } catch (importErr) {
+        throw new Error("Excel出力機能が利用できません。管理者に「npm install exceljs」の実行を依頼してください。");
+      }
+
       const exportingEntries = sortedEntries.map((row) => row.entry);
       const exportTable = buildExportTableData({ form, entries: exportingEntries });
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Data");
+      const themeColors = getThemeColors();
+
+      const primaryColor = (themeColors.primary || "#2f6fed").replace("#", "");
+      const primarySoftColor = (themeColors.primarySoft || "#dbeafe").replace("#", "");
+      const surfaceColor = (themeColors.surface || "#ffffff").replace("#", "");
+      const borderColor = (themeColors.border || "#e6e8f0").replace("#", "");
+
+      // ヘッダー追加とスタイリング
+      exportTable.headerRows.forEach((rowArray) => {
+        const row = worksheet.addRow(rowArray);
+        row.eachCell((cell) => {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + primaryColor } };
+          cell.font = { color: { argb: "FFFFFFFF" }, bold: true };
+          cell.border = {
+            top: { style: "medium", color: { argb: "FF" + primaryColor } },
+            left: { style: "medium", color: { argb: "FF" + primaryColor } },
+            bottom: { style: "medium", color: { argb: "FF" + primaryColor } },
+            right: { style: "medium", color: { argb: "FF" + primaryColor } }
+          };
+        });
+      });
+
+      // データ追加とスタイリング
+      exportTable.rows.forEach((rowArray, index) => {
+        const row = worksheet.addRow(rowArray);
+        const bgColor = index % 2 === 0 ? surfaceColor : primarySoftColor;
+        row.eachCell((cell) => {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + bgColor } };
+          cell.font = { color: { argb: "FF1A1A2E" } };
+          cell.border = {
+            top: { style: "thin", color: { argb: "FF" + borderColor } },
+            left: { style: "thin", color: { argb: "FF" + borderColor } },
+            bottom: { style: "thin", color: { argb: "FF" + borderColor } },
+            right: { style: "thin", color: { argb: "FF" + borderColor } }
+          };
+        });
+      });
+
+      // 列幅の調整とヘッダーの固定
+      worksheet.columns = exportTable.columns.map(() => ({ width: 20 }));
+      worksheet.views = [{ state: 'frozen', ySplit: exportTable.headerRows.length }];
+
+      const buffer = await workbook.xlsx.writeBuffer();
+      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+
       const now = new Date();
       const pad = (n) => String(n).padStart(2, "0");
       const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-      const spreadsheetTitle = `検索結果_${form?.settings?.formTitle || form?.id || "form"}_${timestamp}`;
-      const themeColors = getThemeColors();
-      const result = await exportSearchResults({
-        spreadsheetTitle,
-        headerRows: exportTable.headerRows,
-        rows: exportTable.rows,
-        themeColors,
-      });
-      if (result?.spreadsheetUrl) {
-        showAlert(
-          React.createElement("span", null,
-            `出力完了: ${result.exportedCount} 件を書き出しました。`,
-            React.createElement("br"),
-            React.createElement("a", {
-              href: result.spreadsheetUrl,
-              target: "_blank",
-              rel: "noopener noreferrer",
-              style: { color: "var(--accent-color, #1a73e8)", textDecoration: "underline" },
-            }, "スプレッドシートを開く"),
-          ),
-        );
-      } else {
-        showAlert(`出力完了: ${result.exportedCount} 件を書き出しました。`);
-      }
+      const filename = `検索結果_${form?.settings?.formTitle || form?.id || "form"}_${timestamp}.xlsx`;
+
+      const { saveAs } = await import("file-saver");
+      saveAs(blob, filename);
+
+      showAlert(`出力完了: ${exportTable.rows.length} 件をExcelファイルとしてダウンロードしました。`);
     } catch (err) {
+      console.error(err);
       showAlert(`出力に失敗しました: ${err.message}`);
     } finally {
       setExporting(false);
@@ -307,7 +345,7 @@ export default function SearchPage() {
           onRefresh={forceRefreshAll}
           onExport={handleExportResults}
           useCache={useCache}
-          loading={loading}
+          loading={loading || backgroundLoading}
           exporting={exporting}
           selectedCount={selectedEntries.size}
           filteredCount={sortedEntries.length}
@@ -320,6 +358,7 @@ export default function SearchPage() {
         lastSyncedAt={lastSyncedAt}
         useCache={useCache}
         cacheDisabled={cacheDisabled}
+        backgroundLoading={backgroundLoading}
       />
 
       {loading ? (

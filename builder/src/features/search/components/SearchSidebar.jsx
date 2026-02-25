@@ -33,12 +33,12 @@ export default function SearchSidebar({
       </button>
       <button
         type="button"
-        className={`search-input search-sidebar-btn${useCache ? " search-sidebar-btn-warning" : ""}`}
+        className={`search-input search-sidebar-btn${useCache && !loading ? " search-sidebar-btn-warning" : ""}`}
         onClick={onRefresh}
         disabled={loading}
         title={useCache ? "キャッシュから表示中 - クリックで最新データを取得" : "最新データを取得"}
       >
-        {"🔄 更新"}
+        {loading ? "🔄 更新中..." : "🔄 更新"}
       </button>
       <button
         type="button"

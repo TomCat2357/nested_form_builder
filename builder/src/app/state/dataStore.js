@@ -289,7 +289,6 @@ export const dataStore = {
     entries.forEach((item, idx) => { entryIndexMap[item.id] = idx; });
 
     await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], { schemaHash: form.schemaHash });
-    await updateRecordsMeta(formId, { entryIndexMap, lastReloadedAt: lastSyncedAtNext });
     
     const durationMs = Date.now() - startedAt;
     perfLogger.logVerbose("records", "listEntries full done", { formId, durationMs });
