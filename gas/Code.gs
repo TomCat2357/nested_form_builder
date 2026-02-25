@@ -210,89 +210,83 @@ function SerializeRecord_(record) {
   };
 }
 
-function SubmitResponses_(ctx) {
+
+function ExecuteWithSheet_(ctx, actionFn) {
   let sheet;
   try {
     sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
   } catch (err) {
     return { ok: false, error: Sheets_translateOpenError_(err, ctx.spreadsheetId) };
   }
-  const result = Sheets_upsertRecordById_(sheet, ctx.order, ctx);
-  return {
-    ok: true,
-    spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${ctx.spreadsheetId}`,
-    sheetName: ctx.sheetName,
-    rowNumber: result.row,
-    id: result.id,
-    recordNo: result.recordNo,
-    recordNo: result.recordNo,
-  };
+  return actionFn(sheet);
+}
+
+function SubmitResponses_(ctx) {
+  return ExecuteWithSheet_(ctx, (sheet) => {
+    const result = Sheets_upsertRecordById_(sheet, ctx.order, ctx);
+    return {
+      ok: true,
+      spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${ctx.spreadsheetId}`,
+      sheetName: ctx.sheetName,
+      rowNumber: result.row,
+      id: result.id,
+      recordNo: result.recordNo,
+    };
+  });
 }
 
 function DeleteRecord_(ctx) {
   const idErr = RequireRecordId_(ctx);
   if (idErr) return idErr;
-  let sheet;
-  try {
-    sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
-  } catch (err) {
-    return { ok: false, error: Sheets_translateOpenError_(err, ctx.spreadsheetId) };
-  }
-  const result = Sheets_deleteRecordById_(sheet, ctx.id);
-  if (!result.ok) return result;
-  return { ok: true, id: ctx.id, deletedRow: result.row };
+  return ExecuteWithSheet_(ctx, (sheet) => {
+    const result = Sheets_deleteRecordById_(sheet, ctx.id);
+    if (!result.ok) return result;
+    return { ok: true, id: ctx.id, deletedRow: result.row };
+  });
 }
 
 function GetRecord_(ctx) {
   const idErr = RequireRecordId_(ctx);
   if (idErr) return idErr;
-  let sheet;
-  try {
-    sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
-  } catch (err) {
-    return { ok: false, error: Sheets_translateOpenError_(err, ctx.spreadsheetId) };
-  }
-  const result = Sheets_getRecordById_(sheet, ctx.id, ctx.rowIndexHint);
-  if (!result?.ok) return result || { ok: false, error: "Record not found" };
-  return { ok: true, record: result.record ? SerializeRecord_(result.record) : null, rowIndex: result.rowIndex };
+  return ExecuteWithSheet_(ctx, (sheet) => {
+    const result = Sheets_getRecordById_(sheet, ctx.id, ctx.rowIndexHint);
+    if (!result?.ok) return result || { ok: false, error: "Record not found" };
+    return { ok: true, record: result.record ? SerializeRecord_(result.record) : null, rowIndex: result.rowIndex };
+  });
 }
 
 function ListRecords_(ctx) {
-  let sheet;
-  try {
-    sheet = Sheets_getOrCreateSheet_(ctx.spreadsheetId, ctx.sheetName);
-  } catch (err) {
-    return { ok: false, error: Sheets_translateOpenError_(err, ctx.spreadsheetId) };
-  }
-  let temporalTypeMap = null;
-  const formId = ctx?.raw?.formId;
-  if (formId) {
-    try {
-      const form = Forms_getForm_(formId);
-      if (form?.schema) temporalTypeMap = Sheets_collectTemporalPathMap_(form.schema);
-    } catch (err) {
-      Logger.log(`[ListRecords_] Failed to load form schema for temporal formats: ${err}`);
+  return ExecuteWithSheet_(ctx, (sheet) => {
+    let temporalTypeMap = null;
+    const formId = ctx?.raw?.formId;
+    if (formId) {
+      try {
+        const form = Forms_getForm_(formId);
+        if (form?.schema) temporalTypeMap = Sheets_collectTemporalPathMap_(form.schema);
+      } catch (err) {
+        Logger.log(`[ListRecords_] Failed to load form schema for temporal formats: ${err}`);
+      }
     }
-  }
-  const allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap);
-  const headerMatrix = Sheets_readHeaderMatrix_(sheet);
+    const allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap);
+    const headerMatrix = Sheets_readHeaderMatrix_(sheet);
 
-  if (ctx.forceFullSync || !ctx.lastSyncedAt) {
-    return { ok: true, records: allRecords, count: allRecords.length, headerMatrix, isDelta: false };
-  }
-
-  const updatedRecords = [];
-  const allIds = [];
-
-  for (let i = 0; i < allRecords.length; i++) {
-    const rec = allRecords[i];
-    allIds.push(rec.id);
-    if (rec.modifiedAtUnixMs > ctx.lastSyncedAt) {
-      updatedRecords.push(rec);
+    if (ctx.forceFullSync || !ctx.lastSyncedAt) {
+      return { ok: true, records: allRecords, count: allRecords.length, headerMatrix, isDelta: false };
     }
-  }
 
-  return { ok: true, records: updatedRecords, allIds, count: updatedRecords.length, headerMatrix, isDelta: true };
+    const updatedRecords = [];
+    const allIds = [];
+
+    for (let i = 0; i < allRecords.length; i++) {
+      const rec = allRecords[i];
+      allIds.push(rec.id);
+      if (rec.modifiedAtUnixMs > ctx.lastSyncedAt) {
+        updatedRecords.push(rec);
+      }
+    }
+
+    return { ok: true, records: updatedRecords, allIds, count: updatedRecords.length, headerMatrix, isDelta: true };
+  });
 }
 
 function handleCors_(e, handler) {

@@ -27,18 +27,13 @@ function Forms_parseGoogleDriveUrl_(url) {
   // open?id= 形式: https://drive.google.com/open?id={id}
   var openMatch = trimmed.match(/[?&]id=([a-zA-Z0-9_-]+)/);
   if (openMatch) {
-    // ファイルかフォルダか判定が必要
-    try {
-      var item = DriveApp.getFileById(openMatch[1]);
-      return { type: "file", id: openMatch[1] };
-    } catch (e) {
-      try {
-        var folder = DriveApp.getFolderById(openMatch[1]);
-        return { type: "folder", id: openMatch[1] };
-      } catch (e2) {
-        return { type: null, id: null };
-      }
-    }
+    return Forms_resolveFileOrFolder_(openMatch[1]);
+  }
+
+  // IDのみが渡された場合も試す
+  if (/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
+    return Forms_resolveFileOrFolder_(trimmed);
+  }
   }
 
   // IDのみが渡された場合も試す
@@ -209,3 +204,17 @@ function Forms_computeContentHash_(form) {
   return hexHash.substring(0, 16);
 }
 
+
+function Forms_resolveFileOrFolder_(id) {
+  try {
+    var testFile = DriveApp.getFileById(id);
+    return { type: "file", id: id };
+  } catch (e) {
+    try {
+      var testFolder = DriveApp.getFolderById(id);
+      return { type: "folder", id: id };
+    } catch (e2) {
+      return { type: null, id: null };
+    }
+  }
+}

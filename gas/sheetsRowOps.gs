@@ -151,14 +151,17 @@ function Sheets_upsertRecordById_(sheet, order, ctx) {
   });
 
   var rowIndex = Sheets_findRowById_(sheet, ctx.id);
+  var recordNo;
 
   if (rowIndex === -1) {
     var newRow = Sheets_createNewRow_(sheet, ctx.id);
     rowIndex = newRow.rowIndex;
     ctx.id = newRow.id;
+    recordNo = newRow.recordNo;
   } else {
     Sheets_updateExistingRow_(sheet, rowIndex);
     Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys);
+    recordNo = sheet.getRange(rowIndex, 2).getValue();
   }
 
   Sheets_writeDataToRow_(sheet, rowIndex, ctx.order, ctx.responses, keyToColumn, reservedHeaderKeys);
