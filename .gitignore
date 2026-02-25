@@ -9,6 +9,7 @@ node_modules/
 .codegraph/
 Index.html
 *.diff
+digest_*.txt
 #.rej
 
 # ログ
