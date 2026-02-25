@@ -58,49 +58,44 @@ function doPost(e) {
     const action = ctx.raw?.action || "save";
     const adminSettingsEnabled = Nfb_isAdminSettingsEnabled_();
 
-    const adminKeyParam = ctx.raw?.authKey ? String(ctx.raw.authKey) : "";
-    const userEmail = Session.getActiveUser().getEmail() || "";
-    const isAdmin = adminSettingsEnabled ? IsAdmin_(adminKeyParam, userEmail) : false;
+    const ROUTES = {
+      "admin_key_get":   { handler: () => ({ ok: true, adminKey: GetAdminKey_() }), adminOnly: true },
+      "admin_key_set":   { handler: (c) => SetAdminKey_(c.raw?.adminKey ?? ""), adminOnly: true },
+      "admin_email_get": { handler: () => ({ ok: true, adminEmail: GetAdminEmail_() }), adminOnly: true },
+      "admin_email_set": { handler: (c) => SetAdminEmail_(c.raw?.adminEmail ?? ""), adminOnly: true },
+      "forms_list":      { handler: FormsApi_List_, adminOnly: true },
+      "forms_get":       { handler: FormsApi_Get_, adminOnly: true },
+      "forms_create":    { handler: FormsApi_Create_, adminOnly: true },
+      "forms_import":    { handler: FormsApi_Import_, adminOnly: true },
+      "forms_update":    { handler: FormsApi_Update_, adminOnly: true },
+      "forms_delete":    { handler: FormsApi_Delete_, adminOnly: true },
+      "forms_archive":   { handler: FormsApi_SetArchived_, adminOnly: true },
+      "delete":          { handler: DeleteRecord_, requireSheet: true },
+      "list":            { handler: ListRecords_, requireSheet: true },
+      "get":             { handler: GetRecord_, requireSheet: true },
+      "save":            { handler: SubmitResponses_, requireSheet: true }
+    };
 
-    const formAdminOnlyActions = ["forms_create", "forms_update", "forms_delete", "forms_import", "forms_archive"];
-    const adminSettingsActions = ["admin_key_get", "admin_key_set", "admin_email_get", "admin_email_set"];
+    const route = ROUTES[action];
+    if (!route) return JsonBadRequest_("Unknown action");
 
-    try {
-      if (!adminSettingsEnabled && adminSettingsActions.includes(action)) {
+    if (route.adminOnly) {
+      if (!adminSettingsEnabled && action.startsWith("admin_")) {
         return JsonForbidden_("管理者設定は現在のプロパティ保存モードでは利用できません");
       }
-
-      if (adminSettingsEnabled && (formAdminOnlyActions.includes(action) || adminSettingsActions.includes(action)) && !isAdmin) {
-        return JsonForbidden_("管理者権限が必要です");
+      if (adminSettingsEnabled) {
+        const isAdmin = IsAdmin_(ctx.raw?.authKey || "", Session.getActiveUser().getEmail() || "");
+        if (!isAdmin) return JsonForbidden_("管理者権限が必要です");
       }
+    }
 
-      let payload;
-      switch (action) {
-        case "admin_key_get": payload = { ok: true, adminKey: GetAdminKey_() }; break;
-        case "admin_key_set": payload = SetAdminKey_(ctx.raw?.adminKey ?? ""); break;
-        case "admin_email_get": payload = { ok: true, adminEmail: GetAdminEmail_() }; break;
-        case "admin_email_set": payload = SetAdminEmail_(ctx.raw?.adminEmail ?? ""); break;
-        case "forms_list": payload = FormsApi_List_(ctx); break;
-        case "forms_get": payload = FormsApi_Get_(ctx); break;
-        case "forms_create": payload = FormsApi_Create_(ctx); break;
-        case "forms_import": payload = FormsApi_Import_(ctx); break;
-        case "forms_update": payload = FormsApi_Update_(ctx); break;
-        case "forms_delete": payload = FormsApi_Delete_(ctx); break;
-        case "forms_archive": payload = FormsApi_SetArchived_(ctx); break;
-        case "delete":
-          if (RequireSpreadsheetId_(ctx)) return JsonBadRequest_(RequireSpreadsheetId_(ctx).error);
-          payload = DeleteRecord_(ctx); break;
-        case "list":
-          if (RequireSpreadsheetId_(ctx)) return JsonBadRequest_(RequireSpreadsheetId_(ctx).error);
-          payload = ListRecords_(ctx); break;
-        case "get":
-          if (RequireSpreadsheetId_(ctx)) return JsonBadRequest_(RequireSpreadsheetId_(ctx).error);
-          payload = GetRecord_(ctx); break;
-        default:
-          if (RequireSpreadsheetId_(ctx)) return JsonBadRequest_(RequireSpreadsheetId_(ctx).error);
-          payload = SubmitResponses_(ctx); break;
-      }
-      return JsonOutput_(payload, 200);
+    if (route.requireSheet) {
+      const ssErr = RequireSpreadsheetId_(ctx);
+      if (ssErr) return JsonBadRequest_(ssErr.error);
+    }
+
+    try {
+      return JsonOutput_(route.handler(ctx), 200);
     } catch (err) {
       return JsonInternalError_(err);
     }

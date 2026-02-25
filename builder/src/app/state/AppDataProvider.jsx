@@ -202,52 +202,48 @@ export function AppDataProvider({ children }) {
     })();
   }, []);
 
-  const upsertFormsState = useCallback(async (nextForm) => {
-    if (!nextForm || !nextForm.id) return;
+  // Helper to DRY up form state updates and cache saving
+  const updateFormsAndCache = useCallback(async (updaterFn, nextFailures, logPrefix) => {
     let updatedForms;
     setForms((prev) => {
-      const next = prev.slice();
-      const index = next.findIndex((form) => form.id === nextForm.id);
-      if (index === -1) {
-        next.unshift(nextForm);
-      } else {
-        next[index] = nextForm;
-      }
-      updatedForms = next;
-      return next;
+      updatedForms = updaterFn([...prev]);
+      formsRef.current = updatedForms;
+      return updatedForms;
     });
-
-    // キャッシュ更新の完了を待つ
-    await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, propertyStoreModeRef.current, "upsertFormsState");
+    setLoadFailures(nextFailures);
+    loadFailuresRef.current = nextFailures;
+    await saveCacheWithErrorHandling(updatedForms, nextFailures, setCacheDisabled, propertyStoreModeRef.current, logPrefix);
   }, []);
+
+  const upsertFormsState = useCallback(async (nextForm) => {
+    if (!nextForm || !nextForm.id) return;
+    await updateFormsAndCache((next) => {
+      const index = next.findIndex((form) => form.id === nextForm.id);
+      if (index === -1) next.unshift(nextForm);
+      else next[index] = nextForm;
+      return next;
+    }, loadFailuresRef.current, "upsertFormsState");
+  }, [updateFormsAndCache]);
 
   const removeFormsState = useCallback(async (formIds) => {
     if (!Array.isArray(formIds) || formIds.length === 0) return;
     const targetIdSet = new Set(formIds.filter(Boolean));
     if (!targetIdSet.size) return;
 
-    const nextForms = formsRef.current.filter((form) => !targetIdSet.has(form.id));
-    const nextLoadFailures = loadFailuresRef.current.filter((failure) => !targetIdSet.has(failure.id));
-
-    setForms(nextForms);
-    setLoadFailures(nextLoadFailures);
-
-    formsRef.current = nextForms;
-    loadFailuresRef.current = nextLoadFailures;
-
-    // キャッシュ更新の完了を待つ
-    await saveCacheWithErrorHandling(nextForms, nextLoadFailures, setCacheDisabled, propertyStoreModeRef.current, "removeFormsState");
-  }, []);
+    await updateFormsAndCache(
+      (next) => next.filter((form) => !targetIdSet.has(form.id)),
+      loadFailuresRef.current.filter((failure) => !targetIdSet.has(failure.id)),
+      "removeFormsState"
+    );
+  }, [updateFormsAndCache]);
 
   const createForm = useCallback(async (payload, targetUrl, saveMode = "auto") => {
     const optimisticForm = normalizeFormRecord(payload, { preserveUnknownFields: true });
     await upsertFormsState(optimisticForm);
 
     void dataStore.createForm({ ...payload, id: optimisticForm.id, createdAt: optimisticForm.createdAt }, targetUrl, saveMode)
-      .then((savedForm) => upsertFormsState(savedForm))
-      .catch((err) => {
-        console.error("[AppDataProvider] Background createForm failed:", err);
-      });
+      .then(upsertFormsState)
+      .catch((err) => console.error("[AppDataProvider] createForm failed:", err));
 
     return optimisticForm;
   }, [upsertFormsState]);
@@ -260,63 +256,29 @@ export function AppDataProvider({ children }) {
       id: formId,
       createdAt: existing.createdAt,
       createdAtUnixMs: existing.createdAtUnixMs,
-    }, {
-      fallbackId: formId,
-      fallbackCreatedAt: existing.createdAt || existing.createdAtUnixMs,
-      preserveUnknownFields: true,
-    });
+    }, { fallbackId: formId, fallbackCreatedAt: existing.createdAt || existing.createdAtUnixMs, preserveUnknownFields: true });
 
     await upsertFormsState(optimisticForm);
 
     void dataStore.updateForm(formId, updates, targetUrl, saveMode)
-      .then((savedForm) => upsertFormsState(savedForm))
-      .catch((err) => {
-        console.error("[AppDataProvider] Background updateForm failed:", err);
-      });
+      .then(upsertFormsState)
+      .catch((err) => console.error("[AppDataProvider] updateForm failed:", err));
 
     return optimisticForm;
   }, [upsertFormsState]);
 
   const archiveForm = useCallback(async (formId) => {
-    const existing = formsRef.current.find((form) => form.id === formId) || null;
-    const optimisticForm = existing ? { ...existing, archived: true } : null;
-
-    if (optimisticForm) {
-      await upsertFormsState(optimisticForm);
-    }
-
-    void dataStore.archiveForm(formId)
-      .then((result) => {
-        if (result) {
-          upsertFormsState(result);
-        }
-      })
-      .catch((err) => {
-        console.error("[AppDataProvider] Background archiveForm failed:", err);
-      });
-
-    return optimisticForm;
+    const existing = formsRef.current.find((form) => form.id === formId);
+    if (existing) await upsertFormsState({ ...existing, archived: true });
+    void dataStore.archiveForm(formId).then((res) => { if (res) upsertFormsState(res); });
+    return existing ? { ...existing, archived: true } : null;
   }, [upsertFormsState]);
 
   const unarchiveForm = useCallback(async (formId) => {
-    const existing = formsRef.current.find((form) => form.id === formId) || null;
-    const optimisticForm = existing ? { ...existing, archived: false } : null;
-
-    if (optimisticForm) {
-      await upsertFormsState(optimisticForm);
-    }
-
-    void dataStore.unarchiveForm(formId)
-      .then((result) => {
-        if (result) {
-          upsertFormsState(result);
-        }
-      })
-      .catch((err) => {
-        console.error("[AppDataProvider] Background unarchiveForm failed:", err);
-      });
-
-    return optimisticForm;
+    const existing = formsRef.current.find((form) => form.id === formId);
+    if (existing) await upsertFormsState({ ...existing, archived: false });
+    void dataStore.unarchiveForm(formId).then((res) => { if (res) upsertFormsState(res); });
+    return existing ? { ...existing, archived: false } : null;
   }, [upsertFormsState]);
 
   const batchUpdateFormsState = useCallback(async (dataStoreFn, formIds, archived, logPrefix) => {
@@ -324,54 +286,32 @@ export function AppDataProvider({ children }) {
     if (!targetIds.length) return { forms: [], updated: 0, errors: [] };
 
     const targetIdSet = new Set(targetIds);
-    const optimisticForms = formsRef.current
-      .filter((form) => targetIdSet.has(form.id))
-      .map((form) => ({ ...form, archived }));
+    const optimisticForms = formsRef.current.filter((form) => targetIdSet.has(form.id)).map((form) => ({ ...form, archived }));
 
     if (optimisticForms.length > 0) {
-      let updatedForms;
-      setForms((prev) => {
-        const next = prev.slice();
+      await updateFormsAndCache((next) => {
         optimisticForms.forEach((form) => {
           const index = next.findIndex((f) => f.id === form.id);
-          if (index !== -1) {
-            next[index] = form;
-          }
+          if (index !== -1) next[index] = form;
         });
-        updatedForms = next;
         return next;
-      });
-
-      formsRef.current = updatedForms;
-      await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, propertyStoreModeRef.current, `${logPrefix}:optimistic`);
+      }, loadFailuresRef.current, `${logPrefix}:optimistic`);
     }
 
     void dataStoreFn(targetIds)
       .then(async (result) => {
         if (!result?.forms || !Array.isArray(result.forms) || result.forms.length === 0) return;
-
-        let updatedForms;
-        setForms((prev) => {
-          const next = prev.slice();
+        await updateFormsAndCache((next) => {
           result.forms.forEach((form) => {
             const index = next.findIndex((f) => f.id === form.id);
-            if (index !== -1) {
-              next[index] = form;
-            }
+            if (index !== -1) next[index] = form;
           });
-          updatedForms = next;
           return next;
-        });
-
-        formsRef.current = updatedForms;
-        await saveCacheWithErrorHandling(updatedForms, loadFailuresRef.current, setCacheDisabled, propertyStoreModeRef.current, `${logPrefix}:background`);
-      })
-      .catch((err) => {
-        console.error(`[AppDataProvider] Background ${logPrefix} failed:`, err);
+        }, loadFailuresRef.current, `${logPrefix}:background`);
       });
 
     return { forms: optimisticForms, updated: optimisticForms.length, errors: [] };
-  }, []);
+  }, [updateFormsAndCache]);
 
   const archiveForms = useCallback(
     (formIds) => batchUpdateFormsState(dataStore.archiveForms.bind(dataStore), formIds, true, "archiveForms"),

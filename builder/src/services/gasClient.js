@@ -1,18 +1,13 @@
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 
-export const hasScriptRun = () =>
-  typeof google !== "undefined" &&
-  google?.script?.run;
+export const hasScriptRun = () => typeof google !== "undefined" && google?.script?.run;
 
 const normalizeScriptRunError = (err) => {
   if (err instanceof Error) return err;
   if (typeof err === "string") return new Error(err);
   if (err && typeof err.message === "string") return new Error(err.message);
-  try {
-    return new Error(JSON.stringify(err) || "Apps Script call failed");
-  } catch (jsonErr) {
-    return new Error("Apps Script call failed");
-  }
+  try { return new Error(JSON.stringify(err) || "Apps Script call failed"); }
+  catch (jsonErr) { return new Error("Apps Script call failed"); }
 };
 
 const callScriptRun = (functionName, payload) =>
@@ -22,155 +17,15 @@ const callScriptRun = (functionName, payload) =>
       return;
     }
     google.script.run
-      .withSuccessHandler((result) => resolve(result))
+      .withSuccessHandler(resolve)
       .withFailureHandler((error) => reject(normalizeScriptRunError(error)))[functionName](payload);
   });
 
-export const validateSpreadsheet = async (spreadsheetIdOrUrl) => {
-  if (!spreadsheetIdOrUrl) {
-    throw new Error("Spreadsheet URL/ID is required");
-  }
-  const result = await callScriptRun("nfbValidateSpreadsheet", spreadsheetIdOrUrl);
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Spreadsheet validation failed");
-  }
-  return result;
-};
-
-
-export const submitResponses = async ({ spreadsheetId, sheetName = "Data", payload }) => {
-  if (!spreadsheetId) throw new Error("spreadsheetId is required");
-
-  const body = { ...(payload || {}), spreadsheetId, sheetName };
-  const result = await callScriptRun("saveResponses", body);
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Apps Script call failed");
-  }
-  return result;
-};
-
-export const deleteEntry = async ({ spreadsheetId, sheetName = "Data", entryId }) => {
-  if (!spreadsheetId) throw new Error("spreadsheetId is required");
-  if (!entryId) throw new Error("entryId is required");
-
-  const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
-
-  const payload = {
-    spreadsheetId: cleanSpreadsheetId,
-    sheetName,
-    id: entryId,
-  };
-
-  const result = await callScriptRun("deleteRecord", payload);
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Delete failed");
-  }
-  return result;
-};
-
-export const getEntry = async ({ spreadsheetId, sheetName = "Data", entryId, rowIndexHint = null }) => {
-  if (!spreadsheetId) throw new Error("spreadsheetId is required");
-  if (!entryId) throw new Error("entryId is required");
-
-  const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
-
-  const payload = {
-    spreadsheetId: cleanSpreadsheetId,
-    sheetName,
-    id: entryId,
-    rowIndexHint,
-  };
-
-  const result = await callScriptRun("getRecord", payload);
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Get record failed");
-  }
-  return {
-    record: result.record || null,
-    rowIndex: typeof result.rowIndex === "number" ? result.rowIndex : null,
-  };
-};
-
-export const exportSearchResults = async ({ spreadsheetTitle = "", headerRows, rows, themeColors = null }) => {
-  if (!Array.isArray(headerRows) || headerRows.length === 0) throw new Error("headerRows is required");
-  if (!Array.isArray(rows)) throw new Error("rows must be an array");
-
-  const CHUNK_SIZE = 100;
-  const firstChunk = rows.slice(0, CHUNK_SIZE);
-
-  const result = await callScriptRun("nfbExportSearchResults", {
-    spreadsheetTitle,
-    headerRows,
-    rows: firstChunk,
-    themeColors,
-  });
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Export failed");
-  }
-
-  const headerCount = result.headerCount || headerRows.length;
-  for (let i = CHUNK_SIZE; i < rows.length; i += CHUNK_SIZE) {
-    const chunk = rows.slice(i, i + CHUNK_SIZE);
-    const appendResult = await callScriptRun("nfbAppendExportRows", {
-      spreadsheetId: result.spreadsheetId,
-      rows: chunk,
-      themeColors,
-      headerCount,
-      rowOffset: i,
-    });
-    if (!appendResult || appendResult.ok === false) {
-      throw new Error(appendResult?.error || "Append chunk failed");
-    }
-  }
-
-  return { ...result, exportedCount: rows.length };
-};
-
-export const listEntries = async ({ spreadsheetId, sheetName = "Data", formId = null }) => {
-  if (!spreadsheetId) throw new Error("spreadsheetId is required");
-
-  const cleanSpreadsheetId = normalizeSpreadsheetId(spreadsheetId);
-
-  const payload = {
-    spreadsheetId: cleanSpreadsheetId,
-    sheetName,
-  };
-  if (formId) {
-    payload.formId = formId;
-  }
-
-  const result = await callScriptRun("listRecords", payload);
-  if (!result || result.ok === false) {
-    console.error("[gasClient] Result validation failed - result:", result);
-    throw new Error(result?.error || "データ一覧の取得に失敗しました");
-  }
-  return {
-    records: result.records || [],
-    headerMatrix: result.headerMatrix || []
-  };
-};
-
-// ========================================
-// Form Management APIs (Google Drive)
-// ========================================
-
-/**
- * フォーム管理API呼び出しの共通ヘルパー
- * @param {string} functionName - GAS関数名
- * @param {*} args - 引数
- * @param {string} errorMessage - エラーメッセージ
- * @returns {Promise<*>} - API結果
- */
-const callFormApi = async (functionName, args, errorMessage) => {
-  if (!hasScriptRun()) {
-    throw new Error("Form management is only available in google.script.run environment");
-  }
-
+// DRY化のための共通APIラッパー
+const fetchGasApi = async (functionName, payload, errorMessage) => {
   try {
-    const result = await callScriptRun(functionName, args);
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || errorMessage);
-    }
+    const result = await callScriptRun(functionName, payload);
+    if (!result || result.ok === false) throw new Error(result?.error || errorMessage);
     return result;
   } catch (error) {
     console.error(`[gasClient] ${functionName} failed`, error);
@@ -178,203 +33,63 @@ const callFormApi = async (functionName, args, errorMessage) => {
   }
 };
 
-export const listForms = async (options = {}) => {
-  const result = await callFormApi("nfbListForms", options, "List forms failed");
-  return {
-    forms: result.forms || [],
-    loadFailures: result.loadFailures || [],
-  };
+export const validateSpreadsheet = (idOrUrl) => {
+  if (!idOrUrl) throw new Error("Spreadsheet URL/ID is required");
+  return fetchGasApi("nfbValidateSpreadsheet", idOrUrl, "Spreadsheet validation failed");
 };
 
-export const getForm = async (formId) => {
-  if (!formId) throw new Error("formId is required");
-  const result = await callFormApi("nfbGetForm", formId, "Get form failed");
-  return result.form || null;
+export const submitResponses = ({ spreadsheetId, sheetName = "Data", payload }) => {
+  if (!spreadsheetId) throw new Error("spreadsheetId is required");
+  return fetchGasApi("saveResponses", { ...payload, spreadsheetId, sheetName }, "Apps Script call failed");
 };
 
-export const saveForm = async (form, targetUrl = null, saveMode = "auto") => {
-  if (!form || !form.id) throw new Error("Form with ID is required");
-  const payload = { form, targetUrl, saveMode };
-  const result = await callFormApi("nfbSaveForm", payload, "Save form failed");
-  return { form: result.form, fileUrl: result.fileUrl };
+export const deleteEntry = ({ spreadsheetId, sheetName = "Data", entryId }) => {
+  if (!spreadsheetId || !entryId) throw new Error("spreadsheetId and entryId are required");
+  return fetchGasApi("deleteRecord", { spreadsheetId: normalizeSpreadsheetId(spreadsheetId), sheetName, id: entryId }, "Delete failed");
 };
 
-export const deleteFormFromDrive = async (formId) => {
-  if (!formId) throw new Error("formId is required");
-  return await callFormApi("nfbDeleteForm", formId, "Delete form failed");
+export const getEntry = async ({ spreadsheetId, sheetName = "Data", entryId, rowIndexHint = null }) => {
+  if (!spreadsheetId || !entryId) throw new Error("spreadsheetId and entryId are required");
+  const result = await fetchGasApi("getRecord", { spreadsheetId: normalizeSpreadsheetId(spreadsheetId), sheetName, id: entryId, rowIndexHint }, "Get record failed");
+  return { record: result.record || null, rowIndex: typeof result.rowIndex === "number" ? result.rowIndex : null };
 };
 
-export const deleteFormsFromDrive = async (formIds) => {
-  if (!Array.isArray(formIds) || formIds.length === 0) {
-    throw new Error("formIds array is required");
+export const exportSearchResults = async ({ spreadsheetTitle = "", headerRows, rows, themeColors = null }) => {
+  if (!Array.isArray(headerRows) || headerRows.length === 0) throw new Error("headerRows is required");
+  if (!Array.isArray(rows)) throw new Error("rows must be an array");
+
+  const CHUNK_SIZE = 100;
+  const result = await fetchGasApi("nfbExportSearchResults", { spreadsheetTitle, headerRows, rows: rows.slice(0, CHUNK_SIZE), themeColors }, "Export failed");
+  const headerCount = result.headerCount || headerRows.length;
+  for (let i = CHUNK_SIZE; i < rows.length; i += CHUNK_SIZE) {
+    await fetchGasApi("nfbAppendExportRows", { spreadsheetId: result.spreadsheetId, rows: rows.slice(i, i + CHUNK_SIZE), themeColors, headerCount, rowOffset: i }, "Append chunk failed");
   }
-  const result = await callScriptRun("nfbDeleteForms", formIds);
-  if (!result) {
-    throw new Error("Batch delete forms failed");
-  }
-
-  const deleted = Number.isFinite(result.deleted) ? result.deleted : Number(result.deleted) || 0;
-  if (result.ok === false && deleted === 0) {
-    throw new Error(result?.error || "Batch delete forms failed");
-  }
-
-  return result;
+  return { ...result, exportedCount: rows.length };
 };
 
-export const archiveForm = async (formId) => {
-  if (!formId) throw new Error("formId is required");
-  const result = await callFormApi("nfbArchiveForm", formId, "Archive form failed");
-  return result.form || null;
+export const listEntries = async ({ spreadsheetId, sheetName = "Data", formId = null }) => {
+  if (!spreadsheetId) throw new Error("spreadsheetId is required");
+  const result = await fetchGasApi("listRecords", { spreadsheetId: normalizeSpreadsheetId(spreadsheetId), sheetName, formId }, "データ一覧の取得に失敗しました");
+  return { records: result.records || [], headerMatrix: result.headerMatrix || [] };
 };
 
-export const unarchiveForm = async (formId) => {
-  if (!formId) throw new Error("formId is required");
-  const result = await callFormApi("nfbUnarchiveForm", formId, "Unarchive form failed");
-  return result.form || null;
-};
-
-export const archiveForms = async (formIds) => {
-  if (!Array.isArray(formIds) || formIds.length === 0) {
-    throw new Error("formIds array is required");
-  }
-  return await callFormApi("nfbArchiveForms", formIds, "Batch archive forms failed");
-};
-
-export const unarchiveForms = async (formIds) => {
-  if (!Array.isArray(formIds) || formIds.length === 0) {
-    throw new Error("formIds array is required");
-  }
-  return await callFormApi("nfbUnarchiveForms", formIds, "Batch unarchive forms failed");
-};
-
-export const importFormsFromDrive = async (url) => {
-  if (!url) throw new Error("Google Drive URL is required");
-  const result = await callFormApi("nfbImportFormsFromDrive", url, "Import from Drive failed");
-  return {
-    forms: result.forms || [],
-    skipped: result.skipped || 0,
-    parseFailed: result.parseFailed || 0,
-    totalFiles: result.totalFiles || 0,
-  };
-};
-
-export const registerImportedForm = async (payload) => {
-  if (!payload || !payload.form || !payload.fileId) {
-    throw new Error("form and fileId are required");
-  }
-  return await callFormApi("nfbRegisterImportedForm", payload, "Register imported form failed");
-};
-
-export const importThemeFromDrive = async (url) => {
-  if (!url) throw new Error("Google Drive URL is required");
-  const result = await callScriptRun("nfbImportThemeFromDrive", url);
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Theme import failed");
-  }
-  return {
-    css: result.css || "",
-    fileName: result.fileName || "",
-    fileUrl: result.fileUrl || url,
-  };
-};
-
-export const debugGetMapping = async () => {
-  try {
-    const result = await callScriptRun("nfbDebugGetMapping", {});
-    if (!result || result.ok === false) {
-      throw new Error(result?.error || "Debug get mapping failed");
-    }
-    return result;
-  } catch (error) {
-    console.error(`[gasClient] debugGetMapping failed`, error);
-    throw error;
-  }
-};
-
-// ========================================
-// 管理者設定API
-// ========================================
-
-/**
- * 管理者キーを取得する
- * @returns {Promise<string>} 管理者キー
- */
-export const getAdminKey = async () => {
-  const result = await callScriptRun("nfbGetAdminKey", {});
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Get admin key failed");
-  }
-  return result.adminKey || "";
-};
-
-/**
- * 管理者キーを設定する
- * @param {string} newKey - 新しい管理者キー（空文字で認証無効化）
- * @returns {Promise<string>} 設定後の管理者キー
- */
-export const setAdminKey = async (newKey) => {
-  const result = await callScriptRun("nfbSetAdminKey", newKey);
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Set admin key failed");
-  }
-  return result.adminKey || "";
-};
-
-/**
- * 管理者メールを取得する
- * @returns {Promise<string>} 管理者メール（";"区切り）
- */
-export const getAdminEmail = async () => {
-  const result = await callScriptRun("nfbGetAdminEmail", {});
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Get admin email failed");
-  }
-  return result.adminEmail || "";
-};
-
-/**
- * 管理者メールを設定する
- * @param {string} newEmail - 新しい管理者メール（";"区切り）
- * @returns {Promise<string>} 設定後の管理者メール（";"区切り）
- */
-export const setAdminEmail = async (newEmail) => {
-  const result = await callScriptRun("nfbSetAdminEmail", newEmail);
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Set admin email failed");
-  }
-  return result.adminEmail || "";
-};
-
-/**
- * 個別フォーム限定フラグを取得する
- * @returns {Promise<boolean>}
- */
-export const getRestrictToFormOnly = async () => {
-  const result = await callScriptRun("nfbGetRestrictToFormOnly", {});
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Get restrict to form only failed");
-  }
-  return Boolean(result.restrictToFormOnly);
-};
-
-/**
- * 個別フォーム限定フラグを設定する
- * @param {boolean} value
- * @returns {Promise<boolean>} 設定後の値
- */
-export const setRestrictToFormOnly = async (value) => {
-  const result = await callScriptRun("nfbSetRestrictToFormOnly", value);
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Set restrict to form only failed");
-  }
-  return Boolean(result.restrictToFormOnly);
-};
-
-
-export const saveExcelToDrive = async ({ filename, base64 }) => {
-  const result = await callScriptRun("nfbSaveExcelToDrive", { filename, base64 });
-  if (!result || result.ok === false) {
-    throw new Error(result?.error || "Driveへの保存に失敗しました");
-  }
-  return result;
-};
+export const listForms = (options = {}) => fetchGasApi("nfbListForms", options, "List forms failed").then(r => ({ forms: r.forms || [], loadFailures: r.loadFailures || [] }));
+export const getForm = (formId) => { if (!formId) throw new Error("formId is required"); return fetchGasApi("nfbGetForm", formId, "Get form failed").then(r => r.form || null); };
+export const saveForm = (form, targetUrl = null, saveMode = "auto") => { if (!form || !form.id) throw new Error("Form with ID is required"); return fetchGasApi("nfbSaveForm", { form, targetUrl, saveMode }, "Save form failed").then(r => ({ form: r.form, fileUrl: r.fileUrl })); };
+export const deleteFormFromDrive = (formId) => { if (!formId) throw new Error("formId is required"); return fetchGasApi("nfbDeleteForm", formId, "Delete form failed"); };
+export const deleteFormsFromDrive = (formIds) => { if (!Array.isArray(formIds) || formIds.length === 0) throw new Error("formIds array is required"); return fetchGasApi("nfbDeleteForms", formIds, "Batch delete forms failed"); };
+export const archiveForm = (formId) => { if (!formId) throw new Error("formId is required"); return fetchGasApi("nfbArchiveForm", formId, "Archive form failed").then(r => r.form || null); };
+export const unarchiveForm = (formId) => { if (!formId) throw new Error("formId is required"); return fetchGasApi("nfbUnarchiveForm", formId, "Unarchive form failed").then(r => r.form || null); };
+export const archiveForms = (formIds) => { if (!Array.isArray(formIds) || formIds.length === 0) throw new Error("formIds array is required"); return fetchGasApi("nfbArchiveForms", formIds, "Batch archive forms failed"); };
+export const unarchiveForms = (formIds) => { if (!Array.isArray(formIds) || formIds.length === 0) throw new Error("formIds array is required"); return fetchGasApi("nfbUnarchiveForms", formIds, "Batch unarchive forms failed"); };
+export const importFormsFromDrive = (url) => { if (!url) throw new Error("Google Drive URL is required"); return fetchGasApi("nfbImportFormsFromDrive", url, "Import from Drive failed").then(r => ({ forms: r.forms || [], skipped: r.skipped || 0, parseFailed: r.parseFailed || 0, totalFiles: r.totalFiles || 0 })); };
+export const registerImportedForm = (payload) => { if (!payload || !payload.form || !payload.fileId) throw new Error("form and fileId are required"); return fetchGasApi("nfbRegisterImportedForm", payload, "Register imported form failed"); };
+export const importThemeFromDrive = (url) => { if (!url) throw new Error("Google Drive URL is required"); return fetchGasApi("nfbImportThemeFromDrive", url, "Theme import failed").then(r => ({ css: r.css || "", fileName: r.fileName || "", fileUrl: r.fileUrl || url })); };
+export const debugGetMapping = () => fetchGasApi("nfbDebugGetMapping", {}, "Debug get mapping failed");
+export const getAdminKey = () => fetchGasApi("nfbGetAdminKey", {}, "Get admin key failed").then(r => r.adminKey || "");
+export const setAdminKey = (newKey) => fetchGasApi("nfbSetAdminKey", newKey, "Set admin key failed").then(r => r.adminKey || "");
+export const getAdminEmail = () => fetchGasApi("nfbGetAdminEmail", {}, "Get admin email failed").then(r => r.adminEmail || "");
+export const setAdminEmail = (newEmail) => fetchGasApi("nfbSetAdminEmail", newEmail, "Set admin email failed").then(r => r.adminEmail || "");
+export const getRestrictToFormOnly = () => fetchGasApi("nfbGetRestrictToFormOnly", {}, "Get restrict to form only failed").then(r => Boolean(r.restrictToFormOnly));
+export const setRestrictToFormOnly = (value) => fetchGasApi("nfbSetRestrictToFormOnly", value, "Set restrict to form only failed").then(r => Boolean(r.restrictToFormOnly));
+export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");

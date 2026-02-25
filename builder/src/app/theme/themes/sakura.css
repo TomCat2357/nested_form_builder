@@ -1,12 +1,5 @@
 /* sakura theme overrides */
-:root[data-theme="sakura"] {
-  --font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --label-font-size-base: 14px;
-  --label-size-offset-xs: -4px;
-  --label-size-offset-sm: -2px;
-  --label-size-offset-lg: 2px;
-  --label-size-offset-xl: 4px;
-
+:root[data-theme="sakura"] {
   --bg: #fff7fb;
   --surface: #ffffff;
   --surface-elevated: #ffffff;
@@ -59,19 +52,7 @@
   --warning-ink: #92400e;
 
   --info: #38bdf8;
-  --info-weak: #e0f2fe;
-
-  --radius-sm: 10px;
-  --radius-md: 14px;
-  --radius-lg: 18px;
-
-  --shadow-sm: 0 2px 10px rgba(15, 23, 42, 0.06);
-  --shadow-md: 0 16px 36px rgba(15, 23, 42, 0.13);
-  --shadow-lg: 0 20px 45px rgba(15, 23, 42, 0.22);
-
-  --overlay: rgba(15, 23, 42, 0.35);
-  --overlay-strong: rgba(15, 23, 42, 0.55);
-
+  --info-weak: #e0f2fe;
   --logo-gradient: linear-gradient(135deg, rgba(219, 39, 119, 0.92), rgba(245, 158, 11, 0.85));
   --logo-shadow: 0 10px 26px rgba(219, 39, 119, 0.14), 0 10px 24px rgba(245, 158, 11, 0.10);
 

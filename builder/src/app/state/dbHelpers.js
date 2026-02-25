@@ -70,3 +70,21 @@ export const waitForTransaction = (tx) =>
     tx.onerror = () => reject(tx.error);
     tx.onabort = () => reject(tx.error);
   });
+
+/**
+ * DBトランザクションのボイラープレートを隠蔽するラッパー
+ */
+export async function withTransaction(storeNames, mode, callback) {
+  const db = await openDB();
+  const tx = db.transaction(storeNames, mode);
+  try {
+    const stores = Array.isArray(storeNames)
+      ? storeNames.map(name => tx.objectStore(name))
+      : tx.objectStore(storeNames);
+    const result = await callback(stores, tx);
+    await waitForTransaction(tx);
+    return result;
+  } finally {
+    db.close();
+  }
+}
