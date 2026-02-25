@@ -11,8 +11,17 @@ import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSchemaIDs } from "../core/schema.js";
+import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.js";
+import { useEditLock } from "../app/hooks/useEditLock.js";
+import { getFormsFromCache } from "../app/state/formsCache.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
-import { RECORD_CACHE_MAX_AGE_MS } from "../app/state/cachePolicy.js";
+import {
+  evaluateCache,
+  RECORD_CACHE_MAX_AGE_MS,
+  RECORD_CACHE_BACKGROUND_REFRESH_MS,
+  FORM_CACHE_MAX_AGE_MS,
+  FORM_CACHE_BACKGROUND_REFRESH_MS,
+} from "../app/state/cachePolicy.js";
 import { useAuth } from "../app/state/authContext.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { perfLogger } from "../utils/perfLogger.js";
@@ -25,7 +34,7 @@ const fallbackForForm = (formId, locationState) => {
 
 export default function FormPage() {
   const { formId, entryId } = useParams();
-  const { getFormById } = useAppData();
+  const { getFormById, refreshForms, loadingForms } = useAppData();
   const { userName, userEmail } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -40,6 +49,7 @@ export default function FormPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [mode, setMode] = useState(entryId ? "view" : "edit");
   const [isReloading, setIsReloading] = useState(false);
+  const { isReadLocked, withReadLock } = useEditLock();
   const initialResponsesRef = useRef({});
   const previewRef = useRef(null);
 
@@ -55,6 +65,31 @@ export default function FormPage() {
   const currentIndex = entryId ? entryIds.indexOf(entryId) : -1;
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex >= 0 && currentIndex < entryIds.length - 1;
+  const loadingRef = useRef(loading);
+  const reloadingRef = useRef(isReloading);
+  const savingRef = useRef(isSaving);
+  const readLockRef = useRef(isReadLocked);
+  const loadingFormsRef = useRef(loadingForms);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  useEffect(() => {
+    reloadingRef.current = isReloading;
+  }, [isReloading]);
+
+  useEffect(() => {
+    savingRef.current = isSaving;
+  }, [isSaving]);
+
+  useEffect(() => {
+    readLockRef.current = isReadLocked;
+  }, [isReadLocked]);
+
+  useEffect(() => {
+    loadingFormsRef.current = loadingForms;
+  }, [loadingForms]);
 
   useEffect(() => {
     setMode(entryId ? "view" : "edit");
@@ -177,6 +212,97 @@ export default function FormPage() {
     };
   }, [formId, entryId, form, normalizedSchema, userName, userEmail, applyEntryToState]);
 
+  const refreshFormsIfNeeded = useCallback(async (source = "unknown") => {
+    let formsCache = { forms: [], loadFailures: [], lastSyncedAt: null };
+    try {
+      formsCache = await getFormsFromCache();
+    } catch (error) {
+      console.warn("[FormPage] Failed to load forms cache:", error);
+    }
+
+    const hasFormsCache = (formsCache.forms || []).length > 0 || (formsCache.loadFailures || []).length > 0 || !!formsCache.lastSyncedAt;
+    const formsDecision = evaluateCache({
+      lastSyncedAt: formsCache.lastSyncedAt,
+      hasData: hasFormsCache,
+      maxAgeMs: FORM_CACHE_MAX_AGE_MS,
+      backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
+    });
+
+    if (formsDecision.isFresh || loadingFormsRef.current) return;
+    if (formsDecision.shouldSync) {
+      await refreshForms({ reason: `operation:${source}:form-page-sync`, background: false });
+      return;
+    }
+    if (formsDecision.shouldBackground) {
+      refreshForms({ reason: `operation:${source}:form-page-background`, background: true }).catch((error) => {
+        console.error("[FormPage] background refreshForms failed:", error);
+      });
+    }
+  }, [refreshForms]);
+
+  const handleOperationCacheCheck = useCallback(async ({ source }) => {
+    if (!formId) return;
+
+    if (entryId && !loadingRef.current && !reloadingRef.current && !savingRef.current && !readLockRef.current) {
+      try {
+        const { entry: cachedEntry, rowIndex, lastSyncedAt } = await getCachedEntryWithIndex(formId, entryId);
+        const cacheDecision = evaluateCache({
+          lastSyncedAt,
+          hasData: !!cachedEntry,
+          maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
+          backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
+        });
+
+        if (!cacheDecision.isFresh) {
+          const options = { forceSync: true };
+          if (rowIndex !== undefined && rowIndex !== null) options.rowIndexHint = rowIndex;
+
+          if (!isViewMode) {
+            await withReadLock(async () => {
+              const latest = await dataStore.getEntry(formId, entryId, options);
+              if (latest) {
+                applyEntryToState(latest, entryId);
+              }
+            });
+          } else if (cacheDecision.shouldSync) {
+            setLoading(true);
+            try {
+              const latest = await dataStore.getEntry(formId, entryId, options);
+              if (latest) {
+                applyEntryToState(latest, entryId);
+              }
+            } finally {
+              setLoading(false);
+            }
+          } else if (cacheDecision.shouldBackground) {
+            setIsReloading(true);
+            dataStore.getEntry(formId, entryId, options)
+              .then((latest) => {
+                if (latest) {
+                  applyEntryToState(latest, entryId);
+                }
+              })
+              .catch((error) => {
+                console.error("[FormPage] background getEntry failed:", error);
+              })
+              .finally(() => {
+                setIsReloading(false);
+              });
+          }
+        }
+      } catch (error) {
+        console.error("[FormPage] operation cache check failed:", error);
+      }
+    }
+
+    await refreshFormsIfNeeded(source);
+  }, [applyEntryToState, entryId, formId, isViewMode, refreshFormsIfNeeded, withReadLock]);
+
+  useOperationCacheTrigger({
+    enabled: Boolean(formId),
+    onOperation: handleOperationCacheCheck,
+  });
+
   const isDirty = useMemo(() => hasDirtyChanges(initialResponsesRef.current, responses), [responses]);
 
   useBeforeUnloadGuard(isDirty);
@@ -249,6 +375,7 @@ export default function FormPage() {
       showAlert("フォームが見つかりません");
       return;
     }
+    if (isReadLocked) return;
     try {
       setIsSaving(true);
       const preview = previewRef.current;
@@ -390,7 +517,7 @@ export default function FormPage() {
             </>
           ) : (
             <>
-              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReloading} onClick={() => triggerSave({ redirect: true })}>
+              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReloading || isReadLocked} onClick={() => triggerSave({ redirect: true })}>
                 保存
               </button>
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => attemptLeave("cancel")}>
@@ -427,7 +554,7 @@ export default function FormPage() {
           onSave={handleSaveToStore}
           showOutputJson={false}
           showSaveButton={false}
-          readOnly={isViewMode || isReloading}
+          readOnly={isViewMode || isReloading || isReadLocked}
         />
       )}
 

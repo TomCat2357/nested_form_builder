@@ -101,6 +101,7 @@ export default function SearchPage() {
     lastSyncedAt,
     cacheDisabled,
     fetchAndCacheData,
+    forceRefreshAll,
   } = useEntriesWithCache({
     formId: effectiveFormId,
     form,
@@ -303,7 +304,7 @@ export default function SearchPage() {
           onCreate={handleCreateNew}
           onConfig={settings?.syncAllFormsTheme ? undefined : handleOpenFormConfig}
           onDelete={handleDeleteSelected}
-          onRefresh={() => fetchAndCacheData({ forceFullSync: true })}
+          onRefresh={forceRefreshAll}
           onExport={handleExportResults}
           useCache={useCache}
           loading={loading}

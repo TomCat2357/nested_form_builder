@@ -4,7 +4,10 @@ import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import FormBuilderWorkspace from "../features/admin/FormBuilderWorkspace.jsx";
 import { SETTINGS_GROUPS } from "../features/settings/settingsSchema.js";
+import { dataStore } from "../app/state/dataStore.js";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
+import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.js";
+import { useEditLock } from "../app/hooks/useEditLock.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
@@ -12,13 +15,18 @@ import { validateSpreadsheet } from "../services/gasClient.js";
 import { omitThemeSetting } from "../utils/settings.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
+import {
+  evaluateCache,
+  FORM_CACHE_MAX_AGE_MS,
+  FORM_CACHE_BACKGROUND_REFRESH_MS,
+} from "../app/state/cachePolicy.js";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/forms");
 
 export default function AdminFormEditorPage() {
   const { formId } = useParams();
   const isEdit = Boolean(formId);
-  const { forms, getFormById, createForm, updateForm } = useAppData();
+  const { forms, getFormById, createForm, updateForm, refreshForms, lastSyncedAt, loadingForms } = useAppData();
   const form = isEdit ? getFormById(formId) : null;
   const navigate = useNavigate();
   const location = useLocation();
@@ -39,8 +47,24 @@ export default function AdminFormEditorPage() {
   const [builderDirty, setBuilderDirty] = useState(false);
   const [confirmState, setConfirmState] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const { isReadLocked, withReadLock } = useEditLock();
   const [nameError, setNameError] = useState("");
   const [questionControl, setQuestionControl] = useState(null);
+  const isSavingRef = useRef(isSaving);
+  const isReadLockedRef = useRef(isReadLocked);
+  const loadingFormsRef = useRef(loadingForms);
+
+  useEffect(() => {
+    isSavingRef.current = isSaving;
+  }, [isSaving]);
+
+  useEffect(() => {
+    isReadLockedRef.current = isReadLocked;
+  }, [isReadLocked]);
+
+  useEffect(() => {
+    loadingFormsRef.current = loadingForms;
+  }, [loadingForms]);
 
   // QuestionControlの更新を監視
   useEffect(() => {
@@ -65,6 +89,30 @@ export default function AdminFormEditorPage() {
     setLocalSettings(omitThemeSetting(form.settings || {}));
     setNameError("");
   }, [form]);
+
+  const handleOperationCacheCheck = useCallback(async ({ source }) => {
+    if (!isEdit || !formId) return;
+    if (isSavingRef.current || isReadLockedRef.current || loadingFormsRef.current) return;
+
+    const cacheDecision = evaluateCache({
+      lastSyncedAt,
+      hasData: forms.length > 0 || !!lastSyncedAt,
+      maxAgeMs: FORM_CACHE_MAX_AGE_MS,
+      backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
+    });
+
+    if (cacheDecision.isFresh) return;
+
+    await withReadLock(async () => {
+      await dataStore.getForm(formId);
+      await refreshForms({ reason: `operation:${source}:admin-form-editor`, background: false });
+    });
+  }, [formId, forms.length, isEdit, lastSyncedAt, refreshForms, withReadLock]);
+
+  useOperationCacheTrigger({
+    enabled: isEdit && !!formId,
+    onOperation: handleOperationCacheCheck,
+  });
 
   const metaDirty = useMemo(() => name !== initialMetaRef.current.name || description !== initialMetaRef.current.description, [name, description]);
   const isDirty = builderDirty || metaDirty;
@@ -109,7 +157,7 @@ export default function AdminFormEditorPage() {
 
   const handleSave = async () => {
     if (!builderRef.current) return;
-    if (isSaving) return;
+    if (isSaving || isReadLocked) return;
     setIsSaving(true);
 
     const trimmedName = (name || "").trim();
@@ -262,7 +310,7 @@ export default function AdminFormEditorPage() {
       backHidden={true}
       sidebarActions={
         <>
-          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving} onClick={handleSave}>
+          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReadLocked} onClick={handleSave}>
             保存
           </button>
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleCancel}>
@@ -272,7 +320,7 @@ export default function AdminFormEditorPage() {
           <button
             type="button"
             className="nf-btn-outline nf-btn-sidebar nf-text-14 admin-move-btn"
-            disabled={!questionControl?.canMoveUp}
+            disabled={isReadLocked || !questionControl?.canMoveUp}
             onClick={() => questionControl?.moveUp?.()}
           >
             ↑ 上へ
@@ -280,7 +328,7 @@ export default function AdminFormEditorPage() {
           <button
             type="button"
             className="nf-btn-outline nf-btn-sidebar nf-text-14 admin-move-btn"
-            disabled={!questionControl?.canMoveDown}
+            disabled={isReadLocked || !questionControl?.canMoveDown}
             onClick={() => questionControl?.moveDown?.()}
           >
             ↓ 下へ
@@ -318,13 +366,14 @@ export default function AdminFormEditorPage() {
               }}
               className="nf-input admin-input"
               placeholder="フォーム名"
+              disabled={isReadLocked}
             />
             {nameError && <p className="nf-text-danger-strong nf-text-12 nf-m-0">{nameError}</p>}
           </div>
 
           <div className="nf-col nf-gap-6 nf-mb-16">
             <label className="nf-block nf-fw-600 nf-mb-6">フォームの説明</label>
-            <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="nf-input admin-input nf-min-h-80" placeholder="説明" />
+            <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="nf-input admin-input nf-min-h-80" placeholder="説明" disabled={isReadLocked} />
           </div>
 
           <div className="nf-col nf-gap-6">
@@ -336,6 +385,7 @@ export default function AdminFormEditorPage() {
               placeholder={isEdit
                 ? "空白: マイドライブルートに新たにコピー / フォルダURL: 指定フォルダにコピー"
                 : "空白: マイドライブルート / フォルダURL: 指定フォルダに保存"}
+              disabled={isReadLocked}
             />
             <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
               {isEdit
@@ -366,6 +416,7 @@ export default function AdminFormEditorPage() {
                             className="nf-input"
                             value={localSettings[field.key] ?? ""}
                             onChange={(event) => handleSettingsChange(field.key, event.target.value)}
+                            disabled={isReadLocked}
                           >
                             {(field.options || []).map((option) => (
                               <option key={option.value} value={option.value}>
@@ -380,6 +431,7 @@ export default function AdminFormEditorPage() {
                             value={localSettings[field.key] ?? ""}
                             placeholder={field.placeholder}
                             onChange={(event) => handleSettingsChange(field.key, event.target.value)}
+                            disabled={isReadLocked}
                           />
                         )}
                         {field.description && (
@@ -396,6 +448,7 @@ export default function AdminFormEditorPage() {
                             type="checkbox"
                             checked={localSettings[field.key] !== undefined ? !!localSettings[field.key] : !!field.defaultValue}
                             onChange={(event) => handleSettingsChange(field.key, event.target.checked)}
+                            disabled={isReadLocked}
                           />
                           <span className="nf-fw-600">{field.label}</span>
                         </label>
@@ -408,14 +461,19 @@ export default function AdminFormEditorPage() {
           </div>
         ))}
 
-        <FormBuilderWorkspace
-          ref={builderRef}
-          initialSchema={initialSchema}
-          initialSettings={initialSettings}
-          formTitle={name || "フォーム"}
-          onDirtyChange={setBuilderDirty}
-          showToolbarSave={false}
-        />
+        <div className="admin-editor-workspace-wrap">
+          <div className={isReadLocked ? "admin-editor-workspace-lock" : ""}>
+            <FormBuilderWorkspace
+              ref={builderRef}
+              initialSchema={initialSchema}
+              initialSettings={initialSettings}
+              formTitle={name || "フォーム"}
+              onDirtyChange={setBuilderDirty}
+              showToolbarSave={false}
+            />
+          </div>
+          {isReadLocked && <div className="admin-editor-workspace-overlay" aria-hidden="true" />}
+        </div>
       </div>
 
       <ConfirmDialog open={confirmState} title="未保存の変更があります" message="保存せずに離れますか？" options={confirmOptions} />

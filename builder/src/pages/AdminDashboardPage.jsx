@@ -1,16 +1,22 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import JSZip from "jszip";
 import { saveAs } from "file-saver";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
+import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.js";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
 import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
+import {
+  evaluateCache,
+  FORM_CACHE_MAX_AGE_MS,
+  FORM_CACHE_BACKGROUND_REFRESH_MS,
+} from "../app/state/cachePolicy.js";
 
 const formatDisplayFieldsSummary = (form) => {
   if (!form) return "";
@@ -41,17 +47,22 @@ const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = 
 };
 
 export default function AdminDashboardPage() {
-  const { forms, loadFailures, loadingForms, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, refreshForms, exportForms, registerImportedForm } = useAppData();
+  const { forms, loadFailures, loadingForms, lastSyncedAt, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, refreshForms, exportForms, registerImportedForm } = useAppData();
   const { settings } = useBuilderSettings();
   const navigate = useNavigate();
   const { showAlert } = useAlert();
 const [selected, setSelected] = useState(() => new Set());
+  const loadingFormsRef = useRef(loadingForms);
   const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
   const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null, targetIds: [], multiple: false });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+
+  useEffect(() => {
+    loadingFormsRef.current = loadingForms;
+  }, [loadingForms]);
 
   
   const sortedForms = useMemo(() => {
@@ -374,6 +385,31 @@ const [selected, setSelected] = useState(() => new Set());
     navigate("/forms/new");
   };
 
+  const handleOperationCacheCheck = useCallback(async ({ source }) => {
+    const cacheDecision = evaluateCache({
+      lastSyncedAt,
+      hasData: forms.length > 0 || loadFailures.length > 0 || !!lastSyncedAt,
+      maxAgeMs: FORM_CACHE_MAX_AGE_MS,
+      backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
+    });
+
+    if (cacheDecision.isFresh || loadingFormsRef.current) return;
+    if (cacheDecision.shouldSync) {
+      await refreshForms({ reason: `operation:${source}:admin-dashboard-sync`, background: false });
+      return;
+    }
+    if (cacheDecision.shouldBackground) {
+      refreshForms({ reason: `operation:${source}:admin-dashboard-background`, background: true }).catch((error) => {
+        console.error("[AdminDashboard] Background refresh failed:", error);
+      });
+    }
+  }, [forms.length, lastSyncedAt, loadFailures.length, refreshForms]);
+
+  useOperationCacheTrigger({
+    enabled: true,
+    onOperation: handleOperationCacheCheck,
+  });
+
   return (
     <AppLayout
       title="フォーム管理"
@@ -410,7 +446,7 @@ const [selected, setSelected] = useState(() => new Set());
           <button
             type="button"
             className={`nf-btn-outline nf-btn-sidebar nf-text-13${!loadingForms ? " admin-refresh-btn" : ""}`}
-            onClick={() => refreshForms("manual:admin-dashboard")}
+            onClick={() => refreshForms({ reason: "manual:admin-dashboard", background: false })}
             disabled={loadingForms}
           >
             {loadingForms ? "🔄 更新中..." : "🔄 更新"}

@@ -25,5 +25,6 @@ export const evaluateCache = ({
   const age = lastSyncedAt ? Date.now() - lastSyncedAt : Infinity;
   const shouldSync = forceSync || !hasData || age >= maxAgeMs;
   const shouldBackground = !shouldSync && age >= backgroundAgeMs;
-  return { age, shouldSync, shouldBackground };
+  const isFresh = !shouldSync && !shouldBackground;
+  return { age, shouldSync, shouldBackground, isFresh };
 };

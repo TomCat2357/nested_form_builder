@@ -719,6 +719,22 @@ button:disabled {
   border-color: var(--info);
 }
 
+.admin-editor-workspace-wrap {
+  position: relative;
+}
+
+.admin-editor-workspace-lock {
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.admin-editor-workspace-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  background: transparent;
+}
+
 /* Form builder */
 .form-builder {
   border: 1px solid var(--border);
