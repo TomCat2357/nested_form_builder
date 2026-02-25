@@ -111,6 +111,13 @@ function Sheets_getAllRecords_(sheet, temporalTypeMap) {
   if (dataRowCount > 0) {
     var sortRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn);
     sortRange.sort({column: 2, ascending: true});
+
+    // ソート後、No.列を1から連番でリナンバー
+    var noValues = [];
+    for (var n = 0; n < dataRowCount; n++) {
+      noValues.push([n + 1]);
+    }
+    sheet.getRange(NFB_HEADER_DEPTH + 1, 2, dataRowCount, 1).setValues(noValues);
   }
 
   var dataRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn).getValues();
@@ -126,4 +133,3 @@ function Sheets_getAllRecords_(sheet, temporalTypeMap) {
 
   return records;
 }
-
