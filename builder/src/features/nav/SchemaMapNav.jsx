@@ -37,7 +37,7 @@ export default function SchemaMapNav({ schema }) {
     const escaped = escapeForAttrSelector(questionId);
     const target = document.querySelector(`[data-question-id="${escaped}"]`);
     if (!target) return;
-    target.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    target.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
   };
 
   return (
