@@ -1,6 +1,6 @@
 import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
-import { deepClone, normalizeSchemaIDs, MAX_DEPTH } from "../../core/schema.js";
+import { deepClone, normalizeSchemaIDs, MAX_DEPTH, cleanUnusedFieldProperties } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "../../core/styleSettings.js";
@@ -59,60 +59,23 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
   const newIsChoice = isChoiceType(newType);
 
   if (newIsChoice) {
-    // 選択肢系への変更
-    delete next.pattern;
-    delete next.defaultNow;
-
     if (oldIsChoice) {
-      // 選択肢系 → 選択肢系: childrenByValueをそのまま引き継ぎ
       next.options = next.options?.length ? next.options : [{ id: genId(), label: "" }];
     } else {
-      // 入力系 → 選択肢系: 仮保存から復元
-      const savedChoiceState = getTempState?.(field.id)?.choiceState;
-      if (savedChoiceState && Array.isArray(savedChoiceState.options) && savedChoiceState.options.length > 0) {
-        next.options = deepClone(savedChoiceState.options);
-        if (savedChoiceState.childrenByValue && typeof savedChoiceState.childrenByValue === "object") {
-          next.childrenByValue = deepClone(savedChoiceState.childrenByValue);
-        } else {
-          delete next.childrenByValue;
-        }
-      } else {
-        next.options = next.options?.length ? next.options : [{ id: genId(), label: "" }];
-        delete next.childrenByValue;
-      }
+      const saved = getTempState?.(field.id)?.choiceState;
+      next.options = saved?.options?.length ? deepClone(saved.options) : [{ id: genId(), label: "" }];
+      if (saved?.childrenByValue) next.childrenByValue = deepClone(saved.childrenByValue);
     }
-  } else if (newType === "regex") {
-    // 正規表現への変更
-    next.pattern = typeof next.pattern === "string" ? next.pattern : "";
-    delete next.defaultNow;
-    saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
-  } else if (isDateOrTimeType(newType)) {
-    // 日付・時刻への変更
-    delete next.pattern;
-    next.defaultNow = !!next.defaultNow;
-    saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
-  } else if (newType === USER_NAME_TYPE || newType === EMAIL_TYPE) {
-    // 入力ユーザー名への変更
-    delete next.pattern;
-    delete next.placeholder;
-    delete next.showPlaceholder;
-    next.defaultNow = !!next.defaultNow;
-    saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
-  } else if (newType === MESSAGE_TYPE) {
-    // メッセージへの変更
-    delete next.pattern;
-    delete next.defaultNow;
-    delete next.required;
-    saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
   } else {
-    // テキスト、テキストエリア、数値への変更
-    delete next.pattern;
-    delete next.defaultNow;
+    if (newType === "regex") next.pattern = typeof next.pattern === "string" ? next.pattern : "";
+    if (isDateOrTimeType(newType) || newType === USER_NAME_TYPE || newType === EMAIL_TYPE) {
+      next.defaultNow = !!next.defaultNow;
+    }
     saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
   }
 
+  cleanUnusedFieldProperties(next);
   applyDisplayedFlag(next, wasDisplayed);
-
   return next;
 }
 

@@ -1184,35 +1184,20 @@ const compareValue = (rowValue, operator, targetValue, { allowNumeric = true } =
     }
   }
 
-  switch (normalizedOperator) {
-    case '=':
-      if (allowNumeric && bothNumbers && !isQuoted) return rowNum === targetNum;
-      return rowStr === targetStr;
+  const useNumeric = allowNumeric && bothNumbers && !isQuoted;
+const a = useNumeric ? rowNum : rowStr;
+const b = useNumeric ? targetNum : targetStr;
 
-    case '<>':
-    case '><':
-      if (allowNumeric && bothNumbers && !isQuoted) return rowNum !== targetNum;
-      return rowStr !== targetStr;
-
-    case '>':
-      if (allowNumeric && bothNumbers && !isQuoted) return rowNum > targetNum;
-      return rowStr > targetStr;
-
-    case '>=':
-      if (allowNumeric && bothNumbers && !isQuoted) return rowNum >= targetNum;
-      return rowStr >= targetStr;
-
-    case '<':
-      if (allowNumeric && bothNumbers && !isQuoted) return rowNum < targetNum;
-      return rowStr < targetStr;
-
-    case '<=':
-      if (allowNumeric && bothNumbers && !isQuoted) return rowNum <= targetNum;
-      return rowStr <= targetStr;
-
-    default:
-      return false;
-  }
+switch (normalizedOperator) {
+  case "=": return a === b;
+  case "<>":
+  case "><": return a !== b;
+  case ">": return a > b;
+  case ">=": return a >= b;
+  case "<": return a < b;
+  case "<=": return a <= b;
+  default: return false;
+}
 };
 
 const resolveBooleanValueForRow = (row, column, columnName) => {

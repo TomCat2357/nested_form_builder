@@ -43,6 +43,27 @@ export const deepClone = (value) => {
   return JSON.parse(JSON.stringify(value));
 };
 
+export const cleanUnusedFieldProperties = (field) => {
+  const type = field.type;
+  const isChoice = ["radio", "select", "checkboxes"].includes(type);
+  const isRegex = type === "regex";
+  const hasDefaultNow = ["date", "time", "userName", "email"].includes(type);
+  const noPlaceholder = ["userName", "email", "message"].includes(type);
+
+  if (!isChoice) {
+    delete field.options;
+    delete field.childrenByValue;
+  }
+  if (!isRegex) delete field.pattern;
+  if (!hasDefaultNow) delete field.defaultNow;
+  if (noPlaceholder) {
+    delete field.placeholder;
+    delete field.showPlaceholder;
+  }
+  if (type === "message") delete field.required;
+  return field;
+};
+
 export const normalizeSchemaIDs = (nodes) => {
   return mapSchema(nodes, (field) => {
     const id = field.id || genId();
@@ -53,41 +74,13 @@ export const normalizeSchemaIDs = (nodes) => {
         id: opt?.id || genId(),
         label: sanitizeOptionLabel(opt?.label),
       }));
-      delete base.pattern;
-      delete base.defaultNow;
     } else if (base.type === "regex") {
-      delete base.options;
       base.pattern = typeof base.pattern === "string" ? base.pattern : "";
-      delete base.defaultNow;
-    } else if (["date", "time"].includes(base.type)) {
-      delete base.options;
-      delete base.pattern;
+    } else if (["date", "time", "userName", "email"].includes(base.type)) {
       base.defaultNow = !!base.defaultNow;
-    } else if (base.type === "userName") {
-      delete base.options;
-      delete base.pattern;
-      delete base.placeholder;
-      delete base.showPlaceholder;
-      base.defaultNow = !!base.defaultNow;
-    } else if (base.type === "email") {
-      delete base.options;
-      delete base.pattern;
-      delete base.placeholder;
-      delete base.showPlaceholder;
-      base.defaultNow = !!base.defaultNow;
-    } else if (base.type === "message") {
-      delete base.options;
-      delete base.pattern;
-      delete base.defaultNow;
-      delete base.required;
-      delete base.placeholder;
-      delete base.showPlaceholder;
-    } else {
-      delete base.options;
-      delete base.pattern;
-      delete base.defaultNow;
     }
 
+    cleanUnusedFieldProperties(base);
     base.isDisplayed = !!base.isDisplayed;
 
     if (base.placeholder !== undefined && base.showPlaceholder === undefined) {
