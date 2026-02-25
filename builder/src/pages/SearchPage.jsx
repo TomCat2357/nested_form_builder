@@ -15,9 +15,6 @@ import {
   matchesKeyword,
   parseSearchCellDisplayLimit,
 } from "../features/search/searchTable.js";
-// exportSearchResults from gasClient is removed in favor of frontend Excel generation
-import ExcelJS from "exceljs";
-import { saveAs } from "file-saver";
 import { createExcelBlob, getThemeColors } from "../utils/excelExport.js";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import { saveExcelToDrive } from "../services/gasClient.js";
@@ -207,6 +204,12 @@ export default function SearchPage() {
     try {
       const exportingEntries = sortedEntries.map((row) => row.entry);
       const exportTable = buildExportTableData({ form, entries: exportingEntries });
+      const themeColors = getThemeColors();
+
+      const now = new Date();
+      const pad = (n) => String(n).padStart(2, "0");
+      const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      const filename = `検索結果_${form?.settings?.formTitle || form?.id || "form"}_${timestamp}.xlsx`;
 
       const blob = await createExcelBlob(exportTable, themeColors);
       const base64data = await new Promise((resolve, reject) => {
