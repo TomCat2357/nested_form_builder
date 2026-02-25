@@ -69,7 +69,7 @@ export const exportSearchResults = async ({ spreadsheetTitle = "", headerRows, r
 
 export const listEntries = async ({ spreadsheetId, sheetName = "Data", formId = null }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
-  const result = await fetchGasApi("listRecords", { spreadsheetId: normalizeSpreadsheetId(spreadsheetId), sheetName, formId }, "データ一覧の取得に失敗しました");
+  const result = await fetchGasApi("listRecords", { spreadsheetId: normalizeSpreadsheetId(spreadsheetId), sheetName, formId }, "スプレッドシートからデータ一覧を読み取れませんでした");
   return { records: result.records || [], headerMatrix: result.headerMatrix || [] };
 };
 

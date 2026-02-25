@@ -91,8 +91,8 @@ export default function SearchPage() {
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
   const query = searchParams.get("q") || "";
   const page = Math.max(1, Number(searchParams.get("page") || 1));
-  const PAGE_SIZE = Number(settings?.pageSize) || DEFAULT_PAGE_SIZE;
-  const TABLE_MAX_WIDTH = settings?.searchTableMaxWidth ? Number(settings.searchTableMaxWidth) : null;
+  const PAGE_SIZE = Number(form?.settings?.pageSize) || Number(settings?.pageSize) || DEFAULT_PAGE_SIZE;
+  const TABLE_MAX_WIDTH = Number(form?.settings?.searchTableMaxWidth) || Number(settings?.searchTableMaxWidth) || null;
   const cellDisplayLimit = parseSearchCellDisplayLimit(form?.settings?.searchCellMaxChars);
 
   const {

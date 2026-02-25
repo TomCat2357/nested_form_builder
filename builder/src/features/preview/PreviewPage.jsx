@@ -27,7 +27,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
   const renderReadOnlyValue = () => {
     if (field.type === "checkboxes" && Array.isArray(value)) return value.join(", ");
     if (Array.isArray(value)) return value.join(", ");
-    if (value === undefined || value === null || value === "") return "—";
+    if (value === undefined || value === null || value === "") return "\u00A0";
     if (field.type === "url" && value) {
       return (
         <a href={value} target="_blank" rel="noopener noreferrer" className="nf-link">
@@ -281,7 +281,7 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
         const value = (responses || {})[fid] ?? (responses || {})[field?.id];
         const cardAttrs = s.card(depth, false);
         return (
-          <div key={`node_${fid}`} className={cardAttrs.className} data-depth={cardAttrs["data-depth"]}>
+          <div key={`node_${fid}`} className={cardAttrs.className} data-depth={cardAttrs["data-depth"]} data-question-id={fid}>
             <FieldRenderer
               field={{ ...field, id: fid }}
               value={value}

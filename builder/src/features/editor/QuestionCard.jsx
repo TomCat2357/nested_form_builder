@@ -286,7 +286,7 @@ export default function QuestionCard({
   const cardAttrs = s.card(0, isSelected);
 
   return (
-    <div className={cardAttrs.className} data-depth={cardAttrs["data-depth"]} data-selected={cardAttrs["data-selected"]}>
+    <div className={cardAttrs.className} data-depth={cardAttrs["data-depth"]} data-selected={cardAttrs["data-selected"]} data-question-id={field.id}>
       <div className="nf-row nf-gap-8 nf-mb-8 nf-wrap">
         <span className="nf-text-13 nf-fw-500 nf-text-ink nf-shrink-0">項目名</span>
         <input

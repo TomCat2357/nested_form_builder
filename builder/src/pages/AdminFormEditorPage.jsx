@@ -16,6 +16,7 @@ import { validateSpreadsheet } from "../services/gasClient.js";
 import { omitThemeSetting } from "../utils/settings.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
+import SchemaMapNav from "../features/nav/SchemaMapNav.jsx";
 import {
   evaluateCache,
   FORM_CACHE_MAX_AGE_MS,
@@ -338,6 +339,7 @@ export default function AdminFormEditorPage() {
           >
             📊 スプレッドシートを開く
           </button>
+          <SchemaMapNav schema={builderRef.current?.getSchema?.() || initialSchema} />
         </>
       }
     >

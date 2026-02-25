@@ -15,6 +15,8 @@ import {
 import { perfLogger } from "../../utils/perfLogger.js";
 
 const defaultAlert = { showAlert: (message) => console.warn("[useEntriesWithCache]", message) };
+const buildFetchErrorMessage = (error) =>
+  `スプレッドシートからデータを読み取れませんでした。\n接続設定やスプレッドシートの共有設定を確認してください。\n\n詳細: ${error?.message || error}`;
 
 const shouldForceSync = (locationState) => {
   if (!locationState || typeof locationState !== "object") return false;
@@ -72,7 +74,7 @@ export const useEntriesWithCache = ({
       setUseCache(false);
     } catch (error) {
       console.error("[SearchPage] Failed to fetch and cache data:", error);
-      showAlert(`データの取得に失敗しました: ${error.message || error}`);
+      showAlert(buildFetchErrorMessage(error));
     } finally {
       const finishedAt = Date.now();
       perfLogger.logVerbose("search", "fetch done", {
@@ -213,7 +215,7 @@ export const useEntriesWithCache = ({
       if (shouldSync || shouldBackground) {
         fetchAndCacheData({ background: true, reason: "initial-background" }).catch((error) => {
           console.error("[SearchPage] background refresh failed:", error);
-          showAlert(`データの取得に失敗しました: ${error.message || error}`);
+          showAlert(buildFetchErrorMessage(error));
         });
       }
     };

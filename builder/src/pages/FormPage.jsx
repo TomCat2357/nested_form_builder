@@ -26,6 +26,7 @@ import {
 import { useAuth } from "../app/state/authContext.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { perfLogger } from "../utils/perfLogger.js";
+import SchemaMapNav from "../features/nav/SchemaMapNav.jsx";
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
@@ -520,6 +521,7 @@ export default function FormPage() {
               <span className="nf-text-11 nf-text-muted">{currentIndex + 1} / {entryIds.length}</span>
             </>
           )}
+          <SchemaMapNav schema={normalizedSchema} />
         </>
       }
     >
