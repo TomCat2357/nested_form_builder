@@ -63,47 +63,32 @@ const { settings } = useBuilderSettings();
     })();
   }, [canManageAdminSettings, showAlert]);
 
-  const handleSaveAdminKey = async () => {
+  const handleSaveSetting = async ({ apiFunc, inputValue, setStateValue, setInputValue, setConfirmOpen, setLoading, successMsgEmpty, successMsgFilled, errorMsg }) => {
     if (!canManageAdminSettings) return;
-    setAdminKeyConfirm(false);
-    setAdminKeyLoading(true);
+    setConfirmOpen(false);
+    setLoading(true);
     try {
-      const newKey = await setAdminKey(adminKeyInput.trim());
-      setAdminKeyState(newKey);
-      setAdminKeyInput(newKey);
-      if (newKey === "") {
-        showAlert("管理者キーを解除しました。URLパラメータなしで管理者としてアクセスできます。");
-      } else {
-        showAlert("管理者キーを更新しました。次回から ?adminkey=" + newKey + " でアクセスしてください。");
-      }
+      const newVal = await apiFunc(inputValue);
+      setStateValue(newVal);
+      setInputValue(newVal);
+      showAlert(newVal === "" ? successMsgEmpty : successMsgFilled(newVal));
     } catch (error) {
-      console.error("[AdminSettingsPage] setAdminKey failed", error);
-      showAlert(error?.message || "管理者キーの保存に失敗しました");
+      console.error(error);
+      showAlert(error?.message || errorMsg);
     } finally {
-      setAdminKeyLoading(false);
+      setLoading(false);
     }
   };
 
-  const handleSaveAdminEmail = async () => {
-    if (!canManageAdminSettings) return;
-    setAdminEmailConfirm(false);
-    setAdminEmailLoading(true);
-    try {
-      const newEmail = await setAdminEmail(normalizedAdminEmailInput);
-      setAdminEmailState(newEmail);
-      setAdminEmailInput(newEmail);
-      if (newEmail === "") {
-        showAlert("管理者メール制限を解除しました。メールアドレスによる管理者制限は行いません。");
-      } else {
-        showAlert("管理者メールを更新しました。設定済みメールと一致しないユーザーは管理者画面へアクセスできません。");
-      }
-    } catch (error) {
-      console.error("[AdminSettingsPage] setAdminEmail failed", error);
-      showAlert(error?.message || "管理者メールの保存に失敗しました");
-    } finally {
-      setAdminEmailLoading(false);
-    }
-  };
+  const handleSaveAdminKey = () => handleSaveSetting({
+    apiFunc: async (val) => await setAdminKey(val.trim()), inputValue: adminKeyInput, setStateValue: setAdminKeyState, setInputValue: setAdminKeyInput, setConfirmOpen: setAdminKeyConfirm, setLoading: setAdminKeyLoading,
+    successMsgEmpty: "管理者キーを解除しました。URLパラメータなしで管理者としてアクセスできます。", successMsgFilled: (val) => `管理者キーを更新しました。次回から ?adminkey=${val} でアクセスしてください。`, errorMsg: "管理者キーの保存に失敗しました"
+  });
+
+  const handleSaveAdminEmail = () => handleSaveSetting({
+    apiFunc: async (val) => await setAdminEmail(val), inputValue: normalizedAdminEmailInput, setStateValue: setAdminEmailState, setInputValue: setAdminEmailInput, setConfirmOpen: setAdminEmailConfirm, setLoading: setAdminEmailLoading,
+    successMsgEmpty: "管理者メール制限を解除しました。メールアドレスによる管理者制限は行いません。", successMsgFilled: () => "管理者メールを更新しました。設定済みメールと一致しないユーザーは管理者画面へアクセスできません。", errorMsg: "管理者メールの保存に失敗しました"
+  });
 
   const adminKeyConfirmOptions = [
     { value: "cancel", label: "キャンセル", onSelect: () => setAdminKeyConfirm(false) },

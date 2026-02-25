@@ -18,6 +18,7 @@ import {
 // exportSearchResults from gasClient is removed in favor of frontend Excel generation
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
+import { createExcelBlob, getThemeColors } from "../utils/excelExport.js";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import { saveExcelToDrive } from "../services/gasClient.js";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
@@ -27,40 +28,7 @@ import SearchPagination from "../features/search/components/SearchPagination.jsx
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { DEFAULT_PAGE_SIZE } from "../core/constants.js";
 
-const getThemeColors = () => {
-  const style = getComputedStyle(document.documentElement);
-  const get = (v) => style.getPropertyValue(v).trim();
-  const toHex = (color) => {
-    if (!color) return null;
-    if (/^#[0-9a-fA-F]{6}$/.test(color)) return color.toLowerCase();
-    if (/^#[0-9a-fA-F]{3}$/.test(color)) {
-      return "#" + color[1] + color[1] + color[2] + color[2] + color[3] + color[3];
-    }
-    if (/^#[0-9a-fA-F]{8}$/.test(color)) {
-      const r = parseInt(color.slice(1, 3), 16);
-      const g = parseInt(color.slice(3, 5), 16);
-      const b = parseInt(color.slice(5, 7), 16);
-      const a = parseInt(color.slice(7, 9), 16) / 255;
-      const blend = (c) => Math.round(c * a + 255 * (1 - a));
-      return "#" + [blend(r), blend(g), blend(b)].map((c) => c.toString(16).padStart(2, "0")).join("");
-    }
-    const m = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
-    if (!m) return null;
-    const r = parseInt(m[1]);
-    const g = parseInt(m[2]);
-    const b = parseInt(m[3]);
-    const a = m[4] !== undefined ? parseFloat(m[4]) : 1;
-    const blend = (c) => Math.round(c * a + 255 * (1 - a));
-    return "#" + [blend(r), blend(g), blend(b)].map((c) => c.toString(16).padStart(2, "0")).join("");
-  };
-  return {
-    primary: toHex(get("--primary")),
-    primarySoft: toHex(get("--primary-soft")),
-    text: toHex(get("--text")),
-    border: toHex(get("--border")),
-    surface: toHex(get("--surface")),
-  };
-};
+
 
 const buildInitialSort = (params) => {
   const raw = params.get("sort");
@@ -240,58 +208,7 @@ export default function SearchPage() {
       const exportingEntries = sortedEntries.map((row) => row.entry);
       const exportTable = buildExportTableData({ form, entries: exportingEntries });
 
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("Data");
-      const themeColors = getThemeColors();
-
-      const primaryColor = (themeColors.primary || "#2f6fed").replace("#", "");
-      const primarySoftColor = (themeColors.primarySoft || "#dbeafe").replace("#", "");
-      const surfaceColor = (themeColors.surface || "#ffffff").replace("#", "");
-      const borderColor = (themeColors.border || "#e6e8f0").replace("#", "");
-
-      // ヘッダー追加とスタイリング
-      exportTable.headerRows.forEach((rowArray) => {
-        const row = worksheet.addRow(rowArray);
-        row.eachCell((cell) => {
-          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + primaryColor } };
-          cell.font = { color: { argb: "FFFFFFFF" }, bold: true };
-          cell.border = {
-            top: { style: "medium", color: { argb: "FF" + primaryColor } },
-            left: { style: "medium", color: { argb: "FF" + primaryColor } },
-            bottom: { style: "medium", color: { argb: "FF" + primaryColor } },
-            right: { style: "medium", color: { argb: "FF" + primaryColor } }
-          };
-        });
-      });
-
-      // データ追加とスタイリング
-      exportTable.rows.forEach((rowArray, index) => {
-        const row = worksheet.addRow(rowArray);
-        const bgColor = index % 2 === 0 ? surfaceColor : primarySoftColor;
-        row.eachCell((cell) => {
-          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + bgColor } };
-          cell.font = { color: { argb: "FF1A1A2E" } };
-          cell.border = {
-            top: { style: "thin", color: { argb: "FF" + borderColor } },
-            left: { style: "thin", color: { argb: "FF" + borderColor } },
-            bottom: { style: "thin", color: { argb: "FF" + borderColor } },
-            right: { style: "thin", color: { argb: "FF" + borderColor } }
-          };
-        });
-      });
-
-      // 列幅の調整とヘッダーの固定
-      worksheet.columns = exportTable.columns.map(() => ({ width: 20 }));
-      worksheet.views = [{ state: 'frozen', ySplit: exportTable.headerRows.length }];
-
-      const buffer = await workbook.xlsx.writeBuffer();
-      const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-
-      const now = new Date();
-      const pad = (n) => String(n).padStart(2, "0");
-      const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-      const filename = `検索結果_${form?.settings?.formTitle || form?.id || "form"}_${timestamp}.xlsx`;
-
+      const blob = await createExcelBlob(exportTable, themeColors);
       const base64data = await new Promise((resolve, reject) => {
         const reader = new FileReader();
         reader.onloadend = () => resolve(reader.result.split(',')[1]);

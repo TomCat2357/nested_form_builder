@@ -153,12 +153,13 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
   var createdAtIndex = keyToIndex["createdAt"];
   var modifiedAtIndex = keyToIndex["modifiedAt"];
 
-  if (typeof createdAtIndex === "number") {
-    Sheets_applyTemporalFormatToColumn_(sheet, createdAtIndex, values, dataRowCount, dateTimeFormat);
-  }
-  if (typeof modifiedAtIndex === "number") {
-    Sheets_applyTemporalFormatToColumn_(sheet, modifiedAtIndex, values, dataRowCount, dateTimeFormat);
-  }
+  var applyFormat = function(colIndex, format) {
+    if (typeof colIndex === "number") {
+      Sheets_applyTemporalFormatToColumn_(sheet, colIndex, values, dataRowCount, format);
+    }
+  };
+  applyFormat(createdAtIndex, dateTimeFormat);
+  applyFormat(modifiedAtIndex, dateTimeFormat);
 
   var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "createdBy": true, "modifiedBy": true };
   var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";
@@ -167,21 +168,12 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
     if (reservedKeys[colInfo.key]) continue;
     if (hasExplicitMap) {
       var explicitType = explicitTypeMap[colInfo.key];
-      if (explicitType === "date") {
-        Sheets_applyTemporalFormatToColumn_(sheet, colInfo.index, values, dataRowCount, dateFormat);
-        continue;
-      }
-      if (explicitType === "time") {
-        Sheets_applyTemporalFormatToColumn_(sheet, colInfo.index, values, dataRowCount, timeFormat);
-        continue;
-      }
+      if (explicitType === "date") { applyFormat(colInfo.index, dateFormat); continue; }
+      if (explicitType === "time") { applyFormat(colInfo.index, timeFormat); continue; }
     }
     var temporalType = Sheets_detectTemporalColumnType_(values, colInfo.index);
-    if (temporalType === "date") {
-      Sheets_applyTemporalFormatToColumn_(sheet, colInfo.index, values, dataRowCount, dateFormat);
-    } else if (temporalType === "time") {
-      Sheets_applyTemporalFormatToColumn_(sheet, colInfo.index, values, dataRowCount, timeFormat);
-    }
+    if (temporalType === "date") applyFormat(colInfo.index, dateFormat);
+    else if (temporalType === "time") applyFormat(colInfo.index, timeFormat);
   }
 }
 

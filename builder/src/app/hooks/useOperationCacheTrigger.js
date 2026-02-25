@@ -62,14 +62,16 @@ export const useOperationCacheTrigger = ({
       schedule("visibilitychange");
     };
 
-    document.addEventListener("click", handleClick, true);
-    document.addEventListener("keydown", handleKeydown, true);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const events = [
+      { name: "click", handler: handleClick, capture: true },
+      { name: "keydown", handler: handleKeydown, capture: true },
+      { name: "visibilitychange", handler: handleVisibilityChange, capture: false },
+    ];
+
+    events.forEach(e => document.addEventListener(e.name, e.handler, e.capture));
 
     return () => {
-      document.removeEventListener("click", handleClick, true);
-      document.removeEventListener("keydown", handleKeydown, true);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      events.forEach(e => document.removeEventListener(e.name, e.handler, e.capture));
       if (timeoutRef.current) {
         clearTimeout(timeoutRef.current);
         timeoutRef.current = null;

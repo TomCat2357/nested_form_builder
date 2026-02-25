@@ -62,6 +62,18 @@ function Forms_listForms_(options) {
   var forms = [];
   var loadFailures = [];
 
+  var pushFailure = function(id, fId, fName, fUrl, stage, errMsg) {
+    loadFailures.push({
+      id: id,
+      fileId: fId,
+      fileName: fName || null,
+      driveFileUrl: fUrl || (fId ? Forms_buildDriveFileUrlFromId_(fId) : null),
+      errorStage: stage,
+      errorMessage: errMsg,
+      lastTriedAt: new Date().toISOString(),
+    });
+  };
+
   // マッピングからfileIdリストを構築
   var fileIdMap = {}; // { fileId: formId }
   var formIdToMappingEntry = {}; // { formId: mappingEntry }
@@ -84,15 +96,7 @@ function Forms_listForms_(options) {
       formIdToMappingEntry[formId] = mappingEntry;
     } else {
       // fileIdがない場合はエラーとして記録
-      loadFailures.push({
-        id: formId,
-        fileId: null,
-        fileName: null,
-        driveFileUrl: driveFileUrlFromMap || null,
-        errorStage: "fileId",
-        errorMessage: "プロパティサービスにファイルIDが登録されていません",
-        lastTriedAt: new Date().toISOString(),
-      });
+      pushFailure(formId, null, null, driveFileUrlFromMap, "fileId", "プロパティサービスにファイルIDが登録されていません");
     }
   }
 
@@ -125,15 +129,7 @@ function Forms_listForms_(options) {
 
         if (result.error) {
           // エラーケース
-          loadFailures.push({
-            id: formId,
-            fileId: fileId,
-            fileName: result.fileName || null,
-            driveFileUrl: mappingEntry.driveFileUrl || Forms_buildDriveFileUrlFromId_(fileId),
-            errorStage: result.errorStage || "unknown",
-            errorMessage: result.error,
-            lastTriedAt: new Date().toISOString(),
-          });
+          pushFailure(formId, fileId, result.fileName, mappingEntry.driveFileUrl, result.errorStage || "unknown", result.error);
         } else {
           // 成功ケース
           try {
@@ -161,15 +157,7 @@ function Forms_listForms_(options) {
 
             forms.push(form);
           } catch (parseErr) {
-            loadFailures.push({
-              id: formId,
-              fileId: fileId,
-              fileName: result.fileName,
-              driveFileUrl: mappingEntry.driveFileUrl || result.fileUrl,
-              errorStage: "parse",
-              errorMessage: parseErr && parseErr.message ? parseErr.message : String(parseErr),
-              lastTriedAt: new Date().toISOString(),
-            });
+            pushFailure(formId, fileId, result.fileName, mappingEntry.driveFileUrl || result.fileUrl, "parse", parseErr && parseErr.message ? parseErr.message : String(parseErr));
           }
         }
       }
@@ -179,15 +167,7 @@ function Forms_listForms_(options) {
       for (var k = 0; k < batchFileIds.length; k++) {
         var fbFileId = batchFileIds[k];
         var fbFormId = fileIdMap[fbFileId];
-        loadFailures.push({
-          id: fbFormId,
-          fileId: fbFileId,
-          fileName: null,
-          driveFileUrl: formIdToMappingEntry[fbFormId].driveFileUrl || Forms_buildDriveFileUrlFromId_(fbFileId),
-          errorStage: "batch",
-          errorMessage: batchErr && batchErr.message ? batchErr.message : String(batchErr),
-          lastTriedAt: new Date().toISOString(),
-        });
+        pushFailure(fbFormId, fbFileId, null, formIdToMappingEntry[fbFormId].driveFileUrl, "batch", batchErr && batchErr.message ? batchErr.message : String(batchErr));
       }
     }
   }

@@ -5,13 +5,8 @@ import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { dataStore } from "../../app/state/dataStore.js";
 import { getFormsFromCache } from "../../app/state/formsCache.js";
 import { saveRecordsToCache, getRecordsFromCache } from "../../app/state/recordsCache.js";
-import {
-  evaluateCache,
-  RECORD_CACHE_BACKGROUND_REFRESH_MS,
-  RECORD_CACHE_MAX_AGE_MS,
-  FORM_CACHE_BACKGROUND_REFRESH_MS,
-  FORM_CACHE_MAX_AGE_MS,
-} from "../../app/state/cachePolicy.js";
+import { evaluateCache, RECORD_CACHE_BACKGROUND_REFRESH_MS, RECORD_CACHE_MAX_AGE_MS } from "../../app/state/cachePolicy.js";
+import { useRefreshFormsIfNeeded } from "../../app/hooks/useRefreshFormsIfNeeded.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 
 const defaultAlert = { showAlert: (message) => console.warn("[useEntriesWithCache]", message) };
@@ -21,12 +16,6 @@ const buildFetchErrorMessage = (error) =>
 const shouldForceSync = (locationState) => {
   if (!locationState || typeof locationState !== "object") return false;
   return locationState.saved === true || locationState.deleted === true || locationState.created === true;
-};
-
-const hasFormsCacheData = (cache) => {
-  const formCount = Array.isArray(cache?.forms) ? cache.forms.length : 0;
-  const failureCount = Array.isArray(cache?.loadFailures) ? cache.loadFailures.length : 0;
-  return formCount > 0 || failureCount > 0 || !!cache?.lastSyncedAt;
 };
 
 export const useEntriesWithCache = ({
@@ -93,35 +82,7 @@ export const useEntriesWithCache = ({
     }
   }, [form?.schemaHash, formId, showAlert]);
 
-  const refreshFormsIfNeeded = useCallback(async (source = "unknown") => {
-    let formsCache = { forms: [], loadFailures: [], lastSyncedAt: null };
-    try {
-      formsCache = await getFormsFromCache();
-    } catch (error) {
-      console.warn("[SearchPage] Failed to load forms cache:", error);
-    }
-
-    const decision = evaluateCache({
-      lastSyncedAt: formsCache.lastSyncedAt,
-      hasData: hasFormsCacheData(formsCache),
-      maxAgeMs: FORM_CACHE_MAX_AGE_MS,
-      backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
-    });
-
-    if (decision.isFresh) return;
-    if (loadingFormsRef.current) return;
-
-    if (decision.shouldSync) {
-      await refreshForms({ reason: `operation:${source}:forms-sync`, background: false });
-      return;
-    }
-
-    if (decision.shouldBackground) {
-      refreshForms({ reason: `operation:${source}:forms-background`, background: true }).catch((error) => {
-        console.error("[SearchPage] forms background refresh failed:", error);
-      });
-    }
-  }, [refreshForms]);
+  const refreshFormsIfNeeded = useRefreshFormsIfNeeded(refreshForms, loadingForms);
 
   const handleOperation = useCallback(async ({ source }) => {
     if (!formId) return;

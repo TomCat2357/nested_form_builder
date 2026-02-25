@@ -20,9 +20,8 @@ import {
   evaluateCache,
   RECORD_CACHE_MAX_AGE_MS,
   RECORD_CACHE_BACKGROUND_REFRESH_MS,
-  FORM_CACHE_MAX_AGE_MS,
-  FORM_CACHE_BACKGROUND_REFRESH_MS,
 } from "../app/state/cachePolicy.js";
+import { useRefreshFormsIfNeeded } from "../app/hooks/useRefreshFormsIfNeeded.js";
 import { useAuth } from "../app/state/authContext.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { perfLogger } from "../utils/perfLogger.js";
@@ -194,33 +193,7 @@ export default function FormPage() {
     };
   }, [formId, entryId, form, normalizedSchema, userName, userEmail, applyEntryToState]);
 
-  const refreshFormsIfNeeded = useCallback(async (source = "unknown") => {
-    let formsCache = { forms: [], loadFailures: [], lastSyncedAt: null };
-    try {
-      formsCache = await getFormsFromCache();
-    } catch (error) {
-      console.warn("[FormPage] Failed to load forms cache:", error);
-    }
-
-    const hasFormsCache = (formsCache.forms || []).length > 0 || (formsCache.loadFailures || []).length > 0 || !!formsCache.lastSyncedAt;
-    const formsDecision = evaluateCache({
-      lastSyncedAt: formsCache.lastSyncedAt,
-      hasData: hasFormsCache,
-      maxAgeMs: FORM_CACHE_MAX_AGE_MS,
-      backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
-    });
-
-    if (formsDecision.isFresh || loadingFormsRef.current) return;
-    if (formsDecision.shouldSync) {
-      await refreshForms({ reason: `operation:${source}:form-page-sync`, background: false });
-      return;
-    }
-    if (formsDecision.shouldBackground) {
-      refreshForms({ reason: `operation:${source}:form-page-background`, background: true }).catch((error) => {
-        console.error("[FormPage] background refreshForms failed:", error);
-      });
-    }
-  }, [refreshForms]);
+  const refreshFormsIfNeeded = useRefreshFormsIfNeeded(refreshForms, loadingForms);
 
   const handleOperationCacheCheck = useCallback(async ({ source }) => {
     if (!formId) return;
