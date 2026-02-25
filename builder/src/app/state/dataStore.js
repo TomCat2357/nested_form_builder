@@ -8,6 +8,9 @@ import {
   upsertRecordInCache,
   updateRecordsMeta,
   deleteRecordFromCache,
+  getMaxRecordNo,
+  applyDeltaToCache,
+  getRecordsFromCache,
 } from "./recordsCache.js";
 import { getFormsFromCache } from "./formsCache.js";
 import {
@@ -234,7 +237,7 @@ export const dataStore = {
 
     let no = payload['No.'];
     if (no === undefined || no === null || no === "") {
-      const maxNo = await import("./recordsCache.js").then(m => m.getMaxRecordNo(formId));
+      const maxNo = await getMaxRecordNo(formId);
       no = maxNo + 1;
     }
 
@@ -274,7 +277,6 @@ export const dataStore = {
     
     if (gasResult.isDelta) {
       const updatedEntries = (gasResult.records || []).map(r => mapSheetRecordToEntry(r, formId));
-      const { applyDeltaToCache, getRecordsFromCache } = await import("./recordsCache.js");
       await applyDeltaToCache(formId, updatedEntries, gasResult.allIds, gasResult.headerMatrix || null, form.schemaHash);
       
       const fullCache = await getRecordsFromCache(formId);

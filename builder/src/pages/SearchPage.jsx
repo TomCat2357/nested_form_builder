@@ -16,6 +16,8 @@ import {
   parseSearchCellDisplayLimit,
 } from "../features/search/searchTable.js";
 // exportSearchResults from gasClient is removed in favor of frontend Excel generation
+import ExcelJS from "exceljs";
+import { saveAs } from "file-saver";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import SearchSidebar from "../features/search/components/SearchSidebar.jsx";
@@ -234,13 +236,6 @@ export default function SearchPage() {
     if (sortedEntries.length === 0) return;
     setExporting(true);
     try {
-      let ExcelJS;
-      try {
-        ExcelJS = (await import("exceljs")).default || (await import("exceljs"));
-      } catch (importErr) {
-        throw new Error("Excel出力機能が利用できません。管理者に「npm install exceljs」の実行を依頼してください。");
-      }
-
       const exportingEntries = sortedEntries.map((row) => row.entry);
       const exportTable = buildExportTableData({ form, entries: exportingEntries });
 
@@ -296,7 +291,6 @@ export default function SearchPage() {
       const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
       const filename = `検索結果_${form?.settings?.formTitle || form?.id || "form"}_${timestamp}.xlsx`;
 
-      const { saveAs } = await import("file-saver");
       saveAs(blob, filename);
 
       showAlert(`出力完了: ${exportTable.rows.length} 件をExcelファイルとしてダウンロードしました。`);
