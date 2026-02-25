@@ -14,7 +14,7 @@ export const STORE_NAMES = {
 };
 
 // キャッシュポリシー（ミリ秒）
-export const RECORD_CACHE_MAX_AGE_MS = 5 * 60 * 1000;
+export const RECORD_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 export const RECORD_CACHE_BACKGROUND_REFRESH_MS = 1 * 60 * 1000;
 export const FORM_CACHE_MAX_AGE_MS = 60 * 60 * 1000;
 export const FORM_CACHE_BACKGROUND_REFRESH_MS = 10 * 60 * 1000;

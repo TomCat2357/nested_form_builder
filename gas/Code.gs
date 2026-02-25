@@ -224,6 +224,8 @@ function SubmitResponses_(ctx) {
     sheetName: ctx.sheetName,
     rowNumber: result.row,
     id: result.id,
+    recordNo: result.recordNo,
+    recordNo: result.recordNo,
   };
 }
 
@@ -272,8 +274,25 @@ function ListRecords_(ctx) {
       Logger.log(`[ListRecords_] Failed to load form schema for temporal formats: ${err}`);
     }
   }
-  const records = Sheets_getAllRecords_(sheet, temporalTypeMap);
-  return { ok: true, records, count: records.length, headerMatrix: Sheets_readHeaderMatrix_(sheet) };
+  const allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap);
+  const headerMatrix = Sheets_readHeaderMatrix_(sheet);
+
+  if (ctx.forceFullSync || !ctx.lastSyncedAt) {
+    return { ok: true, records: allRecords, count: allRecords.length, headerMatrix, isDelta: false };
+  }
+
+  const updatedRecords = [];
+  const allIds = [];
+
+  for (let i = 0; i < allRecords.length; i++) {
+    const rec = allRecords[i];
+    allIds.push(rec.id);
+    if (rec.modifiedAtUnixMs > ctx.lastSyncedAt) {
+      updatedRecords.push(rec);
+    }
+  }
+
+  return { ok: true, records: updatedRecords, allIds, count: updatedRecords.length, headerMatrix, isDelta: true };
 }
 
 function handleCors_(e, handler) {

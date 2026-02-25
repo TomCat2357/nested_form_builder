@@ -106,7 +106,7 @@ function Sheets_createNewRow_(sheet, id) {
   sheet.getRange(rowIndex, 5).setValue(email);
   sheet.getRange(rowIndex, 6).setValue(email);
 
-  return { rowIndex: rowIndex, id: nextId };
+  return { rowIndex: rowIndex, id: nextId, recordNo: maxNo + 1 };
 }
 
 function Sheets_updateExistingRow_(sheet, rowIndex) {
@@ -163,7 +163,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx) {
 
   Sheets_writeDataToRow_(sheet, rowIndex, ctx.order, ctx.responses, keyToColumn, reservedHeaderKeys);
 
-  return { row: rowIndex, id: ctx.id };
+  return { row: rowIndex, id: ctx.id, recordNo: recordNo };
 }
 
 function Sheets_deleteRecordById_(sheet, id) {

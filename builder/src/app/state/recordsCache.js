@@ -275,3 +275,65 @@ export async function deleteRecordFromCache(formId, entryId) {
   await waitForTransaction(tx);
   db.close();
 }
+
+/**
+ * キャッシュ内の最大 No. を取得（仮No採番用）
+ */
+export async function getMaxRecordNo(formId) {
+  if (!formId) return 0;
+  const db = await openDB();
+  const tx = db.transaction(STORE_NAMES.records, 'readonly');
+  const store = tx.objectStore(STORE_NAMES.records);
+  const rawEntries = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId)));
+  db.close();
+  
+  let maxNo = 0;
+  for (const entry of rawEntries || []) {
+    const no = parseInt(entry['No.'], 10);
+    if (!Number.isNaN(no) && no > maxNo) maxNo = no;
+  }
+  return maxNo;
+}
+
+/**
+ * 差分データをキャッシュに適用する
+ */
+export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMatrix = null, schemaHash = null) {
+  if (!formId) return;
+  const db = await openDB();
+  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
+  const store = tx.objectStore(STORE_NAMES.records);
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
+  
+  const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
+  const lastSyncedAt = Date.now();
+  const existingRecords = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId))) || [];
+  
+  const allIdSet = new Set(allIds || []);
+  const entryIndexMap = { ...(existingMeta?.entryIndexMap || {}) };
+  
+  // 1. 削除されたレコードを検知して消去
+  for (const record of existingRecords) {
+    if (!allIdSet.has(record.entryId)) {
+      store.delete(record.compoundId);
+      delete entryIndexMap[record.entryId];
+    }
+  }
+  
+  // 2. 追加・更新されたレコードをUpsert
+  for (const record of updatedRecords || []) {
+    const nextRowIndex = entryIndexMap[record.id]; 
+    store.put(buildCacheRecord(formId, record, lastSyncedAt, nextRowIndex));
+  }
+  
+  // メタデータの更新
+  metaStore.put(buildMetadata(formId, existingMeta, {
+    lastSyncedAt,
+    headerMatrix: headerMatrix !== null ? headerMatrix : undefined,
+    schemaHash: schemaHash !== null ? schemaHash : undefined,
+    entryIndexMap
+  }));
+  
+  await waitForTransaction(tx);
+  db.close();
+}

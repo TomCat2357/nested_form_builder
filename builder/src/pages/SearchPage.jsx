@@ -303,7 +303,7 @@ export default function SearchPage() {
           onCreate={handleCreateNew}
           onConfig={settings?.syncAllFormsTheme ? undefined : handleOpenFormConfig}
           onDelete={handleDeleteSelected}
-          onRefresh={fetchAndCacheData}
+          onRefresh={() => fetchAndCacheData({ forceFullSync: true })}
           onExport={handleExportResults}
           useCache={useCache}
           loading={loading}

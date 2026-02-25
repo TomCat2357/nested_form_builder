@@ -207,6 +207,7 @@ export default function FormPage() {
       order: payload.order,
       createdBy,
       modifiedBy,
+      "No.": entry?.["No."] // 既存のNoを引き継ぐ（新規の場合は upsertEntry 内部で最大値+1が振られる）
     });
 
     // スプレッドシート保存はバックグラウンドで継続
@@ -222,6 +223,16 @@ export default function FormPage() {
           spreadsheetId,
           sheetName,
           payload: { ...payload, id: saved.id },
+        }).then(async (gasResult) => {
+          // スプレッドシート側で確定した「本No.」を受け取ってキャッシュと画面を更新
+          if (gasResult && gasResult.recordNo) {
+             const finalRecord = await dataStore.upsertEntry(form.id, {
+               ...saved,
+               "No.": gasResult.recordNo
+             });
+             // 現在表示中のレコードと同じなら画面のNo.も更新
+             setEntry(prev => prev?.id === finalRecord.id ? finalRecord : prev);
+          }
         }).catch((error) => {
           console.error("[FormPage] Background spreadsheet save failed:", error);
         });

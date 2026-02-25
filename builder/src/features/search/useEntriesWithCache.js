@@ -24,15 +24,17 @@ export const useEntriesWithCache = ({ formId, form, locationKey, locationState, 
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [cacheDisabled, setCacheDisabled] = useState(false);
 
-  const fetchAndCacheData = useCallback(async ({ background = false } = {}) => {
+  const fetchAndCacheData = useCallback(async ({ background = false, forceFullSync = false } = {}) => {
     if (!formId) return;
     if (!background) setLoading(true);
     else setBackgroundLoading(true);
     const startedAt = Date.now();
-    perfLogger.logVerbose("search", "fetch start", { formId, background, startedAt });
 
     try {
-      const result = await dataStore.listEntries(formId);
+      const result = await dataStore.listEntries(formId, { 
+        lastSyncedAt: forceFullSync ? null : lastSyncedAt, 
+        forceFullSync 
+      });
       const fetchedEntries = result.entries || result || [];
       setEntries(fetchedEntries);
       setHeaderMatrix(result.headerMatrix || []);

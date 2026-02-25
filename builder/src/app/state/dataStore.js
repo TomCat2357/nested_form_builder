@@ -260,7 +260,16 @@ export const dataStore = {
       ? payload.createdAt
       : (Number.isFinite(payload.createdAtUnixMs) ? payload.createdAtUnixMs : toUnixMs(payload.createdAt));
     const resolvedCreatedAt = Number.isFinite(createdAtSerial) ? createdAtSerial : now;
+
+    let no = payload['No.'];
+    if (no === undefined || no === null || no === "") {
+      const maxNo = await import("./recordsCache.js").then(m => m.getMaxRecordNo(formId));
+      no = maxNo + 1;
+    }
+
     const record = {
+      'No.': no,
+      'No.': no,
       id: payload.id || genId(),
       formId,
       createdBy: payload.createdBy || "",
@@ -276,38 +285,44 @@ export const dataStore = {
     await upsertRecordInCache(formId, record, { headerMatrix: payload.headerMatrix, rowIndex: payload.rowIndex });
     return record;
   },
-  async listEntries(formId) {
+  async listEntries(formId, { lastSyncedAt = null, forceFullSync = false } = {}) {
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
-    if (!sheetConfig) {
-      throw new Error("Spreadsheet not configured for this form");
-    }
+    if (!sheetConfig) throw new Error("Spreadsheet not configured for this form");
+    
     const startedAt = Date.now();
-    perfLogger.logVerbose("records", "listEntries start", { formId, sheet: sheetConfig.sheetName, startedAt });
-    const gasResult = await listEntriesFromGas({ ...sheetConfig, formId });
-    const entries = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
+    perfLogger.logVerbose("records", "listEntries start", { formId, forceFullSync, startedAt });
+    
+    const payload = { ...sheetConfig, formId, forceFullSync };
+    if (!forceFullSync && lastSyncedAt) {
+      payload.lastSyncedAt = lastSyncedAt;
+    }
 
-    // Sort by ID in ascending order when fetching from spreadsheet
-    // (binary search in cache assumes ascending order)
-    entries.sort((a, b) => {
-      if (a.id < b.id) return -1;
-      if (a.id > b.id) return 1;
-      return 0;
-    });
+    const gasResult = await listEntriesFromGas(payload);
+    const lastSyncedAtNext = Date.now();
+    
+    if (gasResult.isDelta) {
+      const updatedEntries = (gasResult.records || []).map(r => mapSheetRecordToEntry(r, formId));
+      const { applyDeltaToCache, getRecordsFromCache } = await import("./recordsCache.js");
+      await applyDeltaToCache(formId, updatedEntries, gasResult.allIds, gasResult.headerMatrix || null, form.schemaHash);
+      
+      const fullCache = await getRecordsFromCache(formId);
+      const durationMs = Date.now() - startedAt;
+      perfLogger.logVerbose("records", "listEntries delta done", { formId, durationMs });
+      return { entries: fullCache.entries, headerMatrix: fullCache.headerMatrix, entryIndexMap: fullCache.entryIndexMap, lastSyncedAt: lastSyncedAtNext };
+    }
+
+    const entries = (gasResult.records || []).map(r => mapSheetRecordToEntry(r, formId));
+    entries.sort((a, b) => { if (a.id < b.id) return -1; if (a.id > b.id) return 1; return 0; });
     const entryIndexMap = {};
-    entries.forEach((item, idx) => {
-      entryIndexMap[item.id] = idx;
-    });
+    entries.forEach((item, idx) => { entryIndexMap[item.id] = idx; });
 
-    const lastSyncedAt = Date.now();
     await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], { schemaHash: form.schemaHash });
-    await updateRecordsMeta(formId, { entryIndexMap, lastReloadedAt: lastSyncedAt });
-    const finishedAt = Date.now();
-    const durationMs = finishedAt - startedAt;
-    perfLogger.logVerbose("records", "listEntries done", { formId, count: entries.length, durationMs });
-    perfLogger.logRecordGasRead(durationMs, null, "list");
-    perfLogger.logRecordList(durationMs, entries.length, false);
-    return { entries, headerMatrix: gasResult.headerMatrix || [], entryIndexMap, lastSyncedAt };
+    await updateRecordsMeta(formId, { entryIndexMap, lastReloadedAt: lastSyncedAtNext });
+    
+    const durationMs = Date.now() - startedAt;
+    perfLogger.logVerbose("records", "listEntries full done", { formId, durationMs });
+    return { entries, headerMatrix: gasResult.headerMatrix || [], entryIndexMap, lastSyncedAt: lastSyncedAtNext };
   },
   async getEntry(formId, entryId, { forceSync = false, rowIndexHint = undefined } = {}) {
     const form = await this.getForm(formId);
@@ -336,40 +351,20 @@ export const dataStore = {
       backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
     });
 
-    if (!shouldSync && cachedEntry) {
+    // 1分(60,000ms)以内であれば強制同期(forceSync: true)でもキャッシュを優先して通信を避ける
+    const isVeryFresh = cacheAge < 60000;
+    
+    if (cachedEntry && (isVeryFresh || (!shouldSync && !forceSync))) {
       if (shouldBackground) {
-        const backgroundStart = Date.now();
-        getEntryFromGas({
-          ...sheetConfig,
-          entryId,
-          rowIndexHint: effectiveRowIndex,
-        })
+        // ...既存のバックグラウンド処理...
+        getEntryFromGas({ ...sheetConfig, entryId, rowIndexHint: effectiveRowIndex })
           .then((result) => {
-            const backgroundDuration = Date.now() - backgroundStart;
-            perfLogger.logRecordGasRead(backgroundDuration, entryId, "single-background");
             const mapped = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
-            if (!mapped) return;
-            const nextRowIndex = typeof result.rowIndex === "number" ? result.rowIndex : effectiveRowIndex;
-            upsertRecordInCache(formId, mapped, { rowIndex: nextRowIndex }).catch((err) => {
-              console.error("[dataStore.getEntry] background cache update failed", err);
-            });
-          })
-          .catch((error) => {
-            console.error("[dataStore.getEntry] background getEntry failed", error);
-          });
+            if (mapped) upsertRecordInCache(formId, mapped, { rowIndex: result.rowIndex ?? effectiveRowIndex });
+          }).catch(() => {});
       }
-      perfLogger.logVerbose("records", "getEntry cache hit", {
-        formId,
-        entryId,
-        cacheAge,
-        rowIndexHint: effectiveRowIndex,
-      });
-      perfLogger.logRecordCacheHit(tGetCacheEnd - tGetCacheStart, entryId);
       return cachedEntry;
     }
-
-    const startedAt = Date.now();
-    perfLogger.logVerbose("records", "getEntry start", { formId, entryId, rowIndexHint: effectiveRowIndex });
 
     const tBeforeGas = performance.now();
     const result = await getEntryFromGas({
@@ -383,6 +378,24 @@ export const dataStore = {
       formId,
       entryId,
     });
+
+    
+    // GAS側で「行がずれている（違うIDが返ってきた）」または「見つからなかった（削除された）」場合、
+    // 単一取得を諦めて差分更新リスト取得にフォールバックする
+    if (!result.ok || !result.record || result.record.id !== entryId) {
+      console.log("[dataStore.getEntry] row mismatch or deleted. falling back to delta listEntries.");
+      const listResult = await this.listEntries(formId, { lastSyncedAt, forceFullSync: false });
+      return listResult.entries.find(e => e.id === entryId) || null;
+    }
+
+    
+    // GAS側で「行がずれている（違うIDが返ってきた）」または「見つからなかった（削除された）」場合、
+    // 単一取得を諦めて差分更新リスト取得にフォールバックする
+    if (!result.ok || !result.record || result.record.id !== entryId) {
+      console.log("[dataStore.getEntry] row mismatch or deleted. falling back to delta listEntries.");
+      const listResult = await this.listEntries(formId, { lastSyncedAt, forceFullSync: false });
+      return listResult.entries.find(e => e.id === entryId) || null;
+    }
 
     const tBeforeMap = performance.now();
     const mapped = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
