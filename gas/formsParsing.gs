@@ -34,22 +34,6 @@ function Forms_parseGoogleDriveUrl_(url) {
   if (/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
     return Forms_resolveFileOrFolder_(trimmed);
   }
-  }
-
-  // IDのみが渡された場合も試す
-  if (/^[a-zA-Z0-9_-]+$/.test(trimmed)) {
-    try {
-      var testFile = DriveApp.getFileById(trimmed);
-      return { type: "file", id: trimmed };
-    } catch (e) {
-      try {
-        var testFolder = DriveApp.getFolderById(trimmed);
-        return { type: "folder", id: trimmed };
-      } catch (e2) {
-        return { type: null, id: null };
-      }
-    }
-  }
 
   return { type: null, id: null };
 }
