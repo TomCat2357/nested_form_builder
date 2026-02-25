@@ -39,3 +39,29 @@ function nfbImportThemeFromDrive(url) {
     };
   });
 }
+
+
+/**
+ * フロントエンドで生成したExcelファイルをGoogle Driveに保存する
+ * @param {Object} payload - { filename: string, base64: string }
+ * @return {Object} { ok: true, fileUrl: string, fileName: string }
+ */
+function nfbSaveExcelToDrive(payload) {
+  return nfbSafeCall_(function() {
+    if (!payload || !payload.base64 || !payload.filename) {
+      throw new Error("ファイルデータが不足しています");
+    }
+
+    var bytes = Utilities.base64Decode(payload.base64);
+    var mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+    var blob = Utilities.newBlob(bytes, mimeType, payload.filename);
+
+    var file = DriveApp.createFile(blob);
+
+    return {
+      ok: true,
+      fileUrl: file.getUrl(),
+      fileName: file.getName()
+    };
+  });
+}

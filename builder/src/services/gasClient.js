@@ -369,3 +369,12 @@ export const setRestrictToFormOnly = async (value) => {
   }
   return Boolean(result.restrictToFormOnly);
 };
+
+
+export const saveExcelToDrive = async ({ filename, base64 }) => {
+  const result = await callScriptRun("nfbSaveExcelToDrive", { filename, base64 });
+  if (!result || result.ok === false) {
+    throw new Error(result?.error || "Driveへの保存に失敗しました");
+  }
+  return result;
+};

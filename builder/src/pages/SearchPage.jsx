@@ -19,6 +19,7 @@ import {
 import ExcelJS from "exceljs";
 import { saveAs } from "file-saver";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
+import { saveExcelToDrive } from "../services/gasClient.js";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import SearchSidebar from "../features/search/components/SearchSidebar.jsx";
 import SearchTable from "../features/search/components/SearchTable.jsx";
@@ -291,9 +292,24 @@ export default function SearchPage() {
       const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
       const filename = `検索結果_${form?.settings?.formTitle || form?.id || "form"}_${timestamp}.xlsx`;
 
-      saveAs(blob, filename);
+      const base64data = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result.split(',')[1]);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
 
-      showAlert(`出力完了: ${exportTable.rows.length} 件をExcelファイルとしてダウンロードしました。`);
+      const result = await saveExcelToDrive({ filename, base64: base64data });
+
+      showAlert(
+        <div className="nf-col nf-gap-8">
+          <div>マイドライブにエクセルファイルを保存しました。</div>
+          <a href={result.fileUrl} target="_blank" rel="noopener noreferrer" className="nf-link nf-fw-600">
+            ファイルを開く
+          </a>
+        </div>,
+        "出力完了"
+      );
     } catch (err) {
       console.error(err);
       showAlert(`出力に失敗しました: ${err.message}`);
