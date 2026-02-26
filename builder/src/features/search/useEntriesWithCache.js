@@ -202,12 +202,14 @@ export const useEntriesWithCache = ({
   }, [cacheDisabled, fetchAndCacheData, form?.schemaHash, formId, locationKey, locationState, showAlert]);
 
   const forceRefreshAll = useCallback(async () => {
+    if (!formId) return;
+
+    // 検索結果画面の手動更新は、遅延書き込み完了→キャッシュ破棄→全件再取得の順で実行する
     await dataStore.flushPendingOperations();
-    await Promise.all([
-      fetchAndCacheData({ background: false, forceFullSync: true, reason: "manual:search-records" }),
-      refreshForms({ reason: "manual:search-forms", background: false }),
-    ]);
-  }, [fetchAndCacheData, refreshForms]);
+    await saveRecordsToCache(formId, [], [], { schemaHash: form?.schemaHash });
+    await fetchAndCacheData({ background: false, forceFullSync: true, reason: "manual:search-records" });
+    await refreshForms({ reason: "manual:search-forms", background: false });
+  }, [fetchAndCacheData, form?.schemaHash, formId, refreshForms]);
 
   return {
     entries,
