@@ -111,6 +111,15 @@ function saveResponses(payload) {
   });
 }
 
+function nfbAcquireSaveLock(payload) {
+  return nfbSafeCall_(() => {
+    const ctx = Model_fromScriptRunPayload_(payload);
+    const ssErr = RequireSpreadsheetId_(ctx);
+    if (ssErr) return ssErr;
+    return AcquireSaveLock_(ctx);
+  });
+}
+
 function deleteRecord(payload) {
   return nfbSafeCall_(() => {
     const ctx = Model_fromScriptRunPayload_(payload);
@@ -216,17 +225,50 @@ function ExecuteWithSheet_(ctx, actionFn) {
   return actionFn(sheet);
 }
 
+function BuildLockTimeoutResult_(actionLabel) {
+  return {
+    ok: false,
+    code: NFB_ERROR_CODE_LOCK_TIMEOUT,
+    error: `${actionLabel}処理は現在、他のユーザーによる更新中のため実行できませんでした。しばらくしてから再度お試しください。`,
+  };
+}
+
+function WithScriptLock_(actionLabel, actionFn) {
+  const lock = LockService.getScriptLock();
+  const locked = lock.tryLock(NFB_LOCK_WAIT_TIMEOUT_MS);
+  if (!locked) return BuildLockTimeoutResult_(actionLabel);
+
+  try {
+    return actionFn();
+  } finally {
+    try {
+      SpreadsheetApp.flush();
+    } catch (flushErr) {
+      Logger.log(`[WithScriptLock_] SpreadsheetApp.flush failed: ${flushErr}`);
+    }
+    lock.releaseLock();
+  }
+}
+
 function SubmitResponses_(ctx) {
   return ExecuteWithSheet_(ctx, (sheet) => {
-    const result = Sheets_upsertRecordById_(sheet, ctx.order, ctx);
-    return {
-      ok: true,
-      spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${ctx.spreadsheetId}`,
-      sheetName: ctx.sheetName,
-      rowNumber: result.row,
-      id: result.id,
-      recordNo: result.recordNo,
-    };
+    return WithScriptLock_("保存", () => {
+      const result = Sheets_upsertRecordById_(sheet, ctx.order, ctx);
+      return {
+        ok: true,
+        spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${ctx.spreadsheetId}`,
+        sheetName: ctx.sheetName,
+        rowNumber: result.row,
+        id: result.id,
+        recordNo: result.recordNo,
+      };
+    });
+  });
+}
+
+function AcquireSaveLock_(ctx) {
+  return ExecuteWithSheet_(ctx, (_sheet) => {
+    return WithScriptLock_("保存", () => ({ ok: true }));
   });
 }
 
@@ -252,36 +294,68 @@ function GetRecord_(ctx) {
 
 function ListRecords_(ctx) {
   return ExecuteWithSheet_(ctx, (sheet) => {
-    let temporalTypeMap = null;
-    const formId = ctx?.raw?.formId;
-    if (formId) {
-      try {
-        const form = Forms_getForm_(formId);
-        if (form?.schema) temporalTypeMap = Sheets_collectTemporalPathMap_(form.schema);
-      } catch (err) {
-        Logger.log(`[ListRecords_] Failed to load form schema for temporal formats: ${err}`);
+    const toComparableUnixMs = (value, allowSerialNumber) => {
+      if (value === null || value === undefined || value === "") return 0;
+      if (value instanceof Date) {
+        const ms = value.getTime();
+        return Number.isFinite(ms) ? ms : 0;
       }
-    }
-    const shouldNormalize = Boolean(ctx.forceFullSync) || !ctx.lastSyncedAt;
-    const allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: shouldNormalize });
-    const headerMatrix = Sheets_readHeaderMatrix_(sheet);
-
-    if (ctx.forceFullSync || !ctx.lastSyncedAt) {
-      return { ok: true, records: allRecords, count: allRecords.length, headerMatrix, isDelta: false };
-    }
-
-    const updatedRecords = [];
-    const allIds = [];
-
-    for (let i = 0; i < allRecords.length; i++) {
-      const rec = allRecords[i];
-      allIds.push(rec.id);
-      if (rec.modifiedAtUnixMs > ctx.lastSyncedAt) {
-        updatedRecords.push(rec);
+      if (typeof value === "number" && Number.isFinite(value)) {
+        if (Math.abs(value) >= 100000000000) return value;
+        if (allowSerialNumber) return NFB_SHEETS_EPOCH_MS + value * NFB_MS_PER_DAY;
+        return value;
       }
-    }
+      if (typeof value === "string") {
+        const trimmed = value.trim();
+        if (!trimmed) return 0;
+        if (/^[-+]?\d+(?:\.\d+)?$/.test(trimmed)) {
+          return toComparableUnixMs(parseFloat(trimmed), allowSerialNumber);
+        }
+        const parsed = Date.parse(trimmed);
+        if (Number.isFinite(parsed)) return parsed;
+      }
+      return 0;
+    };
 
-    return { ok: true, records: updatedRecords, allIds, count: updatedRecords.length, headerMatrix, isDelta: true };
+    const listRecords = () => {
+      let temporalTypeMap = null;
+      const formId = ctx?.raw?.formId;
+      if (formId) {
+        try {
+          const form = Forms_getForm_(formId);
+          if (form?.schema) temporalTypeMap = Sheets_collectTemporalPathMap_(form.schema);
+        } catch (err) {
+          Logger.log(`[ListRecords_] Failed to load form schema for temporal formats: ${err}`);
+        }
+      }
+      const shouldNormalize = Boolean(ctx.forceFullSync);
+      const allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: shouldNormalize });
+      const headerMatrix = Sheets_readHeaderMatrix_(sheet);
+
+      if (ctx.forceFullSync || !ctx.lastSyncedAt) {
+        return { ok: true, records: allRecords, count: allRecords.length, headerMatrix, isDelta: false };
+      }
+
+      const lastSyncedAtUnixMs = toComparableUnixMs(ctx.lastSyncedAt, false);
+      const updatedRecords = [];
+      const allIds = [];
+
+      for (let i = 0; i < allRecords.length; i++) {
+        const rec = allRecords[i];
+        allIds.push(rec.id);
+        const modifiedAtUnixMs = toComparableUnixMs(rec.modifiedAtUnixMs, true) || toComparableUnixMs(rec.modifiedAt, true);
+        if (modifiedAtUnixMs > lastSyncedAtUnixMs) {
+          updatedRecords.push(rec);
+        }
+      }
+
+      return { ok: true, records: updatedRecords, allIds, count: updatedRecords.length, headerMatrix, isDelta: true };
+    };
+
+    if (ctx.forceFullSync) {
+      return WithScriptLock_("更新", listRecords);
+    }
+    return listRecords();
   });
 }
 

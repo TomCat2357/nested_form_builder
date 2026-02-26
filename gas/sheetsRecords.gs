@@ -122,8 +122,32 @@ function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
     lastRow = sheet.getLastRow();
     if (lastRow > NFB_HEADER_DEPTH) {
       var normalizedDataRowCount = lastRow - NFB_HEADER_DEPTH;
-      var sortRange = sheet.getRange(dataStartRow, 1, normalizedDataRowCount, lastColumn);
-      sortRange.sort({ column: 1, ascending: true });
+      var normalizedRange = sheet.getRange(dataStartRow, 1, normalizedDataRowCount, lastColumn);
+      var normalizedRows = normalizedRange.getValues();
+      var CREATED_AT_INDEX = 2; // 0-based, 3rd column
+      var ID_INDEX = 0; // 0-based, 1st column
+      var toCreatedAtSortKey = function(value) {
+        var createdAtSerial = Sheets_toUnixMs_(value, true);
+        if (typeof createdAtSerial === "number" && isFinite(createdAtSerial)) {
+          return createdAtSerial;
+        }
+        // createdAt空白は最古として先頭へ寄せる
+        return -1;
+      };
+
+      normalizedRows.sort(function(a, b) {
+        var aCreatedAt = toCreatedAtSortKey(a[CREATED_AT_INDEX]);
+        var bCreatedAt = toCreatedAtSortKey(b[CREATED_AT_INDEX]);
+        if (aCreatedAt !== bCreatedAt) return aCreatedAt - bCreatedAt;
+
+        // createdAt同値時はIDで安定化
+        var aId = String(a[ID_INDEX] == null ? "" : a[ID_INDEX]);
+        var bId = String(b[ID_INDEX] == null ? "" : b[ID_INDEX]);
+        if (aId < bId) return -1;
+        if (aId > bId) return 1;
+        return 0;
+      });
+      normalizedRange.setValues(normalizedRows);
 
       var noValues = [];
       for (var n = 0; n < normalizedDataRowCount; n++) {

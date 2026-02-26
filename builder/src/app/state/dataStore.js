@@ -38,7 +38,7 @@ import { perfLogger } from "../../utils/perfLogger.js";
 import { toUnixMs } from "../../utils/dateTime.js";
 import { DEFAULT_SHEET_NAME } from "../../core/constants.js";
 
-const nowSerial = () => toUnixMs(Date.now());
+const nowUnixMs = () => Date.now();
 
 const pendingOperations = new Set();
 const trackPendingOperation = (promise) => {
@@ -236,10 +236,13 @@ export const dataStore = {
   },
   async upsertEntry(formId, payload) {
     const now = nowSerial();
-    const createdAtSerial = Number.isFinite(payload.createdAt)
-      ? payload.createdAt
-      : (Number.isFinite(payload.createdAtUnixMs) ? payload.createdAtUnixMs : toUnixMs(payload.createdAt));
-    const resolvedCreatedAt = Number.isFinite(createdAtSerial) ? createdAtSerial : now;
+    let createdAtUnix = Number.isFinite(payload.createdAtUnixMs)
+      ? payload.createdAtUnixMs
+      : toUnixMs(payload.createdAt);
+    if (!Number.isFinite(createdAtUnix) && Number.isFinite(payload.createdAt)) {
+      createdAtUnix = toUnixMs(payload.createdAt);
+    }
+    const resolvedCreatedAt = Number.isFinite(createdAtUnix) ? createdAtUnix : now;
 
     let no = payload['No.'];
     if (no === undefined || no === null || no === "") {

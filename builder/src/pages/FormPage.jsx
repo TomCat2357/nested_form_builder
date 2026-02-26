@@ -7,12 +7,13 @@ import PreviewPage from "../features/preview/PreviewPage.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { restoreResponsesFromData, hasDirtyChanges, collectDefaultNowResponses } from "../utils/responses.js";
-import { submitResponses, hasScriptRun } from "../services/gasClient.js";
+import { acquireSaveLock, submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSchemaIDs } from "../core/schema.js";
 import { traverseSchema } from "../core/schemaUtils.js";
+import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../core/constants.js";
 import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.js";
 import { useEditLock } from "../app/hooks/useEditLock.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
@@ -508,76 +509,93 @@ export default function FormPage() {
     const isNewEntry = !entry?.id;
     const createdBy = isNewEntry ? (userEmail || "") : (entry?.createdBy || "");
     const modifiedBy = userEmail || entry?.modifiedBy || "";
+    const settings = form.settings || {};
+    const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
+    const sheetName = settings.sheetName || "Data";
+    const requiresSpreadsheetSave = Boolean(spreadsheetId && hasScriptRun());
 
-    // まずIndexedDBに即時保存（体感レスポンスを優先）
+    // ロック確保に成功したらキャッシュ更新を先に完了させ、画面遷移を優先する
+    if (requiresSpreadsheetSave) {
+      await acquireSaveLock({ spreadsheetId, sheetName });
+    } else if (spreadsheetId) {
+      console.warn("[FormPage] google.script.run unavailable; skipped background spreadsheet save");
+    } else {
+      console.warn("[FormPage] No spreadsheetId configured, skipping spreadsheet save");
+    }
+
     const saved = await dataStore.upsertEntry(form.id, {
       id: payload.id,
       data: payload.responses,
       order: payload.order,
       createdBy,
       modifiedBy,
-      "No.": entry?.["No."] // 既存のNoを引き継ぐ（新規の場合は upsertEntry 内部で最大値+1が振られる）
+      "No.": entry?.["No."],
     });
-
-    // スプレッドシート保存はバックグラウンドで継続
-    const settings = form.settings || {};
-    const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
-    const sheetName = settings.sheetName || "Data";
-
-    if (spreadsheetId) {
-      if (!hasScriptRun()) {
-        console.warn("[FormPage] google.script.run unavailable; skipped background spreadsheet save");
-      } else {
-        void submitResponses({
-          spreadsheetId,
-          sheetName,
-          payload: { ...payload, id: saved.id },
-        }).then(async (gasResult) => {
-          // スプレッドシート側で確定した「本No.」を受け取ってキャッシュと画面を更新
-          // 古いsavedで全体を上書きせず、キャッシュから最新データを読んでNo.のみ更新
-          if (gasResult && gasResult.recordNo) {
-             const { entry: currentCached } = await getCachedEntryWithIndex(form.id, saved.id);
-             const baseRecord = currentCached || saved;
-             const finalRecord = await dataStore.upsertEntry(form.id, {
-               ...baseRecord,
-               "No.": gasResult.recordNo,
-             });
-             setEntry(prev => prev?.id === finalRecord.id ? finalRecord : prev);
-          }
-        }).catch((error) => {
-          console.error("[FormPage] Background spreadsheet save failed:", error);
-        });
-      }
-    } else {
-      console.warn("[FormPage] No spreadsheetId configured, skipping spreadsheet save");
-    }
     applyEntryToState(saved, saved.id, "save:new-entry");
+
+    if (requiresSpreadsheetSave) {
+      void submitResponses({
+        spreadsheetId,
+        sheetName,
+        payload: { ...payload, id: saved.id },
+      })
+        .then(async (gasResult) => {
+          if (gasResult?.recordNo === undefined || gasResult?.recordNo === null || gasResult?.recordNo === "") return;
+          if (String(gasResult.recordNo) === String(saved["No."])) return;
+
+          const { entry: currentCached } = await getCachedEntryWithIndex(form.id, saved.id);
+          const baseRecord = currentCached || saved;
+          const synced = await dataStore.upsertEntry(form.id, {
+            ...baseRecord,
+            "No.": gasResult.recordNo,
+          });
+          setEntry((prev) => (prev?.id === synced.id ? synced : prev));
+        })
+        .catch((error) => {
+          console.error("[FormPage] Background spreadsheet save failed:", error);
+          if (error?.code === GAS_ERROR_CODE_LOCK_TIMEOUT) {
+            showAlert(
+              "現在、他のユーザーによる更新処理が実行中のためスプレッドシートへの保存を完了できませんでした。少し時間をおいて再度お試しください。",
+              "スプレッドシート保存を完了できませんでした",
+            );
+            return;
+          }
+          showAlert(`スプレッドシート保存に失敗しました: ${error?.message || error}`);
+        });
+    }
     return saved;
   };
 
   const triggerSave = async ({ redirect } = {}) => {
     if (!form) {
       showAlert("フォームが見つかりません");
-      return;
+      return false;
     }
-    if (isReadLocked) return;
+    if (isReadLocked) return false;
+    setIsSaving(true);
     try {
-      setIsSaving(true);
       const preview = previewRef.current;
       if (!preview) throw new Error("preview_not_ready");
       await preview.submit({ silent: true });
       if (redirect) navigateBack({ saved: true });
+      return true;
     } catch (error) {
       console.warn(error);
       if (error?.message === "validation_failed" || error?.message?.includes("missing_")) {
-        setIsSaving(false);
-        return;
+        return false;
       }
-      setIsSaving(false);
+      if (error?.code === GAS_ERROR_CODE_LOCK_TIMEOUT) {
+        showAlert(
+          "現在、他のユーザーによる更新処理が実行中のため保存できませんでした。しばらく時間をおいて、もう一度お試しください。",
+          "保存を完了できませんでした",
+        );
+        return false;
+      }
       showAlert(`保存に失敗しました: ${error?.message || error}`);
-      return;
+      return false;
+    } finally {
+      setIsSaving(false);
     }
-    setIsSaving(false);
   };
 
   const attemptLeave = (intent) => {
@@ -724,8 +742,8 @@ export default function FormPage() {
     if (action === "save") {
       if (intent && intent.startsWith("navigate:")) {
         const targetEntryId = intent.slice("navigate:".length);
-        await triggerSave();
-        navigateToEntryById(targetEntryId);
+        const saved = await triggerSave();
+        if (saved) navigateToEntryById(targetEntryId);
       } else {
         await triggerSave({ redirect: true });
       }

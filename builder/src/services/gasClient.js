@@ -10,6 +10,13 @@ const normalizeScriptRunError = (err) => {
   catch (jsonErr) { return new Error("Apps Script call failed"); }
 };
 
+const createGasApiError = (message, { code, result } = {}) => {
+  const error = new Error(message);
+  if (code) error.code = code;
+  if (result !== undefined) error.result = result;
+  return error;
+};
+
 const callScriptRun = (functionName, payload) =>
   new Promise((resolve, reject) => {
     if (!hasScriptRun()) {
@@ -25,7 +32,12 @@ const callScriptRun = (functionName, payload) =>
 const fetchGasApi = async (functionName, payload, errorMessage) => {
   try {
     const result = await callScriptRun(functionName, payload);
-    if (!result || result.ok === false) throw new Error(result?.error || errorMessage);
+    if (!result || result.ok === false) {
+      throw createGasApiError(result?.error || errorMessage, {
+        code: result?.code,
+        result,
+      });
+    }
     return result;
   } catch (error) {
     console.error(`[gasClient] ${functionName} failed`, error);
@@ -41,6 +53,11 @@ export const validateSpreadsheet = (idOrUrl) => {
 export const submitResponses = ({ spreadsheetId, sheetName = "Data", payload }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
   return fetchGasApi("saveResponses", { ...payload, spreadsheetId, sheetName }, "Apps Script call failed");
+};
+
+export const acquireSaveLock = ({ spreadsheetId, sheetName = "Data" }) => {
+  if (!spreadsheetId) throw new Error("spreadsheetId is required");
+  return fetchGasApi("nfbAcquireSaveLock", { spreadsheetId: normalizeSpreadsheetId(spreadsheetId), sheetName }, "Apps Script call failed");
 };
 
 export const deleteEntry = ({ spreadsheetId, sheetName = "Data", entryId }) => {

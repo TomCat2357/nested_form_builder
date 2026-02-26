@@ -8,7 +8,7 @@ function Sheets_isValidDate_(date) {
 
 function Sheets_serialToDate_(serial) {
   if (typeof serial !== "number" || !isFinite(serial)) return null;
-  var ms = NFB_SHEETS_EPOCH_MS + serial * NFB_MS_PER_DAY;
+  var ms = Math.abs(serial) >= 100000000000 ? serial : NFB_SHEETS_EPOCH_MS + serial * NFB_MS_PER_DAY;
   var d = new Date(ms);
   return Sheets_isValidDate_(d) ? d : null;
 }
@@ -184,11 +184,11 @@ function Sheets_toDateOrOriginal_(value) {
 
 function Sheets_dateToSerial_(date) {
   if (!Sheets_isValidDate_(date)) return null;
-  return (date.getTime() - NFB_SHEETS_EPOCH_MS) / NFB_MS_PER_DAY;
+  return date.getTime();
 }
 
 function Sheets_toUnixMs_(value, allowSerialNumber) {
   var d = Sheets_parseDateLikeToJstDate_(value, allowSerialNumber);
-  return d ? Sheets_dateToSerial_(d) : null;
+  return d ? d.getTime() : null;
 }
 

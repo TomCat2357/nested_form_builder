@@ -2,6 +2,7 @@
 export const MAX_DEPTH = 11;
 export const DEFAULT_PAGE_SIZE = 20;
 export const DEFAULT_SHEET_NAME = "Data";
+export const GAS_ERROR_CODE_LOCK_TIMEOUT = "LOCK_TIMEOUT";
 
 // IndexedDB ストレージ関連
 export const DB_NAME = "NestedFormBuilder";

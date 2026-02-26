@@ -7,6 +7,7 @@ import { getFormsFromCache } from "../../app/state/formsCache.js";
 import { saveRecordsToCache, getRecordsFromCache } from "../../app/state/recordsCache.js";
 import { evaluateCache, RECORD_CACHE_BACKGROUND_REFRESH_MS, RECORD_CACHE_MAX_AGE_MS } from "../../app/state/cachePolicy.js";
 import { useRefreshFormsIfNeeded } from "../../app/hooks/useRefreshFormsIfNeeded.js";
+import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../../core/constants.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 
 const defaultAlert = { showAlert: (message) => console.warn("[useEntriesWithCache]", message) };
@@ -39,7 +40,7 @@ export const useEntriesWithCache = ({
   const latestRequestTokenRef = useRef(0);
   const loadingFormsRef = useLatestRef(loadingForms);
 
-  const fetchAndCacheData = useCallback(async ({ background = false, forceFullSync = false, reason = "unknown" } = {}) => {
+  const fetchAndCacheData = useCallback(async ({ background = false, forceFullSync = false, reason = "unknown", onError = null } = {}) => {
     if (!formId) return;
     if (background && backgroundLoadingRef.current) return;
 
@@ -76,9 +77,12 @@ export const useEntriesWithCache = ({
       setLastSyncedAt(syncedAt);
       setCacheDisabled(false);
       setUseCache(false);
+      return true;
     } catch (error) {
       console.error("[SearchPage] Failed to fetch and cache data:", error);
-      showAlert(buildFetchErrorMessage(error));
+      if (typeof onError === "function") onError(error);
+      else showAlert(buildFetchErrorMessage(error));
+      return false;
     } finally {
       const finishedAt = Date.now();
       perfLogger.logVerbose("search", "fetch done", {
@@ -204,12 +208,26 @@ export const useEntriesWithCache = ({
   const forceRefreshAll = useCallback(async () => {
     if (!formId) return;
 
-    // 検索結果画面の手動更新は、遅延書き込み完了→キャッシュ破棄→全件再取得の順で実行する
+    // 検索結果画面の手動更新は、遅延書き込み完了後に全件再取得を実行する
     await dataStore.flushPendingOperations();
-    await saveRecordsToCache(formId, [], [], { schemaHash: form?.schemaHash });
-    await fetchAndCacheData({ background: false, forceFullSync: true, reason: "manual:search-records" });
+    const refreshed = await fetchAndCacheData({
+      background: false,
+      forceFullSync: true,
+      reason: "manual:search-records",
+      onError: (error) => {
+        if (error?.code === GAS_ERROR_CODE_LOCK_TIMEOUT) {
+          showAlert(
+            "現在、他のユーザーによる更新処理が実行中のため更新できませんでした。少し時間をおいて再度「更新」を実行してください。",
+            "更新を完了できませんでした",
+          );
+          return;
+        }
+        showAlert(buildFetchErrorMessage(error));
+      },
+    });
+    if (!refreshed) return;
     await refreshForms({ reason: "manual:search-forms", background: false });
-  }, [fetchAndCacheData, form?.schemaHash, formId, refreshForms]);
+  }, [fetchAndCacheData, formId, refreshForms, showAlert]);
 
   return {
     entries,
