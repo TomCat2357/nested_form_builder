@@ -5,19 +5,18 @@
 function Sheets_findRowById_(sheet, id) {
   if (!id) return -1;
   var lastRow = sheet.getLastRow();
-  if (lastRow <= NFB_HEADER_DEPTH) return -1;
-  var lookupRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, lastRow - NFB_HEADER_DEPTH, 1).getValues();
+  if (lastRow < NFB_DATA_START_ROW) return -1;
+  var rowCount = lastRow - NFB_DATA_START_ROW + 1;
+  var lookupRange = sheet.getRange(NFB_DATA_START_ROW, 1, rowCount, 1).getValues();
 
-  // 二分探索を試行（ID列がソート済みの場合に高速化）
   var binaryResult = Sheets_binarySearchById_(lookupRange, id);
   if (binaryResult !== -1) {
-    return NFB_HEADER_DEPTH + 1 + binaryResult;
+    return NFB_DATA_START_ROW + binaryResult;
   }
 
-  // フォールバック: 線形探索（後方互換性のため）
   for (var i = 0; i < lookupRange.length; i++) {
     if (String(lookupRange[i][0]) === String(id)) {
-      return NFB_HEADER_DEPTH + 1 + i;
+      return NFB_DATA_START_ROW + i;
     }
   }
   return -1;
@@ -30,35 +29,36 @@ function Sheets_binarySearchById_(lookupRange, targetId) {
   var left = 0;
   var right = lookupRange.length - 1;
 
-  // ソート済みかチェック（最初と最後を比較）
   var firstId = String(lookupRange[0][0]);
   var lastId = String(lookupRange[right][0]);
 
-  // IDが "r_" で始まるタイムスタンプベースの形式かチェック
-  if (!firstId.startsWith("r_") || !lastId.startsWith("r_")) {
-    return -1; // 二分探索不可
-  }
+  if (!firstId.startsWith("r_") || !lastId.startsWith("r_")) return -1;
+  if (firstId > lastId) return -1;
 
-  // ソート順チェック（簡易版: 先頭 <= 末尾）
-  if (firstId > lastId) {
-    return -1; // ソートされていない
-  }
-
-  // 二分探索実行
   while (left <= right) {
     var mid = Math.floor((left + right) / 2);
     var midId = String(lookupRange[mid][0]);
 
-    if (midId === targetStr) {
-      return mid;
-    } else if (midId < targetStr) {
-      left = mid + 1;
-    } else {
-      right = mid - 1;
-    }
+    if (midId === targetStr) return mid;
+    if (midId < targetStr) left = mid + 1;
+    else right = mid - 1;
   }
 
   return -1;
+}
+
+function Sheets_findFirstBlankRow_(sheet) {
+  var lastRow = sheet.getLastRow();
+  if (lastRow < NFB_DATA_START_ROW) return NFB_DATA_START_ROW;
+
+  var rowCount = lastRow - NFB_DATA_START_ROW + 1;
+  var idValues = sheet.getRange(NFB_DATA_START_ROW, 1, rowCount, 1).getValues();
+  for (var i = 0; i < idValues.length; i++) {
+    if (String(idValues[i][0] == null ? "" : idValues[i][0]).trim() === "") {
+      return NFB_DATA_START_ROW + i;
+    }
+  }
+  return lastRow + 1;
 }
 
 function Sheets_prepareResponses_(ctx) {
@@ -79,25 +79,21 @@ function Sheets_prepareResponses_(ctx) {
 
 function Sheets_createNewRow_(sheet, id) {
   var nextId = (id && String(id)) || Sheets_generateRecordId_();
-  var rowIndex = Math.max(sheet.getLastRow() + 1, NFB_HEADER_DEPTH + 1);
+  var rowIndex = Sheets_findFirstBlankRow_(sheet);
 
   Sheets_ensureRowCapacity_(sheet, rowIndex);
-  var now = new Date();
+  var nowSerial = Sheets_dateToSerial_(new Date());
+  var email = Session.getActiveUser().getEmail() || "";
 
   var maxNo = 0;
   var lastRow = sheet.getLastRow();
-  if (lastRow > NFB_HEADER_DEPTH) {
-    var noValues = sheet.getRange(NFB_HEADER_DEPTH + 1, 2, lastRow - NFB_HEADER_DEPTH, 1).getValues();
+  if (lastRow >= NFB_DATA_START_ROW) {
+    var noValues = sheet.getRange(NFB_DATA_START_ROW, 2, lastRow - NFB_DATA_START_ROW + 1, 1).getValues();
     for (var i = 0; i < noValues.length; i++) {
-      var val = noValues[i][0];
-      if (typeof val === 'number' && val > maxNo) {
-        maxNo = val;
-      }
+      var val = Number(noValues[i][0]);
+      if (Number.isFinite(val) && val > maxNo) maxNo = val;
     }
   }
-
-  var nowSerial = Sheets_dateToSerial_(now);
-  var email = Session.getActiveUser().getEmail() || "";
 
   sheet.getRange(rowIndex, 1).setValue(String(nextId));
   sheet.getRange(rowIndex, 2).setValue(String(maxNo + 1));
@@ -105,6 +101,7 @@ function Sheets_createNewRow_(sheet, id) {
   sheet.getRange(rowIndex, 4).setValue(nowSerial);
   sheet.getRange(rowIndex, 5).setValue(email);
   sheet.getRange(rowIndex, 6).setValue(email);
+  Sheets_touchSheetLastUpdated_(sheet, nowSerial);
 
   return { rowIndex: rowIndex, id: nextId, recordNo: maxNo + 1 };
 }
@@ -114,16 +111,15 @@ function Sheets_updateExistingRow_(sheet, rowIndex) {
   var nowSerial = Sheets_dateToSerial_(new Date());
   var email = Session.getActiveUser().getEmail() || "";
   sheet.getRange(rowIndex, 4).setValue(nowSerial);
-  sheet.getRange(rowIndex, 5).setValue(email);
+  sheet.getRange(rowIndex, 6).setValue(email);
+  Sheets_touchSheetLastUpdated_(sheet, nowSerial);
 }
 
 function Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys) {
   for (var key in keyToColumn) {
     if (Object.prototype.hasOwnProperty.call(keyToColumn, key) && !reservedHeaderKeys[key]) {
       var columnIndex = keyToColumn[key];
-      if (columnIndex) {
-        sheet.getRange(rowIndex, columnIndex).setValue("");
-      }
+      if (columnIndex) sheet.getRange(rowIndex, columnIndex).setValue("");
     }
   }
 }
@@ -177,6 +173,6 @@ function Sheets_deleteRecordById_(sheet, id) {
   }
 
   sheet.deleteRow(rowIndex);
+  Sheets_touchSheetLastUpdated_(sheet);
   return { ok: true, row: rowIndex, id: id };
 }
-

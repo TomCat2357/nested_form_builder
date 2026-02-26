@@ -12,7 +12,7 @@ function Model_normalizeContext_(body = {}, params = {}) {
     id: body.id || params.id || "",
     responses,
     order,
-    lastSyncedAt: body.lastSyncedAt || params.lastSyncedAt || null,
+    lastSpreadsheetReadAt: body.lastSpreadsheetReadAt || body.lastSyncedAt || params.lastSpreadsheetReadAt || params.lastSyncedAt || null,
     forceFullSync: body.forceFullSync === true || params.forceFullSync === 'true',
     rowIndexHint,
     raw: body,

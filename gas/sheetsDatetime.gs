@@ -133,7 +133,7 @@ function Sheets_applyTemporalFormatToColumn_(sheet, columnIndex, values, dataRow
     converted.push([parsed || cell]);
   }
 
-  var range = sheet.getRange(NFB_HEADER_DEPTH + 1, columnIndex + 1, dataRowCount, 1);
+  var range = sheet.getRange(NFB_DATA_START_ROW, columnIndex + 1, dataRowCount, 1);
   range.setValues(converted);
   range.setNumberFormat(numberFormat);
 }

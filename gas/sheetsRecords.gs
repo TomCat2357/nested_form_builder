@@ -3,7 +3,7 @@
 
 
 function Sheets_readColumnPaths_(sheet, lastColumn) {
-  var headerMatrix = sheet.getRange(1, 1, NFB_HEADER_DEPTH, lastColumn).getValues();
+  var headerMatrix = sheet.getRange(NFB_HEADER_START_ROW, 1, NFB_HEADER_DEPTH, lastColumn).getValues();
   var columnPaths = [];
   for (var col = 0; col < lastColumn; col++) {
     var path = [];
@@ -58,7 +58,7 @@ function Sheets_getRecordById_(sheet, id, rowIndexHint) {
 
   var lastRow = sheet.getLastRow();
   var lastColumn = sheet.getLastColumn();
-  if (lastColumn === 0 || lastRow <= NFB_HEADER_DEPTH) {
+  if (lastColumn === 0 || lastRow < NFB_DATA_START_ROW) {
     return { ok: false, error: "Record not found" };
   }
 
@@ -66,7 +66,7 @@ function Sheets_getRecordById_(sheet, id, rowIndexHint) {
 
   // 0-basedのデータ行indexをヒントとして受け取り、先頭ヘッダー行を考慮して変換
   if (typeof rowIndexHint === "number" && rowIndexHint >= 0) {
-    var candidate = NFB_HEADER_DEPTH + 1 + rowIndexHint;
+    var candidate = NFB_DATA_START_ROW + rowIndexHint;
     if (candidate <= lastRow) {
       var idCell = sheet.getRange(candidate, 1, 1, 1).getValues()[0][0];
 
@@ -84,7 +84,7 @@ function Sheets_getRecordById_(sheet, id, rowIndexHint) {
     return { ok: false, error: "Record not found" };
   }
 
-  var dataRowIndex = resolvedRowIndex - (NFB_HEADER_DEPTH + 1);
+  var dataRowIndex = resolvedRowIndex - (NFB_DATA_START_ROW);
 
   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
   var rowData = sheet.getRange(resolvedRowIndex, 1, 1, lastColumn).getValues()[0];
@@ -101,14 +101,14 @@ function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
   var lastColumn = sheet.getLastColumn();
   var shouldNormalize = !!(options && options.normalize);
 
-  if (lastRow <= NFB_HEADER_DEPTH || lastColumn === 0) {
+  if (lastRow < NFB_DATA_START_ROW || lastColumn === 0) {
     return [];
   }
 
-  var dataStartRow = NFB_HEADER_DEPTH + 1;
+  var dataStartRow = NFB_DATA_START_ROW;
 
   if (shouldNormalize) {
-    var removableCount = lastRow - NFB_HEADER_DEPTH;
+    var removableCount = lastRow - NFB_DATA_START_ROW + 1;
     if (removableCount > 0) {
       var idValues = sheet.getRange(dataStartRow, 1, removableCount, 1).getValues();
       for (var idx = idValues.length - 1; idx >= 0; idx--) {
@@ -120,8 +120,8 @@ function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
     }
 
     lastRow = sheet.getLastRow();
-    if (lastRow > NFB_HEADER_DEPTH) {
-      var normalizedDataRowCount = lastRow - NFB_HEADER_DEPTH;
+    if (lastRow >= NFB_DATA_START_ROW) {
+      var normalizedDataRowCount = lastRow - NFB_DATA_START_ROW + 1;
       var sortRange = sheet.getRange(dataStartRow, 1, normalizedDataRowCount, lastColumn);
       sortRange.sort({ column: 1, ascending: true });
 
@@ -135,12 +135,12 @@ function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
 
   lastRow = sheet.getLastRow();
   lastColumn = sheet.getLastColumn();
-  if (lastRow <= NFB_HEADER_DEPTH || lastColumn === 0) {
+  if (lastRow < NFB_DATA_START_ROW || lastColumn === 0) {
     return [];
   }
 
   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
-  var dataRowCount = lastRow - NFB_HEADER_DEPTH;
+  var dataRowCount = lastRow - NFB_DATA_START_ROW + 1;
   var dataRange = sheet.getRange(dataStartRow, 1, dataRowCount, lastColumn).getValues();
   if (dataRowCount > 0) {
     Sheets_applyTemporalFormats_(sheet, columnPaths, dataRange, dataRowCount, temporalTypeMap);

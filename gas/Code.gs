@@ -262,12 +262,17 @@ function ListRecords_(ctx) {
         Logger.log(`[ListRecords_] Failed to load form schema for temporal formats: ${err}`);
       }
     }
-    const shouldNormalize = Boolean(ctx.forceFullSync) || !ctx.lastSyncedAt;
+    const sheetLastUpdatedAt = Sheets_readSheetLastUpdated_(sheet);
+    const shouldNormalize = Boolean(ctx.forceFullSync) || !ctx.lastSpreadsheetReadAt;
     const allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: shouldNormalize });
     const headerMatrix = Sheets_readHeaderMatrix_(sheet);
 
-    if (ctx.forceFullSync || !ctx.lastSyncedAt) {
-      return { ok: true, records: allRecords, count: allRecords.length, headerMatrix, isDelta: false };
+    if (ctx.forceFullSync || !ctx.lastSpreadsheetReadAt) {
+      return { ok: true, records: allRecords, count: allRecords.length, headerMatrix, isDelta: false, sheetLastUpdatedAt };
+    }
+
+    if (sheetLastUpdatedAt > 0 && sheetLastUpdatedAt <= ctx.lastSpreadsheetReadAt) {
+      return { ok: true, records: [], allIds: null, count: 0, headerMatrix, isDelta: true, sheetLastUpdatedAt };
     }
 
     const updatedRecords = [];
@@ -276,12 +281,12 @@ function ListRecords_(ctx) {
     for (let i = 0; i < allRecords.length; i++) {
       const rec = allRecords[i];
       allIds.push(rec.id);
-      if (rec.modifiedAtUnixMs > ctx.lastSyncedAt) {
+      if (rec.modifiedAtUnixMs > ctx.lastSpreadsheetReadAt) {
         updatedRecords.push(rec);
       }
     }
 
-    return { ok: true, records: updatedRecords, allIds, count: updatedRecords.length, headerMatrix, isDelta: true };
+    return { ok: true, records: updatedRecords, allIds, count: updatedRecords.length, headerMatrix, isDelta: true, sheetLastUpdatedAt };
   });
 }
 
