@@ -84,6 +84,13 @@ export default function FormPage() {
 
   const isViewMode = mode === "view";
   const canCopyFromExistingRecord = !entryId && !isViewMode;
+  const isDirty = useMemo(() => hasDirtyChanges(initialResponsesRef.current, responses), [responses]);
+  const isDirtyRef = useLatestRef(isDirty);
+  const isViewModeRef = useLatestRef(isViewMode);
+  const normalizedSchemaRef = useLatestRef(normalizedSchema);
+  const userNameRef = useLatestRef(userName);
+  const userEmailRef = useLatestRef(userEmail);
+
   const topLevelFieldMap = useMemo(() => {
     var map = {};
     (normalizedSchema || []).forEach((field) => {
@@ -92,8 +99,7 @@ export default function FormPage() {
       map[id] = field;
     });
     return map;
-  }, []);
-  const applyEntryToStateRef = useLatestRef(applyEntryToState);
+  }, [normalizedSchema]);
 
   const applyEntryToState = useCallback((nextEntry, fallbackEntryId = null) => {
     setEntry(nextEntry);
@@ -101,7 +107,8 @@ export default function FormPage() {
     initialResponsesRef.current = restored;
     setResponses(restored);
     setCurrentRecordId(nextEntry?.id || fallbackEntryId || null);
-  }, [normalizedSchema]);
+  }, []);
+  const applyEntryToStateRef = useLatestRef(applyEntryToState);
 
   const navigateToEntryById = useCallback((targetEntryId) => {
     navigate(`/form/${formId}/entry/${targetEntryId}`, {
@@ -283,13 +290,6 @@ export default function FormPage() {
     enabled: Boolean(formId),
     onOperation: handleOperationCacheCheck,
   });
-
-  const isDirty = useMemo(() => hasDirtyChanges(initialResponsesRef.current, responses), [responses]);
-  const isDirtyRef = useLatestRef(isDirty);
-  const isViewModeRef = useLatestRef(isViewMode);
-  const normalizedSchemaRef = useLatestRef(normalizedSchema);
-  const userNameRef = useLatestRef(userName);
-  const userEmailRef = useLatestRef(userEmail);
 
   useBeforeUnloadGuard(isDirty);
 
