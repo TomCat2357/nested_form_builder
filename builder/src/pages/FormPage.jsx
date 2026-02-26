@@ -92,11 +92,12 @@ export default function FormPage() {
       map[id] = field;
     });
     return map;
-  }, [normalizedSchema]);
+  }, []);
+  const applyEntryToStateRef = useLatestRef(applyEntryToState);
 
   const applyEntryToState = useCallback((nextEntry, fallbackEntryId = null) => {
     setEntry(nextEntry);
-    const restored = restoreResponsesFromData(normalizedSchema, nextEntry?.data || {}, nextEntry?.dataUnixMs || {});
+    const restored = restoreResponsesFromData(normalizedSchemaRef.current, nextEntry?.data || {}, nextEntry?.dataUnixMs || {});
     initialResponsesRef.current = restored;
     setResponses(restored);
     setCurrentRecordId(nextEntry?.id || fallbackEntryId || null);
@@ -109,20 +110,29 @@ export default function FormPage() {
     });
   }, [navigate, formId, location.state?.from, entryIds]);
 
+  const isFormLoaded = !!form;
   useEffect(() => {
     let mounted = true;
     const loadEntry = async () => {
       const tStart = performance.now();
       perfLogger.logVerbose("form-page", "loadEntry start", { formId, entryId });
 
-      if (!formId || !form) {
+      if (!formId || !isFormLoaded) {
         setLoading(false);
         return;
       }
       if (!entryId) {
-        const initialResponses = collectDefaultNowResponses(normalizedSchema, new Date(), { userName, userEmail });
+        if (isDirtyRef.current && Object.keys(responses || {}).length > 0) {
+          setLoading(false);
+          return;
+        }
+        const initialResponses = collectDefaultNowResponses(normalizedSchemaRef.current, new Date(), { userName: userNameRef.current, userEmail: userEmailRef.current });
         initialResponsesRef.current = initialResponses;
         setResponses(initialResponses);
+        setLoading(false);
+        return;
+      }
+      if (isDirtyRef.current && Object.keys(responses || {}).length > 0) {
         setLoading(false);
         return;
       }
@@ -140,7 +150,7 @@ export default function FormPage() {
 
       if (cachedEntry && mounted) {
         // キャッシュがあれば即座に表示
-        applyEntryToState(cachedEntry, entryId);
+        applyEntryToStateRef.current(cachedEntry, entryId);
         setLoading(false);
         perfLogger.logVerbose("form-page", "cache displayed", {
           elapsedFromStartMs: Number((performance.now() - tStart).toFixed(2)),
@@ -160,8 +170,8 @@ export default function FormPage() {
           setIsReloading(true);
           dataStore.getEntry(formId, entryId, { rowIndexHint: rowIndex }).then((freshData) => {
             if (!mounted) return;
-            if (freshData) {
-              applyEntryToState(freshData, entryId);
+            if (freshData && isViewModeRef.current && !isDirtyRef.current) {
+              applyEntryToStateRef.current(freshData, entryId);
               perfLogger.logVerbose("form-page", "background refresh complete", {
                 elapsedFromStartMs: Number((performance.now() - tStart).toFixed(2)),
               });
@@ -189,7 +199,9 @@ export default function FormPage() {
 
         if (!mounted) return;
         const tBeforeApply = performance.now();
-        applyEntryToState(data, entryId);
+        if (data && (!isDirtyRef.current || isViewModeRef.current)) {
+          applyEntryToStateRef.current(data, entryId);
+        }
         const tAfterApply = performance.now();
         perfLogger.logVerbose("form-page", "applyEntryToState", {
           durationMs: Number((tAfterApply - tBeforeApply).toFixed(2)),
@@ -204,11 +216,13 @@ export default function FormPage() {
         });
       }
     };
-    loadEntry();
+    if (isFormLoaded) {
+      loadEntry();
+    }
     return () => {
       mounted = false;
     };
-  }, [formId, entryId, form, normalizedSchema, userName, userEmail, applyEntryToState]);
+  }, [formId, entryId, isFormLoaded]);
 
   const refreshFormsIfNeeded = useRefreshFormsIfNeeded(refreshForms, loadingForms);
 
@@ -229,19 +243,14 @@ export default function FormPage() {
           const options = { forceSync: true };
           if (rowIndex !== undefined && rowIndex !== null) options.rowIndexHint = rowIndex;
 
-          if (!isViewMode) {
-            await withReadLock(async () => {
-              const latest = await dataStore.getEntry(formId, entryId, options);
-              if (latest) {
-                applyEntryToState(latest, entryId);
-              }
-            });
+          if (!isViewModeRef.current) {
+            // 編集モード中は操作によるバックグラウンド更新でデータを上書きしない
           } else if (cacheDecision.shouldSync) {
             setLoading(true);
             try {
               const latest = await dataStore.getEntry(formId, entryId, options);
-              if (latest) {
-                applyEntryToState(latest, entryId);
+              if (latest && !isDirtyRef.current && isViewModeRef.current) {
+                applyEntryToStateRef.current(latest, entryId);
               }
             } finally {
               setLoading(false);
@@ -250,8 +259,8 @@ export default function FormPage() {
             setIsReloading(true);
             dataStore.getEntry(formId, entryId, options)
               .then((latest) => {
-                if (latest) {
-                  applyEntryToState(latest, entryId);
+                if (latest && !isDirtyRef.current && isViewModeRef.current) {
+                  applyEntryToStateRef.current(latest, entryId);
                 }
               })
               .catch((error) => {
@@ -268,7 +277,7 @@ export default function FormPage() {
     }
 
     await refreshFormsIfNeeded(source);
-  }, [applyEntryToState, entryId, formId, isViewMode, refreshFormsIfNeeded, withReadLock]);
+  }, [entryId, formId, refreshFormsIfNeeded]);
 
   useOperationCacheTrigger({
     enabled: Boolean(formId),
@@ -276,6 +285,11 @@ export default function FormPage() {
   });
 
   const isDirty = useMemo(() => hasDirtyChanges(initialResponsesRef.current, responses), [responses]);
+  const isDirtyRef = useLatestRef(isDirty);
+  const isViewModeRef = useLatestRef(isViewMode);
+  const normalizedSchemaRef = useLatestRef(normalizedSchema);
+  const userNameRef = useLatestRef(userName);
+  const userEmailRef = useLatestRef(userEmail);
 
   useBeforeUnloadGuard(isDirty);
 
