@@ -1,5 +1,5 @@
 import { stripSchemaIDs, deepClone } from "../../core/schema.js";
-import { genId } from "../../core/ids.js";
+import { genRecordId } from "../../core/ids.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import { normalizeFormRecord } from "../../utils/formNormalize.js";
 import {
@@ -253,7 +253,7 @@ export const dataStore = {
     const record = {
       'No.': no,
       'No.': no,
-      id: payload.id || genId(),
+      id: payload.id || genRecordId(),
       formId,
       createdBy: payload.createdBy || "",
       modifiedBy: payload.modifiedBy || "",
@@ -268,7 +268,7 @@ export const dataStore = {
     await upsertRecordInCache(formId, record, { headerMatrix: payload.headerMatrix, rowIndex: payload.rowIndex });
     return record;
   },
-  async listEntries(formId, { lastSyncedAt = null, forceFullSync = false } = {}) {
+  async listEntries(formId, { lastSyncedAt = null, lastSpreadsheetReadAt = null, forceFullSync = false } = {}) {
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
     if (!sheetConfig) throw new Error("Spreadsheet not configured for this form");
@@ -277,8 +277,9 @@ export const dataStore = {
     perfLogger.logVerbose("records", "listEntries start", { formId, forceFullSync, startedAt });
     
     const payload = { ...sheetConfig, formId, forceFullSync };
-    if (!forceFullSync && lastSyncedAt) {
-      payload.lastSyncedAt = lastSyncedAt;
+    const spreadsheetReadAt = Number.isFinite(Number(lastSpreadsheetReadAt)) ? Number(lastSpreadsheetReadAt) : Number(lastSyncedAt);
+    if (!forceFullSync && Number.isFinite(spreadsheetReadAt) && spreadsheetReadAt > 0) {
+      payload.lastSpreadsheetReadAt = spreadsheetReadAt;
     }
 
     const gasResult = await listEntriesFromGas(payload);
@@ -286,23 +287,42 @@ export const dataStore = {
     
     if (gasResult.isDelta) {
       const updatedEntries = (gasResult.records || []).map(r => mapSheetRecordToEntry(r, formId));
-      await applyDeltaToCache(formId, updatedEntries, gasResult.allIds, gasResult.headerMatrix || null, form.schemaHash, { syncStartedAt: startedAt });
+      await applyDeltaToCache(formId, updatedEntries, gasResult.allIds, gasResult.headerMatrix || null, form.schemaHash, {
+        syncStartedAt: startedAt,
+        sheetLastUpdatedAt: gasResult.sheetLastUpdatedAt,
+      });
       
       const fullCache = await getRecordsFromCache(formId);
       const durationMs = Date.now() - startedAt;
       perfLogger.logVerbose("records", "listEntries delta done", { formId, durationMs });
-      return { entries: fullCache.entries, headerMatrix: fullCache.headerMatrix, entryIndexMap: fullCache.entryIndexMap, lastSyncedAt: lastSyncedAtNext };
+      return {
+        entries: fullCache.entries,
+        headerMatrix: fullCache.headerMatrix,
+        entryIndexMap: fullCache.entryIndexMap,
+        lastSyncedAt: lastSyncedAtNext,
+        lastSpreadsheetReadAt: fullCache.lastSpreadsheetReadAt,
+      };
     }
 
     const entries = (gasResult.records || []).map(r => mapSheetRecordToEntry(r, formId));
     entries.sort((a, b) => { if (a.id < b.id) return -1; if (a.id > b.id) return 1; return 0; });
 
-    await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], { schemaHash: form.schemaHash, syncStartedAt: forceFullSync ? null : startedAt });
+    await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], {
+      schemaHash: form.schemaHash,
+      syncStartedAt: forceFullSync ? null : startedAt,
+      sheetLastUpdatedAt: gasResult.sheetLastUpdatedAt,
+    });
     const fullCache = await getRecordsFromCache(formId);
     
     const durationMs = Date.now() - startedAt;
     perfLogger.logVerbose("records", "listEntries full done", { formId, durationMs });
-    return { entries: fullCache.entries, headerMatrix: fullCache.headerMatrix, entryIndexMap: fullCache.entryIndexMap, lastSyncedAt: lastSyncedAtNext };
+    return {
+      entries: fullCache.entries,
+      headerMatrix: fullCache.headerMatrix,
+      entryIndexMap: fullCache.entryIndexMap,
+      lastSyncedAt: lastSyncedAtNext,
+      lastSpreadsheetReadAt: fullCache.lastSpreadsheetReadAt,
+    };
   },
   async getEntry(formId, entryId, { forceSync = false, rowIndexHint = undefined } = {}) {
     const form = await this.getForm(formId);
@@ -311,8 +331,14 @@ export const dataStore = {
       throw new Error("Spreadsheet not configured for this form");
     }
 
+    const startedAt = Date.now();
     const tGetCacheStart = performance.now();
-    const { entry: cachedEntry, rowIndex: cachedRowIndex, lastSyncedAt } = await getCachedEntryWithIndex(formId, entryId);
+    const {
+      entry: cachedEntry,
+      rowIndex: cachedRowIndex,
+      lastSyncedAt,
+      lastSpreadsheetReadAt,
+    } = await getCachedEntryWithIndex(formId, entryId);
     const tGetCacheEnd = performance.now();
     perfLogger.logVerbose("records", "getEntry cache lookup", {
       durationMs: Number((tGetCacheEnd - tGetCacheStart).toFixed(2)),
@@ -364,7 +390,11 @@ export const dataStore = {
     // 単一取得を諦めて差分更新リスト取得にフォールバックする
     if (!result.ok || !result.record || result.record.id !== entryId) {
       console.log("[dataStore.getEntry] row mismatch or deleted. falling back to delta listEntries.");
-      const listResult = await this.listEntries(formId, { lastSyncedAt, forceFullSync: false });
+      const listResult = await this.listEntries(formId, {
+        lastSyncedAt,
+        lastSpreadsheetReadAt,
+        forceFullSync: false,
+      });
       return listResult.entries.find(e => e.id === entryId) || null;
     }
 

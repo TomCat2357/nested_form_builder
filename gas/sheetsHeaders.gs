@@ -16,14 +16,11 @@ function Sheets_getOrCreateSheet_(spreadsheetId, sheetName) {
   return sheet || ss.insertSheet(resolvedSheetName);
 }
 
+var NFB_LAST_ID_TS_MS = 0;
+var NFB_LAST_ID_SEQ = 0;
+
 function Sheets_generateRecordId_() {
-  var timestamp = new Date().getTime();
-  var randomChars = "";
-  var chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
-  for (var i = 0; i < 8; i++) {
-    randomChars += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return "r_" + timestamp + "_" + randomChars;
+  return Nfb_generateRecordId_();
 }
 
 function Sheets_ensureRowCapacity_(sheet, minRows) {
@@ -44,9 +41,24 @@ function Sheets_readHeaderMatrix_(sheet) {
     Sheets_ensureColumnExists_(sheet, 1);
     lastColumn = 1;
   }
-  Sheets_ensureRowCapacity_(sheet, NFB_HEADER_DEPTH);
-  var range = sheet.getRange(1, 1, NFB_HEADER_DEPTH, lastColumn);
+  Sheets_ensureRowCapacity_(sheet, NFB_DATA_START_ROW);
+  var range = sheet.getRange(NFB_HEADER_START_ROW, 1, NFB_HEADER_DEPTH, lastColumn);
   return range.getValues();
+}
+
+
+function Sheets_touchSheetLastUpdated_(sheet, serial) {
+  var timestampSerial = Number.isFinite(serial) ? serial : Sheets_dateToSerial_(new Date());
+  sheet.getRange(1, 1).setValue(NFB_SHEET_LAST_UPDATED_LABEL);
+  sheet.getRange(1, 2).setValue(timestampSerial);
+}
+
+function Sheets_readSheetLastUpdated_(sheet) {
+  var label = sheet.getRange(1, 1).getValue();
+  var value = sheet.getRange(1, 2).getValue();
+  if (String(label || "") !== NFB_SHEET_LAST_UPDATED_LABEL) return 0;
+  var serial = Sheets_toUnixMs_(value, true);
+  return Number.isFinite(serial) ? serial : 0;
 }
 
 function Sheets_extractColumnPaths_(matrix) {
@@ -233,19 +245,21 @@ function Sheets_writeHeaderPath_(sheet, columnIndex, path) {
   for (var row = 0; row < NFB_HEADER_DEPTH; row++) {
     values.push([row < path.length ? path[row] : ""]);
   }
-  sheet.getRange(1, columnIndex, NFB_HEADER_DEPTH, 1).setValues(values);
+  sheet.getRange(NFB_HEADER_START_ROW, columnIndex, NFB_HEADER_DEPTH, 1).setValues(values);
 }
 
 function Sheets_ensureHeaderMatrix_(sheet, order) {
-  Sheets_ensureRowCapacity_(sheet, NFB_HEADER_DEPTH);
-  if (sheet.getFrozenRows() !== NFB_HEADER_DEPTH) {
-    sheet.setFrozenRows(NFB_HEADER_DEPTH);
+  Sheets_ensureRowCapacity_(sheet, NFB_DATA_START_ROW);
+  if (sheet.getFrozenRows() !== NFB_DATA_START_ROW - 1) {
+    sheet.setFrozenRows(NFB_DATA_START_ROW - 1);
   }
+
+  Sheets_touchSheetLastUpdated_(sheet);
 
   // Move/insert columns will fail if any part of the column (not just header rows) is merged.
   // Unmerge the full used range up-front to avoid "結合したセルの一部だけを含む列は移動できません" errors.
   var maxCols = Math.max(sheet.getMaxColumns(), 1);
-  var maxRows = Math.max(sheet.getMaxRows(), NFB_HEADER_DEPTH);
+  var maxRows = Math.max(sheet.getMaxRows(), NFB_DATA_START_ROW);
   sheet.getRange(1, 1, maxRows, maxCols).breakApart();
 
   var matrix = Sheets_readHeaderMatrix_(sheet);
@@ -271,13 +285,13 @@ function Sheets_ensureHeaderMatrix_(sheet, order) {
     }
   }
 
-  return sheet.getRange(1, 1, NFB_HEADER_DEPTH, sheet.getLastColumn()).getValues();
+  return sheet.getRange(NFB_HEADER_START_ROW, 1, NFB_HEADER_DEPTH, sheet.getLastColumn()).getValues();
 }
 
 function Sheets_buildHeaderKeyMap_(sheet) {
   var lastColumn = sheet.getLastColumn();
   if (!lastColumn) return {};
-  var values = sheet.getRange(1, 1, NFB_HEADER_DEPTH, lastColumn).getValues();
+  var values = sheet.getRange(NFB_HEADER_START_ROW, 1, NFB_HEADER_DEPTH, lastColumn).getValues();
   var paths = Sheets_extractColumnPaths_(values);
   var map = {};
   for (var col = 0; col < paths.length; col++) {

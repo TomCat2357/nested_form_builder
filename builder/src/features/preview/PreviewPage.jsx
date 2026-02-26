@@ -8,18 +8,7 @@ import { styles as s } from "../editor/styles.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { collectDefaultNowResponses } from "../../utils/responses.js";
 import { resolveLabelSize } from "../../core/styleSettings.js";
-
-const generateRecordId = () => {
-  if (window.crypto?.getRandomValues) {
-    const bytes = new Uint8Array(12);
-    window.crypto.getRandomValues(bytes);
-    return `r_${Array.from(bytes)
-      .map((b) => (`0${b.toString(16)}`).slice(-2))
-      .join("")}`;
-  }
-  return `r_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-};
-
+import { genRecordId } from "../../core/ids.js";
 
 const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildrenForOption, readOnly = false }) => {
   const validation = validateByPattern(field, value);
@@ -313,7 +302,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 ) {
   const { showAlert } = useAlert();
   const initialRecordId = settings.recordId;
-  const recordIdRef = useRef(initialRecordId || generateRecordId());
+  const recordIdRef = useRef(initialRecordId || genRecordId());
   const currentUserName = typeof settings.userName === "string" ? settings.userName : "";
   const currentUserEmail = typeof settings.userEmail === "string" ? settings.userEmail : "";
   const defaultNowMap = useMemo(

@@ -39,14 +39,9 @@ function Forms_parseGoogleDriveUrl_(url) {
 }
 
 function Forms_generateFormId_(mapping) {
-  var chars = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
   var nextId = "";
   do {
-    var randomChars = "";
-    for (var i = 0; i < 8; i++) {
-      randomChars += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    nextId = "f_" + new Date().getTime() + "_" + randomChars;
+    nextId = Nfb_generateFormId_();
   } while (mapping && mapping[nextId]);
   return nextId;
 }

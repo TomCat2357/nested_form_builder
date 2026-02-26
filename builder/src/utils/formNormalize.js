@@ -1,5 +1,5 @@
 import { computeSchemaHash } from "../core/schema.js";
-import { genId } from "../core/ids.js";
+import { genFormId } from "../core/ids.js";
 import { collectDisplayFieldSettings } from "./formPaths.js";
 import { toUnixMs } from "./dateTime.js";
 
@@ -23,7 +23,7 @@ const resolveCreatedAt = (source, fallbackCreatedAt, now) => {
 };
 
 export const normalizeFormRecord = (source = {}, options = {}) => {
-  const { fallbackId = genId(), fallbackCreatedAt = undefined, nowFn = defaultNowFn, preserveUnknownFields = false } = options;
+  const { fallbackId = genFormId(), fallbackCreatedAt = undefined, nowFn = defaultNowFn, preserveUnknownFields = false } = options;
   const now = resolveNow(nowFn);
   const schema = Array.isArray(source.schema) ? source.schema : [];
   const displayFieldSettings = collectDisplayFieldSettings(schema);
