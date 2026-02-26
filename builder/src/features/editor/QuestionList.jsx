@@ -27,27 +27,23 @@ function swapItems(array, index1, index2) {
   return next;
 }
 
+let globalActiveFocusId = null;
+
 /**
  * 質問制御情報を生成
  */
 function buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown) {
-  if (selectedIndex === null) {
-    return {
-      selectedIndex: null,
-      questionLabel: null,
-      canMoveUp: false,
-      canMoveDown: false,
-      moveUp: () => {},
-      moveDown: () => {},
-      isOption: false
-    };
-  }
+  if (selectedIndex === null) return null;
+
+  const fieldId = normalized[selectedIndex]?.id;
+  const focusId = `q_${fieldId}`;
 
   const questionLabel = normalized[selectedIndex]?.label || `質問 ${selectedIndex + 1}`;
   const canMoveUp = selectedIndex > 0;
   const canMoveDown = selectedIndex < normalized.length - 1;
 
   return {
+    focusId,
     selectedIndex,
     questionLabel,
     canMoveUp,
@@ -62,9 +58,15 @@ function buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown) {
  * 選択肢制御情報を生成
  */
 function buildOptionControlInfo(selectedIndex, optionControl, normalized) {
+  if (selectedIndex === null) return null;
+
+  const fieldId = normalized[selectedIndex]?.id;
+  const focusId = `o_${fieldId}_${optionControl.optionIndex}`;
+
   const questionLabel = selectedIndex !== null ? normalized[selectedIndex]?.label || `質問 ${selectedIndex + 1}` : null;
 
   return {
+    focusId,
     selectedIndex,
     questionLabel,
     canMoveUp: optionControl.canMoveUp,
@@ -102,20 +104,24 @@ export default function QuestionList({
   const [optionControl, setOptionControl] = React.useState(null);
 
   React.useEffect(() => {
-    if (depth === 1 && onQuestionControlChange) {
-      let controlInfo;
+    if (onQuestionControlChange) {
+      let controlInfo = null;
 
       // 選択肢が選択されている場合は、選択肢の制御情報を使う
-      if (optionControl && optionControl.type === 'option') {
+      if (optionControl?.type === "option") {
         controlInfo = buildOptionControlInfo(selectedIndex, optionControl, normalized);
-      } else {
+      } else if (selectedIndex !== null) {
         // 質問が選択されている場合
         controlInfo = buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown);
       }
 
-      onQuestionControlChange(controlInfo);
+      if (controlInfo && controlInfo.focusId === globalActiveFocusId) {
+        onQuestionControlChange(controlInfo);
+      } else if (!globalActiveFocusId && selectedIndex === null) {
+        onQuestionControlChange(null);
+      }
     }
-  }, [selectedIndex, optionControl, normalized.length, depth]);
+  }, [selectedIndex, optionControl, normalized.length, depth, onQuestionControlChange]);
 
   const commit = (next) => {
     const fixed = normalizeSchemaIDs(next);
@@ -184,19 +190,23 @@ export default function QuestionList({
             onAddBelow={() => insertAfter(index)}
             onDelete={() => removeOne(index)}
             onFocus={(controlInfo) => {
-              if (controlInfo && typeof controlInfo === 'object') {
+              const fieldId = normalized[index]?.id;
+              if (controlInfo?.type === "option") {
                 // 選択肢が選択された場合
                 setSelectedIndex(index);
                 setOptionControl(controlInfo);
+                globalActiveFocusId = `o_${fieldId}_${controlInfo.optionIndex}`;
               } else {
                 // 質問が選択された場合
                 setSelectedIndex(index);
                 setOptionControl(null);
+                globalActiveFocusId = `q_${fieldId}`;
               }
             }}
             isSelected={selectedIndex === index}
             QuestionListComponent={QuestionList}
             depth={depth}
+            onQuestionControlChange={onQuestionControlChange}
             getTempState={getTempState}
             setTempState={setTempState}
             clearTempState={clearTempState}

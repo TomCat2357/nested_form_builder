@@ -96,31 +96,52 @@ function Sheets_getRecordById_(sheet, id, rowIndexHint) {
   return { ok: true, record: record, rowIndex: dataRowIndex };
 }
 
-function Sheets_getAllRecords_(sheet, temporalTypeMap) {
+function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
   var lastRow = sheet.getLastRow();
   var lastColumn = sheet.getLastColumn();
+  var shouldNormalize = !!(options && options.normalize);
 
+  if (lastRow <= NFB_HEADER_DEPTH || lastColumn === 0) {
+    return [];
+  }
+
+  var dataStartRow = NFB_HEADER_DEPTH + 1;
+
+  if (shouldNormalize) {
+    var removableCount = lastRow - NFB_HEADER_DEPTH;
+    if (removableCount > 0) {
+      var idValues = sheet.getRange(dataStartRow, 1, removableCount, 1).getValues();
+      for (var idx = idValues.length - 1; idx >= 0; idx--) {
+        var idCell = idValues[idx][0];
+        if (String(idCell == null ? "" : idCell).trim() === "") {
+          sheet.deleteRow(dataStartRow + idx);
+        }
+      }
+    }
+
+    lastRow = sheet.getLastRow();
+    if (lastRow > NFB_HEADER_DEPTH) {
+      var normalizedDataRowCount = lastRow - NFB_HEADER_DEPTH;
+      var sortRange = sheet.getRange(dataStartRow, 1, normalizedDataRowCount, lastColumn);
+      sortRange.sort({ column: 1, ascending: true });
+
+      var noValues = [];
+      for (var n = 0; n < normalizedDataRowCount; n++) {
+        noValues.push([n + 1]);
+      }
+      sheet.getRange(dataStartRow, 2, normalizedDataRowCount, 1).setValues(noValues);
+    }
+  }
+
+  lastRow = sheet.getLastRow();
+  lastColumn = sheet.getLastColumn();
   if (lastRow <= NFB_HEADER_DEPTH || lastColumn === 0) {
     return [];
   }
 
   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
   var dataRowCount = lastRow - NFB_HEADER_DEPTH;
-
-  // スプレッドシート側でID列(2列目)で必ずソート
-  if (dataRowCount > 0) {
-    var sortRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn);
-    sortRange.sort({column: 2, ascending: true});
-
-    // ソート後、No.列を1から連番でリナンバー
-    var noValues = [];
-    for (var n = 0; n < dataRowCount; n++) {
-      noValues.push([n + 1]);
-    }
-    sheet.getRange(NFB_HEADER_DEPTH + 1, 2, dataRowCount, 1).setValues(noValues);
-  }
-
-  var dataRange = sheet.getRange(NFB_HEADER_DEPTH + 1, 1, dataRowCount, lastColumn).getValues();
+  var dataRange = sheet.getRange(dataStartRow, 1, dataRowCount, lastColumn).getValues();
   if (dataRowCount > 0) {
     Sheets_applyTemporalFormats_(sheet, columnPaths, dataRange, dataRowCount, temporalTypeMap);
   }

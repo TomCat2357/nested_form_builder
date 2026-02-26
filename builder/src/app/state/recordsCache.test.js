@@ -16,14 +16,14 @@ const incomingRecord = (id, modifiedAtUnixMs) => ({
   modifiedAtUnixMs,
 });
 
-test("共通IDはmodifiedAtが新しい側のみ更新対象になる（同値はキャッシュ優先）", () => {
+test("共通IDはmodifiedAtが新しい側のみ更新対象になる（同値はスプレッドシート優先）", () => {
   const plan = planRecordMerge({
     existingRecords: [cacheRecord("a", 46000), cacheRecord("b", 46005)],
     incomingRecords: [incomingRecord("a", 46001), incomingRecord("b", 46005)],
     allIds: ["a", "b"],
   });
 
-  assert.deepEqual(plan.commonUpdateIds, ["a"]);
+  assert.deepEqual(plan.commonUpdateIds, ["a", "b"]);
   assert.deepEqual(plan.cacheOnlyDeleteIds, []);
   assert.deepEqual(plan.incomingOnlyAddIds, []);
 });

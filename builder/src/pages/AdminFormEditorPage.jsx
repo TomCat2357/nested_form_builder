@@ -56,19 +56,6 @@ export default function AdminFormEditorPage() {
   const isReadLockedRef = useLatestRef(isReadLocked);
   const loadingFormsRef = useLatestRef(loadingForms);
 
-  // QuestionControlの更新を監視
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (builderRef.current) {
-        const control = builderRef.current.getQuestionControl?.();
-        if (control !== questionControl) {
-          setQuestionControl(control);
-        }
-      }
-    }, 100);
-    return () => clearInterval(interval);
-  }, [questionControl]);
-
   useEffect(() => {
     if (!form) return;
     const formTitle = form.settings?.formTitle || "";
@@ -77,6 +64,7 @@ export default function AdminFormEditorPage() {
     setDescription(form.description || "");
     setDriveUrl(form.driveFileUrl || "");
     setLocalSettings(omitThemeSetting(form.settings || {}));
+    setQuestionControl(null);
     setNameError("");
   }, [form]);
 
@@ -460,6 +448,7 @@ export default function AdminFormEditorPage() {
               initialSettings={initialSettings}
               formTitle={name || "フォーム"}
               onDirtyChange={setBuilderDirty}
+              onQuestionControlChange={setQuestionControl}
               showToolbarSave={false}
             />
           </div>

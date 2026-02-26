@@ -211,6 +211,7 @@ export default function QuestionCard({
   isSelected,
   QuestionListComponent,
   depth = 1,
+  onQuestionControlChange,
   getTempState,
   setTempState,
   clearTempState,
@@ -263,25 +264,28 @@ export default function QuestionCard({
     setSelectedOptionIndex(index + 1);
   };
 
+  const buildOptionControlInfo = React.useCallback((index) => {
+    const currentField = latestFieldRef.current;
+    const options = Array.isArray(currentField?.options) ? currentField.options : [];
+    if (index === null || index < 0 || index >= options.length) return null;
+    return {
+      type: "option",
+      optionIndex: index,
+      optionLabel: options[index]?.label || `選択肢 ${index + 1}`,
+      canMoveUp: index > 0,
+      canMoveDown: index < options.length - 1,
+      moveUp: () => moveOptionUp(index),
+      moveDown: () => moveOptionDown(index),
+    };
+  }, []);
+
   // 選択肢の選択状態を親に伝達（質問の上下移動とは別の制御）
   React.useEffect(() => {
     if (isChoice && selectedOptionIndex !== null) {
-      // 選択肢が選択されている場合は、その情報を含めて親に通知
-      const canMoveUp = selectedOptionIndex > 0;
-      const canMoveDown = selectedOptionIndex < (field.options?.length || 0) - 1;
-      const optionLabel = field.options?.[selectedOptionIndex]?.label || `選択肢 ${selectedOptionIndex + 1}`;
-      // onFocusに選択肢情報を含めることで、QuestionListが適切に処理できるようにする
-      onFocus({
-        type: "option",
-        optionIndex: selectedOptionIndex,
-        optionLabel,
-        canMoveUp,
-        canMoveDown,
-        moveUp: () => moveOptionUp(selectedOptionIndex),
-        moveDown: () => moveOptionDown(selectedOptionIndex)
-      });
+      const controlInfo = buildOptionControlInfo(selectedOptionIndex);
+      if (controlInfo) onFocus(controlInfo);
     }
-  }, [selectedOptionIndex, isChoice, field.options?.length]);
+  }, [selectedOptionIndex, isChoice, field.options?.length, buildOptionControlInfo]);
 
   const cardAttrs = s.card(0, isSelected);
 
@@ -461,7 +465,8 @@ export default function QuestionCard({
               }}
               onFocus={() => {
                 setSelectedOptionIndex(index);
-                // 選択肢がフォーカスされた時は、質問カード全体は選択しない
+                const controlInfo = buildOptionControlInfo(index);
+                if (controlInfo) onFocus(controlInfo);
               }}
               isSelected={selectedOptionIndex === index}
               onAddChild={() => {
@@ -487,6 +492,7 @@ export default function QuestionCard({
                         onChange(next);
                       }}
                       depth={depth + 1}
+                      onQuestionControlChange={onQuestionControlChange}
                       getTempState={getTempState}
                       setTempState={setTempState}
                       clearTempState={clearTempState}

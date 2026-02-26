@@ -202,6 +202,7 @@ export const useEntriesWithCache = ({
   }, [cacheDisabled, fetchAndCacheData, form?.schemaHash, formId, locationKey, locationState, showAlert]);
 
   const forceRefreshAll = useCallback(async () => {
+    await dataStore.flushPendingOperations();
     await Promise.all([
       fetchAndCacheData({ background: false, forceFullSync: true, reason: "manual:search-records" }),
       refreshForms({ reason: "manual:search-forms", background: false }),

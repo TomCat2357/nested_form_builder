@@ -10,11 +10,19 @@ import { omitThemeSetting } from "../../utils/settings.js";
 import { deepEqual } from "../../utils/deepEqual.js";
 
 const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
-  { initialSchema, initialSettings, formTitle, onSave, onDirtyChange, showToolbarSave = true },
+  {
+    initialSchema,
+    initialSettings,
+    formTitle,
+    onSave,
+    onDirtyChange,
+    onQuestionControlChange,
+    showToolbarSave = true,
+  },
   ref,
 ) {
   const { showAlert } = useAlert();
-const [activeTab, setActiveTab] = useState("editor");
+  const [activeTab, setActiveTab] = useState("editor");
   const [schema, setSchema] = useState(() => normalizeSchemaIDs(initialSchema || []));
   const [responses, setResponses] = useState({});
   const { settings, replaceSettings, updateSetting } = useBuilderSettings();
@@ -54,6 +62,19 @@ const [activeTab, setActiveTab] = useState("editor");
 
     onDirtyChange?.(schemaDirty || settingsDirty);
   }, [schema, settings, isInitialized, onDirtyChange]);
+
+  useEffect(() => {
+    if (activeTab !== "editor") {
+      setQuestionControl(null);
+      onQuestionControlChange?.(null);
+    }
+  }, [activeTab, onQuestionControlChange]);
+
+  useEffect(() => {
+    if (activeTab === "editor") {
+      onQuestionControlChange?.(questionControl);
+    }
+  }, [activeTab, questionControl, onQuestionControlChange]);
 
   const handleSchemaChange = (nextSchema) => {
     const normalized = normalizeSchemaIDs(nextSchema);
@@ -121,7 +142,11 @@ const [activeTab, setActiveTab] = useState("editor");
       </div>
 
       {activeTab === "editor" && (
-        <EditorPage schema={schema} onSchemaChange={handleSchemaChange} onQuestionControlChange={setQuestionControl} />
+        <EditorPage
+          schema={schema}
+          onSchemaChange={handleSchemaChange}
+          onQuestionControlChange={setQuestionControl}
+        />
       )}
 
       {activeTab === "preview" && (
@@ -137,7 +162,7 @@ const [activeTab, setActiveTab] = useState("editor");
           <SearchPreviewPanel schema={schema} responses={responses} settings={settings} />
         </>
       )}
-</div>
+    </div>
   );
 });
 

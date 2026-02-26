@@ -40,6 +40,12 @@ import { DEFAULT_SHEET_NAME } from "../../core/constants.js";
 
 const nowSerial = () => toUnixMs(Date.now());
 
+const pendingOperations = new Set();
+const trackPendingOperation = (promise) => {
+  pendingOperations.add(promise);
+  promise.finally(() => pendingOperations.delete(promise));
+};
+
 const ensureDisplayInfo = (form) => {
   const schema = Array.isArray(form?.schema) ? form.schema : [];
   const displayFieldSettings = collectDisplayFieldSettings(schema);
@@ -288,7 +294,7 @@ export const dataStore = {
     const entries = (gasResult.records || []).map(r => mapSheetRecordToEntry(r, formId));
     entries.sort((a, b) => { if (a.id < b.id) return -1; if (a.id > b.id) return 1; return 0; });
 
-    await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], { schemaHash: form.schemaHash, syncStartedAt: startedAt });
+    await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], { schemaHash: form.schemaHash, syncStartedAt: forceFullSync ? null : startedAt });
     const fullCache = await getRecordsFromCache(formId);
     
     const durationMs = Date.now() - startedAt;
@@ -413,9 +419,9 @@ export const dataStore = {
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
     if (sheetConfig) {
-      void deleteEntryFromGas({ ...sheetConfig, entryId }).catch((error) => {
+      trackPendingOperation(deleteEntryFromGas({ ...sheetConfig, entryId }).catch((error) => {
         console.error("[dataStore.deleteEntry] Background GAS delete failed:", error);
-      });
+      }));
     }
   },
   async importForms(jsonList) {
@@ -457,5 +463,8 @@ export const dataStore = {
       };
       return deepClone(cleaned);
     });
+  },
+  async flushPendingOperations() {
+    await Promise.allSettled(Array.from(pendingOperations));
   },
 };

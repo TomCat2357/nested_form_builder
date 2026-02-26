@@ -157,7 +157,7 @@ export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], al
 
     const incomingModifiedAt = normalizeComparableModifiedAtUnixMs(incomingRecord);
     const existingModifiedAt = normalizeComparableModifiedAtUnixMs(existingRecord);
-    if (incomingModifiedAt > existingModifiedAt) {
+    if (incomingModifiedAt >= existingModifiedAt) {
       commonUpdateIds.push(entryId);
     }
   }
@@ -170,7 +170,7 @@ export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], al
     }
 
     const existingModifiedAt = normalizeComparableModifiedAtUnixMs(existingRecord);
-    if (existingModifiedAt >= maxIncomingModifiedAt) {
+    if (existingModifiedAt > maxIncomingModifiedAt) {
       continue;
     }
     cacheOnlyDeleteIds.push(entryId);

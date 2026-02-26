@@ -262,7 +262,8 @@ function ListRecords_(ctx) {
         Logger.log(`[ListRecords_] Failed to load form schema for temporal formats: ${err}`);
       }
     }
-    const allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap);
+    const shouldNormalize = Boolean(ctx.forceFullSync) || !ctx.lastSyncedAt;
+    const allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: shouldNormalize });
     const headerMatrix = Sheets_readHeaderMatrix_(sheet);
 
     if (ctx.forceFullSync || !ctx.lastSyncedAt) {
