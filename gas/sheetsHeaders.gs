@@ -101,6 +101,83 @@ function Sheets_collectTemporalPathMap_(schema) {
   return map;
 }
 
+function Sheets_buildOrderFromSchema_(schema) {
+  var order = [];
+  var seen = {};
+  var singleValueTypes = {
+    text: true,
+    textarea: true,
+    number: true,
+    regex: true,
+    date: true,
+    time: true,
+    url: true,
+    userName: true,
+    email: true
+  };
+
+  var appendKey = function(key) {
+    var normalized = String(key || "").trim();
+    if (!normalized || seen[normalized]) return;
+    seen[normalized] = true;
+    order.push(normalized);
+  };
+
+  var resolveFieldLabel = function(field, indexTrail) {
+    var label = field && field.label !== undefined && field.label !== null ? String(field.label).trim() : "";
+    if (label) return label;
+    var fieldType = field && field.type !== undefined && field.type !== null ? String(field.type).trim() : "";
+    if (!fieldType) fieldType = "unknown";
+    return "質問 " + indexTrail.join(".") + " (" + fieldType + ")";
+  };
+
+  var walk = function(fields, pathSegments, indexTrail) {
+    if (!fields || !fields.length) return;
+
+    for (var i = 0; i < fields.length; i++) {
+      var field = fields[i];
+      if (!field || typeof field !== "object") continue;
+
+      var currentIndexTrail = indexTrail.concat(i + 1);
+      var label = resolveFieldLabel(field, currentIndexTrail);
+      var currentPath = pathSegments.concat(label);
+      var baseKey = currentPath.join("|");
+      var type = field.type !== undefined && field.type !== null ? String(field.type).trim() : "";
+
+      if (type === "checkboxes" || type === "radio" || type === "select") {
+        if (Array.isArray(field.options)) {
+          for (var optIndex = 0; optIndex < field.options.length; optIndex++) {
+            var option = field.options[optIndex];
+            var optionLabel = option && option.label !== undefined && option.label !== null ? String(option.label) : "";
+            appendKey(optionLabel ? baseKey + "|" + optionLabel : baseKey + "|");
+          }
+        }
+      } else if (type !== "message" && singleValueTypes[type]) {
+        appendKey(baseKey);
+      }
+
+      if (field.childrenByValue && typeof field.childrenByValue === "object") {
+        for (var childKey in field.childrenByValue) {
+          if (!field.childrenByValue.hasOwnProperty(childKey)) continue;
+          var childFields = field.childrenByValue[childKey];
+          var optionPath = String(childKey || "");
+          var childBasePath = optionPath ? currentPath.concat(optionPath) : currentPath;
+          walk(childFields, childBasePath, currentIndexTrail);
+        }
+      }
+    }
+  };
+
+  walk(Array.isArray(schema) ? schema : [], [], []);
+  return order;
+}
+
+function Sheets_initializeHeaders_(spreadsheetId, sheetName, schema) {
+  var sheet = Sheets_getOrCreateSheet_(spreadsheetId, sheetName || NFB_DEFAULT_SHEET_NAME);
+  var order = Sheets_buildOrderFromSchema_(schema);
+  return Sheets_ensureHeaderMatrix_(sheet, order);
+}
+
 function Sheets_buildDesiredPaths_(order, existingPaths) {
   var desired = [];
   var seen = {};
@@ -208,4 +285,3 @@ function Sheets_buildHeaderKeyMap_(sheet) {
   }
   return map;
 }
-

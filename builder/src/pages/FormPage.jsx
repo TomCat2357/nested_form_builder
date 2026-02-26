@@ -12,6 +12,7 @@ import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSchemaIDs } from "../core/schema.js";
+import { traverseSchema } from "../core/schemaUtils.js";
 import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.js";
 import { useEditLock } from "../app/hooks/useEditLock.js";
 import { getFormsFromCache } from "../app/state/formsCache.js";
@@ -26,6 +27,7 @@ import { useAuth } from "../app/state/authContext.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { perfLogger } from "../utils/perfLogger.js";
 import SchemaMapNav from "../features/nav/SchemaMapNav.jsx";
+import RecordCopyDialog from "../app/components/RecordCopyDialog.jsx";
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
@@ -50,6 +52,10 @@ export default function FormPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [mode, setMode] = useState(entryId ? "view" : "edit");
   const [isReloading, setIsReloading] = useState(false);
+  const [copySourceId, setCopySourceId] = useState("");
+  const [copySourceResponses, setCopySourceResponses] = useState({});
+  const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
+  const [isCopySourceLoading, setIsCopySourceLoading] = useState(false);
   const { isReadLocked, withReadLock } = useEditLock();
   const initialResponsesRef = useRef({});
   const previewRef = useRef(null);
@@ -77,6 +83,17 @@ export default function FormPage() {
   }, [entryId]);
 
   const isViewMode = mode === "view";
+  const canCopyFromExistingRecord = !entryId && !isViewMode;
+  const topLevelFieldMap = useMemo(() => {
+    var map = {};
+    (normalizedSchema || []).forEach((field) => {
+      const id = typeof field?.id === "string" ? field.id.trim() : "";
+      if (!id) return;
+      map[id] = field;
+    });
+    return map;
+  }, [normalizedSchema]);
+
   const applyEntryToState = useCallback((nextEntry, fallbackEntryId = null) => {
     setEntry(nextEntry);
     const restored = restoreResponsesFromData(normalizedSchema, nextEntry?.data || {}, nextEntry?.dataUnixMs || {});
@@ -390,6 +407,70 @@ export default function FormPage() {
     return false;
   };
 
+  const handleFetchCopySource = useCallback(async () => {
+    if (!formId) return;
+    const sourceId = String(copySourceId || "").trim();
+    if (!sourceId) {
+      showAlert("コピー元レコードIDを入力してください");
+      return;
+    }
+
+    try {
+      setIsCopySourceLoading(true);
+      const sourceData = await dataStore.getEntry(formId, sourceId, { forceSync: true });
+      if (!sourceData) {
+        showAlert("指定したレコードが見つかりませんでした");
+        return;
+      }
+      const restored = restoreResponsesFromData(normalizedSchema, sourceData.data || {}, sourceData.dataUnixMs || {});
+      setCopySourceResponses(restored);
+      setIsCopyDialogOpen(true);
+    } catch (error) {
+      console.error("[FormPage] failed to fetch source record for copy:", error);
+      showAlert(`コピー元レコードの取得に失敗しました: ${error?.message || error}`);
+    } finally {
+      setIsCopySourceLoading(false);
+    }
+  }, [copySourceId, formId, normalizedSchema, showAlert]);
+
+  const handleConfirmRecordCopy = useCallback((selectedFieldIds) => {
+    const selectedIds = Array.isArray(selectedFieldIds) ? selectedFieldIds : [];
+    if (!selectedIds.length) {
+      showAlert("コピーする項目を選択してください");
+      return;
+    }
+
+    const copyTargetFieldIds = {};
+    selectedIds.forEach((fieldId) => {
+      const rootField = topLevelFieldMap[fieldId];
+      if (!rootField) return;
+      traverseSchema([rootField], (field) => {
+        const id = typeof field?.id === "string" ? field.id.trim() : "";
+        if (id) copyTargetFieldIds[id] = true;
+      }, { responses: copySourceResponses });
+    });
+
+    const filteredResponses = {};
+    Object.keys(copyTargetFieldIds).forEach((fieldId) => {
+      if (Object.prototype.hasOwnProperty.call(copySourceResponses, fieldId)) {
+        filteredResponses[fieldId] = copySourceResponses[fieldId];
+      }
+    });
+
+    setResponses((prev) => ({
+      ...(prev || {}),
+      ...filteredResponses,
+    }));
+    setIsCopyDialogOpen(false);
+
+    const copiedCount = Object.keys(filteredResponses).length;
+    if (copiedCount > 0) {
+      showAlert(`${copiedCount} 項目をコピーしました`);
+    } else {
+      showAlert("コピー対象の回答が見つかりませんでした");
+    }
+  }, [copySourceResponses, showAlert, topLevelFieldMap]);
+
   if (!form) {
     return (
       <AppLayout themeOverride={form?.settings?.theme} title="フォーム" fallbackPath="/">
@@ -480,6 +561,39 @@ export default function FormPage() {
               </button>
             </>
           )}
+          {canCopyFromExistingRecord && (
+            <>
+              <hr className="nf-sidebar-divider" />
+              <div className="record-copy-sidebar">
+                <div className="record-copy-sidebar__title">既存レコードからコピー</div>
+                <div className="record-copy-sidebar__controls">
+                  <input
+                    type="text"
+                    className="nf-input nf-text-13 record-copy-sidebar__input"
+                    value={copySourceId}
+                    onChange={(event) => setCopySourceId(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void handleFetchCopySource();
+                      }
+                    }}
+                    placeholder="レコードID"
+                  />
+                  <button
+                    type="button"
+                    className="nf-btn-outline nf-text-13 record-copy-sidebar__fetch"
+                    disabled={isCopySourceLoading || isSaving || isReloading || isReadLocked}
+                    onClick={() => {
+                      void handleFetchCopySource();
+                    }}
+                  >
+                    {isCopySourceLoading ? "取得中..." : "取得"}
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
           {entryIds.length > 0 && (
             <>
               <hr className="nf-sidebar-divider" />
@@ -521,6 +635,14 @@ export default function FormPage() {
         options={confirmOptions}
       />
 
-</AppLayout>
+      <RecordCopyDialog
+        open={isCopyDialogOpen}
+        schema={normalizedSchema}
+        sourceResponses={copySourceResponses}
+        onConfirm={handleConfirmRecordCopy}
+        onCancel={() => setIsCopyDialogOpen(false)}
+      />
+
+    </AppLayout>
   );
 }

@@ -166,6 +166,16 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
   }
   var settingsForSave = (settingsResult && settingsResult.settings) ? settingsResult.settings : (form.settings || {});
 
+  // スプレッドシートのヘッダーを初期化
+  if (settingsResult && settingsResult.spreadsheetId && Array.isArray(form.schema) && form.schema.length > 0) {
+    try {
+      var sheetName = settingsForSave.sheetName || NFB_DEFAULT_SHEET_NAME;
+      Sheets_initializeHeaders_(settingsResult.spreadsheetId, sheetName, form.schema);
+    } catch (headerErr) {
+      Logger.log("[Forms_saveForm_] Header init failed (non-critical): " + headerErr);
+    }
+  }
+
   // 仮のフォームオブジェクトを作成（driveFileUrlなし）
   var formWithTimestamp = {
     id: form.id,
@@ -322,4 +332,3 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
  * @param {Object} options - { includeArchived: boolean }
  * @return {Array} フォーム配列
  */
-
