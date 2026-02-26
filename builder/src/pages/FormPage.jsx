@@ -337,12 +337,14 @@ export default function FormPage() {
           payload: { ...payload, id: saved.id },
         }).then(async (gasResult) => {
           // スプレッドシート側で確定した「本No.」を受け取ってキャッシュと画面を更新
+          // 古いsavedで全体を上書きせず、キャッシュから最新データを読んでNo.のみ更新
           if (gasResult && gasResult.recordNo) {
+             const { entry: currentCached } = await getCachedEntryWithIndex(form.id, saved.id);
+             const baseRecord = currentCached || saved;
              const finalRecord = await dataStore.upsertEntry(form.id, {
-               ...saved,
-               "No.": gasResult.recordNo
+               ...baseRecord,
+               "No.": gasResult.recordNo,
              });
-             // 現在表示中のレコードと同じなら画面のNo.も更新
              setEntry(prev => prev?.id === finalRecord.id ? finalRecord : prev);
           }
         }).catch((error) => {

@@ -277,7 +277,7 @@ export const dataStore = {
     
     if (gasResult.isDelta) {
       const updatedEntries = (gasResult.records || []).map(r => mapSheetRecordToEntry(r, formId));
-      await applyDeltaToCache(formId, updatedEntries, gasResult.allIds, gasResult.headerMatrix || null, form.schemaHash);
+      await applyDeltaToCache(formId, updatedEntries, gasResult.allIds, gasResult.headerMatrix || null, form.schemaHash, { syncStartedAt: startedAt });
       
       const fullCache = await getRecordsFromCache(formId);
       const durationMs = Date.now() - startedAt;
@@ -290,7 +290,7 @@ export const dataStore = {
     const entryIndexMap = {};
     entries.forEach((item, idx) => { entryIndexMap[item.id] = idx; });
 
-    await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], { schemaHash: form.schemaHash });
+    await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], { schemaHash: form.schemaHash, syncStartedAt: startedAt });
     
     const durationMs = Date.now() - startedAt;
     perfLogger.logVerbose("records", "listEntries full done", { formId, durationMs });
@@ -328,11 +328,11 @@ export const dataStore = {
     
     if (cachedEntry && (isVeryFresh || (!shouldSync && !forceSync))) {
       if (shouldBackground) {
-        // ...既存のバックグラウンド処理...
+        const bgStartedAt = Date.now();
         getEntryFromGas({ ...sheetConfig, entryId, rowIndexHint: effectiveRowIndex })
           .then((result) => {
             const mapped = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
-            if (mapped) upsertRecordInCache(formId, mapped, { rowIndex: result.rowIndex ?? effectiveRowIndex });
+            if (mapped) upsertRecordInCache(formId, mapped, { rowIndex: result.rowIndex ?? effectiveRowIndex, syncStartedAt: bgStartedAt });
           }).catch(() => {});
       }
       return cachedEntry;

@@ -30,6 +30,24 @@ const deleteEntriesForForm = (store, formId) =>
     request.onerror = () => reject(request.error);
   });
 
+const deleteEntriesForFormExcept = (store, formId, protectedCompoundIds) =>
+  new Promise((resolve, reject) => {
+    const index = store.index('formId');
+    const request = index.openKeyCursor(IDBKeyRange.only(formId));
+    request.onsuccess = (event) => {
+      const cursor = event.target.result;
+      if (cursor) {
+        if (!protectedCompoundIds.has(cursor.primaryKey)) {
+          store.delete(cursor.primaryKey);
+        }
+        cursor.continue();
+      } else {
+        resolve();
+      }
+    };
+    request.onerror = () => reject(request.error);
+  });
+
 const buildCacheRecord = (formId, record, lastSyncedAt, rowIndex) => ({
   ...record,
   compoundId: buildCompoundId(formId, record.id),
@@ -68,7 +86,7 @@ const buildMetadata = (formId, existingMeta, updates = {}) => {
  * @param {Array} headerMatrix
  * @returns {Promise<void>}
  */
-export async function saveRecordsToCache(formId, records, headerMatrix = [], { schemaHash = null } = {}) {
+export async function saveRecordsToCache(formId, records, headerMatrix = [], { schemaHash = null, syncStartedAt = null } = {}) {
   if (!formId) return;
   const db = await openDB();
   const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
@@ -77,11 +95,42 @@ export async function saveRecordsToCache(formId, records, headerMatrix = [], { s
 
   const lastSyncedAt = Date.now();
   const entryIndexMap = buildEntryIndexMap(records || []);
-  await deleteEntriesForForm(store, formId);
 
-  for (let idx = 0; idx < records.length; idx++) {
-    const record = records[idx];
-    await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, idx)));
+  if (syncStartedAt) {
+    // syncStartedAt保護: 同期開始後にローカル変更されたレコードを保護
+    const existingRecords = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId))) || [];
+    const protectedCompoundIds = new Set();
+    const protectedEntryIds = new Set();
+
+    for (const record of existingRecords) {
+      if (record.lastSyncedAt > syncStartedAt) {
+        protectedCompoundIds.add(record.compoundId);
+        protectedEntryIds.add(record.entryId);
+      }
+    }
+
+    await deleteEntriesForFormExcept(store, formId, protectedCompoundIds);
+
+    for (let idx = 0; idx < records.length; idx++) {
+      const record = records[idx];
+      if (protectedEntryIds.has(record.id)) continue;
+      await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, idx)));
+    }
+
+    // 保護レコードのインデックスを維持
+    for (const record of existingRecords) {
+      if (protectedEntryIds.has(record.entryId) && record.rowIndex !== undefined) {
+        entryIndexMap[record.entryId] = record.rowIndex;
+      }
+    }
+  } else {
+    // 従来動作: 全削除→全挿入
+    await deleteEntriesForForm(store, formId);
+
+    for (let idx = 0; idx < records.length; idx++) {
+      const record = records[idx];
+      await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, idx)));
+    }
   }
 
   await waitForRequest(metaStore.put(buildMetadata(formId, null, {
@@ -183,12 +232,23 @@ export async function getCachedEntryWithIndex(formId, entryId) {
 /**
  * Upsert a single record into cache (keeps existing headerMatrix/index map/schemaHash)
  */
-export async function upsertRecordInCache(formId, record, { headerMatrix, rowIndex, schemaHash } = {}) {
+export async function upsertRecordInCache(formId, record, { headerMatrix, rowIndex, schemaHash, syncStartedAt = null } = {}) {
   if (!formId || !record?.id) return;
   const db = await openDB();
   const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
   const store = tx.objectStore(STORE_NAMES.records);
   const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
+
+  // syncStartedAt保護: 同期開始後にローカル変更されたレコードは上書きしない
+  if (syncStartedAt) {
+    const compoundId = buildCompoundId(formId, record.id);
+    const existing = await waitForRequest(store.get(compoundId)).catch(() => null);
+    if (existing && existing.lastSyncedAt > syncStartedAt) {
+      await waitForTransaction(tx);
+      db.close();
+      return;
+    }
+  }
 
   const lastSyncedAt = Date.now();
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
@@ -298,34 +358,53 @@ export async function getMaxRecordNo(formId) {
 /**
  * 差分データをキャッシュに適用する
  */
-export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMatrix = null, schemaHash = null) {
+export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMatrix = null, schemaHash = null, { syncStartedAt = null } = {}) {
   if (!formId) return;
   const db = await openDB();
   const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
   const store = tx.objectStore(STORE_NAMES.records);
   const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
-  
+
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
   const lastSyncedAt = Date.now();
   const existingRecords = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId))) || [];
-  
+
   const allIdSet = new Set(allIds || []);
   const entryIndexMap = { ...(existingMeta?.entryIndexMap || {}) };
-  
+
+  // syncStartedAt保護用: 既存レコードをentryIdでマップ化
+  const existingByEntryId = {};
+  if (syncStartedAt) {
+    for (const record of existingRecords) {
+      existingByEntryId[record.entryId] = record;
+    }
+  }
+
   // 1. 削除されたレコードを検知して消去
   for (const record of existingRecords) {
     if (!allIdSet.has(record.entryId)) {
+      // syncStartedAt保護: 同期開始後にローカル変更されたレコードは削除しない
+      if (syncStartedAt && record.lastSyncedAt > syncStartedAt) {
+        continue;
+      }
       store.delete(record.compoundId);
       delete entryIndexMap[record.entryId];
     }
   }
-  
+
   // 2. 追加・更新されたレコードをUpsert
   for (const record of updatedRecords || []) {
-    const nextRowIndex = entryIndexMap[record.id]; 
+    // syncStartedAt保護: 同期開始後にローカル変更されたレコードは上書きしない
+    if (syncStartedAt) {
+      const existing = existingByEntryId[record.id];
+      if (existing && existing.lastSyncedAt > syncStartedAt) {
+        continue;
+      }
+    }
+    const nextRowIndex = entryIndexMap[record.id];
     store.put(buildCacheRecord(formId, record, lastSyncedAt, nextRowIndex));
   }
-  
+
   // メタデータの更新
   metaStore.put(buildMetadata(formId, existingMeta, {
     lastSyncedAt,
@@ -333,7 +412,7 @@ export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMa
     schemaHash: schemaHash !== null ? schemaHash : undefined,
     entryIndexMap
   }));
-  
+
   await waitForTransaction(tx);
   db.close();
 }
