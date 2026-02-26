@@ -16,9 +16,6 @@ function Sheets_getOrCreateSheet_(spreadsheetId, sheetName) {
   return sheet || ss.insertSheet(resolvedSheetName);
 }
 
-var NFB_LAST_ID_TS_MS = 0;
-var NFB_LAST_ID_SEQ = 0;
-
 function Sheets_generateRecordId_() {
   return Nfb_generateRecordId_();
 }
@@ -48,9 +45,17 @@ function Sheets_readHeaderMatrix_(sheet) {
 
 
 function Sheets_touchSheetLastUpdated_(sheet, serial) {
-  var timestampSerial = Number.isFinite(serial) ? serial : Sheets_dateToSerial_(new Date());
+  var isNum = typeof serial === "number" && isFinite(serial);
+  var timestampSerial = isNum ? serial : Sheets_dateToSerial_(new Date());
   sheet.getRange(1, 1).setValue(NFB_SHEET_LAST_UPDATED_LABEL);
   sheet.getRange(1, 2).setValue(timestampSerial);
+  try {
+    var dt = new Date(timestampSerial);
+    var formatted = Utilities.formatDate(dt, Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
+    sheet.getRange(1, 3).setValue(formatted);
+  } catch (e) {
+    // ignore
+  }
 }
 
 function Sheets_readSheetLastUpdated_(sheet) {

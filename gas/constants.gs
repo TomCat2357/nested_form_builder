@@ -29,18 +29,9 @@ var NFB_DEFAULT_SHEET_NAME = "Data";
 var NFB_TZ = "Asia/Tokyo";
 var NFB_MS_PER_DAY = 24 * 60 * 60 * 1000;
 var NFB_SHEETS_EPOCH_MS = new Date(1899, 11, 30, 0, 0, 0).getTime();
-
-function Nfb_toSixByteTimestamp_(unixMs) {
-  var value = Math.floor(Number(unixMs));
-  if (!isFinite(value) || value < 0) value = 0;
-
-  var bytes = [];
-  for (var i = 5; i >= 0; i--) {
-    bytes[i] = value & 255;
-    value = Math.floor(value / 256);
-  }
-  return bytes;
-}
+var NFB_ULID_RANDOM_LENGTH = 16;
+var NFB_LAST_ULID_TS_MS = -1;
+var NFB_LAST_ULID_RANDOM = "";
 
 function Nfb_createRandomBytes_(size) {
   var bytes = [];
@@ -54,10 +45,104 @@ function Nfb_toBase64Url_(bytes) {
   return Utilities.base64EncodeWebSafe(bytes).replace(/=+$/g, "");
 }
 
+function Nfb_ulidAlphabet_() {
+  return "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+}
+
+function Nfb_encodeUlidTime_(unixMs) {
+  var alphabet = Nfb_ulidAlphabet_();
+  var value = Math.floor(Number(unixMs));
+  if (!isFinite(value) || value < 0) value = 0;
+
+  var chars = [];
+  for (var i = 0; i < 10; i++) {
+    chars.unshift(alphabet.charAt(value % 32));
+    value = Math.floor(value / 32);
+  }
+  return chars.join("");
+}
+
+function Nfb_encodeUlidRandom_(bytes) {
+  var alphabet = Nfb_ulidAlphabet_();
+  var encoded = "";
+  var buffer = 0;
+  var bits = 0;
+
+  for (var i = 0; i < bytes.length; i++) {
+    buffer = (buffer << 8) | bytes[i];
+    bits += 8;
+
+    while (bits >= 5) {
+      encoded += alphabet.charAt((buffer >> (bits - 5)) & 31);
+      bits -= 5;
+      if (bits === 0) {
+        buffer = 0;
+      } else {
+        buffer = buffer & ((1 << bits) - 1);
+      }
+    }
+  }
+
+  if (bits > 0) {
+    encoded += alphabet.charAt((buffer << (5 - bits)) & 31);
+  }
+
+  return encoded;
+}
+
+function Nfb_createUlidRandomPart_() {
+  return Nfb_encodeUlidRandom_(Nfb_createRandomBytes_(10)).substring(0, NFB_ULID_RANDOM_LENGTH);
+}
+
+function Nfb_incrementUlidRandom_(value) {
+  var alphabet = Nfb_ulidAlphabet_();
+  var chars = String(value || "").split("");
+  while (chars.length < NFB_ULID_RANDOM_LENGTH) chars.push(alphabet.charAt(0));
+  if (chars.length > NFB_ULID_RANDOM_LENGTH) chars = chars.slice(0, NFB_ULID_RANDOM_LENGTH);
+
+  for (var i = chars.length - 1; i >= 0; i--) {
+    var idx = alphabet.indexOf(chars[i]);
+    var safeIdx = idx >= 0 ? idx : 0;
+    if (safeIdx < alphabet.length - 1) {
+      chars[i] = alphabet.charAt(safeIdx + 1);
+      for (var j = i + 1; j < chars.length; j++) chars[j] = alphabet.charAt(0);
+      return { value: chars.join(""), overflow: false };
+    }
+    chars[i] = alphabet.charAt(0);
+  }
+
+  return { value: chars.join(""), overflow: true };
+}
+
+function Nfb_generateUlid_() {
+  var nowMs = Math.floor(Number(new Date().getTime()));
+  if (!isFinite(nowMs) || nowMs < 0) nowMs = 0;
+
+  if (NFB_LAST_ULID_TS_MS < 0 || nowMs > NFB_LAST_ULID_TS_MS) {
+    NFB_LAST_ULID_TS_MS = nowMs;
+    NFB_LAST_ULID_RANDOM = Nfb_createUlidRandomPart_();
+    return Nfb_encodeUlidTime_(NFB_LAST_ULID_TS_MS) + NFB_LAST_ULID_RANDOM;
+  }
+
+  if (!NFB_LAST_ULID_RANDOM || NFB_LAST_ULID_RANDOM.length !== NFB_ULID_RANDOM_LENGTH) {
+    NFB_LAST_ULID_RANDOM = Nfb_createUlidRandomPart_();
+  }
+
+  var incremented = Nfb_incrementUlidRandom_(NFB_LAST_ULID_RANDOM);
+  if (incremented.overflow) {
+    NFB_LAST_ULID_TS_MS += 1;
+    NFB_LAST_ULID_RANDOM = Nfb_createUlidRandomPart_();
+  } else {
+    NFB_LAST_ULID_RANDOM = incremented.value;
+  }
+
+  return Nfb_encodeUlidTime_(NFB_LAST_ULID_TS_MS) + NFB_LAST_ULID_RANDOM;
+}
+
 function Nfb_generateCompactId_(prefix) {
-  var tsPart = Nfb_toBase64Url_(Nfb_toSixByteTimestamp_(new Date().getTime()));
-  var randomPart = Nfb_toBase64Url_(Nfb_createRandomBytes_(6));
-  return String(prefix || "") + "_" + tsPart + "_" + randomPart;
+  var ulidPart = Nfb_generateUlid_();
+  var randomPart = Nfb_toBase64Url_(Nfb_createRandomBytes_(6)).substring(0, 8);
+  return String(prefix || "") + "_" + ulidPart + "_" + randomPart;
 }
 
 function Nfb_generateFormId_() {

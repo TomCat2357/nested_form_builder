@@ -375,9 +375,9 @@ function Forms_setFormArchivedState_(formId, archived) {
   }
 
   form.archived = !!archived;
-  var nowSerial = Sheets_dateToSerial_(new Date());
-  form.modifiedAt = nowSerial;
-  form.modifiedAtUnixMs = nowSerial;
+  var currentTs = Sheets_dateToSerial_(new Date());
+  form.modifiedAt = currentTs;
+  form.modifiedAtUnixMs = currentTs;
 
   return Forms_saveForm_(form);
 }
@@ -398,7 +398,7 @@ function Forms_setFormsArchivedState_(formIds, archived) {
   var errors = [];
   var updated = 0;
   var updatedForms = [];
-  var nowSerial = Sheets_dateToSerial_(new Date());
+  var currentTs = Sheets_dateToSerial_(new Date());
 
   ids.forEach(function(formId) {
     if (!formId) return;
@@ -411,8 +411,8 @@ function Forms_setFormsArchivedState_(formIds, archived) {
       }
 
       form.archived = !!archived;
-      form.modifiedAt = nowSerial;
-      form.modifiedAtUnixMs = nowSerial;
+      form.modifiedAt = currentTs;
+      form.modifiedAtUnixMs = currentTs;
 
       var result = Forms_saveForm_(form);
       if (result && result.ok) {

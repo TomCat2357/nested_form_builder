@@ -82,7 +82,7 @@ function Sheets_createNewRow_(sheet, id) {
   var rowIndex = Sheets_findFirstBlankRow_(sheet);
 
   Sheets_ensureRowCapacity_(sheet, rowIndex);
-  var nowSerial = Sheets_dateToSerial_(new Date());
+  var currentTs = Sheets_dateToSerial_(new Date());
   var email = Session.getActiveUser().getEmail() || "";
 
   var maxNo = 0;
@@ -91,28 +91,28 @@ function Sheets_createNewRow_(sheet, id) {
     var noValues = sheet.getRange(NFB_DATA_START_ROW, 2, lastRow - NFB_DATA_START_ROW + 1, 1).getValues();
     for (var i = 0; i < noValues.length; i++) {
       var val = Number(noValues[i][0]);
-      if (Number.isFinite(val) && val > maxNo) maxNo = val;
+      if ((typeof val === "number" && isFinite(val)) && val > maxNo) maxNo = val;
     }
   }
 
   sheet.getRange(rowIndex, 1).setValue(String(nextId));
   sheet.getRange(rowIndex, 2).setValue(String(maxNo + 1));
-  sheet.getRange(rowIndex, 3).setValue(nowSerial);
-  sheet.getRange(rowIndex, 4).setValue(nowSerial);
+  sheet.getRange(rowIndex, 3).setValue(currentTs);
+  sheet.getRange(rowIndex, 4).setValue(currentTs);
   sheet.getRange(rowIndex, 5).setValue(email);
   sheet.getRange(rowIndex, 6).setValue(email);
-  Sheets_touchSheetLastUpdated_(sheet, nowSerial);
+  Sheets_touchSheetLastUpdated_(sheet, currentTs);
 
   return { rowIndex: rowIndex, id: nextId, recordNo: maxNo + 1 };
 }
 
 function Sheets_updateExistingRow_(sheet, rowIndex) {
   Sheets_ensureRowCapacity_(sheet, rowIndex);
-  var nowSerial = Sheets_dateToSerial_(new Date());
+  var currentTs = Sheets_dateToSerial_(new Date());
   var email = Session.getActiveUser().getEmail() || "";
-  sheet.getRange(rowIndex, 4).setValue(nowSerial);
+  sheet.getRange(rowIndex, 4).setValue(currentTs);
   sheet.getRange(rowIndex, 6).setValue(email);
-  Sheets_touchSheetLastUpdated_(sheet, nowSerial);
+  Sheets_touchSheetLastUpdated_(sheet, currentTs);
 }
 
 function Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys) {

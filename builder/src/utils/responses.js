@@ -8,7 +8,13 @@ const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
   const unixMs = Number.isFinite(unixMsValue) ? unixMsValue : toUnixMs(rawValue);
   if (!Number.isFinite(unixMs)) return rawValue;
 
-  return field.type === "time" ? formatUnixMsTime(unixMs) : formatUnixMsDate(unixMs);
+  const d = new Date(unixMs);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return field.type === "time" ? `${hh}:${mi}` : `${yyyy}-${mm}-${dd}`;
 };
 
 export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => {
@@ -54,8 +60,15 @@ export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => 
 
 export const collectDefaultNowResponses = (schema, now = new Date(), options = {}) => {
   const defaults = {};
-  const dateValue = formatUnixMsDate(now.getTime());
-  const timeValue = formatUnixMsTime(now.getTime());
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, "0");
+  const dd = String(now.getDate()).padStart(2, "0");
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mi = String(now.getMinutes()).padStart(2, "0");
+
+  const dateValue = `${yyyy}-${mm}-${dd}`;
+  const timeValue = `${hh}:${mi}`;
+
   const userName = typeof options?.userName === "string" ? options.userName : "";
   const userEmail = typeof options?.userEmail === "string" ? options.userEmail : "";
 

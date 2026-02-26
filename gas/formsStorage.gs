@@ -153,10 +153,10 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
   var file;
   var fileId = null;
   var nowDate = new Date();
-  var nowSerial = Sheets_dateToSerial_(nowDate);
+  var currentTs = Sheets_dateToSerial_(nowDate);
   var createdAtSerial = Sheets_toUnixMs_(form.createdAt, true);
   if (createdAtSerial === null) {
-    createdAtSerial = nowSerial;
+    createdAtSerial = currentTs;
   }
 
   // スプレッドシート設定を解決（空/フォルダ指定は新規作成）
@@ -186,9 +186,9 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     importantFields: form.importantFields || [],
     displayFieldSettings: form.displayFieldSettings || [],
     createdAt: createdAtSerial,
-    modifiedAt: nowSerial,
+    modifiedAt: currentTs,
     createdAtUnixMs: createdAtSerial,
-    modifiedAtUnixMs: nowSerial,
+    modifiedAtUnixMs: currentTs,
     archived: !!form.archived,
     schemaVersion: form.schemaVersion || 1,
   };

@@ -235,7 +235,7 @@ export const dataStore = {
     await this.deleteForms([formId]);
   },
   async upsertEntry(formId, payload) {
-    const now = nowSerial();
+    const now = Date.now();
     let createdAtUnix = Number.isFinite(payload.createdAtUnixMs)
       ? payload.createdAtUnixMs
       : toUnixMs(payload.createdAt);
