@@ -32,8 +32,10 @@ export const useEntriesWithCache = ({
   const [backgroundLoading, setBackgroundLoading] = useState(false);
   const [useCache, setUseCache] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [lastSpreadsheetReadAt, setLastSpreadsheetReadAt] = useState(null);
   const [cacheDisabled, setCacheDisabled] = useState(false);
   const lastSyncedAtRef = useLatestRef(lastSyncedAt);
+  const lastSpreadsheetReadAtRef = useLatestRef(lastSpreadsheetReadAt);
   const backgroundLoadingRef = useRef(false);
   const activeForegroundRequestsRef = useRef(0);
   const latestRequestTokenRef = useRef(0);
@@ -56,6 +58,7 @@ export const useEntriesWithCache = ({
     try {
       const result = await dataStore.listEntries(formId, {
         lastSyncedAt: forceFullSync ? null : lastSyncedAtRef.current,
+        lastSpreadsheetReadAt: forceFullSync ? null : lastSpreadsheetReadAtRef.current,
         forceFullSync,
       });
       if (requestToken !== latestRequestTokenRef.current) {
@@ -74,6 +77,7 @@ export const useEntriesWithCache = ({
       setHeaderMatrix(result.headerMatrix || []);
       const syncedAt = result.lastSyncedAt || Date.now();
       setLastSyncedAt(syncedAt);
+      setLastSpreadsheetReadAt(result.lastSpreadsheetReadAt || null);
       setCacheDisabled(false);
       setUseCache(false);
     } catch (error) {
@@ -110,6 +114,7 @@ export const useEntriesWithCache = ({
       const hasCache = (cache.entries || []).length > 0 && !schemaMismatch;
       const decision = evaluateCache({
         lastSyncedAt: cache.lastSyncedAt,
+        lastSpreadsheetReadAt: cache.lastSpreadsheetReadAt,
         hasData: hasCache,
         maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
         backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
@@ -138,7 +143,7 @@ export const useEntriesWithCache = ({
     if (!formId) return;
 
     const loadData = async () => {
-      let cache = { entries: [], headerMatrix: [], lastSyncedAt: null };
+      let cache = { entries: [], headerMatrix: [], lastSyncedAt: null, lastSpreadsheetReadAt: null };
       try {
         cache = await getRecordsFromCache(formId);
       } catch (error) {
@@ -163,6 +168,7 @@ export const useEntriesWithCache = ({
       const forceSync = shouldForceSync(locationState);
       const { age, shouldSync, shouldBackground } = evaluateCache({
         lastSyncedAt: cache.lastSyncedAt,
+        lastSpreadsheetReadAt: cache.lastSpreadsheetReadAt,
         hasData: hasCache,
         forceSync,
         maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
@@ -182,6 +188,7 @@ export const useEntriesWithCache = ({
         setEntries(cache.entries);
         setHeaderMatrix(cache.headerMatrix || []);
         setLastSyncedAt(cache.lastSyncedAt || cache.cacheTimestamp || null);
+        setLastSpreadsheetReadAt(cache.lastSpreadsheetReadAt || null);
         setUseCache(true);
       }
 

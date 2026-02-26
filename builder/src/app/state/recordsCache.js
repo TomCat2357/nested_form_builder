@@ -135,7 +135,7 @@ const getMaxModifiedAt = (records) => {
   return maxModifiedAt;
 };
 
-export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], allIds = [] } = {}) => {
+export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], allIds = [], sheetLastUpdatedAt = 0, lastFrontendMutationAt = 0 } = {}) => {
   const safeExistingRecords = Array.isArray(existingRecords) ? existingRecords : [];
   const safeIncomingRecords = Array.isArray(incomingRecords) ? incomingRecords : [];
   const allIdsSet = new Set(Array.isArray(allIds) ? allIds : []);
@@ -169,20 +169,20 @@ export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], al
       continue;
     }
 
-    const existingModifiedAt = normalizeComparableModifiedAtUnixMs(existingRecord);
-    if (existingModifiedAt > maxIncomingModifiedAt) {
-      continue;
-    }
-    cacheOnlyDeleteIds.push(entryId);
+    const cacheMutationUnixMs = normalizeNumericModifiedAtToUnixMs(Number(lastFrontendMutationAt));
+    const sheetUpdatedUnixMs = normalizeNumericModifiedAtToUnixMs(Number(sheetLastUpdatedAt));
+    const cacheIsNewerThanSheet = cacheMutationUnixMs > 0 && sheetUpdatedUnixMs > 0 && cacheMutationUnixMs > sheetUpdatedUnixMs;
+    if (!cacheIsNewerThanSheet) cacheOnlyDeleteIds.push(entryId);
   }
 
   for (const [entryId, incomingRecord] of Object.entries(incomingByEntryId)) {
     if (existingByEntryId[entryId]) continue;
 
+    const cacheMutationUnixMs = normalizeNumericModifiedAtToUnixMs(Number(lastFrontendMutationAt));
+    const sheetUpdatedUnixMs = normalizeNumericModifiedAtToUnixMs(Number(sheetLastUpdatedAt));
+    const sheetIsNewerThanCache = sheetUpdatedUnixMs > 0 ? sheetUpdatedUnixMs >= cacheMutationUnixMs : true;
     const incomingModifiedAt = normalizeComparableModifiedAtUnixMs(incomingRecord);
-    if (incomingModifiedAt > maxExistingModifiedAt) {
-      incomingOnlyAddIds.push(entryId);
-    }
+    if (sheetIsNewerThanCache && incomingModifiedAt > 0) incomingOnlyAddIds.push(entryId);
   }
 
   return {
@@ -195,6 +195,8 @@ export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], al
     maxExistingModifiedAt,
     hasAllIds,
     allIdsSet,
+    sheetLastUpdatedAt,
+    lastFrontendMutationAt,
   };
 };
 
@@ -206,6 +208,8 @@ const buildMetadata = (formId, existingMeta, updates = {}) => {
   return {
     formId,
     lastSyncedAt: updates.lastSyncedAt ?? existingMeta?.lastSyncedAt ?? now,
+    lastSpreadsheetReadAt: updates.lastSpreadsheetReadAt ?? existingMeta?.lastSpreadsheetReadAt ?? updates.lastSyncedAt ?? existingMeta?.lastSyncedAt ?? now,
+    lastFrontendMutationAt: updates.lastFrontendMutationAt ?? existingMeta?.lastFrontendMutationAt ?? 0,
     headerMatrix: updates.headerMatrix ?? existingMeta?.headerMatrix ?? [],
     schemaHash: updates.schemaHash ?? existingMeta?.schemaHash ?? null,
     entryIndexMap: updates.entryIndexMap ?? existingMeta?.entryIndexMap ?? {},
@@ -219,7 +223,7 @@ const buildMetadata = (formId, existingMeta, updates = {}) => {
  * @param {Array} headerMatrix
  * @returns {Promise<void>}
  */
-export async function saveRecordsToCache(formId, records, headerMatrix = [], { schemaHash = null, syncStartedAt = null } = {}) {
+export async function saveRecordsToCache(formId, records, headerMatrix = [], { schemaHash = null, syncStartedAt = null, sheetLastUpdatedAt = 0 } = {}) {
   if (!formId) return;
   const db = await openDB();
   const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
@@ -240,6 +244,8 @@ export async function saveRecordsToCache(formId, records, headerMatrix = [], { s
       existingRecords,
       incomingRecords: safeRecords,
       allIds: safeRecords.map((record) => record?.id).filter(Boolean),
+      sheetLastUpdatedAt,
+      lastFrontendMutationAt: existingMeta?.lastFrontendMutationAt || 0,
     });
     console.debug(
       `[saveRecordsToCache] formId=${formId}, cacheCount=${existingRecords.length}, fullCount=${safeRecords.length}, maxFullModifiedAt=${mergePlan.maxIncomingModifiedAt}, maxCacheModifiedAt=${mergePlan.maxExistingModifiedAt}, updates=${mergePlan.commonUpdateIds.length}, deletes=${mergePlan.cacheOnlyDeleteIds.length}, adds=${mergePlan.incomingOnlyAddIds.length}`,
@@ -281,6 +287,7 @@ export async function saveRecordsToCache(formId, records, headerMatrix = [], { s
 
   await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
     lastSyncedAt,
+    lastSpreadsheetReadAt: sheetLastUpdatedAt || existingMeta?.lastSpreadsheetReadAt || lastSyncedAt,
     headerMatrix,
     schemaHash,
     entryIndexMap,
@@ -302,6 +309,7 @@ export async function updateRecordsMeta(formId, { entryIndexMap, lastReloadedAt,
 
   await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
     lastSyncedAt: lastReloadedAt,
+    lastSpreadsheetReadAt: lastReloadedAt,
     headerMatrix,
     schemaHash,
     entryIndexMap,
@@ -351,7 +359,7 @@ const binarySearchById = (entries, entryId) => {
  */
 export async function getCachedEntryWithIndex(formId, entryId) {
   if (!formId || !entryId) return { entry: null, rowIndex: null };
-  const { entries, cacheTimestamp, headerMatrix, schemaHash, lastSyncedAt, entryIndexMap } = await getRecordsFromCache(formId);
+  const { entries, cacheTimestamp, headerMatrix, schemaHash, lastSyncedAt, lastSpreadsheetReadAt, entryIndexMap } = await getRecordsFromCache(formId);
   let rowIndex = entryIndexMap?.[entryId];
   let entry = null;
 
@@ -372,7 +380,7 @@ export async function getCachedEntryWithIndex(formId, entryId) {
     }
   }
 
-  return { entry, rowIndex, cacheTimestamp, headerMatrix, schemaHash, lastSyncedAt, entryIndexMap };
+  return { entry, rowIndex, cacheTimestamp, headerMatrix, schemaHash, lastSyncedAt, lastSpreadsheetReadAt, entryIndexMap };
 }
 
 /**
@@ -408,6 +416,7 @@ export async function upsertRecordInCache(formId, record, { headerMatrix, rowInd
 
   await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
     lastSyncedAt,
+    lastFrontendMutationAt: lastSyncedAt,
     headerMatrix,
     schemaHash,
     entryIndexMap: updatedIndexMap,
@@ -423,7 +432,7 @@ export async function upsertRecordInCache(formId, record, { headerMatrix, rowInd
  * @returns {Promise<{entries: Array, headerMatrix: Array, cacheTimestamp: number|null, lastSyncedAt: number|null}>}
  */
 export async function getRecordsFromCache(formId) {
-  if (!formId) return { entries: [], headerMatrix: [], cacheTimestamp: null, schemaHash: null, lastSyncedAt: null, entryIndexMap: {} };
+  if (!formId) return { entries: [], headerMatrix: [], cacheTimestamp: null, schemaHash: null, lastSyncedAt: null, lastSpreadsheetReadAt: null, lastFrontendMutationAt: 0, entryIndexMap: {} };
   const db = await openDB();
   const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readonly');
   const store = tx.objectStore(STORE_NAMES.records);
@@ -452,6 +461,8 @@ export async function getRecordsFromCache(formId) {
     cacheTimestamp: meta?.lastSyncedAt || null,
     lastSyncedAt: meta?.lastSyncedAt || null,
     schemaHash: meta?.schemaHash || null,
+    lastSpreadsheetReadAt: meta?.lastSpreadsheetReadAt || meta?.lastSyncedAt || null,
+    lastFrontendMutationAt: meta?.lastFrontendMutationAt || 0,
     entryIndexMap: meta?.entryIndexMap || {},
   };
 }
@@ -475,6 +486,7 @@ export async function deleteRecordFromCache(formId, entryId) {
 
   await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
     lastSyncedAt: Date.now(),
+    lastFrontendMutationAt: Date.now(),
     entryIndexMap: updatedIndexMap,
   })));
 
@@ -504,7 +516,7 @@ export async function getMaxRecordNo(formId) {
 /**
  * 差分データをキャッシュに適用する
  */
-export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMatrix = null, schemaHash = null, { syncStartedAt = null } = {}) {
+export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMatrix = null, schemaHash = null, { syncStartedAt = null, sheetLastUpdatedAt = 0 } = {}) {
   if (!formId) return;
   const db = await openDB();
   const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
@@ -520,6 +532,8 @@ export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMa
     existingRecords,
     incomingRecords: safeUpdatedRecords,
     allIds,
+    sheetLastUpdatedAt,
+    lastFrontendMutationAt: existingMeta?.lastFrontendMutationAt || 0,
   });
   console.debug(
     `[applyDeltaToCache] formId=${formId}, cacheCount=${existingRecords.length}, lazyCount=${safeUpdatedRecords.length}, maxLazyModifiedAt=${mergePlan.maxIncomingModifiedAt}, maxCacheModifiedAt=${mergePlan.maxExistingModifiedAt}, allIdsCount=${mergePlan.allIdsSet.size}, hasAllIds=${mergePlan.hasAllIds}, updates=${mergePlan.commonUpdateIds.length}, deletes=${mergePlan.cacheOnlyDeleteIds.length}, adds=${mergePlan.incomingOnlyAddIds.length}`,
@@ -574,6 +588,7 @@ export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMa
   // メタデータの更新
   metaStore.put(buildMetadata(formId, existingMeta, {
     lastSyncedAt,
+    lastSpreadsheetReadAt: sheetLastUpdatedAt || existingMeta?.lastSpreadsheetReadAt || lastSyncedAt,
     headerMatrix: headerMatrix !== null ? headerMatrix : undefined,
     schemaHash: schemaHash !== null ? schemaHash : undefined,
     entryIndexMap

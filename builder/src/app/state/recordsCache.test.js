@@ -28,24 +28,28 @@ test("共通IDはmodifiedAtが新しい側のみ更新対象になる（同値�
   assert.deepEqual(plan.incomingOnlyAddIds, []);
 });
 
-test("cache-only ID は allIds に存在しない場合、相手側maxより古ければ削除対象になる", () => {
+test("cache-only ID はフロント更新時刻がスプレッドシート更新時刻より古い場合に削除対象", () => {
   const plan = planRecordMerge({
-    existingRecords: [cacheRecord("cacheOld", 46000), cacheRecord("cacheNew", 46010)],
+    existingRecords: [cacheRecord("cacheOnly", 46000)],
     incomingRecords: [incomingRecord("shared", 46002)],
     allIds: ["shared"],
+    sheetLastUpdatedAt: 46010,
+    lastFrontendMutationAt: 46005,
   });
 
-  assert.deepEqual(plan.cacheOnlyDeleteIds, ["cacheOld"]);
+  assert.deepEqual(plan.cacheOnlyDeleteIds, ["cacheOnly"]);
 });
 
-test("incoming-only ID は cache 側maxより新しい場合のみ追加対象になる", () => {
+test("incoming-only ID はスプレッドシート更新時刻がフロント更新時刻以上なら追加対象", () => {
   const plan = planRecordMerge({
     existingRecords: [cacheRecord("cacheLatest", 46003)],
-    incomingRecords: [incomingRecord("incomingOld", 46002), incomingRecord("incomingNew", 46004)],
-    allIds: ["cacheLatest", "incomingOld", "incomingNew"],
+    incomingRecords: [incomingRecord("incomingOnly", 46004)],
+    allIds: ["cacheLatest", "incomingOnly"],
+    sheetLastUpdatedAt: 46010,
+    lastFrontendMutationAt: 46005,
   });
 
-  assert.deepEqual(plan.incomingOnlyAddIds, ["incomingNew"]);
+  assert.deepEqual(plan.incomingOnlyAddIds, ["incomingOnly"]);
 });
 
 test("modifiedAtの単位がserialとunix msで混在しても比較できる", () => {

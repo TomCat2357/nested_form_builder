@@ -16,6 +16,10 @@ var NFB_DRIVE_API_BATCH_SIZE = 100;
 
 // スプレッドシート・ヘッダー関連
 var NFB_HEADER_DEPTH = 11;
+var NFB_METADATA_ROWS = 1;
+var NFB_HEADER_START_ROW = NFB_METADATA_ROWS + 1;
+var NFB_DATA_START_ROW = NFB_HEADER_START_ROW + NFB_HEADER_DEPTH;
+var NFB_SHEET_LAST_UPDATED_LABEL = "最終更新時間";
 var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["createdBy"], ["modifiedBy"]];
 var NFB_DEFAULT_SHEET_NAME = "Data";
 
