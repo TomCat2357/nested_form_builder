@@ -15,7 +15,6 @@ import { normalizeSchemaIDs } from "../core/schema.js";
 import { traverseSchema } from "../core/schemaUtils.js";
 import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.js";
 import { useEditLock } from "../app/hooks/useEditLock.js";
-import { getFormsFromCache } from "../app/state/formsCache.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
 import {
   evaluateCache,
@@ -35,6 +34,29 @@ const fallbackForForm = (formId, locationState) => {
   return "/";
 };
 
+const toResponseObject = (value) => (value && typeof value === "object" ? value : {});
+
+const diffResponses = (prevValue, nextValue) => {
+  const prev = toResponseObject(prevValue);
+  const next = toResponseObject(nextValue);
+  const prevKeys = Object.keys(prev);
+  const nextKeys = Object.keys(next);
+
+  const addedKeys = nextKeys.filter((key) => !Object.prototype.hasOwnProperty.call(prev, key));
+  const removedKeys = prevKeys.filter((key) => !Object.prototype.hasOwnProperty.call(next, key));
+  const changedKeys = nextKeys.filter((key) => Object.prototype.hasOwnProperty.call(prev, key) && prev[key] !== next[key]);
+
+  return {
+    prevCount: prevKeys.length,
+    nextCount: nextKeys.length,
+    addedKeys,
+    removedKeys,
+    changedKeys,
+  };
+};
+
+const sampleKeys = (keys, max = 8) => keys.slice(0, max);
+
 export default function FormPage() {
   const { formId, entryId } = useParams();
   const { getFormById, refreshForms, loadingForms } = useAppData();
@@ -42,11 +64,33 @@ export default function FormPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { showAlert } = useAlert();
-  const form = formId ? getFormById(formId) : null;
+  const currentForm = formId ? getFormById(formId) : null;
+  const [cachedForm, setCachedForm] = useState(currentForm);
+
+  const form = cachedForm;
   const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form]);
   const [entry, setEntry] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [responses, setResponses] = useState({});
+
+  const draftKey = `nfb_draft_${formId}_${entryId || 'new'}`;
+
+  const [responses, setResponses] = useState(() => {
+    try {
+      if (!entryId) {
+        const saved = sessionStorage.getItem(draftKey);
+        if (saved) return JSON.parse(saved);
+      }
+    } catch(e) {}
+    return {};
+  });
+
+  useEffect(() => {
+    if (!entryId) {
+      try {
+        sessionStorage.setItem(draftKey, JSON.stringify(responses));
+      } catch(e) {}
+    }
+  }, [responses, draftKey, entryId]);
   const [currentRecordId, setCurrentRecordId] = useState(entryId || null);
   const [confirmState, setConfirmState] = useState({ open: false, intent: null });
   const [isSaving, setIsSaving] = useState(false);
@@ -59,6 +103,9 @@ export default function FormPage() {
   const { isReadLocked, withReadLock } = useEditLock();
   const initialResponsesRef = useRef({});
   const previewRef = useRef(null);
+  const newEntryInitKeyRef = useRef(null);
+  const responseMutationSeqRef = useRef(0);
+  const formLoadedStateRef = useRef(null);
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
 
@@ -77,6 +124,7 @@ export default function FormPage() {
   const savingRef = useLatestRef(isSaving);
   const readLockRef = useLatestRef(isReadLocked);
   const loadingFormsRef = useLatestRef(loadingForms);
+  const responsesRef = useLatestRef(responses);
 
   useEffect(() => {
     setMode(entryId ? "view" : "edit");
@@ -91,6 +139,42 @@ export default function FormPage() {
   const userNameRef = useLatestRef(userName);
   const userEmailRef = useLatestRef(userEmail);
 
+  useEffect(() => {
+    if (!currentForm) return;
+    if (isDirty && !isViewMode) {
+      console.log("[FormPage] defer applying refreshed form during dirty edit", {
+        formId,
+        entryId: entryId || "new",
+      });
+      return;
+    }
+    setCachedForm(currentForm);
+  }, [currentForm, entryId, formId, isDirty, isViewMode]);
+
+  useEffect(() => {
+    if (entryId) {
+      newEntryInitKeyRef.current = null;
+    }
+  }, [entryId, formId]);
+
+  const isFormLoaded = !!form;
+  useEffect(() => {
+    if (formLoadedStateRef.current === null) {
+      formLoadedStateRef.current = isFormLoaded;
+      return;
+    }
+    if (formLoadedStateRef.current !== isFormLoaded) {
+      console.log("[FormPage] isFormLoaded changed", {
+        formId,
+        entryId: entryId || "new",
+        from: formLoadedStateRef.current,
+        to: isFormLoaded,
+        loadingForms: loadingFormsRef.current,
+      });
+      formLoadedStateRef.current = isFormLoaded;
+    }
+  }, [isFormLoaded, formId, entryId, loadingFormsRef]);
+
   const topLevelFieldMap = useMemo(() => {
     var map = {};
     (normalizedSchema || []).forEach((field) => {
@@ -101,13 +185,67 @@ export default function FormPage() {
     return map;
   }, [normalizedSchema]);
 
-  const applyEntryToState = useCallback((nextEntry, fallbackEntryId = null) => {
-    setEntry(nextEntry);
+  const commitResponses = useCallback((source, updater, { forceLog = false, meta = null } = {}) => {
+    setResponses((prevState) => {
+      const prev = toResponseObject(prevState);
+      const rawNextState = typeof updater === "function" ? updater(prevState) : updater;
+      const nextState = rawNextState === undefined || rawNextState === null ? {} : rawNextState;
+      const next = toResponseObject(nextState);
+      if (nextState === prevState) return prevState;
+
+      const diff = diffResponses(prev, next);
+      const shouldLog = forceLog || diff.removedKeys.length > 0 || diff.changedKeys.length > 6 || diff.addedKeys.length > 6;
+      if (shouldLog) {
+        responseMutationSeqRef.current += 1;
+        console.log("[FormPage] responses mutated", {
+          seq: responseMutationSeqRef.current,
+          source,
+          formId,
+          entryId: entryId || "new",
+          isDirty: isDirtyRef.current,
+          isViewMode: isViewModeRef.current,
+          prevCount: diff.prevCount,
+          nextCount: diff.nextCount,
+          addedCount: diff.addedKeys.length,
+          removedCount: diff.removedKeys.length,
+          changedCount: diff.changedKeys.length,
+          addedKeys: sampleKeys(diff.addedKeys),
+          removedKeys: sampleKeys(diff.removedKeys),
+          changedKeys: sampleKeys(diff.changedKeys),
+          ...(meta || {}),
+        });
+      }
+      return nextState;
+    });
+  }, [entryId, formId, isDirtyRef, isViewModeRef]);
+
+  const applyEntryToState = useCallback((nextEntry, fallbackEntryId = null, source = "unknown") => {
     const restored = restoreResponsesFromData(normalizedSchemaRef.current, nextEntry?.data || {}, nextEntry?.dataUnixMs || {});
+    const previous = responsesRef.current;
+    const diff = diffResponses(previous, restored);
+    const hasPotentialOverwrite = diff.removedKeys.length > 0 || diff.changedKeys.length > 6;
+    if (hasPotentialOverwrite || source !== "save:new-entry") {
+      console.log("[FormPage] applyEntryToState", {
+        source,
+        formId,
+        entryId: entryId || "new",
+        nextEntryId: nextEntry?.id || fallbackEntryId || null,
+        isDirty: isDirtyRef.current,
+        isViewMode: isViewModeRef.current,
+        prevCount: diff.prevCount,
+        nextCount: diff.nextCount,
+        removedCount: diff.removedKeys.length,
+        changedCount: diff.changedKeys.length,
+      });
+    }
+    setEntry(nextEntry);
     initialResponsesRef.current = restored;
-    setResponses(restored);
+    commitResponses(`applyEntryToState:${source}`, restored, {
+      forceLog: true,
+      meta: { nextEntryId: nextEntry?.id || fallbackEntryId || null },
+    });
     setCurrentRecordId(nextEntry?.id || fallbackEntryId || null);
-  }, []);
+  }, [commitResponses, entryId, formId, isDirtyRef, isViewModeRef, normalizedSchemaRef, responsesRef]);
   const applyEntryToStateRef = useLatestRef(applyEntryToState);
 
   const navigateToEntryById = useCallback((targetEntryId) => {
@@ -117,7 +255,6 @@ export default function FormPage() {
     });
   }, [navigate, formId, location.state?.from, entryIds]);
 
-  const isFormLoaded = !!form;
   useEffect(() => {
     let mounted = true;
     const loadEntry = async () => {
@@ -129,17 +266,57 @@ export default function FormPage() {
         return;
       }
       if (!entryId) {
-        if (isDirtyRef.current && Object.keys(responses || {}).length > 0) {
+        const newEntryKey = `${formId}:new`;
+        const currentResponses = toResponseObject(responsesRef.current);
+        const responseCount = Object.keys(currentResponses).length;
+
+        if (newEntryInitKeyRef.current === newEntryKey) {
+          if (responseCount > 0) {
+            console.log("[FormPage] skip new-entry reinitialize", {
+              formId,
+              responseCount,
+              isDirty: isDirtyRef.current,
+            });
+          }
           setLoading(false);
           return;
         }
+
+        let hasDraft = false;
+        try {
+          const savedStr = sessionStorage.getItem(draftKey);
+          if (savedStr) {
+            hasDraft = Object.keys(JSON.parse(savedStr)).length > 0;
+          }
+        } catch(e) {}
+
+        if (responseCount > 0 || hasDraft) {
+          console.log("[FormPage] keep existing responses or draft in new-entry mode", {
+            formId,
+            responseCount,
+            hasDraft,
+            isDirty: isDirtyRef.current,
+          });
+          newEntryInitKeyRef.current = newEntryKey;
+          setLoading(false);
+          return;
+        }
+
         const initialResponses = collectDefaultNowResponses(normalizedSchemaRef.current, new Date(), { userName: userNameRef.current, userEmail: userEmailRef.current });
         initialResponsesRef.current = initialResponses;
-        setResponses(initialResponses);
+        commitResponses("loadEntry:new-entry-initialize", initialResponses, {
+          forceLog: true,
+          meta: {
+            defaultKeyCount: Object.keys(initialResponses).length,
+          },
+        });
+        newEntryInitKeyRef.current = newEntryKey;
         setLoading(false);
         return;
       }
-      if (isDirtyRef.current && Object.keys(responses || {}).length > 0) {
+      newEntryInitKeyRef.current = null;
+      const currentResponses = toResponseObject(responsesRef.current);
+      if (isDirtyRef.current && Object.keys(currentResponses).length > 0) {
         setLoading(false);
         return;
       }
@@ -157,7 +334,7 @@ export default function FormPage() {
 
       if (cachedEntry && mounted) {
         // キャッシュがあれば即座に表示
-        applyEntryToStateRef.current(cachedEntry, entryId);
+        applyEntryToStateRef.current(cachedEntry, entryId, "loadEntry:cache");
         setLoading(false);
         perfLogger.logVerbose("form-page", "cache displayed", {
           elapsedFromStartMs: Number((performance.now() - tStart).toFixed(2)),
@@ -178,7 +355,7 @@ export default function FormPage() {
           dataStore.getEntry(formId, entryId, { rowIndexHint: rowIndex }).then((freshData) => {
             if (!mounted) return;
             if (freshData && isViewModeRef.current && !isDirtyRef.current) {
-              applyEntryToStateRef.current(freshData, entryId);
+              applyEntryToStateRef.current(freshData, entryId, "loadEntry:background-refresh");
               perfLogger.logVerbose("form-page", "background refresh complete", {
                 elapsedFromStartMs: Number((performance.now() - tStart).toFixed(2)),
               });
@@ -207,7 +384,7 @@ export default function FormPage() {
         if (!mounted) return;
         const tBeforeApply = performance.now();
         if (data && (!isDirtyRef.current || isViewModeRef.current)) {
-          applyEntryToStateRef.current(data, entryId);
+          applyEntryToStateRef.current(data, entryId, "loadEntry:sync-read");
         }
         const tAfterApply = performance.now();
         perfLogger.logVerbose("form-page", "applyEntryToState", {
@@ -257,7 +434,7 @@ export default function FormPage() {
             try {
               const latest = await dataStore.getEntry(formId, entryId, options);
               if (latest && !isDirtyRef.current && isViewModeRef.current) {
-                applyEntryToStateRef.current(latest, entryId);
+                applyEntryToStateRef.current(latest, entryId, "operation-cache:sync");
               }
             } finally {
               setLoading(false);
@@ -267,7 +444,7 @@ export default function FormPage() {
             dataStore.getEntry(formId, entryId, options)
               .then((latest) => {
                 if (latest && !isDirtyRef.current && isViewModeRef.current) {
-                  applyEntryToStateRef.current(latest, entryId);
+                  applyEntryToStateRef.current(latest, entryId, "operation-cache:background");
                 }
               })
               .catch((error) => {
@@ -281,6 +458,21 @@ export default function FormPage() {
       } catch (error) {
         console.error("[FormPage] operation cache check failed:", error);
       }
+    } else if (!entryId && isDirtyRef.current) {
+      console.log("[FormPage] operation cache check during unsaved new-entry edit", {
+        formId,
+        source,
+        responseCount: Object.keys(toResponseObject(responsesRef.current)).length,
+      });
+    }
+
+    if (isDirtyRef.current && !isViewModeRef.current) {
+      console.log("[FormPage] defer refreshForms during dirty edit", {
+        formId,
+        entryId: entryId || "new",
+        source,
+      });
+      return;
     }
 
     await refreshFormsIfNeeded(source);
@@ -308,6 +500,11 @@ export default function FormPage() {
 
   const handleSaveToStore = async ({ payload }) => {
     if (!form) throw new Error("form_not_found");
+
+    try {
+      sessionStorage.removeItem(draftKey);
+    } catch(e) {}
+
     const isNewEntry = !entry?.id;
     const createdBy = isNewEntry ? (userEmail || "") : (entry?.createdBy || "");
     const modifiedBy = userEmail || entry?.modifiedBy || "";
@@ -354,7 +551,7 @@ export default function FormPage() {
     } else {
       console.warn("[FormPage] No spreadsheetId configured, skipping spreadsheet save");
     }
-    applyEntryToState(saved, saved.id);
+    applyEntryToState(saved, saved.id, "save:new-entry");
     return saved;
   };
 
@@ -405,7 +602,7 @@ export default function FormPage() {
         navigateBack();
         return;
       }
-      applyEntryToState(data, entryId);
+      applyEntryToState(data, entryId, "handleEditMode:forceSync");
     } catch (error) {
       console.error("[FormPage] handleEditMode error:", error);
       showAlert(`データの読み込みに失敗しました: ${error?.message || error}`);
@@ -473,10 +670,15 @@ export default function FormPage() {
       }
     });
 
-    setResponses((prev) => ({
+    commitResponses("record-copy:merge", (prev) => ({
       ...(prev || {}),
       ...filteredResponses,
-    }));
+    }), {
+      forceLog: true,
+      meta: {
+        copiedCount: Object.keys(filteredResponses).length,
+      },
+    });
     setIsCopyDialogOpen(false);
 
     const copiedCount = Object.keys(filteredResponses).length;
@@ -486,6 +688,10 @@ export default function FormPage() {
       showAlert("コピー対象の回答が見つかりませんでした");
     }
   }, [copySourceResponses, showAlert, topLevelFieldMap]);
+
+  const handleResponsesChange = useCallback((updater) => {
+    commitResponses("preview:change", updater);
+  }, [commitResponses]);
 
   if (!form) {
     return (
@@ -635,7 +841,7 @@ export default function FormPage() {
           ref={previewRef}
           schema={normalizedSchema}
           responses={responses}
-          setResponses={setResponses}
+          setResponses={handleResponsesChange}
           settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: entry?.["No."] || "", userName, userEmail }}
           onSave={handleSaveToStore}
           showOutputJson={false}

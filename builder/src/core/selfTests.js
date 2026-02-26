@@ -27,6 +27,33 @@ export const runSelfTests = () => {
     const displayDefault = normalizeSchemaIDs([{ type: "text", label: "表示デフォルト" }]);
     console.assert(displayDefault[0].isDisplayed === false, "isDisplayed default should be false");
 
+    // ID欠損時の自動IDは同一スキーマなら安定して生成される
+    const missingIdSchema = [
+      {
+        type: "select",
+        label: "安定ID",
+        options: [{ label: "赤" }, { label: "青" }],
+        childrenByValue: {
+          赤: [{ type: "text", label: "理由" }],
+        },
+      },
+    ];
+    const missingIdRun1 = normalizeSchemaIDs(missingIdSchema);
+    const missingIdRun2 = normalizeSchemaIDs(missingIdSchema);
+    console.assert(missingIdRun1[0].id === missingIdRun2[0].id, "fallback field id should be stable");
+    console.assert(
+      missingIdRun1[0].options[0].id === missingIdRun2[0].options[0].id,
+      "fallback option id should be stable",
+    );
+    console.assert(
+      missingIdRun1[0].childrenByValue["赤"][0].id === missingIdRun2[0].childrenByValue["赤"][0].id,
+      "fallback child field id should be stable",
+    );
+
+    // 明示IDはそのまま維持される
+    const explicitId = normalizeSchemaIDs([{ id: "fixed_field_id", type: "text", label: "固定ID" }]);
+    console.assert(explicitId[0].id === "fixed_field_id", "explicit field id should be preserved");
+
 
     // 選択系表示は常に縮退列1本に統合される
     const choiceSchema = normalizeSchemaIDs([

@@ -5,6 +5,29 @@ import { mapSchema, traverseSchema } from "./schemaUtils.js";
 
 const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" : label || "");
 
+const stableHash = (seed) => {
+  let hash = 2166136261;
+  const text = String(seed || "");
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+};
+
+const buildStableFieldId = (field, context) => {
+  const path = Array.isArray(context?.pathSegments) ? context.pathSegments.join("|") : "";
+  const index = Number.isFinite(context?.index) ? context.index : -1;
+  const depth = Number.isFinite(context?.depth) ? context.depth : -1;
+  const fieldType = field?.type || "field";
+  return `f_auto_${stableHash(`${fieldType}|${depth}|${index}|${path}`)}`;
+};
+
+const buildStableOptionId = (fieldId, optionLabel, optionIndex) => {
+  const index = Number.isFinite(optionIndex) ? optionIndex : -1;
+  return `o_auto_${stableHash(`${fieldId}|${index}|${optionLabel || ""}`)}`;
+};
+
 export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
 export { MAX_DEPTH };
 
@@ -65,15 +88,18 @@ export const cleanUnusedFieldProperties = (field) => {
 };
 
 export const normalizeSchemaIDs = (nodes) => {
-  return mapSchema(nodes, (field) => {
-    const id = field.id || genId();
+  return mapSchema(nodes, (field, context) => {
+    const id = field.id || buildStableFieldId(field, context);
     const base = { ...field, id };
 
     if (["radio", "select", "checkboxes"].includes(base.type)) {
-      base.options = (base.options || []).map((opt) => ({
-        id: opt?.id || genId(),
-        label: sanitizeOptionLabel(opt?.label),
-      }));
+      base.options = (base.options || []).map((opt, optionIndex) => {
+        const optionLabel = sanitizeOptionLabel(opt?.label);
+        return {
+          id: opt?.id || buildStableOptionId(id, optionLabel, optionIndex),
+          label: optionLabel,
+        };
+      });
     } else if (base.type === "regex") {
       base.pattern = typeof base.pattern === "string" ? base.pattern : "";
     } else if (["date", "time", "userName", "email"].includes(base.type)) {

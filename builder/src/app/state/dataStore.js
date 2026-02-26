@@ -287,14 +287,13 @@ export const dataStore = {
 
     const entries = (gasResult.records || []).map(r => mapSheetRecordToEntry(r, formId));
     entries.sort((a, b) => { if (a.id < b.id) return -1; if (a.id > b.id) return 1; return 0; });
-    const entryIndexMap = {};
-    entries.forEach((item, idx) => { entryIndexMap[item.id] = idx; });
 
     await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], { schemaHash: form.schemaHash, syncStartedAt: startedAt });
+    const fullCache = await getRecordsFromCache(formId);
     
     const durationMs = Date.now() - startedAt;
     perfLogger.logVerbose("records", "listEntries full done", { formId, durationMs });
-    return { entries, headerMatrix: gasResult.headerMatrix || [], entryIndexMap, lastSyncedAt: lastSyncedAtNext };
+    return { entries: fullCache.entries, headerMatrix: fullCache.headerMatrix, entryIndexMap: fullCache.entryIndexMap, lastSyncedAt: lastSyncedAtNext };
   },
   async getEntry(formId, entryId, { forceSync = false, rowIndexHint = undefined } = {}) {
     const form = await this.getForm(formId);

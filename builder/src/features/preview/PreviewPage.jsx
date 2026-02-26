@@ -336,13 +336,22 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       const current = prev || {};
       let changed = false;
       const next = { ...current };
+      const appliedKeys = [];
       Object.keys(defaultNowMap).forEach((key) => {
         const currentValue = next[key];
         if (currentValue === undefined || currentValue === null || currentValue === "") {
           next[key] = defaultNowMap[key];
           changed = true;
+          appliedKeys.push(key);
         }
       });
+      if (changed) {
+        console.log("[PreviewPage] defaultNow values applied", {
+          recordId: settings.recordId || null,
+          appliedCount: appliedKeys.length,
+          appliedKeys: appliedKeys.slice(0, 8),
+        });
+      }
       return changed ? next : current;
     });
   }, [defaultNowMap, setResponses, settings.recordId]);

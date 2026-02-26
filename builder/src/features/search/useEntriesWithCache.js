@@ -35,13 +35,17 @@ export const useEntriesWithCache = ({
   const [cacheDisabled, setCacheDisabled] = useState(false);
   const lastSyncedAtRef = useLatestRef(lastSyncedAt);
   const backgroundLoadingRef = useRef(false);
+  const activeForegroundRequestsRef = useRef(0);
+  const latestRequestTokenRef = useRef(0);
   const loadingFormsRef = useLatestRef(loadingForms);
 
   const fetchAndCacheData = useCallback(async ({ background = false, forceFullSync = false, reason = "unknown" } = {}) => {
     if (!formId) return;
     if (background && backgroundLoadingRef.current) return;
 
+    const requestToken = ++latestRequestTokenRef.current;
     if (!background) {
+      activeForegroundRequestsRef.current += 1;
       setLoading(true);
     } else {
       backgroundLoadingRef.current = true;
@@ -54,6 +58,17 @@ export const useEntriesWithCache = ({
         lastSyncedAt: forceFullSync ? null : lastSyncedAtRef.current,
         forceFullSync,
       });
+      if (requestToken !== latestRequestTokenRef.current) {
+        perfLogger.logVerbose("search", "fetch ignored by stale response guard", {
+          formId,
+          background,
+          reason,
+          forceFullSync,
+          requestToken,
+          latestRequestToken: latestRequestTokenRef.current,
+        });
+        return;
+      }
       const fetchedEntries = result.entries || result || [];
       setEntries(fetchedEntries);
       setHeaderMatrix(result.headerMatrix || []);
@@ -71,10 +86,12 @@ export const useEntriesWithCache = ({
         background,
         reason,
         forceFullSync,
+        requestToken,
         durationMs: finishedAt - startedAt,
       });
       if (!background) {
-        setLoading(false);
+        activeForegroundRequestsRef.current = Math.max(0, activeForegroundRequestsRef.current - 1);
+        setLoading(activeForegroundRequestsRef.current > 0);
       } else {
         backgroundLoadingRef.current = false;
         setBackgroundLoading(false);

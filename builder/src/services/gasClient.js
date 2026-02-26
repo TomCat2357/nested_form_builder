@@ -67,10 +67,26 @@ export const exportSearchResults = async ({ spreadsheetTitle = "", headerRows, r
   return { ...result, exportedCount: rows.length };
 };
 
-export const listEntries = async ({ spreadsheetId, sheetName = "Data", formId = null }) => {
+export const listEntries = async ({ spreadsheetId, sheetName = "Data", formId = null, lastSyncedAt = null, forceFullSync = false }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
-  const result = await fetchGasApi("listRecords", { spreadsheetId: normalizeSpreadsheetId(spreadsheetId), sheetName, formId }, "スプレッドシートからデータ一覧を読み取れませんでした");
-  return { records: result.records || [], headerMatrix: result.headerMatrix || [] };
+  const normalizedLastSyncedAt = Number(lastSyncedAt);
+  const payload = {
+    spreadsheetId: normalizeSpreadsheetId(spreadsheetId),
+    sheetName,
+    formId,
+    forceFullSync: !!forceFullSync,
+  };
+  if (!forceFullSync && Number.isFinite(normalizedLastSyncedAt) && normalizedLastSyncedAt > 0) {
+    payload.lastSyncedAt = normalizedLastSyncedAt;
+  }
+  const result = await fetchGasApi("listRecords", payload, "スプレッドシートからデータ一覧を読み取れませんでした");
+  return {
+    records: result.records || [],
+    headerMatrix: result.headerMatrix || [],
+    isDelta: !!result.isDelta,
+    allIds: Array.isArray(result.allIds) ? result.allIds : [],
+    count: Number.isFinite(result.count) ? result.count : (result.records || []).length,
+  };
 };
 
 export const listForms = (options = {}) => fetchGasApi("nfbListForms", options, "List forms failed").then(r => ({ forms: r.forms || [], loadFailures: r.loadFailures || [] }));

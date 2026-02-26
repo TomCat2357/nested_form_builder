@@ -5,8 +5,71 @@
  */
 
 import { openDB, waitForRequest, waitForTransaction, STORE_NAMES } from './dbHelpers.js';
+import { MS_PER_DAY, SERIAL_EPOCH_UTC_MS, JST_OFFSET_MS } from "../../core/constants.js";
 
 const buildCompoundId = (formId, entryId) => `${formId}::${entryId}`;
+const SERIAL_EPOCH_JST_MS = SERIAL_EPOCH_UTC_MS - JST_OFFSET_MS;
+const isProbablyUnixMs = (value) => Math.abs(value) >= 100000000000;
+
+const normalizeNumericModifiedAtToUnixMs = (value) => {
+  if (!Number.isFinite(value) || value <= 0) return 0;
+  if (isProbablyUnixMs(value)) return value;
+  if (Math.abs(value) >= 1000000000) return value * 1000;
+  return SERIAL_EPOCH_JST_MS + value * MS_PER_DAY;
+};
+
+const normalizeModifiedAtUnixMs = (record) => {
+  if (!record) return 0;
+  const explicitUnixMs = Number(record.modifiedAtUnixMs);
+  if (Number.isFinite(explicitUnixMs) && explicitUnixMs > 0) return explicitUnixMs;
+
+  const rawModifiedAt = record.modifiedAt;
+  if (rawModifiedAt instanceof Date) {
+    const dateUnixMs = rawModifiedAt.getTime();
+    return Number.isFinite(dateUnixMs) && dateUnixMs > 0 ? dateUnixMs : 0;
+  }
+
+  const numericModifiedAt = Number(rawModifiedAt);
+  if (Number.isFinite(numericModifiedAt) && numericModifiedAt > 0) return numericModifiedAt;
+
+  if (typeof rawModifiedAt === 'string' && rawModifiedAt.trim()) {
+    const parsedUnixMs = Date.parse(rawModifiedAt);
+    if (Number.isFinite(parsedUnixMs) && parsedUnixMs > 0) return parsedUnixMs;
+  }
+
+  return 0;
+};
+
+const normalizeComparableModifiedAtUnixMs = (record) => {
+  if (!record) return 0;
+  const explicitUnixMs = Number(record.modifiedAtUnixMs);
+  const normalizedExplicit = normalizeNumericModifiedAtToUnixMs(explicitUnixMs);
+  if (normalizedExplicit > 0) return normalizedExplicit;
+
+  const rawModifiedAt = record.modifiedAt;
+  if (rawModifiedAt instanceof Date) {
+    const dateUnixMs = rawModifiedAt.getTime();
+    return Number.isFinite(dateUnixMs) && dateUnixMs > 0 ? dateUnixMs : 0;
+  }
+
+  const numericModifiedAt = Number(rawModifiedAt);
+  const normalizedNumeric = normalizeNumericModifiedAtToUnixMs(numericModifiedAt);
+  if (normalizedNumeric > 0) return normalizedNumeric;
+
+  if (typeof rawModifiedAt === 'string' && rawModifiedAt.trim()) {
+    const parsedUnixMs = Date.parse(rawModifiedAt);
+    if (Number.isFinite(parsedUnixMs) && parsedUnixMs > 0) return parsedUnixMs;
+  }
+
+  return 0;
+};
+
+const withNormalizedModifiedAt = (record) => {
+  if (!record) return record;
+  const normalizedModifiedAtUnixMs = normalizeModifiedAtUnixMs(record);
+  if (record.modifiedAtUnixMs === normalizedModifiedAtUnixMs) return record;
+  return { ...record, modifiedAtUnixMs: normalizedModifiedAtUnixMs };
+};
 
 const stripMetadata = (record) => {
   if (!record) return null;
@@ -30,32 +93,17 @@ const deleteEntriesForForm = (store, formId) =>
     request.onerror = () => reject(request.error);
   });
 
-const deleteEntriesForFormExcept = (store, formId, protectedCompoundIds) =>
-  new Promise((resolve, reject) => {
-    const index = store.index('formId');
-    const request = index.openKeyCursor(IDBKeyRange.only(formId));
-    request.onsuccess = (event) => {
-      const cursor = event.target.result;
-      if (cursor) {
-        if (!protectedCompoundIds.has(cursor.primaryKey)) {
-          store.delete(cursor.primaryKey);
-        }
-        cursor.continue();
-      } else {
-        resolve();
-      }
-    };
-    request.onerror = () => reject(request.error);
-  });
-
-const buildCacheRecord = (formId, record, lastSyncedAt, rowIndex) => ({
-  ...record,
-  compoundId: buildCompoundId(formId, record.id),
-  formId,
-  entryId: record.id,
-  lastSyncedAt,
-  rowIndex,
-});
+const buildCacheRecord = (formId, record, lastSyncedAt, rowIndex) => {
+  const normalizedRecord = withNormalizedModifiedAt(record);
+  return {
+    ...normalizedRecord,
+    compoundId: buildCompoundId(formId, normalizedRecord.id),
+    formId,
+    entryId: normalizedRecord.id,
+    lastSyncedAt,
+    rowIndex,
+  };
+};
 
 const buildEntryIndexMap = (records) => {
   const map = {};
@@ -63,6 +111,91 @@ const buildEntryIndexMap = (records) => {
     if (record?.id) map[record.id] = idx;
   });
   return map;
+};
+
+const buildLatestRecordMap = (records, pickEntryId) => {
+  const latestByEntryId = {};
+  for (const record of records) {
+    const entryId = pickEntryId(record);
+    if (!entryId) continue;
+    const current = latestByEntryId[entryId];
+    if (!current || normalizeComparableModifiedAtUnixMs(record) > normalizeComparableModifiedAtUnixMs(current)) {
+      latestByEntryId[entryId] = record;
+    }
+  }
+  return latestByEntryId;
+};
+
+const getMaxModifiedAt = (records) => {
+  let maxModifiedAt = 0;
+  for (const record of records) {
+    const ts = normalizeComparableModifiedAtUnixMs(record);
+    if (ts > maxModifiedAt) maxModifiedAt = ts;
+  }
+  return maxModifiedAt;
+};
+
+export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], allIds = [] } = {}) => {
+  const safeExistingRecords = Array.isArray(existingRecords) ? existingRecords : [];
+  const safeIncomingRecords = Array.isArray(incomingRecords) ? incomingRecords : [];
+  const allIdsSet = new Set(Array.isArray(allIds) ? allIds : []);
+  const hasAllIds = allIdsSet.size > 0;
+
+  const existingByEntryId = buildLatestRecordMap(safeExistingRecords, (record) => record?.entryId ?? record?.id);
+  const incomingByEntryId = buildLatestRecordMap(safeIncomingRecords, (record) => record?.id ?? record?.entryId);
+
+  const maxIncomingModifiedAt = getMaxModifiedAt(Object.values(incomingByEntryId));
+  const maxExistingModifiedAt = getMaxModifiedAt(Object.values(existingByEntryId));
+
+  const commonUpdateIds = [];
+  const cacheOnlyDeleteIds = [];
+  const incomingOnlyAddIds = [];
+
+  for (const [entryId, incomingRecord] of Object.entries(incomingByEntryId)) {
+    const existingRecord = existingByEntryId[entryId];
+    if (!existingRecord) continue;
+
+    const incomingModifiedAt = normalizeComparableModifiedAtUnixMs(incomingRecord);
+    const existingModifiedAt = normalizeComparableModifiedAtUnixMs(existingRecord);
+    if (incomingModifiedAt > existingModifiedAt) {
+      commonUpdateIds.push(entryId);
+    }
+  }
+
+  for (const [entryId, existingRecord] of Object.entries(existingByEntryId)) {
+    if (incomingByEntryId[entryId]) continue;
+
+    if (hasAllIds && allIdsSet.has(entryId)) {
+      continue;
+    }
+
+    const existingModifiedAt = normalizeComparableModifiedAtUnixMs(existingRecord);
+    if (existingModifiedAt >= maxIncomingModifiedAt) {
+      continue;
+    }
+    cacheOnlyDeleteIds.push(entryId);
+  }
+
+  for (const [entryId, incomingRecord] of Object.entries(incomingByEntryId)) {
+    if (existingByEntryId[entryId]) continue;
+
+    const incomingModifiedAt = normalizeComparableModifiedAtUnixMs(incomingRecord);
+    if (incomingModifiedAt > maxExistingModifiedAt) {
+      incomingOnlyAddIds.push(entryId);
+    }
+  }
+
+  return {
+    existingByEntryId,
+    incomingByEntryId,
+    commonUpdateIds,
+    cacheOnlyDeleteIds,
+    incomingOnlyAddIds,
+    maxIncomingModifiedAt,
+    maxExistingModifiedAt,
+    hasAllIds,
+    allIdsSet,
+  };
 };
 
 /**
@@ -94,46 +227,59 @@ export async function saveRecordsToCache(formId, records, headerMatrix = [], { s
   const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
 
   const lastSyncedAt = Date.now();
-  const entryIndexMap = buildEntryIndexMap(records || []);
+  const safeRecords = Array.isArray(records) ? records : [];
+  const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
+  const entryIndexMap = syncStartedAt
+    ? { ...(existingMeta?.entryIndexMap || {}) }
+    : buildEntryIndexMap(safeRecords);
 
   if (syncStartedAt) {
-    // syncStartedAt保護: 同期開始後にローカル変更されたレコードを保護
     const existingRecords = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId))) || [];
-    const protectedCompoundIds = new Set();
-    const protectedEntryIds = new Set();
+    const incomingRowIndexMap = buildEntryIndexMap(safeRecords);
+    const mergePlan = planRecordMerge({
+      existingRecords,
+      incomingRecords: safeRecords,
+      allIds: safeRecords.map((record) => record?.id).filter(Boolean),
+    });
+    console.debug(
+      `[saveRecordsToCache] formId=${formId}, cacheCount=${existingRecords.length}, fullCount=${safeRecords.length}, maxFullModifiedAt=${mergePlan.maxIncomingModifiedAt}, maxCacheModifiedAt=${mergePlan.maxExistingModifiedAt}, updates=${mergePlan.commonUpdateIds.length}, deletes=${mergePlan.cacheOnlyDeleteIds.length}, adds=${mergePlan.incomingOnlyAddIds.length}`,
+    );
 
-    for (const record of existingRecords) {
-      if (record.lastSyncedAt > syncStartedAt) {
-        protectedCompoundIds.add(record.compoundId);
-        protectedEntryIds.add(record.entryId);
-      }
+    for (const entryId of mergePlan.cacheOnlyDeleteIds) {
+      const cacheRecord = mergePlan.existingByEntryId[entryId];
+      if (!cacheRecord?.compoundId) continue;
+      await waitForRequest(store.delete(cacheRecord.compoundId));
+      delete entryIndexMap[entryId];
+      console.debug(`[saveRecordsToCache] DELETE entryId=${entryId}`);
     }
 
-    await deleteEntriesForFormExcept(store, formId, protectedCompoundIds);
+    const upsertIncomingIds = [...mergePlan.commonUpdateIds, ...mergePlan.incomingOnlyAddIds];
+    for (const entryId of upsertIncomingIds) {
+      const incomingRecord = mergePlan.incomingByEntryId[entryId];
+      if (!incomingRecord) continue;
 
-    for (let idx = 0; idx < records.length; idx++) {
-      const record = records[idx];
-      if (protectedEntryIds.has(record.id)) continue;
-      await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, idx)));
-    }
+      const existingRecord = mergePlan.existingByEntryId[entryId];
+      const nextRowIndex = Number.isInteger(incomingRowIndexMap[entryId])
+        ? incomingRowIndexMap[entryId]
+        : (Number.isInteger(existingRecord?.rowIndex) ? existingRecord.rowIndex : entryIndexMap[entryId]);
 
-    // 保護レコードのインデックスを維持
-    for (const record of existingRecords) {
-      if (protectedEntryIds.has(record.entryId) && record.rowIndex !== undefined) {
-        entryIndexMap[record.entryId] = record.rowIndex;
+      await waitForRequest(store.put(buildCacheRecord(formId, incomingRecord, lastSyncedAt, nextRowIndex)));
+      if (Number.isInteger(nextRowIndex)) {
+        entryIndexMap[entryId] = nextRowIndex;
       }
+      console.debug(`[saveRecordsToCache] UPSERT entryId=${entryId}, rowIndex=${nextRowIndex}`);
     }
   } else {
     // 従来動作: 全削除→全挿入
     await deleteEntriesForForm(store, formId);
 
-    for (let idx = 0; idx < records.length; idx++) {
-      const record = records[idx];
+    for (let idx = 0; idx < safeRecords.length; idx++) {
+      const record = safeRecords[idx];
       await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, idx)));
     }
   }
 
-  await waitForRequest(metaStore.put(buildMetadata(formId, null, {
+  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
     lastSyncedAt,
     headerMatrix,
     schemaHash,
@@ -368,41 +514,61 @@ export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMa
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
   const lastSyncedAt = Date.now();
   const existingRecords = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId))) || [];
-
-  const allIdSet = new Set(allIds || []);
+  const safeUpdatedRecords = Array.isArray(updatedRecords) ? updatedRecords : [];
   const entryIndexMap = { ...(existingMeta?.entryIndexMap || {}) };
+  const mergePlan = planRecordMerge({
+    existingRecords,
+    incomingRecords: safeUpdatedRecords,
+    allIds,
+  });
+  console.debug(
+    `[applyDeltaToCache] formId=${formId}, cacheCount=${existingRecords.length}, lazyCount=${safeUpdatedRecords.length}, maxLazyModifiedAt=${mergePlan.maxIncomingModifiedAt}, maxCacheModifiedAt=${mergePlan.maxExistingModifiedAt}, allIdsCount=${mergePlan.allIdsSet.size}, hasAllIds=${mergePlan.hasAllIds}, updates=${mergePlan.commonUpdateIds.length}, deletes=${mergePlan.cacheOnlyDeleteIds.length}, adds=${mergePlan.incomingOnlyAddIds.length}`,
+  );
 
-  // syncStartedAt保護用: 既存レコードをentryIdでマップ化
-  const existingByEntryId = {};
-  if (syncStartedAt) {
-    for (const record of existingRecords) {
-      existingByEntryId[record.entryId] = record;
+  for (const entryId of mergePlan.commonUpdateIds) {
+    const lazyRecord = mergePlan.incomingByEntryId[entryId];
+    const cacheRecord = mergePlan.existingByEntryId[entryId];
+    if (!lazyRecord || !cacheRecord) continue;
+
+    const lazyModifiedAt = normalizeComparableModifiedAtUnixMs(lazyRecord);
+    const cacheModifiedAt = normalizeComparableModifiedAtUnixMs(cacheRecord);
+    console.debug(`[applyDeltaToCache] sec1: UPDATE FROM LAZY entryId=${entryId}, cacheModifiedAt=${cacheModifiedAt}, lazyModifiedAt=${lazyModifiedAt}`);
+
+    const nextRowIndex = Number.isInteger(cacheRecord.rowIndex)
+      ? cacheRecord.rowIndex
+      : entryIndexMap[entryId];
+    await waitForRequest(store.put(buildCacheRecord(formId, lazyRecord, lastSyncedAt, nextRowIndex)));
+    if (Number.isInteger(nextRowIndex)) {
+      entryIndexMap[entryId] = nextRowIndex;
     }
   }
 
-  // 1. 削除されたレコードを検知して消去
-  for (const record of existingRecords) {
-    if (!allIdSet.has(record.entryId)) {
-      // syncStartedAt保護: 同期開始後にローカル変更されたレコードは削除しない
-      if (syncStartedAt && record.lastSyncedAt > syncStartedAt) {
-        continue;
-      }
-      store.delete(record.compoundId);
-      delete entryIndexMap[record.entryId];
-    }
+  for (const entryId of mergePlan.cacheOnlyDeleteIds) {
+    const cacheRecord = mergePlan.existingByEntryId[entryId];
+    if (!cacheRecord?.compoundId) continue;
+
+    const cacheModifiedAt = normalizeComparableModifiedAtUnixMs(cacheRecord);
+    const reason = mergePlan.hasAllIds
+      ? `not_in_allIds_and_older(cacheModifiedAt=${cacheModifiedAt}, maxLazyModifiedAt=${mergePlan.maxIncomingModifiedAt})`
+      : `no_allIds_and_older(cacheModifiedAt=${cacheModifiedAt}, maxLazyModifiedAt=${mergePlan.maxIncomingModifiedAt})`;
+    console.debug(`[applyDeltaToCache] sec2: DELETE entryId=${entryId}, reason=${reason}`);
+
+    await waitForRequest(store.delete(cacheRecord.compoundId));
+    delete entryIndexMap[entryId];
   }
 
-  // 2. 追加・更新されたレコードをUpsert
-  for (const record of updatedRecords || []) {
-    // syncStartedAt保護: 同期開始後にローカル変更されたレコードは上書きしない
-    if (syncStartedAt) {
-      const existing = existingByEntryId[record.id];
-      if (existing && existing.lastSyncedAt > syncStartedAt) {
-        continue;
-      }
+  for (const entryId of mergePlan.incomingOnlyAddIds) {
+    const lazyRecord = mergePlan.incomingByEntryId[entryId];
+    if (!lazyRecord) continue;
+
+    const lazyModifiedAt = normalizeComparableModifiedAtUnixMs(lazyRecord);
+    console.debug(`[applyDeltaToCache] sec3: ADD entryId=${entryId}, lazyModifiedAt=${lazyModifiedAt}, maxCacheModifiedAt=${mergePlan.maxExistingModifiedAt}`);
+
+    const nextRowIndex = entryIndexMap[entryId];
+    await waitForRequest(store.put(buildCacheRecord(formId, lazyRecord, lastSyncedAt, nextRowIndex)));
+    if (Number.isInteger(nextRowIndex)) {
+      entryIndexMap[entryId] = nextRowIndex;
     }
-    const nextRowIndex = entryIndexMap[record.id];
-    store.put(buildCacheRecord(formId, record, lastSyncedAt, nextRowIndex));
   }
 
   // メタデータの更新
