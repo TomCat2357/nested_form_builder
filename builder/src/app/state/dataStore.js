@@ -66,20 +66,33 @@ const getSheetConfig = (form) => {
   };
 };
 
-const mapSheetRecordToEntry = (record, formId) => ({
-  id: record.id,
-  "No.": record["No."],
-  modifiedBy: record.modifiedBy || "",
-  createdBy: record.createdBy || "",
-  formId,
-  createdAt: record.createdAt,
-  modifiedAt: record.modifiedAt,
-  createdAtUnixMs: record.createdAtUnixMs ?? null,
-  modifiedAtUnixMs: record.modifiedAtUnixMs ?? null,
-  data: record.data || {},
-  dataUnixMs: record.dataUnixMs || {},
-  order: Object.keys(record.data || {}),
-});
+const resolveUnixMs = (...candidates) => {
+  for (const candidate of candidates) {
+    const unixMs = toUnixMs(candidate);
+    if (Number.isFinite(unixMs)) return unixMs;
+  }
+  return null;
+};
+
+const mapSheetRecordToEntry = (record, formId) => {
+  const createdAtUnixMs = resolveUnixMs(record?.createdAtUnixMs, record?.createdAt);
+  const modifiedAtUnixMs = resolveUnixMs(record?.modifiedAtUnixMs, record?.modifiedAt);
+
+  return {
+    id: record.id,
+    "No.": record["No."],
+    modifiedBy: record.modifiedBy || "",
+    createdBy: record.createdBy || "",
+    formId,
+    createdAt: record.createdAt || "",
+    modifiedAt: record.modifiedAt || "",
+    createdAtUnixMs,
+    modifiedAtUnixMs,
+    data: record.data || {},
+    dataUnixMs: record.dataUnixMs || {},
+    order: Object.keys(record.data || {}),
+  };
+};
 
 export const dataStore = {
   async listForms({ includeArchived = false } = {}) {
@@ -236,12 +249,8 @@ export const dataStore = {
   },
   async upsertEntry(formId, payload) {
     const now = Date.now();
-    let createdAtUnix = Number.isFinite(payload.createdAtUnixMs)
-      ? payload.createdAtUnixMs
-      : toUnixMs(payload.createdAt);
-    if (!Number.isFinite(createdAtUnix) && Number.isFinite(payload.createdAt)) {
-      createdAtUnix = toUnixMs(payload.createdAt);
-    }
+    let createdAtUnix = toUnixMs(payload.createdAtUnixMs);
+    if (!Number.isFinite(createdAtUnix)) createdAtUnix = toUnixMs(payload.createdAt);
     const resolvedCreatedAt = Number.isFinite(createdAtUnix) ? createdAtUnix : now;
 
     let no = payload['No.'];
@@ -250,16 +259,21 @@ export const dataStore = {
       no = maxNo + 1;
     }
 
+    const formatDt = (ms) => {
+      const d = new Date(ms);
+      const pad = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    };
+
     const record = {
-      'No.': no,
       'No.': no,
       id: payload.id || genRecordId(),
       formId,
       createdBy: payload.createdBy || "",
       modifiedBy: payload.modifiedBy || "",
-      createdAt: resolvedCreatedAt,
+      createdAt: typeof payload.createdAt === 'string' && payload.createdAt.includes('/') ? payload.createdAt : formatDt(resolvedCreatedAt),
       createdAtUnixMs: resolvedCreatedAt,
-      modifiedAt: now,
+      modifiedAt: formatDt(now),
       modifiedAtUnixMs: now,
       data: payload.data || {},
       dataUnixMs: payload.dataUnixMs || {},
@@ -284,12 +298,37 @@ export const dataStore = {
 
     const gasResult = await listEntriesFromGas(payload);
     const lastSyncedAtNext = Date.now();
+    const sheetLastUpdatedAt = Number.isFinite(gasResult.sheetLastUpdatedAt) ? gasResult.sheetLastUpdatedAt : 0;
+    const allIdsCount = Array.isArray(gasResult.allIds) ? gasResult.allIds.length : null;
     
     if (gasResult.isDelta) {
       const updatedEntries = (gasResult.records || []).map(r => mapSheetRecordToEntry(r, formId));
+      if (updatedEntries.length === 0 && !Array.isArray(gasResult.allIds)) {
+        const fullCache = await getRecordsFromCache(formId);
+        const cacheLastReadAt = Number.isFinite(Number(fullCache.lastSpreadsheetReadAt)) ? Number(fullCache.lastSpreadsheetReadAt) : 0;
+        const lastSpreadsheetReadAtNext = Math.max(cacheLastReadAt, sheetLastUpdatedAt) || null;
+        const durationMs = Date.now() - startedAt;
+        perfLogger.logVerbose("records", "listEntries delta no-op", {
+          formId,
+          durationMs,
+          sheetLastUpdatedAt,
+          lastSpreadsheetReadAt: spreadsheetReadAt,
+        });
+        return {
+          entries: fullCache.entries,
+          headerMatrix: fullCache.headerMatrix,
+          entryIndexMap: fullCache.entryIndexMap,
+          lastSyncedAt: lastSyncedAtNext,
+          lastSpreadsheetReadAt: lastSpreadsheetReadAtNext,
+          isDelta: true,
+          fetchedCount: 0,
+          allIdsCount,
+          sheetLastUpdatedAt,
+        };
+      }
       await applyDeltaToCache(formId, updatedEntries, gasResult.allIds, gasResult.headerMatrix || null, form.schemaHash, {
         syncStartedAt: startedAt,
-        sheetLastUpdatedAt: gasResult.sheetLastUpdatedAt,
+        sheetLastUpdatedAt,
       });
       
       const fullCache = await getRecordsFromCache(formId);
@@ -301,6 +340,10 @@ export const dataStore = {
         entryIndexMap: fullCache.entryIndexMap,
         lastSyncedAt: lastSyncedAtNext,
         lastSpreadsheetReadAt: fullCache.lastSpreadsheetReadAt,
+        isDelta: true,
+        fetchedCount: updatedEntries.length,
+        allIdsCount,
+        sheetLastUpdatedAt,
       };
     }
 
@@ -310,7 +353,7 @@ export const dataStore = {
     await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], {
       schemaHash: form.schemaHash,
       syncStartedAt: forceFullSync ? null : startedAt,
-      sheetLastUpdatedAt: gasResult.sheetLastUpdatedAt,
+      sheetLastUpdatedAt,
     });
     const fullCache = await getRecordsFromCache(formId);
     
@@ -322,6 +365,10 @@ export const dataStore = {
       entryIndexMap: fullCache.entryIndexMap,
       lastSyncedAt: lastSyncedAtNext,
       lastSpreadsheetReadAt: fullCache.lastSpreadsheetReadAt,
+      isDelta: false,
+      fetchedCount: entries.length,
+      allIdsCount,
+      sheetLastUpdatedAt,
     };
   },
   async getEntry(formId, entryId, { forceSync = false, rowIndexHint = undefined } = {}) {

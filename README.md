@@ -361,8 +361,8 @@ npx playwright test
     { path: "相談内容|生物|動物種|ヒグマ", mode: "compact", type: "checkboxes" }
   ],
   archived: false,
-  createdAt: 45234.12345,
-  modifiedAt: 45236.6789,
+  createdAt: 1767225600000,
+  modifiedAt: 1767312000000,
   schema: [
     {
       id: "q1",
@@ -418,7 +418,7 @@ npx playwright test
 #### スプレッドシートレイアウト
 
 - 行1-11: ヘッダー（最大11階層）
-- 固定列: `id`, `No.`, `createdAt`, `modifiedAt`
+- 固定列: `id`, `No.`, `createdAt`, `modifiedAt`（`createdAt`/`modifiedAt` は UNIX ms）
 - 動的列: 質問パスに基づく列（例: `parent|child|question`）
 
 ### 保存先まとめ

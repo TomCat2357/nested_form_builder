@@ -37,7 +37,9 @@ export const useOperationCacheTrigger = ({
 
     const runCallback = (source) => {
       if (typeof callbackRef.current !== "function") return;
-      Promise.resolve(callbackRef.current({ source, triggeredAt: Date.now() })).catch((error) => {
+      const triggeredAt = Date.now();
+      console.info("[useOperationCacheTrigger] fired", { source, triggeredAt });
+      Promise.resolve(callbackRef.current({ source, triggeredAt })).catch((error) => {
         console.error("[useOperationCacheTrigger] onOperation failed:", error);
       });
     };
@@ -50,6 +52,7 @@ export const useOperationCacheTrigger = ({
         timeoutRef.current = null;
         runCallback(source);
       }, debounceMs);
+      console.info("[useOperationCacheTrigger] scheduled", { source, debounceMs });
     };
 
     const handleClick = () => schedule("click");

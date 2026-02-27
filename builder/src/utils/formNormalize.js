@@ -11,9 +11,10 @@ const resolveNow = (nowFn) => {
 };
 
 const resolveCreatedAt = (source, fallbackCreatedAt, now) => {
-  const createdAt = Number.isFinite(source?.createdAt)
-    ? source.createdAt
-    : (Number.isFinite(source?.createdAtUnixMs) ? source.createdAtUnixMs : toUnixMs(source?.createdAt));
+  const createdAtUnixMs = toUnixMs(source?.createdAtUnixMs);
+  if (Number.isFinite(createdAtUnixMs)) return createdAtUnixMs;
+
+  const createdAt = toUnixMs(source?.createdAt);
   if (Number.isFinite(createdAt)) return createdAt;
 
   const fallback = toUnixMs(fallbackCreatedAt);

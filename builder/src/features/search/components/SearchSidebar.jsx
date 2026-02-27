@@ -7,13 +7,13 @@ const SidebarButton = ({ onClick, disabled, className = "", title, children }) =
 
 export default function SearchSidebar({
   onBack, showBack, onCreate, onConfig, onDelete, onRefresh, onExport,
-  useCache, loading, exporting, selectedCount, filteredCount,
+  useCache, refreshBusy, refreshDisabled, exporting, selectedCount, filteredCount,
 }) {
   const buttons = [
     showBack && onBack && { label: "← 戻る", onClick: onBack },
     { label: "新規入力", onClick: onCreate },
     { label: "削除", onClick: onDelete, disabled: selectedCount === 0, className: "search-sidebar-btn-danger" },
-    { label: loading ? "🔄 更新中..." : "🔄 更新", onClick: onRefresh, disabled: loading, className: useCache && !loading ? "search-sidebar-btn-warning" : "", title: useCache ? "キャッシュから表示中 - クリックで最新データを取得" : "最新データを取得" },
+    { label: refreshBusy ? "🔄 更新中..." : "🔄 更新", onClick: onRefresh, disabled: refreshDisabled, className: useCache && !refreshBusy ? "search-sidebar-btn-warning" : "", title: useCache ? "キャッシュから表示中 - クリックで最新データを取得" : "最新データを取得" },
     { label: exporting ? "出力中..." : "検索結果を出力", onClick: onExport, disabled: exporting || filteredCount === 0, title: filteredCount === 0 ? "出力するデータがありません" : `検索結果 ${filteredCount} 件を出力` },
     onConfig && { label: "設定", onClick: onConfig }
   ].filter(Boolean);

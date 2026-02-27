@@ -26,15 +26,38 @@ export const useRefreshFormsIfNeeded = (refreshForms, loadingForms) => {
       maxAgeMs: FORM_CACHE_MAX_AGE_MS,
       backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
     });
+    console.info("[useRefreshFormsIfNeeded] decision", {
+      source,
+      extraReason,
+      lastSyncedAt: formsCache.lastSyncedAt,
+      shouldSync: decision.shouldSync,
+      shouldBackground: decision.shouldBackground,
+      isFresh: decision.isFresh,
+      loadingForms: loadingFormsRef.current,
+    });
 
-    if (decision.isFresh || loadingFormsRef.current) return;
+    if (decision.isFresh || loadingFormsRef.current) {
+      console.info("[useRefreshFormsIfNeeded] skip", {
+        source,
+        reason: decision.isFresh ? "cache-fresh" : "already-loading",
+      });
+      return;
+    }
 
     if (decision.shouldSync) {
+      console.info("[useRefreshFormsIfNeeded] sync-refresh", {
+        source,
+        reason: `operation:${source}:${extraReason}sync`,
+      });
       await refreshForms({ reason: `operation:${source}:${extraReason}sync`, background: false });
       return;
     }
 
     if (decision.shouldBackground) {
+      console.info("[useRefreshFormsIfNeeded] background-refresh", {
+        source,
+        reason: `operation:${source}:${extraReason}background`,
+      });
       refreshForms({ reason: `operation:${source}:${extraReason}background`, background: true }).catch((error) => {
         console.error(`[useRefreshFormsIfNeeded] background refresh failed:`, error);
       });

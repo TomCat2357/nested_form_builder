@@ -44,26 +44,41 @@ function Sheets_readHeaderMatrix_(sheet) {
 }
 
 
-function Sheets_touchSheetLastUpdated_(sheet, serial) {
-  var isNum = typeof serial === "number" && isFinite(serial);
-  var timestampSerial = isNum ? serial : Sheets_dateToSerial_(new Date());
-  sheet.getRange(1, 1).setValue(NFB_SHEET_LAST_UPDATED_LABEL);
-  sheet.getRange(1, 2).setValue(timestampSerial);
-  try {
-    var dt = new Date(timestampSerial);
-    var formatted = Utilities.formatDate(dt, Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
-    sheet.getRange(1, 3).setValue(formatted);
-  } catch (e) {
-    // ignore
+function Sheets_touchSheetLastUpdated_(sheet, tsString) {
+  var formatDateTime = function(date) {
+    var pad = function(n) { return (n < 10 ? "0" : "") + n; };
+    return date.getFullYear() + "/" + pad(date.getMonth() + 1) + "/" + pad(date.getDate()) + " " +
+      pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
+  };
+  var timestamp = "";
+  if (typeof tsString === "string" && tsString.indexOf("/") !== -1) {
+    timestamp = tsString;
+  } else {
+    var parsed = Sheets_parseDateLikeToJstDate_(tsString, true);
+    timestamp = parsed ? formatDateTime(parsed) : Sheets_getCurrentDateTimeString_();
   }
+  var lastColumn = sheet.getLastColumn();
+  if (lastColumn >= 4) {
+    // 1行目のD列以降はメタ情報として使わないため、列移動時に押し出された値を毎回掃除する
+    sheet.getRange(1, 4, 1, lastColumn - 3).clearContent();
+  }
+  sheet.getRange(1, 1).setValue(NFB_SHEET_LAST_UPDATED_LABEL);
+  var timestampCell = sheet.getRange(1, 2);
+  timestampCell.setNumberFormat("@");
+  timestampCell.setValue(String(timestamp));
+  sheet.getRange(1, 3).setValue("");
 }
 
 function Sheets_readSheetLastUpdated_(sheet) {
   var label = sheet.getRange(1, 1).getValue();
   var value = sheet.getRange(1, 2).getValue();
   if (String(label || "") !== NFB_SHEET_LAST_UPDATED_LABEL) return 0;
-  var serial = Sheets_toUnixMs_(value, true);
-  return Number.isFinite(serial) ? serial : 0;
+  var unixMs = Sheets_toUnixMs_(value, false);
+  if (!Number.isFinite(unixMs) && typeof value === "string") {
+    var parsed = Date.parse(value.trim());
+    if (Number.isFinite(parsed)) unixMs = parsed;
+  }
+  return Number.isFinite(unixMs) ? unixMs : 0;
 }
 
 function Sheets_extractColumnPaths_(matrix) {
@@ -259,8 +274,6 @@ function Sheets_ensureHeaderMatrix_(sheet, order) {
     sheet.setFrozenRows(NFB_DATA_START_ROW - 1);
   }
 
-  Sheets_touchSheetLastUpdated_(sheet);
-
   // Move/insert columns will fail if any part of the column (not just header rows) is merged.
   // Unmerge the full used range up-front to avoid "結合したセルの一部だけを含む列は移動できません" errors.
   var maxCols = Math.max(sheet.getMaxColumns(), 1);
@@ -290,6 +303,7 @@ function Sheets_ensureHeaderMatrix_(sheet, order) {
     }
   }
 
+  Sheets_touchSheetLastUpdated_(sheet);
   return sheet.getRange(NFB_HEADER_START_ROW, 1, NFB_HEADER_DEPTH, sheet.getLastColumn()).getValues();
 }
 

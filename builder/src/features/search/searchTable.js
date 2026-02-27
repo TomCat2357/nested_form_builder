@@ -23,7 +23,7 @@ const isBooleanSortColumn = (column) => columnType(column) === "checkboxes";
 const isNumericColumn = (column) => columnType(column) === "number";
 const isDateLikeColumn = (column) => {
   const type = columnType(column);
-  return type === "date" || type === "time";
+  return type === "date" || type === "time" || column?.key === "modifiedAt";
 };
 const toNumericValue = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -290,11 +290,12 @@ const createBaseColumns = () => [
     searchable: true,
     getValue: (entry) => {
       const raw = entry?.modifiedAt ?? "";
-      const display = formatDateTime(raw);
+      const unixMs = toUnixMs(entry?.modifiedAtUnixMs ?? raw);
+      const display = typeof raw === "string" && raw.includes("/") ? raw : (Number.isFinite(unixMs) ? formatUnixMsDateTime(unixMs) : "");
       return {
         display,
-        search: normalizeSearchText(display || raw || ""),
-        sort: display || "",
+        search: normalizeSearchText(display || ""),
+        sort: Number.isFinite(unixMs) ? unixMs : 0,
       };
     },
   },
@@ -356,6 +357,13 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
   });
   if (includeOperations) columns.push(actionsColumn);
   return columns;
+};
+
+const normalizeHeaderLabel = (value) => (value === null || value === undefined ? "" : String(value));
+
+const shouldSuppressDuplicateByLeftNeighbor = ({ currentLabel, previousLabel, isAdjacent }) => {
+  if (!isAdjacent) return false;
+  return currentLabel !== "" && previousLabel !== "" && currentLabel === previousLabel;
 };
 
 export const buildHeaderRows = (columns) => {
@@ -675,12 +683,11 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
     );
     const row = [];
     let displayIndex = 0;
-    let lastRenderedLabel = "";
 
     for (let i = 0; i < indicesToProcess.length; i++) {
       const colIndex = indicesToProcess[i];
       const mappedColumn = columnMapping[colIndex];
-      const cellValue = rowCellValues[i];
+      const cellValue = normalizeHeaderLabel(rowCellValues[i]);
 
       // 1行目の場合は各列を個別に処理(ソート対応のため)
       const isFirstRow = rowIndex === 0;
@@ -701,11 +708,13 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
       // 1行目の場合のみcolumnオブジェクトを付与
       const column = isFirstRow ? mappedColumn : null;
 
-      // すべての行で、左に同じ文字列があれば空白化（連続重複を抑止）
-      let displayLabel = cellValue;
-      if (displayLabel && lastRenderedLabel === displayLabel) {
-        displayLabel = "";
-      }
+      const previousLabel = i > 0 ? normalizeHeaderLabel(rowCellValues[i - 1]) : "";
+      const isAdjacentToPrevious = i > 0 && indicesToProcess[i] === indicesToProcess[i - 1] + 1;
+      const displayLabel = shouldSuppressDuplicateByLeftNeighbor({
+        currentLabel: cellValue,
+        previousLabel,
+        isAdjacent: isAdjacentToPrevious,
+      }) ? "" : cellValue;
 
       row.push({
         label: displayLabel,
@@ -717,9 +726,6 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
       });
 
       displayIndex += colSpan;
-      if (displayLabel) {
-        lastRenderedLabel = displayLabel;
-      }
       i += colSpan - 1;
     }
 
@@ -732,23 +738,37 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
   return filteredRows;
 };
 
-export const buildSearchTableLayout = (form, { headerMatrix = null, includeOperations = true } = {}) => {
-  const baseColumns = buildSearchColumns(form, { includeOperations });
-  const hasHeaderMatrix = Array.isArray(headerMatrix) && headerMatrix.length > 0;
-  if (!hasHeaderMatrix) {
-    return {
-      columns: baseColumns,
-      headerRows: buildHeaderRows(baseColumns),
-    };
-  }
+const suppressDuplicateHeaderCells = (headerRows) => {
+  if (!Array.isArray(headerRows) || headerRows.length === 0) return [];
+  return headerRows.map((row) => {
+    if (!Array.isArray(row)) return [];
+    return row.map((cell, cellIndex) => {
+      const currentLabel = normalizeHeaderLabel(cell?.label ?? "");
+      const previousCell = cellIndex > 0 ? row[cellIndex - 1] : null;
+      const previousLabel = normalizeHeaderLabel(previousCell?.label ?? "");
+      const previousStart = Number(previousCell?.startIndex) || 0;
+      const previousSpan = Number(previousCell?.colSpan) || 1;
+      const currentStart = Number(cell?.startIndex) || 0;
+      const isAdjacentToPrevious = Boolean(previousCell) && previousStart + previousSpan === currentStart;
+      const displayLabel = shouldSuppressDuplicateByLeftNeighbor({
+        currentLabel,
+        previousLabel,
+        isAdjacent: isAdjacentToPrevious,
+      }) ? "" : currentLabel;
+      return {
+        ...cell,
+        label: displayLabel,
+      };
+    });
+  });
+};
 
-  const columns = buildColumnsFromHeaderMatrix(headerMatrix, baseColumns);
-  const headerRowsFromCsv = buildHeaderRowsFromCsv(headerMatrix, columns);
+export const buildSearchTableLayout = (form, { headerMatrix: _headerMatrix = null, includeOperations = true } = {}) => {
+  const columns = buildSearchColumns(form, { includeOperations });
+  const headerRows = buildHeaderRows(columns);
   return {
     columns,
-    headerRows: headerRowsFromCsv && headerRowsFromCsv.length > 0
-      ? headerRowsFromCsv
-      : buildHeaderRows(columns),
+    headerRows: suppressDuplicateHeaderCells(headerRows),
   };
 };
 
@@ -778,11 +798,13 @@ const suppressDuplicateHeaderLabels = (matrix) => {
     if (!Array.isArray(row)) return row;
     const result = [...row];
     for (let i = 0; i < result.length; i += 1) {
-      const val = result[i] === null || result[i] === undefined ? "" : String(result[i]);
-      const prev = i > 0
-        ? (row[i - 1] === null || row[i - 1] === undefined ? "" : String(row[i - 1]))
-        : "";
-      if (val && prev === val) {
+      const val = normalizeHeaderLabel(result[i]);
+      const prev = i > 0 ? normalizeHeaderLabel(row[i - 1]) : "";
+      if (shouldSuppressDuplicateByLeftNeighbor({
+        currentLabel: val,
+        previousLabel: prev,
+        isAdjacent: i > 0,
+      })) {
         result[i] = "";
       }
     }

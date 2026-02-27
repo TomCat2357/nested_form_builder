@@ -3,7 +3,6 @@ import { useLatestRef } from "../../app/hooks/useLatestRef.js";
 import { useOperationCacheTrigger } from "../../app/hooks/useOperationCacheTrigger.js";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { dataStore } from "../../app/state/dataStore.js";
-import { getFormsFromCache } from "../../app/state/formsCache.js";
 import { saveRecordsToCache, getRecordsFromCache } from "../../app/state/recordsCache.js";
 import { evaluateCache, RECORD_CACHE_BACKGROUND_REFRESH_MS, RECORD_CACHE_MAX_AGE_MS } from "../../app/state/cachePolicy.js";
 import { useRefreshFormsIfNeeded } from "../../app/hooks/useRefreshFormsIfNeeded.js";
@@ -19,6 +18,9 @@ const shouldForceSync = (locationState) => {
   return locationState.saved === true || locationState.deleted === true || locationState.created === true;
 };
 
+const LOCK_WAIT_RETRY_MS = 1000;
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export const useEntriesWithCache = ({
   formId,
   form,
@@ -31,6 +33,7 @@ export const useEntriesWithCache = ({
   const [headerMatrix, setHeaderMatrix] = useState([]);
   const [loading, setLoading] = useState(false);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
+  const [waitingForLock, setWaitingForLock] = useState(false);
   const [useCache, setUseCache] = useState(false);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [lastSpreadsheetReadAt, setLastSpreadsheetReadAt] = useState(null);
@@ -40,13 +43,32 @@ export const useEntriesWithCache = ({
   const backgroundLoadingRef = useRef(false);
   const activeForegroundRequestsRef = useRef(0);
   const latestRequestTokenRef = useRef(0);
-  const loadingFormsRef = useLatestRef(loadingForms);
+  const manualRefreshRunningRef = useRef(false);
+  const manualRefreshQueuedRef = useRef(false);
+  const entriesRef = useLatestRef(entries);
+
+  const logSearchBackground = useCallback((event, payload = {}) => {
+    console.info(`[SearchPage][background] ${event}`, {
+      formId,
+      ...payload,
+    });
+  }, [formId]);
 
   const fetchAndCacheData = useCallback(async ({ background = false, forceFullSync = false, reason = "unknown", onError = null } = {}) => {
     if (!formId) return;
-    if (background && backgroundLoadingRef.current) return;
+    if (background && backgroundLoadingRef.current) {
+      logSearchBackground("fetch:skip-already-running", {
+        background,
+        reason,
+        forceFullSync,
+      });
+      return;
+    }
 
     const requestToken = ++latestRequestTokenRef.current;
+    const entriesBefore = Array.isArray(entriesRef.current) ? entriesRef.current.length : 0;
+    let entriesAfter = entriesBefore;
+    let responseMeta = null;
     if (!background) {
       activeForegroundRequestsRef.current += 1;
       setLoading(true);
@@ -55,6 +77,15 @@ export const useEntriesWithCache = ({
       setBackgroundLoading(true);
     }
     const startedAt = Date.now();
+    logSearchBackground("fetch:start", {
+      background,
+      reason,
+      forceFullSync,
+      requestToken,
+      entriesBefore,
+      lastSyncedAt: lastSyncedAtRef.current,
+      lastSpreadsheetReadAt: lastSpreadsheetReadAtRef.current,
+    });
 
     try {
       const result = await dataStore.listEntries(formId, {
@@ -71,9 +102,32 @@ export const useEntriesWithCache = ({
           requestToken,
           latestRequestToken: latestRequestTokenRef.current,
         });
+        logSearchBackground("fetch:stale-response-ignored", {
+          background,
+          reason,
+          forceFullSync,
+          requestToken,
+          latestRequestToken: latestRequestTokenRef.current,
+        });
         return;
       }
       const fetchedEntries = result.entries || result || [];
+      entriesAfter = fetchedEntries.length;
+      responseMeta = {
+        isDelta: result?.isDelta === true,
+        fetchedCount: Number.isFinite(result?.fetchedCount) ? result.fetchedCount : fetchedEntries.length,
+        allIdsCount: Number.isFinite(result?.allIdsCount) ? result.allIdsCount : null,
+        sheetLastUpdatedAt: Number.isFinite(result?.sheetLastUpdatedAt) ? result.sheetLastUpdatedAt : 0,
+        nextLastSpreadsheetReadAt: result?.lastSpreadsheetReadAt || null,
+      };
+      logSearchBackground("fetch:response", {
+        background,
+        reason,
+        requestToken,
+        entriesBefore,
+        entriesAfter,
+        ...responseMeta,
+      });
       setEntries(fetchedEntries);
       setHeaderMatrix(result.headerMatrix || []);
       const syncedAt = result.lastSyncedAt || Date.now();
@@ -84,11 +138,28 @@ export const useEntriesWithCache = ({
       return true;
     } catch (error) {
       console.error("[SearchPage] Failed to fetch and cache data:", error);
+      logSearchBackground("fetch:error", {
+        background,
+        reason,
+        forceFullSync,
+        requestToken,
+        error: error?.message || String(error),
+      });
       if (typeof onError === "function") onError(error);
       else showAlert(buildFetchErrorMessage(error));
       return false;
     } finally {
       const finishedAt = Date.now();
+      logSearchBackground("fetch:done", {
+        background,
+        reason,
+        forceFullSync,
+        requestToken,
+        durationMs: finishedAt - startedAt,
+        entriesBefore,
+        entriesAfter,
+        ...(responseMeta || {}),
+      });
       perfLogger.logVerbose("search", "fetch done", {
         formId,
         background,
@@ -105,7 +176,7 @@ export const useEntriesWithCache = ({
         setBackgroundLoading(false);
       }
     }
-  }, [form?.schemaHash, formId, showAlert]);
+  }, [entriesRef, form?.schemaHash, formId, logSearchBackground, showAlert]);
 
   const refreshFormsIfNeeded = useRefreshFormsIfNeeded(refreshForms, loadingForms);
 
@@ -123,11 +194,22 @@ export const useEntriesWithCache = ({
         maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
         backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
       });
+      logSearchBackground("operation:decision", {
+        source,
+        hasCache,
+        lastSyncedAt: cache.lastSyncedAt,
+        lastSpreadsheetReadAt: cache.lastSpreadsheetReadAt,
+        shouldSync: decision.shouldSync,
+        shouldBackground: decision.shouldBackground,
+        isFresh: decision.isFresh,
+      });
 
       if (!decision.isFresh) {
         if (decision.shouldSync) {
+          logSearchBackground("operation:sync", { source, reason: `operation:${source}:records-sync` });
           await fetchAndCacheData({ background: false, reason: `operation:${source}:records-sync` });
         } else if (decision.shouldBackground) {
+          logSearchBackground("operation:background", { source, reason: `operation:${source}:records-background` });
           await fetchAndCacheData({ background: true, reason: `operation:${source}:records-background` });
         }
       }
@@ -135,8 +217,12 @@ export const useEntriesWithCache = ({
       await refreshFormsIfNeeded(source);
     } catch (error) {
       console.error("[SearchPage] operation cache check failed:", error);
+      logSearchBackground("operation:error", {
+        source,
+        error: error?.message || String(error),
+      });
     }
-  }, [fetchAndCacheData, form?.schemaHash, formId, refreshFormsIfNeeded]);
+  }, [fetchAndCacheData, form?.schemaHash, formId, logSearchBackground, refreshFormsIfNeeded]);
 
   useOperationCacheTrigger({
     enabled: Boolean(formId),
@@ -187,6 +273,17 @@ export const useEntriesWithCache = ({
         shouldBackground,
         cacheDisabled,
       });
+      logSearchBackground("initial:cache-decision", {
+        hasCache,
+        schemaMismatch: Boolean(schemaMismatch),
+        cacheAgeMs: age,
+        forceSync,
+        shouldSync,
+        shouldBackground,
+        cacheDisabled,
+        cacheLastSyncedAt: cache.lastSyncedAt,
+        cacheLastSpreadsheetReadAt: cache.lastSpreadsheetReadAt,
+      });
 
       if (hasCache) {
         setEntries(cache.entries);
@@ -194,53 +291,133 @@ export const useEntriesWithCache = ({
         setLastSyncedAt(cache.lastSyncedAt || cache.cacheTimestamp || null);
         setLastSpreadsheetReadAt(cache.lastSpreadsheetReadAt || null);
         setUseCache(true);
+        logSearchBackground("initial:cache-applied", {
+          entryCount: (cache.entries || []).length,
+          headerRows: (cache.headerMatrix || []).length,
+        });
       }
 
       if ((shouldSync || cacheDisabled) && !hasCache) {
+        logSearchBackground("initial:sync-start", {
+          reason: "initial-sync",
+          shouldSync,
+          cacheDisabled,
+        });
         await fetchAndCacheData({ background: false, reason: "initial-sync" });
         return;
       }
 
       if (shouldSync || shouldBackground) {
+        logSearchBackground("initial:background-start", {
+          reason: "initial-background",
+          shouldSync,
+          shouldBackground,
+        });
         fetchAndCacheData({ background: true, reason: "initial-background" }).catch((error) => {
           console.error("[SearchPage] background refresh failed:", error);
+          logSearchBackground("initial:background-error", {
+            reason: "initial-background",
+            error: error?.message || String(error),
+          });
           showAlert(buildFetchErrorMessage(error));
         });
       }
     };
 
     loadData();
-  }, [cacheDisabled, fetchAndCacheData, form?.schemaHash, formId, locationKey, locationState, showAlert]);
+  }, [cacheDisabled, fetchAndCacheData, form?.schemaHash, formId, locationKey, locationState, logSearchBackground, showAlert]);
+
+  const runManualRefreshOnce = useCallback(async () => {
+    if (!formId) return;
+
+    // 検索結果画面の手動更新は、遅延書き込み完了後に全件再取得を実行する
+    logSearchBackground("manual-refresh:start", {
+      reason: "manual:search-records",
+    });
+    await dataStore.flushPendingOperations();
+    let lockTimeoutDetected = false;
+    try {
+      while (true) {
+        let fetchError = null;
+        const refreshed = await fetchAndCacheData({
+          background: false,
+          forceFullSync: true,
+          reason: "manual:search-records",
+          onError: (error) => {
+            fetchError = error;
+          },
+        });
+
+        if (refreshed) {
+          logSearchBackground("manual-refresh:records-synced", {
+            reason: "manual:search-records",
+          });
+          await refreshForms({ reason: "manual:search-forms", background: false });
+          logSearchBackground("manual-refresh:done", {
+            reason: "manual:search-forms",
+          });
+          return;
+        }
+
+        if (fetchError?.code === GAS_ERROR_CODE_LOCK_TIMEOUT) {
+          if (!lockTimeoutDetected) {
+            lockTimeoutDetected = true;
+            setWaitingForLock(true);
+          }
+          logSearchBackground("manual-refresh:lock-timeout-retry", {
+            retryInMs: LOCK_WAIT_RETRY_MS,
+          });
+          await wait(LOCK_WAIT_RETRY_MS);
+          continue;
+        }
+
+        if (fetchError) {
+          logSearchBackground("manual-refresh:error", {
+            error: fetchError?.message || String(fetchError),
+          });
+          showAlert(buildFetchErrorMessage(fetchError));
+          return;
+        }
+
+        await wait(LOCK_WAIT_RETRY_MS);
+      }
+    } finally {
+      if (lockTimeoutDetected) setWaitingForLock(false);
+      logSearchBackground("manual-refresh:exit", {
+        reason: "manual:search-records",
+      });
+    }
+  }, [fetchAndCacheData, formId, logSearchBackground, refreshForms, showAlert]);
 
   const forceRefreshAll = useCallback(async () => {
     if (!formId) return;
 
-    // 検索結果画面の手動更新は、遅延書き込み完了後に全件再取得を実行する
-    await dataStore.flushPendingOperations();
-    const refreshed = await fetchAndCacheData({
-      background: false,
-      forceFullSync: true,
-      reason: "manual:search-records",
-      onError: (error) => {
-        if (error?.code === GAS_ERROR_CODE_LOCK_TIMEOUT) {
-          showAlert(
-            "現在、他のユーザーによる更新処理が実行中のため更新できませんでした。少し時間をおいて再度「更新」を実行してください。",
-            "更新を完了できませんでした",
-          );
-          return;
-        }
-        showAlert(buildFetchErrorMessage(error));
-      },
-    });
-    if (!refreshed) return;
-    await refreshForms({ reason: "manual:search-forms", background: false });
-  }, [fetchAndCacheData, formId, refreshForms, showAlert]);
+    if (manualRefreshRunningRef.current) {
+      manualRefreshQueuedRef.current = true;
+      logSearchBackground("manual-refresh:queued", {
+        reason: "manual:search-records",
+      });
+      return;
+    }
+
+    manualRefreshRunningRef.current = true;
+    try {
+      do {
+        manualRefreshQueuedRef.current = false;
+        await runManualRefreshOnce();
+      } while (manualRefreshQueuedRef.current);
+    } finally {
+      manualRefreshRunningRef.current = false;
+      manualRefreshQueuedRef.current = false;
+    }
+  }, [formId, logSearchBackground, runManualRefreshOnce]);
 
   return {
     entries,
     headerMatrix,
     loading,
     backgroundLoading,
+    waitingForLock,
     useCache,
     lastSyncedAt,
     cacheDisabled,

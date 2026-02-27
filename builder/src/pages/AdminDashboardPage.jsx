@@ -12,7 +12,7 @@ import { useAlert } from "../app/hooks/useAlert.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
-import { formatUnixMsDateTime, toUnixMs } from "../utils/dateTime.js";
+import { toUnixMs } from "../utils/dateTime.js";
 import {
   evaluateCache,
   FORM_CACHE_MAX_AGE_MS,
@@ -31,10 +31,14 @@ const formatDisplayFieldsSummary = (form) => {
     .join(", ");
 };
 
-const formatDate = (value) => {
+const toComparableUnixMs = (value) => {
   const ms = Number.isFinite(value) ? value : toUnixMs(value);
-  if (!Number.isFinite(ms)) return "---";
-  return formatUnixMsDateTime(ms);
+  return Number.isFinite(ms) ? ms : 0;
+};
+
+const formatUnixMsValue = (value) => {
+  const ms = toComparableUnixMs(value);
+  return ms > 0 ? String(ms) : "---";
 };
 
 const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
@@ -69,8 +73,8 @@ const [selected, setSelected] = useState(() => new Set());
   const sortedForms = useMemo(() => {
     const list = forms.slice();
     list.sort(
-      (a, b) => (Number.isFinite(b.modifiedAtUnixMs) ? b.modifiedAtUnixMs : toUnixMs(b.modifiedAt)) -
-        (Number.isFinite(a.modifiedAtUnixMs) ? a.modifiedAtUnixMs : toUnixMs(a.modifiedAt))
+      (a, b) => toComparableUnixMs(b.modifiedAtUnixMs ?? b.modifiedAt) -
+        toComparableUnixMs(a.modifiedAtUnixMs ?? a.modifiedAt)
     );
     return list;
   }, [forms]);
@@ -82,11 +86,12 @@ const [selected, setSelected] = useState(() => new Set());
       settings: {},
       description: "",
       modifiedAt: item.lastTriedAt,
+      modifiedAtUnixMs: toUnixMs(item.lastTriedAt),
       loadError: item,
     }));
     rows.sort(
-      (a, b) => (Number.isFinite(b.modifiedAtUnixMs) ? b.modifiedAtUnixMs : toUnixMs(b.modifiedAt || 0)) -
-        (Number.isFinite(a.modifiedAtUnixMs) ? a.modifiedAtUnixMs : toUnixMs(a.modifiedAt || 0))
+      (a, b) => toComparableUnixMs(b.modifiedAtUnixMs ?? b.modifiedAt) -
+        toComparableUnixMs(a.modifiedAtUnixMs ?? a.modifiedAt)
     );
     return rows;
   }, [loadFailures]);
@@ -192,6 +197,8 @@ const [selected, setSelected] = useState(() => new Set());
     if (!raw || typeof raw !== "object") return null;
     const schema = Array.isArray(raw.schema) ? raw.schema : [];
     const settings = raw && typeof raw.settings === "object" && !Array.isArray(raw.settings) ? raw.settings : {};
+    const createdAtUnixMs = toUnixMs(raw.createdAtUnixMs ?? raw.createdAt);
+    const modifiedAtUnixMs = toUnixMs(raw.modifiedAtUnixMs ?? raw.modifiedAt);
 
     // 旧形式のnameフィールドがある場合、settings.formTitleに移行
     if (!settings.formTitle && typeof raw.name === "string") {
@@ -205,10 +212,10 @@ const [selected, setSelected] = useState(() => new Set());
       settings,
       archived: !!raw.archived,
       schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1,
-      createdAt: raw.createdAt, // 作成日時を保持
-      modifiedAt: raw.modifiedAt, // 更新日時を保持
-      createdAtUnixMs: Number.isFinite(raw.createdAtUnixMs) ? raw.createdAtUnixMs : toUnixMs(raw.createdAt),
-      modifiedAtUnixMs: Number.isFinite(raw.modifiedAtUnixMs) ? raw.modifiedAtUnixMs : toUnixMs(raw.modifiedAt),
+      createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : raw.createdAt, // 作成日時を保持
+      modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : raw.modifiedAt, // 更新日時を保持
+      createdAtUnixMs: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : null,
+      modifiedAtUnixMs: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : null,
     };
   };
 
@@ -467,7 +474,7 @@ const [selected, setSelected] = useState(() => new Set());
                 </th>
                 <th className="search-th">名称</th>
                 <th className="search-th">フォームID</th>
-                <th className="search-th">更新日時</th>
+                <th className="search-th">更新日時(UNIX ms)</th>
                 <th className="search-th">表示項目</th>
                 <th className="search-th">状態</th>
               </tr>
@@ -477,7 +484,9 @@ const [selected, setSelected] = useState(() => new Set());
                 const isLoadError = !!form.loadError;
                 const summary = isLoadError ? "" : formatDisplayFieldsSummary(form);
                 const loadError = form.loadError || null;
-                const lastUpdated = isLoadError ? formatDate(loadError?.lastTriedAt) : formatDate(form.modifiedAt);
+                const lastUpdated = isLoadError
+                  ? formatUnixMsValue(loadError?.lastTriedAt)
+                  : formatUnixMsValue(form.modifiedAtUnixMs ?? form.modifiedAt);
                 return (
                   <tr
                     key={form.id}

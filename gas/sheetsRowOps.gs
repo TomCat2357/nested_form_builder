@@ -82,7 +82,7 @@ function Sheets_createNewRow_(sheet, id) {
   var rowIndex = Sheets_findFirstBlankRow_(sheet);
 
   Sheets_ensureRowCapacity_(sheet, rowIndex);
-  var currentTs = Sheets_dateToSerial_(new Date());
+  var currentTs = Sheets_getCurrentDateTimeString_();
   var email = Session.getActiveUser().getEmail() || "";
 
   var maxNo = 0;
@@ -108,7 +108,7 @@ function Sheets_createNewRow_(sheet, id) {
 
 function Sheets_updateExistingRow_(sheet, rowIndex) {
   Sheets_ensureRowCapacity_(sheet, rowIndex);
-  var currentTs = Sheets_dateToSerial_(new Date());
+  var currentTs = Sheets_getCurrentDateTimeString_();
   var email = Session.getActiveUser().getEmail() || "";
   sheet.getRange(rowIndex, 4).setValue(currentTs);
   sheet.getRange(rowIndex, 6).setValue(email);

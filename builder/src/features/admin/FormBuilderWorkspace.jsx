@@ -9,6 +9,21 @@ import { useAlert } from "../../app/hooks/useAlert.js";
 import { omitThemeSetting } from "../../utils/settings.js";
 import { deepEqual } from "../../utils/deepEqual.js";
 
+const countSchemaNodes = (schema) => {
+  const walk = (nodes) => {
+    if (!Array.isArray(nodes) || nodes.length === 0) return 0;
+    return nodes.reduce((total, field) => {
+      const branches =
+        field?.childrenByValue && typeof field.childrenByValue === "object"
+          ? Object.values(field.childrenByValue)
+          : [];
+      const childCount = branches.reduce((branchTotal, childNodes) => branchTotal + walk(childNodes), 0);
+      return total + 1 + childCount;
+    }, 0);
+  };
+  return walk(schema);
+};
+
 const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   {
     initialSchema,
@@ -38,6 +53,14 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   // initialSchema/initialSettingsが変わったら、リセット
   useEffect(() => {
     const normalized = normalizeSchemaIDs(initialSchema || []);
+    const previousSchemaNodeCount = countSchemaNodes(initialSchemaRef.current);
+    const nextSchemaNodeCount = countSchemaNodes(normalized);
+    if (previousSchemaNodeCount > 0 || nextSchemaNodeCount > 0 || initialSchemaRef.current !== null) {
+      console.log("[FormBuilderWorkspace] reset from incoming props", {
+        previousSchemaNodeCount,
+        nextSchemaNodeCount,
+      });
+    }
     setSchema(normalized);
     // replaceSettingsはマージ後の値を返すので、それを初期値として記録
     const mergedSettings = replaceSettings(initialSettings || {});

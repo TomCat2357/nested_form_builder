@@ -23,11 +23,20 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
   var id = rowData[0] ? String(rowData[0]) : "";
   if (!id) return null;
 
+  var formatDt = function(val) {
+    if (!val) return "";
+    if (typeof val === "string" && val.indexOf("/") !== -1) return val;
+    var d = Sheets_parseDateLikeToJstDate_(val, true);
+    if (!d) return String(val);
+    var pad = function(n) { return (n < 10 ? "0" : "") + n; };
+    return d.getFullYear() + "/" + pad(d.getMonth()+1) + "/" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+  };
+
   var record = {
     id: id,
     "No.": rowData[1] || "",
-    createdAt: rowData[2] || "",
-    modifiedAt: rowData[3] || "",
+    createdAt: formatDt(rowData[2]),
+    modifiedAt: formatDt(rowData[3]),
     createdBy: rowData[4] || "",
     modifiedBy: rowData[5] || "",
     createdAtUnixMs: Sheets_toUnixMs_(rowData[2], true),

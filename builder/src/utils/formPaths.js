@@ -13,7 +13,7 @@ export const collectDisplayFieldSettings = (schema) => {
     }
   });
 
-  return collected.sort((a, b) => String(a?.path || "").localeCompare(String(b?.path || ""), "ja"));
+  return collected;
 };
 
 export const splitFieldPath = (path) => {

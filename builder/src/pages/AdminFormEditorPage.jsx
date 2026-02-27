@@ -24,12 +24,28 @@ import {
 } from "../app/state/cachePolicy.js";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/forms");
+const countSchemaNodes = (schema) => {
+  const walk = (nodes) => {
+    if (!Array.isArray(nodes) || nodes.length === 0) return 0;
+    return nodes.reduce((total, field) => {
+      const branches =
+        field?.childrenByValue && typeof field.childrenByValue === "object"
+          ? Object.values(field.childrenByValue)
+          : [];
+      const childCount = branches.reduce((branchTotal, childNodes) => branchTotal + walk(childNodes), 0);
+      return total + 1 + childCount;
+    }, 0);
+  };
+  return walk(schema);
+};
 
 export default function AdminFormEditorPage() {
   const { formId } = useParams();
   const isEdit = Boolean(formId);
   const { forms, getFormById, createForm, updateForm, refreshForms, lastSyncedAt, loadingForms } = useAppData();
-  const form = isEdit ? getFormById(formId) : null;
+  const currentForm = isEdit ? getFormById(formId) : null;
+  const [cachedForm, setCachedForm] = useState(currentForm);
+  const form = cachedForm;
   const navigate = useNavigate();
   const location = useLocation();
   const { showAlert } = useAlert();
@@ -55,9 +71,59 @@ export default function AdminFormEditorPage() {
   const isSavingRef = useLatestRef(isSaving);
   const isReadLockedRef = useLatestRef(isReadLocked);
   const loadingFormsRef = useLatestRef(loadingForms);
+  const cachedFormRef = useLatestRef(cachedForm);
+  const metaDirty = useMemo(() => name !== initialMetaRef.current.name || description !== initialMetaRef.current.description, [name, description]);
+  const isDirty = builderDirty || metaDirty;
+  const isDirtyRef = useLatestRef(isDirty);
+
+  useEffect(() => {
+    if (!isEdit) return;
+    setCachedForm((prevForm) => {
+      if (!prevForm) return prevForm;
+      return prevForm.id === formId ? prevForm : null;
+    });
+  }, [formId, isEdit]);
+
+  useEffect(() => {
+    if (!isEdit) {
+      setCachedForm(null);
+      return;
+    }
+    if (!currentForm) return;
+
+    if (isDirtyRef.current) {
+      console.log("[AdminFormEditorPage] defer applying refreshed form during dirty edit", {
+        formId,
+        cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
+        incomingSchemaNodeCount: countSchemaNodes(currentForm?.schema),
+        incomingModifiedAt: currentForm?.modifiedAt ?? null,
+      });
+      return;
+    }
+
+    setCachedForm((prevForm) => {
+      if (prevForm === currentForm) return prevForm;
+      console.log("[AdminFormEditorPage] apply refreshed form", {
+        formId,
+        previousSchemaNodeCount: countSchemaNodes(prevForm?.schema),
+        incomingSchemaNodeCount: countSchemaNodes(currentForm?.schema),
+        previousModifiedAt: prevForm?.modifiedAt ?? null,
+        incomingModifiedAt: currentForm?.modifiedAt ?? null,
+      });
+      return currentForm;
+    });
+  }, [currentForm, formId, isDirty, isDirtyRef, isEdit, cachedFormRef]);
 
   useEffect(() => {
     if (!form) return;
+    if (isDirtyRef.current) {
+      console.log("[AdminFormEditorPage] defer applying form meta during dirty edit", {
+        formId,
+        cachedSchemaNodeCount: countSchemaNodes(form?.schema),
+        modifiedAt: form?.modifiedAt ?? null,
+      });
+      return;
+    }
     const formTitle = form.settings?.formTitle || "";
     initialMetaRef.current = { name: formTitle, description: form.description || "" };
     setName(formTitle);
@@ -66,11 +132,19 @@ export default function AdminFormEditorPage() {
     setLocalSettings(omitThemeSetting(form.settings || {}));
     setQuestionControl(null);
     setNameError("");
-  }, [form]);
+  }, [form, formId, isDirty, isDirtyRef]);
 
   const handleOperationCacheCheck = useCallback(async ({ source }) => {
     if (!isEdit || !formId) return;
     if (isSavingRef.current || isReadLockedRef.current || loadingFormsRef.current) return;
+    if (isDirtyRef.current) {
+      console.log("[AdminFormEditorPage] defer refreshForms during dirty edit", {
+        formId,
+        source,
+        cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
+      });
+      return;
+    }
 
     const cacheDecision = evaluateCache({
       lastSyncedAt,
@@ -82,18 +156,23 @@ export default function AdminFormEditorPage() {
     if (cacheDecision.isFresh) return;
 
     await withReadLock(async () => {
+      console.log("[AdminFormEditorPage] run refreshForms from operation trigger", {
+        formId,
+        source,
+        cacheAgeMs: cacheDecision.age,
+        shouldSync: cacheDecision.shouldSync,
+        shouldBackground: cacheDecision.shouldBackground,
+        cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
+      });
       await dataStore.getForm(formId);
       await refreshForms({ reason: `operation:${source}:admin-form-editor`, background: false });
     });
-  }, [formId, forms.length, isEdit, lastSyncedAt, refreshForms, withReadLock]);
+  }, [cachedFormRef, formId, forms.length, isDirtyRef, isEdit, lastSyncedAt, refreshForms, withReadLock]);
 
   useOperationCacheTrigger({
     enabled: isEdit && !!formId,
     onOperation: handleOperationCacheCheck,
   });
-
-  const metaDirty = useMemo(() => name !== initialMetaRef.current.name || description !== initialMetaRef.current.description, [name, description]);
-  const isDirty = builderDirty || metaDirty;
 
   useBeforeUnloadGuard(isDirty);
 

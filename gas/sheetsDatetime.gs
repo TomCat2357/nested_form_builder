@@ -2,15 +2,32 @@
 
 
 
+function Sheets_getCurrentDateTimeString_() {
+  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
+}
+
 function Sheets_isValidDate_(date) {
   return date instanceof Date && !isNaN(date.getTime());
 }
 
-function Sheets_serialToDate_(serial) {
-  if (typeof serial !== "number" || !isFinite(serial)) return null;
-  var ms = Math.abs(serial) >= 100000000000 ? serial : NFB_SHEETS_EPOCH_MS + serial * NFB_MS_PER_DAY;
-  var d = new Date(ms);
+function Sheets_normalizeNumericToUnixMs_(value, allowSerialNumber) {
+  if (typeof value !== "number" || !isFinite(value)) return null;
+  var abs = Math.abs(value);
+  if (abs >= 100000000000) return value;
+  if (abs >= 1000000000) return value * 1000;
+  if (allowSerialNumber) return NFB_SHEETS_EPOCH_MS + value * NFB_MS_PER_DAY;
+  return null;
+}
+
+function Sheets_parseNumericToDate_(value, allowSerialNumber) {
+  var unixMs = Sheets_normalizeNumericToUnixMs_(value, allowSerialNumber);
+  if (!Number.isFinite(unixMs)) return null;
+  var d = new Date(unixMs);
   return Sheets_isValidDate_(d) ? d : null;
+}
+
+function Sheets_serialToDate_(serial) {
+  return Sheets_parseNumericToDate_(serial, true);
 }
 
 function Sheets_parseDateLikeToJstDate_(value, allowSerialNumber) {
@@ -19,14 +36,14 @@ function Sheets_parseDateLikeToJstDate_(value, allowSerialNumber) {
 
   if (allowSerialNumber) {
     if (typeof value === "number" && isFinite(value)) {
-      return Sheets_serialToDate_(value);
+      return Sheets_parseNumericToDate_(value, true);
     }
     if (typeof value === "string") {
       var numeric = value.trim();
       if (/^[-+]?\d+(?:\.\d+)?$/.test(numeric)) {
         var numericValue = parseFloat(numeric);
         if (isFinite(numericValue)) {
-          return Sheets_serialToDate_(numericValue);
+          return Sheets_parseNumericToDate_(numericValue, true);
         }
       }
     }
@@ -138,6 +155,43 @@ function Sheets_applyTemporalFormatToColumn_(sheet, columnIndex, values, dataRow
   range.setNumberFormat(numberFormat);
 }
 
+function Sheets_applyUnixMsNumberFormatToColumn_(sheet, columnIndex, values, dataRowCount, allowSerialNumber) {
+  var converted = [];
+  for (var i = 0; i < dataRowCount; i++) {
+    var cell = values[i][columnIndex];
+    if (cell === null || cell === undefined || cell === "") {
+      converted.push([""]);
+      continue;
+    }
+
+    var unixMs = Sheets_toUnixMs_(cell, allowSerialNumber);
+    if (unixMs !== null && isFinite(unixMs)) {
+      converted.push([unixMs]);
+      continue;
+    }
+
+    if (typeof cell === "number" && isFinite(cell)) {
+      converted.push([cell]);
+      continue;
+    }
+
+    if (typeof cell === "string") {
+      var trimmed = cell.trim();
+      if (/^[-+]?\d+(?:\.\d+)?$/.test(trimmed)) {
+        var numeric = parseFloat(trimmed);
+        converted.push([isFinite(numeric) ? numeric : cell]);
+        continue;
+      }
+    }
+
+    converted.push([cell]);
+  }
+
+  var range = sheet.getRange(NFB_DATA_START_ROW, columnIndex + 1, dataRowCount, 1);
+  range.setValues(converted);
+  range.setNumberFormat("0");
+}
+
 function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, explicitTypeMap) {
   if (!dataRowCount) return;
 
@@ -146,7 +200,6 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
     keyToIndex[columnPaths[i].key] = columnPaths[i].index;
   }
 
-  var dateTimeFormat = "yyyy/MM/dd HH:mm:ss";
   var dateFormat = "yyyy/MM/dd";
   var timeFormat = "HH:mm";
 
@@ -158,8 +211,12 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
       Sheets_applyTemporalFormatToColumn_(sheet, colIndex, values, dataRowCount, format);
     }
   };
-  applyFormat(createdAtIndex, dateTimeFormat);
-  applyFormat(modifiedAtIndex, dateTimeFormat);
+  if (typeof createdAtIndex === "number") {
+    sheet.getRange(NFB_DATA_START_ROW, createdAtIndex + 1, dataRowCount, 1).setNumberFormat("@");
+  }
+  if (typeof modifiedAtIndex === "number") {
+    sheet.getRange(NFB_DATA_START_ROW, modifiedAtIndex + 1, dataRowCount, 1).setNumberFormat("@");
+  }
 
   var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "createdBy": true, "modifiedBy": true };
   var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";

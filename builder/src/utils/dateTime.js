@@ -3,10 +3,19 @@ import { MS_PER_DAY, SERIAL_EPOCH_UTC_MS, JST_OFFSET_MS } from "../core/constant
 const TIME_ZONE = "Asia/Tokyo";
 const DEFAULT_LOCALE = "ja-JP";
 const SERIAL_EPOCH_JST_MS = SERIAL_EPOCH_UTC_MS - JST_OFFSET_MS;
+const UNIX_MS_THRESHOLD = 100000000000;
+const UNIX_SECONDS_THRESHOLD = 1000000000;
 
 const pad2 = (value) => String(value).padStart(2, "0");
 const isValidDate = (d) => d instanceof Date && !Number.isNaN(d.getTime());
-const isProbablyUnixMs = (value) => Math.abs(value) >= 100000000000;
+const normalizeNumericToUnixMs = (numeric, { allowSerialNumber = true } = {}) => {
+  if (!Number.isFinite(numeric)) return null;
+  const abs = Math.abs(numeric);
+  if (abs >= UNIX_MS_THRESHOLD) return numeric;
+  if (abs >= UNIX_SECONDS_THRESHOLD) return numeric * 1000;
+  if (!allowSerialNumber) return null;
+  return serialToUnixMs(numeric);
+};
 
 export const unixMsToSerial = (unixMs) => (unixMs - SERIAL_EPOCH_JST_MS) / MS_PER_DAY;
 export const serialToUnixMs = (serial) => SERIAL_EPOCH_JST_MS + serial * MS_PER_DAY;
@@ -19,7 +28,7 @@ const parseStringToUnixMs = (str) => {
     return isValidDate(iso) ? iso.getTime() : null;
   }
 
-  const dt = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:[\/\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  const dt = str.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})(?:[T\/\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
   if (dt) {
     const year = parseInt(dt[1], 10);
     const month = parseInt(dt[2], 10);
@@ -44,7 +53,7 @@ const parseStringToUnixMs = (str) => {
   if (/^[-+]?\d+(?:\.\d+)?$/.test(str)) {
     const numeric = Number(str);
     if (!Number.isFinite(numeric)) return null;
-    return isProbablyUnixMs(numeric) ? numeric : serialToUnixMs(numeric);
+    return normalizeNumericToUnixMs(numeric);
   }
 
   return null;
@@ -59,7 +68,7 @@ export const parseStringToSerial = (value) => {
 export const toUnixMs = (value) => {
   if (value === null || value === undefined) return null;
   if (typeof value === "number" && Number.isFinite(value)) {
-    return isProbablyUnixMs(value) ? value : serialToUnixMs(value);
+    return normalizeNumericToUnixMs(value);
   }
   if (value instanceof Date) return value.getTime();
   const parsed = parseStringToUnixMs(String(value).trim());

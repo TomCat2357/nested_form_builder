@@ -205,8 +205,8 @@ function SerializeRecord_(record) {
     "No.": record["No."] ?? "",
     modifiedBy: record.modifiedBy || "",
     createdBy: record.createdBy || "",
-    createdAt: createdInfo.unixMs ?? createdInfo.iso,
-    modifiedAt: modifiedInfo.unixMs ?? modifiedInfo.iso,
+    createdAt: record.createdAt || "",
+    modifiedAt: record.modifiedAt || "",
     createdAtUnixMs: createdInfo.unixMs,
     modifiedAtUnixMs: modifiedInfo.unixMs,
     data: serializedData,
@@ -301,20 +301,23 @@ function ListRecords_(ctx) {
         return Number.isFinite(ms) ? ms : 0;
       }
       if (typeof value === "number" && Number.isFinite(value)) {
-        if (Math.abs(value) >= 100000000000) return value;
-        if (allowSerialNumber) return NFB_SHEETS_EPOCH_MS + value * NFB_MS_PER_DAY;
-        return value;
+        const normalized = Sheets_normalizeNumericToUnixMs_(value, allowSerialNumber);
+        return Number.isFinite(normalized) ? normalized : 0;
       }
       if (typeof value === "string") {
         const trimmed = value.trim();
         if (!trimmed) return 0;
         if (/^[-+]?\d+(?:\.\d+)?$/.test(trimmed)) {
-          return toComparableUnixMs(parseFloat(trimmed), allowSerialNumber);
+          const normalized = Sheets_normalizeNumericToUnixMs_(parseFloat(trimmed), allowSerialNumber);
+          return Number.isFinite(normalized) ? normalized : 0;
         }
+        const normalized = Sheets_toUnixMs_(trimmed, allowSerialNumber);
+        if (Number.isFinite(normalized)) return normalized;
         const parsed = Date.parse(trimmed);
         if (Number.isFinite(parsed)) return parsed;
       }
-      return 0;
+      const normalized = Sheets_toUnixMs_(value, allowSerialNumber);
+      return Number.isFinite(normalized) ? normalized : 0;
     };
 
     const listRecords = () => {

@@ -20,8 +20,8 @@ const normalizeNumericModifiedAtToUnixMs = (value) => {
 
 const normalizeModifiedAtUnixMs = (record) => {
   if (!record) return 0;
-  const explicitUnixMs = Number(record.modifiedAtUnixMs);
-  if (Number.isFinite(explicitUnixMs) && explicitUnixMs > 0) return explicitUnixMs;
+  const explicitUnixMs = normalizeNumericModifiedAtToUnixMs(Number(record.modifiedAtUnixMs));
+  if (explicitUnixMs > 0) return explicitUnixMs;
 
   const rawModifiedAt = record.modifiedAt;
   if (rawModifiedAt instanceof Date) {
@@ -29,8 +29,8 @@ const normalizeModifiedAtUnixMs = (record) => {
     return Number.isFinite(dateUnixMs) && dateUnixMs > 0 ? dateUnixMs : 0;
   }
 
-  const numericModifiedAt = Number(rawModifiedAt);
-  if (Number.isFinite(numericModifiedAt) && numericModifiedAt > 0) return numericModifiedAt;
+  const numericModifiedAt = normalizeNumericModifiedAtToUnixMs(Number(rawModifiedAt));
+  if (numericModifiedAt > 0) return numericModifiedAt;
 
   if (typeof rawModifiedAt === 'string' && rawModifiedAt.trim()) {
     const parsedUnixMs = Date.parse(rawModifiedAt);
@@ -165,9 +165,9 @@ export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], al
   for (const [entryId, existingRecord] of Object.entries(existingByEntryId)) {
     if (incomingByEntryId[entryId]) continue;
 
-    if (hasAllIds && allIdsSet.has(entryId)) {
-      continue;
-    }
+    // allIds が無い差分は「更新があったレコードだけ」を意味するため、
+    // 不在を根拠にキャッシュ削除してはいけない。
+    if (!hasAllIds || allIdsSet.has(entryId)) continue;
 
     const cacheMutationUnixMs = normalizeNumericModifiedAtToUnixMs(Number(lastFrontendMutationAt));
     const sheetUpdatedUnixMs = normalizeNumericModifiedAtToUnixMs(Number(sheetLastUpdatedAt));

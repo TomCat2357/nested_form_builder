@@ -65,6 +65,7 @@ export default function SearchPage() {
     headerMatrix,
     loading,
     backgroundLoading,
+    waitingForLock,
     useCache,
     lastSyncedAt,
     cacheDisabled,
@@ -146,9 +147,9 @@ export default function SearchPage() {
   const endIndex = totalEntries === 0 ? 0 : Math.min(page * PAGE_SIZE, totalEntries);
 
   const badge = useMemo(() => {
-    if (loading || backgroundLoading) return { label: "読み取り中...", variant: "loading" };
+    if (loading || backgroundLoading || waitingForLock) return { label: "読み取り中...", variant: "loading" };
     return { label: "検索画面", variant: "view" };
-  }, [loading, backgroundLoading]);
+  }, [loading, backgroundLoading, waitingForLock]);
 
   const handleRowClick = (entryId) => {
     if (!effectiveFormId) return;
@@ -275,7 +276,8 @@ export default function SearchPage() {
           onRefresh={forceRefreshAll}
           onExport={handleExportResults}
           useCache={useCache}
-          loading={loading || backgroundLoading}
+          refreshBusy={loading || backgroundLoading || waitingForLock}
+          refreshDisabled={waitingForLock}
           exporting={exporting}
           selectedCount={selectedEntries.size}
           filteredCount={sortedEntries.length}
@@ -289,10 +291,11 @@ export default function SearchPage() {
         useCache={useCache}
         cacheDisabled={cacheDisabled}
         backgroundLoading={backgroundLoading}
+        lockWaiting={waitingForLock}
       />
 
-      {loading ? (
-        <p className="search-loading">読み込み中...</p>
+      {(loading || waitingForLock) ? (
+        <p className="search-loading">{waitingForLock ? "ロック解除待ち..." : "読み込み中..."}</p>
       ) : (
         <SearchTable
           columns={columns}
