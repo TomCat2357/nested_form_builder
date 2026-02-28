@@ -23,7 +23,7 @@ var NFB_HEADER_START_ROW = NFB_METADATA_ROWS + 1;
 var NFB_DATA_START_ROW = NFB_HEADER_START_ROW + NFB_HEADER_DEPTH;
 var NFB_SHEET_LAST_UPDATED_LABEL = "最終更新時間";
 var NFB_SERVER_COMMIT_TOKEN = "NFB_SERVER_COMMIT_TOKEN";
-var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"],["modifiedAt"], ["createdBy"], ["modifiedBy"], ["deletedAt"], ["serverUploadedAt"]];
+var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["deletedAt"], ["createdBy"], ["modifiedBy"], ["deletedBy"]];
 var NFB_DEFAULT_SHEET_NAME = "Data";
 
 // 日時処理関連

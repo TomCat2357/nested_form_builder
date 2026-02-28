@@ -41,19 +41,18 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     "No.": rowData[1] || "",
     createdAt: formatDt(rowData[2]),
     modifiedAt: formatDt(rowData[3]),
-    createdBy: rowData[4] || "",
-    modifiedBy: rowData[5] || "",
-    deletedAt: formatNullableDt(rowData[6]),
-    serverUploadedAt: formatNullableDt(rowData[7]),
+    deletedAt: formatNullableDt(rowData[4]),
+    createdBy: rowData[5] || "",
+    modifiedBy: rowData[6] || "",
+    deletedBy: rowData[7] || "",
     createdAtUnixMs: Sheets_toUnixMs_(rowData[2], true),
     modifiedAtUnixMs: Sheets_toUnixMs_(rowData[3], true),
-    deletedAtUnixMs: Sheets_toUnixMs_(rowData[6], true),
-    serverUploadedAtUnixMs: Sheets_toUnixMs_(rowData[7], true),
+    deletedAtUnixMs: Sheets_toUnixMs_(rowData[4], true),
     data: {},
     dataUnixMs: {}
   };
 
-  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "createdBy": true, "modifiedBy": true, "deletedAt": true, "serverUploadedAt": true };
+  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true };
 
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];

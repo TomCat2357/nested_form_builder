@@ -248,10 +248,10 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
     "No.": true,
     "createdAt": true,
     "modifiedAt": true,
+    "deletedAt": true,
     "createdBy": true,
     "modifiedBy": true,
-    "deletedAt": true,
-    "serverUploadedAt": true,
+    "deletedBy": true,
   };
   var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";
   for (var j = 0; j < columnPaths.length; j++) {

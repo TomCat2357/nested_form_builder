@@ -72,8 +72,8 @@ export default function SearchPage() {
     lastSyncedAt,
     hasUnsynced,
     cacheDisabled,
-    fetchAndCacheData,
     forceRefreshAll,
+    reloadFromCache,
   } = useEntriesWithCache({
     formId: effectiveFormId,
     form,
@@ -249,13 +249,14 @@ export default function SearchPage() {
 
   const confirmDelete = useCallback(async () => {
     if (!effectiveFormId || showDeleteConfirm.entryIds.length === 0) return;
-    for (const entryId of showDeleteConfirm.entryIds) {
-      await dataStore.deleteEntry(effectiveFormId, entryId);
-    }
-    await fetchAndCacheData();
-    setSelectedEntries(new Set());
+    const targetIds = [...showDeleteConfirm.entryIds];
     setShowDeleteConfirm({ open: false, entryIds: [] });
-  }, [effectiveFormId, showDeleteConfirm.entryIds, fetchAndCacheData]);
+    for (const entryId of targetIds) {
+      await dataStore.deleteEntry(effectiveFormId, entryId, { deletedBy: userEmail || "" });
+    }
+    await reloadFromCache();
+    setSelectedEntries(new Set());
+  }, [effectiveFormId, reloadFromCache, showDeleteConfirm.entryIds, userEmail]);
 
   if (!effectiveFormId || !form) {
     return (

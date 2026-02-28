@@ -265,6 +265,19 @@ function Sheets_writeHeaderPath_(sheet, columnIndex, path) {
   sheet.getRange(NFB_HEADER_START_ROW, columnIndex, NFB_HEADER_DEPTH, 1).setValues(values);
 }
 
+function Sheets_removeLegacyFixedColumns_(sheet, matrix) {
+  var paths = Sheets_extractColumnPaths_(matrix);
+  var targets = [];
+  for (var i = 0; i < paths.length; i++) {
+    var key = Sheets_pathKey_(paths[i]);
+    if (key === "serverUploadedAt") targets.push(i + 1);
+  }
+  for (var j = targets.length - 1; j >= 0; j--) {
+    sheet.deleteColumn(targets[j]);
+  }
+  return targets.length > 0;
+}
+
 function Sheets_ensureHeaderMatrix_(sheet, order) {
   Sheets_ensureRowCapacity_(sheet, NFB_DATA_START_ROW);
   if (sheet.getFrozenRows() !== NFB_DATA_START_ROW - 1) {
@@ -278,6 +291,9 @@ function Sheets_ensureHeaderMatrix_(sheet, order) {
   sheet.getRange(1, 1, maxRows, maxCols).breakApart();
 
   var matrix = Sheets_readHeaderMatrix_(sheet);
+  if (Sheets_removeLegacyFixedColumns_(sheet, matrix)) {
+    matrix = Sheets_readHeaderMatrix_(sheet);
+  }
   var existingPaths = Sheets_extractColumnPaths_(matrix);
   var desired = Sheets_buildDesiredPaths_(order, existingPaths);
 

@@ -513,6 +513,7 @@ export default function FormPage() {
     const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
     const sheetName = settings.sheetName || "Data";
     const requiresSpreadsheetSave = Boolean(spreadsheetId && hasScriptRun());
+    const payloadWithFormId = { ...payload, formId: form.id };
 
     // ロック確保に成功したらキャッシュ更新を先に完了させ、画面遷移を優先する
     if (requiresSpreadsheetSave) {
@@ -524,9 +525,9 @@ export default function FormPage() {
     }
 
     const saved = await dataStore.upsertEntry(form.id, {
-      id: payload.id,
-      data: payload.responses,
-      order: payload.order,
+      id: payloadWithFormId.id,
+      data: payloadWithFormId.responses,
+      order: payloadWithFormId.order,
       createdBy,
       modifiedBy,
       "No.": entry?.["No."],
@@ -537,7 +538,7 @@ export default function FormPage() {
       void submitResponses({
         spreadsheetId,
         sheetName,
-        payload: { ...payload, id: saved.id },
+        payload: { ...payloadWithFormId, id: saved.id },
       })
         .then(async (gasResult) => {
           if (gasResult?.recordNo === undefined || gasResult?.recordNo === null || gasResult?.recordNo === "") return;

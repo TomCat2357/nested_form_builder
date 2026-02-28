@@ -430,6 +430,36 @@ export const useEntriesWithCache = ({
     }
   }, [formId, logSearchBackground, runManualRefreshOnce]);
 
+  const reloadFromCache = useCallback(async () => {
+    if (!formId) {
+      setEntries([]);
+      setHeaderMatrix([]);
+      setLastSyncedAt(null);
+      setLastSpreadsheetReadAt(null);
+      setHasUnsynced(false);
+      setUseCache(false);
+      return;
+    }
+
+    try {
+      const cache = await getRecordsFromCache(formId);
+      setEntries(cache.entries || []);
+      setHeaderMatrix(cache.headerMatrix || []);
+      setLastSyncedAt(cache.lastSyncedAt || cache.cacheTimestamp || null);
+      setLastSpreadsheetReadAt(cache.lastSpreadsheetReadAt || null);
+      const cacheLastServerReadAt = Number.isFinite(Number(cache.lastServerReadAt))
+        ? Number(cache.lastServerReadAt)
+        : (Number.isFinite(Number(cache.lastSpreadsheetReadAt)) ? Number(cache.lastSpreadsheetReadAt) : 0);
+      const cachedHasUnsynced = (cache.entries || []).some((entry) => (Number(entry?.modifiedAtUnixMs) || 0) > cacheLastServerReadAt);
+      setHasUnsynced(cachedHasUnsynced);
+      setUseCache(true);
+      setCacheDisabled(false);
+    } catch (error) {
+      console.warn("[SearchPage] Failed to reload cache:", error);
+      setCacheDisabled(true);
+    }
+  }, [formId]);
+
   return {
     entries,
     hasUnsynced,
@@ -442,5 +472,6 @@ export const useEntriesWithCache = ({
     cacheDisabled,
     fetchAndCacheData,
     forceRefreshAll,
+    reloadFromCache,
   };
 };

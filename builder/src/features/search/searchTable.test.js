@@ -8,6 +8,7 @@ import {
   computeRowValues,
   matchesKeyword,
 } from "./searchTable.js";
+import { toUnixMs, unixMsToSerial } from "../../utils/dateTime.js";
 
 const buildRegressionForm = () => ({
   schema: [
@@ -181,4 +182,39 @@ test("modifiedAtソートは数値時刻順で比較する", () => {
   assert.equal(asc[0].entry.id, "old");
   const desc = [newRow, oldRow].sort((a, b) => compareByColumn(a, b, modifiedAtColumn, "desc"));
   assert.equal(desc[0].entry.id, "new");
+});
+
+test("date/time項目はシリアル値をYYYY/MM/DD・HH:mmで表示し検索できる", () => {
+  const form = {
+    settings: {},
+    displayFieldSettings: [
+      { path: "日付項目", type: "date" },
+      { path: "時間項目", type: "time" },
+    ],
+  };
+  const { columns } = buildSearchTableLayout(form, { includeOperations: false });
+
+  const dateUnixMs = Date.UTC(2026, 0, 1, 0, 0, 0);
+  const timeUnixMs = toUnixMs("14:30");
+  const entry = {
+    id: "r_temporal_serial",
+    "No.": 4,
+    modifiedAtUnixMs: Date.UTC(2026, 0, 2, 0, 0, 0),
+    modifiedAt: Date.UTC(2026, 0, 2, 0, 0, 0),
+    data: {
+      日付項目: unixMsToSerial(dateUnixMs),
+      時間項目: unixMsToSerial(timeUnixMs),
+    },
+    dataUnixMs: {},
+  };
+  const row = { entry, values: computeRowValues(entry, columns) };
+  const dateColumn = columns.find((column) => column.path === "日付項目");
+  const timeColumn = columns.find((column) => column.path === "時間項目");
+  assert.ok(dateColumn);
+  assert.ok(timeColumn);
+
+  assert.equal(row.values[dateColumn.key].display, "2026/01/01");
+  assert.equal(row.values[timeColumn.key].display, "14:30");
+  assert.equal(matchesKeyword(row, columns, "日付項目:2026/01/01"), true);
+  assert.equal(matchesKeyword(row, columns, "時間項目:14:30"), true);
 });

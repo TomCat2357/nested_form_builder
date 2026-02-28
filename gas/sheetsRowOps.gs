@@ -99,8 +99,10 @@ function Sheets_createNewRow_(sheet, id) {
   sheet.getRange(rowIndex, 2).setValue(String(maxNo + 1));
   sheet.getRange(rowIndex, 3).setValue(currentTs);
   sheet.getRange(rowIndex, 4).setValue(currentTs);
-  sheet.getRange(rowIndex, 5).setValue(email);
+  sheet.getRange(rowIndex, 5).setValue("");
   sheet.getRange(rowIndex, 6).setValue(email);
+  sheet.getRange(rowIndex, 7).setValue(email);
+  sheet.getRange(rowIndex, 8).setValue("");
   Sheets_touchSheetLastUpdated_(sheet, currentTs);
 
   return { rowIndex: rowIndex, id: nextId, recordNo: maxNo + 1 };
@@ -111,7 +113,7 @@ function Sheets_updateExistingRow_(sheet, rowIndex) {
   var currentTs = Sheets_getCurrentDateTimeString_();
   var email = Session.getActiveUser().getEmail() || "";
   sheet.getRange(rowIndex, 4).setValue(currentTs);
-  sheet.getRange(rowIndex, 6).setValue(email);
+  sheet.getRange(rowIndex, 7).setValue(email);
   Sheets_touchSheetLastUpdated_(sheet, currentTs);
 }
 
@@ -124,19 +126,42 @@ function Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys) 
   }
 }
 
-function Sheets_writeDataToRow_(sheet, rowIndex, orderKeys, responses, keyToColumn, reservedHeaderKeys) {
+function Sheets_resolveTemporalCell_(value, temporalType) {
+  if (value === undefined || value === null || value === "") {
+    return { value: "", numberFormat: null };
+  }
+  if (temporalType !== "date" && temporalType !== "time") {
+    return { value: String(value), numberFormat: null };
+  }
+
+  var parsed = Sheets_parseDateLikeToJstDate_(value, true);
+  if (!parsed) {
+    return { value: String(value), numberFormat: null };
+  }
+  return {
+    value: parsed,
+    numberFormat: temporalType === "time" ? "HH:mm" : "yyyy/MM/dd",
+  };
+}
+
+function Sheets_writeDataToRow_(sheet, rowIndex, orderKeys, responses, keyToColumn, reservedHeaderKeys, temporalTypeMap) {
   for (var i = 0; i < orderKeys.length; i++) {
     var key = String(orderKeys[i] || "");
     if (!key || reservedHeaderKeys[key]) continue;
     var columnIndex = keyToColumn[key];
     if (!columnIndex) continue;
     var value = responses && Object.prototype.hasOwnProperty.call(responses, key) ? responses[key] : "";
-    if (value === undefined || value === null) value = "";
-    sheet.getRange(rowIndex, columnIndex).setValue(String(value));
+    var temporalType = temporalTypeMap && temporalTypeMap[key] ? temporalTypeMap[key] : null;
+    var normalized = Sheets_resolveTemporalCell_(value, temporalType);
+    var range = sheet.getRange(rowIndex, columnIndex);
+    range.setValue(normalized.value);
+    if (normalized.numberFormat) {
+      range.setNumberFormat(normalized.numberFormat);
+    }
   }
 }
 
-function Sheets_upsertRecordById_(sheet, order, ctx) {
+function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
   Sheets_prepareResponses_(ctx);
   Sheets_ensureHeaderMatrix_(sheet, ctx.order);
   var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
@@ -160,7 +185,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx) {
     recordNo = sheet.getRange(rowIndex, 2).getValue();
   }
 
-  Sheets_writeDataToRow_(sheet, rowIndex, ctx.order, ctx.responses, keyToColumn, reservedHeaderKeys);
+  Sheets_writeDataToRow_(sheet, rowIndex, ctx.order, ctx.responses, keyToColumn, reservedHeaderKeys, temporalTypeMap);
 
   return { row: rowIndex, id: ctx.id, recordNo: recordNo };
 }

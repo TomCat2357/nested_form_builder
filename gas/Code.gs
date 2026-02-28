@@ -213,21 +213,19 @@ function SerializeRecord_(record) {
   const createdInfo = SerializeDateLike_(record.createdAt, { allowSerialNumber: true });
   const modifiedInfo = SerializeDateLike_(record.modifiedAt, { allowSerialNumber: true });
   const deletedAtUnixMs = Sheets_toUnixMs_(record.deletedAt, true);
-  const serverUploadedAtUnixMs = Sheets_toUnixMs_(record.serverUploadedAt, true);
 
   return {
     id: String(record.id || ""),
     "No.": record["No."] ?? "",
     modifiedBy: record.modifiedBy || "",
     createdBy: record.createdBy || "",
+    deletedBy: record.deletedBy || "",
     createdAt: formatMsOrFallback(record.createdAt, ""),
     modifiedAt: formatMsOrFallback(record.modifiedAt, ""),
     deletedAt: formatNullableMs(record.deletedAt),
-    serverUploadedAt: formatNullableMs(record.serverUploadedAt),
     createdAtUnixMs: createdInfo.unixMs,
     modifiedAtUnixMs: modifiedInfo.unixMs,
     deletedAtUnixMs,
-    serverUploadedAtUnixMs,
     data: serializedData,
     dataUnixMs: serializedDataUnixMs
   };
@@ -269,10 +267,28 @@ function WithScriptLock_(actionLabel, actionFn) {
   }
 }
 
+function ResolveTemporalTypeMap_(ctx) {
+  if (ctx?.raw?.formSchema && Array.isArray(ctx.raw.formSchema)) {
+    return Sheets_collectTemporalPathMap_(ctx.raw.formSchema);
+  }
+  var formId = ctx?.raw?.formId;
+  if (!formId) return null;
+  try {
+    var form = Forms_getForm_(formId);
+    if (form?.schema && Array.isArray(form.schema)) {
+      return Sheets_collectTemporalPathMap_(form.schema);
+    }
+  } catch (error) {
+    Logger.log("[ResolveTemporalTypeMap_] Failed to load schema: " + error);
+  }
+  return null;
+}
+
 function SubmitResponses_(ctx) {
   return ExecuteWithSheet_(ctx, (sheet) => {
     return WithScriptLock_("保存", () => {
-      const result = Sheets_upsertRecordById_(sheet, ctx.order, ctx);
+      const temporalTypeMap = ResolveTemporalTypeMap_(ctx);
+      const result = Sheets_upsertRecordById_(sheet, ctx.order, ctx, temporalTypeMap);
       return {
         ok: true,
         spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${ctx.spreadsheetId}`,
@@ -509,6 +525,7 @@ function SyncRecords_(ctx) {
       if (ctx.raw.formSchema) {
         order = Sheets_buildOrderFromSchema_(ctx.raw.formSchema);
       }
+      var temporalTypeMap = ResolveTemporalTypeMap_(ctx);
       Sheets_ensureHeaderMatrix_(sheet, order);
       var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
 
@@ -529,6 +546,7 @@ function SyncRecords_(ctx) {
 
       var uploadRecords = ctx.raw.uploadRecords ||[];
       var modifiedCount = 0;
+      var uploadedRecordIds = {};
 
       for (var j = 0; j < uploadRecords.length; j++) {
         var rec = uploadRecords[j];
@@ -560,20 +578,19 @@ function SyncRecords_(ctx) {
           }
 
           rec["No."] = recordNo;
-          rec.serverUploadedAt = Sheets_formatUnixMsJst_(nowMs, true);
-          rec.serverUploadedAtUnixMs = nowMs;
 
-          Sheets_writeDataToRow_(sheet, rowIndex, order, rec.data || {}, keyToColumn, reservedHeaderKeys);
+          Sheets_writeDataToRow_(sheet, rowIndex, order, rec.data || {}, keyToColumn, reservedHeaderKeys, temporalTypeMap);
 
           var deletedAtCol = keyToColumn["deletedAt"];
-          if (deletedAtCol && rec.deletedAt) sheet.getRange(rowIndex, deletedAtCol).setValue(rec.deletedAt);
+          if (deletedAtCol) sheet.getRange(rowIndex, deletedAtCol).setValue(rec.deletedAt || "");
 
-          var uploadedAtCol = keyToColumn["serverUploadedAt"];
-          if (uploadedAtCol) sheet.getRange(rowIndex, uploadedAtCol).setValue(Sheets_formatUnixMsJst_(nowMs, true));
+          var deletedByCol = keyToColumn["deletedBy"];
+          if (deletedByCol) sheet.getRange(rowIndex, deletedByCol).setValue(rec.deletedBy || "");
 
           var modAtCol = keyToColumn["modifiedAt"];
           if (modAtCol && recModifiedAt) sheet.getRange(rowIndex, modAtCol).setValue(Sheets_formatUnixMsJst_(recModifiedAt, true));
 
+          uploadedRecordIds[String(recId)] = true;
           modifiedCount++;
         }
       }
@@ -586,13 +603,12 @@ function SyncRecords_(ctx) {
       var currentToken = GetServerCommitToken_();
       var lastServerReadAt = parseInt(ctx.raw.lastServerReadAt, 10) || 0;
 
-      var allRecords = Sheets_getAllRecords_(sheet, null, { normalize: !!ctx.raw.forceNumbering });
+      var allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: !!ctx.raw.forceNumbering });
       var returnRecords =[];
       for (var k = 0; k < allRecords.length; k++) {
         var aRec = allRecords[k];
         var aModAt = parseInt(aRec.modifiedAtUnixMs, 10) || 0;
-        var uploadedAtUnix = Sheets_toUnixMs_(aRec.serverUploadedAt, true) || 0;
-        if (aModAt > lastServerReadAt || uploadedAtUnix === nowMs) {
+        if (aModAt > lastServerReadAt || uploadedRecordIds[String(aRec.id)]) {
           returnRecords.push(aRec);
         }
       }
@@ -601,7 +617,6 @@ function SyncRecords_(ctx) {
 
       return {
         ok: true,
-        serverUploadedAt: nowMs,
         serverCommitToken: currentToken,
         records: returnRecords.map(SerializeRecord_),
         headerMatrix: headerMatrix

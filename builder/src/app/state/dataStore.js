@@ -78,22 +78,20 @@ const mapSheetRecordToEntry = (record, formId) => {
   const createdAtUnixMs = resolveUnixMs(record?.createdAtUnixMs, record?.createdAt);
   const modifiedAtUnixMs = resolveUnixMs(record?.modifiedAtUnixMs, record?.modifiedAt);
   const deletedAtUnixMs = resolveUnixMs(record?.deletedAtUnixMs, record?.deletedAt);
-  const serverUploadedAtUnixMs = resolveUnixMs(record?.serverUploadedAtUnixMs, record?.serverUploadedAt);
 
   return {
     id: record.id,
     "No.": record["No."],
     modifiedBy: record.modifiedBy || "",
     createdBy: record.createdBy || "",
+    deletedBy: record.deletedBy || "",
     formId,
     createdAt: Number.isFinite(createdAtUnixMs) ? formatUnixMsDateTimeMs(createdAtUnixMs) : (record.createdAt || ""),
     modifiedAt: Number.isFinite(modifiedAtUnixMs) ? formatUnixMsDateTimeMs(modifiedAtUnixMs) : (record.modifiedAt || ""),
     deletedAt: Number.isFinite(deletedAtUnixMs) ? formatUnixMsDateTimeMs(deletedAtUnixMs) : null,
-    serverUploadedAt: Number.isFinite(serverUploadedAtUnixMs) ? formatUnixMsDateTimeMs(serverUploadedAtUnixMs) : null,
     createdAtUnixMs,
     modifiedAtUnixMs,
     deletedAtUnixMs,
-    serverUploadedAtUnixMs,
     data: record.data || {},
     dataUnixMs: record.dataUnixMs || {},
     order: Object.keys(record.data || {}),
@@ -297,13 +295,11 @@ export const dataStore = {
           const createdAtUnixMs = resolveUnixMs(entry?.createdAtUnixMs, entry?.createdAt);
           const modifiedAtUnixMs = resolveUnixMs(entry?.modifiedAtUnixMs, entry?.modifiedAt);
           const deletedAtUnixMs = resolveUnixMs(entry?.deletedAtUnixMs, entry?.deletedAt);
-          const serverUploadedAtUnixMs = resolveUnixMs(entry?.serverUploadedAtUnixMs, entry?.serverUploadedAt);
           return {
             ...entry,
             createdAt: Number.isFinite(createdAtUnixMs) ? formatUnixMsDateTimeMs(createdAtUnixMs) : (entry.createdAt || ""),
             modifiedAt: Number.isFinite(modifiedAtUnixMs) ? formatUnixMsDateTimeMs(modifiedAtUnixMs) : (entry.modifiedAt || ""),
             deletedAt: Number.isFinite(deletedAtUnixMs) ? formatUnixMsDateTimeMs(deletedAtUnixMs) : null,
-            serverUploadedAt: Number.isFinite(serverUploadedAtUnixMs) ? formatUnixMsDateTimeMs(serverUploadedAtUnixMs) : null,
           };
         });
 
@@ -318,7 +314,8 @@ export const dataStore = {
 
     const gasResult = await syncRecordsProxy(payload);
     const syncedRecords = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
-    const nextLastServerReadAt = resolveUnixMs(gasResult.serverUploadedAt, gasResult.serverCommitToken, Date.now()) || Date.now();
+    const commitToken = Number(gasResult.serverCommitToken);
+    const nextLastServerReadAt = Number.isFinite(commitToken) && commitToken > 0 ? commitToken : Date.now();
 
     await applySyncResultToCache(formId, syncedRecords, gasResult.headerMatrix || [], {
       serverCommitToken: gasResult.serverCommitToken,
@@ -459,13 +456,20 @@ export const dataStore = {
     }
     return cachedEntry;
   },
-  async deleteEntry(formId, entryId) {
-    const entry = await this.getEntry(formId, entryId);
+  async deleteEntry(formId, entryId, { deletedBy = "" } = {}) {
+    const { entry, rowIndex } = await getCachedEntryWithIndex(formId, entryId);
     if (!entry) return;
     const now = Date.now();
     const deletedAt = formatUnixMsDateTimeMs(now);
-    const deleted = { ...entry, deletedAt, deletedAtUnixMs: now, modifiedAtUnixMs: now, modifiedAt: deletedAt };
-    await upsertRecordInCache(formId, deleted);
+    const deleted = {
+      ...entry,
+      deletedAt,
+      deletedAtUnixMs: now,
+      deletedBy: deletedBy || entry.deletedBy || "",
+      modifiedAtUnixMs: now,
+      modifiedAt: deletedAt,
+    };
+    await upsertRecordInCache(formId, deleted, { rowIndex });
   },
   async importForms(jsonList) {
     const created = [];
