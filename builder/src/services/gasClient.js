@@ -129,7 +129,8 @@ export const setRestrictToFormOnly = (value) => fetchGasApi("nfbSetRestrictToFor
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
 
 export const syncRecordsProxy = async (payload) => {
-  if (!payload.spreadsheetId) throw new Error("spreadsheetId is required");
-  const result = await fetchGasApi("syncRecordsProxy", payload, "Sync failed");
+  const spreadsheetId = normalizeSpreadsheetId(payload?.spreadsheetId);
+  if (!spreadsheetId) throw new Error("spreadsheetId is required");
+  const result = await fetchGasApi("syncRecordsProxy", { ...payload, spreadsheetId }, "Sync failed");
   return result;
 };
