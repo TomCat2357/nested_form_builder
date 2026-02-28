@@ -11,6 +11,7 @@ import {
   getMaxRecordNo,
   applyDeltaToCache,
   getRecordsFromCache,
+  applySyncResultToCache,
 } from "./recordsCache.js";
 import { getFormsFromCache } from "./formsCache.js";
 import {
@@ -19,8 +20,6 @@ import {
   RECORD_CACHE_BACKGROUND_REFRESH_MS,
 } from "./cachePolicy.js";
 import {
-  deleteEntry as deleteEntryFromGas,
-  listEntries as listEntriesFromGas,
   getEntry as getEntryFromGas,
   listForms as listFormsFromGas,
   getForm as getFormFromGas,
@@ -33,9 +32,10 @@ import {
   unarchiveForms as unarchiveFormsInGas,
   debugGetMapping,
   registerImportedForm as registerImportedFormInGas,
+  syncRecordsProxy,
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
-import { toUnixMs } from "../../utils/dateTime.js";
+import { toUnixMs, formatUnixMsDateTimeMs } from "../../utils/dateTime.js";
 import { DEFAULT_SHEET_NAME } from "../../core/constants.js";
 
 const nowUnixMs = () => Date.now();
@@ -77,6 +77,8 @@ const resolveUnixMs = (...candidates) => {
 const mapSheetRecordToEntry = (record, formId) => {
   const createdAtUnixMs = resolveUnixMs(record?.createdAtUnixMs, record?.createdAt);
   const modifiedAtUnixMs = resolveUnixMs(record?.modifiedAtUnixMs, record?.modifiedAt);
+  const deletedAtUnixMs = resolveUnixMs(record?.deletedAtUnixMs, record?.deletedAt);
+  const serverUploadedAtUnixMs = resolveUnixMs(record?.serverUploadedAtUnixMs, record?.serverUploadedAt);
 
   return {
     id: record.id,
@@ -84,10 +86,14 @@ const mapSheetRecordToEntry = (record, formId) => {
     modifiedBy: record.modifiedBy || "",
     createdBy: record.createdBy || "",
     formId,
-    createdAt: record.createdAt || "",
-    modifiedAt: record.modifiedAt || "",
+    createdAt: Number.isFinite(createdAtUnixMs) ? formatUnixMsDateTimeMs(createdAtUnixMs) : (record.createdAt || ""),
+    modifiedAt: Number.isFinite(modifiedAtUnixMs) ? formatUnixMsDateTimeMs(modifiedAtUnixMs) : (record.modifiedAt || ""),
+    deletedAt: Number.isFinite(deletedAtUnixMs) ? formatUnixMsDateTimeMs(deletedAtUnixMs) : null,
+    serverUploadedAt: Number.isFinite(serverUploadedAtUnixMs) ? formatUnixMsDateTimeMs(serverUploadedAtUnixMs) : null,
     createdAtUnixMs,
     modifiedAtUnixMs,
+    deletedAtUnixMs,
+    serverUploadedAtUnixMs,
     data: record.data || {},
     dataUnixMs: record.dataUnixMs || {},
     order: Object.keys(record.data || {}),
@@ -259,21 +265,15 @@ export const dataStore = {
       no = maxNo + 1;
     }
 
-    const formatDt = (ms) => {
-      const d = new Date(ms);
-      const pad = n => String(n).padStart(2, '0');
-      return `${d.getFullYear()}/${pad(d.getMonth()+1)}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-    };
-
     const record = {
       'No.': no,
       id: payload.id || genRecordId(),
       formId,
       createdBy: payload.createdBy || "",
       modifiedBy: payload.modifiedBy || "",
-      createdAt: typeof payload.createdAt === 'string' && payload.createdAt.includes('/') ? payload.createdAt : formatDt(resolvedCreatedAt),
+      createdAt: formatUnixMsDateTimeMs(resolvedCreatedAt),
       createdAtUnixMs: resolvedCreatedAt,
-      modifiedAt: formatDt(now),
+      modifiedAt: formatUnixMsDateTimeMs(now),
       modifiedAtUnixMs: now,
       data: payload.data || {},
       dataUnixMs: payload.dataUnixMs || {},
@@ -282,93 +282,59 @@ export const dataStore = {
     await upsertRecordInCache(formId, record, { headerMatrix: payload.headerMatrix, rowIndex: payload.rowIndex });
     return record;
   },
-  async listEntries(formId, { lastSyncedAt = null, lastSpreadsheetReadAt = null, forceFullSync = false } = {}) {
+  async listEntries(formId, { forceFullSync = false } = {}) {
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
     if (!sheetConfig) throw new Error("Spreadsheet not configured for this form");
-    
-    const startedAt = Date.now();
-    perfLogger.logVerbose("records", "listEntries start", { formId, forceFullSync, startedAt });
-    
-    const payload = { ...sheetConfig, formId, forceFullSync };
-    const spreadsheetReadAt = Number.isFinite(Number(lastSpreadsheetReadAt)) ? Number(lastSpreadsheetReadAt) : Number(lastSyncedAt);
-    if (!forceFullSync && Number.isFinite(spreadsheetReadAt) && spreadsheetReadAt > 0) {
-      payload.lastSpreadsheetReadAt = spreadsheetReadAt;
-    }
 
-    const gasResult = await listEntriesFromGas(payload);
-    const lastSyncedAtNext = Date.now();
-    const sheetLastUpdatedAt = Number.isFinite(gasResult.sheetLastUpdatedAt) ? gasResult.sheetLastUpdatedAt : 0;
-    const allIdsCount = Array.isArray(gasResult.allIds) ? gasResult.allIds.length : null;
-    
-    if (gasResult.isDelta) {
-      const updatedEntries = (gasResult.records || []).map(r => mapSheetRecordToEntry(r, formId));
-      if (updatedEntries.length === 0 && !Array.isArray(gasResult.allIds)) {
-        const fullCache = await getRecordsFromCache(formId);
-        const cacheLastReadAt = Number.isFinite(Number(fullCache.lastSpreadsheetReadAt)) ? Number(fullCache.lastSpreadsheetReadAt) : 0;
-        const lastSpreadsheetReadAtNext = Math.max(cacheLastReadAt, sheetLastUpdatedAt) || null;
-        const durationMs = Date.now() - startedAt;
-        perfLogger.logVerbose("records", "listEntries delta no-op", {
-          formId,
-          durationMs,
-          sheetLastUpdatedAt,
-          lastSpreadsheetReadAt: spreadsheetReadAt,
+    const cacheMeta = await getRecordsFromCache(formId);
+    const lastServerReadAt = forceFullSync ? 0 : (cacheMeta.lastServerReadAt || 0);
+    const unsynced = forceFullSync
+      ? []
+      : cacheMeta.entries
+        .filter((entry) => (entry.modifiedAtUnixMs || 0) > lastServerReadAt)
+        .map((entry) => {
+          const createdAtUnixMs = resolveUnixMs(entry?.createdAtUnixMs, entry?.createdAt);
+          const modifiedAtUnixMs = resolveUnixMs(entry?.modifiedAtUnixMs, entry?.modifiedAt);
+          const deletedAtUnixMs = resolveUnixMs(entry?.deletedAtUnixMs, entry?.deletedAt);
+          const serverUploadedAtUnixMs = resolveUnixMs(entry?.serverUploadedAtUnixMs, entry?.serverUploadedAt);
+          return {
+            ...entry,
+            createdAt: Number.isFinite(createdAtUnixMs) ? formatUnixMsDateTimeMs(createdAtUnixMs) : (entry.createdAt || ""),
+            modifiedAt: Number.isFinite(modifiedAtUnixMs) ? formatUnixMsDateTimeMs(modifiedAtUnixMs) : (entry.modifiedAt || ""),
+            deletedAt: Number.isFinite(deletedAtUnixMs) ? formatUnixMsDateTimeMs(deletedAtUnixMs) : null,
+            serverUploadedAt: Number.isFinite(serverUploadedAtUnixMs) ? formatUnixMsDateTimeMs(serverUploadedAtUnixMs) : null,
+          };
         });
-        return {
-          entries: fullCache.entries,
-          headerMatrix: fullCache.headerMatrix,
-          entryIndexMap: fullCache.entryIndexMap,
-          lastSyncedAt: lastSyncedAtNext,
-          lastSpreadsheetReadAt: lastSpreadsheetReadAtNext,
-          isDelta: true,
-          fetchedCount: 0,
-          allIdsCount,
-          sheetLastUpdatedAt,
-        };
-      }
-      await applyDeltaToCache(formId, updatedEntries, gasResult.allIds, gasResult.headerMatrix || null, form.schemaHash, {
-        syncStartedAt: startedAt,
-        sheetLastUpdatedAt,
-      });
-      
-      const fullCache = await getRecordsFromCache(formId);
-      const durationMs = Date.now() - startedAt;
-      perfLogger.logVerbose("records", "listEntries delta done", { formId, durationMs });
-      return {
-        entries: fullCache.entries,
-        headerMatrix: fullCache.headerMatrix,
-        entryIndexMap: fullCache.entryIndexMap,
-        lastSyncedAt: lastSyncedAtNext,
-        lastSpreadsheetReadAt: fullCache.lastSpreadsheetReadAt,
-        isDelta: true,
-        fetchedCount: updatedEntries.length,
-        allIdsCount,
-        sheetLastUpdatedAt,
-      };
-    }
 
-    const entries = (gasResult.records || []).map(r => mapSheetRecordToEntry(r, formId));
-    entries.sort((a, b) => { if (a.id < b.id) return -1; if (a.id > b.id) return 1; return 0; });
+    const payload = {
+      ...sheetConfig,
+      formId,
+      formSchema: form.schema,
+      lastServerReadAt,
+      uploadRecords: unsynced,
+      forceNumbering: forceFullSync
+    };
 
-    await saveRecordsToCache(formId, entries, gasResult.headerMatrix || [], {
-      schemaHash: form.schemaHash,
-      syncStartedAt: forceFullSync ? null : startedAt,
-      sheetLastUpdatedAt,
+    const gasResult = await syncRecordsProxy(payload);
+    const syncedRecords = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
+    const nextLastServerReadAt = resolveUnixMs(gasResult.serverUploadedAt, gasResult.serverCommitToken, Date.now()) || Date.now();
+
+    await applySyncResultToCache(formId, syncedRecords, gasResult.headerMatrix || [], {
+      serverCommitToken: gasResult.serverCommitToken,
+      lastServerReadAt: nextLastServerReadAt,
     });
+
     const fullCache = await getRecordsFromCache(formId);
-    
-    const durationMs = Date.now() - startedAt;
-    perfLogger.logVerbose("records", "listEntries full done", { formId, durationMs });
+    const hasUnsynced = fullCache.entries.some(e => (e.modifiedAtUnixMs || 0) > (fullCache.lastServerReadAt || 0));
+
     return {
       entries: fullCache.entries,
       headerMatrix: fullCache.headerMatrix,
-      entryIndexMap: fullCache.entryIndexMap,
-      lastSyncedAt: lastSyncedAtNext,
-      lastSpreadsheetReadAt: fullCache.lastSpreadsheetReadAt,
+      lastSyncedAt: Date.now(),
+      lastSpreadsheetReadAt: fullCache.lastServerReadAt || null,
+      hasUnsynced,
       isDelta: false,
-      fetchedCount: entries.length,
-      allIdsCount,
-      sheetLastUpdatedAt,
     };
   },
   async getEntry(formId, entryId, { forceSync = false, rowIndexHint = undefined } = {}) {
@@ -494,15 +460,12 @@ export const dataStore = {
     return cachedEntry;
   },
   async deleteEntry(formId, entryId) {
-    await deleteRecordFromCache(formId, entryId);
-
-    const form = await this.getForm(formId);
-    const sheetConfig = getSheetConfig(form);
-    if (sheetConfig) {
-      trackPendingOperation(deleteEntryFromGas({ ...sheetConfig, entryId }).catch((error) => {
-        console.error("[dataStore.deleteEntry] Background GAS delete failed:", error);
-      }));
-    }
+    const entry = await this.getEntry(formId, entryId);
+    if (!entry) return;
+    const now = Date.now();
+    const deletedAt = formatUnixMsDateTimeMs(now);
+    const deleted = { ...entry, deletedAt, deletedAtUnixMs: now, modifiedAtUnixMs: now, modifiedAt: deletedAt };
+    await upsertRecordInCache(formId, deleted);
   },
   async importForms(jsonList) {
     const created = [];

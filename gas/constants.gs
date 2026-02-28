@@ -22,11 +22,13 @@ var NFB_METADATA_ROWS = 1;
 var NFB_HEADER_START_ROW = NFB_METADATA_ROWS + 1;
 var NFB_DATA_START_ROW = NFB_HEADER_START_ROW + NFB_HEADER_DEPTH;
 var NFB_SHEET_LAST_UPDATED_LABEL = "最終更新時間";
-var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["createdBy"], ["modifiedBy"]];
+var NFB_SERVER_COMMIT_TOKEN = "NFB_SERVER_COMMIT_TOKEN";
+var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"],["modifiedAt"], ["createdBy"], ["modifiedBy"], ["deletedAt"], ["serverUploadedAt"]];
 var NFB_DEFAULT_SHEET_NAME = "Data";
 
 // 日時処理関連
 var NFB_TZ = "Asia/Tokyo";
+var NFB_JST_OFFSET_MS = 9 * 60 * 60 * 1000;
 var NFB_MS_PER_DAY = 24 * 60 * 60 * 1000;
 var NFB_SHEETS_EPOCH_MS = new Date(1899, 11, 30, 0, 0, 0).getTime();
 var NFB_ULID_RANDOM_LENGTH = 16;

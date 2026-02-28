@@ -30,6 +30,7 @@ export const useEntriesWithCache = ({
 }) => {
   const { refreshForms, loadingForms } = useAppData();
   const [entries, setEntries] = useState([]);
+  const [hasUnsynced, setHasUnsynced] = useState(false);
   const [headerMatrix, setHeaderMatrix] = useState([]);
   const [loading, setLoading] = useState(false);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
@@ -113,6 +114,7 @@ export const useEntriesWithCache = ({
       }
       const fetchedEntries = result.entries || result || [];
       entriesAfter = fetchedEntries.length;
+      setHasUnsynced(!!result.hasUnsynced);
       responseMeta = {
         isDelta: result?.isDelta === true,
         fetchedCount: Number.isFinite(result?.fetchedCount) ? result.fetchedCount : fetchedEntries.length,
@@ -230,7 +232,15 @@ export const useEntriesWithCache = ({
   });
 
   useEffect(() => {
-    if (!formId) return;
+    if (!formId) {
+      setEntries([]);
+      setHeaderMatrix([]);
+      setLastSyncedAt(null);
+      setLastSpreadsheetReadAt(null);
+      setHasUnsynced(false);
+      setUseCache(false);
+      return;
+    }
 
     const loadData = async () => {
       let cache = { entries: [], headerMatrix: [], lastSyncedAt: null, lastSpreadsheetReadAt: null };
@@ -290,11 +300,19 @@ export const useEntriesWithCache = ({
         setHeaderMatrix(cache.headerMatrix || []);
         setLastSyncedAt(cache.lastSyncedAt || cache.cacheTimestamp || null);
         setLastSpreadsheetReadAt(cache.lastSpreadsheetReadAt || null);
+        const cacheLastServerReadAt = Number.isFinite(Number(cache.lastServerReadAt))
+          ? Number(cache.lastServerReadAt)
+          : (Number.isFinite(Number(cache.lastSpreadsheetReadAt)) ? Number(cache.lastSpreadsheetReadAt) : 0);
+        const cachedHasUnsynced = (cache.entries || []).some((entry) => (Number(entry?.modifiedAtUnixMs) || 0) > cacheLastServerReadAt);
+        setHasUnsynced(cachedHasUnsynced);
         setUseCache(true);
         logSearchBackground("initial:cache-applied", {
           entryCount: (cache.entries || []).length,
           headerRows: (cache.headerMatrix || []).length,
+          hasUnsynced: cachedHasUnsynced,
         });
+      } else {
+        setHasUnsynced(false);
       }
 
       if ((shouldSync || cacheDisabled) && !hasCache) {
@@ -414,6 +432,7 @@ export const useEntriesWithCache = ({
 
   return {
     entries,
+    hasUnsynced,
     headerMatrix,
     loading,
     backgroundLoading,

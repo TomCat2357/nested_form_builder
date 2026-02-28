@@ -127,3 +127,9 @@ export const setAdminEmail = (newEmail) => fetchGasApi("nfbSetAdminEmail", newEm
 export const getRestrictToFormOnly = () => fetchGasApi("nfbGetRestrictToFormOnly", {}, "Get restrict to form only failed").then(r => Boolean(r.restrictToFormOnly));
 export const setRestrictToFormOnly = (value) => fetchGasApi("nfbSetRestrictToFormOnly", value, "Set restrict to form only failed").then(r => Boolean(r.restrictToFormOnly));
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
+
+export const syncRecordsProxy = async (payload) => {
+  if (!payload.spreadsheetId) throw new Error("spreadsheetId is required");
+  const result = await fetchGasApi("syncRecordsProxy", payload, "Sync failed");
+  return result;
+};

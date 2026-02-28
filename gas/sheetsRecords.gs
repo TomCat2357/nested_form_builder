@@ -24,12 +24,16 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
   if (!id) return null;
 
   var formatDt = function(val) {
-    if (!val) return "";
-    if (typeof val === "string" && val.indexOf("/") !== -1) return val;
-    var d = Sheets_parseDateLikeToJstDate_(val, true);
-    if (!d) return String(val);
-    var pad = function(n) { return (n < 10 ? "0" : "") + n; };
-    return d.getFullYear() + "/" + pad(d.getMonth()+1) + "/" + pad(d.getDate()) + " " + pad(d.getHours()) + ":" + pad(d.getMinutes()) + ":" + pad(d.getSeconds());
+    var unixMs = Sheets_toUnixMs_(val, true);
+    if (unixMs !== null && isFinite(unixMs)) return Sheets_formatUnixMsJst_(unixMs, true);
+    if (val === null || val === undefined || val === "") return "";
+    return String(val);
+  };
+  var formatNullableDt = function(val) {
+    var unixMs = Sheets_toUnixMs_(val, true);
+    if (unixMs !== null && isFinite(unixMs)) return Sheets_formatUnixMsJst_(unixMs, true);
+    if (val === null || val === undefined || val === "") return null;
+    return String(val);
   };
 
   var record = {
@@ -39,13 +43,17 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     modifiedAt: formatDt(rowData[3]),
     createdBy: rowData[4] || "",
     modifiedBy: rowData[5] || "",
+    deletedAt: formatNullableDt(rowData[6]),
+    serverUploadedAt: formatNullableDt(rowData[7]),
     createdAtUnixMs: Sheets_toUnixMs_(rowData[2], true),
     modifiedAtUnixMs: Sheets_toUnixMs_(rowData[3], true),
+    deletedAtUnixMs: Sheets_toUnixMs_(rowData[6], true),
+    serverUploadedAtUnixMs: Sheets_toUnixMs_(rowData[7], true),
     data: {},
     dataUnixMs: {}
   };
 
-  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "createdBy": true, "modifiedBy": true };
+  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "createdBy": true, "modifiedBy": true, "deletedAt": true, "serverUploadedAt": true };
 
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];

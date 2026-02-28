@@ -73,7 +73,8 @@ function doPost(e) {
       "delete":          { handler: DeleteRecord_, requireSheet: true },
       "list":            { handler: ListRecords_, requireSheet: true },
       "get":             { handler: GetRecord_, requireSheet: true },
-      "save":            { handler: SubmitResponses_, requireSheet: true }
+      "save":            { handler: SubmitResponses_, requireSheet: true },
+      "sync_records":    { handler: SyncRecords_, requireSheet: true }
     };
 
     const route = ROUTES[action];
@@ -188,6 +189,18 @@ function SerializeDateLike_(value, options = {}) {
 function SerializeRecord_(record) {
   const serializedData = {};
   const serializedDataUnixMs = {};
+  const formatMsOrFallback = (value, fallbackEmpty = "") => {
+    const unixMs = Sheets_toUnixMs_(value, true);
+    if (Number.isFinite(unixMs)) return Sheets_formatUnixMsJst_(unixMs, true);
+    if (value === null || value === undefined || value === "") return fallbackEmpty;
+    return String(value);
+  };
+  const formatNullableMs = (value) => {
+    const unixMs = Sheets_toUnixMs_(value, true);
+    if (Number.isFinite(unixMs)) return Sheets_formatUnixMsJst_(unixMs, true);
+    if (value === null || value === undefined || value === "") return null;
+    return String(value);
+  };
 
   if (record.data && typeof record.data === "object") {
     Object.entries(record.data).forEach(([key, value]) => {
@@ -199,16 +212,22 @@ function SerializeRecord_(record) {
 
   const createdInfo = SerializeDateLike_(record.createdAt, { allowSerialNumber: true });
   const modifiedInfo = SerializeDateLike_(record.modifiedAt, { allowSerialNumber: true });
+  const deletedAtUnixMs = Sheets_toUnixMs_(record.deletedAt, true);
+  const serverUploadedAtUnixMs = Sheets_toUnixMs_(record.serverUploadedAt, true);
 
   return {
     id: String(record.id || ""),
     "No.": record["No."] ?? "",
     modifiedBy: record.modifiedBy || "",
     createdBy: record.createdBy || "",
-    createdAt: record.createdAt || "",
-    modifiedAt: record.modifiedAt || "",
+    createdAt: formatMsOrFallback(record.createdAt, ""),
+    modifiedAt: formatMsOrFallback(record.modifiedAt, ""),
+    deletedAt: formatNullableMs(record.deletedAt),
+    serverUploadedAt: formatNullableMs(record.serverUploadedAt),
     createdAtUnixMs: createdInfo.unixMs,
     modifiedAtUnixMs: modifiedInfo.unixMs,
+    deletedAtUnixMs,
+    serverUploadedAtUnixMs,
     data: serializedData,
     dataUnixMs: serializedDataUnixMs
   };
@@ -471,4 +490,122 @@ function FormsApi_SetArchived_(ctx) {
   const result = archivedFlag ? nfbArchiveForm(ctx.raw.formId) : nfbUnarchiveForm(ctx.raw.formId);
   if (!result?.ok) return { ok: false, error: result?.error || "フォームの更新に失敗しました" };
   return { ok: true, form: result.form || null };
+}
+
+function syncRecordsProxy(payload) {
+  return nfbSafeCall_(() => {
+    const ctx = Model_fromScriptRunPayload_(payload);
+    const ssErr = RequireSpreadsheetId_(ctx);
+    if (ssErr) return ssErr;
+    return SyncRecords_(ctx);
+  });
+}
+
+function SyncRecords_(ctx) {
+  return ExecuteWithSheet_(ctx, function(sheet) {
+    return WithScriptLock_("同期", function() {
+      var nowMs = Date.now();
+      var order = ctx.order ||[];
+      if (ctx.raw.formSchema) {
+        order = Sheets_buildOrderFromSchema_(ctx.raw.formSchema);
+      }
+      Sheets_ensureHeaderMatrix_(sheet, order);
+      var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
+
+      var reservedHeaderKeys = {};
+      NFB_FIXED_HEADER_PATHS.forEach(function(path) {
+        reservedHeaderKeys[Sheets_pathKey_(path)] = true;
+      });
+
+      var lastRow = sheet.getLastRow();
+      var dataStartRow = NFB_DATA_START_ROW;
+      var idValues = lastRow >= dataStartRow ? sheet.getRange(dataStartRow, 1, lastRow - dataStartRow + 1, 1).getValues() :[];
+
+      var existingRowMap = {};
+      for (var i = 0; i < idValues.length; i++) {
+        var id = String(idValues[i][0] || "").trim();
+        if (id) existingRowMap[id] = dataStartRow + i;
+      }
+
+      var uploadRecords = ctx.raw.uploadRecords ||[];
+      var modifiedCount = 0;
+
+      for (var j = 0; j < uploadRecords.length; j++) {
+        var rec = uploadRecords[j];
+        var recId = rec.id;
+        var recModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || 0;
+
+        var rowIndex = existingRowMap[recId] || -1;
+        var sheetModifiedAt = 0;
+        var recordNo = "";
+
+        if (rowIndex !== -1) {
+          var modifiedAtCol = keyToColumn["modifiedAt"];
+          if (modifiedAtCol) {
+            var val = sheet.getRange(rowIndex, modifiedAtCol).getValue();
+            sheetModifiedAt = Sheets_toUnixMs_(val, true) || 0;
+          }
+        }
+
+        if (recModifiedAt > sheetModifiedAt) {
+          if (rowIndex === -1) {
+            var newRow = Sheets_createNewRow_(sheet, recId);
+            rowIndex = newRow.rowIndex;
+            recordNo = newRow.recordNo;
+            existingRowMap[recId] = rowIndex;
+          } else {
+            Sheets_updateExistingRow_(sheet, rowIndex);
+            Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys);
+            recordNo = sheet.getRange(rowIndex, 2).getValue();
+          }
+
+          rec["No."] = recordNo;
+          rec.serverUploadedAt = Sheets_formatUnixMsJst_(nowMs, true);
+          rec.serverUploadedAtUnixMs = nowMs;
+
+          Sheets_writeDataToRow_(sheet, rowIndex, order, rec.data || {}, keyToColumn, reservedHeaderKeys);
+
+          var deletedAtCol = keyToColumn["deletedAt"];
+          if (deletedAtCol && rec.deletedAt) sheet.getRange(rowIndex, deletedAtCol).setValue(rec.deletedAt);
+
+          var uploadedAtCol = keyToColumn["serverUploadedAt"];
+          if (uploadedAtCol) sheet.getRange(rowIndex, uploadedAtCol).setValue(Sheets_formatUnixMsJst_(nowMs, true));
+
+          var modAtCol = keyToColumn["modifiedAt"];
+          if (modAtCol && recModifiedAt) sheet.getRange(rowIndex, modAtCol).setValue(Sheets_formatUnixMsJst_(recModifiedAt, true));
+
+          modifiedCount++;
+        }
+      }
+
+      if (modifiedCount > 0 || ctx.raw.forceNumbering) {
+        SetServerCommitToken_(nowMs);
+        Sheets_touchSheetLastUpdated_(sheet, nowMs);
+      }
+
+      var currentToken = GetServerCommitToken_();
+      var lastServerReadAt = parseInt(ctx.raw.lastServerReadAt, 10) || 0;
+
+      var allRecords = Sheets_getAllRecords_(sheet, null, { normalize: !!ctx.raw.forceNumbering });
+      var returnRecords =[];
+      for (var k = 0; k < allRecords.length; k++) {
+        var aRec = allRecords[k];
+        var aModAt = parseInt(aRec.modifiedAtUnixMs, 10) || 0;
+        var uploadedAtUnix = Sheets_toUnixMs_(aRec.serverUploadedAt, true) || 0;
+        if (aModAt > lastServerReadAt || uploadedAtUnix === nowMs) {
+          returnRecords.push(aRec);
+        }
+      }
+
+      var headerMatrix = Sheets_readHeaderMatrix_(sheet);
+
+      return {
+        ok: true,
+        serverUploadedAt: nowMs,
+        serverCommitToken: currentToken,
+        records: returnRecords.map(SerializeRecord_),
+        headerMatrix: headerMatrix
+      };
+    });
+  });
 }

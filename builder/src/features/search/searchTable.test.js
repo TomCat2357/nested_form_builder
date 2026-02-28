@@ -132,8 +132,8 @@ test("modifiedAtはJST表示を検索対象にし、raw unix文字列は部分�
   const entry = { id: "r_1", "No.": 1, modifiedAtUnixMs: unixMs, modifiedAt: unixMs, data: {}, dataUnixMs: {} };
   const row = { entry, values: computeRowValues(entry, columns) };
 
-  assert.equal(row.values.modifiedAt.display, "2026/01/01 09:00");
-  assert.equal(matchesKeyword(row, columns, "modifiedAt:2026/01/01 09:00"), true);
+  assert.equal(row.values.modifiedAt.display, "2026/01/01 09:00:00");
+  assert.equal(matchesKeyword(row, columns, "modifiedAt:2026/01/01 09:00:00"), true);
   assert.equal(matchesKeyword(row, columns, String(unixMs)), false);
 });
 
@@ -156,7 +156,7 @@ test("modifiedAtUnixMsがUNIX秒でもJST表示とソート値はUNIX msで扱�
   const entry = { id: "r_sec", "No.": 3, modifiedAtUnixMs: unixSec, modifiedAt: unixSec, data: {}, dataUnixMs: {} };
   const row = { entry, values: computeRowValues(entry, columns) };
 
-  assert.equal(row.values.modifiedAt.display, "2026/01/01 09:00");
+  assert.equal(row.values.modifiedAt.display, "2026/01/01 09:00:00");
   assert.equal(row.values.modifiedAt.sort, unixMs);
 });
 

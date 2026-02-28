@@ -1,3 +1,4 @@
+import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import React, { useMemo, useState, useCallback, useEffect } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
@@ -51,6 +52,7 @@ export default function SearchPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [selectedEntries, setSelectedEntries] = useState(new Set());
   const [exporting, setExporting] = useState(false);
+  const [showDeleted, setShowDeleted] = useState(false);
 
   const form = useMemo(() => (effectiveFormId ? getFormById(effectiveFormId) : null), [effectiveFormId, getFormById]);
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
@@ -68,6 +70,7 @@ export default function SearchPage() {
     waitingForLock,
     useCache,
     lastSyncedAt,
+    hasUnsynced,
     cacheDisabled,
     fetchAndCacheData,
     forceRefreshAll,
@@ -122,10 +125,14 @@ export default function SearchPage() {
   }, [processedEntries, isAdmin, userEmail, form?.settings?.showOwnRecordsOnly]);
 
   const filteredEntries = useMemo(() => {
+    let base = ownerFilteredEntries;
+    if (!showDeleted) {
+      base = base.filter(r => !r.entry.deletedAt);
+    }
     const keyword = query.trim();
-    if (!keyword) return ownerFilteredEntries;
-    return ownerFilteredEntries.filter((row) => matchesKeyword(row, columns, keyword));
-  }, [ownerFilteredEntries, columns, query]);
+    if (!keyword) return base;
+    return base.filter((row) => matchesKeyword(row, columns, keyword));
+  }, [ownerFilteredEntries, columns, query, showDeleted]);
 
   const sortedEntries = useMemo(() => {
     const list = filteredEntries.slice();
@@ -141,6 +148,7 @@ export default function SearchPage() {
     return sortedEntries.slice(start, start + PAGE_SIZE);
   }, [sortedEntries, page, PAGE_SIZE]);
 
+  useBeforeUnloadGuard(hasUnsynced);
   const totalPages = Math.max(1, Math.ceil(sortedEntries.length / PAGE_SIZE));
   const totalEntries = sortedEntries.length;
   const startIndex = totalEntries === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -292,7 +300,14 @@ export default function SearchPage() {
         cacheDisabled={cacheDisabled}
         backgroundLoading={backgroundLoading}
         lockWaiting={waitingForLock}
+        hasUnsynced={hasUnsynced}
       />
+      {isAdmin && (
+        <label className="nf-row nf-gap-6 nf-items-center nf-mb-12">
+          <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
+          <span className="nf-text-13">削除済みデータを表示する</span>
+        </label>
+      )}
 
       {(loading || waitingForLock) ? (
         <p className="search-loading">{waitingForLock ? "ロック解除待ち..." : "読み込み中..."}</p>

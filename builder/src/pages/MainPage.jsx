@@ -5,12 +5,12 @@ import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { useAuth } from "../app/state/authContext.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
-import { toUnixMs } from "../utils/dateTime.js";
+import { toUnixMs, formatUnixMsDateTimeMs } from "../utils/dateTime.js";
 import { evaluateCache, FORM_CACHE_MAX_AGE_MS, FORM_CACHE_BACKGROUND_REFRESH_MS } from "../app/state/cachePolicy.js";
 
 const formatUnixMsValue = (value) => {
   const unixMs = toUnixMs(value);
-  return Number.isFinite(unixMs) ? String(unixMs) : "---";
+  return Number.isFinite(unixMs) ? formatUnixMsDateTimeMs(unixMs) : "---";
 };
 
 export default function MainPage() {
@@ -90,7 +90,7 @@ export default function MainPage() {
               <h2 className="main-title">{form.settings?.formTitle || "(無題)"}</h2>
               {form.description && <p className="nf-m-0 nf-text-muted">{form.description}</p>}
               <div className="main-meta">
-                最終更新(UNIX ms): {formatUnixMsValue(form.modifiedAtUnixMs ?? form.modifiedAt)}
+                最終更新: {formatUnixMsValue(form.modifiedAtUnixMs ?? form.modifiedAt)}
               </div>
             </div>
           ))}

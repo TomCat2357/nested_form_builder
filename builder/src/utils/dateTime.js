@@ -7,6 +7,7 @@ const UNIX_MS_THRESHOLD = 100000000000;
 const UNIX_SECONDS_THRESHOLD = 1000000000;
 
 const pad2 = (value) => String(value).padStart(2, "0");
+const pad3 = (value) => String(value).padStart(3, "0");
 const isValidDate = (d) => d instanceof Date && !Number.isNaN(d.getTime());
 const normalizeNumericToUnixMs = (numeric, { allowSerialNumber = true } = {}) => {
   if (!Number.isFinite(numeric)) return null;
@@ -28,7 +29,7 @@ const parseStringToUnixMs = (str) => {
     return isValidDate(iso) ? iso.getTime() : null;
   }
 
-  const dt = str.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})(?:[T\/\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);
+  const dt = str.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})(?:[T\/\s]+(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)?$/);
   if (dt) {
     const year = parseInt(dt[1], 10);
     const month = parseInt(dt[2], 10);
@@ -36,9 +37,11 @@ const parseStringToUnixMs = (str) => {
     const hour = dt[4] ? parseInt(dt[4], 10) : 0;
     const minute = dt[5] ? parseInt(dt[5], 10) : 0;
     const second = dt[6] ? parseInt(dt[6], 10) : 0;
+    const millisecond = dt[7] ? parseInt(dt[7].padEnd(3, "0"), 10) : 0;
     if (month < 1 || month > 12 || day < 1 || day > 31) return null;
     if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) return null;
-    return Date.UTC(year, month - 1, day, hour, minute, second) - JST_OFFSET_MS;
+    if (millisecond < 0 || millisecond > 999) return null;
+    return Date.UTC(year, month - 1, day, hour, minute, second, millisecond) - JST_OFFSET_MS;
   }
 
   const t = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
@@ -121,3 +124,24 @@ export const formatUnixMsTime = (value) => {
     return "";
   }
 };
+
+const formatJstDateTime = (value, { includeSeconds = false, includeMilliseconds = false } = {}) => {
+  const ms = toUnixMs(value);
+  if (!Number.isFinite(ms)) return "";
+  const jstDate = new Date(ms + JST_OFFSET_MS);
+  const yyyy = jstDate.getUTCFullYear();
+  const mm = pad2(jstDate.getUTCMonth() + 1);
+  const dd = pad2(jstDate.getUTCDate());
+  const hh = pad2(jstDate.getUTCHours());
+  const mi = pad2(jstDate.getUTCMinutes());
+  const ss = pad2(jstDate.getUTCSeconds());
+  const sss = pad3(jstDate.getUTCMilliseconds());
+
+  let formatted = `${yyyy}/${mm}/${dd} ${hh}:${mi}`;
+  if (includeSeconds || includeMilliseconds) formatted += `:${ss}`;
+  if (includeMilliseconds) formatted += `.${sss}`;
+  return formatted;
+};
+
+export const formatUnixMsDateTimeSec = (value) => formatJstDateTime(value, { includeSeconds: true });
+export const formatUnixMsDateTimeMs = (value) => formatJstDateTime(value, { includeSeconds: true, includeMilliseconds: true });

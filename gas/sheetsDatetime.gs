@@ -2,8 +2,14 @@
 
 
 
+function Sheets_formatUnixMsJst_(unixMs, includeMilliseconds) {
+  if (!isFinite(unixMs)) return "";
+  var format = includeMilliseconds ? "yyyy/MM/dd HH:mm:ss.SSS" : "yyyy/MM/dd HH:mm:ss";
+  return Utilities.formatDate(new Date(unixMs), NFB_TZ, format);
+}
+
 function Sheets_getCurrentDateTimeString_() {
-  return Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy/MM/dd HH:mm:ss");
+  return Sheets_formatUnixMsJst_(Date.now(), true);
 }
 
 function Sheets_isValidDate_(date) {
@@ -59,32 +65,51 @@ function Sheets_parseDateLikeToJstDate_(value, allowSerialNumber) {
     return Sheets_isValidDate_(isoDate) ? isoDate : null;
   }
 
-  // YYYY-MM-DD[/ ]HH:mm[:ss]
-  var dateTimeMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})(?:[\/\s]+(\d{1,2}):(\d{2})(?::(\d{2}))?)$/);
+  // YYYY-MM-DD or YYYY/MM/DD + HH:mm[:ss[.SSS]]
+  var dateTimeMatch = str.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})(?:[T\/\s]+(\d{1,2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?)$/);
   if (dateTimeMatch) {
     var parts = dateTimeMatch;
-    var dt = new Date(
-      parseInt(parts[1], 10),
-      parseInt(parts[2], 10) - 1,
-      parseInt(parts[3], 10),
-      parseInt(parts[4], 10),
-      parseInt(parts[5], 10),
-      parts[6] ? parseInt(parts[6], 10) : 0
-    );
+    var year = parseInt(parts[1], 10);
+    var month = parseInt(parts[2], 10);
+    var day = parseInt(parts[3], 10);
+    var hour = parseInt(parts[4], 10);
+    var minute = parseInt(parts[5], 10);
+    var second = parts[6] ? parseInt(parts[6], 10) : 0;
+    var millisecond = parts[7] ? parseInt((parts[7] + "000").slice(0, 3), 10) : 0;
+    if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+    if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) return null;
+    if (millisecond < 0 || millisecond > 999) return null;
+    var dt = new Date(Date.UTC(year, month - 1, day, hour, minute, second, millisecond) - NFB_JST_OFFSET_MS);
     return Sheets_isValidDate_(dt) ? dt : null;
   }
 
-  // YYYY-MM-DD
-  var dateOnlyMatch = str.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  // YYYY-MM-DD / YYYY/MM/DD
+  var dateOnlyMatch = str.match(/^(\d{4})[-\/](\d{2})[-\/](\d{2})$/);
   if (dateOnlyMatch) {
-    var d = new Date(parseInt(dateOnlyMatch[1], 10), parseInt(dateOnlyMatch[2], 10) - 1, parseInt(dateOnlyMatch[3], 10), 0, 0, 0);
+    var d = new Date(Date.UTC(
+      parseInt(dateOnlyMatch[1], 10),
+      parseInt(dateOnlyMatch[2], 10) - 1,
+      parseInt(dateOnlyMatch[3], 10),
+      0,
+      0,
+      0,
+      0
+    ) - NFB_JST_OFFSET_MS);
     return Sheets_isValidDate_(d) ? d : null;
   }
 
   // HH:mm[:ss] を基準日(1899-12-30)のJSTで扱う
   var timeOnlyMatch = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
   if (timeOnlyMatch) {
-    var t = new Date(1899, 11, 30, parseInt(timeOnlyMatch[1], 10), parseInt(timeOnlyMatch[2], 10), timeOnlyMatch[3] ? parseInt(timeOnlyMatch[3], 10) : 0);
+    var t = new Date(Date.UTC(
+      1899,
+      11,
+      30,
+      parseInt(timeOnlyMatch[1], 10),
+      parseInt(timeOnlyMatch[2], 10),
+      timeOnlyMatch[3] ? parseInt(timeOnlyMatch[3], 10) : 0,
+      0
+    ) - NFB_JST_OFFSET_MS);
     return Sheets_isValidDate_(t) ? t : null;
   }
 
@@ -92,7 +117,7 @@ function Sheets_parseDateLikeToJstDate_(value, allowSerialNumber) {
 }
 
 function Sheets_isDateString_(value) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value);
+  return /^\d{4}[-\/]\d{2}[-\/]\d{2}$/.test(value);
 }
 
 function Sheets_isTimeString_(value) {
@@ -218,7 +243,16 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
     sheet.getRange(NFB_DATA_START_ROW, modifiedAtIndex + 1, dataRowCount, 1).setNumberFormat("@");
   }
 
-  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "createdBy": true, "modifiedBy": true };
+  var reservedKeys = {
+    "id": true,
+    "No.": true,
+    "createdAt": true,
+    "modifiedAt": true,
+    "createdBy": true,
+    "modifiedBy": true,
+    "deletedAt": true,
+    "serverUploadedAt": true,
+  };
   var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];

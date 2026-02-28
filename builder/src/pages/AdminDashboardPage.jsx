@@ -12,7 +12,7 @@ import { useAlert } from "../app/hooks/useAlert.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
-import { toUnixMs } from "../utils/dateTime.js";
+import { toUnixMs, formatUnixMsDateTimeMs } from "../utils/dateTime.js";
 import {
   evaluateCache,
   FORM_CACHE_MAX_AGE_MS,
@@ -38,7 +38,7 @@ const toComparableUnixMs = (value) => {
 
 const formatUnixMsValue = (value) => {
   const ms = toComparableUnixMs(value);
-  return ms > 0 ? String(ms) : "---";
+  return ms > 0 ? formatUnixMsDateTimeMs(ms) : "---";
 };
 
 const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
@@ -474,7 +474,7 @@ const [selected, setSelected] = useState(() => new Set());
                 </th>
                 <th className="search-th">名称</th>
                 <th className="search-th">フォームID</th>
-                <th className="search-th">更新日時(UNIX ms)</th>
+                <th className="search-th">更新日時</th>
                 <th className="search-th">表示項目</th>
                 <th className="search-th">状態</th>
               </tr>

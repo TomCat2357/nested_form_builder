@@ -45,17 +45,14 @@ function Sheets_readHeaderMatrix_(sheet) {
 
 
 function Sheets_touchSheetLastUpdated_(sheet, tsString) {
-  var formatDateTime = function(date) {
-    var pad = function(n) { return (n < 10 ? "0" : "") + n; };
-    return date.getFullYear() + "/" + pad(date.getMonth() + 1) + "/" + pad(date.getDate()) + " " +
-      pad(date.getHours()) + ":" + pad(date.getMinutes()) + ":" + pad(date.getSeconds());
-  };
   var timestamp = "";
-  if (typeof tsString === "string" && tsString.indexOf("/") !== -1) {
-    timestamp = tsString;
+  var unixMs = Sheets_toUnixMs_(tsString, true);
+  if (Number.isFinite(unixMs)) {
+    timestamp = Sheets_formatUnixMsJst_(unixMs, true);
+  } else if (typeof tsString === "string" && tsString.indexOf("/") !== -1) {
+    timestamp = String(tsString);
   } else {
-    var parsed = Sheets_parseDateLikeToJstDate_(tsString, true);
-    timestamp = parsed ? formatDateTime(parsed) : Sheets_getCurrentDateTimeString_();
+    timestamp = Sheets_getCurrentDateTimeString_();
   }
   var lastColumn = sheet.getLastColumn();
   if (lastColumn >= 4) {

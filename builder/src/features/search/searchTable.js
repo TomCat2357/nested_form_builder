@@ -1,5 +1,12 @@
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
-import { formatUnixMsDateTime, formatUnixMsDate, formatUnixMsTime, toUnixMs, parseStringToSerial } from "../../utils/dateTime.js";
+import {
+  formatUnixMsDateTime,
+  formatUnixMsDateTimeSec,
+  formatUnixMsDate,
+  formatUnixMsTime,
+  toUnixMs,
+  parseStringToSerial,
+} from "../../utils/dateTime.js";
 import { MAX_DEPTH as MAX_HEADER_DEPTH } from "../../core/constants.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 
@@ -291,7 +298,7 @@ const createBaseColumns = () => [
     getValue: (entry) => {
       const raw = entry?.modifiedAt ?? "";
       const unixMs = toUnixMs(entry?.modifiedAtUnixMs ?? raw);
-      const display = typeof raw === "string" && raw.includes("/") ? raw : (Number.isFinite(unixMs) ? formatUnixMsDateTime(unixMs) : "");
+      const display = Number.isFinite(unixMs) ? formatUnixMsDateTimeSec(unixMs) : (typeof raw === "string" ? raw : "");
       return {
         display,
         search: normalizeSearchText(display || ""),

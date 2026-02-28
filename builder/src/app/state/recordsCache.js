@@ -209,6 +209,8 @@ const buildMetadata = (formId, existingMeta, updates = {}) => {
     formId,
     lastSyncedAt: updates.lastSyncedAt ?? existingMeta?.lastSyncedAt ?? now,
     lastSpreadsheetReadAt: updates.lastSpreadsheetReadAt ?? existingMeta?.lastSpreadsheetReadAt ?? updates.lastSyncedAt ?? existingMeta?.lastSyncedAt ?? now,
+    serverCommitToken: updates.serverCommitToken ?? existingMeta?.serverCommitToken ?? 0,
+    lastServerReadAt: updates.lastServerReadAt ?? existingMeta?.lastServerReadAt ?? 0,
     lastFrontendMutationAt: updates.lastFrontendMutationAt ?? existingMeta?.lastFrontendMutationAt ?? 0,
     headerMatrix: updates.headerMatrix ?? existingMeta?.headerMatrix ?? [],
     schemaHash: updates.schemaHash ?? existingMeta?.schemaHash ?? null,
@@ -462,6 +464,8 @@ export async function getRecordsFromCache(formId) {
     lastSyncedAt: meta?.lastSyncedAt || null,
     schemaHash: meta?.schemaHash || null,
     lastSpreadsheetReadAt: meta?.lastSpreadsheetReadAt || meta?.lastSyncedAt || null,
+    serverCommitToken: meta?.serverCommitToken || 0,
+    lastServerReadAt: meta?.lastServerReadAt || 0,
     lastFrontendMutationAt: meta?.lastFrontendMutationAt || 0,
     entryIndexMap: meta?.entryIndexMap || {},
   };
@@ -592,6 +596,52 @@ export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMa
     headerMatrix: headerMatrix !== null ? headerMatrix : undefined,
     schemaHash: schemaHash !== null ? schemaHash : undefined,
     entryIndexMap
+  }));
+
+  await waitForTransaction(tx);
+  db.close();
+}
+
+export async function applySyncResultToCache(formId, syncedRecords, headerMatrix, metaUpdates) {
+  if (!formId) return;
+  const db = await openDB();
+  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
+  const store = tx.objectStore(STORE_NAMES.records);
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
+
+  const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
+  const lastSyncedAt = Date.now();
+  const existingRecords = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId))) ||[];
+
+  const existingMap = {};
+  existingRecords.forEach(r => existingMap[r.id] = r);
+
+  for (const rec of syncedRecords) {
+    const ex = existingMap[rec.id];
+    const exMod = ex ? (Number(ex.modifiedAtUnixMs) || 0) : 0;
+    const newMod = Number(rec.modifiedAtUnixMs) || 0;
+    if (!ex || newMod >= exMod) {
+      const nextRowIndex = ex?.rowIndex;
+      const normalizedRecord = { ...rec };
+      await waitForRequest(store.put({
+        ...normalizedRecord,
+        compoundId: `${formId}::${normalizedRecord.id}`,
+        formId,
+        entryId: normalizedRecord.id,
+        lastSyncedAt,
+        rowIndex: nextRowIndex,
+      }));
+    }
+  }
+
+  await waitForRequest(metaStore.put({
+    ...existingMeta,
+    ...metaUpdates,
+    formId,
+    lastSyncedAt,
+    headerMatrix: headerMatrix ?? existingMeta?.headerMatrix ??[],
+    lastServerReadAt: metaUpdates.lastServerReadAt ?? existingMeta?.lastServerReadAt ?? 0,
+    serverCommitToken: metaUpdates.serverCommitToken ?? existingMeta?.serverCommitToken ?? 0
   }));
 
   await waitForTransaction(tx);

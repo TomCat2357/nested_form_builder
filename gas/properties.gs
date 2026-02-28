@@ -75,3 +75,6 @@ const GetFormUrl_ = (formId) => {
     return null;
   }
 };
+
+const GetServerCommitToken_ = () => parseInt(Nfb_getActiveProperties_().getProperty(NFB_SERVER_COMMIT_TOKEN) || "0", 10) || 0;
+const SetServerCommitToken_ = (token) => Nfb_getActiveProperties_().setProperty(NFB_SERVER_COMMIT_TOKEN, String(token));
