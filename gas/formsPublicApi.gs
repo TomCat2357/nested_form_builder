@@ -251,7 +251,6 @@ function nfbDebugGetMapping() {
     var mode = Nfb_getPropertyStoreMode_();
     var rawJson = props.getProperty(FORMS_PROPERTY_KEY);
     var mapping = Forms_parseMappingJson_(rawJson, mode);
-    var legacyInfo = { hasLegacy: false, legacyCount: 0, migratedCount: 0 };
 
     return {
       ok: true,
@@ -259,7 +258,6 @@ function nfbDebugGetMapping() {
       mapping: mapping,
       rawJson: rawJson,
       totalForms: Object.keys(mapping).length,
-      legacyInfo: legacyInfo,
     };
   });
 }
@@ -270,4 +268,3 @@ function nfbDebugGetMapping() {
  * @param {Object} form - フォームオブジェクト
  * @return {string} ハッシュ値（16進数、先頭16文字）
  */
-

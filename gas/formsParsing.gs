@@ -72,10 +72,6 @@ function Forms_normalizeImportedFormData_(rawForm) {
     settings = copiedSettings;
   }
 
-  if (!settings.formTitle && typeof rawForm.name === "string" && rawForm.name.trim()) {
-    settings.formTitle = rawForm.name.trim();
-  }
-
   normalized.settings = settings;
   return normalized;
 }

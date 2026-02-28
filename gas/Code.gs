@@ -348,8 +348,6 @@ function ListRecords_(ctx) {
         }
         const normalized = Sheets_toUnixMs_(trimmed, allowSerialNumber);
         if (Number.isFinite(normalized)) return normalized;
-        const parsed = Date.parse(trimmed);
-        if (Number.isFinite(parsed)) return parsed;
       }
       const normalized = Sheets_toUnixMs_(value, allowSerialNumber);
       return Number.isFinite(normalized) ? normalized : 0;

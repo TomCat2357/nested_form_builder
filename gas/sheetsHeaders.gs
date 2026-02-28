@@ -45,37 +45,17 @@ function Sheets_readHeaderMatrix_(sheet) {
 
 
 function Sheets_touchSheetLastUpdated_(sheet, tsString) {
-  var timestamp = "";
-  var unixMs = Sheets_toUnixMs_(tsString, true);
-  if (Number.isFinite(unixMs)) {
-    timestamp = Sheets_formatUnixMsJst_(unixMs, true);
-  } else if (typeof tsString === "string" && tsString.indexOf("/") !== -1) {
-    timestamp = String(tsString);
-  } else {
-    timestamp = Sheets_getCurrentDateTimeString_();
-  }
-  var lastColumn = sheet.getLastColumn();
-  if (lastColumn >= 4) {
-    // 1行目のD列以降はメタ情報として使わないため、列移動時に押し出された値を毎回掃除する
-    sheet.getRange(1, 4, 1, lastColumn - 3).clearContent();
-  }
-  sheet.getRange(1, 1).setValue(NFB_SHEET_LAST_UPDATED_LABEL);
-  var timestampCell = sheet.getRange(1, 2);
-  timestampCell.setNumberFormat("@");
-  timestampCell.setValue(String(timestamp));
-  sheet.getRange(1, 3).setValue("");
+  var parent = sheet ? sheet.getParent() : null;
+  var spreadsheetId = parent ? parent.getId() : "";
+  var sheetName = sheet ? sheet.getName() : NFB_DEFAULT_SHEET_NAME;
+  return SetSheetLastUpdatedAt_(spreadsheetId, sheetName, tsString);
 }
 
 function Sheets_readSheetLastUpdated_(sheet) {
-  var label = sheet.getRange(1, 1).getValue();
-  var value = sheet.getRange(1, 2).getValue();
-  if (String(label || "") !== NFB_SHEET_LAST_UPDATED_LABEL) return 0;
-  var unixMs = Sheets_toUnixMs_(value, false);
-  if (!Number.isFinite(unixMs) && typeof value === "string") {
-    var parsed = Date.parse(value.trim());
-    if (Number.isFinite(parsed)) unixMs = parsed;
-  }
-  return Number.isFinite(unixMs) ? unixMs : 0;
+  var parent = sheet ? sheet.getParent() : null;
+  var spreadsheetId = parent ? parent.getId() : "";
+  var sheetName = sheet ? sheet.getName() : NFB_DEFAULT_SHEET_NAME;
+  return GetSheetLastUpdatedAt_(spreadsheetId, sheetName);
 }
 
 function Sheets_extractColumnPaths_(matrix) {
@@ -265,19 +245,6 @@ function Sheets_writeHeaderPath_(sheet, columnIndex, path) {
   sheet.getRange(NFB_HEADER_START_ROW, columnIndex, NFB_HEADER_DEPTH, 1).setValues(values);
 }
 
-function Sheets_removeLegacyFixedColumns_(sheet, matrix) {
-  var paths = Sheets_extractColumnPaths_(matrix);
-  var targets = [];
-  for (var i = 0; i < paths.length; i++) {
-    var key = Sheets_pathKey_(paths[i]);
-    if (key === "serverUploadedAt") targets.push(i + 1);
-  }
-  for (var j = targets.length - 1; j >= 0; j--) {
-    sheet.deleteColumn(targets[j]);
-  }
-  return targets.length > 0;
-}
-
 function Sheets_ensureHeaderMatrix_(sheet, order) {
   Sheets_ensureRowCapacity_(sheet, NFB_DATA_START_ROW);
   if (sheet.getFrozenRows() !== NFB_DATA_START_ROW - 1) {
@@ -291,9 +258,6 @@ function Sheets_ensureHeaderMatrix_(sheet, order) {
   sheet.getRange(1, 1, maxRows, maxCols).breakApart();
 
   var matrix = Sheets_readHeaderMatrix_(sheet);
-  if (Sheets_removeLegacyFixedColumns_(sheet, matrix)) {
-    matrix = Sheets_readHeaderMatrix_(sheet);
-  }
   var existingPaths = Sheets_extractColumnPaths_(matrix);
   var desired = Sheets_buildDesiredPaths_(order, existingPaths);
 

@@ -3,8 +3,10 @@ const Nfb_getPropertyStoreMode_ = () => {
   return rawMode === NFB_PROPERTY_STORE_MODE_SCRIPT ? NFB_PROPERTY_STORE_MODE_SCRIPT : NFB_PROPERTY_STORE_MODE_USER;
 };
 
+const Nfb_getScriptProperties_ = () => PropertiesService.getScriptProperties();
 const Nfb_getActiveProperties_ = () => Nfb_getPropertyStoreMode_() === NFB_PROPERTY_STORE_MODE_USER ? PropertiesService.getUserProperties() : PropertiesService.getScriptProperties();
 const Nfb_isAdminSettingsEnabled_ = () => Nfb_getPropertyStoreMode_() === NFB_PROPERTY_STORE_MODE_SCRIPT;
+const Nfb_buildSheetLastUpdatedKey_ = (spreadsheetId, sheetName) => `${NFB_SHEET_LAST_UPDATED_AT_PREFIX}::${String(spreadsheetId || "").trim()}::${String(sheetName || NFB_DEFAULT_SHEET_NAME).trim() || NFB_DEFAULT_SHEET_NAME}`;
 
 const ExtractFileIdFromUrl_ = (url) => {
   if (!url || typeof url !== "string") return null;
@@ -76,5 +78,16 @@ const GetFormUrl_ = (formId) => {
   }
 };
 
-const GetServerCommitToken_ = () => parseInt(Nfb_getActiveProperties_().getProperty(NFB_SERVER_COMMIT_TOKEN) || "0", 10) || 0;
-const SetServerCommitToken_ = (token) => Nfb_getActiveProperties_().setProperty(NFB_SERVER_COMMIT_TOKEN, String(token));
+const GetServerCommitToken_ = () => parseInt(Nfb_getScriptProperties_().getProperty(NFB_SERVER_COMMIT_TOKEN) || "0", 10) || 0;
+const SetServerCommitToken_ = (token) => Nfb_getScriptProperties_().setProperty(NFB_SERVER_COMMIT_TOKEN, String(token));
+const GetSheetLastUpdatedAt_ = (spreadsheetId, sheetName) => {
+  const key = Nfb_buildSheetLastUpdatedKey_(spreadsheetId, sheetName);
+  return parseInt(Nfb_getScriptProperties_().getProperty(key) || "0", 10) || 0;
+};
+const SetSheetLastUpdatedAt_ = (spreadsheetId, sheetName, value) => {
+  const key = Nfb_buildSheetLastUpdatedKey_(spreadsheetId, sheetName);
+  const unixMs = Sheets_toUnixMs_(value, true);
+  const normalized = Number.isFinite(unixMs) ? unixMs : Date.now();
+  Nfb_getScriptProperties_().setProperty(key, String(normalized));
+  return normalized;
+};

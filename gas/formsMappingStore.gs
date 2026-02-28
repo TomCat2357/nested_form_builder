@@ -9,11 +9,11 @@ function Forms_getActiveProps_() {
 function Forms_parseMappingJson_(json, label) {
   if (!json) return {};
   try {
-    var parsed = JSON.parse(json) || {};
-    if (parsed && typeof parsed === "object" && parsed.mapping) {
-      return parsed.mapping;
-    }
-    return parsed;
+    var parsed = JSON.parse(json);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    if (parsed.version !== FORMS_PROPERTY_VERSION) return {};
+    if (!parsed.mapping || typeof parsed.mapping !== "object" || Array.isArray(parsed.mapping)) return {};
+    return parsed.mapping;
   } catch (err) {
     Logger.log("[Forms_parseMappingJson_] Failed to parse " + label + ": " + err);
     return {};
@@ -43,19 +43,9 @@ function Forms_normalizeMappingValue_(value) {
   var fileId = null;
   var driveFileUrl = null;
 
-  if (value && typeof value === "object") {
-    fileId = value.fileId || null;
-    driveFileUrl = value.driveFileUrl || null;
-  } else if (typeof value === "string") {
-    if (value.indexOf("/file/") !== -1 || value.indexOf("drive.google.com") !== -1) {
-      driveFileUrl = value;
-      var parsed = Forms_parseGoogleDriveUrl_(value);
-      if (parsed.type === "file") {
-        fileId = parsed.id;
-      }
-    } else {
-      fileId = value;
-    }
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    fileId = typeof value.fileId === "string" ? String(value.fileId).trim() : null;
+    driveFileUrl = typeof value.driveFileUrl === "string" ? String(value.driveFileUrl).trim() : null;
   }
 
   if (!driveFileUrl && fileId) {
@@ -131,7 +121,7 @@ function Forms_buildDriveFileUrlFromId_(fileId) {
 }
 
 /**
- * マッピング値を正規化（v1: fileId文字列, v2: { fileId, driveFileUrl }）
+ * マッピング値を正規化（v2: { fileId, driveFileUrl }）
  * @param {*} value
  * @returns {{fileId: string|null, driveFileUrl: string|null}}
  */
@@ -188,4 +178,3 @@ function Forms_stripSchemaIds_(schema) {
  * プロパティサービスにフォームマッピングを保存
  * @param {Object} mapping - formId -> fileId のマッピング
  */
-

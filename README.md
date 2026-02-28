@@ -418,8 +418,10 @@ npx playwright test
 #### スプレッドシートレイアウト
 
 - 行1-11: ヘッダー（最大11階層）
-- 固定列: `id`, `No.`, `createdAt`, `modifiedAt`（`createdAt`/`modifiedAt` は UNIX ms）
+- 固定列: `id`, `No.`, `createdAt`, `modifiedAt`, `deletedAt`, `createdBy`, `modifiedBy`, `deletedBy`
 - 動的列: 質問パスに基づく列（例: `parent|child|question`）
+- 列順: 固定列 → フォーム定義列 → 既存の未定義列（右端へ押し出し）
+- 最終更新時刻: シート1行目ではなく ScriptProperties で管理
 
 ### 保存先まとめ
 
@@ -441,11 +443,12 @@ npx playwright test
 | キー | 何を保存するか |
 |---|---|
 | `nfb.forms.mapping` | formId → Google Drive ファイル ID/URL のマッピング |
-| `FORM_URLS_MAP` | 同上（旧形式、レガシー） |
 | `ADMIN_KEY` | 管理者キー |
 | `ADMIN_EMAIL` | 管理者メールアドレス |
 | `RESTRICT_TO_FORM_ONLY` | 一般ユーザーを個別フォームのみに制限するフラグ |
 | `NFB_PROPERTY_STORE_MODE` | プロパティ保存先モード（`script` / `user`） |
+| `NFB_SERVER_COMMIT_TOKEN` | レコード同期用サーバーコミットトークン |
+| `NFB_SHEET_LAST_UPDATED_AT::{spreadsheetId}::{sheetName}` | シート最終更新時刻（UNIX ms） |
 
 #### Google Drive（JSON ファイル）
 
