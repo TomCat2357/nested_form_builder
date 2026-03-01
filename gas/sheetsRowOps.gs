@@ -82,7 +82,7 @@ function Sheets_createNewRow_(sheet, id) {
   var rowIndex = Sheets_findFirstBlankRow_(sheet);
 
   Sheets_ensureRowCapacity_(sheet, rowIndex);
-  var currentTs = Sheets_getCurrentDateTimeString_();
+  var currentTs = Date.now();
   var email = Session.getActiveUser().getEmail() || "";
 
   var maxNo = 0;
@@ -100,6 +100,7 @@ function Sheets_createNewRow_(sheet, id) {
   sheet.getRange(rowIndex, 3).setValue(currentTs);
   sheet.getRange(rowIndex, 4).setValue(currentTs);
   sheet.getRange(rowIndex, 5).setValue("");
+  sheet.getRange(rowIndex, 3, 1, 3).setNumberFormat("0");
   sheet.getRange(rowIndex, 6).setValue(email);
   sheet.getRange(rowIndex, 7).setValue(email);
   sheet.getRange(rowIndex, 8).setValue("");
@@ -110,9 +111,10 @@ function Sheets_createNewRow_(sheet, id) {
 
 function Sheets_updateExistingRow_(sheet, rowIndex) {
   Sheets_ensureRowCapacity_(sheet, rowIndex);
-  var currentTs = Sheets_getCurrentDateTimeString_();
+  var currentTs = Date.now();
   var email = Session.getActiveUser().getEmail() || "";
   sheet.getRange(rowIndex, 4).setValue(currentTs);
+  sheet.getRange(rowIndex, 3, 1, 3).setNumberFormat("0");
   sheet.getRange(rowIndex, 7).setValue(email);
   Sheets_touchSheetLastUpdated_(sheet, currentTs);
 }

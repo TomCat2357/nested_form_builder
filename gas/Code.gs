@@ -189,15 +189,15 @@ function SerializeDateLike_(value, options = {}) {
 function SerializeRecord_(record) {
   const serializedData = {};
   const serializedDataUnixMs = {};
-  const formatMsOrFallback = (value, fallbackEmpty = "") => {
+  const unixMsOrFallback = (value, fallbackEmpty = "") => {
     const unixMs = Sheets_toUnixMs_(value, true);
-    if (Number.isFinite(unixMs)) return Sheets_formatUnixMsJst_(unixMs, true);
+    if (Number.isFinite(unixMs)) return unixMs;
     if (value === null || value === undefined || value === "") return fallbackEmpty;
     return String(value);
   };
-  const formatNullableMs = (value) => {
+  const unixMsNullableOrFallback = (value) => {
     const unixMs = Sheets_toUnixMs_(value, true);
-    if (Number.isFinite(unixMs)) return Sheets_formatUnixMsJst_(unixMs, true);
+    if (Number.isFinite(unixMs)) return unixMs;
     if (value === null || value === undefined || value === "") return null;
     return String(value);
   };
@@ -220,9 +220,9 @@ function SerializeRecord_(record) {
     modifiedBy: record.modifiedBy || "",
     createdBy: record.createdBy || "",
     deletedBy: record.deletedBy || "",
-    createdAt: formatMsOrFallback(record.createdAt, ""),
-    modifiedAt: formatMsOrFallback(record.modifiedAt, ""),
-    deletedAt: formatNullableMs(record.deletedAt),
+    createdAt: unixMsOrFallback(record.createdAt, ""),
+    modifiedAt: unixMsOrFallback(record.modifiedAt, ""),
+    deletedAt: unixMsNullableOrFallback(record.deletedAt),
     createdAtUnixMs: createdInfo.unixMs,
     modifiedAtUnixMs: modifiedInfo.unixMs,
     deletedAtUnixMs,
@@ -586,7 +586,7 @@ function SyncRecords_(ctx) {
           if (deletedByCol) sheet.getRange(rowIndex, deletedByCol).setValue(rec.deletedBy || "");
 
           var modAtCol = keyToColumn["modifiedAt"];
-          if (modAtCol && recModifiedAt) sheet.getRange(rowIndex, modAtCol).setValue(Sheets_formatUnixMsJst_(recModifiedAt, true));
+          if (modAtCol && recModifiedAt) sheet.getRange(rowIndex, modAtCol).setValue(recModifiedAt);
 
           uploadedRecordIds[String(recId)] = true;
           modifiedCount++;

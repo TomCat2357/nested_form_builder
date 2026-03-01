@@ -19,7 +19,15 @@ const shouldForceSync = (locationState) => {
 };
 
 const LOCK_WAIT_RETRY_MS = 1000;
+const READ_RETRY_INTERVAL_MS = 1000;
+const READ_RETRY_MAX_ATTEMPTS = 3;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const shouldRetryListReadError = (error) => {
+  if (!error) return false;
+  if (error.code === GAS_ERROR_CODE_LOCK_TIMEOUT) return false;
+  const message = String(error?.message || error);
+  return message.includes("スプレッドシート");
+};
 
 export const useEntriesWithCache = ({
   formId,
@@ -89,11 +97,32 @@ export const useEntriesWithCache = ({
     });
 
     try {
-      const result = await dataStore.listEntries(formId, {
-        lastSyncedAt: forceFullSync ? null : lastSyncedAtRef.current,
-        lastSpreadsheetReadAt: forceFullSync ? null : lastSpreadsheetReadAtRef.current,
-        forceFullSync,
-      });
+      let result;
+      let retryAttempt = 0;
+      while (true) {
+        try {
+          result = await dataStore.listEntries(formId, {
+            lastSyncedAt: forceFullSync ? null : lastSyncedAtRef.current,
+            lastSpreadsheetReadAt: forceFullSync ? null : lastSpreadsheetReadAtRef.current,
+            forceFullSync,
+          });
+          break;
+        } catch (error) {
+          const canRetry = shouldRetryListReadError(error) && retryAttempt < READ_RETRY_MAX_ATTEMPTS;
+          if (!canRetry) throw error;
+          retryAttempt += 1;
+          logSearchBackground("fetch:retry", {
+            background,
+            reason,
+            forceFullSync,
+            requestToken,
+            attempt: retryAttempt,
+            retryInMs: READ_RETRY_INTERVAL_MS,
+            error: error?.message || String(error),
+          });
+          await wait(READ_RETRY_INTERVAL_MS);
+        }
+      }
       if (requestToken !== latestRequestTokenRef.current) {
         perfLogger.logVerbose("search", "fetch ignored by stale response guard", {
           formId,

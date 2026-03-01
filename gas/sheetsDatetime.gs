@@ -230,6 +230,7 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
 
   var createdAtIndex = keyToIndex["createdAt"];
   var modifiedAtIndex = keyToIndex["modifiedAt"];
+  var deletedAtIndex = keyToIndex["deletedAt"];
 
   var applyFormat = function(colIndex, format) {
     if (typeof colIndex === "number") {
@@ -237,10 +238,13 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
     }
   };
   if (typeof createdAtIndex === "number") {
-    sheet.getRange(NFB_DATA_START_ROW, createdAtIndex + 1, dataRowCount, 1).setNumberFormat("@");
+    sheet.getRange(NFB_DATA_START_ROW, createdAtIndex + 1, dataRowCount, 1).setNumberFormat("0");
   }
   if (typeof modifiedAtIndex === "number") {
-    sheet.getRange(NFB_DATA_START_ROW, modifiedAtIndex + 1, dataRowCount, 1).setNumberFormat("@");
+    sheet.getRange(NFB_DATA_START_ROW, modifiedAtIndex + 1, dataRowCount, 1).setNumberFormat("0");
+  }
+  if (typeof deletedAtIndex === "number") {
+    sheet.getRange(NFB_DATA_START_ROW, deletedAtIndex + 1, dataRowCount, 1).setNumberFormat("0");
   }
 
   var reservedKeys = {

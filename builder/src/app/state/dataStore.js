@@ -35,7 +35,7 @@ import {
   syncRecordsProxy,
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
-import { toUnixMs, formatUnixMsDateTimeMs } from "../../utils/dateTime.js";
+import { toUnixMs } from "../../utils/dateTime.js";
 import { DEFAULT_SHEET_NAME } from "../../core/constants.js";
 
 const nowUnixMs = () => Date.now();
@@ -86,9 +86,9 @@ const mapSheetRecordToEntry = (record, formId) => {
     createdBy: record.createdBy || "",
     deletedBy: record.deletedBy || "",
     formId,
-    createdAt: Number.isFinite(createdAtUnixMs) ? formatUnixMsDateTimeMs(createdAtUnixMs) : (record.createdAt || ""),
-    modifiedAt: Number.isFinite(modifiedAtUnixMs) ? formatUnixMsDateTimeMs(modifiedAtUnixMs) : (record.modifiedAt || ""),
-    deletedAt: Number.isFinite(deletedAtUnixMs) ? formatUnixMsDateTimeMs(deletedAtUnixMs) : null,
+    createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : (record.createdAt || ""),
+    modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : (record.modifiedAt || ""),
+    deletedAt: Number.isFinite(deletedAtUnixMs) ? deletedAtUnixMs : null,
     createdAtUnixMs,
     modifiedAtUnixMs,
     deletedAtUnixMs,
@@ -269,9 +269,9 @@ export const dataStore = {
       formId,
       createdBy: payload.createdBy || "",
       modifiedBy: payload.modifiedBy || "",
-      createdAt: formatUnixMsDateTimeMs(resolvedCreatedAt),
+      createdAt: resolvedCreatedAt,
       createdAtUnixMs: resolvedCreatedAt,
-      modifiedAt: formatUnixMsDateTimeMs(now),
+      modifiedAt: now,
       modifiedAtUnixMs: now,
       data: payload.data || {},
       dataUnixMs: payload.dataUnixMs || {},
@@ -297,9 +297,9 @@ export const dataStore = {
           const deletedAtUnixMs = resolveUnixMs(entry?.deletedAtUnixMs, entry?.deletedAt);
           return {
             ...entry,
-            createdAt: Number.isFinite(createdAtUnixMs) ? formatUnixMsDateTimeMs(createdAtUnixMs) : (entry.createdAt || ""),
-            modifiedAt: Number.isFinite(modifiedAtUnixMs) ? formatUnixMsDateTimeMs(modifiedAtUnixMs) : (entry.modifiedAt || ""),
-            deletedAt: Number.isFinite(deletedAtUnixMs) ? formatUnixMsDateTimeMs(deletedAtUnixMs) : null,
+            createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : (entry.createdAt || ""),
+            modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : (entry.modifiedAt || ""),
+            deletedAt: Number.isFinite(deletedAtUnixMs) ? deletedAtUnixMs : null,
           };
         });
 
@@ -460,14 +460,13 @@ export const dataStore = {
     const { entry, rowIndex } = await getCachedEntryWithIndex(formId, entryId);
     if (!entry) return;
     const now = Date.now();
-    const deletedAt = formatUnixMsDateTimeMs(now);
     const deleted = {
       ...entry,
-      deletedAt,
+      deletedAt: now,
       deletedAtUnixMs: now,
       deletedBy: deletedBy || entry.deletedBy || "",
       modifiedAtUnixMs: now,
-      modifiedAt: deletedAt,
+      modifiedAt: now,
     };
     await upsertRecordInCache(formId, deleted, { rowIndex });
   },

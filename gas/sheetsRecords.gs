@@ -25,13 +25,13 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
 
   var formatDt = function(val) {
     var unixMs = Sheets_toUnixMs_(val, true);
-    if (unixMs !== null && isFinite(unixMs)) return Sheets_formatUnixMsJst_(unixMs, true);
+    if (unixMs !== null && isFinite(unixMs)) return unixMs;
     if (val === null || val === undefined || val === "") return "";
     return String(val);
   };
   var formatNullableDt = function(val) {
     var unixMs = Sheets_toUnixMs_(val, true);
-    if (unixMs !== null && isFinite(unixMs)) return Sheets_formatUnixMsJst_(unixMs, true);
+    if (unixMs !== null && isFinite(unixMs)) return unixMs;
     if (val === null || val === undefined || val === "") return null;
     return String(val);
   };

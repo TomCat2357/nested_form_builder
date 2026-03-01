@@ -6,6 +6,7 @@
 
 import { openDB, waitForRequest, waitForTransaction, STORE_NAMES } from './dbHelpers.js';
 import { MS_PER_DAY, SERIAL_EPOCH_UTC_MS, JST_OFFSET_MS } from "../../core/constants.js";
+import { toUnixMs } from "../../utils/dateTime.js";
 
 const buildCompoundId = (formId, entryId) => `${formId}::${entryId}`;
 const SERIAL_EPOCH_JST_MS = SERIAL_EPOCH_UTC_MS - JST_OFFSET_MS;
@@ -33,7 +34,7 @@ const normalizeModifiedAtUnixMs = (record) => {
   if (numericModifiedAt > 0) return numericModifiedAt;
 
   if (typeof rawModifiedAt === 'string' && rawModifiedAt.trim()) {
-    const parsedUnixMs = Date.parse(rawModifiedAt);
+    const parsedUnixMs = toUnixMs(rawModifiedAt);
     if (Number.isFinite(parsedUnixMs) && parsedUnixMs > 0) return parsedUnixMs;
   }
 
@@ -57,7 +58,7 @@ const normalizeComparableModifiedAtUnixMs = (record) => {
   if (normalizedNumeric > 0) return normalizedNumeric;
 
   if (typeof rawModifiedAt === 'string' && rawModifiedAt.trim()) {
-    const parsedUnixMs = Date.parse(rawModifiedAt);
+    const parsedUnixMs = toUnixMs(rawModifiedAt);
     if (Number.isFinite(parsedUnixMs) && parsedUnixMs > 0) return parsedUnixMs;
   }
 
