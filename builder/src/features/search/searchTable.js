@@ -745,37 +745,12 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
   return filteredRows;
 };
 
-const suppressDuplicateHeaderCells = (headerRows) => {
-  if (!Array.isArray(headerRows) || headerRows.length === 0) return [];
-  return headerRows.map((row) => {
-    if (!Array.isArray(row)) return [];
-    return row.map((cell, cellIndex) => {
-      const currentLabel = normalizeHeaderLabel(cell?.label ?? "");
-      const previousCell = cellIndex > 0 ? row[cellIndex - 1] : null;
-      const previousLabel = normalizeHeaderLabel(previousCell?.label ?? "");
-      const previousStart = Number(previousCell?.startIndex) || 0;
-      const previousSpan = Number(previousCell?.colSpan) || 1;
-      const currentStart = Number(cell?.startIndex) || 0;
-      const isAdjacentToPrevious = Boolean(previousCell) && previousStart + previousSpan === currentStart;
-      const displayLabel = shouldSuppressDuplicateByLeftNeighbor({
-        currentLabel,
-        previousLabel,
-        isAdjacent: isAdjacentToPrevious,
-      }) ? "" : currentLabel;
-      return {
-        ...cell,
-        label: displayLabel,
-      };
-    });
-  });
-};
-
 export const buildSearchTableLayout = (form, { headerMatrix: _headerMatrix = null, includeOperations = true } = {}) => {
   const columns = buildSearchColumns(form, { includeOperations });
-  const headerRows = buildHeaderRows(columns);
+  const headerRows = applyExportHeaderLabelLogicToTableRows(buildHeaderRows(columns), columns.length);
   return {
     columns,
-    headerRows: suppressDuplicateHeaderCells(headerRows),
+    headerRows,
   };
 };
 
@@ -816,6 +791,23 @@ const suppressDuplicateHeaderLabels = (matrix) => {
       }
     }
     return result;
+  });
+};
+
+const applyExportHeaderLabelLogicToTableRows = (headerRows, columnCount) => {
+  if (!Array.isArray(headerRows) || headerRows.length === 0 || columnCount <= 0) return [];
+  const matrix = expandHeaderRowsToMatrix(headerRows, columnCount);
+  const dedupedMatrix = suppressDuplicateHeaderLabels(matrix);
+  return headerRows.map((row, rowIndex) => {
+    if (!Array.isArray(row)) return [];
+    return row.map((cell) => {
+      const startIndex = Number(cell?.startIndex) || 0;
+      const label = dedupedMatrix[rowIndex]?.[startIndex] ?? "";
+      return {
+        ...cell,
+        label: normalizeHeaderLabel(label),
+      };
+    });
   });
 };
 

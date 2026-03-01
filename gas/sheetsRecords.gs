@@ -180,8 +180,16 @@ function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
       normalizedRange.setValues(normalizedRows);
 
       var noValues = [];
+      var nextNo = 1;
       for (var n = 0; n < normalizedDataRowCount; n++) {
-        noValues.push([n + 1]);
+        var deletedAtCell = normalizedRows[n][4];
+        var deletedAtText = String(deletedAtCell == null ? "" : deletedAtCell).trim();
+        if (deletedAtText) {
+          noValues.push([""]);
+          continue;
+        }
+        noValues.push([nextNo]);
+        nextNo += 1;
       }
       sheet.getRange(dataStartRow, 2, normalizedDataRowCount, 1).setValues(noValues);
     }
