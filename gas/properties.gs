@@ -78,8 +78,11 @@ const GetFormUrl_ = (formId) => {
   }
 };
 
-const GetServerCommitToken_ = () => parseInt(Nfb_getScriptProperties_().getProperty(NFB_SERVER_COMMIT_TOKEN) || "0", 10) || 0;
-const SetServerCommitToken_ = (token) => Nfb_getScriptProperties_().setProperty(NFB_SERVER_COMMIT_TOKEN, String(token));
+const GetServerModifiedAt_ = () => parseInt(Nfb_getScriptProperties_().getProperty(NFB_SERVER_MODIFIED_AT) || "0", 10) || 0;
+const SetServerModifiedAt_ = (value) => Nfb_getScriptProperties_().setProperty(NFB_SERVER_MODIFIED_AT, String(value));
+// backward compatibility
+const GetServerCommitToken_ = () => GetServerModifiedAt_();
+const SetServerCommitToken_ = (token) => SetServerModifiedAt_(token);
 const GetSheetLastUpdatedAt_ = (spreadsheetId, sheetName) => {
   const key = Nfb_buildSheetLastUpdatedKey_(spreadsheetId, sheetName);
   return parseInt(Nfb_getScriptProperties_().getProperty(key) || "0", 10) || 0;

@@ -594,11 +594,11 @@ function SyncRecords_(ctx) {
       }
 
       if (modifiedCount > 0 || ctx.raw.forceNumbering) {
-        SetServerCommitToken_(nowMs);
+        SetServerModifiedAt_(nowMs);
         Sheets_touchSheetLastUpdated_(sheet, nowMs);
       }
 
-      var currentToken = GetServerCommitToken_();
+      var serverModifiedAt = GetServerModifiedAt_();
       var lastServerReadAt = parseInt(ctx.raw.lastServerReadAt, 10) || 0;
 
       var allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: !!ctx.raw.forceNumbering });
@@ -615,7 +615,8 @@ function SyncRecords_(ctx) {
 
       return {
         ok: true,
-        serverCommitToken: currentToken,
+        serverModifiedAt: serverModifiedAt,
+        serverCommitToken: serverModifiedAt,
         records: returnRecords.map(SerializeRecord_),
         headerMatrix: headerMatrix
       };

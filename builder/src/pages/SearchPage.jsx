@@ -71,6 +71,7 @@ export default function SearchPage() {
     useCache,
     lastSyncedAt,
     hasUnsynced,
+    unsyncedCount,
     cacheDisabled,
     forceRefreshAll,
     reloadFromCache,
@@ -255,8 +256,9 @@ export default function SearchPage() {
       await dataStore.deleteEntry(effectiveFormId, entryId, { deletedBy: userEmail || "" });
     }
     await reloadFromCache();
+    await forceRefreshAll();
     setSelectedEntries(new Set());
-  }, [effectiveFormId, reloadFromCache, showDeleteConfirm.entryIds, userEmail]);
+  }, [effectiveFormId, forceRefreshAll, reloadFromCache, showDeleteConfirm.entryIds, userEmail]);
 
   if (!effectiveFormId || !form) {
     return (
@@ -302,6 +304,8 @@ export default function SearchPage() {
         backgroundLoading={backgroundLoading}
         lockWaiting={waitingForLock}
         hasUnsynced={hasUnsynced}
+        unsyncedCount={unsyncedCount}
+        syncInProgress={loading || backgroundLoading || waitingForLock}
       />
       {isAdmin && (
         <label className="nf-row nf-gap-6 nf-items-center nf-mb-12">

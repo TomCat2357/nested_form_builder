@@ -23,6 +23,7 @@ const READ_RETRY_INTERVAL_MS = 1000;
 const READ_RETRY_MAX_ATTEMPTS = 3;
 const WRITE_RETRY_INTERVAL_MS = 1000;
 const WRITE_RETRY_MAX_ATTEMPTS = 3;
+const SYNC_INTERVAL_MS = RECORD_CACHE_BACKGROUND_REFRESH_MS;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const shouldRetryListReadError = (error) => {
   if (!error) return false;
@@ -69,6 +70,7 @@ export const useEntriesWithCache = ({
   const { refreshForms, loadingForms } = useAppData();
   const [entries, setEntries] = useState([]);
   const [hasUnsynced, setHasUnsynced] = useState(false);
+  const [unsyncedCount, setUnsyncedCount] = useState(0);
   const [headerMatrix, setHeaderMatrix] = useState([]);
   const [loading, setLoading] = useState(false);
   const [backgroundLoading, setBackgroundLoading] = useState(false);
@@ -86,6 +88,7 @@ export const useEntriesWithCache = ({
   const manualRefreshQueuedRef = useRef(false);
   const entriesRef = useLatestRef(entries);
   const operationSyncTokenRef = useRef(0);
+  const syncStartSequenceRef = useRef(0);
 
   const logSearchBackground = useCallback((event, payload = {}) => {
     console.info(`[SearchPage][background] ${event}`, {
@@ -106,6 +109,7 @@ export const useEntriesWithCache = ({
     }
 
     const requestToken = ++latestRequestTokenRef.current;
+    const syncSequence = ++syncStartSequenceRef.current;
     const entriesBefore = Array.isArray(entriesRef.current) ? entriesRef.current.length : 0;
     let entriesAfter = entriesBefore;
     let responseMeta = null;
@@ -174,7 +178,9 @@ export const useEntriesWithCache = ({
       }
       const fetchedEntries = result.entries || result || [];
       entriesAfter = fetchedEntries.length;
+      const resultUnsyncedCount = Number(result.unsyncedCount) || 0;
       setHasUnsynced(!!result.hasUnsynced);
+      setUnsyncedCount(resultUnsyncedCount);
       responseMeta = {
         isDelta: result?.isDelta === true,
         fetchedCount: Number.isFinite(result?.fetchedCount) ? result.fetchedCount : fetchedEntries.length,
@@ -187,6 +193,7 @@ export const useEntriesWithCache = ({
         reason,
         requestToken,
         entriesBefore,
+        syncSequence,
         entriesAfter,
         ...responseMeta,
       });
@@ -219,6 +226,7 @@ export const useEntriesWithCache = ({
         requestToken,
         durationMs: finishedAt - startedAt,
         entriesBefore,
+        syncSequence,
         entriesAfter,
         ...(responseMeta || {}),
       });
@@ -258,6 +266,10 @@ export const useEntriesWithCache = ({
         maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
         backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
       });
+      const nowMs = Date.now();
+      const reachedSyncInterval = nowMs > (unsyncedState.cacheLastServerReadAt + SYNC_INTERVAL_MS);
+      const cachedServerModifiedAt = Number(cache.serverModifiedAt) || 0;
+      const shouldSyncByServerModifiedAt = cachedServerModifiedAt <= 0 || cachedServerModifiedAt > unsyncedState.cacheLastServerReadAt;
       logSearchBackground("operation:decision", {
         source,
         hasCache,
@@ -269,7 +281,10 @@ export const useEntriesWithCache = ({
         hasUnsynced: unsyncedState.hasUnsynced,
         unsyncedCount: unsyncedState.unsyncedCount,
         unsyncedMaxModifiedAt: unsyncedState.unsyncedMaxModifiedAt,
+        reachedSyncInterval,
+        shouldSyncByServerModifiedAt,
       });
+
 
       if (unsyncedState.hasUnsynced) {
         let attempt = 0;
@@ -323,7 +338,15 @@ export const useEntriesWithCache = ({
             retryInMs: WRITE_RETRY_INTERVAL_MS,
             error: syncError?.message || String(syncError),
           });
+          const retryWaitBaselineSequence = syncStartSequenceRef.current;
           await wait(WRITE_RETRY_INTERVAL_MS);
+          if (syncStartSequenceRef.current !== retryWaitBaselineSequence) {
+            logSearchBackground("operation:sync-cancelled-by-other-sync", {
+              source,
+              attempt,
+            });
+            break;
+          }
           cache = await getRecordsFromCache(formId);
           const retriedUnsyncedState = getUnsyncedState(cache);
           if (retriedUnsyncedState.unsyncedMaxModifiedAt > unsyncedState.unsyncedMaxModifiedAt) {
@@ -336,7 +359,7 @@ export const useEntriesWithCache = ({
           }
         }
       } else if (!decision.isFresh) {
-        if (decision.shouldSync) {
+        if (decision.shouldSync && reachedSyncInterval && shouldSyncByServerModifiedAt) {
           logSearchBackground("operation:sync", { source, reason: `operation:${source}:records-sync` });
           await fetchAndCacheData({ background: false, reason: `operation:${source}:records-sync` });
         } else if (decision.shouldBackground) {
@@ -367,6 +390,7 @@ export const useEntriesWithCache = ({
       setLastSyncedAt(null);
       setLastSpreadsheetReadAt(null);
       setHasUnsynced(false);
+      setUnsyncedCount(0);
       setUseCache(false);
       return;
     }
@@ -434,6 +458,7 @@ export const useEntriesWithCache = ({
           : (Number.isFinite(Number(cache.lastSpreadsheetReadAt)) ? Number(cache.lastSpreadsheetReadAt) : 0);
         const cachedHasUnsynced = (cache.entries || []).some((entry) => (Number(entry?.modifiedAtUnixMs) || 0) > cacheLastServerReadAt);
         setHasUnsynced(cachedHasUnsynced);
+        setUnsyncedCount(cachedHasUnsynced ? (cache.entries || []).filter((entry) => (Number(entry?.modifiedAtUnixMs) || 0) > cacheLastServerReadAt).length : 0);
         setUseCache(true);
         logSearchBackground("initial:cache-applied", {
           entryCount: (cache.entries || []).length,
@@ -442,6 +467,7 @@ export const useEntriesWithCache = ({
         });
       } else {
         setHasUnsynced(false);
+        setUnsyncedCount(0);
       }
 
       if ((shouldSync || cacheDisabled) && !hasCache) {
@@ -566,6 +592,7 @@ export const useEntriesWithCache = ({
       setLastSyncedAt(null);
       setLastSpreadsheetReadAt(null);
       setHasUnsynced(false);
+      setUnsyncedCount(0);
       setUseCache(false);
       return;
     }
@@ -581,6 +608,7 @@ export const useEntriesWithCache = ({
         : (Number.isFinite(Number(cache.lastSpreadsheetReadAt)) ? Number(cache.lastSpreadsheetReadAt) : 0);
       const cachedHasUnsynced = (cache.entries || []).some((entry) => (Number(entry?.modifiedAtUnixMs) || 0) > cacheLastServerReadAt);
       setHasUnsynced(cachedHasUnsynced);
+      setUnsyncedCount(cachedHasUnsynced ? (cache.entries || []).filter((entry) => (Number(entry?.modifiedAtUnixMs) || 0) > cacheLastServerReadAt).length : 0);
       setUseCache(true);
       setCacheDisabled(false);
     } catch (error) {
@@ -592,6 +620,7 @@ export const useEntriesWithCache = ({
   return {
     entries,
     hasUnsynced,
+    unsyncedCount,
     headerMatrix,
     loading,
     backgroundLoading,
