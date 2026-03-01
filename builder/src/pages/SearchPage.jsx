@@ -269,7 +269,7 @@ export default function SearchPage() {
       await dataStore.deleteEntry(effectiveFormId, entryId, { deletedBy: userEmail || "" });
     }
     await reloadFromCache();
-    await forceRefreshAll();
+    forceRefreshAll();
     setSelectedEntries(new Set());
   }, [effectiveFormId, forceRefreshAll, reloadFromCache, showDeleteConfirm.entryIds, userEmail]);
 
@@ -281,7 +281,7 @@ export default function SearchPage() {
       await dataStore.undeleteEntry(effectiveFormId, entryId, { modifiedBy: userEmail || "" });
     }
     await reloadFromCache();
-    await forceRefreshAll();
+    forceRefreshAll();
     setSelectedEntries(new Set());
   }, [effectiveFormId, forceRefreshAll, reloadFromCache, showUndeleteConfirm.entryIds, userEmail]);
 
@@ -341,8 +341,10 @@ export default function SearchPage() {
         </label>
       )}
 
-      {(loading || waitingForLock) ? (
-        <p className="search-loading">{waitingForLock ? "ロック解除待ち..." : "読み込み中..."}</p>
+      {waitingForLock ? (
+        <p className="search-loading">ロック解除待ち...</p>
+      ) : (loading && pagedEntries.length === 0) ? (
+        <p className="search-loading">読み込み中...</p>
       ) : (
         <SearchTable
           columns={columns}
