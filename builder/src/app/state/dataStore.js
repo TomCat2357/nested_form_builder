@@ -523,6 +523,21 @@ export const dataStore = {
     };
     await upsertRecordInCache(formId, deleted, { rowIndex });
   },
+  async undeleteEntry(formId, entryId, { modifiedBy = "" } = {}) {
+    const { entry, rowIndex } = await getCachedEntryWithIndex(formId, entryId);
+    if (!entry) return;
+    const now = Date.now();
+    const undeleted = {
+      ...entry,
+      deletedAt: null,
+      deletedAtUnixMs: null,
+      deletedBy: "",
+      modifiedAt: now,
+      modifiedAtUnixMs: now,
+      modifiedBy: modifiedBy || entry.modifiedBy || "",
+    };
+    await upsertRecordInCache(formId, undeleted, { rowIndex });
+  },
   async importForms(jsonList) {
     const created = [];
     for (const item of jsonList) {

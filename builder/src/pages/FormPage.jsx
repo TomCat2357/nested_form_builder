@@ -61,7 +61,7 @@ const sampleKeys = (keys, max = 8) => keys.slice(0, max);
 export default function FormPage() {
   const { formId, entryId } = useParams();
   const { getFormById, refreshForms, loadingForms } = useAppData();
-  const { userName, userEmail } = useAuth();
+  const { userName, userEmail, isAdmin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const { showAlert, showToast } = useAlert();
@@ -97,6 +97,7 @@ export default function FormPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [mode, setMode] = useState(entryId ? "view" : "edit");
   const [isReloading, setIsReloading] = useState(false);
+  const [entryActionConfirm, setEntryActionConfirm] = useState({ open: false, action: null });
   const [copySourceId, setCopySourceId] = useState("");
   const [copySourceResponses, setCopySourceResponses] = useState({});
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
@@ -639,6 +640,29 @@ export default function FormPage() {
     return false;
   };
 
+  const handleDeleteEntry = () => {
+    setEntryActionConfirm({ open: true, action: "delete" });
+  };
+
+  const handleUndeleteEntry = () => {
+    setEntryActionConfirm({ open: true, action: "undelete" });
+  };
+
+  const confirmEntryAction = useCallback(async () => {
+    const action = entryActionConfirm.action;
+    setEntryActionConfirm({ open: false, action: null });
+    if (action === "delete") {
+      await dataStore.deleteEntry(formId, entryId, { deletedBy: userEmail || "" });
+      navigateBack();
+    } else if (action === "undelete") {
+      await dataStore.undeleteEntry(formId, entryId, { modifiedBy: userEmail || "" });
+      const { entry: updated } = await getCachedEntryWithIndex(formId, entryId);
+      if (updated) {
+        applyEntryToState(updated, entryId, "undelete");
+      }
+    }
+  }, [entryActionConfirm.action, formId, entryId, userEmail, applyEntryToState]);
+
   const handleFetchCopySource = useCallback(async () => {
     if (!formId) return;
     const sourceId = String(copySourceId || "").trim();
@@ -802,6 +826,20 @@ export default function FormPage() {
               </button>
             </>
           )}
+          {entryId && (
+            <>
+              <hr className="nf-sidebar-divider" />
+              {isAdmin && entry?.deletedAt ? (
+                <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleUndeleteEntry}>
+                  削除取消し
+                </button>
+              ) : (
+                <button type="button" className="nf-btn-outline nf-btn-sidebar nf-btn-danger nf-text-14" onClick={handleDeleteEntry}>
+                  削除
+                </button>
+              )}
+            </>
+          )}
           {canCopyFromExistingRecord && (
             <>
               <hr className="nf-sidebar-divider" />
@@ -874,6 +912,19 @@ export default function FormPage() {
         title="未保存の変更があります"
         message={confirmMessage}
         options={confirmOptions}
+      />
+      <ConfirmDialog
+        open={entryActionConfirm.open}
+        title={entryActionConfirm.action === "undelete" ? "削除取消し" : "レコードを削除"}
+        message={entryActionConfirm.action === "undelete"
+          ? "このレコードの削除を取り消し、復活させます。よろしいですか？"
+          : "このレコードを削除します。よろしいですか？"}
+        options={[
+          { label: "キャンセル", value: "cancel", onSelect: () => setEntryActionConfirm({ open: false, action: null }) },
+          entryActionConfirm.action === "undelete"
+            ? { label: "削除取消し", value: "undelete", variant: "primary", onSelect: confirmEntryAction }
+            : { label: "削除", value: "delete", variant: "danger", onSelect: confirmEntryAction },
+        ]}
       />
 
       <RecordCopyDialog

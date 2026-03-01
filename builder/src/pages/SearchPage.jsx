@@ -50,6 +50,7 @@ export default function SearchPage() {
   const effectiveFormId = queryFormId || scopedFormId;
   const isScopedByAuth = scopedFormId !== "";
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
+  const [showUndeleteConfirm, setShowUndeleteConfirm] = useState({ open: false, entryIds: [] });
   const [selectedEntries, setSelectedEntries] = useState(new Set());
   const [exporting, setExporting] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -200,12 +201,24 @@ export default function SearchPage() {
     else setSelectedEntries(new Set());
   };
 
+  const allSelectedAreDeleted = useMemo(() => {
+    if (selectedEntries.size === 0) return false;
+    const selectedRows = sortedEntries.filter((row) => selectedEntries.has(row.entry.id));
+    if (selectedRows.length === 0) return false;
+    return selectedRows.every((row) => !!row.entry.deletedAt);
+  }, [selectedEntries, sortedEntries]);
+
   const handleDeleteSelected = () => {
     if (selectedEntries.size === 0) {
       showAlert("削除する項目を選択してください。");
       return;
     }
     setShowDeleteConfirm({ open: true, entryIds: Array.from(selectedEntries) });
+  };
+
+  const handleUndeleteSelected = () => {
+    if (selectedEntries.size === 0) return;
+    setShowUndeleteConfirm({ open: true, entryIds: Array.from(selectedEntries) });
   };
 
   const handleExportResults = useCallback(async () => {
@@ -260,6 +273,18 @@ export default function SearchPage() {
     setSelectedEntries(new Set());
   }, [effectiveFormId, forceRefreshAll, reloadFromCache, showDeleteConfirm.entryIds, userEmail]);
 
+  const confirmUndelete = useCallback(async () => {
+    if (!effectiveFormId || showUndeleteConfirm.entryIds.length === 0) return;
+    const targetIds = [...showUndeleteConfirm.entryIds];
+    setShowUndeleteConfirm({ open: false, entryIds: [] });
+    for (const entryId of targetIds) {
+      await dataStore.undeleteEntry(effectiveFormId, entryId, { modifiedBy: userEmail || "" });
+    }
+    await reloadFromCache();
+    await forceRefreshAll();
+    setSelectedEntries(new Set());
+  }, [effectiveFormId, forceRefreshAll, reloadFromCache, showUndeleteConfirm.entryIds, userEmail]);
+
   if (!effectiveFormId || !form) {
     return (
       <AppLayout themeOverride={form?.settings?.theme} title="検索" fallbackPath="/" backHidden={false}>
@@ -284,6 +309,8 @@ export default function SearchPage() {
           onCreate={handleCreateNew}
           onConfig={settings?.syncAllFormsTheme ? undefined : handleOpenFormConfig}
           onDelete={handleDeleteSelected}
+          onUndelete={handleUndeleteSelected}
+          isUndoDelete={isAdmin && allSelectedAreDeleted}
           onRefresh={forceRefreshAll}
           onExport={handleExportResults}
           useCache={useCache}
@@ -348,6 +375,15 @@ export default function SearchPage() {
         options={[
           { label: "キャンセル", value: "cancel", onSelect: () => setShowDeleteConfirm({ open: false, entryIds: [] }) },
           { label: "削除", value: "delete", variant: "danger", onSelect: confirmDelete },
+        ]}
+      />
+      <ConfirmDialog
+        open={showUndeleteConfirm.open}
+        title="削除取消し"
+        message={`選択した${showUndeleteConfirm.entryIds.length}件の削除済みデータを復活させます。よろしいですか？`}
+        options={[
+          { label: "キャンセル", value: "cancel", onSelect: () => setShowUndeleteConfirm({ open: false, entryIds: [] }) },
+          { label: "削除取消し", value: "undelete", variant: "primary", onSelect: confirmUndelete },
         ]}
       />
 
