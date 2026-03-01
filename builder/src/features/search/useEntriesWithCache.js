@@ -21,12 +21,42 @@ const shouldForceSync = (locationState) => {
 const LOCK_WAIT_RETRY_MS = 1000;
 const READ_RETRY_INTERVAL_MS = 1000;
 const READ_RETRY_MAX_ATTEMPTS = 3;
+const WRITE_RETRY_INTERVAL_MS = 1000;
+const WRITE_RETRY_MAX_ATTEMPTS = 3;
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const shouldRetryListReadError = (error) => {
   if (!error) return false;
   if (error.code === GAS_ERROR_CODE_LOCK_TIMEOUT) return false;
   const message = String(error?.message || error);
   return message.includes("スプレッドシート");
+};
+
+const canRetryOperationSync = (error) => {
+  if (!error) return false;
+  if (error.code === GAS_ERROR_CODE_LOCK_TIMEOUT) return true;
+  return shouldRetryListReadError(error);
+};
+
+const getUnsyncedState = (cache) => {
+  const cacheLastServerReadAt = Number.isFinite(Number(cache?.lastServerReadAt))
+    ? Number(cache.lastServerReadAt)
+    : (Number.isFinite(Number(cache?.lastSpreadsheetReadAt)) ? Number(cache.lastSpreadsheetReadAt) : 0);
+
+  let unsyncedCount = 0;
+  let unsyncedMaxModifiedAt = 0;
+  (cache?.entries || []).forEach((entry) => {
+    const modifiedAt = Number(entry?.modifiedAtUnixMs) || 0;
+    if (modifiedAt <= cacheLastServerReadAt) return;
+    unsyncedCount += 1;
+    if (modifiedAt > unsyncedMaxModifiedAt) unsyncedMaxModifiedAt = modifiedAt;
+  });
+
+  return {
+    cacheLastServerReadAt,
+    unsyncedCount,
+    unsyncedMaxModifiedAt,
+    hasUnsynced: unsyncedCount > 0,
+  };
 };
 
 export const useEntriesWithCache = ({
@@ -55,6 +85,7 @@ export const useEntriesWithCache = ({
   const manualRefreshRunningRef = useRef(false);
   const manualRefreshQueuedRef = useRef(false);
   const entriesRef = useLatestRef(entries);
+  const operationSyncTokenRef = useRef(0);
 
   const logSearchBackground = useCallback((event, payload = {}) => {
     console.info(`[SearchPage][background] ${event}`, {
@@ -213,9 +244,11 @@ export const useEntriesWithCache = ({
 
   const handleOperation = useCallback(async ({ source }) => {
     if (!formId) return;
+    const operationSyncToken = ++operationSyncTokenRef.current;
 
     try {
-      const cache = await getRecordsFromCache(formId);
+      let cache = await getRecordsFromCache(formId);
+      const unsyncedState = getUnsyncedState(cache);
       const schemaMismatch = cache.schemaHash && form?.schemaHash && cache.schemaHash !== form.schemaHash;
       const hasCache = (cache.entries || []).length > 0 && !schemaMismatch;
       const decision = evaluateCache({
@@ -233,9 +266,76 @@ export const useEntriesWithCache = ({
         shouldSync: decision.shouldSync,
         shouldBackground: decision.shouldBackground,
         isFresh: decision.isFresh,
+        hasUnsynced: unsyncedState.hasUnsynced,
+        unsyncedCount: unsyncedState.unsyncedCount,
+        unsyncedMaxModifiedAt: unsyncedState.unsyncedMaxModifiedAt,
       });
 
-      if (!decision.isFresh) {
+      if (unsyncedState.hasUnsynced) {
+        let attempt = 0;
+        while (true) {
+          if (operationSyncToken !== operationSyncTokenRef.current) {
+            logSearchBackground("operation:sync-cancelled-by-new-operation", {
+              source,
+              attempt,
+            });
+            break;
+          }
+
+          const currentUnsyncedState = getUnsyncedState(cache);
+          if (!currentUnsyncedState.hasUnsynced) {
+            logSearchBackground("operation:sync-skip-no-unsynced", {
+              source,
+              attempt,
+            });
+            break;
+          }
+
+          let syncError = null;
+          logSearchBackground("operation:sync-unsynced", {
+            source,
+            attempt,
+            unsyncedCount: currentUnsyncedState.unsyncedCount,
+          });
+          const synced = await fetchAndCacheData({
+            background: false,
+            reason: `operation:${source}:unsynced-sync`,
+            onError: (error) => {
+              syncError = error;
+            },
+          });
+          if (synced) break;
+
+          const canRetry = canRetryOperationSync(syncError) && attempt < WRITE_RETRY_MAX_ATTEMPTS;
+          if (!canRetry) {
+            logSearchBackground("operation:sync-unsynced-error", {
+              source,
+              attempt,
+              error: syncError?.message || String(syncError),
+            });
+            break;
+          }
+
+          attempt += 1;
+          logSearchBackground("operation:sync-unsynced-retry", {
+            source,
+            attempt,
+            retryInMs: WRITE_RETRY_INTERVAL_MS,
+            error: syncError?.message || String(syncError),
+          });
+          await wait(WRITE_RETRY_INTERVAL_MS);
+          cache = await getRecordsFromCache(formId);
+          const retriedUnsyncedState = getUnsyncedState(cache);
+          if (retriedUnsyncedState.unsyncedMaxModifiedAt > unsyncedState.unsyncedMaxModifiedAt) {
+            logSearchBackground("operation:sync-cancelled-by-new-mutation", {
+              source,
+              previousUnsyncedMaxModifiedAt: unsyncedState.unsyncedMaxModifiedAt,
+              nextUnsyncedMaxModifiedAt: retriedUnsyncedState.unsyncedMaxModifiedAt,
+            });
+            break;
+          }
+        }
+      } else if (!decision.isFresh) {
         if (decision.shouldSync) {
           logSearchBackground("operation:sync", { source, reason: `operation:${source}:records-sync` });
           await fetchAndCacheData({ background: false, reason: `operation:${source}:records-sync` });
