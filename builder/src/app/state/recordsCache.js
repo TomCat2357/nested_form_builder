@@ -136,11 +136,9 @@ const getMaxModifiedAt = (records) => {
   return maxModifiedAt;
 };
 
-export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], allIds = [], sheetLastUpdatedAt = 0, lastFrontendMutationAt = 0 } = {}) => {
+export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], sheetLastUpdatedAt = 0, lastFrontendMutationAt = 0 } = {}) => {
   const safeExistingRecords = Array.isArray(existingRecords) ? existingRecords : [];
   const safeIncomingRecords = Array.isArray(incomingRecords) ? incomingRecords : [];
-  const allIdsSet = new Set(Array.isArray(allIds) ? allIds : []);
-  const hasAllIds = allIdsSet.size > 0;
 
   const existingByEntryId = buildLatestRecordMap(safeExistingRecords, (record) => record?.entryId ?? record?.id);
   const incomingByEntryId = buildLatestRecordMap(safeIncomingRecords, (record) => record?.id ?? record?.entryId);
@@ -163,18 +161,9 @@ export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], al
     }
   }
 
-  for (const [entryId, existingRecord] of Object.entries(existingByEntryId)) {
-    if (incomingByEntryId[entryId]) continue;
-
-    // allIds が無い差分は「更新があったレコードだけ」を意味するため、
-    // 不在を根拠にキャッシュ削除してはいけない。
-    if (!hasAllIds || allIdsSet.has(entryId)) continue;
-
-    const cacheMutationUnixMs = normalizeNumericModifiedAtToUnixMs(Number(lastFrontendMutationAt));
-    const sheetUpdatedUnixMs = normalizeNumericModifiedAtToUnixMs(Number(sheetLastUpdatedAt));
-    const cacheIsNewerThanSheet = cacheMutationUnixMs > 0 && sheetUpdatedUnixMs > 0 && cacheMutationUnixMs > sheetUpdatedUnixMs;
-    if (!cacheIsNewerThanSheet) cacheOnlyDeleteIds.push(entryId);
-  }
+  // tombstone 方式により「allIds 集合差分による削除推論」を廃止。
+  // 削除は deletedAt tombstone として差分に乗るため、キャッシュからの欠落を
+  // 削除の根拠として使用してはいけない。cacheOnlyDeleteIds は常に空。
 
   for (const [entryId, incomingRecord] of Object.entries(incomingByEntryId)) {
     if (existingByEntryId[entryId]) continue;
@@ -194,8 +183,6 @@ export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], al
     incomingOnlyAddIds,
     maxIncomingModifiedAt,
     maxExistingModifiedAt,
-    hasAllIds,
-    allIdsSet,
     sheetLastUpdatedAt,
     lastFrontendMutationAt,
   };
@@ -247,7 +234,6 @@ export async function saveRecordsToCache(formId, records, headerMatrix =[], { sc
     const mergePlan = planRecordMerge({
       existingRecords,
       incomingRecords: safeRecords,
-      allIds: safeRecords.map((record) => record?.id).filter(Boolean),
       sheetLastUpdatedAt,
       lastFrontendMutationAt: existingMeta?.lastFrontendMutationAt || 0,
     });
@@ -526,7 +512,7 @@ export async function getMaxRecordNo(formId) {
 /**
  * 差分データをキャッシュに適用する
  */
-export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMatrix = null, schemaHash = null, { syncStartedAt = null, sheetLastUpdatedAt = 0 } = {}) {
+export async function applyDeltaToCache(formId, updatedRecords, headerMatrix = null, schemaHash = null, { syncStartedAt = null, sheetLastUpdatedAt = 0 } = {}) {
   if (!formId) return;
   const db = await openDB();
   const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
@@ -541,12 +527,11 @@ export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMa
   const mergePlan = planRecordMerge({
     existingRecords,
     incomingRecords: safeUpdatedRecords,
-    allIds,
     sheetLastUpdatedAt,
     lastFrontendMutationAt: existingMeta?.lastFrontendMutationAt || 0,
   });
   console.debug(
-    `[applyDeltaToCache] formId=${formId}, cacheCount=${existingRecords.length}, lazyCount=${safeUpdatedRecords.length}, maxLazyModifiedAt=${mergePlan.maxIncomingModifiedAt}, maxCacheModifiedAt=${mergePlan.maxExistingModifiedAt}, allIdsCount=${mergePlan.allIdsSet.size}, hasAllIds=${mergePlan.hasAllIds}, updates=${mergePlan.commonUpdateIds.length}, deletes=${mergePlan.cacheOnlyDeleteIds.length}, adds=${mergePlan.incomingOnlyAddIds.length}`,
+    `[applyDeltaToCache] formId=${formId}, cacheCount=${existingRecords.length}, lazyCount=${safeUpdatedRecords.length}, maxLazyModifiedAt=${mergePlan.maxIncomingModifiedAt}, maxCacheModifiedAt=${mergePlan.maxExistingModifiedAt}, updates=${mergePlan.commonUpdateIds.length}, deletes=${mergePlan.cacheOnlyDeleteIds.length}, adds=${mergePlan.incomingOnlyAddIds.length}`,
   );
 
   for (const entryId of mergePlan.commonUpdateIds) {
@@ -572,10 +557,7 @@ export async function applyDeltaToCache(formId, updatedRecords, allIds, headerMa
     if (!cacheRecord?.compoundId) continue;
 
     const cacheModifiedAt = normalizeComparableModifiedAtUnixMs(cacheRecord);
-    const reason = mergePlan.hasAllIds
-      ? `not_in_allIds_and_older(cacheModifiedAt=${cacheModifiedAt}, maxLazyModifiedAt=${mergePlan.maxIncomingModifiedAt})`
-      : `no_allIds_and_older(cacheModifiedAt=${cacheModifiedAt}, maxLazyModifiedAt=${mergePlan.maxIncomingModifiedAt})`;
-    console.debug(`[applyDeltaToCache] sec2: DELETE entryId=${entryId}, reason=${reason}`);
+    console.debug(`[applyDeltaToCache] sec2: DELETE entryId=${entryId}, cacheModifiedAt=${cacheModifiedAt}, maxLazyModifiedAt=${mergePlan.maxIncomingModifiedAt}`);
 
     await waitForRequest(store.delete(cacheRecord.compoundId));
     delete entryIndexMap[entryId];

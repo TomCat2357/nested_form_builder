@@ -199,7 +199,18 @@ function Sheets_deleteRecordById_(sheet, id) {
     return { ok: false, error: "Record not found" };
   }
 
-  sheet.deleteRow(rowIndex);
-  Sheets_touchSheetLastUpdated_(sheet);
+  // tombstone: 物理削除の代わりに deletedAt / modifiedAt を記録する
+  // col1=id, col2=No., col3=createdAt, col4=modifiedAt,
+  // col5=deletedAt, col6=createdBy, col7=modifiedBy, col8=deletedBy
+  var now = Date.now();
+  var email = Session.getActiveUser().getEmail() || "";
+  sheet.getRange(rowIndex, 4).setValue(now);   // modifiedAt
+  sheet.getRange(rowIndex, 5).setValue(now);   // deletedAt
+  sheet.getRange(rowIndex, 7).setValue(email); // modifiedBy
+  sheet.getRange(rowIndex, 8).setValue(email); // deletedBy
+  sheet.getRange(rowIndex, 2).setValue("");    // No. をクリア
+  sheet.getRange(rowIndex, 4, 1, 2).setNumberFormat("0"); // modifiedAt,deletedAt を整数フォーマット
+  Sheets_touchSheetLastUpdated_(sheet, now);
+  SetServerModifiedAt_(now);
   return { ok: true, row: rowIndex, id: id };
 }

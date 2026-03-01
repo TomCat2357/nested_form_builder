@@ -407,7 +407,6 @@ function ListRecords_(ctx) {
         return {
           ok: true,
           records: [],
-          allIds: null,
           count: 0,
           headerMatrix,
           isDelta: true,
@@ -416,10 +415,8 @@ function ListRecords_(ctx) {
       }
 
       const updatedRecords = [];
-      const allIds = [];
       for (let i = 0; i < allRecords.length; i += 1) {
         const rec = allRecords[i];
-        allIds.push(rec.id);
         const modifiedAtUnixMs = toComparableUnixMs(rec.modifiedAtUnixMs, true) || toComparableUnixMs(rec.modifiedAt, true);
         if (modifiedAtUnixMs > lastSpreadsheetReadAtUnixMs) {
           updatedRecords.push(rec);
@@ -429,7 +426,6 @@ function ListRecords_(ctx) {
       return {
         ok: true,
         records: updatedRecords,
-        allIds,
         count: updatedRecords.length,
         headerMatrix,
         isDelta: true,

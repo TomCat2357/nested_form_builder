@@ -365,8 +365,10 @@ export const dataStore = {
     }
 
     const fullCache = await getRecordsFromCache(formId);
-    const visibleEntries = await pruneExpiredDeletedEntries(formId, fullCache.entries, deletedRetentionDays);
-    const unsyncedCount = visibleEntries.filter((e) => (e.modifiedAtUnixMs || 0) > (fullCache.lastServerReadAt || 0)).length;
+    // 期限切れ tombstone をキャッシュから物理除去した後、tombstone 全体を UI 向けに非表示
+    const prunedEntries = await pruneExpiredDeletedEntries(formId, fullCache.entries, deletedRetentionDays);
+    const visibleEntries = prunedEntries.filter((e) => !e.deletedAtUnixMs && !e.deletedAt);
+    const unsyncedCount = prunedEntries.filter((e) => (e.modifiedAtUnixMs || 0) > (fullCache.lastServerReadAt || 0)).length;
     const hasUnsynced = unsyncedCount > 0;
 
     return {

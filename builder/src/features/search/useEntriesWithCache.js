@@ -564,7 +564,7 @@ export const useEntriesWithCache = ({
       if (hasCache) {
         const syncedAt = cache.lastSyncedAt || cache.cacheTimestamp || null;
         const sheetReadAt = cache.lastSpreadsheetReadAt || null;
-        setEntries(cache.entries);
+        setEntries((cache.entries || []).filter((e) => !e.deletedAtUnixMs && !e.deletedAt));
         setHeaderMatrix(cache.headerMatrix || []);
         setLastSyncedAt(syncedAt);
         setLastSpreadsheetReadAt(sheetReadAt);
@@ -740,7 +740,7 @@ export const useEntriesWithCache = ({
       const cache = await getRecordsFromCache(formId);
       const syncedAt = cache.lastSyncedAt || cache.cacheTimestamp || null;
       const sheetReadAt = cache.lastSpreadsheetReadAt || null;
-      setEntries(cache.entries || []);
+      setEntries((cache.entries || []).filter((e) => !e.deletedAtUnixMs && !e.deletedAt));
       setHeaderMatrix(cache.headerMatrix || []);
       setLastSyncedAt(syncedAt);
       setLastSpreadsheetReadAt(sheetReadAt);
