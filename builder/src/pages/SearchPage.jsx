@@ -126,15 +126,17 @@ export default function SearchPage() {
     return processedEntries.filter((row) => (row.entry?.createdBy || row.entry?.modifiedBy) === userEmail);
   }, [processedEntries, isAdmin, userEmail, form?.settings?.showOwnRecordsOnly]);
 
+  const isDeletedEntry = useCallback((entry) => Boolean(entry?.deletedAtUnixMs || entry?.deletedAt), []);
+
   const filteredEntries = useMemo(() => {
     let base = ownerFilteredEntries;
     if (!showDeleted) {
-      base = base.filter(r => !r.entry.deletedAt);
+      base = base.filter((row) => !isDeletedEntry(row.entry));
     }
     const keyword = query.trim();
     if (!keyword) return base;
     return base.filter((row) => matchesKeyword(row, columns, keyword));
-  }, [ownerFilteredEntries, columns, query, showDeleted]);
+  }, [ownerFilteredEntries, columns, query, showDeleted, isDeletedEntry]);
 
   const sortedEntries = useMemo(() => {
     const list = filteredEntries.slice();
@@ -205,8 +207,8 @@ export default function SearchPage() {
     if (selectedEntries.size === 0) return false;
     const selectedRows = sortedEntries.filter((row) => selectedEntries.has(row.entry.id));
     if (selectedRows.length === 0) return false;
-    return selectedRows.every((row) => !!row.entry.deletedAt);
-  }, [selectedEntries, sortedEntries]);
+    return selectedRows.every((row) => isDeletedEntry(row.entry));
+  }, [selectedEntries, sortedEntries, isDeletedEntry]);
 
   const handleDeleteSelected = () => {
     if (selectedEntries.size === 0) {
