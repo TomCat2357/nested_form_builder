@@ -211,6 +211,7 @@ const buildMetadata = (formId, existingMeta, updates = {}) => {
     lastSyncedAt: updates.lastSyncedAt ?? existingMeta?.lastSyncedAt ?? now,
     lastSpreadsheetReadAt: updates.lastSpreadsheetReadAt ?? existingMeta?.lastSpreadsheetReadAt ?? updates.lastSyncedAt ?? existingMeta?.lastSyncedAt ?? now,
     serverCommitToken: updates.serverCommitToken ?? existingMeta?.serverCommitToken ?? 0,
+    serverModifiedAt: updates.serverModifiedAt ?? existingMeta?.serverModifiedAt ?? 0,
     lastServerReadAt: updates.lastServerReadAt ?? existingMeta?.lastServerReadAt ?? 0,
     lastFrontendMutationAt: updates.lastFrontendMutationAt ?? existingMeta?.lastFrontendMutationAt ?? 0,
     headerMatrix: updates.headerMatrix ?? existingMeta?.headerMatrix ?? [],
@@ -466,6 +467,7 @@ export async function getRecordsFromCache(formId) {
     schemaHash: meta?.schemaHash || null,
     lastSpreadsheetReadAt: meta?.lastSpreadsheetReadAt || meta?.lastSyncedAt || null,
     serverCommitToken: meta?.serverCommitToken || 0,
+    serverModifiedAt: meta?.serverModifiedAt || 0,
     lastServerReadAt: meta?.lastServerReadAt || 0,
     lastFrontendMutationAt: meta?.lastFrontendMutationAt || 0,
     entryIndexMap: meta?.entryIndexMap || {},
@@ -642,7 +644,8 @@ export async function applySyncResultToCache(formId, syncedRecords, headerMatrix
     lastSyncedAt,
     headerMatrix: headerMatrix ?? existingMeta?.headerMatrix ??[],
     lastServerReadAt: metaUpdates.lastServerReadAt ?? existingMeta?.lastServerReadAt ?? 0,
-    serverCommitToken: metaUpdates.serverCommitToken ?? existingMeta?.serverCommitToken ?? 0
+    serverCommitToken: metaUpdates.serverCommitToken ?? existingMeta?.serverCommitToken ?? 0,
+    serverModifiedAt: metaUpdates.serverModifiedAt ?? existingMeta?.serverModifiedAt ?? 0
   }));
 
   await waitForTransaction(tx);

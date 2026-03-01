@@ -9,7 +9,7 @@ export function useBeforeUnloadGuard(isDirty) {
     const handleBeforeUnload = (event) => {
       if (!isDirty) return;
       event.preventDefault();
-      event.returnValue = "";
+      event.returnValue = "未アップロードの変更があります。このまま離れると変更が失われる可能性があります。";
     };
     window.addEventListener("beforeunload", handleBeforeUnload);
     return () => window.removeEventListener("beforeunload", handleBeforeUnload);

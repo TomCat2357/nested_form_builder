@@ -314,16 +314,18 @@ export const dataStore = {
 
     const gasResult = await syncRecordsProxy(payload);
     const syncedRecords = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
-    const commitToken = Number(gasResult.serverCommitToken);
-    const nextLastServerReadAt = Number.isFinite(commitToken) && commitToken > 0 ? commitToken : Date.now();
+    const serverModifiedAt = Number(gasResult.serverModifiedAt ?? gasResult.serverCommitToken);
+    const nextLastServerReadAt = Date.now();
 
     await applySyncResultToCache(formId, syncedRecords, gasResult.headerMatrix || [], {
       serverCommitToken: gasResult.serverCommitToken,
+      serverModifiedAt: Number.isFinite(serverModifiedAt) && serverModifiedAt > 0 ? serverModifiedAt : 0,
       lastServerReadAt: nextLastServerReadAt,
     });
 
     const fullCache = await getRecordsFromCache(formId);
-    const hasUnsynced = fullCache.entries.some(e => (e.modifiedAtUnixMs || 0) > (fullCache.lastServerReadAt || 0));
+    const unsyncedCount = fullCache.entries.filter((e) => (e.modifiedAtUnixMs || 0) > (fullCache.lastServerReadAt || 0)).length;
+    const hasUnsynced = unsyncedCount > 0;
 
     return {
       entries: fullCache.entries,
@@ -331,6 +333,7 @@ export const dataStore = {
       lastSyncedAt: Date.now(),
       lastSpreadsheetReadAt: fullCache.lastServerReadAt || null,
       hasUnsynced,
+      unsyncedCount,
       isDelta: false,
     };
   },
