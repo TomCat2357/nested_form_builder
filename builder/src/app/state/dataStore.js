@@ -36,7 +36,7 @@ import {
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 import { toUnixMs } from "../../utils/dateTime.js";
-import { DEFAULT_SHEET_NAME } from "../../core/constants.js";
+import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_SHEET_NAME, MS_PER_DAY } from "../../core/constants.js";
 
 const nowUnixMs = () => Date.now();
 
@@ -72,6 +72,36 @@ const resolveUnixMs = (...candidates) => {
     if (Number.isFinite(unixMs)) return unixMs;
   }
   return null;
+};
+
+
+const normalizeRetentionDays = (value) => {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric) || numeric <= 0) return DEFAULT_DELETED_RETENTION_DAYS;
+  return Math.floor(numeric);
+};
+
+const getDeletedRetentionDays = (form) => normalizeRetentionDays(form?.settings?.deletedRetentionDays);
+
+const isDeletedEntryExpired = (entry, retentionDays, nowMs = Date.now()) => {
+  const deletedAtUnixMs = resolveUnixMs(entry?.deletedAtUnixMs, entry?.deletedAt);
+  if (!Number.isFinite(deletedAtUnixMs) || deletedAtUnixMs <= 0) return false;
+  return deletedAtUnixMs <= nowMs - retentionDays * MS_PER_DAY;
+};
+
+const pruneExpiredDeletedEntries = async (formId, entries, retentionDays) => {
+  const safeEntries = Array.isArray(entries) ? entries : [];
+  const nowMs = Date.now();
+  const expiredIds = safeEntries
+    .filter((entry) => isDeletedEntryExpired(entry, retentionDays, nowMs))
+    .map((entry) => entry?.id)
+    .filter(Boolean);
+
+  if (expiredIds.length) {
+    await Promise.all(expiredIds.map((entryId) => deleteRecordFromCache(formId, entryId)));
+  }
+
+  return safeEntries.filter((entry) => !expiredIds.includes(entry?.id));
 };
 
 const mapSheetRecordToEntry = (record, formId) => {
@@ -283,13 +313,15 @@ export const dataStore = {
   async listEntries(formId, { forceFullSync = false } = {}) {
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
+    const deletedRetentionDays = getDeletedRetentionDays(form);
     if (!sheetConfig) throw new Error("Spreadsheet not configured for this form");
 
     const cacheMeta = await getRecordsFromCache(formId);
+    const prunedCachedEntries = await pruneExpiredDeletedEntries(formId, cacheMeta.entries, deletedRetentionDays);
     const lastServerReadAt = forceFullSync ? 0 : (cacheMeta.lastServerReadAt || 0);
     const unsynced = forceFullSync
       ? []
-      : cacheMeta.entries
+      : prunedCachedEntries
         .filter((entry) => (entry.modifiedAtUnixMs || 0) > lastServerReadAt)
         .map((entry) => {
           const createdAtUnixMs = resolveUnixMs(entry?.createdAtUnixMs, entry?.createdAt);
@@ -309,7 +341,8 @@ export const dataStore = {
       formSchema: form.schema,
       lastServerReadAt,
       uploadRecords: unsynced,
-      forceNumbering: forceFullSync
+      forceNumbering: forceFullSync,
+      deletedRetentionDays
     };
 
     const gasResult = await syncRecordsProxy(payload);
@@ -324,11 +357,12 @@ export const dataStore = {
     });
 
     const fullCache = await getRecordsFromCache(formId);
-    const unsyncedCount = fullCache.entries.filter((e) => (e.modifiedAtUnixMs || 0) > (fullCache.lastServerReadAt || 0)).length;
+    const visibleEntries = await pruneExpiredDeletedEntries(formId, fullCache.entries, deletedRetentionDays);
+    const unsyncedCount = visibleEntries.filter((e) => (e.modifiedAtUnixMs || 0) > (fullCache.lastServerReadAt || 0)).length;
     const hasUnsynced = unsyncedCount > 0;
 
     return {
-      entries: fullCache.entries,
+      entries: visibleEntries,
       headerMatrix: fullCache.headerMatrix,
       lastSyncedAt: Date.now(),
       lastSpreadsheetReadAt: fullCache.lastServerReadAt || null,
@@ -352,6 +386,12 @@ export const dataStore = {
       lastSyncedAt,
       lastSpreadsheetReadAt,
     } = await getCachedEntryWithIndex(formId, entryId);
+    const deletedRetentionDays = getDeletedRetentionDays(form);
+    const cacheEntryExpired = isDeletedEntryExpired(cachedEntry, deletedRetentionDays);
+    if (cacheEntryExpired && cachedEntry?.id) {
+      await deleteRecordFromCache(formId, cachedEntry.id);
+    }
+    const usableCachedEntry = cacheEntryExpired ? null : cachedEntry;
     const tGetCacheEnd = performance.now();
     perfLogger.logVerbose("records", "getEntry cache lookup", {
       durationMs: Number((tGetCacheEnd - tGetCacheStart).toFixed(2)),
@@ -364,7 +404,7 @@ export const dataStore = {
 
     const { age: cacheAge, shouldSync, shouldBackground } = evaluateCache({
       lastSyncedAt,
-      hasData: !!cachedEntry,
+      hasData: !!usableCachedEntry,
       forceSync,
       maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
       backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
@@ -373,16 +413,17 @@ export const dataStore = {
     // 1分(60,000ms)以内であれば強制同期(forceSync: true)でもキャッシュを優先して通信を避ける
     const isVeryFresh = cacheAge < 60000;
     
-    if (cachedEntry && (isVeryFresh || (!shouldSync && !forceSync))) {
+    if (usableCachedEntry && (isVeryFresh || (!shouldSync && !forceSync))) {
       if (shouldBackground) {
         const bgStartedAt = Date.now();
         getEntryFromGas({ ...sheetConfig, entryId, rowIndexHint: effectiveRowIndex })
           .then((result) => {
-            const mapped = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
+            const mappedRecord = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
+            const mapped = isDeletedEntryExpired(mappedRecord, deletedRetentionDays) ? null : mappedRecord;
             if (mapped) upsertRecordInCache(formId, mapped, { rowIndex: result.rowIndex ?? effectiveRowIndex, syncStartedAt: bgStartedAt });
           }).catch(() => {});
       }
-      return cachedEntry;
+      return usableCachedEntry;
     }
 
     const tBeforeGas = performance.now();
@@ -412,7 +453,8 @@ export const dataStore = {
     }
 
     const tBeforeMap = performance.now();
-    const mapped = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
+    const mappedRecord = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
+    const mapped = isDeletedEntryExpired(mappedRecord, deletedRetentionDays) ? null : mappedRecord;
     const tAfterMap = performance.now();
     perfLogger.logVerbose("records", "getEntry map record", {
       durationMs: Number((tAfterMap - tBeforeMap).toFixed(2)),
@@ -450,14 +492,14 @@ export const dataStore = {
     perfLogger.logVerbose("records", "getEntry done", {
       formId,
       entryId,
-      fromCache: !!cachedEntry,
+      fromCache: !!usableCachedEntry,
       durationMs: finishedAt - startedAt,
       fallbackCache: true,
     });
-    if (cachedEntry) {
+    if (usableCachedEntry) {
       perfLogger.logRecordCacheHit(tGetCacheEnd - tGetCacheStart, entryId);
     }
-    return cachedEntry;
+    return usableCachedEntry;
   },
   async deleteEntry(formId, entryId, { deletedBy = "" } = {}) {
     const { entry, rowIndex } = await getCachedEntryWithIndex(formId, entryId);

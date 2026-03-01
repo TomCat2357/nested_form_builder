@@ -1,3 +1,31 @@
+
+function Sheets_purgeExpiredDeletedRows_(sheet, retentionDays) {
+  var days = parseInt(retentionDays, 10);
+  if (!isFinite(days) || days <= 0) days = NFB_DEFAULT_DELETED_RECORD_RETENTION_DAYS;
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow < NFB_DATA_START_ROW) return { deletedCount: 0 };
+
+  var rowCount = lastRow - NFB_DATA_START_ROW + 1;
+  var deletedAtValues = sheet.getRange(NFB_DATA_START_ROW, 5, rowCount, 1).getValues();
+  var cutoffUnixMs = Date.now() - days * NFB_MS_PER_DAY;
+  var deletedCount = 0;
+
+  for (var i = deletedAtValues.length - 1; i >= 0; i--) {
+    var deletedAtUnixMs = Sheets_toUnixMs_(deletedAtValues[i][0], true);
+    if (isFinite(deletedAtUnixMs) && deletedAtUnixMs > 0 && deletedAtUnixMs <= cutoffUnixMs) {
+      sheet.deleteRow(NFB_DATA_START_ROW + i);
+      deletedCount += 1;
+    }
+  }
+
+  if (deletedCount > 0) {
+    Sheets_touchSheetLastUpdated_(sheet, Date.now());
+  }
+
+  return { deletedCount: deletedCount };
+}
+
 // Split from sheets.gs
 
 

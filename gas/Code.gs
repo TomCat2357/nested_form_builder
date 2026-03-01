@@ -267,6 +267,25 @@ function WithScriptLock_(actionLabel, actionFn) {
   }
 }
 
+
+function ResolveDeletedRecordRetentionDays_(ctx) {
+  var rawDays = parseInt(ctx?.raw?.deletedRetentionDays, 10);
+  if (isFinite(rawDays) && rawDays > 0) return rawDays;
+
+  var formId = ctx?.raw?.formId;
+  if (formId) {
+    try {
+      var form = Forms_getForm_(formId);
+      var formDays = parseInt(form?.settings?.deletedRetentionDays, 10);
+      if (isFinite(formDays) && formDays > 0) return formDays;
+    } catch (error) {
+      Logger.log("[ResolveDeletedRecordRetentionDays_] Failed to load form setting: " + error);
+    }
+  }
+
+  return Nfb_getDeletedRecordRetentionDays_();
+}
+
 function ResolveTemporalTypeMap_(ctx) {
   if (ctx?.raw?.formSchema && Array.isArray(ctx.raw.formSchema)) {
     return Sheets_collectTemporalPathMap_(ctx.raw.formSchema);
@@ -288,6 +307,7 @@ function SubmitResponses_(ctx) {
   return ExecuteWithSheet_(ctx, (sheet) => {
     return WithScriptLock_("保存", () => {
       const temporalTypeMap = ResolveTemporalTypeMap_(ctx);
+      Sheets_purgeExpiredDeletedRows_(sheet, ResolveDeletedRecordRetentionDays_(ctx));
       const result = Sheets_upsertRecordById_(sheet, ctx.order, ctx, temporalTypeMap);
       return {
         ok: true,
@@ -354,6 +374,7 @@ function ListRecords_(ctx) {
     };
 
     const listRecords = () => {
+      Sheets_purgeExpiredDeletedRows_(sheet, ResolveDeletedRecordRetentionDays_(ctx));
       let temporalTypeMap = null;
       const formId = ctx?.raw?.formId;
       if (formId) {
@@ -518,6 +539,7 @@ function syncRecordsProxy(payload) {
 function SyncRecords_(ctx) {
   return ExecuteWithSheet_(ctx, function(sheet) {
     return WithScriptLock_("同期", function() {
+      Sheets_purgeExpiredDeletedRows_(sheet, ResolveDeletedRecordRetentionDays_(ctx));
       var nowMs = Date.now();
       var order = ctx.order ||[];
       if (ctx.raw.formSchema) {

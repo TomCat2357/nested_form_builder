@@ -1,6 +1,7 @@
 // UI・動作関連
 export const MAX_DEPTH = 11;
 export const DEFAULT_PAGE_SIZE = 20;
+export const DEFAULT_DELETED_RETENTION_DAYS = 30;
 export const DEFAULT_SHEET_NAME = "Data";
 export const GAS_ERROR_CODE_LOCK_TIMEOUT = "LOCK_TIMEOUT";
 
