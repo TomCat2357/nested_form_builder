@@ -28,6 +28,8 @@ import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { perfLogger } from "../utils/perfLogger.js";
 import SchemaMapNav from "../features/nav/SchemaMapNav.jsx";
 import RecordCopyDialog from "../app/components/RecordCopyDialog.jsx";
+import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
+import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
@@ -103,6 +105,24 @@ export default function FormPage() {
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
   const [isCopySourceLoading, setIsCopySourceLoading] = useState(false);
   const { isReadLocked, withReadLock } = useEditLock();
+  const {
+    hasUnsynced,
+    unsyncedCount,
+    loading: listLoading,
+    backgroundLoading: listBackgroundLoading,
+    waitingForLock,
+    useCache,
+    lastSyncedAt,
+    cacheDisabled,
+    reloadFromCache: reloadListFromCache,
+  } = useEntriesWithCache({
+    formId,
+    form,
+    locationKey: location.key,
+    locationState: location.state,
+    showAlert,
+  });
+
   const initialResponsesRef = useRef({});
   const previewRef = useRef(null);
   const newEntryInitKeyRef = useRef(null);
@@ -485,10 +505,14 @@ export default function FormPage() {
     onOperation: handleOperationCacheCheck,
   });
 
+  useEffect(() => {
+    reloadListFromCache();
+  }, [formId]);
+
   useBeforeUnloadGuard(isDirty);
 
-  const navigateBack = ({ saved = false } = {}) => {
-    const state = saved ? { saved: true } : undefined;
+  const navigateBack = ({ saved = false, deleted = false } = {}) => {
+    const state = (saved || deleted) ? { saved, deleted } : undefined;
     if (location.state?.from) {
       navigate(location.state.from, { replace: true, state });
       return;
@@ -533,6 +557,7 @@ export default function FormPage() {
       "No.": entry?.["No."],
     });
     applyEntryToState(saved, saved.id, "save:new-entry");
+    reloadListFromCache();
 
     if (requiresSpreadsheetSave) {
       void acquireSaveLock({ spreadsheetId, sheetName })
@@ -653,15 +678,16 @@ export default function FormPage() {
     setEntryActionConfirm({ open: false, action: null });
     if (action === "delete") {
       await dataStore.deleteEntry(formId, entryId, { deletedBy: userEmail || "" });
-      navigateBack();
+      navigateBack({ deleted: true });
     } else if (action === "undelete") {
       await dataStore.undeleteEntry(formId, entryId, { modifiedBy: userEmail || "" });
       const { entry: updated } = await getCachedEntryWithIndex(formId, entryId);
       if (updated) {
         applyEntryToState(updated, entryId, "undelete");
       }
+      reloadListFromCache();
     }
-  }, [entryActionConfirm.action, formId, entryId, userEmail, applyEntryToState]);
+  }, [entryActionConfirm.action, formId, entryId, userEmail, applyEntryToState, reloadListFromCache]);
 
   const handleFetchCopySource = useCallback(async () => {
     if (!formId) return;
@@ -891,6 +917,17 @@ export default function FormPage() {
         </>
       }
     >
+      <SearchToolbar
+        showSearch={false}
+        lastSyncedAt={lastSyncedAt}
+        useCache={useCache}
+        cacheDisabled={cacheDisabled}
+        backgroundLoading={listBackgroundLoading}
+        lockWaiting={waitingForLock}
+        hasUnsynced={hasUnsynced}
+        unsyncedCount={unsyncedCount}
+        syncInProgress={listLoading || listBackgroundLoading || waitingForLock}
+      />
       {loading ? (
         <p className="nf-text-subtle">読み込み中...</p>
       ) : (

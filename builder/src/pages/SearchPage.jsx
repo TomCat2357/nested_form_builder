@@ -341,10 +341,8 @@ export default function SearchPage() {
         </label>
       )}
 
-      {waitingForLock ? (
-        <p className="search-loading">ロック解除待ち...</p>
-      ) : (loading && pagedEntries.length === 0) ? (
-        <p className="search-loading">読み込み中...</p>
+      {(waitingForLock || loading) && pagedEntries.length === 0 ? (
+        <p className="search-loading">{waitingForLock ? "ロック解除待ち..." : "読み込み中..."}</p>
       ) : (
         <SearchTable
           columns={columns}
