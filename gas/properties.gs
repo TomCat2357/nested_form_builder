@@ -80,6 +80,13 @@ const GetFormUrl_ = (formId) => {
 
 const GetServerModifiedAt_ = () => parseInt(Nfb_getScriptProperties_().getProperty(NFB_SERVER_MODIFIED_AT) || "0", 10) || 0;
 const SetServerModifiedAt_ = (value) => Nfb_getScriptProperties_().setProperty(NFB_SERVER_MODIFIED_AT, String(value));
+
+const Nfb_getDeletedRecordRetentionDays_ = () => {
+  const raw = Nfb_getScriptProperties_().getProperty(NFB_DELETED_RECORD_RETENTION_DAYS_KEY);
+  const numeric = parseInt(raw || "", 10);
+  if (isFinite(numeric) && numeric > 0) return numeric;
+  return NFB_DEFAULT_DELETED_RECORD_RETENTION_DAYS;
+};
 // backward compatibility
 const GetServerCommitToken_ = () => GetServerModifiedAt_();
 const SetServerCommitToken_ = (token) => SetServerModifiedAt_(token);

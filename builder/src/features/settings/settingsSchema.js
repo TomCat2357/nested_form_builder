@@ -44,6 +44,14 @@ export const SETTINGS_GROUPS = [
         required: false,
         type: "number",
       },
+      {
+        key: "deletedRetentionDays",
+        label: "削除済みデータの保存日数",
+        placeholder: "30",
+        required: false,
+        type: "number",
+        description: "deletedAt からこの日数を超過したデータは、次回同期時に完全削除されます",
+      },
     ],
   },
   {
