@@ -64,7 +64,7 @@ export default function FormPage() {
   const { userName, userEmail } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const { showAlert } = useAlert();
+  const { showAlert, showToast } = useAlert();
   const currentForm = formId ? getFormById(formId) : null;
   const [cachedForm, setCachedForm] = useState(currentForm);
 
@@ -515,13 +515,12 @@ export default function FormPage() {
     const requiresSpreadsheetSave = Boolean(spreadsheetId && hasScriptRun());
     const payloadWithFormId = { ...payload, formId: form.id };
 
-    // ロック確保に成功したらキャッシュ更新を先に完了させ、画面遷移を優先する
-    if (requiresSpreadsheetSave) {
-      await acquireSaveLock({ spreadsheetId, sheetName });
-    } else if (spreadsheetId) {
-      console.warn("[FormPage] google.script.run unavailable; skipped background spreadsheet save");
-    } else {
-      console.warn("[FormPage] No spreadsheetId configured, skipping spreadsheet save");
+    if (!requiresSpreadsheetSave) {
+      if (spreadsheetId) {
+        console.warn("[FormPage] google.script.run unavailable; skipped background spreadsheet save");
+      } else {
+        console.warn("[FormPage] No spreadsheetId configured, skipping spreadsheet save");
+      }
     }
 
     const saved = await dataStore.upsertEntry(form.id, {
@@ -535,11 +534,12 @@ export default function FormPage() {
     applyEntryToState(saved, saved.id, "save:new-entry");
 
     if (requiresSpreadsheetSave) {
-      void submitResponses({
-        spreadsheetId,
-        sheetName,
-        payload: { ...payloadWithFormId, id: saved.id },
-      })
+      void acquireSaveLock({ spreadsheetId, sheetName })
+        .then(() => submitResponses({
+          spreadsheetId,
+          sheetName,
+          payload: { ...payloadWithFormId, id: saved.id },
+        }))
         .then(async (gasResult) => {
           if (gasResult?.recordNo === undefined || gasResult?.recordNo === null || gasResult?.recordNo === "") return;
           if (String(gasResult.recordNo) === String(saved["No."])) return;
@@ -649,7 +649,7 @@ export default function FormPage() {
 
     try {
       setIsCopySourceLoading(true);
-      const sourceData = await dataStore.getEntry(formId, sourceId, { forceSync: true });
+      const { entry: sourceData } = await getCachedEntryWithIndex(formId, sourceId);
       if (!sourceData) {
         showAlert("指定したレコードが見つかりませんでした");
         return;
@@ -702,11 +702,11 @@ export default function FormPage() {
 
     const copiedCount = Object.keys(filteredResponses).length;
     if (copiedCount > 0) {
-      showAlert(`${copiedCount} 項目をコピーしました`);
+      showToast(`${copiedCount} 項目をコピーしました`);
     } else {
       showAlert("コピー対象の回答が見つかりませんでした");
     }
-  }, [copySourceResponses, showAlert, topLevelFieldMap]);
+  }, [copySourceResponses, showAlert, showToast, topLevelFieldMap]);
 
   const handleResponsesChange = useCallback((updater) => {
     commitResponses("preview:change", updater);

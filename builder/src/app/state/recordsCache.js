@@ -343,46 +343,36 @@ export async function updateEntryIndex(formId, entryId, rowIndex) {
   db.close();
 }
 
-const binarySearchById = (entries, entryId) => {
-  // Assumes entries are sorted ascending by id (ensured at fetch time)
-  let low = 0;
-  let high = entries.length - 1;
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    const currentId = entries[mid]?.id;
-    if (currentId === entryId) return mid;
-    if (currentId < entryId) low = mid + 1;
-    else high = mid - 1;
-  }
-  return -1;
-};
-
 /**
- * Get cached entry with row index (fast path using map, fallback to binary search)
+ * Get cached entry with row index by direct compound key lookup.
  */
 export async function getCachedEntryWithIndex(formId, entryId) {
   if (!formId || !entryId) return { entry: null, rowIndex: null };
-  const { entries, cacheTimestamp, headerMatrix, schemaHash, lastSyncedAt, lastSpreadsheetReadAt, entryIndexMap } = await getRecordsFromCache(formId);
-  let rowIndex = entryIndexMap?.[entryId];
-  let entry = null;
+  const db = await openDB();
+  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readonly');
+  const store = tx.objectStore(STORE_NAMES.records);
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
 
-  if (Number.isInteger(rowIndex) && rowIndex >= 0 && rowIndex < entries.length) {
-    entry = entries[rowIndex];
-    if (entry?.id !== entryId) {
-      entry = null;
-      rowIndex = null;
-    }
-  }
+  const [rawRecord, meta] = await Promise.all([
+    waitForRequest(store.get(buildCompoundId(formId, entryId))).catch(() => null),
+    waitForRequest(metaStore.get(formId)).catch(() => null),
+  ]);
 
-  if (!entry) {
-    const foundIndex = binarySearchById(entries, entryId);
-    if (foundIndex !== -1) {
-      entry = entries[foundIndex];
-      rowIndex = foundIndex;
-      await updateEntryIndex(formId, entryId, foundIndex);
-    }
-  }
+  await waitForTransaction(tx);
+  db.close();
 
+  const entry = stripMetadata(rawRecord);
+  const mapIndex = meta?.entryIndexMap?.[entryId];
+  const rowIndex = Number.isInteger(rawRecord?.rowIndex)
+    ? rawRecord.rowIndex
+    : (Number.isInteger(mapIndex) ? mapIndex : null);
+
+  const cacheTimestamp = meta?.lastSyncedAt || null;
+  const headerMatrix = meta?.headerMatrix || [];
+  const schemaHash = meta?.schemaHash || null;
+  const lastSyncedAt = meta?.lastSyncedAt || null;
+  const lastSpreadsheetReadAt = meta?.lastSpreadsheetReadAt || meta?.lastSyncedAt || null;
+  const entryIndexMap = meta?.entryIndexMap || {};
   return { entry, rowIndex, cacheTimestamp, headerMatrix, schemaHash, lastSyncedAt, lastSpreadsheetReadAt, entryIndexMap };
 }
 
