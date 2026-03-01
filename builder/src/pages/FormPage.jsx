@@ -638,22 +638,12 @@ export default function FormPage() {
 
   const handleEditMode = async () => {
     if (!formId || !entryId) return;
-    setIsReloading(true);
-    setMode("edit");
-    try {
-      const data = await dataStore.getEntry(formId, entryId, { forceSync: true });
-      if (!data) {
-        showAlert("レコードが見つかりませんでした。削除された可能性があります。");
-        navigateBack();
-        return;
-      }
-      applyEntryToState(data, entryId, "handleEditMode:forceSync");
-    } catch (error) {
-      console.error("[FormPage] handleEditMode error:", error);
-      showAlert(`データの読み込みに失敗しました: ${error?.message || error}`);
-    } finally {
-      setIsReloading(false);
+    const syncInProgress = listLoading || listBackgroundLoading || waitingForLock;
+    if (syncInProgress || isReloading || loading || isReadLocked) {
+      showAlert("データ同期中のため、同期完了まで編集できません。");
+      return;
     }
+    setMode("edit");
   };
 
   const handleBack = () => {
@@ -821,6 +811,7 @@ export default function FormPage() {
   ];
 
   const confirmMessage = "保存せずに前の画面へ戻りますか？";
+  const editDisabled = listLoading || listBackgroundLoading || waitingForLock || isReloading || loading || isReadLocked;
 
   return (
     <AppLayout themeOverride={form?.settings?.theme}       title={`${form.settings?.formTitle || "(無題)"} - フォーム入力`}
@@ -835,7 +826,7 @@ export default function FormPage() {
         <>
           {isViewMode ? (
             <>
-              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleEditMode}>
+              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleEditMode} disabled={editDisabled}>
                 編集
               </button>
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => navigateBack()}>
