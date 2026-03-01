@@ -747,7 +747,20 @@ export const buildHeaderRowsFromCsv = (multiHeaderRows, columns = null) => {
 
 export const buildSearchTableLayout = (form, { headerMatrix: _headerMatrix = null, includeOperations = true } = {}) => {
   const columns = buildSearchColumns(form, { includeOperations });
-  const headerRows = applyExportHeaderLabelLogicToTableRows(buildHeaderRows(columns), columns.length);
+  const baseHeaderRows = buildHeaderRows(columns);
+  const matrix = expandHeaderRowsToMatrix(baseHeaderRows, columns.length);
+  const deduped = suppressDuplicateHeaderLabels(matrix);
+
+  const headerRows = deduped.map((row, rowIndex) =>
+    padRowToLength(row, columns.length).map((label, colIndex) => ({
+      label: normalizeHeaderLabel(label),
+      colSpan: 1,
+      rowSpan: 1,
+      startIndex: colIndex,
+      column: rowIndex === 0 ? columns[colIndex] || null : null,
+    }))
+  );
+
   return {
     columns,
     headerRows,

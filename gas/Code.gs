@@ -615,7 +615,9 @@ function SyncRecords_(ctx) {
         }
       }
 
-      if (modifiedCount > 0 || ctx.raw.forceNumbering) {
+      var forceFullSync = !!ctx.raw.forceFullSync;
+
+      if (modifiedCount > 0 || forceFullSync) {
         SetServerModifiedAt_(nowMs);
         Sheets_touchSheetLastUpdated_(sheet, nowMs);
       }
@@ -623,13 +625,17 @@ function SyncRecords_(ctx) {
       var serverModifiedAt = GetServerModifiedAt_();
       var lastServerReadAt = parseInt(ctx.raw.lastServerReadAt, 10) || 0;
 
-      var allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: !!ctx.raw.forceNumbering });
+      var allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: forceFullSync });
       var returnRecords =[];
       for (var k = 0; k < allRecords.length; k++) {
         var aRec = allRecords[k];
-        var aModAt = parseInt(aRec.modifiedAtUnixMs, 10) || 0;
-        if (aModAt > lastServerReadAt || uploadedRecordIds[String(aRec.id)]) {
+        if (forceFullSync) {
           returnRecords.push(aRec);
+        } else {
+          var aModAt = parseInt(aRec.modifiedAtUnixMs, 10) || 0;
+          if (aModAt > lastServerReadAt || uploadedRecordIds[String(aRec.id)]) {
+            returnRecords.push(aRec);
+          }
         }
       }
 

@@ -108,20 +108,20 @@ export default function SearchTable({
                   const fallbackColumn = cell.colSpan === 1 ? selectableColumns[cell.startIndex] || null : null;
                   const column = cell.column || fallbackColumn;
                   if (column && column.key === "__actions") return null;
-                  const sortable = Boolean(cell.column && cell.column.sortable !== false);
-                  const orderLabel = sortable ? headerSortLabel(activeSort, column.key) : "";
+                  const sortable = Boolean(column && column.sortable !== false);
+                  const orderLabel = sortable && cell.label !== "" ? headerSortLabel(activeSort, column.key) : "";
 
                   return (
                     <th
                       key={`header-cell-${rowIndex}-${cellIndex}`}
                       className="search-th"
-                      data-sortable={sortable ? "true" : "false"}
+                      data-sortable={sortable && cell.label !== "" ? "true" : "false"}
                       colSpan={cell.colSpan}
                       rowSpan={cell.rowSpan ?? 1}
-                      onClick={sortable ? () => onSortToggle(column.key) : undefined}
+                      onClick={sortable && cell.label !== "" ? () => onSortToggle(column.key) : undefined}
                     >
                       {cell.label}
-                      {sortable && <span className="nf-text-muted nf-ml-4">{orderLabel}</span>}
+                      {orderLabel && <span className="nf-text-muted nf-ml-4">{orderLabel}</span>}
                     </th>
                   );
                 })}

@@ -227,7 +227,7 @@ const buildMetadata = (formId, existingMeta, updates = {}) => {
  * @param {Array} headerMatrix
  * @returns {Promise<void>}
  */
-export async function saveRecordsToCache(formId, records, headerMatrix = [], { schemaHash = null, syncStartedAt = null, sheetLastUpdatedAt = 0 } = {}) {
+export async function saveRecordsToCache(formId, records, headerMatrix =[], { schemaHash = null, syncStartedAt = null, sheetLastUpdatedAt = 0, serverCommitToken = 0, serverModifiedAt = 0, lastServerReadAt = 0 } = {}) {
   if (!formId) return;
   const db = await openDB();
   const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
@@ -295,6 +295,9 @@ export async function saveRecordsToCache(formId, records, headerMatrix = [], { s
     headerMatrix,
     schemaHash,
     entryIndexMap,
+    serverCommitToken,
+    serverModifiedAt,
+    lastServerReadAt,
   })));
 
   await waitForTransaction(tx);

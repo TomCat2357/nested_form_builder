@@ -318,11 +318,9 @@ export const dataStore = {
 
     const cacheMeta = await getRecordsFromCache(formId);
     const prunedCachedEntries = await pruneExpiredDeletedEntries(formId, cacheMeta.entries, deletedRetentionDays);
-    const lastServerReadAt = forceFullSync ? 0 : (cacheMeta.lastServerReadAt || 0);
-    const unsynced = forceFullSync
-      ? []
-      : prunedCachedEntries
-        .filter((entry) => (entry.modifiedAtUnixMs || 0) > lastServerReadAt)
+    const baseServerReadAt = cacheMeta.lastServerReadAt || 0;
+    const unsynced = prunedCachedEntries
+      .filter((entry) => (entry.modifiedAtUnixMs || 0) > baseServerReadAt)
         .map((entry) => {
           const createdAtUnixMs = resolveUnixMs(entry?.createdAtUnixMs, entry?.createdAt);
           const modifiedAtUnixMs = resolveUnixMs(entry?.modifiedAtUnixMs, entry?.modifiedAt);
@@ -339,9 +337,9 @@ export const dataStore = {
       ...sheetConfig,
       formId,
       formSchema: form.schema,
-      lastServerReadAt,
+      lastServerReadAt: baseServerReadAt,
       uploadRecords: unsynced,
-      forceNumbering: forceFullSync,
+      forceFullSync,
       deletedRetentionDays
     };
 
@@ -350,11 +348,21 @@ export const dataStore = {
     const serverModifiedAt = Number(gasResult.serverModifiedAt ?? gasResult.serverCommitToken);
     const nextLastServerReadAt = Date.now();
 
-    await applySyncResultToCache(formId, syncedRecords, gasResult.headerMatrix || [], {
-      serverCommitToken: gasResult.serverCommitToken,
-      serverModifiedAt: Number.isFinite(serverModifiedAt) && serverModifiedAt > 0 ? serverModifiedAt : 0,
-      lastServerReadAt: nextLastServerReadAt,
-    });
+    if (forceFullSync) {
+      await saveRecordsToCache(formId, syncedRecords, gasResult.headerMatrix ||[], {
+        sheetLastUpdatedAt: serverModifiedAt,
+        serverCommitToken: gasResult.serverCommitToken,
+        serverModifiedAt: serverModifiedAt > 0 ? serverModifiedAt : 0,
+        lastServerReadAt: nextLastServerReadAt,
+        schemaHash: form.schemaHash,
+      });
+    } else {
+      await applySyncResultToCache(formId, syncedRecords, gasResult.headerMatrix ||[], {
+        serverCommitToken: gasResult.serverCommitToken,
+        serverModifiedAt: serverModifiedAt > 0 ? serverModifiedAt : 0,
+        lastServerReadAt: nextLastServerReadAt,
+      });
+    }
 
     const fullCache = await getRecordsFromCache(formId);
     const visibleEntries = await pruneExpiredDeletedEntries(formId, fullCache.entries, deletedRetentionDays);
