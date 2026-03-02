@@ -13,6 +13,7 @@ import {
   getRecordsFromCache,
   applySyncResultToCache,
 } from "./recordsCache.js";
+import { buildUploadRecordsForSync } from "./syncUploadPlan.js";
 import { getFormsFromCache } from "./formsCache.js";
 import {
   evaluateCache,
@@ -319,26 +320,18 @@ export const dataStore = {
     const cacheMeta = await getRecordsFromCache(formId);
     const prunedCachedEntries = await pruneExpiredDeletedEntries(formId, cacheMeta.entries, deletedRetentionDays);
     const baseServerReadAt = cacheMeta.lastServerReadAt || 0;
-    const unsynced = prunedCachedEntries
-      .filter((entry) => (entry.modifiedAtUnixMs || 0) > baseServerReadAt)
-        .map((entry) => {
-          const createdAtUnixMs = resolveUnixMs(entry?.createdAtUnixMs, entry?.createdAt);
-          const modifiedAtUnixMs = resolveUnixMs(entry?.modifiedAtUnixMs, entry?.modifiedAt);
-          const deletedAtUnixMs = resolveUnixMs(entry?.deletedAtUnixMs, entry?.deletedAt);
-          return {
-            ...entry,
-            createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : (entry.createdAt || ""),
-            modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : (entry.modifiedAt || ""),
-            deletedAt: Number.isFinite(deletedAtUnixMs) ? deletedAtUnixMs : null,
-          };
-        });
+    const uploadRecords = buildUploadRecordsForSync({
+      entries: prunedCachedEntries,
+      baseServerReadAt,
+      forceFullSync,
+    });
 
     const payload = {
       ...sheetConfig,
       formId,
       formSchema: form.schema,
       lastServerReadAt: baseServerReadAt,
-      uploadRecords: unsynced,
+      uploadRecords,
       forceFullSync,
       deletedRetentionDays
     };

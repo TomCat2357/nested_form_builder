@@ -165,14 +165,10 @@ export const planRecordMerge = ({ existingRecords = [], incomingRecords = [], sh
   // 削除は deletedAt tombstone として差分に乗るため、キャッシュからの欠落を
   // 削除の根拠として使用してはいけない。cacheOnlyDeleteIds は常に空。
 
-  for (const [entryId, incomingRecord] of Object.entries(incomingByEntryId)) {
+  for (const [entryId] of Object.entries(incomingByEntryId)) {
     if (existingByEntryId[entryId]) continue;
-
-    const cacheMutationUnixMs = normalizeNumericModifiedAtToUnixMs(Number(lastFrontendMutationAt));
-    const sheetUpdatedUnixMs = normalizeNumericModifiedAtToUnixMs(Number(sheetLastUpdatedAt));
-    const sheetIsNewerThanCache = sheetUpdatedUnixMs > 0 ? sheetUpdatedUnixMs >= cacheMutationUnixMs : true;
-    const incomingModifiedAt = normalizeComparableModifiedAtUnixMs(incomingRecord);
-    if (sheetIsNewerThanCache && incomingModifiedAt > 0) incomingOnlyAddIds.push(entryId);
+    // 片側欠落(IDがincoming側のみに存在)は「存在している側」を採用する。
+    incomingOnlyAddIds.push(entryId);
   }
 
   return {

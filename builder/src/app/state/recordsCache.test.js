@@ -39,15 +39,26 @@ test("tombstone方式: キャッシュのみに存在するIDはcacheOnlyDeleteI
   assert.deepEqual(plan.cacheOnlyDeleteIds, []);
 });
 
-test("incoming-only ID はスプレッドシート更新時刻がフロント更新時刻以上なら追加対象", () => {
+test("incoming-only ID は片側欠落時に常に追加対象（存在側優先）", () => {
   const plan = planRecordMerge({
     existingRecords: [cacheRecord("cacheLatest", 46003)],
     incomingRecords: [incomingRecord("incomingOnly", 46004)],
-    sheetLastUpdatedAt: 46010,
-    lastFrontendMutationAt: 46005,
+    sheetLastUpdatedAt: 46001,
+    lastFrontendMutationAt: 46010,
   });
 
   assert.deepEqual(plan.incomingOnlyAddIds, ["incomingOnly"]);
+});
+
+test("incoming-only ID は modifiedAt 未設定でも追加対象（存在側優先）", () => {
+  const plan = planRecordMerge({
+    existingRecords: [cacheRecord("cacheLatest", 46003)],
+    incomingRecords: [incomingRecord("incomingNoModifiedAt", 0)],
+    sheetLastUpdatedAt: 0,
+    lastFrontendMutationAt: 46010,
+  });
+
+  assert.deepEqual(plan.incomingOnlyAddIds, ["incomingNoModifiedAt"]);
 });
 
 test("modifiedAtの単位がserialとunix msで混在しても比較できる", () => {

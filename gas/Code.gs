@@ -567,7 +567,7 @@ function SyncRecords_(ctx) {
       for (var j = 0; j < uploadRecords.length; j++) {
         var rec = uploadRecords[j];
         var recId = rec.id;
-        var recModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || 0;
+        var recModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || Sheets_toUnixMs_(rec.modifiedAt, true) || 0;
 
         var rowIndex = existingRowMap[recId] || -1;
         var sheetModifiedAt = 0;
@@ -581,7 +581,8 @@ function SyncRecords_(ctx) {
           }
         }
 
-        if (recModifiedAt > sheetModifiedAt) {
+        var shouldApplyRecord = (rowIndex === -1) || (recModifiedAt > sheetModifiedAt);
+        if (shouldApplyRecord) {
           if (rowIndex === -1) {
             var newRow = Sheets_createNewRow_(sheet, recId);
             rowIndex = newRow.rowIndex;

@@ -637,9 +637,13 @@ export const useEntriesWithCache = ({
   const runManualRefreshOnce = useCallback(async () => {
     if (!formId) return;
 
-    // 検索結果画面の手動更新は、遅延書き込み完了後に全件再取得を実行する
+    // 検索結果画面の手動更新:
+    // 1) ローカル保留操作の書き込み完了待ち
+    // 2) forceFullSync で全件同期
+    // 3) 返却されたシート全件でキャッシュを完全置換
     logSearchBackground("manual-refresh:start", {
       reason: "manual:search-records",
+      flow: "full-upload-sheet-normalize-cache-replace",
     });
     updateGlobalMeta(formId, { waitingForLock: false });
     await dataStore.flushPendingOperations();
@@ -659,10 +663,12 @@ export const useEntriesWithCache = ({
         if (refreshed) {
           logSearchBackground("manual-refresh:records-synced", {
             reason: "manual:search-records",
+            flow: "full-upload-sheet-normalize-cache-replace",
           });
           await refreshForms({ reason: "manual:search-forms", background: false });
           logSearchBackground("manual-refresh:done", {
             reason: "manual:search-forms",
+            flow: "full-upload-sheet-normalize-cache-replace",
           });
           return;
         }
