@@ -9,7 +9,6 @@ import {
   updateRecordsMeta,
   deleteRecordFromCache,
   getMaxRecordNo,
-  applyDeltaToCache,
   getRecordsFromCache,
   applySyncResultToCache,
 } from "./recordsCache.js";
