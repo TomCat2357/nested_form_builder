@@ -60,6 +60,19 @@ const diffResponses = (prevValue, nextValue) => {
 
 const sampleKeys = (keys, max = 8) => keys.slice(0, max);
 
+const toEntryVersion = (candidate) => {
+  const value = Number(candidate?.modifiedAtUnixMs ?? candidate?.modifiedAt ?? 0);
+  return Number.isFinite(value) ? value : 0;
+};
+
+const pickLatestEntry = (current, incoming) => {
+  if (!current) return incoming || null;
+  if (!incoming) return current;
+  const currentVersion = toEntryVersion(current);
+  const incomingVersion = toEntryVersion(incoming);
+  return incomingVersion > currentVersion ? incoming : current;
+};
+
 export default function FormPage() {
   const { formId, entryId } = useParams();
   const { getFormById, refreshForms, loadingForms } = useAppData();
@@ -128,6 +141,7 @@ export default function FormPage() {
   const newEntryInitKeyRef = useRef(null);
   const responseMutationSeqRef = useRef(0);
   const formLoadedStateRef = useRef(null);
+  const pendingSyncedEntryRef = useRef(null);
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
 
@@ -147,6 +161,7 @@ export default function FormPage() {
   const readLockRef = useLatestRef(isReadLocked);
   const loadingFormsRef = useLatestRef(loadingForms);
   const responsesRef = useLatestRef(responses);
+  const entryRef = useLatestRef(entry);
 
   useEffect(() => {
     setMode(entryId ? "view" : "edit");
@@ -270,6 +285,53 @@ export default function FormPage() {
   }, [commitResponses, entryId, formId, isDirtyRef, isViewModeRef, normalizedSchemaRef, responsesRef]);
   const applyEntryToStateRef = useLatestRef(applyEntryToState);
 
+  const applyOrDeferSyncedEntry = useCallback((nextEntry, source = "unknown") => {
+    if (!nextEntry) return false;
+    const currentVersion = toEntryVersion(entryRef.current);
+    const incomingVersion = toEntryVersion(nextEntry);
+    if (incomingVersion > 0 && currentVersion > 0 && incomingVersion < currentVersion) {
+      console.log("[FormPage] ignore stale synced entry", {
+        source,
+        formId,
+        entryId: entryId || "new",
+        currentVersion,
+        incomingVersion,
+      });
+      return false;
+    }
+    if (!isViewModeRef.current) {
+      pendingSyncedEntryRef.current = pickLatestEntry(pendingSyncedEntryRef.current, nextEntry);
+      console.log("[FormPage] defer synced entry during edit", {
+        source,
+        formId,
+        entryId: entryId || "new",
+        pendingVersion: toEntryVersion(pendingSyncedEntryRef.current),
+      });
+      return false;
+    }
+    pendingSyncedEntryRef.current = null;
+    applyEntryToStateRef.current(nextEntry, entryId, source);
+    return true;
+  }, [entryId, formId, entryRef, isViewModeRef]);
+
+  const cancelEditAndRestoreLatest = useCallback(async () => {
+    if (!entryId || !formId) return;
+    let restoreTarget = pickLatestEntry(entryRef.current, pendingSyncedEntryRef.current);
+    try {
+      const { entry: cachedEntry } = await getCachedEntryWithIndex(formId, entryId);
+      restoreTarget = pickLatestEntry(restoreTarget, cachedEntry);
+    } catch (error) {
+      console.error("[FormPage] failed to load latest cache on cancel:", error);
+    }
+    if (restoreTarget) {
+      applyEntryToState(restoreTarget, entryId, "cancel:restore-latest");
+    } else {
+      commitResponses("cancel:restore-initial", initialResponsesRef.current, { forceLog: true });
+    }
+    pendingSyncedEntryRef.current = null;
+    setMode("view");
+  }, [applyEntryToState, commitResponses, entryId, entryRef, formId]);
+
   const navigateToEntryById = useCallback((targetEntryId) => {
     navigate(`/form/${formId}/entry/${targetEntryId}`, {
       state: { from: location.state?.from, entryIds },
@@ -376,8 +438,8 @@ export default function FormPage() {
           setIsReloading(true);
           dataStore.getEntry(formId, entryId, { rowIndexHint: rowIndex }).then((freshData) => {
             if (!mounted) return;
-            if (freshData && isViewModeRef.current && !isDirtyRef.current) {
-              applyEntryToStateRef.current(freshData, entryId, "loadEntry:background-refresh");
+            if (freshData && !isDirtyRef.current) {
+              applyOrDeferSyncedEntry(freshData, "loadEntry:background-refresh");
               perfLogger.logVerbose("form-page", "background refresh complete", {
                 elapsedFromStartMs: Number((performance.now() - tStart).toFixed(2)),
               });
@@ -405,8 +467,8 @@ export default function FormPage() {
 
         if (!mounted) return;
         const tBeforeApply = performance.now();
-        if (data && (!isDirtyRef.current || isViewModeRef.current)) {
-          applyEntryToStateRef.current(data, entryId, "loadEntry:sync-read");
+        if (data && !isDirtyRef.current) {
+          applyOrDeferSyncedEntry(data, "loadEntry:sync-read");
         }
         const tAfterApply = performance.now();
         perfLogger.logVerbose("form-page", "applyEntryToState", {
@@ -455,8 +517,8 @@ export default function FormPage() {
             setLoading(true);
             try {
               const latest = await dataStore.getEntry(formId, entryId, options);
-              if (latest && !isDirtyRef.current && isViewModeRef.current) {
-                applyEntryToStateRef.current(latest, entryId, "operation-cache:sync");
+              if (latest && !isDirtyRef.current) {
+                applyOrDeferSyncedEntry(latest, "operation-cache:sync");
               }
             } finally {
               setLoading(false);
@@ -465,8 +527,8 @@ export default function FormPage() {
             setIsReloading(true);
             dataStore.getEntry(formId, entryId, options)
               .then((latest) => {
-                if (latest && !isDirtyRef.current && isViewModeRef.current) {
-                  applyEntryToStateRef.current(latest, entryId, "operation-cache:background");
+                if (latest && !isDirtyRef.current) {
+                  applyOrDeferSyncedEntry(latest, "operation-cache:background");
                 }
               })
               .catch((error) => {
@@ -498,7 +560,7 @@ export default function FormPage() {
     }
 
     await refreshFormsIfNeeded(source);
-  }, [entryId, formId, refreshFormsIfNeeded]);
+  }, [applyOrDeferSyncedEntry, entryId, formId, refreshFormsIfNeeded]);
 
   useOperationCacheTrigger({
     enabled: Boolean(formId),
@@ -557,6 +619,7 @@ export default function FormPage() {
       "No.": entry?.["No."],
     });
     applyEntryToState(saved, saved.id, "save:new-entry");
+    pendingSyncedEntryRef.current = null;
     reloadListFromCache();
 
     if (requiresSpreadsheetSave) {
@@ -630,6 +693,14 @@ export default function FormPage() {
       setConfirmState({ open: true, intent });
       return;
     }
+    if (intent === "cancel-edit") {
+      if (!entryId) {
+        navigateBack();
+        return;
+      }
+      void cancelEditAndRestoreLatest();
+      return;
+    }
     if (intent === "back" || intent === "cancel") {
       navigateBack();
       return;
@@ -638,9 +709,8 @@ export default function FormPage() {
 
   const handleEditMode = async () => {
     if (!formId || !entryId) return;
-    const syncInProgress = listLoading || listBackgroundLoading || waitingForLock;
-    if (syncInProgress || isReloading || loading || isReadLocked) {
-      showAlert("データ同期中のため、同期完了まで編集できません。");
+    if (loading || isReadLocked) {
+      showAlert("データ読み取り中のため、読み取り完了までお待ちください。");
       return;
     }
     setMode("edit");
@@ -772,6 +842,14 @@ export default function FormPage() {
     const intent = confirmState.intent;
     setConfirmState({ open: false, intent: null });
     if (action === "discard") {
+      if (intent === "cancel-edit") {
+        if (!entryId) {
+          navigateBack();
+          return;
+        }
+        await cancelEditAndRestoreLatest();
+        return;
+      }
       if (intent && intent.startsWith("navigate:")) {
         const targetEntryId = intent.slice("navigate:".length);
         navigateToEntryById(targetEntryId);
@@ -810,8 +888,10 @@ export default function FormPage() {
     },
   ];
 
-  const confirmMessage = "保存せずに前の画面へ戻りますか？";
-  const editDisabled = listLoading || listBackgroundLoading || waitingForLock || isReloading || loading || isReadLocked;
+  const confirmMessage = confirmState.intent === "cancel-edit"
+    ? "保存せずに編集内容を破棄しますか？"
+    : "保存せずに前の画面へ戻りますか？";
+  const editDisabled = loading || isReadLocked;
 
   return (
     <AppLayout themeOverride={form?.settings?.theme}       title={`${form.settings?.formTitle || "(無題)"} - フォーム入力`}
@@ -835,10 +915,10 @@ export default function FormPage() {
             </>
           ) : (
             <>
-              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReloading || isReadLocked} onClick={() => triggerSave({ redirect: true })}>
+              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReadLocked} onClick={() => triggerSave({ redirect: true })}>
                 保存
               </button>
-              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => attemptLeave("cancel")}>
+              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => attemptLeave("cancel-edit")}>
                 キャンセル
               </button>
             </>
@@ -879,7 +959,7 @@ export default function FormPage() {
                   <button
                     type="button"
                     className="nf-btn-outline nf-text-13 record-copy-sidebar__fetch"
-                    disabled={isCopySourceLoading || isSaving || isReloading || isReadLocked}
+                    disabled={isCopySourceLoading || isSaving || isReadLocked}
                     onClick={() => {
                       void handleFetchCopySource();
                     }}
@@ -931,7 +1011,7 @@ export default function FormPage() {
           onSave={handleSaveToStore}
           showOutputJson={false}
           showSaveButton={false}
-          readOnly={isViewMode || isReloading || isReadLocked}
+          readOnly={isViewMode || isReadLocked}
         />
       )}
 
