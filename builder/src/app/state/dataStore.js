@@ -30,7 +30,6 @@ import {
   unarchiveForm as unarchiveFormInGas,
   archiveForms as archiveFormsInGas,
   unarchiveForms as unarchiveFormsInGas,
-  debugGetMapping,
   registerImportedForm as registerImportedFormInGas,
   syncRecordsProxy,
 } from "../../services/gasClient.js";
@@ -154,10 +153,6 @@ export const dataStore = {
     const result = await listFormsFromGas({ includeArchived });
     const forms = Array.isArray(result.forms) ? result.forms : [];
     const loadFailures = Array.isArray(result.loadFailures) ? result.loadFailures : [];
-    console.log("[dataStore.listForms] Fetched from GAS:", {
-      count: forms.length,
-      loadFailures: loadFailures.length,
-    });
     return {
       forms: forms.map((form) => ensureDisplayInfo(form)),
       loadFailures,
@@ -180,39 +175,9 @@ export const dataStore = {
   async createForm(payload, targetUrl = null, saveMode = "auto") {
     // normalizeFormRecordにID生成を委ねる（payloadにidがあればそれを使用、なければ生成）
     const record = normalizeFormRecord(payload);
-    console.log("[dataStore.createForm] Creating form:", { id: record.id, hasPayloadId: !!payload.id, targetUrl });
-
-    // Try to save to Google Drive via GAS
-
-    // Debug: 保存前のマッピングを取得
-    let beforeMapping = null;
-    try {
-      beforeMapping = await debugGetMapping();
-      console.log("[DEBUG] BEFORE createForm - Mapping:", beforeMapping);
-      console.log("[DEBUG] BEFORE createForm - Legacy info:", JSON.stringify(beforeMapping?.legacyInfo, null, 2));
-    } catch (debugErr) {
-      console.warn("[DEBUG] Failed to get before-mapping:", debugErr);
-    }
-
     const result = await saveFormToGas(record, targetUrl, saveMode);
-    console.log("[dataStore.createForm] GAS result:", { formId: result?.form?.id, fileUrl: result?.fileUrl });
-    console.log("[dataStore.createForm] GAS debugRawJsonBefore:", result?.debugRawJsonBefore);
-    console.log("[dataStore.createForm] GAS debugRawJsonAfter:", result?.debugRawJsonAfter);
-    console.log("[dataStore.createForm] GAS debugMappingStr:", result?.debugMappingStr);
-
-    // Debug: 保存後のマッピングを取得
-    try {
-      const afterMapping = await debugGetMapping();
-      console.log("[DEBUG] AFTER createForm - Mapping:", afterMapping);
-      console.log("[DEBUG] Mapping changed from", beforeMapping?.totalForms, "to", afterMapping?.totalForms, "forms");
-    } catch (debugErr) {
-      console.warn("[DEBUG] Failed to get after-mapping:", debugErr);
-    }
-
     const savedForm = result?.form || result;
     const fileUrl = result?.fileUrl;
-
-    // fileUrlをフォームに保存
     const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
     return formWithUrl ? ensureDisplayInfo(formWithUrl) : record;
   },
@@ -358,9 +323,10 @@ export const dataStore = {
     const syncedRecords = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
     const serverModifiedAt = Number(gasResult.serverModifiedAt ?? gasResult.serverCommitToken);
     const nextLastServerReadAt = Date.now();
+    const postSyncHeaderMatrix = gasResult.headerMatrix || [];
 
     if (forceFullSync) {
-      await saveRecordsToCache(formId, syncedRecords, gasResult.headerMatrix ||[], {
+      await saveRecordsToCache(formId, syncedRecords, postSyncHeaderMatrix, {
         sheetLastUpdatedAt: serverModifiedAt,
         serverCommitToken: gasResult.serverCommitToken,
         serverModifiedAt: serverModifiedAt > 0 ? serverModifiedAt : 0,
@@ -368,25 +334,45 @@ export const dataStore = {
         schemaHash: form.schemaHash,
       });
     } else {
-      await applySyncResultToCache(formId, syncedRecords, gasResult.headerMatrix ||[], {
+      await applySyncResultToCache(formId, syncedRecords, postSyncHeaderMatrix, {
         serverCommitToken: gasResult.serverCommitToken,
         serverModifiedAt: serverModifiedAt > 0 ? serverModifiedAt : 0,
         lastServerReadAt: nextLastServerReadAt,
       });
     }
 
-    const fullCache = await getRecordsFromCache(formId);
+    // シンク後の状態をメモリ内で計算し、不要な2回目のIDB読み取りを回避する
+    let postSyncEntries;
+    if (forceFullSync) {
+      postSyncEntries = syncedRecords;
+    } else {
+      // applySyncResultToCache のマージロジックをメモリ内で再現する
+      const existingById = {};
+      prunedCachedEntries.forEach((e) => { existingById[e.id] = e; });
+      for (const rec of syncedRecords) {
+        const existing = existingById[rec.id];
+        const existingMod = Number(existing?.modifiedAtUnixMs) || 0;
+        const newMod = Number(rec.modifiedAtUnixMs) || 0;
+        if (!existing || newMod >= existingMod) {
+          existingById[rec.id] = rec;
+        }
+      }
+      postSyncEntries = Object.values(existingById).sort((a, b) =>
+        a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+      );
+    }
+
     // 期限切れ tombstone をキャッシュから物理除去した後、tombstone 全体を UI 向けに非表示
-    const prunedEntries = await pruneExpiredDeletedEntries(formId, fullCache.entries, deletedRetentionDays);
+    const prunedEntries = await pruneExpiredDeletedEntries(formId, postSyncEntries, deletedRetentionDays);
     const visibleEntries = prunedEntries.filter((e) => !e.deletedAtUnixMs && !e.deletedAt);
-    const unsyncedCount = prunedEntries.filter((e) => (e.modifiedAtUnixMs || 0) > (fullCache.lastServerReadAt || 0)).length;
+    const unsyncedCount = prunedEntries.filter((e) => (e.modifiedAtUnixMs || 0) > nextLastServerReadAt).length;
     const hasUnsynced = unsyncedCount > 0;
 
     return {
       entries: visibleEntries,
-      headerMatrix: fullCache.headerMatrix,
+      headerMatrix: postSyncHeaderMatrix,
       lastSyncedAt: Date.now(),
-      lastSpreadsheetReadAt: fullCache.lastServerReadAt || null,
+      lastSpreadsheetReadAt: nextLastServerReadAt,
       hasUnsynced,
       unsyncedCount,
       isDelta: false,
