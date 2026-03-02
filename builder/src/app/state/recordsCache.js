@@ -435,60 +435,6 @@ export async function getMaxRecordNo(formId) {
 /**
  * 差分データをキャッシュに適用する
  */
-export async function applyDeltaToCache(formId, updatedRecords, headerMatrix = null, schemaHash = null, { syncStartedAt = null, sheetLastUpdatedAt = 0 } = {}) {
-  if (!formId) return;
-  const db = await openDB();
-  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
-  const store = tx.objectStore(STORE_NAMES.records);
-  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
-
-  const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
-  const lastSyncedAt = Date.now();
-  const existingRecords = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId))) || [];
-  const safeUpdatedRecords = Array.isArray(updatedRecords) ? updatedRecords : [];
-  const entryIndexMap = { ...(existingMeta?.entryIndexMap || {}) };
-  const mergePlan = planRecordMerge({
-    existingRecords,
-    incomingRecords: safeUpdatedRecords,
-  });
-
-  for (const entryId of mergePlan.commonUpdateIds) {
-    const lazyRecord = mergePlan.incomingByEntryId[entryId];
-    const cacheRecord = mergePlan.existingByEntryId[entryId];
-    if (!lazyRecord || !cacheRecord) continue;
-
-    const nextRowIndex = Number.isInteger(cacheRecord.rowIndex)
-      ? cacheRecord.rowIndex
-      : entryIndexMap[entryId];
-    await waitForRequest(store.put(buildCacheRecord(formId, lazyRecord, lastSyncedAt, nextRowIndex)));
-    if (Number.isInteger(nextRowIndex)) {
-      entryIndexMap[entryId] = nextRowIndex;
-    }
-  }
-
-  for (const entryId of mergePlan.incomingOnlyAddIds) {
-    const lazyRecord = mergePlan.incomingByEntryId[entryId];
-    if (!lazyRecord) continue;
-
-    const nextRowIndex = entryIndexMap[entryId];
-    await waitForRequest(store.put(buildCacheRecord(formId, lazyRecord, lastSyncedAt, nextRowIndex)));
-    if (Number.isInteger(nextRowIndex)) {
-      entryIndexMap[entryId] = nextRowIndex;
-    }
-  }
-
-  // メタデータの更新
-  metaStore.put(buildMetadata(formId, existingMeta, {
-    lastSyncedAt,
-    lastSpreadsheetReadAt: sheetLastUpdatedAt || existingMeta?.lastSpreadsheetReadAt || lastSyncedAt,
-    headerMatrix: headerMatrix !== null ? headerMatrix : undefined,
-    schemaHash: schemaHash !== null ? schemaHash : undefined,
-    entryIndexMap
-  }));
-
-  await waitForTransaction(tx);
-  db.close();
-}
 
 export async function applySyncResultToCache(formId, syncedRecords, headerMatrix, metaUpdates) {
   if (!formId) return;

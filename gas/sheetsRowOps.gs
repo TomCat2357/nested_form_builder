@@ -77,56 +77,6 @@ function Sheets_prepareResponses_(ctx) {
   ctx.order = responseKeys;
 }
 
-function Sheets_createNewRow_(sheet, id) {
-  var nextId = (id && String(id)) || Sheets_generateRecordId_();
-  var rowIndex = Sheets_findFirstBlankRow_(sheet);
-
-  Sheets_ensureRowCapacity_(sheet, rowIndex);
-  var currentTs = Date.now();
-  var email = Session.getActiveUser().getEmail() || "";
-
-  var maxNo = 0;
-  var lastRow = sheet.getLastRow();
-  if (lastRow >= NFB_DATA_START_ROW) {
-    var noValues = sheet.getRange(NFB_DATA_START_ROW, 2, lastRow - NFB_DATA_START_ROW + 1, 1).getValues();
-    for (var i = 0; i < noValues.length; i++) {
-      var val = Number(noValues[i][0]);
-      if ((typeof val === "number" && isFinite(val)) && val > maxNo) maxNo = val;
-    }
-  }
-
-  sheet.getRange(rowIndex, 1).setValue(String(nextId));
-  sheet.getRange(rowIndex, 2).setValue(String(maxNo + 1));
-  sheet.getRange(rowIndex, 3).setValue(currentTs);
-  sheet.getRange(rowIndex, 4).setValue(currentTs);
-  sheet.getRange(rowIndex, 5).setValue("");
-  sheet.getRange(rowIndex, 3, 1, 3).setNumberFormat("0");
-  sheet.getRange(rowIndex, 6).setValue(email);
-  sheet.getRange(rowIndex, 7).setValue(email);
-  sheet.getRange(rowIndex, 8).setValue("");
-  Sheets_touchSheetLastUpdated_(sheet, currentTs);
-
-  return { rowIndex: rowIndex, id: nextId, recordNo: maxNo + 1 };
-}
-
-function Sheets_updateExistingRow_(sheet, rowIndex) {
-  Sheets_ensureRowCapacity_(sheet, rowIndex);
-  var currentTs = Date.now();
-  var email = Session.getActiveUser().getEmail() || "";
-  sheet.getRange(rowIndex, 4).setValue(currentTs);
-  sheet.getRange(rowIndex, 3, 1, 3).setNumberFormat("0");
-  sheet.getRange(rowIndex, 7).setValue(email);
-  Sheets_touchSheetLastUpdated_(sheet, currentTs);
-}
-
-function Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys) {
-  for (var key in keyToColumn) {
-    if (Object.prototype.hasOwnProperty.call(keyToColumn, key) && !reservedHeaderKeys[key]) {
-      var columnIndex = keyToColumn[key];
-      if (columnIndex) sheet.getRange(rowIndex, columnIndex).setValue("");
-    }
-  }
-}
 
 function Sheets_resolveTemporalCell_(value, temporalType) {
   if (value === undefined || value === null || value === "") {
@@ -146,22 +96,6 @@ function Sheets_resolveTemporalCell_(value, temporalType) {
   };
 }
 
-function Sheets_writeDataToRow_(sheet, rowIndex, orderKeys, responses, keyToColumn, reservedHeaderKeys, temporalTypeMap) {
-  for (var i = 0; i < orderKeys.length; i++) {
-    var key = String(orderKeys[i] || "");
-    if (!key || reservedHeaderKeys[key]) continue;
-    var columnIndex = keyToColumn[key];
-    if (!columnIndex) continue;
-    var value = responses && Object.prototype.hasOwnProperty.call(responses, key) ? responses[key] : "";
-    var temporalType = temporalTypeMap && temporalTypeMap[key] ? temporalTypeMap[key] : null;
-    var normalized = Sheets_resolveTemporalCell_(value, temporalType);
-    var range = sheet.getRange(rowIndex, columnIndex);
-    range.setValue(normalized.value);
-    if (normalized.numberFormat) {
-      range.setNumberFormat(normalized.numberFormat);
-    }
-  }
-}
 
 function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
   Sheets_prepareResponses_(ctx);

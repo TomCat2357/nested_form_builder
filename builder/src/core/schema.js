@@ -31,35 +31,6 @@ const buildStableOptionId = (fieldId, optionLabel, optionIndex) => {
 export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
 export { MAX_DEPTH };
 
-export const sampleSchema = () => [
-  {
-    id: genId(),
-    type: "checkboxes",
-    label: "好きな果物？",
-    options: [
-      { id: genId(), label: "リンゴ" },
-      { id: genId(), label: "みかん" },
-      { id: genId(), label: "ぶどう" },
-    ],
-    childrenByValue: {
-      "リンゴ": [
-        { id: genId(), type: "regex", label: "どれくらい食べる？", pattern: "^.+$", required: false, placeholder: "例: 1日1個" },
-      ],
-      "みかん": [
-        {
-          id: genId(),
-          type: "select",
-          label: "何個食べる？",
-          options: [
-            { id: genId(), label: "１個" },
-            { id: genId(), label: "２個" },
-            { id: genId(), label: "３個以上" },
-          ],
-        },
-      ],
-    },
-  },
-];
 
 export const deepClone = (value) => {
   if (typeof structuredClone === "function") return structuredClone(value);

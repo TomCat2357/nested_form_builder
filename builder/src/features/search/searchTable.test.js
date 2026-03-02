@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   buildExportTableData,
-  buildHeaderRowsFromCsv,
   buildSearchTableLayout,
   compareByColumn,
   computeRowValues,
@@ -47,15 +46,7 @@ test("連続する同一ヘッダーは2つ目以降を空白化する", () => {
   assert.deepEqual(headerRows[0].slice(3), ["", "", "", ""]);
 });
 
-test("検索ヘッダーCSV: 空白を挟んだ同一ラベルは省略しない", () => {
-  const rows = buildHeaderRowsFromCsv([["xxx", "", "xxx", "xxx"]]);
-  assert.deepEqual(rows[0].map((cell) => cell.label), ["xxx", "", "xxx", ""]);
-});
 
-test("検索ヘッダーCSV: 連続する同一ラベルは右側を空白化する", () => {
-  const rows = buildHeaderRowsFromCsv([["xxx", "xxx", "xxx", "xxx"]]);
-  assert.deepEqual(rows[0].map((cell) => cell.label), ["xxx", "", "", ""]);
-});
 
 test("検索一覧ヘッダー上段: 連続する同一ラベルは右側を空白化する", () => {
   const form = {

@@ -40,12 +40,6 @@ function Forms_getForm_(formId) {
   }
 }
 
-/**
- * フォームを削除（Driveファイルは削除せず、紐付けのみ解除）
- * @param {string} formId
- * @return {Object} { ok: true }
- */
-
 function Forms_listForms_(options) {
   var startTime = new Date().getTime();
   var includeArchived = !!(options && options.includeArchived);
@@ -310,23 +304,6 @@ function Forms_batchGetFiles_(fileIds) {
   return results;
 }
 
-/**
- * 特定フォームを取得
- * @param {string} formId
- * @return {Object|null} フォームオブジェクトまたはnull
- */
-
-function Forms_deleteForm_(formId) {
-  if (!formId) {
-    throw new Error("Form ID is required");
-  }
-
-  var mapping = Forms_getMapping_();
-  delete mapping[formId];
-  Forms_saveMapping_(mapping);
-
-  return { ok: true };
-}
 
 /**
  * 複数フォームを削除（Driveファイルは削除せず、紐付けのみ解除）
@@ -361,26 +338,6 @@ function Forms_deleteForms_(formIds) {
   };
 }
 
-/**
- * フォームのアーカイブ状態を変更
- * @param {string} formId
- * @param {boolean} archived
- * @return {Object} { ok: true, form }
- */
-
-function Forms_setFormArchivedState_(formId, archived) {
-  var form = Forms_getForm_(formId);
-  if (!form) {
-    throw new Error("Form not found: " + formId);
-  }
-
-  form.archived = !!archived;
-  var currentTs = Sheets_dateToSerial_(new Date());
-  form.modifiedAt = currentTs;
-  form.modifiedAtUnixMs = currentTs;
-
-  return Forms_saveForm_(form);
-}
 
 /**
  * 複数フォームのアーカイブ状態を一括変更
@@ -443,3 +400,22 @@ function Forms_setFormsArchivedState_(formIds, archived) {
  * フォーム一覧を取得
  */
 
+
+/**
+ * フォームを削除 (複数削除APIへ委譲)
+ */
+function Forms_deleteForm_(formId) {
+  var res = Forms_deleteForms_([formId]);
+  return { ok: res.ok };
+}
+
+/**
+ * フォームのアーカイブ状態を変更 (複数アーカイブAPIへ委譲)
+ */
+function Forms_setFormArchivedState_(formId, archived) {
+  var res = Forms_setFormsArchivedState_([formId], archived);
+  if (res.ok && res.forms && res.forms.length > 0) {
+    return { ok: true, form: res.forms[0] };
+  }
+  return { ok: false, error: (res.errors && res.errors[0]) ? res.errors[0].error : "Unknown error" };
+}

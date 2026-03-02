@@ -14,40 +14,11 @@ const ExtractFileIdFromUrl_ = (url) => {
   return parsed.type === "file" ? parsed.id : null;
 };
 
-const GetFormUrls_ = () => {
-  try {
-    if (typeof Forms_getMapping_ !== "function") return {};
-    const mapping = Forms_getMapping_() || {};
-    const urlMap = {};
-    Object.entries(mapping).forEach(([formId, entry]) => {
-      let fileUrl = entry?.driveFileUrl || null;
-      if (!fileUrl && entry?.fileId) {
-        fileUrl = typeof Forms_buildDriveFileUrlFromId_ === "function"
-          ? Forms_buildDriveFileUrlFromId_(entry.fileId)
-          : `https://drive.google.com/file/d/${entry.fileId}/view`;
-      }
-      if (fileUrl) urlMap[formId] = fileUrl;
-    });
-    return urlMap;
-  } catch (error) {
-    Logger.log(`[GetFormUrls_] Error: ${nfbErrorToString_(error)}`);
-    return {};
-  }
-};
 
-const SaveFormUrls_ = (urlMap = {}) => {
-  try {
-    if (typeof Forms_getMapping_ !== "function" || typeof Forms_saveMapping_ !== "function") throw new Error("Forms mapping functions are unavailable");
-    const mapping = Forms_getMapping_() || {};
-    Object.entries(urlMap).forEach(([formId, fileUrl]) => {
-      if (!fileUrl) return;
-      mapping[formId] = { fileId: ExtractFileIdFromUrl_(fileUrl) || mapping[formId]?.fileId || null, driveFileUrl: fileUrl };
-    });
-    Forms_saveMapping_(mapping);
-  } catch (error) {
-    throw new Error(`フォームURLマップの保存に失敗しました: ${nfbErrorToString_(error)}`);
-  }
-};
+;
+
+
+;
 
 const AddFormUrl_ = (formId, fileUrl) => {
   try {
