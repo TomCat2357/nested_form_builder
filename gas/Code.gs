@@ -374,7 +374,6 @@ function ListRecords_(ctx) {
     };
 
     const listRecords = () => {
-      Sheets_purgeExpiredDeletedRows_(sheet, ResolveDeletedRecordRetentionDays_(ctx));
       let temporalTypeMap = null;
       const formId = ctx?.raw?.formId;
       if (formId) {
@@ -433,9 +432,6 @@ function ListRecords_(ctx) {
       };
     };
 
-    if (ctx.forceFullSync) {
-      return WithScriptLock_("更新", listRecords);
-    }
     return listRecords();
   });
 }
@@ -534,8 +530,76 @@ function syncRecordsProxy(payload) {
 
 function SyncRecords_(ctx) {
   return ExecuteWithSheet_(ctx, function(sheet) {
+    var forceFullSync = !!ctx.raw.forceFullSync;
+    var uploadRecords = Array.isArray(ctx.raw.uploadRecords) ? ctx.raw.uploadRecords : [];
+    var lastServerReadAt = parseInt(ctx.raw.lastServerReadAt, 10) || 0;
+    var sheetLastUpdatedAt = Sheets_readSheetLastUpdated_(sheet);
+    var serverModifiedAt = GetServerModifiedAt_();
+
+    var getRecordModifiedAtUnixMs = function(record) {
+      var modifiedAtUnixMs = parseInt(record && record.modifiedAtUnixMs, 10);
+      if (isFinite(modifiedAtUnixMs) && modifiedAtUnixMs > 0) return modifiedAtUnixMs;
+      return Sheets_toUnixMs_(record && record.modifiedAt, true) || 0;
+    };
+
+    var buildReadOnlyResult = function() {
+      var temporalTypeMap = ResolveTemporalTypeMap_(ctx);
+      var allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: false });
+      var headerMatrix = Sheets_readHeaderMatrix_(sheet);
+
+      if (forceFullSync || lastServerReadAt <= 0) {
+        var fullRecords = allRecords.map(SerializeRecord_);
+        return {
+          ok: true,
+          serverModifiedAt: serverModifiedAt,
+          serverCommitToken: serverModifiedAt,
+          records: fullRecords,
+          headerMatrix: headerMatrix,
+          isDelta: false,
+          unchanged: false,
+          count: fullRecords.length,
+          sheetLastUpdatedAt: sheetLastUpdatedAt,
+        };
+      }
+
+      var deltaRecords = [];
+      for (var i = 0; i < allRecords.length; i++) {
+        var record = allRecords[i];
+        if (getRecordModifiedAtUnixMs(record) > lastServerReadAt) {
+          deltaRecords.push(record);
+        }
+      }
+      var serializedDelta = deltaRecords.map(SerializeRecord_);
+      return {
+        ok: true,
+        serverModifiedAt: serverModifiedAt,
+        serverCommitToken: serverModifiedAt,
+        records: serializedDelta,
+        headerMatrix: headerMatrix,
+        isDelta: true,
+        unchanged: false,
+        count: serializedDelta.length,
+        sheetLastUpdatedAt: sheetLastUpdatedAt,
+      };
+    };
+
+    if (uploadRecords.length === 0) {
+      if (sheetLastUpdatedAt > 0 && lastServerReadAt > 0 && sheetLastUpdatedAt <= lastServerReadAt) {
+        return {
+          ok: true,
+          serverModifiedAt: serverModifiedAt,
+          serverCommitToken: serverModifiedAt,
+          records: [],
+          isDelta: true,
+          unchanged: true,
+          count: 0,
+          sheetLastUpdatedAt: sheetLastUpdatedAt,
+        };
+      }
+      return buildReadOnlyResult();
+    }
+
     return WithScriptLock_("同期", function() {
-      Sheets_purgeExpiredDeletedRows_(sheet, ResolveDeletedRecordRetentionDays_(ctx));
       var nowMs = Date.now();
       var order = ctx.order || [];
       if (ctx.raw.formSchema) {
@@ -572,7 +636,6 @@ function SyncRecords_(ctx) {
         if (isFinite(noVal) && noVal > maxNo) maxNo = noVal;
       }
 
-      var uploadRecords = ctx.raw.uploadRecords || [];
       var modifiedCount = 0;
       var uploadedRecordIds = {};
       var currentUserEmail = Session.getActiveUser().getEmail() || "";
@@ -653,33 +716,7 @@ function SyncRecords_(ctx) {
         }
       }
 
-      var forceFullSync = !!ctx.raw.forceFullSync;
-
-      // forceFullSync 時または変更があった時: createdAt昇順でソートしてリナンバー
-      if (existingData.length > 0 && (forceFullSync || modifiedCount > 0)) {
-        var pairs = [];
-        for (var pi = 0; pi < existingData.length; pi++) {
-          pairs.push({ d: existingData[pi], f: existingFormats[pi] });
-        }
-        pairs.sort(function(a, b) {
-          var aTs = Number(a.d[2] == null ? 0 : a.d[2]);
-          var bTs = Number(b.d[2] == null ? 0 : b.d[2]);
-          return aTs < bTs ? -1 : aTs > bTs ? 1 : 0;
-        });
-        var seq = 1;
-        for (var rn = 0; rn < pairs.length; rn++) {
-          var delAt = String(pairs[rn].d[4] == null ? "" : pairs[rn].d[4]).trim();
-          pairs[rn].d[1] = delAt ? "" : seq++;
-        }
-        for (var si = 0; si < pairs.length; si++) {
-          existingData[si] = pairs[si].d;
-          existingFormats[si] = pairs[si].f;
-        }
-      }
-
-      // 一括書き込み
-      var needWrite = modifiedCount > 0 || forceFullSync;
-      if (needWrite) {
+      if (modifiedCount > 0) {
         Sheets_ensureRowCapacity_(sheet, dataStartRow + existingData.length - 1);
         if (existingData.length > 0) {
           var outRange = sheet.getRange(dataStartRow, 1, existingData.length, lastColumn);
@@ -688,10 +725,12 @@ function SyncRecords_(ctx) {
         }
         SetServerModifiedAt_(nowMs);
         Sheets_touchSheetLastUpdated_(sheet, nowMs);
+        serverModifiedAt = nowMs;
+        sheetLastUpdatedAt = nowMs;
+      } else {
+        sheetLastUpdatedAt = Sheets_readSheetLastUpdated_(sheet);
+        serverModifiedAt = GetServerModifiedAt_();
       }
-
-      var serverModifiedAt = GetServerModifiedAt_();
-      var lastServerReadAt = parseInt(ctx.raw.lastServerReadAt, 10) || 0;
 
       // 返却データ構築
       var returnRecords = [];
@@ -706,7 +745,7 @@ function SyncRecords_(ctx) {
         if (forceFullSync) {
           returnRecords.push(aRec);
         } else {
-          var aModAt = parseInt(aRec.modifiedAtUnixMs, 10) || 0;
+          var aModAt = getRecordModifiedAtUnixMs(aRec);
           if (aModAt > lastServerReadAt || uploadedRecordIds[String(aRec.id)]) {
             returnRecords.push(aRec);
           }
@@ -714,13 +753,18 @@ function SyncRecords_(ctx) {
       }
 
       var headerMatrix = Sheets_readHeaderMatrix_(sheet);
+      var serializedRecords = returnRecords.map(SerializeRecord_);
 
       return {
         ok: true,
         serverModifiedAt: serverModifiedAt,
         serverCommitToken: serverModifiedAt,
-        records: returnRecords.map(SerializeRecord_),
-        headerMatrix: headerMatrix
+        records: serializedRecords,
+        headerMatrix: headerMatrix,
+        isDelta: !forceFullSync,
+        unchanged: false,
+        count: serializedRecords.length,
+        sheetLastUpdatedAt: sheetLastUpdatedAt,
       };
     });
   });

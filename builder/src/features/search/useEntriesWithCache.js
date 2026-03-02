@@ -278,7 +278,8 @@ export const useEntriesWithCache = ({
         return;
       }
       const fetchedEntries = result.entries || result || [];
-      entriesAfter = fetchedEntries.length;
+      const shouldKeepExistingEntries = result?.unchanged === true;
+      entriesAfter = shouldKeepExistingEntries ? entriesBefore : fetchedEntries.length;
       const resultUnsyncedCount = Number(result.unsyncedCount) || 0;
       const syncedAt = result.lastSyncedAt || Date.now();
       const nextLastSpreadsheetReadAt = result.lastSpreadsheetReadAt || null;
@@ -287,6 +288,7 @@ export const useEntriesWithCache = ({
       setWaitingForLock(false);
       responseMeta = {
         isDelta: result?.isDelta === true,
+        unchanged: shouldKeepExistingEntries,
         fetchedCount: Number.isFinite(result?.fetchedCount) ? result.fetchedCount : fetchedEntries.length,
         allIdsCount: Number.isFinite(result?.allIdsCount) ? result.allIdsCount : null,
         sheetLastUpdatedAt: Number.isFinite(result?.sheetLastUpdatedAt) ? result.sheetLastUpdatedAt : 0,
@@ -301,8 +303,12 @@ export const useEntriesWithCache = ({
         entriesAfter,
         ...responseMeta,
       });
-      setEntries(fetchedEntries);
-      setHeaderMatrix(result.headerMatrix || []);
+      if (!shouldKeepExistingEntries) {
+        setEntries(fetchedEntries);
+      }
+      if (!shouldKeepExistingEntries && Array.isArray(result.headerMatrix)) {
+        setHeaderMatrix(result.headerMatrix);
+      }
       setLastSyncedAt(syncedAt);
       setLastSpreadsheetReadAt(nextLastSpreadsheetReadAt);
       setCacheDisabled(false);
@@ -639,11 +645,11 @@ export const useEntriesWithCache = ({
 
     // 検索結果画面の手動更新:
     // 1) ローカル保留操作の書き込み完了待ち
-    // 2) forceFullSync で全件同期
+    // 2) forceFullSync で全件同期（シート正規化は行わない）
     // 3) 返却されたシート全件でキャッシュを完全置換
     logSearchBackground("manual-refresh:start", {
       reason: "manual:search-records",
-      flow: "full-upload-sheet-normalize-cache-replace",
+      flow: "full-upload-sheet-cache-replace",
     });
     updateGlobalMeta(formId, { waitingForLock: false });
     await dataStore.flushPendingOperations();
@@ -663,12 +669,12 @@ export const useEntriesWithCache = ({
         if (refreshed) {
           logSearchBackground("manual-refresh:records-synced", {
             reason: "manual:search-records",
-            flow: "full-upload-sheet-normalize-cache-replace",
+            flow: "full-upload-sheet-cache-replace",
           });
           await refreshForms({ reason: "manual:search-forms", background: false });
           logSearchBackground("manual-refresh:done", {
             reason: "manual:search-forms",
-            flow: "full-upload-sheet-normalize-cache-replace",
+            flow: "full-upload-sheet-cache-replace",
           });
           return;
         }

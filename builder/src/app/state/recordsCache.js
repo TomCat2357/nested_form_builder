@@ -216,19 +216,39 @@ export async function saveRecordsToCache(formId, records, headerMatrix = [], { s
 /**
  * Update metadata only (entry index map / timestamp / schemaHash)
  */
-export async function updateRecordsMeta(formId, { entryIndexMap, lastReloadedAt, schemaHash, headerMatrix } = {}) {
+export async function updateRecordsMeta(formId, {
+  entryIndexMap,
+  lastReloadedAt,
+  schemaHash,
+  headerMatrix,
+  lastSpreadsheetReadAt,
+  lastServerReadAt,
+  serverCommitToken,
+  serverModifiedAt,
+} = {}) {
   if (!formId) return;
   const db = await openDB();
   const tx = db.transaction(STORE_NAMES.recordsMeta, 'readwrite');
   const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
 
-  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
-    lastSyncedAt: lastReloadedAt,
-    lastSpreadsheetReadAt: lastReloadedAt,
+  const updates = {
     headerMatrix,
     schemaHash,
     entryIndexMap,
+    lastServerReadAt,
+    serverCommitToken,
+    serverModifiedAt,
+  };
+  if (lastReloadedAt !== undefined) {
+    updates.lastSyncedAt = lastReloadedAt;
+    updates.lastSpreadsheetReadAt = lastSpreadsheetReadAt ?? lastReloadedAt;
+  } else if (lastSpreadsheetReadAt !== undefined) {
+    updates.lastSpreadsheetReadAt = lastSpreadsheetReadAt;
+  }
+
+  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
+    ...updates,
   })));
 
   await waitForTransaction(tx);

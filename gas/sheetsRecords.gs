@@ -169,47 +169,16 @@ function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
 
   if (shouldNormalize) {
     var validRows = [];
-    var emptyCount = 0;
 
     // 空行の除外（メモリ上）
     for (var i = 0; i < dataValues.length; i++) {
       var idCell = dataValues[i][ID_INDEX];
       if (String(idCell == null ? "" : idCell).trim() !== "") {
         validRows.push(dataValues[i]);
-      } else {
-        emptyCount++;
       }
     }
 
-    // ソート（メモリ上）: createdAt昇順
-    var CREATED_AT_INDEX = 2;
-    validRows.sort(function(a, b) {
-      var aTs = Number(a[CREATED_AT_INDEX] == null ? 0 : a[CREATED_AT_INDEX]);
-      var bTs = Number(b[CREATED_AT_INDEX] == null ? 0 : b[CREATED_AT_INDEX]);
-      if (aTs < bTs) return -1;
-      if (aTs > bTs) return 1;
-      return 0;
-    });
-
-    // No.の振り直し（メモリ上）
-    var nextNo = 1;
-    for (var n = 0; n < validRows.length; n++) {
-      var deletedAtText = String(validRows[n][4] == null ? "" : validRows[n][4]).trim();
-      if (!deletedAtText) {
-        validRows[n][1] = nextNo++;
-      } else {
-        validRows[n][1] = "";
-      }
-    }
-
-    // 1回のAPI呼び出しでシートへ一括書き戻し
-    if (validRows.length > 0) {
-      sheet.getRange(dataStartRow, 1, validRows.length, lastColumn).setValues(validRows);
-    }
-    if (emptyCount > 0) {
-      sheet.getRange(dataStartRow + validRows.length, 1, emptyCount, lastColumn).clearContent();
-    }
-
+    // 正規化はメモリ内のみ（シートへは書き戻さない）
     dataValues = validRows;
     dataRowCount = validRows.length;
   }

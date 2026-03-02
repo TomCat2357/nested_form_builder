@@ -320,14 +320,47 @@ export const dataStore = {
     };
 
     const gasResult = await syncRecordsProxy(payload);
+    const unchanged = gasResult?.unchanged === true;
     const syncedRecords = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
     const serverModifiedAt = Number(gasResult.serverModifiedAt ?? gasResult.serverCommitToken);
+    const sheetLastUpdatedAt = Number(gasResult.sheetLastUpdatedAt);
     const nextLastServerReadAt = Date.now();
-    const postSyncHeaderMatrix = gasResult.headerMatrix || [];
+    const postSyncHeaderMatrix = Array.isArray(gasResult.headerMatrix)
+      ? gasResult.headerMatrix
+      : (cacheMeta.headerMatrix || []);
+    const normalizedSheetLastUpdatedAt = Number.isFinite(sheetLastUpdatedAt) && sheetLastUpdatedAt > 0
+      ? sheetLastUpdatedAt
+      : (cacheMeta.lastSpreadsheetReadAt || 0);
+
+    if (unchanged) {
+      await updateRecordsMeta(formId, {
+        lastReloadedAt: nextLastServerReadAt,
+        lastSpreadsheetReadAt: nextLastServerReadAt,
+        lastServerReadAt: nextLastServerReadAt,
+        serverCommitToken: gasResult.serverCommitToken,
+        serverModifiedAt: serverModifiedAt > 0 ? serverModifiedAt : 0,
+        schemaHash: form.schemaHash,
+        headerMatrix: postSyncHeaderMatrix,
+      });
+
+      const visibleEntries = prunedCachedEntries.filter((e) => !e.deletedAtUnixMs && !e.deletedAt);
+      return {
+        entries: visibleEntries,
+        headerMatrix: postSyncHeaderMatrix,
+        lastSyncedAt: nextLastServerReadAt,
+        lastSpreadsheetReadAt: nextLastServerReadAt,
+        hasUnsynced: false,
+        unsyncedCount: 0,
+        isDelta: true,
+        unchanged: true,
+        fetchedCount: 0,
+        sheetLastUpdatedAt: normalizedSheetLastUpdatedAt,
+      };
+    }
 
     if (forceFullSync) {
       await saveRecordsToCache(formId, syncedRecords, postSyncHeaderMatrix, {
-        sheetLastUpdatedAt: serverModifiedAt,
+        sheetLastUpdatedAt: normalizedSheetLastUpdatedAt,
         serverCommitToken: gasResult.serverCommitToken,
         serverModifiedAt: serverModifiedAt > 0 ? serverModifiedAt : 0,
         lastServerReadAt: nextLastServerReadAt,
@@ -375,7 +408,10 @@ export const dataStore = {
       lastSpreadsheetReadAt: nextLastServerReadAt,
       hasUnsynced,
       unsyncedCount,
-      isDelta: false,
+      isDelta: gasResult?.isDelta === true,
+      unchanged: false,
+      fetchedCount: syncedRecords.length,
+      sheetLastUpdatedAt: normalizedSheetLastUpdatedAt,
     };
   },
   async getEntry(formId, entryId, { forceSync = false, rowIndexHint = undefined } = {}) {
