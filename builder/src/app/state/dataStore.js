@@ -47,13 +47,32 @@ const trackPendingOperation = (promise) => {
   promise.finally(() => pendingOperations.delete(promise));
 };
 
+const displayInfoCache = new Map();
+
+const resolveSchemaVersionKey = (form) => {
+  if (!form || !form.id) return "";
+  if (form.schemaHash) return `hash:${form.schemaHash}`;
+  return `fallback:${form.updatedAtUnixMs || form.modifiedAtUnixMs || form.updatedAt || form.modifiedAt || "none"}`;
+};
+
 const ensureDisplayInfo = (form) => {
   const schema = Array.isArray(form?.schema) ? form.schema : [];
-  const displayFieldSettings = collectDisplayFieldSettings(schema);
+  const cacheKey = resolveSchemaVersionKey(form);
+  const cached = displayInfoCache.get(form?.id);
+  const displayInfo = cached?.versionKey === cacheKey
+    ? cached
+    : (() => {
+      const displayFieldSettings = collectDisplayFieldSettings(schema);
+      const importantFields = displayFieldSettings.map((item) => item.path);
+      const next = { versionKey: cacheKey, displayFieldSettings, importantFields };
+      if (form?.id) displayInfoCache.set(form.id, next);
+      return next;
+    })();
+
   return {
     ...form,
-    displayFieldSettings,
-    importantFields: displayFieldSettings.map((item) => item.path),
+    displayFieldSettings: displayInfo.displayFieldSettings,
+    importantFields: displayInfo.importantFields,
   };
 };
 
@@ -97,12 +116,13 @@ const pruneExpiredDeletedEntries = async (formId, entries, retentionDays) => {
     .filter((entry) => isDeletedEntryExpired(entry, retentionDays, nowMs))
     .map((entry) => entry?.id)
     .filter(Boolean);
+  const expiredIdSet = new Set(expiredIds);
 
   if (expiredIds.length) {
     await Promise.all(expiredIds.map((entryId) => deleteRecordFromCache(formId, entryId)));
   }
 
-  return safeEntries.filter((entry) => !expiredIds.includes(entry?.id));
+  return safeEntries.filter((entry) => !expiredIdSet.has(entry?.id));
 };
 
 const mapSheetRecordToEntry = (record, formId) => {
@@ -137,7 +157,6 @@ export const dataStore = {
     const loadFailures = Array.isArray(result.loadFailures) ? result.loadFailures : [];
     console.log("[dataStore.listForms] Fetched from GAS:", {
       count: forms.length,
-      formIds: forms.map((f) => f.id),
       loadFailures: loadFailures.length,
     });
     return {
