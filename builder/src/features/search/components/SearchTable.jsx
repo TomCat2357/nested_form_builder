@@ -19,6 +19,19 @@ export default function SearchTable({
   onToggleSelect,
   onRowClick,
 }) {
+  const handleCopyId = async (event, id) => {
+    event.stopPropagation();
+    const idText = String(id || "");
+    if (!idText) return;
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(idText);
+      }
+    } catch {
+      // no-op: クリップボードAPIが使えない環境では通常表示のみ
+    }
+  };
+
   const selectableColumns = columns.filter((column) => column.key !== "__actions");
   const topScrollRef = useRef(null);
   const bottomScrollRef = useRef(null);
@@ -153,9 +166,22 @@ export default function SearchTable({
                   const rawDisplayText = values[column.key]?.display ?? "";
                   const limitedText = applyDisplayLengthLimit(rawDisplayText || "", cellDisplayLimit);
                   const isUrl = column.sourceType === "url" && rawDisplayText;
+                  const isRecordIdColumn = column.key === "id";
                   return (
                     <td key={`${entry.id}_${column.key}`} className="search-td">
-                      {isUrl ? (
+                      {isRecordIdColumn ? (
+                        <button
+                          type="button"
+                          className="nf-link nf-text-left"
+                          style={{ padding: 0, border: "none", background: "none", cursor: "pointer" }}
+                          onClick={(event) => {
+                            void handleCopyId(event, rawDisplayText);
+                          }}
+                          title="クリックでIDをコピー"
+                        >
+                          {limitedText}
+                        </button>
+                      ) : isUrl ? (
                         <a
                           href={rawDisplayText}
                           target="_blank"

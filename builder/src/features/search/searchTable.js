@@ -30,7 +30,7 @@ const isBooleanSortColumn = (column) => columnType(column) === "checkboxes";
 const isNumericColumn = (column) => columnType(column) === "number";
 const isDateLikeColumn = (column) => {
   const type = columnType(column);
-  return type === "date" || type === "time" || column?.key === "modifiedAt";
+  return type === "date" || type === "time" || column?.key === "modifiedAt" || column?.key === "createdAt";
 };
 const toNumericValue = (value) => {
   if (value === null || value === undefined || value === "") return null;
@@ -277,6 +277,20 @@ const compareValues = (a, b) => {
 
 const createBaseColumns = () => [
   {
+    key: "id",
+    segments: ["ID"],
+    sortable: true,
+    searchable: true,
+    getValue: (entry) => {
+      const value = entry?.id || "";
+      return {
+        display: String(value),
+        search: normalizeSearchText(value),
+        sort: String(value),
+      };
+    },
+  },
+  {
     key: "No.",
     segments: ["No."],
     sortable: true,
@@ -287,6 +301,22 @@ const createBaseColumns = () => [
         display: String(value),
         search: normalizeSearchText(value),
         sort: typeof value === 'number' ? value : (value ? parseFloat(value) || 0 : 0),
+      };
+    },
+  },
+  {
+    key: "createdAt",
+    segments: ["作成日時"],
+    sortable: true,
+    searchable: true,
+    getValue: (entry) => {
+      const raw = entry?.createdAt ?? "";
+      const unixMs = toUnixMs(entry?.createdAtUnixMs ?? raw);
+      const display = Number.isFinite(unixMs) ? formatUnixMsDateTimeSec(unixMs) : (typeof raw === "string" ? raw : "");
+      return {
+        display,
+        search: normalizeSearchText(display || ""),
+        sort: Number.isFinite(unixMs) ? unixMs : 0,
       };
     },
   },
@@ -356,8 +386,15 @@ const resolveDisplayFieldSettings = (form) => {
 
 export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
   const showRecordNo = form?.settings?.showRecordNo !== false;
+  const showSearchId = form?.settings?.showSearchId !== false;
+  const showSearchCreatedAt = form?.settings?.showSearchCreatedAt !== false;
   const baseColumns = createBaseColumns();
-  const columns = showRecordNo ? baseColumns : baseColumns.filter((col) => col.key !== "No.");
+  const columns = baseColumns.filter((col) => {
+    if (!showRecordNo && col.key === "No.") return false;
+    if (!showSearchId && col.key === "id") return false;
+    if (!showSearchCreatedAt && col.key === "createdAt") return false;
+    return true;
+  });
   resolveDisplayFieldSettings(form).forEach(({ path, type }) => {
     if (!path) return;
     columns.push(createDisplayColumn(path, type));
@@ -498,6 +535,14 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
       pushColumn(findBaseColumnByKey("No."));
       continue;
     }
+    if (headerValueStr === "id") {
+      pushColumn(findBaseColumnByKey("id"));
+      continue;
+    }
+    if (headerValueStr === "createdAt") {
+      pushColumn(findBaseColumnByKey("createdAt"));
+      continue;
+    }
     if (headerValueStr === "modifiedAt") {
       pushColumn(findBaseColumnByKey("modifiedAt"));
       continue;
@@ -528,7 +573,7 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
   // headerMatrixに存在しない場合でも、ベース列は最低限表示する
   safeBaseColumns.forEach((baseColumn) => {
     if (!baseColumn) return;
-    if (baseColumn.key === "__actions" || baseColumn.key === "No." || baseColumn.key === "modifiedAt") return;
+    if (baseColumn.key === "__actions" || baseColumn.key === "id" || baseColumn.key === "No." || baseColumn.key === "createdAt" || baseColumn.key === "modifiedAt") return;
     if (!baseColumn.path) return;
     const basePath = String(baseColumn.path);
     if (resolvedBasePaths.has(basePath)) return;
