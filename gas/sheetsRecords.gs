@@ -181,12 +181,13 @@ function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
       }
     }
 
-    // ソート（メモリ上）
+    // ソート（メモリ上）: createdAt昇順
+    var CREATED_AT_INDEX = 2;
     validRows.sort(function(a, b) {
-      var aId = String(a[ID_INDEX] == null ? "" : a[ID_INDEX]);
-      var bId = String(b[ID_INDEX] == null ? "" : b[ID_INDEX]);
-      if (aId < bId) return -1;
-      if (aId > bId) return 1;
+      var aTs = Number(a[CREATED_AT_INDEX] == null ? 0 : a[CREATED_AT_INDEX]);
+      var bTs = Number(b[CREATED_AT_INDEX] == null ? 0 : b[CREATED_AT_INDEX]);
+      if (aTs < bTs) return -1;
+      if (aTs > bTs) return 1;
       return 0;
     });
 

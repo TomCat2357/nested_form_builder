@@ -655,17 +655,37 @@ function SyncRecords_(ctx) {
 
       var forceFullSync = !!ctx.raw.forceFullSync;
 
+      // forceFullSync 時または変更があった時: createdAt昇順でソートしてリナンバー
+      if (existingData.length > 0 && (forceFullSync || modifiedCount > 0)) {
+        var pairs = [];
+        for (var pi = 0; pi < existingData.length; pi++) {
+          pairs.push({ d: existingData[pi], f: existingFormats[pi] });
+        }
+        pairs.sort(function(a, b) {
+          var aTs = Number(a.d[2] == null ? 0 : a.d[2]);
+          var bTs = Number(b.d[2] == null ? 0 : b.d[2]);
+          return aTs < bTs ? -1 : aTs > bTs ? 1 : 0;
+        });
+        var seq = 1;
+        for (var rn = 0; rn < pairs.length; rn++) {
+          var delAt = String(pairs[rn].d[4] == null ? "" : pairs[rn].d[4]).trim();
+          pairs[rn].d[1] = delAt ? "" : seq++;
+        }
+        for (var si = 0; si < pairs.length; si++) {
+          existingData[si] = pairs[si].d;
+          existingFormats[si] = pairs[si].f;
+        }
+      }
+
       // 一括書き込み
-      if (modifiedCount > 0) {
+      var needWrite = modifiedCount > 0 || forceFullSync;
+      if (needWrite) {
         Sheets_ensureRowCapacity_(sheet, dataStartRow + existingData.length - 1);
         if (existingData.length > 0) {
           var outRange = sheet.getRange(dataStartRow, 1, existingData.length, lastColumn);
           outRange.setValues(existingData);
           outRange.setNumberFormats(existingFormats);
         }
-        SetServerModifiedAt_(nowMs);
-        Sheets_touchSheetLastUpdated_(sheet, nowMs);
-      } else if (forceFullSync) {
         SetServerModifiedAt_(nowMs);
         Sheets_touchSheetLastUpdated_(sheet, nowMs);
       }
