@@ -67,6 +67,22 @@ export const SETTINGS_GROUPS = [
         description: "OFFにすると、検索画面・レコード画面でNo.列が非表示になります（回答状況の推測を防止）",
       },
       {
+        key: "showSearchId",
+        label: "検索結果一覧でIDを表示する",
+        type: "checkbox",
+        required: false,
+        defaultValue: true,
+        description: "OFFにすると、検索画面のID列が非表示になります",
+      },
+      {
+        key: "showSearchCreatedAt",
+        label: "検索結果一覧で作成日時を表示する",
+        type: "checkbox",
+        required: false,
+        defaultValue: true,
+        description: "OFFにすると、検索画面の作成日時列が非表示になります",
+      },
+      {
         key: "showOwnRecordsOnly",
         label: "自分の回答のみ表示",
         type: "checkbox",
