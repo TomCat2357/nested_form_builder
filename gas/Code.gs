@@ -537,7 +537,7 @@ function SyncRecords_(ctx) {
     return WithScriptLock_("同期", function() {
       Sheets_purgeExpiredDeletedRows_(sheet, ResolveDeletedRecordRetentionDays_(ctx));
       var nowMs = Date.now();
-      var order = ctx.order ||[];
+      var order = ctx.order || [];
       if (ctx.raw.formSchema) {
         order = Sheets_buildOrderFromSchema_(ctx.raw.formSchema);
       }
@@ -545,68 +545,109 @@ function SyncRecords_(ctx) {
       Sheets_ensureHeaderMatrix_(sheet, order);
       var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
 
-      var reservedHeaderKeys = {};
-      NFB_FIXED_HEADER_PATHS.forEach(function(path) {
-        reservedHeaderKeys[Sheets_pathKey_(path)] = true;
-      });
+      var reservedHeaderKeys = {
+        "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
+        "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
+      };
 
+      var lastColumn = Math.max(sheet.getLastColumn(), 8);
       var lastRow = sheet.getLastRow();
       var dataStartRow = NFB_DATA_START_ROW;
-      var idValues = lastRow >= dataStartRow ? sheet.getRange(dataStartRow, 1, lastRow - dataStartRow + 1, 1).getValues() :[];
 
-      var existingRowMap = {};
-      for (var i = 0; i < idValues.length; i++) {
-        var id = String(idValues[i][0] || "").trim();
-        if (id) existingRowMap[id] = dataStartRow + i;
+      // 全データを取得
+      var existingData = [];
+      var existingFormats = [];
+      if (lastRow >= dataStartRow) {
+        var dataRange = sheet.getRange(dataStartRow, 1, lastRow - dataStartRow + 1, lastColumn);
+        existingData = dataRange.getValues();
+        existingFormats = dataRange.getNumberFormats();
       }
 
-      var uploadRecords = ctx.raw.uploadRecords ||[];
+      var existingRowMap = {};
+      var maxNo = 0;
+      for (var i = 0; i < existingData.length; i++) {
+        var id = String(existingData[i][0] || "").trim();
+        if (id) existingRowMap[id] = i;
+        var noVal = Number(existingData[i][1]);
+        if (isFinite(noVal) && noVal > maxNo) maxNo = noVal;
+      }
+
+      var uploadRecords = ctx.raw.uploadRecords || [];
       var modifiedCount = 0;
       var uploadedRecordIds = {};
+      var currentUserEmail = Session.getActiveUser().getEmail() || "";
 
       for (var j = 0; j < uploadRecords.length; j++) {
         var rec = uploadRecords[j];
-        var recId = rec.id;
-        var recModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || Sheets_toUnixMs_(rec.modifiedAt, true) || 0;
+        var recId = rec.id || Sheets_generateRecordId_();
+        var recModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || Sheets_toUnixMs_(rec.modifiedAt, true) || nowMs;
 
-        var rowIndex = existingRowMap[recId] || -1;
+        var localIndex = existingRowMap.hasOwnProperty(recId) ? existingRowMap[recId] : -1;
         var sheetModifiedAt = 0;
-        var recordNo = "";
 
-        if (rowIndex !== -1) {
-          var modifiedAtCol = keyToColumn["modifiedAt"];
-          if (modifiedAtCol) {
-            var val = sheet.getRange(rowIndex, modifiedAtCol).getValue();
-            sheetModifiedAt = Sheets_toUnixMs_(val, true) || 0;
-          }
+        if (localIndex !== -1) {
+          var modAtVal = existingData[localIndex][3];
+          sheetModifiedAt = Sheets_toUnixMs_(modAtVal, true) || 0;
         }
 
-        var shouldApplyRecord = (rowIndex === -1) || (recModifiedAt > sheetModifiedAt);
+        var shouldApplyRecord = (localIndex === -1) || (recModifiedAt > sheetModifiedAt);
         if (shouldApplyRecord) {
-          if (rowIndex === -1) {
-            var newRow = Sheets_createNewRow_(sheet, recId);
-            rowIndex = newRow.rowIndex;
-            recordNo = newRow.recordNo;
-            existingRowMap[recId] = rowIndex;
+          var rowData;
+          var rowFormats;
+
+          if (localIndex === -1) {
+            rowData = new Array(lastColumn).fill("");
+            rowFormats = new Array(lastColumn).fill("General");
+            rowData[0] = recId;
+            maxNo++;
+            rowData[1] = maxNo;
+            rowData[2] = nowMs; // createdAt
+            rowData[5] = rec.createdBy || currentUserEmail;
+
+            localIndex = existingData.length;
+            existingData.push(rowData);
+            existingFormats.push(rowFormats);
+            existingRowMap[recId] = localIndex;
           } else {
-            Sheets_updateExistingRow_(sheet, rowIndex);
-            Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys);
-            recordNo = sheet.getRange(rowIndex, 2).getValue();
+            rowData = existingData[localIndex];
+            rowFormats = existingFormats[localIndex];
+            for (var key in keyToColumn) {
+              if (keyToColumn.hasOwnProperty(key) && !reservedHeaderKeys[key]) {
+                var cIdx = keyToColumn[key] - 1;
+                if (cIdx >= 0 && cIdx < lastColumn) rowData[cIdx] = "";
+              }
+            }
           }
 
-          rec["No."] = recordNo;
+          rowData[3] = recModifiedAt;
+          rowData[6] = currentUserEmail;
+          rowFormats[2] = "0";
+          rowFormats[3] = "0";
 
-          Sheets_writeDataToRow_(sheet, rowIndex, order, rec.data || {}, keyToColumn, reservedHeaderKeys, temporalTypeMap);
+          if (rec.deletedAt) {
+            rowData[4] = Sheets_toUnixMs_(rec.deletedAt, true) || rec.deletedAt;
+            rowData[7] = rec.deletedBy || currentUserEmail;
+            rowFormats[4] = "0";
+          } else {
+            rowData[4] = "";
+            rowData[7] = "";
+          }
 
-          var deletedAtCol = keyToColumn["deletedAt"];
-          if (deletedAtCol) sheet.getRange(rowIndex, deletedAtCol).setValue(rec.deletedAt || "");
+          for (var k = 0; k < order.length; k++) {
+            var kName = String(order[k] || "");
+            if (!kName || reservedHeaderKeys[kName]) continue;
+            var colIdx = keyToColumn[kName] - 1;
+            if (colIdx < 0) continue;
 
-          var deletedByCol = keyToColumn["deletedBy"];
-          if (deletedByCol) sheet.getRange(rowIndex, deletedByCol).setValue(rec.deletedBy || "");
+            var val = (rec.data && rec.data.hasOwnProperty(kName)) ? rec.data[kName] : "";
+            var tType = temporalTypeMap && temporalTypeMap[kName] ? temporalTypeMap[kName] : null;
+            var norm = Sheets_resolveTemporalCell_(val, tType);
 
-          var modAtCol = keyToColumn["modifiedAt"];
-          if (modAtCol && recModifiedAt) sheet.getRange(rowIndex, modAtCol).setValue(recModifiedAt);
+            rowData[colIdx] = norm.value;
+            if (norm.numberFormat) rowFormats[colIdx] = norm.numberFormat;
+          }
 
+          rec["No."] = rowData[1];
           uploadedRecordIds[String(recId)] = true;
           modifiedCount++;
         }
@@ -614,7 +655,17 @@ function SyncRecords_(ctx) {
 
       var forceFullSync = !!ctx.raw.forceFullSync;
 
-      if (modifiedCount > 0 || forceFullSync) {
+      // 一括書き込み
+      if (modifiedCount > 0) {
+        Sheets_ensureRowCapacity_(sheet, dataStartRow + existingData.length - 1);
+        if (existingData.length > 0) {
+          var outRange = sheet.getRange(dataStartRow, 1, existingData.length, lastColumn);
+          outRange.setValues(existingData);
+          outRange.setNumberFormats(existingFormats);
+        }
+        SetServerModifiedAt_(nowMs);
+        Sheets_touchSheetLastUpdated_(sheet, nowMs);
+      } else if (forceFullSync) {
         SetServerModifiedAt_(nowMs);
         Sheets_touchSheetLastUpdated_(sheet, nowMs);
       }
@@ -622,10 +673,16 @@ function SyncRecords_(ctx) {
       var serverModifiedAt = GetServerModifiedAt_();
       var lastServerReadAt = parseInt(ctx.raw.lastServerReadAt, 10) || 0;
 
-      var allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: forceFullSync });
-      var returnRecords =[];
-      for (var k = 0; k < allRecords.length; k++) {
-        var aRec = allRecords[k];
+      // 返却データ構築
+      var returnRecords = [];
+      var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
+
+      Sheets_applyTemporalFormatsToMemory_(columnPaths, existingData, existingData.length, temporalTypeMap);
+
+      for (var r = 0; r < existingData.length; r++) {
+        var aRec = Sheets_buildRecordFromRow_(existingData[r], columnPaths);
+        if (!aRec) continue;
+
         if (forceFullSync) {
           returnRecords.push(aRec);
         } else {

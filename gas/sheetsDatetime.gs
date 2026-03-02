@@ -287,3 +287,37 @@ function Sheets_toUnixMs_(value, allowSerialNumber) {
   return d ? d.getTime() : null;
 }
 
+
+function Sheets_applyTemporalFormatsToMemory_(columnPaths, values, dataRowCount, explicitTypeMap) {
+  if (!dataRowCount) return;
+
+  var reservedKeys = {
+    "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
+    "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
+  };
+  var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";
+
+  for (var j = 0; j < columnPaths.length; j++) {
+    var colInfo = columnPaths[j];
+    if (reservedKeys[colInfo.key]) continue;
+
+    var colIndex = colInfo.index;
+    var temporalType = null;
+
+    if (hasExplicitMap && explicitTypeMap[colInfo.key]) {
+      temporalType = explicitTypeMap[colInfo.key];
+    } else {
+      temporalType = Sheets_detectTemporalColumnType_(values, colIndex);
+    }
+
+    if (temporalType === "date" || temporalType === "time") {
+      for (var i = 0; i < dataRowCount; i++) {
+        var cell = values[i][colIndex];
+        if (cell === null || cell === undefined || cell === "") continue;
+        if (cell instanceof Date || (typeof cell === "number" && isFinite(cell))) continue;
+        var parsed = Sheets_parseDateLikeToJstDate_(cell);
+        if (parsed) values[i][colIndex] = parsed;
+      }
+    }
+  }
+}

@@ -6,20 +6,32 @@ function Sheets_purgeExpiredDeletedRows_(sheet, retentionDays) {
   var lastRow = sheet.getLastRow();
   if (lastRow < NFB_DATA_START_ROW) return { deletedCount: 0 };
 
+  var lastColumn = sheet.getLastColumn();
+  if (lastColumn === 0) return { deletedCount: 0 };
+
   var rowCount = lastRow - NFB_DATA_START_ROW + 1;
-  var deletedAtValues = sheet.getRange(NFB_DATA_START_ROW, 5, rowCount, 1).getValues();
+  var range = sheet.getRange(NFB_DATA_START_ROW, 1, rowCount, lastColumn);
+  var values = range.getValues();
+
   var cutoffUnixMs = Date.now() - days * NFB_MS_PER_DAY;
   var deletedCount = 0;
 
-  for (var i = deletedAtValues.length - 1; i >= 0; i--) {
-    var deletedAtUnixMs = Sheets_toUnixMs_(deletedAtValues[i][0], true);
+  var newValues = [];
+  for (var i = 0; i < values.length; i++) {
+    var deletedAtUnixMs = Sheets_toUnixMs_(values[i][4], true); // index 4 is deletedAt
     if (isFinite(deletedAtUnixMs) && deletedAtUnixMs > 0 && deletedAtUnixMs <= cutoffUnixMs) {
-      sheet.deleteRow(NFB_DATA_START_ROW + i);
-      deletedCount += 1;
+      deletedCount++;
+    } else {
+      newValues.push(values[i]);
     }
   }
 
   if (deletedCount > 0) {
+    if (newValues.length > 0) {
+      sheet.getRange(NFB_DATA_START_ROW, 1, newValues.length, lastColumn).setValues(newValues);
+    }
+    // クリア対象行
+    sheet.getRange(NFB_DATA_START_ROW + newValues.length, 1, deletedCount, lastColumn).clearContent();
     Sheets_touchSheetLastUpdated_(sheet, Date.now());
   }
 
@@ -150,67 +162,67 @@ function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
   }
 
   var dataStartRow = NFB_DATA_START_ROW;
+  var dataRowCount = lastRow - NFB_DATA_START_ROW + 1;
+  var dataRange = sheet.getRange(dataStartRow, 1, dataRowCount, lastColumn);
+  var dataValues = dataRange.getValues();
+  var ID_INDEX = 0;
 
   if (shouldNormalize) {
-    var removableCount = lastRow - NFB_DATA_START_ROW + 1;
-    if (removableCount > 0) {
-      var idValues = sheet.getRange(dataStartRow, 1, removableCount, 1).getValues();
-      for (var idx = idValues.length - 1; idx >= 0; idx--) {
-        var idCell = idValues[idx][0];
-        if (String(idCell == null ? "" : idCell).trim() === "") {
-          sheet.deleteRow(dataStartRow + idx);
-        }
+    var validRows = [];
+    var emptyCount = 0;
+
+    // 空行の除外（メモリ上）
+    for (var i = 0; i < dataValues.length; i++) {
+      var idCell = dataValues[i][ID_INDEX];
+      if (String(idCell == null ? "" : idCell).trim() !== "") {
+        validRows.push(dataValues[i]);
+      } else {
+        emptyCount++;
       }
     }
 
-    lastRow = sheet.getLastRow();
-    if (lastRow >= NFB_DATA_START_ROW) {
-      var normalizedDataRowCount = lastRow - NFB_DATA_START_ROW + 1;
-      var normalizedRange = sheet.getRange(dataStartRow, 1, normalizedDataRowCount, lastColumn);
-      var normalizedRows = normalizedRange.getValues();
-      var ID_INDEX = 0; // 0-based, 1st column
+    // ソート（メモリ上）
+    validRows.sort(function(a, b) {
+      var aId = String(a[ID_INDEX] == null ? "" : a[ID_INDEX]);
+      var bId = String(b[ID_INDEX] == null ? "" : b[ID_INDEX]);
+      if (aId < bId) return -1;
+      if (aId > bId) return 1;
+      return 0;
+    });
 
-      normalizedRows.sort(function(a, b) {
-        var aId = String(a[ID_INDEX] == null ? "" : a[ID_INDEX]);
-        var bId = String(b[ID_INDEX] == null ? "" : b[ID_INDEX]);
-        if (aId < bId) return -1;
-        if (aId > bId) return 1;
-        return 0;
-      });
-      normalizedRange.setValues(normalizedRows);
-
-      var noValues = [];
-      var nextNo = 1;
-      for (var n = 0; n < normalizedDataRowCount; n++) {
-        var deletedAtCell = normalizedRows[n][4];
-        var deletedAtText = String(deletedAtCell == null ? "" : deletedAtCell).trim();
-        if (deletedAtText) {
-          noValues.push([""]);
-          continue;
-        }
-        noValues.push([nextNo]);
-        nextNo += 1;
+    // No.の振り直し（メモリ上）
+    var nextNo = 1;
+    for (var n = 0; n < validRows.length; n++) {
+      var deletedAtText = String(validRows[n][4] == null ? "" : validRows[n][4]).trim();
+      if (!deletedAtText) {
+        validRows[n][1] = nextNo++;
+      } else {
+        validRows[n][1] = "";
       }
-      sheet.getRange(dataStartRow, 2, normalizedDataRowCount, 1).setValues(noValues);
     }
+
+    // 1回のAPI呼び出しでシートへ一括書き戻し
+    if (validRows.length > 0) {
+      sheet.getRange(dataStartRow, 1, validRows.length, lastColumn).setValues(validRows);
+    }
+    if (emptyCount > 0) {
+      sheet.getRange(dataStartRow + validRows.length, 1, emptyCount, lastColumn).clearContent();
+    }
+
+    dataValues = validRows;
+    dataRowCount = validRows.length;
   }
 
-  lastRow = sheet.getLastRow();
-  lastColumn = sheet.getLastColumn();
-  if (lastRow < NFB_DATA_START_ROW || lastColumn === 0) {
-    return [];
-  }
+  if (dataRowCount === 0) return [];
 
   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
-  var dataRowCount = lastRow - NFB_DATA_START_ROW + 1;
-  var dataRange = sheet.getRange(dataStartRow, 1, dataRowCount, lastColumn).getValues();
-  if (dataRowCount > 0) {
-    Sheets_applyTemporalFormats_(sheet, columnPaths, dataRange, dataRowCount, temporalTypeMap);
-  }
+
+  // フォーマットの適用（メモリ上の値を変換するだけ。APIは叩かない）
+  Sheets_applyTemporalFormatsToMemory_(columnPaths, dataValues, dataRowCount, temporalTypeMap);
 
   var records = [];
-  for (var i = 0; i < dataRange.length; i++) {
-    var record = Sheets_buildRecordFromRow_(dataRange[i], columnPaths);
+  for (var r = 0; r < dataValues.length; r++) {
+    var record = Sheets_buildRecordFromRow_(dataValues[r], columnPaths);
     if (record) records.push(record);
   }
 

@@ -168,48 +168,114 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
   Sheets_ensureHeaderMatrix_(sheet, ctx.order);
   var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
 
-  var reservedHeaderKeys = {};
-  NFB_FIXED_HEADER_PATHS.forEach(function(path) {
-    reservedHeaderKeys[Sheets_pathKey_(path)] = true;
-  });
+  var reservedHeaderKeys = {
+    "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
+    "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
+  };
 
+  var lastColumn = Math.max(sheet.getLastColumn(), 8);
   var rowIndex = Sheets_findRowById_(sheet, ctx.id);
-  var recordNo;
+  var isNew = (rowIndex === -1);
+  var currentTs = Date.now();
+  var email = Session.getActiveUser().getEmail() || "";
 
-  if (rowIndex === -1) {
-    var newRow = Sheets_createNewRow_(sheet, ctx.id);
-    rowIndex = newRow.rowIndex;
-    ctx.id = newRow.id;
-    recordNo = newRow.recordNo;
+  var rowData = new Array(lastColumn).fill("");
+  var formats = new Array(lastColumn).fill(null);
+
+  if (isNew) {
+    rowIndex = Sheets_findFirstBlankRow_(sheet);
+    Sheets_ensureRowCapacity_(sheet, rowIndex);
+
+    var maxNo = 0;
+    var lastRow = sheet.getLastRow();
+    if (lastRow >= NFB_DATA_START_ROW) {
+      var noValues = sheet.getRange(NFB_DATA_START_ROW, 2, lastRow - NFB_DATA_START_ROW + 1, 1).getValues();
+      for (var i = 0; i < noValues.length; i++) {
+        var val = Number(noValues[i][0]);
+        if (isFinite(val) && val > maxNo) maxNo = val;
+      }
+    }
+    ctx.id = ctx.id || Sheets_generateRecordId_();
+
+    rowData[0] = ctx.id;
+    rowData[1] = maxNo + 1;
+    rowData[2] = currentTs; // createdAt
+    rowData[3] = currentTs; // modifiedAt
+    rowData[5] = email;     // createdBy
+    rowData[6] = email;     // modifiedBy
   } else {
-    Sheets_updateExistingRow_(sheet, rowIndex);
-    Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys);
-    recordNo = sheet.getRange(rowIndex, 2).getValue();
+    var existingValues = sheet.getRange(rowIndex, 1, 1, lastColumn).getValues()[0];
+    for (var c = 0; c < lastColumn; c++) rowData[c] = existingValues[c] !== undefined ? existingValues[c] : "";
+
+    for (var key in keyToColumn) {
+      if (keyToColumn.hasOwnProperty(key) && !reservedHeaderKeys[key]) {
+        var colIdx = keyToColumn[key] - 1;
+        if (colIdx >= 0 && colIdx < lastColumn) rowData[colIdx] = "";
+      }
+    }
+    rowData[3] = currentTs; // modifiedAt
+    rowData[6] = email;     // modifiedBy
   }
 
-  Sheets_writeDataToRow_(sheet, rowIndex, ctx.order, ctx.responses, keyToColumn, reservedHeaderKeys, temporalTypeMap);
+  formats[2] = "0";
+  formats[3] = "0";
 
-  return { row: rowIndex, id: ctx.id, recordNo: recordNo };
+  for (var k = 0; k < ctx.order.length; k++) {
+    var kName = String(ctx.order[k] || "");
+    if (!kName || reservedHeaderKeys[kName]) continue;
+    var cIdx = keyToColumn[kName] - 1;
+    if (cIdx < 0) continue;
+
+    var val = ctx.responses && ctx.responses.hasOwnProperty(kName) ? ctx.responses[kName] : "";
+    var tType = temporalTypeMap && temporalTypeMap[kName] ? temporalTypeMap[kName] : null;
+    var norm = Sheets_resolveTemporalCell_(val, tType);
+
+    rowData[cIdx] = norm.value;
+    if (norm.numberFormat) formats[cIdx] = norm.numberFormat;
+  }
+
+  var range = sheet.getRange(rowIndex, 1, 1, lastColumn);
+  range.setValues([rowData]);
+
+  var needFormatWrite = false;
+  for (var f = 0; f < formats.length; f++) {
+    if (formats[f]) { needFormatWrite = true; break; }
+  }
+  if (needFormatWrite) {
+    var currentFormats = range.getNumberFormats()[0];
+    for (var ff = 0; ff < formats.length; ff++) {
+      if (formats[ff]) currentFormats[ff] = formats[ff];
+    }
+    range.setNumberFormats([currentFormats]);
+  }
+
+  Sheets_touchSheetLastUpdated_(sheet, currentTs);
+
+  return { row: rowIndex, id: ctx.id, recordNo: rowData[1] };
 }
 
 function Sheets_deleteRecordById_(sheet, id) {
   var rowIndex = Sheets_findRowById_(sheet, id);
+  if (rowIndex === -1) return { ok: false, error: "Record not found" };
 
-  if (rowIndex === -1) {
-    return { ok: false, error: "Record not found" };
-  }
-
-  // tombstone: 物理削除の代わりに deletedAt / modifiedAt を記録する
-  // col1=id, col2=No., col3=createdAt, col4=modifiedAt,
-  // col5=deletedAt, col6=createdBy, col7=modifiedBy, col8=deletedBy
   var now = Date.now();
   var email = Session.getActiveUser().getEmail() || "";
-  sheet.getRange(rowIndex, 4).setValue(now);   // modifiedAt
-  sheet.getRange(rowIndex, 5).setValue(now);   // deletedAt
-  sheet.getRange(rowIndex, 7).setValue(email); // modifiedBy
-  sheet.getRange(rowIndex, 8).setValue(email); // deletedBy
-  sheet.getRange(rowIndex, 2).setValue("");    // No. をクリア
-  sheet.getRange(rowIndex, 4, 1, 2).setNumberFormat("0"); // modifiedAt,deletedAt を整数フォーマット
+
+  var range = sheet.getRange(rowIndex, 2, 1, 7); // Col 2(No) to Col 8(deletedBy)
+  var values = range.getValues()[0];
+  var formats = range.getNumberFormats()[0];
+
+  values[0] = "";      // No.
+  values[2] = now;     // modifiedAt
+  values[3] = now;     // deletedAt
+  values[5] = email;   // modifiedBy
+  values[6] = email;   // deletedBy
+  formats[2] = "0";
+  formats[3] = "0";
+
+  range.setValues([values]);
+  range.setNumberFormats([formats]);
+
   Sheets_touchSheetLastUpdated_(sheet, now);
   SetServerModifiedAt_(now);
   return { ok: true, row: rowIndex, id: id };

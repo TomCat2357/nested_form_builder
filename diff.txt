@@ -1,0 +1,1458 @@
+Added regular file diff.txt:
+    (empty)
+Modified regular file gas\Code.gs:
+    ...
+ 532  532:   });
+ 533  533: }
+ 534  534: 
+ 535     : function SyncRecords_(ctx) {
+ 536     :   return ExecuteWithSheet_(ctx, function(sheet) {
+ 537     :     return WithScriptLock_("同期", function() {
+ 538     :       Sheets_purgeExpiredDeletedRows_(sheet, ResolveDeletedRecordRetentionDays_(ctx));
+ 539     :       var nowMs = Date.now();
+ 540     :       var order = ctx.order ||[];
+ 541     :       if (ctx.raw.formSchema) {
+ 542     :         order = Sheets_buildOrderFromSchema_(ctx.raw.formSchema);
+ 543     :       }
+ 544     :       var temporalTypeMap = ResolveTemporalTypeMap_(ctx);
+ 545     :       Sheets_ensureHeaderMatrix_(sheet, order);
+ 546     :       var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
+ 547     : 
+ 548     :       var reservedHeaderKeys = {};
+ 549     :       NFB_FIXED_HEADER_PATHS.forEach(function(path) {
+ 550     :         reservedHeaderKeys[Sheets_pathKey_(path)] = true;
+ 551     :       });
+ 552     : 
+ 553     :       var lastRow = sheet.getLastRow();
+ 554     :       var dataStartRow = NFB_DATA_START_ROW;
+ 555     :       var idValues = lastRow >= dataStartRow ? sheet.getRange(dataStartRow, 1, lastRow - dataStartRow + 1, 1).getValues() :[];
+ 556     : 
+ 557     :       var existingRowMap = {};
+ 558     :       for (var i = 0; i < idValues.length; i++) {
+ 559     :         var id = String(idValues[i][0] || "").trim();
+ 560     :         if (id) existingRowMap[id] = dataStartRow + i;
+ 561     :       }
+ 562     : 
+ 563     :       var uploadRecords = ctx.raw.uploadRecords ||[];
+ 564     :       var modifiedCount = 0;
+ 565     :       var uploadedRecordIds = {};
+ 566     : 
+      535: function SyncRecords_(ctx) {
+      536:   return ExecuteWithSheet_(ctx, function(sheet) {
+      537:     return WithScriptLock_("同期", function() {
+      538:       Sheets_purgeExpiredDeletedRows_(sheet, ResolveDeletedRecordRetentionDays_(ctx));
+      539:       var nowMs = Date.now();
+      540:       var order = ctx.order || [];
+      541:       if (ctx.raw.formSchema) {
+      542:         order = Sheets_buildOrderFromSchema_(ctx.raw.formSchema);
+      543:       }
+      544:       var temporalTypeMap = ResolveTemporalTypeMap_(ctx);
+      545:       Sheets_ensureHeaderMatrix_(sheet, order);
+      546:       var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
+      547: 
+      548:       var reservedHeaderKeys = {
+      549:         "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
+      550:         "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
+      551:       };
+      552: 
+      553:       var lastColumn = Math.max(sheet.getLastColumn(), 8);
+      554:       var lastRow = sheet.getLastRow();
+      555:       var dataStartRow = NFB_DATA_START_ROW;
+      556: 
+      557:       // 全データを取得
+      558:       var existingData = [];
+      559:       var existingFormats = [];
+      560:       if (lastRow >= dataStartRow) {
+      561:         var dataRange = sheet.getRange(dataStartRow, 1, lastRow - dataStartRow + 1, lastColumn);
+      562:         existingData = dataRange.getValues();
+      563:         existingFormats = dataRange.getNumberFormats();
+      564:       }
+      565: 
+      566:       var existingRowMap = {};
+      567:       var maxNo = 0;
+      568:       for (var i = 0; i < existingData.length; i++) {
+      569:         var id = String(existingData[i][0] || "").trim();
+      570:         if (id) existingRowMap[id] = i;
+      571:         var noVal = Number(existingData[i][1]);
+      572:         if (isFinite(noVal) && noVal > maxNo) maxNo = noVal;
+      573:       }
+      574: 
+      575:       var uploadRecords = ctx.raw.uploadRecords || [];
+      576:       var modifiedCount = 0;
+      577:       var uploadedRecordIds = {};
+      578:       var currentUserEmail = Session.getActiveUser().getEmail() || "";
+      579: 
+ 567  580:       for (var j = 0; j < uploadRecords.length; j++) {
+ 568  581:         var rec = uploadRecords[j];
+ 569  582:         var recId = rec.id || Sheets_generateRecordId_();
+ 570  583:         var recModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || Sheets_toUnixMs_(rec.modifiedAt, true) || 0nowMs;
+ 571  584: 
+ 572     :         var rowIndex = existingRowMap[recId] || -1;
+      585:         var localIndex = existingRowMap.hasOwnProperty(recId) ? existingRowMap[recId] : -1;
+ 573  586:         var sheetModifiedAt = 0;
+ 574     :         var recordNo = "";
+ 575     : 
+ 576     :         if (rowIndex !== -1) {
+ 577     :           var modifiedAtCol = keyToColumn["modifiedAt"];
+ 578     :           if (modifiedAtCol) {
+ 579     :             var val = sheet.getRange(rowIndex, modifiedAtCol).getValue();
+ 580     :             sheetModifiedAt = Sheets_toUnixMs_(val, true) || 0;
+ 581     :           }
+      587: 
+      588:         if (localIndex !== -1) {
+      589:           var modAtVal = existingData[localIndex][3];
+      590:           sheetModifiedAt = Sheets_toUnixMs_(modAtVal, true) || 0;
+ 582  591:         }
+ 583  592: 
+ 584  593:         var shouldApplyRecord = (rowIndexlocalIndex === -1) || (recModifiedAt > sheetModifiedAt);
+ 585  594:         if (shouldApplyRecord) {
+ 586     :           if (rowIndex === -1) {
+ 587     :             var newRow = Sheets_createNewRow_(sheet, recId);
+ 588     :             rowIndex = newRow.rowIndex;
+ 589     :             recordNo = newRow.recordNo;
+ 590     :             existingRowMap[recId] = rowIndex;
+ 591     :           } else {
+ 592     :             Sheets_updateExistingRow_(sheet, rowIndex);
+ 593     :             Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys);
+ 594     :             recordNo = sheet.getRange(rowIndex, 2).getValue();
+ 595     :           }
+ 596     : 
+ 597     :           rec["No."] = recordNo;
+ 598     : 
+ 599     :           Sheets_writeDataToRow_(sheet, rowIndex, order, rec.data || {}, keyToColumn, reservedHeaderKeys, temporalTypeMap);
+ 600     : 
+ 601     :           var deletedAtCol = keyToColumn["deletedAt"];
+ 602     :           if (deletedAtCol) sheet.getRange(rowIndex, deletedAtCol).setValue(rec.deletedAt || "");
+ 603     : 
+ 604     :           var deletedByCol = keyToColumn["deletedBy"];
+ 605     :           if (deletedByCol) sheet.getRange(rowIndex, deletedByCol).setValue(rec.deletedBy || "");
+ 606     : 
+ 607     :           var modAtCol = keyToColumn["modifiedAt"];
+ 608     :           if (modAtCol && recModifiedAt) sheet.getRange(rowIndex, modAtCol).setValue(recModifiedAt);
+ 609     : 
+ 610     :           uploadedRecordIds[String(recId)] = true;
+ 611     :           modifiedCount++;
+ 612     :         }
+ 613     :       }
+ 614     : 
+ 615     :       var forceFullSync = !!ctx.raw.forceFullSync;
+ 616     : 
+ 617     :       if (modifiedCount > 0 || forceFullSync) {
+ 618     :         SetServerModifiedAt_(nowMs);
+ 619     :         Sheets_touchSheetLastUpdated_(sheet, nowMs);
+ 620     :       }
+ 621     : 
+ 622     :       var serverModifiedAt = GetServerModifiedAt_();
+ 623     :       var lastServerReadAt = parseInt(ctx.raw.lastServerReadAt, 10) || 0;
+ 624     : 
+ 625     :       var allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: forceFullSync });
+ 626     :       var returnRecords =[];
+ 627     :       for (var k = 0; k < allRecords.length; k++) {
+ 628     :         var aRec = allRecords[k];
+ 629     :         if (forceFullSync) {
+ 630     :           returnRecords.push(aRec);
+ 631     :         } else {
+ 632     :           var aModAt = parseInt(aRec.modifiedAtUnixMs, 10) || 0;
+ 633     :           if (aModAt > lastServerReadAt || uploadedRecordIds[String(aRec.id)]) {
+ 634     :             returnRecords.push(aRec);
+ 635     :           }
+ 636     :         }
+ 637     :       }
+ 638     : 
+ 639     :       var headerMatrix = Sheets_readHeaderMatrix_(sheet);
+ 640     : 
+ 641     :       return {
+ 642     :         ok: true,
+ 643     :         serverModifiedAt: serverModifiedAt,
+ 644     :         serverCommitToken: serverModifiedAt,
+ 645     :         records: returnRecords.map(SerializeRecord_),
+ 646     :         headerMatrix: headerMatrix
+ 647     :       };
+ 648     :     });
+ 649     :   });
+ 650     : }
+      595:           var rowData;
+      596:           var rowFormats;
+      597: 
+      598:           if (localIndex === -1) {
+      599:             rowData = new Array(lastColumn).fill("");
+      600:             rowFormats = new Array(lastColumn).fill("General");
+      601:             rowData[0] = recId;
+      602:             maxNo++;
+      603:             rowData[1] = maxNo;
+      604:             rowData[2] = nowMs; // createdAt
+      605:             rowData[5] = rec.createdBy || currentUserEmail;
+      606: 
+      607:             localIndex = existingData.length;
+      608:             existingData.push(rowData);
+      609:             existingFormats.push(rowFormats);
+      610:             existingRowMap[recId] = localIndex;
+      611:           } else {
+      612:             rowData = existingData[localIndex];
+      613:             rowFormats = existingFormats[localIndex];
+      614:             for (var key in keyToColumn) {
+      615:               if (keyToColumn.hasOwnProperty(key) && !reservedHeaderKeys[key]) {
+      616:                 var cIdx = keyToColumn[key] - 1;
+      617:                 if (cIdx >= 0 && cIdx < lastColumn) rowData[cIdx] = "";
+      618:               }
+      619:             }
+      620:           }
+      621: 
+      622:           rowData[3] = recModifiedAt;
+      623:           rowData[6] = currentUserEmail;
+      624:           rowFormats[2] = "0";
+      625:           rowFormats[3] = "0";
+      626: 
+      627:           if (rec.deletedAt) {
+      628:             rowData[4] = Sheets_toUnixMs_(rec.deletedAt, true) || rec.deletedAt;
+      629:             rowData[7] = rec.deletedBy || currentUserEmail;
+      630:             rowFormats[4] = "0";
+      631:           } else {
+      632:             rowData[4] = "";
+      633:             rowData[7] = "";
+      634:           }
+      635: 
+      636:           for (var k = 0; k < order.length; k++) {
+      637:             var kName = String(order[k] || "");
+      638:             if (!kName || reservedHeaderKeys[kName]) continue;
+      639:             var colIdx = keyToColumn[kName] - 1;
+      640:             if (colIdx < 0) continue;
+      641: 
+      642:             var val = (rec.data && rec.data.hasOwnProperty(kName)) ? rec.data[kName] : "";
+      643:             var tType = temporalTypeMap && temporalTypeMap[kName] ? temporalTypeMap[kName] : null;
+      644:             var norm = Sheets_resolveTemporalCell_(val, tType);
+      645: 
+      646:             rowData[colIdx] = norm.value;
+      647:             if (norm.numberFormat) rowFormats[colIdx] = norm.numberFormat;
+      648:           }
+      649: 
+      650:           rec["No."] = rowData[1];
+      651:           uploadedRecordIds[String(recId)] = true;
+      652:           modifiedCount++;
+      653:         }
+      654:       }
+      655: 
+      656:       var forceFullSync = !!ctx.raw.forceFullSync;
+      657: 
+      658:       // 一括書き込み
+      659:       if (modifiedCount > 0) {
+      660:         Sheets_ensureRowCapacity_(sheet, dataStartRow + existingData.length - 1);
+      661:         if (existingData.length > 0) {
+      662:           var outRange = sheet.getRange(dataStartRow, 1, existingData.length, lastColumn);
+      663:           outRange.setValues(existingData);
+      664:           outRange.setNumberFormats(existingFormats);
+      665:         }
+      666:         SetServerModifiedAt_(nowMs);
+      667:         Sheets_touchSheetLastUpdated_(sheet, nowMs);
+      668:       } else if (forceFullSync) {
+      669:         SetServerModifiedAt_(nowMs);
+      670:         Sheets_touchSheetLastUpdated_(sheet, nowMs);
+      671:       }
+      672: 
+      673:       var serverModifiedAt = GetServerModifiedAt_();
+      674:       var lastServerReadAt = parseInt(ctx.raw.lastServerReadAt, 10) || 0;
+      675: 
+      676:       // 返却データ構築
+      677:       var returnRecords = [];
+      678:       var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
+      679: 
+      680:       Sheets_applyTemporalFormatsToMemory_(columnPaths, existingData, existingData.length, temporalTypeMap);
+      681: 
+      682:       for (var r = 0; r < existingData.length; r++) {
+      683:         var aRec = Sheets_buildRecordFromRow_(existingData[r], columnPaths);
+      684:         if (!aRec) continue;
+      685: 
+      686:         if (forceFullSync) {
+      687:           returnRecords.push(aRec);
+      688:         } else {
+      689:           var aModAt = parseInt(aRec.modifiedAtUnixMs, 10) || 0;
+      690:           if (aModAt > lastServerReadAt || uploadedRecordIds[String(aRec.id)]) {
+      691:             returnRecords.push(aRec);
+      692:           }
+      693:         }
+      694:       }
+      695: 
+      696:       var headerMatrix = Sheets_readHeaderMatrix_(sheet);
+      697: 
+      698:       return {
+      699:         ok: true,
+      700:         serverModifiedAt: serverModifiedAt,
+      701:         serverCommitToken: serverModifiedAt,
+      702:         records: returnRecords.map(SerializeRecord_),
+      703:         headerMatrix: headerMatrix
+      704:       };
+      705:     });
+      706:   });
+      707: }
+Modified regular file gas\sheetsDatetime.gs:
+    ...
+ 287  287:   return d ? d.getTime() : null;
+ 288  288: }
+ 289  289: 
+      290: 
+      291: function Sheets_applyTemporalFormatsToMemory_(columnPaths, values, dataRowCount, explicitTypeMap) {
+      292:   if (!dataRowCount) return;
+      293: 
+      294:   var reservedKeys = {
+      295:     "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
+      296:     "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
+      297:   };
+      298:   var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";
+      299: 
+      300:   for (var j = 0; j < columnPaths.length; j++) {
+      301:     var colInfo = columnPaths[j];
+      302:     if (reservedKeys[colInfo.key]) continue;
+      303: 
+      304:     var colIndex = colInfo.index;
+      305:     var temporalType = null;
+      306: 
+      307:     if (hasExplicitMap && explicitTypeMap[colInfo.key]) {
+      308:       temporalType = explicitTypeMap[colInfo.key];
+      309:     } else {
+      310:       temporalType = Sheets_detectTemporalColumnType_(values, colIndex);
+      311:     }
+      312: 
+      313:     if (temporalType === "date" || temporalType === "time") {
+      314:       for (var i = 0; i < dataRowCount; i++) {
+      315:         var cell = values[i][colIndex];
+      316:         if (cell === null || cell === undefined || cell === "") continue;
+      317:         if (cell instanceof Date || (typeof cell === "number" && isFinite(cell))) continue;
+      318:         var parsed = Sheets_parseDateLikeToJstDate_(cell);
+      319:         if (parsed) values[i][colIndex] = parsed;
+      320:       }
+      321:     }
+      322:   }
+      323: }
+Modified regular file gas\sheetsRecords.gs:
+   1    1: 
+   2     : function Sheets_purgeExpiredDeletedRows_(sheet, retentionDays) {
+   3     :   var days = parseInt(retentionDays, 10);
+   4     :   if (!isFinite(days) || days <= 0) days = NFB_DEFAULT_DELETED_RECORD_RETENTION_DAYS;
+   5     : 
+   6     :   var lastRow = sheet.getLastRow();
+   7     :   if (lastRow < NFB_DATA_START_ROW) return { deletedCount: 0 };
+   8     : 
+   9     :   var rowCount = lastRow - NFB_DATA_START_ROW + 1;
+  10     :   var deletedAtValues = sheet.getRange(NFB_DATA_START_ROW, 5, rowCount, 1).getValues();
+  11     :   var cutoffUnixMs = Date.now() - days * NFB_MS_PER_DAY;
+  12     :   var deletedCount = 0;
+  13     : 
+  14     :   for (var i = deletedAtValues.length - 1; i >= 0; i--) {
+  15     :     var deletedAtUnixMs = Sheets_toUnixMs_(deletedAtValues[i][0], true);
+  16     :     if (isFinite(deletedAtUnixMs) && deletedAtUnixMs > 0 && deletedAtUnixMs <= cutoffUnixMs) {
+  17     :       sheet.deleteRow(NFB_DATA_START_ROW + i);
+  18     :       deletedCount += 1;
+  19     :     }
+  20     :   }
+  21     : 
+  22     :   if (deletedCount > 0) {
+  23     :     Sheets_touchSheetLastUpdated_(sheet, Date.now());
+  24     :   }
+  25     : 
+  26     :   return { deletedCount: deletedCount };
+  27     : }
+        2: function Sheets_purgeExpiredDeletedRows_(sheet, retentionDays) {
+        3:   var days = parseInt(retentionDays, 10);
+        4:   if (!isFinite(days) || days <= 0) days = NFB_DEFAULT_DELETED_RECORD_RETENTION_DAYS;
+        5: 
+        6:   var lastRow = sheet.getLastRow();
+        7:   if (lastRow < NFB_DATA_START_ROW) return { deletedCount: 0 };
+        8: 
+        9:   var lastColumn = sheet.getLastColumn();
+       10:   if (lastColumn === 0) return { deletedCount: 0 };
+       11: 
+       12:   var rowCount = lastRow - NFB_DATA_START_ROW + 1;
+       13:   var range = sheet.getRange(NFB_DATA_START_ROW, 1, rowCount, lastColumn);
+       14:   var values = range.getValues();
+       15: 
+       16:   var cutoffUnixMs = Date.now() - days * NFB_MS_PER_DAY;
+       17:   var deletedCount = 0;
+       18: 
+       19:   var newValues = [];
+       20:   for (var i = 0; i < values.length; i++) {
+       21:     var deletedAtUnixMs = Sheets_toUnixMs_(values[i][4], true); // index 4 is deletedAt
+       22:     if (isFinite(deletedAtUnixMs) && deletedAtUnixMs > 0 && deletedAtUnixMs <= cutoffUnixMs) {
+       23:       deletedCount++;
+       24:     } else {
+       25:       newValues.push(values[i]);
+       26:     }
+       27:   }
+       28: 
+       29:   if (deletedCount > 0) {
+       30:     if (newValues.length > 0) {
+       31:       sheet.getRange(NFB_DATA_START_ROW, 1, newValues.length, lastColumn).setValues(newValues);
+       32:     }
+       33:     // クリア対象行
+       34:     sheet.getRange(NFB_DATA_START_ROW + newValues.length, 1, deletedCount, lastColumn).clearContent();
+       35:     Sheets_touchSheetLastUpdated_(sheet, Date.now());
+       36:   }
+       37: 
+       38:   return { deletedCount: deletedCount };
+       39: }
+  28   40: 
+  29   41: // Split from sheets.gs
+  30   42: 
+    ...
+ 140  152:   return { ok: true, record: record, rowIndex: dataRowIndex };
+ 141  153: }
+ 142  154: 
+ 143     : function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
+ 144     :   var lastRow = sheet.getLastRow();
+ 145     :   var lastColumn = sheet.getLastColumn();
+ 146     :   var shouldNormalize = !!(options && options.normalize);
+ 147     : 
+ 148     :   if (lastRow < NFB_DATA_START_ROW || lastColumn === 0) {
+ 149     :     return [];
+ 150     :   }
+ 151     : 
+ 152     :   var dataStartRow = NFB_DATA_START_ROW;
+ 153     : 
+ 154     :   if (shouldNormalize) {
+ 155     :     var removableCount = lastRow - NFB_DATA_START_ROW + 1;
+ 156     :     if (removableCount > 0) {
+ 157     :       var idValues = sheet.getRange(dataStartRow, 1, removableCount, 1).getValues();
+ 158     :       for (var idx = idValues.length - 1; idx >= 0; idx--) {
+ 159     :         var idCell = idValues[idx][0];
+ 160     :         if (String(idCell == null ? "" : idCell).trim() === "") {
+ 161     :           sheet.deleteRow(dataStartRow + idx);
+ 162     :         }
+ 163     :       }
+ 164     :     }
+ 165     : 
+ 166     :     lastRow = sheet.getLastRow();
+ 167     :     if (lastRow >= NFB_DATA_START_ROW) {
+ 168     :       var normalizedDataRowCount = lastRow - NFB_DATA_START_ROW + 1;
+ 169     :       var normalizedRange = sheet.getRange(dataStartRow, 1, normalizedDataRowCount, lastColumn);
+ 170     :       var normalizedRows = normalizedRange.getValues();
+ 171     :       var ID_INDEX = 0; // 0-based, 1st column
+ 172     : 
+ 173     :       normalizedRows.sort(function(a, b) {
+ 174     :         var aId = String(a[ID_INDEX] == null ? "" : a[ID_INDEX]);
+ 175     :         var bId = String(b[ID_INDEX] == null ? "" : b[ID_INDEX]);
+ 176     :         if (aId < bId) return -1;
+ 177     :         if (aId > bId) return 1;
+ 178     :         return 0;
+ 179     :       });
+ 180     :       normalizedRange.setValues(normalizedRows);
+ 181     : 
+ 182     :       var noValues = [];
+ 183     :       var nextNo = 1;
+ 184     :       for (var n = 0; n < normalizedDataRowCount; n++) {
+ 185     :         var deletedAtCell = normalizedRows[n][4];
+ 186     :         var deletedAtText = String(deletedAtCell == null ? "" : deletedAtCell).trim();
+ 187     :         if (deletedAtText) {
+ 188     :           noValues.push([""]);
+ 189     :           continue;
+ 190     :         }
+ 191     :         noValues.push([nextNo]);
+ 192     :         nextNo += 1;
+ 193     :       }
+ 194     :       sheet.getRange(dataStartRow, 2, normalizedDataRowCount, 1).setValues(noValues);
+ 195     :     }
+ 196     :   }
+ 197     : 
+ 198     :   lastRow = sheet.getLastRow();
+ 199     :   lastColumn = sheet.getLastColumn();
+ 200     :   if (lastRow < NFB_DATA_START_ROW || lastColumn === 0) {
+ 201     :     return [];
+ 202     :   }
+ 203     : 
+ 204     :   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
+ 205     :   var dataRowCount = lastRow - NFB_DATA_START_ROW + 1;
+ 206     :   var dataRange = sheet.getRange(dataStartRow, 1, dataRowCount, lastColumn).getValues();
+ 207     :   if (dataRowCount > 0) {
+ 208     :     Sheets_applyTemporalFormats_(sheet, columnPaths, dataRange, dataRowCount, temporalTypeMap);
+ 209     :   }
+ 210     : 
+ 211     :   var records = [];
+ 212     :   for (var i = 0; i < dataRange.length; i++) {
+ 213     :     var record = Sheets_buildRecordFromRow_(dataRange[i], columnPaths);
+ 214     :     if (record) records.push(record);
+ 215     :   }
+ 216     : 
+ 217     :   return records;
+ 218     : }
+      155: function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
+      156:   var lastRow = sheet.getLastRow();
+      157:   var lastColumn = sheet.getLastColumn();
+      158:   var shouldNormalize = !!(options && options.normalize);
+      159: 
+      160:   if (lastRow < NFB_DATA_START_ROW || lastColumn === 0) {
+      161:     return [];
+      162:   }
+      163: 
+      164:   var dataStartRow = NFB_DATA_START_ROW;
+      165:   var dataRowCount = lastRow - NFB_DATA_START_ROW + 1;
+      166:   var dataRange = sheet.getRange(dataStartRow, 1, dataRowCount, lastColumn);
+      167:   var dataValues = dataRange.getValues();
+      168:   var ID_INDEX = 0;
+      169: 
+      170:   if (shouldNormalize) {
+      171:     var validRows = [];
+      172:     var emptyCount = 0;
+      173: 
+      174:     // 空行の除外（メモリ上）
+      175:     for (var i = 0; i < dataValues.length; i++) {
+      176:       var idCell = dataValues[i][ID_INDEX];
+      177:       if (String(idCell == null ? "" : idCell).trim() !== "") {
+      178:         validRows.push(dataValues[i]);
+      179:       } else {
+      180:         emptyCount++;
+      181:       }
+      182:     }
+      183: 
+      184:     // ソート（メモリ上）
+      185:     validRows.sort(function(a, b) {
+      186:       var aId = String(a[ID_INDEX] == null ? "" : a[ID_INDEX]);
+      187:       var bId = String(b[ID_INDEX] == null ? "" : b[ID_INDEX]);
+      188:       if (aId < bId) return -1;
+      189:       if (aId > bId) return 1;
+      190:       return 0;
+      191:     });
+      192: 
+      193:     // No.の振り直し（メモリ上）
+      194:     var nextNo = 1;
+      195:     for (var n = 0; n < validRows.length; n++) {
+      196:       var deletedAtText = String(validRows[n][4] == null ? "" : validRows[n][4]).trim();
+      197:       if (!deletedAtText) {
+      198:         validRows[n][1] = nextNo++;
+      199:       } else {
+      200:         validRows[n][1] = "";
+      201:       }
+      202:     }
+      203: 
+      204:     // 1回のAPI呼び出しでシートへ一括書き戻し
+      205:     if (validRows.length > 0) {
+      206:       sheet.getRange(dataStartRow, 1, validRows.length, lastColumn).setValues(validRows);
+      207:     }
+      208:     if (emptyCount > 0) {
+      209:       sheet.getRange(dataStartRow + validRows.length, 1, emptyCount, lastColumn).clearContent();
+      210:     }
+      211: 
+      212:     dataValues = validRows;
+      213:     dataRowCount = validRows.length;
+      214:   }
+      215: 
+      216:   if (dataRowCount === 0) return [];
+      217: 
+      218:   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
+      219: 
+      220:   // フォーマットの適用（メモリ上の値を変換するだけ。APIは叩かない）
+      221:   Sheets_applyTemporalFormatsToMemory_(columnPaths, dataValues, dataRowCount, temporalTypeMap);
+      222: 
+      223:   var records = [];
+      224:   for (var r = 0; r < dataValues.length; r++) {
+      225:     var record = Sheets_buildRecordFromRow_(dataValues[r], columnPaths);
+      226:     if (record) records.push(record);
+      227:   }
+      228: 
+      229:   return records;
+      230: }
+Modified regular file gas\sheetsRowOps.gs:
+    ...
+ 163  163:   }
+ 164  164: }
+ 165  165: 
+ 166     : function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
+ 167     :   Sheets_prepareResponses_(ctx);
+ 168     :   Sheets_ensureHeaderMatrix_(sheet, ctx.order);
+ 169     :   var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
+ 170     : 
+ 171     :   var reservedHeaderKeys = {};
+ 172     :   NFB_FIXED_HEADER_PATHS.forEach(function(path) {
+ 173     :     reservedHeaderKeys[Sheets_pathKey_(path)] = true;
+ 174     :   });
+ 175     : 
+ 176     :   var rowIndex = Sheets_findRowById_(sheet, ctx.id);
+ 177     :   var recordNo;
+ 178     : 
+ 179     :   if (rowIndex === -1) {
+ 180     :     var newRow = Sheets_createNewRow_(sheet, ctx.id);
+ 181     :     rowIndex = newRow.rowIndex;
+ 182     :     ctx.id = newRow.id;
+ 183     :     recordNo = newRow.recordNo;
+ 184     :   } else {
+ 185     :     Sheets_updateExistingRow_(sheet, rowIndex);
+ 186     :     Sheets_clearDataRow_(sheet, rowIndex, keyToColumn, reservedHeaderKeys);
+ 187     :     recordNo = sheet.getRange(rowIndex, 2).getValue();
+ 188     :   }
+ 189     : 
+ 190     :   Sheets_writeDataToRow_(sheet, rowIndex, ctx.order, ctx.responses, keyToColumn, reservedHeaderKeys, temporalTypeMap);
+ 191     : 
+ 192     :   return { row: rowIndex, id: ctx.id, recordNo: recordNo };
+ 193     : }
+ 194     : 
+ 195     : function Sheets_deleteRecordById_(sheet, id) {
+ 196     :   var rowIndex = Sheets_findRowById_(sheet, id);
+ 197     : 
+ 198     :   if (rowIndex === -1) {
+ 199     :     return { ok: false, error: "Record not found" };
+ 200     :   }
+ 201     : 
+ 202     :   // tombstone: 物理削除の代わりに deletedAt / modifiedAt を記録する
+ 203     :   // col1=id, col2=No., col3=createdAt, col4=modifiedAt,
+ 204     :   // col5=deletedAt, col6=createdBy, col7=modifiedBy, col8=deletedBy
+ 205     :   var now = Date.now();
+ 206     :   var email = Session.getActiveUser().getEmail() || "";
+ 207     :   sheet.getRange(rowIndex, 4).setValue(now);   // modifiedAt
+ 208     :   sheet.getRange(rowIndex, 5).setValue(now);   // deletedAt
+ 209     :   sheet.getRange(rowIndex, 7).setValue(email); // modifiedBy
+ 210     :   sheet.getRange(rowIndex, 8).setValue(email); // deletedBy
+ 211     :   sheet.getRange(rowIndex, 2).setValue("");    // No. をクリア
+ 212     :   sheet.getRange(rowIndex, 4, 1, 2).setNumberFormat("0"); // modifiedAt,deletedAt を整数フォーマット
+ 213     :   Sheets_touchSheetLastUpdated_(sheet, now);
+ 214     :   SetServerModifiedAt_(now);
+ 215     :   return { ok: true, row: rowIndex, id: id };
+ 216     : }
+      166: function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
+      167:   Sheets_prepareResponses_(ctx);
+      168:   Sheets_ensureHeaderMatrix_(sheet, ctx.order);
+      169:   var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
+      170: 
+      171:   var reservedHeaderKeys = {
+      172:     "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
+      173:     "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
+      174:   };
+      175: 
+      176:   var lastColumn = Math.max(sheet.getLastColumn(), 8);
+      177:   var rowIndex = Sheets_findRowById_(sheet, ctx.id);
+      178:   var isNew = (rowIndex === -1);
+      179:   var currentTs = Date.now();
+      180:   var email = Session.getActiveUser().getEmail() || "";
+      181: 
+      182:   var rowData = new Array(lastColumn).fill("");
+      183:   var formats = new Array(lastColumn).fill(null);
+      184: 
+      185:   if (isNew) {
+      186:     rowIndex = Sheets_findFirstBlankRow_(sheet);
+      187:     Sheets_ensureRowCapacity_(sheet, rowIndex);
+      188: 
+      189:     var maxNo = 0;
+      190:     var lastRow = sheet.getLastRow();
+      191:     if (lastRow >= NFB_DATA_START_ROW) {
+      192:       var noValues = sheet.getRange(NFB_DATA_START_ROW, 2, lastRow - NFB_DATA_START_ROW + 1, 1).getValues();
+      193:       for (var i = 0; i < noValues.length; i++) {
+      194:         var val = Number(noValues[i][0]);
+      195:         if (isFinite(val) && val > maxNo) maxNo = val;
+      196:       }
+      197:     }
+      198:     ctx.id = ctx.id || Sheets_generateRecordId_();
+      199: 
+      200:     rowData[0] = ctx.id;
+      201:     rowData[1] = maxNo + 1;
+      202:     rowData[2] = currentTs; // createdAt
+      203:     rowData[3] = currentTs; // modifiedAt
+      204:     rowData[5] = email;     // createdBy
+      205:     rowData[6] = email;     // modifiedBy
+      206:   } else {
+      207:     var existingValues = sheet.getRange(rowIndex, 1, 1, lastColumn).getValues()[0];
+      208:     for (var c = 0; c < lastColumn; c++) rowData[c] = existingValues[c] !== undefined ? existingValues[c] : "";
+      209: 
+      210:     for (var key in keyToColumn) {
+      211:       if (keyToColumn.hasOwnProperty(key) && !reservedHeaderKeys[key]) {
+      212:         var colIdx = keyToColumn[key] - 1;
+      213:         if (colIdx >= 0 && colIdx < lastColumn) rowData[colIdx] = "";
+      214:       }
+      215:     }
+      216:     rowData[3] = currentTs; // modifiedAt
+      217:     rowData[6] = email;     // modifiedBy
+      218:   }
+      219: 
+      220:   formats[2] = "0";
+      221:   formats[3] = "0";
+      222: 
+      223:   for (var k = 0; k < ctx.order.length; k++) {
+      224:     var kName = String(ctx.order[k] || "");
+      225:     if (!kName || reservedHeaderKeys[kName]) continue;
+      226:     var cIdx = keyToColumn[kName] - 1;
+      227:     if (cIdx < 0) continue;
+      228: 
+      229:     var val = ctx.responses && ctx.responses.hasOwnProperty(kName) ? ctx.responses[kName] : "";
+      230:     var tType = temporalTypeMap && temporalTypeMap[kName] ? temporalTypeMap[kName] : null;
+      231:     var norm = Sheets_resolveTemporalCell_(val, tType);
+      232: 
+      233:     rowData[cIdx] = norm.value;
+      234:     if (norm.numberFormat) formats[cIdx] = norm.numberFormat;
+      235:   }
+      236: 
+      237:   var range = sheet.getRange(rowIndex, 1, 1, lastColumn);
+      238:   range.setValues([rowData]);
+      239: 
+      240:   var needFormatWrite = false;
+      241:   for (var f = 0; f < formats.length; f++) {
+      242:     if (formats[f]) { needFormatWrite = true; break; }
+      243:   }
+      244:   if (needFormatWrite) {
+      245:     var currentFormats = range.getNumberFormats()[0];
+      246:     for (var ff = 0; ff < formats.length; ff++) {
+      247:       if (formats[ff]) currentFormats[ff] = formats[ff];
+      248:     }
+      249:     range.setNumberFormats([currentFormats]);
+      250:   }
+      251: 
+      252:   Sheets_touchSheetLastUpdated_(sheet, currentTs);
+      253: 
+      254:   return { row: rowIndex, id: ctx.id, recordNo: rowData[1] };
+      255: }
+      256: 
+      257: function Sheets_deleteRecordById_(sheet, id) {
+      258:   var rowIndex = Sheets_findRowById_(sheet, id);
+      259:   if (rowIndex === -1) return { ok: false, error: "Record not found" };
+      260: 
+      261:   var now = Date.now();
+      262:   var email = Session.getActiveUser().getEmail() || "";
+      263: 
+      264:   var range = sheet.getRange(rowIndex, 2, 1, 7); // Col 2(No) to Col 8(deletedBy)
+      265:   var values = range.getValues()[0];
+      266:   var formats = range.getNumberFormats()[0];
+      267: 
+      268:   values[0] = "";      // No.
+      269:   values[2] = now;     // modifiedAt
+      270:   values[3] = now;     // deletedAt
+      271:   values[5] = email;   // modifiedBy
+      272:   values[6] = email;   // deletedBy
+      273:   formats[2] = "0";
+      274:   formats[3] = "0";
+      275: 
+      276:   range.setValues([values]);
+      277:   range.setNumberFormats([formats]);
+      278: 
+      279:   Sheets_touchSheetLastUpdated_(sheet, now);
+      280:   SetServerModifiedAt_(now);
+      281:   return { ok: true, row: rowIndex, id: id };
+      282: }
+Added regular file patch.js:
+        1: // patch.js
+        2: // Robust function-level patcher for nested_form_builder GAS sources.
+        3: // - Avoids brittle regex that can cut functions mid-body
+        4: // - Replaces functions by parsing matching braces (simple JS lexer-lite)
+        5: // - Appends helper function only once (with a stable marker)
+        6: // - Replaces SyncRecords_ from whichever file currently defines it (Code.gs etc.)
+        7: 
+        8: const fs = require("fs");
+        9: const path = require("path");
+       10: 
+       11: /** ------------------------------
+       12:  *  Low-level utilities
+       13:  *  ------------------------------ */
+       14: 
+       15: const readText = (filePath) => fs.readFileSync(filePath, "utf8");
+       16: const writeText = (filePath, content) =>
+       17:   fs.writeFileSync(filePath, content, "utf8");
+       18: const resolvePath = (rel) => path.resolve(__dirname, rel);
+       19: 
+       20: const log = {
+       21:   ok: (msg) => console.log(`✅ ${msg}`),
+       22:   warn: (msg) => console.log(`⚠️  ${msg}`),
+       23:   err: (msg) => console.error(`❌ ${msg}`),
+       24: };
+       25: 
+       26: function escapeRegExp(s) {
+       27:   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+       28: }
+       29: 
+       30: /**
+       31:  * Find the index of the matching '}' for a '{' at openBraceIndex,
+       32:  * skipping strings and comments.
+       33:  */
+       34: function findMatchingBraceIndex(src, openBraceIndex) {
+       35:   let i = openBraceIndex;
+       36:   if (src[i] !== "{") throw new Error("openBraceIndex must point to '{'");
+       37: 
+       38:   let depth = 0;
+       39:   let inSQuote = false;
+       40:   let inDQuote = false;
+       41:   let inTmpl = false;
+       42:   let inLineComment = false;
+       43:   let inBlockComment = false;
+       44: 
+       45:   for (; i < src.length; i++) {
+       46:     const ch = src[i];
+       47:     const prev = i > 0 ? src[i - 1] : "";
+       48:     const next = i + 1 < src.length ? src[i + 1] : "";
+       49: 
+       50:     if (inLineComment) {
+       51:       if (ch === "\n") inLineComment = false;
+       52:       continue;
+       53:     }
+       54:     if (inBlockComment) {
+       55:       if (prev === "*" && ch === "/") inBlockComment = false;
+       56:       continue;
+       57:     }
+       58: 
+       59:     if (inSQuote) {
+       60:       if (ch === "'" && prev !== "\\") inSQuote = false;
+       61:       continue;
+       62:     }
+       63:     if (inDQuote) {
+       64:       if (ch === `"` && prev !== "\\") inDQuote = false;
+       65:       continue;
+       66:     }
+       67:     if (inTmpl) {
+       68:       if (ch === "`" && prev !== "\\") inTmpl = false;
+       69:       continue;
+       70:     }
+       71: 
+       72:     if (ch === "/" && next === "/") {
+       73:       inLineComment = true;
+       74:       i++;
+       75:       continue;
+       76:     }
+       77:     if (ch === "/" && next === "*") {
+       78:       inBlockComment = true;
+       79:       i++;
+       80:       continue;
+       81:     }
+       82: 
+       83:     if (ch === "'") {
+       84:       inSQuote = true;
+       85:       continue;
+       86:     }
+       87:     if (ch === `"`) {
+       88:       inDQuote = true;
+       89:       continue;
+       90:     }
+       91:     if (ch === "`") {
+       92:       inTmpl = true;
+       93:       continue;
+       94:     }
+       95: 
+       96:     if (ch === "{") {
+       97:       depth++;
+       98:       continue;
+       99:     }
+      100:     if (ch === "}") {
+      101:       depth--;
+      102:       if (depth === 0) return i;
+      103:       continue;
+      104:     }
+      105:   }
+      106: 
+      107:   return -1;
+      108: }
+      109: 
+      110: /**
+      111:  * Locate a function declaration `function <name>(...) { ... }`
+      112:  * and return { startIndex, endIndex } for the whole declaration.
+      113:  */
+      114: function findFunctionRange(src, funcName) {
+      115:   const re = new RegExp(`\\bfunction\\s+${escapeRegExp(funcName)}\\s*\\(`, "m");
+      116:   const m = re.exec(src);
+      117:   if (!m) return null;
+      118: 
+      119:   const startIndex = m.index;
+      120: 
+      121:   const braceIndex = src.indexOf("{", m.index);
+      122:   if (braceIndex === -1) return null;
+      123: 
+      124:   const endBraceIndex = findMatchingBraceIndex(src, braceIndex);
+      125:   if (endBraceIndex === -1) return null;
+      126: 
+      127:   let endIndex = endBraceIndex + 1;
+      128:   if (src[endIndex] === "\r" && src[endIndex + 1] === "\n") endIndex += 2;
+      129:   else if (src[endIndex] === "\n") endIndex += 1;
+      130: 
+      131:   return { startIndex, endIndex };
+      132: }
+      133: 
+      134: /**
+      135:  * Replace a function by name with newSource (full `function Name_(...) { ... }` string).
+      136:  * Returns true if patched.
+      137:  */
+      138: function replaceFunctionInFile(relPath, funcName, newSource) {
+      139:   const fullPath = resolvePath(relPath);
+      140:   if (!fs.existsSync(fullPath)) {
+      141:     log.err(`File not found: ${fullPath}`);
+      142:     return false;
+      143:   }
+      144: 
+      145:   const src = readText(fullPath);
+      146:   const range = findFunctionRange(src, funcName);
+      147: 
+      148:   if (!range) {
+      149:     return false;
+      150:   }
+      151: 
+      152:   const before = src.slice(0, range.startIndex);
+      153:   const after = src.slice(range.endIndex);
+      154: 
+      155:   const normalizedNew = newSource.endsWith("\n") ? newSource : newSource + "\n";
+      156: 
+      157:   writeText(fullPath, before + normalizedNew + after);
+      158:   log.ok(`Patched: ${relPath} :: ${funcName}`);
+      159:   return true;
+      160: }
+      161: 
+      162: /**
+      163:  * Try replacing a function across multiple candidate files.
+      164:  * - Patches the first file where the function is found.
+      165:  * - If not found, prints a useful error.
+      166:  */
+      167: function replaceFunctionInFiles(candidateRelPaths, funcName, newSource) {
+      168:   const tried = [];
+      169:   for (const rel of candidateRelPaths) {
+      170:     tried.push(rel);
+      171:     const fullPath = resolvePath(rel);
+      172:     if (!fs.existsSync(fullPath)) continue;
+      173:     if (replaceFunctionInFile(rel, funcName, newSource)) return true;
+      174:   }
+      175:   log.warn(`Function not found in any candidate files: ${funcName}`);
+      176:   log.warn(`Tried: ${tried.join(", ")}`);
+      177:   return false;
+      178: }
+      179: 
+      180: /**
+      181:  * Append a helper block once (idempotent)
+      182:  */
+      183: function appendOnce(relPath, uniqueNeedle, blockToAppend) {
+      184:   const fullPath = resolvePath(relPath);
+      185:   if (!fs.existsSync(fullPath)) {
+      186:     log.err(`File not found: ${fullPath}`);
+      187:     return false;
+      188:   }
+      189: 
+      190:   const src = readText(fullPath);
+      191:   if (src.includes(uniqueNeedle)) {
+      192:     log.warn(`Already present: ${relPath} :: ${uniqueNeedle}`);
+      193:     return false;
+      194:   }
+      195: 
+      196:   const out = src.replace(/\s*$/, "\n") + blockToAppend.replace(/^\s*/, "\n");
+      197:   writeText(fullPath, out);
+      198:   log.ok(`Patched: ${relPath} (Appended helper)`);
+      199:   return true;
+      200: }
+      201: 
+      202: /** ------------------------------
+      203:  *  Replacement sources
+      204:  *  ------------------------------ */
+      205: 
+      206: // 1) gas/sheetsRecords.gs
+      207: const sheetsRecordsPath = "gas/sheetsRecords.gs";
+      208: 
+      209: const Sheets_purgeExpiredDeletedRows_New = `function Sheets_purgeExpiredDeletedRows_(sheet, retentionDays) {
+      210:   var days = parseInt(retentionDays, 10);
+      211:   if (!isFinite(days) || days <= 0) days = NFB_DEFAULT_DELETED_RECORD_RETENTION_DAYS;
+      212: 
+      213:   var lastRow = sheet.getLastRow();
+      214:   if (lastRow < NFB_DATA_START_ROW) return { deletedCount: 0 };
+      215: 
+      216:   var lastColumn = sheet.getLastColumn();
+      217:   if (lastColumn === 0) return { deletedCount: 0 };
+      218: 
+      219:   var rowCount = lastRow - NFB_DATA_START_ROW + 1;
+      220:   var range = sheet.getRange(NFB_DATA_START_ROW, 1, rowCount, lastColumn);
+      221:   var values = range.getValues();
+      222: 
+      223:   var cutoffUnixMs = Date.now() - days * NFB_MS_PER_DAY;
+      224:   var deletedCount = 0;
+      225: 
+      226:   var newValues = [];
+      227:   for (var i = 0; i < values.length; i++) {
+      228:     var deletedAtUnixMs = Sheets_toUnixMs_(values[i][4], true); // index 4 is deletedAt
+      229:     if (isFinite(deletedAtUnixMs) && deletedAtUnixMs > 0 && deletedAtUnixMs <= cutoffUnixMs) {
+      230:       deletedCount++;
+      231:     } else {
+      232:       newValues.push(values[i]);
+      233:     }
+      234:   }
+      235: 
+      236:   if (deletedCount > 0) {
+      237:     if (newValues.length > 0) {
+      238:       sheet.getRange(NFB_DATA_START_ROW, 1, newValues.length, lastColumn).setValues(newValues);
+      239:     }
+      240:     // クリア対象行
+      241:     sheet.getRange(NFB_DATA_START_ROW + newValues.length, 1, deletedCount, lastColumn).clearContent();
+      242:     Sheets_touchSheetLastUpdated_(sheet, Date.now());
+      243:   }
+      244: 
+      245:   return { deletedCount: deletedCount };
+      246: }`;
+      247: 
+      248: const Sheets_getAllRecords_New = `function Sheets_getAllRecords_(sheet, temporalTypeMap, options) {
+      249:   var lastRow = sheet.getLastRow();
+      250:   var lastColumn = sheet.getLastColumn();
+      251:   var shouldNormalize = !!(options && options.normalize);
+      252: 
+      253:   if (lastRow < NFB_DATA_START_ROW || lastColumn === 0) {
+      254:     return [];
+      255:   }
+      256: 
+      257:   var dataStartRow = NFB_DATA_START_ROW;
+      258:   var dataRowCount = lastRow - NFB_DATA_START_ROW + 1;
+      259:   var dataRange = sheet.getRange(dataStartRow, 1, dataRowCount, lastColumn);
+      260:   var dataValues = dataRange.getValues();
+      261:   var ID_INDEX = 0;
+      262: 
+      263:   if (shouldNormalize) {
+      264:     var validRows = [];
+      265:     var emptyCount = 0;
+      266: 
+      267:     // 空行の除外（メモリ上）
+      268:     for (var i = 0; i < dataValues.length; i++) {
+      269:       var idCell = dataValues[i][ID_INDEX];
+      270:       if (String(idCell == null ? "" : idCell).trim() !== "") {
+      271:         validRows.push(dataValues[i]);
+      272:       } else {
+      273:         emptyCount++;
+      274:       }
+      275:     }
+      276: 
+      277:     // ソート（メモリ上）
+      278:     validRows.sort(function(a, b) {
+      279:       var aId = String(a[ID_INDEX] == null ? "" : a[ID_INDEX]);
+      280:       var bId = String(b[ID_INDEX] == null ? "" : b[ID_INDEX]);
+      281:       if (aId < bId) return -1;
+      282:       if (aId > bId) return 1;
+      283:       return 0;
+      284:     });
+      285: 
+      286:     // No.の振り直し（メモリ上）
+      287:     var nextNo = 1;
+      288:     for (var n = 0; n < validRows.length; n++) {
+      289:       var deletedAtText = String(validRows[n][4] == null ? "" : validRows[n][4]).trim();
+      290:       if (!deletedAtText) {
+      291:         validRows[n][1] = nextNo++;
+      292:       } else {
+      293:         validRows[n][1] = "";
+      294:       }
+      295:     }
+      296: 
+      297:     // 1回のAPI呼び出しでシートへ一括書き戻し
+      298:     if (validRows.length > 0) {
+      299:       sheet.getRange(dataStartRow, 1, validRows.length, lastColumn).setValues(validRows);
+      300:     }
+      301:     if (emptyCount > 0) {
+      302:       sheet.getRange(dataStartRow + validRows.length, 1, emptyCount, lastColumn).clearContent();
+      303:     }
+      304: 
+      305:     dataValues = validRows;
+      306:     dataRowCount = validRows.length;
+      307:   }
+      308: 
+      309:   if (dataRowCount === 0) return [];
+      310: 
+      311:   var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
+      312: 
+      313:   // フォーマットの適用（メモリ上の値を変換するだけ。APIは叩かない）
+      314:   Sheets_applyTemporalFormatsToMemory_(columnPaths, dataValues, dataRowCount, temporalTypeMap);
+      315: 
+      316:   var records = [];
+      317:   for (var r = 0; r < dataValues.length; r++) {
+      318:     var record = Sheets_buildRecordFromRow_(dataValues[r], columnPaths);
+      319:     if (record) records.push(record);
+      320:   }
+      321: 
+      322:   return records;
+      323: }`;
+      324: 
+      325: // 2) gas/sheetsDatetime.gs (append helper once)
+      326: const sheetsDatetimePath = "gas/sheetsDatetime.gs";
+      327: const temporalFormatsMemoryAdd = `
+      328: /* ---- PATCH: temporal formats (memory) ---- */
+      329: function Sheets_applyTemporalFormatsToMemory_(columnPaths, values, dataRowCount, explicitTypeMap) {
+      330:   if (!dataRowCount) return;
+      331: 
+      332:   var reservedKeys = {
+      333:     "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
+      334:     "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
+      335:   };
+      336:   var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";
+      337: 
+      338:   for (var j = 0; j < columnPaths.length; j++) {
+      339:     var colInfo = columnPaths[j];
+      340:     if (reservedKeys[colInfo.key]) continue;
+      341: 
+      342:     var colIndex = colInfo.index;
+      343:     var temporalType = null;
+      344: 
+      345:     if (hasExplicitMap && explicitTypeMap[colInfo.key]) {
+      346:       temporalType = explicitTypeMap[colInfo.key];
+      347:     } else {
+      348:       temporalType = Sheets_detectTemporalColumnType_(values, colIndex);
+      349:     }
+      350: 
+      351:     if (temporalType === "date" || temporalType === "time") {
+      352:       for (var i = 0; i < dataRowCount; i++) {
+      353:         var cell = values[i][colIndex];
+      354:         if (cell === null || cell === undefined || cell === "") continue;
+      355:         if (cell instanceof Date || (typeof cell === "number" && isFinite(cell))) continue;
+      356:         var parsed = Sheets_parseDateLikeToJstDate_(cell);
+      357:         if (parsed) values[i][colIndex] = parsed;
+      358:       }
+      359:     }
+      360:   }
+      361: }
+      362: /* ---- /PATCH ---- */
+      363: `;
+      364: 
+      365: // 3) gas/sheetsRowOps.gs
+      366: const sheetsRowOpsPath = "gas/sheetsRowOps.gs";
+      367: 
+      368: const Sheets_upsertRecordById_New = `function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
+      369:   Sheets_prepareResponses_(ctx);
+      370:   Sheets_ensureHeaderMatrix_(sheet, ctx.order);
+      371:   var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
+      372: 
+      373:   var reservedHeaderKeys = {
+      374:     "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
+      375:     "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
+      376:   };
+      377: 
+      378:   var lastColumn = Math.max(sheet.getLastColumn(), 8);
+      379:   var rowIndex = Sheets_findRowById_(sheet, ctx.id);
+      380:   var isNew = (rowIndex === -1);
+      381:   var currentTs = Date.now();
+      382:   var email = Session.getActiveUser().getEmail() || "";
+      383: 
+      384:   var rowData = new Array(lastColumn).fill("");
+      385:   var formats = new Array(lastColumn).fill(null);
+      386: 
+      387:   if (isNew) {
+      388:     rowIndex = Sheets_findFirstBlankRow_(sheet);
+      389:     Sheets_ensureRowCapacity_(sheet, rowIndex);
+      390: 
+      391:     var maxNo = 0;
+      392:     var lastRow = sheet.getLastRow();
+      393:     if (lastRow >= NFB_DATA_START_ROW) {
+      394:       var noValues = sheet.getRange(NFB_DATA_START_ROW, 2, lastRow - NFB_DATA_START_ROW + 1, 1).getValues();
+      395:       for (var i = 0; i < noValues.length; i++) {
+      396:         var val = Number(noValues[i][0]);
+      397:         if (isFinite(val) && val > maxNo) maxNo = val;
+      398:       }
+      399:     }
+      400:     ctx.id = ctx.id || Sheets_generateRecordId_();
+      401: 
+      402:     rowData[0] = ctx.id;
+      403:     rowData[1] = maxNo + 1;
+      404:     rowData[2] = currentTs; // createdAt
+      405:     rowData[3] = currentTs; // modifiedAt
+      406:     rowData[5] = email;     // createdBy
+      407:     rowData[6] = email;     // modifiedBy
+      408:   } else {
+      409:     var existingValues = sheet.getRange(rowIndex, 1, 1, lastColumn).getValues()[0];
+      410:     for (var c = 0; c < lastColumn; c++) rowData[c] = existingValues[c] !== undefined ? existingValues[c] : "";
+      411: 
+      412:     for (var key in keyToColumn) {
+      413:       if (keyToColumn.hasOwnProperty(key) && !reservedHeaderKeys[key]) {
+      414:         var colIdx = keyToColumn[key] - 1;
+      415:         if (colIdx >= 0 && colIdx < lastColumn) rowData[colIdx] = "";
+      416:       }
+      417:     }
+      418:     rowData[3] = currentTs; // modifiedAt
+      419:     rowData[6] = email;     // modifiedBy
+      420:   }
+      421: 
+      422:   formats[2] = "0";
+      423:   formats[3] = "0";
+      424: 
+      425:   for (var k = 0; k < ctx.order.length; k++) {
+      426:     var kName = String(ctx.order[k] || "");
+      427:     if (!kName || reservedHeaderKeys[kName]) continue;
+      428:     var cIdx = keyToColumn[kName] - 1;
+      429:     if (cIdx < 0) continue;
+      430: 
+      431:     var val = ctx.responses && ctx.responses.hasOwnProperty(kName) ? ctx.responses[kName] : "";
+      432:     var tType = temporalTypeMap && temporalTypeMap[kName] ? temporalTypeMap[kName] : null;
+      433:     var norm = Sheets_resolveTemporalCell_(val, tType);
+      434: 
+      435:     rowData[cIdx] = norm.value;
+      436:     if (norm.numberFormat) formats[cIdx] = norm.numberFormat;
+      437:   }
+      438: 
+      439:   var range = sheet.getRange(rowIndex, 1, 1, lastColumn);
+      440:   range.setValues([rowData]);
+      441: 
+      442:   var needFormatWrite = false;
+      443:   for (var f = 0; f < formats.length; f++) {
+      444:     if (formats[f]) { needFormatWrite = true; break; }
+      445:   }
+      446:   if (needFormatWrite) {
+      447:     var currentFormats = range.getNumberFormats()[0];
+      448:     for (var ff = 0; ff < formats.length; ff++) {
+      449:       if (formats[ff]) currentFormats[ff] = formats[ff];
+      450:     }
+      451:     range.setNumberFormats([currentFormats]);
+      452:   }
+      453: 
+      454:   Sheets_touchSheetLastUpdated_(sheet, currentTs);
+      455: 
+      456:   return { row: rowIndex, id: ctx.id, recordNo: rowData[1] };
+      457: }`;
+      458: 
+      459: const Sheets_deleteRecordById_New = `function Sheets_deleteRecordById_(sheet, id) {
+      460:   var rowIndex = Sheets_findRowById_(sheet, id);
+      461:   if (rowIndex === -1) return { ok: false, error: "Record not found" };
+      462: 
+      463:   var now = Date.now();
+      464:   var email = Session.getActiveUser().getEmail() || "";
+      465: 
+      466:   var range = sheet.getRange(rowIndex, 2, 1, 7); // Col 2(No) to Col 8(deletedBy)
+      467:   var values = range.getValues()[0];
+      468:   var formats = range.getNumberFormats()[0];
+      469: 
+      470:   values[0] = "";      // No.
+      471:   values[2] = now;     // modifiedAt
+      472:   values[3] = now;     // deletedAt
+      473:   values[5] = email;   // modifiedBy
+      474:   values[6] = email;   // deletedBy
+      475:   formats[2] = "0";
+      476:   formats[3] = "0";
+      477: 
+      478:   range.setValues([values]);
+      479:   range.setNumberFormats([formats]);
+      480: 
+      481:   Sheets_touchSheetLastUpdated_(sheet, now);
+      482:   SetServerModifiedAt_(now);
+      483:   return { ok: true, row: rowIndex, id: id };
+      484: }`;
+      485: 
+      486: // 4) SyncRecords_ replacement (bulk/memory version)
+      487: const SyncRecords_New = `function SyncRecords_(ctx) {
+      488:   return ExecuteWithSheet_(ctx, function(sheet) {
+      489:     return WithScriptLock_("同期", function() {
+      490:       Sheets_purgeExpiredDeletedRows_(sheet, ResolveDeletedRecordRetentionDays_(ctx));
+      491:       var nowMs = Date.now();
+      492:       var order = ctx.order || [];
+      493:       if (ctx.raw.formSchema) {
+      494:         order = Sheets_buildOrderFromSchema_(ctx.raw.formSchema);
+      495:       }
+      496:       var temporalTypeMap = ResolveTemporalTypeMap_(ctx);
+      497:       Sheets_ensureHeaderMatrix_(sheet, order);
+      498:       var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
+      499: 
+      500:       var reservedHeaderKeys = {
+      501:         "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
+      502:         "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
+      503:       };
+      504: 
+      505:       var lastColumn = Math.max(sheet.getLastColumn(), 8);
+      506:       var lastRow = sheet.getLastRow();
+      507:       var dataStartRow = NFB_DATA_START_ROW;
+      508: 
+      509:       // 全データを取得
+      510:       var existingData = [];
+      511:       var existingFormats = [];
+      512:       if (lastRow >= dataStartRow) {
+      513:         var dataRange = sheet.getRange(dataStartRow, 1, lastRow - dataStartRow + 1, lastColumn);
+      514:         existingData = dataRange.getValues();
+      515:         existingFormats = dataRange.getNumberFormats();
+      516:       }
+      517: 
+      518:       var existingRowMap = {};
+      519:       var maxNo = 0;
+      520:       for (var i = 0; i < existingData.length; i++) {
+      521:         var id = String(existingData[i][0] || "").trim();
+      522:         if (id) existingRowMap[id] = i;
+      523:         var noVal = Number(existingData[i][1]);
+      524:         if (isFinite(noVal) && noVal > maxNo) maxNo = noVal;
+      525:       }
+      526: 
+      527:       var uploadRecords = ctx.raw.uploadRecords || [];
+      528:       var modifiedCount = 0;
+      529:       var uploadedRecordIds = {};
+      530:       var currentUserEmail = Session.getActiveUser().getEmail() || "";
+      531: 
+      532:       for (var j = 0; j < uploadRecords.length; j++) {
+      533:         var rec = uploadRecords[j];
+      534:         var recId = rec.id || Sheets_generateRecordId_();
+      535:         var recModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || Sheets_toUnixMs_(rec.modifiedAt, true) || nowMs;
+      536: 
+      537:         var localIndex = existingRowMap.hasOwnProperty(recId) ? existingRowMap[recId] : -1;
+      538:         var sheetModifiedAt = 0;
+      539: 
+      540:         if (localIndex !== -1) {
+      541:           var modAtVal = existingData[localIndex][3];
+      542:           sheetModifiedAt = Sheets_toUnixMs_(modAtVal, true) || 0;
+      543:         }
+      544: 
+      545:         var shouldApplyRecord = (localIndex === -1) || (recModifiedAt > sheetModifiedAt);
+      546:         if (shouldApplyRecord) {
+      547:           var rowData;
+      548:           var rowFormats;
+      549: 
+      550:           if (localIndex === -1) {
+      551:             rowData = new Array(lastColumn).fill("");
+      552:             rowFormats = new Array(lastColumn).fill("General");
+      553:             rowData[0] = recId;
+      554:             maxNo++;
+      555:             rowData[1] = maxNo;
+      556:             rowData[2] = nowMs; // createdAt
+      557:             rowData[5] = rec.createdBy || currentUserEmail;
+      558: 
+      559:             localIndex = existingData.length;
+      560:             existingData.push(rowData);
+      561:             existingFormats.push(rowFormats);
+      562:             existingRowMap[recId] = localIndex;
+      563:           } else {
+      564:             rowData = existingData[localIndex];
+      565:             rowFormats = existingFormats[localIndex];
+      566:             for (var key in keyToColumn) {
+      567:               if (keyToColumn.hasOwnProperty(key) && !reservedHeaderKeys[key]) {
+      568:                 var cIdx = keyToColumn[key] - 1;
+      569:                 if (cIdx >= 0 && cIdx < lastColumn) rowData[cIdx] = "";
+      570:               }
+      571:             }
+      572:           }
+      573: 
+      574:           rowData[3] = recModifiedAt;
+      575:           rowData[6] = currentUserEmail;
+      576:           rowFormats[2] = "0";
+      577:           rowFormats[3] = "0";
+      578: 
+      579:           if (rec.deletedAt) {
+      580:             rowData[4] = Sheets_toUnixMs_(rec.deletedAt, true) || rec.deletedAt;
+      581:             rowData[7] = rec.deletedBy || currentUserEmail;
+      582:             rowFormats[4] = "0";
+      583:           } else {
+      584:             rowData[4] = "";
+      585:             rowData[7] = "";
+      586:           }
+      587: 
+      588:           for (var k = 0; k < order.length; k++) {
+      589:             var kName = String(order[k] || "");
+      590:             if (!kName || reservedHeaderKeys[kName]) continue;
+      591:             var colIdx = keyToColumn[kName] - 1;
+      592:             if (colIdx < 0) continue;
+      593: 
+      594:             var val = (rec.data && rec.data.hasOwnProperty(kName)) ? rec.data[kName] : "";
+      595:             var tType = temporalTypeMap && temporalTypeMap[kName] ? temporalTypeMap[kName] : null;
+      596:             var norm = Sheets_resolveTemporalCell_(val, tType);
+      597: 
+      598:             rowData[colIdx] = norm.value;
+      599:             if (norm.numberFormat) rowFormats[colIdx] = norm.numberFormat;
+      600:           }
+      601: 
+      602:           rec["No."] = rowData[1];
+      603:           uploadedRecordIds[String(recId)] = true;
+      604:           modifiedCount++;
+      605:         }
+      606:       }
+      607: 
+      608:       var forceFullSync = !!ctx.raw.forceFullSync;
+      609: 
+      610:       // 一括書き込み
+      611:       if (modifiedCount > 0) {
+      612:         Sheets_ensureRowCapacity_(sheet, dataStartRow + existingData.length - 1);
+      613:         if (existingData.length > 0) {
+      614:           var outRange = sheet.getRange(dataStartRow, 1, existingData.length, lastColumn);
+      615:           outRange.setValues(existingData);
+      616:           outRange.setNumberFormats(existingFormats);
+      617:         }
+      618:         SetServerModifiedAt_(nowMs);
+      619:         Sheets_touchSheetLastUpdated_(sheet, nowMs);
+      620:       } else if (forceFullSync) {
+      621:         SetServerModifiedAt_(nowMs);
+      622:         Sheets_touchSheetLastUpdated_(sheet, nowMs);
+      623:       }
+      624: 
+      625:       var serverModifiedAt = GetServerModifiedAt_();
+      626:       var lastServerReadAt = parseInt(ctx.raw.lastServerReadAt, 10) || 0;
+      627: 
+      628:       // 返却データ構築
+      629:       var returnRecords = [];
+      630:       var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
+      631: 
+      632:       Sheets_applyTemporalFormatsToMemory_(columnPaths, existingData, existingData.length, temporalTypeMap);
+      633: 
+      634:       for (var r = 0; r < existingData.length; r++) {
+      635:         var aRec = Sheets_buildRecordFromRow_(existingData[r], columnPaths);
+      636:         if (!aRec) continue;
+      637: 
+      638:         if (forceFullSync) {
+      639:           returnRecords.push(aRec);
+      640:         } else {
+      641:           var aModAt = parseInt(aRec.modifiedAtUnixMs, 10) || 0;
+      642:           if (aModAt > lastServerReadAt || uploadedRecordIds[String(aRec.id)]) {
+      643:             returnRecords.push(aRec);
+      644:           }
+      645:         }
+      646:       }
+      647: 
+      648:       var headerMatrix = Sheets_readHeaderMatrix_(sheet);
+      649: 
+      650:       return {
+      651:         ok: true,
+      652:         serverModifiedAt: serverModifiedAt,
+      653:         serverCommitToken: serverModifiedAt,
+      654:         records: returnRecords.map(SerializeRecord_),
+      655:         headerMatrix: headerMatrix
+      656:       };
+      657:     });
+      658:   });
+      659: }`;
+      660: 
+      661: /** ------------------------------
+      662:  *  Execute patches
+      663:  *  ------------------------------ */
+      664: 
+      665: console.log("Applying patches (function-safe) ...");
+      666: 
+      667: // sheetsRecords
+      668: if (
+      669:   !replaceFunctionInFile(
+      670:     sheetsRecordsPath,
+      671:     "Sheets_purgeExpiredDeletedRows_",
+      672:     Sheets_purgeExpiredDeletedRows_New,
+      673:   )
+      674: ) {
+      675:   log.warn(
+      676:     `Function not found: ${sheetsRecordsPath} :: Sheets_purgeExpiredDeletedRows_`,
+      677:   );
+      678: }
+      679: if (
+      680:   !replaceFunctionInFile(
+      681:     sheetsRecordsPath,
+      682:     "Sheets_getAllRecords_",
+      683:     Sheets_getAllRecords_New,
+      684:   )
+      685: ) {
+      686:   log.warn(`Function not found: ${sheetsRecordsPath} :: Sheets_getAllRecords_`);
+      687: }
+      688: 
+      689: // sheetsDatetime (append once)
+      690: appendOnce(
+      691:   sheetsDatetimePath,
+      692:   "Sheets_applyTemporalFormatsToMemory_",
+      693:   temporalFormatsMemoryAdd,
+      694: );
+      695: 
+      696: // sheetsRowOps
+      697: if (
+      698:   !replaceFunctionInFile(
+      699:     sheetsRowOpsPath,
+      700:     "Sheets_upsertRecordById_",
+      701:     Sheets_upsertRecordById_New,
+      702:   )
+      703: ) {
+      704:   log.warn(
+      705:     `Function not found: ${sheetsRowOpsPath} :: Sheets_upsertRecordById_`,
+      706:   );
+      707: }
+      708: if (
+      709:   !replaceFunctionInFile(
+      710:     sheetsRowOpsPath,
+      711:     "Sheets_deleteRecordById_",
+      712:     Sheets_deleteRecordById_New,
+      713:   )
+      714: ) {
+      715:   log.warn(
+      716:     `Function not found: ${sheetsRowOpsPath} :: Sheets_deleteRecordById_`,
+      717:   );
+      718: }
+      719: 
+      720: // SyncRecords_ : file location can vary (Code.gs / formsCrud.gs etc.)
+      721: replaceFunctionInFiles(
+      722:   [
+      723:     "gas/Code.gs",
+      724:     "gas/formsCrud.gs",
+      725:     "gas/formsPublicApi.gs",
+      726:     "gas/model.gs",
+      727:     "gas/formsStorage.gs",
+      728:     "gas/formsParsing.gs",
+      729:   ],
+      730:   "SyncRecords_",
+      731:   SyncRecords_New,
+      732: );
+      733: 
+      734: console.log("Done.");
