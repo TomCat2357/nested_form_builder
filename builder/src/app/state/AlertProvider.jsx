@@ -2,7 +2,7 @@ import React, { createContext, useCallback, useEffect, useMemo, useRef, useState
 import AlertDialog from "../components/AlertDialog.jsx";
 
 export const AlertContext = createContext(null);
-const DEFAULT_TOAST_DURATION_MS = 2500;
+const DEFAULT_TOAST_DURATION_MS = 20000;
 
 const normalizeMessage = (message) =>
   message === undefined || message === null
@@ -18,7 +18,7 @@ export function AlertProvider({ children }) {
 
   const closeAlert = useCallback((id) => {
     const timeoutId = timeoutMapRef.current.get(id);
-    if (timeoutId) {
+    if (timeoutId !== undefined) {
       clearTimeout(timeoutId);
       timeoutMapRef.current.delete(id);
     }
@@ -30,12 +30,7 @@ export function AlertProvider({ children }) {
     timeoutMapRef.current.clear();
   }, []);
 
-  const showAlert = useCallback((message, title = "通知") => {
-    const id = ++nextIdRef.current;
-    setAlerts(prev => [...prev, { id, title, message: normalizeMessage(message), time: new Date() }]);
-  }, []);
-
-  const showToast = useCallback((message, { title = "通知", durationMs = DEFAULT_TOAST_DURATION_MS } = {}) => {
+  const enqueueAlert = useCallback((message, { title = "通知", durationMs = DEFAULT_TOAST_DURATION_MS } = {}) => {
     const id = ++nextIdRef.current;
     setAlerts(prev => [...prev, { id, title, message: normalizeMessage(message), time: new Date() }]);
     const duration = Number(durationMs);
@@ -46,6 +41,14 @@ export function AlertProvider({ children }) {
     }, duration);
     timeoutMapRef.current.set(id, timeoutId);
   }, [closeAlert]);
+
+  const showAlert = useCallback((message, title = "通知") => {
+    enqueueAlert(message, { title });
+  }, [enqueueAlert]);
+
+  const showToast = useCallback((message, { title = "通知", durationMs = DEFAULT_TOAST_DURATION_MS } = {}) => {
+    enqueueAlert(message, { title, durationMs });
+  }, [enqueueAlert]);
 
   const value = useMemo(
     () => ({ showAlert, showToast }),
