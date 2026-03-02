@@ -451,18 +451,11 @@ export async function applyDeltaToCache(formId, updatedRecords, headerMatrix = n
     existingRecords,
     incomingRecords: safeUpdatedRecords,
   });
-  console.debug(
-    `[applyDeltaToCache] formId=${formId}, cacheCount=${existingRecords.length}, lazyCount=${safeUpdatedRecords.length}, maxLazyModifiedAt=${mergePlan.maxIncomingModifiedAt}, maxCacheModifiedAt=${mergePlan.maxExistingModifiedAt}, updates=${mergePlan.commonUpdateIds.length}, adds=${mergePlan.incomingOnlyAddIds.length}`,
-  );
 
   for (const entryId of mergePlan.commonUpdateIds) {
     const lazyRecord = mergePlan.incomingByEntryId[entryId];
     const cacheRecord = mergePlan.existingByEntryId[entryId];
     if (!lazyRecord || !cacheRecord) continue;
-
-    const lazyModifiedAt = normalizeComparableModifiedAtUnixMs(lazyRecord);
-    const cacheModifiedAt = normalizeComparableModifiedAtUnixMs(cacheRecord);
-    console.debug(`[applyDeltaToCache] sec1: UPDATE FROM LAZY entryId=${entryId}, cacheModifiedAt=${cacheModifiedAt}, lazyModifiedAt=${lazyModifiedAt}`);
 
     const nextRowIndex = Number.isInteger(cacheRecord.rowIndex)
       ? cacheRecord.rowIndex
@@ -476,9 +469,6 @@ export async function applyDeltaToCache(formId, updatedRecords, headerMatrix = n
   for (const entryId of mergePlan.incomingOnlyAddIds) {
     const lazyRecord = mergePlan.incomingByEntryId[entryId];
     if (!lazyRecord) continue;
-
-    const lazyModifiedAt = normalizeComparableModifiedAtUnixMs(lazyRecord);
-    console.debug(`[applyDeltaToCache] sec3: ADD entryId=${entryId}, lazyModifiedAt=${lazyModifiedAt}, maxCacheModifiedAt=${mergePlan.maxExistingModifiedAt}`);
 
     const nextRowIndex = entryIndexMap[entryId];
     await waitForRequest(store.put(buildCacheRecord(formId, lazyRecord, lastSyncedAt, nextRowIndex)));

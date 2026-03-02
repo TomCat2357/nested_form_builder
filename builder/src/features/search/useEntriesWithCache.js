@@ -574,13 +574,7 @@ export const useEntriesWithCache = ({
         setHeaderMatrix(cache.headerMatrix || []);
         setLastSyncedAt(syncedAt);
         setLastSpreadsheetReadAt(sheetReadAt);
-        const cacheLastServerReadAt = Number.isFinite(Number(cache.lastServerReadAt))
-          ? Number(cache.lastServerReadAt)
-          : (Number.isFinite(Number(cache.lastSpreadsheetReadAt)) ? Number(cache.lastSpreadsheetReadAt) : 0);
-        const cachedHasUnsynced = (cache.entries || []).some((entry) => (Number(entry?.modifiedAtUnixMs) || 0) > cacheLastServerReadAt);
-        const nextUnsyncedCount = cachedHasUnsynced
-          ? (cache.entries || []).filter((entry) => (Number(entry?.modifiedAtUnixMs) || 0) > cacheLastServerReadAt).length
-          : 0;
+        const { hasUnsynced: cachedHasUnsynced, unsyncedCount: nextUnsyncedCount } = getUnsyncedState(cache);
         setHasUnsynced(cachedHasUnsynced);
         setUnsyncedCount(nextUnsyncedCount);
         setUseCache(true);
@@ -756,13 +750,7 @@ export const useEntriesWithCache = ({
       setHeaderMatrix(cache.headerMatrix || []);
       setLastSyncedAt(syncedAt);
       setLastSpreadsheetReadAt(sheetReadAt);
-      const cacheLastServerReadAt = Number.isFinite(Number(cache.lastServerReadAt))
-        ? Number(cache.lastServerReadAt)
-        : (Number.isFinite(Number(cache.lastSpreadsheetReadAt)) ? Number(cache.lastSpreadsheetReadAt) : 0);
-      const cachedHasUnsynced = (cache.entries || []).some((entry) => (Number(entry?.modifiedAtUnixMs) || 0) > cacheLastServerReadAt);
-      const nextUnsyncedCount = cachedHasUnsynced
-        ? (cache.entries || []).filter((entry) => (Number(entry?.modifiedAtUnixMs) || 0) > cacheLastServerReadAt).length
-        : 0;
+      const { hasUnsynced: cachedHasUnsynced, unsyncedCount: nextUnsyncedCount } = getUnsyncedState(cache);
       setHasUnsynced(cachedHasUnsynced);
       setUnsyncedCount(nextUnsyncedCount);
       setUseCache(true);
