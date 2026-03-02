@@ -67,3 +67,12 @@ export const traverseSchema = (schema, visitor, options = {}) => {
   };
   walk(Array.isArray(schema) ? schema : []);
 };
+
+/**
+ * スキーマの全ノード数を数える
+ */
+export const countSchemaNodes = (schema) => {
+  let count = 0;
+  traverseSchema(schema, () => { count++; });
+  return count;
+};

@@ -22,22 +22,9 @@ import {
   FORM_CACHE_MAX_AGE_MS,
   FORM_CACHE_BACKGROUND_REFRESH_MS,
 } from "../app/state/cachePolicy.js";
+import { countSchemaNodes } from "../core/schema.js";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/forms");
-const countSchemaNodes = (schema) => {
-  const walk = (nodes) => {
-    if (!Array.isArray(nodes) || nodes.length === 0) return 0;
-    return nodes.reduce((total, field) => {
-      const branches =
-        field?.childrenByValue && typeof field.childrenByValue === "object"
-          ? Object.values(field.childrenByValue)
-          : [];
-      const childCount = branches.reduce((branchTotal, childNodes) => branchTotal + walk(childNodes), 0);
-      return total + 1 + childCount;
-    }, 0);
-  };
-  return walk(schema);
-};
 
 export default function AdminFormEditorPage() {
   const { formId } = useParams();
