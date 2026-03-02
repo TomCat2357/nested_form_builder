@@ -161,6 +161,7 @@ export const useEntriesWithCache = ({
   const entriesRef = useLatestRef(entries);
   const operationSyncTokenRef = useRef(0);
   const syncStartSequenceRef = useRef(0);
+  const initialFormsSyncDoneRef = useRef(false);
 
   const applyGlobalSyncSnapshot = useCallback((snapshot) => {
     setLoading(snapshot.loading);
@@ -480,7 +481,6 @@ export const useEntriesWithCache = ({
         }
       }
 
-      await refreshFormsIfNeeded(source);
     } catch (error) {
       console.error("[SearchPage] operation cache check failed:", error);
       logSearchBackground("operation:error", {
@@ -497,6 +497,7 @@ export const useEntriesWithCache = ({
 
   useEffect(() => {
     if (!formId) {
+      initialFormsSyncDoneRef.current = false;
       setEntries([]);
       setHeaderMatrix([]);
       setLastSyncedAt(null);
@@ -508,6 +509,11 @@ export const useEntriesWithCache = ({
     }
 
     const loadData = async () => {
+      if (!initialFormsSyncDoneRef.current) {
+        initialFormsSyncDoneRef.current = true;
+        await refreshFormsIfNeeded("search-initial", "search-page:");
+      }
+
       let cache = { entries: [], headerMatrix: [], lastSyncedAt: null, lastSpreadsheetReadAt: null };
       try {
         cache = await getRecordsFromCache(formId);
@@ -632,7 +638,7 @@ export const useEntriesWithCache = ({
     };
 
     loadData();
-  }, [cacheDisabled, fetchAndCacheData, form?.schemaHash, formId, locationKey, locationState, logSearchBackground, showAlert]);
+  }, [cacheDisabled, fetchAndCacheData, form?.schemaHash, formId, locationKey, locationState, logSearchBackground, refreshFormsIfNeeded, showAlert]);
 
   const runManualRefreshOnce = useCallback(async () => {
     if (!formId) return;
