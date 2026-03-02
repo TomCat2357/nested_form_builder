@@ -24,9 +24,6 @@ const isUserNameType = (type) => type === USER_NAME_TYPE;
 const isEmailType = (type) => type === EMAIL_TYPE;
 const applyDisplayedFlag = (target, displayed) => {
   target.isDisplayed = displayed === true;
-  delete target.displayMode;
-  delete target.important;
-  delete target.compact;
 };
 
 /**

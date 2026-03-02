@@ -3,26 +3,11 @@ import EditorPage from "../editor/EditorPage.jsx";
 import PreviewPage from "../preview/PreviewPage.jsx";
 import SearchPreviewPanel from "./SearchPreviewPanel.jsx";
 import { useBuilderSettings } from "../settings/settingsStore.js";
-import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, MAX_DEPTH } from "../../core/schema.js";
+import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, MAX_DEPTH, countSchemaNodes } from "../../core/schema.js";
 import { runSelfTests } from "../../core/selfTests.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { omitThemeSetting } from "../../utils/settings.js";
 import { deepEqual } from "../../utils/deepEqual.js";
-
-const countSchemaNodes = (schema) => {
-  const walk = (nodes) => {
-    if (!Array.isArray(nodes) || nodes.length === 0) return 0;
-    return nodes.reduce((total, field) => {
-      const branches =
-        field?.childrenByValue && typeof field.childrenByValue === "object"
-          ? Object.values(field.childrenByValue)
-          : [];
-      const childCount = branches.reduce((branchTotal, childNodes) => branchTotal + walk(childNodes), 0);
-      return total + 1 + childCount;
-    }, 0);
-  };
-  return walk(schema);
-};
 
 const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   {

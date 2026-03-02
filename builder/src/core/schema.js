@@ -1,7 +1,8 @@
 import { genId } from "./ids.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
 import { MAX_DEPTH } from "./constants.js";
-import { mapSchema, traverseSchema } from "./schemaUtils.js";
+import { mapSchema, traverseSchema, countSchemaNodes } from "./schemaUtils.js";
+export { countSchemaNodes };
 
 const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" : label || "");
 
