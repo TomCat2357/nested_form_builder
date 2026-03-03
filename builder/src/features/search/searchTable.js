@@ -168,7 +168,7 @@ const resolveChoiceDisplayValue = (path, rawValue, column) => {
   return choiceLabels.optionLabel;
 };
 
-const collectDirectOptionLabels = (data, path) => {
+const collectDirectOptionLabels = (data, path, optionOrder = null) => {
   const optionValues = [];
   const prefix = `${path}|`;
   Object.entries(data).forEach(([key, value]) => {
@@ -181,6 +181,15 @@ const collectDirectOptionLabels = (data, path) => {
       optionValues.push(head);
     }
   });
+  if (Array.isArray(optionOrder) && optionOrder.length > 0) {
+    const orderMap = new Map(optionOrder.map((label, index) => [label, index]));
+    optionValues.sort((a, b) => {
+      const orderA = orderMap.has(a) ? orderMap.get(a) : Number.MAX_SAFE_INTEGER;
+      const orderB = orderMap.has(b) ? orderMap.get(b) : Number.MAX_SAFE_INTEGER;
+      if (orderA !== orderB) return orderA - orderB;
+      return compareStrings(a, b);
+    });
+  }
   return optionValues;
 };
 
@@ -221,7 +230,7 @@ const collectFieldValue = (entry, path, column) => {
 
   // 直接値がある場合はそれを優先
   const hasDirectValue = Object.prototype.hasOwnProperty.call(data, path);
-  const optionValues = collectDirectOptionLabels(data, path);
+  const optionValues = collectDirectOptionLabels(data, path, column?.optionOrder);
 
   if (hasDirectValue) {
     const directValue = data[path];
@@ -340,10 +349,11 @@ const createBaseColumns = () => [
   },
 ];
 
-const createDisplayColumn = (path, sourceType = "") => {
+const createDisplayColumn = (path, sourceType = "", options = {}) => {
   const segments = splitFieldPath(path).slice(0, MAX_HEADER_DEPTH);
   if (segments.length === 0) segments.push("回答");
   const key = `display:${path}`;
+  const optionOrder = Array.isArray(options.optionOrder) ? options.optionOrder : null;
   return {
     key,
     segments,
@@ -351,6 +361,7 @@ const createDisplayColumn = (path, sourceType = "") => {
     searchable: true,
     path,
     sourceType,
+    optionOrder,
     getValue: (entry, column) => collectFieldValue(entry, path, column),
   };
 };
@@ -363,8 +374,25 @@ const actionsColumn = {
   getValue: () => ({ display: "", search: "", sort: "" }),
 };
 
+const collectChoiceOptionOrderByPath = (schema) => {
+  const optionOrderByPath = new Map();
+  traverseSchema(schema || [], (field, context) => {
+    const path = context?.pathSegments?.join("|") || "";
+    if (!path) return;
+    if (field?.type !== "checkboxes") return;
+    const options = Array.isArray(field?.options) ? field.options : [];
+    const labels = options
+      .map((option) => (typeof option?.label === "string" ? option.label : ""))
+      .filter(Boolean);
+    optionOrderByPath.set(path, labels);
+  });
+  return optionOrderByPath;
+};
+
 const resolveDisplayFieldSettings = (form) => {
-  const collected = collectDisplayFieldSettings(form?.schema || []);
+  const schema = form?.schema || [];
+  const collected = collectDisplayFieldSettings(schema);
+  const optionOrderByPath = collectChoiceOptionOrderByPath(schema);
   if (Array.isArray(form?.displayFieldSettings) && form.displayFieldSettings.length) {
     const resolveTypeByPath = (path) => {
       const matched = collected.find((item) => item.path === path);
@@ -375,6 +403,7 @@ const resolveDisplayFieldSettings = (form) => {
       .map((item) => ({
         path: String(item.path),
         type: item.type || resolveTypeByPath(String(item.path)),
+        optionOrder: optionOrderByPath.get(String(item.path)) || null,
       }));
   }
 
@@ -383,6 +412,7 @@ const resolveDisplayFieldSettings = (form) => {
     .map((item) => ({
       path: String(item.path),
       type: item.type || "",
+      optionOrder: optionOrderByPath.get(String(item.path)) || null,
     }));
 };
 
@@ -397,9 +427,9 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
     if (!showSearchCreatedAt && col.key === "createdAt") return false;
     return true;
   });
-  resolveDisplayFieldSettings(form).forEach(({ path, type }) => {
+  resolveDisplayFieldSettings(form).forEach(({ path, type, optionOrder }) => {
     if (!path) return;
-    columns.push(createDisplayColumn(path, type));
+    columns.push(createDisplayColumn(path, type, { optionOrder }));
   });
   if (includeOperations) columns.push(actionsColumn);
   return columns;
