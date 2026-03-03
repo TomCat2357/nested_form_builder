@@ -86,6 +86,7 @@ export default function FormPage() {
   const form = cachedForm;
   const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form]);
   const [entry, setEntry] = useState(null);
+  const [recordNoInput, setRecordNoInput] = useState("");
   const [loading, setLoading] = useState(true);
 
   const draftKey = `nfb_draft_${formId}_${entryId || 'new'}`;
@@ -276,6 +277,7 @@ export default function FormPage() {
       });
     }
     setEntry(nextEntry);
+    setRecordNoInput(nextEntry?.["No."] === undefined || nextEntry?.["No."] === null ? "" : String(nextEntry["No."]));
     initialResponsesRef.current = restored;
     commitResponses(`applyEntryToState:${source}`, restored, {
       forceLog: true,
@@ -610,13 +612,14 @@ export default function FormPage() {
       }
     }
 
+    const normalizedRecordNo = String(recordNoInput || "").trim();
     const saved = await dataStore.upsertEntry(form.id, {
       id: payloadWithFormId.id,
       data: payloadWithFormId.responses,
       order: payloadWithFormId.order,
       createdBy,
       modifiedBy,
-      "No.": entry?.["No."],
+      "No.": normalizedRecordNo === "" ? entry?.["No."] : normalizedRecordNo,
     });
     applyEntryToState(saved, saved.id, "save:new-entry");
     pendingSyncedEntryRef.current = null;
@@ -1007,7 +1010,8 @@ export default function FormPage() {
           schema={normalizedSchema}
           responses={responses}
           setResponses={handleResponsesChange}
-          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: entry?.["No."] || "", userName, userEmail }}
+          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: recordNoInput, userName, userEmail }}
+          onRecordNoChange={setRecordNoInput}
           onSave={handleSaveToStore}
           showOutputJson={false}
           showSaveButton={false}

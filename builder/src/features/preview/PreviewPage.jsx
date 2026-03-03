@@ -384,6 +384,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     settings = {},
     showOutputJson = true,
     onSave,
+    onRecordNoChange,
     saveButtonLabel = "回答保存",
     showSaveButton = true,
     readOnly = false,
@@ -536,7 +537,16 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       {settings.showRecordNo !== false && (
         <div className="nf-mb-12">
           <label className="preview-label">No.</label>
-          <input type="text" value={settings.recordNo || ""} readOnly className="nf-input nf-input--readonly" />
+          <input
+            type="text"
+            value={settings.recordNo || ""}
+            readOnly={readOnly}
+            className={`nf-input${readOnly ? " nf-input--readonly" : ""}`}
+            onChange={(event) => {
+              if (readOnly || typeof onRecordNoChange !== "function") return;
+              onRecordNoChange(event.target.value);
+            }}
+          />
         </div>
       )}
       <div className="nf-mb-12">
