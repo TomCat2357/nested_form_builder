@@ -1,6 +1,33 @@
 /**
  * スキーマの木構造を変換して新しいツリーを生成する（Map操作）
  */
+const resolveOrderedChildKeys = (field) => {
+  const branches = field?.childrenByValue;
+  if (!branches || typeof branches !== "object") return [];
+
+  const branchKeys = Object.keys(branches);
+  if (branchKeys.length === 0) return [];
+
+  const ordered = [];
+  const seen = new Set();
+  const options = Array.isArray(field?.options) ? field.options : [];
+
+  options.forEach((opt) => {
+    const label = typeof opt?.label === "string" ? opt.label : "";
+    if (seen.has(label) || !Object.prototype.hasOwnProperty.call(branches, label)) return;
+    ordered.push(label);
+    seen.add(label);
+  });
+
+  branchKeys.forEach((key) => {
+    if (seen.has(key)) return;
+    ordered.push(key);
+    seen.add(key);
+  });
+
+  return ordered;
+};
+
 export const mapSchema = (schema, mapper) => {
   const walk = (nodes, pathSegments = [], depth = 1) => {
     return (nodes || []).map((field, index) => {
@@ -12,7 +39,7 @@ export const mapSchema = (schema, mapper) => {
 
       if (newField && newField.childrenByValue && typeof newField.childrenByValue === "object") {
         const newChildren = {};
-        Object.keys(newField.childrenByValue).forEach((optionLabel) => {
+        resolveOrderedChildKeys(newField).forEach((optionLabel) => {
           newChildren[optionLabel] = walk(
             newField.childrenByValue[optionLabel],
             [...currentPath, optionLabel],
@@ -44,14 +71,16 @@ export const traverseSchema = (schema, visitor, options = {}) => {
       if (shouldContinue === false) return;
 
       if (field.childrenByValue && typeof field.childrenByValue === "object") {
-        let childKeys = Object.keys(field.childrenByValue);
+        let childKeys = resolveOrderedChildKeys(field);
 
         if (options.getChildKeys) {
-          childKeys = options.getChildKeys(field, context);
+          const customKeys = options.getChildKeys(field, context);
+          childKeys = Array.isArray(customKeys) ? customKeys : [];
         } else if (options.responses) {
           const value = options.responses[field.id];
           if (field.type === "checkboxes" && Array.isArray(value)) {
-            childKeys = value.filter(k => Object.prototype.hasOwnProperty.call(field.childrenByValue, k));
+            const selected = new Set(value);
+            childKeys = resolveOrderedChildKeys(field).filter((k) => selected.has(k));
           } else if (["radio", "select"].includes(field.type) && typeof value === "string" && value) {
             childKeys = field.childrenByValue[value] ? [value] : [];
           } else {
