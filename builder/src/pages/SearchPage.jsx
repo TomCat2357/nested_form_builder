@@ -343,7 +343,7 @@ export default function SearchPage() {
         </label>
       )}
 
-      {(waitingForLock || loading) && pagedEntries.length === 0 ? (
+      {(waitingForLock || loading) && entries.length === 0 ? (
         <p className="search-loading">{waitingForLock ? "ロック解除待ち..." : "読み込み中..."}</p>
       ) : (
         <SearchTable

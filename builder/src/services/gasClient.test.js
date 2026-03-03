@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { syncRecordsProxy } from "./gasClient.js";
+import { listForms, syncRecordsProxy } from "./gasClient.js";
 
 const createGoogleScriptRunStub = () => {
   const calls = [];
@@ -70,4 +70,19 @@ test("syncRecordsProxy は spreadsheetId が空ならエラーにする", async 
     syncRecordsProxy({ spreadsheetId: "   " }),
     /spreadsheetId is required/,
   );
+});
+
+test("Apps Script 関数が未定義の場合は関数名を含むエラーを返す", async () => {
+  const originalGoogle = globalThis.google;
+  const { run } = createGoogleScriptRunStub();
+  globalThis.google = { script: { run } };
+
+  try {
+    await assert.rejects(
+      listForms(),
+      /Apps Script function "nfbListForms" is not available/,
+    );
+  } finally {
+    globalThis.google = originalGoogle;
+  }
 });

@@ -168,6 +168,48 @@ test("検索列設定でid列とcreatedAt列を非表示にできる", () => {
   assert.equal(keys.includes("modifiedAt"), true);
 });
 
+test("id列が非表示でも通常検索でレコードIDにマッチする", () => {
+  const form = {
+    settings: {
+      showSearchId: false,
+    },
+  };
+  const { columns } = buildSearchTableLayout(form, { includeOperations: false });
+  const entry = {
+    id: "rec_hidden_id_001",
+    "No.": 1,
+    modifiedAtUnixMs: Date.UTC(2026, 0, 1, 0, 0, 0),
+    modifiedAt: Date.UTC(2026, 0, 1, 0, 0, 0),
+    data: {},
+    dataUnixMs: {},
+  };
+  const row = { entry, values: computeRowValues(entry, columns) };
+
+  assert.equal(columns.some((column) => column.key === "id"), false);
+  assert.equal(matchesKeyword(row, columns, "hidden_id_001"), true);
+});
+
+test("id列が非表示でも列指定検索(ID:...)でレコードIDにマッチする", () => {
+  const form = {
+    settings: {
+      showSearchId: false,
+    },
+  };
+  const { columns } = buildSearchTableLayout(form, { includeOperations: false });
+  const entry = {
+    id: "rec_column_id_999",
+    "No.": 2,
+    modifiedAtUnixMs: Date.UTC(2026, 0, 1, 0, 0, 0),
+    modifiedAt: Date.UTC(2026, 0, 1, 0, 0, 0),
+    data: {},
+    dataUnixMs: {},
+  };
+  const row = { entry, values: computeRowValues(entry, columns) };
+
+  assert.equal(columns.some((column) => column.key === "id"), false);
+  assert.equal(matchesKeyword(row, columns, "ID:column_id_999"), true);
+});
+
 test("modifiedAt比較検索はYYYY/MM/DD HH:mm形式を解釈できる", () => {
   const form = { settings: {} };
   const { columns } = buildSearchTableLayout(form, { includeOperations: false });

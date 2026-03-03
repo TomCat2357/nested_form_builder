@@ -138,6 +138,8 @@ export const formatDateTime = (value) => {
 };
 
 const normalizeSearchText = (text) => String(text || "").toLowerCase();
+const normalizeColumnName = (text) => String(text || "").trim().toLowerCase();
+const isEntryIdColumnName = (columnName) => normalizeColumnName(columnName) === "id";
 
 const buildSearchableCandidates = (key, value, unixMs = undefined) => {
   const candidates = [];
@@ -1004,11 +1006,21 @@ const findColumnByName = (columns, colName) => {
 const findMatchingEntryField = (row, columnName) => {
   const entryData = row?.entry?.data || {};
   const entryDataUnixMs = row?.entry?.dataUnixMs || {};
-  const normalizedColName = (columnName || "").toLowerCase();
+  const normalizedColName = normalizeColumnName(columnName);
   if (!normalizedColName) return null;
 
+  if (isEntryIdColumnName(normalizedColName)) {
+    const entryId = row?.entry?.id;
+    if (entryId === undefined || entryId === null || entryId === "") return null;
+    return {
+      key: "id",
+      value: entryId,
+      unixMs: undefined,
+    };
+  }
+
   const matchingKey = Object.keys(entryData).find((key) => {
-    const lower = key.toLowerCase();
+    const lower = normalizeColumnName(key);
     return lower === normalizedColName || lower.includes(normalizedColName);
   });
 
@@ -1144,6 +1156,17 @@ const evaluateAST = (ast, row, columns) => {
       });
 
       if (matchesInColumns) return true;
+
+      // ID列が非表示でもレコードIDを検索対象に含める
+      const entryId = row?.entry?.id;
+      if (entryId !== undefined && entryId !== null && entryId !== "") {
+        const matchesEntryId = buildSearchableCandidates("id", entryId).some((candidate) => {
+          if (!candidate) return false;
+          const normalized = normalizeSearchText(candidate);
+          return normalized.includes(keyword);
+        });
+        if (matchesEntryId) return true;
+      }
 
       // 表示列で見つからなかった場合、全データフィールドを検索
       const entryData = row?.entry?.data || {};

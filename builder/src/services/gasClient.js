@@ -23,9 +23,27 @@ const callScriptRun = (functionName, payload) =>
       reject(new Error("この機能はGoogle Apps Script環境でのみ利用可能です"));
       return;
     }
-    google.script.run
+    const safeFunctionName = typeof functionName === "string" ? functionName.trim() : "";
+    if (!safeFunctionName) {
+      reject(new Error("Apps Script functionName is required"));
+      return;
+    }
+
+    const runner = google.script.run
       .withSuccessHandler(resolve)
-      .withFailureHandler((error) => reject(normalizeScriptRunError(error)))[functionName](payload);
+      .withFailureHandler((error) => reject(normalizeScriptRunError(error)));
+
+    const remoteFunction = runner?.[safeFunctionName];
+    if (typeof remoteFunction !== "function") {
+      reject(new Error(`Apps Script function "${safeFunctionName}" is not available`));
+      return;
+    }
+
+    try {
+      remoteFunction.call(runner, payload);
+    } catch (error) {
+      reject(normalizeScriptRunError(error));
+    }
   });
 
 // DRY化のための共通APIラッパー
