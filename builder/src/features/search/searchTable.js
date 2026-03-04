@@ -941,6 +941,15 @@ const tokenizeSearchQuery = (query) => {
 const parseTokens = (tokens) => {
   let pos = 0;
 
+  const isImplicitAndEligibleNode = (node) => {
+    if (!node) return false;
+    if (node.type === 'PARTIAL') return true;
+    if (node.type === 'AND') {
+      return isImplicitAndEligibleNode(node.left) && isImplicitAndEligibleNode(node.right);
+    }
+    return false;
+  };
+
   const parseExpression = () => {
     let left = parseTerm();
 
@@ -956,8 +965,15 @@ const parseTokens = (tokens) => {
   const parseTerm = () => {
     let left = parseFactor();
 
-    while (pos < tokens.length && tokens[pos].type === 'AND') {
-      pos++; // 'AND'をスキップ
+    while (pos < tokens.length) {
+      if (tokens[pos].type === 'AND') {
+        pos++; // 'AND'をスキップ
+      } else if (tokens[pos].type === 'OR' || tokens[pos].type === 'RPAREN') {
+        break;
+      } else if (!(isImplicitAndEligibleNode(left) && tokens[pos].type === 'PARTIAL')) {
+        break;
+      }
+      // 演算子なしで条件が連続する場合は暗黙ANDとして扱う
       const right = parseFactor();
       left = { type: 'AND', left, right };
     }

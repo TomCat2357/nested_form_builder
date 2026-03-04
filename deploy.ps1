@@ -12,6 +12,40 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+
+function Resolve-IndexHtmlPath {
+    $candidates = @("dist/Index.html", "dist/index.html")
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+    return ""
+}
+
+function Set-FileContentWithRetry {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Path,
+        [Parameter(Mandatory=$true)]
+        [string]$Content,
+        [int]$RetryCount = 5,
+        [int]$DelayMs = 400
+    )
+
+    for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
+        try {
+            $Content | Set-Content $Path -Encoding UTF8 -NoNewline
+            return
+        } catch {
+            if ($attempt -ge $RetryCount) {
+                throw
+            }
+            Start-Sleep -Milliseconds $DelayMs
+        }
+    }
+}
+
 function Show-Help {
     @"
 Usage: .\deploy.ps1 [options]
@@ -99,9 +133,10 @@ Write-Host "🗂 プロパティ保存先: $PropertyStore" -ForegroundColor Gree
 # デプロイファイルの準備
 Write-Host "📄 デプロイファイルを準備中..." -ForegroundColor Yellow
 
-# dist/Index.html が生成されているか確認
-if (-not (Test-Path "dist/Index.html")) {
-    Write-Host "❌ ビルド成果物 dist/Index.html が見つかりません" -ForegroundColor Red
+# dist/Index.html または dist/index.html が生成されているか確認
+$IndexHtmlPath = Resolve-IndexHtmlPath
+if (-not $IndexHtmlPath) {
+    Write-Host "❌ ビルド成果物 dist/Index.html (or dist/index.html) が見つかりません" -ForegroundColor Red
     exit 1
 }
 
@@ -109,7 +144,7 @@ if (-not (Test-Path "dist/Index.html")) {
 $DeployTimestamp = (Get-Date).ToUniversalTime().AddHours(9).ToString("yyyy-MM-dd HH:mm:ss") + " JST"
 
 # <base target="_top"> タグとデプロイ時刻を追加
-$indexHtml = Get-Content "dist/Index.html" -Raw -Encoding UTF8
+$indexHtml = Get-Content $IndexHtmlPath -Raw -Encoding UTF8
 
 if (-not $indexHtml.Contains('<base target="_top">')) {
     $indexHtml = $indexHtml -replace '<head>', "<head>`n  <base target=""_top"">"
@@ -122,7 +157,7 @@ if ($indexHtml -match '<meta name="deploy-time"') {
     $indexHtml = $indexHtml -replace '<head>', "<head>`n  $deployMeta"
 }
 
-$indexHtml | Set-Content "dist/Index.html" -Encoding UTF8 -NoNewline
+Set-FileContentWithRetry -Path $IndexHtmlPath -Content $indexHtml
 Write-Host "📅 デプロイ時刻: $DeployTimestamp" -ForegroundColor Green
 
 # appsscript.json をコピー
@@ -161,7 +196,7 @@ if ($ManifestOverride -ne "") {
 
 Write-Host "✅ デプロイファイルの準備が完了しました" -ForegroundColor Green
 Write-Host "   - dist/Bundle.gs (GAS結合ファイル)"
-Write-Host "   - dist/Index.html (Reactアプリ)"
+Write-Host "   - $IndexHtmlPath (Reactアプリ)"
 if ($ManifestOverride -ne "") {
     Write-Host "   - dist/appsscript.json (GAS設定, overrides: $ManifestOverride)"
 } else {
