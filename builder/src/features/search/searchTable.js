@@ -844,7 +844,7 @@ const tokenizeSearchQuery = (query) => {
 
     // 条件式のトークン化
     // パターン1: 列名:/正規表現/
-    const regexMatch = remaining.match(/^([^:()]+?):\/(.+?)\//);
+    const regexMatch = remaining.match(/^([^\s:()]+):\/(.+?)\//);
     if (regexMatch) {
       const colName = regexMatch[1].trim().replace(/^["']|["']$/g, '');
       const pattern = regexMatch[2];
@@ -855,20 +855,35 @@ const tokenizeSearchQuery = (query) => {
 
     // パターン2: 列名[演算子]値（数値・等価比較用。":" "=" "==" 同義）
     // 引用符で囲まれた値はスペースを含めて全体を取得
-    let operatorMatch = remaining.match(/^([^:()]+?)(>=|<=|<>|><|!=|>|<|=|:|==)"([^"]*)"(?=\s|$|and|AND|or|OR|\))/i);
+    let operatorMatch = remaining.match(/^([^\s:()><=!]+)(>=|<=|<>|><|!=|>|<|=|:|==)"([^"]*)"(?=\s|$|[()])/i);
     if (!operatorMatch) {
-      operatorMatch = remaining.match(/^([^:()]+?)(>=|<=|<>|><|!=|>|<|=|:|==)'([^']*)'(?=\s|$|and|AND|or|OR|\))/i);
+      operatorMatch = remaining.match(/^([^\s:()><=!]+)(>=|<=|<>|><|!=|>|<|=|:|==)'([^']*)'(?=\s|$|[()])/i);
     }
     if (!operatorMatch) {
-      operatorMatch = remaining.match(/^([^:()]+?)(>=|<=|<>|><|!=|>|<|=|:|==)(.+?)(?=\s|$|and|AND|or|OR|\))/i);
+      operatorMatch = remaining.match(/^([^\s:()><=!]+)(>=|<=|<>|><|!=|>|<|=|:|==)(.+?)(?=\s|$|[()])/i);
     }
     if (operatorMatch) {
       const colName = operatorMatch[1].trim().replace(/^["']|["']$/g, '');
       const operator = operatorMatch[2];
       let value = operatorMatch[3].trim().replace(/^["']|["']$/g, '');
+      const rawToken = operatorMatch[0].trim();
+      let consumedLength = operatorMatch[0].length;
+      if (operator === ":" && /^\d{1,2}:\d{2}(?::\d{2})?$/.test(rawToken)) {
+        tokens.push({ type: 'PARTIAL', keyword: rawToken });
+        i += consumedLength;
+        continue;
+      }
+      if (/^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(value)) {
+        const trailing = normalizedQuery.slice(i + consumedLength);
+        const timeSuffixMatch = trailing.match(/^\s+(\d{1,2}:\d{2}(?::\d{2})?)(?=\s|$|[()])/);
+        if (timeSuffixMatch) {
+          value = `${value} ${timeSuffixMatch[1]}`;
+          consumedLength += timeSuffixMatch[0].length;
+        }
+      }
       if (value === "") {
         pushAlwaysFalse();
-        i += operatorMatch[0].length;
+        i += consumedLength;
         continue;
       }
       const normalized = value.toLowerCase();
@@ -877,7 +892,7 @@ const tokenizeSearchQuery = (query) => {
       // 真偽指定（=のみ）
       if ((normalized === "true" || normalized === "false") && (op === "=")) {
         tokens.push({ type: 'COLUMN_BOOL', column: colName, value: normalized === "true" });
-        i += operatorMatch[0].length;
+        i += consumedLength;
         continue;
       }
 
@@ -887,17 +902,17 @@ const tokenizeSearchQuery = (query) => {
       if (!isNumeric && op === "=") {
         // 文字列として扱う → COLUMN_PARTIAL（含有）に回す
         tokens.push({ type: 'COLUMN_PARTIAL', column: colName, keyword: value });
-        i += operatorMatch[0].length;
+        i += consumedLength;
         continue;
       }
 
       tokens.push({ type: 'COMPARE', column: colName, operator: op, value });
-      i += operatorMatch[0].length;
+      i += consumedLength;
       continue;
     }
 
     // パターン3: 列名:部分一致ワード
-    const colonMatch = remaining.match(/^([^:()]+?):(.*?)(?=\s|$|and|AND|or|OR|\))/i);
+    const colonMatch = remaining.match(/^([^\s:()]+):(.*?)(?=\s|$|[()])/i);
     if (colonMatch) {
       const colName = colonMatch[1].trim().replace(/^["']|["']$/g, '');
       const keywordRaw = colonMatch[2].trim();
@@ -918,7 +933,7 @@ const tokenizeSearchQuery = (query) => {
     }
 
     // パターン4: 部分一致ワード（列名なし）
-    const wordMatch = remaining.match(/^(.+?)(?=\s|$|and|AND|or|OR|\))/i);
+    const wordMatch = remaining.match(/^([^()\s]+)/);
     if (wordMatch) {
       const keyword = wordMatch[1].trim().replace(/^["']|["']$/g, '');
       if (keyword) {
@@ -941,13 +956,11 @@ const tokenizeSearchQuery = (query) => {
 const parseTokens = (tokens) => {
   let pos = 0;
 
-  const isImplicitAndEligibleNode = (node) => {
-    if (!node) return false;
-    if (node.type === 'PARTIAL') return true;
-    if (node.type === 'AND') {
-      return isImplicitAndEligibleNode(node.left) && isImplicitAndEligibleNode(node.right);
-    }
-    return false;
+  const CONDITION_TYPES = new Set(['PARTIAL', 'COLUMN_PARTIAL', 'COMPARE', 'REGEX', 'COLUMN_BOOL', 'ALWAYS_FALSE']);
+  const isFactorStartToken = (token) => {
+    if (!token) return false;
+    if (token.type === 'LPAREN' || token.type === 'NOT') return true;
+    return CONDITION_TYPES.has(token.type);
   };
 
   const parseExpression = () => {
@@ -970,7 +983,7 @@ const parseTokens = (tokens) => {
         pos++; // 'AND'をスキップ
       } else if (tokens[pos].type === 'OR' || tokens[pos].type === 'RPAREN') {
         break;
-      } else if (!(isImplicitAndEligibleNode(left) && tokens[pos].type === 'PARTIAL')) {
+      } else if (!isFactorStartToken(tokens[pos])) {
         break;
       }
       // 演算子なしで条件が連続する場合は暗黙ANDとして扱う
@@ -1005,7 +1018,7 @@ const parseTokens = (tokens) => {
     }
 
     // 条件
-    if (['PARTIAL', 'COLUMN_PARTIAL', 'COMPARE', 'REGEX', 'COLUMN_BOOL', 'ALWAYS_FALSE'].includes(token.type)) {
+    if (CONDITION_TYPES.has(token.type)) {
       pos++;
       return token;
     }
@@ -1346,7 +1359,7 @@ const evaluateAST = (ast, row, columns) => {
  * 2. {列名}:{部分一致ワード} - 指定列で部分一致検索
  * 3. {列名}[>|>=|=|<=|<|<>|><|!=]{値} - 指定列で比較演算
  * 4. {列名}:/{正規表現}/ - 指定列で正規表現検索
- * 5. 上記をand/orで連結、()で優先順位制御可能
+ * 5. 上記をAND/ORまたは空白(暗黙AND)で連結、()で優先順位制御可能
  *
  * 例:
  * - "山田" → 全列から"山田"を含む行
