@@ -12,7 +12,6 @@ import { useEditLock } from "../app/hooks/useEditLock.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
-import { validateSpreadsheet } from "../services/gasClient.js";
 import { omitThemeSetting } from "../utils/settings.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
@@ -176,29 +175,6 @@ export default function AdminFormEditorPage() {
     builderRef.current?.updateSetting?.(key, value);
   }, []);
 
-  const checkSpreadsheet = useCallback(async (spreadsheetIdOrUrl) => {
-    const trimmed = (spreadsheetIdOrUrl || "").trim();
-    if (!trimmed) {
-      // 未設定の場合はマイドライブに新規作成されるのでOK
-      return true;
-    }
-    try {
-      const result = await validateSpreadsheet(trimmed);
-      if (!result?.canView) {
-        showAlert("閲覧権限がありません。アクセス権を確認してください");
-        return false;
-      }
-      if (!result.canEdit) {
-        showAlert("閲覧権限のみで続行します。保存に失敗する場合は編集権限を付与してください。");
-      }
-      return true;
-    } catch (error) {
-      console.error("[AdminFormEditorPage] validateSpreadsheet failed", error);
-      showAlert(error?.message || "スプレッドシートを確認できません");
-      return false;
-    }
-  }, [showAlert]);
-
   const handleSave = async () => {
     if (!builderRef.current) return;
     if (isSaving || isReadLocked) return;
@@ -211,13 +187,6 @@ export default function AdminFormEditorPage() {
       return;
     }
     setNameError("");
-
-    const settingsForCheck = builderRef.current.getSettings?.() || {};
-    const spreadsheetOk = await checkSpreadsheet(settingsForCheck.spreadsheetId || "");
-    if (!spreadsheetOk) {
-      setIsSaving(false);
-      return;
-    }
 
     // バリデーション実行（失敗時はfalseを返す）
     const saveResult = builderRef.current.save();
