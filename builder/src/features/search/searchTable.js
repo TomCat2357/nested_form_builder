@@ -1306,14 +1306,12 @@ const evaluateAST = (ast, row, columns) => {
       // 表示列から検索
       if (column) {
         const text = row?.values?.[column.key]?.display ?? '';
-        if (text) {
-          try {
-            const regex = new RegExp(ast.pattern, 'i');
-            return regex.test(text);
-          } catch (error) {
-            console.warn('Invalid regex pattern:', ast.pattern, error);
-            return false;
-          }
+        try {
+          const regex = new RegExp(ast.pattern, 'i');
+          return regex.test(text);
+        } catch (error) {
+          console.warn('Invalid regex pattern:', ast.pattern, error);
+          return false;
         }
       }
 
@@ -1323,7 +1321,11 @@ const evaluateAST = (ast, row, columns) => {
 
       try {
         const regex = new RegExp(ast.pattern, 'i');
-        return candidateMatches(entryField, (candidate) => (candidate ? regex.test(candidate) : false));
+        const candidates = buildSearchableCandidates(entryField.key, entryField.value, entryField.unixMs);
+        if (candidates.length === 0) {
+          return regex.test('');
+        }
+        return candidates.some((candidate) => regex.test(candidate ?? ''));
       } catch (error) {
         console.warn('Invalid regex pattern:', ast.pattern, error);
         return false;
