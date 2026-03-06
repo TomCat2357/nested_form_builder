@@ -251,32 +251,25 @@ function Sheets_ensureHeaderMatrix_(sheet, order) {
     sheet.setFrozenRows(NFB_DATA_START_ROW - 1);
   }
 
-  // Move/insert columns will fail if any part of the column (not just header rows) is merged.
-  // Unmerge the full used range up-front to avoid "結合したセルの一部だけを含む列は移動できません" errors.
-  var maxCols = Math.max(sheet.getMaxColumns(), 1);
-  var maxRows = Math.max(sheet.getMaxRows(), NFB_DATA_START_ROW);
-  sheet.getRange(1, 1, maxRows, maxCols).breakApart();
-
   var matrix = Sheets_readHeaderMatrix_(sheet);
   var existingPaths = Sheets_extractColumnPaths_(matrix);
   var desired = Sheets_buildDesiredPaths_(order, existingPaths);
 
+  // 既存列のキーセットを構築
+  var existingKeySet = {};
+  existingPaths.forEach(function(path) {
+    existingKeySet[Sheets_pathKey_(path)] = true;
+  });
+
+  // 新しい列のみ末尾に追加（既存列は移動しない）
   for (var i = 0; i < desired.length; i++) {
     var path = desired[i];
-    var found = Sheets_findColumnByPath_(matrix, path);
-    var targetIndex = i + 1;
-
-    if (found === -1) {
-      sheet.insertColumns(targetIndex, 1);
-      Sheets_writeHeaderPath_(sheet, targetIndex, path);
-      matrix = Sheets_readHeaderMatrix_(sheet);
-    } else if (found !== targetIndex) {
-      var range = sheet.getRange(1, found, sheet.getMaxRows(), 1);
-      sheet.moveColumns(range, targetIndex);
-      Sheets_writeHeaderPath_(sheet, targetIndex, path);
-      matrix = Sheets_readHeaderMatrix_(sheet);
-    } else {
-      Sheets_writeHeaderPath_(sheet, targetIndex, path);
+    var key = Sheets_pathKey_(path);
+    if (!existingKeySet[key]) {
+      var newColIndex = sheet.getLastColumn() + 1;
+      Sheets_ensureColumnExists_(sheet, newColIndex);
+      Sheets_writeHeaderPath_(sheet, newColIndex, path);
+      existingKeySet[key] = true;
     }
   }
 
