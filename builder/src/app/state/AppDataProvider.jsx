@@ -238,33 +238,33 @@ export function AppDataProvider({ children }) {
   }, [updateFormsAndCache]);
 
   const createForm = useCallback(async (payload, targetUrl, saveMode = "auto") => {
-    const optimisticForm = normalizeFormRecord(payload, { preserveUnknownFields: true });
-    await upsertFormsState(optimisticForm);
+    const pendingForm = normalizeFormRecord(payload, { preserveUnknownFields: true });
+    const savedForm = await dataStore.createForm(
+      { ...payload, id: pendingForm.id, createdAt: pendingForm.createdAt },
+      targetUrl,
+      saveMode,
+    );
 
-    void dataStore.createForm({ ...payload, id: optimisticForm.id, createdAt: optimisticForm.createdAt }, targetUrl, saveMode)
-      .then(upsertFormsState)
-      .catch((err) => console.error("[AppDataProvider] createForm failed:", err));
-
-    return optimisticForm;
+    await upsertFormsState(savedForm);
+    setLastSyncedAt(Date.now());
+    return savedForm;
   }, [upsertFormsState]);
 
   const updateForm = useCallback(async (formId, updates, targetUrl, saveMode = "auto") => {
     const existing = formsRef.current.find((form) => form.id === formId) || {};
-    const optimisticForm = normalizeFormRecord({
-      ...existing,
+    const preparedUpdates = {
       ...updates,
-      id: formId,
-      createdAt: existing.createdAt,
-      createdAtUnixMs: existing.createdAtUnixMs,
-    }, { fallbackId: formId, fallbackCreatedAt: existing.createdAt || existing.createdAtUnixMs, preserveUnknownFields: true });
+      createdAt: updates?.createdAt ?? existing.createdAt,
+      createdAtUnixMs: updates?.createdAtUnixMs ?? existing.createdAtUnixMs,
+      archived: updates?.archived ?? existing.archived,
+      schemaVersion: updates?.schemaVersion ?? existing.schemaVersion,
+      driveFileUrl: updates?.driveFileUrl ?? existing.driveFileUrl,
+    };
+    const savedForm = await dataStore.updateForm(formId, preparedUpdates, targetUrl, saveMode);
 
-    await upsertFormsState(optimisticForm);
-
-    void dataStore.updateForm(formId, updates, targetUrl, saveMode)
-      .then(upsertFormsState)
-      .catch((err) => console.error("[AppDataProvider] updateForm failed:", err));
-
-    return optimisticForm;
+    await upsertFormsState(savedForm);
+    setLastSyncedAt(Date.now());
+    return savedForm;
   }, [upsertFormsState]);
 
   const archiveForm = useCallback(async (formId) => {
