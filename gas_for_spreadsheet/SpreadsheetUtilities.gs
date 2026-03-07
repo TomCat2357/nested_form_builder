@@ -5,8 +5,8 @@
  * メニューから実行するか、関数を直接実行する。
  *
  * 提供機能:
- *   1. NFBUtil_sortByCreatedAt      — createdAt 昇順でデータ行をソート
- *   2. NFBUtil_renumber             — No. 列を上から連番で振り直す（deletedAt 行の扱いはダイアログで選択）
+ *   1. NFBUtil_sortByCreatedAt      — createdAt 昇順でデータ行をソート（Sheets 標準ソート使用）
+ *   2. NFBUtil_renumber             — No. 列を連番で振り直す（deletedAt が空白の行のみ対象）
  *   3. NFBUtil_reorderColumnsByForm — フォームJSON の URL を指定して列をフォーム順に並べ替える
  *
  * 共通仕様:
@@ -37,7 +37,7 @@ function onOpen() {
   var ui = SpreadsheetApp.getUi();
   ui.createMenu("NFB ユーティリティ")
     .addItem("createdAt 順にソート", "NFBUtil_sortByCreatedAt")
-    .addItem("No. リナンバー", "NFBUtil_renumberMenu")
+    .addItem("No. リナンバー", "NFBUtil_renumber")
     .addItem("フォーム順で列を並べ替え", "NFBUtil_reorderColumnsByFormMenu")
     .addToUi();
 }
@@ -46,8 +46,8 @@ function onOpen() {
 // 1. createdAt 順ソート
 // ============================================================
 /**
- * アクティブシートのデータ行を createdAt 列（3列目）の昇順でソートする。
- * modifiedAt は更新しない。
+ * アクティブシートのデータ行（12行目以降）を createdAt 列（3列目）の昇順でソートする。
+ * Sheets 標準のソート機能を使用するため高速。modifiedAt は更新しない。
  */
 function NFBUtil_sortByCreatedAt() {
   var sheet = SpreadsheetApp.getActiveSheet();
@@ -60,30 +60,8 @@ function NFBUtil_sortByCreatedAt() {
 
   var numRows = lastRow - NFBU_DATA_START_ROW + 1;
   var dataRange = sheet.getRange(NFBU_DATA_START_ROW, 1, numRows, lastCol);
-  var values = dataRange.getValues();
-  var formats = dataRange.getNumberFormats();
-
-  // createdAt は 3列目（index 2）
-  var COL_CREATED_AT = 2;
-
-  // ソート用に [元index, 比較値] の配列を作成
-  var indexed = [];
-  for (var i = 0; i < values.length; i++) {
-    indexed.push({ idx: i, sortKey: nfbuToComparableValue_(values[i][COL_CREATED_AT]) });
-  }
-  indexed.sort(function(a, b) { return a.sortKey - b.sortKey; });
-
-  // ソート結果で values / formats を並べ替え
-  var sortedValues = [];
-  var sortedFormats = [];
-  for (var j = 0; j < indexed.length; j++) {
-    sortedValues.push(values[indexed[j].idx]);
-    sortedFormats.push(formats[indexed[j].idx]);
-  }
-
-  dataRange.setValues(sortedValues);
-  dataRange.setNumberFormats(sortedFormats);
-  SpreadsheetApp.flush();
+  // createdAt は 3列目（ascending: true）
+  dataRange.sort({ column: 3, ascending: true });
   SpreadsheetApp.getUi().alert("createdAt 順にソートしました（" + numRows + " 行）。");
 }
 
@@ -91,28 +69,10 @@ function NFBUtil_sortByCreatedAt() {
 // 2. No. リナンバー
 // ============================================================
 /**
- * メニューから呼ばれるエントリーポイント。
- * deletedAt がある行も含めるかダイアログで確認する。
- */
-function NFBUtil_renumberMenu() {
-  var ui = SpreadsheetApp.getUi();
-  var result = ui.alert(
-    "No. リナンバー",
-    "deletedAt に値がある行（削除済み）も連番に含めますか？\n\n" +
-    "「はい」→ 削除済みも含めて連番\n" +
-    "「いいえ」→ 削除済みはスキップ（空欄にする）",
-    ui.ButtonSet.YES_NO_CANCEL
-  );
-  if (result === ui.Button.CANCEL) return;
-  var includeDeleted = (result === ui.Button.YES);
-  NFBUtil_renumber(includeDeleted);
-}
-
-/**
  * No. 列を上から連番（1, 2, 3, ...）で振り直す。
- * @param {boolean} includeDeleted  true: deletedAt 行も連番に含める / false: スキップ
+ * deletedAt が空白の行のみ連番を付与し、削除済み行は空欄にする。
  */
-function NFBUtil_renumber(includeDeleted) {
+function NFBUtil_renumber() {
   var sheet = SpreadsheetApp.getActiveSheet();
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
@@ -125,13 +85,11 @@ function NFBUtil_renumber(includeDeleted) {
   // No. 列（2列目）と deletedAt 列（5列目）を読み取る
   var noRange = sheet.getRange(NFBU_DATA_START_ROW, 2, numRows, 1);
   var noValues = noRange.getValues();
-  var deletedAtRange = sheet.getRange(NFBU_DATA_START_ROW, 5, numRows, 1);
-  var deletedAtValues = deletedAtRange.getValues();
+  var deletedAtValues = sheet.getRange(NFBU_DATA_START_ROW, 5, numRows, 1).getValues();
 
   var seq = 1;
   for (var i = 0; i < numRows; i++) {
-    var hasDeletedAt = nfbuHasValue_(deletedAtValues[i][0]);
-    if (hasDeletedAt && !includeDeleted) {
+    if (nfbuHasValue_(deletedAtValues[i][0])) {
       noValues[i][0] = "";
     } else {
       noValues[i][0] = seq;
@@ -141,10 +99,7 @@ function NFBUtil_renumber(includeDeleted) {
 
   noRange.setValues(noValues);
   SpreadsheetApp.flush();
-  SpreadsheetApp.getUi().alert(
-    "No. をリナンバーしました（" + (seq - 1) + " 件に番号付与" +
-    (includeDeleted ? "、削除済み含む" : "、削除済みスキップ") + "）。"
-  );
+  SpreadsheetApp.getUi().alert("No. をリナンバーしました（" + (seq - 1) + " 件に番号付与、削除済みは空欄）。");
 }
 
 // ============================================================
