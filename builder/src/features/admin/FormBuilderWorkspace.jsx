@@ -94,7 +94,14 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     setSchema(normalized);
   };
 
-  const handleSave = useCallback(() => {
+  const commitSavedState = useCallback(() => {
+    initialSchemaRef.current = schema;
+    initialSettingsRef.current = settings;
+    onDirtyChange?.(false);
+  }, [schema, settings, onDirtyChange]);
+
+  const handleSave = useCallback((options = {}) => {
+    const { markClean = true } = options;
     const labelCheck = validateRequiredLabels(schema);
     if (!labelCheck.ok) {
       const items = (labelCheck.emptyLabels || []).map((entry, index) => `${index + 1}. ${entry.path}`).join("\n");
@@ -108,24 +115,25 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
       return false;
     }
 
-    initialSchemaRef.current = schema;
-    initialSettingsRef.current = settings;
-    onDirtyChange?.(false);
+    if (markClean) {
+      commitSavedState();
+    }
     onSave?.({ schema, settings });
     return true;
-  }, [onSave, schema, settings, onDirtyChange, showAlert]);
+  }, [commitSavedState, onSave, schema, settings, showAlert]);
 
   useImperativeHandle(
     ref,
     () => ({
       save: handleSave,
+      commitSavedState,
       getSchema: () => schema,
       getSettings: () => settings,
       updateSetting: updateSetting,
       setMode: setActiveTab,
       getQuestionControl: () => questionControl,
     }),
-    [handleSave, schema, settings, updateSetting, questionControl],
+    [handleSave, commitSavedState, schema, settings, updateSetting, questionControl],
   );
 
   const previewSettings = useMemo(() => ({ ...settings, formTitle }), [settings, formTitle]);

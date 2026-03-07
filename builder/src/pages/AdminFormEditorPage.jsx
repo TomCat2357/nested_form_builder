@@ -76,6 +76,15 @@ export default function AdminFormEditorPage() {
       return;
     }
     if (!currentForm) return;
+    if (isSavingRef.current) {
+      console.log("[AdminFormEditorPage] defer applying refreshed form during save", {
+        formId,
+        cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
+        incomingSchemaNodeCount: countSchemaNodes(currentForm?.schema),
+        incomingModifiedAt: currentForm?.modifiedAt ?? null,
+      });
+      return;
+    }
 
     if (isDirtyRef.current) {
       console.log("[AdminFormEditorPage] defer applying refreshed form during dirty edit", {
@@ -98,10 +107,18 @@ export default function AdminFormEditorPage() {
       });
       return currentForm;
     });
-  }, [currentForm, formId, isDirty, isDirtyRef, isEdit, cachedFormRef]);
+  }, [currentForm, formId, isDirty, isDirtyRef, isEdit, cachedFormRef, isSavingRef]);
 
   useEffect(() => {
     if (!form) return;
+    if (isSavingRef.current) {
+      console.log("[AdminFormEditorPage] defer applying form meta during save", {
+        formId,
+        cachedSchemaNodeCount: countSchemaNodes(form?.schema),
+        modifiedAt: form?.modifiedAt ?? null,
+      });
+      return;
+    }
     if (isDirtyRef.current) {
       console.log("[AdminFormEditorPage] defer applying form meta during dirty edit", {
         formId,
@@ -118,7 +135,7 @@ export default function AdminFormEditorPage() {
     setLocalSettings(omitThemeSetting(form.settings || {}));
     setQuestionControl(null);
     setNameError("");
-  }, [form, formId, isDirty, isDirtyRef]);
+  }, [form, formId, isDirty, isDirtyRef, isSavingRef]);
 
   const handleOperationCacheCheck = useCallback(async ({ source }) => {
     if (!isEdit || !formId) return;
@@ -189,7 +206,7 @@ export default function AdminFormEditorPage() {
     setNameError("");
 
     // バリデーション実行（失敗時はfalseを返す）
-    const saveResult = builderRef.current.save();
+    const saveResult = builderRef.current.save({ markClean: false });
     if (saveResult === false) {
       setIsSaving(false);
       return;
@@ -241,11 +258,13 @@ export default function AdminFormEditorPage() {
     }
 
     try {
-      if (isEdit) await updateForm(formId, payload, targetUrl, saveMode);
-      else await createForm(payload, targetUrl, saveMode);
+      const savedForm = isEdit
+        ? await updateForm(formId, payload, targetUrl, saveMode)
+        : await createForm(payload, targetUrl, saveMode);
+      setCachedForm(savedForm);
+      builderRef.current?.commitSavedState?.();
       initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
       setBuilderDirty(false);
-      setIsSaving(false);
       navigate("/forms", { replace: true });
     } catch (error) {
       console.error(error);
