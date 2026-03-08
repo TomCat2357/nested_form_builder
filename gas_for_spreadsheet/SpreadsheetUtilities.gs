@@ -381,7 +381,7 @@ function nfbuBuildOrderFromSchema_(schema) {
   var seen = {};
   var singleValueTypes = {
     text: true, textarea: true, number: true, regex: true,
-    date: true, time: true, url: true, userName: true, email: true
+    date: true, time: true, url: true, userName: true, email: true, phone: true
   };
 
   var appendKey = function(key) {

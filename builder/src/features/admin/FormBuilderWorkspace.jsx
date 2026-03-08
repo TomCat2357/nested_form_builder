@@ -6,6 +6,7 @@ import { useBuilderSettings } from "../settings/settingsStore.js";
 import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, MAX_DEPTH, countSchemaNodes } from "../../core/schema.js";
 import { runSelfTests } from "../../core/selfTests.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
+import { useAuth } from "../../app/state/authContext.jsx";
 import { omitThemeSetting } from "../../utils/settings.js";
 import { deepEqual } from "../../utils/deepEqual.js";
 
@@ -22,6 +23,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   ref,
 ) {
   const { showAlert } = useAlert();
+  const { userName, userEmail, userAffiliation, userPhone } = useAuth();
   const [activeTab, setActiveTab] = useState("editor");
   const [schema, setSchema] = useState(() => normalizeSchemaIDs(initialSchema || []));
   const [responses, setResponses] = useState({});
@@ -136,7 +138,10 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     [handleSave, commitSavedState, schema, settings, updateSetting, questionControl],
   );
 
-  const previewSettings = useMemo(() => ({ ...settings, formTitle }), [settings, formTitle]);
+  const previewSettings = useMemo(
+    () => ({ ...settings, formTitle, userName, userEmail, userAffiliation, userPhone }),
+    [settings, formTitle, userName, userEmail, userAffiliation, userPhone],
+  );
 
   return (
     <div className="form-builder">

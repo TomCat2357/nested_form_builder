@@ -102,11 +102,6 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
   Sheets_ensureHeaderMatrix_(sheet, ctx.order);
   var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
 
-  var reservedHeaderKeys = {
-    "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
-    "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
-  };
-
   var lastColumn = Math.max(sheet.getLastColumn(), 8);
   var rowIndex = Sheets_findRowById_(sheet, ctx.id);
   var isNew = (rowIndex === -1);
@@ -142,7 +137,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
     for (var c = 0; c < lastColumn; c++) rowData[c] = existingValues[c] !== undefined ? existingValues[c] : "";
 
     for (var key in keyToColumn) {
-      if (keyToColumn.hasOwnProperty(key) && !reservedHeaderKeys[key]) {
+      if (keyToColumn.hasOwnProperty(key) && !NFB_RESERVED_HEADER_KEYS[key]) {
         var colIdx = keyToColumn[key] - 1;
         if (colIdx >= 0 && colIdx < lastColumn) rowData[colIdx] = "";
       }
@@ -156,7 +151,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
 
   for (var k = 0; k < ctx.order.length; k++) {
     var kName = String(ctx.order[k] || "");
-    if (!kName || reservedHeaderKeys[kName]) continue;
+    if (!kName || NFB_RESERVED_HEADER_KEYS[kName]) continue;
     var cIdx = keyToColumn[kName] - 1;
     if (cIdx < 0) continue;
 

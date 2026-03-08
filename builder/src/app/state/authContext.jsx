@@ -10,9 +10,17 @@ const AuthContext = createContext({
   authError: "",
   userEmail: "",
   userName: "",
+  userAffiliation: "",
+  userPhone: "",
   propertyStoreMode: "script",
   adminSettingsEnabled: true,
 });
+
+const getWindowGlobal = (key, defaultVal, castFn = (value) => value) => {
+  if (typeof window === "undefined") return defaultVal;
+  if (window[key] === undefined) return defaultVal;
+  return castFn(window[key]);
+};
 
 /**
  * 認証プロバイダー
@@ -22,35 +30,17 @@ export function AuthProvider({ children }) {
   const value = useMemo(() => {
     // GASから注入されたグローバル変数を読み取る
     // 未定義の場合はデフォルトで管理者モード（開発環境用）
-    const isAdmin = typeof window !== "undefined" && window.__IS_ADMIN__ !== undefined
-      ? Boolean(window.__IS_ADMIN__)
-      : true;
+    const isAdmin = getWindowGlobal("__IS_ADMIN__", true, Boolean);
+    const formId = getWindowGlobal("__FORM_ID__", "", String);
+    const authError = getWindowGlobal("__AUTH_ERROR__", "", String);
+    const userEmail = getWindowGlobal("__USER_EMAIL__", "", String);
+    const userName = getWindowGlobal("__USER_NAME__", "", String);
+    const userAffiliation = getWindowGlobal("__USER_AFFILIATION__", "", String);
+    const userPhone = getWindowGlobal("__USER_PHONE__", "", String);
+    const propertyStoreMode = getWindowGlobal("__PROPERTY_STORE_MODE__", "script", String);
+    const adminSettingsEnabled = getWindowGlobal("__ADMIN_SETTINGS_ENABLED__", true, Boolean);
 
-    const formId = typeof window !== "undefined" && window.__FORM_ID__
-      ? String(window.__FORM_ID__)
-      : "";
-
-    const authError = typeof window !== "undefined" && window.__AUTH_ERROR__
-      ? String(window.__AUTH_ERROR__)
-      : "";
-
-    const userEmail = typeof window !== "undefined" && window.__USER_EMAIL__
-      ? String(window.__USER_EMAIL__)
-      : "";
-
-    const userName = typeof window !== "undefined" && window.__USER_NAME__
-      ? String(window.__USER_NAME__)
-      : "";
-
-    const propertyStoreMode = typeof window !== "undefined" && window.__PROPERTY_STORE_MODE__
-      ? String(window.__PROPERTY_STORE_MODE__)
-      : "script";
-
-    const adminSettingsEnabled = typeof window !== "undefined" && window.__ADMIN_SETTINGS_ENABLED__ !== undefined
-      ? Boolean(window.__ADMIN_SETTINGS_ENABLED__)
-      : true;
-
-    return { isAdmin, formId, authError, userEmail, userName, propertyStoreMode, adminSettingsEnabled };
+    return { isAdmin, formId, authError, userEmail, userName, userAffiliation, userPhone, propertyStoreMode, adminSettingsEnabled };
   }, []);
 
   return (
@@ -62,7 +52,7 @@ export function AuthProvider({ children }) {
 
 /**
  * 認証情報を取得するフック
- * @returns {{ isAdmin: boolean, formId: string, authError: string, userEmail: string, userName: string, propertyStoreMode: string, adminSettingsEnabled: boolean }}
+ * @returns {{ isAdmin: boolean, formId: string, authError: string, userEmail: string, userName: string, userAffiliation: string, userPhone: string, propertyStoreMode: string, adminSettingsEnabled: boolean }}
  */
 export function useAuth() {
   return useContext(AuthContext);

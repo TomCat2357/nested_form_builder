@@ -1,5 +1,10 @@
 import ExcelJS from "exceljs";
 
+const blendToHex = (r, g, b, a = 1) => {
+  const blend = (channel) => Math.round(channel * a + 255 * (1 - a));
+  return "#" + [blend(r), blend(g), blend(b)].map((channel) => channel.toString(16).padStart(2, "0")).join("");
+};
+
 export const getThemeColors = () => {
   if (typeof document === "undefined") return {};
   const style = getComputedStyle(document.documentElement);
@@ -15,8 +20,7 @@ export const getThemeColors = () => {
       const g = parseInt(color.slice(3, 5), 16);
       const b = parseInt(color.slice(5, 7), 16);
       const a = parseInt(color.slice(7, 9), 16) / 255;
-      const blend = (c) => Math.round(c * a + 255 * (1 - a));
-      return "#" + [blend(r), blend(g), blend(b)].map((c) => c.toString(16).padStart(2, "0")).join("");
+      return blendToHex(r, g, b, a);
     }
     const m = color.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)/);
     if (!m) return null;
@@ -24,8 +28,7 @@ export const getThemeColors = () => {
     const g = parseInt(m[2]);
     const b = parseInt(m[3]);
     const a = m[4] !== undefined ? parseFloat(m[4]) : 1;
-    const blend = (c) => Math.round(c * a + 255 * (1 - a));
-    return "#" + [blend(r), blend(g), blend(b)].map((c) => c.toString(16).padStart(2, "0")).join("");
+    return blendToHex(r, g, b, a);
   };
   return {
     primary: toHex(get("--primary")),

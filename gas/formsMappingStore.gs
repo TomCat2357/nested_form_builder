@@ -162,10 +162,9 @@ function Forms_stripSchemaIds_(schema) {
       }
 
       // 一時UI状態は保存対象外
-      delete base._savedChoiceState;
-      delete base._savedStyleSettings;
-      delete base._savedChildrenForChoice;
-      delete base._savedDisplayModeForChoice;
+      for (var i = 0; i < NFB_UI_TEMP_KEYS.length; i++) {
+        delete base[NFB_UI_TEMP_KEYS[i]];
+      }
 
       return base;
     });

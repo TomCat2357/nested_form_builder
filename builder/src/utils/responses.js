@@ -1,6 +1,7 @@
 import { formatUnixMsDate, formatUnixMsTime, toUnixMs } from "./dateTime.js";
 import { deepEqual } from "./deepEqual.js";
 import { traverseSchema } from "../core/schemaUtils.js";
+import { formatPhoneValueForField } from "../core/phone.js";
 
 const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
   if (field.type !== "time" && field.type !== "date") return rawValue;
@@ -18,7 +19,7 @@ const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
 };
 
 const CHOICE_TYPES = new Set(["checkboxes", "radio", "select"]);
-const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
+export const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
 
 const collectOptionLabels = (field) => {
   const labels = [];
@@ -109,6 +110,32 @@ const collectMarkerChoiceLabels = (field, baseKey, data) => {
   return mergeChoiceLabels(field, labels);
 };
 
+const collectDefaultSelectedLabels = (field) => {
+  const labels = [];
+  (Array.isArray(field?.options) ? field.options : []).forEach((opt) => {
+    const label = typeof opt?.label === "string" ? opt.label : "";
+    if (!label || !opt?.defaultSelected) return;
+    labels.push(label);
+  });
+  return labels;
+};
+
+const resolveTextDefaultValue = (field, options = {}) => {
+  const userName = typeof options?.userName === "string" ? options.userName : "";
+  const userAffiliation = typeof options?.userAffiliation === "string" ? options.userAffiliation : "";
+
+  switch (field?.defaultValueMode) {
+    case "userName":
+      return userName;
+    case "userAffiliation":
+      return userAffiliation;
+    case "custom":
+      return typeof field?.defaultValueText === "string" ? field.defaultValueText : "";
+    default:
+      return "";
+  }
+};
+
 export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => {
   const responses = {};
 
@@ -129,7 +156,11 @@ export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => 
     } else {
       const normalized = normalizeTemporalValue(field, data[baseKey], dataUnixMs[baseKey]);
       if (normalized !== undefined && normalized !== null) {
-        Object.assign(responses, { [field.id]: normalized });
+        Object.assign(responses, {
+          [field.id]: field.type === "number" && normalized !== ""
+            ? String(normalized)
+            : normalized,
+        });
       }
     }
   }, {
@@ -160,16 +191,45 @@ export const collectDefaultNowResponses = (schema, now = new Date(), options = {
 
   const userName = typeof options?.userName === "string" ? options.userName : "";
   const userEmail = typeof options?.userEmail === "string" ? options.userEmail : "";
+  const userPhone = typeof options?.userPhone === "string" ? options.userPhone : "";
 
   traverseSchema(schema, (field) => {
+    if (!field?.id) return;
+
     if (["date", "time"].includes(field?.type) && field?.defaultNow && field?.id) {
       defaults[field.id] = field.type === "date" ? dateValue : timeValue;
     }
     if (field?.type === "userName" && field?.defaultNow && field?.id && userName) {
       defaults[field.id] = userName;
     }
-    if (field?.type === "email" && field?.defaultNow && field?.id && userEmail) {
+    if (field?.type === "text") {
+      const defaultValue = resolveTextDefaultValue(field, options);
+      if (defaultValue !== "") {
+        defaults[field.id] = defaultValue;
+      }
+    }
+    if (field?.type === "email" && (field?.autoFillUserEmail || field?.defaultNow) && field?.id && userEmail) {
       defaults[field.id] = userEmail;
+    }
+    if (field?.type === "phone" && field?.autoFillUserPhone && userPhone) {
+      const formattedPhone = formatPhoneValueForField(userPhone, field);
+      if (formattedPhone) {
+        defaults[field.id] = formattedPhone;
+      } else if (userPhone.trim()) {
+        defaults[field.id] = userPhone;
+      }
+    }
+    if (field?.type === "checkboxes") {
+      const selected = collectDefaultSelectedLabels(field);
+      if (selected.length > 0) {
+        defaults[field.id] = selected;
+      }
+    }
+    if (["radio", "select"].includes(field?.type)) {
+      const selected = collectDefaultSelectedLabels(field);
+      if (selected[0]) {
+        defaults[field.id] = selected[0];
+      }
     }
   });
 

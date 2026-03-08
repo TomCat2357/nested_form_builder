@@ -92,7 +92,7 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
   try {
     SpreadsheetApp.openById(parsed.id);
   } catch (err) {
-    throw new Error("スプレッドシートにアクセスできません: " + (err && err.message ? err.message : String(err)));
+    throw new Error("スプレッドシートにアクセスできません: " + nfbErrorToString_(err));
   }
 
   nextSettings.spreadsheetId = rawInput;
@@ -235,14 +235,14 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       try {
         file = DriveApp.getFileById(overwriteFileId);
       } catch (errOpenFile) {
-        throw new Error("[save-stage=open-file] ファイルにアクセスできません. formId=" + form.id + ", fileId=" + overwriteFileId + ", saveMode=" + effectiveSaveMode + ", error=" + (errOpenFile && errOpenFile.message ? errOpenFile.message : String(errOpenFile)));
+        throw new Error("[save-stage=open-file] ファイルにアクセスできません. formId=" + form.id + ", fileId=" + overwriteFileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errOpenFile));
       }
 
       try {
         file.setContent(content);
         fileId = overwriteFileId;
       } catch (errWriteFile) {
-        throw new Error("[save-stage=write-file] ファイル更新に失敗しました. formId=" + form.id + ", fileId=" + overwriteFileId + ", saveMode=" + effectiveSaveMode + ", error=" + (errWriteFile && errWriteFile.message ? errWriteFile.message : String(errWriteFile)));
+        throw new Error("[save-stage=write-file] ファイル更新に失敗しました. formId=" + form.id + ", fileId=" + overwriteFileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errWriteFile));
       }
     } else if (effectiveSaveMode === "copy_to_folder") {
       if (!parsedTarget || parsedTarget.type !== "folder") {
@@ -254,14 +254,14 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
         file = folder.createFile(fileName, content, MimeType.PLAIN_TEXT);
         fileId = file.getId();
       } catch (errCreateInFolder) {
-        throw new Error("[save-stage=create-in-folder] 指定フォルダへの保存に失敗しました. formId=" + form.id + ", folderId=" + parsedTarget.id + ", saveMode=" + effectiveSaveMode + ", error=" + (errCreateInFolder && errCreateInFolder.message ? errCreateInFolder.message : String(errCreateInFolder)));
+        throw new Error("[save-stage=create-in-folder] 指定フォルダへの保存に失敗しました. formId=" + form.id + ", folderId=" + parsedTarget.id + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errCreateInFolder));
       }
     } else if (effectiveSaveMode === "copy_to_root") {
       try {
         file = DriveApp.createFile(fileName, content, MimeType.PLAIN_TEXT);
         fileId = file.getId();
       } catch (errCreateInRoot) {
-        throw new Error("[save-stage=create-in-root] マイドライブ直下への保存に失敗しました. formId=" + form.id + ", saveMode=" + effectiveSaveMode + ", error=" + (errCreateInRoot && errCreateInRoot.message ? errCreateInRoot.message : String(errCreateInRoot)));
+        throw new Error("[save-stage=create-in-root] マイドライブ直下への保存に失敗しました. formId=" + form.id + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errCreateInRoot));
       }
     } else {
       throw new Error("[save-stage=resolve-mode] 未知のsaveModeです: " + effectiveSaveMode + ", formId=" + form.id);
@@ -271,7 +271,7 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       try {
         file = DriveApp.getFileById(fileId);
       } catch (errReload) {
-        throw new Error("[save-stage=reload-file] 保存後ファイルの再取得に失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + (errReload && errReload.message ? errReload.message : String(errReload)));
+        throw new Error("[save-stage=reload-file] 保存後ファイルの再取得に失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errReload));
       }
     }
 
@@ -279,7 +279,7 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     try {
       fileUrl = file.getUrl();
     } catch (errGetUrl) {
-      throw new Error("[save-stage=get-url] ファイルURLの取得に失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + (errGetUrl && errGetUrl.message ? errGetUrl.message : String(errGetUrl)));
+      throw new Error("[save-stage=get-url] ファイルURLの取得に失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errGetUrl));
     }
     formWithTimestamp.driveFileUrl = fileUrl;
 
@@ -300,7 +300,7 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     try {
       file.setContent(JSON.stringify(formForFile, null, 2));
     } catch (errWriteFinal) {
-      throw new Error("[save-stage=final-write] driveFileUrl反映書き込みに失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + (errWriteFinal && errWriteFinal.message ? errWriteFinal.message : String(errWriteFinal)));
+      throw new Error("[save-stage=final-write] driveFileUrl反映書き込みに失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errWriteFinal));
     }
 
     // マッピングを更新

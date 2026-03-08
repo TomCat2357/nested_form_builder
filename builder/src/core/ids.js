@@ -5,24 +5,22 @@ const ULID_RANDOM_LENGTH = 16;
 let lastUlidTimeMs = -1;
 let lastUlidRandomPart = "";
 
+const toBase64UrlSafe = (base64) => String(base64 || "")
+  .replace(/\+/g, "-")
+  .replace(/\//g, "_")
+  .replace(BASE64_PAD_RE, "");
+
 const toBase64Url = (bytes) => {
   if (typeof btoa === "function") {
     let binary = "";
     for (let i = 0; i < bytes.length; i += 1) {
       binary += String.fromCharCode(bytes[i]);
     }
-    return btoa(binary)
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(BASE64_PAD_RE, "");
+    return toBase64UrlSafe(btoa(binary));
   }
 
   if (typeof Buffer !== "undefined") {
-    return Buffer.from(bytes)
-      .toString("base64")
-      .replace(/\+/g, "-")
-      .replace(/\//g, "_")
-      .replace(BASE64_PAD_RE, "");
+    return toBase64UrlSafe(Buffer.from(bytes).toString("base64"));
   }
 
   throw new Error("No base64 encoder available");

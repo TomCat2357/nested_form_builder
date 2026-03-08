@@ -1,10 +1,23 @@
 import { genId } from "./ids.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
 import { MAX_DEPTH } from "./constants.js";
+import { normalizePhoneSettings } from "./phone.js";
 import { mapSchema, traverseSchema, countSchemaNodes } from "./schemaUtils.js";
 export { countSchemaNodes };
 
 const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" : label || "");
+const UI_TEMP_KEYS = [
+  "_savedChoiceState",
+  "_savedStyleSettings",
+  "_savedChildrenForChoice",
+  "_savedDisplayModeForChoice",
+];
+
+const clearUiTempState = (obj) => {
+  UI_TEMP_KEYS.forEach((key) => {
+    delete obj[key];
+  });
+};
 
 const stableHash = (seed) => {
   let hash = 2166136261;
@@ -31,6 +44,37 @@ const buildStableOptionId = (fieldId, optionLabel, optionIndex) => {
 
 export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
 export { MAX_DEPTH };
+export const DEFAULT_TEXT_MAX_LENGTH = 20;
+
+const normalizeBooleanSetting = (value, defaultValue = false) => {
+  if (value === undefined) return defaultValue;
+  if (typeof value === "string") {
+    const lowered = value.toLowerCase();
+    if (lowered === "true") return true;
+    if (lowered === "false") return false;
+  }
+  return !!value;
+};
+
+const normalizeFiniteNumberSetting = (value) => {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const normalizeNumberFieldSettings = (field) => {
+  field.integerOnly = normalizeBooleanSetting(field.integerOnly, false);
+
+  const minValue = normalizeFiniteNumberSetting(field.minValue);
+  if (minValue === undefined) delete field.minValue;
+  else field.minValue = minValue;
+
+  const maxValue = normalizeFiniteNumberSetting(field.maxValue);
+  if (maxValue === undefined) delete field.maxValue;
+  else field.maxValue = maxValue;
+
+  return field;
+};
 
 
 export const deepClone = (value) => {
@@ -41,17 +85,51 @@ export const deepClone = (value) => {
 export const cleanUnusedFieldProperties = (field) => {
   const type = field.type;
   const isChoice = ["radio", "select", "checkboxes"].includes(type);
-  const isRegex = type === "regex";
-  const hasDefaultNow = ["date", "time", "userName", "email"].includes(type);
-  const noPlaceholder = ["userName", "email", "message"].includes(type);
+  const supportsPattern = ["text", "regex"].includes(type);
+  const supportsTextDefaults = ["text", "userName"].includes(type);
+  const supportsEmailAutoFill = type === "email";
+  const supportsNumberSettings = type === "number";
+  const supportsPhone = type === "phone";
+  const supportsDefaultNow = ["date", "time"].includes(type);
+  const supportsPlaceholder = ["text", "number", "email", "phone", "url", "regex", "textarea"].includes(type);
 
   if (!isChoice) {
     delete field.options;
     delete field.childrenByValue;
   }
-  if (!isRegex) delete field.pattern;
-  if (!hasDefaultNow) delete field.defaultNow;
-  if (noPlaceholder) {
+  if (isChoice && Array.isArray(field.options)) {
+    field.options = field.options.map((opt) => ({ ...opt, defaultSelected: !!opt?.defaultSelected }));
+  }
+  if (!supportsPattern) {
+    delete field.pattern;
+    delete field.inputRestrictionMode;
+    delete field.maxLength;
+  }
+  if (field.type === "text" && field.inputRestrictionMode !== "pattern") delete field.pattern;
+  if (field.type === "text" && field.inputRestrictionMode !== "maxLength") delete field.maxLength;
+  if (!supportsTextDefaults) {
+    delete field.multiline;
+    delete field.defaultValueMode;
+    delete field.defaultValueText;
+  }
+  if (!supportsDefaultNow) delete field.defaultNow;
+  if (!supportsEmailAutoFill) delete field.autoFillUserEmail;
+  if (!supportsNumberSettings) {
+    delete field.integerOnly;
+    delete field.minValue;
+    delete field.maxValue;
+  } else {
+    normalizeNumberFieldSettings(field);
+  }
+  if (!supportsPhone) {
+    delete field.phoneFormat;
+    delete field.allowFixedLineOmitAreaCode;
+    delete field.allowMobile;
+    delete field.allowIpPhone;
+    delete field.allowTollFree;
+    delete field.autoFillUserPhone;
+  }
+  if (!supportsPlaceholder) {
     delete field.placeholder;
     delete field.showPlaceholder;
   }
@@ -64,18 +142,63 @@ export const normalizeSchemaIDs = (nodes) => {
     const id = field.id || buildStableFieldId(field, context);
     const base = { ...field, id };
 
+    if (base.type === "textarea") {
+      base.type = "text";
+      base.multiline = true;
+    } else if (base.type === "regex") {
+      base.type = "text";
+      base.multiline = false;
+      base.inputRestrictionMode = "pattern";
+      base.pattern = typeof base.pattern === "string" ? base.pattern : "";
+    } else if (base.type === "userName") {
+      base.type = "text";
+      base.multiline = false;
+      base.defaultValueMode = "userName";
+    }
+
     if (["radio", "select", "checkboxes"].includes(base.type)) {
       base.options = (base.options || []).map((opt, optionIndex) => {
         const optionLabel = sanitizeOptionLabel(opt?.label);
         return {
           id: opt?.id || buildStableOptionId(id, optionLabel, optionIndex),
           label: optionLabel,
+          defaultSelected: !!opt?.defaultSelected,
         };
       });
-    } else if (base.type === "regex") {
+      if (["radio", "select"].includes(base.type)) {
+        let seenSelected = false;
+        base.options = base.options.map((opt) => {
+          if (!opt.defaultSelected || seenSelected) return { ...opt, defaultSelected: false };
+          seenSelected = true;
+          return opt;
+        });
+      }
+    } else if (base.type === "text") {
+      base.multiline = !!base.multiline;
+      base.defaultValueMode = [ "none", "userName", "userAffiliation", "custom" ].includes(base.defaultValueMode)
+        ? base.defaultValueMode
+        : "none";
+      base.defaultValueText = typeof base.defaultValueText === "string" ? base.defaultValueText : "";
+      if (base.inputRestrictionMode === "maxLength") {
+        const parsedMaxLength = Number(base.maxLength);
+        base.inputRestrictionMode = "maxLength";
+        base.maxLength = Number.isFinite(parsedMaxLength) && parsedMaxLength > 0
+          ? Math.floor(parsedMaxLength)
+          : DEFAULT_TEXT_MAX_LENGTH;
+      } else if (base.inputRestrictionMode === "pattern") {
+        base.inputRestrictionMode = "pattern";
+      } else {
+        base.inputRestrictionMode = "none";
+      }
       base.pattern = typeof base.pattern === "string" ? base.pattern : "";
-    } else if (["date", "time", "userName", "email"].includes(base.type)) {
+    } else if (base.type === "number") {
+      normalizeNumberFieldSettings(base);
+    } else if (["date", "time"].includes(base.type)) {
       base.defaultNow = !!base.defaultNow;
+    } else if (base.type === "email") {
+      base.autoFillUserEmail = !!(base.autoFillUserEmail ?? base.defaultNow);
+    } else if (base.type === "phone") {
+      Object.assign(base, normalizePhoneSettings(base));
     }
 
     cleanUnusedFieldProperties(base);
@@ -116,10 +239,7 @@ export const normalizeSchemaIDs = (nodes) => {
       delete base.showStyleSettings;
     }
 
-    delete base._savedChoiceState;
-    delete base._savedStyleSettings;
-    delete base._savedChildrenForChoice;
-    delete base._savedDisplayModeForChoice;
+    clearUiTempState(base);
 
     return base;
   });
@@ -134,10 +254,7 @@ export const stripSchemaIDs = (nodes) => {
       base.options = base.options.map(({ id: optId, ...optRest }) => optRest);
     }
 
-    delete base._savedChoiceState;
-    delete base._savedStyleSettings;
-    delete base._savedChildrenForChoice;
-    delete base._savedDisplayModeForChoice;
+    clearUiTempState(base);
 
     return base;
   });

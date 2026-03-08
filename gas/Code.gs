@@ -8,7 +8,10 @@ function doGet(e) {
   const userEmail = Session.getActiveUser().getEmail() || "";
 
   const authResult = DetermineAccess_(formParam, adminkeyParam, userEmail);
-  const userName = ResolveActiveUserDisplayName_();
+  const userProfile = ResolveActiveUserProfile_();
+  const userName = userProfile.displayName;
+  const userAffiliation = userProfile.affiliation;
+  const userPhone = userProfile.phone;
   const adminEmail = GetAdminEmail_();
   const propertyStoreMode = Nfb_getPropertyStoreMode_();
   const adminSettingsEnabled = Nfb_isAdminSettingsEnabled_();
@@ -20,6 +23,8 @@ function doGet(e) {
     window.__AUTH_ERROR__ = "${EscapeForInlineScript_(authResult.authError)}";
     window.__USER_EMAIL__ = "${EscapeForInlineScript_(userEmail)}";
     window.__USER_NAME__ = "${EscapeForInlineScript_(userName)}";
+    window.__USER_AFFILIATION__ = "${EscapeForInlineScript_(userAffiliation)}";
+    window.__USER_PHONE__ = "${EscapeForInlineScript_(userPhone)}";
     window.__ADMIN_EMAIL__ = "${EscapeForInlineScript_(adminEmail)}";
     window.__PROPERTY_STORE_MODE__ = "${EscapeForInlineScript_(propertyStoreMode)}";
     window.__ADMIN_SETTINGS_ENABLED__ = ${adminSettingsEnabled};
@@ -32,15 +37,52 @@ function doGet(e) {
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
-function ResolveActiveUserDisplayName_() {
-  try {
-    const person = People.People.get("people/me", { personFields: "names" });
-    if (!person?.names || !person.names.length) return "";
-    const displayName = person.names[0]?.displayName;
-    return displayName ? String(displayName).trim() : "";
-  } catch (err) {
-    return "";
+function ResolvePrimaryPersonField_(items) {
+  if (!items?.length) return null;
+  return items.find((item) => item?.metadata?.primary)
+    || items.find((item) => item?.current)
+    || items[0]
+    || null;
+}
+
+function NormalizeProfilePhone_(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  let digits = raw.replace(/\D/g, "");
+  if (!digits) return "";
+
+  if (digits.startsWith("0081")) {
+    digits = `0${digits.slice(4)}`;
+  } else if (digits.startsWith("81")) {
+    digits = `0${digits.slice(2)}`;
   }
+
+  return digits;
+}
+
+function ResolveActiveUserProfile_() {
+  const emptyProfile = { displayName: "", affiliation: "", phone: "" };
+  try {
+    const person = People.People.get("people/me", { personFields: "names,organizations,phoneNumbers" });
+    const primaryName = ResolvePrimaryPersonField_(person?.names);
+    const primaryOrganization = ResolvePrimaryPersonField_(person?.organizations);
+    const primaryPhone = ResolvePrimaryPersonField_(person?.phoneNumbers);
+
+    const displayName = primaryName?.displayName ? String(primaryName.displayName).trim() : "";
+    const affiliation = primaryOrganization?.department
+      ? String(primaryOrganization.department).trim()
+      : (primaryOrganization?.name ? String(primaryOrganization.name).trim() : "");
+    const phone = NormalizeProfilePhone_(primaryPhone?.canonicalForm || primaryPhone?.value || "");
+
+    return { displayName, affiliation, phone };
+  } catch (err) {
+    return emptyProfile;
+  }
+}
+
+function ResolveActiveUserDisplayName_() {
+  return ResolveActiveUserProfile_().displayName;
 }
 
 function EscapeForInlineScript_(value) {
@@ -609,11 +651,6 @@ function SyncRecords_(ctx) {
       Sheets_ensureHeaderMatrix_(sheet, order);
       var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
 
-      var reservedHeaderKeys = {
-        "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
-        "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
-      };
-
       var lastColumn = Math.max(sheet.getLastColumn(), 8);
       var lastRow = sheet.getLastRow();
       var dataStartRow = NFB_DATA_START_ROW;
@@ -675,7 +712,7 @@ function SyncRecords_(ctx) {
             rowData = existingData[localIndex];
             rowFormats = existingFormats[localIndex];
             for (var key in keyToColumn) {
-              if (keyToColumn.hasOwnProperty(key) && !reservedHeaderKeys[key]) {
+              if (keyToColumn.hasOwnProperty(key) && !NFB_RESERVED_HEADER_KEYS[key]) {
                 var cIdx = keyToColumn[key] - 1;
                 if (cIdx >= 0 && cIdx < lastColumn) rowData[cIdx] = "";
               }
@@ -698,7 +735,7 @@ function SyncRecords_(ctx) {
 
           for (var k = 0; k < order.length; k++) {
             var kName = String(order[k] || "");
-            if (!kName || reservedHeaderKeys[kName]) continue;
+            if (!kName || NFB_RESERVED_HEADER_KEYS[kName]) continue;
             var colIdx = keyToColumn[kName] - 1;
             if (colIdx < 0) continue;
 

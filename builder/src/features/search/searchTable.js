@@ -7,6 +7,7 @@ import {
   toUnixMs,
   parseStringToSerial,
 } from "../../utils/dateTime.js";
+import { isChoiceMarkerValue } from "../../utils/responses.js";
 import { MAX_DEPTH as MAX_HEADER_DEPTH } from "../../core/constants.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 
@@ -109,8 +110,6 @@ const formatTemporalValue = (rawValue, unixMs, column) => {
 
   return type === "time" ? formatUnixMsTime(ms) : formatUnixMsDate(ms);
 };
-
-const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
 
 const deriveChoiceLabels = (key, value) => {
   if (!isChoiceMarkerValue(value)) return null;
@@ -1140,8 +1139,7 @@ const b = useNumeric ? targetNum : targetStr;
 
 switch (normalizedOperator) {
   case "=": return a === b;
-  case "<>":
-  case "><": return a !== b;
+  case "<>": return a !== b;
   case ">": return a > b;
   case ">=": return a >= b;
   case "<": return a < b;

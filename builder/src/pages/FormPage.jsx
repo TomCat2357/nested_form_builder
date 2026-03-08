@@ -76,7 +76,7 @@ const pickLatestEntry = (current, incoming) => {
 export default function FormPage() {
   const { formId, entryId } = useParams();
   const { getFormById, refreshForms, loadingForms } = useAppData();
-  const { userName, userEmail, isAdmin } = useAuth();
+  const { userName, userEmail, userAffiliation, userPhone, isAdmin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const { showAlert, showToast } = useAlert();
@@ -176,6 +176,8 @@ export default function FormPage() {
   const normalizedSchemaRef = useLatestRef(normalizedSchema);
   const userNameRef = useLatestRef(userName);
   const userEmailRef = useLatestRef(userEmail);
+  const userAffiliationRef = useLatestRef(userAffiliation);
+  const userPhoneRef = useLatestRef(userPhone);
 
   useEffect(() => {
     if (!currentForm) return;
@@ -388,7 +390,12 @@ export default function FormPage() {
           return;
         }
 
-        const initialResponses = collectDefaultNowResponses(normalizedSchemaRef.current, new Date(), { userName: userNameRef.current, userEmail: userEmailRef.current });
+        const initialResponses = collectDefaultNowResponses(normalizedSchemaRef.current, new Date(), {
+          userName: userNameRef.current,
+          userEmail: userEmailRef.current,
+          userAffiliation: userAffiliationRef.current,
+          userPhone: userPhoneRef.current,
+        });
         initialResponsesRef.current = initialResponses;
         commitResponses("loadEntry:new-entry-initialize", initialResponses, {
           forceLog: true,
@@ -1010,7 +1017,7 @@ export default function FormPage() {
           schema={normalizedSchema}
           responses={responses}
           setResponses={handleResponsesChange}
-          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: recordNoInput, userName, userEmail }}
+          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: recordNoInput, userName, userEmail, userAffiliation, userPhone }}
           onRecordNoChange={setRecordNoInput}
           onSave={handleSaveToStore}
           showOutputJson={false}

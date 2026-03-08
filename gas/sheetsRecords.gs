@@ -92,12 +92,10 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     dataUnixMs: {}
   };
 
-  var reservedKeys = { "id": true, "No.": true, "createdAt": true, "modifiedAt": true, "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true };
-
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];
     var value = rowData[colInfo.index];
-    if (value != null && value !== "" && !reservedKeys[colInfo.key]) {
+    if (value != null && value !== "" && !NFB_RESERVED_HEADER_KEYS[colInfo.key]) {
       record.data[colInfo.key] = value;
       var unix = Sheets_toUnixMs_(value);
       if (unix !== null) {

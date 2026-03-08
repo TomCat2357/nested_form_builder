@@ -151,7 +151,7 @@ function Forms_listForms_(options) {
 
             forms.push(form);
           } catch (parseErr) {
-            pushFailure(formId, fileId, result.fileName, mappingEntry.driveFileUrl || result.fileUrl, "parse", parseErr && parseErr.message ? parseErr.message : String(parseErr));
+            pushFailure(formId, fileId, result.fileName, mappingEntry.driveFileUrl || result.fileUrl, "parse", nfbErrorToString_(parseErr));
           }
         }
       }
@@ -161,7 +161,7 @@ function Forms_listForms_(options) {
       for (var k = 0; k < batchFileIds.length; k++) {
         var fbFileId = batchFileIds[k];
         var fbFormId = fileIdMap[fbFileId];
-        pushFailure(fbFormId, fbFileId, null, formIdToMappingEntry[fbFormId].driveFileUrl, "batch", batchErr && batchErr.message ? batchErr.message : String(batchErr));
+        pushFailure(fbFormId, fbFileId, null, formIdToMappingEntry[fbFormId].driveFileUrl, "batch", nfbErrorToString_(batchErr));
       }
     }
   }
@@ -272,7 +272,7 @@ function Forms_batchGetFiles_(fileIds) {
           fileId: fid,
           fileName: meta.name,
           fileUrl: meta.webViewLink,
-          error: readErr && readErr.message ? readErr.message : String(readErr),
+          error: nfbErrorToString_(readErr),
           errorStage: "read",
         });
       }
@@ -294,7 +294,7 @@ function Forms_batchGetFiles_(fileIds) {
       } catch (fbErr) {
         results.push({
           fileId: fbId,
-          error: fbErr && fbErr.message ? fbErr.message : String(fbErr),
+          error: nfbErrorToString_(fbErr),
           errorStage: "fallback",
         });
       }

@@ -247,20 +247,10 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
     sheet.getRange(NFB_DATA_START_ROW, deletedAtIndex + 1, dataRowCount, 1).setNumberFormat("0");
   }
 
-  var reservedKeys = {
-    "id": true,
-    "No.": true,
-    "createdAt": true,
-    "modifiedAt": true,
-    "deletedAt": true,
-    "createdBy": true,
-    "modifiedBy": true,
-    "deletedBy": true,
-  };
   var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];
-    if (reservedKeys[colInfo.key]) continue;
+    if (NFB_RESERVED_HEADER_KEYS[colInfo.key]) continue;
     if (hasExplicitMap) {
       var explicitType = explicitTypeMap[colInfo.key];
       if (explicitType === "date") { applyFormat(colInfo.index, dateFormat); continue; }
@@ -291,15 +281,11 @@ function Sheets_toUnixMs_(value, allowSerialNumber) {
 function Sheets_applyTemporalFormatsToMemory_(columnPaths, values, dataRowCount, explicitTypeMap) {
   if (!dataRowCount) return;
 
-  var reservedKeys = {
-    "id": true, "No.": true, "createdAt": true, "modifiedAt": true,
-    "deletedAt": true, "createdBy": true, "modifiedBy": true, "deletedBy": true
-  };
   var hasExplicitMap = explicitTypeMap && typeof explicitTypeMap === "object";
 
   for (var j = 0; j < columnPaths.length; j++) {
     var colInfo = columnPaths[j];
-    if (reservedKeys[colInfo.key]) continue;
+    if (NFB_RESERVED_HEADER_KEYS[colInfo.key]) continue;
 
     var colIndex = colInfo.index;
     var temporalType = null;

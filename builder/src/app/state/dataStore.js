@@ -8,9 +8,11 @@ import {
   upsertRecordInCache,
   updateRecordsMeta,
   deleteRecordFromCache,
+  deleteRecordsFromCache,
   getMaxRecordNo,
   getRecordsFromCache,
   applySyncResultToCache,
+  mergeRecordsByModifiedAt,
 } from "./recordsCache.js";
 import { buildUploadRecordsForSync } from "./syncUploadPlan.js";
 import { getFormsFromCache } from "./formsCache.js";
@@ -34,7 +36,7 @@ import {
   syncRecordsProxy,
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
-import { toUnixMs } from "../../utils/dateTime.js";
+import { toUnixMs, resolveUnixMs } from "../../utils/dateTime.js";
 import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_SHEET_NAME, MS_PER_DAY } from "../../core/constants.js";
 
 const nowUnixMs = () => Date.now();
@@ -84,15 +86,6 @@ const getSheetConfig = (form) => {
   };
 };
 
-const resolveUnixMs = (...candidates) => {
-  for (const candidate of candidates) {
-    const unixMs = toUnixMs(candidate);
-    if (Number.isFinite(unixMs)) return unixMs;
-  }
-  return null;
-};
-
-
 const normalizeRetentionDays = (value) => {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) return DEFAULT_DELETED_RETENTION_DAYS;
@@ -117,7 +110,7 @@ const pruneExpiredDeletedEntries = async (formId, entries, retentionDays) => {
   const expiredIdSet = new Set(expiredIds);
 
   if (expiredIds.length) {
-    await Promise.all(expiredIds.map((entryId) => deleteRecordFromCache(formId, entryId)));
+    await deleteRecordsFromCache(formId, expiredIds);
   }
 
   return safeEntries.filter((entry) => !expiredIdSet.has(entry?.id));
@@ -379,18 +372,9 @@ export const dataStore = {
     if (forceFullSync) {
       postSyncEntries = syncedRecords;
     } else {
-      // applySyncResultToCache のマージロジックをメモリ内で再現する
       const existingById = {};
       prunedCachedEntries.forEach((e) => { existingById[e.id] = e; });
-      for (const rec of syncedRecords) {
-        const existing = existingById[rec.id];
-        const existingMod = Number(existing?.modifiedAtUnixMs) || 0;
-        const newMod = Number(rec.modifiedAtUnixMs) || 0;
-        if (!existing || newMod >= existingMod) {
-          existingById[rec.id] = rec;
-        }
-      }
-      postSyncEntries = Object.values(existingById).sort((a, b) =>
+      postSyncEntries = Object.values(mergeRecordsByModifiedAt(existingById, syncedRecords)).sort((a, b) =>
         a.id < b.id ? -1 : a.id > b.id ? 1 : 0
       );
     }

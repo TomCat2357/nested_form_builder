@@ -122,7 +122,8 @@ function Sheets_buildOrderFromSchema_(schema) {
     time: true,
     url: true,
     userName: true,
-    email: true
+    email: true,
+    phone: true
   };
 
   var appendKey = function(key) {

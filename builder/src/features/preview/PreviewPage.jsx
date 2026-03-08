@@ -1,7 +1,7 @@
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { collectResponses, sortResponses } from "../../core/collect.js";
 import { computeSchemaHash } from "../../core/schema.js";
-import { collectValidationErrors, formatValidationErrors, validateByPattern } from "../../core/validate.js";
+import { collectValidationErrors, formatValidationErrors, isNumberInputDraftAllowed, validateByPattern } from "../../core/validate.js";
 import { submitResponses, hasScriptRun } from "../../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
@@ -9,6 +9,7 @@ import { useAlert } from "../../app/hooks/useAlert.js";
 import { collectDefaultNowResponses } from "../../utils/responses.js";
 import { resolveLabelSize } from "../../core/styleSettings.js";
 import { genRecordId } from "../../core/ids.js";
+import { getStandardPhonePlaceholder } from "../../core/phone.js";
 
 const CHOICE_TYPES = new Set(["checkboxes", "radio", "select"]);
 const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
@@ -92,10 +93,29 @@ const toSelectedChoiceLabels = (field, value) => {
   return type === "checkboxes" ? ordered : ordered.slice(0, 1);
 };
 
+const hasVisibleValue = (value) => {
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== undefined && value !== null && value !== "";
+};
+
+const isTextareaField = (field) => field?.type === "textarea" || (field?.type === "text" && field?.multiline);
+
+const resolveConfiguredPlaceholder = (field, fallback = "") => {
+  if (field?.showPlaceholder !== true) return "";
+  return field?.placeholder || fallback;
+};
+
+const getNumberInputMode = (field) => (field?.integerOnly ? "numeric" : "decimal");
+
 const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildrenForOption, readOnly = false }) => {
   const validation = validateByPattern(field, value);
   const selectedChoiceLabels = toSelectedChoiceLabels(field, value);
   const selectedSingleChoice = selectedChoiceLabels[0] || "";
+  const showInlineValidation = !validation.ok && (validation.code === "pattern_invalid" || hasVisibleValue(value));
+  const readOnlyIsTextarea = isTextareaField(field);
+  const textMaxLength = field.type === "text" && field.inputRestrictionMode === "maxLength"
+    ? Math.max(1, Number(field.maxLength) || 1)
+    : undefined;
 
   const renderReadOnlyValue = () => {
     if (CHOICE_TYPES.has(field.type)) {
@@ -151,7 +171,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         : null;
 
     const readOnlyClassName =
-      field.type === "textarea" ? "nf-input nf-input--readonly nf-textarea-readonly" : "nf-input nf-input--readonly";
+      readOnlyIsTextarea ? "nf-input nf-input--readonly nf-textarea-readonly" : "nf-input nf-input--readonly";
 
     return (
       <div className="preview-field">
@@ -173,37 +193,47 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
       </label>
 
-      {(field.type === "text" || field.type === "userName" || field.type === "email") && (
+      {(field.type === "text" || field.type === "userName" || field.type === "email" || field.type === "phone") && !isTextareaField(field) && (
         <input
-          type={field.type === "email" ? "email" : "text"}
+          type={field.type === "email" ? "email" : (field.type === "phone" ? "tel" : "text")}
           value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
-          className={s.input.className}
+          className={showInlineValidation ? `${s.input.className} nf-input--error` : s.input.className}
           placeholder={field.type === "userName"
             ? "入力ユーザー名"
-            : (field.type === "email" ? "メールアドレス" : (field.placeholder || "入力"))}
+            : field.type === "email"
+              ? resolveConfiguredPlaceholder(field, "user@example.com")
+              : field.type === "phone"
+                ? resolveConfiguredPlaceholder(field, getStandardPhonePlaceholder(field))
+                : resolveConfiguredPlaceholder(field, "")}
+          maxLength={textMaxLength}
+          inputMode={field.type === "phone" ? "tel" : undefined}
         />
       )}
 
-      {field.type === "textarea" && (
+      {isTextareaField(field) && (
         <textarea
           value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
-          className={`${s.input.className} nf-h-96`}
-          placeholder={field.placeholder || "入力"}
+          className={`${showInlineValidation ? `${s.input.className} nf-input--error` : s.input.className} nf-h-96`}
+          placeholder={resolveConfiguredPlaceholder(field, "")}
+          maxLength={textMaxLength}
         />
       )}
 
       {field.type === "number" && (
         <input
-          type="number"
+          type="text"
           value={value ?? ""}
           onChange={(event) => {
             const val = event.target.value;
-            onChange(val === "" ? "" : Number(val));
+            if (isNumberInputDraftAllowed(val, !!field.integerOnly)) {
+              onChange(val);
+            }
           }}
-          className={s.input.className}
-          placeholder={field.placeholder || ""}
+          className={showInlineValidation ? `${s.input.className} nf-input--error` : s.input.className}
+          placeholder={resolveConfiguredPlaceholder(field, "")}
+          inputMode={getNumberInputMode(field)}
         />
       )}
 
@@ -214,9 +244,9 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
             value={value ?? ""}
             onChange={(event) => onChange(event.target.value)}
             className={validation.ok ? s.input.className : `${s.input.className} nf-input--error`}
-            placeholder={field.placeholder || "入力"}
+            placeholder={resolveConfiguredPlaceholder(field, "")}
           />
-          {!validation.ok && (
+          {showInlineValidation && (
             <div className="nf-text-danger-ink nf-text-12 nf-mt-4">{validation.message}</div>
           )}
         </>
@@ -245,9 +275,13 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
           type="url"
           value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
-          className={s.input.className}
-          placeholder={field.placeholder || "https://example.com"}
+          className={showInlineValidation ? `${s.input.className} nf-input--error` : s.input.className}
+          placeholder={resolveConfiguredPlaceholder(field, "")}
         />
+      )}
+
+      {showInlineValidation && (isTextareaField(field) || field.type === "text" || field.type === "email" || field.type === "phone" || field.type === "number" || field.type === "url") && (
+        <div className="nf-text-danger-ink nf-text-12 nf-mt-4">{validation.message}</div>
       )}
 
       {field.type === "radio" && (
@@ -396,9 +430,16 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const recordIdRef = useRef(initialRecordId || genRecordId());
   const currentUserName = typeof settings.userName === "string" ? settings.userName : "";
   const currentUserEmail = typeof settings.userEmail === "string" ? settings.userEmail : "";
+  const currentUserAffiliation = typeof settings.userAffiliation === "string" ? settings.userAffiliation : "";
+  const currentUserPhone = typeof settings.userPhone === "string" ? settings.userPhone : "";
   const defaultNowMap = useMemo(
-    () => collectDefaultNowResponses(schema, new Date(), { userName: currentUserName, userEmail: currentUserEmail }),
-    [schema, currentUserName, currentUserEmail],
+    () => collectDefaultNowResponses(schema, new Date(), {
+      userName: currentUserName,
+      userEmail: currentUserEmail,
+      userAffiliation: currentUserAffiliation,
+      userPhone: currentUserPhone,
+    }),
+    [schema, currentUserName, currentUserEmail, currentUserAffiliation, currentUserPhone],
   );
 
   useEffect(() => {
@@ -408,7 +449,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   }, [initialRecordId]);
 
   useEffect(() => {
-    // 既往データ編集時は日付・時間・入力ユーザー名の自動初期値設定をスキップ
+    // 既往データ編集時は自動初期値設定をスキップ
     if (settings.recordId) return;
 
     if (!defaultNowMap || Object.keys(defaultNowMap).length === 0) return;

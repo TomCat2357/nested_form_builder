@@ -114,6 +114,24 @@ const getMaxModifiedAt = (records) => {
   return maxModifiedAt;
 };
 
+export const mergeRecordsByModifiedAt = (existingMap, newRecords) => {
+  const merged = { ...(existingMap || {}) };
+  const safeNewRecords = Array.isArray(newRecords) ? newRecords : [];
+
+  for (const record of safeNewRecords) {
+    const entryId = record?.id ?? record?.entryId;
+    if (!entryId) continue;
+    const existing = merged[entryId];
+    if (!existing || normalizeComparableModifiedAtUnixMs(record) >= normalizeComparableModifiedAtUnixMs(existing)) {
+      merged[entryId] = existing?.rowIndex !== undefined && record?.rowIndex === undefined
+        ? { ...record, rowIndex: existing.rowIndex }
+        : record;
+    }
+  }
+
+  return merged;
+};
+
 export const planRecordMerge = ({ existingRecords = [], incomingRecords = [] } = {}) => {
   const safeExistingRecords = Array.isArray(existingRecords) ? existingRecords : [];
   const safeIncomingRecords = Array.isArray(incomingRecords) ? incomingRecords : [];
@@ -410,22 +428,38 @@ export async function getRecordsFromCache(formId) {
  * Remove a single record from cache (removes only the deleted entry from index map)
  */
 export async function deleteRecordFromCache(formId, entryId) {
-  if (!formId || !entryId) return;
+  return deleteRecordsFromCache(formId, [entryId]);
+}
+
+export async function deleteRecordsFromCache(formId, entryIds) {
+  if (!formId) return;
   const db = await openDB();
   const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
   const store = tx.objectStore(STORE_NAMES.records);
   const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
 
-  await waitForRequest(store.delete(buildCompoundId(formId, entryId)));
+  const targetIds = Array.isArray(entryIds) ? entryIds.filter(Boolean) : [];
+  if (targetIds.length === 0) {
+    await waitForTransaction(tx);
+    db.close();
+    return;
+  }
+
+  for (const entryId of targetIds) {
+    await waitForRequest(store.delete(buildCompoundId(formId, entryId)));
+  }
   const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
 
   // 削除対象のentryIdのみをindexMapから除去（他のエントリは保持）
   const updatedIndexMap = { ...(existingMeta?.entryIndexMap || {}) };
-  delete updatedIndexMap[entryId];
+  targetIds.forEach((entryId) => {
+    delete updatedIndexMap[entryId];
+  });
+  const now = Date.now();
 
   await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
-    lastSyncedAt: Date.now(),
-    lastFrontendMutationAt: Date.now(),
+    lastSyncedAt: now,
+    lastFrontendMutationAt: now,
     entryIndexMap: updatedIndexMap,
   })));
 
@@ -456,7 +490,7 @@ export async function getMaxRecordNo(formId) {
  * 差分データをキャッシュに適用する
  */
 
-export async function applySyncResultToCache(formId, syncedRecords, headerMatrix, metaUpdates) {
+export async function applySyncResultToCache(formId, syncedRecords, headerMatrix, metaUpdates = {}) {
   if (!formId) return;
   const db = await openDB();
   const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
@@ -468,36 +502,24 @@ export async function applySyncResultToCache(formId, syncedRecords, headerMatrix
   const existingRecords = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId))) ||[];
 
   const existingMap = {};
-  existingRecords.forEach(r => existingMap[r.id] = r);
+  existingRecords.forEach((record) => {
+    const entryId = record?.entryId ?? record?.id;
+    if (entryId) existingMap[entryId] = record;
+  });
 
-  for (const rec of syncedRecords) {
-    const ex = existingMap[rec.id];
-    const exMod = ex ? (Number(ex.modifiedAtUnixMs) || 0) : 0;
-    const newMod = Number(rec.modifiedAtUnixMs) || 0;
-    if (!ex || newMod >= exMod) {
-      const nextRowIndex = ex?.rowIndex;
-      const normalizedRecord = { ...rec };
-      await waitForRequest(store.put({
-        ...normalizedRecord,
-        compoundId: `${formId}::${normalizedRecord.id}`,
-        formId,
-        entryId: normalizedRecord.id,
-        lastSyncedAt,
-        rowIndex: nextRowIndex,
-      }));
-    }
+  const mergedMap = mergeRecordsByModifiedAt(existingMap, syncedRecords);
+  for (const [entryId, record] of Object.entries(mergedMap)) {
+    if (existingMap[entryId] === record) continue;
+    await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, record?.rowIndex)));
   }
 
-  await waitForRequest(metaStore.put({
-    ...existingMeta,
-    ...metaUpdates,
-    formId,
+  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
     lastSyncedAt,
-    headerMatrix: headerMatrix ?? existingMeta?.headerMatrix ??[],
+    headerMatrix: headerMatrix ?? existingMeta?.headerMatrix ?? [],
     lastServerReadAt: metaUpdates.lastServerReadAt ?? existingMeta?.lastServerReadAt ?? 0,
     serverCommitToken: metaUpdates.serverCommitToken ?? existingMeta?.serverCommitToken ?? 0,
-    serverModifiedAt: metaUpdates.serverModifiedAt ?? existingMeta?.serverModifiedAt ?? 0
-  }));
+    serverModifiedAt: metaUpdates.serverModifiedAt ?? existingMeta?.serverModifiedAt ?? 0,
+  })));
 
   await waitForTransaction(tx);
   db.close();

@@ -1,34 +1,53 @@
 import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
-import { deepClone, normalizeSchemaIDs, MAX_DEPTH, cleanUnusedFieldProperties } from "../../core/schema.js";
+import { deepClone, normalizeSchemaIDs, MAX_DEPTH, cleanUnusedFieldProperties, DEFAULT_TEXT_MAX_LENGTH } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "../../core/styleSettings.js";
+import { buildPhonePattern, getStandardPhonePlaceholder, normalizePhoneSettings } from "../../core/phone.js";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
-// 定数
-const CHOICE_TYPES = ["radio", "select", "checkboxes"];
-const INPUT_TYPES = ["text", "textarea", "number", "url"];
-const DATE_TIME_TYPES = ["date", "time"];
-const MESSAGE_TYPE = "message";
-const USER_NAME_TYPE = "userName";
-const EMAIL_TYPE = "email";
-const DISPLAY_LABEL = "表示";
 
-// ヘルパー関数
+const CHOICE_TYPES = ["radio", "select", "checkboxes"];
+const DATE_TIME_TYPES = ["date", "time"];
+const BASIC_INPUT_TYPES = ["number", "url"];
+const MESSAGE_TYPE = "message";
+const DISPLAY_LABEL = "表示";
+const EMAIL_PLACEHOLDER = "user@example.com";
+
 const isChoiceType = (type) => CHOICE_TYPES.includes(type);
-const isInputType = (type) => INPUT_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 const isMessageType = (type) => type === MESSAGE_TYPE;
-const isUserNameType = (type) => type === USER_NAME_TYPE;
-const isEmailType = (type) => type === EMAIL_TYPE;
+const isBasicInputType = (type) => BASIC_INPUT_TYPES.includes(type);
 const applyDisplayedFlag = (target, displayed) => {
   target.isDisplayed = displayed === true;
 };
 
-/**
- * 選択肢系から非選択肢系への変更時に、選択肢状態をメモリへ退避してoptionsを削除する
- */
+const normalizeTextFieldSettings = (field) => {
+  field.multiline = !!field.multiline;
+  field.defaultValueMode = ["none", "userName", "userAffiliation", "custom"].includes(field.defaultValueMode)
+    ? field.defaultValueMode
+    : "none";
+  field.defaultValueText = typeof field.defaultValueText === "string" ? field.defaultValueText : "";
+
+  if (field.inputRestrictionMode === "maxLength") {
+    const parsedMaxLength = Number(field.maxLength);
+    field.inputRestrictionMode = "maxLength";
+    field.maxLength = Number.isFinite(parsedMaxLength) && parsedMaxLength > 0
+      ? Math.floor(parsedMaxLength)
+      : DEFAULT_TEXT_MAX_LENGTH;
+  } else if (field.inputRestrictionMode === "pattern") {
+    field.inputRestrictionMode = "pattern";
+    field.pattern = typeof field.pattern === "string" ? field.pattern : "";
+  } else {
+    field.inputRestrictionMode = "none";
+  }
+
+  if (field.inputRestrictionMode !== "pattern") delete field.pattern;
+  if (field.inputRestrictionMode !== "maxLength") delete field.maxLength;
+  return field;
+};
+
 function saveAndClearChoiceState(next, field, oldIsChoice, setTempState) {
   if (oldIsChoice) {
     setTempState?.(field.id, {
@@ -42,10 +61,6 @@ function saveAndClearChoiceState(next, field, oldIsChoice, setTempState) {
   delete next.childrenByValue;
 }
 
-/**
- * タイプ変更時の状態を管理する関数
- * 選択肢系⇔入力系の変換時にchildrenByValueの状態を保存・復元する
- */
 function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
   const next = deepClone(field);
   const oldType = field.type;
@@ -57,17 +72,17 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
 
   if (newIsChoice) {
     if (oldIsChoice) {
-      next.options = next.options?.length ? next.options : [{ id: genId(), label: "" }];
+      next.options = next.options?.length ? next.options : [{ id: genId(), label: "", defaultSelected: false }];
     } else {
       const saved = getTempState?.(field.id)?.choiceState;
-      next.options = saved?.options?.length ? deepClone(saved.options) : [{ id: genId(), label: "" }];
+      next.options = saved?.options?.length ? deepClone(saved.options) : [{ id: genId(), label: "", defaultSelected: false }];
       if (saved?.childrenByValue) next.childrenByValue = deepClone(saved.childrenByValue);
     }
   } else {
-    if (newType === "regex") next.pattern = typeof next.pattern === "string" ? next.pattern : "";
-    if (isDateOrTimeType(newType) || newType === USER_NAME_TYPE || newType === EMAIL_TYPE) {
-      next.defaultNow = !!next.defaultNow;
-    }
+    if (newType === "text") normalizeTextFieldSettings(next);
+    if (newType === "email") next.autoFillUserEmail = !!next.autoFillUserEmail;
+    if (newType === "phone") Object.assign(next, normalizePhoneSettings(next));
+    if (isDateOrTimeType(newType)) next.defaultNow = !!next.defaultNow;
     saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
   }
 
@@ -76,10 +91,14 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
   return next;
 }
 
-/**
- * プレースホルダー入力UI
- */
-function PlaceholderInput({ field, onChange, onFocus }) {
+function PlaceholderInput({
+  field,
+  onChange,
+  onFocus,
+  toggleLabel = "プレースホルダー",
+  inputPlaceholder = "例: 入力例を表示",
+  defaultPlaceholder = "",
+}) {
   return (
     <div className="nf-mt-8">
       <label className={`nf-row nf-gap-6${field.showPlaceholder ? " nf-mb-4" : ""}`}>
@@ -87,16 +106,21 @@ function PlaceholderInput({ field, onChange, onFocus }) {
           type="checkbox"
           checked={!!field.showPlaceholder}
           onChange={(event) => {
-            onChange({ ...field, showPlaceholder: event.target.checked });
+            const checked = event.target.checked;
+            const nextField = { ...field, showPlaceholder: checked };
+            if (checked && defaultPlaceholder && !nextField.placeholder) {
+              nextField.placeholder = defaultPlaceholder;
+            }
+            onChange(nextField);
           }}
         />
-        プレースホルダー
+        {toggleLabel}
       </label>
       {field.showPlaceholder && (
         <div className="nf-row nf-gap-8">
           <input
             className={s.input.className}
-            placeholder="例: 入力例を表示"
+            placeholder={inputPlaceholder}
             value={field.placeholder || ""}
             onChange={(event) => onChange({ ...field, placeholder: event.target.value })}
             onFocus={onFocus}
@@ -107,9 +131,6 @@ function PlaceholderInput({ field, onChange, onFocus }) {
   );
 }
 
-/**
- * スタイル設定入力UI
- */
 function StyleSettingsInput({ field, onChange, onFocus, getTempState, setTempState }) {
   const styleSettings = normalizeStyleSettings(field.styleSettings || {});
   const isStyleSettingsEnabled = typeof field.showStyleSettings === "boolean"
@@ -129,22 +150,11 @@ function StyleSettingsInput({ field, onChange, onFocus, getTempState, setTempSta
                 ? field.styleSettings
                 : (savedStyleSettings && typeof savedStyleSettings === "object" ? savedStyleSettings : {});
               const nextStyleSettings = { ...DEFAULT_STYLE_SETTINGS, ...normalizeStyleSettings(restored) };
-              console.log("[StyleSettingsInput] toggle ON", {
-                id: field.id,
-                label: field.label,
-                restoredFrom: field.styleSettings ? "styleSettings" : (savedStyleSettings ? "tempState" : "default"),
-                nextStyleSettings
-              });
               const nextField = { ...field, showStyleSettings: true, styleSettings: nextStyleSettings };
               setTempState?.(field.id, { savedStyleSettings: undefined });
               onChange(nextField);
               return;
             }
-            console.log("[StyleSettingsInput] toggle OFF (keep in-memory until save)", {
-              id: field.id,
-              label: field.label,
-              styleSettings: field.styleSettings,
-            });
             const nextField = { ...field, showStyleSettings: false };
             if (field.styleSettings && typeof field.styleSettings === "object") {
               setTempState?.(field.id, { savedStyleSettings: deepClone(field.styleSettings) });
@@ -199,6 +209,187 @@ function StyleSettingsInput({ field, onChange, onFocus, getTempState, setTempSta
   );
 }
 
+function TextDefaultValueInput({ field, onChange, onFocus }) {
+  const radioName = `text-default-${field.id}`;
+  return (
+    <div className="nf-mt-8">
+      <label className="nf-fw-600 nf-mb-4">初期値</label>
+      <div className="nf-row nf-gap-12 nf-wrap nf-mt-4">
+        <label className="nf-row nf-gap-4 nf-nowrap">
+          <input
+            type="radio"
+            name={radioName}
+            checked={(field.defaultValueMode || "none") === "none"}
+            onChange={() => onChange({ ...field, defaultValueMode: "none" })}
+          />
+          <span>なし</span>
+        </label>
+        <label className="nf-row nf-gap-4 nf-nowrap">
+          <input
+            type="radio"
+            name={radioName}
+            checked={field.defaultValueMode === "userName"}
+            onChange={() => onChange({ ...field, defaultValueMode: "userName" })}
+          />
+          <span>ユーザー名</span>
+        </label>
+        <label className="nf-row nf-gap-4 nf-nowrap">
+          <input
+            type="radio"
+            name={radioName}
+            checked={field.defaultValueMode === "userAffiliation"}
+            onChange={() => onChange({ ...field, defaultValueMode: "userAffiliation" })}
+          />
+          <span>ユーザー所属</span>
+        </label>
+        <label className="nf-row nf-gap-4 nf-nowrap">
+          <input
+            type="radio"
+            name={radioName}
+            checked={field.defaultValueMode === "custom"}
+            onChange={() => onChange({ ...field, defaultValueMode: "custom" })}
+          />
+          <span>自由入力</span>
+        </label>
+      </div>
+      {field.defaultValueMode === "custom" && (
+        <input
+          className={s.input.className}
+          placeholder="初期値を入力"
+          value={field.defaultValueText || ""}
+          onChange={(event) => onChange({ ...field, defaultValueText: event.target.value })}
+          onFocus={onFocus}
+        />
+      )}
+    </div>
+  );
+}
+
+function TextInputRestrictionInput({ field, onChange, onFocus, regexError }) {
+  const radioName = `text-restriction-${field.id}`;
+  return (
+    <div className="nf-mt-8">
+      <label className="nf-fw-600 nf-mb-4">入力制限</label>
+      <div className="nf-row nf-gap-12 nf-wrap nf-mt-4">
+        <label className="nf-row nf-gap-4 nf-nowrap">
+          <input
+            type="radio"
+            name={radioName}
+            checked={(field.inputRestrictionMode || "none") === "none"}
+            onChange={() => onChange({ ...field, inputRestrictionMode: "none" })}
+          />
+          <span>なし</span>
+        </label>
+        <label className="nf-row nf-gap-4 nf-nowrap">
+          <input
+            type="radio"
+            name={radioName}
+            checked={field.inputRestrictionMode === "maxLength"}
+            onChange={() => onChange({
+              ...field,
+              inputRestrictionMode: "maxLength",
+              maxLength: field.maxLength || DEFAULT_TEXT_MAX_LENGTH
+            })}
+          />
+          <span>最大文字数</span>
+        </label>
+        <label className="nf-row nf-gap-4 nf-nowrap">
+          <input
+            type="radio"
+            name={radioName}
+            checked={field.inputRestrictionMode === "pattern"}
+            onChange={() => onChange({ ...field, inputRestrictionMode: "pattern", pattern: field.pattern || "" })}
+          />
+          <span>パターン指定（正規表現）</span>
+        </label>
+      </div>
+      {field.inputRestrictionMode === "maxLength" && (
+        <input
+          type="number"
+          min="1"
+          className={s.input.className}
+          value={field.maxLength ?? DEFAULT_TEXT_MAX_LENGTH}
+          onChange={(event) => onChange({
+            ...field,
+            inputRestrictionMode: "maxLength",
+            maxLength: event.target.value === "" ? "" : Number(event.target.value),
+          })}
+          onFocus={onFocus}
+        />
+      )}
+      {field.inputRestrictionMode === "pattern" && (
+        <>
+          <input
+            className={s.input.className}
+            placeholder="例: ^[0-9]+$"
+            value={field.pattern || ""}
+            onChange={(event) => onChange({ ...field, pattern: event.target.value })}
+            onFocus={onFocus}
+          />
+          {regexError && (
+            <div className="nf-text-danger-ink nf-text-12 nf-mt-4">正規表現が不正です: {regexError}</div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+const parseNumberSettingValue = (value) => {
+  if (value === "") return undefined;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+function NumberSettingsInput({ field, onChange, onFocus }) {
+  const step = field.integerOnly ? "1" : "any";
+
+  const updateBound = (key, rawValue) => {
+    const nextField = { ...field };
+    const nextValue = parseNumberSettingValue(rawValue);
+    if (nextValue === undefined) delete nextField[key];
+    else nextField[key] = nextValue;
+    onChange(nextField);
+  };
+
+  return (
+    <div className="nf-mt-8">
+      <label className="nf-row nf-gap-6">
+        <input
+          type="checkbox"
+          checked={!!field.integerOnly}
+          onChange={(event) => onChange({ ...field, integerOnly: event.target.checked })}
+        />
+        整数のみ
+      </label>
+      <div className="nf-row nf-gap-8 nf-mt-8" style={{ flexWrap: "nowrap" }}>
+        <div className="nf-flex-1 nf-min-w-0">
+          <label className="nf-text-12 nf-mb-2 nf-text-subtle">最小値</label>
+          <input
+            type="number"
+            step={step}
+            className={s.input.className}
+            value={field.minValue ?? ""}
+            onChange={(event) => updateBound("minValue", event.target.value)}
+            onFocus={onFocus}
+          />
+        </div>
+        <div className="nf-flex-1 nf-min-w-0">
+          <label className="nf-text-12 nf-mb-2 nf-text-subtle">最大値</label>
+          <input
+            type="number"
+            step={step}
+            className={s.input.className}
+            value={field.maxValue ?? ""}
+            onChange={(event) => updateBound("maxValue", event.target.value)}
+            onFocus={onFocus}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function QuestionCard({
   field,
   onChange,
@@ -214,32 +405,60 @@ export default function QuestionCard({
   clearTempState,
 }) {
   const isChoice = isChoiceType(field.type);
-  const isRegex = field.type === "regex";
+  const isText = field.type === "text";
+  const isNumber = field.type === "number";
   const isDateOrTime = isDateOrTimeType(field.type);
-  const isInput = isInputType(field.type);
+  const isBasicInput = isBasicInputType(field.type);
   const isMessage = isMessageType(field.type);
-  const isUserName = isUserNameType(field.type);
-  const isEmail = isEmailType(field.type);
+  const isEmail = field.type === "email";
+  const isPhone = field.type === "phone";
   const canAddChild = depth < MAX_DEPTH;
-  const regexCheck = isRegex ? buildSafeRegex(field.pattern || "") : { error: null };
+  const regexCheck = (isText && field.inputRestrictionMode === "pattern")
+    ? buildSafeRegex(field.pattern || "")
+    : { error: null };
+  const phonePlaceholder = isPhone ? getStandardPhonePlaceholder(field) : "";
+  const phonePattern = isPhone ? buildPhonePattern(field) : "";
+  const prevPhonePlaceholderRef = React.useRef(phonePlaceholder);
   const [selectedOptionIndex, setSelectedOptionIndex] = React.useState(null);
   const latestFieldRef = React.useRef(field);
   const latestOnChangeRef = React.useRef(onChange);
   latestFieldRef.current = field;
   latestOnChangeRef.current = onChange;
   const isDisplayed = resolveIsDisplayed(field);
+
   const handleDisplayToggle = (checked) => {
     const nextField = { ...field };
     applyDisplayedFlag(nextField, checked);
     onChange(nextField);
   };
 
-  // 既存のplaceholderがある場合はshowPlaceholderをtrueにする
   React.useEffect(() => {
-    if ((isInput || isRegex) && field.placeholder && !field.showPlaceholder) {
+    if ((isText || isBasicInput || isEmail || isPhone) && field.placeholder && !field.showPlaceholder) {
       onChange({ ...field, showPlaceholder: true });
     }
   }, []);
+
+  React.useEffect(() => {
+    if (isEmail && field.showPlaceholder && !field.placeholder) {
+      onChange({ ...field, placeholder: EMAIL_PLACEHOLDER });
+    }
+  }, [isEmail, field.showPlaceholder, field.placeholder]);
+
+  React.useEffect(() => {
+    if (!isPhone) {
+      prevPhonePlaceholderRef.current = "";
+      return;
+    }
+
+    const previousStandard = prevPhonePlaceholderRef.current;
+    const currentPlaceholder = typeof field.placeholder === "string" ? field.placeholder : "";
+    if (field.showPlaceholder && currentPlaceholder === previousStandard && currentPlaceholder !== phonePlaceholder) {
+      prevPhonePlaceholderRef.current = phonePlaceholder;
+      onChange({ ...field, placeholder: phonePlaceholder });
+      return;
+    }
+    prevPhonePlaceholderRef.current = phonePlaceholder;
+  }, [isPhone, field.showPlaceholder, field.placeholder, phonePlaceholder]);
 
   const moveOptionUp = (index) => {
     const currentField = latestFieldRef.current;
@@ -276,13 +495,33 @@ export default function QuestionCard({
     };
   }, []);
 
-  // 選択肢の選択状態を親に伝達（質問の上下移動とは別の制御）
   React.useEffect(() => {
     if (isChoice && selectedOptionIndex !== null) {
       const controlInfo = buildOptionControlInfo(selectedOptionIndex);
       if (controlInfo) onFocus(controlInfo);
     }
   }, [selectedOptionIndex, isChoice, field.options?.length, buildOptionControlInfo]);
+
+  const updateChoiceDefaultSelection = (optionIndex, checked) => {
+    const next = deepClone(field);
+    next.options = (next.options || []).map((opt, index) => {
+      if (field.type === "checkboxes") {
+        return { ...opt, defaultSelected: index === optionIndex ? checked : !!opt.defaultSelected };
+      }
+      return { ...opt, defaultSelected: checked && index === optionIndex };
+    });
+    onChange(next);
+  };
+
+  const renderStyleSettingsInput = () => (
+    <StyleSettingsInput
+      field={field}
+      onChange={onChange}
+      onFocus={onFocus}
+      getTempState={getTempState}
+      setTempState={setTempState}
+    />
+  );
 
   const cardAttrs = s.card(0, isSelected);
 
@@ -311,17 +550,15 @@ export default function QuestionCard({
           onFocus={onFocus}
         >
           <option value="text">テキスト</option>
-          <option value="textarea">テキスト（複数行）</option>
-          <option value="number">数値</option>
-          <option value="regex">正規表現</option>
-          <option value="checkboxes">チェックボックス</option>
-          <option value="radio">ラジオ</option>
-          <option value="select">ドロップダウン</option>
-          <option value="date">日付</option>
-          <option value="time">時間</option>
-          <option value="userName">名前</option>
+          <option value="phone">電話番号</option>
           <option value="email">メールアドレス</option>
           <option value="url">URL</option>
+          <option value="number">数値</option>
+          <option value="date">日付</option>
+          <option value="time">時間</option>
+          <option value="checkboxes">チェックボックス</option>
+          <option value="radio">ラジオボタン</option>
+          <option value="select">ドロップダウン</option>
           <option value="message">メッセージ</option>
         </select>
         {!isMessage && (
@@ -344,16 +581,141 @@ export default function QuestionCard({
         </label>
       </div>
 
-      {/* スタイル設定（全タイプで利用可能） */}
-      <StyleSettingsInput
-        field={field}
-        onChange={onChange}
-        onFocus={onFocus}
-        getTempState={getTempState}
-        setTempState={setTempState}
-      />
+      {!isText && renderStyleSettingsInput()}
 
-      {isInput && <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />}
+      {isText && (
+        <>
+          <div className="nf-mt-8">
+            <label className="nf-row nf-gap-6">
+              <input
+                type="checkbox"
+                checked={!!field.multiline}
+                onChange={(event) => onChange({ ...field, multiline: event.target.checked })}
+              />
+              複数行入力を許可
+            </label>
+          </div>
+          {renderStyleSettingsInput()}
+          <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />
+          <TextDefaultValueInput field={field} onChange={onChange} onFocus={onFocus} />
+          <TextInputRestrictionInput field={field} onChange={onChange} onFocus={onFocus} regexError={regexCheck.error} />
+        </>
+      )}
+
+      {isBasicInput && <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />}
+
+      {isNumber && (
+        <NumberSettingsInput field={field} onChange={onChange} onFocus={onFocus} />
+      )}
+
+      {isEmail && (
+        <>
+          <PlaceholderInput
+            field={field}
+            onChange={onChange}
+            onFocus={onFocus}
+            toggleLabel="プレースホルダーを設定する"
+            inputPlaceholder={EMAIL_PLACEHOLDER}
+            defaultPlaceholder={EMAIL_PLACEHOLDER}
+          />
+          <div className="nf-mt-8">
+            <label className="nf-row nf-gap-6">
+              <input
+                type="checkbox"
+                checked={!!field.autoFillUserEmail}
+                onChange={(event) => onChange({ ...field, autoFillUserEmail: event.target.checked })}
+              />
+              回答者のメールアドレスを自動入力する
+            </label>
+          </div>
+        </>
+      )}
+
+      {isPhone && (
+        <>
+          <PlaceholderInput
+            field={field}
+            onChange={onChange}
+            onFocus={onFocus}
+            toggleLabel="プレースホルダーを設定する"
+            inputPlaceholder={phonePlaceholder}
+            defaultPlaceholder={phonePlaceholder}
+          />
+          <div className="nf-mt-8">
+            <label className="nf-row nf-gap-6">
+              <input
+                type="checkbox"
+                checked={!!field.autoFillUserPhone}
+                onChange={(event) => onChange({ ...field, autoFillUserPhone: event.target.checked })}
+              />
+              回答者の電話番号を自動入力する
+            </label>
+          </div>
+          <div className="nf-mt-8">
+            <label className="nf-fw-600 nf-mb-4">形式</label>
+            <div className="nf-row nf-gap-12 nf-wrap nf-mt-4">
+              <label className="nf-row nf-gap-4 nf-nowrap">
+                <input
+                  type="radio"
+                  name={`phone-format-${field.id}`}
+                  checked={(field.phoneFormat || "hyphen") === "hyphen"}
+                  onChange={() => onChange({ ...field, phoneFormat: "hyphen" })}
+                />
+                <span>ハイフンあり</span>
+              </label>
+              <label className="nf-row nf-gap-4 nf-nowrap">
+                <input
+                  type="radio"
+                  name={`phone-format-${field.id}`}
+                  checked={field.phoneFormat === "plain"}
+                  onChange={() => onChange({ ...field, phoneFormat: "plain" })}
+                />
+                <span>ハイフンなし</span>
+              </label>
+            </div>
+          </div>
+          <div className="nf-mt-8">
+            <div className="nf-row nf-gap-12 nf-wrap">
+              <label className="nf-row nf-gap-4">
+                <input
+                  type="checkbox"
+                  checked={!!field.allowFixedLineOmitAreaCode}
+                  onChange={(event) => onChange({ ...field, allowFixedLineOmitAreaCode: event.target.checked })}
+                />
+                <span>固定電話の市外局番省略を認める</span>
+              </label>
+              <label className="nf-row nf-gap-4">
+                <input
+                  type="checkbox"
+                  checked={field.allowMobile !== false}
+                  onChange={(event) => onChange({ ...field, allowMobile: event.target.checked })}
+                />
+                <span>携帯電話（090 / 080 / 070）を許容</span>
+              </label>
+              <label className="nf-row nf-gap-4">
+                <input
+                  type="checkbox"
+                  checked={field.allowIpPhone !== false}
+                  onChange={(event) => onChange({ ...field, allowIpPhone: event.target.checked })}
+                />
+                <span>IP電話（050）を許容</span>
+              </label>
+              <label className="nf-row nf-gap-4">
+                <input
+                  type="checkbox"
+                  checked={field.allowTollFree !== false}
+                  onChange={(event) => onChange({ ...field, allowTollFree: event.target.checked })}
+                />
+                <span>フリーダイヤル（0120）を許容</span>
+              </label>
+            </div>
+          </div>
+          <div className="nf-mt-8 nf-text-12 nf-text-subtle">
+            <div>許容パターン（正規表現）</div>
+            <code className="nf-text-11 nf-text-muted nf-word-break">{phonePattern}</code>
+          </div>
+        </>
+      )}
 
       {isDateOrTime && (
         <div className="nf-mt-8">
@@ -368,48 +730,6 @@ export default function QuestionCard({
         </div>
       )}
 
-      {isUserName && (
-        <div className="nf-mt-8">
-          <label className="nf-row nf-gap-6">
-            <input
-              type="checkbox"
-              checked={!!field.defaultNow}
-              onChange={(event) => onChange({ ...field, defaultNow: event.target.checked })}
-            />
-            作成時に入力ユーザーの氏名を自動入力
-          </label>
-        </div>
-      )}
-      {isEmail && (
-        <div className="nf-mt-8">
-          <label className="nf-row nf-gap-6">
-            <input
-              type="checkbox"
-              checked={!!field.defaultNow}
-              onChange={(event) => onChange({ ...field, defaultNow: event.target.checked })}
-            />
-            作成時に入力ユーザーのアドレスを自動入力
-          </label>
-        </div>
-      )}
-
-      {isRegex && (
-        <div className="nf-mt-8">
-          <label className="nf-fw-600 nf-mb-4">正規表現（任意）</label>
-          <input
-            className={s.input.className}
-            placeholder="例: ^[0-9]+$"
-            value={field.pattern || ""}
-            onChange={(event) => onChange({ ...field, pattern: event.target.value })}
-            onFocus={onFocus}
-          />
-          {regexCheck.error && (
-            <div className="nf-text-danger-ink nf-text-12 nf-mt-4">正規表現が不正です: {regexCheck.error}</div>
-          )}
-          <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />
-        </div>
-      )}
-
       {isChoice && (
         <div className="nf-mt-8">
           <div className="nf-row-between nf-mb-6">
@@ -420,7 +740,7 @@ export default function QuestionCard({
               onClick={() => {
                 const next = deepClone(field);
                 next.options = next.options || [];
-                next.options.push({ id: genId(), label: "" });
+                next.options.push({ id: genId(), label: "", defaultSelected: false });
                 onChange(next);
               }}
             >
@@ -436,9 +756,12 @@ export default function QuestionCard({
                 const next = deepClone(field);
                 const prevLabel = opt.label || "";
                 const nextLabel = nextOpt.label || "";
-                next.options[index] = { id: nextOpt.id || genId(), label: nextLabel };
+                next.options[index] = {
+                  id: nextOpt.id || genId(),
+                  label: nextLabel,
+                  defaultSelected: !!nextOpt.defaultSelected,
+                };
 
-                // ラベル変更時も子質問を維持する
                 if (prevLabel !== nextLabel && next.childrenByValue?.[prevLabel]) {
                   next.childrenByValue = { ...next.childrenByValue };
                   const movedChildren = next.childrenByValue[prevLabel];
@@ -476,25 +799,40 @@ export default function QuestionCard({
                 onChange(next);
               }}
               canAddChild={canAddChild}
+              defaultSelectionControl={
+                <label className="nf-row nf-gap-4 nf-nowrap">
+                  <input
+                    type="checkbox"
+                    checked={!!opt.defaultSelected}
+                    onChange={(event) => updateChoiceDefaultSelection(index, event.target.checked)}
+                    onFocus={() => {
+                      setSelectedOptionIndex(index);
+                      const controlInfo = buildOptionControlInfo(index);
+                      if (controlInfo) onFocus(controlInfo);
+                    }}
+                  />
+                  初期選択
+                </label>
+              }
               childrenArea={
                 (() => {
                   const hasChildren = field.childrenByValue && field.childrenByValue[opt.label]?.length;
                   return hasChildren ? (
                     <div className={s.child.className}>
                       <QuestionListComponent
-                      fields={field.childrenByValue[opt.label]}
-                      onChange={(childFields) => {
-                        const next = deepClone(field);
-                        next.childrenByValue[opt.label] = normalizeSchemaIDs(childFields);
-                        onChange(next);
-                      }}
-                      depth={depth + 1}
-                      onQuestionControlChange={onQuestionControlChange}
-                      getTempState={getTempState}
-                      setTempState={setTempState}
-                      clearTempState={clearTempState}
-                    />
-                  </div>
+                        fields={field.childrenByValue[opt.label]}
+                        onChange={(childFields) => {
+                          const next = deepClone(field);
+                          next.childrenByValue[opt.label] = normalizeSchemaIDs(childFields);
+                          onChange(next);
+                        }}
+                        depth={depth + 1}
+                        onQuestionControlChange={onQuestionControlChange}
+                        getTempState={getTempState}
+                        setTempState={setTempState}
+                        clearTempState={clearTempState}
+                      />
+                    </div>
                   ) : null;
                 })()
               }

@@ -1,12 +1,4 @@
-import { toUnixMs } from "../../utils/dateTime.js";
-
-const resolveUnixMs = (...candidates) => {
-  for (const candidate of candidates) {
-    const unixMs = toUnixMs(candidate);
-    if (Number.isFinite(unixMs)) return unixMs;
-  }
-  return null;
-};
+import { resolveUnixMs } from "../../utils/dateTime.js";
 
 const toUploadRecord = (entry) => {
   const createdAtUnixMs = resolveUnixMs(entry?.createdAtUnixMs, entry?.createdAt);

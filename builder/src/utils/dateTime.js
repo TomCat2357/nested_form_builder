@@ -78,6 +78,14 @@ export const toUnixMs = (value) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
+export const resolveUnixMs = (...candidates) => {
+  for (const candidate of candidates) {
+    const unixMs = toUnixMs(candidate);
+    if (Number.isFinite(unixMs)) return unixMs;
+  }
+  return null;
+};
+
 const buildFormatter = (options) => new Intl.DateTimeFormat(DEFAULT_LOCALE, { timeZone: TIME_ZONE, hour12: false, ...options });
 
 const formatFromPartsMs = (formatter, unixMs) => {
