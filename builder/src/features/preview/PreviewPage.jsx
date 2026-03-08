@@ -431,15 +431,17 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const currentUserName = typeof settings.userName === "string" ? settings.userName : "";
   const currentUserEmail = typeof settings.userEmail === "string" ? settings.userEmail : "";
   const currentUserAffiliation = typeof settings.userAffiliation === "string" ? settings.userAffiliation : "";
+  const currentUserTitle = typeof settings.userTitle === "string" ? settings.userTitle : "";
   const currentUserPhone = typeof settings.userPhone === "string" ? settings.userPhone : "";
   const defaultNowMap = useMemo(
     () => collectDefaultNowResponses(schema, new Date(), {
       userName: currentUserName,
       userEmail: currentUserEmail,
       userAffiliation: currentUserAffiliation,
+      userTitle: currentUserTitle,
       userPhone: currentUserPhone,
     }),
-    [schema, currentUserName, currentUserEmail, currentUserAffiliation, currentUserPhone],
+    [schema, currentUserName, currentUserEmail, currentUserAffiliation, currentUserTitle, currentUserPhone],
   );
 
   useEffect(() => {

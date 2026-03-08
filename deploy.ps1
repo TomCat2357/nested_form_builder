@@ -12,7 +12,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-
 function Resolve-IndexHtmlPath {
     $candidates = @("dist/Index.html", "dist/index.html")
     foreach ($candidate in $candidates) {
@@ -30,15 +29,20 @@ function Set-FileContentWithRetry {
         [Parameter(Mandatory=$true)]
         [string]$Content,
         [int]$RetryCount = 5,
-        [int]$DelayMs = 400
+        [int]$DelayMs = 1000 # ロック対策として待機時間を1秒に延長
     )
+
+    # パスを絶対パスに変換（.NETクラスで安全に扱うため）
+    $fullPath = (Resolve-Path $Path).Path
 
     for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
         try {
-            $Content | Set-Content $Path -Encoding UTF8 -NoNewline
+            # Set-Contentではなく、より確実にハンドルを閉じる.NETのWriteAllTextを使用
+            [System.IO.File]::WriteAllText($fullPath, $Content, [System.Text.Encoding]::UTF8)
             return
         } catch {
             if ($attempt -ge $RetryCount) {
+                Write-Host "❌ ファイル書き込みの再試行回数の上限に達しました: $fullPath" -ForegroundColor Red
                 throw
             }
             Start-Sleep -Milliseconds $DelayMs
@@ -120,14 +124,19 @@ if (-not (Test-Path $BundleFile)) {
     exit 1
 }
 
-$bundleContent = Get-Content $BundleFile -Raw -Encoding UTF8
+# 読み書きも.NETクラスで行う
+$fullBundlePath = (Resolve-Path $BundleFile).Path
+$bundleContent = [System.IO.File]::ReadAllText($fullBundlePath, [System.Text.Encoding]::UTF8)
+
 $modePlaceholder = "__NFB_PROPERTY_STORE_MODE__"
 if ($bundleContent.Contains($modePlaceholder)) {
     $bundleContent = $bundleContent -replace [Regex]::Escape($modePlaceholder), $PropertyStore
 } else {
     Write-Host "⚠️ プロパティ保存先プレースホルダーが見つかりません。既定値(script)で動作します。" -ForegroundColor Yellow
 }
-$bundleContent | Set-Content $BundleFile -Encoding UTF8 -NoNewline
+
+# 保存
+Set-FileContentWithRetry -Path $BundleFile -Content $bundleContent
 Write-Host "🗂 プロパティ保存先: $PropertyStore" -ForegroundColor Green
 
 # デプロイファイルの準備
@@ -144,7 +153,8 @@ if (-not $IndexHtmlPath) {
 $DeployTimestamp = (Get-Date).ToUniversalTime().AddHours(9).ToString("yyyy-MM-dd HH:mm:ss") + " JST"
 
 # <base target="_top"> タグとデプロイ時刻を追加
-$indexHtml = Get-Content $IndexHtmlPath -Raw -Encoding UTF8
+$fullIndexHtmlPath = (Resolve-Path $IndexHtmlPath).Path
+$indexHtml = [System.IO.File]::ReadAllText($fullIndexHtmlPath, [System.Text.Encoding]::UTF8)
 
 if (-not $indexHtml.Contains('<base target="_top">')) {
     $indexHtml = $indexHtml -replace '<head>', "<head>`n  <base target=""_top"">"
@@ -157,6 +167,7 @@ if ($indexHtml -match '<meta name="deploy-time"') {
     $indexHtml = $indexHtml -replace '<head>', "<head>`n  $deployMeta"
 }
 
+# 上書き保存（リトライ付き関数を使用）
 Set-FileContentWithRetry -Path $IndexHtmlPath -Content $indexHtml
 Write-Host "📅 デプロイ時刻: $DeployTimestamp" -ForegroundColor Green
 

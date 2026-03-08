@@ -25,7 +25,7 @@ const applyDisplayedFlag = (target, displayed) => {
 
 const normalizeTextFieldSettings = (field) => {
   field.multiline = !!field.multiline;
-  field.defaultValueMode = ["none", "userName", "userAffiliation", "custom"].includes(field.defaultValueMode)
+  field.defaultValueMode = ["none", "userName", "userAffiliation", "userTitle", "custom"].includes(field.defaultValueMode)
     ? field.defaultValueMode
     : "none";
   field.defaultValueText = typeof field.defaultValueText === "string" ? field.defaultValueText : "";
@@ -210,51 +210,27 @@ function StyleSettingsInput({ field, onChange, onFocus, getTempState, setTempSta
 }
 
 function TextDefaultValueInput({ field, onChange, onFocus }) {
-  const radioName = `text-default-${field.id}`;
+  const defaultValueMode = field.defaultValueMode || "none";
   return (
     <div className="nf-mt-8">
-      <label className="nf-fw-600 nf-mb-4">初期値</label>
-      <div className="nf-row nf-gap-12 nf-wrap nf-mt-4">
-        <label className="nf-row nf-gap-4 nf-nowrap">
-          <input
-            type="radio"
-            name={radioName}
-            checked={(field.defaultValueMode || "none") === "none"}
-            onChange={() => onChange({ ...field, defaultValueMode: "none" })}
-          />
-          <span>なし</span>
-        </label>
-        <label className="nf-row nf-gap-4 nf-nowrap">
-          <input
-            type="radio"
-            name={radioName}
-            checked={field.defaultValueMode === "userName"}
-            onChange={() => onChange({ ...field, defaultValueMode: "userName" })}
-          />
-          <span>ユーザー名</span>
-        </label>
-        <label className="nf-row nf-gap-4 nf-nowrap">
-          <input
-            type="radio"
-            name={radioName}
-            checked={field.defaultValueMode === "userAffiliation"}
-            onChange={() => onChange({ ...field, defaultValueMode: "userAffiliation" })}
-          />
-          <span>ユーザー所属</span>
-        </label>
-        <label className="nf-row nf-gap-4 nf-nowrap">
-          <input
-            type="radio"
-            name={radioName}
-            checked={field.defaultValueMode === "custom"}
-            onChange={() => onChange({ ...field, defaultValueMode: "custom" })}
-          />
-          <span>自由入力</span>
-        </label>
+      <div className="nf-row nf-gap-8 nf-wrap nf-items-center">
+        <label className="nf-fw-600 nf-shrink-0">初期値</label>
+        <select
+          className={`${s.input.className} nf-w-auto nf-min-w-150 nf-flex-0-1-auto`}
+          value={defaultValueMode}
+          onChange={(event) => onChange({ ...field, defaultValueMode: event.target.value })}
+          onFocus={onFocus}
+        >
+          <option value="none">なし</option>
+          <option value="userName">回答者名</option>
+          <option value="userAffiliation">回答者所属</option>
+          <option value="userTitle">回答者役職</option>
+          <option value="custom">自由入力</option>
+        </select>
       </div>
-      {field.defaultValueMode === "custom" && (
+      {defaultValueMode === "custom" && (
         <input
-          className={s.input.className}
+          className={`${s.input.className} nf-mt-8`}
           placeholder="初期値を入力"
           value={field.defaultValueText || ""}
           onChange={(event) => onChange({ ...field, defaultValueText: event.target.value })}
@@ -266,48 +242,42 @@ function TextDefaultValueInput({ field, onChange, onFocus }) {
 }
 
 function TextInputRestrictionInput({ field, onChange, onFocus, regexError }) {
-  const radioName = `text-restriction-${field.id}`;
+  const inputRestrictionMode = field.inputRestrictionMode || "none";
   return (
     <div className="nf-mt-8">
-      <label className="nf-fw-600 nf-mb-4">入力制限</label>
-      <div className="nf-row nf-gap-12 nf-wrap nf-mt-4">
-        <label className="nf-row nf-gap-4 nf-nowrap">
-          <input
-            type="radio"
-            name={radioName}
-            checked={(field.inputRestrictionMode || "none") === "none"}
-            onChange={() => onChange({ ...field, inputRestrictionMode: "none" })}
-          />
-          <span>なし</span>
-        </label>
-        <label className="nf-row nf-gap-4 nf-nowrap">
-          <input
-            type="radio"
-            name={radioName}
-            checked={field.inputRestrictionMode === "maxLength"}
-            onChange={() => onChange({
-              ...field,
-              inputRestrictionMode: "maxLength",
-              maxLength: field.maxLength || DEFAULT_TEXT_MAX_LENGTH
-            })}
-          />
-          <span>最大文字数</span>
-        </label>
-        <label className="nf-row nf-gap-4 nf-nowrap">
-          <input
-            type="radio"
-            name={radioName}
-            checked={field.inputRestrictionMode === "pattern"}
-            onChange={() => onChange({ ...field, inputRestrictionMode: "pattern", pattern: field.pattern || "" })}
-          />
-          <span>パターン指定（正規表現）</span>
-        </label>
+      <div className="nf-row nf-gap-8 nf-wrap nf-items-center">
+        <label className="nf-fw-600 nf-shrink-0">入力制限</label>
+        <select
+          className={`${s.input.className} nf-w-auto nf-min-w-150 nf-flex-0-1-auto`}
+          value={inputRestrictionMode}
+          onChange={(event) => {
+            const nextMode = event.target.value;
+            if (nextMode === "maxLength") {
+              onChange({
+                ...field,
+                inputRestrictionMode: "maxLength",
+                maxLength: field.maxLength || DEFAULT_TEXT_MAX_LENGTH,
+              });
+              return;
+            }
+            if (nextMode === "pattern") {
+              onChange({ ...field, inputRestrictionMode: "pattern", pattern: field.pattern || "" });
+              return;
+            }
+            onChange({ ...field, inputRestrictionMode: "none" });
+          }}
+          onFocus={onFocus}
+        >
+          <option value="none">なし</option>
+          <option value="maxLength">最大文字数</option>
+          <option value="pattern">パターン指定（正規表現）</option>
+        </select>
       </div>
-      {field.inputRestrictionMode === "maxLength" && (
+      {inputRestrictionMode === "maxLength" && (
         <input
           type="number"
           min="1"
-          className={s.input.className}
+          className={`${s.input.className} nf-mt-8`}
           value={field.maxLength ?? DEFAULT_TEXT_MAX_LENGTH}
           onChange={(event) => onChange({
             ...field,
@@ -317,10 +287,10 @@ function TextInputRestrictionInput({ field, onChange, onFocus, regexError }) {
           onFocus={onFocus}
         />
       )}
-      {field.inputRestrictionMode === "pattern" && (
+      {inputRestrictionMode === "pattern" && (
         <>
           <input
-            className={s.input.className}
+            className={`${s.input.className} nf-mt-8`}
             placeholder="例: ^[0-9]+$"
             value={field.pattern || ""}
             onChange={(event) => onChange({ ...field, pattern: event.target.value })}

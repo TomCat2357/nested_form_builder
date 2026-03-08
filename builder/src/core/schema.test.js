@@ -8,6 +8,7 @@ test("normalizeSchemaIDs は旧フィールド型を新仕様へ移行する", (
     { type: "regex", label: "会員番号", pattern: "^[0-9]+$" },
     { type: "userName", label: "氏名" },
     { type: "email", label: "メール", defaultNow: true, placeholder: "legacy@example.com" },
+    { type: "text", label: "役職", defaultValueMode: "userTitle" },
   ]);
 
   assert.equal(schema[0].type, "text");
@@ -23,6 +24,9 @@ test("normalizeSchemaIDs は旧フィールド型を新仕様へ移行する", (
   assert.equal(schema[3].type, "email");
   assert.equal(schema[3].autoFillUserEmail, true);
   assert.equal("defaultNow" in schema[3], false);
+
+  assert.equal(schema[4].type, "text");
+  assert.equal(schema[4].defaultValueMode, "userTitle");
 });
 
 test("normalizeSchemaIDs は初期選択と電話番号設定を正規化する", () => {

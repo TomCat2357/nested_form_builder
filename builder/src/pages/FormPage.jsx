@@ -76,7 +76,7 @@ const pickLatestEntry = (current, incoming) => {
 export default function FormPage() {
   const { formId, entryId } = useParams();
   const { getFormById, refreshForms, loadingForms } = useAppData();
-  const { userName, userEmail, userAffiliation, userPhone, isAdmin } = useAuth();
+  const { userName, userEmail, userAffiliation, userTitle, userPhone, isAdmin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const { showAlert, showToast } = useAlert();
@@ -177,6 +177,7 @@ export default function FormPage() {
   const userNameRef = useLatestRef(userName);
   const userEmailRef = useLatestRef(userEmail);
   const userAffiliationRef = useLatestRef(userAffiliation);
+  const userTitleRef = useLatestRef(userTitle);
   const userPhoneRef = useLatestRef(userPhone);
 
   useEffect(() => {
@@ -394,6 +395,7 @@ export default function FormPage() {
           userName: userNameRef.current,
           userEmail: userEmailRef.current,
           userAffiliation: userAffiliationRef.current,
+          userTitle: userTitleRef.current,
           userPhone: userPhoneRef.current,
         });
         initialResponsesRef.current = initialResponses;
@@ -1017,7 +1019,7 @@ export default function FormPage() {
           schema={normalizedSchema}
           responses={responses}
           setResponses={handleResponsesChange}
-          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: recordNoInput, userName, userEmail, userAffiliation, userPhone }}
+          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: recordNoInput, userName, userEmail, userAffiliation, userTitle, userPhone }}
           onRecordNoChange={setRecordNoInput}
           onSave={handleSaveToStore}
           showOutputJson={false}

@@ -11,6 +11,7 @@ function doGet(e) {
   const userProfile = ResolveActiveUserProfile_();
   const userName = userProfile.displayName;
   const userAffiliation = userProfile.affiliation;
+  const userTitle = userProfile.title;
   const userPhone = userProfile.phone;
   const adminEmail = GetAdminEmail_();
   const propertyStoreMode = Nfb_getPropertyStoreMode_();
@@ -24,6 +25,7 @@ function doGet(e) {
     window.__USER_EMAIL__ = "${EscapeForInlineScript_(userEmail)}";
     window.__USER_NAME__ = "${EscapeForInlineScript_(userName)}";
     window.__USER_AFFILIATION__ = "${EscapeForInlineScript_(userAffiliation)}";
+    window.__USER_TITLE__ = "${EscapeForInlineScript_(userTitle)}";
     window.__USER_PHONE__ = "${EscapeForInlineScript_(userPhone)}";
     window.__ADMIN_EMAIL__ = "${EscapeForInlineScript_(adminEmail)}";
     window.__PROPERTY_STORE_MODE__ = "${EscapeForInlineScript_(propertyStoreMode)}";
@@ -62,7 +64,7 @@ function NormalizeProfilePhone_(value) {
 }
 
 function ResolveActiveUserProfile_() {
-  const emptyProfile = { displayName: "", affiliation: "", phone: "" };
+  const emptyProfile = { displayName: "", affiliation: "", title: "", phone: "" };
   try {
     const person = People.People.get("people/me", { personFields: "names,organizations,phoneNumbers" });
     const primaryName = ResolvePrimaryPersonField_(person?.names);
@@ -73,9 +75,10 @@ function ResolveActiveUserProfile_() {
     const affiliation = primaryOrganization?.department
       ? String(primaryOrganization.department).trim()
       : (primaryOrganization?.name ? String(primaryOrganization.name).trim() : "");
-    const phone = NormalizeProfilePhone_(primaryPhone?.canonicalForm || primaryPhone?.value || "");
+    const title = primaryOrganization?.title ? String(primaryOrganization.title).trim() : "";
+    const phone = NormalizeProfilePhone_(primaryPhone?.value || primaryPhone?.canonicalForm || "");
 
-    return { displayName, affiliation, phone };
+    return { displayName, affiliation, title, phone };
   } catch (err) {
     return emptyProfile;
   }

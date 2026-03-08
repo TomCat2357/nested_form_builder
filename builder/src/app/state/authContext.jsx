@@ -11,6 +11,7 @@ const AuthContext = createContext({
   userEmail: "",
   userName: "",
   userAffiliation: "",
+  userTitle: "",
   userPhone: "",
   propertyStoreMode: "script",
   adminSettingsEnabled: true,
@@ -36,11 +37,12 @@ export function AuthProvider({ children }) {
     const userEmail = getWindowGlobal("__USER_EMAIL__", "", String);
     const userName = getWindowGlobal("__USER_NAME__", "", String);
     const userAffiliation = getWindowGlobal("__USER_AFFILIATION__", "", String);
+    const userTitle = getWindowGlobal("__USER_TITLE__", "", String);
     const userPhone = getWindowGlobal("__USER_PHONE__", "", String);
     const propertyStoreMode = getWindowGlobal("__PROPERTY_STORE_MODE__", "script", String);
     const adminSettingsEnabled = getWindowGlobal("__ADMIN_SETTINGS_ENABLED__", true, Boolean);
 
-    return { isAdmin, formId, authError, userEmail, userName, userAffiliation, userPhone, propertyStoreMode, adminSettingsEnabled };
+    return { isAdmin, formId, authError, userEmail, userName, userAffiliation, userTitle, userPhone, propertyStoreMode, adminSettingsEnabled };
   }, []);
 
   return (
@@ -52,7 +54,7 @@ export function AuthProvider({ children }) {
 
 /**
  * 認証情報を取得するフック
- * @returns {{ isAdmin: boolean, formId: string, authError: string, userEmail: string, userName: string, userAffiliation: string, userPhone: string, propertyStoreMode: string, adminSettingsEnabled: boolean }}
+ * @returns {{ isAdmin: boolean, formId: string, authError: string, userEmail: string, userName: string, userAffiliation: string, userTitle: string, userPhone: string, propertyStoreMode: string, adminSettingsEnabled: boolean }}
  */
 export function useAuth() {
   return useContext(AuthContext);

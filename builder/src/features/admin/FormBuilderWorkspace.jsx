@@ -23,7 +23,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   ref,
 ) {
   const { showAlert } = useAlert();
-  const { userName, userEmail, userAffiliation, userPhone } = useAuth();
+  const { userName, userEmail, userAffiliation, userTitle, userPhone } = useAuth();
   const [activeTab, setActiveTab] = useState("editor");
   const [schema, setSchema] = useState(() => normalizeSchemaIDs(initialSchema || []));
   const [responses, setResponses] = useState({});
@@ -139,8 +139,8 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
   );
 
   const previewSettings = useMemo(
-    () => ({ ...settings, formTitle, userName, userEmail, userAffiliation, userPhone }),
-    [settings, formTitle, userName, userEmail, userAffiliation, userPhone],
+    () => ({ ...settings, formTitle, userName, userEmail, userAffiliation, userTitle, userPhone }),
+    [settings, formTitle, userName, userEmail, userAffiliation, userTitle, userPhone],
   );
 
   return (

@@ -123,12 +123,15 @@ const collectDefaultSelectedLabels = (field) => {
 const resolveTextDefaultValue = (field, options = {}) => {
   const userName = typeof options?.userName === "string" ? options.userName : "";
   const userAffiliation = typeof options?.userAffiliation === "string" ? options.userAffiliation : "";
+  const userTitle = typeof options?.userTitle === "string" ? options.userTitle : "";
 
   switch (field?.defaultValueMode) {
     case "userName":
       return userName;
     case "userAffiliation":
       return userAffiliation;
+    case "userTitle":
+      return userTitle;
     case "custom":
       return typeof field?.defaultValueText === "string" ? field.defaultValueText : "";
     default:

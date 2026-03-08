@@ -175,7 +175,7 @@ export const normalizeSchemaIDs = (nodes) => {
       }
     } else if (base.type === "text") {
       base.multiline = !!base.multiline;
-      base.defaultValueMode = [ "none", "userName", "userAffiliation", "custom" ].includes(base.defaultValueMode)
+      base.defaultValueMode = [ "none", "userName", "userAffiliation", "userTitle", "custom" ].includes(base.defaultValueMode)
         ? base.defaultValueMode
         : "none";
       base.defaultValueText = typeof base.defaultValueText === "string" ? base.defaultValueText : "";
