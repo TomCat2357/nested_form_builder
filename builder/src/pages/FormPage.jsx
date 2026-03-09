@@ -7,7 +7,7 @@ import PreviewPage from "../features/preview/PreviewPage.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { restoreResponsesFromData, hasDirtyChanges, collectDefaultNowResponses } from "../utils/responses.js";
-import { acquireSaveLock, submitResponses, hasScriptRun } from "../services/gasClient.js";
+import { acquireSaveLock, createRecordPrintDocument, submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
@@ -111,6 +111,7 @@ export default function FormPage() {
   const [currentRecordId, setCurrentRecordId] = useState(entryId || null);
   const [confirmState, setConfirmState] = useState({ open: false, intent: null });
   const [isSaving, setIsSaving] = useState(false);
+  const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
   const [mode, setMode] = useState(entryId ? "view" : "edit");
   const [isReloading, setIsReloading] = useState(false);
   const [entryActionConfirm, setEntryActionConfirm] = useState({ open: false, action: null });
@@ -834,6 +835,34 @@ export default function FormPage() {
     commitResponses("preview:change", updater);
   }, [commitResponses]);
 
+  const handleCreatePrintDocument = useCallback(async () => {
+    const preview = previewRef.current;
+    if (!preview || typeof preview.getPrintDocumentPayload !== "function") {
+      showAlert("印刷フォームの出力準備がまだできていません。少し待ってからもう一度お試しください。");
+      return;
+    }
+
+    setIsCreatingPrintDocument(true);
+    try {
+      const payload = preview.getPrintDocumentPayload();
+      const result = await createRecordPrintDocument(payload);
+      showAlert(
+        <div className="nf-col nf-gap-8">
+          <div>マイドライブに Google ドキュメントを保存しました。</div>
+          <a href={result.fileUrl} target="_blank" rel="noopener noreferrer" className="nf-link nf-fw-600">
+            ファイルを開く
+          </a>
+        </div>,
+        "出力完了",
+      );
+    } catch (error) {
+      console.error("[FormPage] failed to create print document:", error);
+      showAlert(`印刷フォームの作成に失敗しました: ${error?.message || error}`);
+    } finally {
+      setIsCreatingPrintDocument(false);
+    }
+  }, [showAlert]);
+
   if (!form) {
     return (
       <AppLayout themeOverride={form?.settings?.theme} title="フォーム" fallbackPath="/">
@@ -935,6 +964,16 @@ export default function FormPage() {
               </button>
             </>
           )}
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-14"
+            disabled={loading || isCreatingPrintDocument}
+            onClick={() => {
+              void handleCreatePrintDocument();
+            }}
+          >
+            {isCreatingPrintDocument ? "作成中..." : "印刷フォームを作成"}
+          </button>
           {entryId && (
             <>
               <hr className="nf-sidebar-divider" />

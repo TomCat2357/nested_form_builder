@@ -10,95 +10,13 @@ import { collectDefaultNowResponses } from "../../utils/responses.js";
 import { resolveLabelSize } from "../../core/styleSettings.js";
 import { genRecordId } from "../../core/ids.js";
 import { getStandardPhonePlaceholder } from "../../core/phone.js";
-
-const CHOICE_TYPES = new Set(["checkboxes", "radio", "select"]);
-const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
-
-const toChoiceOptionLabels = (field) => {
-  const options = Array.isArray(field?.options) ? field.options : [];
-  const labels = [];
-  const seen = new Set();
-  options.forEach((opt) => {
-    const label = typeof opt?.label === "string" ? opt.label : "";
-    if (!label || seen.has(label)) return;
-    labels.push(label);
-    seen.add(label);
-  });
-  return labels;
-};
-
-const toRawSelectedLabels = (type, value) => {
-  const labels = [];
-  const seen = new Set();
-  const add = (candidate) => {
-    if (typeof candidate !== "string" || !candidate || seen.has(candidate)) return;
-    labels.push(candidate);
-    seen.add(candidate);
-  };
-
-  if (type === "checkboxes") {
-    if (Array.isArray(value)) {
-      value.forEach((item) => add(item));
-      return labels;
-    }
-    if (typeof value === "string") {
-      add(value);
-    } else if (value && typeof value === "object") {
-      Object.entries(value).forEach(([label, marker]) => {
-        if (isChoiceMarkerValue(marker)) add(label);
-      });
-    }
-    return labels;
-  }
-
-  if (type === "radio" || type === "select") {
-    if (typeof value === "string") {
-      add(value);
-    } else if (Array.isArray(value)) {
-      value.forEach((item) => add(item));
-    } else if (value && typeof value === "object") {
-      Object.entries(value).forEach(([label, marker]) => {
-        if (isChoiceMarkerValue(marker)) add(label);
-      });
-    }
-    return labels;
-  }
-
-  return labels;
-};
-
-const toSelectedChoiceLabels = (field, value) => {
-  const type = field?.type;
-  if (!CHOICE_TYPES.has(type)) return [];
-
-  const rawSelected = toRawSelectedLabels(type, value);
-  if (rawSelected.length === 0) return [];
-
-  const selectedSet = new Set(rawSelected);
-  const ordered = [];
-  const seen = new Set();
-
-  toChoiceOptionLabels(field).forEach((label) => {
-    if (!selectedSet.has(label) || seen.has(label)) return;
-    ordered.push(label);
-    seen.add(label);
-  });
-
-  rawSelected.forEach((label) => {
-    if (seen.has(label)) return;
-    ordered.push(label);
-    seen.add(label);
-  });
-
-  return type === "checkboxes" ? ordered : ordered.slice(0, 1);
-};
-
-const hasVisibleValue = (value) => {
-  if (Array.isArray(value)) return value.length > 0;
-  return value !== undefined && value !== null && value !== "";
-};
-
-const isTextareaField = (field) => field?.type === "textarea" || (field?.type === "text" && field?.multiline);
+import {
+  buildPrintDocumentPayload,
+  CHOICE_TYPES,
+  hasVisibleValue,
+  isTextareaField,
+  toSelectedChoiceLabels,
+} from "./printDocument.js";
 
 const resolveConfiguredPlaceholder = (field, fallback = "") => {
   if (field?.showPlaceholder !== true) return "";
@@ -488,6 +406,12 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const formTitle = settings.formTitle || "受付フォーム";
 
   const [isSaving, setIsSaving] = useState(false);
+  const getPrintDocumentPayload = () => buildPrintDocumentPayload({
+    schema,
+    responses,
+    settings,
+    recordId: recordIdRef.current,
+  });
 
   const handleSaveToSheet = async (options = {}) => {
     let alertShown = false;
@@ -570,8 +494,9 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       submit: handleSaveToSheet,
       getRecordId: () => recordIdRef.current,
       getOutput: () => ({ map: output, keys: sortedKeys }),
+      getPrintDocumentPayload,
     }),
-    [handleSaveToSheet, output, sortedKeys],
+    [getPrintDocumentPayload, handleSaveToSheet, output, sortedKeys],
   );
 
   return (

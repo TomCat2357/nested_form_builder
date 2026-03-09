@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { listForms, syncRecordsProxy } from "./gasClient.js";
+import { createRecordPrintDocument, listForms, syncRecordsProxy } from "./gasClient.js";
 
-const createGoogleScriptRunStub = () => {
+const createGoogleScriptRunStub = (handlers = {}) => {
   const calls = [];
 
   const run = {
@@ -16,18 +16,23 @@ const createGoogleScriptRunStub = () => {
       this._failureHandler = handler;
       return this;
     },
-    syncRecordsProxy(payload) {
-      calls.push({ functionName: "syncRecordsProxy", payload });
-      if (this._successHandler) this._successHandler({ ok: true, payload });
-    },
   };
+
+  Object.entries(handlers).forEach(([functionName, handler]) => {
+    run[functionName] = function stubbedAppsScriptFunction(payload) {
+      calls.push({ functionName, payload });
+      if (this._successHandler) this._successHandler(handler(payload));
+    };
+  });
 
   return { run, calls };
 };
 
 test("syncRecordsProxy は URL の spreadsheetId を ID に正規化して送信する", async () => {
   const originalGoogle = globalThis.google;
-  const { run, calls } = createGoogleScriptRunStub();
+  const { run, calls } = createGoogleScriptRunStub({
+    syncRecordsProxy: (payload) => ({ ok: true, payload }),
+  });
   globalThis.google = { script: { run } };
 
   try {
@@ -49,7 +54,9 @@ test("syncRecordsProxy は URL の spreadsheetId を ID に正規化して送信
 
 test("syncRecordsProxy は ID の spreadsheetId をそのまま送信する", async () => {
   const originalGoogle = globalThis.google;
-  const { run, calls } = createGoogleScriptRunStub();
+  const { run, calls } = createGoogleScriptRunStub({
+    syncRecordsProxy: (payload) => ({ ok: true, payload }),
+  });
   globalThis.google = { script: { run } };
 
   try {
@@ -82,6 +89,38 @@ test("Apps Script 関数が未定義の場合は関数名を含むエラーを�
       listForms(),
       /Apps Script function "nfbListForms" is not available/,
     );
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});
+
+test("createRecordPrintDocument は nfbCreateRecordPrintDocument を呼び出す", async () => {
+  const originalGoogle = globalThis.google;
+  const payload = {
+    fileName: "印刷フォーム_相談票_rec001_20260309_120000",
+    formTitle: "相談票",
+    recordId: "rec001",
+    recordNo: "12",
+    exportedAtIso: "2026-03-09T03:00:00.000Z",
+    items: [{ label: "氏名", value: "山田 太郎", depth: 0, type: "text" }],
+  };
+  const { run, calls } = createGoogleScriptRunStub({
+    nfbCreateRecordPrintDocument: (receivedPayload) => ({
+      ok: true,
+      fileUrl: "https://docs.google.com/document/d/file123/edit",
+      payload: receivedPayload,
+    }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    const result = await createRecordPrintDocument(payload);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.fileUrl, "https://docs.google.com/document/d/file123/edit");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].functionName, "nfbCreateRecordPrintDocument");
+    assert.deepEqual(calls[0].payload, payload);
   } finally {
     globalThis.google = originalGoogle;
   }
