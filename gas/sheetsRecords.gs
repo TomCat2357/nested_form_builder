@@ -48,7 +48,7 @@ function Sheets_readColumnPaths_(sheet, lastColumn) {
   for (var col = 0; col < lastColumn; col++) {
     var path = [];
     for (var row = 0; row < NFB_HEADER_DEPTH; row++) {
-      var cell = headerMatrix[row][col] ? String(headerMatrix[row][col]) : "";
+      var cell = Sheets_normalizeHeaderSegment_(headerMatrix[row][col]);
       if (!cell) break;
       path.push(cell);
     }

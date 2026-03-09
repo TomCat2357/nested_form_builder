@@ -62,15 +62,17 @@ function Sheets_findFirstBlankRow_(sheet) {
 }
 
 function Sheets_prepareResponses_(ctx) {
-  var responseKeys = (ctx.order && ctx.order.length)
+  var rawResponseKeys = (ctx.order && ctx.order.length)
     ? ctx.order
     : Object.keys(ctx.responses || {});
+  var responseKeys = Sheets_normalizeHeaderKeyList_(rawResponseKeys);
+  var normalizedResponses = Sheets_normalizeRecordDataKeys_(ctx.responses);
 
   var sortedResponses = {};
   for (var r = 0; r < responseKeys.length; r++) {
     var key = responseKeys[r];
-    if (ctx.responses && Object.prototype.hasOwnProperty.call(ctx.responses, key)) {
-      sortedResponses[key] = ctx.responses[key];
+    if (Object.prototype.hasOwnProperty.call(normalizedResponses, key)) {
+      sortedResponses[key] = normalizedResponses[key];
     }
   }
   ctx.responses = sortedResponses;

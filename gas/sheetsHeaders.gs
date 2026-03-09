@@ -58,13 +58,61 @@ function Sheets_readSheetLastUpdated_(sheet) {
   return GetSheetLastUpdatedAt_(spreadsheetId, sheetName);
 }
 
+function Sheets_normalizeHeaderSegment_(segment) {
+  if (segment === undefined || segment === null) return "";
+  return String(segment).replace(/\r\n?/g, "\n").trim();
+}
+
+function Sheets_normalizeHeaderPath_(path) {
+  var normalized = [];
+  if (!Array.isArray(path)) return normalized;
+  for (var i = 0; i < path.length && i < NFB_HEADER_DEPTH; i++) {
+    var segment = Sheets_normalizeHeaderSegment_(path[i]);
+    if (!segment) break;
+    normalized.push(segment);
+  }
+  return normalized;
+}
+
+function Sheets_normalizeHeaderKey_(key) {
+  if (key === undefined || key === null) return "";
+  return Sheets_pathKey_(String(key).split("|"));
+}
+
+function Sheets_normalizeHeaderKeyList_(keys) {
+  var normalized = [];
+  var seen = {};
+  var list = Array.isArray(keys) ? keys : [];
+  for (var i = 0; i < list.length; i++) {
+    var key = Sheets_normalizeHeaderKey_(list[i]);
+    if (!key || seen[key]) continue;
+    seen[key] = true;
+    normalized.push(key);
+  }
+  return normalized;
+}
+
+function Sheets_normalizeRecordDataKeys_(data) {
+  var normalized = {};
+  if (!data || typeof data !== "object") return normalized;
+
+  for (var key in data) {
+    if (!Object.prototype.hasOwnProperty.call(data, key)) continue;
+    var normalizedKey = Sheets_normalizeHeaderKey_(key);
+    if (!normalizedKey || Object.prototype.hasOwnProperty.call(normalized, normalizedKey)) continue;
+    normalized[normalizedKey] = data[key];
+  }
+
+  return normalized;
+}
+
 function Sheets_extractColumnPaths_(matrix) {
   var paths = [];
   if (!matrix || !matrix.length) return paths;
   for (var col = 0; col < matrix[0].length; col++) {
     var path = [];
     for (var row = 0; row < NFB_HEADER_DEPTH; row++) {
-      var cell = (matrix[row] && matrix[row][col]) ? String(matrix[row][col]) : "";
+      var cell = Sheets_normalizeHeaderSegment_(matrix[row] ? matrix[row][col] : "");
       if (!cell) break;
       path.push(cell);
     }
@@ -74,7 +122,7 @@ function Sheets_extractColumnPaths_(matrix) {
 }
 
 function Sheets_pathKey_(path) {
-  return path.join("|");
+  return Sheets_normalizeHeaderPath_(path).join("|");
 }
 
 function Sheets_collectTemporalPathMap_(schema) {
@@ -86,7 +134,7 @@ function Sheets_collectTemporalPathMap_(schema) {
     for (var i = 0; i < fields.length; i++) {
       var field = fields[i];
       if (!field) continue;
-      var label = field.label !== undefined && field.label !== null ? String(field.label) : "";
+      var label = Sheets_normalizeHeaderSegment_(field.label);
       if (!label) continue;
       var path = basePath ? basePath + "|" + label : label;
 
@@ -98,7 +146,7 @@ function Sheets_collectTemporalPathMap_(schema) {
         for (var key in field.childrenByValue) {
           if (!field.childrenByValue.hasOwnProperty(key)) continue;
           var childFields = field.childrenByValue[key];
-          var optionLabel = String(key || "");
+          var optionLabel = Sheets_normalizeHeaderSegment_(key);
           var nextPath = optionLabel ? path + "|" + optionLabel : path;
           walk(childFields, nextPath);
         }
@@ -127,14 +175,14 @@ function Sheets_buildOrderFromSchema_(schema) {
   };
 
   var appendKey = function(key) {
-    var normalized = String(key || "").trim();
+    var normalized = Sheets_normalizeHeaderKey_(key);
     if (!normalized || seen[normalized]) return;
     seen[normalized] = true;
     order.push(normalized);
   };
 
   var resolveFieldLabel = function(field, indexTrail) {
-    var label = field && field.label !== undefined && field.label !== null ? String(field.label).trim() : "";
+    var label = Sheets_normalizeHeaderSegment_(field && field.label);
     if (label) return label;
     var fieldType = field && field.type !== undefined && field.type !== null ? String(field.type).trim() : "";
     if (!fieldType) fieldType = "unknown";
@@ -158,7 +206,7 @@ function Sheets_buildOrderFromSchema_(schema) {
         if (Array.isArray(field.options)) {
           for (var optIndex = 0; optIndex < field.options.length; optIndex++) {
             var option = field.options[optIndex];
-            var optionLabel = option && option.label !== undefined && option.label !== null ? String(option.label) : "";
+            var optionLabel = Sheets_normalizeHeaderSegment_(option && option.label);
             appendKey(optionLabel ? baseKey + "|" + optionLabel : baseKey + "|");
           }
         }
@@ -170,7 +218,7 @@ function Sheets_buildOrderFromSchema_(schema) {
         for (var childKey in field.childrenByValue) {
           if (!field.childrenByValue.hasOwnProperty(childKey)) continue;
           var childFields = field.childrenByValue[childKey];
-          var optionPath = String(childKey || "");
+          var optionPath = Sheets_normalizeHeaderSegment_(childKey);
           var childBasePath = optionPath ? currentPath.concat(optionPath) : currentPath;
           walk(childFields, childBasePath, currentIndexTrail);
         }
@@ -193,20 +241,17 @@ function Sheets_buildDesiredPaths_(order, existingPaths) {
   var seen = {};
 
   NFB_FIXED_HEADER_PATHS.forEach(function (path) {
-    var key = Sheets_pathKey_(path);
+    var normalizedPath = Sheets_normalizeHeaderPath_(path);
+    if (!normalizedPath.length) return;
+    var key = Sheets_pathKey_(normalizedPath);
     if (!seen[key]) {
-      desired.push(path);
+      desired.push(normalizedPath);
       seen[key] = true;
     }
   });
 
   (order || []).forEach(function (keyRaw) {
-    var keyStr = String(keyRaw || "");
-    if (!keyStr) return;
-    var parts = keyStr.split("|")
-      .map(function (part) { return String(part || "").trim(); })
-      .filter(function (part) { return part; })
-      .slice(0, NFB_HEADER_DEPTH);
+    var parts = Sheets_normalizeHeaderPath_(String(keyRaw || "").split("|"));
     if (!parts.length) return;
     var key = Sheets_pathKey_(parts);
     if (!seen[key]) {
@@ -216,9 +261,11 @@ function Sheets_buildDesiredPaths_(order, existingPaths) {
   });
 
   (existingPaths || []).forEach(function (path) {
-    var key = Sheets_pathKey_(path);
+    var normalizedPath = Sheets_normalizeHeaderPath_(path);
+    if (!normalizedPath.length) return;
+    var key = Sheets_pathKey_(normalizedPath);
     if (!seen[key]) {
-      desired.push(path);
+      desired.push(normalizedPath);
       seen[key] = true;
     }
   });
@@ -239,9 +286,10 @@ function Sheets_findColumnByPath_(matrix, path) {
 }
 
 function Sheets_writeHeaderPath_(sheet, columnIndex, path) {
+  var normalizedPath = Sheets_normalizeHeaderPath_(path);
   var values = [];
   for (var row = 0; row < NFB_HEADER_DEPTH; row++) {
-    values.push([row < path.length ? path[row] : ""]);
+    values.push([row < normalizedPath.length ? normalizedPath[row] : ""]);
   }
   sheet.getRange(NFB_HEADER_START_ROW, columnIndex, NFB_HEADER_DEPTH, 1).setValues(values);
 }

@@ -649,6 +649,8 @@ function SyncRecords_(ctx) {
       var order = ctx.order || [];
       if (ctx.raw.formSchema) {
         order = Sheets_buildOrderFromSchema_(ctx.raw.formSchema);
+      } else {
+        order = Sheets_normalizeHeaderKeyList_(order);
       }
       var temporalTypeMap = ResolveTemporalTypeMap_(ctx);
       Sheets_ensureHeaderMatrix_(sheet, order);
@@ -682,6 +684,7 @@ function SyncRecords_(ctx) {
 
       for (var j = 0; j < uploadRecords.length; j++) {
         var rec = uploadRecords[j];
+        var normalizedRecordData = Sheets_normalizeRecordDataKeys_(rec && rec.data);
         var recId = rec.id || Sheets_generateRecordId_();
         var recModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || Sheets_toUnixMs_(rec.modifiedAt, true) || nowMs;
 
@@ -742,7 +745,7 @@ function SyncRecords_(ctx) {
             var colIdx = keyToColumn[kName] - 1;
             if (colIdx < 0) continue;
 
-            var val = (rec.data && rec.data.hasOwnProperty(kName)) ? rec.data[kName] : "";
+            var val = Object.prototype.hasOwnProperty.call(normalizedRecordData, kName) ? normalizedRecordData[kName] : "";
             var tType = temporalTypeMap && temporalTypeMap[kName] ? temporalTypeMap[kName] : null;
             var norm = Sheets_resolveTemporalCell_(val, tType);
 
