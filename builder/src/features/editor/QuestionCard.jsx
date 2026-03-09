@@ -222,9 +222,9 @@ function TextDefaultValueInput({ field, onChange, onFocus }) {
           onFocus={onFocus}
         >
           <option value="none">なし</option>
-          <option value="userName">回答者名</option>
-          <option value="userAffiliation">回答者所属</option>
-          <option value="userTitle">回答者役職</option>
+          <option value="userName">入力者名</option>
+          <option value="userAffiliation">入力者所属</option>
+          <option value="userTitle">入力者役職</option>
           <option value="custom">自由入力</option>
         </select>
       </div>
@@ -595,7 +595,7 @@ export default function QuestionCard({
                 checked={!!field.autoFillUserEmail}
                 onChange={(event) => onChange({ ...field, autoFillUserEmail: event.target.checked })}
               />
-              回答者のメールアドレスを自動入力する
+              入力者のメールアドレスを自動入力する
             </label>
           </div>
         </>
@@ -618,7 +618,7 @@ export default function QuestionCard({
                 checked={!!field.autoFillUserPhone}
                 onChange={(event) => onChange({ ...field, autoFillUserPhone: event.target.checked })}
               />
-              回答者の電話番号を自動入力する
+              入力者の電話番号を自動入力する
             </label>
           </div>
           <div className="nf-mt-8">

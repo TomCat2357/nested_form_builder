@@ -102,6 +102,12 @@ export default function QuestionList({
   const normalized = normalizeSchemaIDs(fields);
   const [selectedIndex, setSelectedIndex] = React.useState(null);
   const [optionControl, setOptionControl] = React.useState(null);
+  const latestNormalizedRef = React.useRef(normalized);
+  latestNormalizedRef.current = normalized;
+  const selectedField = selectedIndex !== null ? normalized[selectedIndex] : null;
+  const selectedOptionLabel = optionControl?.type === "option"
+    ? selectedField?.options?.[optionControl.optionIndex]?.label || null
+    : null;
 
   React.useEffect(() => {
     if (onQuestionControlChange) {
@@ -109,7 +115,10 @@ export default function QuestionList({
 
       // 選択肢が選択されている場合は、選択肢の制御情報を使う
       if (optionControl?.type === "option") {
-        controlInfo = buildOptionControlInfo(selectedIndex, optionControl, normalized);
+        const latestOptionControl = selectedOptionLabel
+          ? { ...optionControl, optionLabel: selectedOptionLabel }
+          : optionControl;
+        controlInfo = buildOptionControlInfo(selectedIndex, latestOptionControl, normalized);
       } else if (selectedIndex !== null) {
         // 質問が選択されている場合
         controlInfo = buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown);
@@ -121,7 +130,7 @@ export default function QuestionList({
         onQuestionControlChange(null);
       }
     }
-  }, [selectedIndex, optionControl, normalized.length, depth, onQuestionControlChange]);
+  }, [selectedIndex, optionControl, selectedField?.id, selectedField?.label, selectedOptionLabel, depth, onQuestionControlChange]);
 
   const commit = (next) => {
     const fixed = normalizeSchemaIDs(next);
@@ -158,8 +167,9 @@ export default function QuestionList({
   };
 
   const moveUp = (index) => {
-    if (index === 0) return;
-    const next = swapItems(normalized, index - 1, index);
+    const currentFields = latestNormalizedRef.current;
+    if (index === 0 || index >= currentFields.length) return;
+    const next = swapItems(currentFields, index - 1, index);
     commit(next);
     if (selectedIndex === index) {
       setSelectedIndex(index - 1);
@@ -169,8 +179,9 @@ export default function QuestionList({
   };
 
   const moveDown = (index) => {
-    if (index === normalized.length - 1) return;
-    const next = swapItems(normalized, index, index + 1);
+    const currentFields = latestNormalizedRef.current;
+    if (index < 0 || index >= currentFields.length - 1) return;
+    const next = swapItems(currentFields, index, index + 1);
     commit(next);
     if (selectedIndex === index) {
       setSelectedIndex(index + 1);
