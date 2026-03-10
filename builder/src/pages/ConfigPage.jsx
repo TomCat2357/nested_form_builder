@@ -16,6 +16,11 @@ import {
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { hasScriptRun, importThemeFromDrive } from "../services/gasClient.js";
 import { resolveOmitEmptyRowsOnPrint } from "../features/preview/printDocument.js";
+import {
+  THEME_SYNC_SCOPE,
+  THEME_SYNC_TRIGGER,
+  resolveThemeSyncScope,
+} from "../features/settings/themeSyncRules.js";
 
 const extractThemeName = (css, fallbackName = "") => {
   const match = String(css || "").match(/data-theme=(["'])([^"']+)\1/);
@@ -40,7 +45,7 @@ export default function ConfigPage() {
   const { settings, updateSetting } = useBuilderSettings({ applyGlobalTheme: false });
   const { forms, getFormById, updateForm } = useAppData();
   const { showAlert } = useAlert();
-const targetForm = useMemo(
+  const targetForm = useMemo(
     () => (requestedFormId ? getFormById(requestedFormId) : null),
     [requestedFormId, getFormById],
   );
@@ -51,7 +56,6 @@ const targetForm = useMemo(
   const globalTheme = rawGlobalTheme || DEFAULT_THEME;
   const themeValue = isFormMode ? formTheme : globalTheme;
   const syncAllFormsTheme = settings?.syncAllFormsTheme ?? false;
-  const isFormThemeLocked = isFormMode && syncAllFormsTheme;
 
   const [customThemes, setCustomThemes] = useState([]);
   const [customThemesReady, setCustomThemesReady] = useState(false);
@@ -78,6 +82,11 @@ const targetForm = useMemo(
   const pageTitle = isFormMode
     ? `${targetForm?.settings?.formTitle || requestedFormId} - 設定`
     : "設定";
+  const themeUpdateScope = resolveThemeSyncScope({
+    isFormMode,
+    syncAllFormsTheme,
+    trigger: THEME_SYNC_TRIGGER.THEME_UPDATED,
+  });
 
   useEffect(() => {
     let active = true;
@@ -110,45 +119,6 @@ const targetForm = useMemo(
     void applyThemeWithFallback(globalTheme, { persist: false });
   }, [isFormMode, globalTheme]);
 
-  // テーマ欠損時のフォールバック（IndexedDBクリア等）
-  useEffect(() => {
-    if (!customThemesReady) return;
-
-    if (isFormMode) {
-      if (!targetForm) return;
-      const resolved = resolveThemeName(rawFormTheme, customThemes);
-      if (resolved !== rawFormTheme) {
-        void updateForm(targetForm.id, {
-          settings: { ...(targetForm.settings || {}), theme: resolved },
-        });
-      }
-      return;
-    }
-
-    const resolved = resolveThemeName(rawGlobalTheme, customThemes);
-    if (resolved !== rawGlobalTheme) {
-      updateSetting("theme", resolved);
-    }
-  }, [
-    customThemesReady,
-    isFormMode,
-    targetForm?.id,
-    targetForm?.settings,
-    rawFormTheme,
-    rawGlobalTheme,
-    customThemes,
-    updateSetting,
-    updateForm,
-  ]);
-
-  // デプロイ時刻を読み取り
-  useEffect(() => {
-    const metaTag = document.querySelector("meta[name=\"deploy-time\"]");
-    if (metaTag) {
-      setDeployTime(metaTag.getAttribute("content") || "");
-    }
-  }, []);
-
   const applyThemeToAllForms = useCallback(
     async (nextTheme) => {
       const targets = forms.filter((form) => (form?.settings?.theme || DEFAULT_THEME) !== nextTheme);
@@ -171,6 +141,50 @@ const targetForm = useMemo(
     [forms, updateForm],
   );
 
+  // テーマ欠損時のフォールバック（IndexedDBクリア等）
+  useEffect(() => {
+    if (!customThemesReady) return;
+
+    if (isFormMode) {
+      if (!targetForm) return;
+      const resolved = resolveThemeName(rawFormTheme, customThemes);
+      if (resolved !== rawFormTheme) {
+        void updateForm(targetForm.id, {
+          settings: { ...(targetForm.settings || {}), theme: resolved },
+        });
+      }
+      return;
+    }
+
+    const resolved = resolveThemeName(rawGlobalTheme, customThemes);
+    if (resolved !== rawGlobalTheme) {
+      updateSetting("theme", resolved);
+      if (themeUpdateScope === THEME_SYNC_SCOPE.GLOBAL_AND_ALL_FORMS) {
+        void applyThemeToAllForms(resolved);
+      }
+    }
+  }, [
+    customThemesReady,
+    isFormMode,
+    targetForm?.id,
+    targetForm?.settings,
+    rawFormTheme,
+    rawGlobalTheme,
+    customThemes,
+    updateSetting,
+    updateForm,
+    themeUpdateScope,
+    applyThemeToAllForms,
+  ]);
+
+  // デプロイ時刻を読み取り
+  useEffect(() => {
+    const metaTag = document.querySelector("meta[name=\"deploy-time\"]");
+    if (metaTag) {
+      setDeployTime(metaTag.getAttribute("content") || "");
+    }
+  }, []);
+
   const updateCurrentFormSettings = useCallback(
     async (nextPartialSettings) => {
       if (!targetForm) return;
@@ -190,23 +204,23 @@ const targetForm = useMemo(
 
   const handleChangeFormTheme = useCallback(
     async (nextTheme) => {
-      if (!targetForm || isFormThemeLocked) return;
+      if (!targetForm) return;
       await updateCurrentFormSettings({ theme: nextTheme });
       await applyThemeWithFallback(nextTheme, { persist: false });
     },
-    [isFormThemeLocked, targetForm, updateCurrentFormSettings],
+    [targetForm, updateCurrentFormSettings],
   );
 
   const handleThemeChange = async (event) => {
     const nextTheme = event.target.value;
 
-    if (isFormMode) {
+    if (themeUpdateScope === THEME_SYNC_SCOPE.CURRENT_FORM_ONLY) {
       await handleChangeFormTheme(nextTheme);
       return;
     }
 
     await handleChangeMainTheme(nextTheme);
-    if (!syncAllFormsTheme) return;
+    if (themeUpdateScope !== THEME_SYNC_SCOPE.GLOBAL_AND_ALL_FORMS) return;
 
     setApplyingTheme(true);
     try {
@@ -218,7 +232,12 @@ const targetForm = useMemo(
 
   const handleToggleSyncAllFormsTheme = async (checked) => {
     updateSetting("syncAllFormsTheme", checked);
-    if (!checked) return;
+    const syncToggleScope = resolveThemeSyncScope({
+      isFormMode,
+      syncAllFormsTheme: checked,
+      trigger: THEME_SYNC_TRIGGER.SYNC_ENABLED,
+    });
+    if (syncToggleScope !== THEME_SYNC_SCOPE.ALL_FORMS_FROM_GLOBAL) return;
 
     setApplyingTheme(true);
     try {
@@ -246,10 +265,6 @@ const targetForm = useMemo(
 
   const handleImportTheme = async () => {
     if (importing) return;
-    if (isFormThemeLocked) {
-      showAlert("全体テーマの一括変更がONの間は、このフォーム個別のテーマは変更できません。");
-      return;
-    }
     if (!hasScriptRun()) {
       showAlert("インポート機能はGoogle Apps Script環境でのみ利用可能です");
       return;
@@ -275,11 +290,11 @@ const targetForm = useMemo(
       setCustomThemes(nextThemes);
       setImportUrl("");
 
-      if (isFormMode) {
+      if (themeUpdateScope === THEME_SYNC_SCOPE.CURRENT_FORM_ONLY) {
         await handleChangeFormTheme(theme.id);
       } else {
         await handleChangeMainTheme(theme.id);
-        if (syncAllFormsTheme) {
+        if (themeUpdateScope === THEME_SYNC_SCOPE.GLOBAL_AND_ALL_FORMS) {
           const { updated, failed } = await applyThemeToAllForms(theme.id);
           showAlert(`テーマをインポートしました。${buildThemeApplyMessage(updated, failed)}`);
           return;
@@ -296,10 +311,6 @@ const targetForm = useMemo(
 
   const handleRemoveCustomTheme = (theme) => {
     if (!theme) return;
-    if (isFormThemeLocked) {
-      showAlert("全体テーマの一括変更がONの間は、このフォーム個別のテーマは変更できません。");
-      return;
-    }
     setRemoveTarget(theme);
   };
 
@@ -309,11 +320,11 @@ const targetForm = useMemo(
     setCustomThemes(nextThemes);
     let syncMessage = "";
     if (selectThemeValue === removeTarget.id) {
-      if (isFormMode && targetForm) {
+      if (themeUpdateScope === THEME_SYNC_SCOPE.CURRENT_FORM_ONLY && targetForm) {
         await handleChangeFormTheme(DEFAULT_THEME);
       } else {
         await handleChangeMainTheme(DEFAULT_THEME);
-        if (syncAllFormsTheme) {
+        if (themeUpdateScope === THEME_SYNC_SCOPE.GLOBAL_AND_ALL_FORMS) {
           const { updated, failed } = await applyThemeToAllForms(DEFAULT_THEME);
           syncMessage = ` ${buildThemeApplyMessage(updated, failed)}`;
         }
@@ -335,7 +346,7 @@ const targetForm = useMemo(
           <p>指定されたフォームが見つかりません。</p>
           <p className="nf-text-muted nf-text-14 nf-mt-8">メイン画面からフォームを選択してやり直してください。</p>
         </div>
-</AppLayout>
+      </AppLayout>
     );
   }
 
@@ -349,7 +360,7 @@ const targetForm = useMemo(
             className="nf-input"
             value={selectThemeValue}
             onChange={handleThemeChange}
-            disabled={applyingTheme || isFormThemeLocked}
+            disabled={applyingTheme}
           >
             {themeOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -358,11 +369,7 @@ const targetForm = useMemo(
             ))}
           </select>
           <p className="nf-mt-6 nf-text-12 nf-text-muted">
-            {isFormMode
-              ? isFormThemeLocked
-                ? "全体テーマの一括変更がONの間は、このフォーム個別のテーマは変更できません。"
-                : "このフォームにのみ適用されます。"
-              : "フォーム以外の画面に適用されます。"}
+            {isFormMode ? "このフォームにのみ適用されます。" : "フォーム以外の画面に適用されます。"}
           </p>
         </div>
 
@@ -378,7 +385,7 @@ const targetForm = useMemo(
               <span className="nf-fw-600">フォームテーマも一括変更</span>
             </label>
             <p className="nf-mt-6 nf-text-12 nf-text-muted">
-              ONにした瞬間に現在のテーマを全フォームへ反映します。ON中のテーマ変更は全フォームへ追従し、OFF後はフォーム以外の画面だけが変わります。
+              ONにした瞬間に現在のテーマを全フォームへ反映します。ONのままこの画面でテーマ変更すると、その変更後のテーマを全フォームへ反映します。OFFにしても、すでに反映済みのフォームテーマは戻りません。
             </p>
           </div>
         )}
@@ -406,9 +413,7 @@ const targetForm = useMemo(
         <div className="nf-mt-16">
           <div className="nf-settings-group-title nf-mb-8">テーマをインポート</div>
           <p className="nf-mb-12 nf-text-12 nf-text-muted">
-            {isFormThemeLocked
-              ? "全体テーマの一括変更がONの間は、このフォーム個別のテーマ関連操作はできません。"
-              : "インポートするGoogle Drive内CSSファイルURLを指定してください"}
+            インポートするGoogle Drive内CSSファイルURLを指定してください
           </p>
           <div className="nf-row nf-gap-12">
             <input
@@ -417,13 +422,13 @@ const targetForm = useMemo(
               value={importUrl}
               placeholder="https://drive.google.com/file/d/..."
               onChange={(event) => setImportUrl(event.target.value)}
-              disabled={isFormThemeLocked}
+              disabled={importing || applyingTheme}
             />
             <button
               type="button"
               className="nf-btn nf-nowrap"
               onClick={handleImportTheme}
-              disabled={importing || applyingTheme || isFormThemeLocked}
+              disabled={importing || applyingTheme}
             >
               {importing ? "インポート中..." : "インポート"}
             </button>
@@ -441,7 +446,7 @@ const targetForm = useMemo(
                       type="button"
                       className="nf-btn-outline nf-nowrap"
                       onClick={() => handleRemoveCustomTheme(theme)}
-                      disabled={isFormThemeLocked}
+                      disabled={importing || applyingTheme}
                     >
                       削除
                     </button>
@@ -469,6 +474,6 @@ const targetForm = useMemo(
         }
         options={removeOptions}
       />
-</AppLayout>
+    </AppLayout>
   );
 }
