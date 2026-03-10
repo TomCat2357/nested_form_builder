@@ -15,6 +15,7 @@ import {
 } from "../app/theme/theme.js";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { hasScriptRun, importThemeFromDrive } from "../services/gasClient.js";
+import { resolveOmitEmptyRowsOnPrint } from "../features/preview/printDocument.js";
 
 const extractThemeName = (css, fallbackName = "") => {
   const match = String(css || "").match(/data-theme=(["'])([^"']+)\1/);
@@ -45,10 +46,12 @@ const targetForm = useMemo(
   );
   const rawFormTheme = targetForm?.settings?.theme;
   const formTheme = rawFormTheme || DEFAULT_THEME;
+  const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(targetForm?.settings);
   const rawGlobalTheme = settings?.theme;
   const globalTheme = rawGlobalTheme || DEFAULT_THEME;
   const themeValue = isFormMode ? formTheme : globalTheme;
   const syncAllFormsTheme = settings?.syncAllFormsTheme ?? false;
+  const isFormThemeLocked = isFormMode && syncAllFormsTheme;
 
   const [customThemes, setCustomThemes] = useState([]);
   const [customThemesReady, setCustomThemesReady] = useState(false);
@@ -57,6 +60,7 @@ const targetForm = useMemo(
   const [removeTarget, setRemoveTarget] = useState(null);
   const [deployTime, setDeployTime] = useState("");
   const [applyingTheme, setApplyingTheme] = useState(false);
+  const [savingPrintSettings, setSavingPrintSettings] = useState(false);
 
   const themeOptions = useMemo(
     () => [
@@ -167,19 +171,30 @@ const targetForm = useMemo(
     [forms, updateForm],
   );
 
+  const updateCurrentFormSettings = useCallback(
+    async (nextPartialSettings) => {
+      if (!targetForm) return;
+      await updateForm(targetForm.id, {
+        settings: {
+          ...(targetForm.settings || {}),
+          ...nextPartialSettings,
+        },
+      });
+    },
+    [targetForm, updateForm],
+  );
+
   const handleChangeMainTheme = useCallback(async (nextTheme) => {
     updateSetting("theme", nextTheme);
   }, [updateSetting]);
 
   const handleChangeFormTheme = useCallback(
     async (nextTheme) => {
-      if (!targetForm) return;
-      await updateForm(targetForm.id, {
-        settings: { ...(targetForm.settings || {}), theme: nextTheme },
-      });
+      if (!targetForm || isFormThemeLocked) return;
+      await updateCurrentFormSettings({ theme: nextTheme });
       await applyThemeWithFallback(nextTheme, { persist: false });
     },
-    [targetForm, updateForm],
+    [isFormThemeLocked, targetForm, updateCurrentFormSettings],
   );
 
   const handleThemeChange = async (event) => {
@@ -213,8 +228,28 @@ const targetForm = useMemo(
     }
   };
 
+  const handleToggleOmitEmptyRowsOnPrint = useCallback(
+    async (checked) => {
+      if (!targetForm || savingPrintSettings) return;
+      setSavingPrintSettings(true);
+      try {
+        await updateCurrentFormSettings({ omitEmptyRowsOnPrint: checked });
+      } catch (error) {
+        console.error("[ConfigPage] failed to update print settings", error);
+        showAlert(error?.message || "印刷設定の保存に失敗しました");
+      } finally {
+        setSavingPrintSettings(false);
+      }
+    },
+    [savingPrintSettings, showAlert, targetForm, updateCurrentFormSettings],
+  );
+
   const handleImportTheme = async () => {
     if (importing) return;
+    if (isFormThemeLocked) {
+      showAlert("全体テーマの一括変更がONの間は、このフォーム個別のテーマは変更できません。");
+      return;
+    }
     if (!hasScriptRun()) {
       showAlert("インポート機能はGoogle Apps Script環境でのみ利用可能です");
       return;
@@ -261,6 +296,10 @@ const targetForm = useMemo(
 
   const handleRemoveCustomTheme = (theme) => {
     if (!theme) return;
+    if (isFormThemeLocked) {
+      showAlert("全体テーマの一括変更がONの間は、このフォーム個別のテーマは変更できません。");
+      return;
+    }
     setRemoveTarget(theme);
   };
 
@@ -310,7 +349,7 @@ const targetForm = useMemo(
             className="nf-input"
             value={selectThemeValue}
             onChange={handleThemeChange}
-            disabled={applyingTheme}
+            disabled={applyingTheme || isFormThemeLocked}
           >
             {themeOptions.map((option) => (
               <option key={option.value} value={option.value}>
@@ -319,7 +358,11 @@ const targetForm = useMemo(
             ))}
           </select>
           <p className="nf-mt-6 nf-text-12 nf-text-muted">
-            {isFormMode ? "このフォームにのみ適用されます。" : "フォーム以外の画面に適用されます。"}
+            {isFormMode
+              ? isFormThemeLocked
+                ? "全体テーマの一括変更がONの間は、このフォーム個別のテーマは変更できません。"
+                : "このフォームにのみ適用されます。"
+              : "フォーム以外の画面に適用されます。"}
           </p>
         </div>
 
@@ -335,7 +378,27 @@ const targetForm = useMemo(
               <span className="nf-fw-600">フォームテーマも一括変更</span>
             </label>
             <p className="nf-mt-6 nf-text-12 nf-text-muted">
-              ON時にテーマを変更すると、その時点の値で全フォームのテーマ設定を一括更新します。
+              ONにした瞬間に現在のテーマを全フォームへ反映します。ON中のテーマ変更は全フォームへ追従し、OFF後はフォーム以外の画面だけが変わります。
+            </p>
+          </div>
+        )}
+
+        {isFormMode && (
+          <div className="nf-mb-12">
+            <div className="nf-settings-group-title nf-mb-8">印刷設定</div>
+            <label className="nf-row nf-gap-8 nf-items-center">
+              <input
+                type="checkbox"
+                checked={omitEmptyRowsOnPrint}
+                onChange={(event) => {
+                  void handleToggleOmitEmptyRowsOnPrint(event.target.checked);
+                }}
+                disabled={savingPrintSettings}
+              />
+              <span className="nf-fw-600">印刷フォーム作成時に空欄項目を省く</span>
+            </label>
+            <p className="nf-mt-6 nf-text-12 nf-text-muted">
+              OFFにすると、未回答の項目も印刷フォームへ出力します。
             </p>
           </div>
         )}
@@ -343,7 +406,9 @@ const targetForm = useMemo(
         <div className="nf-mt-16">
           <div className="nf-settings-group-title nf-mb-8">テーマをインポート</div>
           <p className="nf-mb-12 nf-text-12 nf-text-muted">
-            インポートするGoogle Drive内CSSファイルURLを指定してください
+            {isFormThemeLocked
+              ? "全体テーマの一括変更がONの間は、このフォーム個別のテーマ関連操作はできません。"
+              : "インポートするGoogle Drive内CSSファイルURLを指定してください"}
           </p>
           <div className="nf-row nf-gap-12">
             <input
@@ -352,12 +417,13 @@ const targetForm = useMemo(
               value={importUrl}
               placeholder="https://drive.google.com/file/d/..."
               onChange={(event) => setImportUrl(event.target.value)}
+              disabled={isFormThemeLocked}
             />
             <button
               type="button"
               className="nf-btn nf-nowrap"
               onClick={handleImportTheme}
-              disabled={importing || applyingTheme}
+              disabled={importing || applyingTheme || isFormThemeLocked}
             >
               {importing ? "インポート中..." : "インポート"}
             </button>
@@ -375,6 +441,7 @@ const targetForm = useMemo(
                       type="button"
                       className="nf-btn-outline nf-nowrap"
                       onClick={() => handleRemoveCustomTheme(theme)}
+                      disabled={isFormThemeLocked}
                     >
                       削除
                     </button>

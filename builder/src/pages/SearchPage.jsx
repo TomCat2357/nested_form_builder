@@ -17,7 +17,11 @@ import {
   matchesKeyword,
   parseSearchCellDisplayLimit,
 } from "../features/search/searchTable.js";
-import { buildPrintDocumentBundlePayload, buildPrintDocumentPayload } from "../features/preview/printDocument.js";
+import {
+  buildPrintDocumentBundlePayload,
+  buildPrintDocumentPayload,
+  resolveOmitEmptyRowsOnPrint,
+} from "../features/preview/printDocument.js";
 import { createExcelBlob, getThemeColors } from "../utils/excelExport.js";
 import { restoreResponsesFromData } from "../utils/responses.js";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
@@ -57,11 +61,11 @@ export default function SearchPage() {
   const [selectedEntries, setSelectedEntries] = useState(new Set());
   const [exporting, setExporting] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
-  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
 
   const form = useMemo(() => (effectiveFormId ? getFormById(effectiveFormId) : null), [effectiveFormId, getFormById]);
   const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form?.schema]);
+  const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
   const query = searchParams.get("q") || "";
   const page = Math.max(1, Number(searchParams.get("page") || 1));
@@ -273,15 +277,7 @@ export default function SearchPage() {
     }
   }, [form, sortedEntries, showAlert]);
 
-  const handleOpenPrintDialog = useCallback(() => {
-    if (selectedPrintableRows.length === 0) {
-      showAlert("印刷するレコードを選択してください。");
-      return;
-    }
-    setIsPrintDialogOpen(true);
-  }, [selectedPrintableRows.length, showAlert]);
-
-  const handleCreatePrintDocument = useCallback(async ({ omitEmptyRows }) => {
+  const handleCreatePrintDocument = useCallback(async () => {
     if (selectedPrintableRows.length === 0) {
       showAlert("印刷するレコードを選択してください。");
       return;
@@ -301,7 +297,7 @@ export default function SearchPage() {
           },
           recordId: entry?.id,
           exportedAt,
-          omitEmptyRows: !!omitEmptyRows,
+          omitEmptyRows: omitEmptyRowsOnPrint,
         });
       });
       const payload = buildPrintDocumentBundlePayload({
@@ -325,7 +321,7 @@ export default function SearchPage() {
     } finally {
       setIsCreatingPrintDocument(false);
     }
-  }, [form?.settings, normalizedSchema, selectedPrintableRows, showAlert]);
+  }, [form?.settings, normalizedSchema, omitEmptyRowsOnPrint, selectedPrintableRows, showAlert]);
 
   const confirmDelete = useCallback(async () => {
     if (!effectiveFormId || showDeleteConfirm.entryIds.length === 0) return;
@@ -373,11 +369,11 @@ export default function SearchPage() {
           onBack={handleBackToMain}
           showBack={!isScopedByAuth}
           onCreate={handleCreateNew}
-          onConfig={settings?.syncAllFormsTheme ? undefined : handleOpenFormConfig}
+          onConfig={handleOpenFormConfig}
           onDelete={handleDeleteSelected}
           onUndelete={handleUndeleteSelected}
           isUndoDelete={isAdmin && allSelectedAreDeleted}
-          onPrint={handleOpenPrintDialog}
+          onPrint={handleCreatePrintDocument}
           onRefresh={forceRefreshAll}
           onExport={handleExportResults}
           useCache={useCache}
@@ -452,35 +448,6 @@ export default function SearchPage() {
         options={[
           { label: "キャンセル", value: "cancel", onSelect: () => setShowUndeleteConfirm({ open: false, entryIds: [] }) },
           { label: "削除取消し", value: "undelete", variant: "primary", onSelect: confirmUndelete },
-        ]}
-      />
-      <ConfirmDialog
-        open={isPrintDialogOpen}
-        title="印刷内容の確認"
-        message="空欄の項目をどのように扱いますか。見出し行は常に出力されます。"
-        options={[
-          {
-            label: "空欄項目を省いて作成",
-            value: "omit-empty",
-            variant: "primary",
-            onSelect: () => {
-              setIsPrintDialogOpen(false);
-              void handleCreatePrintDocument({ omitEmptyRows: true });
-            },
-          },
-          {
-            label: "空欄項目も含めて作成",
-            value: "include-empty",
-            onSelect: () => {
-              setIsPrintDialogOpen(false);
-              void handleCreatePrintDocument({ omitEmptyRows: false });
-            },
-          },
-          {
-            label: "キャンセル",
-            value: "cancel",
-            onSelect: () => setIsPrintDialogOpen(false),
-          },
         ]}
       />
 
