@@ -184,7 +184,7 @@ export default function SearchTable({
                         </button>
                       ) : isUrl ? (
                         <a
-                          href={rawDisplayText}
+                          href={String(rawDisplayText).match(/^(javascript|vbscript|data):/i) ? "#" : rawDisplayText}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="nf-link"

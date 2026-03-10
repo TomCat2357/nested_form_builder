@@ -43,7 +43,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
     if (value === undefined || value === null || value === "") return "\u00A0";
     if (field.type === "url" && value) {
       return (
-        <a href={value} target="_blank" rel="noopener noreferrer" className="nf-link">
+        <a href={String(value).match(/^(javascript|vbscript|data):/i) ? "#" : value} target="_blank" rel="noopener noreferrer" className="nf-link">
           {value}
         </a>
       );

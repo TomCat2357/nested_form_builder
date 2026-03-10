@@ -5,7 +5,7 @@ const regexCache = new Map();
 const NUMBER_INTEGER_DRAFT_REGEX = /^-?\d*$/;
 const NUMBER_DECIMAL_DRAFT_REGEX = /^-?\d*(?:\.\d*)?$/;
 const NUMBER_INTEGER_FINAL_REGEX = /^-?\d+$/;
-const URL_REGEX = /^[A-Za-z][A-Za-z0-9+.-]*:.+$/;
+const URL_REGEX = /^https?:\/\/.+$/;
 const ASCII_ONLY_REGEX = /^[\x00-\x7F]+$/;
 const EMAIL_LOCAL_ALLOWED_REGEX = /^[A-Za-z0-9._$=?\^`{}~#-]+$/;
 const EMAIL_DOMAIN_ALLOWED_REGEX = /^[A-Za-z0-9.-]+$/;

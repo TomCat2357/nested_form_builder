@@ -241,7 +241,7 @@ export default function FormPage() {
       const shouldLog = forceLog || diff.removedKeys.length > 0 || diff.changedKeys.length > 6 || diff.addedKeys.length > 6;
       if (shouldLog) {
         responseMutationSeqRef.current += 1;
-        console.log("[FormPage] responses mutated", {
+        if (process.env.NODE_ENV !== "production") console.log("[FormPage] responses mutated", {
           seq: responseMutationSeqRef.current,
           source,
           formId,
@@ -269,7 +269,7 @@ export default function FormPage() {
     const diff = diffResponses(previous, restored);
     const hasPotentialOverwrite = diff.removedKeys.length > 0 || diff.changedKeys.length > 6;
     if (hasPotentialOverwrite || source !== "save:new-entry") {
-      console.log("[FormPage] applyEntryToState", {
+      if (process.env.NODE_ENV !== "production") console.log("[FormPage] applyEntryToState", {
         source,
         formId,
         entryId: entryId || "new",

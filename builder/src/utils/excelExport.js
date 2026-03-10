@@ -49,7 +49,7 @@ export const createExcelBlob = async (exportTable, themeColors) => {
   const borderColor = (themeColors.border || "#e6e8f0").replace("#", "");
 
   exportTable.headerRows.forEach((rowArray) => {
-    const row = worksheet.addRow(rowArray);
+    const row = worksheet.addRow(rowArray.map(sanitizeForExcel));
     row.eachCell((cell) => {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + primaryColor } };
       cell.font = { color: { argb: "FFFFFFFF" }, bold: true };
@@ -62,8 +62,16 @@ export const createExcelBlob = async (exportTable, themeColors) => {
     });
   });
 
+  // Formula Injection対策: =, +, -, @ で始まる文字列を無害化
+  const sanitizeForExcel = (value) => {
+    if (typeof value === "string" && /^[=+\-@]/.test(value)) {
+      return "'" + value;
+    }
+    return value;
+  };
+
   exportTable.rows.forEach((rowArray, index) => {
-    const row = worksheet.addRow(rowArray);
+    const row = worksheet.addRow(rowArray.map(sanitizeForExcel));
     const bgColor = index % 2 === 0 ? surfaceColor : primarySoftColor;
     row.eachCell((cell) => {
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + bgColor } };

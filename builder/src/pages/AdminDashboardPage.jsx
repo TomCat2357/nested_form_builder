@@ -167,7 +167,8 @@ const [selected, setSelected] = useState(() => new Set());
     if (targets.length === 1) {
       // 1個の場合は.jsonファイルとして保存
       const form = targets[0];
-      const filename = `${form.settings?.formTitle || form.id}.json`;
+      const safeTitle = (form.settings?.formTitle || form.id).replace(/[\\/:*?"<>|\r\n]/g, "_").replace(/^\.+/, "");
+        const filename = `${safeTitle}.json`;
       const { id, ...formWithoutId } = form;
       const blob = new Blob([JSON.stringify(formWithoutId, null, 2)], { type: "application/json" });
       saveAs(blob, filename);
@@ -175,7 +176,8 @@ const [selected, setSelected] = useState(() => new Set());
       // 複数の場合はZIPファイルとして保存
       const zip = new JSZip();
       targets.forEach((form) => {
-        const filename = `${form.settings?.formTitle || form.id}.json`;
+        const safeTitle = (form.settings?.formTitle || form.id).replace(/[\\/:*?"<>|\r\n]/g, "_").replace(/^\.+/, "");
+        const filename = `${safeTitle}.json`;
         const { id, ...formWithoutId } = form;
         zip.file(filename, JSON.stringify(formWithoutId, null, 2));
       });
