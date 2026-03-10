@@ -48,6 +48,14 @@ export const createExcelBlob = async (exportTable, themeColors) => {
   const surfaceColor = (themeColors.surface || "#ffffff").replace("#", "");
   const borderColor = (themeColors.border || "#e6e8f0").replace("#", "");
 
+  // Formula Injection対策: =, +, -, @ で始まる文字列を無害化
+  function sanitizeForExcel(value) {
+    if (typeof value === "string" && /^[=+\-@]/.test(value)) {
+      return "'" + value;
+    }
+    return value;
+  }
+
   exportTable.headerRows.forEach((rowArray) => {
     const row = worksheet.addRow(rowArray.map(sanitizeForExcel));
     row.eachCell((cell) => {
@@ -61,14 +69,6 @@ export const createExcelBlob = async (exportTable, themeColors) => {
       };
     });
   });
-
-  // Formula Injection対策: =, +, -, @ で始まる文字列を無害化
-  const sanitizeForExcel = (value) => {
-    if (typeof value === "string" && /^[=+\-@]/.test(value)) {
-      return "'" + value;
-    }
-    return value;
-  };
 
   exportTable.rows.forEach((rowArray, index) => {
     const row = worksheet.addRow(rowArray.map(sanitizeForExcel));
