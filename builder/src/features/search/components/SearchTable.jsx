@@ -33,6 +33,7 @@ export default function SearchTable({
   };
 
   const selectableColumns = columns.filter((column) => column.key !== "__actions");
+  const allPagedEntriesSelected = pagedEntries.length > 0 && pagedEntries.every(({ entry }) => selectedEntries.has(entry.id));
   const topScrollRef = useRef(null);
   const bottomScrollRef = useRef(null);
   const tableRef = useRef(null);
@@ -112,7 +113,7 @@ export default function SearchTable({
                   <th className="search-th search-td-narrow" rowSpan={headerRows.length}>
                     <input
                       type="checkbox"
-                      checked={pagedEntries.length > 0 && selectedEntries.size === pagedEntries.length}
+                      checked={allPagedEntriesSelected}
                       onChange={(e) => onSelectAll(e.target.checked)}
                     />
                   </th>

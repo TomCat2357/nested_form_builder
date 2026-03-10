@@ -112,6 +112,7 @@ export default function FormPage() {
   const [confirmState, setConfirmState] = useState({ open: false, intent: null });
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
+  const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
   const [mode, setMode] = useState(entryId ? "view" : "edit");
   const [isReloading, setIsReloading] = useState(false);
   const [entryActionConfirm, setEntryActionConfirm] = useState({ open: false, action: null });
@@ -835,7 +836,7 @@ export default function FormPage() {
     commitResponses("preview:change", updater);
   }, [commitResponses]);
 
-  const handleCreatePrintDocument = useCallback(async () => {
+  const handleCreatePrintDocument = useCallback(async ({ omitEmptyRows }) => {
     const preview = previewRef.current;
     if (!preview || typeof preview.getPrintDocumentPayload !== "function") {
       showAlert("印刷フォームの出力準備がまだできていません。少し待ってからもう一度お試しください。");
@@ -844,7 +845,7 @@ export default function FormPage() {
 
     setIsCreatingPrintDocument(true);
     try {
-      const payload = preview.getPrintDocumentPayload();
+      const payload = preview.getPrintDocumentPayload({ omitEmptyRows: !!omitEmptyRows });
       const result = await createRecordPrintDocument(payload);
       showAlert(
         <div className="nf-col nf-gap-8">
@@ -969,7 +970,7 @@ export default function FormPage() {
             className="nf-btn-outline nf-btn-sidebar nf-text-14"
             disabled={loading || isCreatingPrintDocument}
             onClick={() => {
-              void handleCreatePrintDocument();
+              setIsPrintDialogOpen(true);
             }}
           >
             {isCreatingPrintDocument ? "作成中..." : "印刷フォームを作成"}
@@ -1084,6 +1085,35 @@ export default function FormPage() {
           entryActionConfirm.action === "undelete"
             ? { label: "削除取消し", value: "undelete", variant: "primary", onSelect: confirmEntryAction }
             : { label: "削除", value: "delete", variant: "danger", onSelect: confirmEntryAction },
+        ]}
+      />
+      <ConfirmDialog
+        open={isPrintDialogOpen}
+        title="印刷内容の確認"
+        message="空欄の項目をどのように扱いますか。見出し行は常に出力されます。"
+        options={[
+          {
+            label: "空欄項目を省いて作成",
+            value: "omit-empty",
+            variant: "primary",
+            onSelect: () => {
+              setIsPrintDialogOpen(false);
+              void handleCreatePrintDocument({ omitEmptyRows: true });
+            },
+          },
+          {
+            label: "空欄項目も含めて作成",
+            value: "include-empty",
+            onSelect: () => {
+              setIsPrintDialogOpen(false);
+              void handleCreatePrintDocument({ omitEmptyRows: false });
+            },
+          },
+          {
+            label: "キャンセル",
+            value: "cancel",
+            onSelect: () => setIsPrintDialogOpen(false),
+          },
         ]}
       />
 

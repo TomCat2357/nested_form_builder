@@ -125,3 +125,48 @@ test("createRecordPrintDocument は nfbCreateRecordPrintDocument を呼び出す
     globalThis.google = originalGoogle;
   }
 });
+
+test("createRecordPrintDocument は一括 payload でも nfbCreateRecordPrintDocument を呼び出す", async () => {
+  const originalGoogle = globalThis.google;
+  const payload = {
+    fileName: "印刷フォーム_相談票_一括_2件_20260309_120000",
+    records: [
+      {
+        fileName: "印刷フォーム_相談票_1_20260309_120000",
+        formTitle: "相談票",
+        recordId: "rec001",
+        recordNo: "1",
+        exportedAtIso: "2026-03-09T03:00:00.000Z",
+        items: [{ label: "氏名", value: "山田 太郎", depth: 0, type: "text" }],
+      },
+      {
+        fileName: "印刷フォーム_相談票_2_20260309_120000",
+        formTitle: "相談票",
+        recordId: "rec002",
+        recordNo: "2",
+        exportedAtIso: "2026-03-09T03:00:00.000Z",
+        items: [{ label: "氏名", value: "佐藤 花子", depth: 0, type: "text" }],
+      },
+    ],
+  };
+  const { run, calls } = createGoogleScriptRunStub({
+    nfbCreateRecordPrintDocument: (receivedPayload) => ({
+      ok: true,
+      fileUrl: "https://docs.google.com/document/d/file456/edit",
+      payload: receivedPayload,
+    }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    const result = await createRecordPrintDocument(payload);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.fileUrl, "https://docs.google.com/document/d/file456/edit");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].functionName, "nfbCreateRecordPrintDocument");
+    assert.deepEqual(calls[0].payload, payload);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});

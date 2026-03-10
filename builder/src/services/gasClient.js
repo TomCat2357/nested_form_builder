@@ -145,8 +145,22 @@ export const setAdminEmail = (newEmail) => fetchGasApi("nfbSetAdminEmail", newEm
 export const getRestrictToFormOnly = () => fetchGasApi("nfbGetRestrictToFormOnly", {}, "Get restrict to form only failed").then(r => Boolean(r.restrictToFormOnly));
 export const setRestrictToFormOnly = (value) => fetchGasApi("nfbSetRestrictToFormOnly", value, "Set restrict to form only failed").then(r => Boolean(r.restrictToFormOnly));
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
+const isSingleRecordPrintPayload = (payload) => {
+  return Boolean(payload && payload.fileName && Array.isArray(payload.items));
+};
+
+const isMultiRecordPrintPayload = (payload) => {
+  return Boolean(
+    payload
+      && payload.fileName
+      && Array.isArray(payload.records)
+      && payload.records.length > 0
+      && payload.records.every((record) => record && record.fileName && Array.isArray(record.items)),
+  );
+};
+
 export const createRecordPrintDocument = (payload) => {
-  if (!payload || !payload.fileName || !Array.isArray(payload.items)) {
+  if (!isSingleRecordPrintPayload(payload) && !isMultiRecordPrintPayload(payload)) {
     throw new Error("print document payload is invalid");
   }
   return fetchGasApi("nfbCreateRecordPrintDocument", payload, "印刷フォームの作成に失敗しました");

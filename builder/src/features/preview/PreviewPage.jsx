@@ -406,11 +406,12 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const formTitle = settings.formTitle || "受付フォーム";
 
   const [isSaving, setIsSaving] = useState(false);
-  const getPrintDocumentPayload = () => buildPrintDocumentPayload({
+  const getPrintDocumentPayload = (options = {}) => buildPrintDocumentPayload({
     schema,
     responses,
     settings,
     recordId: recordIdRef.current,
+    omitEmptyRows: options.omitEmptyRows,
   });
 
   const handleSaveToSheet = async (options = {}) => {

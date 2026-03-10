@@ -90,7 +90,7 @@ export const isTextareaField = (field) => field?.type === "textarea" || (field?.
 
 const pad = (value) => String(value).padStart(2, "0");
 
-const formatFileTimestamp = (date) => {
+export const formatFileTimestamp = (date) => {
   const safeDate = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
   return `${safeDate.getFullYear()}${pad(safeDate.getMonth() + 1)}${pad(safeDate.getDate())}_${pad(safeDate.getHours())}${pad(safeDate.getMinutes())}${pad(safeDate.getSeconds())}`;
 };
@@ -121,25 +121,34 @@ const resolveFieldLabel = (field) => {
   return typeof field?.label === "string" && field.label.trim() ? field.label.trim() : fallback;
 };
 
-const appendPrintItems = (fields, responses, depth, items) => {
+const shouldIncludePrintItem = (item, omitEmptyRows) => {
+  if (!omitEmptyRows) return true;
+  if (item?.type === "message") return true;
+  return hasVisibleValue(item?.value);
+};
+
+const appendPrintItems = (fields, responses, depth, items, options = {}) => {
   (fields || []).forEach((field, index) => {
     const fieldId = resolveFieldId(field, depth, index);
     const normalizedField = { ...field, id: fieldId };
     const value = (responses || {})[fieldId] ?? (responses || {})[field?.id];
 
-    items.push({
+    const nextItem = {
       label: resolveFieldLabel(normalizedField),
       value: formatPrintItemValue(normalizedField, value),
       depth,
       type: normalizedField?.type || "text",
-    });
+    };
+    if (shouldIncludePrintItem(nextItem, options.omitEmptyRows)) {
+      items.push(nextItem);
+    }
 
     const selectedLabels = toSelectedChoiceLabels(normalizedField, value);
     if (!normalizedField?.childrenByValue) return;
 
     if (normalizedField.type === "checkboxes") {
       selectedLabels.forEach((label) => {
-        appendPrintItems(normalizedField.childrenByValue?.[label] || [], responses, depth + 1, items);
+        appendPrintItems(normalizedField.childrenByValue?.[label] || [], responses, depth + 1, items, options);
       });
       return;
     }
@@ -147,14 +156,14 @@ const appendPrintItems = (fields, responses, depth, items) => {
     if (normalizedField.type === "radio" || normalizedField.type === "select") {
       const selected = selectedLabels[0];
       if (selected) {
-        appendPrintItems(normalizedField.childrenByValue?.[selected] || [], responses, depth + 1, items);
+        appendPrintItems(normalizedField.childrenByValue?.[selected] || [], responses, depth + 1, items, options);
       }
     }
   });
   return items;
 };
 
-export const buildPrintDocumentPayload = ({ schema, responses, settings = {}, recordId, exportedAt = new Date() }) => {
+export const buildPrintDocumentPayload = ({ schema, responses, settings = {}, recordId, exportedAt = new Date(), omitEmptyRows = false }) => {
   const safeExportedAt = exportedAt instanceof Date && !Number.isNaN(exportedAt.getTime()) ? exportedAt : new Date();
   const formTitle = typeof settings.formTitle === "string" && settings.formTitle.trim() ? settings.formTitle.trim() : "受付フォーム";
   const resolvedRecordId = String(recordId || settings.recordId || "").trim() || "record";
@@ -167,6 +176,19 @@ export const buildPrintDocumentPayload = ({ schema, responses, settings = {}, re
     recordId: resolvedRecordId,
     recordNo,
     exportedAtIso: safeExportedAt.toISOString(),
-    items: appendPrintItems(schema, responses, 0, []),
+    items: appendPrintItems(schema, responses, 0, [], { omitEmptyRows: !!omitEmptyRows }),
+  };
+};
+
+export const buildPrintDocumentBundlePayload = ({ formTitle, records, exportedAt = new Date() }) => {
+  const safeExportedAt = exportedAt instanceof Date && !Number.isNaN(exportedAt.getTime()) ? exportedAt : new Date();
+  const safeFormTitle = typeof formTitle === "string" && formTitle.trim() ? formTitle.trim() : "受付フォーム";
+  const safeRecords = Array.isArray(records) ? records : [];
+
+  return {
+    fileName: `印刷フォーム_${sanitizePrintFileNamePart(safeFormTitle, "form")}_一括_${safeRecords.length}件_${formatFileTimestamp(safeExportedAt)}`,
+    formTitle: safeFormTitle,
+    exportedAtIso: safeExportedAt.toISOString(),
+    records: safeRecords,
   };
 };

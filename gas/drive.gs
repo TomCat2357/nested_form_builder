@@ -73,32 +73,20 @@ function nfbSaveExcelToDrive(payload) {
  */
 function nfbCreateRecordPrintDocument(payload) {
   return nfbSafeCall_(function() {
-    if (!payload || !payload.fileName || !Array.isArray(payload.items)) {
-      throw new Error("印刷フォームのデータが不足しています");
-    }
+    var normalizedPayload = nfbNormalizePrintDocumentPayload_(payload);
 
-    var fileName = String(payload.fileName || "").trim();
-    if (!fileName) {
-      throw new Error("fileName is required");
-    }
-
-    var formTitle = String(payload.formTitle || "").trim() || "受付フォーム";
-    var recordId = String(payload.recordId || "").trim() || "record";
-    var recordNo = payload.recordNo === undefined || payload.recordNo === null ? "" : String(payload.recordNo).trim();
-
-    var doc = DocumentApp.create(fileName);
+    var doc = DocumentApp.create(normalizedPayload.fileName);
     var body = doc.getBody();
     if (body && typeof body.clear === "function") {
       body.clear();
     }
 
-    nfbWritePrintDocument_(body, {
-      formTitle: formTitle,
-      recordId: recordId,
-      recordNo: recordNo,
-      exportedAtIso: payload.exportedAtIso,
-      items: payload.items
-    });
+    for (var i = 0; i < normalizedPayload.records.length; i++) {
+      nfbWritePrintDocument_(body, normalizedPayload.records[i]);
+      if (i < normalizedPayload.records.length - 1 && body && typeof body.appendPageBreak === "function") {
+        body.appendPageBreak();
+      }
+    }
 
     doc.saveAndClose();
 
@@ -110,6 +98,46 @@ function nfbCreateRecordPrintDocument(payload) {
       fileId: file.getId()
     };
   });
+}
+
+function nfbNormalizePrintDocumentPayload_(payload) {
+  if (!payload || typeof payload !== "object") {
+    throw new Error("印刷フォームのデータが不足しています");
+  }
+
+  var fileName = String(payload.fileName || "").trim();
+  if (!fileName) {
+    throw new Error("fileName is required");
+  }
+
+  var rawRecords = Array.isArray(payload.records) ? payload.records : [payload];
+  var records = [];
+  for (var i = 0; i < rawRecords.length; i++) {
+    records.push(nfbNormalizePrintDocumentRecord_(rawRecords[i], i));
+  }
+
+  if (!records.length) {
+    throw new Error("印刷フォームの出力対象がありません");
+  }
+
+  return {
+    fileName: fileName,
+    records: records
+  };
+}
+
+function nfbNormalizePrintDocumentRecord_(payload, index) {
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new Error("印刷フォームのデータが不足しています");
+  }
+
+  return {
+    formTitle: String(payload.formTitle || "").trim() || "受付フォーム",
+    recordId: String(payload.recordId || "").trim() || ("record-" + (index + 1)),
+    recordNo: payload.recordNo === undefined || payload.recordNo === null ? "" : String(payload.recordNo).trim(),
+    exportedAtIso: payload.exportedAtIso,
+    items: payload.items
+  };
 }
 
 function nfbWritePrintDocument_(body, payload) {
@@ -140,17 +168,6 @@ function nfbWritePrintDocument_(body, payload) {
     });
     return;
   }
-
-  var sectionTitle = body.appendParagraph("回答一覧");
-  sectionTitle.setHeading(DocumentApp.ParagraphHeading.HEADING2);
-  nfbStylePrintDocumentParagraph_(sectionTitle, {
-    fontFamily: "Arial",
-    fontSize: 12,
-    bold: true,
-    color: "#202124",
-    spacingBefore: 12,
-    spacingAfter: 6
-  });
 
   nfbAppendPrintDocumentItemsTable_(body, items);
 }

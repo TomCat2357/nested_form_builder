@@ -51,6 +51,7 @@ test("buildPrintDocumentPayload は表示順を維持しつつ非表示分岐を
     },
     recordId: "rec:001",
     exportedAt: new Date("2026-03-09T12:34:56+09:00"),
+    omitEmptyRows: false,
   });
 
   assert.equal(payload.formTitle, "相談票");
@@ -65,6 +66,33 @@ test("buildPrintDocumentPayload は表示順を維持しつつ非表示分岐を
     { label: "申請詳細", value: "申請A", depth: 1, type: "text" },
     { label: "契約詳細", value: "契約B", depth: 1, type: "text" },
     { label: "未回答項目", value: "", depth: 0, type: "text" },
+  ]);
+});
+
+test("buildPrintDocumentPayload は空欄行を省略しても message 行は残す", () => {
+  const schema = [
+    { id: "message_1", type: "message", label: "セクション見出し" },
+    { id: "empty_field", type: "text", label: "未回答項目" },
+    { id: "filled_field", type: "text", label: "回答済み項目" },
+  ];
+
+  const payload = buildPrintDocumentPayload({
+    schema,
+    responses: {
+      filled_field: "あり",
+    },
+    settings: {
+      formTitle: "相談票",
+      recordNo: "15",
+    },
+    recordId: "rec-015",
+    exportedAt: new Date("2026-03-09T12:34:56+09:00"),
+    omitEmptyRows: true,
+  });
+
+  assert.deepEqual(payload.items, [
+    { label: "セクション見出し", value: "", depth: 0, type: "message" },
+    { label: "回答済み項目", value: "あり", depth: 0, type: "text" },
   ]);
 });
 
