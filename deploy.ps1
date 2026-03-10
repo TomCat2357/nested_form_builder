@@ -1,11 +1,12 @@
 ﻿# Google AppSheetスタイル データ管理アプリ デプロイスクリプト (PowerShell版)
-# Usage: .\deploy.ps1 [--manifest-override <path>] [-PropertyStore <script|user>] [-BundleOnly] [-h|--help]
+# Usage: .\deploy.ps1 [--manifest-override <path>] [-PropertyStore <script|user>] [-BundleOnly] [-PushOnly] [-h|--help]
 
 param(
     [string]$ManifestOverride = "",
     [ValidateSet("script", "user")]
     [string]$PropertyStore = "script",
     [switch]$BundleOnly,
+    [switch]$PushOnly,
     [switch]$h,
     [switch]$Help
 )
@@ -58,6 +59,7 @@ Options:
   --manifest-override <path>  指定したJSONファイルで gas/appsscript.json を上書きしてから push/deploy します。
   -PropertyStore <script|user> フォームマッピングの保存先を指定します（既定: script）。
   -BundleOnly                 ビルド＆バンドルのみ実行（clasp push/deploy はスキップ）。credential不要。
+  -PushOnly                   ビルド＆バンドル＆clasp push のみ実行（clasp deploy はスキップ）。
   -h, --help                  このヘルプを表示します。
 "@
 }
@@ -69,6 +71,8 @@ if ($h -or $Help) {
 
 if ($BundleOnly) {
     Write-Host "🔧 BundleOnly モード: ビルド＆バンドルのみ実行します（clasp不要）" -ForegroundColor Cyan
+} elseif ($PushOnly) {
+    Write-Host "📤 PushOnly モード: ビルド＆バンドル＆clasp push のみ実行します（deploy はスキップ）" -ForegroundColor Cyan
 } else {
     Write-Host "🚀 Google AppSheetスタイル データ管理アプリのデプロイを開始します..." -ForegroundColor Cyan
 }
@@ -229,6 +233,13 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 Write-Host "✅ プッシュが完了しました" -ForegroundColor Green
+
+# PushOnlyモードの場合はここで終了
+if ($PushOnly) {
+    Write-Host ""
+    Write-Host "✅ PushOnly モード: ビルド＆バンドル＆clasp push が完了しました（deploy はスキップ）" -ForegroundColor Green
+    exit 0
+}
 
 # デプロイ
 Write-Host "🌐 Webアプリとしてデプロイ中..." -ForegroundColor Yellow
