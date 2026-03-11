@@ -403,10 +403,10 @@ export default function ConfigPage() {
                 }}
                 disabled={savingPrintSettings}
               />
-              <span className="nf-fw-600">印刷フォームのヘッダーを表示する</span>
+              <span className="nf-fw-600">印刷様式のヘッダーを表示する</span>
             </label>
             <p className="nf-mt-6 nf-text-12 nf-text-muted nf-mb-12">
-              OFFにすると、印刷フォーム先頭のフォーム名・出力日時・レコードNo・回答IDを非表示にします。
+              OFFにすると、印刷様式先頭のフォーム名・出力日時・レコードNo・回答IDを非表示にします。
             </p>
             <label className="nf-row nf-gap-8 nf-items-center">
               <input
@@ -417,10 +417,10 @@ export default function ConfigPage() {
                 }}
                 disabled={savingPrintSettings}
               />
-              <span className="nf-fw-600">印刷フォーム作成時に空欄項目を省く</span>
+              <span className="nf-fw-600">印刷様式出力時に空欄項目を省く</span>
             </label>
             <p className="nf-mt-6 nf-text-12 nf-text-muted">
-              OFFにすると、未回答の項目も印刷フォームへ出力します。
+              OFFにすると、未回答の項目も印刷様式へ出力します。
             </p>
           </div>
         )}

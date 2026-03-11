@@ -27,7 +27,7 @@ test("buildSearchSidebarButtons は指定順でボタンを返す", () => {
 
   assert.deepEqual(
     buttons.map((button) => button.label),
-    ["← 戻る", "新規入力", "削除", "🔄 更新", "検索結果を出力", "印刷フォームを作成", "設定"],
+    ["← 戻る", "新規入力", "削除", "🔄 更新", "検索結果を出力", "印刷様式を出力", "設定"],
   );
 });
 
@@ -54,6 +54,6 @@ test("buildSearchSidebarButtons は削除取消しでも並び位置を維持し
 
   assert.deepEqual(
     buttons.map((button) => button.label),
-    ["新規入力", "削除取消し", "🔄 更新", "検索結果を出力", "印刷フォームを作成"],
+    ["新規入力", "削除取消し", "🔄 更新", "検索結果を出力", "印刷様式を出力"],
   );
 });

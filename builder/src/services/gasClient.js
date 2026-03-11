@@ -163,7 +163,7 @@ export const createRecordPrintDocument = (payload) => {
   if (!isSingleRecordPrintPayload(payload) && !isMultiRecordPrintPayload(payload)) {
     throw new Error("print document payload is invalid");
   }
-  return fetchGasApi("nfbCreateRecordPrintDocument", payload, "印刷フォームの作成に失敗しました");
+  return fetchGasApi("nfbCreateRecordPrintDocument", payload, "印刷様式の出力に失敗しました");
 };
 
 export const syncRecordsProxy = async (payload) => {

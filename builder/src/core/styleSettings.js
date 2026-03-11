@@ -1,4 +1,14 @@
-export const DEFAULT_STYLE_SETTINGS = { labelSize: "default", textColor: "#000000" };
+export const STYLE_TEXT_COLORS = {
+  SETTINGS_DEFAULT: "settingsDefault",
+  WHITE: "#FFFFFF",
+  BLACK: "#000000",
+  RED: "#DC2626",
+  BLUE: "#2563EB",
+  GREEN: "#16A34A",
+  GRAY: "#6B7280",
+};
+
+export const DEFAULT_STYLE_SETTINGS = { labelSize: "default", textColor: STYLE_TEXT_COLORS.SETTINGS_DEFAULT };
 
 export const normalizeLabelSize = (value) => {
   if (value === "smallest" || value === "smaller" || value === "default" || value === "larger" || value === "largest") return value;
@@ -18,7 +28,15 @@ export const normalizeStyleSettings = (input) => {
     }
   }
   next.labelSize = normalizeLabelSize(next.labelSize);
-  if (typeof next.textColor !== "string" || !next.textColor) {
+  if (
+    next.textColor !== STYLE_TEXT_COLORS.SETTINGS_DEFAULT
+    && next.textColor !== STYLE_TEXT_COLORS.WHITE
+    && next.textColor !== STYLE_TEXT_COLORS.BLACK
+    && next.textColor !== STYLE_TEXT_COLORS.RED
+    && next.textColor !== STYLE_TEXT_COLORS.BLUE
+    && next.textColor !== STYLE_TEXT_COLORS.GREEN
+    && next.textColor !== STYLE_TEXT_COLORS.GRAY
+  ) {
     next.textColor = DEFAULT_STYLE_SETTINGS.textColor;
   }
   delete next.fontSize;
@@ -41,4 +59,9 @@ export const resolveLabelSize = (styleSettings) => {
     }
   }
   return "default";
+};
+
+export const resolveTextColor = (styleSettings) => {
+  const normalized = normalizeStyleSettings(styleSettings);
+  return normalized.textColor === STYLE_TEXT_COLORS.SETTINGS_DEFAULT ? undefined : normalized.textColor;
 };

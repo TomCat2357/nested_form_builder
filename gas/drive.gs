@@ -67,7 +67,7 @@ function nfbSaveExcelToDrive(payload) {
 }
 
 /**
- * 個別レコードの印刷フォームを Google ドキュメントとしてマイドライブ直下に保存する
+ * 個別レコードの印刷様式を Google ドキュメントとしてマイドライブ直下に保存する
  * @param {Object} payload - { fileName, formTitle, recordId, recordNo, showHeader, exportedAtIso, items }
  * @return {Object} { ok: true, fileUrl: string, fileName: string, fileId: string }
  */
@@ -102,7 +102,7 @@ function nfbCreateRecordPrintDocument(payload) {
 
 function nfbNormalizePrintDocumentPayload_(payload) {
   if (!payload || typeof payload !== "object") {
-    throw new Error("印刷フォームのデータが不足しています");
+    throw new Error("印刷様式のデータが不足しています");
   }
 
   var fileName = String(payload.fileName || "").trim();
@@ -117,7 +117,7 @@ function nfbNormalizePrintDocumentPayload_(payload) {
   }
 
   if (!records.length) {
-    throw new Error("印刷フォームの出力対象がありません");
+    throw new Error("印刷様式の出力対象がありません");
   }
 
   return {
@@ -128,7 +128,7 @@ function nfbNormalizePrintDocumentPayload_(payload) {
 
 function nfbNormalizePrintDocumentRecord_(payload, index) {
   if (!payload || !Array.isArray(payload.items)) {
-    throw new Error("印刷フォームのデータが不足しています");
+    throw new Error("印刷様式のデータが不足しています");
   }
 
   return {

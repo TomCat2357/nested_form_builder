@@ -183,7 +183,7 @@ export const buildPrintDocumentPayload = ({ schema, responses, settings = {}, re
   const shouldShowHeader = resolveShowPrintHeader(settings, showHeader);
 
   return {
-    fileName: `印刷フォーム_${sanitizePrintFileNamePart(formTitle, "form")}_${sanitizePrintFileNamePart(recordRef, "record")}_${formatFileTimestamp(safeExportedAt)}`,
+    fileName: `印刷様式_${sanitizePrintFileNamePart(formTitle, "form")}_${sanitizePrintFileNamePart(recordRef, "record")}_${formatFileTimestamp(safeExportedAt)}`,
     formTitle,
     recordId: resolvedRecordId,
     recordNo,
@@ -199,7 +199,7 @@ export const buildPrintDocumentBundlePayload = ({ formTitle, records, exportedAt
   const safeRecords = Array.isArray(records) ? records : [];
 
   return {
-    fileName: `印刷フォーム_${sanitizePrintFileNamePart(safeFormTitle, "form")}_一括_${safeRecords.length}件_${formatFileTimestamp(safeExportedAt)}`,
+    fileName: `印刷様式_${sanitizePrintFileNamePart(safeFormTitle, "form")}_一括_${safeRecords.length}件_${formatFileTimestamp(safeExportedAt)}`,
     formTitle: safeFormTitle,
     exportedAtIso: safeExportedAt.toISOString(),
     records: safeRecords,

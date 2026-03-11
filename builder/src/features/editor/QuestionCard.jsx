@@ -3,7 +3,7 @@ import { buildSafeRegex } from "../../core/validate.js";
 import { deepClone, normalizeSchemaIDs, MAX_DEPTH, cleanUnusedFieldProperties, DEFAULT_TEXT_MAX_LENGTH } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
-import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "../../core/styleSettings.js";
+import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings, STYLE_TEXT_COLORS } from "../../core/styleSettings.js";
 import { buildPhonePattern, getStandardPhonePlaceholder, normalizePhoneSettings } from "../../core/phone.js";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
@@ -189,18 +189,20 @@ function StyleSettingsInput({ field, onChange, onFocus, getTempState, setTempSta
             <label className="nf-text-12 nf-mb-2 nf-text-subtle">文字色</label>
             <select
               className={s.input.className}
-              value={styleSettings.textColor || "#000000"}
+              value={styleSettings.textColor || STYLE_TEXT_COLORS.SETTINGS_DEFAULT}
               onChange={(event) => onChange({
                 ...field,
                 styleSettings: { ...styleSettings, textColor: event.target.value }
               })}
               onFocus={onFocus}
             >
-              <option value="#000000">黒（デフォルト）</option>
-              <option value="#DC2626">赤</option>
-              <option value="#2563EB">青</option>
-              <option value="#16A34A">緑</option>
-              <option value="#6B7280">グレー</option>
+              <option value={STYLE_TEXT_COLORS.SETTINGS_DEFAULT}>設定のデフォルト</option>
+              <option value={STYLE_TEXT_COLORS.WHITE}>白</option>
+              <option value={STYLE_TEXT_COLORS.BLACK}>黒</option>
+              <option value={STYLE_TEXT_COLORS.RED}>赤</option>
+              <option value={STYLE_TEXT_COLORS.BLUE}>青</option>
+              <option value={STYLE_TEXT_COLORS.GREEN}>緑</option>
+              <option value={STYLE_TEXT_COLORS.GRAY}>グレー</option>
             </select>
           </div>
         </div>

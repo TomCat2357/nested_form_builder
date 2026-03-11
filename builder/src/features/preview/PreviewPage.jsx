@@ -7,7 +7,7 @@ import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { collectDefaultNowResponses } from "../../utils/responses.js";
-import { resolveLabelSize } from "../../core/styleSettings.js";
+import { resolveLabelSize, resolveTextColor } from "../../core/styleSettings.js";
 import { genRecordId } from "../../core/ids.js";
 import { getStandardPhonePlaceholder } from "../../core/phone.js";
 import {
@@ -54,12 +54,13 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
   // スタイル設定を適用
   const styleSettings = field.styleSettings || {};
   const labelSize = resolveLabelSize(styleSettings);
+  const textColor = resolveTextColor(styleSettings);
   const labelStyleVars = {
     ...(labelSize === "smallest" ? { "--label-font-size-offset": "var(--label-size-offset-xs)" } : {}),
     ...(labelSize === "smaller" ? { "--label-font-size-offset": "var(--label-size-offset-sm)" } : {}),
     ...(labelSize === "larger" ? { "--label-font-size-offset": "var(--label-size-offset-lg)" } : {}),
     ...(labelSize === "largest" ? { "--label-font-size-offset": "var(--label-size-offset-xl)" } : {}),
-    ...(styleSettings.textColor ? { "--label-color": styleSettings.textColor } : {}),
+    ...(textColor ? { "--label-color": textColor } : {}),
   };
 
   // メッセージタイプの場合はラベルのみ表示

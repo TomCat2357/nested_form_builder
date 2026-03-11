@@ -840,7 +840,7 @@ export default function FormPage() {
   const handleCreatePrintDocument = useCallback(async () => {
     const preview = previewRef.current;
     if (!preview || typeof preview.getPrintDocumentPayload !== "function") {
-      showAlert("印刷フォームの出力準備がまだできていません。少し待ってからもう一度お試しください。");
+        showAlert("印刷様式の出力準備がまだできていません。少し待ってからもう一度お試しください。");
       return;
     }
 
@@ -859,7 +859,7 @@ export default function FormPage() {
       );
     } catch (error) {
       console.error("[FormPage] failed to create print document:", error);
-      showAlert(`印刷フォームの作成に失敗しました: ${error?.message || error}`);
+      showAlert(`印刷様式の出力に失敗しました: ${error?.message || error}`);
     } finally {
       setIsCreatingPrintDocument(false);
     }
@@ -974,7 +974,7 @@ export default function FormPage() {
               void handleCreatePrintDocument();
             }}
           >
-            {isCreatingPrintDocument ? "作成中..." : "印刷フォームを作成"}
+            {isCreatingPrintDocument ? "出力中..." : "印刷様式を出力"}
           </button>
           {entryId && (
             <>

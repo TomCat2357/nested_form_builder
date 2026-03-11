@@ -317,7 +317,7 @@ export default function SearchPage() {
       );
     } catch (error) {
       console.error("[SearchPage] failed to create print document:", error);
-      showAlert(`印刷フォームの作成に失敗しました: ${error?.message || error}`);
+      showAlert(`印刷様式の出力に失敗しました: ${error?.message || error}`);
     } finally {
       setIsCreatingPrintDocument(false);
     }
