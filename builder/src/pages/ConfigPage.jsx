@@ -15,7 +15,7 @@ import {
 } from "../app/theme/theme.js";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { hasScriptRun, importThemeFromDrive } from "../services/gasClient.js";
-import { resolveOmitEmptyRowsOnPrint } from "../features/preview/printDocument.js";
+import { resolveOmitEmptyRowsOnPrint, resolveShowPrintHeader } from "../features/preview/printDocument.js";
 import {
   THEME_SYNC_SCOPE,
   THEME_SYNC_TRIGGER,
@@ -52,6 +52,7 @@ export default function ConfigPage() {
   const rawFormTheme = targetForm?.settings?.theme;
   const formTheme = rawFormTheme || DEFAULT_THEME;
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(targetForm?.settings);
+  const showPrintHeader = resolveShowPrintHeader(targetForm?.settings);
   const rawGlobalTheme = settings?.theme;
   const globalTheme = rawGlobalTheme || DEFAULT_THEME;
   const themeValue = isFormMode ? formTheme : globalTheme;
@@ -247,12 +248,12 @@ export default function ConfigPage() {
     }
   };
 
-  const handleToggleOmitEmptyRowsOnPrint = useCallback(
-    async (checked) => {
+  const handleTogglePrintSetting = useCallback(
+    async (key, checked) => {
       if (!targetForm || savingPrintSettings) return;
       setSavingPrintSettings(true);
       try {
-        await updateCurrentFormSettings({ omitEmptyRowsOnPrint: checked });
+        await updateCurrentFormSettings({ [key]: checked });
       } catch (error) {
         console.error("[ConfigPage] failed to update print settings", error);
         showAlert(error?.message || "印刷設定の保存に失敗しました");
@@ -396,9 +397,23 @@ export default function ConfigPage() {
             <label className="nf-row nf-gap-8 nf-items-center">
               <input
                 type="checkbox"
+                checked={showPrintHeader}
+                onChange={(event) => {
+                  void handleTogglePrintSetting("showPrintHeader", event.target.checked);
+                }}
+                disabled={savingPrintSettings}
+              />
+              <span className="nf-fw-600">印刷フォームのヘッダーを表示する</span>
+            </label>
+            <p className="nf-mt-6 nf-text-12 nf-text-muted nf-mb-12">
+              OFFにすると、印刷フォーム先頭のフォーム名・出力日時・レコードNo・回答IDを非表示にします。
+            </p>
+            <label className="nf-row nf-gap-8 nf-items-center">
+              <input
+                type="checkbox"
                 checked={omitEmptyRowsOnPrint}
                 onChange={(event) => {
-                  void handleToggleOmitEmptyRowsOnPrint(event.target.checked);
+                  void handleTogglePrintSetting("omitEmptyRowsOnPrint", event.target.checked);
                 }}
                 disabled={savingPrintSettings}
               />

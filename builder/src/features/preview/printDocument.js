@@ -119,6 +119,11 @@ export const resolveOmitEmptyRowsOnPrint = (settings = {}, overrideValue = undef
   return settings?.omitEmptyRowsOnPrint !== false;
 };
 
+export const resolveShowPrintHeader = (settings = {}, overrideValue = undefined) => {
+  if (overrideValue !== undefined) return !!overrideValue;
+  return settings?.showPrintHeader !== false;
+};
+
 const resolveFieldId = (field, depth, index) => field?.id || `tmp_${depth}_${index}_${field?.label || ""}`;
 
 const resolveFieldLabel = (field) => {
@@ -168,19 +173,21 @@ const appendPrintItems = (fields, responses, depth, items, options = {}) => {
   return items;
 };
 
-export const buildPrintDocumentPayload = ({ schema, responses, settings = {}, recordId, exportedAt = new Date(), omitEmptyRows }) => {
+export const buildPrintDocumentPayload = ({ schema, responses, settings = {}, recordId, exportedAt = new Date(), omitEmptyRows, showHeader }) => {
   const safeExportedAt = exportedAt instanceof Date && !Number.isNaN(exportedAt.getTime()) ? exportedAt : new Date();
   const formTitle = typeof settings.formTitle === "string" && settings.formTitle.trim() ? settings.formTitle.trim() : "受付フォーム";
   const resolvedRecordId = String(recordId || settings.recordId || "").trim() || "record";
   const recordNo = settings.recordNo === undefined || settings.recordNo === null ? "" : String(settings.recordNo).trim();
   const recordRef = recordNo || resolvedRecordId;
   const shouldOmitEmptyRows = resolveOmitEmptyRowsOnPrint(settings, omitEmptyRows);
+  const shouldShowHeader = resolveShowPrintHeader(settings, showHeader);
 
   return {
     fileName: `印刷フォーム_${sanitizePrintFileNamePart(formTitle, "form")}_${sanitizePrintFileNamePart(recordRef, "record")}_${formatFileTimestamp(safeExportedAt)}`,
     formTitle,
     recordId: resolvedRecordId,
     recordNo,
+    showHeader: shouldShowHeader,
     exportedAtIso: safeExportedAt.toISOString(),
     items: appendPrintItems(schema, responses, 0, [], { omitEmptyRows: shouldOmitEmptyRows }),
   };

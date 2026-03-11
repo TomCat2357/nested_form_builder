@@ -68,7 +68,7 @@ function nfbSaveExcelToDrive(payload) {
 
 /**
  * 個別レコードの印刷フォームを Google ドキュメントとしてマイドライブ直下に保存する
- * @param {Object} payload - { fileName, formTitle, recordId, recordNo, exportedAtIso, items }
+ * @param {Object} payload - { fileName, formTitle, recordId, recordNo, showHeader, exportedAtIso, items }
  * @return {Object} { ok: true, fileUrl: string, fileName: string, fileId: string }
  */
 function nfbCreateRecordPrintDocument(payload) {
@@ -135,27 +135,30 @@ function nfbNormalizePrintDocumentRecord_(payload, index) {
     formTitle: String(payload.formTitle || "").trim() || "受付フォーム",
     recordId: String(payload.recordId || "").trim() || ("record-" + (index + 1)),
     recordNo: payload.recordNo === undefined || payload.recordNo === null ? "" : String(payload.recordNo).trim(),
+    showHeader: payload.showHeader !== false,
     exportedAtIso: payload.exportedAtIso,
     items: payload.items
   };
 }
 
 function nfbWritePrintDocument_(body, payload) {
-  var title = body.appendParagraph(payload.formTitle || "受付フォーム");
-  title.setHeading(DocumentApp.ParagraphHeading.HEADING1);
-  nfbStylePrintDocumentParagraph_(title, {
-    fontFamily: "Arial",
-    fontSize: 16,
-    bold: true,
-    color: "#202124",
-    spacingAfter: 6
-  });
+  if (payload.showHeader !== false) {
+    var title = body.appendParagraph(payload.formTitle || "受付フォーム");
+    title.setHeading(DocumentApp.ParagraphHeading.HEADING1);
+    nfbStylePrintDocumentParagraph_(title, {
+      fontFamily: "Arial",
+      fontSize: 16,
+      bold: true,
+      color: "#202124",
+      spacingAfter: 6
+    });
 
-  nfbAppendPrintDocumentMetaTable_(body, {
-    exportedAtIso: payload.exportedAtIso,
-    recordNo: payload.recordNo,
-    recordId: payload.recordId
-  });
+    nfbAppendPrintDocumentMetaTable_(body, {
+      exportedAtIso: payload.exportedAtIso,
+      recordNo: payload.recordNo,
+      recordId: payload.recordId
+    });
+  }
 
   var items = Array.isArray(payload.items) ? payload.items : [];
   if (!items.length) {
