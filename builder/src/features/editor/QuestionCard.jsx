@@ -243,8 +243,26 @@ function TextDefaultValueInput({ field, onChange, onFocus }) {
   );
 }
 
-function TextInputRestrictionInput({ field, onChange, onFocus, regexError }) {
+function TextInputRestrictionInput({ field, onChange, onFocus, regexError, getTempState, setTempState }) {
   const inputRestrictionMode = field.inputRestrictionMode || "none";
+  const maxLengthDraft = getTempState?.(field.id)?.maxLengthDraft;
+  const maxLengthValue = maxLengthDraft ?? (field.maxLength ?? DEFAULT_TEXT_MAX_LENGTH);
+
+  React.useEffect(() => {
+    if (inputRestrictionMode !== "maxLength" && maxLengthDraft !== undefined) {
+      setTempState?.(field.id, { maxLengthDraft: undefined });
+    }
+  }, [field.id, inputRestrictionMode, maxLengthDraft, setTempState]);
+
+  React.useEffect(() => {
+    if (maxLengthDraft === undefined) return;
+    if (inputRestrictionMode !== "maxLength") return;
+    if (maxLengthDraft === "") return;
+    if (String(field.maxLength ?? "") === maxLengthDraft) {
+      setTempState?.(field.id, { maxLengthDraft: undefined });
+    }
+  }, [field.id, field.maxLength, inputRestrictionMode, maxLengthDraft, setTempState]);
+
   return (
     <div className="nf-mt-8">
       <div className="nf-row nf-gap-8 nf-wrap nf-items-center">
@@ -255,6 +273,7 @@ function TextInputRestrictionInput({ field, onChange, onFocus, regexError }) {
           onChange={(event) => {
             const nextMode = event.target.value;
             if (nextMode === "maxLength") {
+              setTempState?.(field.id, { maxLengthDraft: undefined });
               onChange({
                 ...field,
                 inputRestrictionMode: "maxLength",
@@ -263,9 +282,11 @@ function TextInputRestrictionInput({ field, onChange, onFocus, regexError }) {
               return;
             }
             if (nextMode === "pattern") {
+              setTempState?.(field.id, { maxLengthDraft: undefined });
               onChange({ ...field, inputRestrictionMode: "pattern", pattern: field.pattern || "" });
               return;
             }
+            setTempState?.(field.id, { maxLengthDraft: undefined });
             onChange({ ...field, inputRestrictionMode: "none" });
           }}
           onFocus={onFocus}
@@ -280,12 +301,22 @@ function TextInputRestrictionInput({ field, onChange, onFocus, regexError }) {
           type="number"
           min="1"
           className={`${s.input.className} nf-mt-8`}
-          value={field.maxLength ?? DEFAULT_TEXT_MAX_LENGTH}
-          onChange={(event) => onChange({
-            ...field,
-            inputRestrictionMode: "maxLength",
-            maxLength: event.target.value === "" ? "" : Number(event.target.value),
-          })}
+          value={maxLengthValue}
+          onChange={(event) => {
+            const rawValue = event.target.value;
+            setTempState?.(field.id, { maxLengthDraft: rawValue });
+            if (rawValue === "") return;
+            onChange({
+              ...field,
+              inputRestrictionMode: "maxLength",
+              maxLength: Number(rawValue),
+            });
+          }}
+          onBlur={() => {
+            if (getTempState?.(field.id)?.maxLengthDraft === "") {
+              setTempState?.(field.id, { maxLengthDraft: undefined });
+            }
+          }}
           onFocus={onFocus}
         />
       )}
@@ -570,7 +601,14 @@ export default function QuestionCard({
           {renderStyleSettingsInput()}
           <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />
           <TextDefaultValueInput field={field} onChange={onChange} onFocus={onFocus} />
-          <TextInputRestrictionInput field={field} onChange={onChange} onFocus={onFocus} regexError={regexCheck.error} />
+          <TextInputRestrictionInput
+            field={field}
+            onChange={onChange}
+            onFocus={onFocus}
+            regexError={regexCheck.error}
+            getTempState={getTempState}
+            setTempState={setTempState}
+          />
         </>
       )}
 
