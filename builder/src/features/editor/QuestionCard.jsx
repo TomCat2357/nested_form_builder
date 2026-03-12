@@ -14,6 +14,7 @@ const BASIC_INPUT_TYPES = ["number", "url"];
 const MESSAGE_TYPE = "message";
 const DISPLAY_LABEL = "表示";
 const EMAIL_PLACEHOLDER = "user@example.com";
+const EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL = "一覧・印刷から除外";
 
 const isChoiceType = (type) => CHOICE_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
@@ -585,6 +586,22 @@ export default function QuestionCard({
       </div>
 
       {!isText && renderStyleSettingsInput()}
+
+      {isMessage && (
+        <div className="nf-mt-8">
+          <label className="nf-row nf-gap-6">
+            <input
+              type="checkbox"
+              checked={!!field.excludeFromSearchAndPrint}
+              onChange={(event) => onChange({ ...field, excludeFromSearchAndPrint: event.target.checked })}
+            />
+            {EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL}
+          </label>
+          <div className="nf-text-12 nf-text-subtle nf-mt-4">
+            情報周知用のメッセージを検索結果一覧と印刷様式に出しません。
+          </div>
+        </div>
+      )}
 
       {isText && (
         <>

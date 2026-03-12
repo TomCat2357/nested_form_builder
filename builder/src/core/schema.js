@@ -92,6 +92,7 @@ export const cleanUnusedFieldProperties = (field) => {
   const supportsPhone = type === "phone";
   const supportsDefaultNow = ["date", "time"].includes(type);
   const supportsPlaceholder = ["text", "number", "email", "phone", "url", "regex", "textarea"].includes(type);
+  const supportsSearchAndPrintExclusion = type === "message";
 
   if (!isChoice) {
     delete field.options;
@@ -132,6 +133,11 @@ export const cleanUnusedFieldProperties = (field) => {
   if (!supportsPlaceholder) {
     delete field.placeholder;
     delete field.showPlaceholder;
+  }
+  if (!supportsSearchAndPrintExclusion) {
+    delete field.excludeFromSearchAndPrint;
+  } else {
+    field.excludeFromSearchAndPrint = normalizeBooleanSetting(field.excludeFromSearchAndPrint, false);
   }
   if (type === "message") delete field.required;
   return field;

@@ -97,6 +97,32 @@ test("buildPrintDocumentPayload は空欄行を省略しても message 行は残
   ]);
 });
 
+test("buildPrintDocumentPayload は除外指定したメッセージを印刷様式に含めない", () => {
+  const schema = [
+    { id: "message_hidden", type: "message", label: "周知", excludeFromSearchAndPrint: true },
+    { id: "message_visible", type: "message", label: "注意事項" },
+    { id: "filled_field", type: "text", label: "回答済み項目" },
+  ];
+
+  const payload = buildPrintDocumentPayload({
+    schema,
+    responses: {
+      filled_field: "あり",
+    },
+    settings: {
+      formTitle: "相談票",
+    },
+    recordId: "rec-print-1",
+    exportedAt: new Date("2026-03-09T12:34:56+09:00"),
+    omitEmptyRows: false,
+  });
+
+  assert.deepEqual(payload.items, [
+    { label: "注意事項", value: "", depth: 0, type: "message" },
+    { label: "回答済み項目", value: "あり", depth: 0, type: "text" },
+  ]);
+});
+
 test("buildPrintDocumentPayload は textarea の改行を保持し recordNo が空でも recordId を使う", () => {
   const schema = [
     { id: "memo", type: "textarea", label: "メモ" },

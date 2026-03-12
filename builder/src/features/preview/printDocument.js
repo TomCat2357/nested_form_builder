@@ -124,6 +124,8 @@ export const resolveShowPrintHeader = (settings = {}, overrideValue = undefined)
   return settings?.showPrintHeader !== false;
 };
 
+const isExcludedMessageField = (field) => field?.type === "message" && field?.excludeFromSearchAndPrint === true;
+
 const resolveFieldId = (field, depth, index) => field?.id || `tmp_${depth}_${index}_${field?.label || ""}`;
 
 const resolveFieldLabel = (field) => {
@@ -141,6 +143,7 @@ const appendPrintItems = (fields, responses, depth, items, options = {}) => {
   (fields || []).forEach((field, index) => {
     const fieldId = resolveFieldId(field, depth, index);
     const normalizedField = { ...field, id: fieldId };
+    if (isExcludedMessageField(normalizedField)) return;
     const value = (responses || {})[fieldId] ?? (responses || {})[field?.id];
 
     const nextItem = {

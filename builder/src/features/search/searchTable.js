@@ -391,14 +391,14 @@ const collectChoiceOptionOrderByPath = (schema) => {
 const resolveDisplayFieldSettings = (form) => {
   const schema = form?.schema || [];
   const collected = collectDisplayFieldSettings(schema);
+  const collectedByPath = new Map(collected.map((item) => [item.path, item.type || ""]));
   const optionOrderByPath = collectChoiceOptionOrderByPath(schema);
   if (Array.isArray(form?.displayFieldSettings) && form.displayFieldSettings.length) {
-    const resolveTypeByPath = (path) => {
-      const matched = collected.find((item) => item.path === path);
-      return matched?.type || "";
-    };
+    const resolveTypeByPath = (path) => collectedByPath.get(path) || "";
+    const shouldFilterByCollected = collectedByPath.size > 0;
     return form.displayFieldSettings
       .filter((item) => item && item.path)
+      .filter((item) => !shouldFilterByCollected || collectedByPath.has(String(item.path)))
       .map((item) => ({
         path: String(item.path),
         type: item.type || resolveTypeByPath(String(item.path)),

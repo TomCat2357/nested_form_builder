@@ -37,3 +37,14 @@ test("displayFieldSettingsはネストした分岐でも巡回順を保持する
   const paths = collected.map((item) => item.path);
   assert.deepEqual(paths, ["親", "親|分岐B|子2", "親|分岐B|子1", "親|分岐A|子3", "末尾"]);
 });
+
+test("displayFieldSettingsは除外指定したメッセージを含めない", () => {
+  const schema = [
+    { type: "message", label: "案内", isDisplayed: true, excludeFromSearchAndPrint: true },
+    { type: "text", label: "氏名", isDisplayed: true },
+  ];
+
+  const collected = collectDisplayFieldSettings(schema);
+  const paths = collected.map((item) => item.path);
+  assert.deepEqual(paths, ["氏名"]);
+});

@@ -117,6 +117,24 @@ test("検索列はdisplayFieldSettingsの定義順を保持する", () => {
   assert.deepEqual(fieldPaths, ["B項目", "A項目", "親|子"]);
 });
 
+test("検索列は除外指定したメッセージをdisplayFieldSettingsに残っていても含めない", () => {
+  const form = {
+    settings: {},
+    schema: [
+      { type: "message", label: "案内", isDisplayed: true, excludeFromSearchAndPrint: true },
+      { type: "text", label: "氏名", isDisplayed: true },
+    ],
+    displayFieldSettings: [
+      { path: "案内", type: "message" },
+      { path: "氏名", type: "text" },
+    ],
+  };
+
+  const layout = buildSearchTableLayout(form, { includeOperations: false });
+  const fieldPaths = layout.columns.filter((column) => column?.path).map((column) => column.path);
+  assert.deepEqual(fieldPaths, ["氏名"]);
+});
+
 test("modifiedAtはJST表示を検索対象にし、raw unix文字列は部分一致検索対象にしない", () => {
   const form = { settings: {} };
   const { columns } = buildSearchTableLayout(form, { includeOperations: false });
