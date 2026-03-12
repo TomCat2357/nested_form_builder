@@ -33,6 +33,7 @@ const isDateLikeColumn = (column) => {
   const type = columnType(column);
   return type === "date" || type === "time" || column?.key === "modifiedAt" || column?.key === "createdAt";
 };
+const isExcludedMessageField = (field) => field?.type === "message" && field?.excludeFromSearchAndPrint === true;
 const toNumericValue = (value) => {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -704,6 +705,7 @@ const collectAllFieldSettings = (schema) => {
   const collected = [];
   const seen = new Set();
   traverseSchema(schema || [], (field, context) => {
+    if (isExcludedMessageField(field)) return;
     const path = context?.pathSegments?.join("|") || "";
     if (!path || seen.has(path)) return;
     seen.add(path);

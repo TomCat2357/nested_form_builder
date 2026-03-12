@@ -135,6 +135,21 @@ test("検索列は除外指定したメッセージをdisplayFieldSettingsに残
   assert.deepEqual(fieldPaths, ["氏名"]);
 });
 
+test("検索結果エクスポートの多段ヘッダーは除外指定したメッセージを含めない", () => {
+  const form = {
+    settings: {},
+    schema: [
+      { type: "message", label: "案内", isDisplayed: true, excludeFromSearchAndPrint: true },
+      { type: "text", label: "氏名", isDisplayed: true },
+    ],
+  };
+
+  const exportTable = buildExportTableData({ form, entries: [] });
+  const flattenedHeaders = exportTable.headerRows.flat().filter(Boolean);
+  assert.equal(flattenedHeaders.includes("案内"), false);
+  assert.equal(flattenedHeaders.includes("氏名"), true);
+});
+
 test("modifiedAtはJST表示を検索対象にし、raw unix文字列は部分一致検索対象にしない", () => {
   const form = { settings: {} };
   const { columns } = buildSearchTableLayout(form, { includeOperations: false });
