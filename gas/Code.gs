@@ -756,6 +756,24 @@ function SyncRecords_(ctx) {
           rec["No."] = rowData[1];
           uploadedRecordIds[String(recId)] = true;
           modifiedCount++;
+        } else if (localIndex !== -1 && recModifiedAt === sheetModifiedAt) {
+          var equalRowData = existingData[localIndex];
+          var equalRowFormats = existingFormats[localIndex];
+          var didFillEmptyCells = Sync_fillEmptySheetCellsFromRecord_({
+            rowData: equalRowData,
+            rowFormats: equalRowFormats,
+            order: order,
+            keyToColumn: keyToColumn,
+            normalizedRecordData: normalizedRecordData,
+            temporalTypeMap: temporalTypeMap,
+            normalizeCell: Sheets_resolveTemporalCell_,
+          });
+
+          if (didFillEmptyCells) {
+            rec["No."] = equalRowData[1];
+            uploadedRecordIds[String(recId)] = true;
+            modifiedCount++;
+          }
         }
       }
 

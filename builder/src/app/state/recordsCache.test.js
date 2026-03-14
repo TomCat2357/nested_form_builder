@@ -16,7 +16,7 @@ const incomingRecord = (id, modifiedAtUnixMs) => ({
   modifiedAtUnixMs,
 });
 
-test("共通IDはmodifiedAtが新しい側のみ更新対象になる（同値はスプレッドシート優先）", () => {
+test("共通IDはmodifiedAtが新しい側のみ更新対象になる（同値も更新対象に含む）", () => {
   const plan = planRecordMerge({
     existingRecords: [cacheRecord("a", 46000), cacheRecord("b", 46005)],
     incomingRecords: [incomingRecord("a", 46001), incomingRecord("b", 46005)],

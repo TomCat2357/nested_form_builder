@@ -340,12 +340,21 @@ export default function FormPage() {
     setMode("view");
   }, [applyEntryToState, commitResponses, entryId, entryRef, formId]);
 
+  const clearNewEntryDraft = useCallback(() => {
+    if (entryId) return;
+    newEntryInitKeyRef.current = null;
+    try {
+      sessionStorage.removeItem(draftKey);
+    } catch (e) {}
+  }, [draftKey, entryId]);
+
   const navigateToEntryById = useCallback((targetEntryId) => {
+    clearNewEntryDraft();
     navigate(`/form/${formId}/entry/${targetEntryId}`, {
       state: { from: location.state?.from, entryIds },
       replace: true,
     });
-  }, [navigate, formId, location.state?.from, entryIds]);
+  }, [clearNewEntryDraft, navigate, formId, location.state?.from, entryIds]);
 
   useEffect(() => {
     let mounted = true;
@@ -588,6 +597,7 @@ export default function FormPage() {
   useBeforeUnloadGuard(isDirty);
 
   const navigateBack = ({ saved = false, deleted = false } = {}) => {
+    clearNewEntryDraft();
     const state = (saved || deleted) ? { saved, deleted } : undefined;
     if (location.state?.from) {
       navigate(location.state.from, { replace: true, state });
@@ -1037,7 +1047,7 @@ export default function FormPage() {
               <span className="nf-text-11 nf-text-muted">{currentIndex + 1} / {entryIds.length}</span>
             </>
           )}
-          <SchemaMapNav schema={normalizedSchema} />
+          <SchemaMapNav schema={normalizedSchema} responses={responses} scope="visible" />
         </>
       }
     >

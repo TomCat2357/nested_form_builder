@@ -381,7 +381,7 @@ export default function AdminFormEditorPage() {
           >
             📊 スプレッドシートを開く
           </button>
-          <SchemaMapNav schema={builderRef.current?.getSchema?.() || initialSchema} />
+          <SchemaMapNav schema={builderRef.current?.getSchema?.() || initialSchema} scope="all" />
         </>
       }
     >
