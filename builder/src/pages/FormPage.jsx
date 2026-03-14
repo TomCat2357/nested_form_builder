@@ -1077,7 +1077,18 @@ export default function FormPage() {
           schema={normalizedSchema}
           responses={responses}
           setResponses={handleResponsesChange}
-          settings={{ ...(form.settings || {}), recordId: currentRecordId, recordNo: recordNoInput, userName, userEmail, userAffiliation, userTitle, userPhone }}
+          settings={{
+            ...(form.settings || {}),
+            recordId: currentRecordId,
+            recordNo: recordNoInput,
+            modifiedAt: entry?.modifiedAt,
+            modifiedAtUnixMs: entry?.modifiedAtUnixMs,
+            userName,
+            userEmail,
+            userAffiliation,
+            userTitle,
+            userPhone,
+          }}
           onRecordNoChange={setRecordNoInput}
           onSave={handleSaveToStore}
           showOutputJson={false}

@@ -13,6 +13,7 @@ import { getStandardPhonePlaceholder } from "../../core/phone.js";
 import {
   buildPrintDocumentPayload,
   CHOICE_TYPES,
+  formatRecordMetaDateTime,
   hasVisibleValue,
   isTextareaField,
   toSelectedChoiceLabels,
@@ -405,6 +406,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const output = sortedData.map;
   const sortedKeys = sortedData.keys;
   const formTitle = settings.formTitle || "受付フォーム";
+  const modifiedAtDisplay = formatRecordMetaDateTime(settings.modifiedAtUnixMs ?? settings.modifiedAt);
 
   const [isSaving, setIsSaving] = useState(false);
   const getPrintDocumentPayload = (options = {}) => buildPrintDocumentPayload({
@@ -522,6 +524,10 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       <div className="nf-mb-12">
         <label className="preview-label">回答ID</label>
         <input type="text" value={recordIdRef.current} readOnly className="nf-input nf-input--readonly" />
+      </div>
+      <div className="nf-mb-12">
+        <label className="preview-label">最終更新日時</label>
+        <input type="text" value={modifiedAtDisplay || "-"} readOnly className="nf-input nf-input--readonly" />
       </div>
       <RendererRecursive fields={schema} responses={responses} onChange={setResponses} readOnly={readOnly} />
       {showOutputJson && (

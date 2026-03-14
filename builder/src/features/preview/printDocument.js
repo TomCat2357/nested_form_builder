@@ -1,3 +1,5 @@
+import { formatUnixMsDateTimeSec, toUnixMs } from "../../utils/dateTime.js";
+
 export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select"]);
 
 export const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
@@ -124,6 +126,19 @@ export const resolveShowPrintHeader = (settings = {}, overrideValue = undefined)
   return settings?.showPrintHeader !== false;
 };
 
+export const formatRecordMetaDateTime = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string" && value.trim() === "") return "";
+
+  const unixMs = toUnixMs(value);
+  if (Number.isFinite(unixMs) && unixMs > 0) {
+    return formatUnixMsDateTimeSec(unixMs);
+  }
+
+  if (typeof value === "string") return value.trim();
+  return "";
+};
+
 const isExcludedMessageField = (field) => field?.type === "message" && field?.excludeFromSearchAndPrint === true;
 
 const resolveFieldId = (field, depth, index) => field?.id || `tmp_${depth}_${index}_${field?.label || ""}`;
@@ -181,6 +196,7 @@ export const buildPrintDocumentPayload = ({ schema, responses, settings = {}, re
   const formTitle = typeof settings.formTitle === "string" && settings.formTitle.trim() ? settings.formTitle.trim() : "受付フォーム";
   const resolvedRecordId = String(recordId || settings.recordId || "").trim() || "record";
   const recordNo = settings.recordNo === undefined || settings.recordNo === null ? "" : String(settings.recordNo).trim();
+  const modifiedAt = formatRecordMetaDateTime(settings.modifiedAtUnixMs ?? settings.modifiedAt);
   const recordRef = recordNo || resolvedRecordId;
   const shouldOmitEmptyRows = resolveOmitEmptyRowsOnPrint(settings, omitEmptyRows);
   const shouldShowHeader = resolveShowPrintHeader(settings, showHeader);
@@ -190,6 +206,7 @@ export const buildPrintDocumentPayload = ({ schema, responses, settings = {}, re
     formTitle,
     recordId: resolvedRecordId,
     recordNo,
+    modifiedAt,
     showHeader: shouldShowHeader,
     exportedAtIso: safeExportedAt.toISOString(),
     items: appendPrintItems(schema, responses, 0, [], { omitEmptyRows: shouldOmitEmptyRows }),

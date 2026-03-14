@@ -294,6 +294,8 @@ export default function SearchPage() {
           settings: {
             ...(form?.settings || {}),
             recordNo: entry?.["No."],
+            modifiedAt: entry?.modifiedAt,
+            modifiedAtUnixMs: entry?.modifiedAtUnixMs,
           },
           recordId: entry?.id,
           exportedAt,

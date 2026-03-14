@@ -1,0 +1,11 @@
+{
+  "name": "nested-form-builder-beginner-manual",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "build": "node generate_manual.js"
+  },
+  "dependencies": {
+    "pptxgenjs": "^3.12.0"
+  }
+}

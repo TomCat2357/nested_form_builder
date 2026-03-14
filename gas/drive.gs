@@ -68,7 +68,7 @@ function nfbSaveExcelToDrive(payload) {
 
 /**
  * 個別レコードの印刷様式を Google ドキュメントとしてマイドライブ直下に保存する
- * @param {Object} payload - { fileName, formTitle, recordId, recordNo, showHeader, exportedAtIso, items }
+ * @param {Object} payload - { fileName, formTitle, recordId, recordNo, modifiedAt, showHeader, exportedAtIso, items }
  * @return {Object} { ok: true, fileUrl: string, fileName: string, fileId: string }
  */
 function nfbCreateRecordPrintDocument(payload) {
@@ -135,6 +135,7 @@ function nfbNormalizePrintDocumentRecord_(payload, index) {
     formTitle: String(payload.formTitle || "").trim() || "受付フォーム",
     recordId: String(payload.recordId || "").trim() || ("record-" + (index + 1)),
     recordNo: payload.recordNo === undefined || payload.recordNo === null ? "" : String(payload.recordNo).trim(),
+    modifiedAt: payload.modifiedAt === undefined || payload.modifiedAt === null ? "" : String(payload.modifiedAt).trim(),
     showHeader: payload.showHeader !== false,
     exportedAtIso: payload.exportedAtIso,
     items: payload.items
@@ -155,6 +156,7 @@ function nfbWritePrintDocument_(body, payload) {
 
     nfbAppendPrintDocumentMetaTable_(body, {
       exportedAtIso: payload.exportedAtIso,
+      modifiedAt: payload.modifiedAt,
       recordNo: payload.recordNo,
       recordId: payload.recordId
     });
@@ -178,6 +180,7 @@ function nfbWritePrintDocument_(body, payload) {
 function nfbAppendPrintDocumentMetaTable_(body, payload) {
   var rows = [
     ["出力日時", nfbFormatPrintDocumentExportedAt_(payload.exportedAtIso)],
+    ["最終更新日時", payload.modifiedAt ? payload.modifiedAt : "-"],
     ["レコードNo", payload.recordNo ? payload.recordNo : "-"],
     ["回答ID", payload.recordId ? payload.recordId : "-"]
   ];
