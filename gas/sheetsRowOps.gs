@@ -127,12 +127,18 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
       }
     }
     ctx.id = ctx.id || Sheets_generateRecordId_();
+    var insertMeta = Sync_resolveNewRecordMetadata_({
+      record: ctx && ctx.raw ? ctx.raw : {},
+      fallbackRecordNo: maxNo + 1,
+      fallbackCreatedAt: currentTs,
+      fallbackCreatedBy: email,
+    });
 
     rowData[0] = ctx.id;
-    rowData[1] = maxNo + 1;
-    rowData[2] = currentTs; // createdAt
+    rowData[1] = insertMeta.recordNo;
+    rowData[2] = insertMeta.createdAt;
     rowData[3] = currentTs; // modifiedAt
-    rowData[5] = email;     // createdBy
+    rowData[5] = insertMeta.createdBy;
     rowData[6] = email;     // modifiedBy
   } else {
     var existingValues = sheet.getRange(rowIndex, 1, 1, lastColumn).getValues()[0];

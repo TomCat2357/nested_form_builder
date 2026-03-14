@@ -652,7 +652,14 @@ export default function FormPage() {
         .then(() => submitResponses({
           spreadsheetId,
           sheetName,
-          payload: { ...payloadWithFormId, id: saved.id },
+          payload: {
+            ...payloadWithFormId,
+            id: saved.id,
+            createdAt: saved.createdAt,
+            createdAtUnixMs: saved.createdAtUnixMs,
+            createdBy: saved.createdBy,
+            "No.": saved["No."],
+          },
         }))
         .then(async (gasResult) => {
           if (gasResult?.recordNo === undefined || gasResult?.recordNo === null || gasResult?.recordNo === "") return;

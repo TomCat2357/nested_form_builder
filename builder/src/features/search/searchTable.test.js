@@ -201,6 +201,20 @@ test("検索列設定でid列とcreatedAt列を非表示にできる", () => {
   assert.equal(keys.includes("modifiedAt"), true);
 });
 
+test("検索列設定でmodifiedAt列を非表示にできる", () => {
+  const form = {
+    settings: {
+      showSearchModifiedAt: false,
+    },
+  };
+  const { columns } = buildSearchTableLayout(form, { includeOperations: false });
+  const keys = columns.map((column) => column.key);
+
+  assert.equal(keys.includes("modifiedAt"), false);
+  assert.equal(keys.includes("createdAt"), true);
+  assert.equal(keys.includes("id"), true);
+});
+
 test("id列が非表示でも通常検索でレコードIDにマッチする", () => {
   const form = {
     settings: {

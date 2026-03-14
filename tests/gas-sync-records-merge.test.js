@@ -1,6 +1,10 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
-const { Sync_fillEmptySheetCellsFromRecord_, Sync_isBlankCellValue_ } = require("../gas/syncRecordsMerge.js");
+const {
+  Sync_fillEmptySheetCellsFromRecord_,
+  Sync_isBlankCellValue_,
+  Sync_resolveNewRecordMetadata_,
+} = require("../gas/syncRecordsMerge.js");
 
 test("Sync_isBlankCellValue_ は空文字/null/undefined のみ空扱いにする", () => {
   assert.equal(Sync_isBlankCellValue_(""), true);
@@ -45,4 +49,57 @@ test("Sync_fillEmptySheetCellsFromRecord_ はキャッシュ側が空なら補�
 
   assert.equal(changed, false);
   assert.equal(rowData[8], "");
+});
+
+test("Sync_resolveNewRecordMetadata_ はキャッシュの No. / createdAt / createdBy を優先する", () => {
+  const metadata = Sync_resolveNewRecordMetadata_({
+    record: {
+      "No.": "12",
+      createdAtUnixMs: 1700000000123,
+      createdBy: "creator@example.com",
+    },
+    fallbackRecordNo: 3,
+    fallbackCreatedAt: 1700000000999,
+    fallbackCreatedBy: "fallback@example.com",
+  });
+
+  assert.deepEqual(metadata, {
+    recordNo: 12,
+    createdAt: 1700000000123,
+    createdBy: "creator@example.com",
+  });
+});
+
+test("Sync_resolveNewRecordMetadata_ は未指定時にフォールバック値を使う", () => {
+  const metadata = Sync_resolveNewRecordMetadata_({
+    record: {},
+    fallbackRecordNo: 4,
+    fallbackCreatedAt: 1700000000456,
+    fallbackCreatedBy: "fallback@example.com",
+    toUnixMs: () => null,
+  });
+
+  assert.deepEqual(metadata, {
+    recordNo: 4,
+    createdAt: 1700000000456,
+    createdBy: "fallback@example.com",
+  });
+});
+
+test("Sync_resolveNewRecordMetadata_ は createdBy が空文字でもそのまま保持する", () => {
+  const metadata = Sync_resolveNewRecordMetadata_({
+    record: {
+      createdBy: "",
+    },
+    fallbackRecordNo: 7,
+    fallbackCreatedAt: 1700000000555,
+    fallbackCreatedBy: "fallback@example.com",
+    toUnixMs: () => null,
+  });
+
+  assert.deepEqual(metadata, {
+    recordNo: 7,
+    createdAt: 1700000000555,
+    createdBy: "",
+  });
 });

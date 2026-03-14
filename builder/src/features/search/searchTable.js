@@ -420,11 +420,13 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
   const showRecordNo = form?.settings?.showRecordNo !== false;
   const showSearchId = form?.settings?.showSearchId !== false;
   const showSearchCreatedAt = form?.settings?.showSearchCreatedAt !== false;
+  const showSearchModifiedAt = form?.settings?.showSearchModifiedAt !== false;
   const baseColumns = createBaseColumns();
   const columns = baseColumns.filter((col) => {
     if (!showRecordNo && col.key === "No.") return false;
     if (!showSearchId && col.key === "id") return false;
     if (!showSearchCreatedAt && col.key === "createdAt") return false;
+    if (!showSearchModifiedAt && col.key === "modifiedAt") return false;
     return true;
   });
   resolveDisplayFieldSettings(form).forEach(({ path, type, optionOrder }) => {

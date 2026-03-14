@@ -40,9 +40,53 @@ function Sync_fillEmptySheetCellsFromRecord_(params) {
   return changed;
 }
 
+function Sync_resolveNewRecordMetadata_(params) {
+  var record = params && params.record ? params.record : {};
+  var fallbackRecordNo = Number(params && params.fallbackRecordNo);
+  var fallbackCreatedAt = Number(params && params.fallbackCreatedAt);
+  var fallbackCreatedBy = params && params.fallbackCreatedBy ? String(params.fallbackCreatedBy) : "";
+  var toUnixMs = params && typeof params.toUnixMs === "function"
+    ? params.toUnixMs
+    : function(value) {
+      if (typeof Sheets_toUnixMs_ === "function") {
+        return Sheets_toUnixMs_(value, true);
+      }
+      var parsed = parseInt(value, 10);
+      return isFinite(parsed) ? parsed : null;
+    };
+
+  var parsedRecordNo = parseInt(record["No."], 10);
+  var recordNo = isFinite(parsedRecordNo) && parsedRecordNo > 0
+    ? parsedRecordNo
+    : fallbackRecordNo;
+  if (!isFinite(recordNo) || recordNo <= 0) {
+    recordNo = 1;
+  }
+
+  var createdAt = parseInt(record.createdAtUnixMs, 10);
+  if (!(isFinite(createdAt) && createdAt > 0)) {
+    createdAt = toUnixMs(record.createdAt);
+  }
+  if (!(isFinite(createdAt) && createdAt > 0)) {
+    createdAt = isFinite(fallbackCreatedAt) && fallbackCreatedAt > 0
+      ? fallbackCreatedAt
+      : Date.now();
+  }
+
+  var hasCreatedBy = Object.prototype.hasOwnProperty.call(record, "createdBy");
+  var createdBy = hasCreatedBy ? String(record.createdBy == null ? "" : record.createdBy) : fallbackCreatedBy;
+
+  return {
+    recordNo: recordNo,
+    createdAt: createdAt,
+    createdBy: createdBy || "",
+  };
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     Sync_fillEmptySheetCellsFromRecord_,
     Sync_isBlankCellValue_,
+    Sync_resolveNewRecordMetadata_,
   };
 }

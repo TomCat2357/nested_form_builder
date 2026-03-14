@@ -4,9 +4,9 @@
  * - Stores header metadata per form
  */
 
-import { openDB, waitForRequest, waitForTransaction, STORE_NAMES } from './dbHelpers.js';
+import { openDB, waitForRequest, waitForTransaction, STORE_NAMES } from "./dbHelpers.js";
 import { MS_PER_DAY, SERIAL_EPOCH_UTC_MS, JST_OFFSET_MS } from "../../core/constants.js";
-import { toUnixMs } from "../../utils/dateTime.js";
+import { resolveUnixMs, toUnixMs } from "../../utils/dateTime.js";
 
 const buildCompoundId = (formId, entryId) => `${formId}::${entryId}`;
 const SERIAL_EPOCH_JST_MS = SERIAL_EPOCH_UTC_MS - JST_OFFSET_MS;
@@ -50,10 +50,48 @@ const withNormalizedModifiedAt = (record) => {
   return { ...record, modifiedAtUnixMs: normalizedModifiedAtUnixMs };
 };
 
+const normalizeObjectRecord = (value) => (
+  value && typeof value === "object" && !Array.isArray(value) ? value : {}
+);
+
+export const normalizeRecordForCache = (record, { formId } = {}) => {
+  const baseRecord = record && typeof record === "object" ? record : {};
+  const createdAtUnixMs = resolveUnixMs(baseRecord.createdAtUnixMs, baseRecord.createdAt);
+  const modifiedAtUnixMs = resolveUnixMs(baseRecord.modifiedAtUnixMs, baseRecord.modifiedAt);
+  const deletedAtUnixMs = resolveUnixMs(baseRecord.deletedAtUnixMs, baseRecord.deletedAt);
+  const normalizedData = normalizeObjectRecord(baseRecord.data);
+  const normalizedDataUnixMs = normalizeObjectRecord(baseRecord.dataUnixMs);
+  const normalizedOrder = Array.isArray(baseRecord.order) && baseRecord.order.length > 0
+    ? [...baseRecord.order]
+    : Object.keys(normalizedData);
+  const rawDeletedAt = baseRecord.deletedAt;
+
+  return {
+    ...baseRecord,
+    id: baseRecord.id ?? baseRecord.entryId ?? "",
+    "No.": baseRecord["No."] ?? "",
+    formId: formId ?? baseRecord.formId ?? "",
+    createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : (baseRecord.createdAt ?? ""),
+    createdAtUnixMs: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : null,
+    modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : (baseRecord.modifiedAt ?? ""),
+    modifiedAtUnixMs: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : null,
+    deletedAt: Number.isFinite(deletedAtUnixMs)
+      ? deletedAtUnixMs
+      : (rawDeletedAt === "" || rawDeletedAt === undefined ? null : (rawDeletedAt ?? null)),
+    deletedAtUnixMs: Number.isFinite(deletedAtUnixMs) ? deletedAtUnixMs : null,
+    createdBy: baseRecord.createdBy ?? "",
+    modifiedBy: baseRecord.modifiedBy ?? "",
+    deletedBy: baseRecord.deletedBy ?? "",
+    data: normalizedData,
+    dataUnixMs: normalizedDataUnixMs,
+    order: normalizedOrder,
+  };
+};
+
 const stripMetadata = (record) => {
   if (!record) return null;
   const { compoundId, lastSyncedAt, entryId, ...rest } = record;
-  return { ...rest, id: entryId };
+  return normalizeRecordForCache({ ...rest, id: entryId }, { formId: rest.formId });
 };
 
 const deleteEntriesForForm = (store, formId) =>
@@ -73,7 +111,7 @@ const deleteEntriesForForm = (store, formId) =>
   });
 
 const buildCacheRecord = (formId, record, lastSyncedAt, rowIndex) => {
-  const normalizedRecord = withNormalizedModifiedAt(record);
+  const normalizedRecord = withNormalizedModifiedAt(normalizeRecordForCache(record, { formId }));
   return {
     ...normalizedRecord,
     compoundId: buildCompoundId(formId, normalizedRecord.id),

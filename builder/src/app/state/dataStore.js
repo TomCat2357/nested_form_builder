@@ -13,6 +13,7 @@ import {
   getRecordsFromCache,
   applySyncResultToCache,
   mergeRecordsByModifiedAt,
+  normalizeRecordForCache,
 } from "./recordsCache.js";
 import { buildUploadRecordsForSync } from "./syncUploadPlan.js";
 import { getFormsFromCache } from "./formsCache.js";
@@ -36,7 +37,7 @@ import {
   syncRecordsProxy,
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
-import { toUnixMs, resolveUnixMs } from "../../utils/dateTime.js";
+import { resolveUnixMs } from "../../utils/dateTime.js";
 import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_SHEET_NAME, MS_PER_DAY } from "../../core/constants.js";
 
 const nowUnixMs = () => Date.now();
@@ -116,28 +117,64 @@ const pruneExpiredDeletedEntries = async (formId, entries, retentionDays) => {
   return safeEntries.filter((entry) => !expiredIdSet.has(entry?.id));
 };
 
-const mapSheetRecordToEntry = (record, formId) => {
-  const createdAtUnixMs = resolveUnixMs(record?.createdAtUnixMs, record?.createdAt);
-  const modifiedAtUnixMs = resolveUnixMs(record?.modifiedAtUnixMs, record?.modifiedAt);
-  const deletedAtUnixMs = resolveUnixMs(record?.deletedAtUnixMs, record?.deletedAt);
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
-  return {
-    id: record.id,
-    "No.": record["No."],
-    modifiedBy: record.modifiedBy || "",
-    createdBy: record.createdBy || "",
-    deletedBy: record.deletedBy || "",
+const mapSheetRecordToEntry = (record, formId) => normalizeRecordForCache(record, { formId });
+
+export const buildUpsertEntryRecord = ({
+  formId,
+  payload = {},
+  existingEntry = null,
+  now = Date.now(),
+  nextRecordNo = null,
+} = {}) => {
+  const safePayload = payload && typeof payload === "object" ? payload : {};
+  const existingCreatedAtUnixMs = resolveUnixMs(existingEntry?.createdAtUnixMs, existingEntry?.createdAt);
+  let createdAtUnixMs = resolveUnixMs(safePayload.createdAtUnixMs, safePayload.createdAt);
+  if (!Number.isFinite(createdAtUnixMs)) createdAtUnixMs = existingCreatedAtUnixMs;
+  if (!Number.isFinite(createdAtUnixMs)) createdAtUnixMs = now;
+
+  const hasExplicitRecordNo = !(
+    safePayload["No."] === undefined
+    || safePayload["No."] === null
+    || safePayload["No."] === ""
+  );
+  const resolvedRecordNo = hasExplicitRecordNo
+    ? safePayload["No."]
+    : (
+      existingEntry?.["No."] !== undefined
+      && existingEntry?.["No."] !== null
+      && existingEntry?.["No."] !== ""
+        ? existingEntry["No."]
+        : (nextRecordNo ?? "")
+    );
+
+  const resolvedData = hasOwn(safePayload, "data") ? safePayload.data : existingEntry?.data;
+  const resolvedDataUnixMs = hasOwn(safePayload, "dataUnixMs") ? safePayload.dataUnixMs : existingEntry?.dataUnixMs;
+  const resolvedDeletedAt = hasOwn(safePayload, "deletedAt") ? safePayload.deletedAt : existingEntry?.deletedAt;
+  const resolvedDeletedAtUnixMs = hasOwn(safePayload, "deletedAtUnixMs") ? safePayload.deletedAtUnixMs : existingEntry?.deletedAtUnixMs;
+  const resolvedDeletedBy = hasOwn(safePayload, "deletedBy") ? safePayload.deletedBy : existingEntry?.deletedBy;
+  const fallbackOrder = Object.keys((resolvedData && typeof resolvedData === "object" && !Array.isArray(resolvedData)) ? resolvedData : {});
+
+  return normalizeRecordForCache({
+    ...existingEntry,
+    ...safePayload,
+    id: safePayload.id || existingEntry?.id || genRecordId(),
     formId,
-    createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : (record.createdAt || ""),
-    modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : (record.modifiedAt || ""),
-    deletedAt: Number.isFinite(deletedAtUnixMs) ? deletedAtUnixMs : null,
+    "No.": resolvedRecordNo,
+    createdAt: createdAtUnixMs,
     createdAtUnixMs,
-    modifiedAtUnixMs,
-    deletedAtUnixMs,
-    data: record.data || {},
-    dataUnixMs: record.dataUnixMs || {},
-    order: Object.keys(record.data || {}),
-  };
+    createdBy: hasOwn(safePayload, "createdBy") ? safePayload.createdBy : (existingEntry?.createdBy ?? ""),
+    modifiedAt: now,
+    modifiedAtUnixMs: now,
+    modifiedBy: hasOwn(safePayload, "modifiedBy") ? safePayload.modifiedBy : (existingEntry?.modifiedBy ?? ""),
+    deletedAt: resolvedDeletedAt,
+    deletedAtUnixMs: resolvedDeletedAtUnixMs,
+    deletedBy: resolvedDeletedBy ?? "",
+    data: resolvedData,
+    dataUnixMs: resolvedDataUnixMs,
+    order: hasOwn(safePayload, "order") ? safePayload.order : (existingEntry?.order ?? fallbackOrder),
+  }, { formId });
 };
 
 export const dataStore = {
@@ -259,32 +296,39 @@ export const dataStore = {
     await this.deleteForms([formId]);
   },
   async upsertEntry(formId, payload) {
+    const safePayload = payload && typeof payload === "object" ? payload : {};
     const now = Date.now();
-    let createdAtUnix = toUnixMs(payload.createdAtUnixMs);
-    if (!Number.isFinite(createdAtUnix)) createdAtUnix = toUnixMs(payload.createdAt);
-    const resolvedCreatedAt = Number.isFinite(createdAtUnix) ? createdAtUnix : now;
+    const cached = safePayload.id ? await getCachedEntryWithIndex(formId, safePayload.id) : { entry: null, rowIndex: null };
+    const existingEntry = cached.entry;
 
-    let no = payload['No.'];
-    if (no === undefined || no === null || no === "") {
+    let nextRecordNo = null;
+    const payloadRecordNo = safePayload["No."];
+    const existingRecordNo = existingEntry?.["No."];
+    const needsNewRecordNo = (
+      payloadRecordNo === undefined
+      || payloadRecordNo === null
+      || payloadRecordNo === ""
+    ) && (
+      existingRecordNo === undefined
+      || existingRecordNo === null
+      || existingRecordNo === ""
+    );
+    if (needsNewRecordNo) {
       const maxNo = await getMaxRecordNo(formId);
-      no = maxNo + 1;
+      nextRecordNo = maxNo + 1;
     }
 
-    const record = {
-      'No.': no,
-      id: payload.id || genRecordId(),
+    const record = buildUpsertEntryRecord({
       formId,
-      createdBy: payload.createdBy || "",
-      modifiedBy: payload.modifiedBy || "",
-      createdAt: resolvedCreatedAt,
-      createdAtUnixMs: resolvedCreatedAt,
-      modifiedAt: now,
-      modifiedAtUnixMs: now,
-      data: payload.data || {},
-      dataUnixMs: payload.dataUnixMs || {},
-      order: payload.order || Object.keys(payload.data || {}),
-    };
-    await upsertRecordInCache(formId, record, { headerMatrix: payload.headerMatrix, rowIndex: payload.rowIndex });
+      payload: safePayload,
+      existingEntry,
+      now,
+      nextRecordNo,
+    });
+    await upsertRecordInCache(formId, record, {
+      headerMatrix: safePayload.headerMatrix,
+      rowIndex: safePayload.rowIndex ?? cached.rowIndex,
+    });
     return record;
   },
   async listEntries(formId, { forceFullSync = false } = {}) {
@@ -539,6 +583,7 @@ export const dataStore = {
       deletedBy: deletedBy || entry.deletedBy || "",
       modifiedAtUnixMs: now,
       modifiedAt: now,
+      modifiedBy: deletedBy || entry.modifiedBy || "",
     };
     await upsertRecordInCache(formId, deleted, { rowIndex });
   },

@@ -83,6 +83,14 @@ export const SETTINGS_GROUPS = [
         description: "OFFにすると、検索画面の作成日時列が非表示になります",
       },
       {
+        key: "showSearchModifiedAt",
+        label: "検索結果一覧で最終更新日時を表示する",
+        type: "checkbox",
+        required: false,
+        defaultValue: true,
+        description: "OFFにすると、検索画面の最終更新日時列が非表示になります",
+      },
+      {
         key: "showOwnRecordsOnly",
         label: "自分の回答のみ表示",
         type: "checkbox",

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MS_PER_DAY, SERIAL_EPOCH_UTC_MS, JST_OFFSET_MS } from "../../core/constants.js";
-import { planRecordMerge } from "./recordsCache.js";
+import { normalizeRecordForCache, planRecordMerge } from "./recordsCache.js";
 
 const serialToUnixMs = (serial) => (SERIAL_EPOCH_UTC_MS - JST_OFFSET_MS) + serial * MS_PER_DAY;
 
@@ -73,4 +73,27 @@ test("更新/追加レコードは反映し、差分にないキャッシュレ�
 
   assert.deepEqual(plan.commonUpdateIds, ["shared"]);
   assert.deepEqual(plan.incomingOnlyAddIds, ["new"]);
+});
+
+test("normalizeRecordForCache は固定列を補完して保持する", () => {
+  const record = normalizeRecordForCache({
+    id: "rec_1",
+    data: { field_a: "value" },
+  }, { formId: "form_1" });
+
+  assert.equal(record.id, "rec_1");
+  assert.equal(record.formId, "form_1");
+  assert.equal(record["No."], "");
+  assert.equal(record.createdAt, "");
+  assert.equal(record.createdAtUnixMs, null);
+  assert.equal(record.modifiedAt, "");
+  assert.equal(record.modifiedAtUnixMs, null);
+  assert.equal(record.deletedAt, null);
+  assert.equal(record.deletedAtUnixMs, null);
+  assert.equal(record.createdBy, "");
+  assert.equal(record.modifiedBy, "");
+  assert.equal(record.deletedBy, "");
+  assert.deepEqual(record.data, { field_a: "value" });
+  assert.deepEqual(record.dataUnixMs, {});
+  assert.deepEqual(record.order, ["field_a"]);
 });

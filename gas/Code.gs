@@ -702,13 +702,19 @@ function SyncRecords_(ctx) {
           var rowFormats;
 
           if (localIndex === -1) {
+            var insertMeta = Sync_resolveNewRecordMetadata_({
+              record: rec,
+              fallbackRecordNo: maxNo + 1,
+              fallbackCreatedAt: nowMs,
+              fallbackCreatedBy: currentUserEmail,
+            });
             rowData = new Array(lastColumn).fill("");
             rowFormats = new Array(lastColumn).fill("General");
             rowData[0] = recId;
-            maxNo++;
-            rowData[1] = maxNo;
-            rowData[2] = nowMs; // createdAt
-            rowData[5] = rec.createdBy || currentUserEmail;
+            rowData[1] = insertMeta.recordNo;
+            rowData[2] = insertMeta.createdAt;
+            rowData[5] = insertMeta.createdBy;
+            maxNo = Math.max(maxNo, insertMeta.recordNo);
 
             localIndex = existingData.length;
             existingData.push(rowData);
