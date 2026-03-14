@@ -541,11 +541,11 @@ function createSlides() {
   addInfoCard(
     slide,
     "最初に入力する内容",
-    "フォーム名と説明を入れ、必要ならGoogle Drive保存先や回答保存先スプレッドシートを設定します。保存先URLが空でも自動作成される項目があります。",
+    "フォーム名と説明を入れ、必要ならGoogle Drive保存先や回答保存先スプレッドシートを設定します。仲間で共有するなら共有フォルダURLと共有スプレッドシートURLを入れます。",
     0.82,
-    6.08,
+    6.02,
     11.5,
-    0.7,
+    0.78,
     { fillColor: COLORS.surface }
   );
   addFooterLabel(slide, "作成の入口は「フォーム管理」→「新規作成」");
@@ -553,6 +553,79 @@ function createSlides() {
 
   slide = pptx.addSlide();
   addBackground(slide, 5);
+  addHeader(
+    slide,
+    "共有",
+    "仲間のフォームはインポートして使います",
+    "フォーム一覧は利用者ごとに分かれるため、共有されたGoogle DriveのURLを各自の一覧へ取り込みます。"
+  );
+  addScreenshot(
+    slide,
+    image("manual_04_form_management_page.png"),
+    0.82,
+    2.12,
+    7.12,
+    1.9,
+    "フォーム管理からインポート"
+  );
+  addScreenshot(
+    slide,
+    image("manual_05_import_dialog.png"),
+    8.18,
+    2.12,
+    4.1,
+    2.28,
+    "Google Drive URLを入力"
+  );
+  addInfoCard(
+    slide,
+    "1. 渡す側",
+    "フォーム定義JSONのファイルURLかフォルダURLを仲間へ渡し、回答保存先のスプレッドシートも共有します。",
+    0.82,
+    4.5,
+    3.7,
+    1.58,
+    { fillColor: COLORS.surface }
+  );
+  addInfoCard(
+    slide,
+    "2. 受け取る側",
+    "「フォーム管理」→「インポート」を押し、共有されたファイルURLまたはフォルダURLを貼って取り込みます。",
+    4.72,
+    4.5,
+    3.7,
+    1.58,
+    { fillColor: COLORS.surface }
+  );
+  addInfoCard(
+    slide,
+    "3. 取り込み後",
+    "フォーム編集で「Spreadsheet ID / URL」と「Sheet Name」を確認します。空欄なら共有スプレッドシートURLを入れて保存します。",
+    8.62,
+    4.5,
+    3.66,
+    1.58,
+    { fillColor: COLORS.panel }
+  );
+  addChip(slide, "ファイルURL: 1フォーム", 0.82, 6.34, {
+    w: 2.18,
+    fillColor: COLORS.primarySoft,
+    textColor: COLORS.primary,
+  });
+  addChip(slide, "フォルダURL: 一括取込", 3.18, 6.34, { w: 2.18 });
+  addChip(slide, "同じフォームIDは自動スキップ", 5.54, 6.34, {
+    w: 2.64,
+    fillColor: COLORS.primarySoft,
+    textColor: COLORS.primary,
+  });
+  addChip(slide, "スプレッドシート権限も必要", 8.44, 6.34, {
+    w: 2.84,
+  });
+  addFooterLabel(slide, "インポートにはGoogle DriveのファイルURLかフォルダURLを使います");
+  finalizeSlide(slide);
+
+  slide = pptx.addSlide();
+  addBackground(slide, 6);
   addHeader(
     slide,
     "作成",
@@ -594,7 +667,7 @@ function createSlides() {
   finalizeSlide(slide);
 
   slide = pptx.addSlide();
-  addBackground(slide, 6);
+  addBackground(slide, 7);
   addHeader(
     slide,
     "分岐",
@@ -641,7 +714,7 @@ function createSlides() {
   finalizeSlide(slide);
 
   slide = pptx.addSlide();
-  addBackground(slide, 7);
+  addBackground(slide, 8);
   addHeader(
     slide,
     "確認",
@@ -683,7 +756,7 @@ function createSlides() {
   finalizeSlide(slide);
 
   slide = pptx.addSlide();
-  addBackground(slide, 8);
+  addBackground(slide, 9);
   addHeader(
     slide,
     "入力",
@@ -726,7 +799,7 @@ function createSlides() {
   finalizeSlide(slide);
 
   slide = pptx.addSlide();
-  addBackground(slide, 9);
+  addBackground(slide, 10);
   addHeader(
     slide,
     "検索",
@@ -774,7 +847,7 @@ function createSlides() {
   finalizeSlide(slide);
 
   slide = pptx.addSlide();
-  addBackground(slide, 10);
+  addBackground(slide, 11);
   addHeader(
     slide,
     "まとめ",
@@ -783,8 +856,8 @@ function createSlides() {
   );
   addInfoCard(
     slide,
-    "5ステップで始める",
-    "1. フォーム管理で新規作成\n2. フォーム名を入れる\n3. 質問カードを追加する\n4. プレビューで見え方を確認する\n5. 保存して、新規入力と検索を試す",
+    "作成も共有取込も、この5ステップ",
+    "1. フォーム管理を開く\n2. 新規作成またはインポート\n3. 保存先と質問内容を確認する\n4. プレビューで見え方を確認する\n5. 保存して、新規入力と検索を試す",
     0.82,
     2.18,
     5.45,
@@ -794,7 +867,7 @@ function createSlides() {
   addInfoCard(
     slide,
     "最初に覚えるボタン",
-    "新規作成 / 保存 / プレビュー / 新規入力 / 更新 / 検索結果を出力",
+    "新規作成 / インポート / 保存 / プレビュー / 新規入力 / 更新 / 検索結果を出力",
     0.82,
     4.62,
     5.45,
@@ -811,11 +884,11 @@ function createSlides() {
     0.68,
     { fillColor: COLORS.surface }
   );
-  addFlowStep(slide, 1, "新規作成", 6.72, 2.34, 1.78);
-  addFlowStep(slide, 2, "質問追加", 8.62, 2.34, 1.78);
-  addFlowStep(slide, 3, "プレビュー", 10.52, 2.34, 1.88);
-  addFlowStep(slide, 4, "保存", 7.58, 3.26, 1.5);
-  addFlowStep(slide, 5, "入力と検索", 9.22, 3.26, 2.15);
+  addFlowStep(slide, 1, "フォーム管理", 6.72, 2.34, 1.98);
+  addFlowStep(slide, 2, "作成/取込", 8.84, 2.34, 1.7);
+  addFlowStep(slide, 3, "確認", 10.68, 2.34, 1.32);
+  addFlowStep(slide, 4, "保存", 7.72, 3.26, 1.42);
+  addFlowStep(slide, 5, "入力と検索", 9.28, 3.26, 2.08);
   addScreenshot(
     slide,
     image("manual_04_form_management_page.png"),
@@ -825,7 +898,7 @@ function createSlides() {
     2.16,
     "フォーム管理のイメージ"
   );
-  addFooterLabel(slide, "まずは1本作って、1件入力し、1回検索するところまで進めれば十分です");
+  addFooterLabel(slide, "作成でも取込でも、1件入力と1回検索まで試せば流れがつかめます");
   finalizeSlide(slide);
 }
 

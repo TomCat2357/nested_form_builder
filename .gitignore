@@ -8,6 +8,7 @@
 node_modules/
 .codegraph/
 Index.html
+*.pptx
 *.diff
 digest_*.txt
 #.rej
