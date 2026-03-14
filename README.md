@@ -37,7 +37,7 @@ nested_form_builder/
 
 - `builder/vite.config.mjs` はビルド出力先を `../dist` に向けています。
 - `vite-plugin-singlefile` により、フロントエンドは Apps Script 配信向けの単一 HTML に寄せた出力になります。
-- `gas/scripts/bundle.js` は `gas/*.gs` を `dist/Bundle.gs` に結合します。
+- `gas/scripts/bundle.js` は `gas/` 配下のバンドル対象ソースを `dist/Bundle.gs` に結合します。
 - `dist/` は生成物です。通常は直接編集せず、`builder/` と `gas/` を修正してください。
 
 ## React フロントエンド

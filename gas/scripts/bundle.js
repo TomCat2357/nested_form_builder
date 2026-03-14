@@ -3,7 +3,7 @@
 /**
  * GAS ファイル結合スクリプト
  *
- * gas/ フォルダ内の複数の .gs ファイルを1つの Bundle.gs に結合します。
+ * gas/ フォルダ内の複数の GAS ソースファイルを1つの Bundle.gs に結合します。
  * 開発時は分割ファイルで作業し、デプロイ時に結合することで、
  * コードの見通しと実行効率を両立させます。
  */
@@ -35,6 +35,7 @@ const FILE_ORDER = [
   'sheetsRowOps.gs',
   'sheetsRecords.gs',
   'sheetsExport.gs',
+  'syncRecordsMerge.js',
   'Code.gs',        // メインエントリーポイント
 ];
 
