@@ -686,7 +686,8 @@ function SyncRecords_(ctx) {
         var rec = uploadRecords[j];
         var normalizedRecordData = Sheets_normalizeRecordDataKeys_(rec && rec.data);
         var recId = rec.id || Sheets_generateRecordId_();
-        var recModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || Sheets_toUnixMs_(rec.modifiedAt, true) || nowMs;
+        var cacheModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || Sheets_toUnixMs_(rec.modifiedAt, true) || 0;
+        var recModifiedAt = cacheModifiedAt || nowMs;
 
         var localIndex = existingRowMap.hasOwnProperty(recId) ? existingRowMap[recId] : -1;
         var sheetModifiedAt = 0;
@@ -696,7 +697,8 @@ function SyncRecords_(ctx) {
           sheetModifiedAt = Sheets_toUnixMs_(modAtVal, true) || 0;
         }
 
-        var shouldApplyRecord = (localIndex === -1) || (recModifiedAt > sheetModifiedAt);
+        var shouldApplyRecord = (localIndex === -1)
+          || (localIndex !== -1 && (sheetModifiedAt === 0 || (cacheModifiedAt > 0 && cacheModifiedAt > sheetModifiedAt)));
         if (shouldApplyRecord) {
           var rowData;
           var rowFormats;
@@ -729,20 +731,31 @@ function SyncRecords_(ctx) {
                 if (cIdx >= 0 && cIdx < lastColumn) rowData[cIdx] = "";
               }
             }
+            Sync_syncFixedMetaColumnsFromRecord_({
+              rowData: rowData,
+              rowFormats: rowFormats,
+              record: rec,
+              mode: "overwrite",
+              toUnixMs: function(value) {
+                return Sheets_toUnixMs_(value, true);
+              },
+            });
           }
 
-          rowData[3] = recModifiedAt;
-          rowData[6] = currentUserEmail;
-          rowFormats[2] = "0";
-          rowFormats[3] = "0";
+          if (localIndex === -1) {
+            rowData[3] = recModifiedAt;
+            rowData[6] = currentUserEmail;
+            rowFormats[2] = "0";
+            rowFormats[3] = "0";
 
-          if (rec.deletedAt) {
-            rowData[4] = Sheets_toUnixMs_(rec.deletedAt, true) || rec.deletedAt;
-            rowData[7] = rec.deletedBy || currentUserEmail;
-            rowFormats[4] = "0";
-          } else {
-            rowData[4] = "";
-            rowData[7] = "";
+            if (rec.deletedAt) {
+              rowData[4] = Sheets_toUnixMs_(rec.deletedAt, true) || rec.deletedAt;
+              rowData[7] = rec.deletedBy || currentUserEmail;
+              rowFormats[4] = "0";
+            } else {
+              rowData[4] = "";
+              rowData[7] = "";
+            }
           }
 
           for (var k = 0; k < order.length; k++) {
@@ -762,7 +775,7 @@ function SyncRecords_(ctx) {
           rec["No."] = rowData[1];
           uploadedRecordIds[String(recId)] = true;
           modifiedCount++;
-        } else if (localIndex !== -1 && recModifiedAt === sheetModifiedAt) {
+        } else if (localIndex !== -1 && cacheModifiedAt > 0 && cacheModifiedAt === sheetModifiedAt) {
           var equalRowData = existingData[localIndex];
           var equalRowFormats = existingFormats[localIndex];
           var didFillEmptyCells = Sync_fillEmptySheetCellsFromRecord_({
@@ -774,8 +787,17 @@ function SyncRecords_(ctx) {
             temporalTypeMap: temporalTypeMap,
             normalizeCell: Sheets_resolveTemporalCell_,
           });
+          var didFillFixedMeta = Sync_syncFixedMetaColumnsFromRecord_({
+            rowData: equalRowData,
+            rowFormats: equalRowFormats,
+            record: rec,
+            mode: "fillBlank",
+            toUnixMs: function(value) {
+              return Sheets_toUnixMs_(value, true);
+            },
+          });
 
-          if (didFillEmptyCells) {
+          if (didFillEmptyCells || didFillFixedMeta) {
             rec["No."] = equalRowData[1];
             uploadedRecordIds[String(recId)] = true;
             modifiedCount++;

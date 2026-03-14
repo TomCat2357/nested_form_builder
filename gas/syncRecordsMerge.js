@@ -40,6 +40,87 @@ function Sync_fillEmptySheetCellsFromRecord_(params) {
   return changed;
 }
 
+function Sync_getFixedMetaColumnValue_(record, key, toUnixMs) {
+  if (key === "No.") {
+    var parsedRecordNo = parseInt(record["No."], 10);
+    return isFinite(parsedRecordNo) && parsedRecordNo > 0 ? parsedRecordNo : "";
+  }
+
+  if (key === "createdAt" || key === "modifiedAt" || key === "deletedAt") {
+    var unixMsFieldName = key + "UnixMs";
+    var unixMs = parseInt(record[unixMsFieldName], 10);
+    if (!(isFinite(unixMs) && unixMs > 0)) {
+      unixMs = toUnixMs(record[key]);
+    }
+    return isFinite(unixMs) && unixMs > 0 ? unixMs : "";
+  }
+
+  if (key === "createdBy" || key === "modifiedBy" || key === "deletedBy") {
+    if (!Object.prototype.hasOwnProperty.call(record, key)) return "";
+    return String(record[key] == null ? "" : record[key]);
+  }
+
+  return "";
+}
+
+function Sync_syncFixedMetaColumnsFromRecord_(params) {
+  var rowData = params && Array.isArray(params.rowData) ? params.rowData : [];
+  var rowFormats = params && Array.isArray(params.rowFormats) ? params.rowFormats : [];
+  var record = params && params.record ? params.record : {};
+  var mode = params && params.mode === "overwrite" ? "overwrite" : "fillBlank";
+  var toUnixMs = params && typeof params.toUnixMs === "function"
+    ? params.toUnixMs
+    : function(value) {
+      if (typeof Sheets_toUnixMs_ === "function") {
+        return Sheets_toUnixMs_(value, true);
+      }
+      var parsed = parseInt(value, 10);
+      return isFinite(parsed) ? parsed : null;
+    };
+  var specs = mode === "overwrite"
+    ? [
+      { key: "No.", colIdx: 1, numberFormat: "0" },
+      { key: "createdAt", colIdx: 2, numberFormat: "0" },
+      { key: "modifiedAt", colIdx: 3, numberFormat: "0" },
+      { key: "deletedAt", colIdx: 4, numberFormat: "0" },
+      { key: "createdBy", colIdx: 5, numberFormat: null },
+      { key: "modifiedBy", colIdx: 6, numberFormat: null },
+      { key: "deletedBy", colIdx: 7, numberFormat: null },
+    ]
+    : [
+      { key: "No.", colIdx: 1, numberFormat: "0" },
+      { key: "createdAt", colIdx: 2, numberFormat: "0" },
+      { key: "deletedAt", colIdx: 4, numberFormat: "0" },
+      { key: "createdBy", colIdx: 5, numberFormat: null },
+      { key: "modifiedBy", colIdx: 6, numberFormat: null },
+      { key: "deletedBy", colIdx: 7, numberFormat: null },
+    ];
+  var changed = false;
+
+  for (var i = 0; i < specs.length; i++) {
+    var spec = specs[i];
+    if (spec.colIdx < 0 || spec.colIdx >= rowData.length) continue;
+
+    var nextValue = Sync_getFixedMetaColumnValue_(record, spec.key, toUnixMs);
+    if (mode === "fillBlank") {
+      if (!Sync_isBlankCellValue_(rowData[spec.colIdx])) continue;
+      if (Sync_isBlankCellValue_(nextValue)) continue;
+    }
+
+    if (rowData[spec.colIdx] !== nextValue) {
+      rowData[spec.colIdx] = nextValue;
+      changed = true;
+    }
+
+    if (spec.numberFormat && rowFormats[spec.colIdx] !== spec.numberFormat) {
+      rowFormats[spec.colIdx] = spec.numberFormat;
+      changed = true;
+    }
+  }
+
+  return changed;
+}
+
 function Sync_resolveNewRecordMetadata_(params) {
   var record = params && params.record ? params.record : {};
   var fallbackRecordNo = Number(params && params.fallbackRecordNo);
@@ -86,6 +167,7 @@ function Sync_resolveNewRecordMetadata_(params) {
 if (typeof module !== "undefined") {
   module.exports = {
     Sync_fillEmptySheetCellsFromRecord_,
+    Sync_syncFixedMetaColumnsFromRecord_,
     Sync_isBlankCellValue_,
     Sync_resolveNewRecordMetadata_,
   };
