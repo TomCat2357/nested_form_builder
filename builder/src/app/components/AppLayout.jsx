@@ -6,7 +6,7 @@ import { DEFAULT_THEME, applyThemeWithFallback } from "../theme/theme.js";
 
 export default function AppLayout({ themeOverride, title, fallbackPath = "/", onBack, backHidden = false, actions, sidebarActions, badge, children }) {
   const navigate = useNavigate();
-  const { settings } = useBuilderSettings();
+  const { settings } = useBuilderSettings({ applyGlobalTheme: false });
 
   useEffect(() => {
     const themeToApply = themeOverride || settings?.theme || DEFAULT_THEME;

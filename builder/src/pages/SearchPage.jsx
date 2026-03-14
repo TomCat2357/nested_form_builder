@@ -47,7 +47,7 @@ const buildInitialSort = (params) => {
 
 export default function SearchPage() {
   const { getFormById } = useAppData();
-  const { settings } = useBuilderSettings();
+  const { settings } = useBuilderSettings({ applyGlobalTheme: false });
   const { isAdmin, userEmail, formId: scopedFormId } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
