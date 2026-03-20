@@ -910,6 +910,11 @@ export default function FormPage() {
         await cancelEditAndRestoreLatest();
         return;
       }
+      if (intent && intent.startsWith("linked-form:")) {
+        const linkedFormId = intent.slice("linked-form:".length);
+        navigate(`/search?form=${linkedFormId}`);
+        return;
+      }
       if (intent && intent.startsWith("navigate:")) {
         const targetEntryId = intent.slice("navigate:".length);
         navigateToEntryById(targetEntryId);
@@ -919,6 +924,12 @@ export default function FormPage() {
       return;
     }
     if (action === "save") {
+      if (intent && intent.startsWith("linked-form:")) {
+        const linkedFormId = intent.slice("linked-form:".length);
+        const saved = await triggerSave();
+        if (saved) navigate(`/search?form=${linkedFormId}`);
+        return;
+      }
       if (intent && intent.startsWith("navigate:")) {
         const targetEntryId = intent.slice("navigate:".length);
         const saved = await triggerSave();
@@ -1052,6 +1063,33 @@ export default function FormPage() {
                 </button>
               </div>
               <span className="nf-text-11 nf-text-muted">{currentIndex + 1} / {entryIds.length}</span>
+            </>
+          )}
+          {Array.isArray(form?.settings?.linkedForms) && form.settings.linkedForms.length > 0 && (
+            <>
+              <hr className="nf-sidebar-divider" />
+              <div className="linked-forms-sidebar">
+                <div className="linked-forms-sidebar__title">関連フォーム</div>
+                {form.settings.linkedForms.map((link, idx) => {
+                  if (!link.formId) return null;
+                  return (
+                    <button
+                      key={link.formId + idx}
+                      type="button"
+                      className="nf-btn-outline nf-btn-sidebar nf-text-14 linked-forms-sidebar__btn"
+                      onClick={() => {
+                        if (isDirty) {
+                          setConfirmState({ open: true, intent: `linked-form:${link.formId}` });
+                        } else {
+                          navigate(`/search?form=${link.formId}`);
+                        }
+                      }}
+                    >
+                      {link.label || link.formId}
+                    </button>
+                  );
+                })}
+              </div>
             </>
           )}
           <SchemaMapNav schema={normalizedSchema} responses={responses} scope="visible" />
