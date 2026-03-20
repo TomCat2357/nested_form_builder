@@ -1234,6 +1234,133 @@ button:disabled {
   text-align: left;
 }
 
+/* Child Form Link Config (Editor) */
+.child-form-link-config {
+  border-top: 1px dashed var(--border-muted);
+  padding-top: 8px;
+}
+
+.child-form-link-config__toggle {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.child-form-link-config__toggle:hover {
+  color: var(--primary-ink);
+}
+
+.child-form-link-config__body {
+  padding: 8px 0 0 16px;
+}
+
+/* Breadcrumb Nav (Sidebar) */
+.breadcrumb-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.breadcrumb-nav__title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.breadcrumb-nav__trail {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+}
+
+.breadcrumb-nav__link {
+  background: none;
+  border: none;
+  color: var(--primary-ink);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  text-decoration: underline;
+}
+
+.breadcrumb-nav__link:hover {
+  background: var(--primary-soft);
+}
+
+.breadcrumb-nav__sep {
+  color: var(--text-muted);
+  font-size: 10px;
+  margin: 0 1px;
+}
+
+.breadcrumb-nav__current {
+  color: var(--text-ink);
+  font-weight: 600;
+  font-size: 12px;
+  padding: 2px 4px;
+}
+
+/* Child Records Sidebar */
+.child-records-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.child-records-sidebar__title {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.child-records-sidebar__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.child-records-sidebar__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-ink);
+}
+
+.child-records-sidebar__list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.child-records-sidebar__record {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 4px 8px;
+}
+
+.child-records-sidebar__record-no {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.child-records-sidebar__record-summary {
+  font-size: 11px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
 /* Alert Banner */
 .alert-banner-container {
   position: fixed;

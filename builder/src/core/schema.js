@@ -210,6 +210,16 @@ export const normalizeSchemaIDs = (nodes) => {
     cleanUnusedFieldProperties(base);
     base.isDisplayed = !!base.isDisplayed;
 
+    if (base.childFormLink && typeof base.childFormLink === "object") {
+      base.childFormLink = {
+        formId: typeof base.childFormLink.formId === "string" ? base.childFormLink.formId : "",
+        allowMultiple: !!base.childFormLink.allowMultiple,
+      };
+      if (!base.childFormLink.formId) delete base.childFormLink;
+    } else {
+      delete base.childFormLink;
+    }
+
     if (base.placeholder !== undefined && base.showPlaceholder === undefined) {
       base.showPlaceholder = true;
     }

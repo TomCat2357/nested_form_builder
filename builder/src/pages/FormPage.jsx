@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLatestRef } from "../app/hooks/useLatestRef.js";
-import { useLocation, useNavigate, useParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import PreviewPage from "../features/preview/PreviewPage.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
+import { PARENT_FORM_ID_KEY, PARENT_RECORD_ID_KEY } from "../core/constants.js";
 import { restoreResponsesFromData, hasDirtyChanges, collectDefaultNowResponses } from "../utils/responses.js";
 import { acquireSaveLock, createRecordPrintDocument, submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
@@ -76,7 +77,8 @@ const pickLatestEntry = (current, incoming) => {
 
 export default function FormPage() {
   const { formId, entryId } = useParams();
-  const { getFormById, refreshForms, loadingForms } = useAppData();
+  const [searchParams] = useSearchParams();
+  const { getFormById, refreshForms, loadingForms, forms } = useAppData();
   const { userName, userEmail, userAffiliation, userTitle, userPhone, isAdmin } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
@@ -110,6 +112,54 @@ export default function FormPage() {
     }
   }, [responses, draftKey, entryId]);
   const [currentRecordId, setCurrentRecordId] = useState(entryId || null);
+
+  // 親フォーム・子フォーム階層コンテキスト
+  const parentFormId = searchParams.get("parentFormId") || location.state?.parentFormId || "";
+  const parentRecordId = searchParams.get("parentRecordId") || location.state?.parentRecordId || "";
+  const breadcrumbTrail = location.state?.breadcrumbTrail || [];
+
+  // 子フォームリンクを持つ質問を抽出
+  const childFormLinks = useMemo(() => {
+    const links = [];
+    (normalizedSchema || []).forEach((field) => {
+      if (field.childFormLink?.formId) {
+        links.push({
+          fieldId: field.id,
+          fieldLabel: field.label || "",
+          childFormId: field.childFormLink.formId,
+          allowMultiple: field.childFormLink.allowMultiple ?? true,
+        });
+      }
+    });
+    return links;
+  }, [normalizedSchema]);
+
+  // 各子フォームのレコードをキャッシュから取得
+  const [childRecordsMap, setChildRecordsMap] = useState({});
+  useEffect(() => {
+    if (!entryId || childFormLinks.length === 0) {
+      setChildRecordsMap({});
+      return;
+    }
+    let mounted = true;
+    const loadChildRecords = async () => {
+      const map = {};
+      for (const link of childFormLinks) {
+        try {
+          const allEntries = await dataStore.listEntries(link.childFormId);
+          map[link.childFormId] = (allEntries || []).filter(
+            (e) => e.data?.[PARENT_RECORD_ID_KEY] === entryId && !e.deletedAt,
+          );
+        } catch (err) {
+          console.error("[FormPage] failed to load child records for", link.childFormId, err);
+          map[link.childFormId] = [];
+        }
+      }
+      if (mounted) setChildRecordsMap(map);
+    };
+    loadChildRecords();
+    return () => { mounted = false; };
+  }, [entryId, childFormLinks]);
   const [confirmState, setConfirmState] = useState({ open: false, intent: null });
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
@@ -145,6 +195,7 @@ export default function FormPage() {
   const responseMutationSeqRef = useRef(0);
   const formLoadedStateRef = useRef(null);
   const pendingSyncedEntryRef = useRef(null);
+  const pendingNavStateRef = useRef(null);
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
@@ -635,10 +686,21 @@ export default function FormPage() {
     }
 
     const normalizedRecordNo = String(recordNoInput || "").trim();
+
+    // 親フォームのコンテキストがあればデータに埋め込む
+    const saveData = { ...payloadWithFormId.responses };
+    const saveOrder = [...payloadWithFormId.order];
+    if (isNewEntry && parentFormId && parentRecordId) {
+      saveData[PARENT_FORM_ID_KEY] = parentFormId;
+      saveData[PARENT_RECORD_ID_KEY] = parentRecordId;
+      if (!saveOrder.includes(PARENT_FORM_ID_KEY)) saveOrder.push(PARENT_FORM_ID_KEY);
+      if (!saveOrder.includes(PARENT_RECORD_ID_KEY)) saveOrder.push(PARENT_RECORD_ID_KEY);
+    }
+
     const saved = await dataStore.upsertEntry(form.id, {
       id: payloadWithFormId.id,
-      data: payloadWithFormId.responses,
-      order: payloadWithFormId.order,
+      data: saveData,
+      order: saveOrder,
       createdBy,
       modifiedBy,
       "No.": normalizedRecordNo === "" ? entry?.["No."] : normalizedRecordNo,
@@ -654,6 +716,8 @@ export default function FormPage() {
           sheetName,
           payload: {
             ...payloadWithFormId,
+            responses: saveData,
+            order: saveOrder,
             id: saved.id,
             createdAt: saved.createdAt,
             createdAtUnixMs: saved.createdAtUnixMs,
@@ -915,6 +979,23 @@ export default function FormPage() {
         navigate(`/search?form=${linkedFormId}`);
         return;
       }
+      if (intent && intent.startsWith("breadcrumb:")) {
+        const idx = parseInt(intent.slice("breadcrumb:".length), 10);
+        const crumb = breadcrumbTrail[idx];
+        if (crumb) {
+          navigate(`/form/${crumb.formId}/entry/${crumb.recordId}`, {
+            state: { breadcrumbTrail: breadcrumbTrail.slice(0, idx) },
+          });
+        }
+        return;
+      }
+      if (intent && intent.startsWith("child-form:")) {
+        const targetUrl = intent.slice("child-form:".length);
+        const navState = pendingNavStateRef.current;
+        pendingNavStateRef.current = null;
+        navigate(targetUrl, { state: navState || undefined });
+        return;
+      }
       if (intent && intent.startsWith("navigate:")) {
         const targetEntryId = intent.slice("navigate:".length);
         navigateToEntryById(targetEntryId);
@@ -928,6 +1009,25 @@ export default function FormPage() {
         const linkedFormId = intent.slice("linked-form:".length);
         const saved = await triggerSave();
         if (saved) navigate(`/search?form=${linkedFormId}`);
+        return;
+      }
+      if (intent && intent.startsWith("breadcrumb:")) {
+        const idx = parseInt(intent.slice("breadcrumb:".length), 10);
+        const crumb = breadcrumbTrail[idx];
+        const saved = await triggerSave();
+        if (saved && crumb) {
+          navigate(`/form/${crumb.formId}/entry/${crumb.recordId}`, {
+            state: { breadcrumbTrail: breadcrumbTrail.slice(0, idx) },
+          });
+        }
+        return;
+      }
+      if (intent && intent.startsWith("child-form:")) {
+        const targetUrl = intent.slice("child-form:".length);
+        const navState = pendingNavStateRef.current;
+        pendingNavStateRef.current = null;
+        const saved = await triggerSave();
+        if (saved) navigate(targetUrl, { state: navState || undefined });
         return;
       }
       if (intent && intent.startsWith("navigate:")) {
@@ -975,6 +1075,43 @@ export default function FormPage() {
       }}
       sidebarActions={
         <>
+          {breadcrumbTrail.length > 0 && (
+            <>
+              <div className="breadcrumb-nav">
+                <div className="breadcrumb-nav__title">階層ナビ</div>
+                <div className="breadcrumb-nav__trail">
+                  {breadcrumbTrail.map((crumb, idx) => {
+                    const crumbForm = getFormById(crumb.formId);
+                    const crumbLabel = crumbForm?.settings?.formTitle || crumb.formId;
+                    return (
+                      <React.Fragment key={crumb.formId + crumb.recordId + idx}>
+                        <button
+                          type="button"
+                          className="breadcrumb-nav__link"
+                          onClick={() => {
+                            if (isDirty) {
+                              setConfirmState({ open: true, intent: `breadcrumb:${idx}` });
+                            } else {
+                              navigate(`/form/${crumb.formId}/entry/${crumb.recordId}`, {
+                                state: {
+                                  breadcrumbTrail: breadcrumbTrail.slice(0, idx),
+                                },
+                              });
+                            }
+                          }}
+                        >
+                          {crumbLabel}
+                        </button>
+                        <span className="breadcrumb-nav__sep">&gt;</span>
+                      </React.Fragment>
+                    );
+                  })}
+                  <span className="breadcrumb-nav__current">{form?.settings?.formTitle || "(現在)"}</span>
+                </div>
+              </div>
+              <hr className="nf-sidebar-divider" />
+            </>
+          )}
           {isViewMode ? (
             <>
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleEditMode} disabled={editDisabled}>
@@ -1087,6 +1224,73 @@ export default function FormPage() {
                     >
                       {link.label || link.formId}
                     </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+          {entryId && childFormLinks.length > 0 && (
+            <>
+              <hr className="nf-sidebar-divider" />
+              <div className="child-records-sidebar">
+                <div className="child-records-sidebar__title">子フォーム</div>
+                {childFormLinks.map((link) => {
+                  const childForm = getFormById(link.childFormId);
+                  const childFormTitle = childForm?.settings?.formTitle || link.childFormId;
+                  const childRecords = childRecordsMap[link.childFormId] || [];
+                  const displayFields = childForm?.importantFields || [];
+                  const nextBreadcrumb = [
+                    ...breadcrumbTrail,
+                    { formId, recordId: entryId },
+                  ];
+                  const navigateToChild = (path, state) => {
+                    if (isDirty) {
+                      pendingNavStateRef.current = state || null;
+                      setConfirmState({ open: true, intent: `child-form:${path}` });
+                    } else {
+                      navigate(path, { state });
+                    }
+                  };
+                  return (
+                    <div key={link.fieldId} className="child-records-sidebar__group">
+                      <div className="child-records-sidebar__label">
+                        {link.fieldLabel ? `${link.fieldLabel} → ` : ""}{childFormTitle}
+                      </div>
+                      {childRecords.length > 0 && (
+                        <div className="child-records-sidebar__list">
+                          {childRecords.map((rec) => {
+                            const summary = displayFields.length > 0
+                              ? displayFields.map((f) => rec.data?.[f] || "").filter(Boolean).join(" / ")
+                              : "";
+                            return (
+                              <button
+                                key={rec.id}
+                                type="button"
+                                className="nf-btn-outline nf-btn-sidebar nf-text-13 child-records-sidebar__record"
+                                onClick={() => navigateToChild(`/form/${link.childFormId}/entry/${rec.id}`, { breadcrumbTrail: nextBreadcrumb })}
+                              >
+                                <span className="child-records-sidebar__record-no">
+                                  {rec["No."] ? `#${rec["No."]}` : rec.id.slice(0, 12)}
+                                </span>
+                                {summary && <span className="child-records-sidebar__record-summary">{summary}</span>}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                      {(link.allowMultiple || childRecords.length === 0) && (
+                        <button
+                          type="button"
+                          className="nf-btn-outline nf-btn-sidebar nf-text-13"
+                          onClick={() => navigateToChild(
+                            `/form/${link.childFormId}/new?parentFormId=${formId}&parentRecordId=${entryId}`,
+                            { breadcrumbTrail: nextBreadcrumb, parentFormId: formId, parentRecordId: entryId },
+                          )}
+                        >
+                          + 新規作成
+                        </button>
+                      )}
+                    </div>
                   );
                 })}
               </div>
