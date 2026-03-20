@@ -5,6 +5,7 @@ import { genId } from "../../core/ids.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings, STYLE_TEXT_COLORS } from "../../core/styleSettings.js";
 import { buildPhonePattern, getStandardPhonePlaceholder, normalizePhoneSettings } from "../../core/phone.js";
+import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
 
@@ -390,6 +391,77 @@ function NumberSettingsInput({ field, onChange, onFocus }) {
           />
         </div>
       </div>
+    </div>
+  );
+}
+
+function ChildFormLinkConfig({ field, onChange }) {
+  const { forms } = useAppData();
+  const hasLink = !!(field.childFormLink && field.childFormLink.formId);
+  const [expanded, setExpanded] = React.useState(hasLink);
+
+  const otherForms = React.useMemo(
+    () => (forms || []).filter((f) => !f.archived),
+    [forms],
+  );
+
+  const handleToggle = () => {
+    if (expanded && hasLink) {
+      const next = { ...field };
+      delete next.childFormLink;
+      onChange(next);
+    }
+    setExpanded((prev) => !prev);
+  };
+
+  return (
+    <div className="child-form-link-config nf-mt-12">
+      <button type="button" className="child-form-link-config__toggle" onClick={handleToggle}>
+        {expanded ? "▾" : "▸"} 子フォームリンク{hasLink ? ` (${otherForms.find((f) => f.id === field.childFormLink?.formId)?.settings?.formTitle || field.childFormLink?.formId})` : ""}
+      </button>
+      {expanded && (
+        <div className="child-form-link-config__body">
+          <div className="nf-row nf-gap-8 nf-mb-8">
+            <select
+              className="nf-input nf-flex-1"
+              value={field.childFormLink?.formId || ""}
+              onChange={(event) => {
+                const selectedForm = otherForms.find((f) => f.id === event.target.value);
+                onChange({
+                  ...field,
+                  childFormLink: {
+                    formId: event.target.value,
+                    allowMultiple: field.childFormLink?.allowMultiple ?? true,
+                  },
+                });
+              }}
+            >
+              <option value="">-- 子フォームを選択 --</option>
+              {otherForms.map((f) => (
+                <option key={f.id} value={f.id}>{f.settings?.formTitle || f.name || f.id}</option>
+              ))}
+            </select>
+          </div>
+          {field.childFormLink?.formId && (
+            <label className="nf-row nf-gap-6 nf-items-center">
+              <input
+                type="checkbox"
+                checked={field.childFormLink?.allowMultiple ?? true}
+                onChange={(event) => {
+                  onChange({
+                    ...field,
+                    childFormLink: {
+                      ...field.childFormLink,
+                      allowMultiple: event.target.checked,
+                    },
+                  });
+                }}
+              />
+              <span>複数の子レコードを許可</span>
+            </label>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -867,6 +939,8 @@ export default function QuestionCard({
           ))}
         </div>
       )}
+
+      <ChildFormLinkConfig field={field} onChange={onChange} />
 
       <div className="nf-row nf-gap-8 nf-mt-12">
         <button type="button" className={s.btnDanger.className} onClick={onDelete}>削除</button>
