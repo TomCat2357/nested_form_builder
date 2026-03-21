@@ -117,21 +117,6 @@ export default function FormPage() {
   const parentRecordId = searchParams.get("parentRecordId") || location.state?.parentRecordId || "";
   const breadcrumbTrail = location.state?.breadcrumbTrail || [];
 
-  // 子フォームリンクを持つ質問を抽出
-  const childFormLinks = useMemo(() => {
-    const links = [];
-    (normalizedSchema || []).forEach((field) => {
-      if (field.childFormLink?.formId) {
-        links.push({
-          fieldId: field.id,
-          fieldLabel: field.label || "",
-          childFormId: field.childFormLink.formId,
-          childFormName: getFormById(field.childFormLink.formId)?.settings?.formTitle || field.childFormLink.formId,
-        });
-      }
-    });
-    return links;
-  }, [normalizedSchema, getFormById]);
   const [confirmState, setConfirmState] = useState({ open: false, intent: null });
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
@@ -718,7 +703,7 @@ export default function FormPage() {
     return saved;
   };
 
-  const triggerSave = async ({ redirect } = {}) => {
+  const triggerSave = async ({ redirect, stayAsView } = {}) => {
     if (!form) {
       showAlert("フォームが見つかりません");
       return false;
@@ -729,7 +714,17 @@ export default function FormPage() {
       const preview = previewRef.current;
       if (!preview) throw new Error("preview_not_ready");
       await preview.submit({ silent: true });
-      if (redirect) navigateBack({ saved: true });
+      if (stayAsView) {
+        const savedId = preview.getRecordId();
+        if (!entryId && savedId) {
+          navigate(`/form/${formId}/entry/${savedId}`, { replace: true, state: location.state });
+        } else {
+          setMode("view");
+        }
+        showToast("保存しました");
+      } else if (redirect) {
+        navigateBack({ saved: true });
+      }
       return true;
     } catch (error) {
       console.warn(error);
@@ -885,11 +880,19 @@ export default function FormPage() {
   }, [commitResponses]);
 
   const handleChildFormJump = useCallback((childFormId) => {
-    const nextBreadcrumb = [...breadcrumbTrail, { formId, recordId: entryId }];
+    if (mode === "edit" && isDirty) {
+      setConfirmState({ open: true, intent: `childJump:${childFormId}` });
+      return;
+    }
+    const representativeFieldId = form?.settings?.representativeFieldId;
+    const representativeValue = representativeFieldId
+      ? (responses?.[representativeFieldId] || "")
+      : (entryId || "");
+    const nextBreadcrumb = [...breadcrumbTrail, { formId, recordId: entryId, representativeValue }];
     navigate(`/search?form=${childFormId}&parentRecordId=${entryId}`, {
       state: { breadcrumbTrail: nextBreadcrumb },
     });
-  }, [breadcrumbTrail, entryId, formId, navigate]);
+  }, [breadcrumbTrail, entryId, form, formId, isDirty, mode, navigate, responses]);
 
   const handleCreatePrintDocument = useCallback(async () => {
     const preview = previewRef.current;
@@ -957,6 +960,18 @@ export default function FormPage() {
         }
         return;
       }
+      if (intent && intent.startsWith("childJump:")) {
+        const childFormId = intent.slice("childJump:".length);
+        const representativeFieldId = form?.settings?.representativeFieldId;
+        const representativeValue = representativeFieldId
+          ? (responses?.[representativeFieldId] || "")
+          : (entryId || "");
+        const nextBreadcrumb = [...breadcrumbTrail, { formId, recordId: entryId, representativeValue }];
+        navigate(`/search?form=${childFormId}&parentRecordId=${entryId}`, {
+          state: { breadcrumbTrail: nextBreadcrumb },
+        });
+        return;
+      }
       if (intent && intent.startsWith("navigate:")) {
         const targetEntryId = intent.slice("navigate:".length);
         navigateToEntryById(targetEntryId);
@@ -966,6 +981,21 @@ export default function FormPage() {
       return;
     }
     if (action === "save") {
+      if (intent && intent.startsWith("childJump:")) {
+        const childFormId = intent.slice("childJump:".length);
+        const saved = await triggerSave({ stayAsView: true });
+        if (saved) {
+          const representativeFieldId = form?.settings?.representativeFieldId;
+          const representativeValue = representativeFieldId
+            ? (responses?.[representativeFieldId] || "")
+            : (entryId || "");
+          const nextBreadcrumb = [...breadcrumbTrail, { formId, recordId: entryId, representativeValue }];
+          navigate(`/search?form=${childFormId}&parentRecordId=${entryId}`, {
+            state: { breadcrumbTrail: nextBreadcrumb },
+          });
+        }
+        return;
+      }
       if (intent && intent.startsWith("breadcrumb:")) {
         const idx = parseInt(intent.slice("breadcrumb:".length), 10);
         const crumb = breadcrumbTrail[idx];
@@ -1029,7 +1059,10 @@ export default function FormPage() {
                 <div className="breadcrumb-nav__trail">
                   {breadcrumbTrail.map((crumb, idx) => {
                     const crumbForm = getFormById(crumb.formId);
-                    const crumbLabel = crumbForm?.settings?.formTitle || crumb.formId;
+                    const crumbTitle = crumbForm?.settings?.formTitle || crumb.formId;
+                    const crumbLabel = crumb.representativeValue
+                      ? `${crumbTitle}（${crumb.representativeValue}）`
+                      : crumbTitle;
                     return (
                       <React.Fragment key={crumb.formId + crumb.recordId + idx}>
                         <button
@@ -1070,7 +1103,7 @@ export default function FormPage() {
             </>
           ) : (
             <>
-              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReadLocked} onClick={() => triggerSave({ redirect: true })}>
+              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReadLocked} onClick={() => triggerSave({ stayAsView: true })}>
                 保存
               </button>
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => attemptLeave("cancel-edit")}>
@@ -1189,7 +1222,6 @@ export default function FormPage() {
           showOutputJson={false}
           showSaveButton={false}
           readOnly={isViewMode || isReadLocked}
-          childFormLinks={childFormLinks}
           entryId={currentRecordId}
           onChildFormJump={handleChildFormJump}
         />

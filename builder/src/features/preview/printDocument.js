@@ -106,7 +106,7 @@ export const sanitizePrintFileNamePart = (input, fallback = "record") => {
 };
 
 export const formatPrintItemValue = (field, value) => {
-  if (field?.type === "message") return "";
+  if (field?.type === "message" || field?.type === "childFormLink") return "";
   if (CHOICE_TYPES.has(field?.type)) {
     return toSelectedChoiceLabels(field, value).join(", ");
   }
@@ -139,18 +139,18 @@ export const formatRecordMetaDateTime = (value) => {
   return "";
 };
 
-const isExcludedMessageField = (field) => field?.type === "message" && field?.excludeFromSearchAndPrint === true;
+const isExcludedMessageField = (field) => (field?.type === "message" || field?.type === "childFormLink") && field?.excludeFromSearchAndPrint === true;
 
 const resolveFieldId = (field, depth, index) => field?.id || `tmp_${depth}_${index}_${field?.label || ""}`;
 
 const resolveFieldLabel = (field) => {
-  const fallback = field?.type === "message" ? "メッセージ" : "項目";
+  const fallback = field?.type === "message" ? "メッセージ" : field?.type === "childFormLink" ? "子フォームリンク" : "項目";
   return typeof field?.label === "string" && field.label.trim() ? field.label.trim() : fallback;
 };
 
 const shouldIncludePrintItem = (item, omitEmptyRows) => {
   if (!omitEmptyRows) return true;
-  if (item?.type === "message") return true;
+  if (item?.type === "message" || item?.type === "childFormLink") return true;
   return hasVisibleValue(item?.value);
 };
 

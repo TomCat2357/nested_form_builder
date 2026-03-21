@@ -22,6 +22,7 @@ import {
   FORM_CACHE_BACKGROUND_REFRESH_MS,
 } from "../app/state/cachePolicy.js";
 import { countSchemaNodes } from "../core/schema.js";
+import { traverseSchema } from "../core/schemaUtils.js";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/forms");
 
@@ -39,6 +40,15 @@ export default function AdminFormEditorPage() {
   const builderRef = useRef(null);
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
   const initialSchema = useMemo(() => (form?.schema ? form.schema : []), [form]);
+  const flatRepresentativeFields = useMemo(() => {
+    const result = [];
+    traverseSchema(initialSchema, (field) => {
+      if (field.type !== "childFormLink" && field.type !== "message") {
+        result.push({ id: field.id, label: field.label || field.id });
+      }
+    });
+    return result;
+  }, [initialSchema]);
   const initialSettings = useMemo(() => omitThemeSetting(form?.settings || {}), [form]);
 
   const { settings } = useBuilderSettings();
@@ -424,6 +434,24 @@ export default function AdminFormEditorPage() {
               {isEdit
                 ? "現在のファイルURLが表示されています。空白にするとマイドライブルートに新たなコピーを作成します。フォルダURLに変更するとそのフォルダにコピーを作成します。ファイルURLは元のURL以外は指定できません。"
                 : "空白の場合はマイドライブのルートに保存されます。フォルダURLを指定するとそのフォルダに保存されます。ファイルURLは指定できません。"}
+            </p>
+          </div>
+
+          <div className="nf-col nf-gap-6 nf-mt-16">
+            <label className="nf-block nf-fw-600 nf-mb-6">代表フィールド</label>
+            <select
+              className="nf-input admin-input"
+              value={localSettings.representativeFieldId || ""}
+              onChange={(event) => handleSettingsChange("representativeFieldId", event.target.value)}
+              disabled={isReadLocked}
+            >
+              <option value="">ID（デフォルト）</option>
+              {flatRepresentativeFields.map((f) => (
+                <option key={f.id} value={f.id}>{f.label}</option>
+              ))}
+            </select>
+            <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+              パンくずリストに表示する代表値のフィールドを指定します。未設定の場合はレコードIDが表示されます。
             </p>
           </div>
         </div>

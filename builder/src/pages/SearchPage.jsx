@@ -388,7 +388,10 @@ export default function SearchPage() {
                 <div className="breadcrumb-nav__trail">
                   {breadcrumbTrail.map((crumb, idx) => {
                     const crumbForm = getFormById(crumb.formId);
-                    const crumbLabel = crumbForm?.settings?.formTitle || crumb.formId;
+                    const crumbTitle = crumbForm?.settings?.formTitle || crumb.formId;
+                    const crumbLabel = crumb.representativeValue
+                      ? `${crumbTitle}（${crumb.representativeValue}）`
+                      : crumbTitle;
                     return (
                       <React.Fragment key={crumb.formId + crumb.recordId + idx}>
                         <button
@@ -407,6 +410,22 @@ export default function SearchPage() {
                   <span className="breadcrumb-nav__current">{form?.settings?.formTitle || "(現在)"}</span>
                 </div>
               </div>
+              <hr className="nf-sidebar-divider" />
+              {(() => {
+                const lastCrumb = breadcrumbTrail[breadcrumbTrail.length - 1];
+                if (!lastCrumb) return null;
+                return (
+                  <button
+                    type="button"
+                    className="nf-btn-outline nf-btn-sidebar nf-text-14"
+                    onClick={() => navigate(`/form/${lastCrumb.formId}/entry/${lastCrumb.recordId}`, {
+                      state: { breadcrumbTrail: breadcrumbTrail.slice(0, -1) },
+                    })}
+                  >
+                    ← 親フォームに戻る
+                  </button>
+                );
+              })()}
               <hr className="nf-sidebar-divider" />
             </>
           )}

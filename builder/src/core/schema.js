@@ -92,7 +92,8 @@ export const cleanUnusedFieldProperties = (field) => {
   const supportsPhone = type === "phone";
   const supportsDefaultNow = ["date", "time"].includes(type);
   const supportsPlaceholder = ["text", "number", "email", "phone", "url", "regex", "textarea"].includes(type);
-  const supportsSearchAndPrintExclusion = type === "message";
+  const supportsSearchAndPrintExclusion = type === "message" || type === "childFormLink";
+  const isChildFormLink = type === "childFormLink";
 
   if (!isChoice) {
     delete field.options;
@@ -139,7 +140,12 @@ export const cleanUnusedFieldProperties = (field) => {
   } else {
     field.excludeFromSearchAndPrint = normalizeBooleanSetting(field.excludeFromSearchAndPrint, false);
   }
-  if (type === "message") delete field.required;
+  if (type === "message" || type === "childFormLink") delete field.required;
+  if (!isChildFormLink) {
+    delete field.childFormId;
+    delete field.childFormButtonLabel;
+    delete field.allowMultipleChildren;
+  }
   return field;
 };
 
@@ -205,20 +211,22 @@ export const normalizeSchemaIDs = (nodes) => {
       base.autoFillUserEmail = !!(base.autoFillUserEmail ?? base.defaultNow);
     } else if (base.type === "phone") {
       Object.assign(base, normalizePhoneSettings(base));
+    } else if (base.type === "childFormLink") {
+      base.childFormId = typeof base.childFormId === "string" ? base.childFormId : "";
+      base.childFormButtonLabel = typeof base.childFormButtonLabel === "string" ? base.childFormButtonLabel : "";
+      base.allowMultipleChildren = !!base.allowMultipleChildren;
+    }
+
+    // 旧形式マイグレーション: childFormLinkプロパティ → childFormLinkタイプ
+    // (旧形式は別質問の追加プロパティだったため、ここでは単にプロパティを削除)
+    if (base.childFormLink && typeof base.childFormLink === "object") {
+      delete base.childFormLink;
+    } else {
+      delete base.childFormLink;
     }
 
     cleanUnusedFieldProperties(base);
     base.isDisplayed = !!base.isDisplayed;
-
-    if (base.childFormLink && typeof base.childFormLink === "object") {
-      base.childFormLink = {
-        formId: typeof base.childFormLink.formId === "string" ? base.childFormLink.formId : "",
-        allowMultiple: !!base.childFormLink.allowMultiple,
-      };
-      if (!base.childFormLink.formId) delete base.childFormLink;
-    } else {
-      delete base.childFormLink;
-    }
 
     if (base.placeholder !== undefined && base.showPlaceholder === undefined) {
       base.showPlaceholder = true;

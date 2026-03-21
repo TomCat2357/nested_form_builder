@@ -75,6 +75,11 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
     );
   }
 
+  // 子フォームリンクタイプ: ボタン表示（ボタン機能はFormPage側で処理）
+  if (field.type === "childFormLink") {
+    return null;
+  }
+
   if (readOnly) {
     const childrenForCheckboxes =
       field.type === "checkboxes" && renderChildrenForOption
@@ -262,7 +267,7 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
   );
 };
 
-const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = false, childFormLinks, entryId, onChildFormJump }) => {
+const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = false, entryId, onChildFormJump }) => {
   const renderChildrenAll = (field, fid) => () => {
     if (!field?.childrenByValue) return null;
     const selectedLabels = toSelectedChoiceLabels(field, (responses || {})[fid]);
@@ -276,7 +281,6 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
           onChange={onChange}
           depth={depth + 1}
           readOnly={readOnly}
-          childFormLinks={childFormLinks}
           entryId={entryId}
           onChildFormJump={onChildFormJump}
         />
@@ -291,7 +295,6 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
           onChange={onChange}
           depth={depth + 1}
           readOnly={readOnly}
-          childFormLinks={childFormLinks}
           entryId={entryId}
           onChildFormJump={onChildFormJump}
         />
@@ -309,7 +312,6 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
         onChange={onChange}
         depth={depth + 1}
         readOnly={readOnly}
-        childFormLinks={childFormLinks}
         entryId={entryId}
         onChildFormJump={onChildFormJump}
       />
@@ -322,9 +324,7 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
         const fid = field?.id || `tmp_${depth}_${index}_${field?.label || ""}`;
         const value = (responses || {})[fid] ?? (responses || {})[field?.id];
         const cardAttrs = s.card(depth, false);
-        const matchedLink = readOnly && entryId && Array.isArray(childFormLinks)
-          ? childFormLinks.find((l) => l.fieldId === fid)
-          : null;
+        const isChildFormLinkField = field.type === "childFormLink" && field.childFormId;
         return (
           <div key={`node_${fid}`} className={cardAttrs.className} data-depth={cardAttrs["data-depth"]} data-question-id={fid}>
             <FieldRenderer
@@ -335,13 +335,13 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
               renderChildrenForOption={(label) => renderChildrenForOption(field, fid, label)}
               readOnly={readOnly}
             />
-            {matchedLink && (
+            {isChildFormLinkField && entryId && (
               <button
                 type="button"
                 className="nf-btn-outline nf-text-13 child-form-jump-btn"
-                onClick={() => onChildFormJump && onChildFormJump(matchedLink.childFormId)}
+                onClick={() => onChildFormJump && onChildFormJump(field.childFormId)}
               >
-                → {matchedLink.childFormName || matchedLink.childFormId}（子フォーム）
+                → {field.label || "子フォームを開く"}
               </button>
             )}
           </div>
@@ -363,7 +363,6 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     saveButtonLabel = "回答保存",
     showSaveButton = true,
     readOnly = false,
-    childFormLinks,
     entryId,
     onChildFormJump,
   },
@@ -553,7 +552,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         <label className="preview-label">最終更新日時</label>
         <input type="text" value={modifiedAtDisplay || "-"} readOnly className="nf-input nf-input--readonly" />
       </div>
-      <RendererRecursive fields={schema} responses={responses} onChange={setResponses} readOnly={readOnly} childFormLinks={childFormLinks} entryId={entryId} onChildFormJump={onChildFormJump} />
+      <RendererRecursive fields={schema} responses={responses} onChange={setResponses} readOnly={readOnly} entryId={entryId} onChildFormJump={onChildFormJump} />
       {showOutputJson && (
         <div className="nf-mt-12">
           <label className="preview-label">回答JSON</label>
