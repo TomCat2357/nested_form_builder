@@ -29,6 +29,7 @@ import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { perfLogger } from "../utils/perfLogger.js";
 import SchemaMapNav from "../features/nav/SchemaMapNav.jsx";
 import RecordCopyDialog from "../app/components/RecordCopyDialog.jsx";
+import BreadcrumbNav from "../app/components/BreadcrumbNav.jsx";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import { resolveOmitEmptyRowsOnPrint } from "../features/preview/printDocument.js";
@@ -950,6 +951,12 @@ export default function FormPage() {
         await cancelEditAndRestoreLatest();
         return;
       }
+      if (intent === "breadcrumb-nav") {
+        const nav = pendingNavStateRef.current;
+        pendingNavStateRef.current = null;
+        if (nav) navigate(nav.path, { state: nav.state });
+        return;
+      }
       if (intent && intent.startsWith("breadcrumb:")) {
         const idx = parseInt(intent.slice("breadcrumb:".length), 10);
         const crumb = breadcrumbTrail[idx];
@@ -981,6 +988,13 @@ export default function FormPage() {
       return;
     }
     if (action === "save") {
+      if (intent === "breadcrumb-nav") {
+        const nav = pendingNavStateRef.current;
+        pendingNavStateRef.current = null;
+        const saved = await triggerSave();
+        if (saved && nav) navigate(nav.path, { state: nav.state });
+        return;
+      }
       if (intent && intent.startsWith("childJump:")) {
         const childFormId = intent.slice("childJump:".length);
         const saved = await triggerSave({ stayAsView: true });
@@ -1052,53 +1066,13 @@ export default function FormPage() {
       }}
       sidebarActions={
         <>
-          {breadcrumbTrail.length > 0 && (
-            <>
-              <div className="breadcrumb-nav">
-                <div className="breadcrumb-nav__title">階層ナビ</div>
-                <div className="breadcrumb-nav__trail">
-                  {breadcrumbTrail.map((crumb, idx) => {
-                    const crumbForm = getFormById(crumb.formId);
-                    const crumbTitle = crumbForm?.settings?.formTitle || crumb.formId;
-                    const crumbLabel = crumb.representativeValue
-                      ? `${crumbTitle}（${crumb.representativeValue}）`
-                      : crumbTitle;
-                    return (
-                      <React.Fragment key={crumb.formId + crumb.recordId + idx}>
-                        <button
-                          type="button"
-                          className="breadcrumb-nav__link"
-                          onClick={() => {
-                            if (isDirty) {
-                              setConfirmState({ open: true, intent: `breadcrumb:${idx}` });
-                            } else {
-                              navigate(`/form/${crumb.formId}/entry/${crumb.recordId}`, {
-                                state: {
-                                  breadcrumbTrail: breadcrumbTrail.slice(0, idx),
-                                },
-                              });
-                            }
-                          }}
-                        >
-                          {crumbLabel}
-                        </button>
-                        <span className="breadcrumb-nav__sep">&gt;</span>
-                      </React.Fragment>
-                    );
-                  })}
-                  <span className="breadcrumb-nav__current">{form?.settings?.formTitle || "(現在)"}</span>
-                </div>
-              </div>
-              <hr className="nf-sidebar-divider" />
-            </>
-          )}
           {isViewMode ? (
             <>
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleEditMode} disabled={editDisabled}>
                 編集
               </button>
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => navigateBack()}>
-                戻る
+                ← 戻る
               </button>
             </>
           ) : (
@@ -1186,6 +1160,22 @@ export default function FormPage() {
         </>
       }
     >
+      <BreadcrumbNav
+        trail={breadcrumbTrail}
+        currentFormId={formId}
+        currentFormTitle={form?.settings?.formTitle || "(無題)"}
+        currentRecordLabel={entryId ? (responses?.[form?.settings?.representativeFieldId] || entryId) : ""}
+        parentRecordId={parentRecordId}
+        getFormById={getFormById}
+        onNavigate={(path, state) => {
+          if (isDirty) {
+            pendingNavStateRef.current = { path, state };
+            setConfirmState({ open: true, intent: "breadcrumb-nav" });
+          } else {
+            navigate(path, { state });
+          }
+        }}
+      />
       <SearchToolbar
         showSearch={false}
         lastSyncedAt={lastSyncedAt}

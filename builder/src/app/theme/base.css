@@ -1219,24 +1219,22 @@ button:disabled {
 }
 
 /* Breadcrumb Nav (Sidebar) */
-.breadcrumb-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.breadcrumb-nav__title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-muted);
+.breadcrumb-nav--page-top {
+  margin-bottom: 12px;
 }
 
 .breadcrumb-nav__trail {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 2px;
+  flex-direction: column;
+  gap: 1px;
   font-size: 12px;
+}
+
+.breadcrumb-nav__item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 300px;
 }
 
 .breadcrumb-nav__link {
@@ -1244,10 +1242,14 @@ button:disabled {
   border: none;
   color: var(--primary-ink);
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 1px 4px;
   border-radius: var(--radius-sm);
   font-size: 12px;
   text-decoration: underline;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
 }
 
 .breadcrumb-nav__link:hover {
@@ -1256,15 +1258,19 @@ button:disabled {
 
 .breadcrumb-nav__sep {
   color: var(--text-muted);
-  font-size: 10px;
-  margin: 0 1px;
+  font-size: 11px;
+  flex-shrink: 0;
 }
 
 .breadcrumb-nav__current {
   color: var(--text-ink);
   font-weight: 600;
   font-size: 12px;
-  padding: 2px 4px;
+  padding: 1px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
 }
 
 /* Child Form Jump Button (in question card) */

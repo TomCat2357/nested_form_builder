@@ -32,6 +32,7 @@ import SearchTable from "../features/search/components/SearchTable.jsx";
 import SearchPagination from "../features/search/components/SearchPagination.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { DEFAULT_PAGE_SIZE } from "../core/constants.js";
+import BreadcrumbNav from "../app/components/BreadcrumbNav.jsx";
 
 
 
@@ -153,7 +154,7 @@ export default function SearchPage() {
     const keyword = query.trim();
     if (!keyword) return base;
     return base.filter((row) => matchesKeyword(row, columns, keyword));
-  }, [ownerFilteredEntries, columns, query, showDeleted, isDeletedEntry]);
+  }, [parentFilteredEntries, columns, query, showDeleted, isDeletedEntry]);
 
   const sortedEntries = useMemo(() => {
     const list = filteredEntries.slice();
@@ -188,7 +189,7 @@ export default function SearchPage() {
     if (!effectiveFormId) return;
     const entryIds = sortedEntries.map((row) => row.entry.id);
     navigate(`/form/${effectiveFormId}/entry/${entryId}`, {
-      state: { from: `${location.pathname}${location.search}`, entryIds },
+      state: { from: `${location.pathname}${location.search}`, entryIds, breadcrumbTrail },
     });
   };
 
@@ -201,6 +202,7 @@ export default function SearchPage() {
       state: {
         from: `${location.pathname}${location.search}`,
         ...(parentRecordId ? { parentRecordId } : {}),
+        breadcrumbTrail,
       },
     });
   };
@@ -213,7 +215,14 @@ export default function SearchPage() {
   };
 
   const handleBackToMain = () => {
-    navigate("/");
+    if (breadcrumbTrail.length > 0) {
+      const lastCrumb = breadcrumbTrail[breadcrumbTrail.length - 1];
+      navigate(`/form/${lastCrumb.formId}/entry/${lastCrumb.recordId}`, {
+        state: { breadcrumbTrail: breadcrumbTrail.slice(0, -1) },
+      });
+    } else {
+      navigate("/");
+    }
   };
 
   const toggleSelectEntry = (entryId) => {
@@ -381,54 +390,6 @@ export default function SearchPage() {
       badge={badge}
       sidebarActions={(
         <>
-          {breadcrumbTrail.length > 0 && (
-            <>
-              <div className="breadcrumb-nav">
-                <div className="breadcrumb-nav__title">階層ナビ</div>
-                <div className="breadcrumb-nav__trail">
-                  {breadcrumbTrail.map((crumb, idx) => {
-                    const crumbForm = getFormById(crumb.formId);
-                    const crumbTitle = crumbForm?.settings?.formTitle || crumb.formId;
-                    const crumbLabel = crumb.representativeValue
-                      ? `${crumbTitle}（${crumb.representativeValue}）`
-                      : crumbTitle;
-                    return (
-                      <React.Fragment key={crumb.formId + crumb.recordId + idx}>
-                        <button
-                          type="button"
-                          className="breadcrumb-nav__link"
-                          onClick={() => navigate(`/form/${crumb.formId}/entry/${crumb.recordId}`, {
-                            state: { breadcrumbTrail: breadcrumbTrail.slice(0, idx) },
-                          })}
-                        >
-                          {crumbLabel}
-                        </button>
-                        <span className="breadcrumb-nav__sep">&gt;</span>
-                      </React.Fragment>
-                    );
-                  })}
-                  <span className="breadcrumb-nav__current">{form?.settings?.formTitle || "(現在)"}</span>
-                </div>
-              </div>
-              <hr className="nf-sidebar-divider" />
-              {(() => {
-                const lastCrumb = breadcrumbTrail[breadcrumbTrail.length - 1];
-                if (!lastCrumb) return null;
-                return (
-                  <button
-                    type="button"
-                    className="nf-btn-outline nf-btn-sidebar nf-text-14"
-                    onClick={() => navigate(`/form/${lastCrumb.formId}/entry/${lastCrumb.recordId}`, {
-                      state: { breadcrumbTrail: breadcrumbTrail.slice(0, -1) },
-                    })}
-                  >
-                    ← 親フォームに戻る
-                  </button>
-                );
-              })()}
-              <hr className="nf-sidebar-divider" />
-            </>
-          )}
           <SearchSidebar
           onBack={handleBackToMain}
           showBack={!isScopedByAuth}
@@ -451,6 +412,14 @@ export default function SearchPage() {
         </>
       )}
     >
+      <BreadcrumbNav
+        trail={breadcrumbTrail}
+        currentFormId={effectiveFormId}
+        currentFormTitle={form?.settings?.formTitle || "(無題)"}
+        parentRecordId={parentRecordId}
+        getFormById={getFormById}
+        onNavigate={(path, state) => navigate(path, { state })}
+      />
       <SearchToolbar
         query={query}
         onChange={handleSearchChange}

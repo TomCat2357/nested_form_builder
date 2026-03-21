@@ -261,6 +261,7 @@ function SerializeRecord_(record) {
 
   return {
     id: String(record.id || ""),
+    parentRecordId: record.parentRecordId || "",
     "No.": record["No."] ?? "",
     modifiedBy: record.modifiedBy || "",
     createdBy: record.createdBy || "",
