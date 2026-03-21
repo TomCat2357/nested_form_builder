@@ -56,6 +56,8 @@ export default function SearchPage() {
   const queryFormId = (searchParams.get("form") || "").trim();
   const effectiveFormId = queryFormId || scopedFormId;
   const isScopedByAuth = scopedFormId !== "";
+  const parentRecordId = searchParams.get("parentRecordId") || "";
+  const breadcrumbTrail = location.state?.breadcrumbTrail || [];
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [showUndeleteConfirm, setShowUndeleteConfirm] = useState({ open: false, entryIds: [] });
   const [selectedEntries, setSelectedEntries] = useState(new Set());
@@ -138,8 +140,13 @@ export default function SearchPage() {
 
   const isDeletedEntry = useCallback((entry) => Boolean(entry?.deletedAtUnixMs || entry?.deletedAt), []);
 
+  const parentFilteredEntries = useMemo(() => {
+    if (!parentRecordId) return ownerFilteredEntries;
+    return ownerFilteredEntries.filter((row) => row.entry?.parentRecordId === parentRecordId);
+  }, [ownerFilteredEntries, parentRecordId]);
+
   const filteredEntries = useMemo(() => {
-    let base = ownerFilteredEntries;
+    let base = parentFilteredEntries;
     if (!showDeleted) {
       base = base.filter((row) => !isDeletedEntry(row.entry));
     }
@@ -187,8 +194,14 @@ export default function SearchPage() {
 
   const handleCreateNew = () => {
     if (!effectiveFormId) return;
-    navigate(`/form/${effectiveFormId}/new`, {
-      state: { from: `${location.pathname}${location.search}` },
+    const url = parentRecordId
+      ? `/form/${effectiveFormId}/new?parentRecordId=${parentRecordId}`
+      : `/form/${effectiveFormId}/new`;
+    navigate(url, {
+      state: {
+        from: `${location.pathname}${location.search}`,
+        ...(parentRecordId ? { parentRecordId } : {}),
+      },
     });
   };
 
@@ -367,7 +380,37 @@ export default function SearchPage() {
       backHidden
       badge={badge}
       sidebarActions={(
-        <SearchSidebar
+        <>
+          {breadcrumbTrail.length > 0 && (
+            <>
+              <div className="breadcrumb-nav">
+                <div className="breadcrumb-nav__title">階層ナビ</div>
+                <div className="breadcrumb-nav__trail">
+                  {breadcrumbTrail.map((crumb, idx) => {
+                    const crumbForm = getFormById(crumb.formId);
+                    const crumbLabel = crumbForm?.settings?.formTitle || crumb.formId;
+                    return (
+                      <React.Fragment key={crumb.formId + crumb.recordId + idx}>
+                        <button
+                          type="button"
+                          className="breadcrumb-nav__link"
+                          onClick={() => navigate(`/form/${crumb.formId}/entry/${crumb.recordId}`, {
+                            state: { breadcrumbTrail: breadcrumbTrail.slice(0, idx) },
+                          })}
+                        >
+                          {crumbLabel}
+                        </button>
+                        <span className="breadcrumb-nav__sep">&gt;</span>
+                      </React.Fragment>
+                    );
+                  })}
+                  <span className="breadcrumb-nav__current">{form?.settings?.formTitle || "(現在)"}</span>
+                </div>
+              </div>
+              <hr className="nf-sidebar-divider" />
+            </>
+          )}
+          <SearchSidebar
           onBack={handleBackToMain}
           showBack={!isScopedByAuth}
           onCreate={handleCreateNew}
@@ -386,6 +429,7 @@ export default function SearchPage() {
           selectedCount={selectedEntries.size}
           filteredCount={sortedEntries.length}
         />
+        </>
       )}
     >
       <SearchToolbar

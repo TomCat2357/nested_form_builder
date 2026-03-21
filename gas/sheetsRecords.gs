@@ -18,7 +18,7 @@ function Sheets_purgeExpiredDeletedRows_(sheet, retentionDays) {
 
   var newValues = [];
   for (var i = 0; i < values.length; i++) {
-    var deletedAtUnixMs = Sheets_toUnixMs_(values[i][4], true); // index 4 is deletedAt
+    var deletedAtUnixMs = Sheets_toUnixMs_(values[i][5], true); // index 5 is deletedAt
     if (isFinite(deletedAtUnixMs) && deletedAtUnixMs > 0 && deletedAtUnixMs <= cutoffUnixMs) {
       deletedCount++;
     } else {
@@ -78,16 +78,17 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
 
   var record = {
     id: id,
-    "No.": rowData[1] || "",
-    createdAt: formatDt(rowData[2]),
-    modifiedAt: formatDt(rowData[3]),
-    deletedAt: formatNullableDt(rowData[4]),
-    createdBy: rowData[5] || "",
-    modifiedBy: rowData[6] || "",
-    deletedBy: rowData[7] || "",
-    createdAtUnixMs: Sheets_toUnixMs_(rowData[2], true),
-    modifiedAtUnixMs: Sheets_toUnixMs_(rowData[3], true),
-    deletedAtUnixMs: Sheets_toUnixMs_(rowData[4], true),
+    parentRecordId: rowData[1] || "",
+    "No.": rowData[2] || "",
+    createdAt: formatDt(rowData[3]),
+    modifiedAt: formatDt(rowData[4]),
+    deletedAt: formatNullableDt(rowData[5]),
+    createdBy: rowData[6] || "",
+    modifiedBy: rowData[7] || "",
+    deletedBy: rowData[8] || "",
+    createdAtUnixMs: Sheets_toUnixMs_(rowData[3], true),
+    modifiedAtUnixMs: Sheets_toUnixMs_(rowData[4], true),
+    deletedAtUnixMs: Sheets_toUnixMs_(rowData[5], true),
     data: {},
     dataUnixMs: {}
   };

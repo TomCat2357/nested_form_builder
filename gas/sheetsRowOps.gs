@@ -104,7 +104,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
   Sheets_ensureHeaderMatrix_(sheet, ctx.order);
   var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
 
-  var lastColumn = Math.max(sheet.getLastColumn(), 8);
+  var lastColumn = Math.max(sheet.getLastColumn(), 9);
   var rowIndex = Sheets_findRowById_(sheet, ctx.id);
   var isNew = (rowIndex === -1);
   var currentTs = Date.now();
@@ -120,7 +120,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
     var maxNo = 0;
     var lastRow = sheet.getLastRow();
     if (lastRow >= NFB_DATA_START_ROW) {
-      var noValues = sheet.getRange(NFB_DATA_START_ROW, 2, lastRow - NFB_DATA_START_ROW + 1, 1).getValues();
+      var noValues = sheet.getRange(NFB_DATA_START_ROW, 3, lastRow - NFB_DATA_START_ROW + 1, 1).getValues();
       for (var i = 0; i < noValues.length; i++) {
         var val = Number(noValues[i][0]);
         if (isFinite(val) && val > maxNo) maxNo = val;
@@ -135,11 +135,12 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
     });
 
     rowData[0] = ctx.id;
-    rowData[1] = insertMeta.recordNo;
-    rowData[2] = insertMeta.createdAt;
-    rowData[3] = currentTs; // modifiedAt
-    rowData[5] = insertMeta.createdBy;
-    rowData[6] = email;     // modifiedBy
+    rowData[1] = ctx.parentRecordId || ""; // parentRecordId
+    rowData[2] = insertMeta.recordNo;
+    rowData[3] = insertMeta.createdAt;
+    rowData[4] = currentTs; // modifiedAt
+    rowData[6] = insertMeta.createdBy;
+    rowData[7] = email;     // modifiedBy
   } else {
     var existingValues = sheet.getRange(rowIndex, 1, 1, lastColumn).getValues()[0];
     for (var c = 0; c < lastColumn; c++) rowData[c] = existingValues[c] !== undefined ? existingValues[c] : "";
@@ -150,12 +151,12 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
         if (colIdx >= 0 && colIdx < lastColumn) rowData[colIdx] = "";
       }
     }
-    rowData[3] = currentTs; // modifiedAt
-    rowData[6] = email;     // modifiedBy
+    rowData[4] = currentTs; // modifiedAt
+    rowData[7] = email;     // modifiedBy
   }
 
-  formats[2] = "0";
   formats[3] = "0";
+  formats[4] = "0";
 
   for (var k = 0; k < ctx.order.length; k++) {
     var kName = String(ctx.order[k] || "");
@@ -188,7 +189,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
 
   Sheets_touchSheetLastUpdated_(sheet, currentTs);
 
-  return { row: rowIndex, id: ctx.id, recordNo: rowData[1] };
+  return { row: rowIndex, id: ctx.id, recordNo: rowData[2] };
 }
 
 function Sheets_deleteRecordById_(sheet, id) {
@@ -198,17 +199,17 @@ function Sheets_deleteRecordById_(sheet, id) {
   var now = Date.now();
   var email = Session.getActiveUser().getEmail() || "";
 
-  var range = sheet.getRange(rowIndex, 2, 1, 7); // Col 2(No) to Col 8(deletedBy)
+  var range = sheet.getRange(rowIndex, 2, 1, 8); // Col 2(parentRecordId) to Col 9(deletedBy)
   var values = range.getValues()[0];
   var formats = range.getNumberFormats()[0];
 
-  values[0] = "";      // No.
-  values[2] = now;     // modifiedAt
-  values[3] = now;     // deletedAt
-  values[5] = email;   // modifiedBy
-  values[6] = email;   // deletedBy
-  formats[2] = "0";
+  values[1] = "";      // No.
+  values[3] = now;     // modifiedAt
+  values[4] = now;     // deletedAt
+  values[6] = email;   // modifiedBy
+  values[7] = email;   // deletedBy
   formats[3] = "0";
+  formats[4] = "0";
 
   range.setValues([values]);
   range.setNumberFormats([formats]);

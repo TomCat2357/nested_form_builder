@@ -6,7 +6,7 @@ import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import PreviewPage from "../features/preview/PreviewPage.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
-import { PARENT_FORM_ID_KEY, PARENT_RECORD_ID_KEY } from "../core/constants.js";
+import { PARENT_RECORD_ID_KEY } from "../core/constants.js";
 import { restoreResponsesFromData, hasDirtyChanges, collectDefaultNowResponses } from "../utils/responses.js";
 import { acquireSaveLock, createRecordPrintDocument, submitResponses, hasScriptRun } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
@@ -113,8 +113,7 @@ export default function FormPage() {
   }, [responses, draftKey, entryId]);
   const [currentRecordId, setCurrentRecordId] = useState(entryId || null);
 
-  // 親フォーム・子フォーム階層コンテキスト
-  const parentFormId = searchParams.get("parentFormId") || location.state?.parentFormId || "";
+  // 親子フォーム階層コンテキスト
   const parentRecordId = searchParams.get("parentRecordId") || location.state?.parentRecordId || "";
   const breadcrumbTrail = location.state?.breadcrumbTrail || [];
 
@@ -127,39 +126,12 @@ export default function FormPage() {
           fieldId: field.id,
           fieldLabel: field.label || "",
           childFormId: field.childFormLink.formId,
-          allowMultiple: field.childFormLink.allowMultiple ?? true,
+          childFormName: getFormById(field.childFormLink.formId)?.settings?.formTitle || field.childFormLink.formId,
         });
       }
     });
     return links;
-  }, [normalizedSchema]);
-
-  // 各子フォームのレコードをキャッシュから取得
-  const [childRecordsMap, setChildRecordsMap] = useState({});
-  useEffect(() => {
-    if (!entryId || childFormLinks.length === 0) {
-      setChildRecordsMap({});
-      return;
-    }
-    let mounted = true;
-    const loadChildRecords = async () => {
-      const map = {};
-      for (const link of childFormLinks) {
-        try {
-          const allEntries = await dataStore.listEntries(link.childFormId);
-          map[link.childFormId] = (allEntries || []).filter(
-            (e) => e.data?.[PARENT_RECORD_ID_KEY] === entryId && !e.deletedAt,
-          );
-        } catch (err) {
-          console.error("[FormPage] failed to load child records for", link.childFormId, err);
-          map[link.childFormId] = [];
-        }
-      }
-      if (mounted) setChildRecordsMap(map);
-    };
-    loadChildRecords();
-    return () => { mounted = false; };
-  }, [entryId, childFormLinks]);
+  }, [normalizedSchema, getFormById]);
   const [confirmState, setConfirmState] = useState({ open: false, intent: null });
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
@@ -687,20 +659,14 @@ export default function FormPage() {
 
     const normalizedRecordNo = String(recordNoInput || "").trim();
 
-    // 親フォームのコンテキストがあればデータに埋め込む
     const saveData = { ...payloadWithFormId.responses };
     const saveOrder = [...payloadWithFormId.order];
-    if (isNewEntry && parentFormId && parentRecordId) {
-      saveData[PARENT_FORM_ID_KEY] = parentFormId;
-      saveData[PARENT_RECORD_ID_KEY] = parentRecordId;
-      if (!saveOrder.includes(PARENT_FORM_ID_KEY)) saveOrder.push(PARENT_FORM_ID_KEY);
-      if (!saveOrder.includes(PARENT_RECORD_ID_KEY)) saveOrder.push(PARENT_RECORD_ID_KEY);
-    }
 
     const saved = await dataStore.upsertEntry(form.id, {
       id: payloadWithFormId.id,
       data: saveData,
       order: saveOrder,
+      ...(isNewEntry && parentRecordId ? { parentRecordId } : {}),
       createdBy,
       modifiedBy,
       "No.": normalizedRecordNo === "" ? entry?.["No."] : normalizedRecordNo,
@@ -918,6 +884,13 @@ export default function FormPage() {
     commitResponses("preview:change", updater);
   }, [commitResponses]);
 
+  const handleChildFormJump = useCallback((childFormId) => {
+    const nextBreadcrumb = [...breadcrumbTrail, { formId, recordId: entryId }];
+    navigate(`/search?form=${childFormId}&parentRecordId=${entryId}`, {
+      state: { breadcrumbTrail: nextBreadcrumb },
+    });
+  }, [breadcrumbTrail, entryId, formId, navigate]);
+
   const handleCreatePrintDocument = useCallback(async () => {
     const preview = previewRef.current;
     if (!preview || typeof preview.getPrintDocumentPayload !== "function") {
@@ -974,11 +947,6 @@ export default function FormPage() {
         await cancelEditAndRestoreLatest();
         return;
       }
-      if (intent && intent.startsWith("linked-form:")) {
-        const linkedFormId = intent.slice("linked-form:".length);
-        navigate(`/search?form=${linkedFormId}`);
-        return;
-      }
       if (intent && intent.startsWith("breadcrumb:")) {
         const idx = parseInt(intent.slice("breadcrumb:".length), 10);
         const crumb = breadcrumbTrail[idx];
@@ -987,13 +955,6 @@ export default function FormPage() {
             state: { breadcrumbTrail: breadcrumbTrail.slice(0, idx) },
           });
         }
-        return;
-      }
-      if (intent && intent.startsWith("child-form:")) {
-        const targetUrl = intent.slice("child-form:".length);
-        const navState = pendingNavStateRef.current;
-        pendingNavStateRef.current = null;
-        navigate(targetUrl, { state: navState || undefined });
         return;
       }
       if (intent && intent.startsWith("navigate:")) {
@@ -1005,12 +966,6 @@ export default function FormPage() {
       return;
     }
     if (action === "save") {
-      if (intent && intent.startsWith("linked-form:")) {
-        const linkedFormId = intent.slice("linked-form:".length);
-        const saved = await triggerSave();
-        if (saved) navigate(`/search?form=${linkedFormId}`);
-        return;
-      }
       if (intent && intent.startsWith("breadcrumb:")) {
         const idx = parseInt(intent.slice("breadcrumb:".length), 10);
         const crumb = breadcrumbTrail[idx];
@@ -1020,14 +975,6 @@ export default function FormPage() {
             state: { breadcrumbTrail: breadcrumbTrail.slice(0, idx) },
           });
         }
-        return;
-      }
-      if (intent && intent.startsWith("child-form:")) {
-        const targetUrl = intent.slice("child-form:".length);
-        const navState = pendingNavStateRef.current;
-        pendingNavStateRef.current = null;
-        const saved = await triggerSave();
-        if (saved) navigate(targetUrl, { state: navState || undefined });
         return;
       }
       if (intent && intent.startsWith("navigate:")) {
@@ -1202,100 +1149,6 @@ export default function FormPage() {
               <span className="nf-text-11 nf-text-muted">{currentIndex + 1} / {entryIds.length}</span>
             </>
           )}
-          {Array.isArray(form?.settings?.linkedForms) && form.settings.linkedForms.length > 0 && (
-            <>
-              <hr className="nf-sidebar-divider" />
-              <div className="linked-forms-sidebar">
-                <div className="linked-forms-sidebar__title">関連フォーム</div>
-                {form.settings.linkedForms.map((link, idx) => {
-                  if (!link.formId) return null;
-                  return (
-                    <button
-                      key={link.formId + idx}
-                      type="button"
-                      className="nf-btn-outline nf-btn-sidebar nf-text-14 linked-forms-sidebar__btn"
-                      onClick={() => {
-                        if (isDirty) {
-                          setConfirmState({ open: true, intent: `linked-form:${link.formId}` });
-                        } else {
-                          navigate(`/search?form=${link.formId}`);
-                        }
-                      }}
-                    >
-                      {link.label || link.formId}
-                    </button>
-                  );
-                })}
-              </div>
-            </>
-          )}
-          {entryId && childFormLinks.length > 0 && (
-            <>
-              <hr className="nf-sidebar-divider" />
-              <div className="child-records-sidebar">
-                <div className="child-records-sidebar__title">子フォーム</div>
-                {childFormLinks.map((link) => {
-                  const childForm = getFormById(link.childFormId);
-                  const childFormTitle = childForm?.settings?.formTitle || link.childFormId;
-                  const childRecords = childRecordsMap[link.childFormId] || [];
-                  const displayFields = childForm?.importantFields || [];
-                  const nextBreadcrumb = [
-                    ...breadcrumbTrail,
-                    { formId, recordId: entryId },
-                  ];
-                  const navigateToChild = (path, state) => {
-                    if (isDirty) {
-                      pendingNavStateRef.current = state || null;
-                      setConfirmState({ open: true, intent: `child-form:${path}` });
-                    } else {
-                      navigate(path, { state });
-                    }
-                  };
-                  return (
-                    <div key={link.fieldId} className="child-records-sidebar__group">
-                      <div className="child-records-sidebar__label">
-                        {link.fieldLabel ? `${link.fieldLabel} → ` : ""}{childFormTitle}
-                      </div>
-                      {childRecords.length > 0 && (
-                        <div className="child-records-sidebar__list">
-                          {childRecords.map((rec) => {
-                            const summary = displayFields.length > 0
-                              ? displayFields.map((f) => rec.data?.[f] || "").filter(Boolean).join(" / ")
-                              : "";
-                            return (
-                              <button
-                                key={rec.id}
-                                type="button"
-                                className="nf-btn-outline nf-btn-sidebar nf-text-13 child-records-sidebar__record"
-                                onClick={() => navigateToChild(`/form/${link.childFormId}/entry/${rec.id}`, { breadcrumbTrail: nextBreadcrumb })}
-                              >
-                                <span className="child-records-sidebar__record-no">
-                                  {rec["No."] ? `#${rec["No."]}` : rec.id.slice(0, 12)}
-                                </span>
-                                {summary && <span className="child-records-sidebar__record-summary">{summary}</span>}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      )}
-                      {(link.allowMultiple || childRecords.length === 0) && (
-                        <button
-                          type="button"
-                          className="nf-btn-outline nf-btn-sidebar nf-text-13"
-                          onClick={() => navigateToChild(
-                            `/form/${link.childFormId}/new?parentFormId=${formId}&parentRecordId=${entryId}`,
-                            { breadcrumbTrail: nextBreadcrumb, parentFormId: formId, parentRecordId: entryId },
-                          )}
-                        >
-                          + 新規作成
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </>
-          )}
           <SchemaMapNav schema={normalizedSchema} responses={responses} scope="visible" />
         </>
       }
@@ -1336,6 +1189,9 @@ export default function FormPage() {
           showOutputJson={false}
           showSaveButton={false}
           readOnly={isViewMode || isReadLocked}
+          childFormLinks={childFormLinks}
+          entryId={currentRecordId}
+          onChildFormJump={handleChildFormJump}
         />
       )}
 

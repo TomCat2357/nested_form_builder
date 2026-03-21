@@ -22,8 +22,7 @@ export const FORM_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
 export const FORM_CACHE_BACKGROUND_REFRESH_MS = 5 * 60 * 1000;
 
 // 親子フォームリンク関連
-export const PARENT_FORM_ID_KEY = "__nfb_parentFormId";
-export const PARENT_RECORD_ID_KEY = "__nfb_parentRecordId";
+export const PARENT_RECORD_ID_KEY = "parentRecordId";
 
 // 日時処理関連
 export const MS_PER_DAY = 24 * 60 * 60 * 1000;

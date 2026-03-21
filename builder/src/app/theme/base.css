@@ -1194,46 +1194,6 @@ button:disabled {
   padding: 6px 10px;
 }
 
-/* Linked Forms - Admin Settings */
-.linked-form-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.linked-form-select {
-  flex: 1 1 45%;
-  min-width: 0;
-}
-
-.linked-form-label {
-  flex: 1 1 35%;
-  min-width: 0;
-}
-
-.linked-form-remove {
-  flex: 0 0 auto;
-  padding: 6px 10px;
-}
-
-/* Linked Forms - Sidebar */
-.linked-forms-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.linked-forms-sidebar__title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-muted);
-  margin-bottom: 2px;
-}
-
-.linked-forms-sidebar__btn {
-  text-align: left;
-}
-
 /* Child Form Link Config (Editor) */
 .child-form-link-config {
   border-top: 1px dashed var(--border-muted);
@@ -1307,58 +1267,13 @@ button:disabled {
   padding: 2px 4px;
 }
 
-/* Child Records Sidebar */
-.child-records-sidebar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.child-records-sidebar__title {
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-.child-records-sidebar__group {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.child-records-sidebar__label {
+/* Child Form Jump Button (in question card) */
+.child-form-jump-btn {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 6px;
   font-size: 12px;
-  font-weight: 600;
-  color: var(--text-ink);
-}
-
-.child-records-sidebar__list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.child-records-sidebar__record {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  text-align: left;
-  padding: 4px 8px;
-}
-
-.child-records-sidebar__record-no {
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.child-records-sidebar__record-summary {
-  font-size: 11px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
+  padding: 4px 10px;
 }
 
 /* Alert Banner */

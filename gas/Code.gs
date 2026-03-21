@@ -656,7 +656,7 @@ function SyncRecords_(ctx) {
       Sheets_ensureHeaderMatrix_(sheet, order);
       var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
 
-      var lastColumn = Math.max(sheet.getLastColumn(), 8);
+      var lastColumn = Math.max(sheet.getLastColumn(), 9);
       var lastRow = sheet.getLastRow();
       var dataStartRow = NFB_DATA_START_ROW;
 
@@ -674,7 +674,7 @@ function SyncRecords_(ctx) {
       for (var i = 0; i < existingData.length; i++) {
         var id = String(existingData[i][0] || "").trim();
         if (id) existingRowMap[id] = i;
-        var noVal = Number(existingData[i][1]);
+        var noVal = Number(existingData[i][2]);
         if (isFinite(noVal) && noVal > maxNo) maxNo = noVal;
       }
 
@@ -693,7 +693,7 @@ function SyncRecords_(ctx) {
         var sheetModifiedAt = 0;
 
         if (localIndex !== -1) {
-          var modAtVal = existingData[localIndex][3];
+          var modAtVal = existingData[localIndex][4];
           sheetModifiedAt = Sheets_toUnixMs_(modAtVal, true) || 0;
         }
 
@@ -713,9 +713,10 @@ function SyncRecords_(ctx) {
             rowData = new Array(lastColumn).fill("");
             rowFormats = new Array(lastColumn).fill("General");
             rowData[0] = recId;
-            rowData[1] = insertMeta.recordNo;
-            rowData[2] = insertMeta.createdAt;
-            rowData[5] = insertMeta.createdBy;
+            rowData[1] = rec.parentRecordId || ""; // parentRecordId
+            rowData[2] = insertMeta.recordNo;
+            rowData[3] = insertMeta.createdAt;
+            rowData[6] = insertMeta.createdBy;
             maxNo = Math.max(maxNo, insertMeta.recordNo);
 
             localIndex = existingData.length;
@@ -743,18 +744,18 @@ function SyncRecords_(ctx) {
           }
 
           if (localIndex === -1) {
-            rowData[3] = recModifiedAt;
-            rowData[6] = currentUserEmail;
-            rowFormats[2] = "0";
+            rowData[4] = recModifiedAt;
+            rowData[7] = currentUserEmail;
             rowFormats[3] = "0";
+            rowFormats[4] = "0";
 
             if (rec.deletedAt) {
-              rowData[4] = Sheets_toUnixMs_(rec.deletedAt, true) || rec.deletedAt;
-              rowData[7] = rec.deletedBy || currentUserEmail;
-              rowFormats[4] = "0";
+              rowData[5] = Sheets_toUnixMs_(rec.deletedAt, true) || rec.deletedAt;
+              rowData[8] = rec.deletedBy || currentUserEmail;
+              rowFormats[5] = "0";
             } else {
-              rowData[4] = "";
-              rowData[7] = "";
+              rowData[5] = "";
+              rowData[8] = "";
             }
           }
 
@@ -772,7 +773,7 @@ function SyncRecords_(ctx) {
             if (norm.numberFormat) rowFormats[colIdx] = norm.numberFormat;
           }
 
-          rec["No."] = rowData[1];
+          rec["No."] = rowData[2];
           uploadedRecordIds[String(recId)] = true;
           modifiedCount++;
         } else if (localIndex !== -1 && cacheModifiedAt > 0 && cacheModifiedAt === sheetModifiedAt) {
