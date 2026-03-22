@@ -5,15 +5,15 @@ function doGet(e) {
 
   const formParam = e?.parameter?.form ? String(e.parameter.form) : "";
   const adminkeyParam = e?.parameter?.adminkey ? String(e.parameter.adminkey) : "";
-  const userEmail = Session.getActiveUser().getEmail() || "";
+  const userEmail = ResolveActiveUserEmail_();
 
   const authResult = DetermineAccess_(formParam, adminkeyParam, userEmail);
-  const userProfile = ResolveActiveUserProfile_();
+  const userProfile = userEmail ? ResolveActiveUserProfile_() : { displayName: "", affiliation: "", title: "", phone: "" };
   const userName = userProfile.displayName;
   const userAffiliation = userProfile.affiliation;
   const userTitle = userProfile.title;
   const userPhone = userProfile.phone;
-  const adminEmail = GetAdminEmail_();
+  const adminEmail = authResult.isAdmin ? GetAdminEmail_() : "";
   const propertyStoreMode = Nfb_getPropertyStoreMode_();
   const adminSettingsEnabled = Nfb_isAdminSettingsEnabled_();
 
@@ -37,6 +37,14 @@ function doGet(e) {
   return HtmlService.createHtmlOutput(htmlContent)
     .setTitle("Nested Form Builder")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function ResolveActiveUserEmail_() {
+  try {
+    return Session.getActiveUser().getEmail() || "";
+  } catch (err) {
+    return "";
+  }
 }
 
 function ResolvePrimaryPersonField_(items) {
@@ -130,7 +138,7 @@ function doPost(e) {
         return JsonForbidden_("管理者設定は現在のプロパティ保存モードでは利用できません");
       }
       if (adminSettingsEnabled) {
-        const isAdmin = IsAdmin_(ctx.raw?.authKey || "", Session.getActiveUser().getEmail() || "");
+        const isAdmin = IsAdmin_(ctx.raw?.authKey || "", ResolveActiveUserEmail_());
         if (!isAdmin) return JsonForbidden_("管理者権限が必要です");
       }
     }
@@ -681,7 +689,7 @@ function SyncRecords_(ctx) {
 
       var modifiedCount = 0;
       var uploadedRecordIds = {};
-      var currentUserEmail = Session.getActiveUser().getEmail() || "";
+      var currentUserEmail = ResolveActiveUserEmail_();
 
       for (var j = 0; j < uploadRecords.length; j++) {
         var rec = uploadRecords[j];

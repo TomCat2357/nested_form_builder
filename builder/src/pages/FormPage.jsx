@@ -360,10 +360,15 @@ export default function FormPage() {
   const navigateToEntryById = useCallback((targetEntryId) => {
     clearNewEntryDraft();
     navigate(`/form/${formId}/entry/${targetEntryId}`, {
-      state: { from: location.state?.from, entryIds },
+      state: {
+        from: location.state?.from,
+        entryIds,
+        ...(parentRecordId ? { parentRecordId } : {}),
+        ...(breadcrumbTrail.length > 0 ? { breadcrumbTrail } : {}),
+      },
       replace: true,
     });
-  }, [clearNewEntryDraft, navigate, formId, location.state?.from, entryIds]);
+  }, [breadcrumbTrail, clearNewEntryDraft, navigate, formId, location.state?.from, entryIds, parentRecordId]);
 
   useEffect(() => {
     let mounted = true;
@@ -607,7 +612,13 @@ export default function FormPage() {
 
   const navigateBack = ({ saved = false, deleted = false } = {}) => {
     clearNewEntryDraft();
-    const state = (saved || deleted) ? { saved, deleted } : undefined;
+    const hierarchyState = {
+      ...(parentRecordId ? { parentRecordId } : {}),
+      ...(breadcrumbTrail.length > 0 ? { breadcrumbTrail } : {}),
+    };
+    const state = (saved || deleted || Object.keys(hierarchyState).length > 0)
+      ? { ...(saved || deleted ? { saved, deleted } : {}), ...hierarchyState }
+      : undefined;
     if (location.state?.from) {
       navigate(location.state.from, { replace: true, state });
       return;
@@ -718,7 +729,14 @@ export default function FormPage() {
       if (stayAsView) {
         const savedId = preview.getRecordId();
         if (!entryId && savedId) {
-          navigate(`/form/${formId}/entry/${savedId}`, { replace: true, state: location.state });
+          navigate(`/form/${formId}/entry/${savedId}`, {
+            replace: true,
+            state: {
+              ...location.state,
+              ...(parentRecordId ? { parentRecordId } : {}),
+              ...(breadcrumbTrail.length > 0 ? { breadcrumbTrail } : {}),
+            },
+          });
         } else {
           setMode("view");
         }
