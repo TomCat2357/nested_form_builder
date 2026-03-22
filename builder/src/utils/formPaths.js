@@ -11,6 +11,7 @@ export const collectDisplayFieldSettings = (schema) => {
       collected.push({
         path: context.pathSegments.join("|"),
         type: field.type || "",
+        fieldId: field.id || "",
       });
     }
   });

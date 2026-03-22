@@ -97,6 +97,8 @@ export default function QuestionList({
   getTempState,
   setTempState,
   clearTempState,
+  representativeFieldId,
+  onRepresentativeChange,
 }) {
   const { showAlert } = useAlert();
   const normalized = normalizeSchemaIDs(fields);
@@ -221,6 +223,9 @@ export default function QuestionList({
             getTempState={getTempState}
             setTempState={setTempState}
             clearTempState={clearTempState}
+            isRepresentative={field.id === representativeFieldId}
+            onRepresentativeChange={onRepresentativeChange}
+            representativeFieldId={representativeFieldId}
           />
         ))}
       </div>

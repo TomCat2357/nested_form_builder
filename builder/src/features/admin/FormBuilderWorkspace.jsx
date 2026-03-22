@@ -167,6 +167,11 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
           schema={schema}
           onSchemaChange={handleSchemaChange}
           onQuestionControlChange={setQuestionControl}
+          representativeFieldId={settings.representativeFieldId || ""}
+          onRepresentativeChange={(fieldId) => {
+            const current = settings.representativeFieldId || "";
+            updateSetting("representativeFieldId", current === fieldId ? "" : fieldId);
+          }}
         />
       )}
 

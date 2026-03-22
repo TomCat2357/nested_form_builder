@@ -138,6 +138,8 @@ function nfbNormalizePrintDocumentRecord_(payload, index) {
     modifiedAt: payload.modifiedAt === undefined || payload.modifiedAt === null ? "" : String(payload.modifiedAt).trim(),
     showHeader: payload.showHeader !== false,
     exportedAtIso: payload.exportedAtIso,
+    parentRecordId: payload.parentRecordId || "",
+    parentRepresentativeValue: payload.parentRepresentativeValue || "",
     items: payload.items
   };
 }
@@ -158,7 +160,9 @@ function nfbWritePrintDocument_(body, payload) {
       exportedAtIso: payload.exportedAtIso,
       modifiedAt: payload.modifiedAt,
       recordNo: payload.recordNo,
-      recordId: payload.recordId
+      recordId: payload.recordId,
+      parentRecordId: payload.parentRecordId,
+      parentRepresentativeValue: payload.parentRepresentativeValue
     });
   }
 
@@ -184,6 +188,13 @@ function nfbAppendPrintDocumentMetaTable_(body, payload) {
     ["レコードNo", payload.recordNo ? payload.recordNo : "-"],
     ["回答ID", payload.recordId ? payload.recordId : "-"]
   ];
+
+  if (payload.parentRecordId) {
+    rows.push(["親レコードID", payload.parentRecordId]);
+    if (payload.parentRepresentativeValue && payload.parentRepresentativeValue !== payload.parentRecordId) {
+      rows.push(["親レコード代表値", payload.parentRepresentativeValue]);
+    }
+  }
 
   var table = body.appendTable();
   for (var i = 0; i < rows.length; i++) {

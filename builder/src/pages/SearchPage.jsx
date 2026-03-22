@@ -112,6 +112,7 @@ export default function SearchPage() {
     childEntriesByFormId,
     loading: childEntriesLoading,
   } = useChildEntriesWithCache({
+    parentFormId: effectiveFormId,
     childFormLinks: childForms,
     enabled: includeChildren && canIncludeChildren,
     getFormById,
@@ -278,6 +279,22 @@ export default function SearchPage() {
     });
   };
 
+  const handleChildRowClick = (childFormId, parentEntryId) => {
+    if (!childFormId || !parentEntryId) return;
+    const parentEntry = entries.find((e) => e.id === parentEntryId);
+    const representativeFieldId = form?.settings?.representativeFieldId;
+    const representativeValue = representativeFieldId
+      ? (parentEntry?.data?.[representativeFieldId] || parentEntryId)
+      : parentEntryId;
+    const nextTrail = [
+      ...breadcrumbTrail,
+      { formId: effectiveFormId, recordId: parentEntryId, representativeValue },
+    ];
+    navigate(`/search?form=${childFormId}&parentRecordId=${parentEntryId}`, {
+      state: { breadcrumbTrail: nextTrail },
+    });
+  };
+
   const handleCreateNew = () => {
     if (!effectiveFormId) return;
     const url = parentRecordId
@@ -417,6 +434,16 @@ export default function SearchPage() {
     return new Map(pairs.filter(Boolean));
   }, [childEntriesByFormId, getFormById, includeChildren]);
 
+  const parentInfo = useMemo(() => {
+    if (!parentRecordId) return null;
+    const lastCrumb = breadcrumbTrail.length > 0 ? breadcrumbTrail[breadcrumbTrail.length - 1] : null;
+    const repValue = lastCrumb?.representativeValue || "";
+    return {
+      parentRecordId,
+      parentRepresentativeValue: repValue && repValue !== parentRecordId ? repValue : "",
+    };
+  }, [parentRecordId, breadcrumbTrail]);
+
   const createPrintDocument = useCallback(async (selectedChildFormIds = []) => {
     setIsCreatingPrintDocument(true);
     try {
@@ -464,6 +491,7 @@ export default function SearchPage() {
           exportedAt,
           omitEmptyRows: omitEmptyRowsOnPrint,
           childSections,
+          parentInfo,
         });
       });
       const payload = buildPrintDocumentBundlePayload({
@@ -495,6 +523,7 @@ export default function SearchPage() {
     loadChildEntriesForPrint,
     normalizedSchema,
     omitEmptyRowsOnPrint,
+    parentInfo,
     selectedPrintableRows,
     showAlert,
   ]);
@@ -560,7 +589,7 @@ export default function SearchPage() {
           onBack={handleBackToMain}
           showBack={!isScopedByAuth}
           onCreate={handleCreateNew}
-          onConfig={handleOpenFormConfig}
+          onConfig={parentRecordId ? undefined : handleOpenFormConfig}
           onDelete={handleDeleteSelected}
           onUndelete={handleUndeleteSelected}
           isUndoDelete={isAdmin && allSelectedAreDeleted}
@@ -630,6 +659,7 @@ export default function SearchPage() {
           onSelectAll={selectAllEntries}
           onToggleSelect={toggleSelectEntry}
           onRowClick={handleRowClick}
+          onChildRowClick={handleChildRowClick}
         />
       )}
 

@@ -375,6 +375,7 @@ const createDisplayColumn = (path, sourceType = "", options = {}) => {
     optionOrder,
     scope,
     childFormId,
+    fieldId: options.fieldId || "",
     searchAliases: Array.isArray(options.searchAliases) ? options.searchAliases.filter(Boolean) : [],
     getValue: (entry, column) => collectFieldValue(entry, path, column),
   };
@@ -408,6 +409,7 @@ const resolveDisplayFieldSettings = (form) => {
   const schema = form?.schema || [];
   const collected = collectDisplayFieldSettings(schema);
   const collectedByPath = new Map(collected.map((item) => [item.path, item.type || ""]));
+  const fieldIdByPath = new Map(collected.map((item) => [item.path, item.fieldId || ""]));
   const optionOrderByPath = collectChoiceOptionOrderByPath(schema);
   if (Array.isArray(form?.displayFieldSettings) && form.displayFieldSettings.length) {
     const resolveTypeByPath = (path) => collectedByPath.get(path) || "";
@@ -419,6 +421,7 @@ const resolveDisplayFieldSettings = (form) => {
         path: String(item.path),
         type: item.type || resolveTypeByPath(String(item.path)),
         optionOrder: optionOrderByPath.get(String(item.path)) || null,
+        fieldId: fieldIdByPath.get(String(item.path)) || "",
       }));
   }
 
@@ -428,6 +431,7 @@ const resolveDisplayFieldSettings = (form) => {
       path: String(item.path),
       type: item.type || "",
       optionOrder: optionOrderByPath.get(String(item.path)) || null,
+      fieldId: item.fieldId || "",
     }));
 };
 
@@ -440,7 +444,7 @@ const buildChildDisplayColumns = (childForms = []) => {
       ? childForm.labelPaths.filter(Boolean)
       : (childForm?.labelPath ? [childForm.labelPath] : []);
 
-    return resolveDisplayFieldSettings(childForm.form).map(({ path, type, optionOrder }) => {
+    return resolveDisplayFieldSettings(childForm.form).map(({ path, type, optionOrder, fieldId }) => {
       const searchAliases = [path];
       searchPrefixes.forEach((prefix) => {
         searchAliases.push(`${prefix}|${path}`);
@@ -452,34 +456,49 @@ const buildChildDisplayColumns = (childForms = []) => {
         scope: "child",
         childFormId,
         searchAliases,
+        fieldId,
       });
     });
   });
 };
 
-const orderSearchColumns = (parentColumns, childColumns, metaColumns) => {
-  if (!childColumns.length) {
-    return [...metaColumns, ...parentColumns];
-  }
-
-  const parentPrimary = parentColumns.slice(0, 1);
-  const parentRest = parentColumns.slice(1);
-  const childGroups = [];
-  const groupMap = new Map();
-
-  childColumns.forEach((column) => {
-    const childFormId = String(column?.childFormId || "");
-    if (!groupMap.has(childFormId)) {
-      const nextGroup = [];
-      groupMap.set(childFormId, nextGroup);
-      childGroups.push(nextGroup);
+const orderSearchColumns = (parentColumns, childColumns, metaColumns, { representativeFieldId, childRepresentativeFieldIds } = {}) => {
+  // 親の代表列を抽出
+  const parentRepresentative = [];
+  const parentRest = [];
+  parentColumns.forEach((col) => {
+    if (representativeFieldId && col.fieldId === representativeFieldId) {
+      parentRepresentative.push(col);
+    } else {
+      parentRest.push(col);
     }
-    groupMap.get(childFormId).push(column);
   });
 
-  const childPrimary = childGroups.map((group) => group[0]).filter(Boolean);
-  const childRest = childGroups.flatMap((group) => group.slice(1));
-  return [...parentPrimary, ...childPrimary, ...parentRest, ...childRest, ...metaColumns];
+  if (!childColumns.length) {
+    return [...metaColumns, ...parentRepresentative, ...parentRest];
+  }
+
+  // 子列を childFormId ごとにグループ化（入力順=スキーマ出現順を維持）
+  const childFormGroups = new Map();
+  childColumns.forEach((col) => {
+    const cfId = String(col?.childFormId || "");
+    if (!childFormGroups.has(cfId)) childFormGroups.set(cfId, []);
+    childFormGroups.get(cfId).push(col);
+  });
+  // 各グループ内で代表列を先頭に配置
+  const orderedChildCols = [];
+  childFormGroups.forEach((cols, cfId) => {
+    const cfRepId = childRepresentativeFieldIds?.get(cfId) || "";
+    const rep = [];
+    const rest = [];
+    cols.forEach((col) => {
+      if (cfRepId && col.fieldId === cfRepId) rep.push(col);
+      else rest.push(col);
+    });
+    orderedChildCols.push(...rep, ...rest);
+  });
+
+  return [...metaColumns, ...parentRepresentative, ...parentRest, ...orderedChildCols];
 };
 
 export const buildSearchColumns = (form, { includeOperations = true, childForms = [] } = {}) => {
@@ -494,13 +513,20 @@ export const buildSearchColumns = (form, { includeOperations = true, childForms 
     if (!showSearchModifiedAt && col.key === "modifiedAt") return false;
     return true;
   });
+  const representativeFieldId = form?.settings?.representativeFieldId || "";
   const parentColumns = [];
-  resolveDisplayFieldSettings(form).forEach(({ path, type, optionOrder }) => {
+  resolveDisplayFieldSettings(form).forEach(({ path, type, optionOrder, fieldId }) => {
     if (!path) return;
-    parentColumns.push(createDisplayColumn(path, type, { optionOrder }));
+    parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId }));
+  });
+  const childRepresentativeFieldIds = new Map();
+  (childForms || []).forEach((cf) => {
+    const cfId = String(cf?.childFormId || cf?.form?.id || "").trim();
+    const cfRepId = cf?.form?.settings?.representativeFieldId || "";
+    if (cfId && cfRepId) childRepresentativeFieldIds.set(cfId, cfRepId);
   });
   const childColumns = buildChildDisplayColumns(childForms);
-  const columns = orderSearchColumns(parentColumns, childColumns, metaColumns);
+  const columns = orderSearchColumns(parentColumns, childColumns, metaColumns, { representativeFieldId, childRepresentativeFieldIds });
   if (includeOperations) columns.push(actionsColumn);
   return columns;
 };

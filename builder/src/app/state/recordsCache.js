@@ -225,6 +225,7 @@ const buildMetadata = (formId, existingMeta, updates = {}) => {
     headerMatrix: updates.headerMatrix ?? existingMeta?.headerMatrix ?? [],
     schemaHash: updates.schemaHash ?? existingMeta?.schemaHash ?? null,
     entryIndexMap: updates.entryIndexMap ?? existingMeta?.entryIndexMap ?? {},
+    childEntriesData: updates.childEntriesData !== undefined ? updates.childEntriesData : (existingMeta?.childEntriesData ?? null),
   };
 };
 
@@ -561,4 +562,38 @@ export async function applySyncResultToCache(formId, syncedRecords, headerMatrix
 
   await waitForTransaction(tx);
   db.close();
+}
+
+/**
+ * Save child form entries data to parent form's cache metadata
+ * @param {string} parentFormId
+ * @param {Object} childEntriesData - { [childFormId]: { entries: [...] } }
+ */
+export async function saveChildEntriesToCache(parentFormId, childEntriesData) {
+  if (!parentFormId) return;
+  const db = await openDB();
+  const tx = db.transaction([STORE_NAMES.recordsMeta], 'readwrite');
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
+  const existingMeta = await waitForRequest(metaStore.get(parentFormId)).catch(() => null);
+  await waitForRequest(metaStore.put(buildMetadata(parentFormId, existingMeta, {
+    childEntriesData: childEntriesData || null,
+  })));
+  await waitForTransaction(tx);
+  db.close();
+}
+
+/**
+ * Get child form entries data from parent form's cache metadata
+ * @param {string} parentFormId
+ * @returns {Promise<Object|null>} childEntriesData or null
+ */
+export async function getChildEntriesFromCache(parentFormId) {
+  if (!parentFormId) return null;
+  const db = await openDB();
+  const tx = db.transaction([STORE_NAMES.recordsMeta], 'readonly');
+  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
+  const meta = await waitForRequest(metaStore.get(parentFormId)).catch(() => null);
+  await waitForTransaction(tx);
+  db.close();
+  return meta?.childEntriesData || null;
 }

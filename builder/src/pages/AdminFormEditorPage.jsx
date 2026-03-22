@@ -22,7 +22,6 @@ import {
   FORM_CACHE_BACKGROUND_REFRESH_MS,
 } from "../app/state/cachePolicy.js";
 import { countSchemaNodes } from "../core/schema.js";
-import { traverseSchema } from "../core/schemaUtils.js";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/forms");
 
@@ -40,15 +39,6 @@ export default function AdminFormEditorPage() {
   const builderRef = useRef(null);
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "" });
   const initialSchema = useMemo(() => (form?.schema ? form.schema : []), [form]);
-  const flatRepresentativeFields = useMemo(() => {
-    const result = [];
-    traverseSchema(initialSchema, (field) => {
-      if (field.type !== "childFormLink" && field.type !== "message") {
-        result.push({ id: field.id, label: field.label || field.id });
-      }
-    });
-    return result;
-  }, [initialSchema]);
   const initialSettings = useMemo(() => omitThemeSetting(form?.settings || {}), [form]);
 
   const { settings } = useBuilderSettings();
@@ -438,20 +428,8 @@ export default function AdminFormEditorPage() {
           </div>
 
           <div className="nf-col nf-gap-6 nf-mt-16">
-            <label className="nf-block nf-fw-600 nf-mb-6">代表フィールド</label>
-            <select
-              className="nf-input admin-input"
-              value={localSettings.representativeFieldId || ""}
-              onChange={(event) => handleSettingsChange("representativeFieldId", event.target.value)}
-              disabled={isReadLocked}
-            >
-              <option value="">ID（デフォルト）</option>
-              {flatRepresentativeFields.map((f) => (
-                <option key={f.id} value={f.id}>{f.label}</option>
-              ))}
-            </select>
             <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
-              パンくずリストに表示する代表値のフィールドを指定します。未設定の場合はレコードIDが表示されます。
+              代表フィールドは各質問の「代表表示」チェックで設定できます。未設定の場合はレコードIDが代表値になります。
             </p>
           </div>
         </div>

@@ -238,6 +238,7 @@ export const buildPrintDocumentPayload = ({
   omitEmptyRows,
   showHeader,
   childSections = [],
+  parentInfo = null,
 }) => {
   const safeExportedAt = exportedAt instanceof Date && !Number.isNaN(exportedAt.getTime()) ? exportedAt : new Date();
   const formTitle = typeof settings.formTitle === "string" && settings.formTitle.trim() ? settings.formTitle.trim() : "受付フォーム";
@@ -256,6 +257,8 @@ export const buildPrintDocumentPayload = ({
     modifiedAt,
     showHeader: shouldShowHeader,
     exportedAtIso: safeExportedAt.toISOString(),
+    parentRecordId: parentInfo?.parentRecordId || "",
+    parentRepresentativeValue: parentInfo?.parentRepresentativeValue || "",
     items: appendChildSectionItems(
       appendPrintItems(schema, responses, 0, [], { omitEmptyRows: shouldOmitEmptyRows }),
       childSections,

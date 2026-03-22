@@ -512,6 +512,9 @@ export default function QuestionCard({
   getTempState,
   setTempState,
   clearTempState,
+  isRepresentative,
+  onRepresentativeChange,
+  representativeFieldId,
 }) {
   const isChoice = isChoiceType(field.type);
   const isText = field.type === "text";
@@ -690,6 +693,16 @@ export default function QuestionCard({
           />
           {DISPLAY_LABEL}
         </label>
+        {!isMessage && !isChildFormLink && onRepresentativeChange && (
+          <label className="nf-row nf-gap-6">
+            <input
+              type="checkbox"
+              checked={!!isRepresentative}
+              onChange={() => onRepresentativeChange(isRepresentative ? "" : field.id)}
+            />
+            代表表示
+          </label>
+        )}
       </div>
 
       {!isText && !isChildFormLink && renderStyleSettingsInput()}
@@ -969,6 +982,8 @@ export default function QuestionCard({
                         getTempState={getTempState}
                         setTempState={setTempState}
                         clearTempState={clearTempState}
+                        representativeFieldId={representativeFieldId}
+                        onRepresentativeChange={onRepresentativeChange}
                       />
                     </div>
                   ) : null;

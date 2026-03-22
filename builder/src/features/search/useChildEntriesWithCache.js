@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { dataStore } from "../../app/state/dataStore.js";
+import { saveChildEntriesToCache, getChildEntriesFromCache } from "../../app/state/recordsCache.js";
 
 const EMPTY_MAP = new Map();
 
 export const useChildEntriesWithCache = ({
+  parentFormId,
   childFormLinks,
   enabled,
   getFormById,
@@ -34,44 +36,90 @@ export const useChildEntriesWithCache = ({
     let alive = true;
     setLoading(true);
 
-    Promise.all(
-      uniqueChildFormIds.map(async (childFormId) => {
-        const form = typeof getFormById === "function" ? getFormById(childFormId) : null;
-        const result = await dataStore.listEntries(childFormId);
-        const entries = Array.isArray(result?.entries) ? result.entries : [];
-        return [
-          childFormId,
-          {
-            entries: entries.map((entry) => ({ ...entry, __childFormId: childFormId })),
-            form,
-            loading: false,
-          },
-        ];
-      }),
-    )
-      .then((pairs) => {
+    const loadData = async () => {
+      // まずキャッシュから読み取り
+      if (parentFormId) {
+        try {
+          const cached = await getChildEntriesFromCache(parentFormId);
+          if (cached && alive) {
+            const pairs = uniqueChildFormIds
+              .filter((id) => cached[id])
+              .map((childFormId) => {
+                const form = typeof getFormById === "function" ? getFormById(childFormId) : null;
+                const entries = Array.isArray(cached[childFormId]?.entries) ? cached[childFormId].entries : [];
+                return [
+                  childFormId,
+                  {
+                    entries: entries.map((entry) => ({ ...entry, __childFormId: childFormId })),
+                    form,
+                    loading: false,
+                  },
+                ];
+              });
+            if (pairs.length > 0) {
+              setChildEntriesByFormId(new Map(pairs));
+            }
+          }
+        } catch (error) {
+          console.warn("[useChildEntriesWithCache] cache read failed:", error);
+        }
+      }
+
+      // サーバーからフェッチ
+      try {
+        const pairs = await Promise.all(
+          uniqueChildFormIds.map(async (childFormId) => {
+            const form = typeof getFormById === "function" ? getFormById(childFormId) : null;
+            const result = await dataStore.listEntries(childFormId);
+            const entries = Array.isArray(result?.entries) ? result.entries : [];
+            return [
+              childFormId,
+              {
+                entries: entries.map((entry) => ({ ...entry, __childFormId: childFormId })),
+                form,
+                loading: false,
+              },
+            ];
+          }),
+        );
+
         if (!alive) return;
-        setChildEntriesByFormId(new Map(pairs));
-      })
-      .catch((error) => {
+        const nextMap = new Map(pairs);
+        setChildEntriesByFormId(nextMap);
+
+        // キャッシュに保存
+        if (parentFormId) {
+          const cacheData = {};
+          nextMap.forEach((value, childFormId) => {
+            cacheData[childFormId] = {
+              entries: (value.entries || []).map(({ __childFormId, ...rest }) => rest),
+            };
+          });
+          saveChildEntriesToCache(parentFormId, cacheData).catch((err) => {
+            console.warn("[useChildEntriesWithCache] cache save failed:", err);
+          });
+        }
+      } catch (error) {
         console.error("[useChildEntriesWithCache] failed to load child entries:", error);
         if (alive && typeof showAlert === "function") {
           showAlert(`子フォームのデータ取得に失敗しました: ${error?.message || error}`);
         }
         if (alive) {
-          setChildEntriesByFormId(EMPTY_MAP);
+          setChildEntriesByFormId((prev) => (prev.size > 0 ? prev : EMPTY_MAP));
         }
-      })
-      .finally(() => {
+      } finally {
         if (alive) {
           setLoading(false);
         }
-      });
+      }
+    };
+
+    loadData();
 
     return () => {
       alive = false;
     };
-  }, [enabled, getFormById, showAlert, uniqueChildFormIds]);
+  }, [enabled, getFormById, parentFormId, showAlert, uniqueChildFormIds]);
 
   return {
     childEntriesByFormId,
