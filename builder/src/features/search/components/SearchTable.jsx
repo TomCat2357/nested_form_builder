@@ -326,7 +326,7 @@ export default function SearchTable({
                         onClick={() => {
                           const selection = window.getSelection();
                           if (selection && selection.toString().length > 0) return;
-                          onChildRowClick && onChildRowClick(childRow.childFormId, entry.id);
+                          onChildRowClick && onChildRowClick(childRow.childFormId, entry.id, childRow.entry.id);
                         }}
                       >
                         <td className="search-td search-td-narrow" />

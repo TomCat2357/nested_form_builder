@@ -286,7 +286,7 @@ export default function SearchPage() {
     });
   };
 
-  const handleChildRowClick = (childFormId, parentEntryId) => {
+  const handleChildRowClick = (childFormId, parentEntryId, childEntryId) => {
     if (!childFormId || !parentEntryId) return;
     const parentEntry = entries.find((e) => e.id === parentEntryId);
     const representativeFieldId = form?.settings?.representativeFieldId;
@@ -297,9 +297,15 @@ export default function SearchPage() {
       ...breadcrumbTrail,
       { formId: effectiveFormId, recordId: parentEntryId, representativeValue },
     ];
-    navigate(`/search?form=${childFormId}&parentRecordId=${parentEntryId}`, {
-      state: { breadcrumbTrail: nextTrail },
-    });
+    if (childEntryId) {
+      navigate(`/form/${childFormId}/entry/${childEntryId}`, {
+        state: { breadcrumbTrail: nextTrail },
+      });
+    } else {
+      navigate(`/search?form=${childFormId}&parentRecordId=${parentEntryId}`, {
+        state: { breadcrumbTrail: nextTrail },
+      });
+    }
   };
 
   const handleCreateNew = () => {
