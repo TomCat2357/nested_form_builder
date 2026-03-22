@@ -39,6 +39,9 @@ import BreadcrumbNav from "../app/components/BreadcrumbNav.jsx";
 
 
 
+// フォームIDごとに「子フォームを含める」チェック状態を保持（ナビゲーションで消えないようにする）
+const includeChildrenByFormId = new Map();
+
 const buildInitialSort = (params) => {
   const raw = params.get("sort");
   if (!raw) return { key: "No.", order: "desc" };
@@ -68,8 +71,12 @@ export default function SearchPage() {
   const [exporting, setExporting] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
-  const [includeChildren, setIncludeChildren] = useState(false);
+  const [includeChildren, setIncludeChildren] = useState(() => includeChildrenByFormId.get(effectiveFormId) || false);
   const [showPrintChildFormDialog, setShowPrintChildFormDialog] = useState(false);
+
+  useEffect(() => {
+    if (effectiveFormId) includeChildrenByFormId.set(effectiveFormId, includeChildren);
+  }, [effectiveFormId, includeChildren]);
 
   const form = useMemo(() => (effectiveFormId ? getFormById(effectiveFormId) : null), [effectiveFormId, getFormById]);
   const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form?.schema]);

@@ -33,6 +33,8 @@ import BreadcrumbNav from "../app/components/BreadcrumbNav.jsx";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import { resolveOmitEmptyRowsOnPrint } from "../features/preview/printDocument.js";
+import { collectChildFormLinks, mergeChildFormLinksByFormId } from "../features/search/childFormIntegration.js";
+import PrintChildFormDialog from "../features/search/components/PrintChildFormDialog.jsx";
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
@@ -121,6 +123,7 @@ export default function FormPage() {
   const [confirmState, setConfirmState] = useState({ open: false, intent: null });
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
+  const [showPrintChildFormDialog, setShowPrintChildFormDialog] = useState(false);
   const [mode, setMode] = useState(entryId ? "view" : "edit");
   const [isReloading, setIsReloading] = useState(false);
   const [entryActionConfirm, setEntryActionConfirm] = useState({ open: false, action: null });
@@ -157,6 +160,12 @@ export default function FormPage() {
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
+  const childFormLinks = useMemo(() => collectChildFormLinks(normalizedSchema), [normalizedSchema]);
+  const childForms = useMemo(
+    () => mergeChildFormLinksByFormId(childFormLinks, getFormById),
+    [childFormLinks, getFormById],
+  );
+  const canIncludeChildrenInPrint = Boolean(entryId && childForms.length > 0);
 
   useEffect(() => {
     if (!form) return;
@@ -913,16 +922,43 @@ export default function FormPage() {
     });
   }, [breadcrumbTrail, entryId, form, formId, isDirty, mode, navigate, responses]);
 
-  const handleCreatePrintDocument = useCallback(async () => {
-    const preview = previewRef.current;
-    if (!preview || typeof preview.getPrintDocumentPayload !== "function") {
-        showAlert("印刷様式の出力準備がまだできていません。少し待ってからもう一度お試しください。");
-      return;
-    }
+  const buildChildSectionsForPrint = useCallback(async (targetChildForms) => {
+    const isDeleted = (e) => Boolean(e?.deletedAtUnixMs || e?.deletedAt);
+    const sections = await Promise.all(
+      (targetChildForms || []).map(async (childForm) => {
+        const childFormId = String(childForm?.childFormId || "");
+        if (!childFormId) return null;
+        const childFormRecord = childForm?.form || getFormById(childFormId);
+        const childSchema = normalizeSchemaIDs(childFormRecord?.schema || []);
+        const result = await dataStore.listEntries(childFormId);
+        const allEntries = Array.isArray(result?.entries) ? result.entries : [];
+        const entries = allEntries
+          .filter((ce) => ce?.parentRecordId === entryId)
+          .filter((ce) => !isDeleted(ce))
+          .map((ce, idx) => ({
+            recordNo: ce?.["No."] === undefined || ce?.["No."] === null || ce?.["No."] === ""
+              ? String(idx + 1)
+              : String(ce["No."]),
+            schema: childSchema,
+            responses: restoreResponsesFromData(childSchema, ce?.data || {}, ce?.dataUnixMs || {}),
+          }));
+        return {
+          title: childForm?.formTitle || childFormRecord?.settings?.formTitle || childFormId,
+          entries,
+        };
+      }),
+    );
+    return sections.filter(Boolean).filter((s) => s.entries.length > 0);
+  }, [entryId, getFormById]);
 
+  const executePrintWithChildren = useCallback(async (selectedChildFormIds) => {
+    const preview = previewRef.current;
+    if (!preview || typeof preview.getPrintDocumentPayload !== "function") return;
     setIsCreatingPrintDocument(true);
     try {
-      const payload = preview.getPrintDocumentPayload({ omitEmptyRows: omitEmptyRowsOnPrint });
+      const targetChildForms = childForms.filter((cf) => selectedChildFormIds.includes(cf.childFormId));
+      const childSections = await buildChildSectionsForPrint(targetChildForms);
+      const payload = preview.getPrintDocumentPayload({ omitEmptyRows: omitEmptyRowsOnPrint, childSections });
       const result = await createRecordPrintDocument(payload);
       showAlert(
         <div className="nf-col nf-gap-8">
@@ -939,7 +975,22 @@ export default function FormPage() {
     } finally {
       setIsCreatingPrintDocument(false);
     }
-  }, [omitEmptyRowsOnPrint, showAlert]);
+  }, [buildChildSectionsForPrint, childForms, omitEmptyRowsOnPrint, showAlert]);
+
+  const handleCreatePrintDocument = useCallback(async () => {
+    const preview = previewRef.current;
+    if (!preview || typeof preview.getPrintDocumentPayload !== "function") {
+      showAlert("印刷様式の出力準備がまだできていません。少し待ってからもう一度お試しください。");
+      return;
+    }
+
+    if (canIncludeChildrenInPrint) {
+      setShowPrintChildFormDialog(true);
+      return;
+    }
+
+    await executePrintWithChildren([]);
+  }, [canIncludeChildrenInPrint, executePrintWithChildren, showAlert]);
 
   if (!form) {
     return (
@@ -1261,6 +1312,16 @@ export default function FormPage() {
         sourceResponses={copySourceResponses}
         onConfirm={handleConfirmRecordCopy}
         onCancel={() => setIsCopyDialogOpen(false)}
+      />
+
+      <PrintChildFormDialog
+        open={showPrintChildFormDialog}
+        childForms={childForms}
+        onCancel={() => setShowPrintChildFormDialog(false)}
+        onSubmit={async (selectedChildFormIds) => {
+          setShowPrintChildFormDialog(false);
+          await executePrintWithChildren(selectedChildFormIds);
+        }}
       />
 
     </AppLayout>

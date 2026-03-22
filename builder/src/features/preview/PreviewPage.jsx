@@ -438,6 +438,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     settings,
     recordId: recordIdRef.current,
     omitEmptyRows: options.omitEmptyRows,
+    childSections: options.childSections || [],
   });
 
   const handleSaveToSheet = async (options = {}) => {

@@ -479,22 +479,6 @@ function ChildFormLinkSettings({ field, onChange, onFocus }) {
         </div>
       )}
       <p className="nf-text-12 nf-text-muted nf-mt-4 nf-mb-8">※ 項目名がそのままボタン名になります</p>
-      <label className="nf-row nf-gap-6 nf-items-center">
-        <input
-          type="checkbox"
-          checked={field.allowMultipleChildren ?? true}
-          onChange={(event) => onChange({ ...field, allowMultipleChildren: event.target.checked })}
-        />
-        <span>複数の子レコードを許可</span>
-      </label>
-      <label className="nf-row nf-gap-6 nf-items-center nf-mt-4">
-        <input
-          type="checkbox"
-          checked={!!field.excludeFromSearchAndPrint}
-          onChange={(event) => onChange({ ...field, excludeFromSearchAndPrint: event.target.checked })}
-        />
-        {EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL}
-      </label>
     </div>
   );
 }

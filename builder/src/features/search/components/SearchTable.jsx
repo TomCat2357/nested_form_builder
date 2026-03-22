@@ -38,6 +38,18 @@ export default function SearchTable({
     return entries;
   }, [columns]);
 
+  // 各子フォームの最初の列キーを特定（展開ボタン配置用）
+  const firstChildColumnKeyByFormId = useMemo(() => {
+    const map = new Map();
+    const selectableCols = columns.filter((col) => col.key !== "__actions");
+    selectableCols.forEach((col) => {
+      if (col.scope === "child" && col.childFormId && !map.has(col.childFormId)) {
+        map.set(col.childFormId, col.key);
+      }
+    });
+    return map;
+  }, [columns]);
+
   const handleCopyId = async (event, id) => {
     event.stopPropagation();
     const idText = String(id || "");
@@ -267,18 +279,22 @@ export default function SearchTable({
                         onChange={() => onToggleSelect(entry.id)}
                       />
                     </td>
-                    {selectableColumns.map((column, columnIndex) => {
+                    {selectableColumns.map((column) => {
                       const rawDisplayText = values[column.key]?.display ?? "";
-                      const shouldShowToggle = hasChildRows && columnIndex === 0;
+                      // この列が特定の子フォームの最初の列なら、その子フォームの展開ボタンを表示
+                      const toggleChildFormId = hasChildRows
+                        ? uniqueChildFormEntries.find(({ childFormId: cfId }) => firstChildColumnKeyByFormId.get(cfId) === column.key)
+                        : null;
                       return (
                         <td key={`${entry.id}_${column.key}`} className="search-td">
-                          {shouldShowToggle && uniqueChildFormEntries.map(({ childFormId: cfId, label: cfLabel }) => {
+                          {toggleChildFormId && (() => {
+                            const cfId = toggleChildFormId.childFormId;
+                            const cfLabel = toggleChildFormId.label;
                             const cfChildRows = childRows.filter((cr) => cr.childFormId === cfId);
                             if (cfChildRows.length === 0) return null;
                             const cfExpanded = isChildFormExpanded(entry.id, cfId, forcedExpanded);
                             return (
                               <button
-                                key={cfId}
                                 type="button"
                                 className="search-row-toggle"
                                 onClick={(event) => {
@@ -291,7 +307,7 @@ export default function SearchTable({
                                 {cfExpanded ? "▼" : "▶"}
                               </button>
                             );
-                          })}
+                          })()}
                           {renderCellContent(column, rawDisplayText, entry.id)}
                         </td>
                       );
