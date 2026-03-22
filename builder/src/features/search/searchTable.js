@@ -292,6 +292,7 @@ const createBaseColumns = () => [
     segments: ["ID"],
     sortable: true,
     searchable: true,
+    scope: "parent",
     getValue: (entry) => {
       const value = entry?.id || "";
       return {
@@ -306,6 +307,7 @@ const createBaseColumns = () => [
     segments: ["No."],
     sortable: true,
     searchable: true,
+    scope: "parent",
     getValue: (entry) => {
       const value = entry?.["No."] || "";
       return {
@@ -320,6 +322,7 @@ const createBaseColumns = () => [
     segments: ["作成日時"],
     sortable: true,
     searchable: true,
+    scope: "parent",
     getValue: (entry) => {
       const raw = entry?.createdAt ?? "";
       const unixMs = toUnixMs(entry?.createdAtUnixMs ?? raw);
@@ -336,6 +339,7 @@ const createBaseColumns = () => [
     segments: ["最終更新日時"],
     sortable: true,
     searchable: true,
+    scope: "parent",
     getValue: (entry) => {
       const raw = entry?.modifiedAt ?? "";
       const unixMs = toUnixMs(entry?.modifiedAtUnixMs ?? raw);
@@ -350,18 +354,28 @@ const createBaseColumns = () => [
 ];
 
 const createDisplayColumn = (path, sourceType = "", options = {}) => {
-  const segments = splitFieldPath(path).slice(0, MAX_HEADER_DEPTH);
-  if (segments.length === 0) segments.push("回答");
-  const key = `display:${path}`;
+  const normalizedSegments = Array.isArray(options.segments)
+    ? [...options.segments]
+    : splitFieldPath(path);
+  const scope = options.scope || "parent";
+  const childFormId = options.childFormId || null;
+  if (normalizedSegments.length === 0) normalizedSegments.push("回答");
+  const limitedSegments = normalizedSegments.slice(0, MAX_HEADER_DEPTH);
+  const key = options.key || (scope === "child" && childFormId
+    ? `child:${childFormId}:display:${path}`
+    : `display:${path}`);
   const optionOrder = Array.isArray(options.optionOrder) ? options.optionOrder : null;
   return {
     key,
-    segments,
+    segments: limitedSegments.length > 0 ? limitedSegments : ["回答"],
     sortable: true,
     searchable: true,
     path,
     sourceType,
     optionOrder,
+    scope,
+    childFormId,
+    searchAliases: Array.isArray(options.searchAliases) ? options.searchAliases.filter(Boolean) : [],
     getValue: (entry, column) => collectFieldValue(entry, path, column),
   };
 };
@@ -371,6 +385,7 @@ const actionsColumn = {
   segments: ["操作"],
   sortable: false,
   searchable: false,
+  scope: "parent",
   getValue: () => ({ display: "", search: "", sort: "" }),
 };
 
@@ -416,23 +431,76 @@ const resolveDisplayFieldSettings = (form) => {
     }));
 };
 
-export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
+const buildChildDisplayColumns = (childForms = []) => {
+  return (childForms || []).flatMap((childForm) => {
+    const childFormId = String(childForm?.childFormId || childForm?.form?.id || "").trim();
+    if (!childFormId || !childForm?.form) return [];
+    const formTitle = childForm?.formTitle || childForm.form?.settings?.formTitle || childForm.form?.name || childFormId;
+    const searchPrefixes = Array.isArray(childForm?.labelPaths)
+      ? childForm.labelPaths.filter(Boolean)
+      : (childForm?.labelPath ? [childForm.labelPath] : []);
+
+    return resolveDisplayFieldSettings(childForm.form).map(({ path, type, optionOrder }) => {
+      const searchAliases = [path];
+      searchPrefixes.forEach((prefix) => {
+        searchAliases.push(`${prefix}|${path}`);
+      });
+      return createDisplayColumn(path, type, {
+        key: `child:${childFormId}:display:${path}`,
+        segments: [formTitle, ...splitFieldPath(path)],
+        optionOrder,
+        scope: "child",
+        childFormId,
+        searchAliases,
+      });
+    });
+  });
+};
+
+const orderSearchColumns = (parentColumns, childColumns, metaColumns) => {
+  if (!childColumns.length) {
+    return [...metaColumns, ...parentColumns];
+  }
+
+  const parentPrimary = parentColumns.slice(0, 1);
+  const parentRest = parentColumns.slice(1);
+  const childGroups = [];
+  const groupMap = new Map();
+
+  childColumns.forEach((column) => {
+    const childFormId = String(column?.childFormId || "");
+    if (!groupMap.has(childFormId)) {
+      const nextGroup = [];
+      groupMap.set(childFormId, nextGroup);
+      childGroups.push(nextGroup);
+    }
+    groupMap.get(childFormId).push(column);
+  });
+
+  const childPrimary = childGroups.map((group) => group[0]).filter(Boolean);
+  const childRest = childGroups.flatMap((group) => group.slice(1));
+  return [...parentPrimary, ...childPrimary, ...parentRest, ...childRest, ...metaColumns];
+};
+
+export const buildSearchColumns = (form, { includeOperations = true, childForms = [] } = {}) => {
   const showRecordNo = form?.settings?.showRecordNo !== false;
   const showSearchId = form?.settings?.showSearchId !== false;
   const showSearchCreatedAt = form?.settings?.showSearchCreatedAt !== false;
   const showSearchModifiedAt = form?.settings?.showSearchModifiedAt !== false;
-  const baseColumns = createBaseColumns();
-  const columns = baseColumns.filter((col) => {
+  const metaColumns = createBaseColumns().filter((col) => {
     if (!showRecordNo && col.key === "No.") return false;
     if (!showSearchId && col.key === "id") return false;
     if (!showSearchCreatedAt && col.key === "createdAt") return false;
     if (!showSearchModifiedAt && col.key === "modifiedAt") return false;
     return true;
   });
+  const parentColumns = [];
   resolveDisplayFieldSettings(form).forEach(({ path, type, optionOrder }) => {
     if (!path) return;
-    columns.push(createDisplayColumn(path, type, { optionOrder }));
+    parentColumns.push(createDisplayColumn(path, type, { optionOrder }));
   });
+  const childColumns = buildChildDisplayColumns(childForms);
+  const columns = orderSearchColumns(parentColumns, childColumns, metaColumns);
   if (includeOperations) columns.push(actionsColumn);
   return columns;
 };
@@ -624,8 +692,11 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
 
 ;
 
-export const buildSearchTableLayout = (form, { headerMatrix: _headerMatrix = null, includeOperations = true } = {}) => {
-  const columns = buildSearchColumns(form, { includeOperations });
+export const buildSearchTableLayout = (
+  form,
+  { headerMatrix: _headerMatrix = null, includeOperations = true, childForms = [] } = {},
+) => {
+  const columns = buildSearchColumns(form, { includeOperations, childForms });
   const baseHeaderRows = buildHeaderRows(columns);
   const matrix = expandHeaderRowsToMatrix(baseHeaderRows, columns.length);
   const deduped = suppressDuplicateHeaderLabels(matrix);
@@ -719,7 +790,23 @@ const collectAllFieldSettings = (schema) => {
   return collected;
 };
 
-export const buildExportColumns = (form, { includeBaseColumns = true } = {}) => {
+const buildChildExportColumns = (childForms = []) => {
+  return (childForms || []).flatMap((childForm) => {
+    const childFormId = String(childForm?.childFormId || childForm?.form?.id || "").trim();
+    if (!childFormId || !childForm?.form) return [];
+    const formTitle = childForm?.formTitle || childForm.form?.settings?.formTitle || childForm.form?.name || childFormId;
+    return collectAllFieldSettings(childForm.form?.schema || []).map(({ path, type }) =>
+      createDisplayColumn(path, type, {
+        key: `child:${childFormId}:display:${path}`,
+        segments: [formTitle, ...splitFieldPath(path)],
+        scope: "child",
+        childFormId,
+      })
+    );
+  });
+};
+
+export const buildExportColumns = (form, { includeBaseColumns = true, childForms = [] } = {}) => {
   const columns = [];
   if (includeBaseColumns) {
     columns.push(...createBaseColumns());
@@ -728,23 +815,43 @@ export const buildExportColumns = (form, { includeBaseColumns = true } = {}) => 
     if (!path) return;
     columns.push(createDisplayColumn(path, type));
   });
+  columns.push(...buildChildExportColumns(childForms));
   return columns;
 };
 
-export const buildExportTableData = ({ form, entries }) => {
-  const columns = buildExportColumns(form, { includeBaseColumns: true });
+export const buildExportTableData = ({ form, entries, childForms = [], childEntriesMap = new Map() }) => {
+  const columns = buildExportColumns(form, { includeBaseColumns: true, childForms });
   const headerRows = buildHeaderRows(columns);
   const headerMatrix = expandHeaderRowsToMatrix(headerRows, columns.length);
   const deduped = suppressDuplicateHeaderLabels(headerMatrix);
   const normalizedHeaderRows = deduped.map((row) => padRowToLength(row, columns.length));
-  const normalizedRows = (entries || []).map((entry) => {
-    const values = computeRowValues(entry, columns);
+  const normalizedRows = [];
+  (entries || []).forEach((entry) => {
+    const values = computeRowValues(entry, columns, { scope: "parent" });
     const row = columns.map((column) => {
       const display = values?.[column.key]?.display;
       if (display === null || display === undefined) return "";
       return String(display);
     });
-    return padRowToLength(row, columns.length);
+    normalizedRows.push(padRowToLength(row, columns.length));
+
+    const childEntriesByFormId = childEntriesMap instanceof Map
+      ? childEntriesMap.get(entry?.id) || {}
+      : {};
+
+    (childForms || []).forEach((childForm) => {
+      const childFormId = String(childForm?.childFormId || "");
+      const childEntries = Array.isArray(childEntriesByFormId?.[childFormId]) ? childEntriesByFormId[childFormId] : [];
+      childEntries.forEach((childEntry) => {
+        const childValues = computeRowValues(childEntry, columns, { scope: "child", childFormId });
+        const childRow = columns.map((column) => {
+          const display = childValues?.[column.key]?.display;
+          if (display === null || display === undefined) return "";
+          return String(display);
+        });
+        normalizedRows.push(padRowToLength(childRow, columns.length));
+      });
+    });
   });
   return {
     columns,
@@ -753,15 +860,56 @@ export const buildExportTableData = ({ form, entries }) => {
   };
 };
 
-export const computeRowValues = (entry, columns) => {
+const createEmptyCellValue = () => ({ display: "", search: "", sort: "", boolean: false });
+
+const isColumnVisibleForRow = (column, { scope = "parent", childFormId = null } = {}) => {
+  if (!column || column.key === "__actions") return false;
+  if (scope === "child") {
+    return column.scope === "child" && String(column.childFormId || "") === String(childFormId || "");
+  }
+  return column.scope !== "child";
+};
+
+const matchColumnName = (column, normalized) => {
+  if (!column || !normalized) return false;
+
+  if (column.key && column.key.toLowerCase() === normalized) return true;
+  if (column.path && column.path.toLowerCase() === normalized) return true;
+
+  if (Array.isArray(column.searchAliases)) {
+    if (column.searchAliases.some((alias) => String(alias || "").toLowerCase() === normalized)) {
+      return true;
+    }
+  }
+
+  if (column.segments && Array.isArray(column.segments)) {
+    const lastSegment = column.segments[column.segments.length - 1];
+    if (lastSegment && String(lastSegment).toLowerCase() === normalized) return true;
+
+    const fullName = column.segments.join("|").toLowerCase();
+    if (fullName === normalized) return true;
+  }
+
+  return false;
+};
+
+export const computeRowValues = (entry, columns, options = {}) => {
+  const scopeOptions = {
+    scope: options?.scope || "parent",
+    childFormId: options?.childFormId || null,
+  };
   const values = {};
   (columns || []).forEach((column) => {
     if (!column || !column.key) return;
-    if (typeof column.getValue !== "function") {
-      values[column.key] = { display: "", search: "", sort: "" };
+    if (!isColumnVisibleForRow(column, scopeOptions)) {
+      values[column.key] = createEmptyCellValue();
       return;
     }
-    values[column.key] = column.getValue(entry, column) || { display: "", search: "", sort: "" };
+    if (typeof column.getValue !== "function") {
+      values[column.key] = createEmptyCellValue();
+      return;
+    }
+    values[column.key] = column.getValue(entry, column) || createEmptyCellValue();
   });
   return values;
 };
@@ -1039,30 +1187,21 @@ const parseTokens = (tokens) => {
 /**
  * 列名から対応するcolumnオブジェクトを取得
  */
-const findColumnByName = (columns, colName) => {
-  if (!columns || !colName) return null;
+const resolveColumnByNameForRow = (columns, colName, row) => {
+  if (!columns || !colName) return { column: null, blockedByScope: false };
 
   const normalized = colName.trim().toLowerCase();
+  let blockedByScope = false;
 
-  return columns.find(col => {
-    // key名でマッチング
-    if (col.key && col.key.toLowerCase() === normalized) return true;
-
-    // path名でマッチング
-    if (col.path && col.path.toLowerCase() === normalized) return true;
-
-    // segments（表示名）でマッチング
-    if (col.segments && Array.isArray(col.segments)) {
-      const lastSegment = col.segments[col.segments.length - 1];
-      if (lastSegment && lastSegment.toLowerCase() === normalized) return true;
-
-      // 全セグメントを結合してマッチング
-      const fullName = col.segments.join('|').toLowerCase();
-      if (fullName === normalized) return true;
+  for (const column of columns) {
+    if (!matchColumnName(column, normalized)) continue;
+    if (isColumnVisibleForRow(column, row || {})) {
+      return { column, blockedByScope: false };
     }
+    blockedByScope = true;
+  }
 
-    return false;
-  });
+  return { column: null, blockedByScope };
 };
 
 const findMatchingEntryField = (row, columnName) => {
@@ -1190,152 +1329,112 @@ const resolveBooleanValueForRow = (row, column, columnName) => {
 /**
  * ASTを評価して行がマッチするか判定
  */
-const evaluateAST = (ast, row, columns) => {
-  if (!ast || ast.type === 'EMPTY') return true;
+const evaluateLeafOnRow = (ast, row, columns) => {
+  if (!row) return false;
 
   switch (ast.type) {
-    case 'NOT':
-      return !evaluateAST(ast.value, row, columns);
-
-    case 'AND':
-      return evaluateAST(ast.left, row, columns) && evaluateAST(ast.right, row, columns);
-
-    case 'OR':
-      return evaluateAST(ast.left, row, columns) || evaluateAST(ast.right, row, columns);
-
     case 'PARTIAL': {
-      // 全列に対してOR検索（表示列だけでなく、全データフィールドも対象）
       const keyword = normalizeSearchText(ast.keyword);
       if (!keyword) return true;
 
-      // まず表示されている列を検索
       const matchesInColumns = (columns || []).some((column) => {
-        if (column.searchable === false) return false;
+        if (column.searchable === false || !isColumnVisibleForRow(column, row || {})) return false;
         const text = row?.values?.[column.key]?.search;
-        if (!text) return false;
-        return text.includes(keyword);
+        return Boolean(text && text.includes(keyword));
       });
-
       if (matchesInColumns) return true;
 
-      // ID列が非表示でもレコードIDを検索対象に含める
-      const entryId = row?.entry?.id;
-      if (entryId !== undefined && entryId !== null && entryId !== "") {
-        const matchesEntryId = buildSearchableCandidates("id", entryId).some((candidate) => {
-          if (!candidate) return false;
-          const normalized = normalizeSearchText(candidate);
-          return normalized.includes(keyword);
-        });
-        if (matchesEntryId) return true;
+      if ((row?.scope || "parent") !== "child") {
+        const entryId = row?.entry?.id;
+        if (entryId !== undefined && entryId !== null && entryId !== "") {
+          const matchesEntryId = buildSearchableCandidates("id", entryId).some((candidate) => {
+            if (!candidate) return false;
+            return normalizeSearchText(candidate).includes(keyword);
+          });
+          if (matchesEntryId) return true;
+        }
       }
 
-      // 表示列で見つからなかった場合、全データフィールドを検索
       const entryData = row?.entry?.data || {};
       const entryDataUnixMs = row?.entry?.dataUnixMs || {};
-
       return Object.entries(entryData).some(([key, value]) => {
         const unixMs = entryDataUnixMs[key];
         return buildSearchableCandidates(key, value, unixMs).some((candidate) => {
           if (!candidate) return false;
-          const normalized = normalizeSearchText(candidate);
-          return normalized.includes(keyword);
+          return normalizeSearchText(candidate).includes(keyword);
         });
       });
     }
 
     case 'COLUMN_PARTIAL': {
-      // 指定列に対して部分一致検索
-      const column = findColumnByName(columns, ast.column);
       if (!ast.keyword) return false;
-
-      // 表示列から検索
+      const { column, blockedByScope } = resolveColumnByNameForRow(columns, ast.column, row);
       if (column) {
         const text = row?.values?.[column.key]?.search;
-        if (text) {
-          const keyword = normalizeSearchText(ast.keyword);
-          return text.includes(keyword);
-        }
+        return Boolean(text && text.includes(normalizeSearchText(ast.keyword)));
       }
+      if (blockedByScope) return false;
 
-      // 表示列にない場合、データフィールドから直接検索
       const entryField = findMatchingEntryField(row, ast.column);
       if (!entryField) return false;
       const keyword = normalizeSearchText(ast.keyword);
       return candidateMatches(entryField, (candidate) => {
         if (!candidate) return false;
-        const normalized = normalizeSearchText(candidate);
-        return normalized.includes(keyword);
+        return normalizeSearchText(candidate).includes(keyword);
       });
     }
 
     case 'COLUMN_BOOL': {
-      const column = findColumnByName(columns, ast.column);
+      const { column, blockedByScope } = resolveColumnByNameForRow(columns, ast.column, row);
+      if (!column && blockedByScope) return false;
       const boolValue = resolveBooleanValueForRow(row, column, ast.column);
       return boolValue === ast.value;
     }
 
     case 'COMPARE': {
-      // 指定列に対して比較演算
-      const column = findColumnByName(columns, ast.column);
       if (ast.value === "") return false;
-
-      // 表示列から取得
+      const { column, blockedByScope } = resolveColumnByNameForRow(columns, ast.column, row);
       if (column) {
         const cellValue = row?.values?.[column.key];
-        // sort値を使用（数値の場合は数値、文字列の場合は文字列）
         const rowValue = cellValue?.sort ?? cellValue?.display ?? '';
         if (isDateLikeColumn(column)) {
-          const parser = parseStringToSerial;
-          const rowMs = parser(String(rowValue));
-          const targetMs = parser(String(ast.value));
+          const rowMs = parseStringToSerial(String(rowValue));
+          const targetMs = parseStringToSerial(String(ast.value));
           if (!Number.isFinite(rowMs) || !Number.isFinite(targetMs)) return false;
           return compareValue(rowMs, ast.operator, targetMs, { allowNumeric: true });
         }
 
         const numericPossible = Number.isFinite(Number(rowValue)) && Number.isFinite(Number(ast.value));
         const allowNumeric = isNumericColumn(column) || typeof rowValue === "number" || numericPossible;
-
         if (rowValue !== '') {
           return compareValue(rowValue, ast.operator, ast.value, { allowNumeric });
         }
       }
+      if (blockedByScope) return false;
 
-      // 表示列にない場合、データフィールドから直接取得
       const entryField = findMatchingEntryField(row, ast.column);
       if (!entryField) return false;
-
       return candidateMatches(entryField, (candidate) => {
         if (candidate === undefined || candidate === null || candidate === "") return false;
-        const numCandidate = Number(candidate);
-        const numTarget = Number(ast.value);
-        const allowNumericCandidate = Number.isFinite(numCandidate) && Number.isFinite(numTarget);
+        const allowNumericCandidate = Number.isFinite(Number(candidate)) && Number.isFinite(Number(ast.value));
         return compareValue(candidate, ast.operator, ast.value, { allowNumeric: allowNumericCandidate });
       });
     }
 
     case 'REGEX': {
-      // 指定列に対して正規表現検索
-      const column = findColumnByName(columns, ast.column);
       if (!ast.pattern) return false;
-
-      // 表示列から検索
-      if (column) {
-        const text = row?.values?.[column.key]?.display ?? '';
-        try {
-          const regex = new RegExp(ast.pattern, 'i');
-          return regex.test(text);
-        } catch (error) {
-          console.warn('Invalid regex pattern:', ast.pattern, error);
-          return false;
-        }
-      }
-
-      // 表示列にない場合、データフィールドから直接検索
-      const entryField = findMatchingEntryField(row, ast.column);
-      if (!entryField) return false;
-
+      const { column, blockedByScope } = resolveColumnByNameForRow(columns, ast.column, row);
       try {
         const regex = new RegExp(ast.pattern, 'i');
+        if (column) {
+          const text = row?.values?.[column.key]?.display ?? '';
+          return regex.test(text);
+        }
+        if (blockedByScope) return false;
+
+        const entryField = findMatchingEntryField(row, ast.column);
+        if (!entryField) return false;
+
         const candidates = buildSearchableCandidates(entryField.key, entryField.value, entryField.unixMs);
         if (candidates.length === 0) {
           return regex.test('');
@@ -1347,10 +1446,99 @@ const evaluateAST = (ast, row, columns) => {
       }
     }
 
+    case 'ALWAYS_FALSE':
+      return false;
+
     default:
-      if (ast.type === 'ALWAYS_FALSE') return false;
       return true;
   }
+};
+
+const evaluateAstAcrossContext = (ast, parentRow, childRows, columns) => {
+  if (!ast || ast.type === 'EMPTY') return true;
+
+  switch (ast.type) {
+    case 'NOT':
+      return !evaluateAstAcrossContext(ast.value, parentRow, childRows, columns);
+    case 'AND':
+      return evaluateAstAcrossContext(ast.left, parentRow, childRows, columns)
+        && evaluateAstAcrossContext(ast.right, parentRow, childRows, columns);
+    case 'OR':
+      return evaluateAstAcrossContext(ast.left, parentRow, childRows, columns)
+        || evaluateAstAcrossContext(ast.right, parentRow, childRows, columns);
+    default:
+      if (evaluateLeafOnRow(ast, parentRow, columns)) return true;
+      return (childRows || []).some((childRow) => evaluateLeafOnRow(ast, childRow, columns));
+  }
+};
+
+const evaluateAstForSpecificChild = (ast, parentRow, childRow, columns) => {
+  if (!ast || ast.type === 'EMPTY') {
+    return { matched: true, childMatched: false };
+  }
+
+  switch (ast.type) {
+    case 'NOT': {
+      const inner = evaluateAstForSpecificChild(ast.value, parentRow, childRow, columns);
+      return { matched: !inner.matched, childMatched: false };
+    }
+    case 'AND': {
+      const left = evaluateAstForSpecificChild(ast.left, parentRow, childRow, columns);
+      const right = evaluateAstForSpecificChild(ast.right, parentRow, childRow, columns);
+      const matched = left.matched && right.matched;
+      return { matched, childMatched: matched && (left.childMatched || right.childMatched) };
+    }
+    case 'OR': {
+      const left = evaluateAstForSpecificChild(ast.left, parentRow, childRow, columns);
+      const right = evaluateAstForSpecificChild(ast.right, parentRow, childRow, columns);
+      const matched = left.matched || right.matched;
+      return {
+        matched,
+        childMatched: (left.matched && left.childMatched) || (right.matched && right.childMatched),
+      };
+    }
+    default: {
+      const parentMatched = evaluateLeafOnRow(ast, parentRow, columns);
+      const childMatched = evaluateLeafOnRow(ast, childRow, columns);
+      return {
+        matched: parentMatched || childMatched,
+        childMatched,
+      };
+    }
+  }
+};
+
+export const getKeywordMatchDetail = (row, columns, keyword, options = {}) => {
+  if (!keyword || typeof keyword !== 'string' || !keyword.trim()) {
+    return {
+      matched: true,
+      matchedChildEntryIds: new Set(),
+    };
+  }
+
+  const tokens = tokenizeSearchQuery(keyword);
+  const ast = parseTokens(tokens);
+  const childRows = Array.isArray(options.childRows) ? options.childRows : [];
+  const parentResult = evaluateAstForSpecificChild(ast, row, null, columns);
+  let matched = parentResult.matched;
+  const matchedChildEntryIds = new Set();
+
+  childRows.forEach((childRow) => {
+    const childEntryId = childRow?.entry?.id;
+    if (!childEntryId) return;
+    const childResult = evaluateAstForSpecificChild(ast, row, childRow, columns);
+    if (childResult.matched) {
+      matched = true;
+    }
+    if (childResult.matched && childResult.childMatched) {
+      matchedChildEntryIds.add(childEntryId);
+    }
+  });
+
+  return {
+    matched,
+    matchedChildEntryIds,
+  };
 };
 
 /**
@@ -1371,16 +1559,6 @@ const evaluateAST = (ast, row, columns) => {
  * - "氏名:山田 and 年齢>=20" → 氏名に"山田"を含み、年齢が20以上
  * - "(氏名:山田 or 氏名:田中) and 年齢>=20" → (氏名に"山田"または"田中")かつ年齢が20以上
  */
-export const matchesKeyword = (row, columns, keyword) => {
-  if (!keyword || typeof keyword !== 'string') return true;
-  if (!keyword.trim()) return true;
-
-  // トークン化
-  const tokens = tokenizeSearchQuery(keyword);
-
-  // パース
-  const ast = parseTokens(tokens);
-
-  // 評価
-  return evaluateAST(ast, row, columns);
+export const matchesKeyword = (row, columns, keyword, options = {}) => {
+  return getKeywordMatchDetail(row, columns, keyword, options).matched;
 };

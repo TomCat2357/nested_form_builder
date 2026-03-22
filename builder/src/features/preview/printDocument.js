@@ -191,7 +191,54 @@ const appendPrintItems = (fields, responses, depth, items, options = {}) => {
   return items;
 };
 
-export const buildPrintDocumentPayload = ({ schema, responses, settings = {}, recordId, exportedAt = new Date(), omitEmptyRows, showHeader }) => {
+const appendChildSectionItems = (items, childSections, options = {}) => {
+  (childSections || []).forEach((section) => {
+    const title = String(section?.title || "").trim();
+    const entries = Array.isArray(section?.entries) ? section.entries : [];
+    if (!title || entries.length === 0) return;
+
+    items.push({
+      label: title,
+      value: "",
+      depth: 0,
+      type: "message",
+    });
+
+    const shouldShowRecordSeparator = entries.length > 1;
+    entries.forEach((entry, index) => {
+      if (shouldShowRecordSeparator) {
+        const recordNo = String(entry?.recordNo || index + 1).trim();
+        items.push({
+          label: `No. ${recordNo || index + 1}`,
+          value: "",
+          depth: 1,
+          type: "message",
+        });
+      }
+
+      appendPrintItems(
+        entry?.schema || [],
+        entry?.responses || {},
+        shouldShowRecordSeparator ? 2 : 1,
+        items,
+        options,
+      );
+    });
+  });
+
+  return items;
+};
+
+export const buildPrintDocumentPayload = ({
+  schema,
+  responses,
+  settings = {},
+  recordId,
+  exportedAt = new Date(),
+  omitEmptyRows,
+  showHeader,
+  childSections = [],
+}) => {
   const safeExportedAt = exportedAt instanceof Date && !Number.isNaN(exportedAt.getTime()) ? exportedAt : new Date();
   const formTitle = typeof settings.formTitle === "string" && settings.formTitle.trim() ? settings.formTitle.trim() : "受付フォーム";
   const resolvedRecordId = String(recordId || settings.recordId || "").trim() || "record";
@@ -209,7 +256,11 @@ export const buildPrintDocumentPayload = ({ schema, responses, settings = {}, re
     modifiedAt,
     showHeader: shouldShowHeader,
     exportedAtIso: safeExportedAt.toISOString(),
-    items: appendPrintItems(schema, responses, 0, [], { omitEmptyRows: shouldOmitEmptyRows }),
+    items: appendChildSectionItems(
+      appendPrintItems(schema, responses, 0, [], { omitEmptyRows: shouldOmitEmptyRows }),
+      childSections,
+      { omitEmptyRows: shouldOmitEmptyRows },
+    ),
   };
 };
 

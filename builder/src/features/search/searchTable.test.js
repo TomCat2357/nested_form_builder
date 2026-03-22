@@ -5,6 +5,7 @@ import {
   buildSearchTableLayout,
   compareByColumn,
   computeRowValues,
+  getKeywordMatchDetail,
   matchesKeyword,
 } from "./searchTable.js";
 import { toUnixMs, unixMsToSerial } from "../../utils/dateTime.js";
@@ -498,4 +499,162 @@ test("検索結果のチェックボックス表示はフォーム定義順で�
 
   const values = computeRowValues(entry, columns);
   assert.equal(values[checkboxColumn.key].display, "電話、SMS");
+});
+
+test("子フォーム列は親代表項目の直後に配置される", () => {
+  const form = {
+    settings: {},
+    displayFieldSettings: [
+      { path: "会社名", type: "text" },
+      { path: "所在地", type: "text" },
+    ],
+  };
+  const childForms = [
+    {
+      childFormId: "form_factory",
+      formTitle: "工場",
+      labelPaths: ["会社情報|工場情報"],
+      form: {
+        settings: { formTitle: "工場" },
+        displayFieldSettings: [
+          { path: "工場名", type: "text" },
+          { path: "担当者", type: "text" },
+        ],
+      },
+    },
+  ];
+
+  const { columns } = buildSearchTableLayout(form, {
+    includeOperations: false,
+    childForms,
+  });
+
+  assert.deepEqual(
+    columns.slice(0, 4).map((column) => column.key),
+    [
+      "display:会社名",
+      "child:form_factory:display:工場名",
+      "display:所在地",
+      "child:form_factory:display:担当者",
+    ],
+  );
+  assert.deepEqual(columns.slice(-4).map((column) => column.key), ["id", "No.", "createdAt", "modifiedAt"]);
+});
+
+test("子フォーム検索は子レコード単位でマッチした行だけ展開対象にする", () => {
+  const form = {
+    settings: {},
+    displayFieldSettings: [
+      { path: "会社名", type: "text" },
+    ],
+  };
+  const childForms = [
+    {
+      childFormId: "form_factory",
+      formTitle: "工場",
+      labelPaths: ["会社情報|工場情報"],
+      form: {
+        settings: { formTitle: "工場" },
+        displayFieldSettings: [
+          { path: "工場名", type: "text" },
+          { path: "担当者", type: "text" },
+        ],
+      },
+    },
+  ];
+  const { columns } = buildSearchTableLayout(form, {
+    includeOperations: false,
+    childForms,
+  });
+  const parentEntry = {
+    id: "parent_1",
+    "No.": 1,
+    modifiedAtUnixMs: Date.UTC(2026, 0, 2, 0, 0, 0),
+    modifiedAt: Date.UTC(2026, 0, 2, 0, 0, 0),
+    data: { 会社名: "山田製作所" },
+    dataUnixMs: {},
+  };
+  const childEntry1 = {
+    id: "child_1",
+    parentRecordId: "parent_1",
+    data: { 工場名: "第一工場", 担当者: "佐藤" },
+    dataUnixMs: {},
+  };
+  const childEntry2 = {
+    id: "child_2",
+    parentRecordId: "parent_1",
+    data: { 工場名: "第二工場", 担当者: "鈴木" },
+    dataUnixMs: {},
+  };
+
+  const parentRow = {
+    scope: "parent",
+    entry: parentEntry,
+    values: computeRowValues(parentEntry, columns, { scope: "parent" }),
+  };
+  const childRows = [childEntry1, childEntry2].map((entry) => ({
+    scope: "child",
+    childFormId: "form_factory",
+    entry,
+    values: computeRowValues(entry, columns, { scope: "child", childFormId: "form_factory" }),
+  }));
+
+  const byPath = getKeywordMatchDetail(parentRow, columns, "会社情報|工場情報|担当者:鈴木", { childRows });
+  assert.equal(byPath.matched, true);
+  assert.deepEqual(Array.from(byPath.matchedChildEntryIds), ["child_2"]);
+
+  const byLeaf = getKeywordMatchDetail(parentRow, columns, "工場名:第一", { childRows });
+  assert.equal(byLeaf.matched, true);
+  assert.deepEqual(Array.from(byLeaf.matchedChildEntryIds), ["child_1"]);
+});
+
+test("子フォームを含むエクスポートは親行の後ろに子行を追加する", () => {
+  const form = {
+    settings: {},
+    schema: [
+      { type: "text", label: "会社名" },
+    ],
+  };
+  const childForms = [
+    {
+      childFormId: "form_factory",
+      formTitle: "工場",
+      form: {
+        settings: { formTitle: "工場" },
+        schema: [
+          { type: "text", label: "工場名" },
+        ],
+      },
+    },
+  ];
+  const parentEntry = {
+    id: "parent_1",
+    "No.": 1,
+    createdAt: Date.UTC(2026, 0, 1, 0, 0, 0),
+    createdAtUnixMs: Date.UTC(2026, 0, 1, 0, 0, 0),
+    modifiedAt: Date.UTC(2026, 0, 2, 0, 0, 0),
+    modifiedAtUnixMs: Date.UTC(2026, 0, 2, 0, 0, 0),
+    data: { 会社名: "山田製作所" },
+    dataUnixMs: {},
+  };
+  const childEntry = {
+    id: "child_1",
+    parentRecordId: "parent_1",
+    data: { 工場名: "第一工場" },
+    dataUnixMs: {},
+  };
+
+  const exportTable = buildExportTableData({
+    form,
+    entries: [parentEntry],
+    childForms,
+    childEntriesMap: new Map([
+      ["parent_1", { form_factory: [childEntry] }],
+    ]),
+  });
+
+  assert.equal(exportTable.rows.length, 2);
+  assert.equal(exportTable.rows[0].includes("山田製作所"), true);
+  assert.equal(exportTable.rows[1].includes("第一工場"), true);
+  assert.equal(exportTable.rows[1].includes("山田製作所"), false);
 });

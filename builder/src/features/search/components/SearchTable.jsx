@@ -19,6 +19,8 @@ export default function SearchTable({
   onToggleSelect,
   onRowClick,
 }) {
+  const [expandedParentIds, setExpandedParentIds] = useState(new Set());
+
   const handleCopyId = async (event, id) => {
     event.stopPropagation();
     const idText = String(id || "");
@@ -30,6 +32,57 @@ export default function SearchTable({
     } catch {
       // no-op: クリップボードAPIが使えない環境では通常表示のみ
     }
+  };
+
+  const toggleExpandedParent = (entryId) => {
+    setExpandedParentIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(entryId)) next.delete(entryId);
+      else next.add(entryId);
+      return next;
+    });
+  };
+
+  const renderCellContent = (column, rawDisplayText, rowId, { isChildRow = false, isIndented = false } = {}) => {
+    const limitedText = applyDisplayLengthLimit(rawDisplayText || "", cellDisplayLimit);
+    const isUrl = column.sourceType === "url" && rawDisplayText;
+    const isRecordIdColumn = column.key === "id" && !isChildRow;
+
+    if (isRecordIdColumn) {
+      return (
+        <button
+          type="button"
+          className="nf-link nf-text-left"
+          style={{ padding: 0, border: "none", background: "none", cursor: "pointer" }}
+          onClick={(event) => {
+            void handleCopyId(event, rawDisplayText);
+          }}
+          title="クリックでIDをコピー"
+        >
+          {limitedText}
+        </button>
+      );
+    }
+
+    if (isUrl) {
+      return (
+        <a
+          href={String(rawDisplayText).match(/^(javascript|vbscript|data):/i) ? "#" : rawDisplayText}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="nf-link"
+          onClick={(event) => event.stopPropagation()}
+        >
+          {limitedText}
+        </a>
+      );
+    }
+
+    if (isIndented && limitedText) {
+      return <span className="search-child-cell-content">└ {limitedText}</span>;
+    }
+
+    return limitedText;
   };
 
   const selectableColumns = columns.filter((column) => column.key !== "__actions");
@@ -122,7 +175,7 @@ export default function SearchTable({
                   const fallbackColumn = cell.colSpan === 1 ? selectableColumns[cell.startIndex] || null : null;
                   const column = cell.column || fallbackColumn;
                   if (column && column.key === "__actions") return null;
-                  const sortable = Boolean(column && column.sortable !== false);
+                  const sortable = Boolean(column && column.sortable !== false && column.scope !== "child");
                   const orderLabel = sortable && cell.label !== "" ? headerSortLabel(activeSort, column.key) : "";
 
                   return (
@@ -143,63 +196,91 @@ export default function SearchTable({
             ))}
           </thead>
           <tbody>
-            {pagedEntries.map(({ entry, values }) => (
-              <tr
-                key={entry.id}
-                className="search-row"
-                onClick={() => {
-                  // テキストが選択されていたら（ドラッグ操作）遷移しない
-                  const selection = window.getSelection();
-                  if (selection && selection.toString().length > 0) {
-                    return;
-                  }
-                  onRowClick(entry.id);
-                }}
-              >
-                <td className="search-td search-td-narrow" onClick={(e) => e.stopPropagation()}>
-                  <input
-                    type="checkbox"
-                    checked={selectedEntries.has(entry.id)}
-                    onChange={() => onToggleSelect(entry.id)}
-                  />
-                </td>
-                {selectableColumns.map((column) => {
-                  const rawDisplayText = values[column.key]?.display ?? "";
-                  const limitedText = applyDisplayLengthLimit(rawDisplayText || "", cellDisplayLimit);
-                  const isUrl = column.sourceType === "url" && rawDisplayText;
-                  const isRecordIdColumn = column.key === "id";
-                  return (
-                    <td key={`${entry.id}_${column.key}`} className="search-td">
-                      {isRecordIdColumn ? (
-                        <button
-                          type="button"
-                          className="nf-link nf-text-left"
-                          style={{ padding: 0, border: "none", background: "none", cursor: "pointer" }}
-                          onClick={(event) => {
-                            void handleCopyId(event, rawDisplayText);
-                          }}
-                          title="クリックでIDをコピー"
-                        >
-                          {limitedText}
-                        </button>
-                      ) : isUrl ? (
-                        <a
-                          href={String(rawDisplayText).match(/^(javascript|vbscript|data):/i) ? "#" : rawDisplayText}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="nf-link"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {limitedText}
-                        </a>
-                      ) : (
-                        limitedText
-                      )}
+            {pagedEntries.map((row) => {
+              const { entry, values, childRows = [], matchedChildEntryIds = new Set() } = row;
+              const hasChildRows = childRows.length > 0;
+              const forcedExpanded = matchedChildEntryIds.size > 0;
+              const isExpanded = hasChildRows && (forcedExpanded || expandedParentIds.has(entry.id));
+              const visibleChildRows = !isExpanded
+                ? []
+                : (forcedExpanded
+                    ? childRows.filter((childRow) => matchedChildEntryIds.has(childRow?.entry?.id))
+                    : childRows);
+
+              return (
+                <React.Fragment key={entry.id}>
+                  <tr
+                    className="search-row"
+                    onClick={() => {
+                      const selection = window.getSelection();
+                      if (selection && selection.toString().length > 0) {
+                        return;
+                      }
+                      onRowClick(entry.id);
+                    }}
+                  >
+                    <td className="search-td search-td-narrow" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedEntries.has(entry.id)}
+                        onChange={() => onToggleSelect(entry.id)}
+                      />
                     </td>
-                  );
-                })}
-              </tr>
-            ))}
+                    {selectableColumns.map((column, columnIndex) => {
+                      const rawDisplayText = values[column.key]?.display ?? "";
+                      const shouldShowToggle = hasChildRows && columnIndex === 0;
+                      return (
+                        <td key={`${entry.id}_${column.key}`} className="search-td">
+                          {shouldShowToggle && (
+                            <button
+                              type="button"
+                              className="search-row-toggle"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                toggleExpandedParent(entry.id);
+                              }}
+                              aria-label={isExpanded ? "子レコードを折りたたむ" : "子レコードを展開する"}
+                            >
+                              {isExpanded ? "▼" : "▶"}
+                            </button>
+                          )}
+                          {renderCellContent(column, rawDisplayText, entry.id)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  {visibleChildRows.map((childRow) => {
+                    const firstChildColumn = selectableColumns.find(
+                      (column) => column.scope === "child" && String(column.childFormId || "") === String(childRow.childFormId || ""),
+                    );
+
+                    return (
+                      <tr key={`${entry.id}_${childRow.childFormId}_${childRow.entry.id}`} className="search-row search-row-child">
+                        <td className="search-td search-td-narrow" />
+                        {selectableColumns.map((column) => {
+                          const isVisibleChildColumn = column.scope === "child"
+                            && String(column.childFormId || "") === String(childRow.childFormId || "");
+                          const rawDisplayText = isVisibleChildColumn ? (childRow.values[column.key]?.display ?? "") : "";
+                          return (
+                            <td
+                              key={`${childRow.entry.id}_${column.key}`}
+                              className={`search-td search-td-child${isVisibleChildColumn ? " is-filled" : ""}`}
+                            >
+                              {isVisibleChildColumn
+                                ? renderCellContent(column, rawDisplayText, childRow.entry.id, {
+                                    isChildRow: true,
+                                    isIndented: firstChildColumn?.key === column.key,
+                                  })
+                                : ""}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    );
+                  })}
+                </React.Fragment>
+              );
+            })}
             {pagedEntries.length === 0 && (
               <tr>
                 <td className="search-td nf-text-center" colSpan={selectableColumns.length + 1}>
