@@ -13,7 +13,7 @@
   },
   "webapp": {
     "executeAs": "USER_DEPLOYING",
-    "access": "ANYONE"
+    "access": "ANYONE_ANONYMOUS"
   },
   "oauthScopes": [
     "https://www.googleapis.com/auth/userinfo.email",

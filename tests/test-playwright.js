@@ -7,12 +7,17 @@ const { chromium } = require("playwright");
 const DEFAULT_TIMEOUT_MS = Number(process.env.PLAYWRIGHT_TIMEOUT_MS || 20000);
 const REQUIRE_MULTI_RECORDS = process.env.PLAYWRIGHT_REQUIRE_MULTI_RECORDS !== "0";
 
+function readJsonFile(filePath) {
+  const raw = fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/, "");
+  return JSON.parse(raw);
+}
+
 function readDeploymentUrlFromCache(cwd) {
   const cachePath = path.join(cwd, ".gas-deployment.json");
   if (!fs.existsSync(cachePath)) return "";
 
   try {
-    const raw = JSON.parse(fs.readFileSync(cachePath, "utf8"));
+    const raw = readJsonFile(cachePath);
     if (raw?.webAppUrl) return String(raw.webAppUrl).trim();
     if (raw?.deploymentId) return `https://script.google.com/macros/s/${String(raw.deploymentId).trim()}/exec`;
   } catch (_error) {
@@ -65,6 +70,14 @@ async function getAppSurface(page) {
   if (frames.length <= 1) return page.mainFrame();
 
   const candidates = frames.filter((frame) => frame !== page.mainFrame());
+  for (const frame of candidates.slice().reverse()) {
+    const mainCount = await frame.locator("main").count().catch(() => 0);
+    const nestedFrameCount = await frame.locator("iframe").count().catch(() => 0);
+    if (mainCount > 0 && nestedFrameCount === 0) {
+      return frame;
+    }
+  }
+
   return candidates[candidates.length - 1];
 }
 
@@ -77,7 +90,10 @@ async function expectNoGoogleLogin(page) {
 }
 
 async function waitForAppReady(surface) {
-  const selectors = [".app-root", ".app-container", ".nf-card", "main"];
+  const loadingText = surface.getByText("読み込み中");
+  await loadingText.waitFor({ state: "hidden", timeout: DEFAULT_TIMEOUT_MS }).catch(() => {});
+
+  const selectors = [".app-root", ".app-container", ".nf-card", "main", "h1"];
   for (const selector of selectors) {
     const locator = surface.locator(selector);
     if (await locator.count()) {
@@ -106,8 +122,13 @@ async function isSearchPage(surface) {
 }
 
 async function openFormCard(surface, page, index) {
-  const formCards = surface.locator("main > div");
-  const count = await formCards.count();
+  const formCards = surface.locator("main h2");
+  const deadline = Date.now() + DEFAULT_TIMEOUT_MS;
+  let count = await formCards.count();
+  while (count <= index && Date.now() < deadline) {
+    await page.waitForTimeout(500);
+    count = await formCards.count();
+  }
   if (count <= index) return false;
   await formCards.nth(index).click();
   await page.waitForTimeout(1500);
@@ -124,12 +145,32 @@ async function clickBackToMain(surface, page) {
   return false;
 }
 
+async function waitForSearchResults(surface, page) {
+  const rows = surface.locator("table tbody tr");
+  const deadline = Date.now() + DEFAULT_TIMEOUT_MS;
+
+  while (Date.now() < deadline) {
+    if (await rows.count()) return true;
+
+    const bodyText = await surface.locator("body").innerText().catch(() => "");
+    if (bodyText && !bodyText.includes("読み込み中")) {
+      return false;
+    }
+
+    await page.waitForTimeout(500);
+  }
+
+  return (await rows.count()) > 0;
+}
+
 async function findParentRecordWithChildJump(surface, page) {
+  await waitForSearchResults(surface, page);
   const rows = surface.locator("table tbody tr");
   const rowCount = await rows.count();
   for (let i = 0; i < Math.min(rowCount, 10); i += 1) {
     await rows.nth(i).click();
     await page.waitForTimeout(1200);
+    surface = await getAppSurface(page);
     const childJumpButtons = surface.locator(".child-form-jump-btn");
     if (await childJumpButtons.count()) {
       return true;
@@ -190,6 +231,7 @@ async function verifyChildSearchAndRecord(surface, page) {
   assert.ok(childSearchBreadcrumb.length >= 3, "子フォーム検索画面のパンくずが不足しています");
 
   const childRows = surface.locator("table tbody tr");
+  await waitForSearchResults(surface, page);
   const childRowCount = await childRows.count();
   assert.ok(childRowCount > 0, "子フォーム検索結果にレコードがありません");
 

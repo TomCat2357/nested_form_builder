@@ -12,6 +12,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Resolve-IndexHtmlPath {
     $candidates = @("dist/Index.html", "dist/index.html")
@@ -34,12 +35,16 @@ function Set-FileContentWithRetry {
     )
 
     # パスを絶対パスに変換（.NETクラスで安全に扱うため）
-    $fullPath = (Resolve-Path $Path).Path
+    if (Test-Path $Path) {
+        $fullPath = (Resolve-Path $Path).Path
+    } else {
+        $fullPath = [System.IO.Path]::GetFullPath((Join-Path (Get-Location) $Path))
+    }
 
     for ($attempt = 1; $attempt -le $RetryCount; $attempt++) {
         try {
             # Set-Contentではなく、より確実にハンドルを閉じる.NETのWriteAllTextを使用
-            [System.IO.File]::WriteAllText($fullPath, $Content, [System.Text.Encoding]::UTF8)
+            [System.IO.File]::WriteAllText($fullPath, $Content, $Utf8NoBom)
             return
         } catch {
             if ($attempt -ge $RetryCount) {
@@ -201,7 +206,7 @@ if ($ManifestOverride -ne "") {
             $baseJson | Add-Member -MemberType NoteProperty -Name $prop.Name -Value $prop.Value -Force
         }
 
-        $baseJson | ConvertTo-Json -Depth 10 | Set-Content $TargetManifest -Encoding UTF8
+        Set-FileContentWithRetry -Path $TargetManifest -Content ($baseJson | ConvertTo-Json -Depth 10)
         Write-Host "   ➕ マニフェスト上書き: $ManifestOverride を適用しました" -ForegroundColor Green
     } catch {
         Write-Host "❌ マニフェストの上書き処理に失敗しました" -ForegroundColor Red
@@ -351,7 +356,7 @@ if ($DeploymentId -ne "" -or $WebAppUrl -ne "") {
     if ($WebAppUrl -ne "") {
         $cacheData["webAppUrl"] = $WebAppUrl
     }
-    $cacheData | ConvertTo-Json | Set-Content $DeployCacheFile -Encoding UTF8
+    Set-FileContentWithRetry -Path $DeployCacheFile -Content ($cacheData | ConvertTo-Json)
 }
 
 # アクセス権限の警告
