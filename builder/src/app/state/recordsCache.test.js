@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MS_PER_DAY, SERIAL_EPOCH_UTC_MS, JST_OFFSET_MS } from "../../core/constants.js";
-import { normalizeRecordForCache, planRecordMerge } from "./recordsCache.js";
+import { getMaxRecordNoFromEntries, normalizeRecordForCache, planRecordMerge } from "./recordsCache.js";
 
 const serialToUnixMs = (serial) => (SERIAL_EPOCH_UTC_MS - JST_OFFSET_MS) + serial * MS_PER_DAY;
 
@@ -96,4 +96,43 @@ test("normalizeRecordForCache は固定列を補完して保持する", () => {
   assert.deepEqual(record.data, { field_a: "value" });
   assert.deepEqual(record.dataUnixMs, {});
   assert.deepEqual(record.order, ["field_a"]);
+});
+
+test("getMaxRecordNoFromEntries は同一親ID配下の最大 No. を返す", () => {
+  const maxNo = getMaxRecordNoFromEntries([
+    { id: "child_1", parentRecordId: "parent_a", "No.": 1 },
+    { id: "child_2", parentRecordId: "parent_a", "No.": 2 },
+    { id: "child_3", parentRecordId: "parent_b", "No.": 7 },
+  ], "parent_a");
+
+  assert.equal(maxNo, 2);
+});
+
+test("getMaxRecordNoFromEntries は親IDが異なれば No. 1 開始になるよう別集団として扱う", () => {
+  const maxNo = getMaxRecordNoFromEntries([
+    { id: "child_1", parentRecordId: "parent_a", "No.": 3 },
+    { id: "child_2", parentRecordId: "parent_a", "No.": 4 },
+  ], "parent_b");
+
+  assert.equal(maxNo, 0);
+});
+
+test("getMaxRecordNoFromEntries は削除済み子レコードの No. も再利用しない前提で最大値に含める", () => {
+  const maxNo = getMaxRecordNoFromEntries([
+    { id: "child_1", parentRecordId: "parent_a", "No.": 1, deletedAt: null },
+    { id: "child_2", parentRecordId: "parent_a", "No.": 4, deletedAt: 1700000000000 },
+    { id: "child_3", parentRecordId: "parent_a", "No.": 2, deletedAt: null },
+  ], "parent_a");
+
+  assert.equal(maxNo, 4);
+});
+
+test("getMaxRecordNoFromEntries は親なしレコードでは従来どおりフォーム単位で最大 No. を返す", () => {
+  const maxNo = getMaxRecordNoFromEntries([
+    { id: "rec_1", "No.": 2 },
+    { id: "rec_2", parentRecordId: "", "No.": 5 },
+    { id: "rec_3", parentRecordId: "parent_a", "No.": 9 },
+  ]);
+
+  assert.equal(maxNo, 5);
 });

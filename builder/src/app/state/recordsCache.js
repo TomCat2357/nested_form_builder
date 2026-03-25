@@ -506,23 +506,33 @@ export async function deleteRecordsFromCache(formId, entryIds) {
   db.close();
 }
 
+export const getMaxRecordNoFromEntries = (entries, parentRecordId = "") => {
+  const scopeParentRecordId = String(parentRecordId ?? "");
+  let maxNo = 0;
+
+  for (const entry of entries || []) {
+    const entryParentRecordId = String(entry?.parentRecordId ?? "");
+    if (entryParentRecordId !== scopeParentRecordId) continue;
+
+    const no = parseInt(entry?.["No."], 10);
+    if (!Number.isNaN(no) && no > maxNo) maxNo = no;
+  }
+
+  return maxNo;
+};
+
 /**
  * キャッシュ内の最大 No. を取得（仮No採番用）
  */
-export async function getMaxRecordNo(formId) {
+export async function getMaxRecordNo(formId, parentRecordId = "") {
   if (!formId) return 0;
   const db = await openDB();
   const tx = db.transaction(STORE_NAMES.records, 'readonly');
   const store = tx.objectStore(STORE_NAMES.records);
   const rawEntries = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId)));
   db.close();
-  
-  let maxNo = 0;
-  for (const entry of rawEntries || []) {
-    const no = parseInt(entry['No.'], 10);
-    if (!Number.isNaN(no) && no > maxNo) maxNo = no;
-  }
-  return maxNo;
+
+  return getMaxRecordNoFromEntries(rawEntries, parentRecordId);
 }
 
 /**
