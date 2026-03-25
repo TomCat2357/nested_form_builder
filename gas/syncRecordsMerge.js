@@ -2,6 +2,16 @@ function Sync_isBlankCellValue_(value) {
   return value === "" || value === null || value === undefined;
 }
 
+function Sync_shouldApplyRecordToSheet_(params) {
+  var hasSheetRow = params && params.hasSheetRow === true;
+  var cacheModifiedAt = Number(params && params.cacheModifiedAt);
+  var sheetModifiedAt = Number(params && params.sheetModifiedAt);
+
+  if (!hasSheetRow) return true;
+  if (!(isFinite(sheetModifiedAt) && sheetModifiedAt > 0)) return true;
+  return isFinite(cacheModifiedAt) && cacheModifiedAt > sheetModifiedAt;
+}
+
 function Sync_fillEmptySheetCellsFromRecord_(params) {
   var rowData = params && Array.isArray(params.rowData) ? params.rowData : [];
   var rowFormats = params && Array.isArray(params.rowFormats) ? params.rowFormats : [];
@@ -173,6 +183,7 @@ function Sync_resolveNewRecordMetadata_(params) {
 
 if (typeof module !== "undefined") {
   module.exports = {
+    Sync_shouldApplyRecordToSheet_,
     Sync_fillEmptySheetCellsFromRecord_,
     Sync_syncFixedMetaColumnsFromRecord_,
     Sync_isBlankCellValue_,

@@ -1,6 +1,7 @@
 const assert = require("node:assert/strict");
 const test = require("node:test");
 const {
+  Sync_shouldApplyRecordToSheet_,
   Sync_fillEmptySheetCellsFromRecord_,
   Sync_syncFixedMetaColumnsFromRecord_,
   Sync_isBlankCellValue_,
@@ -13,6 +14,14 @@ test("Sync_isBlankCellValue_ は空文字/null/undefined のみ空扱いにす�
   assert.equal(Sync_isBlankCellValue_(undefined), true);
   assert.equal(Sync_isBlankCellValue_(0), false);
   assert.equal(Sync_isBlankCellValue_(false), false);
+});
+
+test("Sync_shouldApplyRecordToSheet_ は modifiedAt が新しい場合のみキャッシュを適用する", () => {
+  assert.equal(Sync_shouldApplyRecordToSheet_({ hasSheetRow: false, cacheModifiedAt: 0, sheetModifiedAt: 0 }), true);
+  assert.equal(Sync_shouldApplyRecordToSheet_({ hasSheetRow: true, cacheModifiedAt: 1700000000200, sheetModifiedAt: 0 }), true);
+  assert.equal(Sync_shouldApplyRecordToSheet_({ hasSheetRow: true, cacheModifiedAt: 1700000000200, sheetModifiedAt: 1700000000100 }), true);
+  assert.equal(Sync_shouldApplyRecordToSheet_({ hasSheetRow: true, cacheModifiedAt: 1700000000200, sheetModifiedAt: 1700000000200 }), false);
+  assert.equal(Sync_shouldApplyRecordToSheet_({ hasSheetRow: true, cacheModifiedAt: 1700000000100, sheetModifiedAt: 1700000000200 }), false);
 });
 
 test("Sync_fillEmptySheetCellsFromRecord_ は同値時に空セルだけ補完する", () => {
