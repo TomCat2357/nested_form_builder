@@ -6,13 +6,16 @@ import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings, STYLE_TEXT_COLORS } from "../../core/styleSettings.js";
 import { buildPhonePattern, getStandardPhonePlaceholder, normalizePhoneSettings } from "../../core/phone.js";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
+import { useAlert } from "../../app/hooks/useAlert.js";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
 import {
   CHILD_FORM_LINK_PASTE_VALUE,
   buildHiddenCurrentChildFormOption,
   extractChildFormIdFromInput,
+  getChildFormOptionLabel,
   getVisibleChildFormOptions,
+  resolveChildFormPasteInput,
 } from "./childFormLinkSettings.js";
 
 const CHOICE_TYPES = ["radio", "select", "checkboxes"];
@@ -410,6 +413,7 @@ function NumberSettingsInput({ field, onChange, onFocus }) {
 
 function ChildFormLinkSettings({ field, onChange, onFocus }) {
   const { forms } = useAppData();
+  const { showAlert } = useAlert();
   const [pasteMode, setPasteMode] = React.useState(false);
   const [pasteInput, setPasteInput] = React.useState("");
 
@@ -418,8 +422,8 @@ function ChildFormLinkSettings({ field, onChange, onFocus }) {
     [forms],
   );
   const hiddenCurrentOption = React.useMemo(
-    () => buildHiddenCurrentChildFormOption(field.childFormId, otherForms),
-    [field.childFormId, otherForms],
+    () => buildHiddenCurrentChildFormOption(field.childFormId, otherForms, forms),
+    [field.childFormId, otherForms, forms],
   );
 
   const handleSelectChange = (event) => {
@@ -433,12 +437,22 @@ function ChildFormLinkSettings({ field, onChange, onFocus }) {
   };
 
   const handlePasteApply = () => {
-    const extracted = extractChildFormIdFromInput(pasteInput);
-    if (extracted) {
-      onChange({ ...field, childFormId: extracted });
+    const resolved = resolveChildFormPasteInput(pasteInput, forms);
+    if (resolved.status === "matched") {
+      onChange({ ...field, childFormId: resolved.formId });
+      setPasteMode(false);
+      setPasteInput("");
+      return;
     }
-    setPasteMode(false);
-    setPasteInput("");
+
+    if (resolved.status === "empty") {
+      showAlert("フォームURLまたはフォームIDを入力してください");
+      return;
+    }
+
+    const extracted = extractChildFormIdFromInput(pasteInput);
+    const targetLabel = extracted || "入力された値";
+    showAlert(`${targetLabel} に一致するフォームが見つかりません`);
   };
 
   return (
@@ -459,7 +473,7 @@ function ChildFormLinkSettings({ field, onChange, onFocus }) {
             </option>
           ) : null}
           {otherForms.map((f) => (
-            <option key={f.id} value={f.id}>{f.settings?.formTitle || f.name || f.id}</option>
+            <option key={f.id} value={f.id}>{getChildFormOptionLabel(f)}</option>
           ))}
         </select>
       </div>

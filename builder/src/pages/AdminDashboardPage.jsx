@@ -13,6 +13,7 @@ import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
 import { toUnixMs, formatUnixMsDateTimeMs } from "../utils/dateTime.js";
+import { buildSharedFormUrl } from "../utils/formShareUrl.js";
 import {
   evaluateCache,
   FORM_CACHE_MAX_AGE_MS,
@@ -381,7 +382,7 @@ const [selected, setSelected] = useState(() => new Set());
   const handleCopyId = useCallback((formId, event) => {
     event.stopPropagation();
     const baseUrl = window.__GAS_WEBAPP_URL__ || window.location.origin;
-    const fullUrl = `${baseUrl}?form=${formId}`;
+    const fullUrl = buildSharedFormUrl(baseUrl, formId);
     navigator.clipboard.writeText(fullUrl).then(() => {
       setCopiedId(formId);
       setTimeout(() => setCopiedId(null), 2000);
@@ -534,7 +535,14 @@ const [selected, setSelected] = useState(() => new Set());
                     </td>
                     <td className="search-td" onClick={(e) => e.stopPropagation()}>
                       <div className="nf-row nf-gap-6">
-                        <span className="admin-form-id">{form.id}</span>
+                        <button
+                          type="button"
+                          className="admin-form-id admin-form-id-btn"
+                          onClick={(e) => handleCopyId(form.id, e)}
+                          title="クリックでURLをコピー"
+                        >
+                          {form.id}
+                        </button>
                         <button
                           type="button"
                           className="admin-copy-btn"

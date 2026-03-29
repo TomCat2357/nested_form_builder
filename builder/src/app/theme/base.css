@@ -849,6 +849,14 @@ button:disabled {
   color: var(--text-ink);
 }
 
+.admin-form-id-btn {
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
 .admin-import-overlay {
   position: fixed;
   inset: 0;
