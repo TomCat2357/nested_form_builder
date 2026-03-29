@@ -8,6 +8,12 @@ import { buildPhonePattern, getStandardPhonePlaceholder, normalizePhoneSettings 
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
+import {
+  CHILD_FORM_LINK_PASTE_VALUE,
+  buildHiddenCurrentChildFormOption,
+  extractChildFormIdFromInput,
+  getVisibleChildFormOptions,
+} from "./childFormLinkSettings.js";
 
 const CHOICE_TYPES = ["radio", "select", "checkboxes"];
 const DATE_TIME_TYPES = ["date", "time"];
@@ -402,35 +408,23 @@ function NumberSettingsInput({ field, onChange, onFocus }) {
   );
 }
 
-const extractFormIdFromInput = (input) => {
-  const trimmed = (input || "").trim();
-  if (/^form_[a-zA-Z0-9]+$/.test(trimmed)) return trimmed;
-  try {
-    const url = new URL(trimmed);
-    const formParam = url.searchParams.get("form");
-    if (formParam && /^form_[a-zA-Z0-9]+$/.test(formParam)) return formParam;
-    const pathMatch = trimmed.match(/form[_/]([a-zA-Z0-9]+)/);
-    if (pathMatch) return `form_${pathMatch[1]}`;
-  } catch (_) {
-    const pathMatch = trimmed.match(/form[_/]([a-zA-Z0-9]+)/);
-    if (pathMatch) return `form_${pathMatch[1]}`;
-  }
-  return trimmed;
-};
-
 function ChildFormLinkSettings({ field, onChange, onFocus }) {
   const { forms } = useAppData();
   const [pasteMode, setPasteMode] = React.useState(false);
   const [pasteInput, setPasteInput] = React.useState("");
 
   const otherForms = React.useMemo(
-    () => (forms || []).filter((f) => !f.archived),
+    () => getVisibleChildFormOptions(forms),
     [forms],
+  );
+  const hiddenCurrentOption = React.useMemo(
+    () => buildHiddenCurrentChildFormOption(field.childFormId, otherForms),
+    [field.childFormId, otherForms],
   );
 
   const handleSelectChange = (event) => {
     const value = event.target.value;
-    if (value === "__paste_url__") {
+    if (value === CHILD_FORM_LINK_PASTE_VALUE) {
       setPasteMode(true);
       setPasteInput("");
     } else {
@@ -439,7 +433,7 @@ function ChildFormLinkSettings({ field, onChange, onFocus }) {
   };
 
   const handlePasteApply = () => {
-    const extracted = extractFormIdFromInput(pasteInput);
+    const extracted = extractChildFormIdFromInput(pasteInput);
     if (extracted) {
       onChange({ ...field, childFormId: extracted });
     }
@@ -453,12 +447,17 @@ function ChildFormLinkSettings({ field, onChange, onFocus }) {
         <label className="nf-text-13 nf-text-subtle nf-nowrap">子フォーム</label>
         <select
           className="nf-input nf-flex-1"
-          value={pasteMode ? "__paste_url__" : (field.childFormId || "")}
+          value={pasteMode ? CHILD_FORM_LINK_PASTE_VALUE : (field.childFormId || "")}
           onChange={handleSelectChange}
           onFocus={onFocus}
         >
           <option value="">-- 子フォームを選択 --</option>
-          <option value="__paste_url__">フォームURL/IDを貼り付ける</option>
+          <option value={CHILD_FORM_LINK_PASTE_VALUE}>フォームURL/IDを貼り付ける</option>
+          {hiddenCurrentOption ? (
+            <option value={hiddenCurrentOption.id} hidden>
+              {hiddenCurrentOption.label}
+            </option>
+          ) : null}
           {otherForms.map((f) => (
             <option key={f.id} value={f.id}>{f.settings?.formTitle || f.name || f.id}</option>
           ))}

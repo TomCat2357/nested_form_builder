@@ -101,25 +101,55 @@ const isDeletedEntryExpired = (entry, retentionDays, nowMs = Date.now()) => {
   return deletedAtUnixMs <= nowMs - retentionDays * MS_PER_DAY;
 };
 
+export const filterExpiredDeletedEntries = (entries, retentionDays, nowMs = Date.now()) => {
+  const safeEntries = Array.isArray(entries) ? entries : [];
+  return safeEntries.filter((entry) => !isDeletedEntryExpired(entry, retentionDays, nowMs));
+};
+
 const pruneExpiredDeletedEntries = async (formId, entries, retentionDays) => {
   const safeEntries = Array.isArray(entries) ? entries : [];
   const nowMs = Date.now();
+  const remainingEntries = filterExpiredDeletedEntries(safeEntries, retentionDays, nowMs);
+  const remainingIdSet = new Set(remainingEntries.map((entry) => entry?.id).filter(Boolean));
   const expiredIds = safeEntries
-    .filter((entry) => isDeletedEntryExpired(entry, retentionDays, nowMs))
+    .filter((entry) => entry?.id && !remainingIdSet.has(entry.id))
     .map((entry) => entry?.id)
     .filter(Boolean);
-  const expiredIdSet = new Set(expiredIds);
 
   if (expiredIds.length) {
     await deleteRecordsFromCache(formId, expiredIds);
   }
 
-  return safeEntries.filter((entry) => !expiredIdSet.has(entry?.id));
+  return remainingEntries;
 };
 
 const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {}, key);
 
 const mapSheetRecordToEntry = (record, formId) => normalizeRecordForCache(record, { formId });
+
+export const buildListEntriesResult = ({
+  entries = [],
+  headerMatrix = [],
+  lastSyncedAt = null,
+  lastSpreadsheetReadAt = null,
+  hasUnsynced = false,
+  unsyncedCount = 0,
+  isDelta = false,
+  unchanged = false,
+  fetchedCount = 0,
+  sheetLastUpdatedAt = 0,
+} = {}) => ({
+  entries: Array.isArray(entries) ? entries : [],
+  headerMatrix: Array.isArray(headerMatrix) ? headerMatrix : [],
+  lastSyncedAt,
+  lastSpreadsheetReadAt,
+  hasUnsynced: !!hasUnsynced,
+  unsyncedCount: Number.isFinite(Number(unsyncedCount)) ? Number(unsyncedCount) : 0,
+  isDelta: isDelta === true,
+  unchanged: unchanged === true,
+  fetchedCount: Number.isFinite(Number(fetchedCount)) ? Number(fetchedCount) : 0,
+  sheetLastUpdatedAt: Number.isFinite(Number(sheetLastUpdatedAt)) ? Number(sheetLastUpdatedAt) : 0,
+});
 
 export const buildUpsertEntryRecord = ({
   formId,
@@ -381,9 +411,8 @@ export const dataStore = {
         headerMatrix: postSyncHeaderMatrix,
       });
 
-      const visibleEntries = prunedCachedEntries.filter((e) => !e.deletedAtUnixMs && !e.deletedAt);
-      return {
-        entries: visibleEntries,
+      return buildListEntriesResult({
+        entries: prunedCachedEntries,
         headerMatrix: postSyncHeaderMatrix,
         lastSyncedAt: nextLastServerReadAt,
         lastSpreadsheetReadAt: nextLastServerReadAt,
@@ -393,7 +422,7 @@ export const dataStore = {
         unchanged: true,
         fetchedCount: 0,
         sheetLastUpdatedAt: normalizedSheetLastUpdatedAt,
-      };
+      });
     }
 
     if (forceFullSync) {
@@ -424,14 +453,13 @@ export const dataStore = {
       );
     }
 
-    // 期限切れ tombstone をキャッシュから物理除去した後、tombstone 全体を UI 向けに非表示
+    // 期限切れ tombstone だけをキャッシュから物理除去し、削除済み表示の制御は UI 側に委ねる
     const prunedEntries = await pruneExpiredDeletedEntries(formId, postSyncEntries, deletedRetentionDays);
-    const visibleEntries = prunedEntries.filter((e) => !e.deletedAtUnixMs && !e.deletedAt);
     const unsyncedCount = prunedEntries.filter((e) => (e.modifiedAtUnixMs || 0) > nextLastServerReadAt).length;
     const hasUnsynced = unsyncedCount > 0;
 
-    return {
-      entries: visibleEntries,
+    return buildListEntriesResult({
+      entries: prunedEntries,
       headerMatrix: postSyncHeaderMatrix,
       lastSyncedAt: Date.now(),
       lastSpreadsheetReadAt: nextLastServerReadAt,
@@ -441,7 +469,7 @@ export const dataStore = {
       unchanged: false,
       fetchedCount: syncedRecords.length,
       sheetLastUpdatedAt: normalizedSheetLastUpdatedAt,
-    };
+    });
   },
   async getEntry(formId, entryId, { forceSync = false, rowIndexHint = undefined } = {}) {
     const form = await this.getForm(formId);

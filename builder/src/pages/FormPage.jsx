@@ -35,6 +35,7 @@ import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import { resolveOmitEmptyRowsOnPrint } from "../features/preview/printDocument.js";
 import { collectChildFormLinks, mergeChildFormLinksByFormId } from "../features/search/childFormIntegration.js";
 import PrintChildFormDialog from "../features/search/components/PrintChildFormDialog.jsx";
+import { buildPrimarySaveOptions } from "../utils/settings.js";
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
@@ -160,6 +161,7 @@ export default function FormPage() {
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
+  const primarySaveOptions = useMemo(() => buildPrimarySaveOptions(form?.settings), [form?.settings?.saveAfterAction]);
   const childFormLinks = useMemo(() => collectChildFormLinks(normalizedSchema), [normalizedSchema]);
   const childForms = useMemo(
     () => mergeChildFormLinksByFormId(childFormLinks, getFormById),
@@ -1146,7 +1148,7 @@ export default function FormPage() {
             </>
           ) : (
             <>
-              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReadLocked} onClick={() => triggerSave({ stayAsView: true })}>
+              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReadLocked} onClick={() => triggerSave(primarySaveOptions)}>
                 保存
               </button>
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => attemptLeave("cancel-edit")}>

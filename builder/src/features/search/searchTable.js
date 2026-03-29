@@ -501,18 +501,24 @@ const orderSearchColumns = (parentColumns, childColumns, metaColumns, { represen
   return [...metaColumns, ...parentRepresentative, ...parentRest, ...orderedChildCols];
 };
 
+const moveRecordNoColumnToFront = (columns = []) => {
+  const recordNoColumn = columns.find((column) => column?.key === "No.");
+  if (!recordNoColumn) return [...columns];
+  return [recordNoColumn, ...columns.filter((column) => column?.key !== "No.")];
+};
+
 export const buildSearchColumns = (form, { includeOperations = true, childForms = [] } = {}) => {
   const showRecordNo = form?.settings?.showRecordNo !== false;
   const showSearchId = form?.settings?.showSearchId !== false;
   const showSearchCreatedAt = form?.settings?.showSearchCreatedAt !== false;
   const showSearchModifiedAt = form?.settings?.showSearchModifiedAt !== false;
-  const metaColumns = createBaseColumns().filter((col) => {
+  const metaColumns = moveRecordNoColumnToFront(createBaseColumns().filter((col) => {
     if (!showRecordNo && col.key === "No.") return false;
     if (!showSearchId && col.key === "id") return false;
     if (!showSearchCreatedAt && col.key === "createdAt") return false;
     if (!showSearchModifiedAt && col.key === "modifiedAt") return false;
     return true;
-  });
+  }));
   const representativeFieldId = form?.settings?.representativeFieldId || "";
   const parentColumns = [];
   resolveDisplayFieldSettings(form).forEach(({ path, type, optionOrder, fieldId }) => {

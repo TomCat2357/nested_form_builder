@@ -12,7 +12,7 @@ import { useEditLock } from "../app/hooks/useEditLock.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
-import { omitThemeSetting } from "../utils/settings.js";
+import { omitThemeSetting, resolveSettingsCheckboxChecked, resolveSettingsFieldValue } from "../utils/settings.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import SchemaMapNav from "../features/nav/SchemaMapNav.jsx";
@@ -453,7 +453,7 @@ export default function AdminFormEditorPage() {
                         {isSelect ? (
                           <select
                             className="nf-input"
-                            value={localSettings[field.key] ?? ""}
+                            value={resolveSettingsFieldValue(field, localSettings[field.key])}
                             onChange={(event) => handleSettingsChange(field.key, event.target.value)}
                             disabled={isReadLocked}
                           >
@@ -485,7 +485,7 @@ export default function AdminFormEditorPage() {
                         <label key={field.key} className="nf-flex nf-items-center nf-gap-8" style={{ cursor: "pointer" }}>
                           <input
                             type="checkbox"
-                            checked={localSettings[field.key] !== undefined ? !!localSettings[field.key] : !!field.defaultValue}
+                            checked={resolveSettingsCheckboxChecked(field, localSettings[field.key])}
                             onChange={(event) => handleSettingsChange(field.key, event.target.checked)}
                             disabled={isReadLocked}
                           />

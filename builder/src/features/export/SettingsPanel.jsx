@@ -1,5 +1,6 @@
 import React from "react";
 import { SETTINGS_GROUPS } from "../settings/settingsSchema.js";
+import { resolveSettingsCheckboxChecked, resolveSettingsFieldValue } from "../../utils/settings.js";
 
 const SettingsField = ({ field, value, onChange }) => {
   const isSelect = field.type === "select" || Array.isArray(field.options);
@@ -11,7 +12,7 @@ const SettingsField = ({ field, value, onChange }) => {
         <label className="nf-flex nf-items-center nf-gap-8" style={{ cursor: "pointer" }}>
           <input
             type="checkbox"
-            checked={value !== undefined ? !!value : !!field.defaultValue}
+            checked={resolveSettingsCheckboxChecked(field, value)}
             onChange={(event) => onChange(field.key, event.target.checked)}
           />
           <span className="nf-fw-600">{field.label}</span>
@@ -30,7 +31,7 @@ const SettingsField = ({ field, value, onChange }) => {
         {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
       </label>
       {isSelect ? (
-        <select className="nf-input" value={value ?? ""} onChange={(event) => onChange(field.key, event.target.value)}>
+        <select className="nf-input" value={resolveSettingsFieldValue(field, value)} onChange={(event) => onChange(field.key, event.target.value)}>
           {(field.options || []).map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}

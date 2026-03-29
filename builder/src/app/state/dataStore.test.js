@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildUpsertEntryRecord } from "./dataStore.js";
+import { buildListEntriesResult, buildUpsertEntryRecord, filterExpiredDeletedEntries } from "./dataStore.js";
 
 test("既存レコード更新時は createdAt / createdBy / No. を保持して modifiedAt だけ更新する", () => {
   const existingEntry = {
@@ -72,4 +72,64 @@ test("新規レコードは createdAt / createdAtUnixMs / createdBy をフロン
   assert.equal(record.modifiedBy, "editor@example.com");
   assert.equal(record.deletedAt, null);
   assert.equal(record.deletedAtUnixMs, null);
+});
+
+test("buildListEntriesResult は unchanged 同期でも削除済みレコードを保持する", () => {
+  const deletedEntry = {
+    id: "rec_deleted",
+    deletedAt: 1700000004000,
+    deletedAtUnixMs: 1700000004000,
+  };
+
+  const result = buildListEntriesResult({
+    entries: [deletedEntry],
+    unchanged: true,
+    isDelta: true,
+    fetchedCount: 0,
+    lastSyncedAt: 1700000005000,
+    lastSpreadsheetReadAt: 1700000005000,
+    sheetLastUpdatedAt: 1700000005000,
+  });
+
+  assert.equal(result.unchanged, true);
+  assert.equal(result.entries.length, 1);
+  assert.equal(result.entries[0].id, "rec_deleted");
+  assert.equal(result.entries[0].deletedAtUnixMs, 1700000004000);
+});
+
+test("buildListEntriesResult は full sync 相当でも削除済みレコードを保持する", () => {
+  const deletedEntry = {
+    id: "rec_deleted_full_sync",
+    deletedAt: 1700000006000,
+    deletedAtUnixMs: 1700000006000,
+  };
+
+  const result = buildListEntriesResult({
+    entries: [deletedEntry],
+    unchanged: false,
+    isDelta: false,
+    fetchedCount: 1,
+    lastSyncedAt: 1700000007000,
+    lastSpreadsheetReadAt: 1700000007000,
+    sheetLastUpdatedAt: 1700000007000,
+  });
+
+  assert.equal(result.unchanged, false);
+  assert.equal(result.entries.length, 1);
+  assert.equal(result.entries[0].id, "rec_deleted_full_sync");
+  assert.equal(result.entries[0].deletedAtUnixMs, 1700000006000);
+});
+
+test("filterExpiredDeletedEntries は保持期限を過ぎた削除済みレコードだけ除外する", () => {
+  const now = 1700000000000;
+  const retentionDays = 30;
+  const recentDeletedAt = now - (retentionDays - 1) * 24 * 60 * 60 * 1000;
+  const expiredDeletedAt = now - (retentionDays + 1) * 24 * 60 * 60 * 1000;
+  const filtered = filterExpiredDeletedEntries([
+    { id: "active", deletedAt: null, deletedAtUnixMs: null },
+    { id: "deleted_recent", deletedAt: recentDeletedAt, deletedAtUnixMs: recentDeletedAt },
+    { id: "deleted_expired", deletedAt: expiredDeletedAt, deletedAtUnixMs: expiredDeletedAt },
+  ], retentionDays, now);
+
+  assert.deepEqual(filtered.map((entry) => entry.id), ["active", "deleted_recent"]);
 });

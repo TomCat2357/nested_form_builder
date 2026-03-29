@@ -1,3 +1,5 @@
+import { SAVE_AFTER_ACTIONS } from "../../utils/settings.js";
+
 export const SETTINGS_GROUPS = [
   {
     key: "spreadsheet",
@@ -51,6 +53,24 @@ export const SETTINGS_GROUPS = [
         required: false,
         type: "number",
         description: "deletedAt からこの日数を超過したデータは、次回同期時に完全削除されます",
+      },
+    ],
+  },
+  {
+    key: "record",
+    label: "レコード画面設定",
+    fields: [
+      {
+        key: "saveAfterAction",
+        label: "通常保存後の動作",
+        type: "select",
+        required: false,
+        defaultValue: SAVE_AFTER_ACTIONS.RETURN_TO_LIST,
+        options: [
+          { value: SAVE_AFTER_ACTIONS.RETURN_TO_LIST, label: "一覧に戻る" },
+          { value: SAVE_AFTER_ACTIONS.STAY_ON_RECORD, label: "レコード画面に留まる" },
+        ],
+        description: "レコード画面の通常の「保存」ボタンを押した後の遷移先を設定します",
       },
     ],
   },
