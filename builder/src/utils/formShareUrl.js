@@ -1,24 +1,27 @@
-export const SHARED_FORM_ID_PATTERN = /^form_[a-zA-Z0-9]+$/;
-
-export const isSharedFormId = (value) => SHARED_FORM_ID_PATTERN.test(String(value || "").trim());
+const normalizeSharedFormId = (value) => String(value || "").trim();
 
 export const extractSharedFormIdFromInput = (input) => {
-  const trimmed = String(input || "").trim();
+  const trimmed = normalizeSharedFormId(input);
   if (!trimmed) return "";
-  if (isSharedFormId(trimmed)) return trimmed;
+
+  const queryMatch = trimmed.match(/(?:[?&#]|^)form=([^&#]+)/i);
+  if (queryMatch) {
+    try {
+      return normalizeSharedFormId(decodeURIComponent(queryMatch[1]));
+    } catch (_) {
+      return normalizeSharedFormId(queryMatch[1]);
+    }
+  }
 
   try {
     const url = new URL(trimmed);
     const formParam = url.searchParams.get("form");
-    if (isSharedFormId(formParam)) return String(formParam).trim();
+    if (normalizeSharedFormId(formParam)) return normalizeSharedFormId(formParam);
   } catch (_) {
-    // no-op: URL でなくても後続のパターン抽出を試す
+    // no-op: URL でなくても末尾で生値をそのまま使う
   }
 
-  const pathMatch = trimmed.match(/(?:^|[/?#=&])form[_/]([a-zA-Z0-9]+)/);
-  if (pathMatch) return `form_${pathMatch[1]}`;
-
-  return "";
+  return trimmed;
 };
 
 export const buildSharedFormUrl = (baseUrl, formId) => {
