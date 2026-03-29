@@ -21,6 +21,8 @@ import {
   THEME_SYNC_TRIGGER,
   resolveThemeSyncScope,
 } from "../features/settings/themeSyncRules.js";
+import { resolveSettingsFieldValue } from "../utils/settings.js";
+import { getConfigPageSaveAfterActionField } from "./configPageSettings.js";
 
 const extractThemeName = (css, fallbackName = "") => {
   const match = String(css || "").match(/data-theme=(["'])([^"']+)\1/);
@@ -57,6 +59,7 @@ export default function ConfigPage() {
   const globalTheme = rawGlobalTheme || DEFAULT_THEME;
   const themeValue = isFormMode ? formTheme : globalTheme;
   const syncAllFormsTheme = settings?.syncAllFormsTheme ?? false;
+  const saveAfterActionField = useMemo(() => getConfigPageSaveAfterActionField(), []);
 
   const [customThemes, setCustomThemes] = useState([]);
   const [customThemesReady, setCustomThemesReady] = useState(false);
@@ -66,6 +69,8 @@ export default function ConfigPage() {
   const [deployTime, setDeployTime] = useState("");
   const [applyingTheme, setApplyingTheme] = useState(false);
   const [savingPrintSettings, setSavingPrintSettings] = useState(false);
+  const [savingRecordSettings, setSavingRecordSettings] = useState(false);
+  const [pendingSaveAfterAction, setPendingSaveAfterAction] = useState(null);
 
   const themeOptions = useMemo(
     () => [
@@ -83,6 +88,10 @@ export default function ConfigPage() {
   const pageTitle = isFormMode
     ? `${targetForm?.settings?.formTitle || requestedFormId} - 設定`
     : "設定";
+  const saveAfterActionValue = resolveSettingsFieldValue(
+    saveAfterActionField,
+    pendingSaveAfterAction !== null ? pendingSaveAfterAction : targetForm?.settings?.saveAfterAction,
+  );
   const themeUpdateScope = resolveThemeSyncScope({
     isFormMode,
     syncAllFormsTheme,
@@ -119,6 +128,13 @@ export default function ConfigPage() {
     if (isFormMode) return;
     void applyThemeWithFallback(globalTheme, { persist: false });
   }, [isFormMode, globalTheme]);
+
+  useEffect(() => {
+    if (pendingSaveAfterAction === null) return;
+    if (targetForm?.settings?.saveAfterAction === pendingSaveAfterAction) {
+      setPendingSaveAfterAction(null);
+    }
+  }, [pendingSaveAfterAction, targetForm?.settings?.saveAfterAction]);
 
   const applyThemeToAllForms = useCallback(
     async (nextTheme) => {
@@ -264,6 +280,24 @@ export default function ConfigPage() {
     [savingPrintSettings, showAlert, targetForm, updateCurrentFormSettings],
   );
 
+  const handleSaveAfterActionChange = useCallback(
+    async (nextValue) => {
+      if (!targetForm || !saveAfterActionField || savingRecordSettings) return;
+      setPendingSaveAfterAction(nextValue);
+      setSavingRecordSettings(true);
+      try {
+        await updateCurrentFormSettings({ saveAfterAction: nextValue });
+      } catch (error) {
+        console.error("[ConfigPage] failed to update saveAfterAction", error);
+        setPendingSaveAfterAction(null);
+        showAlert(error?.message || "保存後動作の保存に失敗しました");
+      } finally {
+        setSavingRecordSettings(false);
+      }
+    },
+    [saveAfterActionField, savingRecordSettings, showAlert, targetForm, updateCurrentFormSettings],
+  );
+
   const handleImportTheme = async () => {
     if (importing) return;
     if (!hasScriptRun()) {
@@ -393,6 +427,29 @@ export default function ConfigPage() {
 
         {isFormMode && (
           <div className="nf-mb-12">
+            {saveAfterActionField && (
+              <div className="nf-mb-16">
+                <div className="nf-settings-group-title nf-mb-8">レコード画面設定</div>
+                <label className="nf-block nf-fw-600 nf-mb-6">{saveAfterActionField.label}</label>
+                <select
+                  className="nf-input"
+                  value={saveAfterActionValue}
+                  onChange={(event) => {
+                    void handleSaveAfterActionChange(event.target.value);
+                  }}
+                  disabled={savingRecordSettings}
+                >
+                  {(saveAfterActionField.options || []).map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {saveAfterActionField.description && (
+                  <p className="nf-mt-6 nf-text-12 nf-text-muted">{saveAfterActionField.description}</p>
+                )}
+              </div>
+            )}
             <div className="nf-settings-group-title nf-mb-8">印刷設定</div>
             <label className="nf-row nf-gap-8 nf-items-center">
               <input
