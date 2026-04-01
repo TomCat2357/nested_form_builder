@@ -5,24 +5,12 @@ import { genId } from "../../core/ids.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings, STYLE_TEXT_COLORS } from "../../core/styleSettings.js";
 import { buildPhonePattern, getStandardPhonePlaceholder, normalizePhoneSettings } from "../../core/phone.js";
-import { useAppData } from "../../app/state/AppDataProvider.jsx";
-import { useAlert } from "../../app/hooks/useAlert.js";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
-import {
-  CHILD_FORM_LINK_PASTE_VALUE,
-  buildHiddenCurrentChildFormOption,
-  extractChildFormIdFromInput,
-  getChildFormOptionLabel,
-  getVisibleChildFormOptions,
-  resolveChildFormPasteInput,
-} from "./childFormLinkSettings.js";
-
 const CHOICE_TYPES = ["radio", "select", "checkboxes"];
 const DATE_TIME_TYPES = ["date", "time"];
 const BASIC_INPUT_TYPES = ["number", "url"];
 const MESSAGE_TYPE = "message";
-const CHILD_FORM_LINK_TYPE = "childFormLink";
 const DISPLAY_LABEL = "表示";
 const EMAIL_PLACEHOLDER = "user@example.com";
 const EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL = "一覧・印刷から除外";
@@ -31,7 +19,6 @@ const isChoiceType = (type) => CHOICE_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 const isMessageType = (type) => type === MESSAGE_TYPE;
 const isBasicInputType = (type) => BASIC_INPUT_TYPES.includes(type);
-const isChildFormLinkType = (type) => type === CHILD_FORM_LINK_TYPE;
 const applyDisplayedFlag = (target, displayed) => {
   target.isDisplayed = displayed === true;
 };
@@ -96,11 +83,6 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
     if (newType === "email") next.autoFillUserEmail = !!next.autoFillUserEmail;
     if (newType === "phone") Object.assign(next, normalizePhoneSettings(next));
     if (isDateOrTimeType(newType)) next.defaultNow = !!next.defaultNow;
-    if (isChildFormLinkType(newType)) {
-      next.childFormId = next.childFormId || "";
-      next.childFormButtonLabel = next.childFormButtonLabel || "";
-      next.allowMultipleChildren = next.allowMultipleChildren ?? true;
-    }
     if (newType === "fileUpload") {
       next.allowUploadByUrl = next.allowUploadByUrl ?? false;
     }
@@ -414,91 +396,6 @@ function NumberSettingsInput({ field, onChange, onFocus }) {
   );
 }
 
-function ChildFormLinkSettings({ field, onChange, onFocus }) {
-  const { forms } = useAppData();
-  const { showAlert } = useAlert();
-  const [pasteMode, setPasteMode] = React.useState(false);
-  const [pasteInput, setPasteInput] = React.useState("");
-
-  const otherForms = React.useMemo(
-    () => getVisibleChildFormOptions(forms),
-    [forms],
-  );
-  const hiddenCurrentOption = React.useMemo(
-    () => buildHiddenCurrentChildFormOption(field.childFormId, otherForms, forms),
-    [field.childFormId, otherForms, forms],
-  );
-
-  const handleSelectChange = (event) => {
-    const value = event.target.value;
-    if (value === CHILD_FORM_LINK_PASTE_VALUE) {
-      setPasteMode(true);
-      setPasteInput("");
-    } else {
-      onChange({ ...field, childFormId: value });
-    }
-  };
-
-  const handlePasteApply = () => {
-    const resolved = resolveChildFormPasteInput(pasteInput, forms);
-    if (resolved.status === "matched") {
-      onChange({ ...field, childFormId: resolved.formId });
-      setPasteMode(false);
-      setPasteInput("");
-      return;
-    }
-
-    if (resolved.status === "empty") {
-      showAlert("フォームURLまたはフォームIDを入力してください");
-      return;
-    }
-
-    const extracted = extractChildFormIdFromInput(pasteInput);
-    const targetLabel = extracted || "入力された値";
-    showAlert(`${targetLabel} に一致するフォームが見つかりません`);
-  };
-
-  return (
-    <div className="nf-mt-8">
-      <div className="nf-row nf-gap-8 nf-mb-8">
-        <label className="nf-text-13 nf-text-subtle nf-nowrap">子フォーム</label>
-        <select
-          className="nf-input nf-flex-1"
-          value={pasteMode ? CHILD_FORM_LINK_PASTE_VALUE : (field.childFormId || "")}
-          onChange={handleSelectChange}
-          onFocus={onFocus}
-        >
-          <option value="">-- 子フォームを選択 --</option>
-          <option value={CHILD_FORM_LINK_PASTE_VALUE}>フォームURL/IDを貼り付ける</option>
-          {hiddenCurrentOption ? (
-            <option value={hiddenCurrentOption.id} hidden>
-              {hiddenCurrentOption.label}
-            </option>
-          ) : null}
-          {otherForms.map((f) => (
-            <option key={f.id} value={f.id}>{getChildFormOptionLabel(f)}</option>
-          ))}
-        </select>
-      </div>
-      {pasteMode && (
-        <div className="nf-row nf-gap-8 nf-mb-8 nf-items-center">
-          <input
-            type="text"
-            className="nf-input nf-flex-1"
-            value={pasteInput}
-            onChange={(event) => setPasteInput(event.target.value)}
-            placeholder="フォームURL または form_xxx 形式のID"
-            onFocus={onFocus}
-          />
-          <button type="button" className="nf-btn-outline nf-text-12" onClick={handlePasteApply}>適用</button>
-          <button type="button" className="nf-btn-outline nf-text-12" onClick={() => { setPasteMode(false); setPasteInput(""); }}>キャンセル</button>
-        </div>
-      )}
-      <p className="nf-text-12 nf-text-muted nf-mt-4 nf-mb-8">※ 項目名がそのままボタン名になります</p>
-    </div>
-  );
-}
-
 export default function QuestionCard({
   field,
   onChange,
@@ -522,7 +419,6 @@ export default function QuestionCard({
   const isDateOrTime = isDateOrTimeType(field.type);
   const isBasicInput = isBasicInputType(field.type);
   const isMessage = isMessageType(field.type);
-  const isChildFormLink = isChildFormLinkType(field.type);
   const isEmail = field.type === "email";
   const isPhone = field.type === "phone";
   const canAddChild = depth < MAX_DEPTH;
@@ -673,10 +569,9 @@ export default function QuestionCard({
           <option value="radio">ラジオボタン</option>
           <option value="select">ドロップダウン</option>
           <option value="message">メッセージ</option>
-          <option value="childFormLink">子フォームリンク</option>
           <option value="fileUpload">ファイルアップロード</option>
         </select>
-        {!isMessage && !isChildFormLink && (
+        {!isMessage && (
           <label className="nf-row nf-gap-4 nf-nowrap">
             <input
               type="checkbox"
@@ -694,7 +589,7 @@ export default function QuestionCard({
           />
           {DISPLAY_LABEL}
         </label>
-        {!isMessage && !isChildFormLink && onRepresentativeChange && (
+        {!isMessage && onRepresentativeChange && (
           <label className="nf-row nf-gap-6">
             <input
               type="checkbox"
@@ -706,7 +601,7 @@ export default function QuestionCard({
         )}
       </div>
 
-      {!isText && !isChildFormLink && renderStyleSettingsInput()}
+      {!isText && renderStyleSettingsInput()}
 
       {isMessage && (
         <div className="nf-mt-8">
@@ -724,9 +619,6 @@ export default function QuestionCard({
         </div>
       )}
 
-      {isChildFormLink && (
-        <ChildFormLinkSettings field={field} onChange={onChange} onFocus={onFocus} />
-      )}
 
       {isText && (
         <>

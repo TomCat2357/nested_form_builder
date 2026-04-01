@@ -51,7 +51,7 @@ function Sync_fillEmptySheetCellsFromRecord_(params) {
 }
 
 function Sync_getFixedMetaColumnValue_(record, key, toUnixMs) {
-  if (key === "parentRecordId" || key === "driveFolderUrl") {
+  if (key === "driveFolderUrl") {
     if (!Object.prototype.hasOwnProperty.call(record, key)) return "";
     return String(record[key] == null ? "" : record[key]);
   }
@@ -94,25 +94,23 @@ function Sync_syncFixedMetaColumnsFromRecord_(params) {
     };
   var specs = mode === "overwrite"
     ? [
-      { key: "parentRecordId", colIdx: 1, numberFormat: null },
-      { key: "No.", colIdx: 2, numberFormat: "0" },
-      { key: "createdAt", colIdx: 3, numberFormat: "0" },
-      { key: "modifiedAt", colIdx: 4, numberFormat: "0" },
-      { key: "deletedAt", colIdx: 5, numberFormat: "0" },
-      { key: "createdBy", colIdx: 6, numberFormat: null },
-      { key: "modifiedBy", colIdx: 7, numberFormat: null },
-      { key: "deletedBy", colIdx: 8, numberFormat: null },
-      { key: "driveFolderUrl", colIdx: 9, numberFormat: null },
+      { key: "No.", colIdx: 1, numberFormat: "0" },
+      { key: "createdAt", colIdx: 2, numberFormat: "0" },
+      { key: "modifiedAt", colIdx: 3, numberFormat: "0" },
+      { key: "deletedAt", colIdx: 4, numberFormat: "0" },
+      { key: "createdBy", colIdx: 5, numberFormat: null },
+      { key: "modifiedBy", colIdx: 6, numberFormat: null },
+      { key: "deletedBy", colIdx: 7, numberFormat: null },
+      { key: "driveFolderUrl", colIdx: 8, numberFormat: null },
     ]
     : [
-      { key: "parentRecordId", colIdx: 1, numberFormat: null },
-      { key: "No.", colIdx: 2, numberFormat: "0" },
-      { key: "createdAt", colIdx: 3, numberFormat: "0" },
-      { key: "deletedAt", colIdx: 5, numberFormat: "0" },
-      { key: "createdBy", colIdx: 6, numberFormat: null },
-      { key: "modifiedBy", colIdx: 7, numberFormat: null },
-      { key: "deletedBy", colIdx: 8, numberFormat: null },
-      { key: "driveFolderUrl", colIdx: 9, numberFormat: null },
+      { key: "No.", colIdx: 1, numberFormat: "0" },
+      { key: "createdAt", colIdx: 2, numberFormat: "0" },
+      { key: "deletedAt", colIdx: 4, numberFormat: "0" },
+      { key: "createdBy", colIdx: 5, numberFormat: null },
+      { key: "modifiedBy", colIdx: 6, numberFormat: null },
+      { key: "deletedBy", colIdx: 7, numberFormat: null },
+      { key: "driveFolderUrl", colIdx: 8, numberFormat: null },
     ];
   var changed = false;
 

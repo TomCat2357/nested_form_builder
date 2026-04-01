@@ -7,7 +7,6 @@ const vm = require("node:vm");
 function loadGasContext() {
   const fixedHeaderPaths = [
     ["id"],
-    ["parentRecordId"],
     ["No."],
     ["createdAt"],
     ["modifiedAt"],
