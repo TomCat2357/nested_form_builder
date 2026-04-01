@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { createRecordPrintDocument, listForms, syncRecordsProxy } from "./gasClient.js";
+import {
+  createRecordPrintDocument,
+  finalizeRecordDriveFolder,
+  listForms,
+  syncRecordsProxy,
+} from "./gasClient.js";
 
 const createGoogleScriptRunStub = (handlers = {}) => {
   const calls = [];
@@ -108,6 +113,8 @@ test("createRecordPrintDocument は nfbCreateRecordPrintDocument を呼び出す
     nfbCreateRecordPrintDocument: (receivedPayload) => ({
       ok: true,
       fileUrl: "https://docs.google.com/document/d/file123/edit",
+      folderUrl: "https://drive.google.com/drive/folders/folder123",
+      autoCreated: true,
       payload: receivedPayload,
     }),
   });
@@ -116,11 +123,13 @@ test("createRecordPrintDocument は nfbCreateRecordPrintDocument を呼び出す
   try {
     const result = await createRecordPrintDocument(payload);
 
-    assert.equal(result.ok, true);
-    assert.equal(result.fileUrl, "https://docs.google.com/document/d/file123/edit");
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].functionName, "nfbCreateRecordPrintDocument");
-    assert.deepEqual(calls[0].payload, payload);
+      assert.equal(result.ok, true);
+      assert.equal(result.fileUrl, "https://docs.google.com/document/d/file123/edit");
+      assert.equal(result.folderUrl, "https://drive.google.com/drive/folders/folder123");
+      assert.equal(result.autoCreated, true);
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].functionName, "nfbCreateRecordPrintDocument");
+      assert.deepEqual(calls[0].payload, payload);
   } finally {
     globalThis.google = originalGoogle;
   }
@@ -153,6 +162,8 @@ test("createRecordPrintDocument は一括 payload でも nfbCreateRecordPrintDoc
     nfbCreateRecordPrintDocument: (receivedPayload) => ({
       ok: true,
       fileUrl: "https://docs.google.com/document/d/file456/edit",
+      folderUrl: "",
+      autoCreated: false,
       payload: receivedPayload,
     }),
   });
@@ -161,10 +172,49 @@ test("createRecordPrintDocument は一括 payload でも nfbCreateRecordPrintDoc
   try {
     const result = await createRecordPrintDocument(payload);
 
+      assert.equal(result.ok, true);
+      assert.equal(result.fileUrl, "https://docs.google.com/document/d/file456/edit");
+      assert.equal(result.folderUrl, "");
+      assert.equal(result.autoCreated, false);
+      assert.equal(calls.length, 1);
+      assert.equal(calls[0].functionName, "nfbCreateRecordPrintDocument");
+      assert.deepEqual(calls[0].payload, payload);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});
+
+test("finalizeRecordDriveFolder は trashFileIds を含む payload をそのまま送信する", async () => {
+  const originalGoogle = globalThis.google;
+  const payload = {
+    currentDriveFolderUrl: "https://drive.google.com/drive/folders/current123",
+    inputDriveFolderUrl: "",
+    rootFolderUrl: "https://drive.google.com/drive/folders/root123",
+    folderNameTemplate: "{ID}_資料",
+    responses: { name: "山田 太郎" },
+    fieldLabels: { name: "氏名" },
+    fileIds: ["file_keep_1", "file_print_1"],
+    trashFileIds: ["file_old_1"],
+    recordId: "rec001",
+  };
+  const { run, calls } = createGoogleScriptRunStub({
+    nfbFinalizeRecordDriveFolder: (receivedPayload) => ({
+      ok: true,
+      folderUrl: "https://drive.google.com/drive/folders/final123",
+      autoCreated: false,
+      payload: receivedPayload,
+    }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    const result = await finalizeRecordDriveFolder(payload);
+
     assert.equal(result.ok, true);
-    assert.equal(result.fileUrl, "https://docs.google.com/document/d/file456/edit");
+    assert.equal(result.folderUrl, "https://drive.google.com/drive/folders/final123");
+    assert.equal(result.autoCreated, false);
     assert.equal(calls.length, 1);
-    assert.equal(calls[0].functionName, "nfbCreateRecordPrintDocument");
+    assert.equal(calls[0].functionName, "nfbFinalizeRecordDriveFolder");
     assert.deepEqual(calls[0].payload, payload);
   } finally {
     globalThis.google = originalGoogle;

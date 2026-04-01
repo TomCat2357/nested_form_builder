@@ -20,6 +20,8 @@ export const resolveSaveAfterAction = (settings) => (
     : SAVE_AFTER_ACTIONS.RETURN_TO_LIST
 );
 
+export const resolveCreatePrintOnSave = (settings) => settings?.createPrintOnSave === true;
+
 export const buildPrimarySaveOptions = (settings) => (
   resolveSaveAfterAction(settings) === SAVE_AFTER_ACTIONS.STAY_ON_RECORD
     ? { stayAsView: true }

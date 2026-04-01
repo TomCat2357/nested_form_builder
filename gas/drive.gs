@@ -74,6 +74,8 @@ function nfbSaveExcelToDrive(payload) {
 function nfbCreateRecordPrintDocument(payload) {
   return nfbSafeCall_(function() {
     var normalizedPayload = nfbNormalizePrintDocumentPayload_(payload);
+    var outputFolderUrl = "";
+    var outputAutoCreated = false;
 
     var doc = DocumentApp.create(normalizedPayload.fileName);
     var body = doc.getBody();
@@ -98,6 +100,7 @@ function nfbCreateRecordPrintDocument(payload) {
       var ctx = {
         responses: ds.responses || {},
         fieldLabels: ds.fieldLabels || {},
+        recordId: ds.recordId || normalizedPayload.records[0].recordId || "",
         now: new Date()
       };
 
@@ -110,17 +113,24 @@ function nfbCreateRecordPrintDocument(payload) {
         }
       }
 
-      var folder = nfbResolveOrCreateFolder_(ds, ctx);
+      var folderResult = ds.useTemporaryFolder
+        ? nfbResolveUploadFolder_(ds)
+        : { folder: nfbResolveOrCreateFolder_(ds, ctx), autoCreated: false };
+      var folder = folderResult.folder;
       var finalFileName = file.getName();
       nfbTrashExistingFile_(folder, finalFileName);
       file.moveTo(folder);
+      outputFolderUrl = folder.getUrl();
+      outputAutoCreated = folderResult.autoCreated === true;
     }
 
     return {
       ok: true,
       fileUrl: file.getUrl(),
       fileName: file.getName(),
-      fileId: file.getId()
+      fileId: file.getId(),
+      folderUrl: outputFolderUrl,
+      autoCreated: outputAutoCreated
     };
   });
 }
@@ -211,7 +221,7 @@ function nfbAppendPrintDocumentMetaTable_(body, payload) {
     ["出力日時", nfbFormatPrintDocumentExportedAt_(payload.exportedAtIso)],
     ["最終更新日時", payload.modifiedAt ? payload.modifiedAt : "-"],
     ["レコードNo", payload.recordNo ? payload.recordNo : "-"],
-    ["回答ID", payload.recordId ? payload.recordId : "-"]
+    ["ID", payload.recordId ? payload.recordId : "-"]
   ];
 
   if (payload.parentRecordId) {
@@ -389,6 +399,7 @@ function nfbResolveTemplate_(template, context) {
   var tz = Session.getScriptTimeZone();
   var responses = (context && context.responses) || {};
   var fieldLabels = (context && context.fieldLabels) || {};
+  var recordId = context && context.recordId ? String(context.recordId).trim() : "";
 
   // 日時プレースホルダーのマッピング
   var dateFormats = {
@@ -413,6 +424,10 @@ function nfbResolveTemplate_(template, context) {
       var formatted = Utilities.formatDate(now, tz, dateFormats[key]);
       result = result.split(pattern).join(formatted);
     }
+  }
+
+  if (result.indexOf("{ID}") !== -1) {
+    result = result.split("{ID}").join(recordId);
   }
 
   // フィールドラベルプレースホルダーを解決
@@ -479,11 +494,17 @@ function nfbBuildDriveTemplateContext_(driveSettings, context) {
   return context || {
     responses: (driveSettings && driveSettings.responses) || {},
     fieldLabels: (driveSettings && driveSettings.fieldLabels) || {},
+    recordId: driveSettings && driveSettings.recordId ? String(driveSettings.recordId).trim() : "",
     now: new Date()
   };
 }
 
 function nfbResolveOrCreateFolder_(driveSettings, context) {
+  var directFolderUrl = driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
+  if (directFolderUrl) {
+    return nfbResolveFolderFromInput_(directFolderUrl);
+  }
+
   var rootFolder = nfbResolveRootFolder_(driveSettings);
 
   var folderTemplate = driveSettings && driveSettings.folderNameTemplate ? String(driveSettings.folderNameTemplate).trim() : "";
@@ -557,7 +578,23 @@ function nfbMoveFilesToFolder_(fileIds, folder) {
     } catch (error) {
       throw new Error("ファイルへのアクセスに失敗しました: " + nfbErrorToString_(error));
     }
+    if (file && typeof file.isTrashed === "function" && file.isTrashed()) {
+      continue;
+    }
     file.moveTo(folder);
+  }
+}
+
+function nfbTrashFilesByIds_(fileIds) {
+  var normalizedFileIds = nfbNormalizeDriveFileIds_(fileIds);
+  for (var i = 0; i < normalizedFileIds.length; i++) {
+    var file;
+    try {
+      file = DriveApp.getFileById(normalizedFileIds[i]);
+    } catch (error) {
+      throw new Error("ファイルへのアクセスに失敗しました: " + nfbErrorToString_(error));
+    }
+    file.setTrashed(true);
   }
 }
 
@@ -568,6 +605,8 @@ function nfbFinalizeRecordDriveFolder(payload) {
     var currentFolder = currentDriveFolderUrl ? nfbResolveFolderFromInput_(currentDriveFolderUrl) : null;
     var inputFolder = inputDriveFolderUrl ? nfbResolveFolderFromInput_(inputDriveFolderUrl) : null;
     var targetFolder = inputFolder || currentFolder;
+
+    nfbTrashFilesByIds_(payload && payload.trashFileIds);
 
     if (!targetFolder) {
       return {
@@ -587,6 +626,7 @@ function nfbFinalizeRecordDriveFolder(payload) {
         var resolvedFolderName = nfbResolveTemplate_(folderNameTemplate, {
           responses: payload && payload.responses ? payload.responses : {},
           fieldLabels: payload && payload.fieldLabels ? payload.fieldLabels : {},
+          recordId: payload && payload.recordId ? payload.recordId : "",
           now: new Date()
         });
         if (resolvedFolderName) {

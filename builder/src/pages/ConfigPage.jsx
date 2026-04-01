@@ -21,7 +21,7 @@ import {
   THEME_SYNC_TRIGGER,
   resolveThemeSyncScope,
 } from "../features/settings/themeSyncRules.js";
-import { resolveSettingsFieldValue } from "../utils/settings.js";
+import { resolveCreatePrintOnSave, resolveSettingsFieldValue } from "../utils/settings.js";
 import { getConfigPageSaveAfterActionField } from "./configPageSettings.js";
 
 const extractThemeName = (css, fallbackName = "") => {
@@ -55,6 +55,7 @@ export default function ConfigPage() {
   const formTheme = rawFormTheme || DEFAULT_THEME;
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(targetForm?.settings);
   const showPrintHeader = resolveShowPrintHeader(targetForm?.settings);
+  const createPrintOnSave = resolveCreatePrintOnSave(targetForm?.settings);
   const rawGlobalTheme = settings?.theme;
   const globalTheme = rawGlobalTheme || DEFAULT_THEME;
   const themeValue = isFormMode ? formTheme : globalTheme;
@@ -463,7 +464,7 @@ export default function ConfigPage() {
               <span className="nf-fw-600">印刷様式のヘッダーを表示する</span>
             </label>
             <p className="nf-mt-6 nf-text-12 nf-text-muted nf-mb-12">
-              OFFにすると、印刷様式先頭のフォーム名・出力日時・レコードNo・回答IDを非表示にします。
+              OFFにすると、印刷様式先頭のフォーム名・出力日時・レコードNo・IDを非表示にします。
             </p>
             <label className="nf-row nf-gap-8 nf-items-center">
               <input
@@ -478,6 +479,20 @@ export default function ConfigPage() {
             </label>
             <p className="nf-mt-6 nf-text-12 nf-text-muted">
               OFFにすると、未回答の項目も印刷様式へ出力します。
+            </p>
+            <label className="nf-row nf-gap-8 nf-items-center nf-mt-12">
+              <input
+                type="checkbox"
+                checked={createPrintOnSave}
+                onChange={(event) => {
+                  void handleTogglePrintSetting("createPrintOnSave", event.target.checked);
+                }}
+                disabled={savingPrintSettings}
+              />
+              <span className="nf-fw-600">保存時に印刷様式を出力する（同名ファイルは上書き）</span>
+            </label>
+            <p className="nf-mt-6 nf-text-12 nf-text-muted">
+              通常の保存ボタンを押した時だけ印刷様式を自動出力します。子フォーム遷移前の自動保存では出力しません。
             </p>
           </div>
         )}

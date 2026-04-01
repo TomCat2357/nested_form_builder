@@ -38,10 +38,14 @@ import RecordCopyDialog from "../app/components/RecordCopyDialog.jsx";
 import BreadcrumbNav from "../app/components/BreadcrumbNav.jsx";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
-import { buildFieldLabelsMap, resolveOmitEmptyRowsOnPrint } from "../features/preview/printDocument.js";
+import {
+  buildFieldLabelsMap,
+  buildPrintDocumentPayload,
+  resolveOmitEmptyRowsOnPrint,
+} from "../features/preview/printDocument.js";
 import { collectChildFormLinks, mergeChildFormLinksByFormId } from "../features/search/childFormIntegration.js";
 import PrintChildFormDialog from "../features/search/components/PrintChildFormDialog.jsx";
-import { buildPrimarySaveOptions } from "../utils/settings.js";
+import { buildPrimarySaveOptions, resolveCreatePrintOnSave } from "../utils/settings.js";
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
@@ -89,7 +93,32 @@ const createEmptyDriveFolderState = () => ({
   resolvedUrl: "",
   inputUrl: "",
   autoCreated: false,
+  sessionUploadFileIds: [],
+  pendingPrintFileIds: [],
 });
+
+const normalizeDriveFileIds = (value) => {
+  const source = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  return source.reduce((ids, candidate) => {
+    const normalized = typeof candidate === "string" ? candidate.trim() : "";
+    if (!normalized || seen.has(normalized)) return ids;
+    seen.add(normalized);
+    ids.push(normalized);
+    return ids;
+  }, []);
+};
+
+const appendDriveFileId = (ids, candidate) => {
+  const normalized = typeof candidate === "string" ? candidate.trim() : "";
+  if (!normalized) return ids;
+  return ids.includes(normalized) ? ids : [...ids, normalized];
+};
+
+const areDriveFileIdListsEqual = (left, right) => {
+  if (left.length !== right.length) return false;
+  return left.every((value, index) => value === right[index]);
+};
 
 const normalizeDriveFolderState = (value) => {
   const source = value && typeof value === "object" ? value : {};
@@ -101,7 +130,14 @@ const normalizeDriveFolderState = (value) => {
     resolvedUrl,
     inputUrl,
     autoCreated: source.autoCreated === true,
+    sessionUploadFileIds: normalizeDriveFileIds(source.sessionUploadFileIds),
+    pendingPrintFileIds: normalizeDriveFileIds(source.pendingPrintFileIds),
   };
+};
+
+const resolveEffectiveDriveFolderUrl = (value) => {
+  const normalized = normalizeDriveFolderState(value);
+  return normalized.inputUrl.trim() || normalized.resolvedUrl.trim();
 };
 
 const areDriveFolderStatesEqual = (left, right) => {
@@ -109,7 +145,9 @@ const areDriveFolderStatesEqual = (left, right) => {
   const b = normalizeDriveFolderState(right);
   return a.resolvedUrl === b.resolvedUrl
     && a.inputUrl === b.inputUrl
-    && a.autoCreated === b.autoCreated;
+    && a.autoCreated === b.autoCreated
+    && areDriveFileIdListsEqual(a.sessionUploadFileIds, b.sessionUploadFileIds)
+    && areDriveFileIdListsEqual(a.pendingPrintFileIds, b.pendingPrintFileIds);
 };
 
 const collectDriveFileIds = (responses) => {
@@ -121,7 +159,7 @@ const collectDriveFileIds = (responses) => {
       if (fileId) seen.add(fileId);
     });
   });
-  return Array.from(seen);
+  return normalizeDriveFileIds(Array.from(seen));
 };
 
 export default function FormPage() {
@@ -235,7 +273,13 @@ export default function FormPage() {
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
   const fieldLabels = useMemo(() => buildFieldLabelsMap(normalizedSchema), [normalizedSchema]);
-  const primarySaveOptions = useMemo(() => buildPrimarySaveOptions(form?.settings), [form?.settings?.saveAfterAction]);
+  const primarySaveOptions = useMemo(
+    () => ({
+      ...buildPrimarySaveOptions(form?.settings),
+      createPrintAfterSave: resolveCreatePrintOnSave(form?.settings),
+    }),
+    [form?.settings?.createPrintOnSave, form?.settings?.saveAfterAction],
+  );
   const childFormLinks = useMemo(() => collectChildFormLinks(normalizedSchema), [normalizedSchema]);
   const childForms = useMemo(
     () => mergeChildFormLinksByFormId(childFormLinks, getFormById),
@@ -401,6 +445,50 @@ export default function FormPage() {
     setCurrentRecordId(nextEntry?.id || fallbackEntryId || null);
   }, [commitResponses, entryId, formId, isDirtyRef, isViewModeRef, normalizedSchemaRef, responsesRef]);
   const applyEntryToStateRef = useLatestRef(applyEntryToState);
+
+  const updateDriveFolderStateFromPrintResult = useCallback((result) => {
+    setDriveFolderState((prevState) => {
+      const prev = normalizeDriveFolderState(prevState);
+      const currentEffectiveFolderUrl = resolveEffectiveDriveFolderUrl(prev);
+      const nextResolvedUrl = typeof result?.folderUrl === "string" && result.folderUrl.trim()
+        ? result.folderUrl.trim()
+        : (currentEffectiveFolderUrl || prev.resolvedUrl);
+      const keepAutoCreated = prev.autoCreated && prev.resolvedUrl.trim() && prev.resolvedUrl.trim() === nextResolvedUrl;
+      return normalizeDriveFolderState({
+        ...prev,
+        resolvedUrl: nextResolvedUrl,
+        inputUrl: prev.inputUrl.trim() ? prev.inputUrl : nextResolvedUrl,
+        autoCreated: keepAutoCreated || result?.autoCreated === true,
+        pendingPrintFileIds: appendDriveFileId(prev.pendingPrintFileIds, result?.fileId),
+      });
+    });
+  }, []);
+
+  const buildSavedRecordPrintPayload = useCallback((savedEntry, rawResponses, driveFolderUrl = "") => (
+    buildPrintDocumentPayload({
+      schema: normalizedSchema,
+      responses: rawResponses || {},
+      settings: {
+        ...(form?.settings || {}),
+        recordNo: savedEntry?.["No."] === undefined || savedEntry?.["No."] === null ? "" : String(savedEntry["No."]),
+        modifiedAt: savedEntry?.modifiedAt,
+        modifiedAtUnixMs: savedEntry?.modifiedAtUnixMs,
+      },
+      recordId: savedEntry?.id,
+      omitEmptyRows: omitEmptyRowsOnPrint,
+      driveFolderState: normalizeDriveFolderState({
+        resolvedUrl: driveFolderUrl,
+        inputUrl: driveFolderUrl,
+        autoCreated: false,
+      }),
+      useTemporaryFolder: false,
+    })
+  ), [form?.settings, normalizedSchema, omitEmptyRowsOnPrint]);
+
+  const runPrintOnSave = useCallback(async (savedEntry, rawResponses) => {
+    const payload = buildSavedRecordPrintPayload(savedEntry, rawResponses, savedEntry?.driveFolderUrl || "");
+    return createRecordPrintDocument(payload);
+  }, [buildSavedRecordPrintPayload]);
 
   const applyOrDeferSyncedEntry = useCallback((nextEntry, source = "unknown") => {
     if (!nextEntry) return false;
@@ -764,8 +852,23 @@ export default function FormPage() {
     const currentDriveFolder = normalizeDriveFolderState(driveFolderStateRef.current);
     const currentDriveFolderUrl = currentDriveFolder.resolvedUrl.trim();
     const inputDriveFolderUrl = currentDriveFolder.inputUrl.trim();
-    const driveFileIds = collectDriveFileIds(rawResponses);
-    const shouldFinalizeDriveFolder = Boolean(currentDriveFolderUrl || inputDriveFolderUrl || driveFileIds.length > 0);
+    const currentResponseFileIds = collectDriveFileIds(rawResponses);
+    const initialResponseFileIds = collectDriveFileIds(initialResponsesRef.current);
+    const currentResponseFileIdSet = new Set(currentResponseFileIds);
+    const finalizeFileIds = normalizeDriveFileIds([
+      ...currentResponseFileIds,
+      ...currentDriveFolder.pendingPrintFileIds,
+    ]);
+    const trashFileIds = normalizeDriveFileIds([
+      ...initialResponseFileIds,
+      ...currentDriveFolder.sessionUploadFileIds,
+    ]).filter((fileId) => !currentResponseFileIdSet.has(fileId));
+    const shouldFinalizeDriveFolder = Boolean(
+      currentDriveFolderUrl
+      || inputDriveFolderUrl
+      || finalizeFileIds.length > 0
+      || trashFileIds.length > 0
+    );
     let finalizedDriveFolderUrl = currentDriveFolderUrl;
 
     if (shouldFinalizeDriveFolder) {
@@ -779,7 +882,8 @@ export default function FormPage() {
         folderNameTemplate: settings.driveFolderNameTemplate || "",
         responses: rawResponses || {},
         fieldLabels,
-        fileIds: driveFileIds,
+        fileIds: finalizeFileIds,
+        trashFileIds,
         recordId: payloadWithFormId.id,
       });
       finalizedDriveFolderUrl = typeof finalizeResult?.folderUrl === "string"
@@ -851,7 +955,7 @@ export default function FormPage() {
     return saved;
   };
 
-  const triggerSave = async ({ redirect, stayAsView, skipStayAsViewNavigation = false } = {}) => {
+  const triggerSave = async ({ redirect, stayAsView, skipStayAsViewNavigation = false, createPrintAfterSave = false } = {}) => {
     if (!form) {
       showAlert("フォームが見つかりません");
       return { ok: false, recordId: "" };
@@ -861,8 +965,25 @@ export default function FormPage() {
     try {
       const preview = previewRef.current;
       if (!preview) throw new Error("preview_not_ready");
+      const rawResponsesForPrint = responsesRef.current;
       const result = await preview.submit({ silent: true });
       const savedId = String(preview.getRecordId?.() || result?.id || currentRecordId || entryId || "").trim();
+      let printResult = null;
+      let printError = null;
+
+      if (createPrintAfterSave) {
+        try {
+          printResult = await runPrintOnSave(result, rawResponsesForPrint);
+        } catch (error) {
+          console.error("[FormPage] failed to create print document after save:", error);
+          printError = error;
+        }
+      }
+
+      const saveSuccessMessage = printResult ? "保存しました。印刷様式も出力しました。" : "保存しました";
+      const printFailureMessage = printError
+        ? `保存は完了しましたが、印刷様式の出力に失敗しました: ${printError?.message || printError}`
+        : "";
       if (stayAsView) {
         if (!skipStayAsViewNavigation) {
           if (!entryId && savedId) {
@@ -878,9 +999,22 @@ export default function FormPage() {
             setMode("view");
           }
         }
-        showToast("保存しました");
+        if (printFailureMessage) {
+          showAlert(printFailureMessage, "印刷様式を出力できませんでした");
+        } else {
+          showToast(saveSuccessMessage);
+        }
       } else if (redirect) {
+        if (printFailureMessage) {
+          showAlert(printFailureMessage, "印刷様式を出力できませんでした");
+        } else if (printResult) {
+          showToast(saveSuccessMessage);
+        }
         navigateBack({ saved: true });
+      } else if (printFailureMessage) {
+        showAlert(printFailureMessage, "印刷様式を出力できませんでした");
+      } else if (printResult) {
+        showToast(saveSuccessMessage);
       }
       return { ok: true, recordId: savedId };
     } catch (error) {
@@ -1102,8 +1236,14 @@ export default function FormPage() {
     try {
       const targetChildForms = childForms.filter((cf) => selectedChildFormIds.includes(cf.childFormId));
       const childSections = await buildChildSectionsForPrint(targetChildForms);
-      const payload = preview.getPrintDocumentPayload({ omitEmptyRows: omitEmptyRowsOnPrint, childSections });
+      const payload = preview.getPrintDocumentPayload({
+        omitEmptyRows: omitEmptyRowsOnPrint,
+        childSections,
+        driveFolderState: driveFolderStateRef.current,
+        useTemporaryFolder: true,
+      });
       const result = await createRecordPrintDocument(payload);
+      updateDriveFolderStateFromPrintResult(result);
       showAlert(
         <div className="nf-col nf-gap-8">
           <div>マイドライブに Google ドキュメントを保存しました。</div>
@@ -1119,7 +1259,7 @@ export default function FormPage() {
     } finally {
       setIsCreatingPrintDocument(false);
     }
-  }, [buildChildSectionsForPrint, childForms, omitEmptyRowsOnPrint, showAlert]);
+  }, [buildChildSectionsForPrint, childForms, omitEmptyRowsOnPrint, showAlert, updateDriveFolderStateFromPrintResult, driveFolderStateRef]);
 
   const handleCreatePrintDocument = useCallback(async () => {
     const preview = previewRef.current;

@@ -510,6 +510,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     recordId: recordIdRef.current,
     omitEmptyRows: options.omitEmptyRows,
     childSections: options.childSections || [],
+    driveFolderState: options.driveFolderState ?? driveFolderState,
+    useTemporaryFolder: options.useTemporaryFolder === true,
   });
 
   const handleSaveToSheet = async (options = {}) => {
@@ -617,7 +619,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         </div>
       )}
       <div className="nf-mb-12">
-        <label className="preview-label">回答ID</label>
+        <label className="preview-label">ID</label>
         <input type="text" value={recordIdRef.current} readOnly className="nf-input nf-input--readonly" />
       </div>
       <div className="nf-mb-12">

@@ -308,3 +308,41 @@ test("buildPrintDocumentPayload は子フォームセクションを追加でき
     { label: "工場名", value: "第二工場", depth: 2, type: "text" },
   ]);
 });
+
+test("buildPrintDocumentPayload は印刷用 driveSettings に ID と仮フォルダ情報を含める", () => {
+  const payload = buildPrintDocumentPayload({
+    schema: [
+      { id: "name", type: "text", label: "氏名" },
+    ],
+    responses: {
+      name: "山田 太郎",
+    },
+    settings: {
+      formTitle: "申請書",
+      driveRootFolderUrl: "https://drive.google.com/drive/folders/root123",
+      driveFolderNameTemplate: "{ID}_{氏名}",
+      printFileNameTemplate: "{ID}_印刷様式",
+    },
+    recordId: "rec-save-1",
+    driveFolderState: {
+      resolvedUrl: "https://drive.google.com/drive/folders/temp999",
+      inputUrl: "",
+    },
+    useTemporaryFolder: true,
+  });
+
+  assert.deepEqual(payload.driveSettings, {
+    rootFolderUrl: "https://drive.google.com/drive/folders/root123",
+    folderNameTemplate: "{ID}_{氏名}",
+    fileNameTemplate: "{ID}_印刷様式",
+    recordId: "rec-save-1",
+    folderUrl: "https://drive.google.com/drive/folders/temp999",
+    useTemporaryFolder: true,
+    responses: {
+      name: "山田 太郎",
+    },
+    fieldLabels: {
+      name: "氏名",
+    },
+  });
+});

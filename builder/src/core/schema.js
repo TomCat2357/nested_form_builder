@@ -146,9 +146,12 @@ export const cleanUnusedFieldProperties = (field) => {
     delete field.childFormButtonLabel;
     delete field.allowMultipleChildren;
   }
-  if (type !== "fileUpload") {
-    delete field.allowMultipleFiles;
+  if (type === "fileUpload") {
+    field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
+  } else {
+    delete field.allowUploadByUrl;
   }
+  delete field.allowMultipleFiles;
   return field;
 };
 
@@ -218,6 +221,8 @@ export const normalizeSchemaIDs = (nodes) => {
       base.childFormId = typeof base.childFormId === "string" ? base.childFormId : "";
       base.childFormButtonLabel = typeof base.childFormButtonLabel === "string" ? base.childFormButtonLabel : "";
       base.allowMultipleChildren = !!base.allowMultipleChildren;
+    } else if (base.type === "fileUpload") {
+      base.allowUploadByUrl = normalizeBooleanSetting(base.allowUploadByUrl, false);
     }
 
     // 旧形式マイグレーション: childFormLinkプロパティ → childFormLinkタイプ

@@ -4,6 +4,26 @@ const EMPTY_FOLDER_STATE = {
   resolvedUrl: "",
   inputUrl: "",
   autoCreated: false,
+  sessionUploadFileIds: [],
+  pendingPrintFileIds: [],
+};
+
+const normalizeIdList = (value) => {
+  const source = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  return source.reduce((ids, candidate) => {
+    const normalized = typeof candidate === "string" ? candidate.trim() : "";
+    if (!normalized || seen.has(normalized)) return ids;
+    seen.add(normalized);
+    ids.push(normalized);
+    return ids;
+  }, []);
+};
+
+const appendId = (ids, candidate) => {
+  const normalized = typeof candidate === "string" ? candidate.trim() : "";
+  if (!normalized) return ids;
+  return ids.includes(normalized) ? ids : [...ids, normalized];
 };
 
 const normalizeFolderState = (state) => {
@@ -14,6 +34,8 @@ const normalizeFolderState = (state) => {
     resolvedUrl,
     inputUrl,
     autoCreated: source.autoCreated === true,
+    sessionUploadFileIds: normalizeIdList(source.sessionUploadFileIds),
+    pendingPrintFileIds: normalizeIdList(source.pendingPrintFileIds),
   };
 };
 
@@ -48,6 +70,7 @@ const FileUploadField = ({
 }) => {
   const files = Array.isArray(value) ? value : [];
   const fileInputRef = React.useRef(null);
+  const filesRef = React.useRef(files);
   const [dragOver, setDragOver] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [driveUrl, setDriveUrl] = React.useState("");
@@ -62,6 +85,10 @@ const FileUploadField = ({
     folderStateRef.current = normalizeFolderState(folderState);
   }, [folderState]);
 
+  React.useEffect(() => {
+    filesRef.current = files;
+  }, [files]);
+
   const updateFolderStateFromUploadResult = React.useCallback((result) => {
     if (typeof onFolderStateChange !== "function") return;
     onFolderStateChange((prevState) => {
@@ -72,11 +99,13 @@ const FileUploadField = ({
         ? result.folderUrl.trim()
         : (currentEffectiveFolderUrl || prev.resolvedUrl);
       const keepAutoCreated = prev.autoCreated && prev.resolvedUrl.trim() && prev.resolvedUrl.trim() === nextResolvedUrl;
-      const nextState = {
+      const nextState = normalizeFolderState({
+        ...prev,
         resolvedUrl: nextResolvedUrl,
         inputUrl: prev.inputUrl.trim() ? prev.inputUrl : nextResolvedUrl,
         autoCreated: keepAutoCreated || result?.autoCreated === true,
-      };
+        sessionUploadFileIds: appendId(prev.sessionUploadFileIds, result?.fileId),
+      });
       folderStateRef.current = nextState;
       return nextState;
     });
@@ -103,7 +132,8 @@ const FileUploadField = ({
         driveSettings: buildUploadDriveSettings(),
       });
       const entry = { name: result.fileName, driveFileId: result.fileId, driveFileUrl: result.fileUrl };
-      const next = field.allowMultipleFiles ? [...files, entry] : [entry];
+      const next = [...filesRef.current, entry];
+      filesRef.current = next;
       onChange(next);
       updateFolderStateFromUploadResult(result);
     } catch (err) {
@@ -115,7 +145,7 @@ const FileUploadField = ({
 
   const handleFiles = (fileList) => {
     if (!fileList || fileList.length === 0) return;
-    const targets = field.allowMultipleFiles ? Array.from(fileList) : [fileList[0]];
+    const targets = Array.from(fileList);
     targets.reduce((chain, file) => chain.then(() => uploadFile(file)), Promise.resolve());
   };
 
@@ -136,7 +166,8 @@ const FileUploadField = ({
         driveSettings: buildUploadDriveSettings(),
       });
       const entry = { name: result.fileName, driveFileId: result.fileId, driveFileUrl: result.fileUrl };
-      const next = field.allowMultipleFiles ? [...files, entry] : [entry];
+      const next = [...filesRef.current, entry];
+      filesRef.current = next;
       onChange(next);
       updateFolderStateFromUploadResult(result);
       setDriveUrl("");
@@ -149,6 +180,7 @@ const FileUploadField = ({
 
   const removeFile = (index) => {
     const next = files.filter((_, i) => i !== index);
+    filesRef.current = next;
     onChange(next.length > 0 ? next : "");
   };
 
@@ -161,8 +193,9 @@ const FileUploadField = ({
         ...prev,
         inputUrl: nextInputUrl,
       };
-      folderStateRef.current = nextState;
-      return nextState;
+      const normalizedNextState = normalizeFolderState(nextState);
+      folderStateRef.current = normalizedNextState;
+      return normalizedNextState;
     });
   };
 
@@ -233,29 +266,31 @@ const FileUploadField = ({
         <input
           ref={fileInputRef}
           type="file"
-          multiple={!!field.allowMultipleFiles}
+          multiple
           style={{ display: "none" }}
           onChange={(event) => { handleFiles(event.target.files); event.target.value = ""; }}
         />
       </div>
 
-      <div className="nf-row nf-gap-8 nf-mt-8">
-        <input
-          type="text"
-          className="nf-input nf-flex-1"
-          value={driveUrl}
-          onChange={(event) => setDriveUrl(event.target.value)}
-          placeholder="Google DriveファイルURLを貼り付け"
-        />
-        <button
-          type="button"
-          className="nf-btn"
-          onClick={handleDriveUrlCopy}
-          disabled={uploading || !driveUrl.trim()}
-        >
-          Driveからコピー
-        </button>
-      </div>
+      {field.allowUploadByUrl === true && (
+        <div className="nf-row nf-gap-8 nf-mt-8">
+          <input
+            type="text"
+            className="nf-input nf-flex-1"
+            value={driveUrl}
+            onChange={(event) => setDriveUrl(event.target.value)}
+            placeholder="Google DriveファイルURLを貼り付け"
+          />
+          <button
+            type="button"
+            className="nf-btn"
+            onClick={handleDriveUrlCopy}
+            disabled={uploading || !driveUrl.trim()}
+          >
+            Driveからコピー
+          </button>
+        </div>
+      )}
 
       {displayedFolderUrl && (
         <div className="nf-text-12 nf-text-muted nf-mt-8">

@@ -102,7 +102,7 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
       next.allowMultipleChildren = next.allowMultipleChildren ?? true;
     }
     if (newType === "fileUpload") {
-      next.allowMultipleFiles = next.allowMultipleFiles ?? false;
+      next.allowUploadByUrl = next.allowUploadByUrl ?? false;
     }
     saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
   }
@@ -874,10 +874,10 @@ export default function QuestionCard({
           <label className="nf-row nf-gap-6">
             <input
               type="checkbox"
-              checked={!!field.allowMultipleFiles}
-              onChange={(event) => onChange({ ...field, allowMultipleFiles: event.target.checked })}
+              checked={!!field.allowUploadByUrl}
+              onChange={(event) => onChange({ ...field, allowUploadByUrl: event.target.checked })}
             />
-            複数ファイルのアップロードを許可
+            URLによるアップロードを有効にする
           </label>
         </div>
       )}

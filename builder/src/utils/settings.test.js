@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   SAVE_AFTER_ACTIONS,
   buildPrimarySaveOptions,
+  resolveCreatePrintOnSave,
   resolveSaveAfterAction,
   resolveSettingsCheckboxChecked,
   resolveSettingsFieldValue,
@@ -51,4 +52,11 @@ test("resolveSettingsCheckboxChecked は defaultValue を checked に反映す�
 
   assert.equal(resolveSettingsCheckboxChecked(field, undefined), true);
   assert.equal(resolveSettingsCheckboxChecked(field, false), false);
+});
+
+test("resolveCreatePrintOnSave は未設定時 false、true 明示時のみ true を返す", () => {
+  assert.equal(resolveCreatePrintOnSave({}), false);
+  assert.equal(resolveCreatePrintOnSave(null), false);
+  assert.equal(resolveCreatePrintOnSave({ createPrintOnSave: false }), false);
+  assert.equal(resolveCreatePrintOnSave({ createPrintOnSave: true }), true);
 });

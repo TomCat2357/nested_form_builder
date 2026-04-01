@@ -247,6 +247,13 @@ export const buildFieldLabelsMap = (fields, map = {}) => {
   return map;
 };
 
+const resolveDriveFolderUrl = (driveFolderState) => {
+  if (!driveFolderState || typeof driveFolderState !== "object") return "";
+  const inputUrl = typeof driveFolderState.inputUrl === "string" ? driveFolderState.inputUrl.trim() : "";
+  const resolvedUrl = typeof driveFolderState.resolvedUrl === "string" ? driveFolderState.resolvedUrl.trim() : "";
+  return inputUrl || resolvedUrl;
+};
+
 export const buildPrintDocumentPayload = ({
   schema,
   responses,
@@ -257,6 +264,8 @@ export const buildPrintDocumentPayload = ({
   showHeader,
   childSections = [],
   parentInfo = null,
+  driveFolderState = null,
+  useTemporaryFolder = false,
 }) => {
   const safeExportedAt = exportedAt instanceof Date && !Number.isNaN(exportedAt.getTime()) ? exportedAt : new Date();
   const formTitle = typeof settings.formTitle === "string" && settings.formTitle.trim() ? settings.formTitle.trim() : "受付フォーム";
@@ -266,12 +275,16 @@ export const buildPrintDocumentPayload = ({
   const recordRef = recordNo || resolvedRecordId;
   const shouldOmitEmptyRows = resolveOmitEmptyRowsOnPrint(settings, omitEmptyRows);
   const shouldShowHeader = resolveShowPrintHeader(settings, showHeader);
+  const folderUrl = resolveDriveFolderUrl(driveFolderState);
 
-  const hasDriveSettings = settings.driveRootFolderUrl || settings.driveFolderNameTemplate || settings.printFileNameTemplate;
+  const hasDriveSettings = settings.driveRootFolderUrl || settings.driveFolderNameTemplate || settings.printFileNameTemplate || folderUrl || useTemporaryFolder;
   const driveSettings = hasDriveSettings ? {
     rootFolderUrl: settings.driveRootFolderUrl || "",
     folderNameTemplate: settings.driveFolderNameTemplate || "",
     fileNameTemplate: settings.printFileNameTemplate || "",
+    recordId: resolvedRecordId,
+    folderUrl,
+    useTemporaryFolder: !!useTemporaryFolder,
     responses: responses || {},
     fieldLabels: buildFieldLabelsMap(schema),
   } : undefined;
