@@ -92,8 +92,7 @@ export const cleanUnusedFieldProperties = (field) => {
   const supportsPhone = type === "phone";
   const supportsDefaultNow = ["date", "time"].includes(type);
   const supportsPlaceholder = ["text", "number", "email", "phone", "url", "regex", "textarea"].includes(type);
-  const supportsSearchAndPrintExclusion = type === "message" || type === "childFormLink";
-  const isChildFormLink = type === "childFormLink";
+  const supportsSearchAndPrintExclusion = type === "message";
 
   if (!isChoice) {
     delete field.options;
@@ -140,12 +139,10 @@ export const cleanUnusedFieldProperties = (field) => {
   } else {
     field.excludeFromSearchAndPrint = normalizeBooleanSetting(field.excludeFromSearchAndPrint, false);
   }
-  if (type === "message" || type === "childFormLink") delete field.required;
-  if (!isChildFormLink) {
-    delete field.childFormId;
-    delete field.childFormButtonLabel;
-    delete field.allowMultipleChildren;
-  }
+  if (type === "message") delete field.required;
+  delete field.childFormId;
+  delete field.childFormButtonLabel;
+  delete field.allowMultipleChildren;
   if (type === "fileUpload") {
     field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
   } else {
@@ -217,10 +214,6 @@ export const normalizeSchemaIDs = (nodes) => {
       base.autoFillUserEmail = !!(base.autoFillUserEmail ?? base.defaultNow);
     } else if (base.type === "phone") {
       Object.assign(base, normalizePhoneSettings(base));
-    } else if (base.type === "childFormLink") {
-      base.childFormId = typeof base.childFormId === "string" ? base.childFormId : "";
-      base.childFormButtonLabel = typeof base.childFormButtonLabel === "string" ? base.childFormButtonLabel : "";
-      base.allowMultipleChildren = !!base.allowMultipleChildren;
     } else if (base.type === "fileUpload") {
       base.allowUploadByUrl = normalizeBooleanSetting(base.allowUploadByUrl, false);
     }

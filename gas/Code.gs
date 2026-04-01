@@ -269,7 +269,6 @@ function SerializeRecord_(record) {
 
   return {
     id: String(record.id || ""),
-    parentRecordId: record.parentRecordId || "",
     driveFolderUrl: record.driveFolderUrl || "",
     "No.": record["No."] ?? "",
     modifiedBy: record.modifiedBy || "",
@@ -684,7 +683,7 @@ function SyncRecords_(ctx) {
       for (var i = 0; i < existingData.length; i++) {
         var id = String(existingData[i][0] || "").trim();
         if (id) existingRowMap[id] = i;
-        var noVal = Number(existingData[i][2]);
+        var noVal = Number(existingData[i][1]);
         if (isFinite(noVal) && noVal > maxNo) maxNo = noVal;
       }
 
@@ -726,11 +725,10 @@ function SyncRecords_(ctx) {
             rowData = new Array(lastColumn).fill("");
             rowFormats = new Array(lastColumn).fill("General");
             rowData[0] = recId;
-            rowData[1] = rec.parentRecordId || ""; // parentRecordId
-            rowData[2] = insertMeta.recordNo;
-            rowData[3] = insertMeta.createdAt;
-            rowData[6] = insertMeta.createdBy;
-            rowData[9] = rec.driveFolderUrl || "";
+            rowData[1] = insertMeta.recordNo;
+            rowData[2] = insertMeta.createdAt;
+            rowData[5] = insertMeta.createdBy;
+            rowData[8] = rec.driveFolderUrl || "";
             maxNo = Math.max(maxNo, insertMeta.recordNo);
 
             localIndex = existingData.length;
@@ -758,18 +756,18 @@ function SyncRecords_(ctx) {
           }
 
           if (localIndex === -1) {
-            rowData[4] = recModifiedAt;
-            rowData[7] = currentUserEmail;
+            rowData[3] = recModifiedAt;
+            rowData[6] = currentUserEmail;
+            rowFormats[2] = "0";
             rowFormats[3] = "0";
-            rowFormats[4] = "0";
 
             if (rec.deletedAt) {
-              rowData[5] = Sheets_toUnixMs_(rec.deletedAt, true) || rec.deletedAt;
-              rowData[8] = rec.deletedBy || currentUserEmail;
-              rowFormats[5] = "0";
+              rowData[4] = Sheets_toUnixMs_(rec.deletedAt, true) || rec.deletedAt;
+              rowData[7] = rec.deletedBy || currentUserEmail;
+              rowFormats[4] = "0";
             } else {
-              rowData[5] = "";
-              rowData[8] = "";
+              rowData[4] = "";
+              rowData[7] = "";
             }
           }
 

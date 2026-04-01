@@ -88,10 +88,6 @@ const FieldRenderer = ({
     );
   }
 
-  // 子フォームリンクタイプ: ボタン表示（ボタン機能はFormPage側で処理）
-  if (field.type === "childFormLink") {
-    return null;
-  }
 
   if (field.type === "fileUpload") {
     return (
@@ -380,7 +376,6 @@ const RendererRecursive = ({
         const fid = field?.id || `tmp_${depth}_${index}_${field?.label || ""}`;
         const value = (responses || {})[fid] ?? (responses || {})[field?.id];
         const cardAttrs = s.card(depth, false);
-        const isChildFormLinkField = field.type === "childFormLink" && field.childFormId;
         return (
           <div key={`node_${fid}`} className={cardAttrs.className} data-depth={cardAttrs["data-depth"]} data-question-id={fid}>
             <FieldRenderer
@@ -395,16 +390,6 @@ const RendererRecursive = ({
               driveFolderState={driveFolderState}
               onDriveFolderStateChange={onDriveFolderStateChange}
             />
-            {isChildFormLinkField && (
-              <button
-                type="button"
-                className="nf-btn-outline nf-text-13 child-form-jump-btn"
-                disabled={!onChildFormJump}
-                onClick={() => onChildFormJump && onChildFormJump(field.childFormId)}
-              >
-                → {field.label || "子フォームを開く"}
-              </button>
-            )}
           </div>
         );
       })}
