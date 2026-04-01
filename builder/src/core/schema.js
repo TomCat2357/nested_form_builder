@@ -146,6 +146,9 @@ export const cleanUnusedFieldProperties = (field) => {
     delete field.childFormButtonLabel;
     delete field.allowMultipleChildren;
   }
+  if (type !== "fileUpload") {
+    delete field.allowMultipleFiles;
+  }
   return field;
 };
 

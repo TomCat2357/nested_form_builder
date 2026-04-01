@@ -91,6 +91,31 @@ function nfbCreateRecordPrintDocument(payload) {
     doc.saveAndClose();
 
     var file = DriveApp.getFileById(doc.getId());
+
+    // driveSettings がある場合はフォルダに移動・ファイル名テンプレート適用
+    if (payload && payload.driveSettings) {
+      var ds = payload.driveSettings;
+      var ctx = {
+        responses: ds.responses || {},
+        fieldLabels: ds.fieldLabels || {},
+        now: new Date()
+      };
+
+      // ファイル名テンプレートの解決
+      var fileNameTemplate = ds.fileNameTemplate ? String(ds.fileNameTemplate).trim() : "";
+      if (fileNameTemplate) {
+        var resolvedFileName = nfbResolveTemplate_(fileNameTemplate, ctx);
+        if (resolvedFileName) {
+          file.setName(resolvedFileName);
+        }
+      }
+
+      var folder = nfbResolveOrCreateFolder_(ds, ctx);
+      var finalFileName = file.getName();
+      nfbTrashExistingFile_(folder, finalFileName);
+      file.moveTo(folder);
+    }
+
     return {
       ok: true,
       fileUrl: file.getUrl(),
@@ -346,6 +371,207 @@ function nfbStylePrintDocumentParagraph_(paragraph, options) {
   }
   return paragraph;
 }
+
+// =========================================================================
+// テンプレート解決・フォルダ操作・ファイルアップロード
+// =========================================================================
+
+/**
+ * テンプレート文字列のプレースホルダーを解決する
+ * @param {string} template - テンプレート文字列
+ * @param {Object} context - { responses, fieldLabels, now }
+ * @return {string}
+ */
+function nfbResolveTemplate_(template, context) {
+  if (!template || typeof template !== "string") return "";
+
+  var now = context && context.now ? context.now : new Date();
+  var tz = Session.getScriptTimeZone();
+  var responses = (context && context.responses) || {};
+  var fieldLabels = (context && context.fieldLabels) || {};
+
+  // 日時プレースホルダーのマッピング
+  var dateFormats = {
+    "YYYY-MM-DD": "yyyy-MM-dd",
+    "HH:mm:ss": "HH:mm:ss",
+    "YYYY": "yyyy",
+    "MM": "MM",
+    "DD": "dd",
+    "HH": "HH",
+    "mm": "mm",
+    "ss": "ss"
+  };
+
+  var result = template;
+
+  // 日時プレースホルダーを先に解決（長いパターンから）
+  var dateKeys = Object.keys(dateFormats).sort(function(a, b) { return b.length - a.length; });
+  for (var i = 0; i < dateKeys.length; i++) {
+    var key = dateKeys[i];
+    var pattern = "{" + key + "}";
+    if (result.indexOf(pattern) !== -1) {
+      var formatted = Utilities.formatDate(now, tz, dateFormats[key]);
+      result = result.split(pattern).join(formatted);
+    }
+  }
+
+  // フィールドラベルプレースホルダーを解決
+  // fieldLabels は { fieldId: "ラベル" } 形式
+  // ラベル → fieldId の逆引きマップを作成
+  var labelToId = {};
+  for (var fid in fieldLabels) {
+    if (!fieldLabels.hasOwnProperty(fid)) continue;
+    var label = fieldLabels[fid];
+    if (label && !labelToId.hasOwnProperty(label)) {
+      labelToId[label] = fid;
+    }
+  }
+
+  // {ラベル名} パターンを解決
+  result = result.replace(/\{([^{}]+)\}/g, function(match, labelName) {
+    var fieldId = labelToId[labelName];
+    if (fieldId !== undefined) {
+      var val = responses[fieldId];
+      if (val === undefined || val === null) return "";
+      if (Array.isArray(val)) return val.join(", ");
+      if (typeof val === "object") return JSON.stringify(val);
+      return String(val);
+    }
+    return "";
+  });
+
+  return result;
+}
+
+/**
+ * driveSettings からフォルダを解決または作成する
+ * @param {Object} driveSettings - { rootFolderUrl, folderNameTemplate, responses, fieldLabels }
+ * @param {Object} context - { responses, fieldLabels, now }（driveSettingsから構築可能）
+ * @return {Folder}
+ */
+function nfbResolveOrCreateFolder_(driveSettings, context) {
+  var rootFolder;
+  var rootUrl = driveSettings && driveSettings.rootFolderUrl ? String(driveSettings.rootFolderUrl).trim() : "";
+
+  if (rootUrl) {
+    var parsed = Forms_parseGoogleDriveUrl_(rootUrl);
+    if (parsed.type === "folder" && parsed.id) {
+      rootFolder = DriveApp.getFolderById(parsed.id);
+    } else {
+      throw new Error("無効なフォルダURLです: " + rootUrl);
+    }
+  } else {
+    rootFolder = DriveApp.getRootFolder();
+  }
+
+  var folderTemplate = driveSettings && driveSettings.folderNameTemplate ? String(driveSettings.folderNameTemplate).trim() : "";
+  if (!folderTemplate) {
+    return rootFolder;
+  }
+
+  var ctx = context || {
+    responses: (driveSettings && driveSettings.responses) || {},
+    fieldLabels: (driveSettings && driveSettings.fieldLabels) || {},
+    now: new Date()
+  };
+
+  var folderName = nfbResolveTemplate_(folderTemplate, ctx);
+  if (!folderName) {
+    return rootFolder;
+  }
+
+  // 同名フォルダが既にあればそれを返す
+  var existingFolders = rootFolder.getFoldersByName(folderName);
+  if (existingFolders.hasNext()) {
+    return existingFolders.next();
+  }
+
+  return rootFolder.createFolder(folderName);
+}
+
+/**
+ * フォルダ内の同名ファイルをゴミ箱に移動する（上書き前処理）
+ * @param {Folder} folder
+ * @param {string} fileName
+ */
+function nfbTrashExistingFile_(folder, fileName) {
+  var existing = folder.getFilesByName(fileName);
+  while (existing.hasNext()) {
+    existing.next().setTrashed(true);
+  }
+}
+
+/**
+ * ローカルファイルをGoogle Driveにアップロードする
+ * @param {Object} payload - { base64, fileName, mimeType, driveSettings }
+ * @return {Object} { ok: true, fileUrl, fileName, fileId }
+ */
+function nfbUploadFileToDrive(payload) {
+  return nfbSafeCall_(function() {
+    if (!payload || !payload.base64 || !payload.fileName) {
+      throw new Error("ファイルデータが不足しています");
+    }
+
+    var bytes = Utilities.base64Decode(payload.base64);
+    var mimeType = payload.mimeType || "application/octet-stream";
+    var fileName = String(payload.fileName).trim();
+    var blob = Utilities.newBlob(bytes, mimeType, fileName);
+
+    var folder = nfbResolveOrCreateFolder_(payload.driveSettings);
+    nfbTrashExistingFile_(folder, fileName);
+
+    var file = folder.createFile(blob);
+
+    return {
+      ok: true,
+      fileUrl: file.getUrl(),
+      fileName: file.getName(),
+      fileId: file.getId()
+    };
+  });
+}
+
+/**
+ * Google Driveのファイルをコピーして指定フォルダに保存する
+ * @param {Object} payload - { sourceUrl, driveSettings }
+ * @return {Object} { ok: true, fileUrl, fileName, fileId }
+ */
+function nfbCopyDriveFileToDrive(payload) {
+  return nfbSafeCall_(function() {
+    if (!payload || !payload.sourceUrl) {
+      throw new Error("ソースファイルのURLが指定されていません");
+    }
+
+    var parsed = Forms_parseGoogleDriveUrl_(payload.sourceUrl);
+    if (!parsed.id || parsed.type !== "file") {
+      throw new Error("無効なGoogle DriveファイルURLです");
+    }
+
+    var sourceFile;
+    try {
+      sourceFile = DriveApp.getFileById(parsed.id);
+    } catch (accessError) {
+      throw new Error("ソースファイルへのアクセスに失敗しました: " + nfbErrorToString_(accessError));
+    }
+
+    var originalName = sourceFile.getName();
+    var folder = nfbResolveOrCreateFolder_(payload.driveSettings);
+    nfbTrashExistingFile_(folder, originalName);
+
+    var copiedFile = sourceFile.makeCopy(originalName, folder);
+
+    return {
+      ok: true,
+      fileUrl: copiedFile.getUrl(),
+      fileName: copiedFile.getName(),
+      fileId: copiedFile.getId()
+    };
+  });
+}
+
+// =========================================================================
+// 印刷様式ユーティリティ（既存）
+// =========================================================================
 
 function nfbFormatPrintDocumentExportedAt_(value) {
   var date = value ? new Date(value) : new Date();

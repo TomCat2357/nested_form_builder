@@ -2,7 +2,8 @@ import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from
 import { collectResponses, sortResponses } from "../../core/collect.js";
 import { computeSchemaHash } from "../../core/schema.js";
 import { collectValidationErrors, formatValidationErrors, isNumberInputDraftAllowed, validateByPattern } from "../../core/validate.js";
-import { submitResponses, hasScriptRun } from "../../services/gasClient.js";
+import * as gasClientModule from "../../services/gasClient.js";
+const { submitResponses, hasScriptRun } = gasClientModule;
 import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
@@ -18,6 +19,7 @@ import {
   isTextareaField,
   toSelectedChoiceLabels,
 } from "./printDocument.js";
+import FileUploadField from "./FileUploadField.jsx";
 
 const resolveConfiguredPlaceholder = (field, fallback = "") => {
   if (field?.showPlaceholder !== true) return "";
@@ -26,7 +28,7 @@ const resolveConfiguredPlaceholder = (field, fallback = "") => {
 
 const getNumberInputMode = (field) => (field?.integerOnly ? "numeric" : "decimal");
 
-const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildrenForOption, readOnly = false }) => {
+const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildrenForOption, readOnly = false, driveSettings, gasClientRef }) => {
   const validation = validateByPattern(field, value);
   const selectedChoiceLabels = toSelectedChoiceLabels(field, value);
   const selectedSingleChoice = selectedChoiceLabels[0] || "";
@@ -262,12 +264,23 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         </div>
       )}
 
+      {field.type === "fileUpload" && (
+        <FileUploadField
+          field={field}
+          value={value}
+          onChange={onChange}
+          readOnly={readOnly}
+          driveSettings={driveSettings}
+          gasClient={gasClientRef?.current}
+        />
+      )}
+
       {renderChildrenAll && field.type !== "checkboxes" && <div className={s.child.className}>{renderChildrenAll()}</div>}
     </div>
   );
 };
 
-const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = false, entryId, onChildFormJump }) => {
+const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = false, entryId, onChildFormJump, driveSettings, gasClientRef }) => {
   const renderChildrenAll = (field, fid) => () => {
     if (!field?.childrenByValue) return null;
     const selectedLabels = toSelectedChoiceLabels(field, (responses || {})[fid]);
@@ -283,6 +296,8 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
           readOnly={readOnly}
           entryId={entryId}
           onChildFormJump={onChildFormJump}
+          driveSettings={driveSettings}
+          gasClientRef={gasClientRef}
         />
       );
     }
@@ -297,6 +312,8 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
           readOnly={readOnly}
           entryId={entryId}
           onChildFormJump={onChildFormJump}
+          driveSettings={driveSettings}
+          gasClientRef={gasClientRef}
         />
       ));
     }
@@ -314,6 +331,8 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
         readOnly={readOnly}
         entryId={entryId}
         onChildFormJump={onChildFormJump}
+        driveSettings={driveSettings}
+        gasClientRef={gasClientRef}
       />
     );
   };
@@ -334,6 +353,8 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
               renderChildrenAll={renderChildrenAll(field, fid)}
               renderChildrenForOption={(label) => renderChildrenForOption(field, fid, label)}
               readOnly={readOnly}
+              driveSettings={driveSettings}
+              gasClientRef={gasClientRef}
             />
             {isChildFormLinkField && entryId && (
               <button
@@ -430,6 +451,13 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const sortedKeys = sortedData.keys;
   const formTitle = settings.formTitle || "受付フォーム";
   const modifiedAtDisplay = formatRecordMetaDateTime(settings.modifiedAtUnixMs ?? settings.modifiedAt);
+
+  const gasClientRef = useRef(gasClientModule);
+  const driveSettings = useMemo(() => ({
+    rootFolderUrl: settings.driveRootFolderUrl || "",
+    folderNameTemplate: settings.driveFolderNameTemplate || "",
+    printFileNameTemplate: settings.printFileNameTemplate || "",
+  }), [settings.driveRootFolderUrl, settings.driveFolderNameTemplate, settings.printFileNameTemplate]);
 
   const [isSaving, setIsSaving] = useState(false);
   const getPrintDocumentPayload = (options = {}) => buildPrintDocumentPayload({
@@ -553,7 +581,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         <label className="preview-label">最終更新日時</label>
         <input type="text" value={modifiedAtDisplay || "-"} readOnly className="nf-input nf-input--readonly" />
       </div>
-      <RendererRecursive fields={schema} responses={responses} onChange={setResponses} readOnly={readOnly} entryId={entryId} onChildFormJump={onChildFormJump} />
+      <RendererRecursive fields={schema} responses={responses} onChange={setResponses} readOnly={readOnly} entryId={entryId} onChildFormJump={onChildFormJump} driveSettings={driveSettings} gasClientRef={gasClientRef} />
       {showOutputJson && (
         <div className="nf-mt-12">
           <label className="preview-label">回答JSON</label>

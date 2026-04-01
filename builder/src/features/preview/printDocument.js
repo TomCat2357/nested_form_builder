@@ -107,6 +107,10 @@ export const sanitizePrintFileNamePart = (input, fallback = "record") => {
 
 export const formatPrintItemValue = (field, value) => {
   if (field?.type === "message" || field?.type === "childFormLink") return "";
+  if (field?.type === "fileUpload") {
+    const files = Array.isArray(value) ? value : [];
+    return files.map((f) => f?.name || "不明なファイル").join(", ");
+  }
   if (CHOICE_TYPES.has(field?.type)) {
     return toSelectedChoiceLabels(field, value).join(", ");
   }
@@ -229,6 +233,20 @@ const appendChildSectionItems = (items, childSections, options = {}) => {
   return items;
 };
 
+export const buildFieldLabelsMap = (fields, map = {}) => {
+  (fields || []).forEach((field) => {
+    if (field?.id && typeof field?.label === "string" && field.label.trim()) {
+      map[field.id] = field.label.trim();
+    }
+    if (field?.childrenByValue) {
+      Object.values(field.childrenByValue).forEach((children) => {
+        buildFieldLabelsMap(children, map);
+      });
+    }
+  });
+  return map;
+};
+
 export const buildPrintDocumentPayload = ({
   schema,
   responses,
@@ -249,6 +267,15 @@ export const buildPrintDocumentPayload = ({
   const shouldOmitEmptyRows = resolveOmitEmptyRowsOnPrint(settings, omitEmptyRows);
   const shouldShowHeader = resolveShowPrintHeader(settings, showHeader);
 
+  const hasDriveSettings = settings.driveRootFolderUrl || settings.driveFolderNameTemplate || settings.printFileNameTemplate;
+  const driveSettings = hasDriveSettings ? {
+    rootFolderUrl: settings.driveRootFolderUrl || "",
+    folderNameTemplate: settings.driveFolderNameTemplate || "",
+    fileNameTemplate: settings.printFileNameTemplate || "",
+    responses: responses || {},
+    fieldLabels: buildFieldLabelsMap(schema),
+  } : undefined;
+
   return {
     fileName: `印刷様式_${sanitizePrintFileNamePart(formTitle, "form")}_${sanitizePrintFileNamePart(recordRef, "record")}_${formatFileTimestamp(safeExportedAt)}`,
     formTitle,
@@ -264,6 +291,7 @@ export const buildPrintDocumentPayload = ({
       childSections,
       { omitEmptyRows: shouldOmitEmptyRows },
     ),
+    ...(driveSettings ? { driveSettings } : {}),
   };
 };
 

@@ -101,6 +101,9 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
       next.childFormButtonLabel = next.childFormButtonLabel || "";
       next.allowMultipleChildren = next.allowMultipleChildren ?? true;
     }
+    if (newType === "fileUpload") {
+      next.allowMultipleFiles = next.allowMultipleFiles ?? false;
+    }
     saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
   }
 
@@ -671,6 +674,7 @@ export default function QuestionCard({
           <option value="select">ドロップダウン</option>
           <option value="message">メッセージ</option>
           <option value="childFormLink">子フォームリンク</option>
+          <option value="fileUpload">ファイルアップロード</option>
         </select>
         {!isMessage && !isChildFormLink && (
           <label className="nf-row nf-gap-4 nf-nowrap">
@@ -863,6 +867,19 @@ export default function QuestionCard({
             <code className="nf-text-11 nf-text-muted nf-word-break">{phonePattern}</code>
           </div>
         </>
+      )}
+
+      {field.type === "fileUpload" && (
+        <div className="nf-mt-8">
+          <label className="nf-row nf-gap-6">
+            <input
+              type="checkbox"
+              checked={!!field.allowMultipleFiles}
+              onChange={(event) => onChange({ ...field, allowMultipleFiles: event.target.checked })}
+            />
+            複数ファイルのアップロードを許可
+          </label>
+        </div>
       )}
 
       {isDateOrTime && (

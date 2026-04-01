@@ -119,6 +119,33 @@ export const SETTINGS_GROUPS = [
       },
     ],
   },
+  {
+    key: "driveStorage",
+    label: "ファイル保存先設定",
+    fields: [
+      {
+        key: "driveRootFolderUrl",
+        label: "ルートフォルダURL",
+        placeholder: "https://drive.google.com/drive/folders/...",
+        required: false,
+        description: "空白の場合はマイドライブのルートがファイルの保存先になります",
+      },
+      {
+        key: "driveFolderNameTemplate",
+        label: "フォルダ命名規則",
+        placeholder: "{YYYY-MM-DD}_{担当者名}",
+        required: false,
+        description: "空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{YYYY-MM-DD}, {HH:mm:ss} などの日時や {フィールドラベル} でフィールド値を参照できます",
+      },
+      {
+        key: "printFileNameTemplate",
+        label: "印刷様式ファイル名",
+        placeholder: "{HH:mm:ss}_印刷様式",
+        required: false,
+        description: "空白の場合はデフォルトの命名規則（印刷様式_フォーム名_レコード番号_タイムスタンプ）が適用されます",
+      },
+    ],
+  },
 ];
 
 // 後方互換のためフラット配列もエクスポート
