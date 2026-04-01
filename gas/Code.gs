@@ -270,6 +270,7 @@ function SerializeRecord_(record) {
   return {
     id: String(record.id || ""),
     parentRecordId: record.parentRecordId || "",
+    driveFolderUrl: record.driveFolderUrl || "",
     "No.": record["No."] ?? "",
     modifiedBy: record.modifiedBy || "",
     createdBy: record.createdBy || "",
@@ -665,7 +666,7 @@ function SyncRecords_(ctx) {
       Sheets_ensureHeaderMatrix_(sheet, order);
       var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
 
-      var lastColumn = Math.max(sheet.getLastColumn(), 9);
+      var lastColumn = Math.max(sheet.getLastColumn(), 10);
       var lastRow = sheet.getLastRow();
       var dataStartRow = NFB_DATA_START_ROW;
 
@@ -729,6 +730,7 @@ function SyncRecords_(ctx) {
             rowData[2] = insertMeta.recordNo;
             rowData[3] = insertMeta.createdAt;
             rowData[6] = insertMeta.createdBy;
+            rowData[9] = rec.driveFolderUrl || "";
             maxNo = Math.max(maxNo, insertMeta.recordNo);
 
             localIndex = existingData.length;

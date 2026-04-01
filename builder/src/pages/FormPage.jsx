@@ -8,7 +8,13 @@ import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
 import { PARENT_RECORD_ID_KEY } from "../core/constants.js";
 import { restoreResponsesFromData, hasDirtyChanges, collectDefaultNowResponses } from "../utils/responses.js";
-import { acquireSaveLock, createRecordPrintDocument, submitResponses, hasScriptRun } from "../services/gasClient.js";
+import {
+  acquireSaveLock,
+  createRecordPrintDocument,
+  finalizeRecordDriveFolder,
+  submitResponses,
+  hasScriptRun,
+} from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
@@ -32,7 +38,7 @@ import RecordCopyDialog from "../app/components/RecordCopyDialog.jsx";
 import BreadcrumbNav from "../app/components/BreadcrumbNav.jsx";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
-import { resolveOmitEmptyRowsOnPrint } from "../features/preview/printDocument.js";
+import { buildFieldLabelsMap, resolveOmitEmptyRowsOnPrint } from "../features/preview/printDocument.js";
 import { collectChildFormLinks, mergeChildFormLinksByFormId } from "../features/search/childFormIntegration.js";
 import PrintChildFormDialog from "../features/search/components/PrintChildFormDialog.jsx";
 import { buildPrimarySaveOptions } from "../utils/settings.js";
@@ -79,6 +85,45 @@ const pickLatestEntry = (current, incoming) => {
   return incomingVersion > currentVersion ? incoming : current;
 };
 
+const createEmptyDriveFolderState = () => ({
+  resolvedUrl: "",
+  inputUrl: "",
+  autoCreated: false,
+});
+
+const normalizeDriveFolderState = (value) => {
+  const source = value && typeof value === "object" ? value : {};
+  const resolvedUrl = typeof source.resolvedUrl === "string"
+    ? source.resolvedUrl
+    : (typeof source.url === "string" ? source.url : "");
+  const inputUrl = typeof source.inputUrl === "string" ? source.inputUrl : resolvedUrl;
+  return {
+    resolvedUrl,
+    inputUrl,
+    autoCreated: source.autoCreated === true,
+  };
+};
+
+const areDriveFolderStatesEqual = (left, right) => {
+  const a = normalizeDriveFolderState(left);
+  const b = normalizeDriveFolderState(right);
+  return a.resolvedUrl === b.resolvedUrl
+    && a.inputUrl === b.inputUrl
+    && a.autoCreated === b.autoCreated;
+};
+
+const collectDriveFileIds = (responses) => {
+  const seen = new Set();
+  Object.values(toResponseObject(responses)).forEach((value) => {
+    if (!Array.isArray(value)) return;
+    value.forEach((entry) => {
+      const fileId = typeof entry?.driveFileId === "string" ? entry.driveFileId.trim() : "";
+      if (fileId) seen.add(fileId);
+    });
+  });
+  return Array.from(seen);
+};
+
 export default function FormPage() {
   const { formId, entryId } = useParams();
   const [searchParams] = useSearchParams();
@@ -96,7 +141,8 @@ export default function FormPage() {
   const [recordNoInput, setRecordNoInput] = useState("");
   const [loading, setLoading] = useState(true);
 
-  const draftKey = `nfb_draft_${formId}_${entryId || 'new'}`;
+  const draftKey = `nfb_draft_${formId}_${entryId || "new"}`;
+  const driveFolderDraftKey = `nfb_draft_folder_${formId}_${entryId || "new"}`;
 
   const [responses, setResponses] = useState(() => {
     try {
@@ -115,6 +161,32 @@ export default function FormPage() {
       } catch(e) {}
     }
   }, [responses, draftKey, entryId]);
+  const [driveFolderState, setDriveFolderState] = useState(() => {
+    if (entryId) return createEmptyDriveFolderState();
+    try {
+      const saved = sessionStorage.getItem(driveFolderDraftKey);
+      if (saved) return normalizeDriveFolderState(JSON.parse(saved));
+    } catch (e) {}
+    return createEmptyDriveFolderState();
+  });
+
+  useEffect(() => {
+    if (entryId) return;
+    try {
+      const saved = sessionStorage.getItem(driveFolderDraftKey);
+      setDriveFolderState(saved ? normalizeDriveFolderState(JSON.parse(saved)) : createEmptyDriveFolderState());
+    } catch (e) {
+      setDriveFolderState(createEmptyDriveFolderState());
+    }
+  }, [driveFolderDraftKey, entryId]);
+
+  useEffect(() => {
+    if (!entryId) {
+      try {
+        sessionStorage.setItem(driveFolderDraftKey, JSON.stringify(driveFolderState));
+      } catch (e) {}
+    }
+  }, [driveFolderDraftKey, driveFolderState, entryId]);
   const [currentRecordId, setCurrentRecordId] = useState(entryId || null);
 
   // 親子フォーム階層コンテキスト
@@ -152,6 +224,7 @@ export default function FormPage() {
   });
 
   const initialResponsesRef = useRef({});
+  const initialDriveFolderStateRef = useRef(createEmptyDriveFolderState());
   const previewRef = useRef(null);
   const newEntryInitKeyRef = useRef(null);
   const responseMutationSeqRef = useRef(0);
@@ -161,6 +234,7 @@ export default function FormPage() {
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
+  const fieldLabels = useMemo(() => buildFieldLabelsMap(normalizedSchema), [normalizedSchema]);
   const primarySaveOptions = useMemo(() => buildPrimarySaveOptions(form?.settings), [form?.settings?.saveAfterAction]);
   const childFormLinks = useMemo(() => collectChildFormLinks(normalizedSchema), [normalizedSchema]);
   const childForms = useMemo(
@@ -186,6 +260,7 @@ export default function FormPage() {
   const loadingFormsRef = useLatestRef(loadingForms);
   const responsesRef = useLatestRef(responses);
   const entryRef = useLatestRef(entry);
+  const driveFolderStateRef = useLatestRef(driveFolderState);
 
   useEffect(() => {
     setMode(entryId ? "view" : "edit");
@@ -193,7 +268,14 @@ export default function FormPage() {
 
   const isViewMode = mode === "view";
   const canCopyFromExistingRecord = !entryId && !isViewMode;
-  const isDirty = useMemo(() => hasDirtyChanges(initialResponsesRef.current, responses), [responses]);
+  const isDriveFolderDirty = useMemo(
+    () => !areDriveFolderStatesEqual(initialDriveFolderStateRef.current, driveFolderState),
+    [driveFolderState],
+  );
+  const isDirty = useMemo(
+    () => hasDirtyChanges(initialResponsesRef.current, responses) || isDriveFolderDirty,
+    [isDriveFolderDirty, responses],
+  );
   const isDirtyRef = useLatestRef(isDirty);
   const isViewModeRef = useLatestRef(isViewMode);
   const normalizedSchemaRef = useLatestRef(normalizedSchema);
@@ -285,6 +367,11 @@ export default function FormPage() {
 
   const applyEntryToState = useCallback((nextEntry, fallbackEntryId = null, source = "unknown") => {
     const restored = restoreResponsesFromData(normalizedSchemaRef.current, nextEntry?.data || {}, nextEntry?.dataUnixMs || {});
+    const nextDriveFolderState = normalizeDriveFolderState({
+      resolvedUrl: nextEntry?.driveFolderUrl || "",
+      inputUrl: nextEntry?.driveFolderUrl || "",
+      autoCreated: false,
+    });
     const previous = responsesRef.current;
     const diff = diffResponses(previous, restored);
     const hasPotentialOverwrite = diff.removedKeys.length > 0 || diff.changedKeys.length > 6;
@@ -305,6 +392,8 @@ export default function FormPage() {
     setEntry(nextEntry);
     setRecordNoInput(nextEntry?.["No."] === undefined || nextEntry?.["No."] === null ? "" : String(nextEntry["No."]));
     initialResponsesRef.current = restored;
+    initialDriveFolderStateRef.current = nextDriveFolderState;
+    setDriveFolderState(nextDriveFolderState);
     commitResponses(`applyEntryToState:${source}`, restored, {
       forceLog: true,
       meta: { nextEntryId: nextEntry?.id || fallbackEntryId || null },
@@ -355,6 +444,7 @@ export default function FormPage() {
       applyEntryToState(restoreTarget, entryId, "cancel:restore-latest");
     } else {
       commitResponses("cancel:restore-initial", initialResponsesRef.current, { forceLog: true });
+      setDriveFolderState(initialDriveFolderStateRef.current);
     }
     pendingSyncedEntryRef.current = null;
     setMode("view");
@@ -366,7 +456,10 @@ export default function FormPage() {
     try {
       sessionStorage.removeItem(draftKey);
     } catch (e) {}
-  }, [draftKey, entryId]);
+    try {
+      sessionStorage.removeItem(driveFolderDraftKey);
+    } catch (e) {}
+  }, [draftKey, driveFolderDraftKey, entryId]);
 
   const navigateToEntryById = useCallback((targetEntryId) => {
     clearNewEntryDraft();
@@ -435,7 +528,10 @@ export default function FormPage() {
           userTitle: userTitleRef.current,
           userPhone: userPhoneRef.current,
         });
+        const emptyDriveFolderState = createEmptyDriveFolderState();
         initialResponsesRef.current = initialResponses;
+        initialDriveFolderStateRef.current = emptyDriveFolderState;
+        setDriveFolderState(emptyDriveFolderState);
         commitResponses("loadEntry:new-entry-initialize", initialResponses, {
           forceLog: true,
           meta: {
@@ -641,12 +737,8 @@ export default function FormPage() {
     }
   };
 
-  const handleSaveToStore = async ({ payload }) => {
+  const handleSaveToStore = async ({ payload, responses: rawResponses }) => {
     if (!form) throw new Error("form_not_found");
-
-    try {
-      sessionStorage.removeItem(draftKey);
-    } catch(e) {}
 
     const isNewEntry = !entry?.id;
     const createdBy = isNewEntry ? (userEmail || "") : (entry?.createdBy || "");
@@ -669,11 +761,37 @@ export default function FormPage() {
 
     const saveData = { ...payloadWithFormId.responses };
     const saveOrder = [...payloadWithFormId.order];
+    const currentDriveFolder = normalizeDriveFolderState(driveFolderStateRef.current);
+    const currentDriveFolderUrl = currentDriveFolder.resolvedUrl.trim();
+    const inputDriveFolderUrl = currentDriveFolder.inputUrl.trim();
+    const driveFileIds = collectDriveFileIds(rawResponses);
+    const shouldFinalizeDriveFolder = Boolean(currentDriveFolderUrl || inputDriveFolderUrl || driveFileIds.length > 0);
+    let finalizedDriveFolderUrl = currentDriveFolderUrl;
+
+    if (shouldFinalizeDriveFolder) {
+      if (!hasScriptRun()) {
+        throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
+      }
+      const finalizeResult = await finalizeRecordDriveFolder({
+        currentDriveFolderUrl,
+        inputDriveFolderUrl,
+        rootFolderUrl: settings.driveRootFolderUrl || "",
+        folderNameTemplate: settings.driveFolderNameTemplate || "",
+        responses: rawResponses || {},
+        fieldLabels,
+        fileIds: driveFileIds,
+        recordId: payloadWithFormId.id,
+      });
+      finalizedDriveFolderUrl = typeof finalizeResult?.folderUrl === "string"
+        ? finalizeResult.folderUrl.trim()
+        : currentDriveFolderUrl;
+    }
 
     const saved = await dataStore.upsertEntry(form.id, {
       id: payloadWithFormId.id,
       data: saveData,
       order: saveOrder,
+      driveFolderUrl: finalizedDriveFolderUrl,
       ...(isNewEntry && parentRecordId ? { parentRecordId } : {}),
       createdBy,
       modifiedBy,
@@ -693,6 +811,7 @@ export default function FormPage() {
             responses: saveData,
             order: saveOrder,
             id: saved.id,
+            driveFolderUrl: finalizedDriveFolderUrl,
             createdAt: saved.createdAt,
             createdAtUnixMs: saved.createdAtUnixMs,
             createdBy: saved.createdBy,
@@ -723,53 +842,61 @@ export default function FormPage() {
           showAlert(`スプレッドシート保存に失敗しました: ${error?.message || error}`);
         });
     }
+    try {
+      sessionStorage.removeItem(draftKey);
+    } catch (e) {}
+    try {
+      sessionStorage.removeItem(driveFolderDraftKey);
+    } catch (e) {}
     return saved;
   };
 
-  const triggerSave = async ({ redirect, stayAsView } = {}) => {
+  const triggerSave = async ({ redirect, stayAsView, skipStayAsViewNavigation = false } = {}) => {
     if (!form) {
       showAlert("フォームが見つかりません");
-      return false;
+      return { ok: false, recordId: "" };
     }
-    if (isReadLocked) return false;
+    if (isReadLocked) return { ok: false, recordId: "" };
     setIsSaving(true);
     try {
       const preview = previewRef.current;
       if (!preview) throw new Error("preview_not_ready");
-      await preview.submit({ silent: true });
+      const result = await preview.submit({ silent: true });
+      const savedId = String(preview.getRecordId?.() || result?.id || currentRecordId || entryId || "").trim();
       if (stayAsView) {
-        const savedId = preview.getRecordId();
-        if (!entryId && savedId) {
-          navigate(`/form/${formId}/entry/${savedId}`, {
-            replace: true,
-            state: {
-              ...location.state,
-              ...(parentRecordId ? { parentRecordId } : {}),
-              ...(breadcrumbTrail.length > 0 ? { breadcrumbTrail } : {}),
-            },
-          });
-        } else {
-          setMode("view");
+        if (!skipStayAsViewNavigation) {
+          if (!entryId && savedId) {
+            navigate(`/form/${formId}/entry/${savedId}`, {
+              replace: true,
+              state: {
+                ...location.state,
+                ...(parentRecordId ? { parentRecordId } : {}),
+                ...(breadcrumbTrail.length > 0 ? { breadcrumbTrail } : {}),
+              },
+            });
+          } else {
+            setMode("view");
+          }
         }
         showToast("保存しました");
       } else if (redirect) {
         navigateBack({ saved: true });
       }
-      return true;
+      return { ok: true, recordId: savedId };
     } catch (error) {
       console.warn(error);
       if (error?.message === "validation_failed" || error?.message?.includes("missing_")) {
-        return false;
+        return { ok: false, recordId: "" };
       }
       if (error?.code === GAS_ERROR_CODE_LOCK_TIMEOUT) {
         showAlert(
           "現在、他のユーザーによる更新処理が実行中のため保存できませんでした。しばらく時間をおいて、もう一度お試しください。",
           "保存を完了できませんでした",
         );
-        return false;
+        return { ok: false, recordId: "" };
       }
       showAlert(`保存に失敗しました: ${error?.message || error}`);
-      return false;
+      return { ok: false, recordId: "" };
     } finally {
       setIsSaving(false);
     }
@@ -909,20 +1036,35 @@ export default function FormPage() {
     commitResponses("preview:change", updater);
   }, [commitResponses]);
 
-  const handleChildFormJump = useCallback((childFormId) => {
+  const navigateToChildForm = useCallback((childFormId, targetRecordId) => {
+    const resolvedRecordId = String(targetRecordId || "").trim();
+    if (!childFormId || !resolvedRecordId) return false;
+    const representativeFieldId = form?.settings?.representativeFieldId;
+    const representativeValue = representativeFieldId
+      ? (responses?.[representativeFieldId] || "")
+      : resolvedRecordId;
+    const nextBreadcrumb = [...breadcrumbTrail, { formId, recordId: resolvedRecordId, representativeValue }];
+    navigate(`/search?form=${childFormId}&parentRecordId=${resolvedRecordId}`, {
+      state: { breadcrumbTrail: nextBreadcrumb },
+    });
+    return true;
+  }, [breadcrumbTrail, form?.settings?.representativeFieldId, formId, navigate, responses]);
+
+  const handleChildFormJump = useCallback(async (childFormId) => {
+    const persistedRecordId = String(entryId || currentRecordId || "").trim();
+    if (!persistedRecordId) {
+      const saveResult = await triggerSave({ stayAsView: true, skipStayAsViewNavigation: true });
+      if (saveResult.ok) {
+        navigateToChildForm(childFormId, saveResult.recordId);
+      }
+      return;
+    }
     if (mode === "edit" && isDirty) {
       setConfirmState({ open: true, intent: `childJump:${childFormId}` });
       return;
     }
-    const representativeFieldId = form?.settings?.representativeFieldId;
-    const representativeValue = representativeFieldId
-      ? (responses?.[representativeFieldId] || "")
-      : (entryId || "");
-    const nextBreadcrumb = [...breadcrumbTrail, { formId, recordId: entryId, representativeValue }];
-    navigate(`/search?form=${childFormId}&parentRecordId=${entryId}`, {
-      state: { breadcrumbTrail: nextBreadcrumb },
-    });
-  }, [breadcrumbTrail, entryId, form, formId, isDirty, mode, navigate, responses]);
+    navigateToChildForm(childFormId, persistedRecordId);
+  }, [currentRecordId, entryId, isDirty, mode, navigateToChildForm, triggerSave]);
 
   const buildChildSectionsForPrint = useCallback(async (targetChildForms) => {
     const isDeleted = (e) => Boolean(e?.deletedAtUnixMs || e?.deletedAt);
@@ -1040,14 +1182,7 @@ export default function FormPage() {
       }
       if (intent && intent.startsWith("childJump:")) {
         const childFormId = intent.slice("childJump:".length);
-        const representativeFieldId = form?.settings?.representativeFieldId;
-        const representativeValue = representativeFieldId
-          ? (responses?.[representativeFieldId] || "")
-          : (entryId || "");
-        const nextBreadcrumb = [...breadcrumbTrail, { formId, recordId: entryId, representativeValue }];
-        navigate(`/search?form=${childFormId}&parentRecordId=${entryId}`, {
-          state: { breadcrumbTrail: nextBreadcrumb },
-        });
+        navigateToChildForm(childFormId, currentRecordId || entryId);
         return;
       }
       if (intent && intent.startsWith("navigate:")) {
@@ -1062,30 +1197,23 @@ export default function FormPage() {
       if (intent === "breadcrumb-nav") {
         const nav = pendingNavStateRef.current;
         pendingNavStateRef.current = null;
-        const saved = await triggerSave();
-        if (saved && nav) navigate(nav.path, { state: nav.state });
+        const saveResult = await triggerSave();
+        if (saveResult.ok && nav) navigate(nav.path, { state: nav.state });
         return;
       }
       if (intent && intent.startsWith("childJump:")) {
         const childFormId = intent.slice("childJump:".length);
-        const saved = await triggerSave({ stayAsView: true });
-        if (saved) {
-          const representativeFieldId = form?.settings?.representativeFieldId;
-          const representativeValue = representativeFieldId
-            ? (responses?.[representativeFieldId] || "")
-            : (entryId || "");
-          const nextBreadcrumb = [...breadcrumbTrail, { formId, recordId: entryId, representativeValue }];
-          navigate(`/search?form=${childFormId}&parentRecordId=${entryId}`, {
-            state: { breadcrumbTrail: nextBreadcrumb },
-          });
+        const saveResult = await triggerSave({ stayAsView: true, skipStayAsViewNavigation: true });
+        if (saveResult.ok) {
+          navigateToChildForm(childFormId, saveResult.recordId || currentRecordId || entryId);
         }
         return;
       }
       if (intent && intent.startsWith("breadcrumb:")) {
         const idx = parseInt(intent.slice("breadcrumb:".length), 10);
         const crumb = breadcrumbTrail[idx];
-        const saved = await triggerSave();
-        if (saved && crumb) {
+        const saveResult = await triggerSave();
+        if (saveResult.ok && crumb) {
           navigate(`/form/${crumb.formId}/entry/${crumb.recordId}`, {
             state: { breadcrumbTrail: breadcrumbTrail.slice(0, idx) },
           });
@@ -1094,8 +1222,8 @@ export default function FormPage() {
       }
       if (intent && intent.startsWith("navigate:")) {
         const targetEntryId = intent.slice("navigate:".length);
-        const saved = await triggerSave();
-        if (saved) navigateToEntryById(targetEntryId);
+        const saveResult = await triggerSave();
+        if (saveResult.ok) navigateToEntryById(targetEntryId);
       } else {
         await triggerSave({ redirect: true });
       }
@@ -1285,6 +1413,8 @@ export default function FormPage() {
           readOnly={isViewMode || isReadLocked}
           entryId={currentRecordId}
           onChildFormJump={handleChildFormJump}
+          driveFolderState={driveFolderState}
+          onDriveFolderStateChange={setDriveFolderState}
         />
       )}
 

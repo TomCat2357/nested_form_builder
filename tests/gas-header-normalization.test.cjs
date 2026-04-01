@@ -7,6 +7,7 @@ const vm = require("node:vm");
 function loadGasContext() {
   const fixedHeaderPaths = [
     ["id"],
+    ["parentRecordId"],
     ["No."],
     ["createdAt"],
     ["modifiedAt"],
@@ -14,6 +15,7 @@ function loadGasContext() {
     ["createdBy"],
     ["modifiedBy"],
     ["deletedBy"],
+    ["driveFolderUrl"],
   ];
   const reservedKeys = {};
   for (const pathParts of fixedHeaderPaths) {

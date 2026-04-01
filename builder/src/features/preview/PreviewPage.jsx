@@ -28,7 +28,18 @@ const resolveConfiguredPlaceholder = (field, fallback = "") => {
 
 const getNumberInputMode = (field) => (field?.integerOnly ? "numeric" : "decimal");
 
-const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildrenForOption, readOnly = false, driveSettings, gasClientRef }) => {
+const FieldRenderer = ({
+  field,
+  value,
+  onChange,
+  renderChildrenAll,
+  renderChildrenForOption,
+  readOnly = false,
+  driveSettings,
+  gasClientRef,
+  driveFolderState,
+  onDriveFolderStateChange,
+}) => {
   const validation = validateByPattern(field, value);
   const selectedChoiceLabels = toSelectedChoiceLabels(field, value);
   const selectedSingleChoice = selectedChoiceLabels[0] || "";
@@ -80,6 +91,27 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
   // 子フォームリンクタイプ: ボタン表示（ボタン機能はFormPage側で処理）
   if (field.type === "childFormLink") {
     return null;
+  }
+
+  if (field.type === "fileUpload") {
+    return (
+      <div className="preview-field">
+        <label className="preview-label" style={labelStyleVars}>
+          {field.label || <span className="nf-text-faded">項目</span>}
+          {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
+        </label>
+        <FileUploadField
+          field={field}
+          value={value}
+          onChange={onChange}
+          readOnly={readOnly}
+          driveSettings={driveSettings}
+          gasClient={gasClientRef?.current}
+          folderState={driveFolderState}
+          onFolderStateChange={onDriveFolderStateChange}
+        />
+      </div>
+    );
   }
 
   if (readOnly) {
@@ -264,23 +296,24 @@ const FieldRenderer = ({ field, value, onChange, renderChildrenAll, renderChildr
         </div>
       )}
 
-      {field.type === "fileUpload" && (
-        <FileUploadField
-          field={field}
-          value={value}
-          onChange={onChange}
-          readOnly={readOnly}
-          driveSettings={driveSettings}
-          gasClient={gasClientRef?.current}
-        />
-      )}
-
       {renderChildrenAll && field.type !== "checkboxes" && <div className={s.child.className}>{renderChildrenAll()}</div>}
     </div>
   );
 };
 
-const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = false, entryId, onChildFormJump, driveSettings, gasClientRef }) => {
+const RendererRecursive = ({
+  fields,
+  responses,
+  onChange,
+  depth = 0,
+  readOnly = false,
+  entryId,
+  onChildFormJump,
+  driveSettings,
+  gasClientRef,
+  driveFolderState,
+  onDriveFolderStateChange,
+}) => {
   const renderChildrenAll = (field, fid) => () => {
     if (!field?.childrenByValue) return null;
     const selectedLabels = toSelectedChoiceLabels(field, (responses || {})[fid]);
@@ -298,6 +331,8 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
           onChildFormJump={onChildFormJump}
           driveSettings={driveSettings}
           gasClientRef={gasClientRef}
+          driveFolderState={driveFolderState}
+          onDriveFolderStateChange={onDriveFolderStateChange}
         />
       );
     }
@@ -333,6 +368,8 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
         onChildFormJump={onChildFormJump}
         driveSettings={driveSettings}
         gasClientRef={gasClientRef}
+        driveFolderState={driveFolderState}
+        onDriveFolderStateChange={onDriveFolderStateChange}
       />
     );
   };
@@ -355,11 +392,14 @@ const RendererRecursive = ({ fields, responses, onChange, depth = 0, readOnly = 
               readOnly={readOnly}
               driveSettings={driveSettings}
               gasClientRef={gasClientRef}
+              driveFolderState={driveFolderState}
+              onDriveFolderStateChange={onDriveFolderStateChange}
             />
-            {isChildFormLinkField && entryId && (
+            {isChildFormLinkField && (
               <button
                 type="button"
                 className="nf-btn-outline nf-text-13 child-form-jump-btn"
+                disabled={!onChildFormJump}
                 onClick={() => onChildFormJump && onChildFormJump(field.childFormId)}
               >
                 → {field.label || "子フォームを開く"}
@@ -386,6 +426,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     readOnly = false,
     entryId,
     onChildFormJump,
+    driveFolderState,
+    onDriveFolderStateChange,
   },
   ref,
 ) {
@@ -457,6 +499,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     rootFolderUrl: settings.driveRootFolderUrl || "",
     folderNameTemplate: settings.driveFolderNameTemplate || "",
     printFileNameTemplate: settings.printFileNameTemplate || "",
+    recordId: recordIdRef.current,
   }), [settings.driveRootFolderUrl, settings.driveFolderNameTemplate, settings.printFileNameTemplate]);
 
   const [isSaving, setIsSaving] = useState(false);
@@ -581,7 +624,18 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         <label className="preview-label">最終更新日時</label>
         <input type="text" value={modifiedAtDisplay || "-"} readOnly className="nf-input nf-input--readonly" />
       </div>
-      <RendererRecursive fields={schema} responses={responses} onChange={setResponses} readOnly={readOnly} entryId={entryId} onChildFormJump={onChildFormJump} driveSettings={driveSettings} gasClientRef={gasClientRef} />
+      <RendererRecursive
+        fields={schema}
+        responses={responses}
+        onChange={setResponses}
+        readOnly={readOnly}
+        entryId={entryId}
+        onChildFormJump={onChildFormJump}
+        driveSettings={driveSettings}
+        gasClientRef={gasClientRef}
+        driveFolderState={driveFolderState}
+        onDriveFolderStateChange={onDriveFolderStateChange}
+      />
       {showOutputJson && (
         <div className="nf-mt-12">
           <label className="preview-label">回答JSON</label>

@@ -51,7 +51,7 @@ function Sync_fillEmptySheetCellsFromRecord_(params) {
 }
 
 function Sync_getFixedMetaColumnValue_(record, key, toUnixMs) {
-  if (key === "parentRecordId") {
+  if (key === "parentRecordId" || key === "driveFolderUrl") {
     if (!Object.prototype.hasOwnProperty.call(record, key)) return "";
     return String(record[key] == null ? "" : record[key]);
   }
@@ -102,6 +102,7 @@ function Sync_syncFixedMetaColumnsFromRecord_(params) {
       { key: "createdBy", colIdx: 6, numberFormat: null },
       { key: "modifiedBy", colIdx: 7, numberFormat: null },
       { key: "deletedBy", colIdx: 8, numberFormat: null },
+      { key: "driveFolderUrl", colIdx: 9, numberFormat: null },
     ]
     : [
       { key: "parentRecordId", colIdx: 1, numberFormat: null },
@@ -111,6 +112,7 @@ function Sync_syncFixedMetaColumnsFromRecord_(params) {
       { key: "createdBy", colIdx: 6, numberFormat: null },
       { key: "modifiedBy", colIdx: 7, numberFormat: null },
       { key: "deletedBy", colIdx: 8, numberFormat: null },
+      { key: "driveFolderUrl", colIdx: 9, numberFormat: null },
     ];
   var changed = false;
 

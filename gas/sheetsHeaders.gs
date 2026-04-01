@@ -171,7 +171,8 @@ function Sheets_buildOrderFromSchema_(schema) {
     url: true,
     userName: true,
     email: true,
-    phone: true
+    phone: true,
+    fileUpload: true
   };
 
   var appendKey = function(key) {

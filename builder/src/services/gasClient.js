@@ -192,6 +192,9 @@ export const uploadFileToDrive = ({ base64, fileName, mimeType, driveSettings })
 export const copyDriveFileToDrive = ({ sourceUrl, driveSettings }) =>
   fetchGasApi("nfbCopyDriveFileToDrive", { sourceUrl, driveSettings }, "Driveファイルのコピーに失敗しました");
 
+export const finalizeRecordDriveFolder = (payload) =>
+  fetchGasApi("nfbFinalizeRecordDriveFolder", payload, "Driveフォルダの確定に失敗しました");
+
 export const createRecordPrintDocument = (payload) => {
   if (!isSingleRecordPrintPayload(payload) && !isMultiRecordPrintPayload(payload)) {
     throw new Error("print document payload is invalid");

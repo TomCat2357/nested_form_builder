@@ -25,13 +25,14 @@ var NFB_DATA_START_ROW = NFB_HEADER_START_ROW + NFB_HEADER_DEPTH;
 var NFB_SERVER_MODIFIED_AT = "NFB_SERVER_MODIFIED_AT";
 var NFB_SERVER_COMMIT_TOKEN = NFB_SERVER_MODIFIED_AT;
 var NFB_SHEET_LAST_UPDATED_AT_PREFIX = "NFB_SHEET_LAST_UPDATED_AT";
-var NFB_FIXED_HEADER_PATHS = [["id"], ["parentRecordId"], ["No."], ["createdAt"], ["modifiedAt"], ["deletedAt"], ["createdBy"], ["modifiedBy"], ["deletedBy"]];
+var NFB_FIXED_HEADER_PATHS = [["id"], ["parentRecordId"], ["No."], ["createdAt"], ["modifiedAt"], ["deletedAt"], ["createdBy"], ["modifiedBy"], ["deletedBy"], ["driveFolderUrl"]];
 var NFB_RESERVED_HEADER_KEYS = {};
 for (var i = 0; i < NFB_FIXED_HEADER_PATHS.length; i++) {
   NFB_RESERVED_HEADER_KEYS[NFB_FIXED_HEADER_PATHS[i][0]] = true;
 }
 var NFB_DEFAULT_SHEET_NAME = "Data";
 var NFB_UI_TEMP_KEYS = ["_savedChoiceState", "_savedStyleSettings", "_savedChildrenForChoice", "_savedDisplayModeForChoice"];
+var NFB_RECORD_TEMP_FOLDER_PREFIX = "NFB_RECORD_TEMP_";
 
 // 日時処理関連
 var NFB_TZ = "Asia/Tokyo";

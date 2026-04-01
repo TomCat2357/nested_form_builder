@@ -18,6 +18,30 @@ const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
   return field.type === "time" ? `${hh}:${mi}` : `${yyyy}-${mm}-${dd}`;
 };
 
+const normalizeFileUploadEntries = (rawValue) => {
+  let source = rawValue;
+  if (typeof source === "string") {
+    const trimmed = source.trim();
+    if (!trimmed) return [];
+    try {
+      source = JSON.parse(trimmed);
+    } catch (_error) {
+      return [];
+    }
+  }
+  if (!Array.isArray(source)) return [];
+  return source
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+      const name = typeof entry.name === "string" ? entry.name : "";
+      const driveFileId = typeof entry.driveFileId === "string" ? entry.driveFileId : "";
+      const driveFileUrl = typeof entry.driveFileUrl === "string" ? entry.driveFileUrl : "";
+      if (!name && !driveFileId && !driveFileUrl) return null;
+      return { name, driveFileId, driveFileUrl };
+    })
+    .filter(Boolean);
+};
+
 const CHOICE_TYPES = new Set(["checkboxes", "radio", "select"]);
 export const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
 
@@ -155,6 +179,11 @@ export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => 
         }
       } else if (selectedLabels[0]) {
         Object.assign(responses, { [field.id]: selectedLabels[0] });
+      }
+    } else if (field.type === "fileUpload") {
+      const files = normalizeFileUploadEntries(data?.[baseKey]);
+      if (files.length > 0) {
+        Object.assign(responses, { [field.id]: files });
       }
     } else {
       const normalized = normalizeTemporalValue(field, data[baseKey], dataUnixMs[baseKey]);

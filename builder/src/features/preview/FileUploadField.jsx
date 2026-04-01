@@ -1,5 +1,27 @@
 import React from "react";
 
+const EMPTY_FOLDER_STATE = {
+  resolvedUrl: "",
+  inputUrl: "",
+  autoCreated: false,
+};
+
+const normalizeFolderState = (state) => {
+  const source = state && typeof state === "object" ? state : EMPTY_FOLDER_STATE;
+  const resolvedUrl = typeof source.resolvedUrl === "string" ? source.resolvedUrl : "";
+  const inputUrl = typeof source.inputUrl === "string" ? source.inputUrl : resolvedUrl;
+  return {
+    resolvedUrl,
+    inputUrl,
+    autoCreated: source.autoCreated === true,
+  };
+};
+
+const resolveEffectiveFolderUrl = (state) => {
+  const normalized = normalizeFolderState(state);
+  return normalized.inputUrl.trim() || normalized.resolvedUrl.trim();
+};
+
 const toBase64 = (file) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -7,20 +29,67 @@ const toBase64 = (file) =>
       const arrayBuffer = reader.result;
       const bytes = new Uint8Array(arrayBuffer);
       let binary = "";
-      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      for (let i = 0; i < bytes.length; i += 1) binary += String.fromCharCode(bytes[i]);
       resolve(btoa(binary));
     };
     reader.onerror = reject;
     reader.readAsArrayBuffer(file);
   });
 
-const FileUploadField = ({ field, value, onChange, readOnly, driveSettings, gasClient }) => {
+const FileUploadField = ({
+  field,
+  value,
+  onChange,
+  readOnly,
+  driveSettings,
+  gasClient,
+  folderState,
+  onFolderStateChange,
+}) => {
   const files = Array.isArray(value) ? value : [];
   const fileInputRef = React.useRef(null);
   const [dragOver, setDragOver] = React.useState(false);
   const [uploading, setUploading] = React.useState(false);
   const [driveUrl, setDriveUrl] = React.useState("");
   const [error, setError] = React.useState("");
+
+  const normalizedFolderState = normalizeFolderState(folderState);
+  const folderStateRef = React.useRef(normalizedFolderState);
+  const effectiveFolderUrl = resolveEffectiveFolderUrl(normalizedFolderState);
+  const displayedFolderUrl = effectiveFolderUrl || normalizedFolderState.resolvedUrl.trim();
+
+  React.useEffect(() => {
+    folderStateRef.current = normalizeFolderState(folderState);
+  }, [folderState]);
+
+  const updateFolderStateFromUploadResult = React.useCallback((result) => {
+    if (typeof onFolderStateChange !== "function") return;
+    onFolderStateChange((prevState) => {
+      const prev = normalizeFolderState(prevState);
+      const current = normalizeFolderState(folderStateRef.current);
+      const currentEffectiveFolderUrl = resolveEffectiveFolderUrl(current);
+      const nextResolvedUrl = typeof result?.folderUrl === "string" && result.folderUrl.trim()
+        ? result.folderUrl.trim()
+        : (currentEffectiveFolderUrl || prev.resolvedUrl);
+      const keepAutoCreated = prev.autoCreated && prev.resolvedUrl.trim() && prev.resolvedUrl.trim() === nextResolvedUrl;
+      const nextState = {
+        resolvedUrl: nextResolvedUrl,
+        inputUrl: prev.inputUrl.trim() ? prev.inputUrl : nextResolvedUrl,
+        autoCreated: keepAutoCreated || result?.autoCreated === true,
+      };
+      folderStateRef.current = nextState;
+      return nextState;
+    });
+  }, [onFolderStateChange]);
+
+  const buildUploadDriveSettings = React.useCallback(() => {
+    const current = normalizeFolderState(folderStateRef.current);
+    return {
+      ...(driveSettings || {}),
+      folderUrl: resolveEffectiveFolderUrl(current),
+      autoCreated: current.autoCreated,
+    };
+  }, [driveSettings]);
 
   const uploadFile = async (file) => {
     setError("");
@@ -31,11 +100,12 @@ const FileUploadField = ({ field, value, onChange, readOnly, driveSettings, gasC
         base64,
         fileName: file.name,
         mimeType: file.type || "application/octet-stream",
-        driveSettings,
+        driveSettings: buildUploadDriveSettings(),
       });
       const entry = { name: result.fileName, driveFileId: result.fileId, driveFileUrl: result.fileUrl };
       const next = field.allowMultipleFiles ? [...files, entry] : [entry];
       onChange(next);
+      updateFolderStateFromUploadResult(result);
     } catch (err) {
       setError(err?.message || "アップロードに失敗しました");
     } finally {
@@ -46,7 +116,7 @@ const FileUploadField = ({ field, value, onChange, readOnly, driveSettings, gasC
   const handleFiles = (fileList) => {
     if (!fileList || fileList.length === 0) return;
     const targets = field.allowMultipleFiles ? Array.from(fileList) : [fileList[0]];
-    targets.reduce((chain, f) => chain.then(() => uploadFile(f)), Promise.resolve());
+    targets.reduce((chain, file) => chain.then(() => uploadFile(file)), Promise.resolve());
   };
 
   const handleDrop = (event) => {
@@ -63,11 +133,12 @@ const FileUploadField = ({ field, value, onChange, readOnly, driveSettings, gasC
     try {
       const result = await gasClient.copyDriveFileToDrive({
         sourceUrl: driveUrl.trim(),
-        driveSettings,
+        driveSettings: buildUploadDriveSettings(),
       });
       const entry = { name: result.fileName, driveFileId: result.fileId, driveFileUrl: result.fileUrl };
       const next = field.allowMultipleFiles ? [...files, entry] : [entry];
       onChange(next);
+      updateFolderStateFromUploadResult(result);
       setDriveUrl("");
     } catch (err) {
       setError(err?.message || "Driveファイルのコピーに失敗しました");
@@ -81,16 +152,41 @@ const FileUploadField = ({ field, value, onChange, readOnly, driveSettings, gasC
     onChange(next.length > 0 ? next : "");
   };
 
+  const handleFolderUrlChange = (event) => {
+    if (typeof onFolderStateChange !== "function") return;
+    const nextInputUrl = event.target.value;
+    onFolderStateChange((prevState) => {
+      const prev = normalizeFolderState(prevState);
+      const nextState = {
+        ...prev,
+        inputUrl: nextInputUrl,
+      };
+      folderStateRef.current = nextState;
+      return nextState;
+    });
+  };
+
   if (readOnly) {
     return (
       <div>
-        {files.length === 0 && <span className="nf-text-muted">ファイルなし</span>}
-        {files.map((f, i) => (
-          <div key={i} className="nf-mb-4">
-            {f.driveFileUrl ? (
-              <a href={f.driveFileUrl} target="_blank" rel="noopener noreferrer">{f.name || "ファイル"}</a>
+        {displayedFolderUrl && (
+          <div className="nf-mb-6">
+            <a href={displayedFolderUrl} target="_blank" rel="noopener noreferrer" className="nf-link">
+              保存先フォルダを開く
+            </a>
+          </div>
+        )}
+        {files.length === 0 && (
+          <span className="nf-text-muted">
+            {displayedFolderUrl ? "ファイルなし" : "フォルダ未設定"}
+          </span>
+        )}
+        {files.map((file, index) => (
+          <div key={index} className="nf-mb-4">
+            {file.driveFileUrl ? (
+              <a href={file.driveFileUrl} target="_blank" rel="noopener noreferrer">{file.name || "ファイル"}</a>
             ) : (
-              <span>{f.name || "ファイル"}</span>
+              <span>{file.name || "ファイル"}</span>
             )}
           </div>
         ))}
@@ -100,8 +196,19 @@ const FileUploadField = ({ field, value, onChange, readOnly, driveSettings, gasC
 
   return (
     <div>
+      <div className="nf-mb-8">
+        <label className="nf-block nf-fw-600 nf-mb-6">保存先フォルダURL</label>
+        <input
+          type="text"
+          className="nf-input"
+          value={normalizedFolderState.inputUrl}
+          onChange={handleFolderUrlChange}
+          placeholder="空欄の場合は初回アップロード時に自動作成 / Google DriveフォルダURLを入力するとそのフォルダを使用"
+        />
+      </div>
+
       <div
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+        onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         style={{
@@ -119,7 +226,7 @@ const FileUploadField = ({ field, value, onChange, readOnly, driveSettings, gasC
         <button
           type="button"
           className="nf-btn"
-          onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+          onClick={(event) => { event.stopPropagation(); fileInputRef.current?.click(); }}
         >
           ファイルを選択
         </button>
@@ -128,7 +235,7 @@ const FileUploadField = ({ field, value, onChange, readOnly, driveSettings, gasC
           type="file"
           multiple={!!field.allowMultipleFiles}
           style={{ display: "none" }}
-          onChange={(e) => { handleFiles(e.target.files); e.target.value = ""; }}
+          onChange={(event) => { handleFiles(event.target.files); event.target.value = ""; }}
         />
       </div>
 
@@ -137,7 +244,7 @@ const FileUploadField = ({ field, value, onChange, readOnly, driveSettings, gasC
           type="text"
           className="nf-input nf-flex-1"
           value={driveUrl}
-          onChange={(e) => setDriveUrl(e.target.value)}
+          onChange={(event) => setDriveUrl(event.target.value)}
           placeholder="Google DriveファイルURLを貼り付け"
         />
         <button
@@ -150,6 +257,16 @@ const FileUploadField = ({ field, value, onChange, readOnly, driveSettings, gasC
         </button>
       </div>
 
+      {displayedFolderUrl && (
+        <div className="nf-text-12 nf-text-muted nf-mt-8">
+          現在の保存先:
+          {" "}
+          <a href={displayedFolderUrl} target="_blank" rel="noopener noreferrer" className="nf-link">
+            フォルダを開く
+          </a>
+        </div>
+      )}
+
       {uploading && (
         <div className="nf-text-12 nf-text-muted nf-mt-8">アップロード中...</div>
       )}
@@ -160,20 +277,20 @@ const FileUploadField = ({ field, value, onChange, readOnly, driveSettings, gasC
 
       {files.length > 0 && (
         <div className="nf-mt-8">
-          {files.map((f, i) => (
-            <div key={i} className="nf-row nf-gap-8 nf-items-center nf-mb-4">
-              {f.driveFileUrl ? (
-                <a href={f.driveFileUrl} target="_blank" rel="noopener noreferrer" className="nf-flex-1 nf-text-12">
-                  {f.name || "ファイル"}
+          {files.map((file, index) => (
+            <div key={index} className="nf-row nf-gap-8 nf-items-center nf-mb-4">
+              {file.driveFileUrl ? (
+                <a href={file.driveFileUrl} target="_blank" rel="noopener noreferrer" className="nf-flex-1 nf-text-12">
+                  {file.name || "ファイル"}
                 </a>
               ) : (
-                <span className="nf-flex-1 nf-text-12">{f.name || "ファイル"}</span>
+                <span className="nf-flex-1 nf-text-12">{file.name || "ファイル"}</span>
               )}
               <button
                 type="button"
                 className="nf-btn nf-btn-danger nf-text-11"
                 style={{ padding: "2px 8px" }}
-                onClick={() => removeFile(i)}
+                onClick={() => removeFile(index)}
               >
                 削除
               </button>

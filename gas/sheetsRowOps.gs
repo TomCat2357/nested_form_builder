@@ -104,7 +104,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
   Sheets_ensureHeaderMatrix_(sheet, ctx.order);
   var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
 
-  var lastColumn = Math.max(sheet.getLastColumn(), 9);
+  var lastColumn = Math.max(sheet.getLastColumn(), 10);
   var rowIndex = Sheets_findRowById_(sheet, ctx.id);
   var isNew = (rowIndex === -1);
   var currentTs = Date.now();
@@ -141,6 +141,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
     rowData[4] = currentTs; // modifiedAt
     rowData[6] = insertMeta.createdBy;
     rowData[7] = email;     // modifiedBy
+    rowData[9] = ctx.raw.driveFolderUrl || "";
   } else {
     var existingValues = sheet.getRange(rowIndex, 1, 1, lastColumn).getValues()[0];
     for (var c = 0; c < lastColumn; c++) rowData[c] = existingValues[c] !== undefined ? existingValues[c] : "";
@@ -153,6 +154,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
     }
     rowData[4] = currentTs; // modifiedAt
     rowData[7] = email;     // modifiedBy
+    rowData[9] = ctx.raw.driveFolderUrl || "";
   }
 
   formats[3] = "0";
@@ -199,7 +201,7 @@ function Sheets_deleteRecordById_(sheet, id) {
   var now = Date.now();
   var email = Session.getActiveUser().getEmail() || "";
 
-  var range = sheet.getRange(rowIndex, 2, 1, 8); // Col 2(parentRecordId) to Col 9(deletedBy)
+  var range = sheet.getRange(rowIndex, 2, 1, 9); // Col 2(parentRecordId) to Col 10(driveFolderUrl)
   var values = range.getValues()[0];
   var formats = range.getNumberFormats()[0];
 

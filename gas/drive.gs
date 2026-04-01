@@ -449,31 +449,49 @@ function nfbResolveTemplate_(template, context) {
  * @param {Object} context - { responses, fieldLabels, now }（driveSettingsから構築可能）
  * @return {Folder}
  */
-function nfbResolveOrCreateFolder_(driveSettings, context) {
-  var rootFolder;
-  var rootUrl = driveSettings && driveSettings.rootFolderUrl ? String(driveSettings.rootFolderUrl).trim() : "";
-
-  if (rootUrl) {
-    var parsed = Forms_parseGoogleDriveUrl_(rootUrl);
-    if (parsed.type === "folder" && parsed.id) {
-      rootFolder = DriveApp.getFolderById(parsed.id);
-    } else {
-      throw new Error("無効なフォルダURLです: " + rootUrl);
-    }
-  } else {
-    rootFolder = DriveApp.getRootFolder();
+function nfbResolveFolderFromInput_(input) {
+  var normalizedInput = input === undefined || input === null ? "" : String(input).trim();
+  if (!normalizedInput) {
+    throw new Error("フォルダURLが指定されていません");
   }
+
+  var parsed = Forms_parseGoogleDriveUrl_(normalizedInput);
+  if (parsed.type !== "folder" || !parsed.id) {
+    throw new Error("無効なフォルダURLです: " + normalizedInput);
+  }
+
+  try {
+    return DriveApp.getFolderById(parsed.id);
+  } catch (error) {
+    throw new Error("フォルダへのアクセスに失敗しました: " + nfbErrorToString_(error));
+  }
+}
+
+function nfbResolveRootFolder_(driveSettings) {
+  var rootUrl = driveSettings && driveSettings.rootFolderUrl ? String(driveSettings.rootFolderUrl).trim() : "";
+  if (!rootUrl) {
+    return DriveApp.getRootFolder();
+  }
+  return nfbResolveFolderFromInput_(rootUrl);
+}
+
+function nfbBuildDriveTemplateContext_(driveSettings, context) {
+  return context || {
+    responses: (driveSettings && driveSettings.responses) || {},
+    fieldLabels: (driveSettings && driveSettings.fieldLabels) || {},
+    now: new Date()
+  };
+}
+
+function nfbResolveOrCreateFolder_(driveSettings, context) {
+  var rootFolder = nfbResolveRootFolder_(driveSettings);
 
   var folderTemplate = driveSettings && driveSettings.folderNameTemplate ? String(driveSettings.folderNameTemplate).trim() : "";
   if (!folderTemplate) {
     return rootFolder;
   }
 
-  var ctx = context || {
-    responses: (driveSettings && driveSettings.responses) || {},
-    fieldLabels: (driveSettings && driveSettings.fieldLabels) || {},
-    now: new Date()
-  };
+  var ctx = nfbBuildDriveTemplateContext_(driveSettings, context);
 
   var folderName = nfbResolveTemplate_(folderTemplate, ctx);
   if (!folderName) {
@@ -487,6 +505,102 @@ function nfbResolveOrCreateFolder_(driveSettings, context) {
   }
 
   return rootFolder.createFolder(folderName);
+}
+
+function nfbBuildRecordTempFolderName_(driveSettings) {
+  var rawRecordId = driveSettings && driveSettings.recordId ? String(driveSettings.recordId).trim() : "";
+  var safeRecordId = rawRecordId ? rawRecordId.replace(/[^A-Za-z0-9_-]/g, "_") : "record";
+  return NFB_RECORD_TEMP_FOLDER_PREFIX + safeRecordId + "_" + Utilities.getUuid().slice(0, 8);
+}
+
+function nfbResolveUploadFolder_(driveSettings) {
+  var directFolderUrl = driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
+  if (directFolderUrl) {
+    return {
+      folder: nfbResolveFolderFromInput_(directFolderUrl),
+      autoCreated: false
+    };
+  }
+
+  var rootFolder = nfbResolveRootFolder_(driveSettings);
+  return {
+    folder: rootFolder.createFolder(nfbBuildRecordTempFolderName_(driveSettings)),
+    autoCreated: true
+  };
+}
+
+function nfbIsRecordTempFolder_(folder) {
+  if (!folder || typeof folder.getName !== "function") return false;
+  var folderName = String(folder.getName() || "");
+  return folderName.indexOf(NFB_RECORD_TEMP_FOLDER_PREFIX) === 0;
+}
+
+function nfbNormalizeDriveFileIds_(fileIds) {
+  var seen = {};
+  var normalized = [];
+  var source = Array.isArray(fileIds) ? fileIds : [];
+  for (var i = 0; i < source.length; i++) {
+    var fileId = typeof source[i] === "string" ? source[i].trim() : "";
+    if (!fileId || seen[fileId]) continue;
+    seen[fileId] = true;
+    normalized.push(fileId);
+  }
+  return normalized;
+}
+
+function nfbMoveFilesToFolder_(fileIds, folder) {
+  var normalizedFileIds = nfbNormalizeDriveFileIds_(fileIds);
+  for (var i = 0; i < normalizedFileIds.length; i++) {
+    var file;
+    try {
+      file = DriveApp.getFileById(normalizedFileIds[i]);
+    } catch (error) {
+      throw new Error("ファイルへのアクセスに失敗しました: " + nfbErrorToString_(error));
+    }
+    file.moveTo(folder);
+  }
+}
+
+function nfbFinalizeRecordDriveFolder(payload) {
+  return nfbSafeCall_(function() {
+    var currentDriveFolderUrl = payload && payload.currentDriveFolderUrl ? String(payload.currentDriveFolderUrl).trim() : "";
+    var inputDriveFolderUrl = payload && payload.inputDriveFolderUrl ? String(payload.inputDriveFolderUrl).trim() : "";
+    var currentFolder = currentDriveFolderUrl ? nfbResolveFolderFromInput_(currentDriveFolderUrl) : null;
+    var inputFolder = inputDriveFolderUrl ? nfbResolveFolderFromInput_(inputDriveFolderUrl) : null;
+    var targetFolder = inputFolder || currentFolder;
+
+    if (!targetFolder) {
+      return {
+        ok: true,
+        folderUrl: ""
+      };
+    }
+
+    if (inputFolder && currentFolder && inputFolder.getId() !== currentFolder.getId()) {
+      nfbMoveFilesToFolder_(payload && payload.fileIds, inputFolder);
+    }
+
+    var isCurrentTarget = currentFolder && (!inputFolder || inputFolder.getId() === currentFolder.getId());
+    if (isCurrentTarget && nfbIsRecordTempFolder_(currentFolder)) {
+      var folderNameTemplate = payload && payload.folderNameTemplate ? String(payload.folderNameTemplate).trim() : "";
+      if (folderNameTemplate) {
+        var resolvedFolderName = nfbResolveTemplate_(folderNameTemplate, {
+          responses: payload && payload.responses ? payload.responses : {},
+          fieldLabels: payload && payload.fieldLabels ? payload.fieldLabels : {},
+          now: new Date()
+        });
+        if (resolvedFolderName) {
+          currentFolder.setName(resolvedFolderName);
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      folderUrl: targetFolder.getUrl(),
+      autoCreated: nfbIsRecordTempFolder_(targetFolder)
+    };
+  });
 }
 
 /**
@@ -517,7 +631,8 @@ function nfbUploadFileToDrive(payload) {
     var fileName = String(payload.fileName).trim();
     var blob = Utilities.newBlob(bytes, mimeType, fileName);
 
-    var folder = nfbResolveOrCreateFolder_(payload.driveSettings);
+    var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
+    var folder = folderResult.folder;
     nfbTrashExistingFile_(folder, fileName);
 
     var file = folder.createFile(blob);
@@ -526,7 +641,9 @@ function nfbUploadFileToDrive(payload) {
       ok: true,
       fileUrl: file.getUrl(),
       fileName: file.getName(),
-      fileId: file.getId()
+      fileId: file.getId(),
+      folderUrl: folder.getUrl(),
+      autoCreated: folderResult.autoCreated === true
     };
   });
 }
@@ -555,7 +672,8 @@ function nfbCopyDriveFileToDrive(payload) {
     }
 
     var originalName = sourceFile.getName();
-    var folder = nfbResolveOrCreateFolder_(payload.driveSettings);
+    var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
+    var folder = folderResult.folder;
     nfbTrashExistingFile_(folder, originalName);
 
     var copiedFile = sourceFile.makeCopy(originalName, folder);
@@ -564,7 +682,9 @@ function nfbCopyDriveFileToDrive(payload) {
       ok: true,
       fileUrl: copiedFile.getUrl(),
       fileName: copiedFile.getName(),
-      fileId: copiedFile.getId()
+      fileId: copiedFile.getId(),
+      folderUrl: folder.getUrl(),
+      autoCreated: folderResult.autoCreated === true
     };
   });
 }

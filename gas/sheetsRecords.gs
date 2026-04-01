@@ -86,6 +86,7 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     createdBy: rowData[6] || "",
     modifiedBy: rowData[7] || "",
     deletedBy: rowData[8] || "",
+    driveFolderUrl: rowData[9] || "",
     createdAtUnixMs: Sheets_toUnixMs_(rowData[3], true),
     modifiedAtUnixMs: Sheets_toUnixMs_(rowData[4], true),
     deletedAtUnixMs: Sheets_toUnixMs_(rowData[5], true),

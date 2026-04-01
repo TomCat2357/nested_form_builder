@@ -71,6 +71,8 @@ export const normalizeRecordForCache = (record, { formId } = {}) => {
     id: baseRecord.id ?? baseRecord.entryId ?? "",
     "No.": baseRecord["No."] ?? "",
     formId: formId ?? baseRecord.formId ?? "",
+    parentRecordId: baseRecord.parentRecordId ?? "",
+    driveFolderUrl: baseRecord.driveFolderUrl ?? "",
     createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : (baseRecord.createdAt ?? ""),
     createdAtUnixMs: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : null,
     modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : (baseRecord.modifiedAt ?? ""),
