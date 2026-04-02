@@ -413,7 +413,11 @@ function nfbResolveTemplate_(template, context) {
     "ss": "ss"
   };
 
-  var result = template;
+  var escapedOpenBraceToken = "__NFB_ESCAPED_OPEN_BRACE__";
+  var escapedCloseBraceToken = "__NFB_ESCAPED_CLOSE_BRACE__";
+  var result = String(template)
+    .replace(/\\\{/g, escapedOpenBraceToken)
+    .replace(/\\\}/g, escapedCloseBraceToken);
 
   // 日時プレースホルダーを先に解決（長いパターンから）
   var dateKeys = Object.keys(dateFormats).sort(function(a, b) { return b.length - a.length; });
@@ -455,7 +459,9 @@ function nfbResolveTemplate_(template, context) {
     return "";
   });
 
-  return result;
+  return result
+    .split(escapedOpenBraceToken).join("{")
+    .split(escapedCloseBraceToken).join("}");
 }
 
 /**
@@ -714,9 +720,14 @@ function nfbCopyDriveFileToDrive(payload) {
     var originalName = sourceFile.getName();
     var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
     var folder = folderResult.folder;
-    nfbTrashExistingFile_(folder, originalName);
+    var ctx = nfbBuildDriveTemplateContext_(payload.driveSettings);
+    var resolvedName = payload && payload.fileNameTemplate
+      ? nfbResolveTemplate_(String(payload.fileNameTemplate), ctx)
+      : "";
+    var finalName = resolvedName || originalName;
+    nfbTrashExistingFile_(folder, finalName);
 
-    var copiedFile = sourceFile.makeCopy(originalName, folder);
+    var copiedFile = sourceFile.makeCopy(finalName, folder);
 
     return {
       ok: true,
@@ -726,6 +737,34 @@ function nfbCopyDriveFileToDrive(payload) {
       folderUrl: folder.getUrl(),
       autoCreated: folderResult.autoCreated === true
     };
+  });
+}
+
+function nfbFindDriveFileInFolder(payload) {
+  return nfbSafeCall_(function() {
+    if (!payload || !payload.fileNameTemplate || !payload.driveSettings) {
+      throw new Error("検索条件が不足しています");
+    }
+    var ctx = nfbBuildDriveTemplateContext_(payload.driveSettings);
+    var finalName = nfbResolveTemplate_(String(payload.fileNameTemplate), ctx);
+    if (!finalName) {
+      throw new Error("ファイル名を解決できませんでした");
+    }
+    var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
+    var folder = folderResult.folder;
+    var files = folder.getFilesByName(finalName);
+    if (files.hasNext()) {
+      var found = files.next();
+      return {
+        ok: true,
+        found: true,
+        fileUrl: found.getUrl(),
+        fileName: found.getName(),
+        fileId: found.getId(),
+        folderUrl: folder.getUrl(),
+      };
+    }
+    return { ok: true, found: false, fileName: finalName, folderUrl: folder.getUrl() };
   });
 }
 

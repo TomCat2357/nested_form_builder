@@ -76,6 +76,18 @@ const normalizeNumberFieldSettings = (field) => {
   return field;
 };
 
+const normalizePrintTemplateSettings = (value) => {
+  const base = value && typeof value === "object" ? value : {};
+  const outputType = typeof base.outputType === "string" && base.outputType.trim() ? base.outputType.trim() : "googleDoc";
+  return {
+    enabled: base.enabled === true,
+    templateUrl: typeof base.templateUrl === "string" ? base.templateUrl : "",
+    fileNameTemplate: typeof base.fileNameTemplate === "string" ? base.fileNameTemplate : "",
+    outputType,
+    buttonLabel: typeof base.buttonLabel === "string" ? base.buttonLabel : "",
+  };
+};
+
 
 export const deepClone = (value) => {
   if (typeof structuredClone === "function") return structuredClone(value);
@@ -93,6 +105,7 @@ export const cleanUnusedFieldProperties = (field) => {
   const supportsDefaultNow = ["date", "time"].includes(type);
   const supportsPlaceholder = ["text", "number", "email", "phone", "url", "regex", "textarea"].includes(type);
   const supportsSearchAndPrintExclusion = type === "message";
+  const supportsPrintTemplateAction = type !== "message";
 
   if (!isChoice) {
     delete field.options;
@@ -138,6 +151,11 @@ export const cleanUnusedFieldProperties = (field) => {
     delete field.excludeFromSearchAndPrint;
   } else {
     field.excludeFromSearchAndPrint = normalizeBooleanSetting(field.excludeFromSearchAndPrint, false);
+  }
+  if (supportsPrintTemplateAction) {
+    field.printTemplateAction = normalizePrintTemplateSettings(field.printTemplateAction);
+  } else {
+    delete field.printTemplateAction;
   }
   if (type === "message") delete field.required;
   delete field.childFormId;

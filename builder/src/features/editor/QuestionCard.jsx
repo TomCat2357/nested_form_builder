@@ -14,6 +14,13 @@ const MESSAGE_TYPE = "message";
 const DISPLAY_LABEL = "表示";
 const EMAIL_PLACEHOLDER = "user@example.com";
 const EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL = "一覧・印刷から除外";
+const PRINT_TEMPLATE_OUTPUT_TYPES = [
+  { value: "googleDoc", label: "Googleドキュメント" },
+  { value: "text", label: "テキストファイル" },
+  { value: "pdf", label: "PDF" },
+  { value: "gmail", label: "Gmail様式" },
+  { value: "googleSheet", label: "Googleスプレッドシート" },
+];
 
 const isChoiceType = (type) => CHOICE_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
@@ -434,6 +441,7 @@ export default function QuestionCard({
   latestFieldRef.current = field;
   latestOnChangeRef.current = onChange;
   const isDisplayed = resolveIsDisplayed(field);
+  const printTemplateAction = field.printTemplateAction || {};
 
   const handleDisplayToggle = (checked) => {
     const nextField = { ...field };
@@ -600,6 +608,58 @@ export default function QuestionCard({
           </label>
         )}
       </div>
+
+      {!isMessage && (
+        <div className="nf-mt-8">
+          <label className="nf-row nf-gap-6">
+            <input
+              type="checkbox"
+              checked={!!printTemplateAction.enabled}
+              onChange={(event) => onChange({
+                ...field,
+                printTemplateAction: {
+                  ...printTemplateAction,
+                  enabled: event.target.checked,
+                  outputType: printTemplateAction.outputType || "googleDoc",
+                },
+              })}
+            />
+            このカードに様式出力ボタンを表示
+          </label>
+          {!!printTemplateAction.enabled && (
+            <div className="nf-col nf-gap-8 nf-mt-8">
+              <input
+                className={s.input.className}
+                placeholder="ボタン名（例: 見積書を開く）"
+                value={printTemplateAction.buttonLabel || ""}
+                onChange={(event) => onChange({ ...field, printTemplateAction: { ...printTemplateAction, buttonLabel: event.target.value } })}
+              />
+              <input
+                className={s.input.className}
+                placeholder="様式URL（Google DriveファイルURL）"
+                value={printTemplateAction.templateUrl || ""}
+                onChange={(event) => onChange({ ...field, printTemplateAction: { ...printTemplateAction, templateUrl: event.target.value } })}
+              />
+              <input
+                className={s.input.className}
+                placeholder="出力ファイル名（例: {ID}_帳票）"
+                value={printTemplateAction.fileNameTemplate || ""}
+                onChange={(event) => onChange({ ...field, printTemplateAction: { ...printTemplateAction, fileNameTemplate: event.target.value } })}
+              />
+              <select
+                className={s.input.className}
+                value={printTemplateAction.outputType || "googleDoc"}
+                onChange={(event) => onChange({ ...field, printTemplateAction: { ...printTemplateAction, outputType: event.target.value } })}
+              >
+                {PRINT_TEMPLATE_OUTPUT_TYPES.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+              <div className="nf-text-11 nf-text-muted">{"{フィールド名}/{ID} を使えます。中括弧を残す場合は \\{ を使ってください。"}</div>
+            </div>
+          )}
+        </div>
+      )}
 
       {!isText && renderStyleSettingsInput()}
 

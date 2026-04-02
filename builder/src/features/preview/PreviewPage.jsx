@@ -13,6 +13,7 @@ import { genRecordId } from "../../core/ids.js";
 import { getStandardPhonePlaceholder } from "../../core/phone.js";
 import {
   buildPrintDocumentPayload,
+  buildFieldLabelsMap,
   CHOICE_TYPES,
   formatRecordMetaDateTime,
   hasVisibleValue,
@@ -39,6 +40,7 @@ const FieldRenderer = ({
   gasClientRef,
   driveFolderState,
   onDriveFolderStateChange,
+  onTemplateAction,
 }) => {
   const validation = validateByPattern(field, value);
   const selectedChoiceLabels = toSelectedChoiceLabels(field, value);
@@ -135,6 +137,17 @@ const FieldRenderer = ({
           {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
         </label>
         <div className={readOnlyClassName}>{renderReadOnlyValue()}</div>
+        {field?.printTemplateAction?.enabled && (
+          <div className="nf-mt-8">
+            <button
+              type="button"
+              className="nf-btn-outline nf-text-13"
+              onClick={() => onTemplateAction?.(field)}
+            >
+              {field?.printTemplateAction?.buttonLabel || "様式を開く"}
+            </button>
+          </div>
+        )}
         {childrenForCheckboxes}
         {childrenCommon}
       </div>
@@ -293,6 +306,17 @@ const FieldRenderer = ({
       )}
 
       {renderChildrenAll && field.type !== "checkboxes" && <div className={s.child.className}>{renderChildrenAll()}</div>}
+      {field?.printTemplateAction?.enabled && (
+        <div className="nf-mt-8">
+          <button
+            type="button"
+            className="nf-btn-outline nf-text-13"
+            onClick={() => onTemplateAction?.(field)}
+          >
+            {field?.printTemplateAction?.buttonLabel || "様式を開く"}
+          </button>
+        </div>
+      )}
     </div>
   );
 };
@@ -309,6 +333,7 @@ const RendererRecursive = ({
   gasClientRef,
   driveFolderState,
   onDriveFolderStateChange,
+  onTemplateAction,
 }) => {
   const renderChildrenAll = (field, fid) => () => {
     if (!field?.childrenByValue) return null;
@@ -329,6 +354,7 @@ const RendererRecursive = ({
           gasClientRef={gasClientRef}
           driveFolderState={driveFolderState}
           onDriveFolderStateChange={onDriveFolderStateChange}
+          onTemplateAction={onTemplateAction}
         />
       );
     }
@@ -345,6 +371,9 @@ const RendererRecursive = ({
           onChildFormJump={onChildFormJump}
           driveSettings={driveSettings}
           gasClientRef={gasClientRef}
+          driveFolderState={driveFolderState}
+          onDriveFolderStateChange={onDriveFolderStateChange}
+          onTemplateAction={onTemplateAction}
         />
       ));
     }
@@ -366,6 +395,7 @@ const RendererRecursive = ({
         gasClientRef={gasClientRef}
         driveFolderState={driveFolderState}
         onDriveFolderStateChange={onDriveFolderStateChange}
+        onTemplateAction={onTemplateAction}
       />
     );
   };
@@ -389,6 +419,7 @@ const RendererRecursive = ({
               gasClientRef={gasClientRef}
               driveFolderState={driveFolderState}
               onDriveFolderStateChange={onDriveFolderStateChange}
+              onTemplateAction={onTemplateAction}
             />
           </div>
         );
@@ -483,11 +514,49 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const driveSettings = useMemo(() => ({
     rootFolderUrl: settings.driveRootFolderUrl || "",
     folderNameTemplate: settings.driveFolderNameTemplate || "",
-    printFileNameTemplate: settings.printFileNameTemplate || "",
     recordId: recordIdRef.current,
-  }), [settings.driveRootFolderUrl, settings.driveFolderNameTemplate, settings.printFileNameTemplate]);
+  }), [settings.driveRootFolderUrl, settings.driveFolderNameTemplate]);
 
   const [isSaving, setIsSaving] = useState(false);
+  const handleFieldTemplateAction = async (field) => {
+    const action = field?.printTemplateAction || {};
+    if (!action.enabled) return;
+    const sourceUrl = String(action.templateUrl || "").trim();
+    const fileNameTemplate = String(action.fileNameTemplate || "").trim();
+    if (!sourceUrl || !fileNameTemplate) {
+      showAlert("様式URLと出力ファイル名を設定してください");
+      return;
+    }
+    const folderUrl = String(driveFolderState?.inputUrl || driveFolderState?.resolvedUrl || "").trim();
+    if (!folderUrl) {
+      showAlert("このレコードにはアップロード先フォルダがありません。先にファイルをアップロードしてください。");
+      return;
+    }
+    const driveTemplateSettings = {
+      folderUrl,
+      recordId: recordIdRef.current,
+      responses: responses || {},
+      fieldLabels: buildFieldLabelsMap(schema),
+    };
+    try {
+      const existing = await gasClientRef.current.findDriveFileInFolder({ fileNameTemplate, driveSettings: driveTemplateSettings });
+      if (existing?.found && existing.fileUrl) {
+        window.location.assign(existing.fileUrl);
+        return;
+      }
+      const copied = await gasClientRef.current.copyDriveFileToDrive({
+        sourceUrl,
+        fileNameTemplate,
+        driveSettings: driveTemplateSettings,
+      });
+      if (copied?.fileUrl) {
+        window.location.assign(copied.fileUrl);
+      }
+    } catch (error) {
+      showAlert(`様式出力に失敗しました: ${error?.message || error}`);
+    }
+  };
+
   const getPrintDocumentPayload = (options = {}) => buildPrintDocumentPayload({
     schema,
     responses,
@@ -622,6 +691,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         gasClientRef={gasClientRef}
         driveFolderState={driveFolderState}
         onDriveFolderStateChange={onDriveFolderStateChange}
+        onTemplateAction={handleFieldTemplateAction}
       />
       {showOutputJson && (
         <div className="nf-mt-12">
