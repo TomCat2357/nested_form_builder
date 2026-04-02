@@ -29,6 +29,42 @@ const resolveConfiguredPlaceholder = (field, fallback = "") => {
 
 const getNumberInputMode = (field) => (field?.integerOnly ? "numeric" : "decimal");
 
+const normalizeDriveIdList = (value) => {
+  const source = Array.isArray(value) ? value : [];
+  const seen = new Set();
+  return source.reduce((ids, candidate) => {
+    const normalized = typeof candidate === "string" ? candidate.trim() : "";
+    if (!normalized || seen.has(normalized)) return ids;
+    seen.add(normalized);
+    ids.push(normalized);
+    return ids;
+  }, []);
+};
+
+const appendDriveId = (ids, candidate) => {
+  const normalized = typeof candidate === "string" ? candidate.trim() : "";
+  if (!normalized) return ids;
+  return ids.includes(normalized) ? ids : [...ids, normalized];
+};
+
+const normalizeDriveFolderState = (state) => {
+  const source = state && typeof state === "object" ? state : {};
+  const resolvedUrl = typeof source.resolvedUrl === "string" ? source.resolvedUrl : "";
+  const inputUrl = typeof source.inputUrl === "string" ? source.inputUrl : resolvedUrl;
+  return {
+    resolvedUrl,
+    inputUrl,
+    autoCreated: source.autoCreated === true,
+    sessionUploadFileIds: normalizeDriveIdList(source.sessionUploadFileIds),
+    pendingPrintFileIds: normalizeDriveIdList(source.pendingPrintFileIds),
+  };
+};
+
+const resolveEffectiveDriveFolderUrl = (state) => {
+  const normalized = normalizeDriveFolderState(state);
+  return normalized.inputUrl.trim() || normalized.resolvedUrl.trim();
+};
+
 const FieldRenderer = ({
   field,
   value,
@@ -90,6 +126,20 @@ const FieldRenderer = ({
     );
   }
 
+  if (field.type === "printTemplate") {
+    return (
+      <div className="preview-field">
+        <button
+          type="button"
+          className="nf-btn-outline nf-text-13"
+          onClick={() => onTemplateAction?.(field)}
+        >
+          {field?.printTemplateAction?.buttonLabel || "様式を開く"}
+        </button>
+      </div>
+    );
+  }
+
 
   if (field.type === "fileUpload") {
     return (
@@ -137,17 +187,6 @@ const FieldRenderer = ({
           {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
         </label>
         <div className={readOnlyClassName}>{renderReadOnlyValue()}</div>
-        {field?.printTemplateAction?.enabled && (
-          <div className="nf-mt-8">
-            <button
-              type="button"
-              className="nf-btn-outline nf-text-13"
-              onClick={() => onTemplateAction?.(field)}
-            >
-              {field?.printTemplateAction?.buttonLabel || "様式を開く"}
-            </button>
-          </div>
-        )}
         {childrenForCheckboxes}
         {childrenCommon}
       </div>
@@ -306,17 +345,6 @@ const FieldRenderer = ({
       )}
 
       {renderChildrenAll && field.type !== "checkboxes" && <div className={s.child.className}>{renderChildrenAll()}</div>}
-      {field?.printTemplateAction?.enabled && (
-        <div className="nf-mt-8">
-          <button
-            type="button"
-            className="nf-btn-outline nf-text-13"
-            onClick={() => onTemplateAction?.(field)}
-          >
-            {field?.printTemplateAction?.buttonLabel || "様式を開く"}
-          </button>
-        </div>
-      )}
     </div>
   );
 };
@@ -509,6 +537,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const sortedKeys = sortedData.keys;
   const formTitle = settings.formTitle || "受付フォーム";
   const modifiedAtDisplay = formatRecordMetaDateTime(settings.modifiedAtUnixMs ?? settings.modifiedAt);
+  const fieldLabels = useMemo(() => buildFieldLabelsMap(schema), [schema]);
 
   const gasClientRef = useRef(gasClientModule);
   const driveSettings = useMemo(() => ({
@@ -518,6 +547,24 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   }), [settings.driveRootFolderUrl, settings.driveFolderNameTemplate]);
 
   const [isSaving, setIsSaving] = useState(false);
+  const updateDriveFolderStateFromPrintResult = (result) => {
+    if (typeof onDriveFolderStateChange !== "function") return;
+    onDriveFolderStateChange((prevState) => {
+      const prev = normalizeDriveFolderState(prevState);
+      const currentEffectiveFolderUrl = resolveEffectiveDriveFolderUrl(prev);
+      const nextResolvedUrl = typeof result?.folderUrl === "string" && result.folderUrl.trim()
+        ? result.folderUrl.trim()
+        : (currentEffectiveFolderUrl || prev.resolvedUrl);
+      const keepAutoCreated = prev.autoCreated && prev.resolvedUrl.trim() && prev.resolvedUrl.trim() === nextResolvedUrl;
+      return normalizeDriveFolderState({
+        ...prev,
+        resolvedUrl: nextResolvedUrl,
+        inputUrl: prev.inputUrl.trim() ? prev.inputUrl : nextResolvedUrl,
+        autoCreated: keepAutoCreated || result?.autoCreated === true,
+        pendingPrintFileIds: appendDriveId(prev.pendingPrintFileIds, result?.fileId),
+      });
+    });
+  };
   const handleFieldTemplateAction = async (field) => {
     const action = field?.printTemplateAction || {};
     if (!action.enabled) return;
@@ -527,29 +574,37 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       showAlert("様式URLと出力ファイル名を設定してください");
       return;
     }
-    const folderUrl = String(driveFolderState?.inputUrl || driveFolderState?.resolvedUrl || "").trim();
-    if (!folderUrl) {
-      showAlert("このレコードにはアップロード先フォルダがありません。先にファイルをアップロードしてください。");
-      return;
-    }
-    const driveTemplateSettings = {
-      folderUrl,
+    const effectiveFolderUrl = resolveEffectiveDriveFolderUrl(driveFolderState);
+    const baseDriveTemplateSettings = {
+      ...driveSettings,
+      ...(effectiveFolderUrl ? { folderUrl: effectiveFolderUrl } : {}),
       recordId: recordIdRef.current,
       responses: responses || {},
-      fieldLabels: buildFieldLabelsMap(schema),
+      fieldLabels,
     };
     try {
-      const existing = await gasClientRef.current.findDriveFileInFolder({ fileNameTemplate, driveSettings: driveTemplateSettings });
+      const existing = await gasClientRef.current.findDriveFileInFolder({
+        fileNameTemplate,
+        driveSettings: baseDriveTemplateSettings,
+      });
+      if (existing?.folderUrl) {
+        updateDriveFolderStateFromPrintResult(existing);
+      }
       if (existing?.found && existing.fileUrl) {
         window.location.assign(existing.fileUrl);
         return;
       }
+      const resolvedFolderUrl = typeof existing?.folderUrl === "string" ? existing.folderUrl.trim() : "";
       const copied = await gasClientRef.current.copyDriveFileToDrive({
         sourceUrl,
         fileNameTemplate,
-        driveSettings: driveTemplateSettings,
+        driveSettings: {
+          ...baseDriveTemplateSettings,
+          ...(resolvedFolderUrl ? { folderUrl: resolvedFolderUrl } : {}),
+        },
       });
       if (copied?.fileUrl) {
+        updateDriveFolderStateFromPrintResult(copied);
         window.location.assign(copied.fileUrl);
       }
     } catch (error) {

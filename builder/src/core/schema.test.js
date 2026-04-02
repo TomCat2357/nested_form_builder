@@ -104,3 +104,37 @@ test("normalizeSchemaIDs は fileUpload 設定を allowUploadByUrl へ正規化�
   assert.equal(schema[1].allowUploadByUrl, false);
   assert.equal("allowUploadByUrl" in schema[2], false);
 });
+
+test("normalizeSchemaIDs は旧 fileUpload の printTemplateAction を独立カードへ移行する", () => {
+  const schema = normalizeSchemaIDs([
+    {
+      id: "upload_1",
+      type: "fileUpload",
+      label: "添付資料",
+      isDisplayed: true,
+      printTemplateAction: {
+        enabled: true,
+        templateUrl: "https://example.com/template",
+        fileNameTemplate: "出力_${recordId}",
+        outputType: "spreadsheet",
+        buttonLabel: "様式を出力",
+      },
+    },
+    { id: "memo_1", type: "text", label: "備考" },
+  ]);
+
+  assert.equal(schema.length, 3);
+  assert.equal(schema[0].type, "fileUpload");
+  assert.equal("printTemplateAction" in schema[0], false);
+  assert.equal(schema[1].type, "printTemplate");
+  assert.equal(schema[1].label, "添付資料 様式出力");
+  assert.equal(schema[1].isDisplayed, true);
+  assert.deepEqual(schema[1].printTemplateAction, {
+    enabled: true,
+    templateUrl: "https://example.com/template",
+    fileNameTemplate: "出力_${recordId}",
+    outputType: "spreadsheet",
+    buttonLabel: "様式を出力",
+  });
+  assert.equal(schema[2].id, "memo_1");
+});

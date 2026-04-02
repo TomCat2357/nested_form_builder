@@ -21,7 +21,7 @@ function collectFieldIds(fields, ids = new Set()) {
  * フォームエディターのメインページ
  * 質問リストを管理
  */
-export default function EditorPage({ schema, onSchemaChange, onQuestionControlChange, representativeFieldId, onRepresentativeChange }) {
+export default function EditorPage({ schema, onSchemaChange, onQuestionControlChange }) {
   const tempUiStateRef = React.useRef(new Map());
 
   const getTempState = React.useCallback((fieldId) => {
@@ -75,8 +75,6 @@ export default function EditorPage({ schema, onSchemaChange, onQuestionControlCh
         getTempState={getTempState}
         setTempState={setTempState}
         clearTempState={clearTempState}
-        representativeFieldId={representativeFieldId}
-        onRepresentativeChange={onRepresentativeChange}
       />
       <div className="nf-row-center nf-mt-12">
         <button type="button" className={s.btn.className} onClick={handleAddQuestion}>質問を追加</button>

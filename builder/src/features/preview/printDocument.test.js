@@ -125,6 +125,35 @@ test("buildPrintDocumentPayload は除外指定したメッセージを印刷様
   ]);
 });
 
+test("buildPrintDocumentPayload は printTemplate を印刷項目に含めない", () => {
+  const schema = [
+    { id: "name", type: "text", label: "氏名" },
+    {
+      id: "print_action",
+      type: "printTemplate",
+      label: "様式出力",
+      printTemplateAction: { enabled: true, fileNameTemplate: "print_${recordId}" },
+    },
+  ];
+
+  const payload = buildPrintDocumentPayload({
+    schema,
+    responses: {
+      name: "山田太郎",
+    },
+    settings: {
+      formTitle: "相談票",
+    },
+    recordId: "rec-print-template",
+    exportedAt: new Date("2026-03-09T12:34:56+09:00"),
+    omitEmptyRows: false,
+  });
+
+  assert.deepEqual(payload.items, [
+    { label: "氏名", value: "山田太郎", depth: 0, type: "text" },
+  ]);
+});
+
 test("buildPrintDocumentPayload は textarea の改行を保持し recordNo が空でも recordId を使う", () => {
   const schema = [
     { id: "memo", type: "textarea", label: "メモ" },

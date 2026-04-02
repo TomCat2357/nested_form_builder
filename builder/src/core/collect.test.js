@@ -46,3 +46,26 @@ test("collectResponsesは電話番号を単一値として出力する", () => {
   const raw = collectResponses(schema, responses);
   assert.equal(raw["電話番号"], "090-1234-5678");
 });
+
+test("collectResponses と sortResponses は printTemplate を回答データに含めない", () => {
+  const schema = [
+    { id: "q_name", type: "text", label: "氏名" },
+    {
+      id: "q_print",
+      type: "printTemplate",
+      label: "様式出力",
+      printTemplateAction: { enabled: true, fileNameTemplate: "print_${recordId}" },
+    },
+  ];
+  const responses = {
+    q_name: "山田太郎",
+    q_print: "ignored",
+  };
+
+  const raw = collectResponses(schema, responses);
+  const sorted = sortResponses(raw, schema);
+
+  assert.deepEqual(raw, { 氏名: "山田太郎" });
+  assert.deepEqual(sorted.keys, ["氏名"]);
+  assert.deepEqual(sorted.map, { 氏名: "山田太郎" });
+});

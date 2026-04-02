@@ -10,7 +10,7 @@ export const SAVE_AFTER_ACTIONS = Object.freeze({
  */
 export const omitThemeSetting = (settings) => {
   if (!settings || typeof settings !== "object") return {};
-  const { theme, ...rest } = settings;
+  const { theme, representativeFieldId, ...rest } = settings;
   return rest;
 };
 

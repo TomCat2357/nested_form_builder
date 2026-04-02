@@ -11,6 +11,7 @@ const CHOICE_TYPES = ["radio", "select", "checkboxes"];
 const DATE_TIME_TYPES = ["date", "time"];
 const BASIC_INPUT_TYPES = ["number", "url"];
 const MESSAGE_TYPE = "message";
+const PRINT_TEMPLATE_TYPE = "printTemplate";
 const DISPLAY_LABEL = "表示";
 const EMAIL_PLACEHOLDER = "user@example.com";
 const EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL = "一覧・印刷から除外";
@@ -25,6 +26,7 @@ const PRINT_TEMPLATE_OUTPUT_TYPES = [
 const isChoiceType = (type) => CHOICE_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 const isMessageType = (type) => type === MESSAGE_TYPE;
+const isPrintTemplateType = (type) => type === PRINT_TEMPLATE_TYPE;
 const isBasicInputType = (type) => BASIC_INPUT_TYPES.includes(type);
 const applyDisplayedFlag = (target, displayed) => {
   target.isDisplayed = displayed === true;
@@ -92,6 +94,18 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
     if (isDateOrTimeType(newType)) next.defaultNow = !!next.defaultNow;
     if (newType === "fileUpload") {
       next.allowUploadByUrl = next.allowUploadByUrl ?? false;
+    }
+    if (newType === PRINT_TEMPLATE_TYPE) {
+      next.label = next.label || "様式出力";
+      next.printTemplateAction = {
+        enabled: true,
+        templateUrl: typeof next.printTemplateAction?.templateUrl === "string" ? next.printTemplateAction.templateUrl : "",
+        fileNameTemplate: typeof next.printTemplateAction?.fileNameTemplate === "string" ? next.printTemplateAction.fileNameTemplate : "",
+        outputType: typeof next.printTemplateAction?.outputType === "string" && next.printTemplateAction.outputType
+          ? next.printTemplateAction.outputType
+          : "googleDoc",
+        buttonLabel: typeof next.printTemplateAction?.buttonLabel === "string" ? next.printTemplateAction.buttonLabel : "",
+      };
     }
     saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
   }
@@ -416,9 +430,6 @@ export default function QuestionCard({
   getTempState,
   setTempState,
   clearTempState,
-  isRepresentative,
-  onRepresentativeChange,
-  representativeFieldId,
 }) {
   const isChoice = isChoiceType(field.type);
   const isText = field.type === "text";
@@ -426,6 +437,7 @@ export default function QuestionCard({
   const isDateOrTime = isDateOrTimeType(field.type);
   const isBasicInput = isBasicInputType(field.type);
   const isMessage = isMessageType(field.type);
+  const isPrintTemplate = isPrintTemplateType(field.type);
   const isEmail = field.type === "email";
   const isPhone = field.type === "phone";
   const canAddChild = depth < MAX_DEPTH;
@@ -578,8 +590,9 @@ export default function QuestionCard({
           <option value="select">ドロップダウン</option>
           <option value="message">メッセージ</option>
           <option value="fileUpload">ファイルアップロード</option>
+          <option value="printTemplate">様式出力</option>
         </select>
-        {!isMessage && (
+        {!isMessage && !isPrintTemplate && (
           <label className="nf-row nf-gap-4 nf-nowrap">
             <input
               type="checkbox"
@@ -597,71 +610,56 @@ export default function QuestionCard({
           />
           {DISPLAY_LABEL}
         </label>
-        {!isMessage && onRepresentativeChange && (
-          <label className="nf-row nf-gap-6">
-            <input
-              type="checkbox"
-              checked={!!isRepresentative}
-              onChange={() => onRepresentativeChange(isRepresentative ? "" : field.id)}
-            />
-            代表表示
-          </label>
-        )}
       </div>
 
-      {!isMessage && (
+      {isPrintTemplate && (
         <div className="nf-mt-8">
-          <label className="nf-row nf-gap-6">
+          <div className="nf-col nf-gap-8">
             <input
-              type="checkbox"
-              checked={!!printTemplateAction.enabled}
+              className={s.input.className}
+              placeholder="ボタン名（例: 見積書を開く）"
+              value={printTemplateAction.buttonLabel || ""}
               onChange={(event) => onChange({
                 ...field,
-                printTemplateAction: {
-                  ...printTemplateAction,
-                  enabled: event.target.checked,
-                  outputType: printTemplateAction.outputType || "googleDoc",
-                },
+                printTemplateAction: { ...printTemplateAction, buttonLabel: event.target.value, enabled: true },
               })}
             />
-            このカードに様式出力ボタンを表示
-          </label>
-          {!!printTemplateAction.enabled && (
-            <div className="nf-col nf-gap-8 nf-mt-8">
-              <input
-                className={s.input.className}
-                placeholder="ボタン名（例: 見積書を開く）"
-                value={printTemplateAction.buttonLabel || ""}
-                onChange={(event) => onChange({ ...field, printTemplateAction: { ...printTemplateAction, buttonLabel: event.target.value } })}
-              />
-              <input
-                className={s.input.className}
-                placeholder="様式URL（Google DriveファイルURL）"
-                value={printTemplateAction.templateUrl || ""}
-                onChange={(event) => onChange({ ...field, printTemplateAction: { ...printTemplateAction, templateUrl: event.target.value } })}
-              />
-              <input
-                className={s.input.className}
-                placeholder="出力ファイル名（例: {ID}_帳票）"
-                value={printTemplateAction.fileNameTemplate || ""}
-                onChange={(event) => onChange({ ...field, printTemplateAction: { ...printTemplateAction, fileNameTemplate: event.target.value } })}
-              />
-              <select
-                className={s.input.className}
-                value={printTemplateAction.outputType || "googleDoc"}
-                onChange={(event) => onChange({ ...field, printTemplateAction: { ...printTemplateAction, outputType: event.target.value } })}
-              >
-                {PRINT_TEMPLATE_OUTPUT_TYPES.map((option) => (
-                  <option key={option.value} value={option.value}>{option.label}</option>
-                ))}
-              </select>
-              <div className="nf-text-11 nf-text-muted">{"{フィールド名}/{ID} を使えます。中括弧を残す場合は \\{ を使ってください。"}</div>
-            </div>
-          )}
+            <input
+              className={s.input.className}
+              placeholder="様式URL（Google DriveファイルURL）"
+              value={printTemplateAction.templateUrl || ""}
+              onChange={(event) => onChange({
+                ...field,
+                printTemplateAction: { ...printTemplateAction, templateUrl: event.target.value, enabled: true },
+              })}
+            />
+            <input
+              className={s.input.className}
+              placeholder="出力ファイル名（例: {ID}_帳票）"
+              value={printTemplateAction.fileNameTemplate || ""}
+              onChange={(event) => onChange({
+                ...field,
+                printTemplateAction: { ...printTemplateAction, fileNameTemplate: event.target.value, enabled: true },
+              })}
+            />
+            <select
+              className={s.input.className}
+              value={printTemplateAction.outputType || "googleDoc"}
+              onChange={(event) => onChange({
+                ...field,
+                printTemplateAction: { ...printTemplateAction, outputType: event.target.value, enabled: true },
+              })}
+            >
+              {PRINT_TEMPLATE_OUTPUT_TYPES.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <div className="nf-text-11 nf-text-muted">{"{フィールド名}/{ID} を使えます。中括弧を残す場合は \\{ を使ってください。"}</div>
+          </div>
         </div>
       )}
 
-      {!isText && renderStyleSettingsInput()}
+      {!isText && !isPrintTemplate && renderStyleSettingsInput()}
 
       {isMessage && (
         <div className="nf-mt-8">
@@ -948,8 +946,6 @@ export default function QuestionCard({
                         getTempState={getTempState}
                         setTempState={setTempState}
                         clearTempState={clearTempState}
-                        representativeFieldId={representativeFieldId}
-                        onRepresentativeChange={onRepresentativeChange}
                       />
                     </div>
                   ) : null;

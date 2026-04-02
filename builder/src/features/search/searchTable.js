@@ -33,7 +33,6 @@ const isDateLikeColumn = (column) => {
   const type = columnType(column);
   return type === "date" || type === "time" || column?.key === "modifiedAt" || column?.key === "createdAt";
 };
-const isExcludedMessageField = (field) => field?.type === "message" && field?.excludeFromSearchAndPrint === true;
 const toNumericValue = (value) => {
   if (value === null || value === undefined || value === "") return null;
   if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -59,6 +58,11 @@ const debugLog = (...args) => {
   if (!isDevEnvironment) return;
   console.debug("[searchTable]", ...args);
 };
+
+const isExcludedSearchOrPrintField = (field) => (
+  field?.type === "printTemplate"
+  || (field?.type === "message" && field?.excludeFromSearchAndPrint === true)
+);
 
 const buildHeaderFullPath = (matrix, columnIndex) => {
   const parts = [];
@@ -422,7 +426,8 @@ const resolveDisplayFieldSettings = (form) => {
         type: item.type || resolveTypeByPath(String(item.path)),
         optionOrder: optionOrderByPath.get(String(item.path)) || null,
         fieldId: fieldIdByPath.get(String(item.path)) || "",
-      }));
+      }))
+      .filter((item) => item.type !== "printTemplate");
   }
 
   return collected
@@ -462,45 +467,6 @@ const buildChildDisplayColumns = (childForms = []) => {
   });
 };
 
-const orderSearchColumns = (parentColumns, childColumns, metaColumns, { representativeFieldId, childRepresentativeFieldIds } = {}) => {
-  // 親の代表列を抽出
-  const parentRepresentative = [];
-  const parentRest = [];
-  parentColumns.forEach((col) => {
-    if (representativeFieldId && col.fieldId === representativeFieldId) {
-      parentRepresentative.push(col);
-    } else {
-      parentRest.push(col);
-    }
-  });
-
-  if (!childColumns.length) {
-    return [...metaColumns, ...parentRepresentative, ...parentRest];
-  }
-
-  // 子列を childFormId ごとにグループ化（入力順=スキーマ出現順を維持）
-  const childFormGroups = new Map();
-  childColumns.forEach((col) => {
-    const cfId = String(col?.childFormId || "");
-    if (!childFormGroups.has(cfId)) childFormGroups.set(cfId, []);
-    childFormGroups.get(cfId).push(col);
-  });
-  // 各グループ内で代表列を先頭に配置
-  const orderedChildCols = [];
-  childFormGroups.forEach((cols, cfId) => {
-    const cfRepId = childRepresentativeFieldIds?.get(cfId) || "";
-    const rep = [];
-    const rest = [];
-    cols.forEach((col) => {
-      if (cfRepId && col.fieldId === cfRepId) rep.push(col);
-      else rest.push(col);
-    });
-    orderedChildCols.push(...rep, ...rest);
-  });
-
-  return [...metaColumns, ...parentRepresentative, ...parentRest, ...orderedChildCols];
-};
-
 const moveRecordNoColumnToFront = (columns = []) => {
   const recordNoColumn = columns.find((column) => column?.key === "No.");
   if (!recordNoColumn) return [...columns];
@@ -519,20 +485,13 @@ export const buildSearchColumns = (form, { includeOperations = true, childForms 
     if (!showSearchModifiedAt && col.key === "modifiedAt") return false;
     return true;
   }));
-  const representativeFieldId = form?.settings?.representativeFieldId || "";
   const parentColumns = [];
   resolveDisplayFieldSettings(form).forEach(({ path, type, optionOrder, fieldId }) => {
     if (!path) return;
     parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId }));
   });
-  const childRepresentativeFieldIds = new Map();
-  (childForms || []).forEach((cf) => {
-    const cfId = String(cf?.childFormId || cf?.form?.id || "").trim();
-    const cfRepId = cf?.form?.settings?.representativeFieldId || "";
-    if (cfId && cfRepId) childRepresentativeFieldIds.set(cfId, cfRepId);
-  });
   const childColumns = buildChildDisplayColumns(childForms);
-  const columns = orderSearchColumns(parentColumns, childColumns, metaColumns, { representativeFieldId, childRepresentativeFieldIds });
+  const columns = [...metaColumns, ...parentColumns, ...childColumns];
   if (includeOperations) columns.push(actionsColumn);
   return columns;
 };
@@ -810,7 +769,7 @@ const collectAllFieldSettings = (schema) => {
   const collected = [];
   const seen = new Set();
   traverseSchema(schema || [], (field, context) => {
-    if (isExcludedMessageField(field)) return;
+    if (isExcludedSearchOrPrintField(field)) return;
     const path = context?.pathSegments?.join("|") || "";
     if (!path || seen.has(path)) return;
     seen.add(path);

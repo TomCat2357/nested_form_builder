@@ -48,3 +48,19 @@ test("displayFieldSettingsは除外指定したメッセージを含めない", 
   const paths = collected.map((item) => item.path);
   assert.deepEqual(paths, ["氏名"]);
 });
+
+test("displayFieldSettingsは printTemplate を含めない", () => {
+  const schema = [
+    { type: "text", label: "氏名", isDisplayed: true },
+    {
+      type: "printTemplate",
+      label: "様式出力",
+      isDisplayed: true,
+      printTemplateAction: { enabled: true, fileNameTemplate: "print_${recordId}" },
+    },
+  ];
+
+  const collected = collectDisplayFieldSettings(schema);
+  const paths = collected.map((item) => item.path);
+  assert.deepEqual(paths, ["氏名"]);
+});

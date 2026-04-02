@@ -426,12 +426,6 @@ export default function AdminFormEditorPage() {
                 : "空白の場合はマイドライブのルートに保存されます。フォルダURLを指定するとそのフォルダに保存されます。ファイルURLは指定できません。"}
             </p>
           </div>
-
-          <div className="nf-col nf-gap-6 nf-mt-16">
-            <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
-              代表フィールドは各質問の「代表表示」チェックで設定できます。未設定の場合はレコードIDが代表値になります。
-            </p>
-          </div>
         </div>
 
         {SETTINGS_GROUPS.map((group) => (

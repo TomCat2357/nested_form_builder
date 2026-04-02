@@ -2,7 +2,7 @@ import { genId } from "./ids.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
 import { MAX_DEPTH } from "./constants.js";
 import { normalizePhoneSettings } from "./phone.js";
-import { mapSchema, traverseSchema, countSchemaNodes } from "./schemaUtils.js";
+import { traverseSchema, countSchemaNodes } from "./schemaUtils.js";
 export { countSchemaNodes };
 
 const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" : label || "");
@@ -40,6 +40,33 @@ const buildStableFieldId = (field, context) => {
 const buildStableOptionId = (fieldId, optionLabel, optionIndex) => {
   const index = Number.isFinite(optionIndex) ? optionIndex : -1;
   return `o_auto_${stableHash(`${fieldId}|${index}|${optionLabel || ""}`)}`;
+};
+
+const collectOrderedChildKeys = (field) => {
+  const branches = field?.childrenByValue;
+  if (!branches || typeof branches !== "object") return [];
+
+  const branchKeys = Object.keys(branches);
+  if (branchKeys.length === 0) return [];
+
+  const ordered = [];
+  const seen = new Set();
+  const options = Array.isArray(field?.options) ? field.options : [];
+
+  options.forEach((opt) => {
+    const label = typeof opt?.label === "string" ? opt.label : "";
+    if (seen.has(label) || !Object.prototype.hasOwnProperty.call(branches, label)) return;
+    ordered.push(label);
+    seen.add(label);
+  });
+
+  branchKeys.forEach((key) => {
+    if (seen.has(key)) return;
+    ordered.push(key);
+    seen.add(key);
+  });
+
+  return ordered;
 };
 
 export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
@@ -94,6 +121,26 @@ export const deepClone = (value) => {
   return JSON.parse(JSON.stringify(value));
 };
 
+const buildMigratedPrintTemplateField = (sourceField, sourceFieldId) => {
+  const normalizedAction = normalizePrintTemplateSettings(sourceField?.printTemplateAction);
+  if (!normalizedAction.enabled) return null;
+
+  const baseLabel = typeof sourceField?.label === "string" && sourceField.label.trim()
+    ? sourceField.label.trim()
+    : "ファイルアップロード";
+
+  return {
+    id: `f_auto_${stableHash(`${sourceFieldId}|printTemplate`)}`,
+    type: "printTemplate",
+    label: `${baseLabel} 様式出力`,
+    isDisplayed: !!sourceField?.isDisplayed,
+    printTemplateAction: {
+      ...normalizedAction,
+      enabled: true,
+    },
+  };
+};
+
 export const cleanUnusedFieldProperties = (field) => {
   const type = field.type;
   const isChoice = ["radio", "select", "checkboxes"].includes(type);
@@ -105,7 +152,7 @@ export const cleanUnusedFieldProperties = (field) => {
   const supportsDefaultNow = ["date", "time"].includes(type);
   const supportsPlaceholder = ["text", "number", "email", "phone", "url", "regex", "textarea"].includes(type);
   const supportsSearchAndPrintExclusion = type === "message";
-  const supportsPrintTemplateAction = type !== "message";
+  const supportsPrintTemplateAction = type === "printTemplate";
 
   if (!isChoice) {
     delete field.options;
@@ -153,11 +200,14 @@ export const cleanUnusedFieldProperties = (field) => {
     field.excludeFromSearchAndPrint = normalizeBooleanSetting(field.excludeFromSearchAndPrint, false);
   }
   if (supportsPrintTemplateAction) {
-    field.printTemplateAction = normalizePrintTemplateSettings(field.printTemplateAction);
+    field.printTemplateAction = {
+      ...normalizePrintTemplateSettings(field.printTemplateAction),
+      enabled: true,
+    };
   } else {
     delete field.printTemplateAction;
   }
-  if (type === "message") delete field.required;
+  if (type === "message" || type === "printTemplate") delete field.required;
   delete field.childFormId;
   delete field.childFormButtonLabel;
   delete field.allowMultipleChildren;
@@ -171,7 +221,7 @@ export const cleanUnusedFieldProperties = (field) => {
 };
 
 export const normalizeSchemaIDs = (nodes) => {
-  return mapSchema(nodes, (field, context) => {
+  const normalizeField = (field, context) => {
     const id = field.id || buildStableFieldId(field, context);
     const base = { ...field, id };
 
@@ -234,6 +284,12 @@ export const normalizeSchemaIDs = (nodes) => {
       Object.assign(base, normalizePhoneSettings(base));
     } else if (base.type === "fileUpload") {
       base.allowUploadByUrl = normalizeBooleanSetting(base.allowUploadByUrl, false);
+    } else if (base.type === "printTemplate") {
+      base.label = typeof base.label === "string" && base.label.trim() ? base.label : "様式出力";
+      base.printTemplateAction = {
+        ...normalizePrintTemplateSettings(base.printTemplateAction),
+        enabled: true,
+      };
     }
 
     // 旧形式マイグレーション: childFormLinkプロパティ → childFormLinkタイプ
@@ -285,7 +341,48 @@ export const normalizeSchemaIDs = (nodes) => {
     clearUiTempState(base);
 
     return base;
-  });
+  };
+
+  const normalizeNodes = (inputNodes, pathSegments = [], depth = 1) => {
+    const sourceNodes = Array.isArray(inputNodes) ? inputNodes : [];
+    const normalizedNodes = [];
+
+    sourceNodes.forEach((field, index) => {
+      const fieldLabel = (field?.label || "").trim();
+      const currentPath = [...pathSegments, fieldLabel];
+      const context = { pathSegments: currentPath, index, depth };
+      const sourceFieldId = field?.id || buildStableFieldId(field, context);
+      const migratedPrintTemplateField = field?.type === "fileUpload"
+        ? buildMigratedPrintTemplateField(field, sourceFieldId)
+        : null;
+      const normalizedField = normalizeField(field, context);
+
+      if (normalizedField?.childrenByValue && typeof normalizedField.childrenByValue === "object") {
+        const nextChildren = {};
+        collectOrderedChildKeys(normalizedField).forEach((optionLabel) => {
+          nextChildren[optionLabel] = normalizeNodes(
+            normalizedField.childrenByValue[optionLabel],
+            [...currentPath, optionLabel],
+            depth + 1,
+          );
+        });
+        normalizedField.childrenByValue = nextChildren;
+      }
+
+      normalizedNodes.push(normalizedField);
+      if (migratedPrintTemplateField) {
+        normalizedNodes.push(normalizeField(migratedPrintTemplateField, {
+          pathSegments: [...pathSegments, migratedPrintTemplateField.label],
+          index: index + 0.5,
+          depth,
+        }));
+      }
+    });
+
+    return normalizedNodes;
+  };
+
+  return normalizeNodes(nodes);
 };
 
 export const stripSchemaIDs = (nodes) => {

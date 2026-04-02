@@ -1,13 +1,16 @@
 import { resolveIsDisplayed } from "../core/displayModes.js";
 import { traverseSchema } from "../core/schemaUtils.js";
 
-const isExcludedMessageField = (field) => field?.type === "message" && field?.excludeFromSearchAndPrint === true;
+const isExcludedDisplayField = (field) => (
+  field?.type === "printTemplate"
+  || (field?.type === "message" && field?.excludeFromSearchAndPrint === true)
+);
 
 export const collectDisplayFieldSettings = (schema) => {
   const collected = [];
 
   traverseSchema(schema, (field, context) => {
-    if (resolveIsDisplayed(field) && !isExcludedMessageField(field)) {
+    if (resolveIsDisplayed(field) && !isExcludedDisplayField(field)) {
       collected.push({
         path: context.pathSegments.join("|"),
         type: field.type || "",

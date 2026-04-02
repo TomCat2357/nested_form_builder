@@ -145,6 +145,7 @@ const validateNumberField = (field, value) => {
 
 const isEmpty = (field, value) => {
   if (value === undefined || value === null) return true;
+  if (field.type === "printTemplate") return true;
   if (["text", "textarea", "regex", "date", "time", "select", "radio", "url", "userName", "email", "phone"].includes(field.type)) {
     return value === "";
   }
@@ -226,6 +227,7 @@ export const collectValidationErrors = (fields, responses) => {
   const errors = [];
 
   traverseSchema(fields, (field, context) => {
+    if (field?.type === "printTemplate") return;
     const value = responses?.[field.id];
     const path = context.pathSegments.join(" > ");
     let hasRequiredError = false;

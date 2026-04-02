@@ -35,7 +35,6 @@ import SearchPagination from "../features/search/components/SearchPagination.jsx
 import PrintChildFormDialog from "../features/search/components/PrintChildFormDialog.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { DEFAULT_PAGE_SIZE } from "../core/constants.js";
-import BreadcrumbNav from "../app/components/BreadcrumbNav.jsx";
 
 
 
@@ -64,7 +63,7 @@ export default function SearchPage() {
   const effectiveFormId = queryFormId || scopedFormId;
   const isScopedByAuth = scopedFormId !== "";
   const parentRecordId = searchParams.get("parentRecordId") || "";
-  const breadcrumbTrail = location.state?.breadcrumbTrail || [];
+  const currentSearchUrl = `${location.pathname}${location.search}`;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [showUndeleteConfirm, setShowUndeleteConfirm] = useState({ open: false, entryIds: [] });
   const [selectedEntries, setSelectedEntries] = useState(new Set());
@@ -282,28 +281,19 @@ export default function SearchPage() {
     if (!effectiveFormId) return;
     const entryIds = sortedEntries.map((row) => row.entry.id);
     navigate(`/form/${effectiveFormId}/entry/${entryId}`, {
-      state: { from: `${location.pathname}${location.search}`, entryIds, breadcrumbTrail },
+      state: { from: currentSearchUrl, entryIds },
     });
   };
 
   const handleChildRowClick = (childFormId, parentEntryId, childEntryId) => {
     if (!childFormId || !parentEntryId) return;
-    const parentEntry = entries.find((e) => e.id === parentEntryId);
-    const representativeFieldId = form?.settings?.representativeFieldId;
-    const representativeValue = representativeFieldId
-      ? (parentEntry?.data?.[representativeFieldId] || parentEntryId)
-      : parentEntryId;
-    const nextTrail = [
-      ...breadcrumbTrail,
-      { formId: effectiveFormId, recordId: parentEntryId, representativeValue },
-    ];
     if (childEntryId) {
       navigate(`/form/${childFormId}/entry/${childEntryId}`, {
-        state: { breadcrumbTrail: nextTrail },
+        state: { from: currentSearchUrl, parentRecordId: parentEntryId },
       });
     } else {
       navigate(`/search?form=${childFormId}&parentRecordId=${parentEntryId}`, {
-        state: { breadcrumbTrail: nextTrail },
+        state: { from: currentSearchUrl },
       });
     }
   };
@@ -315,29 +305,23 @@ export default function SearchPage() {
       : `/form/${effectiveFormId}/new`;
     navigate(url, {
       state: {
-        from: `${location.pathname}${location.search}`,
+        from: currentSearchUrl,
         ...(parentRecordId ? { parentRecordId } : {}),
-        breadcrumbTrail,
       },
     });
   };
-
   const handleOpenFormConfig = () => {
     if (!effectiveFormId) return;
     navigate(`/config?form=${encodeURIComponent(effectiveFormId)}`, {
-      state: { from: `${location.pathname}${location.search}` },
+      state: { from: currentSearchUrl },
     });
   };
-
   const handleBackToMain = () => {
-    if (breadcrumbTrail.length > 0) {
-      const lastCrumb = breadcrumbTrail[breadcrumbTrail.length - 1];
-      navigate(`/form/${lastCrumb.formId}/entry/${lastCrumb.recordId}`, {
-        state: { breadcrumbTrail: breadcrumbTrail.slice(0, -1) },
-      });
-    } else {
-      navigate("/");
+    if (location.state?.from) {
+      navigate(location.state.from);
+      return;
     }
+    navigate("/");
   };
 
   const toggleSelectEntry = (entryId) => {
@@ -449,13 +433,10 @@ export default function SearchPage() {
 
   const parentInfo = useMemo(() => {
     if (!parentRecordId) return null;
-    const lastCrumb = breadcrumbTrail.length > 0 ? breadcrumbTrail[breadcrumbTrail.length - 1] : null;
-    const repValue = lastCrumb?.representativeValue || "";
     return {
       parentRecordId,
-      parentRepresentativeValue: repValue && repValue !== parentRecordId ? repValue : "",
     };
-  }, [parentRecordId, breadcrumbTrail]);
+  }, [parentRecordId]);
 
   const createPrintDocument = useCallback(async (selectedChildFormIds = []) => {
     setIsCreatingPrintDocument(true);
@@ -620,14 +601,6 @@ export default function SearchPage() {
         </>
       )}
     >
-      <BreadcrumbNav
-        trail={breadcrumbTrail}
-        currentFormId={effectiveFormId}
-        currentFormTitle={form?.settings?.formTitle || "(無題)"}
-        parentRecordId={parentRecordId}
-        getFormById={getFormById}
-        onNavigate={(path, state) => navigate(path, { state })}
-      />
       <SearchToolbar
         query={query}
         onChange={handleSearchChange}

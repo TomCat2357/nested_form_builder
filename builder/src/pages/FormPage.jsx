@@ -35,7 +35,6 @@ import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { perfLogger } from "../utils/perfLogger.js";
 import SchemaMapNav from "../features/nav/SchemaMapNav.jsx";
 import RecordCopyDialog from "../app/components/RecordCopyDialog.jsx";
-import BreadcrumbNav from "../app/components/BreadcrumbNav.jsx";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import {
@@ -229,7 +228,7 @@ export default function FormPage() {
 
   // 親子フォーム階層コンテキスト
   const parentRecordId = searchParams.get("parentRecordId") || location.state?.parentRecordId || "";
-  const breadcrumbTrail = location.state?.breadcrumbTrail || [];
+  const currentFormUrl = `${location.pathname}${location.search}`;
 
   const [confirmState, setConfirmState] = useState({ open: false, intent: null });
   const [isSaving, setIsSaving] = useState(false);
@@ -268,7 +267,6 @@ export default function FormPage() {
   const responseMutationSeqRef = useRef(0);
   const formLoadedStateRef = useRef(null);
   const pendingSyncedEntryRef = useRef(null);
-  const pendingNavStateRef = useRef(null);
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
@@ -556,11 +554,10 @@ export default function FormPage() {
         from: location.state?.from,
         entryIds,
         ...(parentRecordId ? { parentRecordId } : {}),
-        ...(breadcrumbTrail.length > 0 ? { breadcrumbTrail } : {}),
       },
       replace: true,
     });
-  }, [breadcrumbTrail, clearNewEntryDraft, navigate, formId, location.state?.from, entryIds, parentRecordId]);
+  }, [clearNewEntryDraft, navigate, formId, location.state?.from, entryIds, parentRecordId]);
 
   useEffect(() => {
     let mounted = true;
@@ -807,10 +804,7 @@ export default function FormPage() {
 
   const navigateBack = ({ saved = false, deleted = false } = {}) => {
     clearNewEntryDraft();
-    const hierarchyState = {
-      ...(parentRecordId ? { parentRecordId } : {}),
-      ...(breadcrumbTrail.length > 0 ? { breadcrumbTrail } : {}),
-    };
+    const hierarchyState = parentRecordId ? { parentRecordId } : {};
     const state = (saved || deleted || Object.keys(hierarchyState).length > 0)
       ? { ...(saved || deleted ? { saved, deleted } : {}), ...hierarchyState }
       : undefined;
@@ -992,7 +986,6 @@ export default function FormPage() {
               state: {
                 ...location.state,
                 ...(parentRecordId ? { parentRecordId } : {}),
-                ...(breadcrumbTrail.length > 0 ? { breadcrumbTrail } : {}),
               },
             });
           } else {
@@ -1173,16 +1166,11 @@ export default function FormPage() {
   const navigateToChildForm = useCallback((childFormId, targetRecordId) => {
     const resolvedRecordId = String(targetRecordId || "").trim();
     if (!childFormId || !resolvedRecordId) return false;
-    const representativeFieldId = form?.settings?.representativeFieldId;
-    const representativeValue = representativeFieldId
-      ? (responses?.[representativeFieldId] || "")
-      : resolvedRecordId;
-    const nextBreadcrumb = [...breadcrumbTrail, { formId, recordId: resolvedRecordId, representativeValue }];
     navigate(`/search?form=${childFormId}&parentRecordId=${resolvedRecordId}`, {
-      state: { breadcrumbTrail: nextBreadcrumb },
+      state: { from: currentFormUrl },
     });
     return true;
-  }, [breadcrumbTrail, form?.settings?.representativeFieldId, formId, navigate, responses]);
+  }, [currentFormUrl, navigate]);
 
   const handleChildFormJump = useCallback(async (childFormId) => {
     const persistedRecordId = String(entryId || currentRecordId || "").trim();
@@ -1301,22 +1289,6 @@ export default function FormPage() {
         await cancelEditAndRestoreLatest();
         return;
       }
-      if (intent === "breadcrumb-nav") {
-        const nav = pendingNavStateRef.current;
-        pendingNavStateRef.current = null;
-        if (nav) navigate(nav.path, { state: nav.state });
-        return;
-      }
-      if (intent && intent.startsWith("breadcrumb:")) {
-        const idx = parseInt(intent.slice("breadcrumb:".length), 10);
-        const crumb = breadcrumbTrail[idx];
-        if (crumb) {
-          navigate(`/form/${crumb.formId}/entry/${crumb.recordId}`, {
-            state: { breadcrumbTrail: breadcrumbTrail.slice(0, idx) },
-          });
-        }
-        return;
-      }
       if (intent && intent.startsWith("childJump:")) {
         const childFormId = intent.slice("childJump:".length);
         navigateToChildForm(childFormId, currentRecordId || entryId);
@@ -1331,29 +1303,11 @@ export default function FormPage() {
       return;
     }
     if (action === "save") {
-      if (intent === "breadcrumb-nav") {
-        const nav = pendingNavStateRef.current;
-        pendingNavStateRef.current = null;
-        const saveResult = await triggerSave();
-        if (saveResult.ok && nav) navigate(nav.path, { state: nav.state });
-        return;
-      }
       if (intent && intent.startsWith("childJump:")) {
         const childFormId = intent.slice("childJump:".length);
         const saveResult = await triggerSave({ stayAsView: true, skipStayAsViewNavigation: true });
         if (saveResult.ok) {
           navigateToChildForm(childFormId, saveResult.recordId || currentRecordId || entryId);
-        }
-        return;
-      }
-      if (intent && intent.startsWith("breadcrumb:")) {
-        const idx = parseInt(intent.slice("breadcrumb:".length), 10);
-        const crumb = breadcrumbTrail[idx];
-        const saveResult = await triggerSave();
-        if (saveResult.ok && crumb) {
-          navigate(`/form/${crumb.formId}/entry/${crumb.recordId}`, {
-            state: { breadcrumbTrail: breadcrumbTrail.slice(0, idx) },
-          });
         }
         return;
       }
@@ -1388,7 +1342,9 @@ export default function FormPage() {
 
   const confirmMessage = confirmState.intent === "cancel-edit"
     ? "保存せずに編集内容を破棄しますか？"
-    : "保存せずに前の画面へ戻りますか？";
+    : (confirmState.intent && (confirmState.intent.startsWith("navigate:") || confirmState.intent.startsWith("childJump:"))
+      ? "保存せずに移動しますか？"
+      : "保存せずに前の画面へ戻りますか？");
   const editDisabled = loading || isReadLocked;
 
   return (
@@ -1496,22 +1452,6 @@ export default function FormPage() {
         </>
       }
     >
-      <BreadcrumbNav
-        trail={breadcrumbTrail}
-        currentFormId={formId}
-        currentFormTitle={form?.settings?.formTitle || "(無題)"}
-        currentRecordLabel={entryId ? (responses?.[form?.settings?.representativeFieldId] || entryId) : ""}
-        parentRecordId={parentRecordId}
-        getFormById={getFormById}
-        onNavigate={(path, state) => {
-          if (isDirty) {
-            pendingNavStateRef.current = { path, state };
-            setConfirmState({ open: true, intent: "breadcrumb-nav" });
-          } else {
-            navigate(path, { state });
-          }
-        }}
-      />
       <SearchToolbar
         showSearch={false}
         lastSyncedAt={lastSyncedAt}
