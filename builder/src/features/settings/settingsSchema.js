@@ -137,13 +137,6 @@ export const SETTINGS_GROUPS = [
         required: false,
         description: "空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{ID}, {YYYY-MM-DD}, {HH:mm:ss} などの日時や {フィールドラベル} でフィールド値を参照できます",
       },
-      {
-        key: "printFileNameTemplate",
-        label: "印刷様式ファイル名",
-        placeholder: "{ID}_印刷様式",
-        required: false,
-        description: "空白の場合はデフォルトの命名規則（印刷様式_フォーム名_レコード番号_タイムスタンプ）が適用されます。{ID} や {フィールドラベル} も利用できます",
-      },
     ],
   },
 ];

@@ -1239,11 +1239,8 @@ export default function FormPage() {
       const payload = preview.getPrintDocumentPayload({
         omitEmptyRows: omitEmptyRowsOnPrint,
         childSections,
-        driveFolderState: driveFolderStateRef.current,
-        useTemporaryFolder: true,
       });
       const result = await createRecordPrintDocument(payload);
-      updateDriveFolderStateFromPrintResult(result);
       showAlert(
         <div className="nf-col nf-gap-8">
           <div>マイドライブに Google ドキュメントを保存しました。</div>
@@ -1259,7 +1256,7 @@ export default function FormPage() {
     } finally {
       setIsCreatingPrintDocument(false);
     }
-  }, [buildChildSectionsForPrint, childForms, omitEmptyRowsOnPrint, showAlert, updateDriveFolderStateFromPrintResult, driveFolderStateRef]);
+  }, [buildChildSectionsForPrint, childForms, omitEmptyRowsOnPrint, showAlert]);
 
   const handleCreatePrintDocument = useCallback(async () => {
     const preview = previewRef.current;

@@ -277,11 +277,10 @@ export const buildPrintDocumentPayload = ({
   const shouldShowHeader = resolveShowPrintHeader(settings, showHeader);
   const folderUrl = resolveDriveFolderUrl(driveFolderState);
 
-  const hasDriveSettings = settings.driveRootFolderUrl || settings.driveFolderNameTemplate || settings.printFileNameTemplate || folderUrl || useTemporaryFolder;
+  const hasDriveSettings = settings.driveRootFolderUrl || settings.driveFolderNameTemplate || folderUrl || useTemporaryFolder;
   const driveSettings = hasDriveSettings ? {
     rootFolderUrl: settings.driveRootFolderUrl || "",
     folderNameTemplate: settings.driveFolderNameTemplate || "",
-    fileNameTemplate: settings.printFileNameTemplate || "",
     recordId: resolvedRecordId,
     folderUrl,
     useTemporaryFolder: !!useTemporaryFolder,

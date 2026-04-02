@@ -189,8 +189,11 @@ const isMultiRecordPrintPayload = (payload) => {
 export const uploadFileToDrive = ({ base64, fileName, mimeType, driveSettings }) =>
   fetchGasApi("nfbUploadFileToDrive", { base64, fileName, mimeType, driveSettings }, "ファイルのアップロードに失敗しました");
 
-export const copyDriveFileToDrive = ({ sourceUrl, driveSettings }) =>
-  fetchGasApi("nfbCopyDriveFileToDrive", { sourceUrl, driveSettings }, "Driveファイルのコピーに失敗しました");
+export const copyDriveFileToDrive = ({ sourceUrl, driveSettings, fileNameTemplate }) =>
+  fetchGasApi("nfbCopyDriveFileToDrive", { sourceUrl, driveSettings, fileNameTemplate }, "Driveファイルのコピーに失敗しました");
+
+export const findDriveFileInFolder = ({ fileNameTemplate, driveSettings }) =>
+  fetchGasApi("nfbFindDriveFileInFolder", { fileNameTemplate, driveSettings }, "Driveファイルの検索に失敗しました");
 
 export const finalizeRecordDriveFolder = (payload) =>
   fetchGasApi("nfbFinalizeRecordDriveFolder", payload, "Driveフォルダの確定に失敗しました");
