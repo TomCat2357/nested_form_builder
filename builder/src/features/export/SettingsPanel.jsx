@@ -5,6 +5,7 @@ import { resolveSettingsCheckboxChecked, resolveSettingsFieldValue } from "../..
 const SettingsField = ({ field, value, onChange }) => {
   const isSelect = field.type === "select" || Array.isArray(field.options);
   const isCheckbox = field.type === "checkbox";
+  const isTextarea = field.type === "textarea";
 
   if (isCheckbox) {
     return (
@@ -38,6 +39,13 @@ const SettingsField = ({ field, value, onChange }) => {
             </option>
           ))}
         </select>
+      ) : isTextarea ? (
+        <textarea
+          className="nf-input nf-h-96"
+          value={value ?? ""}
+          placeholder={field.placeholder}
+          onChange={(event) => onChange(field.key, event.target.value)}
+        />
       ) : (
         <input
           className="nf-input"

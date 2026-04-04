@@ -117,7 +117,6 @@ test("normalizeSchemaIDs は旧 fileUpload の printTemplateAction を独立カ�
         templateUrl: "https://example.com/template",
         fileNameTemplate: "出力_${recordId}",
         outputType: "spreadsheet",
-        buttonLabel: "様式を出力",
       },
     },
     { id: "memo_1", type: "text", label: "備考" },
@@ -131,10 +130,10 @@ test("normalizeSchemaIDs は旧 fileUpload の printTemplateAction を独立カ�
   assert.equal(schema[1].isDisplayed, true);
   assert.deepEqual(schema[1].printTemplateAction, {
     enabled: true,
+    outputType: "googleDoc",
+    useCustomTemplate: false,
     templateUrl: "https://example.com/template",
     fileNameTemplate: "出力_${recordId}",
-    outputType: "googleDoc",
-    buttonLabel: "様式を出力",
   });
   assert.equal(schema[2].id, "memo_1");
 });

@@ -85,7 +85,7 @@ function FormNotFoundPage() {
  * 一般ユーザー用の初期リダイレクト処理
  */
 function UserRedirect() {
-  const { authError, formId } = useAuth();
+  const { authError, formId, recordId } = useAuth();
 
   // 認証エラーがある場合
   if (authError === "form_not_found") {
@@ -93,6 +93,10 @@ function UserRedirect() {
   }
   if (authError === "access_denied" || authError === "forbidden") {
     return <AccessDeniedPage />;
+  }
+
+  if (formId && recordId) {
+    return <Navigate to={`/form/${formId}/entry/${recordId}`} replace />;
   }
 
   if (formId) {

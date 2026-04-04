@@ -4,6 +4,7 @@ function doGet(e) {
   let htmlContent = html.getContent();
 
   const formParam = e?.parameter?.form ? String(e.parameter.form) : "";
+  const recordParam = e?.parameter?.record ? String(e.parameter.record) : "";
   const adminkeyParam = e?.parameter?.adminkey ? String(e.parameter.adminkey) : "";
   const userEmail = ResolveActiveUserEmail_();
 
@@ -21,6 +22,7 @@ function doGet(e) {
     window.__GAS_WEBAPP_URL__ = "${EscapeForInlineScript_(webAppUrl)}";
     window.__IS_ADMIN__ = ${authResult.isAdmin};
     window.__FORM_ID__ = "${EscapeForInlineScript_(authResult.formId)}";
+    window.__RECORD_ID__ = "${EscapeForInlineScript_(recordParam)}";
     window.__AUTH_ERROR__ = "${EscapeForInlineScript_(authResult.authError)}";
     window.__USER_EMAIL__ = "${EscapeForInlineScript_(userEmail)}";
     window.__USER_NAME__ = "${EscapeForInlineScript_(userName)}";

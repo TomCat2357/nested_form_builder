@@ -265,6 +265,7 @@ export const buildPrintDocumentPayload = ({
   const driveSettings = hasDriveSettings ? {
     rootFolderUrl: settings.driveRootFolderUrl || "",
     folderNameTemplate: settings.driveFolderNameTemplate || "",
+    formId: settings.formId || "",
     recordId: resolvedRecordId,
     folderUrl,
     useTemporaryFolder: !!useTemporaryFolder,
@@ -276,6 +277,8 @@ export const buildPrintDocumentPayload = ({
   return {
     fileName: `印刷様式_${sanitizePrintFileNamePart(formTitle, "form")}_${sanitizePrintFileNamePart(recordRef, "record")}_${formatFileTimestamp(safeExportedAt)}`,
     formTitle,
+    formId: settings.formId || "",
+    templateSourceUrl: settings.standardPrintTemplateUrl || "",
     recordId: resolvedRecordId,
     recordNo,
     modifiedAt,

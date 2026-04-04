@@ -7,6 +7,7 @@ import React, { createContext, useContext, useMemo } from "react";
 const AuthContext = createContext({
   isAdmin: true,
   formId: "",
+  recordId: "",
   authError: "",
   userEmail: "",
   userName: "",
@@ -25,7 +26,7 @@ const getWindowGlobal = (key, defaultVal, castFn = (value) => value) => {
 
 /**
  * 認証プロバイダー
- * window.__IS_ADMIN__ と window.__FORM_ID__ と window.__AUTH_ERROR__ を読み取る
+ * window.__IS_ADMIN__ と window.__FORM_ID__ と window.__RECORD_ID__ と window.__AUTH_ERROR__ を読み取る
  */
 export function AuthProvider({ children }) {
   const value = useMemo(() => {
@@ -33,6 +34,7 @@ export function AuthProvider({ children }) {
     // 未定義の場合はデフォルトで管理者モード（開発環境用）
     const isAdmin = getWindowGlobal("__IS_ADMIN__", true, Boolean);
     const formId = getWindowGlobal("__FORM_ID__", "", String);
+    const recordId = getWindowGlobal("__RECORD_ID__", "", String);
     const authError = getWindowGlobal("__AUTH_ERROR__", "", String);
     const userEmail = getWindowGlobal("__USER_EMAIL__", "", String);
     const userName = getWindowGlobal("__USER_NAME__", "", String);
@@ -42,7 +44,7 @@ export function AuthProvider({ children }) {
     const propertyStoreMode = getWindowGlobal("__PROPERTY_STORE_MODE__", "script", String);
     const adminSettingsEnabled = getWindowGlobal("__ADMIN_SETTINGS_ENABLED__", true, Boolean);
 
-    return { isAdmin, formId, authError, userEmail, userName, userAffiliation, userTitle, userPhone, propertyStoreMode, adminSettingsEnabled };
+    return { isAdmin, formId, recordId, authError, userEmail, userName, userAffiliation, userTitle, userPhone, propertyStoreMode, adminSettingsEnabled };
   }, []);
 
   return (
@@ -54,7 +56,7 @@ export function AuthProvider({ children }) {
 
 /**
  * 認証情報を取得するフック
- * @returns {{ isAdmin: boolean, formId: string, authError: string, userEmail: string, userName: string, userAffiliation: string, userTitle: string, userPhone: string, propertyStoreMode: string, adminSettingsEnabled: boolean }}
+ * @returns {{ isAdmin: boolean, formId: string, recordId: string, authError: string, userEmail: string, userName: string, userAffiliation: string, userTitle: string, userPhone: string, propertyStoreMode: string, adminSettingsEnabled: boolean }}
  */
 export function useAuth() {
   return useContext(AuthContext);

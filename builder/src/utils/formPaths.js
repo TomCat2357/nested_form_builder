@@ -1,9 +1,9 @@
 import { resolveIsDisplayed } from "../core/displayModes.js";
 import { traverseSchema } from "../core/schemaUtils.js";
+import { resolvePrintTemplateFieldLabel } from "../core/schema.js";
 
 const isExcludedDisplayField = (field) => (
-  field?.type === "printTemplate"
-  || (field?.type === "message" && field?.excludeFromSearchAndPrint === true)
+  field?.type === "message" && field?.excludeFromSearchAndPrint === true
 );
 
 export const collectDisplayFieldSettings = (schema) => {
@@ -11,8 +11,16 @@ export const collectDisplayFieldSettings = (schema) => {
 
   traverseSchema(schema, (field, context) => {
     if (resolveIsDisplayed(field) && !isExcludedDisplayField(field)) {
+      const pathSegments = Array.isArray(context?.pathSegments) ? [...context.pathSegments] : [];
+      if (field?.type === "printTemplate") {
+        if (pathSegments.length > 0) {
+          pathSegments[pathSegments.length - 1] = resolvePrintTemplateFieldLabel(field);
+        } else {
+          pathSegments.push(resolvePrintTemplateFieldLabel(field));
+        }
+      }
       collected.push({
-        path: context.pathSegments.join("|"),
+        path: pathSegments.join("|"),
         type: field.type || "",
         fieldId: field.id || "",
       });

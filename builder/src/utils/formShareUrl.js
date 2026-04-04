@@ -1,43 +1,62 @@
-const normalizeSharedFormId = (value) => String(value || "").trim();
+const normalizeSharedValue = (value) => String(value || "").trim();
+const normalizeSharedFormId = normalizeSharedValue;
+const normalizeSharedRecordId = normalizeSharedValue;
 
-export const extractSharedFormIdFromInput = (input) => {
-  const trimmed = normalizeSharedFormId(input);
+const extractQueryParam = (input, paramName) => {
+  const trimmed = normalizeSharedValue(input);
   if (!trimmed) return "";
 
-  const queryMatch = trimmed.match(/(?:[?&#]|^)form=([^&#]+)/i);
+  const queryMatch = trimmed.match(new RegExp(`(?:[?&#]|^)${paramName}=([^&#]+)`, "i"));
   if (queryMatch) {
     try {
-      return normalizeSharedFormId(decodeURIComponent(queryMatch[1]));
+      return normalizeSharedValue(decodeURIComponent(queryMatch[1]));
     } catch (_) {
-      return normalizeSharedFormId(queryMatch[1]);
+      return normalizeSharedValue(queryMatch[1]);
     }
   }
 
   try {
     const url = new URL(trimmed);
-    const formParam = url.searchParams.get("form");
-    if (normalizeSharedFormId(formParam)) return normalizeSharedFormId(formParam);
+    return normalizeSharedValue(url.searchParams.get(paramName));
   } catch (_) {
-    // no-op: URL でなくても末尾で生値をそのまま使う
+    return "";
   }
+};
+
+export const extractSharedFormIdFromInput = (input) => {
+  const trimmed = normalizeSharedFormId(input);
+  if (!trimmed) return "";
+
+  const formParam = extractQueryParam(trimmed, "form");
+  if (formParam) return formParam;
 
   return trimmed;
 };
 
-export const buildSharedFormUrl = (baseUrl, formId) => {
+export const extractSharedRecordIdFromInput = (input) => extractQueryParam(input, "record");
+
+export const buildSharedFormUrl = (baseUrl, formId, recordId = "") => {
   const normalizedBaseUrl = String(baseUrl || "").trim();
   const normalizedFormId = String(formId || "").trim();
+  const normalizedRecordId = String(recordId || "").trim();
   if (!normalizedBaseUrl || !normalizedFormId) return "";
 
   try {
     const url = new URL(normalizedBaseUrl);
     url.searchParams.set("form", normalizedFormId);
+    if (normalizedRecordId) url.searchParams.set("record", normalizedRecordId);
+    else url.searchParams.delete("record");
     return url.toString();
   } catch (_) {
     const hashIndex = normalizedBaseUrl.indexOf("#");
     const baseWithoutHash = hashIndex >= 0 ? normalizedBaseUrl.slice(0, hashIndex) : normalizedBaseUrl;
     const hashSuffix = hashIndex >= 0 ? normalizedBaseUrl.slice(hashIndex) : "";
     const joiner = baseWithoutHash.includes("?") ? "&" : "?";
-    return `${baseWithoutHash}${joiner}form=${encodeURIComponent(normalizedFormId)}${hashSuffix}`;
+    const recordQuery = normalizedRecordId ? `&record=${encodeURIComponent(normalizedRecordId)}` : "";
+    return `${baseWithoutHash}${joiner}form=${encodeURIComponent(normalizedFormId)}${recordQuery}${hashSuffix}`;
   }
 };
+
+export const buildSharedRecordUrl = (baseUrl, formId, recordId) => (
+  buildSharedFormUrl(baseUrl, formId, recordId)
+);

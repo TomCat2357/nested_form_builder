@@ -162,10 +162,19 @@ const collectDriveFileIds = (responses) => {
 export default function FormPage() {
   const { formId, entryId } = useParams();
   const { getFormById, refreshForms, loadingForms, forms } = useAppData();
-  const { userName, userEmail, userAffiliation, userTitle, userPhone, isAdmin } = useAuth();
+  const {
+    userName,
+    userEmail,
+    userAffiliation,
+    userTitle,
+    userPhone,
+    isAdmin,
+    formId: sharedFormId,
+    recordId: sharedRecordId,
+  } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
-  const { showAlert, showToast } = useAlert();
+  const { showAlert, showToast, showOutputAlert } = useAlert();
   const currentForm = formId ? getFormById(formId) : null;
   const [cachedForm, setCachedForm] = useState(currentForm);
 
@@ -259,16 +268,17 @@ export default function FormPage() {
   const responseMutationSeqRef = useRef(0);
   const formLoadedStateRef = useRef(null);
   const pendingSyncedEntryRef = useRef(null);
+  const isDirectRecordMode = sharedFormId === formId && sharedRecordId !== "" && sharedRecordId === entryId;
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
   const fieldLabels = useMemo(() => buildFieldLabelsMap(normalizedSchema), [normalizedSchema]);
   const primarySaveOptions = useMemo(
     () => ({
-      ...buildPrimarySaveOptions(form?.settings),
+      ...(isDirectRecordMode ? { stayAsView: true } : buildPrimarySaveOptions(form?.settings)),
       createPrintAfterSave: resolveCreatePrintOnSave(form?.settings),
     }),
-    [form?.settings?.createPrintOnSave, form?.settings?.saveAfterAction],
+    [form?.settings?.createPrintOnSave, form?.settings?.saveAfterAction, isDirectRecordMode],
   );
 
   useEffect(() => {
@@ -448,7 +458,7 @@ export default function FormPage() {
     });
   }, []);
 
-  const buildSavedRecordPrintPayload = useCallback((savedEntry, rawResponses, driveFolderUrl = "") => (
+  const buildSavedRecordPrintPayload = useCallback((savedEntry, rawResponses) => (
     buildPrintDocumentPayload({
       schema: normalizedSchema,
       responses: rawResponses || {},
@@ -460,17 +470,13 @@ export default function FormPage() {
       },
       recordId: savedEntry?.id,
       omitEmptyRows: omitEmptyRowsOnPrint,
-      driveFolderState: normalizeDriveFolderState({
-        resolvedUrl: driveFolderUrl,
-        inputUrl: driveFolderUrl,
-        autoCreated: false,
-      }),
+      driveFolderState: createEmptyDriveFolderState(),
       useTemporaryFolder: false,
     })
   ), [form?.settings, normalizedSchema, omitEmptyRowsOnPrint]);
 
   const runPrintOnSave = useCallback(async (savedEntry, rawResponses) => {
-    const payload = buildSavedRecordPrintPayload(savedEntry, rawResponses, savedEntry?.driveFolderUrl || "");
+    const payload = buildSavedRecordPrintPayload(savedEntry, rawResponses);
     return createRecordPrintDocument(payload);
   }, [buildSavedRecordPrintPayload]);
 
@@ -786,6 +792,10 @@ export default function FormPage() {
 
   const navigateBack = ({ saved = false, deleted = false } = {}) => {
     clearNewEntryDraft();
+    if (isDirectRecordMode && !deleted) {
+      navigate(`/form/${formId}/entry/${entryId}`, { replace: true, state: location.state });
+      return;
+    }
     const state = (saved || deleted)
       ? { ...(saved || deleted ? { saved, deleted } : {}) }
       : undefined;
@@ -973,6 +983,10 @@ export default function FormPage() {
         if (printFailureMessage) {
           showAlert(printFailureMessage, "印刷様式を出力できませんでした");
         } else {
+          if (printResult?.fileUrl) {
+            showOutputAlert({ message: "保存し、印刷様式を出力しました。", url: printResult.fileUrl, linkLabel: "ファイルを開く" });
+            return { ok: true, recordId: savedId };
+          }
           showToast(saveSuccessMessage);
         }
       } else if (redirect) {
@@ -1036,6 +1050,7 @@ export default function FormPage() {
   };
 
   const handleBack = () => {
+    if (isDirectRecordMode) return false;
     if (!isDirty) {
       navigateBack();
       return false;
@@ -1152,24 +1167,17 @@ export default function FormPage() {
     try {
       const payload = preview.getPrintDocumentPayload({
         omitEmptyRows: omitEmptyRowsOnPrint,
+        driveFolderState: createEmptyDriveFolderState(),
       });
       const result = await createRecordPrintDocument(payload);
-      showAlert(
-        <div className="nf-col nf-gap-8">
-          <div>マイドライブに Google ドキュメントを保存しました。</div>
-          <a href={result.fileUrl} target="_blank" rel="noopener noreferrer" className="nf-link nf-fw-600">
-            ファイルを開く
-          </a>
-        </div>,
-        "出力完了",
-      );
+      showOutputAlert({ message: "マイドライブに Google ドキュメントを保存しました。", url: result.fileUrl, linkLabel: "ファイルを開く" });
     } catch (error) {
       console.error("[FormPage] failed to create print document:", error);
       showAlert(`印刷様式の出力に失敗しました: ${error?.message || error}`);
     } finally {
       setIsCreatingPrintDocument(false);
     }
-  }, [omitEmptyRowsOnPrint, showAlert]);
+  }, [omitEmptyRowsOnPrint, showAlert, showOutputAlert]);
 
   if (!form) {
     return (
@@ -1245,7 +1253,7 @@ export default function FormPage() {
   const editDisabled = loading || isReadLocked;
 
   return (
-    <AppLayout themeOverride={form?.settings?.theme}       title={`${form.settings?.formTitle || "(無題)"} - フォーム入力`}
+      <AppLayout themeOverride={form?.settings?.theme}       title={`${form.settings?.formTitle || "(無題)"} - フォーム入力`}
       fallbackPath={fallbackPath}
       onBack={handleBack}
       backHidden={true}
@@ -1260,9 +1268,11 @@ export default function FormPage() {
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleEditMode} disabled={editDisabled}>
                 編集
               </button>
-              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => navigateBack()}>
-                ← 戻る
-              </button>
+              {!isDirectRecordMode && (
+                <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => navigateBack()}>
+                  ← 戻る
+                </button>
+              )}
             </>
           ) : (
             <>
@@ -1370,6 +1380,7 @@ export default function FormPage() {
           setResponses={handleResponsesChange}
           settings={{
             ...(form.settings || {}),
+            formId: form.id,
             recordId: currentRecordId,
             recordNo: recordNoInput,
             modifiedAt: entry?.modifiedAt,

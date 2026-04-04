@@ -3,6 +3,10 @@ import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.
 import { MAX_DEPTH } from "./constants.js";
 import { normalizePhoneSettings } from "./phone.js";
 import { traverseSchema, countSchemaNodes } from "./schemaUtils.js";
+import {
+  normalizePrintTemplateAction,
+  resolvePrintTemplateFieldLabel,
+} from "../utils/printTemplateAction.js";
 export { countSchemaNodes };
 
 const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" : label || "");
@@ -103,25 +107,13 @@ const normalizeNumberFieldSettings = (field) => {
   return field;
 };
 
-const normalizePrintTemplateSettings = (value) => {
-  const base = value && typeof value === "object" ? value : {};
-  return {
-    enabled: base.enabled === true,
-    templateUrl: typeof base.templateUrl === "string" ? base.templateUrl : "",
-    fileNameTemplate: typeof base.fileNameTemplate === "string" ? base.fileNameTemplate : "",
-    outputType: "googleDoc",
-    buttonLabel: typeof base.buttonLabel === "string" ? base.buttonLabel : "",
-  };
-};
-
-
 export const deepClone = (value) => {
   if (typeof structuredClone === "function") return structuredClone(value);
   return JSON.parse(JSON.stringify(value));
 };
 
 const buildMigratedPrintTemplateField = (sourceField, sourceFieldId) => {
-  const normalizedAction = normalizePrintTemplateSettings(sourceField?.printTemplateAction);
+  const normalizedAction = normalizePrintTemplateAction(sourceField?.printTemplateAction);
   if (!normalizedAction.enabled) return null;
 
   const baseLabel = typeof sourceField?.label === "string" && sourceField.label.trim()
@@ -200,7 +192,7 @@ export const cleanUnusedFieldProperties = (field) => {
   }
   if (supportsPrintTemplateAction) {
     field.printTemplateAction = {
-      ...normalizePrintTemplateSettings(field.printTemplateAction),
+      ...normalizePrintTemplateAction(field.printTemplateAction),
       enabled: true,
     };
   } else {
@@ -281,9 +273,9 @@ export const normalizeSchemaIDs = (nodes) => {
     } else if (base.type === "fileUpload") {
       base.allowUploadByUrl = normalizeBooleanSetting(base.allowUploadByUrl, false);
     } else if (base.type === "printTemplate") {
-      base.label = typeof base.label === "string" && base.label.trim() ? base.label : "様式出力";
+      base.label = typeof base.label === "string" ? base.label : "";
       base.printTemplateAction = {
-        ...normalizePrintTemplateSettings(base.printTemplateAction),
+        ...normalizePrintTemplateAction(base.printTemplateAction),
         enabled: true,
       };
     }
@@ -418,6 +410,8 @@ export const validateRequiredLabels = (fields, { responses = null, visibleOnly =
   traverseSchema(fields, (field, context) => {
     if (visibleOnly && field?.isDisplayed !== true) return false;
 
+    if (field?.type === "printTemplate") return;
+
     const label = (field?.label || "").trim();
     if (!label) {
       emptyLabels.push({ path: context.pathSegments.join(" > ") });
@@ -437,3 +431,5 @@ export const computeSchemaHash = (schema) => {
   }
   return `v1-${Math.abs(hash)}`;
 };
+
+export { resolvePrintTemplateFieldLabel };

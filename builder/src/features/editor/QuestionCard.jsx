@@ -5,6 +5,12 @@ import { genId } from "../../core/ids.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings, STYLE_TEXT_COLORS } from "../../core/styleSettings.js";
 import { buildPhonePattern, getStandardPhonePlaceholder, normalizePhoneSettings } from "../../core/phone.js";
+import {
+  getPrintTemplateOutputLabel,
+  normalizePrintTemplateAction,
+  PRINT_TEMPLATE_OUTPUT_OPTIONS,
+  PRINT_TEMPLATE_OUTPUT_TYPES,
+} from "../../utils/printTemplateAction.js";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
 const CHOICE_TYPES = ["radio", "select", "checkboxes"];
@@ -88,13 +94,9 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
       next.allowUploadByUrl = next.allowUploadByUrl ?? false;
     }
     if (newType === PRINT_TEMPLATE_TYPE) {
-      next.label = next.label || "様式出力";
       next.printTemplateAction = {
+        ...normalizePrintTemplateAction(next.printTemplateAction),
         enabled: true,
-        templateUrl: typeof next.printTemplateAction?.templateUrl === "string" ? next.printTemplateAction.templateUrl : "",
-        fileNameTemplate: typeof next.printTemplateAction?.fileNameTemplate === "string" ? next.printTemplateAction.fileNameTemplate : "",
-        outputType: "googleDoc",
-        buttonLabel: typeof next.printTemplateAction?.buttonLabel === "string" ? next.printTemplateAction.buttonLabel : "",
       };
     }
     saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
@@ -443,7 +445,7 @@ export default function QuestionCard({
   latestFieldRef.current = field;
   latestOnChangeRef.current = onChange;
   const isDisplayed = resolveIsDisplayed(field);
-  const printTemplateAction = field.printTemplateAction || {};
+  const printTemplateAction = normalizePrintTemplateAction(field.printTemplateAction);
 
   const handleDisplayToggle = (checked) => {
     const nextField = { ...field };
@@ -605,34 +607,61 @@ export default function QuestionCard({
       {isPrintTemplate && (
         <div className="nf-mt-8">
           <div className="nf-col nf-gap-8">
-            <input
+            <div className="nf-text-12 nf-text-subtle">未入力時の表示名は {getPrintTemplateOutputLabel(printTemplateAction)} です。</div>
+            <select
               className={s.input.className}
-              placeholder="ボタン名（例: 見積書を開く）"
-              value={printTemplateAction.buttonLabel || ""}
+              value={printTemplateAction.outputType}
               onChange={(event) => onChange({
                 ...field,
-                printTemplateAction: { ...printTemplateAction, buttonLabel: event.target.value, enabled: true },
+                printTemplateAction: {
+                  ...printTemplateAction,
+                  outputType: event.target.value,
+                  enabled: true,
+                },
               })}
-            />
+            >
+              {PRINT_TEMPLATE_OUTPUT_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            {printTemplateAction.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
+              <label className="nf-row nf-gap-6">
+                <input
+                  type="checkbox"
+                  checked={!!printTemplateAction.useCustomTemplate}
+                  onChange={(event) => onChange({
+                    ...field,
+                    printTemplateAction: {
+                      ...printTemplateAction,
+                      useCustomTemplate: event.target.checked,
+                      enabled: true,
+                    },
+                  })}
+                />
+                カスタムテンプレートを使う
+              </label>
+            )}
+            {printTemplateAction.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && printTemplateAction.useCustomTemplate && (
+              <input
+                className={s.input.className}
+                placeholder="テンプレートURL（Google Document URL）"
+                value={printTemplateAction.templateUrl || ""}
+                onChange={(event) => onChange({
+                  ...field,
+                  printTemplateAction: { ...printTemplateAction, templateUrl: event.target.value, enabled: true },
+                })}
+              />
+            )}
             <input
               className={s.input.className}
-              placeholder="様式URL（Google DriveファイルURL）"
-              value={printTemplateAction.templateUrl || ""}
-              onChange={(event) => onChange({
-                ...field,
-                printTemplateAction: { ...printTemplateAction, templateUrl: event.target.value, enabled: true },
-              })}
-            />
-            <input
-              className={s.input.className}
-              placeholder="出力ファイル名（例: {ID}_帳票）"
+              placeholder={printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL ? "PDFファイル名（例: {ID}_送信用PDF）" : "出力ファイル名（例: {ID}_帳票）"}
               value={printTemplateAction.fileNameTemplate || ""}
               onChange={(event) => onChange({
                 ...field,
                 printTemplateAction: { ...printTemplateAction, fileNameTemplate: event.target.value, enabled: true },
               })}
             />
-            <div className="nf-text-11 nf-text-muted">{"Google Document テンプレート本文と出力ファイル名で {フィールド名}/{ID}/日付トークンを使えます。中括弧を残す場合は \\{ を使ってください。"}</div>
+            <div className="nf-text-11 nf-text-muted">{"テンプレート本文と出力ファイル名で {フィールド名}/{ID}/日付トークンを使えます。Gmail 本文では {_record_url} / {_folder_url} / {_PDF} を使えます。"}</div>
           </div>
         </div>
       )}

@@ -3,6 +3,7 @@ import AlertDialog from "../components/AlertDialog.jsx";
 
 export const AlertContext = createContext(null);
 const DEFAULT_TOAST_DURATION_MS = 20000;
+const OUTPUT_ALERT_DURATION_MS = 24 * 60 * 60 * 1000;
 
 const normalizeMessage = (message) =>
   message === undefined || message === null
@@ -50,9 +51,21 @@ export function AlertProvider({ children }) {
     enqueueAlert(message, { title, durationMs });
   }, [enqueueAlert]);
 
+  const showOutputAlert = useCallback(({ title = "出力完了", message = "", url = "", linkLabel = "開く" } = {}) => {
+    const content = url ? (
+      <div className="nf-col nf-gap-8">
+        <div>{normalizeMessage(message)}</div>
+        <a href={url} target="_blank" rel="noopener noreferrer" className="nf-link nf-fw-600">
+          {linkLabel}
+        </a>
+      </div>
+    ) : normalizeMessage(message);
+    enqueueAlert(content, { title, durationMs: OUTPUT_ALERT_DURATION_MS });
+  }, [enqueueAlert]);
+
   const value = useMemo(
-    () => ({ showAlert, showToast }),
-    [showAlert, showToast],
+    () => ({ showAlert, showToast, showOutputAlert }),
+    [showAlert, showToast, showOutputAlert],
   );
 
   return (

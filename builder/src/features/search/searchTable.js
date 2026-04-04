@@ -10,6 +10,7 @@ import {
 import { isChoiceMarkerValue } from "../../utils/responses.js";
 import { MAX_DEPTH as MAX_HEADER_DEPTH } from "../../core/constants.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
+import { getPrintTemplateOutputLabel, normalizePrintTemplateAction } from "../../utils/printTemplateAction.js";
 
 export { MAX_HEADER_DEPTH };
 
@@ -361,6 +362,8 @@ const createDisplayColumn = (path, sourceType = "", options = {}) => {
   const limitedSegments = normalizedSegments.slice(0, MAX_HEADER_DEPTH);
   const key = options.key || `display:${path}`;
   const optionOrder = Array.isArray(options.optionOrder) ? options.optionOrder : null;
+  const actionKind = options.actionKind || "";
+  const action = options.action || null;
   return {
     key,
     segments: limitedSegments.length > 0 ? limitedSegments : ["回答"],
@@ -370,8 +373,29 @@ const createDisplayColumn = (path, sourceType = "", options = {}) => {
     sourceType,
     optionOrder,
     fieldId: options.fieldId || "",
+    actionKind,
+    action,
     searchAliases: Array.isArray(options.searchAliases) ? options.searchAliases.filter(Boolean) : [],
-    getValue: (entry, column) => collectFieldValue(entry, path, column),
+    getValue: (entry, column) => {
+      if (actionKind === "folderLink") {
+        const folderUrl = typeof entry?.driveFolderUrl === "string" ? entry.driveFolderUrl.trim() : "";
+        return {
+          display: folderUrl ? "フォルダを開く" : "",
+          search: normalizeSearchText(folderUrl),
+          sort: folderUrl,
+          url: folderUrl,
+        };
+      }
+      if (actionKind === "printTemplate") {
+        const label = getPrintTemplateOutputLabel(action);
+        return {
+          display: label,
+          search: normalizeSearchText(label),
+          sort: label,
+        };
+      }
+      return collectFieldValue(entry, path, column);
+    },
   };
 };
 
@@ -398,6 +422,16 @@ const collectChoiceOptionOrderByPath = (schema) => {
   return optionOrderByPath;
 };
 
+const collectFieldMetaById = (schema) => {
+  const map = new Map();
+  traverseSchema(schema || [], (field) => {
+    const fieldId = typeof field?.id === "string" ? field.id.trim() : "";
+    if (!fieldId) return;
+    map.set(fieldId, field);
+  });
+  return map;
+};
+
 const resolveDisplayFieldSettings = (form) => {
   const schema = form?.schema || [];
   const collected = collectDisplayFieldSettings(schema);
@@ -415,8 +449,7 @@ const resolveDisplayFieldSettings = (form) => {
         type: item.type || resolveTypeByPath(String(item.path)),
         optionOrder: optionOrderByPath.get(String(item.path)) || null,
         fieldId: fieldIdByPath.get(String(item.path)) || "",
-      }))
-      .filter((item) => item.type !== "printTemplate");
+      }));
   }
 
   return collected
@@ -447,9 +480,24 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
     if (!showSearchModifiedAt && col.key === "modifiedAt") return false;
     return true;
   }));
+  const fieldMetaById = collectFieldMetaById(form?.schema || []);
   const parentColumns = [];
   resolveDisplayFieldSettings(form).forEach(({ path, type, optionOrder, fieldId }) => {
     if (!path) return;
+    const fieldMeta = fieldMetaById.get(fieldId) || null;
+    if (type === "fileUpload") {
+      parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId, actionKind: "folderLink" }));
+      return;
+    }
+    if (type === "printTemplate") {
+      parentColumns.push(createDisplayColumn(path, type, {
+        optionOrder,
+        fieldId,
+        actionKind: "printTemplate",
+        action: normalizePrintTemplateAction(fieldMeta?.printTemplateAction),
+      }));
+      return;
+    }
     parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId }));
   });
   const columns = [...metaColumns, ...parentColumns];

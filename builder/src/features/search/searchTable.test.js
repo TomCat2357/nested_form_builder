@@ -136,27 +136,29 @@ test("検索列は除外指定したメッセージをdisplayFieldSettingsに残
   assert.deepEqual(fieldPaths, ["氏名"]);
 });
 
-test("検索列は printTemplate をdisplayFieldSettingsに残っていても含めない", () => {
+test("検索列は printTemplate をdisplayFieldSettingsに残っていれば型別アクション列として含める", () => {
   const form = {
     settings: {},
     schema: [
       { type: "text", label: "氏名", isDisplayed: true },
       {
         type: "printTemplate",
-        label: "様式出力",
+        label: "",
         isDisplayed: true,
-        printTemplateAction: { enabled: true, fileNameTemplate: "print_${recordId}" },
+        printTemplateAction: { enabled: true, outputType: "gmail", fileNameTemplate: "print_${recordId}" },
       },
     ],
     displayFieldSettings: [
       { path: "氏名", type: "text" },
-      { path: "様式出力", type: "printTemplate" },
+      { path: "Gmail", type: "printTemplate" },
     ],
   };
 
   const layout = buildSearchTableLayout(form, { includeOperations: false });
   const fieldPaths = layout.columns.filter((column) => column?.path).map((column) => column.path);
-  assert.deepEqual(fieldPaths, ["氏名"]);
+  assert.deepEqual(fieldPaths, ["氏名", "Gmail"]);
+  const actionColumn = layout.columns.find((column) => column.path === "Gmail");
+  assert.equal(actionColumn?.actionKind, "printTemplate");
 });
 
 test("検索結果エクスポートの多段ヘッダーは除外指定したメッセージを含めない", () => {

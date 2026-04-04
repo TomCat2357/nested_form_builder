@@ -212,6 +212,9 @@ export const createRecordPrintDocument = (payload) => {
   return fetchGasApi("nfbCreateRecordPrintDocument", payload, "印刷様式の出力に失敗しました");
 };
 
+export const executeRecordOutputAction = (payload) =>
+  fetchGasApi("nfbExecuteRecordOutputAction", payload, "出力処理に失敗しました");
+
 export const syncRecordsProxy = async (payload) => {
   const spreadsheetId = normalizeSpreadsheetId(payload?.spreadsheetId);
   if (!spreadsheetId) throw new Error("spreadsheetId is required");

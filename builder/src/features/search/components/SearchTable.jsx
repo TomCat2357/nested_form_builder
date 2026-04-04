@@ -18,6 +18,7 @@ export default function SearchTable({
   onSelectAll,
   onToggleSelect,
   onRowClick,
+  onCellAction,
 }) {
   const handleCopyId = async (event, id) => {
     event.stopPropagation();
@@ -32,7 +33,7 @@ export default function SearchTable({
     }
   };
 
-  const renderCellContent = (column, rawDisplayText) => {
+  const renderCellContent = (column, rawDisplayText, row) => {
     const limitedText = applyDisplayLengthLimit(rawDisplayText || "", cellDisplayLimit);
     const isUrl = column.sourceType === "url" && rawDisplayText;
     const isRecordIdColumn = column.key === "id";
@@ -64,6 +65,22 @@ export default function SearchTable({
         >
           {limitedText}
         </a>
+      );
+    }
+
+    if (column.actionKind && rawDisplayText) {
+      return (
+        <button
+          type="button"
+          className="nf-link nf-text-left"
+          style={{ padding: 0, border: "none", background: "none", cursor: "pointer" }}
+          onClick={(event) => {
+            event.stopPropagation();
+            onCellAction?.(column, row?.entry);
+          }}
+        >
+          {limitedText}
+        </button>
       );
     }
 
@@ -206,7 +223,7 @@ export default function SearchTable({
                     const rawDisplayText = values[column.key]?.display ?? "";
                     return (
                       <td key={`${entry.id}_${column.key}`} className="search-td">
-                        {renderCellContent(column, rawDisplayText)}
+                        {renderCellContent(column, rawDisplayText, row)}
                       </td>
                     );
                   })}

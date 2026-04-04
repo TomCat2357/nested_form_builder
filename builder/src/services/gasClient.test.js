@@ -3,6 +3,7 @@ import { test } from "node:test";
 import {
   createGoogleDocumentFromTemplate,
   createRecordPrintDocument,
+  executeRecordOutputAction,
   finalizeRecordDriveFolder,
   listForms,
   syncRecordsProxy,
@@ -256,6 +257,35 @@ test("finalizeRecordDriveFolder は trashFileIds を含む payload をそのま�
     assert.equal(result.autoCreated, false);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].functionName, "nfbFinalizeRecordDriveFolder");
+    assert.deepEqual(calls[0].payload, payload);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});
+
+test("executeRecordOutputAction は nfbExecuteRecordOutputAction を呼び出す", async () => {
+  const originalGoogle = globalThis.google;
+  const payload = {
+    action: { outputType: "gmail", enabled: true, fileNameTemplate: "{ID}_mail" },
+    settings: { gmailTemplateSubject: "{ID} のご案内" },
+    recordContext: { formId: "form_1", recordId: "rec001" },
+    driveSettings: { recordId: "rec001", fileNameTemplate: "{ID}_mail" },
+  };
+  const { run, calls } = createGoogleScriptRunStub({
+    nfbExecuteRecordOutputAction: (receivedPayload) => ({
+      ok: true,
+      openUrl: "https://mail.google.com/mail/u/0/#drafts",
+      payload: receivedPayload,
+    }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    const result = await executeRecordOutputAction(payload);
+    assert.equal(result.ok, true);
+    assert.equal(result.openUrl, "https://mail.google.com/mail/u/0/#drafts");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].functionName, "nfbExecuteRecordOutputAction");
     assert.deepEqual(calls[0].payload, payload);
   } finally {
     globalThis.google = originalGoogle;

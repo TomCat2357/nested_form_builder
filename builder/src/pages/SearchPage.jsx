@@ -19,12 +19,19 @@ import {
 import {
   buildPrintDocumentBundlePayload,
   buildPrintDocumentPayload,
+  buildFieldLabelsMap,
+  buildFieldValuesMap,
   resolveOmitEmptyRowsOnPrint,
 } from "../features/preview/printDocument.js";
 import { createExcelBlob, getThemeColors } from "../utils/excelExport.js";
 import { restoreResponsesFromData } from "../utils/responses.js";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
-import { createRecordPrintDocument, saveExcelToDrive } from "../services/gasClient.js";
+import {
+  createRecordPrintDocument,
+  executeRecordOutputAction,
+  findDriveFileInFolder,
+  saveExcelToDrive,
+} from "../services/gasClient.js";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import SearchSidebar from "../features/search/components/SearchSidebar.jsx";
 import SearchTable from "../features/search/components/SearchTable.jsx";
@@ -49,7 +56,7 @@ export default function SearchPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const { showAlert } = useAlert();
+  const { showAlert, showOutputAlert } = useAlert();
   const queryFormId = (searchParams.get("form") || "").trim();
   const effectiveFormId = queryFormId || scopedFormId;
   const isScopedByAuth = scopedFormId !== "";
@@ -64,6 +71,7 @@ export default function SearchPage() {
   const form = useMemo(() => (effectiveFormId ? getFormById(effectiveFormId) : null), [effectiveFormId, getFormById]);
   const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form?.schema]);
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
+  const fieldLabels = useMemo(() => buildFieldLabelsMap(normalizedSchema), [normalizedSchema]);
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
   const query = searchParams.get("q") || "";
   const page = Math.max(1, Number(searchParams.get("page") || 1));
@@ -280,15 +288,7 @@ export default function SearchPage() {
 
       const result = await saveExcelToDrive({ filename, base64: base64data });
 
-      showAlert(
-        <div className="nf-col nf-gap-8">
-          <div>マイドライブにエクセルファイルを保存しました。</div>
-          <a href={result.fileUrl} target="_blank" rel="noopener noreferrer" className="nf-link nf-fw-600">
-            ファイルを開く
-          </a>
-        </div>,
-        "出力完了"
-      );
+      showOutputAlert({ message: "マイドライブにエクセルファイルを保存しました。", url: result.fileUrl, linkLabel: "ファイルを開く" });
     } catch (err) {
       console.error(err);
       showAlert(`出力に失敗しました: ${err.message}`);
@@ -308,6 +308,7 @@ export default function SearchPage() {
           responses: restoredResponses,
           settings: {
             ...(form?.settings || {}),
+            formId: form?.id || "",
             recordNo: entry?.["No."],
             modifiedAt: entry?.modifiedAt,
             modifiedAtUnixMs: entry?.modifiedAtUnixMs,
@@ -323,15 +324,7 @@ export default function SearchPage() {
         exportedAt,
       });
       const result = await createRecordPrintDocument(payload);
-      showAlert(
-        <div className="nf-col nf-gap-8">
-          <div>マイドライブに Google ドキュメントを保存しました。</div>
-          <a href={result.fileUrl} target="_blank" rel="noopener noreferrer" className="nf-link nf-fw-600">
-            ファイルを開く
-          </a>
-        </div>,
-        "出力完了",
-      );
+      showOutputAlert({ message: "マイドライブに Google ドキュメントを保存しました。", url: result.fileUrl, linkLabel: "ファイルを開く" });
     } catch (error) {
       console.error("[SearchPage] failed to create print document:", error);
       showAlert(`印刷様式の出力に失敗しました: ${error?.message || error}`);
@@ -340,10 +333,108 @@ export default function SearchPage() {
     }
   }, [
     form?.settings,
+    form?.id,
     normalizedSchema,
     omitEmptyRowsOnPrint,
     selectedPrintableRows,
     showAlert,
+  ]);
+
+  const handleCellAction = useCallback(async (column, entry) => {
+    if (!column || !entry) return;
+
+    if (column.actionKind === "folderLink") {
+      if (!entry.driveFolderUrl) {
+        showAlert("保存先フォルダが未確定です。");
+        return;
+      }
+      window.open(entry.driveFolderUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    if (column.actionKind !== "printTemplate") return;
+
+    const action = column.action || {};
+    const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
+    const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
+    const driveSettings = {
+      rootFolderUrl: form?.settings?.driveRootFolderUrl || "",
+      folderNameTemplate: form?.settings?.driveFolderNameTemplate || "",
+      formId: form?.id || "",
+      recordId: entry.id,
+      folderUrl: entry.driveFolderUrl || "",
+      responses: restoredResponses,
+      fieldLabels,
+      fieldValues,
+      fileNameTemplate: action.fileNameTemplate || "",
+    };
+
+    if (action.outputType === "gmail") {
+      const result = await executeRecordOutputAction({
+        action,
+        settings: {
+          standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
+          gmailTemplateTo: form?.settings?.gmailTemplateTo || "",
+          gmailTemplateCc: form?.settings?.gmailTemplateCc || "",
+          gmailTemplateBcc: form?.settings?.gmailTemplateBcc || "",
+          gmailTemplateSubject: form?.settings?.gmailTemplateSubject || "",
+          gmailTemplateBody: form?.settings?.gmailTemplateBody || "",
+        },
+        recordContext: {
+          formTitle: form?.settings?.formTitle || "",
+          formId: form?.id || "",
+          recordId: entry.id,
+          recordNo: entry?.["No."] || "",
+          modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
+          printPayload: buildPrintDocumentPayload({
+            schema: normalizedSchema,
+            responses: restoredResponses,
+            settings: {
+              ...(form?.settings || {}),
+              formId: form?.id || "",
+              recordNo: entry?.["No."],
+              modifiedAt: entry?.modifiedAt,
+              modifiedAtUnixMs: entry?.modifiedAtUnixMs,
+            },
+            recordId: entry.id,
+            omitEmptyRows: omitEmptyRowsOnPrint,
+            driveFolderState: {
+              resolvedUrl: entry.driveFolderUrl || "",
+              inputUrl: entry.driveFolderUrl || "",
+            },
+            useTemporaryFolder: true,
+          }),
+        },
+        driveSettings,
+      });
+      if (result?.openUrl) {
+        window.open(result.openUrl, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
+
+    if (!entry.driveFolderUrl) {
+      showAlert("保存先フォルダが未確定です。");
+      return;
+    }
+
+    const found = await findDriveFileInFolder({
+      fileNameTemplate: action.fileNameTemplate || "",
+      driveSettings,
+    });
+    if (!found?.found || !found?.fileUrl) {
+      showAlert("該当ファイルが見つかりませんでした。");
+      return;
+    }
+    window.open(found.fileUrl, "_blank", "noopener,noreferrer");
+  }, [
+    fieldLabels,
+    form?.id,
+    form?.settings,
+    normalizedSchema,
+    omitEmptyRowsOnPrint,
+    showAlert,
+    showOutputAlert,
   ]);
 
   const handleCreatePrintDocument = useCallback(async () => {
@@ -456,6 +547,7 @@ export default function SearchPage() {
           onSelectAll={selectAllEntries}
           onToggleSelect={toggleSelectEntry}
           onRowClick={handleRowClick}
+          onCellAction={handleCellAction}
         />
       )}
 

@@ -21,6 +21,7 @@ import {
   isTextareaField,
   toSelectedChoiceLabels,
 } from "./printDocument.js";
+import { getPrintTemplateOutputLabel, normalizePrintTemplateAction } from "../../utils/printTemplateAction.js";
 import FileUploadField from "./FileUploadField.jsx";
 
 const resolveConfiguredPlaceholder = (field, fallback = "") => {
@@ -135,7 +136,7 @@ const FieldRenderer = ({
           className="nf-btn-outline nf-text-13"
           onClick={() => onTemplateAction?.(field)}
         >
-          {field?.printTemplateAction?.buttonLabel || "様式を開く"}
+          {getPrintTemplateOutputLabel(field?.printTemplateAction)}
         </button>
       </div>
     );
@@ -545,8 +546,9 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const driveSettings = useMemo(() => ({
     rootFolderUrl: settings.driveRootFolderUrl || "",
     folderNameTemplate: settings.driveFolderNameTemplate || "",
+    formId: settings.formId || "",
     recordId: recordIdRef.current,
-  }), [settings.driveRootFolderUrl, settings.driveFolderNameTemplate]);
+  }), [settings.driveRootFolderUrl, settings.driveFolderNameTemplate, settings.formId]);
 
   const [isSaving, setIsSaving] = useState(false);
   const updateDriveFolderStateFromPrintResult = (result) => {
@@ -568,12 +570,15 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     });
   };
   const handleFieldTemplateAction = async (field) => {
-    const action = field?.printTemplateAction || {};
+    const action = normalizePrintTemplateAction(field?.printTemplateAction);
     if (!action.enabled) return;
-    const sourceUrl = String(action.templateUrl || "").trim();
     const fileNameTemplate = String(action.fileNameTemplate || "").trim();
-    if (!sourceUrl || !fileNameTemplate) {
-      showAlert("様式URLと出力ファイル名を設定してください");
+    if (!fileNameTemplate) {
+      showAlert("出力ファイル名を設定してください");
+      return;
+    }
+    if (action.useCustomTemplate && !String(action.templateUrl || "").trim()) {
+      showAlert("カスタムテンプレートURLを設定してください");
       return;
     }
     const effectiveFolderUrl = resolveEffectiveDriveFolderUrl(driveFolderState);
@@ -586,14 +591,37 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       fieldValues,
     };
     try {
-      const copied = await gasClientRef.current.createGoogleDocumentFromTemplate({
-        sourceUrl,
-        fileNameTemplate,
-        driveSettings: baseDriveTemplateSettings,
+      const result = await gasClientRef.current.executeRecordOutputAction({
+        action,
+        settings: {
+          standardPrintTemplateUrl: settings.standardPrintTemplateUrl || "",
+          gmailTemplateTo: settings.gmailTemplateTo || "",
+          gmailTemplateCc: settings.gmailTemplateCc || "",
+          gmailTemplateBcc: settings.gmailTemplateBcc || "",
+          gmailTemplateSubject: settings.gmailTemplateSubject || "",
+          gmailTemplateBody: settings.gmailTemplateBody || "",
+        },
+        recordContext: {
+          formTitle,
+          formId: settings.formId || "",
+          recordId: recordIdRef.current,
+          recordNo: settings.recordNo || "",
+          modifiedAt: settings.modifiedAtUnixMs ?? settings.modifiedAt ?? "",
+          printPayload: getPrintDocumentPayload({
+            driveFolderState,
+            useTemporaryFolder: true,
+          }),
+        },
+        driveSettings: {
+          ...baseDriveTemplateSettings,
+          fileNameTemplate,
+        },
       });
-      if (copied?.fileUrl) {
-        updateDriveFolderStateFromPrintResult(copied);
-        window.location.assign(copied.fileUrl);
+      if (result?.fileId || result?.folderUrl) {
+        updateDriveFolderStateFromPrintResult(result);
+      }
+      if (result?.openUrl) {
+        window.open(result.openUrl, "_blank", "noopener,noreferrer");
       }
     } catch (error) {
       showAlert(`様式出力に失敗しました: ${error?.message || error}`);

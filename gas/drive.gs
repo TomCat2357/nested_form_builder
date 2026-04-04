@@ -76,6 +76,37 @@ function nfbCreateRecordPrintDocument(payload) {
     var normalizedPayload = nfbNormalizePrintDocumentPayload_(payload);
     var outputFolderUrl = "";
     var outputAutoCreated = false;
+    if (payload && payload.templateSourceUrl && normalizedPayload.records.length === 1) {
+      var templateDriveSettings = payload.driveSettings || {};
+      var templateFolderResult = templateDriveSettings.useTemporaryFolder
+        ? nfbResolveUploadFolder_(templateDriveSettings)
+        : { folder: nfbResolveOrCreateFolder_(templateDriveSettings, nfbBuildDriveTemplateContext_(templateDriveSettings)), autoCreated: false };
+      var templateFolder = templateFolderResult.folder;
+      var templateContext = nfbBuildRecordOutputContext_({
+        driveSettings: templateDriveSettings,
+        recordContext: {
+          formId: payload.formId || "",
+          formTitle: payload.formTitle || "",
+          recordId: payload.recordId || "",
+          recordNo: payload.recordNo || "",
+          modifiedAt: payload.modifiedAt || ""
+        }
+      }, templateFolder.getUrl());
+      var templatedFile = nfbCreateGoogleDocumentFileFromTemplate_(
+        String(payload.templateSourceUrl),
+        templateFolder,
+        normalizedPayload.fileName,
+        templateContext
+      );
+      return {
+        ok: true,
+        fileUrl: templatedFile.getUrl(),
+        fileName: templatedFile.getName(),
+        fileId: templatedFile.getId(),
+        folderUrl: templateFolder.getUrl(),
+        autoCreated: templateFolderResult.autoCreated === true
+      };
+    }
 
     var doc = DocumentApp.create(normalizedPayload.fileName);
     var body = doc.getBody();
@@ -134,6 +165,209 @@ function nfbCreateRecordPrintDocument(payload) {
       autoCreated: outputAutoCreated
     };
   });
+}
+
+function nfbExecuteRecordOutputAction(payload) {
+  return nfbSafeCall_(function() {
+    var action = payload && payload.action ? payload.action : {};
+    var outputType = action.outputType === "pdf" ? "pdf" : (action.outputType === "gmail" ? "gmail" : "googleDoc");
+    var driveSettings = payload && payload.driveSettings ? payload.driveSettings : {};
+    var fileNameTemplate = driveSettings && driveSettings.fileNameTemplate
+      ? String(driveSettings.fileNameTemplate).trim()
+      : (action && action.fileNameTemplate ? String(action.fileNameTemplate).trim() : "");
+    if (!fileNameTemplate) {
+      throw new Error("出力ファイル名が指定されていません");
+    }
+
+    var folderResult = nfbResolveUploadFolder_(driveSettings);
+    var folder = folderResult.folder;
+    var outputContext = nfbBuildRecordOutputContext_(payload, folder.getUrl());
+    var finalBaseName = nfbResolveTemplate_(fileNameTemplate, outputContext) || ("record_" + outputContext.recordId);
+
+    if (outputType === "gmail") {
+      return nfbCreateGmailDraftOutput_(payload, action, folder, folderResult, outputContext, finalBaseName);
+    }
+
+    if (outputType === "pdf") {
+      return nfbCreatePdfOutput_(payload, action, folder, folderResult, outputContext, finalBaseName);
+    }
+
+    return nfbCreateGoogleDocumentOutput_(payload, action, folder, folderResult, outputContext, finalBaseName);
+  });
+}
+
+function nfbBuildRecordOutputContext_(payload, folderUrl) {
+  var driveSettings = payload && payload.driveSettings ? payload.driveSettings : {};
+  var recordContext = payload && payload.recordContext ? payload.recordContext : {};
+  var now = new Date();
+  var formId = recordContext.formId || driveSettings.formId || "";
+  var recordId = recordContext.recordId || driveSettings.recordId || "";
+  var webAppUrl = ScriptApp.getService().getUrl() || "";
+  var recordUrl = webAppUrl && formId && recordId
+    ? webAppUrl + "?form=" + encodeURIComponent(formId) + "&record=" + encodeURIComponent(recordId)
+    : "";
+
+  return {
+    responses: driveSettings.responses || {},
+    fieldLabels: driveSettings.fieldLabels || {},
+    fieldValues: driveSettings.fieldValues || {},
+    formId: formId,
+    recordId: recordId,
+    recordNo: recordContext.recordNo || "",
+    formTitle: recordContext.formTitle || "",
+    folderUrl: folderUrl || "",
+    recordUrl: recordUrl,
+    now: now
+  };
+}
+
+function nfbResolveRecordOutputTemplateSourceUrl_(payload, action) {
+  if (action && action.useCustomTemplate) {
+    return action.templateUrl ? String(action.templateUrl).trim() : "";
+  }
+  return payload && payload.settings && payload.settings.standardPrintTemplateUrl
+    ? String(payload.settings.standardPrintTemplateUrl).trim()
+    : "";
+}
+
+function nfbCreateGoogleDocumentOutput_(payload, action, folder, folderResult, outputContext, finalBaseName) {
+  var docFile = nfbCreateRecordOutputGoogleDocument_(payload, action, folder, outputContext, finalBaseName);
+  return {
+    ok: true,
+    outputType: "googleDoc",
+    fileUrl: docFile.getUrl(),
+    fileName: docFile.getName(),
+    fileId: docFile.getId(),
+    folderUrl: folder.getUrl(),
+    autoCreated: folderResult.autoCreated === true,
+    openUrl: docFile.getUrl()
+  };
+}
+
+function nfbCreatePdfOutput_(payload, action, folder, folderResult, outputContext, finalBaseName) {
+  var docFile = nfbCreateRecordOutputGoogleDocument_(payload, action, folder, outputContext, finalBaseName + "__tmp");
+  var pdfName = /\.pdf$/i.test(finalBaseName) ? finalBaseName : finalBaseName + ".pdf";
+  nfbTrashExistingFile_(folder, pdfName);
+  var pdfFile = folder.createFile(docFile.getBlob().getAs(MimeType.PDF).setName(pdfName));
+  docFile.setTrashed(true);
+  return {
+    ok: true,
+    outputType: "pdf",
+    fileUrl: pdfFile.getUrl(),
+    fileName: pdfFile.getName(),
+    fileId: pdfFile.getId(),
+    folderUrl: folder.getUrl(),
+    autoCreated: folderResult.autoCreated === true,
+    openUrl: pdfFile.getUrl()
+  };
+}
+
+function nfbCreateGmailDraftOutput_(payload, action, folder, folderResult, outputContext, finalBaseName) {
+  var settings = payload && payload.settings ? payload.settings : {};
+  var to = nfbResolveTemplate_(String(settings.gmailTemplateTo || ""), outputContext);
+  var cc = nfbResolveTemplate_(String(settings.gmailTemplateCc || ""), outputContext);
+  var bcc = nfbResolveTemplate_(String(settings.gmailTemplateBcc || ""), outputContext);
+  var subject = nfbResolveTemplate_(String(settings.gmailTemplateSubject || ""), outputContext);
+  var bodyTemplate = String(settings.gmailTemplateBody || "");
+  var shouldAttachPdf = bodyTemplate.indexOf("{_PDF}") !== -1;
+  var body = nfbResolveTemplateTokens_(
+    bodyTemplate.replace(/\{_PDF\}/g, ""),
+    nfbBuildTemplateReplacementMap_(outputContext),
+    true
+  );
+
+  var attachments = [];
+  var pdfResult = null;
+  if (shouldAttachPdf) {
+    pdfResult = nfbCreatePdfOutput_(payload, action, folder, folderResult, outputContext, finalBaseName);
+    attachments.push(DriveApp.getFileById(pdfResult.fileId).getBlob());
+  }
+
+  var draft = GmailApp.createDraft(to, subject, body, {
+    cc: cc,
+    bcc: bcc,
+    attachments: attachments
+  });
+  var draftId = typeof draft.getId === "function" ? draft.getId() : "";
+  var openUrl = draftId ? ("https://mail.google.com/mail/u/0/#drafts?compose=" + encodeURIComponent(draftId)) : "https://mail.google.com/mail/u/0/#drafts";
+
+  return {
+    ok: true,
+    outputType: "gmail",
+    draftId: draftId,
+    folderUrl: folder.getUrl(),
+    autoCreated: folderResult.autoCreated === true,
+    fileId: pdfResult ? pdfResult.fileId : "",
+    fileUrl: pdfResult ? pdfResult.fileUrl : "",
+    openUrl: openUrl
+  };
+}
+
+function nfbCreateRecordOutputGoogleDocument_(payload, action, folder, outputContext, finalBaseName) {
+  var sourceUrl = nfbResolveRecordOutputTemplateSourceUrl_(payload, action);
+  if (sourceUrl) {
+    return nfbCreateGoogleDocumentFileFromTemplate_(sourceUrl, folder, finalBaseName, outputContext);
+  }
+  return nfbCreateGoogleDocumentFileFromPrintPayload_(payload && payload.recordContext ? payload.recordContext.printPayload : null, folder, finalBaseName);
+}
+
+function nfbCreateGoogleDocumentFileFromTemplate_(sourceUrl, folder, finalBaseName, outputContext) {
+  var parsed = Forms_parseGoogleDriveUrl_(sourceUrl);
+  if (!parsed.id || parsed.type !== "file") {
+    throw new Error("無効なGoogle DriveファイルURLです");
+  }
+
+  var sourceFile;
+  try {
+    sourceFile = DriveApp.getFileById(parsed.id);
+  } catch (accessError) {
+    throw new Error("ソースファイルへのアクセスに失敗しました: " + nfbErrorToString_(accessError));
+  }
+
+  nfbTrashExistingFile_(folder, finalBaseName);
+  var copiedFile = sourceFile.makeCopy(finalBaseName, folder);
+  try {
+    var doc = DocumentApp.openById(copiedFile.getId());
+    nfbApplyTemplateReplacementsToGoogleDocument_(doc, nfbBuildTemplateReplacementMap_(outputContext));
+    doc.saveAndClose();
+  } catch (error) {
+    copiedFile.setTrashed(true);
+    throw new Error("Google ドキュメントテンプレートの差し込みに失敗しました: " + nfbErrorToString_(error));
+  }
+  return copiedFile;
+}
+
+function nfbCreateGoogleDocumentFileFromPrintPayload_(printPayload, folder, finalBaseName) {
+  var normalizedPayload = nfbNormalizePrintDocumentPayload_({
+    fileName: finalBaseName,
+    records: printPayload && Array.isArray(printPayload.records) ? printPayload.records : null,
+    formTitle: printPayload && printPayload.formTitle,
+    formId: printPayload && printPayload.formId,
+    recordId: printPayload && printPayload.recordId,
+    recordNo: printPayload && printPayload.recordNo,
+    modifiedAt: printPayload && printPayload.modifiedAt,
+    showHeader: printPayload && printPayload.showHeader,
+    exportedAtIso: printPayload && printPayload.exportedAtIso,
+    items: printPayload && printPayload.items
+  });
+  var doc = DocumentApp.create(finalBaseName);
+  var body = doc.getBody();
+  if (body && typeof body.clear === "function") {
+    body.clear();
+  }
+  for (var i = 0; i < normalizedPayload.records.length; i++) {
+    nfbWritePrintDocument_(body, normalizedPayload.records[i]);
+    if (i < normalizedPayload.records.length - 1 && body && typeof body.appendPageBreak === "function") {
+      body.appendPageBreak();
+    }
+  }
+  doc.saveAndClose();
+
+  var file = DriveApp.getFileById(doc.getId());
+  nfbTrashExistingFile_(folder, finalBaseName);
+  file.moveTo(folder);
+  file.setName(finalBaseName);
+  return file;
 }
 
 function nfbNormalizePrintDocumentPayload_(payload) {
@@ -403,6 +637,8 @@ function nfbBuildTemplateReplacementMap_(context) {
   var fieldLabels = (context && context.fieldLabels) || {};
   var fieldValues = (context && context.fieldValues) || {};
   var recordId = context && context.recordId ? String(context.recordId).trim() : "";
+  var recordUrl = context && context.recordUrl ? String(context.recordUrl).trim() : "";
+  var folderUrl = context && context.folderUrl ? String(context.folderUrl).trim() : "";
   var dateFormats = {
     "YYYY-MM-DD": "yyyy-MM-dd",
     "HH:mm:ss": "HH:mm:ss",
@@ -419,6 +655,8 @@ function nfbBuildTemplateReplacementMap_(context) {
     replacements["{" + dateKeys[i] + "}"] = Utilities.formatDate(now, tz, dateFormats[dateKeys[i]]);
   }
   replacements["{ID}"] = recordId;
+  replacements["{_record_url}"] = recordUrl;
+  replacements["{_folder_url}"] = folderUrl;
 
   for (var fid in fieldLabels) {
     if (!fieldLabels.hasOwnProperty(fid)) continue;
@@ -504,7 +742,9 @@ function nfbBuildDriveTemplateContext_(driveSettings, context) {
     responses: (driveSettings && driveSettings.responses) || {},
     fieldLabels: (driveSettings && driveSettings.fieldLabels) || {},
     fieldValues: (driveSettings && driveSettings.fieldValues) || {},
+    formId: driveSettings && driveSettings.formId ? String(driveSettings.formId).trim() : "",
     recordId: driveSettings && driveSettings.recordId ? String(driveSettings.recordId).trim() : "",
+    folderUrl: driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "",
     now: new Date()
   };
 }
