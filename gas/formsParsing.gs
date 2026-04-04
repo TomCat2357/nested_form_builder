@@ -12,8 +12,15 @@ function Forms_parseGoogleDriveUrl_(url) {
     return { type: null, id: null };
   }
 
-  // ファイルURL: https://drive.google.com/file/d/{fileId}/view
+  // ファイルURL:
+  // - https://drive.google.com/file/d/{fileId}/view
+  // - https://docs.google.com/document/d/{fileId}/edit
+  // - https://docs.google.com/spreadsheets/d/{fileId}/edit
+  // - https://docs.google.com/presentation/d/{fileId}/edit
   var fileMatch = trimmed.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (!fileMatch) {
+    fileMatch = trimmed.match(/docs\.google\.com\/[^/]+\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/);
+  }
   if (fileMatch) {
     return { type: "file", id: fileMatch[1] };
   }

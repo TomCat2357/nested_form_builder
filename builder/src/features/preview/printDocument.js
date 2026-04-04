@@ -213,6 +213,26 @@ export const buildFieldLabelsMap = (fields, map = {}) => {
   return map;
 };
 
+const assignFieldValues = (fields, responses, map, isActive = true, depth = 0) => {
+  (fields || []).forEach((field, index) => {
+    const fieldId = resolveFieldId(field, depth, index);
+    const normalizedField = { ...field, id: fieldId };
+    const rawValue = isActive ? ((responses || {})[fieldId] ?? (responses || {})[field?.id]) : "";
+    map[fieldId] = isActive ? formatPrintItemValue(normalizedField, rawValue) : "";
+
+    if (!normalizedField?.childrenByValue) return;
+
+    const selectedLabels = isActive ? toSelectedChoiceLabels(normalizedField, rawValue) : [];
+    const selectedSet = new Set(selectedLabels);
+    Object.entries(normalizedField.childrenByValue).forEach(([optionLabel, children]) => {
+      assignFieldValues(children, responses, map, isActive && selectedSet.has(optionLabel), depth + 1);
+    });
+  });
+  return map;
+};
+
+export const buildFieldValuesMap = (fields, responses, map = {}) => assignFieldValues(fields, responses, map);
+
 const resolveDriveFolderUrl = (driveFolderState) => {
   if (!driveFolderState || typeof driveFolderState !== "object") return "";
   const inputUrl = typeof driveFolderState.inputUrl === "string" ? driveFolderState.inputUrl.trim() : "";
@@ -250,6 +270,7 @@ export const buildPrintDocumentPayload = ({
     useTemporaryFolder: !!useTemporaryFolder,
     responses: responses || {},
     fieldLabels: buildFieldLabelsMap(schema),
+    fieldValues: buildFieldValuesMap(schema, responses),
   } : undefined;
 
   return {

@@ -100,6 +100,7 @@ function nfbCreateRecordPrintDocument(payload) {
       var ctx = {
         responses: ds.responses || {},
         fieldLabels: ds.fieldLabels || {},
+        fieldValues: ds.fieldValues || {},
         recordId: ds.recordId || normalizedPayload.records[0].recordId || "",
         now: new Date()
       };
@@ -378,19 +379,30 @@ function nfbStylePrintDocumentParagraph_(paragraph, options) {
 /**
  * テンプレート文字列のプレースホルダーを解決する
  * @param {string} template - テンプレート文字列
- * @param {Object} context - { responses, fieldLabels, now }
+ * @param {Object} context - { responses, fieldLabels, fieldValues, now }
  * @return {string}
  */
-function nfbResolveTemplate_(template, context) {
-  if (!template || typeof template !== "string") return "";
+function nfbTemplateValueToString_(value) {
+  if (value === undefined || value === null) return "";
+  if (Array.isArray(value)) {
+    var parts = [];
+    for (var i = 0; i < value.length; i++) {
+      if (value[i] === undefined || value[i] === null) continue;
+      parts.push(String(value[i]));
+    }
+    return parts.join(", ");
+  }
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+}
 
+function nfbBuildTemplateReplacementMap_(context) {
   var now = context && context.now ? context.now : new Date();
   var tz = Session.getScriptTimeZone();
   var responses = (context && context.responses) || {};
   var fieldLabels = (context && context.fieldLabels) || {};
+  var fieldValues = (context && context.fieldValues) || {};
   var recordId = context && context.recordId ? String(context.recordId).trim() : "";
-
-  // 日時プレースホルダーのマッピング
   var dateFormats = {
     "YYYY-MM-DD": "yyyy-MM-dd",
     "HH:mm:ss": "HH:mm:ss",
@@ -401,62 +413,64 @@ function nfbResolveTemplate_(template, context) {
     "mm": "mm",
     "ss": "ss"
   };
+  var replacements = {};
+  var dateKeys = Object.keys(dateFormats).sort(function(a, b) { return b.length - a.length; });
+  for (var i = 0; i < dateKeys.length; i++) {
+    replacements["{" + dateKeys[i] + "}"] = Utilities.formatDate(now, tz, dateFormats[dateKeys[i]]);
+  }
+  replacements["{ID}"] = recordId;
+
+  for (var fid in fieldLabels) {
+    if (!fieldLabels.hasOwnProperty(fid)) continue;
+    var label = fieldLabels[fid];
+    if (!label) continue;
+    var token = "{" + label + "}";
+    if (replacements.hasOwnProperty(token)) continue;
+    var value = Object.prototype.hasOwnProperty.call(fieldValues, fid) ? fieldValues[fid] : responses[fid];
+    replacements[token] = nfbTemplateValueToString_(value);
+  }
+
+  return replacements;
+}
+
+function nfbResolveTemplateTokens_(template, replacements, removeUnknownPlaceholders) {
+  if (!template || typeof template !== "string") return "";
 
   var escapedOpenBraceToken = "__NFB_ESCAPED_OPEN_BRACE__";
   var escapedCloseBraceToken = "__NFB_ESCAPED_CLOSE_BRACE__";
   var result = String(template)
     .replace(/\\\{/g, escapedOpenBraceToken)
     .replace(/\\\}/g, escapedCloseBraceToken);
-
-  // 日時プレースホルダーを先に解決（長いパターンから）
-  var dateKeys = Object.keys(dateFormats).sort(function(a, b) { return b.length - a.length; });
-  for (var i = 0; i < dateKeys.length; i++) {
-    var key = dateKeys[i];
-    var pattern = "{" + key + "}";
-    if (result.indexOf(pattern) !== -1) {
-      var formatted = Utilities.formatDate(now, tz, dateFormats[key]);
-      result = result.split(pattern).join(formatted);
-    }
+  var tokens = Object.keys(replacements).sort(function(a, b) { return b.length - a.length; });
+  var markerPrefix = "__NFB_TEMPLATE_MARKER__";
+  var markerPairs = [];
+  for (var i = 0; i < tokens.length; i++) {
+    var token = tokens[i];
+    if (result.indexOf(token) === -1) continue;
+    var marker = markerPrefix + i + "__";
+    result = result.split(token).join(marker);
+    markerPairs.push({ marker: marker, value: replacements[token] });
   }
-
-  if (result.indexOf("{ID}") !== -1) {
-    result = result.split("{ID}").join(recordId);
+  for (var j = 0; j < markerPairs.length; j++) {
+    result = result.split(markerPairs[j].marker).join(markerPairs[j].value);
   }
-
-  // フィールドラベルプレースホルダーを解決
-  // fieldLabels は { fieldId: "ラベル" } 形式
-  // ラベル → fieldId の逆引きマップを作成
-  var labelToId = {};
-  for (var fid in fieldLabels) {
-    if (!fieldLabels.hasOwnProperty(fid)) continue;
-    var label = fieldLabels[fid];
-    if (label && !labelToId.hasOwnProperty(label)) {
-      labelToId[label] = fid;
-    }
+  if (removeUnknownPlaceholders !== false) {
+    result = result.replace(/\{([^{}]+)\}/g, "");
   }
-
-  // {ラベル名} パターンを解決
-  result = result.replace(/\{([^{}]+)\}/g, function(match, labelName) {
-    var fieldId = labelToId[labelName];
-    if (fieldId !== undefined) {
-      var val = responses[fieldId];
-      if (val === undefined || val === null) return "";
-      if (Array.isArray(val)) return val.join(", ");
-      if (typeof val === "object") return JSON.stringify(val);
-      return String(val);
-    }
-    return "";
-  });
 
   return result
     .split(escapedOpenBraceToken).join("{")
     .split(escapedCloseBraceToken).join("}");
 }
 
+function nfbResolveTemplate_(template, context) {
+  return nfbResolveTemplateTokens_(template, nfbBuildTemplateReplacementMap_(context), true);
+}
+
 /**
  * driveSettings からフォルダを解決または作成する
- * @param {Object} driveSettings - { rootFolderUrl, folderNameTemplate, responses, fieldLabels }
- * @param {Object} context - { responses, fieldLabels, now }（driveSettingsから構築可能）
+ * @param {Object} driveSettings - { rootFolderUrl, folderNameTemplate, responses, fieldLabels, fieldValues }
+ * @param {Object} context - { responses, fieldLabels, fieldValues, now }（driveSettingsから構築可能）
  * @return {Folder}
  */
 function nfbResolveFolderFromInput_(input) {
@@ -489,6 +503,7 @@ function nfbBuildDriveTemplateContext_(driveSettings, context) {
   return context || {
     responses: (driveSettings && driveSettings.responses) || {},
     fieldLabels: (driveSettings && driveSettings.fieldLabels) || {},
+    fieldValues: (driveSettings && driveSettings.fieldValues) || {},
     recordId: driveSettings && driveSettings.recordId ? String(driveSettings.recordId).trim() : "",
     now: new Date()
   };
@@ -621,6 +636,7 @@ function nfbFinalizeRecordDriveFolder(payload) {
         var resolvedFolderName = nfbResolveTemplate_(folderNameTemplate, {
           responses: payload && payload.responses ? payload.responses : {},
           fieldLabels: payload && payload.fieldLabels ? payload.fieldLabels : {},
+          fieldValues: payload && payload.fieldValues ? payload.fieldValues : {},
           recordId: payload && payload.recordId ? payload.recordId : "",
           now: new Date()
         });
@@ -647,6 +663,67 @@ function nfbTrashExistingFile_(folder, fileName) {
   var existing = folder.getFilesByName(fileName);
   while (existing.hasNext()) {
     existing.next().setTrashed(true);
+  }
+}
+
+function nfbEscapeRegExp_(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function nfbEscapeReplaceTextReplacement_(value) {
+  return String(value === undefined || value === null ? "" : value)
+    .replace(/\\/g, "\\\\")
+    .replace(/\$/g, "\\$");
+}
+
+function nfbApplyTemplateReplacementsToText_(textElement, replacements) {
+  if (!textElement || typeof textElement.replaceText !== "function") return;
+
+  var tokens = Object.keys(replacements).sort(function(a, b) { return b.length - a.length; });
+  var markerPrefix = "__NFB_DOC_TEMPLATE_MARKER__";
+  var markerPairs = [];
+  for (var i = 0; i < tokens.length; i++) {
+    var token = tokens[i];
+    var marker = markerPrefix + i + "__";
+    textElement.replaceText(nfbEscapeRegExp_(token), marker);
+    markerPairs.push({ marker: marker, value: replacements[token] });
+  }
+  for (var j = 0; j < markerPairs.length; j++) {
+    textElement.replaceText(
+      nfbEscapeRegExp_(markerPairs[j].marker),
+      nfbEscapeReplaceTextReplacement_(markerPairs[j].value)
+    );
+  }
+}
+
+function nfbApplyTemplateReplacementsToElement_(element, replacements) {
+  if (!element) return;
+
+  if (typeof element.editAsText === "function") {
+    var textElement = element.editAsText();
+    if (textElement && typeof textElement.getText === "function" && typeof textElement.replaceText === "function") {
+      nfbApplyTemplateReplacementsToText_(textElement, replacements);
+      return;
+    }
+  }
+
+  if (typeof element.getNumChildren === "function" && typeof element.getChild === "function") {
+    for (var i = 0; i < element.getNumChildren(); i++) {
+      nfbApplyTemplateReplacementsToElement_(element.getChild(i), replacements);
+    }
+  }
+}
+
+function nfbApplyTemplateReplacementsToGoogleDocument_(doc, replacements) {
+  if (!doc) return;
+  if (typeof doc.getBody === "function") {
+    nfbApplyTemplateReplacementsToElement_(doc.getBody(), replacements);
+  }
+  if (typeof doc.getHeader === "function") {
+    nfbApplyTemplateReplacementsToElement_(doc.getHeader(), replacements);
+  }
+  if (typeof doc.getFooter === "function") {
+    nfbApplyTemplateReplacementsToElement_(doc.getFooter(), replacements);
   }
 }
 
@@ -717,6 +794,57 @@ function nfbCopyDriveFileToDrive(payload) {
     nfbTrashExistingFile_(folder, finalName);
 
     var copiedFile = sourceFile.makeCopy(finalName, folder);
+
+    return {
+      ok: true,
+      fileUrl: copiedFile.getUrl(),
+      fileName: copiedFile.getName(),
+      fileId: copiedFile.getId(),
+      folderUrl: folder.getUrl(),
+      autoCreated: folderResult.autoCreated === true
+    };
+  });
+}
+
+function nfbCreateGoogleDocumentFromTemplate(payload) {
+  return nfbSafeCall_(function() {
+    if (!payload || !payload.sourceUrl) {
+      throw new Error("ソースファイルのURLが指定されていません");
+    }
+    if (!payload.driveSettings) {
+      throw new Error("出力先設定が不足しています");
+    }
+
+    var parsed = Forms_parseGoogleDriveUrl_(payload.sourceUrl);
+    if (!parsed.id || parsed.type !== "file") {
+      throw new Error("無効なGoogle DriveファイルURLです");
+    }
+
+    var sourceFile;
+    try {
+      sourceFile = DriveApp.getFileById(parsed.id);
+    } catch (accessError) {
+      throw new Error("ソースファイルへのアクセスに失敗しました: " + nfbErrorToString_(accessError));
+    }
+
+    var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
+    var folder = folderResult.folder;
+    var ctx = nfbBuildDriveTemplateContext_(payload.driveSettings);
+    var resolvedName = payload && payload.fileNameTemplate
+      ? nfbResolveTemplate_(String(payload.fileNameTemplate), ctx)
+      : "";
+    var finalName = resolvedName || sourceFile.getName();
+    nfbTrashExistingFile_(folder, finalName);
+
+    var copiedFile = sourceFile.makeCopy(finalName, folder);
+    var doc;
+    try {
+      doc = DocumentApp.openById(copiedFile.getId());
+      nfbApplyTemplateReplacementsToGoogleDocument_(doc, nfbBuildTemplateReplacementMap_(ctx));
+      doc.saveAndClose();
+    } catch (error) {
+      throw new Error("Google ドキュメントテンプレートの差し込みに失敗しました: " + nfbErrorToString_(error));
+    }
 
     return {
       ok: true,

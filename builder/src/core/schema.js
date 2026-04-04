@@ -105,12 +105,11 @@ const normalizeNumberFieldSettings = (field) => {
 
 const normalizePrintTemplateSettings = (value) => {
   const base = value && typeof value === "object" ? value : {};
-  const outputType = typeof base.outputType === "string" && base.outputType.trim() ? base.outputType.trim() : "googleDoc";
   return {
     enabled: base.enabled === true,
     templateUrl: typeof base.templateUrl === "string" ? base.templateUrl : "",
     fileNameTemplate: typeof base.fileNameTemplate === "string" ? base.fileNameTemplate : "",
-    outputType,
+    outputType: "googleDoc",
     buttonLabel: typeof base.buttonLabel === "string" ? base.buttonLabel : "",
   };
 };

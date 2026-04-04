@@ -15,14 +15,6 @@ const PRINT_TEMPLATE_TYPE = "printTemplate";
 const DISPLAY_LABEL = "表示";
 const EMAIL_PLACEHOLDER = "user@example.com";
 const EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL = "一覧・印刷から除外";
-const PRINT_TEMPLATE_OUTPUT_TYPES = [
-  { value: "googleDoc", label: "Googleドキュメント" },
-  { value: "text", label: "テキストファイル" },
-  { value: "pdf", label: "PDF" },
-  { value: "gmail", label: "Gmail様式" },
-  { value: "googleSheet", label: "Googleスプレッドシート" },
-];
-
 const isChoiceType = (type) => CHOICE_TYPES.includes(type);
 const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 const isMessageType = (type) => type === MESSAGE_TYPE;
@@ -101,9 +93,7 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
         enabled: true,
         templateUrl: typeof next.printTemplateAction?.templateUrl === "string" ? next.printTemplateAction.templateUrl : "",
         fileNameTemplate: typeof next.printTemplateAction?.fileNameTemplate === "string" ? next.printTemplateAction.fileNameTemplate : "",
-        outputType: typeof next.printTemplateAction?.outputType === "string" && next.printTemplateAction.outputType
-          ? next.printTemplateAction.outputType
-          : "googleDoc",
+        outputType: "googleDoc",
         buttonLabel: typeof next.printTemplateAction?.buttonLabel === "string" ? next.printTemplateAction.buttonLabel : "",
       };
     }
@@ -642,19 +632,7 @@ export default function QuestionCard({
                 printTemplateAction: { ...printTemplateAction, fileNameTemplate: event.target.value, enabled: true },
               })}
             />
-            <select
-              className={s.input.className}
-              value={printTemplateAction.outputType || "googleDoc"}
-              onChange={(event) => onChange({
-                ...field,
-                printTemplateAction: { ...printTemplateAction, outputType: event.target.value, enabled: true },
-              })}
-            >
-              {PRINT_TEMPLATE_OUTPUT_TYPES.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-            <div className="nf-text-11 nf-text-muted">{"{フィールド名}/{ID} を使えます。中括弧を残す場合は \\{ を使ってください。"}</div>
+            <div className="nf-text-11 nf-text-muted">{"Google Document テンプレート本文と出力ファイル名で {フィールド名}/{ID}/日付トークンを使えます。中括弧を残す場合は \\{ を使ってください。"}</div>
           </div>
         </div>
       )}

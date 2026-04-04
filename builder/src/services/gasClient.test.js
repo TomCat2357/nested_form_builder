@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  createGoogleDocumentFromTemplate,
   createRecordPrintDocument,
   finalizeRecordDriveFolder,
   listForms,
@@ -184,6 +185,45 @@ test("createRecordPrintDocument は一括 payload でも nfbCreateRecordPrintDoc
   }
 });
 
+test("createGoogleDocumentFromTemplate は nfbCreateGoogleDocumentFromTemplate を呼び出す", async () => {
+  const originalGoogle = globalThis.google;
+  const payload = {
+    sourceUrl: "https://docs.google.com/document/d/template123/edit",
+    fileNameTemplate: "{ID}_{氏名}",
+    driveSettings: {
+      recordId: "rec001",
+      responses: { name: "山田 太郎" },
+      fieldLabels: { name: "氏名" },
+      fieldValues: { name: "山田 太郎" },
+    },
+  };
+  const { run, calls } = createGoogleScriptRunStub({
+    nfbCreateGoogleDocumentFromTemplate: (receivedPayload) => ({
+      ok: true,
+      fileUrl: "https://docs.google.com/document/d/generated123/edit",
+      fileName: "rec001_山田 太郎",
+      fileId: "generated123",
+      folderUrl: "https://drive.google.com/drive/folders/folder123",
+      autoCreated: true,
+      payload: receivedPayload,
+    }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    const result = await createGoogleDocumentFromTemplate(payload);
+
+    assert.equal(result.ok, true);
+    assert.equal(result.fileId, "generated123");
+    assert.equal(result.fileUrl, "https://docs.google.com/document/d/generated123/edit");
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].functionName, "nfbCreateGoogleDocumentFromTemplate");
+    assert.deepEqual(calls[0].payload, payload);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});
+
 test("finalizeRecordDriveFolder は trashFileIds を含む payload をそのまま送信する", async () => {
   const originalGoogle = globalThis.google;
   const payload = {
@@ -193,6 +233,7 @@ test("finalizeRecordDriveFolder は trashFileIds を含む payload をそのま�
     folderNameTemplate: "{ID}_資料",
     responses: { name: "山田 太郎" },
     fieldLabels: { name: "氏名" },
+    fieldValues: { name: "山田 太郎" },
     fileIds: ["file_keep_1", "file_print_1"],
     trashFileIds: ["file_old_1"],
     recordId: "rec001",

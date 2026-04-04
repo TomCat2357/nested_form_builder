@@ -14,6 +14,7 @@ import { getStandardPhonePlaceholder } from "../../core/phone.js";
 import {
   buildPrintDocumentPayload,
   buildFieldLabelsMap,
+  buildFieldValuesMap,
   CHOICE_TYPES,
   formatRecordMetaDateTime,
   hasVisibleValue,
@@ -538,6 +539,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const formTitle = settings.formTitle || "受付フォーム";
   const modifiedAtDisplay = formatRecordMetaDateTime(settings.modifiedAtUnixMs ?? settings.modifiedAt);
   const fieldLabels = useMemo(() => buildFieldLabelsMap(schema), [schema]);
+  const fieldValues = useMemo(() => buildFieldValuesMap(schema, responses), [schema, responses]);
 
   const gasClientRef = useRef(gasClientModule);
   const driveSettings = useMemo(() => ({
@@ -581,27 +583,13 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       recordId: recordIdRef.current,
       responses: responses || {},
       fieldLabels,
+      fieldValues,
     };
     try {
-      const existing = await gasClientRef.current.findDriveFileInFolder({
-        fileNameTemplate,
-        driveSettings: baseDriveTemplateSettings,
-      });
-      if (existing?.folderUrl) {
-        updateDriveFolderStateFromPrintResult(existing);
-      }
-      if (existing?.found && existing.fileUrl) {
-        window.location.assign(existing.fileUrl);
-        return;
-      }
-      const resolvedFolderUrl = typeof existing?.folderUrl === "string" ? existing.folderUrl.trim() : "";
-      const copied = await gasClientRef.current.copyDriveFileToDrive({
+      const copied = await gasClientRef.current.createGoogleDocumentFromTemplate({
         sourceUrl,
         fileNameTemplate,
-        driveSettings: {
-          ...baseDriveTemplateSettings,
-          ...(resolvedFolderUrl ? { folderUrl: resolvedFolderUrl } : {}),
-        },
+        driveSettings: baseDriveTemplateSettings,
       });
       if (copied?.fileUrl) {
         updateDriveFolderStateFromPrintResult(copied);

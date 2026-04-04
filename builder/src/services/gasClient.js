@@ -195,6 +195,13 @@ export const copyDriveFileToDrive = ({ sourceUrl, driveSettings, fileNameTemplat
 export const findDriveFileInFolder = ({ fileNameTemplate, driveSettings }) =>
   fetchGasApi("nfbFindDriveFileInFolder", { fileNameTemplate, driveSettings }, "Driveファイルの検索に失敗しました");
 
+export const createGoogleDocumentFromTemplate = ({ sourceUrl, driveSettings, fileNameTemplate }) =>
+  fetchGasApi(
+    "nfbCreateGoogleDocumentFromTemplate",
+    { sourceUrl, driveSettings, fileNameTemplate },
+    "Googleドキュメント様式の出力に失敗しました",
+  );
+
 export const finalizeRecordDriveFolder = (payload) =>
   fetchGasApi("nfbFinalizeRecordDriveFolder", payload, "Driveフォルダの確定に失敗しました");
 

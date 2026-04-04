@@ -133,7 +133,7 @@ test("normalizeSchemaIDs は旧 fileUpload の printTemplateAction を独立カ�
     enabled: true,
     templateUrl: "https://example.com/template",
     fileNameTemplate: "出力_${recordId}",
-    outputType: "spreadsheet",
+    outputType: "googleDoc",
     buttonLabel: "様式を出力",
   });
   assert.equal(schema[2].id, "memo_1");

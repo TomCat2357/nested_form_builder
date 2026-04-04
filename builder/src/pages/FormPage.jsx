@@ -38,6 +38,7 @@ import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import {
   buildFieldLabelsMap,
+  buildFieldValuesMap,
   buildPrintDocumentPayload,
   resolveOmitEmptyRowsOnPrint,
 } from "../features/preview/printDocument.js";
@@ -314,7 +315,7 @@ export default function FormPage() {
 
   useEffect(() => {
     if (!currentForm) return;
-    if (isDirty && !isViewMode) {
+    if (cachedForm && isDirty && !isViewMode) {
       console.log("[FormPage] defer applying refreshed form during dirty edit", {
         formId,
         entryId: entryId || "new",
@@ -322,7 +323,7 @@ export default function FormPage() {
       return;
     }
     setCachedForm(currentForm);
-  }, [currentForm, entryId, formId, isDirty, isViewMode]);
+  }, [cachedForm, currentForm, entryId, formId, isDirty, isViewMode]);
 
   useEffect(() => {
     if (entryId) {
@@ -856,6 +857,7 @@ export default function FormPage() {
         folderNameTemplate: settings.driveFolderNameTemplate || "",
         responses: rawResponses || {},
         fieldLabels,
+        fieldValues: buildFieldValuesMap(normalizedSchema, rawResponses || {}),
         fileIds: finalizeFileIds,
         trashFileIds,
         recordId: payloadWithFormId.id,
@@ -1384,7 +1386,6 @@ export default function FormPage() {
           showSaveButton={false}
           readOnly={isViewMode || isReadLocked}
           entryId={currentRecordId}
-          onChildFormJump={handleChildFormJump}
           driveFolderState={driveFolderState}
           onDriveFolderStateChange={setDriveFolderState}
         />
