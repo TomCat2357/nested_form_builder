@@ -344,8 +344,7 @@ export const dataStore = {
       || existingRecordNo === ""
     );
     if (needsNewRecordNo) {
-      const recordNoScopeParentRecordId = safePayload.parentRecordId ?? existingEntry?.parentRecordId ?? "";
-      const maxNo = await getMaxRecordNo(formId, recordNoScopeParentRecordId);
+      const maxNo = await getMaxRecordNo(formId);
       nextRecordNo = maxNo + 1;
     }
 

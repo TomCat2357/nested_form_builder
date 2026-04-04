@@ -199,44 +199,6 @@ const appendPrintItems = (fields, responses, depth, items, options = {}) => {
   return items;
 };
 
-const appendChildSectionItems = (items, childSections, options = {}) => {
-  (childSections || []).forEach((section) => {
-    const title = String(section?.title || "").trim();
-    const entries = Array.isArray(section?.entries) ? section.entries : [];
-    if (!title || entries.length === 0) return;
-
-    items.push({
-      label: title,
-      value: "",
-      depth: 0,
-      type: "message",
-    });
-
-    const shouldShowRecordSeparator = entries.length > 1;
-    entries.forEach((entry, index) => {
-      if (shouldShowRecordSeparator) {
-        const recordNo = String(entry?.recordNo || index + 1).trim();
-        items.push({
-          label: `No. ${recordNo || index + 1}`,
-          value: "",
-          depth: 1,
-          type: "message",
-        });
-      }
-
-      appendPrintItems(
-        entry?.schema || [],
-        entry?.responses || {},
-        shouldShowRecordSeparator ? 2 : 1,
-        items,
-        options,
-      );
-    });
-  });
-
-  return items;
-};
-
 export const buildFieldLabelsMap = (fields, map = {}) => {
   (fields || []).forEach((field) => {
     if (field?.id && typeof field?.label === "string" && field.label.trim()) {
@@ -266,8 +228,6 @@ export const buildPrintDocumentPayload = ({
   exportedAt = new Date(),
   omitEmptyRows,
   showHeader,
-  childSections = [],
-  parentInfo = null,
   driveFolderState = null,
   useTemporaryFolder = false,
 }) => {
@@ -300,12 +260,7 @@ export const buildPrintDocumentPayload = ({
     modifiedAt,
     showHeader: shouldShowHeader,
     exportedAtIso: safeExportedAt.toISOString(),
-    parentRecordId: parentInfo?.parentRecordId || "",
-    items: appendChildSectionItems(
-      appendPrintItems(schema, responses, 0, [], { omitEmptyRows: shouldOmitEmptyRows }),
-      childSections,
-      { omitEmptyRows: shouldOmitEmptyRows },
-    ),
+    items: appendPrintItems(schema, responses, 0, [], { omitEmptyRows: shouldOmitEmptyRows }),
     ...(driveSettings ? { driveSettings } : {}),
   };
 };

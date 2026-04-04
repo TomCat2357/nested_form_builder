@@ -296,7 +296,6 @@ const createBaseColumns = () => [
     segments: ["ID"],
     sortable: true,
     searchable: true,
-    scope: "parent",
     getValue: (entry) => {
       const value = entry?.id || "";
       return {
@@ -311,7 +310,6 @@ const createBaseColumns = () => [
     segments: ["No."],
     sortable: true,
     searchable: true,
-    scope: "parent",
     getValue: (entry) => {
       const value = entry?.["No."] || "";
       return {
@@ -326,7 +324,6 @@ const createBaseColumns = () => [
     segments: ["作成日時"],
     sortable: true,
     searchable: true,
-    scope: "parent",
     getValue: (entry) => {
       const raw = entry?.createdAt ?? "";
       const unixMs = toUnixMs(entry?.createdAtUnixMs ?? raw);
@@ -343,7 +340,6 @@ const createBaseColumns = () => [
     segments: ["最終更新日時"],
     sortable: true,
     searchable: true,
-    scope: "parent",
     getValue: (entry) => {
       const raw = entry?.modifiedAt ?? "";
       const unixMs = toUnixMs(entry?.modifiedAtUnixMs ?? raw);
@@ -361,13 +357,9 @@ const createDisplayColumn = (path, sourceType = "", options = {}) => {
   const normalizedSegments = Array.isArray(options.segments)
     ? [...options.segments]
     : splitFieldPath(path);
-  const scope = options.scope || "parent";
-  const childFormId = options.childFormId || null;
   if (normalizedSegments.length === 0) normalizedSegments.push("回答");
   const limitedSegments = normalizedSegments.slice(0, MAX_HEADER_DEPTH);
-  const key = options.key || (scope === "child" && childFormId
-    ? `child:${childFormId}:display:${path}`
-    : `display:${path}`);
+  const key = options.key || `display:${path}`;
   const optionOrder = Array.isArray(options.optionOrder) ? options.optionOrder : null;
   return {
     key,
@@ -377,8 +369,6 @@ const createDisplayColumn = (path, sourceType = "", options = {}) => {
     path,
     sourceType,
     optionOrder,
-    scope,
-    childFormId,
     fieldId: options.fieldId || "",
     searchAliases: Array.isArray(options.searchAliases) ? options.searchAliases.filter(Boolean) : [],
     getValue: (entry, column) => collectFieldValue(entry, path, column),
@@ -390,7 +380,6 @@ const actionsColumn = {
   segments: ["操作"],
   sortable: false,
   searchable: false,
-  scope: "parent",
   getValue: () => ({ display: "", search: "", sort: "" }),
 };
 
@@ -440,40 +429,13 @@ const resolveDisplayFieldSettings = (form) => {
     }));
 };
 
-const buildChildDisplayColumns = (childForms = []) => {
-  return (childForms || []).flatMap((childForm) => {
-    const childFormId = String(childForm?.childFormId || childForm?.form?.id || "").trim();
-    if (!childFormId || !childForm?.form) return [];
-    const formTitle = childForm?.formTitle || childForm.form?.settings?.formTitle || childForm.form?.name || childFormId;
-    const searchPrefixes = Array.isArray(childForm?.labelPaths)
-      ? childForm.labelPaths.filter(Boolean)
-      : (childForm?.labelPath ? [childForm.labelPath] : []);
-
-    return resolveDisplayFieldSettings(childForm.form).map(({ path, type, optionOrder, fieldId }) => {
-      const searchAliases = [path];
-      searchPrefixes.forEach((prefix) => {
-        searchAliases.push(`${prefix}|${path}`);
-      });
-      return createDisplayColumn(path, type, {
-        key: `child:${childFormId}:display:${path}`,
-        segments: [formTitle, ...splitFieldPath(path)],
-        optionOrder,
-        scope: "child",
-        childFormId,
-        searchAliases,
-        fieldId,
-      });
-    });
-  });
-};
-
 const moveRecordNoColumnToFront = (columns = []) => {
   const recordNoColumn = columns.find((column) => column?.key === "No.");
   if (!recordNoColumn) return [...columns];
   return [recordNoColumn, ...columns.filter((column) => column?.key !== "No.")];
 };
 
-export const buildSearchColumns = (form, { includeOperations = true, childForms = [] } = {}) => {
+export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
   const showRecordNo = form?.settings?.showRecordNo !== false;
   const showSearchId = form?.settings?.showSearchId !== false;
   const showSearchCreatedAt = form?.settings?.showSearchCreatedAt !== false;
@@ -490,8 +452,7 @@ export const buildSearchColumns = (form, { includeOperations = true, childForms 
     if (!path) return;
     parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId }));
   });
-  const childColumns = buildChildDisplayColumns(childForms);
-  const columns = [...metaColumns, ...parentColumns, ...childColumns];
+  const columns = [...metaColumns, ...parentColumns];
   if (includeOperations) columns.push(actionsColumn);
   return columns;
 };
@@ -685,9 +646,9 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
 
 export const buildSearchTableLayout = (
   form,
-  { headerMatrix: _headerMatrix = null, includeOperations = true, childForms = [] } = {},
+  { headerMatrix: _headerMatrix = null, includeOperations = true } = {},
 ) => {
-  const columns = buildSearchColumns(form, { includeOperations, childForms });
+  const columns = buildSearchColumns(form, { includeOperations });
   const baseHeaderRows = buildHeaderRows(columns);
   const matrix = expandHeaderRowsToMatrix(baseHeaderRows, columns.length);
   const deduped = suppressDuplicateHeaderLabels(matrix);
@@ -781,23 +742,7 @@ const collectAllFieldSettings = (schema) => {
   return collected;
 };
 
-const buildChildExportColumns = (childForms = []) => {
-  return (childForms || []).flatMap((childForm) => {
-    const childFormId = String(childForm?.childFormId || childForm?.form?.id || "").trim();
-    if (!childFormId || !childForm?.form) return [];
-    const formTitle = childForm?.formTitle || childForm.form?.settings?.formTitle || childForm.form?.name || childFormId;
-    return collectAllFieldSettings(childForm.form?.schema || []).map(({ path, type }) =>
-      createDisplayColumn(path, type, {
-        key: `child:${childFormId}:display:${path}`,
-        segments: [formTitle, ...splitFieldPath(path)],
-        scope: "child",
-        childFormId,
-      })
-    );
-  });
-};
-
-export const buildExportColumns = (form, { includeBaseColumns = true, childForms = [] } = {}) => {
+export const buildExportColumns = (form, { includeBaseColumns = true } = {}) => {
   const columns = [];
   if (includeBaseColumns) {
     columns.push(...createBaseColumns());
@@ -806,43 +751,24 @@ export const buildExportColumns = (form, { includeBaseColumns = true, childForms
     if (!path) return;
     columns.push(createDisplayColumn(path, type));
   });
-  columns.push(...buildChildExportColumns(childForms));
   return columns;
 };
 
-export const buildExportTableData = ({ form, entries, childForms = [], childEntriesMap = new Map() }) => {
-  const columns = buildExportColumns(form, { includeBaseColumns: true, childForms });
+export const buildExportTableData = ({ form, entries }) => {
+  const columns = buildExportColumns(form, { includeBaseColumns: true });
   const headerRows = buildHeaderRows(columns);
   const headerMatrix = expandHeaderRowsToMatrix(headerRows, columns.length);
   const deduped = suppressDuplicateHeaderLabels(headerMatrix);
   const normalizedHeaderRows = deduped.map((row) => padRowToLength(row, columns.length));
   const normalizedRows = [];
   (entries || []).forEach((entry) => {
-    const values = computeRowValues(entry, columns, { scope: "parent" });
+    const values = computeRowValues(entry, columns);
     const row = columns.map((column) => {
       const display = values?.[column.key]?.display;
       if (display === null || display === undefined) return "";
       return String(display);
     });
     normalizedRows.push(padRowToLength(row, columns.length));
-
-    const childEntriesByFormId = childEntriesMap instanceof Map
-      ? childEntriesMap.get(entry?.id) || {}
-      : {};
-
-    (childForms || []).forEach((childForm) => {
-      const childFormId = String(childForm?.childFormId || "");
-      const childEntries = Array.isArray(childEntriesByFormId?.[childFormId]) ? childEntriesByFormId[childFormId] : [];
-      childEntries.forEach((childEntry) => {
-        const childValues = computeRowValues(childEntry, columns, { scope: "child", childFormId });
-        const childRow = columns.map((column) => {
-          const display = childValues?.[column.key]?.display;
-          if (display === null || display === undefined) return "";
-          return String(display);
-        });
-        normalizedRows.push(padRowToLength(childRow, columns.length));
-      });
-    });
   });
   return {
     columns,
@@ -852,14 +778,6 @@ export const buildExportTableData = ({ form, entries, childForms = [], childEntr
 };
 
 const createEmptyCellValue = () => ({ display: "", search: "", sort: "", boolean: false });
-
-const isColumnVisibleForRow = (column, { scope = "parent", childFormId = null } = {}) => {
-  if (!column || column.key === "__actions") return false;
-  if (scope === "child") {
-    return column.scope === "child" && String(column.childFormId || "") === String(childFormId || "");
-  }
-  return column.scope !== "child";
-};
 
 const matchColumnName = (column, normalized) => {
   if (!column || !normalized) return false;
@@ -884,18 +802,10 @@ const matchColumnName = (column, normalized) => {
   return false;
 };
 
-export const computeRowValues = (entry, columns, options = {}) => {
-  const scopeOptions = {
-    scope: options?.scope || "parent",
-    childFormId: options?.childFormId || null,
-  };
+export const computeRowValues = (entry, columns) => {
   const values = {};
   (columns || []).forEach((column) => {
     if (!column || !column.key) return;
-    if (!isColumnVisibleForRow(column, scopeOptions)) {
-      values[column.key] = createEmptyCellValue();
-      return;
-    }
     if (typeof column.getValue !== "function") {
       values[column.key] = createEmptyCellValue();
       return;
@@ -1182,17 +1092,13 @@ const resolveColumnByNameForRow = (columns, colName, row) => {
   if (!columns || !colName) return { column: null, blockedByScope: false };
 
   const normalized = colName.trim().toLowerCase();
-  let blockedByScope = false;
 
   for (const column of columns) {
     if (!matchColumnName(column, normalized)) continue;
-    if (isColumnVisibleForRow(column, row || {})) {
-      return { column, blockedByScope: false };
-    }
-    blockedByScope = true;
+    return { column, blockedByScope: false };
   }
 
-  return { column: null, blockedByScope };
+  return { column: null, blockedByScope: false };
 };
 
 const findMatchingEntryField = (row, columnName) => {
@@ -1329,21 +1235,19 @@ const evaluateLeafOnRow = (ast, row, columns) => {
       if (!keyword) return true;
 
       const matchesInColumns = (columns || []).some((column) => {
-        if (column.searchable === false || !isColumnVisibleForRow(column, row || {})) return false;
+        if (column.searchable === false) return false;
         const text = row?.values?.[column.key]?.search;
         return Boolean(text && text.includes(keyword));
       });
       if (matchesInColumns) return true;
 
-      if ((row?.scope || "parent") !== "child") {
-        const entryId = row?.entry?.id;
-        if (entryId !== undefined && entryId !== null && entryId !== "") {
-          const matchesEntryId = buildSearchableCandidates("id", entryId).some((candidate) => {
-            if (!candidate) return false;
-            return normalizeSearchText(candidate).includes(keyword);
-          });
-          if (matchesEntryId) return true;
-        }
+      const entryId = row?.entry?.id;
+      if (entryId !== undefined && entryId !== null && entryId !== "") {
+        const matchesEntryId = buildSearchableCandidates("id", entryId).some((candidate) => {
+          if (!candidate) return false;
+          return normalizeSearchText(candidate).includes(keyword);
+        });
+        if (matchesEntryId) return true;
       }
 
       const entryData = row?.entry?.data || {};
@@ -1501,35 +1405,13 @@ const evaluateAstForSpecificChild = (ast, parentRow, childRow, columns) => {
 
 export const getKeywordMatchDetail = (row, columns, keyword, options = {}) => {
   if (!keyword || typeof keyword !== 'string' || !keyword.trim()) {
-    return {
-      matched: true,
-      matchedChildEntryIds: new Set(),
-    };
+    return { matched: true };
   }
 
   const tokens = tokenizeSearchQuery(keyword);
   const ast = parseTokens(tokens);
-  const childRows = Array.isArray(options.childRows) ? options.childRows : [];
   const parentResult = evaluateAstForSpecificChild(ast, row, null, columns);
-  let matched = parentResult.matched;
-  const matchedChildEntryIds = new Set();
-
-  childRows.forEach((childRow) => {
-    const childEntryId = childRow?.entry?.id;
-    if (!childEntryId) return;
-    const childResult = evaluateAstForSpecificChild(ast, row, childRow, columns);
-    if (childResult.matched) {
-      matched = true;
-    }
-    if (childResult.matched && childResult.childMatched) {
-      matchedChildEntryIds.add(childEntryId);
-    }
-  });
-
-  return {
-    matched,
-    matchedChildEntryIds,
-  };
+  return { matched: parentResult.matched };
 };
 
 /**

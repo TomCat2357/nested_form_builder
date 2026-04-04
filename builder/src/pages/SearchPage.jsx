@@ -5,7 +5,6 @@ import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { useAuth } from "../app/state/authContext.jsx";
-import { dataStore } from "../app/state/dataStore.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { normalizeSchemaIDs } from "../core/schema.js";
@@ -25,21 +24,13 @@ import {
 import { createExcelBlob, getThemeColors } from "../utils/excelExport.js";
 import { restoreResponsesFromData } from "../utils/responses.js";
 import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
-import { useChildEntriesWithCache } from "../features/search/useChildEntriesWithCache.js";
-import { collectChildFormLinks, mergeChildFormLinksByFormId } from "../features/search/childFormIntegration.js";
 import { createRecordPrintDocument, saveExcelToDrive } from "../services/gasClient.js";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import SearchSidebar from "../features/search/components/SearchSidebar.jsx";
 import SearchTable from "../features/search/components/SearchTable.jsx";
 import SearchPagination from "../features/search/components/SearchPagination.jsx";
-import PrintChildFormDialog from "../features/search/components/PrintChildFormDialog.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { DEFAULT_PAGE_SIZE } from "../core/constants.js";
-
-
-
-// フォームIDごとに「子フォームを含める」チェック状態を保持（ナビゲーションで消えないようにする）
-const includeChildrenByFormId = new Map();
 
 const buildInitialSort = (params) => {
   const raw = params.get("sort");
@@ -62,7 +53,6 @@ export default function SearchPage() {
   const queryFormId = (searchParams.get("form") || "").trim();
   const effectiveFormId = queryFormId || scopedFormId;
   const isScopedByAuth = scopedFormId !== "";
-  const parentRecordId = searchParams.get("parentRecordId") || "";
   const currentSearchUrl = `${location.pathname}${location.search}`;
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [showUndeleteConfirm, setShowUndeleteConfirm] = useState({ open: false, entryIds: [] });
@@ -70,21 +60,9 @@ export default function SearchPage() {
   const [exporting, setExporting] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
-  const [includeChildren, setIncludeChildren] = useState(() => includeChildrenByFormId.get(effectiveFormId) || false);
-  const [showPrintChildFormDialog, setShowPrintChildFormDialog] = useState(false);
-
-  useEffect(() => {
-    if (effectiveFormId) includeChildrenByFormId.set(effectiveFormId, includeChildren);
-  }, [effectiveFormId, includeChildren]);
 
   const form = useMemo(() => (effectiveFormId ? getFormById(effectiveFormId) : null), [effectiveFormId, getFormById]);
   const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form?.schema]);
-  const childFormLinks = useMemo(() => collectChildFormLinks(normalizedSchema), [normalizedSchema]);
-  const childForms = useMemo(
-    () => mergeChildFormLinksByFormId(childFormLinks, getFormById),
-    [childFormLinks, getFormById],
-  );
-  const canIncludeChildren = !parentRecordId && childForms.length > 0;
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
   const query = searchParams.get("q") || "";
@@ -114,24 +92,12 @@ export default function SearchPage() {
     showAlert,
   });
 
-  const {
-    childEntriesByFormId,
-    loading: childEntriesLoading,
-  } = useChildEntriesWithCache({
-    parentFormId: effectiveFormId,
-    childFormLinks: childForms,
-    enabled: includeChildren && canIncludeChildren,
-    getFormById,
-    showAlert,
-  });
-
   const { columns, headerRows } = useMemo(
     () => buildSearchTableLayout(form, {
       headerMatrix,
       includeOperations: false,
-      childForms: includeChildren && canIncludeChildren ? childForms : [],
     }),
-    [form, headerMatrix, includeChildren, canIncludeChildren, childForms],
+    [form, headerMatrix],
   );
 
   const handleSearchChange = (value) => {
@@ -164,56 +130,14 @@ export default function SearchPage() {
 
   const isDeletedEntry = useCallback((entry) => Boolean(entry?.deletedAtUnixMs || entry?.deletedAt), []);
 
-  const parentEntriesMap = useMemo(() => {
-    const next = new Map();
-    if (!includeChildren || !canIncludeChildren) return next;
-
-    childForms.forEach((childForm) => {
-      const childFormId = String(childForm?.childFormId || "");
-      const childEntries = childEntriesByFormId.get(childFormId)?.entries || [];
-      childEntries.forEach((childEntry) => {
-        if (!childEntry?.parentRecordId) return;
-        if (!showDeleted && isDeletedEntry(childEntry)) return;
-        if (!next.has(childEntry.parentRecordId)) {
-          next.set(childEntry.parentRecordId, {});
-        }
-        const grouped = next.get(childEntry.parentRecordId);
-        if (!Array.isArray(grouped[childFormId])) {
-          grouped[childFormId] = [];
-        }
-        grouped[childFormId].push(childEntry);
-      });
-    });
-
-    return next;
-  }, [canIncludeChildren, childEntriesByFormId, childForms, includeChildren, isDeletedEntry, showDeleted]);
-
   const processedEntries = useMemo(() => {
     return entries.map((entry) => {
-      const childEntriesByLinkedForm = parentEntriesMap.get(entry?.id) || {};
-      const childRows = includeChildren && canIncludeChildren
-        ? childForms.flatMap((childForm) => {
-            const childFormId = String(childForm?.childFormId || "");
-            const linkedEntries = Array.isArray(childEntriesByLinkedForm[childFormId]) ? childEntriesByLinkedForm[childFormId] : [];
-            return linkedEntries.map((childEntry) => ({
-              scope: "child",
-              childFormId,
-              entry: childEntry,
-              values: computeRowValues(childEntry, columns, { scope: "child", childFormId }),
-            }));
-          })
-        : [];
-
       return {
-        scope: "parent",
         entry,
-        values: computeRowValues(entry, columns, { scope: "parent" }),
-        childRows,
-        childEntriesByFormId: childEntriesByLinkedForm,
-        matchedChildEntryIds: new Set(),
+        values: computeRowValues(entry, columns),
       };
     });
-  }, [entries, parentEntriesMap, includeChildren, canIncludeChildren, childForms, columns]);
+  }, [entries, columns]);
 
   const ownerFilteredEntries = useMemo(() => {
     if (isAdmin) return processedEntries;
@@ -222,31 +146,23 @@ export default function SearchPage() {
     return processedEntries.filter((row) => (row.entry?.createdBy || row.entry?.modifiedBy) === userEmail);
   }, [processedEntries, isAdmin, userEmail, form?.settings?.showOwnRecordsOnly]);
 
-  const parentFilteredEntries = useMemo(() => {
-    if (!parentRecordId) return ownerFilteredEntries;
-    return ownerFilteredEntries.filter((row) => row.entry?.parentRecordId === parentRecordId);
-  }, [ownerFilteredEntries, parentRecordId]);
-
   const filteredEntries = useMemo(() => {
-    let base = parentFilteredEntries;
+    let base = ownerFilteredEntries;
     if (!showDeleted) {
       base = base.filter((row) => !isDeletedEntry(row.entry));
     }
     const keyword = query.trim();
     if (!keyword) {
-      return base.map((row) => ({ ...row, matchedChildEntryIds: new Set() }));
+      return base;
     }
     return base
       .map((row) => {
-        const matchDetail = getKeywordMatchDetail(row, columns, keyword, { childRows: row.childRows });
+        const matchDetail = getKeywordMatchDetail(row, columns, keyword);
         if (!matchDetail.matched) return null;
-        return {
-          ...row,
-          matchedChildEntryIds: matchDetail.matchedChildEntryIds,
-        };
+        return row;
       })
       .filter(Boolean);
-  }, [parentFilteredEntries, columns, query, showDeleted, isDeletedEntry]);
+  }, [ownerFilteredEntries, columns, query, showDeleted, isDeletedEntry]);
 
   const sortedEntries = useMemo(() => {
     const list = filteredEntries.slice();
@@ -273,9 +189,9 @@ export default function SearchPage() {
   const endIndex = totalEntries === 0 ? 0 : Math.min(page * PAGE_SIZE, totalEntries);
 
   const badge = useMemo(() => {
-    if (loading || backgroundLoading || waitingForLock || childEntriesLoading) return { label: "読み取り中...", variant: "loading" };
+    if (loading || backgroundLoading || waitingForLock) return { label: "読み取り中...", variant: "loading" };
     return { label: "検索画面", variant: "view" };
-  }, [loading, backgroundLoading, waitingForLock, childEntriesLoading]);
+  }, [loading, backgroundLoading, waitingForLock]);
 
   const handleRowClick = (entryId) => {
     if (!effectiveFormId) return;
@@ -285,28 +201,11 @@ export default function SearchPage() {
     });
   };
 
-  const handleChildRowClick = (childFormId, parentEntryId, childEntryId) => {
-    if (!childFormId || !parentEntryId) return;
-    if (childEntryId) {
-      navigate(`/form/${childFormId}/entry/${childEntryId}`, {
-        state: { from: currentSearchUrl, parentRecordId: parentEntryId },
-      });
-    } else {
-      navigate(`/search?form=${childFormId}&parentRecordId=${parentEntryId}`, {
-        state: { from: currentSearchUrl },
-      });
-    }
-  };
-
   const handleCreateNew = () => {
     if (!effectiveFormId) return;
-    const url = parentRecordId
-      ? `/form/${effectiveFormId}/new?parentRecordId=${parentRecordId}`
-      : `/form/${effectiveFormId}/new`;
-    navigate(url, {
+    navigate(`/form/${effectiveFormId}/new`, {
       state: {
         from: currentSearchUrl,
-        ...(parentRecordId ? { parentRecordId } : {}),
       },
     });
   };
@@ -363,12 +262,7 @@ export default function SearchPage() {
     setExporting(true);
     try {
       const exportingEntries = sortedEntries.map((row) => row.entry);
-      const exportTable = buildExportTableData({
-        form,
-        entries: exportingEntries,
-        childForms: includeChildren && canIncludeChildren ? childForms : [],
-        childEntriesMap: includeChildren && canIncludeChildren ? parentEntriesMap : new Map(),
-      });
+      const exportTable = buildExportTableData({ form, entries: exportingEntries });
       const themeColors = getThemeColors();
 
       const now = new Date();
@@ -401,77 +295,14 @@ export default function SearchPage() {
     } finally {
       setExporting(false);
     }
-  }, [form, sortedEntries, showAlert, includeChildren, canIncludeChildren, childForms, parentEntriesMap]);
+  }, [form, sortedEntries, showAlert]);
 
-  const loadChildEntriesForPrint = useCallback(async (targetChildForms) => {
-    const pairs = await Promise.all(
-      (targetChildForms || []).map(async (childForm) => {
-        const childFormId = String(childForm?.childFormId || "");
-        if (!childFormId) return null;
-
-        const cached = childEntriesByFormId.get(childFormId);
-        if (cached?.entries && includeChildren) {
-          return [childFormId, cached];
-        }
-
-        const formRecord = childForm?.form || getFormById(childFormId);
-        const result = await dataStore.listEntries(childFormId);
-        const entries = Array.isArray(result?.entries) ? result.entries : [];
-        return [
-          childFormId,
-          {
-            entries: entries.map((entry) => ({ ...entry, __childFormId: childFormId })),
-            form: formRecord,
-            loading: false,
-          },
-        ];
-      }),
-    );
-
-    return new Map(pairs.filter(Boolean));
-  }, [childEntriesByFormId, getFormById, includeChildren]);
-
-  const parentInfo = useMemo(() => {
-    if (!parentRecordId) return null;
-    return {
-      parentRecordId,
-    };
-  }, [parentRecordId]);
-
-  const createPrintDocument = useCallback(async (selectedChildFormIds = []) => {
+  const createPrintDocument = useCallback(async () => {
     setIsCreatingPrintDocument(true);
     try {
       const exportedAt = new Date();
-      const targetChildForms = childForms.filter((childForm) => selectedChildFormIds.includes(childForm.childFormId));
-      const printChildEntries = targetChildForms.length > 0
-        ? await loadChildEntriesForPrint(targetChildForms)
-        : new Map();
-
       const records = selectedPrintableRows.map(({ entry }) => {
         const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
-        const childSections = targetChildForms
-          .map((childForm) => {
-            const childFormId = String(childForm?.childFormId || "");
-            const childFormRecord = childForm?.form || printChildEntries.get(childFormId)?.form || getFormById(childFormId);
-            const childSchema = normalizeSchemaIDs(childFormRecord?.schema || []);
-            const entries = (printChildEntries.get(childFormId)?.entries || [])
-              .filter((childEntry) => childEntry?.parentRecordId === entry?.id)
-              .filter((childEntry) => !isDeletedEntry(childEntry))
-              .map((childEntry, index) => ({
-                recordNo: childEntry?.["No."] === undefined || childEntry?.["No."] === null || childEntry?.["No."] === ""
-                  ? String(index + 1)
-                  : String(childEntry["No."]),
-                schema: childSchema,
-                responses: restoreResponsesFromData(childSchema, childEntry?.data || {}, childEntry?.dataUnixMs || {}),
-              }));
-
-            return {
-              title: childForm?.formTitle || childFormRecord?.settings?.formTitle || childFormId,
-              entries,
-            };
-          })
-          .filter((section) => section.entries.length > 0);
-
         return buildPrintDocumentPayload({
           schema: normalizedSchema,
           responses: restoredResponses,
@@ -484,8 +315,6 @@ export default function SearchPage() {
           recordId: entry?.id,
           exportedAt,
           omitEmptyRows: omitEmptyRowsOnPrint,
-          childSections,
-          parentInfo,
         });
       });
       const payload = buildPrintDocumentBundlePayload({
@@ -510,14 +339,9 @@ export default function SearchPage() {
       setIsCreatingPrintDocument(false);
     }
   }, [
-    childForms,
     form?.settings,
-    getFormById,
-    isDeletedEntry,
-    loadChildEntriesForPrint,
     normalizedSchema,
     omitEmptyRowsOnPrint,
-    parentInfo,
     selectedPrintableRows,
     showAlert,
   ]);
@@ -528,13 +352,8 @@ export default function SearchPage() {
       return;
     }
 
-    if (canIncludeChildren) {
-      setShowPrintChildFormDialog(true);
-      return;
-    }
-
-    await createPrintDocument([]);
-  }, [selectedPrintableRows.length, showAlert, canIncludeChildren, createPrintDocument]);
+    await createPrintDocument();
+  }, [selectedPrintableRows.length, showAlert, createPrintDocument]);
 
   const confirmDelete = useCallback(async () => {
     if (!effectiveFormId || showDeleteConfirm.entryIds.length === 0) return;
@@ -583,7 +402,7 @@ export default function SearchPage() {
           onBack={handleBackToMain}
           showBack={!isScopedByAuth}
           onCreate={handleCreateNew}
-          onConfig={parentRecordId ? undefined : handleOpenFormConfig}
+          onConfig={handleOpenFormConfig}
           onDelete={handleDeleteSelected}
           onUndelete={handleUndeleteSelected}
           isUndoDelete={isAdmin && allSelectedAreDeleted}
@@ -613,20 +432,12 @@ export default function SearchPage() {
         unsyncedCount={unsyncedCount}
         syncInProgress={loading || backgroundLoading || waitingForLock}
       />
-      {(canIncludeChildren || isAdmin) && (
+      {isAdmin && (
         <div className="nf-row nf-gap-16 nf-items-center nf-mb-12 nf-wrap">
-          {canIncludeChildren && (
-            <label className="nf-row nf-gap-6 nf-items-center">
-              <input type="checkbox" checked={includeChildren} onChange={(e) => setIncludeChildren(e.target.checked)} />
-              <span className="nf-text-13">子フォームを含める</span>
-            </label>
-          )}
-          {isAdmin && (
-            <label className="nf-row nf-gap-6 nf-items-center">
-              <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
-              <span className="nf-text-13">削除済みデータを表示する</span>
-            </label>
-          )}
+          <label className="nf-row nf-gap-6 nf-items-center">
+            <input type="checkbox" checked={showDeleted} onChange={(e) => setShowDeleted(e.target.checked)} />
+            <span className="nf-text-13">削除済みデータを表示する</span>
+          </label>
         </div>
       )}
 
@@ -645,7 +456,6 @@ export default function SearchPage() {
           onSelectAll={selectAllEntries}
           onToggleSelect={toggleSelectEntry}
           onRowClick={handleRowClick}
-          onChildRowClick={handleChildRowClick}
         />
       )}
 
@@ -675,15 +485,6 @@ export default function SearchPage() {
           { label: "キャンセル", value: "cancel", onSelect: () => setShowUndeleteConfirm({ open: false, entryIds: [] }) },
           { label: "削除取消し", value: "undelete", variant: "primary", onSelect: confirmUndelete },
         ]}
-      />
-      <PrintChildFormDialog
-        open={showPrintChildFormDialog}
-        childForms={childForms}
-        onCancel={() => setShowPrintChildFormDialog(false)}
-        onSubmit={async (selectedChildFormIds) => {
-          setShowPrintChildFormDialog(false);
-          await createPrintDocument(selectedChildFormIds);
-        }}
       />
 
 </AppLayout>

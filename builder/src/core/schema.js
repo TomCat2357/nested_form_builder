@@ -208,9 +208,6 @@ export const cleanUnusedFieldProperties = (field) => {
     delete field.printTemplateAction;
   }
   if (type === "message" || type === "printTemplate") delete field.required;
-  delete field.childFormId;
-  delete field.childFormButtonLabel;
-  delete field.allowMultipleChildren;
   if (type === "fileUpload") {
     field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
   } else {
@@ -290,14 +287,6 @@ export const normalizeSchemaIDs = (nodes) => {
         ...normalizePrintTemplateSettings(base.printTemplateAction),
         enabled: true,
       };
-    }
-
-    // 旧形式マイグレーション: childFormLinkプロパティ → childFormLinkタイプ
-    // (旧形式は別質問の追加プロパティだったため、ここでは単にプロパティを削除)
-    if (base.childFormLink && typeof base.childFormLink === "object") {
-      delete base.childFormLink;
-    } else {
-      delete base.childFormLink;
     }
 
     cleanUnusedFieldProperties(base);

@@ -71,7 +71,6 @@ export const normalizeRecordForCache = (record, { formId } = {}) => {
     id: baseRecord.id ?? baseRecord.entryId ?? "",
     "No.": baseRecord["No."] ?? "",
     formId: formId ?? baseRecord.formId ?? "",
-    parentRecordId: baseRecord.parentRecordId ?? "",
     driveFolderUrl: baseRecord.driveFolderUrl ?? "",
     createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : (baseRecord.createdAt ?? ""),
     createdAtUnixMs: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : null,
@@ -508,14 +507,10 @@ export async function deleteRecordsFromCache(formId, entryIds) {
   db.close();
 }
 
-export const getMaxRecordNoFromEntries = (entries, parentRecordId = "") => {
-  const scopeParentRecordId = String(parentRecordId ?? "");
+export const getMaxRecordNoFromEntries = (entries) => {
   let maxNo = 0;
 
   for (const entry of entries || []) {
-    const entryParentRecordId = String(entry?.parentRecordId ?? "");
-    if (entryParentRecordId !== scopeParentRecordId) continue;
-
     const no = parseInt(entry?.["No."], 10);
     if (!Number.isNaN(no) && no > maxNo) maxNo = no;
   }
@@ -526,7 +521,7 @@ export const getMaxRecordNoFromEntries = (entries, parentRecordId = "") => {
 /**
  * キャッシュ内の最大 No. を取得（仮No採番用）
  */
-export async function getMaxRecordNo(formId, parentRecordId = "") {
+export async function getMaxRecordNo(formId) {
   if (!formId) return 0;
   const db = await openDB();
   const tx = db.transaction(STORE_NAMES.records, 'readonly');
@@ -534,7 +529,7 @@ export async function getMaxRecordNo(formId, parentRecordId = "") {
   const rawEntries = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId)));
   db.close();
 
-  return getMaxRecordNoFromEntries(rawEntries, parentRecordId);
+  return getMaxRecordNoFromEntries(rawEntries);
 }
 
 /**
@@ -574,38 +569,4 @@ export async function applySyncResultToCache(formId, syncedRecords, headerMatrix
 
   await waitForTransaction(tx);
   db.close();
-}
-
-/**
- * Save child form entries data to parent form's cache metadata
- * @param {string} parentFormId
- * @param {Object} childEntriesData - { [childFormId]: { entries: [...] } }
- */
-export async function saveChildEntriesToCache(parentFormId, childEntriesData) {
-  if (!parentFormId) return;
-  const db = await openDB();
-  const tx = db.transaction([STORE_NAMES.recordsMeta], 'readwrite');
-  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
-  const existingMeta = await waitForRequest(metaStore.get(parentFormId)).catch(() => null);
-  await waitForRequest(metaStore.put(buildMetadata(parentFormId, existingMeta, {
-    childEntriesData: childEntriesData || null,
-  })));
-  await waitForTransaction(tx);
-  db.close();
-}
-
-/**
- * Get child form entries data from parent form's cache metadata
- * @param {string} parentFormId
- * @returns {Promise<Object|null>} childEntriesData or null
- */
-export async function getChildEntriesFromCache(parentFormId) {
-  if (!parentFormId) return null;
-  const db = await openDB();
-  const tx = db.transaction([STORE_NAMES.recordsMeta], 'readonly');
-  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
-  const meta = await waitForRequest(metaStore.get(parentFormId)).catch(() => null);
-  await waitForTransaction(tx);
-  db.close();
-  return meta?.childEntriesData || null;
 }

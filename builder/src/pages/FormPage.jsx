@@ -1,12 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLatestRef } from "../app/hooks/useLatestRef.js";
-import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import PreviewPage from "../features/preview/PreviewPage.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
-import { PARENT_RECORD_ID_KEY } from "../core/constants.js";
 import { restoreResponsesFromData, hasDirtyChanges, collectDefaultNowResponses } from "../utils/responses.js";
 import {
   acquireSaveLock,
@@ -42,8 +41,6 @@ import {
   buildPrintDocumentPayload,
   resolveOmitEmptyRowsOnPrint,
 } from "../features/preview/printDocument.js";
-import { collectChildFormLinks, mergeChildFormLinksByFormId } from "../features/search/childFormIntegration.js";
-import PrintChildFormDialog from "../features/search/components/PrintChildFormDialog.jsx";
 import { buildPrimarySaveOptions, resolveCreatePrintOnSave } from "../utils/settings.js";
 
 const fallbackForForm = (formId, locationState) => {
@@ -163,7 +160,6 @@ const collectDriveFileIds = (responses) => {
 
 export default function FormPage() {
   const { formId, entryId } = useParams();
-  const [searchParams] = useSearchParams();
   const { getFormById, refreshForms, loadingForms, forms } = useAppData();
   const { userName, userEmail, userAffiliation, userTitle, userPhone, isAdmin } = useAuth();
   const location = useLocation();
@@ -226,14 +222,9 @@ export default function FormPage() {
   }, [driveFolderDraftKey, driveFolderState, entryId]);
   const [currentRecordId, setCurrentRecordId] = useState(entryId || null);
 
-  // 親子フォーム階層コンテキスト
-  const parentRecordId = searchParams.get("parentRecordId") || location.state?.parentRecordId || "";
-  const currentFormUrl = `${location.pathname}${location.search}`;
-
   const [confirmState, setConfirmState] = useState({ open: false, intent: null });
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
-  const [showPrintChildFormDialog, setShowPrintChildFormDialog] = useState(false);
   const [mode, setMode] = useState(entryId ? "view" : "edit");
   const [isReloading, setIsReloading] = useState(false);
   const [entryActionConfirm, setEntryActionConfirm] = useState({ open: false, action: null });
@@ -278,12 +269,6 @@ export default function FormPage() {
     }),
     [form?.settings?.createPrintOnSave, form?.settings?.saveAfterAction],
   );
-  const childFormLinks = useMemo(() => collectChildFormLinks(normalizedSchema), [normalizedSchema]);
-  const childForms = useMemo(
-    () => mergeChildFormLinksByFormId(childFormLinks, getFormById),
-    [childFormLinks, getFormById],
-  );
-  const canIncludeChildrenInPrint = Boolean(entryId && childForms.length > 0);
 
   useEffect(() => {
     if (!form) return;
@@ -550,14 +535,10 @@ export default function FormPage() {
   const navigateToEntryById = useCallback((targetEntryId) => {
     clearNewEntryDraft();
     navigate(`/form/${formId}/entry/${targetEntryId}`, {
-      state: {
-        from: location.state?.from,
-        entryIds,
-        ...(parentRecordId ? { parentRecordId } : {}),
-      },
+      state: { from: location.state?.from, entryIds },
       replace: true,
     });
-  }, [clearNewEntryDraft, navigate, formId, location.state?.from, entryIds, parentRecordId]);
+  }, [clearNewEntryDraft, navigate, formId, location.state?.from, entryIds]);
 
   useEffect(() => {
     let mounted = true;
@@ -804,9 +785,8 @@ export default function FormPage() {
 
   const navigateBack = ({ saved = false, deleted = false } = {}) => {
     clearNewEntryDraft();
-    const hierarchyState = parentRecordId ? { parentRecordId } : {};
-    const state = (saved || deleted || Object.keys(hierarchyState).length > 0)
-      ? { ...(saved || deleted ? { saved, deleted } : {}), ...hierarchyState }
+    const state = (saved || deleted)
+      ? { ...(saved || deleted ? { saved, deleted } : {}) }
       : undefined;
     if (location.state?.from) {
       navigate(location.state.from, { replace: true, state });
@@ -890,7 +870,6 @@ export default function FormPage() {
       data: saveData,
       order: saveOrder,
       driveFolderUrl: finalizedDriveFolderUrl,
-      ...(isNewEntry && parentRecordId ? { parentRecordId } : {}),
       createdBy,
       modifiedBy,
       "No.": normalizedRecordNo === "" ? entry?.["No."] : normalizedRecordNo,
@@ -983,10 +962,7 @@ export default function FormPage() {
           if (!entryId && savedId) {
             navigate(`/form/${formId}/entry/${savedId}`, {
               replace: true,
-              state: {
-                ...location.state,
-                ...(parentRecordId ? { parentRecordId } : {}),
-              },
+              state: location.state,
             });
           } else {
             setMode("view");
@@ -1163,70 +1139,17 @@ export default function FormPage() {
     commitResponses("preview:change", updater);
   }, [commitResponses]);
 
-  const navigateToChildForm = useCallback((childFormId, targetRecordId) => {
-    const resolvedRecordId = String(targetRecordId || "").trim();
-    if (!childFormId || !resolvedRecordId) return false;
-    navigate(`/search?form=${childFormId}&parentRecordId=${resolvedRecordId}`, {
-      state: { from: currentFormUrl },
-    });
-    return true;
-  }, [currentFormUrl, navigate]);
-
-  const handleChildFormJump = useCallback(async (childFormId) => {
-    const persistedRecordId = String(entryId || currentRecordId || "").trim();
-    if (!persistedRecordId) {
-      const saveResult = await triggerSave({ stayAsView: true, skipStayAsViewNavigation: true });
-      if (saveResult.ok) {
-        navigateToChildForm(childFormId, saveResult.recordId);
-      }
-      return;
-    }
-    if (mode === "edit" && isDirty) {
-      setConfirmState({ open: true, intent: `childJump:${childFormId}` });
-      return;
-    }
-    navigateToChildForm(childFormId, persistedRecordId);
-  }, [currentRecordId, entryId, isDirty, mode, navigateToChildForm, triggerSave]);
-
-  const buildChildSectionsForPrint = useCallback(async (targetChildForms) => {
-    const isDeleted = (e) => Boolean(e?.deletedAtUnixMs || e?.deletedAt);
-    const sections = await Promise.all(
-      (targetChildForms || []).map(async (childForm) => {
-        const childFormId = String(childForm?.childFormId || "");
-        if (!childFormId) return null;
-        const childFormRecord = childForm?.form || getFormById(childFormId);
-        const childSchema = normalizeSchemaIDs(childFormRecord?.schema || []);
-        const result = await dataStore.listEntries(childFormId);
-        const allEntries = Array.isArray(result?.entries) ? result.entries : [];
-        const entries = allEntries
-          .filter((ce) => ce?.parentRecordId === entryId)
-          .filter((ce) => !isDeleted(ce))
-          .map((ce, idx) => ({
-            recordNo: ce?.["No."] === undefined || ce?.["No."] === null || ce?.["No."] === ""
-              ? String(idx + 1)
-              : String(ce["No."]),
-            schema: childSchema,
-            responses: restoreResponsesFromData(childSchema, ce?.data || {}, ce?.dataUnixMs || {}),
-          }));
-        return {
-          title: childForm?.formTitle || childFormRecord?.settings?.formTitle || childFormId,
-          entries,
-        };
-      }),
-    );
-    return sections.filter(Boolean).filter((s) => s.entries.length > 0);
-  }, [entryId, getFormById]);
-
-  const executePrintWithChildren = useCallback(async (selectedChildFormIds) => {
+  const handleCreatePrintDocument = useCallback(async () => {
     const preview = previewRef.current;
-    if (!preview || typeof preview.getPrintDocumentPayload !== "function") return;
+    if (!preview || typeof preview.getPrintDocumentPayload !== "function") {
+      showAlert("印刷様式の出力準備がまだできていません。少し待ってからもう一度お試しください。");
+      return;
+    }
+
     setIsCreatingPrintDocument(true);
     try {
-      const targetChildForms = childForms.filter((cf) => selectedChildFormIds.includes(cf.childFormId));
-      const childSections = await buildChildSectionsForPrint(targetChildForms);
       const payload = preview.getPrintDocumentPayload({
         omitEmptyRows: omitEmptyRowsOnPrint,
-        childSections,
       });
       const result = await createRecordPrintDocument(payload);
       showAlert(
@@ -1244,22 +1167,7 @@ export default function FormPage() {
     } finally {
       setIsCreatingPrintDocument(false);
     }
-  }, [buildChildSectionsForPrint, childForms, omitEmptyRowsOnPrint, showAlert]);
-
-  const handleCreatePrintDocument = useCallback(async () => {
-    const preview = previewRef.current;
-    if (!preview || typeof preview.getPrintDocumentPayload !== "function") {
-      showAlert("印刷様式の出力準備がまだできていません。少し待ってからもう一度お試しください。");
-      return;
-    }
-
-    if (canIncludeChildrenInPrint) {
-      setShowPrintChildFormDialog(true);
-      return;
-    }
-
-    await executePrintWithChildren([]);
-  }, [canIncludeChildrenInPrint, executePrintWithChildren, showAlert]);
+  }, [omitEmptyRowsOnPrint, showAlert]);
 
   if (!form) {
     return (
@@ -1289,11 +1197,6 @@ export default function FormPage() {
         await cancelEditAndRestoreLatest();
         return;
       }
-      if (intent && intent.startsWith("childJump:")) {
-        const childFormId = intent.slice("childJump:".length);
-        navigateToChildForm(childFormId, currentRecordId || entryId);
-        return;
-      }
       if (intent && intent.startsWith("navigate:")) {
         const targetEntryId = intent.slice("navigate:".length);
         navigateToEntryById(targetEntryId);
@@ -1303,14 +1206,6 @@ export default function FormPage() {
       return;
     }
     if (action === "save") {
-      if (intent && intent.startsWith("childJump:")) {
-        const childFormId = intent.slice("childJump:".length);
-        const saveResult = await triggerSave({ stayAsView: true, skipStayAsViewNavigation: true });
-        if (saveResult.ok) {
-          navigateToChildForm(childFormId, saveResult.recordId || currentRecordId || entryId);
-        }
-        return;
-      }
       if (intent && intent.startsWith("navigate:")) {
         const targetEntryId = intent.slice("navigate:".length);
         const saveResult = await triggerSave();
@@ -1342,7 +1237,7 @@ export default function FormPage() {
 
   const confirmMessage = confirmState.intent === "cancel-edit"
     ? "保存せずに編集内容を破棄しますか？"
-    : (confirmState.intent && (confirmState.intent.startsWith("navigate:") || confirmState.intent.startsWith("childJump:"))
+    : (confirmState.intent && confirmState.intent.startsWith("navigate:")
       ? "保存せずに移動しますか？"
       : "保存せずに前の画面へ戻りますか？");
   const editDisabled = loading || isReadLocked;
@@ -1521,16 +1416,6 @@ export default function FormPage() {
         sourceResponses={copySourceResponses}
         onConfirm={handleConfirmRecordCopy}
         onCancel={() => setIsCopyDialogOpen(false)}
-      />
-
-      <PrintChildFormDialog
-        open={showPrintChildFormDialog}
-        childForms={childForms}
-        onCancel={() => setShowPrintChildFormDialog(false)}
-        onSubmit={async (selectedChildFormIds) => {
-          setShowPrintChildFormDialog(false);
-          await executePrintWithChildren(selectedChildFormIds);
-        }}
       />
 
     </AppLayout>

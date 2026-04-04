@@ -18,38 +18,7 @@ export default function SearchTable({
   onSelectAll,
   onToggleSelect,
   onRowClick,
-  onChildRowClick,
 }) {
-  // Map<entryId, Set<childFormId>> - 手動展開した子フォーム
-  const [expandedChildForms, setExpandedChildForms] = useState(new Map());
-  // Map<entryId, Set<childFormId>> - 強制展開から折りたたんだ子フォーム
-  const [collapsedChildForms, setCollapsedChildForms] = useState(new Map());
-
-  // 子フォームIDのユニークリスト（列の出現順）
-  const uniqueChildFormEntries = useMemo(() => {
-    const entries = [];
-    const seen = new Set();
-    columns.forEach((col) => {
-      if (col.scope === "child" && col.childFormId && !seen.has(col.childFormId)) {
-        seen.add(col.childFormId);
-        entries.push({ childFormId: col.childFormId, label: col.segments?.[0] || col.childFormId });
-      }
-    });
-    return entries;
-  }, [columns]);
-
-  // 各子フォームの最初の列キーを特定（展開ボタン配置用）
-  const firstChildColumnKeyByFormId = useMemo(() => {
-    const map = new Map();
-    const selectableCols = columns.filter((col) => col.key !== "__actions");
-    selectableCols.forEach((col) => {
-      if (col.scope === "child" && col.childFormId && !map.has(col.childFormId)) {
-        map.set(col.childFormId, col.key);
-      }
-    });
-    return map;
-  }, [columns]);
-
   const handleCopyId = async (event, id) => {
     event.stopPropagation();
     const idText = String(id || "");
@@ -63,41 +32,10 @@ export default function SearchTable({
     }
   };
 
-  const isChildFormExpanded = (entryId, childFormId, forcedExpanded) => {
-    if (forcedExpanded) {
-      const collapsed = collapsedChildForms.get(entryId);
-      return !collapsed?.has(childFormId);
-    }
-    const expanded = expandedChildForms.get(entryId);
-    return expanded?.has(childFormId) || false;
-  };
-
-  const toggleChildForm = (entryId, childFormId, forcedExpanded) => {
-    if (forcedExpanded) {
-      setCollapsedChildForms((prev) => {
-        const next = new Map(prev);
-        const set = new Set(next.get(entryId) || []);
-        if (set.has(childFormId)) set.delete(childFormId);
-        else set.add(childFormId);
-        next.set(entryId, set);
-        return next;
-      });
-    } else {
-      setExpandedChildForms((prev) => {
-        const next = new Map(prev);
-        const set = new Set(next.get(entryId) || []);
-        if (set.has(childFormId)) set.delete(childFormId);
-        else set.add(childFormId);
-        next.set(entryId, set);
-        return next;
-      });
-    }
-  };
-
-  const renderCellContent = (column, rawDisplayText, rowId, { isChildRow = false, isIndented = false } = {}) => {
+  const renderCellContent = (column, rawDisplayText) => {
     const limitedText = applyDisplayLengthLimit(rawDisplayText || "", cellDisplayLimit);
     const isUrl = column.sourceType === "url" && rawDisplayText;
-    const isRecordIdColumn = column.key === "id" && !isChildRow;
+    const isRecordIdColumn = column.key === "id";
 
     if (isRecordIdColumn) {
       return (
@@ -127,10 +65,6 @@ export default function SearchTable({
           {limitedText}
         </a>
       );
-    }
-
-    if (isIndented && limitedText) {
-      return <span className="search-child-cell-content">└ {limitedText}</span>;
     }
 
     return limitedText;
@@ -248,110 +182,35 @@ export default function SearchTable({
           </thead>
           <tbody>
             {pagedEntries.map((row) => {
-              const { entry, values, childRows = [], matchedChildEntryIds = new Set() } = row;
-              const hasChildRows = childRows.length > 0;
-              const forcedExpanded = matchedChildEntryIds.size > 0;
-              const visibleChildRows = childRows.filter((childRow) => {
-                const cfId = childRow.childFormId;
-                if (forcedExpanded) {
-                  if (!matchedChildEntryIds.has(childRow?.entry?.id)) return false;
-                  return !collapsedChildForms.get(entry.id)?.has(cfId);
-                }
-                return expandedChildForms.get(entry.id)?.has(cfId) || false;
-              });
-
+              const { entry, values } = row;
               return (
-                <React.Fragment key={entry.id}>
-                  <tr
-                    className="search-row"
-                    onClick={() => {
-                      const selection = window.getSelection();
-                      if (selection && selection.toString().length > 0) {
-                        return;
-                      }
-                      onRowClick(entry.id);
-                    }}
-                  >
-                    <td className="search-td search-td-narrow" onClick={(e) => e.stopPropagation()}>
-                      <input
-                        type="checkbox"
-                        checked={selectedEntries.has(entry.id)}
-                        onChange={() => onToggleSelect(entry.id)}
-                      />
-                    </td>
-                    {selectableColumns.map((column) => {
-                      const rawDisplayText = values[column.key]?.display ?? "";
-                      // この列が特定の子フォームの最初の列なら、その子フォームの展開ボタンを表示
-                      const toggleChildFormId = hasChildRows
-                        ? uniqueChildFormEntries.find(({ childFormId: cfId }) => firstChildColumnKeyByFormId.get(cfId) === column.key)
-                        : null;
-                      return (
-                        <td key={`${entry.id}_${column.key}`} className="search-td">
-                          {toggleChildFormId && (() => {
-                            const cfId = toggleChildFormId.childFormId;
-                            const cfLabel = toggleChildFormId.label;
-                            const cfChildRows = childRows.filter((cr) => cr.childFormId === cfId);
-                            if (cfChildRows.length === 0) return null;
-                            const cfExpanded = isChildFormExpanded(entry.id, cfId, forcedExpanded);
-                            return (
-                              <button
-                                type="button"
-                                className="search-row-toggle"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  toggleChildForm(entry.id, cfId, forcedExpanded);
-                                }}
-                                aria-label={cfExpanded ? `${cfLabel}を折りたたむ` : `${cfLabel}を展開する`}
-                                title={cfLabel}
-                              >
-                                {cfExpanded ? "▼" : "▶"}
-                              </button>
-                            );
-                          })()}
-                          {renderCellContent(column, rawDisplayText, entry.id)}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                  {visibleChildRows.map((childRow) => {
-                    const firstChildColumn = selectableColumns.find(
-                      (column) => column.scope === "child" && String(column.childFormId || "") === String(childRow.childFormId || ""),
-                    );
-
+                <tr
+                  key={entry.id}
+                  className="search-row"
+                  onClick={() => {
+                    const selection = window.getSelection();
+                    if (selection && selection.toString().length > 0) {
+                      return;
+                    }
+                    onRowClick(entry.id);
+                  }}
+                >
+                  <td className="search-td search-td-narrow" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedEntries.has(entry.id)}
+                      onChange={() => onToggleSelect(entry.id)}
+                    />
+                  </td>
+                  {selectableColumns.map((column) => {
+                    const rawDisplayText = values[column.key]?.display ?? "";
                     return (
-                      <tr
-                        key={`${entry.id}_${childRow.childFormId}_${childRow.entry.id}`}
-                        className="search-row search-row-child"
-                        style={{ cursor: onChildRowClick ? "pointer" : undefined }}
-                        onClick={() => {
-                          const selection = window.getSelection();
-                          if (selection && selection.toString().length > 0) return;
-                          onChildRowClick && onChildRowClick(childRow.childFormId, entry.id, childRow.entry.id);
-                        }}
-                      >
-                        <td className="search-td search-td-narrow" />
-                        {selectableColumns.map((column) => {
-                          const isVisibleChildColumn = column.scope === "child"
-                            && String(column.childFormId || "") === String(childRow.childFormId || "");
-                          const rawDisplayText = isVisibleChildColumn ? (childRow.values[column.key]?.display ?? "") : "";
-                          return (
-                            <td
-                              key={`${childRow.entry.id}_${column.key}`}
-                              className={`search-td search-td-child${isVisibleChildColumn ? " is-filled" : ""}`}
-                            >
-                              {isVisibleChildColumn
-                                ? renderCellContent(column, rawDisplayText, childRow.entry.id, {
-                                    isChildRow: true,
-                                    isIndented: firstChildColumn?.key === column.key,
-                                  })
-                                : ""}
-                            </td>
-                          );
-                        })}
-                      </tr>
+                      <td key={`${entry.id}_${column.key}`} className="search-td">
+                        {renderCellContent(column, rawDisplayText)}
+                      </td>
                     );
                   })}
-                </React.Fragment>
+                </tr>
               );
             })}
             {pagedEntries.length === 0 && (

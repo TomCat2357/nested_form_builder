@@ -492,7 +492,7 @@ export default function ConfigPage() {
               <span className="nf-fw-600">保存時に印刷様式を出力する（同名ファイルは上書き）</span>
             </label>
             <p className="nf-mt-6 nf-text-12 nf-text-muted">
-              通常の保存ボタンを押した時だけ印刷様式を自動出力します。子フォーム遷移前の自動保存では出力しません。
+              通常の保存ボタンを押した時だけ印刷様式を自動出力します。自動保存では出力しません。
             </p>
           </div>
         )}
