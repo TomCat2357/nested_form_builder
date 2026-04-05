@@ -1,6 +1,6 @@
 import { traverseSchema } from "./schemaUtils.js";
 
-const sanitizeFileUploadEntry = (entry) => {
+export const sanitizeFileUploadEntry = (entry) => {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
   const name = typeof entry.name === "string" ? entry.name : "";
   const driveFileId = typeof entry.driveFileId === "string" ? entry.driveFileId : "";
