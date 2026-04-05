@@ -7,6 +7,7 @@ import {
   finalizeRecordDriveFolder,
   listForms,
   syncRecordsProxy,
+  trashDriveFilesByIds,
 } from "./gasClient.js";
 
 const createGoogleScriptRunStub = (handlers = {}) => {
@@ -257,6 +258,29 @@ test("finalizeRecordDriveFolder は trashFileIds を含む payload をそのま�
     assert.equal(result.autoCreated, false);
     assert.equal(calls.length, 1);
     assert.equal(calls[0].functionName, "nfbFinalizeRecordDriveFolder");
+    assert.deepEqual(calls[0].payload, payload);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});
+
+test("trashDriveFilesByIds は nfbTrashDriveFilesByIds を呼び出す", async () => {
+  const originalGoogle = globalThis.google;
+  const payload = ["file_1", "file_2"];
+  const { run, calls } = createGoogleScriptRunStub({
+    nfbTrashDriveFilesByIds: (receivedPayload) => ({
+      ok: true,
+      trashedIds: receivedPayload,
+    }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    const result = await trashDriveFilesByIds(payload);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.trashedIds, payload);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].functionName, "nfbTrashDriveFilesByIds");
     assert.deepEqual(calls[0].payload, payload);
   } finally {
     globalThis.google = originalGoogle;

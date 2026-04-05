@@ -38,6 +38,11 @@ import SearchTable from "../features/search/components/SearchTable.jsx";
 import SearchPagination from "../features/search/components/SearchPagination.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { DEFAULT_PAGE_SIZE } from "../core/constants.js";
+import {
+  normalizePrintTemplateAction,
+  requiresPrintTemplateFileName,
+  resolveEffectivePrintTemplateFileNameTemplate,
+} from "../utils/printTemplateAction.js";
 
 const buildInitialSort = (params) => {
   const raw = params.get("sort");
@@ -361,7 +366,8 @@ export default function SearchPage() {
 
     if (column.actionKind !== "printTemplate") return;
 
-    const action = column.action || {};
+    const action = normalizePrintTemplateAction(column.action);
+    const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, form?.settings || {});
     const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
     const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
     const driveSettings = {
@@ -373,14 +379,19 @@ export default function SearchPage() {
       responses: restoredResponses,
       fieldLabels,
       fieldValues,
-      fileNameTemplate: action.fileNameTemplate || "",
+      fileNameTemplate: effectiveFileNameTemplate,
     };
 
     if (action.outputType === "gmail") {
+      if (requiresPrintTemplateFileName(action) && !effectiveFileNameTemplate) {
+        showAlert("Gmail 本文で {_PDF} を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください。");
+        return;
+      }
       const result = await executeRecordOutputAction({
         action,
         settings: {
           standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
+          standardPrintFileNameTemplate: form?.settings?.standardPrintFileNameTemplate || "",
         },
         recordContext: {
           formTitle: form?.settings?.formTitle || "",
@@ -415,13 +426,18 @@ export default function SearchPage() {
       return;
     }
 
+    if (!effectiveFileNameTemplate) {
+      showAlert("出力ファイル名が設定されていません。");
+      return;
+    }
+
     if (!entry.driveFolderUrl) {
       showAlert("保存先フォルダが未確定です。");
       return;
     }
 
     const found = await findDriveFileInFolder({
-      fileNameTemplate: action.fileNameTemplate || "",
+      fileNameTemplate: effectiveFileNameTemplate,
       driveSettings,
     });
     if (!found?.found || !found?.fileUrl) {

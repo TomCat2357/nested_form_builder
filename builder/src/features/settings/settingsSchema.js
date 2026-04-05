@@ -68,6 +68,13 @@ export const SETTINGS_GROUPS = [
         description: "未設定時は既存の自動生成ドキュメントを使います",
       },
       {
+        key: "standardPrintFileNameTemplate",
+        label: "標準様式出力ファイル名規則",
+        placeholder: "{ID}_{YYYY-MM-DD}_{氏名}",
+        required: false,
+        description: "Gmail の PDF 名に使います。GoogleDocument/PDF の各カードで未指定時もこの規則を使います",
+      },
+      {
         key: "saveAfterAction",
         label: "通常保存後の動作",
         type: "select",

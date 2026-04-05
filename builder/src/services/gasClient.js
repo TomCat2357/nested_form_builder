@@ -205,6 +205,9 @@ export const createGoogleDocumentFromTemplate = ({ sourceUrl, driveSettings, fil
 export const finalizeRecordDriveFolder = (payload) =>
   fetchGasApi("nfbFinalizeRecordDriveFolder", payload, "Driveフォルダの確定に失敗しました");
 
+export const trashDriveFilesByIds = (fileIds) =>
+  fetchGasApi("nfbTrashDriveFilesByIds", fileIds, "Driveファイルの削除に失敗しました");
+
 export const createRecordPrintDocument = (payload) => {
   if (!isSingleRecordPrintPayload(payload) && !isMultiRecordPrintPayload(payload)) {
     throw new Error("print document payload is invalid");

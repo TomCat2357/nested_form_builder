@@ -653,15 +653,23 @@ export default function QuestionCard({
                 })}
               />
             )}
-            <input
-              className={s.input.className}
-              placeholder={printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL ? "PDFファイル名（例: {ID}_送信用PDF）" : "出力ファイル名（例: {ID}_帳票）"}
-              value={printTemplateAction.fileNameTemplate || ""}
-              onChange={(event) => onChange({
-                ...field,
-                printTemplateAction: { ...printTemplateAction, fileNameTemplate: event.target.value, enabled: true },
-              })}
-            />
+            {printTemplateAction.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
+              <>
+                <input
+                  className={s.input.className}
+                  placeholder="出力ファイル名（例: {ID}_帳票）"
+                  value={printTemplateAction.fileNameTemplate || ""}
+                  onChange={(event) => onChange({
+                    ...field,
+                    printTemplateAction: { ...printTemplateAction, fileNameTemplate: event.target.value, enabled: true },
+                  })}
+                />
+                <div className="nf-text-11 nf-text-muted">未指定時はフォーム設定の標準様式出力ファイル名規則を使用します。</div>
+              </>
+            )}
+            {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
+              <div className="nf-text-11 nf-text-muted">Gmail 本文で {"{_PDF}"} を使う場合の PDF ファイル名はフォーム設定の標準様式出力ファイル名規則を使用します。</div>
+            )}
             {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
               <>
                 <input

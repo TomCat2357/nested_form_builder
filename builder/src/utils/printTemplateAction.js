@@ -32,6 +32,33 @@ export const normalizePrintTemplateAction = (value) => {
   };
 };
 
+const normalizeTemplateString = (value) => (typeof value === "string" ? value.trim() : "");
+
+export const resolveSharedPrintFileNameTemplate = (settings) => (
+  normalizeTemplateString(settings?.standardPrintFileNameTemplate)
+);
+
+export const usesPrintTemplatePdfLink = (value) => (
+  normalizePrintTemplateAction(value).gmailTemplateBody.includes("{_PDF}")
+);
+
+export const requiresPrintTemplateFileName = (value) => {
+  const action = normalizePrintTemplateAction(value);
+  return action.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL || usesPrintTemplatePdfLink(action);
+};
+
+export const resolveEffectivePrintTemplateFileNameTemplate = (value, settings = {}) => {
+  const action = normalizePrintTemplateAction(value);
+  const sharedTemplate = resolveSharedPrintFileNameTemplate(settings);
+  const actionTemplate = normalizeTemplateString(action.fileNameTemplate);
+
+  if (action.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL) {
+    return usesPrintTemplatePdfLink(action) ? (sharedTemplate || actionTemplate) : "";
+  }
+
+  return actionTemplate || sharedTemplate;
+};
+
 export const getPrintTemplateOutputLabel = (actionOrType) => {
   const outputType = typeof actionOrType === "string"
     ? normalizePrintTemplateOutputType(actionOrType)

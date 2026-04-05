@@ -172,17 +172,17 @@ function nfbExecuteRecordOutputAction(payload) {
     var action = payload && payload.action ? payload.action : {};
     var outputType = action.outputType === "pdf" ? "pdf" : (action.outputType === "gmail" ? "gmail" : "googleDoc");
     var driveSettings = payload && payload.driveSettings ? payload.driveSettings : {};
-    var fileNameTemplate = driveSettings && driveSettings.fileNameTemplate
-      ? String(driveSettings.fileNameTemplate).trim()
-      : (action && action.fileNameTemplate ? String(action.fileNameTemplate).trim() : "");
-    if (!fileNameTemplate) {
+    var fileNameTemplate = nfbResolveRecordOutputFileNameTemplate_(payload, action, outputType);
+    if (nfbRequiresRecordOutputFileNameTemplate_(action, outputType) && !fileNameTemplate) {
       throw new Error("出力ファイル名が指定されていません");
     }
 
     var folderResult = nfbResolveUploadFolder_(driveSettings);
     var folder = folderResult.folder;
     var outputContext = nfbBuildRecordOutputContext_(payload, folder.getUrl());
-    var finalBaseName = nfbResolveTemplate_(fileNameTemplate, outputContext) || ("record_" + outputContext.recordId);
+    var finalBaseName = fileNameTemplate
+      ? (nfbResolveTemplate_(fileNameTemplate, outputContext) || ("record_" + outputContext.recordId))
+      : "";
 
     if (outputType === "gmail") {
       return nfbCreateGmailDraftOutput_(payload, action, folder, folderResult, outputContext, finalBaseName);
@@ -219,6 +219,28 @@ function nfbBuildRecordOutputContext_(payload, folderUrl) {
     recordUrl: recordUrl,
     now: now
   };
+}
+
+function nfbResolveRecordOutputFileNameTemplate_(payload, action, outputType) {
+  var settings = payload && payload.settings ? payload.settings : {};
+  var actionTemplate = action && action.fileNameTemplate ? String(action.fileNameTemplate).trim() : "";
+  var sharedTemplate = settings && settings.standardPrintFileNameTemplate
+    ? String(settings.standardPrintFileNameTemplate).trim()
+    : "";
+
+  if (outputType === "gmail") {
+    return nfbBodyTemplateUsesPdf_(action) ? (sharedTemplate || actionTemplate) : "";
+  }
+
+  return actionTemplate || sharedTemplate;
+}
+
+function nfbRequiresRecordOutputFileNameTemplate_(action, outputType) {
+  return outputType !== "gmail" || nfbBodyTemplateUsesPdf_(action);
+}
+
+function nfbBodyTemplateUsesPdf_(action) {
+  return String(action && action.gmailTemplateBody || "").indexOf("{_PDF}") !== -1;
 }
 
 function nfbResolveRecordOutputTemplateSourceUrl_(payload, action) {
@@ -867,6 +889,18 @@ function nfbTrashFilesByIds_(fileIds) {
     }
     file.setTrashed(true);
   }
+}
+
+function nfbTrashDriveFilesByIds(payload) {
+  return nfbSafeCall_(function() {
+    var fileIds = Array.isArray(payload) ? payload : (payload && payload.fileIds);
+    var normalizedFileIds = nfbNormalizeDriveFileIds_(fileIds);
+    nfbTrashFilesByIds_(normalizedFileIds);
+    return {
+      ok: true,
+      trashedIds: normalizedFileIds
+    };
+  });
 }
 
 function nfbFinalizeRecordDriveFolder(payload) {

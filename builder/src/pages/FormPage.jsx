@@ -11,8 +11,9 @@ import {
   acquireSaveLock,
   createRecordPrintDocument,
   finalizeRecordDriveFolder,
-  submitResponses,
   hasScriptRun,
+  submitResponses,
+  trashDriveFilesByIds,
 } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
@@ -538,6 +539,16 @@ export default function FormPage() {
       sessionStorage.removeItem(driveFolderDraftKey);
     } catch (e) {}
   }, [draftKey, driveFolderDraftKey, entryId]);
+
+  const discardUnsavedUploadedFiles = useCallback(async () => {
+    const currentDriveFolder = normalizeDriveFolderState(driveFolderStateRef.current);
+    const fileIds = currentDriveFolder.sessionUploadFileIds;
+    if (fileIds.length === 0) return;
+    if (!hasScriptRun()) {
+      throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
+    }
+    await trashDriveFilesByIds(fileIds);
+  }, [driveFolderStateRef]);
 
   const navigateToEntryById = useCallback((targetEntryId) => {
     clearNewEntryDraft();
@@ -1199,6 +1210,12 @@ export default function FormPage() {
     const intent = confirmState.intent;
     setConfirmState({ open: false, intent: null });
     if (action === "discard") {
+      try {
+        await discardUnsavedUploadedFiles();
+      } catch (error) {
+        showAlert(`未保存アップロードファイルの削除に失敗しました: ${error?.message || error}`);
+        return;
+      }
       if (intent === "cancel-edit") {
         if (!entryId) {
           navigateBack();

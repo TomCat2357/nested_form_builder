@@ -21,7 +21,12 @@ import {
   isTextareaField,
   toSelectedChoiceLabels,
 } from "./printDocument.js";
-import { getPrintTemplateOutputLabel, normalizePrintTemplateAction } from "../../utils/printTemplateAction.js";
+import {
+  getPrintTemplateOutputLabel,
+  normalizePrintTemplateAction,
+  requiresPrintTemplateFileName,
+  resolveEffectivePrintTemplateFileNameTemplate,
+} from "../../utils/printTemplateAction.js";
 import FileUploadField from "./FileUploadField.jsx";
 
 const resolveConfiguredPlaceholder = (field, fallback = "") => {
@@ -583,12 +588,16 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const handleFieldTemplateAction = async (field) => {
     const action = normalizePrintTemplateAction(field?.printTemplateAction);
     if (!action.enabled) return;
-    const fileNameTemplate = String(action.fileNameTemplate || "").trim();
-    if (!fileNameTemplate) {
-      showAlert("出力ファイル名を設定してください");
+    const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, settings);
+    if (requiresPrintTemplateFileName(action) && !effectiveFileNameTemplate) {
+      showAlert(
+        action.outputType === "gmail"
+          ? "Gmail 本文で {_PDF} を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください"
+          : "出力ファイル名が設定されていません",
+      );
       return;
     }
-    if (action.useCustomTemplate && !String(action.templateUrl || "").trim()) {
+    if (action.outputType !== "gmail" && action.useCustomTemplate && !String(action.templateUrl || "").trim()) {
       showAlert("カスタムテンプレートURLを設定してください");
       return;
     }
@@ -606,6 +615,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         action,
         settings: {
           standardPrintTemplateUrl: settings.standardPrintTemplateUrl || "",
+          standardPrintFileNameTemplate: settings.standardPrintFileNameTemplate || "",
         },
         recordContext: {
           formTitle,
@@ -620,7 +630,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         },
         driveSettings: {
           ...baseDriveTemplateSettings,
-          fileNameTemplate,
+          fileNameTemplate: effectiveFileNameTemplate,
         },
       });
       if (result?.fileId || result?.folderUrl) {
