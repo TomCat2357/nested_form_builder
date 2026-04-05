@@ -5,24 +5,14 @@
  */
 
 import { openDB, waitForRequest, waitForTransaction, STORE_NAMES } from "./dbHelpers.js";
-import { MS_PER_DAY, SERIAL_EPOCH_UTC_MS, JST_OFFSET_MS } from "../../core/constants.js";
-import { resolveUnixMs, toUnixMs } from "../../utils/dateTime.js";
+import { resolveUnixMs, toUnixMs, normalizeNumericToUnixMs } from "../../utils/dateTime.js";
 
 const buildCompoundId = (formId, entryId) => `${formId}::${entryId}`;
-const SERIAL_EPOCH_JST_MS = SERIAL_EPOCH_UTC_MS - JST_OFFSET_MS;
-const isProbablyUnixMs = (value) => Math.abs(value) >= 100000000000;
-
-const normalizeNumericModifiedAtToUnixMs = (value) => {
-  if (!Number.isFinite(value) || value <= 0) return 0;
-  if (isProbablyUnixMs(value)) return value;
-  if (Math.abs(value) >= 1000000000) return value * 1000;
-  return SERIAL_EPOCH_JST_MS + value * MS_PER_DAY;
-};
 
 const normalizeComparableModifiedAtUnixMs = (record) => {
   if (!record) return 0;
   const explicitUnixMs = Number(record.modifiedAtUnixMs);
-  const normalizedExplicit = normalizeNumericModifiedAtToUnixMs(explicitUnixMs);
+  const normalizedExplicit = (normalizeNumericToUnixMs(explicitUnixMs) ?? 0);
   if (normalizedExplicit > 0) return normalizedExplicit;
 
   const rawModifiedAt = record.modifiedAt;
@@ -32,7 +22,7 @@ const normalizeComparableModifiedAtUnixMs = (record) => {
   }
 
   const numericModifiedAt = Number(rawModifiedAt);
-  const normalizedNumeric = normalizeNumericModifiedAtToUnixMs(numericModifiedAt);
+  const normalizedNumeric = (normalizeNumericToUnixMs(numericModifiedAt) ?? 0);
   if (normalizedNumeric > 0) return normalizedNumeric;
 
   if (typeof rawModifiedAt === 'string' && rawModifiedAt.trim()) {

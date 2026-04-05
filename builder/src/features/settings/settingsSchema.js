@@ -154,6 +154,3 @@ export const SETTINGS_GROUPS = [
     ],
   },
 ];
-
-// 後方互換のためフラット配列もエクスポート
-export const SETTINGS_FIELDS = SETTINGS_GROUPS.flatMap((g) => g.fields);
