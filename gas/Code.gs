@@ -107,91 +107,105 @@ function EscapeForInlineScript_(value) {
     .replace(/<\/script/gi, "<\\/script");
 }
 
-function doPost(e) {
-  return handleCors_(e, () => {
-    const ctx = Model_parseRequest_(e);
-    const action = ctx.raw?.action || "save";
+const ACTION_DEFINITIONS_ = {
+  "admin_key_get":   { handler: () => ({ ok: true, adminKey: GetAdminKey_() }), adminOnly: true },
+  "admin_key_set":   { handler: (ctx) => SetAdminKey_(ctx.raw?.adminKey ?? ""), adminOnly: true },
+  "admin_email_get": { handler: () => ({ ok: true, adminEmail: GetAdminEmail_() }), adminOnly: true },
+  "admin_email_set": { handler: (ctx) => SetAdminEmail_(ctx.raw?.adminEmail ?? ""), adminOnly: true },
+  "forms_list":      { handler: FormsApi_List_, adminOnly: true },
+  "forms_get":       { handler: FormsApi_Get_, adminOnly: true },
+  "forms_create":    { handler: FormsApi_Create_, adminOnly: true },
+  "forms_import":    { handler: FormsApi_Import_, adminOnly: true },
+  "forms_update":    { handler: FormsApi_Update_, adminOnly: true },
+  "forms_delete":    { handler: FormsApi_Delete_, adminOnly: true },
+  "forms_archive":   { handler: FormsApi_SetArchived_, adminOnly: true },
+  "delete":          { handler: DeleteRecord_, requireSpreadsheetId: true, requireRecordId: true },
+  "list":            { handler: ListRecordsAction_, requireSpreadsheetId: true },
+  "get":             { handler: GetRecord_, requireSpreadsheetId: true, requireRecordId: true },
+  "save":            { handler: SubmitResponses_, requireSpreadsheetId: true },
+  "save_lock":       { handler: AcquireSaveLock_, requireSpreadsheetId: true },
+  "sync_records":    { handler: SyncRecords_, requireSpreadsheetId: true },
+};
+
+function ResolveActionContext_(rawPayload, source) {
+  return source === "doPost"
+    ? Model_parseRequest_(rawPayload)
+    : Model_fromScriptRunPayload_(rawPayload);
+}
+
+function ExecuteActionHttpError_(message, source) {
+  if (source !== "doPost") return { ok: false, error: message };
+  return JsonBadRequest_(message);
+}
+
+function ExecuteActionAuthError_(message, source) {
+  if (source !== "doPost") return { ok: false, error: message };
+  return JsonForbidden_(message);
+}
+
+function ExecuteActionInternalError_(err, source) {
+  if (source !== "doPost") return nfbFail_(err);
+  return JsonInternalError_(err);
+}
+
+function ExecuteActionSuccess_(result, source) {
+  if (source !== "doPost") return result;
+  return JsonOutput_(result, 200);
+}
+
+function executeAction_(action, rawPayload, options = {}) {
+  const source = options.source || "scriptRun";
+  const ctx = ResolveActionContext_(rawPayload, source);
+  const resolvedAction = action || ctx.raw?.action || "save";
+  const route = ACTION_DEFINITIONS_[resolvedAction];
+  if (!route) return ExecuteActionHttpError_("Unknown action", source);
+
+  if (route.adminOnly) {
     const adminSettingsEnabled = Nfb_isAdminSettingsEnabled_();
-
-    const ROUTES = {
-      "admin_key_get":   { handler: () => ({ ok: true, adminKey: GetAdminKey_() }), adminOnly: true },
-      "admin_key_set":   { handler: (c) => SetAdminKey_(c.raw?.adminKey ?? ""), adminOnly: true },
-      "admin_email_get": { handler: () => ({ ok: true, adminEmail: GetAdminEmail_() }), adminOnly: true },
-      "admin_email_set": { handler: (c) => SetAdminEmail_(c.raw?.adminEmail ?? ""), adminOnly: true },
-      "forms_list":      { handler: FormsApi_List_, adminOnly: true },
-      "forms_get":       { handler: FormsApi_Get_, adminOnly: true },
-      "forms_create":    { handler: FormsApi_Create_, adminOnly: true },
-      "forms_import":    { handler: FormsApi_Import_, adminOnly: true },
-      "forms_update":    { handler: FormsApi_Update_, adminOnly: true },
-      "forms_delete":    { handler: FormsApi_Delete_, adminOnly: true },
-      "forms_archive":   { handler: FormsApi_SetArchived_, adminOnly: true },
-      "delete":          { handler: DeleteRecord_, requireSheet: true },
-      "list":            { handler: ListRecords_, requireSheet: true },
-      "get":             { handler: GetRecord_, requireSheet: true },
-      "save":            { handler: SubmitResponses_, requireSheet: true },
-      "sync_records":    { handler: SyncRecords_, requireSheet: true }
-    };
-
-    const route = ROUTES[action];
-    if (!route) return JsonBadRequest_("Unknown action");
-
-    if (route.adminOnly) {
-      if (!adminSettingsEnabled && action.startsWith("admin_")) {
-        return JsonForbidden_("管理者設定は現在のプロパティ保存モードでは利用できません");
-      }
-      if (adminSettingsEnabled) {
-        const isAdmin = IsAdmin_(ctx.raw?.authKey || "", ResolveActiveUserEmail_());
-        if (!isAdmin) return JsonForbidden_("管理者権限が必要です");
-      }
+    if (!adminSettingsEnabled && resolvedAction.startsWith("admin_")) {
+      return ExecuteActionAuthError_("管理者設定は現在のプロパティ保存モードでは利用できません", source);
     }
-
-    if (route.requireSheet) {
-      const ssErr = RequireSpreadsheetId_(ctx);
-      if (ssErr) return JsonBadRequest_(ssErr.error);
+    if (adminSettingsEnabled) {
+      const isAdmin = IsAdmin_(ctx.raw?.authKey || "", ResolveActiveUserEmail_());
+      if (!isAdmin) return ExecuteActionAuthError_("管理者権限が必要です", source);
     }
+  }
 
-    try {
-      return JsonOutput_(route.handler(ctx), 200);
-    } catch (err) {
-      return JsonInternalError_(err);
-    }
-  });
+  if (route.requireSpreadsheetId) {
+    const ssErr = RequireSpreadsheetId_(ctx);
+    if (ssErr) return ExecuteActionHttpError_(ssErr.error, source);
+  }
+  if (route.requireRecordId) {
+    const idErr = RequireRecordId_(ctx);
+    if (idErr) return ExecuteActionHttpError_(idErr.error, source);
+  }
+
+  try {
+    const result = route.handler(ctx);
+    return ExecuteActionSuccess_(result, source);
+  } catch (err) {
+    return ExecuteActionInternalError_(err, source);
+  }
+}
+
+function doPost(e) {
+  return handleCors_(e, () => executeAction_(null, e, { source: "doPost" }));
 }
 
 function saveResponses(payload) {
-  return nfbSafeCall_(() => {
-    const ctx = Model_fromScriptRunPayload_(payload);
-    const ssErr = RequireSpreadsheetId_(ctx);
-    if (ssErr) return ssErr;
-    return SubmitResponses_(ctx);
-  });
+  return executeAction_("save", payload, { source: "scriptRun" });
 }
 
 function nfbAcquireSaveLock(payload) {
-  return nfbSafeCall_(() => {
-    const ctx = Model_fromScriptRunPayload_(payload);
-    const ssErr = RequireSpreadsheetId_(ctx);
-    if (ssErr) return ssErr;
-    return AcquireSaveLock_(ctx);
-  });
+  return executeAction_("save_lock", payload, { source: "scriptRun" });
 }
 
 function deleteRecord(payload) {
-  return nfbSafeCall_(() => {
-    const ctx = Model_fromScriptRunPayload_(payload);
-    const ssErr = RequireSpreadsheetId_(ctx) || RequireRecordId_(ctx);
-    if (ssErr) return ssErr;
-    return DeleteRecord_(ctx);
-  });
+  return executeAction_("delete", payload, { source: "scriptRun" });
 }
 
 function getRecord(payload) {
-  return nfbSafeCall_(() => {
-    const ctx = Model_fromScriptRunPayload_(payload);
-    const ssErr = RequireSpreadsheetId_(ctx) || RequireRecordId_(ctx);
-    if (ssErr) return ssErr;
-    return GetRecord_(ctx);
-  });
+  return executeAction_("get", payload, { source: "scriptRun" });
 }
 
 function nfbExportSearchResults(payload) {
@@ -219,14 +233,13 @@ function nfbAppendExportRows(payload) {
 }
 
 function listRecords(payload) {
-  return nfbSafeCall_(() => {
-    const ctx = Model_fromScriptRunPayload_(payload);
-    const ssErr = RequireSpreadsheetId_(ctx);
-    if (ssErr) return ssErr;
-    const result = ListRecords_(ctx);
-    if (result?.records) result.records = result.records.map(SerializeRecord_);
-    return result;
-  });
+  return executeAction_("list", payload, { source: "scriptRun" });
+}
+
+function ListRecordsAction_(ctx) {
+  const result = ListRecords_(ctx);
+  if (result?.records) result.records = result.records.map(SerializeRecord_);
+  return result;
 }
 
 function SerializeValue_(value) {
@@ -576,12 +589,7 @@ function FormsApi_SetArchived_(ctx) {
 }
 
 function syncRecordsProxy(payload) {
-  return nfbSafeCall_(() => {
-    const ctx = Model_fromScriptRunPayload_(payload);
-    const ssErr = RequireSpreadsheetId_(ctx);
-    if (ssErr) return ssErr;
-    return SyncRecords_(ctx);
-  });
+  return executeAction_("sync_records", payload, { source: "scriptRun" });
 }
 
 function SyncRecords_(ctx) {
