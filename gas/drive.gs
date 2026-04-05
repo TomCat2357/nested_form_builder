@@ -229,10 +229,19 @@ function nfbResolveRecordOutputFileNameTemplate_(payload, action, outputType) {
     : "";
 
   if (outputType === "gmail") {
-    return nfbBodyTemplateUsesPdf_(action) ? (sharedTemplate || actionTemplate) : "";
+    return nfbBodyTemplateUsesPdf_(action)
+      ? (sharedTemplate || actionTemplate || nfbResolveStandardPrintFileNameTemplate_(settings))
+      : "";
   }
 
-  return actionTemplate || sharedTemplate;
+  return actionTemplate || sharedTemplate || nfbResolveStandardPrintFileNameTemplate_(settings);
+}
+
+function nfbResolveStandardPrintFileNameTemplate_(settings) {
+  var configuredTemplate = settings && settings.standardPrintFileNameTemplate
+    ? String(settings.standardPrintFileNameTemplate).trim()
+    : "";
+  return configuredTemplate || "{ID}_{YYYY-MM-DD}_{氏名}";
 }
 
 function nfbRequiresRecordOutputFileNameTemplate_(action, outputType) {

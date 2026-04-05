@@ -72,7 +72,7 @@ export const SETTINGS_GROUPS = [
         label: "標準様式出力ファイル名規則",
         placeholder: "{ID}_{YYYY-MM-DD}_{氏名}",
         required: false,
-        description: "Gmail の PDF 名に使います。GoogleDocument/PDF の各カードで未指定時もこの規則を使います",
+        description: "Gmail の PDF 名に使います。未入力時は {ID}_{YYYY-MM-DD}_{氏名} を既定値として使い、GoogleDocument/PDF の各カードで未指定時もこの規則を使います",
       },
       {
         key: "saveAfterAction",

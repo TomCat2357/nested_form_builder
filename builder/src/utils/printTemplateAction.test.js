@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE,
   normalizePrintTemplateAction,
   requiresPrintTemplateFileName,
   resolveEffectivePrintTemplateFileNameTemplate,
@@ -67,6 +68,13 @@ test("resolveEffectivePrintTemplateFileNameTemplate は GoogleDocument/PDF で�
     ),
     "{ID}_個別",
   );
+  assert.equal(
+    resolveEffectivePrintTemplateFileNameTemplate(
+      { outputType: "googleDoc", fileNameTemplate: "" },
+      {},
+    ),
+    DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE,
+  );
 });
 
 test("resolveEffectivePrintTemplateFileNameTemplate は Gmail の {_PDF} で共通設定を優先し旧個別設定へ後方互換フォールバックする", () => {
@@ -83,6 +91,13 @@ test("resolveEffectivePrintTemplateFileNameTemplate は Gmail の {_PDF} で共�
       {},
     ),
     "{ID}_旧個別",
+  );
+  assert.equal(
+    resolveEffectivePrintTemplateFileNameTemplate(
+      { outputType: "gmail", fileNameTemplate: "", gmailTemplateBody: "本文 {_PDF}" },
+      {},
+    ),
+    DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE,
   );
   assert.equal(
     resolveEffectivePrintTemplateFileNameTemplate(
