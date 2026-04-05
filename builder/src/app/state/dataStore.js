@@ -127,6 +127,27 @@ const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value || {},
 
 const mapSheetRecordToEntry = (record, formId) => normalizeRecordForCache(record, { formId });
 
+/**
+ * @typedef {object} ListEntriesOptions
+ * @property {boolean} [forceFullSync=false] 差分同期ではなくフル同期を強制する
+ */
+
+/**
+ * listEntries が受け付けるオプションだけを正規化する。
+ * @param {unknown} options
+ * @returns {Required<ListEntriesOptions>}
+ */
+export const normalizeListEntriesOptions = (options = {}) => {
+  const safeOptions = options && typeof options === "object" ? options : {};
+  return {
+    forceFullSync: safeOptions.forceFullSync === true,
+  };
+};
+
+export const buildGetEntryFallbackListEntriesOptions = () => normalizeListEntriesOptions({
+  forceFullSync: false,
+});
+
 export const buildListEntriesResult = ({
   entries = [],
   headerMatrix = [],
@@ -361,7 +382,12 @@ export const dataStore = {
     });
     return record;
   },
-  async listEntries(formId, { forceFullSync = false } = {}) {
+  /**
+   * @param {string} formId
+   * @param {ListEntriesOptions} [options]
+   */
+  async listEntries(formId, options = {}) {
+    const { forceFullSync } = normalizeListEntriesOptions(options);
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
     const deletedRetentionDays = getDeletedRetentionDays(form);
@@ -483,7 +509,6 @@ export const dataStore = {
       entry: cachedEntry,
       rowIndex: cachedRowIndex,
       lastSyncedAt,
-      lastSpreadsheetReadAt,
     } = await getCachedEntryWithIndex(formId, entryId);
     const deletedRetentionDays = getDeletedRetentionDays(form);
     const cacheEntryExpired = isDeletedEntryExpired(cachedEntry, deletedRetentionDays);
@@ -543,11 +568,7 @@ export const dataStore = {
     // 単一取得を諦めて差分更新リスト取得にフォールバックする
     if (!result.ok || !result.record || result.record.id !== entryId) {
       console.log("[dataStore.getEntry] row mismatch or deleted. falling back to delta listEntries.");
-      const listResult = await this.listEntries(formId, {
-        lastSyncedAt,
-        lastSpreadsheetReadAt,
-        forceFullSync: false,
-      });
+      const listResult = await this.listEntries(formId, buildGetEntryFallbackListEntriesOptions());
       return listResult.entries.find(e => e.id === entryId) || null;
     }
 
