@@ -5,32 +5,13 @@
  */
 
 import { openDB, waitForRequest, waitForTransaction, STORE_NAMES } from "./dbHelpers.js";
-import { resolveUnixMs, toUnixMs, normalizeNumericToUnixMs } from "../../utils/dateTime.js";
+import { resolveUnixMs } from "../../utils/dateTime.js";
 
 const buildCompoundId = (formId, entryId) => `${formId}::${entryId}`;
 
 const normalizeComparableModifiedAtUnixMs = (record) => {
   if (!record) return 0;
-  const explicitUnixMs = Number(record.modifiedAtUnixMs);
-  const normalizedExplicit = (normalizeNumericToUnixMs(explicitUnixMs) ?? 0);
-  if (normalizedExplicit > 0) return normalizedExplicit;
-
-  const rawModifiedAt = record.modifiedAt;
-  if (rawModifiedAt instanceof Date) {
-    const dateUnixMs = rawModifiedAt.getTime();
-    return Number.isFinite(dateUnixMs) && dateUnixMs > 0 ? dateUnixMs : 0;
-  }
-
-  const numericModifiedAt = Number(rawModifiedAt);
-  const normalizedNumeric = (normalizeNumericToUnixMs(numericModifiedAt) ?? 0);
-  if (normalizedNumeric > 0) return normalizedNumeric;
-
-  if (typeof rawModifiedAt === 'string' && rawModifiedAt.trim()) {
-    const parsedUnixMs = toUnixMs(rawModifiedAt);
-    if (Number.isFinite(parsedUnixMs) && parsedUnixMs > 0) return parsedUnixMs;
-  }
-
-  return 0;
+  return resolveUnixMs(record.modifiedAtUnixMs, record.modifiedAt) ?? 0;
 };
 
 const withNormalizedModifiedAt = (record) => {
