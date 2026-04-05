@@ -9,7 +9,7 @@ const UNIX_SECONDS_THRESHOLD = 1000000000;
 const pad2 = (value) => String(value).padStart(2, "0");
 const pad3 = (value) => String(value).padStart(3, "0");
 const isValidDate = (d) => d instanceof Date && !Number.isNaN(d.getTime());
-const normalizeNumericToUnixMs = (numeric, { allowSerialNumber = true } = {}) => {
+export const normalizeNumericToUnixMs = (numeric, { allowSerialNumber = true } = {}) => {
   if (!Number.isFinite(numeric)) return null;
   const abs = Math.abs(numeric);
   if (abs >= UNIX_MS_THRESHOLD) return numeric;

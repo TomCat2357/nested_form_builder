@@ -1,7 +1,7 @@
 /**
  * スキーマの木構造を変換して新しいツリーを生成する（Map操作）
  */
-const resolveOrderedChildKeys = (field) => {
+export const resolveOrderedChildKeys = (field) => {
   const branches = field?.childrenByValue;
   if (!branches || typeof branches !== "object") return [];
 

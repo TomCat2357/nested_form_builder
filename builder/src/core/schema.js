@@ -2,7 +2,7 @@ import { genId } from "./ids.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
 import { MAX_DEPTH } from "./constants.js";
 import { normalizePhoneSettings } from "./phone.js";
-import { traverseSchema, countSchemaNodes } from "./schemaUtils.js";
+import { traverseSchema, countSchemaNodes, resolveOrderedChildKeys } from "./schemaUtils.js";
 import {
   normalizePrintTemplateAction,
   resolvePrintTemplateFieldLabel,
@@ -44,33 +44,6 @@ const buildStableFieldId = (field, context) => {
 const buildStableOptionId = (fieldId, optionLabel, optionIndex) => {
   const index = Number.isFinite(optionIndex) ? optionIndex : -1;
   return `o_auto_${stableHash(`${fieldId}|${index}|${optionLabel || ""}`)}`;
-};
-
-const collectOrderedChildKeys = (field) => {
-  const branches = field?.childrenByValue;
-  if (!branches || typeof branches !== "object") return [];
-
-  const branchKeys = Object.keys(branches);
-  if (branchKeys.length === 0) return [];
-
-  const ordered = [];
-  const seen = new Set();
-  const options = Array.isArray(field?.options) ? field.options : [];
-
-  options.forEach((opt) => {
-    const label = typeof opt?.label === "string" ? opt.label : "";
-    if (seen.has(label) || !Object.prototype.hasOwnProperty.call(branches, label)) return;
-    ordered.push(label);
-    seen.add(label);
-  });
-
-  branchKeys.forEach((key) => {
-    if (seen.has(key)) return;
-    ordered.push(key);
-    seen.add(key);
-  });
-
-  return ordered;
 };
 
 export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
@@ -342,7 +315,7 @@ export const normalizeSchemaIDs = (nodes) => {
 
       if (normalizedField?.childrenByValue && typeof normalizedField.childrenByValue === "object") {
         const nextChildren = {};
-        collectOrderedChildKeys(normalizedField).forEach((optionLabel) => {
+        resolveOrderedChildKeys(normalizedField).forEach((optionLabel) => {
           nextChildren[optionLabel] = normalizeNodes(
             normalizedField.childrenByValue[optionLabel],
             [...currentPath, optionLabel],

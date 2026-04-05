@@ -58,9 +58,6 @@ const Nfb_getDeletedRecordRetentionDays_ = () => {
   if (isFinite(numeric) && numeric > 0) return numeric;
   return NFB_DEFAULT_DELETED_RECORD_RETENTION_DAYS;
 };
-// backward compatibility
-const GetServerCommitToken_ = () => GetServerModifiedAt_();
-const SetServerCommitToken_ = (token) => SetServerModifiedAt_(token);
 const GetSheetLastUpdatedAt_ = (spreadsheetId, sheetName) => {
   const key = Nfb_buildSheetLastUpdatedKey_(spreadsheetId, sheetName);
   return parseInt(Nfb_getScriptProperties_().getProperty(key) || "0", 10) || 0;
