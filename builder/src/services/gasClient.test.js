@@ -1,13 +1,21 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import {
+  archiveForm,
+  archiveForms,
   createGoogleDocumentFromTemplate,
   createRecordPrintDocument,
   executeRecordOutputAction,
   finalizeRecordDriveFolder,
+  getAdminEmail,
+  getAdminKey,
   listForms,
+  setAdminEmail,
+  setAdminKey,
   syncRecordsProxy,
   trashDriveFilesByIds,
+  unarchiveForm,
+  unarchiveForms,
 } from "./gasClient.js";
 
 const createGoogleScriptRunStub = (handlers = {}) => {
@@ -311,6 +319,75 @@ test("executeRecordOutputAction は nfbExecuteRecordOutputAction を呼び出す
     assert.equal(calls.length, 1);
     assert.equal(calls[0].functionName, "nfbExecuteRecordOutputAction");
     assert.deepEqual(calls[0].payload, payload);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});
+
+test("archive/unarchive 系は formId 必須エラー文言を維持する", async () => {
+  await assert.rejects(archiveForm(), /formId is required/);
+  await assert.rejects(unarchiveForm(), /formId is required/);
+});
+
+test("archive/unarchive 系は mapResult で form を返し未定義時は null を返す", async () => {
+  const originalGoogle = globalThis.google;
+  const { run } = createGoogleScriptRunStub({
+    nfbArchiveForm: () => ({ ok: true, form: { id: "f1" } }),
+    nfbUnarchiveForm: () => ({ ok: true }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    const archived = await archiveForm("f1");
+    const unarchived = await unarchiveForm("f1");
+    assert.deepEqual(archived, { id: "f1" });
+    assert.equal(unarchived, null);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});
+
+test("archiveForms/unarchiveForms は formIds 必須エラー文言を維持する", async () => {
+  await assert.rejects(archiveForms(), /formIds array is required/);
+  await assert.rejects(unarchiveForms([]), /formIds array is required/);
+});
+
+test("archiveForms/unarchiveForms は配列 payload をそのまま送信する", async () => {
+  const originalGoogle = globalThis.google;
+  const { run, calls } = createGoogleScriptRunStub({
+    nfbArchiveForms: (payload) => ({ ok: true, archived: payload.length }),
+    nfbUnarchiveForms: (payload) => ({ ok: true, unarchived: payload.length }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    const ids = ["f1", "f2"];
+    const archiveResult = await archiveForms(ids);
+    const unarchiveResult = await unarchiveForms(ids);
+    assert.equal(archiveResult.archived, 2);
+    assert.equal(unarchiveResult.unarchived, 2);
+    assert.deepEqual(calls[0].payload, ids);
+    assert.deepEqual(calls[1].payload, ids);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});
+
+test("admin key/email 系は mapResult で既定値を返す", async () => {
+  const originalGoogle = globalThis.google;
+  const { run } = createGoogleScriptRunStub({
+    nfbGetAdminKey: () => ({ ok: true }),
+    nfbSetAdminKey: () => ({ ok: true, adminKey: "new-key" }),
+    nfbGetAdminEmail: () => ({ ok: true }),
+    nfbSetAdminEmail: () => ({ ok: true, adminEmail: "admin@example.com" }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    assert.equal(await getAdminKey(), "");
+    assert.equal(await setAdminKey("new-key"), "new-key");
+    assert.equal(await getAdminEmail(), "");
+    assert.equal(await setAdminEmail("admin@example.com"), "admin@example.com");
   } finally {
     globalThis.google = originalGoogle;
   }

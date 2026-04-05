@@ -63,6 +63,27 @@ const fetchGasApi = async (functionName, payload, errorMessage) => {
   }
 };
 
+const createGasEndpoint = ({
+  fnName,
+  validate = (...args) => args[0],
+  mapResult = (result) => result,
+  defaultError = "Apps Script call failed",
+}) => async (...args) => {
+  const payload = validate(...args);
+  const result = await fetchGasApi(fnName, payload, defaultError);
+  return mapResult(result);
+};
+
+const validateFormId = (formId) => {
+  if (!formId) throw new Error("formId is required");
+  return formId;
+};
+
+const validateFormIds = (formIds) => {
+  if (!Array.isArray(formIds) || formIds.length === 0) throw new Error("formIds array is required");
+  return formIds;
+};
+
 export const validateSpreadsheet = (idOrUrl) => {
   if (!idOrUrl) throw new Error("Spreadsheet URL/ID is required");
   return fetchGasApi("nfbValidateSpreadsheet", idOrUrl, "Spreadsheet validation failed");
@@ -141,18 +162,10 @@ export const saveForm = async (form, targetUrl = null, saveMode = "auto") => {
 };
 export const deleteFormFromDrive = (formId) => { if (!formId) throw new Error("formId is required"); return fetchGasApi("nfbDeleteForm", formId, "Delete form failed"); };
 export const deleteFormsFromDrive = (formIds) => { if (!Array.isArray(formIds) || formIds.length === 0) throw new Error("formIds array is required"); return fetchGasApi("nfbDeleteForms", formIds, "Batch delete forms failed"); };
-export const archiveForm = async (formId) => {
-  if (!formId) throw new Error("formId is required");
-  const r = await fetchGasApi("nfbArchiveForm", formId, "Archive form failed");
-  return r.form || null;
-};
-export const unarchiveForm = async (formId) => {
-  if (!formId) throw new Error("formId is required");
-  const r = await fetchGasApi("nfbUnarchiveForm", formId, "Unarchive form failed");
-  return r.form || null;
-};
-export const archiveForms = (formIds) => { if (!Array.isArray(formIds) || formIds.length === 0) throw new Error("formIds array is required"); return fetchGasApi("nfbArchiveForms", formIds, "Batch archive forms failed"); };
-export const unarchiveForms = (formIds) => { if (!Array.isArray(formIds) || formIds.length === 0) throw new Error("formIds array is required"); return fetchGasApi("nfbUnarchiveForms", formIds, "Batch unarchive forms failed"); };
+export const archiveForm = createGasEndpoint({ fnName: "nfbArchiveForm", validate: validateFormId, mapResult: (r) => r.form || null, defaultError: "Archive form failed" });
+export const unarchiveForm = createGasEndpoint({ fnName: "nfbUnarchiveForm", validate: validateFormId, mapResult: (r) => r.form || null, defaultError: "Unarchive form failed" });
+export const archiveForms = createGasEndpoint({ fnName: "nfbArchiveForms", validate: validateFormIds, defaultError: "Batch archive forms failed" });
+export const unarchiveForms = createGasEndpoint({ fnName: "nfbUnarchiveForms", validate: validateFormIds, defaultError: "Batch unarchive forms failed" });
 export const importFormsFromDrive = async (url) => {
   if (!url) throw new Error("Google Drive URL is required");
   const r = await fetchGasApi("nfbImportFormsFromDrive", url, "Import from Drive failed");
@@ -165,10 +178,10 @@ export const importThemeFromDrive = async (url) => {
   return { css: r.css || "", fileName: r.fileName || "", fileUrl: r.fileUrl || url };
 };
 export const debugGetMapping = () => fetchGasApi("nfbDebugGetMapping", {}, "Debug get mapping failed");
-export const getAdminKey = async () => { const r = await fetchGasApi("nfbGetAdminKey", {}, "Get admin key failed"); return r.adminKey || ""; };
-export const setAdminKey = async (newKey) => { const r = await fetchGasApi("nfbSetAdminKey", newKey, "Set admin key failed"); return r.adminKey || ""; };
-export const getAdminEmail = async () => { const r = await fetchGasApi("nfbGetAdminEmail", {}, "Get admin email failed"); return r.adminEmail || ""; };
-export const setAdminEmail = async (newEmail) => { const r = await fetchGasApi("nfbSetAdminEmail", newEmail, "Set admin email failed"); return r.adminEmail || ""; };
+export const getAdminKey = createGasEndpoint({ fnName: "nfbGetAdminKey", validate: () => ({}), mapResult: (r) => r.adminKey || "", defaultError: "Get admin key failed" });
+export const setAdminKey = createGasEndpoint({ fnName: "nfbSetAdminKey", mapResult: (r) => r.adminKey || "", defaultError: "Set admin key failed" });
+export const getAdminEmail = createGasEndpoint({ fnName: "nfbGetAdminEmail", validate: () => ({}), mapResult: (r) => r.adminEmail || "", defaultError: "Get admin email failed" });
+export const setAdminEmail = createGasEndpoint({ fnName: "nfbSetAdminEmail", mapResult: (r) => r.adminEmail || "", defaultError: "Set admin email failed" });
 export const getRestrictToFormOnly = async () => { const r = await fetchGasApi("nfbGetRestrictToFormOnly", {}, "Get restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
 export const setRestrictToFormOnly = async (value) => { const r = await fetchGasApi("nfbSetRestrictToFormOnly", value, "Set restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
