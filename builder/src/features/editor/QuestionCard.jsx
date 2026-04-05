@@ -581,9 +581,9 @@ export default function QuestionCard({
           <option value="checkboxes">チェックボックス</option>
           <option value="radio">ラジオボタン</option>
           <option value="select">ドロップダウン</option>
-          <option value="message">メッセージ</option>
           <option value="fileUpload">ファイルアップロード</option>
           <option value="printTemplate">様式出力</option>
+          <option value="message">メッセージ</option>
         </select>
         {!isMessage && !isPrintTemplate && (
           <label className="nf-row nf-gap-4 nf-nowrap">
@@ -657,7 +657,7 @@ export default function QuestionCard({
               <>
                 <input
                   className={s.input.className}
-                  placeholder="出力ファイル名（例: {ID}_帳票）"
+                  placeholder="出力ファイル名（例: {ID}_{YYYY}-{MM}-{DD}）"
                   value={printTemplateAction.fileNameTemplate || ""}
                   onChange={(event) => onChange({
                     ...field,
@@ -668,7 +668,7 @@ export default function QuestionCard({
               </>
             )}
             {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
-              <div className="nf-text-11 nf-text-muted">Gmail 本文で {"{_PDF}"} を使う場合の PDF ファイル名はフォーム設定の標準様式出力ファイル名規則を使用します。</div>
+              <div className="nf-text-11 nf-text-muted">Gmail 本文で {"{_PDF}"} または {"{_DOCUMENT}"} を使う場合の出力名は、フォーム設定の標準様式出力ファイル名規則か既定値を使用します。</div>
             )}
             {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
               <>
@@ -719,7 +719,7 @@ export default function QuestionCard({
                 />
               </>
             )}
-            <div className="nf-text-11 nf-text-muted">{"テンプレート本文と出力ファイル名で {フィールド名}/{ID}/日付トークンを使えます。Gmail 本文では {_record_url} / {_folder_url} / {_PDF} を使えます。"}</div>
+            <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {ID} / {YYYY} / {MM} / {DD} / {H} / {m} / {s} / {gg} / {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照します。Gmail 本文では {_PDF} / {_DOCUMENT} / {_folder_url} / {_record_url} / {_form_url} も使えます。"}</div>
           </div>
         </div>
       )}

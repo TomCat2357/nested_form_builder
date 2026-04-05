@@ -2,8 +2,8 @@ import React, { createContext, useCallback, useEffect, useMemo, useRef, useState
 import AlertDialog from "../components/AlertDialog.jsx";
 
 export const AlertContext = createContext(null);
-const DEFAULT_TOAST_DURATION_MS = 20000;
-const OUTPUT_ALERT_DURATION_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_TOAST_DURATION_MS = 30000;
+const OUTPUT_ALERT_DURATION_MS = 30000;
 
 const normalizeMessage = (message) =>
   message === undefined || message === null

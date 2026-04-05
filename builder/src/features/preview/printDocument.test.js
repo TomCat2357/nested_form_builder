@@ -81,6 +81,7 @@ test("buildPrintDocumentPayload は表示順を維持しつつ非表示分岐を
 test("buildPrintDocumentPayload は空欄行を省略しても message 行は残す", () => {
   const schema = [
     { id: "message_1", type: "message", label: "セクション見出し" },
+    { id: "files", type: "fileUpload", label: "添付資料" },
     { id: "empty_field", type: "text", label: "未回答項目" },
     { id: "filled_field", type: "text", label: "回答済み項目" },
   ];
@@ -101,6 +102,7 @@ test("buildPrintDocumentPayload は空欄行を省略しても message 行は残
 
   assert.deepEqual(payload.items, [
     { label: "セクション見出し", value: "", depth: 0, type: "message" },
+    { label: "添付資料", value: "", depth: 0, type: "fileUpload" },
     { label: "回答済み項目", value: "あり", depth: 0, type: "text" },
   ]);
 });

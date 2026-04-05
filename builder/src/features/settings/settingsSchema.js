@@ -70,9 +70,9 @@ export const SETTINGS_GROUPS = [
       {
         key: "standardPrintFileNameTemplate",
         label: "標準様式出力ファイル名規則",
-        placeholder: "{ID}_{YYYY-MM-DD}_{氏名}",
+        placeholder: "{ID}_{YYYY}-{MM}-{DD}",
         required: false,
-        description: "Gmail の PDF 名に使います。未入力時は {ID}_{YYYY-MM-DD}_{氏名} を既定値として使い、GoogleDocument/PDF の各カードで未指定時もこの規則を使います",
+        description: "GoogleDocument/PDF は「カード個別 > フォーム共通 > 既定値」で解決します。Gmail 本文の {_PDF}/{_DOCUMENT} はフォーム共通か既定値のみを使い、未入力時の既定値は {ID}_{YYYY}-{MM}-{DD} です",
       },
       {
         key: "saveAfterAction",
@@ -147,9 +147,9 @@ export const SETTINGS_GROUPS = [
       {
         key: "driveFolderNameTemplate",
         label: "フォルダ命名規則",
-        placeholder: "{ID}_{YYYY-MM-DD}_{担当者名}",
+        placeholder: "{ID}_{YYYY}-{MM}-{DD}_{担当者名}",
         required: false,
-        description: "空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{ID}, {YYYY-MM-DD}, {HH:mm:ss} などの日時や {フィールドラベル} でフィールド値を参照できます",
+        description: "空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{ID}, {YYYY}, {MM}, {DD}, {H}, {m}, {s}, {gg}, {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照できます",
       },
     ],
   },

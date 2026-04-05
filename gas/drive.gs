@@ -203,6 +203,9 @@ function nfbBuildRecordOutputContext_(payload, folderUrl) {
   var formId = recordContext.formId || driveSettings.formId || "";
   var recordId = recordContext.recordId || driveSettings.recordId || "";
   var webAppUrl = ScriptApp.getService().getUrl() || "";
+  var formUrl = webAppUrl && formId
+    ? webAppUrl + "?form=" + encodeURIComponent(formId)
+    : "";
   var recordUrl = webAppUrl && formId && recordId
     ? webAppUrl + "?form=" + encodeURIComponent(formId) + "&record=" + encodeURIComponent(recordId)
     : "";
@@ -216,6 +219,7 @@ function nfbBuildRecordOutputContext_(payload, folderUrl) {
     recordNo: recordContext.recordNo || "",
     formTitle: recordContext.formTitle || "",
     folderUrl: folderUrl || "",
+    formUrl: formUrl,
     recordUrl: recordUrl,
     now: now
   };
@@ -229,8 +233,8 @@ function nfbResolveRecordOutputFileNameTemplate_(payload, action, outputType) {
     : "";
 
   if (outputType === "gmail") {
-    return nfbBodyTemplateUsesPdf_(action)
-      ? (sharedTemplate || actionTemplate || nfbResolveStandardPrintFileNameTemplate_(settings))
+    return nfbBodyTemplateUsesGeneratedFile_(action)
+      ? (sharedTemplate || nfbResolveStandardPrintFileNameTemplate_(settings))
       : "";
   }
 
@@ -241,15 +245,23 @@ function nfbResolveStandardPrintFileNameTemplate_(settings) {
   var configuredTemplate = settings && settings.standardPrintFileNameTemplate
     ? String(settings.standardPrintFileNameTemplate).trim()
     : "";
-  return configuredTemplate || "{ID}_{YYYY-MM-DD}_{氏名}";
+  return configuredTemplate || "{ID}_{YYYY}-{MM}-{DD}";
 }
 
 function nfbRequiresRecordOutputFileNameTemplate_(action, outputType) {
-  return outputType !== "gmail" || nfbBodyTemplateUsesPdf_(action);
+  return outputType !== "gmail" || nfbBodyTemplateUsesGeneratedFile_(action);
 }
 
 function nfbBodyTemplateUsesPdf_(action) {
   return String(action && action.gmailTemplateBody || "").indexOf("{_PDF}") !== -1;
+}
+
+function nfbBodyTemplateUsesDocument_(action) {
+  return String(action && action.gmailTemplateBody || "").indexOf("{_DOCUMENT}") !== -1;
+}
+
+function nfbBodyTemplateUsesGeneratedFile_(action) {
+  return nfbBodyTemplateUsesPdf_(action) || nfbBodyTemplateUsesDocument_(action);
 }
 
 function nfbResolveRecordOutputTemplateSourceUrl_(payload, action) {
@@ -277,9 +289,7 @@ function nfbCreateGoogleDocumentOutput_(payload, action, folder, folderResult, o
 
 function nfbCreatePdfOutput_(payload, action, folder, folderResult, outputContext, finalBaseName) {
   var docFile = nfbCreateRecordOutputGoogleDocument_(payload, action, folder, outputContext, finalBaseName + "__tmp");
-  var pdfName = /\.pdf$/i.test(finalBaseName) ? finalBaseName : finalBaseName + ".pdf";
-  nfbTrashExistingFile_(folder, pdfName);
-  var pdfFile = folder.createFile(docFile.getBlob().getAs(MimeType.PDF).setName(pdfName));
+  var pdfFile = nfbCreatePdfFileFromGoogleDocument_(docFile, folder, finalBaseName);
   docFile.setTrashed(true);
   return {
     ok: true,
@@ -300,22 +310,13 @@ function nfbCreateGmailDraftOutput_(payload, action, folder, folderResult, outpu
   var bcc = nfbResolveTemplate_(String(action && action.gmailTemplateBcc || ""), outputContext);
   var subject = nfbResolveTemplate_(String(action && action.gmailTemplateSubject || ""), outputContext);
   var bodyTemplate = String(action && action.gmailTemplateBody || "");
-  var shouldInsertPdfUrl = bodyTemplate.indexOf("{_PDF}") !== -1;
-  var pdfResult = null;
-  if (shouldInsertPdfUrl) {
-    var pdfAction = {};
-    for (var actionKey in action) {
-      if (Object.prototype.hasOwnProperty.call(action, actionKey)) {
-        pdfAction[actionKey] = action[actionKey];
-      }
-    }
-    pdfAction.useCustomTemplate = false;
-    pdfAction.templateUrl = "";
-    pdfResult = nfbCreatePdfOutput_(payload, pdfAction, folder, folderResult, outputContext, finalBaseName);
-  }
-  var replacements = nfbBuildTemplateReplacementMap_(outputContext);
-  replacements["{_PDF}"] = pdfResult ? pdfResult.fileUrl : "";
-  var body = nfbResolveTemplateTokens_(bodyTemplate, replacements, true);
+  var generatedFiles = nfbCreateGmailGeneratedFiles_(payload, action, folder, outputContext, finalBaseName);
+  var bodyContext = nfbCloneTemplateContext_(outputContext);
+  bodyContext.generatedTokens = {
+    _PDF: generatedFiles.pdfFile ? generatedFiles.pdfFile.getUrl() : "",
+    _DOCUMENT: generatedFiles.documentFile ? generatedFiles.documentFile.getUrl() : ""
+  };
+  var body = nfbResolveTemplate_(bodyTemplate, bodyContext, { allowGmailOnlyTokens: true });
   var openUrl = nfbBuildGmailComposeUrl_({
     to: to,
     cc: cc,
@@ -330,9 +331,65 @@ function nfbCreateGmailDraftOutput_(payload, action, folder, folderResult, outpu
     draftId: "",
     folderUrl: folder.getUrl(),
     autoCreated: folderResult.autoCreated === true,
-    fileId: pdfResult ? pdfResult.fileId : "",
-    fileUrl: pdfResult ? pdfResult.fileUrl : "",
+    fileId: generatedFiles.pdfFile ? generatedFiles.pdfFile.getId() : (generatedFiles.documentFile ? generatedFiles.documentFile.getId() : ""),
+    fileUrl: generatedFiles.pdfFile ? generatedFiles.pdfFile.getUrl() : (generatedFiles.documentFile ? generatedFiles.documentFile.getUrl() : ""),
     openUrl: openUrl
+  };
+}
+
+function nfbCloneTemplateContext_(context) {
+  var cloned = {};
+  var source = context || {};
+  for (var key in source) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      cloned[key] = source[key];
+    }
+  }
+  return cloned;
+}
+
+function nfbCloneRecordOutputActionForGeneratedFile_(action) {
+  var cloned = {};
+  var source = action || {};
+  for (var key in source) {
+    if (Object.prototype.hasOwnProperty.call(source, key)) {
+      cloned[key] = source[key];
+    }
+  }
+  cloned.useCustomTemplate = false;
+  cloned.templateUrl = "";
+  return cloned;
+}
+
+function nfbCreatePdfFileFromGoogleDocument_(docFile, folder, finalBaseName) {
+  var pdfName = /\.pdf$/i.test(finalBaseName) ? finalBaseName : finalBaseName + ".pdf";
+  nfbTrashExistingFile_(folder, pdfName);
+  return folder.createFile(docFile.getBlob().getAs(MimeType.PDF).setName(pdfName));
+}
+
+function nfbCreateGmailGeneratedFiles_(payload, action, folder, outputContext, finalBaseName) {
+  var needsDocument = nfbBodyTemplateUsesDocument_(action);
+  var needsPdf = nfbBodyTemplateUsesPdf_(action);
+  if (!needsDocument && !needsPdf) {
+    return {
+      documentFile: null,
+      pdfFile: null
+    };
+  }
+
+  var documentAction = nfbCloneRecordOutputActionForGeneratedFile_(action);
+  var documentBaseName = needsDocument ? finalBaseName : (finalBaseName + "__tmp");
+  var documentFile = nfbCreateRecordOutputGoogleDocument_(payload, documentAction, folder, outputContext, documentBaseName);
+  var pdfFile = needsPdf ? nfbCreatePdfFileFromGoogleDocument_(documentFile, folder, finalBaseName) : null;
+
+  if (!needsDocument) {
+    documentFile.setTrashed(true);
+    documentFile = null;
+  }
+
+  return {
+    documentFile: documentFile,
+    pdfFile: pdfFile
   };
 }
 
@@ -380,7 +437,7 @@ function nfbCreateGoogleDocumentFileFromTemplate_(sourceUrl, folder, finalBaseNa
   var copiedFile = sourceFile.makeCopy(finalBaseName, folder);
   try {
     var doc = DocumentApp.openById(copiedFile.getId());
-    nfbApplyTemplateReplacementsToGoogleDocument_(doc, nfbBuildTemplateReplacementMap_(outputContext));
+    nfbApplyTemplateReplacementsToGoogleDocument_(doc, outputContext);
     doc.saveAndClose();
   } catch (error) {
     copiedFile.setTrashed(true);
@@ -662,12 +719,6 @@ function nfbStylePrintDocumentParagraph_(paragraph, options) {
 // テンプレート解決・フォルダ操作・ファイルアップロード
 // =========================================================================
 
-/**
- * テンプレート文字列のプレースホルダーを解決する
- * @param {string} template - テンプレート文字列
- * @param {Object} context - { responses, fieldLabels, fieldValues, now }
- * @return {string}
- */
 function nfbTemplateValueToString_(value) {
   if (value === undefined || value === null) return "";
   if (Array.isArray(value)) {
@@ -682,79 +733,152 @@ function nfbTemplateValueToString_(value) {
   return String(value);
 }
 
-function nfbBuildTemplateReplacementMap_(context) {
-  var now = context && context.now ? context.now : new Date();
-  var tz = Session.getScriptTimeZone();
+function nfbBuildFieldLabelValueMap_(context) {
   var responses = (context && context.responses) || {};
   var fieldLabels = (context && context.fieldLabels) || {};
   var fieldValues = (context && context.fieldValues) || {};
+  var labelValueMap = {};
+
+  for (var fid in fieldLabels) {
+    if (!Object.prototype.hasOwnProperty.call(fieldLabels, fid)) continue;
+    var label = fieldLabels[fid];
+    if (!label || Object.prototype.hasOwnProperty.call(labelValueMap, label)) continue;
+    var value = Object.prototype.hasOwnProperty.call(fieldValues, fid) ? fieldValues[fid] : responses[fid];
+    labelValueMap[label] = nfbTemplateValueToString_(value);
+  }
+
+  return labelValueMap;
+}
+
+function nfbGetTemplateDateParts_(date, tz) {
+  return {
+    year: Number(Utilities.formatDate(date, tz, "yyyy")),
+    month: Number(Utilities.formatDate(date, tz, "M")),
+    day: Number(Utilities.formatDate(date, tz, "d")),
+    hour: Number(Utilities.formatDate(date, tz, "H")),
+    minute: Number(Utilities.formatDate(date, tz, "m")),
+    second: Number(Utilities.formatDate(date, tz, "s"))
+  };
+}
+
+function nfbDatePartsIsSameOrAfter_(dateParts, comparison) {
+  if (dateParts.year !== comparison.year) return dateParts.year > comparison.year;
+  if (dateParts.month !== comparison.month) return dateParts.month > comparison.month;
+  return dateParts.day >= comparison.day;
+}
+
+function nfbResolveJapaneseEra_(dateParts) {
+  var eras = [
+    { name: "令和", year: 2019, month: 5, day: 1 },
+    { name: "平成", year: 1989, month: 1, day: 8 },
+    { name: "昭和", year: 1926, month: 12, day: 25 },
+    { name: "大正", year: 1912, month: 7, day: 30 },
+    { name: "明治", year: 1868, month: 1, day: 25 }
+  ];
+
+  for (var i = 0; i < eras.length; i++) {
+    if (nfbDatePartsIsSameOrAfter_(dateParts, eras[i])) {
+      return {
+        name: eras[i].name,
+        year: dateParts.year - eras[i].year + 1
+      };
+    }
+  }
+
+  return {
+    name: "",
+    year: dateParts.year
+  };
+}
+
+function nfbIsReservedTemplateToken_(tokenName) {
+  return tokenName === "ID"
+    || tokenName === "gg"
+    || tokenName === "_PDF"
+    || tokenName === "_DOCUMENT"
+    || tokenName === "_folder_url"
+    || tokenName === "_record_url"
+    || tokenName === "_form_url"
+    || /^Y+$/.test(tokenName)
+    || /^M+$/.test(tokenName)
+    || /^D+$/.test(tokenName)
+    || /^H+$/.test(tokenName)
+    || /^m+$/.test(tokenName)
+    || /^s+$/.test(tokenName)
+    || /^e+$/.test(tokenName);
+}
+
+function nfbResolveReservedTemplateToken_(tokenName, context, options) {
+  var now = context && context.now ? context.now : new Date();
+  var tz = Session.getScriptTimeZone();
+  var dateParts = nfbGetTemplateDateParts_(now, tz);
+  var era = nfbResolveJapaneseEra_(dateParts);
   var recordId = context && context.recordId ? String(context.recordId).trim() : "";
   var recordUrl = context && context.recordUrl ? String(context.recordUrl).trim() : "";
   var folderUrl = context && context.folderUrl ? String(context.folderUrl).trim() : "";
-  var dateFormats = {
-    "YYYY-MM-DD": "yyyy-MM-dd",
-    "HH:mm:ss": "HH:mm:ss",
-    "YYYY": "yyyy",
-    "MM": "MM",
-    "DD": "dd",
-    "HH": "HH",
-    "mm": "mm",
-    "ss": "ss"
-  };
-  var replacements = {};
-  var dateKeys = Object.keys(dateFormats).sort(function(a, b) { return b.length - a.length; });
-  for (var i = 0; i < dateKeys.length; i++) {
-    replacements["{" + dateKeys[i] + "}"] = Utilities.formatDate(now, tz, dateFormats[dateKeys[i]]);
-  }
-  replacements["{ID}"] = recordId;
-  replacements["{_record_url}"] = recordUrl;
-  replacements["{_folder_url}"] = folderUrl;
+  var formUrl = context && context.formUrl ? String(context.formUrl).trim() : "";
+  var generatedTokens = (context && context.generatedTokens) || {};
+  var allowGmailOnlyTokens = options && options.allowGmailOnlyTokens === true;
 
-  for (var fid in fieldLabels) {
-    if (!fieldLabels.hasOwnProperty(fid)) continue;
-    var label = fieldLabels[fid];
-    if (!label) continue;
-    var token = "{" + label + "}";
-    if (replacements.hasOwnProperty(token)) continue;
-    var value = Object.prototype.hasOwnProperty.call(fieldValues, fid) ? fieldValues[fid] : responses[fid];
-    replacements[token] = nfbTemplateValueToString_(value);
-  }
-
-  return replacements;
+  if (tokenName === "ID") return recordId;
+  if (tokenName === "gg") return era.name;
+  if (/^Y+$/.test(tokenName)) return String(dateParts.year).padStart(tokenName.length, "0");
+  if (/^M+$/.test(tokenName)) return String(dateParts.month).padStart(tokenName.length, "0");
+  if (/^D+$/.test(tokenName)) return String(dateParts.day).padStart(tokenName.length, "0");
+  if (/^H+$/.test(tokenName)) return String(dateParts.hour).padStart(tokenName.length, "0");
+  if (/^m+$/.test(tokenName)) return String(dateParts.minute).padStart(tokenName.length, "0");
+  if (/^s+$/.test(tokenName)) return String(dateParts.second).padStart(tokenName.length, "0");
+  if (/^e+$/.test(tokenName)) return String(era.year).padStart(tokenName.length, "0");
+  if (tokenName === "_PDF") return allowGmailOnlyTokens ? String(generatedTokens._PDF || "") : "";
+  if (tokenName === "_DOCUMENT") return allowGmailOnlyTokens ? String(generatedTokens._DOCUMENT || "") : "";
+  if (tokenName === "_folder_url") return allowGmailOnlyTokens ? folderUrl : "";
+  if (tokenName === "_record_url") return allowGmailOnlyTokens ? recordUrl : "";
+  if (tokenName === "_form_url") return allowGmailOnlyTokens ? formUrl : "";
+  return null;
 }
 
-function nfbResolveTemplateTokens_(template, replacements, removeUnknownPlaceholders) {
+function nfbResolveFieldTemplateToken_(tokenName, context) {
+  var labelValueMap = nfbBuildFieldLabelValueMap_(context);
+  return Object.prototype.hasOwnProperty.call(labelValueMap, tokenName) ? labelValueMap[tokenName] : "";
+}
+
+function nfbResolveTemplateTokenValue_(tokenName, context, options) {
+  var forceFieldReference = options && options.forceFieldReference === true;
+  if (!forceFieldReference) {
+    var reservedValue = nfbResolveReservedTemplateToken_(tokenName, context, options);
+    if (reservedValue !== null) {
+      return reservedValue;
+    }
+  }
+  return nfbResolveFieldTemplateToken_(tokenName, context);
+}
+
+function nfbResolveTemplateTokens_(template, context, options) {
   if (!template || typeof template !== "string") return "";
 
   var escapedOpenBraceToken = "__NFB_ESCAPED_OPEN_BRACE__";
   var escapedCloseBraceToken = "__NFB_ESCAPED_CLOSE_BRACE__";
   var result = String(template)
     .replace(/\\\{/g, escapedOpenBraceToken)
-    .replace(/\\\}/g, escapedCloseBraceToken);
-  var tokens = Object.keys(replacements).sort(function(a, b) { return b.length - a.length; });
-  var markerPrefix = "__NFB_TEMPLATE_MARKER__";
-  var markerPairs = [];
-  for (var i = 0; i < tokens.length; i++) {
-    var token = tokens[i];
-    if (result.indexOf(token) === -1) continue;
-    var marker = markerPrefix + i + "__";
-    result = result.split(token).join(marker);
-    markerPairs.push({ marker: marker, value: replacements[token] });
-  }
-  for (var j = 0; j < markerPairs.length; j++) {
-    result = result.split(markerPairs[j].marker).join(markerPairs[j].value);
-  }
-  if (removeUnknownPlaceholders !== false) {
-    result = result.replace(/\{([^{}]+)\}/g, "");
-  }
+    .replace(/\\\}/g, escapedCloseBraceToken)
+    .replace(/\{([^{}]+)\}/g, function(match, tokenBody) {
+      var rawTokenName = tokenBody || "";
+      var forceFieldReference = rawTokenName.indexOf("\\") === 0;
+      var tokenName = forceFieldReference ? rawTokenName.slice(1) : rawTokenName;
+      if (!tokenName) return "";
+      return nfbResolveTemplateTokenValue_(tokenName, context, {
+        allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
+        forceFieldReference: forceFieldReference
+      });
+    });
 
   return result
     .split(escapedOpenBraceToken).join("{")
     .split(escapedCloseBraceToken).join("}");
 }
 
-function nfbResolveTemplate_(template, context) {
-  return nfbResolveTemplateTokens_(template, nfbBuildTemplateReplacementMap_(context), true);
+function nfbResolveTemplate_(template, context, options) {
+  return nfbResolveTemplateTokens_(template, context, options);
 }
 
 /**
@@ -980,54 +1104,40 @@ function nfbEscapeReplaceTextReplacement_(value) {
     .replace(/\$/g, "\\$");
 }
 
-function nfbApplyTemplateReplacementsToText_(textElement, replacements) {
-  if (!textElement || typeof textElement.replaceText !== "function") return;
-
-  var tokens = Object.keys(replacements).sort(function(a, b) { return b.length - a.length; });
-  var markerPrefix = "__NFB_DOC_TEMPLATE_MARKER__";
-  var markerPairs = [];
-  for (var i = 0; i < tokens.length; i++) {
-    var token = tokens[i];
-    var marker = markerPrefix + i + "__";
-    textElement.replaceText(nfbEscapeRegExp_(token), marker);
-    markerPairs.push({ marker: marker, value: replacements[token] });
-  }
-  for (var j = 0; j < markerPairs.length; j++) {
-    textElement.replaceText(
-      nfbEscapeRegExp_(markerPairs[j].marker),
-      nfbEscapeReplaceTextReplacement_(markerPairs[j].value)
-    );
-  }
+function nfbApplyTemplateReplacementsToText_(textElement, context, options) {
+  if (!textElement || typeof textElement.getText !== "function" || typeof textElement.setText !== "function") return;
+  var originalText = textElement.getText();
+  textElement.setText(nfbResolveTemplate_(originalText, context, options));
 }
 
-function nfbApplyTemplateReplacementsToElement_(element, replacements) {
+function nfbApplyTemplateReplacementsToElement_(element, context, options) {
   if (!element) return;
 
   if (typeof element.editAsText === "function") {
     var textElement = element.editAsText();
-    if (textElement && typeof textElement.getText === "function" && typeof textElement.replaceText === "function") {
-      nfbApplyTemplateReplacementsToText_(textElement, replacements);
+    if (textElement && typeof textElement.getText === "function" && typeof textElement.setText === "function") {
+      nfbApplyTemplateReplacementsToText_(textElement, context, options);
       return;
     }
   }
 
   if (typeof element.getNumChildren === "function" && typeof element.getChild === "function") {
     for (var i = 0; i < element.getNumChildren(); i++) {
-      nfbApplyTemplateReplacementsToElement_(element.getChild(i), replacements);
+      nfbApplyTemplateReplacementsToElement_(element.getChild(i), context, options);
     }
   }
 }
 
-function nfbApplyTemplateReplacementsToGoogleDocument_(doc, replacements) {
+function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
   if (!doc) return;
   if (typeof doc.getBody === "function") {
-    nfbApplyTemplateReplacementsToElement_(doc.getBody(), replacements);
+    nfbApplyTemplateReplacementsToElement_(doc.getBody(), context, options);
   }
   if (typeof doc.getHeader === "function") {
-    nfbApplyTemplateReplacementsToElement_(doc.getHeader(), replacements);
+    nfbApplyTemplateReplacementsToElement_(doc.getHeader(), context, options);
   }
   if (typeof doc.getFooter === "function") {
-    nfbApplyTemplateReplacementsToElement_(doc.getFooter(), replacements);
+    nfbApplyTemplateReplacementsToElement_(doc.getFooter(), context, options);
   }
 }
 
@@ -1144,7 +1254,7 @@ function nfbCreateGoogleDocumentFromTemplate(payload) {
     var doc;
     try {
       doc = DocumentApp.openById(copiedFile.getId());
-      nfbApplyTemplateReplacementsToGoogleDocument_(doc, nfbBuildTemplateReplacementMap_(ctx));
+      nfbApplyTemplateReplacementsToGoogleDocument_(doc, ctx);
       doc.saveAndClose();
     } catch (error) {
       throw new Error("Google ドキュメントテンプレートの差し込みに失敗しました: " + nfbErrorToString_(error));

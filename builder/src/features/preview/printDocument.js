@@ -156,9 +156,11 @@ const resolveFieldLabel = (field) => {
   return typeof field?.label === "string" && field.label.trim() ? field.label.trim() : fallback;
 };
 
+const isAlwaysIncludedPrintType = (type) => type === "message" || type === "fileUpload";
+
 const shouldIncludePrintItem = (item, omitEmptyRows) => {
   if (!omitEmptyRows) return true;
-  if (item?.type === "message") return true;
+  if (isAlwaysIncludedPrintType(item?.type)) return true;
   return hasVisibleValue(item?.value);
 };
 

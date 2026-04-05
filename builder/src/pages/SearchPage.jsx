@@ -384,7 +384,7 @@ export default function SearchPage() {
 
     if (action.outputType === "gmail") {
       if (requiresPrintTemplateFileName(action) && !effectiveFileNameTemplate) {
-        showAlert("Gmail 本文で {_PDF} を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください。");
+        showAlert("Gmail 本文で {_PDF} または {_DOCUMENT} を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください。");
         return;
       }
       const result = await executeRecordOutputAction({
