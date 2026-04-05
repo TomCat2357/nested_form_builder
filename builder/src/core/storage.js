@@ -60,3 +60,13 @@ export const loadSettingsFromStorage = async () => {
 export const saveSettingsToStorage = async (settings) => {
   await writeJson(SETTINGS_STORAGE_KEY, { ...DEFAULT_SETTINGS, ...settings });
 };
+
+const searchDisplayKey = (formId) => `search_display_${formId}`;
+
+export const loadSearchDisplayOverrides = async (formId) => {
+  return await readJson(searchDisplayKey(formId));
+};
+
+export const saveSearchDisplayOverrides = async (formId, overrides) => {
+  await writeJson(searchDisplayKey(formId), overrides);
+};

@@ -672,51 +672,66 @@ export default function QuestionCard({
             )}
             {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
               <>
-                <input
-                  className={s.input.className}
-                  placeholder="To（例: {メールアドレス}）"
-                  value={printTemplateAction.gmailTemplateTo || ""}
-                  onChange={(event) => onChange({
-                    ...field,
-                    printTemplateAction: { ...printTemplateAction, gmailTemplateTo: event.target.value, enabled: true },
-                  })}
-                />
-                <input
-                  className={s.input.className}
-                  placeholder="Cc"
-                  value={printTemplateAction.gmailTemplateCc || ""}
-                  onChange={(event) => onChange({
-                    ...field,
-                    printTemplateAction: { ...printTemplateAction, gmailTemplateCc: event.target.value, enabled: true },
-                  })}
-                />
-                <input
-                  className={s.input.className}
-                  placeholder="Bcc"
-                  value={printTemplateAction.gmailTemplateBcc || ""}
-                  onChange={(event) => onChange({
-                    ...field,
-                    printTemplateAction: { ...printTemplateAction, gmailTemplateBcc: event.target.value, enabled: true },
-                  })}
-                />
-                <input
-                  className={s.input.className}
-                  placeholder="件名"
-                  value={printTemplateAction.gmailTemplateSubject || ""}
-                  onChange={(event) => onChange({
-                    ...field,
-                    printTemplateAction: { ...printTemplateAction, gmailTemplateSubject: event.target.value, enabled: true },
-                  })}
-                />
-                <textarea
-                  className={`${s.input.className} nf-h-96`}
-                  placeholder="本文テンプレートを入力"
-                  value={printTemplateAction.gmailTemplateBody || ""}
-                  onChange={(event) => onChange({
-                    ...field,
-                    printTemplateAction: { ...printTemplateAction, gmailTemplateBody: event.target.value, enabled: true },
-                  })}
-                />
+                <label className="nf-col nf-gap-4">
+                  <span className="nf-text-11 nf-text-muted">To</span>
+                  <input
+                    className={s.input.className}
+                    placeholder="例: {メールアドレス}"
+                    value={printTemplateAction.gmailTemplateTo || ""}
+                    onChange={(event) => onChange({
+                      ...field,
+                      printTemplateAction: { ...printTemplateAction, gmailTemplateTo: event.target.value, enabled: true },
+                    })}
+                  />
+                </label>
+                <label className="nf-col nf-gap-4">
+                  <span className="nf-text-11 nf-text-muted">Cc</span>
+                  <input
+                    className={s.input.className}
+                    placeholder="例: {メールアドレス}"
+                    value={printTemplateAction.gmailTemplateCc || ""}
+                    onChange={(event) => onChange({
+                      ...field,
+                      printTemplateAction: { ...printTemplateAction, gmailTemplateCc: event.target.value, enabled: true },
+                    })}
+                  />
+                </label>
+                <label className="nf-col nf-gap-4">
+                  <span className="nf-text-11 nf-text-muted">Bcc</span>
+                  <input
+                    className={s.input.className}
+                    placeholder="例: {メールアドレス}"
+                    value={printTemplateAction.gmailTemplateBcc || ""}
+                    onChange={(event) => onChange({
+                      ...field,
+                      printTemplateAction: { ...printTemplateAction, gmailTemplateBcc: event.target.value, enabled: true },
+                    })}
+                  />
+                </label>
+                <label className="nf-col nf-gap-4">
+                  <span className="nf-text-11 nf-text-muted">件名</span>
+                  <input
+                    className={s.input.className}
+                    placeholder="例: 【申請】{ID}_{YYYY}-{MM}-{DD}"
+                    value={printTemplateAction.gmailTemplateSubject || ""}
+                    onChange={(event) => onChange({
+                      ...field,
+                      printTemplateAction: { ...printTemplateAction, gmailTemplateSubject: event.target.value, enabled: true },
+                    })}
+                  />
+                </label>
+                <label className="nf-col nf-gap-4">
+                  <span className="nf-text-11 nf-text-muted">本文</span>
+                  <textarea
+                    className={`${s.input.className} nf-h-96`}
+                    placeholder="本文テンプレートを入力"
+                    value={printTemplateAction.gmailTemplateBody || ""}
+                    onChange={(event) => onChange({
+                      ...field,
+                      printTemplateAction: { ...printTemplateAction, gmailTemplateBody: event.target.value, enabled: true },
+                    })}
+                  />
+                </label>
               </>
             )}
             <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {ID} / {YYYY} / {MM} / {DD} / {H} / {m} / {s} / {gg} / {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照します。Gmail 本文では {_PDF} / {_DOCUMENT} / {_folder_url} / {_record_url} / {_form_url} も使えます。"}</div>

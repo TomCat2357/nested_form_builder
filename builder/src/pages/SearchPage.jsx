@@ -36,6 +36,8 @@ import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import SearchSidebar from "../features/search/components/SearchSidebar.jsx";
 import SearchTable from "../features/search/components/SearchTable.jsx";
 import SearchPagination from "../features/search/components/SearchPagination.jsx";
+import SearchDisplaySettingsDialog from "../features/search/components/SearchDisplaySettingsDialog.jsx";
+import { useSearchDisplayOverrides } from "../features/search/useSearchDisplayOverrides.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { DEFAULT_PAGE_SIZE } from "../core/constants.js";
 import {
@@ -72,6 +74,7 @@ export default function SearchPage() {
   const [exporting, setExporting] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
+  const [showDisplaySettings, setShowDisplaySettings] = useState(false);
 
   const form = useMemo(() => (effectiveFormId ? getFormById(effectiveFormId) : null), [effectiveFormId, getFormById]);
   const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form?.schema]);
@@ -80,9 +83,10 @@ export default function SearchPage() {
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
   const query = searchParams.get("q") || "";
   const page = Math.max(1, Number(searchParams.get("page") || 1));
-  const PAGE_SIZE = Number(form?.settings?.pageSize) || Number(settings?.pageSize) || DEFAULT_PAGE_SIZE;
-  const TABLE_MAX_WIDTH = Number(form?.settings?.searchTableMaxWidth) || Number(settings?.searchTableMaxWidth) || null;
-  const cellDisplayLimit = parseSearchCellDisplayLimit(form?.settings?.searchCellMaxChars);
+  const { overrides: searchOverrides, updateOverride } = useSearchDisplayOverrides(effectiveFormId);
+  const PAGE_SIZE = Number(searchOverrides?.pageSize) || Number(form?.settings?.pageSize) || Number(settings?.pageSize) || DEFAULT_PAGE_SIZE;
+  const TABLE_MAX_WIDTH = Number(searchOverrides?.searchTableMaxWidth) || Number(form?.settings?.searchTableMaxWidth) || Number(settings?.searchTableMaxWidth) || null;
+  const cellDisplayLimit = parseSearchCellDisplayLimit(searchOverrides?.searchCellMaxChars ?? form?.settings?.searchCellMaxChars);
 
   const {
     entries,
@@ -541,6 +545,7 @@ export default function SearchPage() {
         hasUnsynced={hasUnsynced}
         unsyncedCount={unsyncedCount}
         syncInProgress={loading || backgroundLoading || waitingForLock}
+        onSettingsClick={() => setShowDisplaySettings(true)}
       />
       {isAdmin && (
         <div className="nf-row nf-gap-16 nf-items-center nf-mb-12 nf-wrap">
@@ -579,6 +584,14 @@ export default function SearchPage() {
         onChange={handlePageChange}
       />
 
+      <SearchDisplaySettingsDialog
+        open={showDisplaySettings}
+        onClose={() => setShowDisplaySettings(false)}
+        overrides={searchOverrides}
+        onUpdateOverride={updateOverride}
+        formSettings={form?.settings}
+        globalSettings={settings}
+      />
       <ConfirmDialog
         open={showDeleteConfirm.open}
         title="レコードを削除"

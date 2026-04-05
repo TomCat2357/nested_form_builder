@@ -205,9 +205,13 @@ const FileUploadField = ({
       <div>
         {displayedFolderUrl && (
           <div className="nf-mb-6">
-            <a href={displayedFolderUrl} target="_blank" rel="noopener noreferrer" className="nf-link">
-              保存先フォルダを開く
-            </a>
+            <button
+              type="button"
+              className="nf-btn nf-btn-compact"
+              onClick={() => window.open(displayedFolderUrl, "_blank", "noopener,noreferrer")}
+            >
+              フォルダを開く
+            </button>
           </div>
         )}
         {files.length === 0 && (
