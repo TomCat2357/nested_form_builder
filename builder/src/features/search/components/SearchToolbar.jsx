@@ -16,7 +16,7 @@ export default function SearchToolbar({ query, onChange, lastSyncedAt, useCache,
       )}
       {onSettingsClick && (
         <button type="button" className="nf-btn nf-btn-compact nf-btn-secondary" onClick={onSettingsClick} title="表示設定">
-          ⚙ 表示設定
+          表示設定
         </button>
       )}
       <span className="nf-text-subtle nf-text-12">

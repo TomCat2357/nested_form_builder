@@ -23,7 +23,6 @@ import {
 } from "../features/settings/themeSyncRules.js";
 import { resolveCreatePrintOnSave, resolveSettingsFieldValue } from "../utils/settings.js";
 import { getConfigPageSaveAfterActionField } from "./configPageSettings.js";
-import { useSearchDisplayOverrides } from "../features/search/useSearchDisplayOverrides.js";
 
 const extractThemeName = (css, fallbackName = "") => {
   const match = String(css || "").match(/data-theme=(["'])([^"']+)\1/);
@@ -62,7 +61,6 @@ export default function ConfigPage() {
   const themeValue = isFormMode ? formTheme : globalTheme;
   const syncAllFormsTheme = settings?.syncAllFormsTheme ?? false;
   const saveAfterActionField = useMemo(() => getConfigPageSaveAfterActionField(), []);
-  const { overrides: searchOverrides, updateOverride: updateSearchOverride } = useSearchDisplayOverrides(isFormMode ? requestedFormId : null);
 
   const [customThemes, setCustomThemes] = useState([]);
   const [customThemesReady, setCustomThemesReady] = useState(false);
@@ -429,7 +427,6 @@ export default function ConfigPage() {
         )}
 
         {isFormMode && (
-          <>
           <div className="nf-mb-12">
             {saveAfterActionField && (
               <div className="nf-mb-16">
@@ -498,40 +495,6 @@ export default function ConfigPage() {
               通常の保存ボタンを押した時だけ印刷様式を自動出力します。自動保存では出力しません。
             </p>
           </div>
-          <div className="nf-mt-16">
-            <div className="nf-settings-group-title nf-mb-8">検索表示設定（このデバイス個別）</div>
-            <p className="nf-mb-12 nf-text-12 nf-text-muted">
-              ここでの設定はこのデバイスにのみ保存され、フォームの基本設定より優先されます。未入力の場合はフォームの基本設定が使われます。
-            </p>
-            {[
-              { key: "pageSize", label: "1画面あたりの表示件数", placeholder: String(Number(targetForm?.settings?.pageSize) || 20) },
-              { key: "searchTableMaxWidth", label: "検索結果テーブルの幅（px）", placeholder: String(Number(targetForm?.settings?.searchTableMaxWidth) || "") || "制限なし" },
-              { key: "searchCellMaxChars", label: "検索結果セルの表示文字数上限", placeholder: String(targetForm?.settings?.searchCellMaxChars ?? "") || "50" },
-            ].map(({ key, label, placeholder }) => (
-              <div key={key} className="nf-col nf-gap-4 nf-mb-12">
-                <label className="nf-label">{label}</label>
-                <div className="nf-row nf-gap-6 nf-items-center">
-                  <input
-                    type="number"
-                    className="nf-input nf-flex-1"
-                    value={searchOverrides?.[key] ?? ""}
-                    placeholder={placeholder}
-                    min={1}
-                    onChange={(e) => updateSearchOverride(key, e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="nf-btn nf-btn-compact nf-btn-secondary"
-                    onClick={() => updateSearchOverride(key, "")}
-                    title="クリア（フォームの基本設定に戻す）"
-                  >
-                    クリア
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-          </>
         )}
 
         <div className="nf-mt-16">
