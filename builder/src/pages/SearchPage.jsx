@@ -200,6 +200,13 @@ export default function SearchPage() {
     if (loading || backgroundLoading || waitingForLock) return { label: "読み取り中...", variant: "loading" };
     return { label: "検索画面", variant: "view" };
   }, [loading, backgroundLoading, waitingForLock]);
+  const showPrintTemplateOutputAlert = useCallback((url, outputType) => {
+    showOutputAlert({
+      message: "様式出力を準備しました。",
+      url,
+      linkLabel: outputType === "gmail" ? "Gmail送信画面を開く" : "ファイルを開く",
+    });
+  }, [showOutputAlert]);
 
   const handleRowClick = (entryId) => {
     if (!effectiveFormId) return;
@@ -374,11 +381,6 @@ export default function SearchPage() {
         action,
         settings: {
           standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
-          gmailTemplateTo: form?.settings?.gmailTemplateTo || "",
-          gmailTemplateCc: form?.settings?.gmailTemplateCc || "",
-          gmailTemplateBcc: form?.settings?.gmailTemplateBcc || "",
-          gmailTemplateSubject: form?.settings?.gmailTemplateSubject || "",
-          gmailTemplateBody: form?.settings?.gmailTemplateBody || "",
         },
         recordContext: {
           formTitle: form?.settings?.formTitle || "",
@@ -408,7 +410,7 @@ export default function SearchPage() {
         driveSettings,
       });
       if (result?.openUrl) {
-        window.open(result.openUrl, "_blank", "noopener,noreferrer");
+        showPrintTemplateOutputAlert(result.openUrl, result.outputType || action.outputType);
       }
       return;
     }
@@ -426,7 +428,7 @@ export default function SearchPage() {
       showAlert("該当ファイルが見つかりませんでした。");
       return;
     }
-    window.open(found.fileUrl, "_blank", "noopener,noreferrer");
+    showPrintTemplateOutputAlert(found.fileUrl, action.outputType);
   }, [
     fieldLabels,
     form?.id,
@@ -435,6 +437,7 @@ export default function SearchPage() {
     omitEmptyRowsOnPrint,
     showAlert,
     showOutputAlert,
+    showPrintTemplateOutputAlert,
   ]);
 
   const handleCreatePrintDocument = useCallback(async () => {

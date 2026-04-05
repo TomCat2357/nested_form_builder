@@ -131,6 +131,9 @@ const FieldRenderer = ({
   if (field.type === "printTemplate") {
     return (
       <div className="preview-field">
+        <label className="preview-label" style={labelStyleVars}>
+          {field.label || <span className="nf-text-faded">項目</span>}
+        </label>
         <button
           type="button"
           className="nf-btn-outline nf-text-13"
@@ -477,7 +480,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   },
   ref,
 ) {
-  const { showAlert } = useAlert();
+  const { showAlert, showOutputAlert } = useAlert();
   const initialRecordId = settings.recordId;
   const recordIdRef = useRef(initialRecordId || genRecordId());
   const currentUserName = typeof settings.userName === "string" ? settings.userName : "";
@@ -551,6 +554,14 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   }), [settings.driveRootFolderUrl, settings.driveFolderNameTemplate, settings.formId]);
 
   const [isSaving, setIsSaving] = useState(false);
+  const showRecordOutputAlert = (result, fallbackOutputType) => {
+    const outputType = result?.outputType || fallbackOutputType || "";
+    showOutputAlert({
+      message: "様式出力を準備しました。",
+      url: result?.openUrl || "",
+      linkLabel: outputType === "gmail" ? "Gmail送信画面を開く" : "ファイルを開く",
+    });
+  };
   const updateDriveFolderStateFromPrintResult = (result) => {
     if (typeof onDriveFolderStateChange !== "function") return;
     onDriveFolderStateChange((prevState) => {
@@ -595,11 +606,6 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         action,
         settings: {
           standardPrintTemplateUrl: settings.standardPrintTemplateUrl || "",
-          gmailTemplateTo: settings.gmailTemplateTo || "",
-          gmailTemplateCc: settings.gmailTemplateCc || "",
-          gmailTemplateBcc: settings.gmailTemplateBcc || "",
-          gmailTemplateSubject: settings.gmailTemplateSubject || "",
-          gmailTemplateBody: settings.gmailTemplateBody || "",
         },
         recordContext: {
           formTitle,
@@ -621,7 +627,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         updateDriveFolderStateFromPrintResult(result);
       }
       if (result?.openUrl) {
-        window.open(result.openUrl, "_blank", "noopener,noreferrer");
+        showRecordOutputAlert(result, action.outputType);
       }
     } catch (error) {
       showAlert(`様式出力に失敗しました: ${error?.message || error}`);

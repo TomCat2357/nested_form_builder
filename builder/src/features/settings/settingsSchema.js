@@ -68,38 +68,6 @@ export const SETTINGS_GROUPS = [
         description: "未設定時は既存の自動生成ドキュメントを使います",
       },
       {
-        key: "gmailTemplateTo",
-        label: "Gmail To",
-        placeholder: "{メールアドレス}",
-        required: false,
-      },
-      {
-        key: "gmailTemplateCc",
-        label: "Gmail Cc",
-        placeholder: "{CC宛先}",
-        required: false,
-      },
-      {
-        key: "gmailTemplateBcc",
-        label: "Gmail Bcc",
-        placeholder: "{BCC宛先}",
-        required: false,
-      },
-      {
-        key: "gmailTemplateSubject",
-        label: "Gmail 件名",
-        placeholder: "{ID} のご連絡",
-        required: false,
-      },
-      {
-        key: "gmailTemplateBody",
-        label: "Gmail 本文",
-        type: "textarea",
-        placeholder: "本文テンプレートを入力",
-        required: false,
-        description: "{_record_url} / {_folder_url} / {_PDF} を使えます",
-      },
-      {
         key: "saveAfterAction",
         label: "通常保存後の動作",
         type: "select",

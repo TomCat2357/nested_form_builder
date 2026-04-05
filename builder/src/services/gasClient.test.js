@@ -266,15 +266,15 @@ test("finalizeRecordDriveFolder は trashFileIds を含む payload をそのま�
 test("executeRecordOutputAction は nfbExecuteRecordOutputAction を呼び出す", async () => {
   const originalGoogle = globalThis.google;
   const payload = {
-    action: { outputType: "gmail", enabled: true, fileNameTemplate: "{ID}_mail" },
-    settings: { gmailTemplateSubject: "{ID} のご案内" },
+    action: { outputType: "gmail", enabled: true, fileNameTemplate: "{ID}_mail", gmailTemplateSubject: "{ID} のご案内" },
+    settings: { standardPrintTemplateUrl: "https://docs.google.com/document/d/template123/edit" },
     recordContext: { formId: "form_1", recordId: "rec001" },
     driveSettings: { recordId: "rec001", fileNameTemplate: "{ID}_mail" },
   };
   const { run, calls } = createGoogleScriptRunStub({
     nfbExecuteRecordOutputAction: (receivedPayload) => ({
       ok: true,
-      openUrl: "https://mail.google.com/mail/u/0/#drafts",
+      openUrl: "https://mail.google.com/mail/?view=cm&fs=1&su=rec001",
       payload: receivedPayload,
     }),
   });
@@ -283,7 +283,7 @@ test("executeRecordOutputAction は nfbExecuteRecordOutputAction を呼び出す
   try {
     const result = await executeRecordOutputAction(payload);
     assert.equal(result.ok, true);
-    assert.equal(result.openUrl, "https://mail.google.com/mail/u/0/#drafts");
+    assert.equal(result.openUrl, "https://mail.google.com/mail/?view=cm&fs=1&su=rec001");
     assert.equal(calls.length, 1);
     assert.equal(calls[0].functionName, "nfbExecuteRecordOutputAction");
     assert.deepEqual(calls[0].payload, payload);

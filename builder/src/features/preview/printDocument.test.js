@@ -325,6 +325,7 @@ test("buildPrintDocumentPayload は印刷用 driveSettings に ID と仮フォ�
   assert.deepEqual(payload.driveSettings, {
     rootFolderUrl: "https://drive.google.com/drive/folders/root123",
     folderNameTemplate: "{ID}_{氏名}",
+    formId: "",
     recordId: "rec-save-1",
     folderUrl: "https://drive.google.com/drive/folders/temp999",
     useTemporaryFolder: true,

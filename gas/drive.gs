@@ -263,44 +263,65 @@ function nfbCreatePdfOutput_(payload, action, folder, folderResult, outputContex
 }
 
 function nfbCreateGmailDraftOutput_(payload, action, folder, folderResult, outputContext, finalBaseName) {
-  var settings = payload && payload.settings ? payload.settings : {};
-  var to = nfbResolveTemplate_(String(settings.gmailTemplateTo || ""), outputContext);
-  var cc = nfbResolveTemplate_(String(settings.gmailTemplateCc || ""), outputContext);
-  var bcc = nfbResolveTemplate_(String(settings.gmailTemplateBcc || ""), outputContext);
-  var subject = nfbResolveTemplate_(String(settings.gmailTemplateSubject || ""), outputContext);
-  var bodyTemplate = String(settings.gmailTemplateBody || "");
-  var shouldAttachPdf = bodyTemplate.indexOf("{_PDF}") !== -1;
-  var body = nfbResolveTemplateTokens_(
-    bodyTemplate.replace(/\{_PDF\}/g, ""),
-    nfbBuildTemplateReplacementMap_(outputContext),
-    true
-  );
-
-  var attachments = [];
+  action = action || {};
+  var to = nfbResolveTemplate_(String(action && action.gmailTemplateTo || ""), outputContext);
+  var cc = nfbResolveTemplate_(String(action && action.gmailTemplateCc || ""), outputContext);
+  var bcc = nfbResolveTemplate_(String(action && action.gmailTemplateBcc || ""), outputContext);
+  var subject = nfbResolveTemplate_(String(action && action.gmailTemplateSubject || ""), outputContext);
+  var bodyTemplate = String(action && action.gmailTemplateBody || "");
+  var shouldInsertPdfUrl = bodyTemplate.indexOf("{_PDF}") !== -1;
   var pdfResult = null;
-  if (shouldAttachPdf) {
-    pdfResult = nfbCreatePdfOutput_(payload, action, folder, folderResult, outputContext, finalBaseName);
-    attachments.push(DriveApp.getFileById(pdfResult.fileId).getBlob());
+  if (shouldInsertPdfUrl) {
+    var pdfAction = {};
+    for (var actionKey in action) {
+      if (Object.prototype.hasOwnProperty.call(action, actionKey)) {
+        pdfAction[actionKey] = action[actionKey];
+      }
+    }
+    pdfAction.useCustomTemplate = false;
+    pdfAction.templateUrl = "";
+    pdfResult = nfbCreatePdfOutput_(payload, pdfAction, folder, folderResult, outputContext, finalBaseName);
   }
-
-  var draft = GmailApp.createDraft(to, subject, body, {
+  var replacements = nfbBuildTemplateReplacementMap_(outputContext);
+  replacements["{_PDF}"] = pdfResult ? pdfResult.fileUrl : "";
+  var body = nfbResolveTemplateTokens_(bodyTemplate, replacements, true);
+  var openUrl = nfbBuildGmailComposeUrl_({
+    to: to,
     cc: cc,
     bcc: bcc,
-    attachments: attachments
+    subject: subject,
+    body: body
   });
-  var draftId = typeof draft.getId === "function" ? draft.getId() : "";
-  var openUrl = draftId ? ("https://mail.google.com/mail/u/0/#drafts?compose=" + encodeURIComponent(draftId)) : "https://mail.google.com/mail/u/0/#drafts";
 
   return {
     ok: true,
     outputType: "gmail",
-    draftId: draftId,
+    draftId: "",
     folderUrl: folder.getUrl(),
     autoCreated: folderResult.autoCreated === true,
     fileId: pdfResult ? pdfResult.fileId : "",
     fileUrl: pdfResult ? pdfResult.fileUrl : "",
     openUrl: openUrl
   };
+}
+
+function nfbBuildGmailComposeUrl_(params) {
+  var query = ["view=cm", "fs=1"];
+  var mappings = [
+    ["to", params && params.to],
+    ["cc", params && params.cc],
+    ["bcc", params && params.bcc],
+    ["su", params && params.subject],
+    ["body", params && params.body]
+  ];
+
+  for (var i = 0; i < mappings.length; i++) {
+    var value = mappings[i][1] === undefined || mappings[i][1] === null ? "" : String(mappings[i][1]);
+    if (!value) continue;
+    query.push(mappings[i][0] + "=" + encodeURIComponent(value));
+  }
+
+  return "https://mail.google.com/mail/?" + query.join("&");
 }
 
 function nfbCreateRecordOutputGoogleDocument_(payload, action, folder, outputContext, finalBaseName) {

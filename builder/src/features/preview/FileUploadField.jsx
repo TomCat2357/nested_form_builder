@@ -80,6 +80,7 @@ const FileUploadField = ({
   const folderStateRef = React.useRef(normalizedFolderState);
   const effectiveFolderUrl = resolveEffectiveFolderUrl(normalizedFolderState);
   const displayedFolderUrl = effectiveFolderUrl || normalizedFolderState.resolvedUrl.trim();
+  const allowFolderUrlEdit = field?.allowFolderUrlEdit === true;
 
   React.useEffect(() => {
     folderStateRef.current = normalizeFolderState(folderState);
@@ -229,16 +230,18 @@ const FileUploadField = ({
 
   return (
     <div>
-      <div className="nf-mb-8">
-        <label className="nf-block nf-fw-600 nf-mb-6">保存先フォルダURL</label>
-        <input
-          type="text"
-          className="nf-input"
-          value={normalizedFolderState.inputUrl}
-          onChange={handleFolderUrlChange}
-          placeholder="空欄の場合は初回アップロード時に自動作成 / Google DriveフォルダURLを入力するとそのフォルダを使用"
-        />
-      </div>
+      {allowFolderUrlEdit && (
+        <div className="nf-mb-8">
+          <label className="nf-block nf-fw-600 nf-mb-6">保存先フォルダURL</label>
+          <input
+            type="text"
+            className="nf-input"
+            value={normalizedFolderState.inputUrl}
+            onChange={handleFolderUrlChange}
+            placeholder="空欄の場合は初回アップロード時に自動作成 / Google DriveフォルダURLを入力するとそのフォルダを使用"
+          />
+        </div>
+      )}
 
       <div
         onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}

@@ -201,8 +201,10 @@ export const cleanUnusedFieldProperties = (field) => {
   if (type === "message" || type === "printTemplate") delete field.required;
   if (type === "fileUpload") {
     field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
+    field.allowFolderUrlEdit = normalizeBooleanSetting(field.allowFolderUrlEdit, false);
   } else {
     delete field.allowUploadByUrl;
+    delete field.allowFolderUrlEdit;
   }
   delete field.allowMultipleFiles;
   return field;
@@ -272,6 +274,7 @@ export const normalizeSchemaIDs = (nodes) => {
       Object.assign(base, normalizePhoneSettings(base));
     } else if (base.type === "fileUpload") {
       base.allowUploadByUrl = normalizeBooleanSetting(base.allowUploadByUrl, false);
+      base.allowFolderUrlEdit = normalizeBooleanSetting(base.allowFolderUrlEdit, false);
     } else if (base.type === "printTemplate") {
       base.label = typeof base.label === "string" ? base.label : "";
       base.printTemplateAction = {

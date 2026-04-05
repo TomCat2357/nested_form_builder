@@ -24,6 +24,11 @@ export const normalizePrintTemplateAction = (value) => {
     useCustomTemplate: base.useCustomTemplate === true,
     templateUrl: typeof base.templateUrl === "string" ? base.templateUrl : "",
     fileNameTemplate: typeof base.fileNameTemplate === "string" ? base.fileNameTemplate : "",
+    gmailTemplateTo: typeof base.gmailTemplateTo === "string" ? base.gmailTemplateTo : "",
+    gmailTemplateCc: typeof base.gmailTemplateCc === "string" ? base.gmailTemplateCc : "",
+    gmailTemplateBcc: typeof base.gmailTemplateBcc === "string" ? base.gmailTemplateBcc : "",
+    gmailTemplateSubject: typeof base.gmailTemplateSubject === "string" ? base.gmailTemplateSubject : "",
+    gmailTemplateBody: typeof base.gmailTemplateBody === "string" ? base.gmailTemplateBody : "",
   };
 };
 

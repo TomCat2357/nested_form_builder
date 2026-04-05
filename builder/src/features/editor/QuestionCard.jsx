@@ -92,6 +92,7 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
     if (isDateOrTimeType(newType)) next.defaultNow = !!next.defaultNow;
     if (newType === "fileUpload") {
       next.allowUploadByUrl = next.allowUploadByUrl ?? false;
+      next.allowFolderUrlEdit = next.allowFolderUrlEdit ?? false;
     }
     if (newType === PRINT_TEMPLATE_TYPE) {
       next.printTemplateAction = {
@@ -661,12 +662,61 @@ export default function QuestionCard({
                 printTemplateAction: { ...printTemplateAction, fileNameTemplate: event.target.value, enabled: true },
               })}
             />
+            {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
+              <>
+                <input
+                  className={s.input.className}
+                  placeholder="To（例: {メールアドレス}）"
+                  value={printTemplateAction.gmailTemplateTo || ""}
+                  onChange={(event) => onChange({
+                    ...field,
+                    printTemplateAction: { ...printTemplateAction, gmailTemplateTo: event.target.value, enabled: true },
+                  })}
+                />
+                <input
+                  className={s.input.className}
+                  placeholder="Cc"
+                  value={printTemplateAction.gmailTemplateCc || ""}
+                  onChange={(event) => onChange({
+                    ...field,
+                    printTemplateAction: { ...printTemplateAction, gmailTemplateCc: event.target.value, enabled: true },
+                  })}
+                />
+                <input
+                  className={s.input.className}
+                  placeholder="Bcc"
+                  value={printTemplateAction.gmailTemplateBcc || ""}
+                  onChange={(event) => onChange({
+                    ...field,
+                    printTemplateAction: { ...printTemplateAction, gmailTemplateBcc: event.target.value, enabled: true },
+                  })}
+                />
+                <input
+                  className={s.input.className}
+                  placeholder="件名"
+                  value={printTemplateAction.gmailTemplateSubject || ""}
+                  onChange={(event) => onChange({
+                    ...field,
+                    printTemplateAction: { ...printTemplateAction, gmailTemplateSubject: event.target.value, enabled: true },
+                  })}
+                />
+                <textarea
+                  className={`${s.input.className} nf-h-96`}
+                  placeholder="本文テンプレートを入力"
+                  value={printTemplateAction.gmailTemplateBody || ""}
+                  onChange={(event) => onChange({
+                    ...field,
+                    printTemplateAction: { ...printTemplateAction, gmailTemplateBody: event.target.value, enabled: true },
+                  })}
+                />
+              </>
+            )}
             <div className="nf-text-11 nf-text-muted">{"テンプレート本文と出力ファイル名で {フィールド名}/{ID}/日付トークンを使えます。Gmail 本文では {_record_url} / {_folder_url} / {_PDF} を使えます。"}</div>
           </div>
         </div>
       )}
 
-      {!isText && !isPrintTemplate && renderStyleSettingsInput()}
+      {!isText && renderStyleSettingsInput()}
 
       {isMessage && (
         <div className="nf-mt-8">
@@ -835,6 +885,14 @@ export default function QuestionCard({
               onChange={(event) => onChange({ ...field, allowUploadByUrl: event.target.checked })}
             />
             URLによるアップロードを有効にする
+          </label>
+          <label className="nf-row nf-gap-6 nf-mt-8">
+            <input
+              type="checkbox"
+              checked={!!field.allowFolderUrlEdit}
+              onChange={(event) => onChange({ ...field, allowFolderUrlEdit: event.target.checked })}
+            />
+            保存先フォルダURLを変更可能にする
           </label>
         </div>
       )}
