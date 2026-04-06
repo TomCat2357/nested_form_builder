@@ -310,30 +310,60 @@ function nfbCreateGmailDraftOutput_(payload, action, folder, folderResult, outpu
   var bcc = nfbResolveTemplate_(String(action && action.gmailTemplateBcc || ""), outputContext);
   var subject = nfbResolveTemplate_(String(action && action.gmailTemplateSubject || ""), outputContext);
   var bodyTemplate = String(action && action.gmailTemplateBody || "");
-  var generatedFiles = nfbCreateGmailGeneratedFiles_(payload, action, folder, outputContext, finalBaseName);
+
+  var needsPdf = nfbBodyTemplateUsesPdf_(action);
+  var needsDocument = nfbBodyTemplateUsesDocument_(action);
+
+  var attachments = [];
+  var pdfFileName = "";
+  var documentFile = null;
+
+  if (needsPdf || needsDocument) {
+    var documentAction = nfbCloneRecordOutputActionForGeneratedFile_(action);
+    var docBaseName = needsDocument && !needsPdf ? finalBaseName : (finalBaseName + "__tmp");
+    var docFile = nfbCreateRecordOutputGoogleDocument_(payload, documentAction, folder, outputContext, docBaseName);
+
+    if (needsPdf) {
+      var pdfName = /\.pdf$/i.test(finalBaseName) ? finalBaseName : finalBaseName + ".pdf";
+      var pdfBlob = docFile.getBlob().getAs(MimeType.PDF).setName(pdfName);
+      attachments.push(pdfBlob);
+      pdfFileName = pdfName;
+    }
+
+    if (needsDocument) {
+      if (needsPdf) {
+        // Document was created with __tmp suffix; rename to final name
+        docFile.setName(finalBaseName);
+      }
+      documentFile = docFile;
+    } else {
+      docFile.setTrashed(true);
+    }
+  }
+
   var bodyContext = nfbCloneTemplateContext_(outputContext);
   bodyContext.generatedTokens = {
-    _PDF: generatedFiles.pdfFile ? generatedFiles.pdfFile.getUrl() : "",
-    _DOCUMENT: generatedFiles.documentFile ? generatedFiles.documentFile.getUrl() : ""
+    _PDF: pdfFileName ? "" : "",
+    _DOCUMENT: documentFile ? documentFile.getUrl() : ""
   };
   var body = nfbResolveTemplate_(bodyTemplate, bodyContext, { allowGmailOnlyTokens: true });
-  var openUrl = nfbBuildGmailComposeUrl_({
-    to: to,
-    cc: cc,
-    bcc: bcc,
-    subject: subject,
-    body: body
-  });
+
+  var draftOptions = {};
+  if (cc) draftOptions.cc = cc;
+  if (bcc) draftOptions.bcc = bcc;
+  if (attachments.length > 0) draftOptions.attachments = attachments;
+
+  var draft = GmailApp.createDraft(to, subject, body, draftOptions);
 
   return {
     ok: true,
     outputType: "gmail",
-    draftId: "",
+    draftId: draft.getId(),
     folderUrl: folder.getUrl(),
     autoCreated: folderResult.autoCreated === true,
-    fileId: generatedFiles.pdfFile ? generatedFiles.pdfFile.getId() : (generatedFiles.documentFile ? generatedFiles.documentFile.getId() : ""),
-    fileUrl: generatedFiles.pdfFile ? generatedFiles.pdfFile.getUrl() : (generatedFiles.documentFile ? generatedFiles.documentFile.getUrl() : ""),
-    openUrl: openUrl
+    fileId: documentFile ? documentFile.getId() : "",
+    fileUrl: documentFile ? documentFile.getUrl() : "",
+    openUrl: "https://mail.google.com/mail/#drafts"
   };
 }
 
@@ -367,50 +397,6 @@ function nfbCreatePdfFileFromGoogleDocument_(docFile, folder, finalBaseName) {
   return folder.createFile(docFile.getBlob().getAs(MimeType.PDF).setName(pdfName));
 }
 
-function nfbCreateGmailGeneratedFiles_(payload, action, folder, outputContext, finalBaseName) {
-  var needsDocument = nfbBodyTemplateUsesDocument_(action);
-  var needsPdf = nfbBodyTemplateUsesPdf_(action);
-  if (!needsDocument && !needsPdf) {
-    return {
-      documentFile: null,
-      pdfFile: null
-    };
-  }
-
-  var documentAction = nfbCloneRecordOutputActionForGeneratedFile_(action);
-  var documentBaseName = needsDocument ? finalBaseName : (finalBaseName + "__tmp");
-  var documentFile = nfbCreateRecordOutputGoogleDocument_(payload, documentAction, folder, outputContext, documentBaseName);
-  var pdfFile = needsPdf ? nfbCreatePdfFileFromGoogleDocument_(documentFile, folder, finalBaseName) : null;
-
-  if (!needsDocument) {
-    documentFile.setTrashed(true);
-    documentFile = null;
-  }
-
-  return {
-    documentFile: documentFile,
-    pdfFile: pdfFile
-  };
-}
-
-function nfbBuildGmailComposeUrl_(params) {
-  var query = ["view=cm", "fs=1"];
-  var mappings = [
-    ["to", params && params.to],
-    ["cc", params && params.cc],
-    ["bcc", params && params.bcc],
-    ["su", params && params.subject],
-    ["body", params && params.body]
-  ];
-
-  for (var i = 0; i < mappings.length; i++) {
-    var value = mappings[i][1] === undefined || mappings[i][1] === null ? "" : String(mappings[i][1]);
-    if (!value) continue;
-    query.push(mappings[i][0] + "=" + encodeURIComponent(value));
-  }
-
-  return "https://mail.google.com/mail/?" + query.join("&");
-}
 
 function nfbCreateRecordOutputGoogleDocument_(payload, action, folder, outputContext, finalBaseName) {
   var sourceUrl = nfbResolveRecordOutputTemplateSourceUrl_(payload, action);
