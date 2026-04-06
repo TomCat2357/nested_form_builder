@@ -144,6 +144,32 @@ const FileUploadField = ({
     const next = files.filter((_, i) => i !== index);
     filesRef.current = next;
     onChange(next.length > 0 ? next : "");
+    const currentFolderState = normalizeDriveFolderState(folderStateRef.current);
+    const effectiveFolderUrl = resolveEffectiveDriveFolderUrl(currentFolderState);
+    if (!effectiveFolderUrl || typeof gasClient?.finalizeRecordDriveFolder !== "function") return;
+    const currentSettings = buildUploadDriveSettings();
+    gasClient.finalizeRecordDriveFolder({
+      currentDriveFolderUrl: effectiveFolderUrl,
+      inputDriveFolderUrl: currentFolderState.inputUrl.trim(),
+      folderNameTemplate: currentSettings.folderNameTemplate || "",
+      responses: currentSettings.responses || {},
+      fieldLabels: currentSettings.fieldLabels || {},
+      fieldValues: currentSettings.fieldValues || {},
+      recordId: currentSettings.recordId || "",
+    }).then((result) => {
+      if (!result?.folderUrl || typeof onFolderStateChange !== "function") return;
+      onFolderStateChange((prevState) => {
+        const prev = normalizeDriveFolderState(prevState);
+        return normalizeDriveFolderState({
+          ...prev,
+          resolvedUrl: result.folderUrl,
+          inputUrl: prev.inputUrl.trim() ? prev.inputUrl : result.folderUrl,
+          autoCreated: prev.autoCreated || result.autoCreated === true,
+        });
+      });
+    }).catch(() => {
+      // 削除操作自体はローカル完結のため、フォルダ名更新失敗時は無視する
+    });
   };
 
   const handleFolderUrlChange = (event) => {

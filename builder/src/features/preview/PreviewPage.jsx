@@ -536,7 +536,10 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     folderNameTemplate: settings.driveFolderNameTemplate || "",
     formId: settings.formId || "",
     recordId: recordIdRef.current,
-  }), [settings.driveRootFolderUrl, settings.driveFolderNameTemplate, settings.formId]);
+    responses: responses || {},
+    fieldLabels,
+    fieldValues,
+  }), [settings.driveRootFolderUrl, settings.driveFolderNameTemplate, settings.formId, responses, fieldLabels, fieldValues]);
 
   const [isSaving, setIsSaving] = useState(false);
   const showRecordOutputAlert = (result, fallbackOutputType) => {
