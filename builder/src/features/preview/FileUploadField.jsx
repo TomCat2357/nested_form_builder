@@ -4,6 +4,7 @@ import {
   normalizeDriveFolderState,
   resolveEffectiveDriveFolderUrl,
 } from "../../utils/driveFolderState.js";
+import { resolveFileDisplayName } from "../../core/collect.js";
 
 const extractPdfTitle = async (file) => {
   if (!file || file.type !== "application/pdf") return "";
@@ -53,6 +54,8 @@ const FileUploadField = ({
   gasClient,
   folderState,
   onFolderStateChange,
+  canDeleteDriveFolder,
+  onDeleteDriveFolder,
 }) => {
   const files = Array.isArray(value) ? value : [];
   const fileInputRef = React.useRef(null);
@@ -238,9 +241,9 @@ const FileUploadField = ({
         {files.map((file, index) => (
           <div key={index} className="nf-mb-4">
             {file.driveFileUrl ? (
-              <a href={file.driveFileUrl} target="_blank" rel="noopener noreferrer">{file.name || "ファイル"}</a>
+              <a href={file.driveFileUrl} target="_blank" rel="noopener noreferrer">{resolveFileDisplayName(file.name, field?.hideFileExtension)}</a>
             ) : (
-              <span>{file.name || "ファイル"}</span>
+              <span>{resolveFileDisplayName(file.name, field?.hideFileExtension)}</span>
             )}
           </div>
         ))}
@@ -316,12 +319,24 @@ const FileUploadField = ({
       )}
 
       {displayedFolderUrl && (
-        <div className="nf-text-12 nf-text-muted nf-mt-8">
-          現在の保存先:
-          {" "}
-          <a href={displayedFolderUrl} target="_blank" rel="noopener noreferrer" className="nf-link">
-            フォルダを開く
-          </a>
+        <div className="nf-text-12 nf-text-muted nf-mt-8 nf-row nf-items-center nf-gap-8">
+          <span>
+            現在の保存先:
+            {" "}
+            <a href={displayedFolderUrl} target="_blank" rel="noopener noreferrer" className="nf-link">
+              フォルダを開く
+            </a>
+          </span>
+          {!readOnly && canDeleteDriveFolder && (
+            <button
+              type="button"
+              className="nf-btn nf-btn-danger nf-text-11"
+              style={{ padding: "2px 8px" }}
+              onClick={onDeleteDriveFolder}
+            >
+              フォルダ削除
+            </button>
+          )}
         </div>
       )}
 
@@ -339,10 +354,10 @@ const FileUploadField = ({
             <div key={index} className="nf-row nf-gap-8 nf-items-center nf-mb-4">
               {file.driveFileUrl ? (
                 <a href={file.driveFileUrl} target="_blank" rel="noopener noreferrer" className="nf-flex-1 nf-text-12">
-                  {file.name || "ファイル"}
+                  {resolveFileDisplayName(file.name, field?.hideFileExtension)}
                 </a>
               ) : (
-                <span className="nf-flex-1 nf-text-12">{file.name || "ファイル"}</span>
+                <span className="nf-flex-1 nf-text-12">{resolveFileDisplayName(file.name, field?.hideFileExtension)}</span>
               )}
               <button
                 type="button"

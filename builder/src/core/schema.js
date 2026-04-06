@@ -192,10 +192,12 @@ export const cleanUnusedFieldProperties = (field) => {
     field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
     field.allowFolderUrlEdit = normalizeBooleanSetting(field.allowFolderUrlEdit, false);
     field.showPdfMetaTitle = normalizeBooleanSetting(field.showPdfMetaTitle, false);
+    field.hideFileExtension = normalizeBooleanSetting(field.hideFileExtension, false);
   } else {
     delete field.allowUploadByUrl;
     delete field.allowFolderUrlEdit;
     delete field.showPdfMetaTitle;
+    delete field.hideFileExtension;
   }
   delete field.allowMultipleFiles;
   return field;

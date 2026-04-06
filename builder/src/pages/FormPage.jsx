@@ -1273,16 +1273,6 @@ export default function FormPage() {
           >
             {isCreatingPrintDocument ? "出力中..." : "印刷様式を出力"}
           </button>
-          {!isViewMode && canDeleteDriveFolder && (
-            <button
-              type="button"
-              className="nf-btn-outline nf-btn-sidebar nf-btn-danger nf-text-14"
-              disabled={isSaving || isReadLocked}
-              onClick={() => setDriveFolderActionConfirm({ open: true })}
-            >
-              フォルダ削除
-            </button>
-          )}
           {entryId && (
             <>
               <hr className="nf-sidebar-divider" />
@@ -1388,6 +1378,8 @@ export default function FormPage() {
           entryId={currentRecordId}
           driveFolderState={driveFolderState}
           onDriveFolderStateChange={setDriveFolderState}
+          canDeleteDriveFolder={!isViewMode && canDeleteDriveFolder}
+          onDeleteDriveFolder={() => setDriveFolderActionConfirm({ open: true })}
         />
       )}
 

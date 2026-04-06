@@ -74,6 +74,13 @@ export const collectAllPossiblePaths = (fields) => {
   return paths;
 };
 
+export const resolveFileDisplayName = (fileName, hideExtension) => {
+  if (!fileName) return "ファイル";
+  if (!hideExtension) return fileName;
+  const dotIndex = fileName.lastIndexOf(".");
+  return dotIndex > 0 ? fileName.slice(0, dotIndex) : fileName;
+};
+
 export const sortResponses = (responses, schema = null) => {
   const source = responses || {};
 

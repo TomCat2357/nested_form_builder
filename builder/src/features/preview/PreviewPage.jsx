@@ -53,6 +53,8 @@ const FieldRenderer = ({
   driveFolderState,
   onDriveFolderStateChange,
   onTemplateAction,
+  canDeleteDriveFolder,
+  onDeleteDriveFolder,
 }) => {
   const validation = validateByPattern(field, value);
   const selectedChoiceLabels = toSelectedChoiceLabels(field, value);
@@ -136,6 +138,8 @@ const FieldRenderer = ({
           gasClient={gasClientRef?.current}
           folderState={driveFolderState}
           onFolderStateChange={onDriveFolderStateChange}
+          canDeleteDriveFolder={canDeleteDriveFolder}
+          onDeleteDriveFolder={onDeleteDriveFolder}
         />
       </div>
     );
@@ -352,6 +356,8 @@ const RendererRecursive = ({
   driveFolderState,
   onDriveFolderStateChange,
   onTemplateAction,
+  canDeleteDriveFolder,
+  onDeleteDriveFolder,
 }) => {
   const renderChildrenAll = (field, fid) => () => {
     if (!field?.childrenByValue) return null;
@@ -373,6 +379,8 @@ const RendererRecursive = ({
           driveFolderState={driveFolderState}
           onDriveFolderStateChange={onDriveFolderStateChange}
           onTemplateAction={onTemplateAction}
+          canDeleteDriveFolder={canDeleteDriveFolder}
+          onDeleteDriveFolder={onDeleteDriveFolder}
         />
       );
     }
@@ -392,6 +400,8 @@ const RendererRecursive = ({
           driveFolderState={driveFolderState}
           onDriveFolderStateChange={onDriveFolderStateChange}
           onTemplateAction={onTemplateAction}
+          canDeleteDriveFolder={canDeleteDriveFolder}
+          onDeleteDriveFolder={onDeleteDriveFolder}
         />
       ));
     }
@@ -414,6 +424,8 @@ const RendererRecursive = ({
         driveFolderState={driveFolderState}
         onDriveFolderStateChange={onDriveFolderStateChange}
         onTemplateAction={onTemplateAction}
+        canDeleteDriveFolder={canDeleteDriveFolder}
+        onDeleteDriveFolder={onDeleteDriveFolder}
       />
     );
   };
@@ -438,6 +450,8 @@ const RendererRecursive = ({
               driveFolderState={driveFolderState}
               onDriveFolderStateChange={onDriveFolderStateChange}
               onTemplateAction={onTemplateAction}
+              canDeleteDriveFolder={canDeleteDriveFolder}
+              onDeleteDriveFolder={onDeleteDriveFolder}
             />
           </div>
         );
@@ -462,6 +476,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     onChildFormJump,
     driveFolderState,
     onDriveFolderStateChange,
+    canDeleteDriveFolder,
+    onDeleteDriveFolder,
   },
   ref,
 ) {
@@ -761,6 +777,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         driveFolderState={driveFolderState}
         onDriveFolderStateChange={onDriveFolderStateChange}
         onTemplateAction={handleFieldTemplateAction}
+        canDeleteDriveFolder={canDeleteDriveFolder}
+        onDeleteDriveFolder={onDeleteDriveFolder}
       />
       {showOutputJson && (
         <div className="nf-mt-12">

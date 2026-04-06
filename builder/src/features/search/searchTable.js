@@ -1,4 +1,5 @@
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
+import { resolveFileDisplayName } from "../../core/collect.js";
 import {
   formatUnixMsDateTime,
   formatUnixMsDateTimeSec,
@@ -146,8 +147,30 @@ const normalizeSearchText = (text) => String(text || "").toLowerCase();
 const normalizeColumnName = (text) => String(text || "").trim().toLowerCase();
 const isEntryIdColumnName = (columnName) => normalizeColumnName(columnName) === "id";
 
+const parseFileUploadJson = (value) => {
+  if (typeof value !== "string" || !value.startsWith("[")) return null;
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return null;
+    if (parsed.length > 0 && typeof parsed[0]?.driveFileId !== "undefined") return parsed;
+    return null;
+  } catch {
+    return null;
+  }
+};
+
 const buildSearchableCandidates = (key, value, unixMs = undefined) => {
   const candidates = [];
+
+  const fileEntries = parseFileUploadJson(value);
+  if (fileEntries !== null) {
+    fileEntries.forEach((entry) => {
+      const name = typeof entry?.name === "string" ? entry.name.trim() : "";
+      if (name) candidates.push(name);
+    });
+    return candidates;
+  }
+
   const displayValue = valueToDisplayString(value, unixMs);
   if (displayValue) {
     candidates.push(displayValue);
@@ -403,11 +426,12 @@ const createDisplayColumn = (path, sourceType = "", options = {}) => {
         const folderUrl = typeof entry?.driveFolderUrl === "string" ? entry.driveFolderUrl.trim() : "";
         const rawDataValue = entry?.data?.[path];
         const files = parseFileUploadEntries(rawDataValue);
+        const hideExt = options?.fieldMeta?.hideFileExtension === true;
         const fileItems = files.map((file) => ({
           name: typeof file.name === "string" ? file.name : "",
           driveFileUrl: typeof file.driveFileUrl === "string" ? file.driveFileUrl : "",
           pdfTitle: typeof file.pdfTitle === "string" ? file.pdfTitle.trim() : "",
-          displayName: getFileDisplayName(file, showPdfMetaTitle),
+          displayName: resolveFileDisplayName(getFileDisplayName(file, showPdfMetaTitle), hideExt),
         }));
         const displayNames = fileItems.map((f) => f.displayName).filter(Boolean);
         // For search: include original file names and pdfTitles
@@ -527,7 +551,7 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
     const fieldMeta = fieldMetaById.get(fieldId) || null;
     if (type === "fileUpload") {
       const showPdfMetaTitle = fieldMeta?.showPdfMetaTitle === true;
-      parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId, actionKind: "folderLink", showPdfMetaTitle }));
+      parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId, actionKind: "folderLink", showPdfMetaTitle, fieldMeta }));
       return;
     }
     if (type === "printTemplate") {
