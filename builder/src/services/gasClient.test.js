@@ -307,7 +307,7 @@ test("executeRecordOutputAction は nfbExecuteRecordOutputAction を呼び出す
   const { run, calls } = createGoogleScriptRunStub({
     nfbExecuteRecordOutputAction: (receivedPayload) => ({
       ok: true,
-      openUrl: "https://mail.google.com/mail/?view=cm&fs=1&su=rec001",
+      openUrl: "https://mail.google.com/mail/#drafts",
       payload: receivedPayload,
     }),
   });
@@ -316,7 +316,7 @@ test("executeRecordOutputAction は nfbExecuteRecordOutputAction を呼び出す
   try {
     const result = await executeRecordOutputAction(payload);
     assert.equal(result.ok, true);
-    assert.equal(result.openUrl, "https://mail.google.com/mail/?view=cm&fs=1&su=rec001");
+    assert.equal(result.openUrl, "https://mail.google.com/mail/#drafts");
     assert.equal(calls.length, 1);
     assert.equal(calls[0].functionName, "nfbExecuteRecordOutputAction");
     assert.deepEqual(calls[0].payload, payload);

@@ -547,7 +547,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     showOutputAlert({
       message: "様式出力を準備しました。",
       url: result?.openUrl || "",
-      linkLabel: outputType === "gmail" ? "Gmail送信画面を開く" : "ファイルを開く",
+      linkLabel: outputType === "gmail" ? "Gmail下書きを開く" : "ファイルを開く",
     });
   };
   const updateDriveFolderStateFromPrintResult = (result) => {
