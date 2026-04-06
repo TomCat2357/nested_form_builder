@@ -6,7 +6,10 @@ export const sanitizeFileUploadEntry = (entry) => {
   const driveFileId = typeof entry.driveFileId === "string" ? entry.driveFileId : "";
   const driveFileUrl = typeof entry.driveFileUrl === "string" ? entry.driveFileUrl : "";
   if (!name && !driveFileId && !driveFileUrl) return null;
-  return { name, driveFileId, driveFileUrl };
+  const result = { name, driveFileId, driveFileUrl };
+  const pdfTitle = typeof entry.pdfTitle === "string" ? entry.pdfTitle.trim() : "";
+  if (pdfTitle) result.pdfTitle = pdfTitle;
+  return result;
 };
 
 const serializeFileUploadValue = (value) => {
