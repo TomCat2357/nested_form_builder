@@ -354,6 +354,26 @@ const createBaseColumns = () => [
   },
 ];
 
+const parseFileUploadEntries = (rawDataValue) => {
+  if (!rawDataValue) return [];
+  try {
+    const parsed = typeof rawDataValue === "string" ? JSON.parse(rawDataValue) : rawDataValue;
+    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
+  } catch (e) {
+    return [];
+  }
+};
+
+const getFileDisplayName = (file, showPdfMetaTitle) => {
+  const name = typeof file.name === "string" ? file.name : "";
+  if (showPdfMetaTitle) {
+    const isPdf = name.toLowerCase().endsWith(".pdf");
+    const pdfTitle = typeof file.pdfTitle === "string" ? file.pdfTitle.trim() : "";
+    if (isPdf && pdfTitle) return pdfTitle;
+  }
+  return name;
+};
+
 const createDisplayColumn = (path, sourceType = "", options = {}) => {
   const normalizedSegments = Array.isArray(options.segments)
     ? [...options.segments]
@@ -364,6 +384,7 @@ const createDisplayColumn = (path, sourceType = "", options = {}) => {
   const optionOrder = Array.isArray(options.optionOrder) ? options.optionOrder : null;
   const actionKind = options.actionKind || "";
   const action = options.action || null;
+  const showPdfMetaTitle = options.showPdfMetaTitle === true;
   return {
     key,
     segments: limitedSegments.length > 0 ? limitedSegments : ["回答"],
@@ -375,15 +396,34 @@ const createDisplayColumn = (path, sourceType = "", options = {}) => {
     fieldId: options.fieldId || "",
     actionKind,
     action,
+    showPdfMetaTitle,
     searchAliases: Array.isArray(options.searchAliases) ? options.searchAliases.filter(Boolean) : [],
     getValue: (entry, column) => {
       if (actionKind === "folderLink") {
         const folderUrl = typeof entry?.driveFolderUrl === "string" ? entry.driveFolderUrl.trim() : "";
+        const rawDataValue = entry?.data?.[path];
+        const files = parseFileUploadEntries(rawDataValue);
+        const fileItems = files.map((file) => ({
+          name: typeof file.name === "string" ? file.name : "",
+          driveFileUrl: typeof file.driveFileUrl === "string" ? file.driveFileUrl : "",
+          pdfTitle: typeof file.pdfTitle === "string" ? file.pdfTitle.trim() : "",
+          displayName: getFileDisplayName(file, showPdfMetaTitle),
+        }));
+        const displayNames = fileItems.map((f) => f.displayName).filter(Boolean);
+        // For search: include original file names and pdfTitles
+        const searchParts = files.flatMap((file) => {
+          const parts = [];
+          if (file.name) parts.push(file.name);
+          if (file.pdfTitle) parts.push(file.pdfTitle);
+          return parts;
+        });
+        const display = displayNames.join("、") || (folderUrl ? "フォルダを開く" : "");
         return {
-          display: folderUrl ? "フォルダを開く" : "",
-          search: normalizeSearchText(folderUrl),
-          sort: folderUrl,
-          url: folderUrl,
+          display,
+          search: normalizeSearchText(searchParts.join(" ")),
+          sort: displayNames[0] || "",
+          files: fileItems,
+          folderUrl,
         };
       }
       if (actionKind === "printTemplate") {
@@ -486,7 +526,8 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
     if (!path) return;
     const fieldMeta = fieldMetaById.get(fieldId) || null;
     if (type === "fileUpload") {
-      parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId, actionKind: "folderLink" }));
+      const showPdfMetaTitle = fieldMeta?.showPdfMetaTitle === true;
+      parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId, actionKind: "folderLink", showPdfMetaTitle }));
       return;
     }
     if (type === "printTemplate") {

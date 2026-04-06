@@ -5,6 +5,31 @@ import {
   resolveEffectiveDriveFolderUrl,
 } from "../../utils/driveFolderState.js";
 
+const extractPdfTitle = async (file) => {
+  if (!file || file.type !== "application/pdf") return "";
+  try {
+    const maxBytes = Math.min(file.size, 65536);
+    const chunk = file.slice(0, maxBytes);
+    const buffer = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(chunk);
+    });
+    const bytes = new Uint8Array(buffer);
+    let raw = "";
+    for (let i = 0; i < bytes.length; i++) {
+      raw += String.fromCharCode(bytes[i]);
+    }
+    // Try /Title (text) pattern in PDF info dictionary
+    const match = raw.match(/\/Title\s*\(([^)]+)\)/);
+    if (match && match[1].trim()) return match[1].trim();
+    return "";
+  } catch (e) {
+    return "";
+  }
+};
+
 const toBase64 = (file) =>
   new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -86,7 +111,10 @@ const FileUploadField = ({
     setError("");
     setUploading(true);
     try {
-      const base64 = await toBase64(file);
+      const [base64, pdfTitle] = await Promise.all([
+        toBase64(file),
+        field?.showPdfMetaTitle ? extractPdfTitle(file) : Promise.resolve(""),
+      ]);
       const result = await gasClient.uploadFileToDrive({
         base64,
         fileName: file.name,
@@ -94,6 +122,7 @@ const FileUploadField = ({
         driveSettings: buildUploadDriveSettings(),
       });
       const entry = { name: result.fileName, driveFileId: result.fileId, driveFileUrl: result.fileUrl };
+      if (pdfTitle) entry.pdfTitle = pdfTitle;
       const next = [...filesRef.current, entry];
       filesRef.current = next;
       onChange(next);

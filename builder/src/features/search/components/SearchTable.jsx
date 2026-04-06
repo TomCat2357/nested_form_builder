@@ -33,7 +33,7 @@ export default function SearchTable({
     }
   };
 
-  const renderCellContent = (column, rawDisplayText, row) => {
+  const renderCellContent = (column, rawDisplayText, row, cellValue) => {
     const limitedText = applyDisplayLengthLimit(rawDisplayText || "", cellDisplayLimit);
     const isUrl = column.sourceType === "url" && rawDisplayText;
     const isRecordIdColumn = column.key === "id";
@@ -66,6 +66,52 @@ export default function SearchTable({
           {limitedText}
         </a>
       );
+    }
+
+    if (column.actionKind === "folderLink") {
+      const fileItems = Array.isArray(cellValue?.files) ? cellValue.files : [];
+      const folderUrl = typeof cellValue?.folderUrl === "string" ? cellValue.folderUrl : "";
+      if (fileItems.length > 0) {
+        return (
+          <div>
+            {fileItems.map((file, i) => {
+              const label = applyDisplayLengthLimit(file.displayName || file.name || "", cellDisplayLimit);
+              if (file.driveFileUrl) {
+                return (
+                  <div key={i}>
+                    <a
+                      href={file.driveFileUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="nf-link"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      {label}
+                    </a>
+                  </div>
+                );
+              }
+              return <div key={i}>{label || file.name}</div>;
+            })}
+          </div>
+        );
+      }
+      if (folderUrl) {
+        return (
+          <button
+            type="button"
+            className="nf-link nf-text-left"
+            style={{ padding: 0, border: "none", background: "none", cursor: "pointer" }}
+            onClick={(event) => {
+              event.stopPropagation();
+              onCellAction?.(column, row?.entry);
+            }}
+          >
+            フォルダを開く
+          </button>
+        );
+      }
+      return "";
     }
 
     if (column.actionKind && rawDisplayText) {
@@ -220,10 +266,11 @@ export default function SearchTable({
                     />
                   </td>
                   {selectableColumns.map((column) => {
-                    const rawDisplayText = values[column.key]?.display ?? "";
+                    const cellValue = values[column.key] ?? {};
+                    const rawDisplayText = cellValue.display ?? "";
                     return (
                       <td key={`${entry.id}_${column.key}`} className="search-td">
-                        {renderCellContent(column, rawDisplayText, row)}
+                        {renderCellContent(column, rawDisplayText, row, cellValue)}
                       </td>
                     );
                   })}

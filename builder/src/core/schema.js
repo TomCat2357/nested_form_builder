@@ -191,9 +191,11 @@ export const cleanUnusedFieldProperties = (field) => {
   if (type === "fileUpload") {
     field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
     field.allowFolderUrlEdit = normalizeBooleanSetting(field.allowFolderUrlEdit, false);
+    field.showPdfMetaTitle = normalizeBooleanSetting(field.showPdfMetaTitle, false);
   } else {
     delete field.allowUploadByUrl;
     delete field.allowFolderUrlEdit;
+    delete field.showPdfMetaTitle;
   }
   delete field.allowMultipleFiles;
   return field;
@@ -268,6 +270,7 @@ export const normalizeSchemaIDs = (nodes) => {
     } else if (base.type === "fileUpload") {
       base.allowUploadByUrl = normalizeBooleanSetting(base.allowUploadByUrl, false);
       base.allowFolderUrlEdit = normalizeBooleanSetting(base.allowFolderUrlEdit, false);
+      base.showPdfMetaTitle = normalizeBooleanSetting(base.showPdfMetaTitle, false);
     } else if (base.type === "printTemplate") {
       base.label = typeof base.label === "string" ? base.label : "";
       base.printTemplateAction = {
