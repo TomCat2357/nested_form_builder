@@ -905,6 +905,28 @@ function nfbResolveFolderFromInput_(input) {
   }
 }
 
+function nfbResolveFolderFromInputIfExists_(input) {
+  var normalizedInput = input === undefined || input === null ? "" : String(input).trim();
+  if (!normalizedInput) {
+    return null;
+  }
+
+  var parsed = Forms_parseGoogleDriveUrl_(normalizedInput);
+  if (parsed.type !== "folder" || !parsed.id) {
+    return null;
+  }
+
+  try {
+    var folder = DriveApp.getFolderById(parsed.id);
+    if (folder && typeof folder.isTrashed === "function" && folder.isTrashed()) {
+      return null;
+    }
+    return folder;
+  } catch (error) {
+    return null;
+  }
+}
+
 function nfbResolveRootFolder_(driveSettings) {
   var rootUrl = driveSettings && driveSettings.rootFolderUrl ? String(driveSettings.rootFolderUrl).trim() : "";
   if (!rootUrl) {
@@ -1040,11 +1062,18 @@ function nfbFinalizeRecordDriveFolder(payload) {
   return nfbSafeCall_(function() {
     var currentDriveFolderUrl = payload && payload.currentDriveFolderUrl ? String(payload.currentDriveFolderUrl).trim() : "";
     var inputDriveFolderUrl = payload && payload.inputDriveFolderUrl ? String(payload.inputDriveFolderUrl).trim() : "";
-    var currentFolder = currentDriveFolderUrl ? nfbResolveFolderFromInput_(currentDriveFolderUrl) : null;
+    var folderUrlToTrash = payload && payload.folderUrlToTrash ? String(payload.folderUrlToTrash).trim() : "";
+    var currentFolder = currentDriveFolderUrl ? nfbResolveFolderFromInputIfExists_(currentDriveFolderUrl) : null;
     var inputFolder = inputDriveFolderUrl ? nfbResolveFolderFromInput_(inputDriveFolderUrl) : null;
     var targetFolder = inputFolder || currentFolder;
 
     nfbTrashFilesByIds_(payload && payload.trashFileIds);
+    if (folderUrlToTrash) {
+      var folderToTrash = nfbResolveFolderFromInputIfExists_(folderUrlToTrash);
+      if (folderToTrash && typeof folderToTrash.setTrashed === "function") {
+        folderToTrash.setTrashed(true);
+      }
+    }
 
     if (!targetFolder) {
       return {

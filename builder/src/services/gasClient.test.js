@@ -239,6 +239,7 @@ test("finalizeRecordDriveFolder は trashFileIds を含む payload をそのま�
   const payload = {
     currentDriveFolderUrl: "https://drive.google.com/drive/folders/current123",
     inputDriveFolderUrl: "",
+    folderUrlToTrash: "https://drive.google.com/drive/folders/current123",
     rootFolderUrl: "https://drive.google.com/drive/folders/root123",
     folderNameTemplate: "{ID}_資料",
     responses: { name: "山田 太郎" },

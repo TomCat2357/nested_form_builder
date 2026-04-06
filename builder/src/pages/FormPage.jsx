@@ -44,6 +44,16 @@ import {
   resolveOmitEmptyRowsOnPrint,
 } from "../features/preview/printDocument.js";
 import { buildPrimarySaveOptions, resolveCreatePrintOnSave } from "../utils/settings.js";
+import {
+  appendDriveFileId,
+  areDriveFolderStatesEqual,
+  createEmptyDriveFolderState,
+  hasConfiguredDriveFolder,
+  markDriveFolderForDeletion,
+  normalizeDriveFileIds,
+  normalizeDriveFolderState,
+  resolveEffectiveDriveFolderUrl,
+} from "../utils/driveFolderState.js";
 
 const fallbackForForm = (formId, locationState) => {
   if (locationState?.from) return locationState.from;
@@ -85,67 +95,6 @@ const pickLatestEntry = (current, incoming) => {
   const currentVersion = toEntryVersion(current);
   const incomingVersion = toEntryVersion(incoming);
   return incomingVersion > currentVersion ? incoming : current;
-};
-
-const createEmptyDriveFolderState = () => ({
-  resolvedUrl: "",
-  inputUrl: "",
-  autoCreated: false,
-  sessionUploadFileIds: [],
-  pendingPrintFileIds: [],
-});
-
-const normalizeDriveFileIds = (value) => {
-  const source = Array.isArray(value) ? value : [];
-  const seen = new Set();
-  return source.reduce((ids, candidate) => {
-    const normalized = typeof candidate === "string" ? candidate.trim() : "";
-    if (!normalized || seen.has(normalized)) return ids;
-    seen.add(normalized);
-    ids.push(normalized);
-    return ids;
-  }, []);
-};
-
-const appendDriveFileId = (ids, candidate) => {
-  const normalized = typeof candidate === "string" ? candidate.trim() : "";
-  if (!normalized) return ids;
-  return ids.includes(normalized) ? ids : [...ids, normalized];
-};
-
-const areDriveFileIdListsEqual = (left, right) => {
-  if (left.length !== right.length) return false;
-  return left.every((value, index) => value === right[index]);
-};
-
-const normalizeDriveFolderState = (value) => {
-  const source = value && typeof value === "object" ? value : {};
-  const resolvedUrl = typeof source.resolvedUrl === "string"
-    ? source.resolvedUrl
-    : (typeof source.url === "string" ? source.url : "");
-  const inputUrl = typeof source.inputUrl === "string" ? source.inputUrl : resolvedUrl;
-  return {
-    resolvedUrl,
-    inputUrl,
-    autoCreated: source.autoCreated === true,
-    sessionUploadFileIds: normalizeDriveFileIds(source.sessionUploadFileIds),
-    pendingPrintFileIds: normalizeDriveFileIds(source.pendingPrintFileIds),
-  };
-};
-
-const resolveEffectiveDriveFolderUrl = (value) => {
-  const normalized = normalizeDriveFolderState(value);
-  return normalized.inputUrl.trim() || normalized.resolvedUrl.trim();
-};
-
-const areDriveFolderStatesEqual = (left, right) => {
-  const a = normalizeDriveFolderState(left);
-  const b = normalizeDriveFolderState(right);
-  return a.resolvedUrl === b.resolvedUrl
-    && a.inputUrl === b.inputUrl
-    && a.autoCreated === b.autoCreated
-    && areDriveFileIdListsEqual(a.sessionUploadFileIds, b.sessionUploadFileIds)
-    && areDriveFileIdListsEqual(a.pendingPrintFileIds, b.pendingPrintFileIds);
 };
 
 const collectDriveFileIds = (responses) => {
@@ -239,6 +188,7 @@ export default function FormPage() {
   const [mode, setMode] = useState(entryId ? "view" : "edit");
   const [isReloading, setIsReloading] = useState(false);
   const [entryActionConfirm, setEntryActionConfirm] = useState({ open: false, action: null });
+  const [driveFolderActionConfirm, setDriveFolderActionConfirm] = useState({ open: false });
   const [copySourceId, setCopySourceId] = useState("");
   const [copySourceResponses, setCopySourceResponses] = useState({});
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
@@ -314,6 +264,10 @@ export default function FormPage() {
   const isDirty = useMemo(
     () => hasDirtyChanges(initialResponsesRef.current, responses) || isDriveFolderDirty,
     [isDriveFolderDirty, responses],
+  );
+  const canDeleteDriveFolder = useMemo(
+    () => hasConfiguredDriveFolder(driveFolderState),
+    [driveFolderState],
   );
   const isDirtyRef = useLatestRef(isDirty);
   const isViewModeRef = useLatestRef(isViewMode);
@@ -848,6 +802,7 @@ export default function FormPage() {
     const currentDriveFolder = normalizeDriveFolderState(driveFolderStateRef.current);
     const currentDriveFolderUrl = currentDriveFolder.resolvedUrl.trim();
     const inputDriveFolderUrl = currentDriveFolder.inputUrl.trim();
+    const pendingDeleteFolderUrl = currentDriveFolder.pendingDeleteUrl.trim();
     const currentResponseFileIds = collectDriveFileIds(rawResponses);
     const initialResponseFileIds = collectDriveFileIds(initialResponsesRef.current);
     const currentResponseFileIdSet = new Set(currentResponseFileIds);
@@ -862,6 +817,7 @@ export default function FormPage() {
     const shouldFinalizeDriveFolder = Boolean(
       currentDriveFolderUrl
       || inputDriveFolderUrl
+      || pendingDeleteFolderUrl
       || finalizeFileIds.length > 0
       || trashFileIds.length > 0
     );
@@ -881,6 +837,7 @@ export default function FormPage() {
         fieldValues: buildFieldValuesMap(normalizedSchema, rawResponses || {}),
         fileIds: finalizeFileIds,
         trashFileIds,
+        folderUrlToTrash: pendingDeleteFolderUrl,
         recordId: payloadWithFormId.id,
       });
       finalizedDriveFolderUrl = typeof finalizeResult?.folderUrl === "string"
@@ -1167,6 +1124,11 @@ export default function FormPage() {
     commitResponses("preview:change", updater);
   }, [commitResponses]);
 
+  const handleDeleteDriveFolder = useCallback(() => {
+    setDriveFolderState((prevState) => markDriveFolderForDeletion(prevState));
+    setDriveFolderActionConfirm({ open: false });
+  }, []);
+
   const handleCreatePrintDocument = useCallback(async () => {
     const preview = previewRef.current;
     if (!preview || typeof preview.getPrintDocumentPayload !== "function") {
@@ -1311,6 +1273,16 @@ export default function FormPage() {
           >
             {isCreatingPrintDocument ? "出力中..." : "印刷様式を出力"}
           </button>
+          {!isViewMode && canDeleteDriveFolder && (
+            <button
+              type="button"
+              className="nf-btn-outline nf-btn-sidebar nf-btn-danger nf-text-14"
+              disabled={isSaving || isReadLocked}
+              onClick={() => setDriveFolderActionConfirm({ open: true })}
+            >
+              フォルダ削除
+            </button>
+          )}
           {entryId && (
             <>
               <hr className="nf-sidebar-divider" />
@@ -1436,6 +1408,15 @@ export default function FormPage() {
           entryActionConfirm.action === "undelete"
             ? { label: "削除取消し", value: "undelete", variant: "primary", onSelect: confirmEntryAction }
             : { label: "削除", value: "delete", variant: "danger", onSelect: confirmEntryAction },
+        ]}
+      />
+      <ConfirmDialog
+        open={driveFolderActionConfirm.open}
+        title="フォルダ削除"
+        message="現在の保存先フォルダのリンクを解除し、存在するフォルダは保存時にごみ箱へ移動します。よろしいですか？"
+        options={[
+          { label: "キャンセル", value: "cancel", onSelect: () => setDriveFolderActionConfirm({ open: false }) },
+          { label: "フォルダ削除", value: "delete-folder", variant: "danger", onSelect: handleDeleteDriveFolder },
         ]}
       />
 

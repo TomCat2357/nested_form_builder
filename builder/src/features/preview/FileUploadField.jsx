@@ -1,48 +1,9 @@
 import React from "react";
-
-const EMPTY_FOLDER_STATE = {
-  resolvedUrl: "",
-  inputUrl: "",
-  autoCreated: false,
-  sessionUploadFileIds: [],
-  pendingPrintFileIds: [],
-};
-
-const normalizeIdList = (value) => {
-  const source = Array.isArray(value) ? value : [];
-  const seen = new Set();
-  return source.reduce((ids, candidate) => {
-    const normalized = typeof candidate === "string" ? candidate.trim() : "";
-    if (!normalized || seen.has(normalized)) return ids;
-    seen.add(normalized);
-    ids.push(normalized);
-    return ids;
-  }, []);
-};
-
-const appendId = (ids, candidate) => {
-  const normalized = typeof candidate === "string" ? candidate.trim() : "";
-  if (!normalized) return ids;
-  return ids.includes(normalized) ? ids : [...ids, normalized];
-};
-
-const normalizeFolderState = (state) => {
-  const source = state && typeof state === "object" ? state : EMPTY_FOLDER_STATE;
-  const resolvedUrl = typeof source.resolvedUrl === "string" ? source.resolvedUrl : "";
-  const inputUrl = typeof source.inputUrl === "string" ? source.inputUrl : resolvedUrl;
-  return {
-    resolvedUrl,
-    inputUrl,
-    autoCreated: source.autoCreated === true,
-    sessionUploadFileIds: normalizeIdList(source.sessionUploadFileIds),
-    pendingPrintFileIds: normalizeIdList(source.pendingPrintFileIds),
-  };
-};
-
-const resolveEffectiveFolderUrl = (state) => {
-  const normalized = normalizeFolderState(state);
-  return normalized.inputUrl.trim() || normalized.resolvedUrl.trim();
-};
+import {
+  appendDriveFileId,
+  normalizeDriveFolderState,
+  resolveEffectiveDriveFolderUrl,
+} from "../../utils/driveFolderState.js";
 
 const toBase64 = (file) =>
   new Promise((resolve, reject) => {
@@ -76,14 +37,14 @@ const FileUploadField = ({
   const [driveUrl, setDriveUrl] = React.useState("");
   const [error, setError] = React.useState("");
 
-  const normalizedFolderState = normalizeFolderState(folderState);
+  const normalizedFolderState = normalizeDriveFolderState(folderState);
   const folderStateRef = React.useRef(normalizedFolderState);
-  const effectiveFolderUrl = resolveEffectiveFolderUrl(normalizedFolderState);
+  const effectiveFolderUrl = resolveEffectiveDriveFolderUrl(normalizedFolderState);
   const displayedFolderUrl = effectiveFolderUrl || normalizedFolderState.resolvedUrl.trim();
   const allowFolderUrlEdit = field?.allowFolderUrlEdit === true;
 
   React.useEffect(() => {
-    folderStateRef.current = normalizeFolderState(folderState);
+    folderStateRef.current = normalizeDriveFolderState(folderState);
   }, [folderState]);
 
   React.useEffect(() => {
@@ -93,19 +54,19 @@ const FileUploadField = ({
   const updateFolderStateFromUploadResult = React.useCallback((result) => {
     if (typeof onFolderStateChange !== "function") return;
     onFolderStateChange((prevState) => {
-      const prev = normalizeFolderState(prevState);
-      const current = normalizeFolderState(folderStateRef.current);
-      const currentEffectiveFolderUrl = resolveEffectiveFolderUrl(current);
+      const prev = normalizeDriveFolderState(prevState);
+      const current = normalizeDriveFolderState(folderStateRef.current);
+      const currentEffectiveFolderUrl = resolveEffectiveDriveFolderUrl(current);
       const nextResolvedUrl = typeof result?.folderUrl === "string" && result.folderUrl.trim()
         ? result.folderUrl.trim()
         : (currentEffectiveFolderUrl || prev.resolvedUrl);
       const keepAutoCreated = prev.autoCreated && prev.resolvedUrl.trim() && prev.resolvedUrl.trim() === nextResolvedUrl;
-      const nextState = normalizeFolderState({
+      const nextState = normalizeDriveFolderState({
         ...prev,
         resolvedUrl: nextResolvedUrl,
         inputUrl: prev.inputUrl.trim() ? prev.inputUrl : nextResolvedUrl,
         autoCreated: keepAutoCreated || result?.autoCreated === true,
-        sessionUploadFileIds: appendId(prev.sessionUploadFileIds, result?.fileId),
+        sessionUploadFileIds: appendDriveFileId(prev.sessionUploadFileIds, result?.fileId),
       });
       folderStateRef.current = nextState;
       return nextState;
@@ -113,10 +74,10 @@ const FileUploadField = ({
   }, [onFolderStateChange]);
 
   const buildUploadDriveSettings = React.useCallback(() => {
-    const current = normalizeFolderState(folderStateRef.current);
+    const current = normalizeDriveFolderState(folderStateRef.current);
     return {
       ...(driveSettings || {}),
-      folderUrl: resolveEffectiveFolderUrl(current),
+      folderUrl: resolveEffectiveDriveFolderUrl(current),
       autoCreated: current.autoCreated,
     };
   }, [driveSettings]);
@@ -189,12 +150,12 @@ const FileUploadField = ({
     if (typeof onFolderStateChange !== "function") return;
     const nextInputUrl = event.target.value;
     onFolderStateChange((prevState) => {
-      const prev = normalizeFolderState(prevState);
+      const prev = normalizeDriveFolderState(prevState);
       const nextState = {
         ...prev,
         inputUrl: nextInputUrl,
       };
-      const normalizedNextState = normalizeFolderState(nextState);
+      const normalizedNextState = normalizeDriveFolderState(nextState);
       folderStateRef.current = normalizedNextState;
       return normalizedNextState;
     });

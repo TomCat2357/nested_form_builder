@@ -27,6 +27,11 @@ import {
   requiresPrintTemplateFileName,
   resolveEffectivePrintTemplateFileNameTemplate,
 } from "../../utils/printTemplateAction.js";
+import {
+  appendDriveFileId,
+  normalizeDriveFolderState,
+  resolveEffectiveDriveFolderUrl,
+} from "../../utils/driveFolderState.js";
 import FileUploadField from "./FileUploadField.jsx";
 
 const resolveConfiguredPlaceholder = (field, fallback = "") => {
@@ -35,42 +40,6 @@ const resolveConfiguredPlaceholder = (field, fallback = "") => {
 };
 
 const getNumberInputMode = (field) => (field?.integerOnly ? "numeric" : "decimal");
-
-const normalizeDriveIdList = (value) => {
-  const source = Array.isArray(value) ? value : [];
-  const seen = new Set();
-  return source.reduce((ids, candidate) => {
-    const normalized = typeof candidate === "string" ? candidate.trim() : "";
-    if (!normalized || seen.has(normalized)) return ids;
-    seen.add(normalized);
-    ids.push(normalized);
-    return ids;
-  }, []);
-};
-
-const appendDriveId = (ids, candidate) => {
-  const normalized = typeof candidate === "string" ? candidate.trim() : "";
-  if (!normalized) return ids;
-  return ids.includes(normalized) ? ids : [...ids, normalized];
-};
-
-const normalizeDriveFolderState = (state) => {
-  const source = state && typeof state === "object" ? state : {};
-  const resolvedUrl = typeof source.resolvedUrl === "string" ? source.resolvedUrl : "";
-  const inputUrl = typeof source.inputUrl === "string" ? source.inputUrl : resolvedUrl;
-  return {
-    resolvedUrl,
-    inputUrl,
-    autoCreated: source.autoCreated === true,
-    sessionUploadFileIds: normalizeDriveIdList(source.sessionUploadFileIds),
-    pendingPrintFileIds: normalizeDriveIdList(source.pendingPrintFileIds),
-  };
-};
-
-const resolveEffectiveDriveFolderUrl = (state) => {
-  const normalized = normalizeDriveFolderState(state);
-  return normalized.inputUrl.trim() || normalized.resolvedUrl.trim();
-};
 
 const FieldRenderer = ({
   field,
@@ -592,7 +561,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         resolvedUrl: nextResolvedUrl,
         inputUrl: prev.inputUrl.trim() ? prev.inputUrl : nextResolvedUrl,
         autoCreated: keepAutoCreated || result?.autoCreated === true,
-        pendingPrintFileIds: appendDriveId(prev.pendingPrintFileIds, result?.fileId),
+        pendingPrintFileIds: appendDriveFileId(prev.pendingPrintFileIds, result?.fileId),
       });
     });
   };
