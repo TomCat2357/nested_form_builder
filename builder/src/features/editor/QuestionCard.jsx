@@ -14,6 +14,7 @@ import {
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
 const CHOICE_TYPES = ["radio", "select", "checkboxes"];
+const WEEKDAY_TYPE = "weekday";
 const DATE_TIME_TYPES = ["date", "time"];
 const BASIC_INPUT_TYPES = ["number", "url"];
 const MESSAGE_TYPE = "message";
@@ -90,6 +91,7 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
     if (newType === "email") next.autoFillUserEmail = !!next.autoFillUserEmail;
     if (newType === "phone") Object.assign(next, normalizePhoneSettings(next));
     if (isDateOrTimeType(newType)) next.defaultNow = !!next.defaultNow;
+    if (newType === WEEKDAY_TYPE) next.defaultToday = !!next.defaultToday;
     if (newType === "fileUpload") {
       next.allowUploadByUrl = next.allowUploadByUrl ?? false;
       next.allowFolderUrlEdit = next.allowFolderUrlEdit ?? false;
@@ -425,6 +427,7 @@ export default function QuestionCard({
   clearTempState,
 }) {
   const isChoice = isChoiceType(field.type);
+  const isWeekday = field.type === WEEKDAY_TYPE;
   const isText = field.type === "text";
   const isNumber = field.type === "number";
   const isDateOrTime = isDateOrTimeType(field.type);
@@ -578,6 +581,7 @@ export default function QuestionCard({
           <option value="number">数値</option>
           <option value="date">日付</option>
           <option value="time">時間</option>
+          <option value="weekday">曜日</option>
           <option value="checkboxes">チェックボックス</option>
           <option value="radio">ラジオボタン</option>
           <option value="select">ドロップダウン</option>
@@ -929,6 +933,22 @@ export default function QuestionCard({
               onChange={(event) => onChange({ ...field, defaultNow: event.target.checked })}
             />
             初期値を現在{field.type === "date" ? "の日付" : "の時刻"}にする
+          </label>
+        </div>
+      )}
+
+      {isWeekday && (
+        <div className="nf-mt-8">
+          <div className="nf-text-12 nf-text-subtle nf-mb-4">
+            選択肢は固定です: 月・火・水・木・金・土・日
+          </div>
+          <label className="nf-row nf-gap-6">
+            <input
+              type="checkbox"
+              checked={!!field.defaultToday}
+              onChange={(event) => onChange({ ...field, defaultToday: event.target.checked })}
+            />
+            初期値を今日の曜日にする
           </label>
         </div>
       )}

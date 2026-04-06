@@ -146,7 +146,7 @@ const validateNumberField = (field, value) => {
 const isEmpty = (field, value) => {
   if (value === undefined || value === null) return true;
   if (field.type === "printTemplate") return true;
-  if (["text", "textarea", "regex", "date", "time", "select", "radio", "url", "userName", "email", "phone"].includes(field.type)) {
+  if (["text", "textarea", "regex", "date", "time", "select", "radio", "weekday", "url", "userName", "email", "phone"].includes(field.type)) {
     return value === "";
   }
   if (field.type === "number") {

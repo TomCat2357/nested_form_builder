@@ -26,7 +26,7 @@ const toBooleanLike = (value) => {
 const columnType = (column) => column?.sourceType || column?.type || "";
 const isChoiceColumn = (column) => {
   const type = columnType(column);
-  return type === "checkboxes" || type === "radio" || type === "select";
+  return type === "checkboxes" || type === "radio" || type === "select" || type === "weekday";
 };
 const isBooleanSortColumn = (column) => columnType(column) === "checkboxes";
 const isNumericColumn = (column) => columnType(column) === "number";
@@ -412,7 +412,7 @@ const collectChoiceOptionOrderByPath = (schema) => {
   traverseSchema(schema || [], (field, context) => {
     const path = context?.pathSegments?.join("|") || "";
     if (!path) return;
-    if (field?.type !== "checkboxes") return;
+    if (field?.type !== "checkboxes" && field?.type !== "weekday") return;
     const options = Array.isArray(field?.options) ? field.options : [];
     const labels = options
       .map((option) => (typeof option?.label === "string" ? option.label : ""))

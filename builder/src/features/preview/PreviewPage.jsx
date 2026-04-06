@@ -326,6 +326,17 @@ const FieldRenderer = ({
         </select>
       )}
 
+      {field.type === "weekday" && (
+        <select value={selectedSingleChoice} onChange={(event) => onChange(event.target.value)} className={s.input.className}>
+          <option value="">-- 未選択 --</option>
+          {(field.options || []).map((opt) => (
+            <option key={opt.id} value={typeof opt?.label === "string" ? opt.label : ""}>
+              {(typeof opt?.label === "string" ? opt.label : "") || "選択肢"}
+            </option>
+          ))}
+        </select>
+      )}
+
       {field.type === "checkboxes" && (
         <div>
           {(field.options || []).map((opt) => {

@@ -34,7 +34,7 @@ const normalizeFileUploadEntries = (rawValue) => {
   return source.map(sanitizeFileUploadEntry).filter(Boolean);
 };
 
-const CHOICE_TYPES = new Set(["checkboxes", "radio", "select"]);
+const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);
 export const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
 
 const collectOptionLabels = (field) => {
@@ -248,6 +248,10 @@ export const collectDefaultNowResponses = (schema, now = new Date(), options = {
       if (selected.length > 0) {
         defaults[field.id] = selected;
       }
+    }
+    if (field?.type === "weekday" && field?.defaultToday) {
+      const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
+      defaults[field.id] = WEEKDAY_LABELS[now.getDay()];
     }
     if (["radio", "select"].includes(field?.type)) {
       const selected = collectDefaultSelectedLabels(field);

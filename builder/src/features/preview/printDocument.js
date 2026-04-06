@@ -1,6 +1,6 @@
 import { formatUnixMsDateTimeSec, toUnixMs } from "../../utils/dateTime.js";
 
-export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select"]);
+export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);
 
 export const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
 
@@ -41,7 +41,7 @@ const toRawSelectedLabels = (type, value) => {
     return labels;
   }
 
-  if (type === "radio" || type === "select") {
+  if (type === "radio" || type === "select" || type === "weekday") {
     if (typeof value === "string") {
       add(value);
     } else if (Array.isArray(value)) {

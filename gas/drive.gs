@@ -1104,40 +1104,53 @@ function nfbEscapeReplaceTextReplacement_(value) {
     .replace(/\$/g, "\\$");
 }
 
-function nfbApplyTemplateReplacementsToText_(textElement, context, options) {
-  if (!textElement || typeof textElement.getText !== "function" || typeof textElement.setText !== "function") return;
-  var originalText = textElement.getText();
-  textElement.setText(nfbResolveTemplate_(originalText, context, options));
-}
-
-function nfbApplyTemplateReplacementsToElement_(element, context, options) {
-  if (!element) return;
-
-  if (typeof element.editAsText === "function") {
-    var textElement = element.editAsText();
-    if (textElement && typeof textElement.getText === "function" && typeof textElement.setText === "function") {
-      nfbApplyTemplateReplacementsToText_(textElement, context, options);
-      return;
-    }
-  }
-
-  if (typeof element.getNumChildren === "function" && typeof element.getChild === "function") {
-    for (var i = 0; i < element.getNumChildren(); i++) {
-      nfbApplyTemplateReplacementsToElement_(element.getChild(i), context, options);
-    }
-  }
+function nfbEscapeJavaRegex_(str) {
+  return String(str).replace(/([\\^$.|?*+()\[\]{}])/g, "\\$1");
 }
 
 function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
   if (!doc) return;
-  if (typeof doc.getBody === "function") {
-    nfbApplyTemplateReplacementsToElement_(doc.getBody(), context, options);
+
+  var sections = [];
+  try { var body = doc.getBody(); if (body) sections.push(body); } catch(e) {}
+  try { var header = doc.getHeader(); if (header) sections.push(header); } catch(e) {}
+  try { var footer = doc.getFooter(); if (footer) sections.push(footer); } catch(e) {}
+  if (!sections.length) return;
+
+  // ドキュメント全テキストから {TOKEN} を収集して解決値を求める
+  var tokenValueMap = {};
+  for (var s = 0; s < sections.length; s++) {
+    var sectionText = "";
+    try { sectionText = sections[s].getText(); } catch(e) { continue; }
+    if (!sectionText) continue;
+    var tokenRegex = /\{([^{}]+)\}/g;
+    var match;
+    while ((match = tokenRegex.exec(sectionText)) !== null) {
+      var rawTokenName = match[1] || "";
+      if (!rawTokenName) continue;
+      var fullToken = match[0];
+      if (Object.prototype.hasOwnProperty.call(tokenValueMap, fullToken)) continue;
+      var forceField = rawTokenName.charAt(0) === "\\";
+      var tokenName = forceField ? rawTokenName.slice(1) : rawTokenName;
+      var value = nfbResolveTemplateTokenValue_(tokenName, context, {
+        allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),
+        forceFieldReference: forceField
+      });
+      tokenValueMap[fullToken] = String(value === null || value === undefined ? "" : value);
+    }
   }
-  if (typeof doc.getHeader === "function") {
-    nfbApplyTemplateReplacementsToElement_(doc.getHeader(), context, options);
-  }
-  if (typeof doc.getFooter === "function") {
-    nfbApplyTemplateReplacementsToElement_(doc.getFooter(), context, options);
+
+  // replaceText でトークンを置換（画像・罫線・書式を保持）
+  for (var s2 = 0; s2 < sections.length; s2++) {
+    for (var token in tokenValueMap) {
+      if (!Object.prototype.hasOwnProperty.call(tokenValueMap, token)) continue;
+      try {
+        sections[s2].replaceText(
+          nfbEscapeJavaRegex_(token),
+          nfbEscapeReplaceTextReplacement_(tokenValueMap[token])
+        );
+      } catch(e) {}
+    }
   }
 }
 

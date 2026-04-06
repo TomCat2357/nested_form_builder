@@ -31,7 +31,7 @@ export const collectResponses = (fields, responses) => {
         out[key] = "●";
         orderList.push(key);
       });
-    } else if (["radio", "select"].includes(field.type) && typeof value === "string" && value) {
+    } else if (["radio", "select", "weekday"].includes(field.type) && typeof value === "string" && value) {
       const key = `${base}|${value}`;
       out[key] = "●";
       orderList.push(key);
@@ -56,7 +56,7 @@ export const collectAllPossiblePaths = (fields) => {
   traverseSchema(fields, (field, context) => {
     const base = context.pathSegments.join("|");
 
-    if (["checkboxes", "radio", "select"].includes(field.type) && Array.isArray(field.options)) {
+    if (["checkboxes", "radio", "select", "weekday"].includes(field.type) && Array.isArray(field.options)) {
       field.options.forEach((option) => {
         const optionLabel = option.label || "";
         paths.push(`${base}|${optionLabel}`);
