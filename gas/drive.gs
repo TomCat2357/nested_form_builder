@@ -176,7 +176,9 @@ function nfbExecuteRecordOutputAction(payload) {
       throw new Error("出力ファイル名が指定されていません");
     }
 
-    var outputContext = nfbBuildRecordOutputContext_(payload, "");
+    var driveSettings = payload && payload.driveSettings ? payload.driveSettings : {};
+    var initialFolderUrl = driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
+    var outputContext = nfbBuildRecordOutputContext_(payload, initialFolderUrl);
     var finalBaseName = fileNameTemplate
       ? (nfbResolveTemplate_(fileNameTemplate, outputContext) || ("record_" + outputContext.recordId))
       : "";
