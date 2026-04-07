@@ -1001,6 +1001,18 @@ function nfbResolveTemplateTokens_(template, context, options) {
       var forceFieldReference = rawTokenName.indexOf("\\") === 0;
       var tokenName = forceFieldReference ? rawTokenName.slice(1) : rawTokenName;
       if (!tokenName) return "";
+
+      var pipeIndex = tokenName.indexOf("|");
+      if (pipeIndex >= 0) {
+        var fieldPart = tokenName.substring(0, pipeIndex);
+        var transformersPart = tokenName.substring(pipeIndex + 1);
+        var resolvedValue = nfbResolveTemplateTokenValue_(fieldPart, context, {
+          allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
+          forceFieldReference: forceFieldReference
+        });
+        return nfbApplyPipeTransformers_(resolvedValue, transformersPart);
+      }
+
       return nfbResolveTemplateTokenValue_(tokenName, context, {
         allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
         forceFieldReference: forceFieldReference
@@ -1014,6 +1026,476 @@ function nfbResolveTemplateTokens_(template, context, options) {
 
 function nfbResolveTemplate_(template, context, options) {
   return nfbResolveTemplateTokens_(template, context, options);
+}
+
+// ---------------------------------------------------------------------------
+// Pipe transformer system: {field|transform:args|transform2:args2}
+// ---------------------------------------------------------------------------
+
+function nfbSplitEscaped_(str, delimiter) {
+  var SENTINEL = "__NFB_ESC_" + delimiter.charCodeAt(0) + "__";
+  var escaped = str.split("\\" + delimiter).join(SENTINEL);
+  var parts = escaped.split(delimiter);
+  for (var i = 0; i < parts.length; i++) {
+    parts[i] = parts[i].split(SENTINEL).join(delimiter);
+  }
+  return parts;
+}
+
+function nfbParsePipeTransformers_(transformerString) {
+  var parts = nfbSplitEscaped_(transformerString, "|");
+  var result = [];
+  for (var i = 0; i < parts.length; i++) {
+    var segment = parts[i];
+    var colonIndex = segment.indexOf(":");
+    if (colonIndex >= 0) {
+      result.push({ name: segment.substring(0, colonIndex), args: segment.substring(colonIndex + 1) });
+    } else {
+      result.push({ name: segment, args: "" });
+    }
+  }
+  return result;
+}
+
+function nfbApplyPipeTransformers_(value, transformerString) {
+  var transformers = nfbParsePipeTransformers_(transformerString);
+  var current = value === undefined || value === null ? "" : String(value);
+  for (var i = 0; i < transformers.length; i++) {
+    current = nfbApplyOneTransformer_(current, transformers[i].name, transformers[i].args);
+  }
+  return current;
+}
+
+var NFB_TRANSFORMERS_ = {
+  "date":     nfbTransformDate_,
+  "time":     nfbTransformTime_,
+  "left":     nfbTransformLeft_,
+  "right":    nfbTransformRight_,
+  "mid":      nfbTransformMid_,
+  "pad":      nfbTransformPad_,
+  "padRight": nfbTransformPadRight_,
+  "upper":    function(v) { return v.toUpperCase(); },
+  "lower":    function(v) { return v.toLowerCase(); },
+  "trim":     function(v) { return v.replace(/^\s+|\s+$/g, ""); },
+  "default":  function(v, a) { return v ? v : String(a); },
+  "replace":  nfbTransformReplace_,
+  "match":    nfbTransformMatch_,
+  "number":   nfbTransformNumber_,
+  "if":       nfbTransformIf_,
+  "map":      nfbTransformMap_,
+  "kana":     nfbTransformKana_,
+  "zen":      nfbTransformZen_,
+  "han":      nfbTransformHan_
+};
+
+function nfbApplyOneTransformer_(value, name, args) {
+  var fn = NFB_TRANSFORMERS_[name];
+  return fn ? fn(value, args) : value;
+}
+
+function nfbParseDateString_(value) {
+  var str = String(value).replace(/^\s+|\s+$/g, "");
+  var m = str.match(/^(\d{4})[\-\/](\d{1,2})[\-\/](\d{1,2})/);
+  if (m) return { year: Number(m[1]), month: Number(m[2]), day: Number(m[3]) };
+  var m2 = str.match(/^(\d{4})(\d{2})(\d{2})$/);
+  if (m2) return { year: Number(m2[1]), month: Number(m2[2]), day: Number(m2[3]) };
+  return null;
+}
+
+var NFB_DAY_OF_WEEK_SHORT_ = ["日", "月", "火", "水", "木", "金", "土"];
+var NFB_DAY_OF_WEEK_LONG_ = ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"];
+
+function nfbTransformDate_(value, formatStr) {
+  var dateParts = nfbParseDateString_(value);
+  if (!dateParts) return value;
+
+  var era = nfbResolveJapaneseEra_(dateParts);
+  var dow = new Date(dateParts.year, dateParts.month - 1, dateParts.day).getDay();
+  var result = formatStr;
+
+  // Longer tokens first to avoid partial replacement
+  result = result.split("dddd").join(NFB_DAY_OF_WEEK_LONG_[dow]);
+  result = result.split("ddd").join(NFB_DAY_OF_WEEK_SHORT_[dow]);
+  result = result.split("gge").join(era.name + String(era.year));
+  result = result.split("gg").join(era.name);
+  result = result.split("YYYY").join(String(dateParts.year));
+  result = result.split("YY").join(("0" + dateParts.year).slice(-2));
+  result = result.split("MM").join(("0" + dateParts.month).slice(-2));
+  result = result.split("DD").join(("0" + dateParts.day).slice(-2));
+  result = result.split("ee").join(("0" + era.year).slice(-2));
+  // Single-char tokens after their multi-char variants are already consumed
+  result = result.split("M").join(String(dateParts.month));
+  result = result.split("D").join(String(dateParts.day));
+  result = result.split("e").join(String(era.year));
+
+  return result;
+}
+
+function nfbTransformLeft_(value, args) {
+  var n = parseInt(args, 10);
+  if (isNaN(n) || n < 0) return value;
+  return value.substring(0, n);
+}
+
+function nfbTransformRight_(value, args) {
+  var n = parseInt(args, 10);
+  if (isNaN(n) || n < 0) return value;
+  return n >= value.length ? value : value.substring(value.length - n);
+}
+
+function nfbTransformMid_(value, args) {
+  var parts = args.split(",");
+  var start = parseInt(parts[0], 10);
+  var length = parts.length > 1 ? parseInt(parts[1], 10) : undefined;
+  if (isNaN(start) || start < 0) return value;
+  if (length !== undefined && (isNaN(length) || length < 0)) return value;
+  return length !== undefined ? value.substr(start, length) : value.substring(start);
+}
+
+function nfbTransformPad_(value, args) {
+  var parts = args.split(",");
+  var length = parseInt(parts[0], 10);
+  var padChar = parts.length > 1 ? parts[1] : "0";
+  if (isNaN(length) || length <= 0) return value;
+  var result = value;
+  while (result.length < length) result = padChar + result;
+  return result;
+}
+
+function nfbTransformPadRight_(value, args) {
+  var parts = args.split(",");
+  var length = parseInt(parts[0], 10);
+  var padChar = parts.length > 1 ? parts[1] : " ";
+  if (isNaN(length) || length <= 0) return value;
+  var result = value;
+  while (result.length < length) result = result + padChar;
+  return result;
+}
+
+function nfbTransformReplace_(value, args) {
+  var commaIndex = args.indexOf(",");
+  if (commaIndex < 0) return value;
+  var from = args.substring(0, commaIndex);
+  var to = args.substring(commaIndex + 1);
+  return value.split(from).join(to);
+}
+
+// ---------------------------------------------------------------------------
+// time transformer: {field|time:HH時mm分ss秒}
+// ---------------------------------------------------------------------------
+
+function nfbParseTimeString_(value) {
+  var str = String(value).replace(/^\s+|\s+$/g, "");
+  // Try datetime format first (2024-01-15 14:30:00 or 2024-01-15T14:30:00)
+  var dtMatch = str.match(/[\sT](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (dtMatch) {
+    return { hour: Number(dtMatch[1]), minute: Number(dtMatch[2]), second: dtMatch[3] ? Number(dtMatch[3]) : 0 };
+  }
+  // Bare time format (14:30 or 14:30:00)
+  var tMatch = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (tMatch) {
+    return { hour: Number(tMatch[1]), minute: Number(tMatch[2]), second: tMatch[3] ? Number(tMatch[3]) : 0 };
+  }
+  return null;
+}
+
+function nfbTransformTime_(value, formatStr) {
+  var timeParts = nfbParseTimeString_(value);
+  if (!timeParts) return value;
+
+  var result = formatStr;
+  result = result.split("HH").join(("0" + timeParts.hour).slice(-2));
+  result = result.split("mm").join(("0" + timeParts.minute).slice(-2));
+  result = result.split("ss").join(("0" + timeParts.second).slice(-2));
+  result = result.split("H").join(String(timeParts.hour));
+  result = result.split("m").join(String(timeParts.minute));
+  result = result.split("s").join(String(timeParts.second));
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// match transformer: {field|match:PATTERN,GROUP}
+// ---------------------------------------------------------------------------
+
+function nfbTransformMatch_(value, args) {
+  var lastComma = args.lastIndexOf(",");
+  var pattern, groupIndex;
+  if (lastComma >= 0) {
+    var possibleGroup = args.substring(lastComma + 1).replace(/^\s+|\s+$/g, "");
+    if (/^\d+$/.test(possibleGroup)) {
+      pattern = args.substring(0, lastComma);
+      groupIndex = parseInt(possibleGroup, 10);
+    } else {
+      pattern = args;
+      groupIndex = 0;
+    }
+  } else {
+    pattern = args;
+    groupIndex = 0;
+  }
+  try {
+    var re = new RegExp(pattern);
+    var m = value.match(re);
+    return m && m[groupIndex] !== undefined ? m[groupIndex] : "";
+  } catch (e) {
+    return value;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// number transformer: {field|number:#,##0.00}
+// ---------------------------------------------------------------------------
+
+function nfbTransformNumber_(value, formatStr) {
+  var num = parseFloat(String(value).replace(/^\s+|\s+$/g, ""));
+  if (isNaN(num)) return value;
+
+  var isNeg = num < 0;
+  num = Math.abs(num);
+
+  // Parse format: find prefix, numeric part, suffix
+  var fmtMatch = formatStr.match(/^([^#0,.]*)([#0,.]+)(.*)$/);
+  if (!fmtMatch) return value;
+  var prefix = fmtMatch[1];
+  var numFmt = fmtMatch[2];
+  var suffix = fmtMatch[3];
+
+  // Determine decimal places from format
+  var dotIndex = numFmt.indexOf(".");
+  var decimalPlaces = 0;
+  var useThousands = numFmt.indexOf(",") >= 0;
+  if (dotIndex >= 0) {
+    decimalPlaces = numFmt.length - dotIndex - 1;
+  }
+
+  // Format the number
+  var fixed = num.toFixed(decimalPlaces);
+  var intPart, decPart;
+  if (decimalPlaces > 0) {
+    var parts = fixed.split(".");
+    intPart = parts[0];
+    decPart = parts[1];
+  } else {
+    intPart = fixed.split(".")[0];
+    decPart = "";
+  }
+
+  // Add thousands separator
+  if (useThousands) {
+    var formatted = "";
+    for (var i = intPart.length - 1, count = 0; i >= 0; i--, count++) {
+      if (count > 0 && count % 3 === 0) formatted = "," + formatted;
+      formatted = intPart.charAt(i) + formatted;
+    }
+    intPart = formatted;
+  }
+
+  var result = (isNeg ? "-" : "") + prefix + intPart;
+  if (decimalPlaces > 0) result += "." + decPart;
+  result += suffix;
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// if transformer: {field|if:VAL,THEN,ELSE}
+// ---------------------------------------------------------------------------
+
+function nfbTransformIf_(value, args) {
+  var firstComma = args.indexOf(",");
+  if (firstComma < 0) return value;
+  var testVal = args.substring(0, firstComma);
+  var rest = args.substring(firstComma + 1);
+  var secondComma = rest.indexOf(",");
+  var thenVal, elseVal;
+  if (secondComma >= 0) {
+    thenVal = rest.substring(0, secondComma);
+    elseVal = rest.substring(secondComma + 1);
+  } else {
+    thenVal = rest;
+    elseVal = "";
+  }
+  // Empty testVal = test for non-empty value
+  if (testVal === "") {
+    return value ? thenVal : elseVal;
+  }
+  return value === testVal ? thenVal : elseVal;
+}
+
+// ---------------------------------------------------------------------------
+// map transformer: {field|map:A=X;B=Y;*=Z}
+// ---------------------------------------------------------------------------
+
+function nfbTransformMap_(value, args) {
+  var entries = args.split(";");
+  var fallback = value;
+  for (var i = 0; i < entries.length; i++) {
+    var eqIndex = entries[i].indexOf("=");
+    if (eqIndex < 0) continue;
+    var key = entries[i].substring(0, eqIndex);
+    var val = entries[i].substring(eqIndex + 1);
+    if (key === "*") { fallback = val; continue; }
+    if (value === key) return val;
+  }
+  return fallback;
+}
+
+// ---------------------------------------------------------------------------
+// kana/zen/han transformers
+// ---------------------------------------------------------------------------
+
+function nfbTransformKana_(value) {
+  var result = "";
+  for (var i = 0; i < value.length; i++) {
+    var code = value.charCodeAt(i);
+    // Hiragana U+3041-U+3096 → Katakana U+30A1-U+30F6
+    if (code >= 0x3041 && code <= 0x3096) {
+      result += String.fromCharCode(code + 0x60);
+    } else {
+      result += value.charAt(i);
+    }
+  }
+  return result;
+}
+
+var NFB_HALFWIDTH_KANA_MAP_ = {
+  "\uFF66": "\u30F2", "\uFF67": "\u30A1", "\uFF68": "\u30A3", "\uFF69": "\u30A5",
+  "\uFF6A": "\u30A7", "\uFF6B": "\u30A9", "\uFF6C": "\u30E3", "\uFF6D": "\u30E5",
+  "\uFF6E": "\u30E7", "\uFF6F": "\u30C3", "\uFF70": "\u30FC",
+  "\uFF71": "\u30A2", "\uFF72": "\u30A4", "\uFF73": "\u30A6", "\uFF74": "\u30A8",
+  "\uFF75": "\u30AA", "\uFF76": "\u30AB", "\uFF77": "\u30AD", "\uFF78": "\u30AF",
+  "\uFF79": "\u30B1", "\uFF7A": "\u30B3", "\uFF7B": "\u30B5", "\uFF7C": "\u30B7",
+  "\uFF7D": "\u30B9", "\uFF7E": "\u30BB", "\uFF7F": "\u30BD", "\uFF80": "\u30BF",
+  "\uFF81": "\u30C1", "\uFF82": "\u30C4", "\uFF83": "\u30C6", "\uFF84": "\u30C8",
+  "\uFF85": "\u30CA", "\uFF86": "\u30CB", "\uFF87": "\u30CC", "\uFF88": "\u30CD",
+  "\uFF89": "\u30CE", "\uFF8A": "\u30CF", "\uFF8B": "\u30D2", "\uFF8C": "\u30D5",
+  "\uFF8D": "\u30D8", "\uFF8E": "\u30DB", "\uFF8F": "\u30DE", "\uFF90": "\u30DF",
+  "\uFF91": "\u30E0", "\uFF92": "\u30E1", "\uFF93": "\u30E2", "\uFF94": "\u30E4",
+  "\uFF95": "\u30E6", "\uFF96": "\u30E8", "\uFF97": "\u30E9", "\uFF98": "\u30EA",
+  "\uFF99": "\u30EB", "\uFF9A": "\u30EC", "\uFF9B": "\u30ED", "\uFF9C": "\u30EF",
+  "\uFF9D": "\u30F3"
+};
+
+// Dakuten map: base char → dakuten form
+var NFB_DAKUTEN_MAP_ = {
+  "\u30AB": "\u30AC", "\u30AD": "\u30AE", "\u30AF": "\u30B0", "\u30B1": "\u30B2", "\u30B3": "\u30B4",
+  "\u30B5": "\u30B6", "\u30B7": "\u30B8", "\u30B9": "\u30BA", "\u30BB": "\u30BC", "\u30BD": "\u30BE",
+  "\u30BF": "\u30C0", "\u30C1": "\u30C2", "\u30C4": "\u30C5", "\u30C6": "\u30C7", "\u30C8": "\u30C9",
+  "\u30CF": "\u30D0", "\u30D2": "\u30D3", "\u30D5": "\u30D6", "\u30D8": "\u30D9", "\u30DB": "\u30DC",
+  "\u30A6": "\u30F4"
+};
+
+// Handakuten map: base char → handakuten form
+var NFB_HANDAKUTEN_MAP_ = {
+  "\u30CF": "\u30D1", "\u30D2": "\u30D4", "\u30D5": "\u30D7", "\u30D8": "\u30DA", "\u30DB": "\u30DD"
+};
+
+function nfbTransformZen_(value) {
+  var result = "";
+  for (var i = 0; i < value.length; i++) {
+    var ch = value.charAt(i);
+    var code = value.charCodeAt(i);
+
+    // ASCII half-width (0x21-0x7E) → full-width (0xFF01-0xFF5E)
+    if (code >= 0x21 && code <= 0x7E) {
+      result += String.fromCharCode(code + 0xFEE0);
+      continue;
+    }
+    // Space → full-width space
+    if (code === 0x20) {
+      result += "\u3000";
+      continue;
+    }
+
+    // Half-width katakana → full-width katakana
+    var mapped = NFB_HALFWIDTH_KANA_MAP_[ch];
+    if (mapped) {
+      // Check for dakuten/handakuten combining mark
+      var next = i + 1 < value.length ? value.charAt(i + 1) : "";
+      if (next === "\uFF9E" && NFB_DAKUTEN_MAP_[mapped]) {
+        result += NFB_DAKUTEN_MAP_[mapped];
+        i++;
+      } else if (next === "\uFF9F" && NFB_HANDAKUTEN_MAP_[mapped]) {
+        result += NFB_HANDAKUTEN_MAP_[mapped];
+        i++;
+      } else {
+        result += mapped;
+      }
+      continue;
+    }
+
+    result += ch;
+  }
+  return result;
+}
+
+// Build reverse map for han (full-width → half-width)
+var NFB_FULLWIDTH_KANA_TO_HALF_ = {};
+var NFB_DAKUTEN_TO_HALF_ = {};
+var NFB_HANDAKUTEN_TO_HALF_ = {};
+
+(function() {
+  var k;
+  for (k in NFB_HALFWIDTH_KANA_MAP_) {
+    if (Object.prototype.hasOwnProperty.call(NFB_HALFWIDTH_KANA_MAP_, k)) {
+      NFB_FULLWIDTH_KANA_TO_HALF_[NFB_HALFWIDTH_KANA_MAP_[k]] = k;
+    }
+  }
+  for (k in NFB_DAKUTEN_MAP_) {
+    if (Object.prototype.hasOwnProperty.call(NFB_DAKUTEN_MAP_, k)) {
+      // Find the half-width base for the undakuten form
+      var halfBase = NFB_FULLWIDTH_KANA_TO_HALF_[k];
+      if (halfBase) {
+        NFB_DAKUTEN_TO_HALF_[NFB_DAKUTEN_MAP_[k]] = halfBase + "\uFF9E";
+      }
+    }
+  }
+  for (k in NFB_HANDAKUTEN_MAP_) {
+    if (Object.prototype.hasOwnProperty.call(NFB_HANDAKUTEN_MAP_, k)) {
+      var halfBase2 = NFB_FULLWIDTH_KANA_TO_HALF_[k];
+      if (halfBase2) {
+        NFB_HANDAKUTEN_TO_HALF_[NFB_HANDAKUTEN_MAP_[k]] = halfBase2 + "\uFF9F";
+      }
+    }
+  }
+})();
+
+function nfbTransformHan_(value) {
+  var result = "";
+  for (var i = 0; i < value.length; i++) {
+    var ch = value.charAt(i);
+    var code = value.charCodeAt(i);
+
+    // Full-width ASCII (0xFF01-0xFF5E) → half-width (0x21-0x7E)
+    if (code >= 0xFF01 && code <= 0xFF5E) {
+      result += String.fromCharCode(code - 0xFEE0);
+      continue;
+    }
+    // Full-width space → half-width space
+    if (code === 0x3000) {
+      result += " ";
+      continue;
+    }
+
+    // Dakuten/handakuten katakana → half-width + combining mark
+    if (NFB_DAKUTEN_TO_HALF_[ch]) {
+      result += NFB_DAKUTEN_TO_HALF_[ch];
+      continue;
+    }
+    if (NFB_HANDAKUTEN_TO_HALF_[ch]) {
+      result += NFB_HANDAKUTEN_TO_HALF_[ch];
+      continue;
+    }
+    // Plain full-width katakana → half-width katakana
+    if (NFB_FULLWIDTH_KANA_TO_HALF_[ch]) {
+      result += NFB_FULLWIDTH_KANA_TO_HALF_[ch];
+      continue;
+    }
+
+    result += ch;
+  }
+  return result;
 }
 
 /**
@@ -1323,10 +1805,23 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
       if (Object.prototype.hasOwnProperty.call(tokenValueMap, fullToken)) continue;
       var forceField = rawTokenName.charAt(0) === "\\";
       var tokenName = forceField ? rawTokenName.slice(1) : rawTokenName;
-      var value = nfbResolveTemplateTokenValue_(tokenName, context, {
-        allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),
-        forceFieldReference: forceField
-      });
+
+      var pipeIdx = tokenName.indexOf("|");
+      var value;
+      if (pipeIdx >= 0) {
+        var fPart = tokenName.substring(0, pipeIdx);
+        var tPart = tokenName.substring(pipeIdx + 1);
+        var raw = nfbResolveTemplateTokenValue_(fPart, context, {
+          allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),
+          forceFieldReference: forceField
+        });
+        value = nfbApplyPipeTransformers_(raw, tPart);
+      } else {
+        value = nfbResolveTemplateTokenValue_(tokenName, context, {
+          allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),
+          forceFieldReference: forceField
+        });
+      }
       tokenValueMap[fullToken] = String(value === null || value === undefined ? "" : value);
     }
   }
