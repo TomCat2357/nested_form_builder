@@ -486,14 +486,16 @@ const collectChoiceOptionOrderByPath = (schema) => {
   return optionOrderByPath;
 };
 
-const collectFieldMetaById = (schema) => {
-  const map = new Map();
-  traverseSchema(schema || [], (field) => {
+const collectFieldMeta = (schema) => {
+  const byId = new Map();
+  const byPath = new Map();
+  traverseSchema(schema || [], (field, context) => {
     const fieldId = typeof field?.id === "string" ? field.id.trim() : "";
-    if (!fieldId) return;
-    map.set(fieldId, field);
+    if (fieldId) byId.set(fieldId, field);
+    const path = Array.isArray(context?.pathSegments) ? context.pathSegments.join("|") : "";
+    if (path && !byPath.has(path)) byPath.set(path, field);
   });
-  return map;
+  return { byId, byPath };
 };
 
 const resolveDisplayFieldSettings = (form) => {
@@ -588,11 +590,11 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
     if (!showSearchModifiedAt && col.key === "modifiedAt") return false;
     return true;
   }));
-  const fieldMetaById = collectFieldMetaById(form?.schema || []);
+  const fieldMetaLookup = collectFieldMeta(form?.schema || []);
   const parentColumns = [];
   resolveDisplayFieldSettings(form).forEach(({ path, type, optionOrder, fieldId, printTemplateAction: resolvedAction }) => {
     if (!path) return;
-    const fieldMeta = fieldMetaById.get(fieldId) || null;
+    const fieldMeta = (fieldId && fieldMetaLookup.byId.get(fieldId)) || fieldMetaLookup.byPath.get(path) || null;
     if (type === "fileUpload") {
       const showPdfMetaTitle = fieldMeta?.showPdfMetaTitle === true;
       parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId, actionKind: "folderLink", showPdfMetaTitle, fieldMeta }));

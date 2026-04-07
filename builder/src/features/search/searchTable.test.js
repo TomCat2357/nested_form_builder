@@ -609,3 +609,110 @@ test("No.非表示時は既存順を維持してNo.を挿入しない", () => {
     "display:会社名",
   ]);
 });
+
+test("fileUploadのhideFileExtensionが検索結果の表示名に反映される", () => {
+  const form = {
+    schema: [
+      {
+        id: "f_upload",
+        type: "fileUpload",
+        label: "添付ファイル",
+        isDisplayed: true,
+        hideFileExtension: true,
+        showPdfMetaTitle: false,
+        allowUploadByUrl: false,
+        allowFolderUrlEdit: false,
+      },
+    ],
+    displayFieldSettings: [
+      { path: "添付ファイル", type: "fileUpload", fieldId: "f_upload" },
+    ],
+  };
+
+  const { columns } = buildSearchTableLayout(form, { includeOperations: false });
+  const fileColumn = columns.find((column) => column.sourceType === "fileUpload");
+  assert.ok(fileColumn, "fileUpload列が存在する");
+
+  const entry = {
+    id: "rec_1",
+    "No.": 1,
+    modifiedAtUnixMs: 0,
+    modifiedAt: 0,
+    data: { "添付ファイル": JSON.stringify([{ name: "報告書.pdf", driveFileUrl: "https://example.com" }]) },
+    dataUnixMs: {},
+  };
+  const values = computeRowValues(entry, columns);
+  const cellValue = values[fileColumn.key];
+  assert.equal(cellValue.display, "報告書");
+  assert.equal(cellValue.files[0].displayName, "報告書");
+});
+
+test("fileUploadのhideFileExtensionがfalseの場合は拡張子が表示される", () => {
+  const form = {
+    schema: [
+      {
+        id: "f_upload",
+        type: "fileUpload",
+        label: "添付ファイル",
+        isDisplayed: true,
+        hideFileExtension: false,
+        showPdfMetaTitle: false,
+        allowUploadByUrl: false,
+        allowFolderUrlEdit: false,
+      },
+    ],
+    displayFieldSettings: [
+      { path: "添付ファイル", type: "fileUpload", fieldId: "f_upload" },
+    ],
+  };
+
+  const { columns } = buildSearchTableLayout(form, { includeOperations: false });
+  const fileColumn = columns.find((column) => column.sourceType === "fileUpload");
+
+  const entry = {
+    id: "rec_1",
+    "No.": 1,
+    modifiedAtUnixMs: 0,
+    modifiedAt: 0,
+    data: { "添付ファイル": JSON.stringify([{ name: "報告書.pdf", driveFileUrl: "https://example.com" }]) },
+    dataUnixMs: {},
+  };
+  const values = computeRowValues(entry, columns);
+  const cellValue = values[fileColumn.key];
+  assert.equal(cellValue.display, "報告書.pdf");
+});
+
+test("schema にIDがないfileUploadでもhideFileExtensionが反映される", () => {
+  const form = {
+    schema: [
+      {
+        type: "fileUpload",
+        label: "添付ファイル",
+        isDisplayed: true,
+        hideFileExtension: true,
+        showPdfMetaTitle: false,
+        allowUploadByUrl: false,
+        allowFolderUrlEdit: false,
+      },
+    ],
+    displayFieldSettings: [
+      { path: "添付ファイル", type: "fileUpload", fieldId: "f_auto_rg9dm9" },
+    ],
+  };
+
+  const { columns } = buildSearchTableLayout(form, { includeOperations: false });
+  const fileColumn = columns.find((column) => column.sourceType === "fileUpload");
+  assert.ok(fileColumn, "fileUpload列が存在する");
+
+  const entry = {
+    id: "rec_1",
+    "No.": 1,
+    modifiedAtUnixMs: 0,
+    modifiedAt: 0,
+    data: { "添付ファイル": JSON.stringify([{ name: "要領（R7.4改正）.pdf", driveFileUrl: "https://example.com" }]) },
+    dataUnixMs: {},
+  };
+  const values = computeRowValues(entry, columns);
+  const cellValue = values[fileColumn.key];
+  assert.equal(cellValue.display, "要領（R7.4改正）");
+});
