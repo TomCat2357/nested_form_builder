@@ -76,11 +76,11 @@ export default function SearchTable({
           <div>
             {fileItems.map((file, i) => {
               const label = applyDisplayLengthLimit(file.displayName || file.name || "", cellDisplayLimit);
-              if (file.driveFileUrl) {
+              if (folderUrl) {
                 return (
                   <div key={i}>
                     <a
-                      href={file.driveFileUrl}
+                      href={folderUrl}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="nf-link"
@@ -98,20 +98,18 @@ export default function SearchTable({
       }
       if (folderUrl) {
         return (
-          <button
-            type="button"
-            className="nf-link nf-text-left"
-            style={{ padding: 0, border: "none", background: "none", cursor: "pointer" }}
-            onClick={(event) => {
-              event.stopPropagation();
-              onCellAction?.(column, row?.entry);
-            }}
+          <a
+            href={folderUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="nf-link"
+            onClick={(event) => event.stopPropagation()}
           >
-            フォルダを開く
-          </button>
+            なし
+          </a>
         );
       }
-      return "";
+      return "なし";
     }
 
     if (column.actionKind && rawDisplayText) {

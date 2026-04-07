@@ -7,15 +7,14 @@ export const PRINT_TEMPLATE_OUTPUT_TYPES = Object.freeze({
 export const DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE = "{ID}_{YYYY}-{MM}-{DD}";
 
 export const PRINT_TEMPLATE_OUTPUT_OPTIONS = [
-  { value: PRINT_TEMPLATE_OUTPUT_TYPES.GOOGLE_DOC, label: "GoogleDocument" },
   { value: PRINT_TEMPLATE_OUTPUT_TYPES.PDF, label: "PDF" },
   { value: PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL, label: "Gmail" },
 ];
 
 export const normalizePrintTemplateOutputType = (value) => (
-  value === PRINT_TEMPLATE_OUTPUT_TYPES.PDF || value === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL
-    ? value
-    : PRINT_TEMPLATE_OUTPUT_TYPES.GOOGLE_DOC
+  value === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL
+    ? PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL
+    : PRINT_TEMPLATE_OUTPUT_TYPES.PDF
 );
 
 export const normalizePrintTemplateAction = (value) => {
@@ -40,10 +39,8 @@ export const resolveSharedPrintFileNameTemplate = (settings) => (
   normalizeTemplateString(settings?.standardPrintFileNameTemplate)
 );
 
-const GENERATED_GMAIL_FILE_TOKENS = ["{_PDF}", "{_DOCUMENT}"];
-
 export const usesPrintTemplatePdfLink = (value) => (
-  GENERATED_GMAIL_FILE_TOKENS.some((token) => normalizePrintTemplateAction(value).gmailTemplateBody.includes(token))
+  normalizePrintTemplateAction(value).gmailTemplateBody.includes("{_PDF}")
 );
 
 export const requiresPrintTemplateFileName = (value) => {

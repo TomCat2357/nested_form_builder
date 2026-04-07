@@ -30,7 +30,6 @@ import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import {
   createRecordPrintDocument,
   executeRecordOutputAction,
-  findDriveFileInFolder,
   saveExcelToDrive,
 } from "../services/gasClient.js";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
@@ -387,69 +386,64 @@ export default function SearchPage() {
       fileNameTemplate: effectiveFileNameTemplate,
     };
 
+    const buildRecordActionPayload = () => ({
+      action,
+      settings: {
+        standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
+        standardPrintFileNameTemplate: form?.settings?.standardPrintFileNameTemplate || "",
+      },
+      recordContext: {
+        formTitle: form?.settings?.formTitle || "",
+        formId: form?.id || "",
+        recordId: entry.id,
+        recordNo: entry?.["No."] || "",
+        modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
+        printPayload: buildPrintDocumentPayload({
+          schema: normalizedSchema,
+          responses: restoredResponses,
+          settings: {
+            ...(form?.settings || {}),
+            formId: form?.id || "",
+            recordNo: entry?.["No."],
+            modifiedAt: entry?.modifiedAt,
+            modifiedAtUnixMs: entry?.modifiedAtUnixMs,
+          },
+          recordId: entry.id,
+          omitEmptyRows: omitEmptyRowsOnPrint,
+          driveFolderState: {
+            resolvedUrl: entry.driveFolderUrl || "",
+            inputUrl: entry.driveFolderUrl || "",
+          },
+          useTemporaryFolder: true,
+        }),
+      },
+      driveSettings,
+    });
+
     if (action.outputType === "gmail") {
       if (requiresPrintTemplateFileName(action) && !effectiveFileNameTemplate) {
-        showAlert("Gmail 本文で {_PDF} または {_DOCUMENT} を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください。");
+        showAlert("Gmail 本文で {_PDF} を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください。");
         return;
       }
-      const result = await executeRecordOutputAction({
-        action,
-        settings: {
-          standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
-          standardPrintFileNameTemplate: form?.settings?.standardPrintFileNameTemplate || "",
-        },
-        recordContext: {
-          formTitle: form?.settings?.formTitle || "",
-          formId: form?.id || "",
-          recordId: entry.id,
-          recordNo: entry?.["No."] || "",
-          modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
-          printPayload: buildPrintDocumentPayload({
-            schema: normalizedSchema,
-            responses: restoredResponses,
-            settings: {
-              ...(form?.settings || {}),
-              formId: form?.id || "",
-              recordNo: entry?.["No."],
-              modifiedAt: entry?.modifiedAt,
-              modifiedAtUnixMs: entry?.modifiedAtUnixMs,
-            },
-            recordId: entry.id,
-            omitEmptyRows: omitEmptyRowsOnPrint,
-            driveFolderState: {
-              resolvedUrl: entry.driveFolderUrl || "",
-              inputUrl: entry.driveFolderUrl || "",
-            },
-            useTemporaryFolder: true,
-          }),
-        },
-        driveSettings,
-      });
+      const result = await executeRecordOutputAction(buildRecordActionPayload());
       if (result?.openUrl) {
         showPrintTemplateOutputAlert(result.openUrl, result.outputType || action.outputType);
       }
       return;
     }
 
-    if (!effectiveFileNameTemplate) {
-      showAlert("出力ファイル名が設定されていません。");
-      return;
+    // PDF: オンデマンド生成してブラウザダウンロード
+    const result = await executeRecordOutputAction(buildRecordActionPayload());
+    if (result?.pdfBase64 && result?.fileName) {
+      const bytes = Uint8Array.from(atob(result.pdfBase64), (c) => c.charCodeAt(0));
+      const blob = new Blob([bytes], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = result.fileName;
+      a.click();
+      URL.revokeObjectURL(url);
     }
-
-    if (!entry.driveFolderUrl) {
-      showAlert("保存先フォルダが未確定です。");
-      return;
-    }
-
-    const found = await findDriveFileInFolder({
-      fileNameTemplate: effectiveFileNameTemplate,
-      driveSettings,
-    });
-    if (!found?.found || !found?.fileUrl) {
-      showAlert("該当ファイルが見つかりませんでした。");
-      return;
-    }
-    showPrintTemplateOutputAlert(found.fileUrl, action.outputType);
   }, [
     fieldLabels,
     form?.id,

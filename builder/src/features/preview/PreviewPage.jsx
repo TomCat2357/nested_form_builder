@@ -638,6 +638,16 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       if (result?.openUrl) {
         showRecordOutputAlert(result, action.outputType);
       }
+      if (result?.pdfBase64 && result?.fileName) {
+        const bytes = Uint8Array.from(atob(result.pdfBase64), (c) => c.charCodeAt(0));
+        const blob = new Blob([bytes], { type: "application/pdf" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = result.fileName;
+        a.click();
+        URL.revokeObjectURL(url);
+      }
     } catch (error) {
       showAlert(`様式出力に失敗しました: ${error?.message || error}`);
     }

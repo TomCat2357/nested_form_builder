@@ -205,8 +205,8 @@ export const uploadFileToDrive = ({ base64, fileName, mimeType, driveSettings })
 export const copyDriveFileToDrive = ({ sourceUrl, driveSettings, fileNameTemplate }) =>
   fetchGasApi("nfbCopyDriveFileToDrive", { sourceUrl, driveSettings, fileNameTemplate }, "Driveファイルのコピーに失敗しました");
 
-export const findDriveFileInFolder = ({ fileNameTemplate, driveSettings }) =>
-  fetchGasApi("nfbFindDriveFileInFolder", { fileNameTemplate, driveSettings }, "Driveファイルの検索に失敗しました");
+export const findDriveFileInFolder = ({ fileNameTemplate, outputType, driveSettings }) =>
+  fetchGasApi("nfbFindDriveFileInFolder", { fileNameTemplate, outputType, driveSettings }, "Driveファイルの検索に失敗しました");
 
 export const createGoogleDocumentFromTemplate = ({ sourceUrl, driveSettings, fileNameTemplate }) =>
   fetchGasApi(

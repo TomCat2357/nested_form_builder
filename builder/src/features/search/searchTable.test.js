@@ -117,6 +117,29 @@ test("検索列はdisplayFieldSettingsの定義順を保持する", () => {
   const fieldPaths = layout.columns.filter((column) => column?.path).map((column) => column.path);
   assert.deepEqual(fieldPaths, ["B項目", "A項目", "親|子"]);
 });
+test("検索列は旧 printTemplate 設定でも current schema の PDF 出力を使う", () => {
+  const form = {
+    settings: {},
+    schema: [
+      {
+        id: "print_pdf_1",
+        type: "printTemplate",
+        label: "",
+        isDisplayed: true,
+        printTemplateAction: { enabled: true, outputType: "pdf", fileNameTemplate: "print_${recordId}" },
+      },
+    ],
+    displayFieldSettings: [
+      { path: "GoogleDocument", type: "printTemplate" },
+    ],
+  };
+
+  const layout = buildSearchTableLayout(form, { includeOperations: false });
+  const actionColumn = layout.columns.find((column) => column?.actionKind === "printTemplate");
+  assert.equal(actionColumn?.path, "PDF");
+  const rowValues = computeRowValues({ id: "rec_1", data: {}, dataUnixMs: {} }, layout.columns);
+  assert.equal(rowValues[actionColumn.key].display, "PDF");
+});
 
 test("検索列は除外指定したメッセージをdisplayFieldSettingsに残っていても含めない", () => {
   const form = {

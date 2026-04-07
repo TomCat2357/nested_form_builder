@@ -23,6 +23,7 @@ export const collectDisplayFieldSettings = (schema) => {
         path: pathSegments.join("|"),
         type: field.type || "",
         fieldId: field.id || "",
+        printTemplateAction: field.type === "printTemplate" ? (field.printTemplateAction ?? null) : undefined,
       });
     }
   });

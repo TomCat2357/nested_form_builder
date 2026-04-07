@@ -498,22 +498,65 @@ const collectFieldMetaById = (schema) => {
 
 const resolveDisplayFieldSettings = (form) => {
   const schema = form?.schema || [];
-  const collected = collectDisplayFieldSettings(schema);
+  const collected = collectDisplayFieldSettings(schema).map((item) => ({
+    path: String(item?.path || ""),
+    type: item?.type || "",
+    fieldId: item?.fieldId || "",
+    printTemplateAction: item?.printTemplateAction,
+  }));
   const collectedByPath = new Map(collected.map((item) => [item.path, item.type || ""]));
-  const fieldIdByPath = new Map(collected.map((item) => [item.path, item.fieldId || ""]));
+  const collectedByFieldId = new Map(
+    collected
+      .filter((item) => item.fieldId)
+      .map((item) => [item.fieldId, item]),
+  );
   const optionOrderByPath = collectChoiceOptionOrderByPath(schema);
   if (Array.isArray(form?.displayFieldSettings) && form.displayFieldSettings.length) {
     const resolveTypeByPath = (path) => collectedByPath.get(path) || "";
     const shouldFilterByCollected = collectedByPath.size > 0;
+    const matchedFallbackFieldIds = new Set();
     return form.displayFieldSettings
       .filter((item) => item && item.path)
-      .filter((item) => !shouldFilterByCollected || collectedByPath.has(String(item.path)))
-      .map((item) => ({
-        path: String(item.path),
-        type: item.type || resolveTypeByPath(String(item.path)),
-        optionOrder: optionOrderByPath.get(String(item.path)) || null,
-        fieldId: fieldIdByPath.get(String(item.path)) || "",
-      }));
+      .map((item) => {
+        const rawPath = String(item.path);
+        const rawType = item.type || resolveTypeByPath(rawPath);
+        const rawFieldId = typeof item.fieldId === "string" ? item.fieldId : "";
+        let matched = rawFieldId ? collectedByFieldId.get(rawFieldId) || null : null;
+
+        if (!matched) {
+          matched = collected.find((candidate) => (
+            candidate.path === rawPath
+            && candidate.type === rawType
+            && (!candidate.fieldId || !matchedFallbackFieldIds.has(candidate.fieldId))
+          )) || null;
+        }
+
+        if (!matched && rawType === "printTemplate") {
+          matched = collected.find((candidate) => (
+            candidate.type === rawType
+            && !matchedFallbackFieldIds.has(candidate.fieldId)
+          )) || null;
+        }
+
+        if (matched?.fieldId) {
+          matchedFallbackFieldIds.add(matched.fieldId);
+        }
+
+        const resolvedPath = matched?.path || rawPath;
+        const resolvedType = matched?.type || rawType;
+        if (shouldFilterByCollected && !matched && !collectedByPath.has(rawPath)) {
+          return null;
+        }
+
+        return {
+          path: resolvedPath,
+          type: resolvedType,
+          optionOrder: optionOrderByPath.get(resolvedPath) || null,
+          fieldId: matched?.fieldId || rawFieldId,
+          printTemplateAction: matched?.printTemplateAction,
+        };
+      })
+      .filter(Boolean);
   }
 
   return collected
@@ -523,6 +566,7 @@ const resolveDisplayFieldSettings = (form) => {
       type: item.type || "",
       optionOrder: optionOrderByPath.get(String(item.path)) || null,
       fieldId: item.fieldId || "",
+      printTemplateAction: item.printTemplateAction,
     }));
 };
 
@@ -546,7 +590,7 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
   }));
   const fieldMetaById = collectFieldMetaById(form?.schema || []);
   const parentColumns = [];
-  resolveDisplayFieldSettings(form).forEach(({ path, type, optionOrder, fieldId }) => {
+  resolveDisplayFieldSettings(form).forEach(({ path, type, optionOrder, fieldId, printTemplateAction: resolvedAction }) => {
     if (!path) return;
     const fieldMeta = fieldMetaById.get(fieldId) || null;
     if (type === "fileUpload") {
@@ -555,11 +599,12 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
       return;
     }
     if (type === "printTemplate") {
+      const action = normalizePrintTemplateAction(resolvedAction ?? fieldMeta?.printTemplateAction);
       parentColumns.push(createDisplayColumn(path, type, {
         optionOrder,
         fieldId,
         actionKind: "printTemplate",
-        action: normalizePrintTemplateAction(fieldMeta?.printTemplateAction),
+        action,
       }));
       return;
     }
