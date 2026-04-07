@@ -170,7 +170,7 @@ function nfbCreateRecordPrintDocument(payload) {
 function nfbExecuteRecordOutputAction(payload) {
   return nfbSafeCall_(function() {
     var action = payload && payload.action ? payload.action : {};
-    var outputType = action.outputType === "gmail" ? "gmail" : "pdf";
+    var outputType = action.outputType === "gmail" ? "gmail" : (action.outputType === "googleDoc" ? "googleDoc" : "pdf");
     var fileNameTemplate = nfbResolveRecordOutputFileNameTemplate_(payload, action, outputType);
     if (nfbRequiresRecordOutputFileNameTemplate_(action, outputType) && !fileNameTemplate) {
       throw new Error("出力ファイル名が指定されていません");
@@ -187,8 +187,99 @@ function nfbExecuteRecordOutputAction(payload) {
       return nfbCreateGmailDraftOutput_(payload, action, outputContext, finalBaseName);
     }
 
+    if (outputType === "googleDoc") {
+      return nfbCreateGoogleDocInRootOutput_(payload, action, outputContext, finalBaseName);
+    }
+
     return nfbCreatePdfDownloadOutput_(payload, action, outputContext, finalBaseName);
   });
+}
+
+function nfbExecuteBatchGoogleDocOutput(payload) {
+  return nfbSafeCall_(function() {
+    var records = payload && payload.records;
+    if (!records || !records.length) throw new Error("レコードが選択されていません");
+
+    var fileName = payload.fileNameTemplate || "一括出力";
+    var tmpBase = fileName + "__tmp_" + Utilities.getUuid();
+    var rootFolder = DriveApp.getRootFolder();
+
+    // 1件目のレコードでベースDocを作成
+    var firstPayload = records[0];
+    var firstAction = firstPayload.action || {};
+    var firstFolderUrl = (firstPayload.driveSettings && firstPayload.driveSettings.folderUrl) || "";
+    var firstContext = nfbBuildRecordOutputContext_(firstPayload, firstFolderUrl);
+    var firstSourceUrl = nfbResolveRecordOutputTemplateSourceUrl_(firstPayload, firstAction);
+
+    var combinedFile;
+    if (firstSourceUrl) {
+      combinedFile = nfbCreateGoogleDocumentFileFromTemplate_(firstSourceUrl, rootFolder, tmpBase, firstContext);
+    } else {
+      var firstPrintPayload = firstPayload.recordContext ? firstPayload.recordContext.printPayload : null;
+      combinedFile = nfbCreateGoogleDocumentFileInRoot_(firstPrintPayload, tmpBase);
+    }
+
+    // 2件目以降: 改ページ + body要素コピー
+    if (records.length > 1) {
+      var combinedDoc = DocumentApp.openById(combinedFile.getId());
+      var combinedBody = combinedDoc.getBody();
+
+      for (var i = 1; i < records.length; i++) {
+        combinedBody.appendPageBreak();
+
+        var recPayload = records[i];
+        var recAction = recPayload.action || {};
+        var recFolderUrl = (recPayload.driveSettings && recPayload.driveSettings.folderUrl) || "";
+        var recContext = nfbBuildRecordOutputContext_(recPayload, recFolderUrl);
+        var recSourceUrl = nfbResolveRecordOutputTemplateSourceUrl_(recPayload, recAction);
+
+        var tempFile;
+        if (recSourceUrl) {
+          tempFile = nfbCreateGoogleDocumentFileFromTemplate_(recSourceUrl, rootFolder, tmpBase + "_" + i, recContext);
+        } else {
+          var recPrintPayload = recPayload.recordContext ? recPayload.recordContext.printPayload : null;
+          tempFile = nfbCreateGoogleDocumentFileInRoot_(recPrintPayload, tmpBase + "_" + i);
+        }
+
+        var tempDoc = DocumentApp.openById(tempFile.getId());
+        var tempBody = tempDoc.getBody();
+        nfbCopyBodyElements_(tempBody, combinedBody);
+        tempDoc.saveAndClose();
+        tempFile.setTrashed(true);
+      }
+
+      combinedDoc.saveAndClose();
+    }
+
+    // 最終ファイル名に変更
+    combinedFile.setName(fileName);
+
+    return {
+      ok: true,
+      outputType: "googleDoc",
+      openUrl: combinedFile.getUrl(),
+      fileName: combinedFile.getName()
+    };
+  });
+}
+
+function nfbCopyBodyElements_(sourceBody, targetBody) {
+  var numChildren = sourceBody.getNumChildren();
+  for (var i = 0; i < numChildren; i++) {
+    var element = sourceBody.getChild(i);
+    var type = element.getType();
+    if (type === DocumentApp.ElementType.PARAGRAPH) {
+      targetBody.appendParagraph(element.copy());
+    } else if (type === DocumentApp.ElementType.TABLE) {
+      targetBody.appendTable(element.copy());
+    } else if (type === DocumentApp.ElementType.LIST_ITEM) {
+      targetBody.appendListItem(element.copy());
+    } else if (type === DocumentApp.ElementType.HORIZONTAL_RULE) {
+      targetBody.appendHorizontalRule();
+    } else if (type === DocumentApp.ElementType.PAGE_BREAK) {
+      targetBody.appendPageBreak();
+    }
+  }
 }
 
 function nfbBuildRecordOutputContext_(payload, folderUrl) {
@@ -349,6 +440,16 @@ function nfbCreatePdfDownloadOutput_(payload, action, outputContext, finalBaseNa
     outputType: "pdf",
     pdfBase64: base64,
     fileName: pdfName
+  };
+}
+
+function nfbCreateGoogleDocInRootOutput_(payload, action, outputContext, finalBaseName) {
+  var docFile = nfbCreateRecordOutputGoogleDocumentInRoot_(payload, action, outputContext, finalBaseName);
+  return {
+    ok: true,
+    outputType: "googleDoc",
+    openUrl: docFile.getUrl(),
+    fileName: docFile.getName()
   };
 }
 
