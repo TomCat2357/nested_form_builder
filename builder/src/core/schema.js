@@ -2,7 +2,7 @@ import { genId } from "./ids.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
 import { MAX_DEPTH } from "./constants.js";
 import { normalizePhoneSettings } from "./phone.js";
-import { traverseSchema, countSchemaNodes, resolveOrderedChildKeys } from "./schemaUtils.js";
+import { traverseSchema, countSchemaNodes, resolveOrderedChildKeys, mapSchema } from "./schemaUtils.js";
 import {
   normalizePrintTemplateAction,
   resolvePrintTemplateFieldLabel,
@@ -191,7 +191,7 @@ export const cleanUnusedFieldProperties = (field) => {
   if (type === "fileUpload") {
     field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
     field.allowFolderUrlEdit = normalizeBooleanSetting(field.allowFolderUrlEdit, false);
-    field.showPdfMetaTitle = normalizeBooleanSetting(field.showPdfMetaTitle, false);
+    delete field.showPdfMetaTitle;
     field.hideFileExtension = normalizeBooleanSetting(field.hideFileExtension, false);
   } else {
     delete field.allowUploadByUrl;
@@ -272,7 +272,7 @@ export const normalizeSchemaIDs = (nodes) => {
     } else if (base.type === "fileUpload") {
       base.allowUploadByUrl = normalizeBooleanSetting(base.allowUploadByUrl, false);
       base.allowFolderUrlEdit = normalizeBooleanSetting(base.allowFolderUrlEdit, false);
-      base.showPdfMetaTitle = normalizeBooleanSetting(base.showPdfMetaTitle, false);
+      delete base.showPdfMetaTitle;
     } else if (base.type === "printTemplate") {
       base.label = typeof base.label === "string" ? base.label : "";
       base.printTemplateAction = {

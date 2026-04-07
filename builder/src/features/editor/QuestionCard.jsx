@@ -924,14 +924,6 @@ export default function QuestionCard({
           <label className="nf-row nf-gap-6 nf-mt-8">
             <input
               type="checkbox"
-              checked={!!field.showPdfMetaTitle}
-              onChange={(event) => onChange({ ...field, showPdfMetaTitle: event.target.checked })}
-            />
-            PDFのメタタイトルを表示名に使用する（空白の場合はファイル名）
-          </label>
-          <label className="nf-row nf-gap-6 nf-mt-8">
-            <input
-              type="checkbox"
               checked={!!field.hideFileExtension}
               onChange={(event) => onChange({ ...field, hideFileExtension: event.target.checked })}
             />

@@ -67,6 +67,31 @@ function nfbSaveExcelToDrive(payload) {
 }
 
 /**
+ * フロントエンドで生成したファイルをGoogle Driveに保存する（汎用）
+ * @param {Object} payload - { filename: string, base64: string, mimeType: string }
+ * @return {Object} { ok: true, fileUrl: string, fileName: string }
+ */
+function nfbSaveFileToDrive(payload) {
+  return nfbSafeCall_(function() {
+    if (!payload || !payload.base64 || !payload.filename) {
+      throw new Error("ファイルデータが不足しています");
+    }
+
+    var bytes = Utilities.base64Decode(payload.base64);
+    var mimeType = payload.mimeType || "application/octet-stream";
+    var blob = Utilities.newBlob(bytes, mimeType, payload.filename);
+
+    var file = DriveApp.createFile(blob);
+
+    return {
+      ok: true,
+      fileUrl: file.getUrl(),
+      fileName: file.getName()
+    };
+  });
+}
+
+/**
  * 個別レコードの印刷様式を Google ドキュメントとしてマイドライブ直下に保存する
  * @param {Object} payload - { fileName, formTitle, recordId, recordNo, modifiedAt, showHeader, exportedAtIso, items }
  * @return {Object} { ok: true, fileUrl: string, fileName: string, fileId: string }

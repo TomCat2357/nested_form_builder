@@ -387,14 +387,8 @@ const parseFileUploadEntries = (rawDataValue) => {
   }
 };
 
-const getFileDisplayName = (file, showPdfMetaTitle) => {
-  const name = typeof file.name === "string" ? file.name : "";
-  if (showPdfMetaTitle) {
-    const isPdf = name.toLowerCase().endsWith(".pdf");
-    const pdfTitle = typeof file.pdfTitle === "string" ? file.pdfTitle.trim() : "";
-    if (isPdf && pdfTitle) return pdfTitle;
-  }
-  return name;
+const getFileDisplayName = (file) => {
+  return typeof file.name === "string" ? file.name : "";
 };
 
 const createDisplayColumn = (path, sourceType = "", options = {}) => {
@@ -407,7 +401,6 @@ const createDisplayColumn = (path, sourceType = "", options = {}) => {
   const optionOrder = Array.isArray(options.optionOrder) ? options.optionOrder : null;
   const actionKind = options.actionKind || "";
   const action = options.action || null;
-  const showPdfMetaTitle = options.showPdfMetaTitle === true;
   return {
     key,
     segments: limitedSegments.length > 0 ? limitedSegments : ["回答"],
@@ -419,7 +412,6 @@ const createDisplayColumn = (path, sourceType = "", options = {}) => {
     fieldId: options.fieldId || "",
     actionKind,
     action,
-    showPdfMetaTitle,
     searchAliases: Array.isArray(options.searchAliases) ? options.searchAliases.filter(Boolean) : [],
     getValue: (entry, column) => {
       if (actionKind === "folderLink") {
@@ -430,17 +422,10 @@ const createDisplayColumn = (path, sourceType = "", options = {}) => {
         const fileItems = files.map((file) => ({
           name: typeof file.name === "string" ? file.name : "",
           driveFileUrl: typeof file.driveFileUrl === "string" ? file.driveFileUrl : "",
-          pdfTitle: typeof file.pdfTitle === "string" ? file.pdfTitle.trim() : "",
-          displayName: resolveFileDisplayName(getFileDisplayName(file, showPdfMetaTitle), hideExt),
+          displayName: resolveFileDisplayName(getFileDisplayName(file), hideExt),
         }));
         const displayNames = fileItems.map((f) => f.displayName).filter(Boolean);
-        // For search: include original file names and pdfTitles
-        const searchParts = files.flatMap((file) => {
-          const parts = [];
-          if (file.name) parts.push(file.name);
-          if (file.pdfTitle) parts.push(file.pdfTitle);
-          return parts;
-        });
+        const searchParts = files.map((file) => file.name).filter(Boolean);
         const display = displayNames.join("、") || (folderUrl ? "フォルダを開く" : "");
         return {
           display,
@@ -596,8 +581,7 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
     if (!path) return;
     const fieldMeta = (fieldId && fieldMetaLookup.byId.get(fieldId)) || fieldMetaLookup.byPath.get(path) || null;
     if (type === "fileUpload") {
-      const showPdfMetaTitle = fieldMeta?.showPdfMetaTitle === true;
-      parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId, actionKind: "folderLink", showPdfMetaTitle, fieldMeta }));
+      parentColumns.push(createDisplayColumn(path, type, { optionOrder, fieldId, actionKind: "folderLink", fieldMeta }));
       return;
     }
     if (type === "printTemplate") {

@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useLatestRef } from "../app/hooks/useLatestRef.js";
 import { useNavigate } from "react-router-dom";
 import JSZip from "jszip";
-import { saveAs } from "file-saver";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
@@ -56,7 +55,7 @@ export default function AdminDashboardPage() {
   const { forms, loadFailures, loadingForms, lastSyncedAt, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, refreshForms, exportForms, registerImportedForm } = useAppData();
   const { settings } = useBuilderSettings();
   const navigate = useNavigate();
-  const { showAlert } = useAlert();
+  const { showAlert, showOutputAlert } = useAlert();
 const [selected, setSelected] = useState(() => new Set());
   const loadingFormsRef = useRef(loadingForms);
   const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
@@ -64,6 +63,7 @@ const [selected, setSelected] = useState(() => new Set());
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
 
   useEffect(() => {
@@ -159,31 +159,44 @@ const [selected, setSelected] = useState(() => new Set());
       showAlert("スキーマをエクスポートするフォームを選択してください。");
       return;
     }
-    const targets = await exportForms(Array.from(selected));
-    if (!targets.length) {
-      showAlert("エクスポート可能なデータがありません");
-      return;
-    }
+    setExporting(true);
+    try {
+      const targets = await exportForms(Array.from(selected));
+      if (!targets.length) {
+        showAlert("エクスポート可能なデータがありません");
+        return;
+      }
 
-    if (targets.length === 1) {
-      // 1個の場合は.jsonファイルとして保存
-      const form = targets[0];
-      const safeTitle = (form.settings?.formTitle || form.id).replace(/[\\/:*?"<>|\r\n]/g, "_").replace(/^\.+/, "");
-        const filename = `${safeTitle}.json`;
-      const { id, ...formWithoutId } = form;
-      const blob = new Blob([JSON.stringify(formWithoutId, null, 2)], { type: "application/json" });
-      saveAs(blob, filename);
-    } else {
-      // 複数の場合はZIPファイルとして保存
-      const zip = new JSZip();
-      targets.forEach((form) => {
-        const safeTitle = (form.settings?.formTitle || form.id).replace(/[\\/:*?"<>|\r\n]/g, "_").replace(/^\.+/, "");
-        const filename = `${safeTitle}.json`;
-        const { id, ...formWithoutId } = form;
-        zip.file(filename, JSON.stringify(formWithoutId, null, 2));
-      });
-      const blob = await zip.generateAsync({ type: "blob" });
-      saveAs(blob, `forms_${new Date().toISOString().replace(/[:.-]/g, "")}.zip`);
+      let blob, filename, mimeType;
+
+      if (targets.length === 1) {
+        const form = targets[0];
+        const safeTitle = (form.settings?.formTitle || "form").replace(/[\\/:*?"<>|\r\n]/g, "_").replace(/^\.+/, "");
+        filename = `${safeTitle}.json`;
+        mimeType = "application/json";
+        blob = new Blob([JSON.stringify(form, null, 2)], { type: mimeType });
+      } else {
+        const zip = new JSZip();
+        targets.forEach((form) => {
+          const safeTitle = (form.settings?.formTitle || "form").replace(/[\\/:*?"<>|\r\n]/g, "_").replace(/^\.+/, "");
+          zip.file(`${safeTitle}.json`, JSON.stringify(form, null, 2));
+        });
+        blob = await zip.generateAsync({ type: "blob" });
+        filename = `forms_${new Date().toISOString().replace(/[:.-]/g, "")}.zip`;
+        mimeType = "application/zip";
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+      showAlert("エクスポートファイルをダウンロードしました。");
+    } catch (err) {
+      showAlert(`エクスポートに失敗しました: ${err.message || "不明なエラー"}`);
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -435,8 +448,8 @@ const [selected, setSelected] = useState(() => new Set());
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleImport}>
             {importing ? "インポート中..." : "インポート"}
           </button>
-          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleExport} disabled={selected.size === 0}>
-            エクスポート
+          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleExport} disabled={exporting || selected.size === 0}>
+            {exporting ? "エクスポート中..." : "エクスポート"}
           </button>
           <button
             type="button"
