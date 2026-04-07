@@ -1,4 +1,5 @@
 import { formatUnixMsDateTimeSec, toUnixMs } from "../../utils/dateTime.js";
+import { resolveFileDisplayName } from "../../core/collect.js";
 
 export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);
 
@@ -110,7 +111,7 @@ export const formatPrintItemValue = (field, value) => {
   if (field?.type === "printTemplate") return "";
   if (field?.type === "fileUpload") {
     const files = Array.isArray(value) ? value : [];
-    return files.map((f) => f?.name || "不明なファイル").join(", ");
+    return files.map((f) => resolveFileDisplayName(f?.name || "不明なファイル", field?.hideFileExtension)).join(", ");
   }
   if (CHOICE_TYPES.has(field?.type)) {
     return toSelectedChoiceLabels(field, value).join(", ");
