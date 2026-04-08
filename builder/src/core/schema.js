@@ -59,6 +59,7 @@ const buildStableOptionId = (fieldId, optionLabel, optionIndex) => {
 export const SCHEMA_STORAGE_KEY = "nested_form_builder_schema_slim_v1";
 export { MAX_DEPTH };
 export const DEFAULT_TEXT_MAX_LENGTH = 20;
+export const DEFAULT_MULTILINE_ROWS = 4;
 
 const normalizeBooleanSetting = (value, defaultValue = false) => {
   if (value === undefined) return defaultValue;
@@ -149,8 +150,12 @@ export const cleanUnusedFieldProperties = (field) => {
   if (field.type === "text" && field.inputRestrictionMode !== "maxLength") delete field.maxLength;
   if (!supportsTextDefaults) {
     delete field.multiline;
+    delete field.multilineRows;
     delete field.defaultValueMode;
     delete field.defaultValueText;
+  }
+  if (field.type === "text" && !field.multiline) {
+    delete field.multilineRows;
   }
   if (!supportsDefaultNow) delete field.defaultNow;
   if (!supportsDefaultToday) delete field.defaultToday;
@@ -245,6 +250,12 @@ export const normalizeSchemaIDs = (nodes) => {
       delete base.childrenByValue;
     } else if (base.type === "text") {
       base.multiline = !!base.multiline;
+      if (base.multiline) {
+        const parsed = Number(base.multilineRows);
+        base.multilineRows = Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : DEFAULT_MULTILINE_ROWS;
+      } else {
+        delete base.multilineRows;
+      }
       base.defaultValueMode = [ "none", "userName", "userAffiliation", "userTitle", "custom" ].includes(base.defaultValueMode)
         ? base.defaultValueMode
         : "none";

@@ -1,6 +1,6 @@
 import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
-import { deepClone, normalizeSchemaIDs, MAX_DEPTH, cleanUnusedFieldProperties, DEFAULT_TEXT_MAX_LENGTH } from "../../core/schema.js";
+import { deepClone, normalizeSchemaIDs, MAX_DEPTH, cleanUnusedFieldProperties, DEFAULT_TEXT_MAX_LENGTH, DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings, STYLE_TEXT_COLORS } from "../../core/styleSettings.js";
@@ -33,6 +33,12 @@ const applyDisplayedFlag = (target, displayed) => {
 
 const normalizeTextFieldSettings = (field) => {
   field.multiline = !!field.multiline;
+  if (field.multiline) {
+    const parsed = Number(field.multilineRows);
+    field.multilineRows = Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : DEFAULT_MULTILINE_ROWS;
+  } else {
+    delete field.multilineRows;
+  }
   field.defaultValueMode = ["none", "userName", "userAffiliation", "userTitle", "custom"].includes(field.defaultValueMode)
     ? field.defaultValueMode
     : "none";
@@ -774,6 +780,24 @@ export default function QuestionCard({
               複数行入力を許可
             </label>
           </div>
+          {!!field.multiline && (
+            <div className="nf-mt-6 nf-row nf-gap-6 nf-items-center">
+              <label className="nf-text-12">テキストボックスの高さ（行数）</label>
+              <input
+                type="number"
+                min="1"
+                max="50"
+                className={`${s.input.className}`}
+                style={{ width: 72 }}
+                value={field.multilineRows ?? DEFAULT_MULTILINE_ROWS}
+                onChange={(event) => {
+                  const v = Number(event.target.value);
+                  onChange({ ...field, multilineRows: Number.isFinite(v) && v >= 1 ? Math.floor(v) : DEFAULT_MULTILINE_ROWS });
+                }}
+                onFocus={onFocus}
+              />
+            </div>
+          )}
           {renderStyleSettingsInput()}
           <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />
           <TextDefaultValueInput field={field} onChange={onChange} onFocus={onFocus} />

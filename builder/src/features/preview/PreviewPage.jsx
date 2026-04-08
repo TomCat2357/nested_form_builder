@@ -1,6 +1,6 @@
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { collectResponses, sortResponses } from "../../core/collect.js";
-import { computeSchemaHash } from "../../core/schema.js";
+import { computeSchemaHash, DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
 import { collectValidationErrors, formatValidationErrors, isNumberInputDraftAllowed, validateByPattern } from "../../core/validate.js";
 import * as gasClientModule from "../../services/gasClient.js";
 const { submitResponses, hasScriptRun } = gasClientModule;
@@ -205,7 +205,8 @@ const FieldRenderer = ({
         <textarea
           value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
-          className={`${showInlineValidation ? `${s.input.className} nf-input--error` : s.input.className} nf-h-96`}
+          className={showInlineValidation ? `${s.input.className} nf-input--error` : s.input.className}
+          style={{ height: `${(field.multilineRows || DEFAULT_MULTILINE_ROWS) * 24}px` }}
           placeholder={resolveConfiguredPlaceholder(field, "")}
           maxLength={textMaxLength}
         />
