@@ -16,7 +16,11 @@ const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
   const dd = String(d.getDate()).padStart(2, "0");
   const hh = String(d.getHours()).padStart(2, "0");
   const mi = String(d.getMinutes()).padStart(2, "0");
-  return field.type === "time" ? `${hh}:${mi}` : `${yyyy}-${mm}-${dd}`;
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  if (field.type === "time") {
+    return field.includeSeconds ? `${hh}:${mi}:${ss}` : `${hh}:${mi}`;
+  }
+  return `${yyyy}-${mm}-${dd}`;
 };
 
 const normalizeFileUploadEntries = (rawValue) => {
@@ -209,9 +213,9 @@ export const collectDefaultNowResponses = (schema, now = new Date(), options = {
   const dd = String(now.getDate()).padStart(2, "0");
   const hh = String(now.getHours()).padStart(2, "0");
   const mi = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
 
   const dateValue = `${yyyy}-${mm}-${dd}`;
-  const timeValue = `${hh}:${mi}`;
 
   const userName = typeof options?.userName === "string" ? options.userName : "";
   const userEmail = typeof options?.userEmail === "string" ? options.userEmail : "";
@@ -221,6 +225,7 @@ export const collectDefaultNowResponses = (schema, now = new Date(), options = {
     if (!field?.id) return;
 
     if (["date", "time"].includes(field?.type) && field?.defaultNow && field?.id) {
+      const timeValue = field.includeSeconds ? `${hh}:${mi}:${ss}` : `${hh}:${mi}`;
       defaults[field.id] = field.type === "date" ? dateValue : timeValue;
     }
     if (field?.type === "userName" && field?.defaultNow && field?.id && userName) {

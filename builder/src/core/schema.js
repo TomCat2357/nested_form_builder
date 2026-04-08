@@ -158,6 +158,7 @@ export const cleanUnusedFieldProperties = (field) => {
     delete field.multilineRows;
   }
   if (!supportsDefaultNow) delete field.defaultNow;
+  if (type !== "time") delete field.includeSeconds;
   if (!supportsDefaultToday) delete field.defaultToday;
   if (!supportsEmailAutoFill) delete field.autoFillUserEmail;
   if (!supportsNumberSettings) {
@@ -276,6 +277,9 @@ export const normalizeSchemaIDs = (nodes) => {
       normalizeNumberFieldSettings(base);
     } else if (["date", "time"].includes(base.type)) {
       base.defaultNow = !!base.defaultNow;
+      if (base.type === "time") {
+        base.includeSeconds = !!base.includeSeconds;
+      }
     } else if (base.type === "email") {
       base.autoFillUserEmail = !!(base.autoFillUserEmail ?? base.defaultNow);
     } else if (base.type === "phone") {

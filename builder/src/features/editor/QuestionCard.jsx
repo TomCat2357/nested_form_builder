@@ -96,7 +96,10 @@ function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
     if (newType === "text") normalizeTextFieldSettings(next);
     if (newType === "email") next.autoFillUserEmail = !!next.autoFillUserEmail;
     if (newType === "phone") Object.assign(next, normalizePhoneSettings(next));
-    if (isDateOrTimeType(newType)) next.defaultNow = !!next.defaultNow;
+    if (isDateOrTimeType(newType)) {
+      next.defaultNow = !!next.defaultNow;
+      if (newType === "time") next.includeSeconds = !!next.includeSeconds;
+    }
     if (newType === WEEKDAY_TYPE) next.defaultToday = !!next.defaultToday;
     if (newType === "fileUpload") {
       next.allowUploadByUrl = next.allowUploadByUrl ?? false;
@@ -966,6 +969,16 @@ export default function QuestionCard({
             />
             初期値を現在{field.type === "date" ? "の日付" : "の時刻"}にする
           </label>
+          {field.type === "time" && (
+            <label className="nf-row nf-gap-6 nf-mt-8">
+              <input
+                type="checkbox"
+                checked={!!field.includeSeconds}
+                onChange={(event) => onChange({ ...field, includeSeconds: event.target.checked })}
+              />
+              秒を含める（時:分:秒）
+            </label>
+          )}
         </div>
       )}
 
