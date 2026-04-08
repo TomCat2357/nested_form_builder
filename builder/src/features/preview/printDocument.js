@@ -1,5 +1,6 @@
 import { formatUnixMsDateTimeSec, toUnixMs } from "../../utils/dateTime.js";
 import { resolveFileDisplayName } from "../../core/collect.js";
+import { findFirstFileUploadField } from "../../core/schema.js";
 
 export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);
 
@@ -264,10 +265,13 @@ export const buildPrintDocumentPayload = ({
   const shouldShowHeader = resolveShowPrintHeader(settings, showHeader);
   const folderUrl = resolveDriveFolderUrl(driveFolderState);
 
-  const hasDriveSettings = settings.driveRootFolderUrl || settings.driveFolderNameTemplate || folderUrl || useTemporaryFolder;
+  const firstUploadField = findFirstFileUploadField(schema);
+  const fieldRootFolderUrl = firstUploadField?.driveRootFolderUrl || "";
+  const fieldFolderNameTemplate = firstUploadField?.driveFolderNameTemplate || "";
+  const hasDriveSettings = fieldRootFolderUrl || fieldFolderNameTemplate || folderUrl || useTemporaryFolder;
   const driveSettings = hasDriveSettings ? {
-    rootFolderUrl: settings.driveRootFolderUrl || "",
-    folderNameTemplate: settings.driveFolderNameTemplate || "",
+    rootFolderUrl: fieldRootFolderUrl,
+    folderNameTemplate: fieldFolderNameTemplate,
     formId: settings.formId || "",
     recordId: resolvedRecordId,
     folderUrl,

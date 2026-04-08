@@ -80,10 +80,12 @@ const FileUploadField = ({
     const current = normalizeDriveFolderState(folderStateRef.current);
     return {
       ...(driveSettings || {}),
+      rootFolderUrl: field?.driveRootFolderUrl || "",
+      folderNameTemplate: field?.driveFolderNameTemplate || "",
       folderUrl: resolveEffectiveDriveFolderUrl(current),
       autoCreated: current.autoCreated,
     };
-  }, [driveSettings]);
+  }, [driveSettings, field?.driveRootFolderUrl, field?.driveFolderNameTemplate]);
 
   const uploadFile = async (file) => {
     setError("");

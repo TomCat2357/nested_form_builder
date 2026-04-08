@@ -953,6 +953,32 @@ export default function QuestionCard({
             />
             ファイル名の拡張子を非表示にする
           </label>
+          <div className="nf-mt-12">
+            <div className="nf-text-12 nf-fw-600 nf-mb-4">ルートフォルダURL</div>
+            <input
+              className="nf-input"
+              type="text"
+              value={field.driveRootFolderUrl ?? ""}
+              placeholder="https://drive.google.com/drive/folders/..."
+              onChange={(event) => onChange({ ...field, driveRootFolderUrl: event.target.value })}
+            />
+            <div className="nf-text-11 nf-text-muted nf-mt-4">
+              空白の場合はマイドライブのルートがファイルの保存先になります
+            </div>
+          </div>
+          <div className="nf-mt-8">
+            <div className="nf-text-12 nf-fw-600 nf-mb-4">フォルダ命名規則</div>
+            <input
+              className="nf-input"
+              type="text"
+              value={field.driveFolderNameTemplate ?? ""}
+              placeholder="{ID}_{YYYY}-{MM}-{DD}_{担当者名}"
+              onChange={(event) => onChange({ ...field, driveFolderNameTemplate: event.target.value })}
+            />
+            <div className="nf-text-11 nf-text-muted nf-mt-4">
+              {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{ID}, {YYYY}, {MM}, {DD}, {H}, {m}, {s}, {gg}, {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照できます"}
+            </div>
+          </div>
         </div>
       )}
 
