@@ -52,7 +52,7 @@ const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = 
 };
 
 export default function AdminDashboardPage() {
-  const { forms, loadFailures, loadingForms, lastSyncedAt, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, refreshForms, exportForms, registerImportedForm } = useAppData();
+  const { forms, loadFailures, loadingForms, lastSyncedAt, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, refreshForms, exportForms, copyForm, registerImportedForm } = useAppData();
   const { settings } = useBuilderSettings();
   const navigate = useNavigate();
   const { showAlert, showOutputAlert } = useAlert();
@@ -65,6 +65,8 @@ const [selected, setSelected] = useState(() => new Set());
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
+  const [confirmCopy, setConfirmCopy] = useState({ open: false, formId: null });
+  const [copying, setCopying] = useState(false);
 
   useEffect(() => {
     loadingFormsRef.current = loadingForms;
@@ -409,6 +411,37 @@ const [selected, setSelected] = useState(() => new Set());
     navigate("/forms/new");
   };
 
+  const handleCopySelected = () => {
+    if (copying) return;
+    if (!hasScriptRun()) {
+      showAlert("コピー機能はGoogle Apps Script環境でのみ利用可能です");
+      return;
+    }
+    const selectedForm = sortedForms.find((f) => selected.has(f.id));
+    if (!selectedForm || selectedForm.loadError) {
+      showAlert("コピー可能なフォームを1件選択してください。");
+      return;
+    }
+    setConfirmCopy({ open: true, formId: selectedForm.id });
+  };
+
+  const confirmCopyAction = async () => {
+    const formId = confirmCopy.formId;
+    setConfirmCopy({ open: false, formId: null });
+    if (!formId) return;
+
+    setCopying(true);
+    try {
+      await copyForm(formId);
+      setSelected(new Set());
+      showAlert("フォームをコピーしました。スプレッドシートの設定を確認してください。");
+    } catch (error) {
+      showAlert("フォームのコピーに失敗しました: " + (error.message || "不明なエラー"));
+    } finally {
+      setCopying(false);
+    }
+  };
+
   const handleOperationCacheCheck = useCallback(async ({ source }) => {
     const cacheDecision = evaluateCache({
       lastSyncedAt,
@@ -450,6 +483,14 @@ const [selected, setSelected] = useState(() => new Set());
           </button>
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleExport} disabled={exporting || selected.size === 0}>
             {exporting ? "エクスポート中..." : "エクスポート"}
+          </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-13"
+            onClick={handleCopySelected}
+            disabled={copying || selected.size !== 1}
+          >
+            {copying ? "コピー中..." : "コピー"}
           </button>
           <button
             type="button"
@@ -646,6 +687,28 @@ const [selected, setSelected] = useState(() => new Set());
             value: "delete",
             variant: "danger",
             onSelect: confirmDeleteAction,
+          },
+        ]}
+      />
+
+      <ConfirmDialog
+        open={confirmCopy.open}
+        title="フォームをコピー"
+        message={
+          "コピーしたフォームは、コピー元と同じスプレッドシートにデータが保存されます。" +
+          "そのままではデータが混在するため、コピー後にフォーム設定画面から新しいスプレッドシートのURLに変更してください。"
+        }
+        options={[
+          {
+            label: "キャンセル",
+            value: "cancel",
+            onSelect: () => setConfirmCopy({ open: false, formId: null }),
+          },
+          {
+            label: "コピー",
+            value: "copy",
+            variant: "primary",
+            onSelect: confirmCopyAction,
           },
         ]}
       />

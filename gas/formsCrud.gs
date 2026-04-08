@@ -392,6 +392,55 @@ function Forms_setFormsArchivedState_(formIds, archived) {
   };
 }
 
+/**
+ * フォームをコピー（同じDriveフォルダに新IDで作成）
+ * @param {string} formId - コピー元フォームID
+ * @return {Object} Forms_saveForm_の戻り値（{ ok, fileId, fileUrl, form }）
+ */
+function Forms_copyForm_(formId) {
+  if (!formId) throw new Error("formId is required");
+
+  // 1. 元フォームを取得
+  var sourceForm = Forms_getForm_(formId);
+  if (!sourceForm) throw new Error("コピー元フォームが見つかりません: " + formId);
+
+  // 2. 元ファイルの親フォルダURLを取得
+  var mapping = Forms_getMapping_();
+  var mappingEntry = mapping[formId] || {};
+  var sourceFileId = mappingEntry.fileId;
+  var parentFolderUrl = null;
+
+  if (sourceFileId) {
+    try {
+      var sourceFile = DriveApp.getFileById(sourceFileId);
+      var parents = sourceFile.getParents();
+      if (parents.hasNext()) {
+        var parentFolder = parents.next();
+        parentFolderUrl = "https://drive.google.com/drive/folders/" + parentFolder.getId();
+      }
+    } catch (e) {
+      Logger.log("[Forms_copyForm_] Failed to get parent folder: " + e);
+    }
+  }
+
+  // 3. 新しいフォームデータを作成（新ID、タイトルに「（コピー）」付与）
+  var newForm = JSON.parse(JSON.stringify(sourceForm));
+  var newId = "f_" + Utilities.getUuid().replace(/-/g, "");
+  newForm.id = newId;
+
+  var originalTitle = (sourceForm.settings && sourceForm.settings.formTitle) || "";
+  newForm.settings = newForm.settings || {};
+  newForm.settings.formTitle = originalTitle + "（コピー）";
+  newForm.archived = false;
+  delete newForm.driveFileUrl;
+
+  // 4. 同じフォルダに保存（フォルダが不明ならルートに保存）
+  var saveMode = parentFolderUrl ? "copy_to_folder" : "copy_to_root";
+  var result = Forms_saveForm_(newForm, parentFolderUrl, saveMode);
+
+  return result;
+}
+
 // ========================================
 // Public API Functions (google.script.run経由で呼び出し可能)
 // ========================================

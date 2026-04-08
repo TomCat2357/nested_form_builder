@@ -34,6 +34,7 @@ import {
   archiveForms as archiveFormsInGas,
   unarchiveForms as unarchiveFormsInGas,
   registerImportedForm as registerImportedFormInGas,
+  copyForm as copyFormFromGas,
   syncRecordsProxy,
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
@@ -268,6 +269,13 @@ export const dataStore = {
     const form = result?.form;
     const fileUrl = result?.fileUrl || payload.fileUrl;
     return form ? ensureDisplayInfo({ ...form, driveFileUrl: fileUrl }) : null;
+  },
+  async copyForm(formId) {
+    const result = await copyFormFromGas(formId);
+    const savedForm = result?.form || result;
+    const fileUrl = result?.fileUrl;
+    const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
+    return formWithUrl ? ensureDisplayInfo(formWithUrl) : null;
   },
   async updateForm(formId, updates, targetUrl = null, saveMode = "auto") {
     // First get the current form. If GAS fetch fails, fallback to provided updates.

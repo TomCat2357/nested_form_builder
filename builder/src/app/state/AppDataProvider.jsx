@@ -349,6 +349,15 @@ export function AppDataProvider({ children }) {
     return created;
   }, []);
 
+  const copyForm = useCallback(async (formId) => {
+    const savedForm = await dataStore.copyForm(formId);
+    if (savedForm) {
+      await upsertFormsState(savedForm);
+      setLastSyncedAt(Date.now());
+    }
+    return savedForm;
+  }, [upsertFormsState]);
+
   const exportForms = useCallback(async (formIds) => dataStore.exportForms(formIds), []);
   const getFormById = useCallback((formId) => forms.find((form) => form.id === formId) || null, [forms]);
 
@@ -379,10 +388,11 @@ export function AppDataProvider({ children }) {
       deleteForm,
       importForms,
       exportForms,
+      copyForm,
       getFormById,
       registerImportedForm,
     }),
-    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, deleteForm, importForms, exportForms, getFormById, registerImportedForm],
+    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, deleteForm, importForms, exportForms, copyForm, getFormById, registerImportedForm],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;
