@@ -258,6 +258,7 @@ const FieldRenderer = ({
           value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
           className={s.input.className}
+          step={field.includeSeconds ? "1" : undefined}
         />
       )}
 

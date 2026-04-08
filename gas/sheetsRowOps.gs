@@ -94,7 +94,9 @@ function Sheets_resolveTemporalCell_(value, temporalType) {
   }
   return {
     value: parsed,
-    numberFormat: temporalType === "time" ? "HH:mm" : "yyyy/MM/dd",
+    numberFormat: temporalType === "time"
+      ? (String(value).match(/^\d{1,2}:\d{2}:\d{2}$/) ? "HH:mm:ss" : "HH:mm")
+      : "yyyy/MM/dd",
   };
 }
 
