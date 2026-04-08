@@ -117,6 +117,20 @@ function nfbUnarchiveForms(formIds) {
 }
 
 /**
+ * フォームをコピー（同じDriveフォルダに新IDで作成）
+ * @param {string} formId - コピー元フォームID
+ * @return {Object} { ok, fileId, fileUrl, form }
+ */
+
+function nfbCopyForm(formId) {
+  return nfbSafeCall_(function() {
+    if (!formId) return { ok: false, error: "formId is required" };
+    var result = Forms_copyForm_(formId);
+    return result;
+  });
+}
+
+/**
  * スプレッドシートの存在・権限を検証する
  * @param {string} spreadsheetIdOrUrl
  * @return {Object} { ok, spreadsheetId, title, canEdit, canView, sheetNames }

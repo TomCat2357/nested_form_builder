@@ -160,6 +160,11 @@ export const saveForm = async (form, targetUrl = null, saveMode = "auto") => {
   const r = await fetchGasApi("nfbSaveForm", { form, targetUrl, saveMode }, "Save form failed");
   return { form: r.form, fileUrl: r.fileUrl };
 };
+export const copyForm = async (formId) => {
+  if (!formId) throw new Error("formId is required");
+  const r = await fetchGasApi("nfbCopyForm", formId, "Copy form failed");
+  return { form: r.form, fileUrl: r.fileUrl };
+};
 export const deleteFormFromDrive = (formId) => { if (!formId) throw new Error("formId is required"); return fetchGasApi("nfbDeleteForm", formId, "Delete form failed"); };
 export const deleteFormsFromDrive = (formIds) => { if (!Array.isArray(formIds) || formIds.length === 0) throw new Error("formIds array is required"); return fetchGasApi("nfbDeleteForms", formIds, "Batch delete forms failed"); };
 export const archiveForm = createGasEndpoint({ fnName: "nfbArchiveForm", validate: validateFormId, mapResult: (r) => r.form || null, defaultError: "Archive form failed" });
