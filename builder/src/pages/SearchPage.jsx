@@ -8,7 +8,7 @@ import { dataStore } from "../app/state/dataStore.js";
 import { useAuth } from "../app/state/authContext.jsx";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
-import { normalizeSchemaIDs } from "../core/schema.js";
+import { normalizeSchemaIDs, findFirstFileUploadField } from "../core/schema.js";
 import {
   buildSearchTableLayout,
   buildExportTableData,
@@ -326,12 +326,13 @@ export default function SearchPage() {
       };
       const effectiveFileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {}) || DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE;
 
+      const firstUploadField = findFirstFileUploadField(normalizedSchema);
       const recordPayloads = selectedPrintableRows.map(({ entry }) => {
         const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
         const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
         const driveSettings = {
-          rootFolderUrl: form?.settings?.driveRootFolderUrl || "",
-          folderNameTemplate: form?.settings?.driveFolderNameTemplate || "",
+          rootFolderUrl: firstUploadField?.driveRootFolderUrl || "",
+          folderNameTemplate: firstUploadField?.driveFolderNameTemplate || "",
           formId: form?.id || "",
           recordId: entry.id,
           folderUrl: entry.driveFolderUrl || "",
@@ -423,9 +424,10 @@ export default function SearchPage() {
     const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, form?.settings || {});
     const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
     const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
+    const firstUploadFieldSingle = findFirstFileUploadField(normalizedSchema);
     const driveSettings = {
-      rootFolderUrl: form?.settings?.driveRootFolderUrl || "",
-      folderNameTemplate: form?.settings?.driveFolderNameTemplate || "",
+      rootFolderUrl: firstUploadFieldSingle?.driveRootFolderUrl || "",
+      folderNameTemplate: firstUploadFieldSingle?.driveFolderNameTemplate || "",
       formId: form?.id || "",
       recordId: entry.id,
       folderUrl: entry.driveFolderUrl || "",

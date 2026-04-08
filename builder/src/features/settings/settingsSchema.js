@@ -133,24 +133,4 @@ export const SETTINGS_GROUPS = [
       },
     ],
   },
-  {
-    key: "driveStorage",
-    label: "ファイル保存先設定",
-    fields: [
-      {
-        key: "driveRootFolderUrl",
-        label: "ルートフォルダURL",
-        placeholder: "https://drive.google.com/drive/folders/...",
-        required: false,
-        description: "空白の場合はマイドライブのルートがファイルの保存先になります",
-      },
-      {
-        key: "driveFolderNameTemplate",
-        label: "フォルダ命名規則",
-        placeholder: "{ID}_{YYYY}-{MM}-{DD}_{担当者名}",
-        required: false,
-        description: "空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{ID}, {YYYY}, {MM}, {DD}, {H}, {m}, {s}, {gg}, {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照できます",
-      },
-    ],
-  },
 ];

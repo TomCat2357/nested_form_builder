@@ -550,14 +550,12 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 
   const gasClientRef = useRef(gasClientModule);
   const driveSettings = useMemo(() => ({
-    rootFolderUrl: settings.driveRootFolderUrl || "",
-    folderNameTemplate: settings.driveFolderNameTemplate || "",
     formId: settings.formId || "",
     recordId: recordIdRef.current,
     responses: responses || {},
     fieldLabels,
     fieldValues,
-  }), [settings.driveRootFolderUrl, settings.driveFolderNameTemplate, settings.formId, responses, fieldLabels, fieldValues]);
+  }), [settings.formId, responses, fieldLabels, fieldValues]);
 
   const [isSaving, setIsSaving] = useState(false);
   const showRecordOutputAlert = (result, fallbackOutputType) => {

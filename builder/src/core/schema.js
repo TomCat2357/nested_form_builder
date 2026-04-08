@@ -199,11 +199,15 @@ export const cleanUnusedFieldProperties = (field) => {
     field.allowFolderUrlEdit = normalizeBooleanSetting(field.allowFolderUrlEdit, false);
     delete field.showPdfMetaTitle;
     field.hideFileExtension = normalizeBooleanSetting(field.hideFileExtension, false);
+    field.driveRootFolderUrl = typeof field.driveRootFolderUrl === "string" ? field.driveRootFolderUrl : "";
+    field.driveFolderNameTemplate = typeof field.driveFolderNameTemplate === "string" ? field.driveFolderNameTemplate : "";
   } else {
     delete field.allowUploadByUrl;
     delete field.allowFolderUrlEdit;
     delete field.showPdfMetaTitle;
     delete field.hideFileExtension;
+    delete field.driveRootFolderUrl;
+    delete field.driveFolderNameTemplate;
   }
   delete field.allowMultipleFiles;
   return field;
@@ -288,6 +292,8 @@ export const normalizeSchemaIDs = (nodes) => {
       base.allowUploadByUrl = normalizeBooleanSetting(base.allowUploadByUrl, false);
       base.allowFolderUrlEdit = normalizeBooleanSetting(base.allowFolderUrlEdit, false);
       delete base.showPdfMetaTitle;
+      base.driveRootFolderUrl = typeof base.driveRootFolderUrl === "string" ? base.driveRootFolderUrl : "";
+      base.driveFolderNameTemplate = typeof base.driveFolderNameTemplate === "string" ? base.driveFolderNameTemplate : "";
     } else if (base.type === "printTemplate") {
       base.label = typeof base.label === "string" ? base.label : "";
       base.printTemplateAction = {
@@ -446,6 +452,19 @@ export const computeSchemaHash = (schema) => {
     hash |= 0;
   }
   return `v1-${Math.abs(hash)}`;
+};
+
+export const findFirstFileUploadField = (fields) => {
+  for (const field of (fields || [])) {
+    if (field?.type === "fileUpload") return field;
+    if (field?.childrenByValue) {
+      for (const children of Object.values(field.childrenByValue)) {
+        const found = findFirstFileUploadField(children);
+        if (found) return found;
+      }
+    }
+  }
+  return null;
 };
 
 export { resolvePrintTemplateFieldLabel };

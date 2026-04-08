@@ -18,7 +18,7 @@ import {
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
-import { normalizeSchemaIDs } from "../core/schema.js";
+import { normalizeSchemaIDs, findFirstFileUploadField } from "../core/schema.js";
 import { traverseSchema } from "../core/schemaUtils.js";
 import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../core/constants.js";
 import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.js";
@@ -827,11 +827,12 @@ export default function FormPage() {
       if (!hasScriptRun()) {
         throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
       }
+      const firstUploadField = findFirstFileUploadField(normalizedSchema);
       const finalizeResult = await finalizeRecordDriveFolder({
         currentDriveFolderUrl,
         inputDriveFolderUrl,
-        rootFolderUrl: settings.driveRootFolderUrl || "",
-        folderNameTemplate: settings.driveFolderNameTemplate || "",
+        rootFolderUrl: firstUploadField?.driveRootFolderUrl || "",
+        folderNameTemplate: firstUploadField?.driveFolderNameTemplate || "",
         responses: rawResponses || {},
         fieldLabels,
         fieldValues: buildFieldValuesMap(normalizedSchema, rawResponses || {}),
