@@ -762,7 +762,7 @@ export default function QuestionCard({
                 </label>
               </>
             )}
-            <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {ID} / {YYYY} / {MM} / {DD} / {H} / {m} / {s} / {gg} / {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照します。Gmail 本文では {_folder_url} / {_record_url} / {_form_url} も使えます。"}</div>
+            <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {ID} / {YYYY} / {MM} / {DD} / {H} / {m} / {s} / {gg} / {_NOW} / {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照します。Gmail 本文では {_folder_url} / {_record_url} / {_form_url} も使えます。"}</div>
           </div>
         </div>
       )}
@@ -994,7 +994,7 @@ export default function QuestionCard({
               onChange={(event) => onChange({ ...field, driveFolderNameTemplate: event.target.value })}
             />
             <div className="nf-text-11 nf-text-muted nf-mt-4">
-              {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{ID}, {YYYY}, {MM}, {DD}, {H}, {m}, {s}, {gg}, {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照できます"}
+              {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{ID}, {YYYY}, {MM}, {DD}, {H}, {m}, {s}, {gg}, {_NOW}, {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照できます"}
             </div>
           </div>
         </div>

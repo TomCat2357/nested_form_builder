@@ -42,6 +42,7 @@ function createContainer(children) {
 
 function loadGasContext() {
   const formatLookup = {
+    "yyyy-MM-dd HH:mm:ss": "2026-04-04 10:20:30",
     "yyyy-MM-dd": "2026-04-04",
     "HH:mm:ss": "10:20:30",
     yyyy: "2026",
@@ -783,4 +784,66 @@ test("パイプ変換: 新規変換器のチェーン", () => {
   };
   // kana → han chain
   assert.equal(gas.nfbResolveTemplate_("{名前|kana|han}", ctx), "\uFF94\uFF8F\uFF80\uFF9E"); // ﾔﾏﾀﾞ
+});
+
+// ---------------------------------------------------------------------------
+// {_NOW} reserved token tests
+// ---------------------------------------------------------------------------
+
+test("予約トークン: {_NOW} が YYYY-MM-DD HH:mm:ss を返す", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    responses: {},
+    fieldLabels: {},
+    fieldValues: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{_NOW}", ctx), "2026-04-04 10:20:30");
+});
+
+test("予約トークン: {_NOW|date:...} で日付フォーマット", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    responses: {},
+    fieldLabels: {},
+    fieldValues: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{_NOW|date:YYYY年M月D日}", ctx), "2026年4月4日");
+  assert.equal(gas.nfbResolveTemplate_("{_NOW|date:YYYY/MM/DD}", ctx), "2026/04/04");
+});
+
+test("予約トークン: {_NOW|time:...} で時刻フォーマット", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    responses: {},
+    fieldLabels: {},
+    fieldValues: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{_NOW|time:HH:mm}", ctx), "10:20");
+  assert.equal(gas.nfbResolveTemplate_("{_NOW|time:HH時mm分ss秒}", ctx), "10時20分30秒");
+});
+
+test("予約トークン: {_NOW|date:gge年} で和暦変換", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    responses: {},
+    fieldLabels: {},
+    fieldValues: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{_NOW|date:gge年M月D日}", ctx), "令和8年4月4日");
+});
+
+test("予約トークン: {_NOW} のチェーン変換", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    responses: {},
+    fieldLabels: {},
+    fieldValues: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{_NOW|date:YYYY|pad:6,0}", ctx), "002026");
+  assert.equal(gas.nfbResolveTemplate_("{_NOW|left:10}", ctx), "2026-04-04");
 });

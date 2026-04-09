@@ -920,6 +920,7 @@ function nfbIsReservedTemplateToken_(tokenName) {
     || tokenName === "_folder_url"
     || tokenName === "_record_url"
     || tokenName === "_form_url"
+    || tokenName === "_NOW"
     || /^Y+$/.test(tokenName)
     || /^M+$/.test(tokenName)
     || /^D+$/.test(tokenName)
@@ -942,6 +943,7 @@ function nfbResolveReservedTemplateToken_(tokenName, context, options) {
 
   if (tokenName === "ID") return recordId;
   if (tokenName === "gg") return era.name;
+  if (tokenName === "_NOW") return Utilities.formatDate(now, tz, "yyyy-MM-dd HH:mm:ss");
   if (/^Y+$/.test(tokenName)) return String(dateParts.year).padStart(tokenName.length, "0");
   if (/^M+$/.test(tokenName)) return String(dateParts.month).padStart(tokenName.length, "0");
   if (/^D+$/.test(tokenName)) return String(dateParts.day).padStart(tokenName.length, "0");
