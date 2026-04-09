@@ -670,7 +670,7 @@ export default function QuestionCard({
               <>
                 <input
                   className={s.input.className}
-                  placeholder="出力ファイル名（例: {ID}_{YYYY}-{MM}-{DD}）"
+                  placeholder="出力ファイル名（例: {ID}_{_NOW|date:YYYY-MM-DD}）"
                   value={printTemplateAction.fileNameTemplate || ""}
                   onChange={(event) => onChange({
                     ...field,
@@ -740,7 +740,7 @@ export default function QuestionCard({
                   <span className="nf-text-11 nf-text-muted">件名</span>
                   <input
                     className={s.input.className}
-                    placeholder="例: 【申請】{ID}_{YYYY}-{MM}-{DD}"
+                    placeholder="例: 【申請】{ID}_{_NOW|date:YYYY-MM-DD}"
                     value={printTemplateAction.gmailTemplateSubject || ""}
                     onChange={(event) => onChange({
                       ...field,
@@ -762,7 +762,7 @@ export default function QuestionCard({
                 </label>
               </>
             )}
-            <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {ID} / {YYYY} / {MM} / {DD} / {H} / {m} / {s} / {gg} / {_NOW} / {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照します。Gmail 本文では {_folder_url} / {_record_url} / {_form_url} も使えます。"}</div>
+            <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {ID} / {_NOW} / {フィールド名} を使えます。{_NOW|date:YYYY-MM-DD} や {_NOW|time:HH:mm} のようにパイプで書式を指定できます。予約語と同名の項目は {\\フィールド名} で参照します。Gmail 本文では {_folder_url} / {_record_url} / {_form_url} も使えます。"}</div>
           </div>
         </div>
       )}
@@ -990,11 +990,11 @@ export default function QuestionCard({
               className="nf-input"
               type="text"
               value={field.driveFolderNameTemplate ?? ""}
-              placeholder="{ID}_{YYYY}-{MM}-{DD}_{担当者名}"
+              placeholder="{ID}_{_NOW|date:YYYY-MM-DD}_{担当者名}"
               onChange={(event) => onChange({ ...field, driveFolderNameTemplate: event.target.value })}
             />
             <div className="nf-text-11 nf-text-muted nf-mt-4">
-              {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{ID}, {YYYY}, {MM}, {DD}, {H}, {m}, {s}, {gg}, {_NOW}, {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照できます"}
+              {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{ID}, {_NOW}, {フィールド名} を使えます。{_NOW|date:YYYY-MM-DD} のようにパイプで書式を指定できます。予約語と同名の項目は {\\フィールド名} で参照できます"}
             </div>
           </div>
         </div>

@@ -356,7 +356,7 @@ function nfbResolveStandardPrintFileNameTemplate_(settings) {
   var configuredTemplate = settings && settings.standardPrintFileNameTemplate
     ? String(settings.standardPrintFileNameTemplate).trim()
     : "";
-  return configuredTemplate || "{ID}_{YYYY}-{MM}-{DD}";
+  return configuredTemplate || "{ID}_{_NOW|date:YYYY-MM-DD}";
 }
 
 function nfbRequiresRecordOutputFileNameTemplate_(action, outputType) {
