@@ -25,6 +25,7 @@ export const normalizePrintTemplateAction = (value) => {
     useCustomTemplate: base.useCustomTemplate === true,
     templateUrl: typeof base.templateUrl === "string" ? base.templateUrl : "",
     fileNameTemplate: typeof base.fileNameTemplate === "string" ? base.fileNameTemplate : "",
+    gmailAttachPdf: base.gmailAttachPdf === true,
     gmailTemplateTo: typeof base.gmailTemplateTo === "string" ? base.gmailTemplateTo : "",
     gmailTemplateCc: typeof base.gmailTemplateCc === "string" ? base.gmailTemplateCc : "",
     gmailTemplateBcc: typeof base.gmailTemplateBcc === "string" ? base.gmailTemplateBcc : "",
@@ -39,13 +40,13 @@ export const resolveSharedPrintFileNameTemplate = (settings) => (
   normalizeTemplateString(settings?.standardPrintFileNameTemplate)
 );
 
-export const usesPrintTemplatePdfLink = (value) => (
-  normalizePrintTemplateAction(value).gmailTemplateBody.includes("{_PDF}")
+export const usesGmailAttachPdf = (value) => (
+  normalizePrintTemplateAction(value).gmailAttachPdf === true
 );
 
 export const requiresPrintTemplateFileName = (value) => {
   const action = normalizePrintTemplateAction(value);
-  return action.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL || usesPrintTemplatePdfLink(action);
+  return action.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL || action.gmailAttachPdf;
 };
 
 export const resolveEffectivePrintTemplateFileNameTemplate = (value, settings = {}) => {
@@ -54,7 +55,7 @@ export const resolveEffectivePrintTemplateFileNameTemplate = (value, settings = 
   const actionTemplate = normalizeTemplateString(action.fileNameTemplate);
 
   if (action.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL) {
-    return usesPrintTemplatePdfLink(action)
+    return action.gmailAttachPdf
       ? (sharedTemplate || DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE)
       : "";
   }

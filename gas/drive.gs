@@ -344,7 +344,7 @@ function nfbResolveRecordOutputFileNameTemplate_(payload, action, outputType) {
     : "";
 
   if (outputType === "gmail") {
-    return nfbBodyTemplateUsesGeneratedFile_(action)
+    return (action && action.gmailAttachPdf)
       ? (sharedTemplate || nfbResolveStandardPrintFileNameTemplate_(settings))
       : "";
   }
@@ -360,19 +360,7 @@ function nfbResolveStandardPrintFileNameTemplate_(settings) {
 }
 
 function nfbRequiresRecordOutputFileNameTemplate_(action, outputType) {
-  return outputType !== "gmail" || nfbBodyTemplateUsesGeneratedFile_(action);
-}
-
-function nfbBodyTemplateUsesPdf_(action) {
-  return String(action && action.gmailTemplateBody || "").indexOf("{_PDF}") !== -1;
-}
-
-function nfbBodyTemplateUsesDocument_(action) {
-  return String(action && action.gmailTemplateBody || "").indexOf("{_DOCUMENT}") !== -1;
-}
-
-function nfbBodyTemplateUsesGeneratedFile_(action) {
-  return nfbBodyTemplateUsesPdf_(action) || nfbBodyTemplateUsesDocument_(action);
+  return outputType !== "gmail" || !!(action && action.gmailAttachPdf);
 }
 
 function nfbResolveRecordOutputTemplateSourceUrl_(payload, action) {
@@ -422,7 +410,7 @@ function nfbCreateGmailDraftOutput_(payload, action, outputContext, finalBaseNam
   var subject = nfbResolveTemplate_(String(action && action.gmailTemplateSubject || ""), outputContext);
   var bodyTemplate = String(action && action.gmailTemplateBody || "");
 
-  var needsPdf = nfbBodyTemplateUsesPdf_(action);
+  var needsPdf = !!(action && action.gmailAttachPdf);
 
   var attachments = [];
 
@@ -929,8 +917,6 @@ function nfbResolveJapaneseEra_(dateParts) {
 function nfbIsReservedTemplateToken_(tokenName) {
   return tokenName === "ID"
     || tokenName === "gg"
-    || tokenName === "_PDF"
-    || tokenName === "_DOCUMENT"
     || tokenName === "_folder_url"
     || tokenName === "_record_url"
     || tokenName === "_form_url"
@@ -952,7 +938,6 @@ function nfbResolveReservedTemplateToken_(tokenName, context, options) {
   var recordUrl = context && context.recordUrl ? String(context.recordUrl).trim() : "";
   var folderUrl = context && context.folderUrl ? String(context.folderUrl).trim() : "";
   var formUrl = context && context.formUrl ? String(context.formUrl).trim() : "";
-  var generatedTokens = (context && context.generatedTokens) || {};
   var allowGmailOnlyTokens = options && options.allowGmailOnlyTokens === true;
 
   if (tokenName === "ID") return recordId;
@@ -964,8 +949,6 @@ function nfbResolveReservedTemplateToken_(tokenName, context, options) {
   if (/^m+$/.test(tokenName)) return String(dateParts.minute).padStart(tokenName.length, "0");
   if (/^s+$/.test(tokenName)) return String(dateParts.second).padStart(tokenName.length, "0");
   if (/^e+$/.test(tokenName)) return String(era.year).padStart(tokenName.length, "0");
-  if (tokenName === "_PDF") return allowGmailOnlyTokens ? String(generatedTokens._PDF || "") : "";
-  if (tokenName === "_DOCUMENT") return allowGmailOnlyTokens ? String(generatedTokens._DOCUMENT || "") : "";
   if (tokenName === "_folder_url") return allowGmailOnlyTokens ? folderUrl : "";
   if (tokenName === "_record_url") return allowGmailOnlyTokens ? recordUrl : "";
   if (tokenName === "_form_url") return allowGmailOnlyTokens ? formUrl : "";
