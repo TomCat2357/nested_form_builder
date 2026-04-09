@@ -226,7 +226,7 @@ test("nfbResolveRecordOutputFileNameTemplate_ は標準ファイル名未設定�
       { outputType: "googleDoc", fileNameTemplate: "" },
       "googleDoc",
     ),
-    "{ID}_{YYYY}-{MM}-{DD}",
+    "{ID}_{_NOW|date:YYYY-MM-DD}",
   );
 
   assert.equal(
@@ -235,7 +235,7 @@ test("nfbResolveRecordOutputFileNameTemplate_ は標準ファイル名未設定�
       { outputType: "pdf", fileNameTemplate: "" },
       "pdf",
     ),
-    "{ID}_{YYYY}-{MM}-{DD}",
+    "{ID}_{_NOW|date:YYYY-MM-DD}",
   );
 
   assert.equal(
@@ -244,7 +244,7 @@ test("nfbResolveRecordOutputFileNameTemplate_ は標準ファイル名未設定�
       { outputType: "gmail", fileNameTemplate: "", gmailAttachPdf: true },
       "gmail",
     ),
-    "{ID}_{YYYY}-{MM}-{DD}",
+    "{ID}_{_NOW|date:YYYY-MM-DD}",
   );
 });
 test("nfbFindDriveFileInFolder は PDF 出力時に .pdf を補完して検索する", () => {
