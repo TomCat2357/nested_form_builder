@@ -591,7 +591,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     if (requiresPrintTemplateFileName(action) && !effectiveFileNameTemplate) {
       showAlert(
         action.outputType === "gmail"
-          ? "Gmail 本文で {_PDF} または {_DOCUMENT} を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください"
+          ? "PDF 添付を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください"
           : "出力ファイル名が設定されていません",
       );
       return;

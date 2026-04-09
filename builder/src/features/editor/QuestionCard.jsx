@@ -681,7 +681,22 @@ export default function QuestionCard({
               </>
             )}
             {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
-              <div className="nf-text-11 nf-text-muted">Gmail 本文で {"{_PDF}"}（メールに添付）または {"{_DOCUMENT}"} を使う場合の出力名は、フォーム設定の標準様式出力ファイル名規則か既定値を使用します。</div>
+              <>
+                <label className="nf-row nf-gap-8 nf-items-center">
+                  <input
+                    type="checkbox"
+                    checked={printTemplateAction.gmailAttachPdf || false}
+                    onChange={(event) => onChange({
+                      ...field,
+                      printTemplateAction: { ...printTemplateAction, gmailAttachPdf: event.target.checked, enabled: true },
+                    })}
+                  />
+                  <span className="nf-text-11">PDF を添付</span>
+                </label>
+                {printTemplateAction.gmailAttachPdf && (
+                  <div className="nf-text-11 nf-text-muted">PDF 添付時の出力名は、フォーム設定の標準様式出力ファイル名規則か既定値を使用します。</div>
+                )}
+              </>
             )}
             {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
               <>
@@ -747,7 +762,7 @@ export default function QuestionCard({
                 </label>
               </>
             )}
-            <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {ID} / {YYYY} / {MM} / {DD} / {H} / {m} / {s} / {gg} / {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照します。Gmail 本文では {_PDF}（PDF添付） / {_DOCUMENT} / {_folder_url} / {_record_url} / {_form_url} も使えます。"}</div>
+            <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {ID} / {YYYY} / {MM} / {DD} / {H} / {m} / {s} / {gg} / {フィールド名} を使えます。予約語と同名の項目は {\\フィールド名} で参照します。Gmail 本文では {_folder_url} / {_record_url} / {_form_url} も使えます。"}</div>
           </div>
         </div>
       )}
