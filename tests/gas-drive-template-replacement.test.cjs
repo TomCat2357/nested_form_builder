@@ -83,9 +83,19 @@ function loadGasContext() {
 
   vm.createContext(context);
   const projectRoot = path.join(__dirname, "..");
-  const sourceFile = path.join(projectRoot, "gas", "drive.gs");
-  const code = fs.readFileSync(sourceFile, "utf8");
-  vm.runInContext(code, context, { filename: sourceFile });
+  const gasDir = path.join(projectRoot, "gas");
+  const driveFiles = [
+    "driveTemplate.gs",
+    "drivePrintDocument.gs",
+    "driveFolder.gs",
+    "driveOutput.gs",
+    "driveFile.gs",
+  ];
+  for (const fileName of driveFiles) {
+    const filePath = path.join(gasDir, fileName);
+    const code = fs.readFileSync(filePath, "utf8");
+    vm.runInContext(code, context, { filename: filePath });
+  }
   return context;
 }
 
