@@ -50,7 +50,6 @@ import {
 
 // Re-export helper functions that external modules depend on
 export {
-  filterExpiredDeletedEntries,
   normalizeListEntriesOptions,
   buildGetEntryFallbackListEntriesOptions,
   buildListEntriesResult,

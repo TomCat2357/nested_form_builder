@@ -6,7 +6,6 @@ import {
   requiresPrintTemplateFileName,
   resolveEffectivePrintTemplateFileNameTemplate,
   resolveSharedPrintFileNameTemplate,
-  usesGmailAttachPdf,
 } from "./printTemplateAction.js";
 
 test("normalizePrintTemplateAction は Gmail 設定項目を文字列で正規化する", () => {
@@ -42,12 +41,6 @@ test("resolveSharedPrintFileNameTemplate はフォーム共通ファイル名設
     "{ID}_共通PDF",
   );
   assert.equal(resolveSharedPrintFileNameTemplate({}), "");
-});
-
-test("usesGmailAttachPdf は gmailAttachPdf フラグで判定する", () => {
-  assert.equal(usesGmailAttachPdf({ outputType: "gmail", gmailAttachPdf: true }), true);
-  assert.equal(usesGmailAttachPdf({ outputType: "gmail", gmailAttachPdf: false }), false);
-  assert.equal(usesGmailAttachPdf({ outputType: "gmail" }), false);
 });
 
 test("requiresPrintTemplateFileName は Gmail で gmailAttachPdf が false の場合は false を返す", () => {

@@ -9,7 +9,6 @@ export async function saveFormsToCache(forms, loadFailures = [], propertyStoreMo
     for (const form of forms) await waitForRequest(store.put({ ...form, lastSyncedAt }));
     await waitForRequest(store.put({ id: META_KEY, lastSyncedAt, failures: loadFailures, propertyStoreMode }));
   });
-  console.log('[formsCache] Saved', forms.length, 'forms and', loadFailures.length, 'failures to cache');
 }
 
 export async function getFormsFromCache() {
