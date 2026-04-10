@@ -1,7 +1,3 @@
-// Split from sheets.gs
-
-
-
 function Sheets_getOrCreateSheet_(spreadsheetId, sheetName) {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
 
@@ -14,10 +10,6 @@ function Sheets_getOrCreateSheet_(spreadsheetId, sheetName) {
   var resolvedSheetName = sheetName || NFB_DEFAULT_SHEET_NAME;
   var sheet = ss.getSheetByName(resolvedSheetName);
   return sheet || ss.insertSheet(resolvedSheetName);
-}
-
-function Sheets_generateRecordId_() {
-  return Nfb_generateRecordId_();
 }
 
 function Sheets_ensureRowCapacity_(sheet, minRows) {

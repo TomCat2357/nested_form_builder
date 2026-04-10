@@ -266,10 +266,6 @@ function nfbTrashExistingFile_(folder, fileName) {
   }
 }
 
-function nfbEscapeRegExp_(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function nfbEscapeReplaceTextReplacement_(value) {
   return String(value === undefined || value === null ? "" : value)
     .replace(/\\/g, "\\\\")

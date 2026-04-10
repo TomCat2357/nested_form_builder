@@ -1,7 +1,3 @@
-// Split from forms.gs
-
-
-
 function Forms_importFromDrive_(url) {
   if (!url || typeof url !== "string") {
     throw new Error("URLが必要です");

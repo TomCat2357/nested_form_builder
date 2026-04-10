@@ -1,7 +1,3 @@
-// Split from forms.gs
-
-
-
 function nfbListForms(options) {
   return nfbSafeCall_(function() {
     var result = Forms_listForms_(options || {});
@@ -43,12 +39,7 @@ function nfbSaveForm(payload) {
     var form = payload.form || payload;
     var targetUrl = payload.targetUrl || null;
     var saveMode = payload.saveMode || "auto";
-    var result = Forms_saveForm_(form, targetUrl, saveMode);
-    Logger.log("[nfbSaveForm] Result before return: " + JSON.stringify(result));
-    Logger.log("[nfbSaveForm] Result.debugRawJsonBefore: " + result.debugRawJsonBefore);
-    Logger.log("[nfbSaveForm] Result.debugRawJsonAfter: " + result.debugRawJsonAfter);
-    Logger.log("[nfbSaveForm] Result.debugMappingStr: " + result.debugMappingStr);
-    return result;
+    return Forms_saveForm_(form, targetUrl, saveMode);
   });
 }
 
@@ -58,7 +49,8 @@ function nfbSaveForm(payload) {
 
 function nfbDeleteForm(formId) {
   return nfbSafeCall_(function() {
-    return Forms_deleteForm_(formId);
+    var res = Forms_deleteForms_([formId]);
+    return { ok: res.ok };
   });
 }
 
@@ -78,7 +70,11 @@ function nfbDeleteForms(formIds) {
 
 function nfbArchiveForm(formId) {
   return nfbSafeCall_(function() {
-    return Forms_setFormArchivedState_(formId, true);
+    var res = Forms_setFormsArchivedState_([formId], true);
+    if (res.ok && res.forms && res.forms.length > 0) {
+      return { ok: true, form: res.forms[0] };
+    }
+    return { ok: false, error: (res.errors && res.errors[0]) ? res.errors[0].error : "Unknown error" };
   });
 }
 
@@ -88,7 +84,11 @@ function nfbArchiveForm(formId) {
 
 function nfbUnarchiveForm(formId) {
   return nfbSafeCall_(function() {
-    return Forms_setFormArchivedState_(formId, false);
+    var res = Forms_setFormsArchivedState_([formId], false);
+    if (res.ok && res.forms && res.forms.length > 0) {
+      return { ok: true, form: res.forms[0] };
+    }
+    return { ok: false, error: (res.errors && res.errors[0]) ? res.errors[0].error : "Unknown error" };
   });
 }
 
@@ -235,44 +235,6 @@ function nfbImportFormsFromDrive(url) {
 function nfbRegisterImportedForm(payload) {
   return nfbSafeCall_(function() {
     return Forms_registerImportedForm_(payload);
-  });
-}
-
-/**
- * デバッグ用：Forms_getMapping_()を直接呼び出してその結果を返す
- * @return {Object} { ok: true, mapping: Object }
- */
-
-function nfbDebugCallGetMapping() {
-  return nfbSafeCall_(function() {
-    var mapping = Forms_getMapping_();
-    return {
-      ok: true,
-      mapping: mapping,
-      totalForms: Object.keys(mapping).length,
-    };
-  });
-}
-
-/**
- * デバッグ用：PropertiesServiceのマッピングを取得
- * @return {Object} { ok: true, mapping: Object, rawJson: string }
- */
-
-function nfbDebugGetMapping() {
-  return nfbSafeCall_(function() {
-    var props = Forms_getActiveProps_();
-    var mode = Nfb_getPropertyStoreMode_();
-    var rawJson = props.getProperty(FORMS_PROPERTY_KEY);
-    var mapping = Forms_parseMappingJson_(rawJson, mode);
-
-    return {
-      ok: true,
-      propertyStoreMode: mode,
-      mapping: mapping,
-      rawJson: rawJson,
-      totalForms: Object.keys(mapping).length,
-    };
   });
 }
 

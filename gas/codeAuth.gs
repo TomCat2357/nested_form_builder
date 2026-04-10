@@ -56,10 +56,6 @@ function ResolveActiveUserProfile_() {
   }
 }
 
-function ResolveActiveUserDisplayName_() {
-  return ResolveActiveUserProfile_().displayName;
-}
-
 function EscapeForInlineScript_(value) {
   return String(value ?? "")
     .replace(/\\/g, "\\\\")

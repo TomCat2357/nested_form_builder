@@ -1,7 +1,3 @@
-// Split from sheets.gs
-
-
-
 function Sheets_formatUnixMsJst_(unixMs, includeMilliseconds) {
   if (!isFinite(unixMs)) return "";
   var format = includeMilliseconds ? "yyyy/MM/dd HH:mm:ss.SSS" : "yyyy/MM/dd HH:mm:ss";
@@ -260,11 +256,6 @@ function Sheets_applyTemporalFormats_(sheet, columnPaths, values, dataRowCount, 
     if (temporalType === "date") applyFormat(colInfo.index, dateFormat);
     else if (temporalType === "time") applyFormat(colInfo.index, timeFormat);
   }
-}
-
-function Sheets_toDateOrOriginal_(value) {
-  var parsed = Sheets_parseDateLikeToJstDate_(value);
-  return parsed || value;
 }
 
 function Sheets_dateToSerial_(date) {

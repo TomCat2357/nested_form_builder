@@ -14,12 +14,6 @@ const ExtractFileIdFromUrl_ = (url) => {
   return parsed.type === "file" ? parsed.id : null;
 };
 
-
-;
-
-
-;
-
 const AddFormUrl_ = (formId, fileUrl) => {
   try {
     if (!formId || !fileUrl) throw new Error("フォームIDまたはファイルURLが指定されていません");

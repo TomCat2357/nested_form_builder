@@ -119,7 +119,7 @@ function SyncRecords_(ctx) {
       for (var j = 0; j < uploadRecords.length; j++) {
         var rec = uploadRecords[j];
         var normalizedRecordData = Sheets_normalizeRecordDataKeys_(rec && rec.data);
-        var recId = rec.id || Sheets_generateRecordId_();
+        var recId = rec.id || Nfb_generateRecordId_();
         var cacheModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || Sheets_toUnixMs_(rec.modifiedAt, true) || 0;
         var recModifiedAt = cacheModifiedAt || nowMs;
 

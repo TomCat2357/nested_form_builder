@@ -1,7 +1,3 @@
-// Split from sheets.gs
-
-
-
 function Sheets_exportResultMatrixToNewSpreadsheet_(spreadsheetTitle, headerRows, rows, themeColors) {
   if (!headerRows || !headerRows.length) throw new Error("headerRows is required");
   if (!Array.isArray(rows)) throw new Error("rows must be an array");

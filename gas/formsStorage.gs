@@ -1,7 +1,3 @@
-// Split from forms.gs
-
-
-
 function Forms_buildSpreadsheetName_(form) {
   var base = "";
   if (form && form.settings && form.settings.formTitle) {
@@ -132,24 +128,9 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     }
 
     var requestedSaveMode = saveMode || "auto";
-    Logger.log("[Forms_saveForm_] Starting save for formId: " + form.id + ", requestedSaveMode: " + requestedSaveMode);
-
-    // DEBUG: 現在のプロパティ保存先を直接読んで確認
-    var activeProps = Forms_getActiveProps_();
-    var propertyStoreMode = Nfb_getPropertyStoreMode_();
-    var rawJsonBeforeGetMapping = activeProps.getProperty(FORMS_PROPERTY_KEY);
-    Logger.log("[Forms_saveForm_] DEBUG: Raw JSON from PropertiesService (" + propertyStoreMode + ") BEFORE Forms_getMapping_: " + rawJsonBeforeGetMapping);
-
     var mapping = Forms_getMapping_();
-    Logger.log("[Forms_saveForm_] Current mapping before save: " + JSON.stringify(mapping));
-
-    // DEBUG: もう一度PropertiesServiceを直接読んで確認
-    var rawJsonAfterGetMapping = activeProps.getProperty(FORMS_PROPERTY_KEY);
-    Logger.log("[Forms_saveForm_] DEBUG: Raw JSON from PropertiesService (" + propertyStoreMode + ") AFTER Forms_getMapping_: " + rawJsonAfterGetMapping);
-
     var mappingEntry = mapping[form.id] || {};
     var existingFileId = mappingEntry.fileId;
-    Logger.log("[Forms_saveForm_] Existing fileId for this form: " + existingFileId);
 
     var file;
     var fileId = null;
@@ -305,9 +286,7 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
 
     // マッピングを更新
     mapping[form.id] = { fileId: fileId, driveFileUrl: fileUrl };
-    Logger.log("[Forms_saveForm_] Updated mapping, about to save: " + JSON.stringify(mapping));
     Forms_saveMapping_(mapping);
-    Logger.log("[Forms_saveForm_] Mapping saved. FormId: " + form.id + ", FileId: " + fileId + ", saveMode: " + effectiveSaveMode);
 
     // 認証用URLマップにも登録（?form=xxx でアクセス可能にする）
     try {
@@ -322,9 +301,6 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       fileUrl: fileUrl,
       saveMode: effectiveSaveMode,
       form: formWithTimestamp,
-      debugRawJsonBefore: rawJsonBeforeGetMapping,
-      debugRawJsonAfter: rawJsonAfterGetMapping,
-      debugMappingStr: JSON.stringify(mapping),
     };
   });
 }

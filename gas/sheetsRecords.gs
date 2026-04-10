@@ -38,10 +38,6 @@ function Sheets_purgeExpiredDeletedRows_(sheet, retentionDays) {
   return { deletedCount: deletedCount };
 }
 
-// Split from sheets.gs
-
-
-
 function Sheets_readColumnPaths_(sheet, lastColumn) {
   var headerMatrix = sheet.getRange(NFB_HEADER_START_ROW, 1, NFB_HEADER_DEPTH, lastColumn).getValues();
   var columnPaths = [];
