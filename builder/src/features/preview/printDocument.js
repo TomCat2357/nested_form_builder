@@ -1,23 +1,9 @@
 import { formatUnixMsDateTimeSec, toUnixMs } from "../../utils/dateTime.js";
+import { CHOICE_TYPES, isChoiceMarkerValue, toChoiceOptionLabels } from "../../utils/responses.js";
 import { resolveFileDisplayName } from "../../core/collect.js";
 import { findFirstFileUploadField } from "../../core/schema.js";
 
-export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);
-
-export const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
-
-export const toChoiceOptionLabels = (field) => {
-  const options = Array.isArray(field?.options) ? field.options : [];
-  const labels = [];
-  const seen = new Set();
-  options.forEach((opt) => {
-    const label = typeof opt?.label === "string" ? opt.label : "";
-    if (!label || seen.has(label)) return;
-    labels.push(label);
-    seen.add(label);
-  });
-  return labels;
-};
+export { CHOICE_TYPES, toChoiceOptionLabels };
 
 const toRawSelectedLabels = (type, value) => {
   const labels = [];

@@ -4,34 +4,26 @@ import {
   formatUnixMsDateTimeSec,
   toUnixMs,
 } from "../../utils/dateTime.js";
-import { isChoiceMarkerValue } from "../../utils/responses.js";
 import { MAX_DEPTH as MAX_HEADER_DEPTH } from "../../core/constants.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 import { getPrintTemplateOutputLabel, normalizePrintTemplateAction } from "../../utils/printTemplateAction.js";
 import {
-  columnType,
   isChoiceColumn,
   normalizeSearchText,
   debugLog,
   collectFieldValue,
-  collectDirectOptionLabels,
-  compareStrings,
   computeRowValues,
 } from "./searchTableValues.js";
 
 export { MAX_HEADER_DEPTH };
 
-// Re-export from searchTableValues.js for backward compatibility
 export {
-  formatDateTime,
   computeRowValues,
   compareByColumn,
-  buildDisplayText,
   applyDisplayLengthLimit,
   parseSearchCellDisplayLimit,
 } from "./searchTableValues.js";
 
-// Re-export from searchQueryEngine.js for backward compatibility
 export {
   getKeywordMatchDetail,
   matchesKeyword,
@@ -443,9 +435,6 @@ export const buildHeaderRows = (columns) => {
   return rows;
 };
 
-;
-
-;
 export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
   if (!multiHeaderRows || multiHeaderRows.length === 0) return baseColumns || [];
 
@@ -523,9 +512,6 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
   debugLog("buildColumnsFromHeaderMatrix:result", { total: result.length });
   return result;
 };
-
-
-;
 
 export const buildSearchTableLayout = (
   form,

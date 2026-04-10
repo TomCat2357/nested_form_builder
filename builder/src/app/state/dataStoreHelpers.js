@@ -7,13 +7,7 @@ import {
   normalizeRecordForCache,
 } from "./recordsCache.js";
 
-export const nowUnixMs = () => Date.now();
-
 export const pendingOperations = new Set();
-export const trackPendingOperation = (promise) => {
-  pendingOperations.add(promise);
-  promise.finally(() => pendingOperations.delete(promise));
-};
 
 export const displayInfoCache = new Map();
 

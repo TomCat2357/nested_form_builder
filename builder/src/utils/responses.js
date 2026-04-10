@@ -38,10 +38,10 @@ const normalizeFileUploadEntries = (rawValue) => {
   return source.map(sanitizeFileUploadEntry).filter(Boolean);
 };
 
-const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);
+export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);
 export const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
 
-const collectOptionLabels = (field) => {
+export const toChoiceOptionLabels = (field) => {
   const labels = [];
   const seen = new Set();
   (Array.isArray(field?.options) ? field.options : []).forEach((opt) => {
@@ -67,7 +67,7 @@ const mergeChoiceLabels = (field, labels) => {
   const orderedSeen = new Set();
   const selectedSet = new Set(unique);
 
-  collectOptionLabels(field).forEach((label) => {
+  toChoiceOptionLabels(field).forEach((label) => {
     if (!selectedSet.has(label) || orderedSeen.has(label)) return;
     ordered.push(label);
     orderedSeen.add(label);
