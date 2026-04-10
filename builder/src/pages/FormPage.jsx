@@ -31,7 +31,7 @@ import {
 } from "../app/state/cachePolicy.js";
 import { useRefreshFormsIfNeeded } from "../app/hooks/useRefreshFormsIfNeeded.js";
 import { useAuth } from "../app/state/authContext.jsx";
-import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
+import { useApplyTheme } from "../app/hooks/useApplyTheme.js";
 import { perfLogger } from "../utils/perfLogger.js";
 import SchemaMapNav from "../features/nav/SchemaMapNav.jsx";
 import RecordCopyDialog from "../app/components/RecordCopyDialog.jsx";
@@ -187,11 +187,7 @@ export default function FormPage() {
     [form?.settings?.createPrintOnSave, form?.settings?.saveAfterAction, isDirectRecordMode],
   );
 
-  useEffect(() => {
-    if (!form) return;
-    const theme = form?.settings?.theme || DEFAULT_THEME;
-    void applyThemeWithFallback(theme, { persist: false });
-  }, [form?.id, form?.settings?.theme]);
+  useApplyTheme(form?.settings?.theme, { enabled: !!form });
 
   const entryIds = location.state?.entryIds || [];
   const currentIndex = entryId ? entryIds.indexOf(entryId) : -1;

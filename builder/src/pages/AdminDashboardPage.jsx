@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLatestRef } from "../app/hooks/useLatestRef.js";
+import React, { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import JSZip from "jszip";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
-import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.js";
+import { useFormCacheSync } from "../app/hooks/useFormCacheSync.js";
+import { useSetSelection } from "../app/hooks/useSetSelection.js";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
@@ -13,11 +13,6 @@ import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { importFormsFromDrive, hasScriptRun } from "../services/gasClient.js";
 import { toUnixMs, formatUnixMsDateTimeMs } from "../utils/dateTime.js";
 import { buildSharedFormUrl } from "../utils/formShareUrl.js";
-import {
-  evaluateCache,
-  FORM_CACHE_MAX_AGE_MS,
-  FORM_CACHE_BACKGROUND_REFRESH_MS,
-} from "../app/state/cachePolicy.js";
 import ImportUrlDialog from "./AdminImportUrlDialog.jsx";
 
 const formatDisplayFieldsSummary = (form) => {
@@ -57,8 +52,7 @@ export default function AdminDashboardPage() {
   const { settings } = useBuilderSettings();
   const navigate = useNavigate();
   const { showAlert, showOutputAlert } = useAlert();
-const [selected, setSelected] = useState(() => new Set());
-  const loadingFormsRef = useRef(loadingForms);
+const { selected, toggle: toggleSelect, selectAll: selectAllRaw, clear: clearSelection, clearByIds: clearSelectionByIds } = useSetSelection();
   const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
   const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null, targetIds: [], multiple: false });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
@@ -68,10 +62,6 @@ const [selected, setSelected] = useState(() => new Set());
   const [copiedId, setCopiedId] = useState(null);
   const [confirmCopy, setConfirmCopy] = useState({ open: false, formId: null });
   const [copying, setCopying] = useState(false);
-
-  useEffect(() => {
-    loadingFormsRef.current = loadingForms;
-  }, [loadingForms]);
 
   
   const sortedForms = useMemo(() => {
@@ -102,28 +92,10 @@ const [selected, setSelected] = useState(() => new Set());
 
   const adminForms = useMemo(() => [...sortedForms, ...loadFailureRows], [sortedForms, loadFailureRows]);
 
-  const toggleSelect = (formId) => {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(formId)) next.delete(formId);
-      else next.add(formId);
-      return next;
-    });
-  };
-
   const selectAll = (checked) => {
-    if (checked) setSelected(new Set(adminForms.map((form) => form.id)));
-    else setSelected(new Set());
+    if (checked) selectAllRaw(adminForms.map((form) => form.id));
+    else clearSelection();
   };
-
-  const clearSelectionByIds = useCallback((ids = []) => {
-    if (!Array.isArray(ids) || ids.length === 0) return;
-    setSelected((prev) => {
-      const next = new Set(prev);
-      ids.forEach((id) => next.delete(id));
-      return next;
-    });
-  }, []);
 
   const handleArchiveSelected = () => {
     const selectedForms = sortedForms.filter((form) => selected.has(form.id));
@@ -290,7 +262,7 @@ const [selected, setSelected] = useState(() => new Set());
           }
         }
 
-        setSelected(new Set());
+        clearSelection();
         const saveFailedDetail = saveFailed > 0 ? `（保存失敗 ${saveFailed} 件）` : "";
 
         // 結果メッセージ
@@ -434,7 +406,7 @@ const [selected, setSelected] = useState(() => new Set());
     setCopying(true);
     try {
       await copyForm(formId);
-      setSelected(new Set());
+      clearSelection();
       showAlert("フォームをコピーしました。スプレッドシートの設定を確認してください。");
     } catch (error) {
       showAlert("フォームのコピーに失敗しました: " + (error.message || "不明なエラー"));
@@ -443,29 +415,13 @@ const [selected, setSelected] = useState(() => new Set());
     }
   };
 
-  const handleOperationCacheCheck = useCallback(async ({ source }) => {
-    const cacheDecision = evaluateCache({
-      lastSyncedAt,
-      hasData: forms.length > 0 || loadFailures.length > 0 || !!lastSyncedAt,
-      maxAgeMs: FORM_CACHE_MAX_AGE_MS,
-      backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
-    });
-
-    if (cacheDecision.isFresh || loadingFormsRef.current) return;
-    if (cacheDecision.shouldSync) {
-      await refreshForms({ reason: `operation:${source}:admin-dashboard-sync`, background: false });
-      return;
-    }
-    if (cacheDecision.shouldBackground) {
-      refreshForms({ reason: `operation:${source}:admin-dashboard-background`, background: true }).catch((error) => {
-        console.error("[AdminDashboard] Background refresh failed:", error);
-      });
-    }
-  }, [forms.length, lastSyncedAt, loadFailures.length, refreshForms]);
-
-  useOperationCacheTrigger({
+  useFormCacheSync({
     enabled: true,
-    onOperation: handleOperationCacheCheck,
+    formsCount: forms.length + (loadFailures || []).length,
+    lastSyncedAt,
+    loadingForms,
+    refreshForms,
+    label: "admin-dashboard",
   });
 
   return (

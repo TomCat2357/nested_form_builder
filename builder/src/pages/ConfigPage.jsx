@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { useApplyTheme } from "../app/hooks/useApplyTheme.js";
+import { useDeployTime } from "../app/hooks/useDeployTime.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import {
@@ -67,7 +69,7 @@ export default function ConfigPage() {
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [removeTarget, setRemoveTarget] = useState(null);
-  const [deployTime, setDeployTime] = useState("");
+  const deployTime = useDeployTime();
   const [applyingTheme, setApplyingTheme] = useState(false);
   const [savingPrintSettings, setSavingPrintSettings] = useState(false);
   const [savingRecordSettings, setSavingRecordSettings] = useState(false);
@@ -119,16 +121,10 @@ export default function ConfigPage() {
   }, []);
 
   // 個別フォーム設定では常に対象フォームのテーマを画面へ適用
-  useEffect(() => {
-    if (!isFormMode || !targetForm) return;
-    void applyThemeWithFallback(formTheme, { persist: false });
-  }, [isFormMode, targetForm?.id, formTheme]);
+  useApplyTheme(formTheme, { enabled: isFormMode && !!targetForm });
 
   // メイン設定では常にグローバルテーマを画面へ適用
-  useEffect(() => {
-    if (isFormMode) return;
-    void applyThemeWithFallback(globalTheme, { persist: false });
-  }, [isFormMode, globalTheme]);
+  useApplyTheme(globalTheme, { enabled: !isFormMode });
 
   useEffect(() => {
     if (pendingSaveAfterAction === null) return;
@@ -194,14 +190,6 @@ export default function ConfigPage() {
     themeUpdateScope,
     applyThemeToAllForms,
   ]);
-
-  // デプロイ時刻を読み取り
-  useEffect(() => {
-    const metaTag = document.querySelector("meta[name=\"deploy-time\"]");
-    if (metaTag) {
-      setDeployTime(metaTag.getAttribute("content") || "");
-    }
-  }, []);
 
   const updateCurrentFormSettings = useCallback(
     async (nextPartialSettings) => {

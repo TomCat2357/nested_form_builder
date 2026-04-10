@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { useDeployTime } from "../app/hooks/useDeployTime.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { hasScriptRun, getAdminKey, setAdminKey, getAdminEmail, setAdminEmail, getRestrictToFormOnly, setRestrictToFormOnly } from "../services/gasClient.js";
@@ -16,7 +17,7 @@ const normalizeAdminEmailInput = (value) => String(value || "")
 export default function AdminSettingsPage() {
   const { showAlert } = useAlert();
 const { settings } = useBuilderSettings();
-  const [deployTime, setDeployTime] = useState("");
+  const deployTime = useDeployTime();
 
   const [adminKey, setAdminKeyState] = useState("");
   const [adminKeyInput, setAdminKeyInput] = useState("");
@@ -37,14 +38,6 @@ const { settings } = useBuilderSettings();
     () => normalizeAdminEmailInput(adminEmailInput),
     [adminEmailInput],
   );
-
-  
-  useEffect(() => {
-    const metaTag = document.querySelector("meta[name=\"deploy-time\"]");
-    if (metaTag) {
-      setDeployTime(metaTag.getAttribute("content") || "");
-    }
-  }, []);
 
   useEffect(() => {
     if (!canManageAdminSettings) return;

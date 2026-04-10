@@ -7,7 +7,7 @@ import FormBuilderWorkspace from "../features/admin/FormBuilderWorkspace.jsx";
 import { SETTINGS_GROUPS } from "../features/settings/settingsSchema.js";
 import { dataStore } from "../app/state/dataStore.js";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
-import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.js";
+import { useFormCacheSync } from "../app/hooks/useFormCacheSync.js";
 import { useEditLock } from "../app/hooks/useEditLock.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
@@ -16,11 +16,6 @@ import { omitThemeSetting, resolveSettingsCheckboxChecked, resolveSettingsFieldV
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import SchemaMapNav from "../features/nav/SchemaMapNav.jsx";
-import {
-  evaluateCache,
-  FORM_CACHE_MAX_AGE_MS,
-  FORM_CACHE_BACKGROUND_REFRESH_MS,
-} from "../app/state/cachePolicy.js";
 import { countSchemaNodes } from "../core/schema.js";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/forms");
@@ -56,7 +51,6 @@ export default function AdminFormEditorPage() {
   const [questionControl, setQuestionControl] = useState(null);
   const isSavingRef = useLatestRef(isSaving);
   const isReadLockedRef = useLatestRef(isReadLocked);
-  const loadingFormsRef = useLatestRef(loadingForms);
   const cachedFormRef = useLatestRef(cachedForm);
   const metaDirty = useMemo(() => name !== initialMetaRef.current.name || description !== initialMetaRef.current.description, [name, description]);
   const isDirty = builderDirty || metaDirty;
@@ -137,44 +131,28 @@ export default function AdminFormEditorPage() {
     setNameError("");
   }, [form, formId, isDirty, isDirtyRef, isSavingRef]);
 
-  const handleOperationCacheCheck = useCallback(async ({ source }) => {
-    if (!isEdit || !formId) return;
-    if (isSavingRef.current || isReadLockedRef.current || loadingFormsRef.current) return;
-    if (isDirtyRef.current) {
-      console.log("[AdminFormEditorPage] defer refreshForms during dirty edit", {
-        formId,
-        source,
-        cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
-      });
-      return;
-    }
-
-    const cacheDecision = evaluateCache({
-      lastSyncedAt,
-      hasData: forms.length > 0 || !!lastSyncedAt,
-      maxAgeMs: FORM_CACHE_MAX_AGE_MS,
-      backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
-    });
-
-    if (cacheDecision.isFresh) return;
-
-    await withReadLock(async () => {
-      console.log("[AdminFormEditorPage] run refreshForms from operation trigger", {
-        formId,
-        source,
-        cacheAgeMs: cacheDecision.age,
-        shouldSync: cacheDecision.shouldSync,
-        shouldBackground: cacheDecision.shouldBackground,
-        cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
-      });
-      await dataStore.getForm(formId);
-      await refreshForms({ reason: `operation:${source}:admin-form-editor`, background: false });
-    });
-  }, [cachedFormRef, formId, forms.length, isDirtyRef, isEdit, lastSyncedAt, refreshForms, withReadLock]);
-
-  useOperationCacheTrigger({
+  useFormCacheSync({
     enabled: isEdit && !!formId,
-    onOperation: handleOperationCacheCheck,
+    formsCount: forms.length,
+    lastSyncedAt,
+    loadingForms,
+    refreshForms,
+    label: "admin-form-editor",
+    shouldSkip: () => isSavingRef.current || isReadLockedRef.current || isDirtyRef.current,
+    onRefresh: async (source, cacheDecision) => {
+      await withReadLock(async () => {
+        console.log("[AdminFormEditorPage] run refreshForms from operation trigger", {
+          formId,
+          source,
+          cacheAgeMs: cacheDecision.age,
+          shouldSync: cacheDecision.shouldSync,
+          shouldBackground: cacheDecision.shouldBackground,
+          cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
+        });
+        await dataStore.getForm(formId);
+        await refreshForms({ reason: `operation:${source}:admin-form-editor`, background: false });
+      });
+    },
   });
 
   useBeforeUnloadGuard(isDirty);
