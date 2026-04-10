@@ -19,24 +19,35 @@ const OUTPUT_FILE = path.join(DIST_DIR, 'Bundle.gs');
 // 結合順序（依存関係順）
 const FILE_ORDER = [
   'constants.gs',
-  'errors.gs',      // エラーハンドリング・レスポンス共通
-  'settings.gs',    // 定数・設定
-  'properties.gs',  // プロパティサービス管理
-  'drive.gs',       // Google Drive操作
+  'errors.gs',           // エラーハンドリング・レスポンス共通
+  'settings.gs',         // 定数・設定
+  'properties.gs',       // プロパティサービス管理
+  // --- drive分割 ---
+  'driveTemplate.gs',       // テンプレート解決・パイプ変換
+  'drivePrintDocument.gs',  // 印刷様式ドキュメント
+  'driveFolder.gs',         // フォルダ管理
+  'driveOutput.gs',         // 出力オーケストレーション
+  'driveFile.gs',           // ファイル操作（公開API）
+  // --- forms ---
   'formsParsing.gs',
   'formsMappingStore.gs',
   'formsStorage.gs',
   'formsCrud.gs',
   'formsImport.gs',
   'formsPublicApi.gs',
-  'model.gs',       // モデル関数
+  'model.gs',            // モデル関数
+  // --- sheets ---
   'sheetsDatetime.gs',
   'sheetsHeaders.gs',
   'sheetsRowOps.gs',
   'sheetsRecords.gs',
   'sheetsExport.gs',
   'syncRecordsMerge.js',
-  'Code.gs',        // メインエントリーポイント
+  // --- Code分割 ---
+  'codeAuth.gs',         // 認証・プロフィール
+  'codeHandlers.gs',     // アクションハンドラ
+  'codeSyncRecords.gs',  // 同期処理
+  'Code.gs',             // メインエントリーポイント
 ];
 
 /**
