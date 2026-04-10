@@ -1,61 +1,17 @@
-import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
-import React, { useMemo, useState, useCallback, useEffect } from "react";
+import React from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
-import { dataStore } from "../app/state/dataStore.js";
 import { useAuth } from "../app/state/authContext.jsx";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
-import { normalizeSchemaIDs, findFirstFileUploadField } from "../core/schema.js";
-import {
-  buildSearchTableLayout,
-  buildExportTableData,
-  computeRowValues,
-  compareByColumn,
-  getKeywordMatchDetail,
-  parseSearchCellDisplayLimit,
-} from "../features/search/searchTable.js";
-import {
-  buildPrintDocumentPayload,
-  buildFieldLabelsMap,
-  buildFieldValuesMap,
-  resolveOmitEmptyRowsOnPrint,
-} from "../features/preview/printDocument.js";
-import { createExcelBlob, getThemeColors } from "../utils/excelExport.js";
-import { restoreResponsesFromData } from "../utils/responses.js";
-import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
-import {
-  executeRecordOutputAction,
-  executeBatchGoogleDocOutput,
-  saveExcelToDrive,
-} from "../services/gasClient.js";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import SearchSidebar from "../features/search/components/SearchSidebar.jsx";
 import SearchTable from "../features/search/components/SearchTable.jsx";
 import SearchPagination from "../features/search/components/SearchPagination.jsx";
 import SearchDisplaySettingsDialog from "../features/search/components/SearchDisplaySettingsDialog.jsx";
-import { useSearchDisplayOverrides } from "../features/search/useSearchDisplayOverrides.js";
-import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
-import { DEFAULT_PAGE_SIZE } from "../core/constants.js";
-import {
-  normalizePrintTemplateAction,
-  requiresPrintTemplateFileName,
-  resolveEffectivePrintTemplateFileNameTemplate,
-  resolveSharedPrintFileNameTemplate,
-  DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE,
-} from "../utils/printTemplateAction.js";
-
-const buildInitialSort = (params) => {
-  const raw = params.get("sort");
-  if (!raw) return { key: "No.", order: "desc" };
-  const lastColonIndex = raw.lastIndexOf(":");
-  if (lastColonIndex === -1) return { key: raw, order: "desc" };
-  const key = raw.slice(0, lastColonIndex);
-  const order = raw.slice(lastColonIndex + 1);
-  return { key: key || "No.", order: order === "asc" ? "asc" : "desc" };
-};
+import { useSearchPageState } from "./useSearchPageState.js";
 
 export default function SearchPage() {
   const { getFormById } = useAppData();
@@ -65,33 +21,32 @@ export default function SearchPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const { showAlert, showOutputAlert } = useAlert();
-  const queryFormId = (searchParams.get("form") || "").trim();
-  const effectiveFormId = queryFormId || scopedFormId;
-  const isScopedByAuth = scopedFormId !== "";
-  const currentSearchUrl = `${location.pathname}${location.search}`;
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
-  const [showUndeleteConfirm, setShowUndeleteConfirm] = useState({ open: false, entryIds: [] });
-  const [selectedEntries, setSelectedEntries] = useState(new Set());
-  const [exporting, setExporting] = useState(false);
-  const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
-  const [showDeleted, setShowDeleted] = useState(false);
-  const [showDisplaySettings, setShowDisplaySettings] = useState(false);
-
-  const form = useMemo(() => (effectiveFormId ? getFormById(effectiveFormId) : null), [effectiveFormId, getFormById]);
-  const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form?.schema]);
-  const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
-  const fieldLabels = useMemo(() => buildFieldLabelsMap(normalizedSchema), [normalizedSchema]);
-  const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
-  const query = searchParams.get("q") || "";
-  const page = Math.max(1, Number(searchParams.get("page") || 1));
-  const { overrides: searchOverrides, updateOverride } = useSearchDisplayOverrides(effectiveFormId);
-  const PAGE_SIZE = Number(searchOverrides?.pageSize) || Number(form?.settings?.pageSize) || Number(settings?.pageSize) || DEFAULT_PAGE_SIZE;
-  const TABLE_MAX_WIDTH = Number(searchOverrides?.searchTableMaxWidth) || Number(form?.settings?.searchTableMaxWidth) || Number(settings?.searchTableMaxWidth) || null;
-  const cellDisplayLimit = parseSearchCellDisplayLimit(searchOverrides?.searchCellMaxChars ?? form?.settings?.searchCellMaxChars);
 
   const {
+    effectiveFormId,
+    isScopedByAuth,
+    form,
+    showDeleteConfirm,
+    setShowDeleteConfirm,
+    showUndeleteConfirm,
+    setShowUndeleteConfirm,
+    selectedEntries,
+    exporting,
+    isCreatingPrintDocument,
+    showDeleted,
+    setShowDeleted,
+    showDisplaySettings,
+    setShowDisplaySettings,
+    query,
+    page,
+    activeSort,
+    searchOverrides,
+    updateOverride,
+    TABLE_MAX_WIDTH,
+    cellDisplayLimit,
     entries,
-    headerMatrix,
+    columns,
+    headerRows,
     loading,
     backgroundLoading,
     waitingForLock,
@@ -101,443 +56,43 @@ export default function SearchPage() {
     unsyncedCount,
     cacheDisabled,
     forceRefreshAll,
-    reloadFromCache,
-  } = useEntriesWithCache({
-    formId: effectiveFormId,
-    form,
-    locationKey: location.key,
-    locationState: location.state,
+    sortedEntries,
+    pagedEntries,
+    totalPages,
+    totalEntries,
+    startIndex,
+    endIndex,
+    badge,
+    allSelectedAreDeleted,
+    handleSearchChange,
+    handleSortToggle,
+    handlePageChange,
+    handleRowClick,
+    handleCreateNew,
+    handleOpenFormConfig,
+    handleBackToMain,
+    toggleSelectEntry,
+    selectAllEntries,
+    handleDeleteSelected,
+    handleUndeleteSelected,
+    handleExportResults,
+    handleCellAction,
+    handleCreatePrintDocument,
+    confirmDelete,
+    confirmUndelete,
+  } = useSearchPageState({
+    searchParams,
+    setSearchParams,
+    location,
+    navigate,
     showAlert,
+    showOutputAlert,
+    isAdmin,
+    userEmail,
+    scopedFormId,
+    getFormById,
+    settings,
   });
-
-  const { columns, headerRows } = useMemo(
-    () => buildSearchTableLayout(form, {
-      headerMatrix,
-      includeOperations: false,
-    }),
-    [form, headerMatrix],
-  );
-
-  const handleSearchChange = (value) => {
-    const next = new URLSearchParams(searchParams);
-    if (value) next.set("q", value);
-    else next.delete("q");
-    next.set("page", "1");
-    setSearchParams(next);
-  };
-
-  const handleSortToggle = (key) => {
-    const next = new URLSearchParams(searchParams);
-    const current = buildInitialSort(next);
-    const order = current.key === key ? (current.order === "desc" ? "asc" : "desc") : "desc";
-    next.set("sort", `${key}:${order}`);
-    setSearchParams(next);
-  };
-
-  const handlePageChange = (nextPage) => {
-    const next = new URLSearchParams(searchParams);
-    next.set("page", String(nextPage));
-    setSearchParams(next);
-  };
-
-  useEffect(() => {
-    if (!form) return;
-    const theme = form?.settings?.theme || DEFAULT_THEME;
-    void applyThemeWithFallback(theme, { persist: false });
-  }, [form?.id, form?.settings?.theme, settings?.theme]);
-
-  const isDeletedEntry = useCallback((entry) => Boolean(entry?.deletedAtUnixMs || entry?.deletedAt), []);
-
-  const processedEntries = useMemo(() => {
-    return entries.map((entry) => {
-      return {
-        entry,
-        values: computeRowValues(entry, columns),
-      };
-    });
-  }, [entries, columns]);
-
-  const ownerFilteredEntries = useMemo(() => {
-    if (isAdmin) return processedEntries;
-    if (!form?.settings?.showOwnRecordsOnly) return processedEntries;
-    if (!userEmail) return processedEntries;
-    return processedEntries.filter((row) => (row.entry?.createdBy || row.entry?.modifiedBy) === userEmail);
-  }, [processedEntries, isAdmin, userEmail, form?.settings?.showOwnRecordsOnly]);
-
-  const filteredEntries = useMemo(() => {
-    let base = ownerFilteredEntries;
-    if (!showDeleted) {
-      base = base.filter((row) => !isDeletedEntry(row.entry));
-    }
-    const keyword = query.trim();
-    if (!keyword) {
-      return base;
-    }
-    return base
-      .map((row) => {
-        const matchDetail = getKeywordMatchDetail(row, columns, keyword);
-        if (!matchDetail.matched) return null;
-        return row;
-      })
-      .filter(Boolean);
-  }, [ownerFilteredEntries, columns, query, showDeleted, isDeletedEntry]);
-
-  const sortedEntries = useMemo(() => {
-    const list = filteredEntries.slice();
-    const targetColumn = columns.find((column) => column.key === activeSort.key && column.sortable !== false);
-    if (targetColumn) {
-      list.sort((a, b) => compareByColumn(a, b, targetColumn, activeSort.order));
-    }
-    return list;
-  }, [filteredEntries, columns, activeSort]);
-  const selectedPrintableRows = useMemo(
-    () => sortedEntries.filter((row) => selectedEntries.has(row.entry.id)),
-    [selectedEntries, sortedEntries],
-  );
-
-  const pagedEntries = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return sortedEntries.slice(start, start + PAGE_SIZE);
-  }, [sortedEntries, page, PAGE_SIZE]);
-
-  useBeforeUnloadGuard(hasUnsynced);
-  const totalPages = Math.max(1, Math.ceil(sortedEntries.length / PAGE_SIZE));
-  const totalEntries = sortedEntries.length;
-  const startIndex = totalEntries === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const endIndex = totalEntries === 0 ? 0 : Math.min(page * PAGE_SIZE, totalEntries);
-
-  const badge = useMemo(() => {
-    if (loading || backgroundLoading || waitingForLock) return { label: "読み取り中...", variant: "loading" };
-    return { label: "検索画面", variant: "view" };
-  }, [loading, backgroundLoading, waitingForLock]);
-  const showPrintTemplateOutputAlert = useCallback((url, outputType) => {
-    showOutputAlert({
-      message: "様式出力を準備しました。",
-      url,
-      linkLabel: outputType === "gmail" ? "Gmail下書きを開く" : "ファイルを開く",
-    });
-  }, [showOutputAlert]);
-
-  const handleRowClick = (entryId) => {
-    if (!effectiveFormId) return;
-    const entryIds = sortedEntries.map((row) => row.entry.id);
-    navigate(`/form/${effectiveFormId}/entry/${entryId}`, {
-      state: { from: currentSearchUrl, entryIds },
-    });
-  };
-
-  const handleCreateNew = () => {
-    if (!effectiveFormId) return;
-    navigate(`/form/${effectiveFormId}/new`, {
-      state: {
-        from: currentSearchUrl,
-      },
-    });
-  };
-  const handleOpenFormConfig = () => {
-    if (!effectiveFormId) return;
-    navigate(`/config?form=${encodeURIComponent(effectiveFormId)}`, {
-      state: { from: currentSearchUrl },
-    });
-  };
-  const handleBackToMain = () => {
-    if (location.state?.from) {
-      navigate(location.state.from);
-      return;
-    }
-    navigate("/");
-  };
-
-  const toggleSelectEntry = (entryId) => {
-    setSelectedEntries((prev) => {
-      const next = new Set(prev);
-      if (next.has(entryId)) next.delete(entryId);
-      else next.add(entryId);
-      return next;
-    });
-  };
-
-  const selectAllEntries = (checked) => {
-    if (checked) setSelectedEntries(new Set(pagedEntries.map((item) => item.entry.id)));
-    else setSelectedEntries(new Set());
-  };
-
-  const allSelectedAreDeleted = useMemo(() => {
-    if (selectedEntries.size === 0) return false;
-    const selectedRows = sortedEntries.filter((row) => selectedEntries.has(row.entry.id));
-    if (selectedRows.length === 0) return false;
-    return selectedRows.every((row) => isDeletedEntry(row.entry));
-  }, [selectedEntries, sortedEntries, isDeletedEntry]);
-
-  const handleDeleteSelected = () => {
-    if (selectedEntries.size === 0) {
-      showAlert("削除する項目を選択してください。");
-      return;
-    }
-    setShowDeleteConfirm({ open: true, entryIds: Array.from(selectedEntries) });
-  };
-
-  const handleUndeleteSelected = () => {
-    if (selectedEntries.size === 0) return;
-    setShowUndeleteConfirm({ open: true, entryIds: Array.from(selectedEntries) });
-  };
-
-  const handleExportResults = useCallback(async () => {
-    if (sortedEntries.length === 0) return;
-    setExporting(true);
-    try {
-      const exportingEntries = sortedEntries.map((row) => row.entry);
-      const exportTable = buildExportTableData({ form, entries: exportingEntries });
-      const themeColors = getThemeColors();
-
-      const now = new Date();
-      const pad = (n) => String(n).padStart(2, "0");
-      const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-      const filename = `検索結果_${form?.settings?.formTitle || form?.id || "form"}_${timestamp}.xlsx`;
-
-      const blob = await createExcelBlob(exportTable, themeColors);
-      const base64data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
-      const result = await saveExcelToDrive({ filename, base64: base64data });
-
-      showOutputAlert({ message: "マイドライブにエクセルファイルを保存しました。", url: result.fileUrl, linkLabel: "ファイルを開く" });
-    } catch (err) {
-      console.error(err);
-      showAlert(`出力に失敗しました: ${err.message}`);
-    } finally {
-      setExporting(false);
-    }
-  }, [form, sortedEntries, showAlert]);
-
-  const createPrintDocument = useCallback(async () => {
-    setIsCreatingPrintDocument(true);
-    try {
-      const action = {
-        enabled: true,
-        outputType: "googleDoc",
-        useCustomTemplate: false,
-        templateUrl: "",
-        fileNameTemplate: "",
-      };
-      const effectiveFileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {}) || DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE;
-
-      const firstUploadField = findFirstFileUploadField(normalizedSchema);
-      const recordPayloads = selectedPrintableRows.map(({ entry }) => {
-        const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
-        const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
-        const driveSettings = {
-          rootFolderUrl: firstUploadField?.driveRootFolderUrl || "",
-          folderNameTemplate: firstUploadField?.driveFolderNameTemplate || "",
-          formId: form?.id || "",
-          recordId: entry.id,
-          folderUrl: entry.driveFolderUrl || "",
-          responses: restoredResponses,
-          fieldLabels,
-          fieldValues,
-          fileNameTemplate: effectiveFileNameTemplate,
-        };
-        return {
-          action,
-          settings: {
-            standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
-            standardPrintFileNameTemplate: form?.settings?.standardPrintFileNameTemplate || "",
-          },
-          recordContext: {
-            formTitle: form?.settings?.formTitle || "",
-            formId: form?.id || "",
-            recordId: entry.id,
-            recordNo: entry?.["No."] || "",
-            modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
-            printPayload: buildPrintDocumentPayload({
-              schema: normalizedSchema,
-              responses: restoredResponses,
-              settings: {
-                ...(form?.settings || {}),
-                formId: form?.id || "",
-                recordNo: entry?.["No."],
-                modifiedAt: entry?.modifiedAt,
-                modifiedAtUnixMs: entry?.modifiedAtUnixMs,
-              },
-              recordId: entry.id,
-              omitEmptyRows: omitEmptyRowsOnPrint,
-              driveFolderState: {
-                resolvedUrl: entry.driveFolderUrl || "",
-                inputUrl: entry.driveFolderUrl || "",
-              },
-              useTemporaryFolder: true,
-            }),
-          },
-          driveSettings,
-        };
-      });
-
-      const combinedFileName = (form?.settings?.formTitle || "出力") + "_一括出力";
-      const result = await executeBatchGoogleDocOutput({
-        records: recordPayloads,
-        fileNameTemplate: combinedFileName,
-      });
-
-      if (result?.openUrl) {
-        showOutputAlert({
-          message: `${selectedPrintableRows.length}件の印刷様式を出力しました。`,
-          url: result.openUrl,
-          linkLabel: "Google ドキュメントを開く",
-        });
-      }
-    } catch (error) {
-      console.error("[SearchPage] failed to create print document:", error);
-      showAlert(`印刷様式の出力に失敗しました: ${error?.message || error}`);
-    } finally {
-      setIsCreatingPrintDocument(false);
-    }
-  }, [
-    fieldLabels,
-    form?.id,
-    form?.settings,
-    normalizedSchema,
-    omitEmptyRowsOnPrint,
-    selectedPrintableRows,
-    showAlert,
-    showOutputAlert,
-  ]);
-
-  const handleCellAction = useCallback(async (column, entry) => {
-    if (!column || !entry) return;
-
-    if (column.actionKind === "folderLink") {
-      if (!entry.driveFolderUrl) {
-        showAlert("保存先フォルダが未確定です。");
-        return;
-      }
-      window.open(entry.driveFolderUrl, "_blank", "noopener,noreferrer");
-      return;
-    }
-
-    if (column.actionKind !== "printTemplate") return;
-
-    const action = normalizePrintTemplateAction(column.action);
-    const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, form?.settings || {});
-    const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
-    const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
-    const firstUploadFieldSingle = findFirstFileUploadField(normalizedSchema);
-    const driveSettings = {
-      rootFolderUrl: firstUploadFieldSingle?.driveRootFolderUrl || "",
-      folderNameTemplate: firstUploadFieldSingle?.driveFolderNameTemplate || "",
-      formId: form?.id || "",
-      recordId: entry.id,
-      folderUrl: entry.driveFolderUrl || "",
-      responses: restoredResponses,
-      fieldLabels,
-      fieldValues,
-      fileNameTemplate: effectiveFileNameTemplate,
-    };
-
-    const buildRecordActionPayload = () => ({
-      action,
-      settings: {
-        standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
-        standardPrintFileNameTemplate: form?.settings?.standardPrintFileNameTemplate || "",
-      },
-      recordContext: {
-        formTitle: form?.settings?.formTitle || "",
-        formId: form?.id || "",
-        recordId: entry.id,
-        recordNo: entry?.["No."] || "",
-        modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
-        printPayload: buildPrintDocumentPayload({
-          schema: normalizedSchema,
-          responses: restoredResponses,
-          settings: {
-            ...(form?.settings || {}),
-            formId: form?.id || "",
-            recordNo: entry?.["No."],
-            modifiedAt: entry?.modifiedAt,
-            modifiedAtUnixMs: entry?.modifiedAtUnixMs,
-          },
-          recordId: entry.id,
-          omitEmptyRows: omitEmptyRowsOnPrint,
-          driveFolderState: {
-            resolvedUrl: entry.driveFolderUrl || "",
-            inputUrl: entry.driveFolderUrl || "",
-          },
-          useTemporaryFolder: true,
-        }),
-      },
-      driveSettings,
-    });
-
-    if (action.outputType === "gmail") {
-      if (requiresPrintTemplateFileName(action) && !effectiveFileNameTemplate) {
-        showAlert("PDF 添付を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください。");
-        return;
-      }
-      const result = await executeRecordOutputAction(buildRecordActionPayload());
-      if (result?.openUrl) {
-        showPrintTemplateOutputAlert(result.openUrl, result.outputType || action.outputType);
-      }
-      return;
-    }
-
-    // PDF: オンデマンド生成してブラウザダウンロード
-    const result = await executeRecordOutputAction(buildRecordActionPayload());
-    if (result?.pdfBase64 && result?.fileName) {
-      const bytes = Uint8Array.from(atob(result.pdfBase64), (c) => c.charCodeAt(0));
-      const blob = new Blob([bytes], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = result.fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
-  }, [
-    fieldLabels,
-    form?.id,
-    form?.settings,
-    normalizedSchema,
-    omitEmptyRowsOnPrint,
-    showAlert,
-    showOutputAlert,
-    showPrintTemplateOutputAlert,
-  ]);
-
-  const handleCreatePrintDocument = useCallback(async () => {
-    if (selectedPrintableRows.length === 0) {
-      showAlert("印刷するレコードを選択してください。");
-      return;
-    }
-
-    await createPrintDocument();
-  }, [selectedPrintableRows.length, showAlert, createPrintDocument]);
-
-  const confirmDelete = useCallback(async () => {
-    if (!effectiveFormId || showDeleteConfirm.entryIds.length === 0) return;
-    const targetIds = [...showDeleteConfirm.entryIds];
-    setShowDeleteConfirm({ open: false, entryIds: [] });
-    for (const entryId of targetIds) {
-      await dataStore.deleteEntry(effectiveFormId, entryId, { deletedBy: userEmail || "" });
-    }
-    await reloadFromCache();
-    forceRefreshAll();
-    setSelectedEntries(new Set());
-  }, [effectiveFormId, forceRefreshAll, reloadFromCache, showDeleteConfirm.entryIds, userEmail]);
-
-  const confirmUndelete = useCallback(async () => {
-    if (!effectiveFormId || showUndeleteConfirm.entryIds.length === 0) return;
-    const targetIds = [...showUndeleteConfirm.entryIds];
-    setShowUndeleteConfirm({ open: false, entryIds: [] });
-    for (const entryId of targetIds) {
-      await dataStore.undeleteEntry(effectiveFormId, entryId, { modifiedBy: userEmail || "" });
-    }
-    await reloadFromCache();
-    forceRefreshAll();
-    setSelectedEntries(new Set());
-  }, [effectiveFormId, forceRefreshAll, reloadFromCache, showUndeleteConfirm.entryIds, userEmail]);
 
   if (!effectiveFormId || !form) {
     return (

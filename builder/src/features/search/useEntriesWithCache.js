@@ -8,128 +8,26 @@ import { evaluateCache, RECORD_CACHE_BACKGROUND_REFRESH_MS, RECORD_CACHE_MAX_AGE
 import { useRefreshFormsIfNeeded } from "../../app/hooks/useRefreshFormsIfNeeded.js";
 import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../../core/constants.js";
 import { perfLogger } from "../../utils/perfLogger.js";
+import {
+  syncStateListeners,
+  defaultAlert,
+  getGlobalSyncSnapshot,
+  setGlobalSyncState,
+  updateGlobalMeta,
+  buildFetchErrorMessage,
+  shouldForceSync,
+  shouldRetryListReadError,
+  canRetryOperationSync,
+  getUnsyncedState,
+  LOCK_WAIT_RETRY_MS,
+  READ_RETRY_INTERVAL_MS,
+  READ_RETRY_MAX_ATTEMPTS,
+  SYNC_INTERVAL_MS,
+  wait,
+} from "./globalSyncState.js";
 
-
-const syncStateListeners = new Set();
-const globalSyncState = {
-  loading: new Map(),
-  background: new Map(),
-  meta: new Map(),
-};
-
-const defaultSyncMeta = {
-  hasUnsynced: false,
-  unsyncedCount: 0,
-  waitingForLock: false,
-  lastSyncedAt: null,
-  lastSpreadsheetReadAt: null,
-  useCache: false,
-  cacheDisabled: false,
-};
-
-const emitSyncStateChange = () => {
-  syncStateListeners.forEach((listener) => listener());
-};
-
-const updateSyncCounter = (counterMap, formId, isLoading) => {
-  if (!formId) return;
-  const current = counterMap.get(formId) || 0;
-  if (isLoading) {
-    counterMap.set(formId, current + 1);
-    return;
-  }
-  if (current <= 1) {
-    counterMap.delete(formId);
-    return;
-  }
-  counterMap.set(formId, current - 1);
-};
-
-const setGlobalSyncState = (formId, isLoading, isBackground) => {
-  if (isBackground) updateSyncCounter(globalSyncState.background, formId, isLoading);
-  else updateSyncCounter(globalSyncState.loading, formId, isLoading);
-  emitSyncStateChange();
-};
-
-const updateGlobalMeta = (formId, partialMeta = {}) => {
-  if (!formId) return;
-  const current = globalSyncState.meta.get(formId) || {};
-  globalSyncState.meta.set(formId, { ...current, ...partialMeta });
-  emitSyncStateChange();
-};
-
-const getGlobalSyncSnapshot = (formId) => {
-  if (!formId) {
-    return {
-      ...defaultSyncMeta,
-      loading: false,
-      backgroundLoading: false,
-    };
-  }
-  const meta = { ...defaultSyncMeta, ...(globalSyncState.meta.get(formId) || {}) };
-  return {
-    loading: (globalSyncState.loading.get(formId) || 0) > 0,
-    backgroundLoading: (globalSyncState.background.get(formId) || 0) > 0,
-    waitingForLock: !!meta.waitingForLock,
-    hasUnsynced: !!meta.hasUnsynced,
-    unsyncedCount: Number.isFinite(Number(meta.unsyncedCount)) ? Number(meta.unsyncedCount) : 0,
-    lastSyncedAt: meta.lastSyncedAt || null,
-    lastSpreadsheetReadAt: meta.lastSpreadsheetReadAt || null,
-    useCache: !!meta.useCache,
-    cacheDisabled: !!meta.cacheDisabled,
-  };
-};
-
-const defaultAlert = { showAlert: (message) => console.warn("[useEntriesWithCache]", message) };
-const buildFetchErrorMessage = (error) =>
-  `スプレッドシートからデータを読み取れませんでした。\n接続設定やスプレッドシートの共有設定を確認してください。\n\n詳細: ${error?.message || error}`;
-
-const shouldForceSync = (locationState) => {
-  if (!locationState || typeof locationState !== "object") return false;
-  return locationState.saved === true || locationState.deleted === true || locationState.created === true;
-};
-
-const LOCK_WAIT_RETRY_MS = 1000;
-const READ_RETRY_INTERVAL_MS = 1000;
-const READ_RETRY_MAX_ATTEMPTS = 3;
 const WRITE_RETRY_INTERVAL_MS = 1000;
 const WRITE_RETRY_MAX_ATTEMPTS = 3;
-const SYNC_INTERVAL_MS = RECORD_CACHE_BACKGROUND_REFRESH_MS;
-const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-const shouldRetryListReadError = (error) => {
-  if (!error) return false;
-  if (error.code === GAS_ERROR_CODE_LOCK_TIMEOUT) return false;
-  const message = String(error?.message || error);
-  return message.includes("スプレッドシート");
-};
-
-const canRetryOperationSync = (error) => {
-  if (!error) return false;
-  if (error.code === GAS_ERROR_CODE_LOCK_TIMEOUT) return true;
-  return shouldRetryListReadError(error);
-};
-
-const getUnsyncedState = (cache) => {
-  const cacheLastServerReadAt = Number.isFinite(Number(cache?.lastServerReadAt))
-    ? Number(cache.lastServerReadAt)
-    : (Number.isFinite(Number(cache?.lastSpreadsheetReadAt)) ? Number(cache.lastSpreadsheetReadAt) : 0);
-
-  let unsyncedCount = 0;
-  let unsyncedMaxModifiedAt = 0;
-  (cache?.entries || []).forEach((entry) => {
-    const modifiedAt = Number(entry?.modifiedAtUnixMs) || 0;
-    if (modifiedAt <= cacheLastServerReadAt) return;
-    unsyncedCount += 1;
-    if (modifiedAt > unsyncedMaxModifiedAt) unsyncedMaxModifiedAt = modifiedAt;
-  });
-
-  return {
-    cacheLastServerReadAt,
-    unsyncedCount,
-    unsyncedMaxModifiedAt,
-    hasUnsynced: unsyncedCount > 0,
-  };
-};
 
 export const useEntriesWithCache = ({
   formId,
