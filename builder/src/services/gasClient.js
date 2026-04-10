@@ -84,11 +84,6 @@ const validateFormIds = (formIds) => {
   return formIds;
 };
 
-export const validateSpreadsheet = (idOrUrl) => {
-  if (!idOrUrl) throw new Error("Spreadsheet URL/ID is required");
-  return fetchGasApi("nfbValidateSpreadsheet", idOrUrl, "Spreadsheet validation failed");
-};
-
 export const submitResponses = ({ spreadsheetId, sheetName = "Data", payload }) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
   return fetchGasApi("saveResponses", { ...payload, spreadsheetId, sheetName }, "Apps Script call failed");
@@ -108,19 +103,6 @@ export const getEntry = async ({ spreadsheetId, sheetName = "Data", entryId, row
   if (!spreadsheetId || !entryId) throw new Error("spreadsheetId and entryId are required");
   const result = await fetchGasApi("getRecord", { spreadsheetId: normalizeSpreadsheetId(spreadsheetId), sheetName, id: entryId, rowIndexHint }, "Get record failed");
   return { record: result.record || null, rowIndex: typeof result.rowIndex === "number" ? result.rowIndex : null };
-};
-
-export const exportSearchResults = async ({ spreadsheetTitle = "", headerRows, rows, themeColors = null }) => {
-  if (!Array.isArray(headerRows) || headerRows.length === 0) throw new Error("headerRows is required");
-  if (!Array.isArray(rows)) throw new Error("rows must be an array");
-
-  const CHUNK_SIZE = 100;
-  const result = await fetchGasApi("nfbExportSearchResults", { spreadsheetTitle, headerRows, rows: rows.slice(0, CHUNK_SIZE), themeColors }, "Export failed");
-  const headerCount = result.headerCount || headerRows.length;
-  for (let i = CHUNK_SIZE; i < rows.length; i += CHUNK_SIZE) {
-    await fetchGasApi("nfbAppendExportRows", { spreadsheetId: result.spreadsheetId, rows: rows.slice(i, i + CHUNK_SIZE), themeColors, headerCount, rowOffset: i }, "Append chunk failed");
-  }
-  return { ...result, exportedCount: rows.length };
 };
 
 export const listEntries = async ({ spreadsheetId, sheetName = "Data", formId = null, lastSpreadsheetReadAt = null, forceFullSync = false }) => {
@@ -182,7 +164,6 @@ export const importThemeFromDrive = async (url) => {
   const r = await fetchGasApi("nfbImportThemeFromDrive", url, "Theme import failed");
   return { css: r.css || "", fileName: r.fileName || "", fileUrl: r.fileUrl || url };
 };
-export const debugGetMapping = () => fetchGasApi("nfbDebugGetMapping", {}, "Debug get mapping failed");
 export const getAdminKey = createGasEndpoint({ fnName: "nfbGetAdminKey", validate: () => ({}), mapResult: (r) => r.adminKey || "", defaultError: "Get admin key failed" });
 export const setAdminKey = createGasEndpoint({ fnName: "nfbSetAdminKey", mapResult: (r) => r.adminKey || "", defaultError: "Set admin key failed" });
 export const getAdminEmail = createGasEndpoint({ fnName: "nfbGetAdminEmail", validate: () => ({}), mapResult: (r) => r.adminEmail || "", defaultError: "Get admin email failed" });

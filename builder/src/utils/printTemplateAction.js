@@ -40,10 +40,6 @@ export const resolveSharedPrintFileNameTemplate = (settings) => (
   normalizeTemplateString(settings?.standardPrintFileNameTemplate)
 );
 
-export const usesGmailAttachPdf = (value) => (
-  normalizePrintTemplateAction(value).gmailAttachPdf === true
-);
-
 export const requiresPrintTemplateFileName = (value) => {
   const action = normalizePrintTemplateAction(value);
   return action.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL || action.gmailAttachPdf;
