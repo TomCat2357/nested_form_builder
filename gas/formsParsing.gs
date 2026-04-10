@@ -1,7 +1,3 @@
-// Split from forms.gs
-
-
-
 function Forms_parseGoogleDriveUrl_(url) {
   if (!url || typeof url !== "string") {
     return { type: null, id: null };

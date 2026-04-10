@@ -1,7 +1,3 @@
-// Split from forms.gs
-
-
-
 function Forms_getForm_(formId) {
   if (!formId) return null;
 
@@ -41,17 +37,9 @@ function Forms_getForm_(formId) {
 }
 
 function Forms_listForms_(options) {
-  var startTime = new Date().getTime();
   var includeArchived = !!(options && options.includeArchived);
 
-  var mappingStartTime = new Date().getTime();
   var mapping = Forms_getMapping_();
-  var mappingEndTime = new Date().getTime();
-  var mappingDuration = mappingEndTime - mappingStartTime;
-
-  Logger.log("[Forms_listForms_] Retrieved mapping: " + JSON.stringify(mapping));
-  Logger.log("[Forms_listForms_] Total forms in mapping: " + Object.keys(mapping).length);
-  Logger.log("[Forms_listForms_] Mapping retrieval took: " + mappingDuration + "ms");
 
   var forms = [];
   var loadFailures = [];
@@ -95,24 +83,16 @@ function Forms_listForms_(options) {
   }
 
   var fileIds = Object.keys(fileIdMap);
-  Logger.log("[Forms_listForms_] Processing " + fileIds.length + " files with batch requests");
 
   // Drive API v3 バッチリクエスト（最大100件ずつ）
   var BATCH_SIZE = NFB_DRIVE_API_BATCH_SIZE;
-  var batchStartTime = new Date().getTime();
-  var totalBatchTime = 0;
 
   for (var i = 0; i < fileIds.length; i += BATCH_SIZE) {
     var batchFileIds = fileIds.slice(i, i + BATCH_SIZE);
-    var batchStart = new Date().getTime();
 
     // バッチリクエストで複数ファイルのメタデータとコンテンツを取得
     try {
       var batchResults = Forms_batchGetFiles_(batchFileIds);
-      var batchEnd = new Date().getTime();
-      totalBatchTime += (batchEnd - batchStart);
-
-      Logger.log("[Forms_listForms_] Batch " + (Math.floor(i / BATCH_SIZE) + 1) + " completed in " + (batchEnd - batchStart) + "ms (" + batchFileIds.length + " files)");
 
       // バッチ結果を処理
       for (var j = 0; j < batchResults.length; j++) {
@@ -165,16 +145,6 @@ function Forms_listForms_(options) {
       }
     }
   }
-
-  var endTime = new Date().getTime();
-  var totalDuration = endTime - startTime;
-
-  Logger.log("[Forms_listForms_] === Performance Summary ===");
-  Logger.log("[Forms_listForms_] Total duration: " + totalDuration + "ms");
-  Logger.log("[Forms_listForms_] Mapping retrieval: " + mappingDuration + "ms (" + Math.round(mappingDuration / totalDuration * 100) + "%)");
-  Logger.log("[Forms_listForms_] Batch requests: " + totalBatchTime + "ms (" + Math.round(totalBatchTime / totalDuration * 100) + "%)");
-  Logger.log("[Forms_listForms_] Average per form: " + Math.round(totalDuration / fileIds.length) + "ms");
-  Logger.log("[Forms_listForms_] Returning " + forms.length + " forms (loadFailures=" + loadFailures.length + ")");
 
   return {
     forms: forms,
@@ -441,30 +411,3 @@ function Forms_copyForm_(formId) {
   return result;
 }
 
-// ========================================
-// Public API Functions (google.script.run経由で呼び出し可能)
-// ========================================
-
-/**
- * フォーム一覧を取得
- */
-
-
-/**
- * フォームを削除 (複数削除APIへ委譲)
- */
-function Forms_deleteForm_(formId) {
-  var res = Forms_deleteForms_([formId]);
-  return { ok: res.ok };
-}
-
-/**
- * フォームのアーカイブ状態を変更 (複数アーカイブAPIへ委譲)
- */
-function Forms_setFormArchivedState_(formId, archived) {
-  var res = Forms_setFormsArchivedState_([formId], archived);
-  if (res.ok && res.forms && res.forms.length > 0) {
-    return { ok: true, form: res.forms[0] };
-  }
-  return { ok: false, error: (res.errors && res.errors[0]) ? res.errors[0].error : "Unknown error" };
-}

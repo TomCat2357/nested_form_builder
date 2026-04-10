@@ -1,7 +1,3 @@
-// Split from sheets.gs
-
-
-
 function Sheets_findRowById_(sheet, id) {
   if (!id) return -1;
   var lastRow = sheet.getLastRow();
@@ -128,7 +124,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
         if (isFinite(val) && val > maxNo) maxNo = val;
       }
     }
-    ctx.id = ctx.id || Sheets_generateRecordId_();
+    ctx.id = ctx.id || Nfb_generateRecordId_();
     var insertMeta = Sync_resolveNewRecordMetadata_({
       record: ctx && ctx.raw ? ctx.raw : {},
       fallbackRecordNo: maxNo + 1,

@@ -1,7 +1,3 @@
-// Split from forms.gs
-
-
-
 function Forms_getActiveProps_() {
   return Nfb_getActiveProperties_();
 }
