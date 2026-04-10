@@ -1,4 +1,5 @@
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
+import { useSetSelection } from "../app/hooks/useSetSelection.js";
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { dataStore } from "../app/state/dataStore.js";
 import { normalizeSchemaIDs, findFirstFileUploadField } from "../core/schema.js";
@@ -65,7 +66,7 @@ export function useSearchPageState({
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
   const [showUndeleteConfirm, setShowUndeleteConfirm] = useState({ open: false, entryIds: [] });
-  const [selectedEntries, setSelectedEntries] = useState(new Set());
+  const { selected: selectedEntries, toggle: toggleSelectEntry, selectAll: selectAllEntriesRaw, clear: clearSelectedEntries } = useSetSelection();
   const [exporting, setExporting] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -246,18 +247,9 @@ export function useSearchPageState({
     navigate("/");
   };
 
-  const toggleSelectEntry = (entryId) => {
-    setSelectedEntries((prev) => {
-      const next = new Set(prev);
-      if (next.has(entryId)) next.delete(entryId);
-      else next.add(entryId);
-      return next;
-    });
-  };
-
   const selectAllEntries = (checked) => {
-    if (checked) setSelectedEntries(new Set(pagedEntries.map((item) => item.entry.id)));
-    else setSelectedEntries(new Set());
+    if (checked) selectAllEntriesRaw(pagedEntries.map((item) => item.entry.id));
+    else clearSelectedEntries();
   };
 
   const allSelectedAreDeleted = useMemo(() => {
@@ -522,7 +514,7 @@ export function useSearchPageState({
     }
     await reloadFromCache();
     forceRefreshAll();
-    setSelectedEntries(new Set());
+    clearSelectedEntries();
   }, [effectiveFormId, forceRefreshAll, reloadFromCache, showDeleteConfirm.entryIds, userEmail]);
 
   const confirmUndelete = useCallback(async () => {
@@ -534,7 +526,7 @@ export function useSearchPageState({
     }
     await reloadFromCache();
     forceRefreshAll();
-    setSelectedEntries(new Set());
+    clearSelectedEntries();
   }, [effectiveFormId, forceRefreshAll, reloadFromCache, showUndeleteConfirm.entryIds, userEmail]);
 
   return {
