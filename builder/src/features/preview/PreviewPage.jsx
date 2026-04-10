@@ -1,4 +1,4 @@
-import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { collectResponses, sortResponses } from "../../core/collect.js";
 import { computeSchemaHash, DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
 import { collectValidationErrors, formatValidationErrors, isNumberInputDraftAllowed, validateByPattern } from "../../core/validate.js";
@@ -11,6 +11,7 @@ import { collectDefaultNowResponses } from "../../utils/responses.js";
 import { resolveLabelSize, resolveTextColor } from "../../core/styleSettings.js";
 import { genRecordId } from "../../core/ids.js";
 import { getStandardPhonePlaceholder } from "../../core/phone.js";
+import { resolveTemplateTokens, buildLabelValueMap } from "../../utils/tokenReplacer.js";
 import {
   buildPrintDocumentPayload,
   buildFieldLabelsMap,
@@ -33,6 +34,7 @@ import {
   resolveEffectiveDriveFolderUrl,
 } from "../../utils/driveFolderState.js";
 import FileUploadField from "./FileUploadField.jsx";
+import { buildSharedFormUrl, buildSharedRecordUrl } from "../../utils/formShareUrl.js";
 
 const resolveConfiguredPlaceholder = (field, fallback = "") => {
   if (field?.showPlaceholder !== true) return "";
@@ -40,6 +42,8 @@ const resolveConfiguredPlaceholder = (field, fallback = "") => {
 };
 
 const getNumberInputMode = (field) => (field?.integerOnly ? "numeric" : "decimal");
+
+const identityFn = (v) => v || "";
 
 const FieldRenderer = ({
   field,
@@ -55,6 +59,7 @@ const FieldRenderer = ({
   onTemplateAction,
   canDeleteDriveFolder,
   onDeleteDriveFolder,
+  resolveTokens = identityFn,
 }) => {
   const validation = validateByPattern(field, value);
   const selectedChoiceLabels = toSelectedChoiceLabels(field, value);
@@ -98,7 +103,7 @@ const FieldRenderer = ({
     return (
       <div className="preview-field">
         <div className="preview-label" style={labelStyleVars}>
-          {field.label || <span className="nf-text-faded">メッセージ</span>}
+          {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">メッセージ</span>}
         </div>
       </div>
     );
@@ -108,7 +113,7 @@ const FieldRenderer = ({
     return (
       <div className="preview-field">
         <label className="preview-label" style={labelStyleVars}>
-          {field.label || <span className="nf-text-faded">項目</span>}
+          {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">項目</span>}
         </label>
         <button
           type="button"
@@ -126,7 +131,7 @@ const FieldRenderer = ({
     return (
       <div className="preview-field">
         <label className="preview-label" style={labelStyleVars}>
-          {field.label || <span className="nf-text-faded">項目</span>}
+          {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">項目</span>}
           {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
         </label>
         <FileUploadField
@@ -166,7 +171,7 @@ const FieldRenderer = ({
     return (
       <div className="preview-field">
         <label className="preview-label" style={labelStyleVars}>
-          {field.label || <span className="nf-text-faded">項目</span>}
+          {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">項目</span>}
           {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
         </label>
         <div className={readOnlyClassName}>{renderReadOnlyValue()}</div>
@@ -176,10 +181,12 @@ const FieldRenderer = ({
     );
   }
 
+  const rph = (fallback = "") => resolveTokens(resolveConfiguredPlaceholder(field, fallback));
+
   return (
     <div className="preview-field">
       <label className="preview-label" style={labelStyleVars}>
-        {field.label || <span className="nf-text-faded">項目</span>}
+        {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">項目</span>}
         {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
       </label>
 
@@ -192,10 +199,10 @@ const FieldRenderer = ({
           placeholder={field.type === "userName"
             ? "入力ユーザー名"
             : field.type === "email"
-              ? resolveConfiguredPlaceholder(field, "user@example.com")
+              ? rph("user@example.com")
               : field.type === "phone"
-                ? resolveConfiguredPlaceholder(field, getStandardPhonePlaceholder(field))
-                : resolveConfiguredPlaceholder(field, "")}
+                ? rph(getStandardPhonePlaceholder(field))
+                : rph("")}
           maxLength={textMaxLength}
           inputMode={field.type === "phone" ? "tel" : undefined}
         />
@@ -207,7 +214,7 @@ const FieldRenderer = ({
           onChange={(event) => onChange(event.target.value)}
           className={showInlineValidation ? `${s.input.className} nf-input--error` : s.input.className}
           style={{ height: `${(field.multilineRows || DEFAULT_MULTILINE_ROWS) * 24}px` }}
-          placeholder={resolveConfiguredPlaceholder(field, "")}
+          placeholder={rph("")}
           maxLength={textMaxLength}
         />
       )}
@@ -223,7 +230,7 @@ const FieldRenderer = ({
             }
           }}
           className={showInlineValidation ? `${s.input.className} nf-input--error` : s.input.className}
-          placeholder={resolveConfiguredPlaceholder(field, "")}
+          placeholder={rph("")}
           inputMode={getNumberInputMode(field)}
         />
       )}
@@ -235,7 +242,7 @@ const FieldRenderer = ({
             value={value ?? ""}
             onChange={(event) => onChange(event.target.value)}
             className={validation.ok ? s.input.className : `${s.input.className} nf-input--error`}
-            placeholder={resolveConfiguredPlaceholder(field, "")}
+            placeholder={rph("")}
           />
           {showInlineValidation && (
             <div className="nf-text-danger-ink nf-text-12 nf-mt-4">{validation.message}</div>
@@ -268,7 +275,7 @@ const FieldRenderer = ({
           value={value ?? ""}
           onChange={(event) => onChange(event.target.value)}
           className={showInlineValidation ? `${s.input.className} nf-input--error` : s.input.className}
-          placeholder={resolveConfiguredPlaceholder(field, "")}
+          placeholder={rph("")}
         />
       )}
 
@@ -283,7 +290,7 @@ const FieldRenderer = ({
             return (
               <label key={opt.id} className="nf-block nf-mb-4">
                 <input type="radio" name={field.id} checked={selectedSingleChoice === optionLabel} onChange={() => onChange(optionLabel)} />
-                <span className="nf-ml-6">{optionLabel || "選択肢"}</span>
+                <span className="nf-ml-6">{optionLabel ? resolveTokens(optionLabel) : "選択肢"}</span>
               </label>
             );
           })}
@@ -293,22 +300,28 @@ const FieldRenderer = ({
       {field.type === "select" && (
         <select value={selectedSingleChoice} onChange={(event) => onChange(event.target.value)} className={s.input.className}>
           <option value="">-- 未選択 --</option>
-          {(field.options || []).map((opt) => (
-            <option key={opt.id} value={typeof opt?.label === "string" ? opt.label : ""}>
-              {(typeof opt?.label === "string" ? opt.label : "") || "選択肢"}
-            </option>
-          ))}
+          {(field.options || []).map((opt) => {
+            const rawLabel = typeof opt?.label === "string" ? opt.label : "";
+            return (
+              <option key={opt.id} value={rawLabel}>
+                {rawLabel ? resolveTokens(rawLabel) : "選択肢"}
+              </option>
+            );
+          })}
         </select>
       )}
 
       {field.type === "weekday" && (
         <select value={selectedSingleChoice} onChange={(event) => onChange(event.target.value)} className={s.input.className}>
           <option value="">-- 未選択 --</option>
-          {(field.options || []).map((opt) => (
-            <option key={opt.id} value={typeof opt?.label === "string" ? opt.label : ""}>
-              {(typeof opt?.label === "string" ? opt.label : "") || "選択肢"}
-            </option>
-          ))}
+          {(field.options || []).map((opt) => {
+            const rawLabel = typeof opt?.label === "string" ? opt.label : "";
+            return (
+              <option key={opt.id} value={rawLabel}>
+                {rawLabel ? resolveTokens(rawLabel) : "選択肢"}
+              </option>
+            );
+          })}
         </select>
       )}
 
@@ -329,7 +342,7 @@ const FieldRenderer = ({
                       onChange(Array.from(next));
                     }}
                   />
-                  <span className="nf-ml-6">{optionLabel || "選択肢"}</span>
+                  <span className="nf-ml-6">{optionLabel ? resolveTokens(optionLabel) : "選択肢"}</span>
                 </label>
                 {checked && renderChildrenForOption && (
                   <div className={s.child.className}>{renderChildrenForOption(optionLabel)}</div>
@@ -360,6 +373,7 @@ const RendererRecursive = ({
   onTemplateAction,
   canDeleteDriveFolder,
   onDeleteDriveFolder,
+  resolveTokens,
 }) => {
   const renderChildrenAll = (field, fid) => () => {
     if (!field?.childrenByValue) return null;
@@ -383,6 +397,7 @@ const RendererRecursive = ({
           onTemplateAction={onTemplateAction}
           canDeleteDriveFolder={canDeleteDriveFolder}
           onDeleteDriveFolder={onDeleteDriveFolder}
+          resolveTokens={resolveTokens}
         />
       );
     }
@@ -404,6 +419,7 @@ const RendererRecursive = ({
           onTemplateAction={onTemplateAction}
           canDeleteDriveFolder={canDeleteDriveFolder}
           onDeleteDriveFolder={onDeleteDriveFolder}
+          resolveTokens={resolveTokens}
         />
       ));
     }
@@ -428,6 +444,7 @@ const RendererRecursive = ({
         onTemplateAction={onTemplateAction}
         canDeleteDriveFolder={canDeleteDriveFolder}
         onDeleteDriveFolder={onDeleteDriveFolder}
+        resolveTokens={resolveTokens}
       />
     );
   };
@@ -454,6 +471,7 @@ const RendererRecursive = ({
               onTemplateAction={onTemplateAction}
               canDeleteDriveFolder={canDeleteDriveFolder}
               onDeleteDriveFolder={onDeleteDriveFolder}
+              resolveTokens={resolveTokens}
             />
           </div>
         );
@@ -556,6 +574,18 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     fieldLabels,
     fieldValues,
   }), [settings.formId, responses, fieldLabels, fieldValues]);
+
+  const resolveTokens = useMemo(() => {
+    const baseUrl = typeof window !== "undefined" ? (window.__GAS_WEBAPP_URL__ || window.location.origin) : "";
+    const formId = settings.formId || "";
+    const recordId = recordIdRef.current;
+    const folderUrl = resolveEffectiveDriveFolderUrl(driveFolderState) || "";
+    const formUrl = buildSharedFormUrl(baseUrl, formId);
+    const recordUrl = buildSharedRecordUrl(baseUrl, formId, recordId);
+    const labelValueMap = buildLabelValueMap(fieldLabels, fieldValues, responses, schema);
+    const ctx = { now: new Date(), recordId, folderUrl, formUrl, recordUrl, labelValueMap };
+    return (text) => resolveTemplateTokens(text, ctx);
+  }, [fieldLabels, fieldValues, responses, schema, settings.formId, driveFolderState]);
 
   const [isSaving, setIsSaving] = useState(false);
   const showRecordOutputAlert = (result, fallbackOutputType) => {
@@ -789,6 +819,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         onTemplateAction={handleFieldTemplateAction}
         canDeleteDriveFolder={canDeleteDriveFolder}
         onDeleteDriveFolder={onDeleteDriveFolder}
+        resolveTokens={resolveTokens}
       />
       {showOutputJson && (
         <div className="nf-mt-12">
