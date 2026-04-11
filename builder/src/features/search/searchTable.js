@@ -4,7 +4,6 @@ import {
   formatUnixMsDateTimeSec,
   toUnixMs,
 } from "../../utils/dateTime.js";
-import { isChoiceMarkerValue } from "../../utils/responses.js";
 import { MAX_DEPTH as MAX_HEADER_DEPTH } from "../../core/constants.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 import { getPrintTemplateOutputLabel, normalizePrintTemplateAction } from "../../utils/printTemplateAction.js";
@@ -14,30 +13,11 @@ import {
   normalizeSearchText,
   debugLog,
   collectFieldValue,
-  collectDirectOptionLabels,
-  compareStrings,
-  computeRowValues,
 } from "./searchTableValues.js";
 
 export { MAX_HEADER_DEPTH };
 
-// Re-export from searchTableValues.js for backward compatibility
-export {
-  formatDateTime,
-  computeRowValues,
-  compareByColumn,
-  buildDisplayText,
-  applyDisplayLengthLimit,
-  parseSearchCellDisplayLimit,
-} from "./searchTableValues.js";
-
-// Re-export from searchQueryEngine.js for backward compatibility
-export {
-  getKeywordMatchDetail,
-  matchesKeyword,
-} from "./searchQueryEngine.js";
-
-const isExcludedSearchOrPrintField = (field) => (
+export const isExcludedSearchOrPrintField = (field) => (
   field?.type === "printTemplate"
   || (field?.type === "message" && field?.excludeFromSearchAndPrint === true)
 );
@@ -85,7 +65,7 @@ const getFileDisplayName = (file) => {
   return typeof file.name === "string" ? file.name : "";
 };
 
-const createBaseColumns = () => [
+export const createBaseColumns = () => [
   {
     key: "id",
     segments: ["ID"],
@@ -148,7 +128,7 @@ const createBaseColumns = () => [
   },
 ];
 
-const createDisplayColumn = (path, sourceType = "", options = {}) => {
+export const createDisplayColumn = (path, sourceType = "", options = {}) => {
   const normalizedSegments = Array.isArray(options.segments)
     ? [...options.segments]
     : splitFieldPath(path);
@@ -443,9 +423,6 @@ export const buildHeaderRows = (columns) => {
   return rows;
 };
 
-;
-
-;
 export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
   if (!multiHeaderRows || multiHeaderRows.length === 0) return baseColumns || [];
 
@@ -524,12 +501,9 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
   return result;
 };
 
-
-;
-
 export const buildSearchTableLayout = (
   form,
-  { headerMatrix: _headerMatrix = null, includeOperations = true } = {},
+  { includeOperations = true } = {},
 ) => {
   const columns = buildSearchColumns(form, { includeOperations });
   const baseHeaderRows = buildHeaderRows(columns);
@@ -552,13 +526,13 @@ export const buildSearchTableLayout = (
   };
 };
 
-const padRowToLength = (row, length) => {
+export const padRowToLength = (row, length) => {
   const base = Array.isArray(row) ? row.slice(0, length) : [];
   while (base.length < length) base.push("");
   return base.map((cell) => (cell === null || cell === undefined ? "" : String(cell)));
 };
 
-const expandHeaderRowsToMatrix = (headerRows, columnCount) => {
+export const expandHeaderRowsToMatrix = (headerRows, columnCount) => {
   if (!Array.isArray(headerRows) || headerRows.length === 0 || columnCount <= 0) return [];
   const matrix = Array.from({ length: headerRows.length }, () => Array(columnCount).fill(""));
   headerRows.forEach((row, rowIndex) => {
@@ -572,7 +546,7 @@ const expandHeaderRowsToMatrix = (headerRows, columnCount) => {
   return matrix;
 };
 
-const suppressDuplicateHeaderLabels = (matrix) => {
+export const suppressDuplicateHeaderLabels = (matrix) => {
   if (!Array.isArray(matrix) || matrix.length === 0) return matrix;
   return matrix.map((row) => {
     if (!Array.isArray(row)) return row;
@@ -592,53 +566,3 @@ const suppressDuplicateHeaderLabels = (matrix) => {
   });
 };
 
-const collectAllFieldSettings = (schema) => {
-  const collected = [];
-  const seen = new Set();
-  traverseSchema(schema || [], (field, context) => {
-    if (isExcludedSearchOrPrintField(field)) return;
-    const path = context?.pathSegments?.join("|") || "";
-    if (!path || seen.has(path)) return;
-    seen.add(path);
-    collected.push({
-      path,
-      type: field?.type || "",
-    });
-  });
-  return collected;
-};
-
-export const buildExportColumns = (form, { includeBaseColumns = true } = {}) => {
-  const columns = [];
-  if (includeBaseColumns) {
-    columns.push(...createBaseColumns());
-  }
-  collectAllFieldSettings(form?.schema || []).forEach(({ path, type }) => {
-    if (!path) return;
-    columns.push(createDisplayColumn(path, type));
-  });
-  return columns;
-};
-
-export const buildExportTableData = ({ form, entries }) => {
-  const columns = buildExportColumns(form, { includeBaseColumns: true });
-  const headerRows = buildHeaderRows(columns);
-  const headerMatrix = expandHeaderRowsToMatrix(headerRows, columns.length);
-  const deduped = suppressDuplicateHeaderLabels(headerMatrix);
-  const normalizedHeaderRows = deduped.map((row) => padRowToLength(row, columns.length));
-  const normalizedRows = [];
-  (entries || []).forEach((entry) => {
-    const values = computeRowValues(entry, columns);
-    const row = columns.map((column) => {
-      const display = values?.[column.key]?.display;
-      if (display === null || display === undefined) return "";
-      return String(display);
-    });
-    normalizedRows.push(padRowToLength(row, columns.length));
-  });
-  return {
-    columns,
-    headerRows: normalizedHeaderRows,
-    rows: normalizedRows,
-  };
-};

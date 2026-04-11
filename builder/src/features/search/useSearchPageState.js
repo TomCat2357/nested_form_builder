@@ -1,27 +1,27 @@
-import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
-import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
-import { useSetSelection } from "../app/hooks/useSetSelection.js";
+import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
+import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
+import { useSetSelection } from "../../app/hooks/useSetSelection.js";
 import { useMemo, useState, useCallback, useEffect } from "react";
-import { dataStore } from "../app/state/dataStore.js";
-import { normalizeSchemaIDs } from "../core/schema.js";
+import { dataStore } from "../../app/state/dataStore.js";
+import { normalizeSchemaIDs } from "../../core/schema.js";
+import { buildSearchTableLayout } from "./searchTable.js";
+import { buildExportTableData } from "./searchExport.js";
 import {
-  buildSearchTableLayout,
-  buildExportTableData,
   computeRowValues,
   compareByColumn,
-  getKeywordMatchDetail,
   parseSearchCellDisplayLimit,
-} from "../features/search/searchTable.js";
+} from "./searchTableValues.js";
+import { getKeywordMatchDetail } from "./searchQueryEngine.js";
 import {
   buildFieldLabelsMap,
   resolveOmitEmptyRowsOnPrint,
-} from "../features/preview/printDocument.js";
-import { createExcelBlob, getThemeColors } from "../utils/excelExport.js";
-import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
-import { saveExcelToDrive } from "../services/gasClient.js";
-import { useSearchDisplayOverrides } from "../features/search/useSearchDisplayOverrides.js";
-import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
-import { DEFAULT_PAGE_SIZE } from "../core/constants.js";
+} from "../preview/printDocument.js";
+import { createExcelBlob, getThemeColors } from "../../utils/excelExport.js";
+import { useEntriesWithCache } from "./useEntriesWithCache.js";
+import { saveExcelToDrive } from "../../services/gasClient.js";
+import { useSearchDisplayOverrides } from "./useSearchDisplayOverrides.js";
+import { DEFAULT_THEME, applyThemeWithFallback } from "../../app/theme/theme.js";
+import { DEFAULT_PAGE_SIZE } from "../../core/constants.js";
 import { useSearchPagePrintActions } from "./useSearchPagePrintActions.js";
 
 export const buildInitialSort = (params) => {
@@ -73,7 +73,6 @@ export function useSearchPageState({
 
   const {
     entries,
-    headerMatrix,
     loading,
     backgroundLoading,
     waitingForLock,
@@ -94,10 +93,9 @@ export function useSearchPageState({
 
   const { columns, headerRows } = useMemo(
     () => buildSearchTableLayout(form, {
-      headerMatrix,
       includeOperations: false,
     }),
-    [form, headerMatrix],
+    [form],
   );
 
   const handleSearchChange = (value) => {

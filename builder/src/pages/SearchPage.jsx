@@ -11,7 +11,7 @@ import SearchSidebar from "../features/search/components/SearchSidebar.jsx";
 import SearchTable from "../features/search/components/SearchTable.jsx";
 import SearchPagination from "../features/search/components/SearchPagination.jsx";
 import SearchDisplaySettingsDialog from "../features/search/components/SearchDisplaySettingsDialog.jsx";
-import { useSearchPageState } from "./useSearchPageState.js";
+import { useSearchPageState } from "../features/search/useSearchPageState.js";
 
 export default function SearchPage() {
   const { getFormById } = useAppData();
