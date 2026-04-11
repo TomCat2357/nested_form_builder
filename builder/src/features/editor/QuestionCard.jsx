@@ -1,17 +1,14 @@
 import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
-import { deepClone, normalizeSchemaIDs, MAX_DEPTH } from "../../core/schema.js";
-import { genId } from "../../core/ids.js";
+import { MAX_DEPTH } from "../../core/schema.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
-import { buildPhonePattern, getStandardPhonePlaceholder } from "../../core/phone.js";
+import { buildPhonePattern } from "../../core/phone.js";
 import { normalizePrintTemplateAction } from "../../utils/printTemplateAction.js";
 import { styles as s } from "./styles.js";
-import OptionRow from "./OptionRow.jsx";
 import {
   WEEKDAY_TYPE,
   MESSAGE_TYPE,
   DISPLAY_LABEL,
-  EMAIL_PLACEHOLDER,
   isChoiceType,
   isDateOrTimeType,
   isMessageType,
@@ -24,6 +21,8 @@ import {
   NumberSettingsInput,
 } from "./QuestionCardInputs.jsx";
 import { useQuestionCardOptions } from "./useQuestionCardOptions.js";
+import { useFieldPlaceholderSync } from "./useFieldPlaceholderSync.js";
+import ChoiceOptionsSection from "./ChoiceOptionsSection.jsx";
 import {
   PrintTemplateSection,
   MessageSection,
@@ -34,6 +33,23 @@ import {
   DateTimeFieldSection,
   WeekdayFieldSection,
 } from "./QuestionCardSections.jsx";
+
+const FIELD_TYPE_OPTIONS = [
+  { value: "text", label: "テキスト" },
+  { value: "phone", label: "電話番号" },
+  { value: "email", label: "メールアドレス" },
+  { value: "url", label: "URL" },
+  { value: "number", label: "数値" },
+  { value: "date", label: "日付" },
+  { value: "time", label: "時間" },
+  { value: "weekday", label: "曜日" },
+  { value: "checkboxes", label: "チェックボックス" },
+  { value: "radio", label: "ラジオボタン" },
+  { value: "select", label: "ドロップダウン" },
+  { value: "fileUpload", label: "ファイルアップロード" },
+  { value: "printTemplate", label: "様式出力" },
+  { value: "message", label: "メッセージ" },
+];
 
 export default function QuestionCard({
   field,
@@ -63,11 +79,13 @@ export default function QuestionCard({
   const regexCheck = (isText && field.inputRestrictionMode === "pattern")
     ? buildSafeRegex(field.pattern || "")
     : { error: null };
-  const phonePlaceholder = isPhone ? getStandardPhonePlaceholder(field) : "";
   const phonePattern = isPhone ? buildPhonePattern(field) : "";
-  const prevPhonePlaceholderRef = React.useRef(phonePlaceholder);
   const isDisplayed = resolveIsDisplayed(field);
   const printTemplateAction = normalizePrintTemplateAction(field.printTemplateAction);
+
+  const { phonePlaceholder } = useFieldPlaceholderSync({
+    field, onChange, isText, isBasicInput, isEmail, isPhone,
+  });
 
   const {
     selectedOptionIndex,
@@ -81,34 +99,6 @@ export default function QuestionCard({
     applyDisplayedFlag(nextField, checked);
     onChange(nextField);
   };
-
-  React.useEffect(() => {
-    if ((isText || isBasicInput || isEmail || isPhone) && field.placeholder && !field.showPlaceholder) {
-      onChange({ ...field, showPlaceholder: true });
-    }
-  }, []);
-
-  React.useEffect(() => {
-    if (isEmail && field.showPlaceholder && !field.placeholder) {
-      onChange({ ...field, placeholder: EMAIL_PLACEHOLDER });
-    }
-  }, [isEmail, field.showPlaceholder, field.placeholder]);
-
-  React.useEffect(() => {
-    if (!isPhone) {
-      prevPhonePlaceholderRef.current = "";
-      return;
-    }
-
-    const previousStandard = prevPhonePlaceholderRef.current;
-    const currentPlaceholder = typeof field.placeholder === "string" ? field.placeholder : "";
-    if (field.showPlaceholder && currentPlaceholder === previousStandard && currentPlaceholder !== phonePlaceholder) {
-      prevPhonePlaceholderRef.current = phonePlaceholder;
-      onChange({ ...field, placeholder: phonePlaceholder });
-      return;
-    }
-    prevPhonePlaceholderRef.current = phonePlaceholder;
-  }, [isPhone, field.showPlaceholder, field.placeholder, phonePlaceholder]);
 
   const cardAttrs = s.card(0, isSelected);
 
@@ -136,20 +126,9 @@ export default function QuestionCard({
           }}
           onFocus={onFocus}
         >
-          <option value="text">テキスト</option>
-          <option value="phone">電話番号</option>
-          <option value="email">メールアドレス</option>
-          <option value="url">URL</option>
-          <option value="number">数値</option>
-          <option value="date">日付</option>
-          <option value="time">時間</option>
-          <option value="weekday">曜日</option>
-          <option value="checkboxes">チェックボックス</option>
-          <option value="radio">ラジオボタン</option>
-          <option value="select">ドロップダウン</option>
-          <option value="fileUpload">ファイルアップロード</option>
-          <option value="printTemplate">様式出力</option>
-          <option value="message">メッセージ</option>
+          {FIELD_TYPE_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
         </select>
         {!isMessage && !isPrintTemplate && (
           <label className="nf-row nf-gap-4 nf-nowrap">
@@ -196,114 +175,22 @@ export default function QuestionCard({
       {isWeekday && <WeekdayFieldSection field={field} onChange={onChange} />}
 
       {isChoice && (
-        <div className="nf-mt-8">
-          <div className="nf-row-between nf-mb-6">
-            <strong>選択肢</strong>
-            <button
-              type="button"
-              className={s.btn.className}
-              onClick={() => {
-                const next = deepClone(field);
-                next.options = next.options || [];
-                next.options.push({ id: genId(), label: "", defaultSelected: false });
-                onChange(next);
-              }}
-            >
-              選択肢を追加
-            </button>
-          </div>
-
-          {(field.options || []).map((opt, index) => (
-            <OptionRow
-              key={opt.id}
-              option={opt}
-              onChange={(nextOpt) => {
-                const next = deepClone(field);
-                const prevLabel = opt.label || "";
-                const nextLabel = nextOpt.label || "";
-                next.options[index] = {
-                  id: nextOpt.id || genId(),
-                  label: nextLabel,
-                  defaultSelected: !!nextOpt.defaultSelected,
-                };
-
-                if (prevLabel !== nextLabel && next.childrenByValue?.[prevLabel]) {
-                  next.childrenByValue = { ...next.childrenByValue };
-                  const movedChildren = next.childrenByValue[prevLabel];
-                  const existing = next.childrenByValue[nextLabel];
-                  next.childrenByValue[nextLabel] = existing
-                    ? normalizeSchemaIDs([...movedChildren, ...existing])
-                    : movedChildren;
-                  delete next.childrenByValue[prevLabel];
-                }
-                onChange(next);
-              }}
-              onDelete={() => {
-                const next = deepClone(field);
-                next.options.splice(index, 1);
-                onChange(next);
-                if (selectedOptionIndex === index) {
-                  setSelectedOptionIndex(null);
-                } else if (selectedOptionIndex > index) {
-                  setSelectedOptionIndex(selectedOptionIndex - 1);
-                }
-              }}
-              onFocus={() => {
-                setSelectedOptionIndex(index);
-                const controlInfo = buildOptionControlInfo(index);
-                if (controlInfo) onFocus(controlInfo);
-              }}
-              isSelected={selectedOptionIndex === index}
-              onAddChild={() => {
-                if (!canAddChild) return;
-                const next = deepClone(field);
-                next.childrenByValue = next.childrenByValue || {};
-                const key = opt.label;
-                next.childrenByValue[key] = normalizeSchemaIDs(next.childrenByValue[key] || []);
-                next.childrenByValue[key].push({ id: genId(), type: "text", label: "" });
-                onChange(next);
-              }}
-              canAddChild={canAddChild}
-              defaultSelectionControl={
-                <label className="nf-row nf-gap-4 nf-nowrap">
-                  <input
-                    type="checkbox"
-                    checked={!!opt.defaultSelected}
-                    onChange={(event) => updateChoiceDefaultSelection(index, event.target.checked)}
-                    onFocus={() => {
-                      setSelectedOptionIndex(index);
-                      const controlInfo = buildOptionControlInfo(index);
-                      if (controlInfo) onFocus(controlInfo);
-                    }}
-                  />
-                  初期選択
-                </label>
-              }
-              childrenArea={
-                (() => {
-                  const hasChildren = field.childrenByValue && field.childrenByValue[opt.label]?.length;
-                  return hasChildren ? (
-                    <div className={s.child.className}>
-                      <QuestionListComponent
-                        fields={field.childrenByValue[opt.label]}
-                        onChange={(childFields) => {
-                          const next = deepClone(field);
-                          next.childrenByValue[opt.label] = normalizeSchemaIDs(childFields);
-                          onChange(next);
-                        }}
-                        depth={depth + 1}
-                        onQuestionControlChange={onQuestionControlChange}
-                        getTempState={getTempState}
-                        setTempState={setTempState}
-                        clearTempState={clearTempState}
-                      />
-                    </div>
-                  ) : null;
-                })()
-              }
-            />
-          ))}
-        </div>
+        <ChoiceOptionsSection
+          field={field}
+          onChange={onChange}
+          onFocus={onFocus}
+          canAddChild={canAddChild}
+          depth={depth}
+          selectedOptionIndex={selectedOptionIndex}
+          setSelectedOptionIndex={setSelectedOptionIndex}
+          buildOptionControlInfo={buildOptionControlInfo}
+          updateChoiceDefaultSelection={updateChoiceDefaultSelection}
+          QuestionListComponent={QuestionListComponent}
+          onQuestionControlChange={onQuestionControlChange}
+          getTempState={getTempState}
+          setTempState={setTempState}
+          clearTempState={clearTempState}
+        />
       )}
 
       <div className="nf-row nf-gap-8 nf-mt-12">

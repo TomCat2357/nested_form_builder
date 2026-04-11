@@ -1,5 +1,5 @@
 import React from "react";
-import QuestionList from "./QuestionList.jsx";
+import QuestionList, { ActiveFocusProvider } from "./QuestionList.jsx";
 import { normalizeSchemaIDs } from "../../core/schema.js";
 import { styles as s } from "./styles.js";
 import { genId } from "../../core/ids.js";
@@ -67,18 +67,20 @@ export default function EditorPage({ schema, onSchemaChange, onQuestionControlCh
   };
 
   return (
-    <div>
-      <QuestionList
-        fields={schema}
-        onChange={onSchemaChange}
-        onQuestionControlChange={onQuestionControlChange}
-        getTempState={getTempState}
-        setTempState={setTempState}
-        clearTempState={clearTempState}
-      />
-      <div className="nf-row-center nf-mt-12">
-        <button type="button" className={s.btn.className} onClick={handleAddQuestion}>質問を追加</button>
+    <ActiveFocusProvider>
+      <div>
+        <QuestionList
+          fields={schema}
+          onChange={onSchemaChange}
+          onQuestionControlChange={onQuestionControlChange}
+          getTempState={getTempState}
+          setTempState={setTempState}
+          clearTempState={clearTempState}
+        />
+        <div className="nf-row-center nf-mt-12">
+          <button type="button" className={s.btn.className} onClick={handleAddQuestion}>質問を追加</button>
+        </div>
       </div>
-    </div>
+    </ActiveFocusProvider>
   );
 }
