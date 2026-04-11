@@ -15,7 +15,94 @@ import {
   TextInputRestrictionInput,
 } from "./QuestionCardInputs.jsx";
 
+function PrintTemplateDocFields({ field, onChange, printTemplateAction }) {
+  const updateAction = (patch) => onChange({
+    ...field,
+    printTemplateAction: { ...printTemplateAction, ...patch, enabled: true },
+  });
+
+  return (
+    <>
+      <label className="nf-row nf-gap-6">
+        <input
+          type="checkbox"
+          checked={!!printTemplateAction.useCustomTemplate}
+          onChange={(event) => updateAction({ useCustomTemplate: event.target.checked })}
+        />
+        カスタムテンプレートを使う
+      </label>
+      {printTemplateAction.useCustomTemplate && (
+        <input
+          className={s.input.className}
+          placeholder="テンプレートURL（Google Document URL）"
+          value={printTemplateAction.templateUrl || ""}
+          onChange={(event) => updateAction({ templateUrl: event.target.value })}
+        />
+      )}
+      <input
+        className={s.input.className}
+        placeholder="出力ファイル名（例: {ID}_{_NOW|date:YYYY-MM-DD}）"
+        value={printTemplateAction.fileNameTemplate || ""}
+        onChange={(event) => updateAction({ fileNameTemplate: event.target.value })}
+      />
+      <div className="nf-text-11 nf-text-muted">未指定時はフォーム設定の標準様式出力ファイル名規則を使用します。</div>
+    </>
+  );
+}
+
+const GMAIL_TEMPLATE_FIELDS = [
+  { key: "gmailTemplateTo", label: "To", placeholder: "例: {メールアドレス}" },
+  { key: "gmailTemplateCc", label: "Cc", placeholder: "例: {メールアドレス}" },
+  { key: "gmailTemplateBcc", label: "Bcc", placeholder: "例: {メールアドレス}" },
+  { key: "gmailTemplateSubject", label: "件名", placeholder: "例: 【申請】{ID}_{_NOW|date:YYYY-MM-DD}" },
+];
+
+function PrintTemplateGmailFields({ field, onChange, printTemplateAction }) {
+  const updateAction = (patch) => onChange({
+    ...field,
+    printTemplateAction: { ...printTemplateAction, ...patch, enabled: true },
+  });
+
+  return (
+    <>
+      <label className="nf-row nf-gap-8 nf-items-center">
+        <input
+          type="checkbox"
+          checked={printTemplateAction.gmailAttachPdf || false}
+          onChange={(event) => updateAction({ gmailAttachPdf: event.target.checked })}
+        />
+        <span className="nf-text-11">PDF を添付</span>
+      </label>
+      {printTemplateAction.gmailAttachPdf && (
+        <div className="nf-text-11 nf-text-muted">PDF 添付時の出力名は、フォーム設定の標準様式出力ファイル名規則か既定値を使用します。</div>
+      )}
+      {GMAIL_TEMPLATE_FIELDS.map(({ key, label, placeholder }) => (
+        <label key={key} className="nf-col nf-gap-4">
+          <span className="nf-text-11 nf-text-muted">{label}</span>
+          <input
+            className={s.input.className}
+            placeholder={placeholder}
+            value={printTemplateAction[key] || ""}
+            onChange={(event) => updateAction({ [key]: event.target.value })}
+          />
+        </label>
+      ))}
+      <label className="nf-col nf-gap-4">
+        <span className="nf-text-11 nf-text-muted">本文</span>
+        <textarea
+          className={`${s.input.className} nf-h-96`}
+          placeholder="本文テンプレートを入力"
+          value={printTemplateAction.gmailTemplateBody || ""}
+          onChange={(event) => updateAction({ gmailTemplateBody: event.target.value })}
+        />
+      </label>
+    </>
+  );
+}
+
 export function PrintTemplateSection({ field, onChange, printTemplateAction }) {
+  const isGmail = printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL;
+
   return (
     <div className="nf-mt-8">
       <div className="nf-col nf-gap-8">
@@ -36,130 +123,10 @@ export function PrintTemplateSection({ field, onChange, printTemplateAction }) {
             <option key={option.value} value={option.value}>{option.label}</option>
           ))}
         </select>
-        {printTemplateAction.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
-          <label className="nf-row nf-gap-6">
-            <input
-              type="checkbox"
-              checked={!!printTemplateAction.useCustomTemplate}
-              onChange={(event) => onChange({
-                ...field,
-                printTemplateAction: {
-                  ...printTemplateAction,
-                  useCustomTemplate: event.target.checked,
-                  enabled: true,
-                },
-              })}
-            />
-            カスタムテンプレートを使う
-          </label>
-        )}
-        {printTemplateAction.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && printTemplateAction.useCustomTemplate && (
-          <input
-            className={s.input.className}
-            placeholder="テンプレートURL（Google Document URL）"
-            value={printTemplateAction.templateUrl || ""}
-            onChange={(event) => onChange({
-              ...field,
-              printTemplateAction: { ...printTemplateAction, templateUrl: event.target.value, enabled: true },
-            })}
-          />
-        )}
-        {printTemplateAction.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
-          <>
-            <input
-              className={s.input.className}
-              placeholder="出力ファイル名（例: {ID}_{_NOW|date:YYYY-MM-DD}）"
-              value={printTemplateAction.fileNameTemplate || ""}
-              onChange={(event) => onChange({
-                ...field,
-                printTemplateAction: { ...printTemplateAction, fileNameTemplate: event.target.value, enabled: true },
-              })}
-            />
-            <div className="nf-text-11 nf-text-muted">未指定時はフォーム設定の標準様式出力ファイル名規則を使用します。</div>
-          </>
-        )}
-        {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
-          <>
-            <label className="nf-row nf-gap-8 nf-items-center">
-              <input
-                type="checkbox"
-                checked={printTemplateAction.gmailAttachPdf || false}
-                onChange={(event) => onChange({
-                  ...field,
-                  printTemplateAction: { ...printTemplateAction, gmailAttachPdf: event.target.checked, enabled: true },
-                })}
-              />
-              <span className="nf-text-11">PDF を添付</span>
-            </label>
-            {printTemplateAction.gmailAttachPdf && (
-              <div className="nf-text-11 nf-text-muted">PDF 添付時の出力名は、フォーム設定の標準様式出力ファイル名規則か既定値を使用します。</div>
-            )}
-          </>
-        )}
-        {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
-          <>
-            <label className="nf-col nf-gap-4">
-              <span className="nf-text-11 nf-text-muted">To</span>
-              <input
-                className={s.input.className}
-                placeholder="例: {メールアドレス}"
-                value={printTemplateAction.gmailTemplateTo || ""}
-                onChange={(event) => onChange({
-                  ...field,
-                  printTemplateAction: { ...printTemplateAction, gmailTemplateTo: event.target.value, enabled: true },
-                })}
-              />
-            </label>
-            <label className="nf-col nf-gap-4">
-              <span className="nf-text-11 nf-text-muted">Cc</span>
-              <input
-                className={s.input.className}
-                placeholder="例: {メールアドレス}"
-                value={printTemplateAction.gmailTemplateCc || ""}
-                onChange={(event) => onChange({
-                  ...field,
-                  printTemplateAction: { ...printTemplateAction, gmailTemplateCc: event.target.value, enabled: true },
-                })}
-              />
-            </label>
-            <label className="nf-col nf-gap-4">
-              <span className="nf-text-11 nf-text-muted">Bcc</span>
-              <input
-                className={s.input.className}
-                placeholder="例: {メールアドレス}"
-                value={printTemplateAction.gmailTemplateBcc || ""}
-                onChange={(event) => onChange({
-                  ...field,
-                  printTemplateAction: { ...printTemplateAction, gmailTemplateBcc: event.target.value, enabled: true },
-                })}
-              />
-            </label>
-            <label className="nf-col nf-gap-4">
-              <span className="nf-text-11 nf-text-muted">件名</span>
-              <input
-                className={s.input.className}
-                placeholder="例: 【申請】{ID}_{_NOW|date:YYYY-MM-DD}"
-                value={printTemplateAction.gmailTemplateSubject || ""}
-                onChange={(event) => onChange({
-                  ...field,
-                  printTemplateAction: { ...printTemplateAction, gmailTemplateSubject: event.target.value, enabled: true },
-                })}
-              />
-            </label>
-            <label className="nf-col nf-gap-4">
-              <span className="nf-text-11 nf-text-muted">本文</span>
-              <textarea
-                className={`${s.input.className} nf-h-96`}
-                placeholder="本文テンプレートを入力"
-                value={printTemplateAction.gmailTemplateBody || ""}
-                onChange={(event) => onChange({
-                  ...field,
-                  printTemplateAction: { ...printTemplateAction, gmailTemplateBody: event.target.value, enabled: true },
-                })}
-              />
-            </label>
-          </>
-        )}
+        {isGmail
+          ? <PrintTemplateGmailFields field={field} onChange={onChange} printTemplateAction={printTemplateAction} />
+          : <PrintTemplateDocFields field={field} onChange={onChange} printTemplateAction={printTemplateAction} />
+        }
         <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {ID} / {_NOW} / {フィールド名} を使えます。{_NOW|date:YYYY-MM-DD} や {_NOW|time:HH:mm} のようにパイプで書式を指定できます。予約語と同名の項目は {\\フィールド名} で参照します。Gmail 本文では {_folder_url} / {_record_url} / {_form_url} も使えます。"}</div>
       </div>
     </div>

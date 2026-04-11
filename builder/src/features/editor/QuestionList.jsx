@@ -27,8 +27,6 @@ function swapItems(array, index1, index2) {
   return next;
 }
 
-let globalActiveFocusId = null;
-
 /**
  * 質問制御情報を生成
  */
@@ -89,6 +87,28 @@ function clearTempStateForField(field, clearTempState) {
   }
 }
 
+/**
+ * フォーカス中の質問/選択肢を全 QuestionList インスタンスで共有するための ref。
+ * モジュールスコープのグローバル変数ではなく React.createContext 経由で
+ * 共有し、複数レンダーツリーでも安全に動作する。
+ */
+const ActiveFocusContext = React.createContext(null);
+
+export function ActiveFocusProvider({ children }) {
+  const ref = React.useRef(null);
+  return (
+    <ActiveFocusContext.Provider value={ref}>
+      {children}
+    </ActiveFocusContext.Provider>
+  );
+}
+
+function useActiveFocusRef() {
+  const ctxRef = React.useContext(ActiveFocusContext);
+  const fallbackRef = React.useRef(null);
+  return ctxRef ?? fallbackRef;
+}
+
 export default function QuestionList({
   fields,
   onChange,
@@ -99,6 +119,7 @@ export default function QuestionList({
   clearTempState,
 }) {
   const { showAlert } = useAlert();
+  const activeFocusRef = useActiveFocusRef();
   const normalized = normalizeSchemaIDs(fields);
   const [selectedIndex, setSelectedIndex] = React.useState(null);
   const [optionControl, setOptionControl] = React.useState(null);
@@ -124,9 +145,9 @@ export default function QuestionList({
         controlInfo = buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown);
       }
 
-      if (controlInfo && controlInfo.focusId === globalActiveFocusId) {
+      if (controlInfo && controlInfo.focusId === activeFocusRef.current) {
         onQuestionControlChange(controlInfo);
-      } else if (!globalActiveFocusId && selectedIndex === null) {
+      } else if (!activeFocusRef.current && selectedIndex === null) {
         onQuestionControlChange(null);
       }
     }
@@ -206,12 +227,12 @@ export default function QuestionList({
                 // 選択肢が選択された場合
                 setSelectedIndex(index);
                 setOptionControl(controlInfo);
-                globalActiveFocusId = `o_${fieldId}_${controlInfo.optionIndex}`;
+                activeFocusRef.current = `o_${fieldId}_${controlInfo.optionIndex}`;
               } else {
                 // 質問が選択された場合
                 setSelectedIndex(index);
                 setOptionControl(null);
-                globalActiveFocusId = `q_${fieldId}`;
+                activeFocusRef.current = `q_${fieldId}`;
               }
             }}
             isSelected={selectedIndex === index}
