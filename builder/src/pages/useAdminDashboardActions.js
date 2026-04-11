@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import JSZip from "jszip";
+import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import { hasScriptRun, importFormsFromDrive } from "../services/gasClient.js";
 import { toUnixMs } from "../utils/dateTime.js";
 
@@ -71,13 +72,13 @@ export function useAdminDashboardActions({
   copyForm,
   registerImportedForm,
 }) {
-  const [confirmArchive, setConfirmArchive] = useState({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
-  const [confirmDelete, setConfirmDelete] = useState({ open: false, formId: null, targetIds: [], multiple: false });
+  const archiveDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
+  const deleteDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const [confirmCopy, setConfirmCopy] = useState({ open: false, formId: null });
+  const copyDialog = useConfirmDialog({ formId: null });
   const [copying, setCopying] = useState(false);
 
   const handleArchiveSelected = () => {
@@ -92,8 +93,7 @@ export function useAdminDashboardActions({
 
     const targetIds = selectedForms.map((form) => form.id);
     const firstId = targetIds[0];
-    setConfirmArchive({
-      open: true,
+    archiveDialog.open({
       formId: firstId,
       targetIds,
       multiple: targetIds.length > 1,
@@ -109,7 +109,7 @@ export function useAdminDashboardActions({
     }
     const targetIds = Array.from(selected);
     const firstId = targetIds[0];
-    setConfirmDelete({ open: true, formId: firstId, multiple: targetIds.length > 1, targetIds });
+    deleteDialog.open({ formId: firstId, multiple: targetIds.length > 1, targetIds });
   };
 
   const handleExport = async () => {
@@ -255,19 +255,19 @@ export function useAdminDashboardActions({
   };
 
   const confirmArchiveAction = () => {
-    const targetIds = (confirmArchive.targetIds && confirmArchive.targetIds.length
-      ? confirmArchive.targetIds
-      : confirmArchive.formId
-        ? [confirmArchive.formId]
+    const targetIds = (archiveDialog.state.targetIds && archiveDialog.state.targetIds.length
+      ? archiveDialog.state.targetIds
+      : archiveDialog.state.formId
+        ? [archiveDialog.state.formId]
         : []);
     if (!targetIds.length) return;
 
     // アーカイブ状態を保持
-    const shouldUnarchive = confirmArchive.allArchived;
+    const shouldUnarchive = archiveDialog.state.allArchived;
 
     // ダイアログを即座に閉じて選択をクリア
     clearSelectionByIds(targetIds);
-    setConfirmArchive({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
+    archiveDialog.reset();
 
     // バックグラウンドで一括処理を実行
     (async () => {
@@ -285,17 +285,17 @@ export function useAdminDashboardActions({
   };
 
   const confirmDeleteAction = async () => {
-    const targetIds = (confirmDelete.targetIds && confirmDelete.targetIds.length
-      ? confirmDelete.targetIds
-      : confirmDelete.formId
-        ? [confirmDelete.formId]
+    const targetIds = (deleteDialog.state.targetIds && deleteDialog.state.targetIds.length
+      ? deleteDialog.state.targetIds
+      : deleteDialog.state.formId
+        ? [deleteDialog.state.formId]
         : []);
     if (!targetIds.length) return;
 
     try {
       await deleteForms(targetIds);
       clearSelectionByIds(targetIds);
-      setConfirmDelete({ open: false, formId: null, targetIds: [], multiple: false });
+      deleteDialog.reset();
     } catch (error) {
       console.error("[AdminDashboard] Delete action failed:", error);
       showAlert(error?.message || "フォームの削除中にエラーが発生しました");
@@ -313,12 +313,12 @@ export function useAdminDashboardActions({
       showAlert("コピー可能なフォームを1件選択してください。");
       return;
     }
-    setConfirmCopy({ open: true, formId: selectedForm.id });
+    copyDialog.open({ formId: selectedForm.id });
   };
 
   const confirmCopyAction = async () => {
-    const formId = confirmCopy.formId;
-    setConfirmCopy({ open: false, formId: null });
+    const formId = copyDialog.state.formId;
+    copyDialog.reset();
     if (!formId) return;
 
     setCopying(true);
@@ -334,18 +334,18 @@ export function useAdminDashboardActions({
   };
 
   return {
-    confirmArchive,
-    setConfirmArchive,
-    confirmDelete,
-    setConfirmDelete,
+    confirmArchive: archiveDialog.state,
+    setConfirmArchive: archiveDialog.setState,
+    confirmDelete: deleteDialog.state,
+    setConfirmDelete: deleteDialog.setState,
     importDialogOpen,
     setImportDialogOpen,
     importUrl,
     setImportUrl,
     importing,
     exporting,
-    confirmCopy,
-    setConfirmCopy,
+    confirmCopy: copyDialog.state,
+    setConfirmCopy: copyDialog.setState,
     copying,
     handleArchiveSelected,
     handleDeleteSelected,

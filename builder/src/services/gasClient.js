@@ -84,32 +84,39 @@ const validateFormIds = (formIds) => {
   return formIds;
 };
 
-export const submitResponses = ({ spreadsheetId, sheetName = "Data", payload }) => {
+const validateSpreadsheetId = (spreadsheetId) => {
   if (!spreadsheetId) throw new Error("spreadsheetId is required");
-  return fetchGasApi("saveResponses", { ...payload, spreadsheetId, sheetName }, "Apps Script call failed");
+  return normalizeSpreadsheetId(spreadsheetId);
+};
+
+export const submitResponses = ({ spreadsheetId, sheetName = "Data", payload }) => {
+  const normalizedId = validateSpreadsheetId(spreadsheetId);
+  return fetchGasApi("saveResponses", { ...payload, spreadsheetId: normalizedId, sheetName }, "Apps Script call failed");
 };
 
 export const acquireSaveLock = ({ spreadsheetId, sheetName = "Data" }) => {
-  if (!spreadsheetId) throw new Error("spreadsheetId is required");
-  return fetchGasApi("nfbAcquireSaveLock", { spreadsheetId: normalizeSpreadsheetId(spreadsheetId), sheetName }, "Apps Script call failed");
+  const normalizedId = validateSpreadsheetId(spreadsheetId);
+  return fetchGasApi("nfbAcquireSaveLock", { spreadsheetId: normalizedId, sheetName }, "Apps Script call failed");
 };
 
 export const deleteEntry = ({ spreadsheetId, sheetName = "Data", entryId }) => {
-  if (!spreadsheetId || !entryId) throw new Error("spreadsheetId and entryId are required");
-  return fetchGasApi("deleteRecord", { spreadsheetId: normalizeSpreadsheetId(spreadsheetId), sheetName, id: entryId }, "Delete failed");
+  const normalizedId = validateSpreadsheetId(spreadsheetId);
+  if (!entryId) throw new Error("entryId is required");
+  return fetchGasApi("deleteRecord", { spreadsheetId: normalizedId, sheetName, id: entryId }, "Delete failed");
 };
 
 export const getEntry = async ({ spreadsheetId, sheetName = "Data", entryId, rowIndexHint = null }) => {
-  if (!spreadsheetId || !entryId) throw new Error("spreadsheetId and entryId are required");
-  const result = await fetchGasApi("getRecord", { spreadsheetId: normalizeSpreadsheetId(spreadsheetId), sheetName, id: entryId, rowIndexHint }, "Get record failed");
+  const normalizedId = validateSpreadsheetId(spreadsheetId);
+  if (!entryId) throw new Error("entryId is required");
+  const result = await fetchGasApi("getRecord", { spreadsheetId: normalizedId, sheetName, id: entryId, rowIndexHint }, "Get record failed");
   return { record: result.record || null, rowIndex: typeof result.rowIndex === "number" ? result.rowIndex : null };
 };
 
 export const listEntries = async ({ spreadsheetId, sheetName = "Data", formId = null, lastSpreadsheetReadAt = null, forceFullSync = false }) => {
-  if (!spreadsheetId) throw new Error("spreadsheetId is required");
+  const normalizedId = validateSpreadsheetId(spreadsheetId);
   const normalizedLastSpreadsheetReadAt = Number(lastSpreadsheetReadAt);
   const payload = {
-    spreadsheetId: normalizeSpreadsheetId(spreadsheetId),
+    spreadsheetId: normalizedId,
     sheetName,
     formId,
     forceFullSync: !!forceFullSync,
@@ -147,8 +154,8 @@ export const copyForm = async (formId) => {
   const r = await fetchGasApi("nfbCopyForm", formId, "Copy form failed");
   return { form: r.form, fileUrl: r.fileUrl };
 };
-export const deleteFormFromDrive = (formId) => { if (!formId) throw new Error("formId is required"); return fetchGasApi("nfbDeleteForm", formId, "Delete form failed"); };
-export const deleteFormsFromDrive = (formIds) => { if (!Array.isArray(formIds) || formIds.length === 0) throw new Error("formIds array is required"); return fetchGasApi("nfbDeleteForms", formIds, "Batch delete forms failed"); };
+export const deleteFormFromDrive = createGasEndpoint({ fnName: "nfbDeleteForm", validate: validateFormId, defaultError: "Delete form failed" });
+export const deleteFormsFromDrive = createGasEndpoint({ fnName: "nfbDeleteForms", validate: validateFormIds, defaultError: "Batch delete forms failed" });
 export const archiveForm = createGasEndpoint({ fnName: "nfbArchiveForm", validate: validateFormId, mapResult: (r) => r.form || null, defaultError: "Archive form failed" });
 export const unarchiveForm = createGasEndpoint({ fnName: "nfbUnarchiveForm", validate: validateFormId, mapResult: (r) => r.form || null, defaultError: "Unarchive form failed" });
 export const archiveForms = createGasEndpoint({ fnName: "nfbArchiveForms", validate: validateFormIds, defaultError: "Batch archive forms failed" });
@@ -222,8 +229,7 @@ export const executeBatchGoogleDocOutput = (payload) =>
   fetchGasApi("nfbExecuteBatchGoogleDocOutput", payload, "一括様式出力に失敗しました");
 
 export const syncRecordsProxy = async (payload) => {
-  const spreadsheetId = normalizeSpreadsheetId(payload?.spreadsheetId);
-  if (!spreadsheetId) throw new Error("spreadsheetId is required");
+  const spreadsheetId = validateSpreadsheetId(payload?.spreadsheetId);
   const result = await fetchGasApi("syncRecordsProxy", { ...payload, spreadsheetId }, "Sync failed");
   return result;
 };

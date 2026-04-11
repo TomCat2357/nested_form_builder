@@ -75,13 +75,18 @@ const FieldRenderer = ({
     ...(textColor ? { "--label-color": textColor } : {}),
   };
 
+  const renderLabel = ({ tag: Tag = "label", fallback = "項目", showRequired = true } = {}) => (
+    <Tag className="preview-label" style={labelStyleVars}>
+      {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">{fallback}</span>}
+      {showRequired && field.required && <span className="nf-text-danger nf-ml-4">*</span>}
+    </Tag>
+  );
+
   // メッセージタイプの場合はラベルのみ表示
   if (field.type === "message") {
     return (
       <div className="preview-field">
-        <div className="preview-label" style={labelStyleVars}>
-          {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">メッセージ</span>}
-        </div>
+        {renderLabel({ tag: "div", fallback: "メッセージ", showRequired: false })}
       </div>
     );
   }
@@ -89,9 +94,7 @@ const FieldRenderer = ({
   if (field.type === "printTemplate") {
     return (
       <div className="preview-field">
-        <label className="preview-label" style={labelStyleVars}>
-          {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">項目</span>}
-        </label>
+        {renderLabel({ showRequired: false })}
         <button
           type="button"
           className="nf-btn-outline nf-text-13"
@@ -107,10 +110,7 @@ const FieldRenderer = ({
   if (field.type === "fileUpload") {
     return (
       <div className="preview-field">
-        <label className="preview-label" style={labelStyleVars}>
-          {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">項目</span>}
-          {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
-        </label>
+        {renderLabel()}
         <FileUploadField
           field={field}
           value={value}
@@ -147,10 +147,7 @@ const FieldRenderer = ({
 
     return (
       <div className="preview-field">
-        <label className="preview-label" style={labelStyleVars}>
-          {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">項目</span>}
-          {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
-        </label>
+        {renderLabel()}
         <div className={readOnlyClassName}>{renderReadOnlyValue()}</div>
         {childrenForCheckboxes}
         {childrenCommon}
@@ -162,10 +159,7 @@ const FieldRenderer = ({
 
   return (
     <div className="preview-field">
-      <label className="preview-label" style={labelStyleVars}>
-        {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">項目</span>}
-        {field.required && <span className="nf-text-danger nf-ml-4">*</span>}
-      </label>
+      {renderLabel()}
 
       {(field.type === "text" || field.type === "userName" || field.type === "email" || field.type === "phone") && !isTextareaField(field) && (
         <input
@@ -274,21 +268,7 @@ const FieldRenderer = ({
         </div>
       )}
 
-      {field.type === "select" && (
-        <select value={selectedSingleChoice} onChange={(event) => onChange(event.target.value)} className={s.input.className}>
-          <option value="">-- 未選択 --</option>
-          {(field.options || []).map((opt) => {
-            const rawLabel = typeof opt?.label === "string" ? opt.label : "";
-            return (
-              <option key={opt.id} value={rawLabel}>
-                {rawLabel ? resolveTokens(rawLabel) : "選択肢"}
-              </option>
-            );
-          })}
-        </select>
-      )}
-
-      {field.type === "weekday" && (
+      {(field.type === "select" || field.type === "weekday") && (
         <select value={selectedSingleChoice} onChange={(event) => onChange(event.target.value)} className={s.input.className}>
           <option value="">-- 未選択 --</option>
           {(field.options || []).map((opt) => {
@@ -352,6 +332,12 @@ export const RendererRecursive = ({
   onDeleteDriveFolder,
   resolveTokens,
 }) => {
+  const recursiveProps = {
+    responses, onChange, depth: depth + 1, readOnly, entryId, onChildFormJump,
+    driveSettings, gasClientRef, driveFolderState, onDriveFolderStateChange,
+    onTemplateAction, canDeleteDriveFolder, onDeleteDriveFolder, resolveTokens,
+  };
+
   const renderChildrenAll = (field, fid) => () => {
     if (!field?.childrenByValue) return null;
     const selectedLabels = toSelectedChoiceLabels(field, (responses || {})[fid]);
@@ -361,20 +347,7 @@ export const RendererRecursive = ({
       return (
         <RendererRecursive
           fields={field.childrenByValue[selected] || []}
-          responses={responses}
-          onChange={onChange}
-          depth={depth + 1}
-          readOnly={readOnly}
-          entryId={entryId}
-          onChildFormJump={onChildFormJump}
-          driveSettings={driveSettings}
-          gasClientRef={gasClientRef}
-          driveFolderState={driveFolderState}
-          onDriveFolderStateChange={onDriveFolderStateChange}
-          onTemplateAction={onTemplateAction}
-          canDeleteDriveFolder={canDeleteDriveFolder}
-          onDeleteDriveFolder={onDeleteDriveFolder}
-          resolveTokens={resolveTokens}
+          {...recursiveProps}
         />
       );
     }
@@ -383,20 +356,7 @@ export const RendererRecursive = ({
         <RendererRecursive
           key={`child_${fid}_${label}`}
           fields={field.childrenByValue[label] || []}
-          responses={responses}
-          onChange={onChange}
-          depth={depth + 1}
-          readOnly={readOnly}
-          entryId={entryId}
-          onChildFormJump={onChildFormJump}
-          driveSettings={driveSettings}
-          gasClientRef={gasClientRef}
-          driveFolderState={driveFolderState}
-          onDriveFolderStateChange={onDriveFolderStateChange}
-          onTemplateAction={onTemplateAction}
-          canDeleteDriveFolder={canDeleteDriveFolder}
-          onDeleteDriveFolder={onDeleteDriveFolder}
-          resolveTokens={resolveTokens}
+          {...recursiveProps}
         />
       ));
     }
@@ -408,20 +368,7 @@ export const RendererRecursive = ({
     return (
       <RendererRecursive
         fields={field.childrenByValue[optionLabel] || []}
-        responses={responses}
-        onChange={onChange}
-        depth={depth + 1}
-        readOnly={readOnly}
-        entryId={entryId}
-        onChildFormJump={onChildFormJump}
-        driveSettings={driveSettings}
-        gasClientRef={gasClientRef}
-        driveFolderState={driveFolderState}
-        onDriveFolderStateChange={onDriveFolderStateChange}
-        onTemplateAction={onTemplateAction}
-        canDeleteDriveFolder={canDeleteDriveFolder}
-        onDeleteDriveFolder={onDeleteDriveFolder}
-        resolveTokens={resolveTokens}
+        {...recursiveProps}
       />
     );
   };

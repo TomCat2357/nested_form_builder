@@ -1,4 +1,5 @@
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
+import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import { useSetSelection } from "../app/hooks/useSetSelection.js";
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { dataStore } from "../app/state/dataStore.js";
@@ -51,8 +52,8 @@ export function useSearchPageState({
   const isScopedByAuth = scopedFormId !== "";
   const currentSearchUrl = `${location.pathname}${location.search}`;
 
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState({ open: false, entryIds: [] });
-  const [showUndeleteConfirm, setShowUndeleteConfirm] = useState({ open: false, entryIds: [] });
+  const deleteDialog = useConfirmDialog({ entryIds: [] });
+  const undeleteDialog = useConfirmDialog({ entryIds: [] });
   const { selected: selectedEntries, toggle: toggleSelectEntry, selectAll: selectAllEntriesRaw, clear: clearSelectedEntries } = useSetSelection();
   const [exporting, setExporting] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
@@ -256,12 +257,12 @@ export function useSearchPageState({
       showAlert("削除する項目を選択してください。");
       return;
     }
-    setShowDeleteConfirm({ open: true, entryIds: Array.from(selectedEntries) });
+    deleteDialog.open({ entryIds: Array.from(selectedEntries) });
   };
 
   const handleUndeleteSelected = () => {
     if (selectedEntries.size === 0) return;
-    setShowUndeleteConfirm({ open: true, entryIds: Array.from(selectedEntries) });
+    undeleteDialog.open({ entryIds: Array.from(selectedEntries) });
   };
 
   const handleExportResults = useCallback(async () => {
@@ -297,28 +298,28 @@ export function useSearchPageState({
   }, [form, sortedEntries, showAlert]);
 
   const confirmDelete = useCallback(async () => {
-    if (!effectiveFormId || showDeleteConfirm.entryIds.length === 0) return;
-    const targetIds = [...showDeleteConfirm.entryIds];
-    setShowDeleteConfirm({ open: false, entryIds: [] });
+    if (!effectiveFormId || deleteDialog.state.entryIds.length === 0) return;
+    const targetIds = [...deleteDialog.state.entryIds];
+    deleteDialog.reset();
     for (const entryId of targetIds) {
       await dataStore.deleteEntry(effectiveFormId, entryId, { deletedBy: userEmail || "" });
     }
     await reloadFromCache();
     forceRefreshAll();
     clearSelectedEntries();
-  }, [effectiveFormId, forceRefreshAll, reloadFromCache, showDeleteConfirm.entryIds, userEmail]);
+  }, [effectiveFormId, forceRefreshAll, reloadFromCache, deleteDialog.state.entryIds, userEmail]);
 
   const confirmUndelete = useCallback(async () => {
-    if (!effectiveFormId || showUndeleteConfirm.entryIds.length === 0) return;
-    const targetIds = [...showUndeleteConfirm.entryIds];
-    setShowUndeleteConfirm({ open: false, entryIds: [] });
+    if (!effectiveFormId || undeleteDialog.state.entryIds.length === 0) return;
+    const targetIds = [...undeleteDialog.state.entryIds];
+    undeleteDialog.reset();
     for (const entryId of targetIds) {
       await dataStore.undeleteEntry(effectiveFormId, entryId, { modifiedBy: userEmail || "" });
     }
     await reloadFromCache();
     forceRefreshAll();
     clearSelectedEntries();
-  }, [effectiveFormId, forceRefreshAll, reloadFromCache, showUndeleteConfirm.entryIds, userEmail]);
+  }, [effectiveFormId, forceRefreshAll, reloadFromCache, undeleteDialog.state.entryIds, userEmail]);
 
   return {
     // Derived IDs / flags
@@ -329,10 +330,10 @@ export function useSearchPageState({
     form,
 
     // State
-    showDeleteConfirm,
-    setShowDeleteConfirm,
-    showUndeleteConfirm,
-    setShowUndeleteConfirm,
+    showDeleteConfirm: deleteDialog.state,
+    setShowDeleteConfirm: deleteDialog.setState,
+    showUndeleteConfirm: undeleteDialog.state,
+    setShowUndeleteConfirm: undeleteDialog.setState,
     selectedEntries,
     exporting,
     isCreatingPrintDocument,
