@@ -55,52 +55,35 @@ export const isNumberInputDraftAllowed = (value, integerOnly = false) => {
   return (integerOnly ? NUMBER_INTEGER_DRAFT_REGEX : NUMBER_DECIMAL_DRAFT_REGEX).test(source);
 };
 
+const EMAIL_INVALID = { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
+
+const isValidEmailLocal = (local) => {
+  if (!local) return false;
+  if (!/^[A-Za-z0-9]/.test(local) || !/[A-Za-z0-9]$/.test(local)) return false;
+  if (!EMAIL_LOCAL_ALLOWED_REGEX.test(local)) return false;
+  if (local.includes("..") || local.includes("__")) return false;
+  return true;
+};
+
+const isValidEmailDomain = (domain) => {
+  if (!domain || !domain.includes(".") || !EMAIL_DOMAIN_ALLOWED_REGEX.test(domain)) return false;
+  const labels = domain.split(".");
+  if (labels.length < 2 || labels.some((l) => !l)) return false;
+  if (labels.some((l) => !EMAIL_DOMAIN_LABEL_REGEX.test(l))) return false;
+  if (labels.some((l) => l.startsWith("-") || l.endsWith("-"))) return false;
+  if (labels.some((l) => l.toLowerCase().startsWith("xn--"))) return false;
+  return true;
+};
+
 const validateEmailAddress = (value) => {
   const source = String(value);
-  if (!source || source.length > EMAIL_MAX_LENGTH) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
-  if (!ASCII_ONLY_REGEX.test(source) || source.includes(" ")) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
+  if (!source || source.length > EMAIL_MAX_LENGTH) return EMAIL_INVALID;
+  if (!ASCII_ONLY_REGEX.test(source) || source.includes(" ")) return EMAIL_INVALID;
 
   const parts = source.split("@");
-  if (parts.length !== 2) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
+  if (parts.length !== 2) return EMAIL_INVALID;
 
-  const [localPart, domainPart] = parts;
-  if (!localPart || !domainPart) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
-
-  if (!/^[A-Za-z0-9]/.test(localPart) || !/[A-Za-z0-9]$/.test(localPart)) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
-  if (!EMAIL_LOCAL_ALLOWED_REGEX.test(localPart)) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
-  if (localPart.includes("..") || localPart.includes("__")) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
-
-  if (!domainPart.includes(".") || !EMAIL_DOMAIN_ALLOWED_REGEX.test(domainPart)) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
-
-  const domainLabels = domainPart.split(".");
-  if (domainLabels.length < 2 || domainLabels.some((label) => !label)) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
-  if (domainLabels.some((label) => !EMAIL_DOMAIN_LABEL_REGEX.test(label))) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
-  if (domainLabels.some((label) => label.startsWith("-") || label.endsWith("-"))) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
-  if (domainLabels.some((label) => label.toLowerCase().startsWith("xn--"))) {
-    return { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
-  }
+  if (!isValidEmailLocal(parts[0]) || !isValidEmailDomain(parts[1])) return EMAIL_INVALID;
 
   return { ok: true, code: "", message: "" };
 };
@@ -146,16 +129,10 @@ const validateNumberField = (field, value) => {
 const isEmpty = (field, value) => {
   if (value === undefined || value === null) return true;
   if (field.type === "printTemplate") return true;
-  if (["text", "textarea", "regex", "date", "time", "select", "radio", "weekday", "url", "userName", "email", "phone"].includes(field.type)) {
-    return value === "";
-  }
-  if (field.type === "number") {
-    return value === "";
-  }
   if (field.type === "checkboxes") {
     return !Array.isArray(value) || value.length === 0;
   }
-  return false;
+  return value === "";
 };
 
 export const validateByPattern = (field, value, cachedRegex = null) => {
@@ -229,36 +206,16 @@ export const collectValidationErrors = (fields, responses) => {
   traverseSchema(fields, (field, context) => {
     if (field?.type === "printTemplate") return;
     const value = responses?.[field.id];
-    const path = context.pathSegments.join(" > ");
-    let hasRequiredError = false;
-
-    if (field.required && isEmpty(field, value)) {
-      errors.push({
-        fieldId: field.id,
-        path,
-        type: "required",
-        message: "必須項目が未入力です",
-      });
-      hasRequiredError = true;
-    }
-
     const regexResult = patternEnabled(field) ? getRegexResult(getPatternSource(field)) : null;
     const result = validateByPattern(field, value, regexResult);
-    if (!result.ok && result.code !== "required") {
-      errors.push({
-        fieldId: field.id,
-        path,
-        type: result.code || "invalid",
-        message: result.message,
-      });
-    } else if (!result.ok && !hasRequiredError) {
-      errors.push({
-        fieldId: field.id,
-        path,
-        type: "required",
-        message: "必須項目が未入力です",
-      });
-    }
+    if (result.ok) return;
+
+    errors.push({
+      fieldId: field.id,
+      path: context.pathSegments.join(" > "),
+      type: result.code || "invalid",
+      message: result.code === "required" ? "必須項目が未入力です" : result.message,
+    });
   }, { responses });
 
   return { errors };
