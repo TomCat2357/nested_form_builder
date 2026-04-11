@@ -5,7 +5,7 @@ import { useAlert } from "../app/hooks/useAlert.js";
 import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import { useDeployTime } from "../app/hooks/useDeployTime.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
-import { hasScriptRun, getAdminKey, setAdminKey, getAdminEmail, setAdminEmail, getRestrictToFormOnly, setRestrictToFormOnly } from "../services/gasClient.js";
+import { hasScriptRun, getAdminKey, setAdminKey, getAdminEmail, setAdminEmail, checkAdminEmailMembership, getRestrictToFormOnly, setRestrictToFormOnly } from "../services/gasClient.js";
 import { useAuth } from "../app/state/authContext.jsx";
 
 const normalizeAdminEmailInput = (value) => String(value || "")
@@ -116,16 +116,29 @@ export default function AdminSettingsPage() {
     { value: "save", label: "保存する", variant: "primary", onSelect: handleSaveAdminKey },
   ];
 
-  const handleOpenAdminEmailConfirm = () => {
+  const handleOpenAdminEmailConfirm = async () => {
     if (normalizedAdminEmailInput) {
       const emails = normalizedAdminEmailInput.split(";").map((e) => e.trim().toLowerCase()).filter(Boolean);
       const currentEmail = (userEmail || "").trim().toLowerCase();
+      // 個人メール直接一致ならAPIコール不要で即OK
       if (!currentEmail || !emails.includes(currentEmail)) {
-        showAlert(
-          `現在のアカウント（${currentEmail || "不明"}）が管理者リストに含まれていません。\n` +
-          `自分自身をロックアウトしないよう、現在のメールアドレスをリストに含めてください。`
-        );
-        return;
+        // グループメンバーシップをサーバー側で確認
+        try {
+          const isMember = await checkAdminEmailMembership({
+            userEmail: currentEmail,
+            adminEmails: normalizedAdminEmailInput,
+          });
+          if (!isMember) {
+            showAlert(
+              `現在のアカウント（${currentEmail || "不明"}）が管理者リストに含まれていません。\n` +
+              `自分自身をロックアウトしないよう、現在のメールアドレスまたは所属グループをリストに含めてください。`
+            );
+            return;
+          }
+        } catch (error) {
+          console.error("[AdminSettingsPage] membership check failed", error);
+          // API失敗時はダイアログを開く（バックエンドのSetAdminEmail_が最終チェック）
+        }
       }
     }
     adminEmailDialog.open();
@@ -176,7 +189,7 @@ export default function AdminSettingsPage() {
         <div className="nf-section-divider">
           <AdminSettingRow
             title="管理者メール"
-            description={<>複数指定する場合は <code>;</code> 区切りで入力してください。例: <code>admin1@example.com;admin2@example.com</code></>}
+            description={<>複数指定する場合は <code>;</code> 区切りで入力してください。Google グループのメールアドレスも指定できます（グループのメンバー全員が管理者として認識されます）。例: <code>admin1@example.com;admin-group@googlegroups.com</code></>}
             label="管理者メールアドレス"
             inputValue={adminEmailInput}
             placeholder="未設定（メール制限なし）"

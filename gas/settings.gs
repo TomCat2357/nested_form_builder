@@ -98,10 +98,10 @@ function SetAdminEmail_(newEmail) {
   // （誤って誰も管理者画面に入れなくなることを防ぐ）
   if (emails.length > 0) {
     var currentUserEmail = NormalizeEmail_(Session.getActiveUser().getEmail() || "");
-    if (!currentUserEmail || emails.indexOf(currentUserEmail) === -1) {
+    if (!currentUserEmail || !IsAdminEmailOrGroupMatched_(currentUserEmail, emails)) {
       throw new Error(
         "現在のアカウント（" + (currentUserEmail || "不明") + "）が管理者リストに含まれていないため保存できません。" +
-        "自分自身をロックアウトしないよう、現在のメールアドレスをリストに含めてください。"
+        "自分自身をロックアウトしないよう、現在のメールアドレスまたは所属グループをリストに含めてください。"
       );
     }
   }
@@ -112,7 +112,42 @@ function SetAdminEmail_(newEmail) {
 }
 
 /**
+ * Google Groupのメンバーシップを確認する
+ * グループでないメール、権限不足などの場合はfalseを返す
+ * @param {string} userEmail - 確認対象のユーザーメール（正規化済み）
+ * @param {string} groupEmail - グループメール（正規化済み）
+ * @return {boolean}
+ */
+function IsUserInAdminGroup_(userEmail, groupEmail) {
+  try {
+    var group = GroupsApp.getGroupByEmail(groupEmail);
+    return group.hasUser(userEmail);
+  } catch (e) {
+    return false;
+  }
+}
+
+/**
+ * 管理者メールリストに対して、個人メール一致またはグループメンバーシップで判定する
+ * 1st pass: 完全一致（APIコール不要、高速）
+ * 2nd pass: グループメンバーシップ照合（APIコールあり）
+ * @param {string} normalizedUserEmail - 正規化済みユーザーメール
+ * @param {string[]} adminEmails - 正規化済み管理者メール配列
+ * @return {boolean}
+ */
+function IsAdminEmailOrGroupMatched_(normalizedUserEmail, adminEmails) {
+  for (var i = 0; i < adminEmails.length; i++) {
+    if (adminEmails[i] === normalizedUserEmail) return true;
+  }
+  for (var i = 0; i < adminEmails.length; i++) {
+    if (IsUserInAdminGroup_(normalizedUserEmail, adminEmails[i])) return true;
+  }
+  return false;
+}
+
+/**
  * 管理者メール制限に一致しているか判定する
+ * 個人メール一致に加え、Google Groupメンバーシップも確認する
  * @param {string} activeUserEmail
  * @return {boolean}
  */
@@ -129,7 +164,7 @@ function IsAdminEmailMatched_(activeUserEmail) {
   if (!normalizedUserEmail) {
     return false;
   }
-  return adminEmails.indexOf(normalizedUserEmail) !== -1;
+  return IsAdminEmailOrGroupMatched_(normalizedUserEmail, adminEmails);
 }
 
 /**
@@ -275,6 +310,23 @@ function nfbGetRestrictToFormOnly() {
 function nfbSetRestrictToFormOnly(value) {
   return nfbSafeCall_(function() {
     return SetRestrictToFormOnly_(value);
+  });
+}
+
+/**
+ * 指定ユーザーが管理者メールリスト（グループ含む）に含まれるか確認するAPI
+ * フロントエンドのロックアウトチェック用
+ * @param {Object} payload - { userEmail: string, adminEmails: string }
+ * @return {Object}
+ */
+function nfbCheckAdminEmailMembership(payload) {
+  return nfbSafeCall_(function() {
+    var userEmail = NormalizeEmail_(payload && payload.userEmail || "");
+    var adminEmailsRaw = String(payload && payload.adminEmails || "");
+    var adminEmails = ParseAdminEmails_(adminEmailsRaw);
+    if (adminEmails.length === 0) return { ok: true, isMember: true };
+    if (!userEmail) return { ok: true, isMember: false };
+    return { ok: true, isMember: IsAdminEmailOrGroupMatched_(userEmail, adminEmails) };
   });
 }
 
