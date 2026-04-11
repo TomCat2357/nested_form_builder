@@ -41,7 +41,6 @@ const FILE_ORDER = [
   'sheetsHeaders.gs',
   'sheetsRowOps.gs',
   'sheetsRecords.gs',
-  'sheetsExport.gs',
   'syncRecordsMerge.js',
   // --- Code分割 ---
   'codeAuth.gs',         // 認証・プロフィール

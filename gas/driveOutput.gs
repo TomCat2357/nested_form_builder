@@ -222,30 +222,23 @@ function nfbCopyBodyElements_(sourceBody, targetBody) {
 function nfbBuildRecordOutputContext_(payload, folderUrl) {
   var driveSettings = payload && payload.driveSettings ? payload.driveSettings : {};
   var recordContext = payload && payload.recordContext ? payload.recordContext : {};
-  var now = new Date();
-  var formId = recordContext.formId || driveSettings.formId || "";
-  var recordId = recordContext.recordId || driveSettings.recordId || "";
+
+  var ctx = nfbBuildDriveTemplateContext_(driveSettings);
+  ctx.formId = recordContext.formId || ctx.formId || "";
+  ctx.recordId = recordContext.recordId || ctx.recordId || "";
+  ctx.folderUrl = folderUrl || ctx.folderUrl || "";
+  ctx.recordNo = recordContext.recordNo || "";
+  ctx.formTitle = recordContext.formTitle || "";
+
   var webAppUrl = ScriptApp.getService().getUrl() || "";
-  var formUrl = webAppUrl && formId
-    ? webAppUrl + "?form=" + encodeURIComponent(formId)
+  ctx.formUrl = webAppUrl && ctx.formId
+    ? webAppUrl + "?form=" + encodeURIComponent(ctx.formId)
     : "";
-  var recordUrl = webAppUrl && formId && recordId
-    ? webAppUrl + "?form=" + encodeURIComponent(formId) + "&record=" + encodeURIComponent(recordId)
+  ctx.recordUrl = webAppUrl && ctx.formId && ctx.recordId
+    ? webAppUrl + "?form=" + encodeURIComponent(ctx.formId) + "&record=" + encodeURIComponent(ctx.recordId)
     : "";
 
-  return {
-    responses: driveSettings.responses || {},
-    fieldLabels: driveSettings.fieldLabels || {},
-    fieldValues: driveSettings.fieldValues || {},
-    formId: formId,
-    recordId: recordId,
-    recordNo: recordContext.recordNo || "",
-    formTitle: recordContext.formTitle || "",
-    folderUrl: folderUrl || "",
-    formUrl: formUrl,
-    recordUrl: recordUrl,
-    now: now
-  };
+  return ctx;
 }
 
 function nfbResolveRecordOutputFileNameTemplate_(payload, action, outputType) {
@@ -282,36 +275,6 @@ function nfbResolveRecordOutputTemplateSourceUrl_(payload, action) {
   return payload && payload.settings && payload.settings.standardPrintTemplateUrl
     ? String(payload.settings.standardPrintTemplateUrl).trim()
     : "";
-}
-
-function nfbCreateGoogleDocumentOutput_(payload, action, folder, folderResult, outputContext, finalBaseName) {
-  var docFile = nfbCreateRecordOutputGoogleDocument_(payload, action, folder, outputContext, finalBaseName);
-  return {
-    ok: true,
-    outputType: "googleDoc",
-    fileUrl: docFile.getUrl(),
-    fileName: docFile.getName(),
-    fileId: docFile.getId(),
-    folderUrl: folder.getUrl(),
-    autoCreated: folderResult.autoCreated === true,
-    openUrl: docFile.getUrl()
-  };
-}
-
-function nfbCreatePdfOutput_(payload, action, folder, folderResult, outputContext, finalBaseName) {
-  var docFile = nfbCreateRecordOutputGoogleDocument_(payload, action, folder, outputContext, finalBaseName + "__tmp");
-  var pdfFile = nfbCreatePdfFileFromGoogleDocument_(docFile, folder, finalBaseName);
-  docFile.setTrashed(true);
-  return {
-    ok: true,
-    outputType: "pdf",
-    fileUrl: pdfFile.getUrl(),
-    fileName: pdfFile.getName(),
-    fileId: pdfFile.getId(),
-    folderUrl: folder.getUrl(),
-    autoCreated: folderResult.autoCreated === true,
-    openUrl: pdfFile.getUrl()
-  };
 }
 
 function nfbCreateGmailDraftOutput_(payload, action, outputContext, finalBaseName) {
@@ -379,13 +342,7 @@ function nfbCreateGoogleDocInRootOutput_(payload, action, outputContext, finalBa
 }
 
 function nfbCreateRecordOutputGoogleDocumentInRoot_(payload, action, outputContext, finalBaseName) {
-  var sourceUrl = nfbResolveRecordOutputTemplateSourceUrl_(payload, action);
-  if (sourceUrl) {
-    var rootFolder = DriveApp.getRootFolder();
-    return nfbCreateGoogleDocumentFileFromTemplate_(sourceUrl, rootFolder, finalBaseName, outputContext);
-  }
-  var printPayload = payload && payload.recordContext ? payload.recordContext.printPayload : null;
-  return nfbCreateGoogleDocumentFileInRoot_(printPayload, finalBaseName);
+  return nfbCreateRecordOutputGoogleDocument_(payload, action, DriveApp.getRootFolder(), outputContext, finalBaseName);
 }
 
 function nfbCreateGoogleDocumentFileInRoot_(printPayload, finalBaseName) {
@@ -416,25 +373,8 @@ function nfbCreateGoogleDocumentFileInRoot_(printPayload, finalBaseName) {
   return DriveApp.getFileById(doc.getId());
 }
 
-function nfbCloneTemplateContext_(context) {
-  var cloned = {};
-  var source = context || {};
-  for (var key in source) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
-      cloned[key] = source[key];
-    }
-  }
-  return cloned;
-}
-
 function nfbCloneRecordOutputActionForGeneratedFile_(action) {
-  var cloned = {};
-  var source = action || {};
-  for (var key in source) {
-    if (Object.prototype.hasOwnProperty.call(source, key)) {
-      cloned[key] = source[key];
-    }
-  }
+  var cloned = Object.assign({}, action || {});
   cloned.useCustomTemplate = false;
   cloned.templateUrl = "";
   return cloned;
@@ -482,35 +422,9 @@ function nfbCreateGoogleDocumentFileFromTemplate_(sourceUrl, folder, finalBaseNa
 }
 
 function nfbCreateGoogleDocumentFileFromPrintPayload_(printPayload, folder, finalBaseName) {
-  var normalizedPayload = nfbNormalizePrintDocumentPayload_({
-    fileName: finalBaseName,
-    records: printPayload && Array.isArray(printPayload.records) ? printPayload.records : null,
-    formTitle: printPayload && printPayload.formTitle,
-    formId: printPayload && printPayload.formId,
-    recordId: printPayload && printPayload.recordId,
-    recordNo: printPayload && printPayload.recordNo,
-    modifiedAt: printPayload && printPayload.modifiedAt,
-    showHeader: printPayload && printPayload.showHeader,
-    exportedAtIso: printPayload && printPayload.exportedAtIso,
-    items: printPayload && printPayload.items
-  });
-  var doc = DocumentApp.create(finalBaseName);
-  var body = doc.getBody();
-  if (body && typeof body.clear === "function") {
-    body.clear();
-  }
-  for (var i = 0; i < normalizedPayload.records.length; i++) {
-    nfbWritePrintDocument_(body, normalizedPayload.records[i]);
-    if (i < normalizedPayload.records.length - 1 && body && typeof body.appendPageBreak === "function") {
-      body.appendPageBreak();
-    }
-  }
-  doc.saveAndClose();
-
-  var file = DriveApp.getFileById(doc.getId());
+  var file = nfbCreateGoogleDocumentFileInRoot_(printPayload, finalBaseName);
   nfbTrashExistingFile_(folder, finalBaseName);
   file.moveTo(folder);
-  file.setName(finalBaseName);
   return file;
 }
 
