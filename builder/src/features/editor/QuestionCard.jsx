@@ -1,24 +1,17 @@
 import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
-import { deepClone, normalizeSchemaIDs, MAX_DEPTH, DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
+import { deepClone, normalizeSchemaIDs, MAX_DEPTH } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { buildPhonePattern, getStandardPhonePlaceholder } from "../../core/phone.js";
-import {
-  getPrintTemplateOutputLabel,
-  normalizePrintTemplateAction,
-  PRINT_TEMPLATE_OUTPUT_OPTIONS,
-  PRINT_TEMPLATE_OUTPUT_TYPES,
-} from "../../utils/printTemplateAction.js";
+import { normalizePrintTemplateAction } from "../../utils/printTemplateAction.js";
 import { styles as s } from "./styles.js";
 import OptionRow from "./OptionRow.jsx";
 import {
   WEEKDAY_TYPE,
   MESSAGE_TYPE,
-  PRINT_TEMPLATE_TYPE,
   DISPLAY_LABEL,
   EMAIL_PLACEHOLDER,
-  EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL,
   isChoiceType,
   isDateOrTimeType,
   isMessageType,
@@ -28,10 +21,19 @@ import {
   handleTypeChange,
   PlaceholderInput,
   StyleSettingsInput,
-  TextDefaultValueInput,
-  TextInputRestrictionInput,
   NumberSettingsInput,
 } from "./QuestionCardInputs.jsx";
+import { useQuestionCardOptions } from "./useQuestionCardOptions.js";
+import {
+  PrintTemplateSection,
+  MessageSection,
+  TextFieldSection,
+  EmailFieldSection,
+  PhoneFieldSection,
+  FileUploadFieldSection,
+  DateTimeFieldSection,
+  WeekdayFieldSection,
+} from "./QuestionCardSections.jsx";
 
 export default function QuestionCard({
   field,
@@ -64,13 +66,15 @@ export default function QuestionCard({
   const phonePlaceholder = isPhone ? getStandardPhonePlaceholder(field) : "";
   const phonePattern = isPhone ? buildPhonePattern(field) : "";
   const prevPhonePlaceholderRef = React.useRef(phonePlaceholder);
-  const [selectedOptionIndex, setSelectedOptionIndex] = React.useState(null);
-  const latestFieldRef = React.useRef(field);
-  const latestOnChangeRef = React.useRef(onChange);
-  latestFieldRef.current = field;
-  latestOnChangeRef.current = onChange;
   const isDisplayed = resolveIsDisplayed(field);
   const printTemplateAction = normalizePrintTemplateAction(field.printTemplateAction);
+
+  const {
+    selectedOptionIndex,
+    setSelectedOptionIndex,
+    buildOptionControlInfo,
+    updateChoiceDefaultSelection,
+  } = useQuestionCardOptions({ field, onChange, onFocus, isChoice });
 
   const handleDisplayToggle = (checked) => {
     const nextField = { ...field };
@@ -105,69 +109,6 @@ export default function QuestionCard({
     }
     prevPhonePlaceholderRef.current = phonePlaceholder;
   }, [isPhone, field.showPlaceholder, field.placeholder, phonePlaceholder]);
-
-  const moveOptionUp = (index) => {
-    const currentField = latestFieldRef.current;
-    if (!Array.isArray(currentField?.options)) return;
-    if (index <= 0 || index >= currentField.options.length) return;
-    const next = deepClone(currentField);
-    [next.options[index - 1], next.options[index]] = [next.options[index], next.options[index - 1]];
-    latestOnChangeRef.current(next);
-    setSelectedOptionIndex(index - 1);
-  };
-
-  const moveOptionDown = (index) => {
-    const currentField = latestFieldRef.current;
-    if (!Array.isArray(currentField?.options)) return;
-    if (index < 0 || index >= currentField.options.length - 1) return;
-    const next = deepClone(currentField);
-    [next.options[index], next.options[index + 1]] = [next.options[index + 1], next.options[index]];
-    latestOnChangeRef.current(next);
-    setSelectedOptionIndex(index + 1);
-  };
-
-  const buildOptionControlInfo = React.useCallback((index) => {
-    const currentField = latestFieldRef.current;
-    const options = Array.isArray(currentField?.options) ? currentField.options : [];
-    if (index === null || index < 0 || index >= options.length) return null;
-    return {
-      type: "option",
-      optionIndex: index,
-      optionLabel: options[index]?.label || `選択肢 ${index + 1}`,
-      canMoveUp: index > 0,
-      canMoveDown: index < options.length - 1,
-      moveUp: () => moveOptionUp(index),
-      moveDown: () => moveOptionDown(index),
-    };
-  }, []);
-
-  React.useEffect(() => {
-    if (isChoice && selectedOptionIndex !== null) {
-      const controlInfo = buildOptionControlInfo(selectedOptionIndex);
-      if (controlInfo) onFocus(controlInfo);
-    }
-  }, [selectedOptionIndex, isChoice, field.options?.length, buildOptionControlInfo]);
-
-  const updateChoiceDefaultSelection = (optionIndex, checked) => {
-    const next = deepClone(field);
-    next.options = (next.options || []).map((opt, index) => {
-      if (field.type === "checkboxes") {
-        return { ...opt, defaultSelected: index === optionIndex ? checked : !!opt.defaultSelected };
-      }
-      return { ...opt, defaultSelected: checked && index === optionIndex };
-    });
-    onChange(next);
-  };
-
-  const renderStyleSettingsInput = () => (
-    <StyleSettingsInput
-      field={field}
-      onChange={onChange}
-      onFocus={onFocus}
-      getTempState={getTempState}
-      setTempState={setTempState}
-    />
-  );
 
   const cardAttrs = s.card(0, isSelected);
 
@@ -230,426 +171,29 @@ export default function QuestionCard({
         </label>
       </div>
 
-      {isPrintTemplate && (
-        <div className="nf-mt-8">
-          <div className="nf-col nf-gap-8">
-            <div className="nf-text-12 nf-text-subtle">未入力時の表示名は {getPrintTemplateOutputLabel(printTemplateAction)} です。</div>
-            <select
-              className={s.input.className}
-              value={printTemplateAction.outputType}
-              onChange={(event) => onChange({
-                ...field,
-                printTemplateAction: {
-                  ...printTemplateAction,
-                  outputType: event.target.value,
-                  enabled: true,
-                },
-              })}
-            >
-              {PRINT_TEMPLATE_OUTPUT_OPTIONS.map((option) => (
-                <option key={option.value} value={option.value}>{option.label}</option>
-              ))}
-            </select>
-            {printTemplateAction.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
-              <label className="nf-row nf-gap-6">
-                <input
-                  type="checkbox"
-                  checked={!!printTemplateAction.useCustomTemplate}
-                  onChange={(event) => onChange({
-                    ...field,
-                    printTemplateAction: {
-                      ...printTemplateAction,
-                      useCustomTemplate: event.target.checked,
-                      enabled: true,
-                    },
-                  })}
-                />
-                カスタムテンプレートを使う
-              </label>
-            )}
-            {printTemplateAction.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && printTemplateAction.useCustomTemplate && (
-              <input
-                className={s.input.className}
-                placeholder="テンプレートURL（Google Document URL）"
-                value={printTemplateAction.templateUrl || ""}
-                onChange={(event) => onChange({
-                  ...field,
-                  printTemplateAction: { ...printTemplateAction, templateUrl: event.target.value, enabled: true },
-                })}
-              />
-            )}
-            {printTemplateAction.outputType !== PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
-              <>
-                <input
-                  className={s.input.className}
-                  placeholder="出力ファイル名（例: {ID}_{_NOW|date:YYYY-MM-DD}）"
-                  value={printTemplateAction.fileNameTemplate || ""}
-                  onChange={(event) => onChange({
-                    ...field,
-                    printTemplateAction: { ...printTemplateAction, fileNameTemplate: event.target.value, enabled: true },
-                  })}
-                />
-                <div className="nf-text-11 nf-text-muted">未指定時はフォーム設定の標準様式出力ファイル名規則を使用します。</div>
-              </>
-            )}
-            {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
-              <>
-                <label className="nf-row nf-gap-8 nf-items-center">
-                  <input
-                    type="checkbox"
-                    checked={printTemplateAction.gmailAttachPdf || false}
-                    onChange={(event) => onChange({
-                      ...field,
-                      printTemplateAction: { ...printTemplateAction, gmailAttachPdf: event.target.checked, enabled: true },
-                    })}
-                  />
-                  <span className="nf-text-11">PDF を添付</span>
-                </label>
-                {printTemplateAction.gmailAttachPdf && (
-                  <div className="nf-text-11 nf-text-muted">PDF 添付時の出力名は、フォーム設定の標準様式出力ファイル名規則か既定値を使用します。</div>
-                )}
-              </>
-            )}
-            {printTemplateAction.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL && (
-              <>
-                <label className="nf-col nf-gap-4">
-                  <span className="nf-text-11 nf-text-muted">To</span>
-                  <input
-                    className={s.input.className}
-                    placeholder="例: {メールアドレス}"
-                    value={printTemplateAction.gmailTemplateTo || ""}
-                    onChange={(event) => onChange({
-                      ...field,
-                      printTemplateAction: { ...printTemplateAction, gmailTemplateTo: event.target.value, enabled: true },
-                    })}
-                  />
-                </label>
-                <label className="nf-col nf-gap-4">
-                  <span className="nf-text-11 nf-text-muted">Cc</span>
-                  <input
-                    className={s.input.className}
-                    placeholder="例: {メールアドレス}"
-                    value={printTemplateAction.gmailTemplateCc || ""}
-                    onChange={(event) => onChange({
-                      ...field,
-                      printTemplateAction: { ...printTemplateAction, gmailTemplateCc: event.target.value, enabled: true },
-                    })}
-                  />
-                </label>
-                <label className="nf-col nf-gap-4">
-                  <span className="nf-text-11 nf-text-muted">Bcc</span>
-                  <input
-                    className={s.input.className}
-                    placeholder="例: {メールアドレス}"
-                    value={printTemplateAction.gmailTemplateBcc || ""}
-                    onChange={(event) => onChange({
-                      ...field,
-                      printTemplateAction: { ...printTemplateAction, gmailTemplateBcc: event.target.value, enabled: true },
-                    })}
-                  />
-                </label>
-                <label className="nf-col nf-gap-4">
-                  <span className="nf-text-11 nf-text-muted">件名</span>
-                  <input
-                    className={s.input.className}
-                    placeholder="例: 【申請】{ID}_{_NOW|date:YYYY-MM-DD}"
-                    value={printTemplateAction.gmailTemplateSubject || ""}
-                    onChange={(event) => onChange({
-                      ...field,
-                      printTemplateAction: { ...printTemplateAction, gmailTemplateSubject: event.target.value, enabled: true },
-                    })}
-                  />
-                </label>
-                <label className="nf-col nf-gap-4">
-                  <span className="nf-text-11 nf-text-muted">本文</span>
-                  <textarea
-                    className={`${s.input.className} nf-h-96`}
-                    placeholder="本文テンプレートを入力"
-                    value={printTemplateAction.gmailTemplateBody || ""}
-                    onChange={(event) => onChange({
-                      ...field,
-                      printTemplateAction: { ...printTemplateAction, gmailTemplateBody: event.target.value, enabled: true },
-                    })}
-                  />
-                </label>
-              </>
-            )}
-            <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {ID} / {_NOW} / {フィールド名} を使えます。{_NOW|date:YYYY-MM-DD} や {_NOW|time:HH:mm} のようにパイプで書式を指定できます。予約語と同名の項目は {\\フィールド名} で参照します。Gmail 本文では {_folder_url} / {_record_url} / {_form_url} も使えます。"}</div>
-          </div>
-        </div>
+      {isPrintTemplate && <PrintTemplateSection field={field} onChange={onChange} printTemplateAction={printTemplateAction} />}
+
+      {!isText && (
+        <StyleSettingsInput field={field} onChange={onChange} onFocus={onFocus} getTempState={getTempState} setTempState={setTempState} />
       )}
 
-      {!isText && renderStyleSettingsInput()}
+      {isMessage && <MessageSection field={field} onChange={onChange} />}
 
-      {isMessage && (
-        <div className="nf-mt-8">
-          <label className="nf-row nf-gap-6">
-            <input
-              type="checkbox"
-              checked={!!field.excludeFromSearchAndPrint}
-              onChange={(event) => onChange({ ...field, excludeFromSearchAndPrint: event.target.checked })}
-            />
-            {EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL}
-          </label>
-          <div className="nf-text-12 nf-text-subtle nf-mt-4">
-            情報周知用のメッセージを検索結果一覧と印刷様式に出しません。
-          </div>
-        </div>
-      )}
-
-
-      {isText && (
-        <>
-          <div className="nf-mt-8">
-            <label className="nf-row nf-gap-6">
-              <input
-                type="checkbox"
-                checked={!!field.multiline}
-                onChange={(event) => onChange({ ...field, multiline: event.target.checked })}
-              />
-              複数行入力を許可
-            </label>
-          </div>
-          {!!field.multiline && (
-            <div className="nf-mt-6 nf-row nf-gap-6 nf-items-center">
-              <label className="nf-text-12">テキストボックスの高さ（行数）</label>
-              <input
-                type="number"
-                min="1"
-                max="50"
-                className={`${s.input.className}`}
-                style={{ width: 72 }}
-                value={field.multilineRows ?? DEFAULT_MULTILINE_ROWS}
-                onChange={(event) => {
-                  const v = Number(event.target.value);
-                  onChange({ ...field, multilineRows: Number.isFinite(v) && v >= 1 ? Math.floor(v) : DEFAULT_MULTILINE_ROWS });
-                }}
-                onFocus={onFocus}
-              />
-            </div>
-          )}
-          {renderStyleSettingsInput()}
-          <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />
-          <TextDefaultValueInput field={field} onChange={onChange} onFocus={onFocus} />
-          <TextInputRestrictionInput
-            field={field}
-            onChange={onChange}
-            onFocus={onFocus}
-            regexError={regexCheck.error}
-            getTempState={getTempState}
-            setTempState={setTempState}
-          />
-        </>
-      )}
+      {isText && <TextFieldSection field={field} onChange={onChange} onFocus={onFocus} regexError={regexCheck.error} getTempState={getTempState} setTempState={setTempState} />}
 
       {isBasicInput && <PlaceholderInput field={field} onChange={onChange} onFocus={onFocus} />}
 
-      {isNumber && (
-        <NumberSettingsInput field={field} onChange={onChange} onFocus={onFocus} />
-      )}
+      {isNumber && <NumberSettingsInput field={field} onChange={onChange} onFocus={onFocus} />}
 
-      {isEmail && (
-        <>
-          <PlaceholderInput
-            field={field}
-            onChange={onChange}
-            onFocus={onFocus}
-            toggleLabel="プレースホルダーを設定する"
-            inputPlaceholder={EMAIL_PLACEHOLDER}
-            defaultPlaceholder={EMAIL_PLACEHOLDER}
-          />
-          <div className="nf-mt-8">
-            <label className="nf-row nf-gap-6">
-              <input
-                type="checkbox"
-                checked={!!field.autoFillUserEmail}
-                onChange={(event) => onChange({ ...field, autoFillUserEmail: event.target.checked })}
-              />
-              入力者のメールアドレスを自動入力する
-            </label>
-          </div>
-        </>
-      )}
+      {isEmail && <EmailFieldSection field={field} onChange={onChange} onFocus={onFocus} />}
 
-      {isPhone && (
-        <>
-          <PlaceholderInput
-            field={field}
-            onChange={onChange}
-            onFocus={onFocus}
-            toggleLabel="プレースホルダーを設定する"
-            inputPlaceholder={phonePlaceholder}
-            defaultPlaceholder={phonePlaceholder}
-          />
-          <div className="nf-mt-8">
-            <label className="nf-row nf-gap-6">
-              <input
-                type="checkbox"
-                checked={!!field.autoFillUserPhone}
-                onChange={(event) => onChange({ ...field, autoFillUserPhone: event.target.checked })}
-              />
-              入力者の電話番号を自動入力する
-            </label>
-          </div>
-          <div className="nf-mt-8">
-            <label className="nf-fw-600 nf-mb-4">形式</label>
-            <div className="nf-row nf-gap-12 nf-wrap nf-mt-4">
-              <label className="nf-row nf-gap-4 nf-nowrap">
-                <input
-                  type="radio"
-                  name={`phone-format-${field.id}`}
-                  checked={(field.phoneFormat || "hyphen") === "hyphen"}
-                  onChange={() => onChange({ ...field, phoneFormat: "hyphen" })}
-                />
-                <span>ハイフンあり</span>
-              </label>
-              <label className="nf-row nf-gap-4 nf-nowrap">
-                <input
-                  type="radio"
-                  name={`phone-format-${field.id}`}
-                  checked={field.phoneFormat === "plain"}
-                  onChange={() => onChange({ ...field, phoneFormat: "plain" })}
-                />
-                <span>ハイフンなし</span>
-              </label>
-            </div>
-          </div>
-          <div className="nf-mt-8">
-            <div className="nf-row nf-gap-12 nf-wrap">
-              <label className="nf-row nf-gap-4">
-                <input
-                  type="checkbox"
-                  checked={!!field.allowFixedLineOmitAreaCode}
-                  onChange={(event) => onChange({ ...field, allowFixedLineOmitAreaCode: event.target.checked })}
-                />
-                <span>固定電話の市外局番省略を認める</span>
-              </label>
-              <label className="nf-row nf-gap-4">
-                <input
-                  type="checkbox"
-                  checked={field.allowMobile !== false}
-                  onChange={(event) => onChange({ ...field, allowMobile: event.target.checked })}
-                />
-                <span>携帯電話（090 / 080 / 070）を許容</span>
-              </label>
-              <label className="nf-row nf-gap-4">
-                <input
-                  type="checkbox"
-                  checked={field.allowIpPhone !== false}
-                  onChange={(event) => onChange({ ...field, allowIpPhone: event.target.checked })}
-                />
-                <span>IP電話（050）を許容</span>
-              </label>
-              <label className="nf-row nf-gap-4">
-                <input
-                  type="checkbox"
-                  checked={field.allowTollFree !== false}
-                  onChange={(event) => onChange({ ...field, allowTollFree: event.target.checked })}
-                />
-                <span>フリーダイヤル（0120）を許容</span>
-              </label>
-            </div>
-          </div>
-          <div className="nf-mt-8 nf-text-12 nf-text-subtle">
-            <div>許容パターン（正規表現）</div>
-            <code className="nf-text-11 nf-text-muted nf-word-break">{phonePattern}</code>
-          </div>
-        </>
-      )}
+      {isPhone && <PhoneFieldSection field={field} onChange={onChange} onFocus={onFocus} phonePlaceholder={phonePlaceholder} phonePattern={phonePattern} />}
 
-      {field.type === "fileUpload" && (
-        <div className="nf-mt-8">
-          <label className="nf-row nf-gap-6">
-            <input
-              type="checkbox"
-              checked={!!field.allowUploadByUrl}
-              onChange={(event) => onChange({ ...field, allowUploadByUrl: event.target.checked })}
-            />
-            URLによるアップロードを有効にする
-          </label>
-          <label className="nf-row nf-gap-6 nf-mt-8">
-            <input
-              type="checkbox"
-              checked={!!field.allowFolderUrlEdit}
-              onChange={(event) => onChange({ ...field, allowFolderUrlEdit: event.target.checked })}
-            />
-            保存先フォルダURLを変更可能にする
-          </label>
-          <label className="nf-row nf-gap-6 nf-mt-8">
-            <input
-              type="checkbox"
-              checked={!!field.hideFileExtension}
-              onChange={(event) => onChange({ ...field, hideFileExtension: event.target.checked })}
-            />
-            ファイル名の拡張子を非表示にする
-          </label>
-          <div className="nf-mt-12">
-            <div className="nf-text-12 nf-fw-600 nf-mb-4">ルートフォルダURL</div>
-            <input
-              className="nf-input"
-              type="text"
-              value={field.driveRootFolderUrl ?? ""}
-              placeholder="https://drive.google.com/drive/folders/..."
-              onChange={(event) => onChange({ ...field, driveRootFolderUrl: event.target.value })}
-            />
-            <div className="nf-text-11 nf-text-muted nf-mt-4">
-              空白の場合はマイドライブのルートがファイルの保存先になります
-            </div>
-          </div>
-          <div className="nf-mt-8">
-            <div className="nf-text-12 nf-fw-600 nf-mb-4">フォルダ命名規則</div>
-            <input
-              className="nf-input"
-              type="text"
-              value={field.driveFolderNameTemplate ?? ""}
-              placeholder="{ID}_{_NOW|date:YYYY-MM-DD}_{担当者名}"
-              onChange={(event) => onChange({ ...field, driveFolderNameTemplate: event.target.value })}
-            />
-            <div className="nf-text-11 nf-text-muted nf-mt-4">
-              {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{ID}, {_NOW}, {フィールド名} を使えます。{_NOW|date:YYYY-MM-DD} のようにパイプで書式を指定できます。予約語と同名の項目は {\\フィールド名} で参照できます"}
-            </div>
-          </div>
-        </div>
-      )}
+      {field.type === "fileUpload" && <FileUploadFieldSection field={field} onChange={onChange} />}
 
-      {isDateOrTime && (
-        <div className="nf-mt-8">
-          <label className="nf-row nf-gap-6">
-            <input
-              type="checkbox"
-              checked={!!field.defaultNow}
-              onChange={(event) => onChange({ ...field, defaultNow: event.target.checked })}
-            />
-            初期値を現在{field.type === "date" ? "の日付" : "の時刻"}にする
-          </label>
-          {field.type === "time" && (
-            <label className="nf-row nf-gap-6 nf-mt-8">
-              <input
-                type="checkbox"
-                checked={!!field.includeSeconds}
-                onChange={(event) => onChange({ ...field, includeSeconds: event.target.checked })}
-              />
-              秒を含める（時:分:秒）
-            </label>
-          )}
-        </div>
-      )}
+      {isDateOrTime && <DateTimeFieldSection field={field} onChange={onChange} />}
 
-      {isWeekday && (
-        <div className="nf-mt-8">
-          <div className="nf-text-12 nf-text-subtle nf-mb-4">
-            選択肢は固定です: 月・火・水・木・金・土・日
-          </div>
-          <label className="nf-row nf-gap-6">
-            <input
-              type="checkbox"
-              checked={!!field.defaultToday}
-              onChange={(event) => onChange({ ...field, defaultToday: event.target.checked })}
-            />
-            初期値を今日の曜日にする
-          </label>
-        </div>
-      )}
+      {isWeekday && <WeekdayFieldSection field={field} onChange={onChange} />}
 
       {isChoice && (
         <div className="nf-mt-8">
