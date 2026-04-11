@@ -10,6 +10,7 @@ import { DEFAULT_THEME } from "../app/theme/theme.js";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { resolveOmitEmptyRowsOnPrint, resolveShowPrintHeader } from "../features/preview/printDocument.js";
 import { resolveCreatePrintOnSave, resolveSettingsFieldValue } from "../utils/settings.js";
+import { SettingsField } from "../features/settings/SettingsField.jsx";
 import { getConfigPageSaveAfterActionField } from "./configPageSettings.js";
 import { useConfigPageTheme } from "./useConfigPageTheme.js";
 
@@ -195,20 +196,12 @@ export default function ConfigPage() {
               <div className="nf-mb-16">
                 <div className="nf-settings-group-title nf-mb-8">レコード画面設定</div>
                 <label className="nf-block nf-fw-600 nf-mb-6">{saveAfterActionField.label}</label>
-                <select
-                  className="nf-input"
+                <SettingsField
+                  field={saveAfterActionField}
                   value={saveAfterActionValue}
-                  onChange={(event) => {
-                    void handleSaveAfterActionChange(event.target.value);
-                  }}
+                  onChange={(_key, val) => { void handleSaveAfterActionChange(val); }}
                   disabled={savingRecordSettings}
-                >
-                  {(saveAfterActionField.options || []).map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                />
                 {saveAfterActionField.description && (
                   <p className="nf-mt-6 nf-text-12 nf-text-muted">{saveAfterActionField.description}</p>
                 )}
@@ -307,7 +300,7 @@ export default function ConfigPage() {
           )}
         </div>
 
-        <div className="nf-mt-16 nf-pt-16" style={{ borderTop: "1px solid var(--nf-color-border)" }}>
+        <div className="nf-section-divider">
           <div className="nf-settings-group-title nf-mb-6">システム情報</div>
           <div className="nf-text-12 nf-text-muted">
             <div>最終デプロイ: {deployTime || "情報なし"}</div>

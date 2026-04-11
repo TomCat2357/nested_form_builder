@@ -96,12 +96,6 @@ button[style*="background:var(--danger-strong)"] {
   color: var(--button-solid-text, #fff);
 }
 
-.admin-import-btn-primary {
-  background: linear-gradient(135deg, var(--primary, #2f6fed), var(--primary-strong, var(--primary, #2563eb)));
-  border-color: var(--primary-border-soft, rgba(47, 111, 237, 0.22));
-  color: var(--button-solid-text, #fff);
-}
-
 /* 3-3) Optional .btn class (preview primary button look) */
 .btn {
   display: inline-flex;

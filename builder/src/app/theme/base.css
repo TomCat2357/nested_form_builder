@@ -454,6 +454,12 @@ button:disabled {
   margin-top: 16px;
 }
 
+.nf-section-divider {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border-muted);
+}
+
 .nf-mt-24 {
   margin-top: 24px;
 }
@@ -857,42 +863,6 @@ button:disabled {
   text-decoration: underline;
 }
 
-.admin-import-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--overlay-strong);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.admin-import-panel {
-  background: var(--surface);
-  border-radius: var(--radius-md);
-  padding: 24px;
-  width: min(520px, 90vw);
-  box-shadow: var(--shadow-lg);
-}
-
-.admin-import-input {
-  padding: 8px 10px;
-  font-size: 14px;
-}
-
-.admin-import-btn {
-  padding: 8px 16px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--button-border, var(--border-strong));
-  background: var(--button-bg, var(--surface));
-  color: var(--button-text, var(--text));
-}
-
-.admin-import-btn-primary {
-  border-color: var(--primary-border-soft, var(--primary-strong, var(--primary, #2563eb)));
-  background: var(--primary-strong, var(--primary, #2563eb));
-  color: var(--button-solid-text, #fff);
-}
 
 /* Search page */
 .search-empty,

@@ -4,7 +4,6 @@ import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import { useDeployTime } from "../app/hooks/useDeployTime.js";
-import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { hasScriptRun, getAdminKey, setAdminKey, getAdminEmail, setAdminEmail, getRestrictToFormOnly, setRestrictToFormOnly } from "../services/gasClient.js";
 import { useAuth } from "../app/state/authContext.jsx";
@@ -15,9 +14,37 @@ const normalizeAdminEmailInput = (value) => String(value || "")
   .filter(Boolean)
   .join(";");
 
+function AdminSettingRow({ title, description, label, inputValue, placeholder, onInputChange, onSave, loading, saveDisabled, statusContent }) {
+  return (
+    <>
+      <div className="nf-settings-group-title nf-mb-6">{title}</div>
+      <p className="nf-mb-12 nf-text-12 nf-text-muted">{description}</p>
+      <label className="nf-block nf-fw-600 nf-mb-6">{label}</label>
+      <div className="nf-row nf-gap-12">
+        <input
+          className="nf-input nf-flex-1 nf-min-w-0"
+          type="text"
+          value={inputValue}
+          placeholder={placeholder}
+          onChange={(event) => onInputChange(event.target.value)}
+        />
+        <button
+          type="button"
+          className="nf-btn nf-nowrap"
+          onClick={onSave}
+          disabled={loading || saveDisabled}
+        >
+          {loading ? "保存中..." : "保存"}
+        </button>
+      </div>
+      <p className="nf-mt-6 nf-text-11 nf-text-muted">{statusContent}</p>
+    </>
+  );
+}
+
 export default function AdminSettingsPage() {
   const { showAlert } = useAlert();
-const { settings } = useBuilderSettings();
+  const { settings } = useBuilderSettings();
   const deployTime = useDeployTime();
 
   const [adminKey, setAdminKeyState] = useState("");
@@ -90,7 +117,6 @@ const { settings } = useBuilderSettings();
   ];
 
   const handleOpenAdminEmailConfirm = () => {
-    // メールリストが空でない場合、現在のユーザーが含まれているか確認する
     if (normalizedAdminEmailInput) {
       const emails = normalizedAdminEmailInput.split(";").map((e) => e.trim().toLowerCase()).filter(Boolean);
       const currentEmail = (userEmail || "").trim().toLowerCase();
@@ -134,74 +160,35 @@ const { settings } = useBuilderSettings();
           </div>
         )}
 
-        <div className="nf-settings-group-title nf-mb-6">管理者キー</div>
-        <p className="nf-mb-12 nf-text-12 nf-text-muted">
-          管理者キーを設定すると、URLパラメータ <code>?adminkey=キー</code> でアクセスした場合のみ管理者として認識されます。
-          空欄にすると管理者キー制限は解除されます。
-        </p>
-        <label className="nf-block nf-fw-600 nf-mb-6">管理者キー</label>
-        <div className="nf-row nf-gap-12">
-          <input
-            className="nf-input nf-flex-1 nf-min-w-0"
-            type="text"
-            value={adminKeyInput}
-            placeholder="未設定（管理者キー制限なし）"
-            onChange={(event) => setAdminKeyInput(event.target.value)}
+        <AdminSettingRow
+          title="管理者キー"
+          description={<>管理者キーを設定すると、URLパラメータ <code>?adminkey=キー</code> でアクセスした場合のみ管理者として認識されます。空欄にすると管理者キー制限は解除されます。</>}
+          label="管理者キー"
+          inputValue={adminKeyInput}
+          placeholder="未設定（管理者キー制限なし）"
+          onInputChange={setAdminKeyInput}
+          onSave={() => adminKeyDialog.open()}
+          loading={adminKeyLoading}
+          saveDisabled={adminKeyInput.trim() === adminKey}
+          statusContent={adminKey ? (<>現在の管理者アクセスURL: <code>?adminkey={adminKey}</code></>) : "現在は管理者キーが未設定のため、管理者キー制限はありません。"}
+        />
+
+        <div className="nf-section-divider">
+          <AdminSettingRow
+            title="管理者メール"
+            description={<>複数指定する場合は <code>;</code> 区切りで入力してください。例: <code>admin1@example.com;admin2@example.com</code></>}
+            label="管理者メールアドレス"
+            inputValue={adminEmailInput}
+            placeholder="未設定（メール制限なし）"
+            onInputChange={setAdminEmailInput}
+            onSave={handleOpenAdminEmailConfirm}
+            loading={adminEmailLoading}
+            saveDisabled={normalizedAdminEmailInput === adminEmail}
+            statusContent={adminEmail ? (<>現在の管理者メール: <code>{adminEmail}</code></>) : "現在は管理者メールが未設定のため、メールアドレスによる管理者制限はありません。"}
           />
-          <button
-            type="button"
-            className="nf-btn nf-nowrap"
-            onClick={() => adminKeyDialog.open()}
-            disabled={adminKeyLoading || adminKeyInput.trim() === adminKey}
-          >
-            {adminKeyLoading ? "保存中..." : "保存"}
-          </button>
-        </div>
-        <p className="nf-mt-6 nf-text-11 nf-text-muted">
-          {adminKey ? (
-            <>
-              現在の管理者アクセスURL: <code>?adminkey={adminKey}</code>
-            </>
-          ) : (
-            "現在は管理者キーが未設定のため、管理者キー制限はありません。"
-          )}
-        </p>
-
-        <div className="nf-mt-16 nf-pt-16" style={{ borderTop: "1px solid var(--nf-color-border)" }}>
-          <div className="nf-settings-group-title nf-mb-6">管理者メール</div>
-          <p className="nf-mb-12 nf-text-12 nf-text-muted">
-            複数指定する場合は <code>;</code> 区切りで入力してください。例: <code>admin1@example.com;admin2@example.com</code>
-          </p>
-          <label className="nf-block nf-fw-600 nf-mb-6">管理者メールアドレス</label>
-          <div className="nf-row nf-gap-12">
-            <input
-              className="nf-input nf-flex-1 nf-min-w-0"
-              type="text"
-              value={adminEmailInput}
-              placeholder="未設定（メール制限なし）"
-              onChange={(event) => setAdminEmailInput(event.target.value)}
-            />
-            <button
-              type="button"
-              className="nf-btn nf-nowrap"
-              onClick={handleOpenAdminEmailConfirm}
-              disabled={adminEmailLoading || normalizedAdminEmailInput === adminEmail}
-            >
-              {adminEmailLoading ? "保存中..." : "保存"}
-            </button>
-          </div>
-          <p className="nf-mt-6 nf-text-11 nf-text-muted">
-            {adminEmail
-              ? (
-                <>
-                  現在の管理者メール: <code>{adminEmail}</code>
-                </>
-              )
-              : "現在は管理者メールが未設定のため、メールアドレスによる管理者制限はありません。"}
-          </p>
         </div>
 
-        <div className="nf-mt-16 nf-pt-16" style={{ borderTop: "1px solid var(--nf-color-border)" }}>
+        <div className="nf-section-divider">
           <div className="nf-settings-group-title nf-mb-6">アクセス制限</div>
           <p className="nf-mb-12 nf-text-12 nf-text-muted">
             管理者キーまたは管理者メールが設定されている場合に有効です。ONにすると、<code>?form=xxx</code> を指定しない一般ユーザーはアクセス拒否されます。
@@ -220,7 +207,7 @@ const { settings } = useBuilderSettings();
           </label>
         </div>
 
-        <div className="nf-mt-16 nf-pt-16" style={{ borderTop: "1px solid var(--nf-color-border)" }}>
+        <div className="nf-section-divider">
           <div className="nf-settings-group-title nf-mb-6">システム情報</div>
           <div className="nf-text-12 nf-text-muted">
             <div>最終デプロイ: {deployTime || "情報なし"}</div>
