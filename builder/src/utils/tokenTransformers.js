@@ -76,7 +76,6 @@ const transformDate = (value, formatStr) => {
   let result = formatStr;
   result = result.split("dddd").join(DAY_OF_WEEK_LONG[dow]);
   result = result.split("ddd").join(DAY_OF_WEEK_SHORT[dow]);
-  result = result.split("gge").join(era.name + String(era.year));
   result = result.split("gg").join(era.name);
   result = result.split("YYYY").join(String(dp.year));
   result = result.split("YY").join(("0" + dp.year).slice(-2));

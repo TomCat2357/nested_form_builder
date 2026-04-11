@@ -262,7 +262,6 @@ function nfbTransformDate_(value, formatStr) {
   // Longer tokens first to avoid partial replacement
   result = result.split("dddd").join(NFB_DAY_OF_WEEK_LONG_[dow]);
   result = result.split("ddd").join(NFB_DAY_OF_WEEK_SHORT_[dow]);
-  result = result.split("gge").join(era.name + String(era.year));
   result = result.split("gg").join(era.name);
   result = result.split("YYYY").join(String(dateParts.year));
   result = result.split("YY").join(("0" + dateParts.year).slice(-2));
