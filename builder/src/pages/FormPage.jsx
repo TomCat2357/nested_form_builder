@@ -17,6 +17,7 @@ import {
 } from "../services/gasClient.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSchemaIDs, findFirstFileUploadField } from "../core/schema.js";
 import { traverseSchema } from "../core/schemaUtils.js";
@@ -137,13 +138,13 @@ export default function FormPage() {
   }, [driveFolderDraftKey, driveFolderState, entryId]);
   const [currentRecordId, setCurrentRecordId] = useState(entryId || null);
 
-  const [confirmState, setConfirmState] = useState({ open: false, intent: null });
+  const unsavedDialog = useConfirmDialog({ intent: null });
   const [isSaving, setIsSaving] = useState(false);
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
   const [mode, setMode] = useState(entryId ? "view" : "edit");
   const [isReloading, setIsReloading] = useState(false);
-  const [entryActionConfirm, setEntryActionConfirm] = useState({ open: false, action: null });
-  const [driveFolderActionConfirm, setDriveFolderActionConfirm] = useState({ open: false });
+  const entryActionDialog = useConfirmDialog({ action: null });
+  const driveFolderDialog = useConfirmDialog();
   const [copySourceId, setCopySourceId] = useState("");
   const [copySourceResponses, setCopySourceResponses] = useState({});
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
@@ -943,7 +944,7 @@ export default function FormPage() {
 
   const attemptLeave = (intent) => {
     if (isDirty) {
-      setConfirmState({ open: true, intent });
+      unsavedDialog.open({ intent });
       return;
     }
     if (intent === "cancel-edit") {
@@ -975,21 +976,21 @@ export default function FormPage() {
       navigateBack();
       return false;
     }
-    setConfirmState({ open: true, intent: "back" });
+    unsavedDialog.open({ intent: "back" });
     return false;
   };
 
   const handleDeleteEntry = () => {
-    setEntryActionConfirm({ open: true, action: "delete" });
+    entryActionDialog.open({ action: "delete" });
   };
 
   const handleUndeleteEntry = () => {
-    setEntryActionConfirm({ open: true, action: "undelete" });
+    entryActionDialog.open({ action: "undelete" });
   };
 
   const confirmEntryAction = useCallback(async () => {
-    const action = entryActionConfirm.action;
-    setEntryActionConfirm({ open: false, action: null });
+    const action = entryActionDialog.state.action;
+    entryActionDialog.reset();
     if (action === "delete") {
       await dataStore.deleteEntry(formId, entryId, { deletedBy: userEmail || "" });
       navigateBack({ deleted: true });
@@ -1001,7 +1002,7 @@ export default function FormPage() {
       }
       reloadListFromCache();
     }
-  }, [entryActionConfirm.action, formId, entryId, userEmail, applyEntryToState, reloadListFromCache]);
+  }, [entryActionDialog.state.action, formId, entryId, userEmail, applyEntryToState, reloadListFromCache]);
 
   const handleFetchCopySource = useCallback(async () => {
     if (!formId) return;
@@ -1078,7 +1079,7 @@ export default function FormPage() {
 
   const handleDeleteDriveFolder = useCallback(() => {
     setDriveFolderState((prevState) => markDriveFolderForDeletion(prevState));
-    setDriveFolderActionConfirm({ open: false });
+    driveFolderDialog.close();
   }, []);
 
   const handleCreatePrintDocument = useCallback(async () => {
@@ -1121,8 +1122,8 @@ export default function FormPage() {
   };
 
   const handleConfirmAction = async (action) => {
-    const intent = confirmState.intent;
-    setConfirmState({ open: false, intent: null });
+    const intent = unsavedDialog.state.intent;
+    unsavedDialog.reset();
     if (action === "discard") {
       try {
         await discardUnsavedUploadedFiles();
@@ -1172,13 +1173,13 @@ export default function FormPage() {
     {
       label: "キャンセル",
       value: "cancel",
-      onSelect: () => setConfirmState({ open: false, intent: null }),
+      onSelect: unsavedDialog.reset,
     },
   ];
 
-  const confirmMessage = confirmState.intent === "cancel-edit"
+  const confirmMessage = unsavedDialog.state.intent === "cancel-edit"
     ? "保存せずに編集内容を破棄しますか？"
-    : (confirmState.intent && confirmState.intent.startsWith("navigate:")
+    : (unsavedDialog.state.intent && unsavedDialog.state.intent.startsWith("navigate:")
       ? "保存せずに移動しますか？"
       : "保存せずに前の画面へ戻りますか？");
   const editDisabled = loading || isReadLocked;
@@ -1331,35 +1332,35 @@ export default function FormPage() {
           driveFolderState={driveFolderState}
           onDriveFolderStateChange={setDriveFolderState}
           canDeleteDriveFolder={!isViewMode && canDeleteDriveFolder}
-          onDeleteDriveFolder={() => setDriveFolderActionConfirm({ open: true })}
+          onDeleteDriveFolder={() => driveFolderDialog.open()}
         />
       )}
 
       <ConfirmDialog
-        open={confirmState.open}
+        open={unsavedDialog.state.open}
         title="未保存の変更があります"
         message={confirmMessage}
         options={confirmOptions}
       />
       <ConfirmDialog
-        open={entryActionConfirm.open}
-        title={entryActionConfirm.action === "undelete" ? "削除取消し" : "レコードを削除"}
-        message={entryActionConfirm.action === "undelete"
+        open={entryActionDialog.state.open}
+        title={entryActionDialog.state.action === "undelete" ? "削除取消し" : "レコードを削除"}
+        message={entryActionDialog.state.action === "undelete"
           ? "このレコードの削除を取り消し、復活させます。よろしいですか？"
           : "このレコードを削除します。よろしいですか？"}
         options={[
-          { label: "キャンセル", value: "cancel", onSelect: () => setEntryActionConfirm({ open: false, action: null }) },
-          entryActionConfirm.action === "undelete"
+          { label: "キャンセル", value: "cancel", onSelect: entryActionDialog.reset },
+          entryActionDialog.state.action === "undelete"
             ? { label: "削除取消し", value: "undelete", variant: "primary", onSelect: confirmEntryAction }
             : { label: "削除", value: "delete", variant: "danger", onSelect: confirmEntryAction },
         ]}
       />
       <ConfirmDialog
-        open={driveFolderActionConfirm.open}
+        open={driveFolderDialog.state.open}
         title="フォルダ削除"
         message="現在の保存先フォルダのリンクを解除し、存在するフォルダは保存時にごみ箱へ移動します。よろしいですか？"
         options={[
-          { label: "キャンセル", value: "cancel", onSelect: () => setDriveFolderActionConfirm({ open: false }) },
+          { label: "キャンセル", value: "cancel", onSelect: driveFolderDialog.close },
           { label: "フォルダ削除", value: "delete-folder", variant: "danger", onSelect: handleDeleteDriveFolder },
         ]}
       />

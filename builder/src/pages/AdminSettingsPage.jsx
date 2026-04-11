@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import { useDeployTime } from "../app/hooks/useDeployTime.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
@@ -22,12 +23,12 @@ const { settings } = useBuilderSettings();
   const [adminKey, setAdminKeyState] = useState("");
   const [adminKeyInput, setAdminKeyInput] = useState("");
   const [adminKeyLoading, setAdminKeyLoading] = useState(false);
-  const [adminKeyConfirm, setAdminKeyConfirm] = useState(false);
+  const adminKeyDialog = useConfirmDialog();
 
   const [adminEmail, setAdminEmailState] = useState("");
   const [adminEmailInput, setAdminEmailInput] = useState("");
   const [adminEmailLoading, setAdminEmailLoading] = useState(false);
-  const [adminEmailConfirm, setAdminEmailConfirm] = useState(false);
+  const adminEmailDialog = useConfirmDialog();
 
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
@@ -56,9 +57,9 @@ const { settings } = useBuilderSettings();
     })();
   }, [canManageAdminSettings, showAlert]);
 
-  const handleSaveSetting = async ({ apiFunc, inputValue, setStateValue, setInputValue, setConfirmOpen, setLoading, successMsgEmpty, successMsgFilled, errorMsg }) => {
+  const handleSaveSetting = async ({ apiFunc, inputValue, setStateValue, setInputValue, closeDialog, setLoading, successMsgEmpty, successMsgFilled, errorMsg }) => {
     if (!canManageAdminSettings) return;
-    setConfirmOpen(false);
+    closeDialog();
     setLoading(true);
     try {
       const newVal = await apiFunc(inputValue);
@@ -74,17 +75,17 @@ const { settings } = useBuilderSettings();
   };
 
   const handleSaveAdminKey = () => handleSaveSetting({
-    apiFunc: async (val) => await setAdminKey(val.trim()), inputValue: adminKeyInput, setStateValue: setAdminKeyState, setInputValue: setAdminKeyInput, setConfirmOpen: setAdminKeyConfirm, setLoading: setAdminKeyLoading,
+    apiFunc: async (val) => await setAdminKey(val.trim()), inputValue: adminKeyInput, setStateValue: setAdminKeyState, setInputValue: setAdminKeyInput, closeDialog: adminKeyDialog.close, setLoading: setAdminKeyLoading,
     successMsgEmpty: "管理者キーを解除しました。URLパラメータなしで管理者としてアクセスできます。", successMsgFilled: (val) => `管理者キーを更新しました。次回から ?adminkey=${val} でアクセスしてください。`, errorMsg: "管理者キーの保存に失敗しました"
   });
 
   const handleSaveAdminEmail = () => handleSaveSetting({
-    apiFunc: async (val) => await setAdminEmail(val), inputValue: normalizedAdminEmailInput, setStateValue: setAdminEmailState, setInputValue: setAdminEmailInput, setConfirmOpen: setAdminEmailConfirm, setLoading: setAdminEmailLoading,
+    apiFunc: async (val) => await setAdminEmail(val), inputValue: normalizedAdminEmailInput, setStateValue: setAdminEmailState, setInputValue: setAdminEmailInput, closeDialog: adminEmailDialog.close, setLoading: setAdminEmailLoading,
     successMsgEmpty: "管理者メール制限を解除しました。メールアドレスによる管理者制限は行いません。", successMsgFilled: () => "管理者メールを更新しました。設定済みメールと一致しないユーザーは管理者画面へアクセスできません。", errorMsg: "管理者メールの保存に失敗しました"
   });
 
   const adminKeyConfirmOptions = [
-    { value: "cancel", label: "キャンセル", onSelect: () => setAdminKeyConfirm(false) },
+    { value: "cancel", label: "キャンセル", onSelect: adminKeyDialog.close },
     { value: "save", label: "保存する", variant: "primary", onSelect: handleSaveAdminKey },
   ];
 
@@ -101,11 +102,11 @@ const { settings } = useBuilderSettings();
         return;
       }
     }
-    setAdminEmailConfirm(true);
+    adminEmailDialog.open();
   };
 
   const adminEmailConfirmOptions = [
-    { value: "cancel", label: "キャンセル", onSelect: () => setAdminEmailConfirm(false) },
+    { value: "cancel", label: "キャンセル", onSelect: adminEmailDialog.close },
     { value: "save", label: "保存する", variant: "primary", onSelect: handleSaveAdminEmail },
   ];
 
@@ -150,7 +151,7 @@ const { settings } = useBuilderSettings();
           <button
             type="button"
             className="nf-btn nf-nowrap"
-            onClick={() => setAdminKeyConfirm(true)}
+            onClick={() => adminKeyDialog.open()}
             disabled={adminKeyLoading || adminKeyInput.trim() === adminKey}
           >
             {adminKeyLoading ? "保存中..." : "保存"}
@@ -228,7 +229,7 @@ const { settings } = useBuilderSettings();
       </div>
 
       <ConfirmDialog
-        open={adminKeyConfirm}
+        open={adminKeyDialog.state.open}
         title="管理者キーを変更しますか？"
         message={
           adminKeyInput.trim()
@@ -239,7 +240,7 @@ const { settings } = useBuilderSettings();
       />
 
       <ConfirmDialog
-        open={adminEmailConfirm}
+        open={adminEmailDialog.state.open}
         title="管理者メールを変更しますか？"
         message={
           normalizedAdminEmailInput

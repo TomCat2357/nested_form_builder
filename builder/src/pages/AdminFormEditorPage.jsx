@@ -10,6 +10,7 @@ import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { useFormCacheSync } from "../app/hooks/useFormCacheSync.js";
 import { useEditLock } from "../app/hooks/useEditLock.js";
 import { useAlert } from "../app/hooks/useAlert.js";
+import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { omitThemeSetting, resolveSettingsCheckboxChecked, resolveSettingsFieldValue } from "../utils/settings.js";
@@ -44,7 +45,7 @@ export default function AdminFormEditorPage() {
   const [driveUrl, setDriveUrl] = useState(form?.driveFileUrl || "");
   const [localSettings, setLocalSettings] = useState(initialSettings);
   const [builderDirty, setBuilderDirty] = useState(false);
-  const [confirmState, setConfirmState] = useState(false);
+  const unsavedDialog = useConfirmDialog();
   const [isSaving, setIsSaving] = useState(false);
   const { isReadLocked, withReadLock } = useEditLock();
   const [nameError, setNameError] = useState("");
@@ -256,7 +257,7 @@ export default function AdminFormEditorPage() {
       navigateBack();
       return false;
     }
-    setConfirmState(true);
+    unsavedDialog.open();
     return false;
   };
 
@@ -264,7 +265,7 @@ export default function AdminFormEditorPage() {
     if (!isDirty) {
       navigateBack();
     } else {
-      setConfirmState(true);
+      unsavedDialog.open();
     }
   };
 
@@ -292,7 +293,7 @@ export default function AdminFormEditorPage() {
       value: "save",
       variant: "primary",
       onSelect: async () => {
-        setConfirmState(false);
+        unsavedDialog.close();
         await handleSave();
       },
     },
@@ -300,14 +301,14 @@ export default function AdminFormEditorPage() {
       label: "保存せずに戻る",
       value: "discard",
       onSelect: () => {
-        setConfirmState(false);
+        unsavedDialog.close();
         navigateBack();
       },
     },
     {
       label: "キャンセル",
       value: "cancel",
-      onSelect: () => setConfirmState(false),
+      onSelect: unsavedDialog.close,
     },
   ];
 
@@ -488,7 +489,7 @@ export default function AdminFormEditorPage() {
         </div>
       </div>
 
-      <ConfirmDialog open={confirmState} title="未保存の変更があります" message="保存せずに離れますか？" options={confirmOptions} />
+      <ConfirmDialog open={unsavedDialog.state.open} title="未保存の変更があります" message="保存せずに離れますか？" options={confirmOptions} />
 
 </AppLayout>
   );

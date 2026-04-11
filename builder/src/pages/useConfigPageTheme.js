@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import {
   DEFAULT_THEME,
   THEME_OPTIONS,
@@ -47,7 +48,7 @@ export function useConfigPageTheme({
   const [customThemesReady, setCustomThemesReady] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
-  const [removeTarget, setRemoveTarget] = useState(null);
+  const removeDialog = useConfirmDialog({ target: null });
   const [applyingTheme, setApplyingTheme] = useState(false);
 
   const themeOptions = useMemo(
@@ -244,10 +245,11 @@ export function useConfigPageTheme({
 
   const handleRemoveCustomTheme = (theme) => {
     if (!theme) return;
-    setRemoveTarget(theme);
+    removeDialog.open({ target: theme });
   };
 
   const handleConfirmRemove = async () => {
+    const removeTarget = removeDialog.state.target;
     if (!removeTarget) return;
     const nextThemes = await removeCustomTheme(removeTarget.id);
     setCustomThemes(nextThemes);
@@ -263,12 +265,12 @@ export function useConfigPageTheme({
         }
       }
     }
-    setRemoveTarget(null);
+    removeDialog.reset();
     showAlert(`インポートしたテーマを削除しました。${syncMessage}`.trim());
   };
 
   const removeOptions = [
-    { value: "cancel", label: "キャンセル", onSelect: () => setRemoveTarget(null) },
+    { value: "cancel", label: "キャンセル", onSelect: removeDialog.reset },
     { value: "remove", label: "削除する", variant: "danger", onSelect: handleConfirmRemove },
   ];
 
@@ -278,7 +280,7 @@ export function useConfigPageTheme({
     importUrl,
     setImportUrl,
     importing,
-    removeTarget,
+    removeTarget: removeDialog.state.target,
     applyingTheme,
     themeOptions,
     selectThemeValue,
