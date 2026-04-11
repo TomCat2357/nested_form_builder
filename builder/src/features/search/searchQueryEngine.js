@@ -343,18 +343,18 @@ const compareValue = (rowValue, operator, targetValue, { allowNumeric = true } =
   }
 
   const useNumeric = allowNumeric && bothNumbers && !isQuoted;
-const a = useNumeric ? rowNum : rowStr;
-const b = useNumeric ? targetNum : targetStr;
+  const a = useNumeric ? rowNum : rowStr;
+  const b = useNumeric ? targetNum : targetStr;
 
-switch (normalizedOperator) {
-  case "=": return a === b;
-  case "<>": return a !== b;
-  case ">": return a > b;
-  case ">=": return a >= b;
-  case "<": return a < b;
-  case "<=": return a <= b;
-  default: return false;
-}
+  switch (normalizedOperator) {
+    case "=": return a === b;
+    case "<>": return a !== b;
+    case ">": return a > b;
+    case ">=": return a >= b;
+    case "<": return a < b;
+    case "<=": return a <= b;
+    default: return false;
+  }
 };
 
 const resolveBooleanValueForRow = (row, column, columnName) => {

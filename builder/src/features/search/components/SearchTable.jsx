@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { applyDisplayLengthLimit } from "../searchTable.js";
+import { applyDisplayLengthLimit } from "../searchTableValues.js";
 
 const headerSortLabel = (activeSort, columnKey) => {
   if (activeSort.key !== columnKey) return "";

@@ -1,21 +1,21 @@
 import { useState, useCallback } from "react";
-import { findFirstFileUploadField } from "../core/schema.js";
+import { findFirstFileUploadField } from "../../core/schema.js";
 import {
   buildPrintDocumentPayload,
   buildFieldValuesMap,
-} from "../features/preview/printDocument.js";
-import { restoreResponsesFromData } from "../utils/responses.js";
+} from "../preview/printDocument.js";
+import { restoreResponsesFromData } from "../../utils/responses.js";
 import {
   executeRecordOutputAction,
   executeBatchGoogleDocOutput,
-} from "../services/gasClient.js";
+} from "../../services/gasClient.js";
 import {
   normalizePrintTemplateAction,
   requiresPrintTemplateFileName,
   resolveEffectivePrintTemplateFileNameTemplate,
   resolveSharedPrintFileNameTemplate,
   DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE,
-} from "../utils/printTemplateAction.js";
+} from "../../utils/printTemplateAction.js";
 
 export function useSearchPagePrintActions({
   form,

@@ -1,13 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { buildSearchTableLayout } from "./searchTable.js";
+import { buildExportTableData } from "./searchExport.js";
 import {
-  buildExportTableData,
-  buildSearchTableLayout,
   compareByColumn,
   computeRowValues,
+} from "./searchTableValues.js";
+import {
   getKeywordMatchDetail,
   matchesKeyword,
-} from "./searchTable.js";
+} from "./searchQueryEngine.js";
 import { toUnixMs, unixMsToSerial } from "../../utils/dateTime.js";
 
 const buildRegressionForm = () => ({

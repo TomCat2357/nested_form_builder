@@ -1,12 +1,12 @@
 import React, { useMemo } from "react";
 import { collectResponses } from "../../core/collect.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
+import { buildSearchTableLayout } from "../search/searchTable.js";
 import {
-  buildSearchTableLayout,
   computeRowValues,
   applyDisplayLengthLimit,
   parseSearchCellDisplayLimit,
-} from "../search/searchTable.js";
+} from "../search/searchTableValues.js";
 const BASE_KEYS = new Set(["id", "createdAt", "modifiedAt", "__actions"]);
 
 const hasAnyValue = (values, columns) =>
