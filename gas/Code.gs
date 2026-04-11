@@ -142,30 +142,6 @@ function getRecord(payload) {
   return executeAction_("get", payload, { source: "scriptRun" });
 }
 
-function nfbExportSearchResults(payload) {
-  return nfbSafeCall_(() => {
-    if (!payload || !payload.headerRows || !payload.headerRows.length) {
-      return { ok: false, error: "headerRows is required" };
-    }
-    if (!Array.isArray(payload.rows)) {
-      return { ok: false, error: "rows must be an array" };
-    }
-    return Sheets_exportResultMatrixToNewSpreadsheet_(payload.spreadsheetTitle || "", payload.headerRows, payload.rows, payload.themeColors || null);
-  });
-}
-
-function nfbAppendExportRows(payload) {
-  return nfbSafeCall_(() => {
-    if (!payload || !payload.spreadsheetId) {
-      return { ok: false, error: "spreadsheetId is required" };
-    }
-    if (!Array.isArray(payload.rows)) {
-      return { ok: false, error: "rows must be an array" };
-    }
-    return Sheets_appendRowsToSpreadsheet_(payload.spreadsheetId, payload.rows, payload.themeColors || null, payload.headerCount || 0, payload.rowOffset || 0);
-  });
-}
-
 function listRecords(payload) {
   return executeAction_("list", payload, { source: "scriptRun" });
 }
