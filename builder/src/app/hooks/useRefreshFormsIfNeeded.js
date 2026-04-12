@@ -1,7 +1,7 @@
 import { useCallback } from "react";
 import { useLatestRef } from "./useLatestRef.js";
 import { getFormsFromCache } from "../state/formsCache.js";
-import { evaluateCache, FORM_CACHE_MAX_AGE_MS, FORM_CACHE_BACKGROUND_REFRESH_MS } from "../state/cachePolicy.js";
+import { evaluateCacheForForms } from "../state/cachePolicy.js";
 
 const hasFormsCacheData = (cache) => {
   const formCount = Array.isArray(cache?.forms) ? cache.forms.length : 0;
@@ -20,11 +20,9 @@ export const useRefreshFormsIfNeeded = (refreshForms, loadingForms) => {
       console.warn("[useRefreshFormsIfNeeded] Failed to load forms cache:", error);
     }
 
-    const decision = evaluateCache({
+    const decision = evaluateCacheForForms({
       lastSyncedAt: formsCache.lastSyncedAt,
       hasData: hasFormsCacheData(formsCache),
-      maxAgeMs: FORM_CACHE_MAX_AGE_MS,
-      backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
     });
     console.info("[useRefreshFormsIfNeeded] decision", {
       source,

@@ -4,7 +4,7 @@ import { useOperationCacheTrigger } from "../../app/hooks/useOperationCacheTrigg
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { dataStore } from "../../app/state/dataStore.js";
 import { saveRecordsToCache, getRecordsFromCache } from "../../app/state/recordsCache.js";
-import { evaluateCache, RECORD_CACHE_BACKGROUND_REFRESH_MS, RECORD_CACHE_MAX_AGE_MS } from "../../app/state/cachePolicy.js";
+import { evaluateCacheForRecords } from "../../app/state/cachePolicy.js";
 import { useRefreshFormsIfNeeded } from "../../app/hooks/useRefreshFormsIfNeeded.js";
 import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../../core/constants.js";
 import { perfLogger } from "../../utils/perfLogger.js";
@@ -276,12 +276,9 @@ export const useEntriesWithCache = ({
       const unsyncedState = getUnsyncedState(cache);
       const schemaMismatch = cache.schemaHash && form?.schemaHash && cache.schemaHash !== form.schemaHash;
       const hasCache = (cache.entries || []).length > 0 && !schemaMismatch;
-      const decision = evaluateCache({
+      const decision = evaluateCacheForRecords({
         lastSyncedAt: cache.lastSyncedAt,
-        lastSpreadsheetReadAt: cache.lastSpreadsheetReadAt,
         hasData: hasCache,
-        maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
-        backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
       });
       const nowMs = Date.now();
       const reachedSyncInterval = nowMs > (unsyncedState.cacheLastServerReadAt + SYNC_INTERVAL_MS);
@@ -442,13 +439,10 @@ export const useEntriesWithCache = ({
       }
 
       const forceSync = shouldForceSync(locationState);
-      const { age, shouldSync, shouldBackground } = evaluateCache({
+      const { age, shouldSync, shouldBackground } = evaluateCacheForRecords({
         lastSyncedAt: cache.lastSyncedAt,
-        lastSpreadsheetReadAt: cache.lastSpreadsheetReadAt,
         hasData: hasCache,
         forceSync,
-        maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
-        backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
       });
 
       perfLogger.logVerbose("search", "cache decision", {

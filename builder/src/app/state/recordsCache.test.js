@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { MS_PER_DAY, SERIAL_EPOCH_UTC_MS, JST_OFFSET_MS } from "../../core/constants.js";
-import { getMaxRecordNoFromEntries, normalizeRecordForCache, planRecordMerge } from "./recordsCache.js";
+import { getMaxRecordNoFromEntries, normalizeRecordForCache, planRecordMerge } from "./recordMerge.js";
 
 const serialToUnixMs = (serial) => (SERIAL_EPOCH_UTC_MS - JST_OFFSET_MS) + serial * MS_PER_DAY;
 

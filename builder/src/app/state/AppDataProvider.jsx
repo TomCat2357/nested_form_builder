@@ -2,11 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { dataStore } from "./dataStore.js";
 import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
 import { useAuth } from "./authContext.jsx";
-import {
-  evaluateCache,
-  FORM_CACHE_MAX_AGE_MS,
-  FORM_CACHE_BACKGROUND_REFRESH_MS,
-} from "./cachePolicy.js";
+import { evaluateCacheForForms } from "./cachePolicy.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 import { normalizeFormRecord } from "../../utils/formNormalize.js";
 
@@ -156,11 +152,9 @@ export function AppDataProvider({ children }) {
           cacheApplied = true;
         }
 
-        const { age: cacheAgeMs, shouldSync, shouldBackground } = evaluateCache({
+        const { age: cacheAgeMs, shouldSync, shouldBackground } = evaluateCacheForForms({
           lastSyncedAt: cacheLastSyncedAt,
           hasData: hasCachedData,
-          maxAgeMs: FORM_CACHE_MAX_AGE_MS,
-          backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
         });
 
         perfLogger.logVerbose("forms", "cache check", {
