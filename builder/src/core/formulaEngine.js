@@ -181,10 +181,12 @@ export const evaluateFormula = (compiled, labelValueMap) => {
   if (compiled.error) return { value: null, error: compiled.error };
   if (!compiled.fn) return { value: "", error: null };
 
+  const map = labelValueMap || {};
+
   // Build numeric variable map
   const vars = {};
   for (const dep of compiled.dependencies) {
-    const raw = labelValueMap[dep];
+    const raw = map[dep];
     if (raw === undefined || raw === null || raw === "") {
       vars[dep] = 0;
     } else {

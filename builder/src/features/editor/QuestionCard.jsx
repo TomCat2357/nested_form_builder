@@ -1,5 +1,6 @@
 import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
+import { compileFormula } from "../../core/formulaEngine.js";
 import { MAX_DEPTH } from "../../core/schema.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { buildPhonePattern } from "../../core/phone.js";
@@ -87,6 +88,7 @@ export default function QuestionCard({
   const regexCheck = (isText && field.inputRestrictionMode === "pattern")
     ? buildSafeRegex(field.pattern || "")
     : { error: null };
+  const formulaCheck = isCalculated ? compileFormula(field.formula || "") : { error: null };
   const phonePattern = isPhone ? buildPhonePattern(field) : "";
   const isDisplayed = resolveIsDisplayed(field);
   const printTemplateAction = normalizePrintTemplateAction(field.printTemplateAction);
@@ -182,7 +184,7 @@ export default function QuestionCard({
 
       {isWeekday && <WeekdayFieldSection field={field} onChange={onChange} />}
 
-      {isCalculated && <CalculatedFieldSection field={field} onChange={onChange} />}
+      {isCalculated && <CalculatedFieldSection field={field} onChange={onChange} formulaError={formulaCheck.error} />}
 
       {isSubstitution && <SubstitutionFieldSection field={field} onChange={onChange} />}
 

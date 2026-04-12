@@ -416,7 +416,7 @@ export function WeekdayFieldSection({ field, onChange }) {
   );
 }
 
-export function CalculatedFieldSection({ field, onChange }) {
+export function CalculatedFieldSection({ field, onChange, formulaError }) {
   return (
     <div className="nf-mt-8">
       <div className="nf-col nf-gap-8">
@@ -428,6 +428,9 @@ export function CalculatedFieldSection({ field, onChange }) {
             value={field.formula || ""}
             onChange={(event) => onChange({ ...field, formula: event.target.value })}
           />
+          {formulaError && (
+            <div className="nf-text-danger-ink nf-text-12 nf-mt-4">計算式エラー: {formulaError}</div>
+          )}
           <span className="nf-text-11 nf-text-muted">
             {"{フィールド名} で他の項目を参照できます。四則演算（+ - * / % **）のほか、max, min, abs, round, floor, ceil, trunc, pow, sqrt, log, log10, PI, E が使えます。Math.max(...) 形式もOKです。"}
           </span>

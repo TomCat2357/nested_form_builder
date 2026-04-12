@@ -75,13 +75,12 @@ const getFieldDependencies = (field) => {
 export const buildDependencyGraph = (schema) => {
   const computedFields = [];
   const labelToId = {};
-  const allLabels = {};
 
   // 全フィールドのラベル→ID マッピングを構築
+  // validateUniqueLabels が保存時に重複を防ぐため last-wins で問題ない
   traverseSchema(schema, (field) => {
     const label = (field?.label || "").trim();
     if (label && field?.id) {
-      if (!allLabels[label]) allLabels[label] = field.id;
       labelToId[label] = field.id;
     }
     if (field?.type === "calculated" || field?.type === "substitution") {
