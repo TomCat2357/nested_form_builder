@@ -68,6 +68,14 @@ const parseDateString = (value) => {
 const DAY_OF_WEEK_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
 const DAY_OF_WEEK_LONG = ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"];
 
+const replaceFormatTokens = (formatStr, replacements) => {
+  let result = formatStr;
+  for (const [token, value] of replacements) {
+    result = result.split(token).join(value);
+  }
+  return result;
+};
+
 const parseTimeString = (value) => {
   const str = String(value).trim();
   const dtMatch = str.match(/[\sT](\d{1,2}):(\d{2})(?::(\d{2}))?/);
@@ -89,25 +97,30 @@ const transformTime = (value, formatStr) => {
   if (dp) {
     const era = resolveJapaneseEra(dp);
     const dow = new Date(dp.year, dp.month - 1, dp.day).getDay();
-    result = result.split("dddd").join(DAY_OF_WEEK_LONG[dow]);
-    result = result.split("ddd").join(DAY_OF_WEEK_SHORT[dow]);
-    result = result.split("gg").join(era.name);
-    result = result.split("YYYY").join(String(dp.year));
-    result = result.split("YY").join(("0" + dp.year).slice(-2));
-    result = result.split("MM").join(("0" + dp.month).slice(-2));
-    result = result.split("DD").join(("0" + dp.day).slice(-2));
-    result = result.split("ee").join(("0" + era.year).slice(-2));
-    result = result.split("M").join(String(dp.month));
-    result = result.split("D").join(String(dp.day));
-    result = result.split("e").join(String(era.year));
+    // Longer tokens first to avoid partial replacement (e.g. "MM" before "M")
+    result = replaceFormatTokens(result, [
+      ["dddd", DAY_OF_WEEK_LONG[dow]],
+      ["ddd",  DAY_OF_WEEK_SHORT[dow]],
+      ["gg",   era.name],
+      ["YYYY", String(dp.year)],
+      ["YY",   ("0" + dp.year).slice(-2)],
+      ["MM",   ("0" + dp.month).slice(-2)],
+      ["DD",   ("0" + dp.day).slice(-2)],
+      ["ee",   ("0" + era.year).slice(-2)],
+      ["M",    String(dp.month)],
+      ["D",    String(dp.day)],
+      ["e",    String(era.year)],
+    ]);
   }
   if (tp) {
-    result = result.split("HH").join(("0" + tp.hour).slice(-2));
-    result = result.split("mm").join(("0" + tp.minute).slice(-2));
-    result = result.split("ss").join(("0" + tp.second).slice(-2));
-    result = result.split("H").join(String(tp.hour));
-    result = result.split("m").join(String(tp.minute));
-    result = result.split("s").join(String(tp.second));
+    result = replaceFormatTokens(result, [
+      ["HH", ("0" + tp.hour).slice(-2)],
+      ["mm", ("0" + tp.minute).slice(-2)],
+      ["ss", ("0" + tp.second).slice(-2)],
+      ["H",  String(tp.hour)],
+      ["m",  String(tp.minute)],
+      ["s",  String(tp.second)],
+    ]);
   }
   return result;
 };
@@ -143,6 +156,11 @@ const transformPadRight = (v, args) => {
   if (isNaN(len) || len <= 0) return v;
   return v.padEnd(len, ch);
 };
+
+const transformUpper = (v) => v.toUpperCase();
+const transformLower = (v) => v.toLowerCase();
+const transformTrim = (v) => v.trim();
+const transformDefault = (v, a) => v ? v : String(a);
 
 const transformReplace = (v, args) => {
   const commaIndex = args.indexOf(",");
@@ -329,10 +347,10 @@ const TRANSFORMERS = {
   mid: transformMid,
   pad: transformPad,
   padRight: transformPadRight,
-  upper: (v) => v.toUpperCase(),
-  lower: (v) => v.toLowerCase(),
-  trim: (v) => v.trim(),
-  default: (v, a) => v ? v : String(a),
+  upper: transformUpper,
+  lower: transformLower,
+  trim: transformTrim,
+  default: transformDefault,
   replace: transformReplace,
   match: transformMatch,
   number: transformNumber,

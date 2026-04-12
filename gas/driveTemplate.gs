@@ -219,10 +219,10 @@ var NFB_TRANSFORMERS_ = {
   "mid":      nfbTransformMid_,
   "pad":      nfbTransformPad_,
   "padRight": nfbTransformPadRight_,
-  "upper":    function(v) { return v.toUpperCase(); },
-  "lower":    function(v) { return v.toLowerCase(); },
-  "trim":     function(v) { return v.replace(/^\s+|\s+$/g, ""); },
-  "default":  function(v, a) { return v ? v : String(a); },
+  "upper":    nfbTransformUpper_,
+  "lower":    nfbTransformLower_,
+  "trim":     nfbTransformTrim_,
+  "default":  nfbTransformDefault_,
   "replace":  nfbTransformReplace_,
   "match":    nfbTransformMatch_,
   "number":   nfbTransformNumber_,
@@ -250,28 +250,11 @@ function nfbParseDateString_(value) {
 var NFB_DAY_OF_WEEK_SHORT_ = ["日", "月", "火", "水", "木", "金", "土"];
 var NFB_DAY_OF_WEEK_LONG_ = ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"];
 
-function nfbTransformDate_(value, formatStr) {
-  var dateParts = nfbParseDateString_(value);
-  if (!dateParts) return value;
-
-  var era = nfbResolveJapaneseEra_(dateParts);
-  var dow = new Date(dateParts.year, dateParts.month - 1, dateParts.day).getDay();
+function nfbReplaceFormatTokens_(formatStr, replacements) {
   var result = formatStr;
-
-  // Longer tokens first to avoid partial replacement
-  result = result.split("dddd").join(NFB_DAY_OF_WEEK_LONG_[dow]);
-  result = result.split("ddd").join(NFB_DAY_OF_WEEK_SHORT_[dow]);
-  result = result.split("gg").join(era.name);
-  result = result.split("YYYY").join(String(dateParts.year));
-  result = result.split("YY").join(("0" + dateParts.year).slice(-2));
-  result = result.split("MM").join(("0" + dateParts.month).slice(-2));
-  result = result.split("DD").join(("0" + dateParts.day).slice(-2));
-  result = result.split("ee").join(("0" + era.year).slice(-2));
-  // Single-char tokens after their multi-char variants are already consumed
-  result = result.split("M").join(String(dateParts.month));
-  result = result.split("D").join(String(dateParts.day));
-  result = result.split("e").join(String(era.year));
-
+  for (var i = 0; i < replacements.length; i++) {
+    result = result.split(replacements[i][0]).join(replacements[i][1]);
+  }
   return result;
 }
 
@@ -301,9 +284,7 @@ function nfbTransformPad_(value, args) {
   var length = parseInt(parts[0], 10);
   var padChar = parts.length > 1 ? parts[1] : "0";
   if (isNaN(length) || length <= 0) return value;
-  var result = value;
-  while (result.length < length) result = padChar + result;
-  return result;
+  return value.padStart(length, padChar);
 }
 
 function nfbTransformPadRight_(value, args) {
@@ -311,9 +292,7 @@ function nfbTransformPadRight_(value, args) {
   var length = parseInt(parts[0], 10);
   var padChar = parts.length > 1 ? parts[1] : " ";
   if (isNaN(length) || length <= 0) return value;
-  var result = value;
-  while (result.length < length) result = result + padChar;
-  return result;
+  return value.padEnd(length, padChar);
 }
 
 function nfbTransformReplace_(value, args) {
@@ -322,6 +301,22 @@ function nfbTransformReplace_(value, args) {
   var from = args.substring(0, commaIndex);
   var to = args.substring(commaIndex + 1);
   return value.split(from).join(to);
+}
+
+function nfbTransformUpper_(value) {
+  return value.toUpperCase();
+}
+
+function nfbTransformLower_(value) {
+  return value.toLowerCase();
+}
+
+function nfbTransformTrim_(value) {
+  return value.replace(/^\s+|\s+$/g, "");
+}
+
+function nfbTransformDefault_(value, args) {
+  return value ? value : String(args);
 }
 
 // ---------------------------------------------------------------------------
@@ -356,25 +351,30 @@ function nfbTransformTime_(value, formatStr) {
   if (dateParts) {
     var era = nfbResolveJapaneseEra_(dateParts);
     var dow = new Date(dateParts.year, dateParts.month - 1, dateParts.day).getDay();
-    result = result.split("dddd").join(NFB_DAY_OF_WEEK_LONG_[dow]);
-    result = result.split("ddd").join(NFB_DAY_OF_WEEK_SHORT_[dow]);
-    result = result.split("gg").join(era.name);
-    result = result.split("YYYY").join(String(dateParts.year));
-    result = result.split("YY").join(("0" + dateParts.year).slice(-2));
-    result = result.split("MM").join(("0" + dateParts.month).slice(-2));
-    result = result.split("DD").join(("0" + dateParts.day).slice(-2));
-    result = result.split("ee").join(("0" + era.year).slice(-2));
-    result = result.split("M").join(String(dateParts.month));
-    result = result.split("D").join(String(dateParts.day));
-    result = result.split("e").join(String(era.year));
+    // Longer tokens first to avoid partial replacement (e.g. "MM" before "M")
+    result = nfbReplaceFormatTokens_(result, [
+      ["dddd", NFB_DAY_OF_WEEK_LONG_[dow]],
+      ["ddd",  NFB_DAY_OF_WEEK_SHORT_[dow]],
+      ["gg",   era.name],
+      ["YYYY", String(dateParts.year)],
+      ["YY",   ("0" + dateParts.year).slice(-2)],
+      ["MM",   ("0" + dateParts.month).slice(-2)],
+      ["DD",   ("0" + dateParts.day).slice(-2)],
+      ["ee",   ("0" + era.year).slice(-2)],
+      ["M",    String(dateParts.month)],
+      ["D",    String(dateParts.day)],
+      ["e",    String(era.year)]
+    ]);
   }
   if (timeParts) {
-    result = result.split("HH").join(("0" + timeParts.hour).slice(-2));
-    result = result.split("mm").join(("0" + timeParts.minute).slice(-2));
-    result = result.split("ss").join(("0" + timeParts.second).slice(-2));
-    result = result.split("H").join(String(timeParts.hour));
-    result = result.split("m").join(String(timeParts.minute));
-    result = result.split("s").join(String(timeParts.second));
+    result = nfbReplaceFormatTokens_(result, [
+      ["HH", ("0" + timeParts.hour).slice(-2)],
+      ["mm", ("0" + timeParts.minute).slice(-2)],
+      ["ss", ("0" + timeParts.second).slice(-2)],
+      ["H",  String(timeParts.hour)],
+      ["m",  String(timeParts.minute)],
+      ["s",  String(timeParts.second)]
+    ]);
   }
 
   return result;
