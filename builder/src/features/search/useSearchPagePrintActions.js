@@ -17,7 +17,7 @@ import {
 } from "../../utils/printTemplateAction.js";
 import {
   validateOutputAction,
-  handleRecordOutputResult,
+  downloadPdfFromBase64,
 } from "../../utils/recordOutputActions.js";
 
 export function useSearchPagePrintActions({
@@ -195,10 +195,17 @@ export function useSearchPagePrintActions({
     };
 
     const result = await executeRecordOutputAction(payload);
-    handleRecordOutputResult(result, {
-      showOutputAlert,
-      fallbackOutputType: action.outputType,
-    });
+    if (result?.openUrl) {
+      const outputType = result.outputType || action.outputType || "";
+      showOutputAlert({
+        message: "様式出力を準備しました。",
+        url: result.openUrl,
+        linkLabel: outputType === "gmail" ? "Gmail下書きを開く" : "ファイルを開く",
+      });
+    }
+    if (result?.pdfBase64 && result?.fileName) {
+      downloadPdfFromBase64(result.pdfBase64, result.fileName);
+    }
   }, [
     fieldLabels,
     form?.id,
