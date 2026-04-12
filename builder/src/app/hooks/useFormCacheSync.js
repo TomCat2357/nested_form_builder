@@ -1,11 +1,7 @@
 import { useCallback } from "react";
 import { useLatestRef } from "./useLatestRef.js";
 import { useOperationCacheTrigger } from "./useOperationCacheTrigger.js";
-import {
-  evaluateCache,
-  FORM_CACHE_MAX_AGE_MS,
-  FORM_CACHE_BACKGROUND_REFRESH_MS,
-} from "../state/cachePolicy.js";
+import { evaluateCacheForForms } from "../state/cachePolicy.js";
 
 /**
  * フォームキャッシュをユーザー操作に応じて同期するフック
@@ -39,11 +35,9 @@ export function useFormCacheSync({
     if (typeof shouldSkipRef.current === "function" && shouldSkipRef.current()) return;
     if (loadingFormsRef.current) return;
 
-    const cacheDecision = evaluateCache({
+    const cacheDecision = evaluateCacheForForms({
       lastSyncedAt,
       hasData: formsCount > 0 || !!lastSyncedAt,
-      maxAgeMs: FORM_CACHE_MAX_AGE_MS,
-      backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
     });
 
     if (cacheDecision.isFresh) return;

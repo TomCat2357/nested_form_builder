@@ -26,9 +26,8 @@ import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.
 import { useEditLock } from "../app/hooks/useEditLock.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsCache.js";
 import {
-  evaluateCache,
+  evaluateCacheForRecords,
   RECORD_CACHE_MAX_AGE_MS,
-  RECORD_CACHE_BACKGROUND_REFRESH_MS,
 } from "../app/state/cachePolicy.js";
 import { useRefreshFormsIfNeeded } from "../app/hooks/useRefreshFormsIfNeeded.js";
 import { useAuth } from "../app/state/authContext.jsx";
@@ -634,11 +633,9 @@ export default function FormPage() {
     if (entryId && !loadingRef.current && !reloadingRef.current && !savingRef.current && !readLockRef.current) {
       try {
         const { entry: cachedEntry, rowIndex, lastSyncedAt } = await getCachedEntryWithIndex(formId, entryId);
-        const cacheDecision = evaluateCache({
+        const cacheDecision = evaluateCacheForRecords({
           lastSyncedAt,
           hasData: !!cachedEntry,
-          maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
-          backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
         });
 
         if (!cacheDecision.isFresh) {

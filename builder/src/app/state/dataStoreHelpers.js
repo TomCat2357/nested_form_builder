@@ -1,48 +1,10 @@
 import { genRecordId } from "../../core/ids.js";
-import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import { resolveUnixMs } from "../../utils/dateTime.js";
 import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_SHEET_NAME, MS_PER_DAY } from "../../core/constants.js";
-import {
-  deleteRecordsFromCache,
-  normalizeRecordForCache,
-} from "./recordsCache.js";
+import { deleteRecordsFromCache } from "./recordsCache.js";
+import { normalizeRecordForCache } from "./recordMerge.js";
 
 export const nowUnixMs = () => Date.now();
-
-export const pendingOperations = new Set();
-export const trackPendingOperation = (promise) => {
-  pendingOperations.add(promise);
-  promise.finally(() => pendingOperations.delete(promise));
-};
-
-export const displayInfoCache = new Map();
-
-export const resolveSchemaVersionKey = (form) => {
-  if (!form || !form.id) return "";
-  if (form.schemaHash) return `hash:${form.schemaHash}`;
-  return `fallback:${form.updatedAtUnixMs || form.modifiedAtUnixMs || form.updatedAt || form.modifiedAt || "none"}`;
-};
-
-export const ensureDisplayInfo = (form) => {
-  const schema = Array.isArray(form?.schema) ? form.schema : [];
-  const cacheKey = resolveSchemaVersionKey(form);
-  const cached = displayInfoCache.get(form?.id);
-  const displayInfo = cached?.versionKey === cacheKey
-    ? cached
-    : (() => {
-      const displayFieldSettings = collectDisplayFieldSettings(schema);
-      const importantFields = displayFieldSettings.map((item) => item.path);
-      const next = { versionKey: cacheKey, displayFieldSettings, importantFields };
-      if (form?.id) displayInfoCache.set(form.id, next);
-      return next;
-    })();
-
-  return {
-    ...form,
-    displayFieldSettings: displayInfo.displayFieldSettings,
-    importantFields: displayInfo.importantFields,
-  };
-};
 
 export const getSheetConfig = (form) => {
   const spreadsheetId = form?.settings?.spreadsheetId;

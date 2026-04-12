@@ -1,5 +1,6 @@
 import { stripSchemaIDs, deepClone } from "../../core/schema.js";
 import { normalizeFormRecord } from "../../utils/formNormalize.js";
+import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import {
   getCachedEntryWithIndex,
   saveRecordsToCache,
@@ -9,15 +10,11 @@ import {
   getMaxRecordNo,
   getRecordsFromCache,
   applySyncResultToCache,
-  mergeRecordsByModifiedAt,
 } from "./recordsCache.js";
+import { mergeRecordsByModifiedAt } from "./recordMerge.js";
 import { buildUploadRecordsForSync } from "./syncUploadPlan.js";
 import { getFormsFromCache } from "./formsCache.js";
-import {
-  evaluateCache,
-  RECORD_CACHE_MAX_AGE_MS,
-  RECORD_CACHE_BACKGROUND_REFRESH_MS,
-} from "./cachePolicy.js";
+import { evaluateCacheForRecords } from "./cachePolicy.js";
 import {
   getEntry as getEntryFromGas,
   listForms as listFormsFromGas,
@@ -35,8 +32,6 @@ import {
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 import {
-  pendingOperations,
-  ensureDisplayInfo,
   getSheetConfig,
   getDeletedRetentionDays,
   isDeletedEntryExpired,
@@ -55,6 +50,41 @@ export {
   buildListEntriesResult,
   buildUpsertEntryRecord,
 } from "./dataStoreHelpers.js";
+
+// ---------------------------------------------------------------------------
+// dataStore-local helpers (moved from dataStoreHelpers.js)
+// ---------------------------------------------------------------------------
+
+const pendingOperations = new Set();
+
+const displayInfoCache = new Map();
+
+const resolveSchemaVersionKey = (form) => {
+  if (!form || !form.id) return "";
+  if (form.schemaHash) return `hash:${form.schemaHash}`;
+  return `fallback:${form.updatedAtUnixMs || form.modifiedAtUnixMs || form.updatedAt || form.modifiedAt || "none"}`;
+};
+
+const ensureDisplayInfo = (form) => {
+  const schema = Array.isArray(form?.schema) ? form.schema : [];
+  const cacheKey = resolveSchemaVersionKey(form);
+  const cached = displayInfoCache.get(form?.id);
+  const displayInfo = cached?.versionKey === cacheKey
+    ? cached
+    : (() => {
+      const displayFieldSettings = collectDisplayFieldSettings(schema);
+      const importantFields = displayFieldSettings.map((item) => item.path);
+      const next = { versionKey: cacheKey, displayFieldSettings, importantFields };
+      if (form?.id) displayInfoCache.set(form.id, next);
+      return next;
+    })();
+
+  return {
+    ...form,
+    displayFieldSettings: displayInfo.displayFieldSettings,
+    importantFields: displayInfo.importantFields,
+  };
+};
 
 export const dataStore = {
   async listForms({ includeArchived = false } = {}) {
@@ -361,12 +391,10 @@ export const dataStore = {
     // rowIndexHintが明示的に渡された場合はそれを優先、なければキャッシュから取得したものを使用
     const effectiveRowIndex = rowIndexHint !== undefined ? rowIndexHint : cachedRowIndex;
 
-    const { age: cacheAge, shouldSync, shouldBackground } = evaluateCache({
+    const { age: cacheAge, shouldSync, shouldBackground } = evaluateCacheForRecords({
       lastSyncedAt,
       hasData: !!usableCachedEntry,
       forceSync,
-      maxAgeMs: RECORD_CACHE_MAX_AGE_MS,
-      backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS,
     });
 
     // 1分(60,000ms)以内であれば強制同期(forceSync: true)でもキャッシュを優先して通信を避ける

@@ -2,63 +2,22 @@
  * IndexedDB-based cache for records data (per form)
  * - Uses indexes for quick lookup by formId and entryId
  * - Stores header metadata per form
+ * - Pure transformation / merge logic lives in recordMerge.js
  */
 
-import { openDB, waitForRequest, waitForTransaction, STORE_NAMES } from "./dbHelpers.js";
-import { resolveUnixMs } from "../../utils/dateTime.js";
+import { withTransaction, waitForRequest, STORE_NAMES } from "./dbHelpers.js";
+import {
+  withNormalizedModifiedAt,
+  normalizeRecordForCache,
+  buildEntryIndexMap,
+  mergeRecordsByModifiedAt,
+  getMaxRecordNoFromEntries,
+} from "./recordMerge.js";
+
+// Re-export pure functions so existing consumers don't break
+export { normalizeRecordForCache, mergeRecordsByModifiedAt, planRecordMerge, getMaxRecordNoFromEntries } from "./recordMerge.js";
 
 const buildCompoundId = (formId, entryId) => `${formId}::${entryId}`;
-
-const normalizeComparableModifiedAtUnixMs = (record) => {
-  if (!record) return 0;
-  return resolveUnixMs(record.modifiedAtUnixMs, record.modifiedAt) ?? 0;
-};
-
-const withNormalizedModifiedAt = (record) => {
-  if (!record) return record;
-  const normalizedModifiedAtUnixMs = normalizeComparableModifiedAtUnixMs(record);
-  if (record.modifiedAtUnixMs === normalizedModifiedAtUnixMs) return record;
-  return { ...record, modifiedAtUnixMs: normalizedModifiedAtUnixMs };
-};
-
-const normalizeObjectRecord = (value) => (
-  value && typeof value === "object" && !Array.isArray(value) ? value : {}
-);
-
-export const normalizeRecordForCache = (record, { formId } = {}) => {
-  const baseRecord = record && typeof record === "object" ? record : {};
-  const createdAtUnixMs = resolveUnixMs(baseRecord.createdAtUnixMs, baseRecord.createdAt);
-  const modifiedAtUnixMs = resolveUnixMs(baseRecord.modifiedAtUnixMs, baseRecord.modifiedAt);
-  const deletedAtUnixMs = resolveUnixMs(baseRecord.deletedAtUnixMs, baseRecord.deletedAt);
-  const normalizedData = normalizeObjectRecord(baseRecord.data);
-  const normalizedDataUnixMs = normalizeObjectRecord(baseRecord.dataUnixMs);
-  const normalizedOrder = Array.isArray(baseRecord.order) && baseRecord.order.length > 0
-    ? [...baseRecord.order]
-    : Object.keys(normalizedData);
-  const rawDeletedAt = baseRecord.deletedAt;
-
-  return {
-    ...baseRecord,
-    id: baseRecord.id ?? baseRecord.entryId ?? "",
-    "No.": baseRecord["No."] ?? "",
-    formId: formId ?? baseRecord.formId ?? "",
-    driveFolderUrl: baseRecord.driveFolderUrl ?? "",
-    createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : (baseRecord.createdAt ?? ""),
-    createdAtUnixMs: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : null,
-    modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : (baseRecord.modifiedAt ?? ""),
-    modifiedAtUnixMs: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : null,
-    deletedAt: Number.isFinite(deletedAtUnixMs)
-      ? deletedAtUnixMs
-      : (rawDeletedAt === "" || rawDeletedAt === undefined ? null : (rawDeletedAt ?? null)),
-    deletedAtUnixMs: Number.isFinite(deletedAtUnixMs) ? deletedAtUnixMs : null,
-    createdBy: baseRecord.createdBy ?? "",
-    modifiedBy: baseRecord.modifiedBy ?? "",
-    deletedBy: baseRecord.deletedBy ?? "",
-    data: normalizedData,
-    dataUnixMs: normalizedDataUnixMs,
-    order: normalizedOrder,
-  };
-};
 
 const stripMetadata = (record) => {
   if (!record) return null;
@@ -94,93 +53,6 @@ const buildCacheRecord = (formId, record, lastSyncedAt, rowIndex) => {
   };
 };
 
-const buildEntryIndexMap = (records) => {
-  const map = {};
-  records.forEach((record, idx) => {
-    if (record?.id) map[record.id] = idx;
-  });
-  return map;
-};
-
-const buildLatestRecordMap = (records, pickEntryId) => {
-  const latestByEntryId = {};
-  for (const record of records) {
-    const entryId = pickEntryId(record);
-    if (!entryId) continue;
-    const current = latestByEntryId[entryId];
-    if (!current || normalizeComparableModifiedAtUnixMs(record) > normalizeComparableModifiedAtUnixMs(current)) {
-      latestByEntryId[entryId] = record;
-    }
-  }
-  return latestByEntryId;
-};
-
-const getMaxModifiedAt = (records) => {
-  let maxModifiedAt = 0;
-  for (const record of records) {
-    const ts = normalizeComparableModifiedAtUnixMs(record);
-    if (ts > maxModifiedAt) maxModifiedAt = ts;
-  }
-  return maxModifiedAt;
-};
-
-export const mergeRecordsByModifiedAt = (existingMap, newRecords) => {
-  const merged = { ...(existingMap || {}) };
-  const safeNewRecords = Array.isArray(newRecords) ? newRecords : [];
-
-  for (const record of safeNewRecords) {
-    const entryId = record?.id ?? record?.entryId;
-    if (!entryId) continue;
-    const existing = merged[entryId];
-    if (!existing || normalizeComparableModifiedAtUnixMs(record) >= normalizeComparableModifiedAtUnixMs(existing)) {
-      merged[entryId] = existing?.rowIndex !== undefined && record?.rowIndex === undefined
-        ? { ...record, rowIndex: existing.rowIndex }
-        : record;
-    }
-  }
-
-  return merged;
-};
-
-export const planRecordMerge = ({ existingRecords = [], incomingRecords = [] } = {}) => {
-  const safeExistingRecords = Array.isArray(existingRecords) ? existingRecords : [];
-  const safeIncomingRecords = Array.isArray(incomingRecords) ? incomingRecords : [];
-
-  const existingByEntryId = buildLatestRecordMap(safeExistingRecords, (record) => record?.entryId ?? record?.id);
-  const incomingByEntryId = buildLatestRecordMap(safeIncomingRecords, (record) => record?.id ?? record?.entryId);
-
-  const maxIncomingModifiedAt = getMaxModifiedAt(Object.values(incomingByEntryId));
-  const maxExistingModifiedAt = getMaxModifiedAt(Object.values(existingByEntryId));
-
-  const commonUpdateIds = [];
-  const incomingOnlyAddIds = [];
-
-  for (const [entryId, incomingRecord] of Object.entries(incomingByEntryId)) {
-    const existingRecord = existingByEntryId[entryId];
-    if (!existingRecord) continue;
-
-    const incomingModifiedAt = normalizeComparableModifiedAtUnixMs(incomingRecord);
-    const existingModifiedAt = normalizeComparableModifiedAtUnixMs(existingRecord);
-    if (incomingModifiedAt >= existingModifiedAt) {
-      commonUpdateIds.push(entryId);
-    }
-  }
-
-  for (const [entryId] of Object.entries(incomingByEntryId)) {
-    if (existingByEntryId[entryId]) continue;
-    incomingOnlyAddIds.push(entryId);
-  }
-
-  return {
-    existingByEntryId,
-    incomingByEntryId,
-    commonUpdateIds,
-    incomingOnlyAddIds,
-    maxIncomingModifiedAt,
-    maxExistingModifiedAt,
-  };
-};
-
 /**
  * Build metadata object with defaults from existing metadata
  */
@@ -210,36 +82,30 @@ const buildMetadata = (formId, existingMeta, updates = {}) => {
  */
 export async function saveRecordsToCache(formId, records, headerMatrix = [], { schemaHash = null, sheetLastUpdatedAt = 0, serverCommitToken = 0, serverModifiedAt = 0, lastServerReadAt = 0 } = {}) {
   if (!formId) return;
-  const db = await openDB();
-  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
-  const store = tx.objectStore(STORE_NAMES.records);
-  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
+  await withTransaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite', async ([store, metaStore]) => {
+    const lastSyncedAt = Date.now();
+    const safeRecords = Array.isArray(records) ? records : [];
+    const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
+    const entryIndexMap = buildEntryIndexMap(safeRecords);
 
-  const lastSyncedAt = Date.now();
-  const safeRecords = Array.isArray(records) ? records : [];
-  const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
-  const entryIndexMap = buildEntryIndexMap(safeRecords);
+    await deleteEntriesForForm(store, formId);
 
-  await deleteEntriesForForm(store, formId);
+    for (let idx = 0; idx < safeRecords.length; idx++) {
+      const record = safeRecords[idx];
+      await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, idx)));
+    }
 
-  for (let idx = 0; idx < safeRecords.length; idx++) {
-    const record = safeRecords[idx];
-    await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, idx)));
-  }
-
-  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
-    lastSyncedAt,
-    lastSpreadsheetReadAt: sheetLastUpdatedAt || existingMeta?.lastSpreadsheetReadAt || lastSyncedAt,
-    headerMatrix,
-    schemaHash,
-    entryIndexMap,
-    serverCommitToken,
-    serverModifiedAt,
-    lastServerReadAt,
-  })));
-
-  await waitForTransaction(tx);
-  db.close();
+    await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
+      lastSyncedAt,
+      lastSpreadsheetReadAt: sheetLastUpdatedAt || existingMeta?.lastSpreadsheetReadAt || lastSyncedAt,
+      headerMatrix,
+      schemaHash,
+      entryIndexMap,
+      serverCommitToken,
+      serverModifiedAt,
+      lastServerReadAt,
+    })));
+  });
 }
 
 /**
@@ -256,32 +122,28 @@ export async function updateRecordsMeta(formId, {
   serverModifiedAt,
 } = {}) {
   if (!formId) return;
-  const db = await openDB();
-  const tx = db.transaction(STORE_NAMES.recordsMeta, 'readwrite');
-  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
-  const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
+  await withTransaction(STORE_NAMES.recordsMeta, 'readwrite', async (metaStore) => {
+    const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
 
-  const updates = {
-    headerMatrix,
-    schemaHash,
-    entryIndexMap,
-    lastServerReadAt,
-    serverCommitToken,
-    serverModifiedAt,
-  };
-  if (lastReloadedAt !== undefined) {
-    updates.lastSyncedAt = lastReloadedAt;
-    updates.lastSpreadsheetReadAt = lastSpreadsheetReadAt ?? lastReloadedAt;
-  } else if (lastSpreadsheetReadAt !== undefined) {
-    updates.lastSpreadsheetReadAt = lastSpreadsheetReadAt;
-  }
+    const updates = {
+      headerMatrix,
+      schemaHash,
+      entryIndexMap,
+      lastServerReadAt,
+      serverCommitToken,
+      serverModifiedAt,
+    };
+    if (lastReloadedAt !== undefined) {
+      updates.lastSyncedAt = lastReloadedAt;
+      updates.lastSpreadsheetReadAt = lastSpreadsheetReadAt ?? lastReloadedAt;
+    } else if (lastSpreadsheetReadAt !== undefined) {
+      updates.lastSpreadsheetReadAt = lastSpreadsheetReadAt;
+    }
 
-  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
-    ...updates,
-  })));
-
-  await waitForTransaction(tx);
-  db.close();
+    await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
+      ...updates,
+    })));
+  });
 }
 
 /**
@@ -289,20 +151,16 @@ export async function updateRecordsMeta(formId, {
  */
 export async function updateEntryIndex(formId, entryId, rowIndex) {
   if (!formId || !entryId || rowIndex === undefined || rowIndex === null) return;
-  const db = await openDB();
-  const tx = db.transaction(STORE_NAMES.recordsMeta, 'readwrite');
-  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
-  const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
+  await withTransaction(STORE_NAMES.recordsMeta, 'readwrite', async (metaStore) => {
+    const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
 
-  const existingMap = existingMeta?.entryIndexMap || {};
-  existingMap[entryId] = rowIndex;
+    const existingMap = existingMeta?.entryIndexMap || {};
+    existingMap[entryId] = rowIndex;
 
-  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
-    entryIndexMap: existingMap,
-  })));
-
-  await waitForTransaction(tx);
-  db.close();
+    await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
+      entryIndexMap: existingMap,
+    })));
+  });
 }
 
 const binarySearchById = (entries, entryId) => {
@@ -353,42 +211,34 @@ export async function getCachedEntryWithIndex(formId, entryId) {
  */
 export async function upsertRecordInCache(formId, record, { headerMatrix, rowIndex, schemaHash, syncStartedAt = null } = {}) {
   if (!formId || !record?.id) return;
-  const db = await openDB();
-  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
-  const store = tx.objectStore(STORE_NAMES.records);
-  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
-
-  // syncStartedAt保護: 同期開始後にローカル変更されたレコードは上書きしない
-  if (syncStartedAt) {
-    const compoundId = buildCompoundId(formId, record.id);
-    const existing = await waitForRequest(store.get(compoundId)).catch(() => null);
-    if (existing && existing.lastSyncedAt > syncStartedAt) {
-      await waitForTransaction(tx);
-      db.close();
-      return;
+  await withTransaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite', async ([store, metaStore]) => {
+    // syncStartedAt保護: 同期開始後にローカル変更されたレコードは上書きしない
+    if (syncStartedAt) {
+      const compoundId = buildCompoundId(formId, record.id);
+      const existing = await waitForRequest(store.get(compoundId)).catch(() => null);
+      if (existing && existing.lastSyncedAt > syncStartedAt) {
+        return;
+      }
     }
-  }
 
-  const lastSyncedAt = Date.now();
-  const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
-  const nextRowIndex = Number.isInteger(rowIndex) ? rowIndex : existingMeta?.entryIndexMap?.[record.id];
-  await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, nextRowIndex)));
+    const lastSyncedAt = Date.now();
+    const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
+    const nextRowIndex = Number.isInteger(rowIndex) ? rowIndex : existingMeta?.entryIndexMap?.[record.id];
+    await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, nextRowIndex)));
 
-  const updatedIndexMap = { ...(existingMeta?.entryIndexMap || {}) };
-  if (Number.isInteger(nextRowIndex)) {
-    updatedIndexMap[record.id] = nextRowIndex;
-  }
+    const updatedIndexMap = { ...(existingMeta?.entryIndexMap || {}) };
+    if (Number.isInteger(nextRowIndex)) {
+      updatedIndexMap[record.id] = nextRowIndex;
+    }
 
-  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
-    lastSyncedAt,
-    lastFrontendMutationAt: lastSyncedAt,
-    headerMatrix,
-    schemaHash,
-    entryIndexMap: updatedIndexMap,
-  })));
-
-  await waitForTransaction(tx);
-  db.close();
+    await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
+      lastSyncedAt,
+      lastFrontendMutationAt: lastSyncedAt,
+      headerMatrix,
+      schemaHash,
+      entryIndexMap: updatedIndexMap,
+    })));
+  });
 }
 
 /**
@@ -398,21 +248,17 @@ export async function upsertRecordInCache(formId, record, { headerMatrix, rowInd
  */
 export async function getRecordsFromCache(formId) {
   if (!formId) return { entries: [], headerMatrix: [], cacheTimestamp: null, schemaHash: null, lastSyncedAt: null, lastSpreadsheetReadAt: null, lastFrontendMutationAt: 0, entryIndexMap: {} };
-  const db = await openDB();
-  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readonly');
-  const store = tx.objectStore(STORE_NAMES.records);
-  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
+  const { rawEntries, meta } = await withTransaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readonly', async ([store, metaStore]) => {
+    const entriesRequest = store.index('formId').getAll(IDBKeyRange.only(formId));
+    const metaRequest = metaStore.get(formId);
 
-  const entriesRequest = store.index('formId').getAll(IDBKeyRange.only(formId));
-  const metaRequest = metaStore.get(formId);
+    const [rawEntries, meta] = await Promise.all([
+      waitForRequest(entriesRequest),
+      waitForRequest(metaRequest).catch(() => null),
+    ]);
 
-  const [rawEntries, meta] = await Promise.all([
-    waitForRequest(entriesRequest),
-    waitForRequest(metaRequest).catch(() => null),
-  ]);
-
-  await waitForTransaction(tx);
-  db.close();
+    return { rawEntries, meta };
+  });
 
   const entries = (rawEntries || []).map(stripMetadata);
   entries.sort((a, b) => {
@@ -444,100 +290,69 @@ export async function deleteRecordFromCache(formId, entryId) {
 
 export async function deleteRecordsFromCache(formId, entryIds) {
   if (!formId) return;
-  const db = await openDB();
-  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
-  const store = tx.objectStore(STORE_NAMES.records);
-  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
-
   const targetIds = Array.isArray(entryIds) ? entryIds.filter(Boolean) : [];
-  if (targetIds.length === 0) {
-    await waitForTransaction(tx);
-    db.close();
-    return;
-  }
+  if (targetIds.length === 0) return;
 
-  for (const entryId of targetIds) {
-    await waitForRequest(store.delete(buildCompoundId(formId, entryId)));
-  }
-  const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
+  await withTransaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite', async ([store, metaStore]) => {
+    for (const entryId of targetIds) {
+      await waitForRequest(store.delete(buildCompoundId(formId, entryId)));
+    }
+    const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
 
-  // 削除対象のentryIdのみをindexMapから除去（他のエントリは保持）
-  const updatedIndexMap = { ...(existingMeta?.entryIndexMap || {}) };
-  targetIds.forEach((entryId) => {
-    delete updatedIndexMap[entryId];
+    // 削除対象のentryIdのみをindexMapから除去（他のエントリは保持）
+    const updatedIndexMap = { ...(existingMeta?.entryIndexMap || {}) };
+    targetIds.forEach((entryId) => {
+      delete updatedIndexMap[entryId];
+    });
+    const now = Date.now();
+
+    await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
+      lastSyncedAt: now,
+      lastFrontendMutationAt: now,
+      entryIndexMap: updatedIndexMap,
+    })));
   });
-  const now = Date.now();
-
-  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
-    lastSyncedAt: now,
-    lastFrontendMutationAt: now,
-    entryIndexMap: updatedIndexMap,
-  })));
-
-  await waitForTransaction(tx);
-  db.close();
 }
-
-export const getMaxRecordNoFromEntries = (entries) => {
-  let maxNo = 0;
-
-  for (const entry of entries || []) {
-    const no = parseInt(entry?.["No."], 10);
-    if (!Number.isNaN(no) && no > maxNo) maxNo = no;
-  }
-
-  return maxNo;
-};
 
 /**
  * キャッシュ内の最大 No. を取得（仮No採番用）
  */
 export async function getMaxRecordNo(formId) {
   if (!formId) return 0;
-  const db = await openDB();
-  const tx = db.transaction(STORE_NAMES.records, 'readonly');
-  const store = tx.objectStore(STORE_NAMES.records);
-  const rawEntries = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId)));
-  db.close();
-
-  return getMaxRecordNoFromEntries(rawEntries);
+  return await withTransaction(STORE_NAMES.records, 'readonly', async (store) => {
+    const rawEntries = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId)));
+    return getMaxRecordNoFromEntries(rawEntries);
+  });
 }
 
 /**
  * 差分データをキャッシュに適用する
  */
-
 export async function applySyncResultToCache(formId, syncedRecords, headerMatrix, metaUpdates = {}) {
   if (!formId) return;
-  const db = await openDB();
-  const tx = db.transaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite');
-  const store = tx.objectStore(STORE_NAMES.records);
-  const metaStore = tx.objectStore(STORE_NAMES.recordsMeta);
+  await withTransaction([STORE_NAMES.records, STORE_NAMES.recordsMeta], 'readwrite', async ([store, metaStore]) => {
+    const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
+    const lastSyncedAt = Date.now();
+    const existingRecords = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId))) || [];
 
-  const existingMeta = await waitForRequest(metaStore.get(formId)).catch(() => null);
-  const lastSyncedAt = Date.now();
-  const existingRecords = await waitForRequest(store.index('formId').getAll(IDBKeyRange.only(formId))) ||[];
+    const existingMap = {};
+    existingRecords.forEach((record) => {
+      const entryId = record?.entryId ?? record?.id;
+      if (entryId) existingMap[entryId] = record;
+    });
 
-  const existingMap = {};
-  existingRecords.forEach((record) => {
-    const entryId = record?.entryId ?? record?.id;
-    if (entryId) existingMap[entryId] = record;
+    const mergedMap = mergeRecordsByModifiedAt(existingMap, syncedRecords);
+    for (const [entryId, record] of Object.entries(mergedMap)) {
+      if (existingMap[entryId] === record) continue;
+      await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, record?.rowIndex)));
+    }
+
+    await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
+      lastSyncedAt,
+      headerMatrix: headerMatrix ?? existingMeta?.headerMatrix ?? [],
+      lastServerReadAt: metaUpdates.lastServerReadAt ?? existingMeta?.lastServerReadAt ?? 0,
+      serverCommitToken: metaUpdates.serverCommitToken ?? existingMeta?.serverCommitToken ?? 0,
+      serverModifiedAt: metaUpdates.serverModifiedAt ?? existingMeta?.serverModifiedAt ?? 0,
+    })));
   });
-
-  const mergedMap = mergeRecordsByModifiedAt(existingMap, syncedRecords);
-  for (const [entryId, record] of Object.entries(mergedMap)) {
-    if (existingMap[entryId] === record) continue;
-    await waitForRequest(store.put(buildCacheRecord(formId, record, lastSyncedAt, record?.rowIndex)));
-  }
-
-  await waitForRequest(metaStore.put(buildMetadata(formId, existingMeta, {
-    lastSyncedAt,
-    headerMatrix: headerMatrix ?? existingMeta?.headerMatrix ?? [],
-    lastServerReadAt: metaUpdates.lastServerReadAt ?? existingMeta?.lastServerReadAt ?? 0,
-    serverCommitToken: metaUpdates.serverCommitToken ?? existingMeta?.serverCommitToken ?? 0,
-    serverModifiedAt: metaUpdates.serverModifiedAt ?? existingMeta?.serverModifiedAt ?? 0,
-  })));
-
-  await waitForTransaction(tx);
-  db.close();
 }

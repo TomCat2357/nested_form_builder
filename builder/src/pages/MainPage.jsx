@@ -6,7 +6,7 @@ import { useAuth } from "../app/state/authContext.jsx";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../app/theme/theme.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { toUnixMs, formatUnixMsDateTimeMs } from "../utils/dateTime.js";
-import { evaluateCache, FORM_CACHE_MAX_AGE_MS, FORM_CACHE_BACKGROUND_REFRESH_MS } from "../app/state/cachePolicy.js";
+import { evaluateCacheForForms } from "../app/state/cachePolicy.js";
 
 const formatUnixMsValue = (value) => {
   const unixMs = toUnixMs(value);
@@ -22,11 +22,9 @@ export default function MainPage() {
   const activeForms = useMemo(() => forms.filter((form) => !form.archived), [forms]);
 
   useEffect(() => {
-    const decision = evaluateCache({
+    const decision = evaluateCacheForForms({
       lastSyncedAt,
       hasData: forms.length > 0,
-      maxAgeMs: FORM_CACHE_MAX_AGE_MS,
-      backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS,
     });
     if (decision.shouldSync && !loadingForms) {
       refreshForms({ reason: "main-mount-sync", background: false });
