@@ -233,13 +233,7 @@ function nfbFinalizeRecordDriveFolder(payload) {
     if (isCurrentTarget && nfbIsRecordTempFolder_(currentFolder)) {
       var folderNameTemplate = payload && payload.folderNameTemplate ? String(payload.folderNameTemplate).trim() : "";
       if (folderNameTemplate) {
-        var resolvedFolderName = nfbResolveTemplate_(folderNameTemplate, {
-          responses: payload && payload.responses ? payload.responses : {},
-          fieldLabels: payload && payload.fieldLabels ? payload.fieldLabels : {},
-          fieldValues: payload && payload.fieldValues ? payload.fieldValues : {},
-          recordId: payload && payload.recordId ? payload.recordId : "",
-          now: new Date()
-        });
+        var resolvedFolderName = nfbResolveTemplate_(folderNameTemplate, nfbBuildDriveTemplateContext_(payload));
         if (resolvedFolderName) {
           currentFolder.setName(resolvedFolderName);
         }

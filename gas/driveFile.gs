@@ -42,6 +42,19 @@ function nfbImportThemeFromDrive(url) {
 
 
 /**
+ * base64エンコードされたデータをBlobに変換する
+ * @param {string} base64 - base64エンコードされたデータ
+ * @param {string} fileName - ファイル名
+ * @param {string} [mimeType] - MIMEタイプ（省略時は application/octet-stream）
+ * @return {Blob}
+ */
+function nfbDecodeBase64ToBlob_(base64, fileName, mimeType) {
+  var bytes = Utilities.base64Decode(base64);
+  var resolvedMimeType = mimeType || "application/octet-stream";
+  return Utilities.newBlob(bytes, resolvedMimeType, String(fileName).trim());
+}
+
+/**
  * フロントエンドで生成したExcelファイルをGoogle Driveに保存する
  * nfbSaveFileToDrive に Excel 用 mimeType を設定して委譲
  * @param {Object} payload - { filename: string, base64: string }
@@ -66,10 +79,7 @@ function nfbSaveFileToDrive(payload) {
       throw new Error("ファイルデータが不足しています");
     }
 
-    var bytes = Utilities.base64Decode(payload.base64);
-    var mimeType = payload.mimeType || "application/octet-stream";
-    var blob = Utilities.newBlob(bytes, mimeType, payload.filename);
-
+    var blob = nfbDecodeBase64ToBlob_(payload.base64, payload.filename, payload.mimeType);
     var file = DriveApp.createFile(blob);
 
     return {
@@ -91,10 +101,8 @@ function nfbUploadFileToDrive(payload) {
       throw new Error("ファイルデータが不足しています");
     }
 
-    var bytes = Utilities.base64Decode(payload.base64);
-    var mimeType = payload.mimeType || "application/octet-stream";
     var fileName = String(payload.fileName).trim();
-    var blob = Utilities.newBlob(bytes, mimeType, fileName);
+    var blob = nfbDecodeBase64ToBlob_(payload.base64, fileName, payload.mimeType);
 
     var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
     var folder = folderResult.folder;
@@ -118,82 +126,72 @@ function nfbUploadFileToDrive(payload) {
  * @param {Object} payload - { sourceUrl, driveSettings }
  * @return {Object} { ok: true, fileUrl, fileName, fileId }
  */
+/**
+ * ソースファイルを指定フォルダにコピーする共通処理
+ * @param {Object} payload - { sourceUrl, driveSettings, fileNameTemplate }
+ * @return {Object} { copiedFile, folder, autoCreated, ctx }
+ */
+function nfbCopyFileToDriveFolder_(payload) {
+  if (!payload || !payload.sourceUrl) {
+    throw new Error("ソースファイルのURLが指定されていません");
+  }
+
+  var parsed = Forms_parseGoogleDriveUrl_(payload.sourceUrl);
+  if (!parsed.id || parsed.type !== "file") {
+    throw new Error("無効なGoogle DriveファイルURLです");
+  }
+
+  var sourceFile;
+  try {
+    sourceFile = DriveApp.getFileById(parsed.id);
+  } catch (accessError) {
+    throw new Error("ソースファイルへのアクセスに失敗しました: " + nfbErrorToString_(accessError));
+  }
+
+  var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
+  var folder = folderResult.folder;
+  var ctx = nfbBuildDriveTemplateContext_(payload.driveSettings);
+  var resolvedName = payload.fileNameTemplate
+    ? nfbResolveTemplate_(String(payload.fileNameTemplate), ctx)
+    : "";
+  var finalName = resolvedName || sourceFile.getName();
+  nfbTrashExistingFile_(folder, finalName);
+
+  var copiedFile = sourceFile.makeCopy(finalName, folder);
+
+  return {
+    copiedFile: copiedFile,
+    folder: folder,
+    autoCreated: folderResult.autoCreated === true,
+    ctx: ctx
+  };
+}
+
 function nfbCopyDriveFileToDrive(payload) {
   return nfbSafeCall_(function() {
-    if (!payload || !payload.sourceUrl) {
-      throw new Error("ソースファイルのURLが指定されていません");
-    }
-
-    var parsed = Forms_parseGoogleDriveUrl_(payload.sourceUrl);
-    if (!parsed.id || parsed.type !== "file") {
-      throw new Error("無効なGoogle DriveファイルURLです");
-    }
-
-    var sourceFile;
-    try {
-      sourceFile = DriveApp.getFileById(parsed.id);
-    } catch (accessError) {
-      throw new Error("ソースファイルへのアクセスに失敗しました: " + nfbErrorToString_(accessError));
-    }
-
-    var originalName = sourceFile.getName();
-    var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
-    var folder = folderResult.folder;
-    var ctx = nfbBuildDriveTemplateContext_(payload.driveSettings);
-    var resolvedName = payload && payload.fileNameTemplate
-      ? nfbResolveTemplate_(String(payload.fileNameTemplate), ctx)
-      : "";
-    var finalName = resolvedName || originalName;
-    nfbTrashExistingFile_(folder, finalName);
-
-    var copiedFile = sourceFile.makeCopy(finalName, folder);
-
+    var result = nfbCopyFileToDriveFolder_(payload);
     return {
       ok: true,
-      fileUrl: copiedFile.getUrl(),
-      fileName: copiedFile.getName(),
-      fileId: copiedFile.getId(),
-      folderUrl: folder.getUrl(),
-      autoCreated: folderResult.autoCreated === true
+      fileUrl: result.copiedFile.getUrl(),
+      fileName: result.copiedFile.getName(),
+      fileId: result.copiedFile.getId(),
+      folderUrl: result.folder.getUrl(),
+      autoCreated: result.autoCreated
     };
   });
 }
 
 function nfbCreateGoogleDocumentFromTemplate(payload) {
   return nfbSafeCall_(function() {
-    if (!payload || !payload.sourceUrl) {
-      throw new Error("ソースファイルのURLが指定されていません");
-    }
-    if (!payload.driveSettings) {
+    if (!payload || !payload.driveSettings) {
       throw new Error("出力先設定が不足しています");
     }
 
-    var parsed = Forms_parseGoogleDriveUrl_(payload.sourceUrl);
-    if (!parsed.id || parsed.type !== "file") {
-      throw new Error("無効なGoogle DriveファイルURLです");
-    }
-
-    var sourceFile;
-    try {
-      sourceFile = DriveApp.getFileById(parsed.id);
-    } catch (accessError) {
-      throw new Error("ソースファイルへのアクセスに失敗しました: " + nfbErrorToString_(accessError));
-    }
-
-    var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
-    var folder = folderResult.folder;
-    var ctx = nfbBuildDriveTemplateContext_(payload.driveSettings);
-    var resolvedName = payload && payload.fileNameTemplate
-      ? nfbResolveTemplate_(String(payload.fileNameTemplate), ctx)
-      : "";
-    var finalName = resolvedName || sourceFile.getName();
-    nfbTrashExistingFile_(folder, finalName);
-
-    var copiedFile = sourceFile.makeCopy(finalName, folder);
+    var result = nfbCopyFileToDriveFolder_(payload);
     var doc;
     try {
-      doc = DocumentApp.openById(copiedFile.getId());
-      nfbApplyTemplateReplacementsToGoogleDocument_(doc, ctx);
+      doc = DocumentApp.openById(result.copiedFile.getId());
+      nfbApplyTemplateReplacementsToGoogleDocument_(doc, result.ctx);
       doc.saveAndClose();
     } catch (error) {
       throw new Error("Google ドキュメントテンプレートの差し込みに失敗しました: " + nfbErrorToString_(error));
@@ -201,11 +199,11 @@ function nfbCreateGoogleDocumentFromTemplate(payload) {
 
     return {
       ok: true,
-      fileUrl: copiedFile.getUrl(),
-      fileName: copiedFile.getName(),
-      fileId: copiedFile.getId(),
-      folderUrl: folder.getUrl(),
-      autoCreated: folderResult.autoCreated === true
+      fileUrl: result.copiedFile.getUrl(),
+      fileName: result.copiedFile.getName(),
+      fileId: result.copiedFile.getId(),
+      folderUrl: result.folder.getUrl(),
+      autoCreated: result.autoCreated
     };
   });
 }
