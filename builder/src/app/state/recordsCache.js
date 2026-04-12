@@ -15,7 +15,7 @@ import {
 } from "./recordMerge.js";
 
 // Re-export pure functions so existing consumers don't break
-export { normalizeRecordForCache, mergeRecordsByModifiedAt, planRecordMerge, getMaxRecordNoFromEntries } from "./recordMerge.js";
+export { normalizeRecordForCache, mergeRecordsByModifiedAt, getMaxRecordNoFromEntries } from "./recordMerge.js";
 
 const buildCompoundId = (formId, entryId) => `${formId}::${entryId}`;
 

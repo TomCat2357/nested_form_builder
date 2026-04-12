@@ -150,39 +150,6 @@ function Forms_resolveSpreadsheetIdOrFolder_(id) {
   return { type: null, id: null };
 }
 
-/**
- * スプレッドシート名を生成
- * @param {Object} form
- * @return {string}
- */
-
-function Forms_computeContentHash_(form) {
-  // ハッシュ計算用にタイムスタンプとURL以外の内容を抽出
-  var hashContent = {
-    id: form.id || "",
-    description: form.description || "",
-    schema: form.schema || [],
-    settings: form.settings || {},
-    importantFields: form.importantFields || [],
-    displayFieldSettings: form.displayFieldSettings || [],
-    archived: !!form.archived,
-    schemaVersion: form.schemaVersion || 1,
-  };
-
-  var contentStr = JSON.stringify(hashContent);
-  var rawHash = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, contentStr);
-
-  // バイト配列を16進数文字列に変換
-  var hexHash = rawHash.map(function(byte) {
-    var hex = (byte < 0 ? byte + 256 : byte).toString(16);
-    return hex.length === 1 ? "0" + hex : hex;
-  }).join("");
-
-  // 先頭16文字を返す（ファイル名として扱いやすい長さに）
-  return hexHash.substring(0, 16);
-}
-
-
 function Forms_resolveFileOrFolder_(id) {
   try {
     var testFile = DriveApp.getFileById(id);

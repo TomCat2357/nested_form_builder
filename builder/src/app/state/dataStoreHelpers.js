@@ -4,8 +4,6 @@ import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_SHEET_NAME, MS_PER_DAY } from "
 import { deleteRecordsFromCache } from "./recordsCache.js";
 import { normalizeRecordForCache } from "./recordMerge.js";
 
-export const nowUnixMs = () => Date.now();
-
 export const getSheetConfig = (form) => {
   const spreadsheetId = form?.settings?.spreadsheetId;
   if (!spreadsheetId) return null;

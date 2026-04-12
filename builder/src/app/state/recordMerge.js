@@ -30,7 +30,7 @@ export const withNormalizedModifiedAt = (record) => {
 // Record normalization
 // ---------------------------------------------------------------------------
 
-export const normalizeObjectRecord = (value) => (
+const normalizeObjectRecord = (value) => (
   value && typeof value === "object" && !Array.isArray(value) ? value : {}
 );
 
@@ -81,28 +81,6 @@ export const buildEntryIndexMap = (records) => {
   return map;
 };
 
-export const buildLatestRecordMap = (records, pickEntryId) => {
-  const latestByEntryId = {};
-  for (const record of records) {
-    const entryId = pickEntryId(record);
-    if (!entryId) continue;
-    const current = latestByEntryId[entryId];
-    if (!current || getComparableModifiedAt(record) > getComparableModifiedAt(current)) {
-      latestByEntryId[entryId] = record;
-    }
-  }
-  return latestByEntryId;
-};
-
-export const getMaxModifiedAt = (records) => {
-  let maxModifiedAt = 0;
-  for (const record of records) {
-    const ts = getComparableModifiedAt(record);
-    if (ts > maxModifiedAt) maxModifiedAt = ts;
-  }
-  return maxModifiedAt;
-};
-
 // ---------------------------------------------------------------------------
 // Merge logic
 // ---------------------------------------------------------------------------
@@ -123,45 +101,6 @@ export const mergeRecordsByModifiedAt = (existingMap, newRecords) => {
   }
 
   return merged;
-};
-
-export const planRecordMerge = ({ existingRecords = [], incomingRecords = [] } = {}) => {
-  const safeExistingRecords = Array.isArray(existingRecords) ? existingRecords : [];
-  const safeIncomingRecords = Array.isArray(incomingRecords) ? incomingRecords : [];
-
-  const existingByEntryId = buildLatestRecordMap(safeExistingRecords, (record) => record?.entryId ?? record?.id);
-  const incomingByEntryId = buildLatestRecordMap(safeIncomingRecords, (record) => record?.id ?? record?.entryId);
-
-  const maxIncomingModifiedAt = getMaxModifiedAt(Object.values(incomingByEntryId));
-  const maxExistingModifiedAt = getMaxModifiedAt(Object.values(existingByEntryId));
-
-  const commonUpdateIds = [];
-  const incomingOnlyAddIds = [];
-
-  for (const [entryId, incomingRecord] of Object.entries(incomingByEntryId)) {
-    const existingRecord = existingByEntryId[entryId];
-    if (!existingRecord) continue;
-
-    const incomingModifiedAt = getComparableModifiedAt(incomingRecord);
-    const existingModifiedAt = getComparableModifiedAt(existingRecord);
-    if (incomingModifiedAt >= existingModifiedAt) {
-      commonUpdateIds.push(entryId);
-    }
-  }
-
-  for (const [entryId] of Object.entries(incomingByEntryId)) {
-    if (existingByEntryId[entryId]) continue;
-    incomingOnlyAddIds.push(entryId);
-  }
-
-  return {
-    existingByEntryId,
-    incomingByEntryId,
-    commonUpdateIds,
-    incomingOnlyAddIds,
-    maxIncomingModifiedAt,
-    maxExistingModifiedAt,
-  };
 };
 
 // ---------------------------------------------------------------------------

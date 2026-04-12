@@ -11,11 +11,9 @@ import {
 export {
   RECORD_CACHE_MAX_AGE_MS,
   RECORD_CACHE_BACKGROUND_REFRESH_MS,
-  FORM_CACHE_MAX_AGE_MS,
-  FORM_CACHE_BACKGROUND_REFRESH_MS,
 };
 
-export const evaluateCache = ({
+const evaluateCache = ({
   lastSyncedAt,
   hasData,
   forceSync = false,

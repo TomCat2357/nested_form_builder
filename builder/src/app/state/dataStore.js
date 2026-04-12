@@ -43,14 +43,6 @@ import {
   buildUpsertEntryRecord,
 } from "./dataStoreHelpers.js";
 
-// Re-export helper functions that external modules depend on
-export {
-  normalizeListEntriesOptions,
-  buildGetEntryFallbackListEntriesOptions,
-  buildListEntriesResult,
-  buildUpsertEntryRecord,
-} from "./dataStoreHelpers.js";
-
 // ---------------------------------------------------------------------------
 // dataStore-local helpers (moved from dataStoreHelpers.js)
 // ---------------------------------------------------------------------------
