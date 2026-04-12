@@ -277,36 +277,41 @@ function nfbResolveRecordOutputTemplateSourceUrl_(payload, action) {
     : "";
 }
 
-function nfbCreateGmailDraftOutput_(payload, action, outputContext, finalBaseName) {
+function nfbResolveGmailTemplateFields_(action, outputContext) {
   action = action || {};
-  var to = nfbResolveTemplate_(String(action && action.gmailTemplateTo || ""), outputContext);
-  var cc = nfbResolveTemplate_(String(action && action.gmailTemplateCc || ""), outputContext);
-  var bcc = nfbResolveTemplate_(String(action && action.gmailTemplateBcc || ""), outputContext);
-  var subject = nfbResolveTemplate_(String(action && action.gmailTemplateSubject || ""), outputContext);
-  var bodyTemplate = String(action && action.gmailTemplateBody || "");
+  return {
+    to: nfbResolveTemplate_(String(action.gmailTemplateTo || ""), outputContext),
+    cc: nfbResolveTemplate_(String(action.gmailTemplateCc || ""), outputContext),
+    bcc: nfbResolveTemplate_(String(action.gmailTemplateBcc || ""), outputContext),
+    subject: nfbResolveTemplate_(String(action.gmailTemplateSubject || ""), outputContext),
+    body: nfbResolveTemplate_(String(action.gmailTemplateBody || ""), outputContext, { allowGmailOnlyTokens: true })
+  };
+}
 
-  var needsPdf = !!(action && action.gmailAttachPdf);
+function nfbCreateTempPdfBlob_(payload, action, outputContext, finalBaseName) {
+  var documentAction = nfbCloneRecordOutputActionForGeneratedFile_(action);
+  var tmpName = finalBaseName + "__tmp_" + Utilities.getUuid();
+  var docFile = nfbCreateRecordOutputGoogleDocumentInRoot_(payload, documentAction, outputContext, tmpName);
+  var pdfName = /\.pdf$/i.test(finalBaseName) ? finalBaseName : finalBaseName + ".pdf";
+  var pdfBlob = docFile.getBlob().getAs(MimeType.PDF).setName(pdfName);
+  docFile.setTrashed(true);
+  return pdfBlob;
+}
 
+function nfbCreateGmailDraftOutput_(payload, action, outputContext, finalBaseName) {
+  var emailFields = nfbResolveGmailTemplateFields_(action, outputContext);
   var attachments = [];
 
-  if (needsPdf) {
-    var documentAction = nfbCloneRecordOutputActionForGeneratedFile_(action);
-    var tmpName = finalBaseName + "__tmp_" + Utilities.getUuid();
-    var docFile = nfbCreateRecordOutputGoogleDocumentInRoot_(payload, documentAction, outputContext, tmpName);
-    var pdfName = /\.pdf$/i.test(finalBaseName) ? finalBaseName : finalBaseName + ".pdf";
-    var pdfBlob = docFile.getBlob().getAs(MimeType.PDF).setName(pdfName);
-    attachments.push(pdfBlob);
-    docFile.setTrashed(true);
+  if (action && action.gmailAttachPdf) {
+    attachments.push(nfbCreateTempPdfBlob_(payload, action, outputContext, finalBaseName));
   }
 
-  var body = nfbResolveTemplate_(bodyTemplate, outputContext, { allowGmailOnlyTokens: true });
-
   var draftOptions = {};
-  if (cc) draftOptions.cc = cc;
-  if (bcc) draftOptions.bcc = bcc;
+  if (emailFields.cc) draftOptions.cc = emailFields.cc;
+  if (emailFields.bcc) draftOptions.bcc = emailFields.bcc;
   if (attachments.length > 0) draftOptions.attachments = attachments;
 
-  var draft = GmailApp.createDraft(to, subject, body, draftOptions);
+  var draft = GmailApp.createDraft(emailFields.to, emailFields.subject, emailFields.body, draftOptions);
 
   return {
     ok: true,
@@ -317,17 +322,13 @@ function nfbCreateGmailDraftOutput_(payload, action, outputContext, finalBaseNam
 }
 
 function nfbCreatePdfDownloadOutput_(payload, action, outputContext, finalBaseName) {
-  var tmpName = finalBaseName + "__tmp_" + Utilities.getUuid();
-  var docFile = nfbCreateRecordOutputGoogleDocumentInRoot_(payload, action, outputContext, tmpName);
-  var pdfName = /\.pdf$/i.test(finalBaseName) ? finalBaseName : finalBaseName + ".pdf";
-  var pdfBlob = docFile.getBlob().getAs(MimeType.PDF).setName(pdfName);
+  var pdfBlob = nfbCreateTempPdfBlob_(payload, action, outputContext, finalBaseName);
   var base64 = Utilities.base64Encode(pdfBlob.getBytes());
-  docFile.setTrashed(true);
   return {
     ok: true,
     outputType: "pdf",
     pdfBase64: base64,
-    fileName: pdfName
+    fileName: pdfBlob.getName()
   };
 }
 

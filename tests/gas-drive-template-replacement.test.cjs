@@ -857,3 +857,76 @@ test("予約トークン: {_NOW} のチェーン変換", () => {
   assert.equal(gas.nfbResolveTemplate_("{_NOW|date:YYYY|pad:6,0}", ctx), "002026");
   assert.equal(gas.nfbResolveTemplate_("{_NOW|left:10}", ctx), "2026-04-04");
 });
+
+// ---------------------------------------------------------------------------
+// nfbResolveGmailTemplateFields_ tests
+// ---------------------------------------------------------------------------
+
+test("nfbResolveGmailTemplateFields_ はメールテンプレートフィールドを一括解決する", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    responses: {},
+    fieldLabels: { email: "メールアドレス", name: "氏名" },
+    fieldValues: { email: "user@example.com", name: "山田太郎" },
+    recordId: "rec001",
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  const action = {
+    gmailTemplateTo: "{メールアドレス}",
+    gmailTemplateCc: "admin@example.com",
+    gmailTemplateBcc: "",
+    gmailTemplateSubject: "【申請】{ID}_{氏名}",
+    gmailTemplateBody: "お世話になっております。{氏名}さんの申請です。",
+  };
+  const result = gas.nfbResolveGmailTemplateFields_(action, ctx);
+
+  assert.equal(result.to, "user@example.com");
+  assert.equal(result.cc, "admin@example.com");
+  assert.equal(result.bcc, "");
+  assert.equal(result.subject, "【申請】rec001_山田太郎");
+  assert.equal(result.body, "お世話になっております。山田太郎さんの申請です。");
+});
+
+test("nfbResolveGmailTemplateFields_ は空のactionでも安全に動作する", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    responses: {},
+    fieldLabels: {},
+    fieldValues: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  const result = gas.nfbResolveGmailTemplateFields_(null, ctx);
+  assert.equal(result.to, "");
+  assert.equal(result.cc, "");
+  assert.equal(result.bcc, "");
+  assert.equal(result.subject, "");
+  assert.equal(result.body, "");
+});
+
+test("nfbResolveGmailTemplateFields_ の本文で Gmail限定トークンが解決される", () => {
+  const gas = loadGasContext();
+  gas.ScriptApp = {
+    getService() {
+      return { getUrl() { return "https://script.google.com/macros/s/xxx/exec"; } };
+    },
+  };
+  const ctx = {
+    responses: {},
+    fieldLabels: {},
+    fieldValues: {},
+    recordId: "rec001",
+    formId: "form001",
+    folderUrl: "https://drive.google.com/drive/folders/folder001",
+    recordUrl: "https://script.google.com/macros/s/xxx/exec?form=form001&record=rec001",
+    formUrl: "https://script.google.com/macros/s/xxx/exec?form=form001",
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  const action = {
+    gmailTemplateTo: "user@example.com",
+    gmailTemplateSubject: "件名",
+    gmailTemplateBody: "フォルダ: {_folder_url} レコード: {_record_url}",
+  };
+  const result = gas.nfbResolveGmailTemplateFields_(action, ctx);
+  assert.ok(result.body.includes("https://drive.google.com/drive/folders/folder001"));
+  assert.ok(result.body.includes("https://script.google.com/macros/s/xxx/exec?form=form001&record=rec001"));
+});

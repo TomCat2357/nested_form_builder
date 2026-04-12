@@ -18,9 +18,12 @@ import {
 } from "./printDocument.js";
 import {
   normalizePrintTemplateAction,
-  requiresPrintTemplateFileName,
   resolveEffectivePrintTemplateFileNameTemplate,
 } from "../../utils/printTemplateAction.js";
+import {
+  validateOutputAction,
+  handleRecordOutputResult,
+} from "../../utils/recordOutputActions.js";
 import {
   appendDriveFileId,
   normalizeDriveFolderState,
@@ -137,14 +140,6 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   }, [fieldLabels, fieldValues, responses, schema, settings.formId, driveFolderState]);
 
   const [isSaving, setIsSaving] = useState(false);
-  const showRecordOutputAlert = (result, fallbackOutputType) => {
-    const outputType = result?.outputType || fallbackOutputType || "";
-    showOutputAlert({
-      message: "様式出力を準備しました。",
-      url: result?.openUrl || "",
-      linkLabel: outputType === "gmail" ? "Gmail下書きを開く" : "ファイルを開く",
-    });
-  };
   const updateDriveFolderStateFromPrintResult = (result) => {
     if (typeof onDriveFolderStateChange !== "function") return;
     onDriveFolderStateChange((prevState) => {
@@ -166,19 +161,14 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const handleFieldTemplateAction = async (field) => {
     const action = normalizePrintTemplateAction(field?.printTemplateAction);
     if (!action.enabled) return;
+
+    const validation = validateOutputAction(action, settings);
+    if (!validation.valid) {
+      showAlert(validation.error);
+      return;
+    }
+
     const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, settings);
-    if (requiresPrintTemplateFileName(action) && !effectiveFileNameTemplate) {
-      showAlert(
-        action.outputType === "gmail"
-          ? "PDF 添付を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください"
-          : "出力ファイル名が設定されていません",
-      );
-      return;
-    }
-    if (action.outputType !== "gmail" && action.useCustomTemplate && !String(action.templateUrl || "").trim()) {
-      showAlert("カスタムテンプレートURLを設定してください");
-      return;
-    }
     const effectiveFolderUrl = resolveEffectiveDriveFolderUrl(driveFolderState);
     const baseDriveTemplateSettings = {
       ...driveSettings,
@@ -211,22 +201,11 @@ const PreviewPage = React.forwardRef(function PreviewPage(
           fileNameTemplate: effectiveFileNameTemplate,
         },
       });
-      if (result?.fileId || result?.folderUrl) {
-        updateDriveFolderStateFromPrintResult(result);
-      }
-      if (result?.openUrl) {
-        showRecordOutputAlert(result, action.outputType);
-      }
-      if (result?.pdfBase64 && result?.fileName) {
-        const bytes = Uint8Array.from(atob(result.pdfBase64), (c) => c.charCodeAt(0));
-        const blob = new Blob([bytes], { type: "application/pdf" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = result.fileName;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
+      handleRecordOutputResult(result, {
+        showOutputAlert,
+        fallbackOutputType: action.outputType,
+        onDriveFolderStateUpdate: updateDriveFolderStateFromPrintResult,
+      });
     } catch (error) {
       showAlert(`様式出力に失敗しました: ${error?.message || error}`);
     }

@@ -11,11 +11,14 @@ import {
 } from "../../services/gasClient.js";
 import {
   normalizePrintTemplateAction,
-  requiresPrintTemplateFileName,
   resolveEffectivePrintTemplateFileNameTemplate,
   resolveSharedPrintFileNameTemplate,
   DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE,
 } from "../../utils/printTemplateAction.js";
+import {
+  validateOutputAction,
+  handleRecordOutputResult,
+} from "../../utils/recordOutputActions.js";
 
 export function useSearchPagePrintActions({
   form,
@@ -27,14 +30,6 @@ export function useSearchPagePrintActions({
   showOutputAlert,
 }) {
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
-
-  const showPrintTemplateOutputAlert = useCallback((url, outputType) => {
-    showOutputAlert({
-      message: "様式出力を準備しました。",
-      url,
-      linkLabel: outputType === "gmail" ? "Gmail下書きを開く" : "ファイルを開く",
-    });
-  }, [showOutputAlert]);
 
   const createPrintDocument = useCallback(async () => {
     setIsCreatingPrintDocument(true);
@@ -143,6 +138,12 @@ export function useSearchPagePrintActions({
     if (column.actionKind !== "printTemplate") return;
 
     const action = normalizePrintTemplateAction(column.action);
+    const validation = validateOutputAction(action, form?.settings || {});
+    if (!validation.valid) {
+      showAlert(validation.error);
+      return;
+    }
+
     const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, form?.settings || {});
     const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
     const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
@@ -159,7 +160,7 @@ export function useSearchPagePrintActions({
       fileNameTemplate: effectiveFileNameTemplate,
     };
 
-    const buildRecordActionPayload = () => ({
+    const payload = {
       action,
       settings: {
         standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
@@ -191,32 +192,13 @@ export function useSearchPagePrintActions({
         }),
       },
       driveSettings,
+    };
+
+    const result = await executeRecordOutputAction(payload);
+    handleRecordOutputResult(result, {
+      showOutputAlert,
+      fallbackOutputType: action.outputType,
     });
-
-    if (action.outputType === "gmail") {
-      if (requiresPrintTemplateFileName(action) && !effectiveFileNameTemplate) {
-        showAlert("PDF 添付を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください。");
-        return;
-      }
-      const result = await executeRecordOutputAction(buildRecordActionPayload());
-      if (result?.openUrl) {
-        showPrintTemplateOutputAlert(result.openUrl, result.outputType || action.outputType);
-      }
-      return;
-    }
-
-    // PDF: オンデマンド生成してブラウザダウンロード
-    const result = await executeRecordOutputAction(buildRecordActionPayload());
-    if (result?.pdfBase64 && result?.fileName) {
-      const bytes = Uint8Array.from(atob(result.pdfBase64), (c) => c.charCodeAt(0));
-      const blob = new Blob([bytes], { type: "application/pdf" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = result.fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-    }
   }, [
     fieldLabels,
     form?.id,
@@ -225,7 +207,6 @@ export function useSearchPagePrintActions({
     omitEmptyRowsOnPrint,
     showAlert,
     showOutputAlert,
-    showPrintTemplateOutputAlert,
   ]);
 
   const handleCreatePrintDocument = useCallback(async () => {
