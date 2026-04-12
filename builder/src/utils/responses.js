@@ -2,7 +2,7 @@ import { formatUnixMsDate, formatUnixMsTime, toUnixMs } from "./dateTime.js";
 import { deepEqual } from "./deepEqual.js";
 import { traverseSchema } from "../core/schemaUtils.js";
 import { formatPhoneValueForField } from "../core/phone.js";
-import { sanitizeFileUploadEntry } from "../core/collect.js";
+import { sanitizeFileUploadEntry, normalizeFileUploadEntries } from "../core/collect.js";
 
 const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
   if (field.type !== "time" && field.type !== "date") return rawValue;
@@ -21,21 +21,6 @@ const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
     return field.includeSeconds ? `${hh}:${mi}:${ss}` : `${hh}:${mi}`;
   }
   return `${yyyy}-${mm}-${dd}`;
-};
-
-const normalizeFileUploadEntries = (rawValue) => {
-  let source = rawValue;
-  if (typeof source === "string") {
-    const trimmed = source.trim();
-    if (!trimmed) return [];
-    try {
-      source = JSON.parse(trimmed);
-    } catch (_error) {
-      return [];
-    }
-  }
-  if (!Array.isArray(source)) return [];
-  return source.map(sanitizeFileUploadEntry).filter(Boolean);
 };
 
 const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);

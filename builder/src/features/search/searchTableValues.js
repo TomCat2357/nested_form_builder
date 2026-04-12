@@ -7,6 +7,7 @@ import {
   parseStringToSerial,
 } from "../../utils/dateTime.js";
 import { isChoiceMarkerValue } from "../../utils/responses.js";
+import { normalizeFileUploadEntries } from "../../core/collect.js";
 
 const FALSE_LIKE_VALUES = new Set([null, undefined, "", false, 0, "0"]);
 
@@ -106,23 +107,11 @@ export const normalizeSearchText = (text) => String(text || "").toLowerCase();
 export const normalizeColumnName = (text) => String(text || "").trim().toLowerCase();
 export const isEntryIdColumnName = (columnName) => normalizeColumnName(columnName) === "id";
 
-export const parseFileUploadJson = (value) => {
-  if (typeof value !== "string" || !value.startsWith("[")) return null;
-  try {
-    const parsed = JSON.parse(value);
-    if (!Array.isArray(parsed)) return null;
-    if (parsed.length > 0 && typeof parsed[0]?.driveFileId !== "undefined") return parsed;
-    return null;
-  } catch {
-    return null;
-  }
-};
-
 export const buildSearchableCandidates = (key, value, unixMs = undefined) => {
   const candidates = [];
 
-  const fileEntries = parseFileUploadJson(value);
-  if (fileEntries !== null) {
+  const fileEntries = normalizeFileUploadEntries(value);
+  if (fileEntries.length > 0) {
     fileEntries.forEach((entry) => {
       const name = typeof entry?.name === "string" ? entry.name.trim() : "";
       if (name) candidates.push(name);

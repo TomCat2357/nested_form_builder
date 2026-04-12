@@ -1,5 +1,5 @@
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
-import { resolveFileDisplayName } from "../../core/collect.js";
+import { resolveFileDisplayName, normalizeFileUploadEntries } from "../../core/collect.js";
 import {
   formatUnixMsDateTimeSec,
   toUnixMs,
@@ -49,20 +49,6 @@ const matchBaseDisplayColumn = (columns, fullPath) => {
     }
   }
   return null;
-};
-
-const parseFileUploadEntries = (rawDataValue) => {
-  if (!rawDataValue) return [];
-  try {
-    const parsed = typeof rawDataValue === "string" ? JSON.parse(rawDataValue) : rawDataValue;
-    return Array.isArray(parsed) ? parsed.filter(Boolean) : [];
-  } catch (e) {
-    return [];
-  }
-};
-
-const getFileDisplayName = (file) => {
-  return typeof file.name === "string" ? file.name : "";
 };
 
 export const createBaseColumns = () => [
@@ -154,12 +140,12 @@ export const createDisplayColumn = (path, sourceType = "", options = {}) => {
       if (actionKind === "folderLink") {
         const folderUrl = typeof entry?.driveFolderUrl === "string" ? entry.driveFolderUrl.trim() : "";
         const rawDataValue = entry?.data?.[path];
-        const files = parseFileUploadEntries(rawDataValue);
+        const files = normalizeFileUploadEntries(rawDataValue);
         const hideExt = options?.fieldMeta?.hideFileExtension === true;
         const fileItems = files.map((file) => ({
-          name: typeof file.name === "string" ? file.name : "",
-          driveFileUrl: typeof file.driveFileUrl === "string" ? file.driveFileUrl : "",
-          displayName: resolveFileDisplayName(getFileDisplayName(file), hideExt),
+          name: file.name,
+          driveFileUrl: file.driveFileUrl,
+          displayName: resolveFileDisplayName(file.name, hideExt),
         }));
         const displayNames = fileItems.map((f) => f.displayName).filter(Boolean);
         const searchParts = files.map((file) => file.name).filter(Boolean);

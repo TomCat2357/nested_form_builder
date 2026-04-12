@@ -9,6 +9,21 @@ export const sanitizeFileUploadEntry = (entry) => {
   return { name, driveFileId, driveFileUrl };
 };
 
+export const normalizeFileUploadEntries = (rawValue) => {
+  let source = rawValue;
+  if (typeof source === "string") {
+    const trimmed = source.trim();
+    if (!trimmed) return [];
+    try {
+      source = JSON.parse(trimmed);
+    } catch (_error) {
+      return [];
+    }
+  }
+  if (!Array.isArray(source)) return [];
+  return source.map(sanitizeFileUploadEntry).filter(Boolean);
+};
+
 const serializeFileUploadValue = (value) => {
   const files = Array.isArray(value)
     ? value.map((entry) => sanitizeFileUploadEntry(entry)).filter(Boolean)
