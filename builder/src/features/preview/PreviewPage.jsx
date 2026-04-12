@@ -10,6 +10,7 @@ import { useAlert } from "../../app/hooks/useAlert.js";
 import { collectDefaultNowResponses } from "../../utils/responses.js";
 import { genRecordId } from "../../core/ids.js";
 import { resolveTemplateTokens, buildLabelValueMap } from "../../utils/tokenReplacer.js";
+import { evaluateAllComputedFields } from "../../core/computedFields.js";
 import {
   buildPrintDocumentPayload,
   buildFieldLabelsMap,
@@ -107,12 +108,6 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     });
   }, [defaultNowMap, setResponses, settings.recordId]);
 
-  const sortedData = useMemo(() => {
-    const raw = collectResponses(schema, responses);
-    return sortResponses(raw, schema, responses);
-  }, [schema, responses]);
-  const output = sortedData.map;
-  const sortedKeys = sortedData.keys;
   const formTitle = settings.formTitle || "受付フォーム";
   const modifiedAtDisplay = formatRecordMetaDateTime(settings.modifiedAtUnixMs ?? settings.modifiedAt);
   const fieldLabels = useMemo(() => buildFieldLabelsMap(schema), [schema]);
@@ -127,17 +122,50 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     fieldValues,
   }), [settings.formId, responses, fieldLabels, fieldValues]);
 
-  const resolveTokens = useMemo(() => {
+  const baseLabelValueMap = useMemo(
+    () => buildLabelValueMap(fieldLabels, fieldValues, responses, schema),
+    [fieldLabels, fieldValues, responses, schema],
+  );
+
+  const tokenContext = useMemo(() => {
     const baseUrl = typeof window !== "undefined" ? (window.__GAS_WEBAPP_URL__ || window.location.origin) : "";
     const formId = settings.formId || "";
     const recordId = recordIdRef.current;
     const folderUrl = resolveEffectiveDriveFolderUrl(driveFolderState) || "";
     const formUrl = buildSharedFormUrl(baseUrl, formId);
     const recordUrl = buildSharedRecordUrl(baseUrl, formId, recordId);
-    const labelValueMap = buildLabelValueMap(fieldLabels, fieldValues, responses, schema);
-    const ctx = { now: new Date(), recordId, folderUrl, formUrl, recordUrl, labelValueMap };
+    return { now: new Date(), recordId, folderUrl, formUrl, recordUrl };
+  }, [settings.formId, driveFolderState]);
+
+  const { computedValues, computedErrors } = useMemo(
+    () => evaluateAllComputedFields(schema, responses, baseLabelValueMap, tokenContext),
+    [schema, responses, baseLabelValueMap, tokenContext],
+  );
+
+  const resolveTokens = useMemo(() => {
+    const labelValueMap = { ...baseLabelValueMap };
+    if (computedValues) {
+      const fieldLabelsMap = fieldLabels || {};
+      for (const [fid, val] of Object.entries(computedValues)) {
+        const label = fieldLabelsMap[fid];
+        if (label && val != null) labelValueMap[label] = String(val);
+      }
+    }
+    const ctx = { ...tokenContext, labelValueMap };
     return (text) => resolveTemplateTokens(text, ctx);
-  }, [fieldLabels, fieldValues, responses, schema, settings.formId, driveFolderState]);
+  }, [baseLabelValueMap, computedValues, fieldLabels, tokenContext]);
+
+  const mergedResponses = useMemo(() => {
+    if (!computedValues || Object.keys(computedValues).length === 0) return responses;
+    return { ...responses, ...computedValues };
+  }, [responses, computedValues]);
+
+  const sortedData = useMemo(() => {
+    const raw = collectResponses(schema, mergedResponses);
+    return sortResponses(raw, schema, mergedResponses);
+  }, [schema, mergedResponses]);
+  const output = sortedData.map;
+  const sortedKeys = sortedData.keys;
 
   const [isSaving, setIsSaving] = useState(false);
   const updateDriveFolderStateFromPrintResult = (result) => {
@@ -357,6 +385,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         canDeleteDriveFolder={canDeleteDriveFolder}
         onDeleteDriveFolder={onDeleteDriveFolder}
         resolveTokens={resolveTokens}
+        computedValues={computedValues}
+        computedErrors={computedErrors}
       />
       {showOutputJson && (
         <div className="nf-mt-12">

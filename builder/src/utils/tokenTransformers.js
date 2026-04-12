@@ -68,26 +68,6 @@ const parseDateString = (value) => {
 const DAY_OF_WEEK_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
 const DAY_OF_WEEK_LONG = ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"];
 
-const transformDate = (value, formatStr) => {
-  const dp = parseDateString(value);
-  if (!dp) return value;
-  const era = resolveJapaneseEra(dp);
-  const dow = new Date(dp.year, dp.month - 1, dp.day).getDay();
-  let result = formatStr;
-  result = result.split("dddd").join(DAY_OF_WEEK_LONG[dow]);
-  result = result.split("ddd").join(DAY_OF_WEEK_SHORT[dow]);
-  result = result.split("gg").join(era.name);
-  result = result.split("YYYY").join(String(dp.year));
-  result = result.split("YY").join(("0" + dp.year).slice(-2));
-  result = result.split("MM").join(("0" + dp.month).slice(-2));
-  result = result.split("DD").join(("0" + dp.day).slice(-2));
-  result = result.split("ee").join(("0" + era.year).slice(-2));
-  result = result.split("M").join(String(dp.month));
-  result = result.split("D").join(String(dp.day));
-  result = result.split("e").join(String(era.year));
-  return result;
-};
-
 const parseTimeString = (value) => {
   const str = String(value).trim();
   const dtMatch = str.match(/[\sT](\d{1,2}):(\d{2})(?::(\d{2}))?/);
@@ -97,16 +77,38 @@ const parseTimeString = (value) => {
   return null;
 };
 
+/**
+ * 統合 time パイプ: 日付トークンと時刻トークンの両方に対応
+ * 旧 date パイプの機能を統合（後方互換不要）
+ */
 const transformTime = (value, formatStr) => {
+  const dp = parseDateString(value);
   const tp = parseTimeString(value);
-  if (!tp) return value;
+  if (!dp && !tp) return value;
   let result = formatStr;
-  result = result.split("HH").join(("0" + tp.hour).slice(-2));
-  result = result.split("mm").join(("0" + tp.minute).slice(-2));
-  result = result.split("ss").join(("0" + tp.second).slice(-2));
-  result = result.split("H").join(String(tp.hour));
-  result = result.split("m").join(String(tp.minute));
-  result = result.split("s").join(String(tp.second));
+  if (dp) {
+    const era = resolveJapaneseEra(dp);
+    const dow = new Date(dp.year, dp.month - 1, dp.day).getDay();
+    result = result.split("dddd").join(DAY_OF_WEEK_LONG[dow]);
+    result = result.split("ddd").join(DAY_OF_WEEK_SHORT[dow]);
+    result = result.split("gg").join(era.name);
+    result = result.split("YYYY").join(String(dp.year));
+    result = result.split("YY").join(("0" + dp.year).slice(-2));
+    result = result.split("MM").join(("0" + dp.month).slice(-2));
+    result = result.split("DD").join(("0" + dp.day).slice(-2));
+    result = result.split("ee").join(("0" + era.year).slice(-2));
+    result = result.split("M").join(String(dp.month));
+    result = result.split("D").join(String(dp.day));
+    result = result.split("e").join(String(era.year));
+  }
+  if (tp) {
+    result = result.split("HH").join(("0" + tp.hour).slice(-2));
+    result = result.split("mm").join(("0" + tp.minute).slice(-2));
+    result = result.split("ss").join(("0" + tp.second).slice(-2));
+    result = result.split("H").join(String(tp.hour));
+    result = result.split("m").join(String(tp.minute));
+    result = result.split("s").join(String(tp.second));
+  }
   return result;
 };
 
@@ -321,7 +323,6 @@ const transformHan = (v) => {
 // ---------------------------------------------------------------------------
 
 const TRANSFORMERS = {
-  date: transformDate,
   time: transformTime,
   left: transformLeft,
   right: transformRight,

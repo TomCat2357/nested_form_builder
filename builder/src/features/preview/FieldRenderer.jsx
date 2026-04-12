@@ -37,6 +37,8 @@ const FieldRenderer = ({
   canDeleteDriveFolder,
   onDeleteDriveFolder,
   resolveTokens = identityFn,
+  computedValues,
+  computedErrors,
 }) => {
   const validation = validateByPattern(field, value);
   const selectedChoiceLabels = toSelectedChoiceLabels(field, value);
@@ -77,7 +79,7 @@ const FieldRenderer = ({
 
   const renderLabel = ({ tag: Tag = "label", fallback = "項目", showRequired = true } = {}) => (
     <Tag className="preview-label" style={labelStyleVars}>
-      {field.label ? resolveTokens(field.label) : <span className="nf-text-faded">{fallback}</span>}
+      {field.label ? field.label : <span className="nf-text-faded">{fallback}</span>}
       {showRequired && field.required && <span className="nf-text-danger nf-ml-4">*</span>}
     </Tag>
   );
@@ -87,6 +89,21 @@ const FieldRenderer = ({
     return (
       <div className="preview-field">
         {renderLabel({ tag: "div", fallback: "メッセージ", showRequired: false })}
+      </div>
+    );
+  }
+
+  if (field.type === "calculated" || field.type === "substitution") {
+    if (field.hideFromRecordView) return null;
+    const computedValue = computedValues?.[field.id];
+    const computedError = computedErrors?.[field.id];
+    return (
+      <div className="preview-field">
+        {renderLabel({ tag: "div", showRequired: false })}
+        {computedError
+          ? <div className="nf-text-danger-ink nf-text-12">{computedError}</div>
+          : <div className="nf-input nf-input--readonly">{computedValue != null && computedValue !== "" ? String(computedValue) : "\u00A0"}</div>
+        }
       </div>
     );
   }
@@ -155,7 +172,7 @@ const FieldRenderer = ({
     );
   }
 
-  const rph = (fallback = "") => resolveTokens(resolveConfiguredPlaceholder(field, fallback));
+  const rph = (fallback = "") => resolveConfiguredPlaceholder(field, fallback);
 
   return (
     <div className="preview-field">
@@ -261,7 +278,7 @@ const FieldRenderer = ({
             return (
               <label key={opt.id} className="nf-block nf-mb-4">
                 <input type="radio" name={field.id} checked={selectedSingleChoice === optionLabel} onChange={() => onChange(optionLabel)} />
-                <span className="nf-ml-6">{optionLabel ? resolveTokens(optionLabel) : "選択肢"}</span>
+                <span className="nf-ml-6">{optionLabel || "選択肢"}</span>
               </label>
             );
           })}
@@ -275,7 +292,7 @@ const FieldRenderer = ({
             const rawLabel = typeof opt?.label === "string" ? opt.label : "";
             return (
               <option key={opt.id} value={rawLabel}>
-                {rawLabel ? resolveTokens(rawLabel) : "選択肢"}
+                {rawLabel || "選択肢"}
               </option>
             );
           })}
@@ -299,7 +316,7 @@ const FieldRenderer = ({
                       onChange(Array.from(next));
                     }}
                   />
-                  <span className="nf-ml-6">{optionLabel ? resolveTokens(optionLabel) : "選択肢"}</span>
+                  <span className="nf-ml-6">{optionLabel || "選択肢"}</span>
                 </label>
                 {checked && renderChildrenForOption && (
                   <div className={s.child.className}>{renderChildrenForOption(optionLabel)}</div>
@@ -331,11 +348,14 @@ export const RendererRecursive = ({
   canDeleteDriveFolder,
   onDeleteDriveFolder,
   resolveTokens,
+  computedValues,
+  computedErrors,
 }) => {
   const recursiveProps = {
     responses, onChange, depth: depth + 1, readOnly, entryId, onChildFormJump,
     driveSettings, gasClientRef, driveFolderState, onDriveFolderStateChange,
     onTemplateAction, canDeleteDriveFolder, onDeleteDriveFolder, resolveTokens,
+    computedValues, computedErrors,
   };
 
   const renderChildrenAll = (field, fid) => () => {
@@ -396,6 +416,8 @@ export const RendererRecursive = ({
               canDeleteDriveFolder={canDeleteDriveFolder}
               onDeleteDriveFolder={onDeleteDriveFolder}
               resolveTokens={resolveTokens}
+              computedValues={computedValues}
+              computedErrors={computedErrors}
             />
           </div>
         );

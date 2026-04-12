@@ -164,7 +164,9 @@ function Sheets_buildOrderFromSchema_(schema) {
     userName: true,
     email: true,
     phone: true,
-    fileUpload: true
+    fileUpload: true,
+    calculated: true,
+    substitution: true
   };
 
   var appendKey = function(key) {

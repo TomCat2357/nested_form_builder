@@ -213,7 +213,6 @@ function nfbApplyPipeTransformers_(value, transformerString) {
 }
 
 var NFB_TRANSFORMERS_ = {
-  "date":     nfbTransformDate_,
   "time":     nfbTransformTime_,
   "left":     nfbTransformLeft_,
   "right":    nfbTransformRight_,
@@ -344,17 +343,39 @@ function nfbParseTimeString_(value) {
   return null;
 }
 
+/**
+ * 統合 time パイプ: 日付トークンと時刻トークンの両方に対応
+ * 旧 date パイプの機能を統合（後方互換不要）
+ */
 function nfbTransformTime_(value, formatStr) {
+  var dateParts = nfbParseDateString_(value);
   var timeParts = nfbParseTimeString_(value);
-  if (!timeParts) return value;
+  if (!dateParts && !timeParts) return value;
 
   var result = formatStr;
-  result = result.split("HH").join(("0" + timeParts.hour).slice(-2));
-  result = result.split("mm").join(("0" + timeParts.minute).slice(-2));
-  result = result.split("ss").join(("0" + timeParts.second).slice(-2));
-  result = result.split("H").join(String(timeParts.hour));
-  result = result.split("m").join(String(timeParts.minute));
-  result = result.split("s").join(String(timeParts.second));
+  if (dateParts) {
+    var era = nfbResolveJapaneseEra_(dateParts);
+    var dow = new Date(dateParts.year, dateParts.month - 1, dateParts.day).getDay();
+    result = result.split("dddd").join(NFB_DAY_OF_WEEK_LONG_[dow]);
+    result = result.split("ddd").join(NFB_DAY_OF_WEEK_SHORT_[dow]);
+    result = result.split("gg").join(era.name);
+    result = result.split("YYYY").join(String(dateParts.year));
+    result = result.split("YY").join(("0" + dateParts.year).slice(-2));
+    result = result.split("MM").join(("0" + dateParts.month).slice(-2));
+    result = result.split("DD").join(("0" + dateParts.day).slice(-2));
+    result = result.split("ee").join(("0" + era.year).slice(-2));
+    result = result.split("M").join(String(dateParts.month));
+    result = result.split("D").join(String(dateParts.day));
+    result = result.split("e").join(String(era.year));
+  }
+  if (timeParts) {
+    result = result.split("HH").join(("0" + timeParts.hour).slice(-2));
+    result = result.split("mm").join(("0" + timeParts.minute).slice(-2));
+    result = result.split("ss").join(("0" + timeParts.second).slice(-2));
+    result = result.split("H").join(String(timeParts.hour));
+    result = result.split("m").join(String(timeParts.minute));
+    result = result.split("s").join(String(timeParts.second));
+  }
 
   return result;
 }

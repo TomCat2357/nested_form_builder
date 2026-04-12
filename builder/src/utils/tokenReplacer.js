@@ -3,13 +3,13 @@
  *
  * バックエンド gas/drive.gs の nfbResolveTemplateTokens_ と同等のロジックを
  * フロントエンドで再現する。質問カードの項目名・選択肢・プレースホルダー等に
- * {ID}, {_NOW|date:YYYY年MM月DD日}, {フィールド名} などのトークンを埋め込み、
+ * {ID}, {_NOW|time:YYYY年MM月DD日}, {フィールド名} などのトークンを埋め込み、
  * フォーム表示時に実際の値へ置換する。
  *
  * 予約トークン:
  *   {_ID}          - レコードID
  *   {_NOW}         - 現在日時 ("yyyy-MM-dd HH:mm:ss")。パイプで整形可:
- *                    {_NOW|date:YYYY年MM月DD日}  {_NOW|time:HH時mm分}
+ *                    {_NOW|time:YYYY年MM月DD日}  {_NOW|time:HH時mm分}
  *   {_folder_url}  - Driveフォルダ URL
  *   {_record_url}  - レコード URL
  *   {_form_url}    - フォーム URL

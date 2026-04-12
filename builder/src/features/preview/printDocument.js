@@ -110,6 +110,9 @@ export const sanitizePrintFileNamePart = (input, fallback = "record") => {
 export const formatPrintItemValue = (field, value) => {
   if (field?.type === "message") return "";
   if (field?.type === "printTemplate") return "";
+  if (field?.type === "calculated" || field?.type === "substitution") {
+    return value != null && value !== "" ? String(value) : "";
+  }
   if (field?.type === "fileUpload") {
     const files = Array.isArray(value) ? value : [];
     return files.map((f) => resolveFileDisplayName(f?.name || "不明なファイル", field?.hideFileExtension)).join(", ");
@@ -149,6 +152,7 @@ export const formatRecordMetaDateTime = (value) => {
 const isExcludedPrintField = (field) => (
   field?.type === "printTemplate"
   || ((field?.type === "message") && field?.excludeFromSearchAndPrint === true)
+  || ((field?.type === "calculated" || field?.type === "substitution") && field?.excludeFromSearch === true)
 );
 
 const resolveFieldId = (field, depth, index) => field?.id || `tmp_${depth}_${index}_${field?.label || ""}`;

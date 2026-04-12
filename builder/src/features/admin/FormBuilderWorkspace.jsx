@@ -4,6 +4,7 @@ import PreviewPage from "../preview/PreviewPage.jsx";
 import SearchPreviewPanel from "./SearchPreviewPanel.jsx";
 import { useBuilderSettings } from "../settings/settingsStore.js";
 import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, MAX_DEPTH, countSchemaNodes } from "../../core/schema.js";
+import { detectCircularReferences } from "../../core/computedFields.js";
 import { runSelfTests } from "../../core/selfTests.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { useAuth } from "../../app/state/authContext.jsx";
@@ -114,6 +115,12 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     const uniqueCheck = validateUniqueLabels(schema);
     if (!uniqueCheck.ok) {
       showAlert(`重複する項目名: ${uniqueCheck.dup}`);
+      return false;
+    }
+
+    const circularCheck = detectCircularReferences(schema);
+    if (circularCheck.hasCycle) {
+      showAlert(`循環参照が検出されました: ${circularCheck.cycleFields.join(" → ")}`, "循環参照エラー");
       return false;
     }
 

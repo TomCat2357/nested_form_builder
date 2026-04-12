@@ -14,6 +14,7 @@ import {
   isMessageType,
   isPrintTemplateType,
   isBasicInputType,
+  isComputedType,
   applyDisplayedFlag,
   handleTypeChange,
   PlaceholderInput,
@@ -32,6 +33,8 @@ import {
   FileUploadFieldSection,
   DateTimeFieldSection,
   WeekdayFieldSection,
+  CalculatedFieldSection,
+  SubstitutionFieldSection,
 } from "./QuestionCardSections.jsx";
 
 const FIELD_TYPE_OPTIONS = [
@@ -49,6 +52,8 @@ const FIELD_TYPE_OPTIONS = [
   { value: "fileUpload", label: "ファイルアップロード" },
   { value: "printTemplate", label: "様式出力" },
   { value: "message", label: "メッセージ" },
+  { value: "calculated", label: "計算" },
+  { value: "substitution", label: "置換" },
 ];
 
 export default function QuestionCard({
@@ -75,6 +80,9 @@ export default function QuestionCard({
   const isPrintTemplate = isPrintTemplateType(field.type);
   const isEmail = field.type === "email";
   const isPhone = field.type === "phone";
+  const isComputed = isComputedType(field.type);
+  const isCalculated = field.type === "calculated";
+  const isSubstitution = field.type === "substitution";
   const canAddChild = depth < MAX_DEPTH;
   const regexCheck = (isText && field.inputRestrictionMode === "pattern")
     ? buildSafeRegex(field.pattern || "")
@@ -130,7 +138,7 @@ export default function QuestionCard({
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-        {!isMessage && !isPrintTemplate && (
+        {!isMessage && !isPrintTemplate && !isComputed && (
           <label className="nf-row nf-gap-4 nf-nowrap">
             <input
               type="checkbox"
@@ -173,6 +181,10 @@ export default function QuestionCard({
       {isDateOrTime && <DateTimeFieldSection field={field} onChange={onChange} />}
 
       {isWeekday && <WeekdayFieldSection field={field} onChange={onChange} />}
+
+      {isCalculated && <CalculatedFieldSection field={field} onChange={onChange} />}
+
+      {isSubstitution && <SubstitutionFieldSection field={field} onChange={onChange} />}
 
       {isChoice && (
         <ChoiceOptionsSection
