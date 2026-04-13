@@ -527,7 +527,7 @@ Google Doc テンプレートやファイル／フォルダ名で使用するト
 | `time` | `format` | 日付・時刻を書式化（YYYY, MM, M, DD, D, YY, HH, H, mm, m, ss, s, gg, ee, ddd, dddd） | `{日付|time:YYYY年M月D日}` |
 | `left` | `n` | 先頭 n 文字を取得 | `{氏名|left:1}` |
 | `right` | `n` | 末尾 n 文字を取得 | `{コード|right:4}` |
-| `mid` | `start,length` | 指定位置から文字列を切り出し | `{コード|mid:2:5}` |
+| `mid` | `start,length` | 指定位置から文字列を切り出し | `{コード|mid:2,5}` |
 | `pad` | `length[,char]` | 左側を埋め文字（デフォルト `0`）で n 桁に | `{番号|pad:5}` → `00042` |
 | `padRight` | `length[,char]` | 右側を埋め文字（デフォルトスペース）で n 桁に | `{値|padRight:10}` |
 | `upper` | — | 大文字に変換 | `{名前|upper}` |
