@@ -353,7 +353,9 @@ function nfbCreatePdfDownloadOutput_(payload, action, outputContext, finalBaseNa
 }
 
 function nfbCreateGoogleDocInRootOutput_(payload, action, outputContext, finalBaseName) {
-  var docFile = nfbCreateRecordOutputGoogleDocumentInRoot_(payload, action, outputContext, finalBaseName);
+  var driveSettings = payload && payload.driveSettings ? payload.driveSettings : {};
+  var folder = nfbResolveRootFolder_(driveSettings);
+  var docFile = nfbCreateRecordOutputGoogleDocument_(payload, action, folder, outputContext, finalBaseName);
   return {
     ok: true,
     outputType: "googleDoc",

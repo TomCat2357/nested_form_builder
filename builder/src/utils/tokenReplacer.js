@@ -57,14 +57,14 @@ const valueToString = (value) => {
   return String(value);
 };
 
-const collectFileUploadFieldIds = (fields, ids) => {
+export const collectFileUploadFieldIds = (fields, ids) => {
   (fields || []).forEach((f) => {
     if (f?.type === "fileUpload" && f?.id) ids.add(f.id);
     if (f?.childrenByValue) Object.values(f.childrenByValue).forEach((ch) => collectFileUploadFieldIds(ch, ids));
   });
 };
 
-const extractFileUrls = (raw) => {
+export const extractFileUrls = (raw) => {
   const files = Array.isArray(raw) ? raw : [];
   return files.map((f) => f?.driveFileUrl || "").filter(Boolean).join(", ");
 };

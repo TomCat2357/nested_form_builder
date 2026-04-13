@@ -21,6 +21,10 @@ import {
   validateOutputAction,
   downloadPdfFromBase64,
 } from "../../utils/recordOutputActions.js";
+import {
+  collectFileUploadFieldIds,
+  extractFileUrls,
+} from "../../utils/tokenReplacer.js";
 
 export function useSearchPagePrintActions({
   form,
@@ -212,6 +216,13 @@ export function useSearchPagePrintActions({
     const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
     const firstUploadFieldSingle = findFirstFileUploadField(normalizedSchema);
     const fileUploadMetaSingle = collectFileUploadMeta(normalizedSchema);
+    const fileUploadIds = new Set();
+    collectFileUploadFieldIds(normalizedSchema, fileUploadIds);
+    const fileUrlParts = [];
+    for (const fid of fileUploadIds) {
+      const urls = extractFileUrls(restoredResponses[fid]);
+      if (urls) fileUrlParts.push(urls);
+    }
     const driveSettings = {
       rootFolderUrl: firstUploadFieldSingle?.driveRootFolderUrl || "",
       folderNameTemplate: firstUploadFieldSingle?.driveFolderNameTemplate || "",
@@ -223,6 +234,7 @@ export function useSearchPagePrintActions({
       fieldValues,
       fileUploadMeta: fileUploadMetaSingle,
       fileNameTemplate: effectiveFileNameTemplate,
+      fileUrls: fileUrlParts.join(", "),
     };
 
     const payload = {
