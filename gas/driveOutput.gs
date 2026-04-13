@@ -62,6 +62,26 @@ function nfbCreateRecordPrintDocument(payload) {
 
     var file = DriveApp.getFileById(doc.getId());
 
+    // fileNameTemplate + templateContext がある場合（driveSettings無し）、ファイル名テンプレートを解決
+    if (payload && payload.fileNameTemplate && !payload.driveSettings) {
+      var tc = payload.templateContext || {};
+      var fnCtx = {
+        responses: tc.responses || {},
+        fieldLabels: tc.fieldLabels || {},
+        fieldValues: tc.fieldValues || {},
+        fileUploadMeta: tc.fileUploadMeta || {},
+        recordId: tc.recordId || normalizedPayload.records[0].recordId || "",
+        formId: tc.formId || "",
+        recordNo: tc.recordNo || "",
+        formTitle: tc.formTitle || "",
+        now: new Date()
+      };
+      var resolvedName = nfbResolveTemplate_(String(payload.fileNameTemplate), fnCtx);
+      if (resolvedName) {
+        file.setName(resolvedName);
+      }
+    }
+
     // driveSettings がある場合はフォルダに移動・ファイル名テンプレート適用
     if (payload && payload.driveSettings) {
       var ds = payload.driveSettings;

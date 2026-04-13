@@ -99,25 +99,15 @@ function nfbResolveJapaneseEra_(dateParts) {
 
 function nfbIsReservedTemplateToken_(tokenName) {
   return tokenName === "ID"
-    || tokenName === "gg"
+    || tokenName === "_NOW"
     || tokenName === "_folder_url"
     || tokenName === "_record_url"
-    || tokenName === "_form_url"
-    || tokenName === "_NOW"
-    || /^Y+$/.test(tokenName)
-    || /^M+$/.test(tokenName)
-    || /^D+$/.test(tokenName)
-    || /^H+$/.test(tokenName)
-    || /^m+$/.test(tokenName)
-    || /^s+$/.test(tokenName)
-    || /^e+$/.test(tokenName);
+    || tokenName === "_form_url";
 }
 
 function nfbResolveReservedTemplateToken_(tokenName, context, options) {
   var now = context && context.now ? context.now : new Date();
   var tz = Session.getScriptTimeZone();
-  var dateParts = nfbGetTemplateDateParts_(now, tz);
-  var era = nfbResolveJapaneseEra_(dateParts);
   var recordId = context && context.recordId ? String(context.recordId).trim() : "";
   var recordUrl = context && context.recordUrl ? String(context.recordUrl).trim() : "";
   var folderUrl = context && context.folderUrl ? String(context.folderUrl).trim() : "";
@@ -125,15 +115,7 @@ function nfbResolveReservedTemplateToken_(tokenName, context, options) {
   var allowGmailOnlyTokens = options && options.allowGmailOnlyTokens === true;
 
   if (tokenName === "ID") return recordId;
-  if (tokenName === "gg") return era.name;
   if (tokenName === "_NOW") return Utilities.formatDate(now, tz, "yyyy-MM-dd HH:mm:ss");
-  if (/^Y+$/.test(tokenName)) return String(dateParts.year).padStart(tokenName.length, "0");
-  if (/^M+$/.test(tokenName)) return String(dateParts.month).padStart(tokenName.length, "0");
-  if (/^D+$/.test(tokenName)) return String(dateParts.day).padStart(tokenName.length, "0");
-  if (/^H+$/.test(tokenName)) return String(dateParts.hour).padStart(tokenName.length, "0");
-  if (/^m+$/.test(tokenName)) return String(dateParts.minute).padStart(tokenName.length, "0");
-  if (/^s+$/.test(tokenName)) return String(dateParts.second).padStart(tokenName.length, "0");
-  if (/^e+$/.test(tokenName)) return String(era.year).padStart(tokenName.length, "0");
   if (tokenName === "_folder_url") return allowGmailOnlyTokens ? folderUrl : "";
   if (tokenName === "_record_url") return allowGmailOnlyTokens ? recordUrl : "";
   if (tokenName === "_form_url") return allowGmailOnlyTokens ? formUrl : "";

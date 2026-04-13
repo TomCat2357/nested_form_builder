@@ -41,10 +41,10 @@ import {
   buildFieldLabelsMap,
   buildFieldValuesMap,
   collectFileUploadMeta,
-  buildPrintDocumentPayload,
   resolveOmitEmptyRowsOnPrint,
 } from "../features/preview/printDocument.js";
-import { buildPrimarySaveOptions, resolveCreatePrintOnSave } from "../utils/settings.js";
+import { buildPrimarySaveOptions } from "../utils/settings.js";
+import { resolveSharedPrintFileNameTemplate } from "../utils/printTemplateAction.js";
 import {
   appendDriveFileId,
   areDriveFolderStatesEqual,
@@ -190,11 +190,8 @@ export default function FormPage() {
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
   const fieldLabels = useMemo(() => buildFieldLabelsMap(normalizedSchema), [normalizedSchema]);
   const primarySaveOptions = useMemo(
-    () => ({
-      ...(isDirectRecordMode ? { stayAsView: true } : buildPrimarySaveOptions(form?.settings)),
-      createPrintAfterSave: resolveCreatePrintOnSave(form?.settings),
-    }),
-    [form?.settings?.createPrintOnSave, form?.settings?.saveAfterAction, isDirectRecordMode],
+    () => (isDirectRecordMode ? { stayAsView: true } : buildPrimarySaveOptions(form?.settings)),
+    [form?.settings?.saveAfterAction, isDirectRecordMode],
   );
 
   useApplyTheme(form?.settings?.theme, { enabled: !!form });
@@ -373,28 +370,6 @@ export default function FormPage() {
       });
     });
   }, []);
-
-  const buildSavedRecordPrintPayload = useCallback((savedEntry, rawResponses) => (
-    buildPrintDocumentPayload({
-      schema: normalizedSchema,
-      responses: rawResponses || {},
-      settings: {
-        ...(form?.settings || {}),
-        recordNo: savedEntry?.["No."] === undefined || savedEntry?.["No."] === null ? "" : String(savedEntry["No."]),
-        modifiedAt: savedEntry?.modifiedAt,
-        modifiedAtUnixMs: savedEntry?.modifiedAtUnixMs,
-      },
-      recordId: savedEntry?.id,
-      omitEmptyRows: omitEmptyRowsOnPrint,
-      driveFolderState: createEmptyDriveFolderState(),
-      useTemporaryFolder: false,
-    })
-  ), [form?.settings, normalizedSchema, omitEmptyRowsOnPrint]);
-
-  const runPrintOnSave = useCallback(async (savedEntry, rawResponses) => {
-    const payload = buildSavedRecordPrintPayload(savedEntry, rawResponses);
-    return createRecordPrintDocument(payload);
-  }, [buildSavedRecordPrintPayload]);
 
   const applyOrDeferSyncedEntry = useCallback((nextEntry, source = "unknown") => {
     if (!nextEntry) return false;
@@ -882,7 +857,7 @@ export default function FormPage() {
     return saved;
   };
 
-  const triggerSave = async ({ redirect, stayAsView, skipStayAsViewNavigation = false, createPrintAfterSave = false, unlinkDriveFolder = false } = {}) => {
+  const triggerSave = async ({ redirect, stayAsView, skipStayAsViewNavigation = false, unlinkDriveFolder = false } = {}) => {
     if (!form) {
       showAlert("フォームが見つかりません");
       return { ok: false, recordId: "" };
@@ -892,25 +867,9 @@ export default function FormPage() {
     try {
       const preview = previewRef.current;
       if (!preview) throw new Error("preview_not_ready");
-      const rawResponsesForPrint = responsesRef.current;
       const result = await preview.submit({ silent: true, unlinkDriveFolder });
       const savedId = String(preview.getRecordId?.() || result?.id || currentRecordId || entryId || "").trim();
-      let printResult = null;
-      let printError = null;
 
-      if (createPrintAfterSave) {
-        try {
-          printResult = await runPrintOnSave(result, rawResponsesForPrint);
-        } catch (error) {
-          console.error("[FormPage] failed to create print document after save:", error);
-          printError = error;
-        }
-      }
-
-      const saveSuccessMessage = printResult ? "保存しました。印刷様式も出力しました。" : "保存しました";
-      const printFailureMessage = printError
-        ? `保存は完了しましたが、印刷様式の出力に失敗しました: ${printError?.message || printError}`
-        : "";
       if (stayAsView) {
         if (!skipStayAsViewNavigation) {
           if (!entryId && savedId) {
@@ -922,32 +881,15 @@ export default function FormPage() {
             setMode("view");
           }
         }
-        if (printFailureMessage) {
-          showAlert(printFailureMessage, "印刷様式を出力できませんでした");
-        } else {
-          if (printResult?.fileUrl) {
-            showOutputAlert({ message: "保存し、印刷様式を出力しました。", url: printResult.fileUrl, linkLabel: "ファイルを開く" });
-            return { ok: true, recordId: savedId };
-          }
-          showToast(saveSuccessMessage);
-        }
+        showToast("保存しました");
       } else if (redirect) {
-        if (printFailureMessage) {
-          showAlert(printFailureMessage, "印刷様式を出力できませんでした");
-        } else if (printResult) {
-          showToast(saveSuccessMessage);
-        }
         navigateBack({ saved: true });
-      } else if (printFailureMessage) {
-        showAlert(printFailureMessage, "印刷様式を出力できませんでした");
-      } else if (printResult) {
-        showToast(saveSuccessMessage);
       }
       return { ok: true, recordId: savedId };
     } catch (error) {
       console.warn(error);
       if (error instanceof DriveFolderFinalizeError && isAdmin) {
-        pendingUnlinkSaveRef.current = { redirect, stayAsView, skipStayAsViewNavigation, createPrintAfterSave };
+        pendingUnlinkSaveRef.current = { redirect, stayAsView, skipStayAsViewNavigation };
         unlinkFolderDialog.open({ errorMessage: error.originalError?.message || "不明なエラー" });
         return { ok: false, recordId: "" };
       }
@@ -1139,6 +1081,21 @@ export default function FormPage() {
         omitEmptyRows: omitEmptyRowsOnPrint,
         driveFolderState: createEmptyDriveFolderState(),
       });
+      const fileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {});
+      if (fileNameTemplate) {
+        const currentResponses = responsesRef.current || {};
+        payload.fileNameTemplate = fileNameTemplate;
+        payload.templateContext = {
+          responses: currentResponses,
+          fieldLabels,
+          fieldValues: buildFieldValuesMap(normalizedSchema, currentResponses),
+          fileUploadMeta: collectFileUploadMeta(normalizedSchema),
+          recordId: payload.recordId || "",
+          formId: form?.id || "",
+          recordNo: entry?.["No."] || "",
+          formTitle: form?.settings?.formTitle || "",
+        };
+      }
       const result = await createRecordPrintDocument(payload);
       showOutputAlert({ message: "マイドライブに Google ドキュメントを保存しました。", url: result.fileUrl, linkLabel: "ファイルを開く" });
     } catch (error) {
@@ -1147,7 +1104,7 @@ export default function FormPage() {
     } finally {
       setIsCreatingPrintDocument(false);
     }
-  }, [omitEmptyRowsOnPrint, showAlert, showOutputAlert]);
+  }, [entry, fieldLabels, form?.id, form?.settings, normalizedSchema, omitEmptyRowsOnPrint, showAlert, showOutputAlert]);
 
   if (!form) {
     return (

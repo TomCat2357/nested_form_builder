@@ -7,6 +7,7 @@ import {
 } from "../preview/printDocument.js";
 import { restoreResponsesFromData } from "../../utils/responses.js";
 import {
+  createRecordPrintDocument,
   executeRecordOutputAction,
   executeBatchGoogleDocOutput,
 } from "../../services/gasClient.js";
@@ -32,88 +33,127 @@ export function useSearchPagePrintActions({
 }) {
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
 
-  const createPrintDocument = useCallback(async () => {
-    setIsCreatingPrintDocument(true);
-    try {
-      const action = {
-        enabled: true,
-        outputType: "googleDoc",
-        useCustomTemplate: false,
-        templateUrl: "",
-        fileNameTemplate: "",
-      };
-      const effectiveFileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {}) || DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE;
+  const createSinglePrintDocument = useCallback(async (entry) => {
+    const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
+    const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
+    const fileUploadMeta = collectFileUploadMeta(normalizedSchema);
+    const fileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {});
 
-      const firstUploadField = findFirstFileUploadField(normalizedSchema);
-      const fileUploadMeta = collectFileUploadMeta(normalizedSchema);
-      const recordPayloads = selectedPrintableRows.map(({ entry }) => {
-        const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
-        const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
-        const driveSettings = {
-          rootFolderUrl: firstUploadField?.driveRootFolderUrl || "",
-          folderNameTemplate: firstUploadField?.driveFolderNameTemplate || "",
+    const payload = buildPrintDocumentPayload({
+      schema: normalizedSchema,
+      responses: restoredResponses,
+      settings: {
+        ...(form?.settings || {}),
+        formId: form?.id || "",
+        recordNo: entry?.["No."],
+        modifiedAt: entry?.modifiedAt,
+        modifiedAtUnixMs: entry?.modifiedAtUnixMs,
+      },
+      recordId: entry.id,
+      omitEmptyRows: omitEmptyRowsOnPrint,
+      driveFolderState: {
+        resolvedUrl: entry.driveFolderUrl || "",
+        inputUrl: entry.driveFolderUrl || "",
+      },
+    });
+
+    if (fileNameTemplate) {
+      payload.fileNameTemplate = fileNameTemplate;
+      payload.templateContext = {
+        responses: restoredResponses,
+        fieldLabels,
+        fieldValues,
+        fileUploadMeta,
+        recordId: entry.id,
+        formId: form?.id || "",
+        recordNo: entry?.["No."] || "",
+        formTitle: form?.settings?.formTitle || "",
+      };
+    }
+
+    const result = await createRecordPrintDocument(payload);
+    if (result?.fileUrl) {
+      showOutputAlert({
+        message: "印刷様式を出力しました。",
+        url: result.fileUrl,
+        linkLabel: "Google ドキュメントを開く",
+      });
+    }
+  }, [fieldLabels, form?.id, form?.settings, normalizedSchema, omitEmptyRowsOnPrint, showOutputAlert]);
+
+  const createBatchPrintDocument = useCallback(async () => {
+    const action = {
+      enabled: true,
+      outputType: "googleDoc",
+      useCustomTemplate: false,
+      templateUrl: "",
+      fileNameTemplate: "",
+    };
+    const effectiveFileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {}) || DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE;
+
+    const firstUploadField = findFirstFileUploadField(normalizedSchema);
+    const fileUploadMeta = collectFileUploadMeta(normalizedSchema);
+    const recordPayloads = selectedPrintableRows.map(({ entry }) => {
+      const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
+      const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
+      const driveSettings = {
+        rootFolderUrl: firstUploadField?.driveRootFolderUrl || "",
+        folderNameTemplate: firstUploadField?.driveFolderNameTemplate || "",
+        formId: form?.id || "",
+        recordId: entry.id,
+        folderUrl: entry.driveFolderUrl || "",
+        responses: restoredResponses,
+        fieldLabels,
+        fieldValues,
+        fileUploadMeta,
+        fileNameTemplate: effectiveFileNameTemplate,
+      };
+      return {
+        action,
+        settings: {
+          standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
+          standardPrintFileNameTemplate: form?.settings?.standardPrintFileNameTemplate || "",
+        },
+        recordContext: {
+          formTitle: form?.settings?.formTitle || "",
           formId: form?.id || "",
           recordId: entry.id,
-          folderUrl: entry.driveFolderUrl || "",
-          responses: restoredResponses,
-          fieldLabels,
-          fieldValues,
-          fileUploadMeta,
-          fileNameTemplate: effectiveFileNameTemplate,
-        };
-        return {
-          action,
-          settings: {
-            standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
-            standardPrintFileNameTemplate: form?.settings?.standardPrintFileNameTemplate || "",
-          },
-          recordContext: {
-            formTitle: form?.settings?.formTitle || "",
-            formId: form?.id || "",
+          recordNo: entry?.["No."] || "",
+          modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
+          printPayload: buildPrintDocumentPayload({
+            schema: normalizedSchema,
+            responses: restoredResponses,
+            settings: {
+              ...(form?.settings || {}),
+              formId: form?.id || "",
+              recordNo: entry?.["No."],
+              modifiedAt: entry?.modifiedAt,
+              modifiedAtUnixMs: entry?.modifiedAtUnixMs,
+            },
             recordId: entry.id,
-            recordNo: entry?.["No."] || "",
-            modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
-            printPayload: buildPrintDocumentPayload({
-              schema: normalizedSchema,
-              responses: restoredResponses,
-              settings: {
-                ...(form?.settings || {}),
-                formId: form?.id || "",
-                recordNo: entry?.["No."],
-                modifiedAt: entry?.modifiedAt,
-                modifiedAtUnixMs: entry?.modifiedAtUnixMs,
-              },
-              recordId: entry.id,
-              omitEmptyRows: omitEmptyRowsOnPrint,
-              driveFolderState: {
-                resolvedUrl: entry.driveFolderUrl || "",
-                inputUrl: entry.driveFolderUrl || "",
-              },
-              useTemporaryFolder: true,
-            }),
-          },
-          driveSettings,
-        };
-      });
+            omitEmptyRows: omitEmptyRowsOnPrint,
+            driveFolderState: {
+              resolvedUrl: entry.driveFolderUrl || "",
+              inputUrl: entry.driveFolderUrl || "",
+            },
+          }),
+        },
+        driveSettings,
+      };
+    });
 
-      const combinedFileName = (form?.settings?.formTitle || "出力") + "_一括出力";
-      const result = await executeBatchGoogleDocOutput({
-        records: recordPayloads,
-        fileNameTemplate: combinedFileName,
-      });
+    const combinedFileName = (form?.settings?.formTitle || "出力") + "_一括出力";
+    const result = await executeBatchGoogleDocOutput({
+      records: recordPayloads,
+      fileNameTemplate: combinedFileName,
+    });
 
-      if (result?.openUrl) {
-        showOutputAlert({
-          message: `${selectedPrintableRows.length}件の印刷様式を出力しました。`,
-          url: result.openUrl,
-          linkLabel: "Google ドキュメントを開く",
-        });
-      }
-    } catch (error) {
-      console.error("[SearchPage] failed to create print document:", error);
-      showAlert(`印刷様式の出力に失敗しました: ${error?.message || error}`);
-    } finally {
-      setIsCreatingPrintDocument(false);
+    if (result?.openUrl) {
+      showOutputAlert({
+        message: `${selectedPrintableRows.length}件の印刷様式を出力しました。`,
+        url: result.openUrl,
+        linkLabel: "Google ドキュメントを開く",
+      });
     }
   }, [
     fieldLabels,
@@ -122,8 +162,28 @@ export function useSearchPagePrintActions({
     normalizedSchema,
     omitEmptyRowsOnPrint,
     selectedPrintableRows,
-    showAlert,
     showOutputAlert,
+  ]);
+
+  const createPrintDocument = useCallback(async () => {
+    setIsCreatingPrintDocument(true);
+    try {
+      if (selectedPrintableRows.length === 1) {
+        await createSinglePrintDocument(selectedPrintableRows[0].entry);
+      } else {
+        await createBatchPrintDocument();
+      }
+    } catch (error) {
+      console.error("[SearchPage] failed to create print document:", error);
+      showAlert(`印刷様式の出力に失敗しました: ${error?.message || error}`);
+    } finally {
+      setIsCreatingPrintDocument(false);
+    }
+  }, [
+    selectedPrintableRows,
+    createSinglePrintDocument,
+    createBatchPrintDocument,
+    showAlert,
   ]);
 
   const handleCellAction = useCallback(async (column, entry) => {
@@ -193,7 +253,6 @@ export function useSearchPagePrintActions({
             resolvedUrl: entry.driveFolderUrl || "",
             inputUrl: entry.driveFolderUrl || "",
           },
-          useTemporaryFolder: true,
         }),
       },
       driveSettings,

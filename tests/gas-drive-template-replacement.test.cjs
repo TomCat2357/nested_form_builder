@@ -479,7 +479,7 @@ test("パイプ変換: 予約トークン + パイプ", () => {
     fieldValues: {},
     now: new Date("2026-04-04T10:20:30+09:00"),
   };
-  assert.equal(gas.nfbResolveTemplate_("{YYYY|left:2}", ctx), "20");
+  assert.equal(gas.nfbResolveTemplate_("{_NOW|time:YYYY|left:2}", ctx), "20");
 });
 
 test("パイプ変換: パース不能な日付はそのまま返す", () => {
@@ -1177,7 +1177,7 @@ test("@ prefix: 予約トークンは @ なしで動作", () => {
     now: new Date("2026-04-04T10:20:30+09:00"),
   };
   assert.equal(gas.nfbResolveTemplate_("{ID}", ctx), "rec001");
-  assert.equal(gas.nfbResolveTemplate_("{YYYY}", ctx), "2026");
+  assert.equal(gas.nfbResolveTemplate_("{_NOW|time:YYYY}", ctx), "2026");
 });
 
 test("@ prefix: 混合テンプレート", () => {

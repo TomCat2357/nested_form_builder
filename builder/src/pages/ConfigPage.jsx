@@ -9,7 +9,7 @@ import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { DEFAULT_THEME } from "../app/theme/theme.js";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { resolveOmitEmptyRowsOnPrint, resolveShowPrintHeader } from "../features/preview/printDocument.js";
-import { resolveCreatePrintOnSave, resolveSettingsFieldValue } from "../utils/settings.js";
+import { resolveSettingsFieldValue } from "../utils/settings.js";
 import { SettingsField } from "../features/settings/SettingsField.jsx";
 import { getConfigPageSaveAfterActionField } from "./configPageSettings.js";
 import { useConfigPageTheme } from "./useConfigPageTheme.js";
@@ -30,7 +30,6 @@ export default function ConfigPage() {
   const formTheme = rawFormTheme || DEFAULT_THEME;
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(targetForm?.settings);
   const showPrintHeader = resolveShowPrintHeader(targetForm?.settings);
-  const createPrintOnSave = resolveCreatePrintOnSave(targetForm?.settings);
   const rawGlobalTheme = settings?.theme;
   const globalTheme = rawGlobalTheme || DEFAULT_THEME;
   const themeValue = isFormMode ? formTheme : globalTheme;
@@ -235,20 +234,6 @@ export default function ConfigPage() {
             </label>
             <p className="nf-mt-6 nf-text-12 nf-text-muted">
               OFFにすると、未回答の項目も印刷様式へ出力します。
-            </p>
-            <label className="nf-row nf-gap-8 nf-items-center nf-mt-12">
-              <input
-                type="checkbox"
-                checked={createPrintOnSave}
-                onChange={(event) => {
-                  void handleTogglePrintSetting("createPrintOnSave", event.target.checked);
-                }}
-                disabled={savingPrintSettings}
-              />
-              <span className="nf-fw-600">保存時に印刷様式を出力する（同名ファイルは上書き）</span>
-            </label>
-            <p className="nf-mt-6 nf-text-12 nf-text-muted">
-              通常の保存ボタンを押した時だけ印刷様式を自動出力します。自動保存では出力しません。
             </p>
           </div>
         )}
