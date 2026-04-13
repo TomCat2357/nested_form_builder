@@ -97,9 +97,16 @@ export function useSearchPagePrintActions({
 
     const firstUploadField = findFirstFileUploadField(normalizedSchema);
     const fileUploadMeta = collectFileUploadMeta(normalizedSchema);
+    const fileUploadIdsBatch = new Set();
+    collectFileUploadFieldIds(normalizedSchema, fileUploadIdsBatch);
     const recordPayloads = selectedPrintableRows.map(({ entry }) => {
       const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
       const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
+      const batchFileUrlParts = [];
+      for (const fid of fileUploadIdsBatch) {
+        const urls = extractFileUrls(restoredResponses[fid]);
+        if (urls) batchFileUrlParts.push(urls);
+      }
       const driveSettings = {
         rootFolderUrl: firstUploadField?.driveRootFolderUrl || "",
         folderNameTemplate: firstUploadField?.driveFolderNameTemplate || "",
@@ -111,6 +118,7 @@ export function useSearchPagePrintActions({
         fieldValues,
         fileUploadMeta,
         fileNameTemplate: effectiveFileNameTemplate,
+        fileUrls: batchFileUrlParts.join(", "),
       };
       return {
         action,

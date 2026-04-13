@@ -159,7 +159,8 @@ function nfbExecuteBatchGoogleDocOutput(payload) {
 
     var fileName = payload.fileNameTemplate || "一括出力";
     var tmpBase = fileName + "__tmp_" + Utilities.getUuid();
-    var rootFolder = DriveApp.getRootFolder();
+    var firstDriveSettings = records[0] && records[0].driveSettings ? records[0].driveSettings : {};
+    var rootFolder = nfbResolveRootFolder_(firstDriveSettings);
 
     // 1件目のレコードでベースDocを作成
     var firstPayload = records[0];
