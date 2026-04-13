@@ -219,15 +219,32 @@ const transformNumber = (v, formatStr) => {
 // if transformer helpers (GAS nfbTransformIf_ equivalent)
 // ---------------------------------------------------------------------------
 
-const resolveFieldRef = (name, context) => {
-  const map = (context && context.labelValueMap) || {};
+// 予約トークン名 → context プロパティのマッピング（循環import回避）
+const RESERVED_CONTEXT_MAP = {
+  _id: "recordId",
+  _NOW: null, // special handling
+  _folder_url: "folderUrl",
+  _record_url: "recordUrl",
+  _form_url: "formUrl",
+  _file_urls: "fileUrls",
+};
+
+/** @で参照される名前を解決: 予約トークン優先 → labelValueMap フォールバック */
+const resolveRef = (name, context) => {
+  const ctx = context || {};
+  const ctxProp = RESERVED_CONTEXT_MAP[name];
+  if (ctxProp !== undefined) {
+    if (name === "_NOW") return formatNow(ctx.now || new Date());
+    return ctx[ctxProp] || "";
+  }
+  const map = ctx.labelValueMap || {};
   return Object.prototype.hasOwnProperty.call(map, name) ? map[name] : "";
 };
 
 const resolveConditionOperand = (operand, context) => {
   const s = operand.trim();
   if (s.charAt(0) === "@" && s.length > 1) {
-    return resolveFieldRef(s.substring(1), context);
+    return resolveRef(s.substring(1), context);
   }
   if (s.length >= 2 && s.charAt(0) === '"' && s.charAt(s.length - 1) === '"') {
     return s.substring(1, s.length - 1);
@@ -297,7 +314,7 @@ const resolveIfValue = (valueStr, context, pipeValue) => {
   if (valueStr === "_") return pipeValue;
   if (valueStr === "\\_") return "_";
   if (valueStr.charAt(0) === "@" && valueStr.length > 1) {
-    return resolveFieldRef(valueStr.substring(1), context);
+    return resolveRef(valueStr.substring(1), context);
   }
   return valueStr;
 };

@@ -4,7 +4,7 @@ export const PRINT_TEMPLATE_OUTPUT_TYPES = Object.freeze({
   GMAIL: "gmail",
 });
 
-export const DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE = "{ID}_{_NOW|time:YYYY-MM-DD}";
+export const DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE = "{@_id}_{@_NOW|time:YYYY-MM-DD}";
 
 export const PRINT_TEMPLATE_OUTPUT_OPTIONS = [
   { value: PRINT_TEMPLATE_OUTPUT_TYPES.PDF, label: "PDF" },

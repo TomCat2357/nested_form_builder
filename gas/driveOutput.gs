@@ -281,7 +281,7 @@ function nfbResolveStandardPrintFileNameTemplate_(settings) {
   var configuredTemplate = settings && settings.standardPrintFileNameTemplate
     ? String(settings.standardPrintFileNameTemplate).trim()
     : "";
-  return configuredTemplate || "{ID}_{_NOW|time:YYYY-MM-DD}";
+  return configuredTemplate || "{@_id}_{@_NOW|time:YYYY-MM-DD}";
 }
 
 function nfbRequiresRecordOutputFileNameTemplate_(action, outputType) {
@@ -471,8 +471,8 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
       if (!rawTokenName) continue;
       var fullToken = match[0];
       if (Object.prototype.hasOwnProperty.call(tokenValueMap, fullToken)) continue;
-      var isFieldRef = rawTokenName.charAt(0) === "@";
-      var tokenName = isFieldRef ? rawTokenName.slice(1) : rawTokenName;
+      var isRef = rawTokenName.charAt(0) === "@";
+      var tokenName = isRef ? rawTokenName.slice(1) : rawTokenName;
 
       var pipeIdx = tokenName.indexOf("|");
       var value;
@@ -481,13 +481,13 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
         var tPart = tokenName.substring(pipeIdx + 1);
         var raw = nfbResolveTemplateTokenValue_(fPart, context, {
           allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),
-          forceFieldReference: isFieldRef
+          isRef: isRef
         });
         value = nfbApplyPipeTransformers_(raw, tPart, context);
       } else {
         value = nfbResolveTemplateTokenValue_(tokenName, context, {
           allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),
-          forceFieldReference: isFieldRef
+          isRef: isRef
         });
       }
       tokenValueMap[fullToken] = String(value === null || value === undefined ? "" : value);

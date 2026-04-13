@@ -70,9 +70,9 @@ export const SETTINGS_GROUPS = [
       {
         key: "standardPrintFileNameTemplate",
         label: "標準様式出力ファイル名規則",
-        placeholder: "{ID}_{_NOW|time:YYYY-MM-DD}",
+        placeholder: "{@_id}_{@_NOW|time:YYYY-MM-DD}",
         required: false,
-        description: "GoogleDocument/PDF は「カード個別 > フォーム共通 > 既定値」で解決します。Gmail の PDF 添付はフォーム共通か既定値のみを使い、未入力時の既定値は {ID}_{_NOW|time:YYYY-MM-DD} です",
+        description: "GoogleDocument/PDF は「カード個別 > フォーム共通 > 既定値」で解決します。Gmail の PDF 添付はフォーム共通か既定値のみを使い、未入力時の既定値は {@_id}_{@_NOW|time:YYYY-MM-DD} です",
       },
       {
         key: "saveAfterAction",

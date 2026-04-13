@@ -41,7 +41,7 @@ function PrintTemplateDocFields({ field, onChange, printTemplateAction }) {
       )}
       <input
         className={s.input.className}
-        placeholder="出力ファイル名（例: {ID}_{_NOW|time:YYYY-MM-DD}）"
+        placeholder="出力ファイル名（例: {@_id}_{@_NOW|time:YYYY-MM-DD}）"
         value={printTemplateAction.fileNameTemplate || ""}
         onChange={(event) => updateAction({ fileNameTemplate: event.target.value })}
       />
@@ -54,7 +54,7 @@ const GMAIL_TEMPLATE_FIELDS = [
   { key: "gmailTemplateTo", label: "To", placeholder: "例: {メールアドレス}" },
   { key: "gmailTemplateCc", label: "Cc", placeholder: "例: {メールアドレス}" },
   { key: "gmailTemplateBcc", label: "Bcc", placeholder: "例: {メールアドレス}" },
-  { key: "gmailTemplateSubject", label: "件名", placeholder: "例: 【申請】{ID}_{_NOW|time:YYYY-MM-DD}" },
+  { key: "gmailTemplateSubject", label: "件名", placeholder: "例: 【申請】{@_id}_{@_NOW|time:YYYY-MM-DD}" },
 ];
 
 function PrintTemplateGmailFields({ field, onChange, printTemplateAction }) {
@@ -127,7 +127,7 @@ export function PrintTemplateSection({ field, onChange, printTemplateAction }) {
           ? <PrintTemplateGmailFields field={field} onChange={onChange} printTemplateAction={printTemplateAction} />
           : <PrintTemplateDocFields field={field} onChange={onChange} printTemplateAction={printTemplateAction} />
         }
-        <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {ID} / {_NOW} / {フィールド名} を使えます。{_NOW|time:YYYY-MM-DD} や {_NOW|time:HH:mm} のようにパイプで書式を指定できます。予約語と同名の項目は {\\フィールド名} で参照します。Gmail 本文では {_folder_url} / {_record_url} / {_form_url} も使えます。"}</div>
+        <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {@_id} / {@_NOW} / {@フィールド名} を使えます。{@_NOW|time:YYYY-MM-DD} や {@_NOW|time:HH:mm} のようにパイプで書式を指定できます。Gmail 本文では {@_folder_url} / {@_record_url} / {@_form_url} も使えます。{値|if:@_folder_url,代替} のように予約トークンを条件に使えます。"}</div>
       </div>
     </div>
   );
@@ -362,11 +362,11 @@ export function FileUploadFieldSection({ field, onChange }) {
           className="nf-input"
           type="text"
           value={field.driveFolderNameTemplate ?? ""}
-          placeholder="{ID}_{_NOW|time:YYYY-MM-DD}_{担当者名}"
+          placeholder="{@_id}_{@_NOW|time:YYYY-MM-DD}_{担当者名}"
           onChange={(event) => onChange({ ...field, driveFolderNameTemplate: event.target.value })}
         />
         <div className="nf-text-11 nf-text-muted nf-mt-4">
-          {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{ID}, {_NOW}, {フィールド名} を使えます。{_NOW|time:YYYY-MM-DD} のようにパイプで書式を指定できます。予約語と同名の項目は {\\フィールド名} で参照できます"}
+          {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{@_id}, {@_NOW}, {@フィールド名} を使えます。{@_NOW|time:YYYY-MM-DD} のようにパイプで書式を指定できます。"}
         </div>
       </div>
     </div>
@@ -472,7 +472,7 @@ export function SubstitutionFieldSection({ field, onChange }) {
             onChange={(event) => onChange({ ...field, templateText: event.target.value })}
           />
           <span className="nf-text-11 nf-text-muted">
-            {"{フィールド名} で他の項目の値を埋め込めます。{_ID}, {_NOW|time:YYYY年MM月DD日} 等の予約トークンも使えます。パイプ変換（|upper, |left:3 等）も使用できます。"}
+            {"{@フィールド名} で他の項目の値を埋め込めます。{@_id}, {@_NOW|time:YYYY年MM月DD日} 等の予約トークンも使えます。パイプ変換（|upper, |left:3 等）も使用できます。"}
           </span>
         </label>
         <label className="nf-row nf-gap-6">

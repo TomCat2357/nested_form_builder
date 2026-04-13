@@ -27,8 +27,10 @@ test("extractTemplateDependencies はフィールドラベルを抽出する", (
 });
 
 test("extractTemplateDependencies は予約トークンをスキップする", () => {
+  assert.deepEqual(extractTemplateDependencies("{@_NOW}は現在時刻"), []);
+  assert.deepEqual(extractTemplateDependencies("{@_id}"), []);
+  // @ なしの _ 始まりもスキップ
   assert.deepEqual(extractTemplateDependencies("{_NOW}は現在時刻"), []);
-  assert.deepEqual(extractTemplateDependencies("{_ID}"), []);
 });
 
 test("extractTemplateDependencies はパイプ変換を除去してラベルのみ返す", () => {

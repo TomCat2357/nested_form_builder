@@ -154,10 +154,10 @@ Nested Form Builder は、ネストした階層構造を持つフォームの設
 ├─────────────────────────────────────────────────────────────────┤
 │  Drive Integration（Drive連携）                                  │
 │  ┌─ テンプレートシステム ──────────────────────────┐            │
-│  │ トークン置換: {TOKEN}, {field|pipe1|pipe2}        │           │
-│  │ 予約トークン: {ID}, {_NOW}, {_folder_url} 等      │           │
+│  │ トークン置換: {@TOKEN}, {@field|pipe1|pipe2}       │           │
+│  │ 予約トークン: {@_id}, {@_NOW}, {@_folder_url} 等  │           │
 │  │ パイプ変換: time, left, pad, default, if 等       │           │
-│  │ 和暦対応: {_NOW|time:gg ee年}                     │           │
+│  │ 和暦対応: {@_NOW|time:gg ee年}                    │           │
 │  └──────────────────────────────────────────────────┘           │
 │  ┌─ ドキュメント出力 ──────────────────────────────┐            │
 │  │ Google Docテンプレートからの文書生成               │           │
@@ -511,12 +511,14 @@ Google Doc テンプレートやファイル／フォルダ名で使用するト
 
 | トークン | 内容 |
 | --- | --- |
-| `{ID}` | レコード ID |
-| `{_NOW}` | 現在日時（`yyyy-MM-dd HH:mm:ss`）。`{_NOW\|time:YYYY年MM月DD日}` のようにパイプで整形可 |
-| `{_folder_url}` | レコードの Drive フォルダ URL（Gmail 出力時のみ有効） |
-| `{_record_url}` | レコード閲覧 URL（Gmail 出力時のみ有効） |
-| `{_form_url}` | フォーム入力 URL（Gmail 出力時のみ有効） |
-| `{_file_urls}` | アップロードファイル URL（カンマ区切り、フロントエンドのみ） |
+| `{@_id}` | レコード ID |
+| `{@_NOW}` | 現在日時（`yyyy-MM-dd HH:mm:ss`）。`{@_NOW\|time:YYYY年MM月DD日}` のようにパイプで整形可 |
+| `{@_folder_url}` | レコードの Drive フォルダ URL（Gmail 出力時のみ有効） |
+| `{@_record_url}` | レコード閲覧 URL（Gmail 出力時のみ有効） |
+| `{@_form_url}` | フォーム入力 URL（Gmail 出力時のみ有効） |
+| `{@_file_urls}` | アップロードファイル URL（カンマ区切り） |
+
+予約トークンは `if` 条件で真偽判定に使用可能: `{@value\|if:@_folder_url,fallback}`
 
 ### パイプ変換一覧
 

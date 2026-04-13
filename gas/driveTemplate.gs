@@ -98,11 +98,12 @@ function nfbResolveJapaneseEra_(dateParts) {
 }
 
 function nfbIsReservedTemplateToken_(tokenName) {
-  return tokenName === "ID"
+  return tokenName === "_id"
     || tokenName === "_NOW"
     || tokenName === "_folder_url"
     || tokenName === "_record_url"
-    || tokenName === "_form_url";
+    || tokenName === "_form_url"
+    || tokenName === "_file_urls";
 }
 
 function nfbResolveReservedTemplateToken_(tokenName, context, options) {
@@ -112,13 +113,15 @@ function nfbResolveReservedTemplateToken_(tokenName, context, options) {
   var recordUrl = context && context.recordUrl ? String(context.recordUrl).trim() : "";
   var folderUrl = context && context.folderUrl ? String(context.folderUrl).trim() : "";
   var formUrl = context && context.formUrl ? String(context.formUrl).trim() : "";
+  var fileUrls = context && context.fileUrls ? String(context.fileUrls).trim() : "";
   var allowGmailOnlyTokens = options && options.allowGmailOnlyTokens === true;
 
-  if (tokenName === "ID") return recordId;
+  if (tokenName === "_id") return recordId;
   if (tokenName === "_NOW") return Utilities.formatDate(now, tz, "yyyy-MM-dd HH:mm:ss");
   if (tokenName === "_folder_url") return allowGmailOnlyTokens ? folderUrl : "";
   if (tokenName === "_record_url") return allowGmailOnlyTokens ? recordUrl : "";
   if (tokenName === "_form_url") return allowGmailOnlyTokens ? formUrl : "";
+  if (tokenName === "_file_urls") return fileUrls;
   return null;
 }
 
@@ -128,12 +131,15 @@ function nfbResolveFieldTemplateToken_(tokenName, context) {
 }
 
 function nfbResolveTemplateTokenValue_(tokenName, context, options) {
-  var forceFieldReference = options && options.forceFieldReference === true;
-  if (forceFieldReference) {
+  var isRef = options && options.isRef === true;
+  if (isRef) {
+    // @ prefix: 予約トークン優先 → フィールド参照フォールバック
+    var reservedValue = nfbResolveReservedTemplateToken_(tokenName, context, options);
+    if (reservedValue !== null) return reservedValue;
     return nfbResolveFieldTemplateToken_(tokenName, context);
   }
-  var reservedValue = nfbResolveReservedTemplateToken_(tokenName, context, options);
-  return reservedValue !== null ? reservedValue : "";
+  // @ なし: フィールド参照のみ
+  return nfbResolveFieldTemplateToken_(tokenName, context);
 }
 
 function nfbResolveTemplateTokens_(template, context, options) {
@@ -146,8 +152,8 @@ function nfbResolveTemplateTokens_(template, context, options) {
     .replace(/\\\}/g, escapedCloseBraceToken)
     .replace(/\{([^{}]+)\}/g, function(match, tokenBody) {
       var rawTokenName = tokenBody || "";
-      var isFieldReference = rawTokenName.charAt(0) === "@";
-      var tokenName = isFieldReference ? rawTokenName.slice(1) : rawTokenName;
+      var isRef = rawTokenName.charAt(0) === "@";
+      var tokenName = isRef ? rawTokenName.slice(1) : rawTokenName;
       if (!tokenName) return "";
 
       var pipeIndex = tokenName.indexOf("|");
@@ -156,14 +162,14 @@ function nfbResolveTemplateTokens_(template, context, options) {
         var transformersPart = tokenName.substring(pipeIndex + 1);
         var resolvedValue = nfbResolveTemplateTokenValue_(fieldPart, context, {
           allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
-          forceFieldReference: isFieldReference
+          isRef: isRef
         });
         return nfbApplyPipeTransformers_(resolvedValue, transformersPart, context);
       }
 
       return nfbResolveTemplateTokenValue_(tokenName, context, {
         allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
-        forceFieldReference: isFieldReference
+        isRef: isRef
       });
     });
 
@@ -482,10 +488,18 @@ function nfbTransformNumber_(value, formatStr) {
 // if transformer: {trueValue|if:condition,elseValue}
 // ---------------------------------------------------------------------------
 
+/** @参照を解決: 予約トークン優先 → フィールド参照フォールバック（if条件用） */
+function nfbResolveRef_(name, context) {
+  // allowGmailOnlyTokens: true で真偽判定が全コンテキストで動作するようにする
+  var reservedValue = nfbResolveReservedTemplateToken_(name, context, { allowGmailOnlyTokens: true });
+  if (reservedValue !== null) return reservedValue;
+  return nfbResolveFieldTemplateToken_(name, context);
+}
+
 function nfbResolveConditionOperand_(operand, context) {
   var s = operand.replace(/^\s+|\s+$/g, "");
   if (s.charAt(0) === "@" && s.length > 1) {
-    return context ? nfbResolveFieldTemplateToken_(s.substring(1), context) : "";
+    return context ? nfbResolveRef_(s.substring(1), context) : "";
   }
   if (s.length >= 2 && s.charAt(0) === '"' && s.charAt(s.length - 1) === '"') {
     return s.substring(1, s.length - 1);
@@ -556,7 +570,7 @@ function nfbResolveIfValue_(valueStr, context, pipeValue) {
   if (valueStr === "_") return pipeValue;
   if (valueStr === "\\_") return "_";
   if (valueStr.charAt(0) === "@" && valueStr.length > 1) {
-    return context ? nfbResolveFieldTemplateToken_(valueStr.substring(1), context) : "";
+    return context ? nfbResolveRef_(valueStr.substring(1), context) : "";
   }
   return valueStr;
 }

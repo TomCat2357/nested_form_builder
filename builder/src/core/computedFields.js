@@ -29,12 +29,16 @@ export const extractTemplateDependencies = (templateText) => {
   TOKEN_RE.lastIndex = 0;
   while ((m = TOKEN_RE.exec(templateText)) !== null) {
     const raw = m[1].trim();
+    const isRef = raw.startsWith("@");
     const forceField = raw.startsWith("\\");
-    const tokenName = forceField ? raw.slice(1) : raw;
+    const tokenName = (isRef || forceField) ? raw.slice(1) : raw;
     const pipeIndex = tokenName.indexOf("|");
     const fieldPart = pipeIndex >= 0 ? tokenName.substring(0, pipeIndex).trim() : tokenName.trim();
-    // 予約トークンはフィールド依存ではない
-    if (fieldPart.startsWith("_") || !fieldPart) continue;
+    if (!fieldPart) continue;
+    // @ + _ 始まりは予約トークン（フィールド依存ではない）
+    if (isRef && fieldPart.startsWith("_")) continue;
+    // @ なしで _ 始まりも予約トークン扱い（レガシー互換）
+    if (!isRef && fieldPart.startsWith("_")) continue;
     if (!seen.has(fieldPart)) {
       deps.push(fieldPart);
       seen.add(fieldPart);

@@ -1,24 +1,27 @@
 /**
  * フロントエンド向けテンプレートトークン置換エンジン
  *
- * バックエンド gas/drive.gs の nfbResolveTemplateTokens_ と同等のロジックを
+ * バックエンド gas/driveTemplate.gs の nfbResolveTemplateTokens_ と同等のロジックを
  * フロントエンドで再現する。質問カードの項目名・選択肢・プレースホルダー等に
- * {ID}, {_NOW|time:YYYY年MM月DD日}, {フィールド名} などのトークンを埋め込み、
+ * {@_id}, {@_NOW|time:YYYY年MM月DD日}, {フィールド名} などのトークンを埋め込み、
  * フォーム表示時に実際の値へ置換する。
  *
- * 予約トークン:
- *   {_ID}          - レコードID
- *   {_NOW}         - 現在日時 ("yyyy-MM-dd HH:mm:ss")。パイプで整形可:
- *                    {_NOW|time:YYYY年MM月DD日}  {_NOW|time:HH時mm分}
- *   {_folder_url}  - Driveフォルダ URL
- *   {_record_url}  - レコード URL
- *   {_form_url}    - フォーム URL
- *   {_file_urls}   - アップロードファイル URL（カンマ区切り）
+ * 予約トークン（@ プレフィックス必須）:
+ *   {@_id}          - レコードID
+ *   {@_NOW}         - 現在日時 ("yyyy-MM-dd HH:mm:ss")。パイプで整形可:
+ *                     {@_NOW|time:YYYY年MM月DD日}  {@_NOW|time:HH時mm分}
+ *   {@_folder_url}  - Driveフォルダ URL
+ *   {@_record_url}  - レコード URL
+ *   {@_form_url}    - フォーム URL
+ *   {@_file_urls}   - アップロードファイル URL（カンマ区切り）
  *
- * フィールド参照:
- *   {フィールドラベル}           - 該当フィールドの現在の値
- *   {\フィールドラベル}          - バックスラッシュで強制フィールド参照
- *   {フィールドラベル|upper}     - パイプ変換付き
+ * @ 参照（予約トークン優先 → フィールド参照フォールバック）:
+ *   {@フィールドラベル}           - 該当フィールドの現在の値
+ *   {@フィールドラベル|upper}     - パイプ変換付き
+ *   {フィールドラベル}            - @ なし: フィールド参照のみ（予約トークン無視）
+ *
+ * if条件での予約トークン:
+ *   {aaa|if:@_folder_url,bbb}   - _folder_urlが存在すれば"aaa"、なければ"bbb"
  *
  * エスケープ:
  *   \{ → {  \} → }
@@ -30,12 +33,12 @@ import { formatNow, applyPipeTransformers } from "./tokenTransformers.js";
 // Reserved tokens
 // ---------------------------------------------------------------------------
 
-const RESERVED_TOKENS = new Set(["_ID", "_NOW", "_folder_url", "_record_url", "_form_url", "_file_urls"]);
+const RESERVED_TOKENS = new Set(["_id", "_NOW", "_folder_url", "_record_url", "_form_url", "_file_urls"]);
 
 const isReservedToken = (tokenName) => RESERVED_TOKENS.has(tokenName);
 
 const resolveReservedToken = (tokenName, context) => {
-  if (tokenName === "_ID") return context.recordId || "";
+  if (tokenName === "_id") return context.recordId || "";
   if (tokenName === "_NOW") return formatNow(context.now || new Date());
   if (tokenName === "_folder_url") return context.folderUrl || "";
   if (tokenName === "_record_url") return context.recordUrl || "";
@@ -120,8 +123,9 @@ export const resolveTemplateTokens = (template, context) => {
     .split("\\}").join(ESC_CLOSE)
     .replace(/\{([^{}]+)\}/g, (_match, tokenBody) => {
       const raw = tokenBody || "";
-      const forceField = raw.startsWith("\\") || raw.startsWith("@");
-      const tokenName = forceField ? raw.slice(1) : raw;
+      const isRef = raw.startsWith("@");
+      const forceField = raw.startsWith("\\");
+      const tokenName = (isRef || forceField) ? raw.slice(1) : raw;
       if (!tokenName) return "";
 
       const pipeIndex = tokenName.indexOf("|");
@@ -129,16 +133,18 @@ export const resolveTemplateTokens = (template, context) => {
         const fieldPart = tokenName.substring(0, pipeIndex);
         const transformersPart = tokenName.substring(pipeIndex + 1);
         let resolved;
-        if (!forceField) {
+        if (isRef) {
+          // @ prefix: 予約トークン優先 → labelValueMap フォールバック
           const reservedVal = resolveReservedToken(fieldPart, ctx);
           resolved = reservedVal !== null ? reservedVal : ((ctx.labelValueMap || {})[fieldPart] ?? "");
         } else {
+          // @ なし / \ prefix: labelValueMap のみ
           resolved = (ctx.labelValueMap || {})[fieldPart] ?? "";
         }
         return applyPipeTransformers(resolved, transformersPart, ctx);
       }
 
-      if (!forceField) {
+      if (isRef) {
         const reservedVal = resolveReservedToken(tokenName, ctx);
         if (reservedVal !== null) return reservedVal;
       }

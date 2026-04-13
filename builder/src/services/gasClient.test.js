@@ -199,7 +199,7 @@ test("createGoogleDocumentFromTemplate は nfbCreateGoogleDocumentFromTemplate �
   const originalGoogle = globalThis.google;
   const payload = {
     sourceUrl: "https://docs.google.com/document/d/template123/edit",
-    fileNameTemplate: "{ID}_{氏名}",
+    fileNameTemplate: "{@_id}_{氏名}",
     driveSettings: {
       recordId: "rec001",
       responses: { name: "山田 太郎" },
@@ -241,7 +241,7 @@ test("finalizeRecordDriveFolder は trashFileIds を含む payload をそのま�
     inputDriveFolderUrl: "",
     folderUrlToTrash: "https://drive.google.com/drive/folders/current123",
     rootFolderUrl: "https://drive.google.com/drive/folders/root123",
-    folderNameTemplate: "{ID}_資料",
+    folderNameTemplate: "{@_id}_資料",
     responses: { name: "山田 太郎" },
     fieldLabels: { name: "氏名" },
     fieldValues: { name: "山田 太郎" },
@@ -299,10 +299,10 @@ test("trashDriveFilesByIds は nfbTrashDriveFilesByIds を呼び出す", async (
 test("executeRecordOutputAction は nfbExecuteRecordOutputAction を呼び出す", async () => {
   const originalGoogle = globalThis.google;
   const payload = {
-    action: { outputType: "gmail", enabled: true, fileNameTemplate: "{ID}_mail", gmailTemplateSubject: "{ID} のご案内" },
+    action: { outputType: "gmail", enabled: true, fileNameTemplate: "{@_id}_mail", gmailTemplateSubject: "{@_id} のご案内" },
     settings: { standardPrintTemplateUrl: "https://docs.google.com/document/d/template123/edit" },
     recordContext: { formId: "form_1", recordId: "rec001" },
-    driveSettings: { recordId: "rec001", fileNameTemplate: "{ID}_mail" },
+    driveSettings: { recordId: "rec001", fileNameTemplate: "{@_id}_mail" },
   };
   const { run, calls } = createGoogleScriptRunStub({
     nfbExecuteRecordOutputAction: (receivedPayload) => ({

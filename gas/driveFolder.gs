@@ -60,6 +60,7 @@ function nfbBuildDriveTemplateContext_(driveSettings, context) {
     formId: driveSettings && driveSettings.formId ? String(driveSettings.formId).trim() : "",
     recordId: driveSettings && driveSettings.recordId ? String(driveSettings.recordId).trim() : "",
     folderUrl: driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "",
+    fileUrls: driveSettings && driveSettings.fileUrls ? String(driveSettings.fileUrls).trim() : "",
     now: new Date()
   };
 }
