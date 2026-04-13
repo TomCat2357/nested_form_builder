@@ -126,8 +126,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   }), [settings.formId, responses, fieldLabels, fieldValues, fileUploadMeta]);
 
   const baseLabelValueMap = useMemo(
-    () => buildLabelValueMap(fieldLabels, fieldValues, responses, schema),
-    [fieldLabels, fieldValues, responses, schema],
+    () => buildLabelValueMap(fieldLabels, fieldValues, responses),
+    [fieldLabels, fieldValues, responses],
   );
 
   const tokenContext = useMemo(() => {

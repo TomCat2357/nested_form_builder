@@ -2,11 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { buildLabelValueMap, resolveTemplateTokens } from "./tokenReplacer.js";
 
-test("buildLabelValueMap は fileUpload で fieldValues を優先する", () => {
-  const schema = [
-    { id: "f1", type: "fileUpload", label: "添付ファイル" },
-    { id: "f2", type: "text", label: "名前" },
-  ];
+test("buildLabelValueMap は fieldValues を優先する", () => {
   const fieldLabels = { f1: "添付ファイル", f2: "名前" };
   const fieldValues = { f1: "見積書, 申請書", f2: "山田 太郎" };
   const responses = {
@@ -17,15 +13,12 @@ test("buildLabelValueMap は fileUpload で fieldValues を優先する", () => 
     f2: "山田 太郎",
   };
 
-  const map = buildLabelValueMap(fieldLabels, fieldValues, responses, schema);
+  const map = buildLabelValueMap(fieldLabels, fieldValues, responses);
   assert.equal(map["添付ファイル"], "見積書, 申請書");
   assert.equal(map["名前"], "山田 太郎");
 });
 
-test("buildLabelValueMap は fileUpload で fieldValues がない場合 extractFileUrls にフォールバック", () => {
-  const schema = [
-    { id: "f1", type: "fileUpload", label: "添付ファイル" },
-  ];
+test("buildLabelValueMap は fieldValues がない場合 responses からファイル名を抽出する", () => {
   const fieldLabels = { f1: "添付ファイル" };
   const fieldValues = {};
   const responses = {
@@ -34,8 +27,8 @@ test("buildLabelValueMap は fileUpload で fieldValues がない場合 extractF
     ],
   };
 
-  const map = buildLabelValueMap(fieldLabels, fieldValues, responses, schema);
-  assert.equal(map["添付ファイル"], "https://drive.google.com/file/d/abc");
+  const map = buildLabelValueMap(fieldLabels, fieldValues, responses);
+  assert.equal(map["添付ファイル"], "見積書.pdf");
 });
 
 test("resolveTemplateTokens で fileUpload トークンが fieldValues の値を使う", () => {

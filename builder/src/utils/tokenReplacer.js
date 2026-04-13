@@ -53,7 +53,16 @@ const resolveReservedToken = (tokenName, context) => {
 
 const valueToString = (value) => {
   if (value === undefined || value === null) return "";
-  if (Array.isArray(value)) return value.join(", ");
+  if (Array.isArray(value)) {
+    return value
+      .filter((v) => v !== undefined && v !== null)
+      .map((v) => (typeof v === "object" && v.name ? String(v.name) : String(v)))
+      .join(", ");
+  }
+  if (typeof value === "object") {
+    if (value.name) return String(value.name);
+    return JSON.stringify(value);
+  }
   return String(value);
 };
 
@@ -73,28 +82,16 @@ export const extractFileUrls = (raw) => {
  * @param {Object} fieldLabels  - { fieldId: label }
  * @param {Object} fieldValues  - { fieldId: formattedValue }
  * @param {Object} responses    - { fieldId: rawValue }
- * @param {Array}  [schema]     - フォームスキーマ（fileUpload URL 解決用）
  */
-export const buildLabelValueMap = (fieldLabels, fieldValues, responses, schema) => {
-  const fileUploadIds = new Set();
-  if (schema) collectFileUploadFieldIds(schema, fileUploadIds);
-
+export const buildLabelValueMap = (fieldLabels, fieldValues, responses) => {
   const map = {};
   for (const fid of Object.keys(fieldLabels || {})) {
     const label = fieldLabels[fid];
     if (!label || Object.prototype.hasOwnProperty.call(map, label)) continue;
-    if (fileUploadIds.has(fid)) {
-      if (Object.prototype.hasOwnProperty.call(fieldValues || {}, fid)) {
-        map[label] = valueToString(fieldValues[fid]);
-      } else {
-        map[label] = extractFileUrls((responses || {})[fid]);
-      }
-    } else {
-      const value = Object.prototype.hasOwnProperty.call(fieldValues || {}, fid)
-        ? fieldValues[fid]
-        : (responses || {})[fid];
-      map[label] = valueToString(value);
-    }
+    const value = Object.prototype.hasOwnProperty.call(fieldValues || {}, fid)
+      ? fieldValues[fid]
+      : (responses || {})[fid];
+    map[label] = valueToString(value);
   }
   return map;
 };
