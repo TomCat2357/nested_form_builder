@@ -3,6 +3,7 @@ import { findFirstFileUploadField } from "../../core/schema.js";
 import {
   buildPrintDocumentPayload,
   buildFieldValuesMap,
+  collectFileUploadMeta,
 } from "../preview/printDocument.js";
 import { restoreResponsesFromData } from "../../utils/responses.js";
 import {
@@ -44,6 +45,7 @@ export function useSearchPagePrintActions({
       const effectiveFileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {}) || DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE;
 
       const firstUploadField = findFirstFileUploadField(normalizedSchema);
+      const fileUploadMeta = collectFileUploadMeta(normalizedSchema);
       const recordPayloads = selectedPrintableRows.map(({ entry }) => {
         const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
         const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
@@ -56,6 +58,7 @@ export function useSearchPagePrintActions({
           responses: restoredResponses,
           fieldLabels,
           fieldValues,
+          fileUploadMeta,
           fileNameTemplate: effectiveFileNameTemplate,
         };
         return {
@@ -148,6 +151,7 @@ export function useSearchPagePrintActions({
     const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
     const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
     const firstUploadFieldSingle = findFirstFileUploadField(normalizedSchema);
+    const fileUploadMetaSingle = collectFileUploadMeta(normalizedSchema);
     const driveSettings = {
       rootFolderUrl: firstUploadFieldSingle?.driveRootFolderUrl || "",
       folderNameTemplate: firstUploadFieldSingle?.driveFolderNameTemplate || "",
@@ -157,6 +161,7 @@ export function useSearchPagePrintActions({
       responses: restoredResponses,
       fieldLabels,
       fieldValues,
+      fileUploadMeta: fileUploadMetaSingle,
       fileNameTemplate: effectiveFileNameTemplate,
     };
 

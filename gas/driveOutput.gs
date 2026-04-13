@@ -451,8 +451,8 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
       if (!rawTokenName) continue;
       var fullToken = match[0];
       if (Object.prototype.hasOwnProperty.call(tokenValueMap, fullToken)) continue;
-      var forceField = rawTokenName.charAt(0) === "\\";
-      var tokenName = forceField ? rawTokenName.slice(1) : rawTokenName;
+      var isFieldRef = rawTokenName.charAt(0) === "@";
+      var tokenName = isFieldRef ? rawTokenName.slice(1) : rawTokenName;
 
       var pipeIdx = tokenName.indexOf("|");
       var value;
@@ -461,13 +461,13 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
         var tPart = tokenName.substring(pipeIdx + 1);
         var raw = nfbResolveTemplateTokenValue_(fPart, context, {
           allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),
-          forceFieldReference: forceField
+          forceFieldReference: isFieldRef
         });
-        value = nfbApplyPipeTransformers_(raw, tPart);
+        value = nfbApplyPipeTransformers_(raw, tPart, context);
       } else {
         value = nfbResolveTemplateTokenValue_(tokenName, context, {
           allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),
-          forceFieldReference: forceField
+          forceFieldReference: isFieldRef
         });
       }
       tokenValueMap[fullToken] = String(value === null || value === undefined ? "" : value);

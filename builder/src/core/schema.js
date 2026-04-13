@@ -315,6 +315,7 @@ export const normalizeSchemaIDs = (nodes) => {
     } else if (base.type === "fileUpload") {
       base.allowUploadByUrl = normalizeBooleanSetting(base.allowUploadByUrl, false);
       base.allowFolderUrlEdit = normalizeBooleanSetting(base.allowFolderUrlEdit, false);
+      base.hideFileExtension = normalizeBooleanSetting(base.hideFileExtension, false);
       delete base.showPdfMetaTitle;
       base.driveRootFolderUrl = typeof base.driveRootFolderUrl === "string" ? base.driveRootFolderUrl : "";
       base.driveFolderNameTemplate = typeof base.driveFolderNameTemplate === "string" ? base.driveFolderNameTemplate : "";

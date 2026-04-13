@@ -40,6 +40,7 @@ import { useEntriesWithCache } from "../features/search/useEntriesWithCache.js";
 import {
   buildFieldLabelsMap,
   buildFieldValuesMap,
+  collectFileUploadMeta,
   buildPrintDocumentPayload,
   resolveOmitEmptyRowsOnPrint,
 } from "../features/preview/printDocument.js";
@@ -63,6 +64,13 @@ import {
   pickLatestEntry,
   collectDriveFileIds,
 } from "./formPageHelpers.js";
+
+class DriveFolderFinalizeError extends Error {
+  constructor(originalError) {
+    super("drive_folder_finalize_failed");
+    this.originalError = originalError;
+  }
+}
 
 export default function FormPage() {
   const { formId, entryId } = useParams();
@@ -144,6 +152,8 @@ export default function FormPage() {
   const [isReloading, setIsReloading] = useState(false);
   const entryActionDialog = useConfirmDialog({ action: null });
   const driveFolderDialog = useConfirmDialog();
+  const unlinkFolderDialog = useConfirmDialog({ errorMessage: "" });
+  const pendingUnlinkSaveRef = useRef(null);
   const [copySourceId, setCopySourceId] = useState("");
   const [copySourceResponses, setCopySourceResponses] = useState({});
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
@@ -724,7 +734,7 @@ export default function FormPage() {
     }
   };
 
-  const handleSaveToStore = async ({ payload, responses: rawResponses }) => {
+  const handleSaveToStore = async ({ payload, responses: rawResponses, options = {} }) => {
     if (!form) throw new Error("form_not_found");
 
     const isNewEntry = !entry?.id;
@@ -773,26 +783,35 @@ export default function FormPage() {
     let finalizedDriveFolderUrl = currentDriveFolderUrl;
 
     if (shouldFinalizeDriveFolder) {
-      if (!hasScriptRun()) {
-        throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
+      if (options.unlinkDriveFolder === true) {
+        finalizedDriveFolderUrl = "";
+      } else {
+        if (!hasScriptRun()) {
+          throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
+        }
+        const firstUploadField = findFirstFileUploadField(normalizedSchema);
+        try {
+          const finalizeResult = await finalizeRecordDriveFolder({
+            currentDriveFolderUrl,
+            inputDriveFolderUrl,
+            rootFolderUrl: firstUploadField?.driveRootFolderUrl || "",
+            folderNameTemplate: firstUploadField?.driveFolderNameTemplate || "",
+            responses: rawResponses || {},
+            fieldLabels,
+            fieldValues: buildFieldValuesMap(normalizedSchema, rawResponses || {}),
+            fileUploadMeta: collectFileUploadMeta(normalizedSchema),
+            fileIds: finalizeFileIds,
+            trashFileIds,
+            folderUrlToTrash: pendingDeleteFolderUrl,
+            recordId: payloadWithFormId.id,
+          });
+          finalizedDriveFolderUrl = typeof finalizeResult?.folderUrl === "string"
+            ? finalizeResult.folderUrl.trim()
+            : currentDriveFolderUrl;
+        } catch (folderError) {
+          throw new DriveFolderFinalizeError(folderError);
+        }
       }
-      const firstUploadField = findFirstFileUploadField(normalizedSchema);
-      const finalizeResult = await finalizeRecordDriveFolder({
-        currentDriveFolderUrl,
-        inputDriveFolderUrl,
-        rootFolderUrl: firstUploadField?.driveRootFolderUrl || "",
-        folderNameTemplate: firstUploadField?.driveFolderNameTemplate || "",
-        responses: rawResponses || {},
-        fieldLabels,
-        fieldValues: buildFieldValuesMap(normalizedSchema, rawResponses || {}),
-        fileIds: finalizeFileIds,
-        trashFileIds,
-        folderUrlToTrash: pendingDeleteFolderUrl,
-        recordId: payloadWithFormId.id,
-      });
-      finalizedDriveFolderUrl = typeof finalizeResult?.folderUrl === "string"
-        ? finalizeResult.folderUrl.trim()
-        : currentDriveFolderUrl;
     }
 
     const saved = await dataStore.upsertEntry(form.id, {
@@ -807,6 +826,11 @@ export default function FormPage() {
     applyEntryToState(saved, saved.id, "save:new-entry");
     pendingSyncedEntryRef.current = null;
     reloadListFromCache();
+    if (options.unlinkDriveFolder === true) {
+      const emptyFolder = createEmptyDriveFolderState();
+      setDriveFolderState(emptyFolder);
+      initialDriveFolderStateRef.current = emptyFolder;
+    }
 
     if (requiresSpreadsheetSave) {
       void acquireSaveLock({ spreadsheetId, sheetName })
@@ -858,7 +882,7 @@ export default function FormPage() {
     return saved;
   };
 
-  const triggerSave = async ({ redirect, stayAsView, skipStayAsViewNavigation = false, createPrintAfterSave = false } = {}) => {
+  const triggerSave = async ({ redirect, stayAsView, skipStayAsViewNavigation = false, createPrintAfterSave = false, unlinkDriveFolder = false } = {}) => {
     if (!form) {
       showAlert("フォームが見つかりません");
       return { ok: false, recordId: "" };
@@ -869,7 +893,7 @@ export default function FormPage() {
       const preview = previewRef.current;
       if (!preview) throw new Error("preview_not_ready");
       const rawResponsesForPrint = responsesRef.current;
-      const result = await preview.submit({ silent: true });
+      const result = await preview.submit({ silent: true, unlinkDriveFolder });
       const savedId = String(preview.getRecordId?.() || result?.id || currentRecordId || entryId || "").trim();
       let printResult = null;
       let printError = null;
@@ -922,7 +946,16 @@ export default function FormPage() {
       return { ok: true, recordId: savedId };
     } catch (error) {
       console.warn(error);
+      if (error instanceof DriveFolderFinalizeError && isAdmin) {
+        pendingUnlinkSaveRef.current = { redirect, stayAsView, skipStayAsViewNavigation, createPrintAfterSave };
+        unlinkFolderDialog.open({ errorMessage: error.originalError?.message || "不明なエラー" });
+        return { ok: false, recordId: "" };
+      }
       if (error?.message === "validation_failed" || error?.message?.includes("missing_")) {
+        return { ok: false, recordId: "" };
+      }
+      if (error instanceof DriveFolderFinalizeError) {
+        showAlert(`Driveフォルダの処理に失敗しました: ${error.originalError?.message || error.message}`);
         return { ok: false, recordId: "" };
       }
       if (error?.code === GAS_ERROR_CODE_LOCK_TIMEOUT) {
@@ -1077,6 +1110,20 @@ export default function FormPage() {
   const handleDeleteDriveFolder = useCallback(() => {
     setDriveFolderState((prevState) => markDriveFolderForDeletion(prevState));
     driveFolderDialog.close();
+  }, []);
+
+  const handleConfirmUnlinkFolder = useCallback(async () => {
+    unlinkFolderDialog.close();
+    const savedOptions = pendingUnlinkSaveRef.current;
+    pendingUnlinkSaveRef.current = null;
+    if (savedOptions) {
+      await triggerSave({ ...savedOptions, unlinkDriveFolder: true });
+    }
+  }, [triggerSave]);
+
+  const handleCancelUnlinkFolder = useCallback(() => {
+    unlinkFolderDialog.close();
+    pendingUnlinkSaveRef.current = null;
   }, []);
 
   const handleCreatePrintDocument = useCallback(async () => {
@@ -1359,6 +1406,15 @@ export default function FormPage() {
         options={[
           { label: "キャンセル", value: "cancel", onSelect: driveFolderDialog.close },
           { label: "フォルダ削除", value: "delete-folder", variant: "danger", onSelect: handleDeleteDriveFolder },
+        ]}
+      />
+      <ConfirmDialog
+        open={unlinkFolderDialog.state.open}
+        title="フォルダ操作に失敗しました"
+        message={`保存先フォルダの処理中にエラーが発生しました（${unlinkFolderDialog.state.errorMessage}）。フォルダのリンクを解除して保存を続行しますか？（Driveフォルダの操作はスキップされます）`}
+        options={[
+          { label: "キャンセル", value: "cancel", onSelect: handleCancelUnlinkFolder },
+          { label: "リンクを解除して保存", value: "unlink", variant: "danger", onSelect: handleConfirmUnlinkFolder },
         ]}
       />
 

@@ -221,6 +221,20 @@ export const buildFieldLabelsMap = (fields, map = {}) => {
   return map;
 };
 
+export const collectFileUploadMeta = (fields, meta = {}) => {
+  (fields || []).forEach((field) => {
+    if (field?.type === "fileUpload" && field?.id && field?.hideFileExtension) {
+      meta[field.id] = { hideFileExtension: true };
+    }
+    if (field?.childrenByValue) {
+      Object.values(field.childrenByValue).forEach((children) => {
+        collectFileUploadMeta(children, meta);
+      });
+    }
+  });
+  return meta;
+};
+
 const assignFieldValues = (fields, responses, map, isActive = true, depth = 0) => {
   (fields || []).forEach((field, index) => {
     const fieldId = resolveFieldId(field, depth, index);
@@ -283,6 +297,7 @@ export const buildPrintDocumentPayload = ({
     responses: responses || {},
     fieldLabels: buildFieldLabelsMap(schema),
     fieldValues: buildFieldValuesMap(schema, responses),
+    fileUploadMeta: collectFileUploadMeta(schema),
   } : undefined;
 
   return {

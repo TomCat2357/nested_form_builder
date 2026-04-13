@@ -56,6 +56,7 @@ function nfbBuildDriveTemplateContext_(driveSettings, context) {
     responses: (driveSettings && driveSettings.responses) || {},
     fieldLabels: (driveSettings && driveSettings.fieldLabels) || {},
     fieldValues: (driveSettings && driveSettings.fieldValues) || {},
+    fileUploadMeta: (driveSettings && driveSettings.fileUploadMeta) || {},
     formId: driveSettings && driveSettings.formId ? String(driveSettings.formId).trim() : "",
     recordId: driveSettings && driveSettings.recordId ? String(driveSettings.recordId).trim() : "",
     folderUrl: driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "",

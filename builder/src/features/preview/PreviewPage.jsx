@@ -15,6 +15,7 @@ import {
   buildPrintDocumentPayload,
   buildFieldLabelsMap,
   buildFieldValuesMap,
+  collectFileUploadMeta,
   formatRecordMetaDateTime,
 } from "./printDocument.js";
 import {
@@ -114,13 +115,15 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const fieldValues = useMemo(() => buildFieldValuesMap(schema, responses), [schema, responses]);
 
   const gasClientRef = useRef(gasClientModule);
+  const fileUploadMeta = useMemo(() => collectFileUploadMeta(schema), [schema]);
   const driveSettings = useMemo(() => ({
     formId: settings.formId || "",
     recordId: recordIdRef.current,
     responses: responses || {},
     fieldLabels,
     fieldValues,
-  }), [settings.formId, responses, fieldLabels, fieldValues]);
+    fileUploadMeta,
+  }), [settings.formId, responses, fieldLabels, fieldValues, fileUploadMeta]);
 
   const baseLabelValueMap = useMemo(
     () => buildLabelValueMap(fieldLabels, fieldValues, responses, schema),

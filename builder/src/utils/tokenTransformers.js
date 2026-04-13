@@ -215,16 +215,102 @@ const transformNumber = (v, formatStr) => {
   return result + suffix;
 };
 
-const transformIf = (v, args) => {
+// ---------------------------------------------------------------------------
+// if transformer helpers (GAS nfbTransformIf_ equivalent)
+// ---------------------------------------------------------------------------
+
+const resolveFieldRef = (name, context) => {
+  const map = (context && context.labelValueMap) || {};
+  return Object.prototype.hasOwnProperty.call(map, name) ? map[name] : "";
+};
+
+const resolveConditionOperand = (operand, context) => {
+  const s = operand.trim();
+  if (s.charAt(0) === "@" && s.length > 1) {
+    return resolveFieldRef(s.substring(1), context);
+  }
+  if (s.length >= 2 && s.charAt(0) === '"' && s.charAt(s.length - 1) === '"') {
+    return s.substring(1, s.length - 1);
+  }
+  return s;
+};
+
+const compare = (left, right, operator) => {
+  if (operator === "==") return left === right;
+  if (operator === "!=") return left !== right;
+  if (operator === "in") return right.indexOf(left) >= 0;
+
+  const numLeft = parseFloat(left);
+  const numRight = parseFloat(right);
+  const useNumeric = !isNaN(numLeft) && !isNaN(numRight)
+    && String(left).trim() !== "" && String(right).trim() !== "";
+
+  if (useNumeric) {
+    if (operator === ">")  return numLeft > numRight;
+    if (operator === ">=") return numLeft >= numRight;
+    if (operator === "<")  return numLeft < numRight;
+    if (operator === "<=") return numLeft <= numRight;
+  } else {
+    if (operator === ">")  return left > right;
+    if (operator === ">=") return left >= right;
+    if (operator === "<")  return left < right;
+    if (operator === "<=") return left <= right;
+  }
+  return false;
+};
+
+const evaluateIfCondition = (conditionStr, context) => {
+  let str = conditionStr.trim();
+
+  let negate = false;
+  if (str.length >= 4 && str.substring(0, 4) === "not ") {
+    negate = true;
+    str = str.substring(4).trimStart();
+  }
+
+  // " in " operator
+  const inIdx = str.indexOf(" in ");
+  if (inIdx >= 0) {
+    const inLeft = resolveConditionOperand(str.substring(0, inIdx), context);
+    const inRight = resolveConditionOperand(str.substring(inIdx + 4), context);
+    const inResult = compare(inLeft, inRight, "in");
+    return negate ? !inResult : inResult;
+  }
+
+  // Comparison operators
+  const opMatch = str.match(/^(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)$/);
+  let result;
+  if (opMatch) {
+    const leftVal = resolveConditionOperand(opMatch[1], context);
+    const rightVal = resolveConditionOperand(opMatch[3], context);
+    result = compare(leftVal, rightVal, opMatch[2]);
+  } else {
+    const val = resolveConditionOperand(str, context);
+    result = !!val;
+  }
+
+  return negate ? !result : result;
+};
+
+const resolveIfValue = (valueStr, context, pipeValue) => {
+  if (valueStr === "") return "";
+  if (valueStr === "_") return pipeValue;
+  if (valueStr === "\\_") return "_";
+  if (valueStr.charAt(0) === "@" && valueStr.length > 1) {
+    return resolveFieldRef(valueStr.substring(1), context);
+  }
+  return valueStr;
+};
+
+const transformIf = (v, args, context) => {
   const firstComma = args.indexOf(",");
   if (firstComma < 0) return v;
-  const testVal = args.substring(0, firstComma);
-  const rest = args.substring(firstComma + 1);
-  const secondComma = rest.indexOf(",");
-  const thenVal = secondComma >= 0 ? rest.substring(0, secondComma) : rest;
-  const elseVal = secondComma >= 0 ? rest.substring(secondComma + 1) : "";
-  if (testVal === "") return v ? thenVal : elseVal;
-  return v === testVal ? thenVal : elseVal;
+  const conditionStr = args.substring(0, firstComma);
+  const elseValueStr = args.substring(firstComma + 1);
+
+  const matched = evaluateIfCondition(conditionStr, context);
+  if (matched) return v;
+  return resolveIfValue(elseValueStr, context, v);
 };
 
 const transformMap = (v, args) => {
@@ -336,11 +422,21 @@ const transformHan = (v) => {
   return result;
 };
 
+const transformNoext = (value) => {
+  if (!value) return "";
+  return value.split(", ").map((part) => {
+    const trimmed = part.trim();
+    const dotIndex = trimmed.lastIndexOf(".");
+    return dotIndex > 0 ? trimmed.substring(0, dotIndex) : trimmed;
+  }).join(", ");
+};
+
 // ---------------------------------------------------------------------------
 // Transformer registry
 // ---------------------------------------------------------------------------
 
 const TRANSFORMERS = {
+  noext: transformNoext,
   time: transformTime,
   left: transformLeft,
   right: transformRight,
@@ -379,12 +475,12 @@ const parsePipeTransformers = (transformerString) => {
   });
 };
 
-export const applyPipeTransformers = (value, transformerString) => {
+export const applyPipeTransformers = (value, transformerString, context) => {
   const transformers = parsePipeTransformers(transformerString);
   let current = value == null ? "" : String(value);
   for (const { name, args } of transformers) {
     const fn = TRANSFORMERS[name];
-    if (fn) current = fn(current, args);
+    if (fn) current = fn(current, args, context);
   }
   return current;
 };

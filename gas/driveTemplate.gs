@@ -9,18 +9,32 @@ function nfbTemplateValueToString_(value) {
     var parts = [];
     for (var i = 0; i < value.length; i++) {
       if (value[i] === undefined || value[i] === null) continue;
-      parts.push(String(value[i]));
+      if (typeof value[i] === "object" && value[i].name) {
+        parts.push(String(value[i].name));
+      } else {
+        parts.push(String(value[i]));
+      }
     }
     return parts.join(", ");
   }
-  if (typeof value === "object") return JSON.stringify(value);
+  if (typeof value === "object") {
+    if (value.name) return String(value.name);
+    return JSON.stringify(value);
+  }
   return String(value);
+}
+
+function nfbStripFileExtension_(name) {
+  if (!name || typeof name !== "string") return name || "";
+  var dotIndex = name.lastIndexOf(".");
+  return dotIndex > 0 ? name.substring(0, dotIndex) : name;
 }
 
 function nfbBuildFieldLabelValueMap_(context) {
   var responses = (context && context.responses) || {};
   var fieldLabels = (context && context.fieldLabels) || {};
   var fieldValues = (context && context.fieldValues) || {};
+  var fileUploadMeta = (context && context.fileUploadMeta) || {};
   var labelValueMap = {};
 
   for (var fid in fieldLabels) {
@@ -28,7 +42,15 @@ function nfbBuildFieldLabelValueMap_(context) {
     var label = fieldLabels[fid];
     if (!label || Object.prototype.hasOwnProperty.call(labelValueMap, label)) continue;
     var value = Object.prototype.hasOwnProperty.call(fieldValues, fid) ? fieldValues[fid] : responses[fid];
-    labelValueMap[label] = nfbTemplateValueToString_(value);
+    var stringValue = nfbTemplateValueToString_(value);
+    if (fileUploadMeta[fid] && fileUploadMeta[fid].hideFileExtension && !Object.prototype.hasOwnProperty.call(fieldValues, fid)) {
+      var fileParts = stringValue.split(", ");
+      for (var i = 0; i < fileParts.length; i++) {
+        fileParts[i] = nfbStripFileExtension_(fileParts[i].trim());
+      }
+      stringValue = fileParts.join(", ");
+    }
+    labelValueMap[label] = stringValue;
   }
 
   return labelValueMap;
@@ -125,13 +147,11 @@ function nfbResolveFieldTemplateToken_(tokenName, context) {
 
 function nfbResolveTemplateTokenValue_(tokenName, context, options) {
   var forceFieldReference = options && options.forceFieldReference === true;
-  if (!forceFieldReference) {
-    var reservedValue = nfbResolveReservedTemplateToken_(tokenName, context, options);
-    if (reservedValue !== null) {
-      return reservedValue;
-    }
+  if (forceFieldReference) {
+    return nfbResolveFieldTemplateToken_(tokenName, context);
   }
-  return nfbResolveFieldTemplateToken_(tokenName, context);
+  var reservedValue = nfbResolveReservedTemplateToken_(tokenName, context, options);
+  return reservedValue !== null ? reservedValue : "";
 }
 
 function nfbResolveTemplateTokens_(template, context, options) {
@@ -144,8 +164,8 @@ function nfbResolveTemplateTokens_(template, context, options) {
     .replace(/\\\}/g, escapedCloseBraceToken)
     .replace(/\{([^{}]+)\}/g, function(match, tokenBody) {
       var rawTokenName = tokenBody || "";
-      var forceFieldReference = rawTokenName.indexOf("\\") === 0;
-      var tokenName = forceFieldReference ? rawTokenName.slice(1) : rawTokenName;
+      var isFieldReference = rawTokenName.charAt(0) === "@";
+      var tokenName = isFieldReference ? rawTokenName.slice(1) : rawTokenName;
       if (!tokenName) return "";
 
       var pipeIndex = tokenName.indexOf("|");
@@ -154,14 +174,14 @@ function nfbResolveTemplateTokens_(template, context, options) {
         var transformersPart = tokenName.substring(pipeIndex + 1);
         var resolvedValue = nfbResolveTemplateTokenValue_(fieldPart, context, {
           allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
-          forceFieldReference: forceFieldReference
+          forceFieldReference: isFieldReference
         });
-        return nfbApplyPipeTransformers_(resolvedValue, transformersPart);
+        return nfbApplyPipeTransformers_(resolvedValue, transformersPart, context);
       }
 
       return nfbResolveTemplateTokenValue_(tokenName, context, {
         allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
-        forceFieldReference: forceFieldReference
+        forceFieldReference: isFieldReference
       });
     });
 
@@ -203,16 +223,28 @@ function nfbParsePipeTransformers_(transformerString) {
   return result;
 }
 
-function nfbApplyPipeTransformers_(value, transformerString) {
+function nfbApplyPipeTransformers_(value, transformerString, context) {
   var transformers = nfbParsePipeTransformers_(transformerString);
   var current = value === undefined || value === null ? "" : String(value);
   for (var i = 0; i < transformers.length; i++) {
-    current = nfbApplyOneTransformer_(current, transformers[i].name, transformers[i].args);
+    current = nfbApplyOneTransformer_(current, transformers[i].name, transformers[i].args, context);
   }
   return current;
 }
 
+function nfbTransformNoext_(value) {
+  if (!value) return "";
+  var parts = value.split(", ");
+  for (var i = 0; i < parts.length; i++) {
+    var trimmed = parts[i].replace(/^\s+|\s+$/g, "");
+    var dotIndex = trimmed.lastIndexOf(".");
+    parts[i] = dotIndex > 0 ? trimmed.substring(0, dotIndex) : trimmed;
+  }
+  return parts.join(", ");
+}
+
 var NFB_TRANSFORMERS_ = {
+  "noext":    nfbTransformNoext_,
   "time":     nfbTransformTime_,
   "left":     nfbTransformLeft_,
   "right":    nfbTransformRight_,
@@ -233,9 +265,9 @@ var NFB_TRANSFORMERS_ = {
   "han":      nfbTransformHan_
 };
 
-function nfbApplyOneTransformer_(value, name, args) {
+function nfbApplyOneTransformer_(value, name, args, context) {
   var fn = NFB_TRANSFORMERS_[name];
-  return fn ? fn(value, args) : value;
+  return fn ? fn(value, args, context) : value;
 }
 
 function nfbParseDateString_(value) {
@@ -465,28 +497,97 @@ function nfbTransformNumber_(value, formatStr) {
 }
 
 // ---------------------------------------------------------------------------
-// if transformer: {field|if:VAL,THEN,ELSE}
+// if transformer: {trueValue|if:condition,elseValue}
 // ---------------------------------------------------------------------------
 
-function nfbTransformIf_(value, args) {
+function nfbResolveConditionOperand_(operand, context) {
+  var s = operand.replace(/^\s+|\s+$/g, "");
+  if (s.charAt(0) === "@" && s.length > 1) {
+    return context ? nfbResolveFieldTemplateToken_(s.substring(1), context) : "";
+  }
+  if (s.length >= 2 && s.charAt(0) === '"' && s.charAt(s.length - 1) === '"') {
+    return s.substring(1, s.length - 1);
+  }
+  return s;
+}
+
+function nfbCompare_(left, right, operator) {
+  if (operator === "==") return left === right;
+  if (operator === "!=") return left !== right;
+  if (operator === "in") return right.indexOf(left) >= 0;
+
+  var numLeft = parseFloat(left);
+  var numRight = parseFloat(right);
+  var useNumeric = !isNaN(numLeft) && !isNaN(numRight)
+    && String(left).replace(/^\s+|\s+$/g, "") !== ""
+    && String(right).replace(/^\s+|\s+$/g, "") !== "";
+
+  if (useNumeric) {
+    if (operator === ">")  return numLeft > numRight;
+    if (operator === ">=") return numLeft >= numRight;
+    if (operator === "<")  return numLeft < numRight;
+    if (operator === "<=") return numLeft <= numRight;
+  } else {
+    if (operator === ">")  return left > right;
+    if (operator === ">=") return left >= right;
+    if (operator === "<")  return left < right;
+    if (operator === "<=") return left <= right;
+  }
+  return false;
+}
+
+function nfbEvaluateIfCondition_(conditionStr, context) {
+  var str = conditionStr.replace(/^\s+|\s+$/g, "");
+
+  var negate = false;
+  if (str.length >= 4 && str.substring(0, 4) === "not ") {
+    negate = true;
+    str = str.substring(4).replace(/^\s+/, "");
+  }
+
+  // Check for " in " operator first (space-delimited)
+  var inIdx = str.indexOf(" in ");
+  if (inIdx >= 0) {
+    var inLeft = nfbResolveConditionOperand_(str.substring(0, inIdx), context);
+    var inRight = nfbResolveConditionOperand_(str.substring(inIdx + 4), context);
+    var inResult = nfbCompare_(inLeft, inRight, "in");
+    return negate ? !inResult : inResult;
+  }
+
+  // Check for comparison operators
+  var opMatch = str.match(/^(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)$/);
+  var result;
+  if (opMatch) {
+    var leftVal = nfbResolveConditionOperand_(opMatch[1], context);
+    var rightVal = nfbResolveConditionOperand_(opMatch[3], context);
+    result = nfbCompare_(leftVal, rightVal, opMatch[2]);
+  } else {
+    var val = nfbResolveConditionOperand_(str, context);
+    result = !!val;
+  }
+
+  return negate ? !result : result;
+}
+
+function nfbResolveIfValue_(valueStr, context, pipeValue) {
+  if (valueStr === "") return "";
+  if (valueStr === "_") return pipeValue;
+  if (valueStr === "\\_") return "_";
+  if (valueStr.charAt(0) === "@" && valueStr.length > 1) {
+    return context ? nfbResolveFieldTemplateToken_(valueStr.substring(1), context) : "";
+  }
+  return valueStr;
+}
+
+function nfbTransformIf_(value, args, context) {
   var firstComma = args.indexOf(",");
   if (firstComma < 0) return value;
-  var testVal = args.substring(0, firstComma);
-  var rest = args.substring(firstComma + 1);
-  var secondComma = rest.indexOf(",");
-  var thenVal, elseVal;
-  if (secondComma >= 0) {
-    thenVal = rest.substring(0, secondComma);
-    elseVal = rest.substring(secondComma + 1);
-  } else {
-    thenVal = rest;
-    elseVal = "";
-  }
-  // Empty testVal = test for non-empty value
-  if (testVal === "") {
-    return value ? thenVal : elseVal;
-  }
-  return value === testVal ? thenVal : elseVal;
+  var conditionStr = args.substring(0, firstComma);
+  var elseValueStr = args.substring(firstComma + 1);
+
+  var matched = nfbEvaluateIfCondition_(conditionStr, context);
+  if (matched) return value;
+  return nfbResolveIfValue_(elseValueStr, context, value);
 }
 
 // ---------------------------------------------------------------------------

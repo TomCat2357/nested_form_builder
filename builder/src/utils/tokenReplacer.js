@@ -81,7 +81,11 @@ export const buildLabelValueMap = (fieldLabels, fieldValues, responses, schema) 
     const label = fieldLabels[fid];
     if (!label || Object.prototype.hasOwnProperty.call(map, label)) continue;
     if (fileUploadIds.has(fid)) {
-      map[label] = extractFileUrls((responses || {})[fid]);
+      if (Object.prototype.hasOwnProperty.call(fieldValues || {}, fid)) {
+        map[label] = valueToString(fieldValues[fid]);
+      } else {
+        map[label] = extractFileUrls((responses || {})[fid]);
+      }
     } else {
       const value = Object.prototype.hasOwnProperty.call(fieldValues || {}, fid)
         ? fieldValues[fid]
@@ -116,7 +120,7 @@ export const resolveTemplateTokens = (template, context) => {
     .split("\\}").join(ESC_CLOSE)
     .replace(/\{([^{}]+)\}/g, (_match, tokenBody) => {
       const raw = tokenBody || "";
-      const forceField = raw.startsWith("\\");
+      const forceField = raw.startsWith("\\") || raw.startsWith("@");
       const tokenName = forceField ? raw.slice(1) : raw;
       if (!tokenName) return "";
 
@@ -131,7 +135,7 @@ export const resolveTemplateTokens = (template, context) => {
         } else {
           resolved = (ctx.labelValueMap || {})[fieldPart] ?? "";
         }
-        return applyPipeTransformers(resolved, transformersPart);
+        return applyPipeTransformers(resolved, transformersPart, ctx);
       }
 
       if (!forceField) {
