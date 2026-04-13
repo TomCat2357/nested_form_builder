@@ -37,6 +37,7 @@ export function PlaceholderInput({
   inputPlaceholder = "例: 入力例を表示",
   defaultPlaceholder = "",
 }) {
+  const useTextarea = !!field.multiline;
   return (
     <div className="nf-mt-8">
       <label className={`nf-row nf-gap-6${field.showPlaceholder ? " nf-mb-4" : ""}`}>
@@ -56,13 +57,24 @@ export function PlaceholderInput({
       </label>
       {field.showPlaceholder && (
         <div className="nf-row nf-gap-8">
-          <input
-            className={s.input.className}
-            placeholder={inputPlaceholder}
-            value={field.placeholder || ""}
-            onChange={(event) => onChange({ ...field, placeholder: event.target.value })}
-            onFocus={onFocus}
-          />
+          {useTextarea ? (
+            <textarea
+              className={s.input.className}
+              placeholder={inputPlaceholder}
+              value={field.placeholder || ""}
+              rows={3}
+              onChange={(event) => onChange({ ...field, placeholder: event.target.value })}
+              onFocus={onFocus}
+            />
+          ) : (
+            <input
+              className={s.input.className}
+              placeholder={inputPlaceholder}
+              value={field.placeholder || ""}
+              onChange={(event) => onChange({ ...field, placeholder: event.target.value })}
+              onFocus={onFocus}
+            />
+          )}
         </div>
       )}
     </div>
@@ -169,13 +181,24 @@ export function TextDefaultValueInput({ field, onChange, onFocus }) {
         </select>
       </div>
       {defaultValueMode === "custom" && (
-        <input
-          className={`${s.input.className} nf-mt-8`}
-          placeholder="初期値を入力"
-          value={field.defaultValueText || ""}
-          onChange={(event) => onChange({ ...field, defaultValueText: event.target.value })}
-          onFocus={onFocus}
-        />
+        field.multiline ? (
+          <textarea
+            className={`${s.input.className} nf-mt-8`}
+            placeholder="初期値を入力"
+            rows={3}
+            value={field.defaultValueText || ""}
+            onChange={(event) => onChange({ ...field, defaultValueText: event.target.value })}
+            onFocus={onFocus}
+          />
+        ) : (
+          <input
+            className={`${s.input.className} nf-mt-8`}
+            placeholder="初期値を入力"
+            value={field.defaultValueText || ""}
+            onChange={(event) => onChange({ ...field, defaultValueText: event.target.value })}
+            onFocus={onFocus}
+          />
+        )
       )}
     </div>
   );
