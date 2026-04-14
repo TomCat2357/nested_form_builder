@@ -62,14 +62,14 @@ export const SETTINGS_GROUPS = [
     fields: [
       {
         key: "standardPrintTemplateUrl",
-        label: "標準印刷テンプレートURL",
+        label: "印刷様式テンプレートURL",
         placeholder: "https://docs.google.com/document/d/...",
         required: false,
         description: "未設定時は既存の自動生成ドキュメントを使います",
       },
       {
         key: "standardPrintFileNameTemplate",
-        label: "標準様式出力ファイル名規則",
+        label: "印刷様式出力ファイル名規則",
         placeholder: "{@_id}_{@_NOW|time:YYYY-MM-DD}",
         required: false,
         description: "GoogleDocument/PDF は「カード個別 > フォーム共通 > 既定値」で解決します。Gmail の PDF 添付はフォーム共通か既定値のみを使い、未入力時の既定値は {@_id}_{@_NOW|time:YYYY-MM-DD} です",

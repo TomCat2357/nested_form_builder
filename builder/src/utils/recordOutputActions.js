@@ -16,7 +16,7 @@ export const validateOutputAction = (action, settings) => {
     return {
       valid: false,
       error: action.outputType === "gmail"
-        ? "PDF 添付を使うには、フォーム設定の標準様式出力ファイル名規則を設定してください"
+        ? "PDF 添付を使うには、フォーム設定の印刷様式出力ファイル名規則を設定してください"
         : "出力ファイル名が設定されていません",
     };
   }

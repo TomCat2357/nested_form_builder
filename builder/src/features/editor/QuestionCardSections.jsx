@@ -45,7 +45,7 @@ function PrintTemplateDocFields({ field, onChange, printTemplateAction }) {
         value={printTemplateAction.fileNameTemplate || ""}
         onChange={(event) => updateAction({ fileNameTemplate: event.target.value })}
       />
-      <div className="nf-text-11 nf-text-muted">未指定時はフォーム設定の標準様式出力ファイル名規則を使用します。</div>
+      <div className="nf-text-11 nf-text-muted">未指定時はフォーム設定の印刷様式出力ファイル名規則を使用します。</div>
     </>
   );
 }
@@ -74,7 +74,7 @@ function PrintTemplateGmailFields({ field, onChange, printTemplateAction }) {
         <span className="nf-text-11">PDF を添付</span>
       </label>
       {printTemplateAction.gmailAttachPdf && (
-        <div className="nf-text-11 nf-text-muted">PDF 添付時の出力名は、フォーム設定の標準様式出力ファイル名規則か既定値を使用します。</div>
+        <div className="nf-text-11 nf-text-muted">PDF 添付時の出力名は、フォーム設定の印刷様式出力ファイル名規則か既定値を使用します。</div>
       )}
       {GMAIL_TEMPLATE_FIELDS.map(({ key, label, placeholder }) => (
         <label key={key} className="nf-col nf-gap-4">

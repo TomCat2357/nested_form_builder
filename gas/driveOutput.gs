@@ -29,10 +29,39 @@ function nfbCreateRecordPrintDocument(payload) {
           modifiedAt: payload.modifiedAt || ""
         }
       }, templateFolder.getUrl());
+      var templateBaseName = normalizedPayload.fileName;
+      var tplFileNameTemplate = templateDriveSettings.fileNameTemplate
+        ? String(templateDriveSettings.fileNameTemplate).trim()
+        : (payload.fileNameTemplate ? String(payload.fileNameTemplate).trim() : "");
+      if (tplFileNameTemplate) {
+        var tplCtx = templateContext;
+        if (!tplCtx.fieldLabels || !Object.keys(tplCtx.fieldLabels).length) {
+          var tc = payload.templateContext || {};
+          tplCtx = {
+            responses: tc.responses || tplCtx.responses || {},
+            fieldLabels: tc.fieldLabels || tplCtx.fieldLabels || {},
+            fieldValues: tc.fieldValues || tplCtx.fieldValues || {},
+            fileUploadMeta: tc.fileUploadMeta || tplCtx.fileUploadMeta || {},
+            fileUrls: tplCtx.fileUrls || "",
+            recordId: tplCtx.recordId || "",
+            formId: tplCtx.formId || "",
+            recordNo: tplCtx.recordNo || "",
+            formTitle: tplCtx.formTitle || "",
+            folderUrl: tplCtx.folderUrl || "",
+            recordUrl: tplCtx.recordUrl || "",
+            formUrl: tplCtx.formUrl || "",
+            now: tplCtx.now || new Date()
+          };
+        }
+        var resolvedBaseName = nfbResolveTemplate_(tplFileNameTemplate, tplCtx);
+        if (resolvedBaseName) {
+          templateBaseName = resolvedBaseName;
+        }
+      }
       var templatedFile = nfbCreateGoogleDocumentFileFromTemplate_(
         String(payload.templateSourceUrl),
         templateFolder,
-        normalizedPayload.fileName,
+        templateBaseName,
         templateContext
       );
       return {
@@ -89,7 +118,10 @@ function nfbCreateRecordPrintDocument(payload) {
         responses: ds.responses || {},
         fieldLabels: ds.fieldLabels || {},
         fieldValues: ds.fieldValues || {},
+        fileUploadMeta: ds.fileUploadMeta || {},
+        fileUrls: ds.fileUrls || "",
         recordId: ds.recordId || normalizedPayload.records[0].recordId || "",
+        formId: ds.formId || "",
         now: new Date()
       };
 

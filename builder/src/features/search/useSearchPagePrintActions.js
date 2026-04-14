@@ -80,6 +80,9 @@ export function useSearchPagePrintActions({
       payload.driveSettings.folderUrl = "";
       payload.driveSettings.folderNameTemplate = "";
       payload.driveSettings.useTemporaryFolder = false;
+      if (fileNameTemplate) {
+        payload.driveSettings.fileNameTemplate = fileNameTemplate;
+      }
     }
 
     const result = await createRecordPrintDocument(payload);

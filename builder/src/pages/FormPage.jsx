@@ -1081,10 +1081,20 @@ export default function FormPage() {
         omitEmptyRows: omitEmptyRowsOnPrint,
         driveFolderState: createEmptyDriveFolderState(),
       });
+      // 印刷様式出力は常にマイドライブ直下に配置
+      if (payload.driveSettings) {
+        payload.driveSettings.rootFolderUrl = "";
+        payload.driveSettings.folderUrl = "";
+        payload.driveSettings.folderNameTemplate = "";
+        payload.driveSettings.useTemporaryFolder = false;
+      }
       const fileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {});
       if (fileNameTemplate) {
         const currentResponses = responsesRef.current || {};
         payload.fileNameTemplate = fileNameTemplate;
+        if (payload.driveSettings) {
+          payload.driveSettings.fileNameTemplate = fileNameTemplate;
+        }
         payload.templateContext = {
           responses: currentResponses,
           fieldLabels,
