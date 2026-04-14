@@ -9,7 +9,7 @@ import { styles as s } from "../editor/styles.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { collectDefaultNowResponses } from "../../utils/responses.js";
 import { genRecordId } from "../../core/ids.js";
-import { resolveTemplateTokens, buildLabelValueMap } from "../../utils/tokenReplacer.js";
+import { resolveTemplateTokens, buildLabelValueMap, collectFileUploadFieldIds, extractFileUrls } from "../../utils/tokenReplacer.js";
 import { evaluateAllComputedFields } from "../../core/computedFields.js";
 import {
   buildPrintDocumentPayload,
@@ -116,6 +116,16 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 
   const gasClientRef = useRef(gasClientModule);
   const fileUploadMeta = useMemo(() => collectFileUploadMeta(schema), [schema]);
+  const fileUrls = useMemo(() => {
+    const ids = new Set();
+    collectFileUploadFieldIds(schema, ids);
+    const parts = [];
+    for (const fid of ids) {
+      const urls = extractFileUrls((responses || {})[fid]);
+      if (urls) parts.push(urls);
+    }
+    return parts.join(", ");
+  }, [schema, responses]);
   const driveSettings = useMemo(() => ({
     formId: settings.formId || "",
     recordId: recordIdRef.current,
@@ -123,7 +133,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     fieldLabels,
     fieldValues,
     fileUploadMeta,
-  }), [settings.formId, responses, fieldLabels, fieldValues, fileUploadMeta]);
+    fileUrls,
+  }), [settings.formId, responses, fieldLabels, fieldValues, fileUploadMeta, fileUrls]);
 
   const baseLabelValueMap = useMemo(
     () => buildLabelValueMap(fieldLabels, fieldValues, responses),
@@ -208,6 +219,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       responses: responses || {},
       fieldLabels,
       fieldValues,
+      fileUrls,
     };
     try {
       const result = await gasClientRef.current.executeRecordOutputAction({

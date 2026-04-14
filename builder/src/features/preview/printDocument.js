@@ -1,6 +1,7 @@
 import { formatUnixMsDateTimeSec, toUnixMs } from "../../utils/dateTime.js";
 import { resolveFileDisplayName } from "../../core/collect.js";
 import { findFirstFileUploadField } from "../../core/schema.js";
+import { collectFileUploadFieldIds, extractFileUrls } from "../../utils/tokenReplacer.js";
 
 export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);
 
@@ -286,6 +287,14 @@ export const buildPrintDocumentPayload = ({
   const firstUploadField = findFirstFileUploadField(schema);
   const fieldRootFolderUrl = firstUploadField?.driveRootFolderUrl || "";
   const fieldFolderNameTemplate = firstUploadField?.driveFolderNameTemplate || "";
+  const fileUploadIds = new Set();
+  collectFileUploadFieldIds(schema, fileUploadIds);
+  const fileUrlParts = [];
+  for (const fid of fileUploadIds) {
+    const urls = extractFileUrls((responses || {})[fid]);
+    if (urls) fileUrlParts.push(urls);
+  }
+
   const hasDriveSettings = fieldRootFolderUrl || fieldFolderNameTemplate || folderUrl || useTemporaryFolder;
   const driveSettings = hasDriveSettings ? {
     rootFolderUrl: fieldRootFolderUrl,
@@ -298,6 +307,7 @@ export const buildPrintDocumentPayload = ({
     fieldLabels: buildFieldLabelsMap(schema),
     fieldValues: buildFieldValuesMap(schema, responses),
     fileUploadMeta: collectFileUploadMeta(schema),
+    fileUrls: fileUrlParts.join(", "),
   } : undefined;
 
   return {

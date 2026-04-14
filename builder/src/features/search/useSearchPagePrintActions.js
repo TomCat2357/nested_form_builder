@@ -1,5 +1,4 @@
 import { useState, useCallback } from "react";
-import { findFirstFileUploadField } from "../../core/schema.js";
 import {
   buildPrintDocumentPayload,
   buildFieldValuesMap,
@@ -75,6 +74,14 @@ export function useSearchPagePrintActions({
       };
     }
 
+    // 検索ページからの出力は常にマイドライブ直下に配置
+    if (payload.driveSettings) {
+      payload.driveSettings.rootFolderUrl = "";
+      payload.driveSettings.folderUrl = "";
+      payload.driveSettings.folderNameTemplate = "";
+      payload.driveSettings.useTemporaryFolder = false;
+    }
+
     const result = await createRecordPrintDocument(payload);
     if (result?.fileUrl) {
       showOutputAlert({
@@ -95,7 +102,6 @@ export function useSearchPagePrintActions({
     };
     const effectiveFileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {}) || DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE;
 
-    const firstUploadField = findFirstFileUploadField(normalizedSchema);
     const fileUploadMeta = collectFileUploadMeta(normalizedSchema);
     const fileUploadIdsBatch = new Set();
     collectFileUploadFieldIds(normalizedSchema, fileUploadIdsBatch);
@@ -108,11 +114,11 @@ export function useSearchPagePrintActions({
         if (urls) batchFileUrlParts.push(urls);
       }
       const driveSettings = {
-        rootFolderUrl: firstUploadField?.driveRootFolderUrl || "",
-        folderNameTemplate: firstUploadField?.driveFolderNameTemplate || "",
+        rootFolderUrl: "",
+        folderNameTemplate: "",
         formId: form?.id || "",
         recordId: entry.id,
-        folderUrl: entry.driveFolderUrl || "",
+        folderUrl: "",
         responses: restoredResponses,
         fieldLabels,
         fieldValues,
@@ -222,7 +228,6 @@ export function useSearchPagePrintActions({
     const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, form?.settings || {});
     const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
     const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
-    const firstUploadFieldSingle = findFirstFileUploadField(normalizedSchema);
     const fileUploadMetaSingle = collectFileUploadMeta(normalizedSchema);
     const fileUploadIds = new Set();
     collectFileUploadFieldIds(normalizedSchema, fileUploadIds);
@@ -232,11 +237,11 @@ export function useSearchPagePrintActions({
       if (urls) fileUrlParts.push(urls);
     }
     const driveSettings = {
-      rootFolderUrl: firstUploadFieldSingle?.driveRootFolderUrl || "",
-      folderNameTemplate: firstUploadFieldSingle?.driveFolderNameTemplate || "",
+      rootFolderUrl: "",
+      folderNameTemplate: "",
       formId: form?.id || "",
       recordId: entry.id,
-      folderUrl: entry.driveFolderUrl || "",
+      folderUrl: "",
       responses: restoredResponses,
       fieldLabels,
       fieldValues,
