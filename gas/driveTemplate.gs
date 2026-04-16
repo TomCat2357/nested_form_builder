@@ -247,6 +247,7 @@ var NFB_TRANSFORMERS_ = {
   "match":    nfbTransformMatch_,
   "number":   nfbTransformNumber_,
   "if":       nfbTransformIf_,
+  "ifv":      nfbTransformIfv_,
   "map":      nfbTransformMap_,
   "kana":     nfbTransformKana_,
   "zen":      nfbTransformZen_,
@@ -496,8 +497,9 @@ function nfbResolveRef_(name, context) {
   return nfbResolveFieldTemplateToken_(name, context);
 }
 
-function nfbResolveConditionOperand_(operand, context) {
+function nfbResolveConditionOperand_(operand, context, pipeValue) {
   var s = operand.replace(/^\s+|\s+$/g, "");
+  if (s === "_" && pipeValue !== undefined) return pipeValue;
   if (s.charAt(0) === "@" && s.length > 1) {
     return context ? nfbResolveRef_(s.substring(1), context) : "";
   }
@@ -532,7 +534,7 @@ function nfbCompare_(left, right, operator) {
   return false;
 }
 
-function nfbEvaluateIfCondition_(conditionStr, context) {
+function nfbEvaluateIfCondition_(conditionStr, context, pipeValue) {
   var str = conditionStr.replace(/^\s+|\s+$/g, "");
 
   var negate = false;
@@ -544,8 +546,8 @@ function nfbEvaluateIfCondition_(conditionStr, context) {
   // Check for " in " operator first (space-delimited)
   var inIdx = str.indexOf(" in ");
   if (inIdx >= 0) {
-    var inLeft = nfbResolveConditionOperand_(str.substring(0, inIdx), context);
-    var inRight = nfbResolveConditionOperand_(str.substring(inIdx + 4), context);
+    var inLeft = nfbResolveConditionOperand_(str.substring(0, inIdx), context, pipeValue);
+    var inRight = nfbResolveConditionOperand_(str.substring(inIdx + 4), context, pipeValue);
     var inResult = nfbCompare_(inLeft, inRight, "in");
     return negate ? !inResult : inResult;
   }
@@ -554,11 +556,11 @@ function nfbEvaluateIfCondition_(conditionStr, context) {
   var opMatch = str.match(/^(.+?)\s*(==|!=|>=|<=|>|<)\s*(.+)$/);
   var result;
   if (opMatch) {
-    var leftVal = nfbResolveConditionOperand_(opMatch[1], context);
-    var rightVal = nfbResolveConditionOperand_(opMatch[3], context);
+    var leftVal = nfbResolveConditionOperand_(opMatch[1], context, pipeValue);
+    var rightVal = nfbResolveConditionOperand_(opMatch[3], context, pipeValue);
     result = nfbCompare_(leftVal, rightVal, opMatch[2]);
   } else {
-    var val = nfbResolveConditionOperand_(str, context);
+    var val = nfbResolveConditionOperand_(str, context, pipeValue);
     result = !!val;
   }
 
@@ -581,9 +583,29 @@ function nfbTransformIf_(value, args, context) {
   var conditionStr = args.substring(0, firstComma);
   var elseValueStr = args.substring(firstComma + 1);
 
-  var matched = nfbEvaluateIfCondition_(conditionStr, context);
+  var matched = nfbEvaluateIfCondition_(conditionStr, context, value);
   if (matched) return value;
   return nfbResolveIfValue_(elseValueStr, context, value);
+}
+
+// ---------------------------------------------------------------------------
+// ifv transformer: {field|ifv:condition,trueValue,falseValue}
+// 3引数版 if — 真の場合も任意の値を返せる
+// ---------------------------------------------------------------------------
+
+function nfbTransformIfv_(value, args, context) {
+  var firstComma = args.indexOf(",");
+  if (firstComma < 0) return value;
+  var conditionStr = args.substring(0, firstComma);
+  var rest = args.substring(firstComma + 1);
+  var secondComma = rest.indexOf(",");
+  if (secondComma < 0) return value;
+  var trueValueStr = rest.substring(0, secondComma);
+  var falseValueStr = rest.substring(secondComma + 1);
+
+  var matched = nfbEvaluateIfCondition_(conditionStr, context, value);
+  if (matched) return nfbResolveIfValue_(trueValueStr, context, value);
+  return nfbResolveIfValue_(falseValueStr, context, value);
 }
 
 // ---------------------------------------------------------------------------

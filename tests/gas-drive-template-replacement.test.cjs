@@ -1290,3 +1290,96 @@ test("nfbStripFileExtension_ は最後のドット以降を除去する", () => 
   assert.equal(gas.nfbStripFileExtension_(""), "");
   assert.equal(gas.nfbStripFileExtension_(null), "");
 });
+
+// ---------------------------------------------------------------------------
+// ifv パイプ: 3引数 if — {field|ifv:condition,trueValue,falseValue}
+// ---------------------------------------------------------------------------
+
+test("ifv: 基本 — 条件一致で真の値、不一致で偽の値", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "対応方法" },
+    fieldValues: { a: "来庁" },
+    responses: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{@対応方法|ifv:@対応方法==来庁,■,□}", ctx), "■");
+  ctx.fieldValues.a = "電話";
+  assert.equal(gas.nfbResolveTemplate_("{@対応方法|ifv:@対応方法==来庁,■,□}", ctx), "□");
+});
+
+test("ifv: in 演算子でチェックボックス部分一致", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "報道の結果" },
+    fieldValues: { a: "記事掲載, その他" },
+    responses: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{@報道の結果|ifv:記事掲載 in _,■,□}", ctx), "■");
+  assert.equal(gas.nfbResolveTemplate_("{@報道の結果|ifv:放送予定 in _,■,□}", ctx), "□");
+  assert.equal(gas.nfbResolveTemplate_("{@報道の結果|ifv:その他 in _,■,□}", ctx), "■");
+  assert.equal(gas.nfbResolveTemplate_("{@報道の結果|ifv:報道なし in _,■,□}", ctx), "□");
+});
+
+test("ifv: 真の値に _ でパイプ入力値を返す", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "名前" },
+    fieldValues: { a: "山田太郎" },
+    responses: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{@名前|ifv:@名前,_,不明}", ctx), "山田太郎");
+  ctx.fieldValues.a = "";
+  assert.equal(gas.nfbResolveTemplate_("{@名前|ifv:@名前,_,不明}", ctx), "不明");
+});
+
+test("ifv: 真の値・偽の値に @ref でフィールド参照解決", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "状態", b: "完了メッセージ", c: "未完了メッセージ" },
+    fieldValues: { a: "完了", b: "OK", c: "NG" },
+    responses: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{@状態|ifv:@状態==完了,@完了メッセージ,@未完了メッセージ}", ctx), "OK");
+  ctx.fieldValues.a = "未完了";
+  assert.equal(gas.nfbResolveTemplate_("{@状態|ifv:@状態==完了,@完了メッセージ,@未完了メッセージ}", ctx), "NG");
+});
+
+test("ifv: not 否定との組み合わせ", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "備考" },
+    fieldValues: { a: "あり" },
+    responses: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{@備考|ifv:not @備考,空です,値あり}", ctx), "値あり");
+  ctx.fieldValues.a = "";
+  assert.equal(gas.nfbResolveTemplate_("{@備考|ifv:not @備考,空です,値あり}", ctx), "空です");
+});
+
+test("ifv: 他パイプとのチェーン", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "金額" },
+    fieldValues: { a: "1500" },
+    responses: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{@金額|ifv:@金額>1000,_,0|number:#,##0}", ctx), "1,500");
+});
+
+test("ifv: カンマ不足（引数1つ以下）はパイプ入力値をそのまま返す", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "名前" },
+    fieldValues: { a: "太郎" },
+    responses: {},
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{@名前|ifv:@名前}", ctx), "太郎");
+  assert.equal(gas.nfbResolveTemplate_("{@名前|ifv:@名前,OK}", ctx), "太郎");
+});
