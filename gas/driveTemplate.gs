@@ -336,8 +336,9 @@ function nfbTransformTrim_(value) {
   return value.replace(/^\s+|\s+$/g, "");
 }
 
-function nfbTransformDefault_(value, args) {
-  return value ? value : String(args);
+function nfbTransformDefault_(value, args, context) {
+  if (value) return value;
+  return nfbResolveIfValue_(String(args), context, value);
 }
 
 // ---------------------------------------------------------------------------

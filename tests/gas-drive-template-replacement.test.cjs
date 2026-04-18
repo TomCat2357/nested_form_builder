@@ -460,6 +460,39 @@ test("パイプ変換: default で空値にフォールバック", () => {
   assert.equal(gas.nfbResolveTemplate_("{@電話|default:未入力}", ctx), "未入力");
 });
 
+test("パイプ変換: default で @参照 を解決（空時は参照フィールド値で埋める）", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    responses: {},
+    fieldLabels: { handler: "対応者", reporter: "報告者" },
+    fieldValues: { handler: "", reporter: "春元 負比呂" },
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{@対応者|default:@報告者}", ctx), "春元 負比呂");
+});
+
+test("パイプ変換: default — 値がある場合は参照を読まない", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    responses: {},
+    fieldLabels: { handler: "対応者", reporter: "報告者" },
+    fieldValues: { handler: "田中", reporter: "春元 負比呂" },
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{@対応者|default:@報告者}", ctx), "田中");
+});
+
+test("パイプ変換: default — 参照先も空ならリテラル @表記を返さず空を返す", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    responses: {},
+    fieldLabels: { handler: "対応者", reporter: "報告者" },
+    fieldValues: { handler: "", reporter: "" },
+    now: new Date("2026-04-04T10:20:30+09:00"),
+  };
+  assert.equal(gas.nfbResolveTemplate_("{@対応者|default:@報告者}", ctx), "");
+});
+
 test("パイプ変換: replace で文字列を全置換", () => {
   const gas = loadGasContext();
   const ctx = {
