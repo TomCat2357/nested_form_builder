@@ -156,40 +156,109 @@ function nfbResolveTemplateTokens_(template, context, options) {
 
   var escapedOpenBraceToken = "__NFB_ESCAPED_OPEN_BRACE__";
   var escapedCloseBraceToken = "__NFB_ESCAPED_CLOSE_BRACE__";
-  var result = String(template)
+  var src = String(template)
     .replace(/\\\{/g, escapedOpenBraceToken)
-    .replace(/\\\}/g, escapedCloseBraceToken)
-    .replace(/\{([^{}]+)\}/g, function(match, tokenBody) {
-      var rawTokenName = tokenBody || "";
-      var isRef = rawTokenName.charAt(0) === "@";
-      var tokenName = isRef ? rawTokenName.slice(1) : rawTokenName;
-      if (!tokenName) return "";
+    .replace(/\\\}/g, escapedCloseBraceToken);
 
-      var pipeIndex = tokenName.indexOf("|");
-      if (pipeIndex >= 0) {
-        var fieldPart = tokenName.substring(0, pipeIndex);
-        var transformersPart = tokenName.substring(pipeIndex + 1);
-        var resolvedValue = nfbResolveTemplateTokenValue_(fieldPart, context, {
-          allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
-          isRef: isRef
-        });
-        var metaByLabel = nfbBuildFileUploadMetaByLabel_(context);
-        var currentFieldMeta = metaByLabel[fieldPart] || null;
-        var pipeContext = currentFieldMeta
-          ? Object.assign({}, context || {}, { currentFieldMeta: currentFieldMeta })
-          : context;
-        return nfbApplyPipeTransformers_(resolvedValue, transformersPart, pipeContext);
-      }
+  var allowGmail = !!(options && options.allowGmailOnlyTokens === true);
+  var hasPipeValue = !!(options && Object.prototype.hasOwnProperty.call(options, "pipeValue"));
+  var pipeValue = hasPipeValue ? options.pipeValue : undefined;
+  var subContext = context;
+  if (hasPipeValue && pipeValue !== undefined) {
+    subContext = Object.assign({}, context || {}, { __pipeValue__: pipeValue });
+  }
+  var resolveOptions = { allowGmailOnlyTokens: allowGmail };
+  if (hasPipeValue) resolveOptions.pipeValue = pipeValue;
 
-      return nfbResolveTemplateTokenValue_(tokenName, context, {
-        allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
-        isRef: isRef
-      });
-    });
+  var result = nfbScanBalancedTokens_(src, function(tokenBody) {
+    return nfbResolveOneTokenBody_(tokenBody, subContext, resolveOptions);
+  });
 
   return result
     .split(escapedOpenBraceToken).join("{")
     .split(escapedCloseBraceToken).join("}");
+}
+
+/**
+ * Scan a template string and replace each balanced {...} token via the replacer.
+ * Supports nested braces (inner {...} are passed as part of the body, not stripped).
+ * Unclosed braces are left literal.
+ */
+function nfbScanBalancedTokens_(text, replacer) {
+  var out = "";
+  var i = 0;
+  var n = text.length;
+  while (i < n) {
+    var ch = text.charAt(i);
+    if (ch !== "{") {
+      out += ch;
+      i++;
+      continue;
+    }
+    var depth = 1;
+    var j = i + 1;
+    while (j < n && depth > 0) {
+      var c = text.charAt(j);
+      if (c === "{") {
+        depth++;
+      } else if (c === "}") {
+        depth--;
+        if (depth === 0) break;
+      }
+      j++;
+    }
+    if (depth !== 0) {
+      out += text.substring(i);
+      return out;
+    }
+    var body = text.substring(i + 1, j);
+    out += replacer(body);
+    i = j + 1;
+  }
+  return out;
+}
+
+/**
+ * Resolve a single token body (the contents between matching { and }).
+ * Handles {_} / {@_} / {_|...} as pipe-value references when context.__pipeValue__ is set.
+ */
+function nfbResolveOneTokenBody_(tokenBody, context, options) {
+  var rawTokenName = tokenBody || "";
+  var isRef = rawTokenName.charAt(0) === "@";
+  var tokenName = isRef ? rawTokenName.slice(1) : rawTokenName;
+  if (!tokenName) return "";
+
+  var pipeIndex = tokenName.indexOf("|");
+  var fieldPart = pipeIndex >= 0 ? tokenName.substring(0, pipeIndex) : tokenName;
+  var hasPipeCtx = context && Object.prototype.hasOwnProperty.call(context, "__pipeValue__");
+
+  // Pipe-value reference: {_} / {@_} / {_|...} / {@_|...}
+  if (fieldPart === "_" && hasPipeCtx) {
+    var pv = nfbTemplateValueToString_(context.__pipeValue__);
+    if (pipeIndex >= 0) {
+      return nfbApplyPipeTransformers_(pv, tokenName.substring(pipeIndex + 1), context);
+    }
+    return pv;
+  }
+
+  if (pipeIndex >= 0) {
+    var transformersPart = tokenName.substring(pipeIndex + 1);
+    var resolvedValue = nfbResolveTemplateTokenValue_(fieldPart, context, {
+      allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
+      isRef: isRef
+    });
+    var metaByLabel = nfbBuildFileUploadMetaByLabel_(context);
+    var currentFieldMeta = metaByLabel[fieldPart] || null;
+    var pipeContext = currentFieldMeta
+      ? Object.assign({}, context || {}, { currentFieldMeta: currentFieldMeta })
+      : context;
+    return nfbApplyPipeTransformers_(resolvedValue, transformersPart, pipeContext);
+  }
+
+  return nfbResolveTemplateTokenValue_(tokenName, context, {
+    allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
+    isRef: isRef
+  });
 }
 
 function nfbResolveTemplate_(template, context, options) {
@@ -200,18 +269,45 @@ function nfbResolveTemplate_(template, context, options) {
 // Pipe transformer system: {field|transform:args|transform2:args2}
 // ---------------------------------------------------------------------------
 
-function nfbSplitEscaped_(str, delimiter) {
-  var SENTINEL = "__NFB_ESC_" + delimiter.charCodeAt(0) + "__";
-  var escaped = str.split("\\" + delimiter).join(SENTINEL);
-  var parts = escaped.split(delimiter);
-  for (var i = 0; i < parts.length; i++) {
-    parts[i] = parts[i].split(SENTINEL).join(delimiter);
+/**
+ * Split str on delimiter at top level (depth 0 of {} nesting), with \<delim> escape support.
+ * If maxParts > 0, splits at most maxParts-1 times — the remainder goes into the last part.
+ */
+function nfbSplitTopLevel_(str, delimiter, maxParts) {
+  var parts = [];
+  var current = "";
+  var depth = 0;
+  var n = str.length;
+  for (var i = 0; i < n; i++) {
+    var ch = str.charAt(i);
+    if (ch === "\\" && i + 1 < n && str.charAt(i + 1) === delimiter) {
+      current += delimiter;
+      i++;
+      continue;
+    }
+    if (ch === "{") {
+      depth++;
+      current += ch;
+      continue;
+    }
+    if (ch === "}") {
+      if (depth > 0) depth--;
+      current += ch;
+      continue;
+    }
+    if (ch === delimiter && depth === 0 && (!maxParts || parts.length < maxParts - 1)) {
+      parts.push(current);
+      current = "";
+      continue;
+    }
+    current += ch;
   }
+  parts.push(current);
   return parts;
 }
 
 function nfbParsePipeTransformers_(transformerString) {
-  var parts = nfbSplitEscaped_(transformerString, "|");
+  var parts = nfbSplitTopLevel_(transformerString, "|");
   var result = [];
   for (var i = 0; i < parts.length; i++) {
     var segment = parts[i];
@@ -362,11 +458,9 @@ function nfbTransformPadRight_(value, args) {
 }
 
 function nfbTransformReplace_(value, args) {
-  var commaIndex = args.indexOf(",");
-  if (commaIndex < 0) return value;
-  var from = args.substring(0, commaIndex);
-  var to = args.substring(commaIndex + 1);
-  return value.split(from).join(to);
+  var parts = nfbSplitTopLevel_(args, ",", 2);
+  if (parts.length < 2) return value;
+  return value.split(parts[0]).join(parts[1]);
 }
 
 function nfbTransformUpper_(value) {
@@ -617,6 +711,14 @@ function nfbResolveIfValue_(valueStr, context, pipeValue) {
   if (valueStr === "") return "";
   if (valueStr === "_") return pipeValue;
   if (valueStr === "\\_") return "_";
+  // Sub-template: any { triggers recursive resolution so literal text and field
+  // references can be combined, e.g. "({@responder})記載あり"
+  if (valueStr.indexOf("{") >= 0) {
+    return nfbResolveTemplate_(valueStr, context, {
+      allowGmailOnlyTokens: true,
+      pipeValue: pipeValue
+    });
+  }
   if (valueStr.charAt(0) === "@" && valueStr.length > 1) {
     return context ? nfbResolveRef_(valueStr.substring(1), context) : "";
   }
@@ -624,14 +726,11 @@ function nfbResolveIfValue_(valueStr, context, pipeValue) {
 }
 
 function nfbTransformIf_(value, args, context) {
-  var firstComma = args.indexOf(",");
-  if (firstComma < 0) return value;
-  var conditionStr = args.substring(0, firstComma);
-  var elseValueStr = args.substring(firstComma + 1);
-
-  var matched = nfbEvaluateIfCondition_(conditionStr, context, value);
+  var parts = nfbSplitTopLevel_(args, ",", 2);
+  if (parts.length < 2) return value;
+  var matched = nfbEvaluateIfCondition_(parts[0], context, value);
   if (matched) return value;
-  return nfbResolveIfValue_(elseValueStr, context, value);
+  return nfbResolveIfValue_(parts[1], context, value);
 }
 
 // ---------------------------------------------------------------------------
@@ -640,18 +739,11 @@ function nfbTransformIf_(value, args, context) {
 // ---------------------------------------------------------------------------
 
 function nfbTransformIfv_(value, args, context) {
-  var firstComma = args.indexOf(",");
-  if (firstComma < 0) return value;
-  var conditionStr = args.substring(0, firstComma);
-  var rest = args.substring(firstComma + 1);
-  var secondComma = rest.indexOf(",");
-  if (secondComma < 0) return value;
-  var trueValueStr = rest.substring(0, secondComma);
-  var falseValueStr = rest.substring(secondComma + 1);
-
-  var matched = nfbEvaluateIfCondition_(conditionStr, context, value);
-  if (matched) return nfbResolveIfValue_(trueValueStr, context, value);
-  return nfbResolveIfValue_(falseValueStr, context, value);
+  var parts = nfbSplitTopLevel_(args, ",", 3);
+  if (parts.length < 3) return value;
+  var matched = nfbEvaluateIfCondition_(parts[0], context, value);
+  if (matched) return nfbResolveIfValue_(parts[1], context, value);
+  return nfbResolveIfValue_(parts[2], context, value);
 }
 
 // ---------------------------------------------------------------------------
