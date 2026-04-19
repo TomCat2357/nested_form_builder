@@ -85,7 +85,10 @@ export default function MainPage() {
         <div className="main-list">
           {activeForms.map((form) => (
             <div key={form.id} className="main-card" onClick={() => handleSelect(form.id)}>
-              <h2 className="main-title">{form.settings?.formTitle || "(無題)"}</h2>
+              <h2 className="main-title">
+                {form.settings?.formTitle || "(無題)"}
+                {form.readOnly && <span className="nf-text-warning nf-fw-600 nf-text-12 nf-ml-8">【参照のみ】</span>}
+              </h2>
               {form.description && <p className="nf-m-0 nf-text-muted">{form.description}</p>}
               <div className="main-meta">
                 最終更新: {formatUnixMsValue(form.modifiedAtUnixMs ?? form.modifiedAt)}

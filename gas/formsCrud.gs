@@ -338,6 +338,9 @@ function Forms_setFormsArchivedState_(formIds, archived) {
       }
 
       form.archived = !!archived;
+      if (form.archived) {
+        form.readOnly = false;
+      }
       form.modifiedAt = currentTs;
       form.modifiedAtUnixMs = currentTs;
 
@@ -350,6 +353,62 @@ function Forms_setFormsArchivedState_(formIds, archived) {
       }
     } catch (err) {
       Logger.log("[Forms_setFormsArchivedState_] Error updating archive state for form " + formId + ": " + err);
+      errors.push({ formId: formId, error: err.message || String(err) });
+    }
+  });
+
+  return {
+    ok: errors.length === 0,
+    updated: updated,
+    errors: errors,
+    forms: updatedForms
+  };
+}
+
+/**
+ * 複数フォームの参照のみ状態を一括変更
+ * @param {Array<string>} formIds
+ * @param {boolean} readOnly
+ * @return {Object} { ok: boolean, updated: number, errors: Array, forms: Array }
+ */
+
+function Forms_setFormsReadOnlyState_(formIds, readOnly) {
+  if (!formIds || !formIds.length) {
+    throw new Error("Form IDs are required");
+  }
+
+  var ids = Array.isArray(formIds) ? formIds.slice() : [formIds];
+  var errors = [];
+  var updated = 0;
+  var updatedForms = [];
+  var currentTs = Sheets_dateToSerial_(new Date());
+
+  ids.forEach(function(formId) {
+    if (!formId) return;
+
+    try {
+      var form = Forms_getForm_(formId);
+      if (!form) {
+        errors.push({ formId: formId, error: "Form not found" });
+        return;
+      }
+
+      form.readOnly = !!readOnly;
+      if (form.readOnly) {
+        form.archived = false;
+      }
+      form.modifiedAt = currentTs;
+      form.modifiedAtUnixMs = currentTs;
+
+      var result = Forms_saveForm_(form);
+      if (result && result.ok) {
+        updated += 1;
+        updatedForms.push(result.form);
+      } else {
+        errors.push({ formId: formId, error: "Save failed" });
+      }
+    } catch (err) {
+      Logger.log("[Forms_setFormsReadOnlyState_] Error updating readOnly state for form " + formId + ": " + err);
       errors.push({ formId: formId, error: err.message || String(err) });
     }
   });
@@ -402,6 +461,7 @@ function Forms_copyForm_(formId) {
   newForm.settings = newForm.settings || {};
   newForm.settings.formTitle = originalTitle + "（コピー）";
   newForm.archived = false;
+  newForm.readOnly = false;
   delete newForm.driveFileUrl;
 
   // 4. 同じフォルダに保存（フォルダが不明ならルートに保存）

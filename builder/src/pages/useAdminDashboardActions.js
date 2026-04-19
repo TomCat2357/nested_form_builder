@@ -32,6 +32,7 @@ const sanitizeImportedForm = (raw) => {
     schema,
     settings,
     archived: !!raw.archived,
+    readOnly: !!raw.readOnly,
     schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1,
     createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : raw.createdAt, // 作成日時を保持
     modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : raw.modifiedAt, // 更新日時を保持
@@ -67,12 +68,15 @@ export function useAdminDashboardActions({
   showAlert,
   archiveForms,
   unarchiveForms,
+  setFormsReadOnly,
+  clearFormsReadOnly,
   deleteForms,
   exportForms,
   copyForm,
   registerImportedForm,
 }) {
   const archiveDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
+  const readOnlyDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false, allReadOnly: false });
   const deleteDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importUrl, setImportUrl] = useState("");
@@ -99,6 +103,24 @@ export function useAdminDashboardActions({
       multiple: targetIds.length > 1,
       allArchived,
       hasPublished,
+    });
+  };
+
+  const handleReadOnlySelected = () => {
+    const selectedForms = sortedForms.filter((form) => selected.has(form.id) && !form.loadError);
+    if (!selectedForms.length) {
+      showAlert("参照のみ設定可能なフォームを選択してください。");
+      return;
+    }
+
+    const allReadOnly = selectedForms.every((form) => form.readOnly);
+    const targetIds = selectedForms.map((form) => form.id);
+    const firstId = targetIds[0];
+    readOnlyDialog.open({
+      formId: firstId,
+      targetIds,
+      multiple: targetIds.length > 1,
+      allReadOnly,
     });
   };
 
@@ -284,6 +306,33 @@ export function useAdminDashboardActions({
     })();
   };
 
+  const confirmReadOnlyAction = () => {
+    const targetIds = (readOnlyDialog.state.targetIds && readOnlyDialog.state.targetIds.length
+      ? readOnlyDialog.state.targetIds
+      : readOnlyDialog.state.formId
+        ? [readOnlyDialog.state.formId]
+        : []);
+    if (!targetIds.length) return;
+
+    const shouldClear = readOnlyDialog.state.allReadOnly;
+
+    clearSelectionByIds(targetIds);
+    readOnlyDialog.reset();
+
+    (async () => {
+      try {
+        if (shouldClear) {
+          await clearFormsReadOnly(targetIds);
+        } else {
+          await setFormsReadOnly(targetIds);
+        }
+      } catch (error) {
+        console.error("[AdminDashboard] ReadOnly action failed:", error);
+        showAlert(`参照のみ設定中にエラーが発生しました: ${error.message}`);
+      }
+    })();
+  };
+
   const confirmDeleteAction = async () => {
     const targetIds = (deleteDialog.state.targetIds && deleteDialog.state.targetIds.length
       ? deleteDialog.state.targetIds
@@ -336,6 +385,8 @@ export function useAdminDashboardActions({
   return {
     confirmArchive: archiveDialog.state,
     setConfirmArchive: archiveDialog.setState,
+    confirmReadOnly: readOnlyDialog.state,
+    setConfirmReadOnly: readOnlyDialog.setState,
     confirmDelete: deleteDialog.state,
     setConfirmDelete: deleteDialog.setState,
     importDialogOpen,
@@ -348,11 +399,13 @@ export function useAdminDashboardActions({
     setConfirmCopy: copyDialog.setState,
     copying,
     handleArchiveSelected,
+    handleReadOnlySelected,
     handleDeleteSelected,
     handleExport,
     handleImport,
     handleImportFromDrive,
     confirmArchiveAction,
+    confirmReadOnlyAction,
     confirmDeleteAction,
     handleCopySelected,
     confirmCopyAction,

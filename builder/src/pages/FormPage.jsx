@@ -210,11 +210,16 @@ export default function FormPage() {
   const driveFolderStateRef = useLatestRef(driveFolderState);
 
   useEffect(() => {
+    if (form?.readOnly) {
+      setMode("view");
+      return;
+    }
     setMode(entryId ? "view" : "edit");
-  }, [entryId]);
+  }, [entryId, form?.readOnly]);
 
   const isViewMode = mode === "view";
-  const canCopyFromExistingRecord = !entryId && !isViewMode;
+  const isFormReadOnly = !!form?.readOnly;
+  const canCopyFromExistingRecord = !entryId && !isViewMode && !isFormReadOnly;
   const isDriveFolderDirty = useMemo(
     () => !areDriveFolderStatesEqual(initialDriveFolderStateRef.current, driveFolderState),
     [driveFolderState],
@@ -1193,7 +1198,7 @@ export default function FormPage() {
     : (unsavedDialog.state.intent && unsavedDialog.state.intent.startsWith("navigate:")
       ? "保存せずに移動しますか？"
       : "保存せずに前の画面へ戻りますか？");
-  const editDisabled = loading || isReadLocked;
+  const editDisabled = loading || isReadLocked || isFormReadOnly;
 
   return (
       <AppLayout themeOverride={form?.settings?.theme}       title={`${form.settings?.formTitle || "(無題)"} - フォーム入力`}
@@ -1201,8 +1206,8 @@ export default function FormPage() {
       onBack={handleBack}
       backHidden={true}
       badge={{
-        label: (loading || isReloading) ? "読み取り中..." : (isViewMode ? "閲覧モード" : "編集モード"),
-        variant: (loading || isReloading) ? "loading" : (isViewMode ? "view" : "edit")
+        label: (loading || isReloading) ? "読み取り中..." : (isFormReadOnly ? "参照のみ" : (isViewMode ? "閲覧モード" : "編集モード")),
+        variant: (loading || isReloading) ? "loading" : (isFormReadOnly ? "view" : (isViewMode ? "view" : "edit"))
       }}
       sidebarActions={
         <>
@@ -1219,7 +1224,7 @@ export default function FormPage() {
             </>
           ) : (
             <>
-              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReadLocked} onClick={() => triggerSave(primarySaveOptions)}>
+              <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReadLocked || isFormReadOnly} onClick={() => triggerSave(primarySaveOptions)}>
                 保存
               </button>
               <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={() => attemptLeave("cancel-edit")}>
@@ -1245,7 +1250,7 @@ export default function FormPage() {
                   削除取消し
                 </button>
               ) : (
-                <button type="button" className="nf-btn-outline nf-btn-sidebar nf-btn-danger nf-text-14" onClick={handleDeleteEntry}>
+                <button type="button" className="nf-btn-outline nf-btn-sidebar nf-btn-danger nf-text-14" onClick={handleDeleteEntry} disabled={isFormReadOnly}>
                   削除
                 </button>
               )}
@@ -1338,7 +1343,7 @@ export default function FormPage() {
           onSave={handleSaveToStore}
           showOutputJson={false}
           showSaveButton={false}
-          readOnly={isViewMode || isReadLocked}
+          readOnly={isViewMode || isReadLocked || isFormReadOnly}
           entryId={currentRecordId}
           driveFolderState={driveFolderState}
           onDriveFolderStateChange={setDriveFolderState}

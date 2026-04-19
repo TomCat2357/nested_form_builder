@@ -53,6 +53,7 @@ export const normalizeFormRecord = (source = {}, options = {}) => {
     createdAtUnixMs: createdAt,
     modifiedAtUnixMs: now,
     archived: !!source.archived,
+    readOnly: !!source.readOnly,
     schemaVersion: Number.isFinite(source.schemaVersion) ? source.schemaVersion : 1,
   };
 };

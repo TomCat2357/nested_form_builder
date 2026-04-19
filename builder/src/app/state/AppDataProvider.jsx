@@ -275,12 +275,13 @@ export function AppDataProvider({ children }) {
     return existing ? { ...existing, archived: false } : null;
   }, [upsertFormsState]);
 
-  const batchUpdateFormsState = useCallback(async (dataStoreFn, formIds, archived, logPrefix) => {
+  const batchUpdateFormsState = useCallback(async (dataStoreFn, formIds, optimisticPatch, logPrefix) => {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
     if (!targetIds.length) return { forms: [], updated: 0, errors: [] };
 
+    const patchFn = typeof optimisticPatch === "function" ? optimisticPatch : (form) => ({ ...form, ...optimisticPatch });
     const targetIdSet = new Set(targetIds);
-    const optimisticForms = formsRef.current.filter((form) => targetIdSet.has(form.id)).map((form) => ({ ...form, archived }));
+    const optimisticForms = formsRef.current.filter((form) => targetIdSet.has(form.id)).map((form) => patchFn(form));
 
     if (optimisticForms.length > 0) {
       await updateFormsAndCache((next) => {
@@ -308,12 +309,36 @@ export function AppDataProvider({ children }) {
   }, [updateFormsAndCache]);
 
   const archiveForms = useCallback(
-    (formIds) => batchUpdateFormsState(dataStore.archiveForms.bind(dataStore), formIds, true, "archiveForms"),
+    (formIds) => batchUpdateFormsState(dataStore.archiveForms.bind(dataStore), formIds, { archived: true, readOnly: false }, "archiveForms"),
     [batchUpdateFormsState],
   );
 
   const unarchiveForms = useCallback(
-    (formIds) => batchUpdateFormsState(dataStore.unarchiveForms.bind(dataStore), formIds, false, "unarchiveForms"),
+    (formIds) => batchUpdateFormsState(dataStore.unarchiveForms.bind(dataStore), formIds, { archived: false }, "unarchiveForms"),
+    [batchUpdateFormsState],
+  );
+
+  const setFormReadOnly = useCallback(async (formId) => {
+    const existing = formsRef.current.find((form) => form.id === formId);
+    if (existing) await upsertFormsState({ ...existing, readOnly: true, archived: false });
+    void dataStore.setFormReadOnly(formId).then((res) => { if (res) upsertFormsState(res); });
+    return existing ? { ...existing, readOnly: true, archived: false } : null;
+  }, [upsertFormsState]);
+
+  const clearFormReadOnly = useCallback(async (formId) => {
+    const existing = formsRef.current.find((form) => form.id === formId);
+    if (existing) await upsertFormsState({ ...existing, readOnly: false });
+    void dataStore.clearFormReadOnly(formId).then((res) => { if (res) upsertFormsState(res); });
+    return existing ? { ...existing, readOnly: false } : null;
+  }, [upsertFormsState]);
+
+  const setFormsReadOnly = useCallback(
+    (formIds) => batchUpdateFormsState(dataStore.setFormsReadOnly.bind(dataStore), formIds, { readOnly: true, archived: false }, "setFormsReadOnly"),
+    [batchUpdateFormsState],
+  );
+
+  const clearFormsReadOnly = useCallback(
+    (formIds) => batchUpdateFormsState(dataStore.clearFormsReadOnly.bind(dataStore), formIds, { readOnly: false }, "clearFormsReadOnly"),
     [batchUpdateFormsState],
   );
 
@@ -378,6 +403,10 @@ export function AppDataProvider({ children }) {
       unarchiveForm,
       archiveForms,
       unarchiveForms,
+      setFormReadOnly,
+      clearFormReadOnly,
+      setFormsReadOnly,
+      clearFormsReadOnly,
       deleteForms,
       deleteForm,
       importForms,
@@ -386,7 +415,7 @@ export function AppDataProvider({ children }) {
       getFormById,
       registerImportedForm,
     }),
-    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, deleteForms, deleteForm, importForms, exportForms, copyForm, getFormById, registerImportedForm],
+    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteForm, importForms, exportForms, copyForm, getFormById, registerImportedForm],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;

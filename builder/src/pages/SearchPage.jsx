@@ -131,6 +131,7 @@ export default function SearchPage() {
           printing={isCreatingPrintDocument}
           selectedCount={selectedEntries.size}
           filteredCount={sortedEntries.length}
+          readOnly={!!form?.readOnly}
         />
         </>
       )}

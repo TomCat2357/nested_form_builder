@@ -160,6 +160,10 @@ export const archiveForm = createGasEndpoint({ fnName: "nfbArchiveForm", validat
 export const unarchiveForm = createGasEndpoint({ fnName: "nfbUnarchiveForm", validate: validateFormId, mapResult: (r) => r.form || null, defaultError: "Unarchive form failed" });
 export const archiveForms = createGasEndpoint({ fnName: "nfbArchiveForms", validate: validateFormIds, defaultError: "Batch archive forms failed" });
 export const unarchiveForms = createGasEndpoint({ fnName: "nfbUnarchiveForms", validate: validateFormIds, defaultError: "Batch unarchive forms failed" });
+export const setFormReadOnly = createGasEndpoint({ fnName: "nfbSetFormReadOnly", validate: validateFormId, mapResult: (r) => r.form || null, defaultError: "Set form readOnly failed" });
+export const clearFormReadOnly = createGasEndpoint({ fnName: "nfbClearFormReadOnly", validate: validateFormId, mapResult: (r) => r.form || null, defaultError: "Clear form readOnly failed" });
+export const setFormsReadOnly = createGasEndpoint({ fnName: "nfbSetFormsReadOnly", validate: validateFormIds, defaultError: "Batch set forms readOnly failed" });
+export const clearFormsReadOnly = createGasEndpoint({ fnName: "nfbClearFormsReadOnly", validate: validateFormIds, defaultError: "Batch clear forms readOnly failed" });
 export const importFormsFromDrive = async (url) => {
   if (!url) throw new Error("Google Drive URL is required");
   const r = await fetchGasApi("nfbImportFormsFromDrive", url, "Import from Drive failed");

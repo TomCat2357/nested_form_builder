@@ -26,6 +26,10 @@ import {
   unarchiveForm as unarchiveFormInGas,
   archiveForms as archiveFormsInGas,
   unarchiveForms as unarchiveFormsInGas,
+  setFormReadOnly as setFormReadOnlyInGas,
+  clearFormReadOnly as clearFormReadOnlyInGas,
+  setFormsReadOnly as setFormsReadOnlyInGas,
+  clearFormsReadOnly as clearFormsReadOnlyInGas,
   registerImportedForm as registerImportedFormInGas,
   copyForm as copyFormFromGas,
   syncRecordsProxy,
@@ -193,6 +197,22 @@ export const dataStore = {
   },
   async unarchiveForms(formIds) {
     return this._batchArchiveAction(formIds, unarchiveFormsInGas);
+  },
+  async setFormReadOnlyState(formId, readOnly) {
+    const savedForm = readOnly ? await setFormReadOnlyInGas(formId) : await clearFormReadOnlyInGas(formId);
+    return savedForm ? ensureDisplayInfo(savedForm) : null;
+  },
+  async setFormReadOnly(formId) {
+    return this.setFormReadOnlyState(formId, true);
+  },
+  async clearFormReadOnly(formId) {
+    return this.setFormReadOnlyState(formId, false);
+  },
+  async setFormsReadOnly(formIds) {
+    return this._batchArchiveAction(formIds, setFormsReadOnlyInGas);
+  },
+  async clearFormsReadOnly(formIds) {
+    return this._batchArchiveAction(formIds, clearFormsReadOnlyInGas);
   },
   async deleteForms(formIds) {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);

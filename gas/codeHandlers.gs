@@ -354,3 +354,11 @@ function FormsApi_SetArchived_(ctx) {
   if (!result?.ok) return { ok: false, error: result?.error || "フォームの更新に失敗しました" };
   return { ok: true, form: result.form || null };
 }
+
+function FormsApi_SetReadOnly_(ctx) {
+  if (!ctx.raw?.formId || ctx.raw?.readOnly === undefined) return { ok: false, error: "フォームIDまたは参照のみ状態が指定されていません" };
+  const readOnlyFlag = ["true", true, 1, "1"].includes(ctx.raw.readOnly);
+  const result = readOnlyFlag ? nfbSetFormReadOnly(ctx.raw.formId) : nfbClearFormReadOnly(ctx.raw.formId);
+  if (!result?.ok) return { ok: false, error: result?.error || "フォームの更新に失敗しました" };
+  return { ok: true, form: result.form || null };
+}

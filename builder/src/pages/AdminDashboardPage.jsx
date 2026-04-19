@@ -35,7 +35,7 @@ const formatUnixMsValue = (value) => {
 };
 
 export default function AdminDashboardPage() {
-  const { forms, loadFailures, loadingForms, lastSyncedAt, archiveForms, unarchiveForms, deleteForms, refreshForms, exportForms, copyForm, registerImportedForm } = useAppData();
+  const { forms, loadFailures, loadingForms, lastSyncedAt, archiveForms, unarchiveForms, setFormsReadOnly, clearFormsReadOnly, deleteForms, refreshForms, exportForms, copyForm, registerImportedForm } = useAppData();
   useBuilderSettings();
   const navigate = useNavigate();
   const { showAlert } = useAlert();
@@ -79,6 +79,8 @@ const { selected, toggle: toggleSelect, selectAll: selectAllRaw, clear: clearSel
   const {
     confirmArchive,
     setConfirmArchive,
+    confirmReadOnly,
+    setConfirmReadOnly,
     confirmDelete,
     setConfirmDelete,
     importDialogOpen,
@@ -91,11 +93,13 @@ const { selected, toggle: toggleSelect, selectAll: selectAllRaw, clear: clearSel
     setConfirmCopy,
     copying,
     handleArchiveSelected,
+    handleReadOnlySelected,
     handleDeleteSelected,
     handleExport,
     handleImport,
     handleImportFromDrive,
     confirmArchiveAction,
+    confirmReadOnlyAction,
     confirmDeleteAction,
     handleCopySelected,
     confirmCopyAction,
@@ -107,6 +111,8 @@ const { selected, toggle: toggleSelect, selectAll: selectAllRaw, clear: clearSel
     showAlert,
     archiveForms,
     unarchiveForms,
+    setFormsReadOnly,
+    clearFormsReadOnly,
     deleteForms,
     exportForms,
     copyForm,
@@ -175,6 +181,14 @@ const { selected, toggle: toggleSelect, selectAll: selectAllRaw, clear: clearSel
             disabled={selected.size === 0}
           >
             アーカイブ
+          </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-13"
+            onClick={handleReadOnlySelected}
+            disabled={selected.size === 0}
+          >
+            参照のみ
           </button>
           <button
             type="button"
@@ -302,6 +316,8 @@ const { selected, toggle: toggleSelect, selectAll: selectAllRaw, clear: clearSel
                         <span className="nf-text-danger-strong nf-fw-600">読み込みエラー</span>
                       ) : form.archived ? (
                         <span className="nf-text-danger-strong">アーカイブ済み</span>
+                      ) : form.readOnly ? (
+                        <span className="nf-text-warning nf-fw-600">参照のみ</span>
                       ) : (
                         <span className="nf-text-success">公開中</span>
                       )}
@@ -340,6 +356,29 @@ const { selected, toggle: toggleSelect, selectAll: selectAllRaw, clear: clearSel
             value: "archive",
             variant: "primary",
             onSelect: confirmArchiveAction,
+          },
+        ]}
+      />
+
+      <ConfirmDialog
+        open={confirmReadOnly.open}
+        title={confirmReadOnly.allReadOnly ? "参照のみを解除" : "フォームを参照のみに設定"}
+        message={
+          confirmReadOnly.allReadOnly
+            ? "このフォームの参照のみ設定を解除して編集可能に戻します。よろしいですか？"
+            : "このフォームを参照のみに設定します。以降、新規作成・編集・削除ができなくなります（検索・閲覧は可能）。アーカイブ中のフォームは公開中に戻した上で参照のみに設定されます。よろしいですか？"
+        }
+        options={[
+          {
+            label: "キャンセル",
+            value: "cancel",
+            onSelect: () => setConfirmReadOnly({ open: false, formId: null, targetIds: [], multiple: false, allReadOnly: false }),
+          },
+          {
+            label: confirmReadOnly.allReadOnly ? "解除" : "参照のみに設定",
+            value: "readOnly",
+            variant: "primary",
+            onSelect: confirmReadOnlyAction,
           },
         ]}
       />

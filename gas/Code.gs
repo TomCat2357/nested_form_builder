@@ -53,6 +53,7 @@ const ACTION_DEFINITIONS_ = {
   "forms_update":    { handler: FormsApi_Update_, adminOnly: true },
   "forms_delete":    { handler: FormsApi_Delete_, adminOnly: true },
   "forms_archive":   { handler: FormsApi_SetArchived_, adminOnly: true },
+  "forms_readonly":  { handler: FormsApi_SetReadOnly_, adminOnly: true },
   "delete":          { handler: DeleteRecord_, requireSpreadsheetId: true, requireRecordId: true },
   "list":            { handler: ListRecordsAction_, requireSpreadsheetId: true },
   "get":             { handler: GetRecord_, requireSpreadsheetId: true, requireRecordId: true },

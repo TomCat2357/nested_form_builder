@@ -204,6 +204,7 @@ export default function AdminFormEditorPage() {
       schema,
       settings: { ...trimmedSettings, theme: preservedTheme, formTitle: trimmedName },
       archived: form?.archived ?? false,
+      readOnly: form?.readOnly ?? false,
       schemaVersion: form?.schemaVersion ?? 1,
     };
 

@@ -117,6 +117,54 @@ function nfbUnarchiveForms(formIds) {
 }
 
 /**
+ * フォームを参照のみに設定
+ */
+
+function nfbSetFormReadOnly(formId) {
+  return nfbSafeCall_(function() {
+    var res = Forms_setFormsReadOnlyState_([formId], true);
+    if (res.ok && res.forms && res.forms.length > 0) {
+      return { ok: true, form: res.forms[0] };
+    }
+    return { ok: false, error: (res.errors && res.errors[0]) ? res.errors[0].error : "Unknown error" };
+  });
+}
+
+/**
+ * フォームの参照のみを解除
+ */
+
+function nfbClearFormReadOnly(formId) {
+  return nfbSafeCall_(function() {
+    var res = Forms_setFormsReadOnlyState_([formId], false);
+    if (res.ok && res.forms && res.forms.length > 0) {
+      return { ok: true, form: res.forms[0] };
+    }
+    return { ok: false, error: (res.errors && res.errors[0]) ? res.errors[0].error : "Unknown error" };
+  });
+}
+
+/**
+ * 複数フォームをまとめて参照のみに設定
+ */
+
+function nfbSetFormsReadOnly(formIds) {
+  return nfbSafeCall_(function() {
+    return Forms_setFormsReadOnlyState_(formIds, true);
+  });
+}
+
+/**
+ * 複数フォームの参照のみをまとめて解除
+ */
+
+function nfbClearFormsReadOnly(formIds) {
+  return nfbSafeCall_(function() {
+    return Forms_setFormsReadOnlyState_(formIds, false);
+  });
+}
+
+/**
  * フォームをコピー（同じDriveフォルダに新IDで作成）
  * @param {string} formId - コピー元フォームID
  * @return {Object} { ok, fileId, fileUrl, form }

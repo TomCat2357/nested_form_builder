@@ -16,14 +16,15 @@ export const buildSearchSidebarButtons = ({
   filteredCount,
   isUndoDelete,
   printing,
+  readOnly = false,
 }) => {
   const deleteBtn = isUndoDelete
-    ? { label: "削除取消し", onClick: onUndelete, disabled: selectedCount === 0, className: "search-sidebar-btn-warning" }
-    : { label: "削除", onClick: onDelete, disabled: selectedCount === 0, className: "search-sidebar-btn-danger" };
+    ? { label: "削除取消し", onClick: onUndelete, disabled: selectedCount === 0 || readOnly, className: "search-sidebar-btn-warning" }
+    : { label: "削除", onClick: onDelete, disabled: selectedCount === 0 || readOnly, className: "search-sidebar-btn-danger" };
 
   return [
     showBack && onBack && { label: "← 戻る", onClick: onBack },
-    { label: "新規入力", onClick: onCreate },
+    { label: "新規入力", onClick: onCreate, disabled: readOnly, title: readOnly ? "このフォームは参照のみに設定されています" : undefined },
     deleteBtn,
     { label: refreshBusy ? "🔄 更新中..." : "🔄 更新", onClick: onRefresh, disabled: refreshDisabled, className: useCache && !refreshBusy ? "search-sidebar-btn-warning" : "", title: useCache ? "キャッシュから表示中 - クリックで最新データを取得" : "最新データを取得" },
     { label: exporting ? "出力中..." : "検索結果を出力", onClick: onExport, disabled: exporting || filteredCount === 0, title: filteredCount === 0 ? "出力するデータがありません" : `検索結果 ${filteredCount} 件を出力` },
