@@ -127,7 +127,7 @@ function SyncRecords_(ctx) {
         var sheetModifiedAt = 0;
 
         if (localIndex !== -1) {
-          var modAtVal = existingData[localIndex][4];
+          var modAtVal = existingData[localIndex][3];
           sheetModifiedAt = Sheets_toUnixMs_(modAtVal, true) || 0;
         }
 
@@ -136,6 +136,24 @@ function SyncRecords_(ctx) {
           cacheModifiedAt: cacheModifiedAt,
           sheetModifiedAt: sheetModifiedAt,
         });
+
+        if (localIndex !== -1) {
+          try {
+            Logger.log(
+              "[NFB-sync] recId=%s forceFullSync=%s cacheMs=%s sheetMs=%s delta=%s apply=%s cacheBy=%s sheetBy=%s formId=%s",
+              String(recId),
+              String(forceFullSync),
+              String(cacheModifiedAt),
+              String(sheetModifiedAt),
+              String((cacheModifiedAt || 0) - (sheetModifiedAt || 0)),
+              String(shouldApplyRecord),
+              String((rec && rec.modifiedBy) || ""),
+              String(existingData[localIndex][6] || ""),
+              String((ctx && ctx.raw && ctx.raw.formId) || "")
+            );
+          } catch (e) { /* no-op */ }
+        }
+
         if (shouldApplyRecord) {
           var rowData;
           var rowFormats;
