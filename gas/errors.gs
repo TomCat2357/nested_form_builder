@@ -1,5 +1,11 @@
 const nfbErrorToString_ = (err) => err?.message || String(err);
-const nfbFail_ = (err) => ({ ok: false, error: nfbErrorToString_(err) });
+const nfbFail_ = (err) => {
+  const payload = { ok: false, error: nfbErrorToString_(err) };
+  if (err && err.reason) payload.reason = err.reason;
+  if (err && err.groupErrors) payload.groupErrors = err.groupErrors;
+  if (err && err.detail) payload.detail = err.detail;
+  return payload;
+};
 const nfbSafeCall_ = (fn) => { try { return fn(); } catch (err) { return nfbFail_(err); } };
 
 const JsonOutput_ = (payload, status) => {

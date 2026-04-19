@@ -5,7 +5,7 @@ import { useAlert } from "../app/hooks/useAlert.js";
 import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import { useDeployTime } from "../app/hooks/useDeployTime.js";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
-import { hasScriptRun, getAdminKey, setAdminKey, getAdminEmail, setAdminEmail, checkAdminEmailMembership, getRestrictToFormOnly, setRestrictToFormOnly, refreshGroupCache, getGroupCacheStatus } from "../services/gasClient.js";
+import { hasScriptRun, getAdminKey, setAdminKey, getAdminEmail, setAdminEmail, checkAdminEmailMembership, getRestrictToFormOnly, setRestrictToFormOnly } from "../services/gasClient.js";
 import { useAuth } from "../app/state/authContext.jsx";
 
 const normalizeAdminEmailInput = (value) => String(value || "")
@@ -13,6 +13,32 @@ const normalizeAdminEmailInput = (value) => String(value || "")
   .map((item) => item.trim())
   .filter(Boolean)
   .join(";");
+
+function buildMembershipFailMessage({ userEmail, reason, groupErrors, detail }) {
+  const safeUser = userEmail || "不明";
+  if (reason === "missing_current_user_email") {
+    return "現在ユーザーのメールアドレスを取得できませんでした。Google アカウントにログインし直してから再度お試しください。";
+  }
+  if (reason === "group_fetch_failed") {
+    const entries = Object.entries(groupErrors || {});
+    const lines = entries.length
+      ? entries.map(([group, message]) => `・${group}: ${message}`).join("\n")
+      : "（詳細不明）";
+    return (
+      `現在のアカウント（${safeUser}）が管理者メンバーであるか確認できませんでした。\n` +
+      `以下のグループのメンバー取得に失敗しました:\n${lines}\n\n` +
+      `権限不足・外部グループ・削除済みグループの可能性があります。\n` +
+      `回避策: 自分のメールアドレスを管理者リストに直接追加してから保存してください。`
+    );
+  }
+  if (reason === "not_member") {
+    return (
+      `現在のアカウント（${safeUser}）が管理者リストに含まれていません。\n` +
+      `自分自身をロックアウトしないよう、現在のメールアドレスまたは所属グループをリストに含めてください。`
+    );
+  }
+  return detail || `管理者リストの検証に失敗しました（${reason || "unknown"}）。`;
+}
 
 function AdminSettingRow({ title, description, label, inputValue, placeholder, onInputChange, onSave, loading, saveDisabled, statusContent }) {
   return (
@@ -60,9 +86,6 @@ export default function AdminSettingsPage() {
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
 
-  const [groupCacheStatus, setGroupCacheStatus] = useState(null);
-  const [groupCacheLoading, setGroupCacheLoading] = useState(false);
-
   const { userEmail } = useAuth();
   const canManageAdminSettings = hasScriptRun();
   const normalizedAdminEmailInput = useMemo(
@@ -74,13 +97,12 @@ export default function AdminSettingsPage() {
     if (!canManageAdminSettings) return;
     (async () => {
       try {
-        const [key, email, restrict, cacheStatus] = await Promise.all([getAdminKey(), getAdminEmail(), getRestrictToFormOnly(), getGroupCacheStatus()]);
+        const [key, email, restrict] = await Promise.all([getAdminKey(), getAdminEmail(), getRestrictToFormOnly()]);
         setAdminKeyState(key);
         setAdminKeyInput(key);
         setAdminEmailState(email);
         setAdminEmailInput(email);
         setRestrictToFormOnlyState(restrict);
-        setGroupCacheStatus(cacheStatus);
       } catch (error) {
         console.error("[AdminSettingsPage] load failed", error);
         showAlert(error?.message || "管理者設定の読み込みに失敗しました");
@@ -119,14 +141,19 @@ export default function AdminSettingsPage() {
       setAdminEmailState(newVal);
       setAdminEmailInput(newVal);
       showAlert(newVal === "" ? "管理者メール制限を解除しました。メールアドレスによる管理者制限は行いません。" : "管理者メールを更新しました。設定済みメールと一致しないユーザーは管理者画面へアクセスできません。");
-      // キャッシュステータスを再取得（サーバー側で自動更新済み）
-      try {
-        const status = await getGroupCacheStatus();
-        setGroupCacheStatus(status);
-      } catch (_) { /* 非致命的 */ }
     } catch (error) {
       console.error(error);
-      showAlert(error?.message || "管理者メールの保存に失敗しました");
+      const serverResult = error?.result;
+      if (serverResult?.reason) {
+        showAlert(buildMembershipFailMessage({
+          userEmail: (userEmail || "").trim().toLowerCase(),
+          reason: serverResult.reason,
+          groupErrors: serverResult.groupErrors,
+          detail: serverResult.detail,
+        }));
+      } else {
+        showAlert(error?.message || "管理者メールの保存に失敗しました");
+      }
     } finally {
       setAdminEmailLoading(false);
     }
@@ -145,15 +172,17 @@ export default function AdminSettingsPage() {
       if (!currentEmail || !emails.includes(currentEmail)) {
         // グループメンバーシップをサーバー側で確認
         try {
-          const isMember = await checkAdminEmailMembership({
+          const check = await checkAdminEmailMembership({
             userEmail: currentEmail,
             adminEmails: normalizedAdminEmailInput,
           });
-          if (!isMember) {
-            showAlert(
-              `現在のアカウント（${currentEmail || "不明"}）が管理者リストに含まれていません。\n` +
-              `自分自身をロックアウトしないよう、現在のメールアドレスまたは所属グループをリストに含めてください。`
-            );
+          if (!check.isMember) {
+            showAlert(buildMembershipFailMessage({
+              userEmail: currentEmail,
+              reason: check.reason,
+              groupErrors: check.groupErrors,
+              detail: check.detail,
+            }));
             return;
           }
         } catch (error) {
@@ -169,22 +198,6 @@ export default function AdminSettingsPage() {
     { value: "cancel", label: "キャンセル", onSelect: adminEmailDialog.close },
     { value: "save", label: "保存する", variant: "primary", onSelect: handleSaveAdminEmail },
   ];
-
-  const handleRefreshGroupCache = async () => {
-    if (!canManageAdminSettings) return;
-    setGroupCacheLoading(true);
-    try {
-      await refreshGroupCache();
-      const status = await getGroupCacheStatus();
-      setGroupCacheStatus(status);
-      showAlert("グループメンバーキャッシュを更新しました。");
-    } catch (error) {
-      console.error("[AdminSettingsPage] refreshGroupCache failed", error);
-      showAlert(error?.message || "グループキャッシュの更新に失敗しました");
-    } finally {
-      setGroupCacheLoading(false);
-    }
-  };
 
   const handleToggleRestrictToFormOnly = async (event) => {
     if (!canManageAdminSettings) return;
@@ -236,27 +249,6 @@ export default function AdminSettingsPage() {
             saveDisabled={normalizedAdminEmailInput === adminEmail}
             statusContent={adminEmail ? (<>現在の管理者メール: <code>{adminEmail}</code></>) : "現在は管理者メールが未設定のため、メールアドレスによる管理者制限はありません。"}
           />
-          {adminEmail && groupCacheStatus && (
-            <div className="nf-mt-12">
-              <div className="nf-text-12 nf-text-muted nf-mb-6">
-                {"グループメンバーキャッシュ: "}
-                {groupCacheStatus.hasCachedGroups
-                  ? `${groupCacheStatus.groupEmails.length}件のグループをキャッシュ済み（最終更新: ${groupCacheStatus.updatedAt ? new Date(groupCacheStatus.updatedAt).toLocaleString("ja-JP") : "不明"}）`
-                  : "キャッシュなし（グループメールが管理者リストに含まれていないか、グループの解決に失敗しました）"}
-              </div>
-              <button
-                type="button"
-                className="nf-btn nf-btn-sm"
-                onClick={handleRefreshGroupCache}
-                disabled={groupCacheLoading}
-              >
-                {groupCacheLoading ? "更新中..." : "キャッシュを更新"}
-              </button>
-              <p className="nf-mt-4 nf-text-11 nf-text-muted">
-                グループメンバーシップの変更を反映するには、キャッシュを手動で更新してください。管理者メール保存時にも自動更新されます。
-              </p>
-            </div>
-          )}
         </div>
 
         <div className="nf-section-divider">

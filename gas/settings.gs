@@ -99,10 +99,12 @@ function SetAdminEmail_(newEmail) {
   if (emails.length > 0) {
     var currentUserEmail = NormalizeEmail_(Session.getActiveUser().getEmail() || "");
     if (!currentUserEmail) {
-      throw new Error(
+      var errMissing = new Error(
         "現在のアカウント（不明）が管理者リストに含まれていないため保存できません。" +
         "自分自身をロックアウトしないよう、現在のメールアドレスまたは所属グループをリストに含めてください。"
       );
+      errMissing.reason = "missing_current_user_email";
+      throw errMissing;
     }
     // 直接一致を試す
     var directMatch = false;
@@ -118,22 +120,29 @@ function SetAdminEmail_(newEmail) {
       return { ok: true, adminEmail: normalized };
     }
     // グループメンバーを解決して所属判定（キャッシュも同時構築）
-    var resolved = ResolveAllGroupMembers_(emails);
-    var foundInGroup = IsUserInResolvedGroups_(currentUserEmail, resolved);
+    var resolveResult = ResolveAllGroupMembers_(emails);
+    var resolvedGroups = resolveResult.resolved;
+    var groupErrors = resolveResult.errors;
+    var foundInGroup = IsUserInResolvedGroups_(currentUserEmail, resolvedGroups);
     // ライブ解決でもダメならキャッシュフォールバック
     if (!foundInGroup) {
-      for (var i = 0; i < emails.length; i++) {
-        if (IsUserInCachedGroup_(currentUserEmail, emails[i])) { foundInGroup = true; break; }
+      for (var j = 0; j < emails.length; j++) {
+        if (IsUserInCachedGroup_(currentUserEmail, emails[j])) { foundInGroup = true; break; }
       }
     }
     if (!foundInGroup) {
-      throw new Error(
+      var hasGroupErrors = false;
+      for (var k in groupErrors) { if (groupErrors.hasOwnProperty(k)) { hasGroupErrors = true; break; } }
+      var errNotMember = new Error(
         "現在のアカウント（" + currentUserEmail + "）が管理者リストに含まれていないため保存できません。" +
         "自分自身をロックアウトしないよう、現在のメールアドレスまたは所属グループをリストに含めてください。"
       );
+      errNotMember.reason = hasGroupErrors ? "group_fetch_failed" : "not_member";
+      if (hasGroupErrors) errNotMember.groupErrors = groupErrors;
+      throw errNotMember;
     }
     // 解決済みグループをキャッシュに保存
-    SaveResolvedGroupCache_(resolved);
+    SaveResolvedGroupCache_(resolvedGroups);
   }
   var props = GetAdminProps_();
   var normalized = emails.join(";");
@@ -159,9 +168,9 @@ function IsUserInAdminGroup_(userEmail, groupEmail) {
 
 /**
  * Google Groupのメンバーを全員取得する
- * グループでないメール、権限不足などの場合はnullを返す
+ * 成功時は { members: [...] }、失敗時は { error: '...' } を返す
  * @param {string} groupEmail - グループメール（正規化済み）
- * @return {string[]|null}
+ * @return {{members?: string[], error?: string}}
  */
 function ResolveGroupMembers_(groupEmail) {
   try {
@@ -172,26 +181,29 @@ function ResolveGroupMembers_(groupEmail) {
       var email = NormalizeEmail_(users[i].getEmail());
       if (email) members.push(email);
     }
-    return members;
+    return { members: members };
   } catch (e) {
-    return null;
+    return { error: (e && e.message) ? e.message : String(e) };
   }
 }
 
 /**
  * 全管理者メールに対してグループメンバーを解決する
  * @param {string[]} emails - 正規化済み管理者メール配列
- * @return {Object} グループメール→メンバー配列のマップ（グループでないメールは含まない）
+ * @return {{resolved: Object, errors: Object}} 成功したグループのメンバー一覧と、失敗したグループの例外メッセージ
  */
 function ResolveAllGroupMembers_(emails) {
   var resolved = {};
+  var errors = {};
   for (var i = 0; i < emails.length; i++) {
-    var members = ResolveGroupMembers_(emails[i]);
-    if (members !== null) {
-      resolved[emails[i]] = members;
+    var result = ResolveGroupMembers_(emails[i]);
+    if (result && result.members) {
+      resolved[emails[i]] = result.members;
+    } else if (result && result.error) {
+      errors[emails[i]] = result.error;
     }
   }
-  return resolved;
+  return { resolved: resolved, errors: errors };
 }
 
 /**
@@ -243,13 +255,14 @@ function RefreshGroupMemberCache_() {
   var cache = {};
   var hasAnyGroup = false;
   for (var i = 0; i < adminEmails.length; i++) {
-    var members = ResolveGroupMembers_(adminEmails[i]);
-    if (members !== null) {
-      cache[adminEmails[i]] = members;
+    var result = ResolveGroupMembers_(adminEmails[i]);
+    if (result && result.members) {
+      cache[adminEmails[i]] = result.members;
       hasAnyGroup = true;
     }
   }
   var props = GetAdminProps_();
+  props.setProperty(NFB_GROUP_CACHE_LAST_ATTEMPT_AT, String(Date.now()));
   if (hasAnyGroup) {
     var json = JSON.stringify({ updatedAt: Date.now(), groups: cache });
     if (json.length > 9000) {
@@ -276,6 +289,29 @@ function GetGroupMemberCache_() {
   } catch (e) {
     return null;
   }
+}
+
+/**
+ * キャッシュが古い/空であれば裏で再構築する
+ * - ロックが取れない（他プロセスが更新中）場合は何もしない
+ * - 直近試行から NFB_GROUP_CACHE_RETRY_INTERVAL_MS 以内は連続実行を避ける
+ */
+function MaybeRefreshGroupCacheIfStale_() {
+  try {
+    var props = GetAdminProps_();
+    var adminEmailsRaw = props.getProperty(NFB_ADMIN_EMAIL) || "";
+    if (!adminEmailsRaw) return;
+    var cache = GetGroupMemberCache_();
+    var now = Date.now();
+    var stale = !cache || !cache.updatedAt || (now - cache.updatedAt) > NFB_GROUP_CACHE_TTL_MS;
+    if (!stale) return;
+    var lastAttemptRaw = props.getProperty(NFB_GROUP_CACHE_LAST_ATTEMPT_AT);
+    var lastAttempt = lastAttemptRaw ? Number(lastAttemptRaw) : 0;
+    if (lastAttempt && (now - lastAttempt) < NFB_GROUP_CACHE_RETRY_INTERVAL_MS) return;
+    var lock = LockService.getScriptLock();
+    if (!lock.tryLock(0)) return;
+    try { RefreshGroupMemberCache_(); } finally { lock.releaseLock(); }
+  } catch (e) { /* 非致命的 */ }
 }
 
 /**
@@ -338,6 +374,7 @@ function IsAdminEmailMatched_(activeUserEmail) {
   if (!normalizedUserEmail) {
     return false;
   }
+  MaybeRefreshGroupCacheIfStale_();
   return IsAdminEmailOrGroupMatched_(normalizedUserEmail, adminEmails);
 }
 
@@ -498,52 +535,34 @@ function nfbCheckAdminEmailMembership(payload) {
     var userEmail = NormalizeEmail_(payload && payload.userEmail || "");
     var adminEmailsRaw = String(payload && payload.adminEmails || "");
     var adminEmails = ParseAdminEmails_(adminEmailsRaw);
-    if (adminEmails.length === 0) return { ok: true, isMember: true };
-    if (!userEmail) return { ok: true, isMember: false };
+    if (adminEmails.length === 0) return { ok: true, isMember: true, reason: "no_restriction" };
+    if (!userEmail) return { ok: true, isMember: false, reason: "missing_current_user_email" };
     // 直接一致
     for (var i = 0; i < adminEmails.length; i++) {
-      if (adminEmails[i] === userEmail) return { ok: true, isMember: true };
+      if (adminEmails[i] === userEmail) return { ok: true, isMember: true, reason: "direct_match" };
     }
-    // グループメンバー解決チェック（getUsers で全メンバー取得）
-    var resolved = ResolveAllGroupMembers_(adminEmails);
-    if (IsUserInResolvedGroups_(userEmail, resolved)) return { ok: true, isMember: true };
+    // ライブ解決
+    var resolveResult = ResolveAllGroupMembers_(adminEmails);
+    var resolvedGroups = resolveResult.resolved;
+    var groupErrors = resolveResult.errors;
+    if (IsUserInResolvedGroups_(userEmail, resolvedGroups)) {
+      return { ok: true, isMember: true, reason: "group_match" };
+    }
     // キャッシュフォールバック
-    for (var i = 0; i < adminEmails.length; i++) {
-      if (IsUserInCachedGroup_(userEmail, adminEmails[i])) return { ok: true, isMember: true };
-    }
-    return { ok: true, isMember: false };
-  });
-}
-
-/**
- * グループメンバーキャッシュを手動更新するAPI（管理者専用）
- * @return {Object}
- */
-function nfbRefreshGroupCache() {
-  return nfbSafeCall_(function() {
-    return RefreshGroupMemberCache_();
-  });
-}
-
-/**
- * グループメンバーキャッシュのステータスを取得するAPI（管理者専用）
- * @return {Object}
- */
-function nfbGetGroupCacheStatus() {
-  return nfbSafeCall_(function() {
-    var cache = GetGroupMemberCache_();
-    var groupNames = [];
-    if (cache && cache.groups) {
-      for (var key in cache.groups) {
-        if (cache.groups.hasOwnProperty(key)) groupNames.push(key);
+    for (var j = 0; j < adminEmails.length; j++) {
+      if (IsUserInCachedGroup_(userEmail, adminEmails[j])) {
+        return { ok: true, isMember: true, reason: "cached_group_match" };
       }
     }
-    return {
+    var hasGroupErrors = false;
+    for (var k in groupErrors) { if (groupErrors.hasOwnProperty(k)) { hasGroupErrors = true; break; } }
+    var response = {
       ok: true,
-      hasCachedGroups: groupNames.length > 0,
-      groupEmails: groupNames,
-      updatedAt: cache ? cache.updatedAt : null
+      isMember: false,
+      reason: hasGroupErrors ? "group_fetch_failed" : "not_member"
     };
+    if (hasGroupErrors) response.groupErrors = groupErrors;
+    return response;
   });
 }
 

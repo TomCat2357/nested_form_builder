@@ -179,9 +179,16 @@ export const getAdminKey = createGasEndpoint({ fnName: "nfbGetAdminKey", validat
 export const setAdminKey = createGasEndpoint({ fnName: "nfbSetAdminKey", mapResult: (r) => r.adminKey || "", defaultError: "Set admin key failed" });
 export const getAdminEmail = createGasEndpoint({ fnName: "nfbGetAdminEmail", validate: () => ({}), mapResult: (r) => r.adminEmail || "", defaultError: "Get admin email failed" });
 export const setAdminEmail = createGasEndpoint({ fnName: "nfbSetAdminEmail", mapResult: (r) => r.adminEmail || "", defaultError: "Set admin email failed" });
-export const checkAdminEmailMembership = createGasEndpoint({ fnName: "nfbCheckAdminEmailMembership", mapResult: (r) => Boolean(r.isMember), defaultError: "Admin email membership check failed" });
-export const refreshGroupCache = createGasEndpoint({ fnName: "nfbRefreshGroupCache", validate: () => ({}), defaultError: "Group cache refresh failed" });
-export const getGroupCacheStatus = createGasEndpoint({ fnName: "nfbGetGroupCacheStatus", validate: () => ({}), defaultError: "Get group cache status failed" });
+export const checkAdminEmailMembership = createGasEndpoint({
+  fnName: "nfbCheckAdminEmailMembership",
+  mapResult: (r) => ({
+    isMember: Boolean(r.isMember),
+    reason: r.reason || null,
+    groupErrors: r.groupErrors || {},
+    detail: r.detail || "",
+  }),
+  defaultError: "Admin email membership check failed",
+});
 export const getRestrictToFormOnly = async () => { const r = await fetchGasApi("nfbGetRestrictToFormOnly", {}, "Get restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
 export const setRestrictToFormOnly = async (value) => { const r = await fetchGasApi("nfbSetRestrictToFormOnly", value, "Set restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
