@@ -56,7 +56,9 @@ function Sheets_readColumnPaths_(sheet, lastColumn) {
 }
 
 function Sheets_buildRecordFromRow_(rowData, columnPaths) {
-  var id = rowData[0] ? String(rowData[0]) : "";
+  var fixedColMap = Sheets_buildFixedColMapFromPaths_(columnPaths);
+  var idIdx = fixedColMap.hasOwnProperty("id") ? fixedColMap.id : 0;
+  var id = rowData[idIdx] ? String(rowData[idIdx]) : "";
   if (!id) return null;
 
   var formatDt = function(val) {
@@ -71,20 +73,29 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     if (val === null || val === undefined || val === "") return null;
     return String(val);
   };
+  var pick = function(key, fallback) {
+    if (!fixedColMap.hasOwnProperty(key)) return fallback;
+    var v = rowData[fixedColMap[key]];
+    return v !== undefined ? v : fallback;
+  };
+
+  var createdAtRaw = pick("createdAt", "");
+  var modifiedAtRaw = pick("modifiedAt", "");
+  var deletedAtRaw = pick("deletedAt", "");
 
   var record = {
     id: id,
-    "No.": rowData[1] || "",
-    createdAt: formatDt(rowData[2]),
-    modifiedAt: formatDt(rowData[3]),
-    deletedAt: formatNullableDt(rowData[4]),
-    createdBy: rowData[5] || "",
-    modifiedBy: rowData[6] || "",
-    deletedBy: rowData[7] || "",
-    driveFolderUrl: rowData[8] || "",
-    createdAtUnixMs: Sheets_toUnixMs_(rowData[2], true),
-    modifiedAtUnixMs: Sheets_toUnixMs_(rowData[3], true),
-    deletedAtUnixMs: Sheets_toUnixMs_(rowData[4], true),
+    "No.": pick("No.", "") || "",
+    createdAt: formatDt(createdAtRaw),
+    modifiedAt: formatDt(modifiedAtRaw),
+    deletedAt: formatNullableDt(deletedAtRaw),
+    createdBy: pick("createdBy", "") || "",
+    modifiedBy: pick("modifiedBy", "") || "",
+    deletedBy: pick("deletedBy", "") || "",
+    driveFolderUrl: pick("driveFolderUrl", "") || "",
+    createdAtUnixMs: Sheets_toUnixMs_(createdAtRaw, true),
+    modifiedAtUnixMs: Sheets_toUnixMs_(modifiedAtRaw, true),
+    deletedAtUnixMs: Sheets_toUnixMs_(deletedAtRaw, true),
     data: {},
     dataUnixMs: {}
   };

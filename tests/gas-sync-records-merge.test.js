@@ -257,6 +257,69 @@ test("Sync_syncFixedMetaColumnsFromRecord_ は overwrite 時に deletedAt と de
   assert.equal(rowData[8], "");
 });
 
+test("Sync_syncFixedMetaColumnsFromRecord_ は fixedColMap 指定時に動的な列位置を使う", () => {
+  // driveFolderUrl を末尾列(index 20)、他の固定メタは既定位置にマップ
+  const rowData = new Array(21).fill("");
+  rowData[0] = "rec_1";
+  const rowFormats = new Array(21).fill("General");
+
+  const changed = Sync_syncFixedMetaColumnsFromRecord_({
+    rowData,
+    rowFormats,
+    record: {
+      "No.": "5",
+      createdAtUnixMs: 1700000000100,
+      modifiedAtUnixMs: 1700000000200,
+      createdBy: "a@example.com",
+      modifiedBy: "b@example.com",
+      driveFolderUrl: "https://drive.google.com/drive/folders/xyz",
+    },
+    mode: "overwrite",
+    fixedColMap: {
+      id: 0, "No.": 1, createdAt: 2, modifiedAt: 3, deletedAt: 4,
+      createdBy: 5, modifiedBy: 6, deletedBy: 7, driveFolderUrl: 20,
+    },
+  });
+
+  assert.equal(changed, true);
+  assert.equal(rowData[8], ""); // 旧既定位置は書かれない
+  assert.equal(rowData[20], "https://drive.google.com/drive/folders/xyz");
+});
+
+test("Sync_syncFixedMetaColumnsFromRecord_ は fixedColMap に driveFolderUrl が無いとき書き込まない", () => {
+  // driveFolderUrl 列を持たない古いシート想定
+  const rowData = new Array(15).fill("");
+  rowData[0] = "rec_1";
+  const rowFormats = new Array(15).fill("General");
+
+  const changed = Sync_syncFixedMetaColumnsFromRecord_({
+    rowData,
+    rowFormats,
+    record: {
+      "No.": "5",
+      createdAtUnixMs: 1700000000100,
+      modifiedAtUnixMs: 1700000000200,
+      createdBy: "a@example.com",
+      modifiedBy: "b@example.com",
+      driveFolderUrl: "https://drive.google.com/drive/folders/xyz",
+    },
+    mode: "overwrite",
+    fixedColMap: {
+      id: 0, "No.": 1, createdAt: 2, modifiedAt: 3, deletedAt: 4,
+      createdBy: 5, modifiedBy: 6, deletedBy: 7,
+      // driveFolderUrl なし
+    },
+  });
+
+  assert.equal(changed, true);
+  assert.equal(rowData[1], 5);
+  assert.equal(rowData[5], "a@example.com");
+  // driveFolderUrl はどの列にも書かれない
+  for (var i = 0; i < rowData.length; i++) {
+    assert.notEqual(rowData[i], "https://drive.google.com/drive/folders/xyz");
+  }
+});
+
 test("Sync_resolveNewRecordMetadata_ はキャッシュの No. / createdAt / createdBy を優先する", () => {
   const metadata = Sync_resolveNewRecordMetadata_({
     record: {

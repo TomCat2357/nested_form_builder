@@ -101,6 +101,9 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
   Sheets_prepareResponses_(ctx);
   Sheets_ensureHeaderMatrix_(sheet, ctx.order);
   var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
+  var driveFolderUrlCol = keyToColumn.hasOwnProperty("driveFolderUrl")
+    ? keyToColumn["driveFolderUrl"] - 1
+    : -1;
 
   var lastColumn = Math.max(sheet.getLastColumn(), 9);
   var rowIndex = Sheets_findRowById_(sheet, ctx.id);
@@ -138,7 +141,9 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
     rowData[3] = currentTs; // modifiedAt
     rowData[5] = insertMeta.createdBy;
     rowData[6] = email;     // modifiedBy
-    rowData[8] = ctx.raw.driveFolderUrl || "";
+    if (driveFolderUrlCol >= 0) {
+      rowData[driveFolderUrlCol] = ctx.raw.driveFolderUrl || "";
+    }
   } else {
     var existingValues = sheet.getRange(rowIndex, 1, 1, lastColumn).getValues()[0];
     for (var c = 0; c < lastColumn; c++) rowData[c] = existingValues[c] !== undefined ? existingValues[c] : "";
@@ -151,7 +156,9 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
     }
     rowData[3] = currentTs; // modifiedAt
     rowData[6] = email;     // modifiedBy
-    rowData[8] = ctx.raw.driveFolderUrl || "";
+    if (driveFolderUrlCol >= 0) {
+      rowData[driveFolderUrlCol] = ctx.raw.driveFolderUrl || "";
+    }
   }
 
   formats[2] = "0";
@@ -198,7 +205,8 @@ function Sheets_deleteRecordById_(sheet, id) {
   var now = Date.now();
   var email = Session.getActiveUser().getEmail() || "";
 
-  var range = sheet.getRange(rowIndex, 2, 1, 8); // Col 2(No.) to Col 9(driveFolderUrl)
+  // 固定メタ列は常に Col 2(No.) 〜 Col 8(deletedBy) の 7 列。driveFolderUrl は触らない。
+  var range = sheet.getRange(rowIndex, 2, 1, 7);
   var values = range.getValues()[0];
   var formats = range.getNumberFormats()[0];
 

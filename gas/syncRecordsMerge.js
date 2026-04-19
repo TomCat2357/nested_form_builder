@@ -92,26 +92,42 @@ function Sync_syncFixedMetaColumnsFromRecord_(params) {
       var parsed = parseInt(value, 10);
       return isFinite(parsed) ? parsed : null;
     };
-  var specs = mode === "overwrite"
+  // driveFolderUrl は古いシートでは列位置が異なる（あるいは欠落している）ため、
+  // 呼び出し元から fixedColMap を受け取って動的に解決する。未指定時は従来の既定位置 (8)。
+  var fixedColMap = params && params.fixedColMap ? params.fixedColMap : null;
+  var resolveColIdx = function(key, fallback) {
+    if (fixedColMap && fixedColMap.hasOwnProperty(key)) return fixedColMap[key];
+    return fallback;
+  };
+  var driveFolderUrlColIdx = fixedColMap
+    ? (fixedColMap.hasOwnProperty("driveFolderUrl") ? fixedColMap.driveFolderUrl : -1)
+    : 8;
+
+  var baseSpecs = mode === "overwrite"
     ? [
-      { key: "No.", colIdx: 1, numberFormat: "0" },
-      { key: "createdAt", colIdx: 2, numberFormat: "0" },
-      { key: "modifiedAt", colIdx: 3, numberFormat: "0" },
-      { key: "deletedAt", colIdx: 4, numberFormat: "0" },
-      { key: "createdBy", colIdx: 5, numberFormat: null },
-      { key: "modifiedBy", colIdx: 6, numberFormat: null },
-      { key: "deletedBy", colIdx: 7, numberFormat: null },
-      { key: "driveFolderUrl", colIdx: 8, numberFormat: null },
+      { key: "No.", colIdx: resolveColIdx("No.", 1), numberFormat: "0" },
+      { key: "createdAt", colIdx: resolveColIdx("createdAt", 2), numberFormat: "0" },
+      { key: "modifiedAt", colIdx: resolveColIdx("modifiedAt", 3), numberFormat: "0" },
+      { key: "deletedAt", colIdx: resolveColIdx("deletedAt", 4), numberFormat: "0" },
+      { key: "createdBy", colIdx: resolveColIdx("createdBy", 5), numberFormat: null },
+      { key: "modifiedBy", colIdx: resolveColIdx("modifiedBy", 6), numberFormat: null },
+      { key: "deletedBy", colIdx: resolveColIdx("deletedBy", 7), numberFormat: null },
+      { key: "driveFolderUrl", colIdx: driveFolderUrlColIdx, numberFormat: null },
     ]
     : [
-      { key: "No.", colIdx: 1, numberFormat: "0" },
-      { key: "createdAt", colIdx: 2, numberFormat: "0" },
-      { key: "deletedAt", colIdx: 4, numberFormat: "0" },
-      { key: "createdBy", colIdx: 5, numberFormat: null },
-      { key: "modifiedBy", colIdx: 6, numberFormat: null },
-      { key: "deletedBy", colIdx: 7, numberFormat: null },
-      { key: "driveFolderUrl", colIdx: 8, numberFormat: null },
+      { key: "No.", colIdx: resolveColIdx("No.", 1), numberFormat: "0" },
+      { key: "createdAt", colIdx: resolveColIdx("createdAt", 2), numberFormat: "0" },
+      { key: "deletedAt", colIdx: resolveColIdx("deletedAt", 4), numberFormat: "0" },
+      { key: "createdBy", colIdx: resolveColIdx("createdBy", 5), numberFormat: null },
+      { key: "modifiedBy", colIdx: resolveColIdx("modifiedBy", 6), numberFormat: null },
+      { key: "deletedBy", colIdx: resolveColIdx("deletedBy", 7), numberFormat: null },
+      { key: "driveFolderUrl", colIdx: driveFolderUrlColIdx, numberFormat: null },
     ];
+  // colIdx < 0 のものは対象外（シートに該当列が存在しない）
+  var specs = [];
+  for (var s = 0; s < baseSpecs.length; s++) {
+    if (baseSpecs[s].colIdx >= 0) specs.push(baseSpecs[s]);
+  }
   var changed = false;
 
   for (var i = 0; i < specs.length; i++) {

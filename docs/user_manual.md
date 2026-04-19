@@ -3,7 +3,7 @@
 **バージョン**: 3.1
 **最終更新**: 2026年4月8日
 
-このマニュアルは、次の公開環境に合わせて更新しています。
+<u>このマニュアルは、次の公開環境に合わせて更新しています。</u>
 
 ```text
 https://script.google.com/macros/s/AKfycbzEzpdLK7i8Qic0RxycSGuzYbBpoFDd3KSbwDmU1vaUPU0K_fYv0aUL-rYCB1yyLk5yAg/exec

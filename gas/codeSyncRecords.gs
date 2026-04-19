@@ -89,6 +89,8 @@ function SyncRecords_(ctx) {
       var temporalTypeMap = ResolveTemporalTypeMap_(ctx);
       Sheets_ensureHeaderMatrix_(sheet, order);
       var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
+      var fixedColMap = Sheets_buildFixedColMapFromSheet_(sheet);
+      var driveFolderUrlCol = fixedColMap.hasOwnProperty("driveFolderUrl") ? fixedColMap.driveFolderUrl : -1;
 
       var lastColumn = Math.max(sheet.getLastColumn(), 10);
       var lastRow = sheet.getLastRow();
@@ -171,7 +173,9 @@ function SyncRecords_(ctx) {
             rowData[1] = insertMeta.recordNo;
             rowData[2] = insertMeta.createdAt;
             rowData[5] = insertMeta.createdBy;
-            rowData[8] = rec.driveFolderUrl || "";
+            if (driveFolderUrlCol >= 0) {
+              rowData[driveFolderUrlCol] = rec.driveFolderUrl || "";
+            }
             maxNo = Math.max(maxNo, insertMeta.recordNo);
 
             localIndex = existingData.length;
@@ -192,6 +196,7 @@ function SyncRecords_(ctx) {
               rowFormats: rowFormats,
               record: rec,
               mode: "overwrite",
+              fixedColMap: fixedColMap,
               toUnixMs: function(value) {
                 return Sheets_toUnixMs_(value, true);
               },

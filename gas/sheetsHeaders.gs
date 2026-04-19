@@ -332,3 +332,27 @@ function Sheets_buildHeaderKeyMap_(sheet) {
   }
   return map;
 }
+
+/**
+ * 固定メタ列（id, No., createdAt, ..., driveFolderUrl）の 0-based インデックス マップ。
+ * ヘッダー パスから動的に解決するため、シート上で列位置が想定と異なっても動作する。
+ * 存在しないキーはマップに含まれない（呼び出し側で有無を確認してから参照すること）。
+ */
+function Sheets_buildFixedColMapFromPaths_(columnPaths) {
+  var map = {};
+  if (!columnPaths || !columnPaths.length) return map;
+  for (var i = 0; i < columnPaths.length; i++) {
+    var p = columnPaths[i];
+    if (p && p.path && p.path.length === 1 && NFB_RESERVED_HEADER_KEYS[p.path[0]]) {
+      map[p.path[0]] = p.index;
+    }
+  }
+  return map;
+}
+
+function Sheets_buildFixedColMapFromSheet_(sheet) {
+  var lastColumn = sheet.getLastColumn();
+  if (!lastColumn) return {};
+  var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
+  return Sheets_buildFixedColMapFromPaths_(columnPaths);
+}
