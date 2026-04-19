@@ -2,7 +2,7 @@ import { formatUnixMsDate, formatUnixMsTime, toUnixMs } from "./dateTime.js";
 import { deepEqual } from "./deepEqual.js";
 import { traverseSchema } from "../core/schemaUtils.js";
 import { formatPhoneValueForField } from "../core/phone.js";
-import { sanitizeFileUploadEntry, normalizeFileUploadEntries } from "../core/collect.js";
+import { sanitizeFileUploadEntry, normalizeFileUploadEntries, parseFileUploadStorage } from "../core/collect.js";
 
 const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
   if (field.type !== "time" && field.type !== "date") return rawValue;
@@ -256,4 +256,15 @@ export const collectDefaultNowResponses = (schema, now = new Date(), options = {
 
 export const hasDirtyChanges = (a, b) => {
   return !deepEqual(a || {}, b || {});
+};
+
+export const collectFileUploadFolderUrls = (schema, data = {}) => {
+  const folderUrls = {};
+  traverseSchema(schema, (field, context) => {
+    if (field?.type !== "fileUpload" || !field?.id) return;
+    const baseKey = context.pathSegments.join("|");
+    const parsed = parseFileUploadStorage(data?.[baseKey]);
+    if (parsed.folderUrl) folderUrls[field.id] = parsed.folderUrl;
+  });
+  return folderUrls;
 };

@@ -9,32 +9,50 @@ export const sanitizeFileUploadEntry = (entry) => {
   return { name, driveFileId, driveFileUrl };
 };
 
-export const normalizeFileUploadEntries = (rawValue) => {
+export const parseFileUploadStorage = (rawValue) => {
   let source = rawValue;
   if (typeof source === "string") {
     const trimmed = source.trim();
-    if (!trimmed) return [];
+    if (!trimmed) return { files: [], folderUrl: "" };
     try {
       source = JSON.parse(trimmed);
     } catch (_error) {
-      return [];
+      return { files: [], folderUrl: "" };
     }
   }
-  if (!Array.isArray(source)) return [];
-  return source.map(sanitizeFileUploadEntry).filter(Boolean);
+  if (Array.isArray(source)) {
+    return {
+      files: source.map(sanitizeFileUploadEntry).filter(Boolean),
+      folderUrl: "",
+    };
+  }
+  if (source && typeof source === "object") {
+    const filesSource = Array.isArray(source.files) ? source.files : [];
+    const folderUrl = typeof source.folderUrl === "string" ? source.folderUrl.trim() : "";
+    return {
+      files: filesSource.map(sanitizeFileUploadEntry).filter(Boolean),
+      folderUrl,
+    };
+  }
+  return { files: [], folderUrl: "" };
 };
 
-const serializeFileUploadValue = (value) => {
+export const normalizeFileUploadEntries = (rawValue) => parseFileUploadStorage(rawValue).files;
+
+const serializeFileUploadValue = (value, folderUrl = "") => {
   const files = Array.isArray(value)
     ? value.map((entry) => sanitizeFileUploadEntry(entry)).filter(Boolean)
     : [];
-  if (files.length === 0) return "";
-  return JSON.stringify(files);
+  const trimmedFolderUrl = typeof folderUrl === "string" ? folderUrl.trim() : "";
+  if (files.length === 0 && !trimmedFolderUrl) return "";
+  if (!trimmedFolderUrl) return JSON.stringify(files);
+  return JSON.stringify({ files, folderUrl: trimmedFolderUrl });
 };
 
-export const collectResponses = (fields, responses) => {
+export const collectResponses = (fields, responses, options = {}) => {
   const out = {};
   const orderList = [];
+  const fileUploadFolderUrls = options?.fileUploadFolderUrls || {};
 
   traverseSchema(fields, (field, context) => {
     const value = responses?.[field.id];
@@ -51,7 +69,10 @@ export const collectResponses = (fields, responses) => {
       out[key] = "●";
       orderList.push(key);
     } else if (field.type === "fileUpload") {
-      const serialized = serializeFileUploadValue(value);
+      const folderUrl = typeof fileUploadFolderUrls[field.id] === "string"
+        ? fileUploadFolderUrls[field.id]
+        : "";
+      const serialized = serializeFileUploadValue(value, folderUrl);
       if (serialized) {
         out[base] = serialized;
         orderList.push(base);
