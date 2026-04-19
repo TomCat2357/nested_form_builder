@@ -31,6 +31,7 @@ import {
   normalizeDriveFolderState,
   resolveEffectiveDriveFolderUrl,
 } from "../../utils/driveFolderState.js";
+import { collectFileUploadFields } from "../../core/schema.js";
 import { buildSharedFormUrl, buildSharedRecordUrl } from "../../utils/formShareUrl.js";
 import { RendererRecursive } from "./FieldRenderer.jsx";
 
@@ -48,8 +49,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     readOnly = false,
     entryId,
     onChildFormJump,
-    driveFolderState,
-    onDriveFolderStateChange,
+    driveFolderStates,
+    onFieldDriveFolderStateChange,
     canDeleteDriveFolder,
     onDeleteDriveFolder,
   },
@@ -141,15 +142,24 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     [fieldLabels, fieldValues, responses],
   );
 
+  const primaryFileUploadFieldId = useMemo(
+    () => collectFileUploadFields(schema)[0]?.id || "",
+    [schema],
+  );
+  const primaryDriveFolderState = useMemo(
+    () => normalizeDriveFolderState((driveFolderStates || {})[primaryFileUploadFieldId]),
+    [driveFolderStates, primaryFileUploadFieldId],
+  );
+
   const tokenContext = useMemo(() => {
     const baseUrl = typeof window !== "undefined" ? (window.__GAS_WEBAPP_URL__ || window.location.origin) : "";
     const formId = settings.formId || "";
     const recordId = recordIdRef.current;
-    const folderUrl = resolveEffectiveDriveFolderUrl(driveFolderState) || "";
+    const folderUrl = resolveEffectiveDriveFolderUrl(primaryDriveFolderState) || "";
     const formUrl = buildSharedFormUrl(baseUrl, formId);
     const recordUrl = buildSharedRecordUrl(baseUrl, formId, recordId);
     return { now: new Date(), recordId, folderUrl, formUrl, recordUrl };
-  }, [settings.formId, driveFolderState]);
+  }, [settings.formId, primaryDriveFolderState]);
 
   const { computedValues, computedErrors } = useMemo(
     () => evaluateAllComputedFields(schema, responses, baseLabelValueMap, tokenContext),
@@ -183,21 +193,21 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 
   const [isSaving, setIsSaving] = useState(false);
   const updateDriveFolderStateFromPrintResult = (result) => {
-    if (typeof onDriveFolderStateChange !== "function") return;
-    onDriveFolderStateChange((prevState) => {
-      const prev = normalizeDriveFolderState(prevState);
+    if (typeof onFieldDriveFolderStateChange !== "function") return;
+    if (!primaryFileUploadFieldId) return;
+    onFieldDriveFolderStateChange(primaryFileUploadFieldId, (prev) => {
       const currentEffectiveFolderUrl = resolveEffectiveDriveFolderUrl(prev);
       const nextResolvedUrl = typeof result?.folderUrl === "string" && result.folderUrl.trim()
         ? result.folderUrl.trim()
         : (currentEffectiveFolderUrl || prev.resolvedUrl);
       const keepAutoCreated = prev.autoCreated && prev.resolvedUrl.trim() && prev.resolvedUrl.trim() === nextResolvedUrl;
-      return normalizeDriveFolderState({
+      return {
         ...prev,
         resolvedUrl: nextResolvedUrl,
         inputUrl: prev.inputUrl.trim() ? prev.inputUrl : nextResolvedUrl,
         autoCreated: keepAutoCreated || result?.autoCreated === true,
         pendingPrintFileIds: appendDriveFileId(prev.pendingPrintFileIds, result?.fileId),
-      });
+      };
     });
   };
   const handleFieldTemplateAction = async (field) => {
@@ -211,7 +221,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     }
 
     const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, settings);
-    const effectiveFolderUrl = resolveEffectiveDriveFolderUrl(driveFolderState);
+    const effectiveFolderUrl = resolveEffectiveDriveFolderUrl(primaryDriveFolderState);
     const baseDriveTemplateSettings = {
       ...driveSettings,
       ...(effectiveFolderUrl ? { folderUrl: effectiveFolderUrl } : {}),
@@ -235,7 +245,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
           recordNo: settings.recordNo || "",
           modifiedAt: settings.modifiedAtUnixMs ?? settings.modifiedAt ?? "",
           printPayload: getPrintDocumentPayload({
-            driveFolderState,
+            driveFolderState: primaryDriveFolderState,
             useTemporaryFolder: true,
           }),
         },
@@ -269,7 +279,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     settings,
     recordId: recordIdRef.current,
     omitEmptyRows: options.omitEmptyRows,
-    driveFolderState: options.driveFolderState ?? driveFolderState,
+    driveFolderState: options.driveFolderState ?? primaryDriveFolderState,
     useTemporaryFolder: options.useTemporaryFolder === true,
   });
 
@@ -394,8 +404,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         onChildFormJump={onChildFormJump}
         driveSettings={driveSettings}
         gasClientRef={gasClientRef}
-        driveFolderState={driveFolderState}
-        onDriveFolderStateChange={onDriveFolderStateChange}
+        driveFolderStates={driveFolderStates}
+        onFieldDriveFolderStateChange={onFieldDriveFolderStateChange}
         onTemplateAction={handleFieldTemplateAction}
         canDeleteDriveFolder={canDeleteDriveFolder}
         onDeleteDriveFolder={onDeleteDriveFolder}

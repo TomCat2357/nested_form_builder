@@ -74,6 +74,31 @@ export const areDriveFolderStatesEqual = (left, right) => {
     && areDriveFileIdListsEqual(a.pendingPrintFileIds, b.pendingPrintFileIds);
 };
 
+export const createEmptyDriveFolderStates = () => ({});
+
+export const getDriveFolderStateForField = (statesMap, fieldId) =>
+  normalizeDriveFolderState((statesMap || {})[fieldId]);
+
+export const setDriveFolderStateForField = (statesMap, fieldId, updater) => {
+  const base = statesMap || {};
+  const current = normalizeDriveFolderState(base[fieldId]);
+  const nextRaw = typeof updater === "function" ? updater(current) : updater;
+  return { ...base, [fieldId]: normalizeDriveFolderState(nextRaw) };
+};
+
+export const areDriveFolderStatesMapsEqual = (left, right) => {
+  const a = left || {};
+  const b = right || {};
+  const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+  for (const key of keys) {
+    if (!areDriveFolderStatesEqual(a[key], b[key])) return false;
+  }
+  return true;
+};
+
+export const hasAnyConfiguredDriveFolder = (statesMap) =>
+  Object.values(statesMap || {}).some((value) => hasConfiguredDriveFolder(value));
+
 export const markDriveFolderForDeletion = (value) => {
   const normalized = normalizeDriveFolderState(value);
   const targetUrl = resolveEffectiveDriveFolderUrl(normalized) || normalized.pendingDeleteUrl.trim();

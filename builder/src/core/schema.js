@@ -500,4 +500,20 @@ export const findFirstFileUploadField = (fields) => {
   return null;
 };
 
+export const collectFileUploadFields = (fields) => {
+  const out = [];
+  const walk = (list) => {
+    for (const field of (list || [])) {
+      if (field?.type === "fileUpload") out.push(field);
+      if (field?.childrenByValue) {
+        for (const children of Object.values(field.childrenByValue)) {
+          walk(children);
+        }
+      }
+    }
+  };
+  walk(fields);
+  return out;
+};
+
 export { resolvePrintTemplateFieldLabel };

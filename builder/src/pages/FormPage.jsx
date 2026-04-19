@@ -6,7 +6,7 @@ import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import PreviewPage from "../features/preview/PreviewPage.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { dataStore } from "../app/state/dataStore.js";
-import { restoreResponsesFromData, hasDirtyChanges, collectDefaultNowResponses } from "../utils/responses.js";
+import { restoreResponsesFromData, hasDirtyChanges, collectDefaultNowResponses, collectFileUploadFolderUrls } from "../utils/responses.js";
 import {
   acquireSaveLock,
   createRecordPrintDocument,
@@ -19,8 +19,9 @@ import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
-import { normalizeSchemaIDs, findFirstFileUploadField } from "../core/schema.js";
+import { normalizeSchemaIDs, collectFileUploadFields } from "../core/schema.js";
 import { traverseSchema } from "../core/schemaUtils.js";
+import { collectResponses as coreCollectResponses } from "../core/collect.js";
 import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../core/constants.js";
 import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.js";
 import { useEditLock } from "../app/hooks/useEditLock.js";
@@ -47,13 +48,15 @@ import { buildPrimarySaveOptions } from "../utils/settings.js";
 import { resolveSharedPrintFileNameTemplate } from "../utils/printTemplateAction.js";
 import {
   appendDriveFileId,
-  areDriveFolderStatesEqual,
+  areDriveFolderStatesMapsEqual,
   createEmptyDriveFolderState,
-  hasConfiguredDriveFolder,
+  createEmptyDriveFolderStates,
+  hasAnyConfiguredDriveFolder,
   markDriveFolderForDeletion,
   normalizeDriveFileIds,
   normalizeDriveFolderState,
   resolveEffectiveDriveFolderUrl,
+  setDriveFolderStateForField,
 } from "../utils/driveFolderState.js";
 import {
   fallbackForForm,
@@ -117,32 +120,52 @@ export default function FormPage() {
       } catch(e) {}
     }
   }, [responses, draftKey, entryId]);
-  const [driveFolderState, setDriveFolderState] = useState(() => {
-    if (entryId) return createEmptyDriveFolderState();
+  const [driveFolderStates, setDriveFolderStates] = useState(() => {
+    if (entryId) return createEmptyDriveFolderStates();
     try {
       const saved = sessionStorage.getItem(driveFolderDraftKey);
-      if (saved) return normalizeDriveFolderState(JSON.parse(saved));
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const next = {};
+          for (const [fid, v] of Object.entries(parsed)) {
+            next[fid] = normalizeDriveFolderState(v);
+          }
+          return next;
+        }
+      }
     } catch (e) {}
-    return createEmptyDriveFolderState();
+    return createEmptyDriveFolderStates();
   });
 
   useEffect(() => {
     if (entryId) return;
     try {
       const saved = sessionStorage.getItem(driveFolderDraftKey);
-      setDriveFolderState(saved ? normalizeDriveFolderState(JSON.parse(saved)) : createEmptyDriveFolderState());
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          const next = {};
+          for (const [fid, v] of Object.entries(parsed)) {
+            next[fid] = normalizeDriveFolderState(v);
+          }
+          setDriveFolderStates(next);
+          return;
+        }
+      }
+      setDriveFolderStates(createEmptyDriveFolderStates());
     } catch (e) {
-      setDriveFolderState(createEmptyDriveFolderState());
+      setDriveFolderStates(createEmptyDriveFolderStates());
     }
   }, [driveFolderDraftKey, entryId]);
 
   useEffect(() => {
     if (!entryId) {
       try {
-        sessionStorage.setItem(driveFolderDraftKey, JSON.stringify(driveFolderState));
+        sessionStorage.setItem(driveFolderDraftKey, JSON.stringify(driveFolderStates));
       } catch (e) {}
     }
-  }, [driveFolderDraftKey, driveFolderState, entryId]);
+  }, [driveFolderDraftKey, driveFolderStates, entryId]);
   const [currentRecordId, setCurrentRecordId] = useState(entryId || null);
 
   const unsavedDialog = useConfirmDialog({ intent: null });
@@ -151,7 +174,7 @@ export default function FormPage() {
   const [mode, setMode] = useState(entryId ? "view" : "edit");
   const [isReloading, setIsReloading] = useState(false);
   const entryActionDialog = useConfirmDialog({ action: null });
-  const driveFolderDialog = useConfirmDialog();
+  const driveFolderDialog = useConfirmDialog({ fieldId: "" });
   const unlinkFolderDialog = useConfirmDialog({ errorMessage: "" });
   const pendingUnlinkSaveRef = useRef(null);
   const [copySourceId, setCopySourceId] = useState("");
@@ -178,7 +201,7 @@ export default function FormPage() {
   });
 
   const initialResponsesRef = useRef({});
-  const initialDriveFolderStateRef = useRef(createEmptyDriveFolderState());
+  const initialDriveFolderStatesRef = useRef(createEmptyDriveFolderStates());
   const previewRef = useRef(null);
   const newEntryInitKeyRef = useRef(null);
   const responseMutationSeqRef = useRef(0);
@@ -207,7 +230,7 @@ export default function FormPage() {
   const loadingFormsRef = useLatestRef(loadingForms);
   const responsesRef = useLatestRef(responses);
   const entryRef = useLatestRef(entry);
-  const driveFolderStateRef = useLatestRef(driveFolderState);
+  const driveFolderStatesRef = useLatestRef(driveFolderStates);
 
   useEffect(() => {
     if (form?.readOnly) {
@@ -221,17 +244,21 @@ export default function FormPage() {
   const isFormReadOnly = !!form?.readOnly;
   const canCopyFromExistingRecord = !entryId && !isViewMode && !isFormReadOnly;
   const isDriveFolderDirty = useMemo(
-    () => !areDriveFolderStatesEqual(initialDriveFolderStateRef.current, driveFolderState),
-    [driveFolderState],
+    () => !areDriveFolderStatesMapsEqual(initialDriveFolderStatesRef.current, driveFolderStates),
+    [driveFolderStates],
   );
   const isDirty = useMemo(
     () => hasDirtyChanges(initialResponsesRef.current, responses) || isDriveFolderDirty,
     [isDriveFolderDirty, responses],
   );
   const canDeleteDriveFolder = useMemo(
-    () => hasConfiguredDriveFolder(driveFolderState),
-    [driveFolderState],
+    () => hasAnyConfiguredDriveFolder(driveFolderStates),
+    [driveFolderStates],
   );
+  const updateFieldDriveFolderState = useCallback((fieldId, updater) => {
+    if (!fieldId) return;
+    setDriveFolderStates((prev) => setDriveFolderStateForField(prev, fieldId, updater));
+  }, []);
   const isDirtyRef = useLatestRef(isDirty);
   const isViewModeRef = useLatestRef(isViewMode);
   const normalizedSchemaRef = useLatestRef(normalizedSchema);
@@ -322,11 +349,24 @@ export default function FormPage() {
   }, [entryId, formId, isDirtyRef, isViewModeRef]);
 
   const applyEntryToState = useCallback((nextEntry, fallbackEntryId = null, source = "unknown") => {
-    const restored = restoreResponsesFromData(normalizedSchemaRef.current, nextEntry?.data || {}, nextEntry?.dataUnixMs || {});
-    const nextDriveFolderState = normalizeDriveFolderState({
-      resolvedUrl: nextEntry?.driveFolderUrl || "",
-      inputUrl: nextEntry?.driveFolderUrl || "",
-      autoCreated: false,
+    const schema = normalizedSchemaRef.current;
+    const restored = restoreResponsesFromData(schema, nextEntry?.data || {}, nextEntry?.dataUnixMs || {});
+    const folderUrlsByField = collectFileUploadFolderUrls(schema, nextEntry?.data || {});
+    const uploadFields = collectFileUploadFields(schema);
+    const primaryFieldId = uploadFields[0]?.id || "";
+    const primaryFolderUrl = nextEntry?.driveFolderUrl || "";
+    const nextDriveFolderStates = {};
+    uploadFields.forEach((field) => {
+      const fid = field?.id;
+      if (!fid) return;
+      const folderUrl = folderUrlsByField[fid]
+        || (fid === primaryFieldId ? primaryFolderUrl : "")
+        || "";
+      nextDriveFolderStates[fid] = normalizeDriveFolderState({
+        resolvedUrl: folderUrl,
+        inputUrl: folderUrl,
+        autoCreated: false,
+      });
     });
     const previous = responsesRef.current;
     const diff = diffResponses(previous, restored);
@@ -348,8 +388,8 @@ export default function FormPage() {
     setEntry(nextEntry);
     setRecordNoInput(nextEntry?.["No."] === undefined || nextEntry?.["No."] === null ? "" : String(nextEntry["No."]));
     initialResponsesRef.current = restored;
-    initialDriveFolderStateRef.current = nextDriveFolderState;
-    setDriveFolderState(nextDriveFolderState);
+    initialDriveFolderStatesRef.current = nextDriveFolderStates;
+    setDriveFolderStates(nextDriveFolderStates);
     commitResponses(`applyEntryToState:${source}`, restored, {
       forceLog: true,
       meta: { nextEntryId: nextEntry?.id || fallbackEntryId || null },
@@ -359,22 +399,24 @@ export default function FormPage() {
   const applyEntryToStateRef = useLatestRef(applyEntryToState);
 
   const updateDriveFolderStateFromPrintResult = useCallback((result) => {
-    setDriveFolderState((prevState) => {
-      const prev = normalizeDriveFolderState(prevState);
+    const schema = normalizedSchemaRef.current;
+    const primaryFieldId = collectFileUploadFields(schema)[0]?.id || "";
+    if (!primaryFieldId) return;
+    updateFieldDriveFolderState(primaryFieldId, (prev) => {
       const currentEffectiveFolderUrl = resolveEffectiveDriveFolderUrl(prev);
       const nextResolvedUrl = typeof result?.folderUrl === "string" && result.folderUrl.trim()
         ? result.folderUrl.trim()
         : (currentEffectiveFolderUrl || prev.resolvedUrl);
       const keepAutoCreated = prev.autoCreated && prev.resolvedUrl.trim() && prev.resolvedUrl.trim() === nextResolvedUrl;
-      return normalizeDriveFolderState({
+      return {
         ...prev,
         resolvedUrl: nextResolvedUrl,
         inputUrl: prev.inputUrl.trim() ? prev.inputUrl : nextResolvedUrl,
         autoCreated: keepAutoCreated || result?.autoCreated === true,
         pendingPrintFileIds: appendDriveFileId(prev.pendingPrintFileIds, result?.fileId),
-      });
+      };
     });
-  }, []);
+  }, [normalizedSchemaRef, updateFieldDriveFolderState]);
 
   const applyOrDeferSyncedEntry = useCallback((nextEntry, source = "unknown") => {
     if (!nextEntry) return false;
@@ -418,7 +460,7 @@ export default function FormPage() {
       applyEntryToState(restoreTarget, entryId, "cancel:restore-latest");
     } else {
       commitResponses("cancel:restore-initial", initialResponsesRef.current, { forceLog: true });
-      setDriveFolderState(initialDriveFolderStateRef.current);
+      setDriveFolderStates(initialDriveFolderStatesRef.current);
     }
     pendingSyncedEntryRef.current = null;
     setMode("view");
@@ -436,14 +478,16 @@ export default function FormPage() {
   }, [draftKey, driveFolderDraftKey, entryId]);
 
   const discardUnsavedUploadedFiles = useCallback(async () => {
-    const currentDriveFolder = normalizeDriveFolderState(driveFolderStateRef.current);
-    const fileIds = currentDriveFolder.sessionUploadFileIds;
+    const currentStates = driveFolderStatesRef.current || {};
+    const fileIds = normalizeDriveFileIds(
+      Object.values(currentStates).flatMap((state) => normalizeDriveFolderState(state).sessionUploadFileIds),
+    );
     if (fileIds.length === 0) return;
     if (!hasScriptRun()) {
       throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
     }
     await trashDriveFilesByIds(fileIds);
-  }, [driveFolderStateRef]);
+  }, [driveFolderStatesRef]);
 
   const navigateToEntryById = useCallback((targetEntryId) => {
     clearNewEntryDraft();
@@ -507,10 +551,10 @@ export default function FormPage() {
           userTitle: userTitleRef.current,
           userPhone: userPhoneRef.current,
         });
-        const emptyDriveFolderState = createEmptyDriveFolderState();
+        const emptyStates = createEmptyDriveFolderStates();
         initialResponsesRef.current = initialResponses;
-        initialDriveFolderStateRef.current = emptyDriveFolderState;
-        setDriveFolderState(emptyDriveFolderState);
+        initialDriveFolderStatesRef.current = emptyStates;
+        setDriveFolderStates(emptyStates);
         commitResponses("loadEntry:new-entry-initialize", initialResponses, {
           forceLog: true,
           meta: {
@@ -738,61 +782,128 @@ export default function FormPage() {
 
     const saveData = { ...payloadWithFormId.responses };
     const saveOrder = [...payloadWithFormId.order];
-    const currentDriveFolder = normalizeDriveFolderState(driveFolderStateRef.current);
-    const currentDriveFolderUrl = currentDriveFolder.resolvedUrl.trim();
-    const inputDriveFolderUrl = currentDriveFolder.inputUrl.trim();
-    const pendingDeleteFolderUrl = currentDriveFolder.pendingDeleteUrl.trim();
+    const uploadFields = collectFileUploadFields(normalizedSchema);
+    const currentStates = driveFolderStatesRef.current || {};
+    const initialStates = initialDriveFolderStatesRef.current || {};
     const currentResponseFileIds = collectDriveFileIds(rawResponses);
     const initialResponseFileIds = collectDriveFileIds(initialResponsesRef.current);
     const currentResponseFileIdSet = new Set(currentResponseFileIds);
-    const finalizeFileIds = normalizeDriveFileIds([
-      ...currentResponseFileIds,
-      ...currentDriveFolder.pendingPrintFileIds,
-    ]);
-    const trashFileIds = normalizeDriveFileIds([
-      ...initialResponseFileIds,
-      ...currentDriveFolder.sessionUploadFileIds,
-    ]).filter((fileId) => !currentResponseFileIdSet.has(fileId));
-    const shouldFinalizeDriveFolder = Boolean(
-      currentDriveFolderUrl
-      || inputDriveFolderUrl
-      || pendingDeleteFolderUrl
-      || finalizeFileIds.length > 0
-      || trashFileIds.length > 0
+    const extraTrashFileIds = normalizeDriveFileIds(initialResponseFileIds).filter(
+      (fileId) => !currentResponseFileIdSet.has(fileId),
     );
-    let finalizedDriveFolderUrl = currentDriveFolderUrl;
+    const extraTrashFileIdSet = new Set(extraTrashFileIds);
 
-    if (shouldFinalizeDriveFolder) {
+    const finalizedFolderUrlByField = {};
+
+    const needsAnyFinalize = uploadFields.some((field) => {
+      const st = normalizeDriveFolderState(currentStates[field.id]);
+      return Boolean(
+        st.resolvedUrl.trim()
+        || st.inputUrl.trim()
+        || st.pendingDeleteUrl.trim()
+        || st.sessionUploadFileIds.length
+        || st.pendingPrintFileIds.length,
+      );
+    }) || extraTrashFileIds.length > 0;
+
+    if (needsAnyFinalize) {
       if (options.unlinkDriveFolder === true) {
-        finalizedDriveFolderUrl = "";
+        // all folder URLs become empty
       } else {
         if (!hasScriptRun()) {
           throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
         }
-        const firstUploadField = findFirstFileUploadField(normalizedSchema);
+        // First pass: per-field finalize
+        const fieldValuesMap = buildFieldValuesMap(normalizedSchema, rawResponses || {});
+        const metaMap = collectFileUploadMeta(normalizedSchema);
         try {
-          const finalizeResult = await finalizeRecordDriveFolder({
-            currentDriveFolderUrl,
-            inputDriveFolderUrl,
-            rootFolderUrl: firstUploadField?.driveRootFolderUrl || "",
-            folderNameTemplate: firstUploadField?.driveFolderNameTemplate || "",
-            responses: rawResponses || {},
-            fieldLabels,
-            fieldValues: buildFieldValuesMap(normalizedSchema, rawResponses || {}),
-            fileUploadMeta: collectFileUploadMeta(normalizedSchema),
-            fileIds: finalizeFileIds,
-            trashFileIds,
-            folderUrlToTrash: pendingDeleteFolderUrl,
-            recordId: payloadWithFormId.id,
-          });
-          finalizedDriveFolderUrl = typeof finalizeResult?.folderUrl === "string"
-            ? finalizeResult.folderUrl.trim()
-            : currentDriveFolderUrl;
+          let remainingExtraTrash = Array.from(extraTrashFileIdSet);
+          for (let i = 0; i < uploadFields.length; i += 1) {
+            const field = uploadFields[i];
+            const fid = field?.id;
+            if (!fid) continue;
+            const st = normalizeDriveFolderState(currentStates[fid]);
+            const fieldValue = (rawResponses || {})[fid];
+            const perFieldFileIds = normalizeDriveFileIds([
+              ...(Array.isArray(fieldValue)
+                ? fieldValue.map((entry) => (entry && typeof entry.driveFileId === "string" ? entry.driveFileId : ""))
+                : []),
+              ...st.pendingPrintFileIds,
+            ]);
+            // Trash candidates: session uploads no longer present in current value
+            const perFieldTrash = normalizeDriveFileIds(st.sessionUploadFileIds).filter(
+              (fileId) => !currentResponseFileIdSet.has(fileId),
+            );
+            // Also reclaim initial-response file ids that belong to this field's sessions
+            const trashFileIds = normalizeDriveFileIds(perFieldTrash);
+            // Attach leftover extraTrash (from value-removal) to the first field to not lose them
+            if (i === 0 && remainingExtraTrash.length > 0) {
+              trashFileIds.push(...remainingExtraTrash);
+              remainingExtraTrash = [];
+            }
+            const hasSomething = Boolean(
+              st.resolvedUrl.trim()
+              || st.inputUrl.trim()
+              || st.pendingDeleteUrl.trim()
+              || perFieldFileIds.length
+              || trashFileIds.length,
+            );
+            if (!hasSomething) {
+              finalizedFolderUrlByField[fid] = "";
+              continue;
+            }
+            const finalizeResult = await finalizeRecordDriveFolder({
+              currentDriveFolderUrl: st.resolvedUrl.trim(),
+              inputDriveFolderUrl: st.inputUrl.trim(),
+              rootFolderUrl: field?.driveRootFolderUrl || "",
+              folderNameTemplate: field?.driveFolderNameTemplate || "",
+              responses: rawResponses || {},
+              fieldLabels,
+              fieldValues: fieldValuesMap,
+              fileUploadMeta: metaMap,
+              fileIds: normalizeDriveFileIds(perFieldFileIds),
+              trashFileIds: normalizeDriveFileIds(trashFileIds),
+              folderUrlToTrash: st.pendingDeleteUrl.trim(),
+              recordId: payloadWithFormId.id,
+            });
+            finalizedFolderUrlByField[fid] = typeof finalizeResult?.folderUrl === "string"
+              ? finalizeResult.folderUrl.trim()
+              : st.resolvedUrl.trim();
+          }
         } catch (folderError) {
           throw new DriveFolderFinalizeError(folderError);
         }
       }
     }
+
+    // Embed per-field folderUrl into sheet cell JSON by rebuilding fileUpload paths
+    {
+      const rebuilt = coreCollectResponses(
+        normalizedSchema,
+        rawResponses || {},
+        { fileUploadFolderUrls: finalizedFolderUrlByField },
+      );
+      const fileUploadBaseKeys = new Set();
+      traverseSchema(normalizedSchema, (field, context) => {
+        if (field?.type === "fileUpload") {
+          fileUploadBaseKeys.add(context.pathSegments.join("|"));
+        }
+      });
+      fileUploadBaseKeys.forEach((key) => {
+        if (Object.prototype.hasOwnProperty.call(rebuilt, key)) {
+          saveData[key] = rebuilt[key];
+        } else if (Object.prototype.hasOwnProperty.call(saveData, key)) {
+          delete saveData[key];
+        }
+      });
+    }
+
+    // Primary folder URL = first fileUpload field's finalized folderUrl (for backwards compat)
+    const primaryFieldId = uploadFields[0]?.id || "";
+    const finalizedDriveFolderUrl = options.unlinkDriveFolder === true
+      ? ""
+      : (primaryFieldId && finalizedFolderUrlByField[primaryFieldId])
+        || "";
 
     const saved = await dataStore.upsertEntry(form.id, {
       id: payloadWithFormId.id,
@@ -807,9 +918,9 @@ export default function FormPage() {
     pendingSyncedEntryRef.current = null;
     reloadListFromCache();
     if (options.unlinkDriveFolder === true) {
-      const emptyFolder = createEmptyDriveFolderState();
-      setDriveFolderState(emptyFolder);
-      initialDriveFolderStateRef.current = emptyFolder;
+      const emptyStates = createEmptyDriveFolderStates();
+      setDriveFolderStates(emptyStates);
+      initialDriveFolderStatesRef.current = emptyStates;
     }
 
     if (requiresSpreadsheetSave) {
@@ -1055,9 +1166,12 @@ export default function FormPage() {
   }, [commitResponses]);
 
   const handleDeleteDriveFolder = useCallback(() => {
-    setDriveFolderState((prevState) => markDriveFolderForDeletion(prevState));
+    const fieldId = driveFolderDialog.state.fieldId;
+    if (fieldId) {
+      updateFieldDriveFolderState(fieldId, (prev) => markDriveFolderForDeletion(prev));
+    }
     driveFolderDialog.close();
-  }, []);
+  }, [driveFolderDialog, updateFieldDriveFolderState]);
 
   const handleConfirmUnlinkFolder = useCallback(async () => {
     unlinkFolderDialog.close();
@@ -1345,10 +1459,10 @@ export default function FormPage() {
           showSaveButton={false}
           readOnly={isViewMode || isReadLocked || isFormReadOnly}
           entryId={currentRecordId}
-          driveFolderState={driveFolderState}
-          onDriveFolderStateChange={setDriveFolderState}
+          driveFolderStates={driveFolderStates}
+          onFieldDriveFolderStateChange={updateFieldDriveFolderState}
           canDeleteDriveFolder={!isViewMode && canDeleteDriveFolder}
-          onDeleteDriveFolder={() => driveFolderDialog.open()}
+          onDeleteDriveFolder={(fieldId) => driveFolderDialog.open({ fieldId: fieldId || "" })}
         />
       )}
 

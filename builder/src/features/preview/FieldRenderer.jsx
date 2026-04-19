@@ -31,8 +31,8 @@ const FieldRenderer = ({
   readOnly = false,
   driveSettings,
   gasClientRef,
-  driveFolderState,
-  onDriveFolderStateChange,
+  driveFolderStates,
+  onFieldDriveFolderStateChange,
   onTemplateAction,
   canDeleteDriveFolder,
   onDeleteDriveFolder,
@@ -125,6 +125,13 @@ const FieldRenderer = ({
 
 
   if (field.type === "fileUpload") {
+    const fieldFolderState = (driveFolderStates || {})[field.id];
+    const handleFieldFolderStateChange = typeof onFieldDriveFolderStateChange === "function"
+      ? (updater) => onFieldDriveFolderStateChange(field.id, updater)
+      : undefined;
+    const handleFieldDeleteDriveFolder = typeof onDeleteDriveFolder === "function"
+      ? () => onDeleteDriveFolder(field.id)
+      : undefined;
     return (
       <div className="preview-field">
         {renderLabel()}
@@ -135,10 +142,10 @@ const FieldRenderer = ({
           readOnly={readOnly}
           driveSettings={driveSettings}
           gasClient={gasClientRef?.current}
-          folderState={driveFolderState}
-          onFolderStateChange={onDriveFolderStateChange}
+          folderState={fieldFolderState}
+          onFolderStateChange={handleFieldFolderStateChange}
           canDeleteDriveFolder={canDeleteDriveFolder}
-          onDeleteDriveFolder={onDeleteDriveFolder}
+          onDeleteDriveFolder={handleFieldDeleteDriveFolder}
         />
       </div>
     );
@@ -342,8 +349,8 @@ export const RendererRecursive = ({
   onChildFormJump,
   driveSettings,
   gasClientRef,
-  driveFolderState,
-  onDriveFolderStateChange,
+  driveFolderStates,
+  onFieldDriveFolderStateChange,
   onTemplateAction,
   canDeleteDriveFolder,
   onDeleteDriveFolder,
@@ -353,7 +360,7 @@ export const RendererRecursive = ({
 }) => {
   const recursiveProps = {
     responses, onChange, depth: depth + 1, readOnly, entryId, onChildFormJump,
-    driveSettings, gasClientRef, driveFolderState, onDriveFolderStateChange,
+    driveSettings, gasClientRef, driveFolderStates, onFieldDriveFolderStateChange,
     onTemplateAction, canDeleteDriveFolder, onDeleteDriveFolder, resolveTokens,
     computedValues, computedErrors,
   };
@@ -410,8 +417,8 @@ export const RendererRecursive = ({
               readOnly={readOnly}
               driveSettings={driveSettings}
               gasClientRef={gasClientRef}
-              driveFolderState={driveFolderState}
-              onDriveFolderStateChange={onDriveFolderStateChange}
+              driveFolderStates={driveFolderStates}
+              onFieldDriveFolderStateChange={onFieldDriveFolderStateChange}
               onTemplateAction={onTemplateAction}
               canDeleteDriveFolder={canDeleteDriveFolder}
               onDeleteDriveFolder={onDeleteDriveFolder}
