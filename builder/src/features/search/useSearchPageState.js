@@ -69,7 +69,11 @@ export function useSearchPageState({
   const { overrides: searchOverrides, updateOverride } = useSearchDisplayOverrides(effectiveFormId);
   const PAGE_SIZE = Number(searchOverrides?.pageSize) || Number(form?.settings?.pageSize) || Number(settings?.pageSize) || DEFAULT_PAGE_SIZE;
   const TABLE_MAX_WIDTH = Number(searchOverrides?.searchTableMaxWidth) || Number(form?.settings?.searchTableMaxWidth) || Number(settings?.searchTableMaxWidth) || null;
-  const cellDisplayLimit = parseSearchCellDisplayLimit(searchOverrides?.searchCellMaxChars ?? form?.settings?.searchCellMaxChars);
+  const cellDisplayLimit =
+    parseSearchCellDisplayLimit(searchOverrides?.searchCellMaxChars) ||
+    parseSearchCellDisplayLimit(form?.settings?.searchCellMaxChars) ||
+    parseSearchCellDisplayLimit(settings?.searchCellMaxChars) ||
+    null;
 
   const {
     entries,
