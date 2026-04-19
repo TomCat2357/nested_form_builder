@@ -138,8 +138,8 @@ function nfbResolveTemplateTokenValue_(tokenName, context, options) {
     if (reservedValue !== null) return reservedValue;
     return nfbResolveFieldTemplateToken_(tokenName, context);
   }
-  // @ なし: フィールド参照のみ
-  return nfbResolveFieldTemplateToken_(tokenName, context);
+  // @ なし: トークンとして解決しない（空文字を返す）
+  return "";
 }
 
 function nfbResolveTemplateTokens_(template, context, options) {

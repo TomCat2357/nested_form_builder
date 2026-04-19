@@ -57,8 +57,8 @@ export const SETTINGS_GROUPS = [
     ],
   },
   {
-    key: "record",
-    label: "レコード画面設定",
+    key: "printTemplate",
+    label: "標準印刷出力様式",
     fields: [
       {
         key: "standardPrintTemplateUrl",
@@ -74,6 +74,28 @@ export const SETTINGS_GROUPS = [
         required: false,
         description: "GoogleDocument/PDF は「カード個別 > フォーム共通 > 既定値」で解決します。Gmail の PDF 添付はフォーム共通か既定値のみを使い、未入力時の既定値は {@_id}_{@_NOW|time:YYYY-MM-DD} です",
       },
+      {
+        key: "showPrintHeader",
+        label: "印刷様式のヘッダーを表示する",
+        type: "checkbox",
+        required: false,
+        defaultValue: true,
+        description: "OFFにすると、印刷様式先頭のフォーム名・出力日時・レコードNo・IDを非表示にします。",
+      },
+      {
+        key: "omitEmptyRowsOnPrint",
+        label: "印刷様式出力時に空欄項目を省く",
+        type: "checkbox",
+        required: false,
+        defaultValue: true,
+        description: "OFFにすると、未回答の項目も印刷様式へ出力します。",
+      },
+    ],
+  },
+  {
+    key: "record",
+    label: "レコード画面設定",
+    fields: [
       {
         key: "saveAfterAction",
         label: "通常保存後の動作",

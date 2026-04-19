@@ -18,7 +18,7 @@
  * @ 参照（予約トークン優先 → フィールド参照フォールバック）:
  *   {@フィールドラベル}           - 該当フィールドの現在の値
  *   {@フィールドラベル|upper}     - パイプ変換付き
- *   {フィールドラベル}            - @ なし: フィールド参照のみ（予約トークン無視）
+ *   {フィールドラベル}            - @ なしはトークンとして解決されず空文字に置換される
  *
  * if条件での予約トークン:
  *   {aaa|if:@_folder_url,bbb}   - _folder_urlが存在すれば"aaa"、なければ"bbb"
@@ -134,9 +134,12 @@ export const resolveTemplateTokens = (template, context) => {
           // @ prefix: 予約トークン優先 → labelValueMap フォールバック
           const reservedVal = resolveReservedToken(fieldPart, ctx);
           resolved = reservedVal !== null ? reservedVal : ((ctx.labelValueMap || {})[fieldPart] ?? "");
-        } else {
-          // @ なし / \ prefix: labelValueMap のみ
+        } else if (forceField) {
+          // \ prefix: labelValueMap 強制参照（エスケープハッチ）
           resolved = (ctx.labelValueMap || {})[fieldPart] ?? "";
+        } else {
+          // @ なしはトークンとして解決しない
+          resolved = "";
         }
         return applyPipeTransformers(resolved, transformersPart, ctx);
       }
@@ -144,8 +147,12 @@ export const resolveTemplateTokens = (template, context) => {
       if (isRef) {
         const reservedVal = resolveReservedToken(tokenName, ctx);
         if (reservedVal !== null) return reservedVal;
+        return (ctx.labelValueMap || {})[tokenName] ?? "";
       }
-      return (ctx.labelValueMap || {})[tokenName] ?? "";
+      if (forceField) {
+        return (ctx.labelValueMap || {})[tokenName] ?? "";
+      }
+      return "";
     });
 
   return result.split(ESC_OPEN).join("{").split(ESC_CLOSE).join("}");

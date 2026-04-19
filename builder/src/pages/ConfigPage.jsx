@@ -8,7 +8,6 @@ import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { DEFAULT_THEME } from "../app/theme/theme.js";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
-import { resolveOmitEmptyRowsOnPrint, resolveShowPrintHeader } from "../features/preview/printDocument.js";
 import { resolveSettingsFieldValue } from "../utils/settings.js";
 import { SettingsField } from "../features/settings/SettingsField.jsx";
 import { getConfigPageSaveAfterActionField } from "./configPageSettings.js";
@@ -28,8 +27,6 @@ export default function ConfigPage() {
   );
   const rawFormTheme = targetForm?.settings?.theme;
   const formTheme = rawFormTheme || DEFAULT_THEME;
-  const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(targetForm?.settings);
-  const showPrintHeader = resolveShowPrintHeader(targetForm?.settings);
   const rawGlobalTheme = settings?.theme;
   const globalTheme = rawGlobalTheme || DEFAULT_THEME;
   const themeValue = isFormMode ? formTheme : globalTheme;
@@ -37,7 +34,6 @@ export default function ConfigPage() {
   const saveAfterActionField = useMemo(() => getConfigPageSaveAfterActionField(), []);
 
   const deployTime = useDeployTime();
-  const [savingPrintSettings, setSavingPrintSettings] = useState(false);
   const [savingRecordSettings, setSavingRecordSettings] = useState(false);
   const [pendingSaveAfterAction, setPendingSaveAfterAction] = useState(null);
 
@@ -103,22 +99,6 @@ export default function ConfigPage() {
       setPendingSaveAfterAction(null);
     }
   }, [pendingSaveAfterAction, targetForm?.settings?.saveAfterAction]);
-
-  const handleTogglePrintSetting = useCallback(
-    async (key, checked) => {
-      if (!targetForm || savingPrintSettings) return;
-      setSavingPrintSettings(true);
-      try {
-        await updateCurrentFormSettings({ [key]: checked });
-      } catch (error) {
-        console.error("[ConfigPage] failed to update print settings", error);
-        showAlert(error?.message || "印刷設定の保存に失敗しました");
-      } finally {
-        setSavingPrintSettings(false);
-      }
-    },
-    [savingPrintSettings, showAlert, targetForm, updateCurrentFormSettings],
-  );
 
   const handleSaveAfterActionChange = useCallback(
     async (nextValue) => {
@@ -206,35 +186,6 @@ export default function ConfigPage() {
                 )}
               </div>
             )}
-            <div className="nf-settings-group-title nf-mb-8">印刷設定</div>
-            <label className="nf-row nf-gap-8 nf-items-center">
-              <input
-                type="checkbox"
-                checked={showPrintHeader}
-                onChange={(event) => {
-                  void handleTogglePrintSetting("showPrintHeader", event.target.checked);
-                }}
-                disabled={savingPrintSettings}
-              />
-              <span className="nf-fw-600">印刷様式のヘッダーを表示する</span>
-            </label>
-            <p className="nf-mt-6 nf-text-12 nf-text-muted nf-mb-12">
-              OFFにすると、印刷様式先頭のフォーム名・出力日時・レコードNo・IDを非表示にします。
-            </p>
-            <label className="nf-row nf-gap-8 nf-items-center">
-              <input
-                type="checkbox"
-                checked={omitEmptyRowsOnPrint}
-                onChange={(event) => {
-                  void handleTogglePrintSetting("omitEmptyRowsOnPrint", event.target.checked);
-                }}
-                disabled={savingPrintSettings}
-              />
-              <span className="nf-fw-600">印刷様式出力時に空欄項目を省く</span>
-            </label>
-            <p className="nf-mt-6 nf-text-12 nf-text-muted">
-              OFFにすると、未回答の項目も印刷様式へ出力します。
-            </p>
           </div>
         )}
 

@@ -1186,7 +1186,7 @@ test("if: 他パイプとのチェーン", () => {
 // @ prefix 基本動作テスト
 // ---------------------------------------------------------------------------
 
-test("@ prefix: フィールド参照は @ あり/なし両方で動作", () => {
+test("@ prefix: フィールド参照は @ 必須", () => {
   const gas = loadGasContext();
   const ctx = {
     responses: {},
@@ -1196,8 +1196,8 @@ test("@ prefix: フィールド参照は @ あり/なし両方で動作", () => 
   };
   // @ あり → フィールド値（予約トークン優先→フィールド参照）
   assert.equal(gas.nfbResolveTemplate_("{@名前}", ctx), "山田");
-  // @ なし → フィールド参照のみ（labelValueMap）
-  assert.equal(gas.nfbResolveTemplate_("{名前}", ctx), "山田");
+  // @ なし → トークンとして解決されず空文字
+  assert.equal(gas.nfbResolveTemplate_("{名前}", ctx), "");
 });
 
 test("@ prefix: 予約トークンは @ 必須", () => {
