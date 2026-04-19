@@ -45,6 +45,16 @@ export const pickLatestEntry = (current, incoming) => {
   return incomingVersion > currentVersion ? incoming : current;
 };
 
+export const buildFolderUrlsByFieldFromStates = (states) => {
+  const out = {};
+  for (const [fid, st] of Object.entries(states || {})) {
+    const normalized = normalizeDriveFolderState(st);
+    const url = (normalized.resolvedUrl || normalized.inputUrl || "").trim();
+    if (url) out[fid] = url;
+  }
+  return out;
+};
+
 export const collectDriveFileIds = (responses) => {
   const seen = new Set();
   Object.values(toResponseObject(responses)).forEach((value) => {

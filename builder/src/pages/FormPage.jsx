@@ -66,6 +66,7 @@ import {
   toEntryVersion,
   pickLatestEntry,
   collectDriveFileIds,
+  buildFolderUrlsByFieldFromStates,
 } from "./formPageHelpers.js";
 
 class DriveFolderFinalizeError extends Error {
@@ -815,7 +816,10 @@ export default function FormPage() {
         }
         // First pass: per-field finalize
         const fieldValuesMap = buildFieldValuesMap(normalizedSchema, rawResponses || {});
-        const metaMap = collectFileUploadMeta(normalizedSchema);
+        const metaMap = collectFileUploadMeta(normalizedSchema, {
+          responses: rawResponses || {},
+          folderUrlsByField: buildFolderUrlsByFieldFromStates(currentStates),
+        });
         try {
           let remainingExtraTrash = Array.from(extraTrashFileIdSet);
           for (let i = 0; i < uploadFields.length; i += 1) {
@@ -1218,7 +1222,10 @@ export default function FormPage() {
           responses: currentResponses,
           fieldLabels,
           fieldValues: buildFieldValuesMap(normalizedSchema, currentResponses),
-          fileUploadMeta: collectFileUploadMeta(normalizedSchema),
+          fileUploadMeta: collectFileUploadMeta(normalizedSchema, {
+            responses: currentResponses,
+            folderUrlsByField: buildFolderUrlsByFieldFromStates(driveFolderStatesRef.current || {}),
+          }),
           recordId: payload.recordId || "",
           formId: form?.id || "",
           recordNo: entry?.["No."] || "",

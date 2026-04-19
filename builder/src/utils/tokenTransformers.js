@@ -220,13 +220,12 @@ const transformNumber = (v, formatStr) => {
 // ---------------------------------------------------------------------------
 
 // 予約トークン名 → context プロパティのマッピング（循環import回避）
+// _folder_url / _file_urls は廃止。fileUpload 欄ごとに |folder_url / |file_urls パイプを使う
 const RESERVED_CONTEXT_MAP = {
   _id: "recordId",
   _NOW: null, // special handling
-  _folder_url: "folderUrl",
   _record_url: "recordUrl",
   _form_url: "formUrl",
-  _file_urls: "fileUrls",
 };
 
 /** @で参照される名前を解決: 予約トークン優先 → labelValueMap フォールバック */
@@ -439,6 +438,17 @@ const transformHan = (v) => {
   return result;
 };
 
+// ---------------------------------------------------------------------------
+// fileUpload 欄専用パイプ
+// ---------------------------------------------------------------------------
+
+const joinList = (list) => (Array.isArray(list) ? list.filter(Boolean).join(", ") : "");
+
+const transformFileNames = (_v, _args, context) => joinList(context?.currentFieldMeta?.fileNames);
+const transformFileUrls = (_v, _args, context) => joinList(context?.currentFieldMeta?.fileUrls);
+const transformFolderName = (_v, _args, context) => String(context?.currentFieldMeta?.folderName || "");
+const transformFolderUrl = (_v, _args, context) => String(context?.currentFieldMeta?.folderUrl || "");
+
 const transformNoext = (value) => {
   if (!value) return "";
   return value.split(", ").map((part) => {
@@ -453,6 +463,10 @@ const transformNoext = (value) => {
 // ---------------------------------------------------------------------------
 
 const TRANSFORMERS = {
+  file_names: transformFileNames,
+  file_urls: transformFileUrls,
+  folder_name: transformFolderName,
+  folder_url: transformFolderUrl,
   noext: transformNoext,
   time: transformTime,
   left: transformLeft,

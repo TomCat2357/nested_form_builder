@@ -9,7 +9,7 @@ import { styles as s } from "../editor/styles.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { collectDefaultNowResponses } from "../../utils/responses.js";
 import { genRecordId } from "../../core/ids.js";
-import { resolveTemplateTokens, buildLabelValueMap, collectFileUploadFieldIds, extractFileUrls } from "../../utils/tokenReplacer.js";
+import { resolveTemplateTokens, buildLabelValueMap } from "../../utils/tokenReplacer.js";
 import { evaluateAllComputedFields } from "../../core/computedFields.js";
 import {
   buildPrintDocumentPayload,
@@ -116,17 +116,18 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const fieldValues = useMemo(() => buildFieldValuesMap(schema, responses), [schema, responses]);
 
   const gasClientRef = useRef(gasClientModule);
-  const fileUploadMeta = useMemo(() => collectFileUploadMeta(schema), [schema]);
-  const fileUrls = useMemo(() => {
-    const ids = new Set();
-    collectFileUploadFieldIds(schema, ids);
-    const parts = [];
-    for (const fid of ids) {
-      const urls = extractFileUrls((responses || {})[fid]);
-      if (urls) parts.push(urls);
+  const folderUrlsByField = useMemo(() => {
+    const out = {};
+    for (const [fid, st] of Object.entries(driveFolderStates || {})) {
+      const url = (st?.resolvedUrl || st?.inputUrl || "").trim();
+      if (url) out[fid] = url;
     }
-    return parts.join(", ");
-  }, [schema, responses]);
+    return out;
+  }, [driveFolderStates]);
+  const fileUploadMeta = useMemo(
+    () => collectFileUploadMeta(schema, { responses: responses || {}, folderUrlsByField }),
+    [schema, responses, folderUrlsByField],
+  );
   const driveSettings = useMemo(() => ({
     formId: settings.formId || "",
     recordId: recordIdRef.current,
@@ -134,8 +135,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     fieldLabels,
     fieldValues,
     fileUploadMeta,
-    fileUrls,
-  }), [settings.formId, responses, fieldLabels, fieldValues, fileUploadMeta, fileUrls]);
+  }), [settings.formId, responses, fieldLabels, fieldValues, fileUploadMeta]);
 
   const baseLabelValueMap = useMemo(
     () => buildLabelValueMap(fieldLabels, fieldValues, responses),
@@ -155,11 +155,10 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     const baseUrl = typeof window !== "undefined" ? (window.__GAS_WEBAPP_URL__ || window.location.origin) : "";
     const formId = settings.formId || "";
     const recordId = recordIdRef.current;
-    const folderUrl = resolveEffectiveDriveFolderUrl(primaryDriveFolderState) || "";
     const formUrl = buildSharedFormUrl(baseUrl, formId);
     const recordUrl = buildSharedRecordUrl(baseUrl, formId, recordId);
-    return { now: new Date(), recordId, folderUrl, formUrl, recordUrl };
-  }, [settings.formId, primaryDriveFolderState]);
+    return { now: new Date(), recordId, formUrl, recordUrl, fieldLabels, fileUploadMeta };
+  }, [settings.formId, fieldLabels, fileUploadMeta]);
 
   const { computedValues, computedErrors } = useMemo(
     () => evaluateAllComputedFields(schema, responses, baseLabelValueMap, tokenContext),
@@ -229,7 +228,6 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       responses: responses || {},
       fieldLabels,
       fieldValues,
-      fileUrls,
     };
     try {
       const result = await gasClientRef.current.executeRecordOutputAction({
@@ -281,6 +279,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     omitEmptyRows: options.omitEmptyRows,
     driveFolderState: options.driveFolderState ?? primaryDriveFolderState,
     useTemporaryFolder: options.useTemporaryFolder === true,
+    folderUrlsByField,
   });
 
   const handleSaveToSheet = async (options = {}) => {

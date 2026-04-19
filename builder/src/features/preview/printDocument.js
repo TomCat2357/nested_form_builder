@@ -1,7 +1,6 @@
 import { formatUnixMsDateTimeSec, toUnixMs } from "../../utils/dateTime.js";
 import { resolveFileDisplayName } from "../../core/collect.js";
 import { findFirstFileUploadField } from "../../core/schema.js";
-import { collectFileUploadFieldIds, extractFileUrls } from "../../utils/tokenReplacer.js";
 
 export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);
 
@@ -222,17 +221,37 @@ export const buildFieldLabelsMap = (fields, map = {}) => {
   return map;
 };
 
-export const collectFileUploadMeta = (fields, meta = {}) => {
-  (fields || []).forEach((field) => {
-    if (field?.type === "fileUpload" && field?.id && field?.hideFileExtension) {
-      meta[field.id] = { hideFileExtension: true };
-    }
-    if (field?.childrenByValue) {
-      Object.values(field.childrenByValue).forEach((children) => {
-        collectFileUploadMeta(children, meta);
-      });
-    }
-  });
+export const collectFileUploadMeta = (fields, options = {}) => {
+  const meta = {};
+  const responses = options?.responses;
+  const folderUrlsByField = options?.folderUrlsByField || {};
+  const folderNamesByField = options?.folderNamesByField || {};
+
+  const walk = (flds) => {
+    (flds || []).forEach((field) => {
+      if (field?.type === "fileUpload" && field?.id) {
+        const entry = {};
+        if (field.hideFileExtension) entry.hideFileExtension = true;
+        if (responses) {
+          const value = responses[field.id];
+          const files = Array.isArray(value) ? value : [];
+          entry.fileNames = files
+            .map((f) => resolveFileDisplayName(f?.name || "", field?.hideFileExtension))
+            .filter(Boolean);
+          entry.fileUrls = files.map((f) => f?.driveFileUrl || "").filter(Boolean);
+        }
+        const folderUrl = folderUrlsByField[field.id];
+        if (typeof folderUrl === "string" && folderUrl) entry.folderUrl = folderUrl;
+        const folderName = folderNamesByField[field.id];
+        if (typeof folderName === "string" && folderName) entry.folderName = folderName;
+        if (Object.keys(entry).length > 0) meta[field.id] = entry;
+      }
+      if (field?.childrenByValue) {
+        Object.values(field.childrenByValue).forEach(walk);
+      }
+    });
+  };
+  walk(fields);
   return meta;
 };
 
@@ -273,6 +292,7 @@ export const buildPrintDocumentPayload = ({
   showHeader,
   driveFolderState = null,
   useTemporaryFolder = false,
+  folderUrlsByField = {},
 }) => {
   const safeExportedAt = exportedAt instanceof Date && !Number.isNaN(exportedAt.getTime()) ? exportedAt : new Date();
   const formTitle = typeof settings.formTitle === "string" && settings.formTitle.trim() ? settings.formTitle.trim() : "受付フォーム";
@@ -287,13 +307,6 @@ export const buildPrintDocumentPayload = ({
   const firstUploadField = findFirstFileUploadField(schema);
   const fieldRootFolderUrl = firstUploadField?.driveRootFolderUrl || "";
   const fieldFolderNameTemplate = firstUploadField?.driveFolderNameTemplate || "";
-  const fileUploadIds = new Set();
-  collectFileUploadFieldIds(schema, fileUploadIds);
-  const fileUrlParts = [];
-  for (const fid of fileUploadIds) {
-    const urls = extractFileUrls((responses || {})[fid]);
-    if (urls) fileUrlParts.push(urls);
-  }
 
   const hasDriveSettings = fieldRootFolderUrl || fieldFolderNameTemplate || folderUrl || useTemporaryFolder;
   const driveSettings = hasDriveSettings ? {
@@ -306,8 +319,10 @@ export const buildPrintDocumentPayload = ({
     responses: responses || {},
     fieldLabels: buildFieldLabelsMap(schema),
     fieldValues: buildFieldValuesMap(schema, responses),
-    fileUploadMeta: collectFileUploadMeta(schema),
-    fileUrls: fileUrlParts.join(", "),
+    fileUploadMeta: collectFileUploadMeta(schema, {
+      responses: responses || {},
+      folderUrlsByField,
+    }),
   } : undefined;
 
   return {

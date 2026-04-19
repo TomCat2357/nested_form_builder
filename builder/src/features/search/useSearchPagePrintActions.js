@@ -4,7 +4,7 @@ import {
   buildFieldValuesMap,
   collectFileUploadMeta,
 } from "../preview/printDocument.js";
-import { restoreResponsesFromData } from "../../utils/responses.js";
+import { restoreResponsesFromData, collectFileUploadFolderUrls } from "../../utils/responses.js";
 import {
   createRecordPrintDocument,
   executeRecordOutputAction,
@@ -20,10 +20,6 @@ import {
   validateOutputAction,
   downloadPdfFromBase64,
 } from "../../utils/recordOutputActions.js";
-import {
-  collectFileUploadFieldIds,
-  extractFileUrls,
-} from "../../utils/tokenReplacer.js";
 
 export function useSearchPagePrintActions({
   form,
@@ -39,7 +35,10 @@ export function useSearchPagePrintActions({
   const createSinglePrintDocument = useCallback(async (entry) => {
     const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
     const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
-    const fileUploadMeta = collectFileUploadMeta(normalizedSchema);
+    const fileUploadMeta = collectFileUploadMeta(normalizedSchema, {
+      responses: restoredResponses,
+      folderUrlsByField: collectFileUploadFolderUrls(normalizedSchema, entry?.data || {}),
+    });
     const fileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {});
 
     const payload = buildPrintDocumentPayload({
@@ -58,6 +57,7 @@ export function useSearchPagePrintActions({
         resolvedUrl: entry.driveFolderUrl || "",
         inputUrl: entry.driveFolderUrl || "",
       },
+      folderUrlsByField: collectFileUploadFolderUrls(normalizedSchema, entry?.data || {}),
     });
 
     if (fileNameTemplate) {
@@ -105,17 +105,13 @@ export function useSearchPagePrintActions({
     };
     const effectiveFileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {}) || DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE;
 
-    const fileUploadMeta = collectFileUploadMeta(normalizedSchema);
-    const fileUploadIdsBatch = new Set();
-    collectFileUploadFieldIds(normalizedSchema, fileUploadIdsBatch);
     const recordPayloads = selectedPrintableRows.map(({ entry }) => {
       const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
       const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
-      const batchFileUrlParts = [];
-      for (const fid of fileUploadIdsBatch) {
-        const urls = extractFileUrls(restoredResponses[fid]);
-        if (urls) batchFileUrlParts.push(urls);
-      }
+      const fileUploadMeta = collectFileUploadMeta(normalizedSchema, {
+        responses: restoredResponses,
+        folderUrlsByField: collectFileUploadFolderUrls(normalizedSchema, entry?.data || {}),
+      });
       const driveSettings = {
         rootFolderUrl: "",
         folderNameTemplate: "",
@@ -127,7 +123,6 @@ export function useSearchPagePrintActions({
         fieldValues,
         fileUploadMeta,
         fileNameTemplate: effectiveFileNameTemplate,
-        fileUrls: batchFileUrlParts.join(", "),
       };
       return {
         action,
@@ -157,6 +152,7 @@ export function useSearchPagePrintActions({
               resolvedUrl: entry.driveFolderUrl || "",
               inputUrl: entry.driveFolderUrl || "",
             },
+            folderUrlsByField: collectFileUploadFolderUrls(normalizedSchema, entry?.data || {}),
           }),
         },
         driveSettings,
@@ -231,14 +227,10 @@ export function useSearchPagePrintActions({
     const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, form?.settings || {});
     const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
     const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
-    const fileUploadMetaSingle = collectFileUploadMeta(normalizedSchema);
-    const fileUploadIds = new Set();
-    collectFileUploadFieldIds(normalizedSchema, fileUploadIds);
-    const fileUrlParts = [];
-    for (const fid of fileUploadIds) {
-      const urls = extractFileUrls(restoredResponses[fid]);
-      if (urls) fileUrlParts.push(urls);
-    }
+    const fileUploadMetaSingle = collectFileUploadMeta(normalizedSchema, {
+      responses: restoredResponses,
+      folderUrlsByField: collectFileUploadFolderUrls(normalizedSchema, entry?.data || {}),
+    });
     const driveSettings = {
       rootFolderUrl: "",
       folderNameTemplate: "",
@@ -250,7 +242,6 @@ export function useSearchPagePrintActions({
       fieldValues,
       fileUploadMeta: fileUploadMetaSingle,
       fileNameTemplate: effectiveFileNameTemplate,
-      fileUrls: fileUrlParts.join(", "),
     };
 
     const payload = {

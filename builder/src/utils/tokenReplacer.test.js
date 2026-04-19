@@ -192,14 +192,23 @@ test("{@_NOW|time:YYYY-MM-DD} でフォーマットできる", () => {
   assert.equal(resolveTemplateTokens("{@_NOW|time:YYYY-MM-DD}", context), "2026-04-13");
 });
 
-test("{@_folder_url} で folderUrl を取得する", () => {
-  const context = { folderUrl: "https://drive.google.com/drive/folders/abc" };
-  assert.equal(resolveTemplateTokens("{@_folder_url}", context), "https://drive.google.com/drive/folders/abc");
+test("{@<欄>|folder_url} で欄ごとのフォルダURLを取得する", () => {
+  const context = {
+    fieldLabels: { f1: "添付" },
+    fileUploadMeta: { f1: { folderUrl: "https://drive.google.com/drive/folders/abc" } },
+  };
+  assert.equal(resolveTemplateTokens("{@添付|folder_url}", context), "https://drive.google.com/drive/folders/abc");
 });
 
-test("{@_file_urls} で fileUrls を取得する", () => {
-  const context = { fileUrls: "https://drive.google.com/file/d/a, https://drive.google.com/file/d/b" };
-  assert.equal(resolveTemplateTokens("{@_file_urls}", context), "https://drive.google.com/file/d/a, https://drive.google.com/file/d/b");
+test("{@<欄>|file_urls} で欄ごとのファイルURLを取得する", () => {
+  const context = {
+    fieldLabels: { f1: "添付" },
+    fileUploadMeta: { f1: { fileUrls: ["https://drive.google.com/file/d/a", "https://drive.google.com/file/d/b"] } },
+  };
+  assert.equal(
+    resolveTemplateTokens("{@添付|file_urls}", context),
+    "https://drive.google.com/file/d/a, https://drive.google.com/file/d/b"
+  );
 });
 
 test("@ なしの {_NOW} は予約トークンとして解決されない", () => {
@@ -215,32 +224,6 @@ test("@ なしの {_id} は予約トークンとして解決されない", () =>
 // ---------------------------------------------------------------------------
 // if条件での予約トークン
 // ---------------------------------------------------------------------------
-
-test("if: @_folder_url が存在すれば真、なければ偽", () => {
-  const ctx1 = { folderUrl: "https://drive.google.com/drive/folders/abc", labelValueMap: { "aaa": "aaa" } };
-  assert.equal(
-    resolveTemplateTokens("{@aaa|if:@_folder_url,bbb}", ctx1),
-    "aaa"
-  );
-  const ctx2 = { folderUrl: "", labelValueMap: { "aaa": "aaa" } };
-  assert.equal(
-    resolveTemplateTokens("{@aaa|if:@_folder_url,bbb}", ctx2),
-    "bbb"
-  );
-});
-
-test("if: @_file_urls が存在すれば真、なければ偽", () => {
-  const ctx1 = { fileUrls: "https://drive.google.com/file/d/a", labelValueMap: { "結果": "OK" } };
-  assert.equal(
-    resolveTemplateTokens("{@結果|if:@_file_urls,ファイルなし}", ctx1),
-    "OK"
-  );
-  const ctx2 = { fileUrls: "", labelValueMap: { "結果": "OK" } };
-  assert.equal(
-    resolveTemplateTokens("{@結果|if:@_file_urls,ファイルなし}", ctx2),
-    "ファイルなし"
-  );
-});
 
 test("if: else値に予約トークン @_form_url を使う", () => {
   const ctx = { formUrl: "https://example.com/?form=f1", labelValueMap: { "テキスト": "" } };

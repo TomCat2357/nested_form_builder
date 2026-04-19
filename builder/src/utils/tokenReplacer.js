@@ -10,18 +10,20 @@
  *   {@_id}          - レコードID
  *   {@_NOW}         - 現在日時 ("yyyy-MM-dd HH:mm:ss")。パイプで整形可:
  *                     {@_NOW|time:YYYY年MM月DD日}  {@_NOW|time:HH時mm分}
- *   {@_folder_url}  - Driveフォルダ URL
  *   {@_record_url}  - レコード URL
  *   {@_form_url}    - フォーム URL
- *   {@_file_urls}   - アップロードファイル URL（カンマ区切り）
+ *
+ * fileUpload 欄ごとの参照（欄ラベル + 専用パイプ）:
+ *   {@<欄>}                - カンマ区切りファイル名（既定）
+ *   {@<欄>|file_names}     - カンマ区切りファイル名
+ *   {@<欄>|file_urls}      - カンマ区切りファイル URL
+ *   {@<欄>|folder_name}    - 保存フォルダ名
+ *   {@<欄>|folder_url}     - 保存フォルダ URL
  *
  * @ 参照（予約トークン優先 → フィールド参照フォールバック）:
  *   {@フィールドラベル}           - 該当フィールドの現在の値
  *   {@フィールドラベル|upper}     - パイプ変換付き
  *   {フィールドラベル}            - @ なしはトークンとして解決されず空文字に置換される
- *
- * if条件での予約トークン:
- *   {aaa|if:@_folder_url,bbb}   - _folder_urlが存在すれば"aaa"、なければ"bbb"
  *
  * エスケープ:
  *   \{ → {  \} → }
@@ -33,18 +35,28 @@ import { formatNow, applyPipeTransformers } from "./tokenTransformers.js";
 // Reserved tokens
 // ---------------------------------------------------------------------------
 
-const RESERVED_TOKENS = new Set(["_id", "_NOW", "_folder_url", "_record_url", "_form_url", "_file_urls"]);
+// _folder_url / _file_urls は廃止。fileUpload 欄ごとに `{@<欄>|folder_url}` / `|file_urls` を使う
+const RESERVED_TOKENS = new Set(["_id", "_NOW", "_record_url", "_form_url"]);
 
 const isReservedToken = (tokenName) => RESERVED_TOKENS.has(tokenName);
 
 const resolveReservedToken = (tokenName, context) => {
   if (tokenName === "_id") return context.recordId || "";
   if (tokenName === "_NOW") return formatNow(context.now || new Date());
-  if (tokenName === "_folder_url") return context.folderUrl || "";
   if (tokenName === "_record_url") return context.recordUrl || "";
   if (tokenName === "_form_url") return context.formUrl || "";
-  if (tokenName === "_file_urls") return context.fileUrls || "";
   return null;
+};
+
+const buildFileUploadMetaByLabel = (context) => {
+  const map = {};
+  const fileUploadMeta = context?.fileUploadMeta || {};
+  const fieldLabels = context?.fieldLabels || {};
+  for (const fid of Object.keys(fileUploadMeta)) {
+    const label = fieldLabels[fid];
+    if (label && !map[label]) map[label] = fileUploadMeta[fid];
+  }
+  return map;
 };
 
 // ---------------------------------------------------------------------------
@@ -112,6 +124,7 @@ export const resolveTemplateTokens = (template, context) => {
   if (!template.includes("{")) return template;
 
   const ctx = context || {};
+  const fileUploadMetaByLabel = buildFileUploadMetaByLabel(ctx);
   const ESC_OPEN = "__NFB_ESC_OB__";
   const ESC_CLOSE = "__NFB_ESC_CB__";
 
@@ -141,7 +154,9 @@ export const resolveTemplateTokens = (template, context) => {
           // @ なしはトークンとして解決しない
           resolved = "";
         }
-        return applyPipeTransformers(resolved, transformersPart, ctx);
+        const currentFieldMeta = fileUploadMetaByLabel[fieldPart] || null;
+        const pipeCtx = currentFieldMeta ? { ...ctx, currentFieldMeta } : ctx;
+        return applyPipeTransformers(resolved, transformersPart, pipeCtx);
       }
 
       if (isRef) {

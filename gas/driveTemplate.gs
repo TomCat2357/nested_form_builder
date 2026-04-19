@@ -100,10 +100,8 @@ function nfbResolveJapaneseEra_(dateParts) {
 function nfbIsReservedTemplateToken_(tokenName) {
   return tokenName === "_id"
     || tokenName === "_NOW"
-    || tokenName === "_folder_url"
     || tokenName === "_record_url"
-    || tokenName === "_form_url"
-    || tokenName === "_file_urls";
+    || tokenName === "_form_url";
 }
 
 function nfbResolveReservedTemplateToken_(tokenName, context, options) {
@@ -111,18 +109,29 @@ function nfbResolveReservedTemplateToken_(tokenName, context, options) {
   var tz = Session.getScriptTimeZone();
   var recordId = context && context.recordId ? String(context.recordId).trim() : "";
   var recordUrl = context && context.recordUrl ? String(context.recordUrl).trim() : "";
-  var folderUrl = context && context.folderUrl ? String(context.folderUrl).trim() : "";
   var formUrl = context && context.formUrl ? String(context.formUrl).trim() : "";
-  var fileUrls = context && context.fileUrls ? String(context.fileUrls).trim() : "";
   var allowGmailOnlyTokens = options && options.allowGmailOnlyTokens === true;
 
   if (tokenName === "_id") return recordId;
   if (tokenName === "_NOW") return Utilities.formatDate(now, tz, "yyyy-MM-dd HH:mm:ss");
-  if (tokenName === "_folder_url") return allowGmailOnlyTokens ? folderUrl : "";
   if (tokenName === "_record_url") return allowGmailOnlyTokens ? recordUrl : "";
   if (tokenName === "_form_url") return allowGmailOnlyTokens ? formUrl : "";
-  if (tokenName === "_file_urls") return fileUrls;
   return null;
+}
+
+function nfbBuildFileUploadMetaByLabel_(context) {
+  var fieldLabels = (context && context.fieldLabels) || {};
+  var fileUploadMeta = (context && context.fileUploadMeta) || {};
+  var out = {};
+  for (var fid in fieldLabels) {
+    if (!Object.prototype.hasOwnProperty.call(fieldLabels, fid)) continue;
+    var label = fieldLabels[fid];
+    if (!label) continue;
+    if (fileUploadMeta[fid] && !Object.prototype.hasOwnProperty.call(out, label)) {
+      out[label] = fileUploadMeta[fid];
+    }
+  }
+  return out;
 }
 
 function nfbResolveFieldTemplateToken_(tokenName, context) {
@@ -164,7 +173,12 @@ function nfbResolveTemplateTokens_(template, context, options) {
           allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
           isRef: isRef
         });
-        return nfbApplyPipeTransformers_(resolvedValue, transformersPart, context);
+        var metaByLabel = nfbBuildFileUploadMetaByLabel_(context);
+        var currentFieldMeta = metaByLabel[fieldPart] || null;
+        var pipeContext = currentFieldMeta
+          ? Object.assign({}, context || {}, { currentFieldMeta: currentFieldMeta })
+          : context;
+        return nfbApplyPipeTransformers_(resolvedValue, transformersPart, pipeContext);
       }
 
       return nfbResolveTemplateTokenValue_(tokenName, context, {
@@ -231,27 +245,58 @@ function nfbTransformNoext_(value) {
   return parts.join(", ");
 }
 
+function nfbJoinList_(list) {
+  if (!list || !list.length) return "";
+  var parts = [];
+  for (var i = 0; i < list.length; i++) {
+    if (list[i] === undefined || list[i] === null) continue;
+    var s = String(list[i]);
+    if (s) parts.push(s);
+  }
+  return parts.join(", ");
+}
+
+function nfbTransformFileNames_(_value, _args, context) {
+  return nfbJoinList_(context && context.currentFieldMeta && context.currentFieldMeta.fileNames);
+}
+
+function nfbTransformFileUrls_(_value, _args, context) {
+  return nfbJoinList_(context && context.currentFieldMeta && context.currentFieldMeta.fileUrls);
+}
+
+function nfbTransformFolderName_(_value, _args, context) {
+  return String((context && context.currentFieldMeta && context.currentFieldMeta.folderName) || "");
+}
+
+function nfbTransformFolderUrl_(_value, _args, context) {
+  return String((context && context.currentFieldMeta && context.currentFieldMeta.folderUrl) || "");
+}
+
 var NFB_TRANSFORMERS_ = {
-  "noext":    nfbTransformNoext_,
-  "time":     nfbTransformTime_,
-  "left":     nfbTransformLeft_,
-  "right":    nfbTransformRight_,
-  "mid":      nfbTransformMid_,
-  "pad":      nfbTransformPad_,
-  "padRight": nfbTransformPadRight_,
-  "upper":    nfbTransformUpper_,
-  "lower":    nfbTransformLower_,
-  "trim":     nfbTransformTrim_,
-  "default":  nfbTransformDefault_,
-  "replace":  nfbTransformReplace_,
-  "match":    nfbTransformMatch_,
-  "number":   nfbTransformNumber_,
-  "if":       nfbTransformIf_,
-  "ifv":      nfbTransformIfv_,
-  "map":      nfbTransformMap_,
-  "kana":     nfbTransformKana_,
-  "zen":      nfbTransformZen_,
-  "han":      nfbTransformHan_
+  "noext":       nfbTransformNoext_,
+  "time":        nfbTransformTime_,
+  "left":        nfbTransformLeft_,
+  "right":       nfbTransformRight_,
+  "mid":         nfbTransformMid_,
+  "pad":         nfbTransformPad_,
+  "padRight":    nfbTransformPadRight_,
+  "upper":       nfbTransformUpper_,
+  "lower":       nfbTransformLower_,
+  "trim":        nfbTransformTrim_,
+  "default":     nfbTransformDefault_,
+  "replace":     nfbTransformReplace_,
+  "match":       nfbTransformMatch_,
+  "number":      nfbTransformNumber_,
+  "if":          nfbTransformIf_,
+  "ifv":         nfbTransformIfv_,
+  "map":         nfbTransformMap_,
+  "kana":        nfbTransformKana_,
+  "zen":         nfbTransformZen_,
+  "han":         nfbTransformHan_,
+  "file_names":  nfbTransformFileNames_,
+  "file_urls":   nfbTransformFileUrls_,
+  "folder_name": nfbTransformFolderName_,
+  "folder_url":  nfbTransformFolderUrl_
 };
 
 function nfbApplyOneTransformer_(value, name, args, context) {

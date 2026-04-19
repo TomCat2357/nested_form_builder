@@ -42,12 +42,10 @@ function nfbCreateRecordPrintDocument(payload) {
             fieldLabels: tc.fieldLabels || tplCtx.fieldLabels || {},
             fieldValues: tc.fieldValues || tplCtx.fieldValues || {},
             fileUploadMeta: tc.fileUploadMeta || tplCtx.fileUploadMeta || {},
-            fileUrls: tplCtx.fileUrls || "",
             recordId: tplCtx.recordId || "",
             formId: tplCtx.formId || "",
             recordNo: tplCtx.recordNo || "",
             formTitle: tplCtx.formTitle || "",
-            folderUrl: tplCtx.folderUrl || "",
             recordUrl: tplCtx.recordUrl || "",
             formUrl: tplCtx.formUrl || "",
             now: tplCtx.now || new Date()
@@ -119,7 +117,6 @@ function nfbCreateRecordPrintDocument(payload) {
         fieldLabels: ds.fieldLabels || {},
         fieldValues: ds.fieldValues || {},
         fileUploadMeta: ds.fileUploadMeta || {},
-        fileUrls: ds.fileUrls || "",
         recordId: ds.recordId || normalizedPayload.records[0].recordId || "",
         formId: ds.formId || "",
         now: new Date()
@@ -279,7 +276,6 @@ function nfbBuildRecordOutputContext_(payload, folderUrl) {
   var ctx = nfbBuildDriveTemplateContext_(driveSettings);
   ctx.formId = recordContext.formId || ctx.formId || "";
   ctx.recordId = recordContext.recordId || ctx.recordId || "";
-  ctx.folderUrl = folderUrl || ctx.folderUrl || "";
   ctx.recordNo = recordContext.recordNo || "";
   ctx.formTitle = recordContext.formTitle || "";
 
@@ -518,7 +514,12 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
           allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),
           isRef: isRef
         });
-        value = nfbApplyPipeTransformers_(raw, tPart, context);
+        var metaByLabel = nfbBuildFileUploadMetaByLabel_(context);
+        var currentFieldMeta = metaByLabel[fPart] || null;
+        var pipeContext = currentFieldMeta
+          ? Object.assign({}, context || {}, { currentFieldMeta: currentFieldMeta })
+          : context;
+        value = nfbApplyPipeTransformers_(raw, tPart, pipeContext);
       } else {
         value = nfbResolveTemplateTokenValue_(tokenName, context, {
           allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),

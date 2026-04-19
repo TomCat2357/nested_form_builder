@@ -59,16 +59,20 @@ function nfbBuildDriveTemplateContext_(driveSettings, context) {
     fileUploadMeta: (driveSettings && driveSettings.fileUploadMeta) || {},
     formId: driveSettings && driveSettings.formId ? String(driveSettings.formId).trim() : "",
     recordId: driveSettings && driveSettings.recordId ? String(driveSettings.recordId).trim() : "",
-    folderUrl: driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "",
-    fileUrls: driveSettings && driveSettings.fileUrls ? String(driveSettings.fileUrls).trim() : "",
     now: new Date()
   };
 }
 
 function nfbResolveOrCreateFolder_(driveSettings, context) {
+  var ctx = nfbBuildDriveTemplateContext_(driveSettings, context);
   var directFolderUrl = driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
   if (directFolderUrl) {
-    return nfbResolveFolderFromInput_(directFolderUrl);
+    if (directFolderUrl.indexOf("{") >= 0) {
+      directFolderUrl = String(nfbResolveTemplate_(directFolderUrl, ctx) || "").trim();
+    }
+    if (directFolderUrl) {
+      return nfbResolveFolderFromInput_(directFolderUrl);
+    }
   }
 
   var rootFolder = nfbResolveRootFolder_(driveSettings);
@@ -77,8 +81,6 @@ function nfbResolveOrCreateFolder_(driveSettings, context) {
   if (!folderTemplate) {
     return rootFolder;
   }
-
-  var ctx = nfbBuildDriveTemplateContext_(driveSettings, context);
 
   var folderName = nfbResolveTemplate_(folderTemplate, ctx);
   if (!folderName) {
@@ -125,6 +127,9 @@ function nfbApplyFolderNameTemplateIfNeeded_(folder, driveSettings, context) {
 function nfbResolveUploadFolder_(driveSettings) {
   var context = nfbBuildDriveTemplateContext_(driveSettings);
   var directFolderUrl = driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
+  if (directFolderUrl && directFolderUrl.indexOf("{") >= 0) {
+    directFolderUrl = String(nfbResolveTemplate_(directFolderUrl, context) || "").trim();
+  }
   if (directFolderUrl) {
     var directFolder = nfbResolveFolderFromInput_(directFolderUrl);
     nfbApplyFolderNameTemplateIfNeeded_(directFolder, driveSettings, context);
