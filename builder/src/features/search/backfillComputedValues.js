@@ -6,42 +6,21 @@
  * 書き戻し（upsertRecordInCache）や同期トリガは呼び出し側の責務。
  */
 
-import {
-  buildComputedFieldPathsById,
-  buildLabelValueMapFromEntryData,
-  evaluateAllComputedFields,
-} from "../../core/computedFields.js";
-
-const isEmptyValue = (value) => value === undefined || value === null || value === "";
+import { backfillComputedFieldValues } from "../../core/computedFields.js";
 
 export const buildBackfilledRecord = (schema, record, { now = Date.now(), userEmail = "" } = {}) => {
-  const pathsById = buildComputedFieldPathsById(schema);
-  const fieldIds = Object.keys(pathsById);
-  if (fieldIds.length === 0) return null;
-
-  const data = record?.data && typeof record.data === "object" ? record.data : {};
-  const missing = fieldIds.filter((fid) => isEmptyValue(data[pathsById[fid]]));
-  if (missing.length === 0) return null;
-
-  const baseLabelValueMap = buildLabelValueMapFromEntryData(schema, data);
-  const { computedValues } = evaluateAllComputedFields(schema, null, baseLabelValueMap);
-
-  const nextData = { ...data };
-  const nextOrder = Array.isArray(record?.order) ? [...record.order] : Object.keys(nextData);
-  let changed = false;
-  for (const fid of missing) {
-    const path = pathsById[fid];
-    const value = computedValues[fid];
-    if (isEmptyValue(value)) continue;
-    nextData[path] = String(value);
-    if (!nextOrder.includes(path)) nextOrder.push(path);
-    changed = true;
-  }
+  const baseData = record?.data && typeof record.data === "object" ? record.data : {};
+  const { data, changed, newPaths } = backfillComputedFieldValues(schema, baseData);
   if (!changed) return null;
+
+  const nextOrder = Array.isArray(record?.order) ? [...record.order] : Object.keys(data);
+  for (const path of newPaths) {
+    if (!nextOrder.includes(path)) nextOrder.push(path);
+  }
 
   return {
     ...record,
-    data: nextData,
+    data,
     order: nextOrder,
     modifiedAt: now,
     modifiedAtUnixMs: now,

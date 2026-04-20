@@ -6,8 +6,8 @@ import { dataStore } from "../../app/state/dataStore.js";
 import { getRecordsFromCache, upsertRecordInCache } from "../../app/state/recordsCache.js";
 import { normalizeSchemaIDs } from "../../core/schema.js";
 import {
+  backfillComputedFieldValues,
   buildComputedFieldPathsById,
-  enrichEntryDataWithComputedFields,
 } from "../../core/computedFields.js";
 import { buildBackfilledRecord } from "./backfillComputedValues.js";
 import { buildSearchTableLayout } from "./searchTable.js";
@@ -145,22 +145,29 @@ export function useSearchPageState({
 
   const processedEntries = useMemo(() => {
     return entries.map((entry) => {
-      const effectiveEntry = hasComputedFields
-        ? { ...entry, data: enrichEntryDataWithComputedFields(normalizedSchema, entry?.data) }
-        : entry;
+      if (!hasComputedFields) {
+        return {
+          entry,
+          values: computeRowValues(entry, columns),
+          needsBackfill: false,
+          originalEntry: entry,
+        };
+      }
+      const { data: enrichedData, changed } = backfillComputedFieldValues(normalizedSchema, entry?.data);
+      const effectiveEntry = changed ? { ...entry, data: enrichedData } : entry;
       return {
         entry: effectiveEntry,
         values: computeRowValues(effectiveEntry, columns),
+        needsBackfill: changed,
+        originalEntry: entry,
       };
     });
   }, [entries, columns, normalizedSchema, hasComputedFields]);
 
-  const recordsNeedingBackfill = useMemo(() => {
-    if (!hasComputedFields) return [];
-    return entries.filter(
-      (entry) => buildBackfilledRecord(normalizedSchema, entry, { now: 0, userEmail: "" }) != null,
-    );
-  }, [entries, normalizedSchema, hasComputedFields]);
+  const recordsNeedingBackfill = useMemo(
+    () => processedEntries.filter((row) => row.needsBackfill).map((row) => row.originalEntry),
+    [processedEntries],
+  );
 
   useEffect(() => {
     if (!effectiveFormId) return;
@@ -337,7 +344,7 @@ export function useSearchPageState({
 
       showOutputAlert({ message: "マイドライブにエクセルファイルを保存しました。", url: result.fileUrl, linkLabel: "ファイルを開く" });
     } catch (err) {
-      console.error(err);
+      console.error("[SearchPage] excel export failed:", err);
       showAlert(`出力に失敗しました: ${err.message}`);
     } finally {
       setExporting(false);
