@@ -3,11 +3,13 @@ import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { useSetSelection } from "../../app/hooks/useSetSelection.js";
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { dataStore } from "../../app/state/dataStore.js";
+import { getRecordsFromCache, upsertRecordInCache } from "../../app/state/recordsCache.js";
 import { normalizeSchemaIDs } from "../../core/schema.js";
 import {
+  backfillComputedFieldValues,
   buildComputedFieldPathsById,
-  enrichEntryDataWithComputedFields,
 } from "../../core/computedFields.js";
+import { buildBackfilledRecord } from "./backfillComputedValues.js";
 import { buildSearchTableLayout } from "./searchTable.js";
 import { buildExportTableData } from "./searchExport.js";
 import {
@@ -97,7 +99,6 @@ export function useSearchPageState({
     locationKey: location.key,
     locationState: location.state,
     showAlert,
-    userEmail,
   });
 
   const { columns, headerRows } = useMemo(
@@ -144,15 +145,53 @@ export function useSearchPageState({
 
   const processedEntries = useMemo(() => {
     return entries.map((entry) => {
-      const effectiveEntry = hasComputedFields
-        ? { ...entry, data: enrichEntryDataWithComputedFields(normalizedSchema, entry?.data) }
-        : entry;
+      if (!hasComputedFields) {
+        return {
+          entry,
+          values: computeRowValues(entry, columns),
+          needsBackfill: false,
+          originalEntry: entry,
+        };
+      }
+      const { data: enrichedData, changed } = backfillComputedFieldValues(normalizedSchema, entry?.data);
+      const effectiveEntry = changed ? { ...entry, data: enrichedData } : entry;
       return {
         entry: effectiveEntry,
         values: computeRowValues(effectiveEntry, columns),
+        needsBackfill: changed,
+        originalEntry: entry,
       };
     });
   }, [entries, columns, normalizedSchema, hasComputedFields]);
+
+  const recordsNeedingBackfill = useMemo(
+    () => processedEntries.filter((row) => row.needsBackfill).map((row) => row.originalEntry),
+    [processedEntries],
+  );
+
+  useEffect(() => {
+    if (!effectiveFormId) return;
+    if (recordsNeedingBackfill.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { headerMatrix, schemaHash } = await getRecordsFromCache(effectiveFormId);
+        const now = Date.now();
+        for (const entry of recordsNeedingBackfill) {
+          if (cancelled) return;
+          const next = buildBackfilledRecord(normalizedSchema, entry, { now, userEmail });
+          if (!next) continue;
+          await upsertRecordInCache(effectiveFormId, next, { headerMatrix, schemaHash });
+        }
+        if (!cancelled) await reloadFromCache();
+      } catch (error) {
+        console.warn("[SearchPage] computed backfill failed:", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveFormId, recordsNeedingBackfill, normalizedSchema, userEmail, reloadFromCache]);
 
   const ownerFilteredEntries = useMemo(() => {
     if (isAdmin) return processedEntries;
@@ -305,7 +344,7 @@ export function useSearchPageState({
 
       showOutputAlert({ message: "マイドライブにエクセルファイルを保存しました。", url: result.fileUrl, linkLabel: "ファイルを開く" });
     } catch (err) {
-      console.error(err);
+      console.error("[SearchPage] excel export failed:", err);
       showAlert(`出力に失敗しました: ${err.message}`);
     } finally {
       setExporting(false);

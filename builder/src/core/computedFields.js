@@ -307,34 +307,58 @@ export const buildComputedFieldPathsById = (schema) => {
   return paths;
 };
 
+const isEmptyComputedValue = (value) => value === undefined || value === null || value === "";
+
+/**
+ * entry.data の空欄の計算/置換フィールドだけを動的評価で補完する共通コア。
+ * 補完対象が無い場合や評価値が全て空だった場合は changed=false を返し、data は元の参照をそのまま返す。
+ *
+ * @param {Array} schema
+ * @param {Object} entryData
+ * @param {Object} [tokenContext] - resolveTemplateTokens 用コンテキスト
+ * @returns {{ data: Object, changed: boolean, newPaths: string[] }}
+ *   newPaths: baseData に元々存在しなかった path のみ
+ */
+export const backfillComputedFieldValues = (schema, entryData, tokenContext) => {
+  const baseData = entryData && typeof entryData === "object" ? entryData : {};
+  const pathsById = buildComputedFieldPathsById(schema);
+  const fieldIds = Object.keys(pathsById);
+  if (fieldIds.length === 0) {
+    return { data: baseData, changed: false, newPaths: [] };
+  }
+
+  const missingFieldIds = fieldIds.filter((fid) => {
+    const path = pathsById[fid];
+    if (!path) return false;
+    return isEmptyComputedValue(baseData[path]);
+  });
+  if (missingFieldIds.length === 0) {
+    return { data: baseData, changed: false, newPaths: [] };
+  }
+
+  const baseLabelValueMap = buildLabelValueMapFromEntryData(schema, baseData);
+  const { computedValues } = evaluateAllComputedFields(schema, null, baseLabelValueMap, tokenContext);
+
+  const nextData = { ...baseData };
+  const newPaths = [];
+  let changed = false;
+  for (const fid of missingFieldIds) {
+    const path = pathsById[fid];
+    const value = computedValues[fid];
+    if (isEmptyComputedValue(value)) continue;
+    nextData[path] = String(value);
+    if (!Object.prototype.hasOwnProperty.call(baseData, path)) {
+      newPaths.push(path);
+    }
+    changed = true;
+  }
+  return { data: changed ? nextData : baseData, changed, newPaths };
+};
+
 /**
  * entry.data に計算/置換フィールドの再評価結果を注入した新しい data を返す
  * 保存値（entry.data[path]）があればそれを優先し、空のフィールドだけ動的計算で補完する
  */
 export const enrichEntryDataWithComputedFields = (schema, entryData, tokenContext) => {
-  const data = entryData || {};
-  const pathsById = buildComputedFieldPathsById(schema);
-  const fieldIds = Object.keys(pathsById);
-  if (fieldIds.length === 0) return data;
-
-  const missingFieldIds = fieldIds.filter((fid) => {
-    const path = pathsById[fid];
-    if (!path) return false;
-    const raw = data[path];
-    return raw === undefined || raw === null || raw === "";
-  });
-  if (missingFieldIds.length === 0) return data;
-
-  const baseLabelValueMap = buildLabelValueMapFromEntryData(schema, data);
-  const { computedValues } = evaluateAllComputedFields(schema, null, baseLabelValueMap, tokenContext);
-
-  const enriched = { ...data };
-  for (const fid of missingFieldIds) {
-    const path = pathsById[fid];
-    const value = computedValues[fid];
-    if (value !== undefined && value !== null && value !== "") {
-      enriched[path] = String(value);
-    }
-  }
-  return enriched;
+  return backfillComputedFieldValues(schema, entryData, tokenContext).data;
 };

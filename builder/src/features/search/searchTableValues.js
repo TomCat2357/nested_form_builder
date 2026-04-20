@@ -39,25 +39,6 @@ export const toNumericValue = (value) => {
   return Number.isFinite(parsed) ? parsed : null;
 };
 
-export const isDevEnvironment = (() => {
-  try {
-    if (typeof import.meta !== "undefined" && import.meta.env && typeof import.meta.env.DEV === "boolean") {
-      return import.meta.env.DEV;
-    }
-  } catch (error) {
-    // no-op: import.meta may not be available in some runtimes
-  }
-  if (typeof process !== "undefined" && process.env && typeof process.env.NODE_ENV === "string") {
-    return process.env.NODE_ENV !== "production";
-  }
-  return false;
-})();
-
-export const debugLog = (...args) => {
-  if (!isDevEnvironment) return;
-  console.debug("[searchTable]", ...args);
-};
-
 export const valueToDisplayString = (value) => {
   if (Array.isArray(value)) {
     return value
