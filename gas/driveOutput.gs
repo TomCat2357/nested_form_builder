@@ -156,7 +156,7 @@ function nfbCreateRecordPrintDocument(payload) {
 function nfbExecuteRecordOutputAction(payload) {
   return nfbSafeCall_(function() {
     var action = payload && payload.action ? payload.action : {};
-    var outputType = action.outputType === "gmail" ? "gmail" : (action.outputType === "googleDoc" ? "googleDoc" : "pdf");
+    var outputType = action.outputType === "gmail" ? "gmail" : "pdf";
     var fileNameTemplate = nfbResolveRecordOutputFileNameTemplate_(payload, action, outputType);
     if (nfbRequiresRecordOutputFileNameTemplate_(action, outputType) && !fileNameTemplate) {
       throw new Error("出力ファイル名が指定されていません");
@@ -171,10 +171,6 @@ function nfbExecuteRecordOutputAction(payload) {
 
     if (outputType === "gmail") {
       return nfbCreateGmailDraftOutput_(payload, action, outputContext, finalBaseName);
-    }
-
-    if (outputType === "googleDoc") {
-      return nfbCreateGoogleDocInRootOutput_(payload, action, outputContext, finalBaseName);
     }
 
     return nfbCreatePdfDownloadOutput_(payload, action, outputContext, finalBaseName);
@@ -243,7 +239,6 @@ function nfbExecuteBatchGoogleDocOutput(payload) {
 
     return {
       ok: true,
-      outputType: "googleDoc",
       openUrl: combinedFile.getUrl(),
       fileName: combinedFile.getName()
     };
@@ -378,18 +373,6 @@ function nfbCreatePdfDownloadOutput_(payload, action, outputContext, finalBaseNa
     outputType: "pdf",
     pdfBase64: base64,
     fileName: pdfBlob.getName()
-  };
-}
-
-function nfbCreateGoogleDocInRootOutput_(payload, action, outputContext, finalBaseName) {
-  var driveSettings = payload && payload.driveSettings ? payload.driveSettings : {};
-  var folder = nfbResolveRootFolder_(driveSettings);
-  var docFile = nfbCreateRecordOutputGoogleDocument_(payload, action, folder, outputContext, finalBaseName);
-  return {
-    ok: true,
-    outputType: "googleDoc",
-    openUrl: docFile.getUrl(),
-    fileName: docFile.getName()
   };
 }
 

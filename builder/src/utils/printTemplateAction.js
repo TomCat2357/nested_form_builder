@@ -1,5 +1,4 @@
 export const PRINT_TEMPLATE_OUTPUT_TYPES = Object.freeze({
-  GOOGLE_DOC: "googleDoc",
   PDF: "pdf",
   GMAIL: "gmail",
 });
@@ -63,7 +62,7 @@ export const getPrintTemplateOutputLabel = (actionOrType) => {
   const outputType = typeof actionOrType === "string"
     ? normalizePrintTemplateOutputType(actionOrType)
     : normalizePrintTemplateOutputType(actionOrType?.outputType);
-  return PRINT_TEMPLATE_OUTPUT_OPTIONS.find((option) => option.value === outputType)?.label || "GoogleDocument";
+  return PRINT_TEMPLATE_OUTPUT_OPTIONS.find((option) => option.value === outputType)?.label || "PDF";
 };
 
 export const resolvePrintTemplateFieldLabel = (field) => {

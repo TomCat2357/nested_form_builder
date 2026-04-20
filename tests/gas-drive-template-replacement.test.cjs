@@ -274,8 +274,8 @@ test("nfbResolveRecordOutputFileNameTemplate_ は標準ファイル名未設定�
   assert.equal(
     gas.nfbResolveRecordOutputFileNameTemplate_(
       { settings: {} },
-      { outputType: "googleDoc", fileNameTemplate: "" },
-      "googleDoc",
+      { outputType: "pdf", fileNameTemplate: "" },
+      "pdf",
     ),
     "{@_id}_{@_NOW|time:YYYY-MM-DD}",
   );

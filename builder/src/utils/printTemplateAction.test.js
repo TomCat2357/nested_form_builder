@@ -49,10 +49,10 @@ test("requiresPrintTemplateFileName は Gmail で gmailAttachPdf が false の�
   assert.equal(requiresPrintTemplateFileName({ outputType: "pdf" }), true);
 });
 
-test("resolveEffectivePrintTemplateFileNameTemplate は GoogleDocument/PDF で共通設定へフォールバックする", () => {
+test("resolveEffectivePrintTemplateFileNameTemplate は PDF で共通設定へフォールバックする", () => {
   assert.equal(
     resolveEffectivePrintTemplateFileNameTemplate(
-      { outputType: "googleDoc", fileNameTemplate: "" },
+      { outputType: "pdf", fileNameTemplate: "" },
       { standardPrintFileNameTemplate: "{ID}_共通" },
     ),
     "{ID}_共通",
@@ -66,7 +66,7 @@ test("resolveEffectivePrintTemplateFileNameTemplate は GoogleDocument/PDF で�
   );
   assert.equal(
     resolveEffectivePrintTemplateFileNameTemplate(
-      { outputType: "googleDoc", fileNameTemplate: "" },
+      { outputType: "pdf", fileNameTemplate: "" },
       {},
     ),
     DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE,
