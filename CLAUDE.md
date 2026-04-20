@@ -34,6 +34,8 @@ nested_form_builder/
 │   │   │   ├── schemaUtils.js # ツリー走査・変換（traverseSchema, mapSchema）
 │   │   │   ├── validate.js    # フィールドバリデーション（パターン, email, phone, URL, 数値範囲）
 │   │   │   ├── collect.js     # 回答収集・パス管理
+│   │   │   ├── computedFields.js # 計算フィールド評価
+│   │   │   ├── formulaEngine.js  # 数式エンジン（計算/置換フィールド用）
 │   │   │   ├── constants.js   # 定数（MAX_DEPTH=11, IndexedDB設定, キャッシュTTL）
 │   │   │   ├── ids.js         # ULID ベースのID生成
 │   │   │   ├── phone.js       # 電話番号処理（日本向け）
@@ -52,18 +54,23 @@ nested_form_builder/
 │   │   ├── pages/             # ページコンポーネント
 │   │   │   ├── AdminDashboardPage.jsx   # フォーム一覧・管理
 │   │   │   ├── AdminFormEditorPage.jsx  # フォームエディタ
+│   │   │   ├── AdminImportUrlDialog.jsx # URL/Drive からのフォームインポート
 │   │   │   ├── AdminSettingsPage.jsx    # 管理者設定
 │   │   │   ├── ConfigPage.jsx           # フォーム個別設定
 │   │   │   ├── FormPage.jsx             # フォーム入力画面
 │   │   │   ├── SearchPage.jsx           # データ検索・閲覧
 │   │   │   ├── MainPage.jsx             # エントリーポイント
-│   │   │   └── NotFoundPage.jsx         # 404
+│   │   │   ├── NotFoundPage.jsx         # 404
+│   │   │   └── （各ページヘルパー: configPageSettings, formPageHelpers, useAdminDashboardActions, useConfigPageTheme）
 │   │   ├── services/          # 外部サービス連携
 │   │   │   └── gasClient.js   # GAS API クライアント（30+関数）
 │   │   └── utils/             # ユーティリティ
 │   │       ├── responses.js          # 回答正規化・変換
 │   │       ├── formPaths.js          # パス・表示フィールド管理
 │   │       ├── printTemplateAction.js # テンプレート出力アクション定義
+│   │       ├── recordOutputActions.js # レコード出力アクション（PDF/Gmail等）
+│   │       ├── tokenReplacer.js      # フロント側トークン置換（GAS側と対応）
+│   │       ├── tokenTransformers.js  # パイプ変換ロジック
 │   │       ├── excelExport.js        # Excel エクスポート（ExcelJS）
 │   │       ├── dateTime.js           # 日時ユーティリティ（JST, シリアル日付変換）
 │   │       ├── driveFolderState.js   # Driveフォルダ状態管理
@@ -75,10 +82,17 @@ nested_form_builder/
 │   │       └── deepEqual.js          # 再帰的等値比較（変更検知）
 │   ├── Index.html             # エントリーポイント
 │   └── vite.config.mjs        # Vite設定（singlefile出力）
-├── gas/                        # Google Apps Script ソースファイル（20+ファイル）
-│   ├── Code.gs                # メインエンドポイント（doGet/doPost, 認証, ユーザープロフィール注入）
+├── gas/                        # Google Apps Script ソースファイル
+│   ├── Code.gs                # メインエンドポイント（doGet/doPost）
+│   ├── codeAuth.gs            # 認証・ユーザープロフィール解決（People API）
+│   ├── codeHandlers.gs        # HTTPハンドラ本体
+│   ├── codeSyncRecords.gs     # レコード差分同期エンドポイント
 │   ├── constants.gs           # 全定数・ULID生成（NFB_HEADER_DEPTH=11, NFB_DATA_START_ROW=12）
-│   ├── drive.gs               # Drive統合・テンプレートトークン・パイプ変換・フォルダ管理・PDF/Gmail出力
+│   ├── driveFile.gs           # Driveファイル操作（アップロード, 取得）
+│   ├── driveFolder.gs         # Driveフォルダ管理
+│   ├── driveTemplate.gs       # テンプレートトークン解決・パイプ変換
+│   ├── driveOutput.gs         # PDF / Gmail 出力
+│   ├── drivePrintDocument.gs  # Google Doc テンプレート差し込み
 │   ├── errors.gs              # エラーヘルパー（nfbSafeCall_）
 │   ├── formsCrud.gs           # フォームCRUD
 │   ├── formsImport.gs         # フォームインポート
@@ -90,7 +104,6 @@ nested_form_builder/
 │   ├── properties.gs          # PropertyStoreモード管理（script/user）, サーバータイムスタンプ
 │   ├── settings.gs            # 設定管理（管理者キー, メール, アクセス制限）
 │   ├── sheetsDatetime.gs      # 日時シリアル変換
-│   ├── sheetsExport.gs        # シートエクスポート
 │   ├── sheetsHeaders.gs       # ヘッダー行管理（11行深さ）
 │   ├── sheetsRecords.gs       # レコードCRUD・リテンション削除
 │   ├── sheetsRowOps.gs        # 行操作（二分探索, upsert）
@@ -102,7 +115,8 @@ nested_form_builder/
 │   └── SpreadsheetUtilities.gs
 ├── scripts/                    # 自動化スクリプト
 │   ├── capture-user-manual.js
-│   └── capture_user_manual_images.js
+│   ├── capture_user_manual_images.js
+│   └── generate_press_template.py
 ├── tests/                      # テストファイル
 │   ├── gas-drive-template-replacement.test.cjs  # テンプレート置換テスト
 │   ├── gas-google-drive-url-parsing.test.cjs    # URL解析テスト
@@ -224,7 +238,7 @@ npx @google/clasp deploy      # 4. Webアプリとしてデプロイ
 - **公開API**（`nfb`プレフィックス）: `nfbListForms`, `nfbGetForm`, `nfbSaveForm`, `nfbDeleteForm`, `nfbArchiveForm`, `nfbUnarchiveForm`, `nfbValidateSpreadsheet`, `nfbImportFormsFromDrive` 等
 - **フォーム管理**: Google DriveにJSONファイルとして保存、`formsMappingStore`でID⇔ファイル対応を管理
 - **シート操作**: 5ファイルに分割 — `sheetsHeaders`（11行ヘッダー管理）、`sheetsRecords`（レコードCRUD）、`sheetsRowOps`（二分探索・upsert）、`sheetsDatetime`（日時変換）、`sheetsExport`（エクスポート）
-- **Drive統合**: テンプレート出力（PDF/Gmail/Google Doc）、フォルダ管理、ファイルアップロード
+- **Drive統合**: `driveFile`/`driveFolder`/`driveTemplate`/`driveOutput`/`drivePrintDocument` の5ファイルに分割 — テンプレート出力（PDF/Gmail/Google Doc）、フォルダ管理、ファイルアップロード
 - **PropertyStoreモード**: `script`（管理者のみ）/ `user`（ユーザー別設定）
 
 ### データ構造
@@ -471,7 +485,7 @@ npm run clasp:login
 
 - **deploy.ps1**: PowerShellデプロイスクリプト
 - **gas/constants.gs**: 全GAS定数・ULID生成（NFB_HEADER_DEPTH, NFB_DATA_START_ROW, NFB_FIXED_HEADER_PATHS等）
-- **gas/drive.gs**: 最大のGASファイル（テンプレートトークン・パイプ変換・Drive統合・PDF/Gmail出力）
+- **gas/driveTemplate.gs / driveOutput.gs**: テンプレートトークン・パイプ変換、PDF/Gmail出力ロジック
 - **gas/Code.gs**: メインエンドポイント・認証・ユーザープロフィール注入
 - **gas/formsPublicApi.gs**: 公開API関数一覧
 - **builder/src/core/schema.js**: フォームスキーマ定義・正規化・バリデーション
