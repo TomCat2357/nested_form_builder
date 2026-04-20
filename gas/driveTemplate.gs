@@ -219,6 +219,37 @@ function nfbScanBalancedTokens_(text, replacer) {
 }
 
 /**
+ * Collect every top-level balanced {...} occurrence from text.
+ * Returns [{fullToken, body}, ...]. Unclosed braces terminate the scan.
+ * Used by the Google Doc path, which needs the original token string for replaceText.
+ */
+function nfbCollectBalancedTokens_(text) {
+  var results = [];
+  if (!text) return results;
+  var n = text.length;
+  var i = 0;
+  while (i < n) {
+    if (text.charAt(i) !== "{") { i++; continue; }
+    var depth = 1;
+    var j = i + 1;
+    while (j < n && depth > 0) {
+      var c = text.charAt(j);
+      if (c === "{") {
+        depth++;
+      } else if (c === "}") {
+        depth--;
+        if (depth === 0) break;
+      }
+      j++;
+    }
+    if (depth !== 0) return results;
+    results.push({ fullToken: text.substring(i, j + 1), body: text.substring(i + 1, j) });
+    i = j + 1;
+  }
+  return results;
+}
+
+/**
  * Resolve a single token body (the contents between matching { and }).
  * Handles {_} / {@_} / {_|...} as pipe-value references when context.__pipeValue__ is set.
  */

@@ -490,42 +490,19 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
   if (!sections.length) return;
 
   // ドキュメント全テキストから {TOKEN} を収集して解決値を求める
+  // ネストした {...}（サブテンプレート）を含むトークンも拾うため balanced scanner を使う
   var tokenValueMap = {};
+  var resolveOptions = { allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens) };
   for (var s = 0; s < sections.length; s++) {
     var sectionText = "";
     try { sectionText = sections[s].getText(); } catch(e) { continue; }
     if (!sectionText) continue;
-    var tokenRegex = /\{([^{}]+)\}/g;
-    var match;
-    while ((match = tokenRegex.exec(sectionText)) !== null) {
-      var rawTokenName = match[1] || "";
-      if (!rawTokenName) continue;
-      var fullToken = match[0];
+    var collected = nfbCollectBalancedTokens_(sectionText);
+    for (var t = 0; t < collected.length; t++) {
+      var fullToken = collected[t].fullToken;
       if (Object.prototype.hasOwnProperty.call(tokenValueMap, fullToken)) continue;
-      var isRef = rawTokenName.charAt(0) === "@";
-      var tokenName = isRef ? rawTokenName.slice(1) : rawTokenName;
-
-      var pipeIdx = tokenName.indexOf("|");
-      var value;
-      if (pipeIdx >= 0) {
-        var fPart = tokenName.substring(0, pipeIdx);
-        var tPart = tokenName.substring(pipeIdx + 1);
-        var raw = nfbResolveTemplateTokenValue_(fPart, context, {
-          allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),
-          isRef: isRef
-        });
-        var metaByLabel = nfbBuildFileUploadMetaByLabel_(context);
-        var currentFieldMeta = metaByLabel[fPart] || null;
-        var pipeContext = currentFieldMeta
-          ? Object.assign({}, context || {}, { currentFieldMeta: currentFieldMeta })
-          : context;
-        value = nfbApplyPipeTransformers_(raw, tPart, pipeContext);
-      } else {
-        value = nfbResolveTemplateTokenValue_(tokenName, context, {
-          allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens),
-          isRef: isRef
-        });
-      }
+      if (!collected[t].body) continue;
+      var value = nfbResolveOneTokenBody_(collected[t].body, context, resolveOptions);
       tokenValueMap[fullToken] = String(value === null || value === undefined ? "" : value);
     }
   }
