@@ -98,7 +98,6 @@ export function useSearchPagePrintActions({
   const createBatchPrintDocument = useCallback(async () => {
     const action = {
       enabled: true,
-      outputType: "googleDoc",
       useCustomTemplate: false,
       templateUrl: "",
       fileNameTemplate: "",
