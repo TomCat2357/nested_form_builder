@@ -7,6 +7,7 @@
     --surface-muted: rgba(255, 255, 255, 0.055);
     --surface-subtle: rgba(255, 255, 255, 0.04);
     --surface-alt: rgba(255, 255, 255, 0.12);
+    --dialog-bg: #1a2234;
 
     --border: rgba(255, 255, 255, 0.14);
     --border-muted: rgba(255, 255, 255, 0.12);

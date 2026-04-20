@@ -1377,7 +1377,7 @@ button:disabled {
 
 .dialog-panel {
   width: min(420px, 90vw);
-  background: var(--surface);
+  background: var(--dialog-bg);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
   padding: 24px 24px 16px;

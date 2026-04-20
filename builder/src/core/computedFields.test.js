@@ -5,6 +5,9 @@ import {
   buildDependencyGraph,
   detectCircularReferences,
   evaluateAllComputedFields,
+  buildLabelValueMapFromEntryData,
+  buildComputedFieldPathsById,
+  enrichEntryDataWithComputedFields,
 } from "./computedFields.js";
 
 // ---------------------------------------------------------------------------
@@ -215,7 +218,7 @@ test("evaluateAllComputedFields は計算フィールドなしスキーマで空
 test("evaluateAllComputedFields は substitution フィールドのトークンを解決する", () => {
   const schema = [
     makeField({ id: "q1", label: "名前", type: "text" }),
-    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "{名前}さんこんにちは" }),
+    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "{@名前}さんこんにちは" }),
   ];
   const responses = { q1: "太郎" };
   const baseLabelValueMap = { "名前": "太郎" };
@@ -228,11 +231,84 @@ test("evaluateAllComputedFields は後続の計算フィールドが先行の結
   const schema = [
     makeField({ id: "q1", label: "数値", type: "number" }),
     makeField({ id: "q2", label: "二倍", type: "calculated", formula: "{数値} * 2" }),
-    makeField({ id: "q3", label: "結果表示", type: "substitution", templateText: "結果は{二倍}です" }),
+    makeField({ id: "q3", label: "結果表示", type: "substitution", templateText: "結果は{@二倍}です" }),
   ];
   const responses = { q1: "10" };
   const baseLabelValueMap = { "数値": "10" };
   const { computedValues } = evaluateAllComputedFields(schema, responses, baseLabelValueMap);
   assert.equal(computedValues.q2, 20);
   assert.equal(computedValues.q3, "結果は20です");
+});
+
+// ---------------------------------------------------------------------------
+// buildLabelValueMapFromEntryData / enrichEntryDataWithComputedFields
+// ---------------------------------------------------------------------------
+
+test("buildLabelValueMapFromEntryData は radio 選択肢マーカーから選択値を再構築する", () => {
+  const schema = [
+    makeField({ id: "q1", label: "政党", type: "radio", options: ["自由民主党", "立憲民主党"] }),
+  ];
+  const entryData = { "政党|自由民主党": "●" };
+  const map = buildLabelValueMapFromEntryData(schema, entryData);
+  assert.equal(map["政党"], "自由民主党");
+});
+
+test("buildLabelValueMapFromEntryData は直接値のテキストフィールドを拾う", () => {
+  const schema = [
+    makeField({ id: "q1", label: "氏名", type: "text" }),
+  ];
+  const entryData = { "氏名": "山田太郎" };
+  const map = buildLabelValueMapFromEntryData(schema, entryData);
+  assert.equal(map["氏名"], "山田太郎");
+});
+
+test("buildComputedFieldPathsById は計算・置換フィールドの fieldId→path を返す", () => {
+  const schema = [
+    makeField({ id: "q1", label: "数値", type: "number" }),
+    makeField({ id: "q2", label: "二倍", type: "calculated", formula: "{数値} * 2" }),
+    makeField({ id: "q3", label: "挨拶", type: "substitution", templateText: "hi" }),
+  ];
+  const paths = buildComputedFieldPathsById(schema);
+  assert.equal(paths.q2, "二倍");
+  assert.equal(paths.q3, "挨拶");
+  assert.equal(paths.q1, undefined);
+});
+
+test("enrichEntryDataWithComputedFields は既存レコードにも置換の map 変換結果を注入する", () => {
+  // 既存レコードには q1 (radio) のみ保存されており、q2 (substitution) の値は未保存
+  const schema = [
+    makeField({ id: "q1", label: "政党", type: "radio", options: ["自由民主党", "立憲民主党"] }),
+    makeField({
+      id: "q2",
+      label: "政党略称",
+      type: "substitution",
+      templateText: "{@政党|map:自由民主党=自民;立憲民主党=立民}",
+    }),
+  ];
+  const entryData = { "政党|自由民主党": "●" };
+  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
+  assert.equal(enriched["政党略称"], "自民");
+  // 元のデータは変わっていない
+  assert.equal(enriched["政党|自由民主党"], "●");
+});
+
+test("enrichEntryDataWithComputedFields は空の結果の場合は path を削除する", () => {
+  const schema = [
+    makeField({ id: "q1", label: "氏名", type: "text" }),
+    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "{@氏名}" }),
+  ];
+  const entryData = { "挨拶": "古い値" };  // 氏名が空なので新評価では空文字
+  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
+  assert.equal(enriched["挨拶"], undefined);
+});
+
+test("enrichEntryDataWithComputedFields は最新の templateText を優先し、古い保存値を上書きする", () => {
+  const schema = [
+    makeField({ id: "q1", label: "氏名", type: "text" }),
+    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "Hello {@氏名}" }),
+  ];
+  // 古いレコード: 氏名=太郎、挨拶には古い「こんにちは 太郎」が保存されている
+  const entryData = { "氏名": "太郎", "挨拶": "こんにちは 太郎" };
+  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
+  assert.equal(enriched["挨拶"], "Hello 太郎");
 });

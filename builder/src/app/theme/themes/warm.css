@@ -1,11 +1,12 @@
 /* warm theme overrides */
-:root[data-theme="warm"] {
+:root[data-theme="warm"] {
   --bg: #0b1020;
   --surface: rgba(255, 255, 255, 0.08);
   --surface-elevated: rgba(255, 255, 255, 0.1);
   --surface-muted: rgba(255, 255, 255, 0.06);
   --surface-subtle: rgba(255, 255, 255, 0.04);
   --surface-alt: rgba(255, 255, 255, 0.12);
+  --dialog-bg: #1a2234;
 
   --border: rgba(255, 255, 255, 0.14);
   --border-muted: rgba(255, 255, 255, 0.12);
@@ -52,7 +53,7 @@
   --warning-ink: #fcd34d;
 
   --info: #38bdf8;
-  --info-weak: rgba(56, 189, 248, 0.16);
+  --info-weak: rgba(56, 189, 248, 0.16);
   --app-bg:
     radial-gradient(900px 500px at 15% -10%, rgba(91, 140, 255, 0.45), transparent 60%),
     radial-gradient(900px 500px at 90% 10%, rgba(255, 122, 89, 0.38), transparent 62%),

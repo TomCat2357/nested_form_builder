@@ -4,6 +4,10 @@ import { useSetSelection } from "../../app/hooks/useSetSelection.js";
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { dataStore } from "../../app/state/dataStore.js";
 import { normalizeSchemaIDs } from "../../core/schema.js";
+import {
+  buildComputedFieldPathsById,
+  enrichEntryDataWithComputedFields,
+} from "../../core/computedFields.js";
 import { buildSearchTableLayout } from "./searchTable.js";
 import { buildExportTableData } from "./searchExport.js";
 import {
@@ -132,14 +136,22 @@ export function useSearchPageState({
 
   const isDeletedEntry = useCallback((entry) => Boolean(entry?.deletedAtUnixMs || entry?.deletedAt), []);
 
+  const hasComputedFields = useMemo(
+    () => Object.keys(buildComputedFieldPathsById(normalizedSchema)).length > 0,
+    [normalizedSchema],
+  );
+
   const processedEntries = useMemo(() => {
     return entries.map((entry) => {
+      const effectiveEntry = hasComputedFields
+        ? { ...entry, data: enrichEntryDataWithComputedFields(normalizedSchema, entry?.data) }
+        : entry;
       return {
-        entry,
-        values: computeRowValues(entry, columns),
+        entry: effectiveEntry,
+        values: computeRowValues(effectiveEntry, columns),
       };
     });
-  }, [entries, columns]);
+  }, [entries, columns, normalizedSchema, hasComputedFields]);
 
   const ownerFilteredEntries = useMemo(() => {
     if (isAdmin) return processedEntries;

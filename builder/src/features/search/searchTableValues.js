@@ -24,7 +24,10 @@ export const isChoiceColumn = (column) => {
   return type === "checkboxes" || type === "radio" || type === "select" || type === "weekday";
 };
 export const isBooleanSortColumn = (column) => columnType(column) === "checkboxes";
-export const isNumericColumn = (column) => columnType(column) === "number";
+export const isNumericColumn = (column) => {
+  const type = columnType(column);
+  return type === "number" || type === "calculated";
+};
 export const isDateLikeColumn = (column) => {
   const type = columnType(column);
   return type === "date" || type === "time" || column?.key === "modifiedAt" || column?.key === "createdAt";

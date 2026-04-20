@@ -8,6 +8,7 @@
 import { traverseSchema } from "./schemaUtils.js";
 import { extractFormulaDependencies, compileFormula, evaluateFormula } from "./formulaEngine.js";
 import { resolveTemplateTokens } from "../utils/tokenReplacer.js";
+import { normalizeFileUploadEntries } from "./collect.js";
 
 // ---------------------------------------------------------------------------
 // Dependency extraction
@@ -236,4 +237,99 @@ export const evaluateAllComputedFields = (schema, responses, baseLabelValueMap, 
   }
 
   return { computedValues, computedErrors };
+};
+
+// ---------------------------------------------------------------------------
+// Entry data enrichment for search
+// ---------------------------------------------------------------------------
+
+const collectOptionLabelsForPath = (entryData, path) => {
+  const prefix = `${path}|`;
+  const selected = [];
+  for (const key of Object.keys(entryData)) {
+    if (!key.startsWith(prefix)) continue;
+    const remainder = key.slice(prefix.length);
+    if (!remainder || remainder.includes("|")) continue;
+    const val = entryData[key];
+    if (val !== undefined && val !== null && val !== "" && val !== false && val !== 0 && val !== "0") {
+      selected.push(remainder);
+    }
+  }
+  return selected;
+};
+
+/**
+ * entry.data からラベル→値マップを再構築する
+ * （計算/置換フィールドを検索時に再評価するための入力として使う）
+ */
+export const buildLabelValueMapFromEntryData = (schema, entryData) => {
+  const map = {};
+  const data = entryData || {};
+  traverseSchema(schema, (field, context) => {
+    if (!field?.label) return;
+    const path = (context.pathSegments || []).join("|");
+    if (!path) return;
+    if (Object.prototype.hasOwnProperty.call(map, field.label)) return;
+
+    const type = field.type;
+    if (type === "radio" || type === "select") {
+      const options = collectOptionLabelsForPath(data, path);
+      if (options.length > 0) map[field.label] = options[0];
+    } else if (type === "checkboxes" || type === "weekday") {
+      const options = collectOptionLabelsForPath(data, path);
+      if (options.length > 0) map[field.label] = options.join(", ");
+    } else if (type === "fileUpload") {
+      const files = normalizeFileUploadEntries(data[path]);
+      if (files.length > 0) map[field.label] = files.map((f) => f.name).join(", ");
+    } else if (type === "message" || type === "printTemplate") {
+      // no stored value
+    } else {
+      const raw = data[path];
+      if (raw !== undefined && raw !== null && raw !== "") {
+        map[field.label] = String(raw);
+      }
+    }
+  });
+  return map;
+};
+
+/**
+ * 計算/置換フィールドの fieldId → path マップを返す
+ */
+export const buildComputedFieldPathsById = (schema) => {
+  const paths = {};
+  traverseSchema(schema, (field, context) => {
+    if (field?.type !== "calculated" && field?.type !== "substitution") return;
+    const fid = field?.id;
+    if (!fid) return;
+    paths[fid] = (context.pathSegments || []).join("|");
+  });
+  return paths;
+};
+
+/**
+ * entry.data に計算/置換フィールドの再評価結果を注入した新しい data を返す
+ * （既存の値は上書きする。記録時と現在のテンプレート/式が違う場合、最新を優先する）
+ */
+export const enrichEntryDataWithComputedFields = (schema, entryData, tokenContext) => {
+  const data = entryData || {};
+  const pathsById = buildComputedFieldPathsById(schema);
+  const fieldIds = Object.keys(pathsById);
+  if (fieldIds.length === 0) return data;
+
+  const baseLabelValueMap = buildLabelValueMapFromEntryData(schema, data);
+  const { computedValues } = evaluateAllComputedFields(schema, null, baseLabelValueMap, tokenContext);
+
+  const enriched = { ...data };
+  for (const fid of fieldIds) {
+    const path = pathsById[fid];
+    if (!path) continue;
+    const value = computedValues[fid];
+    if (value === undefined || value === null || value === "") {
+      delete enriched[path];
+    } else {
+      enriched[path] = String(value);
+    }
+  }
+  return enriched;
 };
