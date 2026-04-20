@@ -97,6 +97,7 @@ export function useSearchPageState({
     locationKey: location.key,
     locationState: location.state,
     showAlert,
+    userEmail,
   });
 
   const { columns, headerRows } = useMemo(

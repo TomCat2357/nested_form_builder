@@ -292,23 +292,47 @@ test("enrichEntryDataWithComputedFields は既存レコードにも置換の map
   assert.equal(enriched["政党|自由民主党"], "●");
 });
 
-test("enrichEntryDataWithComputedFields は空の結果の場合は path を削除する", () => {
-  const schema = [
-    makeField({ id: "q1", label: "氏名", type: "text" }),
-    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "{@氏名}" }),
-  ];
-  const entryData = { "挨拶": "古い値" };  // 氏名が空なので新評価では空文字
-  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
-  assert.equal(enriched["挨拶"], undefined);
-});
-
-test("enrichEntryDataWithComputedFields は最新の templateText を優先し、古い保存値を上書きする", () => {
+test("enrichEntryDataWithComputedFields は保存値が空のとき動的計算で補完する", () => {
   const schema = [
     makeField({ id: "q1", label: "氏名", type: "text" }),
     makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "Hello {@氏名}" }),
   ];
-  // 古いレコード: 氏名=太郎、挨拶には古い「こんにちは 太郎」が保存されている
-  const entryData = { "氏名": "太郎", "挨拶": "こんにちは 太郎" };
+  const entryData = { "氏名": "太郎" };
   const enriched = enrichEntryDataWithComputedFields(schema, entryData);
   assert.equal(enriched["挨拶"], "Hello 太郎");
+});
+
+test("enrichEntryDataWithComputedFields は保存値があれば動的再評価せず保存値を使う", () => {
+  const schema = [
+    makeField({ id: "q1", label: "氏名", type: "text" }),
+    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "Hello {@氏名}" }),
+  ];
+  // 保存値は「こんにちは 太郎」。式は "Hello {@氏名}" に変わっているが保存値を尊重する
+  const entryData = { "氏名": "太郎", "挨拶": "こんにちは 太郎" };
+  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
+  assert.equal(enriched["挨拶"], "こんにちは 太郎");
+});
+
+test("enrichEntryDataWithComputedFields は保存値と空の混在で空だけ補完する", () => {
+  const schema = [
+    makeField({ id: "q1", label: "氏名", type: "text" }),
+    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "Hello {@氏名}" }),
+    makeField({ id: "q3", label: "呼び捨て", type: "substitution", templateText: "{@氏名}!" }),
+  ];
+  // 挨拶は保存済み、呼び捨ては未保存
+  const entryData = { "氏名": "太郎", "挨拶": "こんにちは 太郎" };
+  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
+  assert.equal(enriched["挨拶"], "こんにちは 太郎");
+  assert.equal(enriched["呼び捨て"], "太郎!");
+});
+
+test("enrichEntryDataWithComputedFields は空の計算結果で path を作らない", () => {
+  const schema = [
+    makeField({ id: "q1", label: "氏名", type: "text" }),
+    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "{@氏名}" }),
+  ];
+  // 氏名も挨拶も未保存
+  const entryData = {};
+  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
+  assert.equal(enriched["挨拶"], undefined);
 });
