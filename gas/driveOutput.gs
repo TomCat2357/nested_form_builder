@@ -415,13 +415,6 @@ function nfbCloneRecordOutputActionForGeneratedFile_(action) {
   return cloned;
 }
 
-function nfbCreatePdfFileFromGoogleDocument_(docFile, folder, finalBaseName) {
-  var pdfName = /\.pdf$/i.test(finalBaseName) ? finalBaseName : finalBaseName + ".pdf";
-  nfbTrashExistingFile_(folder, pdfName);
-  return folder.createFile(docFile.getBlob().getAs(MimeType.PDF).setName(pdfName));
-}
-
-
 function nfbCreateRecordOutputGoogleDocument_(payload, action, folder, outputContext, finalBaseName) {
   var sourceUrl = nfbResolveRecordOutputTemplateSourceUrl_(payload, action);
   if (sourceUrl) {
