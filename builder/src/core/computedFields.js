@@ -309,7 +309,7 @@ export const buildComputedFieldPathsById = (schema) => {
 
 /**
  * entry.data に計算/置換フィールドの再評価結果を注入した新しい data を返す
- * （既存の値は上書きする。記録時と現在のテンプレート/式が違う場合、最新を優先する）
+ * 保存値（entry.data[path]）があればそれを優先し、空のフィールドだけ動的計算で補完する
  */
 export const enrichEntryDataWithComputedFields = (schema, entryData, tokenContext) => {
   const data = entryData || {};
@@ -317,17 +317,22 @@ export const enrichEntryDataWithComputedFields = (schema, entryData, tokenContex
   const fieldIds = Object.keys(pathsById);
   if (fieldIds.length === 0) return data;
 
+  const missingFieldIds = fieldIds.filter((fid) => {
+    const path = pathsById[fid];
+    if (!path) return false;
+    const raw = data[path];
+    return raw === undefined || raw === null || raw === "";
+  });
+  if (missingFieldIds.length === 0) return data;
+
   const baseLabelValueMap = buildLabelValueMapFromEntryData(schema, data);
   const { computedValues } = evaluateAllComputedFields(schema, null, baseLabelValueMap, tokenContext);
 
   const enriched = { ...data };
-  for (const fid of fieldIds) {
+  for (const fid of missingFieldIds) {
     const path = pathsById[fid];
-    if (!path) continue;
     const value = computedValues[fid];
-    if (value === undefined || value === null || value === "") {
-      delete enriched[path];
-    } else {
+    if (value !== undefined && value !== null && value !== "") {
       enriched[path] = String(value);
     }
   }

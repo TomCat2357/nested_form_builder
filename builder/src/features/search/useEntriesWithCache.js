@@ -3,11 +3,13 @@ import { useLatestRef } from "../../app/hooks/useLatestRef.js";
 import { useOperationCacheTrigger } from "../../app/hooks/useOperationCacheTrigger.js";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { dataStore } from "../../app/state/dataStore.js";
-import { saveRecordsToCache, getRecordsFromCache } from "../../app/state/recordsCache.js";
+import { saveRecordsToCache, getRecordsFromCache, upsertRecordInCache } from "../../app/state/recordsCache.js";
 import { evaluateCacheForRecords } from "../../app/state/cachePolicy.js";
 import { useRefreshFormsIfNeeded } from "../../app/hooks/useRefreshFormsIfNeeded.js";
 import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../../core/constants.js";
 import { perfLogger } from "../../utils/perfLogger.js";
+import { normalizeSchemaIDs } from "../../core/schema.js";
+import { backfillComputedValuesInCache } from "./backfillComputedValues.js";
 import {
   syncStateListeners,
   defaultAlert,
@@ -35,6 +37,7 @@ export const useEntriesWithCache = ({
   locationKey,
   locationState,
   showAlert = defaultAlert.showAlert,
+  userEmail = "",
 }) => {
   const { refreshForms, loadingForms } = useAppData();
   const initialSyncSnapshot = getGlobalSyncSnapshot(formId);
@@ -545,6 +548,28 @@ export const useEntriesWithCache = ({
     });
     updateGlobalMeta(formId, { waitingForLock: false });
     await dataStore.flushPendingOperations();
+
+    try {
+      const schema = normalizeSchemaIDs(form?.schema || []);
+      const { updatedCount } = await backfillComputedValuesInCache({
+        formId,
+        schema,
+        userEmail,
+        getRecordsFromCache,
+        upsertRecordInCache,
+      });
+      if (updatedCount > 0) {
+        logSearchBackground("manual-refresh:backfill-computed", {
+          reason: "manual:search-records",
+          updatedCount,
+        });
+      }
+    } catch (error) {
+      logSearchBackground("manual-refresh:backfill-error", {
+        error: error?.message || String(error),
+      });
+    }
+
     let lockTimeoutDetected = false;
     try {
       while (true) {
@@ -603,7 +628,7 @@ export const useEntriesWithCache = ({
         reason: "manual:search-records",
       });
     }
-  }, [fetchAndCacheData, formId, logSearchBackground, refreshForms, showAlert]);
+  }, [fetchAndCacheData, formId, form?.schema, logSearchBackground, refreshForms, showAlert, userEmail]);
 
   const forceRefreshAll = useCallback(async () => {
     if (!formId) return;
