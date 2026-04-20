@@ -515,7 +515,11 @@ export const buildSearchTableLayout = (
 export const padRowToLength = (row, length) => {
   const base = Array.isArray(row) ? row.slice(0, length) : [];
   while (base.length < length) base.push("");
-  return base.map((cell) => (cell === null || cell === undefined ? "" : String(cell)));
+  return base.map((cell) => {
+    if (cell === null || cell === undefined) return "";
+    if (typeof cell === "object" && typeof cell.text === "string") return cell;
+    return String(cell);
+  });
 };
 
 export const expandHeaderRowsToMatrix = (headerRows, columnCount) => {

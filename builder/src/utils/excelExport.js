@@ -48,10 +48,20 @@ export const createExcelBlob = async (exportTable, themeColors) => {
   const surfaceColor = (themeColors.surface || "#ffffff").replace("#", "");
   const borderColor = (themeColors.border || "#e6e8f0").replace("#", "");
 
+  const sanitizeText = (text) => (/^[=+\-@]/.test(text) ? "'" + text : text);
+
   // Formula Injection対策: =, +, -, @ で始まる文字列を無害化
+  // ハイパーリンクセル（{ text, hyperlink }）の場合は text 側にも適用
   function sanitizeForExcel(value) {
-    if (typeof value === "string" && /^[=+\-@]/.test(value)) {
-      return "'" + value;
+    if (typeof value === "string") {
+      return sanitizeText(value);
+    }
+    if (value && typeof value === "object" && typeof value.text === "string") {
+      const safeText = sanitizeText(value.text);
+      if (value.hyperlink) {
+        return { text: safeText, hyperlink: value.hyperlink };
+      }
+      return safeText;
     }
     return value;
   }
@@ -71,11 +81,16 @@ export const createExcelBlob = async (exportTable, themeColors) => {
   });
 
   exportTable.rows.forEach((rowArray, index) => {
-    const row = worksheet.addRow(rowArray.map(sanitizeForExcel));
+    const sanitized = rowArray.map(sanitizeForExcel);
+    const row = worksheet.addRow(sanitized);
     const bgColor = index % 2 === 0 ? surfaceColor : primarySoftColor;
-    row.eachCell((cell) => {
+    row.eachCell((cell, colNumber) => {
+      const original = sanitized[colNumber - 1];
+      const isHyperlink = original && typeof original === "object" && typeof original.hyperlink === "string";
       cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF" + bgColor } };
-      cell.font = { color: { argb: "FF1A1A2E" } };
+      cell.font = isHyperlink
+        ? { color: { argb: "FF" + primaryColor }, underline: true }
+        : { color: { argb: "FF1A1A2E" } };
       cell.border = {
         top: { style: "thin", color: { argb: "FF" + borderColor } },
         left: { style: "thin", color: { argb: "FF" + borderColor } },

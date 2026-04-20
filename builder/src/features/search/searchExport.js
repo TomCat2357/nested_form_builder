@@ -21,6 +21,7 @@ const collectAllFieldSettings = (schema) => {
     collected.push({
       path,
       type: field?.type || "",
+      field,
     });
   });
   return collected;
@@ -31,11 +32,25 @@ export const buildExportColumns = (form, { includeBaseColumns = true } = {}) => 
   if (includeBaseColumns) {
     columns.push(...createBaseColumns());
   }
-  collectAllFieldSettings(form?.schema || []).forEach(({ path, type }) => {
+  collectAllFieldSettings(form?.schema || []).forEach(({ path, type, field }) => {
     if (!path) return;
+    if (type === "fileUpload") {
+      columns.push(createDisplayColumn(path, type, { actionKind: "folderLink", fieldMeta: field }));
+      return;
+    }
     columns.push(createDisplayColumn(path, type));
   });
   return columns;
+};
+
+const buildFileUploadCell = (cellValue) => {
+  const files = Array.isArray(cellValue?.files) ? cellValue.files : [];
+  const folderUrl = typeof cellValue?.folderUrl === "string" ? cellValue.folderUrl.trim() : "";
+  const text = files.length > 0 ? String(cellValue?.display ?? "") : "なし";
+  if (folderUrl) {
+    return { text, hyperlink: folderUrl };
+  }
+  return text;
 };
 
 export const buildExportTableData = ({ form, entries }) => {
@@ -48,7 +63,11 @@ export const buildExportTableData = ({ form, entries }) => {
   (entries || []).forEach((entry) => {
     const values = computeRowValues(entry, columns);
     const row = columns.map((column) => {
-      const display = values?.[column.key]?.display;
+      const cellValue = values?.[column.key];
+      if (column?.actionKind === "folderLink") {
+        return buildFileUploadCell(cellValue);
+      }
+      const display = cellValue?.display;
       if (display === null || display === undefined) return "";
       return String(display);
     });
