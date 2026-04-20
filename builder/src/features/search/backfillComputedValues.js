@@ -1,11 +1,9 @@
 /**
- * キャッシュ上の全レコードを走査し、計算/置換フィールドの保存値が空のものを
- * 動的計算で補完する。補完が発生したレコードは modifiedAt を現在時刻に更新し
- * キャッシュへ書き戻す。
+ * 単一レコードの計算/置換フィールドを「保存値が空かつ動的計算で非空値が得られる」欄だけ補完し、
+ * modifiedAt / modifiedAtUnixMs / modifiedBy を更新した新しいレコードを返す純粋関数。
  *
- * その後の差分同期（syncRecordsProxy）で buildUploadRecordsForSync が
- * modifiedAtUnixMs > baseServerReadAt のレコードをピックアップしてバックエンド
- * のスプレッドシートへ送信するため、この関数は送信そのものは行わない。
+ * 補完対象が存在しない、または動的計算値が全て空だった場合は null を返す。
+ * 書き戻し（upsertRecordInCache）や同期トリガは呼び出し側の責務。
  */
 
 import {
@@ -49,35 +47,4 @@ export const buildBackfilledRecord = (schema, record, { now = Date.now(), userEm
     modifiedAtUnixMs: now,
     modifiedBy: userEmail || record?.modifiedBy || "",
   };
-};
-
-export const backfillComputedValuesInCache = async ({
-  formId,
-  schema,
-  userEmail = "",
-  getRecordsFromCache,
-  upsertRecordInCache,
-  now = Date.now(),
-} = {}) => {
-  if (!formId || !Array.isArray(schema) || schema.length === 0) {
-    return { updatedCount: 0 };
-  }
-  const pathsById = buildComputedFieldPathsById(schema);
-  if (Object.keys(pathsById).length === 0) {
-    return { updatedCount: 0 };
-  }
-
-  const { entries, headerMatrix, schemaHash } = await getRecordsFromCache(formId);
-  if (!Array.isArray(entries) || entries.length === 0) {
-    return { updatedCount: 0 };
-  }
-
-  let updatedCount = 0;
-  for (const entry of entries) {
-    const next = buildBackfilledRecord(schema, entry, { now, userEmail });
-    if (!next) continue;
-    await upsertRecordInCache(formId, next, { headerMatrix, schemaHash });
-    updatedCount += 1;
-  }
-  return { updatedCount };
 };

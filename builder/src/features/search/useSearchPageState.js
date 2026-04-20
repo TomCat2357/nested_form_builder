@@ -3,11 +3,13 @@ import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { useSetSelection } from "../../app/hooks/useSetSelection.js";
 import { useMemo, useState, useCallback, useEffect } from "react";
 import { dataStore } from "../../app/state/dataStore.js";
+import { getRecordsFromCache, upsertRecordInCache } from "../../app/state/recordsCache.js";
 import { normalizeSchemaIDs } from "../../core/schema.js";
 import {
   buildComputedFieldPathsById,
   enrichEntryDataWithComputedFields,
 } from "../../core/computedFields.js";
+import { buildBackfilledRecord } from "./backfillComputedValues.js";
 import { buildSearchTableLayout } from "./searchTable.js";
 import { buildExportTableData } from "./searchExport.js";
 import {
@@ -97,7 +99,6 @@ export function useSearchPageState({
     locationKey: location.key,
     locationState: location.state,
     showAlert,
-    userEmail,
   });
 
   const { columns, headerRows } = useMemo(
@@ -153,6 +154,37 @@ export function useSearchPageState({
       };
     });
   }, [entries, columns, normalizedSchema, hasComputedFields]);
+
+  const recordsNeedingBackfill = useMemo(() => {
+    if (!hasComputedFields) return [];
+    return entries.filter(
+      (entry) => buildBackfilledRecord(normalizedSchema, entry, { now: 0, userEmail: "" }) != null,
+    );
+  }, [entries, normalizedSchema, hasComputedFields]);
+
+  useEffect(() => {
+    if (!effectiveFormId) return;
+    if (recordsNeedingBackfill.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { headerMatrix, schemaHash } = await getRecordsFromCache(effectiveFormId);
+        const now = Date.now();
+        for (const entry of recordsNeedingBackfill) {
+          if (cancelled) return;
+          const next = buildBackfilledRecord(normalizedSchema, entry, { now, userEmail });
+          if (!next) continue;
+          await upsertRecordInCache(effectiveFormId, next, { headerMatrix, schemaHash });
+        }
+        if (!cancelled) await reloadFromCache();
+      } catch (error) {
+        console.warn("[SearchPage] computed backfill failed:", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveFormId, recordsNeedingBackfill, normalizedSchema, userEmail, reloadFromCache]);
 
   const ownerFilteredEntries = useMemo(() => {
     if (isAdmin) return processedEntries;
