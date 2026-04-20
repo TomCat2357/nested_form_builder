@@ -56,17 +56,6 @@ function nfbBuildFieldLabelValueMap_(context) {
   return labelValueMap;
 }
 
-function nfbGetTemplateDateParts_(date, tz) {
-  return {
-    year: Number(Utilities.formatDate(date, tz, "yyyy")),
-    month: Number(Utilities.formatDate(date, tz, "M")),
-    day: Number(Utilities.formatDate(date, tz, "d")),
-    hour: Number(Utilities.formatDate(date, tz, "H")),
-    minute: Number(Utilities.formatDate(date, tz, "m")),
-    second: Number(Utilities.formatDate(date, tz, "s"))
-  };
-}
-
 function nfbDatePartsIsSameOrAfter_(dateParts, comparison) {
   if (dateParts.year !== comparison.year) return dateParts.year > comparison.year;
   if (dateParts.month !== comparison.month) return dateParts.month > comparison.month;
@@ -95,13 +84,6 @@ function nfbResolveJapaneseEra_(dateParts) {
     name: "",
     year: dateParts.year
   };
-}
-
-function nfbIsReservedTemplateToken_(tokenName) {
-  return tokenName === "_id"
-    || tokenName === "_NOW"
-    || tokenName === "_record_url"
-    || tokenName === "_form_url";
 }
 
 function nfbResolveReservedTemplateToken_(tokenName, context, options) {

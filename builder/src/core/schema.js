@@ -221,19 +221,16 @@ export const cleanUnusedFieldProperties = (field) => {
   if (type === "fileUpload") {
     field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
     field.allowFolderUrlEdit = normalizeBooleanSetting(field.allowFolderUrlEdit, false);
-    delete field.showPdfMetaTitle;
     field.hideFileExtension = normalizeBooleanSetting(field.hideFileExtension, false);
     field.driveRootFolderUrl = typeof field.driveRootFolderUrl === "string" ? field.driveRootFolderUrl : "";
     field.driveFolderNameTemplate = typeof field.driveFolderNameTemplate === "string" ? field.driveFolderNameTemplate : "";
   } else {
     delete field.allowUploadByUrl;
     delete field.allowFolderUrlEdit;
-    delete field.showPdfMetaTitle;
     delete field.hideFileExtension;
     delete field.driveRootFolderUrl;
     delete field.driveFolderNameTemplate;
   }
-  delete field.allowMultipleFiles;
   return field;
 };
 
@@ -316,7 +313,6 @@ export const normalizeSchemaIDs = (nodes) => {
       base.allowUploadByUrl = normalizeBooleanSetting(base.allowUploadByUrl, false);
       base.allowFolderUrlEdit = normalizeBooleanSetting(base.allowFolderUrlEdit, false);
       base.hideFileExtension = normalizeBooleanSetting(base.hideFileExtension, false);
-      delete base.showPdfMetaTitle;
       base.driveRootFolderUrl = typeof base.driveRootFolderUrl === "string" ? base.driveRootFolderUrl : "";
       base.driveFolderNameTemplate = typeof base.driveFolderNameTemplate === "string" ? base.driveFolderNameTemplate : "";
     } else if (base.type === "printTemplate") {
