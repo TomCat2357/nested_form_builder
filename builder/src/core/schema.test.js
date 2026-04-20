@@ -139,10 +139,11 @@ test("normalizeSchemaIDs は旧 fileUpload の printTemplateAction を独立カ�
   assert.equal(schema[1].isDisplayed, true);
   assert.deepEqual(schema[1].printTemplateAction, {
     enabled: true,
-    outputType: "googleDoc",
+    outputType: "pdf",
     useCustomTemplate: false,
     templateUrl: "https://example.com/template",
     fileNameTemplate: "出力_${recordId}",
+    gmailAttachPdf: false,
     gmailTemplateTo: "",
     gmailTemplateCc: "",
     gmailTemplateBcc: "",
