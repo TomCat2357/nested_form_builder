@@ -23,7 +23,8 @@ const FILE_ORDER = [
   'settings.gs',         // 定数・設定
   'properties.gs',       // プロパティサービス管理
   // --- drive分割 ---
-  'driveTemplate.gs',       // テンプレート解決・パイプ変換
+  'driveTransformers.gs',   // パイプ変換関数群（driveTemplate より前）
+  'driveTemplate.gs',       // テンプレート解決
   'drivePrintDocument.gs',  // 印刷様式ドキュメント
   'driveFolder.gs',         // フォルダ管理
   'driveOutput.gs',         // 出力オーケストレーション

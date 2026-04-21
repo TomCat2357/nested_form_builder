@@ -68,7 +68,7 @@ function nfbResolveOrCreateFolder_(driveSettings, context) {
   var directFolderUrl = driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
   if (directFolderUrl) {
     if (directFolderUrl.indexOf("{") >= 0) {
-      directFolderUrl = String(nfbResolveTemplate_(directFolderUrl, ctx) || "").trim();
+      directFolderUrl = String(nfbResolveTemplateTokens_(directFolderUrl, ctx) || "").trim();
     }
     if (directFolderUrl) {
       return nfbResolveFolderFromInput_(directFolderUrl);
@@ -82,7 +82,7 @@ function nfbResolveOrCreateFolder_(driveSettings, context) {
     return rootFolder;
   }
 
-  var folderName = nfbResolveTemplate_(folderTemplate, ctx);
+  var folderName = nfbResolveTemplateTokens_(folderTemplate, ctx);
   if (!folderName) {
     return rootFolder;
   }
@@ -112,7 +112,7 @@ function nfbApplyFolderNameTemplateIfNeeded_(folder, driveSettings, context) {
     return folder;
   }
 
-  var resolvedName = nfbResolveTemplate_(folderTemplate, nfbBuildDriveTemplateContext_(driveSettings, context));
+  var resolvedName = nfbResolveTemplateTokens_(folderTemplate, nfbBuildDriveTemplateContext_(driveSettings, context));
   if (!resolvedName) {
     return folder;
   }
@@ -128,7 +128,7 @@ function nfbResolveUploadFolder_(driveSettings) {
   var context = nfbBuildDriveTemplateContext_(driveSettings);
   var directFolderUrl = driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
   if (directFolderUrl && directFolderUrl.indexOf("{") >= 0) {
-    directFolderUrl = String(nfbResolveTemplate_(directFolderUrl, context) || "").trim();
+    directFolderUrl = String(nfbResolveTemplateTokens_(directFolderUrl, context) || "").trim();
   }
   if (directFolderUrl) {
     var directFolder = nfbResolveFolderFromInput_(directFolderUrl);
@@ -240,7 +240,7 @@ function nfbFinalizeRecordDriveFolder(payload) {
     if (isCurrentTarget && nfbIsRecordTempFolder_(currentFolder)) {
       var folderNameTemplate = payload && payload.folderNameTemplate ? String(payload.folderNameTemplate).trim() : "";
       if (folderNameTemplate) {
-        var resolvedFolderName = nfbResolveTemplate_(folderNameTemplate, nfbBuildDriveTemplateContext_(payload));
+        var resolvedFolderName = nfbResolveTemplateTokens_(folderNameTemplate, nfbBuildDriveTemplateContext_(payload));
         if (resolvedFolderName) {
           currentFolder.setName(resolvedFolderName);
         }

@@ -21,6 +21,67 @@ import {
   downloadPdfFromBase64,
 } from "../../utils/recordOutputActions.js";
 
+const buildRecordTemplateBase = (normalizedSchema, entry) => {
+  const restoredResponses = restoreResponsesFromData(
+    normalizedSchema,
+    entry?.data || {},
+    entry?.dataUnixMs || {},
+  );
+  const folderUrlsByField = collectFileUploadFolderUrls(normalizedSchema, entry?.data || {});
+  const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
+  const fileUploadMeta = collectFileUploadMeta(normalizedSchema, {
+    responses: restoredResponses,
+    folderUrlsByField,
+  });
+  return { restoredResponses, folderUrlsByField, fieldValues, fileUploadMeta };
+};
+
+const buildRecordTemplateContext = ({ base, entry, form, fieldLabels }) => ({
+  responses: base.restoredResponses,
+  fieldLabels,
+  fieldValues: base.fieldValues,
+  fileUploadMeta: base.fileUploadMeta,
+  recordId: entry.id,
+  formId: form?.id || "",
+  recordNo: entry?.["No."] || "",
+  formTitle: form?.settings?.formTitle || "",
+});
+
+const buildRecordDriveSettings = ({ templateContext, fileNameTemplate, overrides = {} }) => ({
+  rootFolderUrl: "",
+  folderNameTemplate: "",
+  folderUrl: "",
+  useTemporaryFolder: false,
+  ...overrides,
+  formId: templateContext.formId,
+  recordId: templateContext.recordId,
+  responses: templateContext.responses,
+  fieldLabels: templateContext.fieldLabels,
+  fieldValues: templateContext.fieldValues,
+  fileUploadMeta: templateContext.fileUploadMeta,
+  fileNameTemplate,
+});
+
+const buildStandardPrintPayload = ({ base, entry, form, normalizedSchema, omitEmptyRowsOnPrint }) =>
+  buildPrintDocumentPayload({
+    schema: normalizedSchema,
+    responses: base.restoredResponses,
+    settings: {
+      ...(form?.settings || {}),
+      formId: form?.id || "",
+      recordNo: entry?.["No."],
+      modifiedAt: entry?.modifiedAt,
+      modifiedAtUnixMs: entry?.modifiedAtUnixMs,
+    },
+    recordId: entry.id,
+    omitEmptyRows: omitEmptyRowsOnPrint,
+    driveFolderState: {
+      resolvedUrl: entry.driveFolderUrl || "",
+      inputUrl: entry.driveFolderUrl || "",
+    },
+    folderUrlsByField: base.folderUrlsByField,
+  });
+
 export function useSearchPagePrintActions({
   form,
   normalizedSchema,
@@ -33,45 +94,15 @@ export function useSearchPagePrintActions({
   const [isCreatingPrintDocument, setIsCreatingPrintDocument] = useState(false);
 
   const createSinglePrintDocument = useCallback(async (entry) => {
-    const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
-    const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
-    const fileUploadMeta = collectFileUploadMeta(normalizedSchema, {
-      responses: restoredResponses,
-      folderUrlsByField: collectFileUploadFolderUrls(normalizedSchema, entry?.data || {}),
-    });
+    const base = buildRecordTemplateBase(normalizedSchema, entry);
+    const templateContext = buildRecordTemplateContext({ base, entry, form, fieldLabels });
     const fileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {});
 
-    const payload = buildPrintDocumentPayload({
-      schema: normalizedSchema,
-      responses: restoredResponses,
-      settings: {
-        ...(form?.settings || {}),
-        formId: form?.id || "",
-        recordNo: entry?.["No."],
-        modifiedAt: entry?.modifiedAt,
-        modifiedAtUnixMs: entry?.modifiedAtUnixMs,
-      },
-      recordId: entry.id,
-      omitEmptyRows: omitEmptyRowsOnPrint,
-      driveFolderState: {
-        resolvedUrl: entry.driveFolderUrl || "",
-        inputUrl: entry.driveFolderUrl || "",
-      },
-      folderUrlsByField: collectFileUploadFolderUrls(normalizedSchema, entry?.data || {}),
-    });
+    const payload = buildStandardPrintPayload({ base, entry, form, normalizedSchema, omitEmptyRowsOnPrint });
 
     if (fileNameTemplate) {
       payload.fileNameTemplate = fileNameTemplate;
-      payload.templateContext = {
-        responses: restoredResponses,
-        fieldLabels,
-        fieldValues,
-        fileUploadMeta,
-        recordId: entry.id,
-        formId: form?.id || "",
-        recordNo: entry?.["No."] || "",
-        formTitle: form?.settings?.formTitle || "",
-      };
+      payload.templateContext = templateContext;
     }
 
     // 検索ページからの出力は常にマイドライブ直下に配置
@@ -93,7 +124,7 @@ export function useSearchPagePrintActions({
         linkLabel: "Google ドキュメントを開く",
       });
     }
-  }, [fieldLabels, form?.id, form?.settings, normalizedSchema, omitEmptyRowsOnPrint, showOutputAlert]);
+  }, [fieldLabels, form, normalizedSchema, omitEmptyRowsOnPrint, showOutputAlert]);
 
   const createBatchPrintDocument = useCallback(async () => {
     const action = {
@@ -105,24 +136,12 @@ export function useSearchPagePrintActions({
     const effectiveFileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {}) || DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE;
 
     const recordPayloads = selectedPrintableRows.map(({ entry }) => {
-      const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
-      const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
-      const fileUploadMeta = collectFileUploadMeta(normalizedSchema, {
-        responses: restoredResponses,
-        folderUrlsByField: collectFileUploadFolderUrls(normalizedSchema, entry?.data || {}),
-      });
-      const driveSettings = {
-        rootFolderUrl: "",
-        folderNameTemplate: "",
-        formId: form?.id || "",
-        recordId: entry.id,
-        folderUrl: "",
-        responses: restoredResponses,
-        fieldLabels,
-        fieldValues,
-        fileUploadMeta,
+      const base = buildRecordTemplateBase(normalizedSchema, entry);
+      const templateContext = buildRecordTemplateContext({ base, entry, form, fieldLabels });
+      const driveSettings = buildRecordDriveSettings({
+        templateContext,
         fileNameTemplate: effectiveFileNameTemplate,
-      };
+      });
       return {
         action,
         settings: {
@@ -135,24 +154,7 @@ export function useSearchPagePrintActions({
           recordId: entry.id,
           recordNo: entry?.["No."] || "",
           modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
-          printPayload: buildPrintDocumentPayload({
-            schema: normalizedSchema,
-            responses: restoredResponses,
-            settings: {
-              ...(form?.settings || {}),
-              formId: form?.id || "",
-              recordNo: entry?.["No."],
-              modifiedAt: entry?.modifiedAt,
-              modifiedAtUnixMs: entry?.modifiedAtUnixMs,
-            },
-            recordId: entry.id,
-            omitEmptyRows: omitEmptyRowsOnPrint,
-            driveFolderState: {
-              resolvedUrl: entry.driveFolderUrl || "",
-              inputUrl: entry.driveFolderUrl || "",
-            },
-            folderUrlsByField: collectFileUploadFolderUrls(normalizedSchema, entry?.data || {}),
-          }),
+          printPayload: buildStandardPrintPayload({ base, entry, form, normalizedSchema, omitEmptyRowsOnPrint }),
         },
         driveSettings,
       };
@@ -173,8 +175,7 @@ export function useSearchPagePrintActions({
     }
   }, [
     fieldLabels,
-    form?.id,
-    form?.settings,
+    form,
     normalizedSchema,
     omitEmptyRowsOnPrint,
     selectedPrintableRows,
@@ -224,24 +225,12 @@ export function useSearchPagePrintActions({
     }
 
     const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, form?.settings || {});
-    const restoredResponses = restoreResponsesFromData(normalizedSchema, entry?.data || {}, entry?.dataUnixMs || {});
-    const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
-    const fileUploadMetaSingle = collectFileUploadMeta(normalizedSchema, {
-      responses: restoredResponses,
-      folderUrlsByField: collectFileUploadFolderUrls(normalizedSchema, entry?.data || {}),
-    });
-    const driveSettings = {
-      rootFolderUrl: "",
-      folderNameTemplate: "",
-      formId: form?.id || "",
-      recordId: entry.id,
-      folderUrl: "",
-      responses: restoredResponses,
-      fieldLabels,
-      fieldValues,
-      fileUploadMeta: fileUploadMetaSingle,
+    const base = buildRecordTemplateBase(normalizedSchema, entry);
+    const templateContext = buildRecordTemplateContext({ base, entry, form, fieldLabels });
+    const driveSettings = buildRecordDriveSettings({
+      templateContext,
       fileNameTemplate: effectiveFileNameTemplate,
-    };
+    });
 
     const payload = {
       action,
@@ -255,23 +244,7 @@ export function useSearchPagePrintActions({
         recordId: entry.id,
         recordNo: entry?.["No."] || "",
         modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
-        printPayload: buildPrintDocumentPayload({
-          schema: normalizedSchema,
-          responses: restoredResponses,
-          settings: {
-            ...(form?.settings || {}),
-            formId: form?.id || "",
-            recordNo: entry?.["No."],
-            modifiedAt: entry?.modifiedAt,
-            modifiedAtUnixMs: entry?.modifiedAtUnixMs,
-          },
-          recordId: entry.id,
-          omitEmptyRows: omitEmptyRowsOnPrint,
-          driveFolderState: {
-            resolvedUrl: entry.driveFolderUrl || "",
-            inputUrl: entry.driveFolderUrl || "",
-          },
-        }),
+        printPayload: buildStandardPrintPayload({ base, entry, form, normalizedSchema, omitEmptyRowsOnPrint }),
       },
       driveSettings,
     };
@@ -290,8 +263,7 @@ export function useSearchPagePrintActions({
     }
   }, [
     fieldLabels,
-    form?.id,
-    form?.settings,
+    form,
     normalizedSchema,
     omitEmptyRowsOnPrint,
     showAlert,

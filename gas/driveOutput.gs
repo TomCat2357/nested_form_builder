@@ -19,39 +19,24 @@ function nfbCreateRecordPrintDocument(payload) {
         ? nfbResolveUploadFolder_(templateDriveSettings)
         : { folder: nfbResolveOrCreateFolder_(templateDriveSettings, nfbBuildDriveTemplateContext_(templateDriveSettings)), autoCreated: false };
       var templateFolder = templateFolderResult.folder;
-      var templateContext = nfbBuildRecordOutputContext_({
+      var templateContext = nfbNormalizeRecordTemplateContext_({
         driveSettings: templateDriveSettings,
+        templateContext: payload.templateContext,
         recordContext: {
           formId: payload.formId || "",
           formTitle: payload.formTitle || "",
           recordId: payload.recordId || "",
           recordNo: payload.recordNo || "",
           modifiedAt: payload.modifiedAt || ""
-        }
-      }, templateFolder.getUrl());
+        },
+        includeWebAppUrls: true
+      });
       var templateBaseName = normalizedPayload.fileName;
       var tplFileNameTemplate = templateDriveSettings.fileNameTemplate
         ? String(templateDriveSettings.fileNameTemplate).trim()
         : (payload.fileNameTemplate ? String(payload.fileNameTemplate).trim() : "");
       if (tplFileNameTemplate) {
-        var tplCtx = templateContext;
-        if (!tplCtx.fieldLabels || !Object.keys(tplCtx.fieldLabels).length) {
-          var tc = payload.templateContext || {};
-          tplCtx = {
-            responses: tc.responses || tplCtx.responses || {},
-            fieldLabels: tc.fieldLabels || tplCtx.fieldLabels || {},
-            fieldValues: tc.fieldValues || tplCtx.fieldValues || {},
-            fileUploadMeta: tc.fileUploadMeta || tplCtx.fileUploadMeta || {},
-            recordId: tplCtx.recordId || "",
-            formId: tplCtx.formId || "",
-            recordNo: tplCtx.recordNo || "",
-            formTitle: tplCtx.formTitle || "",
-            recordUrl: tplCtx.recordUrl || "",
-            formUrl: tplCtx.formUrl || "",
-            now: tplCtx.now || new Date()
-          };
-        }
-        var resolvedBaseName = nfbResolveTemplate_(tplFileNameTemplate, tplCtx);
+        var resolvedBaseName = nfbResolveTemplateTokens_(tplFileNameTemplate, templateContext);
         if (resolvedBaseName) {
           templateBaseName = resolvedBaseName;
         }
@@ -91,19 +76,11 @@ function nfbCreateRecordPrintDocument(payload) {
 
     // fileNameTemplate + templateContext がある場合（driveSettings無し）、ファイル名テンプレートを解決
     if (payload && payload.fileNameTemplate && !payload.driveSettings) {
-      var tc = payload.templateContext || {};
-      var fnCtx = {
-        responses: tc.responses || {},
-        fieldLabels: tc.fieldLabels || {},
-        fieldValues: tc.fieldValues || {},
-        fileUploadMeta: tc.fileUploadMeta || {},
-        recordId: tc.recordId || normalizedPayload.records[0].recordId || "",
-        formId: tc.formId || "",
-        recordNo: tc.recordNo || "",
-        formTitle: tc.formTitle || "",
-        now: new Date()
-      };
-      var resolvedName = nfbResolveTemplate_(String(payload.fileNameTemplate), fnCtx);
+      var fnCtx = nfbNormalizeRecordTemplateContext_({
+        templateContext: payload.templateContext,
+        fallbackRecordId: normalizedPayload.records[0].recordId
+      });
+      var resolvedName = nfbResolveTemplateTokens_(String(payload.fileNameTemplate), fnCtx);
       if (resolvedName) {
         file.setName(resolvedName);
       }
@@ -112,20 +89,15 @@ function nfbCreateRecordPrintDocument(payload) {
     // driveSettings がある場合はフォルダに移動・ファイル名テンプレート適用
     if (payload && payload.driveSettings) {
       var ds = payload.driveSettings;
-      var ctx = {
-        responses: ds.responses || {},
-        fieldLabels: ds.fieldLabels || {},
-        fieldValues: ds.fieldValues || {},
-        fileUploadMeta: ds.fileUploadMeta || {},
-        recordId: ds.recordId || normalizedPayload.records[0].recordId || "",
-        formId: ds.formId || "",
-        now: new Date()
-      };
+      var ctx = nfbNormalizeRecordTemplateContext_({
+        driveSettings: ds,
+        fallbackRecordId: normalizedPayload.records[0].recordId
+      });
 
       // ファイル名テンプレートの解決
       var fileNameTemplate = ds.fileNameTemplate ? String(ds.fileNameTemplate).trim() : "";
       if (fileNameTemplate) {
-        var resolvedFileName = nfbResolveTemplate_(fileNameTemplate, ctx);
+        var resolvedFileName = nfbResolveTemplateTokens_(fileNameTemplate, ctx);
         if (resolvedFileName) {
           file.setName(resolvedFileName);
         }
@@ -166,7 +138,7 @@ function nfbExecuteRecordOutputAction(payload) {
     var initialFolderUrl = driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
     var outputContext = nfbBuildRecordOutputContext_(payload, initialFolderUrl);
     var finalBaseName = fileNameTemplate
-      ? (nfbResolveTemplate_(fileNameTemplate, outputContext) || ("record_" + outputContext.recordId))
+      ? (nfbResolveTemplateTokens_(fileNameTemplate, outputContext) || ("record_" + outputContext.recordId))
       : "";
 
     if (outputType === "gmail") {
@@ -264,23 +236,84 @@ function nfbCopyBodyElements_(sourceBody, targetBody) {
   }
 }
 
-function nfbBuildRecordOutputContext_(payload, folderUrl) {
-  var driveSettings = payload && payload.driveSettings ? payload.driveSettings : {};
-  var recordContext = payload && payload.recordContext ? payload.recordContext : {};
+function nfbBuildRecordOutputContext_(payload, _folderUrl) {
+  return nfbNormalizeRecordTemplateContext_({
+    driveSettings: payload && payload.driveSettings,
+    recordContext: payload && payload.recordContext,
+    includeWebAppUrls: true
+  });
+}
 
-  var ctx = nfbBuildDriveTemplateContext_(driveSettings);
-  ctx.formId = recordContext.formId || ctx.formId || "";
-  ctx.recordId = recordContext.recordId || ctx.recordId || "";
-  ctx.recordNo = recordContext.recordNo || "";
-  ctx.formTitle = recordContext.formTitle || "";
+/**
+ * payload の各ソース（driveSettings / templateContext / recordContext）から
+ * テンプレート解決用コンテキストを統一フォーマットで合成する。
+ *
+ * sources = {
+ *   driveSettings,         // optional - データフィールドの主ソース
+ *   templateContext,       // optional - データフィールドのフォールバックソース
+ *   recordContext,         // optional - 識別子フィールドの最優先ソース
+ *   fallbackRecordId,      // optional - recordId が他全ソースで空の場合の最終フォールバック
+ *   includeWebAppUrls      // bool    - true で recordUrl/formUrl を ScriptApp から算出
+ * }
+ *
+ * 優先順位:
+ *  - データ系 (responses/fieldLabels/fieldValues/fileUploadMeta):
+ *      fieldLabels を持つ方を採用。両方持つなら driveSettings 優先。
+ *  - 識別子系 (recordId/formId/recordNo/formTitle):
+ *      recordContext > templateContext > driveSettings の順で最初の非空を採用。
+ */
+function nfbNormalizeRecordTemplateContext_(sources) {
+  sources = sources || {};
+  var driveSettings = sources.driveSettings || null;
+  var templateContext = sources.templateContext || null;
+  var recordContext = sources.recordContext || null;
+  var fallbackRecordId = sources.fallbackRecordId || "";
+  var includeWebAppUrls = sources.includeWebAppUrls === true;
 
-  var webAppUrl = ScriptApp.getService().getUrl() || "";
-  ctx.formUrl = webAppUrl && ctx.formId
-    ? webAppUrl + "?form=" + encodeURIComponent(ctx.formId)
-    : "";
-  ctx.recordUrl = webAppUrl && ctx.formId && ctx.recordId
-    ? webAppUrl + "?form=" + encodeURIComponent(ctx.formId) + "&record=" + encodeURIComponent(ctx.recordId)
-    : "";
+  function hasFieldLabels(src) {
+    return !!(src && src.fieldLabels && Object.keys(src.fieldLabels).length);
+  }
+  var dataSrc;
+  if (hasFieldLabels(driveSettings)) {
+    dataSrc = driveSettings;
+  } else if (hasFieldLabels(templateContext)) {
+    dataSrc = templateContext;
+  } else {
+    dataSrc = driveSettings || templateContext || {};
+  }
+
+  function pickStr(key) {
+    var candidates = [recordContext, templateContext, driveSettings];
+    for (var i = 0; i < candidates.length; i++) {
+      var src = candidates[i];
+      if (src && src[key]) return String(src[key]).trim();
+    }
+    return "";
+  }
+
+  var ctx = {
+    responses: (dataSrc && dataSrc.responses) || {},
+    fieldLabels: (dataSrc && dataSrc.fieldLabels) || {},
+    fieldValues: (dataSrc && dataSrc.fieldValues) || {},
+    fileUploadMeta: (dataSrc && dataSrc.fileUploadMeta) || {},
+    recordId: pickStr("recordId") || fallbackRecordId,
+    formId: pickStr("formId"),
+    recordNo: pickStr("recordNo"),
+    formTitle: pickStr("formTitle"),
+    recordUrl: "",
+    formUrl: "",
+    now: new Date()
+  };
+
+  if (includeWebAppUrls) {
+    var webAppUrl = ScriptApp.getService().getUrl() || "";
+    ctx.formUrl = webAppUrl && ctx.formId
+      ? webAppUrl + "?form=" + encodeURIComponent(ctx.formId)
+      : "";
+    ctx.recordUrl = webAppUrl && ctx.formId && ctx.recordId
+      ? webAppUrl + "?form=" + encodeURIComponent(ctx.formId) + "&record=" + encodeURIComponent(ctx.recordId)
+      : "";
+  }
 
   return ctx;
 }
@@ -324,11 +357,11 @@ function nfbResolveRecordOutputTemplateSourceUrl_(payload, action) {
 function nfbResolveGmailTemplateFields_(action, outputContext) {
   action = action || {};
   return {
-    to: nfbResolveTemplate_(String(action.gmailTemplateTo || ""), outputContext),
-    cc: nfbResolveTemplate_(String(action.gmailTemplateCc || ""), outputContext),
-    bcc: nfbResolveTemplate_(String(action.gmailTemplateBcc || ""), outputContext),
-    subject: nfbResolveTemplate_(String(action.gmailTemplateSubject || ""), outputContext),
-    body: nfbResolveTemplate_(String(action.gmailTemplateBody || ""), outputContext, { allowGmailOnlyTokens: true })
+    to: nfbResolveTemplateTokens_(String(action.gmailTemplateTo || ""), outputContext),
+    cc: nfbResolveTemplateTokens_(String(action.gmailTemplateCc || ""), outputContext),
+    bcc: nfbResolveTemplateTokens_(String(action.gmailTemplateBcc || ""), outputContext),
+    subject: nfbResolveTemplateTokens_(String(action.gmailTemplateSubject || ""), outputContext),
+    body: nfbResolveTemplateTokens_(String(action.gmailTemplateBody || ""), outputContext, { allowGmailOnlyTokens: true })
   };
 }
 

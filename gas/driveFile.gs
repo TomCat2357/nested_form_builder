@@ -152,7 +152,7 @@ function nfbCopyFileToDriveFolder_(payload) {
   var folder = folderResult.folder;
   var ctx = nfbBuildDriveTemplateContext_(payload.driveSettings);
   var resolvedName = payload.fileNameTemplate
-    ? nfbResolveTemplate_(String(payload.fileNameTemplate), ctx)
+    ? nfbResolveTemplateTokens_(String(payload.fileNameTemplate), ctx)
     : "";
   var finalName = resolvedName || sourceFile.getName();
   nfbTrashExistingFile_(folder, finalName);
@@ -214,7 +214,7 @@ function nfbFindDriveFileInFolder(payload) {
       throw new Error("検索条件が不足しています");
     }
     var ctx = nfbBuildDriveTemplateContext_(payload.driveSettings);
-    var finalName = nfbResolveTemplate_(String(payload.fileNameTemplate), ctx);
+    var finalName = nfbResolveTemplateTokens_(String(payload.fileNameTemplate), ctx);
     var outputType = payload.outputType === "pdf" ? "pdf" : (payload.outputType === "gmail" ? "gmail" : "googleDoc");
     if (outputType === "pdf" && finalName && !/\.pdf$/i.test(finalName)) {
       finalName += ".pdf";
