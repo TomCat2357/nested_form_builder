@@ -54,6 +54,19 @@ function NormalizeEmail_(value) {
 }
 
 /**
+ * オブジェクトが自己所有キーを1つでも持つか判定する
+ * @param {Object|null|undefined} obj
+ * @return {boolean}
+ */
+function nfbHasOwnKeys_(obj) {
+  if (!obj) return false;
+  for (var k in obj) {
+    if (obj.hasOwnProperty(k)) return true;
+  }
+  return false;
+}
+
+/**
  * 管理者メール設定値（";"区切り）を配列化して返す
  * @param {string} raw
  * @return {string[]}
@@ -131,8 +144,7 @@ function SetAdminEmail_(newEmail) {
       }
     }
     if (!foundInGroup) {
-      var hasGroupErrors = false;
-      for (var k in groupErrors) { if (groupErrors.hasOwnProperty(k)) { hasGroupErrors = true; break; } }
+      var hasGroupErrors = nfbHasOwnKeys_(groupErrors);
       var errNotMember = new Error(
         "現在のアカウント（" + currentUserEmail + "）が管理者リストに含まれていないため保存できません。" +
         "自分自身をロックアウトしないよう、現在のメールアドレスまたは所属グループをリストに含めてください。"
@@ -554,8 +566,7 @@ function nfbCheckAdminEmailMembership(payload) {
         return { ok: true, isMember: true, reason: "cached_group_match" };
       }
     }
-    var hasGroupErrors = false;
-    for (var k in groupErrors) { if (groupErrors.hasOwnProperty(k)) { hasGroupErrors = true; break; } }
+    var hasGroupErrors = nfbHasOwnKeys_(groupErrors);
     var response = {
       ok: true,
       isMember: false,

@@ -162,6 +162,27 @@ function nfbResolveTemplateTokens_(template, context, options) {
 }
 
 /**
+ * Given the index of a "{" in text, return the index of its matching "}",
+ * tracking nested braces. Returns -1 if the brace is never closed.
+ */
+function nfbFindBalancedCloseIndex_(text, openIndex) {
+  var n = text.length;
+  var depth = 1;
+  var j = openIndex + 1;
+  while (j < n && depth > 0) {
+    var c = text.charAt(j);
+    if (c === "{") {
+      depth++;
+    } else if (c === "}") {
+      depth--;
+      if (depth === 0) return j;
+    }
+    j++;
+  }
+  return -1;
+}
+
+/**
  * Scan a template string and replace each balanced {...} token via the replacer.
  * Supports nested braces (inner {...} are passed as part of the body, not stripped).
  * Unclosed braces are left literal.
@@ -177,25 +198,13 @@ function nfbScanBalancedTokens_(text, replacer) {
       i++;
       continue;
     }
-    var depth = 1;
-    var j = i + 1;
-    while (j < n && depth > 0) {
-      var c = text.charAt(j);
-      if (c === "{") {
-        depth++;
-      } else if (c === "}") {
-        depth--;
-        if (depth === 0) break;
-      }
-      j++;
-    }
-    if (depth !== 0) {
+    var close = nfbFindBalancedCloseIndex_(text, i);
+    if (close < 0) {
       out += text.substring(i);
       return out;
     }
-    var body = text.substring(i + 1, j);
-    out += replacer(body);
-    i = j + 1;
+    out += replacer(text.substring(i + 1, close));
+    i = close + 1;
   }
   return out;
 }
@@ -212,21 +221,10 @@ function nfbCollectBalancedTokens_(text) {
   var i = 0;
   while (i < n) {
     if (text.charAt(i) !== "{") { i++; continue; }
-    var depth = 1;
-    var j = i + 1;
-    while (j < n && depth > 0) {
-      var c = text.charAt(j);
-      if (c === "{") {
-        depth++;
-      } else if (c === "}") {
-        depth--;
-        if (depth === 0) break;
-      }
-      j++;
-    }
-    if (depth !== 0) return results;
-    results.push({ fullToken: text.substring(i, j + 1), body: text.substring(i + 1, j) });
-    i = j + 1;
+    var close = nfbFindBalancedCloseIndex_(text, i);
+    if (close < 0) return results;
+    results.push({ fullToken: text.substring(i, close + 1), body: text.substring(i + 1, close) });
+    i = close + 1;
   }
   return results;
 }

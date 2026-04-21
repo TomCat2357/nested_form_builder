@@ -149,23 +149,23 @@ export function useSearchPageState({
         return {
           entry,
           values: computeRowValues(entry, columns),
-          needsBackfill: false,
+          backfillResult: null,
           originalEntry: entry,
         };
       }
-      const { data: enrichedData, changed } = backfillComputedFieldValues(normalizedSchema, entry?.data);
-      const effectiveEntry = changed ? { ...entry, data: enrichedData } : entry;
+      const backfillResult = backfillComputedFieldValues(normalizedSchema, entry?.data);
+      const effectiveEntry = backfillResult.changed ? { ...entry, data: backfillResult.data } : entry;
       return {
         entry: effectiveEntry,
         values: computeRowValues(effectiveEntry, columns),
-        needsBackfill: changed,
+        backfillResult,
         originalEntry: entry,
       };
     });
   }, [entries, columns, normalizedSchema, hasComputedFields]);
 
   const recordsNeedingBackfill = useMemo(
-    () => processedEntries.filter((row) => row.needsBackfill).map((row) => row.originalEntry),
+    () => processedEntries.filter((row) => row.backfillResult?.changed),
     [processedEntries],
   );
 
@@ -177,9 +177,9 @@ export function useSearchPageState({
       try {
         const { headerMatrix, schemaHash } = await getRecordsFromCache(effectiveFormId);
         const now = Date.now();
-        for (const entry of recordsNeedingBackfill) {
+        for (const row of recordsNeedingBackfill) {
           if (cancelled) return;
-          const next = buildBackfilledRecord(normalizedSchema, entry, { now, userEmail });
+          const next = buildBackfilledRecord(row.originalEntry, row.backfillResult, { now, userEmail });
           if (!next) continue;
           await upsertRecordInCache(effectiveFormId, next, { headerMatrix, schemaHash });
         }
@@ -191,7 +191,7 @@ export function useSearchPageState({
     return () => {
       cancelled = true;
     };
-  }, [effectiveFormId, recordsNeedingBackfill, normalizedSchema, userEmail, reloadFromCache]);
+  }, [effectiveFormId, recordsNeedingBackfill, userEmail, reloadFromCache]);
 
   const ownerFilteredEntries = useMemo(() => {
     if (isAdmin) return processedEntries;
