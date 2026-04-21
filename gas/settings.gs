@@ -119,42 +119,28 @@ function SetAdminEmail_(newEmail) {
       errMissing.reason = "missing_current_user_email";
       throw errMissing;
     }
-    // 直接一致を試す
-    var directMatch = false;
-    for (var i = 0; i < emails.length; i++) {
-      if (emails[i] === currentUserEmail) { directMatch = true; break; }
-    }
-    if (directMatch) {
-      // 直接一致 → 保存してからキャッシュ更新
-      var props = GetAdminProps_();
-      var normalized = emails.join(";");
-      props.setProperty(NFB_ADMIN_EMAIL, normalized);
-      try { RefreshGroupMemberCache_(); } catch (e) { /* 非致命的 */ }
-      return { ok: true, adminEmail: normalized };
-    }
-    // グループメンバーを解決して所属判定（キャッシュも同時構築）
-    var resolveResult = ResolveAllGroupMembers_(emails);
-    var resolvedGroups = resolveResult.resolved;
-    var groupErrors = resolveResult.errors;
-    var foundInGroup = IsUserInResolvedGroups_(currentUserEmail, resolvedGroups);
-    // ライブ解決でもダメならキャッシュフォールバック
-    if (!foundInGroup) {
-      for (var j = 0; j < emails.length; j++) {
-        if (IsUserInCachedGroup_(currentUserEmail, emails[j])) { foundInGroup = true; break; }
-      }
-    }
-    if (!foundInGroup) {
-      var hasGroupErrors = nfbHasOwnKeys_(groupErrors);
+    // 共通メンバーシップ解決フロー（直接一致 → ライブ解決 → キャッシュフォールバック）
+    var result = Admin_ResolveMembership_(currentUserEmail, emails);
+    if (!result.isMember) {
       var errNotMember = new Error(
         "現在のアカウント（" + currentUserEmail + "）が管理者リストに含まれていないため保存できません。" +
         "自分自身をロックアウトしないよう、現在のメールアドレスまたは所属グループをリストに含めてください。"
       );
-      errNotMember.reason = hasGroupErrors ? "group_fetch_failed" : "not_member";
-      if (hasGroupErrors) errNotMember.groupErrors = groupErrors;
+      errNotMember.reason = result.reason;
+      if (nfbHasOwnKeys_(result.groupErrors)) errNotMember.groupErrors = result.groupErrors;
       throw errNotMember;
     }
-    // 解決済みグループをキャッシュに保存
-    SaveResolvedGroupCache_(resolvedGroups);
+    // 直接一致ケース: props保存後にキャッシュを再構築（旧挙動を維持）
+    if (result.reason === "direct_match") {
+      var propsDirect = GetAdminProps_();
+      var normalizedDirect = emails.join(";");
+      propsDirect.setProperty(NFB_ADMIN_EMAIL, normalizedDirect);
+      try { RefreshGroupMemberCache_(); } catch (e) { /* 非致命的 */ }
+      return { ok: true, adminEmail: normalizedDirect };
+    }
+    // group_match / cached_group_match: ライブ解決で取得したメンバー一覧でキャッシュを更新
+    // （旧実装では foundInGroup 成立時に常に SaveResolvedGroupCache_ を呼んでいたため挙動を維持）
+    SaveResolvedGroupCache_(result.resolvedGroups);
   }
   var props = GetAdminProps_();
   var normalized = emails.join(";");
@@ -344,27 +330,80 @@ function IsUserInCachedGroup_(userEmail, groupEmail) {
 }
 
 /**
- * 管理者メールリストに対して、個人メール一致またはグループメンバーシップで判定する
+ * 管理者メンバーシップ解決の共通フロー（軽量版）
+ * リクエスト毎のauth gate用。GroupsApp.hasUser()による個別判定のみを使用するため
+ * メンバー一覧を取得しない（キャッシュ保存・UI通知不要のケース向け）。
  * 1st pass: 完全一致（APIコール不要、高速）
- * 2nd pass: グループメンバーシップ照合（APIコールあり）
+ * 2nd pass: ライブGroupsApp.hasUser()照合
+ * 3rd pass: キャッシュフォールバック
+ * @param {string} normalizedUserEmail - 正規化済みユーザーメール
+ * @param {string[]} adminEmails - 正規化済み管理者メール配列
+ * @return {boolean}
+ */
+function Admin_CheckMembershipLite_(normalizedUserEmail, adminEmails) {
+  for (var i = 0; i < adminEmails.length; i++) {
+    if (adminEmails[i] === normalizedUserEmail) return true;
+  }
+  for (var j = 0; j < adminEmails.length; j++) {
+    if (IsUserInAdminGroup_(normalizedUserEmail, adminEmails[j])) return true;
+  }
+  for (var k = 0; k < adminEmails.length; k++) {
+    if (IsUserInCachedGroup_(normalizedUserEmail, adminEmails[k])) return true;
+  }
+  return false;
+}
+
+/**
+ * 管理者メンバーシップ解決の共通フロー（解決版）
+ * 保存時セルフロックアウト防止・UI事前チェック用。
+ * ライブ解決時はgetUsers()でメンバー一覧を取得し、呼び出し側がキャッシュ保存や
+ * groupErrorsによるエラーメッセージを組み立てられるように返す。
+ * 1st pass: 完全一致
+ * 2nd pass: ResolveAllGroupMembers_ + IsUserInResolvedGroups_
+ * 3rd pass: キャッシュフォールバック
+ *
+ * 呼び出し側の前提:
+ * - adminEmails.length === 0 と !normalizedUserEmail は事前に処理済み
+ *
+ * @param {string} normalizedUserEmail - 正規化済みユーザーメール
+ * @param {string[]} adminEmails - 正規化済み管理者メール配列
+ * @return {{isMember: boolean, reason: string, resolvedGroups: Object, groupErrors: Object}}
+ *   reason: "direct_match" | "group_match" | "cached_group_match" | "group_fetch_failed" | "not_member"
+ *   resolvedGroups/groupErrorsはライブ解決パスに到達しない場合は {}
+ */
+function Admin_ResolveMembership_(normalizedUserEmail, adminEmails) {
+  // 1st pass: 完全一致（APIコール不要、高速）
+  for (var i = 0; i < adminEmails.length; i++) {
+    if (adminEmails[i] === normalizedUserEmail) {
+      return { isMember: true, reason: "direct_match", resolvedGroups: {}, groupErrors: {} };
+    }
+  }
+  // 2nd pass: ライブ解決（メンバー一覧取得 → キャッシュ保存にも使える）
+  var resolveResult = ResolveAllGroupMembers_(adminEmails);
+  var resolvedGroups = resolveResult.resolved;
+  var groupErrors = resolveResult.errors;
+  if (IsUserInResolvedGroups_(normalizedUserEmail, resolvedGroups)) {
+    return { isMember: true, reason: "group_match", resolvedGroups: resolvedGroups, groupErrors: groupErrors };
+  }
+  // 3rd pass: キャッシュフォールバック
+  for (var j = 0; j < adminEmails.length; j++) {
+    if (IsUserInCachedGroup_(normalizedUserEmail, adminEmails[j])) {
+      return { isMember: true, reason: "cached_group_match", resolvedGroups: resolvedGroups, groupErrors: groupErrors };
+    }
+  }
+  // 不一致: groupErrorsの有無でreasonを分岐
+  var reason = nfbHasOwnKeys_(groupErrors) ? "group_fetch_failed" : "not_member";
+  return { isMember: false, reason: reason, resolvedGroups: resolvedGroups, groupErrors: groupErrors };
+}
+
+/**
+ * 管理者メールリストに対して、個人メール一致またはグループメンバーシップで判定する
  * @param {string} normalizedUserEmail - 正規化済みユーザーメール
  * @param {string[]} adminEmails - 正規化済み管理者メール配列
  * @return {boolean}
  */
 function IsAdminEmailOrGroupMatched_(normalizedUserEmail, adminEmails) {
-  // 1st pass: 完全一致（APIコール不要、高速）
-  for (var i = 0; i < adminEmails.length; i++) {
-    if (adminEmails[i] === normalizedUserEmail) return true;
-  }
-  // 2nd pass: ライブGroupsApp照合（アクセスユーザーの権限で実行）
-  for (var i = 0; i < adminEmails.length; i++) {
-    if (IsUserInAdminGroup_(normalizedUserEmail, adminEmails[i])) return true;
-  }
-  // 3rd pass: キャッシュフォールバック（管理者が保存時に解決したメンバーリスト）
-  for (var i = 0; i < adminEmails.length; i++) {
-    if (IsUserInCachedGroup_(normalizedUserEmail, adminEmails[i])) return true;
-  }
-  return false;
+  return Admin_CheckMembershipLite_(normalizedUserEmail, adminEmails);
 }
 
 /**
@@ -549,30 +588,13 @@ function nfbCheckAdminEmailMembership(payload) {
     var adminEmails = ParseAdminEmails_(adminEmailsRaw);
     if (adminEmails.length === 0) return { ok: true, isMember: true, reason: "no_restriction" };
     if (!userEmail) return { ok: true, isMember: false, reason: "missing_current_user_email" };
-    // 直接一致
-    for (var i = 0; i < adminEmails.length; i++) {
-      if (adminEmails[i] === userEmail) return { ok: true, isMember: true, reason: "direct_match" };
+    // 共通メンバーシップ解決フロー（直接一致 → ライブ解決 → キャッシュフォールバック）
+    var result = Admin_ResolveMembership_(userEmail, adminEmails);
+    if (result.isMember) {
+      return { ok: true, isMember: true, reason: result.reason };
     }
-    // ライブ解決
-    var resolveResult = ResolveAllGroupMembers_(adminEmails);
-    var resolvedGroups = resolveResult.resolved;
-    var groupErrors = resolveResult.errors;
-    if (IsUserInResolvedGroups_(userEmail, resolvedGroups)) {
-      return { ok: true, isMember: true, reason: "group_match" };
-    }
-    // キャッシュフォールバック
-    for (var j = 0; j < adminEmails.length; j++) {
-      if (IsUserInCachedGroup_(userEmail, adminEmails[j])) {
-        return { ok: true, isMember: true, reason: "cached_group_match" };
-      }
-    }
-    var hasGroupErrors = nfbHasOwnKeys_(groupErrors);
-    var response = {
-      ok: true,
-      isMember: false,
-      reason: hasGroupErrors ? "group_fetch_failed" : "not_member"
-    };
-    if (hasGroupErrors) response.groupErrors = groupErrors;
+    var response = { ok: true, isMember: false, reason: result.reason };
+    if (nfbHasOwnKeys_(result.groupErrors)) response.groupErrors = result.groupErrors;
     return response;
   });
 }
