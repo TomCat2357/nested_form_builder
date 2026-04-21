@@ -1,7 +1,7 @@
 # CLAUDE.md
 
 このファイルは、Claude Code がこのリポジトリで作業する際の**補足ガイド**です。
-プロジェクト全般の仕様・アーキテクチャ・使い方は [README.md](./README.md) を正とし、ここでは Claude の行動に直結する内容だけを残しています。
+詳細なトピック別情報は `docs/claude/` 以下にテーマ単位で分割しているので、タスクに応じて必要なものだけを開いてください。
 
 ## このプロジェクトは何か
 
@@ -11,18 +11,21 @@
 
 ## 詳細情報のマップ
 
-毎回必要なわけではない情報は外出ししています。タスクに応じて該当ドキュメントを開いてください。
+毎回必要なわけではない情報は `docs/claude/` 配下のテーマ別ファイルに外出ししています。タスクに応じて該当ドキュメントを開いてください。
 
 | 知りたいこと | 参照先 |
 |--|--|
-| ディレクトリ構成・モジュール分割 | [README.md](./README.md) 「機能マップ」「リポジトリ構成」 |
-| 開発コマンド（dev / build / test） | [README.md](./README.md) 「セットアップ」「開発フロー」 |
-| デプロイ手順・`deploy.ps1` の動作 | [README.md](./README.md) 「デプロイ」 |
-| アーキテクチャ・データフロー・Provider | [README.md](./README.md) 「アーキテクチャ概要」「Apps Script バックエンド」 |
-| テンプレートトークン・パイプ変換 | [README.md](./README.md) 「テンプレートトークン・パイプ変換」 |
-| 検索クエリ構文 | [README.md](./README.md) 「検索クエリ構文」 |
-| 対応フィールドタイプ・ルーティング | [README.md](./README.md) 「対応フィールドタイプ」「ルーティング」 |
-| テスト配置と実行 | [README.md](./README.md) 「テスト」 |
+| アーキテクチャ・データフロー・Provider・保存先の分担 | [docs/claude/architecture.md](./docs/claude/architecture.md) |
+| 機能マップ（フロント/バック/連携の俯瞰図） | [docs/claude/feature-map.md](./docs/claude/feature-map.md) |
+| ディレクトリ構成 | [docs/claude/repo-structure.md](./docs/claude/repo-structure.md) |
+| Apps Script バックエンドの doGet/doPost・公開 API | [docs/claude/apps-script-backend.md](./docs/claude/apps-script-backend.md) |
+| ルーティング・対応フィールドタイプ | [docs/claude/routing.md](./docs/claude/routing.md) |
+| セットアップ手順 | [docs/claude/setup.md](./docs/claude/setup.md) |
+| 開発コマンド（dev / build / GAS 同期） | [docs/claude/development-workflow.md](./docs/claude/development-workflow.md) |
+| デプロイ手順・`deploy.ps1` の動作 | [docs/claude/deployment.md](./docs/claude/deployment.md) |
+| テスト配置と実行 | [docs/claude/testing.md](./docs/claude/testing.md) |
+| 検索クエリ構文 | [docs/claude/search-query-syntax.md](./docs/claude/search-query-syntax.md) |
+| テンプレートトークン・パイプ変換 | [docs/claude/drive-template-tokens.md](./docs/claude/drive-template-tokens.md) |
 | データ構造（スキーマ / シートレイアウト / ソフトデリート） | [docs/claude/data-model.md](./docs/claude/data-model.md) |
 | キャッシュ・差分同期の実装詳細 | [docs/claude/cache-architecture.md](./docs/claude/cache-architecture.md) |
 | トラブルシュート・デプロイ情報の確認 | [docs/claude/troubleshooting.md](./docs/claude/troubleshooting.md) |
