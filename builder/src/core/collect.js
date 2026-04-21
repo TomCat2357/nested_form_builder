@@ -39,6 +39,12 @@ export const parseFileUploadStorage = (rawValue) => {
 
 export const normalizeFileUploadEntries = (rawValue) => parseFileUploadStorage(rawValue).files;
 
+export const buildFileUploadEntry = (result) => ({
+  name: typeof result?.fileName === "string" ? result.fileName : "",
+  driveFileId: typeof result?.fileId === "string" ? result.fileId : "",
+  driveFileUrl: typeof result?.fileUrl === "string" ? result.fileUrl : "",
+});
+
 const serializeFileUploadValue = (value, folderUrl = "") => {
   const files = Array.isArray(value)
     ? value.map((entry) => sanitizeFileUploadEntry(entry)).filter(Boolean)

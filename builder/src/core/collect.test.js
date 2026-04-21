@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { collectResponses, sortResponses } from "./collect.js";
+import { buildFileUploadEntry, collectResponses, sortResponses } from "./collect.js";
 
 test("sortResponsesはチェックボックス選択順ではなくフォーム設定順でキーを並べる", () => {
   const schema = [
@@ -45,6 +45,28 @@ test("collectResponsesは電話番号を単一値として出力する", () => {
 
   const raw = collectResponses(schema, responses);
   assert.equal(raw["電話番号"], "090-1234-5678");
+});
+
+test("buildFileUploadEntry は GAS 応答をファイルエントリ形式に整形する", () => {
+  assert.deepEqual(
+    buildFileUploadEntry({ fileName: "a.pdf", fileId: "id_1", fileUrl: "https://drive/1" }),
+    { name: "a.pdf", driveFileId: "id_1", driveFileUrl: "https://drive/1" },
+  );
+});
+
+test("buildFileUploadEntry は欠損フィールドを空文字で埋める", () => {
+  assert.deepEqual(
+    buildFileUploadEntry({ fileName: "b.png" }),
+    { name: "b.png", driveFileId: "", driveFileUrl: "" },
+  );
+  assert.deepEqual(
+    buildFileUploadEntry({}),
+    { name: "", driveFileId: "", driveFileUrl: "" },
+  );
+  assert.deepEqual(
+    buildFileUploadEntry(null),
+    { name: "", driveFileId: "", driveFileUrl: "" },
+  );
 });
 
 test("collectResponses と sortResponses は printTemplate を回答データに含めない", () => {
