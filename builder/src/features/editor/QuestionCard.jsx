@@ -25,8 +25,8 @@ import {
 import { useQuestionCardOptions } from "./useQuestionCardOptions.js";
 import { useFieldPlaceholderSync } from "./useFieldPlaceholderSync.js";
 import ChoiceOptionsSection from "./ChoiceOptionsSection.jsx";
+import { PrintTemplateSection } from "./PrintTemplateSection.jsx";
 import {
-  PrintTemplateSection,
   MessageSection,
   TextFieldSection,
   EmailFieldSection,
