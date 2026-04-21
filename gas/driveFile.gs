@@ -55,6 +55,50 @@ function nfbDecodeBase64ToBlob_(base64, fileName, mimeType) {
 }
 
 /**
+ * Drive ファイル操作成功レスポンスを共通形状で組み立てる
+ * @param {File} file - 対象ファイル
+ * @param {Folder} folder - 保存先フォルダ
+ * @param {boolean} autoCreated - フォルダが自動生成されたか
+ * @return {Object} { ok, fileUrl, fileName, fileId, folderUrl, autoCreated }
+ */
+function nfbBuildDriveFileResponse_(file, folder, autoCreated) {
+  return {
+    ok: true,
+    fileUrl: file.getUrl(),
+    fileName: file.getName(),
+    fileId: file.getId(),
+    folderUrl: folder.getUrl(),
+    autoCreated: autoCreated === true
+  };
+}
+
+/**
+ * Blob を Drive に保存する共通処理
+ * driveSettings が null の場合はルート（ユーザーの My Drive）に保存する
+ * @param {Blob} blob
+ * @param {string} fileName
+ * @param {Object|null} driveSettings - null の場合はフォルダ解決せず DriveApp.createFile を使う
+ * @return {Object} { file, folder, autoCreated }
+ */
+function nfbPersistBlobToDrive_(blob, fileName, driveSettings) {
+  if (!driveSettings) {
+    return {
+      file: DriveApp.createFile(blob),
+      folder: null,
+      autoCreated: false
+    };
+  }
+  var folderResult = nfbResolveUploadFolder_(driveSettings);
+  var folder = folderResult.folder;
+  nfbTrashExistingFile_(folder, fileName);
+  return {
+    file: folder.createFile(blob),
+    folder: folder,
+    autoCreated: folderResult.autoCreated === true
+  };
+}
+
+/**
  * フロントエンドで生成したExcelファイルをGoogle Driveに保存する
  * nfbSaveFileToDrive に Excel 用 mimeType を設定して委譲
  * @param {Object} payload - { filename: string, base64: string }
@@ -75,17 +119,21 @@ function nfbSaveExcelToDrive(payload) {
  */
 function nfbSaveFileToDrive(payload) {
   return nfbSafeCall_(function() {
-    if (!payload || !payload.base64 || !payload.filename) {
+    if (!payload || !payload.base64) {
       throw new Error("ファイルデータが不足しています");
     }
+    if (!payload.filename || !String(payload.filename).trim()) {
+      throw new Error("ファイル名が指定されていません");
+    }
 
-    var blob = nfbDecodeBase64ToBlob_(payload.base64, payload.filename, payload.mimeType);
-    var file = DriveApp.createFile(blob);
+    var fileName = String(payload.filename).trim();
+    var blob = nfbDecodeBase64ToBlob_(payload.base64, fileName, payload.mimeType);
+    var result = nfbPersistBlobToDrive_(blob, fileName, null);
 
     return {
       ok: true,
-      fileUrl: file.getUrl(),
-      fileName: file.getName()
+      fileUrl: result.file.getUrl(),
+      fileName: result.file.getName()
     };
   });
 }
@@ -97,27 +145,18 @@ function nfbSaveFileToDrive(payload) {
  */
 function nfbUploadFileToDrive(payload) {
   return nfbSafeCall_(function() {
-    if (!payload || !payload.base64 || !payload.fileName) {
+    if (!payload || !payload.base64) {
       throw new Error("ファイルデータが不足しています");
+    }
+    if (!payload.fileName || !String(payload.fileName).trim()) {
+      throw new Error("ファイル名が指定されていません");
     }
 
     var fileName = String(payload.fileName).trim();
     var blob = nfbDecodeBase64ToBlob_(payload.base64, fileName, payload.mimeType);
+    var result = nfbPersistBlobToDrive_(blob, fileName, payload.driveSettings);
 
-    var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
-    var folder = folderResult.folder;
-    nfbTrashExistingFile_(folder, fileName);
-
-    var file = folder.createFile(blob);
-
-    return {
-      ok: true,
-      fileUrl: file.getUrl(),
-      fileName: file.getName(),
-      fileId: file.getId(),
-      folderUrl: folder.getUrl(),
-      autoCreated: folderResult.autoCreated === true
-    };
+    return nfbBuildDriveFileResponse_(result.file, result.folder, result.autoCreated);
   });
 }
 
@@ -170,14 +209,7 @@ function nfbCopyFileToDriveFolder_(payload) {
 function nfbCopyDriveFileToDrive(payload) {
   return nfbSafeCall_(function() {
     var result = nfbCopyFileToDriveFolder_(payload);
-    return {
-      ok: true,
-      fileUrl: result.copiedFile.getUrl(),
-      fileName: result.copiedFile.getName(),
-      fileId: result.copiedFile.getId(),
-      folderUrl: result.folder.getUrl(),
-      autoCreated: result.autoCreated
-    };
+    return nfbBuildDriveFileResponse_(result.copiedFile, result.folder, result.autoCreated);
   });
 }
 
@@ -197,14 +229,7 @@ function nfbCreateGoogleDocumentFromTemplate(payload) {
       throw new Error("Google ドキュメントテンプレートの差し込みに失敗しました: " + nfbErrorToString_(error));
     }
 
-    return {
-      ok: true,
-      fileUrl: result.copiedFile.getUrl(),
-      fileName: result.copiedFile.getName(),
-      fileId: result.copiedFile.getId(),
-      folderUrl: result.folder.getUrl(),
-      autoCreated: result.autoCreated
-    };
+    return nfbBuildDriveFileResponse_(result.copiedFile, result.folder, result.autoCreated);
   });
 }
 

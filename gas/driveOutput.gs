@@ -1,6 +1,7 @@
 /**
  * driveOutput.gs
- * レコード出力オーケストレーション（PDF/Gmail/GoogleDoc生成）
+ * レコード出力オーケストレーション（PDF/GoogleDoc生成）
+ * Gmail下書き出力は driveGmailOutput.gs を参照。
  */
 
 /**
@@ -354,17 +355,6 @@ function nfbResolveRecordOutputTemplateSourceUrl_(payload, action) {
     : "";
 }
 
-function nfbResolveGmailTemplateFields_(action, outputContext) {
-  action = action || {};
-  return {
-    to: nfbResolveTemplateTokens_(String(action.gmailTemplateTo || ""), outputContext),
-    cc: nfbResolveTemplateTokens_(String(action.gmailTemplateCc || ""), outputContext),
-    bcc: nfbResolveTemplateTokens_(String(action.gmailTemplateBcc || ""), outputContext),
-    subject: nfbResolveTemplateTokens_(String(action.gmailTemplateSubject || ""), outputContext),
-    body: nfbResolveTemplateTokens_(String(action.gmailTemplateBody || ""), outputContext, { allowGmailOnlyTokens: true })
-  };
-}
-
 function nfbCreateTempPdfBlob_(payload, action, outputContext, finalBaseName) {
   var documentAction = nfbCloneRecordOutputActionForGeneratedFile_(action);
   var tmpName = finalBaseName + "__tmp_" + Utilities.getUuid();
@@ -373,29 +363,6 @@ function nfbCreateTempPdfBlob_(payload, action, outputContext, finalBaseName) {
   var pdfBlob = docFile.getBlob().getAs(MimeType.PDF).setName(pdfName);
   docFile.setTrashed(true);
   return pdfBlob;
-}
-
-function nfbCreateGmailDraftOutput_(payload, action, outputContext, finalBaseName) {
-  var emailFields = nfbResolveGmailTemplateFields_(action, outputContext);
-  var attachments = [];
-
-  if (action && action.gmailAttachPdf) {
-    attachments.push(nfbCreateTempPdfBlob_(payload, action, outputContext, finalBaseName));
-  }
-
-  var draftOptions = {};
-  if (emailFields.cc) draftOptions.cc = emailFields.cc;
-  if (emailFields.bcc) draftOptions.bcc = emailFields.bcc;
-  if (attachments.length > 0) draftOptions.attachments = attachments;
-
-  var draft = GmailApp.createDraft(emailFields.to, emailFields.subject, emailFields.body, draftOptions);
-
-  return {
-    ok: true,
-    outputType: "gmail",
-    draftId: draft.getId(),
-    openUrl: "https://mail.google.com/mail/#drafts"
-  };
 }
 
 function nfbCreatePdfDownloadOutput_(payload, action, outputContext, finalBaseName) {

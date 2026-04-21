@@ -27,7 +27,8 @@ const FILE_ORDER = [
   'driveTemplate.gs',       // テンプレート解決
   'drivePrintDocument.gs',  // 印刷様式ドキュメント
   'driveFolder.gs',         // フォルダ管理
-  'driveOutput.gs',         // 出力オーケストレーション
+  'driveOutput.gs',         // 出力オーケストレーション（PDF/GoogleDoc）
+  'driveGmailOutput.gs',    // Gmail下書き出力
   'driveFile.gs',           // ファイル操作（公開API）
   // --- forms ---
   'formsParsing.gs',

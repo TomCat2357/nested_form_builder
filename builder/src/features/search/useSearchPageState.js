@@ -23,6 +23,7 @@ import {
   resolveOmitEmptyRowsOnPrint,
 } from "../preview/printDocument.js";
 import { createExcelBlob, getThemeColors } from "../../utils/excelExport.js";
+import { blobToBase64 } from "../../utils/fileEncoding.js";
 import { useEntriesWithCache } from "./useEntriesWithCache.js";
 import { saveExcelToDrive } from "../../services/gasClient.js";
 import { useSearchDisplayOverrides } from "./useSearchDisplayOverrides.js";
@@ -333,12 +334,7 @@ export function useSearchPageState({
       const filename = `検索結果_${form?.settings?.formTitle || form?.id || "form"}_${timestamp}.xlsx`;
 
       const blob = await createExcelBlob(exportTable, themeColors);
-      const base64data = await new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => resolve(reader.result.split(',')[1]);
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
+      const base64data = await blobToBase64(blob);
 
       const result = await saveExcelToDrive({ filename, base64: base64data });
 

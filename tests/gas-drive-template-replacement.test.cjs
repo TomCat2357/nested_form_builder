@@ -90,6 +90,7 @@ function loadGasContext() {
     "drivePrintDocument.gs",
     "driveFolder.gs",
     "driveOutput.gs",
+    "driveGmailOutput.gs",
     "driveFile.gs",
   ];
   for (const fileName of driveFiles) {

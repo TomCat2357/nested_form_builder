@@ -63,16 +63,31 @@ function nfbBuildDriveTemplateContext_(driveSettings, context) {
   };
 }
 
+/**
+ * driveSettings.folderUrl からフォルダを解決する（テンプレート展開込み）
+ * @param {Object} driveSettings
+ * @param {Object} context - nfbBuildDriveTemplateContext_ の戻り値
+ * @return {Folder|null} 指定がなければ null
+ */
+function nfbResolveDirectFolder_(driveSettings, context) {
+  var directFolderUrl = driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
+  if (!directFolderUrl) {
+    return null;
+  }
+  if (directFolderUrl.indexOf("{") >= 0) {
+    directFolderUrl = String(nfbResolveTemplateTokens_(directFolderUrl, context) || "").trim();
+  }
+  if (!directFolderUrl) {
+    return null;
+  }
+  return nfbResolveFolderFromInput_(directFolderUrl);
+}
+
 function nfbResolveOrCreateFolder_(driveSettings, context) {
   var ctx = nfbBuildDriveTemplateContext_(driveSettings, context);
-  var directFolderUrl = driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
-  if (directFolderUrl) {
-    if (directFolderUrl.indexOf("{") >= 0) {
-      directFolderUrl = String(nfbResolveTemplateTokens_(directFolderUrl, ctx) || "").trim();
-    }
-    if (directFolderUrl) {
-      return nfbResolveFolderFromInput_(directFolderUrl);
-    }
+  var directFolder = nfbResolveDirectFolder_(driveSettings, ctx);
+  if (directFolder) {
+    return directFolder;
   }
 
   var rootFolder = nfbResolveRootFolder_(driveSettings);
@@ -126,12 +141,8 @@ function nfbApplyFolderNameTemplateIfNeeded_(folder, driveSettings, context) {
 
 function nfbResolveUploadFolder_(driveSettings) {
   var context = nfbBuildDriveTemplateContext_(driveSettings);
-  var directFolderUrl = driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
-  if (directFolderUrl && directFolderUrl.indexOf("{") >= 0) {
-    directFolderUrl = String(nfbResolveTemplateTokens_(directFolderUrl, context) || "").trim();
-  }
-  if (directFolderUrl) {
-    var directFolder = nfbResolveFolderFromInput_(directFolderUrl);
+  var directFolder = nfbResolveDirectFolder_(driveSettings, context);
+  if (directFolder) {
     nfbApplyFolderNameTemplateIfNeeded_(directFolder, driveSettings, context);
     return {
       folder: directFolder,
