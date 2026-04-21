@@ -45,7 +45,7 @@
 - V8 ランタイムだが、**既存コードは `var` + `function name() {}` スタイル** — 新規コードも合わせる（`let` / `const` / アロー関数を勝手に導入しない）
 - 公開 API: **`nfb` プレフィックス**（例: `nfbListForms`, `nfbGetForm`, `nfbSaveForm`）
 - 内部ヘルパー: **末尾アンダースコア**（例: `Forms_getForm_`, `nfbSafeCall_`）
-- ドメインプレフィックス: `Sheets_`, `Forms_`, `Nfb_`, `Sync_`
+- ドメインプレフィックス: `Sheets_`, `Forms_`, `Nfb_`, `Sync_`, `Admin_`
 - エラーハンドリングは `nfbSafeCall_` ラッパーで `{ok, error, code}` を返す形に統一
 
 ## 覚えておく定数

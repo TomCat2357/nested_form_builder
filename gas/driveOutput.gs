@@ -16,9 +16,10 @@ function nfbCreateRecordPrintDocument(payload) {
     var outputAutoCreated = false;
     if (payload && payload.templateSourceUrl && normalizedPayload.records.length === 1) {
       var templateDriveSettings = payload.driveSettings || {};
-      var templateFolderResult = templateDriveSettings.useTemporaryFolder
-        ? nfbResolveUploadFolder_(templateDriveSettings)
-        : { folder: nfbResolveOrCreateFolder_(templateDriveSettings, nfbBuildDriveTemplateContext_(templateDriveSettings)), autoCreated: false };
+      var templateFolderResult = nfbResolveOutputFolder_(
+        templateDriveSettings,
+        nfbBuildDriveTemplateContext_(templateDriveSettings)
+      );
       var templateFolder = templateFolderResult.folder;
       var templateContext = nfbNormalizeRecordTemplateContext_({
         driveSettings: templateDriveSettings,
@@ -104,9 +105,7 @@ function nfbCreateRecordPrintDocument(payload) {
         }
       }
 
-      var folderResult = ds.useTemporaryFolder
-        ? nfbResolveUploadFolder_(ds)
-        : { folder: nfbResolveOrCreateFolder_(ds, ctx), autoCreated: false };
+      var folderResult = nfbResolveOutputFolder_(ds, ctx);
       var folder = folderResult.folder;
       var finalFileName = file.getName();
       nfbTrashExistingFile_(folder, finalFileName);
