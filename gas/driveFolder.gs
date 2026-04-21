@@ -75,7 +75,7 @@ function nfbResolveDirectFolder_(driveSettings, context) {
     return null;
   }
   if (directFolderUrl.indexOf("{") >= 0) {
-    directFolderUrl = String(nfbResolveTemplate_(directFolderUrl, context) || "").trim();
+    directFolderUrl = String(nfbResolveTemplateTokens_(directFolderUrl, context) || "").trim();
   }
   if (!directFolderUrl) {
     return null;
@@ -97,7 +97,7 @@ function nfbResolveOrCreateFolder_(driveSettings, context) {
     return rootFolder;
   }
 
-  var folderName = nfbResolveTemplate_(folderTemplate, ctx);
+  var folderName = nfbResolveTemplateTokens_(folderTemplate, ctx);
   if (!folderName) {
     return rootFolder;
   }
@@ -127,7 +127,7 @@ function nfbApplyFolderNameTemplateIfNeeded_(folder, driveSettings, context) {
     return folder;
   }
 
-  var resolvedName = nfbResolveTemplate_(folderTemplate, nfbBuildDriveTemplateContext_(driveSettings, context));
+  var resolvedName = nfbResolveTemplateTokens_(folderTemplate, nfbBuildDriveTemplateContext_(driveSettings, context));
   if (!resolvedName) {
     return folder;
   }
@@ -251,7 +251,7 @@ function nfbFinalizeRecordDriveFolder(payload) {
     if (isCurrentTarget && nfbIsRecordTempFolder_(currentFolder)) {
       var folderNameTemplate = payload && payload.folderNameTemplate ? String(payload.folderNameTemplate).trim() : "";
       if (folderNameTemplate) {
-        var resolvedFolderName = nfbResolveTemplate_(folderNameTemplate, nfbBuildDriveTemplateContext_(payload));
+        var resolvedFolderName = nfbResolveTemplateTokens_(folderNameTemplate, nfbBuildDriveTemplateContext_(payload));
         if (resolvedFolderName) {
           currentFolder.setName(resolvedFolderName);
         }

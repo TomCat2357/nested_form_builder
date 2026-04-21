@@ -8,11 +8,11 @@
 function nfbResolveGmailTemplateFields_(action, outputContext) {
   action = action || {};
   return {
-    to: nfbResolveTemplate_(String(action.gmailTemplateTo || ""), outputContext),
-    cc: nfbResolveTemplate_(String(action.gmailTemplateCc || ""), outputContext),
-    bcc: nfbResolveTemplate_(String(action.gmailTemplateBcc || ""), outputContext),
-    subject: nfbResolveTemplate_(String(action.gmailTemplateSubject || ""), outputContext),
-    body: nfbResolveTemplate_(String(action.gmailTemplateBody || ""), outputContext, { allowGmailOnlyTokens: true })
+    to: nfbResolveTemplateTokens_(String(action.gmailTemplateTo || ""), outputContext),
+    cc: nfbResolveTemplateTokens_(String(action.gmailTemplateCc || ""), outputContext),
+    bcc: nfbResolveTemplateTokens_(String(action.gmailTemplateBcc || ""), outputContext),
+    subject: nfbResolveTemplateTokens_(String(action.gmailTemplateSubject || ""), outputContext),
+    body: nfbResolveTemplateTokens_(String(action.gmailTemplateBody || ""), outputContext, { allowGmailOnlyTokens: true })
   };
 }
 

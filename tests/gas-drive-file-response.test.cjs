@@ -42,7 +42,7 @@ function loadGasContext(overrides) {
       if (fileMatch) return { type: "file", id: fileMatch[1] };
       return { type: "", id: "" };
     },
-    nfbResolveTemplate_(template, context) {
+    nfbResolveTemplateTokens_(template, context) {
       if (!template) return "";
       return String(template).replace(/\{recordId\}/g, (context && context.recordId) || "");
     },
@@ -52,10 +52,12 @@ function loadGasContext(overrides) {
   const projectRoot = path.join(__dirname, "..");
   const gasDir = path.join(projectRoot, "gas");
   const driveFiles = [
+    "driveTransformers.gs",
     "driveTemplate.gs",
     "drivePrintDocument.gs",
     "driveFolder.gs",
     "driveOutput.gs",
+    "driveGmailOutput.gs",
     "driveFile.gs",
   ];
   for (const fileName of driveFiles) {
@@ -212,7 +214,7 @@ test("nfbResolveDirectFolder_ は folderUrl に {token} があればテンプレ
     resolvedInput = input;
     return folder;
   };
-  gas.nfbResolveTemplate_ = function(template, context) {
+  gas.nfbResolveTemplateTokens_ = function(template, context) {
     return String(template).replace(/\{recordId\}/g, (context && context.recordId) || "");
   };
 
@@ -229,7 +231,7 @@ test("nfbResolveDirectFolder_ はテンプレート展開結果が空なら null
   gas.nfbResolveFolderFromInput_ = function() {
     throw new Error("should not be called");
   };
-  gas.nfbResolveTemplate_ = function(template, context) {
+  gas.nfbResolveTemplateTokens_ = function(template, context) {
     return String(template).replace(/\{recordId\}/g, (context && context.recordId) || "");
   };
 
