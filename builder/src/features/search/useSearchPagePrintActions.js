@@ -82,6 +82,51 @@ const buildStandardPrintPayload = ({ base, entry, form, normalizedSchema, omitEm
     folderUrlsByField: base.folderUrlsByField,
   });
 
+const buildRecordOutputPayload = ({
+  action,
+  entry,
+  form,
+  fieldLabels,
+  normalizedSchema,
+  omitEmptyRowsOnPrint,
+  fileNameTemplate,
+}) => {
+  const base = buildRecordTemplateBase(normalizedSchema, entry);
+  const templateContext = buildRecordTemplateContext({ base, entry, form, fieldLabels });
+  const driveSettings = buildRecordDriveSettings({
+    templateContext,
+    fileNameTemplate,
+  });
+  return {
+    action,
+    settings: {
+      standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
+      standardPrintFileNameTemplate: form?.settings?.standardPrintFileNameTemplate || "",
+    },
+    recordContext: {
+      formTitle: form?.settings?.formTitle || "",
+      formId: form?.id || "",
+      recordId: entry.id,
+      recordNo: entry?.["No."] || "",
+      modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
+      printPayload: buildStandardPrintPayload({ base, entry, form, normalizedSchema, omitEmptyRowsOnPrint }),
+    },
+    driveSettings,
+  };
+};
+
+// 検索ページからの単票印刷は常にマイドライブ直下に配置する
+const forceMyDriveRootOverrides = (driveSettings, fileNameTemplate) => {
+  if (!driveSettings) return;
+  driveSettings.rootFolderUrl = "";
+  driveSettings.folderUrl = "";
+  driveSettings.folderNameTemplate = "";
+  driveSettings.useTemporaryFolder = false;
+  if (fileNameTemplate) {
+    driveSettings.fileNameTemplate = fileNameTemplate;
+  }
+};
+
 export function useSearchPagePrintActions({
   form,
   normalizedSchema,
@@ -105,16 +150,7 @@ export function useSearchPagePrintActions({
       payload.templateContext = templateContext;
     }
 
-    // 検索ページからの出力は常にマイドライブ直下に配置
-    if (payload.driveSettings) {
-      payload.driveSettings.rootFolderUrl = "";
-      payload.driveSettings.folderUrl = "";
-      payload.driveSettings.folderNameTemplate = "";
-      payload.driveSettings.useTemporaryFolder = false;
-      if (fileNameTemplate) {
-        payload.driveSettings.fileNameTemplate = fileNameTemplate;
-      }
-    }
+    forceMyDriveRootOverrides(payload.driveSettings, fileNameTemplate);
 
     const result = await createRecordPrintDocument(payload);
     if (result?.fileUrl) {
@@ -135,30 +171,17 @@ export function useSearchPagePrintActions({
     };
     const effectiveFileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {}) || DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE;
 
-    const recordPayloads = selectedPrintableRows.map(({ entry }) => {
-      const base = buildRecordTemplateBase(normalizedSchema, entry);
-      const templateContext = buildRecordTemplateContext({ base, entry, form, fieldLabels });
-      const driveSettings = buildRecordDriveSettings({
-        templateContext,
-        fileNameTemplate: effectiveFileNameTemplate,
-      });
-      return {
+    const recordPayloads = selectedPrintableRows.map(({ entry }) =>
+      buildRecordOutputPayload({
         action,
-        settings: {
-          standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
-          standardPrintFileNameTemplate: form?.settings?.standardPrintFileNameTemplate || "",
-        },
-        recordContext: {
-          formTitle: form?.settings?.formTitle || "",
-          formId: form?.id || "",
-          recordId: entry.id,
-          recordNo: entry?.["No."] || "",
-          modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
-          printPayload: buildStandardPrintPayload({ base, entry, form, normalizedSchema, omitEmptyRowsOnPrint }),
-        },
-        driveSettings,
-      };
-    });
+        entry,
+        form,
+        fieldLabels,
+        normalizedSchema,
+        omitEmptyRowsOnPrint,
+        fileNameTemplate: effectiveFileNameTemplate,
+      })
+    );
 
     const combinedFileName = (form?.settings?.formTitle || "出力") + "_一括出力";
     const result = await executeBatchGoogleDocOutput({
@@ -225,29 +248,15 @@ export function useSearchPagePrintActions({
     }
 
     const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, form?.settings || {});
-    const base = buildRecordTemplateBase(normalizedSchema, entry);
-    const templateContext = buildRecordTemplateContext({ base, entry, form, fieldLabels });
-    const driveSettings = buildRecordDriveSettings({
-      templateContext,
+    const payload = buildRecordOutputPayload({
+      action,
+      entry,
+      form,
+      fieldLabels,
+      normalizedSchema,
+      omitEmptyRowsOnPrint,
       fileNameTemplate: effectiveFileNameTemplate,
     });
-
-    const payload = {
-      action,
-      settings: {
-        standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
-        standardPrintFileNameTemplate: form?.settings?.standardPrintFileNameTemplate || "",
-      },
-      recordContext: {
-        formTitle: form?.settings?.formTitle || "",
-        formId: form?.id || "",
-        recordId: entry.id,
-        recordNo: entry?.["No."] || "",
-        modifiedAt: entry?.modifiedAtUnixMs ?? entry?.modifiedAt ?? "",
-        printPayload: buildStandardPrintPayload({ base, entry, form, normalizedSchema, omitEmptyRowsOnPrint }),
-      },
-      driveSettings,
-    };
 
     const result = await executeRecordOutputAction(payload);
     if (result?.openUrl) {

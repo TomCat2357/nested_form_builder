@@ -397,16 +397,6 @@ function Admin_ResolveMembership_(normalizedUserEmail, adminEmails) {
 }
 
 /**
- * 管理者メールリストに対して、個人メール一致またはグループメンバーシップで判定する
- * @param {string} normalizedUserEmail - 正規化済みユーザーメール
- * @param {string[]} adminEmails - 正規化済み管理者メール配列
- * @return {boolean}
- */
-function IsAdminEmailOrGroupMatched_(normalizedUserEmail, adminEmails) {
-  return Admin_CheckMembershipLite_(normalizedUserEmail, adminEmails);
-}
-
-/**
  * 管理者メール制限に一致しているか判定する
  * 個人メール一致に加え、Google Groupメンバーシップも確認する
  * @param {string} activeUserEmail
@@ -426,7 +416,7 @@ function IsAdminEmailMatched_(activeUserEmail) {
     return false;
   }
   MaybeRefreshGroupCacheIfStale_();
-  return IsAdminEmailOrGroupMatched_(normalizedUserEmail, adminEmails);
+  return Admin_CheckMembershipLite_(normalizedUserEmail, adminEmails);
 }
 
 /**

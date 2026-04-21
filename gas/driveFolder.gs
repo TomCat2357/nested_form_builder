@@ -159,6 +159,24 @@ function nfbResolveUploadFolder_(driveSettings) {
   };
 }
 
+/**
+ * 出力系（印刷様式/Gmail/PDF）のフォルダ解決を一元化する。
+ * useTemporaryFolder が true のときは一時フォルダ経路、それ以外は通常経路。
+ * 戻り値の形は両経路で同じ { folder, autoCreated }。
+ * @param {Object} driveSettings
+ * @param {Object=} context - 通常経路で nfbResolveOrCreateFolder_ に渡すテンプレートコンテキスト
+ * @return {{folder: Folder, autoCreated: boolean}}
+ */
+function nfbResolveOutputFolder_(driveSettings, context) {
+  if (driveSettings && driveSettings.useTemporaryFolder) {
+    return nfbResolveUploadFolder_(driveSettings);
+  }
+  return {
+    folder: nfbResolveOrCreateFolder_(driveSettings, context),
+    autoCreated: false
+  };
+}
+
 function nfbIsRecordTempFolder_(folder) {
   if (!folder || typeof folder.getName !== "function") return false;
   var folderName = String(folder.getName() || "");
