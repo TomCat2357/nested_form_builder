@@ -232,3 +232,72 @@ test("if: else値に予約トークン @_form_url を使う", () => {
     "https://example.com/?form=f1"
   );
 });
+
+// ---------------------------------------------------------------------------
+// 共有エンジン経由でフロント/バック仕様を揃えたもの (以前はフロントで未実装)
+// ---------------------------------------------------------------------------
+
+test("ifv: 3引数版 — 条件一致で真の値、不一致で偽の値", () => {
+  const ctx1 = { labelValueMap: { "対応": "来庁" } };
+  assert.equal(
+    resolveTemplateTokens('{@対応|ifv:@対応=="来庁",■,□}', ctx1),
+    "■"
+  );
+  const ctx2 = { labelValueMap: { "対応": "電話" } };
+  assert.equal(
+    resolveTemplateTokens('{@対応|ifv:@対応=="来庁",■,□}', ctx2),
+    "□"
+  );
+});
+
+test("ifv: in 演算子でチェックボックス部分一致", () => {
+  const ctx = { labelValueMap: { "結果": "記事掲載, ネット掲載" } };
+  assert.equal(
+    resolveTemplateTokens("{@結果|ifv:記事掲載 in _,■,□}", ctx),
+    "■"
+  );
+  assert.equal(
+    resolveTemplateTokens("{@結果|ifv:放送予定 in _,■,□}", ctx),
+    "□"
+  );
+});
+
+test("サブテンプレート: ifv の真の値位置で {...} 再帰解決", () => {
+  const ctxFilled = { labelValueMap: { "報道": "記事掲載" } };
+  assert.equal(
+    resolveTemplateTokens("{@報道|ifv:_,（{@報道}）,}", ctxFilled),
+    "（記事掲載）"
+  );
+  const ctxEmpty = { labelValueMap: { "報道": "" } };
+  assert.equal(
+    resolveTemplateTokens("{@報道|ifv:_,（{@報道}）,}", ctxEmpty),
+    ""
+  );
+});
+
+test("サブテンプレート: {_} でパイプ入力値をサブテンプレート内から参照", () => {
+  const ctx = { labelValueMap: { "報道": "記事掲載" } };
+  assert.equal(
+    resolveTemplateTokens("{@報道|ifv:_,（{_}）,}", ctx),
+    "（記事掲載）"
+  );
+});
+
+test("サブテンプレート: default のフォールバック値に {...} ネスト", () => {
+  const ctx = {
+    now: new Date(2026, 3, 13, 10, 30, 0),
+    labelValueMap: { "納期": "" }
+  };
+  assert.equal(
+    resolveTemplateTokens("{@納期|default:未定（{@_NOW|time:M月D日}時点）}", ctx),
+    "未定（4月13日時点）"
+  );
+});
+
+test("replace: 値位置に , を含めても {} で誤分割されない", () => {
+  const ctx = { labelValueMap: { "電話": "090-1234-5678" } };
+  assert.equal(
+    resolveTemplateTokens("{@電話|replace:-,}", ctx),
+    "09012345678"
+  );
+});

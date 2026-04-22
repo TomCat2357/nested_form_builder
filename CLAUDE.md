@@ -58,7 +58,8 @@
 ## 重要ファイル（影響範囲が広い）
 
 - `gas/constants.gs` — 全 GAS 定数・ULID 生成・`NFB_FIXED_HEADER_PATHS`
-- `gas/driveTemplate.gs` / `gas/driveOutput.gs` — トークン置換・PDF / Gmail 出力
+- `gas/pipeEngine.js` — パイプ変換・スキャナの**共有エンジン** (GAS/フロント両対応 dual-compat)
+- `gas/driveTemplate.gs` / `gas/driveOutput.gs` — トークン置換・PDF / Gmail 出力 (GAS 固有アダプタ)
 - `gas/Code.gs` — doGet / doPost エンドポイント
 - `gas/formsPublicApi.gs` — 公開 API 一覧
 - `gas/scripts/bundle.js` — GAS ファイル結合順序の定義

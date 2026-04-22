@@ -2,47 +2,50 @@
  * フロントエンド向けテンプレートトークン置換エンジン
  *
  * バックエンド gas/driveTemplate.gs の nfbResolveTemplateTokens_ と同等のロジックを
- * フロントエンドで再現する。質問カードの項目名・選択肢・プレースホルダー等に
- * {@_id}, {@_NOW|time:YYYY年MM月DD日}, {フィールド名} などのトークンを埋め込み、
- * フォーム表示時に実際の値へ置換する。
+ * 提供する薄膜ラッパー。純粋計算 (変換関数・スキャナ・条件式評価) は
+ * gas/pipeEngine.js に共有されており、フロント/バックで結果が一致することを
+ * 構造的に保証する。
  *
- * 予約トークン（@ プレフィックス必須）:
- *   {@_id}          - レコードID
- *   {@_NOW}         - 現在日時 ("yyyy-MM-dd HH:mm:ss")。パイプで整形可:
- *                     {@_NOW|time:YYYY年MM月DD日}  {@_NOW|time:HH時mm分}
- *   {@_record_url}  - レコード URL
- *   {@_form_url}    - フォーム URL
+ * 予約トークン (@ プレフィックス必須):
+ *   {@_id}          レコードID
+ *   {@_NOW}         現在日時 ("yyyy-MM-dd HH:mm:ss")。{@_NOW|time:YYYY年MM月DD日} 可
+ *   {@_record_url}  レコード URL
+ *   {@_form_url}    フォーム URL
  *
- * fileUpload 欄ごとの参照（欄ラベル + 専用パイプ）:
- *   {@<欄>}                - カンマ区切りファイル名（既定）
- *   {@<欄>|file_names}     - カンマ区切りファイル名
- *   {@<欄>|file_urls}      - カンマ区切りファイル URL
- *   {@<欄>|folder_name}    - 保存フォルダ名
- *   {@<欄>|folder_url}     - 保存フォルダ URL
+ * fileUpload 欄ごとの参照:
+ *   {@<欄>}             カンマ区切りファイル名 (既定)
+ *   {@<欄>|file_names}  カンマ区切りファイル名
+ *   {@<欄>|file_urls}   カンマ区切りファイル URL
+ *   {@<欄>|folder_name} 保存フォルダ名
+ *   {@<欄>|folder_url}  保存フォルダ URL
  *
- * @ 参照（予約トークン優先 → フィールド参照フォールバック）:
- *   {@フィールドラベル}           - 該当フィールドの現在の値
- *   {@フィールドラベル|upper}     - パイプ変換付き
- *   {フィールドラベル}            - @ なしはトークンとして解決されず空文字に置換される
+ * @ 参照:
+ *   {@フィールドラベル}       該当フィールドの現在の値
+ *   {@フィールドラベル|upper} パイプ変換付き
+ *   {\フィールドラベル}       予約名と衝突するラベルの強制フィールド参照
+ *   {フィールドラベル}        @ も \ もなしはトークン解決されず空文字
  *
- * エスケープ:
- *   \{ → {  \} → }
+ * サブテンプレート・{_}/{@_} パイプ値参照も共有エンジン経由でサポート。
  */
 
-import { formatNow, applyPipeTransformers } from "./tokenTransformers.js";
+import pipeEngine from "../../../gas/pipeEngine.js";
+
+const {
+  applyPipeTransformers,
+  scanBalancedTokens,
+  templateValueToString,
+  formatNowLocal,
+} = pipeEngine;
 
 // ---------------------------------------------------------------------------
-// Reserved tokens
+// Reserved tokens (frontend version — GAS 側と同一の 4 種)
 // ---------------------------------------------------------------------------
 
-// _folder_url / _file_urls は廃止。fileUpload 欄ごとに `{@<欄>|folder_url}` / `|file_urls` を使う
 const RESERVED_TOKENS = new Set(["_id", "_NOW", "_record_url", "_form_url"]);
-
-const isReservedToken = (tokenName) => RESERVED_TOKENS.has(tokenName);
 
 const resolveReservedToken = (tokenName, context) => {
   if (tokenName === "_id") return context.recordId || "";
-  if (tokenName === "_NOW") return formatNow(context.now || new Date());
+  if (tokenName === "_NOW") return formatNowLocal(context.now || new Date());
   if (tokenName === "_record_url") return context.recordUrl || "";
   if (tokenName === "_form_url") return context.formUrl || "";
   return null;
@@ -62,21 +65,6 @@ const buildFileUploadMetaByLabel = (context) => {
 // ---------------------------------------------------------------------------
 // Field label → value map
 // ---------------------------------------------------------------------------
-
-const valueToString = (value) => {
-  if (value === undefined || value === null) return "";
-  if (Array.isArray(value)) {
-    return value
-      .filter((v) => v !== undefined && v !== null)
-      .map((v) => (typeof v === "object" && v.name ? String(v.name) : String(v)))
-      .join(", ");
-  }
-  if (typeof value === "object") {
-    if (value.name) return String(value.name);
-    return JSON.stringify(value);
-  }
-  return String(value);
-};
 
 export const collectFileUploadFieldIds = (fields, ids) => {
   (fields || []).forEach((f) => {
@@ -103,72 +91,117 @@ export const buildLabelValueMap = (fieldLabels, fieldValues, responses) => {
     const value = Object.prototype.hasOwnProperty.call(fieldValues || {}, fid)
       ? fieldValues[fid]
       : (responses || {})[fid];
-    map[label] = valueToString(value);
+    map[label] = templateValueToString(value);
   }
   return map;
+};
+
+// ---------------------------------------------------------------------------
+// @ 参照の解決: 予約トークン優先 → labelValueMap フォールバック
+// ---------------------------------------------------------------------------
+
+const resolveRef = (name, ctx) => {
+  const reserved = resolveReservedToken(name, ctx);
+  if (reserved !== null) return reserved;
+  const map = ctx.labelValueMap || {};
+  return Object.prototype.hasOwnProperty.call(map, name) ? map[name] : "";
 };
 
 // ---------------------------------------------------------------------------
 // Main entry
 // ---------------------------------------------------------------------------
 
-/**
- * テンプレートトークンを解決する
- *
- * @param {string} template - トークンを含むテンプレート文字列
- * @param {{ now?: Date, recordId?: string, folderUrl?: string, recordUrl?: string, formUrl?: string, fileUrls?: string, labelValueMap?: Object }} context
- * @returns {string} 解決済みの文字列
- */
-export const resolveTemplateTokens = (template, context) => {
+const ESC_OPEN = "__NFB_ESC_OB__";
+const ESC_CLOSE = "__NFB_ESC_CB__";
+
+const resolveTokensInternal = (template, context, pipeValue) => {
   if (!template || typeof template !== "string") return template || "";
   if (!template.includes("{")) return template;
 
   const ctx = context || {};
   const fileUploadMetaByLabel = buildFileUploadMetaByLabel(ctx);
-  const ESC_OPEN = "__NFB_ESC_OB__";
-  const ESC_CLOSE = "__NFB_ESC_CB__";
+  const hasPipeValue = pipeValue !== undefined;
 
-  const result = template
-    .split("\\{").join(ESC_OPEN)
-    .split("\\}").join(ESC_CLOSE)
-    .replace(/\{([^{}]+)\}/g, (_match, tokenBody) => {
-      const raw = tokenBody || "";
-      const isRef = raw.startsWith("@");
-      const forceField = raw.startsWith("\\");
-      const tokenName = (isRef || forceField) ? raw.slice(1) : raw;
-      if (!tokenName) return "";
+  const src = template.split("\\{").join(ESC_OPEN).split("\\}").join(ESC_CLOSE);
 
-      const pipeIndex = tokenName.indexOf("|");
+  const replaced = scanBalancedTokens(src, (tokenBody) => {
+    const raw = tokenBody || "";
+    const isRef = raw.startsWith("@");
+    const forceField = raw.startsWith("\\");
+    const tokenName = (isRef || forceField) ? raw.slice(1) : raw;
+    if (!tokenName) return "";
+
+    const pipeIndex = tokenName.indexOf("|");
+    const fieldPart = pipeIndex >= 0 ? tokenName.substring(0, pipeIndex) : tokenName;
+
+    // Pipe-value reference: {_} / {@_} / {_|...} / {@_|...}
+    if (fieldPart === "_" && hasPipeValue) {
+      const pv = templateValueToString(pipeValue);
       if (pipeIndex >= 0) {
-        const fieldPart = tokenName.substring(0, pipeIndex);
-        const transformersPart = tokenName.substring(pipeIndex + 1);
-        let resolved;
-        if (isRef) {
-          // @ prefix: 予約トークン優先 → labelValueMap フォールバック
-          const reservedVal = resolveReservedToken(fieldPart, ctx);
-          resolved = reservedVal !== null ? reservedVal : ((ctx.labelValueMap || {})[fieldPart] ?? "");
-        } else if (forceField) {
-          // \ prefix: labelValueMap 強制参照（エスケープハッチ）
-          resolved = (ctx.labelValueMap || {})[fieldPart] ?? "";
-        } else {
-          // @ なしはトークンとして解決しない
-          resolved = "";
-        }
-        const currentFieldMeta = fileUploadMetaByLabel[fieldPart] || null;
-        const pipeCtx = currentFieldMeta ? { ...ctx, currentFieldMeta } : ctx;
-        return applyPipeTransformers(resolved, transformersPart, pipeCtx);
+        const pipeCtx = bindPipeCallbacks(ctx, null);
+        return applyPipeTransformers(pv, tokenName.substring(pipeIndex + 1), pipeCtx);
       }
+      return pv;
+    }
 
+    if (pipeIndex >= 0) {
+      const transformersPart = tokenName.substring(pipeIndex + 1);
+      let resolved;
       if (isRef) {
-        const reservedVal = resolveReservedToken(tokenName, ctx);
-        if (reservedVal !== null) return reservedVal;
-        return (ctx.labelValueMap || {})[tokenName] ?? "";
+        const reservedVal = resolveReservedToken(fieldPart, ctx);
+        resolved = reservedVal !== null ? reservedVal : ((ctx.labelValueMap || {})[fieldPart] ?? "");
+      } else if (forceField) {
+        resolved = (ctx.labelValueMap || {})[fieldPart] ?? "";
+      } else {
+        resolved = "";
       }
-      if (forceField) {
-        return (ctx.labelValueMap || {})[tokenName] ?? "";
-      }
-      return "";
-    });
+      const currentFieldMeta = fileUploadMetaByLabel[fieldPart] || null;
+      const pipeCtx = bindPipeCallbacks(ctx, currentFieldMeta);
+      return applyPipeTransformers(resolved, transformersPart, pipeCtx);
+    }
 
-  return result.split(ESC_OPEN).join("{").split(ESC_CLOSE).join("}");
+    if (isRef) {
+      const reservedVal = resolveReservedToken(tokenName, ctx);
+      if (reservedVal !== null) return reservedVal;
+      return (ctx.labelValueMap || {})[tokenName] ?? "";
+    }
+    if (forceField) {
+      return (ctx.labelValueMap || {})[tokenName] ?? "";
+    }
+    return "";
+  });
+
+  return replaced.split(ESC_OPEN).join("{").split(ESC_CLOSE).join("}");
+};
+
+/**
+ * pipeEngine に渡すコンテキストに resolveRef / resolveTemplate コールバックを
+ * バインドする。if/ifv の条件式・値位置・サブテンプレート再帰から呼ばれる。
+ */
+const bindPipeCallbacks = (ctx, currentFieldMeta) => {
+  const bound = { ...ctx };
+  bound.resolveRef = (name) => resolveRef(name, ctx);
+  bound.resolveTemplate = (subTemplate, subPipeValue) =>
+    resolveTokensInternal(subTemplate, ctx, subPipeValue);
+  if (currentFieldMeta) bound.currentFieldMeta = currentFieldMeta;
+  return bound;
+};
+
+/**
+ * テンプレートトークンを解決する
+ *
+ * @param {string} template
+ * @param {{
+ *   now?: Date,
+ *   recordId?: string,
+ *   recordUrl?: string,
+ *   formUrl?: string,
+ *   labelValueMap?: Object,
+ *   fieldLabels?: Object,
+ *   fileUploadMeta?: Object,
+ * }} context
+ * @returns {string}
+ */
+export const resolveTemplateTokens = (template, context) => {
+  return resolveTokensInternal(template, context, undefined);
 };
