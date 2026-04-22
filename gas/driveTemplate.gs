@@ -1,34 +1,14 @@
 /**
  * driveTemplate.gs
- * テンプレートトークン解決・パイプ変換システム
+ * トークン解決 (GAS 固有のアダプタ層)
+ *
+ * 純粋計算部分 (変換関数・スキャナ・条件式評価) は pipeEngine.js に集約。
+ * このファイルは GAS 固有の機能のみを担う:
+ * - Session.getScriptTimeZone / Utilities.formatDate を使う _NOW フォーマット
+ * - allowGmailOnlyTokens による _record_url / _form_url のゲート
+ * - fileUpload の hideFileExtension 処理
+ * - pipeEngine のコールバック (resolveRef / resolveTemplate) のバインド
  */
-
-function nfbTemplateValueToString_(value) {
-  if (value === undefined || value === null) return "";
-  if (Array.isArray(value)) {
-    var parts = [];
-    for (var i = 0; i < value.length; i++) {
-      if (value[i] === undefined || value[i] === null) continue;
-      if (typeof value[i] === "object" && value[i].name) {
-        parts.push(String(value[i].name));
-      } else {
-        parts.push(String(value[i]));
-      }
-    }
-    return parts.join(", ");
-  }
-  if (typeof value === "object") {
-    if (value.name) return String(value.name);
-    return JSON.stringify(value);
-  }
-  return String(value);
-}
-
-function nfbStripFileExtension_(name) {
-  if (!name || typeof name !== "string") return name || "";
-  var dotIndex = name.lastIndexOf(".");
-  return dotIndex > 0 ? name.substring(0, dotIndex) : name;
-}
 
 function nfbBuildFieldLabelValueMap_(context) {
   var responses = (context && context.responses) || {};
@@ -91,16 +71,40 @@ function nfbResolveFieldTemplateToken_(tokenName, context) {
   return Object.prototype.hasOwnProperty.call(labelValueMap, tokenName) ? labelValueMap[tokenName] : "";
 }
 
+/** @name 参照を予約トークン優先で解決 (if/ifv の条件式・値位置で使用) */
+function nfbResolveRef_(name, context) {
+  var reservedValue = nfbResolveReservedTemplateToken_(name, context, { allowGmailOnlyTokens: true });
+  if (reservedValue !== null) return reservedValue;
+  return nfbResolveFieldTemplateToken_(name, context);
+}
+
 function nfbResolveTemplateTokenValue_(tokenName, context, options) {
   var isRef = options && options.isRef === true;
   if (isRef) {
-    // @ prefix: 予約トークン優先 → フィールド参照フォールバック
     var reservedValue = nfbResolveReservedTemplateToken_(tokenName, context, options);
     if (reservedValue !== null) return reservedValue;
     return nfbResolveFieldTemplateToken_(tokenName, context);
   }
-  // @ なし: トークンとして解決しない（空文字を返す）
   return "";
+}
+
+/**
+ * pipeEngine に渡すコンテキストに GAS 固有のコールバックをバインドする。
+ * - resolveRef: @name 解決 (if 条件・値位置)
+ * - resolveTemplate: サブテンプレート {...} の再帰解決
+ */
+function nfbBindPipeCallbacks_(context, options) {
+  var bound = Object.assign({}, context || {});
+  bound.resolveRef = function(name) { return nfbResolveRef_(name, context); };
+  bound.resolveTemplate = function(valueStr, pipeValue) {
+    return nfbResolveTemplateTokens_(valueStr, context, {
+      allowGmailOnlyTokens: true,
+      pipeValue: pipeValue
+    });
+  };
+  var currentFieldMeta = options && options.currentFieldMeta;
+  if (currentFieldMeta) bound.currentFieldMeta = currentFieldMeta;
+  return bound;
 }
 
 function nfbResolveTemplateTokens_(template, context, options) {
@@ -132,75 +136,7 @@ function nfbResolveTemplateTokens_(template, context, options) {
 }
 
 /**
- * Given the index of a "{" in text, return the index of its matching "}",
- * tracking nested braces. Returns -1 if the brace is never closed.
- */
-function nfbFindBalancedCloseIndex_(text, openIndex) {
-  var n = text.length;
-  var depth = 1;
-  var j = openIndex + 1;
-  while (j < n && depth > 0) {
-    var c = text.charAt(j);
-    if (c === "{") {
-      depth++;
-    } else if (c === "}") {
-      depth--;
-      if (depth === 0) return j;
-    }
-    j++;
-  }
-  return -1;
-}
-
-/**
- * Scan a template string and replace each balanced {...} token via the replacer.
- * Supports nested braces (inner {...} are passed as part of the body, not stripped).
- * Unclosed braces are left literal.
- */
-function nfbScanBalancedTokens_(text, replacer) {
-  var out = "";
-  var i = 0;
-  var n = text.length;
-  while (i < n) {
-    var ch = text.charAt(i);
-    if (ch !== "{") {
-      out += ch;
-      i++;
-      continue;
-    }
-    var close = nfbFindBalancedCloseIndex_(text, i);
-    if (close < 0) {
-      out += text.substring(i);
-      return out;
-    }
-    out += replacer(text.substring(i + 1, close));
-    i = close + 1;
-  }
-  return out;
-}
-
-/**
- * Collect every top-level balanced {...} occurrence from text.
- * Returns [{fullToken, body}, ...]. Unclosed braces terminate the scan.
- * Used by the Google Doc path, which needs the original token string for replaceText.
- */
-function nfbCollectBalancedTokens_(text) {
-  var results = [];
-  if (!text) return results;
-  var n = text.length;
-  var i = 0;
-  while (i < n) {
-    if (text.charAt(i) !== "{") { i++; continue; }
-    var close = nfbFindBalancedCloseIndex_(text, i);
-    if (close < 0) return results;
-    results.push({ fullToken: text.substring(i, close + 1), body: text.substring(i + 1, close) });
-    i = close + 1;
-  }
-  return results;
-}
-
-/**
- * Resolve a single token body (the contents between matching { and }).
+ * Resolve a single token body (contents between matching { and }).
  * Handles {_} / {@_} / {_|...} as pipe-value references when context.__pipeValue__ is set.
  */
 function nfbResolveOneTokenBody_(tokenBody, context, options) {
@@ -213,11 +149,11 @@ function nfbResolveOneTokenBody_(tokenBody, context, options) {
   var fieldPart = pipeIndex >= 0 ? tokenName.substring(0, pipeIndex) : tokenName;
   var hasPipeCtx = context && Object.prototype.hasOwnProperty.call(context, "__pipeValue__");
 
-  // Pipe-value reference: {_} / {@_} / {_|...} / {@_|...}
   if (fieldPart === "_" && hasPipeCtx) {
     var pv = nfbTemplateValueToString_(context.__pipeValue__);
     if (pipeIndex >= 0) {
-      return nfbApplyPipeTransformers_(pv, tokenName.substring(pipeIndex + 1), context);
+      var pipeCtxForPv = nfbBindPipeCallbacks_(context, {});
+      return nfbApplyPipeTransformers_(pv, tokenName.substring(pipeIndex + 1), pipeCtxForPv);
     }
     return pv;
   }
@@ -230,9 +166,7 @@ function nfbResolveOneTokenBody_(tokenBody, context, options) {
     });
     var metaByLabel = nfbBuildFileUploadMetaByLabel_(context);
     var currentFieldMeta = metaByLabel[fieldPart] || null;
-    var pipeContext = currentFieldMeta
-      ? Object.assign({}, context || {}, { currentFieldMeta: currentFieldMeta })
-      : context;
+    var pipeContext = nfbBindPipeCallbacks_(context, { currentFieldMeta: currentFieldMeta });
     return nfbApplyPipeTransformers_(resolvedValue, transformersPart, pipeContext);
   }
 

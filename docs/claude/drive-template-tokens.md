@@ -1,8 +1,8 @@
 # テンプレートトークン・パイプ変換（Claude 向け詳細）
 
-CLAUDE.md から分離した、Google Doc テンプレート・ファイル／フォルダ名・Gmail 本文・項目ラベル等で使うトークン置換システムのリファレンス。`driveTemplate.gs` や `tokenReplacer.js` / `tokenTransformers.js` を触るときに参照する。
+CLAUDE.md から分離した、Google Doc テンプレート・ファイル／フォルダ名・Gmail 本文・項目ラベル等で使うトークン置換システムのリファレンス。`driveTemplate.gs` / `pipeEngine.js` / `tokenReplacer.js` を触るときに参照する。
 
-レコードデータを埋め込んだ PDF・Gmail 下書き・Google Doc を自動生成できる。バックエンド実装は `gas/driveTemplate.gs`、フロントエンドのプレビュー用実装は `builder/src/utils/tokenReplacer.js` / `tokenTransformers.js` にある（サブテンプレート・`{_}`/`{@_}` 参照など一部の高度機能は GAS 側のみ）。
+レコードデータを埋め込んだ PDF・Gmail 下書き・Google Doc を自動生成できる。純粋計算 (変換関数・スキャナ・条件式評価) は `gas/pipeEngine.js` に**単一実装**として集約され、GAS バックエンドとフロントエンド (Vite) の双方が CommonJS/ESM 両対応の export 経由で再利用する。プラットフォーム固有のアダプタは GAS 側が `gas/driveTemplate.gs`、フロント側が `builder/src/utils/tokenReplacer.js` に置かれ、`context.resolveRef` / `context.resolveTemplate` コールバックで pipeEngine に注入する。サブテンプレート・`{_}`/`{@_}` 参照・`ifv` などは**両環境で同等に動作**する。
 
 ## トークン構文
 
