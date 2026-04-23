@@ -117,36 +117,35 @@ function Sheets_pathKey_(path) {
   return Sheets_normalizeHeaderPath_(path).join("|");
 }
 
+// シートヘッダ用のパスセグメント解決 (改行正規化 + 空ラベル扱い)。
+// Sheets_collectTemporalPathMap_ 側では空ラベルは subtree ごとスキップ、
+// Sheets_buildOrderFromSchema_ 側では fallback "質問 X.Y (type)" を使う。
+function Sheets_headerFieldSegmentSkipEmpty_(field) {
+  return Sheets_normalizeHeaderSegment_(field && field.label) || null;
+}
+
+function Sheets_headerFieldSegmentWithFallback_(field, ctx) {
+  var label = Sheets_normalizeHeaderSegment_(field && field.label);
+  if (label) return label;
+  var type = field && field.type !== undefined && field.type !== null
+    ? String(field.type).trim() : "";
+  return "質問 " + ctx.indexTrail.join(".") + " (" + (type || "unknown") + ")";
+}
+
+function Sheets_headerBranchSegment_(optionKey) {
+  return Sheets_normalizeHeaderSegment_(optionKey) || null;
+}
+
 function Sheets_collectTemporalPathMap_(schema) {
   var map = {};
-
-  var walk = function(fields, basePath) {
-    if (!fields || !fields.length) return;
-
-    for (var i = 0; i < fields.length; i++) {
-      var field = fields[i];
-      if (!field) continue;
-      var label = Sheets_normalizeHeaderSegment_(field.label);
-      if (!label) continue;
-      var path = basePath ? basePath + "|" + label : label;
-
-      if (field.type === "date" || field.type === "time") {
-        map[path] = field.type;
-      }
-
-      if (field.childrenByValue && typeof field.childrenByValue === "object") {
-        for (var key in field.childrenByValue) {
-          if (!field.childrenByValue.hasOwnProperty(key)) continue;
-          var childFields = field.childrenByValue[key];
-          var optionLabel = Sheets_normalizeHeaderSegment_(key);
-          var nextPath = optionLabel ? path + "|" + optionLabel : path;
-          walk(childFields, nextPath);
-        }
-      }
+  nfbTraverseSchema_(schema, function(field, ctx) {
+    if (field.type === "date" || field.type === "time") {
+      map[ctx.pathSegments.join("|")] = field.type;
     }
-  };
-
-  walk(Array.isArray(schema) ? schema : [], "");
+  }, {
+    fieldSegment: Sheets_headerFieldSegmentSkipEmpty_,
+    branchSegment: Sheets_headerBranchSegment_
+  });
   return map;
 }
 
@@ -176,52 +175,26 @@ function Sheets_buildOrderFromSchema_(schema) {
     order.push(normalized);
   };
 
-  var resolveFieldLabel = function(field, indexTrail) {
-    var label = Sheets_normalizeHeaderSegment_(field && field.label);
-    if (label) return label;
-    var fieldType = field && field.type !== undefined && field.type !== null ? String(field.type).trim() : "";
-    if (!fieldType) fieldType = "unknown";
-    return "質問 " + indexTrail.join(".") + " (" + fieldType + ")";
-  };
+  nfbTraverseSchema_(schema, function(field, ctx) {
+    var type = field.type !== undefined && field.type !== null ? String(field.type).trim() : "";
+    var baseKey = ctx.pathSegments.join("|");
 
-  var walk = function(fields, pathSegments, indexTrail) {
-    if (!fields || !fields.length) return;
-
-    for (var i = 0; i < fields.length; i++) {
-      var field = fields[i];
-      if (!field || typeof field !== "object") continue;
-
-      var currentIndexTrail = indexTrail.concat(i + 1);
-      var label = resolveFieldLabel(field, currentIndexTrail);
-      var currentPath = pathSegments.concat(label);
-      var baseKey = currentPath.join("|");
-      var type = field.type !== undefined && field.type !== null ? String(field.type).trim() : "";
-
-      if (type === "checkboxes" || type === "radio" || type === "select") {
-        if (Array.isArray(field.options)) {
-          for (var optIndex = 0; optIndex < field.options.length; optIndex++) {
-            var option = field.options[optIndex];
-            var optionLabel = Sheets_normalizeHeaderSegment_(option && option.label);
-            appendKey(optionLabel ? baseKey + "|" + optionLabel : baseKey + "|");
-          }
-        }
-      } else if (type !== "message" && singleValueTypes[type]) {
-        appendKey(baseKey);
-      }
-
-      if (field.childrenByValue && typeof field.childrenByValue === "object") {
-        for (var childKey in field.childrenByValue) {
-          if (!field.childrenByValue.hasOwnProperty(childKey)) continue;
-          var childFields = field.childrenByValue[childKey];
-          var optionPath = Sheets_normalizeHeaderSegment_(childKey);
-          var childBasePath = optionPath ? currentPath.concat(optionPath) : currentPath;
-          walk(childFields, childBasePath, currentIndexTrail);
+    if (type === "checkboxes" || type === "radio" || type === "select") {
+      if (Array.isArray(field.options)) {
+        for (var optIndex = 0; optIndex < field.options.length; optIndex++) {
+          var option = field.options[optIndex];
+          var optionLabel = Sheets_normalizeHeaderSegment_(option && option.label);
+          appendKey(optionLabel ? baseKey + "|" + optionLabel : baseKey + "|");
         }
       }
+    } else if (type !== "message" && singleValueTypes[type]) {
+      appendKey(baseKey);
     }
-  };
+  }, {
+    fieldSegment: Sheets_headerFieldSegmentWithFallback_,
+    branchSegment: Sheets_headerBranchSegment_
+  });
 
-  walk(Array.isArray(schema) ? schema : [], [], []);
   return order;
 }
 

@@ -123,50 +123,8 @@ function Forms_buildDriveFileUrlFromId_(fileId) {
  */
 
 function Forms_stripSchemaIds_(schema) {
-  if (!schema || !schema.map) return [];
-
-  var stripArray = function(arr) {
-    return (arr || []).map(function(field) {
-      var base = {};
-      for (var key in field) {
-        if (!field.hasOwnProperty(key)) continue;
-        if (key === "id") continue; // フィールドIDは外部配布不要
-        base[key] = field[key];
-      }
-
-      // optionsのIDを除去
-      if (base.options && Array.isArray(base.options)) {
-        base.options = base.options.map(function(opt) {
-          var optBase = {};
-          for (var optKey in opt) {
-            if (!opt.hasOwnProperty(optKey)) continue;
-            if (optKey === "id") continue;
-            optBase[optKey] = opt[optKey];
-          }
-          return optBase;
-        });
-      }
-
-      // childrenByValue のIDを除去
-      if (base.childrenByValue && typeof base.childrenByValue === "object") {
-        var fixed = {};
-        for (var val in base.childrenByValue) {
-          if (!base.childrenByValue.hasOwnProperty(val)) continue;
-          fixed[val] = stripArray(base.childrenByValue[val]);
-        }
-        base.childrenByValue = fixed;
-      }
-
-      // 一時UI状態は保存対象外
-      for (var i = 0; i < NFB_UI_TEMP_KEYS.length; i++) {
-        delete base[NFB_UI_TEMP_KEYS[i]];
-      }
-
-      return base;
-    });
-  };
-
-  return stripArray(schema);
+  if (!Array.isArray(schema)) return [];
+  return nfbStripSchemaIDs_(schema, { uiTempKeys: NFB_UI_TEMP_KEYS });
 }
 
 /**
