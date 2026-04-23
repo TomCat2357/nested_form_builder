@@ -4,16 +4,21 @@ const THEME_STORAGE_KEY = "nested_form_builder_theme";
 export const DEFAULT_THEME = "standard";
 export const THEME_OPTIONS = [
   { value: "standard", label: "Standard" },
+  { value: "porcelain", label: "Porcelain" },
+  { value: "linen", label: "Linen" },
   { value: "matcha", label: "Matcha" },
   { value: "sakura", label: "Sakura" },
   { value: "warm", label: "Warm" },
   { value: "ocean", label: "Ocean" },
   { value: "dark", label: "Dark" },
+  { value: "midnight", label: "Midnight" },
+  { value: "obsidian", label: "Obsidian" },
   { value: "egypt", label: "Egypt" },
   { value: "india", label: "India" },
   { value: "snow", label: "Snow" },
   { value: "christmas", label: "Christmas" },
   { value: "forest", label: "Forest" },
+  { value: "ruins", label: "Ruins" },
 ];
 
 const CUSTOM_THEME_STYLE_ID = "nfb-custom-themes";

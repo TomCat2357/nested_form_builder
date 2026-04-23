@@ -1,140 +1,132 @@
-/* forest theme overrides */
+/* forest theme — Nausicaä / 腐海 (Fukai)
+ *   ベース: oceanと同等の深い闇を、緑側へ寄せた「腐海の底」
+ *   プライマリ: ナウシカのワンピースの深い青
+ *   アクセント: 王蟲（オーム）— 甲殻オレンジと血走った赤い眼
+ *   サポート: 腐海植物の燐光紫、金色の触角、苔の燐光緑
+ */
 :root[data-theme="forest"] {
+  /* Very dark pine-moss — 腐海の底、ほぼ黒に沈む深い青緑 */
+  --bg: #06120e;
+  --surface: rgba(255, 255, 255, 0.05);
+  --surface-elevated: rgba(255, 255, 255, 0.085);
+  --surface-muted: rgba(255, 255, 255, 0.035);
+  --surface-subtle: rgba(255, 255, 255, 0.025);
+  --surface-alt: rgba(255, 255, 255, 0.11);
+  --dialog-bg: #0c2018;
 
-    /* forest floor */
-    --bg: #f2f7f0;
-    --surface: #ffffff;
-    --surface-elevated: #ffffff;
-    --surface-muted: #eaf3e6;
-    --surface-subtle: #f7fbf5;
-    --surface-alt: #dff0d7;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-muted: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.2);
 
-    --border: #cfe2c7;
-    --border-muted: #dcecdf;
-    --border-subtle: #eef6ee;
-    --border-strong: #b6d1ad;
+  --text: #e6efe8;
+  --text-strong: #ffffff;
+  --text-ink: #c9e0ce;
+  --text-muted: rgba(201, 224, 206, 0.82);
+  --text-subtle: rgba(201, 224, 206, 0.68);
+  --text-faded: rgba(201, 224, 206, 0.5);
 
-    --text: #0f172a;
-    --text-strong: #0b1324;
-    --text-ink: #1f2937;
-    --text-muted: #64748b;
-    --text-subtle: #6b7280;
-    --text-faded: #94a3b8;
+  --input-bg: #0a1d14;
+  --input-text: #e6efe8;
+  --input-border: rgba(255, 255, 255, 0.22);
 
-    /* deep green */
-    --primary: #14532d;
-    --primary-strong: #0a3d22;
-    --primary-ink: #031a0f;
-    --primary-ink-strong: #010e07;
-    --primary-soft: #dcfce7;
-    --primary-soft-strong: #bbf7d0;
-    --primary-weak: rgba(20, 83, 45, 0.1);
-    --primary-weak-soft: rgba(20, 83, 45, 0.06);
-    --primary-border-soft: rgba(20, 83, 45, 0.22);
+  /* ナウシカ・ブルー — 腐海の闇に映える深い青 */
+  --primary: #3a6ed8;
+  --primary-strong: #2354bf;
+  --primary-ink: #b6c9f0;
+  --primary-ink-strong: #dbe5f8;
+  --primary-soft: rgba(58, 110, 216, 0.24);
+  --primary-soft-strong: rgba(58, 110, 216, 0.38);
+  --primary-weak: rgba(58, 110, 216, 0.18);
+  --primary-weak-soft: rgba(58, 110, 216, 0.1);
+  --primary-border-soft: rgba(58, 110, 216, 0.42);
 
-    /* earthy amber */
-    --warm: #a16207;
-    --warm-weak: rgba(161, 98, 7, 0.12);
-    --warm-ink: #78350f;
+  /* 王蟲の甲殻オレンジ */
+  --warm: #d95818;
+  --warm-weak: rgba(217, 88, 24, 0.22);
+  --warm-ink: #ffc89a;
 
-    --success: #16a34a;
-    --success-ink: #166534;
-    --success-weak: rgba(22, 163, 74, 0.1);
+  /* 苔の燐光 */
+  --success: #6fd08a;
+  --success-ink: #c4efcf;
+  --success-weak: rgba(111, 208, 138, 0.16);
 
-    --danger: #e11d48;
-    --danger-bright: #ef4444;
-    --danger-strong: #dc2626;
-    --danger-ink: #b91c1c;
-    --danger-ink-strong: #991b1b;
-    --danger-weak: #fef2f2;
-    --danger-weak-strong: #fee2e2;
-    --danger-border: #fecaca;
-    --danger-border-strong: #fca5a5;
+  /* 王蟲の眼 — 血走った深紅 */
+  --danger: #d83a3a;
+  --danger-bright: #e64545;
+  --danger-strong: #a82020;
+  --danger-ink: #ffc5c5;
+  --danger-ink-strong: #ffdede;
+  --danger-weak: rgba(216, 58, 58, 0.22);
+  --danger-weak-strong: rgba(216, 58, 58, 0.32);
+  --danger-border: rgba(216, 58, 58, 0.4);
+  --danger-border-strong: rgba(216, 58, 58, 0.5);
 
-    --warning: #f59e0b;
-    --warning-weak: #fef3c7;
-    --warning-ink: #92400e;
+  /* 王蟲の金の触角 */
+  --warning: #e8b73a;
+  --warning-weak: rgba(232, 183, 58, 0.2);
+  --warning-ink: #ffe8a8;
 
-    --info: #38bdf8;
-    --info-weak: #e0f2fe;
+  /* 腐海植物の燐光紫 */
+  --info: #9a7ed6;
+  --info-weak: rgba(154, 126, 214, 0.2);
 
-    --app-bg:
-        radial-gradient(
-            900px 520px at 12% -10%,
-            rgba(20, 83, 45, 0.16),
-            transparent 60%
-        ),
-        radial-gradient(
-            900px 520px at 92% 0%,
-            rgba(161, 98, 7, 0.1),
-            transparent 62%
-        ),
-        radial-gradient(
-            900px 520px at 52% 110%,
-            rgba(187, 247, 208, 0.65),
-            transparent 60%
-        ),
-        var(--bg);
-    --app-header-bg: rgba(242, 247, 240, 0.84);
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.55);
+  --shadow-md: 0 14px 32px rgba(0, 0, 0, 0.65);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.8);
 
-    --input-border-focus: rgba(20, 83, 45, 0.32);
-    --input-focus-ring: rgba(20, 83, 45, 0.12);
+  /* 腐海の瘴気 — 闇の底に差し込むナウシカ青の光、王蟲オレンジの残光、苔と燐光紫 */
+  --app-bg:
+    radial-gradient(1100px 600px at 10% -12%, rgba(58, 110, 216, 0.4), transparent 60%),
+    radial-gradient(900px 520px at 92% 4%, rgba(217, 88, 24, 0.3), transparent 62%),
+    radial-gradient(700px 420px at 72% 35%, rgba(216, 58, 58, 0.18), transparent 62%),
+    radial-gradient(800px 480px at 35% 55%, rgba(154, 126, 214, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 50% 115%, rgba(111, 208, 138, 0.2), transparent 60%),
+    var(--bg);
+  --app-header-bg: rgba(6, 18, 14, 0.82);
 
-    --badge-primary-bg: linear-gradient(
-        135deg,
-        rgba(20, 83, 45, 0.95),
-        rgba(161, 98, 7, 0.84)
-    );
-    --badge-warm-bg: linear-gradient(
-        135deg,
-        rgba(161, 98, 7, 0.92),
-        rgba(245, 158, 11, 0.78)
-    );
-    --badge-ghost-bg: rgba(20, 83, 45, 0.08);
-    --badge-ghost-border: rgba(20, 83, 45, 0.18);
-    --badge-text: rgba(255, 255, 255, 0.94);
+  --input-border-focus: rgba(58, 110, 216, 0.6);
+  --input-focus-ring: rgba(58, 110, 216, 0.26);
 
-    --logo-gradient: linear-gradient(
-        135deg,
-        rgba(20, 83, 45, 0.92),
-        rgba(161, 98, 7, 0.86)
-    );
-    --logo-shadow:
-        0 10px 26px rgba(20, 83, 45, 0.14), 0 10px 24px rgba(161, 98, 7, 0.1);
+  --badge-primary-bg: linear-gradient(135deg, rgba(58, 110, 216, 0.98), rgba(217, 88, 24, 0.94));
+  --badge-warm-bg: linear-gradient(135deg, rgba(217, 88, 24, 0.98), rgba(216, 58, 58, 0.92));
+  --badge-ghost-bg: rgba(255, 255, 255, 0.08);
+  --badge-ghost-border: rgba(255, 255, 255, 0.18);
+  --badge-text: rgba(255, 255, 255, 0.96);
 
-    --panel-header-bg: linear-gradient(
-        180deg,
-        rgba(20, 83, 45, 0.06),
-        transparent
-    );
-    --card-hover-border: rgba(20, 83, 45, 0.18);
-    --btn-primary-bg: linear-gradient(
-        180deg,
-        var(--primary-weak),
-        var(--primary-weak-soft)
-    );
+  --logo-gradient: linear-gradient(135deg, rgba(58, 110, 216, 0.98), rgba(217, 88, 24, 0.94));
+  --logo-shadow:
+    0 8px 26px rgba(58, 110, 216, 0.36),
+    0 10px 30px rgba(217, 88, 24, 0.24);
 
-    --rail-gradient: linear-gradient(
-        180deg,
-        rgba(20, 83, 45, 0),
-        rgba(20, 83, 45, 0.38),
-        rgba(161, 98, 7, 0.12),
-        rgba(20, 83, 45, 0)
-    );
-    --rail-dot-bg: linear-gradient(
-        135deg,
-        rgba(20, 83, 45, 0.92),
-        rgba(161, 98, 7, 0.86)
-    );
-    --rail-dot-shadow: 0 10px 18px rgba(20, 83, 45, 0.1);
+  --panel-header-bg: linear-gradient(180deg, rgba(58, 110, 216, 0.1), transparent);
+  --card-hover-border: rgba(58, 110, 216, 0.38);
+  --btn-primary-bg: linear-gradient(135deg, rgba(58, 110, 216, 0.26), rgba(217, 88, 24, 0.18));
 
-    --if-box-border: rgba(20, 83, 45, 0.18);
-    --if-box-bg: linear-gradient(
-        135deg,
-        rgba(20, 83, 45, 0.1),
-        rgba(161, 98, 7, 0.06)
-    );
-    --if-chip-bg: rgba(20, 83, 45, 0.1);
-    --if-chip-border: rgba(20, 83, 45, 0.16);
-    --if-badge-border: rgba(245, 158, 11, 0.16);
+  /* オームの蛇腹 — 青 → 甲殻オレンジ → 血走った眼の赤 */
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(58, 110, 216, 0),
+    rgba(58, 110, 216, 0.68),
+    rgba(217, 88, 24, 0.52),
+    rgba(216, 58, 58, 0.32),
+    rgba(58, 110, 216, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(58, 110, 216, 0.98), rgba(217, 88, 24, 0.94));
+  --rail-dot-shadow:
+    0 10px 24px rgba(58, 110, 216, 0.3),
+    0 12px 28px rgba(217, 88, 24, 0.2);
+
+  --if-box-border: rgba(255, 255, 255, 0.12);
+  --if-box-bg: linear-gradient(135deg, rgba(58, 110, 216, 0.2), rgba(217, 88, 24, 0.14));
+  --if-chip-bg: rgba(217, 88, 24, 0.2);
+  --if-chip-border: rgba(217, 88, 24, 0.3);
+  --if-badge-border: rgba(111, 208, 138, 0.28);
+}
+:root[data-theme="forest"] { color-scheme: dark; }
+:root[data-theme="forest"] select { color-scheme: dark; }
+:root[data-theme="forest"] select option,
+:root[data-theme="forest"] select optgroup {
+  background-color: var(--bg);
+  color: var(--text);
 }

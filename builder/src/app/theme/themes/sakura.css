@@ -1,84 +1,108 @@
-/* sakura theme overrides */
-:root[data-theme="sakura"] {
-  --bg: #fff7fb;
-  --surface: #ffffff;
+/* sakura theme — petal pink, kimono crimson, gilded peach */
+:root[data-theme="sakura"] {
+  /* Fallen petal base — more pigmented */
+  --bg: #fbe5ee;
+  --surface: #fff5f9;
   --surface-elevated: #ffffff;
-  --surface-muted: #fff1f7;
-  --surface-subtle: #fffbfd;
-  --surface-alt: #fde7f3;
+  --surface-muted: #f7d3e1;
+  --surface-subtle: #fdecf3;
+  --surface-alt: #efbacd;
+  --dialog-bg: #fff5f9;
 
-  --border: #f2dbe7;
-  --border-muted: #f6e6ee;
-  --border-subtle: #faeff4;
-  --border-strong: #d8b4c9;
+  --border: #e8a5be;
+  --border-muted: #f0bacd;
+  --border-subtle: #f7d3e1;
+  --border-strong: #c96d8c;
 
-  --text: #0f172a;
-  --text-strong: #111827;
-  --text-ink: #334155;
-  --text-muted: #64748b;
-  --text-subtle: #6b7280;
-  --text-faded: #94a3b8;
+  /* Kimono indigo-brown ink */
+  --text: #2a1220;
+  --text-strong: #1a0914;
+  --text-ink: #3b1a2e;
+  --text-muted: #6a3f55;
+  --text-subtle: #805068;
+  --text-faded: #a87f93;
 
-  --primary: #db2777;
-  --primary-strong: #be185d;
-  --primary-ink: #831843;
-  --primary-ink-strong: #500724;
-  --primary-soft: #fce7f3;
-  --primary-soft-strong: #fbcfe8;
-  --primary-weak: rgba(219, 39, 119, 0.12);
-  --primary-weak-soft: rgba(219, 39, 119, 0.06);
-  --primary-border-soft: rgba(219, 39, 119, 0.24);
+  /* Bold kimono crimson */
+  --primary: #b8305f;
+  --primary-strong: #931c4a;
+  --primary-ink: #5c0a2a;
+  --primary-ink-strong: #3a0418;
+  --primary-soft: #fbd4e2;
+  --primary-soft-strong: #f7b2c9;
+  --primary-weak: rgba(184, 48, 95, 0.14);
+  --primary-weak-soft: rgba(184, 48, 95, 0.08);
+  --primary-border-soft: rgba(184, 48, 95, 0.34);
 
-  --warm: #f59e0b;
-  --warm-weak: rgba(245, 158, 11, 0.12);
-  --warm-ink: #92400e;
+  /* Gilded peach — gold leaf tint */
+  --warm: #d48c1c;
+  --warm-weak: rgba(212, 140, 28, 0.14);
+  --warm-ink: #6b4500;
 
-  --success: #16a34a;
-  --success-ink: #166534;
-  --success-weak: rgba(22, 163, 74, 0.10);
+  --success: #0e7a3e;
+  --success-ink: #054022;
+  --success-weak: rgba(14, 122, 62, 0.12);
 
-  --danger: #dc2626;
-  --danger-bright: #ef4444;
-  --danger-strong: #b91c1c;
-  --danger-ink: #991b1b;
-  --danger-ink-strong: #7f1d1d;
-  --danger-weak: #fef2f2;
-  --danger-weak-strong: #fee2e2;
-  --danger-border: #fecaca;
-  --danger-border-strong: #fca5a5;
+  --danger: #b8305f;
+  --danger-bright: #c43a6c;
+  --danger-strong: #8a1f47;
+  --danger-ink: #5c0a2a;
+  --danger-ink-strong: #3a0418;
+  --danger-weak: #fbdae6;
+  --danger-weak-strong: #f6bdd0;
+  --danger-border: #e89fba;
+  --danger-border-strong: #d87097;
 
-  --warning: #f59e0b;
-  --warning-weak: #fef3c7;
-  --warning-ink: #92400e;
+  --warning: #d48c1c;
+  --warning-weak: #fae3b8;
+  --warning-ink: #6b4500;
 
-  --info: #38bdf8;
-  --info-weak: #e0f2fe;
-  --logo-gradient: linear-gradient(135deg, rgba(219, 39, 119, 0.92), rgba(245, 158, 11, 0.85));
-  --logo-shadow: 0 10px 26px rgba(219, 39, 119, 0.14), 0 10px 24px rgba(245, 158, 11, 0.10);
+  --info: #5a6bcb;
+  --info-weak: #dfe3f4;
 
-  --app-bg: radial-gradient(900px 520px at 12% -10%, var(--primary-weak), transparent 60%),
-    radial-gradient(900px 520px at 92% 0%, var(--warm-weak), transparent 62%),
+  --shadow-sm: 0 1px 3px rgba(42, 18, 32, 0.1), 0 2px 10px rgba(42, 18, 32, 0.08);
+  --shadow-md: 0 14px 32px rgba(42, 18, 32, 0.14), 0 2px 8px rgba(42, 18, 32, 0.08);
+  --shadow-lg: 0 24px 56px rgba(42, 18, 32, 0.22);
+
+  /* Drifting blossoms */
+  --app-bg:
+    radial-gradient(1100px 600px at 10% -14%, rgba(184, 48, 95, 0.26), transparent 60%),
+    radial-gradient(900px 520px at 92% 4%, rgba(212, 140, 28, 0.18), transparent 62%),
+    radial-gradient(900px 520px at 50% 110%, rgba(247, 178, 201, 0.6), transparent 60%),
     var(--bg);
-  --app-header-bg: rgba(255, 247, 251, 0.78);
+  --app-header-bg: rgba(251, 229, 238, 0.88);
 
-  --panel-header-bg: linear-gradient(180deg, rgba(219, 39, 119, 0.06), transparent);
+  --input-border-focus: rgba(184, 48, 95, 0.48);
+  --input-focus-ring: rgba(184, 48, 95, 0.18);
 
-  --btn-primary-bg: linear-gradient(180deg, var(--primary-weak), var(--primary-weak-soft));
+  --badge-primary-bg: linear-gradient(135deg, rgba(184, 48, 95, 0.98), rgba(147, 28, 74, 0.94));
+  --badge-warm-bg: linear-gradient(135deg, rgba(212, 140, 28, 0.98), rgba(184, 48, 95, 0.88));
+  --badge-ghost-bg: rgba(184, 48, 95, 0.1);
+  --badge-ghost-border: rgba(184, 48, 95, 0.26);
+  --badge-text: rgba(255, 245, 249, 0.98);
 
-  --badge-primary-bg: linear-gradient(135deg, rgba(219, 39, 119, 0.92), rgba(219, 39, 119, 0.76));
-  --badge-warm-bg: linear-gradient(135deg, rgba(245, 158, 11, 0.90), rgba(245, 158, 11, 0.76));
-  --badge-ghost-bg: rgba(219, 39, 119, 0.08);
-  --badge-ghost-border: rgba(219, 39, 119, 0.18);
-  --badge-text: rgba(255, 255, 255, 0.94);
+  /* Petal + gold leaf */
+  --logo-gradient: linear-gradient(135deg, rgba(184, 48, 95, 0.98), rgba(212, 140, 28, 0.9));
+  --logo-shadow:
+    0 8px 24px rgba(184, 48, 95, 0.3),
+    0 10px 28px rgba(212, 140, 28, 0.18);
 
-  --if-box-border: rgba(219, 39, 119, 0.18);
-  --if-box-bg: linear-gradient(135deg, rgba(219, 39, 119, 0.08), rgba(245, 158, 11, 0.10));
-  --if-chip-bg: rgba(245, 158, 11, 0.12);
-  --if-chip-border: rgba(245, 158, 11, 0.18);
-  --if-badge-border: rgba(22, 163, 74, 0.18);
+  --panel-header-bg: linear-gradient(180deg, rgba(184, 48, 95, 0.08), transparent);
+  --card-hover-border: rgba(184, 48, 95, 0.34);
+  --btn-primary-bg: linear-gradient(135deg, rgba(184, 48, 95, 0.2), rgba(212, 140, 28, 0.1));
 
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(184, 48, 95, 0),
+    rgba(184, 48, 95, 0.6),
+    rgba(212, 140, 28, 0.38),
+    rgba(184, 48, 95, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(184, 48, 95, 0.98), rgba(212, 140, 28, 0.9));
+  --rail-dot-shadow: 0 10px 22px rgba(184, 48, 95, 0.26);
 
-
-
-
+  --if-box-border: rgba(212, 140, 28, 0.26);
+  --if-box-bg: linear-gradient(135deg, rgba(184, 48, 95, 0.14), rgba(212, 140, 28, 0.1));
+  --if-chip-bg: rgba(212, 140, 28, 0.16);
+  --if-chip-border: rgba(212, 140, 28, 0.28);
+  --if-badge-border: rgba(14, 122, 62, 0.22);
 }

@@ -1,108 +1,105 @@
-/* matcha theme overrides */
-:root[data-theme="matcha"] {
-  /* Surfaces (soft mint) */
-  --bg: #f4fbf6;
-  --surface: #ffffff;
+/* matcha theme — stone-ground tea, warm bamboo, red bean accent */
+:root[data-theme="matcha"] {
+  /* Hand-whisked matcha froth */
+  --bg: #e8f0d8;
+  --surface: #f8fcee;
   --surface-elevated: #ffffff;
-  --surface-muted: #eaf7ef;
-  --surface-subtle: #f8fffb;
-  --surface-alt: #dff3e8;
+  --surface-muted: #dbe8c5;
+  --surface-subtle: #f0f6e0;
+  --surface-alt: #c5d9a5;
+  --dialog-bg: #f8fcee;
 
-  /* Borders */
-  --border: #cfe8d7;
-  --border-muted: #d9efe1;
-  --border-subtle: #edf8f2;
-  --border-strong: #a7d7bc;
+  --border: #b5cf8d;
+  --border-muted: #c7dca4;
+  --border-subtle: #dbeabf;
+  --border-strong: #7ca648;
 
-  /* Text */
-  --text: #0f172a;
-  --text-strong: #111827;
-  --text-ink: #334155;
-  --text-muted: #64748b;
-  --text-subtle: #6b7280;
-  --text-faded: #94a3b8;
+  --text: #1a2309;
+  --text-strong: #0d1404;
+  --text-ink: #253214;
+  --text-muted: #556b37;
+  --text-subtle: #687d4a;
+  --text-faded: #93a874;
 
-  /* Primary (matcha green) */
-  --primary: #16a34a;
-  --primary-strong: #15803d;
-  --primary-ink: #14532d;
-  --primary-ink-strong: #052e16;
-  --primary-soft: #dcfce7;
-  --primary-soft-strong: #bbf7d0;
-  --primary-weak: rgba(22, 163, 74, 0.12);
-  --primary-weak-soft: rgba(22, 163, 74, 0.06);
-  --primary-border-soft: rgba(22, 163, 74, 0.24);
+  /* Deep stone-ground matcha */
+  --primary: #4a7a1a;
+  --primary-strong: #365b0f;
+  --primary-ink: #213a06;
+  --primary-ink-strong: #0f1e02;
+  --primary-soft: #d9ecbe;
+  --primary-soft-strong: #bedd95;
+  --primary-weak: rgba(74, 122, 26, 0.14);
+  --primary-weak-soft: rgba(74, 122, 26, 0.08);
+  --primary-border-soft: rgba(74, 122, 26, 0.34);
 
-  /* Warm accent (yuzu amber) */
-  --warm: #f59e0b;
-  --warm-weak: rgba(245, 158, 11, 0.12);
-  --warm-ink: #92400e;
+  /* Red bean (anko) — warm accent */
+  --warm: #b84a2e;
+  --warm-weak: rgba(184, 74, 46, 0.14);
+  --warm-ink: #6b220f;
 
-  /* Status */
-  --success: #10b981;
-  --success-ink: #065f46;
-  --success-weak: rgba(16, 185, 129, 0.10);
+  --success: #4a7a1a;
+  --success-ink: #213a06;
+  --success-weak: rgba(74, 122, 26, 0.12);
 
-  --danger: #dc2626;
-  --danger-bright: #ef4444;
-  --danger-strong: #b91c1c;
-  --danger-ink: #991b1b;
-  --danger-ink-strong: #7f1d1d;
-  --danger-weak: #fef2f2;
-  --danger-weak-strong: #fee2e2;
-  --danger-border: #fecaca;
-  --danger-border-strong: #fca5a5;
+  --danger: #b23030;
+  --danger-bright: #d13939;
+  --danger-strong: #8a1f1f;
+  --danger-ink: #5c1414;
+  --danger-ink-strong: #3a0a0a;
+  --danger-weak: #f7dcdc;
+  --danger-weak-strong: #f0c0c0;
+  --danger-border: #de9393;
+  --danger-border-strong: #c86a6a;
 
-  --warning: #f59e0b;
-  --warning-weak: #fef3c7;
-  --warning-ink: #92400e;
+  --warning: #c47a1a;
+  --warning-weak: #f6e0ba;
+  --warning-ink: #6b4200;
 
-  --info: #38bdf8;
-  --info-weak: #e0f2fe;
+  --info: #2a6e8a;
+  --info-weak: #cfe6ee;
 
-  /* Shape + shadows (same “soft” profile as sakura) */
-  /* App chrome */
+  --shadow-sm: 0 1px 3px rgba(26, 35, 9, 0.12), 0 2px 10px rgba(26, 35, 9, 0.08);
+  --shadow-md: 0 14px 32px rgba(26, 35, 9, 0.16), 0 2px 8px rgba(26, 35, 9, 0.08);
+  --shadow-lg: 0 24px 56px rgba(26, 35, 9, 0.22);
+
   --app-bg:
-    radial-gradient(900px 520px at 12% -10%, var(--primary-weak), transparent 60%),
-    radial-gradient(900px 520px at 92% 0%, var(--warm-weak), transparent 62%),
+    radial-gradient(1000px 560px at 10% -12%, rgba(74, 122, 26, 0.28), transparent 60%),
+    radial-gradient(900px 520px at 92% 4%, rgba(184, 74, 46, 0.14), transparent 62%),
+    radial-gradient(800px 460px at 50% 115%, rgba(190, 221, 149, 0.55), transparent 60%),
     var(--bg);
-  --app-header-bg: rgba(244, 251, 246, 0.78);
+  --app-header-bg: rgba(232, 240, 216, 0.88);
 
-  /* Focus ring */
+  --input-border-focus: rgba(74, 122, 26, 0.48);
+  --input-focus-ring: rgba(74, 122, 26, 0.16);
 
-  /* Badges / logo / panels */
-  --badge-primary-bg: linear-gradient(135deg, rgba(22, 163, 74, 0.92), rgba(22, 163, 74, 0.76));
-  --badge-warm-bg: linear-gradient(135deg, rgba(245, 158, 11, 0.90), rgba(245, 158, 11, 0.76));
-  --badge-ghost-bg: rgba(22, 163, 74, 0.08);
-  --badge-ghost-border: rgba(22, 163, 74, 0.18);
-  --badge-text: rgba(255, 255, 255, 0.94);
+  --badge-primary-bg: linear-gradient(135deg, rgba(74, 122, 26, 0.98), rgba(54, 91, 15, 0.94));
+  --badge-warm-bg: linear-gradient(135deg, rgba(184, 74, 46, 0.98), rgba(107, 34, 15, 0.92));
+  --badge-ghost-bg: rgba(74, 122, 26, 0.1);
+  --badge-ghost-border: rgba(74, 122, 26, 0.26);
+  --badge-text: rgba(248, 252, 238, 0.98);
 
-  --logo-gradient: linear-gradient(135deg, rgba(22, 163, 74, 0.92), rgba(245, 158, 11, 0.85));
-  --logo-shadow: 0 10px 26px rgba(22, 163, 74, 0.14), 0 10px 24px rgba(245, 158, 11, 0.10);
+  --logo-gradient: linear-gradient(135deg, rgba(74, 122, 26, 0.98), rgba(184, 74, 46, 0.92));
+  --logo-shadow:
+    0 8px 24px rgba(74, 122, 26, 0.28),
+    0 10px 28px rgba(184, 74, 46, 0.18);
 
-  --panel-header-bg: linear-gradient(180deg, rgba(22, 163, 74, 0.06), transparent);
-  --btn-primary-bg: linear-gradient(180deg, var(--primary-weak), var(--primary-weak-soft));
+  --panel-header-bg: linear-gradient(180deg, rgba(74, 122, 26, 0.1), transparent);
+  --card-hover-border: rgba(74, 122, 26, 0.36);
+  --btn-primary-bg: linear-gradient(135deg, rgba(74, 122, 26, 0.2), rgba(184, 74, 46, 0.1));
 
-  /* Hierarchy rails (used by preview-overrides.css) */
   --rail-gradient: linear-gradient(
     180deg,
-    rgba(22, 163, 74, 0),
-    rgba(22, 163, 74, 0.45),
-    rgba(245, 158, 11, 0.12),
-    rgba(22, 163, 74, 0)
+    rgba(74, 122, 26, 0),
+    rgba(74, 122, 26, 0.62),
+    rgba(184, 74, 46, 0.3),
+    rgba(74, 122, 26, 0)
   );
-  --rail-dot-bg: linear-gradient(135deg, rgba(22, 163, 74, 0.95), rgba(245, 158, 11, 0.85));
-  --rail-dot-shadow: 0 10px 18px rgba(22, 163, 74, 0.14), 0 12px 26px rgba(245, 158, 11, 0.12);
+  --rail-dot-bg: linear-gradient(135deg, rgba(74, 122, 26, 0.98), rgba(184, 74, 46, 0.9));
+  --rail-dot-shadow: 0 10px 22px rgba(74, 122, 26, 0.26);
 
-  /* If box / chips */
-  --if-box-border: rgba(22, 163, 74, 0.18);
-  --if-box-bg: linear-gradient(135deg, rgba(22, 163, 74, 0.08), rgba(245, 158, 11, 0.10));
-  --if-chip-bg: rgba(245, 158, 11, 0.12);
-  --if-chip-border: rgba(245, 158, 11, 0.18);
-  --if-badge-border: rgba(16, 185, 129, 0.18);
-
-
-
-
-
+  --if-box-border: rgba(184, 74, 46, 0.24);
+  --if-box-bg: linear-gradient(135deg, rgba(74, 122, 26, 0.14), rgba(184, 74, 46, 0.1));
+  --if-chip-bg: rgba(184, 74, 46, 0.16);
+  --if-chip-border: rgba(184, 74, 46, 0.28);
+  --if-badge-border: rgba(74, 122, 26, 0.26);
 }

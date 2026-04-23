@@ -1,162 +1,131 @@
-/* ocean theme overrides */
+/* ocean theme — 腐海の底 × 王蟲 (Sea of Decay abyss × Ohmu)
+ *   ベース: 深海の闇に腐海の青緑を差した、湿った暗がり
+ *   プライマリ: 生物発光シアン — 王蟲が穏やかなときの青い眼
+ *   ワンポイント:
+ *     ・王蟲の甲殻 / 肌の青緑 (teal-jade) — 苔と甲殻のあいだの色
+ *     ・王蟲の怒れる真紅 — 攻撃色、血走った眼
+ *   残光: 珊瑚紫は瘴気の残滓として薄く保持
+ */
 :root[data-theme="ocean"] {
+  /* 腐海に沈んだ深海 — 黒に近い青、わずかに緑へ寄る */
+  --bg: #03151c;
+  --surface: rgba(255, 255, 255, 0.06);
+  --surface-elevated: rgba(255, 255, 255, 0.09);
+  --surface-muted: rgba(255, 255, 255, 0.045);
+  --surface-subtle: rgba(255, 255, 255, 0.03);
+  --surface-alt: rgba(255, 255, 255, 0.11);
+  --dialog-bg: #0a2230;
 
-    /* Base background + surfaces (deep ocean) */
-    --bg: #071421;
-    --surface: rgba(255, 255, 255, 0.08);
-    --surface-elevated: rgba(255, 255, 255, 0.1);
-    --surface-muted: rgba(255, 255, 255, 0.06);
-    --surface-subtle: rgba(255, 255, 255, 0.04);
-    --surface-alt: rgba(255, 255, 255, 0.12);
-    --dialog-bg: #0e2236;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-muted: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.2);
 
-    /* Borders */
-    --border: rgba(255, 255, 255, 0.14);
-    --border-muted: rgba(255, 255, 255, 0.12);
-    --border-subtle: rgba(255, 255, 255, 0.08);
-    --border-strong: rgba(255, 255, 255, 0.18);
+  --text: #eaf6ff;
+  --text-strong: #ffffff;
+  --text-ink: #d2eaff;
+  --text-muted: rgba(210, 234, 255, 0.82);
+  --text-subtle: rgba(210, 234, 255, 0.68);
+  --text-faded: rgba(210, 234, 255, 0.5);
 
-    /* Text */
-    --text: #e6f3ff;
-    --text-strong: #f1f7ff;
-    --text-ink: #cfe6ff;
-    --text-muted: rgba(207, 230, 255, 0.78);
-    --text-subtle: rgba(207, 230, 255, 0.7);
-    --text-faded: rgba(207, 230, 255, 0.58);
+  --input-bg: #08263a;
+  --input-text: #eaf6ff;
+  --input-border: rgba(255, 255, 255, 0.22);
 
-    /* Primary (cyan) */
-    --primary: #22d3ee;
-    --primary-strong: #06b6d4;
-    --primary-ink: #a5f3fc;
-    --primary-ink-strong: #cffafe;
-    --primary-soft: rgba(34, 211, 238, 0.22);
-    --primary-soft-strong: rgba(34, 211, 238, 0.32);
-    --primary-weak: rgba(34, 211, 238, 0.18);
-    --primary-weak-soft: rgba(34, 211, 238, 0.12);
-    --primary-border-soft: rgba(34, 211, 238, 0.35);
+  /* 生物発光シアン — 王蟲の穏やかな青い眼 */
+  --primary: #2de4ff;
+  --primary-strong: #0cc4e5;
+  --primary-ink: #a8efff;
+  --primary-ink-strong: #d0f7ff;
+  --primary-soft: rgba(45, 228, 255, 0.22);
+  --primary-soft-strong: rgba(45, 228, 255, 0.34);
+  --primary-weak: rgba(45, 228, 255, 0.18);
+  --primary-weak-soft: rgba(45, 228, 255, 0.1);
+  --primary-border-soft: rgba(45, 228, 255, 0.42);
 
-    /* Warm accent (violet) */
-    --warm: #a78bfa;
-    --warm-weak: rgba(167, 139, 250, 0.18);
-    --warm-ink: #ddd6fe;
+  /* 珊瑚紫 — 瘴気の残滓として薄く */
+  --warm: #b574ec;
+  --warm-weak: rgba(181, 116, 236, 0.18);
+  --warm-ink: #e9d5ff;
 
-    /* Status */
-    --success: #34d399;
-    --success-ink: #d1fae5;
-    --success-weak: rgba(52, 211, 153, 0.14);
+  /* 王蟲の甲殻 / 肌 — teal-jade。苔と甲殻のあいだの青緑 */
+  --success: #3fbfa8;
+  --success-ink: #bff0e6;
+  --success-weak: rgba(63, 191, 168, 0.18);
 
-    --danger: #fb7185;
-    --danger-bright: #fb7185;
-    --danger-strong: #f43f5e;
-    --danger-ink: #fecdd3;
-    --danger-ink-strong: #fda4af;
-    --danger-weak: rgba(251, 113, 133, 0.16);
-    --danger-weak-strong: rgba(251, 113, 133, 0.22);
-    --danger-border: rgba(251, 113, 133, 0.3);
-    --danger-border-strong: rgba(251, 113, 133, 0.38);
+  /* 王蟲の怒れる眼 — 血走った真紅、攻撃色 */
+  --danger: #e63a3a;
+  --danger-bright: #ff4a4a;
+  --danger-strong: #b82020;
+  --danger-ink: #ffc5c5;
+  --danger-ink-strong: #ffdede;
+  --danger-weak: rgba(230, 58, 58, 0.22);
+  --danger-weak-strong: rgba(230, 58, 58, 0.32);
+  --danger-border: rgba(230, 58, 58, 0.4);
+  --danger-border-strong: rgba(230, 58, 58, 0.5);
 
-    --warning: #fbbf24;
-    --warning-weak: rgba(251, 191, 36, 0.16);
-    --warning-ink: #fcd34d;
+  --warning: #fbbf24;
+  --warning-weak: rgba(251, 191, 36, 0.16);
+  --warning-ink: #fde68a;
 
-    --info: #38bdf8;
-    --info-weak: rgba(56, 189, 248, 0.16);
+  --info: #38bdf8;
+  --info-weak: rgba(56, 189, 248, 0.16);
 
-    /* Radius + shadows */
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 14px 32px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.75);
 
-    /* Overlays */
+  /* 深海に差す光 + 腐海の青緑の瘴気 + 王蟲の赤い残光 */
+  --app-bg:
+    radial-gradient(1100px 600px at 12% -10%, rgba(45, 228, 255, 0.48), transparent 60%),
+    radial-gradient(900px 520px at 94% 6%, rgba(63, 191, 168, 0.32), transparent 62%),
+    radial-gradient(720px 420px at 78% 42%, rgba(230, 58, 58, 0.14), transparent 62%),
+    radial-gradient(900px 520px at 38% 58%, rgba(181, 116, 236, 0.22), transparent 60%),
+    radial-gradient(820px 480px at 58% 118%, rgba(63, 191, 168, 0.22), transparent 60%),
+    var(--bg);
+  --app-header-bg: rgba(3, 21, 28, 0.78);
 
-    /* App chrome */
-    --app-bg:
-        radial-gradient(
-            900px 520px at 14% -10%,
-            rgba(34, 211, 238, 0.42),
-            transparent 60%
-        ),
-        radial-gradient(
-            900px 520px at 92% 6%,
-            rgba(167, 139, 250, 0.35),
-            transparent 62%
-        ),
-        radial-gradient(
-            700px 420px at 60% 120%,
-            rgba(52, 211, 153, 0.16),
-            transparent 60%
-        ),
-        var(--bg);
-    --app-header-bg: rgba(6, 14, 24, 0.68);
+  --input-border-focus: rgba(45, 228, 255, 0.6);
+  --input-focus-ring: rgba(45, 228, 255, 0.26);
 
-    /* Focus ring */
+  /* バッジ: シアン → 王蟲の甲殻teal へ。紫は抑えめ */
+  --badge-primary-bg: linear-gradient(135deg, rgba(45, 228, 255, 0.98), rgba(63, 191, 168, 0.95));
+  --badge-warm-bg: linear-gradient(135deg, rgba(181, 116, 236, 0.95), rgba(230, 58, 58, 0.88));
+  --badge-ghost-bg: rgba(255, 255, 255, 0.08);
+  --badge-ghost-border: rgba(255, 255, 255, 0.18);
+  --badge-text: rgba(5, 30, 40, 0.92);
 
-    /* Badges / logo / panels */
-    --badge-primary-bg: linear-gradient(
-        135deg,
-        rgba(34, 211, 238, 0.95),
-        rgba(167, 139, 250, 0.92)
-    );
-    --badge-warm-bg: linear-gradient(
-        135deg,
-        rgba(167, 139, 250, 0.95),
-        rgba(251, 191, 36, 0.86)
-    );
-    --badge-ghost-bg: rgba(255, 255, 255, 0.08);
-    --badge-ghost-border: rgba(255, 255, 255, 0.16);
-    --badge-text: rgba(255, 255, 255, 0.92);
+  --logo-gradient: linear-gradient(135deg, rgba(45, 228, 255, 0.98), rgba(63, 191, 168, 0.96));
+  --logo-shadow:
+    0 8px 26px rgba(45, 228, 255, 0.36),
+    0 10px 30px rgba(63, 191, 168, 0.24);
 
-    --logo-gradient: linear-gradient(
-        135deg,
-        rgba(34, 211, 238, 0.95),
-        rgba(167, 139, 250, 0.92)
-    );
-    --logo-shadow:
-        0 8px 24px rgba(34, 211, 238, 0.22),
-        0 10px 28px rgba(167, 139, 250, 0.18);
+  --panel-header-bg: linear-gradient(180deg, rgba(45, 228, 255, 0.08), transparent);
+  --card-hover-border: rgba(45, 228, 255, 0.36);
+  --btn-primary-bg: linear-gradient(135deg, rgba(45, 228, 255, 0.24), rgba(63, 191, 168, 0.2));
 
-    --panel-header-bg: linear-gradient(
-        180deg,
-        rgba(255, 255, 255, 0.06),
-        transparent
-    );
-    --btn-primary-bg: linear-gradient(
-        135deg,
-        rgba(34, 211, 238, 0.22),
-        rgba(167, 139, 250, 0.18)
-    );
+  /* レール: 生物発光シアン → 王蟲の甲殻teal → 怒れる眼の赤 → シアンへ戻る */
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(45, 228, 255, 0),
+    rgba(45, 228, 255, 0.7),
+    rgba(63, 191, 168, 0.58),
+    rgba(230, 58, 58, 0.3),
+    rgba(45, 228, 255, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(45, 228, 255, 0.98), rgba(63, 191, 168, 0.95));
+  --rail-dot-shadow:
+    0 10px 24px rgba(45, 228, 255, 0.3),
+    0 12px 28px rgba(63, 191, 168, 0.22);
 
-    /* Hierarchy rails (used by preview-overrides.css) */
-    --rail-gradient: linear-gradient(
-        180deg,
-        rgba(34, 211, 238, 0),
-        rgba(34, 211, 238, 0.55),
-        rgba(167, 139, 250, 0.45),
-        rgba(167, 139, 250, 0)
-    );
-    --rail-dot-bg: linear-gradient(
-        135deg,
-        rgba(34, 211, 238, 0.95),
-        rgba(167, 139, 250, 0.92)
-    );
-
-    /* IF box */
-    --if-box-border: rgba(255, 255, 255, 0.12);
-    --if-box-bg: linear-gradient(
-        135deg,
-        rgba(34, 211, 238, 0.16),
-        rgba(167, 139, 250, 0.12)
-    );
-    --if-chip-bg: rgba(255, 255, 255, 0.1);
-    --if-chip-border: rgba(255, 255, 255, 0.14);
-    --if-badge-border: rgba(52, 211, 153, 0.22);
+  --if-box-border: rgba(255, 255, 255, 0.12);
+  --if-box-bg: linear-gradient(135deg, rgba(45, 228, 255, 0.18), rgba(63, 191, 168, 0.14));
+  --if-chip-bg: rgba(63, 191, 168, 0.2);
+  --if-chip-border: rgba(63, 191, 168, 0.32);
+  --if-badge-border: rgba(230, 58, 58, 0.28);
 }
-/* nfb:select-popup-contrast:ocean */
-:root[data-theme="ocean"] {
-  color-scheme: dark;
-}
-
-/* Fallback: some browsers style the popup via option/optgroup */
-:root[data-theme="ocean"] select {
-  color-scheme: dark;
-}
+:root[data-theme="ocean"] { color-scheme: dark; }
+:root[data-theme="ocean"] select { color-scheme: dark; }
 :root[data-theme="ocean"] select option,
 :root[data-theme="ocean"] select optgroup {
   background-color: var(--bg);

@@ -1,156 +1,115 @@
-/* dark theme overrides */
+/* dark theme — deep midnight navy with electric blue + sunset amber */
 :root[data-theme="dark"] {
+  --bg: #06091a;
+  --surface: rgba(255, 255, 255, 0.055);
+  --surface-elevated: rgba(255, 255, 255, 0.085);
+  --surface-muted: rgba(255, 255, 255, 0.04);
+  --surface-subtle: rgba(255, 255, 255, 0.028);
+  --surface-alt: rgba(255, 255, 255, 0.1);
+  --dialog-bg: #12192e;
 
-    --bg: #0b1020;
-    --surface: rgba(255, 255, 255, 0.07);
-    --surface-elevated: rgba(255, 255, 255, 0.1);
-    --surface-muted: rgba(255, 255, 255, 0.055);
-    --surface-subtle: rgba(255, 255, 255, 0.04);
-    --surface-alt: rgba(255, 255, 255, 0.12);
-    --dialog-bg: #1a2234;
+  --border: rgba(255, 255, 255, 0.1);
+  --border-muted: rgba(255, 255, 255, 0.08);
+  --border-subtle: rgba(255, 255, 255, 0.05);
+  --border-strong: rgba(255, 255, 255, 0.18);
 
-    --border: rgba(255, 255, 255, 0.14);
-    --border-muted: rgba(255, 255, 255, 0.12);
-    --border-subtle: rgba(255, 255, 255, 0.08);
-    --border-strong: rgba(255, 255, 255, 0.18);
+  --text: #f4f5ff;
+  --text-strong: #ffffff;
+  --text-ink: #e1e4f5;
+  --text-muted: rgba(225, 228, 245, 0.82);
+  --text-subtle: rgba(225, 228, 245, 0.68);
+  --text-faded: rgba(225, 228, 245, 0.5);
 
-    --text: #e5e7eb;
-    --text-strong: #f8fafc;
-    --text-ink: #cbd5e1;
-    --text-muted: rgba(203, 213, 225, 0.78);
-    --text-subtle: rgba(203, 213, 225, 0.7);
-    --text-faded: rgba(203, 213, 225, 0.58);
+  --input-bg: #0d1230;
+  --input-text: #f4f5ff;
+  --input-border: rgba(255, 255, 255, 0.2);
 
-    --primary: #60a5fa;
-    --primary-strong: #3b82f6;
-    --primary-ink: #bfdbfe;
-    --primary-ink-strong: #dbeafe;
-    --primary-soft: rgba(96, 165, 250, 0.22);
-    --primary-soft-strong: rgba(96, 165, 250, 0.32);
-    --primary-weak: rgba(96, 165, 250, 0.18);
-    --primary-weak-soft: rgba(96, 165, 250, 0.12);
-    --primary-border-soft: rgba(96, 165, 250, 0.38);
+  --primary: #7aa2ff;
+  --primary-strong: #5582ff;
+  --primary-ink: #cbdafe;
+  --primary-ink-strong: #e5ecff;
+  --primary-soft: rgba(122, 162, 255, 0.22);
+  --primary-soft-strong: rgba(122, 162, 255, 0.34);
+  --primary-weak: rgba(122, 162, 255, 0.18);
+  --primary-weak-soft: rgba(122, 162, 255, 0.1);
+  --primary-border-soft: rgba(122, 162, 255, 0.4);
 
-    --warm: #f97316;
-    --warm-weak: rgba(249, 115, 22, 0.18);
-    --warm-ink: #fed7aa;
+  --warm: #ff9e52;
+  --warm-weak: rgba(255, 158, 82, 0.2);
+  --warm-ink: #ffd7a8;
 
-    --success: #34d399;
-    --success-ink: #d1fae5;
-    --success-weak: rgba(52, 211, 153, 0.14);
+  --success: #4ade80;
+  --success-ink: #bbf7d0;
+  --success-weak: rgba(74, 222, 128, 0.14);
 
-    --danger: #fb7185;
-    --danger-bright: #fb7185;
-    --danger-strong: #f43f5e;
-    --danger-ink: #fecdd3;
-    --danger-ink-strong: #fda4af;
-    --danger-weak: rgba(251, 113, 133, 0.16);
-    --danger-weak-strong: rgba(251, 113, 133, 0.22);
-    --danger-border: rgba(251, 113, 133, 0.3);
-    --danger-border-strong: rgba(251, 113, 133, 0.38);
+  --danger: #fb7185;
+  --danger-bright: #fb7185;
+  --danger-strong: #f43f5e;
+  --danger-ink: #fecdd3;
+  --danger-ink-strong: #fda4af;
+  --danger-weak: rgba(251, 113, 133, 0.16);
+  --danger-weak-strong: rgba(251, 113, 133, 0.22);
+  --danger-border: rgba(251, 113, 133, 0.3);
+  --danger-border-strong: rgba(251, 113, 133, 0.38);
 
-    --warning: #fbbf24;
-    --warning-weak: rgba(251, 191, 36, 0.16);
-    --warning-ink: #fde68a;
+  --warning: #fbbf24;
+  --warning-weak: rgba(251, 191, 36, 0.18);
+  --warning-ink: #fde68a;
 
-    --info: #22d3ee;
-    --info-weak: rgba(34, 211, 238, 0.16);
+  --info: #22d3ee;
+  --info-weak: rgba(34, 211, 238, 0.16);
 
-    --app-bg:
-        radial-gradient(
-            900px 520px at 14% -10%,
-            rgba(96, 165, 250, 0.42),
-            transparent 60%
-        ),
-        radial-gradient(
-            900px 520px at 92% 6%,
-            rgba(249, 115, 22, 0.3),
-            transparent 62%
-        ),
-        radial-gradient(
-            700px 420px at 60% 120%,
-            rgba(34, 211, 238, 0.14),
-            transparent 60%
-        ),
-        var(--bg);
-    --app-header-bg: rgba(8, 12, 20, 0.72);
+  --shadow-sm: 0 2px 10px rgba(0, 0, 0, 0.45);
+  --shadow-md: 0 14px 32px rgba(0, 0, 0, 0.55);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.7);
 
-    --input-border-focus: rgba(96, 165, 250, 0.48);
-    --input-focus-ring: rgba(96, 165, 250, 0.22);
+  --app-bg:
+    radial-gradient(1000px 560px at 12% -12%, rgba(122, 162, 255, 0.48), transparent 60%),
+    radial-gradient(900px 520px at 94% 6%, rgba(255, 158, 82, 0.36), transparent 62%),
+    radial-gradient(800px 460px at 50% 110%, rgba(34, 211, 238, 0.18), transparent 60%),
+    var(--bg);
+  --app-header-bg: rgba(6, 9, 26, 0.78);
 
-    --badge-primary-bg: linear-gradient(
-        135deg,
-        rgba(96, 165, 250, 0.95),
-        rgba(249, 115, 22, 0.9)
-    );
-    --badge-warm-bg: linear-gradient(
-        135deg,
-        rgba(249, 115, 22, 0.95),
-        rgba(251, 191, 36, 0.86)
-    );
-    --badge-ghost-bg: rgba(255, 255, 255, 0.08);
-    --badge-ghost-border: rgba(255, 255, 255, 0.16);
-    --badge-text: rgba(255, 255, 255, 0.92);
+  --input-border-focus: rgba(122, 162, 255, 0.55);
+  --input-focus-ring: rgba(122, 162, 255, 0.24);
 
-    --logo-gradient: linear-gradient(
-        135deg,
-        rgba(96, 165, 250, 0.95),
-        rgba(249, 115, 22, 0.9)
-    );
-    --logo-shadow:
-        0 8px 24px rgba(96, 165, 250, 0.22),
-        0 10px 28px rgba(249, 115, 22, 0.16);
+  --badge-primary-bg: linear-gradient(135deg, rgba(122, 162, 255, 0.98), rgba(255, 158, 82, 0.94));
+  --badge-warm-bg: linear-gradient(135deg, rgba(255, 158, 82, 0.98), rgba(251, 191, 36, 0.88));
+  --badge-ghost-bg: rgba(255, 255, 255, 0.08);
+  --badge-ghost-border: rgba(255, 255, 255, 0.16);
+  --badge-text: rgba(255, 255, 255, 0.96);
 
-    --panel-header-bg: linear-gradient(
-        180deg,
-        rgba(255, 255, 255, 0.06),
-        transparent
-    );
-    --card-hover-border: rgba(255, 255, 255, 0.22);
-    --btn-primary-bg: linear-gradient(
-        135deg,
-        rgba(96, 165, 250, 0.22),
-        rgba(249, 115, 22, 0.18)
-    );
+  --logo-gradient: linear-gradient(135deg, rgba(122, 162, 255, 0.98), rgba(255, 158, 82, 0.92));
+  --logo-shadow:
+    0 8px 24px rgba(122, 162, 255, 0.32),
+    0 10px 28px rgba(255, 158, 82, 0.2);
 
-    --rail-gradient: linear-gradient(
-        180deg,
-        rgba(96, 165, 250, 0),
-        rgba(96, 165, 250, 0.55),
-        rgba(249, 115, 22, 0.4),
-        rgba(96, 165, 250, 0)
-    );
-    --rail-dot-bg: linear-gradient(
-        135deg,
-        rgba(96, 165, 250, 0.95),
-        rgba(249, 115, 22, 0.9)
-    );
-    --rail-dot-shadow:
-        0 10px 22px rgba(96, 165, 250, 0.18),
-        0 12px 26px rgba(249, 115, 22, 0.14);
+  --panel-header-bg: linear-gradient(180deg, rgba(122, 162, 255, 0.08), transparent);
+  --card-hover-border: rgba(122, 162, 255, 0.32);
+  --btn-primary-bg: linear-gradient(135deg, rgba(122, 162, 255, 0.24), rgba(255, 158, 82, 0.18));
 
-    --if-box-border: rgba(255, 255, 255, 0.12);
-    --if-box-bg: linear-gradient(
-        135deg,
-        rgba(96, 165, 250, 0.16),
-        rgba(249, 115, 22, 0.12)
-    );
-    --if-chip-bg: rgba(255, 255, 255, 0.1);
-    --if-chip-border: rgba(255, 255, 255, 0.14);
-    --if-badge-border: rgba(52, 211, 153, 0.22);
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(122, 162, 255, 0),
+    rgba(122, 162, 255, 0.62),
+    rgba(255, 158, 82, 0.45),
+    rgba(122, 162, 255, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(122, 162, 255, 0.98), rgba(255, 158, 82, 0.92));
+  --rail-dot-shadow:
+    0 10px 22px rgba(122, 162, 255, 0.28),
+    0 12px 26px rgba(255, 158, 82, 0.18);
+
+  --if-box-border: rgba(255, 255, 255, 0.12);
+  --if-box-bg: linear-gradient(135deg, rgba(122, 162, 255, 0.2), rgba(255, 158, 82, 0.14));
+  --if-chip-bg: rgba(255, 158, 82, 0.18);
+  --if-chip-border: rgba(255, 158, 82, 0.26);
+  --if-badge-border: rgba(74, 222, 128, 0.24);
 }
-
-/* nfb:select-popup-contrast:dark */
-:root[data-theme="dark"] {
-    color-scheme: dark;
-}
-
-/* Fallback: some browsers style the popup via option/optgroup */
-:root[data-theme="dark"] select {
-    color-scheme: dark;
-}
+:root[data-theme="dark"] { color-scheme: dark; }
+:root[data-theme="dark"] select { color-scheme: dark; }
 :root[data-theme="dark"] select option,
 :root[data-theme="dark"] select optgroup {
-    background-color: var(--bg);
-    color: var(--text);
+  background-color: var(--bg);
+  color: var(--text);
 }

@@ -1,0 +1,122 @@
+/* midnight theme — refined dark with mauve + gold accents */
+:root[data-theme="midnight"] {
+  --bg: #0a0b14;
+  --surface: rgba(255, 255, 255, 0.04);
+  --surface-elevated: rgba(255, 255, 255, 0.065);
+  --surface-muted: rgba(255, 255, 255, 0.03);
+  --surface-subtle: rgba(255, 255, 255, 0.022);
+  --surface-alt: rgba(255, 255, 255, 0.08);
+  --dialog-bg: #15172a;
+
+  --border: rgba(255, 255, 255, 0.08);
+  --border-muted: rgba(255, 255, 255, 0.06);
+  --border-subtle: rgba(255, 255, 255, 0.04);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  --text: #f2effa;
+  --text-strong: #ffffff;
+  --text-ink: #dedbe8;
+  --text-muted: rgba(222, 219, 232, 0.82);
+  --text-subtle: rgba(222, 219, 232, 0.7);
+  --text-faded: rgba(222, 219, 232, 0.5);
+
+  --input-bg: #14152a;
+  --input-text: #f2effa;
+  --input-border: rgba(255, 255, 255, 0.2);
+
+  /* primary: warm gold — now the lead accent */
+  --primary: #eabf6a;
+  --primary-strong: #d4a24a;
+  --primary-ink: #fce8b8;
+  --primary-ink-strong: #fef3d4;
+  --primary-soft: rgba(234, 191, 106, 0.2);
+  --primary-soft-strong: rgba(234, 191, 106, 0.3);
+  --primary-weak: rgba(234, 191, 106, 0.14);
+  --primary-weak-soft: rgba(234, 191, 106, 0.08);
+  --primary-border-soft: rgba(234, 191, 106, 0.36);
+
+  /* warm: mauve as secondary accent */
+  --warm: #a89cff;
+  --warm-weak: rgba(168, 156, 255, 0.16);
+  --warm-ink: #d9d2ff;
+
+  --success: #4ade80;
+  --success-ink: #bbf7d0;
+  --success-weak: rgba(74, 222, 128, 0.12);
+
+  --danger: #f87171;
+  --danger-bright: #f87171;
+  --danger-strong: #ef4444;
+  --danger-ink: #fecaca;
+  --danger-ink-strong: #fed7d7;
+  --danger-weak: rgba(248, 113, 113, 0.14);
+  --danger-weak-strong: rgba(248, 113, 113, 0.2);
+  --danger-border: rgba(248, 113, 113, 0.28);
+  --danger-border-strong: rgba(248, 113, 113, 0.36);
+
+  --warning: #fbbf24;
+  --warning-weak: rgba(251, 191, 36, 0.14);
+  --warning-ink: #fde68a;
+
+  --info: #7dd3fc;
+  --info-weak: rgba(125, 211, 252, 0.14);
+
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 12px 28px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.65);
+
+  --overlay: rgba(5, 6, 14, 0.6);
+  --overlay-strong: rgba(5, 6, 14, 0.78);
+
+  --app-bg:
+    radial-gradient(1100px 600px at 10% -10%, rgba(234, 191, 106, 0.26), transparent 60%),
+    radial-gradient(900px 500px at 95% 10%, rgba(168, 156, 255, 0.24), transparent 60%),
+    radial-gradient(700px 400px at 50% 120%, rgba(234, 191, 106, 0.14), transparent 60%),
+    var(--bg);
+  --app-header-bg: rgba(10, 11, 20, 0.72);
+
+  --input-bg: rgba(255, 255, 255, 0.02);
+  --input-border-focus: rgba(234, 191, 106, 0.55);
+  --input-focus-ring: rgba(234, 191, 106, 0.22);
+
+  --badge-primary-bg: linear-gradient(135deg, rgba(234, 191, 106, 0.95), rgba(212, 162, 74, 0.9));
+  --badge-warm-bg: linear-gradient(135deg, rgba(168, 156, 255, 0.95), rgba(139, 123, 255, 0.88));
+  --badge-ghost-bg: rgba(255, 255, 255, 0.06);
+  --badge-ghost-border: rgba(255, 255, 255, 0.12);
+  --badge-text: rgba(255, 255, 255, 0.96);
+
+  --logo-gradient: linear-gradient(135deg, rgba(234, 191, 106, 0.98), rgba(168, 156, 255, 0.88));
+  --logo-shadow:
+    0 8px 24px rgba(234, 191, 106, 0.32),
+    0 10px 28px rgba(168, 156, 255, 0.18);
+
+  --panel-header-bg: linear-gradient(180deg, rgba(234, 191, 106, 0.07), transparent);
+  --card-hover-border: rgba(234, 191, 106, 0.34);
+  --btn-primary-bg: linear-gradient(135deg, rgba(234, 191, 106, 0.22), rgba(168, 156, 255, 0.14));
+
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(234, 191, 106, 0),
+    rgba(234, 191, 106, 0.65),
+    rgba(168, 156, 255, 0.38),
+    rgba(234, 191, 106, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(234, 191, 106, 0.98), rgba(168, 156, 255, 0.88));
+  --rail-dot-shadow:
+    0 10px 22px rgba(234, 191, 106, 0.26),
+    0 12px 26px rgba(168, 156, 255, 0.14);
+
+  --if-box-border: rgba(234, 191, 106, 0.22);
+  --if-box-bg: linear-gradient(135deg, rgba(234, 191, 106, 0.14), rgba(168, 156, 255, 0.1));
+  --if-chip-bg: rgba(234, 191, 106, 0.16);
+  --if-chip-border: rgba(234, 191, 106, 0.28);
+  --if-badge-border: rgba(74, 222, 128, 0.22);
+}
+
+:root[data-theme="midnight"] { color-scheme: dark; }
+:root[data-theme="midnight"] select { color-scheme: dark; }
+:root[data-theme="midnight"] select option,
+:root[data-theme="midnight"] select optgroup {
+  background-color: var(--bg);
+  color: var(--text);
+}

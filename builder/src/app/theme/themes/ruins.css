@@ -1,0 +1,117 @@
+/* ruins theme — dark tourism / urban decay
+ *   コンクリートの剥離、錆びた鉄骨、苔、色褪せたペンキ
+ *   Pripyat, Hashima, Detroit, Centralia の空気感
+ */
+:root[data-theme="ruins"] {
+  /* Weathered concrete — 風化コンクリの灰白 */
+  --bg: #d8d3cb;
+  --surface: #e6e2d9;
+  --surface-elevated: #eeeae2;
+  --surface-muted: #c4bfb5;
+  --surface-subtle: #ddd8cf;
+  --surface-alt: #a8a39a;
+  --dialog-bg: #eeeae2;
+
+  --border: #8f8a82;
+  --border-muted: #a6a199;
+  --border-subtle: #c0bbb2;
+  --border-strong: #5e5a53;
+
+  /* Sooty ink — すすけた黒 */
+  --text: #1a1815;
+  --text-strong: #0d0c0a;
+  --text-ink: #28241f;
+  --text-muted: #4d4843;
+  --text-subtle: #625d56;
+  --text-faded: #8a857d;
+
+  /* Oxide red — 錆びた鉄骨 */
+  --primary: #8a3a1f;
+  --primary-strong: #6b2a13;
+  --primary-ink: #421608;
+  --primary-ink-strong: #2a0d03;
+  --primary-soft: #e6c9bd;
+  --primary-soft-strong: #d4a795;
+  --primary-weak: rgba(138, 58, 31, 0.14);
+  --primary-weak-soft: rgba(138, 58, 31, 0.08);
+  --primary-border-soft: rgba(138, 58, 31, 0.34);
+
+  /* Sulfur brass — 硫黄・真鍮のくすみ */
+  --warm: #8a6a1c;
+  --warm-weak: rgba(138, 106, 28, 0.14);
+  --warm-ink: #3d2d00;
+
+  /* Moss — 苔 */
+  --success: #4a5e2a;
+  --success-ink: #223008;
+  --success-weak: rgba(74, 94, 42, 0.14);
+
+  /* Deep iron rust — 鉄骨の深錆 */
+  --danger: #6b2410;
+  --danger-bright: #8a3018;
+  --danger-strong: #4e1908;
+  --danger-ink: #341003;
+  --danger-ink-strong: #1f0801;
+  --danger-weak: #e8cdc2;
+  --danger-weak-strong: #dcb19f;
+  --danger-border: #b07860;
+  --danger-border-strong: #8f5a44;
+
+  --warning: #8a6a1c;
+  --warning-weak: #e8d9a8;
+  --warning-ink: #3d2d00;
+
+  /* Faded peeling paint blue — 剥がれた青ペンキ */
+  --info: #3a5f70;
+  --info-weak: #c5d5dc;
+
+  --shadow-sm: 0 1px 3px rgba(26, 24, 21, 0.16), 0 2px 10px rgba(26, 24, 21, 0.1);
+  --shadow-md: 0 14px 32px rgba(26, 24, 21, 0.24), 0 2px 8px rgba(26, 24, 21, 0.12);
+  --shadow-lg: 0 24px 56px rgba(26, 24, 21, 0.32);
+
+  /* Decaying atmosphere — 差し込む錆色の光、苔の影、埃の靄 */
+  --app-bg:
+    radial-gradient(1100px 600px at 10% -12%, rgba(138, 58, 31, 0.26), transparent 60%),
+    radial-gradient(900px 520px at 92% 4%, rgba(138, 106, 28, 0.22), transparent 62%),
+    radial-gradient(700px 420px at 72% 28%, rgba(58, 95, 112, 0.18), transparent 62%),
+    radial-gradient(800px 480px at 35% 55%, rgba(74, 94, 42, 0.18), transparent 60%),
+    radial-gradient(900px 500px at 50% 115%, rgba(168, 163, 154, 0.55), transparent 60%),
+    var(--bg);
+  --app-header-bg: rgba(216, 211, 203, 0.88);
+
+  --input-border-focus: rgba(138, 58, 31, 0.5);
+  --input-focus-ring: rgba(138, 58, 31, 0.16);
+
+  --badge-primary-bg: linear-gradient(135deg, rgba(138, 58, 31, 0.98), rgba(107, 36, 16, 0.94));
+  --badge-warm-bg: linear-gradient(135deg, rgba(138, 106, 28, 0.98), rgba(61, 45, 0, 0.92));
+  --badge-ghost-bg: rgba(138, 58, 31, 0.1);
+  --badge-ghost-border: rgba(138, 58, 31, 0.28);
+  --badge-text: rgba(238, 234, 226, 0.98);
+
+  /* 錆 × 真鍮 */
+  --logo-gradient: linear-gradient(135deg, rgba(138, 58, 31, 0.98), rgba(138, 106, 28, 0.9));
+  --logo-shadow:
+    0 8px 24px rgba(138, 58, 31, 0.32),
+    0 10px 28px rgba(138, 106, 28, 0.2);
+
+  --panel-header-bg: linear-gradient(180deg, rgba(138, 58, 31, 0.12), transparent);
+  --card-hover-border: rgba(138, 58, 31, 0.42);
+  --btn-primary-bg: linear-gradient(135deg, rgba(138, 58, 31, 0.2), rgba(138, 106, 28, 0.12));
+
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(138, 58, 31, 0),
+    rgba(138, 58, 31, 0.62),
+    rgba(138, 106, 28, 0.42),
+    rgba(74, 94, 42, 0.26),
+    rgba(138, 58, 31, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(138, 58, 31, 0.98), rgba(138, 106, 28, 0.9));
+  --rail-dot-shadow: 0 10px 22px rgba(138, 58, 31, 0.3);
+
+  --if-box-border: rgba(138, 106, 28, 0.3);
+  --if-box-bg: linear-gradient(135deg, rgba(138, 58, 31, 0.14), rgba(138, 106, 28, 0.1));
+  --if-chip-bg: rgba(138, 106, 28, 0.16);
+  --if-chip-border: rgba(138, 106, 28, 0.3);
+  --if-badge-border: rgba(74, 94, 42, 0.28);
+}
