@@ -717,47 +717,6 @@ test("schema にIDがないfileUploadでもhideFileExtensionが反映される",
   assert.equal(cellValue.display, "要領（R7.4改正）");
 });
 
-test("計算フィールドは数値列として認識され、sort値・比較演算が数値扱いになる", () => {
-  const form = {
-    settings: {},
-    displayFieldSettings: [
-      { path: "合計", type: "calculated" },
-    ],
-  };
-  const { columns } = buildSearchTableLayout(form, { includeOperations: false });
-  const calcColumn = columns.find((column) => column.path === "合計");
-  assert.ok(calcColumn, "計算列が存在する");
-  assert.equal(isNumericColumn(calcColumn), true);
-
-  const makeRow = (id, no, value) => {
-    const entry = {
-      id,
-      "No.": no,
-      modifiedAtUnixMs: 0,
-      modifiedAt: 0,
-      data: { 合計: value },
-      dataUnixMs: {},
-    };
-    return { entry, values: computeRowValues(entry, columns) };
-  };
-
-  const r3 = makeRow("r3", 1, "3");
-  const r20 = makeRow("r20", 2, "20");
-  const r100 = makeRow("r100", 3, "100");
-
-  assert.equal(r3.values[calcColumn.key].sort, 3);
-  assert.equal(r20.values[calcColumn.key].sort, 20);
-  assert.equal(r100.values[calcColumn.key].sort, 100);
-
-  const asc = [r100, r3, r20].sort((a, b) => compareByColumn(a, b, calcColumn, "asc"));
-  assert.deepEqual(asc.map((row) => row.entry.id), ["r3", "r20", "r100"]);
-
-  assert.equal(matchesKeyword(r20, columns, "合計>=20"), true);
-  assert.equal(matchesKeyword(r20, columns, "合計>=21"), false);
-  assert.equal(matchesKeyword(r100, columns, "合計>20"), true);
-  assert.equal(matchesKeyword(r3, columns, "合計<10"), true);
-});
-
 test("置換フィールドはテキストとしてフリーワード検索・列限定検索の両方に当たる", () => {
   const form = {
     settings: {},

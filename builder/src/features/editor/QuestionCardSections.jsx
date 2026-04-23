@@ -293,49 +293,6 @@ export function WeekdayFieldSection({ field, onChange }) {
   );
 }
 
-export function CalculatedFieldSection({ field, onChange, formulaError }) {
-  return (
-    <div className="nf-mt-8">
-      <div className="nf-col nf-gap-8">
-        <label className="nf-col nf-gap-4">
-          <span className="nf-text-12 nf-fw-600">計算式</span>
-          <textarea
-            className={`${s.input.className} nf-h-64`}
-            placeholder={"例: {売上} - {経費} * 0.1"}
-            value={field.formula || ""}
-            onChange={(event) => onChange({ ...field, formula: event.target.value })}
-          />
-          {formulaError && (
-            <div className="nf-text-danger-ink nf-text-12 nf-mt-4">計算式エラー: {formulaError}</div>
-          )}
-          <span className="nf-text-11 nf-text-muted">
-            {"{フィールド名} で他の項目を参照できます。四則演算（+ - * / % **）のほか、max, min, abs, round, floor, ceil, trunc, pow, sqrt, log, log10, PI, E が使えます。Math.max(...) 形式もOKです。"}
-          </span>
-        </label>
-        <label className="nf-row nf-gap-6">
-          <input
-            type="checkbox"
-            checked={!!field.excludeFromSearch}
-            onChange={(event) => onChange({ ...field, excludeFromSearch: event.target.checked })}
-          />
-          検索結果に表示しない
-        </label>
-        <label className="nf-row nf-gap-6">
-          <input
-            type="checkbox"
-            checked={!!field.hideFromRecordView}
-            onChange={(event) => onChange({ ...field, hideFromRecordView: event.target.checked })}
-          />
-          レコード閲覧・編集画面に表示しない
-        </label>
-        <div className="nf-text-11 nf-text-muted">
-          非表示でも他の計算・置換フィールドや印刷様式から参照できます。
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export function SubstitutionFieldSection({ field, onChange }) {
   return (
     <div className="nf-mt-8">
@@ -369,7 +326,7 @@ export function SubstitutionFieldSection({ field, onChange }) {
           レコード閲覧・編集画面に表示しない
         </label>
         <div className="nf-text-11 nf-text-muted">
-          非表示でも他の計算・置換フィールドや印刷様式から参照できます。
+          非表示でも他の置換フィールドや印刷様式から参照できます。
         </div>
       </div>
     </div>

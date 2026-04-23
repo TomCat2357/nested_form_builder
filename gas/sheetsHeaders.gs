@@ -164,7 +164,6 @@ function Sheets_buildOrderFromSchema_(schema) {
     email: true,
     phone: true,
     fileUpload: true,
-    calculated: true,
     substitution: true
   };
 

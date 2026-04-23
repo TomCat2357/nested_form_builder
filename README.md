@@ -233,7 +233,7 @@ Nested Form Builder は、ネストした階層構造を持つフォームの設
 
 ## 対応フィールドタイプ
 
-`text` / `number` / `email` / `phone` / `url` / `date` / `time` / `radio` / `select` / `checkboxes` / `weekday` / `textarea` / `regex` / `userName` / `fileUpload` / `message` / `printTemplate` / `calculated` / `substitution`
+`text` / `number` / `email` / `phone` / `url` / `date` / `time` / `radio` / `select` / `checkboxes` / `weekday` / `textarea` / `regex` / `userName` / `fileUpload` / `message` / `printTemplate` / `substitution`
 
 ## アーキテクチャ概要
 

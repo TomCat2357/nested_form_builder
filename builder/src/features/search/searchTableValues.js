@@ -26,7 +26,7 @@ export const isChoiceColumn = (column) => {
 export const isBooleanSortColumn = (column) => columnType(column) === "checkboxes";
 export const isNumericColumn = (column) => {
   const type = columnType(column);
-  return type === "number" || type === "calculated";
+  return type === "number";
 };
 export const isDateLikeColumn = (column) => {
   const type = columnType(column);

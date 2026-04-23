@@ -4,7 +4,7 @@ import { resolvePrintTemplateFieldLabel } from "../core/schema.js";
 
 const isExcludedDisplayField = (field) => (
   (field?.type === "message" && field?.excludeFromSearchAndPrint === true)
-  || ((field?.type === "calculated" || field?.type === "substitution") && field?.excludeFromSearch === true)
+  || (field?.type === "substitution" && field?.excludeFromSearch === true)
 );
 
 export const collectDisplayFieldSettings = (schema) => {

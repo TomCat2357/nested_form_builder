@@ -1,6 +1,5 @@
 import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
-import { compileFormula } from "../../core/formulaEngine.js";
 import { MAX_DEPTH } from "../../core/schema.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { buildPhonePattern } from "../../core/phone.js";
@@ -34,7 +33,6 @@ import {
   FileUploadFieldSection,
   DateTimeFieldSection,
   WeekdayFieldSection,
-  CalculatedFieldSection,
   SubstitutionFieldSection,
 } from "./QuestionCardSections.jsx";
 
@@ -53,7 +51,6 @@ const FIELD_TYPE_OPTIONS = [
   { value: "fileUpload", label: "ファイルアップロード" },
   { value: "printTemplate", label: "様式出力" },
   { value: "message", label: "メッセージ" },
-  { value: "calculated", label: "計算" },
   { value: "substitution", label: "置換" },
 ];
 
@@ -82,13 +79,11 @@ export default function QuestionCard({
   const isEmail = field.type === "email";
   const isPhone = field.type === "phone";
   const isComputed = isComputedType(field.type);
-  const isCalculated = field.type === "calculated";
   const isSubstitution = field.type === "substitution";
   const canAddChild = depth < MAX_DEPTH;
   const regexCheck = (isText && field.inputRestrictionMode === "pattern")
     ? buildSafeRegex(field.pattern || "")
     : { error: null };
-  const formulaCheck = isCalculated ? compileFormula(field.formula || "") : { error: null };
   const phonePattern = isPhone ? buildPhonePattern(field) : "";
   const isDisplayed = resolveIsDisplayed(field);
   const printTemplateAction = normalizePrintTemplateAction(field.printTemplateAction);
@@ -183,8 +178,6 @@ export default function QuestionCard({
       {isDateOrTime && <DateTimeFieldSection field={field} onChange={onChange} />}
 
       {isWeekday && <WeekdayFieldSection field={field} onChange={onChange} />}
-
-      {isCalculated && <CalculatedFieldSection field={field} onChange={onChange} formulaError={formulaCheck.error} />}
 
       {isSubstitution && <SubstitutionFieldSection field={field} onChange={onChange} />}
 

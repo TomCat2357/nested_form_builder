@@ -129,9 +129,8 @@ export const cleanUnusedFieldProperties = (field) => {
   const supportsDefaultToday = type === "weekday";
   const supportsPlaceholder = ["text", "number", "email", "phone", "url", "regex", "textarea"].includes(type);
   const supportsSearchAndPrintExclusion = type === "message";
-  const supportsSearchExclusion = type === "calculated" || type === "substitution";
-  const supportsHideFromRecordView = type === "calculated" || type === "substitution";
-  const supportsFormula = type === "calculated";
+  const supportsSearchExclusion = type === "substitution";
+  const supportsHideFromRecordView = type === "substitution";
   const supportsTemplateText = type === "substitution";
   const supportsPrintTemplateAction = type === "printTemplate";
 
@@ -198,11 +197,7 @@ export const cleanUnusedFieldProperties = (field) => {
   } else {
     delete field.printTemplateAction;
   }
-  if (supportsFormula) {
-    field.formula = typeof field.formula === "string" ? field.formula : "";
-  } else {
-    delete field.formula;
-  }
+  delete field.formula;
   if (supportsTemplateText) {
     field.templateText = typeof field.templateText === "string" ? field.templateText : "";
   } else {
@@ -218,7 +213,7 @@ export const cleanUnusedFieldProperties = (field) => {
   } else {
     delete field.hideFromRecordView;
   }
-  if (type === "message" || type === "printTemplate" || type === "calculated" || type === "substitution") delete field.required;
+  if (type === "message" || type === "printTemplate" || type === "substitution") delete field.required;
   if (type === "fileUpload") {
     field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
     field.allowFolderUrlEdit = normalizeBooleanSetting(field.allowFolderUrlEdit, false);
@@ -322,10 +317,6 @@ export const normalizeSchemaIDs = (nodes) => {
         ...normalizePrintTemplateAction(base.printTemplateAction),
         enabled: true,
       };
-    } else if (base.type === "calculated") {
-      base.formula = typeof base.formula === "string" ? base.formula : "";
-      base.excludeFromSearch = !!base.excludeFromSearch;
-      base.hideFromRecordView = !!base.hideFromRecordView;
     } else if (base.type === "substitution") {
       base.templateText = typeof base.templateText === "string" ? base.templateText : "";
       base.excludeFromSearch = !!base.excludeFromSearch;
