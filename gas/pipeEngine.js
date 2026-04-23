@@ -1518,6 +1518,209 @@ function nfbApplyPipeTransformers_(value, transformerString, context) {
 }
 
 // ===========================================================================
+// § Plain value guards (small helpers for `(x && x.field) || {}` duplication)
+// ===========================================================================
+
+function nfbPlainObject_(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  return {};
+}
+
+function nfbPlainArray_(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+// ===========================================================================
+// § Template adapter helpers (shared by GAS driveTemplate.gs and frontend
+//   tokenReplacer.js — pure, platform-agnostic)
+// ===========================================================================
+
+var NFB_TEMPLATE_ESC_OPEN_BRACE_ = "__NFB_TPL_ESC_OB__";
+var NFB_TEMPLATE_ESC_CLOSE_BRACE_ = "__NFB_TPL_ESC_CB__";
+var NFB_TEMPLATE_ESC_OPEN_BRACKET_ = "__NFB_TPL_ESC_OK__";
+var NFB_TEMPLATE_ESC_CLOSE_BRACKET_ = "__NFB_TPL_ESC_CK__";
+
+/** Replace `\{` `\}` `\[` `\]` with internal sentinels so the scanner ignores them. */
+function nfbTemplateEscape_(text) {
+  if (text === undefined || text === null) return "";
+  return String(text)
+    .split("\\{").join(NFB_TEMPLATE_ESC_OPEN_BRACE_)
+    .split("\\}").join(NFB_TEMPLATE_ESC_CLOSE_BRACE_)
+    .split("\\[").join(NFB_TEMPLATE_ESC_OPEN_BRACKET_)
+    .split("\\]").join(NFB_TEMPLATE_ESC_CLOSE_BRACKET_);
+}
+
+/** Inverse of nfbTemplateEscape_: restore literal braces/brackets. */
+function nfbTemplateUnescape_(text) {
+  if (text === undefined || text === null) return "";
+  return String(text)
+    .split(NFB_TEMPLATE_ESC_OPEN_BRACE_).join("{")
+    .split(NFB_TEMPLATE_ESC_CLOSE_BRACE_).join("}")
+    .split(NFB_TEMPLATE_ESC_OPEN_BRACKET_).join("[")
+    .split(NFB_TEMPLATE_ESC_CLOSE_BRACKET_).join("]");
+}
+
+/**
+ * Build { label: meta } from { fid: label } + { fid: meta }. Used by adapters
+ * so fileUpload-only pipes (|file_urls etc.) can resolve via @label.
+ */
+function nfbBuildFileUploadMetaByLabel_(fieldLabels, fileUploadMeta) {
+  var labels = nfbPlainObject_(fieldLabels);
+  var metaByFid = nfbPlainObject_(fileUploadMeta);
+  var out = {};
+  for (var fid in labels) {
+    if (!Object.prototype.hasOwnProperty.call(labels, fid)) continue;
+    var label = labels[fid];
+    if (!label || Object.prototype.hasOwnProperty.call(out, label)) continue;
+    if (Object.prototype.hasOwnProperty.call(metaByFid, fid) && metaByFid[fid]) {
+      out[label] = metaByFid[fid];
+    }
+  }
+  return out;
+}
+
+/**
+ * Build { label: displayString } from { fid: label }, { fid: formattedValue },
+ * { fid: rawValue }. fieldValues takes precedence over responses.
+ *
+ * opts (all optional):
+ *   - fileUploadMeta       { fid: meta } used for hideFileExtension
+ *   - applyHideFileExtension  true  → when value came from responses (no
+ *                            fieldValues entry) and meta.hideFileExtension is
+ *                            set, strip extensions from each comma-separated
+ *                            file name (GAS-side behavior; frontend leaves as-is).
+ */
+function nfbBuildLabelValueMap_(fieldLabels, fieldValues, responses, opts) {
+  var labels = nfbPlainObject_(fieldLabels);
+  var values = nfbPlainObject_(fieldValues);
+  var resp = nfbPlainObject_(responses);
+  var fileUploadMeta = nfbPlainObject_(opts && opts.fileUploadMeta);
+  var applyHideExt = opts && opts.applyHideFileExtension === true;
+
+  var map = {};
+  for (var fid in labels) {
+    if (!Object.prototype.hasOwnProperty.call(labels, fid)) continue;
+    var label = labels[fid];
+    if (!label || Object.prototype.hasOwnProperty.call(map, label)) continue;
+    var fromFieldValues = Object.prototype.hasOwnProperty.call(values, fid);
+    var raw = fromFieldValues ? values[fid] : resp[fid];
+    var str = nfbTemplateValueToString_(raw);
+    if (applyHideExt && !fromFieldValues
+        && fileUploadMeta[fid] && fileUploadMeta[fid].hideFileExtension) {
+      var parts = str.split(", ");
+      for (var i = 0; i < parts.length; i++) {
+        parts[i] = nfbStripFileExtension_(parts[i].replace(/^\s+|\s+$/g, ""));
+      }
+      str = parts.join(", ");
+    }
+    map[label] = str;
+  }
+  return map;
+}
+
+var NFB_TEMPLATE_LABEL_TERMINATORS_ = {
+  "+": true, "|": true, "{": true, "}": true, ",": true, ":": true,
+  " ": true, "\t": true, "\n": true, "\r": true
+};
+
+/**
+ * Extract the leading `@<label>` (unquoted) from a token body so an adapter
+ * can bind fileUpload meta for `|file_urls` / `|folder_url` pipes. Returns
+ * null when the body doesn't start with a simple `@label`. Handles quoted
+ * labels (`@"foo bar"` / `@'foo'`) and backslash escapes.
+ */
+function nfbDetectFieldLabel_(body) {
+  if (!body || body.charAt(0) !== "@") return null;
+  var i = 1;
+  var n = body.length;
+  var q = body.charAt(i);
+  if (q === "\"" || q === "'") {
+    i++;
+    var quoted = "";
+    while (i < n && body.charAt(i) !== q) {
+      if (body.charAt(i) === "\\" && i + 1 < n) { quoted += body.charAt(i + 1); i += 2; continue; }
+      quoted += body.charAt(i);
+      i++;
+    }
+    return quoted || null;
+  }
+  var bare = "";
+  while (i < n && !NFB_TEMPLATE_LABEL_TERMINATORS_[body.charAt(i)]) {
+    if (body.charAt(i) === "\\" && i + 1 < n) { bare += body.charAt(i + 1); i += 2; continue; }
+    bare += body.charAt(i);
+    i++;
+  }
+  return bare || null;
+}
+
+/**
+ * Evaluate a single {kind, body, fullToken} collected by nfbScanBalancedTokens_
+ * or nfbCollectBalancedTokens_. Returns the string replacement value. Shared
+ * between the full-string resolver (nfbResolveTemplate_) and the Google Docs
+ * per-token path (driveOutput.gs) which uses DocumentApp.replaceText.
+ *
+ * opts (all optional):
+ *   - fileUploadMetaByLabel   { label: meta } — when present, a brace token
+ *                             whose leading `@label` maps to a fileUpload
+ *                             field gets `currentFieldMeta` injected into a
+ *                             shallow-cloned evalContext.
+ *   - bracketFallbackLiteral  true (default) — emit fullToken on bracket
+ *                             eval error; false → emit empty string.
+ *   - logError                function(errObj, fullToken)
+ */
+function nfbEvaluateTemplateToken_(tok, context, opts) {
+  var options = opts || {};
+  var baseCtx = context || {};
+  var metaByLabel = options.fileUploadMetaByLabel || null;
+  var logError = typeof options.logError === "function" ? options.logError : null;
+  var bracketFallbackLiteral = options.bracketFallbackLiteral !== false;
+
+  if (tok.kind === "brace") {
+    var evalCtx = baseCtx;
+    if (metaByLabel) {
+      var label = nfbDetectFieldLabel_(tok.body);
+      var meta = label ? metaByLabel[label] : null;
+      if (meta) {
+        evalCtx = {};
+        for (var k in baseCtx) {
+          if (Object.prototype.hasOwnProperty.call(baseCtx, k)) evalCtx[k] = baseCtx[k];
+        }
+        evalCtx.currentFieldMeta = meta;
+      }
+    }
+    var res = nfbEvaluateToken_(tok.body, evalCtx);
+    if (res.ok) return res.value;
+    if (logError) logError(res.error, tok.fullToken);
+    return res.fallback;
+  }
+  var bres = nfbEvaluateBracketExpr_(tok.body, baseCtx);
+  if (bres.ok) return nfbCoerceToString_(bres.value);
+  if (logError) logError(bres.error, tok.fullToken);
+  return bracketFallbackLiteral ? tok.fullToken : "";
+}
+
+/**
+ * Full template-replacement orchestrator shared by GAS (driveTemplate.gs) and
+ * frontend (tokenReplacer.js). Escapes `\{}` / `\[]`, scans top-level braces
+ * and brackets, dispatches each through nfbEvaluateTemplateToken_, then
+ * restores escapes.
+ *
+ * Accepts the same `opts` as nfbEvaluateTemplateToken_.
+ */
+function nfbResolveTemplate_(template, context, opts) {
+  if (template === undefined || template === null) return "";
+  var text = String(template);
+  if (!text) return "";
+  if (text.indexOf("{") < 0 && text.indexOf("[") < 0) return text;
+
+  var src = nfbTemplateEscape_(text);
+  var result = nfbScanBalancedTokens_(src, function(tok) {
+    return nfbEvaluateTemplateToken_(tok, context, opts);
+  });
+  return nfbTemplateUnescape_(result);
+}
+
+// ===========================================================================
 // § Module export (dual-compat: CommonJS for Vite, no-op on GAS)
 // ===========================================================================
 
@@ -1548,6 +1751,17 @@ if (typeof module !== "undefined" && module.exports) {
     extractFieldRefs: nfbExtractFieldRefs_,
     // condition helpers (exposed for advanced frontend integration)
     evaluateIfCondition: nfbEvaluateIfCondition_,
-    resolveIfValue: nfbResolveIfValue_
+    resolveIfValue: nfbResolveIfValue_,
+    // plain value guards
+    plainObject: nfbPlainObject_,
+    plainArray: nfbPlainArray_,
+    // template adapter helpers
+    templateEscape: nfbTemplateEscape_,
+    templateUnescape: nfbTemplateUnescape_,
+    buildFileUploadMetaByLabel: nfbBuildFileUploadMetaByLabel_,
+    buildLabelValueMap: nfbBuildLabelValueMap_,
+    detectFieldLabel: nfbDetectFieldLabel_,
+    evaluateTemplateToken: nfbEvaluateTemplateToken_,
+    resolveTemplate: nfbResolveTemplate_
   };
 }
