@@ -151,11 +151,12 @@ const FileUploadField = ({
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         style={{
-          border: `2px dashed ${dragOver ? "#1a73e8" : "#dadce0"}`,
+          border: `2px dashed ${dragOver ? "var(--primary)" : "var(--border-strong)"}`,
           borderRadius: 8,
           padding: "24px 16px",
           textAlign: "center",
-          backgroundColor: dragOver ? "#e8f0fe" : "#fafafa",
+          backgroundColor: dragOver ? "var(--primary-soft)" : "var(--surface-subtle)",
+          color: "var(--text, inherit)",
           cursor: "pointer",
           transition: "border-color 0.2s, background-color 0.2s",
         }}
