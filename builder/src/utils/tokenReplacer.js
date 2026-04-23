@@ -35,6 +35,8 @@ const {
   templateValueToString,
   formatNowLocal,
   evaluateToken,
+  evaluateBracketExpr,
+  coerceToString,
 } = pipeEngine;
 
 // ---------------------------------------------------------------------------
@@ -113,31 +115,49 @@ const resolveRef = (name, ctx) => {
 
 const ESC_OPEN = "__NFB_ESC_OB__";
 const ESC_CLOSE = "__NFB_ESC_CB__";
+const ESC_LBRACKET = "__NFB_ESC_OK__";
+const ESC_RBRACKET = "__NFB_ESC_CK__";
 
 const resolveTokensInternal = (template, context, pipeValue) => {
   if (!template || typeof template !== "string") return template || "";
-  if (!template.includes("{")) return template;
+  if (!template.includes("{") && !template.includes("[")) return template;
 
   const ctx = context || {};
   const fileUploadMetaByLabel = buildFileUploadMetaByLabel(ctx);
-  const hasPipeValue = pipeValue !== undefined;
 
-  const src = template.split("\\{").join(ESC_OPEN).split("\\}").join(ESC_CLOSE);
+  const src = template
+    .split("\\{").join(ESC_OPEN)
+    .split("\\}").join(ESC_CLOSE)
+    .split("\\[").join(ESC_LBRACKET)
+    .split("\\]").join(ESC_RBRACKET);
 
-  const replaced = scanBalancedTokens(src, (tokenBody) => {
-    const body = tokenBody || "";
-    const fieldPart = detectFieldPart(body);
-    const currentFieldMeta = fieldPart ? (fileUploadMetaByLabel[fieldPart] || null) : null;
-    const evalCtx = bindPipeCallbacks(ctx, currentFieldMeta, pipeValue);
-    const res = evaluateToken(body, evalCtx);
-    if (res.ok) return res.value;
-    if (typeof console !== "undefined" && typeof console.warn === "function") {
-      console.warn("[nfb template]", res.error.message, "in", JSON.stringify("{" + body + "}"));
+  const replaced = scanBalancedTokens(src, (tok) => {
+    if (tok.kind === "brace") {
+      const fieldPart = detectFieldPart(tok.body);
+      const currentFieldMeta = fieldPart ? (fileUploadMetaByLabel[fieldPart] || null) : null;
+      const evalCtx = bindPipeCallbacks(ctx, currentFieldMeta, pipeValue);
+      const res = evaluateToken(tok.body, evalCtx);
+      if (res.ok) return res.value;
+      if (typeof console !== "undefined" && typeof console.warn === "function") {
+        console.warn("[nfb template]", res.error.message, "in", JSON.stringify(tok.fullToken));
+      }
+      return res.fallback;
     }
-    return res.fallback;
+    // bracket: JavaScript expression
+    const evalCtx = bindPipeCallbacks(ctx, null, pipeValue);
+    const bres = evaluateBracketExpr(tok.body, evalCtx);
+    if (bres.ok) return coerceToString(bres.value);
+    if (typeof console !== "undefined" && typeof console.warn === "function") {
+      console.warn("[nfb template]", bres.error.message, "in", JSON.stringify(tok.fullToken));
+    }
+    return tok.fullToken;
   });
 
-  return replaced.split(ESC_OPEN).join("{").split(ESC_CLOSE).join("}");
+  return replaced
+    .split(ESC_OPEN).join("{")
+    .split(ESC_CLOSE).join("}")
+    .split(ESC_LBRACKET).join("[")
+    .split(ESC_RBRACKET).join("]");
 };
 
 /**

@@ -1701,24 +1701,27 @@ test("式言語: + 演算子 — 両辺文字列は連結", () => {
   assert.equal(gas.nfbResolveTemplateTokens_("{@所属+@氏名}", ctx), "営業山田");
 });
 
-test("式言語: parseINT で数値型を通し + が算術加算になる", () => {
+test("式言語: {...} 内の + は常に文字列連結（破壊的変更）", () => {
   const gas = loadGasContext();
   const ctx = {
     fieldLabels: { a: "年齢" },
     fieldValues: { a: "30" },
     responses: {}, now: new Date(),
   };
-  assert.equal(gas.nfbResolveTemplateTokens_("{{@年齢|parseINT}+1}", ctx), "31");
+  // 旧仕様では "31" を返していたが、新仕様では連結で "301"。
+  // 算術加算をしたい場合は [...] を使う。
+  assert.equal(gas.nfbResolveTemplateTokens_("{{@年齢|parseINT}+1}", ctx), "301");
+  assert.equal(gas.nfbResolveTemplateTokens_("[{@年齢}+1]", ctx), "31");
 });
 
-test("式言語: parseFLOAT で浮動小数点の算術加算", () => {
+test("式言語: [...] で parseFLOAT 相当の自動数値変換", () => {
   const gas = loadGasContext();
   const ctx = {
     fieldLabels: { a: "単価" },
     fieldValues: { a: "1.25" },
     responses: {}, now: new Date(),
   };
-  assert.equal(gas.nfbResolveTemplateTokens_("{{@単価|parseFLOAT}+0.5}", ctx), "1.75");
+  assert.equal(gas.nfbResolveTemplateTokens_("[{@単価}+0.5]", ctx), "1.75");
 });
 
 test("式言語: 数値 + 文字列は JS 準拠で文字列連結", () => {
@@ -1782,7 +1785,7 @@ test("式言語: パース不能時は原トークンを残す", () => {
   assert.equal(gas.nfbResolveTemplateTokens_('{"unterminated}', ctx), '{"unterminated}');
 });
 
-test("式言語: parseINT の結果に number パイプをチェーン可能", () => {
+test("式言語: [...] atom を {...} 内で pipe チェーン可能", () => {
   const gas = loadGasContext();
   const ctx = {
     fieldLabels: { a: "金額1", b: "金額2" },
@@ -1790,9 +1793,106 @@ test("式言語: parseINT の結果に number パイプをチェーン可能", (
     responses: {}, now: new Date(),
   };
   assert.equal(
-    gas.nfbResolveTemplateTokens_("{{{@金額1|parseINT}+{@金額2|parseINT}}|number:#,##0}", ctx),
+    gas.nfbResolveTemplateTokens_("{[{@金額1}+{@金額2}]|number:#,##0}", ctx),
     "3,000"
   );
+});
+
+// ---------------------------------------------------------------------------
+// [...] bracket expression (JavaScript 式)
+// ---------------------------------------------------------------------------
+
+test("bracket: 基本算術 [{@身長}+4]", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "身長" },
+    fieldValues: { a: "170" },
+    responses: {}, now: new Date(),
+  };
+  assert.equal(gas.nfbResolveTemplateTokens_("[{@身長}+4]", ctx), "174");
+});
+
+test("bracket: 四則演算・優先順位・括弧", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "a", b: "b" },
+    fieldValues: { a: "2", b: "3" },
+    responses: {}, now: new Date(),
+  };
+  assert.equal(gas.nfbResolveTemplateTokens_("[{@a}+{@b}*2]", ctx), "8");
+  assert.equal(gas.nfbResolveTemplateTokens_("[({@a}+{@b})*2]", ctx), "10");
+  assert.equal(gas.nfbResolveTemplateTokens_("[{@a}-{@b}]", ctx), "-1");
+  assert.equal(gas.nfbResolveTemplateTokens_("[{@b}/{@a}]", ctx), "1.5");
+});
+
+test("bracket: 三項演算子・Math.*", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "age", b: "r" },
+    fieldValues: { a: "20", b: "2" },
+    responses: {}, now: new Date(),
+  };
+  assert.equal(gas.nfbResolveTemplateTokens_("[{@age}>=18?1:0]", ctx), "1");
+  assert.equal(
+    gas.nfbResolveTemplateTokens_("[Math.round(Math.PI*{@r}*{@r}*100)/100]", ctx),
+    "12.57"
+  );
+});
+
+test("bracket: ネストした [...]", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "x" },
+    fieldValues: { a: "10" },
+    responses: {}, now: new Date(),
+  };
+  assert.equal(gas.nfbResolveTemplateTokens_("[[{@x}+5]*2]", ctx), "30");
+});
+
+test("bracket: 空・非数値・構文エラー・NaN は原トークン残存", () => {
+  const gas = loadGasContext();
+  const ctx1 = { fieldLabels: {}, fieldValues: {}, responses: {}, now: new Date() };
+  // undefined field: resolved to "" → empty → error
+  assert.equal(gas.nfbResolveTemplateTokens_("[{@nope}+1]", ctx1), "[{@nope}+1]");
+  const ctx2 = {
+    fieldLabels: { a: "name" },
+    fieldValues: { a: "Alice" },
+    responses: {}, now: new Date(),
+  };
+  assert.equal(gas.nfbResolveTemplateTokens_("[{@name}+1]", ctx2), "[{@name}+1]");
+  // syntax
+  assert.equal(gas.nfbResolveTemplateTokens_("[1++2]", ctx1), "[1++2]");
+  // NaN result
+  const ctx3 = {
+    fieldLabels: { a: "x" },
+    fieldValues: { a: "0" },
+    responses: {}, now: new Date(),
+  };
+  assert.equal(gas.nfbResolveTemplateTokens_("[0/{@x}]", ctx3), "[0/{@x}]");
+});
+
+test("bracket: \\[ \\] リテラルエスケープ", () => {
+  const gas = loadGasContext();
+  const ctx = { fieldLabels: {}, fieldValues: {}, responses: {}, now: new Date() };
+  assert.equal(gas.nfbResolveTemplateTokens_("\\[lit\\]", ctx), "[lit]");
+});
+
+test("bracket: match:[0-9]+ のような正規表現パイプ引数と共存", () => {
+  const gas = loadGasContext();
+  const ctx = {
+    fieldLabels: { a: "s" },
+    fieldValues: { a: "abc123def" },
+    responses: {}, now: new Date(),
+  };
+  assert.equal(gas.nfbResolveTemplateTokens_("{@s|match:[0-9]+}", ctx), "123");
+});
+
+test("bracket: extractFieldRefs が [...] 内の @ も拾う", () => {
+  const gas = loadGasContext();
+  const refs = gas.nfbExtractFieldRefs_("[{@身長}+4] / [{@体重}*2]");
+  assert.equal(refs.length, 2);
+  assert.equal(refs[0], "身長");
+  assert.equal(refs[1], "体重");
 });
 
 test("式言語: extractFieldRefs で @ 参照を抽出（複数・重複排除・予約除外）", () => {
