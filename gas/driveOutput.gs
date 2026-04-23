@@ -477,7 +477,10 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
       var fullToken = collected[t].fullToken;
       if (Object.prototype.hasOwnProperty.call(tokenValueMap, fullToken)) continue;
       if (!collected[t].body) continue;
-      var value = nfbResolveOneTokenBody_(collected[t].body, context, resolveOptions);
+      var evalCtx = nfbBindPipeCallbacks_(context, { allowGmailOnlyTokens: resolveOptions.allowGmailOnlyTokens === true });
+      var bodyCtx = nfbMaybeBindFileUploadMeta_(collected[t].body, evalCtx, context);
+      var res = nfbEvaluateToken_(collected[t].body, bodyCtx);
+      var value = res.ok ? res.value : res.fallback;
       tokenValueMap[fullToken] = String(value === null || value === undefined ? "" : value);
     }
   }

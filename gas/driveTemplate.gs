@@ -123,11 +123,26 @@ function nfbResolveTemplateTokens_(template, context, options) {
   if (hasPipeValue && pipeValue !== undefined) {
     subContext = Object.assign({}, context || {}, { __pipeValue__: pipeValue });
   }
-  var resolveOptions = { allowGmailOnlyTokens: allowGmail };
-  if (hasPipeValue) resolveOptions.pipeValue = pipeValue;
+
+  var evalContext = nfbBindPipeCallbacks_(subContext, { allowGmailOnlyTokens: allowGmail });
 
   var result = nfbScanBalancedTokens_(src, function(tokenBody) {
-    return nfbResolveOneTokenBody_(tokenBody, subContext, resolveOptions);
+    // Special case: fileUpload field pipes need currentFieldMeta in context.
+    // Detect a simple @<label>|... body and bind the matching meta, otherwise
+    // rely on the evaluator.
+    var bodyCtx = nfbMaybeBindFileUploadMeta_(tokenBody, evalContext, subContext);
+    var res = nfbEvaluateToken_(tokenBody, bodyCtx);
+    if (res.ok) return res.value;
+    // Log the parse/eval error so authors can diagnose it, but return the
+    // original {...} so users can spot it in the output and fix.
+    try {
+      if (typeof Logger !== "undefined" && Logger && typeof Logger.log === "function") {
+        Logger.log("[nfb template] " + res.error.message + " in \"{" + tokenBody + "}\"");
+      } else if (typeof console !== "undefined" && typeof console.warn === "function") {
+        console.warn("[nfb template]", res.error.message, "in", "{" + tokenBody + "}");
+      }
+    } catch (e) {}
+    return res.fallback;
   });
 
   return result
@@ -136,42 +151,24 @@ function nfbResolveTemplateTokens_(template, context, options) {
 }
 
 /**
- * Resolve a single token body (contents between matching { and }).
- * Handles {_} / {@_} / {_|...} as pipe-value references when context.__pipeValue__ is set.
+ * Detect the simple `@<label>|...` shape and, if <label> maps to a fileUpload
+ * field, inject its meta into the evaluation context so pipes like
+ * `|file_urls` / `|folder_url` resolve correctly.
  */
-function nfbResolveOneTokenBody_(tokenBody, context, options) {
-  var rawTokenName = tokenBody || "";
-  var isRef = rawTokenName.charAt(0) === "@";
-  var tokenName = isRef ? rawTokenName.slice(1) : rawTokenName;
-  if (!tokenName) return "";
-
-  var pipeIndex = tokenName.indexOf("|");
-  var fieldPart = pipeIndex >= 0 ? tokenName.substring(0, pipeIndex) : tokenName;
-  var hasPipeCtx = context && Object.prototype.hasOwnProperty.call(context, "__pipeValue__");
-
-  if (fieldPart === "_" && hasPipeCtx) {
-    var pv = nfbTemplateValueToString_(context.__pipeValue__);
-    if (pipeIndex >= 0) {
-      var pipeCtxForPv = nfbBindPipeCallbacks_(context, {});
-      return nfbApplyPipeTransformers_(pv, tokenName.substring(pipeIndex + 1), pipeCtxForPv);
-    }
-    return pv;
+function nfbMaybeBindFileUploadMeta_(tokenBody, evalContext, rawContext) {
+  if (!tokenBody || tokenBody.charAt(0) !== "@") return evalContext;
+  var body = tokenBody.substring(1);
+  var pipeIdx = body.indexOf("|");
+  var label = pipeIdx >= 0 ? body.substring(0, pipeIdx) : body;
+  // Unquote if needed (simple case only; parser handles the complex path)
+  if (label.length >= 2 && (label.charAt(0) === "\"" || label.charAt(0) === "'")
+      && label.charAt(label.length - 1) === label.charAt(0)) {
+    label = label.substring(1, label.length - 1);
   }
-
-  if (pipeIndex >= 0) {
-    var transformersPart = tokenName.substring(pipeIndex + 1);
-    var resolvedValue = nfbResolveTemplateTokenValue_(fieldPart, context, {
-      allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
-      isRef: isRef
-    });
-    var metaByLabel = nfbBuildFileUploadMetaByLabel_(context);
-    var currentFieldMeta = metaByLabel[fieldPart] || null;
-    var pipeContext = nfbBindPipeCallbacks_(context, { currentFieldMeta: currentFieldMeta });
-    return nfbApplyPipeTransformers_(resolvedValue, transformersPart, pipeContext);
-  }
-
-  return nfbResolveTemplateTokenValue_(tokenName, context, {
-    allowGmailOnlyTokens: options && options.allowGmailOnlyTokens === true,
-    isRef: isRef
-  });
+  var metaByLabel = nfbBuildFileUploadMetaByLabel_(rawContext);
+  var meta = metaByLabel[label];
+  if (!meta) return evalContext;
+  var bound = Object.assign({}, evalContext);
+  bound.currentFieldMeta = meta;
+  return bound;
 }
