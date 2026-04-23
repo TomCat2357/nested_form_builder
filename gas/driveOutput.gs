@@ -292,10 +292,10 @@ function nfbNormalizeRecordTemplateContext_(sources) {
   }
 
   var ctx = {
-    responses: (dataSrc && dataSrc.responses) || {},
-    fieldLabels: (dataSrc && dataSrc.fieldLabels) || {},
-    fieldValues: (dataSrc && dataSrc.fieldValues) || {},
-    fileUploadMeta: (dataSrc && dataSrc.fileUploadMeta) || {},
+    responses: nfbPlainObject_(dataSrc && dataSrc.responses),
+    fieldLabels: nfbPlainObject_(dataSrc && dataSrc.fieldLabels),
+    fieldValues: nfbPlainObject_(dataSrc && dataSrc.fieldValues),
+    fileUploadMeta: nfbPlainObject_(dataSrc && dataSrc.fileUploadMeta),
     recordId: pickStr("recordId") || fallbackRecordId,
     formId: pickStr("formId"),
     recordNo: pickStr("recordNo"),

@@ -52,13 +52,15 @@ function nfbResolveRootFolder_(driveSettings) {
 }
 
 function nfbBuildDriveTemplateContext_(driveSettings, context) {
-  return context || {
-    responses: (driveSettings && driveSettings.responses) || {},
-    fieldLabels: (driveSettings && driveSettings.fieldLabels) || {},
-    fieldValues: (driveSettings && driveSettings.fieldValues) || {},
-    fileUploadMeta: (driveSettings && driveSettings.fileUploadMeta) || {},
-    formId: driveSettings && driveSettings.formId ? String(driveSettings.formId).trim() : "",
-    recordId: driveSettings && driveSettings.recordId ? String(driveSettings.recordId).trim() : "",
+  if (context) return context;
+  var ds = driveSettings || {};
+  return {
+    responses: nfbPlainObject_(ds.responses),
+    fieldLabels: nfbPlainObject_(ds.fieldLabels),
+    fieldValues: nfbPlainObject_(ds.fieldValues),
+    fileUploadMeta: nfbPlainObject_(ds.fileUploadMeta),
+    formId: ds.formId ? String(ds.formId).trim() : "",
+    recordId: ds.recordId ? String(ds.recordId).trim() : "",
     now: new Date()
   };
 }
