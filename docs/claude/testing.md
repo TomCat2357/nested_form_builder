@@ -13,6 +13,7 @@ node --experimental-vm-modules tests/gas-sync-records-merge.test.js
 node tests/gas-header-normalization.test.cjs
 node tests/gas-google-drive-url-parsing.test.cjs
 node tests/gas-drive-template-replacement.test.cjs
+node tests/gas-drive-file-response.test.cjs
 ```
 
 ## テスト配置

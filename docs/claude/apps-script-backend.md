@@ -18,6 +18,7 @@ CLAUDE.md から分離した、GAS 側のエントリポイント・アクショ
 | `forms_update` | フォーム更新 | 管理者 |
 | `forms_delete` | フォーム削除 | 管理者 |
 | `forms_archive` | 公開状態変更 | 管理者 |
+| `forms_readonly` | 参照のみ状態切替 | 管理者 |
 | `admin_key_get` / `admin_key_set` | 管理者キー取得/保存 | 管理者 |
 | `admin_email_get` / `admin_email_set` | 管理者メール取得/保存 | 管理者 |
 | `save` | レコード保存/更新 | `spreadsheetId` |
@@ -29,11 +30,11 @@ CLAUDE.md から分離した、GAS 側のエントリポイント・アクショ
 
 ## google.script.run 公開関数
 
-`saveResponses` / `listRecords` / `getRecord` / `deleteRecord` / `nfbAcquireSaveLock` / `nfbExportSearchResults` / `nfbAppendExportRows` / `syncRecordsProxy`
+`saveResponses` / `listRecords` / `getRecord` / `deleteRecord` / `nfbAcquireSaveLock` / `syncRecordsProxy`
 
 その他、Drive 操作系: `nfbSaveExcelToDrive` / `nfbSaveFileToDrive` / `nfbCreateRecordPrintDocument` / `nfbExecuteRecordOutputAction` / `nfbExecuteBatchGoogleDocOutput` / `nfbUploadFileToDrive` / `nfbCopyDriveFileToDrive` / `nfbCreateGoogleDocumentFromTemplate` / `nfbFindDriveFileInFolder` / `nfbFinalizeRecordDriveFolder` / `nfbTrashDriveFilesByIds` / `nfbImportThemeFromDrive`
 
-フォーム管理系: `nfbListForms` / `nfbGetForm` / `nfbSaveForm` / `nfbDeleteForm` / `nfbDeleteForms` / `nfbArchiveForm` / `nfbUnarchiveForm` / `nfbArchiveForms` / `nfbUnarchiveForms` / `nfbValidateSpreadsheet` / `nfbImportFormsFromDrive` / `nfbRegisterImportedForm`
+フォーム管理系: `nfbListForms` / `nfbGetForm` / `nfbSaveForm` / `nfbDeleteForm` / `nfbDeleteForms` / `nfbArchiveForm` / `nfbUnarchiveForm` / `nfbArchiveForms` / `nfbUnarchiveForms` / `nfbSetFormReadOnly` / `nfbClearFormReadOnly` / `nfbSetFormsReadOnly` / `nfbClearFormsReadOnly` / `nfbCopyForm` / `nfbImportFormsFromDrive` / `nfbRegisterImportedForm`
 
 設定系: `nfbGetAdminKey` / `nfbSetAdminKey` / `nfbGetAdminEmail` / `nfbSetAdminEmail` / `nfbGetRestrictToFormOnly` / `nfbSetRestrictToFormOnly`
 

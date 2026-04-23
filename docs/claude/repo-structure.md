@@ -8,7 +8,7 @@ nested_form_builder/
 │   ├── src/
 │   │   ├── app/           # App.jsx, Provider, 状態管理, テーマ
 │   │   ├── core/          # スキーマ, バリデーション, displayModes
-│   │   ├── features/      # admin, editor, preview, search, nav, export, settings
+│   │   ├── features/      # admin, editor, preview, search, nav, settings
 │   │   ├── pages/         # ページコンポーネント
 │   │   ├── services/      # gasClient.js (GAS RPC ラッパー)
 │   │   └── utils/         # dateTime, excelExport, formPaths 等
@@ -21,9 +21,12 @@ nested_form_builder/
 │   ├── model.gs           # リクエスト解析, コンテキスト構築
 │   ├── settings.gs        # 管理者設定 (adminKey, adminEmail)
 │   ├── properties.gs      # Properties Service 抽象化
-│   ├── drive.gs           # Drive連携, 印刷, テンプレート, ファイルアップロード
-│   ├── forms*.gs          # フォームCRUD, インポート, マッピング, 解析, API
-│   ├── sheets*.gs         # ヘッダー構築, 行操作, レコードCRUD, エクスポート, 差分同期
+│   ├── drive*.gs          # Drive連携 (Template/PrintDocument/Folder/Output/GmailOutput/File)
+│   ├── forms*.gs          # フォームCRUD, インポート, マッピング, 解析, 公開API
+│   ├── sheets*.gs         # ヘッダー構築, 行操作, レコードCRUD, 日時変換
+│   ├── code*.gs           # Code.gs / codeAuth.gs / codeHandlers.gs / codeSyncRecords.gs
+│   ├── pipeEngine.js      # パイプ変換・スキャナ共有エンジン (GAS/フロント dual-compat)
+│   ├── syncRecordsMerge.js # 差分同期の純粋関数群
 │   ├── appsscript.json    # GAS マニフェスト
 │   └── scripts/bundle.js  # .gs → dist/Bundle.gs 結合スクリプト
 ├── gas_for_spreadsheet/    # 保存先スプレッドシート用の補助スクリプト

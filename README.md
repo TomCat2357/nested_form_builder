@@ -87,8 +87,9 @@ Nested Form Builder は、ネストした階層構造を持つフォームの設
 │  Hooks:  useAlert, useBeforeUnloadGuard, useEditLock,            │
 │          useFormCacheSync, useApplyTheme 等                      │
 │                                                                 │
-│  Theme:  11種のテーマ（standard, dark, ocean, forest, sakura,    │
-│          matcha, warm, snow, christmas, egypt, india）           │
+│  Theme:  16種のテーマ（standard, dark, ocean, forest, sakura,    │
+│          matcha, warm, snow, christmas, egypt, india, linen,    │
+│          midnight, obsidian, porcelain, ruins）                  │
 ├─────────────────────────────────────────────────────────────────┤
 │  Services & Utils                                               │
 │  gasClient.js     GAS RPC ラッパー（google.script.run Promise化）│
@@ -196,7 +197,7 @@ Nested Form Builder は、ネストした階層構造を持つフォームの設
 │  constants.gs   ULID生成, シート定数, Drive定数                  │
 │  errors.gs      nfbSafeCall_ラッパー, HTTPレスポンス整形         │
 │  model.gs       リクエスト解析・コンテキスト正規化               │
-│  bundle.js      25ファイル → dist/Bundle.gs 結合                 │
+│  bundle.js      27ファイル → dist/Bundle.gs 結合                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -232,7 +233,7 @@ Nested Form Builder は、ネストした階層構造を持つフォームの設
 
 ## 対応フィールドタイプ
 
-`text` / `number` / `email` / `phone` / `url` / `date` / `time` / `radio` / `select` / `checkboxes` / `weekday` / `textarea` / `regex` / `userName` / `fileUpload` / `message` / `printTemplate`
+`text` / `number` / `email` / `phone` / `url` / `date` / `time` / `radio` / `select` / `checkboxes` / `weekday` / `textarea` / `regex` / `userName` / `fileUpload` / `message` / `printTemplate` / `calculated` / `substitution`
 
 ## アーキテクチャ概要
 
@@ -249,7 +250,7 @@ nested_form_builder/
 │   ├── src/
 │   │   ├── app/           # App.jsx, Provider, 状態管理, テーマ
 │   │   ├── core/          # スキーマ, バリデーション, displayModes
-│   │   ├── features/      # admin, editor, preview, search, nav, export, settings
+│   │   ├── features/      # admin, editor, preview, search, nav, settings
 │   │   ├── pages/         # ページコンポーネント
 │   │   ├── services/      # gasClient.js (GAS RPC ラッパー)
 │   │   └── utils/         # dateTime, excelExport, formPaths 等
@@ -262,7 +263,9 @@ nested_form_builder/
 │   ├── model.gs           # リクエスト解析, コンテキスト構築
 │   ├── settings.gs        # 管理者設定 (adminKey, adminEmail)
 │   ├── properties.gs      # Properties Service 抽象化
-│   ├── drive.gs           # Drive連携, 印刷, テンプレート, ファイルアップロード
+│   ├── drive*.gs          # Drive連携を分割 (Template/PrintDocument/Folder/Output/GmailOutput/File)
+│   ├── pipeEngine.js      # パイプ変換・スキャナ共有エンジン (GAS/フロント両対応)
+│   ├── syncRecordsMerge.js # 差分同期の純粋関数群
 │   ├── forms*.gs          # フォームCRUD, インポート, マッピング, 解析, API
 │   ├── sheets*.gs         # ヘッダー構築, 行操作, レコードCRUD, エクスポート, 差分同期
 │   ├── appsscript.json    # GAS マニフェスト
@@ -327,6 +330,7 @@ nested_form_builder/
 | `forms_update` | フォーム更新 | 管理者 |
 | `forms_delete` | フォーム削除 | 管理者 |
 | `forms_archive` | 公開状態変更 | 管理者 |
+| `forms_readonly` | 参照のみ状態切替 | 管理者 |
 | `admin_key_get` / `admin_key_set` | 管理者キー取得/保存 | 管理者 |
 | `admin_email_get` / `admin_email_set` | 管理者メール取得/保存 | 管理者 |
 | `save` | レコード保存/更新 | `spreadsheetId` |
@@ -338,11 +342,11 @@ nested_form_builder/
 
 ### google.script.run 公開関数
 
-`saveResponses` / `listRecords` / `getRecord` / `deleteRecord` / `nfbAcquireSaveLock` / `nfbExportSearchResults` / `nfbAppendExportRows` / `syncRecordsProxy`
+`saveResponses` / `listRecords` / `getRecord` / `deleteRecord` / `nfbAcquireSaveLock` / `syncRecordsProxy`
 
 その他、Drive 操作系: `nfbSaveExcelToDrive` / `nfbSaveFileToDrive` / `nfbCreateRecordPrintDocument` / `nfbExecuteRecordOutputAction` / `nfbExecuteBatchGoogleDocOutput` / `nfbUploadFileToDrive` / `nfbCopyDriveFileToDrive` / `nfbCreateGoogleDocumentFromTemplate` / `nfbFindDriveFileInFolder` / `nfbFinalizeRecordDriveFolder` / `nfbTrashDriveFilesByIds` / `nfbImportThemeFromDrive`
 
-フォーム管理系: `nfbListForms` / `nfbGetForm` / `nfbSaveForm` / `nfbDeleteForm` / `nfbDeleteForms` / `nfbArchiveForm` / `nfbUnarchiveForm` / `nfbArchiveForms` / `nfbUnarchiveForms` / `nfbValidateSpreadsheet` / `nfbImportFormsFromDrive` / `nfbRegisterImportedForm`
+フォーム管理系: `nfbListForms` / `nfbGetForm` / `nfbSaveForm` / `nfbDeleteForm` / `nfbDeleteForms` / `nfbArchiveForm` / `nfbUnarchiveForm` / `nfbArchiveForms` / `nfbUnarchiveForms` / `nfbSetFormReadOnly` / `nfbClearFormReadOnly` / `nfbSetFormsReadOnly` / `nfbClearFormsReadOnly` / `nfbCopyForm` / `nfbImportFormsFromDrive` / `nfbRegisterImportedForm`
 
 設定系: `nfbGetAdminKey` / `nfbSetAdminKey` / `nfbGetAdminEmail` / `nfbSetAdminEmail` / `nfbGetRestrictToFormOnly` / `nfbSetRestrictToFormOnly`
 
@@ -469,6 +473,7 @@ node --experimental-vm-modules tests/gas-sync-records-merge.test.js
 node tests/gas-header-normalization.test.cjs
 node tests/gas-google-drive-url-parsing.test.cjs
 node tests/gas-drive-template-replacement.test.cjs
+node tests/gas-drive-file-response.test.cjs
 ```
 
 `builder/src/` 内にも `*.test.js` ファイルがあります（スキーマ、バリデーション、キャッシュ、状態管理等）。
