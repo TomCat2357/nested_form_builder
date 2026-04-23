@@ -1,12 +1,10 @@
 /**
- * 計算/置換フィールドの依存グラフ管理・循環参照検出・一括評価
+ * 置換フィールド (type: "substitution") の依存グラフ管理・循環参照検出・一括評価
  *
- * 計算フィールド (type: "calculated") と置換フィールド (type: "substitution") の
- * 依存関係を解析し、トポロジカル順で安全に一括評価する。
+ * テンプレート内のフィールド参照を解析し、トポロジカル順で安全に一括評価する。
  */
 
 import { traverseSchema } from "./schemaUtils.js";
-import { extractFormulaDependencies, compileFormula, evaluateFormula } from "./formulaEngine.js";
 import { resolveTemplateTokens } from "../utils/tokenReplacer.js";
 import { normalizeFileUploadEntries } from "./collect.js";
 import pipeEngine from "../../../gas/pipeEngine.js";
@@ -33,9 +31,6 @@ export const extractTemplateDependencies = (templateText) => {
  * フィールドの依存先ラベル一覧を取得する
  */
 const getFieldDependencies = (field) => {
-  if (field?.type === "calculated") {
-    return extractFormulaDependencies(field.formula || "");
-  }
   if (field?.type === "substitution") {
     return extractTemplateDependencies(field.templateText || "");
   }
@@ -47,7 +42,7 @@ const getFieldDependencies = (field) => {
 // ---------------------------------------------------------------------------
 
 /**
- * スキーマから計算/置換フィールドの依存グラフを構築する
+ * スキーマから置換フィールドの依存グラフを構築する
  * @param {Array} schema
  * @returns {{
  *   computedFields: Array<{ id: string, label: string, type: string, field: Object }>,
@@ -69,7 +64,7 @@ export const buildDependencyGraph = (schema) => {
     if (label && field?.id) {
       labelToId[label] = field.id;
     }
-    if (field?.type === "calculated" || field?.type === "substitution") {
+    if (field?.type === "substitution") {
       computedFields.push({
         id: field.id,
         label,
@@ -83,10 +78,10 @@ export const buildDependencyGraph = (schema) => {
     return { computedFields, labelToId, graph: new Map(), order: [], hasCycle: false, cycleFields: [] };
   }
 
-  // 計算/置換フィールドのラベル集合
+  // 置換フィールドのラベル集合
   const computedLabelSet = new Set(computedFields.map((cf) => cf.label));
 
-  // 有向グラフ: computedLabel -> Set<computedLabel> (依存先のうち計算/置換のもの)
+  // 有向グラフ: computedLabel -> Set<computedLabel> (依存先のうち置換のもの)
   const graph = new Map();
   const inDegree = new Map();
 
@@ -146,11 +141,11 @@ export const detectCircularReferences = (schema) => {
 // ---------------------------------------------------------------------------
 
 /**
- * 全計算/置換フィールドをトポロジカル順で一括評価する
+ * 全置換フィールドをトポロジカル順で一括評価する
  *
  * @param {Array} schema
  * @param {Object} responses - ユーザー入力値 { fieldId: value }
- * @param {Object} baseLabelValueMap - 非計算フィールドのラベル→値マップ
+ * @param {Object} baseLabelValueMap - 置換以外のフィールドのラベル→値マップ
  * @param {Object} [tokenContext] - resolveTemplateTokens用コンテキスト（now, recordId等）
  * @returns {{ computedValues: Object, computedErrors: Object }}
  *   computedValues: { fieldId: computedValue }
@@ -188,16 +183,7 @@ export const evaluateAllComputedFields = (schema, responses, baseLabelValueMap, 
     const cf = labelToField[label];
     if (!cf) continue;
 
-    if (cf.type === "calculated") {
-      const compiled = compileFormula(cf.field.formula || "");
-      const result = evaluateFormula(compiled, labelValueMap);
-      if (result.error) {
-        computedErrors[cf.id] = result.error;
-        computedValues[cf.id] = "";
-      } else {
-        computedValues[cf.id] = result.value;
-      }
-    } else if (cf.type === "substitution") {
+    if (cf.type === "substitution") {
       try {
         const ctx = {
           ...(tokenContext || {}),
@@ -211,7 +197,7 @@ export const evaluateAllComputedFields = (schema, responses, baseLabelValueMap, 
       }
     }
 
-    // 結果をlabelValueMapに反映（後続の計算フィールドが参照できるように）
+    // 結果をlabelValueMapに反映（後続の置換フィールドが参照できるように）
     if (cf.label && computedValues[cf.id] !== undefined) {
       labelValueMap[cf.label] = String(computedValues[cf.id]);
     }
@@ -241,7 +227,7 @@ const collectOptionLabelsForPath = (entryData, path) => {
 
 /**
  * entry.data からラベル→値マップを再構築する
- * （計算/置換フィールドを検索時に再評価するための入力として使う）
+ * （置換フィールドを検索時に再評価するための入力として使う）
  */
 export const buildLabelValueMapFromEntryData = (schema, entryData) => {
   const map = {};
@@ -275,12 +261,12 @@ export const buildLabelValueMapFromEntryData = (schema, entryData) => {
 };
 
 /**
- * 計算/置換フィールドの fieldId → path マップを返す
+ * 置換フィールドの fieldId → path マップを返す
  */
 export const buildComputedFieldPathsById = (schema) => {
   const paths = {};
   traverseSchema(schema, (field, context) => {
-    if (field?.type !== "calculated" && field?.type !== "substitution") return;
+    if (field?.type !== "substitution") return;
     const fid = field?.id;
     if (!fid) return;
     paths[fid] = (context.pathSegments || []).join("|");
@@ -291,7 +277,7 @@ export const buildComputedFieldPathsById = (schema) => {
 const isEmptyComputedValue = (value) => value === undefined || value === null || value === "";
 
 /**
- * entry.data の空欄の計算/置換フィールドだけを動的評価で補完する共通コア。
+ * entry.data の空欄の置換フィールドだけを動的評価で補完する共通コア。
  * 補完対象が無い場合や評価値が全て空だった場合は changed=false を返し、data は元の参照をそのまま返す。
  *
  * @param {Array} schema
@@ -337,8 +323,8 @@ export const backfillComputedFieldValues = (schema, entryData, tokenContext) => 
 };
 
 /**
- * entry.data に計算/置換フィールドの再評価結果を注入した新しい data を返す
- * 保存値（entry.data[path]）があればそれを優先し、空のフィールドだけ動的計算で補完する
+ * entry.data に置換フィールドの再評価結果を注入した新しい data を返す
+ * 保存値（entry.data[path]）があればそれを優先し、空のフィールドだけ動的評価で補完する
  */
 export const enrichEntryDataWithComputedFields = (schema, entryData, tokenContext) => {
   return backfillComputedFieldValues(schema, entryData, tokenContext).data;

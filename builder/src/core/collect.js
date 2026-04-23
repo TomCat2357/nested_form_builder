@@ -83,7 +83,7 @@ export const collectResponses = (fields, responses, options = {}) => {
         out[base] = serialized;
         orderList.push(base);
       }
-    } else if (field.type === "calculated" || field.type === "substitution") {
+    } else if (field.type === "substitution") {
       if (value != null && value !== "") {
         out[base] = String(value);
         orderList.push(base);
@@ -110,7 +110,7 @@ export const collectAllPossiblePaths = (fields) => {
       });
     } else if (field.type === "fileUpload") {
       paths.push(base);
-    } else if (field.type === "calculated" || field.type === "substitution") {
+    } else if (field.type === "substitution") {
       paths.push(base);
     } else if (["text", "textarea", "number", "regex", "date", "time", "url", "userName", "email", "phone"].includes(field.type)) {
       paths.push(base);

@@ -93,7 +93,7 @@ const FieldRenderer = ({
     );
   }
 
-  if (field.type === "calculated" || field.type === "substitution") {
+  if (field.type === "substitution") {
     if (field.hideFromRecordView) return null;
     const computedValue = computedValues?.[field.id];
     const computedError = computedErrors?.[field.id];

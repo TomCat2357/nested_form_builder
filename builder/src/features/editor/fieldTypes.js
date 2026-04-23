@@ -12,7 +12,6 @@ export const DATE_TIME_TYPES = ["date", "time"];
 export const BASIC_INPUT_TYPES = ["number", "url"];
 export const MESSAGE_TYPE = "message";
 export const PRINT_TEMPLATE_TYPE = "printTemplate";
-export const CALCULATED_TYPE = "calculated";
 export const SUBSTITUTION_TYPE = "substitution";
 export const DISPLAY_LABEL = "表示";
 export const EMAIL_PLACEHOLDER = "user@example.com";
@@ -23,9 +22,8 @@ export const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 export const isMessageType = (type) => type === MESSAGE_TYPE;
 export const isPrintTemplateType = (type) => type === PRINT_TEMPLATE_TYPE;
 export const isBasicInputType = (type) => BASIC_INPUT_TYPES.includes(type);
-export const isCalculatedType = (type) => type === CALCULATED_TYPE;
 export const isSubstitutionType = (type) => type === SUBSTITUTION_TYPE;
-export const isComputedType = (type) => type === CALCULATED_TYPE || type === SUBSTITUTION_TYPE;
+export const isComputedType = (type) => type === SUBSTITUTION_TYPE;
 
 export const applyDisplayedFlag = (target, displayed) => {
   target.isDisplayed = displayed === true;
@@ -110,11 +108,6 @@ export function handleTypeChange(field, newType, { getTempState, setTempState } 
         ...normalizePrintTemplateAction(next.printTemplateAction),
         enabled: true,
       };
-    }
-    if (newType === CALCULATED_TYPE) {
-      next.formula = typeof next.formula === "string" ? next.formula : "";
-      next.excludeFromSearch = !!next.excludeFromSearch;
-      next.hideFromRecordView = !!next.hideFromRecordView;
     }
     if (newType === SUBSTITUTION_TYPE) {
       next.templateText = typeof next.templateText === "string" ? next.templateText : "";
