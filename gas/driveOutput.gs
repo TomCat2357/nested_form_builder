@@ -292,10 +292,10 @@ function nfbNormalizeRecordTemplateContext_(sources) {
   }
 
   var ctx = {
-    responses: (dataSrc && dataSrc.responses) || {},
-    fieldLabels: (dataSrc && dataSrc.fieldLabels) || {},
-    fieldValues: (dataSrc && dataSrc.fieldValues) || {},
-    fileUploadMeta: (dataSrc && dataSrc.fileUploadMeta) || {},
+    responses: nfbPlainObject_(dataSrc && dataSrc.responses),
+    fieldLabels: nfbPlainObject_(dataSrc && dataSrc.fieldLabels),
+    fieldValues: nfbPlainObject_(dataSrc && dataSrc.fieldValues),
+    fileUploadMeta: nfbPlainObject_(dataSrc && dataSrc.fileUploadMeta),
     recordId: pickStr("recordId") || fallbackRecordId,
     formId: pickStr("formId"),
     recordNo: pickStr("recordNo"),
@@ -467,7 +467,14 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
   // ドキュメント全テキストから {TOKEN} を収集して解決値を求める
   // ネストした {...}（サブテンプレート）を含むトークンも拾うため balanced scanner を使う
   var tokenValueMap = {};
-  var resolveOptions = { allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens) };
+  var bundle = nfbBuildTemplateEvalContext_(context, {
+    allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens)
+  });
+  var tokenOptions = {
+    fileUploadMetaByLabel: bundle.fileUploadMetaByLabel,
+    logError: nfbLogTemplateError_,
+    bracketFallbackLiteral: true
+  };
   for (var s = 0; s < sections.length; s++) {
     var sectionText = "";
     try { sectionText = sections[s].getText(); } catch(e) { continue; }
@@ -478,16 +485,7 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
       var fullToken = tok.fullToken;
       if (Object.prototype.hasOwnProperty.call(tokenValueMap, fullToken)) continue;
       if (!tok.body) continue;
-      var evalCtx = nfbBindPipeCallbacks_(context, { allowGmailOnlyTokens: resolveOptions.allowGmailOnlyTokens === true });
-      var value;
-      if (tok.kind === "brace") {
-        var bodyCtx = nfbMaybeBindFileUploadMeta_(tok.body, evalCtx, context);
-        var res = nfbEvaluateToken_(tok.body, bodyCtx);
-        value = res.ok ? res.value : res.fallback;
-      } else {
-        var bres = nfbEvaluateBracketExpr_(tok.body, evalCtx);
-        value = bres.ok ? nfbCoerceToString_(bres.value) : fullToken;
-      }
+      var value = nfbEvaluateTemplateToken_(tok, bundle.evalContext, tokenOptions);
       tokenValueMap[fullToken] = String(value === null || value === undefined ? "" : value);
     }
   }

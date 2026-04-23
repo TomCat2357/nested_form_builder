@@ -2,39 +2,14 @@
  * driveTemplate.gs
  * トークン解決 (GAS 固有のアダプタ層)
  *
- * 純粋計算部分 (変換関数・スキャナ・条件式評価) は pipeEngine.js に集約。
- * このファイルは GAS 固有の機能のみを担う:
+ * 純粋計算 (変換関数・スキャナ・条件式評価・ラベル値マップ構築・エスケープ処理
+ * ・オーケストレーション) は pipeEngine.js に集約。このファイルは GAS 固有の
+ * 処理のみを担う:
  * - Session.getScriptTimeZone / Utilities.formatDate を使う _NOW フォーマット
  * - allowGmailOnlyTokens による _record_url / _form_url のゲート
- * - fileUpload の hideFileExtension 処理
- * - pipeEngine のコールバック (resolveRef / resolveTemplate) のバインド
+ * - hideFileExtension 処理 (pipeEngine へ applyHideFileExtension=true で注入)
+ * - Logger.log 経由のエラーログ
  */
-
-function nfbBuildFieldLabelValueMap_(context) {
-  var responses = (context && context.responses) || {};
-  var fieldLabels = (context && context.fieldLabels) || {};
-  var fieldValues = (context && context.fieldValues) || {};
-  var fileUploadMeta = (context && context.fileUploadMeta) || {};
-  var labelValueMap = {};
-
-  for (var fid in fieldLabels) {
-    if (!Object.prototype.hasOwnProperty.call(fieldLabels, fid)) continue;
-    var label = fieldLabels[fid];
-    if (!label || Object.prototype.hasOwnProperty.call(labelValueMap, label)) continue;
-    var value = Object.prototype.hasOwnProperty.call(fieldValues, fid) ? fieldValues[fid] : responses[fid];
-    var stringValue = nfbTemplateValueToString_(value);
-    if (fileUploadMeta[fid] && fileUploadMeta[fid].hideFileExtension && !Object.prototype.hasOwnProperty.call(fieldValues, fid)) {
-      var fileParts = stringValue.split(", ");
-      for (var i = 0; i < fileParts.length; i++) {
-        fileParts[i] = nfbStripFileExtension_(fileParts[i].trim());
-      }
-      stringValue = fileParts.join(", ");
-    }
-    labelValueMap[label] = stringValue;
-  }
-
-  return labelValueMap;
-}
 
 function nfbResolveReservedTemplateToken_(tokenName, context, options) {
   var now = context && context.now ? context.now : new Date();
@@ -51,41 +26,19 @@ function nfbResolveReservedTemplateToken_(tokenName, context, options) {
   return null;
 }
 
-function nfbBuildFileUploadMetaByLabel_(context) {
-  var fieldLabels = (context && context.fieldLabels) || {};
-  var fileUploadMeta = (context && context.fileUploadMeta) || {};
-  var out = {};
-  for (var fid in fieldLabels) {
-    if (!Object.prototype.hasOwnProperty.call(fieldLabels, fid)) continue;
-    var label = fieldLabels[fid];
-    if (!label) continue;
-    if (fileUploadMeta[fid] && !Object.prototype.hasOwnProperty.call(out, label)) {
-      out[label] = fileUploadMeta[fid];
-    }
-  }
-  return out;
+function nfbBuildFieldLabelValueMap_(context) {
+  var ctx = nfbPlainObject_(context);
+  return nfbBuildLabelValueMap_(ctx.fieldLabels, ctx.fieldValues, ctx.responses, {
+    fileUploadMeta: ctx.fileUploadMeta,
+    applyHideFileExtension: true
+  });
 }
 
-function nfbResolveFieldTemplateToken_(tokenName, context) {
-  var labelValueMap = nfbBuildFieldLabelValueMap_(context);
-  return Object.prototype.hasOwnProperty.call(labelValueMap, tokenName) ? labelValueMap[tokenName] : "";
-}
-
-/** @name 参照を予約トークン優先で解決 (if/ifv の条件式・値位置で使用) */
 function nfbResolveRef_(name, context) {
   var reservedValue = nfbResolveReservedTemplateToken_(name, context, { allowGmailOnlyTokens: true });
   if (reservedValue !== null) return reservedValue;
-  return nfbResolveFieldTemplateToken_(name, context);
-}
-
-function nfbResolveTemplateTokenValue_(tokenName, context, options) {
-  var isRef = options && options.isRef === true;
-  if (isRef) {
-    var reservedValue = nfbResolveReservedTemplateToken_(tokenName, context, options);
-    if (reservedValue !== null) return reservedValue;
-    return nfbResolveFieldTemplateToken_(tokenName, context);
-  }
-  return "";
+  var labelValueMap = nfbBuildFieldLabelValueMap_(context);
+  return Object.prototype.hasOwnProperty.call(labelValueMap, name) ? labelValueMap[name] : "";
 }
 
 /**
@@ -94,7 +47,11 @@ function nfbResolveTemplateTokenValue_(tokenName, context, options) {
  * - resolveTemplate: サブテンプレート {...} の再帰解決
  */
 function nfbBindPipeCallbacks_(context, options) {
-  var bound = Object.assign({}, context || {});
+  var bound = {};
+  var src = context || {};
+  for (var k in src) {
+    if (Object.prototype.hasOwnProperty.call(src, k)) bound[k] = src[k];
+  }
   bound.resolveRef = function(name) { return nfbResolveRef_(name, context); };
   bound.resolveTemplate = function(valueStr, pipeValue) {
     return nfbResolveTemplateTokens_(valueStr, context, {
@@ -105,52 +62,6 @@ function nfbBindPipeCallbacks_(context, options) {
   var currentFieldMeta = options && options.currentFieldMeta;
   if (currentFieldMeta) bound.currentFieldMeta = currentFieldMeta;
   return bound;
-}
-
-function nfbResolveTemplateTokens_(template, context, options) {
-  if (!template || typeof template !== "string") return "";
-
-  var escapedOpenBraceToken = "__NFB_ESCAPED_OPEN_BRACE__";
-  var escapedCloseBraceToken = "__NFB_ESCAPED_CLOSE_BRACE__";
-  var escapedOpenBracketToken = "__NFB_ESCAPED_OPEN_BRACKET__";
-  var escapedCloseBracketToken = "__NFB_ESCAPED_CLOSE_BRACKET__";
-  var src = String(template)
-    .replace(/\\\{/g, escapedOpenBraceToken)
-    .replace(/\\\}/g, escapedCloseBraceToken)
-    .replace(/\\\[/g, escapedOpenBracketToken)
-    .replace(/\\\]/g, escapedCloseBracketToken);
-
-  var allowGmail = !!(options && options.allowGmailOnlyTokens === true);
-  var hasPipeValue = !!(options && Object.prototype.hasOwnProperty.call(options, "pipeValue"));
-  var pipeValue = hasPipeValue ? options.pipeValue : undefined;
-  var subContext = context;
-  if (hasPipeValue && pipeValue !== undefined) {
-    subContext = Object.assign({}, context || {}, { __pipeValue__: pipeValue });
-  }
-
-  var evalContext = nfbBindPipeCallbacks_(subContext, { allowGmailOnlyTokens: allowGmail });
-
-  var result = nfbScanBalancedTokens_(src, function(tok) {
-    if (tok.kind === "brace") {
-      // Special case: fileUpload field pipes need currentFieldMeta in context.
-      var bodyCtx = nfbMaybeBindFileUploadMeta_(tok.body, evalContext, subContext);
-      var res = nfbEvaluateToken_(tok.body, bodyCtx);
-      if (res.ok) return res.value;
-      nfbLogTemplateError_(res.error, tok.fullToken);
-      return res.fallback;
-    }
-    // bracket: evaluate as JS expression
-    var bres = nfbEvaluateBracketExpr_(tok.body, evalContext);
-    if (bres.ok) return nfbCoerceToString_(bres.value);
-    nfbLogTemplateError_(bres.error, tok.fullToken);
-    return tok.fullToken;
-  });
-
-  return result
-    .split(escapedOpenBraceToken).join("{")
-    .split(escapedCloseBraceToken).join("}")
-    .split(escapedOpenBracketToken).join("[")
-    .split(escapedCloseBracketToken).join("]");
 }
 
 function nfbLogTemplateError_(error, fullToken) {
@@ -164,24 +75,42 @@ function nfbLogTemplateError_(error, fullToken) {
 }
 
 /**
- * Detect the simple `@<label>|...` shape and, if <label> maps to a fileUpload
- * field, inject its meta into the evaluation context so pipes like
- * `|file_urls` / `|folder_url` resolve correctly.
+ * Build the evaluation context + per-token helpers used both by
+ * nfbResolveTemplateTokens_ (full-string path) and by driveOutput.gs's Google
+ * Doc per-token loop.
  */
-function nfbMaybeBindFileUploadMeta_(tokenBody, evalContext, rawContext) {
-  if (!tokenBody || tokenBody.charAt(0) !== "@") return evalContext;
-  var body = tokenBody.substring(1);
-  var pipeIdx = body.indexOf("|");
-  var label = pipeIdx >= 0 ? body.substring(0, pipeIdx) : body;
-  // Unquote if needed (simple case only; parser handles the complex path)
-  if (label.length >= 2 && (label.charAt(0) === "\"" || label.charAt(0) === "'")
-      && label.charAt(label.length - 1) === label.charAt(0)) {
-    label = label.substring(1, label.length - 1);
+function nfbBuildTemplateEvalContext_(context, options) {
+  var allowGmail = !!(options && options.allowGmailOnlyTokens === true);
+  var hasPipeValue = !!(options && Object.prototype.hasOwnProperty.call(options, "pipeValue"));
+  var subContext = context;
+  if (hasPipeValue && options.pipeValue !== undefined) {
+    var next = {};
+    var src = context || {};
+    for (var k in src) {
+      if (Object.prototype.hasOwnProperty.call(src, k)) next[k] = src[k];
+    }
+    next.__pipeValue__ = options.pipeValue;
+    subContext = next;
   }
-  var metaByLabel = nfbBuildFileUploadMetaByLabel_(rawContext);
-  var meta = metaByLabel[label];
-  if (!meta) return evalContext;
-  var bound = Object.assign({}, evalContext);
-  bound.currentFieldMeta = meta;
-  return bound;
+  var evalContext = nfbBindPipeCallbacks_(subContext, { allowGmailOnlyTokens: allowGmail });
+  var metaByLabel = nfbBuildFileUploadMetaByLabel_(
+    (subContext && subContext.fieldLabels) || {},
+    (subContext && subContext.fileUploadMeta) || {}
+  );
+  return {
+    evalContext: evalContext,
+    rawContext: subContext,
+    fileUploadMetaByLabel: metaByLabel,
+    allowGmailOnlyTokens: allowGmail
+  };
+}
+
+function nfbResolveTemplateTokens_(template, context, options) {
+  if (!template || typeof template !== "string") return "";
+  var bundle = nfbBuildTemplateEvalContext_(context, options);
+  return nfbResolveTemplate_(template, bundle.evalContext, {
+    fileUploadMetaByLabel: bundle.fileUploadMetaByLabel,
+    logError: nfbLogTemplateError_,
+    bracketFallbackLiteral: true
+  });
 }

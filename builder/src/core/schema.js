@@ -2,7 +2,8 @@ import { genId } from "./ids.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
 import { MAX_DEPTH } from "./constants.js";
 import { normalizePhoneSettings } from "./phone.js";
-import { traverseSchema, countSchemaNodes, resolveOrderedChildKeys, mapSchema } from "./schemaUtils.js";
+import { traverseSchema, countSchemaNodes, resolveOrderedChildKeys } from "./schemaUtils.js";
+import pipeEngine from "../../../gas/pipeEngine.js";
 import {
   normalizePrintTemplateAction,
   resolvePrintTemplateFieldLabel,
@@ -416,20 +417,8 @@ export const normalizeSchemaIDs = (nodes) => {
   return normalizeNodes(nodes);
 };
 
-export const stripSchemaIDs = (nodes) => {
-  return mapSchema(nodes, (field) => {
-    const { id, ...rest } = field;
-    const base = { ...rest };
-
-    if (["radio", "select", "checkboxes", "weekday"].includes(base.type) && Array.isArray(base.options)) {
-      base.options = base.options.map(({ id: optId, ...optRest }) => optRest);
-    }
-
-    clearUiTempState(base);
-
-    return base;
-  });
-};
+export const stripSchemaIDs = (nodes) =>
+  pipeEngine.stripSchemaIDs(nodes, { uiTempKeys: UI_TEMP_KEYS });
 
 export const maxDepthOf = (fields) => {
   let max = 0;

@@ -1518,6 +1518,423 @@ function nfbApplyPipeTransformers_(value, transformerString, context) {
 }
 
 // ===========================================================================
+// § Plain value guards (small helpers for `(x && x.field) || {}` duplication)
+// ===========================================================================
+
+function nfbPlainObject_(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  return {};
+}
+
+function nfbPlainArray_(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+// ===========================================================================
+// § Template adapter helpers (shared by GAS driveTemplate.gs and frontend
+//   tokenReplacer.js — pure, platform-agnostic)
+// ===========================================================================
+
+var NFB_TEMPLATE_ESC_OPEN_BRACE_ = "__NFB_TPL_ESC_OB__";
+var NFB_TEMPLATE_ESC_CLOSE_BRACE_ = "__NFB_TPL_ESC_CB__";
+var NFB_TEMPLATE_ESC_OPEN_BRACKET_ = "__NFB_TPL_ESC_OK__";
+var NFB_TEMPLATE_ESC_CLOSE_BRACKET_ = "__NFB_TPL_ESC_CK__";
+
+/** Replace `\{` `\}` `\[` `\]` with internal sentinels so the scanner ignores them. */
+function nfbTemplateEscape_(text) {
+  if (text === undefined || text === null) return "";
+  return String(text)
+    .split("\\{").join(NFB_TEMPLATE_ESC_OPEN_BRACE_)
+    .split("\\}").join(NFB_TEMPLATE_ESC_CLOSE_BRACE_)
+    .split("\\[").join(NFB_TEMPLATE_ESC_OPEN_BRACKET_)
+    .split("\\]").join(NFB_TEMPLATE_ESC_CLOSE_BRACKET_);
+}
+
+/** Inverse of nfbTemplateEscape_: restore literal braces/brackets. */
+function nfbTemplateUnescape_(text) {
+  if (text === undefined || text === null) return "";
+  return String(text)
+    .split(NFB_TEMPLATE_ESC_OPEN_BRACE_).join("{")
+    .split(NFB_TEMPLATE_ESC_CLOSE_BRACE_).join("}")
+    .split(NFB_TEMPLATE_ESC_OPEN_BRACKET_).join("[")
+    .split(NFB_TEMPLATE_ESC_CLOSE_BRACKET_).join("]");
+}
+
+/**
+ * Build { label: meta } from { fid: label } + { fid: meta }. Used by adapters
+ * so fileUpload-only pipes (|file_urls etc.) can resolve via @label.
+ */
+function nfbBuildFileUploadMetaByLabel_(fieldLabels, fileUploadMeta) {
+  var labels = nfbPlainObject_(fieldLabels);
+  var metaByFid = nfbPlainObject_(fileUploadMeta);
+  var out = {};
+  for (var fid in labels) {
+    if (!Object.prototype.hasOwnProperty.call(labels, fid)) continue;
+    var label = labels[fid];
+    if (!label || Object.prototype.hasOwnProperty.call(out, label)) continue;
+    if (Object.prototype.hasOwnProperty.call(metaByFid, fid) && metaByFid[fid]) {
+      out[label] = metaByFid[fid];
+    }
+  }
+  return out;
+}
+
+/**
+ * Build { label: displayString } from { fid: label }, { fid: formattedValue },
+ * { fid: rawValue }. fieldValues takes precedence over responses.
+ *
+ * opts (all optional):
+ *   - fileUploadMeta       { fid: meta } used for hideFileExtension
+ *   - applyHideFileExtension  true  → when value came from responses (no
+ *                            fieldValues entry) and meta.hideFileExtension is
+ *                            set, strip extensions from each comma-separated
+ *                            file name (GAS-side behavior; frontend leaves as-is).
+ */
+function nfbBuildLabelValueMap_(fieldLabels, fieldValues, responses, opts) {
+  var labels = nfbPlainObject_(fieldLabels);
+  var values = nfbPlainObject_(fieldValues);
+  var resp = nfbPlainObject_(responses);
+  var fileUploadMeta = nfbPlainObject_(opts && opts.fileUploadMeta);
+  var applyHideExt = opts && opts.applyHideFileExtension === true;
+
+  var map = {};
+  for (var fid in labels) {
+    if (!Object.prototype.hasOwnProperty.call(labels, fid)) continue;
+    var label = labels[fid];
+    if (!label || Object.prototype.hasOwnProperty.call(map, label)) continue;
+    var fromFieldValues = Object.prototype.hasOwnProperty.call(values, fid);
+    var raw = fromFieldValues ? values[fid] : resp[fid];
+    var str = nfbTemplateValueToString_(raw);
+    if (applyHideExt && !fromFieldValues
+        && fileUploadMeta[fid] && fileUploadMeta[fid].hideFileExtension) {
+      var parts = str.split(", ");
+      for (var i = 0; i < parts.length; i++) {
+        parts[i] = nfbStripFileExtension_(parts[i].replace(/^\s+|\s+$/g, ""));
+      }
+      str = parts.join(", ");
+    }
+    map[label] = str;
+  }
+  return map;
+}
+
+var NFB_TEMPLATE_LABEL_TERMINATORS_ = {
+  "+": true, "|": true, "{": true, "}": true, ",": true, ":": true,
+  " ": true, "\t": true, "\n": true, "\r": true
+};
+
+/**
+ * Extract the leading `@<label>` (unquoted) from a token body so an adapter
+ * can bind fileUpload meta for `|file_urls` / `|folder_url` pipes. Returns
+ * null when the body doesn't start with a simple `@label`. Handles quoted
+ * labels (`@"foo bar"` / `@'foo'`) and backslash escapes.
+ */
+function nfbDetectFieldLabel_(body) {
+  if (!body || body.charAt(0) !== "@") return null;
+  var i = 1;
+  var n = body.length;
+  var q = body.charAt(i);
+  if (q === "\"" || q === "'") {
+    i++;
+    var quoted = "";
+    while (i < n && body.charAt(i) !== q) {
+      if (body.charAt(i) === "\\" && i + 1 < n) { quoted += body.charAt(i + 1); i += 2; continue; }
+      quoted += body.charAt(i);
+      i++;
+    }
+    return quoted || null;
+  }
+  var bare = "";
+  while (i < n && !NFB_TEMPLATE_LABEL_TERMINATORS_[body.charAt(i)]) {
+    if (body.charAt(i) === "\\" && i + 1 < n) { bare += body.charAt(i + 1); i += 2; continue; }
+    bare += body.charAt(i);
+    i++;
+  }
+  return bare || null;
+}
+
+/**
+ * Evaluate a single {kind, body, fullToken} collected by nfbScanBalancedTokens_
+ * or nfbCollectBalancedTokens_. Returns the string replacement value. Shared
+ * between the full-string resolver (nfbResolveTemplate_) and the Google Docs
+ * per-token path (driveOutput.gs) which uses DocumentApp.replaceText.
+ *
+ * opts (all optional):
+ *   - fileUploadMetaByLabel   { label: meta } — when present, a brace token
+ *                             whose leading `@label` maps to a fileUpload
+ *                             field gets `currentFieldMeta` injected into a
+ *                             shallow-cloned evalContext.
+ *   - bracketFallbackLiteral  true (default) — emit fullToken on bracket
+ *                             eval error; false → emit empty string.
+ *   - logError                function(errObj, fullToken)
+ */
+function nfbEvaluateTemplateToken_(tok, context, opts) {
+  var options = opts || {};
+  var baseCtx = context || {};
+  var metaByLabel = options.fileUploadMetaByLabel || null;
+  var logError = typeof options.logError === "function" ? options.logError : null;
+  var bracketFallbackLiteral = options.bracketFallbackLiteral !== false;
+
+  if (tok.kind === "brace") {
+    var evalCtx = baseCtx;
+    if (metaByLabel) {
+      var label = nfbDetectFieldLabel_(tok.body);
+      var meta = label ? metaByLabel[label] : null;
+      if (meta) {
+        evalCtx = {};
+        for (var k in baseCtx) {
+          if (Object.prototype.hasOwnProperty.call(baseCtx, k)) evalCtx[k] = baseCtx[k];
+        }
+        evalCtx.currentFieldMeta = meta;
+      }
+    }
+    var res = nfbEvaluateToken_(tok.body, evalCtx);
+    if (res.ok) return res.value;
+    if (logError) logError(res.error, tok.fullToken);
+    return res.fallback;
+  }
+  var bres = nfbEvaluateBracketExpr_(tok.body, baseCtx);
+  if (bres.ok) return nfbCoerceToString_(bres.value);
+  if (logError) logError(bres.error, tok.fullToken);
+  return bracketFallbackLiteral ? tok.fullToken : "";
+}
+
+/**
+ * Full template-replacement orchestrator shared by GAS (driveTemplate.gs) and
+ * frontend (tokenReplacer.js). Escapes `\{}` / `\[]`, scans top-level braces
+ * and brackets, dispatches each through nfbEvaluateTemplateToken_, then
+ * restores escapes.
+ *
+ * Accepts the same `opts` as nfbEvaluateTemplateToken_.
+ */
+function nfbResolveTemplate_(template, context, opts) {
+  if (template === undefined || template === null) return "";
+  var text = String(template);
+  if (!text) return "";
+  if (text.indexOf("{") < 0 && text.indexOf("[") < 0) return text;
+
+  var src = nfbTemplateEscape_(text);
+  var result = nfbScanBalancedTokens_(src, function(tok) {
+    return nfbEvaluateTemplateToken_(tok, context, opts);
+  });
+  return nfbTemplateUnescape_(result);
+}
+
+// ===========================================================================
+// § Schema walkers (shared by GAS sheetsHeaders.gs / formsMappingStore.gs and
+//   frontend schemaUtils.js — pure, platform-agnostic ツリー走査)
+// ===========================================================================
+
+/**
+ * options ラベル順で childrenByValue のキーを並べ替えて返す。options に無い
+ * ラベル (後付け編集でズレた等) は後続に残す。空/非オブジェクトは [] を返す。
+ */
+function nfbResolveOrderedChildKeys_(field) {
+  var branches = field && field.childrenByValue;
+  if (!branches || typeof branches !== "object" || Array.isArray(branches)) return [];
+  var keys = [];
+  for (var k in branches) {
+    if (Object.prototype.hasOwnProperty.call(branches, k)) keys.push(k);
+  }
+  if (!keys.length) return [];
+
+  var ordered = [];
+  var seen = {};
+  var options = (field && Array.isArray(field.options)) ? field.options : [];
+  for (var i = 0; i < options.length; i++) {
+    var opt = options[i];
+    var label = (opt && typeof opt.label === "string") ? opt.label : "";
+    if (!label || seen[label] || !Object.prototype.hasOwnProperty.call(branches, label)) continue;
+    ordered.push(label);
+    seen[label] = true;
+  }
+  for (var j = 0; j < keys.length; j++) {
+    if (seen[keys[j]]) continue;
+    ordered.push(keys[j]);
+    seen[keys[j]] = true;
+  }
+  return ordered;
+}
+
+function nfbDefaultFieldSegment_(field, indexTrail) {
+  var rawLabel = field && field.label !== undefined && field.label !== null
+    ? String(field.label) : "";
+  var trimmed = rawLabel.replace(/^\s+|\s+$/g, "");
+  if (trimmed) return trimmed;
+  var type = field && field.type !== undefined && field.type !== null
+    ? String(field.type) : "unknown";
+  return "質問 " + indexTrail.join(".") + " (" + type + ")";
+}
+
+/**
+ * Read-only 再帰走査。visitor(field, context) が false を返すとその subtree を
+ * 打ち切る。context = { pathSegments, depth, index, indexTrail }。
+ *
+ * options (all optional):
+ *   responses        field.id → 値 を渡すと、checkboxes/radio/select は
+ *                    選択分岐のみ辿る。それ以外の分岐型は辿らない。
+ *   getChildKeys     (field, context) => keys[] を返す関数で分岐制御を上書き。
+ *   fieldSegment     (field, context) => string | null を返す関数。null を返すと
+ *                    そのフィールド・その subtree の走査を完全スキップ (visitor
+ *                    も呼ばれない)。既定は trimmed label || 質問 X.Y (type)。
+ *   branchSegment    (optionKey, parentField, context) => string を返す関数。
+ *                    子 childrenByValue[key] を辿るときのパスセグメント。
+ *                    既定は optionKey そのまま。
+ */
+function nfbTraverseSchema_(schema, visitor, options) {
+  var opts = options || {};
+  var hasGetChildKeys = typeof opts.getChildKeys === "function";
+  var hasResponses = !!opts.responses;
+  var fieldSegmentFn = typeof opts.fieldSegment === "function" ? opts.fieldSegment : null;
+  var branchSegmentFn = typeof opts.branchSegment === "function" ? opts.branchSegment : null;
+
+  function walk(nodes, pathSegments, depth, indexTrail) {
+    var list = Array.isArray(nodes) ? nodes : [];
+    for (var i = 0; i < list.length; i++) {
+      var field = list[i];
+      if (field === undefined || field === null) continue;
+      var currentIndexTrail = indexTrail.concat(i + 1);
+      var segmentCtx = {
+        pathSegments: pathSegments,
+        index: i,
+        depth: depth,
+        indexTrail: currentIndexTrail
+      };
+      var segment = fieldSegmentFn
+        ? fieldSegmentFn(field, segmentCtx)
+        : nfbDefaultFieldSegment_(field, currentIndexTrail);
+      if (segment === null || segment === undefined) continue;
+      var currentPath = pathSegments.concat(segment);
+      var context = {
+        pathSegments: currentPath,
+        index: i,
+        depth: depth,
+        indexTrail: currentIndexTrail
+      };
+      var shouldContinue = visitor(field, context);
+      if (shouldContinue === false) continue;
+
+      if (!field.childrenByValue || typeof field.childrenByValue !== "object"
+          || Array.isArray(field.childrenByValue)) continue;
+
+      var childKeys;
+      if (hasGetChildKeys) {
+        var custom = opts.getChildKeys(field, context);
+        childKeys = Array.isArray(custom) ? custom : [];
+      } else if (hasResponses) {
+        var value = opts.responses[field.id];
+        if (field.type === "checkboxes" && Array.isArray(value)) {
+          var selected = {};
+          for (var s = 0; s < value.length; s++) selected[value[s]] = true;
+          var all = nfbResolveOrderedChildKeys_(field);
+          childKeys = [];
+          for (var a = 0; a < all.length; a++) {
+            if (selected[all[a]]) childKeys.push(all[a]);
+          }
+        } else if ((field.type === "radio" || field.type === "select")
+                   && typeof value === "string" && value) {
+          childKeys = field.childrenByValue[value] ? [value] : [];
+        } else {
+          childKeys = [];
+        }
+      } else {
+        childKeys = nfbResolveOrderedChildKeys_(field);
+      }
+
+      for (var ci = 0; ci < childKeys.length; ci++) {
+        var key = childKeys[ci];
+        var branchSegment = branchSegmentFn ? branchSegmentFn(key, field, context) : key;
+        var childPath = (branchSegment === null || branchSegment === undefined)
+          ? currentPath : currentPath.concat(branchSegment);
+        walk(field.childrenByValue[key], childPath, depth + 1, currentIndexTrail);
+      }
+    }
+  }
+
+  walk(Array.isArray(schema) ? schema : [], [], 1, []);
+}
+
+/**
+ * スキーマを mapper で再帰変換する。mapper(field, context) が返したノードが
+ * 新しいツリーのそのノードとなる。childrenByValue は mapper 適用後の値で走査
+ * される (変換後のフィールドに対して子を再帰処理)。
+ *
+ * 注意: traverse とは異なり fallback ラベルは使わず、素の label をパスに用いる。
+ */
+function nfbMapSchema_(schema, mapper) {
+  function walk(nodes, pathSegments, depth) {
+    var list = Array.isArray(nodes) ? nodes : [];
+    var out = [];
+    for (var i = 0; i < list.length; i++) {
+      var field = list[i];
+      var rawLabel = field && field.label !== undefined && field.label !== null
+        ? String(field.label) : "";
+      var trimmed = rawLabel.replace(/^\s+|\s+$/g, "");
+      var currentPath = pathSegments.concat(trimmed);
+      var context = { pathSegments: currentPath, index: i, depth: depth };
+      var newField = mapper(field, context);
+      if (newField && newField.childrenByValue && typeof newField.childrenByValue === "object"
+          && !Array.isArray(newField.childrenByValue)) {
+        var newChildren = {};
+        var orderedKeys = nfbResolveOrderedChildKeys_(newField);
+        for (var k = 0; k < orderedKeys.length; k++) {
+          var optLabel = orderedKeys[k];
+          newChildren[optLabel] = walk(
+            newField.childrenByValue[optLabel],
+            currentPath.concat(optLabel),
+            depth + 1
+          );
+        }
+        newField.childrenByValue = newChildren;
+      }
+      out.push(newField);
+    }
+    return out;
+  }
+  return walk(Array.isArray(schema) ? schema : [], [], 1);
+}
+
+/**
+ * 各フィールドから id と opts.uiTempKeys[] を削除した新ツリーを返す。
+ * options 配列の各エントリからも id を除去する。GAS の Forms_stripSchemaIds_ と
+ * フロントの stripSchemaIDs を統一。
+ *
+ * opts (all optional):
+ *   - uiTempKeys  削除する追加キー名リスト (例: 編集中 UI 状態の _savedXxx)
+ */
+function nfbStripSchemaIDs_(nodes, opts) {
+  var uiTempKeys = opts && Array.isArray(opts.uiTempKeys) ? opts.uiTempKeys : [];
+  return nfbMapSchema_(nodes, function(field) {
+    var base = {};
+    if (field && typeof field === "object") {
+      for (var key in field) {
+        if (!Object.prototype.hasOwnProperty.call(field, key)) continue;
+        if (key === "id") continue;
+        base[key] = field[key];
+      }
+    }
+    if (Array.isArray(base.options)) {
+      var newOpts = [];
+      for (var i = 0; i < base.options.length; i++) {
+        var opt = base.options[i];
+        var optBase = {};
+        if (opt && typeof opt === "object") {
+          for (var ok in opt) {
+            if (!Object.prototype.hasOwnProperty.call(opt, ok)) continue;
+            if (ok === "id") continue;
+            optBase[ok] = opt[ok];
+          }
+        }
+        newOpts.push(optBase);
+      }
+      base.options = newOpts;
+    }
+    for (var u = 0; u < uiTempKeys.length; u++) delete base[uiTempKeys[u]];
+    return base;
+  });
+}
+
+// ===========================================================================
 // § Module export (dual-compat: CommonJS for Vite, no-op on GAS)
 // ===========================================================================
 
@@ -1548,6 +1965,23 @@ if (typeof module !== "undefined" && module.exports) {
     extractFieldRefs: nfbExtractFieldRefs_,
     // condition helpers (exposed for advanced frontend integration)
     evaluateIfCondition: nfbEvaluateIfCondition_,
-    resolveIfValue: nfbResolveIfValue_
+    resolveIfValue: nfbResolveIfValue_,
+    // plain value guards
+    plainObject: nfbPlainObject_,
+    plainArray: nfbPlainArray_,
+    // template adapter helpers
+    templateEscape: nfbTemplateEscape_,
+    templateUnescape: nfbTemplateUnescape_,
+    buildFileUploadMetaByLabel: nfbBuildFileUploadMetaByLabel_,
+    buildLabelValueMap: nfbBuildLabelValueMap_,
+    detectFieldLabel: nfbDetectFieldLabel_,
+    evaluateTemplateToken: nfbEvaluateTemplateToken_,
+    resolveTemplate: nfbResolveTemplate_,
+    // schema walkers
+    defaultFieldSegment: nfbDefaultFieldSegment_,
+    resolveOrderedChildKeys: nfbResolveOrderedChildKeys_,
+    traverseSchema: nfbTraverseSchema_,
+    mapSchema: nfbMapSchema_,
+    stripSchemaIDs: nfbStripSchemaIDs_
   };
 }
