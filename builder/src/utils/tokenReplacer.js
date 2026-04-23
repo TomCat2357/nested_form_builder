@@ -31,10 +31,10 @@
 import pipeEngine from "../../../gas/pipeEngine.js";
 
 const {
-  applyPipeTransformers,
   scanBalancedTokens,
   templateValueToString,
   formatNowLocal,
+  evaluateToken,
 } = pipeEngine;
 
 // ---------------------------------------------------------------------------
@@ -125,65 +125,61 @@ const resolveTokensInternal = (template, context, pipeValue) => {
   const src = template.split("\\{").join(ESC_OPEN).split("\\}").join(ESC_CLOSE);
 
   const replaced = scanBalancedTokens(src, (tokenBody) => {
-    const raw = tokenBody || "";
-    const isRef = raw.startsWith("@");
-    const forceField = raw.startsWith("\\");
-    const tokenName = (isRef || forceField) ? raw.slice(1) : raw;
-    if (!tokenName) return "";
-
-    const pipeIndex = tokenName.indexOf("|");
-    const fieldPart = pipeIndex >= 0 ? tokenName.substring(0, pipeIndex) : tokenName;
-
-    // Pipe-value reference: {_} / {@_} / {_|...} / {@_|...}
-    if (fieldPart === "_" && hasPipeValue) {
-      const pv = templateValueToString(pipeValue);
-      if (pipeIndex >= 0) {
-        const pipeCtx = bindPipeCallbacks(ctx, null);
-        return applyPipeTransformers(pv, tokenName.substring(pipeIndex + 1), pipeCtx);
-      }
-      return pv;
+    const body = tokenBody || "";
+    const fieldPart = detectFieldPart(body);
+    const currentFieldMeta = fieldPart ? (fileUploadMetaByLabel[fieldPart] || null) : null;
+    const evalCtx = bindPipeCallbacks(ctx, currentFieldMeta, pipeValue);
+    const res = evaluateToken(body, evalCtx);
+    if (res.ok) return res.value;
+    if (typeof console !== "undefined" && typeof console.warn === "function") {
+      console.warn("[nfb template]", res.error.message, "in", JSON.stringify("{" + body + "}"));
     }
-
-    if (pipeIndex >= 0) {
-      const transformersPart = tokenName.substring(pipeIndex + 1);
-      let resolved;
-      if (isRef) {
-        const reservedVal = resolveReservedToken(fieldPart, ctx);
-        resolved = reservedVal !== null ? reservedVal : ((ctx.labelValueMap || {})[fieldPart] ?? "");
-      } else if (forceField) {
-        resolved = (ctx.labelValueMap || {})[fieldPart] ?? "";
-      } else {
-        resolved = "";
-      }
-      const currentFieldMeta = fileUploadMetaByLabel[fieldPart] || null;
-      const pipeCtx = bindPipeCallbacks(ctx, currentFieldMeta);
-      return applyPipeTransformers(resolved, transformersPart, pipeCtx);
-    }
-
-    if (isRef) {
-      const reservedVal = resolveReservedToken(tokenName, ctx);
-      if (reservedVal !== null) return reservedVal;
-      return (ctx.labelValueMap || {})[tokenName] ?? "";
-    }
-    if (forceField) {
-      return (ctx.labelValueMap || {})[tokenName] ?? "";
-    }
-    return "";
+    return res.fallback;
   });
 
   return replaced.split(ESC_OPEN).join("{").split(ESC_CLOSE).join("}");
 };
 
 /**
- * pipeEngine に渡すコンテキストに resolveRef / resolveTemplate コールバックを
- * バインドする。if/ifv の条件式・値位置・サブテンプレート再帰から呼ばれる。
+ * Extract the leading `@<label>` (unquoted) from a token body so the adapter
+ * can bind fileUpload meta for `|file_urls` / `|folder_url` pipes. Returns
+ * null if the body doesn't start with a simple `@label`.
  */
-const bindPipeCallbacks = (ctx, currentFieldMeta) => {
+const detectFieldPart = (body) => {
+  if (!body || body.charAt(0) !== "@") return null;
+  let i = 1;
+  if (body.charAt(i) === "\"" || body.charAt(i) === "'") {
+    const quote = body.charAt(i);
+    i++;
+    let out = "";
+    while (i < body.length && body.charAt(i) !== quote) {
+      if (body.charAt(i) === "\\" && i + 1 < body.length) { out += body.charAt(i + 1); i += 2; continue; }
+      out += body.charAt(i);
+      i++;
+    }
+    return out || null;
+  }
+  const terminators = new Set(["+", "|", "{", "}", ",", ":", " ", "\t", "\n", "\r"]);
+  let out = "";
+  while (i < body.length && !terminators.has(body.charAt(i))) {
+    if (body.charAt(i) === "\\" && i + 1 < body.length) { out += body.charAt(i + 1); i += 2; continue; }
+    out += body.charAt(i);
+    i++;
+  }
+  return out || null;
+};
+
+/**
+ * pipeEngine に渡すコンテキストに resolveRef / resolveTemplate コールバックを
+ * バインドする。if 条件式・値位置・サブテンプレート再帰から呼ばれる。
+ */
+const bindPipeCallbacks = (ctx, currentFieldMeta, pipeValue) => {
   const bound = { ...ctx };
   bound.resolveRef = (name) => resolveRef(name, ctx);
   bound.resolveTemplate = (subTemplate, subPipeValue) =>
     resolveTokensInternal(subTemplate, ctx, subPipeValue);
   if (currentFieldMeta) bound.currentFieldMeta = currentFieldMeta;
+  if (pipeValue !== undefined) bound.__pipeValue__ = pipeValue;
   return bound;
 };
 

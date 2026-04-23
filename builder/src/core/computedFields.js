@@ -9,43 +9,24 @@ import { traverseSchema } from "./schemaUtils.js";
 import { extractFormulaDependencies, compileFormula, evaluateFormula } from "./formulaEngine.js";
 import { resolveTemplateTokens } from "../utils/tokenReplacer.js";
 import { normalizeFileUploadEntries } from "./collect.js";
+import pipeEngine from "../../../gas/pipeEngine.js";
 
 // ---------------------------------------------------------------------------
 // Dependency extraction
 // ---------------------------------------------------------------------------
 
-const TOKEN_RE = /\{([^{}]+)\}/g;
-
 /**
- * テンプレート文字列からフィールドラベル参照を抽出する（置換フィールド用）
- * パイプ部分は除去してラベル名のみ返す
+ * テンプレート文字列からフィールドラベル参照を抽出する（置換フィールド用）。
+ * pipeEngine の式パーサを通して `@name` / `@"name"` / `@'name'` / `@a\+b` など、
+ * 新構文の複数 `@` 参照 (`{@a+@b}`) も正しく拾う。予約トークン
+ * (`_id` / `_NOW` / `_record_url` / `_form_url` 等の `_` プレフィックス) は
+ * フィールド依存から除外する。
+ *
  * @param {string} templateText
  * @returns {string[]}
  */
 export const extractTemplateDependencies = (templateText) => {
-  if (!templateText || typeof templateText !== "string") return [];
-  const deps = [];
-  const seen = new Set();
-  let m;
-  TOKEN_RE.lastIndex = 0;
-  while ((m = TOKEN_RE.exec(templateText)) !== null) {
-    const raw = m[1].trim();
-    const isRef = raw.startsWith("@");
-    const forceField = raw.startsWith("\\");
-    const tokenName = (isRef || forceField) ? raw.slice(1) : raw;
-    const pipeIndex = tokenName.indexOf("|");
-    const fieldPart = pipeIndex >= 0 ? tokenName.substring(0, pipeIndex).trim() : tokenName.trim();
-    if (!fieldPart) continue;
-    // @ + _ 始まりは予約トークン（フィールド依存ではない）
-    if (isRef && fieldPart.startsWith("_")) continue;
-    // @ なしで _ 始まりも予約トークン扱い（レガシー互換）
-    if (!isRef && fieldPart.startsWith("_")) continue;
-    if (!seen.has(fieldPart)) {
-      deps.push(fieldPart);
-      seen.add(fieldPart);
-    }
-  }
-  return deps;
+  return pipeEngine.extractFieldRefs(templateText);
 };
 
 /**

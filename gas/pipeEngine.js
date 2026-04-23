@@ -164,6 +164,537 @@ function nfbSplitTopLevel_(str, delimiter, maxParts) {
 }
 
 // ===========================================================================
+// § Value coercion (typed values for + operator and parseINT/parseFLOAT)
+// ===========================================================================
+
+/**
+ * Coerce a parser-internal value (string | number | boolean | null | undefined)
+ * to its string form. Mirrors JS String() semantics enough for template output.
+ */
+function nfbCoerceToString_(value) {
+  if (value === undefined || value === null) return "";
+  if (typeof value === "number") {
+    if (isNaN(value)) return "NaN";
+    return String(value);
+  }
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "string") return value;
+  return String(value);
+}
+
+/**
+ * JS-like + operator. If both operands are numbers → arithmetic add,
+ * otherwise string concatenation (with number-to-string coercion).
+ */
+function nfbAddValues_(left, right) {
+  if (typeof left === "number" && typeof right === "number") {
+    return left + right;
+  }
+  return nfbCoerceToString_(left) + nfbCoerceToString_(right);
+}
+
+// ===========================================================================
+// § Expression tokenizer
+// ===========================================================================
+
+/**
+ * Token kinds produced by nfbLexExpression_:
+ *   AT        — "@" (starts fieldRef)
+ *   IDENT     — identifier (pipe name / function name / bare word / `_` / `true`/`false`)
+ *   STRING    — quoted string literal (value = decoded string)
+ *   NUMBER    — numeric literal (value = number)
+ *   PLUS      — "+"
+ *   PIPE      — "|"
+ *   COLON     — ":"
+ *   COMMA     — ","
+ *   LBRACE    — "{"
+ *   RBRACE    — "}"
+ *   WS        — whitespace (kept so parser can enforce separator rule)
+ *   END       — synthetic end-of-input
+ *
+ * Note: "bare" strings that look like identifiers (letters / Japanese / digits)
+ * get IDENT. Other bare non-operator characters (punctuation etc.) get emitted
+ * as single-char IDENTs too — the parser treats any run of non-operator
+ * characters as a bareWord at the atom level via nfbLexBareWord_.
+ */
+
+var NFB_EXPR_TERMINATORS_ = {
+  "+": true, "|": true, "{": true, "}": true, ",": true, ":": true,
+  "\"": true, "'": true, "@": true
+};
+
+function nfbIsExprTerminator_(ch) {
+  if (!ch) return true;
+  if (NFB_EXPR_TERMINATORS_[ch]) return true;
+  if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") return true;
+  return false;
+}
+
+function nfbLexStringLiteral_(src, startIdx, quoteCh) {
+  var n = src.length;
+  var i = startIdx + 1;
+  var out = "";
+  while (i < n) {
+    var ch = src.charAt(i);
+    if (ch === "\\" && i + 1 < n) {
+      var next = src.charAt(i + 1);
+      if (next === quoteCh || next === "\\") {
+        out += next;
+        i += 2;
+        continue;
+      }
+      out += ch;
+      i++;
+      continue;
+    }
+    if (ch === quoteCh) {
+      return { value: out, end: i + 1 };
+    }
+    out += ch;
+    i++;
+  }
+  return { error: "unterminated string literal", end: n };
+}
+
+function nfbLexNumberLiteral_(src, startIdx) {
+  var n = src.length;
+  var i = startIdx;
+  if (src.charAt(i) === "-") i++;
+  var hadDigit = false;
+  while (i < n && src.charAt(i) >= "0" && src.charAt(i) <= "9") { i++; hadDigit = true; }
+  if (i < n && src.charAt(i) === ".") {
+    i++;
+    while (i < n && src.charAt(i) >= "0" && src.charAt(i) <= "9") { i++; hadDigit = true; }
+  }
+  if (!hadDigit) return null;
+  var text = src.substring(startIdx, i);
+  return { value: parseFloat(text), end: i };
+}
+
+/**
+ * Read a bare identifier/word: a run of non-terminator, non-whitespace chars.
+ * Backslash escapes any single char (preserves it literally in the resulting name).
+ */
+function nfbLexBareRun_(src, startIdx) {
+  var n = src.length;
+  var i = startIdx;
+  var out = "";
+  while (i < n) {
+    var ch = src.charAt(i);
+    if (ch === "\\" && i + 1 < n) {
+      out += src.charAt(i + 1);
+      i += 2;
+      continue;
+    }
+    if (nfbIsExprTerminator_(ch)) break;
+    out += ch;
+    i++;
+  }
+  if (i === startIdx) return null;
+  return { value: out, end: i };
+}
+
+function nfbLexExpression_(src) {
+  var tokens = [];
+  var n = src.length;
+  var i = 0;
+  while (i < n) {
+    var ch = src.charAt(i);
+    // Whitespace
+    if (ch === " " || ch === "\t" || ch === "\n" || ch === "\r") {
+      var ws = "";
+      while (i < n && (src.charAt(i) === " " || src.charAt(i) === "\t" || src.charAt(i) === "\n" || src.charAt(i) === "\r")) {
+        ws += src.charAt(i); i++;
+      }
+      tokens.push({ kind: "WS", value: ws, pos: i - ws.length });
+      continue;
+    }
+    // Single-char operators
+    if (ch === "+") { tokens.push({ kind: "PLUS", value: "+", pos: i }); i++; continue; }
+    if (ch === "|") { tokens.push({ kind: "PIPE", value: "|", pos: i }); i++; continue; }
+    if (ch === ":") { tokens.push({ kind: "COLON", value: ":", pos: i }); i++; continue; }
+    if (ch === ",") { tokens.push({ kind: "COMMA", value: ",", pos: i }); i++; continue; }
+    if (ch === "{") { tokens.push({ kind: "LBRACE", value: "{", pos: i }); i++; continue; }
+    if (ch === "}") { tokens.push({ kind: "RBRACE", value: "}", pos: i }); i++; continue; }
+    if (ch === "@") { tokens.push({ kind: "AT", value: "@", pos: i }); i++; continue; }
+    // String literals
+    if (ch === "\"" || ch === "'") {
+      var strStart = i;
+      var strRes = nfbLexStringLiteral_(src, i, ch);
+      if (strRes.error) {
+        return { ok: false, error: { message: strRes.error, position: strStart } };
+      }
+      tokens.push({ kind: "STRING", value: strRes.value, pos: strStart });
+      i = strRes.end;
+      continue;
+    }
+    // Number literal (leading digit; leading `-digit` handled by parser to avoid
+    // swallowing a minus that might be meant as subtraction in future grammar)
+    if (ch >= "0" && ch <= "9") {
+      var numRes = nfbLexNumberLiteral_(src, i);
+      if (numRes) {
+        tokens.push({ kind: "NUMBER", value: numRes.value, pos: i });
+        i = numRes.end;
+        continue;
+      }
+    }
+    // Bare identifier / word
+    var bareStart = i;
+    var bare = nfbLexBareRun_(src, i);
+    if (!bare) {
+      return { ok: false, error: { message: "unexpected character '" + ch + "'", position: i } };
+    }
+    tokens.push({ kind: "IDENT", value: bare.value, pos: bareStart });
+    i = bare.end;
+  }
+  tokens.push({ kind: "END", value: "", pos: n });
+  return { ok: true, tokens: tokens };
+}
+
+// ===========================================================================
+// § Expression parser (recursive descent)
+// ===========================================================================
+//
+// Grammar:
+//   expression   = pipeExpr
+//   pipeExpr     = addExpr ( "|" pipeCall )*
+//   pipeCall     = IDENT ( ":" pipeArgs )?   -- pipeArgs is raw text up to next top-level | or end
+//   addExpr      = atom ( "+" atom )*
+//   atom         = fieldRef | functionCall | subExpr | STRING | NUMBER | bareWord
+//   functionCall = IDENT ":" argList         -- only recognized at atom start
+//   subExpr      = "{" expression "}"
+//   fieldRef     = "@" ( STRING | bareFieldName )
+//
+// The lexer has already split `{...}` body into tokens. For pipeCall args, we
+// collect the RAW source substring (to preserve existing transformer-arg
+// semantics such as `replace:,\,` and `map:A=a;B=b`).
+
+function nfbPeekNonWs_(tokens, idx) {
+  var j = idx;
+  while (j < tokens.length && tokens[j].kind === "WS") j++;
+  return j;
+}
+
+function nfbTokenAt_(tokens, idx) {
+  return tokens[idx] || { kind: "END", value: "", pos: -1 };
+}
+
+function nfbParseFieldRef_(tokens, idx) {
+  // caller already consumed "@"
+  var t = nfbTokenAt_(tokens, idx);
+  if (t.kind === "STRING") {
+    return { ok: true, name: t.value, nextIdx: idx + 1 };
+  }
+  if (t.kind === "IDENT") {
+    return { ok: true, name: t.value, nextIdx: idx + 1 };
+  }
+  return { ok: false, error: { message: "@ must be followed by a field name", position: t.pos } };
+}
+
+function nfbParseAtom_(tokens, idx, context, rawSrc) {
+  idx = nfbPeekNonWs_(tokens, idx);
+  var t = nfbTokenAt_(tokens, idx);
+
+  if (t.kind === "END") {
+    return { ok: false, error: { message: "unexpected end of expression", position: t.pos } };
+  }
+  if (t.kind === "AT") {
+    var ref = nfbParseFieldRef_(tokens, idx + 1);
+    if (!ref.ok) return ref;
+    // {@_} resolves to the current pipe value when available. Preserves the
+    // legacy behavior that sub-template `{@_}` inside pipe args gets the value
+    // the enclosing pipe was fed.
+    if (ref.name === "_" && context && Object.prototype.hasOwnProperty.call(context, "__pipeValue__")) {
+      return { ok: true, value: context.__pipeValue__, nextIdx: ref.nextIdx };
+    }
+    var resolved = nfbResolveRefWithCallback_(ref.name, context);
+    return { ok: true, value: resolved, nextIdx: ref.nextIdx };
+  }
+  if (t.kind === "STRING") {
+    return { ok: true, value: t.value, nextIdx: idx + 1 };
+  }
+  if (t.kind === "NUMBER") {
+    return { ok: true, value: t.value, nextIdx: idx + 1 };
+  }
+  if (t.kind === "LBRACE") {
+    // subExpr: find matching RBRACE by counting braces, then evaluate body
+    var depth = 1;
+    var j = idx + 1;
+    while (j < tokens.length && depth > 0) {
+      if (tokens[j].kind === "LBRACE") depth++;
+      else if (tokens[j].kind === "RBRACE") { depth--; if (depth === 0) break; }
+      j++;
+    }
+    if (depth !== 0) {
+      return { ok: false, error: { message: "unclosed '{' in expression", position: t.pos } };
+    }
+    // Evaluate the nested subExpr by operating on the raw source substring
+    // so pipe-arg raw-text semantics are preserved inside.
+    var openPos = tokens[idx].pos + 1;
+    var closePos = tokens[j].pos;
+    var subBody = rawSrc.substring(openPos, closePos);
+    var subRes = nfbEvaluateExpressionSource_(subBody, context);
+    if (!subRes.ok) {
+      return { ok: false, error: subRes.error };
+    }
+    return { ok: true, value: subRes.value, nextIdx: j + 1 };
+  }
+  if (t.kind === "IDENT") {
+    // Possible function call: IDENT ":" argList, but only at atom start.
+    var next = nfbTokenAt_(tokens, idx + 1);
+    if (next.kind === "COLON") {
+      return nfbParseFunctionCall_(t.value, tokens, idx + 2, context, rawSrc, t.pos);
+    }
+    // Bare word. Handle special identifier `_` → pipe input value if available.
+    if (t.value === "_" && context && Object.prototype.hasOwnProperty.call(context, "__pipeValue__")) {
+      return { ok: true, value: context.__pipeValue__, nextIdx: idx + 1 };
+    }
+    return { ok: true, value: t.value, nextIdx: idx + 1 };
+  }
+  return { ok: false, error: { message: "unexpected token '" + t.value + "'", position: t.pos } };
+}
+
+function nfbParseAddExpr_(tokens, idx, context, rawSrc) {
+  var first = nfbParseAtom_(tokens, idx, context, rawSrc);
+  if (!first.ok) return first;
+  var value = first.value;
+  var cur = first.nextIdx;
+  while (true) {
+    var c = nfbPeekNonWs_(tokens, cur);
+    var t = nfbTokenAt_(tokens, c);
+    if (t.kind !== "PLUS") break;
+    var rhs = nfbParseAtom_(tokens, c + 1, context, rawSrc);
+    if (!rhs.ok) {
+      if (rhs.error && rhs.error.message === "unexpected end of expression") {
+        return { ok: false, error: { message: "unexpected end of expression after '+'", position: t.pos } };
+      }
+      return rhs;
+    }
+    value = nfbAddValues_(value, rhs.value);
+    cur = rhs.nextIdx;
+  }
+  return { ok: true, value: value, nextIdx: cur };
+}
+
+/**
+ * Extract the raw source substring that makes up a single pipe-call args
+ * region: everything from `startPos` up to (but not including) the next
+ * top-level `|` or the end of the input at `endPos`. Respects `{...}` nesting
+ * and `\|` escape (consistent with existing nfbSplitTopLevel_ semantics).
+ */
+function nfbExtractPipeTail_(rawSrc, startPos, endPos) {
+  var i = startPos;
+  var out = "";
+  var depth = 0;
+  while (i < endPos) {
+    var ch = rawSrc.charAt(i);
+    if (ch === "\\" && i + 1 < endPos) {
+      var next = rawSrc.charAt(i + 1);
+      if (next === "|") {
+        // Strip the pipe escape: `\|` -> literal `|` inside pipe args
+        out += next;
+      } else {
+        // Preserve other escapes (e.g. `\,` remains intact for downstream split)
+        out += ch + next;
+      }
+      i += 2;
+      continue;
+    }
+    if (ch === "{") { depth++; out += ch; i++; continue; }
+    if (ch === "}") { if (depth > 0) depth--; out += ch; i++; continue; }
+    if (ch === "|" && depth === 0) break;
+    out += ch;
+    i++;
+  }
+  return { text: out, end: i };
+}
+
+function nfbParsePipeExpr_(tokens, idx, context, rawSrc) {
+  var head = nfbParseAddExpr_(tokens, idx, context, rawSrc);
+  if (!head.ok) return head;
+  var value = head.value;
+  var cur = nfbPeekNonWs_(tokens, head.nextIdx);
+
+  while (true) {
+    var t = nfbTokenAt_(tokens, cur);
+    if (t.kind === "END" || t.kind === "RBRACE") break;
+    if (t.kind !== "PIPE") {
+      return { ok: false, error: { message: "unexpected token '" + t.value + "' after expression", position: t.pos } };
+    }
+    // Skip optional whitespace after |
+    var nextIdx = nfbPeekNonWs_(tokens, cur + 1);
+    var nameTok = nfbTokenAt_(tokens, nextIdx);
+    if (nameTok.kind !== "IDENT") {
+      return { ok: false, error: { message: "expected pipe name after '|'", position: t.pos } };
+    }
+    var pipeName = nameTok.value;
+    var afterName = nfbPeekNonWs_(tokens, nextIdx + 1);
+    var colonTok = nfbTokenAt_(tokens, afterName);
+    var pipeArgs = "";
+    var advanceTo = afterName;
+    if (colonTok.kind === "COLON") {
+      // raw text from after the colon up to next top-level | or end
+      var argStartPos = colonTok.pos + 1;
+      // end of input in rawSrc is rawSrc.length
+      var tail = nfbExtractPipeTail_(rawSrc, argStartPos, rawSrc.length);
+      pipeArgs = tail.text;
+      // now advance `cur` past all tokens whose pos < tail.end
+      advanceTo = afterName + 1;
+      while (advanceTo < tokens.length && tokens[advanceTo].pos < tail.end) advanceTo++;
+    }
+    // Apply pipe
+    var pipeCtx = context;
+    var fn = NFB_TRANSFORMERS_[pipeName];
+    var inputForPipe;
+    if (fn && fn.__typedSafe__) {
+      inputForPipe = value;
+    } else if (!fn) {
+      // unknown pipe — preserve legacy "silent pass-through" but emit a warn
+      if (typeof console !== "undefined" && typeof console.warn === "function") {
+        console.warn("[nfb template] unknown pipe: '" + pipeName + "'");
+      }
+      cur = nfbPeekNonWs_(tokens, advanceTo);
+      continue;
+    } else {
+      inputForPipe = nfbCoerceToString_(value);
+    }
+    try {
+      value = fn(inputForPipe, pipeArgs, pipeCtx);
+    } catch (e) {
+      return { ok: false, error: { message: "pipe '" + pipeName + "' failed: " + (e && e.message ? e.message : String(e)), position: t.pos } };
+    }
+    cur = nfbPeekNonWs_(tokens, advanceTo);
+  }
+  return { ok: true, value: value, nextIdx: cur };
+}
+
+/**
+ * Registry of top-level functions (invoked as {name:arg1,arg2,...} at atom start).
+ * Each entry = function(argsText, context) -> value.
+ */
+var NFB_FUNCTIONS_ = {};
+
+function nfbParseFunctionCall_(name, tokens, idx, context, rawSrc, startPos) {
+  // Collect raw args text from startPos's next-char (":") position +1 up to the
+  // next token that would terminate the atom: RBRACE, PIPE, or PLUS at depth 0.
+  // (We do NOT stop at COMMA because commas are internal to argList.)
+  var colonPosTok = nfbTokenAt_(tokens, idx - 1);
+  var argStart = colonPosTok.pos + 1;
+  // Walk rawSrc respecting brace/escape depth until we hit a top-level terminator
+  var i = argStart;
+  var n = rawSrc.length;
+  var depth = 0;
+  while (i < n) {
+    var ch = rawSrc.charAt(i);
+    if (ch === "\\" && i + 1 < n) { i += 2; continue; }
+    if (ch === "{") { depth++; i++; continue; }
+    if (ch === "}") { if (depth === 0) break; depth--; i++; continue; }
+    if (depth === 0 && (ch === "|" || ch === "+")) break;
+    i++;
+  }
+  var argsText = rawSrc.substring(argStart, i);
+  // Advance tokens to match
+  var advanceTo = idx;
+  while (advanceTo < tokens.length && tokens[advanceTo].pos < i) advanceTo++;
+
+  var fn = NFB_FUNCTIONS_[name];
+  if (!fn) {
+    return { ok: false, error: { message: "unknown function: '" + name + "'", position: startPos } };
+  }
+  try {
+    var result = fn(argsText, context);
+    if (result && result.ok === false) {
+      return { ok: false, error: result.error };
+    }
+    return { ok: true, value: (result && Object.prototype.hasOwnProperty.call(result, "value")) ? result.value : result, nextIdx: advanceTo };
+  } catch (e) {
+    return { ok: false, error: { message: "function '" + name + "' failed: " + (e && e.message ? e.message : String(e)), position: startPos } };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Built-in function: if (unified 3-arg; same semantics as former ifv).
+// ---------------------------------------------------------------------------
+
+NFB_FUNCTIONS_["if"] = function(argsText, context) {
+  var parts = nfbSplitTopLevel_(argsText, ",", 3);
+  if (parts.length < 3) {
+    return { ok: false, error: { message: "if expects 3 arguments (condition, trueValue, falseValue), got " + parts.length } };
+  }
+  var pipeValue = (context && Object.prototype.hasOwnProperty.call(context, "__pipeValue__"))
+    ? context.__pipeValue__ : undefined;
+  var matched = nfbEvaluateIfCondition_(parts[0], context, pipeValue);
+  var chosen = matched ? parts[1] : parts[2];
+  return nfbResolveIfValue_(chosen, context, pipeValue);
+};
+
+// ===========================================================================
+// § Top-level evaluator (entry point called by scanner)
+// ===========================================================================
+
+/**
+ * Evaluate a single `{...}` token body. Returns:
+ *   { ok: true, value: <final string> }
+ *   { ok: false, error: { message, position }, fallback: <original token text> }
+ */
+function nfbEvaluateToken_(body, context) {
+  var res = nfbEvaluateExpressionSource_(body, context);
+  if (!res.ok) {
+    return { ok: false, error: res.error, fallback: "{" + body + "}" };
+  }
+  return { ok: true, value: nfbCoerceToString_(res.value) };
+}
+
+function nfbEvaluateExpressionSource_(src, context) {
+  var lexed = nfbLexExpression_(src);
+  if (!lexed.ok) return lexed;
+  var parsed = nfbParsePipeExpr_(lexed.tokens, 0, context, src);
+  if (!parsed.ok) return parsed;
+  // Ensure all tokens consumed
+  var trailing = nfbPeekNonWs_(lexed.tokens, parsed.nextIdx);
+  var tail = nfbTokenAt_(lexed.tokens, trailing);
+  if (tail.kind !== "END") {
+    return { ok: false, error: { message: "unexpected token '" + tail.value + "' after expression", position: tail.pos } };
+  }
+  return { ok: true, value: parsed.value };
+}
+
+/**
+ * Extract the set of field-label references (`@name`) used anywhere inside a
+ * template string. Used by the substitution-field dependency graph.
+ * Returns an array of unique names (order of first appearance). Reserved names
+ * (leading underscore) are excluded.
+ */
+function nfbExtractFieldRefs_(template) {
+  var out = [];
+  var seen = {};
+  if (!template || typeof template !== "string") return out;
+  var tokens = nfbCollectBalancedTokens_(template);
+  for (var i = 0; i < tokens.length; i++) {
+    var body = tokens[i].body;
+    var lex = nfbLexExpression_(body);
+    if (!lex.ok) continue;
+    var ts = lex.tokens;
+    for (var j = 0; j < ts.length; j++) {
+      if (ts[j].kind !== "AT") continue;
+      var next = j + 1;
+      while (next < ts.length && ts[next].kind === "WS") next++;
+      var nt = ts[next];
+      if (!nt) continue;
+      if (nt.kind === "STRING" || nt.kind === "IDENT") {
+        var name = nt.value;
+        if (!name || name.charAt(0) === "_") continue;
+        if (!seen[name]) {
+          seen[name] = true;
+          out.push(name);
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// ===========================================================================
 // § Japanese era resolver
 // ===========================================================================
 
@@ -508,17 +1039,20 @@ function nfbResolveIfValue_(valueStr, context, pipeValue) {
 // § Conditional transformers
 // ===========================================================================
 
+/**
+ * Unified 3-arg conditional: {@value|if:condition,trueValue,falseValue}.
+ * Merges the former pipe-form `if` (2-arg) and `ifv` (3-arg) into a single
+ * 3-arg form. If argument count != 3, passes the input value through
+ * (preserving the lenient "silent pass-through" behavior of unknown transforms).
+ */
 function nfbTransformIf_(value, args, context) {
-  var parts = nfbSplitTopLevel_(args, ",", 2);
-  if (parts.length < 2) return value;
-  var matched = nfbEvaluateIfCondition_(parts[0], context, value);
-  if (matched) return value;
-  return nfbResolveIfValue_(parts[1], context, value);
-}
-
-function nfbTransformIfv_(value, args, context) {
   var parts = nfbSplitTopLevel_(args, ",", 3);
-  if (parts.length < 3) return value;
+  if (parts.length < 3) {
+    if (typeof console !== "undefined" && typeof console.warn === "function") {
+      console.warn("[nfb template] |if: expects 3 arguments (condition, trueValue, falseValue), got " + parts.length);
+    }
+    return value;
+  }
   var matched = nfbEvaluateIfCondition_(parts[0], context, value);
   if (matched) return nfbResolveIfValue_(parts[1], context, value);
   return nfbResolveIfValue_(parts[2], context, value);
@@ -680,6 +1214,22 @@ function nfbTransformFolderUrl_(_value, _args, context) {
   return String((context && context.currentFieldMeta && context.currentFieldMeta.folderUrl) || "");
 }
 
+// ===========================================================================
+// § Numeric parse transformers (typed-safe: produce numbers for + arithmetic)
+// ===========================================================================
+
+function nfbTransformParseInt_(value) {
+  var n = parseInt(nfbCoerceToString_(value), 10);
+  return isNaN(n) ? value : n;
+}
+nfbTransformParseInt_.__typedSafe__ = true;
+
+function nfbTransformParseFloat_(value) {
+  var n = parseFloat(nfbCoerceToString_(value));
+  return isNaN(n) ? value : n;
+}
+nfbTransformParseFloat_.__typedSafe__ = true;
+
 function nfbTransformNoext_(value) {
   if (!value) return "";
   var parts = value.split(", ");
@@ -711,11 +1261,12 @@ var NFB_TRANSFORMERS_ = {
   "match":       nfbTransformMatch_,
   "number":      nfbTransformNumber_,
   "if":          nfbTransformIf_,
-  "ifv":         nfbTransformIfv_,
   "map":         nfbTransformMap_,
   "kana":        nfbTransformKana_,
   "zen":         nfbTransformZen_,
   "han":         nfbTransformHan_,
+  "parseINT":    nfbTransformParseInt_,
+  "parseFLOAT":  nfbTransformParseFloat_,
   "file_names":  nfbTransformFileNames_,
   "file_urls":   nfbTransformFileUrls_,
   "folder_name": nfbTransformFolderName_,
@@ -724,7 +1275,9 @@ var NFB_TRANSFORMERS_ = {
 
 function nfbApplyOneTransformer_(value, name, args, context) {
   var fn = NFB_TRANSFORMERS_[name];
-  return fn ? fn(value, args, context) : value;
+  if (!fn) return value;
+  var input = fn.__typedSafe__ ? value : nfbCoerceToString_(value);
+  return fn(input, args, context);
 }
 
 function nfbParsePipeTransformers_(transformerString) {
@@ -742,13 +1295,18 @@ function nfbParsePipeTransformers_(transformerString) {
   return result;
 }
 
+/**
+ * Apply a chained pipe-transformer string to a value. Preserves numeric type
+ * across typed-safe transformers (parseINT, parseFLOAT); coerces to string for
+ * all others. Final result is coerced to string for caller compatibility.
+ */
 function nfbApplyPipeTransformers_(value, transformerString, context) {
   var transformers = nfbParsePipeTransformers_(transformerString);
-  var current = value === undefined || value === null ? "" : String(value);
+  var current = (value === undefined || value === null) ? "" : value;
   for (var i = 0; i < transformers.length; i++) {
     current = nfbApplyOneTransformer_(current, transformers[i].name, transformers[i].args, context);
   }
-  return current;
+  return nfbCoerceToString_(current);
 }
 
 // ===========================================================================
@@ -761,6 +1319,8 @@ if (typeof module !== "undefined" && module.exports) {
     templateValueToString: nfbTemplateValueToString_,
     stripFileExtension: nfbStripFileExtension_,
     joinList: nfbJoinList_,
+    coerceToString: nfbCoerceToString_,
+    addValues: nfbAddValues_,
     // scanners
     findBalancedCloseIndex: nfbFindBalancedCloseIndex_,
     scanBalancedTokens: nfbScanBalancedTokens_,
@@ -774,6 +1334,9 @@ if (typeof module !== "undefined" && module.exports) {
     // pipe engine
     parsePipeTransformers: nfbParsePipeTransformers_,
     applyPipeTransformers: nfbApplyPipeTransformers_,
+    // expression engine (new)
+    evaluateToken: nfbEvaluateToken_,
+    extractFieldRefs: nfbExtractFieldRefs_,
     // condition helpers (exposed for advanced frontend integration)
     evaluateIfCondition: nfbEvaluateIfCondition_,
     resolveIfValue: nfbResolveIfValue_

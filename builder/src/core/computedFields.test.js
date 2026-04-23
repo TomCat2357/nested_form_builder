@@ -26,18 +26,19 @@ const makeField = (overrides) => ({
 // ---------------------------------------------------------------------------
 
 test("extractTemplateDependencies はフィールドラベルを抽出する", () => {
-  assert.deepEqual(extractTemplateDependencies("{氏名}様"), ["氏名"]);
+  // 新仕様: @ なしは bare word リテラル扱い。依存抽出は @ 参照のみ対象。
+  assert.deepEqual(extractTemplateDependencies("{@氏名}様"), ["氏名"]);
 });
 
 test("extractTemplateDependencies は予約トークンをスキップする", () => {
   assert.deepEqual(extractTemplateDependencies("{@_NOW}は現在時刻"), []);
   assert.deepEqual(extractTemplateDependencies("{@_id}"), []);
-  // @ なしの _ 始まりもスキップ
+  // @ なしはそもそも参照扱いされず依存にならない
   assert.deepEqual(extractTemplateDependencies("{_NOW}は現在時刻"), []);
 });
 
 test("extractTemplateDependencies はパイプ変換を除去してラベルのみ返す", () => {
-  assert.deepEqual(extractTemplateDependencies("{日付|time:YYYY年}"), ["日付"]);
+  assert.deepEqual(extractTemplateDependencies("{@日付|time:YYYY年}"), ["日付"]);
 });
 
 test("extractTemplateDependencies は null/空文字で空配列を返す", () => {
@@ -47,11 +48,19 @@ test("extractTemplateDependencies は null/空文字で空配列を返す", () =
 });
 
 test("extractTemplateDependencies は複数フィールドを抽出する", () => {
-  assert.deepEqual(extractTemplateDependencies("{姓}{名}さん"), ["姓", "名"]);
+  assert.deepEqual(extractTemplateDependencies("{@姓}{@名}さん"), ["姓", "名"]);
 });
 
 test("extractTemplateDependencies は重複を除去する", () => {
-  assert.deepEqual(extractTemplateDependencies("{名前}と{名前}"), ["名前"]);
+  assert.deepEqual(extractTemplateDependencies("{@名前}と{@名前}"), ["名前"]);
+});
+
+test("extractTemplateDependencies は + 演算子の複数フィールドも拾う（新仕様）", () => {
+  assert.deepEqual(extractTemplateDependencies("{@所属+@氏名}"), ["所属", "氏名"]);
+});
+
+test("extractTemplateDependencies はクォート付きラベル名を拾う（新仕様）", () => {
+  assert.deepEqual(extractTemplateDependencies('{@"a+b"}'), ["a+b"]);
 });
 
 // ---------------------------------------------------------------------------
