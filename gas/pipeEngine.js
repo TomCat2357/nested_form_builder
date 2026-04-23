@@ -57,24 +57,53 @@ function nfbJoinList_(list) {
 }
 
 // ===========================================================================
-// § Balanced brace scanner & top-level split
+// § Balanced brace/bracket scanner & top-level split
 // ===========================================================================
 
+var NFB_OPEN_TO_CLOSE_ = { "{": "}", "[": "]" };
+var NFB_CLOSE_TO_OPEN_ = { "}": "{", "]": "[" };
+
 /**
- * Given the index of a "{" in text, return the index of its matching "}",
- * tracking nested braces. Returns -1 if never closed.
+ * Given the index of an opening "{" or "[", return the index of its matching
+ * close. Scan rules differ by opener kind so that pipe-arg payloads (which
+ * commonly contain unmatched `[` as regex fragments, e.g. `match:[0-9]+`)
+ * inside `{...}` stay tolerant:
+ *
+ * - Opening `{`: count only `{}` depth. `[` and `]` are treated as plain
+ *   content. This preserves legacy tolerant behavior.
+ * - Opening `[`: count `{}` depth AND `[]` depth, but `[` / `]` are ignored
+ *   whenever `{}` depth > 0 (so unbalanced brackets inside a nested `{...}`
+ *   pipe arg don't disturb bracket matching).
+ *
+ * Returns -1 if never closed.
  */
 function nfbFindBalancedCloseIndex_(text, openIndex) {
+  var open = text.charAt(openIndex);
+  if (!NFB_OPEN_TO_CLOSE_[open]) return -1;
   var n = text.length;
-  var depth = 1;
   var j = openIndex + 1;
-  while (j < n && depth > 0) {
-    var c = text.charAt(j);
-    if (c === "{") {
-      depth++;
-    } else if (c === "}") {
-      depth--;
-      if (depth === 0) return j;
+
+  if (open === "{") {
+    var braceDepth = 1;
+    while (j < n) {
+      var c = text.charAt(j);
+      if (c === "{") braceDepth++;
+      else if (c === "}") { braceDepth--; if (braceDepth === 0) return j; }
+      j++;
+    }
+    return -1;
+  }
+
+  // open === "["
+  var bd = 0;   // brace depth
+  var kd = 1;   // bracket depth (starts at 1 for the opener)
+  while (j < n) {
+    var ch = text.charAt(j);
+    if (ch === "{") { bd++; j++; continue; }
+    if (ch === "}") { if (bd > 0) bd--; j++; continue; }
+    if (bd === 0) {
+      if (ch === "[") { kd++; j++; continue; }
+      if (ch === "]") { kd--; if (kd === 0) return j; j++; continue; }
     }
     j++;
   }
@@ -82,8 +111,9 @@ function nfbFindBalancedCloseIndex_(text, openIndex) {
 }
 
 /**
- * Scan a template string and replace each balanced {...} token via replacer(body).
- * Unclosed braces are left literal.
+ * Scan a template string and dispatch each top-level balanced token via
+ * replacer({ kind: "brace"|"bracket", body, fullToken }) → string.
+ * Unclosed opens are left literal.
  */
 function nfbScanBalancedTokens_(text, replacer) {
   var out = "";
@@ -91,7 +121,7 @@ function nfbScanBalancedTokens_(text, replacer) {
   var n = text.length;
   while (i < n) {
     var ch = text.charAt(i);
-    if (ch !== "{") {
+    if (ch !== "{" && ch !== "[") {
       out += ch;
       i++;
       continue;
@@ -101,14 +131,18 @@ function nfbScanBalancedTokens_(text, replacer) {
       out += text.substring(i);
       return out;
     }
-    out += replacer(text.substring(i + 1, close));
+    var kind = (ch === "{") ? "brace" : "bracket";
+    var body = text.substring(i + 1, close);
+    var fullToken = text.substring(i, close + 1);
+    out += replacer({ kind: kind, body: body, fullToken: fullToken });
     i = close + 1;
   }
   return out;
 }
 
 /**
- * Collect every top-level balanced {...} from text: [{fullToken, body}, ...].
+ * Collect every top-level balanced token from text:
+ *   [{ kind, fullToken, body }, ...].
  * Used by Google Doc path (needs original token string for replaceText).
  */
 function nfbCollectBalancedTokens_(text) {
@@ -117,23 +151,31 @@ function nfbCollectBalancedTokens_(text) {
   var n = text.length;
   var i = 0;
   while (i < n) {
-    if (text.charAt(i) !== "{") { i++; continue; }
+    var ch = text.charAt(i);
+    if (ch !== "{" && ch !== "[") { i++; continue; }
     var close = nfbFindBalancedCloseIndex_(text, i);
     if (close < 0) return results;
-    results.push({ fullToken: text.substring(i, close + 1), body: text.substring(i + 1, close) });
+    var kind = (ch === "{") ? "brace" : "bracket";
+    results.push({
+      kind: kind,
+      fullToken: text.substring(i, close + 1),
+      body: text.substring(i + 1, close)
+    });
     i = close + 1;
   }
   return results;
 }
 
 /**
- * Split str on delimiter at top level (depth 0 of {} nesting), with \<delim> escape support.
- * If maxParts > 0, splits at most maxParts-1 times — remainder goes into last part.
+ * Split str on delimiter at top level (depth 0 of {} AND [] nesting), with
+ * \<delim> escape support. If maxParts > 0, splits at most maxParts-1 times
+ * — remainder goes into last part.
  */
 function nfbSplitTopLevel_(str, delimiter, maxParts) {
   var parts = [];
   var current = "";
-  var depth = 0;
+  var braceDepth = 0;
+  var bracketDepth = 0;
   var n = str.length;
   for (var i = 0; i < n; i++) {
     var ch = str.charAt(i);
@@ -142,17 +184,12 @@ function nfbSplitTopLevel_(str, delimiter, maxParts) {
       i++;
       continue;
     }
-    if (ch === "{") {
-      depth++;
-      current += ch;
-      continue;
-    }
-    if (ch === "}") {
-      if (depth > 0) depth--;
-      current += ch;
-      continue;
-    }
-    if (ch === delimiter && depth === 0 && (!maxParts || parts.length < maxParts - 1)) {
+    if (ch === "{") { braceDepth++; current += ch; continue; }
+    if (ch === "}") { if (braceDepth > 0) braceDepth--; current += ch; continue; }
+    if (ch === "[") { bracketDepth++; current += ch; continue; }
+    if (ch === "]") { if (bracketDepth > 0) bracketDepth--; current += ch; continue; }
+    if (ch === delimiter && braceDepth === 0 && bracketDepth === 0
+        && (!maxParts || parts.length < maxParts - 1)) {
       parts.push(current);
       current = "";
       continue;
@@ -183,13 +220,11 @@ function nfbCoerceToString_(value) {
 }
 
 /**
- * JS-like + operator. If both operands are numbers → arithmetic add,
- * otherwise string concatenation (with number-to-string coercion).
+ * `+` operator inside {...} tokens: always string concatenation.
+ * Arithmetic is performed inside [...] bracket expressions instead —
+ * see nfbEvaluateBracketExpr_.
  */
 function nfbAddValues_(left, right) {
-  if (typeof left === "number" && typeof right === "number") {
-    return left + right;
-  }
   return nfbCoerceToString_(left) + nfbCoerceToString_(right);
 }
 
@@ -219,8 +254,8 @@ function nfbAddValues_(left, right) {
  */
 
 var NFB_EXPR_TERMINATORS_ = {
-  "+": true, "|": true, "{": true, "}": true, ",": true, ":": true,
-  "\"": true, "'": true, "@": true
+  "+": true, "|": true, "{": true, "}": true, "[": true, "]": true,
+  ",": true, ":": true, "\"": true, "'": true, "@": true
 };
 
 function nfbIsExprTerminator_(ch) {
@@ -316,6 +351,8 @@ function nfbLexExpression_(src) {
     if (ch === ",") { tokens.push({ kind: "COMMA", value: ",", pos: i }); i++; continue; }
     if (ch === "{") { tokens.push({ kind: "LBRACE", value: "{", pos: i }); i++; continue; }
     if (ch === "}") { tokens.push({ kind: "RBRACE", value: "}", pos: i }); i++; continue; }
+    if (ch === "[") { tokens.push({ kind: "LBRACKET", value: "[", pos: i }); i++; continue; }
+    if (ch === "]") { tokens.push({ kind: "RBRACKET", value: "]", pos: i }); i++; continue; }
     if (ch === "@") { tokens.push({ kind: "AT", value: "@", pos: i }); i++; continue; }
     // String literals
     if (ch === "\"" || ch === "'") {
@@ -439,6 +476,31 @@ function nfbParseAtom_(tokens, idx, context, rawSrc) {
     }
     return { ok: true, value: subRes.value, nextIdx: j + 1 };
   }
+  if (t.kind === "LBRACKET") {
+    // Find matching RBRACKET by counting both bracket and brace depth so that
+    // nested {...} or [...] inside the body do not confuse the scan.
+    var bDepth = 1;
+    var cDepth = 0;
+    var k = idx + 1;
+    while (k < tokens.length) {
+      var tk = tokens[k].kind;
+      if (tk === "LBRACKET") bDepth++;
+      else if (tk === "RBRACKET") {
+        if (cDepth === 0) { bDepth--; if (bDepth === 0) break; }
+      } else if (tk === "LBRACE") cDepth++;
+      else if (tk === "RBRACE") { if (cDepth > 0) cDepth--; }
+      k++;
+    }
+    if (k >= tokens.length || tokens[k].kind !== "RBRACKET" || bDepth !== 0) {
+      return { ok: false, error: { message: "unclosed '[' in expression", position: t.pos } };
+    }
+    var openPos2 = tokens[idx].pos + 1;
+    var closePos2 = tokens[k].pos;
+    var bracketBody = rawSrc.substring(openPos2, closePos2);
+    var bRes = nfbEvaluateBracketExpr_(bracketBody, context);
+    if (!bRes.ok) return { ok: false, error: bRes.error };
+    return { ok: true, value: bRes.value, nextIdx: k + 1 };
+  }
   if (t.kind === "IDENT") {
     // Possible function call: IDENT ":" argList, but only at atom start.
     var next = nfbTokenAt_(tokens, idx + 1);
@@ -485,7 +547,8 @@ function nfbParseAddExpr_(tokens, idx, context, rawSrc) {
 function nfbExtractPipeTail_(rawSrc, startPos, endPos) {
   var i = startPos;
   var out = "";
-  var depth = 0;
+  var braceDepth = 0;
+  var bracketDepth = 0;
   while (i < endPos) {
     var ch = rawSrc.charAt(i);
     if (ch === "\\" && i + 1 < endPos) {
@@ -500,9 +563,11 @@ function nfbExtractPipeTail_(rawSrc, startPos, endPos) {
       i += 2;
       continue;
     }
-    if (ch === "{") { depth++; out += ch; i++; continue; }
-    if (ch === "}") { if (depth > 0) depth--; out += ch; i++; continue; }
-    if (ch === "|" && depth === 0) break;
+    if (ch === "{") { braceDepth++; out += ch; i++; continue; }
+    if (ch === "}") { if (braceDepth > 0) braceDepth--; out += ch; i++; continue; }
+    if (ch === "[") { bracketDepth++; out += ch; i++; continue; }
+    if (ch === "]") { if (bracketDepth > 0) bracketDepth--; out += ch; i++; continue; }
+    if (ch === "|" && braceDepth === 0 && bracketDepth === 0) break;
     out += ch;
     i++;
   }
@@ -580,16 +645,20 @@ function nfbParseFunctionCall_(name, tokens, idx, context, rawSrc, startPos) {
   // (We do NOT stop at COMMA because commas are internal to argList.)
   var colonPosTok = nfbTokenAt_(tokens, idx - 1);
   var argStart = colonPosTok.pos + 1;
-  // Walk rawSrc respecting brace/escape depth until we hit a top-level terminator
+  // Walk rawSrc respecting brace/bracket/escape depth until we hit a
+  // top-level terminator.
   var i = argStart;
   var n = rawSrc.length;
-  var depth = 0;
+  var braceDepth = 0;
+  var bracketDepth = 0;
   while (i < n) {
     var ch = rawSrc.charAt(i);
     if (ch === "\\" && i + 1 < n) { i += 2; continue; }
-    if (ch === "{") { depth++; i++; continue; }
-    if (ch === "}") { if (depth === 0) break; depth--; i++; continue; }
-    if (depth === 0 && (ch === "|" || ch === "+")) break;
+    if (ch === "{") { braceDepth++; i++; continue; }
+    if (ch === "}") { if (braceDepth === 0) break; braceDepth--; i++; continue; }
+    if (ch === "[") { bracketDepth++; i++; continue; }
+    if (ch === "]") { if (bracketDepth > 0) bracketDepth--; i++; continue; }
+    if (braceDepth === 0 && bracketDepth === 0 && (ch === "|" || ch === "+")) break;
     i++;
   }
   var argsText = rawSrc.substring(argStart, i);
@@ -659,6 +728,132 @@ function nfbEvaluateExpressionSource_(src, context) {
   return { ok: true, value: parsed.value };
 }
 
+// ===========================================================================
+// § Bracket expression evaluator ([ ... ] — JavaScript semantics)
+// ===========================================================================
+
+var NFB_STRICT_NUMBER_RE_ = /^-?\d+(\.\d+)?$/;
+
+/**
+ * Evaluate the body of a [...] expression as a JavaScript expression.
+ *
+ * - Any nested `{...}` is evaluated via the pipe engine; its string result must
+ *   match a strict numeric pattern, then is converted to Number(). Non-numeric
+ *   or empty values produce an error (which bubbles up → outer [...] stays
+ *   literal).
+ * - Any nested `[...]` is recursively evaluated; its JS value (number/bool/…)
+ *   is substituted as-is.
+ * - The rewritten body (with placeholders `__nfb_vN__`) is compiled via
+ *   `new Function(argNames, "return (" + body + ");")` and invoked with the
+ *   captured values. Values are bound as function ARGUMENTS, never interpolated
+ *   into source — so field data cannot inject JS code.
+ * - A NaN result is treated as an error so the author sees it instead of a
+ *   silent "NaN" string in the output.
+ *
+ * Returns { ok: true, value } or { ok: false, error: { message, position } }.
+ */
+function nfbEvaluateBracketExpr_(body, context) {
+  if (body === undefined || body === null) {
+    return { ok: false, error: { message: "empty [] expression", position: 0 } };
+  }
+  var trimmed = body.replace(/^\s+|\s+$/g, "");
+  if (trimmed === "") {
+    return { ok: false, error: { message: "empty [] expression", position: 0 } };
+  }
+
+  var argNames = [];
+  var argValues = [];
+  var rewritten = "";
+  var n = body.length;
+  var i = 0;
+  while (i < n) {
+    var ch = body.charAt(i);
+    // Preserve JS string literals verbatim — {, [ inside them are not tokens.
+    if (ch === "\"" || ch === "'") {
+      var q = ch;
+      rewritten += ch;
+      i++;
+      while (i < n) {
+        var c2 = body.charAt(i);
+        rewritten += c2;
+        if (c2 === "\\" && i + 1 < n) {
+          rewritten += body.charAt(i + 1);
+          i += 2;
+          continue;
+        }
+        i++;
+        if (c2 === q) break;
+      }
+      continue;
+    }
+    if (ch === "{") {
+      var closeB = nfbFindBalancedCloseIndex_(body, i);
+      if (closeB < 0) {
+        return { ok: false, error: { message: "unclosed '{' inside [...]", position: i } };
+      }
+      var innerBody = body.substring(i + 1, closeB);
+      var innerRes = nfbEvaluateToken_(innerBody, context);
+      if (!innerRes.ok) return { ok: false, error: innerRes.error };
+      var s = nfbCoerceToString_(innerRes.value).replace(/^\s+|\s+$/g, "");
+      if (s === "" || !NFB_STRICT_NUMBER_RE_.test(s)) {
+        return { ok: false, error: { message: "non-numeric value in [...]: '" + s + "'", position: i } };
+      }
+      var num = parseFloat(s);
+      if (isNaN(num)) {
+        return { ok: false, error: { message: "non-numeric value in [...]: '" + s + "'", position: i } };
+      }
+      var name = "__nfb_v" + argNames.length + "__";
+      argNames.push(name);
+      argValues.push(num);
+      rewritten += name;
+      i = closeB + 1;
+      continue;
+    }
+    if (ch === "[") {
+      var closeK = nfbFindBalancedCloseIndex_(body, i);
+      if (closeK < 0) {
+        return { ok: false, error: { message: "unclosed '[' inside [...]", position: i } };
+      }
+      var inner2 = body.substring(i + 1, closeK);
+      var inner2Res = nfbEvaluateBracketExpr_(inner2, context);
+      if (!inner2Res.ok) return { ok: false, error: inner2Res.error };
+      var name2 = "__nfb_v" + argNames.length + "__";
+      argNames.push(name2);
+      argValues.push(inner2Res.value);
+      rewritten += name2;
+      i = closeK + 1;
+      continue;
+    }
+    rewritten += ch;
+    i++;
+  }
+
+  var source = "return (" + rewritten + ");";
+  var fn;
+  try {
+    fn = nfbBuildFunction_(argNames, source);
+  } catch (e) {
+    return { ok: false, error: { message: "syntax error in [...]: " + (e && e.message ? e.message : String(e)), position: 0 } };
+  }
+  var result;
+  try {
+    result = fn.apply(null, argValues);
+  } catch (e2) {
+    return { ok: false, error: { message: "runtime error in [...]: " + (e2 && e2.message ? e2.message : String(e2)), position: 0 } };
+  }
+  if (typeof result === "number" && isNaN(result)) {
+    return { ok: false, error: { message: "NaN result in [...]", position: 0 } };
+  }
+  return { ok: true, value: result };
+}
+
+function nfbBuildFunction_(argNames, source) {
+  // Ordered argNames + body. Works under both GAS V8 and modern browsers
+  // (subject to CSP: if `new Function` is disabled, this throws and the
+  // caller's try/catch causes the outer [...] to render literally).
+  return Function.apply(null, argNames.concat([source]));
+}
+
 /**
  * Extract the set of field-label references (`@name`) used anywhere inside a
  * template string. Used by the substitution-field dependency graph.
@@ -671,27 +866,40 @@ function nfbExtractFieldRefs_(template) {
   if (!template || typeof template !== "string") return out;
   var tokens = nfbCollectBalancedTokens_(template);
   for (var i = 0; i < tokens.length; i++) {
-    var body = tokens[i].body;
+    nfbCollectFieldRefsFromToken_(tokens[i], out, seen);
+  }
+  return out;
+}
+
+function nfbCollectFieldRefsFromToken_(tok, out, seen) {
+  var body = tok.body;
+  if (tok.kind === "brace") {
     var lex = nfbLexExpression_(body);
-    if (!lex.ok) continue;
-    var ts = lex.tokens;
-    for (var j = 0; j < ts.length; j++) {
-      if (ts[j].kind !== "AT") continue;
-      var next = j + 1;
-      while (next < ts.length && ts[next].kind === "WS") next++;
-      var nt = ts[next];
-      if (!nt) continue;
-      if (nt.kind === "STRING" || nt.kind === "IDENT") {
-        var name = nt.value;
-        if (!name || name.charAt(0) === "_") continue;
-        if (!seen[name]) {
-          seen[name] = true;
-          out.push(name);
+    if (lex.ok) {
+      var ts = lex.tokens;
+      for (var j = 0; j < ts.length; j++) {
+        if (ts[j].kind !== "AT") continue;
+        var next = j + 1;
+        while (next < ts.length && ts[next].kind === "WS") next++;
+        var nt = ts[next];
+        if (!nt) continue;
+        if (nt.kind === "STRING" || nt.kind === "IDENT") {
+          var name = nt.value;
+          if (!name || name.charAt(0) === "_") continue;
+          if (!seen[name]) {
+            seen[name] = true;
+            out.push(name);
+          }
         }
       }
     }
   }
-  return out;
+  // Recurse into nested {...} / [...] inside this body (for bracket bodies
+  // and for brace bodies that embed [...] as atoms).
+  var sub = nfbCollectBalancedTokens_(body);
+  for (var k = 0; k < sub.length; k++) {
+    nfbCollectFieldRefsFromToken_(sub[k], out, seen);
+  }
 }
 
 // ===========================================================================
@@ -1336,6 +1544,7 @@ if (typeof module !== "undefined" && module.exports) {
     applyPipeTransformers: nfbApplyPipeTransformers_,
     // expression engine (new)
     evaluateToken: nfbEvaluateToken_,
+    evaluateBracketExpr: nfbEvaluateBracketExpr_,
     extractFieldRefs: nfbExtractFieldRefs_,
     // condition helpers (exposed for advanced frontend integration)
     evaluateIfCondition: nfbEvaluateIfCondition_,

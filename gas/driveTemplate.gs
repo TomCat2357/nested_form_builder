@@ -112,9 +112,13 @@ function nfbResolveTemplateTokens_(template, context, options) {
 
   var escapedOpenBraceToken = "__NFB_ESCAPED_OPEN_BRACE__";
   var escapedCloseBraceToken = "__NFB_ESCAPED_CLOSE_BRACE__";
+  var escapedOpenBracketToken = "__NFB_ESCAPED_OPEN_BRACKET__";
+  var escapedCloseBracketToken = "__NFB_ESCAPED_CLOSE_BRACKET__";
   var src = String(template)
     .replace(/\\\{/g, escapedOpenBraceToken)
-    .replace(/\\\}/g, escapedCloseBraceToken);
+    .replace(/\\\}/g, escapedCloseBraceToken)
+    .replace(/\\\[/g, escapedOpenBracketToken)
+    .replace(/\\\]/g, escapedCloseBracketToken);
 
   var allowGmail = !!(options && options.allowGmailOnlyTokens === true);
   var hasPipeValue = !!(options && Object.prototype.hasOwnProperty.call(options, "pipeValue"));
@@ -126,28 +130,37 @@ function nfbResolveTemplateTokens_(template, context, options) {
 
   var evalContext = nfbBindPipeCallbacks_(subContext, { allowGmailOnlyTokens: allowGmail });
 
-  var result = nfbScanBalancedTokens_(src, function(tokenBody) {
-    // Special case: fileUpload field pipes need currentFieldMeta in context.
-    // Detect a simple @<label>|... body and bind the matching meta, otherwise
-    // rely on the evaluator.
-    var bodyCtx = nfbMaybeBindFileUploadMeta_(tokenBody, evalContext, subContext);
-    var res = nfbEvaluateToken_(tokenBody, bodyCtx);
-    if (res.ok) return res.value;
-    // Log the parse/eval error so authors can diagnose it, but return the
-    // original {...} so users can spot it in the output and fix.
-    try {
-      if (typeof Logger !== "undefined" && Logger && typeof Logger.log === "function") {
-        Logger.log("[nfb template] " + res.error.message + " in \"{" + tokenBody + "}\"");
-      } else if (typeof console !== "undefined" && typeof console.warn === "function") {
-        console.warn("[nfb template]", res.error.message, "in", "{" + tokenBody + "}");
-      }
-    } catch (e) {}
-    return res.fallback;
+  var result = nfbScanBalancedTokens_(src, function(tok) {
+    if (tok.kind === "brace") {
+      // Special case: fileUpload field pipes need currentFieldMeta in context.
+      var bodyCtx = nfbMaybeBindFileUploadMeta_(tok.body, evalContext, subContext);
+      var res = nfbEvaluateToken_(tok.body, bodyCtx);
+      if (res.ok) return res.value;
+      nfbLogTemplateError_(res.error, tok.fullToken);
+      return res.fallback;
+    }
+    // bracket: evaluate as JS expression
+    var bres = nfbEvaluateBracketExpr_(tok.body, evalContext);
+    if (bres.ok) return nfbCoerceToString_(bres.value);
+    nfbLogTemplateError_(bres.error, tok.fullToken);
+    return tok.fullToken;
   });
 
   return result
     .split(escapedOpenBraceToken).join("{")
-    .split(escapedCloseBraceToken).join("}");
+    .split(escapedCloseBraceToken).join("}")
+    .split(escapedOpenBracketToken).join("[")
+    .split(escapedCloseBracketToken).join("]");
+}
+
+function nfbLogTemplateError_(error, fullToken) {
+  try {
+    if (typeof Logger !== "undefined" && Logger && typeof Logger.log === "function") {
+      Logger.log("[nfb template] " + error.message + " in \"" + fullToken + "\"");
+    } else if (typeof console !== "undefined" && typeof console.warn === "function") {
+      console.warn("[nfb template]", error.message, "in", fullToken);
+    }
+  } catch (e) {}
 }
 
 /**

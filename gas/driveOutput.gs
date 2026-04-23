@@ -474,13 +474,20 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
     if (!sectionText) continue;
     var collected = nfbCollectBalancedTokens_(sectionText);
     for (var t = 0; t < collected.length; t++) {
-      var fullToken = collected[t].fullToken;
+      var tok = collected[t];
+      var fullToken = tok.fullToken;
       if (Object.prototype.hasOwnProperty.call(tokenValueMap, fullToken)) continue;
-      if (!collected[t].body) continue;
+      if (!tok.body) continue;
       var evalCtx = nfbBindPipeCallbacks_(context, { allowGmailOnlyTokens: resolveOptions.allowGmailOnlyTokens === true });
-      var bodyCtx = nfbMaybeBindFileUploadMeta_(collected[t].body, evalCtx, context);
-      var res = nfbEvaluateToken_(collected[t].body, bodyCtx);
-      var value = res.ok ? res.value : res.fallback;
+      var value;
+      if (tok.kind === "brace") {
+        var bodyCtx = nfbMaybeBindFileUploadMeta_(tok.body, evalCtx, context);
+        var res = nfbEvaluateToken_(tok.body, bodyCtx);
+        value = res.ok ? res.value : res.fallback;
+      } else {
+        var bres = nfbEvaluateBracketExpr_(tok.body, evalCtx);
+        value = bres.ok ? nfbCoerceToString_(bres.value) : fullToken;
+      }
       tokenValueMap[fullToken] = String(value === null || value === undefined ? "" : value);
     }
   }

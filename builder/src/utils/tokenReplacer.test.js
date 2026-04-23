@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildLabelValueMap, resolveTemplateTokens } from "./tokenReplacer.js";
+import pipeEngine from "../../../gas/pipeEngine.js";
 
 test("buildLabelValueMap は fieldValues を優先する", () => {
   const fieldLabels = { f1: "添付ファイル", f2: "名前" };
@@ -328,17 +329,23 @@ test("式言語: + 演算子（両辺文字列 → 連結）", () => {
   assert.equal(resolveTemplateTokens("{@所属+@氏名}", ctx), "営業山田");
 });
 
-test("式言語: parseINT + 数値加算", () => {
+test("式言語: {...} 内の + は常に文字列連結（数値同士でも）", () => {
   const ctx = { labelValueMap: { "年齢": "30" } };
-  assert.equal(resolveTemplateTokens("{{@年齢|parseINT}+1}", ctx), "31");
+  // 旧仕様では "31" だったが、新仕様では {...} 内の + は純粋連結
+  assert.equal(resolveTemplateTokens("{{@年齢|parseINT}+1}", ctx), "301");
 });
 
-test("式言語: parseFLOAT + 浮動小数点加算", () => {
+test("式言語: 数値計算は [...] で行う", () => {
+  const ctx = { labelValueMap: { "年齢": "30" } };
+  assert.equal(resolveTemplateTokens("[{@年齢}+1]", ctx), "31");
+});
+
+test("式言語: [...] で parseFLOAT 相当の自動変換", () => {
   const ctx = { labelValueMap: { "単価": "1.25" } };
-  assert.equal(resolveTemplateTokens("{{@単価|parseFLOAT}+0.5}", ctx), "1.75");
+  assert.equal(resolveTemplateTokens("[{@単価}+0.5]", ctx), "1.75");
 });
 
-test("式言語: 数値 + 文字列 → JS 準拠で文字列連結", () => {
+test("式言語: 数値 + 文字列 → 文字列連結", () => {
   const ctx = { labelValueMap: { "年齢": "30" } };
   assert.equal(resolveTemplateTokens('{{@年齢|parseINT}+" years"}', ctx), "30 years");
 });
@@ -383,10 +390,134 @@ test("式言語: パース不能時は原トークンを残す + console.warn", 
   }
 });
 
-test("式言語: parseINT + 既存 pipe チェーン（number 書式）", () => {
+test("式言語: [...] atom を {...} 内で pipe チェーン可能", () => {
   const ctx = { labelValueMap: { "金額1": "1000", "金額2": "2000" } };
   assert.equal(
-    resolveTemplateTokens("{{{@金額1|parseINT}+{@金額2|parseINT}}|number:#,##0}", ctx),
+    resolveTemplateTokens("{[{@金額1}+{@金額2}]|number:#,##0}", ctx),
     "3,000"
+  );
+});
+
+// ---------------------------------------------------------------------------
+// [...] bracket expression (JavaScript 式)
+// ---------------------------------------------------------------------------
+
+test("bracket: 数値 + 数値 → 算術加算", () => {
+  const ctx = { labelValueMap: { "身長": "170" } };
+  assert.equal(resolveTemplateTokens("[{@身長}+4]", ctx), "174");
+});
+
+test("bracket: 四則演算すべて", () => {
+  const ctx = { labelValueMap: { "a": "10", "b": "3" } };
+  assert.equal(resolveTemplateTokens("[{@a}-{@b}]", ctx), "7");
+  assert.equal(resolveTemplateTokens("[{@a}*{@b}]", ctx), "30");
+  assert.equal(resolveTemplateTokens("[{@a}/{@b}*3]", ctx), "10");
+  assert.equal(resolveTemplateTokens("[{@a}%{@b}]", ctx), "1");
+  assert.equal(resolveTemplateTokens("[{@b}**2]", ctx), "9");
+});
+
+test("bracket: JS 演算子優先順位", () => {
+  const ctx = { labelValueMap: { "x": "1", "y": "2" } };
+  assert.equal(resolveTemplateTokens("[{@x}+{@y}*3]", ctx), "7");
+});
+
+test("bracket: 括弧で評価順指定", () => {
+  const ctx = { labelValueMap: { "a": "2", "b": "3" } };
+  assert.equal(resolveTemplateTokens("[({@a}+{@b})*2]", ctx), "10");
+});
+
+test("bracket: 三項演算子", () => {
+  const ctx = { labelValueMap: { "age": "20" } };
+  assert.equal(resolveTemplateTokens("[{@age}>=18?1:0]", ctx), "1");
+});
+
+test("bracket: 比較演算子", () => {
+  const ctx = { labelValueMap: { "x": "5" } };
+  assert.equal(resolveTemplateTokens("[{@x}>3]", ctx), "true");
+  assert.equal(resolveTemplateTokens("[{@x}==5]", ctx), "true");
+});
+
+test("bracket: Math.* が使える", () => {
+  const ctx = { labelValueMap: { "r": "2" } };
+  assert.equal(
+    resolveTemplateTokens("[Math.round(Math.PI*{@r}*{@r}*100)/100]", ctx),
+    "12.57"
+  );
+});
+
+test("bracket: ネストした [...]", () => {
+  const ctx = { labelValueMap: { "x": "10" } };
+  assert.equal(resolveTemplateTokens("[[{@x}+5]*2]", ctx), "30");
+});
+
+test("bracket: 文字の '1' も数値として計算", () => {
+  const ctx = { labelValueMap: { "v": "1" } };
+  assert.equal(resolveTemplateTokens("[{@v}+2]", ctx), "3");
+});
+
+test("bracket: 空フィールドは error → 原トークン残存", () => {
+  const ctx = { labelValueMap: {} };
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(resolveTemplateTokens("[{@nope}+1]", ctx), "[{@nope}+1]");
+  } finally {
+    console.warn = origWarn;
+  }
+});
+
+test("bracket: 非数値フィールドは error → 原トークン残存", () => {
+  const ctx = { labelValueMap: { "name": "Alice" } };
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(resolveTemplateTokens("[{@name}+1]", ctx), "[{@name}+1]");
+  } finally {
+    console.warn = origWarn;
+  }
+});
+
+test("bracket: JS 構文エラーは原トークン残存", () => {
+  const ctx = { labelValueMap: {} };
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(resolveTemplateTokens("[1++2]", ctx), "[1++2]");
+  } finally {
+    console.warn = origWarn;
+  }
+});
+
+test("bracket: 0 割りの NaN は原トークン残存", () => {
+  const ctx = { labelValueMap: { "x": "0" } };
+  const origWarn = console.warn;
+  console.warn = () => {};
+  try {
+    assert.equal(resolveTemplateTokens("[0/{@x}]", ctx), "[0/{@x}]");
+  } finally {
+    console.warn = origWarn;
+  }
+});
+
+test("bracket: \\[ \\] でリテラルにエスケープ", () => {
+  const ctx = { labelValueMap: {} };
+  assert.equal(resolveTemplateTokens("\\[not a bracket\\]", ctx), "[not a bracket]");
+});
+
+test("bracket: トップレベル・{...} 内の両方で使える", () => {
+  const ctx = { labelValueMap: { "a": "10", "b": "20" } };
+  assert.equal(resolveTemplateTokens("[{@a}+{@b}]", ctx), "30");
+  assert.equal(resolveTemplateTokens("合計: {[{@a}+{@b}]|number:#,##0}円", ctx), "合計: 30円");
+});
+
+test("bracket: 内側 {...} でのパイプは OK", () => {
+  const ctx = { labelValueMap: { "h": " 170 " } };
+  assert.equal(resolveTemplateTokens("[{@h|trim}+1]", ctx), "171");
+});
+
+test("extractFieldRefs: [...] 内の @ も拾う", () => {
+  assert.deepEqual(
+    pipeEngine.extractFieldRefs("[{@身長}+4] / [{@体重}*2]"),
+    ["身長", "体重"]
   );
 });
