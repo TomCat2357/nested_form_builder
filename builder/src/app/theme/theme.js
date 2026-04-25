@@ -3,22 +3,26 @@ import { readSettingsValue, writeSettingsValue } from "../../core/storage.js";
 const THEME_STORAGE_KEY = "nested_form_builder_theme";
 export const DEFAULT_THEME = "standard";
 export const THEME_OPTIONS = [
+  // Light
   { value: "standard", label: "Standard" },
+  { value: "blanc", label: "Blanc" },
   { value: "porcelain", label: "Porcelain" },
   { value: "linen", label: "Linen" },
-  { value: "matcha", label: "Matcha" },
-  { value: "sakura", label: "Sakura" },
-  { value: "warm", label: "Warm" },
-  { value: "ocean", label: "Ocean" },
+  { value: "snow", label: "Snow" },
+  // Dark
   { value: "dark", label: "Dark" },
   { value: "midnight", label: "Midnight" },
   { value: "obsidian", label: "Obsidian" },
+  // Other (themed)
+  { value: "matcha", label: "Matcha" },
+  { value: "sakura", label: "Sakura" },
   { value: "egypt", label: "Egypt" },
   { value: "india", label: "India" },
-  { value: "snow", label: "Snow" },
   { value: "christmas", label: "Christmas" },
-  { value: "forest", label: "Forest" },
   { value: "ruins", label: "Ruins" },
+  { value: "warm", label: "Warm" },
+  { value: "ocean", label: "Ocean" },
+  { value: "forest", label: "Forest" },
 ];
 
 const CUSTOM_THEME_STYLE_ID = "nfb-custom-themes";
