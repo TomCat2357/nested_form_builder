@@ -87,9 +87,9 @@ Nested Form Builder は、ネストした階層構造を持つフォームの設
 │  Hooks:  useAlert, useBeforeUnloadGuard, useEditLock,            │
 │          useFormCacheSync, useApplyTheme 等                      │
 │                                                                 │
-│  Theme:  16種のテーマ（standard, dark, ocean, forest, sakura,    │
-│          matcha, warm, snow, christmas, egypt, india, linen,    │
-│          midnight, obsidian, porcelain, ruins）                  │
+│  Theme:  17種のテーマ（standard, blanc, porcelain, linen, snow, │
+│          dark, midnight, obsidian, matcha, sakura, egypt,       │
+│          india, christmas, ruins, warm, ocean, forest）          │
 ├─────────────────────────────────────────────────────────────────┤
 │  Services & Utils                                               │
 │  gasClient.js     GAS RPC ラッパー（google.script.run Promise化）│
