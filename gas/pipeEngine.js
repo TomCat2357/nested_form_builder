@@ -682,7 +682,7 @@ function nfbParseFunctionCall_(name, tokens, idx, context, rawSrc, startPos) {
 }
 
 // ---------------------------------------------------------------------------
-// Built-in function: if (unified 3-arg; same semantics as former ifv).
+// Built-in function: if (3-arg conditional).
 // ---------------------------------------------------------------------------
 
 NFB_FUNCTIONS_["if"] = function(argsText, context) {
@@ -1135,7 +1135,7 @@ function nfbTransformNumber_(value, formatStr) {
 }
 
 // ===========================================================================
-// § Condition evaluator (used by if / ifv)
+// § Condition evaluator (used by if)
 // ===========================================================================
 
 /**
@@ -1221,7 +1221,7 @@ function nfbEvaluateIfCondition_(conditionStr, context, pipeValue) {
 }
 
 /**
- * Resolve a value position for if elseValue / ifv true/false / default fallback.
+ * Resolve a value position for if trueValue / falseValue / default fallback.
  * Supports:
  *   ""         -> ""
  *   "_"        -> pipeValue
@@ -1248,10 +1248,9 @@ function nfbResolveIfValue_(valueStr, context, pipeValue) {
 // ===========================================================================
 
 /**
- * Unified 3-arg conditional: {@value|if:condition,trueValue,falseValue}.
- * Merges the former pipe-form `if` (2-arg) and `ifv` (3-arg) into a single
- * 3-arg form. If argument count != 3, passes the input value through
- * (preserving the lenient "silent pass-through" behavior of unknown transforms).
+ * Pipe-form 3-arg conditional: {@value|if:condition,trueValue,falseValue}.
+ * If argument count != 3, passes the input value through (lenient
+ * "silent pass-through" behavior matching unknown transforms).
  */
 function nfbTransformIf_(value, args, context) {
   var parts = nfbSplitTopLevel_(args, ",", 3);
