@@ -76,17 +76,27 @@ function Sheets_prepareResponses_(ctx) {
 }
 
 
+function Sheets_neutralizeFormulaPrefix_(s) {
+  if (typeof s !== "string" || s.length === 0) return s;
+  // Triggers: =, +, -, @, TAB, CR. Sheets / Excel evaluate these as formulas.
+  // The leading apostrophe is stripped on display and by Range.getValues(),
+  // so legitimate users never see it.
+  if (/^[=+\-@\t\r]/.test(s)) return "'" + s;
+  return s;
+}
+
+
 function Sheets_resolveTemporalCell_(value, temporalType) {
   if (value === undefined || value === null || value === "") {
     return { value: "", numberFormat: null };
   }
   if (temporalType !== "date" && temporalType !== "time") {
-    return { value: String(value), numberFormat: null };
+    return { value: Sheets_neutralizeFormulaPrefix_(String(value)), numberFormat: null };
   }
 
   var parsed = Sheets_parseDateLikeToJstDate_(value, true);
   if (!parsed) {
-    return { value: String(value), numberFormat: null };
+    return { value: Sheets_neutralizeFormulaPrefix_(String(value)), numberFormat: null };
   }
   return {
     value: parsed,
