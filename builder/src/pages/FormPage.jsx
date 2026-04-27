@@ -1111,6 +1111,10 @@ export default function FormPage() {
         showAlert("指定したレコードが見つかりませんでした");
         return;
       }
+      if (!isAdmin && (sourceData.deletedAtUnixMs || sourceData.deletedAt)) {
+        showAlert("削除済みレコードからのコピーは管理者のみ可能です");
+        return;
+      }
       const restored = restoreResponsesFromData(normalizedSchema, sourceData.data || {}, sourceData.dataUnixMs || {});
       setCopySourceResponses(restored);
       setIsCopyDialogOpen(true);
@@ -1120,7 +1124,7 @@ export default function FormPage() {
     } finally {
       setIsCopySourceLoading(false);
     }
-  }, [copySourceId, formId, normalizedSchema, showAlert]);
+  }, [copySourceId, formId, isAdmin, normalizedSchema, showAlert]);
 
   const handleConfirmRecordCopy = useCallback((selectedFieldIds) => {
     const selectedIds = Array.isArray(selectedFieldIds) ? selectedFieldIds : [];
