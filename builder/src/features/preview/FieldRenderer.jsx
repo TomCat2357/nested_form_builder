@@ -1,5 +1,6 @@
 import React from "react";
 import { DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
+import { fieldHasValue } from "../../core/fieldValue.js";
 import { isNumberInputDraftAllowed, validateByPattern } from "../../core/validate.js";
 import { resolveLabelSize, resolveTextColor } from "../../core/styleSettings.js";
 import { getStandardPhonePlaceholder } from "../../core/phone.js";
@@ -366,26 +367,38 @@ export const RendererRecursive = ({
   };
 
   const renderChildrenAll = (field, fid) => () => {
-    if (!field?.childrenByValue) return null;
-    const selectedLabels = toSelectedChoiceLabels(field, (responses || {})[fid]);
-    if (["radio", "select"].includes(field.type)) {
-      const selected = selectedLabels[0];
-      if (!selected) return null;
-      return (
-        <RendererRecursive
-          fields={field.childrenByValue[selected] || []}
-          {...recursiveProps}
-        />
-      );
+    if (field?.childrenByValue) {
+      const selectedLabels = toSelectedChoiceLabels(field, (responses || {})[fid]);
+      if (["radio", "select"].includes(field.type)) {
+        const selected = selectedLabels[0];
+        if (!selected) return null;
+        return (
+          <RendererRecursive
+            fields={field.childrenByValue[selected] || []}
+            {...recursiveProps}
+          />
+        );
+      }
+      if (field.type === "checkboxes") {
+        return selectedLabels.map((label) => (
+          <RendererRecursive
+            key={`child_${fid}_${label}`}
+            fields={field.childrenByValue[label] || []}
+            {...recursiveProps}
+          />
+        ));
+      }
     }
-    if (field.type === "checkboxes") {
-      return selectedLabels.map((label) => (
-        <RendererRecursive
-          key={`child_${fid}_${label}`}
-          fields={field.childrenByValue[label] || []}
-          {...recursiveProps}
-        />
-      ));
+    if (Array.isArray(field?.children) && field.children.length > 0) {
+      const value = (responses || {})[fid];
+      if (fieldHasValue(field, value)) {
+        return (
+          <RendererRecursive
+            fields={field.children}
+            {...recursiveProps}
+          />
+        );
+      }
     }
     return null;
   };

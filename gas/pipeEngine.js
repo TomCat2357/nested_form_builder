@@ -1766,6 +1766,37 @@ function nfbDefaultFieldSegment_(field, indexTrail) {
 }
 
 /**
+ * 入力タイプのフィールドに値が入っているかを判定する。
+ * `children` 配列を表示するかの判断に使う (空のとき子質問は非表示)。
+ * dual-compat: GAS / フロント両方から呼ばれる。
+ */
+function nfbFieldHasValue_(field, value) {
+  if (!field || typeof field !== "object") return false;
+  var type = field.type;
+  if (type === "text" || type === "email" || type === "url") {
+    return typeof value === "string" && value.replace(/^\s+|\s+$/g, "") !== "";
+  }
+  if (type === "phone") {
+    if (typeof value !== "string") return false;
+    return value.replace(/[\s\-()]/g, "") !== "";
+  }
+  if (type === "number") {
+    if (value === "" || value === null || value === undefined) return false;
+    return !isNaN(Number(value));
+  }
+  if (type === "date" || type === "time") {
+    return typeof value === "string" && value !== "";
+  }
+  if (type === "weekday") {
+    return typeof value === "string" && value !== "";
+  }
+  if (type === "fileUpload") {
+    return Array.isArray(value) && value.length > 0;
+  }
+  return false;
+}
+
+/**
  * Read-only 再帰走査。visitor(field, context) が false を返すとその subtree を
  * 打ち切る。context = { pathSegments, depth, index, indexTrail }。
  *
@@ -1813,39 +1844,50 @@ function nfbTraverseSchema_(schema, visitor, options) {
       var shouldContinue = visitor(field, context);
       if (shouldContinue === false) continue;
 
-      if (!field.childrenByValue || typeof field.childrenByValue !== "object"
-          || Array.isArray(field.childrenByValue)) continue;
-
-      var childKeys;
-      if (hasGetChildKeys) {
-        var custom = opts.getChildKeys(field, context);
-        childKeys = Array.isArray(custom) ? custom : [];
-      } else if (hasResponses) {
-        var value = opts.responses[field.id];
-        if (field.type === "checkboxes" && Array.isArray(value)) {
-          var selected = {};
-          for (var s = 0; s < value.length; s++) selected[value[s]] = true;
-          var all = nfbResolveOrderedChildKeys_(field);
-          childKeys = [];
-          for (var a = 0; a < all.length; a++) {
-            if (selected[all[a]]) childKeys.push(all[a]);
+      if (field.childrenByValue && typeof field.childrenByValue === "object"
+          && !Array.isArray(field.childrenByValue)) {
+        var childKeys;
+        if (hasGetChildKeys) {
+          var custom = opts.getChildKeys(field, context);
+          childKeys = Array.isArray(custom) ? custom : [];
+        } else if (hasResponses) {
+          var value = opts.responses[field.id];
+          if (field.type === "checkboxes" && Array.isArray(value)) {
+            var selected = {};
+            for (var s = 0; s < value.length; s++) selected[value[s]] = true;
+            var all = nfbResolveOrderedChildKeys_(field);
+            childKeys = [];
+            for (var a = 0; a < all.length; a++) {
+              if (selected[all[a]]) childKeys.push(all[a]);
+            }
+          } else if ((field.type === "radio" || field.type === "select")
+                     && typeof value === "string" && value) {
+            childKeys = field.childrenByValue[value] ? [value] : [];
+          } else {
+            childKeys = [];
           }
-        } else if ((field.type === "radio" || field.type === "select")
-                   && typeof value === "string" && value) {
-          childKeys = field.childrenByValue[value] ? [value] : [];
         } else {
-          childKeys = [];
+          childKeys = nfbResolveOrderedChildKeys_(field);
         }
-      } else {
-        childKeys = nfbResolveOrderedChildKeys_(field);
+
+        for (var ci = 0; ci < childKeys.length; ci++) {
+          var key = childKeys[ci];
+          var branchSegment = branchSegmentFn ? branchSegmentFn(key, field, context) : key;
+          var childPath = (branchSegment === null || branchSegment === undefined)
+            ? currentPath : currentPath.concat(branchSegment);
+          walk(field.childrenByValue[key], childPath, depth + 1, currentIndexTrail);
+        }
       }
 
-      for (var ci = 0; ci < childKeys.length; ci++) {
-        var key = childKeys[ci];
-        var branchSegment = branchSegmentFn ? branchSegmentFn(key, field, context) : key;
-        var childPath = (branchSegment === null || branchSegment === undefined)
-          ? currentPath : currentPath.concat(branchSegment);
-        walk(field.childrenByValue[key], childPath, depth + 1, currentIndexTrail);
+      if (Array.isArray(field.children) && field.children.length > 0) {
+        var traverseChildren = true;
+        if (hasResponses) {
+          var inputValue = opts.responses[field.id];
+          traverseChildren = nfbFieldHasValue_(field, inputValue);
+        }
+        if (traverseChildren) {
+          walk(field.children, currentPath, depth + 1, currentIndexTrail);
+        }
       }
     }
   }
@@ -1885,6 +1927,9 @@ function nfbMapSchema_(schema, mapper) {
           );
         }
         newField.childrenByValue = newChildren;
+      }
+      if (newField && Array.isArray(newField.children)) {
+        newField.children = walk(newField.children, currentPath, depth + 1);
       }
       out.push(newField);
     }
@@ -1979,6 +2024,7 @@ if (typeof module !== "undefined" && module.exports) {
     // schema walkers
     defaultFieldSegment: nfbDefaultFieldSegment_,
     resolveOrderedChildKeys: nfbResolveOrderedChildKeys_,
+    fieldHasValue: nfbFieldHasValue_,
     traverseSchema: nfbTraverseSchema_,
     mapSchema: nfbMapSchema_,
     stripSchemaIDs: nfbStripSchemaIDs_

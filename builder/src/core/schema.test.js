@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeSchemaIDs, findFirstFileUploadField } from "./schema.js";
+import { normalizeSchemaIDs, findFirstFileUploadField, supportsChildren } from "./schema.js";
 
 test("normalizeSchemaIDs は旧フィールド型を新仕様へ移行する", () => {
   const schema = normalizeSchemaIDs([
@@ -187,4 +187,84 @@ test("findFirstFileUploadField は fileUpload がない場合 null を返す", (
   assert.equal(findFirstFileUploadField(fields), null);
   assert.equal(findFirstFileUploadField([]), null);
   assert.equal(findFirstFileUploadField(null), null);
+});
+
+test("supportsChildren は入力タイプのみ true を返す", () => {
+  ["text", "number", "email", "phone", "url", "date", "time", "weekday", "fileUpload"].forEach((t) => {
+    assert.equal(supportsChildren(t), true, `${t} should support children`);
+  });
+  ["radio", "select", "checkboxes", "message", "printTemplate", "substitution"].forEach((t) => {
+    assert.equal(supportsChildren(t), false, `${t} should not support children`);
+  });
+});
+
+test("normalizeSchemaIDs は入力タイプの children を正規化し ID を割り当てる", () => {
+  const schema = normalizeSchemaIDs([
+    {
+      type: "text",
+      label: "親テキスト",
+      children: [
+        { type: "text", label: "子1" },
+        { type: "number", label: "子2" },
+      ],
+    },
+  ]);
+  assert.ok(Array.isArray(schema[0].children));
+  assert.equal(schema[0].children.length, 2);
+  assert.match(schema[0].children[0].id, /^f_/);
+  assert.equal(schema[0].children[0].label, "子1");
+  assert.equal(schema[0].children[1].type, "number");
+});
+
+test("normalizeSchemaIDs は children をネストして再帰的に正規化する", () => {
+  const schema = normalizeSchemaIDs([
+    {
+      type: "text", label: "L1",
+      children: [
+        {
+          type: "text", label: "L2",
+          children: [{ type: "text", label: "L3" }],
+        },
+      ],
+    },
+  ]);
+  assert.equal(schema[0].children[0].children[0].label, "L3");
+  assert.match(schema[0].children[0].children[0].id, /^f_/);
+});
+
+test("normalizeSchemaIDs は children を持たないタイプから children を除去する", () => {
+  const schema = normalizeSchemaIDs([
+    {
+      type: "message", label: "メッセージ",
+      children: [{ type: "text", label: "孤児" }],
+    },
+    {
+      type: "radio", label: "ラジオ",
+      options: [{ label: "A" }],
+      children: [{ type: "text", label: "孤児2" }],
+    },
+  ]);
+  assert.equal("children" in schema[0], false);
+  assert.equal("children" in schema[1], false);
+});
+
+test("normalizeSchemaIDs は children のネストで MAX_DEPTH をカウントする", async () => {
+  const { validateMaxDepth, MAX_DEPTH } = await import("./schema.js");
+  let nested = { type: "text", label: "leaf" };
+  for (let i = 0; i < MAX_DEPTH; i += 1) {
+    nested = { type: "text", label: `L${i}`, children: [nested] };
+  }
+  const result = validateMaxDepth([nested], MAX_DEPTH);
+  assert.equal(result.ok, false, "MAX_DEPTH+1 段で不可となるべき");
+});
+
+test("findFirstFileUploadField は children 配下の fileUpload も見つける", () => {
+  const fields = [
+    {
+      type: "text", label: "親",
+      children: [{ type: "fileUpload", label: "添付", driveFolderNameTemplate: "{@_id}" }],
+    },
+  ];
+  const result = findFirstFileUploadField(fields);
+  assert.equal(result.label, "添付");
 });

@@ -436,6 +436,10 @@ function nfbuBuildOrderFromSchema_(schema) {
           walk(childFields, childBasePath, currentIndexTrail);
         }
       }
+
+      if (Array.isArray(field.children) && field.children.length > 0) {
+        walk(field.children, currentPath, currentIndexTrail);
+      }
     }
   };
 

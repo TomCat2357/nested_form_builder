@@ -13,6 +13,9 @@ function collectFieldIds(fields, ids = new Set()) {
         collectFieldIds(children, ids);
       });
     }
+    if (Array.isArray(field.children)) {
+      collectFieldIds(field.children, ids);
+    }
   });
   return ids;
 }

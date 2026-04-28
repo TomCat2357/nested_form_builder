@@ -62,6 +62,11 @@ export { MAX_DEPTH };
 export const DEFAULT_TEXT_MAX_LENGTH = 20;
 export const DEFAULT_MULTILINE_ROWS = 4;
 
+const SUPPORTS_CHILDREN_TYPES = new Set([
+  "text", "number", "email", "phone", "url", "date", "time", "weekday", "fileUpload",
+]);
+export const supportsChildren = (type) => SUPPORTS_CHILDREN_TYPES.has(type);
+
 const normalizeBooleanSetting = (value, defaultValue = false) => {
   if (value === undefined) return defaultValue;
   if (typeof value === "string") {
@@ -137,6 +142,11 @@ export const cleanUnusedFieldProperties = (field) => {
   if (!isChoice) {
     delete field.options;
     delete field.childrenByValue;
+  }
+  if (!supportsChildren(type)) {
+    delete field.children;
+  } else if (field.children !== undefined && !Array.isArray(field.children)) {
+    delete field.children;
   }
   if (isChoice && Array.isArray(field.options)) {
     field.options = field.options.map((opt) => ({ ...opt, defaultSelected: !!opt?.defaultSelected }));
@@ -392,6 +402,14 @@ export const normalizeSchemaIDs = (nodes) => {
         normalizedField.childrenByValue = nextChildren;
       }
 
+      if (Array.isArray(normalizedField?.children)) {
+        normalizedField.children = normalizeNodes(
+          normalizedField.children,
+          [...currentPath],
+          depth + 1,
+        );
+      }
+
       normalizedNodes.push(normalizedField);
       if (migratedPrintTemplateField) {
         normalizedNodes.push(normalizeField(migratedPrintTemplateField, {
@@ -472,6 +490,10 @@ export const findFirstFileUploadField = (fields) => {
         if (found) return found;
       }
     }
+    if (Array.isArray(field?.children)) {
+      const found = findFirstFileUploadField(field.children);
+      if (found) return found;
+    }
   }
   return null;
 };
@@ -485,6 +507,9 @@ export const collectFileUploadFields = (fields) => {
         for (const children of Object.values(field.childrenByValue)) {
           walk(children);
         }
+      }
+      if (Array.isArray(field?.children)) {
+        walk(field.children);
       }
     }
   };

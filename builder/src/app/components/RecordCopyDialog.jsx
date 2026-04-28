@@ -3,8 +3,11 @@ import BaseDialog from "./BaseDialog.jsx";
 
 const hasBranchChildren = (field) => {
   const branches = field?.childrenByValue;
-  if (!branches || typeof branches !== "object") return false;
-  return Object.values(branches).some((children) => Array.isArray(children) && children.length > 0);
+  if (branches && typeof branches === "object"
+      && Object.values(branches).some((children) => Array.isArray(children) && children.length > 0)) {
+    return true;
+  }
+  return Array.isArray(field?.children) && field.children.length > 0;
 };
 
 export default function RecordCopyDialog({ open, schema, sourceResponses, onConfirm, onCancel }) {

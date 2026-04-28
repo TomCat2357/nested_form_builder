@@ -177,6 +177,7 @@ export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => 
       }
     }
   }, {
+    responses,
     getChildKeys: (field) => {
       const value = responses[field.id];
       if (field.type === "checkboxes" && Array.isArray(value)) {

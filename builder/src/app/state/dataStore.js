@@ -163,6 +163,13 @@ export const dataStore = {
       schemaVersion: updates.schemaVersion ?? current.schemaVersion,
       driveFileUrl: current.driveFileUrl, // 既存のURLを保持
     });
+    // schema 未更新時は既存 schemaHash を維持。normalizeFormRecord は毎回再計算するが、
+    // GAS 側が保存時に Forms_stripSchemaIds_ で field id を落とすため、ロード後の
+    // schema から再計算した hash は「初回保存時の hash」と一致せず、テーマ変更だけで
+    // /search の records cache が schemaMismatch として消えてしまう。
+    if (updates.schema === undefined && current.schemaHash) {
+      next.schemaHash = current.schemaHash;
+    }
     const result = await saveFormToGas(next, targetUrl, saveMode);
     const savedForm = result?.form || result;
     const fileUrl = result?.fileUrl;

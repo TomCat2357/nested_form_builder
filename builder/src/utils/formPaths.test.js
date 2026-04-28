@@ -38,6 +38,21 @@ test("displayFieldSettingsはネストした分岐でも巡回順を保持する
   assert.deepEqual(paths, ["親", "親|分岐B|子2", "親|分岐B|子1", "親|分岐A|子3", "末尾"]);
 });
 
+test("displayFieldSettingsは入力タイプの children を 親|子 形式で展開する", () => {
+  const schema = [
+    {
+      type: "text", label: "親", isDisplayed: true,
+      children: [
+        { type: "text", label: "子1", isDisplayed: true },
+        { type: "number", label: "子2", isDisplayed: true },
+      ],
+    },
+  ];
+  const collected = collectDisplayFieldSettings(schema);
+  const paths = collected.map((item) => item.path);
+  assert.deepEqual(paths, ["親", "親|子1", "親|子2"]);
+});
+
 test("displayFieldSettingsは除外指定したメッセージを含めない", () => {
   const schema = [
     { type: "message", label: "案内", isDisplayed: true, excludeFromSearchAndPrint: true },

@@ -1,6 +1,7 @@
 import { formatUnixMsDateTimeSec, toUnixMs } from "../../utils/dateTime.js";
 import { resolveFileDisplayName } from "../../core/collect.js";
 import { findFirstFileUploadField } from "../../core/schema.js";
+import { fieldHasValue } from "../../core/fieldValue.js";
 
 export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);
 
@@ -187,20 +188,23 @@ const appendPrintItems = (fields, responses, depth, items, options = {}) => {
       items.push(nextItem);
     }
 
-    const selectedLabels = toSelectedChoiceLabels(normalizedField, value);
-    if (!normalizedField?.childrenByValue) return;
-
-    if (normalizedField.type === "checkboxes") {
-      selectedLabels.forEach((label) => {
-        appendPrintItems(normalizedField.childrenByValue?.[label] || [], responses, depth + 1, items, options);
-      });
-      return;
+    if (normalizedField?.childrenByValue) {
+      const selectedLabels = toSelectedChoiceLabels(normalizedField, value);
+      if (normalizedField.type === "checkboxes") {
+        selectedLabels.forEach((label) => {
+          appendPrintItems(normalizedField.childrenByValue?.[label] || [], responses, depth + 1, items, options);
+        });
+      } else if (normalizedField.type === "radio" || normalizedField.type === "select") {
+        const selected = selectedLabels[0];
+        if (selected) {
+          appendPrintItems(normalizedField.childrenByValue?.[selected] || [], responses, depth + 1, items, options);
+        }
+      }
     }
 
-    if (normalizedField.type === "radio" || normalizedField.type === "select") {
-      const selected = selectedLabels[0];
-      if (selected) {
-        appendPrintItems(normalizedField.childrenByValue?.[selected] || [], responses, depth + 1, items, options);
+    if (Array.isArray(normalizedField?.children) && normalizedField.children.length > 0) {
+      if (fieldHasValue(normalizedField, value)) {
+        appendPrintItems(normalizedField.children, responses, depth + 1, items, options);
       }
     }
   });
@@ -216,6 +220,9 @@ export const buildFieldLabelsMap = (fields, map = {}) => {
       Object.values(field.childrenByValue).forEach((children) => {
         buildFieldLabelsMap(children, map);
       });
+    }
+    if (Array.isArray(field?.children)) {
+      buildFieldLabelsMap(field.children, map);
     }
   });
   return map;
@@ -249,6 +256,9 @@ export const collectFileUploadMeta = (fields, options = {}) => {
       if (field?.childrenByValue) {
         Object.values(field.childrenByValue).forEach(walk);
       }
+      if (Array.isArray(field?.children)) {
+        walk(field.children);
+      }
     });
   };
   walk(fields);
@@ -262,13 +272,18 @@ const assignFieldValues = (fields, responses, map, isActive = true, depth = 0) =
     const rawValue = isActive ? ((responses || {})[fieldId] ?? (responses || {})[field?.id]) : "";
     map[fieldId] = isActive ? formatPrintItemValue(normalizedField, rawValue) : "";
 
-    if (!normalizedField?.childrenByValue) return;
+    if (normalizedField?.childrenByValue) {
+      const selectedLabels = isActive ? toSelectedChoiceLabels(normalizedField, rawValue) : [];
+      const selectedSet = new Set(selectedLabels);
+      Object.entries(normalizedField.childrenByValue).forEach(([optionLabel, children]) => {
+        assignFieldValues(children, responses, map, isActive && selectedSet.has(optionLabel), depth + 1);
+      });
+    }
 
-    const selectedLabels = isActive ? toSelectedChoiceLabels(normalizedField, rawValue) : [];
-    const selectedSet = new Set(selectedLabels);
-    Object.entries(normalizedField.childrenByValue).forEach(([optionLabel, children]) => {
-      assignFieldValues(children, responses, map, isActive && selectedSet.has(optionLabel), depth + 1);
-    });
+    if (Array.isArray(normalizedField?.children) && normalizedField.children.length > 0) {
+      const childActive = isActive && fieldHasValue(normalizedField, rawValue);
+      assignFieldValues(normalizedField.children, responses, map, childActive, depth + 1);
+    }
   });
   return map;
 };

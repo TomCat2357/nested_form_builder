@@ -1,6 +1,6 @@
 import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
-import { MAX_DEPTH } from "../../core/schema.js";
+import { MAX_DEPTH, supportsChildren } from "../../core/schema.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { buildPhonePattern } from "../../core/phone.js";
 import { normalizePrintTemplateAction } from "../../utils/printTemplateAction.js";
@@ -24,6 +24,7 @@ import {
 import { useQuestionCardOptions } from "./useQuestionCardOptions.js";
 import { useFieldPlaceholderSync } from "./useFieldPlaceholderSync.js";
 import ChoiceOptionsSection from "./ChoiceOptionsSection.jsx";
+import NonChoiceChildrenSection from "./NonChoiceChildrenSection.jsx";
 import { PrintTemplateSection } from "./PrintTemplateSection.jsx";
 import {
   MessageSection,
@@ -192,6 +193,20 @@ export default function QuestionCard({
           setSelectedOptionIndex={setSelectedOptionIndex}
           buildOptionControlInfo={buildOptionControlInfo}
           updateChoiceDefaultSelection={updateChoiceDefaultSelection}
+          QuestionListComponent={QuestionListComponent}
+          onQuestionControlChange={onQuestionControlChange}
+          getTempState={getTempState}
+          setTempState={setTempState}
+          clearTempState={clearTempState}
+        />
+      )}
+
+      {!isChoice && supportsChildren(field.type) && (
+        <NonChoiceChildrenSection
+          field={field}
+          onChange={onChange}
+          canAddChild={canAddChild}
+          depth={depth}
           QuestionListComponent={QuestionListComponent}
           onQuestionControlChange={onQuestionControlChange}
           getTempState={getTempState}

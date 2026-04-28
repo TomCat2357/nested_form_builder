@@ -1,4 +1,4 @@
-import { deepClone, cleanUnusedFieldProperties, DEFAULT_TEXT_MAX_LENGTH, DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
+import { deepClone, cleanUnusedFieldProperties, supportsChildren, DEFAULT_TEXT_MAX_LENGTH, DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { normalizePhoneSettings } from "../../core/phone.js";
@@ -73,6 +73,15 @@ export function saveAndClearChoiceState(next, field, oldIsChoice, setTempState) 
   delete next.childrenByValue;
 }
 
+export function saveAndClearChildren(next, field, oldSupportsChildren, setTempState) {
+  if (oldSupportsChildren && Array.isArray(field.children) && field.children.length > 0) {
+    setTempState?.(field.id, {
+      savedChildren: deepClone(field.children),
+    });
+  }
+  delete next.children;
+}
+
 export function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
   const next = deepClone(field);
   const oldType = field.type;
@@ -81,6 +90,8 @@ export function handleTypeChange(field, newType, { getTempState, setTempState } 
 
   const oldIsChoice = isChoiceType(oldType);
   const newIsChoice = isChoiceType(newType);
+  const oldSupportsChildren = supportsChildren(oldType);
+  const newSupportsChildren = supportsChildren(newType);
 
   if (newIsChoice) {
     if (oldIsChoice) {
@@ -115,6 +126,15 @@ export function handleTypeChange(field, newType, { getTempState, setTempState } 
       next.hideFromRecordView = !!next.hideFromRecordView;
     }
     saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
+  }
+
+  if (!newSupportsChildren) {
+    saveAndClearChildren(next, field, oldSupportsChildren, setTempState);
+  } else if (!oldSupportsChildren) {
+    const savedChildren = getTempState?.(field.id)?.savedChildren;
+    if (Array.isArray(savedChildren) && savedChildren.length > 0) {
+      next.children = deepClone(savedChildren);
+    }
   }
 
   cleanUnusedFieldProperties(next);

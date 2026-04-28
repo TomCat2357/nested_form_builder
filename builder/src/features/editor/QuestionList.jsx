@@ -85,6 +85,9 @@ function clearTempStateForField(field, clearTempState) {
       (children || []).forEach((child) => clearTempStateForField(child, clearTempState));
     });
   }
+  if (Array.isArray(field.children)) {
+    field.children.forEach((child) => clearTempStateForField(child, clearTempState));
+  }
 }
 
 /**

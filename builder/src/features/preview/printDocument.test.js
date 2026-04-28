@@ -459,3 +459,50 @@ test("collectFileUploadMeta は hideFileExtension: true のフィールドのみ
     f4: { hideFileExtension: true },
   });
 });
+
+test("buildPrintDocumentPayload は children を持つ入力フィールドで親が空のとき子を出力しない", () => {
+  const schema = [
+    {
+      id: "f_parent",
+      type: "text",
+      label: "親",
+      children: [{ id: "f_child", type: "text", label: "子" }],
+    },
+  ];
+
+  const filled = buildPrintDocumentPayload({
+    schema,
+    responses: { f_parent: "あり", f_child: "子値" },
+    settings: { formTitle: "T" },
+    exportedAt: new Date("2026-03-09T12:34:56+09:00"),
+    omitEmptyRows: false,
+  });
+  assert.deepEqual(filled.items, [
+    { label: "親", value: "あり", depth: 0, type: "text" },
+    { label: "子", value: "子値", depth: 1, type: "text" },
+  ]);
+
+  const empty = buildPrintDocumentPayload({
+    schema,
+    responses: { f_parent: "", f_child: "孤児" },
+    settings: { formTitle: "T" },
+    exportedAt: new Date("2026-03-09T12:34:56+09:00"),
+    omitEmptyRows: false,
+  });
+  assert.deepEqual(empty.items, [
+    { label: "親", value: "", depth: 0, type: "text" },
+  ]);
+});
+
+test("collectFileUploadMeta は children 配下の fileUpload も収集する", () => {
+  const schema = [
+    {
+      id: "p1",
+      type: "text",
+      label: "親",
+      children: [{ id: "c1", type: "fileUpload", label: "添付", hideFileExtension: true }],
+    },
+  ];
+  const meta = collectFileUploadMeta(schema);
+  assert.deepEqual(meta, { c1: { hideFileExtension: true } });
+});
