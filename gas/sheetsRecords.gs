@@ -13,12 +13,16 @@ function Sheets_purgeExpiredDeletedRows_(sheet, retentionDays) {
   var range = sheet.getRange(NFB_DATA_START_ROW, 1, rowCount, lastColumn);
   var values = range.getValues();
 
+  // ヘッダーから deletedAt 列の 0-based インデックスを動的解決（既定レイアウトは 4）
+  var fixedColMap = Sheets_buildFixedColMapFromSheet_(sheet);
+  var deletedAtCol = fixedColMap.hasOwnProperty("deletedAt") ? fixedColMap.deletedAt : 4;
+
   var cutoffUnixMs = Date.now() - days * NFB_MS_PER_DAY;
   var deletedCount = 0;
 
   var newValues = [];
   for (var i = 0; i < values.length; i++) {
-    var deletedAtUnixMs = Sheets_toUnixMs_(values[i][5], true); // index 5 is deletedAt
+    var deletedAtUnixMs = Sheets_toStrictUnixMs_(values[i][deletedAtCol]);
     if (isFinite(deletedAtUnixMs) && deletedAtUnixMs > 0 && deletedAtUnixMs <= cutoffUnixMs) {
       deletedCount++;
     } else {
@@ -61,14 +65,15 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
   var id = rowData[idIdx] ? String(rowData[idIdx]) : "";
   if (!id) return null;
 
+  // 固定メタ列は Unix ms 厳密解釈（×1000 / Excel シリアル値の再解釈をしない）
   var formatDt = function(val) {
-    var unixMs = Sheets_toUnixMs_(val, true);
+    var unixMs = Sheets_toStrictUnixMs_(val);
     if (unixMs !== null && isFinite(unixMs)) return unixMs;
     if (val === null || val === undefined || val === "") return "";
     return String(val);
   };
   var formatNullableDt = function(val) {
-    var unixMs = Sheets_toUnixMs_(val, true);
+    var unixMs = Sheets_toStrictUnixMs_(val);
     if (unixMs !== null && isFinite(unixMs)) return unixMs;
     if (val === null || val === undefined || val === "") return null;
     return String(val);
@@ -92,10 +97,9 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     createdBy: pick("createdBy", "") || "",
     modifiedBy: pick("modifiedBy", "") || "",
     deletedBy: pick("deletedBy", "") || "",
-    driveFolderUrl: pick("driveFolderUrl", "") || "",
-    createdAtUnixMs: Sheets_toUnixMs_(createdAtRaw, true),
-    modifiedAtUnixMs: Sheets_toUnixMs_(modifiedAtRaw, true),
-    deletedAtUnixMs: Sheets_toUnixMs_(deletedAtRaw, true),
+    createdAtUnixMs: Sheets_toStrictUnixMs_(createdAtRaw),
+    modifiedAtUnixMs: Sheets_toStrictUnixMs_(modifiedAtRaw),
+    deletedAtUnixMs: Sheets_toStrictUnixMs_(deletedAtRaw),
     data: {},
     dataUnixMs: {}
   };

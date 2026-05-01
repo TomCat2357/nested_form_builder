@@ -21,6 +21,37 @@ function Sheets_normalizeNumericToUnixMs_(value, allowSerialNumber) {
   return null;
 }
 
+// 固定メタ列 (createdAt / modifiedAt / deletedAt) 専用の厳密パーサ。
+// abs >= 1e11 のみ Unix ms として通し、それ未満は null を返す。
+// Sheets_normalizeNumericToUnixMs_ にある Unix 秒(×1000) や Excel シリアル値の
+// 自動再解釈をしないため、手動編集で桁を削った値が遠未来日付として復元されない。
+function Sheets_toStrictUnixMs_(value) {
+  if (value === null || value === undefined) return null;
+  if (Sheets_isValidDate_(value)) {
+    var ms = value.getTime();
+    return isFinite(ms) ? ms : null;
+  }
+  if (typeof value === "number") {
+    if (!isFinite(value)) return null;
+    return Math.abs(value) >= 100000000000 ? value : null;
+  }
+  if (typeof value === "string") {
+    var str = value.trim();
+    if (!str) return null;
+    if (/^[-+]?\d+(?:\.\d+)?$/.test(str)) {
+      var n = parseFloat(str);
+      if (!isFinite(n)) return null;
+      return Math.abs(n) >= 100000000000 ? n : null;
+    }
+    // 文字列日付はシリアル値解釈を許可しない（数値経路は上で処理済み）
+    var d = Sheets_parseDateLikeToJstDate_(str, false);
+    if (!d) return null;
+    var dms = d.getTime();
+    return isFinite(dms) && Math.abs(dms) >= 100000000000 ? dms : null;
+  }
+  return null;
+}
+
 function Sheets_parseNumericToDate_(value, allowSerialNumber) {
   var unixMs = Sheets_normalizeNumericToUnixMs_(value, allowSerialNumber);
   if (!Number.isFinite(unixMs)) return null;

@@ -20,7 +20,6 @@ test("normalizeRecordForCache は固定列を補完して保持する", () => {
   assert.equal(record.createdBy, "");
   assert.equal(record.modifiedBy, "");
   assert.equal(record.deletedBy, "");
-  assert.equal(record.driveFolderUrl, "");
   assert.deepEqual(record.data, { field_a: "value" });
   assert.deepEqual(record.dataUnixMs, {});
   assert.deepEqual(record.order, ["field_a"]);

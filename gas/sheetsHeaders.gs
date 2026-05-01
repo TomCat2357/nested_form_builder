@@ -306,7 +306,7 @@ function Sheets_buildHeaderKeyMap_(sheet) {
 }
 
 /**
- * 固定メタ列（id, No., createdAt, ..., driveFolderUrl）の 0-based インデックス マップ。
+ * 固定メタ列（id, No., createdAt, ..., deletedBy）の 0-based インデックス マップ。
  * ヘッダー パスから動的に解決するため、シート上で列位置が想定と異なっても動作する。
  * 存在しないキーはマップに含まれない（呼び出し側で有無を確認してから参照すること）。
  */

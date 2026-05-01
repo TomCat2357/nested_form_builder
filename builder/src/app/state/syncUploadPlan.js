@@ -1,9 +1,10 @@
-import { resolveUnixMs } from "../../utils/dateTime.js";
+import { resolveStrictUnixMs } from "../../utils/dateTime.js";
 
 const toUploadRecord = (entry) => {
-  const createdAtUnixMs = resolveUnixMs(entry?.createdAtUnixMs, entry?.createdAt);
-  const modifiedAtUnixMs = resolveUnixMs(entry?.modifiedAtUnixMs, entry?.modifiedAt);
-  const deletedAtUnixMs = resolveUnixMs(entry?.deletedAtUnixMs, entry?.deletedAt);
+  // 固定メタ列は Unix ms 厳密解釈（×1000 / Excel シリアル値の再解釈をしない）
+  const createdAtUnixMs = resolveStrictUnixMs(entry?.createdAtUnixMs, entry?.createdAt);
+  const modifiedAtUnixMs = resolveStrictUnixMs(entry?.modifiedAtUnixMs, entry?.modifiedAt);
+  const deletedAtUnixMs = resolveStrictUnixMs(entry?.deletedAtUnixMs, entry?.deletedAt);
   return {
     ...entry,
     createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : (entry?.createdAt || ""),

@@ -89,7 +89,7 @@ export default function MainPage() {
                 {form.settings?.formTitle || "(無題)"}
                 {form.readOnly && <span className="nf-text-warning nf-fw-600 nf-text-12 nf-ml-8">【参照のみ】</span>}
               </h2>
-              {form.description && <p className="nf-m-0 nf-text-muted">{form.description}</p>}
+              {form.description && <p className="nf-m-0 nf-text-muted nf-pre-wrap">{form.description}</p>}
               <div className="main-meta">
                 最終更新: {formatUnixMsValue(form.modifiedAtUnixMs ?? form.modifiedAt)}
               </div>

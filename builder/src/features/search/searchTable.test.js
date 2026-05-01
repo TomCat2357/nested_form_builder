@@ -754,7 +754,6 @@ test("buildExportTableData は fileUpload 列でファイル名とフォルダ�
   const entries = [
     {
       id: "rec1",
-      driveFolderUrl: "https://drive.google.com/drive/folders/F1",
       data: {
         "添付": JSON.stringify({
           files: [
@@ -767,14 +766,12 @@ test("buildExportTableData は fileUpload 列でファイル名とフォルダ�
     },
     {
       id: "rec2",
-      driveFolderUrl: "https://drive.google.com/drive/folders/F2",
       data: {
         "添付": JSON.stringify({ files: [], folderUrl: "https://drive.google.com/drive/folders/F2" }),
       },
     },
     {
       id: "rec3",
-      driveFolderUrl: "",
       data: {},
     },
   ];

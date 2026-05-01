@@ -273,7 +273,7 @@ const { selected, toggle: toggleSelect, selectAll: selectAllRaw, clear: clearSel
                       ) : (
                         <>
                           <div className="nf-fw-600">{form.settings?.formTitle || "(無題)"}</div>
-                          {form.description && <div className="nf-text-muted nf-text-12">{form.description}</div>}
+                          {form.description && <div className="nf-text-muted nf-text-12 nf-pre-wrap">{form.description}</div>}
                         </>
                       )}
                     </td>

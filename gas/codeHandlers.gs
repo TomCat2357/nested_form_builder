@@ -24,14 +24,15 @@ function SerializeDateLike_(value, options = {}) {
 function SerializeRecord_(record) {
   const serializedData = {};
   const serializedDataUnixMs = {};
+  // 固定メタ列は Unix ms 厳密解釈（×1000 / Excel シリアル値の再解釈をしない）
   const unixMsOrFallback = (value, fallbackEmpty = "") => {
-    const unixMs = Sheets_toUnixMs_(value, true);
+    const unixMs = Sheets_toStrictUnixMs_(value);
     if (Number.isFinite(unixMs)) return unixMs;
     if (value === null || value === undefined || value === "") return fallbackEmpty;
     return String(value);
   };
   const unixMsNullableOrFallback = (value) => {
-    const unixMs = Sheets_toUnixMs_(value, true);
+    const unixMs = Sheets_toStrictUnixMs_(value);
     if (Number.isFinite(unixMs)) return unixMs;
     if (value === null || value === undefined || value === "") return null;
     return String(value);
@@ -45,13 +46,8 @@ function SerializeRecord_(record) {
     });
   }
 
-  const createdInfo = SerializeDateLike_(record.createdAt, { allowSerialNumber: true });
-  const modifiedInfo = SerializeDateLike_(record.modifiedAt, { allowSerialNumber: true });
-  const deletedAtUnixMs = Sheets_toUnixMs_(record.deletedAt, true);
-
   return {
     id: String(record.id || ""),
-    driveFolderUrl: record.driveFolderUrl || "",
     "No.": record["No."] ?? "",
     modifiedBy: record.modifiedBy || "",
     createdBy: record.createdBy || "",
@@ -59,9 +55,9 @@ function SerializeRecord_(record) {
     createdAt: unixMsOrFallback(record.createdAt, ""),
     modifiedAt: unixMsOrFallback(record.modifiedAt, ""),
     deletedAt: unixMsNullableOrFallback(record.deletedAt),
-    createdAtUnixMs: createdInfo.unixMs,
-    modifiedAtUnixMs: modifiedInfo.unixMs,
-    deletedAtUnixMs,
+    createdAtUnixMs: Sheets_toStrictUnixMs_(record.createdAt),
+    modifiedAtUnixMs: Sheets_toStrictUnixMs_(record.modifiedAt),
+    deletedAtUnixMs: Sheets_toStrictUnixMs_(record.deletedAt),
     data: serializedData,
     dataUnixMs: serializedDataUnixMs
   };

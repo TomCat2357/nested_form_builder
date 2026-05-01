@@ -1,5 +1,5 @@
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
-import { resolveFileDisplayName, normalizeFileUploadEntries } from "../../core/collect.js";
+import { resolveFileDisplayName, normalizeFileUploadEntries, parseFileUploadStorage } from "../../core/collect.js";
 import {
   formatUnixMsDateTimeSec,
   toUnixMs,
@@ -156,8 +156,8 @@ export const createDisplayColumn = (path, sourceType = "", options = {}) => {
     searchAliases: Array.isArray(options.searchAliases) ? options.searchAliases.filter(Boolean) : [],
     getValue: (entry, column) => {
       if (actionKind === "folderLink") {
-        const folderUrl = typeof entry?.driveFolderUrl === "string" ? entry.driveFolderUrl.trim() : "";
         const rawDataValue = entry?.data?.[path];
+        const folderUrl = parseFileUploadStorage(rawDataValue).folderUrl || "";
         const files = normalizeFileUploadEntries(rawDataValue);
         const hideExt = options?.fieldMeta?.hideFileExtension === true;
         const fileItems = files.map((file) => ({

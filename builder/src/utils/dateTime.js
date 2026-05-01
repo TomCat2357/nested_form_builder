@@ -86,6 +86,43 @@ export const resolveUnixMs = (...candidates) => {
   return null;
 };
 
+// 固定メタ列 (createdAt / modifiedAt / deletedAt) 専用の厳密パーサ。
+// abs >= UNIX_MS_THRESHOLD のみ Unix ms として通し、それ未満は null を返す。
+// Unix 秒(×1000) や Excel シリアル値の自動再解釈をしないため、手動編集で
+// 桁を削った値が遠未来日付として復元されることがない。
+export const toStrictUnixMs = (value) => {
+  if (value === null || value === undefined) return null;
+  if (value instanceof Date) {
+    const ms = value.getTime();
+    return Number.isFinite(ms) ? ms : null;
+  }
+  if (typeof value === "number") {
+    if (!Number.isFinite(value)) return null;
+    return Math.abs(value) >= UNIX_MS_THRESHOLD ? value : null;
+  }
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    if (/^[-+]?\d+(?:\.\d+)?$/.test(trimmed)) {
+      const numeric = Number(trimmed);
+      if (!Number.isFinite(numeric)) return null;
+      return Math.abs(numeric) >= UNIX_MS_THRESHOLD ? numeric : null;
+    }
+    const parsed = parseStringToUnixMs(trimmed);
+    if (!Number.isFinite(parsed)) return null;
+    return Math.abs(parsed) >= UNIX_MS_THRESHOLD ? parsed : null;
+  }
+  return null;
+};
+
+export const resolveStrictUnixMs = (...candidates) => {
+  for (const candidate of candidates) {
+    const unixMs = toStrictUnixMs(candidate);
+    if (Number.isFinite(unixMs)) return unixMs;
+  }
+  return null;
+};
+
 const buildFormatter = (options) => new Intl.DateTimeFormat(DEFAULT_LOCALE, { timeZone: TIME_ZONE, hour12: false, ...options });
 
 const formatFromPartsMs = (formatter, unixMs) => {

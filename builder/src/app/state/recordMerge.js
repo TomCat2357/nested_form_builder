@@ -4,7 +4,7 @@
  * - Used by recordsCache.js for cache operations and by tests directly
  */
 
-import { resolveUnixMs } from "../../utils/dateTime.js";
+import { resolveStrictUnixMs } from "../../utils/dateTime.js";
 
 // ---------------------------------------------------------------------------
 // Timestamp helpers
@@ -16,7 +16,9 @@ import { resolveUnixMs } from "../../utils/dateTime.js";
  */
 export const getComparableModifiedAt = (record) => {
   if (!record) return 0;
-  return resolveUnixMs(record.modifiedAtUnixMs, record.modifiedAt) ?? 0;
+  // 固定メタ列は Unix ms 厳密解釈：手動編集で削れた値が遠未来扱いになって
+  // マージで常に勝ってしまうのを防ぐ
+  return resolveStrictUnixMs(record.modifiedAtUnixMs, record.modifiedAt) ?? 0;
 };
 
 export const withNormalizedModifiedAt = (record) => {
@@ -36,9 +38,10 @@ const normalizeObjectRecord = (value) => (
 
 export const normalizeRecordForCache = (record, { formId } = {}) => {
   const baseRecord = record && typeof record === "object" ? record : {};
-  const createdAtUnixMs = resolveUnixMs(baseRecord.createdAtUnixMs, baseRecord.createdAt);
-  const modifiedAtUnixMs = resolveUnixMs(baseRecord.modifiedAtUnixMs, baseRecord.modifiedAt);
-  const deletedAtUnixMs = resolveUnixMs(baseRecord.deletedAtUnixMs, baseRecord.deletedAt);
+  // 固定メタ列は Unix ms 厳密解釈（手動編集で桁を削った値を遠未来日付に再解釈しない）
+  const createdAtUnixMs = resolveStrictUnixMs(baseRecord.createdAtUnixMs, baseRecord.createdAt);
+  const modifiedAtUnixMs = resolveStrictUnixMs(baseRecord.modifiedAtUnixMs, baseRecord.modifiedAt);
+  const deletedAtUnixMs = resolveStrictUnixMs(baseRecord.deletedAtUnixMs, baseRecord.deletedAt);
   const normalizedData = normalizeObjectRecord(baseRecord.data);
   const normalizedDataUnixMs = normalizeObjectRecord(baseRecord.dataUnixMs);
   const normalizedOrder = Array.isArray(baseRecord.order) && baseRecord.order.length > 0
@@ -51,7 +54,6 @@ export const normalizeRecordForCache = (record, { formId } = {}) => {
     id: baseRecord.id ?? baseRecord.entryId ?? "",
     "No.": baseRecord["No."] ?? "",
     formId: formId ?? baseRecord.formId ?? "",
-    driveFolderUrl: baseRecord.driveFolderUrl ?? "",
     createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : (baseRecord.createdAt ?? ""),
     createdAtUnixMs: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : null,
     modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : (baseRecord.modifiedAt ?? ""),

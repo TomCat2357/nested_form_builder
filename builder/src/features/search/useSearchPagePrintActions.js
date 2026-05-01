@@ -5,6 +5,8 @@ import {
   collectFileUploadMeta,
 } from "../preview/printDocument.js";
 import { restoreResponsesFromData, collectFileUploadFolderUrls } from "../../utils/responses.js";
+import { collectFileUploadFields } from "../../core/schema.js";
+import { parseFileUploadStorage } from "../../core/collect.js";
 import {
   createRecordPrintDocument,
   executeRecordOutputAction,
@@ -28,12 +30,14 @@ const buildRecordTemplateBase = (normalizedSchema, entry) => {
     entry?.dataUnixMs || {},
   );
   const folderUrlsByField = collectFileUploadFolderUrls(normalizedSchema, entry?.data || {});
+  const primaryFieldId = collectFileUploadFields(normalizedSchema)[0]?.id || "";
+  const primaryFolderUrl = primaryFieldId ? (folderUrlsByField[primaryFieldId] || "") : "";
   const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
   const fileUploadMeta = collectFileUploadMeta(normalizedSchema, {
     responses: restoredResponses,
     folderUrlsByField,
   });
-  return { restoredResponses, folderUrlsByField, fieldValues, fileUploadMeta };
+  return { restoredResponses, folderUrlsByField, primaryFolderUrl, fieldValues, fileUploadMeta };
 };
 
 const buildRecordTemplateContext = ({ base, entry, form, fieldLabels }) => ({
@@ -76,8 +80,8 @@ const buildStandardPrintPayload = ({ base, entry, form, normalizedSchema, omitEm
     recordId: entry.id,
     omitEmptyRows: omitEmptyRowsOnPrint,
     driveFolderState: {
-      resolvedUrl: entry.driveFolderUrl || "",
-      inputUrl: entry.driveFolderUrl || "",
+      resolvedUrl: base.primaryFolderUrl,
+      inputUrl: base.primaryFolderUrl,
     },
     folderUrlsByField: base.folderUrlsByField,
   });
@@ -230,11 +234,12 @@ export function useSearchPagePrintActions({
     if (!column || !entry) return;
 
     if (column.actionKind === "folderLink") {
-      if (!entry.driveFolderUrl) {
+      const folderUrl = parseFileUploadStorage(entry?.data?.[column.path]).folderUrl || "";
+      if (!folderUrl) {
         showAlert("保存先フォルダが未確定です。");
         return;
       }
-      window.open(entry.driveFolderUrl, "_blank", "noopener,noreferrer");
+      window.open(folderUrl, "_blank", "noopener,noreferrer");
       return;
     }
 

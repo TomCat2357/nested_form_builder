@@ -18,7 +18,8 @@ function SyncRecords_(ctx) {
     var getRecordModifiedAtUnixMs = function(record) {
       var modifiedAtUnixMs = parseInt(record && record.modifiedAtUnixMs, 10);
       if (isFinite(modifiedAtUnixMs) && modifiedAtUnixMs > 0) return modifiedAtUnixMs;
-      return Sheets_toUnixMs_(record && record.modifiedAt, true) || 0;
+      // 固定メタ列は Unix ms 厳密解釈
+      return Sheets_toStrictUnixMs_(record && record.modifiedAt) || 0;
     };
 
     var buildReadOnlyResult = function() {
@@ -90,7 +91,6 @@ function SyncRecords_(ctx) {
       Sheets_ensureHeaderMatrix_(sheet, order);
       var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
       var fixedColMap = Sheets_buildFixedColMapFromSheet_(sheet);
-      var driveFolderUrlCol = fixedColMap.hasOwnProperty("driveFolderUrl") ? fixedColMap.driveFolderUrl : -1;
 
       var lastColumn = Math.max(sheet.getLastColumn(), 10);
       var lastRow = sheet.getLastRow();
@@ -122,7 +122,7 @@ function SyncRecords_(ctx) {
         var rec = uploadRecords[j];
         var normalizedRecordData = Sheets_normalizeRecordDataKeys_(rec && rec.data);
         var recId = rec.id || Nfb_generateRecordId_();
-        var cacheModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || Sheets_toUnixMs_(rec.modifiedAt, true) || 0;
+        var cacheModifiedAt = parseInt(rec.modifiedAtUnixMs, 10) || Sheets_toStrictUnixMs_(rec.modifiedAt) || 0;
         var recModifiedAt = cacheModifiedAt || nowMs;
 
         var localIndex = existingRowMap.hasOwnProperty(recId) ? existingRowMap[recId] : -1;
@@ -173,9 +173,6 @@ function SyncRecords_(ctx) {
             rowData[1] = insertMeta.recordNo;
             rowData[2] = insertMeta.createdAt;
             rowData[5] = insertMeta.createdBy;
-            if (driveFolderUrlCol >= 0) {
-              rowData[driveFolderUrlCol] = rec.driveFolderUrl || "";
-            }
             maxNo = Math.max(maxNo, insertMeta.recordNo);
 
             localIndex = existingData.length;
@@ -198,7 +195,7 @@ function SyncRecords_(ctx) {
               mode: "overwrite",
               fixedColMap: fixedColMap,
               toUnixMs: function(value) {
-                return Sheets_toUnixMs_(value, true);
+                return Sheets_toStrictUnixMs_(value);
               },
             });
           }
@@ -210,7 +207,7 @@ function SyncRecords_(ctx) {
             rowFormats[3] = "0";
 
             if (rec.deletedAt) {
-              rowData[4] = Sheets_toUnixMs_(rec.deletedAt, true) || rec.deletedAt;
+              rowData[4] = Sheets_toStrictUnixMs_(rec.deletedAt) || rec.deletedAt;
               rowData[7] = rec.deletedBy || currentUserEmail;
               rowFormats[4] = "0";
             } else {

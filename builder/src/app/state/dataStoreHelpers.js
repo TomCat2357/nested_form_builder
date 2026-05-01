@@ -1,5 +1,5 @@
 import { genRecordId } from "../../core/ids.js";
-import { resolveUnixMs } from "../../utils/dateTime.js";
+import { resolveStrictUnixMs } from "../../utils/dateTime.js";
 import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_SHEET_NAME, MS_PER_DAY } from "../../core/constants.js";
 import { deleteRecordsFromCache } from "./recordsCache.js";
 import { normalizeRecordForCache } from "./recordMerge.js";
@@ -23,7 +23,8 @@ export const normalizeRetentionDays = (value) => {
 export const getDeletedRetentionDays = (form) => normalizeRetentionDays(form?.settings?.deletedRetentionDays);
 
 export const isDeletedEntryExpired = (entry, retentionDays, nowMs = Date.now()) => {
-  const deletedAtUnixMs = resolveUnixMs(entry?.deletedAtUnixMs, entry?.deletedAt);
+  // 固定メタ列は Unix ms 厳密解釈（×1000 / Excel シリアル値の再解釈をしない）
+  const deletedAtUnixMs = resolveStrictUnixMs(entry?.deletedAtUnixMs, entry?.deletedAt);
   if (!Number.isFinite(deletedAtUnixMs) || deletedAtUnixMs <= 0) return false;
   return deletedAtUnixMs <= nowMs - retentionDays * MS_PER_DAY;
 };
@@ -107,8 +108,8 @@ export const buildUpsertEntryRecord = ({
   nextRecordNo = null,
 } = {}) => {
   const safePayload = payload && typeof payload === "object" ? payload : {};
-  const existingCreatedAtUnixMs = resolveUnixMs(existingEntry?.createdAtUnixMs, existingEntry?.createdAt);
-  let createdAtUnixMs = resolveUnixMs(safePayload.createdAtUnixMs, safePayload.createdAt);
+  const existingCreatedAtUnixMs = resolveStrictUnixMs(existingEntry?.createdAtUnixMs, existingEntry?.createdAt);
+  let createdAtUnixMs = resolveStrictUnixMs(safePayload.createdAtUnixMs, safePayload.createdAt);
   if (!Number.isFinite(createdAtUnixMs)) createdAtUnixMs = existingCreatedAtUnixMs;
   if (!Number.isFinite(createdAtUnixMs)) createdAtUnixMs = now;
 

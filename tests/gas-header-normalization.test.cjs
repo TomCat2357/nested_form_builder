@@ -14,7 +14,6 @@ function loadGasContext() {
     ["createdBy"],
     ["modifiedBy"],
     ["deletedBy"],
-    ["driveFolderUrl"],
   ];
   const reservedKeys = {};
   for (const pathParts of fixedHeaderPaths) {

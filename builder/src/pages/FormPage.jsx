@@ -354,15 +354,11 @@ export default function FormPage() {
     const restored = restoreResponsesFromData(schema, nextEntry?.data || {}, nextEntry?.dataUnixMs || {});
     const folderUrlsByField = collectFileUploadFolderUrls(schema, nextEntry?.data || {});
     const uploadFields = collectFileUploadFields(schema);
-    const primaryFieldId = uploadFields[0]?.id || "";
-    const primaryFolderUrl = nextEntry?.driveFolderUrl || "";
     const nextDriveFolderStates = {};
     uploadFields.forEach((field) => {
       const fid = field?.id;
       if (!fid) return;
-      const folderUrl = folderUrlsByField[fid]
-        || (fid === primaryFieldId ? primaryFolderUrl : "")
-        || "";
+      const folderUrl = folderUrlsByField[fid] || "";
       nextDriveFolderStates[fid] = normalizeDriveFolderState({
         resolvedUrl: folderUrl,
         inputUrl: folderUrl,
@@ -902,18 +898,10 @@ export default function FormPage() {
       });
     }
 
-    // Primary folder URL = first fileUpload field's finalized folderUrl (for backwards compat)
-    const primaryFieldId = uploadFields[0]?.id || "";
-    const finalizedDriveFolderUrl = options.unlinkDriveFolder === true
-      ? ""
-      : (primaryFieldId && finalizedFolderUrlByField[primaryFieldId])
-        || "";
-
     const saved = await dataStore.upsertEntry(form.id, {
       id: payloadWithFormId.id,
       data: saveData,
       order: saveOrder,
-      driveFolderUrl: finalizedDriveFolderUrl,
       createdBy,
       modifiedBy,
       "No.": normalizedRecordNo === "" ? entry?.["No."] : normalizedRecordNo,
@@ -937,7 +925,6 @@ export default function FormPage() {
             responses: saveData,
             order: saveOrder,
             id: saved.id,
-            driveFolderUrl: finalizedDriveFolderUrl,
             createdAt: saved.createdAt,
             createdAtUnixMs: saved.createdAtUnixMs,
             createdBy: saved.createdBy,

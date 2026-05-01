@@ -51,11 +51,6 @@ function Sync_fillEmptySheetCellsFromRecord_(params) {
 }
 
 function Sync_getFixedMetaColumnValue_(record, key, toUnixMs) {
-  if (key === "driveFolderUrl") {
-    if (!Object.prototype.hasOwnProperty.call(record, key)) return "";
-    return String(record[key] == null ? "" : record[key]);
-  }
-
   if (key === "No.") {
     var parsedRecordNo = parseInt(record["No."], 10);
     return isFinite(parsedRecordNo) && parsedRecordNo > 0 ? parsedRecordNo : "";
@@ -86,22 +81,18 @@ function Sync_syncFixedMetaColumnsFromRecord_(params) {
   var toUnixMs = params && typeof params.toUnixMs === "function"
     ? params.toUnixMs
     : function(value) {
-      if (typeof Sheets_toUnixMs_ === "function") {
-        return Sheets_toUnixMs_(value, true);
+      // 固定メタ列は Unix ms 厳密解釈（×1000 / Excel シリアル値の再解釈をしない）
+      if (typeof Sheets_toStrictUnixMs_ === "function") {
+        return Sheets_toStrictUnixMs_(value);
       }
       var parsed = parseInt(value, 10);
       return isFinite(parsed) ? parsed : null;
     };
-  // driveFolderUrl は古いシートでは列位置が異なる（あるいは欠落している）ため、
-  // 呼び出し元から fixedColMap を受け取って動的に解決する。未指定時は従来の既定位置 (8)。
   var fixedColMap = params && params.fixedColMap ? params.fixedColMap : null;
   var resolveColIdx = function(key, fallback) {
     if (fixedColMap && fixedColMap.hasOwnProperty(key)) return fixedColMap[key];
     return fallback;
   };
-  var driveFolderUrlColIdx = fixedColMap
-    ? (fixedColMap.hasOwnProperty("driveFolderUrl") ? fixedColMap.driveFolderUrl : -1)
-    : 8;
 
   var baseSpecs = mode === "overwrite"
     ? [
@@ -112,7 +103,6 @@ function Sync_syncFixedMetaColumnsFromRecord_(params) {
       { key: "createdBy", colIdx: resolveColIdx("createdBy", 5), numberFormat: null },
       { key: "modifiedBy", colIdx: resolveColIdx("modifiedBy", 6), numberFormat: null },
       { key: "deletedBy", colIdx: resolveColIdx("deletedBy", 7), numberFormat: null },
-      { key: "driveFolderUrl", colIdx: driveFolderUrlColIdx, numberFormat: null },
     ]
     : [
       { key: "No.", colIdx: resolveColIdx("No.", 1), numberFormat: "0" },
@@ -121,7 +111,6 @@ function Sync_syncFixedMetaColumnsFromRecord_(params) {
       { key: "createdBy", colIdx: resolveColIdx("createdBy", 5), numberFormat: null },
       { key: "modifiedBy", colIdx: resolveColIdx("modifiedBy", 6), numberFormat: null },
       { key: "deletedBy", colIdx: resolveColIdx("deletedBy", 7), numberFormat: null },
-      { key: "driveFolderUrl", colIdx: driveFolderUrlColIdx, numberFormat: null },
     ];
   // colIdx < 0 のものは対象外（シートに該当列が存在しない）
   var specs = [];
@@ -162,8 +151,9 @@ function Sync_resolveNewRecordMetadata_(params) {
   var toUnixMs = params && typeof params.toUnixMs === "function"
     ? params.toUnixMs
     : function(value) {
-      if (typeof Sheets_toUnixMs_ === "function") {
-        return Sheets_toUnixMs_(value, true);
+      // 固定メタ列は Unix ms 厳密解釈（×1000 / Excel シリアル値の再解釈をしない）
+      if (typeof Sheets_toStrictUnixMs_ === "function") {
+        return Sheets_toStrictUnixMs_(value);
       }
       var parsed = parseInt(value, 10);
       return isFinite(parsed) ? parsed : null;
