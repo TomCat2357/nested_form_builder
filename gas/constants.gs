@@ -12,8 +12,14 @@ var NFB_PROPERTY_STORE_MODE_USER = "user";
 
 // フォーム管理関連（Google Drive）
 var FORMS_FOLDER_NAME = "Nested Form Builder - Forms";
-var FORMS_PROPERTY_KEY = "nfb.forms.mapping"; 
-var FORMS_PROPERTY_VERSION = 2; 
+var FORMS_PROPERTY_KEY = "nfb.forms.mapping";
+var FORMS_PROPERTY_VERSION = 2;
+
+// ダッシュボード管理関連（Google Drive）
+var DASHBOARDS_FOLDER_NAME = "Nested Form Builder - Dashboards";
+var DASHBOARDS_PROPERTY_KEY = "nfb.dashboards.mapping";
+var DASHBOARDS_PROPERTY_VERSION = 1;
+var DASHBOARDS_SCHEMA_VERSION = 1;
 
 // API/バッチ処理関連
 var NFB_DRIVE_API_BATCH_SIZE = 100;
@@ -165,4 +171,8 @@ function Nfb_generateFormId_() {
 
 function Nfb_generateRecordId_() {
   return Nfb_generateCompactId_("r");
+}
+
+function Nfb_generateDashboardId_() {
+  return Nfb_generateCompactId_("dsh");
 }

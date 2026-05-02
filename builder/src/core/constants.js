@@ -7,12 +7,13 @@ export const GAS_ERROR_CODE_LOCK_TIMEOUT = "LOCK_TIMEOUT";
 
 // IndexedDB ストレージ関連
 export const DB_NAME = "NestedFormBuilder";
-export const DB_VERSION = 4;
+export const DB_VERSION = 5;
 export const STORE_NAMES = {
   forms: "formsCache",
   records: "recordsCache",
   recordsMeta: "recordsCacheMeta",
   settings: "settingsStore",
+  dashboards: "dashboardsCache",
 };
 
 // キャッシュポリシー（ミリ秒）

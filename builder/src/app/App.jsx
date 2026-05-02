@@ -9,6 +9,9 @@ import FormPage from "../pages/FormPage.jsx";
 import AdminDashboardPage from "../pages/AdminDashboardPage.jsx";
 import AdminFormEditorPage from "../pages/AdminFormEditorPage.jsx";
 import AdminSettingsPage from "../pages/AdminSettingsPage.jsx";
+import DashboardsManagementPage from "../pages/DashboardsManagementPage.jsx";
+import DashboardEditorPage from "../pages/DashboardEditorPage.jsx";
+import DashboardViewPage from "../pages/DashboardViewPage.jsx";
 import ConfigPage from "../pages/ConfigPage.jsx";
 import NotFoundPage from "../pages/NotFoundPage.jsx";
 
@@ -32,6 +35,21 @@ function FormsRoute({ children }) {
     return <Navigate to="/" replace />;
   }
 
+  return children;
+}
+
+/**
+ * ダッシュボード管理ルートのラッパー
+ * 管理者のみ許可
+ */
+function DashboardsRoute({ children }) {
+  const { isAdmin, formId } = useAuth();
+  if (!isAdmin) {
+    if (formId) {
+      return <Navigate to={`/search?form=${formId}`} replace />;
+    }
+    return <Navigate to="/" replace />;
+  }
   return children;
 }
 
@@ -163,6 +181,38 @@ function AppRoutes() {
           <FormsRoute>
             <AdminFormEditorPage />
           </FormsRoute>
+        }
+      />
+      <Route
+        path="/dashboards"
+        element={
+          <DashboardsRoute>
+            <DashboardsManagementPage />
+          </DashboardsRoute>
+        }
+      />
+      <Route
+        path="/dashboards/new"
+        element={
+          <DashboardsRoute>
+            <DashboardEditorPage />
+          </DashboardsRoute>
+        }
+      />
+      <Route
+        path="/dashboards/:id/edit"
+        element={
+          <DashboardsRoute>
+            <DashboardEditorPage />
+          </DashboardsRoute>
+        }
+      />
+      <Route
+        path="/dashboards/:id/view"
+        element={
+          <DashboardsRoute>
+            <DashboardViewPage />
+          </DashboardsRoute>
         }
       />
       <Route

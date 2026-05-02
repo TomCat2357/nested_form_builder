@@ -171,6 +171,57 @@ export const importFormsFromDrive = async (url) => {
   return { forms: r.forms || [], skipped: r.skipped || 0, parseFailed: r.parseFailed || 0, totalFiles: r.totalFiles || 0 };
 };
 export const registerImportedForm = (payload) => { if (!payload || !payload.form || !payload.fileId) throw new Error("form and fileId are required"); return fetchGasApi("nfbRegisterImportedForm", payload, "Register imported form failed"); };
+const validateDashboardIds = (dashboardIds) => {
+  if (!Array.isArray(dashboardIds) || dashboardIds.length === 0) throw new Error("dashboardIds array is required");
+  return dashboardIds;
+};
+
+export const listDashboards = async (options = {}) => {
+  const r = await fetchGasApi("nfbListDashboards", options, "List dashboards failed");
+  return { dashboards: r.dashboards || [], loadFailures: r.loadFailures || [] };
+};
+export const getDashboard = async (dashboardId) => {
+  if (!dashboardId) throw new Error("dashboardId is required");
+  const r = await fetchGasApi("nfbGetDashboard", dashboardId, "Get dashboard failed");
+  return r.dashboard || null;
+};
+export const saveDashboard = async (dashboard, targetUrl = null, saveMode = "auto") => {
+  if (!dashboard) throw new Error("dashboard is required");
+  const r = await fetchGasApi("nfbSaveDashboard", { dashboard, targetUrl, saveMode }, "Save dashboard failed");
+  return { dashboard: r.dashboard, fileUrl: r.fileUrl, dashboardId: r.dashboardId };
+};
+export const copyDashboard = async (dashboardId) => {
+  if (!dashboardId) throw new Error("dashboardId is required");
+  const r = await fetchGasApi("nfbCopyDashboard", dashboardId, "Copy dashboard failed");
+  return { dashboard: r.dashboard, fileUrl: r.fileUrl, dashboardId: r.dashboardId };
+};
+export const deleteDashboardsFromDrive = createGasEndpoint({ fnName: "nfbDeleteDashboards", validate: validateDashboardIds, defaultError: "Batch delete dashboards failed" });
+export const archiveDashboards = createGasEndpoint({ fnName: "nfbArchiveDashboards", validate: validateDashboardIds, defaultError: "Batch archive dashboards failed" });
+export const unarchiveDashboards = createGasEndpoint({ fnName: "nfbUnarchiveDashboards", validate: validateDashboardIds, defaultError: "Batch unarchive dashboards failed" });
+export const setDashboardsReadOnly = createGasEndpoint({ fnName: "nfbSetDashboardsReadOnly", validate: validateDashboardIds, defaultError: "Batch set dashboards readOnly failed" });
+export const clearDashboardsReadOnly = createGasEndpoint({ fnName: "nfbClearDashboardsReadOnly", validate: validateDashboardIds, defaultError: "Batch clear dashboards readOnly failed" });
+export const importDashboardsFromDrive = async (url) => {
+  if (!url) throw new Error("Google Drive URL is required");
+  const r = await fetchGasApi("nfbImportDashboardsFromDrive", url, "Import dashboards from Drive failed");
+  return { dashboards: r.dashboards || [], skipped: r.skipped || 0, parseFailed: r.parseFailed || 0, totalFiles: r.totalFiles || 0 };
+};
+export const registerImportedDashboard = (payload) => {
+  if (!payload || !payload.dashboard || !payload.fileId) throw new Error("dashboard and fileId are required");
+  return fetchGasApi("nfbRegisterImportedDashboard", payload, "Register imported dashboard failed");
+};
+export const getDashboardTemplate = async (templateUrl) => {
+  if (!templateUrl) throw new Error("templateUrl is required");
+  const r = await fetchGasApi("nfbGetDashboardTemplate", templateUrl, "Get dashboard template failed");
+  return {
+    html: r.html || "",
+    fileId: r.fileId || "",
+    fileName: r.fileName || "",
+    fileUrl: r.fileUrl || "",
+    fetchedAt: r.fetchedAt || 0,
+    fromCache: !!r.fromCache,
+  };
+};
+
 export const importThemeFromDrive = async (url) => {
   if (!url) throw new Error("Google Drive URL is required");
   const r = await fetchGasApi("nfbImportThemeFromDrive", url, "Theme import failed");

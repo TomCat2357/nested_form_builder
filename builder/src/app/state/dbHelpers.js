@@ -44,6 +44,12 @@ export function openDB() {
       if (!db.objectStoreNames.contains(STORE_NAMES.settings)) {
         db.createObjectStore(STORE_NAMES.settings, { keyPath: 'key' });
       }
+
+      // Dashboards cache store
+      if (!db.objectStoreNames.contains(STORE_NAMES.dashboards)) {
+        const dashboardsStore = db.createObjectStore(STORE_NAMES.dashboards, { keyPath: 'id' });
+        dashboardsStore.createIndex('archived', 'archived', { unique: false });
+      }
     };
   });
 }
