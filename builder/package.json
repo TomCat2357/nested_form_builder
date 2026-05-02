@@ -10,6 +10,8 @@
   },
   "dependencies": {
     "@rollup/rollup-win32-x64-msvc": "^4.57.1",
+    "alasql": "^4.6.6",
+    "echarts": "^5.6.0",
     "exceljs": "^4.4.0",
     "jszip": "^3.10.1",
     "react": "^19.1.1",

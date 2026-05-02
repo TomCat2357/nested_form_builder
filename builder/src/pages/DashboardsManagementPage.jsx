@@ -119,6 +119,10 @@ export default function DashboardsManagementPage() {
     navigate(`/dashboards/${dashboardId}/edit`);
   };
 
+  const goToView = (dashboardId) => {
+    navigate(`/dashboards/${dashboardId}/view`);
+  };
+
   const handleCreateNew = () => {
     navigate("/dashboards/new");
   };
@@ -193,7 +197,7 @@ export default function DashboardsManagementPage() {
                     data-clickable={isLoadError ? "false" : "true"}
                     data-error={isLoadError ? "true" : "false"}
                     onClick={() => {
-                      if (!isLoadError) goToEditor(dashboard.id);
+                      if (!isLoadError) goToView(dashboard.id);
                     }}
                   >
                     <td className="search-td" onClick={(e) => e.stopPropagation()}>
@@ -214,7 +218,19 @@ export default function DashboardsManagementPage() {
                       )}
                     </td>
                     <td className="search-td">
-                      <span className="admin-form-id">{dashboard.id}</span>
+                      <div className="nf-row nf-gap-6">
+                        <span className="admin-form-id">{dashboard.id}</span>
+                        {!isLoadError && (
+                          <button
+                            type="button"
+                            className="admin-copy-btn"
+                            onClick={(e) => { e.stopPropagation(); goToEditor(dashboard.id); }}
+                            title="編集画面を開く"
+                          >
+                            ✏
+                          </button>
+                        )}
+                      </div>
                     </td>
                     <td className="search-td">{lastUpdated}</td>
                     <td className="search-td">

@@ -11,6 +11,7 @@ import AdminFormEditorPage from "../pages/AdminFormEditorPage.jsx";
 import AdminSettingsPage from "../pages/AdminSettingsPage.jsx";
 import DashboardsManagementPage from "../pages/DashboardsManagementPage.jsx";
 import DashboardEditorPage from "../pages/DashboardEditorPage.jsx";
+import DashboardViewPage from "../pages/DashboardViewPage.jsx";
 import ConfigPage from "../pages/ConfigPage.jsx";
 import NotFoundPage from "../pages/NotFoundPage.jsx";
 
@@ -203,6 +204,14 @@ function AppRoutes() {
         element={
           <DashboardsRoute>
             <DashboardEditorPage />
+          </DashboardsRoute>
+        }
+      />
+      <Route
+        path="/dashboards/:id/view"
+        element={
+          <DashboardsRoute>
+            <DashboardViewPage />
           </DashboardsRoute>
         }
       />
