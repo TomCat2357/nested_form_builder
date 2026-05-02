@@ -1,4 +1,5 @@
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
+import { DEFAULT_SHEET_NAME } from "../core/constants.js";
 
 export const hasScriptRun = () => typeof google !== "undefined" && google?.script?.run;
 
@@ -89,35 +90,35 @@ const validateSpreadsheetId = (spreadsheetId) => {
   return normalizeSpreadsheetId(spreadsheetId);
 };
 
-export const submitResponses = ({ spreadsheetId, sheetName = "Data", payload }) => {
+export const submitResponses = ({ spreadsheetId, payload }) => {
   const normalizedId = validateSpreadsheetId(spreadsheetId);
-  return fetchGasApi("saveResponses", { ...payload, spreadsheetId: normalizedId, sheetName }, "Apps Script call failed");
+  return fetchGasApi("saveResponses", { ...payload, spreadsheetId: normalizedId, sheetName: DEFAULT_SHEET_NAME }, "Apps Script call failed");
 };
 
-export const acquireSaveLock = ({ spreadsheetId, sheetName = "Data" }) => {
+export const acquireSaveLock = ({ spreadsheetId }) => {
   const normalizedId = validateSpreadsheetId(spreadsheetId);
-  return fetchGasApi("nfbAcquireSaveLock", { spreadsheetId: normalizedId, sheetName }, "Apps Script call failed");
+  return fetchGasApi("nfbAcquireSaveLock", { spreadsheetId: normalizedId, sheetName: DEFAULT_SHEET_NAME }, "Apps Script call failed");
 };
 
-export const deleteEntry = ({ spreadsheetId, sheetName = "Data", entryId }) => {
+export const deleteEntry = ({ spreadsheetId, entryId }) => {
   const normalizedId = validateSpreadsheetId(spreadsheetId);
   if (!entryId) throw new Error("entryId is required");
-  return fetchGasApi("deleteRecord", { spreadsheetId: normalizedId, sheetName, id: entryId }, "Delete failed");
+  return fetchGasApi("deleteRecord", { spreadsheetId: normalizedId, sheetName: DEFAULT_SHEET_NAME, id: entryId }, "Delete failed");
 };
 
-export const getEntry = async ({ spreadsheetId, sheetName = "Data", entryId, rowIndexHint = null }) => {
+export const getEntry = async ({ spreadsheetId, entryId, rowIndexHint = null }) => {
   const normalizedId = validateSpreadsheetId(spreadsheetId);
   if (!entryId) throw new Error("entryId is required");
-  const result = await fetchGasApi("getRecord", { spreadsheetId: normalizedId, sheetName, id: entryId, rowIndexHint }, "Get record failed");
+  const result = await fetchGasApi("getRecord", { spreadsheetId: normalizedId, sheetName: DEFAULT_SHEET_NAME, id: entryId, rowIndexHint }, "Get record failed");
   return { record: result.record || null, rowIndex: typeof result.rowIndex === "number" ? result.rowIndex : null };
 };
 
-export const listEntries = async ({ spreadsheetId, sheetName = "Data", formId = null, lastSpreadsheetReadAt = null, forceFullSync = false }) => {
+export const listEntries = async ({ spreadsheetId, formId = null, lastSpreadsheetReadAt = null, forceFullSync = false }) => {
   const normalizedId = validateSpreadsheetId(spreadsheetId);
   const normalizedLastSpreadsheetReadAt = Number(lastSpreadsheetReadAt);
   const payload = {
     spreadsheetId: normalizedId,
-    sheetName,
+    sheetName: DEFAULT_SHEET_NAME,
     formId,
     forceFullSync: !!forceFullSync,
   };

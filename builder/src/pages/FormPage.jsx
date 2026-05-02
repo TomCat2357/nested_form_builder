@@ -763,7 +763,6 @@ export default function FormPage() {
     const modifiedBy = userEmail || entry?.modifiedBy || "";
     const settings = form.settings || {};
     const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
-    const sheetName = settings.sheetName || "Data";
     const requiresSpreadsheetSave = Boolean(spreadsheetId && hasScriptRun());
     const payloadWithFormId = { ...payload, formId: form.id };
 
@@ -916,10 +915,9 @@ export default function FormPage() {
     }
 
     if (requiresSpreadsheetSave) {
-      void acquireSaveLock({ spreadsheetId, sheetName })
+      void acquireSaveLock({ spreadsheetId })
         .then(() => submitResponses({
           spreadsheetId,
-          sheetName,
           payload: {
             ...payloadWithFormId,
             responses: saveData,

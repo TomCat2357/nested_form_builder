@@ -147,12 +147,13 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       Logger.log("[Forms_saveForm_] Created spreadsheet: " + settingsResult.spreadsheetUrl);
     }
     var settingsForSave = (settingsResult && settingsResult.settings) ? settingsResult.settings : (form.settings || {});
+    // シート名は常に NFB_DEFAULT_SHEET_NAME に固定するため、過去フォームの sheetName は破棄する
+    delete settingsForSave.sheetName;
 
     // スプレッドシートのヘッダーを初期化
     if (settingsResult && settingsResult.spreadsheetId && Array.isArray(form.schema) && form.schema.length > 0) {
       try {
-        var sheetName = settingsForSave.sheetName || NFB_DEFAULT_SHEET_NAME;
-        Sheets_initializeHeaders_(settingsResult.spreadsheetId, sheetName, form.schema);
+        Sheets_initializeHeaders_(settingsResult.spreadsheetId, NFB_DEFAULT_SHEET_NAME, form.schema);
       } catch (headerErr) {
         Logger.log("[Forms_saveForm_] Header init failed (non-critical): " + headerErr);
       }

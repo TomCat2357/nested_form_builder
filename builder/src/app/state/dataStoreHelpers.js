@@ -10,7 +10,7 @@ export const getSheetConfig = (form) => {
 
   return {
     spreadsheetId,
-    sheetName: form?.settings?.sheetName || DEFAULT_SHEET_NAME,
+    sheetName: DEFAULT_SHEET_NAME,
   };
 };
 
