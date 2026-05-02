@@ -42,6 +42,7 @@ const FILE_ORDER = [
   'dashboardsStorage.gs',
   'dashboardsCrud.gs',
   'dashboardsImport.gs',
+  'dashboardsTemplate.gs',
   'dashboardsPublicApi.gs',
   'model.gs',            // モデル関数
   // --- sheets ---

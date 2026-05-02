@@ -83,3 +83,18 @@ function nfbRegisterImportedDashboard(payload) {
     return Dashboards_registerImportedDashboard_(payload);
   });
 }
+
+function nfbGetDashboardTemplate(templateUrl) {
+  return nfbSafeCall_(function() {
+    var result = Dashboards_getTemplate_(templateUrl);
+    return {
+      ok: true,
+      html: result.html,
+      fileId: result.fileId,
+      fileName: result.fileName,
+      fileUrl: result.fileUrl,
+      fetchedAt: result.fetchedAt,
+      fromCache: !!result.fromCache,
+    };
+  });
+}

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
@@ -6,8 +6,11 @@ import { useAlert } from "../app/hooks/useAlert.js";
 import { dataStore } from "../app/state/dataStore.js";
 import { loadDashboardDataSources } from "../features/dashboards/dataSourceLoader.js";
 import { executeQueries } from "../features/dashboards/sqlEngine.js";
-import EChartsWidget from "../features/dashboards/widgets/EChartsWidget.jsx";
+import EChartsWidget, { buildChartOption } from "../features/dashboards/widgets/EChartsWidget.jsx";
 import TableWidget from "../features/dashboards/widgets/TableWidget.jsx";
+import echarts from "../features/dashboards/echartsRegistry.js";
+import { renderTemplate, buildIframeDocument, mountWidgetsIntoIframe } from "../features/dashboards/templateRenderer.js";
+import { getDashboardTemplate } from "../services/gasClient.js";
 
 const collectInitialParams = (queries) => {
   const params = {};
@@ -52,6 +55,12 @@ export default function DashboardViewPage() {
   const [queryResults, setQueryResults] = useState({});
   const [queryErrors, setQueryErrors] = useState([]);
   const [params, setParams] = useState({});
+  const [renderMode, setRenderMode] = useState("widgets"); // "widgets" | "template"
+  const [templateHtml, setTemplateHtml] = useState("");
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [templateError, setTemplateError] = useState("");
+  const iframeRef = useRef(null);
+  const widgetCleanupRef = useRef(null);
 
   // ダッシュボード定義の取得
   useEffect(() => {
@@ -114,6 +123,58 @@ export default function DashboardViewPage() {
     navigate(`/dashboards/${dashboardId}/edit`);
   };
 
+  // テンプレモード時の取得
+  useEffect(() => {
+    if (renderMode !== "template") return;
+    if (!dashboard?.templateUrl) {
+      setTemplateError("テンプレートURLが設定されていません。編集画面で設定してください。");
+      setTemplateHtml("");
+      return;
+    }
+    setTemplateLoading(true);
+    setTemplateError("");
+    getDashboardTemplate(dashboard.templateUrl)
+      .then((res) => setTemplateHtml(res.html || ""))
+      .catch((err) => {
+        console.error("[DashboardViewPage] template fetch failed:", err);
+        setTemplateError(err.message || "テンプレートの取得に失敗しました");
+        setTemplateHtml("");
+      })
+      .finally(() => setTemplateLoading(false));
+  }, [renderMode, dashboard?.templateUrl]);
+
+  // iframe へのウィジェット差込
+  const renderedHtml = useMemo(() => {
+    if (renderMode !== "template" || !templateHtml) return "";
+    const replaced = renderTemplate(templateHtml, { queryResults, params });
+    return buildIframeDocument(replaced);
+  }, [renderMode, templateHtml, queryResults, params]);
+
+  const widgetsById = useMemo(() => {
+    const map = {};
+    for (const widget of dashboard?.widgets || []) {
+      if (!widget?.id) continue;
+      map[widget.id] = { widget, rows: queryResults[widget.queryId] || [] };
+    }
+    return map;
+  }, [dashboard?.widgets, queryResults]);
+
+  const handleIframeLoad = () => {
+    if (widgetCleanupRef.current) {
+      widgetCleanupRef.current();
+      widgetCleanupRef.current = null;
+    }
+    if (renderMode !== "template") return;
+    widgetCleanupRef.current = mountWidgetsIntoIframe(iframeRef.current, widgetsById, echarts, buildChartOption);
+  };
+
+  useEffect(() => () => {
+    if (widgetCleanupRef.current) {
+      widgetCleanupRef.current();
+      widgetCleanupRef.current = null;
+    }
+  }, []);
+
   if (!dashboard) {
     return (
       <AppLayout title="ダッシュボード" badge="閲覧" fallbackPath="/dashboards">
@@ -136,6 +197,15 @@ export default function DashboardViewPage() {
           </button>
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleRunQueries} disabled={loading}>
             ▶ クエリ再実行
+          </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-13"
+            onClick={() => setRenderMode((m) => (m === "template" ? "widgets" : "template"))}
+            disabled={!dashboard.templateUrl}
+            title={dashboard.templateUrl ? "テンプレ⇔ウィジェット表示を切替" : "テンプレートURLが未設定"}
+          >
+            {renderMode === "template" ? "📐 ウィジェット表示" : "📄 テンプレ表示"}
           </button>
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleEdit} disabled={dashboard.readOnly}>
             ✏ 編集
@@ -194,25 +264,42 @@ export default function DashboardViewPage() {
         </div>
       )}
 
-      <div className="dashboard-widget-grid">
-        {widgets.map((widget) => {
-          const rows = queryResults[widget.queryId] || [];
-          if (widget.type === "echarts") {
-            return <EChartsWidget key={widget.id} widget={widget} rows={rows} />;
-          }
-          if (widget.type === "table") {
-            return <TableWidget key={widget.id} widget={widget} rows={rows} />;
-          }
-          return (
-            <div key={widget.id} className="dashboard-widget">
-              <p className="nf-text-muted">未対応のウィジェット種別: {widget.type}</p>
-            </div>
-          );
-        })}
-        {widgets.length === 0 && (
-          <p className="nf-text-subtle">ウィジェットが定義されていません。編集画面でウィジェットを追加してください。</p>
-        )}
-      </div>
+      {renderMode === "template" ? (
+        <div className="dashboard-template-frame-wrap">
+          {templateLoading && <p className="nf-text-subtle">テンプレート取得中...</p>}
+          {templateError && <p className="nf-text-danger-strong">{templateError}</p>}
+          {!templateLoading && !templateError && renderedHtml && (
+            <iframe
+              ref={iframeRef}
+              srcDoc={renderedHtml}
+              onLoad={handleIframeLoad}
+              sandbox="allow-same-origin"
+              title="ダッシュボードテンプレート"
+              style={{ width: "100%", minHeight: "600px", border: "1px solid #ddd", background: "white" }}
+            />
+          )}
+        </div>
+      ) : (
+        <div className="dashboard-widget-grid">
+          {widgets.map((widget) => {
+            const rows = queryResults[widget.queryId] || [];
+            if (widget.type === "echarts") {
+              return <EChartsWidget key={widget.id} widget={widget} rows={rows} />;
+            }
+            if (widget.type === "table") {
+              return <TableWidget key={widget.id} widget={widget} rows={rows} />;
+            }
+            return (
+              <div key={widget.id} className="dashboard-widget">
+                <p className="nf-text-muted">未対応のウィジェット種別: {widget.type}</p>
+              </div>
+            );
+          })}
+          {widgets.length === 0 && (
+            <p className="nf-text-subtle">ウィジェットが定義されていません。編集画面でウィジェットを追加してください。</p>
+          )}
+        </div>
+      )}
     </AppLayout>
   );
 }

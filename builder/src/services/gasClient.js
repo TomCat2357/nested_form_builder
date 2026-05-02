@@ -209,6 +209,18 @@ export const registerImportedDashboard = (payload) => {
   if (!payload || !payload.dashboard || !payload.fileId) throw new Error("dashboard and fileId are required");
   return fetchGasApi("nfbRegisterImportedDashboard", payload, "Register imported dashboard failed");
 };
+export const getDashboardTemplate = async (templateUrl) => {
+  if (!templateUrl) throw new Error("templateUrl is required");
+  const r = await fetchGasApi("nfbGetDashboardTemplate", templateUrl, "Get dashboard template failed");
+  return {
+    html: r.html || "",
+    fileId: r.fileId || "",
+    fileName: r.fileName || "",
+    fileUrl: r.fileUrl || "",
+    fetchedAt: r.fetchedAt || 0,
+    fromCache: !!r.fromCache,
+  };
+};
 
 export const importThemeFromDrive = async (url) => {
   if (!url) throw new Error("Google Drive URL is required");

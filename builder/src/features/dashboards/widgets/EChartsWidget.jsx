@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef } from "react";
 import echarts from "../echartsRegistry.js";
 
-const buildChartOption = (widget, rows) => {
+export function buildChartOption(widget, rows) {
   const chartType = widget.chart || "line";
   const encode = widget.encode || {};
   const xKey = encode.x;
@@ -39,7 +39,7 @@ const buildChartOption = (widget, rows) => {
       data: rows.map((row) => row?.[yKey]),
     })),
   };
-};
+}
 
 export default function EChartsWidget({ widget, rows, height = 320 }) {
   const containerRef = useRef(null);
