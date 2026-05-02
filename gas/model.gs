@@ -22,7 +22,7 @@ function Model_normalizeContext_(body = {}, params = {}) {
     formTitle: body.formTitle || "",
     schemaHash: body.schemaHash || "",
     spreadsheetId: Model_normalizeSpreadsheetId_(params.spreadsheetId || body.spreadsheetId || ""),
-    sheetName: params.sheetName || body.sheetName || NFB_DEFAULT_SHEET_NAME,
+    sheetName: NFB_DEFAULT_SHEET_NAME,
     id: body.id || params.id || "",
     responses,
     order,

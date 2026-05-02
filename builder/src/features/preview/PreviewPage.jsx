@@ -333,7 +333,6 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       }
       const res = await submitResponses({
         spreadsheetId,
-        sheetName: settings.sheetName || "Data",
         payload,
       });
       const msg = res?.spreadsheetUrl

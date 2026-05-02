@@ -12,12 +12,6 @@ export const SETTINGS_GROUPS = [
         required: false,
         description: "未設定/フォルダURLの場合はマイドライブ直下または指定フォルダに新規作成されます（保存後にURLが自動入力）",
       },
-      {
-        key: "sheetName",
-        label: "Sheet Name",
-        placeholder: "Data",
-        required: false,
-      },
     ],
   },
   {
