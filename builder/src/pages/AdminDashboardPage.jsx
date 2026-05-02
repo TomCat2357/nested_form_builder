@@ -160,6 +160,13 @@ const { selected, toggle: toggleSelect, selectAll: selectAllRaw, clear: clearSel
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleCreateNew}>
             新規作成
           </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-13"
+            onClick={() => navigate("/dashboard")}
+          >
+            集計ダッシュボード
+          </button>
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleImport}>
             {importing ? "インポート中..." : "インポート"}
           </button>

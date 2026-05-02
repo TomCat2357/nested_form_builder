@@ -1530,3 +1530,62 @@ button:disabled {
   font-weight: 700;
   color: var(--nf-color-text, var(--text));
 }
+
+.dashboard-root {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.dashboard-form-selector {
+  padding: 12px 14px;
+}
+
+.dashboard-form-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--nf-color-border, var(--border));
+  border-radius: 14px;
+  font-size: 13px;
+  cursor: pointer;
+  background: var(--nf-color-card, var(--card));
+}
+
+.dashboard-form-chip input[type="checkbox"] {
+  margin: 0;
+}
+
+.dashboard-add-bar {
+  align-items: center;
+}
+
+.dashboard-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dashboard-widget {
+  padding: 12px 14px;
+}
+
+.dashboard-widget-header {
+  align-items: center;
+}
+
+.dashboard-widget-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboard-code-input {
+  width: 100%;
+  min-height: 160px;
+  padding: 8px;
+  border: 1px solid var(--nf-color-border, var(--border));
+  border-radius: 4px;
+  background: var(--nf-color-card, var(--card));
+  color: var(--nf-color-text, var(--text));
+  resize: vertical;
+}
