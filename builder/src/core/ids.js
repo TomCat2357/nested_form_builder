@@ -126,5 +126,6 @@ const createCompactId = (prefix) => {
 
 export const genFormId = () => createCompactId("f");
 export const genRecordId = () => createCompactId("r");
+export const genDashboardId = () => createCompactId("dsh");
 
 export const genId = () => `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;

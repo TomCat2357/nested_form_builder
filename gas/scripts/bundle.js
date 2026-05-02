@@ -37,6 +37,12 @@ const FILE_ORDER = [
   'formsCrud.gs',
   'formsImport.gs',
   'formsPublicApi.gs',
+  // --- dashboards ---
+  'dashboardsMappingStore.gs',
+  'dashboardsStorage.gs',
+  'dashboardsCrud.gs',
+  'dashboardsImport.gs',
+  'dashboardsPublicApi.gs',
   'model.gs',            // モデル関数
   // --- sheets ---
   'sheetsDatetime.gs',

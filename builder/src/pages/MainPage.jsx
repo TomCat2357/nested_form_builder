@@ -44,6 +44,10 @@ export default function MainPage() {
     navigate("/forms");
   };
 
+  const handleGoDashboards = () => {
+    navigate("/dashboards");
+  };
+
   const handleGoConfig = () => {
     navigate("/config");
   };
@@ -54,6 +58,7 @@ export default function MainPage() {
 
   const showAdminSettingsButton = isAdmin && adminSettingsEnabled;
   const showFormsButton = propertyStoreMode === "user" || isAdmin;
+  const showDashboardsButton = isAdmin;
 
   return (
     <AppLayout
@@ -72,6 +77,11 @@ export default function MainPage() {
           {showFormsButton && (
             <button type="button" onClick={handleGoForms} className="nf-btn-outline nf-btn-sidebar">
               フォーム管理
+            </button>
+          )}
+          {showDashboardsButton && (
+            <button type="button" onClick={handleGoDashboards} className="nf-btn-outline nf-btn-sidebar">
+              ダッシュボード管理
             </button>
           )}
         </>

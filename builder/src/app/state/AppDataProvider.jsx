@@ -1,6 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { dataStore } from "./dataStore.js";
+import { dashboardsStore } from "./dashboardsStore.js";
 import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
+import { getDashboardsFromCache, saveDashboardsToCache } from "./dashboardsCache.js";
 import { useAuth } from "./authContext.jsx";
 import { evaluateCacheForForms } from "./cachePolicy.js";
 import { perfLogger } from "../../utils/perfLogger.js";
@@ -31,9 +33,24 @@ export function AppDataProvider({ children }) {
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [cacheDisabled, setCacheDisabled] = useState(false);
 
+  const [dashboards, setDashboards] = useState([]);
+  const [loadingDashboards, setLoadingDashboards] = useState(false);
+  const [dashboardLoadFailures, setDashboardLoadFailures] = useState([]);
+  const [dashboardsLastSyncedAt, setDashboardsLastSyncedAt] = useState(null);
+
   // キャッシュ更新用にformsとloadFailuresの最新値を保持
   const formsRef = useRef(forms);
   const loadFailuresRef = useRef(loadFailures);
+  const dashboardsRef = useRef(dashboards);
+  const dashboardLoadFailuresRef = useRef(dashboardLoadFailures);
+
+  useEffect(() => {
+    dashboardsRef.current = dashboards;
+  }, [dashboards]);
+
+  useEffect(() => {
+    dashboardLoadFailuresRef.current = dashboardLoadFailures;
+  }, [dashboardLoadFailures]);
 
   useEffect(() => {
     formsRef.current = forms;
@@ -388,6 +405,190 @@ export function AppDataProvider({ children }) {
     return result;
   }, [upsertFormsState]);
 
+  // ===== Dashboards =====
+  const persistDashboardsCache = useCallback(async (nextDashboards, nextFailures, logPrefix) => {
+    try {
+      await saveDashboardsToCache(nextDashboards, nextFailures, propertyStoreModeRef.current);
+    } catch (err) {
+      console.warn(`[AppDataProvider:${logPrefix}] Failed to save dashboards cache:`, err);
+    }
+  }, []);
+
+  const upsertDashboardsState = useCallback(async (nextDashboard) => {
+    if (!nextDashboard || !nextDashboard.id) return;
+    let updated;
+    setDashboards((prev) => {
+      const next = [...prev];
+      const index = next.findIndex((d) => d.id === nextDashboard.id);
+      if (index === -1) next.unshift(nextDashboard);
+      else next[index] = nextDashboard;
+      updated = next;
+      dashboardsRef.current = next;
+      return next;
+    });
+    await persistDashboardsCache(updated || [], dashboardLoadFailuresRef.current, "upsertDashboardsState");
+  }, [persistDashboardsCache]);
+
+  const removeDashboardsState = useCallback(async (dashboardIds) => {
+    if (!Array.isArray(dashboardIds) || dashboardIds.length === 0) return;
+    const targetIdSet = new Set(dashboardIds.filter(Boolean));
+    if (!targetIdSet.size) return;
+    let updated;
+    setDashboards((prev) => {
+      const next = prev.filter((d) => !targetIdSet.has(d.id));
+      updated = next;
+      dashboardsRef.current = next;
+      return next;
+    });
+    const nextFailures = dashboardLoadFailuresRef.current.filter((f) => !targetIdSet.has(f.id));
+    setDashboardLoadFailures(nextFailures);
+    dashboardLoadFailuresRef.current = nextFailures;
+    await persistDashboardsCache(updated || [], nextFailures, "removeDashboardsState");
+  }, [persistDashboardsCache]);
+
+  const refreshDashboards = useCallback(async ({ reason = "unknown", background = false } = {}) => {
+    if (!background) setLoadingDashboards(true);
+    try {
+      const result = await dashboardsStore.listDashboards({ includeArchived: true });
+      const allDashboards = result.dashboards || [];
+      const failures = result.loadFailures || [];
+      setDashboards(allDashboards);
+      dashboardsRef.current = allDashboards;
+      setDashboardLoadFailures(failures);
+      dashboardLoadFailuresRef.current = failures;
+      const syncedAt = Date.now();
+      setDashboardsLastSyncedAt(syncedAt);
+      await persistDashboardsCache(allDashboards, failures, `refresh:${reason}`);
+    } catch (err) {
+      console.error("[AppDataProvider] ダッシュボード取得エラー:", err);
+    } finally {
+      if (!background) setLoadingDashboards(false);
+    }
+  }, [persistDashboardsCache]);
+
+  // 起動時にダッシュボードキャッシュを読み込む
+  useEffect(() => {
+    (async () => {
+      try {
+        const cached = await getDashboardsFromCache();
+        const cachedDashboards = cached.dashboards || [];
+        const cachedFailures = cached.loadFailures || [];
+        if (cachedDashboards.length > 0 || cachedFailures.length > 0 || cached.lastSyncedAt) {
+          setDashboards(cachedDashboards);
+          dashboardsRef.current = cachedDashboards;
+          setDashboardLoadFailures(cachedFailures);
+          dashboardLoadFailuresRef.current = cachedFailures;
+          setDashboardsLastSyncedAt(cached.lastSyncedAt || null);
+        }
+      } catch (err) {
+        console.warn("[AppDataProvider] ダッシュボードキャッシュ読み込みエラー:", err);
+      }
+    })();
+  }, []);
+
+  const createDashboard = useCallback(async (payload, targetUrl, saveMode = "auto") => {
+    const saved = await dashboardsStore.createDashboard(payload, targetUrl, saveMode);
+    if (saved) {
+      await upsertDashboardsState(saved);
+      setDashboardsLastSyncedAt(Date.now());
+    }
+    return saved;
+  }, [upsertDashboardsState]);
+
+  const updateDashboard = useCallback(async (dashboardId, updates, targetUrl, saveMode = "auto") => {
+    const saved = await dashboardsStore.updateDashboard(dashboardId, updates, targetUrl, saveMode);
+    if (saved) {
+      await upsertDashboardsState(saved);
+      setDashboardsLastSyncedAt(Date.now());
+    }
+    return saved;
+  }, [upsertDashboardsState]);
+
+  const copyDashboard = useCallback(async (dashboardId) => {
+    const saved = await dashboardsStore.copyDashboard(dashboardId);
+    if (saved) {
+      await upsertDashboardsState(saved);
+      setDashboardsLastSyncedAt(Date.now());
+    }
+    return saved;
+  }, [upsertDashboardsState]);
+
+  const batchUpdateDashboards = useCallback(async (gasFn, dashboardIds, optimisticPatch, logPrefix) => {
+    const targetIds = Array.isArray(dashboardIds) ? dashboardIds.filter(Boolean) : [dashboardIds].filter(Boolean);
+    if (!targetIds.length) return { dashboards: [], updated: 0, errors: [] };
+
+    const targetIdSet = new Set(targetIds);
+    const optimisticDashboards = dashboardsRef.current
+      .filter((d) => targetIdSet.has(d.id))
+      .map((d) => ({ ...d, ...optimisticPatch }));
+
+    if (optimisticDashboards.length > 0) {
+      let updated;
+      setDashboards((prev) => {
+        const next = [...prev];
+        optimisticDashboards.forEach((d) => {
+          const idx = next.findIndex((x) => x.id === d.id);
+          if (idx !== -1) next[idx] = d;
+        });
+        updated = next;
+        dashboardsRef.current = next;
+        return next;
+      });
+      await persistDashboardsCache(updated || [], dashboardLoadFailuresRef.current, `${logPrefix}:optimistic`);
+    }
+
+    void gasFn(targetIds).then(async (result) => {
+      if (!result?.dashboards || !Array.isArray(result.dashboards) || result.dashboards.length === 0) return;
+      let updated;
+      setDashboards((prev) => {
+        const next = [...prev];
+        result.dashboards.forEach((d) => {
+          const idx = next.findIndex((x) => x.id === d.id);
+          if (idx !== -1) next[idx] = d;
+        });
+        updated = next;
+        dashboardsRef.current = next;
+        return next;
+      });
+      await persistDashboardsCache(updated || [], dashboardLoadFailuresRef.current, `${logPrefix}:background`);
+    });
+
+    return { dashboards: optimisticDashboards, updated: optimisticDashboards.length, errors: [] };
+  }, [persistDashboardsCache]);
+
+  const archiveDashboards = useCallback(
+    (ids) => batchUpdateDashboards(dashboardsStore.archiveDashboards.bind(dashboardsStore), ids, { archived: true, readOnly: false }, "archiveDashboards"),
+    [batchUpdateDashboards],
+  );
+  const unarchiveDashboards = useCallback(
+    (ids) => batchUpdateDashboards(dashboardsStore.unarchiveDashboards.bind(dashboardsStore), ids, { archived: false }, "unarchiveDashboards"),
+    [batchUpdateDashboards],
+  );
+  const setDashboardsReadOnly = useCallback(
+    (ids) => batchUpdateDashboards(dashboardsStore.setDashboardsReadOnly.bind(dashboardsStore), ids, { readOnly: true, archived: false }, "setDashboardsReadOnly"),
+    [batchUpdateDashboards],
+  );
+  const clearDashboardsReadOnly = useCallback(
+    (ids) => batchUpdateDashboards(dashboardsStore.clearDashboardsReadOnly.bind(dashboardsStore), ids, { readOnly: false }, "clearDashboardsReadOnly"),
+    [batchUpdateDashboards],
+  );
+
+  const deleteDashboards = useCallback(async (dashboardIds) => {
+    await removeDashboardsState(dashboardIds);
+    void dashboardsStore.deleteDashboards(dashboardIds).catch((err) => {
+      console.error("[AppDataProvider] Background deleteDashboards failed:", err);
+    });
+  }, [removeDashboardsState]);
+
+  const exportDashboards = useCallback(async (dashboardIds) => dashboardsStore.exportDashboards(dashboardIds), []);
+  const getDashboardById = useCallback((dashboardId) => dashboards.find((d) => d.id === dashboardId) || null, [dashboards]);
+
+  const registerImportedDashboard = useCallback(async (payload) => {
+    const saved = await dashboardsStore.registerImportedDashboard(payload);
+    if (saved) await upsertDashboardsState(saved);
+    return saved;
+  }, [upsertDashboardsState]);
+
   const memoValue = useMemo(
     () => ({
       forms,
@@ -414,8 +615,25 @@ export function AppDataProvider({ children }) {
       copyForm,
       getFormById,
       registerImportedForm,
+      // Dashboards
+      dashboards,
+      loadingDashboards,
+      dashboardLoadFailures,
+      dashboardsLastSyncedAt,
+      refreshDashboards,
+      createDashboard,
+      updateDashboard,
+      archiveDashboards,
+      unarchiveDashboards,
+      setDashboardsReadOnly,
+      clearDashboardsReadOnly,
+      deleteDashboards,
+      exportDashboards,
+      copyDashboard,
+      getDashboardById,
+      registerImportedDashboard,
     }),
-    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteForm, importForms, exportForms, copyForm, getFormById, registerImportedForm],
+    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteForm, importForms, exportForms, copyForm, getFormById, registerImportedForm, dashboards, loadingDashboards, dashboardLoadFailures, dashboardsLastSyncedAt, refreshDashboards, createDashboard, updateDashboard, archiveDashboards, unarchiveDashboards, setDashboardsReadOnly, clearDashboardsReadOnly, deleteDashboards, exportDashboards, copyDashboard, getDashboardById, registerImportedDashboard],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;
