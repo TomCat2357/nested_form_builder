@@ -370,6 +370,18 @@ export default function AdminFormEditorPage() {
         <div className="nf-card nf-mb-16">
           <h3 className="nf-settings-group-title nf-mb-16">フォームの基本情報</h3>
 
+          {isEdit && (
+            <div className="nf-col nf-gap-6 nf-mb-16">
+              <label className="nf-block nf-fw-600 nf-mb-6">フォームID</label>
+              <input
+                type="text"
+                value={formId || ""}
+                readOnly
+                className="nf-input nf-input--readonly admin-input"
+              />
+            </div>
+          )}
+
           <div className="nf-col nf-gap-6 nf-mb-16">
             <label className="nf-block nf-fw-600 nf-mb-6">フォーム名</label>
             <input
