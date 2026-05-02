@@ -9,7 +9,6 @@ import FormPage from "../pages/FormPage.jsx";
 import AdminDashboardPage from "../pages/AdminDashboardPage.jsx";
 import AdminFormEditorPage from "../pages/AdminFormEditorPage.jsx";
 import AdminSettingsPage from "../pages/AdminSettingsPage.jsx";
-import DataDashboardPage from "../pages/DataDashboardPage.jsx";
 import ConfigPage from "../pages/ConfigPage.jsx";
 import NotFoundPage from "../pages/NotFoundPage.jsx";
 
@@ -163,14 +162,6 @@ function AppRoutes() {
         element={
           <FormsRoute>
             <AdminFormEditorPage />
-          </FormsRoute>
-        }
-      />
-      <Route
-        path="/dashboard"
-        element={
-          <FormsRoute>
-            <DataDashboardPage />
           </FormsRoute>
         }
       />
