@@ -38,17 +38,19 @@ function Forms_getMapping_() {
 function Forms_normalizeMappingValue_(value) {
   var fileId = null;
   var driveFileUrl = null;
+  var title = null;
 
   if (value && typeof value === "object" && !Array.isArray(value)) {
     fileId = typeof value.fileId === "string" ? String(value.fileId).trim() : null;
     driveFileUrl = typeof value.driveFileUrl === "string" ? String(value.driveFileUrl).trim() : null;
+    title = typeof value.title === "string" ? String(value.title) : null;
   }
 
   if (!driveFileUrl && fileId) {
     driveFileUrl = Forms_buildDriveFileUrlFromId_(fileId);
   }
 
-  return { fileId: fileId, driveFileUrl: driveFileUrl };
+  return { fileId: fileId, driveFileUrl: driveFileUrl, title: title };
 }
 
 /**

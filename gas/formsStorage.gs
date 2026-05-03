@@ -132,6 +132,18 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     var mappingEntry = mapping[form.id] || {};
     var existingFileId = mappingEntry.fileId;
 
+    // タイトル正規化 + 衝突時の自動採番
+    var existingTitles = [];
+    for (var otherId in mapping) {
+      if (!mapping.hasOwnProperty(otherId) || otherId === form.id) continue;
+      var t = mapping[otherId] && mapping[otherId].title;
+      if (t) existingTitles.push(t);
+    }
+    var desiredTitle = (form.settings && form.settings.formTitle) || "";
+    var uniqueTitle = Forms_makeUniqueFormTitle_(desiredTitle, existingTitles);
+    form.settings = form.settings || {};
+    form.settings.formTitle = uniqueTitle;
+
     var file;
     var fileId = null;
     var nowDate = new Date();
@@ -285,8 +297,8 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       throw new Error("[save-stage=final-write] driveFileUrl反映書き込みに失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errWriteFinal));
     }
 
-    // マッピングを更新
-    mapping[form.id] = { fileId: fileId, driveFileUrl: fileUrl };
+    // マッピングを更新（タイトルキャッシュも併せて保存）
+    mapping[form.id] = { fileId: fileId, driveFileUrl: fileUrl, title: uniqueTitle };
     Forms_saveMapping_(mapping);
 
     // 認証用URLマップにも登録（?form=xxx でアクセス可能にする）

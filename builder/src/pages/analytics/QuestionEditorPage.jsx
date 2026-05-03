@@ -6,6 +6,7 @@ import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { useBuilderSettings } from "../../features/settings/settingsStore.js";
 import { executeQuestion, saveQuestion } from "../../features/analytics/analyticsStore.js";
 import { generateQuestionId } from "../../features/analytics/utils/generateId.js";
+import { buildColumnIndex, resolveColumnRef } from "../../features/analytics/utils/columnIdentifierResolver.js";
 import ChartRenderer from "../../features/analytics/components/ChartRenderer.jsx";
 import ResultTable from "../../features/analytics/components/ResultTable.jsx";
 
@@ -72,7 +73,7 @@ export default function QuestionEditorPage() {
     };
 
     try {
-      const result = await executeQuestion(question);
+      const result = await executeQuestion(question, { forms, settings });
       if (result.ok) {
         setQueryResult(result);
       } else {
@@ -134,7 +135,14 @@ export default function QuestionEditorPage() {
     }
   }, [name, selectedFormId, sql, vizType, xField, yFields, questionId, forms, settings, navigate]);
 
-  const viz = { type: vizType, xField: xField.trim(), yFields: yFields.split(",").map((s) => s.trim()).filter(Boolean) };
+  const defaultForm = forms.find((f) => f.id === selectedFormId) || null;
+  const defaultColumnIndex = defaultForm ? buildColumnIndex(defaultForm) : null;
+  const resolveCol = (token) => resolveColumnRef(token, defaultColumnIndex) || token;
+  const viz = {
+    type: vizType,
+    xField: resolveCol(xField.trim()),
+    yFields: yFields.split(",").map((s) => s.trim()).filter(Boolean).map(resolveCol),
+  };
 
   return (
     <AppLayout
@@ -167,7 +175,7 @@ export default function QuestionEditorPage() {
         </div>
 
         <div>
-          <label className="nf-label">データソース（フォーム）</label>
+          <label className="nf-label">データソース（既定フォーム）</label>
           <select
             className="nf-input"
             value={selectedFormId}
@@ -190,7 +198,7 @@ export default function QuestionEditorPage() {
             onChange={(e) => setSql(e.target.value)}
             rows={6}
             style={{ width: "100%", fontFamily: "monospace", fontSize: "13px", padding: "8px", boxSizing: "border-box", border: "1px solid var(--nf-border)", borderRadius: "4px", background: "var(--nf-input-bg, #fff)", color: "var(--nf-text)" }}
-            placeholder={"例: SELECT createdAt, COUNT(*) AS count FROM data GROUP BY createdAt"}
+            placeholder={"例: SELECT [基本情報|区], COUNT(*) AS count FROM [data] GROUP BY [基本情報|区]\n他フォーム参照: SELECT * FROM [フォーム名] AS f"}
           />
           <div style={{ marginTop: "6px" }}>
             <button

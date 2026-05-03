@@ -83,6 +83,7 @@ function Forms_listForms_(options) {
   }
 
   var fileIds = Object.keys(fileIdMap);
+  var titleCacheDirty = false;
 
   // Drive API v3 バッチリクエスト（最大100件ずつ）
   var BATCH_SIZE = NFB_DRIVE_API_BATCH_SIZE;
@@ -123,6 +124,18 @@ function Forms_listForms_(options) {
             form.createdAtUnixMs = createdAtSerial;
             form.modifiedAtUnixMs = modifiedAtSerial;
 
+            // タイトルキャッシュの遅延バックフィル
+            var cachedTitle = mappingEntry && mappingEntry.title;
+            var actualTitle = (form.settings && form.settings.formTitle) || "";
+            if (actualTitle && cachedTitle !== actualTitle) {
+              mapping[formId] = {
+                fileId: mappingEntry.fileId || null,
+                driveFileUrl: mappingEntry.driveFileUrl || null,
+                title: actualTitle,
+              };
+              titleCacheDirty = true;
+            }
+
             // アーカイブフィルタリング
             if (!includeArchived && form.archived) {
               Logger.log("[Forms_listForms_] Skipping archived form: " + formId);
@@ -143,6 +156,14 @@ function Forms_listForms_(options) {
         var fbFormId = fileIdMap[fbFileId];
         pushFailure(fbFormId, fbFileId, null, formIdToMappingEntry[fbFormId].driveFileUrl, "batch", nfbErrorToString_(batchErr));
       }
+    }
+  }
+
+  if (titleCacheDirty) {
+    try {
+      Forms_saveMapping_(mapping);
+    } catch (errSaveMap) {
+      Logger.log("[Forms_listForms_] Title cache backfill save failed: " + errSaveMap);
     }
   }
 
@@ -459,7 +480,8 @@ function Forms_copyForm_(formId) {
 
   var originalTitle = (sourceForm.settings && sourceForm.settings.formTitle) || "";
   newForm.settings = newForm.settings || {};
-  newForm.settings.formTitle = originalTitle + "（コピー）";
+  // 同名フォームが既に存在するため、Forms_saveForm_ 内の auto-numbering で (1)(2)... が付く
+  newForm.settings.formTitle = originalTitle;
   newForm.archived = false;
   newForm.readOnly = false;
   delete newForm.driveFileUrl;

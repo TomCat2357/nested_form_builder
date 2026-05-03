@@ -147,7 +147,19 @@ function Forms_registerImportedForm_(payload) {
   form.id = formId;
   form.driveFileUrl = fileUrl;
 
-  mapping[formId] = { fileId: fileId, driveFileUrl: fileUrl };
+  // タイトル正規化 + 衝突時の自動採番（自分以外の登録済みタイトルと比較）
+  var existingTitlesImport = [];
+  for (var otherImportId in mapping) {
+    if (!mapping.hasOwnProperty(otherImportId) || otherImportId === formId) continue;
+    var ot = mapping[otherImportId] && mapping[otherImportId].title;
+    if (ot) existingTitlesImport.push(ot);
+  }
+  var desiredImportTitle = (form.settings && form.settings.formTitle) || "";
+  var uniqueImportTitle = Forms_makeUniqueFormTitle_(desiredImportTitle, existingTitlesImport);
+  form.settings = form.settings || {};
+  form.settings.formTitle = uniqueImportTitle;
+
+  mapping[formId] = { fileId: fileId, driveFileUrl: fileUrl, title: uniqueImportTitle };
   Forms_saveMapping_(mapping);
 
   // AddFormUrl_ にも登録（?form=xxx でアクセス可能にする）

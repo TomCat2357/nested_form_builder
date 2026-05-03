@@ -33,6 +33,7 @@ const FILE_ORDER = [
   // --- forms ---
   'formsParsing.gs',
   'formsMappingStore.gs',
+  'formsTitleHelpers.js',
   'formsStorage.gs',
   'formsCrud.gs',
   'formsImport.gs',
