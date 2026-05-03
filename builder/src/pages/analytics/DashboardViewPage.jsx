@@ -3,12 +3,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../../app/components/AppLayout.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
-import { useBuilderSettings } from "../../features/settings/settingsStore.js";
 import { analyticsGasClient } from "../../features/analytics/analyticsGasClient.js";
 import { executeQuestion } from "../../features/analytics/analyticsStore.js";
 import ChartRenderer from "../../features/analytics/components/ChartRenderer.jsx";
 
-function DashboardCard({ questionId, title, forms, settings }) {
+function DashboardCard({ questionId, title, forms }) {
   const [question, setQuestion] = useState(null);
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -24,7 +23,7 @@ function DashboardCard({ questionId, title, forms, settings }) {
         if (cancelled) return;
         const q = res.question;
         setQuestion(q);
-        const r = await executeQuestion(q, { forms, settings });
+        const r = await executeQuestion(q, { forms });
         if (!cancelled) setResult(r);
       })
       .catch((err) => {
@@ -58,7 +57,6 @@ export default function DashboardViewPage() {
   const { dashboardId } = useParams();
   const { isAdmin } = useAuth();
   const { forms } = useAppData();
-  const { settings } = useBuilderSettings();
 
   const [dashboard, setDashboard] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -107,7 +105,7 @@ export default function DashboardViewPage() {
             <p className="nf-text-subtle">カードがありません。</p>
           )}
           {(dashboard.cards || []).map((card) => (
-            <DashboardCard key={card.id} questionId={card.questionId} title={card.title} forms={forms} settings={settings} />
+            <DashboardCard key={card.id} questionId={card.questionId} title={card.title} forms={forms} />
           ))}
         </div>
       )}

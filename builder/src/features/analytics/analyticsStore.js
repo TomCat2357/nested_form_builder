@@ -16,6 +16,9 @@ import { buildFormIndex } from "./utils/formIdentifierResolver.js";
 import { buildColumnIndex } from "./utils/columnIdentifierResolver.js";
 import { preprocessSql, canonicalFormAlias } from "./utils/sqlPreprocessor.js";
 import { compileGuiToSql } from "./utils/compileGuiToSql.js";
+import { resolveColumnType } from "./utils/aggregationCompatibility.js";
+import { getSheetConfig } from "../../app/state/dataStoreHelpers.js";
+import { traverseSchema } from "../../core/schemaUtils.js";
 
 // ---- Snapshot ----
 
@@ -78,7 +81,7 @@ export async function loadSnapshotsIntoAlaSql(formSources, { defaultFormId } = {
  * mode === "gui" のときは compileGuiToSql で SQL を合成し、対象フォーム 1 件のみを登録して実行する。
  * mode === "sql" のときは forms 配列に基づいて [フォーム名] / [列パイプパス] / [field.id] を解決する。
  */
-export async function executeQuestion(question, { forms, settings } = {}) {
+export async function executeQuestion(question, { forms } = {}) {
   if (!question || !question.query) {
     return { ok: false, error: "クエリが定義されていません" };
   }
@@ -86,7 +89,7 @@ export async function executeQuestion(question, { forms, settings } = {}) {
   const mode = question.query.mode;
 
   if (mode === "gui") {
-    return await executeGuiQuestion(question, { forms, settings });
+    return await executeGuiQuestion(question, { forms });
   }
 
   if (mode !== "sql") {
@@ -124,10 +127,15 @@ export async function executeQuestion(question, { forms, settings } = {}) {
     for (const fid of pre.referencedFormIds) {
       if (seen.has(fid)) continue;
       seen.add(fid);
+      const f = formIndex.byId.get(fid);
+      const sheetConfig = f ? getSheetConfig(f) : null;
+      if (!sheetConfig) {
+        return { ok: false, error: "フォーム " + fid + " にスプレッドシートが紐付いていません" };
+      }
       formSources.push({
         formId: fid,
-        spreadsheetId: settings?.spreadsheetId,
-        sheetName: settings?.sheetName || "Data",
+        spreadsheetId: sheetConfig.spreadsheetId,
+        sheetName: sheetConfig.sheetName,
       });
     }
   }
@@ -154,23 +162,43 @@ export async function executeQuestion(question, { forms, settings } = {}) {
 }
 
 /**
- * スナップショットのカラム一覧を返す（フィールド選択 UI 用）
+ * スナップショットのカラム一覧を返す（フィールド選択 UI 用）。
+ * form を渡すと各列に正規化済みの type（"number"|"date"|"string"|"boolean"|"unknown"）が付く。
  */
-export async function getSnapshotColumns({ formId, spreadsheetId, sheetName }) {
+export async function getSnapshotColumns({ formId, spreadsheetId, sheetName, form }) {
   const snapshot = await getSnapshot({ formId, spreadsheetId, sheetName });
-  return snapshotColumnsFromSnapshot(snapshot);
+  return snapshotColumnsFromSnapshot(snapshot, form);
 }
 
-function snapshotColumnsFromSnapshot(snapshot) {
-  return (snapshot.columns || []).map((col) => ({
-    key: col.key,
-    alaSqlKey: headerKeyToAlaSqlKey(col.key),
-    path: col.path,
-    label: col.path[col.path.length - 1] || col.key,
-  }));
+/**
+ * form.schema を走査して `pipePath -> field.type` のマップを作る。
+ */
+function buildSchemaTypeMap(form) {
+  const map = new Map();
+  if (!form || !Array.isArray(form.schema)) return map;
+  traverseSchema(form.schema, (field, ctx) => {
+    const pipePath = (ctx?.pathSegments || []).join("|");
+    if (!pipePath) return;
+    if (!map.has(pipePath)) map.set(pipePath, field?.type);
+  });
+  return map;
 }
 
-async function executeGuiQuestion(question, { forms, settings } = {}) {
+function snapshotColumnsFromSnapshot(snapshot, form) {
+  const typeMap = buildSchemaTypeMap(form);
+  return (snapshot.columns || []).map((col) => {
+    const out = {
+      key: col.key,
+      alaSqlKey: headerKeyToAlaSqlKey(col.key),
+      path: col.path,
+      label: col.path[col.path.length - 1] || col.key,
+    };
+    if (form) out.type = resolveColumnType(typeMap, col.key);
+    return out;
+  });
+}
+
+async function executeGuiQuestion(question, { forms } = {}) {
   const gui = question.query.gui;
   if (!gui || !gui.formId) {
     return { ok: false, error: "GUI クエリの定義が不正です" };
@@ -179,21 +207,21 @@ async function executeGuiQuestion(question, { forms, settings } = {}) {
   if (!form) {
     return { ok: false, error: "GUI クエリの対象フォームが見つかりません" };
   }
+  const sheetConfig = getSheetConfig(form);
+  if (!sheetConfig) {
+    return { ok: false, error: "対象フォームにスプレッドシートが紐付いていません" };
+  }
 
   let snapshot;
   try {
-    snapshot = await getSnapshot({
-      formId: form.id,
-      spreadsheetId: settings?.spreadsheetId,
-      sheetName: settings?.sheetName || "Data",
-    });
+    snapshot = await getSnapshot({ formId: form.id, ...sheetConfig });
   } catch (err) {
     return { ok: false, error: "データ取得に失敗しました: " + (err.message || String(err)) };
   }
 
   const compiled = compileGuiToSql(gui, {
     form,
-    snapshotColumns: snapshotColumnsFromSnapshot(snapshot),
+    snapshotColumns: snapshotColumnsFromSnapshot(snapshot, form),
   });
   if (!compiled.ok) {
     return { ok: false, error: compiled.errors.join(" / ") };

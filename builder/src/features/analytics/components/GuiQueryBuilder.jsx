@@ -1,18 +1,27 @@
 import React, { useMemo } from "react";
 import { traverseSchema } from "../../../core/schemaUtils.js";
+import {
+  AGG_TYPE_MATRIX,
+  FIXED_DATE_KEYS,
+  isAggCompatible,
+  resolveColumnType,
+} from "../utils/aggregationCompatibility.js";
 
-const NUMERIC_TYPES = new Set(["number"]);
-const DATE_TYPES = new Set(["date"]);
-const FIXED_DATE_KEYS = new Set(["createdAt", "modifiedAt", "deletedAt"]);
+const AGG_LABELS = {
+  count: "件数 (COUNT *)",
+  countNotNull: "非空件数",
+  sum: "合計",
+  avg: "平均",
+  min: "最小",
+  max: "最大",
+};
 
-const AGG_OPTIONS = [
-  { value: "count", label: "件数 (COUNT *)", needsColumn: false },
-  { value: "countNotNull", label: "非空件数", needsColumn: true, columnsOnly: "any" },
-  { value: "sum", label: "合計", needsColumn: true, columnsOnly: "numeric" },
-  { value: "avg", label: "平均", needsColumn: true, columnsOnly: "numeric" },
-  { value: "min", label: "最小", needsColumn: true, columnsOnly: "numeric" },
-  { value: "max", label: "最大", needsColumn: true, columnsOnly: "numeric" },
-];
+const AGG_OPTIONS = Object.keys(AGG_LABELS).map((value) => ({
+  value,
+  label: AGG_LABELS[value],
+  needsColumn: AGG_TYPE_MATRIX[value].columnRequired,
+  allowedTypes: AGG_TYPE_MATRIX[value].allowedTypes,
+}));
 
 const OPERATOR_OPTIONS = [
   { value: "=", label: "等しい" },
@@ -30,8 +39,9 @@ const OPERATOR_OPTIONS = [
 
 const BUCKET_OPTIONS = [
   { value: "", label: "そのまま" },
-  { value: "month", label: "月単位" },
   { value: "year", label: "年単位" },
+  { value: "month", label: "月単位" },
+  { value: "day", label: "日単位" },
 ];
 
 function buildColumnTypeMap(form) {
@@ -45,15 +55,17 @@ function buildColumnTypeMap(form) {
   return map;
 }
 
-function isNumericColumn(typeMap, key) {
-  const t = typeMap.get(key);
-  return t ? NUMERIC_TYPES.has(t) : false;
+function getColumnType(snapshotColumns, typeMap, key) {
+  // snapshotColumns 由来の type を優先（analyticsStore 側で正規化済み）
+  if (Array.isArray(snapshotColumns)) {
+    const c = snapshotColumns.find((x) => x.key === key);
+    if (c && c.type) return c.type;
+  }
+  return resolveColumnType(typeMap, key);
 }
 
-function isDateColumn(typeMap, key) {
-  if (FIXED_DATE_KEYS.has(key)) return true;
-  const t = typeMap.get(key);
-  return t ? DATE_TYPES.has(t) : false;
+function isDateColumn(snapshotColumns, typeMap, key) {
+  return getColumnType(snapshotColumns, typeMap, key) === "date";
 }
 
 function nextAggId(aggs) {
@@ -72,11 +84,6 @@ function nextFilterId(filters) {
 
 export default function GuiQueryBuilder({ gui, onChange, snapshotColumns, form, activeForms, onFormChange }) {
   const typeMap = useMemo(() => buildColumnTypeMap(form), [form]);
-
-  const numericKeys = useMemo(
-    () => snapshotColumns.filter((c) => isNumericColumn(typeMap, c.key)).map((c) => c.key),
-    [snapshotColumns, typeMap]
-  );
 
   const update = (patch) => onChange({ ...gui, ...patch });
 
@@ -130,9 +137,14 @@ export default function GuiQueryBuilder({ gui, onChange, snapshotColumns, form, 
     onFormChange(newId);
   };
 
-  const renderColumnSelect = (value, onChangeFn, restrictTo) => {
-    const options = restrictTo === "numeric"
-      ? snapshotColumns.filter((c) => numericKeys.includes(c.key))
+  const renderColumnSelect = (value, onChangeFn, allowedTypes) => {
+    const options = allowedTypes
+      ? snapshotColumns.filter((c) => {
+          const t = getColumnType(snapshotColumns, typeMap, c.key);
+          // 型が不明な列は許可（snapshot に type が無いケース・固定外列）
+          if (!t || t === "unknown") return true;
+          return allowedTypes.includes(t);
+        })
       : snapshotColumns;
     return (
       <select className="nf-input" value={value || ""} onChange={(e) => onChangeFn(e.target.value)} style={{ minWidth: 180 }}>
@@ -164,17 +176,31 @@ export default function GuiQueryBuilder({ gui, onChange, snapshotColumns, form, 
               {gui.aggregations.map((agg) => {
                 const def = AGG_OPTIONS.find((o) => o.value === agg.type);
                 const needsColumn = def?.needsColumn;
-                const restrictTo = def?.columnsOnly === "numeric" ? "numeric" : null;
+                // 現在の列が新しい集計種別と非互換なら列を解除する
+                const handleAggTypeChange = (e) => {
+                  const newType = e.target.value;
+                  const newDef = AGG_OPTIONS.find((o) => o.value === newType);
+                  let nextColumn = agg.column;
+                  if (newType === "count" || !newDef?.needsColumn) {
+                    nextColumn = undefined;
+                  } else if (agg.column && newDef?.allowedTypes) {
+                    const t = getColumnType(snapshotColumns, typeMap, agg.column);
+                    if (t && t !== "unknown" && !newDef.allowedTypes.includes(t)) {
+                      nextColumn = undefined;
+                    }
+                  }
+                  updateAggregation(agg.id, { type: newType, column: nextColumn });
+                };
                 return (
                   <div key={agg.id} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                     <select
                       className="nf-input"
                       value={agg.type}
-                      onChange={(e) => updateAggregation(agg.id, { type: e.target.value, column: e.target.value === "count" ? undefined : agg.column })}
+                      onChange={handleAggTypeChange}
                     >
                       {AGG_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
-                    {needsColumn && renderColumnSelect(agg.column, (v) => updateAggregation(agg.id, { column: v }), restrictTo)}
+                    {needsColumn && renderColumnSelect(agg.column, (v) => updateAggregation(agg.id, { column: v }), def?.allowedTypes)}
                     <button type="button" className="nf-btn-outline" onClick={() => removeAggregation(agg.id)} disabled={gui.aggregations.length <= 1}>削除</button>
                   </div>
                 );
@@ -189,7 +215,7 @@ export default function GuiQueryBuilder({ gui, onChange, snapshotColumns, form, 
             <label className="nf-label">グループ化</label>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {gui.groupBy.map((g, i) => {
-                const isDate = isDateColumn(typeMap, g.column);
+                const isDate = isDateColumn(snapshotColumns, typeMap, g.column);
                 return (
                   <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
                     {renderColumnSelect(g.column, (v) => updateGroup(i, { column: v, bucket: undefined }))}

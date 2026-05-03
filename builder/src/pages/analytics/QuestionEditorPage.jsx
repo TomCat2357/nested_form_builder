@@ -3,21 +3,14 @@ import { useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../../app/components/AppLayout.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
-import { useBuilderSettings } from "../../features/settings/settingsStore.js";
+import { getSheetConfig } from "../../app/state/dataStoreHelpers.js";
 import { executeQuestion, saveQuestion, listQuestions, getSnapshotColumns } from "../../features/analytics/analyticsStore.js";
 import { generateQuestionId } from "../../features/analytics/utils/generateId.js";
 import { buildColumnIndex, resolveColumnRef } from "../../features/analytics/utils/columnIdentifierResolver.js";
 import { compileGuiToSql } from "../../features/analytics/utils/compileGuiToSql.js";
-import ChartRenderer from "../../features/analytics/components/ChartRenderer.jsx";
+import { suggestChartType } from "../../features/analytics/utils/suggestChartType.js";
 import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder.jsx";
-
-const VIZ_TYPES = [
-  { value: "table", label: "テーブル" },
-  { value: "scalar", label: "単一値" },
-  { value: "bar", label: "棒グラフ" },
-  { value: "line", label: "折れ線グラフ" },
-  { value: "pie", label: "円グラフ" },
-];
+import VisualizePanel from "../../features/analytics/components/VisualizePanel.jsx";
 
 function emptyGui(formId) {
   return {
@@ -31,21 +24,11 @@ function emptyGui(formId) {
   };
 }
 
-function recommendVizType(compiledColumns) {
-  const dims = compiledColumns.filter((c) => c.role === "dimension").length;
-  const metrics = compiledColumns.filter((c) => c.role === "metric").length;
-  if (dims === 0 && metrics === 1) return "scalar";
-  if (dims === 0) return "table";
-  if (dims === 1) return "bar";
-  return "table";
-}
-
 export default function QuestionEditorPage() {
   const navigate = useNavigate();
   const { questionId } = useParams();
   const { isAdmin } = useAuth();
   const { forms } = useAppData();
-  const { settings } = useBuilderSettings();
 
   const [mode, setMode] = useState("gui");
   const [name, setName] = useState("");
@@ -108,18 +91,22 @@ export default function QuestionEditorPage() {
 
   useEffect(() => {
     const fid = mode === "gui" ? gui.formId : selectedFormId;
-    if (!fid || !settings?.spreadsheetId) {
+    if (!fid) {
       setSnapshotColumns([]);
+      setSnapshotError(null);
+      return;
+    }
+    const targetForm = forms.find((f) => f.id === fid);
+    const sheetConfig = targetForm ? getSheetConfig(targetForm) : null;
+    if (!sheetConfig) {
+      setSnapshotColumns([]);
+      setSnapshotError("このフォームにはスプレッドシートが紐付いていません。フォーム設定で spreadsheetId を指定してください。");
       return;
     }
     let cancelled = false;
     setSnapshotLoading(true);
     setSnapshotError(null);
-    getSnapshotColumns({
-      formId: fid,
-      spreadsheetId: settings.spreadsheetId,
-      sheetName: settings.sheetName || "Data",
-    }).then((cols) => {
+    getSnapshotColumns({ formId: fid, ...sheetConfig, form: targetForm }).then((cols) => {
       if (!cancelled) setSnapshotColumns(cols);
     }).catch((err) => {
       if (!cancelled) setSnapshotError(err.message || String(err));
@@ -127,7 +114,7 @@ export default function QuestionEditorPage() {
       if (!cancelled) setSnapshotLoading(false);
     });
     return () => { cancelled = true; };
-  }, [mode, gui.formId, selectedFormId, settings?.spreadsheetId, settings?.sheetName]);
+  }, [mode, gui.formId, selectedFormId, forms]);
 
   const guiForm = useMemo(() => forms.find((f) => f.id === gui.formId) || null, [forms, gui.formId]);
 
@@ -165,14 +152,20 @@ export default function QuestionEditorPage() {
         setRunning(false);
         return;
       }
+      const sheetConfig = getSheetConfig(form);
+      if (!sheetConfig) {
+        setRunError("選択したフォームにスプレッドシートが紐付いていません。フォーム設定で spreadsheetId を指定してください。");
+        setRunning(false);
+        return;
+      }
       questionForRun = {
         query: {
           mode: "sql",
           formSources: [{
             formId: form.id,
             alias: "data",
-            spreadsheetId: settings.spreadsheetId,
-            sheetName: settings.sheetName || "Data",
+            spreadsheetId: sheetConfig.spreadsheetId,
+            sheetName: sheetConfig.sheetName,
           }],
           sql,
         },
@@ -180,13 +173,13 @@ export default function QuestionEditorPage() {
     }
 
     try {
-      const result = await executeQuestion(questionForRun, { forms, settings });
+      const result = await executeQuestion(questionForRun, { forms });
       if (result.ok) {
         setQueryResult(result);
         if (mode === "gui" && Array.isArray(result.compiledColumns)) {
           const dims = result.compiledColumns.filter((c) => c.role === "dimension");
           const metrics = result.compiledColumns.filter((c) => c.role === "metric");
-          const recommended = recommendVizType(result.compiledColumns);
+          const recommended = suggestChartType(result.compiledColumns, result.rows?.length || 0);
           setVizType(recommended);
           setXField(dims[0]?.name || "");
           setYFields(metrics.map((m) => m.name).join(","));
@@ -199,7 +192,7 @@ export default function QuestionEditorPage() {
     } finally {
       setRunning(false);
     }
-  }, [mode, gui, sql, selectedFormId, forms, settings]);
+  }, [mode, gui, sql, selectedFormId, forms]);
 
   const handleSave = useCallback(async () => {
     if (!name.trim()) { setSaveError("Question 名を入力してください。"); return; }
@@ -212,13 +205,18 @@ export default function QuestionEditorPage() {
       if (!selectedFormId) { setSaveError("フォームを選択してください。"); return; }
       const form = forms.find((f) => f.id === selectedFormId);
       if (!form) return;
+      const sheetConfig = getSheetConfig(form);
+      if (!sheetConfig) {
+        setSaveError("選択したフォームにスプレッドシートが紐付いていません。フォーム設定で spreadsheetId を指定してください。");
+        return;
+      }
       query = {
         mode: "sql",
         formSources: [{
           formId: form.id,
           alias: "data",
-          spreadsheetId: settings.spreadsheetId,
-          sheetName: settings.sheetName || "Data",
+          spreadsheetId: sheetConfig.spreadsheetId,
+          sheetName: sheetConfig.sheetName,
         }],
         sql,
       };
@@ -250,7 +248,7 @@ export default function QuestionEditorPage() {
     } finally {
       setSaving(false);
     }
-  }, [mode, name, gui, sql, selectedFormId, vizType, xField, yFields, questionId, forms, settings, navigate]);
+  }, [mode, name, gui, sql, selectedFormId, vizType, xField, yFields, questionId, forms, navigate]);
 
   const handleSwitchToSql = () => {
     if (mode === "sql") return;
@@ -395,40 +393,16 @@ export default function QuestionEditorPage() {
 
         {runError && <p className="nf-text-warning">{runError}</p>}
 
-        {queryResult && (
-          <div>
-            <label className="nf-label">可視化設定</label>
-            <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "10px" }}>
-              <div>
-                <span style={{ fontSize: "12px", marginRight: "6px" }}>グラフ種別</span>
-                <select className="nf-input" value={vizType} onChange={(e) => setVizType(e.target.value)}>
-                  {VIZ_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                </select>
-              </div>
-              {vizType !== "table" && (
-                <>
-                  {vizType !== "scalar" && (
-                    <div>
-                      <span style={{ fontSize: "12px", marginRight: "6px" }}>X 軸</span>
-                      <input className="nf-input" type="text" value={xField} onChange={(e) => setXField(e.target.value)} placeholder="列名" style={{ width: "120px" }} />
-                    </div>
-                  )}
-                  <div>
-                    <span style={{ fontSize: "12px", marginRight: "6px" }}>{vizType === "scalar" ? "値の列" : "Y 軸（カンマ区切り）"}</span>
-                    <input className="nf-input" type="text" value={yFields} onChange={(e) => setYFields(e.target.value)} placeholder={vizType === "scalar" ? "a_1" : "count,total"} style={{ width: "160px" }} />
-                  </div>
-                </>
-              )}
-            </div>
-
-            <div style={{ border: "1px solid var(--nf-border)", borderRadius: "4px", padding: "12px" }}>
-              <ChartRenderer viz={viz} rows={queryResult.rows} columns={queryResult.columns} />
-            </div>
-            <p className="nf-text-subtle" style={{ marginTop: "6px" }}>
-              {queryResult.rows.length} 行
-            </p>
-          </div>
-        )}
+        <VisualizePanel
+          vizType={vizType}
+          xField={xField}
+          yFields={yFields}
+          onVizTypeChange={setVizType}
+          onXFieldChange={setXField}
+          onYFieldsChange={setYFields}
+          result={queryResult}
+          viz={viz}
+        />
       </div>
     </AppLayout>
   );

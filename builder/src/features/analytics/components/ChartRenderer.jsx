@@ -32,6 +32,42 @@ function buildChartConfig(type, viz, rows, columns) {
     };
   }
 
+  if (type === "scatter") {
+    const datasets = yFields.map((field, i) => {
+      const points = [];
+      for (const r of rows) {
+        const xRaw = r[xField];
+        const yRaw = r[field];
+        const xNum = Number(xRaw);
+        const yNum = Number(yRaw);
+        if (Number.isFinite(xNum) && Number.isFinite(yNum)) {
+          points.push({ x: xNum, y: yNum });
+        }
+      }
+      return {
+        label: field,
+        data: points,
+        backgroundColor: COLORS[i % COLORS.length],
+        borderColor: COLORS[i % COLORS.length],
+        pointRadius: 4,
+        showLine: false,
+      };
+    });
+    return {
+      type: "scatter",
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: showLegend } },
+        scales: {
+          x: { type: "linear", title: { display: !!xField, text: xField } },
+          y: { beginAtZero: false },
+        },
+      },
+    };
+  }
+
   const datasets = yFields.map((field, i) => ({
     label: field,
     data: rows.map((r) => r[field]),
