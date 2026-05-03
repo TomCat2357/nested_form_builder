@@ -12,6 +12,7 @@ Nested Form Builder は、ネストした階層構造を持つフォームの設
 - 回答を Google Sheets に保存し、一覧・検索・編集・削除
 - Excel エクスポート、Google Doc / PDF / Gmail 下書きへの出力
 - ファイルアップロード（Google Drive 保存）
+- Question / Dashboard 集計ビュー（GUI または SQL でクエリを組み立て、ブラウザ内 AlaSQL で実行、テーブル / 単一値 / 棒・折れ線・円・散布図）
 - テーマ切替、表示設定、管理者設定
 - IndexedDB による差分同期キャッシュ
 - 排他制御付きの並行保存
@@ -250,8 +251,8 @@ nested_form_builder/
 │   ├── src/
 │   │   ├── app/           # App.jsx, Provider, 状態管理, テーマ
 │   │   ├── core/          # スキーマ, バリデーション, displayModes
-│   │   ├── features/      # admin, editor, preview, search, nav, settings
-│   │   ├── pages/         # ページコンポーネント
+│   │   ├── features/      # admin, editor, preview, search, nav, settings, analytics
+│   │   ├── pages/         # ページコンポーネント (analytics/ に Dashboard・Question 画面)
 │   │   ├── services/      # gasClient.js (GAS RPC ラッパー)
 │   │   └── utils/         # dateTime, excelExport, formPaths 等
 │   ├── Index.html         # エントリ HTML
@@ -268,6 +269,7 @@ nested_form_builder/
 │   ├── syncRecordsMerge.js # 差分同期の純粋関数群
 │   ├── forms*.gs          # フォームCRUD, インポート, マッピング, 解析, API
 │   ├── sheets*.gs         # ヘッダー構築, 行操作, レコードCRUD, エクスポート, 差分同期
+│   ├── analyticsApi.gs    # Question / Dashboard の永続化と列指向スナップショット取得 API
 │   ├── appsscript.json    # GAS マニフェスト
 │   └── scripts/bundle.js  # .gs → dist/Bundle.gs 結合スクリプト
 ├── gas_for_spreadsheet/    # 保存先スプレッドシート用の補助スクリプト
@@ -292,8 +294,12 @@ nested_form_builder/
 | `/forms/:formId/edit` | `AdminFormEditorPage` | 既存フォーム編集 |
 | `/config` | `ConfigPage` | フォーム別・全体設定 |
 | `/admin-settings` | `AdminSettingsPage` | 管理者キー・メール設定 |
+| `/analytics` | `AnalyticsHubPage` | Dashboard / Question 一覧（閲覧は全員、作成・編集・削除は管理者のみ） |
+| `/analytics/questions/new` / `/analytics/questions/:questionId` | `QuestionEditorPage` | Question の新規作成・編集（管理者専用、開いた際にリダイレクト判定あり） |
+| `/analytics/dashboards/new` / `/analytics/dashboards/:dashboardId/edit` | `DashboardEditorPage` | Dashboard の新規作成・編集（管理者専用） |
+| `/analytics/dashboards/:dashboardId` | `DashboardViewPage` | Dashboard 閲覧（カード単位で Question を実行・グラフ描画） |
 
-アクセス制御は `FormsRoute`（`propertyStoreMode=script` で管理者限定）と `AdminSettingsRoute`（管理者設定有効時のみ）が担当します。
+アクセス制御は `FormsRoute`（`propertyStoreMode=script` で管理者限定）と `AdminSettingsRoute`（管理者設定有効時のみ）が担当します。`/analytics` 配下は Route レベルでは無制限で、各画面コンポーネントが `isAdmin` で編集系 UI を出し分けます。
 
 ## Provider と状態管理
 
@@ -349,6 +355,8 @@ nested_form_builder/
 フォーム管理系: `nfbListForms` / `nfbGetForm` / `nfbSaveForm` / `nfbDeleteForm` / `nfbDeleteForms` / `nfbArchiveForm` / `nfbUnarchiveForm` / `nfbArchiveForms` / `nfbUnarchiveForms` / `nfbSetFormReadOnly` / `nfbClearFormReadOnly` / `nfbSetFormsReadOnly` / `nfbClearFormsReadOnly` / `nfbCopyForm` / `nfbImportFormsFromDrive` / `nfbRegisterImportedForm`
 
 設定系: `nfbGetAdminKey` / `nfbSetAdminKey` / `nfbGetAdminEmail` / `nfbSetAdminEmail` / `nfbGetRestrictToFormOnly` / `nfbSetRestrictToFormOnly`
+
+Analytics 系: `nfbListAnalyticsQuestions` / `nfbGetAnalyticsQuestion` / `nfbSaveAnalyticsQuestion` / `nfbDeleteAnalyticsQuestion` / `nfbListAnalyticsDashboards` / `nfbGetAnalyticsDashboard` / `nfbSaveAnalyticsDashboard` / `nfbDeleteAnalyticsDashboard` / `nfbGetAnalyticsSnapshot` / `nfbCheckAnalyticsSnapshotVersion`（Question / Dashboard の永続化と、AlaSQL 実行用の列指向スナップショット取得・差分判定）
 
 ### 保存先の分担
 
