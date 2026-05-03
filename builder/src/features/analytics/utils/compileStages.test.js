@@ -68,7 +68,7 @@ test("summarize 後の filter は HAVING になる", () => {
   assert.match(r.sql, /HAVING \[a_1\] > 1000/);
 });
 
-test("date bucket month で SUBSTRING に変換", () => {
+test("date bucket month で NFB_DATE_BIN に変換", () => {
   const r = compile([
     PICK,
     { id: "s_2", type: "summarize",
@@ -77,8 +77,8 @@ test("date bucket month で SUBSTRING に変換", () => {
     },
   ]);
   assert.equal(r.ok, true);
-  assert.match(r.sql, /SUBSTRING\(\[受付日\], 1, 7\) AS \[受付日__month\]/);
-  assert.match(r.sql, /GROUP BY SUBSTRING\(\[受付日\], 1, 7\)/);
+  assert.match(r.sql, /NFB_DATE_BIN\(\[受付日\], 7\) AS \[受付日__month\]/);
+  assert.match(r.sql, /GROUP BY NFB_DATE_BIN\(\[受付日\], 7\)/);
 });
 
 test("date bucket year/day", () => {
@@ -89,7 +89,7 @@ test("date bucket year/day", () => {
       groupBy: [{ column: "受付日", bucket: "year" }],
     },
   ]);
-  assert.match(ry.sql, /SUBSTRING\(\[受付日\], 1, 4\) AS \[受付日__year\]/);
+  assert.match(ry.sql, /NFB_DATE_BIN\(\[受付日\], 4\) AS \[受付日__year\]/);
 
   const rd = compile([
     PICK,
@@ -98,7 +98,7 @@ test("date bucket year/day", () => {
       groupBy: [{ column: "受付日", bucket: "day" }],
     },
   ]);
-  assert.match(rd.sql, /SUBSTRING\(\[受付日\], 1, 10\) AS \[受付日__day\]/);
+  assert.match(rd.sql, /NFB_DATE_BIN\(\[受付日\], 10\) AS \[受付日__day\]/);
 });
 
 test("sort + limit", () => {

@@ -68,16 +68,18 @@ function resolveAlaSqlKey(columnKey, snapshotIndex) {
 function dimensionExpression(group, snapshotIndex) {
   const alaSqlKey = resolveAlaSqlKey(group.column, snapshotIndex);
   const bracketed = bracketColumn(alaSqlKey);
-  // 日付列は ISO 文字列 (YYYY-MM-DD...) 想定で SUBSTRING で切り出す。
+  // 日付列はエポック ms / Date / ISO 文字列が混在するため、analyticsAlaSql の
+  // NFB_DATE_BIN UDF で型差を吸収して ISO 先頭 N 文字を返す。SUBSTRING を直接使うと
+  // 数値値に対して .substr が呼ばれて落ちる。
   // quarter / week は AlaSQL の DATE 関数挙動が不安定なため後続ステップで対応。
   if (group.bucket === "year") {
-    return { expr: "SUBSTRING(" + bracketed + ", 1, 4)", alias: alaSqlKey + "__year" };
+    return { expr: "NFB_DATE_BIN(" + bracketed + ", 4)", alias: alaSqlKey + "__year" };
   }
   if (group.bucket === "month") {
-    return { expr: "SUBSTRING(" + bracketed + ", 1, 7)", alias: alaSqlKey + "__month" };
+    return { expr: "NFB_DATE_BIN(" + bracketed + ", 7)", alias: alaSqlKey + "__month" };
   }
   if (group.bucket === "day") {
-    return { expr: "SUBSTRING(" + bracketed + ", 1, 10)", alias: alaSqlKey + "__day" };
+    return { expr: "NFB_DATE_BIN(" + bracketed + ", 10)", alias: alaSqlKey + "__day" };
   }
   return { expr: bracketed, alias: alaSqlKey };
 }

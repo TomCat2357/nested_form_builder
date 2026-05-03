@@ -101,7 +101,7 @@ test("文字列リテラルのシングルクォートをエスケープ", () =>
   assert.match(r.sql, /\[氏名\] = 'O''Brien'/);
 });
 
-test("date bucket month で SUBSTRING に変換", () => {
+test("date bucket month で NFB_DATE_BIN に変換", () => {
   const r = compile({
     formId,
     aggregations: [{ id: "a_1", type: "count" }],
@@ -109,8 +109,8 @@ test("date bucket month で SUBSTRING に変換", () => {
     filters: [],
   });
   assert.equal(r.ok, true);
-  assert.match(r.sql, /SELECT SUBSTRING\(\[受付日\], 1, 7\) AS \[受付日__month\]/);
-  assert.match(r.sql, /GROUP BY SUBSTRING\(\[受付日\], 1, 7\)/);
+  assert.match(r.sql, /SELECT NFB_DATE_BIN\(\[受付日\], 7\) AS \[受付日__month\]/);
+  assert.match(r.sql, /GROUP BY NFB_DATE_BIN\(\[受付日\], 7\)/);
 });
 
 test("orderBy と limit が出力される", () => {
