@@ -95,7 +95,10 @@ export function migrateLegacyGui(gui) {
     });
   }
 
-  const aggregations = Array.isArray(gui.aggregations) ? gui.aggregations.filter(Boolean) : [];
+  const rawAggregations = Array.isArray(gui.aggregations) ? gui.aggregations.filter(Boolean) : [];
+  // type === "raw" は raw mode 指定（集計しない）。1 つでも含まれていれば summarize を生成しない。
+  const hasRaw = rawAggregations.some((a) => a.type === "raw");
+  const aggregations = hasRaw ? [] : rawAggregations;
   const groupBy = Array.isArray(gui.groupBy) ? gui.groupBy.filter(Boolean) : [];
   let summarizeAggIds = null;
   if (aggregations.length > 0) {
@@ -114,7 +117,7 @@ export function migrateLegacyGui(gui) {
       })),
     });
   }
-  // aggregations 0 件の場合は v1 ではエラーだったため、ここでは summarize ステージを生成しない（raw mode）。
+  // aggregations 0 件 / raw mode の場合は summarize ステージを生成しない（compileStages の SELECT * 経路に流す）。
 
   const orderBy = Array.isArray(gui.orderBy) ? gui.orderBy : [];
   const sortEntries = migrateOrderBy(orderBy, summarizeAggIds);

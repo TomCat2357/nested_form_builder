@@ -179,10 +179,17 @@ export default function QuestionEditorPage() {
         if (mode === "gui" && Array.isArray(result.compiledColumns)) {
           const dims = result.compiledColumns.filter((c) => c.role === "dimension");
           const metrics = result.compiledColumns.filter((c) => c.role === "metric");
-          const recommended = suggestChartType(result.compiledColumns, result.rows?.length || 0);
-          setVizType(recommended);
-          setXField(dims[0]?.name || "");
-          setYFields(metrics.map((m) => m.name).join(","));
+          if (result.compiledColumns.length === 0 && Array.isArray(result.columns) && result.columns.length > 0) {
+            // raw mode: dim/metric ロールが無いので結果列名から X/Y を自動補完する。
+            setVizType("table");
+            setXField(result.columns[0] || "");
+            setYFields(result.columns.slice(1).join(","));
+          } else {
+            const recommended = suggestChartType(result.compiledColumns, result.rows?.length || 0);
+            setVizType(recommended);
+            setXField(dims[0]?.name || "");
+            setYFields(metrics.map((m) => m.name).join(","));
+          }
         }
       } else {
         setRunError(result.error);

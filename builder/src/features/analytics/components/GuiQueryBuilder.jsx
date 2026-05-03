@@ -14,6 +14,7 @@ const AGG_LABELS = {
   avg: "平均",
   min: "最小",
   max: "最大",
+  raw: "集計なし (生データ)",
 };
 
 const AGG_OPTIONS = Object.keys(AGG_LABELS).map((value) => ({
@@ -21,6 +22,7 @@ const AGG_OPTIONS = Object.keys(AGG_LABELS).map((value) => ({
   label: AGG_LABELS[value],
   needsColumn: AGG_TYPE_MATRIX[value].columnRequired,
   allowedTypes: AGG_TYPE_MATRIX[value].allowedTypes,
+  isRawMode: !!AGG_TYPE_MATRIX[value].isRawMode,
 }));
 
 const OPERATOR_OPTIONS = [
@@ -84,6 +86,7 @@ function nextFilterId(filters) {
 
 export default function GuiQueryBuilder({ gui, onChange, snapshotColumns, form, activeForms, onFormChange }) {
   const typeMap = useMemo(() => buildColumnTypeMap(form), [form]);
+  const hasRaw = Array.isArray(gui.aggregations) && gui.aggregations.some((a) => a && a.type === "raw");
 
   const update = (patch) => onChange({ ...gui, ...patch });
 
@@ -180,6 +183,11 @@ export default function GuiQueryBuilder({ gui, onChange, snapshotColumns, form, 
                 const handleAggTypeChange = (e) => {
                   const newType = e.target.value;
                   const newDef = AGG_OPTIONS.find((o) => o.value === newType);
+                  // raw mode を選んだときは集計欄を 1 行 (raw のみ) に強制し、グループ化もクリア。
+                  if (newDef?.isRawMode) {
+                    update({ aggregations: [{ id: agg.id, type: "raw" }], groupBy: [] });
+                    return;
+                  }
                   let nextColumn = agg.column;
                   if (newType === "count" || !newDef?.needsColumn) {
                     nextColumn = undefined;
@@ -205,12 +213,20 @@ export default function GuiQueryBuilder({ gui, onChange, snapshotColumns, form, 
                   </div>
                 );
               })}
-              <div>
-                <button type="button" className="nf-btn-outline" onClick={addAggregation}>+ 集計を追加</button>
-              </div>
+              {!hasRaw && (
+                <div>
+                  <button type="button" className="nf-btn-outline" onClick={addAggregation}>+ 集計を追加</button>
+                </div>
+              )}
+              {hasRaw && (
+                <p className="nf-text-subtle" style={{ fontSize: 12, margin: 0 }}>
+                  生データモード：行ごとの値をそのまま取得します（グループ化は無効）。散布図やテーブル可視化向け。
+                </p>
+              )}
             </div>
           </section>
 
+          {!hasRaw && (
           <section>
             <label className="nf-label">グループ化</label>
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -233,6 +249,7 @@ export default function GuiQueryBuilder({ gui, onChange, snapshotColumns, form, 
               </div>
             </div>
           </section>
+          )}
 
           <section>
             <label className="nf-label">フィルター</label>

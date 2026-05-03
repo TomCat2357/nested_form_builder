@@ -17,7 +17,8 @@ export function compileGuiToSql(gui, opts) {
 
   if (!gui || !gui.formId) errors.push("フォームが選択されていません");
   const aggs = Array.isArray(gui?.aggregations) ? gui.aggregations : [];
-  if (aggs.length === 0) errors.push("集計を 1 つ以上追加してください");
+  const hasRaw = aggs.some((a) => a && a.type === "raw");
+  if (!hasRaw && aggs.length === 0) errors.push("集計を 1 つ以上追加してください");
 
   if (errors.length > 0) return { ok: false, errors };
 

@@ -142,6 +142,67 @@ test("aggregations が空だとエラー", () => {
   assert.match(r.errors.join(" "), /集計/);
 });
 
+test("raw mode: aggregations に type:raw があれば SELECT * を返す", () => {
+  const r = compile({
+    formId,
+    aggregations: [{ id: "a_1", type: "raw" }],
+    groupBy: [],
+    filters: [],
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.sql, "SELECT * FROM " + tableAlias);
+  assert.deepEqual(r.columns, []);
+});
+
+test("raw mode + filter で WHERE 句が出る", () => {
+  const r = compile({
+    formId,
+    aggregations: [{ id: "a_1", type: "raw" }],
+    groupBy: [],
+    filters: [{ id: "f1", column: "基本情報|金額", operator: ">", value: 100 }],
+  });
+  assert.equal(r.ok, true);
+  assert.match(r.sql, /SELECT \* FROM form_f_complaint WHERE \[基本情報__金額\] > 100/);
+});
+
+test("raw mode + limit で LIMIT が出る", () => {
+  const r = compile({
+    formId,
+    aggregations: [{ id: "a_1", type: "raw" }],
+    groupBy: [],
+    filters: [],
+    limit: 50,
+  });
+  assert.equal(r.ok, true);
+  assert.match(r.sql, /SELECT \* FROM form_f_complaint LIMIT 50/);
+});
+
+test("raw mode が含まれていれば groupBy は無視される", () => {
+  const r = compile({
+    formId,
+    aggregations: [{ id: "a_1", type: "raw" }],
+    groupBy: [{ column: "基本情報|区" }],
+    filters: [],
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.sql, "SELECT * FROM " + tableAlias);
+  assert.doesNotMatch(r.sql, /GROUP BY/);
+});
+
+test("raw mode が含まれていれば他の集計種別も無視される", () => {
+  const r = compile({
+    formId,
+    aggregations: [
+      { id: "a_1", type: "raw" },
+      { id: "a_2", type: "sum", column: "基本情報|金額" },
+    ],
+    groupBy: [],
+    filters: [],
+  });
+  assert.equal(r.ok, true);
+  assert.equal(r.sql, "SELECT * FROM " + tableAlias);
+});
+
 test("sum などで column が無いとエラー", () => {
   const r = compile({
     formId,

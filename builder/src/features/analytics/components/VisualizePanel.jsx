@@ -30,6 +30,8 @@ export default function VisualizePanel({
   const req = CHART_AXIS_REQUIREMENTS[vizType] || CHART_AXIS_REQUIREMENTS.table;
   const xLabel = req.xLabel || "X 軸";
   const yLabel = req.yLabel || (req.y === "single" ? "値の列" : "Y 軸（カンマ区切り）");
+  const availableColumns = Array.isArray(result.columns) ? result.columns : [];
+  const datalistId = "viz-cols-" + (availableColumns.length || 0);
 
   return (
     <div>
@@ -44,14 +46,26 @@ export default function VisualizePanel({
         {req.x && (
           <div>
             <span style={{ fontSize: "12px", marginRight: "6px" }}>{xLabel}</span>
-            <input
-              className="nf-input"
-              type="text"
-              value={xField}
-              onChange={(e) => onXFieldChange(e.target.value)}
-              placeholder="列名"
-              style={{ width: "120px" }}
-            />
+            {availableColumns.length > 0 ? (
+              <select
+                className="nf-input"
+                value={xField}
+                onChange={(e) => onXFieldChange(e.target.value)}
+                style={{ minWidth: "140px" }}
+              >
+                <option value="">列を選択...</option>
+                {availableColumns.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            ) : (
+              <input
+                className="nf-input"
+                type="text"
+                value={xField}
+                onChange={(e) => onXFieldChange(e.target.value)}
+                placeholder="列名"
+                style={{ width: "120px" }}
+              />
+            )}
           </div>
         )}
         {req.y && (
@@ -63,8 +77,14 @@ export default function VisualizePanel({
               value={yFields}
               onChange={(e) => onYFieldsChange(e.target.value)}
               placeholder={req.y === "single" ? "a_1" : "count,total"}
-              style={{ width: "160px" }}
+              style={{ width: "200px" }}
+              list={availableColumns.length > 0 ? datalistId : undefined}
             />
+            {availableColumns.length > 0 && (
+              <datalist id={datalistId}>
+                {availableColumns.map((c) => <option key={c} value={c} />)}
+              </datalist>
+            )}
           </div>
         )}
       </div>

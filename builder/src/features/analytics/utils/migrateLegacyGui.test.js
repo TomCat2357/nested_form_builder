@@ -118,3 +118,34 @@ test("空 / null / undefined を渡しても落ちない", () => {
   assert.deepEqual(migrateLegacyGui(undefined), { schemaVersion: 2, stages: [] });
   assert.deepEqual(migrateLegacyGui({}), { schemaVersion: 2, stages: [] });
 });
+
+test("raw mode: type:raw の集計があれば summarize を生成しない", () => {
+  const v2 = migrateLegacyGui({
+    formId: "f_x",
+    aggregations: [{ id: "a_1", type: "raw" }],
+    groupBy: [{ column: "category" }],
+  });
+  assert.deepEqual(v2.stages.map((s) => s.type), ["pick_data"]);
+});
+
+test("raw mode + filter + limit: summarize は生成されないが filter/limit は残る", () => {
+  const v2 = migrateLegacyGui({
+    formId: "f_x",
+    aggregations: [{ id: "a_1", type: "raw" }],
+    filters: [{ id: "f1", column: "amount", operator: ">", value: 100 }],
+    limit: 50,
+  });
+  assert.deepEqual(v2.stages.map((s) => s.type), ["pick_data", "filter", "limit"]);
+});
+
+test("raw が他の集計と混在していても全体が raw mode 扱い", () => {
+  const v2 = migrateLegacyGui({
+    formId: "f_x",
+    aggregations: [
+      { id: "a_1", type: "raw" },
+      { id: "a_2", type: "sum", column: "amount" },
+    ],
+    groupBy: [{ column: "category" }],
+  });
+  assert.equal(v2.stages.find((s) => s.type === "summarize"), undefined);
+});

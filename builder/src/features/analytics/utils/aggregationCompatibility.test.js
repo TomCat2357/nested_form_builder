@@ -11,8 +11,8 @@ import {
   resolveColumnType,
 } from "./aggregationCompatibility.js";
 
-test("AGG_TYPE_MATRIX: 6 種すべて定義されている", () => {
-  assert.deepEqual(AGG_TYPES.sort(), ["avg", "count", "countNotNull", "max", "min", "sum"]);
+test("AGG_TYPE_MATRIX: 7 種すべて定義されている (raw 含む)", () => {
+  assert.deepEqual(AGG_TYPES.sort(), ["avg", "count", "countNotNull", "max", "min", "raw", "sum"]);
 });
 
 test("isAggCompatible: sum/avg は number のみ", () => {
@@ -48,18 +48,18 @@ test("isAggCompatible: 未知の集計種別は false", () => {
   assert.equal(isAggCompatible("median", "number"), false);
 });
 
-test("compatibleAggTypesForColumnType: 列型で集計を絞り込める", () => {
+test("compatibleAggTypesForColumnType: 列型で集計を絞り込める (raw は全型で許容)", () => {
   const numAggs = compatibleAggTypesForColumnType("number").sort();
-  assert.deepEqual(numAggs, ["avg", "count", "countNotNull", "max", "min", "sum"]);
+  assert.deepEqual(numAggs, ["avg", "count", "countNotNull", "max", "min", "raw", "sum"]);
 
   const strAggs = compatibleAggTypesForColumnType("string").sort();
-  assert.deepEqual(strAggs, ["count", "countNotNull", "max", "min"]);
+  assert.deepEqual(strAggs, ["count", "countNotNull", "max", "min", "raw"]);
 
   const dateAggs = compatibleAggTypesForColumnType("date").sort();
-  assert.deepEqual(dateAggs, ["count", "countNotNull", "max", "min"]);
+  assert.deepEqual(dateAggs, ["count", "countNotNull", "max", "min", "raw"]);
 
   const boolAggs = compatibleAggTypesForColumnType("boolean").sort();
-  assert.deepEqual(boolAggs, ["count", "countNotNull"]);
+  assert.deepEqual(boolAggs, ["count", "countNotNull", "raw"]);
 });
 
 test("assertAggColumnType: 数値列に sum は OK", () => {
@@ -92,12 +92,26 @@ test("assertAggColumnType: 列が候補に無くても型不明として通す",
   assert.equal(assertAggColumnType({ type: "sum", column: "未知列" }, []), null);
 });
 
-test("AGG_TYPE_MATRIX: count のみ列指定不要", () => {
+test("AGG_TYPE_MATRIX: count と raw が列指定不要", () => {
+  const noColumnRequired = new Set(["count", "raw"]);
   for (const aggType of AGG_TYPES) {
-    if (aggType === "count") continue;
+    if (noColumnRequired.has(aggType)) continue;
     assert.equal(AGG_TYPE_MATRIX[aggType].columnRequired, true, aggType);
   }
   assert.equal(AGG_TYPE_MATRIX.count.columnRequired, false);
+  assert.equal(AGG_TYPE_MATRIX.raw.columnRequired, false);
+});
+
+test("assertAggColumnType: raw は列指定なしでも常に通る", () => {
+  assert.equal(assertAggColumnType({ type: "raw" }, []), null);
+  assert.equal(assertAggColumnType({ type: "raw", column: "amount" }, [{ name: "amount", type: "number" }]), null);
+  // 列が候補に無くても raw は通る
+  assert.equal(assertAggColumnType({ type: "raw", column: "missing" }, []), null);
+});
+
+test("AGG_TYPE_MATRIX: raw は isRawMode フラグを持つ", () => {
+  assert.equal(AGG_TYPE_MATRIX.raw.isRawMode, true);
+  assert.notEqual(AGG_TYPE_MATRIX.count.isRawMode, true);
 });
 
 test("normalizeFieldType: 主要型を analytics 型に変換", () => {

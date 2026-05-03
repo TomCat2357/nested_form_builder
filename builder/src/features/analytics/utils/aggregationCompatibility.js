@@ -3,7 +3,8 @@
  * UI（候補絞り込み）とコンパイラ（バリデーション）の両方が参照する単一情報源。
  *
  * 列型: "number" | "date" | "string" | "boolean" | "unknown"
- * 集計種別: "count" | "countNotNull" | "sum" | "avg" | "min" | "max"
+ * 集計種別: "count" | "countNotNull" | "sum" | "avg" | "min" | "max" | "raw"
+ *   - "raw" は擬似集計：選ばれているとき集計をスキップして生データ (SELECT *) を返す。
  */
 
 export const COLUMN_TYPES = ["number", "date", "string", "boolean", "unknown"];
@@ -61,6 +62,8 @@ export const AGG_TYPE_MATRIX = {
   // min/max: 数値・日付・文字列いずれもサポート。boolean は意味が薄いので除外。
   min: { columnRequired: true, allowedTypes: ["number", "date", "string", "unknown"] },
   max: { columnRequired: true, allowedTypes: ["number", "date", "string", "unknown"] },
+  // raw: 集計をスキップする擬似種別。compileGuiToSql / migrateLegacyGui がこの種別を見て summarize ステージを生成しない。
+  raw: { columnRequired: false, allowedTypes: COLUMN_TYPES, isRawMode: true },
 };
 
 export const AGG_TYPES = Object.keys(AGG_TYPE_MATRIX);
@@ -84,6 +87,7 @@ export function isAggCompatible(aggType, columnType) {
 export function assertAggColumnType(agg, columns) {
   const spec = AGG_TYPE_MATRIX[agg && agg.type];
   if (!spec) return "未対応の集計種別: " + (agg && agg.type);
+  if (spec.isRawMode) return null;
   if (spec.columnRequired && !agg.column) {
     return "集計対象の列が指定されていません: " + agg.type;
   }
