@@ -15,6 +15,7 @@ import { headerKeyToAlaSqlKey } from "./utils/headerToAlaSqlKey.js";
 import { buildFormIndex } from "./utils/formIdentifierResolver.js";
 import { buildColumnIndex } from "./utils/columnIdentifierResolver.js";
 import { preprocessSql, canonicalFormAlias } from "./utils/sqlPreprocessor.js";
+import { compileGuiToSql } from "./utils/compileGuiToSql.js";
 
 // ---- Snapshot ----
 
@@ -74,12 +75,22 @@ export async function loadSnapshotsIntoAlaSql(formSources, { defaultFormId } = {
 
 /**
  * Question を実行してデータを返す。
- * forms (= AppDataProvider の forms 配列) を渡すと、SQL 内の [フォーム名] / [列パイプパス] / [field.id]
- * を解決して AlaSQL に渡す。渡されない場合は従来動作 (formSources をそのまま読み込み、SQL は無変換)。
+ * mode === "gui" のときは compileGuiToSql で SQL を合成し、対象フォーム 1 件のみを登録して実行する。
+ * mode === "sql" のときは forms 配列に基づいて [フォーム名] / [列パイプパス] / [field.id] を解決する。
  */
 export async function executeQuestion(question, { forms, settings } = {}) {
   if (!question || !question.query) {
     return { ok: false, error: "クエリが定義されていません" };
+  }
+
+  const mode = question.query.mode;
+
+  if (mode === "gui") {
+    return await executeGuiQuestion(question, { forms, settings });
+  }
+
+  if (mode !== "sql") {
+    return { ok: false, error: "未対応のクエリモードです: " + String(mode) };
   }
 
   const sql = question.query.sql;
@@ -147,12 +158,58 @@ export async function executeQuestion(question, { forms, settings } = {}) {
  */
 export async function getSnapshotColumns({ formId, spreadsheetId, sheetName }) {
   const snapshot = await getSnapshot({ formId, spreadsheetId, sheetName });
+  return snapshotColumnsFromSnapshot(snapshot);
+}
+
+function snapshotColumnsFromSnapshot(snapshot) {
   return (snapshot.columns || []).map((col) => ({
     key: col.key,
     alaSqlKey: headerKeyToAlaSqlKey(col.key),
     path: col.path,
     label: col.path[col.path.length - 1] || col.key,
   }));
+}
+
+async function executeGuiQuestion(question, { forms, settings } = {}) {
+  const gui = question.query.gui;
+  if (!gui || !gui.formId) {
+    return { ok: false, error: "GUI クエリの定義が不正です" };
+  }
+  const form = Array.isArray(forms) ? forms.find((f) => f.id === gui.formId) : null;
+  if (!form) {
+    return { ok: false, error: "GUI クエリの対象フォームが見つかりません" };
+  }
+
+  let snapshot;
+  try {
+    snapshot = await getSnapshot({
+      formId: form.id,
+      spreadsheetId: settings?.spreadsheetId,
+      sheetName: settings?.sheetName || "Data",
+    });
+  } catch (err) {
+    return { ok: false, error: "データ取得に失敗しました: " + (err.message || String(err)) };
+  }
+
+  const compiled = compileGuiToSql(gui, {
+    form,
+    snapshotColumns: snapshotColumnsFromSnapshot(snapshot),
+  });
+  if (!compiled.ok) {
+    return { ok: false, error: compiled.errors.join(" / ") };
+  }
+
+  const canon = canonicalFormAlias(form.id);
+  const aliases = [canon];
+  try {
+    await registerSnapshotAsTable(canon, snapshot);
+    const result = await runAlaSql(compiled.sql);
+    if (!result.ok) return result;
+    const columns = result.rows.length > 0 ? Object.keys(result.rows[0]) : [];
+    return { ok: true, rows: result.rows, columns, compiledColumns: compiled.columns, compiledSql: compiled.sql };
+  } finally {
+    await dropTables(aliases);
+  }
 }
 
 // ---- Questions ----

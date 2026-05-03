@@ -61,7 +61,7 @@ export default function ChartRenderer({ viz, rows, columns }) {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (type === "table") return;
+    if (type === "table" || type === "scalar") return;
     if (!rows || rows.length === 0) return;
 
     let cancelled = false;
@@ -94,6 +94,19 @@ export default function ChartRenderer({ viz, rows, columns }) {
 
   if (type === "table") {
     return <ResultTable rows={rows} columns={columns} />;
+  }
+
+  if (type === "scalar") {
+    const valueField = (viz?.yFields && viz.yFields[0]) || columns?.[0] || "";
+    const raw = rows[0]?.[valueField];
+    const display = raw === null || raw === undefined ? "—" : (typeof raw === "number" ? raw.toLocaleString() : String(raw));
+    return (
+      <div style={{ textAlign: "center", padding: "24px" }}>
+        <div style={{ fontSize: 48, fontWeight: 700, lineHeight: 1.1, color: "var(--nf-text)" }}>{display}</div>
+        {valueField && <div className="nf-text-subtle" style={{ marginTop: 6, fontSize: 12 }}>{valueField}</div>}
+        {rows.length > 1 && <div className="nf-text-subtle" style={{ marginTop: 4, fontSize: 11 }}>1 行目を表示（{rows.length} 行）</div>}
+      </div>
+    );
   }
 
   if (error) {
