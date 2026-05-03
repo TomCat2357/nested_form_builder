@@ -60,6 +60,16 @@ const ACTION_DEFINITIONS_ = {
   "save":            { handler: SubmitResponses_, requireSpreadsheetId: true },
   "save_lock":       { handler: AcquireSaveLock_, requireSpreadsheetId: true },
   "sync_records":    { handler: SyncRecords_, requireSpreadsheetId: true },
+  "analytics_snapshot":          { handler: AnalyticsApi_GetSnapshot_,    requireSpreadsheetId: true },
+  "analytics_snapshot_version":  { handler: AnalyticsApi_CheckVersion_,   requireSpreadsheetId: true },
+  "analytics_questions_list":    { handler: AnalyticsApi_ListQuestions_ },
+  "analytics_questions_get":     { handler: AnalyticsApi_GetQuestion_ },
+  "analytics_questions_save":    { handler: AnalyticsApi_SaveQuestion_,    adminOnly: true },
+  "analytics_questions_delete":  { handler: AnalyticsApi_DeleteQuestion_,  adminOnly: true },
+  "analytics_dashboards_list":   { handler: AnalyticsApi_ListDashboards_ },
+  "analytics_dashboards_get":    { handler: AnalyticsApi_GetDashboard_ },
+  "analytics_dashboards_save":   { handler: AnalyticsApi_SaveDashboard_,   adminOnly: true },
+  "analytics_dashboards_delete": { handler: AnalyticsApi_DeleteDashboard_, adminOnly: true },
 };
 
 function ResolveActionContext_(rawPayload, source) {

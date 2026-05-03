@@ -11,6 +11,10 @@ import AdminFormEditorPage from "../pages/AdminFormEditorPage.jsx";
 import AdminSettingsPage from "../pages/AdminSettingsPage.jsx";
 import ConfigPage from "../pages/ConfigPage.jsx";
 import NotFoundPage from "../pages/NotFoundPage.jsx";
+import AnalyticsHubPage from "../pages/analytics/AnalyticsHubPage.jsx";
+import QuestionEditorPage from "../pages/analytics/QuestionEditorPage.jsx";
+import DashboardEditorPage from "../pages/analytics/DashboardEditorPage.jsx";
+import DashboardViewPage from "../pages/analytics/DashboardViewPage.jsx";
 
 /**
  * フォーム管理ルートのラッパー
@@ -177,6 +181,12 @@ function AppRoutes() {
           </AdminSettingsRoute>
         )}
       />
+      <Route path="/analytics" element={<AnalyticsHubPage />} />
+      <Route path="/analytics/questions/new" element={<QuestionEditorPage />} />
+      <Route path="/analytics/questions/:questionId" element={<QuestionEditorPage />} />
+      <Route path="/analytics/dashboards/new" element={<DashboardEditorPage />} />
+      <Route path="/analytics/dashboards/:dashboardId/edit" element={<DashboardEditorPage />} />
+      <Route path="/analytics/dashboards/:dashboardId" element={<DashboardViewPage />} />
       <Route path="/not-found" element={<NotFoundPage />} />
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

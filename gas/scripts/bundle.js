@@ -37,6 +37,7 @@ const FILE_ORDER = [
   'formsCrud.gs',
   'formsImport.gs',
   'formsPublicApi.gs',
+  'analyticsApi.gs',     // アナリティクス API（snapshot + Question/Dashboard CRUD）
   'model.gs',            // モデル関数
   // --- sheets ---
   'sheetsDatetime.gs',

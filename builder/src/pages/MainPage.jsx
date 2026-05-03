@@ -52,6 +52,10 @@ export default function MainPage() {
     navigate("/admin-settings");
   };
 
+  const handleGoAnalytics = () => {
+    navigate("/analytics");
+  };
+
   const showAdminSettingsButton = isAdmin && adminSettingsEnabled;
   const showFormsButton = propertyStoreMode === "user" || isAdmin;
 
@@ -63,6 +67,9 @@ export default function MainPage() {
         <>
           <button type="button" onClick={handleGoConfig} className="nf-btn-outline nf-btn-sidebar">
             設定
+          </button>
+          <button type="button" onClick={handleGoAnalytics} className="nf-btn-outline nf-btn-sidebar">
+            ダッシュボード
           </button>
           {showAdminSettingsButton && (
             <button type="button" onClick={handleGoAdminSettings} className="nf-btn-outline nf-btn-sidebar">

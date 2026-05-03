@@ -44,6 +44,20 @@ export function openDB() {
       if (!db.objectStoreNames.contains(STORE_NAMES.settings)) {
         db.createObjectStore(STORE_NAMES.settings, { keyPath: 'key' });
       }
+
+      // Analytics stores
+      if (!db.objectStoreNames.contains(STORE_NAMES.analyticsSnapshots)) {
+        db.createObjectStore(STORE_NAMES.analyticsSnapshots, { keyPath: 'formId' });
+      }
+      if (!db.objectStoreNames.contains(STORE_NAMES.analyticsSnapshotsMeta)) {
+        db.createObjectStore(STORE_NAMES.analyticsSnapshotsMeta, { keyPath: 'formId' });
+      }
+      if (!db.objectStoreNames.contains(STORE_NAMES.analyticsQuestions)) {
+        db.createObjectStore(STORE_NAMES.analyticsQuestions, { keyPath: 'id' });
+      }
+      if (!db.objectStoreNames.contains(STORE_NAMES.analyticsDashboards)) {
+        db.createObjectStore(STORE_NAMES.analyticsDashboards, { keyPath: 'id' });
+      }
     };
   });
 }
