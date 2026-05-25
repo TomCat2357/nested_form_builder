@@ -6,6 +6,7 @@ import {
   detectCircularReferences,
   evaluateAllComputedFields,
   buildLabelValueMapFromEntryData,
+  buildDataValueMapFromEntryData,
   buildComputedFieldPathsById,
   enrichEntryDataWithComputedFields,
 } from "./computedFields.js";
@@ -286,6 +287,40 @@ test("evaluateAllComputedFields は後続の置換フィールドが先行の結
   const { computedValues } = evaluateAllComputedFields(schema, responses, baseLabelValueMap);
   assert.equal(String(computedValues.q2), "20");
   assert.equal(computedValues.q3, "結果は20です");
+});
+
+test("evaluateAllComputedFields は {data,view} で単一/二重ブレースを別々に解決する", () => {
+  _clearExpressionCacheForTest();
+  _registerCompiledForTest("`性別__男`", (row) => row["性別__男"]);
+  _registerCompiledForTest("`性別`", (row) => row["性別"]);
+  const schema = [
+    makeField({ id: "q1", label: "性別", type: "radio", options: [{ id: "m", label: "男" }] }),
+    makeField({
+      id: "q2",
+      label: "表示",
+      type: "substitution",
+      templateText: "元:{`性別|男`}/ビュー:{{`性別`}}",
+    }),
+  ];
+  const baseMaps = {
+    data: { "性別|男": true },
+    view: { "性別": "男" },
+  };
+  const { computedValues, computedErrors } = evaluateAllComputedFields(schema, {}, baseMaps);
+  assert.equal(computedValues.q2, "元:true/ビュー:男");
+  assert.equal(computedErrors.q2, undefined);
+});
+
+test("buildDataValueMapFromEntryData は選択肢マーカーを真偽値に正規化する", () => {
+  const schema = [
+    makeField({ id: "q1", label: "性別", type: "radio", options: [{ id: "m", label: "男" }, { id: "f", label: "女" }] }),
+    makeField({ id: "q2", label: "氏名", type: "text" }),
+  ];
+  const entryData = { "性別|男": "●", "氏名": "山田" };
+  const map = buildDataValueMapFromEntryData(schema, entryData);
+  assert.equal(map["性別|男"], true);
+  assert.equal(map["性別|女"], false);
+  assert.equal(map["氏名"], "山田");
 });
 
 // ---------------------------------------------------------------------------

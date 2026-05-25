@@ -307,6 +307,7 @@ function nfbNormalizeRecordTemplateContext_(sources) {
     responses: nfbPlainObject_(dataSrc && dataSrc.responses),
     fieldPaths: nfbPlainObject_(dataSrc && dataSrc.fieldPaths),
     fieldValues: nfbPlainObject_(dataSrc && dataSrc.fieldValues),
+    dataValues: nfbPlainObject_(dataSrc && dataSrc.dataValues),
     fileUploadMeta: nfbPlainObject_(dataSrc && dataSrc.fileUploadMeta),
     recordId: pickStr("recordId") || fallbackRecordId,
     formId: pickStr("formId"),
@@ -484,7 +485,7 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
   // ドキュメント全テキストから {TOKEN} を収集して解決値を求める
   // ネストした {...}（サブテンプレート）を含むトークンも拾うため balanced scanner を使う
   var tokenValueMap = {};
-  var row = nfbBuildTemplateRow_(context, {
+  var rows = nfbBuildTemplateRow_(context, {
     allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens)
   });
   for (var s = 0; s < sections.length; s++) {
@@ -500,7 +501,7 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
       // トークン単体を再評価（fullToken 全体を評価器に渡す）
       var resolvedString;
       try {
-        resolvedString = nfbEvaluateTemplate_(fullToken, row, { logError: nfbLogTemplateError_ });
+        resolvedString = nfbEvaluateTemplate_(fullToken, rows.data, { logError: nfbLogTemplateError_, viewRow: rows.view });
       } catch (e) {
         nfbLogTemplateError_(e, fullToken);
         resolvedString = fullToken;

@@ -8,6 +8,9 @@ import { traverseSchema } from "./schemaUtils.js";
 import { resolveTemplateTokens } from "../utils/tokenReplacer.js";
 import { normalizeFileUploadEntries } from "./collect.js";
 import { extractFieldRefs } from "../features/expression/templateEvaluator.js";
+import { isChoiceMarkerValue } from "../utils/responses.js";
+
+const isPlainObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
 
 // ---------------------------------------------------------------------------
 // Dependency extraction
@@ -147,22 +150,29 @@ export const detectCircularReferences = (schema) => {
  *
  * @param {Array} schema
  * @param {Object} responses - ユーザー入力値 { fieldId: value }
- * @param {Object} baseLabelValueMap - 置換以外のフィールドのフルパス→値マップ
+ * @param {Object} baseMaps - フルパス→値マップ。`{ data, view }` 形式で元データ形式
+ *   （単一ブレース `{...}` 用）とビュー形式（二重ブレース `{{...}}` 用）の両方を渡す。
+ *   後方互換のため単一の平坦マップを渡した場合は data/view 双方の基底として扱う。
  * @param {Object} [tokenContext] - resolveTemplateTokens用コンテキスト（now, recordId等）
  * @returns {{ computedValues: Object, computedErrors: Object }}
  *   computedValues: { fieldId: computedValue }
  *   computedErrors: { fieldId: errorMessage }
  */
-export const evaluateAllComputedFields = (schema, responses, baseLabelValueMap, tokenContext) => {
+export const evaluateAllComputedFields = (schema, responses, baseMaps, tokenContext) => {
   const { computedFields, order, hasCycle, cycleFields } = buildDependencyGraph(schema);
 
   if (computedFields.length === 0) {
     return { computedValues: {}, computedErrors: {} };
   }
 
+  const isWrapper = isPlainObject(baseMaps) && (isPlainObject(baseMaps.data) || isPlainObject(baseMaps.view));
+  const baseDataMap = isWrapper ? (baseMaps.data || {}) : (baseMaps || {});
+  const baseViewMap = isWrapper ? (baseMaps.view || {}) : (baseMaps || {});
+
   const computedValues = {};
   const computedErrors = {};
-  const labelValueMap = { ...baseLabelValueMap };
+  const dataValueMap = { ...baseDataMap };
+  const labelValueMap = { ...baseViewMap };
 
   // パス→フィールド情報のルックアップ
   const pathToField = {};
@@ -189,6 +199,7 @@ export const evaluateAllComputedFields = (schema, responses, baseLabelValueMap, 
       try {
         const ctx = {
           ...(tokenContext || {}),
+          dataValueMap,
           labelValueMap,
         };
         const resolved = resolveTemplateTokens(cf.field.templateText || "", ctx);
@@ -199,9 +210,11 @@ export const evaluateAllComputedFields = (schema, responses, baseLabelValueMap, 
       }
     }
 
-    // 結果を labelValueMap に反映（後続の置換フィールドが参照できるように）
+    // 結果を両マップに反映（後続の置換フィールドが {…} / {{…}} どちらでも参照できるように）
     if (cf.path && computedValues[cf.id] !== undefined) {
-      labelValueMap[cf.path] = String(computedValues[cf.id]);
+      const asString = String(computedValues[cf.id]);
+      dataValueMap[cf.path] = asString;
+      labelValueMap[cf.path] = asString;
     }
   }
 
@@ -262,6 +275,44 @@ export const buildLabelValueMapFromEntryData = (schema, entryData) => {
   return map;
 };
 
+const ENTRY_DATA_CHOICE_TYPES = ["radio", "select", "checkboxes", "weekday"];
+
+/**
+ * entry.data から元データ形式（data）の `{ フルパス: 値 }` マップを再構築する。
+ * 単一ブレース `{...}` 置換の再評価入力に使う。
+ *
+ * - 選択肢はオプション単位パス `親|選択肢` → 真偽値（マーカーを isChoiceMarkerValue
+ *   で boolean 化）。
+ * - 非選択肢は entry.data の保存値そのまま。fileUpload / message / printTemplate は除外。
+ */
+export const buildDataValueMapFromEntryData = (schema, entryData) => {
+  const map = {};
+  const data = entryData || {};
+  traverseSchema(schema, (field, context) => {
+    if (!field?.label) return;
+    const path = (context.pathSegments || []).join("|");
+    if (!path) return;
+
+    const type = field.type;
+    if (ENTRY_DATA_CHOICE_TYPES.includes(type)) {
+      (Array.isArray(field.options) ? field.options : []).forEach((opt) => {
+        const label = typeof opt?.label === "string" ? opt.label : "";
+        if (!label) return;
+        const key = `${path}|${label}`;
+        map[key] = isChoiceMarkerValue(data[key]);
+      });
+    } else if (type === "fileUpload" || type === "message" || type === "printTemplate") {
+      // 行構築時の FILE_* UDF / 値を持たない型は除外
+    } else {
+      const raw = data[path];
+      if (raw !== undefined && raw !== null && raw !== "" && !Object.prototype.hasOwnProperty.call(map, path)) {
+        map[path] = raw;
+      }
+    }
+  });
+  return map;
+};
+
 /**
  * 置換フィールドの fieldId → path マップを返す
  */
@@ -306,7 +357,13 @@ export const backfillComputedFieldValues = (schema, entryData, tokenContext) => 
   }
 
   const baseLabelValueMap = buildLabelValueMapFromEntryData(schema, baseData);
-  const { computedValues } = evaluateAllComputedFields(schema, null, baseLabelValueMap, tokenContext);
+  const baseDataValueMap = buildDataValueMapFromEntryData(schema, baseData);
+  const { computedValues } = evaluateAllComputedFields(
+    schema,
+    null,
+    { data: baseDataValueMap, view: baseLabelValueMap },
+    tokenContext,
+  );
 
   const nextData = { ...baseData };
   const newPaths = [];

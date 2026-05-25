@@ -35,27 +35,40 @@ const logTemplateError = (error, fullToken) => {
 };
 
 /**
- * context (React コンポーネント由来) → alasql 式評価用の平坦 row
+ * context (React コンポーネント由来) → alasql 式評価用の平坦 row を 2 本構築する。
  *
- * - 既存 labelValueMap (フルパスキー) を spread して各 path をキーに値を入れる
- * - fileUploadMeta があれば path ごとに `[{ name, driveFileUrl, ... }, ...]`
- *   配列を上書きで入れる（FILE_NAMES 等の UDF はこの配列を読む）
- * - 予約値 `_id` / `_record_url` / `_form_url` を行に注入。
- *   現在時刻は alasql UDF `NOW()` を使う（行に注入しない）。
+ * - data 行: 元データ形式（`context.dataValueMap`）。単一ブレース `{...}` 用。
+ *   選択肢はオプション単位パス `親|選択肢` → 真偽値、非選択肢は canonical 値。
+ * - view 行: ビュー形式（`context.labelValueMap`）。連続二重ブレース `{{...}}` 用。
+ *   選択肢ラベル連結・表示用文字列。
+ * - どちらか片方しか渡されない旧コンテキストでは相互フォールバックして従来挙動を保つ。
+ * - fileUploadMeta があれば path ごとに `[{ name, driveFileUrl, ... }, ...]` 配列を
+ *   両行へ上書きで入れる（FILE_NAMES 等の UDF はこの配列を読む）。
+ * - 予約値 `_id` / `_record_url` / `_form_url` を両行に注入。現在時刻は UDF `NOW()`。
+ *
+ * @returns {{ data: object, view: object }}
  */
 function buildTemplateRow(context) {
   const ctx = context || {};
-  const source = { ...(ctx.labelValueMap || {}) };
+  const labelMap = ctx.labelValueMap || ctx.dataValueMap || {};
+  const dataMap = ctx.dataValueMap || ctx.labelValueMap || {};
   const fileEntries = buildFileUploadRowEntries(ctx.fieldPaths || {}, ctx.fileUploadMeta || {});
-  for (const path of Object.keys(fileEntries)) {
-    source[path] = fileEntries[path];
-  }
   const fixed = {
     _id: ctx.recordId || "",
     _record_url: ctx.recordUrl || "",
     _form_url: ctx.formUrl || "",
   };
-  return buildRowForExpression(source, fixed);
+  const withFiles = (base) => {
+    const source = { ...base };
+    for (const path of Object.keys(fileEntries)) {
+      source[path] = fileEntries[path];
+    }
+    return source;
+  };
+  return {
+    data: buildRowForExpression(withFiles(dataMap), fixed),
+    view: buildRowForExpression(withFiles(labelMap), fixed),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -78,8 +91,8 @@ export const resolveTemplateTokens = (template, context) => {
   const text = String(template);
   if (!text) return "";
   if (text.indexOf("{") < 0) return text;
-  const row = buildTemplateRow(context);
-  return resolveTemplate(text, row, { fallback: "", logError: logTemplateError });
+  const { data, view } = buildTemplateRow(context);
+  return resolveTemplate(text, data, { fallback: "", logError: logTemplateError, viewRow: view });
 };
 
 /**
@@ -91,8 +104,8 @@ export const resolveTemplateTokensAsync = (template, context) => {
   const text = String(template);
   if (!text) return Promise.resolve("");
   if (text.indexOf("{") < 0) return Promise.resolve(text);
-  const row = buildTemplateRow(context);
-  return resolveTemplateAsync(text, row, { fallback: "", logError: logTemplateError });
+  const { data, view } = buildTemplateRow(context);
+  return resolveTemplateAsync(text, data, { fallback: "", logError: logTemplateError, viewRow: view });
 };
 
 /**

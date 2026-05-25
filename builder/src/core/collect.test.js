@@ -1,6 +1,35 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildFileUploadEntry, collectResponses, sortResponses } from "./collect.js";
+import { buildFileUploadEntry, collectResponses, sortResponses, buildDataValueMap } from "./collect.js";
+
+test("buildDataValueMap: 選択肢はオプション単位パスの真偽値（選択=true/未選択=false）", () => {
+  const schema = [
+    { id: "g", type: "radio", label: "性別", options: [{ id: "m", label: "男" }, { id: "f", label: "女" }] },
+    {
+      id: "t",
+      type: "checkboxes",
+      label: "種別",
+      options: [{ id: "a", label: "申請" }, { id: "b", label: "契約" }],
+    },
+  ];
+  const map = buildDataValueMap(schema, { g: "男", t: ["契約"] });
+  assert.equal(map["性別|男"], true);
+  assert.equal(map["性別|女"], false);
+  assert.equal(map["種別|申請"], false);
+  assert.equal(map["種別|契約"], true);
+});
+
+test("buildDataValueMap: text/number/date は canonical 値（number は数値型）", () => {
+  const schema = [
+    { id: "n", type: "text", label: "氏名" },
+    { id: "num", type: "number", label: "金額" },
+    { id: "d", type: "date", label: "日付" },
+  ];
+  const map = buildDataValueMap(schema, { n: "山田", num: "1000", d: "2025-05-25" });
+  assert.equal(map["氏名"], "山田");
+  assert.equal(map["金額"], 1000);
+  assert.equal(map["日付"], "2025/05/25");
+});
 
 test("collectResponses: time フィールドは timePrecision に応じた幅で正規化保存する", () => {
   const run = (precision) => {
