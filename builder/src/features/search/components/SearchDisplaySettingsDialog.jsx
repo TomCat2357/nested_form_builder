@@ -1,7 +1,13 @@
 import React from "react";
 import BaseDialog from "../../../app/components/BaseDialog.jsx";
 
-export default function SearchDisplaySettingsDialog({ open, onClose, overrides, onUpdateOverride, formSettings, globalSettings }) {
+const parseDebounceMs = (raw) => {
+  if (raw === "" || raw == null) return 0;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+};
+
+export default function SearchDisplaySettingsDialog({ open, onClose, overrides, onUpdateOverride, formSettings, globalSettings, globalDebounceMs, onUpdateGlobalDebounce }) {
   const fields = [
     {
       key: "pageSize",
@@ -71,6 +77,23 @@ export default function SearchDisplaySettingsDialog({ open, onClose, overrides, 
           </div>
         ))}
       </div>
+
+      {onUpdateGlobalDebounce && (
+        <div className="nf-col nf-gap-4 nf-mt-16">
+          <label className="nf-label">検索の遅延時間（ミリ秒）</label>
+          <input
+            type="number"
+            className="nf-input nf-flex-1"
+            value={globalDebounceMs ?? ""}
+            placeholder="300"
+            min={0}
+            onChange={(e) => onUpdateGlobalDebounce(parseDebounceMs(e.target.value))}
+          />
+          <p className="nf-text-12 nf-text-subtle">
+            全フォーム共通の設定です。入力が止まってからこの時間後に検索を実行します（0で即時）。
+          </p>
+        </div>
+      )}
     </BaseDialog>
   );
 }

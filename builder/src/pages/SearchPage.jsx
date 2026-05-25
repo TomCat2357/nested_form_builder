@@ -17,7 +17,7 @@ import { runPurgeCheck } from "../services/gasClient.js";
 
 export default function SearchPage() {
   const { getFormById } = useAppData();
-  const { settings } = useBuilderSettings({ applyGlobalTheme: false });
+  const { settings, updateSetting } = useBuilderSettings({ applyGlobalTheme: false });
   const { isAdmin, userEmail, formId: scopedFormId } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -174,6 +174,7 @@ export default function SearchPage() {
         syncInProgress={loading || backgroundLoading || waitingForLock}
         onSettingsClick={() => setShowDisplaySettings(true)}
         filterError={filterError}
+        debounceMs={Number(settings?.searchDebounceMs) || 0}
       />
       {isAdmin && (
         <div className="nf-row nf-gap-16 nf-items-center nf-mb-12 nf-wrap">
@@ -220,6 +221,8 @@ export default function SearchPage() {
         onUpdateOverride={updateOverride}
         formSettings={form?.settings}
         globalSettings={settings}
+        globalDebounceMs={settings?.searchDebounceMs}
+        onUpdateGlobalDebounce={(ms) => updateSetting("searchDebounceMs", ms)}
       />
       <ConfirmDialog
         open={showDeleteConfirm.open}

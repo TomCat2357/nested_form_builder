@@ -1,16 +1,24 @@
 import React from "react";
 import { formatUnixMsDateTimeSec } from "../../../utils/dateTime.js";
+import { useDebouncedSearchInput } from "../useDebouncedSearchInput.js";
 
-export default function SearchToolbar({ query, onChange, lastSyncedAt, useCache, cacheDisabled, backgroundLoading, lockWaiting, hasUnsynced, unsyncedCount = 0, syncInProgress = false, showSearch = true, onSettingsClick, filterError }) {
+export default function SearchToolbar({ query, onChange, lastSyncedAt, useCache, cacheDisabled, backgroundLoading, lockWaiting, hasUnsynced, unsyncedCount = 0, syncInProgress = false, showSearch = true, onSettingsClick, filterError, debounceMs = 0 }) {
   const lastSyncedLabel = lastSyncedAt ? (formatUnixMsDateTimeSec(lastSyncedAt) || "未取得") : "未取得";
+  const { inputValue, handleChange, handleCompositionStart, handleCompositionEnd } = useDebouncedSearchInput({
+    value: query,
+    onCommit: onChange,
+    delayMs: debounceMs,
+  });
   return (
     <div className="search-bar">
       {showSearch && (
         <input
           type="search"
           placeholder="検索（正規表現）: 田中 / 氏名:^山田 / 年齢>=20  （WHERE・SEARCH で厳密検索も可）"
-          value={query}
-          onChange={(event) => onChange(event.target.value)}
+          value={inputValue}
+          onChange={(event) => handleChange(event.target.value)}
+          onCompositionStart={handleCompositionStart}
+          onCompositionEnd={(event) => handleCompositionEnd(event.target.value)}
           className="search-input nf-flex-1-0-220"
           title="検索ボックス"
         />

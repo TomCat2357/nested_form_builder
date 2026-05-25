@@ -17,6 +17,16 @@ export default function SettingsGeneralTab() {
   const syncAllFormsTheme = settings?.syncAllFormsTheme ?? false;
   const formListSortKey = settings?.formListSortKey || "modifiedAt";
   const formListSortOrder = settings?.formListSortOrder || "desc";
+  const searchDebounceMs = settings?.searchDebounceMs ?? 300;
+
+  const handleSearchDebounceChange = (raw) => {
+    if (raw === "") {
+      updateSetting("searchDebounceMs", 0);
+      return;
+    }
+    const n = Number(raw);
+    updateSetting("searchDebounceMs", Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
+  };
 
   const {
     customThemes,
@@ -116,6 +126,21 @@ export default function SettingsGeneralTab() {
         </div>
         <p className="nf-mt-6 nf-text-12 nf-text-muted">
           フォーム一覧画面に表示するフォームの並び順を変更できます。
+        </p>
+      </div>
+
+      <div className="nf-mb-16">
+        <div className="nf-settings-group-title nf-mb-8">検索の遅延時間（ミリ秒）</div>
+        <input
+          className="nf-input"
+          type="number"
+          min={0}
+          value={searchDebounceMs}
+          placeholder="300"
+          onChange={(event) => handleSearchDebounceChange(event.target.value)}
+        />
+        <p className="nf-mt-6 nf-text-12 nf-text-muted">
+          全フォーム共通の設定です。検索バーへの入力が止まってからこの時間後に検索を実行します（0で即時）。
         </p>
       </div>
 
