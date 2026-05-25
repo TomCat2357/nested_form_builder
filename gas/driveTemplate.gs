@@ -27,11 +27,12 @@ function nfbResolveTemplateTokens_(template, context, options) {
   if (!text) return "";
   if (text.indexOf("{") < 0) return text;
   var opts = options || {};
-  var row = nfbBuildTemplateRow_(context, {
+  var rows = nfbBuildTemplateRow_(context, {
     allowGmailOnlyTokens: opts.allowGmailOnlyTokens === true
   });
-  return nfbEvaluateTemplate_(text, row, {
-    logError: nfbLogTemplateError_
+  return nfbEvaluateTemplate_(text, rows.data, {
+    logError: nfbLogTemplateError_,
+    viewRow: rows.view
     // fallback 未指定: 評価エラー時はトークン原文を残す
   });
 }

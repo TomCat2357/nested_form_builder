@@ -29,11 +29,41 @@ export function findBalancedCloseIndex(text, openIndex) {
 }
 
 /**
- * テンプレート文字列を走査し、各 `{ ... }` トップレベルトークンを replacer に
- * 渡して結果を連結した新しい文字列を返す。`{` 以外の文字はそのまま流す。
+ * 開き位置 i のトークンが二重ブレース `{{ ... }}`（ビューモード）かを判定し、
+ * mode / body / fullToken を返す。`close` は findBalancedCloseIndex の結果。
+ *
+ * - `{{` で始まり対応する `}}` で閉じるトークンは mode="view"、body は内側
+ *   （外周の 1 ペアを剥がしたもの）。
+ * - それ以外は mode="data"、body は `{ ... }` の内側。
+ */
+function describeToken(text, i, close) {
+  if (text.charAt(i + 1) === "{" && close - 1 > i + 1 && text.charAt(close - 1) === "}") {
+    return {
+      mode: "view",
+      body: text.substring(i + 2, close - 1),
+      fullToken: text.substring(i, close + 1),
+      start: i,
+      end: close + 1,
+    };
+  }
+  return {
+    mode: "data",
+    body: text.substring(i + 1, close),
+    fullToken: text.substring(i, close + 1),
+    start: i,
+    end: close + 1,
+  };
+}
+
+/**
+ * テンプレート文字列を走査し、各 `{ ... }` / `{{ ... }}` トップレベルトークンを
+ * replacer に渡して結果を連結した新しい文字列を返す。`{` 以外の文字はそのまま流す。
+ *
+ * トークンには `mode`（"data" = 単一ブレース＝元データ形式 / "view" = 連続二重
+ * ブレース＝ビュー形式）が付く。
  *
  * @param {string} text
- * @param {(tok: { body: string, fullToken: string, start: number, end: number }) => string} replacer
+ * @param {(tok: { body: string, fullToken: string, mode: "data"|"view", start: number, end: number }) => string} replacer
  * @returns {string}
  */
 export function scanAndReplace(text, replacer) {
@@ -54,9 +84,7 @@ export function scanAndReplace(text, replacer) {
       out += text.substring(i);
       return out;
     }
-    const body = text.substring(i + 1, close);
-    const fullToken = text.substring(i, close + 1);
-    out += replacer({ body, fullToken, start: i, end: close + 1 });
+    out += replacer(describeToken(text, i, close));
     i = close + 1;
   }
   return out;
@@ -82,12 +110,7 @@ export function collectBalancedBraces(text) {
     }
     const close = findBalancedCloseIndex(text, i);
     if (close < 0) return results;
-    results.push({
-      body: text.substring(i + 1, close),
-      fullToken: text.substring(i, close + 1),
-      start: i,
-      end: close + 1,
-    });
+    results.push(describeToken(text, i, close));
     i = close + 1;
   }
   return results;

@@ -1,5 +1,5 @@
 import { extractJstPartsFull, formatUnixMsDateTimeSec, toUnixMs, pad2 } from "../../utils/dateTime.js";
-import { resolveFileDisplayName } from "../../core/collect.js";
+import { resolveFileDisplayName, buildDataValueMap } from "../../core/collect.js";
 import { findFirstFileUploadField } from "../../core/schema.js";
 import { fieldHasValue } from "../../core/fieldValue.js";
 import { CHOICE_TYPES, isChoiceMarkerValue } from "../../utils/responses.js";
@@ -360,6 +360,7 @@ export const buildPrintDocumentPayload = ({
     responses: responses || {},
     fieldPaths: buildFieldPathsMap(schema),
     fieldValues: buildFieldValuesMap(schema, responses),
+    dataValues: buildDataValueMap(schema, responses),
     fileUploadMeta: collectFileUploadMeta(schema, {
       responses: responses || {},
       folderUrlsByField,

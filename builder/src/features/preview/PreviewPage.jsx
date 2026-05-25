@@ -1,5 +1,5 @@
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { collectResponses, sortResponses } from "../../core/collect.js";
+import { collectResponses, sortResponses, buildDataValueMap } from "../../core/collect.js";
 import { computeSchemaHash } from "../../core/schema.js";
 import { collectValidationErrors, formatValidationErrors } from "../../core/validate.js";
 import * as gasClientModule from "../../services/gasClient.js";
@@ -121,6 +121,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const modifiedAtDisplay = formatRecordMetaDateTime(settings.modifiedAtUnixMs ?? settings.modifiedAt);
   const fieldPaths = useMemo(() => buildFieldPathsMap(schema), [schema]);
   const fieldValues = useMemo(() => buildFieldValuesMap(schema, responses), [schema, responses]);
+  const dataValueMap = useMemo(() => buildDataValueMap(schema, responses), [schema, responses]);
 
   const gasClientRef = useRef(gasClientModule);
   const folderUrlsByField = useMemo(() => {
@@ -141,8 +142,9 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     responses: responses || {},
     fieldPaths,
     fieldValues,
+    dataValues: dataValueMap,
     fileUploadMeta,
-  }), [settings.formId, responses, fieldPaths, fieldValues, fileUploadMeta]);
+  }), [settings.formId, responses, fieldPaths, fieldValues, dataValueMap, fileUploadMeta]);
 
   const baseLabelValueMap = useMemo(
     () => buildLabelValueMap(fieldPaths, fieldValues, responses),
@@ -194,24 +196,29 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   }, [schema]);
 
   const { computedValues, computedErrors } = useMemo(
-    () => evaluateAllComputedFields(schema, responses, baseLabelValueMap, tokenContext),
+    () => evaluateAllComputedFields(schema, responses, { data: dataValueMap, view: baseLabelValueMap }, tokenContext),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [schema, responses, baseLabelValueMap, tokenContext, precompileEpoch],
+    [schema, responses, dataValueMap, baseLabelValueMap, tokenContext, precompileEpoch],
   );
 
   const resolveTokens = useMemo(() => {
     const labelValueMap = { ...baseLabelValueMap };
+    const dataMap = { ...dataValueMap };
     if (computedValues) {
       const fieldPathsMap = fieldPaths || {};
       for (const [fid, val] of Object.entries(computedValues)) {
         const path = fieldPathsMap[fid];
-        if (path && val != null) labelValueMap[path] = String(val);
+        if (path && val != null) {
+          const asString = String(val);
+          labelValueMap[path] = asString;
+          dataMap[path] = asString;
+        }
       }
     }
-    const ctx = { ...tokenContext, labelValueMap };
+    const ctx = { ...tokenContext, labelValueMap, dataValueMap: dataMap };
     return (text) => resolveTemplateTokens(text, ctx);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseLabelValueMap, computedValues, fieldPaths, tokenContext, precompileEpoch]);
+  }, [baseLabelValueMap, dataValueMap, computedValues, fieldPaths, tokenContext, precompileEpoch]);
 
   const mergedResponses = useMemo(() => {
     if (!computedValues || Object.keys(computedValues).length === 0) return responses;

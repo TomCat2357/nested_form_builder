@@ -59,9 +59,33 @@ function nfbTplFindBalancedClose_(text, openIndex) {
 }
 
 /**
- * Scan text and call replacer({ body, fullToken, start, end }) for each
- * top-level {…} token; non-token characters pass through. 未閉じの `{` 以降は
- * リテラルで残す。
+ * 開き位置 i のトークンを記述する。`{{ ... }}`（連続二重ブレース）は mode="view"、
+ * それ以外は mode="data"。フロント側 templateScanner.js describeToken と等価。
+ */
+function nfbTplDescribeToken_(text, i, close) {
+  if (text.charAt(i + 1) === "{" && close - 1 > i + 1 && text.charAt(close - 1) === "}") {
+    return {
+      mode: "view",
+      body: text.substring(i + 2, close - 1),
+      fullToken: text.substring(i, close + 1),
+      start: i,
+      end: close + 1
+    };
+  }
+  return {
+    mode: "data",
+    body: text.substring(i + 1, close),
+    fullToken: text.substring(i, close + 1),
+    start: i,
+    end: close + 1
+  };
+}
+
+/**
+ * Scan text and call replacer({ body, fullToken, mode, start, end }) for each
+ * top-level {…} / {{…}} token; non-token characters pass through. 未閉じの `{` 以降は
+ * リテラルで残す。mode は "data"（単一ブレース＝元データ形式） / "view"（連続二重
+ * ブレース＝ビュー形式）。
  */
 function nfbTplScanAndReplace_(text, replacer) {
   if (!text) return "";
@@ -73,9 +97,7 @@ function nfbTplScanAndReplace_(text, replacer) {
     if (ch !== "{") { out += ch; i++; continue; }
     var close = nfbTplFindBalancedClose_(text, i);
     if (close < 0) { out += text.substring(i); return out; }
-    var body = text.substring(i + 1, close);
-    var fullToken = text.substring(i, close + 1);
-    out += replacer({ body: body, fullToken: fullToken, start: i, end: close + 1 });
+    out += replacer(nfbTplDescribeToken_(text, i, close));
     i = close + 1;
   }
   return out;
@@ -190,10 +212,12 @@ function nfbTplCoerceToString_(value) {
  * 評価エラー時は対応するトークンの原文をそのまま残す（options.fallback 未指定時）。
  *
  * @param {string} template
- * @param {Object} row 平坦な行オブジェクト。バッククォート識別子は row[ident] で引かれる。
+ * @param {Object} row 単一ブレース `{...}`（元データモード）の平坦行。バッククォート
+ *                     識別子は row[ident] で引かれる。
  * @param {Object=} options
  *   - logError(error, fullToken)
  *   - fallback   評価エラー時の置換値（既定: 原文 fullToken）
+ *   - viewRow    連続二重ブレース `{{...}}`（ビューモード）用の行。未指定時は row。
  */
 function nfbEvaluateTemplate_(template, row, options) {
   if (template === undefined || template === null) return "";
@@ -204,6 +228,7 @@ function nfbEvaluateTemplate_(template, row, options) {
   var logError = typeof opts.logError === "function" ? opts.logError : null;
   var hasFallback = Object.prototype.hasOwnProperty.call(opts, "fallback");
   var theRow = row || {};
+  var viewRow = opts.viewRow || theRow;
 
   function tokenFallback(err, fullToken) {
     if (logError) logError(err, fullToken);
@@ -212,13 +237,14 @@ function nfbEvaluateTemplate_(template, row, options) {
 
   var escaped = nfbTplEscape_(text);
   var replaced = nfbTplScanAndReplace_(escaped, function(tok) {
+    var tokRow = tok.mode === "view" ? viewRow : theRow;
     var parts = nfbTplSplitTopLevelCommas_(tok.body);
     if (parts.length <= 1) {
       var trimmed = parts[0];
       if (!trimmed) return "";
       var value;
       try {
-        value = nfbEvaluateExpression_(trimmed, theRow);
+        value = nfbEvaluateExpression_(trimmed, tokRow);
       } catch (e) {
         return tokenFallback(e, tok.fullToken);
       }
@@ -230,7 +256,7 @@ function nfbEvaluateTemplate_(template, row, options) {
       if (!expr) { out.push(""); continue; }
       var partValue;
       try {
-        partValue = nfbEvaluateExpression_(expr, theRow);
+        partValue = nfbEvaluateExpression_(expr, tokRow);
       } catch (e2) {
         return tokenFallback(e2, tok.fullToken);
       }
@@ -346,13 +372,20 @@ function nfbTplBuildLabelValueMap_(fieldPaths, fieldValues, responses, fileUploa
 }
 
 /**
- * context (fieldPaths / fieldValues / responses / fileUploadMeta /
- * recordId / recordUrl / formUrl / now) を expressionEvaluator 用の平坦 row に
+ * context (fieldPaths / fieldValues / dataValues / responses / fileUploadMeta /
+ * recordId / recordUrl / formUrl / now) を expressionEvaluator 用の平坦 row 2 本に
  * 変換する。
+ *
+ * - data 行: 元データ形式（ctx.dataValues、path / `親|選択肢` キー）。単一ブレース
+ *   `{...}` 用。dataValues が無い旧コンテキストでは view 行（fieldValues 由来）へ
+ *   フォールバックして従来挙動を保つ。
+ * - view 行: ビュー形式（ctx.fieldValues 由来）。連続二重ブレース `{{...}}` 用。
  *
  * options:
  *   allowGmailOnlyTokens   true のとき _record_url / _form_url を含める。
  *                          false のときは空文字（Gmail 以外の出力経路でのゲート挙動）。
+ *
+ * @returns {{ data: Object, view: Object }}
  */
 function nfbBuildTemplateRow_(context, options) {
   var ctx = context || {};
@@ -365,22 +398,30 @@ function nfbBuildTemplateRow_(context, options) {
     ctx.responses,
     ctx.fileUploadMeta
   );
+  var dataValues = nfbPlainObject_(ctx.dataValues);
+  var hasDataValues = false;
+  for (var dk in dataValues) {
+    if (Object.prototype.hasOwnProperty.call(dataValues, dk)) { hasDataValues = true; break; }
+  }
+  var dataMap = hasDataValues ? dataValues : labelValueMap;
   var fileEntries = nfbTplBuildFileUploadRowEntries_(ctx.fieldPaths, ctx.fileUploadMeta);
 
-  var row = {};
-  for (var k in labelValueMap) {
-    if (Object.prototype.hasOwnProperty.call(labelValueMap, k)) row[k] = labelValueMap[k];
-  }
-  for (var k2 in fileEntries) {
-    if (Object.prototype.hasOwnProperty.call(fileEntries, k2)) row[k2] = fileEntries[k2];
+  function assemble(baseMap) {
+    var row = {};
+    for (var k in baseMap) {
+      if (Object.prototype.hasOwnProperty.call(baseMap, k)) row[k] = baseMap[k];
+    }
+    for (var k2 in fileEntries) {
+      if (Object.prototype.hasOwnProperty.call(fileEntries, k2)) row[k2] = fileEntries[k2];
+    }
+    // 予約値（現在時刻は alasql UDF NOW() を使うので行に注入しない）
+    row._id = ctx.recordId ? String(ctx.recordId) : "";
+    row._record_url = allowGmailOnly && ctx.recordUrl ? String(ctx.recordUrl) : "";
+    row._form_url = allowGmailOnly && ctx.formUrl ? String(ctx.formUrl) : "";
+    return row;
   }
 
-  // 予約値（現在時刻は alasql UDF NOW() を使うので行に注入しない）
-  row._id = ctx.recordId ? String(ctx.recordId) : "";
-  row._record_url = allowGmailOnly && ctx.recordUrl ? String(ctx.recordUrl) : "";
-  row._form_url = allowGmailOnly && ctx.formUrl ? String(ctx.formUrl) : "";
-
-  return row;
+  return { data: assemble(dataMap), view: assemble(labelValueMap) };
 }
 
 if (typeof module !== "undefined" && module.exports) {

@@ -111,6 +111,61 @@ export const collectResponses = (fields, responses, options = {}) => {
   return out;
 };
 
+const DATA_CHOICE_TYPES = ["checkboxes", "radio", "select", "weekday"];
+const DATA_VALUE_TEXT_TYPES = ["text", "textarea", "number", "regex", "date", "time", "url", "userName", "email", "phone"];
+
+const collectSelectedOptionLabels = (type, value) => {
+  if (type === "checkboxes") return Array.isArray(value) ? value.filter((v) => typeof v === "string" && v) : [];
+  return typeof value === "string" && value ? [value] : [];
+};
+
+/**
+ * 元データ形式（data）の `{ フルパス: 値 }` マップを構築する。単一ブレース `{...}`
+ * 置換の行ソースに使う。
+ *
+ * - 選択肢（checkboxes/radio/select/weekday）はオプション単位パス `親|選択肢` を
+ *   キーに、選択 → 真偽値 `true` / 未選択 → `false`（boolean 式の堅牢性のため全
+ *   オプションを既定 false で埋める）。
+ * - text/number/date 等は `collectResponses` と同じ canonical 正規化値。
+ * - substitution は計算済み文字列（あれば）。fileUpload は行構築時に FILE_* UDF 用
+ *   配列で上書きされるためここでは出力しない。
+ */
+export const buildDataValueMap = (fields, responses) => {
+  const out = {};
+  traverseSchema(fields, (field, context) => {
+    const base = context.pathSegments.join("|");
+    const value = responses?.[field.id];
+
+    if (DATA_CHOICE_TYPES.includes(field.type)) {
+      (Array.isArray(field.options) ? field.options : []).forEach((opt) => {
+        const label = typeof opt?.label === "string" ? opt.label : "";
+        if (label) out[`${base}|${label}`] = false;
+      });
+      collectSelectedOptionLabels(field.type, value).forEach((label) => {
+        out[`${base}|${label}`] = true;
+      });
+    } else if (field.type === "fileUpload") {
+      // FILE_* UDF 用配列が行構築時に同じ path へ入るため、ここでは出力しない。
+    } else if (field.type === "substitution") {
+      if (value != null && value !== "") out[base] = String(value);
+    } else if (DATA_VALUE_TEXT_TYPES.includes(field.type) && value != null && value !== "") {
+      let normalized;
+      if (field.type === "date" || field.type === "time") {
+        normalized = normalizeDateTimeFieldValue(value, field.type, { precision: field.timePrecision });
+      } else if (field.type === "number") {
+        const n = typeof value === "number" ? value : Number(value);
+        normalized = Number.isFinite(n) ? n : null;
+      } else {
+        normalized = value;
+      }
+      if (normalized === "" || normalized == null) return;
+      out[base] = normalized;
+    }
+  }, { responses });
+
+  return out;
+};
+
 export const collectAllPossiblePaths = (fields) => {
   const paths = [];
 

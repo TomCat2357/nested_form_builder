@@ -96,10 +96,12 @@ export function _coerceResultToStringForTest(value) {
  * 同期テンプレート解決。precompile 済み前提。
  *
  * @param {string} template
- * @param {object} row alasql 式評価の暗黙コンテキスト（buildRowForExpression 済み）
+ * @param {object} row 単一ブレース `{...}`（元データモード）評価の暗黙コンテキスト
+ *                     （buildRowForExpression 済み）
  * @param {object} [opts]
  *   - fallback   評価エラー / 未ロード時の置換値 (既定 "")
  *   - logError   (error, fullToken) => void
+ *   - viewRow    連続二重ブレース `{{...}}`（ビューモード）評価用の行。未指定時は row。
  * @returns {string}
  */
 export function resolveTemplate(template, row, opts) {
@@ -111,9 +113,12 @@ export function resolveTemplate(template, row, opts) {
   const options = opts || {};
   const fallback = Object.prototype.hasOwnProperty.call(options, "fallback") ? options.fallback : "";
   const logError = typeof options.logError === "function" ? options.logError : null;
+  const dataRow = row || {};
+  const viewRow = options.viewRow || dataRow;
 
   const escaped = escapeBraces(text);
   const replaced = scanAndReplace(escaped, (tok) => {
+    const tokRow = tok.mode === "view" ? viewRow : dataRow;
     const parts = splitTopLevelCommas(tok.body);
     if (parts.length <= 1) {
       const expr = normalizeBody(tok.body);
@@ -125,7 +130,7 @@ export function resolveTemplate(template, row, opts) {
       }
       let value;
       try {
-        value = compiled(row || {});
+        value = compiled(tokRow);
       } catch (err) {
         if (logError) logError(err, tok.fullToken);
         return fallback;
@@ -147,7 +152,7 @@ export function resolveTemplate(template, row, opts) {
       }
       let value;
       try {
-        value = compiled(row || {});
+        value = compiled(tokRow);
       } catch (err) {
         if (logError) logError(err, tok.fullToken);
         return fallback;
@@ -176,6 +181,8 @@ export async function resolveTemplateAsync(template, row, opts) {
   const options = opts || {};
   const fallback = Object.prototype.hasOwnProperty.call(options, "fallback") ? options.fallback : "";
   const logError = typeof options.logError === "function" ? options.logError : null;
+  const dataRow = row || {};
+  const viewRow = options.viewRow || dataRow;
 
   await precompileTemplate(text);
 
@@ -183,6 +190,7 @@ export async function resolveTemplateAsync(template, row, opts) {
   const tokens = collectBalancedBraces(escaped);
   const valueByToken = new Map();
   for (const tok of tokens) {
+    const tokRow = tok.mode === "view" ? viewRow : dataRow;
     const parts = splitTopLevelCommas(tok.body);
     if (parts.length <= 1) {
       const expr = normalizeBody(tok.body);
@@ -191,7 +199,7 @@ export async function resolveTemplateAsync(template, row, opts) {
         continue;
       }
       try {
-        const value = await evalExpression(expr, row, { fallback: undefined });
+        const value = await evalExpression(expr, tokRow, { fallback: undefined });
         if (value === undefined) {
           if (logError) logError(new Error("expression eval returned undefined"), tok.fullToken);
           valueByToken.set(tok.fullToken, fallback);
@@ -213,7 +221,7 @@ export async function resolveTemplateAsync(template, row, opts) {
         continue;
       }
       try {
-        const value = await evalExpression(expr, row, { fallback: undefined });
+        const value = await evalExpression(expr, tokRow, { fallback: undefined });
         if (value === undefined) {
           if (logError) logError(new Error("expression eval returned undefined"), tok.fullToken);
           abort = true;
