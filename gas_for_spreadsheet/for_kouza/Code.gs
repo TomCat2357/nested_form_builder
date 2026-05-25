@@ -307,15 +307,18 @@ function readDataRows_(sheet, colMap) {
   var demaeC = colMap[TYPE_COL_DEMAE];
   var orgC = colMap["組織名等"];
   var noC = colMap["No."];
+  var delC = colMap["deletedAt"];
 
   var out = [];
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
     var id = String(row[idC - 1] == null ? "" : row[idC - 1]).replace(/^\s+|\s+$/g, "");
     if (!id) continue;
+    var del = row[delC - 1];
     out.push({
       rowIndex: DATA_START_ROW + i,
       id: id,
+      deleted: (del !== "" && del != null), // ソフトデリート行か
       no: row[noC - 1],
       date: normalizeDate_(row[dateC - 1]),
       start: normalizeTime_(row[startC - 1]),
@@ -373,14 +376,17 @@ function upsertEvents_(sheet, colMap, existing, events) {
   var now = new Date();
   var email = Session.getActiveUser().getEmail() || "";
 
-  // 既存レコードを「完全一致キー」で索引化
+  // 既存レコードを「完全一致キー」で索引化。
+  // ソフトデリート行はマッチ (上書き) 対象外。索引に入れないことで、
+  // 同一キーのイベントが来ても復活させず新規行として追加する。
   var keyToExisting = {};
   for (var i = 0; i < existing.length; i++) {
+    if (existing[i].deleted) continue;
     var k = matchKeyFromRecord_(existing[i]);
     keyToExisting[k] = existing[i];
   }
 
-  // No. の最大値
+  // No. の最大値 (ソフトデリート行も含めて取り、削除済み行との No. 衝突を防ぐ)
   var maxNo = 0;
   for (var j = 0; j < existing.length; j++) {
     var n = Number(existing[j].no);
@@ -402,7 +408,7 @@ function upsertEvents_(sheet, colMap, existing, events) {
       applyEventToRow_(existingRow, ev, colMap);
       existingRow[colMap["modifiedAt"] - 1] = now;
       existingRow[colMap["modifiedBy"] - 1] = email;
-      // ソフトデリート復活
+      // match はソフトデリート行を除外済みなので、ここは通常空のまま。念のため明示クリア。
       existingRow[colMap["deletedAt"] - 1] = "";
       existingRow[colMap["deletedBy"] - 1] = "";
       writeRow_(sheet, match.rowIndex, existingRow, colMap);

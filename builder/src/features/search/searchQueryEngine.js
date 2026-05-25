@@ -797,6 +797,39 @@ const firstHitSegments_ = (text, patterns, budget) => {
   return null;
 };
 
+// 比較・IN・真偽などの列条件は「どの語に一致したか」が無いため、ヒット箇所には
+// セル値全体を 1 ヒットセグメントとして示す。budget を超える長文は末尾を … で省略。
+const wholeValueSegments_ = (text, budget) => {
+  const source = String(text ?? "");
+  if (!source) return null;
+  if (!Number.isFinite(budget) || budget <= 0 || source.length <= budget) {
+    return [{ text: source, hit: true }];
+  }
+  return [{ text: source.slice(0, budget), hit: true }, { text: "…", hit: false }];
+};
+
+// 列を指定する条件トークン（COMPARE / IN / BOOL / EMPTY / NOT_EMPTY）の型。
+// PARTIAL 系（部分一致）とは別に、ヒット箇所表示で「条件が一致した列」を出すために使う。
+const CONDITION_COLUMN_TYPES_ = new Set([
+  'COMPARE',
+  'COLUMN_IN',
+  'COLUMN_BOOL',
+  'COLUMN_EMPTY',
+  'COLUMN_NOT_EMPTY',
+]);
+
+/**
+ * クエリから列指定の条件トークン（COMPARE / COLUMN_IN / COLUMN_BOOL / COLUMN_EMPTY /
+ * COLUMN_NOT_EMPTY）を集めて返す。AND/OR/NOT 構造は無視した和集合。
+ * 厳密モード（SEARCH/WHERE）は対象外で空配列。
+ */
+export const collectConditionColumns = (keyword) => {
+  if (!keyword || typeof keyword !== 'string' || !keyword.trim()) return [];
+  if (STRICT_PREFIX_RE.test(keyword.trim())) return [];
+  const tokens = tokenizeSearchQuery(keyword);
+  return tokens.filter((token) => CONDITION_COLUMN_TYPES_.has(token.type) && token.column);
+};
+
 /**
  * 行のヒット列ごとに抜粋セグメントを作る（③ ヒット箇所表示モード用）。
  * 戻り値: `[{ columnKey, columnLabel, segments: [{ text, hit }] }]`
@@ -807,7 +840,8 @@ const firstHitSegments_ = (text, patterns, budget) => {
  */
 export const buildRowHitExcerpts = (row, columns, keyword, { cellDisplayLimit } = {}) => {
   const patterns = collectSearchPatterns(keyword);
-  if (patterns.length === 0) return [];
+  const conditions = collectConditionColumns(keyword);
+  if (patterns.length === 0 && conditions.length === 0) return [];
   const budget = Number.isFinite(cellDisplayLimit) && cellDisplayLimit > 0 ? cellDisplayLimit : 40;
   const result = [];
   const coveredNames = new Set();
@@ -821,13 +855,23 @@ export const buildRowHitExcerpts = (row, columns, keyword, { cellDisplayLimit } 
     const display = row?.values?.[column.key]?.display;
     if (!display) return;
 
-    const applicable = patterns.filter((p) => {
+    // 1a) 部分一致（PARTIAL / COLUMN_PARTIAL）: ヒット語を中心に抜粋。
+    const applicablePatterns = patterns.filter((p) => {
       if (!p.column) return true;
       return matchColumnName(column, normalizeColumnName(p.column));
     });
-    if (applicable.length === 0) return;
+    let segments = applicablePatterns.length > 0 ? firstHitSegments_(display, applicablePatterns, budget) : null;
 
-    const segments = firstHitSegments_(display, applicable, budget);
+    // 1b) 比較・IN・真偽などの列条件: 部分一致が無ければ、この列を指す条件が
+    //     この行で成立するか評価し、成立すればセル値全体をヒットとして示す。
+    //     `[column]` を渡して評価対象をこの列に限定し、同名別列での誤判定を防ぐ。
+    if (!segments && conditions.length > 0) {
+      const applicableConditions = conditions.filter((c) => matchColumnName(column, normalizeColumnName(c.column)));
+      if (applicableConditions.some((token) => evaluateLeafOnRow(token, row, [column]))) {
+        segments = wholeValueSegments_(display, budget);
+      }
+    }
+
     if (!segments) return;
 
     const columnLabel = Array.isArray(column.segments) && column.segments.length
@@ -868,21 +912,35 @@ export const buildRowHitExcerpts = (row, columns, keyword, { cellDisplayLimit } 
     const normalizedKey = normalizeColumnName(field.key);
     if (!normalizedKey || coveredNames.has(normalizedKey)) return;
 
-    const applicable = patterns.filter((p) => {
-      if (!p.column) return true;
-      const target = normalizeColumnName(p.column);
+    const fieldNameMatches = (name) => {
+      const target = normalizeColumnName(name);
       return normalizedKey === target || normalizedKey.includes(target);
-    });
-    if (applicable.length === 0) return;
+    };
 
     // マッチ判定（buildSearchableCandidates）と同じ候補群を抜粋ソースにする。
     const candidates = candidatesOf(field);
+
+    // 2a) 部分一致（PARTIAL / COLUMN_PARTIAL）
+    const applicable = patterns.filter((p) => !p.column || fieldNameMatches(p.column));
     let segments = null;
-    for (const candidate of candidates) {
-      if (!candidate) continue;
-      segments = firstHitSegments_(candidate, applicable, budget);
-      if (segments) break;
+    if (applicable.length > 0) {
+      for (const candidate of candidates) {
+        if (!candidate) continue;
+        segments = firstHitSegments_(candidate, applicable, budget);
+        if (segments) break;
+      }
     }
+
+    // 2b) この非表示フィールドを指す列条件が成立すれば、フィールド値全体を示す。
+    //     `[]` を渡して列解決を外し、評価器の entry フォールバック経路で判定させる。
+    if (!segments && conditions.length > 0) {
+      const applicableConditions = conditions.filter((c) => fieldNameMatches(c.column));
+      if (applicableConditions.some((token) => evaluateLeafOnRow(token, row, []))) {
+        const text = candidates.find((candidate) => candidate);
+        if (text) segments = wholeValueSegments_(text, budget);
+      }
+    }
+
     if (!segments) return;
 
     coveredNames.add(normalizedKey);

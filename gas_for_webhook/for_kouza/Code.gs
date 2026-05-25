@@ -2,16 +2,19 @@
 // 環境共生担当課 カレンダー取込 Web App (Nested Form Builder 連携)
 //
 // for_kouza/Code.gs を Web App として再構築。
-// React (Builder) の外部アクションボタンが GET でこの URL を叩くと、
-//   - カレンダー名「環境共生担当課」の今月〜+monthsAhead ヶ月後末日の範囲を取得
-//   - 件名に「講座」を含むイベントを抽出
-//   - URL パラメータ ssid のスプレッドシート Data シートに upsert
-// を実行する。
+// React (Builder) の外部アクションボタンが GET でこの URL を ?ssid=... 付きで叩くと、
+//   - 取込 UI (Index.html) を表示する。
+//     カレンダー名・取込開始日・取込終了日を選び「取込実行」ボタンを押すと、
+//     google.script.run.runImport(payload) が呼ばれる。
+//   - runImport は選択カレンダーの指定期間から件名に「講座」を含むイベントを抽出し、
+//     URL パラメータ ssid (フォームデータ由来) のスプレッドシート Data シートに upsert する。
+//   access: MYSELF のため、実質的にデプロイ者 (管理者) 限定のボタンとなる。
 //
-// 重要: upsert ロジック (parseEvent_ / buildHeaderKeyMap_ / readDataRows_ /
-// upsertEvents_ / matchKeyFrom*_ / applyEventToRow_ / detectAndMarkOverlaps_ 等)
-// は for_kouza/Code.gs と同期維持すること。マッチキー定義や列定義を変えたら
-// 両方更新する必要がある。
+// 重要: upsert / 取得ロジック (fetchCalendarEvents_ / parseEvent_ / buildHeaderKeyMap_ /
+// readDataRows_ / upsertEvents_ / matchKeyFrom*_ / applyEventToRow_ /
+// detectAndMarkOverlaps_ / listCalendarsForUi_ / defaultDateRange_ 等) は
+// gas_for_spreadsheet/for_kouza/Code.gs と同期維持すること。マッチキー定義や列定義を
+// 変えたら両方更新する必要がある。
 // =============================================================================
 
 // ----- 定数 ----------------------------------------------------------------
@@ -21,7 +24,6 @@ var DATA_START_ROW = HEADER_DEPTH + 1;
 var TZ = "Asia/Tokyo";
 var FILTER_WORD = "講座";
 var DEFAULT_CALENDAR_NAME = "環境共生担当課";
-var DEFAULT_MONTHS_AHEAD = 12;
 
 var DATETIME_FORMAT = "yyyy/mm/dd hh:mm:ss";
 var DATE_FORMAT = "yyyy/mm/dd";
@@ -41,33 +43,71 @@ var REQUIRED_COLUMNS = [
 ];
 
 
-// ----- Web App エントリ ---------------------------------------------------
+// ----- Web App エントリ (取込 UI を表示) ----------------------------------
+// GET: 手動アクセス・直リンク用に ?ssid= を読む。
+// POST: Builder の外部アクションボタンが隠しフォーム (payload=JSON) で叩く。
+//       spreadsheetId は payload.storage.spreadsheetId に入る
+//       (adminOnly && isAdmin のときだけ storage が付与される)。
 function doGet(e) {
   try {
     var params = (e && e.parameter) || {};
-    var ssid = String(params.ssid || "").replace(/^\s+|\s+$/g, "");
-    if (!ssid) {
-      return renderHtml_("エラー", "URL パラメータ ssid (取込先スプレッドシートID) が必要です。", true);
-    }
-    var monthsAhead = parseInt(params.monthsAhead, 10);
-    if (!isFinite(monthsAhead) || monthsAhead < 0) monthsAhead = DEFAULT_MONTHS_AHEAD;
-    if (monthsAhead > 60) monthsAhead = 60; // 安全上限
-
-    var result = runImport_(ssid, monthsAhead);
-    if (!result.ok) return renderHtml_("エラー", result.error, true);
-
-    var msg =
-      "カレンダー「" + DEFAULT_CALENDAR_NAME + "」(今月〜+" + monthsAhead + "ヶ月) を取込みました。<br>" +
-      "追加: <b>" + result.added + "</b> 件 / 更新: <b>" + result.updated + "</b> 件 / 重複行: <b>" + result.duplicateRows + "</b>";
-    return renderHtml_("取込完了", msg, false);
+    return renderImportUi_(params.ssid);
   } catch (err) {
     return renderHtml_("予期せぬエラー", String(err && err.message ? err.message : err), true);
   }
 }
 
+function doPost(e) {
+  try {
+    var params = (e && e.parameter) || {};
+    var ssid = "";
+    if (params.payload) {
+      var payload;
+      try {
+        payload = JSON.parse(params.payload);
+      } catch (parseErr) {
+        return renderHtml_("エラー", "受信データ (payload) を解析できませんでした。", true);
+      }
+      if (payload && payload.storage && payload.storage.spreadsheetId) {
+        ssid = payload.storage.spreadsheetId;
+      }
+    }
+    if (!ssid && params.ssid) ssid = params.ssid;
+    return renderImportUi_(ssid);
+  } catch (err) {
+    return renderHtml_("予期せぬエラー", String(err && err.message ? err.message : err), true);
+  }
+}
 
-// ----- メイン処理 ----------------------------------------------------------
-function runImport_(ssid, monthsAhead) {
+// 取込 UI (Index.html) をレンダリングする共通ヘルパ。doGet / doPost 双方から呼ぶ。
+function renderImportUi_(ssid) {
+  ssid = String(ssid || "").replace(/^\s+|\s+$/g, "");
+  if (!ssid) {
+    return renderHtml_("エラー", "取込先スプレッドシートID が取得できませんでした。外部アクションボタンが管理者専用 (adminOnly) に設定され、管理者として実行しているか確認してください。", true);
+  }
+
+  var tpl = HtmlService.createTemplateFromFile("Index");
+  tpl.ssid = ssid;
+  tpl.ssName = resolveSpreadsheetName_(ssid); // 取得失敗時は ""
+  tpl.calendars = listCalendarsForUi_();
+  var defaults = defaultDateRange_();
+  tpl.defaultStartDate = defaults.start; // 既定: 先月の 1 日
+  tpl.defaultEndDate = defaults.end;     // 既定: 今月の末日
+  return tpl.evaluate()
+    .setTitle("カレンダー取込")
+    .addMetaTag("viewport", "width=device-width, initial-scale=1")
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+
+// ----- メイン処理 (UI の「取込実行」ボタンから google.script.run で呼ばれる公開関数) ----
+function runImport(payload) {
+  payload = payload || {};
+  var ssid = String(payload.ssid || "").replace(/^\s+|\s+$/g, "");
+  if (!ssid) {
+    return { ok: false, error: "取込先スプレッドシートID (ssid) が指定されていません。" };
+  }
+
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(LOCK_WAIT_MS)) {
     return { ok: false, error: "他のユーザーが更新中です。少し待ってから再実行してください。" };
@@ -92,11 +132,9 @@ function runImport_(ssid, monthsAhead) {
       return { ok: false, error: "Data シートに必要な列が見つかりません: " + missing.join(", ") };
     }
 
-    var events = fetchCalendarEventsByName_(DEFAULT_CALENDAR_NAME, monthsAhead);
-    if (events.error) return { ok: false, error: events.error };
-
+    var events = fetchCalendarEvents_(payload);
     var existing = readDataRows_(sheet, colMap);
-    var upsertResult = upsertEvents_(sheet, colMap, existing, events.list);
+    var upsertResult = upsertEvents_(sheet, colMap, existing, events);
     var dupResult = detectAndMarkOverlaps_(sheet, colMap);
 
     return {
@@ -121,19 +159,67 @@ function findMissingColumns_(colMap, keys) {
 }
 
 
-// ----- カレンダー イベント抽出 (名前指定 + 今月〜+N月) -------------------
-function fetchCalendarEventsByName_(calendarName, monthsAhead) {
-  var cals = CalendarApp.getCalendarsByName(calendarName);
-  if (!cals || cals.length === 0) {
-    return { error: "カレンダー「" + calendarName + "」が見つかりません (共有/アクセス権を確認してください)。", list: [] };
+// ----- UI 用ヘルパ (gas_for_spreadsheet/for_kouza と同期維持) ---------------
+function resolveSpreadsheetName_(ssid) {
+  try {
+    return SpreadsheetApp.openById(ssid).getName();
+  } catch (err) {
+    return "";
   }
-  var cal = cals[0];
+}
 
+function listCalendarsForUi_() {
+  var cals = CalendarApp.getAllCalendars();
+  var out = [];
+  for (var i = 0; i < cals.length; i++) {
+    var c = cals[i];
+    out.push({
+      id: c.getId(),
+      name: c.getName(),
+      isDefault: c.getName() === DEFAULT_CALENDAR_NAME
+    });
+  }
+  // 既定カレンダーを先頭に、それ以降は名前順
+  out.sort(function (a, b) {
+    if (a.isDefault !== b.isDefault) return a.isDefault ? -1 : 1;
+    if (a.name < b.name) return -1;
+    if (a.name > b.name) return 1;
+    return 0;
+  });
+  // 既定が存在しない場合、先頭に selected を付ける
+  var hasDefault = false;
+  for (var k = 0; k < out.length; k++) if (out[k].isDefault) { hasDefault = true; break; }
+  if (!hasDefault && out.length > 0) out[0].isDefault = true;
+  return out;
+}
+
+function defaultDateRange_() {
   var now = new Date();
   var y = now.getFullYear();
   var m = now.getMonth();
-  var startTime = new Date(y, m, 1, 0, 0, 0);                       // 今月 1 日 00:00
-  var endTime = new Date(y, m + monthsAhead + 1, 0, 23, 59, 59);    // 今月+N の末日 23:59
+  var start = new Date(y, m - 1, 1);             // 先月の 1 日
+  var end = new Date(y, m + 1, 0, 23, 59, 59);   // 今月の末日
+  return {
+    start: Utilities.formatDate(start, TZ, "yyyy-MM-dd"),
+    end: Utilities.formatDate(end, TZ, "yyyy-MM-dd")
+  };
+}
+
+
+// ----- カレンダー イベント抽出 (カレンダーID + 期間指定) -------------------
+function fetchCalendarEvents_(params) {
+  if (!params || !params.calendarId) throw new Error("カレンダーが指定されていません。");
+  if (!params.startDate || !params.endDate) throw new Error("期間が正しく指定されていません。");
+
+  var s = String(params.startDate).split("-");
+  var e = String(params.endDate).split("-");
+  if (s.length !== 3 || e.length !== 3) throw new Error("期間の形式が正しくありません (YYYY-MM-DD)。");
+  var startTime = new Date(Number(s[0]), Number(s[1]) - 1, Number(s[2]), 0, 0, 0);
+  var endTime = new Date(Number(e[0]), Number(e[1]) - 1, Number(e[2]), 23, 59, 59);
+  if (endTime < startTime) throw new Error("終了日は開始日以降を指定してください。");
+
+  var cal = CalendarApp.getCalendarById(params.calendarId);
+  if (!cal) throw new Error("カレンダーが見つかりません: " + params.calendarId);
 
   var raw = cal.getEvents(startTime, endTime);
   var out = [];
@@ -143,7 +229,7 @@ function fetchCalendarEventsByName_(calendarName, monthsAhead) {
     if (title.indexOf(FILTER_WORD) === -1) continue;
     out.push(parseEvent_(ev, title));
   }
-  return { error: null, list: out };
+  return out;
 }
 
 function parseEvent_(ev, title) {
@@ -272,15 +358,18 @@ function readDataRows_(sheet, colMap) {
   var demaeC = colMap[TYPE_COL_DEMAE];
   var orgC = colMap["組織名等"];
   var noC = colMap["No."];
+  var delC = colMap["deletedAt"];
 
   var out = [];
   for (var i = 0; i < values.length; i++) {
     var row = values[i];
     var id = String(row[idC - 1] == null ? "" : row[idC - 1]).replace(/^\s+|\s+$/g, "");
     if (!id) continue;
+    var del = row[delC - 1];
     out.push({
       rowIndex: DATA_START_ROW + i,
       id: id,
+      deleted: (del !== "" && del != null), // ソフトデリート行か
       no: row[noC - 1],
       date: normalizeDate_(row[dateC - 1]),
       start: normalizeTime_(row[startC - 1]),
@@ -337,12 +426,16 @@ function upsertEvents_(sheet, colMap, existing, events) {
   var now = new Date();
   var email = Session.getActiveUser().getEmail() || "";
 
+  // ソフトデリート行はマッチ (上書き) 対象外。索引に入れないことで、
+  // 同一キーのイベントが来ても復活させず新規行として追加する。
   var keyToExisting = {};
   for (var i = 0; i < existing.length; i++) {
+    if (existing[i].deleted) continue;
     var k = matchKeyFromRecord_(existing[i]);
     keyToExisting[k] = existing[i];
   }
 
+  // No. 採番はソフトデリート行も含めて最大値を取る (削除済み行との No. 衝突を防ぐ)。
   var maxNo = 0;
   for (var j = 0; j < existing.length; j++) {
     var n = Number(existing[j].no);
@@ -363,6 +456,7 @@ function upsertEvents_(sheet, colMap, existing, events) {
       applyEventToRow_(existingRow, ev, colMap);
       existingRow[colMap["modifiedAt"] - 1] = now;
       existingRow[colMap["modifiedBy"] - 1] = email;
+      // match はソフトデリート行を除外済みなので、ここは通常空のまま。念のため明示クリア。
       existingRow[colMap["deletedAt"] - 1] = "";
       existingRow[colMap["deletedBy"] - 1] = "";
       writeRow_(sheet, match.rowIndex, existingRow, colMap);
