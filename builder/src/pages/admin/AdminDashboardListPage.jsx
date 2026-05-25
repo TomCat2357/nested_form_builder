@@ -55,7 +55,7 @@ export default function AdminDashboardListPage() {
       extraColumn={extraColumn}
       renderNameCell={renderNameCell}
       enableUrlCopy
-      copyUrlPathPrefix="#/dashboards/"
+      copyUrlPathPrefix="/dashboards/"
     />
   );
 }

@@ -10,6 +10,7 @@ import AdminNewFolderDialog from "./AdminNewFolderDialog.jsx";
 import AdminMoveDialog from "./AdminMoveDialog.jsx";
 import { useAdminAnalyticsListActions } from "./useAdminAnalyticsListActions.js";
 import { useFolderBrowser } from "../../features/folders/useFolderBrowser.js";
+import { buildAppUrl } from "../../utils/appUrl.js";
 import FolderSearchBar from "../../features/folders/FolderSearchBar.jsx";
 import FolderBreadcrumbs from "../../features/folders/FolderBreadcrumbs.jsx";
 import FolderRow from "../../features/folders/FolderRow.jsx";
@@ -29,7 +30,7 @@ import FolderRow from "../../features/folders/FolderRow.jsx";
  * @param {(item: object) => React.ReactNode} [props.renderNameCell] 名称セルの描画。未指定なら名前のみ
  * @param {(item: object, ctx: {copiedId: string|null, onCopy: (id: string, e: Event) => void}) => React.ReactNode} [props.renderIdCell] ID セルの描画。未指定なら ID 文字列のみ
  * @param {boolean} [props.enableUrlCopy] true で ID セルクリック→URL コピー機能を有効化
- * @param {string} [props.copyUrlPathPrefix] URL コピー時のパスプレフィックス（例 "#/dashboards/"）
+ * @param {string} [props.copyUrlPathPrefix] URL コピー時の SPA パスプレフィックス（例 "/dashboards/"）。buildAppUrl で GAS は ?route= 形式に変換される
  */
 export default function AdminAnalyticsListPage({
   kind,
@@ -227,8 +228,10 @@ export default function AdminAnalyticsListPage({
 
   const handleCopyUrl = useCallback((itemId, event) => {
     event.stopPropagation();
-    const baseUrl = window.__GAS_WEBAPP_URL__ || window.location.origin;
-    const fullUrl = `${baseUrl}${copyUrlPathPrefix}${itemId}`;
+    // GAS は二重 iframe 構造で外側 URL のハッシュが内側 React に伝播しないため、
+    // 直接 baseUrl + "#/dashboards/id" を作ると閲覧ページに飛べない。
+    // buildAppUrl 経由で ?route= 形式に変換し、doGet → __INITIAL_HASH__ で内側へ届ける。
+    const fullUrl = buildAppUrl(`${copyUrlPathPrefix}${itemId}`);
     navigator.clipboard.writeText(fullUrl).then(() => {
       setCopiedId(itemId);
       setTimeout(() => setCopiedId(null), 2000);
