@@ -14,6 +14,14 @@ import { preprocessAlaSqlExpression } from "./preprocessAlaSqlExpression.js";
 
 const compiledCache = new Map();
 
+// 置換 `{...}` / `{{...}}` を共通 alasql エンジンで表現する中核。
+// `SELECT (<expr>) AS v FROM ? AS r` の `?` には「対象レコード 1 行」を渡す。
+// これは概念的に `SELECT <expr> FROM <テーブル> WHERE [id] = <対象レコード>` と等価だが、
+// 全テーブルを読み込んで id で絞るより単一行を直接渡す方が高速（置換は毎レコードのホットパス）。
+// `{...}` は data 表現の行、`{{...}}` は view 表現の行を渡す（テンプレ評価器が切替）— これが
+// 「単一ブレース=データ / 二重ブレース=ビュー（テーブルを view モードに変えるだけ）」の実体。
+// 検索（filterRowsByExpr）/ クエリー（runAlaSql）と同じ alasql 実行基盤に揃えている。
+// GAS 双子 gas/expressionEvaluator.gs も同形（`SELECT (<expr>) AS __r FROM ? AS r`）。
 function buildSelectSql(expr) {
   return "SELECT (" + preprocessAlaSqlExpression(expr) + ") AS v FROM ? AS r";
 }

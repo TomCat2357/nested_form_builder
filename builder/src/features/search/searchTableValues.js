@@ -47,7 +47,7 @@ export const valueToDisplayString = (value) => {
     return value
       .map((item) => valueToDisplayString(item))
       .filter((item) => !isEmptyCell(item))
-      .join("、");
+      .join(",");
   }
   if (isEmptyCell(value)) return "";
   return String(value);
@@ -94,13 +94,14 @@ export const normalizeSearchText = (text) => String(text || "").toLowerCase();
 export const normalizeColumnName = (text) => String(text || "").trim().toLowerCase();
 export const isEntryIdColumnName = (columnName) => normalizeColumnName(columnName) === "id";
 
-// 複数値セル ("カラス、キタツネ") を集合として扱うための分割ヘルパ。
-// collectFieldValue (searchTableValues.js) が values.join("、") で生成する display と対称。
+// 複数値セル ("カラス,キタツネ") を集合として扱うための分割ヘルパ。
+// collectFieldValue (searchTableValues.js) が values.join(",") で生成する display と対称。
+// 複数値の連結文字は ","（カンマ）で全経路統一（表示 display / view 行 / MV_EQ・MV_IN UDF）。
 export const splitMultiValue = (text) => {
   if (text === undefined || text === null) return [];
   const str = String(text);
   if (str === "") return [];
-  return str.split("、").map((token) => token.trim()).filter((token) => token !== "");
+  return str.split(",").map((token) => token.trim()).filter((token) => token !== "");
 };
 
 // candidates 配列の各要素を splitMultiValue で平坦化して token 配列を返す。
@@ -222,7 +223,7 @@ export const buildEntryLogicalFields = (entry) => {
       emittedChoice.add(parent);
       fields.push({
         key: parent,
-        value: collectDirectOptionLabels(data, parent).join("、"),
+        value: collectDirectOptionLabels(data, parent).join(","),
         unixMs: undefined,
       });
       return;
@@ -308,7 +309,7 @@ export const collectFieldValue = (entry, path, column) => {
     };
   }
 
-  const display = values.join("、");
+  const display = values.join(",");
   const primary = values[0] || "";
   const sortDisplay = isChoiceColumn(column) && values.length <= 1 ? primary : display;
   const sortValue = resolveSortValue({ rawValues, display: sortDisplay, dataUnixMs, path, column });

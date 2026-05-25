@@ -390,8 +390,8 @@ test("isEmptyCell: null / undefined / 空文字を空欄とみなす", () => {
   assert.equal(isEmptyCell(" "), false);
 });
 
-test("collectMultiValueTokens: candidate 配列を「、」で平坦化", () => {
-  assert.deepEqual(collectMultiValueTokens(["カラス、キタツネ", "ハト"]), ["カラス", "キタツネ", "ハト"]);
+test("collectMultiValueTokens: candidate 配列を「,」で平坦化", () => {
+  assert.deepEqual(collectMultiValueTokens(["カラス,キタツネ", "ハト"]), ["カラス", "キタツネ", "ハト"]);
   assert.deepEqual(collectMultiValueTokens([]), []);
   assert.deepEqual(collectMultiValueTokens([""]), []);
   assert.deepEqual(collectMultiValueTokens(null), []);

@@ -191,7 +191,7 @@ export const createDisplayColumn = (path, sourceType = "", options = {}) => {
         }));
         const displayNames = fileItems.map((f) => f.displayName).filter(Boolean);
         const searchParts = files.map((file) => file.name).filter(Boolean);
-        const display = displayNames.join("、") || (folderUrl ? "フォルダを開く" : "");
+        const display = displayNames.join(",") || (folderUrl ? "フォルダを開く" : "");
         return {
           display,
           search: normalizeSearchText(searchParts.join(" ")),

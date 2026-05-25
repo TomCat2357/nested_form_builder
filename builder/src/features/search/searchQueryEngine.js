@@ -68,8 +68,12 @@ const parseInList = (raw) => {
 /**
  * 検索クエリをトークン化
  * 例: '氏名:"山田" and (年齢>=20 or 性別:男性)'
+ *
+ * 簡易検索の alasql WHERE 翻訳器（searchSimpleTranslate.js）からも再利用する。
+ * トークナイザ/パーサを共有することで、簡易検索のフィルタ（alasql）とヒット抜粋
+ * ハイライト（このファイル）の構文解釈を完全に一致させる。
  */
-const tokenizeSearchQuery = (query) => {
+export const tokenizeSearchQuery = (query) => {
   if (!query || typeof query !== 'string') return [];
 
   const tokens = [];
@@ -258,7 +262,7 @@ const tokenizeSearchQuery = (query) => {
 /**
  * トークン列をASTに変換（再帰下降パーサー）
  */
-const parseTokens = (tokens) => {
+export const parseTokens = (tokens) => {
   let pos = 0;
 
   const CONDITION_TYPES = new Set([
@@ -671,7 +675,14 @@ const evaluateAst = (ast, row, columns) => {
 };
 
 /**
- * 検索クエリに基づいて行をフィルタリング
+ * 検索クエリに基づいて行をフィルタリング（簡易検索の意味論リファレンス）。
+ *
+ * ※ ライブの簡易検索フィルタは共通 alasql エンジンに統一済み
+ *   （searchSimpleTranslate.js が WHERE 式へ翻訳 → filterRowsByExpr で評価）。
+ *   この `matchesKeyword` はもうフィルタの本番経路では使われないが、簡易検索の意味論の
+ *   リファレンス実装として残す（翻訳器のパリティテストのオラクル / evaluateLeafOnRow の
+ *   直接的なテスト基盤）。evaluateLeafOnRow 自体はヒット抜粋ハイライト
+ *   （buildRowHitExcerpts）で現役のため、本関数を消しても削減効果は小さい。
  *
  * 検索パターン:
  * 1. {正規表現ワード} - 全テキスト列を対象に正規表現検索

@@ -2,7 +2,8 @@
  * 検索クエリ → alasql 式 への変換 + 行データの構築。
  * useSearchPageState から呼ばれるエントリポイント。
  */
-import { preprocessSearchQuery } from "./searchSyntaxPreprocessor.js";
+import { preprocessSearchQuery, STRICT_PREFIX_RE } from "./searchSyntaxPreprocessor.js";
+import { buildSimpleSearchExpression } from "./searchSimpleTranslate.js";
 import { headerKeyToAlaSqlKey } from "../analytics/utils/headerToAlaSqlKey.js";
 import { columnType } from "./searchTableValues.js";
 import { formatCanonical } from "../../utils/dateTime.js";
@@ -97,13 +98,22 @@ function buildSearchableColumnMeta(columns) {
 
 /**
  * クエリ文字列 → { expr, errors }
+ *
+ * モード:
+ * - 厳密モード（先頭 `SEARCH`/`WHERE`）: searchSyntaxPreprocessor（alasql 標準 WHERE 節）。
+ * - 簡易モード（プレフィックスなし）: searchSimpleTranslate（正規表現 / 複数値集合分解などを
+ *   alasql WHERE 式へ忠実に翻訳。トークナイザ/パーサは searchQueryEngine と共有）。
+ *
  * 日付列は view / data 両モードとも canonical 文字列として文字列比較する（variant 非依存）。
  * @param {string} query
  * @param {Array<{ key: string, path?: string, sourceType?: string, type?: string, searchable?: boolean }>} columns
  */
 export function buildSearchExpression(query, columns) {
-  const meta = buildSearchableColumnMeta(columns);
-  return preprocessSearchQuery(query, meta);
+  if (STRICT_PREFIX_RE.test(String(query == null ? "" : query))) {
+    const meta = buildSearchableColumnMeta(columns);
+    return preprocessSearchQuery(query, meta);
+  }
+  return buildSimpleSearchExpression(query, columns);
 }
 
 /**
@@ -239,8 +249,8 @@ export function buildSearchRow(row, columns) {
       if (raw === undefined || raw === null || raw === "") {
         out[safeKey] = null;
       } else if (Array.isArray(raw)) {
-        // 配列値（checkboxes の selected value 配列等）は表示と同じ「、」連結に正規化
-        const joined = raw.filter((v) => v !== null && v !== undefined && v !== "").join("、");
+        // 配列値（checkboxes の selected value 配列等）は表示と同じ「,」連結に正規化
+        const joined = raw.filter((v) => v !== null && v !== undefined && v !== "").join(",");
         out[safeKey] = joined === "" ? null : joined;
       } else {
         out[safeKey] = raw;

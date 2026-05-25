@@ -18,7 +18,7 @@ import {
   compareByColumn,
   parseSearchCellDisplayLimit,
 } from "./searchTableValues.js";
-import { getKeywordMatchDetail, buildRowHitExcerpts } from "./searchQueryEngine.js";
+import { buildRowHitExcerpts } from "./searchQueryEngine.js";
 import { buildSearchExpression, stripNonSearchableMetaKeys } from "./searchExpressionBuilder.js";
 import { entriesToViewTableRows } from "../analytics/entriesToViewRows.js";
 import { entriesToAlaSqlRows, filterRowsByExpr } from "../analytics/analyticsAlaSql.js";
@@ -277,6 +277,17 @@ export function useSearchPageState({
     [searchTableRows],
   );
 
+  // 簡易検索（プレフィックスなし）は常に view 形式の行に対して評価する。
+  // 簡易検索はラベル/結合文字列（display 相当）を照合対象とするため、選択肢を one-hot 化する
+  // data 形式ではなく view 形式（ラベル文字列・複数値は "," 連結）を使う。
+  // 厳密モードは従来どおり searchableTableRows（searchQueryTableSource を尊重）を使う。
+  const simpleSearchRows = useMemo(() => {
+    if (!form) return [];
+    if (tableSource === "view") return searchableTableRows;
+    const entriesArr = baseFilteredEntries.map((row) => row.entry);
+    return stripNonSearchableMetaKeys(entriesToViewTableRows(entriesArr, form));
+  }, [form, tableSource, searchableTableRows, baseFilteredEntries]);
+
   useCancellable(async (isCancelled) => {
     const keyword = (query || "").trim();
     if (!keyword) {
@@ -284,31 +295,36 @@ export function useSearchPageState({
       setFilteredEntries(baseFilteredEntries);
       return;
     }
-    // SEARCH / WHERE プレフィックスのみ alasql 厳密モードへ。
-    // それ以外は簡易モード = searchQueryEngine.js (getKeywordMatchDetail) で評価。
-    // 簡易モードは `列名:値` 部分一致や `列名:/正規表現/` を独自トークナイザで解釈する。
-    if (!STRICT_PREFIX_RE.test(keyword)) {
-      setFilterError(null);
-      const filtered = baseFilteredEntries.filter(
-        (row) => getKeywordMatchDetail(row, searchColumns, keyword).matched,
-      );
-      setFilteredEntries(filtered);
+    // 簡易・厳密の両モードを共通 alasql エンジンへ統一。
+    // - 厳密モード（先頭 SEARCH/WHERE）: searchSyntaxPreprocessor が WHERE 節相当へ変換。
+    //   評価行は searchableTableRows（searchQueryTableSource を尊重）。
+    // - 簡易モード: searchSimpleTranslate が正規表現 / 複数値集合分解などを WHERE 式へ翻訳。
+    //   評価行は simpleSearchRows（常に view 形式）。
+    // いずれも preprocessAlaSqlExpression → filterRowsByExpr（SELECT * FROM ? WHERE <expr>）で評価。
+    const isStrict = STRICT_PREFIX_RE.test(keyword);
+    const { expr, errors } = buildSearchExpression(keyword, searchColumns);
+    if (errors && errors.length > 0) {
+      setFilteredEntries([]);
+      setFilterError(errors.join(", "));
       return;
     }
-    const { expr, errors } = buildSearchExpression(keyword, searchColumns, { variant: tableSource });
-    if (!expr || (errors && errors.length > 0)) {
-      setFilteredEntries([]);
-      setFilterError(
-        errors && errors.length > 0 ? errors.join(", ") : "検索式を解析できませんでした",
-      );
+    if (!expr) {
+      // 厳密モードで式が空（`WHERE ` のみ等）は従来どおり解析エラー扱い。
+      // 簡易モードで式が空になるのは空 AST（例 "()"）のみで、旧エンジンは全件一致だったため全件表示。
+      if (isStrict) {
+        setFilteredEntries([]);
+        setFilterError("検索式を解析できませんでした");
+      } else {
+        setFilterError(null);
+        setFilteredEntries(baseFilteredEntries);
+      }
       return;
     }
     setFilterError(null);
     try {
-      // ダッシュボード詳細フィルターと同じ AlaSQL `SELECT * FROM ? WHERE <expr>` 評価エンジンに統一。
-      // 式の前処理（バッククォート/UDF 解決）は検索独自の preprocessAlaSqlExpression を維持し、評価だけ共通化する。
       const whereExpr = preprocessAlaSqlExpression(expr);
-      const res = await filterRowsByExpr(searchableTableRows, whereExpr);
+      const rows = isStrict ? searchableTableRows : simpleSearchRows;
+      const res = await filterRowsByExpr(rows, whereExpr);
       if (isCancelled()) return;
       if (!res.ok) {
         setFilterError("検索エラー: " + (res.error || "式を評価できませんでした"));
@@ -325,7 +341,7 @@ export function useSearchPageState({
       setFilterError("検索エラー: " + (err && err.message ? err.message : String(err)));
       setFilteredEntries(baseFilteredEntries);
     }
-  }, [baseFilteredEntries, searchColumns, query, tableSource, searchableTableRows, form]);
+  }, [baseFilteredEntries, searchColumns, query, tableSource, searchableTableRows, simpleSearchRows, form]);
 
   const sortedEntries = useMemo(() => {
     const list = filteredEntries.slice();

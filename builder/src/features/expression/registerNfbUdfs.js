@@ -295,6 +295,42 @@ export function ensureNfbUdfsRegistered(alasql) {
   };
 
   // ---------------------------------------------------------------------------
+  // MV_EQ / MV_IN — 複数値セルの集合分解一致。簡易検索の `列=値` / `列 in (...)` を
+  //   alasql WHERE 式へ翻訳するときに使う（searchQueryEngine の matchEqualityOverTokens_ /
+  //   matchInOverTokens_ 互換）。
+  //   簡易検索は view 行（entriesToViewTableRows）に対して評価し、複数値セル
+  //   （checkboxes / weekday）は `,` 連結で統一されている。よってセル文字列を `,` で
+  //   分割・trim して集合化する。単一値セル（radio / select / text 等）は 1 要素集合に
+  //   なるので通常の等価比較に帰着する。空 / null セルはトークン無し → MV_EQ:false /
+  //   MV_IN:false（否定 `NOT MV_EQ` / `NOT MV_IN` で「空 != 値」「空 not in」が true になる）。
+  // ---------------------------------------------------------------------------
+  function splitMultiValueCell(cell) {
+    if (cell === null || cell === undefined) return [];
+    const str = String(cell);
+    if (str === "") return [];
+    return str.split(",").map((token) => token.trim()).filter((token) => token !== "");
+  }
+  alasql.fn.MV_EQ = function (cell, target) {
+    const tokens = splitMultiValueCell(cell);
+    const t = String(target);
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i] === t) return true;
+    }
+    return false;
+  };
+  alasql.fn.MV_IN = function (cell, ...targets) {
+    const tokens = splitMultiValueCell(cell);
+    if (tokens.length === 0) return false;
+    const targetStrs = targets.map((v) => String(v));
+    for (let i = 0; i < tokens.length; i++) {
+      for (let k = 0; k < targetStrs.length; k++) {
+        if (tokens[i] === targetStrs[k]) return true;
+      }
+    }
+    return false;
+  };
+
+  // ---------------------------------------------------------------------------
   // KANA — ひらがな → カタカナ。pipeEngine の nfbTransformKana_ 移植。
   // ---------------------------------------------------------------------------
   alasql.fn.KANA = function (value) {
