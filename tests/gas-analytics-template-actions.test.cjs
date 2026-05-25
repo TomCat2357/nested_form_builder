@@ -1,0 +1,417 @@
+/**
+ * gas/analyticsApi.gs / analyticsCrud.gs / analyticsImport.gs / analyticsCopy.gs
+ * の主要フロー（archive / delete / copy / import / list の archived フィルタ）を検証。
+ *
+ * GAS API （DriveApp / PropertiesService / MimeType / Logger）と関連ヘルパーを VM に注入する。
+ */
+
+const assert = require("node:assert/strict");
+const test = require("node:test");
+const path = require("node:path");
+const fs = require("node:fs");
+const vm = require("node:vm");
+
+function loadAnalyticsContext() {
+  // ---- in-memory drive ----
+  const fileStore = new Map(); // fileId -> { id, name, parentId, content, trashed, mimeType }
+  const folderStore = new Map(); // folderId -> { id, name, parentId }
+  let nextFileId = 1;
+  let nextFolderId = 1;
+  let nextUlid = 1;
+
+  const makeFile = ({ name, parentId = null, content = "", mimeType = "text/plain", trashed = false }) => {
+    const id = `file_${nextFileId++}`;
+    const file = { id, name, parentId, content, trashed, mimeType };
+    fileStore.set(id, file);
+    return file;
+  };
+  const makeFolder = ({ name, parentId = null }) => {
+    const id = `folder_${nextFolderId++}`;
+    const folder = { id, name, parentId };
+    folderStore.set(id, folder);
+    return folder;
+  };
+
+  const fileWrapper = (file) => ({
+    getId: () => file.id,
+    getName: () => file.name,
+    setName: (n) => { file.name = n; },
+    getUrl: () => `https://drive.google.com/file/d/${file.id}/view`,
+    getMimeType: () => file.mimeType,
+    isTrashed: () => file.trashed,
+    setContent: (c) => { file.content = c; },
+    setTrashed: (v) => { file.trashed = v; },
+    getBlob: () => ({ getDataAsString: () => file.content }),
+    getParents: () => {
+      const parents = [];
+      if (file.parentId) {
+        const f = folderStore.get(file.parentId);
+        if (f) parents.push(folderWrapper(f));
+      }
+      let i = 0;
+      return { hasNext: () => i < parents.length, next: () => parents[i++] };
+    },
+  });
+  const folderWrapper = (folder) => ({
+    getId: () => folder.id,
+    getName: () => folder.name,
+    createFile: (name, content, mimeType) => fileWrapper(makeFile({ name, parentId: folder.id, content, mimeType: mimeType || "text/plain" })),
+    createFolder: (name) => folderWrapper(makeFolder({ name, parentId: folder.id })),
+    getFoldersByName: (name) => {
+      const matches = Array.from(folderStore.values()).filter((f) => f.parentId === folder.id && f.name === name);
+      let i = 0;
+      return { hasNext: () => i < matches.length, next: () => folderWrapper(matches[i++]) };
+    },
+    getFiles: () => {
+      const matches = Array.from(fileStore.values()).filter((f) => f.parentId === folder.id && !f.trashed);
+      let i = 0;
+      return { hasNext: () => i < matches.length, next: () => fileWrapper(matches[i++]) };
+    },
+    getFilesByName: (name) => {
+      const matches = Array.from(fileStore.values()).filter((f) => f.parentId === folder.id && f.name === name && !f.trashed);
+      let i = 0;
+      return { hasNext: () => i < matches.length, next: () => fileWrapper(matches[i++]) };
+    },
+  });
+
+  const DriveApp = {
+    createFolder: (name) => folderWrapper(makeFolder({ name, parentId: null })),
+    createFile: (name, content, mimeType) => fileWrapper(makeFile({ name, parentId: null, content, mimeType: mimeType || "text/plain" })),
+    getFileById: (id) => {
+      const f = fileStore.get(id);
+      if (!f) throw new Error("file not found: " + id);
+      return fileWrapper(f);
+    },
+    getFolderById: (id) => {
+      const f = folderStore.get(id);
+      if (!f) throw new Error("folder not found: " + id);
+      return folderWrapper(f);
+    },
+    getFoldersByName: (name) => {
+      const matches = Array.from(folderStore.values()).filter((f) => f.parentId === null && f.name === name);
+      let i = 0;
+      return { hasNext: () => i < matches.length, next: () => folderWrapper(matches[i++]) };
+    },
+  };
+
+  // ---- properties service ----
+  const propsStore = new Map();
+  const propsService = {
+    getProperty: (key) => propsStore.has(key) ? propsStore.get(key) : null,
+    setProperty: (key, value) => propsStore.set(key, value),
+    deleteProperty: (key) => propsStore.delete(key),
+  };
+
+  // ---- vm context ----
+  const ctx = {
+    console,
+    Logger: { log: () => {} },
+    DriveApp,
+    MimeType: { PLAIN_TEXT: "text/plain" },
+    PropertiesService: { getScriptProperties: () => propsService, getUserProperties: () => propsService },
+    JSON,
+    Date,
+    String,
+    Object,
+    Array,
+    Error,
+    isNaN,
+    parseInt,
+    Number,
+    // shims (本来は gas/properties.gs / gas/constants.gs にある共通ヘルパー)
+    Nfb_getActiveProperties_: () => propsService,
+    Nfb_generateUlid_: () => `ulid${String(nextUlid++).padStart(10, "0")}`,
+    Nfb_parseVersionedMapping_: (json, expectedVersion) => {
+      if (!json) return {};
+      try {
+        const parsed = JSON.parse(json);
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+        if (parsed.version !== expectedVersion) return {};
+        if (!parsed.mapping || typeof parsed.mapping !== "object" || Array.isArray(parsed.mapping)) return {};
+        return parsed.mapping;
+      } catch (_e) {
+        return {};
+      }
+    },
+    Nfb_normalizeIdList_: (ids) => {
+      const source = Array.isArray(ids) ? ids : [ids];
+      const seen = {};
+      const out = [];
+      for (const raw of source) {
+        if (!raw) continue;
+        const id = String(raw);
+        if (seen[id]) continue;
+        seen[id] = true;
+        out.push(id);
+      }
+      return out;
+    },
+    nfbSafeCall_: (fn) => {
+      try {
+        const result = fn();
+        return result;
+      } catch (err) {
+        return { ok: false, error: err && err.message ? err.message : String(err) };
+      }
+    },
+    nfbErrorToString_: (err) => err && err.message ? err.message : String(err),
+    // 本来は gas/formsCrud.gs / gas/properties.gs にある共通ヘルパー（forms 系を本テストではロードしないため shim）
+    Nfb_serializeVersionedMapping_: (props, key, version, mapping, normalizeFn) => {
+      const normalized = {};
+      for (const id in mapping) {
+        if (!Object.prototype.hasOwnProperty.call(mapping, id)) continue;
+        normalized[id] = normalizeFn(mapping[id] || {});
+      }
+      props.setProperty(key, JSON.stringify({ version: version, mapping: normalized }));
+      return normalized;
+    },
+    Nfb_resolveFileIdFromEntry_: (entry) => {
+      if (!entry) return null;
+      if (entry.fileId) return entry.fileId;
+      // テストでは entry.fileId 経由のみ使う想定。URL 経由が必要なら Forms_parseGoogleDriveUrl_ shim を追加する。
+      return null;
+    },
+  };
+
+  vm.createContext(ctx);
+
+  const projectRoot = path.join(__dirname, "..");
+  const filesToLoad = [
+    "gas/formsParsing.gs",
+    // Analytics_saveTemplate_ が Forms_makeUniqueFormTitle_ / Forms_normalizeFormTitle_ を呼ぶため事前ロード
+    "gas/formsTitleHelpers.js",
+    "gas/analyticsApi.gs",
+    "gas/analyticsCrud.gs",
+    "gas/analyticsImport.gs",
+    "gas/analyticsCopy.gs",
+  ];
+  for (const rel of filesToLoad) {
+    const fullPath = path.join(projectRoot, rel);
+    const code = fs.readFileSync(fullPath, "utf8");
+    vm.runInContext(code, ctx, { filename: fullPath });
+  }
+
+  // helpers exposed for tests
+  ctx.__test = {
+    fileStore,
+    folderStore,
+    propsStore,
+    fileWrapper,
+    folderWrapper,
+    makeFile,
+    makeFolder,
+  };
+
+  return ctx;
+}
+
+// ---- list with archived filter ----
+
+test("Analytics_listTemplates_ は includeArchived=false でアーカイブ項目を除外する", () => {
+  const ctx = loadAnalyticsContext();
+
+  // 既定フォルダに2件作成（1件はarchived=true）
+  const saveActive = ctx.Analytics_saveTemplate_("questions", { name: "active1", query: { mode: "gui" } });
+  assert.equal(saveActive.ok, true);
+
+  const saveArchived = ctx.Analytics_saveTemplate_("questions", { name: "archived1", archived: true, query: { mode: "gui" } });
+  assert.equal(saveArchived.ok, true);
+
+  // includeArchived=false（既定）
+  const listed = ctx.Analytics_listTemplates_("questions", {});
+  assert.equal(listed.ok, true);
+  const names = JSON.parse(JSON.stringify(listed.questions)).map((q) => q.name);
+  assert.deepEqual(names, ["active1"]);
+
+  // includeArchived=true
+  const listedAll = ctx.Analytics_listTemplates_("questions", { includeArchived: true });
+  const namesAll = JSON.parse(JSON.stringify(listedAll.questions)).map((q) => q.name).sort();
+  assert.deepEqual(namesAll, ["active1", "archived1"]);
+});
+
+// ---- archive / unarchive ----
+
+test("Analytics_setTemplatesArchivedState_ は archived フラグを反転して再保存する", () => {
+  const ctx = loadAnalyticsContext();
+
+  const saved = ctx.Analytics_saveTemplate_("questions", { name: "q1", query: { mode: "gui" } });
+  const id = saved.question.id;
+
+  // archive
+  const arc = ctx.Analytics_setTemplatesArchivedState_("questions", [id], true);
+  assert.equal(arc.ok, true);
+  assert.equal(arc.updated, 1);
+  assert.equal(arc.questions[0].archived, true);
+
+  // 単一取得でも archived=true が返ること
+  const got = ctx.Analytics_getTemplate_("questions", id);
+  assert.equal(got.question.archived, true);
+
+  // unarchive
+  const unar = ctx.Analytics_setTemplatesArchivedState_("questions", [id], false);
+  assert.equal(unar.ok, true);
+  assert.equal(unar.questions[0].archived, false);
+});
+
+// ---- delete: mapping only, drive file remains ----
+
+test("Analytics_deleteTemplates_ はマッピングのみ除去し Drive ファイルは残す", () => {
+  const ctx = loadAnalyticsContext();
+
+  const saved = ctx.Analytics_saveTemplate_("dashboards", { name: "d1", cards: [] });
+  const id = saved.dashboard.id;
+  const fileId = ctx.__test.propsStore.has("nfb.analytics.dashboards.mapping")
+    ? JSON.parse(ctx.__test.propsStore.get("nfb.analytics.dashboards.mapping")).mapping[id].fileId
+    : null;
+  assert.ok(fileId, "mapping has fileId");
+
+  // delete
+  const del = ctx.Analytics_deleteTemplates_("dashboards", [id]);
+  assert.equal(del.ok, true);
+  assert.equal(del.deleted, 1);
+
+  // mapping から消えている
+  const mapping = JSON.parse(ctx.__test.propsStore.get("nfb.analytics.dashboards.mapping")).mapping;
+  assert.ok(!mapping[id], "mapping deleted");
+
+  // Drive ファイル自体は残っている（trashed=false）
+  const file = ctx.__test.fileStore.get(fileId);
+  assert.ok(file, "drive file still exists");
+  assert.equal(file.trashed, false, "drive file is NOT trashed");
+});
+
+// ---- copy ----
+
+test("Analytics_copyTemplate_ は同じフォルダに `名前 (1)` 形式で複製する", () => {
+  const ctx = loadAnalyticsContext();
+
+  // 親フォルダを作って、その中に保存
+  const parent = ctx.__test.makeFolder({ name: "MyAnalyticsFolder", parentId: null });
+  const folderUrl = `https://drive.google.com/drive/folders/${parent.id}`;
+  const orig = ctx.Analytics_saveTemplate_("questions", { name: "orig", query: { mode: "gui" } }, folderUrl);
+  assert.equal(orig.ok, true);
+  assert.equal(orig.saveMode, "copy_to_folder");
+
+  const origFileId = JSON.parse(ctx.__test.propsStore.get("nfb.analytics.questions.mapping")).mapping[orig.question.id].fileId;
+  const origParentId = ctx.__test.fileStore.get(origFileId).parentId;
+  assert.equal(origParentId, parent.id);
+
+  // 1 回目のコピー: 名前は `orig (1)` で採番される
+  const copyRes = ctx.Analytics_copyTemplate_("questions", orig.question.id);
+  assert.equal(copyRes.ok, true);
+  assert.equal(copyRes.question.name, "orig (1)");
+  assert.equal(copyRes.question.archived, false);
+  assert.notEqual(copyRes.question.id, orig.question.id);
+
+  const copyFileId = JSON.parse(ctx.__test.propsStore.get("nfb.analytics.questions.mapping")).mapping[copyRes.question.id].fileId;
+  const copyParentId = ctx.__test.fileStore.get(copyFileId).parentId;
+  assert.equal(copyParentId, parent.id, "copy lands in same folder as original");
+
+  // 2 回目のコピー: 名前は `orig (2)` で採番される
+  const copyRes2 = ctx.Analytics_copyTemplate_("questions", orig.question.id);
+  assert.equal(copyRes2.ok, true);
+  assert.equal(copyRes2.question.name, "orig (2)");
+});
+
+// ---- import / register ----
+
+test("Analytics_importFromDrive_ + registerImportedTemplate_ はマッピングのみ追加しファイルはコピーしない", () => {
+  const ctx = loadAnalyticsContext();
+
+  // 既存ファイルを Drive 上に直接配置（インポート対象）
+  const externalFolder = ctx.__test.makeFolder({ name: "ExternalQuestions", parentId: null });
+  const validQuestion = { name: "imported_q", query: { mode: "sql" } };
+  const externalFile = ctx.__test.makeFile({
+    name: "imported.json",
+    parentId: externalFolder.id,
+    content: JSON.stringify(validQuestion),
+    mimeType: "application/json",
+  });
+
+  const importRes = ctx.Analytics_importFromDrive_("questions", `https://drive.google.com/drive/folders/${externalFolder.id}`);
+  assert.equal(importRes.ok, true);
+  assert.equal(importRes.items.length, 1);
+  assert.equal(importRes.items[0].fileId, externalFile.id);
+
+  // register
+  const reg = ctx.Analytics_registerImportedTemplate_("questions", importRes.items[0]);
+  assert.equal(reg.ok, true);
+  assert.equal(reg.fileId, externalFile.id, "uses original fileId, no copy");
+
+  // mapping に登録されている
+  const mapping = JSON.parse(ctx.__test.propsStore.get("nfb.analytics.questions.mapping")).mapping;
+  const newId = reg.question.id;
+  assert.ok(mapping[newId], "mapping has new id");
+  assert.equal(mapping[newId].fileId, externalFile.id);
+
+  // 2 回目のインポートは skip
+  const importRes2 = ctx.Analytics_importFromDrive_("questions", `https://drive.google.com/drive/folders/${externalFolder.id}`);
+  assert.equal(importRes2.skipped, 1, "already-registered file is skipped");
+  assert.equal(importRes2.items.length, 0);
+});
+
+test("Analytics_normalizeImportedTemplate_ は不正な JSON を null で拒否する", () => {
+  const ctx = loadAnalyticsContext();
+
+  // questions: query が無いものは null
+  assert.equal(ctx.Analytics_normalizeImportedTemplate_("questions", { name: "no-query" }), null);
+  assert.equal(ctx.Analytics_normalizeImportedTemplate_("questions", null), null);
+
+  // questions: query が object なら正規化
+  const ok = ctx.Analytics_normalizeImportedTemplate_("questions", { name: "q", query: { mode: "gui" } });
+  assert.ok(ok);
+  assert.equal(ok.archived, false);
+
+  // dashboards: cards が array でなければ null
+  assert.equal(ctx.Analytics_normalizeImportedTemplate_("dashboards", { name: "no-cards" }), null);
+  const okD = ctx.Analytics_normalizeImportedTemplate_("dashboards", { name: "d", cards: [] });
+  assert.ok(okD);
+});
+
+// ---- save: targetUrl folder mode ----
+
+test("Analytics_saveTemplate_ は targetUrl にフォルダ URL を渡すと copy_to_folder で動作する", () => {
+  const ctx = loadAnalyticsContext();
+
+  const folder = ctx.__test.makeFolder({ name: "X", parentId: null });
+  const url = `https://drive.google.com/drive/folders/${folder.id}`;
+  const res = ctx.Analytics_saveTemplate_("questions", { name: "q", query: { mode: "gui" } }, url);
+  assert.equal(res.ok, true);
+  assert.equal(res.saveMode, "copy_to_folder");
+  const fileId = JSON.parse(ctx.__test.propsStore.get("nfb.analytics.questions.mapping")).mapping[res.question.id].fileId;
+  assert.equal(ctx.__test.fileStore.get(fileId).parentId, folder.id);
+});
+
+test("Analytics_saveTemplate_ は targetUrl 無し / 既存マッピング無しなら既定フォルダ (copy_to_root) に保存する", () => {
+  const ctx = loadAnalyticsContext();
+  const res = ctx.Analytics_saveTemplate_("questions", { name: "q", query: { mode: "gui" } });
+  assert.equal(res.ok, true);
+  assert.equal(res.saveMode, "copy_to_root");
+  const fileId = JSON.parse(ctx.__test.propsStore.get("nfb.analytics.questions.mapping")).mapping[res.question.id].fileId;
+  const file = ctx.__test.fileStore.get(fileId);
+  // 親が "Nested Form Builder - Analytics" / "Questions" の子であること
+  const parent = ctx.__test.folderStore.get(file.parentId);
+  assert.equal(parent.name, "Questions");
+  const grandparent = ctx.__test.folderStore.get(parent.parentId);
+  assert.equal(grandparent.name, "Nested Form Builder - Analytics");
+});
+
+test("Analytics_saveTemplate_ は2回目以降の保存で既存ファイルを上書きする (overwrite_existing)", () => {
+  const ctx = loadAnalyticsContext();
+  const first = ctx.Analytics_saveTemplate_("questions", { name: "q", query: { mode: "gui" } });
+  const id = first.question.id;
+  const fileId1 = JSON.parse(ctx.__test.propsStore.get("nfb.analytics.questions.mapping")).mapping[id].fileId;
+  const initialFileName = ctx.__test.fileStore.get(fileId1).name;
+
+  // 2 回目（同じ id を渡して更新）
+  const second = ctx.Analytics_saveTemplate_("questions", { id, name: "q-renamed", query: { mode: "gui" } });
+  assert.equal(second.saveMode, "overwrite_existing");
+  const fileId2 = JSON.parse(ctx.__test.propsStore.get("nfb.analytics.questions.mapping")).mapping[id].fileId;
+  assert.equal(fileId2, fileId1, "same fileId is reused");
+
+  const content = JSON.parse(ctx.__test.fileStore.get(fileId2).content);
+  assert.equal(content.name, "q-renamed");
+
+  // Drive ファイル名は新規作成・コピー時のみ name から決定し、以降の保存では追従しない
+  assert.equal(ctx.__test.fileStore.get(fileId2).name, initialFileName);
+});

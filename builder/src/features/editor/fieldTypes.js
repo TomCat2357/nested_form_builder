@@ -1,0 +1,148 @@
+import { deepClone, cleanUnusedFieldProperties, supportsChildren, normalizeWebhookAction, DEFAULT_TEXT_MAX_LENGTH, DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
+import { genId } from "../../core/ids.js";
+import { resolveIsDisplayed } from "../../core/displayModes.js";
+import { normalizePhoneSettings } from "../../core/phone.js";
+import {
+  normalizePrintTemplateAction,
+} from "../../utils/printTemplateAction.js";
+
+export const CHOICE_TYPES = ["radio", "select", "checkboxes"];
+export const WEEKDAY_TYPE = "weekday";
+export const DATE_TIME_TYPES = ["date", "time"];
+export const BASIC_INPUT_TYPES = ["number", "url"];
+export const MESSAGE_TYPE = "message";
+export const PRINT_TEMPLATE_TYPE = "printTemplate";
+export const WEBHOOK_TYPE = "webhook";
+export const SUBSTITUTION_TYPE = "substitution";
+export const DISPLAY_LABEL = "表示";
+export const EMAIL_PLACEHOLDER = "user@example.com";
+export const EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL = "一覧・印刷から除外";
+
+export const isChoiceType = (type) => CHOICE_TYPES.includes(type);
+export const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
+export const isMessageType = (type) => type === MESSAGE_TYPE;
+export const isPrintTemplateType = (type) => type === PRINT_TEMPLATE_TYPE;
+export const isWebhookType = (type) => type === WEBHOOK_TYPE;
+export const isBasicInputType = (type) => BASIC_INPUT_TYPES.includes(type);
+export const isSubstitutionType = (type) => type === SUBSTITUTION_TYPE;
+export const isComputedType = (type) => type === SUBSTITUTION_TYPE;
+
+export const applyDisplayedFlag = (target, displayed) => {
+  target.isDisplayed = displayed === true;
+};
+
+export const normalizeTextFieldSettings = (field) => {
+  field.multiline = !!field.multiline;
+  if (field.multiline) {
+    const parsed = Number(field.multilineRows);
+    field.multilineRows = Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : DEFAULT_MULTILINE_ROWS;
+  } else {
+    delete field.multilineRows;
+  }
+  field.defaultValueMode = ["none", "userName", "userAffiliation", "userTitle", "custom"].includes(field.defaultValueMode)
+    ? field.defaultValueMode
+    : "none";
+  field.defaultValueText = typeof field.defaultValueText === "string" ? field.defaultValueText : "";
+
+  if (field.inputRestrictionMode === "maxLength") {
+    const parsedMaxLength = Number(field.maxLength);
+    field.inputRestrictionMode = "maxLength";
+    field.maxLength = Number.isFinite(parsedMaxLength) && parsedMaxLength > 0
+      ? Math.floor(parsedMaxLength)
+      : DEFAULT_TEXT_MAX_LENGTH;
+  } else if (field.inputRestrictionMode === "pattern") {
+    field.inputRestrictionMode = "pattern";
+    field.pattern = typeof field.pattern === "string" ? field.pattern : "";
+  } else {
+    field.inputRestrictionMode = "none";
+  }
+
+  if (field.inputRestrictionMode !== "pattern") delete field.pattern;
+  if (field.inputRestrictionMode !== "maxLength") delete field.maxLength;
+  return field;
+};
+
+export function saveAndClearChoiceState(next, field, oldIsChoice, setTempState) {
+  if (oldIsChoice) {
+    setTempState?.(field.id, {
+      choiceState: {
+        options: deepClone(field.options || []),
+        childrenByValue: field.childrenByValue ? deepClone(field.childrenByValue) : undefined,
+      },
+    });
+  }
+  delete next.options;
+  delete next.childrenByValue;
+}
+
+export function saveAndClearChildren(next, field, oldSupportsChildren, setTempState) {
+  if (oldSupportsChildren && Array.isArray(field.children) && field.children.length > 0) {
+    setTempState?.(field.id, {
+      savedChildren: deepClone(field.children),
+    });
+  }
+  delete next.children;
+}
+
+export function handleTypeChange(field, newType, { getTempState, setTempState } = {}) {
+  const next = deepClone(field);
+  const oldType = field.type;
+  next.type = newType;
+  const wasDisplayed = resolveIsDisplayed(next);
+
+  const oldIsChoice = isChoiceType(oldType);
+  const newIsChoice = isChoiceType(newType);
+  const oldSupportsChildren = supportsChildren(oldType);
+  const newSupportsChildren = supportsChildren(newType);
+
+  if (newIsChoice) {
+    if (oldIsChoice) {
+      next.options = next.options?.length ? next.options : [{ id: genId(), label: "", defaultSelected: false }];
+    } else {
+      const saved = getTempState?.(field.id)?.choiceState;
+      next.options = saved?.options?.length ? deepClone(saved.options) : [{ id: genId(), label: "", defaultSelected: false }];
+      if (saved?.childrenByValue) next.childrenByValue = deepClone(saved.childrenByValue);
+    }
+  } else {
+    if (newType === "text") normalizeTextFieldSettings(next);
+    if (newType === "email") next.autoFillUserEmail = !!next.autoFillUserEmail;
+    if (newType === "phone") Object.assign(next, normalizePhoneSettings(next));
+    if (isDateOrTimeType(newType)) {
+      next.defaultNow = !!next.defaultNow;
+      if (newType === "time") next.includeSeconds = !!next.includeSeconds;
+    }
+    if (newType === WEEKDAY_TYPE) next.defaultToday = !!next.defaultToday;
+    if (newType === "fileUpload") {
+      next.allowUploadByUrl = next.allowUploadByUrl ?? false;
+      next.allowFolderUrlEdit = next.allowFolderUrlEdit ?? false;
+    }
+    if (newType === PRINT_TEMPLATE_TYPE) {
+      next.printTemplateAction = {
+        ...normalizePrintTemplateAction(next.printTemplateAction),
+        enabled: true,
+      };
+    }
+    if (newType === WEBHOOK_TYPE) {
+      next.webhookAction = normalizeWebhookAction(next.webhookAction);
+    }
+    if (newType === SUBSTITUTION_TYPE) {
+      next.templateText = typeof next.templateText === "string" ? next.templateText : "";
+      next.excludeFromSearch = !!next.excludeFromSearch;
+      next.hideFromRecordView = !!next.hideFromRecordView;
+    }
+    saveAndClearChoiceState(next, field, oldIsChoice, setTempState);
+  }
+
+  if (!newSupportsChildren) {
+    saveAndClearChildren(next, field, oldSupportsChildren, setTempState);
+  } else if (!oldSupportsChildren) {
+    const savedChildren = getTempState?.(field.id)?.savedChildren;
+    if (Array.isArray(savedChildren) && savedChildren.length > 0) {
+      next.children = deepClone(savedChildren);
+    }
+  }
+
+  cleanUnusedFieldProperties(next);
+  applyDisplayedFlag(next, wasDisplayed);
+  return next;
+}

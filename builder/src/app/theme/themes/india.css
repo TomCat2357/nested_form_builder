@@ -1,0 +1,119 @@
+/* india theme — marigold saffron, deep magenta sari, peacock blue, gilded */
+:root[data-theme="india"] {
+  /* Warm marigold cream base */
+  --bg: #fdf4df;
+  --surface: #fffaec;
+  --surface-elevated: #ffffff;
+  --surface-muted: #fce7b8;
+  --surface-subtle: #fef4d8;
+  --surface-alt: #f8d694;
+  --dialog-bg: #fffaec;
+
+  --border: #e3b97a;
+  --border-muted: #eccc96;
+  --border-subtle: #f5dfb5;
+  --border-strong: #c4923e;
+
+  /* Henna / deep brown ink */
+  --text: #2a1208;
+  --text-strong: #1a0a04;
+  --text-ink: #3e1d0e;
+  --text-muted: #735133;
+  --text-subtle: #8a6645;
+  --text-faded: #b39068;
+
+  /* Deep sari magenta — bold and rich */
+  --primary: #b91c5c;
+  --primary-strong: #95164a;
+  --primary-ink: #5c0d2d;
+  --primary-ink-strong: #3d0820;
+  --primary-soft: #fce7f1;
+  --primary-soft-strong: #f9c7de;
+  --primary-weak: rgba(185, 28, 92, 0.16);
+  --primary-weak-soft: rgba(185, 28, 92, 0.08);
+  --primary-border-soft: rgba(185, 28, 92, 0.34);
+
+  /* Saffron — pure marigold orange */
+  --warm: #ea580c;
+  --warm-weak: rgba(234, 88, 12, 0.18);
+  --warm-ink: #7c2d0e;
+
+  /* Mughal emerald */
+  --success: #0e7a3e;
+  --success-ink: #054022;
+  --success-weak: rgba(14, 122, 62, 0.12);
+
+  --danger: #a61d24;
+  --danger-bright: #c42a31;
+  --danger-strong: #7d151b;
+  --danger-ink: #5c0f14;
+  --danger-ink-strong: #3d080c;
+  --danger-weak: #f7d9dc;
+  --danger-weak-strong: #f0bdc1;
+  --danger-border: #d88288;
+  --danger-border-strong: #c46268;
+
+  --warning: #ca8a04;
+  --warning-weak: #fef3c7;
+  --warning-ink: #713f12;
+
+  /* Peacock blue */
+  --info: #0e7490;
+  --info-weak: #cffafe;
+
+  --shadow-sm: 0 1px 3px rgba(62, 29, 14, 0.12), 0 2px 10px rgba(62, 29, 14, 0.08);
+  --shadow-md: 0 12px 30px rgba(62, 29, 14, 0.16), 0 2px 6px rgba(62, 29, 14, 0.08);
+  --shadow-lg: 0 24px 56px rgba(62, 29, 14, 0.22);
+
+  --overlay: rgba(42, 18, 8, 0.42);
+  --overlay-strong: rgba(42, 18, 8, 0.62);
+
+  /* Saffron + magenta + emerald + peacock — full tricolor glow */
+  --app-bg:
+    radial-gradient(1000px 580px at 10% -10%, rgba(234, 88, 12, 0.3), transparent 60%),
+    radial-gradient(900px 520px at 92% 5%, rgba(185, 28, 92, 0.24), transparent 60%),
+    radial-gradient(800px 500px at 50% 45%, rgba(14, 116, 144, 0.12), transparent 60%),
+    radial-gradient(900px 520px at 50% 110%, rgba(14, 122, 62, 0.2), transparent 62%),
+    var(--bg);
+  --app-header-bg: rgba(253, 244, 223, 0.86);
+
+  --input-border-focus: rgba(185, 28, 92, 0.45);
+  --input-focus-ring: rgba(185, 28, 92, 0.18);
+
+  /* Magenta + saffron — sari & marigold */
+  --badge-primary-bg: linear-gradient(135deg, rgba(185, 28, 92, 0.98), rgba(234, 88, 12, 0.92));
+  --badge-warm-bg: linear-gradient(135deg, rgba(234, 88, 12, 0.98), rgba(202, 138, 4, 0.92));
+  --badge-ghost-bg: rgba(185, 28, 92, 0.1);
+  --badge-ghost-border: rgba(185, 28, 92, 0.26);
+  --badge-text: rgba(255, 250, 236, 0.98);
+
+  /* Gilded logo — gold leaf over magenta */
+  --logo-gradient: linear-gradient(135deg, rgba(234, 88, 12, 0.98), rgba(185, 28, 92, 0.94), rgba(14, 116, 144, 0.9));
+  --logo-shadow:
+    0 8px 22px rgba(185, 28, 92, 0.3),
+    0 10px 28px rgba(234, 88, 12, 0.22);
+
+  --panel-header-bg: linear-gradient(180deg, rgba(185, 28, 92, 0.08), transparent);
+  --card-hover-border: rgba(185, 28, 92, 0.32);
+  --btn-primary-bg: linear-gradient(135deg, rgba(185, 28, 92, 0.22), rgba(234, 88, 12, 0.12));
+
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(234, 88, 12, 0),
+    rgba(234, 88, 12, 0.65),
+    rgba(185, 28, 92, 0.55),
+    rgba(14, 116, 144, 0.35),
+    rgba(14, 122, 62, 0.3),
+    rgba(234, 88, 12, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(234, 88, 12, 0.98), rgba(185, 28, 92, 0.92));
+  --rail-dot-shadow:
+    0 10px 22px rgba(185, 28, 92, 0.28),
+    0 12px 26px rgba(234, 88, 12, 0.2);
+
+  --if-box-border: rgba(234, 88, 12, 0.3);
+  --if-box-bg: linear-gradient(135deg, rgba(234, 88, 12, 0.16), rgba(185, 28, 92, 0.1));
+  --if-chip-bg: rgba(234, 88, 12, 0.2);
+  --if-chip-border: rgba(234, 88, 12, 0.3);
+  --if-badge-border: rgba(14, 122, 62, 0.26);
+}

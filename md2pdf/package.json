@@ -1,0 +1,13 @@
+{
+  "name": "md2pdf",
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "md2pdf": "./md2pdf.mjs"
+  },
+  "dependencies": {
+    "markdown-it": "^14.0.0",
+    "markdown-it-highlightjs": "^4.1.0",
+    "puppeteer": "^24.0.0"
+  }
+}

@@ -1,0 +1,395 @@
+import { extractJstPartsFull, formatUnixMsDateTimeSec, toUnixMs, pad2 } from "../../utils/dateTime.js";
+import { resolveFileDisplayName } from "../../core/collect.js";
+import { findFirstFileUploadField } from "../../core/schema.js";
+import { fieldHasValue } from "../../core/fieldValue.js";
+import { CHOICE_TYPES, isChoiceMarkerValue } from "../../utils/responses.js";
+import { traverseSchema } from "../../core/schemaUtils.js";
+import { isExcludedSearchOrPrintField } from "../search/searchTable.js";
+
+export { CHOICE_TYPES, isChoiceMarkerValue };
+
+export const toChoiceOptionLabels = (field) => {
+  const options = Array.isArray(field?.options) ? field.options : [];
+  const labels = [];
+  const seen = new Set();
+  options.forEach((opt) => {
+    const label = typeof opt?.label === "string" ? opt.label : "";
+    if (!label || seen.has(label)) return;
+    labels.push(label);
+    seen.add(label);
+  });
+  return labels;
+};
+
+const toRawSelectedLabels = (type, value) => {
+  const labels = [];
+  const seen = new Set();
+  const add = (candidate) => {
+    if (typeof candidate !== "string" || !candidate || seen.has(candidate)) return;
+    labels.push(candidate);
+    seen.add(candidate);
+  };
+
+  if (type === "checkboxes") {
+    if (Array.isArray(value)) {
+      value.forEach((item) => add(item));
+      return labels;
+    }
+    if (typeof value === "string") {
+      add(value);
+    } else if (value && typeof value === "object") {
+      Object.entries(value).forEach(([label, marker]) => {
+        if (isChoiceMarkerValue(marker)) add(label);
+      });
+    }
+    return labels;
+  }
+
+  if (type === "radio" || type === "select" || type === "weekday") {
+    if (typeof value === "string") {
+      add(value);
+    } else if (Array.isArray(value)) {
+      value.forEach((item) => add(item));
+    } else if (value && typeof value === "object") {
+      Object.entries(value).forEach(([label, marker]) => {
+        if (isChoiceMarkerValue(marker)) add(label);
+      });
+    }
+    return labels;
+  }
+
+  return labels;
+};
+
+export const toSelectedChoiceLabels = (field, value) => {
+  const type = field?.type;
+  if (!CHOICE_TYPES.has(type)) return [];
+
+  const rawSelected = toRawSelectedLabels(type, value);
+  if (rawSelected.length === 0) return [];
+
+  const selectedSet = new Set(rawSelected);
+  const ordered = [];
+  const seen = new Set();
+
+  toChoiceOptionLabels(field).forEach((label) => {
+    if (!selectedSet.has(label) || seen.has(label)) return;
+    ordered.push(label);
+    seen.add(label);
+  });
+
+  rawSelected.forEach((label) => {
+    if (seen.has(label)) return;
+    ordered.push(label);
+    seen.add(label);
+  });
+
+  return type === "checkboxes" ? ordered : ordered.slice(0, 1);
+};
+
+export const hasVisibleValue = (value) => {
+  if (Array.isArray(value)) return value.length > 0;
+  return value !== undefined && value !== null && value !== "";
+};
+
+export const isTextareaField = (field) => field?.type === "textarea" || (field?.type === "text" && field?.multiline);
+
+// 印刷ファイル名は JST 壁時計 (`YYYYMMDD_HHmmss`) で揃える。本プロジェクトは
+// JST 業務利用前提で、ファイル名タイムスタンプは常に日本時間表示にする必要がある。
+// `Date.prototype.get*` は実行環境 TZ 依存で UTC 環境では別時刻になってしまうので、
+// extractJstPartsFull を経由して TZ 非依存に成分を取り出す。
+export const formatFileTimestamp = (date) => {
+  const safeDate = date instanceof Date && !Number.isNaN(date.getTime()) ? date : new Date();
+  const p = extractJstPartsFull(safeDate);
+  if (!p) return "";
+  return `${p.year}${pad2(p.month)}${pad2(p.day)}_${pad2(p.hour)}${pad2(p.minute)}${pad2(p.second)}`;
+};
+
+export const sanitizePrintFileNamePart = (input, fallback = "record") => {
+  const normalized = String(input ?? "")
+    .trim()
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .replace(/\s+/g, " ");
+  return normalized || fallback;
+};
+
+export const formatPrintItemValue = (field, value) => {
+  if (field?.type === "message") return "";
+  if (field?.type === "printTemplate") return "";
+  if (field?.type === "webhook") return "";
+  if (field?.type === "substitution") {
+    return value != null && value !== "" ? String(value) : "";
+  }
+  if (field?.type === "fileUpload") {
+    const files = Array.isArray(value) ? value : [];
+    return files.map((f) => resolveFileDisplayName(f?.name || "不明なファイル", field?.hideFileExtension)).join(", ");
+  }
+  if (CHOICE_TYPES.has(field?.type)) {
+    return toSelectedChoiceLabels(field, value).join(", ");
+  }
+  if (Array.isArray(value)) return value.join(", ");
+  if (value === undefined || value === null || value === "") return "";
+  if (typeof value === "object") return JSON.stringify(value);
+  return String(value);
+};
+
+export const resolveOmitEmptyRowsOnPrint = (settings = {}, overrideValue = undefined) => {
+  if (overrideValue !== undefined) return !!overrideValue;
+  return settings?.omitEmptyRowsOnPrint !== false;
+};
+
+export const resolveShowPrintHeader = (settings = {}, overrideValue = undefined) => {
+  if (overrideValue !== undefined) return !!overrideValue;
+  return settings?.showPrintHeader !== false;
+};
+
+export const formatRecordMetaDateTime = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string" && value.trim() === "") return "";
+
+  const unixMs = toUnixMs(value);
+  if (Number.isFinite(unixMs) && unixMs > 0) {
+    return formatUnixMsDateTimeSec(unixMs);
+  }
+
+  if (typeof value === "string") return value.trim();
+  return "";
+};
+
+const isExcludedPrintField = (field) => (
+  field?.type === "printTemplate"
+  || field?.type === "webhook"
+  || ((field?.type === "message") && field?.excludeFromSearchAndPrint === true)
+  || (field?.type === "substitution" && field?.excludeFromSearch === true)
+);
+
+// レコードの質問内容と入力情報を { question, value, type }[] に整形する。
+// question は「ヘッダー階層を "|" で連結した文字列」で、検索一覧のヘッダー
+// (= traverseSchema の pathSegments) と同じ表現に統一する。Webhook 送信や
+// 外部アクションの payload (record.items) で共有する。
+export const buildRecordItems = (schema, responses) => {
+  const items = [];
+  traverseSchema(schema || [], (field, context) => {
+    if (isExcludedSearchOrPrintField(field)) return;
+    items.push({
+      question: (context.pathSegments || []).join("|"),
+      value: formatPrintItemValue(field, (responses || {})[field?.id]),
+      type: field?.type || "text",
+    });
+  }, { responses: responses || {} });
+  return items;
+};
+
+const resolveFieldId = (field, depth, index) => field?.id || `tmp_${depth}_${index}_${field?.label || ""}`;
+
+const resolveFieldLabel = (field) => {
+  const fallback = field?.type === "message" ? "メッセージ" : "項目";
+  return typeof field?.label === "string" && field.label.trim() ? field.label.trim() : fallback;
+};
+
+const isAlwaysIncludedPrintType = (type) => type === "message" || type === "fileUpload";
+
+const shouldIncludePrintItem = (item, omitEmptyRows) => {
+  if (!omitEmptyRows) return true;
+  if (isAlwaysIncludedPrintType(item?.type)) return true;
+  return hasVisibleValue(item?.value);
+};
+
+const appendPrintItems = (fields, responses, depth, items, options = {}) => {
+  (fields || []).forEach((field, index) => {
+    const fieldId = resolveFieldId(field, depth, index);
+    const normalizedField = { ...field, id: fieldId };
+    if (isExcludedPrintField(normalizedField)) return;
+    const value = (responses || {})[fieldId] ?? (responses || {})[field?.id];
+
+    const nextItem = {
+      label: resolveFieldLabel(normalizedField),
+      value: formatPrintItemValue(normalizedField, value),
+      depth,
+      type: normalizedField?.type || "text",
+    };
+    if (shouldIncludePrintItem(nextItem, options.omitEmptyRows)) {
+      items.push(nextItem);
+    }
+
+    if (normalizedField?.childrenByValue) {
+      const selectedLabels = toSelectedChoiceLabels(normalizedField, value);
+      if (normalizedField.type === "checkboxes") {
+        selectedLabels.forEach((label) => {
+          appendPrintItems(normalizedField.childrenByValue?.[label] || [], responses, depth + 1, items, options);
+        });
+      } else if (normalizedField.type === "radio" || normalizedField.type === "select") {
+        const selected = selectedLabels[0];
+        if (selected) {
+          appendPrintItems(normalizedField.childrenByValue?.[selected] || [], responses, depth + 1, items, options);
+        }
+      }
+    }
+
+    if (Array.isArray(normalizedField?.children) && normalizedField.children.length > 0) {
+      if (fieldHasValue(normalizedField, value)) {
+        appendPrintItems(normalizedField.children, responses, depth + 1, items, options);
+      }
+    }
+  });
+  return items;
+};
+
+export const buildFieldPathsMap = (fields, prefix = "", map = {}) => {
+  (fields || []).forEach((field) => {
+    const label = typeof field?.label === "string" ? field.label.trim() : "";
+    const path = label ? (prefix ? `${prefix}|${label}` : label) : prefix;
+    if (field?.id && label) {
+      map[field.id] = path;
+    }
+    if (field?.childrenByValue) {
+      Object.values(field.childrenByValue).forEach((children) => {
+        buildFieldPathsMap(children, path, map);
+      });
+    }
+    if (Array.isArray(field?.children)) {
+      buildFieldPathsMap(field.children, path, map);
+    }
+  });
+  return map;
+};
+
+export const collectFileUploadMeta = (fields, options = {}) => {
+  const meta = {};
+  const responses = options?.responses;
+  const folderUrlsByField = options?.folderUrlsByField || {};
+  const folderNamesByField = options?.folderNamesByField || {};
+
+  const walk = (flds) => {
+    (flds || []).forEach((field) => {
+      if (field?.type === "fileUpload" && field?.id) {
+        const entry = {};
+        if (field.hideFileExtension) entry.hideFileExtension = true;
+        if (responses) {
+          const value = responses[field.id];
+          const files = Array.isArray(value) ? value : [];
+          entry.fileNames = files
+            .map((f) => resolveFileDisplayName(f?.name || "", field?.hideFileExtension))
+            .filter(Boolean);
+          entry.fileUrls = files.map((f) => f?.driveFileUrl || "").filter(Boolean);
+        }
+        const folderUrl = folderUrlsByField[field.id];
+        if (typeof folderUrl === "string" && folderUrl) entry.folderUrl = folderUrl;
+        const folderName = folderNamesByField[field.id];
+        if (typeof folderName === "string" && folderName) entry.folderName = folderName;
+        if (Object.keys(entry).length > 0) meta[field.id] = entry;
+      }
+      if (field?.childrenByValue) {
+        Object.values(field.childrenByValue).forEach(walk);
+      }
+      if (Array.isArray(field?.children)) {
+        walk(field.children);
+      }
+    });
+  };
+  walk(fields);
+  return meta;
+};
+
+const assignFieldValues = (fields, responses, map, isActive = true, depth = 0) => {
+  (fields || []).forEach((field, index) => {
+    const fieldId = resolveFieldId(field, depth, index);
+    const normalizedField = { ...field, id: fieldId };
+    const rawValue = isActive ? ((responses || {})[fieldId] ?? (responses || {})[field?.id]) : "";
+    map[fieldId] = isActive ? formatPrintItemValue(normalizedField, rawValue) : "";
+
+    if (normalizedField?.childrenByValue) {
+      const selectedLabels = isActive ? toSelectedChoiceLabels(normalizedField, rawValue) : [];
+      const selectedSet = new Set(selectedLabels);
+      Object.entries(normalizedField.childrenByValue).forEach(([optionLabel, children]) => {
+        assignFieldValues(children, responses, map, isActive && selectedSet.has(optionLabel), depth + 1);
+      });
+    }
+
+    if (Array.isArray(normalizedField?.children) && normalizedField.children.length > 0) {
+      const childActive = isActive && fieldHasValue(normalizedField, rawValue);
+      assignFieldValues(normalizedField.children, responses, map, childActive, depth + 1);
+    }
+  });
+  return map;
+};
+
+export const buildFieldValuesMap = (fields, responses, map = {}) => assignFieldValues(fields, responses, map);
+
+const resolveDriveFolderUrl = (driveFolderState) => {
+  if (!driveFolderState || typeof driveFolderState !== "object") return "";
+  const inputUrl = typeof driveFolderState.inputUrl === "string" ? driveFolderState.inputUrl.trim() : "";
+  const resolvedUrl = typeof driveFolderState.resolvedUrl === "string" ? driveFolderState.resolvedUrl.trim() : "";
+  return inputUrl || resolvedUrl;
+};
+
+export const buildPrintDocumentPayload = ({
+  schema,
+  responses,
+  settings = {},
+  recordId,
+  exportedAt = new Date(),
+  omitEmptyRows,
+  showHeader,
+  driveFolderState = null,
+  useTemporaryFolder = false,
+  folderUrlsByField = {},
+}) => {
+  const safeExportedAt = exportedAt instanceof Date && !Number.isNaN(exportedAt.getTime()) ? exportedAt : new Date();
+  const formTitle = typeof settings.formTitle === "string" && settings.formTitle.trim() ? settings.formTitle.trim() : "受付フォーム";
+  const resolvedRecordId = String(recordId || settings.recordId || "").trim() || "record";
+  const recordNo = settings.recordNo === undefined || settings.recordNo === null ? "" : String(settings.recordNo).trim();
+  const modifiedAt = formatRecordMetaDateTime(settings.modifiedAtUnixMs ?? settings.modifiedAt);
+  const recordRef = recordNo || resolvedRecordId;
+  const shouldOmitEmptyRows = resolveOmitEmptyRowsOnPrint(settings, omitEmptyRows);
+  const shouldShowHeader = resolveShowPrintHeader(settings, showHeader);
+  const folderUrl = resolveDriveFolderUrl(driveFolderState);
+
+  const firstUploadField = findFirstFileUploadField(schema);
+  const fieldRootFolderUrl = firstUploadField?.driveRootFolderUrl || "";
+  const fieldFolderNameTemplate = firstUploadField?.driveFolderNameTemplate || "";
+
+  const hasDriveSettings = fieldRootFolderUrl || fieldFolderNameTemplate || folderUrl || useTemporaryFolder;
+  const driveSettings = hasDriveSettings ? {
+    rootFolderUrl: fieldRootFolderUrl,
+    folderNameTemplate: fieldFolderNameTemplate,
+    formId: settings.formId || "",
+    recordId: resolvedRecordId,
+    folderUrl,
+    useTemporaryFolder: !!useTemporaryFolder,
+    responses: responses || {},
+    fieldPaths: buildFieldPathsMap(schema),
+    fieldValues: buildFieldValuesMap(schema, responses),
+    fileUploadMeta: collectFileUploadMeta(schema, {
+      responses: responses || {},
+      folderUrlsByField,
+    }),
+  } : undefined;
+
+  return {
+    fileName: `印刷様式_${sanitizePrintFileNamePart(formTitle, "form")}_${sanitizePrintFileNamePart(recordRef, "record")}_${formatFileTimestamp(safeExportedAt)}`,
+    formTitle,
+    formId: settings.formId || "",
+    templateSourceUrl: settings.standardPrintTemplateUrl || "",
+    recordId: resolvedRecordId,
+    recordNo,
+    modifiedAt,
+    showHeader: shouldShowHeader,
+    exportedAtIso: safeExportedAt.toISOString(),
+    items: appendPrintItems(schema, responses, 0, [], { omitEmptyRows: shouldOmitEmptyRows }),
+    ...(driveSettings ? { driveSettings } : {}),
+  };
+};
+
+export const buildPrintDocumentBundlePayload = ({ formTitle, records, exportedAt = new Date() }) => {
+  const safeExportedAt = exportedAt instanceof Date && !Number.isNaN(exportedAt.getTime()) ? exportedAt : new Date();
+  const safeFormTitle = typeof formTitle === "string" && formTitle.trim() ? formTitle.trim() : "受付フォーム";
+  const safeRecords = Array.isArray(records) ? records : [];
+
+  return {
+    fileName: `印刷様式_${sanitizePrintFileNamePart(safeFormTitle, "form")}_一括_${safeRecords.length}件_${formatFileTimestamp(safeExportedAt)}`,
+    formTitle: safeFormTitle,
+    exportedAtIso: safeExportedAt.toISOString(),
+    records: safeRecords,
+  };
+};

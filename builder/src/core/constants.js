@@ -1,0 +1,40 @@
+// UI・動作関連
+export const MAX_DEPTH = 11;
+export const DEFAULT_PAGE_SIZE = 20;
+export const DEFAULT_DELETED_RETENTION_DAYS = 30;
+export const DEFAULT_SHEET_NAME = "Data";
+export const GAS_ERROR_CODE_LOCK_TIMEOUT = "LOCK_TIMEOUT";
+
+// IndexedDB ストレージ関連
+export const DB_NAME = "NestedFormBuilder";
+export const DB_VERSION = 7;
+export const STORE_NAMES = {
+  forms: "formsCache",
+  settings: "settingsStore",
+  analyticsQuestions: "analyticsQuestions",
+  analyticsDashboards: "analyticsDashboards",
+};
+// v5 → v6 で削除した旧ストア (onupgradeneeded で deleteObjectStore する対象)
+export const LEGACY_STORE_NAMES_V5 = [
+  "recordsCache",
+  "recordsCacheMeta",
+  "analyticsSnapshots",
+  "analyticsSnapshotsMeta",
+];
+
+// キャッシュポリシー（ミリ秒）
+export const RECORD_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+export const RECORD_CACHE_BACKGROUND_REFRESH_MS = 5 * 60 * 1000;
+export const FORM_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
+export const FORM_CACHE_BACKGROUND_REFRESH_MS = 5 * 60 * 1000;
+// 分析（Question / Dashboard）の元レコードテーブルを React メモリにキャッシュする TTL（1時間）。
+// フィルタの微調整ごとに dataStore.listEntries + 行変換を再実行しないための短期キャッシュ。
+export const ANALYTICS_SOURCE_TABLE_CACHE_TTL_MS = 60 * 60 * 1000;
+
+// 日時処理関連
+export const MS_PER_DAY = 24 * 60 * 60 * 1000;
+export const SERIAL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
+export const JST_OFFSET_MS = 9 * 60 * 60 * 1000;
+// |n| >= 1e11 (≒ 1973-03-03 以降) なら unix ms とみなす境界。
+// それ未満は unix 秒（×1000）または Sheets シリアル番号として再解釈する。
+export const UNIX_MS_THRESHOLD = 100000000000;

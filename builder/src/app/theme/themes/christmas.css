@@ -1,0 +1,118 @@
+/* christmas theme — evergreen forest, poinsettia red, candlelight gold */
+:root[data-theme="christmas"] {
+  /* Deep woodland cream — warmer, richer than ivory */
+  --bg: #f7ead1;
+  --surface: #fffaeb;
+  --surface-elevated: #ffffff;
+  --surface-muted: #f0dcb7;
+  --surface-subtle: #faf1da;
+  --surface-alt: #e6c999;
+  --dialog-bg: #fffaeb;
+
+  --border: #d4b68a;
+  --border-muted: #dcc39d;
+  --border-subtle: #ecd9b4;
+  --border-strong: #a8884a;
+
+  /* Bark-brown ink */
+  --text: #1d1305;
+  --text-strong: #0e0803;
+  --text-ink: #2b1d0a;
+  --text-muted: #5a4221;
+  --text-subtle: #6e5530;
+  --text-faded: #9c8359;
+
+  /* Deep fir green — midnight evergreen */
+  --primary: #0e4a2e;
+  --primary-strong: #073620;
+  --primary-ink: #042212;
+  --primary-ink-strong: #021309;
+  --primary-soft: #c8e6d4;
+  --primary-soft-strong: #9ed1b1;
+  --primary-weak: rgba(14, 74, 46, 0.14);
+  --primary-weak-soft: rgba(14, 74, 46, 0.08);
+  --primary-border-soft: rgba(14, 74, 46, 0.3);
+
+  /* Poinsettia crimson */
+  --warm: #b31c24;
+  --warm-weak: rgba(179, 28, 36, 0.14);
+  --warm-ink: #5c0d10;
+
+  --success: #0e4a2e;
+  --success-ink: #042212;
+  --success-weak: rgba(14, 74, 46, 0.12);
+
+  --danger: #b31c24;
+  --danger-bright: #d42530;
+  --danger-strong: #8a1018;
+  --danger-ink: #5c0d10;
+  --danger-ink-strong: #3a0608;
+  --danger-weak: #f8dadd;
+  --danger-weak-strong: #f2bdc1;
+  --danger-border: #e09097;
+  --danger-border-strong: #cc6b73;
+
+  /* Candle gold */
+  --warning: #b8860b;
+  --warning-weak: #f5e4a6;
+  --warning-ink: #6b4a00;
+
+  --info: #1e40af;
+  --info-weak: #dbeafe;
+
+  --shadow-sm: 0 1px 3px rgba(45, 29, 10, 0.12), 0 2px 10px rgba(45, 29, 10, 0.08);
+  --shadow-md: 0 12px 30px rgba(45, 29, 10, 0.16), 0 2px 8px rgba(45, 29, 10, 0.08);
+  --shadow-lg: 0 24px 56px rgba(45, 29, 10, 0.24);
+
+  --overlay: rgba(29, 19, 5, 0.44);
+  --overlay-strong: rgba(29, 19, 5, 0.64);
+
+  /* Hearth glow + evergreen + candles */
+  --app-bg:
+    radial-gradient(1000px 580px at 10% -10%, rgba(179, 28, 36, 0.22), transparent 60%),
+    radial-gradient(900px 520px at 92% 4%, rgba(14, 74, 46, 0.24), transparent 62%),
+    radial-gradient(800px 480px at 50% 40%, rgba(184, 134, 11, 0.14), transparent 60%),
+    radial-gradient(900px 520px at 50% 110%, rgba(168, 136, 74, 0.22), transparent 62%),
+    var(--bg);
+  --app-header-bg: rgba(247, 234, 209, 0.88);
+
+  --input-border-focus: rgba(14, 74, 46, 0.5);
+  --input-focus-ring: rgba(14, 74, 46, 0.18);
+
+  /* Fir + crimson — classic ornaments */
+  --badge-primary-bg: linear-gradient(135deg, rgba(14, 74, 46, 0.98), rgba(7, 54, 32, 0.94));
+  --badge-warm-bg: linear-gradient(135deg, rgba(179, 28, 36, 0.98), rgba(138, 16, 24, 0.92));
+  --badge-ghost-bg: rgba(14, 74, 46, 0.1);
+  --badge-ghost-border: rgba(14, 74, 46, 0.28);
+  --badge-text: rgba(255, 250, 235, 0.98);
+
+  /* Ornament logo — fir, crimson, candle gold */
+  --logo-gradient: linear-gradient(135deg, rgba(14, 74, 46, 0.98), rgba(179, 28, 36, 0.94), rgba(184, 134, 11, 0.9));
+  --logo-shadow:
+    0 8px 22px rgba(14, 74, 46, 0.3),
+    0 10px 28px rgba(179, 28, 36, 0.22);
+
+  --panel-header-bg: linear-gradient(180deg, rgba(14, 74, 46, 0.1), transparent);
+  --card-hover-border: rgba(179, 28, 36, 0.34);
+  --btn-primary-bg: linear-gradient(135deg, rgba(14, 74, 46, 0.2), rgba(179, 28, 36, 0.12));
+
+  /* Garland rail — fir → crimson → gold */
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(14, 74, 46, 0),
+    rgba(14, 74, 46, 0.6),
+    rgba(179, 28, 36, 0.5),
+    rgba(184, 134, 11, 0.3),
+    rgba(14, 74, 46, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(179, 28, 36, 0.98), rgba(184, 134, 11, 0.9));
+  --rail-dot-shadow:
+    0 10px 22px rgba(179, 28, 36, 0.3),
+    0 12px 26px rgba(184, 134, 11, 0.18);
+
+  --if-box-border: rgba(179, 28, 36, 0.26);
+  --if-box-bg: linear-gradient(135deg, rgba(14, 74, 46, 0.12), rgba(179, 28, 36, 0.1));
+  --if-chip-bg: rgba(184, 134, 11, 0.18);
+  --if-chip-border: rgba(184, 134, 11, 0.3);
+  --if-badge-border: rgba(14, 74, 46, 0.28);
+}

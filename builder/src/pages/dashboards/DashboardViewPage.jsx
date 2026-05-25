@@ -1,0 +1,186 @@
+import React, { useEffect, useState } from "react";
+import { useParams } from "react-router-dom";
+import AppLayout from "../../app/components/AppLayout.jsx";
+import { useAuth } from "../../app/state/authContext.jsx";
+import { useAppData } from "../../app/state/AppDataProvider.jsx";
+import { useAsyncResource } from "../../app/hooks/useAsyncResource.js";
+import { analyticsGasClient } from "../../features/analytics/analyticsGasClient.js";
+import { isV2, defaultFilterValue, defaultSimpleFilterValue } from "../../features/analytics/utils/dashboardSchema.js";
+import { clearAnalyticsSourceTableCache } from "../../features/analytics/analyticsAlaSql.js";
+import DashboardGrid from "../../features/analytics/components/DashboardGrid.jsx";
+import DashboardFilterBar from "../../features/analytics/components/DashboardFilterBar.jsx";
+import SimpleFilterBar from "../../features/analytics/components/SimpleFilterBar.jsx";
+
+export default function DashboardViewPage() {
+  const { dashboardId } = useParams();
+  const { isAdmin } = useAuth();
+  const { forms } = useAppData();
+
+  const [filterValues, setFilterValues] = useState({});
+  const [simpleFilterValues, setSimpleFilterValues] = useState({});
+  // インクリメントすると全カードがクエリを再実行する（スプレッドシートから最新データを取り直す）
+  const [refreshNonce, setRefreshNonce] = useState(0);
+  // 閲覧者の一時グローバルフィルタ。ソーステーブル側に WHERE を適用する（ページ滞在中のみ）
+  const [globalWhereExpr, setGlobalWhereExpr] = useState("");
+  const [globalFilterDraft, setGlobalFilterDraft] = useState("");
+  const [globalFilterOpen, setGlobalFilterOpen] = useState(false);
+  // 詳細フィルターを data（元データ形式・選択肢ごとの真偽値列）/ view（ビュー形式・ラベル文字列）
+  // どちらのテーブルに効かせるか。チェックで view、既定は data。
+  const [globalWhereVariant, setGlobalWhereVariant] = useState("data");
+  const [globalFilterVariantDraft, setGlobalFilterVariantDraft] = useState("data");
+
+  const { data: fetched, loading, error } = useAsyncResource(
+    () => analyticsGasClient.getDashboard(dashboardId).then((res) => res.dashboard),
+    [dashboardId],
+  );
+
+  const dashboard = fetched && isV2(fetched) ? fetched : null;
+  const legacyError = fetched && !isV2(fetched)
+    ? "このダッシュボードは旧形式です。再作成してください。"
+    : null;
+
+  useEffect(() => {
+    if (!dashboard) return;
+    const init = {};
+    for (const f of dashboard.filters || []) {
+      init[f.id] = defaultFilterValue(f);
+    }
+    setFilterValues(init);
+    const simpleInit = {};
+    for (const sf of dashboard.simpleFilters || []) {
+      simpleInit[sf.id] = defaultSimpleFilterValue();
+    }
+    setSimpleFilterValues(simpleInit);
+  }, [dashboard]);
+
+  return (
+    <AppLayout
+      title={dashboard?.name || "ダッシュボード"}
+      fallbackPath="/?view=dashboards"
+      sidebarActions={
+        dashboard && (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                // 1時間キャッシュを破棄して全カードを最新データで再実行する。
+                clearAnalyticsSourceTableCache();
+                setRefreshNonce((n) => n + 1);
+              }}
+              className="nf-btn-outline nf-btn-sidebar"
+            >
+              🔄 更新
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setGlobalFilterDraft(globalWhereExpr);
+                setGlobalFilterVariantDraft(globalWhereVariant);
+                setGlobalFilterOpen((v) => !v);
+              }}
+              className="nf-btn-outline nf-btn-sidebar"
+            >
+              詳細フィルター{globalWhereExpr ? " • 適用中" : ""}
+            </button>
+          </>
+        )
+      }
+    >
+      {loading && <p className="nf-text-subtle">読み込み中...</p>}
+      {error && <p className="nf-text-warning">{error}</p>}
+      {legacyError && <p className="nf-text-warning">{legacyError}</p>}
+      {dashboard && (
+        <>
+          {globalFilterOpen && (
+            <div className="nf-card" style={{ padding: "0.75rem", marginBottom: "0.75rem" }}>
+              <div style={{ marginBottom: "0.25rem", fontWeight: 600 }}>一時グローバルフィルター</div>
+              <div className="nf-text-subtle" style={{ fontSize: "0.85em", marginBottom: "0.5rem" }}>
+                各カードのソーステーブルに WHERE を適用します。列名は <code>[列名]</code> で囲んでください
+                （ネスト列は <code>[親__子]</code> 形式）。該当列を持たないテーブルは無視されます。
+              </div>
+              <textarea
+                value={globalFilterDraft}
+                onChange={(e) => setGlobalFilterDraft(e.target.value)}
+                placeholder="例: [受付日] > '2025-01-01'"
+                rows={2}
+                style={{ width: "100%", fontFamily: "monospace", marginBottom: "0.5rem" }}
+              />
+              <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem", fontSize: "0.85em" }}>
+                <input
+                  type="checkbox"
+                  checked={globalFilterVariantDraft === "view"}
+                  onChange={(e) => setGlobalFilterVariantDraft(e.target.checked ? "view" : "data")}
+                />
+                <span>
+                  ビュー形式（view）の値で絞り込む
+                  <span className="nf-text-subtle">
+                    {" "}（オフ＝元データ形式 data。data では選択肢ごとの <code>[親__選択肢]</code> 真偽値列や、
+                    <code>[日付列] {">"} &apos;2025-01-01&apos;</code> の文字列比較が使えます。
+                    指定 variant のテーブルを持たないカードには適用されません）
+                  </span>
+                </span>
+              </label>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <button
+                  type="button"
+                  className="nf-btn"
+                  onClick={() => {
+                    setGlobalWhereExpr(globalFilterDraft.trim());
+                    setGlobalWhereVariant(globalFilterVariantDraft);
+                    setGlobalFilterOpen(false);
+                  }}
+                >
+                  適用
+                </button>
+                <button
+                  type="button"
+                  className="nf-btn-outline"
+                  onClick={() => {
+                    setGlobalWhereExpr("");
+                    setGlobalFilterDraft("");
+                  }}
+                >
+                  クリア
+                </button>
+                <button
+                  type="button"
+                  className="nf-btn-outline"
+                  onClick={() => setGlobalFilterOpen(false)}
+                >
+                  閉じる
+                </button>
+              </div>
+            </div>
+          )}
+          <DashboardFilterBar
+            filters={dashboard.filters || []}
+            values={filterValues}
+            onChange={setFilterValues}
+          />
+          <SimpleFilterBar
+            simpleFilters={dashboard.simpleFilters || []}
+            values={simpleFilterValues}
+            onChange={setSimpleFilterValues}
+          />
+          {(dashboard.cards || []).length === 0 ? (
+            <p className="nf-text-subtle">カードがありません。</p>
+          ) : (
+            <DashboardGrid
+              dashboard={dashboard}
+              filterValues={filterValues}
+              simpleFilters={dashboard.simpleFilters || []}
+              simpleFilterValues={simpleFilterValues}
+              forms={forms}
+              isAdmin={isAdmin}
+              editable={false}
+              viewerControls
+              refreshNonce={refreshNonce}
+              globalWhereExpr={globalWhereExpr}
+              globalWhereVariant={globalWhereVariant}
+            />
+          )}
+        </>
+      )}
+    </AppLayout>
+  );
+}

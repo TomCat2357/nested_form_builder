@@ -1,0 +1,463 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLatestRef } from "../../app/hooks/useLatestRef.js";
+import { useLocation, useNavigate, useParams } from "react-router-dom";
+import AppLayout from "../../app/components/AppLayout.jsx";
+import ConfirmDialog from "../../app/components/ConfirmDialog.jsx";
+import FormBuilderWorkspace from "../../features/admin/FormBuilderWorkspace.jsx";
+import { SETTINGS_GROUPS } from "../../features/settings/settingsSchema.js";
+import { dataStore } from "../../app/state/dataStore.js";
+import { useAppData } from "../../app/state/AppDataProvider.jsx";
+import { useFormCacheSync } from "../../app/hooks/useFormCacheSync.js";
+import { useEditLock } from "../../app/hooks/useEditLock.js";
+import { useAlert } from "../../app/hooks/useAlert.js";
+import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
+import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
+import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
+import { normalizeFolderPath } from "../../utils/folderTree.js";
+import { omitThemeSetting, normalizeExternalActions } from "../../utils/settings.js";
+import { SettingsGroupFields } from "../../features/settings/SettingsField.jsx";
+import ExternalActionsEditor from "../../features/settings/ExternalActionsEditor.jsx";
+import { DEFAULT_THEME } from "../../app/theme/theme.js";
+import SchemaMapNav from "../../features/nav/SchemaMapNav.jsx";
+import { countSchemaNodes } from "../../core/schema.js";
+
+const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/admin/forms");
+
+export default function AdminFormEditorPage() {
+  const { formId } = useParams();
+  const isEdit = Boolean(formId);
+  const { forms, getFormById, createForm, updateForm, refreshForms, lastSyncedAt, loadingForms } = useAppData();
+  const currentForm = isEdit ? getFormById(formId) : null;
+  const [cachedForm, setCachedForm] = useState(currentForm);
+  const form = cachedForm;
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { showAlert } = useAlert();
+  const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
+  const builderRef = useRef(null);
+  // 新規作成時は一覧で開いていたフォルダ (location.state.folder) を初期フォルダにする。
+  const initialFolder = isEdit ? (form?.folder || "") : normalizeFolderPath(location.state?.folder || "");
+  const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "", folder: initialFolder });
+  const initialSchema = useMemo(() => (form?.schema ? form.schema : []), [form]);
+  const initialSettings = useMemo(() => omitThemeSetting(form?.settings || {}), [form]);
+
+  const [name, setName] = useState(initialMetaRef.current.name);
+  const [description, setDescription] = useState(initialMetaRef.current.description);
+  const [folder, setFolder] = useState(initialMetaRef.current.folder);
+  const [driveUrl, setDriveUrl] = useState(form?.driveFileUrl || "");
+  const [localSettings, setLocalSettings] = useState(initialSettings);
+  const [builderDirty, setBuilderDirty] = useState(false);
+  const unsavedDialog = useConfirmDialog();
+  const [isSaving, setIsSaving] = useState(false);
+  const { isReadLocked, withReadLock } = useEditLock();
+  const [nameError, setNameError] = useState("");
+  const [questionControl, setQuestionControl] = useState(null);
+  const isSavingRef = useLatestRef(isSaving);
+  const isReadLockedRef = useLatestRef(isReadLocked);
+  const cachedFormRef = useLatestRef(cachedForm);
+  const metaDirty = useMemo(() => name !== initialMetaRef.current.name || description !== initialMetaRef.current.description || folder !== initialMetaRef.current.folder, [name, description, folder]);
+  const isDirty = builderDirty || metaDirty;
+  const isDirtyRef = useLatestRef(isDirty);
+
+  useEffect(() => {
+    if (!isEdit) return;
+    setCachedForm((prevForm) => {
+      if (!prevForm) return prevForm;
+      return prevForm.id === formId ? prevForm : null;
+    });
+  }, [formId, isEdit]);
+
+  useEffect(() => {
+    if (!isEdit) {
+      setCachedForm(null);
+      return;
+    }
+    if (!currentForm) return;
+    if (isSavingRef.current) {
+      console.log("[AdminFormEditorPage] defer applying refreshed form during save", {
+        formId,
+        cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
+        incomingSchemaNodeCount: countSchemaNodes(currentForm?.schema),
+        incomingModifiedAt: currentForm?.modifiedAt ?? null,
+      });
+      return;
+    }
+
+    if (isDirtyRef.current) {
+      console.log("[AdminFormEditorPage] defer applying refreshed form during dirty edit", {
+        formId,
+        cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
+        incomingSchemaNodeCount: countSchemaNodes(currentForm?.schema),
+        incomingModifiedAt: currentForm?.modifiedAt ?? null,
+      });
+      return;
+    }
+
+    setCachedForm((prevForm) => {
+      if (prevForm === currentForm) return prevForm;
+      console.log("[AdminFormEditorPage] apply refreshed form", {
+        formId,
+        previousSchemaNodeCount: countSchemaNodes(prevForm?.schema),
+        incomingSchemaNodeCount: countSchemaNodes(currentForm?.schema),
+        previousModifiedAt: prevForm?.modifiedAt ?? null,
+        incomingModifiedAt: currentForm?.modifiedAt ?? null,
+      });
+      return currentForm;
+    });
+  }, [currentForm, formId, isDirty, isDirtyRef, isEdit, cachedFormRef, isSavingRef]);
+
+  useEffect(() => {
+    if (!form) return;
+    if (isSavingRef.current) {
+      console.log("[AdminFormEditorPage] defer applying form meta during save", {
+        formId,
+        cachedSchemaNodeCount: countSchemaNodes(form?.schema),
+        modifiedAt: form?.modifiedAt ?? null,
+      });
+      return;
+    }
+    if (isDirtyRef.current) {
+      console.log("[AdminFormEditorPage] defer applying form meta during dirty edit", {
+        formId,
+        cachedSchemaNodeCount: countSchemaNodes(form?.schema),
+        modifiedAt: form?.modifiedAt ?? null,
+      });
+      return;
+    }
+    const formTitle = form.settings?.formTitle || "";
+    initialMetaRef.current = { name: formTitle, description: form.description || "", folder: form.folder || "" };
+    setName(formTitle);
+    setDescription(form.description || "");
+    setFolder(form.folder || "");
+    setDriveUrl(form.driveFileUrl || "");
+    setLocalSettings(omitThemeSetting(form.settings || {}));
+    setQuestionControl(null);
+    setNameError("");
+  }, [form, formId, isDirty, isDirtyRef, isSavingRef]);
+
+  useFormCacheSync({
+    enabled: isEdit && !!formId,
+    formsCount: forms.length,
+    lastSyncedAt,
+    loadingForms,
+    refreshForms,
+    label: "admin-form-editor",
+    shouldSkip: () => isSavingRef.current || isReadLockedRef.current || isDirtyRef.current,
+    onRefresh: async (source, cacheDecision) => {
+      await withReadLock(async () => {
+        console.log("[AdminFormEditorPage] run refreshForms from operation trigger", {
+          formId,
+          source,
+          cacheAgeMs: cacheDecision.age,
+          shouldSync: cacheDecision.shouldSync,
+          shouldBackground: cacheDecision.shouldBackground,
+          cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
+        });
+        await dataStore.getForm(formId);
+        await refreshForms({ reason: `operation:${source}:admin-form-editor`, background: false });
+      });
+    },
+  });
+
+  useBeforeUnloadGuard(isDirty);
+
+  const navigateBack = () => {
+    if (location.state?.from) {
+      navigate(location.state.from, { replace: true });
+      return;
+    }
+    navigate(fallback, { replace: true });
+  };
+
+  const handleSettingsChange = useCallback((key, value) => {
+    setLocalSettings((prev) => ({ ...prev, [key]: value }));
+    builderRef.current?.updateSetting?.(key, value);
+  }, []);
+
+  const handleSave = async () => {
+    if (!builderRef.current) return;
+    if (isSaving || isReadLocked) return;
+    setIsSaving(true);
+
+    const trimmedName = (name || "").trim();
+    if (!trimmedName) {
+      setNameError("フォーム名を入力してください");
+      setIsSaving(false);
+      return;
+    }
+    setNameError("");
+
+    const saveResult = builderRef.current.save({ markClean: false });
+    if (saveResult === false) {
+      setIsSaving(false);
+      return;
+    }
+
+    const schema = builderRef.current.getSchema();
+    const trimmedSettings = omitThemeSetting(localSettings);
+    const preservedTheme = form?.settings?.theme || DEFAULT_THEME;
+
+    const payload = {
+      ...(isEdit && form ? { id: form.id, createdAt: form.createdAt, driveFileUrl: form.driveFileUrl } : {}),
+      description,
+      folder: normalizeFolderPath(folder),
+      schema,
+      settings: { ...trimmedSettings, theme: preservedTheme, formTitle: trimmedName },
+      archived: form?.archived ?? false,
+      readOnly: form?.readOnly ?? false,
+      schemaVersion: form?.schemaVersion ?? 1,
+    };
+
+    const targetUrl = driveUrl?.trim() || null;
+    const isFileUrl = targetUrl ? /\/file\/d\/[a-zA-Z0-9_-]+/.test(targetUrl) : false;
+    const isFolderUrl = targetUrl ? /\/folders\/[a-zA-Z0-9_-]+/.test(targetUrl) : false;
+    let saveMode = "auto";
+
+    if (!targetUrl) {
+      saveMode = isEdit ? "auto" : "copy_to_root";
+    } else if (isFileUrl) {
+      saveMode = "overwrite_existing";
+    } else if (isFolderUrl) {
+      saveMode = "copy_to_folder";
+    }
+
+    if (targetUrl) {
+      if (!isEdit && isFileUrl) {
+        showAlert("新規作成時はファイルURLは指定できません。フォルダURLまたは空白にしてください。");
+        setIsSaving(false);
+        return;
+      }
+      if (isEdit && isFileUrl) {
+        const originalFileUrl = form?.driveFileUrl || "";
+        if (targetUrl !== originalFileUrl) {
+          showAlert("既存フォームの保存先には、元のファイルURL以外のファイルURLは指定できません。フォルダURLまたは空白にしてください。");
+          setIsSaving(false);
+          return;
+        }
+      }
+    }
+
+    try {
+      const savedForm = isEdit
+        ? await updateForm(formId, payload, targetUrl, saveMode)
+        : await createForm(payload, targetUrl, saveMode);
+      setCachedForm(savedForm);
+      builderRef.current?.commitSavedState?.();
+      initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
+      setBuilderDirty(false);
+      navigate("/admin/forms", { replace: true });
+    } catch (error) {
+      console.error(error);
+      setIsSaving(false);
+      showAlert(`保存に失敗しました: ${error?.message || error}`);
+    }
+  };
+
+  const handleBack = () => {
+    if (!isDirty) {
+      navigateBack();
+      return false;
+    }
+    unsavedDialog.open();
+    return false;
+  };
+
+  const handleCancel = () => {
+    if (!isDirty) {
+      navigateBack();
+    } else {
+      unsavedDialog.open();
+    }
+  };
+
+  const handleOpenSpreadsheet = () => {
+    const spreadsheetIdOrUrl = localSettings?.spreadsheetId || "";
+
+    if (!spreadsheetIdOrUrl) {
+      showAlert("スプレッドシートIDが設定されていません");
+      return;
+    }
+
+    const spreadsheetId = normalizeSpreadsheetId(spreadsheetIdOrUrl);
+    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const confirmOptions = [
+    {
+      label: "保存して続行",
+      value: "save",
+      variant: "primary",
+      onSelect: async () => {
+        unsavedDialog.close();
+        await handleSave();
+      },
+    },
+    {
+      label: "保存せずに戻る",
+      value: "discard",
+      onSelect: () => {
+        unsavedDialog.close();
+        navigateBack();
+      },
+    },
+    {
+      label: "キャンセル",
+      value: "cancel",
+      onSelect: unsavedDialog.close,
+    },
+  ];
+
+  return (
+    <AppLayout
+      title={isEdit ? "フォーム修正" : "フォーム新規作成"}
+      badge="管理 > フォーム"
+      fallbackPath={fallback}
+      onBack={handleBack}
+      backHidden={true}
+      sidebarActions={
+        <>
+          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReadLocked} onClick={handleSave}>
+            保存
+          </button>
+          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleCancel}>
+            キャンセル
+          </button>
+          <div className="nf-spacer-16" />
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-14 admin-move-btn"
+            disabled={isReadLocked || !questionControl?.canMoveUp}
+            onClick={() => questionControl?.moveUp?.()}
+          >
+            ↑ 上へ
+          </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-14 admin-move-btn"
+            disabled={isReadLocked || !questionControl?.canMoveDown}
+            onClick={() => questionControl?.moveDown?.()}
+          >
+            ↓ 下へ
+          </button>
+          {questionControl?.selectedIndex !== null && (
+            <div className="nf-text-11 nf-text-muted nf-pad-4-8 nf-text-center nf-word-break">
+              {questionControl?.isOption
+                ? `${questionControl?.questionLabel || `質問 ${(questionControl?.selectedIndex ?? 0) + 1}`} > ${questionControl?.optionLabel || `選択肢 ${(questionControl?.optionIndex ?? 0) + 1}`}`
+                : questionControl?.questionLabel || `質問 ${(questionControl?.selectedIndex ?? 0) + 1}`
+              }
+            </div>
+          )}
+          <div className="nf-flex-1" />
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-14 admin-info-btn"
+            onClick={handleOpenSpreadsheet}
+          >
+            📊 スプレッドシートを開く
+          </button>
+          <SchemaMapNav schema={builderRef.current?.getSchema?.() || initialSchema} scope="all" />
+        </>
+      }
+    >
+      <div className="nf-card nf-mb-24">
+        <div className="nf-card nf-mb-16">
+          <h3 className="nf-settings-group-title nf-mb-16">フォームの基本情報</h3>
+
+          <div className="nf-col nf-gap-6 nf-mb-16">
+            <label className="nf-block nf-fw-600 nf-mb-6">フォーム名</label>
+            <input
+              value={name}
+              onChange={(event) => {
+                setName(event.target.value);
+                if (nameError) setNameError("");
+              }}
+              className="nf-input admin-input"
+              placeholder="フォーム名"
+              disabled={isReadLocked}
+            />
+            {nameError && <p className="nf-text-danger-strong nf-text-12 nf-m-0">{nameError}</p>}
+          </div>
+
+          <div className="nf-col nf-gap-6 nf-mb-16">
+            <label className="nf-block nf-fw-600 nf-mb-6">フォームの説明</label>
+            <textarea value={description} onChange={(event) => setDescription(event.target.value)} className="nf-input admin-input nf-min-h-80" placeholder="説明" disabled={isReadLocked} />
+          </div>
+
+          <div className="nf-col nf-gap-6 nf-mb-16">
+            <label className="nf-block nf-fw-600 nf-mb-6">フォルダ（任意）</label>
+            <input
+              value={folder}
+              onChange={(event) => setFolder(event.target.value)}
+              className="nf-input admin-input"
+              placeholder="例: 営業/見積  （空欄=フォルダなし）"
+              disabled={isReadLocked}
+            />
+            <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+              スラッシュ区切りで階層を指定します。一覧画面でフォルダとして表示され、クリックで中に入れます。
+            </p>
+          </div>
+
+          <div className="nf-col nf-gap-6">
+            <label className="nf-block nf-fw-600 nf-mb-6">フォーム項目データのGoogle Drive保存先URL</label>
+            <input
+              value={driveUrl}
+              onChange={(event) => setDriveUrl(event.target.value)}
+              className="nf-input admin-input"
+              placeholder={isEdit
+                ? "空白: マイドライブルートに新たにコピー / フォルダURL: 指定フォルダにコピー"
+                : "空白: マイドライブルート / フォルダURL: 指定フォルダに保存"}
+              disabled={isReadLocked}
+            />
+            <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+              {isEdit
+                ? "現在のファイルURLが表示されています。空白にするとマイドライブルートに新たなコピーを作成します。フォルダURLに変更するとそのフォルダにコピーを作成します。ファイルURLは元のURL以外は指定できません。"
+                : "空白の場合はマイドライブのルートに保存されます。フォルダURLを指定するとそのフォルダに保存されます。ファイルURLは指定できません。"}
+            </p>
+          </div>
+        </div>
+
+        {SETTINGS_GROUPS.map((group) => (
+          <div key={group.key} className="nf-card nf-mb-16">
+            <div className="nf-settings-group-title nf-mb-12">{group.label}</div>
+            <SettingsGroupFields
+              fields={group.fields}
+              values={localSettings}
+              onChange={handleSettingsChange}
+              disabled={isReadLocked}
+            />
+          </div>
+        ))}
+
+        <div className="nf-card nf-mb-16">
+          <div className="nf-settings-group-title nf-mb-12">外部アクション (Webhook)</div>
+          <ExternalActionsEditor
+            value={normalizeExternalActions(localSettings?.externalActions)}
+            onChange={(next) => setLocalSettings((prev) => ({
+              ...(prev || {}),
+              externalActions: next,
+            }))}
+            disabled={isReadLocked}
+          />
+        </div>
+
+        <div className="admin-editor-workspace-wrap">
+          <div className={isReadLocked ? "admin-editor-workspace-lock" : ""}>
+            <FormBuilderWorkspace
+              ref={builderRef}
+              initialSchema={initialSchema}
+              initialSettings={initialSettings}
+              formTitle={name || "フォーム"}
+              onDirtyChange={setBuilderDirty}
+              onQuestionControlChange={setQuestionControl}
+              showToolbarSave={false}
+            />
+          </div>
+          {isReadLocked && <div className="admin-editor-workspace-overlay" aria-hidden="true" />}
+        </div>
+      </div>
+
+      <ConfirmDialog open={unsavedDialog.state.open} title="未保存の変更があります" message="保存せずに離れますか？" options={confirmOptions} />
+    </AppLayout>
+  );
+}

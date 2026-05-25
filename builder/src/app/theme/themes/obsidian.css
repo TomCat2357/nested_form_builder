@@ -1,0 +1,119 @@
+/* obsidian theme — neutral charcoal with emerald + amber */
+:root[data-theme="obsidian"] {
+  --bg: #121315;
+  --surface: #1a1b1e;
+  --surface-elevated: #202125;
+  --surface-muted: #17181b;
+  --surface-subtle: #15161a;
+  --surface-alt: #26272c;
+  --dialog-bg: #1f2024;
+
+  --border: rgba(255, 255, 255, 0.07);
+  --border-muted: rgba(255, 255, 255, 0.05);
+  --border-subtle: rgba(255, 255, 255, 0.035);
+  --border-strong: rgba(255, 255, 255, 0.12);
+
+  --text: #f4f4f5;
+  --text-strong: #ffffff;
+  --text-ink: #e4e4e7;
+  --text-muted: #b4b4bc;
+  --text-subtle: #9a9aa2;
+  --text-faded: #7a7a82;
+
+  --input-bg: #0d0e10;
+  --input-text: #f4f4f5;
+  --input-border: rgba(255, 255, 255, 0.18);
+
+  /* primary: deep emerald */
+  --primary: #10b981;
+  --primary-strong: #059669;
+  --primary-ink: #a7f3d0;
+  --primary-ink-strong: #d1fae5;
+  --primary-soft: rgba(16, 185, 129, 0.18);
+  --primary-soft-strong: rgba(16, 185, 129, 0.28);
+  --primary-weak: rgba(16, 185, 129, 0.12);
+  --primary-weak-soft: rgba(16, 185, 129, 0.07);
+  --primary-border-soft: rgba(16, 185, 129, 0.3);
+
+  /* warm: amber */
+  --warm: #f59e0b;
+  --warm-weak: rgba(245, 158, 11, 0.14);
+  --warm-ink: #fde68a;
+
+  --success: #10b981;
+  --success-ink: #a7f3d0;
+  --success-weak: rgba(16, 185, 129, 0.12);
+
+  --danger: #f87171;
+  --danger-bright: #ef4444;
+  --danger-strong: #dc2626;
+  --danger-ink: #fecaca;
+  --danger-ink-strong: #fee2e2;
+  --danger-weak: rgba(248, 113, 113, 0.12);
+  --danger-weak-strong: rgba(248, 113, 113, 0.18);
+  --danger-border: rgba(248, 113, 113, 0.26);
+  --danger-border-strong: rgba(248, 113, 113, 0.34);
+
+  --warning: #fbbf24;
+  --warning-weak: rgba(251, 191, 36, 0.12);
+  --warning-ink: #fde68a;
+
+  --info: #60a5fa;
+  --info-weak: rgba(96, 165, 250, 0.12);
+
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.68);
+
+  --overlay: rgba(0, 0, 0, 0.55);
+  --overlay-strong: rgba(0, 0, 0, 0.78);
+
+  /* monochrome base, just a whisper of emerald glow */
+  --app-bg:
+    radial-gradient(1200px 700px at 18% -12%, rgba(16, 185, 129, 0.1), transparent 60%),
+    radial-gradient(900px 500px at 92% 8%, rgba(245, 158, 11, 0.06), transparent 62%),
+    var(--bg);
+  --app-header-bg: rgba(18, 19, 21, 0.82);
+
+  --input-border-focus: rgba(16, 185, 129, 0.5);
+  --input-focus-ring: rgba(16, 185, 129, 0.16);
+
+  --badge-primary-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(5, 150, 105, 0.9));
+  --badge-warm-bg: linear-gradient(135deg, rgba(245, 158, 11, 0.95), rgba(217, 119, 6, 0.85));
+  --badge-ghost-bg: rgba(255, 255, 255, 0.05);
+  --badge-ghost-border: rgba(255, 255, 255, 0.1);
+  --badge-text: rgba(255, 255, 255, 0.96);
+
+  --logo-gradient: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(245, 158, 11, 0.85));
+  --logo-shadow:
+    0 8px 22px rgba(16, 185, 129, 0.22),
+    0 10px 26px rgba(0, 0, 0, 0.35);
+
+  --panel-header-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
+  --card-hover-border: rgba(16, 185, 129, 0.24);
+  --btn-primary-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.16), rgba(245, 158, 11, 0.08));
+
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(16, 185, 129, 0),
+    rgba(16, 185, 129, 0.55),
+    rgba(245, 158, 11, 0.25),
+    rgba(16, 185, 129, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.95), rgba(245, 158, 11, 0.85));
+  --rail-dot-shadow: 0 8px 18px rgba(16, 185, 129, 0.2);
+
+  --if-box-border: rgba(255, 255, 255, 0.08);
+  --if-box-bg: linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(245, 158, 11, 0.06));
+  --if-chip-bg: rgba(245, 158, 11, 0.12);
+  --if-chip-border: rgba(245, 158, 11, 0.2);
+  --if-badge-border: rgba(16, 185, 129, 0.22);
+}
+
+:root[data-theme="obsidian"] { color-scheme: dark; }
+:root[data-theme="obsidian"] select { color-scheme: dark; }
+:root[data-theme="obsidian"] select option,
+:root[data-theme="obsidian"] select optgroup {
+  background-color: var(--bg);
+  color: var(--text);
+}

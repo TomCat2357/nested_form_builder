@@ -1,0 +1,117 @@
+/* egypt theme — Tutankhamun gold, lapis lazuli, carnelian, papyrus */
+:root[data-theme="egypt"] {
+  /* Deep papyrus / tomb wall — richer, less bright */
+  --bg: #f1e3b6;
+  --surface: #fbf1cf;
+  --surface-elevated: #fff6dc;
+  --surface-muted: #ecdda6;
+  --surface-subtle: #f6ead2;
+  --surface-alt: #e3cf8e;
+  --dialog-bg: #fbf1cf;
+
+  --border: #c9a961;
+  --border-muted: #d8be83;
+  --border-subtle: #e8d6a7;
+  --border-strong: #a8862d;
+
+  /* Hieroglyph-ink: deep umber, not black */
+  --text: #2a1a08;
+  --text-strong: #1a0f04;
+  --text-ink: #3c2410;
+  --text-muted: #6b4a24;
+  --text-subtle: #7d5c33;
+  --text-faded: #a0834d;
+
+  /* Pharaoh gold — Tutankhamun's mask */
+  --primary: #c9a227;
+  --primary-strong: #a17f14;
+  --primary-ink: #5c4502;
+  --primary-ink-strong: #3a2c01;
+  --primary-soft: #f4e5a6;
+  --primary-soft-strong: #ecd674;
+  --primary-weak: rgba(201, 162, 39, 0.18);
+  --primary-weak-soft: rgba(201, 162, 39, 0.1);
+  --primary-border-soft: rgba(161, 127, 20, 0.4);
+
+  /* Lapis lazuli — deep royal blue */
+  --warm: #1e3a8a;
+  --warm-weak: rgba(30, 58, 138, 0.14);
+  --warm-ink: #0f1d47;
+
+  /* Carnelian red for errors */
+  --success: #4d7c3d;
+  --success-ink: #2a4620;
+  --success-weak: rgba(77, 124, 61, 0.12);
+
+  --danger: #9c2c2c;
+  --danger-bright: #b83232;
+  --danger-strong: #7a2020;
+  --danger-ink: #5a1717;
+  --danger-ink-strong: #3d0f0f;
+  --danger-weak: #f5d9d1;
+  --danger-weak-strong: #edc2b5;
+  --danger-border: #c77a6e;
+  --danger-border-strong: #b05a4c;
+
+  --warning: #d97706;
+  --warning-weak: #fde4a6;
+  --warning-ink: #78350f;
+
+  --info: #1e3a8a;
+  --info-weak: #d4ddee;
+
+  --shadow-sm: 0 1px 3px rgba(60, 36, 16, 0.12), 0 2px 8px rgba(60, 36, 16, 0.08);
+  --shadow-md: 0 12px 28px rgba(60, 36, 16, 0.18), 0 2px 6px rgba(60, 36, 16, 0.08);
+  --shadow-lg: 0 24px 56px rgba(60, 36, 16, 0.24);
+
+  --overlay: rgba(42, 26, 8, 0.42);
+  --overlay-strong: rgba(42, 26, 8, 0.62);
+
+  /* Sun over desert + lapis sky + deep sand glow */
+  --app-bg:
+    radial-gradient(1100px 620px at 50% -14%, rgba(201, 162, 39, 0.4), transparent 60%),
+    radial-gradient(900px 520px at 8% 30%, rgba(30, 58, 138, 0.16), transparent 62%),
+    radial-gradient(900px 520px at 95% 40%, rgba(156, 44, 44, 0.1), transparent 60%),
+    radial-gradient(900px 500px at 50% 110%, rgba(161, 127, 20, 0.22), transparent 60%),
+    var(--bg);
+  --app-header-bg: rgba(241, 227, 182, 0.86);
+
+  --input-border-focus: rgba(161, 127, 20, 0.55);
+  --input-focus-ring: rgba(201, 162, 39, 0.22);
+
+  /* Gold + lapis badge — regalia */
+  --badge-primary-bg: linear-gradient(135deg, rgba(201, 162, 39, 0.98), rgba(161, 127, 20, 0.94));
+  --badge-warm-bg: linear-gradient(135deg, rgba(30, 58, 138, 0.96), rgba(15, 29, 71, 0.92));
+  --badge-ghost-bg: rgba(161, 127, 20, 0.1);
+  --badge-ghost-border: rgba(161, 127, 20, 0.3);
+  --badge-text: rgba(255, 248, 220, 0.98);
+
+  /* Nemes-stripe logo: gold + lapis */
+  --logo-gradient: linear-gradient(135deg, rgba(201, 162, 39, 0.98), rgba(30, 58, 138, 0.92));
+  --logo-shadow:
+    0 8px 22px rgba(161, 127, 20, 0.34),
+    0 10px 28px rgba(30, 58, 138, 0.22);
+
+  --panel-header-bg: linear-gradient(180deg, rgba(201, 162, 39, 0.12), transparent);
+  --card-hover-border: rgba(161, 127, 20, 0.4);
+  --btn-primary-bg: linear-gradient(135deg, rgba(201, 162, 39, 0.26), rgba(30, 58, 138, 0.12));
+
+  /* Papyrus column rail */
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(201, 162, 39, 0),
+    rgba(201, 162, 39, 0.7),
+    rgba(30, 58, 138, 0.42),
+    rgba(201, 162, 39, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(201, 162, 39, 0.98), rgba(30, 58, 138, 0.92));
+  --rail-dot-shadow:
+    0 10px 22px rgba(161, 127, 20, 0.32),
+    0 12px 26px rgba(30, 58, 138, 0.16);
+
+  --if-box-border: rgba(30, 58, 138, 0.26);
+  --if-box-bg: linear-gradient(135deg, rgba(201, 162, 39, 0.18), rgba(30, 58, 138, 0.12));
+  --if-chip-bg: rgba(201, 162, 39, 0.22);
+  --if-chip-border: rgba(161, 127, 20, 0.35);
+  --if-badge-border: rgba(77, 124, 61, 0.3);
+}

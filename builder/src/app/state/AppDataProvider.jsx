@@ -1,0 +1,465 @@
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { dataStore } from "./dataStore.js";
+import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
+import { useAuth } from "./authContext.jsx";
+import { evaluateCacheForForms } from "./cachePolicy.js";
+import { perfLogger } from "../../utils/perfLogger.js";
+import { normalizeFormRecord } from "../../utils/formNormalize.js";
+
+const AppDataContext = createContext(null);
+
+/**
+ * Helper to save forms cache with consistent error handling
+ */
+const saveCacheWithErrorHandling = async (forms, loadFailures, setCacheDisabled, propertyStoreMode, logPrefix = "saveCache") => {
+  try {
+    await saveFormsToCache(forms, loadFailures, propertyStoreMode);
+    console.log(`[${logPrefix}] Cache updated`);
+  } catch (err) {
+    console.warn(`[${logPrefix}] Failed to update cache:`, err);
+    setCacheDisabled(true);
+  }
+};
+export function AppDataProvider({ children }) {
+  const { propertyStoreMode } = useAuth();
+  const propertyStoreModeRef = useRef(propertyStoreMode);
+
+  const [forms, setForms] = useState([]);
+  const [loadingForms, setLoadingForms] = useState(true);
+  const [error, setError] = useState(null);
+  const [loadFailures, setLoadFailures] = useState([]);
+  const [lastSyncedAt, setLastSyncedAt] = useState(null);
+  const [cacheDisabled, setCacheDisabled] = useState(false);
+  // 登録簿の永続フォルダ（空フォルダ含む）。forms_list 応答 / キャッシュから同期。
+  const [registeredFolders, setRegisteredFolders] = useState([]);
+  const registeredFoldersRef = useRef(registeredFolders);
+  useEffect(() => {
+    registeredFoldersRef.current = registeredFolders;
+  }, [registeredFolders]);
+
+  // キャッシュ更新用にformsとloadFailuresの最新値を保持
+  const formsRef = useRef(forms);
+  const loadFailuresRef = useRef(loadFailures);
+
+  useEffect(() => {
+    formsRef.current = forms;
+  }, [forms]);
+
+  useEffect(() => {
+    loadFailuresRef.current = loadFailures;
+  }, [loadFailures]);
+
+  const refreshForms = useCallback(async ({ reason = "unknown", background = false } = {}) => {
+    if (!background) {
+      setLoadingForms(true);
+    }
+    setError(null);
+    const startedAt = Date.now();
+    perfLogger.logVerbose("forms", "refresh start", { reason, background, startedAt });
+
+    try {
+      const apiCallStart = Date.now();
+      const result = await dataStore.listForms({ includeArchived: true });
+
+      const apiCallEnd = Date.now();
+      const apiCallDuration = apiCallEnd - apiCallStart;
+
+      const allForms = result.forms || [];
+      const failures = result.loadFailures || [];
+      const folders = Array.isArray(result.folders) ? result.folders : [];
+
+      const averagePerForm = allForms.length > 0 ? Math.round(apiCallDuration / allForms.length) : 0;
+
+      perfLogger.logVerbose("forms", "api call done", {
+        apiDurationMs: apiCallDuration,
+        count: allForms.length,
+        avgPerFormMs: averagePerForm,
+      });
+      perfLogger.logFormGasRead(apiCallDuration, allForms.length);
+
+      setForms(allForms);
+      setLoadFailures(failures);
+      setRegisteredFolders(folders);
+      const syncedAt = Date.now();
+      setLastSyncedAt(syncedAt);
+
+      try {
+        const cacheStart = Date.now();
+        await saveFormsToCache(allForms, failures, propertyStoreModeRef.current, { stampSyncTime: true, folders });
+        const cacheDuration = Date.now() - cacheStart;
+        perfLogger.logFormCacheSave(cacheDuration, allForms.length);
+        setCacheDisabled(false);
+        perfLogger.logVerbose("forms", "saved to cache", { cacheDurationMs: cacheDuration, count: allForms.length });
+      } catch (cacheErr) {
+        console.warn("[AppDataProvider] Failed to save to cache:", cacheErr);
+        setCacheDisabled(true);
+      }
+
+      const finishedAt = Date.now();
+      const totalDuration = finishedAt - startedAt;
+
+      perfLogger.logVerbose("forms", "refresh timing", {
+        totalDurationMs: totalDuration,
+        apiSharePct: Math.round(apiCallDuration / totalDuration * 100),
+      });
+      perfLogger.logVerbose("forms", "refresh success", {
+        reason,
+        formCount: allForms.length,
+        loadFailures: failures.length,
+        finishedAt,
+      });
+    } catch (err) {
+      console.error("[AppDataProvider] フォーム取得エラー:", err);
+      setError(err.message || "フォームの取得に失敗しました");
+      const finishedAt = Date.now();
+      perfLogger.logVerbose("forms", "refresh fail", { reason, startedAt, finishedAt, error: err?.message });
+    } finally {
+      if (!background) {
+        setLoadingForms(false);
+      }
+    }
+  }, []);
+
+  useEffect(() => {
+    // 起動時の読み込みロジック
+    (async () => {
+      const startedAt = Date.now();
+      console.log("[AppDataProvider] Startup - checking cache...");
+      let cacheApplied = false;
+      let cachedForms = [];
+      let cachedFailures = [];
+      let cacheLastSyncedAt = null;
+
+      try {
+        // 1. キャッシュから即座に表示
+        const cacheResult = await getFormsFromCache();
+        cachedForms = cacheResult.forms || [];
+        cachedFailures = cacheResult.loadFailures || [];
+        if (Array.isArray(cacheResult.folders)) setRegisteredFolders(cacheResult.folders);
+        cacheLastSyncedAt = cacheResult.lastSyncedAt || cacheResult.cacheTimestamp || null;
+        const cachedPropertyStoreMode = cacheResult.propertyStoreMode || "";
+        const cacheAge = cacheLastSyncedAt ? Date.now() - cacheLastSyncedAt : null;
+        const hasCachedData = cachedForms.length > 0 || cachedFailures.length > 0 || !!cacheLastSyncedAt;
+
+        // プロパティ保存モードが変わった場合はキャッシュを無効化して強制再同期
+        if (hasCachedData && cachedPropertyStoreMode !== propertyStoreModeRef.current) {
+          console.log("[AppDataProvider] Property store mode changed; forcing fresh sync", {
+            cachedMode: cachedPropertyStoreMode,
+            currentMode: propertyStoreModeRef.current,
+          });
+          await refreshForms({ reason: "mode-changed", background: false });
+          setLoadingForms(false);
+          return;
+        }
+
+        if (hasCachedData) {
+          console.log("[AppDataProvider] Loaded from cache:", cachedForms.length, "forms (age:", cacheAge, "ms)");
+          perfLogger.logFormCacheHit(cacheAge || 0, cachedForms.length);
+          setForms(cachedForms);
+          setLoadFailures(cachedFailures);
+          setLastSyncedAt(cacheLastSyncedAt);
+          cacheApplied = true;
+        }
+
+        const { age: cacheAgeMs, shouldSync, shouldBackground } = evaluateCacheForForms({
+          lastSyncedAt: cacheLastSyncedAt,
+          hasData: hasCachedData,
+        });
+
+        perfLogger.logVerbose("forms", "cache check", {
+          cacheAgeMs,
+          cacheApplied,
+          shouldSync,
+          shouldBackground,
+        });
+
+        if (shouldSync) {
+          console.log("[AppDataProvider] Cache stale or missing; fetching synchronously", { cacheAgeMs, cacheLastSyncedAt, hasCachedData });
+          await refreshForms({ reason: "startup-sync", background: false });
+          setLoadingForms(false);
+          return;
+        }
+
+        // cache is fresh enough for sync, stop loading spinner
+        setLoadingForms(false);
+
+        if (shouldBackground) {
+          console.log("[AppDataProvider] Cache is fresh enough; background refresh scheduled");
+          refreshForms({ reason: "startup-background", background: true }).catch((err) => {
+            console.error("[AppDataProvider] Background refresh error:", err);
+            setError(err.message || "フォームの取得に失敗しました");
+          });
+        }
+
+        const finishedAt = Date.now();
+        console.log("[AppDataProvider] Startup complete in", finishedAt - startedAt, "ms");
+      } catch (err) {
+        console.error("[AppDataProvider] Startup error:", err);
+        setError(err.message || "フォームの取得に失敗しました");
+        setCacheDisabled(true);
+      } finally {
+        if (!cacheApplied) {
+          setLoadingForms(false);
+        }
+      }
+    })();
+  }, []);
+
+  // Helper to DRY up form state updates and cache saving
+  const updateFormsAndCache = useCallback(async (updaterFn, nextFailures, logPrefix) => {
+    let updatedForms;
+    setForms((prev) => {
+      updatedForms = updaterFn([...prev]);
+      formsRef.current = updatedForms;
+      return updatedForms;
+    });
+    setLoadFailures(nextFailures);
+    loadFailuresRef.current = nextFailures;
+    await saveCacheWithErrorHandling(updatedForms, nextFailures, setCacheDisabled, propertyStoreModeRef.current, logPrefix);
+  }, []);
+
+  const upsertFormsState = useCallback(async (nextForm) => {
+    if (!nextForm || !nextForm.id) return;
+    await updateFormsAndCache((next) => {
+      const index = next.findIndex((form) => form.id === nextForm.id);
+      if (index === -1) next.unshift(nextForm);
+      else next[index] = nextForm;
+      return next;
+    }, loadFailuresRef.current, "upsertFormsState");
+  }, [updateFormsAndCache]);
+
+  const removeFormsState = useCallback(async (formIds) => {
+    if (!Array.isArray(formIds) || formIds.length === 0) return;
+    const targetIdSet = new Set(formIds.filter(Boolean));
+    if (!targetIdSet.size) return;
+
+    await updateFormsAndCache(
+      (next) => next.filter((form) => !targetIdSet.has(form.id)),
+      loadFailuresRef.current.filter((failure) => !targetIdSet.has(failure.id)),
+      "removeFormsState"
+    );
+  }, [updateFormsAndCache]);
+
+  const createForm = useCallback(async (payload, targetUrl, saveMode = "auto") => {
+    const pendingForm = normalizeFormRecord(payload, { preserveUnknownFields: true });
+    const savedForm = await dataStore.createForm(
+      { ...payload, id: pendingForm.id, createdAt: pendingForm.createdAt },
+      targetUrl,
+      saveMode,
+    );
+
+    await upsertFormsState(savedForm);
+    return savedForm;
+  }, [upsertFormsState]);
+
+  const updateForm = useCallback(async (formId, updates, targetUrl, saveMode = "auto") => {
+    const existing = formsRef.current.find((form) => form.id === formId) || {};
+    const preparedUpdates = {
+      ...updates,
+      createdAt: updates?.createdAt ?? existing.createdAt,
+      createdAtUnixMs: updates?.createdAtUnixMs ?? existing.createdAtUnixMs,
+      archived: updates?.archived ?? existing.archived,
+      schemaVersion: updates?.schemaVersion ?? existing.schemaVersion,
+      driveFileUrl: updates?.driveFileUrl ?? existing.driveFileUrl,
+    };
+    const savedForm = await dataStore.updateForm(formId, preparedUpdates, targetUrl, saveMode);
+
+    await upsertFormsState(savedForm);
+    return savedForm;
+  }, [upsertFormsState]);
+
+  const archiveForm = useCallback(async (formId) => {
+    const existing = formsRef.current.find((form) => form.id === formId);
+    if (existing) await upsertFormsState({ ...existing, archived: true });
+    void dataStore.archiveForm(formId).then((res) => { if (res) upsertFormsState(res); });
+    return existing ? { ...existing, archived: true } : null;
+  }, [upsertFormsState]);
+
+  const unarchiveForm = useCallback(async (formId) => {
+    const existing = formsRef.current.find((form) => form.id === formId);
+    if (existing) await upsertFormsState({ ...existing, archived: false });
+    void dataStore.unarchiveForm(formId).then((res) => { if (res) upsertFormsState(res); });
+    return existing ? { ...existing, archived: false } : null;
+  }, [upsertFormsState]);
+
+  const batchUpdateFormsState = useCallback(async (dataStoreFn, formIds, optimisticPatch, logPrefix) => {
+    const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
+    if (!targetIds.length) return { forms: [], updated: 0, errors: [] };
+
+    const patchFn = typeof optimisticPatch === "function" ? optimisticPatch : (form) => ({ ...form, ...optimisticPatch });
+    const targetIdSet = new Set(targetIds);
+    const optimisticForms = formsRef.current.filter((form) => targetIdSet.has(form.id)).map((form) => patchFn(form));
+
+    if (optimisticForms.length > 0) {
+      await updateFormsAndCache((next) => {
+        optimisticForms.forEach((form) => {
+          const index = next.findIndex((f) => f.id === form.id);
+          if (index !== -1) next[index] = form;
+        });
+        return next;
+      }, loadFailuresRef.current, `${logPrefix}:optimistic`);
+    }
+
+    void dataStoreFn(targetIds)
+      .then(async (result) => {
+        if (!result?.forms || !Array.isArray(result.forms) || result.forms.length === 0) return;
+        await updateFormsAndCache((next) => {
+          result.forms.forEach((form) => {
+            const index = next.findIndex((f) => f.id === form.id);
+            if (index !== -1) next[index] = form;
+          });
+          return next;
+        }, loadFailuresRef.current, `${logPrefix}:background`);
+      });
+
+    return { forms: optimisticForms, updated: optimisticForms.length, errors: [] };
+  }, [updateFormsAndCache]);
+
+  const archiveForms = useCallback(
+    (formIds) => batchUpdateFormsState(dataStore.archiveForms.bind(dataStore), formIds, { archived: true, readOnly: false }, "archiveForms"),
+    [batchUpdateFormsState],
+  );
+
+  const unarchiveForms = useCallback(
+    (formIds) => batchUpdateFormsState(dataStore.unarchiveForms.bind(dataStore), formIds, { archived: false }, "unarchiveForms"),
+    [batchUpdateFormsState],
+  );
+
+  const setFormReadOnly = useCallback(async (formId) => {
+    const existing = formsRef.current.find((form) => form.id === formId);
+    if (existing) await upsertFormsState({ ...existing, readOnly: true, archived: false });
+    void dataStore.setFormReadOnly(formId).then((res) => { if (res) upsertFormsState(res); });
+    return existing ? { ...existing, readOnly: true, archived: false } : null;
+  }, [upsertFormsState]);
+
+  const clearFormReadOnly = useCallback(async (formId) => {
+    const existing = formsRef.current.find((form) => form.id === formId);
+    if (existing) await upsertFormsState({ ...existing, readOnly: false });
+    void dataStore.clearFormReadOnly(formId).then((res) => { if (res) upsertFormsState(res); });
+    return existing ? { ...existing, readOnly: false } : null;
+  }, [upsertFormsState]);
+
+  const setFormsReadOnly = useCallback(
+    (formIds) => batchUpdateFormsState(dataStore.setFormsReadOnly.bind(dataStore), formIds, { readOnly: true, archived: false }, "setFormsReadOnly"),
+    [batchUpdateFormsState],
+  );
+
+  const clearFormsReadOnly = useCallback(
+    (formIds) => batchUpdateFormsState(dataStore.clearFormsReadOnly.bind(dataStore), formIds, { readOnly: false }, "clearFormsReadOnly"),
+    [batchUpdateFormsState],
+  );
+
+  const deleteForms = useCallback(async (formIds) => {
+    await removeFormsState(formIds);
+
+    void dataStore.deleteForms(formIds).catch((err) => {
+      console.error("[AppDataProvider] Background deleteForms failed:", err);
+    });
+  }, [removeFormsState]);
+
+  const deleteForm = useCallback((formId) => deleteForms([formId]), [deleteForms]);
+
+  const importForms = useCallback(async (jsonList) => {
+    const created = await dataStore.importForms(jsonList);
+    if (Array.isArray(created)) {
+      // 複数フォームを一括追加してキャッシュも1回だけ更新
+      setForms((prev) => {
+        const next = [...created, ...prev];
+
+        // キャッシュ更新
+        saveCacheWithErrorHandling(next, loadFailuresRef.current, setCacheDisabled, propertyStoreModeRef.current, "importForms");
+
+        return next;
+      });
+    }
+    return created;
+  }, []);
+
+  const copyForm = useCallback(async (formId) => {
+    const savedForm = await dataStore.copyForm(formId);
+    if (savedForm) {
+      await upsertFormsState(savedForm);
+    }
+    return savedForm;
+  }, [upsertFormsState]);
+
+  const exportForms = useCallback(async (formIds) => dataStore.exportForms(formIds), []);
+  const getFormById = useCallback((formId) => forms.find((form) => form.id === formId) || null, [forms]);
+
+  // 空フォルダを登録簿に追加。フォーム自体は変わらないので folders state とキャッシュのみ更新。
+  const createFolder = useCallback(async (path) => {
+    const result = await dataStore.createFolder(path);
+    const folders = result.folders || [];
+    setRegisteredFolders(folders);
+    try {
+      await saveFormsToCache(formsRef.current, loadFailuresRef.current, propertyStoreModeRef.current, { folders });
+    } catch (err) {
+      console.warn("[AppDataProvider] createFolder cache update failed:", err);
+    }
+    return folders;
+  }, []);
+
+  // フォーム/フォルダ移動。フォームの folder が変わるため一覧を再取得して整合させる。
+  const moveItems = useCallback(async (payload) => {
+    const result = await dataStore.moveItems(payload);
+    await refreshForms({ reason: "move-items", background: false });
+    return result;
+  }, [refreshForms]);
+
+  // フォルダ削除（配下フォームも削除）。一覧を再取得して反映する。
+  const deleteFolder = useCallback(async (path) => {
+    const result = await dataStore.deleteFolder(path);
+    await refreshForms({ reason: "delete-folder", background: false });
+    return result;
+  }, [refreshForms]);
+
+  const registerImportedForm = useCallback(async (payload) => {
+    const result = await dataStore.registerImportedForm(payload);
+    if (result) {
+      await upsertFormsState(result);
+    }
+    return result;
+  }, [upsertFormsState]);
+
+  const memoValue = useMemo(
+    () => ({
+      forms,
+      loadFailures,
+      loadingForms,
+      error,
+      lastSyncedAt,
+      cacheDisabled,
+      registeredFolders,
+      createFolder,
+      moveItems,
+      deleteFolder,
+      refreshForms,
+      createForm,
+      updateForm,
+      archiveForm,
+      unarchiveForm,
+      archiveForms,
+      unarchiveForms,
+      setFormReadOnly,
+      clearFormReadOnly,
+      setFormsReadOnly,
+      clearFormsReadOnly,
+      deleteForms,
+      deleteForm,
+      importForms,
+      exportForms,
+      copyForm,
+      getFormById,
+      registerImportedForm,
+    }),
+    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, registeredFolders, createFolder, moveItems, deleteFolder, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteForm, importForms, exportForms, copyForm, getFormById, registerImportedForm],
+  );
+
+  return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;
+}
+
+export function useAppData() {
+  const ctx = useContext(AppDataContext);
+  if (!ctx) throw new Error("useAppData must be used within AppDataProvider");
+  return ctx;
+}

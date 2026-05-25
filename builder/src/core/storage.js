@@ -1,0 +1,65 @@
+import { openDB, STORE_NAMES, waitForRequest } from '../app/state/dbHelpers.js';
+import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_PAGE_SIZE, DEFAULT_SHEET_NAME } from './constants.js';
+
+export const SETTINGS_STORAGE_KEY = "nested_form_builder_settings_v1";
+
+const readJson = async (key) => {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAMES.settings, "readonly");
+    const store = tx.objectStore(STORE_NAMES.settings);
+    const value = await waitForRequest(store.get(key));
+    db.close();
+    return value?.value || null;
+  } catch (err) {
+    console.warn(`[storage] failed to read ${key}`, err);
+    return null;
+  }
+};
+
+export const readSettingsValue = async (key) => readJson(key);
+
+const writeJson = async (key, value) => {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAMES.settings, "readwrite");
+    const store = tx.objectStore(STORE_NAMES.settings);
+    await waitForRequest(store.put({ key, value }));
+    db.close();
+  } catch (err) {
+    console.warn(`[storage] failed to write ${key}`, err);
+  }
+};
+
+export const writeSettingsValue = async (key, value) => writeJson(key, value);
+
+export const DEFAULT_SETTINGS = {
+  sheetName: DEFAULT_SHEET_NAME,
+  theme: "standard",
+  pageSize: DEFAULT_PAGE_SIZE,
+  deletedRetentionDays: DEFAULT_DELETED_RETENTION_DAYS,
+  searchCellMaxChars: "",
+  syncAllFormsTheme: false,
+  formListSortKey: "modifiedAt",
+  formListSortOrder: "desc",
+};
+
+export const loadSettingsFromStorage = async () => {
+  const loaded = await readJson(SETTINGS_STORAGE_KEY);
+  if (!loaded) return { ...DEFAULT_SETTINGS };
+  return { ...DEFAULT_SETTINGS, ...loaded };
+};
+
+export const saveSettingsToStorage = async (settings) => {
+  await writeJson(SETTINGS_STORAGE_KEY, { ...DEFAULT_SETTINGS, ...settings });
+};
+
+const searchDisplayKey = (formId) => `search_display_${formId}`;
+
+export const loadSearchDisplayOverrides = async (formId) => {
+  return await readJson(searchDisplayKey(formId));
+};
+
+export const saveSearchDisplayOverrides = async (formId, overrides) => {
+  await writeJson(searchDisplayKey(formId), overrides);
+};

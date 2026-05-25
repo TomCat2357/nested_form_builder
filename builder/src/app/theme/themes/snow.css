@@ -1,0 +1,114 @@
+/* snow theme — glacial ice, aurora violet, frozen shadows */
+:root[data-theme="snow"] {
+  /* Cool bluish snowfield, not sterile white */
+  --bg: #e8f1fb;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-muted: #dae7f6;
+  --surface-subtle: #f1f6fc;
+  --surface-alt: #c9dcf0;
+  --dialog-bg: #ffffff;
+
+  --border: #b8cce6;
+  --border-muted: #c9d9ec;
+  --border-subtle: #dde8f5;
+  --border-strong: #7a9bc4;
+
+  /* Inky frost — cold near-black */
+  --text: #0c1a2e;
+  --text-strong: #05101e;
+  --text-ink: #1a2a44;
+  --text-muted: #4a5d7c;
+  --text-subtle: #5e708e;
+  --text-faded: #8597b2;
+
+  /* Deep glacier blue — crystalline, saturated */
+  --primary: #1e4fbf;
+  --primary-strong: #143d99;
+  --primary-ink: #0a2866;
+  --primary-ink-strong: #051640;
+  --primary-soft: #c6dcfb;
+  --primary-soft-strong: #9cc1f7;
+  --primary-weak: rgba(30, 79, 191, 0.14);
+  --primary-weak-soft: rgba(30, 79, 191, 0.07);
+  --primary-border-soft: rgba(30, 79, 191, 0.3);
+
+  /* Aurora violet */
+  --warm: #7c3aed;
+  --warm-weak: rgba(124, 58, 237, 0.14);
+  --warm-ink: #4c1d95;
+
+  --success: #0f766e;
+  --success-ink: #042f2e;
+  --success-weak: rgba(15, 118, 110, 0.12);
+
+  --danger: #b91c3c;
+  --danger-bright: #dc2644;
+  --danger-strong: #911432;
+  --danger-ink: #6b0f26;
+  --danger-ink-strong: #450a1a;
+  --danger-weak: #fbe5ea;
+  --danger-weak-strong: #f5c9d2;
+  --danger-border: #e5a6b3;
+  --danger-border-strong: #d48494;
+
+  --warning: #ca8a04;
+  --warning-weak: #fef3c7;
+  --warning-ink: #713f12;
+
+  --info: #0891b2;
+  --info-weak: #cffafe;
+
+  --shadow-sm: 0 1px 3px rgba(10, 40, 102, 0.08), 0 2px 10px rgba(10, 40, 102, 0.06);
+  --shadow-md: 0 14px 34px rgba(10, 40, 102, 0.14), 0 2px 8px rgba(10, 40, 102, 0.06);
+  --shadow-lg: 0 24px 56px rgba(10, 40, 102, 0.2);
+
+  --overlay: rgba(12, 26, 46, 0.4);
+  --overlay-strong: rgba(12, 26, 46, 0.6);
+
+  /* Aurora sky + sparkling snow */
+  --app-bg:
+    radial-gradient(1100px 620px at 12% -12%, rgba(124, 58, 237, 0.22), transparent 60%),
+    radial-gradient(900px 520px at 94% 4%, rgba(30, 79, 191, 0.26), transparent 62%),
+    radial-gradient(900px 500px at 40% 50%, rgba(156, 193, 247, 0.35), transparent 60%),
+    radial-gradient(1000px 550px at 60% 120%, rgba(198, 220, 251, 0.8), transparent 60%),
+    var(--bg);
+  --app-header-bg: rgba(232, 241, 251, 0.88);
+
+  --input-border-focus: rgba(30, 79, 191, 0.5);
+  --input-focus-ring: rgba(30, 79, 191, 0.18);
+
+  --badge-primary-bg: linear-gradient(135deg, rgba(30, 79, 191, 0.98), rgba(124, 58, 237, 0.9));
+  --badge-warm-bg: linear-gradient(135deg, rgba(124, 58, 237, 0.95), rgba(30, 79, 191, 0.86));
+  --badge-ghost-bg: rgba(30, 79, 191, 0.1);
+  --badge-ghost-border: rgba(30, 79, 191, 0.26);
+  --badge-text: rgba(255, 255, 255, 0.96);
+
+  /* Icicle gradient — glass → aurora */
+  --logo-gradient: linear-gradient(135deg, rgba(30, 79, 191, 0.98), rgba(124, 58, 237, 0.94), rgba(156, 193, 247, 0.9));
+  --logo-shadow:
+    0 8px 22px rgba(30, 79, 191, 0.3),
+    0 10px 28px rgba(124, 58, 237, 0.2);
+
+  --panel-header-bg: linear-gradient(180deg, rgba(30, 79, 191, 0.08), transparent);
+  --card-hover-border: rgba(30, 79, 191, 0.36);
+  --btn-primary-bg: linear-gradient(135deg, rgba(30, 79, 191, 0.18), rgba(124, 58, 237, 0.1));
+
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(30, 79, 191, 0),
+    rgba(30, 79, 191, 0.6),
+    rgba(124, 58, 237, 0.4),
+    rgba(30, 79, 191, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(30, 79, 191, 0.98), rgba(124, 58, 237, 0.92));
+  --rail-dot-shadow:
+    0 10px 22px rgba(30, 79, 191, 0.28),
+    0 12px 26px rgba(124, 58, 237, 0.18);
+
+  --if-box-border: rgba(30, 79, 191, 0.24);
+  --if-box-bg: linear-gradient(135deg, rgba(30, 79, 191, 0.12), rgba(124, 58, 237, 0.1));
+  --if-chip-bg: rgba(124, 58, 237, 0.14);
+  --if-chip-border: rgba(124, 58, 237, 0.26);
+  --if-badge-border: rgba(15, 118, 110, 0.22);
+}

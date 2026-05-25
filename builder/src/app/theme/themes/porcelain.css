@@ -1,0 +1,106 @@
+/* porcelain theme — refined off-white with indigo + copper */
+:root[data-theme="porcelain"] {
+  --bg: #fafaf7;
+  --surface: #ffffff;
+  --surface-elevated: #ffffff;
+  --surface-muted: #f5f4ef;
+  --surface-subtle: #fcfcf9;
+  --surface-alt: #efede6;
+  --dialog-bg: #ffffff;
+
+  --border: #e8e5dc;
+  --border-muted: #efece3;
+  --border-subtle: #f5f3ec;
+  --border-strong: #c8c3b4;
+
+  --text: #1c1b18;
+  --text-strong: #0e0d0b;
+  --text-ink: #2d2b26;
+  --text-muted: #5a5750;
+  --text-subtle: #72706a;
+  --text-faded: #9c998f;
+
+  /* primary: deep indigo */
+  --primary: #4338ca;
+  --primary-strong: #3730a3;
+  --primary-ink: #1e1b4b;
+  --primary-ink-strong: #0e0b2e;
+  --primary-soft: #e0e7ff;
+  --primary-soft-strong: #c7d2fe;
+  --primary-weak: rgba(67, 56, 202, 0.08);
+  --primary-weak-soft: rgba(67, 56, 202, 0.04);
+  --primary-border-soft: rgba(67, 56, 202, 0.2);
+
+  /* warm: copper */
+  --warm: #b45309;
+  --warm-weak: rgba(180, 83, 9, 0.1);
+  --warm-ink: #78350f;
+
+  --success: #15803d;
+  --success-ink: #14532d;
+  --success-weak: rgba(21, 128, 61, 0.09);
+
+  --danger: #b91c1c;
+  --danger-bright: #dc2626;
+  --danger-strong: #991b1b;
+  --danger-ink: #7f1d1d;
+  --danger-ink-strong: #661515;
+  --danger-weak: #fef2f2;
+  --danger-weak-strong: #fee2e2;
+  --danger-border: #fecaca;
+  --danger-border-strong: #fca5a5;
+
+  --warning: #b45309;
+  --warning-weak: #fef3c7;
+  --warning-ink: #78350f;
+
+  --info: #0369a1;
+  --info-weak: #e0f2fe;
+
+  --shadow-sm: 0 1px 2px rgba(28, 27, 24, 0.04), 0 2px 8px rgba(28, 27, 24, 0.04);
+  --shadow-md: 0 10px 28px rgba(28, 27, 24, 0.08), 0 2px 6px rgba(28, 27, 24, 0.04);
+  --shadow-lg: 0 24px 56px rgba(28, 27, 24, 0.14);
+
+  --overlay: rgba(28, 27, 24, 0.36);
+  --overlay-strong: rgba(28, 27, 24, 0.56);
+
+  --app-bg:
+    radial-gradient(1100px 600px at 8% -10%, rgba(67, 56, 202, 0.08), transparent 62%),
+    radial-gradient(900px 520px at 95% 0%, rgba(180, 83, 9, 0.07), transparent 60%),
+    var(--bg);
+  --app-header-bg: rgba(250, 250, 247, 0.82);
+
+  --input-border-focus: rgba(67, 56, 202, 0.36);
+  --input-focus-ring: rgba(67, 56, 202, 0.1);
+
+  --badge-primary-bg: linear-gradient(135deg, rgba(67, 56, 202, 0.95), rgba(55, 48, 163, 0.88));
+  --badge-warm-bg: linear-gradient(135deg, rgba(180, 83, 9, 0.92), rgba(146, 64, 14, 0.82));
+  --badge-ghost-bg: rgba(67, 56, 202, 0.06);
+  --badge-ghost-border: rgba(67, 56, 202, 0.16);
+  --badge-text: rgba(255, 255, 255, 0.96);
+
+  --logo-gradient: linear-gradient(135deg, rgba(67, 56, 202, 0.95), rgba(180, 83, 9, 0.82));
+  --logo-shadow:
+    0 8px 22px rgba(67, 56, 202, 0.16),
+    0 10px 24px rgba(180, 83, 9, 0.08);
+
+  --panel-header-bg: linear-gradient(180deg, rgba(67, 56, 202, 0.04), transparent);
+  --card-hover-border: rgba(28, 27, 24, 0.16);
+  --btn-primary-bg: linear-gradient(180deg, rgba(67, 56, 202, 0.07), rgba(67, 56, 202, 0.03));
+
+  --rail-gradient: linear-gradient(
+    180deg,
+    rgba(67, 56, 202, 0),
+    rgba(67, 56, 202, 0.42),
+    rgba(180, 83, 9, 0.2),
+    rgba(67, 56, 202, 0)
+  );
+  --rail-dot-bg: linear-gradient(135deg, rgba(67, 56, 202, 0.95), rgba(180, 83, 9, 0.82));
+  --rail-dot-shadow: 0 8px 18px rgba(67, 56, 202, 0.16);
+
+  --if-box-border: rgba(180, 83, 9, 0.18);
+  --if-box-bg: linear-gradient(135deg, rgba(180, 83, 9, 0.07), rgba(67, 56, 202, 0.05));
+  --if-chip-bg: rgba(180, 83, 9, 0.1);
+  --if-chip-border: rgba(180, 83, 9, 0.18);
+  --if-badge-border: rgba(21, 128, 61, 0.18);
+}

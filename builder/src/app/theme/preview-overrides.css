@@ -1,0 +1,177 @@
+/* preview-overrides.css
+   Purpose: match ui_preview_balanced.html look & feel (buttons, cards, rails) */
+
+/* 1) Minor tuning: preview uses radius-sm ~ 10px */
+:root,
+:root[data-theme="balanced"] {
+  --radius-sm: 10px;
+  /* Slightly round cards compared to existing radius-md */
+  --radius-md: 14px;
+}
+
+/* 2) Header: transparent + blur + spacing (override inline AppLayout styles) */
+header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border);
+
+  background: var(--app-header-bg);
+  backdrop-filter: blur(10px);
+}
+
+/* 3) Buttons: pill shape + shadow + hover (strong override for inline styles) */
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  padding: 9px 12px;
+  border-radius: 999px;
+
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--button-text, var(--text, #1f2937));
+  box-shadow: var(--shadow-sm);
+
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  user-select: none;
+
+  transition:
+    transform 0.16s ease,
+    box-shadow 0.16s ease,
+    border-color 0.16s ease,
+    background 0.16s ease,
+    filter 0.16s ease;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--card-hover-border);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: var(--shadow-sm);
+}
+
+button:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 4px var(--input-focus-ring), var(--shadow-sm);
+}
+
+/* 3-1) primaryStrong-style buttons (inline background: var(--primary-strong)) */
+button[style*="background: var(--primary-strong)"],
+button[style*="background:var(--primary-strong)"] {
+  background: linear-gradient(135deg, var(--primary, #2f6fed), var(--primary-strong, var(--primary, #2563eb)));
+  border-color: var(--primary-border-soft, rgba(47, 111, 237, 0.22));
+  color: rgba(255, 255, 255, 0.96);
+  filter: saturate(1.02);
+}
+
+/* 3-2) dangerStrong buttons */
+button[style*="background: var(--danger-strong)"],
+button[style*="background:var(--danger-strong)"] {
+  background: linear-gradient(135deg, var(--danger-bright, #ef4444), var(--danger-strong, var(--danger, #dc2626)));
+  border-color: var(--danger-border-strong, rgba(225, 29, 72, 0.35));
+  color: rgba(255, 255, 255, 0.96);
+}
+
+/* 3-2b) dialog button variants (avoid global button override) */
+.dialog-btn.primary {
+  background: linear-gradient(135deg, var(--primary, #2f6fed), var(--primary-strong, var(--primary, #2563eb)));
+  border-color: var(--primary-border-soft, rgba(47, 111, 237, 0.22));
+  color: var(--button-solid-text, #fff);
+}
+
+.dialog-btn.danger {
+  background: linear-gradient(135deg, var(--danger-bright, #ef4444), var(--danger-strong, var(--danger, #dc2626)));
+  border-color: var(--danger-border-strong, rgba(225, 29, 72, 0.35));
+  color: var(--button-solid-text, #fff);
+}
+
+/* 3-3) Optional .btn class (preview primary button look) */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  font-size: 12px;
+  color: var(--text);
+  user-select: none;
+}
+
+.btn.primary {
+  border-color: var(--primary-border-soft);
+  background: var(--btn-primary-bg);
+}
+
+/* 4) Inputs: keep simple radius, reduce heavy shadows (override inline styles) */
+input,
+select,
+textarea {
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* 5) Cards: add shadow + hover for bordered blocks (inline style detection) */
+div[style*="border: 1px solid var(--border)"][style*="border-radius: var(--radius-md)"],
+div[style*="border: 1px solid var(--border)"][style*="border-radius: var(--radius-lg)"] {
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+}
+
+div[style*="border: 1px solid var(--border)"][style*="border-radius: var(--radius-md)"]:hover,
+div[style*="border: 1px solid var(--border)"][style*="border-radius: var(--radius-lg)"]:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--card-hover-border);
+}
+
+/* 6) Hierarchy rails (override editor child border-left) */
+div[style*="border-left: 2px solid var(--border)"] {
+  position: relative;
+  border-left: none;
+  padding-left: 18px;
+}
+
+div[style*="border-left: 2px solid var(--border)"]::before {
+  content: "";
+  position: absolute;
+  left: 6px;
+  top: 10px;
+  bottom: 10px;
+  width: 2px;
+  background: var(--rail-gradient);
+}
+
+div[style*="border-left: 2px solid var(--border)"]::after {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 14px;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--rail-dot-bg);
+  box-shadow: var(--rail-dot-shadow);
+}
+
+/* 7) Text tone: slightly tighter tracking for headings */
+h1,
+h2,
+h3 {
+  letter-spacing: -0.01em;
+}

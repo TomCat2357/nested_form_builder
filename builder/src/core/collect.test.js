@@ -1,0 +1,181 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { buildFileUploadEntry, collectResponses, sortResponses } from "./collect.js";
+
+test("collectResponses: time フィールドは timePrecision に応じた幅で正規化保存する", () => {
+  const run = (precision) => {
+    const schema = [{ id: "q_t", type: "time", label: "時刻", timePrecision: precision }];
+    const out = collectResponses(schema, { q_t: "12:34:56.789" });
+    return out["時刻"];
+  };
+  assert.equal(run("minute"), "12:34");
+  assert.equal(run("second"), "12:34:56");
+  assert.equal(run("millisecond"), "12:34:56.789");
+  // precision 未指定は既定（秒）
+  const out = collectResponses([{ id: "q_t", type: "time", label: "時刻" }], { q_t: "12:34:56.789" });
+  assert.equal(out["時刻"], "12:34:56");
+});
+
+test("sortResponsesはチェックボックス選択順ではなくフォーム設定順でキーを並べる", () => {
+  const schema = [
+    {
+      id: "q_parent",
+      type: "checkboxes",
+      label: "親",
+      options: [
+        { id: "opt_b", label: "B" },
+        { id: "opt_a", label: "A" },
+      ],
+      childrenByValue: {
+        A: [{ id: "q_a", type: "text", label: "A子" }],
+        B: [{ id: "q_b", type: "text", label: "B子" }],
+      },
+    },
+  ];
+  const responses = {
+    q_parent: ["A", "B"],
+    q_a: "a-value",
+    q_b: "b-value",
+  };
+
+  const raw = collectResponses(schema, responses);
+  const sorted = sortResponses(raw, schema);
+
+  assert.deepEqual(sorted.keys, ["親|B", "親|A", "親|B|B子", "親|A|A子"]);
+  assert.deepEqual(Object.keys(sorted.map), ["親|B", "親|A", "親|B|B子", "親|A|A子"]);
+  assert.equal(sorted.map["親|B"], "●");
+  assert.equal(sorted.map["親|A"], "●");
+  assert.equal(sorted.map["親|B|B子"], "b-value");
+  assert.equal(sorted.map["親|A|A子"], "a-value");
+});
+
+test("collectResponsesは電話番号を単一値として出力する", () => {
+  const schema = [
+    { id: "q_phone", type: "phone", label: "電話番号" },
+  ];
+  const responses = {
+    q_phone: "090-1234-5678",
+  };
+
+  const raw = collectResponses(schema, responses);
+  assert.equal(raw["電話番号"], "090-1234-5678");
+});
+
+test("buildFileUploadEntry は GAS 応答をファイルエントリ形式に整形する", () => {
+  assert.deepEqual(
+    buildFileUploadEntry({ fileName: "a.pdf", fileId: "id_1", fileUrl: "https://drive/1" }),
+    { name: "a.pdf", driveFileId: "id_1", driveFileUrl: "https://drive/1" },
+  );
+});
+
+test("buildFileUploadEntry は欠損フィールドを空文字で埋める", () => {
+  assert.deepEqual(
+    buildFileUploadEntry({ fileName: "b.png" }),
+    { name: "b.png", driveFileId: "", driveFileUrl: "" },
+  );
+  assert.deepEqual(
+    buildFileUploadEntry({}),
+    { name: "", driveFileId: "", driveFileUrl: "" },
+  );
+  assert.deepEqual(
+    buildFileUploadEntry(null),
+    { name: "", driveFileId: "", driveFileUrl: "" },
+  );
+});
+
+test("collectResponses は date 型値を YYYY/MM/DD に正規化する（時刻成分を削ぎ落とす）", () => {
+  const schema = [
+    { id: "q_date", type: "date", label: "受付日" },
+  ];
+  // ISO 形式に時刻が混じったケース：時刻成分は削ぎ落とされる
+  const raw = collectResponses(schema, { q_date: "2026-03-14T15:30:45" });
+  assert.equal(raw["受付日"], "2026/03/14");
+});
+
+test("collectResponses は time 型値を HH:mm:ss に正規化する（日付成分を削ぎ落とす）", () => {
+  const schema = [
+    { id: "q_time", type: "time", label: "受付時刻" },
+  ];
+  // 日付付きの time 値が入ってきたら時刻のみ残す（基準日 1899-12-30 は GAS 側で付与）
+  const raw = collectResponses(schema, { q_time: "2026-03-14 09:30:00" });
+  assert.equal(raw["受付時刻"], "09:30:00");
+});
+
+test("collectResponses は date / time の canonical 入力をそのままの意味で出力する", () => {
+  const schema = [
+    { id: "q_date", type: "date", label: "受付日" },
+    { id: "q_time", type: "time", label: "受付時刻" },
+  ];
+  const raw = collectResponses(schema, { q_date: "2026-03-14", q_time: "09:30" });
+  assert.equal(raw["受付日"], "2026/03/14");
+  assert.equal(raw["受付時刻"], "09:30:00");
+});
+
+test("collectResponses は不正な date / time 値をエントリから除外する", () => {
+  const schema = [
+    { id: "q_date", type: "date", label: "受付日" },
+    { id: "q_time", type: "time", label: "受付時刻" },
+  ];
+  const raw = collectResponses(schema, { q_date: "invalid", q_time: "not-a-time" });
+  assert.equal(Object.prototype.hasOwnProperty.call(raw, "受付日"), false);
+  assert.equal(Object.prototype.hasOwnProperty.call(raw, "受付時刻"), false);
+});
+
+test("collectResponses は number 型の文字列入力を Number に変換して出力する", () => {
+  const schema = [
+    { id: "q_qty", type: "number", label: "数量" },
+  ];
+  const raw = collectResponses(schema, { q_qty: "3" });
+  assert.equal(raw["数量"], 3);
+  assert.equal(typeof raw["数量"], "number");
+});
+
+test("collectResponses は number 型の小数・負数を Number に変換する", () => {
+  const schema = [
+    { id: "q_a", type: "number", label: "値A" },
+    { id: "q_b", type: "number", label: "値B" },
+  ];
+  const raw = collectResponses(schema, { q_a: "-3.14", q_b: "1e3" });
+  assert.equal(raw["値A"], -3.14);
+  assert.equal(raw["値B"], 1000);
+});
+
+test("collectResponses は既に number で来た値もそのまま number で出す", () => {
+  const schema = [
+    { id: "q_qty", type: "number", label: "数量" },
+  ];
+  const raw = collectResponses(schema, { q_qty: 42 });
+  assert.equal(raw["数量"], 42);
+  assert.equal(typeof raw["数量"], "number");
+});
+
+test("collectResponses は number 型の不正値（数値でない文字列）をエントリから除外する", () => {
+  const schema = [
+    { id: "q_qty", type: "number", label: "数量" },
+  ];
+  const raw = collectResponses(schema, { q_qty: "abc" });
+  assert.equal(Object.prototype.hasOwnProperty.call(raw, "数量"), false);
+});
+
+test("collectResponses と sortResponses は printTemplate を回答データに含めない", () => {
+  const schema = [
+    { id: "q_name", type: "text", label: "氏名" },
+    {
+      id: "q_print",
+      type: "printTemplate",
+      label: "様式出力",
+      printTemplateAction: { enabled: true, fileNameTemplate: "print_${recordId}" },
+    },
+  ];
+  const responses = {
+    q_name: "山田太郎",
+    q_print: "ignored",
+  };
+
+  const raw = collectResponses(schema, responses);
+  const sorted = sortResponses(raw, schema);
+
+  assert.deepEqual(raw, { 氏名: "山田太郎" });
+  assert.deepEqual(sorted.keys, ["氏名"]);
+  assert.deepEqual(sorted.map, { 氏名: "山田太郎" });
+});
