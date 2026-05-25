@@ -1,5 +1,5 @@
 import { openDB, STORE_NAMES, waitForRequest } from '../app/state/dbHelpers.js';
-import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_PAGE_SIZE, DEFAULT_SHEET_NAME } from './constants.js';
+import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_PAGE_SIZE, DEFAULT_SEARCH_DEBOUNCE_MS, DEFAULT_SHEET_NAME } from './constants.js';
 
 export const SETTINGS_STORAGE_KEY = "nested_form_builder_settings_v1";
 
@@ -37,6 +37,7 @@ export const DEFAULT_SETTINGS = {
   sheetName: DEFAULT_SHEET_NAME,
   theme: "standard",
   pageSize: DEFAULT_PAGE_SIZE,
+  searchDebounceMs: DEFAULT_SEARCH_DEBOUNCE_MS,
   deletedRetentionDays: DEFAULT_DELETED_RETENTION_DAYS,
   searchCellMaxChars: "",
   syncAllFormsTheme: false,
