@@ -55,6 +55,7 @@ function makeEntityClient(entity) {
     [`list${E}Folders`]: () => fetchAnalyticsApi_(`nfbListAnalytics${E}Folders`, undefined, `${E} フォルダ一覧取得に失敗しました`),
     [`create${E}Folder`]: (path) => fetchAnalyticsApi_(`nfbCreateAnalytics${E}Folder`, path, `${E} フォルダ作成に失敗しました`),
     [`move${E}s`]: (payload) => fetchAnalyticsApi_(`nfbMoveAnalytics${E}s`, payload, `${E} 移動に失敗しました`),
+    [`rename${E}Folder`]: (payload) => fetchAnalyticsApi_(`nfbRenameAnalytics${E}Folder`, payload, `${E} フォルダ名変更に失敗しました`),
     [`delete${E}Folder`]: (path) => fetchAnalyticsApi_(`nfbDeleteAnalytics${E}Folder`, path, `${E} フォルダ削除に失敗しました`),
   };
 }

@@ -406,6 +406,13 @@ export function AppDataProvider({ children }) {
     return result;
   }, [refreshForms]);
 
+  // フォルダ名変更（親は保持し leaf 名だけ変更）。配下フォームの folder が変わるため一覧を再取得する。
+  const renameFolder = useCallback(async (payload) => {
+    const result = await dataStore.renameFolder(payload);
+    await refreshForms({ reason: "rename-folder", background: false });
+    return result;
+  }, [refreshForms]);
+
   // フォルダ削除（配下フォームも削除）。一覧を再取得して反映する。
   const deleteFolder = useCallback(async (path) => {
     const result = await dataStore.deleteFolder(path);
@@ -432,6 +439,7 @@ export function AppDataProvider({ children }) {
       registeredFolders,
       createFolder,
       moveItems,
+      renameFolder,
       deleteFolder,
       refreshForms,
       createForm,
@@ -452,7 +460,7 @@ export function AppDataProvider({ children }) {
       getFormById,
       registerImportedForm,
     }),
-    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, registeredFolders, createFolder, moveItems, deleteFolder, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteForm, importForms, exportForms, copyForm, getFormById, registerImportedForm],
+    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteForm, importForms, exportForms, copyForm, getFormById, registerImportedForm],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;

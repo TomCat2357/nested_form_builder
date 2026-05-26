@@ -187,44 +187,14 @@ function Analytics_moveItems_(type, payload) {
   return WithScriptLock_("アナリティクス フォルダ/アイテム移動", function() {
     var movedIds = [];
 
-    // 1) フォルダ移動（prefix 置換）
+    // 1) フォルダ移動（leaf 名を保持して destPath 配下へ。prefix 置換は relocate コアへ集約）
     var registry = Analytics_getFolders_(type);
     for (var i = 0; i < folderPaths.length; i++) {
       var old = folderPaths[i];
       var leaf = old.split("/").pop();
       var next = destPath ? destPath + "/" + leaf : leaf;
       if (next === old) continue;
-
-      // 登録簿のパス置換（old と子孫）
-      registry = registry.map(function(p) {
-        if (p === old) return next;
-        if (p.indexOf(old + "/") === 0) return next + p.slice(old.length);
-        return p;
-      });
-      registry.push(next);
-
-      // 配下アイテムの folder 置換
-      var underIds = Analytics_collectItemIdsUnderFolder_(type, old);
-      for (var u = 0; u < underIds.length; u++) {
-        var aId = underIds[u];
-        // アイテムの現在の folder 値を取得して新パスに変換
-        var mapping = Analytics_getMapping_(type);
-        var entry = mapping[aId];
-        var fileId = Nfb_resolveFileIdFromEntry_(entry);
-        if (!fileId) continue;
-        try {
-          var file = DriveApp.getFileById(fileId);
-          var json = JSON.parse(file.getBlob().getDataAsString());
-          var folder = Forms_normalizeFolderPath_(json.folder);
-          var newFolder = (folder === old) ? next : (next + folder.slice(old.length));
-          json.folder = newFolder;
-          json.modifiedAt = Date.now();
-          file.setContent(JSON.stringify(json, null, 2));
-          movedIds.push(aId);
-        } catch (err) {
-          Logger.log("[Analytics_moveItems_] Failed to update folder for " + aId + ": " + err);
-        }
-      }
+      registry = Analytics_relocateFolderPaths_(type, registry, old, next, movedIds);
     }
     if (folderPaths.length) Analytics_saveFoldersRegistry_(type, registry);
 
@@ -233,6 +203,77 @@ function Analytics_moveItems_(type, payload) {
       if (Analytics_setItemFolder_(type, itemIds[f], destPath)) movedIds.push(itemIds[f]);
     }
 
+    return { ok: true, folders: Analytics_collectFolders_(type), movedIds: movedIds };
+  });
+}
+
+// 単一フォルダの old → next 付け替えコア（移動・リネーム共通）。
+//   - 登録簿の old とその子孫パスを prefix 置換し、next を追加する。
+//   - 配下アイテムの folder フィールドも同じ prefix 置換で Drive 上で書き換える。
+// 更新後の registry を返し、書き換えたアイテム ID を movedIds に push する。
+function Analytics_relocateFolderPaths_(type, registry, old, next, movedIds) {
+  var updated = registry.map(function(p) {
+    if (p === old) return next;
+    if (p.indexOf(old + "/") === 0) return next + p.slice(old.length);
+    return p;
+  });
+  updated.push(next);
+
+  var underIds = Analytics_collectItemIdsUnderFolder_(type, old);
+  for (var u = 0; u < underIds.length; u++) {
+    var aId = underIds[u];
+    var mapping = Analytics_getMapping_(type);
+    var entry = mapping[aId];
+    var fileId = Nfb_resolveFileIdFromEntry_(entry);
+    if (!fileId) continue;
+    try {
+      var file = DriveApp.getFileById(fileId);
+      var json = JSON.parse(file.getBlob().getDataAsString());
+      var folder = Forms_normalizeFolderPath_(json.folder);
+      var newFolder = (folder === old) ? next : (next + folder.slice(old.length));
+      json.folder = newFolder;
+      json.modifiedAt = Date.now();
+      file.setContent(JSON.stringify(json, null, 2));
+      movedIds.push(aId);
+    } catch (err) {
+      Logger.log("[Analytics_relocateFolderPaths_] Failed to update folder for " + type + "/" + aId + ": " + err);
+    }
+  }
+  return updated;
+}
+
+// フォルダのリネーム（mv の rename 相当）。親パスは保持し leaf 名だけを newName に変える。
+//   path   : リネーム対象フォルダパス
+//   newName: 新しい leaf 名（単一セグメント。"/" は不可）
+// 同名フォルダが既に存在する場合はマージせずエラーにする。
+function Analytics_renameFolder_(type, payload) {
+  var raw = payload || {};
+  var old = Forms_normalizeFolderPath_(raw.path);
+  if (!old) {
+    return { ok: false, error: "リネームするフォルダを指定してください" };
+  }
+  var newName = (typeof raw.newName === "string") ? raw.newName.trim() : "";
+  if (!newName) {
+    return { ok: false, error: "新しいフォルダ名を入力してください" };
+  }
+  if (newName.indexOf("/") !== -1) {
+    return { ok: false, error: "フォルダ名に「/」は使用できません" };
+  }
+  var segs = old.split("/");
+  segs.pop();
+  var parent = segs.join("/");
+  var next = parent ? parent + "/" + newName : newName;
+  if (next === old) {
+    return { ok: true, folders: Analytics_collectFolders_(type), movedIds: [] };
+  }
+  var known = Analytics_collectFolders_(type);
+  if (known.indexOf(next) !== -1) {
+    return { ok: false, error: "同名のフォルダ「" + next + "」が既に存在します" };
+  }
+  return WithScriptLock_("アナリティクス フォルダ名変更", function() {
+    var movedIds = [];
+    var registry = Analytics_relocateFolderPaths_(type, Analytics_getFolders_(type), old, next, movedIds);
+    Analytics_saveFoldersRegistry_(type, registry);
     return { ok: true, folders: Analytics_collectFolders_(type), movedIds: movedIds };
   });
 }

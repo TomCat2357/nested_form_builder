@@ -12,6 +12,7 @@ import { buildSharedFormUrl } from "../../utils/formShareUrl.js";
 import ImportUrlDialog from "./AdminImportUrlDialog.jsx";
 import AdminNewFolderDialog from "./AdminNewFolderDialog.jsx";
 import AdminMoveDialog from "./AdminMoveDialog.jsx";
+import AdminRenameFolderDialog from "./AdminRenameFolderDialog.jsx";
 import { useAdminFormListActions } from "./useAdminFormListActions.js";
 import { useFolderBrowser } from "../../features/folders/useFolderBrowser.js";
 import FolderSearchBar from "../../features/folders/FolderSearchBar.jsx";
@@ -31,7 +32,7 @@ const formatDisplayFieldsSummary = (form) => {
 };
 
 export default function AdminFormListPage() {
-  const { forms, loadFailures, loadingForms, lastSyncedAt, registeredFolders, createFolder, moveItems, deleteFolder, archiveForms, unarchiveForms, setFormsReadOnly, clearFormsReadOnly, deleteForms, refreshForms, exportForms, copyForm, registerImportedForm } = useAppData();
+  const { forms, loadFailures, loadingForms, lastSyncedAt, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, archiveForms, unarchiveForms, setFormsReadOnly, clearFormsReadOnly, deleteForms, refreshForms, exportForms, copyForm, registerImportedForm } = useAppData();
   useBuilderSettings();
   const navigate = useNavigate();
   const { showAlert } = useAlert();
@@ -130,6 +131,14 @@ export default function AdminFormListPage() {
     handleMoveSelected,
     confirmMove,
     closeMoveDialog,
+    renameDialogState,
+    renameName,
+    setRenameName,
+    renameError,
+    setRenameError,
+    handleRenameSelectedFolder,
+    confirmRenameFolder,
+    closeRenameDialog,
   } = useAdminFormListActions({
     sortedForms,
     selected,
@@ -151,6 +160,7 @@ export default function AdminFormListPage() {
     currentPath: browser.currentPath,
     createFolder,
     moveItems,
+    renameFolder,
     deleteFolder,
   });
 
@@ -212,6 +222,14 @@ export default function AdminFormListPage() {
             disabled={selected.size === 0 && selectedFolders.size === 0}
           >
             移動
+          </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-13"
+            onClick={handleRenameSelectedFolder}
+            disabled={selected.size !== 0 || selectedFolders.size !== 1}
+          >
+            名前変更
           </button>
           <button
             type="button"
@@ -524,6 +542,16 @@ export default function AdminFormListPage() {
         onConfirm={confirmMove}
         onCancel={closeMoveDialog}
         error={moveError}
+      />
+
+      <AdminRenameFolderDialog
+        open={renameDialogState.open}
+        currentName={renameDialogState.currentName}
+        value={renameName}
+        onChange={(v) => { setRenameName(v); if (renameError) setRenameError(""); }}
+        onConfirm={confirmRenameFolder}
+        onCancel={closeRenameDialog}
+        error={renameError}
       />
     </AppLayout>
   );

@@ -11,6 +11,7 @@ import {
   listQuestionFolders,
   createQuestionFolder,
   moveQuestions,
+  renameQuestionFolder,
   deleteQuestionFolder,
 } from "../../features/analytics/analyticsStore.js";
 import AdminAnalyticsListPage from "./AdminAnalyticsListPage.jsx";
@@ -27,6 +28,7 @@ const store = {
   listFolders: listQuestionFolders,
   createFolder: createQuestionFolder,
   moveItems: moveQuestions,
+  renameFolder: renameQuestionFolder,
   deleteFolder: deleteQuestionFolder,
 };
 

@@ -34,6 +34,7 @@ import {
   copyForm as copyFormFromGas,
   createFolder as createFolderInGas,
   moveItems as moveItemsInGas,
+  renameFolder as renameFolderInGas,
   deleteFolder as deleteFolderInGas,
   syncRecordsProxy,
 } from "../../services/gasClient.js";
@@ -105,6 +106,13 @@ export const dataStore = {
   },
   async moveItems(payload) {
     const result = await moveItemsInGas(payload);
+    return {
+      folders: Array.isArray(result.folders) ? result.folders : [],
+      movedFormIds: Array.isArray(result.movedFormIds) ? result.movedFormIds : [],
+    };
+  },
+  async renameFolder(payload) {
+    const result = await renameFolderInGas(payload);
     return {
       folders: Array.isArray(result.folders) ? result.folders : [],
       movedFormIds: Array.isArray(result.movedFormIds) ? result.movedFormIds : [],

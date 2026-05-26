@@ -87,10 +87,12 @@ var ANALYTICS_HANDLERS_ = {
   "analytics_questions_folders_list":     { type: "questions",  mode: "folders_list" },
   "analytics_questions_folder_create":    { type: "questions",  mode: "folder_create" },
   "analytics_questions_move":             { type: "questions",  mode: "folder_move" },
+  "analytics_questions_folder_rename":    { type: "questions",  mode: "folder_rename" },
   "analytics_questions_folder_delete":    { type: "questions",  mode: "folder_delete" },
   "analytics_dashboards_folders_list":    { type: "dashboards", mode: "folders_list" },
   "analytics_dashboards_folder_create":   { type: "dashboards", mode: "folder_create" },
   "analytics_dashboards_move":            { type: "dashboards", mode: "folder_move" },
+  "analytics_dashboards_folder_rename":   { type: "dashboards", mode: "folder_rename" },
   "analytics_dashboards_folder_delete":   { type: "dashboards", mode: "folder_delete" }
 };
 
@@ -111,6 +113,7 @@ function Analytics_dispatch_(action, ctx) {
     case "folders_list":  return Analytics_listFolders_(def.type);
     case "folder_create": return Analytics_createFolder_(def.type, raw.path);
     case "folder_move":   return Analytics_moveItems_(def.type, raw || {});
+    case "folder_rename": return Analytics_renameFolder_(def.type, raw || {});
     case "folder_delete": return Analytics_deleteFolder_(def.type, raw.path);
   }
   throw new Error("Unknown analytics action: " + action);
@@ -145,10 +148,12 @@ function AnalyticsApi_RegisterImportedDashboard_(ctx) { return Analytics_dispatc
 function AnalyticsApi_ListQuestionFolders_(ctx)        { return Analytics_dispatch_("analytics_questions_folders_list",    ctx); }
 function AnalyticsApi_CreateQuestionFolder_(ctx)       { return Analytics_dispatch_("analytics_questions_folder_create",   ctx); }
 function AnalyticsApi_MoveQuestions_(ctx)              { return Analytics_dispatch_("analytics_questions_move",            ctx); }
+function AnalyticsApi_RenameQuestionFolder_(ctx)       { return Analytics_dispatch_("analytics_questions_folder_rename",   ctx); }
 function AnalyticsApi_DeleteQuestionFolder_(ctx)       { return Analytics_dispatch_("analytics_questions_folder_delete",   ctx); }
 function AnalyticsApi_ListDashboardFolders_(ctx)       { return Analytics_dispatch_("analytics_dashboards_folders_list",   ctx); }
 function AnalyticsApi_CreateDashboardFolder_(ctx)      { return Analytics_dispatch_("analytics_dashboards_folder_create",  ctx); }
 function AnalyticsApi_MoveDashboards_(ctx)             { return Analytics_dispatch_("analytics_dashboards_move",           ctx); }
+function AnalyticsApi_RenameDashboardFolder_(ctx)      { return Analytics_dispatch_("analytics_dashboards_folder_rename",  ctx); }
 function AnalyticsApi_DeleteDashboardFolder_(ctx)      { return Analytics_dispatch_("analytics_dashboards_folder_delete",  ctx); }
 
 // ---- single-id archive 結果のラップ ----
@@ -196,8 +201,10 @@ function nfbRegisterImportedAnalyticsDashboard(payload)  { return Analytics_runS
 function nfbListAnalyticsQuestionFolders()               { return Analytics_runScriptAction_("analytics_questions_folders_list",    {}); }
 function nfbCreateAnalyticsQuestionFolder(path)          { return Analytics_runScriptAction_("analytics_questions_folder_create",   { path: path }); }
 function nfbMoveAnalyticsQuestions(payload)              { return Analytics_runScriptAction_("analytics_questions_move",            payload); }
+function nfbRenameAnalyticsQuestionFolder(payload)       { return Analytics_runScriptAction_("analytics_questions_folder_rename",   payload); }
 function nfbDeleteAnalyticsQuestionFolder(path)          { return Analytics_runScriptAction_("analytics_questions_folder_delete",   { path: path }); }
 function nfbListAnalyticsDashboardFolders()              { return Analytics_runScriptAction_("analytics_dashboards_folders_list",   {}); }
 function nfbCreateAnalyticsDashboardFolder(path)         { return Analytics_runScriptAction_("analytics_dashboards_folder_create",  { path: path }); }
 function nfbMoveAnalyticsDashboards(payload)             { return Analytics_runScriptAction_("analytics_dashboards_move",           payload); }
+function nfbRenameAnalyticsDashboardFolder(payload)      { return Analytics_runScriptAction_("analytics_dashboards_folder_rename",  payload); }
 function nfbDeleteAnalyticsDashboardFolder(path)         { return Analytics_runScriptAction_("analytics_dashboards_folder_delete",  { path: path }); }

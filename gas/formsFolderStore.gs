@@ -190,32 +190,14 @@ function Forms_moveItems_(payload) {
   return WithScriptLock_("フォルダ/フォーム移動", function() {
     var movedFormIds = [];
 
-    // 1) フォルダ移動（prefix 置換）
+    // 1) フォルダ移動（leaf 名を保持して destPath 配下へ。prefix 置換は relocate コアへ集約）
     var registry = Forms_getFolders_();
     for (var i = 0; i < folderPaths.length; i++) {
       var old = folderPaths[i];
       var leaf = old.split("/").pop();
       var next = destPath ? destPath + "/" + leaf : leaf;
       if (next === old) continue;
-
-      // 登録簿のパス置換（old と子孫）
-      registry = registry.map(function(p) {
-        if (p === old) return next;
-        if (p.indexOf(old + "/") === 0) return next + p.slice(old.length);
-        return p;
-      });
-      registry.push(next);
-
-      // 配下フォームの folder 置換
-      var underIds = Forms_collectFormIdsUnderFolder_(old);
-      for (var u = 0; u < underIds.length; u++) {
-        var fId = underIds[u];
-        var form = Forms_getForm_(fId);
-        if (!form) continue;
-        var folder = Forms_normalizeFolderPath_(form.folder);
-        var newFolder = (folder === old) ? next : (next + folder.slice(old.length));
-        if (Forms_setFormFolder_(fId, newFolder)) movedFormIds.push(fId);
-      }
+      registry = Forms_relocateFolderPaths_(registry, old, next, movedFormIds);
     }
     if (folderPaths.length) Forms_saveFolders_(registry);
 
@@ -224,6 +206,66 @@ function Forms_moveItems_(payload) {
       if (Forms_setFormFolder_(formIds[f], destPath)) movedFormIds.push(formIds[f]);
     }
 
+    return { ok: true, folders: Forms_collectFolders_(), movedFormIds: movedFormIds };
+  });
+}
+
+// 単一フォルダの old → next 付け替えコア（移動・リネーム共通）。
+//   - 登録簿の old とその子孫パスを prefix 置換し、next を追加する。
+//   - 配下フォームの folder フィールドも同じ prefix 置換で書き換える。
+// 更新後の registry を返し、書き換えたフォーム ID を movedFormIds に push する。
+function Forms_relocateFolderPaths_(registry, old, next, movedFormIds) {
+  var updated = registry.map(function(p) {
+    if (p === old) return next;
+    if (p.indexOf(old + "/") === 0) return next + p.slice(old.length);
+    return p;
+  });
+  updated.push(next);
+
+  var underIds = Forms_collectFormIdsUnderFolder_(old);
+  for (var u = 0; u < underIds.length; u++) {
+    var fId = underIds[u];
+    var form = Forms_getForm_(fId);
+    if (!form) continue;
+    var folder = Forms_normalizeFolderPath_(form.folder);
+    var newFolder = (folder === old) ? next : (next + folder.slice(old.length));
+    if (Forms_setFormFolder_(fId, newFolder)) movedFormIds.push(fId);
+  }
+  return updated;
+}
+
+// フォルダのリネーム（mv の rename 相当）。親パスは保持し leaf 名だけを newName に変える。
+//   path   : リネーム対象フォルダパス
+//   newName: 新しい leaf 名（単一セグメント。"/" は不可）
+// 同名フォルダが既に存在する場合はマージせずエラーにする。
+function Forms_renameFolder_(payload) {
+  var raw = payload || {};
+  var old = Forms_normalizeFolderPath_(raw.path);
+  if (!old) {
+    return { ok: false, error: "リネームするフォルダを指定してください" };
+  }
+  var newName = (typeof raw.newName === "string") ? raw.newName.trim() : "";
+  if (!newName) {
+    return { ok: false, error: "新しいフォルダ名を入力してください" };
+  }
+  if (newName.indexOf("/") !== -1) {
+    return { ok: false, error: "フォルダ名に「/」は使用できません" };
+  }
+  var segs = old.split("/");
+  segs.pop();
+  var parent = segs.join("/");
+  var next = parent ? parent + "/" + newName : newName;
+  if (next === old) {
+    return { ok: true, folders: Forms_collectFolders_(), movedFormIds: [] };
+  }
+  var known = Forms_collectFolders_();
+  if (known.indexOf(next) !== -1) {
+    return { ok: false, error: "同名のフォルダ「" + next + "」が既に存在します" };
+  }
+  return WithScriptLock_("フォルダ名変更", function() {
+    var movedFormIds = [];
+    var registry = Forms_relocateFolderPaths_(Forms_getFolders_(), old, next, movedFormIds);
+    Forms_saveFolders_(registry);
     return { ok: true, folders: Forms_collectFolders_(), movedFormIds: movedFormIds };
   });
 }

@@ -11,6 +11,7 @@ import {
   listDashboardFolders,
   createDashboardFolder,
   moveDashboards,
+  renameDashboardFolder,
   deleteDashboardFolder,
 } from "../../features/analytics/analyticsStore.js";
 import AdminAnalyticsListPage from "./AdminAnalyticsListPage.jsx";
@@ -27,6 +28,7 @@ const store = {
   listFolders: listDashboardFolders,
   createFolder: createDashboardFolder,
   moveItems: moveDashboards,
+  renameFolder: renameDashboardFolder,
   deleteFolder: deleteDashboardFolder,
 };
 

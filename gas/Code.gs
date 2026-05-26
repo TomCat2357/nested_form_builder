@@ -78,6 +78,7 @@ const ACTION_DEFINITIONS_ = {
   "forms_folders_list":         { handler: (ctx) => Forms_dispatch_("forms_folders_list", ctx) },
   "forms_folder_create":        { handler: (ctx) => Forms_dispatch_("forms_folder_create", ctx), adminOnly: true },
   "forms_move":                 { handler: (ctx) => Forms_dispatch_("forms_move", ctx), adminOnly: true },
+  "forms_folder_rename":        { handler: (ctx) => Forms_dispatch_("forms_folder_rename", ctx), adminOnly: true },
   "forms_folder_delete":        { handler: (ctx) => Forms_dispatch_("forms_folder_delete", ctx), adminOnly: true },
   "delete":          { handler: DeleteRecord_, requireFormId: true, requireRecordId: true },
   "list":            { handler: ListRecordsAction_, requireFormId: true },
@@ -113,10 +114,12 @@ const ACTION_DEFINITIONS_ = {
   "analytics_questions_folders_list":      { handler: AnalyticsApi_ListQuestionFolders_ },
   "analytics_questions_folder_create":     { handler: AnalyticsApi_CreateQuestionFolder_,  adminOnly: true },
   "analytics_questions_move":              { handler: AnalyticsApi_MoveQuestions_,          adminOnly: true },
+  "analytics_questions_folder_rename":     { handler: AnalyticsApi_RenameQuestionFolder_,   adminOnly: true },
   "analytics_questions_folder_delete":     { handler: AnalyticsApi_DeleteQuestionFolder_,   adminOnly: true },
   "analytics_dashboards_folders_list":     { handler: AnalyticsApi_ListDashboardFolders_ },
   "analytics_dashboards_folder_create":    { handler: AnalyticsApi_CreateDashboardFolder_, adminOnly: true },
   "analytics_dashboards_move":             { handler: AnalyticsApi_MoveDashboards_,         adminOnly: true },
+  "analytics_dashboards_folder_rename":    { handler: AnalyticsApi_RenameDashboardFolder_,  adminOnly: true },
   "analytics_dashboards_folder_delete":    { handler: AnalyticsApi_DeleteDashboardFolder_,  adminOnly: true },
 };
 

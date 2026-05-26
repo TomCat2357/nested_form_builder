@@ -8,6 +8,7 @@ import { toComparableUnixMs, formatUnixMsValue } from "../../utils/dateTime.js";
 import ImportUrlDialog from "./AdminImportUrlDialog.jsx";
 import AdminNewFolderDialog from "./AdminNewFolderDialog.jsx";
 import AdminMoveDialog from "./AdminMoveDialog.jsx";
+import AdminRenameFolderDialog from "./AdminRenameFolderDialog.jsx";
 import { useAdminAnalyticsListActions } from "./useAdminAnalyticsListActions.js";
 import { useFolderBrowser } from "../../features/folders/useFolderBrowser.js";
 import { buildAppUrl } from "../../utils/appUrl.js";
@@ -157,6 +158,13 @@ export default function AdminAnalyticsListPage({
     await refresh();
   }, [store, refresh]);
 
+  const renameFolderWrapper = useCallback(async (payload) => {
+    if (!store.renameFolder) return;
+    const result = await store.renameFolder(payload);
+    setRegisteredFolders(result.folders);
+    await refresh();
+  }, [store, refresh]);
+
   const deleteFolderWrapper = useCallback(async (path) => {
     if (!store.deleteFolder) return;
     const result = await store.deleteFolder(path);
@@ -196,6 +204,14 @@ export default function AdminAnalyticsListPage({
     handleMoveSelected,
     confirmMove,
     closeMoveDialog,
+    renameDialogState,
+    renameName,
+    setRenameName,
+    renameError,
+    setRenameError,
+    handleRenameSelectedFolder,
+    confirmRenameFolder,
+    closeRenameDialog,
   } = useAdminAnalyticsListActions({
     kind,
     itemLabel,
@@ -218,6 +234,7 @@ export default function AdminAnalyticsListPage({
     currentPath: browser.currentPath,
     createFolder: createFolderWrapper,
     moveItems: moveItemsWrapper,
+    renameFolder: renameFolderWrapper,
     deleteFolder: deleteFolderWrapper,
   });
 
@@ -304,6 +321,14 @@ export default function AdminAnalyticsListPage({
             disabled={selected.size === 0 && selectedFolders.size === 0}
           >
             移動
+          </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-13"
+            onClick={handleRenameSelectedFolder}
+            disabled={selected.size !== 0 || selectedFolders.size !== 1}
+          >
+            名前変更
           </button>
           <button
             type="button"
@@ -536,6 +561,16 @@ export default function AdminAnalyticsListPage({
         onConfirm={confirmMove}
         onCancel={closeMoveDialog}
         error={moveError}
+      />
+
+      <AdminRenameFolderDialog
+        open={renameDialogState.open}
+        currentName={renameDialogState.currentName}
+        value={renameName}
+        onChange={(v) => { setRenameName(v); if (renameError) setRenameError(""); }}
+        onConfirm={confirmRenameFolder}
+        onCancel={closeRenameDialog}
+        error={renameError}
       />
     </AppLayout>
   );

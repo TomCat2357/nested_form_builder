@@ -423,6 +423,11 @@ function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) => item
     return { folders: result.folders || [], movedIds: result.movedIds || [] };
   }
 
+  async function renameFolder(payload) {
+    const result = await gas[`rename${E}Folder`](payload);
+    return { folders: result.folders || [], movedIds: result.movedIds || [] };
+  }
+
   async function deleteFolder(path) {
     const result = await gas[`delete${E}Folder`](path);
     return { folders: result.folders || [], deletedCount: result.deletedCount || 0 };
@@ -445,6 +450,7 @@ function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) => item
     listFolders,
     createFolder,
     moveItems,
+    renameFolder,
     deleteFolder,
   };
 }
@@ -481,6 +487,7 @@ export const exportQuestions = questionStore.exportItems;
 export const listQuestionFolders = questionStore.listFolders;
 export const createQuestionFolder = questionStore.createFolder;
 export const moveQuestions = questionStore.moveItems;
+export const renameQuestionFolder = questionStore.renameFolder;
 export const deleteQuestionFolder = questionStore.deleteFolder;
 
 export const listDashboards = dashboardStore.list;
@@ -499,4 +506,5 @@ export const exportDashboards = dashboardStore.exportItems;
 export const listDashboardFolders = dashboardStore.listFolders;
 export const createDashboardFolder = dashboardStore.createFolder;
 export const moveDashboards = dashboardStore.moveItems;
+export const renameDashboardFolder = dashboardStore.renameFolder;
 export const deleteDashboardFolder = dashboardStore.deleteFolder;

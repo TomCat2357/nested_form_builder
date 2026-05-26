@@ -37,6 +37,7 @@ export function useAdminAnalyticsListActions({
   currentPath = "",
   createFolder,
   moveItems,
+  renameFolder,
   deleteFolder,
 }) {
   const archiveDialog = useConfirmDialog({ id: null, targetIds: [], multiple: false, allArchived: false });
@@ -54,6 +55,9 @@ export function useAdminAnalyticsListActions({
   const moveDialog = useConfirmDialog({ itemIds: [], folderPaths: [], count: 0 });
   const [moveDest, setMoveDest] = useState("");
   const [moveError, setMoveError] = useState("");
+  const renameDialog = useConfirmDialog({ path: "", currentName: "" });
+  const [renameName, setRenameName] = useState("");
+  const [renameError, setRenameError] = useState("");
 
   const resultListKey = kind; // "questions" | "dashboards"
   const resultSingleKey = kind === "questions" ? "question" : "dashboard";
@@ -345,6 +349,55 @@ export function useAdminAnalyticsListActions({
     }
   };
 
+  // ---- 名前変更（mv の rename 相当。親は保持し leaf 名だけ変える） ----
+  const handleRenameSelectedFolder = () => {
+    if (!hasScriptRun()) {
+      showAlert("名前変更はGoogle Apps Script環境でのみ利用可能です");
+      return;
+    }
+    const folderPaths = Array.from(selectedFolders || []);
+    if (folderPaths.length !== 1) {
+      showAlert("名前を変更するフォルダを1つだけ選択してください。");
+      return;
+    }
+    const path = normalizeFolderPath(folderPaths[0]);
+    const currentName = path.split("/").pop() || "";
+    setRenameName(currentName);
+    setRenameError("");
+    renameDialog.open({ path, currentName });
+  };
+
+  const confirmRenameFolder = async () => {
+    const path = normalizeFolderPath(renameDialog.state.path);
+    const newName = (renameName || "").trim();
+    if (!newName) {
+      setRenameError("新しいフォルダ名を入力してください");
+      return;
+    }
+    if (newName.includes("/")) {
+      setRenameError("フォルダ名に「/」は使用できません");
+      return;
+    }
+    const segs = path.split("/");
+    segs.pop();
+    const parent = segs.join("/");
+    const next = parent ? `${parent}/${newName}` : newName;
+    if (next !== path && folderExists(registeredFolders, next)) {
+      setRenameError(`同名のフォルダ「${next}」が既に存在します`);
+      return;
+    }
+
+    try {
+      await renameFolder({ path, newName });
+      if (clearFolderSelection) clearFolderSelection();
+      renameDialog.reset();
+      setRenameName("");
+      setRenameError("");
+    } catch (error) {
+      setRenameError(error?.message || "名前の変更に失敗しました");
+    }
+  };
+
   return {
     confirmArchive: archiveDialog.state,
     setConfirmArchive: archiveDialog.setState,
@@ -387,5 +440,13 @@ export function useAdminAnalyticsListActions({
     handleMoveSelected,
     confirmMove,
     closeMoveDialog: moveDialog.reset,
+    renameDialogState: renameDialog.state,
+    renameName,
+    setRenameName,
+    renameError,
+    setRenameError,
+    handleRenameSelectedFolder,
+    confirmRenameFolder,
+    closeRenameDialog: renameDialog.reset,
   };
 }

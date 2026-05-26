@@ -51,3 +51,32 @@ test("各メソッドは正しい GAS 関数名と引数で呼ぶ", async () => 
 
   delete globalThis.google;
 });
+
+test("フォルダ名変更は nfbRename...Folder を payload 付きで呼ぶ", async () => {
+  const calls = [];
+  globalThis.google = {
+    script: {
+      run: {
+        withSuccessHandler(fn) { this._ok = fn; return this; },
+        withFailureHandler(fn) { this._fail = fn; return this; },
+      },
+    },
+  };
+  const runner = globalThis.google.script.run;
+  globalThis.google.script.run = new Proxy(runner, {
+    get(target, prop, recv) {
+      if (prop in target) return Reflect.get(target, prop, recv);
+      return (...args) => { calls.push({ fn: String(prop), args }); target._ok({ ok: true, folders: [] }); };
+    },
+  });
+
+  assert.equal(typeof analyticsGasClient.renameQuestionFolder, "function");
+  assert.equal(typeof analyticsGasClient.renameDashboardFolder, "function");
+  await analyticsGasClient.renameQuestionFolder({ path: "a/b", newName: "c" });
+  await analyticsGasClient.renameDashboardFolder({ path: "x", newName: "y" });
+
+  assert.deepEqual(calls[0], { fn: "nfbRenameAnalyticsQuestionFolder", args: [{ path: "a/b", newName: "c" }] });
+  assert.deepEqual(calls[1], { fn: "nfbRenameAnalyticsDashboardFolder", args: [{ path: "x", newName: "y" }] });
+
+  delete globalThis.google;
+});

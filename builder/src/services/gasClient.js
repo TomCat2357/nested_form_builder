@@ -150,6 +150,10 @@ export const moveItems = async ({ formIds = [], folderPaths = [], destPath = "" 
   const r = await fetchGasApi("nfbMoveItems", { formIds, folderPaths, destPath }, "Move failed");
   return { folders: r.folders || [], movedFormIds: r.movedFormIds || [] };
 };
+export const renameFolder = async ({ path, newName } = {}) => {
+  const r = await fetchGasApi("nfbRenameFolder", { path, newName }, "Rename folder failed");
+  return { folders: r.folders || [], movedFormIds: r.movedFormIds || [] };
+};
 export const deleteFolder = async (path) => {
   const r = await fetchGasApi("nfbDeleteFolder", path, "Delete folder failed");
   return { folders: r.folders || [], deletedFormCount: r.deletedFormCount || 0 };
