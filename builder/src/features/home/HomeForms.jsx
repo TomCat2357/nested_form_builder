@@ -48,14 +48,18 @@ export default function HomeForms({ resetNonce = 0 }) {
     }
   }, [lastSyncedAt, forms.length, loadingForms, refreshForms]);
 
-  const handleSelect = (formId) => {
-    navigate(`/search?form=${formId}`);
-  };
-
   const browser = useFolderBrowser(activeForms, {
     getFolder: (form) => form.folder,
     getName: (form) => form.settings?.formTitle || "",
+    urlParam: "folder",
   });
+
+  // 検索へ遷移するとき、戻り先として現在のフォルダ付きホーム URL を渡す。
+  // SearchPage / FormPage の「戻る」がこの from へ復帰し、直前のフォルダが復元される。
+  const handleSelect = (formId) => {
+    const from = `/${browser.currentPath ? `?folder=${encodeURIComponent(browser.currentPath)}` : ""}`;
+    navigate(`/search?form=${formId}`, { state: { from } });
+  };
 
   // 親（HomePage）のタブ再クリックでルート（すべて）へ戻し検索も空にする。
   // browser.goTo / setQuery は安定参照のため依存に含めない。

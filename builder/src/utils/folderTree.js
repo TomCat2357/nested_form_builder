@@ -13,6 +13,17 @@ export function normalizeFolderPath(raw) {
     .join("/");
 }
 
+/**
+ * folder が base 自身またはその子孫かを判定する（検索のフォルダスコープ用）。
+ * base="" は全件対象として常に true。
+ */
+export function isUnderFolder(folder, base) {
+  const f = normalizeFolderPath(folder);
+  const b = normalizeFolderPath(base);
+  if (b === "") return true;
+  return f === b || f.indexOf(b + "/") === 0;
+}
+
 /** 正規表現の特殊文字をエスケープしてリテラル化する。 */
 export function escapeRegExp(str) {
   return String(str).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

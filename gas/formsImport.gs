@@ -70,6 +70,14 @@ function Forms_registerImportedForm_(payload) {
   mapping[formId] = { fileId: fileId, driveFileUrl: fileUrl, title: uniqueImportTitle };
   Forms_saveMapping_(mapping);
 
+  // 開いていたフォルダ配下へ取り込む。参照先 Drive ファイルの json.folder を書き換える
+  // （移動/リネームと同じ既存ヘルパ）。マッピング保存後に呼ぶことで fileId 解決が効く。
+  if (payload.folder) {
+    var normFolder = Forms_normalizeFolderPath_(payload.folder);
+    Forms_setFormFolder_(formId, normFolder);
+    form.folder = normFolder;
+  }
+
   // AddFormUrl_ にも登録（?form=xxx でアクセス可能にする）
   try {
     AddFormUrl_(formId, fileUrl);

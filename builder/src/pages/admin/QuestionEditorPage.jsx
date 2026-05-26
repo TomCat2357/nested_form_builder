@@ -331,7 +331,7 @@ export default function QuestionEditorPage() {
 
     try {
       await saveQuestion(question, targetUrl);
-      navigate("/admin/questions");
+      navigate(location.state?.from || "/admin/questions");
     } catch (err) {
       setSaveError(err.message || String(err));
     } finally {
@@ -385,7 +385,7 @@ export default function QuestionEditorPage() {
 
   useBeforeUnloadGuard(isDirty);
 
-  const goBack = useCallback(() => navigate("/admin/questions"), [navigate]);
+  const goBack = useCallback(() => navigate(location.state?.from || "/admin/questions"), [navigate, location.state]);
 
   const handleCancel = () => {
     if (!isDirty) { goBack(); return; }

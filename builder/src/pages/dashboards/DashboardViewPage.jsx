@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { useParams, useLocation } from "react-router-dom";
 import AppLayout from "../../app/components/AppLayout.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
@@ -13,6 +13,7 @@ import SimpleFilterBar from "../../features/analytics/components/SimpleFilterBar
 
 export default function DashboardViewPage() {
   const { dashboardId } = useParams();
+  const location = useLocation();
   const { isAdmin } = useAuth();
   const { forms } = useAppData();
 
@@ -56,7 +57,7 @@ export default function DashboardViewPage() {
   return (
     <AppLayout
       title={dashboard?.name || "ダッシュボード"}
-      fallbackPath="/?view=dashboards"
+      fallbackPath={location.state?.from || "/?view=dashboards"}
       sidebarActions={
         dashboard && (
           <>

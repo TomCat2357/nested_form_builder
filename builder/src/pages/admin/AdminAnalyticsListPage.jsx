@@ -100,8 +100,15 @@ export default function AdminAnalyticsListPage({
     getFolder: (item) => item.folder,
     getName: (item) => item.name || "",
     folderPaths: registeredFolders,
+    urlParam: "folder",
   });
   const visibleItems = browser.visibleItems;
+
+  // 一覧ページ自身のパス（"/admin/questions" など）は newItemPath から導出する。
+  // 編集/新規へ遷移時、戻り先として現在のフォルダ付き URL を from に渡す。
+  const listBasePath = newItemPath.replace(/\/new$/, "");
+  const listUrlWithFolder = () =>
+    `${listBasePath}${browser.currentPath ? `?folder=${encodeURIComponent(browser.currentPath)}` : ""}`;
   const allVisibleSelected = visibleItems.length > 0 && visibleItems.every((item) => selected.has(item.id));
 
   // フォルダ移動で選択が画面外に残らないよう、ナビゲーション時に選択をクリアする。
@@ -172,6 +179,16 @@ export default function AdminAnalyticsListPage({
     await refresh();
   }, [store, refresh]);
 
+  // アイテム自体の名前変更。完全オブジェクトを読み込み name だけ差し替えて再保存する
+  // （Question/Dashboard には rename 専用 API がないため）。一意採番は保存時に委ねる。
+  const renameItemWrapper = useCallback(async (id, newName) => {
+    if (!store.save) return;
+    const current = items.find((it) => it.id === id);
+    if (!current) throw new Error("対象が見つかりません");
+    await store.save({ ...current, name: newName });
+    await refresh();
+  }, [store, items, refresh]);
+
   const {
     confirmArchive, setConfirmArchive,
     confirmDelete, setConfirmDelete,
@@ -209,8 +226,8 @@ export default function AdminAnalyticsListPage({
     setRenameName,
     renameError,
     setRenameError,
-    handleRenameSelectedFolder,
-    confirmRenameFolder,
+    handleRenameSelected,
+    confirmRename,
     closeRenameDialog,
   } = useAdminAnalyticsListActions({
     kind,
@@ -235,6 +252,7 @@ export default function AdminAnalyticsListPage({
     createFolder: createFolderWrapper,
     moveItems: moveItemsWrapper,
     renameFolder: renameFolderWrapper,
+    renameItem: renameItemWrapper,
     deleteFolder: deleteFolderWrapper,
   });
 
@@ -293,7 +311,7 @@ export default function AdminAnalyticsListPage({
           <button
             type="button"
             className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={() => navigate(newItemPath, { state: { folder: browser.currentPath } })}
+            onClick={() => navigate(newItemPath, { state: { folder: browser.currentPath, from: listUrlWithFolder() } })}
           >
             + 新規作成
           </button>
@@ -325,8 +343,8 @@ export default function AdminAnalyticsListPage({
           <button
             type="button"
             className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleRenameSelectedFolder}
-            disabled={selected.size !== 0 || selectedFolders.size !== 1}
+            onClick={handleRenameSelected}
+            disabled={!((selectedFolders.size === 1 && selected.size === 0) || (selected.size === 1 && selectedFolders.size === 0))}
           >
             名前変更
           </button>
@@ -428,7 +446,7 @@ export default function AdminAnalyticsListPage({
                   key={item.id}
                   className="admin-row"
                   data-clickable="true"
-                  onClick={() => navigate(buildEditPath(item.id))}
+                  onClick={() => navigate(buildEditPath(item.id), { state: { from: listUrlWithFolder() } })}
                 >
                   <td className="search-td" onClick={(e) => e.stopPropagation()}>
                     <input
@@ -568,9 +586,20 @@ export default function AdminAnalyticsListPage({
         currentName={renameDialogState.currentName}
         value={renameName}
         onChange={(v) => { setRenameName(v); if (renameError) setRenameError(""); }}
-        onConfirm={confirmRenameFolder}
+        onConfirm={confirmRename}
         onCancel={closeRenameDialog}
         error={renameError}
+        {...(renameDialogState.kind === "item"
+          ? {
+              title: `${itemLabel} 名を変更`,
+              message: renameDialogState.currentName
+                ? `${itemLabel}「${renameDialogState.currentName}」の名前を変更します。`
+                : `${itemLabel} の名前を変更します。`,
+              label: "新しい名前",
+              placeholder: `例: 月次集計`,
+              note: "",
+            }
+          : {})}
       />
     </AppLayout>
   );

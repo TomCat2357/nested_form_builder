@@ -38,6 +38,7 @@ export function useAdminAnalyticsListActions({
   createFolder,
   moveItems,
   renameFolder,
+  renameItem,
   deleteFolder,
 }) {
   const archiveDialog = useConfirmDialog({ id: null, targetIds: [], multiple: false, allArchived: false });
@@ -55,7 +56,7 @@ export function useAdminAnalyticsListActions({
   const moveDialog = useConfirmDialog({ itemIds: [], folderPaths: [], count: 0 });
   const [moveDest, setMoveDest] = useState("");
   const [moveError, setMoveError] = useState("");
-  const renameDialog = useConfirmDialog({ path: "", currentName: "" });
+  const renameDialog = useConfirmDialog({ kind: "folder", path: "", id: "", currentName: "" });
   const [renameName, setRenameName] = useState("");
   const [renameError, setRenameError] = useState("");
 
@@ -190,7 +191,7 @@ export function useAdminAnalyticsListActions({
       let saveFailed = 0;
       for (const item of items) {
         try {
-          await registerImported(item);
+          await registerImported({ ...item, folder: currentPath });
           imported += 1;
         } catch (err) {
           saveFailed += 1;
@@ -215,7 +216,7 @@ export function useAdminAnalyticsListActions({
     } finally {
       setImporting(false);
     }
-  }, [importUrl, importFromDrive, registerImported, clearSelection, showAlert, itemLabel]);
+  }, [importUrl, importFromDrive, registerImported, clearSelection, showAlert, itemLabel, currentPath]);
 
   const confirmArchiveAction = () => {
     const targetIds = resolveDialogTargetIds(archiveDialog.state, "id");
@@ -349,22 +350,62 @@ export function useAdminAnalyticsListActions({
     }
   };
 
-  // ---- 名前変更（mv の rename 相当。親は保持し leaf 名だけ変える） ----
-  const handleRenameSelectedFolder = () => {
+  // ---- 名前変更 ----
+  // フォルダ1件 → フォルダ名変更（mv の rename 相当）。アイテム1件 → アイテム自体の name 変更。
+  const handleRenameSelected = () => {
     if (!hasScriptRun()) {
       showAlert("名前変更はGoogle Apps Script環境でのみ利用可能です");
       return;
     }
     const folderPaths = Array.from(selectedFolders || []);
-    if (folderPaths.length !== 1) {
-      showAlert("名前を変更するフォルダを1つだけ選択してください。");
+    const itemIds = Array.from(selected || []);
+    if (folderPaths.length === 1 && itemIds.length === 0) {
+      const path = normalizeFolderPath(folderPaths[0]);
+      const currentName = path.split("/").pop() || "";
+      setRenameName(currentName);
+      setRenameError("");
+      renameDialog.open({ kind: "folder", path, currentName });
       return;
     }
-    const path = normalizeFolderPath(folderPaths[0]);
-    const currentName = path.split("/").pop() || "";
-    setRenameName(currentName);
-    setRenameError("");
-    renameDialog.open({ path, currentName });
+    if (itemIds.length === 1 && folderPaths.length === 0) {
+      const item = sortedItems.find((it) => it.id === itemIds[0]);
+      if (!item) {
+        showAlert(`名前を変更できる ${itemLabel} を選択してください。`);
+        return;
+      }
+      const currentName = item.name || "";
+      setRenameName(currentName);
+      setRenameError("");
+      renameDialog.open({ kind: "item", id: item.id, currentName });
+      return;
+    }
+    showAlert(`名前を変更するフォルダまたは ${itemLabel} を1つだけ選択してください。`);
+  };
+
+  const confirmRenameItem = async () => {
+    const id = renameDialog.state.id;
+    const newName = (renameName || "").trim();
+    if (!newName) {
+      setRenameError("新しい名前を入力してください");
+      return;
+    }
+    try {
+      await renameItem(id, newName);
+      clearSelectionByIds([id]);
+      renameDialog.reset();
+      setRenameName("");
+      setRenameError("");
+    } catch (error) {
+      setRenameError(error?.message || "名前の変更に失敗しました");
+    }
+  };
+
+  const confirmRename = async () => {
+    if (renameDialog.state.kind === "item") {
+      await confirmRenameItem();
+      return;
+    }
+    await confirmRenameFolder();
   };
 
   const confirmRenameFolder = async () => {
@@ -445,8 +486,8 @@ export function useAdminAnalyticsListActions({
     setRenameName,
     renameError,
     setRenameError,
-    handleRenameSelectedFolder,
-    confirmRenameFolder,
+    handleRenameSelected,
+    confirmRename,
     closeRenameDialog: renameDialog.reset,
   };
 }

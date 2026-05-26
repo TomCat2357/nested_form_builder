@@ -18,7 +18,14 @@ export default function HomeDashboards({ resetNonce = 0 }) {
   const browser = useFolderBrowser(items, {
     getFolder: (d) => d.folder,
     getName: (d) => d.name || "",
+    urlParam: "folder",
   });
+
+  // 閲覧へ遷移するとき、戻り先として現在のフォルダ付きホーム URL を渡す。
+  const handleSelect = (dashboardId) => {
+    const from = `/?view=dashboards${browser.currentPath ? `&folder=${encodeURIComponent(browser.currentPath)}` : ""}`;
+    navigate(`/dashboards/${dashboardId}`, { state: { from } });
+  };
 
   // 親（HomePage）のタブ再クリックでルート（すべて）へ戻し検索も空にする。
   useEffect(() => {
@@ -50,7 +57,7 @@ export default function HomeDashboards({ resetNonce = 0 }) {
             <div
               key={d.id}
               className="main-card"
-              onClick={() => navigate(`/dashboards/${d.id}`)}
+              onClick={() => handleSelect(d.id)}
             >
               <h2 className="main-title">{d.name || "(無題)"}</h2>
               {d.description && <p className="nf-m-0 nf-text-muted nf-pre-wrap">{d.description}</p>}

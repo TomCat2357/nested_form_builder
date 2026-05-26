@@ -25,6 +25,8 @@ export default function HomePage() {
     } else {
       params.set("view", next);
     }
+    // タブ切替時はフォルダ位置を引き継がない（forms/dashboards でフォルダ体系が異なるため）。
+    params.delete("folder");
     setSearchParams(params, { replace: true });
   };
 

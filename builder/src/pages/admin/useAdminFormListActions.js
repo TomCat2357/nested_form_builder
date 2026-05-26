@@ -82,6 +82,7 @@ export function useAdminFormListActions({
   createFolder,
   moveItems,
   renameFolder,
+  renameForm,
   deleteFolder,
 }) {
   const archiveDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
@@ -100,7 +101,7 @@ export function useAdminFormListActions({
   const moveDialog = useConfirmDialog({ formIds: [], folderPaths: [], count: 0 });
   const [moveDest, setMoveDest] = useState("");
   const [moveError, setMoveError] = useState("");
-  const renameDialog = useConfirmDialog({ path: "", currentName: "" });
+  const renameDialog = useConfirmDialog({ kind: "folder", path: "", id: "", currentName: "" });
   const [renameName, setRenameName] = useState("");
   const [renameError, setRenameError] = useState("");
 
@@ -227,6 +228,7 @@ export function useAdminFormListActions({
               form: item.form,
               fileId: item.fileId,
               fileUrl: item.fileUrl,
+              folder: currentPath,
             });
             imported += 1;
           } catch (error) {
@@ -257,7 +259,7 @@ export function useAdminFormListActions({
         setImporting(false);
       }
     },
-    [registerImportedForm, showAlert],
+    [registerImportedForm, showAlert, clearSelection, currentPath],
   );
 
   const handleImportFromDrive = async () => {
@@ -435,22 +437,64 @@ export function useAdminFormListActions({
     }
   };
 
-  // ---- 名前変更（mv の rename 相当。親は保持し leaf 名だけ変える） ----
-  const handleRenameSelectedFolder = () => {
+  // ---- 名前変更 ----
+  // フォルダ1件 → フォルダ名変更（mv の rename 相当。親は保持し leaf 名だけ変える）。
+  // フォーム1件 → フォーム自体の名前（settings.formTitle）変更。文脈で切り替える。
+  const handleRenameSelected = () => {
     if (!hasScriptRun()) {
       showAlert("名前変更はGoogle Apps Script環境でのみ利用可能です");
       return;
     }
     const folderPaths = Array.from(selectedFolders || []);
-    if (folderPaths.length !== 1) {
-      showAlert("名前を変更するフォルダを1つだけ選択してください。");
+    const formIds = Array.from(selected || []);
+    if (folderPaths.length === 1 && formIds.length === 0) {
+      const path = normalizeFolderPath(folderPaths[0]);
+      const currentName = path.split("/").pop() || "";
+      setRenameName(currentName);
+      setRenameError("");
+      renameDialog.open({ kind: "folder", path, currentName });
       return;
     }
-    const path = normalizeFolderPath(folderPaths[0]);
-    const currentName = path.split("/").pop() || "";
-    setRenameName(currentName);
-    setRenameError("");
-    renameDialog.open({ path, currentName });
+    if (formIds.length === 1 && folderPaths.length === 0) {
+      const form = sortedForms.find((f) => f.id === formIds[0]);
+      if (!form || form.loadError) {
+        showAlert("名前を変更できるフォームを選択してください。");
+        return;
+      }
+      const currentName = form.settings?.formTitle || "";
+      setRenameName(currentName);
+      setRenameError("");
+      renameDialog.open({ kind: "item", id: form.id, currentName });
+      return;
+    }
+    showAlert("名前を変更するフォルダまたはフォームを1つだけ選択してください。");
+  };
+
+  const confirmRenameItem = async () => {
+    const formId = renameDialog.state.id;
+    const newName = (renameName || "").trim();
+    if (!newName) {
+      setRenameError("新しい名前を入力してください");
+      return;
+    }
+    try {
+      await renameForm(formId, newName);
+      clearSelectionByIds([formId]);
+      renameDialog.reset();
+      setRenameName("");
+      setRenameError("");
+    } catch (error) {
+      console.error("[AdminFormList] Rename form failed:", error);
+      setRenameError(error?.message || "名前の変更に失敗しました");
+    }
+  };
+
+  const confirmRename = async () => {
+    if (renameDialog.state.kind === "item") {
+      await confirmRenameItem();
+      return;
+    }
+    await confirmRenameFolder();
   };
 
   const confirmRenameFolder = async () => {
@@ -566,8 +610,8 @@ export function useAdminFormListActions({
     setRenameName,
     renameError,
     setRenameError,
-    handleRenameSelectedFolder,
-    confirmRenameFolder,
+    handleRenameSelected,
+    confirmRename,
     closeRenameDialog: renameDialog.reset,
   };
 }

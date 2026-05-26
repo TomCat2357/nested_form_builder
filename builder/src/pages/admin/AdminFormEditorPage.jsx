@@ -245,7 +245,9 @@ export default function AdminFormEditorPage() {
       builderRef.current?.commitSavedState?.();
       initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
       setBuilderDirty(false);
-      navigate("/admin/forms", { replace: true });
+      // 直前に開いていたフォルダ付き一覧（location.state.from）へ戻る。
+      // from 未指定（ルート検索からの直接遷移）なら fallback = "/admin/forms"。
+      navigateBack();
     } catch (error) {
       console.error(error);
       setIsSaving(false);

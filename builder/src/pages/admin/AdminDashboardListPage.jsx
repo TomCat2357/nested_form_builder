@@ -1,6 +1,7 @@
 import React from "react";
 import {
   listDashboards,
+  saveDashboard,
   archiveDashboards,
   unarchiveDashboards,
   copyDashboard,
@@ -18,6 +19,7 @@ import AdminAnalyticsListPage from "./AdminAnalyticsListPage.jsx";
 
 const store = {
   list: listDashboards,
+  save: saveDashboard,
   archive: archiveDashboards,
   unarchive: unarchiveDashboards,
   copy: copyDashboard,

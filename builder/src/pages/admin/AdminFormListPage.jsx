@@ -32,7 +32,7 @@ const formatDisplayFieldsSummary = (form) => {
 };
 
 export default function AdminFormListPage() {
-  const { forms, loadFailures, loadingForms, lastSyncedAt, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, archiveForms, unarchiveForms, setFormsReadOnly, clearFormsReadOnly, deleteForms, refreshForms, exportForms, copyForm, registerImportedForm } = useAppData();
+  const { forms, loadFailures, loadingForms, lastSyncedAt, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, archiveForms, unarchiveForms, setFormsReadOnly, clearFormsReadOnly, deleteForms, refreshForms, exportForms, copyForm, registerImportedForm, updateForm } = useAppData();
   useBuilderSettings();
   const navigate = useNavigate();
   const { showAlert } = useAlert();
@@ -72,7 +72,13 @@ export default function AdminFormListPage() {
     getFolder: (form) => form.folder,
     getName: (form) => form.settings?.formTitle || "",
     folderPaths: registeredFolders,
+    urlParam: "folder",
   });
+
+  // 編集/新規へ遷移するとき、戻り先として現在のフォルダ付き一覧 URL を渡す。
+  // 保存・戻る時に editor 側がこの from へ復帰し、直前のフォルダが復元される。
+  const listUrlWithFolder = () =>
+    `/admin/forms${browser.currentPath ? `?folder=${encodeURIComponent(browser.currentPath)}` : ""}`;
   const visibleForms = browser.visibleItems;
   const allVisibleSelected = visibleForms.length > 0 && visibleForms.every((form) => selected.has(form.id));
 
@@ -87,6 +93,13 @@ export default function AdminFormListPage() {
     if (checked) selectAllRaw(visibleForms.map((form) => form.id));
     else clearSelection();
   };
+
+  // フォーム自体の名前変更。settings を丸ごと置換する updateForm の仕様に合わせ、
+  // 既存 settings をマージして formTitle だけ差し替える。一意採番は保存時に委ねる。
+  const renameForm = useCallback(async (formId, newName) => {
+    const form = sortedForms.find((f) => f.id === formId) || {};
+    await updateForm(formId, { settings: { ...(form.settings || {}), formTitle: newName } });
+  }, [sortedForms, updateForm]);
 
   const {
     confirmArchive,
@@ -136,8 +149,8 @@ export default function AdminFormListPage() {
     setRenameName,
     renameError,
     setRenameError,
-    handleRenameSelectedFolder,
-    confirmRenameFolder,
+    handleRenameSelected,
+    confirmRename,
     closeRenameDialog,
   } = useAdminFormListActions({
     sortedForms,
@@ -161,11 +174,12 @@ export default function AdminFormListPage() {
     createFolder,
     moveItems,
     renameFolder,
+    renameForm,
     deleteFolder,
   });
 
   const goToEditor = (formId) => {
-    navigate(`/admin/forms/${formId}/edit`);
+    navigate(`/admin/forms/${formId}/edit`, { state: { from: listUrlWithFolder() } });
   };
 
   const handleCopyId = useCallback((formId, event) => {
@@ -182,7 +196,7 @@ export default function AdminFormListPage() {
   }, [showAlert]);
 
   const handleCreateNew = () => {
-    navigate("/admin/forms/new", { state: { folder: browser.currentPath } });
+    navigate("/admin/forms/new", { state: { folder: browser.currentPath, from: listUrlWithFolder() } });
   };
 
   useFormCacheSync({
@@ -226,8 +240,8 @@ export default function AdminFormListPage() {
           <button
             type="button"
             className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleRenameSelectedFolder}
-            disabled={selected.size !== 0 || selectedFolders.size !== 1}
+            onClick={handleRenameSelected}
+            disabled={!((selectedFolders.size === 1 && selected.size === 0) || (selected.size === 1 && selectedFolders.size === 0))}
           >
             名前変更
           </button>
@@ -549,9 +563,20 @@ export default function AdminFormListPage() {
         currentName={renameDialogState.currentName}
         value={renameName}
         onChange={(v) => { setRenameName(v); if (renameError) setRenameError(""); }}
-        onConfirm={confirmRenameFolder}
+        onConfirm={confirmRename}
         onCancel={closeRenameDialog}
         error={renameError}
+        {...(renameDialogState.kind === "item"
+          ? {
+              title: "フォーム名を変更",
+              message: renameDialogState.currentName
+                ? `フォーム「${renameDialogState.currentName}」の名前を変更します。`
+                : "フォームの名前を変更します。",
+              label: "新しいフォーム名",
+              placeholder: "例: 入会申込フォーム",
+              note: "",
+            }
+          : {})}
       />
     </AppLayout>
   );

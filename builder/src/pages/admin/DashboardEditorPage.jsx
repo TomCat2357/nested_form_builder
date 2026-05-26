@@ -311,7 +311,7 @@ export default function DashboardEditorPage() {
 
   useBeforeUnloadGuard(isDirty);
 
-  const goBack = useCallback(() => navigate("/admin/dashboards"), [navigate]);
+  const goBack = useCallback(() => navigate(location.state?.from || "/admin/dashboards"), [navigate, location.state]);
 
   const handleCancel = () => {
     if (!isDirty) { goBack(); return; }
@@ -351,7 +351,7 @@ export default function DashboardEditorPage() {
 
     try {
       await saveDashboard(payload, targetUrl);
-      navigate("/admin/dashboards");
+      navigate(location.state?.from || "/admin/dashboards");
     } catch (err) {
       setError(err.message || String(err));
     } finally {

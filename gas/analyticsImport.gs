@@ -95,6 +95,14 @@ function Analytics_registerImportedTemplate_(type, payload) {
     mapping[newId] = { fileId: fileId, driveFileUrl: fileUrl };
     Analytics_saveMapping_(type, mapping);
 
+    // 開いていたフォルダ配下へ取り込む。参照先 Drive ファイルの json.folder を書き換える
+    // （移動/リネームと同じ既存ヘルパ）。マッピング保存後に呼ぶことで fileId 解決が効く。
+    if (payload.folder) {
+      var normFolder = Forms_normalizeFolderPath_(payload.folder);
+      Analytics_setItemFolder_(type, newId, normFolder);
+      template.folder = normFolder;
+    }
+
     var result = { ok: true, fileId: fileId, fileUrl: fileUrl };
     result[resultKey] = template;
     return result;
