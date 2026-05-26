@@ -1,5 +1,5 @@
 import { escapeRegExp } from "../../utils/folderTree.js";
-import { STRICT_PREFIX_RE } from "./searchSyntaxPreprocessor.js";
+import { STRICT_PREFIX_RE, normalizeFullWidthSearchOperators } from "./searchSyntaxPreprocessor.js";
 import {
   toBooleanLike,
   isChoiceColumn,
@@ -73,7 +73,9 @@ const tokenizeSearchQuery = (query) => {
   if (!query || typeof query !== 'string') return [];
 
   const tokens = [];
-  const normalizedQuery = query.replace(/==/g, "=");
+  // 簡易モードのみ全角記号オペレータを半角化（厳密モード SEARCH/WHERE はそのまま）。
+  const base = STRICT_PREFIX_RE.test(query) ? query : normalizeFullWidthSearchOperators(query);
+  const normalizedQuery = base.replace(/==/g, "=");
   let i = 0;
   const len = normalizedQuery.length;
 

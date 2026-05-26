@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { preprocessSearchQuery } from "./searchSyntaxPreprocessor.js";
+import {
+  preprocessSearchQuery,
+  normalizeFullWidthSearchOperators,
+} from "./searchSyntaxPreprocessor.js";
 
 const COLS = ["氏名", "備考", "年齢"];
 
@@ -350,4 +353,56 @@ test("strict: クォートなし日付リテラルの比較は簡易モードと
   assert.equal(simple.expr, "`販売日` = '2025/01/08'");
   const strict = preprocessSearchQuery("WHERE 販売日 = 2025/01/08", DATE_COLS);
   assert.equal(strict.expr, "`販売日` = '2025/01/08'");
+});
+
+// ---------------------------------------------------------------------------
+// 簡易モードの全角記号オペレータ正規化
+// ---------------------------------------------------------------------------
+
+test("全角イコールは半角イコールと同じ式を生成する", () => {
+  const full = preprocessSearchQuery('氏名 ＝ "田中"', COLS);
+  const half = preprocessSearchQuery('氏名 = "田中"', COLS);
+  assert.equal(full.expr, half.expr);
+  assert.equal(full.expr, "`氏名` = '田中'");
+});
+
+test("全角の比較演算子（＞＝）も半角同等", () => {
+  const full = preprocessSearchQuery("年齢 ＞＝ 20", COLS);
+  const half = preprocessSearchQuery("年齢 >= 20", COLS);
+  assert.equal(full.expr, half.expr);
+  assert.equal(full.expr, "`年齢` >= 20");
+});
+
+test("全角コロンの列指定も半角同等", () => {
+  const full = preprocessSearchQuery("氏名：田中", COLS);
+  const half = preprocessSearchQuery("氏名:田中", COLS);
+  assert.equal(full.expr, half.expr);
+});
+
+test("全角括弧・全角カンマの IN リストも半角同等", () => {
+  const full = preprocessSearchQuery("年齢 in（20，30）", COLS);
+  const half = preprocessSearchQuery("年齢 in (20, 30)", COLS);
+  assert.equal(full.expr, half.expr);
+});
+
+test("引用符内の全角コロンは値として保持される（変換しない）", () => {
+  const r = preprocessSearchQuery('氏名 = "田中：太郎"', COLS);
+  assert.equal(r.expr, "`氏名` = '田中：太郎'");
+});
+
+test("厳密モードでは全角オペレータを変換しない", () => {
+  const half = preprocessSearchQuery('SEARCH 氏名 = "田中"', COLS);
+  assert.equal(half.expr, "`氏名` = '田中'");
+  // 全角のままだと alasql 式として解釈できず、半角版と同じ式にはならない。
+  const full = preprocessSearchQuery('SEARCH 氏名 ＝ "田中"', COLS);
+  assert.notEqual(full.expr, "`氏名` = '田中'");
+});
+
+test("normalizeFullWidthSearchOperators: 記号一式を半角化しクォート内は保護", () => {
+  assert.equal(
+    normalizeFullWidthSearchOperators("年齢 ＞＝ 20 ＜ 30 ！＝ 40 ：（，）"),
+    "年齢 >= 20 < 30 != 40 :(,)"
+  );
+  assert.equal(normalizeFullWidthSearchOperators('氏名＝"田中：太郎"'), '氏名="田中：太郎"');
+  assert.equal(normalizeFullWidthSearchOperators("氏名＝'田中：太郎'"), "氏名='田中：太郎'");
 });

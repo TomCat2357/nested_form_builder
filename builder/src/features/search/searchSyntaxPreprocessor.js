@@ -37,6 +37,48 @@ import { formatCanonical } from "../../utils/dateTime.js";
 const KEYWORDS = new Set(["AND", "OR", "NOT", "IS", "NULL", "LIKE", "IN", "TRUE", "FALSE"]);
 const CMP_OPS = ["<=", ">=", "<>", "!=", "=", "<", ">"];
 
+// 全角記号オペレータ → 半角。簡易モードの入力で全角のまま比較・括弧・IN リストが書けるようにする。
+const FULLWIDTH_OP_MAP = {
+  "：": ":",
+  "＝": "=",
+  "＞": ">",
+  "＜": "<",
+  "！": "!",
+  "（": "(",
+  "）": ")",
+  "，": ",",
+};
+
+/**
+ * 簡易モード検索クエリの全角記号オペレータを半角へ正規化する。
+ * 引用符（' / "）で囲まれた値の中は変換せず保護するため、`氏名="田中：太郎"` の
+ * 値中の全角コロンは保持され、オペレータ位置の全角記号だけが半角化される。
+ * 厳密モード（SEARCH/WHERE）には適用しないこと。
+ *
+ * @param {string} input
+ * @returns {string}
+ */
+export function normalizeFullWidthSearchOperators(input) {
+  const s = String(input == null ? "" : input);
+  let out = "";
+  let quote = null; // 引用符内なら "'" または '"'
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (quote) {
+      out += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      quote = ch;
+      out += ch;
+      continue;
+    }
+    out += Object.prototype.hasOwnProperty.call(FULLWIDTH_OP_MAP, ch) ? FULLWIDTH_OP_MAP[ch] : ch;
+  }
+  return out;
+}
+
 function isIdentStartChar(ch) {
   if (!ch) return false;
   // ASCII letters, underscore, or anything outside ASCII control range
@@ -606,6 +648,8 @@ export function preprocessSearchQuery(query, columns) {
       errors: ["FROM / GROUP BY / ORDER BY / HAVING / LIMIT / OFFSET / UNION / JOIN は使用できません"],
     };
   }
+  // 簡易モードのみ全角記号オペレータを半角へ正規化（厳密モードは従来どおり半角必須）。
+  if (!strict) raw = normalizeFullWidthSearchOperators(raw);
   const tokens = tokenize(raw);
   if (tokens.length === 0) return { expr: null, errors: [] };
   const ctx = buildContext(columns, strict);

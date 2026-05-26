@@ -9,7 +9,7 @@ import FolderSearchBar from "../folders/FolderSearchBar.jsx";
 import FolderBreadcrumbs from "../folders/FolderBreadcrumbs.jsx";
 import FolderCard from "../folders/FolderCard.jsx";
 
-export default function HomeForms() {
+export default function HomeForms({ resetNonce = 0 }) {
   const { forms, loadingForms, refreshForms, lastSyncedAt } = useAppData();
   const { settings } = useBuilderSettings();
   const navigate = useNavigate();
@@ -56,6 +56,16 @@ export default function HomeForms() {
     getFolder: (form) => form.folder,
     getName: (form) => form.settings?.formTitle || "",
   });
+
+  // 親（HomePage）のタブ再クリックでルート（すべて）へ戻し検索も空にする。
+  // browser.goTo / setQuery は安定参照のため依存に含めない。
+  useEffect(() => {
+    if (resetNonce > 0) {
+      browser.goTo("");
+      browser.setQuery("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetNonce]);
 
   if (loadingForms) {
     return <p className="nf-text-subtle">読み込み中...</p>;

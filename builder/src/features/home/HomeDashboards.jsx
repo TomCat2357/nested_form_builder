@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { listDashboards } from "../analytics/analyticsStore.js";
 import { useAsyncResource } from "../../app/hooks/useAsyncResource.js";
@@ -7,7 +7,7 @@ import FolderSearchBar from "../folders/FolderSearchBar.jsx";
 import FolderBreadcrumbs from "../folders/FolderBreadcrumbs.jsx";
 import FolderCard from "../folders/FolderCard.jsx";
 
-export default function HomeDashboards() {
+export default function HomeDashboards({ resetNonce = 0 }) {
   const navigate = useNavigate();
   const { data: dashboards, loading, error } = useAsyncResource(
     () => listDashboards(),
@@ -19,6 +19,15 @@ export default function HomeDashboards() {
     getFolder: (d) => d.folder,
     getName: (d) => d.name || "",
   });
+
+  // 親（HomePage）のタブ再クリックでルート（すべて）へ戻し検索も空にする。
+  useEffect(() => {
+    if (resetNonce > 0) {
+      browser.goTo("");
+      browser.setQuery("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetNonce]);
 
   if (error) return <p className="nf-text-warning">{error}</p>;
   if (loading) return <p className="nf-text-subtle">読み込み中...</p>;
