@@ -37,10 +37,12 @@ const logTemplateError = (error, fullToken) => {
 /**
  * context (React コンポーネント由来) → alasql 式評価用の平坦 row を 2 本構築する。
  *
+ * 置換は共通 alasql エンジン（alasqlExpressionEvaluator の `SELECT (<expr>) AS v FROM ? AS r`）で
+ * 評価し、`{...}` / `{{...}}` の違いは「`?` に渡すテーブル表現の切替」だけ:
  * - data 行: 元データ形式（`context.dataValueMap`）。単一ブレース `{...}` 用。
  *   選択肢はオプション単位パス `親|選択肢` → 真偽値、非選択肢は canonical 値。
- * - view 行: ビュー形式（`context.labelValueMap`）。連続二重ブレース `{{...}}` 用。
- *   選択肢ラベル連結・表示用文字列。
+ * - view 行: ビュー形式（`context.labelValueMap`）。連続二重ブレース `{{...}}` 用
+ *   ＝「テーブルを view モードに変えるだけ」。選択肢ラベル連結・表示用文字列。
  * - どちらか片方しか渡されない旧コンテキストでは相互フォールバックして従来挙動を保つ。
  * - fileUploadMeta があれば path ごとに `[{ name, driveFileUrl, ... }, ...]` 配列を
  *   両行へ上書きで入れる（FILE_NAMES 等の UDF はこの配列を読む）。

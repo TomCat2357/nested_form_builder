@@ -15,6 +15,7 @@ test("UDF が登録される / 廃止・改名された関数は無い", () => {
     "DATE2ERA", "DATETIME2ERATIME", "ERA2DATE", "ERATIME2DATETIME",
     "YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND",
     "TO_BOOL", "TO_NUMBER", "REGEXP_MATCH", "REGEXP_REPLACE", "LIKE_ANY",
+    "MV_EQ", "MV_IN",
   ]) {
     assert.equal(typeof alasql.fn[name], "function", `${name} should be a function`);
   }
@@ -276,4 +277,38 @@ test("STR_MAX / STR_MIN: 数値・canonical 日付文字列・文字列を辞書
   // 全 NULL / 空グループ → null
   assert.equal(aggrReduce(max, [null, null]), null);
   assert.equal(aggrReduce(min, []), null);
+});
+
+test("MV_EQ: 複数値セルを , で分割し集合一致", () => {
+  const alasql = makeFakeAlaSql();
+  ensureNfbUdfsRegistered(alasql);
+  const fn = alasql.fn.MV_EQ;
+  // 単一値セル → 通常の等価
+  assert.equal(fn("カラス", "カラス"), true);
+  assert.equal(fn("カラス", "キツネ"), false);
+  // 複数値（, 連結 = entriesToViewRows の checkboxes / weekday 由来）
+  assert.equal(fn("カラス,キタツネ", "キタツネ"), true);
+  assert.equal(fn("カラス,キタツネ", "タヌキ"), false);
+  assert.equal(fn("カラス,キタツネ", "カラス"), true);
+  // trim される
+  assert.equal(fn("カラス , キタツネ", "キタツネ"), true);
+  // 数値も文字列化して比較
+  assert.equal(fn(20, "20"), true);
+  // 空 / null セルはトークン無し → false（NOT MV_EQ で「空 != 値」が true になる）
+  assert.equal(fn("", "カラス"), false);
+  assert.equal(fn(null, "カラス"), false);
+  assert.equal(fn(undefined, "カラス"), false);
+});
+
+test("MV_IN: 複数値セルを , で分割し集合 IN 判定", () => {
+  const alasql = makeFakeAlaSql();
+  ensureNfbUdfsRegistered(alasql);
+  const fn = alasql.fn.MV_IN;
+  assert.equal(fn("カラス", "田中", "カラス"), true);
+  assert.equal(fn("カラス", "田中", "鈴木"), false);
+  assert.equal(fn("カラス,キタツネ", "キタツネ", "タヌキ"), true);
+  assert.equal(fn("カラス,キタツネ", "カラス"), true);
+  // 空 / null セル → false（NOT MV_IN で not in が true）
+  assert.equal(fn("", "カラス"), false);
+  assert.equal(fn(null, "カラス"), false);
 });
