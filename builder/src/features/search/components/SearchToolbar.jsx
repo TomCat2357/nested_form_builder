@@ -2,12 +2,13 @@ import React from "react";
 import { formatUnixMsDateTimeSec } from "../../../utils/dateTime.js";
 import { useDebouncedSearchInput } from "../useDebouncedSearchInput.js";
 
-export default function SearchToolbar({ query, onChange, lastSyncedAt, useCache, cacheDisabled, backgroundLoading, lockWaiting, hasUnsynced, unsyncedCount = 0, syncInProgress = false, showSearch = true, onSettingsClick, filterError, debounceMs = 0 }) {
+export default function SearchToolbar({ query, onChange, lastSyncedAt, useCache, cacheDisabled, backgroundLoading, lockWaiting, hasUnsynced, unsyncedCount = 0, syncInProgress = false, showSearch = true, onSettingsClick, filterError, debounceMs = 0, manualSearch = false }) {
   const lastSyncedLabel = lastSyncedAt ? (formatUnixMsDateTimeSec(lastSyncedAt) || "未取得") : "未取得";
-  const { inputValue, handleChange, handleCompositionStart, handleCompositionEnd } = useDebouncedSearchInput({
+  const { inputValue, handleChange, handleCompositionStart, handleCompositionEnd, commitNow } = useDebouncedSearchInput({
     value: query,
     onCommit: onChange,
     delayMs: debounceMs,
+    manual: manualSearch,
   });
   return (
     <div className="search-bar">
@@ -19,9 +20,17 @@ export default function SearchToolbar({ query, onChange, lastSyncedAt, useCache,
           onChange={(event) => handleChange(event.target.value)}
           onCompositionStart={handleCompositionStart}
           onCompositionEnd={(event) => handleCompositionEnd(event.target.value)}
+          onKeyDown={manualSearch ? (event) => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) commitNow();
+          } : undefined}
           className="search-input nf-flex-1-0-220"
           title="検索ボックス"
         />
+      )}
+      {manualSearch && showSearch && (
+        <button type="button" className="nf-btn nf-btn-compact nf-btn-primary" onClick={commitNow} title="検索を実行">
+          検索
+        </button>
       )}
       {filterError && (
         <span className="nf-text-warning nf-ml-6 nf-fw-600" title={filterError}>⚠️ 検索式エラー</span>

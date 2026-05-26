@@ -18,6 +18,8 @@ import { runPurgeCheck } from "../services/gasClient.js";
 export default function SearchPage() {
   const { getFormById } = useAppData();
   const { settings, updateSetting } = useBuilderSettings({ applyGlobalTheme: false });
+  // 検索の遅延時間が空欄（"" / 未設定）のときは手動検索モード（検索ボタン）。0 を含む数値は自動検索。
+  const manualSearch = settings?.searchDebounceMs === "" || settings?.searchDebounceMs == null;
   const { isAdmin, userEmail, formId: scopedFormId } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
@@ -174,7 +176,8 @@ export default function SearchPage() {
         syncInProgress={loading || backgroundLoading || waitingForLock}
         onSettingsClick={() => setShowDisplaySettings(true)}
         filterError={filterError}
-        debounceMs={Number(settings?.searchDebounceMs) || 0}
+        debounceMs={manualSearch ? 0 : (Number(settings?.searchDebounceMs) || 0)}
+        manualSearch={manualSearch}
       />
       {isAdmin && (
         <div className="nf-row nf-gap-16 nf-items-center nf-mb-12 nf-wrap">

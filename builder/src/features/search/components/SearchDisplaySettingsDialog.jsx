@@ -2,9 +2,9 @@ import React from "react";
 import BaseDialog from "../../../app/components/BaseDialog.jsx";
 
 const parseDebounceMs = (raw) => {
-  if (raw === "" || raw == null) return 0;
+  if (raw === "" || raw == null) return "";
   const n = Number(raw);
-  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : "";
 };
 
 export default function SearchDisplaySettingsDialog({ open, onClose, overrides, onUpdateOverride, formSettings, globalSettings, globalDebounceMs, onUpdateGlobalDebounce }) {
@@ -90,7 +90,7 @@ export default function SearchDisplaySettingsDialog({ open, onClose, overrides, 
             onChange={(e) => onUpdateGlobalDebounce(parseDebounceMs(e.target.value))}
           />
           <p className="nf-text-12 nf-text-subtle">
-            全フォーム共通の設定です。入力が止まってからこの時間後に検索を実行します（0で即時）。
+            全フォーム共通の設定です。入力が止まってからこの時間後に検索を実行します（0で即時）。空欄にすると検索ボックス右の「検索」ボタンを押したときだけ検索します。
           </p>
         </div>
       )}

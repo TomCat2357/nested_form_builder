@@ -343,7 +343,6 @@ button:disabled {
 }
 
 .nf-textarea-readonly {
-  max-height: 120px;
   overflow-y: auto;
   white-space: pre-wrap;
   word-break: break-word;

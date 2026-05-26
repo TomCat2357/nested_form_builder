@@ -193,11 +193,16 @@ const FieldRenderer = ({
 
     const readOnlyClassName =
       readOnlyIsTextarea ? "nf-input nf-input--readonly nf-textarea-readonly" : "nf-input nf-input--readonly";
+    // 閲覧モードの複数行は設定行数を「最大」表示行数とする（内容が少なければ縮み、多ければスクロール）。
+    // 係数 24 は編集モードの textarea と揃える。
+    const readOnlyTextareaStyle = readOnlyIsTextarea
+      ? { maxHeight: `${(field.multilineRows || DEFAULT_MULTILINE_ROWS) * 24}px` }
+      : undefined;
 
     return (
       <div className="preview-field">
         {renderLabel()}
-        <div className={readOnlyClassName}>{renderReadOnlyValue()}</div>
+        <div className={readOnlyClassName} style={readOnlyTextareaStyle}>{renderReadOnlyValue()}</div>
         {childrenForCheckboxes}
         {childrenCommon}
       </div>

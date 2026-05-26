@@ -21,11 +21,11 @@ export default function SettingsGeneralTab() {
 
   const handleSearchDebounceChange = (raw) => {
     if (raw === "") {
-      updateSetting("searchDebounceMs", 0);
+      updateSetting("searchDebounceMs", "");
       return;
     }
     const n = Number(raw);
-    updateSetting("searchDebounceMs", Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0);
+    updateSetting("searchDebounceMs", Number.isFinite(n) ? Math.max(0, Math.floor(n)) : "");
   };
 
   const {
@@ -140,7 +140,7 @@ export default function SettingsGeneralTab() {
           onChange={(event) => handleSearchDebounceChange(event.target.value)}
         />
         <p className="nf-mt-6 nf-text-12 nf-text-muted">
-          全フォーム共通の設定です。検索バーへの入力が止まってからこの時間後に検索を実行します（0で即時）。
+          全フォーム共通の設定です。検索バーへの入力が止まってからこの時間後に検索を実行します（0で即時）。空欄にすると検索ボックス右の「検索」ボタンを押したときだけ検索します。
         </p>
       </div>
 
