@@ -58,6 +58,18 @@ SEARCH REGEXP_LIKE(`氏名`, '田.*', 'i')
 SEARCH REGEXP_MATCH(`メール`, '(.+)@', 1) = 'admin'
 ```
 
+## 遅延検索（デバウンス）
+
+検索バーへの入力は表示だけ即時反映し、検索実行（onCommit）だけを遅延させる（`useDebouncedSearchInput.js`）。
+
+- 遅延時間は全フォーム共通設定 `settings.searchDebounceMs`（`settingsStore`、既定 `DEFAULT_SEARCH_DEBOUNCE_MS = 300` ms）。設定画面の「検索の遅延時間（ミリ秒）」（`SettingsGeneralTab.jsx`）で変更でき、`0` で即時実行。
+- **IME 変換中（compositionstart〜compositionend）はスケジュールしない** — 確定時（compositionend）にのみコミットする。日本語入力中の中間文字列で検索が走らない。
+- 外部から `value`（URL の `q` など）が自分のコミット以外で変わったときは表示へ同期する。
+
+## 検索ヒット箇所表示
+
+ヒットしたレコードに「どこが一致したか」を出す処理は `searchQueryEngine.js`。部分一致だけでなく**列指定の条件（COMPARE `=`/`>=` 等・`IN`・真偽・空欄/非空）が成立した列**も、`collectConditionColumns` が値付きでヒット箇所として収集する（非表示フィールドも対象）。これにより条件のみマッチ時に「(他の項目に一致)」へ落ちる回帰を解消している。
+
 ## 日付型列の比較
 
 `isDateLike` メタが付いた列を日付/時刻リテラル（`YYYY-MM-DD` / `YYYY/MM/DD` / `HH:mm:ss` 等）と比較するとき、preprocessor は両辺を `DATE(...)` で自動ラップする（簡易・厳密どちらでも）。
@@ -73,5 +85,6 @@ modifiedAt >= 2026/01/01   # → DATE(`modifiedAt`) >= DATE('2026/01/01')
 - 検索式ビルダ（列メタ構築）: `builder/src/features/search/searchExpressionBuilder.js`
 - フォールバック（JSON 走査エンジン）: `builder/src/features/search/searchQueryEngine.js`
 - 検索バー UI: `builder/src/features/search/components/SearchToolbar.jsx`
+- 遅延検索（デバウンス）フック: `builder/src/features/search/useDebouncedSearchInput.js`
 
 ユーザー向けの詳しい使い方は `docs/user_manual.md` の「8.1 検索する」を参照。

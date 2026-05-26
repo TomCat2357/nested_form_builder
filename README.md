@@ -10,8 +10,8 @@
 ## できること
 
 - 視覚的なフォーム設計（最大 11 階層のネスト、`childrenByValue` による条件分岐）
-- 回答の保存・検索・並べ替え・Excel エクスポート・ソフトデリート（既定 30 日保持）
-- 印刷 PDF / Google Doc / Gmail 下書きの自動生成（alasql 関数式によるテンプレ）
+- 回答の保存・検索（遅延検索／IME 対応・ヒット箇所表示）・並べ替え・Excel エクスポート・ソフトデリート（既定 30 日保持）
+- 印刷 PDF / Google Doc / Gmail 下書きの自動生成（alasql 関数式によるテンプレ。`{...}`=元データ形式 / `{{...}}`=ビュー形式）
 - ファイルアップロード（Google Drive 保存）
 - 集計ダッシュボード（Question / Dashboard、ブラウザ内 AlaSQL、Chart.js / ECharts / Leaflet / ピボット）
 - 17 種のテーマ、表示モード、IndexedDB SWR キャッシュ、`LockService` ベースの排他制御
@@ -46,6 +46,7 @@ nested_form_builder/
 ├── builder/          # React 19 + Vite 7 SPA（実装本体）
 ├── gas/              # Apps Script 分割ソース（dist/Bundle.gs に結合される）
 ├── gas_for_spreadsheet/  # 保存先スプレッドシート用の補助スクリプト
+├── gas_for_webhook/      # 「外部アクションボタン」の POST 受信 Web アプリ雛形
 ├── dist/             # clasp push 対象（自動生成）
 ├── docs/             # ユーザーマニュアル + claude/ 配下に開発者向け補足
 ├── tests/ / e2e/     # GAS 横断テスト・Playwright E2E
