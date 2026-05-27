@@ -12,41 +12,85 @@ function loadGasContext() {
       getFileById(id) { return { getId: () => id }; },
       getFolderById(id) { return { getId: () => id }; },
     },
-    // consume テスト用の軽量スタブ（standardFolders.gs では未定義の依存）。
+    // standardFolders.gs では未定義の依存（他ファイル）の軽量スタブ。
     nfbSafeCall_(fn) { return fn(); },
     nfbErrorToString_(err) { return String((err && err.message) || err); },
+    // mapping エントリから fileId を解決する共通ヘルパ（本体は gas/formsCrud.gs）。
+    Nfb_resolveFileIdFromEntry_(entry) {
+      if (!entry) return null;
+      return entry.fileId || null;
+    },
+    // URL→fileId（本体は gas/properties.gs）。テストでは固定 ID を返す上書きを使う。
+    ExtractFileIdFromUrl_() { return null; },
   };
   // standardFolders.gs は formsParsing.gs（Forms_parseGoogleDriveUrl_）と model.gs（Model_normalizeSpreadsheetId_）に依存。
   return loadGasFiles(context, ["formsParsing.gs", "model.gs", "standardFolders.gs"]);
 }
 
-// getFilesByName / createFile / setTrashed を備えた最小フォルダモック。
+// getFilesByName / getFiles / createFile / setTrashed / getLastUpdated を備えた最小フォルダモック。
 function makeMockFolder(rootId) {
   const files = [];
+  let clock = 1000;
   const folder = {
     _files: files,
     getId: () => rootId || "ROOT",
+    getUrl: () => "https://drive.google.com/drive/folders/" + (rootId || "ROOT"),
     getFilesByName(name) {
       const matches = files.filter((f) => f._name === name);
       let i = 0;
       return { hasNext: () => i < matches.length, next: () => matches[i++] };
     },
+    getFiles() {
+      const live = files.slice();
+      let i = 0;
+      return { hasNext: () => i < live.length, next: () => live[i++] };
+    },
     createFile(name, content) {
+      const updated = clock++;
       const f = {
         _name: name,
         _content: content,
         _trashed: false,
+        _updated: updated,
         getId: () => "FILE_" + name,
+        getName: () => name,
+        getMimeType: () => "application/json",
         getUrl: () => "https://drive.google.com/file/d/FILE_" + name + "/view",
         isTrashed: () => f._trashed,
         setTrashed: (v) => { f._trashed = !!v; },
         getBlob: () => ({ getDataAsString: () => f._content }),
+        getLastUpdated: () => new Date(f._updated),
       };
       files.push(f);
       return f;
     },
   };
   return folder;
+}
+
+// 新しい export/import 系テスト用に、ストア関数群をインメモリ実装で差し替える。
+function installStores(gas, init = {}) {
+  const stores = {
+    forms: { ...(init.forms || {}) },
+    questions: { ...(init.questions || {}) },
+    dashboards: { ...(init.dashboards || {}) },
+    foldersForms: [...(init.foldersForms || [])],
+    foldersQuestions: [...(init.foldersQuestions || [])],
+    foldersDashboards: [...(init.foldersDashboards || [])],
+    formUrls: {},
+  };
+  gas.Forms_getMapping_ = () => stores.forms;
+  gas.Forms_saveMapping_ = (m) => { stores.forms = m; };
+  gas.Analytics_getMapping_ = (t) => stores[t];
+  gas.Analytics_saveMapping_ = (t, m) => { stores[t] = m; };
+  gas.Forms_getFolders_ = () => stores.foldersForms;
+  gas.Forms_saveFolders_ = (p) => { stores.foldersForms = p; };
+  gas.Analytics_getFolders_ = (t) => (t === "questions" ? stores.foldersQuestions : stores.foldersDashboards);
+  gas.Analytics_saveFoldersRegistry_ = (t, p) => {
+    if (t === "questions") stores.foldersQuestions = p; else stores.foldersDashboards = p;
+  };
+  gas.AddFormUrl_ = (id, url) => { stores.formUrls[id] = url; };
+  return stores;
 }
 
 test("StdFolders_remapFileUrl_: idMap にあるファイル URL を新 URL へ置換する", () => {
@@ -107,89 +151,152 @@ test("NFB_STD_FOLDER_NAMES / ORDER: 8 種の標準フォルダ名を網羅する
   assert.equal(gas.NFB_STD_FOLDER_ORDER.length, 8);
   assert.equal(gas.NFB_STD_FOLDER_NAMES.forms, "01_forms");
   assert.equal(gas.NFB_STD_FOLDER_NAMES.documents, "08_documents");
-  // ORDER の全キーが NAMES に存在する
   for (const key of gas.NFB_STD_FOLDER_ORDER) {
     assert.ok(gas.NFB_STD_FOLDER_NAMES[key], "missing name for " + key);
   }
+  assert.equal(gas.NFB_STD_MAPPING_FILE_NAME, "_nfb_mapping.json");
 });
 
-test("StdFolders_writeRebuildMarker_: マーカーを 1 件だけ作成し sourceRootId を埋め込む", () => {
+// ---- export / import ----
+
+test("StdFolders_exportMapping_: 3 マッピング＋登録簿を nfb-mapping 形で返す", () => {
   const gas = loadGasContext();
-  const dest = makeMockFolder("DEST");
-  gas.StdFolders_writeRebuildMarker_(dest, "SRCROOT");
-  assert.equal(dest._files.length, 1);
-  const f = dest._files[0];
-  assert.equal(f._name, gas.NFB_STD_REBUILD_MARKER_NAME);
-  const meta = JSON.parse(f._content);
-  assert.equal(meta.sourceRootId, "SRCROOT");
-  assert.equal(meta.version, 1);
+  gas.StdFolders_resolveRootFolder_ = () => ({ getId: () => "ROOT1" });
+  installStores(gas, {
+    forms: { f1: { fileId: "FF1", driveFileUrl: "u1", title: "T1" } },
+    questions: { q1: { fileId: "QF1", driveFileUrl: "qu1", name: "Q1" } },
+    dashboards: {},
+    foldersForms: ["a", "a/b"],
+  });
+  const res = gas.StdFolders_exportMapping_();
+  assert.equal(res.ok, true);
+  assert.equal(res.mapping.type, "nfb-mapping");
+  assert.equal(res.mapping.version, 1);
+  assert.equal(res.mapping.sourceRootId, "ROOT1");
+  assert.equal(res.mapping.forms.f1.fileId, "FF1");
+  assert.equal(res.mapping.questions.q1.name, "Q1");
+  assert.deepEqual(res.mapping.folders.forms, ["a", "a/b"]);
 });
 
-test("StdFolders_writeRebuildMarker_: 既存マーカーがあれば作り直さない", () => {
+test("StdFolders_importMapping_: export→import ラウンドトリップで件数が復元される", () => {
   const gas = loadGasContext();
-  const dest = makeMockFolder("DEST");
-  gas.StdFolders_writeRebuildMarker_(dest, "SRC1");
-  gas.StdFolders_writeRebuildMarker_(dest, "SRC2");
-  assert.equal(dest._files.length, 1);
-  // 1 件目のまま（上書きされない）
-  assert.equal(JSON.parse(dest._files[0]._content).sourceRootId, "SRC1");
+  const doc = {
+    type: "nfb-mapping", version: 1, exportedAt: "x", sourceRootId: "ROOT1",
+    forms: { f1: { fileId: "FF1", driveFileUrl: "u1", title: "T1" } },
+    questions: { q1: { fileId: "QF1", driveFileUrl: "qu1", name: "Q1" } },
+    dashboards: { d1: { fileId: "DF1", driveFileUrl: "du1", name: "D1" } },
+    folders: { forms: ["a"], questions: [], dashboards: [] },
+  };
+  const stores = installStores(gas, {});
+  const res = gas.StdFolders_importMapping_(doc);
+  assert.equal(res.ok, true);
+  assert.equal(res.imported.forms, 1);
+  assert.equal(res.imported.questions, 1);
+  assert.equal(res.imported.dashboards, 1);
+  assert.equal(res.skipped, 0);
+  assert.equal(stores.forms.f1.fileId, "FF1");
+  assert.equal(stores.dashboards.d1.name, "D1");
+  // forms は AddFormUrl_ も更新される
+  assert.equal(stores.formUrls.f1, "u1");
 });
 
-test("StdFolders_findRebuildMarker_: 非存在は null / ゴミ箱はスキップ / 有効な 1 件を返す", () => {
+test("StdFolders_importMapping_: 同一 fileId の既存エントリはスキップ、新規のみ取り込む", () => {
   const gas = loadGasContext();
-  const dest = makeMockFolder("DEST");
-  assert.equal(gas.StdFolders_findRebuildMarker_(dest), null);
-  gas.StdFolders_writeRebuildMarker_(dest, "SRC");
-  const marker = gas.StdFolders_findRebuildMarker_(dest);
-  assert.ok(marker);
-  marker.setTrashed(true);
-  assert.equal(gas.StdFolders_findRebuildMarker_(dest), null);
+  const stores = installStores(gas, {
+    forms: { existing: { fileId: "DUP", driveFileUrl: "ue", title: "E" } },
+  });
+  const doc = {
+    type: "nfb-mapping", version: 1,
+    forms: {
+      dupe: { fileId: "DUP", driveFileUrl: "ud", title: "D" },   // 既存 fileId → skip
+      fresh: { fileId: "NEW", driveFileUrl: "un", title: "N" },  // 新規 → import
+    },
+    questions: {}, dashboards: {}, folders: {},
+  };
+  const res = gas.StdFolders_importMapping_(doc);
+  assert.equal(res.imported.forms, 1);
+  assert.equal(res.skipped, 1);
+  assert.ok(stores.forms.fresh, "新規エントリが取り込まれる");
+  assert.ok(!stores.forms.dupe, "重複 fileId のエントリは取り込まれない");
 });
 
-// consume: 内部の resolveRootFolder_ / rebuild* を VM グローバル上書きで差し替えて検証する。
-function setupConsume(gas, { root, calls }) {
+test("StdFolders_importMapping_: 不正な doc は throw せず {ok:false} を返す", () => {
+  const gas = loadGasContext();
+  installStores(gas, {});
+  assert.equal(gas.StdFolders_importMapping_({ type: "x", version: 1 }).ok, false);
+  assert.equal(gas.StdFolders_importMapping_({ type: "nfb-mapping", version: 2 }).ok, false);
+  assert.equal(gas.StdFolders_importMapping_(null).ok, false);
+});
+
+test("StdFolders_importMappingFromSource_: URL 空 → ルートの最新 .json を読む", () => {
+  const gas = loadGasContext();
+  const root = makeMockFolder("DESTROOT");
+  // 古い方を先に作成（無関係 JSON）→ 新しい方に有効な mapping を作成
+  root.createFile("old.json", JSON.stringify({ type: "nfb-mapping", version: 1, forms: { old: { fileId: "OLD" } }, questions: {}, dashboards: {}, folders: {} }));
+  root.createFile(gas.NFB_STD_MAPPING_FILE_NAME, JSON.stringify({ type: "nfb-mapping", version: 1, forms: { neo: { fileId: "NEW" } }, questions: {}, dashboards: {}, folders: {} }));
   gas.StdFolders_resolveRootFolder_ = () => root;
-  gas.StdFolders_rebuildFormsMapping_ = () => { calls.push("forms"); return { count: 2 }; };
-  gas.StdFolders_rebuildAnalyticsMapping_ = (r, type) => { calls.push(type); return { count: 1 }; };
-}
+  const stores = installStores(gas, {});
 
-test("StdFolders_consumePendingRebuild_: マーカー有り → 再構築実行＋マーカー削除＋ran:true", () => {
-  const gas = loadGasContext();
-  const root = makeMockFolder("DESTROOT");
-  gas.StdFolders_writeRebuildMarker_(root, "SRCROOT"); // sourceRootId != root.getId()
-  const calls = [];
-  setupConsume(gas, { root, calls });
-
-  const res = gas.StdFolders_consumePendingRebuild_();
-  assert.equal(res.ran, true);
-  assert.equal(res.forms.count, 2);
-  assert.deepEqual(calls, ["forms", "questions", "dashboards"]);
-  // マーカーはゴミ箱に入る
-  assert.equal(gas.StdFolders_findRebuildMarker_(root), null);
+  const res = gas.StdFolders_importMappingFromSource_({ url: "" });
+  assert.equal(res.ok, true);
+  assert.equal(res.imported.forms, 1);
+  assert.ok(stores.forms.neo, "最新 .json（_nfb_mapping.json）の内容が取り込まれる");
+  assert.ok(!stores.forms.old, "古い .json は読まれない");
 });
 
-test("StdFolders_consumePendingRebuild_: マーカー無し → ran:false（再構築しない）", () => {
+test("StdFolders_importMappingFromSource_: URL 指定 → その Drive ファイルを読む", () => {
   const gas = loadGasContext();
-  const root = makeMockFolder("DESTROOT");
-  const calls = [];
-  setupConsume(gas, { root, calls });
+  const doc = { type: "nfb-mapping", version: 1, forms: { u: { fileId: "UF" } }, questions: {}, dashboards: {}, folders: {} };
+  gas.ExtractFileIdFromUrl_ = () => "FID";
+  gas.DriveApp = { getFileById: () => ({ getBlob: () => ({ getDataAsString: () => JSON.stringify(doc) }) }) };
+  const stores = installStores(gas, {});
 
-  const res = gas.StdFolders_consumePendingRebuild_();
-  assert.equal(res.ran, false);
-  assert.deepEqual(calls, []);
+  const res = gas.StdFolders_importMappingFromSource_({ url: "https://drive.google.com/file/d/FID/view" });
+  assert.equal(res.ok, true);
+  assert.equal(res.imported.forms, 1);
+  assert.ok(stores.forms.u);
 });
 
-test("StdFolders_consumePendingRebuild_: 同一ルート → skipped かつ再構築しない（破壊防止）", () => {
+test("StdFolders_importMappingFromSource_: URL 不正は {ok:false}", () => {
   const gas = loadGasContext();
-  const root = makeMockFolder("SAMEROOT");
-  gas.StdFolders_writeRebuildMarker_(root, "SAMEROOT"); // sourceRootId === root.getId()
-  const calls = [];
-  setupConsume(gas, { root, calls });
+  gas.ExtractFileIdFromUrl_ = () => null;
+  installStores(gas, {});
+  const res = gas.StdFolders_importMappingFromSource_({ url: "not-a-url" });
+  assert.equal(res.ok, false);
+});
 
-  const res = gas.StdFolders_consumePendingRebuild_();
-  assert.equal(res.ran, false);
-  assert.equal(res.skipped, "same-root");
-  assert.deepEqual(calls, []);
-  // マーカーは削除される
-  assert.equal(gas.StdFolders_findRebuildMarker_(root), null);
+// ---- copy 同梱 ----
+
+test("StdFolders_buildCopiedMappingDoc_: idMap で新 fileId に振り直し、未収載は除外する", () => {
+  const gas = loadGasContext();
+  installStores(gas, {
+    forms: {
+      keep: { fileId: "SRC1", driveFileUrl: "su1", title: "K" },
+      drop: { fileId: "SRC9", driveFileUrl: "su9", title: "D" }, // idMap 未収載 → 除外
+    },
+    questions: { q: { fileId: "SRCQ", driveFileUrl: "suq", name: "Q" } },
+    dashboards: {},
+  });
+  const idMap = {
+    SRC1: { newFileId: "DST1", newUrl: "https://drive.google.com/file/d/DST1/view" },
+    SRCQ: { newFileId: "DSTQ", newUrl: "https://drive.google.com/file/d/DSTQ/view" },
+  };
+  const doc = gas.StdFolders_buildCopiedMappingDoc_(idMap, "SRCROOT");
+  assert.equal(doc.type, "nfb-mapping");
+  assert.equal(doc.sourceRootId, "SRCROOT");
+  assert.equal(doc.forms.keep.fileId, "DST1");
+  assert.equal(doc.forms.keep.driveFileUrl, "https://drive.google.com/file/d/DST1/view");
+  assert.ok(!doc.forms.drop, "idMap 未収載のエントリは除外される");
+  assert.equal(doc.questions.q.fileId, "DSTQ");
+});
+
+test("StdFolders_writeMappingFile_: destRoot に _nfb_mapping.json を 1 件作る", () => {
+  const gas = loadGasContext();
+  const dest = makeMockFolder("DEST");
+  const doc = { type: "nfb-mapping", version: 1, forms: { a: { fileId: "DST1" } } };
+  gas.StdFolders_writeMappingFile_(dest, doc);
+  assert.equal(dest._files.length, 1);
+  assert.equal(dest._files[0]._name, gas.NFB_STD_MAPPING_FILE_NAME);
+  const written = JSON.parse(dest._files[0]._content);
+  assert.equal(written.forms.a.fileId, "DST1");
 });

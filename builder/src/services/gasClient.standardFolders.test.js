@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import {
   copyStandardFolders,
   rebuildMappingsFromFolders,
+  exportMapping,
+  importMapping,
 } from "./gasClient.js";
 
 // google.script.run.withSuccessHandler(fn).withFailureHandler(fn)[fnName](payload) を模した
@@ -59,7 +61,7 @@ test("copyStandardFolders: appsScriptCopied を boolean で返す", async () => 
   }
 });
 
-test("rebuildMappingsFromFolders: 件数オブジェクトを返す", async () => {
+test("rebuildMappingsFromFolders: 件数オブジェクトを返す（同期で流用）", async () => {
   installGoogleStub("nfbRebuildMappingsFromFolders", {
     ok: true, forms: { count: 5 }, questions: { count: 3 }, dashboards: { count: 1 },
   });
@@ -68,6 +70,43 @@ test("rebuildMappingsFromFolders: 件数オブジェクトを返す", async () =
     assert.equal(r.forms.count, 5);
     assert.equal(r.questions.count, 3);
     assert.equal(r.dashboards.count, 1);
+  } finally {
+    clearGoogleStub();
+  }
+});
+
+test("exportMapping: サーバの mapping ドキュメントをそのまま返す", async () => {
+  const doc = { type: "nfb-mapping", version: 1, forms: { f1: { fileId: "FF1" } }, questions: {}, dashboards: {}, folders: {} };
+  installGoogleStub("nfbExportMapping", { ok: true, mapping: doc });
+  try {
+    const r = await exportMapping();
+    assert.equal(r.type, "nfb-mapping");
+    assert.equal(r.forms.f1.fileId, "FF1");
+  } finally {
+    clearGoogleStub();
+  }
+});
+
+test("importMapping: payload に { url } を送り、件数結果を返す", async () => {
+  const captured = installGoogleStub("nfbImportMapping", {
+    ok: true, imported: { forms: 2, questions: 1, dashboards: 0 }, skipped: 1, errors: [],
+  });
+  try {
+    const r = await importMapping("https://drive.google.com/file/d/FID/view");
+    assert.deepEqual(captured.payload, { url: "https://drive.google.com/file/d/FID/view" });
+    assert.equal(r.imported.forms, 2);
+    assert.equal(r.skipped, 1);
+    assert.deepEqual(r.errors, []);
+  } finally {
+    clearGoogleStub();
+  }
+});
+
+test("importMapping: 引数なしは url 空文字で送る（ルート最新読込）", async () => {
+  const captured = installGoogleStub("nfbImportMapping", { ok: true, imported: {}, skipped: 0, errors: [] });
+  try {
+    await importMapping();
+    assert.deepEqual(captured.payload, { url: "" });
   } finally {
     clearGoogleStub();
   }

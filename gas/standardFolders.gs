@@ -19,9 +19,9 @@
 
 var NFB_STD_ROOT_PROPERTY_KEY = "nfb.stdfolders.root";       // ルートフォルダ ID
 
-// コピー時に「再構築待ち」を示すためコピー先ルートへ置くマーカーファイル名。
-// コピー先 GAS が初回管理者アクセス時に検出し、1 回だけ再構築してから削除する。
-var NFB_STD_REBUILD_MARKER_NAME = "_nfb_rebuild_pending.json";
+// コピー時にコピー先ルートへ書き出すマッピングファイル名。
+// 復元は手動（設定 > 管理 の「インポート」/「同期」）で行う（自動再構築は廃止）。
+var NFB_STD_MAPPING_FILE_NAME = "_nfb_mapping.json";
 
 // 論理キー → フォルダ名。
 var NFB_STD_FOLDER_NAMES = {
@@ -147,32 +147,6 @@ function StdFolders_ensureFileInStdFolder_(fileId, key) {
     Logger.log("[StdFolders_ensureFileInStdFolder_] コピー不可、参照のまま (" + key + "): " + nfbErrorToString_(err));
     return fallback;
   }
-}
-
-// ---------------------------------------------
-// 再構築マーカー（コピー → コピー先で自動再構築）
-// ---------------------------------------------
-
-// コピー先ルートから再構築マーカーを探す。非ゴミ箱の 1 件を返す（無ければ null）。
-function StdFolders_findRebuildMarker_(root) {
-  var it = root.getFilesByName(NFB_STD_REBUILD_MARKER_NAME);
-  while (it.hasNext()) {
-    var f = it.next();
-    if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
-    return f;
-  }
-  return null;
-}
-
-// コピー先ルートへ再構築マーカーを置く。既に存在すれば作り直さない。
-function StdFolders_writeRebuildMarker_(destRoot, sourceRootId) {
-  if (StdFolders_findRebuildMarker_(destRoot)) return;
-  var payload = {
-    version: 1,
-    sourceRootId: sourceRootId || "",
-    createdAt: new Date().toISOString()
-  };
-  destRoot.createFile(NFB_STD_REBUILD_MARKER_NAME, JSON.stringify(payload, null, 2), "application/json");
 }
 
 // ---------------------------------------------
@@ -365,9 +339,10 @@ function StdFolders_copy_(payload) {
       clearedLinks += StdFolders_rewireDashboardFile_(dEntry.newFileId, dashboardsRev[dEntry.srcFileId] || null, copiedQuestionIds);
     }
 
-    // 再構築 ON のときはコピー先ルートへマーカーを残し、コピー先 GAS の初回管理者アクセス時に自動再構築させる。
+    // 再構築 ON のときはコピー先ルートへ _nfb_mapping.json を書き出す（新 fileId に振り直し済み）。
+    // 復元はコピー先で手動：設定 > 管理 の「インポート」（URL 空欄でルートの最新 .json を読込）または「同期」。
     if (rebuildMapping) {
-      StdFolders_writeRebuildMarker_(destRoot, srcRoot.getId());
+      StdFolders_writeMappingFile_(destRoot, StdFolders_buildCopiedMappingDoc_(idMap, srcRoot.getId()));
     }
 
     return {
@@ -380,8 +355,8 @@ function StdFolders_copy_(payload) {
       rebuildMapping: rebuildMapping,
       appsScriptCopied: appsScriptCopied,
       message: rebuildMapping
-        ? "コピーが完了しました。コピー先の appsscript 本体を管理者で開くと、マッピングが自動で 1 回だけ再構築されます。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
-        : "コピーが完了しました。コピー先の appsscript 本体で nfbRebuildMappingsFromFolders を 1 回実行してマッピングを再構築してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
+        ? "コピーが完了しました。コピー先ルートに _nfb_mapping.json を保存しました。コピー先の 設定 > 管理 から「インポート」（URL 空欄でルートの最新を読込）または「同期」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
+        : "コピーが完了しました。コピー先の 設定 > 管理 から「同期」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
     };
   });
 }
@@ -529,49 +504,198 @@ function StdFolders_rebuildMappings_(payload) {
   });
 }
 
-// (2.4) コピー先での自動再構築。再構築マーカーがあるときだけ 1 回実行し、マーカーを削除する。
-// コピー先 GAS の初回管理者アクセス時にフロントから呼ばれる。コピー元では実行されない想定だが、
-// 万一マーカーが残ったまま同一ルートで実行された場合は破壊防止のため再構築をスキップする。
-function StdFolders_consumePendingRebuild_() {
-  return nfbSafeCall_(function() {
-    // ルート未設定・自動検出不能な環境では「やることなし」として静かに返す（毎回のエラーログを避ける）。
-    var root;
-    try {
-      root = StdFolders_resolveRootFolder_(null);
-    } catch (err) {
-      Logger.log("[StdFolders_consumePendingRebuild_] ルート未解決のためスキップ: " + nfbErrorToString_(err));
-      return { ok: true, ran: false };
-    }
-    var marker = StdFolders_findRebuildMarker_(root);
-    if (!marker) return { ok: true, ran: false };
+// ---------------------------------------------
+// マッピングのエクスポート / インポート（手動）
+// ---------------------------------------------
 
+// idMap（旧fileId→{newFileId,newUrl}）でソースの 3 マッピングをコピー先 ID に振り直し、
+// _nfb_mapping.json 形のドキュメントを組み立てる。idMap 未収載のエントリ（コピー対象外）は除外。
+function StdFolders_buildCopiedMappingDoc_(idMap, sourceRootId) {
+  function remapSection(mapping, nameKey) {
+    var out = {};
+    for (var id in mapping) {
+      if (!mapping.hasOwnProperty(id)) continue;
+      var entry = mapping[id] || {};
+      var srcFileId = Nfb_resolveFileIdFromEntry_(entry);
+      if (!srcFileId || !idMap[srcFileId]) continue;
+      var mapped = idMap[srcFileId];
+      var next = { fileId: mapped.newFileId, driveFileUrl: mapped.newUrl };
+      if (nameKey && typeof entry[nameKey] === "string") next[nameKey] = entry[nameKey];
+      out[id] = next;
+    }
+    return out;
+  }
+  return {
+    type: "nfb-mapping",
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    sourceRootId: sourceRootId || "",
+    forms: remapSection(Forms_getMapping_(), "title"),
+    questions: remapSection(Analytics_getMapping_("questions"), "name"),
+    dashboards: remapSection(Analytics_getMapping_("dashboards"), "name"),
+    folders: {
+      forms: Forms_getFolders_(),
+      questions: Analytics_getFolders_("questions"),
+      dashboards: Analytics_getFolders_("dashboards")
+    }
+  };
+}
+
+// コピー先ルートへ _nfb_mapping.json を書き出す。
+function StdFolders_writeMappingFile_(destRoot, doc) {
+  destRoot.createFile(NFB_STD_MAPPING_FILE_NAME, JSON.stringify(doc, null, 2), "application/json");
+}
+
+// 現在のマッピング（3 マッピング ＋ フォルダ登録簿）を _nfb_mapping.json 形で返す。
+// ルート未解決でも例外にせず sourceRootId を空で返す。
+function StdFolders_exportMapping_() {
+  return nfbSafeCall_(function() {
     var sourceRootId = "";
     try {
-      var meta = JSON.parse(marker.getBlob().getDataAsString());
-      sourceRootId = (meta && typeof meta.sourceRootId === "string") ? meta.sourceRootId : "";
+      sourceRootId = StdFolders_resolveRootFolder_(null).getId();
     } catch (err) {
-      Logger.log("[StdFolders_consumePendingRebuild_] marker parse failed: " + nfbErrorToString_(err));
+      Logger.log("[StdFolders_exportMapping_] ルート未解決: " + nfbErrorToString_(err));
     }
-
-    // 同一ルート（=コピー元）でのマーカー実行は既存マッピングを破壊し得るためスキップして削除する。
-    if (sourceRootId && sourceRootId === root.getId()) {
-      marker.setTrashed(true);
-      return { ok: true, ran: false, skipped: "same-root" };
-    }
-
-    var formsResult = StdFolders_rebuildFormsMapping_(root);
-    var questionsResult = StdFolders_rebuildAnalyticsMapping_(root, "questions");
-    var dashboardsResult = StdFolders_rebuildAnalyticsMapping_(root, "dashboards");
-    marker.setTrashed(true);
-
-    return {
-      ok: true,
-      ran: true,
-      forms: formsResult,
-      questions: questionsResult,
-      dashboards: dashboardsResult
+    var doc = {
+      type: "nfb-mapping",
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      sourceRootId: sourceRootId,
+      forms: Forms_getMapping_(),
+      questions: Analytics_getMapping_("questions"),
+      dashboards: Analytics_getMapping_("dashboards"),
+      folders: {
+        forms: Forms_getFolders_(),
+        questions: Analytics_getFolders_("questions"),
+        dashboards: Analytics_getFolders_("dashboards")
+      }
     };
+    return { ok: true, mapping: doc };
   });
+}
+
+// 1 セクションを既存ストアへマージする共通処理。fileId 重複はスキップ。
+//   doc       : インポート元セクション（id → entry）
+//   getMapping: () => 既存 mapping
+//   onEntry   : (id, entry) => true で imported カウント（false でスキップ扱い）。保存は呼び出し側。
+// 戻り: { imported, skipped, errors }（errors は { section, id, reason }）。
+function StdFolders_mergeMappingSection_(section, doc, existingMapping, normalizeEntry, onNew) {
+  var result = { imported: 0, skipped: 0, errors: [] };
+  if (!doc || typeof doc !== "object") return result;
+  var mappedFileIds = StdFolders_mappedFileIdSet_(existingMapping);
+  for (var id in doc) {
+    if (!doc.hasOwnProperty(id)) continue;
+    try {
+      var entry = normalizeEntry(doc[id] || {});
+      var fileId = Nfb_resolveFileIdFromEntry_(entry);
+      if (!fileId) {
+        result.errors.push({ section: section, id: id, reason: "fileId を解決できません" });
+        continue;
+      }
+      if (mappedFileIds[fileId]) { result.skipped++; continue; }
+      existingMapping[id] = entry;
+      mappedFileIds[fileId] = true;
+      if (onNew) onNew(id, entry);
+      result.imported++;
+    } catch (err) {
+      result.errors.push({ section: section, id: id, reason: nfbErrorToString_(err) });
+    }
+  }
+  return result;
+}
+
+// パース済みドキュメントを既存マッピングへマージする（純マージ。Drive 走査はしない）。
+// type/version 不一致は throw せず { ok:false, error } を返す。
+function StdFolders_importMapping_(doc) {
+  if (!doc || typeof doc !== "object" || doc.type !== "nfb-mapping" || doc.version !== 1) {
+    return { ok: false, error: "対応していないマッピング形式です（type/version 不一致）" };
+  }
+
+  var imported = { forms: 0, questions: 0, dashboards: 0 };
+  var skipped = 0;
+  var errors = [];
+
+  // forms
+  var formsMapping = Forms_getMapping_();
+  var formsRes = StdFolders_mergeMappingSection_(
+    "forms", doc.forms, formsMapping,
+    function(e) { return { fileId: e.fileId || null, driveFileUrl: e.driveFileUrl || null, title: e.title || null }; },
+    function(id, entry) { try { if (entry.driveFileUrl) AddFormUrl_(id, entry.driveFileUrl); } catch (e) { /* non-critical */ } }
+  );
+  Forms_saveMapping_(formsMapping);
+  imported.forms = formsRes.imported; skipped += formsRes.skipped; errors = errors.concat(formsRes.errors);
+
+  // questions / dashboards
+  ["questions", "dashboards"].forEach(function(type) {
+    var mapping = Analytics_getMapping_(type);
+    var res = StdFolders_mergeMappingSection_(
+      type, doc[type], mapping,
+      function(e) { return { fileId: e.fileId || null, driveFileUrl: e.driveFileUrl || null, name: e.name || null }; },
+      null
+    );
+    Analytics_saveMapping_(type, mapping);
+    imported[type] = res.imported; skipped += res.skipped; errors = errors.concat(res.errors);
+  });
+
+  // フォルダ登録簿（既存と union）
+  var folders = doc.folders || {};
+  if (Array.isArray(folders.forms)) Forms_saveFolders_(Forms_getFolders_().concat(folders.forms));
+  if (Array.isArray(folders.questions)) Analytics_saveFoldersRegistry_("questions", Analytics_getFolders_("questions").concat(folders.questions));
+  if (Array.isArray(folders.dashboards)) Analytics_saveFoldersRegistry_("dashboards", Analytics_getFolders_("dashboards").concat(folders.dashboards));
+
+  return { ok: true, imported: imported, skipped: skipped, errors: errors };
+}
+
+// インポートのソースを解決して取り込む。
+//   payload.url 非空 : その Drive ファイル（マッピング JSON）を読む。
+//   payload.url 空   : ルート直下の非ゴミ箱 .json から getLastUpdated() が最新の 1 件を読む。
+function StdFolders_importMappingFromSource_(payload) {
+  return nfbSafeCall_(function() {
+    var url = payload && payload.url ? String(payload.url).trim() : "";
+    var file;
+    if (url) {
+      var fileId = ExtractFileIdFromUrl_(url);
+      if (!fileId) return { ok: false, error: "有効な Google Drive ファイル URL を指定してください" };
+      try {
+        file = DriveApp.getFileById(fileId);
+      } catch (err) {
+        return { ok: false, error: "ファイルへアクセスできません: " + nfbErrorToString_(err) };
+      }
+    } else {
+      var root;
+      try {
+        root = StdFolders_resolveRootFolder_(null);
+      } catch (err) {
+        return { ok: false, error: "ルートフォルダを解決できません。URL を指定してください: " + nfbErrorToString_(err) };
+      }
+      file = StdFolders_findLatestJsonInRoot_(root);
+      if (!file) return { ok: false, error: "ルートにマッピング JSON が見つかりません" };
+    }
+
+    var doc;
+    try {
+      doc = JSON.parse(file.getBlob().getDataAsString());
+    } catch (err) {
+      return { ok: false, error: "JSON の解析に失敗しました: " + nfbErrorToString_(err) };
+    }
+    return StdFolders_importMapping_(doc);
+  });
+}
+
+// ルート直下の非ゴミ箱 .json ファイルのうち getLastUpdated() が最新の 1 件を返す（無ければ null）。
+function StdFolders_findLatestJsonInRoot_(root) {
+  var latest = null;
+  var latestTime = -1;
+  var files = root.getFiles();
+  while (files.hasNext()) {
+    var f = files.next();
+    if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
+    if (!StdFolders_isJsonFile_(f)) continue;
+    var t = 0;
+    try { t = f.getLastUpdated().getTime(); } catch (e) { t = 0; }
+    if (t >= latestTime) { latestTime = t; latest = f; }
+  }
+  return latest;
 }
 
 // 既存 mapping から fileId の集合を作る（重複登録防止用）。
@@ -672,4 +796,5 @@ function StdFolders_isJsonFile_(file) {
 
 function nfbCopyStandardFolders(payload)     { return Nfb_runScriptAction_("std_folders_copy", payload || {}); }
 function nfbRebuildMappingsFromFolders(payload) { return Nfb_runScriptAction_("std_folders_rebuild_map", payload || {}); }
-function nfbConsumePendingRebuild()          { return Nfb_runScriptAction_("std_folders_consume_rebuild", {}); }
+function nfbExportMapping(payload)           { return Nfb_runScriptAction_("std_folders_export_map", payload || {}); }
+function nfbImportMapping(payload)           { return Nfb_runScriptAction_("std_folders_import_map", payload || {}); }

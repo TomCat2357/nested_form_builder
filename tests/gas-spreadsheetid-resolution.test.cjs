@@ -89,6 +89,9 @@ function loadStripContext({ isAdmin = false } = {}) {
   };
   context.Forms_getForm_ = function (formId) { return context.__forms[formId] || null; };
   context.Forms_listForms_ = function () { return { forms: context.__list, loadFailures: [] }; };
+  // forms_list ハンドラが folders 派生に使う外部ヘルパ（本体は gas/formsFolderStore.gs）。
+  // この回帰テストは spreadsheetId ストリップのみが対象なので空配列で十分。
+  context.Forms_collectFolders_ = function () { return []; };
   return loadGasFiles(context, ["formsPublicApi.gs"]);
 }
 

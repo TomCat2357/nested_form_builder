@@ -12,9 +12,15 @@ import {
   getRestrictToFormOnly,
   setRestrictToFormOnly,
   copyStandardFolders,
+  exportMapping,
+  importMapping,
+  rebuildMappingsFromFolders,
 } from "../../services/gasClient.js";
 import AdminCopyStructureDialog from "../../pages/admin/AdminCopyStructureDialog.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
+import { useAppData } from "../../app/state/AppDataProvider.jsx";
+import { questionCache, dashboardCache } from "../../features/analytics/analyticsCache.js";
+import { triggerBlobDownload } from "../../utils/fileDownload.js";
 
 const normalizeAdminEmailInput = (value) => String(value || "")
   .split(";")
@@ -100,6 +106,13 @@ export default function SettingsAdminTab() {
   const [rebuildMapping, setRebuildMapping] = useState(true);
   const [copyLoading, setCopyLoading] = useState(false);
 
+  // マッピングの管理（エクスポート / インポート / 同期）
+  const [mappingImportUrl, setMappingImportUrl] = useState("");
+  const [exportLoading, setExportLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+
+  const { refreshForms } = useAppData();
   const { userEmail } = useAuth();
   const canManageAdminSettings = hasScriptRun();
   const normalizedAdminEmailInput = useMemo(
@@ -259,6 +272,77 @@ export default function SettingsAdminTab() {
     }
   };
 
+  // マッピング変更後に一覧キャッシュを無効化する（AppDataProvider と同手順）。
+  const invalidateListCaches = async () => {
+    await refreshForms({ reason: "mapping-changed", background: false });
+    try {
+      await Promise.all([questionCache.saveAll([]), dashboardCache.saveAll([])]);
+    } catch (cacheErr) {
+      console.warn("[SettingsAdminTab] analytics cache invalidate failed:", cacheErr);
+    }
+  };
+
+  const handleExportMapping = async () => {
+    if (!canManageAdminSettings) return;
+    setExportLoading(true);
+    try {
+      const doc = await exportMapping();
+      triggerBlobDownload(
+        new Blob([JSON.stringify(doc, null, 2)], { type: "application/json" }),
+        "nfb-mapping.json",
+      );
+    } catch (error) {
+      console.error("[SettingsAdminTab] exportMapping failed", error);
+      showAlert(error?.message || "マッピングのエクスポートに失敗しました");
+    } finally {
+      setExportLoading(false);
+    }
+  };
+
+  const handleImportMapping = async () => {
+    if (!canManageAdminSettings) return;
+    setImportLoading(true);
+    try {
+      const { imported, skipped, errors } = await importMapping(mappingImportUrl.trim());
+      const lines = [
+        `フォーム: ${imported.forms || 0}件`,
+        `Question: ${imported.questions || 0}件`,
+        `Dashboard: ${imported.dashboards || 0}件`,
+        `スキップ（重複）: ${skipped || 0}件`,
+      ];
+      if (errors && errors.length) {
+        lines.push(`エラー: ${errors.length}件`);
+        errors.slice(0, 3).forEach((e) => lines.push(`・[${e.section}] ${e.id}: ${e.reason}`));
+        if (errors.length > 3) lines.push(`…ほか ${errors.length - 3}件`);
+      }
+      await invalidateListCaches();
+      showAlert(`マッピングをインポートしました。\n${lines.join("\n")}`);
+    } catch (error) {
+      console.error("[SettingsAdminTab] importMapping failed", error);
+      showAlert(error?.message || "マッピングのインポートに失敗しました");
+    } finally {
+      setImportLoading(false);
+    }
+  };
+
+  const handleSyncMapping = async () => {
+    if (!canManageAdminSettings) return;
+    setSyncLoading(true);
+    try {
+      const { forms, questions, dashboards } = await rebuildMappingsFromFolders("");
+      await invalidateListCaches();
+      showAlert(
+        "フォルダ走査で未リンクのファイルをリンクしました。\n" +
+        `フォーム: ${forms.count || 0}件\nQuestion: ${questions.count || 0}件\nDashboard: ${dashboards.count || 0}件`,
+      );
+    } catch (error) {
+      console.error("[SettingsAdminTab] rebuildMappingsFromFolders failed", error);
+      showAlert(error?.message || "マッピングの同期に失敗しました");
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   return (
     <div className="nf-card">
       {!canManageAdminSettings && (
@@ -330,6 +414,41 @@ export default function SettingsAdminTab() {
         <p className="nf-mt-6 nf-text-11 nf-text-muted">
           appsscript 本体と標準フォルダ構成の中身を別ルートへ複製し、フォーム→スプレッドシート等のリンクを
           コピー後の URL で再構成します。コピー先スクリプトの Web アプリは手動で再デプロイしてください。
+        </p>
+      </div>
+
+      <div className="nf-section-divider">
+        <div className="nf-settings-group-title nf-mb-6">マッピングの管理</div>
+        <p className="nf-mb-12 nf-text-12 nf-text-muted">
+          フォーム・Question・Dashboard の「ID→Drive ファイル対応表（マッピング）」をエクスポート／インポートします。
+          システムをコピーした直後の復元は、コピー先ルートに保存された <code>_nfb_mapping.json</code> を
+          「インポート」（URL 空欄）で取り込むか、「同期」でフォルダを走査して復元してください。
+        </p>
+
+        <div className="nf-row nf-gap-12 nf-mb-12" style={{ flexWrap: "wrap" }}>
+          <button type="button" className="nf-btn nf-nowrap" onClick={handleExportMapping} disabled={!canManageAdminSettings || exportLoading}>
+            {exportLoading ? "エクスポート中..." : "エクスポート（ダウンロード）"}
+          </button>
+          <button type="button" className="nf-btn nf-nowrap" onClick={handleSyncMapping} disabled={!canManageAdminSettings || syncLoading}>
+            {syncLoading ? "同期中..." : "同期（フォルダ走査）"}
+          </button>
+        </div>
+
+        <label className="nf-block nf-fw-600 nf-mb-6">インポート</label>
+        <div className="nf-row nf-gap-12">
+          <input
+            className="nf-input nf-flex-1 nf-min-w-0"
+            type="text"
+            value={mappingImportUrl}
+            placeholder="マッピング JSON の URL（空欄ならコピー先ルートの最新 .json を読み込み）"
+            onChange={(event) => setMappingImportUrl(event.target.value)}
+          />
+          <button type="button" className="nf-btn nf-nowrap" onClick={handleImportMapping} disabled={!canManageAdminSettings || importLoading}>
+            {importLoading ? "インポート中..." : "インポート"}
+          </button>
+        </div>
+        <p className="nf-mt-6 nf-text-11 nf-text-muted">
+          インポートは既存マッピングへマージします（同じ fileId は重複としてスキップ）。
         </p>
       </div>
 
