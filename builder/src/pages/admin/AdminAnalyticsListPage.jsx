@@ -10,6 +10,7 @@ import AdminNewFolderDialog from "./AdminNewFolderDialog.jsx";
 import AdminMoveDialog from "./AdminMoveDialog.jsx";
 import AdminRenameFolderDialog from "./AdminRenameFolderDialog.jsx";
 import { useAdminAnalyticsListActions } from "./useAdminAnalyticsListActions.js";
+import { useAnalyticsList } from "../../features/analytics/useAnalyticsList.js";
 import { useFolderBrowser } from "../../features/folders/useFolderBrowser.js";
 import { buildAppUrl } from "../../utils/appUrl.js";
 import FolderSearchBar from "../../features/folders/FolderSearchBar.jsx";
@@ -50,13 +51,15 @@ export default function AdminAnalyticsListPage({
   const navigate = useNavigate();
   const { showAlert } = useAlert();
 
-  const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
-  const [reloadCounter, setReloadCounter] = useState(0);
   const [copiedId, setCopiedId] = useState(null);
   const [registeredFolders, setRegisteredFolders] = useState([]);
+
+  // 一覧本体は SWR フックで管理（キャッシュ即表示＋鮮度に応じた裏更新）。
+  const { items, loading, refreshing, error, refresh } = useAnalyticsList({
+    listSWR: store.listSWR,
+    includeArchived: true,
+  });
 
   const {
     selected,
@@ -67,22 +70,11 @@ export default function AdminAnalyticsListPage({
   } = useSetSelection();
   const { selected: selectedFolders, toggle: toggleFolder, clear: clearFolderSelection } = useSetSelection();
 
-  const reload = useCallback(({ forceRefresh = false } = {}) => {
-    setLoading(true);
-    setError(null);
-    const listPromise = store.list({ forceRefresh, includeArchived: true })
-      .then(setItems)
-      .catch((err) => setError(err.message || String(err)));
-    // フォルダ一覧も並行して取得（store に listFolders がある場合のみ）
-    const foldersPromise = store.listFolders
-      ? store.listFolders().then(setRegisteredFolders).catch(() => {})
-      : Promise.resolve();
-    Promise.all([listPromise, foldersPromise]).finally(() => setLoading(false));
-  }, [store]);
-
+  // フォルダ一覧は一覧本体と独立に取得する（一覧表示をフォルダ取得完了で待たせない）。
   useEffect(() => {
-    reload({ forceRefresh: reloadCounter > 0 });
-  }, [reloadCounter, reload]);
+    if (!store.listFolders) return;
+    store.listFolders().then(setRegisteredFolders).catch(() => {});
+  }, [store]);
 
   const filteredItems = useMemo(() => {
     return showArchived ? items : items.filter((item) => !item.archived);
@@ -122,10 +114,6 @@ export default function AdminAnalyticsListPage({
     if (checked) selectAllRaw(visibleItems.map((item) => item.id));
     else clearSelection();
   };
-
-  const refresh = useCallback(async () => {
-    setReloadCounter((n) => n + 1);
-  }, []);
 
   const archive = useCallback(async (ids) => {
     await store.archive(ids);
@@ -394,11 +382,11 @@ export default function AdminAnalyticsListPage({
           <div className="nf-spacer-16" />
           <button
             type="button"
-            className={`nf-btn-outline nf-btn-sidebar nf-text-13${!loading ? " admin-refresh-btn" : ""}`}
+            className={`nf-btn-outline nf-btn-sidebar nf-text-13${!(loading || refreshing) ? " admin-refresh-btn" : ""}`}
             onClick={refresh}
-            disabled={loading}
+            disabled={loading || refreshing}
           >
-            {loading ? "🔄 更新中..." : "🔄 更新"}
+            {(loading || refreshing) ? "🔄 更新中..." : "🔄 更新"}
           </button>
         </>
       }
@@ -408,6 +396,7 @@ export default function AdminAnalyticsListPage({
         <p className="nf-text-subtle">読み込み中...</p>
       ) : (
         <>
+        {refreshing && <p className="nf-text-subtle nf-text-12 nf-m-0">更新中...</p>}
         <FolderSearchBar value={browser.query} onChange={browser.setQuery} placeholder={`${itemLabel} 名で検索（例: 売上。正規表現も可）`} />
         <FolderBreadcrumbs breadcrumbs={browser.breadcrumbs} onNavigate={navigateFolder} hidden={browser.searching} />
         <div className="search-table-wrap">

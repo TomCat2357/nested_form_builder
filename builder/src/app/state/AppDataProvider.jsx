@@ -26,6 +26,8 @@ export function AppDataProvider({ children }) {
 
   const [forms, setForms] = useState([]);
   const [loadingForms, setLoadingForms] = useState(true);
+  // 既存表示を保ったままバックグラウンドで一覧を取り直している間 true。
+  const [refreshingForms, setRefreshingForms] = useState(false);
   const [error, setError] = useState(null);
   const [loadFailures, setLoadFailures] = useState([]);
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
@@ -52,6 +54,8 @@ export function AppDataProvider({ children }) {
   const refreshForms = useCallback(async ({ reason = "unknown", background = false } = {}) => {
     if (!background) {
       setLoadingForms(true);
+    } else {
+      setRefreshingForms(true);
     }
     setError(null);
     const startedAt = Date.now();
@@ -116,6 +120,8 @@ export function AppDataProvider({ children }) {
     } finally {
       if (!background) {
         setLoadingForms(false);
+      } else {
+        setRefreshingForms(false);
       }
     }
   }, []);
@@ -433,6 +439,7 @@ export function AppDataProvider({ children }) {
       forms,
       loadFailures,
       loadingForms,
+      refreshingForms,
       error,
       lastSyncedAt,
       cacheDisabled,
@@ -460,7 +467,7 @@ export function AppDataProvider({ children }) {
       getFormById,
       registerImportedForm,
     }),
-    [forms, loadFailures, loadingForms, error, lastSyncedAt, cacheDisabled, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteForm, importForms, exportForms, copyForm, getFormById, registerImportedForm],
+    [forms, loadFailures, loadingForms, refreshingForms, error, lastSyncedAt, cacheDisabled, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteForm, importForms, exportForms, copyForm, getFormById, registerImportedForm],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;

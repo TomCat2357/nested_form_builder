@@ -31,6 +31,13 @@ const evaluateCache = ({
 export const evaluateCacheForForms = ({ lastSyncedAt, hasData, forceSync }) =>
   evaluateCache({ lastSyncedAt, hasData, forceSync, maxAgeMs: FORM_CACHE_MAX_AGE_MS, backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS });
 
+/**
+ * Analytics（Question / Dashboard）一覧キャッシュの評価。
+ * フォーム一覧と同じ SWR しきい値（1 時間で fresh、24 時間で要再取得）を共有する。
+ */
+export const evaluateCacheForAnalytics = ({ lastSyncedAt, hasData, forceSync }) =>
+  evaluateCache({ lastSyncedAt, hasData, forceSync, maxAgeMs: FORM_CACHE_MAX_AGE_MS, backgroundAgeMs: FORM_CACHE_BACKGROUND_REFRESH_MS });
+
 /** Record cache evaluation with pre-bound constants */
 export const evaluateCacheForRecords = ({ lastSyncedAt, hasData, forceSync }) =>
   evaluateCache({ lastSyncedAt, hasData, forceSync, maxAgeMs: RECORD_CACHE_MAX_AGE_MS, backgroundAgeMs: RECORD_CACHE_BACKGROUND_REFRESH_MS });

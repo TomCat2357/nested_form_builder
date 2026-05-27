@@ -19,6 +19,7 @@ import {
 import { compileStages } from "./utils/compileStages.js";
 import { inferCompiledColumnsFromSql } from "./utils/sqlColumnInference.js";
 import { formHasSpreadsheet } from "../../app/state/dataStoreHelpers.js";
+import { evaluateCacheForAnalytics } from "../../app/state/cachePolicy.js";
 import {
   buildAlaSqlTypeMap,
   buildViewAlaSqlTypeMap,
@@ -330,22 +331,53 @@ function filterV2Dashboards_(items) {
  * @param {(items: any[]) => any[]} [cfg.sanitizeList] GAS / キャッシュから読んだ配列を整形（既定: 恒等）
  * @param {(data: any) => void} [cfg.validateBeforeSave] save 前の検証フック（既定: なし）
  */
-function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) => items, validateBeforeSave }) {
+export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) => items, validateBeforeSave }) {
   const E = one.charAt(0).toUpperCase() + one.slice(1);
   const upsertAll = async (items) => {
     for (const item of items || []) await cache.upsert(item);
   };
+
+  // サーバから全件取得してキャッシュへ保存し、フィルタ済み配列を返す。
+  // lastSyncedAt はこの経路でのみ更新する（stampSyncTime: true）。
+  async function fetchAndStore_(includeArchived) {
+    const result = await gas[`list${E}s`]({ includeArchived: true });
+    const all = sanitizeList(result[many] || []);
+    await cache.saveAll(all, { stampSyncTime: true });
+    return filterArchived_(all, includeArchived);
+  }
 
   async function list({ forceRefresh = false, includeArchived = false } = {}) {
     if (!forceRefresh) {
       const cached = await cache.getAll();
       if (cached.length > 0) return filterArchived_(sanitizeList(cached), includeArchived);
     }
-    // GAS には includeArchived: true で常に全件取得し、フロントでフィルタ
-    const result = await gas[`list${E}s`]({ includeArchived: true });
-    const all = sanitizeList(result[many] || []);
-    await cache.saveAll(all);
-    return filterArchived_(all, includeArchived);
+    return await fetchAndStore_(includeArchived);
+  }
+
+  /**
+   * SWR 版の一覧取得。キャッシュを即座に返しつつ、鮮度に応じて再取得を仕掛ける。
+   * 鮮度判定は evaluateCacheForAnalytics（1 時間で fresh、24 時間で要再取得）に従う。
+   *
+   * @returns {Promise<{ items: any[], blocking: boolean, sync: Promise<any[]>|null }>}
+   *   - items: 即時表示用のキャッシュ済み（フィルタ済み）配列
+   *   - blocking: キャッシュが古すぎて信用できず、items を表示せず取得完了を待つべきか
+   *   - sync: バックグラウンド/同期の再取得 Promise（不要なら null）。解決値は最新のフィルタ済み配列
+   */
+  async function listSWR({ includeArchived = false, forceRefresh = false } = {}) {
+    const cached = await cache.getAll();
+    const { lastSyncedAt } = await cache.getMeta();
+    const sanitized = sanitizeList(cached);
+    const hasData = sanitized.length > 0;
+    const decision = evaluateCacheForAnalytics({ lastSyncedAt, hasData, forceSync: forceRefresh });
+    const items = filterArchived_(sanitized, includeArchived);
+
+    if (decision.isFresh) {
+      return { items, blocking: false, sync: null };
+    }
+    // shouldSync かつ手動更新でない場合のみブロックする（24 時間超 or キャッシュ無し）。
+    // 手動の forceRefresh では既存表示を残したまま裏で取り直す。
+    const blocking = !forceRefresh && decision.shouldSync;
+    return { items, blocking, sync: fetchAndStore_(includeArchived) };
   }
 
   // キャッシュ優先で単一取得。未ヒット時のみ GAS から個別取得。
@@ -435,6 +467,7 @@ function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) => item
 
   return {
     list,
+    listSWR,
     getById,
     save,
     remove,
@@ -472,6 +505,7 @@ const dashboardStore = makeEntityStore({
 });
 
 export const listQuestions = questionStore.list;
+export const listQuestionsSWR = questionStore.listSWR;
 export const getQuestionById = questionStore.getById;
 export const saveQuestion = questionStore.save;
 export const deleteQuestion = questionStore.remove;
@@ -491,6 +525,7 @@ export const renameQuestionFolder = questionStore.renameFolder;
 export const deleteQuestionFolder = questionStore.deleteFolder;
 
 export const listDashboards = dashboardStore.list;
+export const listDashboardsSWR = dashboardStore.listSWR;
 export const getDashboardById = dashboardStore.getById;
 export const saveDashboard = dashboardStore.save;
 export const deleteDashboard = dashboardStore.remove;

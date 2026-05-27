@@ -10,7 +10,7 @@ import FolderBreadcrumbs from "../folders/FolderBreadcrumbs.jsx";
 import FolderCard from "../folders/FolderCard.jsx";
 
 export default function HomeForms({ resetNonce = 0 }) {
-  const { forms, loadingForms, refreshForms, lastSyncedAt } = useAppData();
+  const { forms, loadingForms, refreshingForms, refreshForms, lastSyncedAt } = useAppData();
   const { settings } = useBuilderSettings();
   const navigate = useNavigate();
 
@@ -80,6 +80,7 @@ export default function HomeForms({ resetNonce = 0 }) {
 
   return (
     <div className="nf-col nf-gap-12">
+      {refreshingForms && <p className="nf-text-subtle nf-text-12 nf-m-0">更新中...</p>}
       <FolderSearchBar value={browser.query} onChange={browser.setQuery} placeholder="フォーム名で検索（例: 売上。正規表現も可）" />
       <FolderBreadcrumbs breadcrumbs={browser.breadcrumbs} onNavigate={browser.goTo} hidden={browser.searching} />
       {browser.folders.length === 0 && browser.visibleItems.length === 0 ? (

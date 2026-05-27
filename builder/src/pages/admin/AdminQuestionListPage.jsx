@@ -1,6 +1,7 @@
 import React from "react";
 import {
   listQuestions,
+  listQuestionsSWR,
   saveQuestion,
   archiveQuestions,
   unarchiveQuestions,
@@ -19,6 +20,7 @@ import AdminAnalyticsListPage from "./AdminAnalyticsListPage.jsx";
 
 const store = {
   list: listQuestions,
+  listSWR: listQuestionsSWR,
   save: saveQuestion,
   archive: archiveQuestions,
   unarchive: unarchiveQuestions,

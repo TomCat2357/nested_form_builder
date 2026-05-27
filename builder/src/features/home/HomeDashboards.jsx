@@ -1,7 +1,7 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { listDashboards } from "../analytics/analyticsStore.js";
-import { useAsyncResource } from "../../app/hooks/useAsyncResource.js";
+import { listDashboardsSWR } from "../analytics/analyticsStore.js";
+import { useAnalyticsList } from "../analytics/useAnalyticsList.js";
 import { useFolderBrowser } from "../folders/useFolderBrowser.js";
 import FolderSearchBar from "../folders/FolderSearchBar.jsx";
 import FolderBreadcrumbs from "../folders/FolderBreadcrumbs.jsx";
@@ -9,12 +9,7 @@ import FolderCard from "../folders/FolderCard.jsx";
 
 export default function HomeDashboards({ resetNonce = 0 }) {
   const navigate = useNavigate();
-  const { data: dashboards, loading, error } = useAsyncResource(
-    () => listDashboards(),
-    [],
-  );
-
-  const items = useMemo(() => dashboards || [], [dashboards]);
+  const { items, loading, refreshing, error } = useAnalyticsList({ listSWR: listDashboardsSWR });
   const browser = useFolderBrowser(items, {
     getFolder: (d) => d.folder,
     getName: (d) => d.name || "",
@@ -36,14 +31,15 @@ export default function HomeDashboards({ resetNonce = 0 }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resetNonce]);
 
-  if (error) return <p className="nf-text-warning">{error}</p>;
   if (loading) return <p className="nf-text-subtle">読み込み中...</p>;
+  if (error && items.length === 0) return <p className="nf-text-warning">{error}</p>;
   if (items.length === 0) {
     return <p className="nf-text-subtle">ダッシュボードがありません。</p>;
   }
 
   return (
     <div className="nf-col nf-gap-12">
+      {refreshing && <p className="nf-text-subtle nf-text-12 nf-m-0">更新中...</p>}
       <FolderSearchBar value={browser.query} onChange={browser.setQuery} placeholder="ダッシュボード名で検索（例: 売上。正規表現も可）" />
       <FolderBreadcrumbs breadcrumbs={browser.breadcrumbs} onNavigate={browser.goTo} hidden={browser.searching} />
       {browser.folders.length === 0 && browser.visibleItems.length === 0 ? (
