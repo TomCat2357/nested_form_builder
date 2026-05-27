@@ -17,7 +17,8 @@
 // 管理者が指定したルート URL をフォールバックとして使う。両者とも Script Property に保存する。
 // =============================================
 
-var NFB_STD_ROOT_PROPERTY_KEY = "nfb.stdfolders.root";       // ルートフォルダ ID
+var NFB_STD_ROOT_PROPERTY_KEY = "nfb.stdfolders.root";          // 自動検出キャッシュ（最終フォールバック用）
+var NFB_STD_ROOT_MANUAL_KEY   = "nfb.stdfolders.root.manual";   // 管理者が明示指定した手動ルート（sticky）
 
 // コピー時にコピー先ルートへ書き出すマッピングファイル名。
 // 復元は手動（設定 > 管理 の「インポート」/「同期」）で行う（自動再構築は廃止）。
@@ -59,10 +60,11 @@ function StdFolders_detectRootFromScript_() {
   return null;
 }
 
-// ルートフォルダを解決する。
-//   1) manualRootUrl が与えられればそれを採用し Script Property へ保存
-//   2) Script Property にキャッシュ済みのルート ID
-//   3) appsscript 本体の親フォルダを自動検出し保存
+// ルートフォルダを解決する。自動検出（appsscript 本体の親フォルダ）を権威とする。
+//   1) manualRootUrl が与えられればそれを採用し手動キーへ保存（以後 sticky）
+//   2) 手動キーに保存済みのルート ID（管理者が明示指定した場合のみ）
+//   3) appsscript 本体の親フォルダを自動検出し、キャッシュキーを最新 ID で上書き
+//   4) 検出不能時のみ、自動検出キャッシュキーを最終フォールバックとして読む
 // いずれも解決できなければ日本語例外を投げる。
 function StdFolders_resolveRootFolder_(manualRootUrl) {
   var props = Nfb_getScriptProperties_();
@@ -70,10 +72,32 @@ function StdFolders_resolveRootFolder_(manualRootUrl) {
   var manual = manualRootUrl ? String(manualRootUrl).trim() : "";
   if (manual) {
     var picked = nfbResolveFolderFromInput_(manual); // 無効 URL は例外
-    props.setProperty(NFB_STD_ROOT_PROPERTY_KEY, picked.getId());
+    props.setProperty(NFB_STD_ROOT_MANUAL_KEY, picked.getId());
     return picked;
   }
 
+  // 管理者が明示指定した手動ルートは自動検出より優先（sticky）。無効なら削除してフォールバック。
+  var manualId = props.getProperty(NFB_STD_ROOT_MANUAL_KEY);
+  if (manualId) {
+    try {
+      var manualFolder = DriveApp.getFolderById(manualId);
+      if (!(typeof manualFolder.isTrashed === "function" && manualFolder.isTrashed())) {
+        return manualFolder;
+      }
+    } catch (e) {
+      // 手動ルートが無効 → 削除して自動検出へ
+    }
+    props.deleteProperty(NFB_STD_ROOT_MANUAL_KEY);
+  }
+
+  // 自動検出が権威。成功したら陳腐化し得るキャッシュを最新 ID で上書きする。
+  var detected = StdFolders_detectRootFromScript_();
+  if (detected) {
+    props.setProperty(NFB_STD_ROOT_PROPERTY_KEY, detected.getId());
+    return detected;
+  }
+
+  // 検出不能時のみキャッシュをフォールバックとして使う。
   var savedId = props.getProperty(NFB_STD_ROOT_PROPERTY_KEY);
   if (savedId) {
     try {
@@ -82,14 +106,8 @@ function StdFolders_resolveRootFolder_(manualRootUrl) {
         return cached;
       }
     } catch (e) {
-      // キャッシュが無効 → 自動検出へフォールバック
+      // キャッシュも無効
     }
-  }
-
-  var detected = StdFolders_detectRootFromScript_();
-  if (detected) {
-    props.setProperty(NFB_STD_ROOT_PROPERTY_KEY, detected.getId());
-    return detected;
   }
 
   throw new Error("ルートフォルダを自動検出できませんでした。ルートフォルダの URL を手動で指定してください。");
@@ -101,6 +119,13 @@ function StdFolders_getOrCreateSubfolder_(rootFolder, key) {
   if (!name) throw new Error("未知の標準フォルダキーです: " + key);
   var existing = rootFolder.getFoldersByName(name);
   return existing.hasNext() ? existing.next() : rootFolder.createFolder(name);
+}
+
+// root 配下に標準サブフォルダを全て ensure する（既存はそのまま、無いものだけ作成）。
+function StdFolders_ensureAllSubfolders_(rootFolder) {
+  for (var i = 0; i < NFB_STD_FOLDER_ORDER.length; i++) {
+    StdFolders_getOrCreateSubfolder_(rootFolder, NFB_STD_FOLDER_ORDER[i]);
+  }
 }
 
 // ---------------------------------------------
@@ -159,6 +184,7 @@ function StdFolders_ensureFileInStdFolder_(fileId, key) {
 function StdFolders_autoFileFolderOrNull_(key) {
   try {
     var root = StdFolders_resolveRootFolder_(null);
+    StdFolders_ensureAllSubfolders_(root);   // 不足している全フォルダを一括作成
     return StdFolders_getOrCreateSubfolder_(root, key);
   } catch (err) {
     Logger.log("[StdFolders_autoFileFolderOrNull_] 標準フォルダ解決に失敗 (" + key + "): " + nfbErrorToString_(err));
@@ -798,3 +824,27 @@ function nfbCopyStandardFolders(payload)     { return Nfb_runScriptAction_("std_
 function nfbRebuildMappingsFromFolders(payload) { return Nfb_runScriptAction_("std_folders_rebuild_map", payload || {}); }
 function nfbExportMapping(payload)           { return Nfb_runScriptAction_("std_folders_export_map", payload || {}); }
 function nfbImportMapping(payload)           { return Nfb_runScriptAction_("std_folders_import_map", payload || {}); }
+function nfbGetStdFolderRoot(payload)        { return Nfb_runScriptAction_("std_folders_get_root", payload || {}); }
+function nfbEnsureStdFolders(payload)        { return Nfb_runScriptAction_("std_folders_ensure", payload || {}); }
+
+// 現在のルートフォルダ情報を返す（診断用）。未解決でも例外にせず resolved:false を返す。
+function StdFolders_getRootInfo_() {
+  return nfbSafeCall_(function() {
+    try {
+      var root = StdFolders_resolveRootFolder_(null);
+      return { ok: true, resolved: true, rootId: root.getId(), rootUrl: root.getUrl(), rootName: root.getName() };
+    } catch (err) {
+      return { ok: true, resolved: false, error: nfbErrorToString_(err) };
+    }
+  });
+}
+
+// 全標準サブフォルダを今すぐ作成し、作成後のルート情報を返す（任意で manual rootUrl 指定可）。
+function StdFolders_ensureFolders_(payload) {
+  return nfbSafeCall_(function() {
+    var manualRootUrl = payload && payload.rootUrl ? String(payload.rootUrl).trim() : "";
+    var root = StdFolders_resolveRootFolder_(manualRootUrl);
+    StdFolders_ensureAllSubfolders_(root);
+    return { ok: true, rootId: root.getId(), rootUrl: root.getUrl(), rootName: root.getName() };
+  });
+}

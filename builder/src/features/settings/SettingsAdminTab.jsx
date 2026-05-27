@@ -15,6 +15,8 @@ import {
   exportMapping,
   importMapping,
   rebuildMappingsFromFolders,
+  getStdFolderRoot,
+  ensureStdFolders,
 } from "../../services/gasClient.js";
 import AdminCopyStructureDialog from "../../pages/admin/AdminCopyStructureDialog.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
@@ -98,6 +100,11 @@ export default function SettingsAdminTab() {
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
 
+  // ルートフォルダ診断 / 標準フォルダ作成
+  const [rootInfo, setRootInfo] = useState(null);   // { resolved, rootUrl, rootName, error }
+  const [rootUrlInput, setRootUrlInput] = useState("");
+  const [ensureLoading, setEnsureLoading] = useState(false);
+
   // システムごとコピー
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
   const [copyUrl, setCopyUrl] = useState("");
@@ -135,6 +142,13 @@ export default function SettingsAdminTab() {
       } catch (error) {
         console.error("[SettingsAdminTab] load failed", error);
         showAlert(error?.message || "管理者設定の読み込みに失敗しました");
+      }
+      // ルートフォルダ診断は失敗しても他設定の読み込みを妨げないよう分離して取得。
+      try {
+        setRootInfo(await getStdFolderRoot());
+      } catch (error) {
+        console.error("[SettingsAdminTab] getStdFolderRoot failed", error);
+        setRootInfo({ resolved: false, error: error?.message || "ルートフォルダの取得に失敗しました" });
       }
     })();
   }, [canManageAdminSettings, showAlert]);
@@ -244,6 +258,23 @@ export default function SettingsAdminTab() {
       showAlert(error?.message || "設定の保存に失敗しました");
     } finally {
       setRestrictToFormOnlyLoading(false);
+    }
+  };
+
+  const handleEnsureFolders = async () => {
+    if (!canManageAdminSettings) return;
+    setEnsureLoading(true);
+    try {
+      const { rootName } = await ensureStdFolders(rootUrlInput.trim());
+      const fresh = await getStdFolderRoot();
+      setRootInfo(fresh);
+      setRootUrlInput("");
+      showAlert(`「${rootName}」配下に標準フォルダ構成（01_forms〜08_documents）を作成しました。`);
+    } catch (error) {
+      console.error("[SettingsAdminTab] ensureStdFolders failed", error);
+      showAlert(error?.message || "標準フォルダ構成の作成に失敗しました");
+    } finally {
+      setEnsureLoading(false);
     }
   };
 
@@ -403,10 +434,39 @@ export default function SettingsAdminTab() {
         <p className="nf-mb-12 nf-text-12 nf-text-muted">
           フォーム・Question・Dashboard・スプレッドシート・アップロードファイルは、appsscript 本体が置かれた
           親フォルダをルートとする標準フォルダ構成（<code>01_forms</code>〜<code>08_documents</code>）に保存されます。
-          フォルダは保存時に自動作成されます。
+          いずれかを保存すると、不足しているフォルダも含めて全て自動作成されます。
         </p>
 
+        {rootInfo && (
+          rootInfo.resolved ? (
+            <p className="nf-mb-12 nf-text-12">
+              現在のルートフォルダ:{" "}
+              {rootInfo.rootUrl
+                ? <a href={rootInfo.rootUrl} target="_blank" rel="noreferrer"><code>{rootInfo.rootName || rootInfo.rootUrl}</code></a>
+                : <code>{rootInfo.rootName || "(名称不明)"}</code>}
+            </p>
+          ) : (
+            <p className="nf-mb-12 nf-text-12" style={{ color: "#c0392b" }}>
+              ルートフォルダを自動検出できませんでした{rootInfo.error ? `（${rootInfo.error}）` : ""}。
+              下の入力欄にルートフォルダの URL を指定してから「標準フォルダ構成を今すぐ作成」を実行してください。
+            </p>
+          )
+        )}
+
+        <div className="nf-row nf-gap-12 nf-mb-12">
+          <input
+            className="nf-input nf-flex-1 nf-min-w-0"
+            type="text"
+            value={rootUrlInput}
+            placeholder="ルートフォルダの URL（空欄なら自動検出。指定すると手動ルートとして固定）"
+            onChange={(event) => setRootUrlInput(event.target.value)}
+          />
+        </div>
+
         <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
+          <button type="button" className="nf-btn nf-nowrap" onClick={handleEnsureFolders} disabled={!canManageAdminSettings || ensureLoading}>
+            {ensureLoading ? "作成中..." : "標準フォルダ構成を今すぐ作成"}
+          </button>
           <button type="button" className="nf-btn nf-nowrap" onClick={() => setCopyDialogOpen(true)} disabled={!canManageAdminSettings}>
             システムごとコピー
           </button>

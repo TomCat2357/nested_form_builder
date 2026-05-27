@@ -236,6 +236,16 @@ export const importMapping = async (url = "") => {
   const r = await fetchGasApi("nfbImportMapping", { url }, "マッピングのインポートに失敗しました");
   return { imported: r.imported || {}, skipped: r.skipped || 0, errors: r.errors || [] };
 };
+// 現在解決されるルートフォルダ情報を取得（診断用）。
+export const getStdFolderRoot = async () => {
+  const r = await fetchGasApi("nfbGetStdFolderRoot", {}, "ルートフォルダの取得に失敗しました");
+  return { resolved: Boolean(r.resolved), rootUrl: r.rootUrl || "", rootName: r.rootName || "", rootId: r.rootId || "", error: r.error || "" };
+};
+// 標準フォルダ構成（01_forms〜08_documents）を今すぐ全て作成。rootUrl 非空なら手動指定。
+export const ensureStdFolders = async (rootUrl = "") => {
+  const r = await fetchGasApi("nfbEnsureStdFolders", { rootUrl }, "標準フォルダ構成の作成に失敗しました");
+  return { rootUrl: r.rootUrl || "", rootName: r.rootName || "" };
+};
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
 export const saveFileToDrive = ({ filename, base64, mimeType }) => fetchGasApi("nfbSaveFileToDrive", { filename, base64, mimeType }, "Driveへの保存に失敗しました");
 const isSingleRecordPrintPayload = (payload) => {
