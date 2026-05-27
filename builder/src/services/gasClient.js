@@ -215,17 +215,11 @@ export const checkAdminEmailMembership = createGasEndpoint({
 });
 export const getRestrictToFormOnly = async () => { const r = await fetchGasApi("nfbGetRestrictToFormOnly", {}, "Get restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
 export const setRestrictToFormOnly = async (value) => { const r = await fetchGasApi("nfbSetRestrictToFormOnly", value, "Set restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
-// 標準フォルダ構成（作成 / 自動整理フラグ / 構成コピー / マッピング再構築）
-export const getStandardFolderAutoFile = async () => { const r = await fetchGasApi("nfbGetStandardFolderAutoFile", {}, "Get auto-file setting failed"); return Boolean(r.autoFile); };
-export const setStandardFolderAutoFile = async (value) => { const r = await fetchGasApi("nfbSetStandardFolderAutoFile", value, "Set auto-file setting failed"); return Boolean(r.autoFile); };
-export const createStandardFolders = async (rootUrl = "") => {
-  const r = await fetchGasApi("nfbCreateStandardFolders", { rootUrl }, "標準フォルダ構成の作成に失敗しました");
-  return { rootUrl: r.rootUrl || "", folders: r.folders || [] };
-};
+// 標準フォルダ構成（システムごとコピー / マッピング再構築）
 export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyWebhooks = false, rebuildMapping = true } = {}) => {
   if (!destRootUrl) throw new Error("コピー先ルートフォルダの URL を指定してください");
-  const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks, rebuildMapping }, "フォルダ構成のコピーに失敗しました");
-  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), message: r.message || "" };
+  const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks, rebuildMapping }, "システムごとコピーに失敗しました");
+  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), message: r.message || "" };
 };
 // 手動フォールバック（UI からは呼ばない。コピー先で自動再構築が失敗した場合のコンソール実行用）。
 export const rebuildMappingsFromFolders = async (rootUrl = "") => {

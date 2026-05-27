@@ -79,7 +79,11 @@ function Analytics_registerImportedTemplate_(type, payload) {
     if (!template) {
       throw new Error(resultKey + " の JSON が有効な形式ではありません");
     }
-    var fileUrl = payload.fileUrl || ("https://drive.google.com/file/d/" + fileId + "/view");
+    // 標準フォルダ構成内（02_questions / 03_dashboards）からの取り込みは参照のまま、
+    // 構成外なら該当サブフォルダへコピーしてリンクする。
+    var placed = StdFolders_ensureFileInStdFolder_(fileId, type === "questions" ? "questions" : "dashboards");
+    fileId = placed.fileId;
+    var fileUrl = placed.fileUrl;
 
     var mapping = Analytics_getMapping_(type);
     // ID 採番: 既存 ID が衝突するなら新規生成

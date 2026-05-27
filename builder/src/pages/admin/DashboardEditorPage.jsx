@@ -25,7 +25,6 @@ import DashboardGrid from "../../features/analytics/components/DashboardGrid.jsx
 import DashboardFilterBar from "../../features/analytics/components/DashboardFilterBar.jsx";
 import SimpleFilterBar from "../../features/analytics/components/SimpleFilterBar.jsx";
 import DashboardCardFilterMappingDialog from "../../features/analytics/components/DashboardCardFilterMappingDialog.jsx";
-import { validateDriveSaveTarget } from "../../utils/driveSaveTarget.js";
 import { buildAppUrl } from "../../utils/appUrl.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
 
@@ -52,8 +51,6 @@ export default function DashboardEditorPage() {
   const [loading, setLoading] = useState(!!dashboardId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  const [driveUrl, setDriveUrl] = useState("");
-  const [originalDriveFileUrl, setOriginalDriveFileUrl] = useState("");
   const [previewValues, setPreviewValues] = useState({});
   const [simpleFilterPreviewValues, setSimpleFilterPreviewValues] = useState({});
   const [mappingCardId, setMappingCardId] = useState(null);
@@ -131,8 +128,6 @@ export default function DashboardEditorPage() {
       } else {
         setDashboard(d);
       }
-      setDriveUrl(d?.driveFileUrl || "");
-      setOriginalDriveFileUrl(d?.driveFileUrl || "");
       // フィルタの初期値で previewValues を埋める
       const initVals = {};
       for (const f of d?.filters || []) {
@@ -296,7 +291,7 @@ export default function DashboardEditorPage() {
   };
 
   // ----- Dirty tracking -----
-  const snapshot = useMemo(() => JSON.stringify({ dashboard, driveUrl }), [dashboard, driveUrl]);
+  const snapshot = useMemo(() => JSON.stringify({ dashboard }), [dashboard]);
   const baselineReady = !dashboardId || !loading;
 
   useEffect(() => {
@@ -332,10 +327,6 @@ export default function DashboardEditorPage() {
       return;
     }
 
-    const driveCheck = validateDriveSaveTarget(driveUrl, { isEdit: !!dashboardId, originalFileUrl: originalDriveFileUrl, itemLabel: "Dashboard" });
-    if (!driveCheck.ok) { setError(driveCheck.error); return; }
-    const targetUrl = driveCheck.targetUrl;
-
     setSaving(true);
     setError(null);
 
@@ -350,7 +341,7 @@ export default function DashboardEditorPage() {
     };
 
     try {
-      await saveDashboard(payload, targetUrl);
+      await saveDashboard(payload);
       navigate(location.state?.from || "/admin/dashboards");
     } catch (err) {
       setError(err.message || String(err));
@@ -444,19 +435,9 @@ export default function DashboardEditorPage() {
             </div>
           </div>
 
-          <div>
-            <label className="nf-label">Dashboard 定義の Google Drive 保存先 URL</label>
-            <input
-              className="nf-input"
-              type="text"
-              value={driveUrl}
-              onChange={(e) => setDriveUrl(e.target.value)}
-              placeholder={dashboardId
-                ? "空白: 既定フォルダに新たにコピー / フォルダURL: 指定フォルダにコピー"
-                : "空白: 既定フォルダ / フォルダURL: 指定フォルダに保存"}
-              style={{ width: "100%", maxWidth: 600 }}
-            />
-          </div>
+          <p className="nf-text-11 nf-text-muted nf-mb-0">
+            Dashboard 定義は標準フォルダ構成の <code>03_dashboards</code> に保存されます。
+          </p>
 
           {/* フィルタ定義 */}
           <div>

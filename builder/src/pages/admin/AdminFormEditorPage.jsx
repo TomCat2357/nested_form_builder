@@ -4,7 +4,7 @@ import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../../app/components/AppLayout.jsx";
 import ConfirmDialog from "../../app/components/ConfirmDialog.jsx";
 import FormBuilderWorkspace from "../../features/admin/FormBuilderWorkspace.jsx";
-import { SETTINGS_GROUPS } from "../../features/settings/settingsSchema.js";
+import { SETTINGS_GROUPS, SPREADSHEET_SETTINGS_GROUP } from "../../features/settings/settingsSchema.js";
 import { dataStore } from "../../app/state/dataStore.js";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { useFormCacheSync } from "../../app/hooks/useFormCacheSync.js";
@@ -44,8 +44,9 @@ export default function AdminFormEditorPage() {
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
   const [folder, setFolder] = useState(initialMetaRef.current.folder);
-  const [driveUrl, setDriveUrl] = useState(form?.driveFileUrl || "");
   const [localSettings, setLocalSettings] = useState(initialSettings);
+  // 保存先スプレッドシートの手動指定欄。標準フォルダ構成が既定のため初期は常に非表示（③）。
+  const [showSpreadsheetSetting, setShowSpreadsheetSetting] = useState(false);
   const [builderDirty, setBuilderDirty] = useState(false);
   const unsavedDialog = useConfirmDialog();
   const [isSaving, setIsSaving] = useState(false);
@@ -129,7 +130,6 @@ export default function AdminFormEditorPage() {
     setName(formTitle);
     setDescription(form.description || "");
     setFolder(form.folder || "");
-    setDriveUrl(form.driveFileUrl || "");
     setLocalSettings(omitThemeSetting(form.settings || {}));
     setQuestionControl(null);
     setNameError("");
@@ -208,39 +208,11 @@ export default function AdminFormEditorPage() {
       schemaVersion: form?.schemaVersion ?? 1,
     };
 
-    const targetUrl = driveUrl?.trim() || null;
-    const isFileUrl = targetUrl ? /\/file\/d\/[a-zA-Z0-9_-]+/.test(targetUrl) : false;
-    const isFolderUrl = targetUrl ? /\/folders\/[a-zA-Z0-9_-]+/.test(targetUrl) : false;
-    let saveMode = "auto";
-
-    if (!targetUrl) {
-      saveMode = isEdit ? "auto" : "copy_to_root";
-    } else if (isFileUrl) {
-      saveMode = "overwrite_existing";
-    } else if (isFolderUrl) {
-      saveMode = "copy_to_folder";
-    }
-
-    if (targetUrl) {
-      if (!isEdit && isFileUrl) {
-        showAlert("新規作成時はファイルURLは指定できません。フォルダURLまたは空白にしてください。");
-        setIsSaving(false);
-        return;
-      }
-      if (isEdit && isFileUrl) {
-        const originalFileUrl = form?.driveFileUrl || "";
-        if (targetUrl !== originalFileUrl) {
-          showAlert("既存フォームの保存先には、元のファイルURL以外のファイルURLは指定できません。フォルダURLまたは空白にしてください。");
-          setIsSaving(false);
-          return;
-        }
-      }
-    }
-
+    // 保存先は標準フォルダ構成（01_forms）。新規は copy_to_root → 01_forms、編集は既存ファイルを上書き。
     try {
       const savedForm = isEdit
-        ? await updateForm(formId, payload, targetUrl, saveMode)
-        : await createForm(payload, targetUrl, saveMode);
+        ? await updateForm(formId, payload, null, "auto")
+        : await createForm(payload, null, "auto");
       setCachedForm(savedForm);
       builderRef.current?.commitSavedState?.();
       initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
@@ -399,24 +371,31 @@ export default function AdminFormEditorPage() {
               スラッシュ区切りで階層を指定します。一覧画面でフォルダとして表示され、クリックで中に入れます。
             </p>
           </div>
+        </div>
 
-          <div className="nf-col nf-gap-6">
-            <label className="nf-block nf-fw-600 nf-mb-6">フォーム項目データのGoogle Drive保存先URL</label>
+        <div className="nf-card nf-mb-16">
+          <label className="nf-row nf-gap-8" style={{ alignItems: "center", cursor: isReadLocked ? "default" : "pointer" }}>
             <input
-              value={driveUrl}
-              onChange={(event) => setDriveUrl(event.target.value)}
-              className="nf-input admin-input"
-              placeholder={isEdit
-                ? "空白: マイドライブルートに新たにコピー / フォルダURL: 指定フォルダにコピー"
-                : "空白: マイドライブルート / フォルダURL: 指定フォルダに保存"}
+              type="checkbox"
+              checked={showSpreadsheetSetting}
               disabled={isReadLocked}
+              onChange={(event) => setShowSpreadsheetSetting(event.target.checked)}
             />
-            <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
-              {isEdit
-                ? "現在のファイルURLが表示されています。空白にするとマイドライブルートに新たなコピーを作成します。フォルダURLに変更するとそのフォルダにコピーを作成します。ファイルURLは元のURL以外は指定できません。"
-                : "空白の場合はマイドライブのルートに保存されます。フォルダURLを指定するとそのフォルダに保存されます。ファイルURLは指定できません。"}
-            </p>
-          </div>
+            <span className="nf-text-13">保存先スプレッドシートを手動指定する</span>
+          </label>
+          <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+            指定しない場合は標準フォルダ構成の <code>04_spreadsheets</code> に回答保存用スプレッドシートを自動作成します。
+          </p>
+          {showSpreadsheetSetting && (
+            <div className="nf-mt-12">
+              <SettingsGroupFields
+                fields={SPREADSHEET_SETTINGS_GROUP.fields}
+                values={localSettings}
+                onChange={handleSettingsChange}
+                disabled={isReadLocked}
+              />
+            </div>
+          )}
         </div>
 
         {SETTINGS_GROUPS.map((group) => (

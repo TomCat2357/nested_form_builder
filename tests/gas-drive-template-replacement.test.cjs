@@ -68,6 +68,8 @@ function loadGasContext() {
       const match = String(url).match(/\/d\/([^/]+)/);
       return { type: "file", id: match ? match[1] : "" };
     },
+    // 標準フォルダ未解決の環境を模す（テストは nfbResolveRootFolder_ をスタブして経路を指定する）。
+    StdFolders_autoFileFolderOrNull_() { return null; },
   };
 
   return loadGasFiles(context, [

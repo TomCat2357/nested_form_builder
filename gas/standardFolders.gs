@@ -18,7 +18,6 @@
 // =============================================
 
 var NFB_STD_ROOT_PROPERTY_KEY = "nfb.stdfolders.root";       // ルートフォルダ ID
-var NFB_STD_AUTOFILE_PROPERTY_KEY = "nfb.stdfolders.autofile"; // "true" | "false"（既定 ON）
 
 // コピー時に「再構築待ち」を示すためコピー先ルートへ置くマーカーファイル名。
 // コピー先 GAS が初回管理者アクセス時に検出し、1 回だけ再構築してから削除する。
@@ -105,6 +104,52 @@ function StdFolders_getOrCreateSubfolder_(rootFolder, key) {
 }
 
 // ---------------------------------------------
+// import 用: 構成内判定 + 構成外ならコピー
+// ---------------------------------------------
+
+// fileId のファイルが、解決済みルートの key サブフォルダ直下に在るか判定する。
+// ルート未解決時は false（= 構成外扱い）。
+function StdFolders_isFileInStdSubfolder_(fileId, key) {
+  try {
+    var root = StdFolders_resolveRootFolder_(null);
+    var sub = StdFolders_getOrCreateSubfolder_(root, key);
+    var subId = sub.getId();
+    var parents = DriveApp.getFileById(fileId).getParents();
+    while (parents.hasNext()) {
+      if (parents.next().getId() === subId) return true;
+    }
+  } catch (err) {
+    Logger.log("[StdFolders_isFileInStdSubfolder_] " + fileId + " (" + key + "): " + nfbErrorToString_(err));
+  }
+  return false;
+}
+
+// import 時に、構成内ファイルはそのまま、構成外ファイルは key サブフォルダへコピーして
+// コピー先の { fileId, fileUrl } を返す。ルート未解決時は元のまま（従来の参照取り込み）。
+function StdFolders_ensureFileInStdFolder_(fileId, key) {
+  var fallback = { fileId: fileId, fileUrl: "https://drive.google.com/file/d/" + fileId + "/view" };
+  if (StdFolders_isFileInStdSubfolder_(fileId, key)) {
+    try {
+      var f = DriveApp.getFileById(fileId);
+      return { fileId: fileId, fileUrl: f.getUrl() };
+    } catch (e) {
+      return fallback;
+    }
+  }
+  try {
+    var root = StdFolders_resolveRootFolder_(null);
+    var sub = StdFolders_getOrCreateSubfolder_(root, key);
+    var src = DriveApp.getFileById(fileId);
+    var copied = src.makeCopy(src.getName(), sub);
+    return { fileId: copied.getId(), fileUrl: copied.getUrl() };
+  } catch (err) {
+    // ルート未解決などでコピーできない場合は元ファイル参照のまま登録（従来挙動）。
+    Logger.log("[StdFolders_ensureFileInStdFolder_] コピー不可、参照のまま (" + key + "): " + nfbErrorToString_(err));
+    return fallback;
+  }
+}
+
+// ---------------------------------------------
 // 再構築マーカー（コピー → コピー先で自動再構築）
 // ---------------------------------------------
 
@@ -131,34 +176,18 @@ function StdFolders_writeRebuildMarker_(destRoot, sourceRootId) {
 }
 
 // ---------------------------------------------
-// 自動整理フラグ
+// 標準フォルダ解決（常に有効 = 標準フォルダ構成が唯一の前提）
 // ---------------------------------------------
 
-// 自動整理が有効か。キー未設定時は既定 ON（true）。
-function StdFolders_isAutoFileEnabled_() {
-  var props = Nfb_getScriptProperties_();
-  var raw = props.getProperty(NFB_STD_AUTOFILE_PROPERTY_KEY);
-  if (raw === null || raw === undefined || raw === "") return true;
-  return raw === "true";
-}
-
-function StdFolders_setAutoFileEnabled_(value) {
-  EnsureAdminSettingsEnabled_();
-  var props = Nfb_getScriptProperties_();
-  var flag = value === true || value === "true" || value === 1 || value === "1";
-  props.setProperty(NFB_STD_AUTOFILE_PROPERTY_KEY, flag ? "true" : "false");
-  return { ok: true, autoFile: flag };
-}
-
-// 自動整理が ON かつルートが解決できる場合に標準サブフォルダを返す。それ以外は null（呼び出し側は従来配置）。
-// 作成系フローから呼ばれるため、解決失敗で保存自体を壊さないよう例外は握りつぶす。
+// 標準サブフォルダを取得（無ければ作成）。ルートも未作成なら自動検出・作成する。
+// 作成系フローから呼ばれるため、ルート解決失敗（dev 等）でのみ例外を握って null を返し、
+// 呼び出し側が従来配置（マイドライブ直下）へフォールバックできるようにする。
 function StdFolders_autoFileFolderOrNull_(key) {
-  if (!StdFolders_isAutoFileEnabled_()) return null;
   try {
     var root = StdFolders_resolveRootFolder_(null);
     return StdFolders_getOrCreateSubfolder_(root, key);
   } catch (err) {
-    Logger.log("[StdFolders_autoFileFolderOrNull_] 自動整理をスキップ (" + key + "): " + nfbErrorToString_(err));
+    Logger.log("[StdFolders_autoFileFolderOrNull_] 標準フォルダ解決に失敗 (" + key + "): " + nfbErrorToString_(err));
     return null;
   }
 }
@@ -166,33 +195,6 @@ function StdFolders_autoFileFolderOrNull_(key) {
 function StdFolders_autoFileFolderIdOrNull_(key) {
   var folder = StdFolders_autoFileFolderOrNull_(key);
   return folder ? folder.getId() : null;
-}
-
-// ---------------------------------------------
-// (2.1) 標準フォルダ構成の作成
-// ---------------------------------------------
-
-function StdFolders_create_(payload) {
-  return nfbSafeCall_(function() {
-    var manualRootUrl = payload && payload.rootUrl ? String(payload.rootUrl).trim() : "";
-    var root = StdFolders_resolveRootFolder_(manualRootUrl);
-    var folders = [];
-    for (var i = 0; i < NFB_STD_FOLDER_ORDER.length; i++) {
-      var key = NFB_STD_FOLDER_ORDER[i];
-      var name = NFB_STD_FOLDER_NAMES[key];
-      var existing = root.getFoldersByName(name);
-      var folder;
-      var created = false;
-      if (existing.hasNext()) {
-        folder = existing.next();
-      } else {
-        folder = root.createFolder(name);
-        created = true;
-      }
-      folders.push({ key: key, name: name, id: folder.getId(), url: folder.getUrl(), created: created });
-    }
-    return { ok: true, rootId: root.getId(), rootUrl: root.getUrl(), folders: folders };
-  });
 }
 
 // ---------------------------------------------
@@ -272,6 +274,11 @@ function StdFolders_copy_(payload) {
     if (destRoot.getId() === srcRoot.getId()) {
       throw new Error("コピー先がコピー元のルートと同じフォルダです");
     }
+
+    // appsscript 本体をコピー先ルートへ複製する（システムごとコピー）。
+    // 複製したスクリプトは Web アプリのデプロイ・Script Properties を引き継がない点に注意
+    // （デプロイは手動、マッピングは再構築マーカーで復元、ルートは初回アクセス時に自動検出）。
+    var appsScriptCopied = StdFolders_copyAppsScriptBody_(destRoot);
 
     // ソース mapping から fileId → id 逆引き（コピーファイルへ元 id を埋め込むため）
     var formsRev = StdFolders_buildFileIdToId_(Forms_getMapping_());
@@ -371,11 +378,27 @@ function StdFolders_copy_(payload) {
       copyData: copyData,
       copyWebhooks: copyWebhooks,
       rebuildMapping: rebuildMapping,
+      appsScriptCopied: appsScriptCopied,
       message: rebuildMapping
-        ? "コピーが完了しました。コピー先の appsscript 本体を管理者で開くと、マッピングが自動で 1 回だけ再構築されます。"
-        : "コピーが完了しました。コピー先の appsscript 本体で nfbRebuildMappingsFromFolders を 1 回実行してマッピングを再構築してください。"
+        ? "コピーが完了しました。コピー先の appsscript 本体を管理者で開くと、マッピングが自動で 1 回だけ再構築されます。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
+        : "コピーが完了しました。コピー先の appsscript 本体で nfbRebuildMappingsFromFolders を 1 回実行してマッピングを再構築してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
     };
   });
+}
+
+// appsscript 本体（バインドされたスクリプトプロジェクトの Drive ファイル）を destRoot へ複製する。
+// 成功で true。種別・権限の都合で複製できない場合は握りつぶして false を返す（コピー全体は継続）。
+function StdFolders_copyAppsScriptBody_(destRoot) {
+  try {
+    var scriptId = ScriptApp.getScriptId();
+    if (!scriptId) return false;
+    var scriptFile = DriveApp.getFileById(scriptId);
+    scriptFile.makeCopy(scriptFile.getName(), destRoot);
+    return true;
+  } catch (err) {
+    Logger.log("[StdFolders_copyAppsScriptBody_] appsscript 本体の複製に失敗: " + nfbErrorToString_(err));
+    return false;
+  }
 }
 
 // コピーした Google スプレッドシートの 12 行目以降（ヘッダ 1〜11 行は保持）を全シートで消去する。
@@ -647,9 +670,6 @@ function StdFolders_isJsonFile_(file) {
 // 公開 API（google.script.run 用）— executeAction_ 経由で adminOnly ゲートを通す。
 // ---------------------------------------------
 
-function nfbGetStandardFolderAutoFile()      { return Nfb_runScriptAction_("std_folders_autofile_get", {}); }
-function nfbSetStandardFolderAutoFile(value) { return Nfb_runScriptAction_("std_folders_autofile_set", { value: value }); }
-function nfbCreateStandardFolders(payload)   { return Nfb_runScriptAction_("std_folders_create", payload || {}); }
 function nfbCopyStandardFolders(payload)     { return Nfb_runScriptAction_("std_folders_copy", payload || {}); }
 function nfbRebuildMappingsFromFolders(payload) { return Nfb_runScriptAction_("std_folders_rebuild_map", payload || {}); }
 function nfbConsumePendingRebuild()          { return Nfb_runScriptAction_("std_folders_consume_rebuild", {}); }

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
 
-// 標準フォルダ構成を別ルートへコピーするダイアログ。
+// システムごと（appsscript 本体 + 標準フォルダ構成）を別ルートへコピーするダイアログ。
 // コピー先ルート URL +「データもコピー」「webhooks もコピー」「マッピングを再構築」オプションを受け取る。
 export default function AdminCopyStructureDialog({
   open,
@@ -36,7 +36,7 @@ export default function AdminCopyStructureDialog({
   return (
     <BaseDialog
       open={open}
-      title="標準フォルダ構成をコピー"
+      title="システムごとコピー"
       footer={
         <>
           <button type="button" className="dialog-btn" onClick={onCancel} disabled={loading}>
@@ -49,8 +49,10 @@ export default function AdminCopyStructureDialog({
       }
     >
       <p className="dialog-message">
-        標準フォルダ構成（01_forms〜08_documents）をコピー先ルートへ複製し、フォーム→スプレッドシート等の
-        リンクをコピー後の URL で再構成します。標準フォルダ構成外を指すリンクは削除されます。
+        appsscript 本体と標準フォルダ構成（01_forms〜08_documents）をコピー先ルートへ複製し、
+        フォーム→スプレッドシート等のリンクをコピー後の URL で再構成します。標準フォルダ構成外を指すリンクは
+        削除されます。コピー先スクリプトの Web アプリは手動で再デプロイが必要です（Script Properties は
+        引き継がれず、マッピングは初回管理者アクセス時に自動再構築されます）。
       </p>
 
       <div>

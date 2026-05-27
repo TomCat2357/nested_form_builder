@@ -2,8 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   copyStandardFolders,
-  createStandardFolders,
-  getStandardFolderAutoFile,
   rebuildMappingsFromFolders,
 } from "./gasClient.js";
 
@@ -37,7 +35,7 @@ test("copyStandardFolders: payload を送り結果をマッピングして返す
       destRootUrl: "https://drive.google.com/drive/folders/DEST", copyData: true, copyWebhooks: false,
     });
     assert.deepEqual(captured.payload, {
-      destRootUrl: "https://drive.google.com/drive/folders/DEST", copyData: true, copyWebhooks: false,
+      destRootUrl: "https://drive.google.com/drive/folders/DEST", copyData: true, copyWebhooks: false, rebuildMapping: true,
     });
     assert.equal(r.destRootUrl, "https://drive.google.com/drive/folders/DEST");
     assert.deepEqual(r.summary, { forms: 2, spreadsheets: 2 });
@@ -48,25 +46,14 @@ test("copyStandardFolders: payload を送り結果をマッピングして返す
   }
 });
 
-test("createStandardFolders: rootUrl を送り folders を返す", async () => {
-  const captured = installGoogleStub("nfbCreateStandardFolders", {
-    ok: true, rootUrl: "https://drive.google.com/drive/folders/ROOT",
-    folders: [{ key: "forms", name: "01_forms", created: true }],
+test("copyStandardFolders: appsScriptCopied を boolean で返す", async () => {
+  installGoogleStub("nfbCopyStandardFolders", {
+    ok: true, destRootUrl: "https://drive.google.com/drive/folders/DEST",
+    summary: {}, clearedLinks: 0, appsScriptCopied: true, message: "done",
   });
   try {
-    const r = await createStandardFolders("https://drive.google.com/drive/folders/ROOT");
-    assert.deepEqual(captured.payload, { rootUrl: "https://drive.google.com/drive/folders/ROOT" });
-    assert.equal(r.rootUrl, "https://drive.google.com/drive/folders/ROOT");
-    assert.equal(r.folders.length, 1);
-  } finally {
-    clearGoogleStub();
-  }
-});
-
-test("getStandardFolderAutoFile: autoFile を boolean で返す", async () => {
-  installGoogleStub("nfbGetStandardFolderAutoFile", { ok: true, autoFile: true });
-  try {
-    assert.equal(await getStandardFolderAutoFile(), true);
+    const r = await copyStandardFolders({ destRootUrl: "https://drive.google.com/drive/folders/DEST" });
+    assert.equal(r.appsScriptCopied, true);
   } finally {
     clearGoogleStub();
   }

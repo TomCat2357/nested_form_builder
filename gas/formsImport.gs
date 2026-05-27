@@ -40,8 +40,10 @@ function Forms_registerImportedForm_(payload) {
   if (!form) {
     throw new Error("フォームJSONが有効な形式ではありません");
   }
-  var fileId = payload.fileId;
-  var fileUrl = payload.fileUrl || ("https://drive.google.com/file/d/" + fileId + "/view");
+  // 標準フォルダ構成内（01_forms）からの取り込みは参照のまま、構成外なら 01_forms へコピーしてリンクする。
+  var placed = StdFolders_ensureFileInStdFolder_(payload.fileId, "forms");
+  var fileId = placed.fileId;
+  var fileUrl = placed.fileUrl;
 
   var mapping = Forms_getMapping_();
   var formId = form.id ? String(form.id) : "";

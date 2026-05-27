@@ -11,9 +11,6 @@ import {
   checkAdminEmailMembership,
   getRestrictToFormOnly,
   setRestrictToFormOnly,
-  getStandardFolderAutoFile,
-  setStandardFolderAutoFile,
-  createStandardFolders,
   copyStandardFolders,
 } from "../../services/gasClient.js";
 import AdminCopyStructureDialog from "../../pages/admin/AdminCopyStructureDialog.jsx";
@@ -95,12 +92,7 @@ export default function SettingsAdminTab() {
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
 
-  // 標準フォルダ構成
-  const [autoFile, setAutoFileState] = useState(true);
-  const [autoFileLoading, setAutoFileLoading] = useState(false);
-  const [createFoldersLoading, setCreateFoldersLoading] = useState(false);
-  const [rootUrlInput, setRootUrlInput] = useState("");
-  const [showRootUrlInput, setShowRootUrlInput] = useState(false);
+  // システムごとコピー
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
   const [copyUrl, setCopyUrl] = useState("");
   const [copyData, setCopyData] = useState(false);
@@ -119,15 +111,14 @@ export default function SettingsAdminTab() {
     if (!canManageAdminSettings) return;
     (async () => {
       try {
-        const [key, email, restrict, autoFileEnabled] = await Promise.all([
-          getAdminKey(), getAdminEmail(), getRestrictToFormOnly(), getStandardFolderAutoFile(),
+        const [key, email, restrict] = await Promise.all([
+          getAdminKey(), getAdminEmail(), getRestrictToFormOnly(),
         ]);
         setAdminKeyState(key);
         setAdminKeyInput(key);
         setAdminEmailState(email);
         setAdminEmailInput(email);
         setRestrictToFormOnlyState(restrict);
-        setAutoFileState(autoFileEnabled);
       } catch (error) {
         console.error("[SettingsAdminTab] load failed", error);
         showAlert(error?.message || "管理者設定の読み込みに失敗しました");
@@ -243,50 +234,11 @@ export default function SettingsAdminTab() {
     }
   };
 
-  const handleToggleAutoFile = async (event) => {
-    if (!canManageAdminSettings) return;
-    const newValue = event.target.checked;
-    setAutoFileLoading(true);
-    try {
-      const saved = await setStandardFolderAutoFile(newValue);
-      setAutoFileState(saved);
-    } catch (error) {
-      console.error("[SettingsAdminTab] setStandardFolderAutoFile failed", error);
-      showAlert(error?.message || "設定の保存に失敗しました");
-    } finally {
-      setAutoFileLoading(false);
-    }
-  };
-
-  const handleCreateFolders = async () => {
-    if (!canManageAdminSettings) return;
-    setCreateFoldersLoading(true);
-    try {
-      const { rootUrl, folders } = await createStandardFolders(rootUrlInput.trim());
-      const created = folders.filter((f) => f.created).map((f) => f.name);
-      const existed = folders.filter((f) => !f.created).map((f) => f.name);
-      setShowRootUrlInput(false);
-      setRootUrlInput("");
-      showAlert(
-        `標準フォルダ構成を確認しました（ルート: ${rootUrl}）。\n` +
-        `新規作成: ${created.length ? created.join(", ") : "なし"}\n` +
-        `既存: ${existed.length ? existed.join(", ") : "なし"}`,
-      );
-    } catch (error) {
-      console.error("[SettingsAdminTab] createStandardFolders failed", error);
-      // ルート自動検出に失敗した場合は手動 URL 入力欄を出す
-      setShowRootUrlInput(true);
-      showAlert(error?.message || "標準フォルダ構成の作成に失敗しました");
-    } finally {
-      setCreateFoldersLoading(false);
-    }
-  };
-
   const handleCopyConfirm = async () => {
     if (!canManageAdminSettings) return;
     setCopyLoading(true);
     try {
-      const { summary, clearedLinks, message } = await copyStandardFolders({
+      const { summary, clearedLinks, appsScriptCopied, message } = await copyStandardFolders({
         destRootUrl: copyUrl.trim(),
         copyData,
         copyWebhooks,
@@ -295,10 +247,13 @@ export default function SettingsAdminTab() {
       const lines = Object.keys(summary).map((k) => `${k}: ${summary[k]}件`);
       setCopyDialogOpen(false);
       setCopyUrl("");
-      showAlert(`${message}\n\nコピー件数:\n${lines.join("\n")}\nクリアしたリンク: ${clearedLinks}`);
+      showAlert(
+        `${message}\n\nappsscript 本体: ${appsScriptCopied ? "コピーしました" : "コピーできませんでした（権限等を確認してください）"}\n` +
+        `コピー件数:\n${lines.join("\n")}\nクリアしたリンク: ${clearedLinks}`,
+      );
     } catch (error) {
       console.error("[SettingsAdminTab] copyStandardFolders failed", error);
-      showAlert(error?.message || "フォルダ構成のコピーに失敗しました");
+      showAlert(error?.message || "システムごとコピーに失敗しました");
     } finally {
       setCopyLoading(false);
     }
@@ -360,53 +315,21 @@ export default function SettingsAdminTab() {
       </div>
 
       <div className="nf-section-divider">
-        <div className="nf-settings-group-title nf-mb-6">標準フォルダ構成</div>
+        <div className="nf-settings-group-title nf-mb-6">システムごとコピー</div>
         <p className="nf-mb-12 nf-text-12 nf-text-muted">
-          appsscript 本体が置かれた親フォルダをルートとして、<code>01_forms</code>〜<code>08_documents</code> の
-          標準フォルダ構成を管理します。
+          フォーム・Question・Dashboard・スプレッドシート・アップロードファイルは、appsscript 本体が置かれた
+          親フォルダをルートとする標準フォルダ構成（<code>01_forms</code>〜<code>08_documents</code>）に保存されます。
+          フォルダは保存時に自動作成されます。
         </p>
-
-        <label className="nf-row nf-gap-8 nf-mb-12" style={{ alignItems: "center", cursor: autoFileLoading ? "default" : "pointer" }}>
-          <input
-            type="checkbox"
-            checked={autoFile}
-            disabled={!canManageAdminSettings || autoFileLoading}
-            onChange={handleToggleAutoFile}
-          />
-          <span className="nf-text-13">
-            新規のフォーム・Question・Dashboard・スプレッドシート・アップロードファイルを標準フォルダへ自動整理する
-          </span>
-          {autoFileLoading && <span className="nf-text-12 nf-text-muted">保存中...</span>}
-        </label>
-        <p className="nf-mb-12 nf-text-11 nf-text-muted">
-          ON の間は保存先フォルダの個別指定はできません（標準フォルダへ自動配置）。OFF にすると個別指定できます。
-          OFF 中に個別指定して作成したものは、ON にしても移動しません。
-        </p>
-
-        {showRootUrlInput && (
-          <div className="nf-mb-12">
-            <label className="nf-block nf-mb-6 nf-text-13 nf-fw-600">ルートフォルダ URL（自動検出に失敗した場合）</label>
-            <input
-              className="nf-input"
-              type="text"
-              value={rootUrlInput}
-              placeholder="https://drive.google.com/drive/folders/..."
-              onChange={(event) => setRootUrlInput(event.target.value)}
-            />
-          </div>
-        )}
 
         <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
-          <button type="button" className="nf-btn nf-nowrap" onClick={handleCreateFolders} disabled={!canManageAdminSettings || createFoldersLoading}>
-            {createFoldersLoading ? "作成中..." : "標準フォルダ構成を作成"}
-          </button>
           <button type="button" className="nf-btn nf-nowrap" onClick={() => setCopyDialogOpen(true)} disabled={!canManageAdminSettings}>
-            標準フォルダ構成をコピー
+            システムごとコピー
           </button>
         </div>
         <p className="nf-mt-6 nf-text-11 nf-text-muted">
-          「標準フォルダ構成をコピー」は 01_forms〜08_documents を別ルートへ複製します。マッピングの再構築は
-          コピーのオプション（既定 ON）で、コピー先 GAS を管理者で開いたときに自動実行されます。
+          appsscript 本体と標準フォルダ構成の中身を別ルートへ複製し、フォーム→スプレッドシート等のリンクを
+          コピー後の URL で再構成します。コピー先スクリプトの Web アプリは手動で再デプロイしてください。
         </p>
       </div>
 

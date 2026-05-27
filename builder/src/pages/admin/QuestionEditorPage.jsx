@@ -16,7 +16,6 @@ import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder
 import VisualizePanel from "../../features/analytics/components/VisualizePanel.jsx";
 import { normalizeTableStyle } from "../../features/analytics/utils/tableStyle.js";
 import { DEFAULT_LINE_STYLE } from "../../features/analytics/utils/chartPalette.js";
-import { validateDriveSaveTarget } from "../../utils/driveSaveTarget.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
 import { VARIANT_LABELS, VARIANT_DESCRIPTIONS, normalizeVariant } from "../../features/analytics/variantLabels.js";
 
@@ -80,8 +79,6 @@ export default function QuestionEditorPage() {
   const [yFields, setYFields] = useState("");
   const [heatmap, setHeatmap] = useState({ enabled: false, direction: "column", excludeRows: "", excludeColumns: "", minColor: "", maxColor: "" });
   const [vizOptions, setVizOptions] = useState(() => emptyVizOptions());
-  const [driveUrl, setDriveUrl] = useState("");
-  const [originalDriveFileUrl, setOriginalDriveFileUrl] = useState("");
 
   const [queryResult, setQueryResult] = useState(null);
   const [running, setRunning] = useState(false);
@@ -157,8 +154,6 @@ export default function QuestionEditorPage() {
         tableStyle: normalizeTableStyle(v.tableStyle),
         chartStyle: v.chartStyle && typeof v.chartStyle === "object" ? v.chartStyle : null,
       });
-      setDriveUrl(q.driveFileUrl || "");
-      setOriginalDriveFileUrl(q.driveFileUrl || "");
       setDefinitionLoaded(true);
       setLoading(false);
     } catch (_e) {
@@ -288,10 +283,6 @@ export default function QuestionEditorPage() {
       };
     }
 
-    const driveCheck = validateDriveSaveTarget(driveUrl, { isEdit: !!questionId, originalFileUrl: originalDriveFileUrl, itemLabel: "Question" });
-    if (!driveCheck.ok) { setSaveError(driveCheck.error); return; }
-    const targetUrl = driveCheck.targetUrl;
-
     setSaving(true);
     setSaveError(null);
 
@@ -330,14 +321,14 @@ export default function QuestionEditorPage() {
     };
 
     try {
-      await saveQuestion(question, targetUrl);
+      await saveQuestion(question);
       navigate(location.state?.from || "/admin/questions");
     } catch (err) {
       setSaveError(err.message || String(err));
     } finally {
       setSaving(false);
     }
-  }, [mode, name, folder, gui, sql, buildSqlFormSources, vizType, xField, yFields, heatmap, vizOptions, questionId, navigate, driveUrl, originalDriveFileUrl]);
+  }, [mode, name, folder, gui, sql, buildSqlFormSources, vizType, xField, yFields, heatmap, vizOptions, questionId, navigate]);
 
   const handleSwitchToSql = () => {
     if (mode === "sql") return;
@@ -368,8 +359,8 @@ export default function QuestionEditorPage() {
   };
 
   const snapshot = useMemo(() => JSON.stringify({
-    name, folder, mode, sql, gui, vizType, xField, yFields, heatmap, vizOptions, driveUrl, selectedFormId,
-  }), [name, folder, mode, sql, gui, vizType, xField, yFields, heatmap, vizOptions, driveUrl, selectedFormId]);
+    name, folder, mode, sql, gui, vizType, xField, yFields, heatmap, vizOptions, selectedFormId,
+  }), [name, folder, mode, sql, gui, vizType, xField, yFields, heatmap, vizOptions, selectedFormId]);
 
   const baselineReady = !questionId || definitionLoaded;
 
@@ -490,24 +481,9 @@ export default function QuestionEditorPage() {
           />
         </div>
 
-        <div>
-          <label className="nf-label">Question 定義のGoogle Drive保存先URL</label>
-          <input
-            className="nf-input"
-            type="text"
-            value={driveUrl}
-            onChange={(e) => setDriveUrl(e.target.value)}
-            placeholder={questionId
-              ? "空白: 既定フォルダに新たにコピー / フォルダURL: 指定フォルダにコピー"
-              : "空白: 既定フォルダ / フォルダURL: 指定フォルダに保存"}
-            style={{ width: "100%", maxWidth: "600px" }}
-          />
-          <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
-            {questionId
-              ? "現在のファイルURLが表示されています。空白にすると既定フォルダに新たなコピーを作成します。フォルダURLに変更するとそのフォルダにコピーを作成します。ファイルURLは元のURL以外は指定できません。"
-              : "空白の場合は既定フォルダ（Nested Form Builder - Analytics/Questions）に保存されます。フォルダURLを指定するとそのフォルダに保存されます。ファイルURLは指定できません。"}
-          </p>
-        </div>
+        <p className="nf-text-11 nf-text-muted nf-mb-0">
+          Question 定義は標準フォルダ構成の <code>02_questions</code> に保存されます。
+        </p>
 
         <fieldset style={{ border: "1px solid var(--nf-border)", borderRadius: "4px", padding: "8px 12px", margin: 0 }}>
           <legend style={{ fontSize: "12px", padding: "0 6px" }}>クエリ作成方法</legend>

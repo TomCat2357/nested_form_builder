@@ -1,25 +1,28 @@
 import { SAVE_AFTER_ACTIONS } from "../../utils/settings.js";
 
+// 保存先スプレッドシートの手動指定グループ。標準フォルダ構成が既定のため常時は表示せず、
+// フォームエディタのチェックボックスで開いたときだけレンダリングする（③）。
+export const SPREADSHEET_SETTINGS_GROUP = {
+  key: "spreadsheet",
+  label: "入力データ保存スプレッドシート",
+  fields: [
+    {
+      key: "spreadsheetId",
+      label: "Spreadsheet ID / URL",
+      placeholder: "1AbCdEf... / https://docs.google.com/... / https://drive.google.com/drive/folders/...",
+      required: false,
+      description: "空欄なら標準フォルダ構成の 04_spreadsheets に回答保存用スプレッドシートを自動作成します。フォルダURLを入れればそのフォルダ内に、スプレッドシートURLを入れれば既存シートにリンクします（作成後はURLが自動で入ります）。",
+    },
+    {
+      key: "sheetName",
+      label: "Sheet Name",
+      placeholder: "Data",
+      required: false,
+    },
+  ],
+};
+
 export const SETTINGS_GROUPS = [
-  {
-    key: "spreadsheet",
-    label: "入力データ保存スプレッドシート",
-    fields: [
-      {
-        key: "spreadsheetId",
-        label: "Spreadsheet ID / URL",
-        placeholder: "1AbCdEf... / https://docs.google.com/... / https://drive.google.com/drive/folders/...",
-        required: false,
-        description: "空欄ならマイドライブ直下、フォルダURLを入れればそのフォルダ内に、回答保存用のスプレッドシートを自動作成します（作成後はURLが自動で入ります）。",
-      },
-      {
-        key: "sheetName",
-        label: "Sheet Name",
-        placeholder: "Data",
-        required: false,
-      },
-    ],
-  },
   {
     key: "search",
     label: "検索画面設定",
