@@ -5,6 +5,8 @@ import { useAuth } from "./authContext.jsx";
 import { evaluateCacheForForms } from "./cachePolicy.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 import { normalizeFormRecord } from "../../utils/formNormalize.js";
+import { consumePendingRebuild, hasScriptRun } from "../../services/gasClient.js";
+import { questionCache, dashboardCache } from "../../features/analytics/analyticsCache.js";
 
 const AppDataContext = createContext(null);
 
@@ -21,7 +23,7 @@ const saveCacheWithErrorHandling = async (forms, loadFailures, setCacheDisabled,
   }
 };
 export function AppDataProvider({ children }) {
-  const { propertyStoreMode } = useAuth();
+  const { propertyStoreMode, isAdmin } = useAuth();
   const propertyStoreModeRef = useRef(propertyStoreMode);
 
   const [forms, setForms] = useState([]);
@@ -210,6 +212,33 @@ export function AppDataProvider({ children }) {
       }
     })();
   }, []);
+
+  // コピー先（クローン）環境の初回管理者アクセス時に、コピー元が残した再構築マーカーを
+  // 検出して 1 回だけマッピングを自動再構築する。完了後は一覧を取り直す。
+  // マーカーが無ければサーバ側は ran:false を返し何もしない（GAS 環境・管理者のときだけ呼ぶ）。
+  const rebuildConsumedRef = useRef(false);
+  useEffect(() => {
+    if (rebuildConsumedRef.current) return;
+    if (!isAdmin || !hasScriptRun()) return;
+    rebuildConsumedRef.current = true;
+    (async () => {
+      try {
+        const res = await consumePendingRebuild();
+        if (!res.ran) return;
+        console.log("[AppDataProvider] Pending rebuild consumed:", res);
+        // サーバ側マッピングが復元されたのでフォーム一覧を取り直し、キャッシュを更新する。
+        await refreshForms({ reason: "rebuild-consumed", background: false });
+        // Question / Dashboard 一覧キャッシュを空にして次回訪問時に再取得させる。
+        try {
+          await Promise.all([questionCache.saveAll([]), dashboardCache.saveAll([])]);
+        } catch (cacheErr) {
+          console.warn("[AppDataProvider] analytics cache invalidate failed:", cacheErr);
+        }
+      } catch (err) {
+        console.error("[AppDataProvider] consumePendingRebuild failed:", err);
+      }
+    })();
+  }, [isAdmin]);
 
   // Helper to DRY up form state updates and cache saving
   const updateFormsAndCache = useCallback(async (updaterFn, nextFailures, logPrefix) => {

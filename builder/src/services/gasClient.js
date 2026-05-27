@@ -222,14 +222,25 @@ export const createStandardFolders = async (rootUrl = "") => {
   const r = await fetchGasApi("nfbCreateStandardFolders", { rootUrl }, "標準フォルダ構成の作成に失敗しました");
   return { rootUrl: r.rootUrl || "", folders: r.folders || [] };
 };
-export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyWebhooks = false } = {}) => {
+export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyWebhooks = false, rebuildMapping = true } = {}) => {
   if (!destRootUrl) throw new Error("コピー先ルートフォルダの URL を指定してください");
-  const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks }, "フォルダ構成のコピーに失敗しました");
-  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, message: r.message || "" };
+  const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks, rebuildMapping }, "フォルダ構成のコピーに失敗しました");
+  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), message: r.message || "" };
 };
+// 手動フォールバック（UI からは呼ばない。コピー先で自動再構築が失敗した場合のコンソール実行用）。
 export const rebuildMappingsFromFolders = async (rootUrl = "") => {
   const r = await fetchGasApi("nfbRebuildMappingsFromFolders", { rootUrl }, "マッピングの再構築に失敗しました");
   return { forms: r.forms || { count: 0 }, questions: r.questions || { count: 0 }, dashboards: r.dashboards || { count: 0 } };
+};
+// コピー先での自動再構築。再構築マーカーがあるときだけ実行され ran:true を返す。
+export const consumePendingRebuild = async () => {
+  const r = await fetchGasApi("nfbConsumePendingRebuild", {}, "マッピングの自動再構築に失敗しました");
+  return {
+    ran: Boolean(r.ran),
+    forms: r.forms || { count: 0 },
+    questions: r.questions || { count: 0 },
+    dashboards: r.dashboards || { count: 0 },
+  };
 };
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
 export const saveFileToDrive = ({ filename, base64, mimeType }) => fetchGasApi("nfbSaveFileToDrive", { filename, base64, mimeType }, "Driveへの保存に失敗しました");

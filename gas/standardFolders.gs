@@ -20,6 +20,10 @@
 var NFB_STD_ROOT_PROPERTY_KEY = "nfb.stdfolders.root";       // ルートフォルダ ID
 var NFB_STD_AUTOFILE_PROPERTY_KEY = "nfb.stdfolders.autofile"; // "true" | "false"（既定 ON）
 
+// コピー時に「再構築待ち」を示すためコピー先ルートへ置くマーカーファイル名。
+// コピー先 GAS が初回管理者アクセス時に検出し、1 回だけ再構築してから削除する。
+var NFB_STD_REBUILD_MARKER_NAME = "_nfb_rebuild_pending.json";
+
 // 論理キー → フォルダ名。
 var NFB_STD_FOLDER_NAMES = {
   forms: "01_forms",
@@ -98,6 +102,32 @@ function StdFolders_getOrCreateSubfolder_(rootFolder, key) {
   if (!name) throw new Error("未知の標準フォルダキーです: " + key);
   var existing = rootFolder.getFoldersByName(name);
   return existing.hasNext() ? existing.next() : rootFolder.createFolder(name);
+}
+
+// ---------------------------------------------
+// 再構築マーカー（コピー → コピー先で自動再構築）
+// ---------------------------------------------
+
+// コピー先ルートから再構築マーカーを探す。非ゴミ箱の 1 件を返す（無ければ null）。
+function StdFolders_findRebuildMarker_(root) {
+  var it = root.getFilesByName(NFB_STD_REBUILD_MARKER_NAME);
+  while (it.hasNext()) {
+    var f = it.next();
+    if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
+    return f;
+  }
+  return null;
+}
+
+// コピー先ルートへ再構築マーカーを置く。既に存在すれば作り直さない。
+function StdFolders_writeRebuildMarker_(destRoot, sourceRootId) {
+  if (StdFolders_findRebuildMarker_(destRoot)) return;
+  var payload = {
+    version: 1,
+    sourceRootId: sourceRootId || "",
+    createdAt: new Date().toISOString()
+  };
+  destRoot.createFile(NFB_STD_REBUILD_MARKER_NAME, JSON.stringify(payload, null, 2), "application/json");
 }
 
 // ---------------------------------------------
@@ -234,6 +264,8 @@ function StdFolders_copy_(payload) {
     if (!destRootUrl) throw new Error("コピー先ルートフォルダの URL を指定してください");
     var copyData = !!(payload && (payload.copyData === true || payload.copyData === "true"));
     var copyWebhooks = !!(payload && (payload.copyWebhooks === true || payload.copyWebhooks === "true"));
+    // マッピング再構築は既定 ON（明示 false / "false" のときだけ OFF）。
+    var rebuildMapping = !(payload && (payload.rebuildMapping === false || payload.rebuildMapping === "false"));
 
     var srcRoot = StdFolders_resolveRootFolder_(null);
     var destRoot = nfbResolveFolderFromInput_(destRootUrl);
@@ -326,6 +358,11 @@ function StdFolders_copy_(payload) {
       clearedLinks += StdFolders_rewireDashboardFile_(dEntry.newFileId, dashboardsRev[dEntry.srcFileId] || null, copiedQuestionIds);
     }
 
+    // 再構築 ON のときはコピー先ルートへマーカーを残し、コピー先 GAS の初回管理者アクセス時に自動再構築させる。
+    if (rebuildMapping) {
+      StdFolders_writeRebuildMarker_(destRoot, srcRoot.getId());
+    }
+
     return {
       ok: true,
       destRootUrl: destRoot.getUrl(),
@@ -333,7 +370,10 @@ function StdFolders_copy_(payload) {
       clearedLinks: clearedLinks,
       copyData: copyData,
       copyWebhooks: copyWebhooks,
-      message: "コピーが完了しました。コピー先の appsscript 本体で nfbRebuildMappingsFromFolders を 1 回実行してマッピングを再構築してください。"
+      rebuildMapping: rebuildMapping,
+      message: rebuildMapping
+        ? "コピーが完了しました。コピー先の appsscript 本体を管理者で開くと、マッピングが自動で 1 回だけ再構築されます。"
+        : "コピーが完了しました。コピー先の appsscript 本体で nfbRebuildMappingsFromFolders を 1 回実行してマッピングを再構築してください。"
     };
   });
 }
@@ -466,6 +506,51 @@ function StdFolders_rebuildMappings_(payload) {
   });
 }
 
+// (2.4) コピー先での自動再構築。再構築マーカーがあるときだけ 1 回実行し、マーカーを削除する。
+// コピー先 GAS の初回管理者アクセス時にフロントから呼ばれる。コピー元では実行されない想定だが、
+// 万一マーカーが残ったまま同一ルートで実行された場合は破壊防止のため再構築をスキップする。
+function StdFolders_consumePendingRebuild_() {
+  return nfbSafeCall_(function() {
+    // ルート未設定・自動検出不能な環境では「やることなし」として静かに返す（毎回のエラーログを避ける）。
+    var root;
+    try {
+      root = StdFolders_resolveRootFolder_(null);
+    } catch (err) {
+      Logger.log("[StdFolders_consumePendingRebuild_] ルート未解決のためスキップ: " + nfbErrorToString_(err));
+      return { ok: true, ran: false };
+    }
+    var marker = StdFolders_findRebuildMarker_(root);
+    if (!marker) return { ok: true, ran: false };
+
+    var sourceRootId = "";
+    try {
+      var meta = JSON.parse(marker.getBlob().getDataAsString());
+      sourceRootId = (meta && typeof meta.sourceRootId === "string") ? meta.sourceRootId : "";
+    } catch (err) {
+      Logger.log("[StdFolders_consumePendingRebuild_] marker parse failed: " + nfbErrorToString_(err));
+    }
+
+    // 同一ルート（=コピー元）でのマーカー実行は既存マッピングを破壊し得るためスキップして削除する。
+    if (sourceRootId && sourceRootId === root.getId()) {
+      marker.setTrashed(true);
+      return { ok: true, ran: false, skipped: "same-root" };
+    }
+
+    var formsResult = StdFolders_rebuildFormsMapping_(root);
+    var questionsResult = StdFolders_rebuildAnalyticsMapping_(root, "questions");
+    var dashboardsResult = StdFolders_rebuildAnalyticsMapping_(root, "dashboards");
+    marker.setTrashed(true);
+
+    return {
+      ok: true,
+      ran: true,
+      forms: formsResult,
+      questions: questionsResult,
+      dashboards: dashboardsResult
+    };
+  });
+}
+
 // 既存 mapping から fileId の集合を作る（重複登録防止用）。
 function StdFolders_mappedFileIdSet_(mapping) {
   var set = {};
@@ -567,3 +652,4 @@ function nfbSetStandardFolderAutoFile(value) { return Nfb_runScriptAction_("std_
 function nfbCreateStandardFolders(payload)   { return Nfb_runScriptAction_("std_folders_create", payload || {}); }
 function nfbCopyStandardFolders(payload)     { return Nfb_runScriptAction_("std_folders_copy", payload || {}); }
 function nfbRebuildMappingsFromFolders(payload) { return Nfb_runScriptAction_("std_folders_rebuild_map", payload || {}); }
+function nfbConsumePendingRebuild()          { return Nfb_runScriptAction_("std_folders_consume_rebuild", {}); }

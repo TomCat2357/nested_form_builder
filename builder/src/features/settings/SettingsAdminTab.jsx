@@ -15,7 +15,6 @@ import {
   setStandardFolderAutoFile,
   createStandardFolders,
   copyStandardFolders,
-  rebuildMappingsFromFolders,
 } from "../../services/gasClient.js";
 import AdminCopyStructureDialog from "../../pages/admin/AdminCopyStructureDialog.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
@@ -106,8 +105,8 @@ export default function SettingsAdminTab() {
   const [copyUrl, setCopyUrl] = useState("");
   const [copyData, setCopyData] = useState(false);
   const [copyWebhooks, setCopyWebhooks] = useState(false);
+  const [rebuildMapping, setRebuildMapping] = useState(true);
   const [copyLoading, setCopyLoading] = useState(false);
-  const [rebuildLoading, setRebuildLoading] = useState(false);
 
   const { userEmail } = useAuth();
   const canManageAdminSettings = hasScriptRun();
@@ -291,6 +290,7 @@ export default function SettingsAdminTab() {
         destRootUrl: copyUrl.trim(),
         copyData,
         copyWebhooks,
+        rebuildMapping,
       });
       const lines = Object.keys(summary).map((k) => `${k}: ${summary[k]}件`);
       setCopyDialogOpen(false);
@@ -301,23 +301,6 @@ export default function SettingsAdminTab() {
       showAlert(error?.message || "フォルダ構成のコピーに失敗しました");
     } finally {
       setCopyLoading(false);
-    }
-  };
-
-  const handleRebuildMappings = async () => {
-    if (!canManageAdminSettings) return;
-    setRebuildLoading(true);
-    try {
-      const { forms, questions, dashboards } = await rebuildMappingsFromFolders(rootUrlInput.trim());
-      showAlert(
-        `マッピングを再構築しました。\n` +
-        `フォーム: ${forms.count}件 / Question: ${questions.count}件 / Dashboard: ${dashboards.count}件`,
-      );
-    } catch (error) {
-      console.error("[SettingsAdminTab] rebuildMappingsFromFolders failed", error);
-      showAlert(error?.message || "マッピングの再構築に失敗しました");
-    } finally {
-      setRebuildLoading(false);
     }
   };
 
@@ -418,15 +401,12 @@ export default function SettingsAdminTab() {
             {createFoldersLoading ? "作成中..." : "標準フォルダ構成を作成"}
           </button>
           <button type="button" className="nf-btn nf-nowrap" onClick={() => setCopyDialogOpen(true)} disabled={!canManageAdminSettings}>
-            フォルダ構成をコピー
-          </button>
-          <button type="button" className="nf-btn nf-nowrap" onClick={handleRebuildMappings} disabled={!canManageAdminSettings || rebuildLoading}>
-            {rebuildLoading ? "再構築中..." : "マッピングを再構築"}
+            標準フォルダ構成をコピー
           </button>
         </div>
         <p className="nf-mt-6 nf-text-11 nf-text-muted">
-          「マッピングを再構築」は、コピー先の環境で 1 回だけ実行し、標準フォルダ内の定義ファイルから
-          フォーム/Question/Dashboard のマッピングを復元するためのものです。
+          「標準フォルダ構成をコピー」は 01_forms〜08_documents を別ルートへ複製します。マッピングの再構築は
+          コピーのオプション（既定 ON）で、コピー先 GAS を管理者で開いたときに自動実行されます。
         </p>
       </div>
 
@@ -438,6 +418,8 @@ export default function SettingsAdminTab() {
         onCopyDataChange={setCopyData}
         copyWebhooks={copyWebhooks}
         onCopyWebhooksChange={setCopyWebhooks}
+        rebuildMapping={rebuildMapping}
+        onRebuildMappingChange={setRebuildMapping}
         onConfirm={handleCopyConfirm}
         onCancel={() => setCopyDialogOpen(false)}
         loading={copyLoading}

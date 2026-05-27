@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
 
 // 標準フォルダ構成を別ルートへコピーするダイアログ。
-// コピー先ルート URL + 「データもコピー」「webhooks もコピー」オプションを受け取る。
+// コピー先ルート URL +「データもコピー」「webhooks もコピー」「マッピングを再構築」オプションを受け取る。
 export default function AdminCopyStructureDialog({
   open,
   url,
@@ -11,6 +11,8 @@ export default function AdminCopyStructureDialog({
   onCopyDataChange,
   copyWebhooks,
   onCopyWebhooksChange,
+  rebuildMapping,
+  onRebuildMappingChange,
   onConfirm,
   onCancel,
   loading,
@@ -34,7 +36,7 @@ export default function AdminCopyStructureDialog({
   return (
     <BaseDialog
       open={open}
-      title="フォルダ構成をコピー"
+      title="標準フォルダ構成をコピー"
       footer={
         <>
           <button type="button" className="dialog-btn" onClick={onCancel} disabled={loading}>
@@ -91,8 +93,17 @@ export default function AdminCopyStructureDialog({
         Webhook 送信先 URL もクリアします（コピー先で再リンクしてください）。
       </p>
 
-      <p className="nf-mt-12 nf-text-11 nf-text-muted">
-        コピー完了後、コピー先の appsscript 本体で「マッピングを再構築」を 1 回実行する必要があります。
+      <label className="nf-row nf-gap-8 nf-mt-12" style={{ alignItems: "center", cursor: "pointer" }}>
+        <input
+          type="checkbox"
+          checked={!!rebuildMapping}
+          onChange={(event) => onRebuildMappingChange(event.target.checked)}
+        />
+        <span className="nf-text-13">マッピングを再構築する（コピー先 GAS を開いたときに自動実行・推奨）</span>
+      </label>
+      <p className="nf-mt-2 nf-text-11 nf-text-muted">
+        ON の場合、コピー先ルートに再構築マーカーを残し、コピー先の appsscript を管理者で開いたときに
+        マッピングが自動で 1 回だけ再構築されます。OFF の場合のみ、コピー先で手動再構築が必要です。
       </p>
     </BaseDialog>
   );
