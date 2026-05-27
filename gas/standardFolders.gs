@@ -403,7 +403,8 @@ function StdFolders_copy_(payload) {
     // appsscript 本体をコピー先ルートへ複製する（システムごとコピー）。
     // 複製したスクリプトは Web アプリのデプロイ・Script Properties を引き継がない点に注意
     // （デプロイは手動、マッピングは再構築マーカーで復元、ルートは初回アクセス時に自動検出）。
-    var appsScriptCopied = StdFolders_copyAppsScriptBody_(destRoot);
+    var appsScriptCopyResult = StdFolders_copyAppsScriptBody_(destRoot);
+    var appsScriptCopied = appsScriptCopyResult.ok;
 
     // ソース mapping から fileId → id 逆引き（コピーファイルへ元 id を埋め込むため）
     var formsRev = StdFolders_buildFileIdToId_(Forms_getMapping_());
@@ -505,6 +506,7 @@ function StdFolders_copy_(payload) {
       copyWebhooks: copyWebhooks,
       rebuildMapping: rebuildMapping,
       appsScriptCopied: appsScriptCopied,
+      appsScriptCopyError: appsScriptCopied ? "" : (appsScriptCopyResult.reason || ""),
       message: rebuildMapping
         ? "コピーが完了しました。コピー先ルートに _nfb_mapping.json を保存しました。コピー先の 設定 > 管理 から「インポート」（URL 空欄でルートの最新を読込）または「同期」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
         : "コピーが完了しました。コピー先の 設定 > 管理 から「同期」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
@@ -512,19 +514,108 @@ function StdFolders_copy_(payload) {
   });
 }
 
-// appsscript 本体（バインドされたスクリプトプロジェクトの Drive ファイル）を destRoot へ複製する。
-// 成功で true。種別・権限の都合で複製できない場合は握りつぶして false を返す（コピー全体は継続）。
+// appsscript 本体（スクリプトプロジェクト）を destRoot へ複製する。
+// Apps Script プロジェクト（vnd.google-apps.script）は Drive の copy では複製できないため、
+// Apps Script API（script.googleapis.com/v1）でソース内容を取得→新規プロジェクト作成→内容を書込み、
+// 生成された Drive ファイルを destRoot へ移動する。
+// 戻り値: { ok: boolean, reason: string }。失敗してもコピー全体は継続する（reason はログ＆UI 用）。
+// 前提: oauthScopes に script.projects、かつ実行ユーザーが Apps Script API を有効化していること
+//       （https://script.google.com/home/usersettings）。
 function StdFolders_copyAppsScriptBody_(destRoot) {
   try {
     var scriptId = ScriptApp.getScriptId();
-    if (!scriptId) return false;
-    var scriptFile = DriveApp.getFileById(scriptId);
-    scriptFile.makeCopy(scriptFile.getName(), destRoot);
-    return true;
+    if (!scriptId) return { ok: false, reason: "スクリプト ID を取得できませんでした" };
+    var token = ScriptApp.getOAuthToken();
+
+    // 1) ソースプロジェクトの内容を取得
+    var contentRes = UrlFetchApp.fetch(
+      "https://script.googleapis.com/v1/projects/" + encodeURIComponent(scriptId) + "/content",
+      { method: "get", headers: { Authorization: "Bearer " + token }, muteHttpExceptions: true }
+    );
+    var contentErr = StdFolders_appsScriptApiError_(contentRes);
+    if (contentErr) return { ok: false, reason: contentErr };
+    var content = JSON.parse(contentRes.getContentText());
+    var files = StdFolders_normalizeScriptFiles_(content && content.files);
+    if (!files.length) return { ok: false, reason: "スクリプト内容を取得できませんでした" };
+
+    // 元スクリプト名（取得失敗時は既定名）
+    var title = "Nested Form Builder (copy)";
+    try { title = DriveApp.getFileById(scriptId).getName(); } catch (e) {}
+
+    // 2) 新規スタンドアロンプロジェクトを作成（parentId は付けない＝My Drive 直下に作成）
+    var createRes = UrlFetchApp.fetch(
+      "https://script.googleapis.com/v1/projects",
+      {
+        method: "post",
+        contentType: "application/json",
+        headers: { Authorization: "Bearer " + token },
+        payload: JSON.stringify({ title: title }),
+        muteHttpExceptions: true,
+      }
+    );
+    var createErr = StdFolders_appsScriptApiError_(createRes);
+    if (createErr) return { ok: false, reason: createErr };
+    var created = JSON.parse(createRes.getContentText());
+    var newScriptId = created && created.scriptId;
+    if (!newScriptId) return { ok: false, reason: "新規プロジェクトの作成に失敗しました" };
+
+    // 3) 取得した内容を新規プロジェクトへ書き込む
+    var updateRes = UrlFetchApp.fetch(
+      "https://script.googleapis.com/v1/projects/" + encodeURIComponent(newScriptId) + "/content",
+      {
+        method: "put",
+        contentType: "application/json",
+        headers: { Authorization: "Bearer " + token },
+        payload: JSON.stringify({ files: files }),
+        muteHttpExceptions: true,
+      }
+    );
+    var updateErr = StdFolders_appsScriptApiError_(updateRes);
+    if (updateErr) return { ok: false, reason: updateErr };
+
+    // 4) 生成された Drive ファイル（スタンドアロンは scriptId === Drive fileId）を destRoot へ移動。
+    //    copy は不可だが move（親フォルダ変更）は可能。
+    try {
+      DriveApp.getFileById(newScriptId).moveTo(destRoot);
+    } catch (moveErr) {
+      Logger.log("[StdFolders_copyAppsScriptBody_] 移動に失敗（My Drive 直下に残ります）: " + nfbErrorToString_(moveErr));
+      return { ok: true, reason: "コピーは成功しましたが、コピー先フォルダへの移動に失敗しました（My Drive 直下を確認してください）" };
+    }
+    return { ok: true, reason: "" };
   } catch (err) {
     Logger.log("[StdFolders_copyAppsScriptBody_] appsscript 本体の複製に失敗: " + nfbErrorToString_(err));
-    return false;
+    return { ok: false, reason: nfbErrorToString_(err) };
   }
+}
+
+// Apps Script API レスポンスを判定し、エラーなら日本語メッセージを返す（正常なら空文字）。
+function StdFolders_appsScriptApiError_(response) {
+  var code = response.getResponseCode();
+  if (code >= 200 && code < 300) return "";
+  var body = response.getContentText() || "";
+  // API 未有効（PERMISSION_DENIED / SERVICE_DISABLED）を分かりやすく案内
+  if (code === 403 && /apps script api|disabled|usersettings|SERVICE_DISABLED|PERMISSION_DENIED/i.test(body)) {
+    return "Apps Script API が無効です。https://script.google.com/home/usersettings で「Google Apps Script API」を ON にしてから再実行してください";
+  }
+  var message = "";
+  try {
+    var parsed = JSON.parse(body);
+    message = parsed && parsed.error && parsed.error.message ? parsed.error.message : "";
+  } catch (e) {}
+  Logger.log("[StdFolders_appsScriptApiError_] HTTP " + code + ": " + body);
+  return "Apps Script API 呼び出しに失敗しました (HTTP " + code + ")" + (message ? ": " + message : "");
+}
+
+// content API の files を書き込み用に { name, type, source } のみへ整形する。
+function StdFolders_normalizeScriptFiles_(files) {
+  var out = [];
+  if (!files || !files.length) return out;
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    if (!f || !f.name || !f.type) continue;
+    out.push({ name: f.name, type: f.type, source: f.source || "" });
+  }
+  return out;
 }
 
 // コピーした Google スプレッドシートの 12 行目以降（ヘッダ 1〜11 行は保持）を全シートで消去する。

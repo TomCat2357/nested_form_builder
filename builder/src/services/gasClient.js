@@ -219,7 +219,7 @@ export const setRestrictToFormOnly = async (value) => { const r = await fetchGas
 export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyWebhooks = false, rebuildMapping = true } = {}) => {
   if (!destRootUrl) throw new Error("コピー先ルートフォルダの URL を指定してください");
   const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks, rebuildMapping }, "システムごとコピーに失敗しました");
-  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), message: r.message || "" };
+  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), appsScriptCopyError: r.appsScriptCopyError || "", message: r.message || "" };
 };
 // 既リンク資産のうち標準フォルダ構成外のものを構成内へコピーした結果のデフォルト形。
 const emptyNormalized = () => ({ forms: { count: 0 }, questions: { count: 0 }, dashboards: { count: 0 }, cascadedQuestions: 0, total: 0 });

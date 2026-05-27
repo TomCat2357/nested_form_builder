@@ -56,6 +56,22 @@ test("copyStandardFolders: appsScriptCopied を boolean で返す", async () => 
   try {
     const r = await copyStandardFolders({ destRootUrl: "https://drive.google.com/drive/folders/DEST" });
     assert.equal(r.appsScriptCopied, true);
+    assert.equal(r.appsScriptCopyError, "");
+  } finally {
+    clearGoogleStub();
+  }
+});
+
+test("copyStandardFolders: appsscript 本体コピー失敗時は理由を appsScriptCopyError で返す", async () => {
+  installGoogleStub("nfbCopyStandardFolders", {
+    ok: true, destRootUrl: "https://drive.google.com/drive/folders/DEST",
+    summary: {}, clearedLinks: 0, appsScriptCopied: false,
+    appsScriptCopyError: "Apps Script API が無効です。", message: "done",
+  });
+  try {
+    const r = await copyStandardFolders({ destRootUrl: "https://drive.google.com/drive/folders/DEST" });
+    assert.equal(r.appsScriptCopied, false);
+    assert.equal(r.appsScriptCopyError, "Apps Script API が無効です。");
   } finally {
     clearGoogleStub();
   }

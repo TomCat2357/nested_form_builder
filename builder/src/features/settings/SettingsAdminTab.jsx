@@ -294,7 +294,7 @@ export default function SettingsAdminTab() {
     if (!canManageAdminSettings) return;
     setCopyLoading(true);
     try {
-      const { summary, clearedLinks, appsScriptCopied, message } = await copyStandardFolders({
+      const { summary, clearedLinks, appsScriptCopied, appsScriptCopyError, message } = await copyStandardFolders({
         destRootUrl: copyUrl.trim(),
         copyData,
         copyWebhooks,
@@ -303,8 +303,11 @@ export default function SettingsAdminTab() {
       const lines = Object.keys(summary).map((k) => `${k}: ${summary[k]}件`);
       setCopyDialogOpen(false);
       setCopyUrl("");
+      const appsScriptStatus = appsScriptCopied
+        ? "コピーしました"
+        : `コピーできませんでした（${appsScriptCopyError || "権限等を確認してください"}）`;
       showAlert(
-        `${message}\n\nappsscript 本体: ${appsScriptCopied ? "コピーしました" : "コピーできませんでした（権限等を確認してください）"}\n` +
+        `${message}\n\nappsscript 本体: ${appsScriptStatus}\n` +
         `コピー件数:\n${lines.join("\n")}\nクリアしたリンク: ${clearedLinks}`,
       );
     } catch (error) {
