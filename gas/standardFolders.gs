@@ -175,6 +175,131 @@ function StdFolders_ensureFileInStdFolder_(fileId, key) {
 }
 
 // ---------------------------------------------
+// 既リンク資産の標準フォルダ正規化スイープ
+// インポート / 同期の実行時に、既にマッピング登録済み（= 既リンク）の
+// フォーム・Question・Dashboard を走査し、ファイル本体が標準フォルダ構成の外に
+// あるものは該当サブフォルダへ「コピー」（元ファイルは残す）して、マッピングの
+// リンクをコピー先へ張り替える。Dashboard をコピーしたときは、その cards[].questionId
+// が指す Question も構成内か確認し、構成外なら同様にコピーする（連動コピー）。
+// ---------------------------------------------
+
+// mapping entry の参照ファイルを key サブフォルダ内へ揃える。
+// 構成内ならそのまま { changed:false }。構成外でコピーが成立したときだけ
+// { changed:true, newFileId, newUrl } を返す（呼び出し側で entry を更新する）。
+// ルート未解決等で実際にコピーできなかった場合は changed:false（安全側）。
+function StdFolders_ensureMappingEntryInStd_(entry, key) {
+  var oldFileId = Nfb_resolveFileIdFromEntry_(entry);
+  if (!oldFileId) return { changed: false };
+  if (StdFolders_isFileInStdSubfolder_(oldFileId, key)) return { changed: false };
+  var placed = StdFolders_ensureFileInStdFolder_(oldFileId, key);
+  if (!placed || !placed.fileId || placed.fileId === oldFileId) {
+    return { changed: false };
+  }
+  return { changed: true, newFileId: placed.fileId, newUrl: placed.fileUrl };
+}
+
+// Dashboard ファイル JSON から cards[].questionId を集めて out（id の集合）へ追加する。
+function StdFolders_collectDashboardQuestionIds_(fileId, out) {
+  try {
+    var file = DriveApp.getFileById(fileId);
+    var json = JSON.parse(file.getBlob().getDataAsString());
+    if (json && Array.isArray(json.cards)) {
+      for (var i = 0; i < json.cards.length; i++) {
+        var card = json.cards[i];
+        if (card && typeof card.questionId === "string" && card.questionId) {
+          out[card.questionId] = true;
+        }
+      }
+    }
+  } catch (err) {
+    Logger.log("[StdFolders_collectDashboardQuestionIds_] " + fileId + ": " + nfbErrorToString_(err));
+  }
+}
+
+// 既リンクのフォームを 01_forms へ揃える。コピーしたら AddFormUrl_ も新 URL で更新。
+function StdFolders_normalizeFormsToStd_() {
+  var mapping = Forms_getMapping_();
+  var count = 0;
+  for (var id in mapping) {
+    if (!mapping.hasOwnProperty(id)) continue;
+    var entry = mapping[id];
+    if (!entry) continue;
+    var r = StdFolders_ensureMappingEntryInStd_(entry, "forms");
+    if (r.changed) {
+      entry.fileId = r.newFileId;
+      entry.driveFileUrl = r.newUrl;
+      try { AddFormUrl_(id, r.newUrl); } catch (e) { /* non-critical */ }
+      count++;
+    }
+  }
+  if (count > 0) Forms_saveMapping_(mapping);
+  return { count: count };
+}
+
+// 既リンクの Question / Dashboard を 02_questions / 03_dashboards へ揃える。
+// Dashboard をコピーしたときは、その JSON から linkedQuestionIds を収集して返す。
+function StdFolders_normalizeAnalyticsToStd_(type) {
+  var key = type === "questions" ? "questions" : "dashboards";
+  var mapping = Analytics_getMapping_(type);
+  var count = 0;
+  var linkedQuestionIds = {};
+  for (var id in mapping) {
+    if (!mapping.hasOwnProperty(id)) continue;
+    var entry = mapping[id];
+    if (!entry) continue;
+    var r = StdFolders_ensureMappingEntryInStd_(entry, key);
+    if (r.changed) {
+      entry.fileId = r.newFileId;
+      entry.driveFileUrl = r.newUrl;
+      count++;
+      if (type === "dashboards") {
+        StdFolders_collectDashboardQuestionIds_(r.newFileId, linkedQuestionIds);
+      }
+    }
+  }
+  if (count > 0) Analytics_saveMapping_(type, mapping);
+  return { count: count, linkedQuestionIds: linkedQuestionIds };
+}
+
+// 既リンク資産（forms / questions / dashboards）を標準フォルダ構成へ正規化する。
+// 戻り値: { forms:{count}, questions:{count}, dashboards:{count}, cascadedQuestions, total }
+function StdFolders_normalizeLinkedToStd_() {
+  var forms = StdFolders_normalizeFormsToStd_();
+  var questions = StdFolders_normalizeAnalyticsToStd_("questions");
+  var dashboards = StdFolders_normalizeAnalyticsToStd_("dashboards");
+
+  // ダッシュボード連動: コピーされた Dashboard のリンク先 Question を取りこぼし救済する。
+  // （Question 単体のスイープで大半は揃うため、ここは保険。重複コピーは isFileInStdSubfolder で防止。）
+  var cascadedQuestions = 0;
+  var linked = dashboards.linkedQuestionIds || {};
+  var hasLinked = false;
+  for (var probeId in linked) { if (linked.hasOwnProperty(probeId)) { hasLinked = true; break; } }
+  if (hasLinked) {
+    var qMapping = Analytics_getMapping_("questions");
+    for (var questionId in linked) {
+      if (!linked.hasOwnProperty(questionId)) continue;
+      var qEntry = qMapping[questionId];
+      if (!qEntry) continue;
+      var qr = StdFolders_ensureMappingEntryInStd_(qEntry, "questions");
+      if (qr.changed) {
+        qEntry.fileId = qr.newFileId;
+        qEntry.driveFileUrl = qr.newUrl;
+        cascadedQuestions++;
+      }
+    }
+    if (cascadedQuestions > 0) Analytics_saveMapping_("questions", qMapping);
+  }
+
+  return {
+    forms: { count: forms.count },
+    questions: { count: questions.count },
+    dashboards: { count: dashboards.count },
+    cascadedQuestions: cascadedQuestions,
+    total: forms.count + questions.count + dashboards.count + cascadedQuestions
+  };
+}
+
+// ---------------------------------------------
 // 標準フォルダ解決（常に有効 = 標準フォルダ構成が唯一の前提）
 // ---------------------------------------------
 
@@ -521,11 +646,15 @@ function StdFolders_rebuildMappings_(payload) {
     var questionsResult = StdFolders_rebuildAnalyticsMapping_(root, "questions");
     var dashboardsResult = StdFolders_rebuildAnalyticsMapping_(root, "dashboards");
 
+    // 既リンク資産のうち構成外のものを標準フォルダへコピーして揃える。
+    var normalized = StdFolders_normalizeLinkedToStd_();
+
     return {
       ok: true,
       forms: formsResult,
       questions: questionsResult,
-      dashboards: dashboardsResult
+      dashboards: dashboardsResult,
+      normalized: normalized
     };
   });
 }
@@ -669,7 +798,10 @@ function StdFolders_importMapping_(doc) {
   if (Array.isArray(folders.questions)) Analytics_saveFoldersRegistry_("questions", Analytics_getFolders_("questions").concat(folders.questions));
   if (Array.isArray(folders.dashboards)) Analytics_saveFoldersRegistry_("dashboards", Analytics_getFolders_("dashboards").concat(folders.dashboards));
 
-  return { ok: true, imported: imported, skipped: skipped, errors: errors };
+  // 既リンク資産のうち構成外のものを標準フォルダへコピーして揃える。
+  var normalized = StdFolders_normalizeLinkedToStd_();
+
+  return { ok: true, imported: imported, skipped: skipped, errors: errors, normalized: normalized };
 }
 
 // インポートのソースを解決して取り込む。

@@ -221,10 +221,12 @@ export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyW
   const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks, rebuildMapping }, "システムごとコピーに失敗しました");
   return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), message: r.message || "" };
 };
+// 既リンク資産のうち標準フォルダ構成外のものを構成内へコピーした結果のデフォルト形。
+const emptyNormalized = () => ({ forms: { count: 0 }, questions: { count: 0 }, dashboards: { count: 0 }, cascadedQuestions: 0, total: 0 });
 // 同期（フォルダ走査）。01_forms/02_questions/03_dashboards を走査し未リンク JSON をリンクする。
 export const rebuildMappingsFromFolders = async (rootUrl = "") => {
   const r = await fetchGasApi("nfbRebuildMappingsFromFolders", { rootUrl }, "マッピングの同期に失敗しました");
-  return { forms: r.forms || { count: 0 }, questions: r.questions || { count: 0 }, dashboards: r.dashboards || { count: 0 } };
+  return { forms: r.forms || { count: 0 }, questions: r.questions || { count: 0 }, dashboards: r.dashboards || { count: 0 }, normalized: r.normalized || emptyNormalized() };
 };
 // 現在のマッピングを _nfb_mapping.json 形のドキュメントで取得（ダウンロード用）。
 export const exportMapping = async () => {
@@ -234,7 +236,7 @@ export const exportMapping = async () => {
 // マッピングをインポート（マージ）。url 非空ならその Drive ファイル、空ならルート直下の最新 .json を読む。
 export const importMapping = async (url = "") => {
   const r = await fetchGasApi("nfbImportMapping", { url }, "マッピングのインポートに失敗しました");
-  return { imported: r.imported || {}, skipped: r.skipped || 0, errors: r.errors || [] };
+  return { imported: r.imported || {}, skipped: r.skipped || 0, errors: r.errors || [], normalized: r.normalized || emptyNormalized() };
 };
 // 現在解決されるルートフォルダ情報を取得（診断用）。
 export const getStdFolderRoot = async () => {

@@ -30,6 +30,18 @@ const normalizeAdminEmailInput = (value) => String(value || "")
   .filter(Boolean)
   .join(";");
 
+// 既リンク資産のうち標準フォルダ構成外だったものを構成内へコピーした件数を文面にする。
+// total が 0（コピー発生なし）のときは空配列を返し、従来文面のままにする。
+function buildNormalizedLines(normalized) {
+  if (!normalized || !normalized.total) return [];
+  return [
+    "",
+    "標準フォルダ構成外だったため標準フォルダへコピーしました:",
+    `フォーム: ${normalized.forms?.count || 0}件 / Question: ${normalized.questions?.count || 0}件 / Dashboard: ${normalized.dashboards?.count || 0}件`,
+    `（うちダッシュボード連動でコピーした Question: ${normalized.cascadedQuestions || 0}件）`,
+  ];
+}
+
 function buildMembershipFailMessage({ userEmail, reason, groupErrors, detail }) {
   const safeUser = userEmail || "不明";
   if (reason === "missing_current_user_email") {
@@ -334,7 +346,7 @@ export default function SettingsAdminTab() {
     if (!canManageAdminSettings) return;
     setImportLoading(true);
     try {
-      const { imported, skipped, errors } = await importMapping(mappingImportUrl.trim());
+      const { imported, skipped, errors, normalized } = await importMapping(mappingImportUrl.trim());
       const lines = [
         `フォーム: ${imported.forms || 0}件`,
         `Question: ${imported.questions || 0}件`,
@@ -346,6 +358,7 @@ export default function SettingsAdminTab() {
         errors.slice(0, 3).forEach((e) => lines.push(`・[${e.section}] ${e.id}: ${e.reason}`));
         if (errors.length > 3) lines.push(`…ほか ${errors.length - 3}件`);
       }
+      lines.push(...buildNormalizedLines(normalized));
       await invalidateListCaches();
       showAlert(`マッピングをインポートしました。\n${lines.join("\n")}`);
     } catch (error) {
@@ -360,12 +373,15 @@ export default function SettingsAdminTab() {
     if (!canManageAdminSettings) return;
     setSyncLoading(true);
     try {
-      const { forms, questions, dashboards } = await rebuildMappingsFromFolders("");
+      const { forms, questions, dashboards, normalized } = await rebuildMappingsFromFolders("");
       await invalidateListCaches();
-      showAlert(
-        "フォルダ走査で未リンクのファイルをリンクしました。\n" +
-        `フォーム: ${forms.count || 0}件\nQuestion: ${questions.count || 0}件\nDashboard: ${dashboards.count || 0}件`,
-      );
+      const lines = [
+        `フォーム: ${forms.count || 0}件`,
+        `Question: ${questions.count || 0}件`,
+        `Dashboard: ${dashboards.count || 0}件`,
+      ];
+      lines.push(...buildNormalizedLines(normalized));
+      showAlert("フォルダ走査で未リンクのファイルをリンクしました。\n" + lines.join("\n"));
     } catch (error) {
       console.error("[SettingsAdminTab] rebuildMappingsFromFolders failed", error);
       showAlert(error?.message || "マッピングの同期に失敗しました");
