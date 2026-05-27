@@ -239,8 +239,8 @@ var NfbAlasqlRuntime = (() => {
   // builder/src/core/constants.js
   var RECORD_CACHE_MAX_AGE_MS = 30 * 60 * 1e3;
   var RECORD_CACHE_BACKGROUND_REFRESH_MS = 5 * 60 * 1e3;
-  var FORM_CACHE_MAX_AGE_MS = 30 * 60 * 1e3;
-  var FORM_CACHE_BACKGROUND_REFRESH_MS = 5 * 60 * 1e3;
+  var FORM_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1e3;
+  var FORM_CACHE_BACKGROUND_REFRESH_MS = 60 * 60 * 1e3;
   var ANALYTICS_SOURCE_TABLE_CACHE_TTL_MS = 60 * 60 * 1e3;
   var MS_PER_DAY = 24 * 60 * 60 * 1e3;
   var SERIAL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
@@ -637,6 +637,31 @@ var NfbAlasqlRuntime = (() => {
         const candidates = valueToStrings(cols[i]);
         for (let k = 0; k < candidates.length; k++) {
           if (candidates[k].toLowerCase().indexOf(nLower) >= 0) return true;
+        }
+      }
+      return false;
+    };
+    function splitMultiValueCell(cell) {
+      if (cell === null || cell === void 0) return [];
+      const str = String(cell);
+      if (str === "") return [];
+      return str.split(",").map((token) => token.trim()).filter((token) => token !== "");
+    }
+    alasql.fn.MV_EQ = function(cell, target) {
+      const tokens = splitMultiValueCell(cell);
+      const t = String(target);
+      for (let i = 0; i < tokens.length; i++) {
+        if (tokens[i] === t) return true;
+      }
+      return false;
+    };
+    alasql.fn.MV_IN = function(cell, ...targets) {
+      const tokens = splitMultiValueCell(cell);
+      if (tokens.length === 0) return false;
+      const targetStrs = targets.map((v) => String(v));
+      for (let i = 0; i < tokens.length; i++) {
+        for (let k = 0; k < targetStrs.length; k++) {
+          if (tokens[i] === targetStrs[k]) return true;
         }
       }
       return false;
