@@ -215,6 +215,22 @@ export const checkAdminEmailMembership = createGasEndpoint({
 });
 export const getRestrictToFormOnly = async () => { const r = await fetchGasApi("nfbGetRestrictToFormOnly", {}, "Get restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
 export const setRestrictToFormOnly = async (value) => { const r = await fetchGasApi("nfbSetRestrictToFormOnly", value, "Set restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
+// 標準フォルダ構成（作成 / 自動整理フラグ / 構成コピー / マッピング再構築）
+export const getStandardFolderAutoFile = async () => { const r = await fetchGasApi("nfbGetStandardFolderAutoFile", {}, "Get auto-file setting failed"); return Boolean(r.autoFile); };
+export const setStandardFolderAutoFile = async (value) => { const r = await fetchGasApi("nfbSetStandardFolderAutoFile", value, "Set auto-file setting failed"); return Boolean(r.autoFile); };
+export const createStandardFolders = async (rootUrl = "") => {
+  const r = await fetchGasApi("nfbCreateStandardFolders", { rootUrl }, "標準フォルダ構成の作成に失敗しました");
+  return { rootUrl: r.rootUrl || "", folders: r.folders || [] };
+};
+export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyWebhooks = false } = {}) => {
+  if (!destRootUrl) throw new Error("コピー先ルートフォルダの URL を指定してください");
+  const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks }, "フォルダ構成のコピーに失敗しました");
+  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, message: r.message || "" };
+};
+export const rebuildMappingsFromFolders = async (rootUrl = "") => {
+  const r = await fetchGasApi("nfbRebuildMappingsFromFolders", { rootUrl }, "マッピングの再構築に失敗しました");
+  return { forms: r.forms || { count: 0 }, questions: r.questions || { count: 0 }, dashboards: r.dashboards || { count: 0 } };
+};
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
 export const saveFileToDrive = ({ filename, base64, mimeType }) => fetchGasApi("nfbSaveFileToDrive", { filename, base64, mimeType }, "Driveへの保存に失敗しました");
 const isSingleRecordPrintPayload = (payload) => {

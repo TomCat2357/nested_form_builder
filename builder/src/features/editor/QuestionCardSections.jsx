@@ -1,6 +1,7 @@
 import React from "react";
 import { DEFAULT_MULTILINE_ROWS, normalizeWebhookAction } from "../../core/schema.js";
 import { isValidExternalActionUrl } from "../../utils/externalActionUrl.js";
+import { useStandardFolderAutoFile } from "../../app/hooks/useStandardFolderAutoFile.js";
 import { styles as s } from "./styles.js";
 import {
   EMAIL_PLACEHOLDER,
@@ -195,6 +196,7 @@ export function PhoneFieldSection({ field, onChange, onFocus, phonePlaceholder, 
 }
 
 export function FileUploadFieldSection({ field, onChange }) {
+  const { autoFile } = useStandardFolderAutoFile();
   return (
     <div className="nf-mt-8">
       <label className="nf-row nf-gap-6">
@@ -228,10 +230,13 @@ export function FileUploadFieldSection({ field, onChange }) {
           type="text"
           value={field.driveRootFolderUrl ?? ""}
           placeholder="https://drive.google.com/drive/folders/..."
+          disabled={autoFile}
           onChange={(event) => onChange({ ...field, driveRootFolderUrl: event.target.value })}
         />
         <div className="nf-text-11 nf-text-muted nf-mt-4">
-          空白の場合はマイドライブのルートがファイルの保存先になります
+          {autoFile
+            ? "標準フォルダへの自動整理が ON のため、アップロードは 06_upload_files に保存されます（管理者設定で OFF にすると個別指定できます）"
+            : "空白の場合はマイドライブのルートがファイルの保存先になります"}
         </div>
       </div>
       <div className="nf-mt-8">

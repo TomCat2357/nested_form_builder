@@ -194,14 +194,17 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
       file = folder.createFile(fileName, content, MimeType.PLAIN_TEXT);
     }
 
+    // 自動整理が ON で明示指定が無い場合は 02_questions / 03_dashboards へ作成する。
+    var stdAnalyticsKey = type === "questions" ? "questions" : "dashboards";
+
     if (!file && saveMode === "copy_to_root") {
-      var defaultFolder = Analytics_getOrCreateFolder_(type);
+      var defaultFolder = StdFolders_autoFileFolderOrNull_(stdAnalyticsKey) || Analytics_getOrCreateFolder_(type);
       file = defaultFolder.createFile(fileName, content, MimeType.PLAIN_TEXT);
     }
 
     if (!file) {
-      // overwrite_existing で失敗した場合のフォールバック (既定フォルダに新規作成)
-      var fallbackFolder = Analytics_getOrCreateFolder_(type);
+      // overwrite_existing で失敗した場合のフォールバック (標準フォルダ → 既定フォルダ)
+      var fallbackFolder = StdFolders_autoFileFolderOrNull_(stdAnalyticsKey) || Analytics_getOrCreateFolder_(type);
       file = fallbackFolder.createFile(fileName, content, MimeType.PLAIN_TEXT);
     }
 

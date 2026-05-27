@@ -65,7 +65,9 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
   var rawInput = String(nextSettings.spreadsheetId || "").trim();
 
   if (!rawInput) {
-    var createdRoot = Forms_createSpreadsheet_(Forms_buildSpreadsheetName_(form), null);
+    // 自動整理が ON で明示指定が無い場合は 04_spreadsheets へ作成する。
+    var stdSpreadsheetFolderId = StdFolders_autoFileFolderIdOrNull_("spreadsheets");
+    var createdRoot = Forms_createSpreadsheet_(Forms_buildSpreadsheetName_(form), stdSpreadsheetFolderId);
     nextSettings.spreadsheetId = createdRoot.spreadsheetUrl;
     return {
       settings: nextSettings,
@@ -249,7 +251,11 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       }
     } else if (effectiveSaveMode === "copy_to_root") {
       try {
-        file = DriveApp.createFile(fileName, content, MimeType.PLAIN_TEXT);
+        // 自動整理が ON で明示指定が無い場合は 01_forms へ作成する。失敗時はマイドライブ直下。
+        var stdFormsFolder = StdFolders_autoFileFolderOrNull_("forms");
+        file = stdFormsFolder
+          ? stdFormsFolder.createFile(fileName, content, MimeType.PLAIN_TEXT)
+          : DriveApp.createFile(fileName, content, MimeType.PLAIN_TEXT);
         fileId = file.getId();
       } catch (errCreateInRoot) {
         throw new Error("[save-stage=create-in-root] マイドライブ直下への保存に失敗しました. formId=" + form.id + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errCreateInRoot));

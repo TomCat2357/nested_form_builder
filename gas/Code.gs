@@ -51,6 +51,12 @@ const ACTION_DEFINITIONS_ = {
   "admin_key_set":   { handler: (ctx) => SetAdminKey_(ctx.raw?.adminKey ?? ""), adminOnly: true },
   "admin_email_get": { handler: () => ({ ok: true, adminEmail: GetAdminEmail_() }), adminOnly: true },
   "admin_email_set": { handler: (ctx) => SetAdminEmail_(ctx.raw?.adminEmail ?? ""), adminOnly: true },
+  // 標準フォルダ構成（作成 / 自動整理フラグ / 構成コピー / マッピング再構築）
+  "std_folders_autofile_get": { handler: () => ({ ok: true, autoFile: StdFolders_isAutoFileEnabled_() }), adminOnly: true },
+  "std_folders_autofile_set": { handler: (ctx) => StdFolders_setAutoFileEnabled_(ctx.raw?.value), adminOnly: true },
+  "std_folders_create":       { handler: (ctx) => StdFolders_create_(ctx.raw || {}), adminOnly: true },
+  "std_folders_copy":         { handler: (ctx) => StdFolders_copy_(ctx.raw || {}), adminOnly: true },
+  "std_folders_rebuild_map":  { handler: (ctx) => StdFolders_rebuildMappings_(ctx.raw || {}), adminOnly: true },
   // doPost HTTP 用フォームアクション（従来契約）。list/get は nfb* 経由と同じくゲートなし。
   "forms_list":      { handler: FormsApi_List_ },
   "forms_get":       { handler: FormsApi_Get_ },

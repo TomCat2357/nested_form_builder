@@ -144,6 +144,11 @@ function nfbResolveUploadFolder_(driveSettings) {
   }
 
   var rootFolder = nfbResolveRootFolder_(driveSettings);
+  // 明示指定（rootFolderUrl）が無く自動整理が ON のときは 06_upload_files をルートにする。
+  if (!(driveSettings && driveSettings.rootFolderUrl)) {
+    var stdUploadFolder = StdFolders_autoFileFolderOrNull_("upload");
+    if (stdUploadFolder) rootFolder = stdUploadFolder;
+  }
   var createdFolder = rootFolder.createFolder(nfbBuildRecordTempFolderName_(driveSettings));
   nfbApplyFolderNameTemplateIfNeeded_(createdFolder, driveSettings, context);
   return {
