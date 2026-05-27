@@ -437,7 +437,9 @@ export default function SettingsAdminTab() {
           いずれかを保存すると、不足しているフォルダも含めて全て自動作成されます。
         </p>
 
-        {rootInfo && (
+        {rootInfo === null ? (
+          <p className="nf-mb-12 nf-text-12 nf-text-muted">現在のルートフォルダを確認中…</p>
+        ) : (
           rootInfo.resolved ? (
             <p className="nf-mb-12 nf-text-12">
               現在のルートフォルダ:{" "}
@@ -485,16 +487,9 @@ export default function SettingsAdminTab() {
           「インポート」（URL 空欄）で取り込むか、「同期」でフォルダを走査して復元してください。
         </p>
 
-        <div className="nf-row nf-gap-12 nf-mb-12" style={{ flexWrap: "wrap" }}>
-          <button type="button" className="nf-btn nf-nowrap" onClick={handleExportMapping} disabled={!canManageAdminSettings || exportLoading}>
-            {exportLoading ? "エクスポート中..." : "エクスポート（ダウンロード）"}
-          </button>
-          <button type="button" className="nf-btn nf-nowrap" onClick={handleSyncMapping} disabled={!canManageAdminSettings || syncLoading}>
-            {syncLoading ? "同期中..." : "同期（フォルダ走査）"}
-          </button>
-        </div>
-
-        <label className="nf-block nf-fw-600 nf-mb-6">インポート</label>
+        {/* 復元（取り込み）: インポートと同期はどちらもマッピングを「取り込む」復元手段。 */}
+        <div className="nf-fw-600 nf-text-13 nf-mb-6">復元（取り込み）</div>
+        <label className="nf-block nf-fw-600 nf-mb-6">インポート（JSON から復元）</label>
         <div className="nf-row nf-gap-12">
           <input
             className="nf-input nf-flex-1 nf-min-w-0"
@@ -507,8 +502,28 @@ export default function SettingsAdminTab() {
             {importLoading ? "インポート中..." : "インポート"}
           </button>
         </div>
-        <p className="nf-mt-6 nf-text-11 nf-text-muted">
+        <p className="nf-mt-6 nf-mb-12 nf-text-11 nf-text-muted">
           インポートは既存マッピングへマージします（同じ fileId は重複としてスキップ）。
+        </p>
+
+        <div className="nf-row nf-gap-12">
+          <button type="button" className="nf-btn nf-nowrap" onClick={handleSyncMapping} disabled={!canManageAdminSettings || syncLoading}>
+            {syncLoading ? "同期中..." : "同期（フォルダ走査）"}
+          </button>
+        </div>
+        <p className="nf-mt-6 nf-text-11 nf-text-muted">
+          JSON が無い場合は、フォルダを走査して未リンクのファイルをマッピングへ復元します。
+        </p>
+
+        {/* バックアップ（書き出し）: エクスポートだけが向きの異なる「書き出し」操作。 */}
+        <div className="nf-fw-600 nf-text-13 nf-mb-6 nf-mt-24">バックアップ（書き出し）</div>
+        <div className="nf-row nf-gap-12">
+          <button type="button" className="nf-btn nf-nowrap" onClick={handleExportMapping} disabled={!canManageAdminSettings || exportLoading}>
+            {exportLoading ? "エクスポート中..." : "エクスポート（ダウンロード）"}
+          </button>
+        </div>
+        <p className="nf-mt-6 nf-text-11 nf-text-muted">
+          現在のマッピングを JSON ファイルとしてダウンロードします。
         </p>
       </div>
 
