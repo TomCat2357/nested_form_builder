@@ -528,7 +528,7 @@ export default function SettingsAdminTab() {
           </button>
         </div>
         <p className="nf-mt-6 nf-text-11 nf-text-muted">
-          JSON が無い場合は、フォルダを走査して未リンクのファイルをマッピングへ復元します。
+          標準フォルダを走査し、マッピングに無い未リンクのファイルを検出してマッピングへ追加します。
         </p>
 
         {/* バックアップ（書き出し）: エクスポートだけが向きの異なる「書き出し」操作。 */}
