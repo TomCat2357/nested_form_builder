@@ -1471,6 +1471,7 @@ button:disabled {
 
 .dialog-panel {
   width: min(420px, 90vw);
+  max-height: 90vh;
   background: var(--dialog-bg);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lg);
@@ -1478,6 +1479,15 @@ button:disabled {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+/* 本文が縦に長い場合はここだけスクロールさせ、タイトルとフッター（ボタン）は常に表示する */
+.dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .dialog-title {

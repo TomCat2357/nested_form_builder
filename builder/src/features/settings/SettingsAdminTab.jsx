@@ -446,12 +446,14 @@ export default function SettingsAdminTab() {
       </div>
 
       <div className="nf-section-divider">
-        <div className="nf-settings-group-title nf-mb-6">システムごとコピー</div>
+        <div className="nf-settings-group-title nf-mb-6">フォルダ構成 / システムコピー</div>
         <p className="nf-mb-12 nf-text-12 nf-text-muted">
           フォーム・Question・Dashboard・スプレッドシート・アップロードファイルは、appsscript 本体が置かれた
           親フォルダをルートとする標準フォルダ構成（<code>01_forms</code>〜<code>08_documents</code>）に保存されます。
-          いずれかを保存すると、不足しているフォルダも含めて全て自動作成されます。
         </p>
+
+        {/* 機能1: いまのルート配下に標準フォルダを用意するだけ（コピーではない） */}
+        <div className="nf-fw-600 nf-text-13 nf-mb-6">① 標準フォルダ構成を作成（このルート配下）</div>
 
         {rootInfo === null ? (
           <p className="nf-mb-12 nf-text-12 nf-text-muted">現在のルートフォルダを確認中…</p>
@@ -471,7 +473,7 @@ export default function SettingsAdminTab() {
           )
         )}
 
-        <div className="nf-row nf-gap-12 nf-mb-12">
+        <div className="nf-row nf-gap-12 nf-mb-6">
           <input
             className="nf-input nf-flex-1 nf-min-w-0"
             type="text"
@@ -485,12 +487,20 @@ export default function SettingsAdminTab() {
           <button type="button" className="nf-btn nf-nowrap" onClick={handleEnsureFolders} disabled={!canManageAdminSettings || ensureLoading}>
             {ensureLoading ? "作成中..." : "標準フォルダ構成を今すぐ作成"}
           </button>
+        </div>
+        <p className="nf-mt-6 nf-mb-24 nf-text-11 nf-text-muted">
+          このルート配下に <code>01_forms</code>〜<code>08_documents</code> を作成します（不足分のみ補完）。中身の複製は行いません。
+        </p>
+
+        {/* 機能2: システム一式を別ルートへ複製する */}
+        <div className="nf-fw-600 nf-text-13 nf-mb-6">② システムごと別ルートへコピー</div>
+        <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
           <button type="button" className="nf-btn nf-nowrap" onClick={() => setCopyDialogOpen(true)} disabled={!canManageAdminSettings}>
-            システムごとコピー
+            システムごと別ルートへコピー
           </button>
         </div>
         <p className="nf-mt-6 nf-text-11 nf-text-muted">
-          appsscript 本体と標準フォルダ構成の中身を別ルートへ複製し、フォーム→スプレッドシート等のリンクを
+          appsscript 本体と標準フォルダ構成の中身を<strong>別のルート</strong>へ複製し、フォーム→スプレッドシート等のリンクを
           コピー後の URL で再構成します。コピー先スクリプトの Web アプリは手動で再デプロイしてください。
         </p>
       </div>

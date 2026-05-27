@@ -43,7 +43,7 @@ export default function AdminCopyStructureDialog({
             キャンセル
           </button>
           <button type="button" className="dialog-btn primary" onClick={handleConfirm} disabled={loading}>
-            {loading ? "コピー中..." : "コピー"}
+            {loading ? "コピー中..." : "別ルートへコピー"}
           </button>
         </>
       }

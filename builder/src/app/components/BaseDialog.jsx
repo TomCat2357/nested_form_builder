@@ -6,7 +6,7 @@ export default function BaseDialog({ open, title, children, footer }) {
     <div className="dialog-overlay" role="dialog" aria-modal="true" aria-labelledby="dialog-title">
       <div className="dialog-panel">
         {title && <h2 id="dialog-title" className="dialog-title">{title}</h2>}
-        {children}
+        <div className="dialog-body">{children}</div>
         {footer && <div className="dialog-footer">{footer}</div>}
       </div>
     </div>
