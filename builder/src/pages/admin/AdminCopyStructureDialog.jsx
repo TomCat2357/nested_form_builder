@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
 
 // システムごと（appsscript 本体 + 標準フォルダ構成）を別ルートへコピーするダイアログ。
-// コピー先ルート URL +「データもコピー」「webhooks もコピー」「マッピングを再構築」オプションを受け取る。
+// コピー先ルート URL +「データもコピー」「webhooks もコピー」「マッピング JSON を書き出す」オプションを受け取る。
 export default function AdminCopyStructureDialog({
   open,
   url,
@@ -52,7 +52,7 @@ export default function AdminCopyStructureDialog({
         appsscript 本体と標準フォルダ構成（01_forms〜08_documents）をコピー先ルートへ複製し、
         フォーム→スプレッドシート等のリンクをコピー後の URL で再構成します。標準フォルダ構成外を指すリンクは
         削除されます。コピー先スクリプトの Web アプリは手動で再デプロイが必要です（Script Properties は
-        引き継がれず、マッピングは初回管理者アクセス時に自動再構築されます）。
+        引き継がれず、マッピングはコピー先の 設定 &gt; 管理 から「インポート」または「同期」で手動復元します）。
       </p>
 
       <div>
@@ -101,11 +101,12 @@ export default function AdminCopyStructureDialog({
           checked={!!rebuildMapping}
           onChange={(event) => onRebuildMappingChange(event.target.checked)}
         />
-        <span className="nf-text-13">マッピングを再構築する（コピー先 GAS を開いたときに自動実行・推奨）</span>
+        <span className="nf-text-13">マッピング JSON を書き出す（推奨）</span>
       </label>
       <p className="nf-mt-2 nf-text-11 nf-text-muted">
-        ON の場合、コピー先ルートに再構築マーカーを残し、コピー先の appsscript を管理者で開いたときに
-        マッピングが自動で 1 回だけ再構築されます。OFF の場合のみ、コピー先で手動再構築が必要です。
+        ON の場合、コピー先ルートに _nfb_mapping.json（新 fileId に振り直し済み）を保存します。コピー先の
+        設定 &gt; 管理 から「インポート」（URL 空欄でルートの最新を読込）または「同期」を実行してマッピングを
+        復元してください。OFF の場合は JSON を残さず、コピー先では「同期」のみで復元します。
       </p>
     </BaseDialog>
   );
