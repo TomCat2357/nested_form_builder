@@ -198,6 +198,96 @@ function StdFolders_ensureMappingEntryInStd_(entry, key) {
   return { changed: true, newFileId: placed.fileId, newUrl: placed.fileUrl };
 }
 
+// fileId の Drive ファイルが生存しているか（存在しゴミ箱でない）を返す。
+// 取得不能（削除済み・権限喪失など）は false。マッピングの壊れたリンク判定に使う。
+function StdFolders_isFileIdAlive_(fileId) {
+  if (!fileId) return false;
+  try {
+    var f = DriveApp.getFileById(fileId);
+    return !(typeof f.isTrashed === "function" && f.isTrashed());
+  } catch (e) {
+    return false;
+  }
+}
+
+// key サブフォルダ（例 01_forms）配下の JSON を走査し、各ファイルの埋め込み json.id を
+// キーに { id: { fileId, fileUrl } } のインデックスを返す。壊れたリンクの再リンク先探索に使う。
+// 同一 id が複数あれば先に見つかったものを採用（先勝ち）。ルート未解決時は空オブジェクト。
+function StdFolders_indexStdFolderByEmbeddedId_(key) {
+  var index = {};
+  try {
+    var root = StdFolders_resolveRootFolder_(null);
+    var sub = StdFolders_getOrCreateSubfolder_(root, key);
+    var files = sub.getFiles();
+    while (files.hasNext()) {
+      var file = files.next();
+      if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+      if (!StdFolders_isJsonFile_(file)) continue;
+      var json;
+      try {
+        json = JSON.parse(file.getBlob().getDataAsString());
+      } catch (e) {
+        continue;
+      }
+      if (!json || typeof json.id !== "string" || !json.id) continue;
+      if (!index[json.id]) index[json.id] = { fileId: file.getId(), fileUrl: file.getUrl() };
+    }
+  } catch (err) {
+    Logger.log("[StdFolders_indexStdFolderByEmbeddedId_] " + key + ": " + nfbErrorToString_(err));
+  }
+  return index;
+}
+
+// mapping[id] の 1 エントリを修復する。戻り値: "normalized" | "relinked" | "removed" | "none"。
+//   - 参照ファイルが生存: 従来どおり構成外なら std サブフォルダへコピーして張替え（"normalized"）。
+//   - 壊れたリンク: 埋め込み id インデックス（indexProvider() で遅延取得）に同 id があれば
+//     そのファイルへ再リンク（"relinked"）、無ければ mapping から削除（"removed"）。
+// 変更が成立したら onChange(id, entry) を呼ぶ（削除時は呼ばない）。
+function StdFolders_repairMappingEntry_(mapping, id, key, indexProvider, onChange) {
+  var entry = mapping[id];
+  if (!entry) return "none";
+  var oldFileId = Nfb_resolveFileIdFromEntry_(entry);
+  if (oldFileId && StdFolders_isFileIdAlive_(oldFileId)) {
+    var r = StdFolders_ensureMappingEntryInStd_(entry, key);
+    if (r.changed) {
+      entry.fileId = r.newFileId;
+      entry.driveFileUrl = r.newUrl;
+      if (onChange) onChange(id, entry);
+      return "normalized";
+    }
+    return "none";
+  }
+  // ここから壊れたリンク（参照ファイルが取得不能 / ゴミ箱）
+  var hit = indexProvider()[id];
+  if (hit) {
+    entry.fileId = hit.fileId;
+    entry.driveFileUrl = hit.fileUrl;
+    if (onChange) onChange(id, entry);
+    return "relinked";
+  }
+  delete mapping[id];
+  return "removed";
+}
+
+// mapping 全体を走査して修復・正規化する。戻り: { normalized, relinked, removed, removedIds }。
+// インデックスは壊れたリンクが出たときだけ一度だけ生成する（無駄な Drive 走査を避ける）。
+function StdFolders_repairAndNormalizeMapping_(mapping, key, onChange) {
+  var counts = { normalized: 0, relinked: 0, removed: 0, removedIds: [] };
+  var cachedIndex = null;
+  var provider = function() {
+    if (cachedIndex === null) cachedIndex = StdFolders_indexStdFolderByEmbeddedId_(key);
+    return cachedIndex;
+  };
+  for (var id in mapping) {
+    if (!mapping.hasOwnProperty(id)) continue;
+    var outcome = StdFolders_repairMappingEntry_(mapping, id, key, provider, onChange);
+    if (outcome === "normalized") counts.normalized++;
+    else if (outcome === "relinked") counts.relinked++;
+    else if (outcome === "removed") { counts.removed++; counts.removedIds.push(id); }
+  }
+  return counts;
+}
+
 // Dashboard ファイル JSON から cards[].questionId を集めて out（id の集合）へ追加する。
 function StdFolders_collectDashboardQuestionIds_(fileId, out) {
   try {
@@ -216,49 +306,29 @@ function StdFolders_collectDashboardQuestionIds_(fileId, out) {
   }
 }
 
-// 既リンクのフォームを 01_forms へ揃える。コピーしたら AddFormUrl_ も新 URL で更新。
+// 既リンクのフォームを 01_forms へ揃え、壊れたリンクは再リンク／削除する。
+// 変更時は AddFormUrl_ も新 URL で更新（forms はマッピングが URL 登録簿を兼ねる）。
 function StdFolders_normalizeFormsToStd_() {
   var mapping = Forms_getMapping_();
-  var count = 0;
-  for (var id in mapping) {
-    if (!mapping.hasOwnProperty(id)) continue;
-    var entry = mapping[id];
-    if (!entry) continue;
-    var r = StdFolders_ensureMappingEntryInStd_(entry, "forms");
-    if (r.changed) {
-      entry.fileId = r.newFileId;
-      entry.driveFileUrl = r.newUrl;
-      try { AddFormUrl_(id, r.newUrl); } catch (e) { /* non-critical */ }
-      count++;
-    }
-  }
-  if (count > 0) Forms_saveMapping_(mapping);
-  return { count: count };
+  var res = StdFolders_repairAndNormalizeMapping_(mapping, "forms", function(id, entry) {
+    try { if (entry.driveFileUrl) AddFormUrl_(id, entry.driveFileUrl); } catch (e) { /* non-critical */ }
+  });
+  if (res.normalized > 0 || res.relinked > 0 || res.removed > 0) Forms_saveMapping_(mapping);
+  return { count: res.normalized, relinked: res.relinked, removed: res.removed };
 }
 
-// 既リンクの Question / Dashboard を 02_questions / 03_dashboards へ揃える。
-// Dashboard をコピーしたときは、その JSON から linkedQuestionIds を収集して返す。
+// 既リンクの Question / Dashboard を 02_questions / 03_dashboards へ揃え、壊れたリンクは再リンク／削除する。
+// Dashboard を揃え／再リンクしたときは、そのコピー先 JSON から linkedQuestionIds を収集して返す。
 function StdFolders_normalizeAnalyticsToStd_(type) {
   var key = type === "questions" ? "questions" : "dashboards";
   var mapping = Analytics_getMapping_(type);
-  var count = 0;
   var linkedQuestionIds = {};
-  for (var id in mapping) {
-    if (!mapping.hasOwnProperty(id)) continue;
-    var entry = mapping[id];
-    if (!entry) continue;
-    var r = StdFolders_ensureMappingEntryInStd_(entry, key);
-    if (r.changed) {
-      entry.fileId = r.newFileId;
-      entry.driveFileUrl = r.newUrl;
-      count++;
-      if (type === "dashboards") {
-        StdFolders_collectDashboardQuestionIds_(r.newFileId, linkedQuestionIds);
-      }
-    }
-  }
-  if (count > 0) Analytics_saveMapping_(type, mapping);
-  return { count: count, linkedQuestionIds: linkedQuestionIds };
+  var onChange = type === "dashboards"
+    ? function(id, entry) { StdFolders_collectDashboardQuestionIds_(entry.fileId, linkedQuestionIds); }
+    : null;
+  var res = StdFolders_repairAndNormalizeMapping_(mapping, key, onChange);
+  if (res.normalized > 0 || res.relinked > 0 || res.removed > 0) Analytics_saveMapping_(type, mapping);
+  return { count: res.normalized, relinked: res.relinked, removed: res.removed, linkedQuestionIds: linkedQuestionIds };
 }
 
 // 既リンク資産（forms / questions / dashboards）を標準フォルダ構成へ正規化する。
@@ -271,30 +341,40 @@ function StdFolders_normalizeLinkedToStd_() {
   // ダッシュボード連動: コピーされた Dashboard のリンク先 Question を取りこぼし救済する。
   // （Question 単体のスイープで大半は揃うため、ここは保険。重複コピーは isFileInStdSubfolder で防止。）
   var cascadedQuestions = 0;
+  var cascadeRelinked = 0;
+  var cascadeRemoved = 0;
   var linked = dashboards.linkedQuestionIds || {};
   var hasLinked = false;
   for (var probeId in linked) { if (linked.hasOwnProperty(probeId)) { hasLinked = true; break; } }
   if (hasLinked) {
     var qMapping = Analytics_getMapping_("questions");
+    var cachedQIndex = null;
+    var qProvider = function() {
+      if (cachedQIndex === null) cachedQIndex = StdFolders_indexStdFolderByEmbeddedId_("questions");
+      return cachedQIndex;
+    };
+    var touched = false;
     for (var questionId in linked) {
       if (!linked.hasOwnProperty(questionId)) continue;
-      var qEntry = qMapping[questionId];
-      if (!qEntry) continue;
-      var qr = StdFolders_ensureMappingEntryInStd_(qEntry, "questions");
-      if (qr.changed) {
-        qEntry.fileId = qr.newFileId;
-        qEntry.driveFileUrl = qr.newUrl;
-        cascadedQuestions++;
-      }
+      if (!qMapping[questionId]) continue;
+      var outcome = StdFolders_repairMappingEntry_(qMapping, questionId, "questions", qProvider, null);
+      if (outcome === "normalized") { cascadedQuestions++; touched = true; }
+      else if (outcome === "relinked") { cascadeRelinked++; touched = true; }
+      else if (outcome === "removed") { cascadeRemoved++; touched = true; }
     }
-    if (cascadedQuestions > 0) Analytics_saveMapping_("questions", qMapping);
+    if (touched) Analytics_saveMapping_("questions", qMapping);
   }
+
+  var relinked = (forms.relinked || 0) + (questions.relinked || 0) + (dashboards.relinked || 0) + cascadeRelinked;
+  var removed = (forms.removed || 0) + (questions.removed || 0) + (dashboards.removed || 0) + cascadeRemoved;
 
   return {
     forms: { count: forms.count },
     questions: { count: questions.count },
     dashboards: { count: dashboards.count },
     cascadedQuestions: cascadedQuestions,
+    relinked: relinked,
+    removed: removed,
     total: forms.count + questions.count + dashboards.count + cascadedQuestions
   };
 }
@@ -515,68 +595,25 @@ function StdFolders_copy_(payload) {
 }
 
 // appsscript 本体（スクリプトプロジェクト）を destRoot へ複製する。
-// Apps Script プロジェクト（vnd.google-apps.script）は Drive の copy では複製できないため、
-// Apps Script API（script.googleapis.com/v1）でソース内容を取得→新規プロジェクト作成→内容を書込み、
-// 生成された Drive ファイルを destRoot へ移動する。
+// スタンドアロンプロジェクトは scriptId === Drive fileId なので、DriveApp.makeCopy で複製し
+// moveTo で destRoot へ移動する（makeCopy は保存先を指定しても My Drive 直下に作られるため）。
+// Apps Script API（script.googleapis.com）や usersettings の「Google Apps Script API」トグルは不要。
 // 戻り値: { ok: boolean, reason: string }。失敗してもコピー全体は継続する（reason はログ＆UI 用）。
-// 前提: oauthScopes に script.projects、かつ実行ユーザーが Apps Script API を有効化していること
-//       （https://script.google.com/home/usersettings）。
 function StdFolders_copyAppsScriptBody_(destRoot) {
   try {
     var scriptId = ScriptApp.getScriptId();
     if (!scriptId) return { ok: false, reason: "スクリプト ID を取得できませんでした" };
-    var token = ScriptApp.getOAuthToken();
-
-    // 1) ソースプロジェクトの内容を取得
-    var contentRes = UrlFetchApp.fetch(
-      "https://script.googleapis.com/v1/projects/" + encodeURIComponent(scriptId) + "/content",
-      { method: "get", headers: { Authorization: "Bearer " + token }, muteHttpExceptions: true }
-    );
-    var contentErr = StdFolders_appsScriptApiError_(contentRes);
-    if (contentErr) return { ok: false, reason: contentErr };
-    var content = JSON.parse(contentRes.getContentText());
-    var files = StdFolders_normalizeScriptFiles_(content && content.files);
-    if (!files.length) return { ok: false, reason: "スクリプト内容を取得できませんでした" };
-
-    // 元スクリプト名（取得失敗時は既定名）
-    var title = "Nested Form Builder (copy)";
-    try { title = DriveApp.getFileById(scriptId).getName(); } catch (e) {}
-
-    // 2) 新規スタンドアロンプロジェクトを作成（parentId は付けない＝My Drive 直下に作成）
-    var createRes = UrlFetchApp.fetch(
-      "https://script.googleapis.com/v1/projects",
-      {
-        method: "post",
-        contentType: "application/json",
-        headers: { Authorization: "Bearer " + token },
-        payload: JSON.stringify({ title: title }),
-        muteHttpExceptions: true,
-      }
-    );
-    var createErr = StdFolders_appsScriptApiError_(createRes);
-    if (createErr) return { ok: false, reason: createErr };
-    var created = JSON.parse(createRes.getContentText());
-    var newScriptId = created && created.scriptId;
-    if (!newScriptId) return { ok: false, reason: "新規プロジェクトの作成に失敗しました" };
-
-    // 3) 取得した内容を新規プロジェクトへ書き込む
-    var updateRes = UrlFetchApp.fetch(
-      "https://script.googleapis.com/v1/projects/" + encodeURIComponent(newScriptId) + "/content",
-      {
-        method: "put",
-        contentType: "application/json",
-        headers: { Authorization: "Bearer " + token },
-        payload: JSON.stringify({ files: files }),
-        muteHttpExceptions: true,
-      }
-    );
-    var updateErr = StdFolders_appsScriptApiError_(updateRes);
-    if (updateErr) return { ok: false, reason: updateErr };
-
-    // 4) 生成された Drive ファイル（スタンドアロンは scriptId === Drive fileId）を destRoot へ移動。
-    //    copy は不可だが move（親フォルダ変更）は可能。
+    var selfFile;
     try {
-      DriveApp.getFileById(newScriptId).moveTo(destRoot);
+      selfFile = DriveApp.getFileById(scriptId);
+    } catch (e) {
+      return { ok: false, reason: "スクリプト本体ファイルを取得できませんでした: " + nfbErrorToString_(e) };
+    }
+
+    // makeCopy はコピー先を指定しても My Drive 直下に作られるため、後で moveTo で移動する。
+    var copied = selfFile.makeCopy(selfFile.getName());
+    try {
+      copied.moveTo(destRoot);
     } catch (moveErr) {
       Logger.log("[StdFolders_copyAppsScriptBody_] 移動に失敗（My Drive 直下に残ります）: " + nfbErrorToString_(moveErr));
       return { ok: true, reason: "コピーは成功しましたが、コピー先フォルダへの移動に失敗しました（My Drive 直下を確認してください）" };
@@ -586,36 +623,6 @@ function StdFolders_copyAppsScriptBody_(destRoot) {
     Logger.log("[StdFolders_copyAppsScriptBody_] appsscript 本体の複製に失敗: " + nfbErrorToString_(err));
     return { ok: false, reason: nfbErrorToString_(err) };
   }
-}
-
-// Apps Script API レスポンスを判定し、エラーなら日本語メッセージを返す（正常なら空文字）。
-function StdFolders_appsScriptApiError_(response) {
-  var code = response.getResponseCode();
-  if (code >= 200 && code < 300) return "";
-  var body = response.getContentText() || "";
-  // API 未有効（PERMISSION_DENIED / SERVICE_DISABLED）を分かりやすく案内
-  if (code === 403 && /apps script api|disabled|usersettings|SERVICE_DISABLED|PERMISSION_DENIED/i.test(body)) {
-    return "Apps Script API が無効です。https://script.google.com/home/usersettings で「Google Apps Script API」を ON にしてから再実行してください";
-  }
-  var message = "";
-  try {
-    var parsed = JSON.parse(body);
-    message = parsed && parsed.error && parsed.error.message ? parsed.error.message : "";
-  } catch (e) {}
-  Logger.log("[StdFolders_appsScriptApiError_] HTTP " + code + ": " + body);
-  return "Apps Script API 呼び出しに失敗しました (HTTP " + code + ")" + (message ? ": " + message : "");
-}
-
-// content API の files を書き込み用に { name, type, source } のみへ整形する。
-function StdFolders_normalizeScriptFiles_(files) {
-  var out = [];
-  if (!files || !files.length) return out;
-  for (var i = 0; i < files.length; i++) {
-    var f = files[i];
-    if (!f || !f.name || !f.type) continue;
-    out.push({ name: f.name, type: f.type, source: f.source || "" });
-  }
-  return out;
 }
 
 // コピーした Google スプレッドシートの 12 行目以降（ヘッダ 1〜11 行は保持）を全シートで消去する。

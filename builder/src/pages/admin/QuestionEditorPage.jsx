@@ -68,6 +68,7 @@ export default function QuestionEditorPage() {
 
   const [mode, setMode] = useState("gui");
   const [name, setName] = useState("");
+  const [driveFileUrl, setDriveFileUrl] = useState("");
   // 新規作成時は一覧で開いていたフォルダ (location.state.folder) を初期フォルダにする。
   const [folder, setFolder] = useState(() => isEdit ? "" : normalizeFolderPath(location.state?.folder || ""));
   const [selectedFormId, setSelectedFormId] = useState("");
@@ -114,6 +115,7 @@ export default function QuestionEditorPage() {
       }
       setName(q.name || "");
       setFolder(q.folder || "");
+      setDriveFileUrl(q.driveFileUrl || "");
       const qMode = q.query?.mode === "gui" ? "gui" : "sql";
       setMode(qMode);
       if (qMode === "gui") {
@@ -480,6 +482,24 @@ export default function QuestionEditorPage() {
             style={{ width: "100%", maxWidth: "400px" }}
           />
         </div>
+
+        {questionId && driveFileUrl && (
+          <div>
+            <label className="nf-label">実体ファイル URL（Drive 上の JSON）</label>
+            <input
+              className="nf-input nf-input--readonly"
+              type="text"
+              value={driveFileUrl}
+              readOnly
+              onFocus={(e) => e.target.select()}
+              title="この Question の実体（Drive 上の JSON ファイル）の URL。表示専用で編集できません。"
+              style={{ width: "100%", maxWidth: "640px", background: "var(--surface-subtle)", color: "var(--text-muted)" }}
+            />
+            <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+              この Question 定義が保存されている Drive 上の場所です。どれが実体かを確認するための表示専用で、編集はできません。
+            </p>
+          </div>
+        )}
 
         <p className="nf-text-11 nf-text-muted nf-mb-0">
           Question 定義は標準フォルダ構成の <code>02_questions</code> に保存されます。

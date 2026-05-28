@@ -435,6 +435,24 @@ export default function DashboardEditorPage() {
             </div>
           </div>
 
+          {dashboardId && dashboard.driveFileUrl && (
+            <div>
+              <label className="nf-label">実体ファイル URL（Drive 上の JSON）</label>
+              <input
+                className="nf-input nf-input--readonly"
+                type="text"
+                value={dashboard.driveFileUrl}
+                readOnly
+                onFocus={(e) => e.target.select()}
+                title="この Dashboard の実体（Drive 上の JSON ファイル）の URL。表示専用で編集できません。"
+                style={{ width: "100%", maxWidth: 640, background: "var(--surface-subtle)", color: "var(--text-muted)" }}
+              />
+              <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+                この Dashboard 定義が保存されている Drive 上の場所です。どれが実体かを確認するための表示専用で、編集はできません。
+              </p>
+            </div>
+          )}
+
           <p className="nf-text-11 nf-text-muted nf-mb-0">
             Dashboard 定義は標準フォルダ構成の <code>03_dashboards</code> に保存されます。
           </p>

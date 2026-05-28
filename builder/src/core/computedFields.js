@@ -7,7 +7,7 @@
 import { traverseSchema } from "./schemaUtils.js";
 import { resolveTemplateTokens } from "../utils/tokenReplacer.js";
 import { normalizeFileUploadEntries } from "./collect.js";
-import { extractFieldRefs } from "../features/expression/templateEvaluator.js";
+import { extractFieldRefs, validateTemplateSyntax } from "../features/expression/templateEvaluator.js";
 import { isChoiceMarkerValue } from "../utils/responses.js";
 
 const isPlainObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
@@ -139,6 +139,38 @@ export const buildDependencyGraph = (schema) => {
 export const detectCircularReferences = (schema) => {
   const { hasCycle, cycleFields } = buildDependencyGraph(schema);
   return { hasCycle, cycleFields };
+};
+
+/**
+ * 全置換フィールド (type: "substitution") の templateText を構文検証する
+ * （フォーム保存前バリデーション用）。エラーがあった項目だけを返す。
+ *
+ * @param {Array} schema
+ * @returns {Promise<{ ok: true } | { ok: false, invalidTemplates: Array<{ path: string, label: string, message: string }> }>}
+ */
+export const validateSubstitutionTemplates = async (schema) => {
+  const targets = [];
+  traverseSchema(schema, (field, context) => {
+    if (field?.type !== "substitution") return;
+    const templateText = typeof field.templateText === "string" ? field.templateText : "";
+    if (!templateText || templateText.indexOf("{") < 0) return;
+    targets.push({
+      path: (context?.pathSegments || []).join(" > "),
+      label: (field?.label || "").trim(),
+      templateText,
+    });
+  });
+
+  const invalidTemplates = [];
+  for (const target of targets) {
+    const result = await validateTemplateSyntax(target.templateText);
+    if (!result.ok) {
+      invalidTemplates.push({ path: target.path, label: target.label, message: result.message });
+    }
+  }
+
+  if (invalidTemplates.length > 0) return { ok: false, invalidTemplates };
+  return { ok: true };
 };
 
 // ---------------------------------------------------------------------------
