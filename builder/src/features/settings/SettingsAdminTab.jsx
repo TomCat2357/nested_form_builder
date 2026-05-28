@@ -294,7 +294,7 @@ export default function SettingsAdminTab() {
     if (!canManageAdminSettings) return;
     setCopyLoading(true);
     try {
-      const { summary, clearedLinks, appsScriptCopied, appsScriptCopyError, message } = await copyStandardFolders({
+      const { summary, clearedLinks, unresolvedQuestionLinks, appsScriptCopied, appsScriptCopyError, message } = await copyStandardFolders({
         destRootUrl: copyUrl.trim(),
         copyData,
         copyWebhooks,
@@ -308,7 +308,8 @@ export default function SettingsAdminTab() {
         : `コピーできませんでした（${appsScriptCopyError || "権限等を確認してください"}）`;
       showAlert(
         `${message}\n\nappsscript 本体: ${appsScriptStatus}\n` +
-        `コピー件数:\n${lines.join("\n")}\nクリアしたリンク: ${clearedLinks}`,
+        `コピー件数:\n${lines.join("\n")}\nクリアしたリンク: ${clearedLinks}\n` +
+        `未解決の Question リンク（参照は保持・要再リンク）: ${unresolvedQuestionLinks ?? 0}`,
       );
     } catch (error) {
       console.error("[SettingsAdminTab] copyStandardFolders failed", error);

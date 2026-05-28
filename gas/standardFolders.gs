@@ -462,11 +462,19 @@ function StdFolders_copy_(payload) {
       summary[key] = copied.length;
     }
 
-    // questions の id 集合（dashboard→question の存在チェック用）
+    // questions の論理 id を確定する（dashboard→question の存在チェック / id 埋め込み用）。
+    // ソースマッピングを最優先しつつ、未登録のファイルは本体に埋め込み済みの json.id で
+    // 救済する。これを怠ると「コピーされた Question」がマッピング漏れというだけで
+    // copiedQuestionIds に載らず、ダッシュボードの正当なリンクが誤って失われてしまう。
     var qCopied = copiedFilesByKey["questions"] || [];
+    var questionIdByNewFile = {}; // newFileId → 論理 questionId
     for (var qi = 0; qi < qCopied.length; qi++) {
       var qid = questionsRev[qCopied[qi].srcFileId];
-      if (qid) copiedQuestionIds[qid] = true;
+      if (!qid) qid = StdFolders_readEmbeddedId_(qCopied[qi].newFileId);
+      if (qid) {
+        copiedQuestionIds[qid] = true;
+        questionIdByNewFile[qCopied[qi].newFileId] = qid;
+      }
     }
 
     // --- 第2パス: 定義ファイルへ元 id を埋め込み、リンクを再配線 ---
@@ -479,16 +487,17 @@ function StdFolders_copy_(payload) {
       clearedLinks += StdFolders_rewireFormFile_(fEntry.newFileId, formsRev[fEntry.srcFileId] || null, idMap, folderIdMap, copyWebhooks);
     }
 
-    // questions (02_questions): id 埋め込みのみ
+    // questions (02_questions): 確定した論理 id を埋め込む（コピー先の再構築で同じ id に解決させる）
     for (var qj = 0; qj < qCopied.length; qj++) {
-      StdFolders_embedIdInFile_(qCopied[qj].newFileId, questionsRev[qCopied[qj].srcFileId] || null);
+      StdFolders_embedIdInFile_(qCopied[qj].newFileId, questionIdByNewFile[qCopied[qj].newFileId] || null);
     }
 
     // dashboards (03_dashboards): id 埋め込み + questionId 存在チェック
+    var unresolvedQuestionLinks = 0;
     var dCopied = copiedFilesByKey["dashboards"] || [];
     for (var dj = 0; dj < dCopied.length; dj++) {
       var dEntry = dCopied[dj];
-      clearedLinks += StdFolders_rewireDashboardFile_(dEntry.newFileId, dashboardsRev[dEntry.srcFileId] || null, copiedQuestionIds);
+      unresolvedQuestionLinks += StdFolders_rewireDashboardFile_(dEntry.newFileId, dashboardsRev[dEntry.srcFileId] || null, copiedQuestionIds);
     }
 
     // 再構築 ON のときはコピー先ルートへ _nfb_mapping.json を書き出す（新 fileId に振り直し済み）。
@@ -502,14 +511,18 @@ function StdFolders_copy_(payload) {
       destRootUrl: destRoot.getUrl(),
       summary: summary,
       clearedLinks: clearedLinks,
+      unresolvedQuestionLinks: unresolvedQuestionLinks,
       copyData: copyData,
       copyWebhooks: copyWebhooks,
       rebuildMapping: rebuildMapping,
       appsScriptCopied: appsScriptCopied,
       appsScriptCopyError: appsScriptCopied ? "" : (appsScriptCopyResult.reason || ""),
-      message: rebuildMapping
+      message: (rebuildMapping
         ? "コピーが完了しました。コピー先ルートに _nfb_mapping.json を保存しました。コピー先の 設定 > 管理 から「インポート」（URL 空欄でルートの最新を読込）または「同期」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
-        : "コピーが完了しました。コピー先の 設定 > 管理 から「同期」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
+        : "コピーが完了しました。コピー先の 設定 > 管理 から「同期」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。")
+        + (unresolvedQuestionLinks > 0
+          ? "\n※ ダッシュボードからコピー対象外の Question を参照しているカードが " + unresolvedQuestionLinks + " 件あります。参照は保持しているので、コピー先で「同期」後に自動再リンクされるか、編集画面のリンク差し替えで復旧できます。"
+          : "")
     };
   });
 }
@@ -636,6 +649,19 @@ function StdFolders_clearSpreadsheetData_(spreadsheetId) {
   }
 }
 
+// ファイル JSON に既に埋め込まれている id を読む（無ければ null）。
+// コピー時に「ソースマッピングに載っていない Question」の論理 id を救済するために使う。
+function StdFolders_readEmbeddedId_(fileId) {
+  try {
+    var file = DriveApp.getFileById(fileId);
+    var json = JSON.parse(file.getBlob().getDataAsString());
+    return (json && typeof json.id === "string" && json.id) ? json.id : null;
+  } catch (err) {
+    Logger.log("[StdFolders_readEmbeddedId_] " + fileId + ": " + nfbErrorToString_(err));
+    return null;
+  }
+}
+
 // ファイル JSON に id を埋め込む（無ければスキップ）。
 function StdFolders_embedIdInFile_(fileId, id) {
   if (!id) return;
@@ -694,9 +720,17 @@ function StdFolders_rewireFormFile_(fileId, formId, idMap, folderIdMap, copyWebh
   return cleared;
 }
 
-// ダッシュボード定義ファイルの id 埋め込み + questionId 存在チェック。クリア数を返す。
+// ダッシュボード定義ファイルの id 埋め込み + questionId 存在チェック。
+// コピー対象に見つからなかった（= 未解決の）リンク数を返す。
+//
+// 重要: ここで card.questionId / questionName を破棄してはならない。
+// Question 本体はコピー時に論理 id を埋め込んだ状態で複製され、コピー先の同期/再構築で
+// 同じ id にマッピングされる。したがって questionId を残しておけば自動で再リンクされる。
+// 仮にコピー対象に無い Question を指していても、参照を保持しておけば後からインポート/同期
+// した時点で id 一致または名前一致（Analytics_resolveQuestionRef_）で復旧できる。
+// 参照を空にすると、この自動復旧の手掛かりごと失われてリンクロストになる。
 function StdFolders_rewireDashboardFile_(fileId, dashboardId, copiedQuestionIds) {
-  var cleared = 0;
+  var unresolved = 0;
   try {
     var file = DriveApp.getFileById(fileId);
     var json = JSON.parse(file.getBlob().getDataAsString());
@@ -706,10 +740,8 @@ function StdFolders_rewireDashboardFile_(fileId, dashboardId, copiedQuestionIds)
       for (var i = 0; i < json.cards.length; i++) {
         var card = json.cards[i];
         if (card && typeof card.questionId === "string" && card.questionId) {
-          if (!copiedQuestionIds[card.questionId]) {
-            card.questionId = "";
-            cleared++;
-          }
+          // 参照は保持したまま、コピー対象に居なかったものだけ件数を数える。
+          if (!copiedQuestionIds[card.questionId]) unresolved++;
         }
       }
     }
@@ -718,7 +750,7 @@ function StdFolders_rewireDashboardFile_(fileId, dashboardId, copiedQuestionIds)
   } catch (err) {
     Logger.log("[StdFolders_rewireDashboardFile_] " + fileId + ": " + nfbErrorToString_(err));
   }
-  return cleared;
+  return unresolved;
 }
 
 // ---------------------------------------------
