@@ -196,12 +196,14 @@ export default function QuestionEditorPage() {
   };
 
   // SQL モード用の formSources 配列を selectedFormId / forms から構築する。
-  // 未選択時は空配列で通し (SQL 内の `[フォーム名]` 直接参照を許す)、
-  // フォーム/シート未解決のときは error を返す。caller 側で表示先 (run/save) を切り替える。
+  // 未選択 / フォーム不明時は空配列で通し (SQL 内の `[フォーム名]` 直接参照を許す)、
+  // フォームは解決できたがシート未設定のときだけ error を返す。caller 側で表示先 (run/save) を切り替える。
   const buildSqlFormSources = useCallback(() => {
     if (!selectedFormId) return { formSources: [] };
     const form = forms.find((f) => f.id === selectedFormId);
-    if (!form) return { error: "選択したフォームが見つかりません。" };
+    // 保存済みの formId が現在のフォーム一覧に無い (削除済み等) 場合でも、SQL モードは
+    // [フォーム名] 直接参照で実行できるため、未選択扱いにしてエラーを出さない。
+    if (!form) return { formSources: [] };
     // レコードは formId 経由で取得するため spreadsheetId は不要。設定済みかだけ確認する。
     if (!getSheetConfig(form)) return { error: ERR_NO_SPREADSHEET };
     return {
