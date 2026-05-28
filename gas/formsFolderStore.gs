@@ -109,6 +109,8 @@ function Forms_createFolder_(path) {
     var current = Forms_getFolders_();
     current.push(normalized);
     var folders = Forms_saveFolders_(current);
+    // 物理 Drive フォルダ（01_forms 配下）も作成（祖先含む）。auto-organize off では no-op。
+    FormsDrive_ensureFolderForPath_(normalized);
     return { ok: true, folders: folders };
   });
 }
@@ -145,6 +147,8 @@ function Forms_setFormFolder_(formId, folderPath) {
     json.modifiedAt = Sheets_formatJstString_(nowSerial);
     json.modifiedAtUnixMs = nowSerial;
     file.setContent(JSON.stringify(json, null, 2));
+    // 物理 Drive 上でもファイルを folder に対応するフォルダへ移動（既に正しい親なら no-op）。
+    FormsDrive_moveFormFileToPath_(fileId, json.folder);
     return true;
   } catch (err) {
     Logger.log("[Forms_setFormFolder_] Failed for " + formId + ": " + err);
@@ -215,6 +219,10 @@ function Forms_moveItems_(payload) {
 //   - 配下フォームの folder フィールドも同じ prefix 置換で書き換える。
 // 更新後の registry を返し、書き換えたフォーム ID を movedFormIds に push する。
 function Forms_relocateFolderPaths_(registry, old, next, movedFormIds) {
+  // 物理 Drive フォルダをサブツリーごと移動/リネーム（1 回の Drive 操作）。配下フォームファイルは
+  // フォルダごと一緒に動くため、後段の Forms_setFormFolder_ 内の個別移動は no-op になる。
+  FormsDrive_movePathFolder_(old, next);
+
   var updated = registry.map(function(p) {
     if (p === old) return next;
     if (p.indexOf(old + "/") === 0) return next + p.slice(old.length);
@@ -284,6 +292,8 @@ function Forms_deleteFolder_(path) {
       var res = Forms_deleteForms_(ids);
       deletedFormCount = (res && res.deleted) || 0;
     }
+    // 物理 Drive フォルダ（配下のファイル含む）をゴミ箱へ。auto-organize off では no-op。
+    FormsDrive_trashPathFolder_(normalized);
     // 登録簿から path と子孫を除去
     var prefix = normalized + "/";
     var registry = Forms_getFolders_().filter(function(p) {

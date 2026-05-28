@@ -769,6 +769,10 @@ function StdFolders_rebuildMappings_(payload) {
     var questionsResult = StdFolders_rebuildAnalyticsMapping_(root, "questions");
     var dashboardsResult = StdFolders_rebuildAnalyticsMapping_(root, "dashboards");
 
+    // 物理 Drive フォルダ（01_forms 配下）がずれていたら、物理を正として仮想（登録簿・form.folder・
+    // drivemap）を合わせる。手動 Drive リネーム/移動への追従。
+    var folderReconcile = StdFolders_reconcileFormFoldersToPhysical_(root);
+
     // 既リンク資産のうち構成外のものを標準フォルダへコピーして揃える。
     var normalized = StdFolders_normalizeLinkedToStd_();
 
@@ -777,9 +781,86 @@ function StdFolders_rebuildMappings_(payload) {
       forms: formsResult,
       questions: questionsResult,
       dashboards: dashboardsResult,
+      folderReconcile: folderReconcile,
       normalized: normalized
     };
   });
+}
+
+// ---------------------------------------------
+// (2.4) 物理 Drive フォルダ → 仮想フォルダの逆方向リコンサイル
+// 設定＞管理者の「同期（フォルダ走査）」時、物理 Drive フォルダ（01_forms 配下）の実構造を正として
+// 仮想（登録簿・form.folder・drivemap）を合わせる。Drive 上で手動リネーム/移動されたケースを吸収する。
+//
+// 2 フェーズ:
+//   1) 移行: 01_forms 直下にあり form.folder が非空のフォーム = 未移行レガシー。その folder に対応する
+//            物理フォルダを作成しファイルを移動する（json.folder を尊重）。
+//   2) リコンサイル: 01_forms サブツリーを再帰走査し、ネストされた各フォームの json.folder を物理パス
+//            に合わせて書き換える。drivemap と仮想登録簿を物理フォルダ構造から再構築する。
+//
+// 注意: 物理を正とするため、物理フォルダを持たない空の仮想フォルダは登録簿から落ちる。導入時は先に
+//       FormsDrive_backfillPhysicalFolders_() で物理化してから走査することを推奨。
+// auto-organize off（base=01_forms が解決できない）では何もしない。
+// ---------------------------------------------
+function StdFolders_reconcileFormFoldersToPhysical_(root) {
+  var base = FormsDrive_baseFolderOrNull_();
+  if (!base) return { ok: true, skipped: true };
+
+  var result = { migrated: 0, reconciled: 0, folders: 0 };
+
+  // フェーズ1: 01_forms 直下のレガシー（folder 非空）を物理フォルダへ移行。
+  var rootFiles = base.getFiles();
+  while (rootFiles.hasNext()) {
+    var rf = rootFiles.next();
+    if (typeof rf.isTrashed === "function" && rf.isTrashed()) continue;
+    if (!StdFolders_isJsonFile_(rf)) continue;
+    var rjson;
+    try { rjson = JSON.parse(rf.getBlob().getDataAsString()); } catch (e) { continue; }
+    if (!rjson || !Array.isArray(rjson.schema)) continue;
+    var rfolder = Forms_normalizeFolderPath_(rjson.folder);
+    if (rfolder && FormsDrive_moveFormFileToPath_(rf.getId(), rfolder)) result.migrated++;
+  }
+
+  // フェーズ2: サブツリーを再帰走査し、物理パスを正に json.folder / drivemap / 登録簿を再構築。
+  var map = {};            // 物理パス -> folderId
+  var physicalPaths = {};  // 物理フォルダパス集合（空フォルダも保持）
+  StdFolders_walkPhysicalFormFolders_(base, "", map, physicalPaths, result);
+
+  FormsDrive_savePathMap_(map);
+  Forms_saveFolders_(Object.keys(physicalPaths));
+  return { ok: true, migrated: result.migrated, reconciled: result.reconciled, folders: result.folders };
+}
+
+// 物理サブツリーを歩き、フォルダパス→ID（map）と物理パス集合（physicalPaths）を集めつつ、
+// 各フォーム .json の json.folder を物理パスに合わせて書き換える。
+function StdFolders_walkPhysicalFormFolders_(folder, pathPrefix, map, physicalPaths, result) {
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    var sub = subs.next();
+    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
+    var p = pathPrefix ? pathPrefix + "/" + sub.getName() : sub.getName();
+    physicalPaths[p] = true;
+    map[p] = sub.getId();
+    result.folders++;
+
+    var files = sub.getFiles();
+    while (files.hasNext()) {
+      var file = files.next();
+      if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+      if (!StdFolders_isJsonFile_(file)) continue;
+      var json;
+      try { json = JSON.parse(file.getBlob().getDataAsString()); } catch (e) { continue; }
+      if (!json || !Array.isArray(json.schema)) continue;
+      if (Forms_normalizeFolderPath_(json.folder) !== p) {
+        json.folder = p;
+        var nowSerial = Sheets_dateToSerial_(new Date());
+        json.modifiedAt = Sheets_formatJstString_(nowSerial);
+        json.modifiedAtUnixMs = nowSerial;
+        try { file.setContent(JSON.stringify(json, null, 2)); result.reconciled++; } catch (e) { /* non-critical */ }
+      }
+    }
+    StdFolders_walkPhysicalFormFolders_(sub, p, map, physicalPaths, result);
+  }
 }
 
 // ---------------------------------------------
@@ -998,34 +1079,48 @@ function StdFolders_rebuildFormsMapping_(root) {
   var mapping = Forms_getMapping_();
   var mappedFileIds = StdFolders_mappedFileIdSet_(mapping);
   var folderPaths = Forms_getFolders_();
-  var count = 0;
+  var ctx = { mapping: mapping, mappedFileIds: mappedFileIds, folderPaths: folderPaths, count: 0 };
+
+  // 01_forms 配下を再帰走査する（物理フォルダ階層に対応するため直下だけでなくサブフォルダも対象）。
+  StdFolders_scanFormsFolder_(folder, ctx);
+
+  Forms_saveMapping_(mapping);
+  Forms_saveFolders_(folderPaths);
+  return { count: ctx.count };
+}
+
+// 01_forms 配下のフォーム .json を再帰的に走査し、未登録ファイルのマッピングを構築する。
+function StdFolders_scanFormsFolder_(folder, ctx) {
   var files = folder.getFiles();
   while (files.hasNext()) {
     var file = files.next();
     if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
     if (!StdFolders_isJsonFile_(file)) continue;
     var fileId = file.getId();
-    if (mappedFileIds[fileId]) continue; // 既に登録済みのファイルは再採番しない
+    if (ctx.mappedFileIds[fileId]) continue; // 既に登録済みのファイルは再採番しない
     var json;
     try {
       json = JSON.parse(file.getBlob().getDataAsString());
     } catch (err) {
-      Logger.log("[StdFolders_rebuildFormsMapping_] parse failed: " + file.getName());
+      Logger.log("[StdFolders_scanFormsFolder_] parse failed: " + file.getName());
       continue;
     }
     if (!json || !Array.isArray(json.schema)) continue;
     var id = (typeof json.id === "string" && json.id) ? json.id : Nfb_generateFormId_();
     var title = (json.settings && json.settings.formTitle) || json.description || id;
-    mapping[id] = { fileId: fileId, driveFileUrl: file.getUrl(), title: title };
-    mappedFileIds[fileId] = true;
-    if (typeof json.folder === "string" && json.folder) folderPaths.push(json.folder);
+    ctx.mapping[id] = { fileId: fileId, driveFileUrl: file.getUrl(), title: title };
+    ctx.mappedFileIds[fileId] = true;
+    if (typeof json.folder === "string" && json.folder) ctx.folderPaths.push(json.folder);
     // 認証用 URL マップにも登録（?form=xxx で開けるように）
     try { AddFormUrl_(id, file.getUrl()); } catch (e) { /* non-critical */ }
-    count++;
+    ctx.count++;
   }
-  Forms_saveMapping_(mapping);
-  Forms_saveFolders_(folderPaths);
-  return { count: count };
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    var child = subs.next();
+    if (typeof child.isTrashed === "function" && child.isTrashed()) continue;
+    StdFolders_scanFormsFolder_(child, ctx);
+  }
 }
 
 function StdFolders_rebuildAnalyticsMapping_(root, type) {
