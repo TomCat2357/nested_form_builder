@@ -242,9 +242,12 @@ export const buildFieldPathsMap = (fields, prefix = "", map = {}) => {
     if (field?.id && label) {
       map[field.id] = path;
     }
-    if (field?.childrenByValue) {
-      Object.values(field.childrenByValue).forEach((children) => {
-        buildFieldPathsMap(children, path, map);
+    if (field?.childrenByValue && typeof field.childrenByValue === "object" && !Array.isArray(field.childrenByValue)) {
+      // 選択肢分岐の子は、選択肢ラベルもパスに含める（traverseSchema / buildDataValueMap と一致）。
+      // 例: 選択1|答1|答1補足。これを省くと {...} と {{...}} でパスが食い違い、同名子の衝突も起きる。
+      Object.entries(field.childrenByValue).forEach(([optionLabel, children]) => {
+        const branchPath = path ? `${path}|${optionLabel}` : optionLabel;
+        buildFieldPathsMap(children, branchPath, map);
       });
     }
     if (Array.isArray(field?.children)) {
