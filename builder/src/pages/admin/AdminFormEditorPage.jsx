@@ -371,6 +371,22 @@ export default function AdminFormEditorPage() {
               スラッシュ区切りで階層を指定します。一覧画面でフォルダとして表示され、クリックで中に入れます。
             </p>
           </div>
+
+          {isEdit && (
+            <div className="nf-col nf-gap-6 nf-mb-16">
+              <label className="nf-block nf-fw-600 nf-mb-6">保存先URL（form.json）</label>
+              <input
+                value={form?.driveFileUrl || ""}
+                readOnly
+                disabled
+                className="nf-input admin-input"
+                placeholder="保存後に表示されます"
+              />
+              <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+                このフォームの実体（form.json）が保存されている Google Drive 上のURLです。表示専用です。
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="nf-card nf-mb-16">
