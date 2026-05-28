@@ -5,6 +5,7 @@ import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { useAsyncResource } from "../../app/hooks/useAsyncResource.js";
 import { analyticsGasClient } from "../../features/analytics/analyticsGasClient.js";
+import { resolveDashboardLinks, saveDashboard } from "../../features/analytics/analyticsStore.js";
 import { isV2, defaultFilterValue, defaultSimpleFilterValue } from "../../features/analytics/utils/dashboardSchema.js";
 import { clearAnalyticsSourceTableCache } from "../../features/analytics/analyticsAlaSql.js";
 import DashboardGrid from "../../features/analytics/components/DashboardGrid.jsx";
@@ -31,8 +32,23 @@ export default function DashboardViewPage() {
   const [globalFilterVariantDraft, setGlobalFilterVariantDraft] = useState("data");
 
   const { data: fetched, loading, error } = useAsyncResource(
-    () => analyticsGasClient.getDashboard(dashboardId).then((res) => res.dashboard),
-    [dashboardId],
+    async () => {
+      const res = await analyticsGasClient.getDashboard(dashboardId);
+      const d = res.dashboard;
+      if (!d || !isV2(d)) return d;
+      // リンク切れカードを標準フォルダ 02_questions から再リンクする。
+      // 検出したら（管理者のみ保存可能なので）自動で保存し直す。
+      const { dashboard: repaired, changed } = await resolveDashboardLinks(d);
+      if (changed && isAdmin) {
+        try {
+          await saveDashboard(repaired);
+        } catch (err) {
+          console.warn("[DashboardViewPage] auto-relink save failed:", err);
+        }
+      }
+      return repaired;
+    },
+    [dashboardId, isAdmin],
   );
 
   const dashboard = fetched && isV2(fetched) ? fetched : null;

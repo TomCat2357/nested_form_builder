@@ -72,6 +72,7 @@ var ANALYTICS_HANDLERS_ = {
   "analytics_questions_copy":             { type: "questions",  mode: "copy",           idKey: "questionId" },
   "analytics_questions_import":           { type: "questions",  mode: "import" },
   "analytics_questions_register_import":  { type: "questions",  mode: "register" },
+  "analytics_questions_resolve_ref":      { type: "questions",  mode: "resolve_ref" },
   "analytics_dashboards_list":            { type: "dashboards", mode: "list" },
   "analytics_dashboards_get":             { type: "dashboards", mode: "get",            idKey: "dashboardId" },
   "analytics_dashboards_save":            { type: "dashboards", mode: "save",           payloadKey: "dashboard", urlKey: "targetUrl" },
@@ -110,6 +111,7 @@ function Analytics_dispatch_(action, ctx) {
     case "copy":          return Analytics_copyTemplate_(def.type, raw[def.idKey]);
     case "import":        return Analytics_importFromDrive_(def.type, raw.url);
     case "register":      return Analytics_registerImportedTemplate_(def.type, raw);
+    case "resolve_ref":   return Analytics_resolveQuestionRef_(raw.ref || raw);
     case "folders_list":  return Analytics_listFolders_(def.type);
     case "folder_create": return Analytics_createFolder_(def.type, raw.path);
     case "folder_move":   return Analytics_moveItems_(def.type, raw || {});
@@ -133,6 +135,7 @@ function AnalyticsApi_UnarchiveQuestions_(ctx)        { return Analytics_dispatc
 function AnalyticsApi_CopyQuestion_(ctx)              { return Analytics_dispatch_("analytics_questions_copy", ctx); }
 function AnalyticsApi_ImportQuestions_(ctx)           { return Analytics_dispatch_("analytics_questions_import", ctx); }
 function AnalyticsApi_RegisterImportedQuestion_(ctx)  { return Analytics_dispatch_("analytics_questions_register_import", ctx); }
+function AnalyticsApi_ResolveQuestionRef_(ctx)        { return Analytics_dispatch_("analytics_questions_resolve_ref", ctx); }
 function AnalyticsApi_ListDashboards_(ctx)            { return Analytics_dispatch_("analytics_dashboards_list", ctx); }
 function AnalyticsApi_GetDashboard_(ctx)              { return Analytics_dispatch_("analytics_dashboards_get", ctx); }
 function AnalyticsApi_SaveDashboard_(ctx)             { return Analytics_dispatch_("analytics_dashboards_save", ctx); }
@@ -186,6 +189,7 @@ function nfbUnarchiveAnalyticsQuestions(questionIds)     { return Analytics_runS
 function nfbCopyAnalyticsQuestion(questionId)            { return Analytics_runScriptAction_("analytics_questions_copy",             { questionId: questionId }); }
 function nfbImportAnalyticsQuestionsFromDrive(url)       { return Analytics_runScriptAction_("analytics_questions_import",           { url: url }); }
 function nfbRegisterImportedAnalyticsQuestion(payload)   { return Analytics_runScriptAction_("analytics_questions_register_import",  payload); }
+function nfbResolveAnalyticsQuestionRef(payload)         { return Analytics_runScriptAction_("analytics_questions_resolve_ref",      payload); }
 function nfbListAnalyticsDashboards(options)             { return Analytics_runScriptAction_("analytics_dashboards_list",            { options: options || {} }); }
 function nfbGetAnalyticsDashboard(dashboardId)           { return Analytics_runScriptAction_("analytics_dashboards_get",             { dashboardId: dashboardId }); }
 function nfbSaveAnalyticsDashboard(payload)              { return Analytics_runScriptAction_("analytics_dashboards_save",            payload); }

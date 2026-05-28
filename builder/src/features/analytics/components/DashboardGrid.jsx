@@ -27,9 +27,11 @@ export default function DashboardGrid({
   globalWhereExpr = "",
   globalWhereVariant = "data",
   questionsById,
+  questions = [],
   onCardsChange,
   onRemoveCard,
   onChangeCardTitle,
+  onRelinkCard,
   onOpenMapping,
   onColumnsLoaded,
   onUpdateCard,
@@ -133,8 +135,10 @@ export default function DashboardGrid({
               globalWhereExpr={globalWhereExpr}
               globalWhereVariant={globalWhereVariant}
               questionsById={questionsById}
+              questions={questions}
               onRemove={editable ? onRemoveCard : null}
               onChangeTitle={editable ? onChangeCardTitle : null}
+              onRelink={editable ? onRelinkCard : null}
               onOpenMapping={editable ? onOpenMapping : null}
               onColumnsLoaded={onColumnsLoaded}
             />

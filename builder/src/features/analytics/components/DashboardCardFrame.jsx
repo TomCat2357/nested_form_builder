@@ -33,8 +33,10 @@ export default function DashboardCardFrame({
   globalWhereExpr = "",
   globalWhereVariant = "data",
   questionsById,
+  questions = [],
   onRemove,
   onChangeTitle,
+  onRelink,
   onOpenMapping,
   onColumnsLoaded,
 }) {
@@ -54,6 +56,28 @@ export default function DashboardCardFrame({
   const [dateFilter, setDateFilter] = useState(null);
   const [chartInstance, setChartInstance] = useState(null);
   const [expanded, setExpanded] = useState(false);
+  // 差し替え（再リンク）ポップオーバーの状態
+  const [relinkOpen, setRelinkOpen] = useState(false);
+  const [relinkText, setRelinkText] = useState("");
+
+  // 入力文字列を questionId へ解決する: id 一致 → 名前一致 → そのまま raw id 扱い。
+  const resolveRelinkInput = (text) => {
+    const t = (text || "").trim();
+    if (!t) return "";
+    const byId = questions.find((q) => q.id === t);
+    if (byId) return byId.id;
+    const byName = questions.find((q) => q.name === t);
+    if (byName) return byName.id;
+    return t;
+  };
+
+  const commitRelinkText = () => {
+    const id = resolveRelinkInput(relinkText);
+    if (!id) return;
+    onRelink(card.id, id);
+    setRelinkOpen(false);
+    setRelinkText("");
+  };
 
   const { data: result, loading, error } = useAsyncResource(async () => {
     if (!formsReady) return null;
@@ -108,6 +132,7 @@ export default function DashboardCardFrame({
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
+        position: "relative",
       }}
     >
       <div
@@ -165,6 +190,15 @@ export default function DashboardCardFrame({
                 }}
               >✎</button>
             )}
+            {onRelink && (
+              <button
+                type="button"
+                className="nf-btn-outline"
+                style={{ fontSize: 11, padding: "1px 6px" }}
+                onClick={() => setRelinkOpen((v) => !v)}
+                title="リンク先 Question を差し替え"
+              >⇆</button>
+            )}
             {onOpenMapping && (
               <button
                 type="button"
@@ -205,6 +239,67 @@ export default function DashboardCardFrame({
           </span>
         )}
       </div>
+
+      {relinkOpen && onRelink && (
+        <div
+          className="nf-card"
+          style={{
+            position: "absolute",
+            top: 30,
+            right: 4,
+            zIndex: 20,
+            width: 260,
+            padding: 8,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            boxShadow: "0 2px 8px rgba(0,0,0,0.18)",
+          }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <div style={{ fontSize: 11, fontWeight: 600 }}>リンク先 Question を差し替え</div>
+          <select
+            className="nf-input"
+            defaultValue=""
+            style={{ fontSize: 12 }}
+            onChange={(e) => {
+              if (e.target.value) {
+                onRelink(card.id, e.target.value);
+                setRelinkOpen(false);
+                setRelinkText("");
+              }
+            }}
+          >
+            <option value="">一覧から選択...</option>
+            {questions.map((q) => (
+              <option key={q.id} value={q.id}>{q.name || q.id}</option>
+            ))}
+          </select>
+          <input
+            className="nf-input"
+            type="text"
+            value={relinkText}
+            placeholder="id か Question 名を入力"
+            style={{ fontSize: 12 }}
+            onChange={(e) => setRelinkText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") commitRelinkText(); }}
+          />
+          <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+            <button
+              type="button"
+              className="nf-btn-outline"
+              style={{ fontSize: 11, padding: "2px 6px" }}
+              onClick={commitRelinkText}
+            >差し替え</button>
+            <button
+              type="button"
+              className="nf-btn-outline"
+              style={{ fontSize: 11, padding: "2px 6px" }}
+              onClick={() => { setRelinkOpen(false); setRelinkText(""); }}
+            >閉じる</button>
+          </div>
+        </div>
+      )}
 
       <div style={{ flex: 1, minHeight: 0, padding: 8, overflow: "auto" }}>
         {loading && <p className="nf-text-subtle" style={{ margin: 0 }}>読み込み中...</p>}

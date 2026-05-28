@@ -106,6 +106,7 @@ const ACTION_DEFINITIONS_ = {
   "analytics_questions_copy":              { handler: AnalyticsApi_CopyQuestion_,             adminOnly: true },
   "analytics_questions_import":            { handler: AnalyticsApi_ImportQuestions_,          adminOnly: true },
   "analytics_questions_register_import":   { handler: AnalyticsApi_RegisterImportedQuestion_, adminOnly: true },
+  "analytics_questions_resolve_ref":       { handler: AnalyticsApi_ResolveQuestionRef_ },
   "analytics_dashboards_list":             { handler: AnalyticsApi_ListDashboards_ },
   "analytics_dashboards_get":              { handler: AnalyticsApi_GetDashboard_ },
   "analytics_dashboards_save":             { handler: AnalyticsApi_SaveDashboard_,            adminOnly: true },
