@@ -308,11 +308,6 @@ export default function DashboardEditorPage() {
 
   const goBack = useCallback(() => navigate(location.state?.from || "/admin/dashboards"), [navigate, location.state]);
 
-  const handleCancel = () => {
-    if (!isDirty) { goBack(); return; }
-    unsavedDialog.open();
-  };
-
   const handleBack = () => {
     if (isDirty) {
       unsavedDialog.open();
@@ -382,17 +377,12 @@ export default function DashboardEditorPage() {
   return (
     <AppLayout
       title={dashboardId ? "Dashboard 編集" : "Dashboard 作成"}
-      fallbackPath="/admin/dashboards"
+      fallbackPath={location.state?.from || "/admin/dashboards"}
       onBack={handleBack}
       sidebarActions={
-        <>
-          <button type="button" onClick={handleSave} disabled={saving} className="nf-btn-outline nf-btn-sidebar">
-            {saving ? "保存中..." : "保存"}
-          </button>
-          <button type="button" onClick={handleCancel} className="nf-btn-outline nf-btn-sidebar">
-            キャンセル
-          </button>
-        </>
+        <button type="button" onClick={handleSave} disabled={saving} className="nf-btn-outline nf-btn-sidebar">
+          {saving ? "保存中..." : "保存"}
+        </button>
       }
     >
       {loading && <p className="nf-text-subtle">読み込み中...</p>}

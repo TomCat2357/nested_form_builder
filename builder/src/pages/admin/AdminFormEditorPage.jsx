@@ -236,14 +236,6 @@ export default function AdminFormEditorPage() {
     return false;
   };
 
-  const handleCancel = () => {
-    if (!isDirty) {
-      navigateBack();
-    } else {
-      unsavedDialog.open();
-    }
-  };
-
   const handleOpenSpreadsheet = () => {
     const spreadsheetIdOrUrl = localSettings?.spreadsheetId || "";
 
@@ -288,14 +280,10 @@ export default function AdminFormEditorPage() {
       badge="管理 > フォーム"
       fallbackPath={fallback}
       onBack={handleBack}
-      backHidden={true}
       sidebarActions={
         <>
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReadLocked} onClick={handleSave}>
             保存
-          </button>
-          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleCancel}>
-            キャンセル
           </button>
           <div className="nf-spacer-16" />
           <button

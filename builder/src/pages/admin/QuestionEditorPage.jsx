@@ -380,11 +380,6 @@ export default function QuestionEditorPage() {
 
   const goBack = useCallback(() => navigate(location.state?.from || "/admin/questions"), [navigate, location.state]);
 
-  const handleCancel = () => {
-    if (!isDirty) { goBack(); return; }
-    unsavedDialog.open();
-  };
-
   const handleBack = () => {
     if (isDirty) {
       unsavedDialog.open();
@@ -442,17 +437,12 @@ export default function QuestionEditorPage() {
   return (
     <AppLayout
       title={questionId ? "Question 編集" : "Question 作成"}
-      fallbackPath="/admin/questions"
+      fallbackPath={location.state?.from || "/admin/questions"}
       onBack={handleBack}
       sidebarActions={
-        <>
-          <button type="button" onClick={handleSave} disabled={saving} className="nf-btn-outline nf-btn-sidebar">
-            {saving ? "保存中..." : "保存"}
-          </button>
-          <button type="button" onClick={handleCancel} className="nf-btn-outline nf-btn-sidebar">
-            キャンセル
-          </button>
-        </>
+        <button type="button" onClick={handleSave} disabled={saving} className="nf-btn-outline nf-btn-sidebar">
+          {saving ? "保存中..." : "保存"}
+        </button>
       }
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
