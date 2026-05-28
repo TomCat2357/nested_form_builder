@@ -232,6 +232,8 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       }
 
       try {
+        // 名前を変えたら Drive ファイル名も追従させる（safeTitle.json へリネーム）。
+        if (file.getName() !== fileName) file.setName(fileName);
         file.setContent(content);
         fileId = overwriteFileId;
       } catch (errWriteFile) {

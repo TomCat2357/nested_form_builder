@@ -8,7 +8,8 @@
  *   layout: { cols, rowHeight, margin: [x,y], containerPadding: [x,y] },
  *   cards: [
  *     // type === "question"（既定: 後方互換のため type フィールドが無いカードも question 扱い）
- *     { id, type?: "question", questionId, title, x, y, w, h, minW, minH, filterMappings? },
+ *     // questionName: 保存時の Question 名（= ファイル名）。リンク切れ時にファイル名で探し直すためのキー。
+ *     { id, type?: "question", questionId, questionName?, title, x, y, w, h, minW, minH, filterMappings? },
  *     // type === "message" — ダッシュボード上で直接編集できるメッセージボックス
  *     { id, type: "message", text, fontSize, color, background, align,
  *       x, y, w, h, minW, minH },

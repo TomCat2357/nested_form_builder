@@ -7,7 +7,7 @@ import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
 import { useCancellable } from "../../app/hooks/useCancellable.js";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
-import { listQuestions, saveDashboard } from "../../features/analytics/analyticsStore.js";
+import { listQuestions, saveDashboard, resolveDashboardLinks } from "../../features/analytics/analyticsStore.js";
 import { analyticsGasClient } from "../../features/analytics/analyticsGasClient.js";
 import { genDashboardId, genCardId, genFilterId } from "../../core/ids.js";
 import {
@@ -126,7 +126,24 @@ export default function DashboardEditorPage() {
         setError("このダッシュボードは旧形式です。新規作成してください。");
         setDashboard(createEmptyV2({ id: dashboardId }));
       } else {
-        setDashboard(d);
+        // リンク切れカードを標準フォルダ 02_questions から再リンクし、検出したら保存し直す。
+        let toUse = d;
+        try {
+          const { dashboard: repaired, changed } = await resolveDashboardLinks(d);
+          if (isCancelled()) return;
+          toUse = repaired;
+          if (changed) {
+            try {
+              await saveDashboard(repaired);
+            } catch (err) {
+              console.warn("[DashboardEditorPage] auto-relink save failed:", err);
+            }
+          }
+        } catch (err) {
+          console.warn("[DashboardEditorPage] resolveDashboardLinks failed:", err);
+        }
+        if (isCancelled()) return;
+        setDashboard(toUse);
       }
       // フィルタの初期値で previewValues を埋める
       const initVals = {};
@@ -154,11 +171,26 @@ export default function DashboardEditorPage() {
     const newCard = {
       id: genCardId(),
       questionId,
+      // リンク切れ時にファイル名で探し直せるよう Question 名を控える。
+      questionName: questionsById.get(questionId)?.name || "",
       title: "",
       ...pos,
       filterMappings: {},
     };
     setDashboard((d) => ({ ...d, cards: [...d.cards, newCard] }));
+  };
+
+  // 貼り付け済みカードのリンク先 Question を差し替える（id か名前で指定）。
+  const handleRelinkCard = (cardId, questionId) => {
+    if (!questionId) return;
+    setDashboard((d) => ({
+      ...d,
+      cards: d.cards.map((c) =>
+        c.id === cardId
+          ? { ...c, questionId, questionName: questionsById.get(questionId)?.name || c.questionName || "" }
+          : c
+      ),
+    }));
   };
 
   const handleAddMessageCard = () => {
@@ -337,6 +369,12 @@ export default function DashboardEditorPage() {
       name: dashboard.name.trim(),
       description: (dashboard.description || "").trim(),
       folder: normalizeFolderPath(dashboard.folder),
+      // question カードに最新の Question 名を控える（リンク切れ時のファイル名検索用）。
+      cards: (dashboard.cards || []).map((c) => {
+        if (c.type === "message" || !c.questionId) return c;
+        const name = questionsById.get(c.questionId)?.name;
+        return name ? { ...c, questionName: name } : c;
+      }),
       modifiedAt: Date.now(),
     };
 
@@ -636,9 +674,11 @@ export default function DashboardEditorPage() {
               editable={true}
               viewerControls={false}
               questionsById={questionsById}
+              questions={questions}
               onCardsChange={handleCardsChange}
               onRemoveCard={handleRemoveCard}
               onChangeCardTitle={handleChangeCardTitle}
+              onRelinkCard={handleRelinkCard}
               onOpenMapping={setMappingCardId}
               onColumnsLoaded={handleColumnsLoaded}
               onUpdateCard={handleUpdateCard}

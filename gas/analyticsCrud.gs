@@ -143,7 +143,14 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     normalizedTemplate.name = uniqueName;
 
     var fileName = uniqueName + ".json";
-    var content = JSON.stringify(normalizedTemplate, null, 2);
+    // ファイルへ id を埋め込む（リンク切れ時に id でファイルを探せるようにするため）。
+    // list/get は読み出し後に mapping の id で上書きするので副作用はない。
+    var contentObj = {};
+    for (var ck in normalizedTemplate) {
+      if (normalizedTemplate.hasOwnProperty(ck)) contentObj[ck] = normalizedTemplate[ck];
+    }
+    contentObj.id = id;
+    var content = JSON.stringify(contentObj, null, 2);
 
     // targetUrl をパースして saveMode を決定
     var parsedTarget = null;
@@ -179,8 +186,8 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
           // ゴミ箱に入っていたら新規作成にフォールバック
           file = null;
         } else {
-          // Drive ファイル名は新規作成・コピー時のみ name から決定し、
-          // 以降の保存では追従させない（Form と同じ挙動）
+          // 名前を変えたら Drive ファイル名も追従させる（uniqueName.json へリネーム）。
+          if (file.getName() !== fileName) file.setName(fileName);
           file.setContent(content);
         }
       } catch (err) {
@@ -295,5 +302,114 @@ function Analytics_setTemplatesArchivedState_(type, templateIds, archived) {
     };
     result[Analytics_getResultListKey_(type)] = updatedItems;
     return result;
+  });
+}
+
+// 02_questions 内のファイルを Question として確定する。
+// 既存マッピングに fileId 登録済みならその id、無ければ json.id、それも無ければ新規採番。
+// マッピングを最新化（fileId/url）し、id をセットした Question を返す。失敗時は null。
+function Analytics_adoptQuestionFile_(file, mapping) {
+  var fileId = file.getId();
+  var json;
+  try {
+    json = JSON.parse(file.getBlob().getDataAsString());
+  } catch (err) {
+    Logger.log("[Analytics_adoptQuestionFile_] parse failed: " + file.getName());
+    return null;
+  }
+  if (!json || typeof json !== "object") return null;
+
+  var rev = StdFolders_buildFileIdToId_(mapping);
+  var id = rev[fileId]
+    || ((typeof json.id === "string" && json.id) ? json.id : ("q_" + Nfb_generateUlid_()));
+
+  var fileUrl = file.getUrl();
+  mapping[id] = { fileId: fileId, driveFileUrl: fileUrl, name: json.name || id };
+  Analytics_saveMapping_("questions", mapping);
+
+  json.id = id;
+  json.archived = !!json.archived;
+  if (!json.driveFileUrl) json.driveFileUrl = fileUrl;
+  return json;
+}
+
+/**
+ * 壊れた Question 参照（ダッシュボードカード）を解決する。
+ * ref = { questionId, name }
+ *   1) 既存マッピングの questionId が生存ファイルに解決できればそれを返す（relinked:false）。
+ *   2) 標準フォルダ 02_questions を「ファイル名 (name + ".json") または json.name」で探す（matchedBy:"name"）。
+ *   3) 同フォルダを「json.id === questionId」で探す（matchedBy:"id"）。
+ * 戻り: { ok:true, question, questionId, relinked, matchedBy }。見つからなければ question:null。
+ */
+function Analytics_resolveQuestionRef_(ref) {
+  return nfbSafeCall_(function() {
+    ref = ref || {};
+    var wantId = ref.questionId ? String(ref.questionId) : "";
+    var wantName = (typeof ref.name === "string") ? ref.name : "";
+
+    var mapping = Analytics_getMapping_("questions");
+
+    // 1) 既存マッピングで解決を試みる
+    if (wantId && mapping[wantId]) {
+      var fid = Nfb_resolveFileIdFromEntry_(mapping[wantId]);
+      if (fid) {
+        try {
+          var f0 = DriveApp.getFileById(fid);
+          if (!f0.isTrashed()) {
+            var q0 = Analytics_adoptQuestionFile_(f0, mapping);
+            if (q0) return { ok: true, question: q0, questionId: q0.id, relinked: false, matchedBy: "mapping" };
+          }
+        } catch (e0) { /* 壊れている → フォルダ走査へ */ }
+      }
+    }
+
+    var folder = StdFolders_autoFileFolderOrNull_("questions");
+    if (!folder) return { ok: true, question: null };
+
+    // 2) ファイル名 / json.name で探す
+    if (wantName) {
+      var targetFileName = wantName + ".json";
+      var it2 = folder.getFiles();
+      while (it2.hasNext()) {
+        var fn = it2.next();
+        if (typeof fn.isTrashed === "function" && fn.isTrashed()) continue;
+        if (!StdFolders_isJsonFile_(fn)) continue;
+        if (fn.getName() !== targetFileName) {
+          // ファイル名が一致しなくても中身の name が一致すれば採用（旧データ救済）。
+          // 一致判定だけ先に行い、不一致ファイルを mapping へ登録しない。
+          var peek;
+          try {
+            peek = JSON.parse(fn.getBlob().getDataAsString());
+          } catch (ePeek) {
+            continue;
+          }
+          if (!peek || peek.name !== wantName) continue;
+        }
+        var qn = Analytics_adoptQuestionFile_(fn, mapping);
+        if (qn) return { ok: true, question: qn, questionId: qn.id, relinked: true, matchedBy: "name" };
+      }
+    }
+
+    // 3) json.id === questionId で探す
+    if (wantId) {
+      var it3 = folder.getFiles();
+      while (it3.hasNext()) {
+        var fi = it3.next();
+        if (typeof fi.isTrashed === "function" && fi.isTrashed()) continue;
+        if (!StdFolders_isJsonFile_(fi)) continue;
+        var jsonI;
+        try {
+          jsonI = JSON.parse(fi.getBlob().getDataAsString());
+        } catch (eI) {
+          continue;
+        }
+        if (jsonI && jsonI.id === wantId) {
+          var qi = Analytics_adoptQuestionFile_(fi, mapping);
+          if (qi) return { ok: true, question: qi, questionId: qi.id, relinked: true, matchedBy: "id" };
+        }
+      }
+    }
+
+    return { ok: true, question: null };
   });
 }
