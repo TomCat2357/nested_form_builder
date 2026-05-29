@@ -17,6 +17,7 @@ import {
   rebuildMappingsFromFolders,
   getStdFolderRoot,
   ensureStdFolders,
+  backfillPhysicalFolders,
 } from "../../services/gasClient.js";
 import AdminCopyStructureDialog from "../../pages/admin/AdminCopyStructureDialog.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
@@ -132,6 +133,7 @@ export default function SettingsAdminTab() {
   const [rootInfo, setRootInfo] = useState(null);   // { resolved, rootUrl, rootName, error }
   const [rootUrlInput, setRootUrlInput] = useState("");
   const [ensureLoading, setEnsureLoading] = useState(false);
+  const [backfillLoading, setBackfillLoading] = useState(false);
 
   // システムごとコピー
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
@@ -306,11 +308,29 @@ export default function SettingsAdminTab() {
     }
   };
 
+  const handleBackfillPhysical = async () => {
+    if (!canManageAdminSettings) return;
+    setBackfillLoading(true);
+    try {
+      const { skipped, reason, folders, movedFiles } = await backfillPhysicalFolders();
+      if (skipped) {
+        showAlert(`物理フォルダへの反映をスキップしました（${reason || "標準フォルダが無効です"}）。`);
+      } else {
+        showAlert(`仮想フォルダを物理 Drive フォルダ（01_forms 配下）へ反映しました。\nフォルダ: ${folders}件 / 移動したファイル: ${movedFiles}件`);
+      }
+    } catch (error) {
+      console.error("[SettingsAdminTab] backfillPhysicalFolders failed", error);
+      showAlert(error?.message || "物理フォルダへの反映に失敗しました");
+    } finally {
+      setBackfillLoading(false);
+    }
+  };
+
   const handleCopyConfirm = async () => {
     if (!canManageAdminSettings) return;
     setCopyLoading(true);
     try {
-      const { summary, clearedLinks, appsScriptCopied, appsScriptCopyError, message } = await copyStandardFolders({
+      const { summary, clearedLinks, unresolvedQuestionLinks, appsScriptCopied, appsScriptCopyError, message } = await copyStandardFolders({
         destRootUrl: copyUrl.trim(),
         copyData,
         copyWebhooks,
@@ -324,7 +344,8 @@ export default function SettingsAdminTab() {
         : `コピーできませんでした（${appsScriptCopyError || "権限等を確認してください"}）`;
       showAlert(
         `${message}\n\nappsscript 本体: ${appsScriptStatus}\n` +
-        `コピー件数:\n${lines.join("\n")}\nクリアしたリンク: ${clearedLinks}`,
+        `コピー件数:\n${lines.join("\n")}\nクリアしたリンク: ${clearedLinks}\n` +
+        `未解決の Question リンク（参照は保持・要再リンク）: ${unresolvedQuestionLinks ?? 0}`,
       );
     } catch (error) {
       console.error("[SettingsAdminTab] copyStandardFolders failed", error);
@@ -392,13 +413,16 @@ export default function SettingsAdminTab() {
     if (!canManageAdminSettings) return;
     setSyncLoading(true);
     try {
-      const { forms, questions, dashboards, normalized } = await rebuildMappingsFromFolders("");
+      const { forms, questions, dashboards, folderReconcile, normalized } = await rebuildMappingsFromFolders("");
       await invalidateListCaches();
       const lines = [
         `フォーム: ${forms.count || 0}件`,
         `Question: ${questions.count || 0}件`,
         `Dashboard: ${dashboards.count || 0}件`,
       ];
+      if (folderReconcile && (folderReconcile.reconciled || folderReconcile.migrated)) {
+        lines.push(`フォルダ整合: ${folderReconcile.reconciled || 0}件をDrive構造に合わせて更新（移行 ${folderReconcile.migrated || 0}件）`);
+      }
       lines.push(...buildNormalizedLines(normalized));
       showAlert("フォルダ走査で未リンクのファイルをリンクしました。\n" + lines.join("\n"));
     } catch (error) {
@@ -506,9 +530,14 @@ export default function SettingsAdminTab() {
           <button type="button" className="nf-btn nf-nowrap" onClick={handleEnsureFolders} disabled={!canManageAdminSettings || ensureLoading}>
             {ensureLoading ? "作成中..." : "標準フォルダ構成を今すぐ作成"}
           </button>
+          <button type="button" className="nf-btn nf-nowrap" onClick={handleBackfillPhysical} disabled={!canManageAdminSettings || backfillLoading}>
+            {backfillLoading ? "反映中..." : "仮想フォルダを物理フォルダへ反映"}
+          </button>
         </div>
         <p className="nf-mt-6 nf-mb-24 nf-text-11 nf-text-muted">
           このルート配下に <code>01_forms</code>〜<code>08_documents</code> を作成します（不足分のみ補完）。中身の複製は行いません。
+          「物理フォルダへ反映」は、これまで <code>01_forms</code> 直下にフラット保存されていたフォームを、仮想フォルダと同じ階層の
+          物理フォルダ（<code>01_forms/フォルダ名/…</code>）へ移動します（移行用・冪等）。
         </p>
 
         {/* 機能2: システム一式を別ルートへ複製する */}

@@ -63,4 +63,7 @@ function makeEntityClient(entity) {
 export const analyticsGasClient = {
   ...makeEntityClient("Question"),
   ...makeEntityClient("Dashboard"),
+  // 壊れたカード参照を標準フォルダ 02_questions から名前→id の順で解決する。
+  resolveQuestionRef: (ref) =>
+    fetchAnalyticsApi_("nfbResolveAnalyticsQuestionRef", { ref }, "Question 解決に失敗しました"),
 };

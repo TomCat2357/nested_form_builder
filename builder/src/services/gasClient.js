@@ -219,14 +219,20 @@ export const setRestrictToFormOnly = async (value) => { const r = await fetchGas
 export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyWebhooks = false, rebuildMapping = true } = {}) => {
   if (!destRootUrl) throw new Error("コピー先ルートフォルダの URL を指定してください");
   const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks, rebuildMapping }, "システムごとコピーに失敗しました");
-  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), appsScriptCopyError: r.appsScriptCopyError || "", message: r.message || "" };
+  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, unresolvedQuestionLinks: r.unresolvedQuestionLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), appsScriptCopyError: r.appsScriptCopyError || "", message: r.message || "" };
 };
 // 既リンク資産のうち標準フォルダ構成外のものを構成内へコピーした結果のデフォルト形。
 const emptyNormalized = () => ({ forms: { count: 0 }, questions: { count: 0 }, dashboards: { count: 0 }, cascadedQuestions: 0, total: 0 });
 // 同期（フォルダ走査）。01_forms/02_questions/03_dashboards を走査し未リンク JSON をリンクする。
+// 物理 Drive フォルダがずれていれば物理を正として仮想フォルダ（登録簿・form.folder）も合わせる。
 export const rebuildMappingsFromFolders = async (rootUrl = "") => {
   const r = await fetchGasApi("nfbRebuildMappingsFromFolders", { rootUrl }, "マッピングの同期に失敗しました");
-  return { forms: r.forms || { count: 0 }, questions: r.questions || { count: 0 }, dashboards: r.dashboards || { count: 0 }, normalized: r.normalized || emptyNormalized() };
+  return { forms: r.forms || { count: 0 }, questions: r.questions || { count: 0 }, dashboards: r.dashboards || { count: 0 }, folderReconcile: r.folderReconcile || { migrated: 0, reconciled: 0, folders: 0 }, normalized: r.normalized || emptyNormalized() };
+};
+// 既存の仮想フォルダ/フォームを物理 Drive フォルダ（01_forms 配下）へ反映（移行・冪等）。
+export const backfillPhysicalFolders = async () => {
+  const r = await fetchGasApi("nfbBackfillPhysicalFolders", {}, "物理フォルダへの反映に失敗しました");
+  return { skipped: Boolean(r.skipped), reason: r.reason || "", folders: r.folders || 0, movedFiles: r.movedFiles || 0 };
 };
 // 現在のマッピングを _nfb_mapping.json 形のドキュメントで取得（ダウンロード用）。
 export const exportMapping = async () => {

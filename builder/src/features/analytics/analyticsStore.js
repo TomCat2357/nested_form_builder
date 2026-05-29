@@ -6,7 +6,7 @@
 import { analyticsGasClient } from "./analyticsGasClient.js";
 import { questionCache, dashboardCache } from "./analyticsCache.js";
 import { deepClone } from "../../core/schema.js";
-import { isV2 as isDashboardV2, assertV2 as assertDashboardV2 } from "./utils/dashboardSchema.js";
+import { isV2 as isDashboardV2, assertV2 as assertDashboardV2, getCardType, CARD_TYPE_QUESTION } from "./utils/dashboardSchema.js";
 import { registerFormAsTable, registerFormViewAsTable, dropTables, runAlaSql, applyGlobalWhereToTables, applySourceFilterClauses } from "./analyticsAlaSql.js";
 import { buildFormIndex } from "./utils/formIdentifierResolver.js";
 import { buildColumnIndex } from "./utils/columnIdentifierResolver.js";
@@ -542,3 +542,68 @@ export const createDashboardFolder = dashboardStore.createFolder;
 export const moveDashboards = dashboardStore.moveItems;
 export const renameDashboardFolder = dashboardStore.renameFolder;
 export const deleteDashboardFolder = dashboardStore.deleteFolder;
+
+/**
+ * ダッシュボードの question カードのうち、questionId が現在の Question 一覧で解決できない
+ * （= リンク切れ）ものを、標準フォルダ 02_questions から「ファイル名(name) → id」の順で
+ * 探して再リンクする。解決できたカードは questionId / questionName を最新化する。
+ *
+ * 戻り: { dashboard, changed }。changed=true のとき、呼び出し側で保存し直すと修復が永続化される
+ * （保存は管理者のみ可能。閲覧者はメモリ上の修復で描画だけ正しくなる）。
+ */
+export async function resolveDashboardLinks(dashboard) {
+  if (!dashboard || !Array.isArray(dashboard.cards)) return { dashboard, changed: false };
+
+  // 既知の Question を 1 度だけ取得（壊れ判定と name バックフィルに使う）。
+  // アーカイブ済みも有効なリンク先なので含める。
+  let known = [];
+  try {
+    known = await listQuestions({ includeArchived: true });
+  } catch (err) {
+    console.warn("[resolveDashboardLinks] listQuestions failed:", err);
+  }
+  const byId = new Map(known.map((q) => [q.id, q]));
+
+  let changed = false;
+  const nextCards = [];
+  for (const card of dashboard.cards) {
+    if (getCardType(card) !== CARD_TYPE_QUESTION) {
+      nextCards.push(card);
+      continue;
+    }
+
+    const existing = card.questionId ? byId.get(card.questionId) : null;
+    if (existing) {
+      // 解決済み。name が変わっていれば questionName をバックフィル/更新する。
+      if (card.questionName !== existing.name) {
+        nextCards.push({ ...card, questionName: existing.name });
+        changed = true;
+      } else {
+        nextCards.push(card);
+      }
+      continue;
+    }
+
+    // リンク切れ → サーバで名前/id の順に解決を試みる。
+    try {
+      const res = await analyticsGasClient.resolveQuestionRef({
+        questionId: card.questionId || "",
+        name: card.questionName || "",
+      });
+      const q = res && res.question;
+      if (q && q.id) {
+        await questionCache.upsert(q);
+        byId.set(q.id, q);
+        nextCards.push({ ...card, questionId: q.id, questionName: q.name || card.questionName || "" });
+        changed = true;
+        continue;
+      }
+    } catch (err) {
+      console.warn("[resolveDashboardLinks] resolveQuestionRef failed:", err);
+    }
+
+    nextCards.push(card);
+  }
+
+  return { dashboard: changed ? { ...dashboard, cards: nextCards } : dashboard, changed };
+}

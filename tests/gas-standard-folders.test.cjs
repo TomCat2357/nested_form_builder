@@ -7,6 +7,7 @@ const { loadGasFiles } = require("./helpers/gasVmLoader.cjs");
 function loadGasContext() {
   const context = {
     console,
+    // GAS グローバル Logger のスタブ（standardFolders.gs の catch 節などが呼ぶ）。
     Logger: { log() {} },
     NFB_DEFAULT_SHEET_NAME: "Data",
     DriveApp: {
@@ -375,4 +376,50 @@ test("StdFolders_normalizeLinkedToStd_: 再リンク時は AddFormUrl_ も更新
   assert.equal(stores.formUrls.f1, "https://drive.google.com/file/d/NEWF1/view", "再リンクで AddFormUrl_ も更新される");
   assert.ok(!stores.dashboards.d1, "張替え先のない壊れた Dashboard リンクは削除される");
   assert.equal(stores.questions.q1.fileId, "LIVEQ", "生存 Question は無変更");
+});
+
+// DriveApp.getFileById を差し替えて、JSON 本体を読み書きできる 1 ファイルを用意する。
+function installSingleFile(gas, fileId, content) {
+  const state = { content };
+  gas.DriveApp = {
+    getFileById(id) {
+      if (id !== fileId) throw new Error("not found: " + id);
+      return {
+        getId: () => fileId,
+        getBlob: () => ({ getDataAsString: () => state.content }),
+        setContent: (c) => { state.content = c; },
+      };
+    },
+  };
+  return state;
+}
+
+test("StdFolders_rewireDashboardFile_: コピー対象に居ない questionId でも参照を破棄しない（リンクロスト防止）", () => {
+  const gas = loadGasContext();
+  const before = {
+    id: "OLD_DASH",
+    cards: [
+      { id: "c1", questionId: "q_kept", questionName: "売上" },
+      { id: "c2", questionId: "q_missing", questionName: "離脱率" },
+    ],
+  };
+  const state = installSingleFile(gas, "DASH1", JSON.stringify(before));
+  // q_kept のみコピー対象。q_missing はコピー対象に含まれない。
+  const unresolved = gas.StdFolders_rewireDashboardFile_("DASH1", "NEW_DASH", { q_kept: true });
+
+  assert.equal(unresolved, 1, "コピー対象外の 1 件だけ未解決として数える");
+  const after = JSON.parse(state.content);
+  assert.equal(after.id, "NEW_DASH", "dashboardId は新 id に差し替わる");
+  // どちらの参照も保持されていること（questionId / questionName を破棄しない）。
+  assert.equal(after.cards[0].questionId, "q_kept");
+  assert.equal(after.cards[1].questionId, "q_missing");
+  assert.equal(after.cards[1].questionName, "離脱率");
+});
+
+test("StdFolders_readEmbeddedId_: 埋め込み済み json.id を返す / 無ければ null", () => {
+  const gas = loadGasContext();
+  installSingleFile(gas, "Q1", JSON.stringify({ id: "q_embedded", name: "Q" }));
+  assert.equal(gas.StdFolders_readEmbeddedId_("Q1"), "q_embedded");
+  installSingleFile(gas, "Q2", JSON.stringify({ name: "no id" }));
+  assert.equal(gas.StdFolders_readEmbeddedId_("Q2"), null);
 });
