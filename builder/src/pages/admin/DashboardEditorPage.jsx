@@ -340,11 +340,6 @@ export default function DashboardEditorPage() {
 
   const goBack = useCallback(() => navigate(location.state?.from || "/admin/dashboards"), [navigate, location.state]);
 
-  const handleCancel = () => {
-    if (!isDirty) { goBack(); return; }
-    unsavedDialog.open();
-  };
-
   const handleBack = () => {
     if (isDirty) {
       unsavedDialog.open();
@@ -420,17 +415,12 @@ export default function DashboardEditorPage() {
   return (
     <AppLayout
       title={dashboardId ? "Dashboard 編集" : "Dashboard 作成"}
-      fallbackPath="/admin/dashboards"
+      fallbackPath={location.state?.from || "/admin/dashboards"}
       onBack={handleBack}
       sidebarActions={
-        <>
-          <button type="button" onClick={handleSave} disabled={saving} className="nf-btn-outline nf-btn-sidebar">
-            {saving ? "保存中..." : "保存"}
-          </button>
-          <button type="button" onClick={handleCancel} className="nf-btn-outline nf-btn-sidebar">
-            キャンセル
-          </button>
-        </>
+        <button type="button" onClick={handleSave} disabled={saving} className="nf-btn-outline nf-btn-sidebar">
+          {saving ? "保存中..." : "保存"}
+        </button>
       }
     >
       {loading && <p className="nf-text-subtle">読み込み中...</p>}
@@ -472,6 +462,24 @@ export default function DashboardEditorPage() {
               />
             </div>
           </div>
+
+          {dashboardId && dashboard.driveFileUrl && (
+            <div>
+              <label className="nf-label">実体ファイル URL（Drive 上の JSON）</label>
+              <input
+                className="nf-input nf-input--readonly"
+                type="text"
+                value={dashboard.driveFileUrl}
+                readOnly
+                onFocus={(e) => e.target.select()}
+                title="この Dashboard の実体（Drive 上の JSON ファイル）の URL。表示専用で編集できません。"
+                style={{ width: "100%", maxWidth: 640, background: "var(--surface-subtle)", color: "var(--text-muted)" }}
+              />
+              <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+                この Dashboard 定義が保存されている Drive 上の場所です。どれが実体かを確認するための表示専用で、編集はできません。
+              </p>
+            </div>
+          )}
 
           <p className="nf-text-11 nf-text-muted nf-mb-0">
             Dashboard 定義は標準フォルダ構成の <code>03_dashboards</code> に保存されます。

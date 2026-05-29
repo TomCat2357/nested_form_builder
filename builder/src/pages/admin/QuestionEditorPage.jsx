@@ -68,6 +68,7 @@ export default function QuestionEditorPage() {
 
   const [mode, setMode] = useState("gui");
   const [name, setName] = useState("");
+  const [driveFileUrl, setDriveFileUrl] = useState("");
   // 新規作成時は一覧で開いていたフォルダ (location.state.folder) を初期フォルダにする。
   const [folder, setFolder] = useState(() => isEdit ? "" : normalizeFolderPath(location.state?.folder || ""));
   const [selectedFormId, setSelectedFormId] = useState("");
@@ -114,6 +115,7 @@ export default function QuestionEditorPage() {
       }
       setName(q.name || "");
       setFolder(q.folder || "");
+      setDriveFileUrl(q.driveFileUrl || "");
       const qMode = q.query?.mode === "gui" ? "gui" : "sql";
       setMode(qMode);
       if (qMode === "gui") {
@@ -194,12 +196,14 @@ export default function QuestionEditorPage() {
   };
 
   // SQL モード用の formSources 配列を selectedFormId / forms から構築する。
-  // 未選択時は空配列で通し (SQL 内の `[フォーム名]` 直接参照を許す)、
-  // フォーム/シート未解決のときは error を返す。caller 側で表示先 (run/save) を切り替える。
+  // 未選択 / フォーム不明時は空配列で通し (SQL 内の `[フォーム名]` 直接参照を許す)、
+  // フォームは解決できたがシート未設定のときだけ error を返す。caller 側で表示先 (run/save) を切り替える。
   const buildSqlFormSources = useCallback(() => {
     if (!selectedFormId) return { formSources: [] };
     const form = forms.find((f) => f.id === selectedFormId);
-    if (!form) return { error: "選択したフォームが見つかりません。" };
+    // 保存済みの formId が現在のフォーム一覧に無い (削除済み等) 場合でも、SQL モードは
+    // [フォーム名] 直接参照で実行できるため、未選択扱いにしてエラーを出さない。
+    if (!form) return { formSources: [] };
     // レコードは formId 経由で取得するため spreadsheetId は不要。設定済みかだけ確認する。
     if (!getSheetConfig(form)) return { error: ERR_NO_SPREADSHEET };
     return {
@@ -378,11 +382,6 @@ export default function QuestionEditorPage() {
 
   const goBack = useCallback(() => navigate(location.state?.from || "/admin/questions"), [navigate, location.state]);
 
-  const handleCancel = () => {
-    if (!isDirty) { goBack(); return; }
-    unsavedDialog.open();
-  };
-
   const handleBack = () => {
     if (isDirty) {
       unsavedDialog.open();
@@ -440,17 +439,12 @@ export default function QuestionEditorPage() {
   return (
     <AppLayout
       title={questionId ? "Question 編集" : "Question 作成"}
-      fallbackPath="/admin/questions"
+      fallbackPath={location.state?.from || "/admin/questions"}
       onBack={handleBack}
       sidebarActions={
-        <>
-          <button type="button" onClick={handleSave} disabled={saving} className="nf-btn-outline nf-btn-sidebar">
-            {saving ? "保存中..." : "保存"}
-          </button>
-          <button type="button" onClick={handleCancel} className="nf-btn-outline nf-btn-sidebar">
-            キャンセル
-          </button>
-        </>
+        <button type="button" onClick={handleSave} disabled={saving} className="nf-btn-outline nf-btn-sidebar">
+          {saving ? "保存中..." : "保存"}
+        </button>
       }
     >
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
@@ -480,6 +474,24 @@ export default function QuestionEditorPage() {
             style={{ width: "100%", maxWidth: "400px" }}
           />
         </div>
+
+        {questionId && driveFileUrl && (
+          <div>
+            <label className="nf-label">実体ファイル URL（Drive 上の JSON）</label>
+            <input
+              className="nf-input nf-input--readonly"
+              type="text"
+              value={driveFileUrl}
+              readOnly
+              onFocus={(e) => e.target.select()}
+              title="この Question の実体（Drive 上の JSON ファイル）の URL。表示専用で編集できません。"
+              style={{ width: "100%", maxWidth: "640px", background: "var(--surface-subtle)", color: "var(--text-muted)" }}
+            />
+            <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+              この Question 定義が保存されている Drive 上の場所です。どれが実体かを確認するための表示専用で、編集はできません。
+            </p>
+          </div>
+        )}
 
         <p className="nf-text-11 nf-text-muted nf-mb-0">
           Question 定義は標準フォルダ構成の <code>02_questions</code> に保存されます。

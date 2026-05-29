@@ -16,11 +16,12 @@
  * なお唯一のフロント呼び出し元 utils/tokenReplacer.js は常に { fallback: "" } を明示渡し。
  */
 
-import { collectBalancedBraces, scanAndReplace, escapeBraces, unescapeBraces, splitTopLevelCommas } from "./templateScanner.js";
+import { collectBalancedBraces, scanAndReplace, escapeBraces, unescapeBraces, splitTopLevelCommas, findBalancedCloseIndex } from "./templateScanner.js";
 import {
   precompileExpressions,
   getCompiledExpressionSync,
   evalExpression,
+  compileExpression,
 } from "./alasqlExpressionEvaluator.js";
 import { preprocessAlaSqlExpression } from "./preprocessAlaSqlExpression.js";
 
@@ -57,6 +58,62 @@ export async function precompileTemplate(template) {
   const exprs = extractExpressions(template);
   if (exprs.length === 0) return;
   await precompileExpressions(exprs);
+}
+
+// escape 済みテキスト中で対応する `}` を持たない先頭の `{` の位置を返す（無ければ -1）。
+function findUnclosedBraceIndex(escapedText) {
+  let i = 0;
+  const n = escapedText.length;
+  while (i < n) {
+    if (escapedText.charAt(i) === "{") {
+      const close = findBalancedCloseIndex(escapedText, i);
+      if (close < 0) return i;
+      i = close + 1;
+    } else {
+      i += 1;
+    }
+  }
+  return -1;
+}
+
+/**
+ * テンプレート文字列の構文を検証する（フォーム保存前の置換式チェック用）。
+ * 1. `{...}` の波括弧が対応しているか（未閉じ `{` がないか）
+ * 2. 各式が alasql でコンパイルできるか
+ *
+ * alasql 自体がロードできない等、構文以外の理由で検証できなかった場合は
+ * { ok: true } を返し、保存をブロックしない（誤検知で編集を妨げないため）。
+ *
+ * @param {string} template
+ * @returns {Promise<{ ok: true } | { ok: false, message: string }>}
+ */
+export async function validateTemplateSyntax(template) {
+  if (template === undefined || template === null) return { ok: true };
+  const text = String(template);
+  if (!text || text.indexOf("{") < 0) return { ok: true };
+
+  const escaped = escapeBraces(text);
+  if (findUnclosedBraceIndex(escaped) >= 0) {
+    return { ok: false, message: "波括弧 { } が対応していません（閉じ括弧「}」が不足しています）。" };
+  }
+
+  const exprs = extractExpressions(text);
+  for (const expr of exprs) {
+    try {
+      await compileExpression(expr);
+    } catch (err) {
+      // compileFor が付与する err.expr の有無で「式の構文エラー」と「alasql ロード失敗等」を区別する。
+      if (!err || err.expr === undefined) {
+        if (typeof console !== "undefined") {
+          console.warn("[template] 構文検証をスキップしました:", err && err.message);
+        }
+        return { ok: true };
+      }
+      const detail = err && err.message ? err.message.replace(/^alasql compile failed:\s*/, "") : String(err);
+      return { ok: false, message: `式「{${expr}}」が解釈できません: ${detail}` };
+    }
+  }
+  return { ok: true };
 }
 
 // GAS 側の双子は gas/templateEvaluator.gs の nfbTplCoerceToString_。

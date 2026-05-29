@@ -207,7 +207,7 @@ function Forms_listForms_(options) {
 }
 
 /**
- * Drive API v3を使用して複数ファイルを一括取得
+ * 複数ファイルを DriveApp で順次読み取る
  * @param {Array<string>} fileIds - ファイルIDの配列
  * @return {Array<Object>} 結果の配列 [{ fileId, fileName, fileUrl, content, error, errorStage }]
  */
@@ -215,113 +215,22 @@ function Forms_listForms_(options) {
 function Forms_batchGetFiles_(fileIds) {
   var results = [];
 
-  // Drive API v3のbatch requestを使用
-  var boundary = "batch_boundary_" + new Date().getTime();
-  var batchBody = [];
-
   for (var i = 0; i < fileIds.length; i++) {
-    var fileId = fileIds[i];
-    batchBody.push("--" + boundary);
-    batchBody.push("Content-Type: application/http");
-    batchBody.push("");
-    batchBody.push("GET /drive/v3/files/" + fileId + "?fields=id,name,webViewLink&alt=json");
-    batchBody.push("");
-  }
-  batchBody.push("--" + boundary + "--");
-
-  var batchPayload = batchBody.join("\r\n");
-
-  try {
-    var response = UrlFetchApp.fetch("https://www.googleapis.com/batch/drive/v3", {
-      method: "post",
-      contentType: "multipart/mixed; boundary=" + boundary,
-      headers: {
-        Authorization: "Bearer " + ScriptApp.getOAuthToken(),
-      },
-      payload: batchPayload,
-      muteHttpExceptions: true,
-    });
-
-    var responseText = response.getContentText();
-    var responseParts = responseText.split("--batch");
-
-    // バッチレスポンスをパース
-    var fileMetadataMap = {}; // { fileId: { name, webViewLink } }
-    for (var j = 0; j < responseParts.length; j++) {
-      var part = responseParts[j];
-      if (!part || part.trim() === "" || part.trim() === "--") continue;
-
-      // JSONペイロードを抽出
-      var jsonMatch = part.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          var metadata = JSON.parse(jsonMatch[0]);
-          if (metadata.id) {
-            fileMetadataMap[metadata.id] = {
-              name: metadata.name,
-              webViewLink: metadata.webViewLink,
-            };
-          }
-        } catch (parseErr) {
-          Logger.log("[Forms_batchGetFiles_] Failed to parse batch response part: " + parseErr);
-        }
-      }
-    }
-
-    // メタデータ取得後、各ファイルのコンテンツを取得（DriveApp使用）
-    for (var k = 0; k < fileIds.length; k++) {
-      var fid = fileIds[k];
-      var meta = fileMetadataMap[fid];
-
-      if (!meta) {
-        results.push({
-          fileId: fid,
-          error: "File not found in batch response",
-          errorStage: "batch",
-        });
-        continue;
-      }
-
-      try {
-        var file = DriveApp.getFileById(fid);
-        var content = file.getBlob().getDataAsString();
-        results.push({
-          fileId: fid,
-          fileName: meta.name,
-          fileUrl: meta.webViewLink,
-          content: content,
-        });
-      } catch (readErr) {
-        results.push({
-          fileId: fid,
-          fileName: meta.name,
-          fileUrl: meta.webViewLink,
-          error: nfbErrorToString_(readErr),
-          errorStage: "read",
-        });
-      }
-    }
-  } catch (batchErr) {
-    Logger.log("[Forms_batchGetFiles_] Batch API call failed: " + batchErr);
-    // バッチ全体が失敗した場合は個別フォールバック
-    for (var m = 0; m < fileIds.length; m++) {
-      var fbId = fileIds[m];
-      try {
-        var fbFile = DriveApp.getFileById(fbId);
-        var fbContent = fbFile.getBlob().getDataAsString();
-        results.push({
-          fileId: fbId,
-          fileName: fbFile.getName(),
-          fileUrl: fbFile.getUrl(),
-          content: fbContent,
-        });
-      } catch (fbErr) {
-        results.push({
-          fileId: fbId,
-          error: nfbErrorToString_(fbErr),
-          errorStage: "fallback",
-        });
-      }
+    var fid = fileIds[i];
+    try {
+      var file = DriveApp.getFileById(fid);
+      results.push({
+        fileId: fid,
+        fileName: file.getName(),
+        fileUrl: file.getUrl(),
+        content: file.getBlob().getDataAsString(),
+      });
+    } catch (err) {
+      results.push({
+        fileId: fid,
+        error: nfbErrorToString_(err),
+        errorStage: "read",
+      });
     }
   }
 

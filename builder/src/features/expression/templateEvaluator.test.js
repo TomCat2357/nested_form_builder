@@ -6,6 +6,7 @@ import {
   resolveTemplateAsync,
   precompileTemplate,
   extractFieldRefs,
+  validateTemplateSyntax,
 } from "./templateEvaluator.js";
 import {
   _clearExpressionCacheForTest,
@@ -286,4 +287,41 @@ test("extractFieldRefs: トークン跨ぎでも重複除去", () => {
 test("extractFieldRefs: 文字列リテラルは識別子と区別される", () => {
   // バッククォート以外は識別子扱いされない
   assert.deepEqual(extractFieldRefs("{IIF(`x` = 'リテラル', 1, 0)}"), ["x"]);
+});
+
+// ---------------------------------------------------------------------------
+// validateTemplateSyntax
+// ---------------------------------------------------------------------------
+
+test("validateTemplateSyntax: null/空/トークン無しは ok", async () => {
+  setup();
+  assert.deepEqual(await validateTemplateSyntax(null), { ok: true });
+  assert.deepEqual(await validateTemplateSyntax(""), { ok: true });
+  assert.deepEqual(await validateTemplateSyntax("ただの文字列"), { ok: true });
+});
+
+test("validateTemplateSyntax: precompile 済みの式は ok", async () => {
+  setup();
+  _registerCompiledForTest("`氏名`", (row) => row["氏名"]);
+  assert.deepEqual(await validateTemplateSyntax("こんにちは {`氏名`} 様"), { ok: true });
+});
+
+test("validateTemplateSyntax: 未閉じ波括弧でエラー", async () => {
+  setup();
+  const result = await validateTemplateSyntax("氏名は {`氏名` です");
+  assert.equal(result.ok, false);
+  assert.match(result.message, /波括弧/);
+});
+
+test("validateTemplateSyntax: ネストした未閉じもエラー", async () => {
+  setup();
+  const result = await validateTemplateSyntax("text {`b`{");
+  assert.equal(result.ok, false);
+  assert.match(result.message, /波括弧/);
+});
+
+test("validateTemplateSyntax: エスケープした波括弧はトークンではない", async () => {
+  setup();
+  // \\{ \\} はリテラルなので未閉じ扱いされない
+  assert.deepEqual(await validateTemplateSyntax("\\{リテラル\\}"), { ok: true });
 });

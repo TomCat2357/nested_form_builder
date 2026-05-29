@@ -4,7 +4,7 @@ import PreviewPage from "../preview/PreviewPage.jsx";
 import SearchPreviewPanel from "./SearchPreviewPanel.jsx";
 import { DEFAULT_SETTINGS } from "../../core/storage.js";
 import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, validateLabelCharacters, MAX_DEPTH, countSchemaNodes } from "../../core/schema.js";
-import { detectCircularReferences } from "../../core/computedFields.js";
+import { detectCircularReferences, validateSubstitutionTemplates } from "../../core/computedFields.js";
 import { runSelfTests } from "../../core/selfTests.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { useAuth } from "../../app/state/authContext.jsx";
@@ -106,7 +106,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     onDirtyChange?.(false);
   }, [schema, settings, onDirtyChange]);
 
-  const handleSave = useCallback((options = {}) => {
+  const handleSave = useCallback(async (options = {}) => {
     const { markClean = true } = options;
     const labelCheck = validateRequiredLabels(schema);
     if (!labelCheck.ok) {
@@ -133,6 +133,15 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     const circularCheck = detectCircularReferences(schema);
     if (circularCheck.hasCycle) {
       showAlert(`循環参照が検出されました: ${circularCheck.cycleFields.join(" → ")}`, "循環参照エラー");
+      return false;
+    }
+
+    const templateCheck = await validateSubstitutionTemplates(schema);
+    if (!templateCheck.ok) {
+      const items = templateCheck.invalidTemplates
+        .map((entry, index) => `${index + 1}. ${entry.path || entry.label || "(名称未設定)"}\n   ${entry.message}`)
+        .join("\n\n");
+      showAlert(`置換フィールドの式に文法エラーがあります。修正してから保存してください:\n\n${items}`, "置換式の文法エラー");
       return false;
     }
 

@@ -179,10 +179,9 @@ export async function executeQuestion(question, { forms, globalWhereExpr, global
     }
   }
 
-  if (formSources.length === 0) {
-    return { ok: false, error: "データソースが指定されていません" };
-  }
-
+  // SQL モードはフォーム未選択でも可。formSources が空でも、SQL が自己完結
+  // （例: SELECT 1）なら実行を許す。未解決テーブル参照は AlaSQL 側の
+  // 具体的なエラーで返る。
   let aliases = [];
   try {
     aliases = await loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex });

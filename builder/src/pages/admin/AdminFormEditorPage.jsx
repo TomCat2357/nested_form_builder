@@ -187,7 +187,7 @@ export default function AdminFormEditorPage() {
     }
     setNameError("");
 
-    const saveResult = builderRef.current.save({ markClean: false });
+    const saveResult = await builderRef.current.save({ markClean: false });
     if (saveResult === false) {
       setIsSaving(false);
       return;
@@ -236,14 +236,6 @@ export default function AdminFormEditorPage() {
     return false;
   };
 
-  const handleCancel = () => {
-    if (!isDirty) {
-      navigateBack();
-    } else {
-      unsavedDialog.open();
-    }
-  };
-
   const handleOpenSpreadsheet = () => {
     const spreadsheetIdOrUrl = localSettings?.spreadsheetId || "";
 
@@ -288,14 +280,10 @@ export default function AdminFormEditorPage() {
       badge="管理 > フォーム"
       fallbackPath={fallback}
       onBack={handleBack}
-      backHidden={true}
       sidebarActions={
         <>
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" disabled={isSaving || isReadLocked} onClick={handleSave}>
             保存
-          </button>
-          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-14" onClick={handleCancel}>
-            キャンセル
           </button>
           <div className="nf-spacer-16" />
           <button
@@ -374,16 +362,19 @@ export default function AdminFormEditorPage() {
 
           {isEdit && (
             <div className="nf-col nf-gap-6 nf-mb-16">
-              <label className="nf-block nf-fw-600 nf-mb-6">保存先URL（form.json）</label>
+              <label className="nf-block nf-fw-600 nf-mb-6">実体ファイル URL（Drive 上の form.json）</label>
               <input
+                type="text"
                 value={form?.driveFileUrl || ""}
                 readOnly
-                disabled
-                className="nf-input admin-input"
+                className="nf-input admin-input nf-input--readonly"
+                style={form?.driveFileUrl ? { background: "var(--surface-subtle)", color: "var(--text-muted)" } : undefined}
                 placeholder="保存後に表示されます"
+                onFocus={(event) => event.target.select()}
+                title={form?.driveFileUrl ? "このフォームの実体（Drive 上の JSON ファイル）の URL。表示専用で編集できません。" : undefined}
               />
               <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
-                このフォームの実体（form.json）が保存されている Google Drive 上のURLです。表示専用です。
+                このフォーム定義が保存されている Drive 上の場所です。どれが実体かを確認するための表示専用で、編集はできません。
               </p>
             </div>
           )}

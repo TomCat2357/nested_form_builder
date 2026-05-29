@@ -55,9 +55,8 @@ export default function AdminCopyStructureDialog({
         引き継がれず、マッピングはコピー先の 設定 &gt; 管理 から「インポート」または「同期」で手動復元します）。
       </p>
       <p className="nf-mt-6 nf-text-12 nf-text-muted">
-        ※ appsscript 本体の複製には Apps Script API を使用します。事前に実行ユーザーが
-        script.google.com/home/usersettings で「Google Apps Script API」を ON にしておいてください
-        （OFF のままだと本体はコピーされません）。
+        ※ appsscript 本体は Google ドライブ上で複製されます（Apps Script API の有効化は不要です）。
+        複製先スクリプトの Web アプリは手動で再デプロイしてください。
       </p>
 
       <div>
