@@ -35,6 +35,9 @@ var FORMS_HANDLERS_ = {
   "forms_folder_delete": {
     run: function(raw) { return Forms_deleteFolder_(raw && raw.path); }
   },
+  "forms_folders_backfill_physical": {
+    run: function() { return FormsDrive_backfillPhysicalFolders_(); }
+  },
   "forms_get": {
     run: function(raw) {
       var formId = raw && raw.formId;
@@ -217,3 +220,4 @@ function nfbCreateFolder(path)             { return Forms_runScriptAction_("form
 function nfbMoveItems(payload)             { return Forms_runScriptAction_("forms_move",                 payload || {}); }
 function nfbRenameFolder(payload)          { return Forms_runScriptAction_("forms_folder_rename",        payload || {}); }
 function nfbDeleteFolder(path)             { return Forms_runScriptAction_("forms_folder_delete",        { path: path }); }
+function nfbBackfillPhysicalFolders()      { return Forms_runScriptAction_("forms_folders_backfill_physical", {}); }

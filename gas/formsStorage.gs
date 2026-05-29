@@ -236,6 +236,9 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
         if (file.getName() !== fileName) file.setName(fileName);
         file.setContent(content);
         fileId = overwriteFileId;
+        // folder が変わっていれば物理フォルダ（01_forms 配下）へも移動（既に正しい親なら no-op）。
+        var overwriteFolderPath = typeof form.folder === "string" ? Forms_normalizeFolderPath_(form.folder) : "";
+        FormsDrive_moveFormFileToPath_(overwriteFileId, overwriteFolderPath);
       } catch (errWriteFile) {
         throw new Error("[save-stage=write-file] ファイル更新に失敗しました. formId=" + form.id + ", fileId=" + overwriteFileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errWriteFile));
       }
@@ -253,10 +256,12 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       }
     } else if (effectiveSaveMode === "copy_to_root") {
       try {
-        // 自動整理が ON で明示指定が無い場合は 01_forms へ作成する。失敗時はマイドライブ直下。
-        var stdFormsFolder = StdFolders_autoFileFolderOrNull_("forms");
-        file = stdFormsFolder
-          ? stdFormsFolder.createFile(fileName, content, MimeType.PLAIN_TEXT)
+        // 自動整理が ON で明示指定が無い場合は form.folder に対応する物理フォルダ（01_forms 配下）へ
+        // 作成する。folder 未指定なら 01_forms 直下、解決不能ならマイドライブ直下。
+        var formFolderPath = typeof form.folder === "string" ? Forms_normalizeFolderPath_(form.folder) : "";
+        var targetFolder = FormsDrive_ensureFolderForPath_(formFolderPath);
+        file = targetFolder
+          ? targetFolder.createFile(fileName, content, MimeType.PLAIN_TEXT)
           : DriveApp.createFile(fileName, content, MimeType.PLAIN_TEXT);
         fileId = file.getId();
       } catch (errCreateInRoot) {

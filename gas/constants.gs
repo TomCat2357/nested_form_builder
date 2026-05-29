@@ -19,6 +19,11 @@ var FORMS_PROPERTY_VERSION = 2;
 var NFB_FOLDERS_PROPERTY_KEY = "nfb.forms.folders";
 var NFB_FOLDERS_PROPERTY_VERSION = 1;
 
+// 仮想フォルダパス → 物理 Drive フォルダ ID のマップ（{ version, map: { "a/b": "<folderId>", ... } } 形）。
+// 物理 Drive フォルダ階層（01_forms 配下）と仮想フォルダの対応を O(1) で解決するためのキャッシュ。
+var NFB_FOLDER_DRIVE_MAP_PROPERTY_KEY = "nfb.forms.folders.drivemap";
+var NFB_FOLDER_DRIVE_MAP_PROPERTY_VERSION = 1;
+
 // API/バッチ処理関連
 var NFB_DRIVE_API_BATCH_SIZE = 100;
 var NFB_LOCK_WAIT_TIMEOUT_MS = 10000;

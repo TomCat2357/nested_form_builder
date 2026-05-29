@@ -87,6 +87,7 @@ const ACTION_DEFINITIONS_ = {
   "forms_move":                 { handler: (ctx) => Forms_dispatch_("forms_move", ctx), adminOnly: true },
   "forms_folder_rename":        { handler: (ctx) => Forms_dispatch_("forms_folder_rename", ctx), adminOnly: true },
   "forms_folder_delete":        { handler: (ctx) => Forms_dispatch_("forms_folder_delete", ctx), adminOnly: true },
+  "forms_folders_backfill_physical": { handler: (ctx) => Forms_dispatch_("forms_folders_backfill_physical", ctx), adminOnly: true },
   "delete":          { handler: DeleteRecord_, requireFormId: true, requireRecordId: true },
   "list":            { handler: ListRecordsAction_, requireFormId: true },
   "get":             { handler: GetRecord_, requireFormId: true, requireRecordId: true },

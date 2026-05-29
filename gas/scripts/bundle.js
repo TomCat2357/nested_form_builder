@@ -40,6 +40,7 @@ const FILE_ORDER = [
   'formsParsing.gs',
   'formsMappingStore.gs',
   'formsFolderStore.gs',
+  'formsDriveFolders.gs', // 仮想フォルダ ↔ 物理 Drive フォルダ（01_forms 配下）のミラー
   'formsTitleHelpers.js',
   'formsStorage.gs',
   'formsCrud.gs',
