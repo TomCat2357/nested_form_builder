@@ -157,14 +157,22 @@ export async function executeQuestion(question, { forms, globalWhereExpr, global
     const f = findFormByRef(forms, s.formId, s.formName);
     return f && f.id !== s.formId ? { ...s, formId: f.id } : s;
   });
-  const defaultFormId = explicitSources.length > 0 ? explicitSources[0].formId : null;
 
   let transformedSql = sql;
-  let formSources = explicitSources.slice();
   let formIndex = null;
+  // 保存済み formSources のうち、現在のフォーム一覧に存在しない (削除済み等) ものは
+  // SQL モードでは未選択扱いで落として実行する。[フォーム名] 直接参照や自己完結 SQL は
+  // そのまま動き、削除済みフォーム参照だけが "Form not found" で全体を止めるのを防ぐ。
+  // （Question 単体エディタの buildSqlFormSources と同じ方針。Dashboard カードなど保存済み
+  //   Question をそのまま実行する経路でも、削除済みフォームでエラーにしない。）
+  // forms が渡されない呼び出し（一覧で照合できない）では従来どおり explicitSources を全件使う。
+  let formSources = explicitSources.slice();
+  let defaultFormId = explicitSources.length > 0 ? explicitSources[0].formId : null;
 
   if (forms && Array.isArray(forms)) {
     formIndex = buildFormIndex(forms);
+    formSources = explicitSources.filter((s) => s && formIndex.byId.has(s.formId));
+    defaultFormId = formSources.length > 0 ? formSources[0].formId : null;
     const columnIndexCache = new Map();
     const getColumnIndex = (formId) => {
       if (!columnIndexCache.has(formId)) {
