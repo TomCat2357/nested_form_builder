@@ -254,6 +254,11 @@ export const ensureStdFolders = async (rootUrl = "") => {
   const r = await fetchGasApi("nfbEnsureStdFolders", { rootUrl }, "標準フォルダ構成の作成に失敗しました");
   return { rootUrl: r.rootUrl || "", rootName: r.rootName || "" };
 };
+// 標準フォルダ構成内のファイル目録・リンク関係を Markdown レポート化（LLM へのリンク切れ診断用）。
+export const buildLinkReport = async ({ includeEntityJson = false, includeWebhookText = false } = {}) => {
+  const r = await fetchGasApi("nfbBuildLinkReport", { includeEntityJson, includeWebhookText }, "レポートの作成に失敗しました");
+  return { markdown: r.markdown || "", stats: r.stats || {} };
+};
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
 export const saveFileToDrive = ({ filename, base64, mimeType }) => fetchGasApi("nfbSaveFileToDrive", { filename, base64, mimeType }, "Driveへの保存に失敗しました");
 const isSingleRecordPrintPayload = (payload) => {

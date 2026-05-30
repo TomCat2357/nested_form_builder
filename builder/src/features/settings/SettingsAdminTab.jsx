@@ -18,6 +18,7 @@ import {
   getStdFolderRoot,
   ensureStdFolders,
   backfillPhysicalFolders,
+  buildLinkReport,
 } from "../../services/gasClient.js";
 import AdminCopyStructureDialog from "../../pages/admin/AdminCopyStructureDialog.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
@@ -129,11 +130,15 @@ export default function SettingsAdminTab() {
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
 
-  // ルートフォルダ診断 / 標準フォルダ作成
+  // ルートフォルダ診断 / 標準フォルダ作成（作成と同時に仮想→物理フォルダ反映も実行）
   const [rootInfo, setRootInfo] = useState(null);   // { resolved, rootUrl, rootName, error }
   const [rootUrlInput, setRootUrlInput] = useState("");
   const [ensureLoading, setEnsureLoading] = useState(false);
-  const [backfillLoading, setBackfillLoading] = useState(false);
+
+  // 構成レポート（リンク診断）
+  const [reportLoading, setReportLoading] = useState(false);
+  const [reportIncludeJson, setReportIncludeJson] = useState(false);
+  const [reportIncludeWebhook, setReportIncludeWebhook] = useState(false);
 
   // システムごとコピー
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
@@ -291,15 +296,24 @@ export default function SettingsAdminTab() {
     }
   };
 
+  // 標準フォルダ構成を作成し、続けて仮想フォルダを物理フォルダへ反映する（一連の「整える」操作）。
+  // フォームが無ければ反映は 0 件で無害に終わる。冪等。
   const handleEnsureFolders = async () => {
     if (!canManageAdminSettings) return;
     setEnsureLoading(true);
     try {
       const { rootName } = await ensureStdFolders(rootUrlInput.trim());
+      const backfill = await backfillPhysicalFolders();
       const fresh = await getStdFolderRoot();
       setRootInfo(fresh);
       setRootUrlInput("");
-      showAlert(`「${rootName}」配下に標準フォルダ構成（01_forms〜08_documents）を作成しました。`);
+      const lines = [`「${rootName}」配下に標準フォルダ構成（01_forms〜08_documents）を作成しました。`];
+      if (backfill.skipped) {
+        lines.push(`仮想フォルダの物理反映はスキップしました（${backfill.reason || "標準フォルダが無効です"}）。`);
+      } else {
+        lines.push(`仮想フォルダ→物理フォルダ反映: フォルダ ${backfill.folders}件 / 移動 ${backfill.movedFiles}件`);
+      }
+      showAlert(lines.join("\n"));
     } catch (error) {
       console.error("[SettingsAdminTab] ensureStdFolders failed", error);
       showAlert(error?.message || "標準フォルダ構成の作成に失敗しました");
@@ -308,21 +322,23 @@ export default function SettingsAdminTab() {
     }
   };
 
-  const handleBackfillPhysical = async () => {
+  const handleBuildReport = async () => {
     if (!canManageAdminSettings) return;
-    setBackfillLoading(true);
+    setReportLoading(true);
     try {
-      const { skipped, reason, folders, movedFiles } = await backfillPhysicalFolders();
-      if (skipped) {
-        showAlert(`物理フォルダへの反映をスキップしました（${reason || "標準フォルダが無効です"}）。`);
-      } else {
-        showAlert(`仮想フォルダを物理 Drive フォルダ（01_forms 配下）へ反映しました。\nフォルダ: ${folders}件 / 移動したファイル: ${movedFiles}件`);
-      }
+      const { markdown } = await buildLinkReport({
+        includeEntityJson: reportIncludeJson,
+        includeWebhookText: reportIncludeWebhook,
+      });
+      triggerBlobDownload(
+        new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
+        "nfb-structure-report.md",
+      );
     } catch (error) {
-      console.error("[SettingsAdminTab] backfillPhysicalFolders failed", error);
-      showAlert(error?.message || "物理フォルダへの反映に失敗しました");
+      console.error("[SettingsAdminTab] buildLinkReport failed", error);
+      showAlert(error?.message || "レポートの作成に失敗しました");
     } finally {
-      setBackfillLoading(false);
+      setReportLoading(false);
     }
   };
 
@@ -530,14 +546,11 @@ export default function SettingsAdminTab() {
           <button type="button" className="nf-btn nf-nowrap" onClick={handleEnsureFolders} disabled={!canManageAdminSettings || ensureLoading}>
             {ensureLoading ? "作成中..." : "標準フォルダ構成を今すぐ作成"}
           </button>
-          <button type="button" className="nf-btn nf-nowrap" onClick={handleBackfillPhysical} disabled={!canManageAdminSettings || backfillLoading}>
-            {backfillLoading ? "反映中..." : "仮想フォルダを物理フォルダへ反映"}
-          </button>
         </div>
         <p className="nf-mt-6 nf-mb-24 nf-text-11 nf-text-muted">
           このルート配下に <code>01_forms</code>〜<code>08_documents</code> を作成します（不足分のみ補完）。中身の複製は行いません。
-          「物理フォルダへ反映」は、これまで <code>01_forms</code> 直下にフラット保存されていたフォームを、仮想フォルダと同じ階層の
-          物理フォルダ（<code>01_forms/フォルダ名/…</code>）へ移動します（移行用・冪等）。
+          作成と同時に、これまで <code>01_forms</code> 直下にフラット保存されていたフォームを、仮想フォルダと同じ階層の
+          物理フォルダ（<code>01_forms/フォルダ名/…</code>）へ移動して反映します（移行用・冪等。フォームが無ければ作成のみ）。
         </p>
 
         {/* 機能2: システム一式を別ルートへ複製する */}
@@ -547,9 +560,43 @@ export default function SettingsAdminTab() {
             システムごと別ルートへコピー
           </button>
         </div>
-        <p className="nf-mt-6 nf-text-11 nf-text-muted">
+        <p className="nf-mt-6 nf-mb-24 nf-text-11 nf-text-muted">
           appsscript 本体と標準フォルダ構成の中身を<strong>別のルート</strong>へ複製し、フォーム→スプレッドシート等のリンクを
           コピー後の URL で再構成します。コピー先スクリプトの Web アプリは手動で再デプロイしてください。
+        </p>
+
+        {/* 機能3: 構成の中身とリンク関係をレポート化（LLM へのリンク切れ診断用） */}
+        <div className="nf-fw-600 nf-text-13 nf-mb-6">③ 構成レポート（リンク診断）</div>
+        <p className="nf-mb-12 nf-text-12 nf-text-muted">
+          標準フォルダ構成内（子フォルダ含む）にどんなファイルがあり、どのファイルが何をリンクしているかを
+          Markdown レポートとして書き出します。リンク切れの診断を LLM に依頼する用途を想定しています。
+        </p>
+        <label className="nf-row nf-gap-8 nf-mb-6" style={{ alignItems: "center", cursor: reportLoading ? "default" : "pointer" }}>
+          <input
+            type="checkbox"
+            checked={reportIncludeJson}
+            disabled={!canManageAdminSettings || reportLoading}
+            onChange={(event) => setReportIncludeJson(event.target.checked)}
+          />
+          <span className="nf-text-13">フォーム・Question・Dashboard の JSON を含める</span>
+        </label>
+        <label className="nf-row nf-gap-8 nf-mb-12" style={{ alignItems: "center", cursor: reportLoading ? "default" : "pointer" }}>
+          <input
+            type="checkbox"
+            checked={reportIncludeWebhook}
+            disabled={!canManageAdminSettings || reportLoading}
+            onChange={(event) => setReportIncludeWebhook(event.target.checked)}
+          />
+          <span className="nf-text-13">Webhook（埋め込み設定＋<code>07_webhooks</code> のファイル）をテキストで含める</span>
+        </label>
+        <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
+          <button type="button" className="nf-btn nf-nowrap" onClick={handleBuildReport} disabled={!canManageAdminSettings || reportLoading}>
+            {reportLoading ? "作成中..." : "レポートを作成（ダウンロード）"}
+          </button>
+        </div>
+        <p className="nf-mt-6 nf-text-11 nf-text-muted">
+          <code>nfb-structure-report.md</code> をダウンロードします。リンク切れ判定は標準フォルダ構成内の照合のみ（外部リンクの生死は未検査）。
+          フォーム数が多いと GAS の実行時間（6 分）に注意してください。
         </p>
       </div>
 

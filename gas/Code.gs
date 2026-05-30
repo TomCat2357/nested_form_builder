@@ -58,6 +58,7 @@ const ACTION_DEFINITIONS_ = {
   "std_folders_import_map":   { handler: (ctx) => StdFolders_importMappingFromSource_(ctx.raw || {}), adminOnly: true },
   "std_folders_get_root":     { handler: () => StdFolders_getRootInfo_(), adminOnly: true },
   "std_folders_ensure":       { handler: (ctx) => StdFolders_ensureFolders_(ctx.raw || {}), adminOnly: true },
+  "std_folders_link_report":  { handler: (ctx) => StdFolders_buildLinkReport_(ctx.raw || {}), adminOnly: true },
   // doPost HTTP 用フォームアクション（従来契約）。list/get は nfb* 経由と同じくゲートなし。
   "forms_list":      { handler: FormsApi_List_ },
   "forms_get":       { handler: FormsApi_Get_ },

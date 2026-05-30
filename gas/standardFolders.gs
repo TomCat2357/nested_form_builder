@@ -1175,6 +1175,412 @@ function StdFolders_isJsonFile_(file) {
 }
 
 // ---------------------------------------------
+// (2.4) 構成リンク診断レポート
+// 標準フォルダ構成内（子フォルダ含む）のファイル目録とリンク関係を Markdown で書き出す。
+// LLM にリンク切れ（フォーム→スプレッドシート / Question→フォーム / Dashboard→Question 等）
+// を診断してもらう用途。リンク切れ判定は「構成内の照合のみ」（getFileById での実在検査はしない）。
+// ---------------------------------------------
+
+// URL/ID 文字列から Drive の id を Drive へ問い合わせずに（正規表現のみで）抽出する。
+// 戻り: { id, kind } kind は "file" | "folder" | "unknown" | "none"。
+function StdFolders_extractDriveIdNoFetch_(raw) {
+  var s = String(raw || "").trim();
+  if (!s) return { id: "", kind: "none" };
+  var m;
+  if ((m = s.match(/\/folders\/([a-zA-Z0-9_-]+)/))) return { id: m[1], kind: "folder" };
+  if ((m = s.match(/\/file\/d\/([a-zA-Z0-9_-]+)/))) return { id: m[1], kind: "file" };
+  if ((m = s.match(/docs\.google\.com\/[^/]+\/(?:u\/\d+\/)?d\/([a-zA-Z0-9_-]+)/))) return { id: m[1], kind: "file" };
+  if ((m = s.match(/[?&]id=([a-zA-Z0-9_-]+)/))) return { id: m[1], kind: "unknown" };
+  if (/^[a-zA-Z0-9_-]{10,}$/.test(s)) return { id: s, kind: "unknown" };
+  return { id: "", kind: "none" };
+}
+
+// フォルダ配下の全ファイルを（サブフォルダ含め）再帰収集する。Drive ファイルの実在検査はしない。
+// out へ { relPath, name, fileId, mimeType, url, file } を push し、fileIdSet/folderIdSet を埋める。
+// guard.checkTime() が真になったら guard.truncated を立てて打ち切る（GAS 6 分制限の安全弁）。
+function StdFolders_collectFilesRecursive_(folder, relPrefix, out, fileIdSet, folderIdSet, guard) {
+  if (guard && guard.truncated) return;
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    if (guard && guard.checkTime()) { guard.truncated = true; return; }
+    var file = files.next();
+    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+    var rec = {
+      relPath: relPrefix + file.getName(),
+      name: file.getName(),
+      fileId: file.getId(),
+      mimeType: file.getMimeType(),
+      url: file.getUrl(),
+      file: file
+    };
+    out.push(rec);
+    fileIdSet[rec.fileId] = true;
+  }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    if (guard && guard.checkTime()) { guard.truncated = true; return; }
+    var sub = subs.next();
+    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
+    if (folderIdSet) folderIdSet[sub.getId()] = true;
+    StdFolders_collectFilesRecursive_(sub, relPrefix + sub.getName() + "/", out, fileIdSet, folderIdSet, guard);
+  }
+}
+
+// エンティティ相互参照（formId / questionId）の状態を構成内照合のみで判定する。
+function StdFolders_reportRefStatus_(id, presentSet, mapSet) {
+  if (!id) return "未設定";
+  if (presentSet[id]) return "OK（構成内）";
+  if (mapSet && mapSet[id]) return "要確認（マッピング有・構成内に実体なし）";
+  return "未解決（リンク切れの可能性）";
+}
+
+// Drive ファイル/フォルダ参照（スプレッドシート等）の状態を構成内照合のみで判定する。
+function StdFolders_reportFileLinkStatus_(id, presentSet) {
+  if (!id) return "未設定";
+  if (presentSet[id]) return "構成内";
+  return "構成外/外部（未検査）";
+}
+
+// その状態がリンク切れ候補かどうか。
+function StdFolders_isBrokenStatus_(status) {
+  return status === "未解決（リンク切れの可能性）"
+    || status === "要確認（マッピング有・構成内に実体なし）"
+    || status === "構成外/外部（未検査）";
+}
+
+// 表示用の安全なコードスパン文字列（バッククォートのみ無害化）。
+function StdFolders_mdCode_(s) {
+  return "`" + String(s == null ? "" : s).replace(/`/g, "'") + "`";
+}
+
+// 標準フォルダ構成内のファイル目録・リンク関係を Markdown レポートにして返す。
+function StdFolders_buildLinkReport_(payload) {
+  return nfbSafeCall_(function() {
+    var includeJson = !!(payload && (payload.includeEntityJson === true || payload.includeEntityJson === "true"));
+    var includeWebhook = !!(payload && (payload.includeWebhookText === true || payload.includeWebhookText === "true"));
+
+    var root = StdFolders_resolveRootFolder_(null);
+    var startMs = (new Date()).getTime();
+    var guard = { truncated: false, checkTime: function() { return ((new Date()).getTime() - startMs) > 300000; } };
+
+    // 1) 8 標準フォルダを再帰走査してファイル目録と存在 id 集合を構築。
+    var presentFileIds = {};
+    var presentFolderIds = {};
+    var inventory = {};   // key -> [rec] または null（未作成）
+    var i;
+    for (i = 0; i < NFB_STD_FOLDER_ORDER.length; i++) {
+      var key = NFB_STD_FOLDER_ORDER[i];
+      var name = NFB_STD_FOLDER_NAMES[key];
+      var iter = root.getFoldersByName(name);
+      if (!iter.hasNext()) { inventory[key] = null; continue; }
+      var sub = iter.next();
+      presentFolderIds[sub.getId()] = true;
+      var list = [];
+      StdFolders_collectFilesRecursive_(sub, "", list, presentFileIds, presentFolderIds, guard);
+      inventory[key] = list;
+    }
+
+    // 2) マッピング読込（id ＝ fileId）。
+    var formMap = Forms_getMapping_();
+    var qMap = Analytics_getMapping_("questions");
+    var dMap = Analytics_getMapping_("dashboards");
+    var formMapSet = {}; for (var fk in formMap) { if (formMap.hasOwnProperty(fk)) formMapSet[fk] = true; }
+    var qMapSet = {};    for (var qk in qMap)    { if (qMap.hasOwnProperty(qk))    qMapSet[qk]    = true; }
+    var dMapSet = {};    for (var dk in dMap)    { if (dMap.hasOwnProperty(dk))    dMapSet[dk]    = true; }
+
+    // 構成内に実体のあるフォーム / Question の fileId 集合（JSON ファイルのみ）。
+    var presentFormIds = {};
+    var presentQuestionIds = {};
+    (inventory.forms || []).forEach(function(rec) { if (StdFolders_isJsonFile_(rec.file)) presentFormIds[rec.fileId] = true; });
+    (inventory.questions || []).forEach(function(rec) { if (StdFolders_isJsonFile_(rec.file)) presentQuestionIds[rec.fileId] = true; });
+
+    var broken = [];   // { kind, owner, detail, status }
+
+    // 3) フォーム JSON を解析してリンク抽出。
+    var forms = [];
+    var webhookSettings = [];   // { formName, fieldLabel, url, adminOnly }
+    (inventory.forms || []).forEach(function(rec) {
+      if (!StdFolders_isJsonFile_(rec.file)) return;
+      if (guard.checkTime()) { guard.truncated = true; return; }
+      var json;
+      try { json = JSON.parse(rec.file.getBlob().getDataAsString()); }
+      catch (e) { forms.push({ name: rec.relPath, fileId: rec.fileId, relPath: rec.relPath, links: [], parseError: true }); return; }
+      var displayName = Nfb_nameFromFile_(rec.file) || rec.name;
+      var links = [];
+
+      var ssRaw = json.settings && json.settings.spreadsheetId ? json.settings.spreadsheetId : "";
+      if (ssRaw) {
+        var ssId = Model_normalizeSpreadsheetId_(ssRaw) || ssRaw;
+        var ssStatus = StdFolders_reportFileLinkStatus_(ssId, presentFileIds);
+        links.push({ label: "スプレッドシート", raw: ssRaw, id: ssId, status: ssStatus });
+        if (StdFolders_isBrokenStatus_(ssStatus)) broken.push({ kind: "Form", owner: displayName, detail: "スプレッドシート " + ssId, status: ssStatus });
+      }
+
+      StdFolders_walkFields_(json.schema, function(field) {
+        var fieldLabel = field && field.label ? field.label : (field && field.id ? field.id : "(無題)");
+        if (field.printTemplateAction && field.printTemplateAction.templateUrl) {
+          var t = StdFolders_extractDriveIdNoFetch_(field.printTemplateAction.templateUrl);
+          var ts = StdFolders_reportFileLinkStatus_(t.id, presentFileIds);
+          links.push({ label: "印刷テンプレート [" + fieldLabel + "]", raw: field.printTemplateAction.templateUrl, id: t.id, status: ts });
+          if (StdFolders_isBrokenStatus_(ts)) broken.push({ kind: "Form", owner: displayName, detail: "印刷テンプレート [" + fieldLabel + "]", status: ts });
+        }
+        if (typeof field.driveRootFolderUrl === "string" && field.driveRootFolderUrl) {
+          var u = StdFolders_extractDriveIdNoFetch_(field.driveRootFolderUrl);
+          var us = StdFolders_reportFileLinkStatus_(u.id, presentFolderIds);
+          links.push({ label: "アップロード先フォルダ [" + fieldLabel + "]", raw: field.driveRootFolderUrl, id: u.id, status: us });
+          if (StdFolders_isBrokenStatus_(us)) broken.push({ kind: "Form", owner: displayName, detail: "アップロード先フォルダ [" + fieldLabel + "]", status: us });
+        }
+        if (field.webhookAction && typeof field.webhookAction.url === "string" && field.webhookAction.url) {
+          links.push({ label: "webhook [" + fieldLabel + "]", raw: field.webhookAction.url, id: "", status: "外部 webhook（未検査）" });
+          webhookSettings.push({ formName: displayName, fieldLabel: fieldLabel, url: field.webhookAction.url, adminOnly: !!field.webhookAction.adminOnly });
+        }
+      });
+
+      forms.push({ name: displayName, fileId: rec.fileId, relPath: rec.relPath, links: links, json: includeJson ? JSON.stringify(json, null, 2) : null });
+    });
+
+    // 4) Question JSON を解析して formId 参照を抽出。
+    var questions = [];
+    (inventory.questions || []).forEach(function(rec) {
+      if (!StdFolders_isJsonFile_(rec.file)) return;
+      if (guard.checkTime()) { guard.truncated = true; return; }
+      var json;
+      try { json = JSON.parse(rec.file.getBlob().getDataAsString()); }
+      catch (e) { questions.push({ name: rec.relPath, fileId: rec.fileId, relPath: rec.relPath, refs: [], parseError: true }); return; }
+      var displayName = Nfb_nameFromFile_(rec.file) || rec.name;
+      var refs = [];
+      var query = json && json.query;
+      if (query && typeof query === "object") {
+        if (query.gui && query.gui.formId) {
+          var st1 = StdFolders_reportRefStatus_(query.gui.formId, presentFormIds, formMapSet);
+          refs.push({ label: "query.gui.formId", id: query.gui.formId, status: st1 });
+          if (StdFolders_isBrokenStatus_(st1)) broken.push({ kind: "Question", owner: displayName, detail: "formId " + query.gui.formId, status: st1 });
+        }
+        if (Array.isArray(query.formSources)) {
+          for (var s = 0; s < query.formSources.length; s++) {
+            var src = query.formSources[s];
+            if (src && src.formId) {
+              var st2 = StdFolders_reportRefStatus_(src.formId, presentFormIds, formMapSet);
+              refs.push({ label: "formSources[" + s + "].formId", id: src.formId, status: st2 });
+              if (StdFolders_isBrokenStatus_(st2)) broken.push({ kind: "Question", owner: displayName, detail: "formSources[" + s + "].formId " + src.formId, status: st2 });
+            }
+          }
+        }
+      }
+      questions.push({ name: displayName, fileId: rec.fileId, relPath: rec.relPath, refs: refs, json: includeJson ? JSON.stringify(json, null, 2) : null });
+    });
+
+    // 5) Dashboard JSON を解析して questionId 参照を抽出。
+    var dashboards = [];
+    (inventory.dashboards || []).forEach(function(rec) {
+      if (!StdFolders_isJsonFile_(rec.file)) return;
+      if (guard.checkTime()) { guard.truncated = true; return; }
+      var json;
+      try { json = JSON.parse(rec.file.getBlob().getDataAsString()); }
+      catch (e) { dashboards.push({ name: rec.relPath, fileId: rec.fileId, relPath: rec.relPath, refs: [], parseError: true }); return; }
+      var displayName = Nfb_nameFromFile_(rec.file) || rec.name;
+      var refs = [];
+      if (Array.isArray(json.cards)) {
+        for (var c = 0; c < json.cards.length; c++) {
+          var card = json.cards[c];
+          if (card && card.questionId) {
+            var st3 = StdFolders_reportRefStatus_(card.questionId, presentQuestionIds, qMapSet);
+            refs.push({ label: "cards[" + c + "].questionId", id: card.questionId, qname: card.questionName || "", status: st3 });
+            if (StdFolders_isBrokenStatus_(st3)) broken.push({ kind: "Dashboard", owner: displayName, detail: "cards[" + c + "].questionId " + card.questionId + (card.questionName ? " (name: " + card.questionName + ")" : ""), status: st3 });
+          }
+        }
+      }
+      dashboards.push({ name: displayName, fileId: rec.fileId, relPath: rec.relPath, refs: refs, json: includeJson ? JSON.stringify(json, null, 2) : null });
+    });
+
+    // 6) Markdown 組み立て。
+    var md = StdFolders_renderLinkReportMarkdown_({
+      root: root, inventory: inventory, forms: forms, questions: questions, dashboards: dashboards,
+      broken: broken, webhookSettings: webhookSettings, includeJson: includeJson, includeWebhook: includeWebhook,
+      truncated: guard.truncated
+    });
+
+    var totalFiles = 0;
+    for (var ik in inventory) { if (inventory.hasOwnProperty(ik) && inventory[ik]) totalFiles += inventory[ik].length; }
+    return {
+      ok: true,
+      markdown: md,
+      stats: {
+        files: totalFiles,
+        forms: forms.length,
+        questions: questions.length,
+        dashboards: dashboards.length,
+        brokenCandidates: broken.length,
+        truncated: guard.truncated
+      }
+    };
+  });
+}
+
+// レポート Markdown を組み立てる（純粋な文字列整形）。
+function StdFolders_renderLinkReportMarkdown_(ctx) {
+  var md = [];
+  var totalFiles = 0;
+  for (var ik in ctx.inventory) { if (ctx.inventory.hasOwnProperty(ik) && ctx.inventory[ik]) totalFiles += ctx.inventory[ik].length; }
+
+  md.push("# Nested Form Builder 構成レポート");
+  md.push("");
+  md.push("- ルートフォルダ: " + ctx.root.getName() + "（" + ctx.root.getUrl() + "）");
+  md.push("- 生成時刻: " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss"));
+  md.push("- 集計: ファイル " + totalFiles + " 件 / フォーム " + ctx.forms.length + " / Question " + ctx.questions.length + " / Dashboard " + ctx.dashboards.length);
+  md.push("- リンク切れ候補: " + ctx.broken.length + " 件");
+  md.push("- リンク切れ判定: 標準フォルダ構成内の照合のみ（外部リンクの生死は未検査）");
+  md.push("- 実行打ち切り: " + (ctx.truncated ? "あり（実行時間の安全弁により一部のファイルを未処理。再実行してください）" : "なし"));
+  md.push("");
+
+  md.push("## ⚠ リンク切れ候補");
+  if (!ctx.broken.length) {
+    md.push("");
+    md.push("構成内の照合では検出されませんでした。");
+  } else {
+    md.push("");
+    ctx.broken.forEach(function(b) {
+      md.push("- [" + b.kind + "] " + b.owner + " → " + b.detail + " : **" + b.status + "**");
+    });
+  }
+  md.push("");
+
+  md.push("## フォルダ別ファイル目録");
+  for (var i = 0; i < NFB_STD_FOLDER_ORDER.length; i++) {
+    var key = NFB_STD_FOLDER_ORDER[i];
+    var fname = NFB_STD_FOLDER_NAMES[key];
+    var list = ctx.inventory[key];
+    md.push("");
+    if (list === null) {
+      md.push("### " + fname + "（未作成）");
+      continue;
+    }
+    md.push("### " + fname + "（" + list.length + " 件）");
+    if (!list.length) { md.push("- (空)"); continue; }
+    list.forEach(function(rec) {
+      md.push("- " + StdFolders_mdCode_(rec.relPath) + " | type: " + rec.mimeType + " | fileId: " + StdFolders_mdCode_(rec.fileId) + " | " + rec.url);
+    });
+  }
+  md.push("");
+
+  md.push("## リンク関係");
+  md.push("");
+  md.push("### フォーム");
+  if (!ctx.forms.length) md.push("- (なし)");
+  ctx.forms.forEach(function(f) {
+    md.push("");
+    md.push("#### " + f.name + "（fileId: " + f.fileId + "）");
+    if (f.parseError) { md.push("- ⚠ JSON 解析に失敗しました: " + StdFolders_mdCode_(f.relPath)); return; }
+    if (!f.links.length) { md.push("- (リンクなし)"); return; }
+    f.links.forEach(function(l) {
+      md.push("- " + l.label + ": " + StdFolders_mdCode_(l.raw) + (l.id ? "（id: " + l.id + "）" : "") + " → " + l.status);
+    });
+  });
+  md.push("");
+  md.push("### Question");
+  if (!ctx.questions.length) md.push("- (なし)");
+  ctx.questions.forEach(function(q) {
+    md.push("");
+    md.push("#### " + q.name + "（fileId: " + q.fileId + "）");
+    if (q.parseError) { md.push("- ⚠ JSON 解析に失敗しました: " + StdFolders_mdCode_(q.relPath)); return; }
+    if (!q.refs.length) { md.push("- (参照なし)"); return; }
+    q.refs.forEach(function(r) {
+      md.push("- " + r.label + ": " + StdFolders_mdCode_(r.id) + " → " + r.status);
+    });
+  });
+  md.push("");
+  md.push("### Dashboard");
+  if (!ctx.dashboards.length) md.push("- (なし)");
+  ctx.dashboards.forEach(function(d) {
+    md.push("");
+    md.push("#### " + d.name + "（fileId: " + d.fileId + "）");
+    if (d.parseError) { md.push("- ⚠ JSON 解析に失敗しました: " + StdFolders_mdCode_(d.relPath)); return; }
+    if (!d.refs.length) { md.push("- (参照なし)"); return; }
+    d.refs.forEach(function(r) {
+      md.push("- " + r.label + ": " + StdFolders_mdCode_(r.id) + (r.qname ? "（name: " + r.qname + "）" : "") + " → " + r.status);
+    });
+  });
+  md.push("");
+
+  if (ctx.includeWebhook) {
+    md.push("## Webhook");
+    md.push("");
+    md.push("### フォーム埋め込み設定（webhookAction）");
+    if (!ctx.webhookSettings.length) {
+      md.push("- (なし)");
+    } else {
+      ctx.webhookSettings.forEach(function(w) {
+        md.push("- Form " + w.formName + " / field \"" + w.fieldLabel + "\": url=" + StdFolders_mdCode_(w.url) + " / adminOnly=" + w.adminOnly);
+      });
+    }
+    md.push("");
+    md.push("### 07_webhooks フォルダのファイル");
+    var whList = ctx.inventory.webhooks;
+    if (whList === null) {
+      md.push("- (07_webhooks 未作成)");
+    } else if (!whList.length) {
+      md.push("- (ファイルなし)");
+    } else {
+      whList.forEach(function(rec) {
+        md.push("");
+        md.push("#### " + StdFolders_mdCode_(rec.relPath) + "（fileId: " + rec.fileId + " / type: " + rec.mimeType + "）");
+        var text = null;
+        var mime = String(rec.mimeType || "");
+        var textual = /^text\//.test(mime) || mime === "application/json" || mime === "application/javascript" || mime === "application/xml";
+        if (textual) {
+          try { text = rec.file.getBlob().getDataAsString(); } catch (e) { text = null; }
+        }
+        if (text === null) {
+          md.push("（テキスト化非対応のファイル形式のため本文は省略。URL: " + rec.url + "）");
+        } else {
+          md.push("```");
+          md.push(text);
+          md.push("```");
+        }
+      });
+    }
+    md.push("");
+  }
+
+  if (ctx.includeJson) {
+    md.push("## エンティティ JSON");
+    md.push("");
+    md.push("### フォーム");
+    ctx.forms.forEach(function(f) {
+      if (!f.json) return;
+      md.push("");
+      md.push("#### " + f.name + "（fileId: " + f.fileId + "）");
+      md.push("```json");
+      md.push(f.json);
+      md.push("```");
+    });
+    md.push("");
+    md.push("### Question");
+    ctx.questions.forEach(function(q) {
+      if (!q.json) return;
+      md.push("");
+      md.push("#### " + q.name + "（fileId: " + q.fileId + "）");
+      md.push("```json");
+      md.push(q.json);
+      md.push("```");
+    });
+    md.push("");
+    md.push("### Dashboard");
+    ctx.dashboards.forEach(function(d) {
+      if (!d.json) return;
+      md.push("");
+      md.push("#### " + d.name + "（fileId: " + d.fileId + "）");
+      md.push("```json");
+      md.push(d.json);
+      md.push("```");
+    });
+    md.push("");
+  }
+
+  return md.join("\n");
+}
+
+// ---------------------------------------------
 // 公開 API（google.script.run 用）— executeAction_ 経由で adminOnly ゲートを通す。
 // ---------------------------------------------
 
@@ -1184,6 +1590,7 @@ function nfbExportMapping(payload)           { return Nfb_runScriptAction_("std_
 function nfbImportMapping(payload)           { return Nfb_runScriptAction_("std_folders_import_map", payload || {}); }
 function nfbGetStdFolderRoot(payload)        { return Nfb_runScriptAction_("std_folders_get_root", payload || {}); }
 function nfbEnsureStdFolders(payload)        { return Nfb_runScriptAction_("std_folders_ensure", payload || {}); }
+function nfbBuildLinkReport(payload)         { return Nfb_runScriptAction_("std_folders_link_report", payload || {}); }
 
 // 現在のルートフォルダ情報を返す（診断用）。未解決でも例外にせず resolved:false を返す。
 function StdFolders_getRootInfo_() {
