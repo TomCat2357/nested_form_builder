@@ -9,7 +9,7 @@ import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { listQuestions, saveDashboard, resolveDashboardLinks } from "../../features/analytics/analyticsStore.js";
 import { analyticsGasClient } from "../../features/analytics/analyticsGasClient.js";
-import { genDashboardId, genCardId, genFilterId } from "../../core/ids.js";
+import { genCardId, genFilterId } from "../../core/ids.js";
 import {
   createEmptyV2,
   isV2,
@@ -359,7 +359,8 @@ export default function DashboardEditorPage() {
 
     const payload = {
       ...dashboard,
-      id: dashboard.id || dashboardId || genDashboardId(),
+      // id ＝ Drive fileId。新規はクライアントで採番せず、保存後に GAS が返す fileId を採用する。
+      id: dashboard.id || dashboardId || undefined,
       schemaVersion: 2,
       name: dashboard.name.trim(),
       description: (dashboard.description || "").trim(),

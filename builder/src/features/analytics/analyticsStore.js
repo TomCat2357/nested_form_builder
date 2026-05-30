@@ -31,6 +31,19 @@ export { getFormColumns, getFormViewColumns };
 
 export const ERR_NO_SPREADSHEET = "選択したフォームにスプレッドシートが紐付いていません。フォーム設定で spreadsheetId を指定してください。";
 
+// フォームの表示名（＝Drive ファイル名）。
+const formTitleOf = (f) => (f && f.settings && f.settings.formTitle) || (f && f.name) || "";
+
+// クエスチョンのフォーム参照を解決する。id（＝Drive fileId）で見つからないときは、
+// 保持している formName で標準フォルダ内のフォーム名に一致するものへフォールバックする。
+// （コピー/マイグレーションで fileId が変わったケースの自動再リンク。）
+function findFormByRef(forms, formId, formName) {
+  if (!Array.isArray(forms)) return null;
+  let f = formId ? forms.find((x) => x.id === formId) : null;
+  if (!f && formName) f = forms.find((x) => formTitleOf(x) === formName);
+  return f || null;
+}
+
 // ---- AlaSQL テーブル登録 / Question 実行 ----
 
 /**
@@ -138,7 +151,12 @@ export async function executeQuestion(question, { forms, globalWhereExpr, global
     return { ok: false, error: "SQL が入力されていません" };
   }
 
-  const explicitSources = Array.isArray(question.query.formSources) ? question.query.formSources : [];
+  const rawSources = Array.isArray(question.query.formSources) ? question.query.formSources : [];
+  // id（fileId）で見つからない formSources は formName で名前フォールバック解決し、現 fileId に揃える。
+  const explicitSources = rawSources.map((s) => {
+    const f = findFormByRef(forms, s.formId, s.formName);
+    return f && f.id !== s.formId ? { ...s, formId: f.id } : s;
+  });
   const defaultFormId = explicitSources.length > 0 ? explicitSources[0].formId : null;
 
   let transformedSql = sql;
@@ -226,7 +244,8 @@ async function executeGuiQuestion(question, { forms, globalWhereExpr, globalWher
   if (!gui || !gui.formId) {
     return { ok: false, error: "GUI クエリの定義が不正です" };
   }
-  const form = Array.isArray(forms) ? forms.find((f) => f.id === gui.formId) : null;
+  // id（fileId）で見つからなければ formName で名前フォールバック解決する。
+  const form = findFormByRef(forms, gui.formId, gui.formName);
   if (!form) {
     return { ok: false, error: "GUI クエリの対象フォームが見つかりません" };
   }
@@ -234,12 +253,17 @@ async function executeGuiQuestion(question, { forms, globalWhereExpr, globalWher
     return { ok: false, error: ERR_NO_SPREADSHEET };
   }
 
+  // 名前フォールバックで別 fileId のフォームに解決された場合に備え、実行用 gui の formId を
+  // 解決後フォームの id（＝fileId）に揃える。これで compileStages が生成する SQL の参照テーブル
+  // alias（data_<id>）と、下で登録するテーブル alias（form.id 由来）が一致する。
+  const resolvedGui = form.id === gui.formId ? gui : { ...gui, formId: form.id };
+
   // gui.variant ("data" | "view") は GUI 側で選んだデータソース形式。
   // 未指定は data (スプシ形式、後方互換)。
-  const variant = gui.variant === "view" ? "view" : "data";
+  const variant = resolvedGui.variant === "view" ? "view" : "data";
   const formColumns = variant === "view" ? getFormViewColumns(form) : getFormColumns(form);
 
-  const compiled = compileStages(gui, { formColumns });
+  const compiled = compileStages(resolvedGui, { formColumns });
   if (!compiled.ok) {
     return { ok: false, error: compiled.errors.join(" / ") };
   }

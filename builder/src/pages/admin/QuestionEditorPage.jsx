@@ -9,7 +9,6 @@ import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { getSheetConfig } from "../../app/state/dataStoreHelpers.js";
 import { executeQuestion, saveQuestion, getQuestionById, getFormColumns, getFormViewColumns, ERR_NO_SPREADSHEET } from "../../features/analytics/analyticsStore.js";
-import { genQuestionId } from "../../core/ids.js";
 import { buildColumnIndex, resolveColumnRef } from "../../features/analytics/utils/columnIdentifierResolver.js";
 import { compileStages } from "../../features/analytics/utils/compileStages.js";
 import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder.jsx";
@@ -270,10 +269,16 @@ export default function QuestionEditorPage() {
   const handleSave = useCallback(async () => {
     if (!name.trim()) { setSaveError("Question 名を入力してください。"); return; }
 
+    // id 解決失敗時の名前フォールバック用に、リンク先フォーム名（＝Drive ファイル名）を併せて保持する。
+    const formTitleById = (fid) => {
+      const f = forms.find((x) => x.id === fid);
+      return f ? ((f.settings && f.settings.formTitle) || f.name || "") : "";
+    };
+
     let query;
     if (mode === "gui") {
       if (!gui.formId) { setSaveError("フォームを選択してください。"); return; }
-      query = { mode: "gui", gui };
+      query = { mode: "gui", gui: { ...gui, formName: formTitleById(gui.formId) } };
     } else {
       const sources = buildSqlFormSources();
       if (sources.error) {
@@ -282,7 +287,7 @@ export default function QuestionEditorPage() {
       }
       query = {
         mode: "sql",
-        formSources: sources.formSources,
+        formSources: (sources.formSources || []).map((s) => ({ ...s, formName: formTitleById(s.formId) })),
         sql,
       };
     }
@@ -292,7 +297,8 @@ export default function QuestionEditorPage() {
 
     const yFieldsArr = yFields.split(",").map((s) => s.trim()).filter(Boolean);
     const question = {
-      id: questionId || genQuestionId(),
+      // id ＝ Drive fileId。新規はクライアントで採番せず、保存後に GAS が返す fileId を採用する。
+      id: questionId || undefined,
       name: name.trim(),
       folder: normalizeFolderPath(folder),
       schemaVersion: 1,
