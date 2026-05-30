@@ -129,28 +129,54 @@ function StdFolders_ensureAllSubfolders_(rootFolder) {
 }
 
 // ---------------------------------------------
-// import 用: 構成内判定 + 構成外ならコピー
+// import 用: 構成内判定 + 構成外なら移動（不可ならコピー）
 // ---------------------------------------------
 
-// fileId のファイルが、解決済みルートの key サブフォルダ直下に在るか判定する。
+// fileId が folderId フォルダの「子孫」かどうか（親チェーンを遡って判定）。
+// 01_forms/ヒグマ/ のようなサブフォルダ配下も構成内とみなすため再帰的に判定する。
+// 親チェーンは多親・循環があり得るので visited と深さ上限で保護する。
+function StdFolders_isFileUnderFolder_(fileId, folderId) {
+  if (!fileId || !folderId) return false;
+  try {
+    var seen = {};
+    var queue = [];
+    var p0 = DriveApp.getFileById(fileId).getParents();
+    while (p0.hasNext()) queue.push(p0.next());
+    var steps = 0;
+    while (queue.length && steps < 200) {
+      steps++;
+      var f = queue.shift();
+      var id = f.getId();
+      if (id === folderId) return true;
+      if (seen[id]) continue;
+      seen[id] = true;
+      var ps = f.getParents();
+      while (ps.hasNext()) queue.push(ps.next());
+    }
+  } catch (err) {
+    Logger.log("[StdFolders_isFileUnderFolder_] " + fileId + " under " + folderId + ": " + nfbErrorToString_(err));
+  }
+  return false;
+}
+
+// fileId のファイルが、解決済みルートの key サブフォルダ配下（直下・ネスト問わず）に在るか判定する。
 // ルート未解決時は false（= 構成外扱い）。
 function StdFolders_isFileInStdSubfolder_(fileId, key) {
   try {
     var root = StdFolders_resolveRootFolder_(null);
     var sub = StdFolders_getOrCreateSubfolder_(root, key);
-    var subId = sub.getId();
-    var parents = DriveApp.getFileById(fileId).getParents();
-    while (parents.hasNext()) {
-      if (parents.next().getId() === subId) return true;
-    }
+    return StdFolders_isFileUnderFolder_(fileId, sub.getId());
   } catch (err) {
     Logger.log("[StdFolders_isFileInStdSubfolder_] " + fileId + " (" + key + "): " + nfbErrorToString_(err));
   }
   return false;
 }
 
-// import 時に、構成内ファイルはそのまま、構成外ファイルは key サブフォルダへコピーして
-// コピー先の { fileId, fileUrl } を返す。ルート未解決時は元のまま（従来の参照取り込み）。
+// import / 正規化時に、構成内ファイルはそのまま、構成外ファイルは key サブフォルダへ取り込む。
+// id ＝ fileId 統一下では makeCopy は同一性を壊し参照を孤立させるため、
+// まず file.moveTo（fileId 保持）で移動し、移動できない（他者所有・共有ドライブ制約等）
+// ときだけ makeCopy（新 fileId）にフォールバックする。ルート未解決時は元のまま（従来の参照取り込み）。
+// 戻り: { fileId, fileUrl }（moveTo 成功時は fileId 不変）。
 function StdFolders_ensureFileInStdFolder_(fileId, key) {
   var fallback = { fileId: fileId, fileUrl: "https://drive.google.com/file/d/" + fileId + "/view" };
   if (StdFolders_isFileInStdSubfolder_(fileId, key)) {
@@ -161,15 +187,29 @@ function StdFolders_ensureFileInStdFolder_(fileId, key) {
       return fallback;
     }
   }
+  var sub, src;
   try {
     var root = StdFolders_resolveRootFolder_(null);
-    var sub = StdFolders_getOrCreateSubfolder_(root, key);
-    var src = DriveApp.getFileById(fileId);
+    sub = StdFolders_getOrCreateSubfolder_(root, key);
+    src = DriveApp.getFileById(fileId);
+  } catch (err) {
+    // ルート未解決などで取り込めない場合は元ファイル参照のまま登録（従来挙動）。
+    Logger.log("[StdFolders_ensureFileInStdFolder_] ルート/対象解決不可、参照のまま (" + key + "): " + nfbErrorToString_(err));
+    return fallback;
+  }
+  // 1) fileId を保持したまま移動（同一性・参照を維持）。
+  try {
+    src.moveTo(sub);
+    return { fileId: fileId, fileUrl: src.getUrl() };
+  } catch (moveErr) {
+    Logger.log("[StdFolders_ensureFileInStdFolder_] moveTo 不可、コピーにフォールバック (" + key + "): " + nfbErrorToString_(moveErr));
+  }
+  // 2) 移動できないときのみコピー（新 fileId。元ファイルは残る）。
+  try {
     var copied = src.makeCopy(src.getName(), sub);
     return { fileId: copied.getId(), fileUrl: copied.getUrl() };
-  } catch (err) {
-    // ルート未解決などでコピーできない場合は元ファイル参照のまま登録（従来挙動）。
-    Logger.log("[StdFolders_ensureFileInStdFolder_] コピー不可、参照のまま (" + key + "): " + nfbErrorToString_(err));
+  } catch (copyErr) {
+    Logger.log("[StdFolders_ensureFileInStdFolder_] コピーも不可、参照のまま (" + key + "): " + nfbErrorToString_(copyErr));
     return fallback;
   }
 }
@@ -178,15 +218,16 @@ function StdFolders_ensureFileInStdFolder_(fileId, key) {
 // 既リンク資産の標準フォルダ正規化スイープ
 // インポート / 同期の実行時に、既にマッピング登録済み（= 既リンク）の
 // フォーム・Question・Dashboard を走査し、ファイル本体が標準フォルダ構成の外に
-// あるものは該当サブフォルダへ「コピー」（元ファイルは残す）して、マッピングの
-// リンクをコピー先へ張り替える。Dashboard をコピーしたときは、その cards[].questionId
-// が指す Question も構成内か確認し、構成外なら同様にコピーする（連動コピー）。
+// あるものは該当サブフォルダへ「移動」（fileId 保持。移動不可時のみコピー）して、
+// マッピングのリンクを揃える。fileId が保持されればマッピング・参照は壊れない。
+// Dashboard を取り込むときは、その cards[].questionId が指す Question も構成内か確認し、
+// 構成外なら同様に取り込む（連動取り込み）。
 // ---------------------------------------------
 
 // mapping entry の参照ファイルを key サブフォルダ内へ揃える。
-// 構成内ならそのまま { changed:false }。構成外でコピーが成立したときだけ
-// { changed:true, newFileId, newUrl } を返す（呼び出し側で entry を更新する）。
-// ルート未解決等で実際にコピーできなかった場合は changed:false（安全側）。
+// 構成内ならそのまま { changed:false }。fileId 保持の移動でも URL は不変なので変更なし。
+// 移動不可でコピーが発生し fileId が変わったときだけ { changed:true, newFileId, newUrl }
+// を返す（呼び出し側で entry を更新する）。ルート未解決等で何もできなかった場合は changed:false（安全側）。
 function StdFolders_ensureMappingEntryInStd_(entry, key) {
   var oldFileId = Nfb_resolveFileIdFromEntry_(entry);
   if (!oldFileId) return { changed: false };
@@ -1226,12 +1267,54 @@ function StdFolders_collectFilesRecursive_(folder, relPrefix, out, fileIdSet, fo
   }
 }
 
-// エンティティ相互参照（formId / questionId）の状態を構成内照合のみで判定する。
-function StdFolders_reportRefStatus_(id, presentSet, mapSet) {
-  if (!id) return "未設定";
-  if (presentSet[id]) return "OK（構成内）";
-  if (mapSet && mapSet[id]) return "要確認（マッピング有・構成内に実体なし）";
-  return "未解決（リンク切れの可能性）";
+// name → [fileId,...] の索引に 1 件追加する（同名は配列に積む = 重複検知用）。
+function StdFolders_indexNameToIds_(index, name, fileId) {
+  if (!index || !name || !fileId) return;
+  if (!index[name]) index[name] = [];
+  if (index[name].indexOf(fileId) === -1) index[name].push(fileId);
+}
+
+// 参照（id / 保持名）を present 実体のファイル名索引で名前解決する。
+// 実行時リゾルバ（Forms_resolveFormRef_ / Analytics_resolveQuestionRef_）に倣い、
+//   - 保持名（formName / questionName）
+//   - id 自体（旧 ULID をそのままファイル名にしているエンティティの救済）
+// の双方をファイル名候補とし、正規化名でも引く。戻り: { count, fileId }。
+function StdFolders_resolveRefByName_(id, name, nameToIds) {
+  if (!nameToIds) return { count: 0, fileId: null };
+  var ids = {};
+  var candidates = [];
+  if (name) candidates.push(String(name));
+  if (id) candidates.push(String(id));
+  for (var c = 0; c < candidates.length; c++) {
+    var keys = [candidates[c]];
+    if (typeof Forms_normalizeFormTitle_ === "function") {
+      var norm = Forms_normalizeFormTitle_(candidates[c]);
+      if (norm && norm !== candidates[c]) keys.push(norm);
+    }
+    for (var k = 0; k < keys.length; k++) {
+      var arr = nameToIds[keys[k]];
+      if (arr) { for (var a = 0; a < arr.length; a++) ids[arr[a]] = true; }
+    }
+  }
+  var list = Object.keys(ids);
+  return { count: list.length, fileId: list.length === 1 ? list[0] : null };
+}
+
+// エンティティ相互参照（formId / questionId）の状態を判定する。
+// 実行時リゾルバと同じ階層で評価する:
+//   1) id（fileId）が構成内に実在 → OK（構成内）
+//   2) 保持名 or id をファイル名として名前解決 → 一意なら「名前一致・要再リンク」/ 複数なら「名前重複・曖昧」
+//   3) マッピングキーのみ存在 → 要確認
+//   4) いずれも該当せず → 真のリンク切れ
+// nameToIds は present 実体の { name: [fileId,...] } 索引。
+function StdFolders_reportRefStatus_(id, name, presentSet, mapSet, nameToIds) {
+  if (!id && !name) return "未設定";
+  if (id && presentSet && presentSet[id]) return "OK（構成内）";
+  var matched = StdFolders_resolveRefByName_(id, name, nameToIds);
+  if (matched.count === 1) return "名前一致・要再リンク（実行時は解決）";
+  if (matched.count > 1) return "名前重複・要手動再リンク（曖昧）";
+  if (id && mapSet && mapSet[id]) return "要確認（マッピング有・構成内に実体なし）";
+  return "未解決（真のリンク切れ）";
 }
 
 // Drive ファイル/フォルダ参照（スプレッドシート等）の状態を構成内照合のみで判定する。
@@ -1241,11 +1324,29 @@ function StdFolders_reportFileLinkStatus_(id, presentSet) {
   return "構成外/外部（未検査）";
 }
 
-// その状態がリンク切れ候補かどうか。
+// 判定文字列の重大度を返す。
+//   "manual"   = 要手動対応（真のリンク切れ / 同名曖昧 / 要確認）
+//   "auto"     = 自動再リンク可（名前一致・実行時は解決）
+//   "external" = 外部参照（未検査・対象外）
+//   "ok"       = 問題なし（構成内 / 未設定）
+function StdFolders_statusSeverity_(status) {
+  switch (status) {
+    case "未解決（真のリンク切れ）":
+    case "名前重複・要手動再リンク（曖昧）":
+    case "要確認（マッピング有・構成内に実体なし）":
+      return "manual";
+    case "名前一致・要再リンク（実行時は解決）":
+      return "auto";
+    case "構成外/外部（未検査）":
+      return "external";
+    default:
+      return "ok";
+  }
+}
+
+// その状態をリンク切れ候補セクションに載せるか（ok 以外は載せる）。
 function StdFolders_isBrokenStatus_(status) {
-  return status === "未解決（リンク切れの可能性）"
-    || status === "要確認（マッピング有・構成内に実体なし）"
-    || status === "構成外/外部（未検査）";
+  return StdFolders_statusSeverity_(status) !== "ok";
 }
 
 // 表示用の安全なコードスパン文字列（バッククォートのみ無害化）。
@@ -1288,11 +1389,22 @@ function StdFolders_buildLinkReport_(payload) {
     var qMapSet = {};    for (var qk in qMap)    { if (qMap.hasOwnProperty(qk))    qMapSet[qk]    = true; }
     var dMapSet = {};    for (var dk in dMap)    { if (dMap.hasOwnProperty(dk))    dMapSet[dk]    = true; }
 
-    // 構成内に実体のあるフォーム / Question の fileId 集合（JSON ファイルのみ）。
+    // 構成内に実体のあるフォーム / Question の fileId 集合と、名前→fileId 索引（JSON ファイルのみ）。
+    // 名前索引は実行時リゾルバの名前フォールバック相当の判定と、同名重複の検知に使う。
     var presentFormIds = {};
     var presentQuestionIds = {};
-    (inventory.forms || []).forEach(function(rec) { if (StdFolders_isJsonFile_(rec.file)) presentFormIds[rec.fileId] = true; });
-    (inventory.questions || []).forEach(function(rec) { if (StdFolders_isJsonFile_(rec.file)) presentQuestionIds[rec.fileId] = true; });
+    var presentFormNameToIds = {};
+    var presentQuestionNameToIds = {};
+    (inventory.forms || []).forEach(function(rec) {
+      if (!StdFolders_isJsonFile_(rec.file)) return;
+      presentFormIds[rec.fileId] = true;
+      StdFolders_indexNameToIds_(presentFormNameToIds, Nfb_nameFromFile_(rec.file) || rec.name, rec.fileId);
+    });
+    (inventory.questions || []).forEach(function(rec) {
+      if (!StdFolders_isJsonFile_(rec.file)) return;
+      presentQuestionIds[rec.fileId] = true;
+      StdFolders_indexNameToIds_(presentQuestionNameToIds, Nfb_nameFromFile_(rec.file) || rec.name, rec.fileId);
+    });
 
     var broken = [];   // { kind, owner, detail, status }
 
@@ -1313,7 +1425,7 @@ function StdFolders_buildLinkReport_(payload) {
         var ssId = Model_normalizeSpreadsheetId_(ssRaw) || ssRaw;
         var ssStatus = StdFolders_reportFileLinkStatus_(ssId, presentFileIds);
         links.push({ label: "スプレッドシート", raw: ssRaw, id: ssId, status: ssStatus });
-        if (StdFolders_isBrokenStatus_(ssStatus)) broken.push({ kind: "Form", owner: displayName, detail: "スプレッドシート " + ssId, status: ssStatus });
+        if (StdFolders_isBrokenStatus_(ssStatus)) broken.push({ kind: "Form", owner: displayName, detail: "スプレッドシート " + ssId, status: ssStatus, severity: StdFolders_statusSeverity_(ssStatus) });
       }
 
       StdFolders_walkFields_(json.schema, function(field) {
@@ -1322,13 +1434,13 @@ function StdFolders_buildLinkReport_(payload) {
           var t = StdFolders_extractDriveIdNoFetch_(field.printTemplateAction.templateUrl);
           var ts = StdFolders_reportFileLinkStatus_(t.id, presentFileIds);
           links.push({ label: "印刷テンプレート [" + fieldLabel + "]", raw: field.printTemplateAction.templateUrl, id: t.id, status: ts });
-          if (StdFolders_isBrokenStatus_(ts)) broken.push({ kind: "Form", owner: displayName, detail: "印刷テンプレート [" + fieldLabel + "]", status: ts });
+          if (StdFolders_isBrokenStatus_(ts)) broken.push({ kind: "Form", owner: displayName, detail: "印刷テンプレート [" + fieldLabel + "]", status: ts, severity: StdFolders_statusSeverity_(ts) });
         }
         if (typeof field.driveRootFolderUrl === "string" && field.driveRootFolderUrl) {
           var u = StdFolders_extractDriveIdNoFetch_(field.driveRootFolderUrl);
           var us = StdFolders_reportFileLinkStatus_(u.id, presentFolderIds);
           links.push({ label: "アップロード先フォルダ [" + fieldLabel + "]", raw: field.driveRootFolderUrl, id: u.id, status: us });
-          if (StdFolders_isBrokenStatus_(us)) broken.push({ kind: "Form", owner: displayName, detail: "アップロード先フォルダ [" + fieldLabel + "]", status: us });
+          if (StdFolders_isBrokenStatus_(us)) broken.push({ kind: "Form", owner: displayName, detail: "アップロード先フォルダ [" + fieldLabel + "]", status: us, severity: StdFolders_statusSeverity_(us) });
         }
         if (field.webhookAction && typeof field.webhookAction.url === "string" && field.webhookAction.url) {
           links.push({ label: "webhook [" + fieldLabel + "]", raw: field.webhookAction.url, id: "", status: "外部 webhook（未検査）" });
@@ -1352,17 +1464,21 @@ function StdFolders_buildLinkReport_(payload) {
       var query = json && json.query;
       if (query && typeof query === "object") {
         if (query.gui && query.gui.formId) {
-          var st1 = StdFolders_reportRefStatus_(query.gui.formId, presentFormIds, formMapSet);
-          refs.push({ label: "query.gui.formId", id: query.gui.formId, status: st1 });
-          if (StdFolders_isBrokenStatus_(st1)) broken.push({ kind: "Question", owner: displayName, detail: "formId " + query.gui.formId, status: st1 });
+          var gName = query.gui.formName || "";
+          var st1 = StdFolders_reportRefStatus_(query.gui.formId, gName, presentFormIds, formMapSet, presentFormNameToIds);
+          var r1 = StdFolders_resolveRefByName_(query.gui.formId, gName, presentFormNameToIds);
+          refs.push({ label: "query.gui.formId", id: query.gui.formId, refName: gName, resolvedFileId: r1.fileId, status: st1 });
+          if (StdFolders_isBrokenStatus_(st1)) broken.push({ kind: "Question", owner: displayName, detail: "formId " + query.gui.formId + (gName ? " (name: " + gName + ")" : ""), status: st1, severity: StdFolders_statusSeverity_(st1) });
         }
         if (Array.isArray(query.formSources)) {
           for (var s = 0; s < query.formSources.length; s++) {
             var src = query.formSources[s];
             if (src && src.formId) {
-              var st2 = StdFolders_reportRefStatus_(src.formId, presentFormIds, formMapSet);
-              refs.push({ label: "formSources[" + s + "].formId", id: src.formId, status: st2 });
-              if (StdFolders_isBrokenStatus_(st2)) broken.push({ kind: "Question", owner: displayName, detail: "formSources[" + s + "].formId " + src.formId, status: st2 });
+              var sName = src.formName || "";
+              var st2 = StdFolders_reportRefStatus_(src.formId, sName, presentFormIds, formMapSet, presentFormNameToIds);
+              var r2 = StdFolders_resolveRefByName_(src.formId, sName, presentFormNameToIds);
+              refs.push({ label: "formSources[" + s + "].formId", id: src.formId, refName: sName, resolvedFileId: r2.fileId, status: st2 });
+              if (StdFolders_isBrokenStatus_(st2)) broken.push({ kind: "Question", owner: displayName, detail: "formSources[" + s + "].formId " + src.formId + (sName ? " (name: " + sName + ")" : ""), status: st2, severity: StdFolders_statusSeverity_(st2) });
             }
           }
         }
@@ -1384,9 +1500,11 @@ function StdFolders_buildLinkReport_(payload) {
         for (var c = 0; c < json.cards.length; c++) {
           var card = json.cards[c];
           if (card && card.questionId) {
-            var st3 = StdFolders_reportRefStatus_(card.questionId, presentQuestionIds, qMapSet);
-            refs.push({ label: "cards[" + c + "].questionId", id: card.questionId, qname: card.questionName || "", status: st3 });
-            if (StdFolders_isBrokenStatus_(st3)) broken.push({ kind: "Dashboard", owner: displayName, detail: "cards[" + c + "].questionId " + card.questionId + (card.questionName ? " (name: " + card.questionName + ")" : ""), status: st3 });
+            var qName = card.questionName || "";
+            var st3 = StdFolders_reportRefStatus_(card.questionId, qName, presentQuestionIds, qMapSet, presentQuestionNameToIds);
+            var r3 = StdFolders_resolveRefByName_(card.questionId, qName, presentQuestionNameToIds);
+            refs.push({ label: "cards[" + c + "].questionId", id: card.questionId, qname: qName, resolvedFileId: r3.fileId, status: st3 });
+            if (StdFolders_isBrokenStatus_(st3)) broken.push({ kind: "Dashboard", owner: displayName, detail: "cards[" + c + "].questionId " + card.questionId + (qName ? " (name: " + qName + ")" : ""), status: st3, severity: StdFolders_statusSeverity_(st3) });
           }
         }
       }
@@ -1402,6 +1520,7 @@ function StdFolders_buildLinkReport_(payload) {
 
     var totalFiles = 0;
     for (var ik in inventory) { if (inventory.hasOwnProperty(ik) && inventory[ik]) totalFiles += inventory[ik].length; }
+    var sevCounts = StdFolders_countBySeverity_(broken);
     return {
       ok: true,
       markdown: md,
@@ -1410,11 +1529,25 @@ function StdFolders_buildLinkReport_(payload) {
         forms: forms.length,
         questions: questions.length,
         dashboards: dashboards.length,
-        brokenCandidates: broken.length,
+        brokenCandidates: sevCounts.manual,        // 要手動対応（真のリンク切れ / 曖昧 / 要確認）
+        autoRelinkable: sevCounts.auto,            // 名前一致で自動再リンク可
+        externalRefs: sevCounts.external,          // 外部参照（未検査・対象外）
+        surfacedTotal: broken.length,              // 候補セクションに載った総数
         truncated: guard.truncated
       }
     };
   });
+}
+
+// broken 配列を重大度別に集計する。
+function StdFolders_countBySeverity_(broken) {
+  var counts = { manual: 0, auto: 0, external: 0 };
+  for (var i = 0; i < broken.length; i++) {
+    var sev = broken[i].severity || StdFolders_statusSeverity_(broken[i].status);
+    if (counts[sev] === undefined) counts[sev] = 0;
+    counts[sev]++;
+  }
+  return counts;
 }
 
 // レポート Markdown を組み立てる（純粋な文字列整形）。
@@ -1428,22 +1561,38 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
   md.push("- ルートフォルダ: " + ctx.root.getName() + "（" + ctx.root.getUrl() + "）");
   md.push("- 生成時刻: " + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyy-MM-dd HH:mm:ss"));
   md.push("- 集計: ファイル " + totalFiles + " 件 / フォーム " + ctx.forms.length + " / Question " + ctx.questions.length + " / Dashboard " + ctx.dashboards.length);
-  md.push("- リンク切れ候補: " + ctx.broken.length + " 件");
-  md.push("- リンク切れ判定: 標準フォルダ構成内の照合のみ（外部リンクの生死は未検査）");
+  var sev = StdFolders_countBySeverity_(ctx.broken);
+  md.push("- 要手動対応（真のリンク切れ / 同名曖昧 / 要確認）: " + sev.manual + " 件");
+  md.push("- 自動再リンク可（名前一致・実行時は解決）: " + sev.auto + " 件 — `nfbRelinkReferences` で恒久修復可");
+  md.push("- 外部参照（未検査・対象外）: " + sev.external + " 件");
+  md.push("- リンク切れ判定: 構成内照合＋実行時リゾルバ相当の名前フォールバック（外部リンクの生死は未検査）");
   md.push("- 実行打ち切り: " + (ctx.truncated ? "あり（実行時間の安全弁により一部のファイルを未処理。再実行してください）" : "なし"));
   md.push("");
 
-  md.push("## ⚠ リンク切れ候補");
-  if (!ctx.broken.length) {
+  // 重大度ごとにグルーピングして列挙する。
+  var groups = [
+    { sevKey: "manual",   title: "## ⚠ 要手動対応（真のリンク切れ / 同名曖昧 / 要確認）" },
+    { sevKey: "auto",     title: "## 🔧 自動再リンク可（名前一致・実行時は解決）" },
+    { sevKey: "external", title: "## ℹ 外部参照（未検査・対象外）" }
+  ];
+  var anySurfaced = false;
+  groups.forEach(function(g) {
+    var items = ctx.broken.filter(function(b) { return (b.severity || StdFolders_statusSeverity_(b.status)) === g.sevKey; });
+    if (!items.length) return;
+    anySurfaced = true;
+    md.push(g.title);
     md.push("");
-    md.push("構成内の照合では検出されませんでした。");
-  } else {
-    md.push("");
-    ctx.broken.forEach(function(b) {
+    items.forEach(function(b) {
       md.push("- [" + b.kind + "] " + b.owner + " → " + b.detail + " : **" + b.status + "**");
     });
+    md.push("");
+  });
+  if (!anySurfaced) {
+    md.push("## ⚠ リンク切れ候補");
+    md.push("");
+    md.push("構成内照合＋名前フォールバックでは検出されませんでした。");
+    md.push("");
   }
-  md.push("");
 
   md.push("## フォルダ別ファイル目録");
   for (var i = 0; i < NFB_STD_FOLDER_ORDER.length; i++) {
@@ -1485,7 +1634,7 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
     if (q.parseError) { md.push("- ⚠ JSON 解析に失敗しました: " + StdFolders_mdCode_(q.relPath)); return; }
     if (!q.refs.length) { md.push("- (参照なし)"); return; }
     q.refs.forEach(function(r) {
-      md.push("- " + r.label + ": " + StdFolders_mdCode_(r.id) + " → " + r.status);
+      md.push("- " + r.label + ": " + StdFolders_mdCode_(r.id) + (r.refName ? "（name: " + r.refName + "）" : "") + " → " + r.status + (r.resolvedFileId ? "（解決先 fileId: " + r.resolvedFileId + "）" : ""));
     });
   });
   md.push("");
@@ -1497,7 +1646,7 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
     if (d.parseError) { md.push("- ⚠ JSON 解析に失敗しました: " + StdFolders_mdCode_(d.relPath)); return; }
     if (!d.refs.length) { md.push("- (参照なし)"); return; }
     d.refs.forEach(function(r) {
-      md.push("- " + r.label + ": " + StdFolders_mdCode_(r.id) + (r.qname ? "（name: " + r.qname + "）" : "") + " → " + r.status);
+      md.push("- " + r.label + ": " + StdFolders_mdCode_(r.id) + (r.qname ? "（name: " + r.qname + "）" : "") + " → " + r.status + (r.resolvedFileId ? "（解決先 fileId: " + r.resolvedFileId + "）" : ""));
     });
   });
   md.push("");
@@ -1581,6 +1730,377 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
 }
 
 // ---------------------------------------------
+// 参照の恒久再リンク（旧 id 参照 → 現 fileId へ JSON を書換える）
+// 実行時リゾルバ（id→名前フォールバック）と同じ解決を行い、結果を定義 JSON に永続化することで
+// リンク診断レポートを恒久的にクリーンにする。dryRun（既定）は変更予定のみ返す。
+// ---------------------------------------------
+
+// key サブフォルダ配下（再帰）の JSON を走査し、名前索引を構築する。
+// 戻り: { nameToIds:{name:[fileId,...]}, idToName:{fileId:name}, idSet:{fileId:true} }。
+function StdFolders_buildNameIndexForKey_(root, key) {
+  var out = { nameToIds: {}, idToName: {}, idSet: {} };
+  try {
+    var sub = StdFolders_getOrCreateSubfolder_(root, key);
+    StdFolders_walkNameIndex_(sub, out);
+  } catch (err) {
+    Logger.log("[StdFolders_buildNameIndexForKey_] " + key + ": " + nfbErrorToString_(err));
+  }
+  return out;
+}
+
+function StdFolders_walkNameIndex_(folder, out) {
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var file = files.next();
+    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+    if (!StdFolders_isJsonFile_(file)) continue;
+    var id = file.getId();
+    var name = Nfb_nameFromFile_(file);
+    out.idSet[id] = true;
+    out.idToName[id] = name;
+    StdFolders_indexNameToIds_(out.nameToIds, name, id);
+  }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    var sub = subs.next();
+    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
+    StdFolders_walkNameIndex_(sub, out);
+  }
+}
+
+// 1 件の参照 { id, name } を index で解決し、再リンク判断を返す（純粋）。
+//   { action: "ok"|"relink"|"ambiguous"|"unresolved", toId, toName }
+function StdFolders_planRefRelink_(id, name, index) {
+  if (id && index.idSet[id]) return { action: "ok" };
+  var m = StdFolders_resolveRefByName_(id, name, index.nameToIds);
+  if (m.count === 1) return { action: "relink", toId: m.fileId, toName: index.idToName[m.fileId] || name || "" };
+  if (m.count > 1) return { action: "ambiguous" };
+  return { action: "unresolved" };
+}
+
+// obj[idKey] の参照を index で解決し、relink 可能なら obj を書換える（永続化は呼び出し側）。
+// 戻り: 書換えたら true。ok / ambiguous / unresolved は false（ambiguous・unresolved は res に記録）。
+function StdFolders_applyRefRelink_(obj, idKey, nameKey, label, owner, ownerFileId, index, res) {
+  var oldId = obj[idKey];
+  var name = (nameKey && obj[nameKey]) ? obj[nameKey] : "";
+  var plan = StdFolders_planRefRelink_(oldId, name, index);
+  if (plan.action === "relink") {
+    res.refsRelinked++;
+    res.changes.push({ entity: owner, entityFileId: ownerFileId, ref: label, from: oldId, to: plan.toId, name: plan.toName });
+    obj[idKey] = plan.toId;
+    if (nameKey) obj[nameKey] = plan.toName;
+    return true;
+  }
+  if (plan.action === "ambiguous") {
+    res.ambiguous.push({ entity: owner, entityFileId: ownerFileId, ref: label, id: oldId, name: name });
+  } else if (plan.action === "unresolved") {
+    res.unresolved.push({ entity: owner, entityFileId: ownerFileId, ref: label, id: oldId, name: name });
+  }
+  return false;
+}
+
+function StdFolders_newRelinkResult_() {
+  return { scanned: 0, filesChanged: 0, refsRelinked: 0, ambiguous: [], unresolved: [], changes: [] };
+}
+
+// 全 Question / Dashboard の参照を解決して現 fileId へ書き戻す（dryRun 既定）。
+function StdFolders_relinkReferences_(payload) {
+  return nfbSafeCall_(function() {
+    var apply = !!(payload && (payload.mode === "apply" || payload.apply === true));
+    var rebuild = !(payload && payload.rebuildMapping === false);
+    var manualRootUrl = payload && payload.rootUrl ? String(payload.rootUrl).trim() : "";
+    var root = StdFolders_resolveRootFolder_(manualRootUrl);
+
+    var startMs = (new Date()).getTime();
+    var guard = { truncated: false, checkTime: function() { return ((new Date()).getTime() - startMs) > 300000; } };
+
+    // apply 時のみ先にマッピングを再構築して stale エントリを掃除する（dryRun は読み取りのみ）。
+    var rebuilt = null;
+    if (apply && rebuild) rebuilt = StdFolders_rebuildMappings_({ rootUrl: manualRootUrl });
+
+    var formIndex = StdFolders_buildNameIndexForKey_(root, "forms");
+    var qIndex = StdFolders_buildNameIndexForKey_(root, "questions");
+
+    var qRes = StdFolders_newRelinkResult_();
+    var dRes = StdFolders_newRelinkResult_();
+    try { StdFolders_walkRelink_(StdFolders_getOrCreateSubfolder_(root, "questions"), "questions", formIndex, apply, guard, qRes); }
+    catch (e) { Logger.log("[StdFolders_relinkReferences_] questions: " + nfbErrorToString_(e)); }
+    try { StdFolders_walkRelink_(StdFolders_getOrCreateSubfolder_(root, "dashboards"), "dashboards", qIndex, apply, guard, dRes); }
+    catch (e) { Logger.log("[StdFolders_relinkReferences_] dashboards: " + nfbErrorToString_(e)); }
+
+    return {
+      ok: true,
+      mode: apply ? "apply" : "dryRun",
+      rebuilt: rebuilt,
+      questions: qRes,
+      dashboards: dRes,
+      truncated: guard.truncated
+    };
+  });
+}
+
+// kind = "questions"（formSources/gui.formId）または "dashboards"（cards[].questionId）を走査して再リンク。
+function StdFolders_walkRelink_(folder, kind, index, apply, guard, res) {
+  if (guard.truncated) return;
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    if (guard.checkTime()) { guard.truncated = true; return; }
+    var file = files.next();
+    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+    if (!StdFolders_isJsonFile_(file)) continue;
+    res.scanned++;
+    var fileId = file.getId();
+    var owner = Nfb_nameFromFile_(file);
+    var json;
+    try { json = JSON.parse(file.getBlob().getDataAsString()); } catch (e) { continue; }
+    var changed = false;
+
+    if (kind === "questions") {
+      var query = json && json.query;
+      if (query && typeof query === "object") {
+        if (query.gui && typeof query.gui === "object" && query.gui.formId) {
+          if (StdFolders_applyRefRelink_(query.gui, "formId", "formName", "query.gui.formId", owner, fileId, index, res)) changed = true;
+        }
+        if (Array.isArray(query.formSources)) {
+          for (var i = 0; i < query.formSources.length; i++) {
+            var src = query.formSources[i];
+            if (src && src.formId) {
+              if (StdFolders_applyRefRelink_(src, "formId", "formName", "formSources[" + i + "].formId", owner, fileId, index, res)) changed = true;
+            }
+          }
+        }
+      }
+    } else {
+      if (Array.isArray(json.cards)) {
+        for (var c = 0; c < json.cards.length; c++) {
+          var card = json.cards[c];
+          if (card && card.questionId) {
+            if (StdFolders_applyRefRelink_(card, "questionId", "questionName", "cards[" + c + "].questionId", owner, fileId, index, res)) changed = true;
+          }
+        }
+      }
+    }
+
+    if (changed) {
+      res.filesChanged++;
+      if (apply) {
+        try { file.setContent(JSON.stringify(json, null, 2)); }
+        catch (e) { Logger.log("[StdFolders_walkRelink_] setContent " + fileId + ": " + nfbErrorToString_(e)); }
+      }
+    }
+  }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    if (guard.checkTime()) { guard.truncated = true; return; }
+    var s = subs.next();
+    if (typeof s.isTrashed === "function" && s.isTrashed()) continue;
+    StdFolders_walkRelink_(s, kind, index, apply, guard, res);
+  }
+}
+
+// ---------------------------------------------
+// 同名フォームの重複整理（dedup）
+// 移動がコピーになっていた不具合（Fix）の名残で 01_forms 配下に同名フォームが複数できている。
+// 同名グループの canonical を 1 つ残し、参照（Question.formId）を canonical へ寄せ、残りをゴミ箱へ。
+// dryRun（既定）は計画のみ返す。canonicalOverrides:{ name: fileId } で canonical を明示指定できる。
+// 推奨運用順: rebuild_map → dedupe(apply) → relink(apply)。
+// ---------------------------------------------
+
+function StdFolders_dedupeForms_(payload) {
+  return nfbSafeCall_(function() {
+    var apply = !!(payload && (payload.mode === "apply" || payload.apply === true));
+    var overrides = (payload && payload.canonicalOverrides && typeof payload.canonicalOverrides === "object") ? payload.canonicalOverrides : {};
+    var manualRootUrl = payload && payload.rootUrl ? String(payload.rootUrl).trim() : "";
+    var root = StdFolders_resolveRootFolder_(manualRootUrl);
+
+    var startMs = (new Date()).getTime();
+    var guard = { truncated: false, checkTime: function() { return ((new Date()).getTime() - startMs) > 300000; } };
+
+    // 1) 01_forms 配下を name でグルーピング（schema を持つフォーム定義のみ）。
+    var groups = {};
+    StdFolders_walkFormGroups_(StdFolders_getOrCreateSubfolder_(root, "forms"), "", groups, guard);
+
+    // 2) 現在 Question から参照されているフォーム fileId 集合（canonical 選定の優先材料）。
+    var referenced = StdFolders_collectReferencedFormIds_(root, guard);
+
+    // 3) グループごとに canonical を決め、idMap（dupId→canonicalId）を作る。
+    var plans = [];
+    var idMap = {};
+    for (var name in groups) {
+      if (!groups.hasOwnProperty(name)) continue;
+      var members = groups[name];
+      if (members.length < 2) continue;
+      var canonical = StdFolders_pickCanonicalForm_(name, members, referenced, overrides);
+      var dups = [];
+      for (var i = 0; i < members.length; i++) {
+        members[i].referenced = !!referenced[members[i].fileId];
+        members[i].canonical = (members[i].fileId === canonical.fileId);
+        if (members[i].fileId !== canonical.fileId) { dups.push(members[i].fileId); idMap[members[i].fileId] = canonical.fileId; }
+      }
+      plans.push({
+        name: name,
+        canonicalId: canonical.fileId,
+        canonicalPath: canonical.path,
+        reason: canonical.reason,
+        duplicates: dups,
+        members: members
+      });
+    }
+
+    // 4) Question.formId を idMap で canonical へ寄せる（現 fileId 一致のみ remap）。
+    var remap = { scanned: 0, filesChanged: 0, refsRemapped: 0 };
+    if (Object.keys(idMap).length) {
+      StdFolders_remapFormIdsInQuestions_(StdFolders_getOrCreateSubfolder_(root, "questions"), idMap, apply, guard, remap);
+    }
+
+    // 5) 重複ファイルをゴミ箱へ（apply のみ）。
+    var trashed = [];
+    if (apply) {
+      for (var p = 0; p < plans.length; p++) {
+        for (var d = 0; d < plans[p].duplicates.length; d++) {
+          try { DriveApp.getFileById(plans[p].duplicates[d]).setTrashed(true); trashed.push(plans[p].duplicates[d]); }
+          catch (e) { Logger.log("[StdFolders_dedupeForms_] trash " + plans[p].duplicates[d] + ": " + nfbErrorToString_(e)); }
+        }
+      }
+    }
+
+    return {
+      ok: true,
+      mode: apply ? "apply" : "dryRun",
+      duplicateGroups: plans,
+      duplicateFileCount: Object.keys(idMap).length,
+      remap: remap,
+      trashed: trashed,
+      truncated: guard.truncated
+    };
+  });
+}
+
+// 01_forms 配下を再帰走査し、フォーム定義（schema あり）を name でグルーピングする。
+//   groups[name] = [ { fileId, path, updated } ]
+function StdFolders_walkFormGroups_(folder, pathPrefix, groups, guard) {
+  if (guard.truncated) return;
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    if (guard.checkTime()) { guard.truncated = true; return; }
+    var file = files.next();
+    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+    if (!StdFolders_isJsonFile_(file)) continue;
+    var json;
+    try { json = JSON.parse(file.getBlob().getDataAsString()); } catch (e) { continue; }
+    if (!json || !Array.isArray(json.schema)) continue;
+    var name = Nfb_nameFromFile_(file);
+    if (!name) continue;
+    var updated = 0;
+    try { updated = file.getLastUpdated().getTime(); } catch (e) { updated = 0; }
+    if (!groups[name]) groups[name] = [];
+    groups[name].push({ fileId: file.getId(), path: (pathPrefix ? pathPrefix : "(root)"), depth: pathPrefix ? pathPrefix.split("/").length : 0, updated: updated });
+  }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    if (guard.checkTime()) { guard.truncated = true; return; }
+    var sub = subs.next();
+    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
+    StdFolders_walkFormGroups_(sub, pathPrefix ? pathPrefix + "/" + sub.getName() : sub.getName(), groups, guard);
+  }
+}
+
+// canonical 選定: ① override 指定 → ② 参照されている唯一の member → ③ 物理パスが深い → ④ 古い（=原本）。
+function StdFolders_pickCanonicalForm_(name, members, referenced, overrides) {
+  if (overrides[name]) {
+    for (var i = 0; i < members.length; i++) {
+      if (members[i].fileId === overrides[name]) return { fileId: members[i].fileId, path: members[i].path, reason: "override" };
+    }
+  }
+  var refd = members.filter(function(m) { return referenced[m.fileId]; });
+  if (refd.length === 1) return { fileId: refd[0].fileId, path: refd[0].path, reason: "referenced" };
+  var pool = refd.length > 1 ? refd : members;   // 複数参照ならその中から、無ければ全体から選ぶ
+  var best = pool[0];
+  for (var j = 1; j < pool.length; j++) {
+    var m = pool[j];
+    if (m.depth > best.depth || (m.depth === best.depth && m.updated < best.updated)) best = m;
+  }
+  return { fileId: best.fileId, path: best.path, reason: refd.length > 1 ? "referenced-multi/deepest-oldest" : "deepest-oldest" };
+}
+
+// 02_questions 配下を走査し、現在の formId / gui.formId 値（=フォーム参照）を集合に集める。
+function StdFolders_collectReferencedFormIds_(root, guard) {
+  var set = {};
+  try { StdFolders_walkCollectFormRefs_(StdFolders_getOrCreateSubfolder_(root, "questions"), set, guard); }
+  catch (e) { Logger.log("[StdFolders_collectReferencedFormIds_] " + nfbErrorToString_(e)); }
+  return set;
+}
+
+function StdFolders_walkCollectFormRefs_(folder, set, guard) {
+  if (guard.truncated) return;
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    if (guard.checkTime()) { guard.truncated = true; return; }
+    var file = files.next();
+    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+    if (!StdFolders_isJsonFile_(file)) continue;
+    var json;
+    try { json = JSON.parse(file.getBlob().getDataAsString()); } catch (e) { continue; }
+    var query = json && json.query;
+    if (query && typeof query === "object") {
+      if (query.gui && query.gui.formId) set[query.gui.formId] = true;
+      if (Array.isArray(query.formSources)) {
+        for (var i = 0; i < query.formSources.length; i++) {
+          if (query.formSources[i] && query.formSources[i].formId) set[query.formSources[i].formId] = true;
+        }
+      }
+    }
+  }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    if (guard.checkTime()) { guard.truncated = true; return; }
+    var sub = subs.next();
+    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
+    StdFolders_walkCollectFormRefs_(sub, set, guard);
+  }
+}
+
+// Question の formId / gui.formId を idMap（dupId→canonicalId）で寄せる。
+function StdFolders_remapFormIdsInQuestions_(folder, idMap, apply, guard, remap) {
+  if (guard.truncated) return;
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    if (guard.checkTime()) { guard.truncated = true; return; }
+    var file = files.next();
+    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+    if (!StdFolders_isJsonFile_(file)) continue;
+    remap.scanned++;
+    var json;
+    try { json = JSON.parse(file.getBlob().getDataAsString()); } catch (e) { continue; }
+    var changed = false;
+    var query = json && json.query;
+    if (query && typeof query === "object") {
+      if (query.gui && query.gui.formId && idMap[query.gui.formId]) { query.gui.formId = idMap[query.gui.formId]; remap.refsRemapped++; changed = true; }
+      if (Array.isArray(query.formSources)) {
+        for (var i = 0; i < query.formSources.length; i++) {
+          var src = query.formSources[i];
+          if (src && src.formId && idMap[src.formId]) { src.formId = idMap[src.formId]; remap.refsRemapped++; changed = true; }
+        }
+      }
+    }
+    if (changed) {
+      remap.filesChanged++;
+      if (apply) {
+        try { file.setContent(JSON.stringify(json, null, 2)); }
+        catch (e) { Logger.log("[StdFolders_remapFormIdsInQuestions_] setContent " + file.getId() + ": " + nfbErrorToString_(e)); }
+      }
+    }
+  }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    if (guard.checkTime()) { guard.truncated = true; return; }
+    var sub = subs.next();
+    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
+    StdFolders_remapFormIdsInQuestions_(sub, idMap, apply, guard, remap);
+  }
+}
+
+// ---------------------------------------------
 // 公開 API（google.script.run 用）— executeAction_ 経由で adminOnly ゲートを通す。
 // ---------------------------------------------
 
@@ -1591,6 +2111,8 @@ function nfbImportMapping(payload)           { return Nfb_runScriptAction_("std_
 function nfbGetStdFolderRoot(payload)        { return Nfb_runScriptAction_("std_folders_get_root", payload || {}); }
 function nfbEnsureStdFolders(payload)        { return Nfb_runScriptAction_("std_folders_ensure", payload || {}); }
 function nfbBuildLinkReport(payload)         { return Nfb_runScriptAction_("std_folders_link_report", payload || {}); }
+function nfbRelinkReferences(payload)        { return Nfb_runScriptAction_("std_folders_relink_refs", payload || {}); }
+function nfbDedupeForms(payload)             { return Nfb_runScriptAction_("std_folders_dedupe_forms", payload || {}); }
 
 // 現在のルートフォルダ情報を返す（診断用）。未解決でも例外にせず resolved:false を返す。
 function StdFolders_getRootInfo_() {

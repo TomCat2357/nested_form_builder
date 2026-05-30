@@ -19,6 +19,8 @@ import {
   ensureStdFolders,
   backfillPhysicalFolders,
   buildLinkReport,
+  relinkReferences,
+  dedupeForms,
 } from "../../services/gasClient.js";
 import AdminCopyStructureDialog from "../../pages/admin/AdminCopyStructureDialog.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
@@ -127,6 +129,9 @@ export default function SettingsAdminTab() {
   const [adminEmailLoading, setAdminEmailLoading] = useState(false);
   const adminEmailDialog = useConfirmDialog();
 
+  // 同名フォーム重複整理の適用前確認（ゴミ箱移動を伴う破壊的操作）。
+  const dedupeConfirm = useConfirmDialog();
+
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
 
@@ -139,6 +144,10 @@ export default function SettingsAdminTab() {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportIncludeJson, setReportIncludeJson] = useState(false);
   const [reportIncludeWebhook, setReportIncludeWebhook] = useState(false);
+
+  // 参照の再リンク / 同名フォーム重複整理
+  const [relinkLoading, setRelinkLoading] = useState(false);
+  const [dedupeLoading, setDedupeLoading] = useState(false);
 
   // システムごとコピー
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
@@ -341,6 +350,77 @@ export default function SettingsAdminTab() {
       setReportLoading(false);
     }
   };
+
+  const summarizeRelink = (r) => {
+    const q = r.questions || {};
+    const d = r.dashboards || {};
+    const lines = [
+      `モード: ${r.mode === "apply" ? "適用（JSON を書換え）" : "プレビュー（未変更）"}`,
+      `Question: 走査 ${q.scanned || 0} / 再リンク参照 ${q.refsRelinked || 0}（対象ファイル ${q.filesChanged || 0}）/ 同名曖昧 ${(q.ambiguous || []).length} / 未解決 ${(q.unresolved || []).length}`,
+      `Dashboard: 走査 ${d.scanned || 0} / 再リンク参照 ${d.refsRelinked || 0}（対象ファイル ${d.filesChanged || 0}）/ 同名曖昧 ${(d.ambiguous || []).length} / 未解決 ${(d.unresolved || []).length}`,
+    ];
+    const amb = [...(q.ambiguous || []), ...(d.ambiguous || [])];
+    if (amb.length) {
+      lines.push(`同名複数で曖昧（手動で再リンク要）: ${amb.slice(0, 8).map((a) => `${a.entity}→${a.id}`).join(" / ")}${amb.length > 8 ? " ほか" : ""}`);
+    }
+    if (r.truncated) lines.push("⚠ 実行時間の安全弁で打ち切りました。再実行してください。");
+    return lines.join("\n");
+  };
+
+  const handleRelink = async (mode) => {
+    if (!canManageAdminSettings) return;
+    setRelinkLoading(true);
+    try {
+      const r = await relinkReferences({ mode });
+      if (mode === "apply") await invalidateListCaches();
+      showAlert(summarizeRelink(r));
+    } catch (error) {
+      console.error("[SettingsAdminTab] relinkReferences failed", error);
+      showAlert(error?.message || "参照の再リンクに失敗しました");
+    } finally {
+      setRelinkLoading(false);
+    }
+  };
+
+  const summarizeDedupe = (r) => {
+    const lines = [
+      `モード: ${r.mode === "apply" ? "適用（参照付替え＋重複をゴミ箱へ）" : "プレビュー（未変更）"}`,
+      `同名重複グループ: ${(r.duplicateGroups || []).length} / 重複ファイル: ${r.duplicateFileCount || 0}`,
+      `参照付替え: ${(r.remap && r.remap.refsRemapped) || 0} 件（Question ${(r.remap && r.remap.filesChanged) || 0} ファイル）`,
+    ];
+    if (r.mode === "apply") lines.push(`ゴミ箱へ移動: ${(r.trashed || []).length} ファイル`);
+    (r.duplicateGroups || []).slice(0, 8).forEach((g) => {
+      lines.push(`・「${g.name}」: canonical=${g.canonicalPath}（${g.reason}）/ 重複 ${g.duplicates.length}`);
+    });
+    if ((r.duplicateGroups || []).length > 8) lines.push("…ほか");
+    if (r.truncated) lines.push("⚠ 実行時間の安全弁で打ち切りました。再実行してください。");
+    return lines.join("\n");
+  };
+
+  const runDedupe = async (mode) => {
+    setDedupeLoading(true);
+    try {
+      const r = await dedupeForms({ mode });
+      if (mode === "apply") await invalidateListCaches();
+      showAlert(summarizeDedupe(r));
+    } catch (error) {
+      console.error("[SettingsAdminTab] dedupeForms failed", error);
+      showAlert(error?.message || "重複フォームの整理に失敗しました");
+    } finally {
+      setDedupeLoading(false);
+    }
+  };
+
+  const handleDedupe = async (mode) => {
+    if (!canManageAdminSettings) return;
+    if (mode === "apply") { dedupeConfirm.open(); return; }
+    await runDedupe("dryRun");
+  };
+
+  const dedupeConfirmOptions = [
+    { value: "cancel", label: "キャンセル", onSelect: dedupeConfirm.close },
+    { value: "apply", label: "適用する（重複をゴミ箱へ）", variant: "primary", onSelect: async () => { dedupeConfirm.close(); await runDedupe("apply"); } },
+  ];
 
   const handleCopyConfirm = async () => {
     if (!canManageAdminSettings) return;
@@ -595,8 +675,37 @@ export default function SettingsAdminTab() {
           </button>
         </div>
         <p className="nf-mt-6 nf-text-11 nf-text-muted">
-          <code>nfb-structure-report.md</code> をダウンロードします。リンク切れ判定は標準フォルダ構成内の照合のみ（外部リンクの生死は未検査）。
+          <code>nfb-structure-report.md</code> をダウンロードします。リンク切れ判定は標準フォルダ構成内の照合に加え、
+          実行時リゾルバと同じ名前フォールバックも評価します（外部リンクの生死は未検査）。
           フォーム数が多いと GAS の実行時間（6 分）に注意してください。
+        </p>
+
+        {/* 機能4: リンク修復（旧 id 参照の恒久再リンク / 同名フォーム重複整理） */}
+        <div className="nf-fw-600 nf-text-13 nf-mb-6 nf-mt-24">④ リンク修復（再リンク / 重複整理）</div>
+        <p className="nf-mb-12 nf-text-12 nf-text-muted">
+          旧 ID のままになっている Question→Form / Dashboard→Question 参照を、現在の fileId へ恒久的に書き換えます。
+          まず<strong>プレビュー</strong>で変更予定を確認してから<strong>適用</strong>してください。
+          推奨順: 「マッピングの管理 ＞ 同期」→「重複整理（適用）」→「参照を再リンク（適用）」。
+        </p>
+        <div className="nf-row nf-gap-12 nf-mb-6" style={{ flexWrap: "wrap" }}>
+          <button type="button" className="nf-btn nf-nowrap" onClick={() => handleRelink("dryRun")} disabled={!canManageAdminSettings || relinkLoading}>
+            {relinkLoading ? "処理中..." : "参照を再リンク（プレビュー）"}
+          </button>
+          <button type="button" className="nf-btn nf-nowrap" onClick={() => handleRelink("apply")} disabled={!canManageAdminSettings || relinkLoading}>
+            {relinkLoading ? "処理中..." : "参照を再リンク（適用）"}
+          </button>
+        </div>
+        <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
+          <button type="button" className="nf-btn nf-nowrap" onClick={() => handleDedupe("dryRun")} disabled={!canManageAdminSettings || dedupeLoading}>
+            {dedupeLoading ? "処理中..." : "同名フォーム重複整理（プレビュー）"}
+          </button>
+          <button type="button" className="nf-btn nf-nowrap" onClick={() => handleDedupe("apply")} disabled={!canManageAdminSettings || dedupeLoading}>
+            {dedupeLoading ? "処理中..." : "同名フォーム重複整理（適用）"}
+          </button>
+        </div>
+        <p className="nf-mt-6 nf-text-11 nf-text-muted">
+          再リンクは非破壊（id を現 fileId へ書き換えるのみ）。重複整理は同名グループの canonical を 1 つ残し、
+          参照を寄せたうえで残りを Drive のゴミ箱へ移動します（30 日間は復元可）。同名複数で曖昧なものは変更されず、手動対応として報告されます。
         </p>
       </div>
 
@@ -683,6 +792,13 @@ export default function SettingsAdminTab() {
             : "管理者メール制限を解除します。メールアドレスによる管理者制限は行われません。"
         }
         options={adminEmailConfirmOptions}
+      />
+
+      <ConfirmDialog
+        open={dedupeConfirm.state.open}
+        title="同名フォームの重複を整理しますか？"
+        message={"同名フォームグループごとに canonical を 1 つ残し、Question の参照を canonical へ付け替えたうえで、残りの重複ファイルを Drive のゴミ箱へ移動します（30 日間は復元可）。まずプレビューで内容を確認することを推奨します。"}
+        options={dedupeConfirmOptions}
       />
     </div>
   );

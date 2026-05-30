@@ -259,6 +259,29 @@ export const buildLinkReport = async ({ includeEntityJson = false, includeWebhoo
   const r = await fetchGasApi("nfbBuildLinkReport", { includeEntityJson, includeWebhookText }, "レポートの作成に失敗しました");
   return { markdown: r.markdown || "", stats: r.stats || {} };
 };
+// Question→Form / Dashboard→Question の旧 id 参照を現 fileId へ恒久再リンク。mode 既定 "dryRun"。
+export const relinkReferences = async ({ mode = "dryRun", rebuildMapping = true } = {}) => {
+  const r = await fetchGasApi("nfbRelinkReferences", { mode, rebuildMapping }, "参照の再リンクに失敗しました");
+  return {
+    mode: r.mode || mode,
+    questions: r.questions || {},
+    dashboards: r.dashboards || {},
+    rebuilt: r.rebuilt || null,
+    truncated: Boolean(r.truncated),
+  };
+};
+// 01_forms 配下の同名フォーム重複を整理（参照を canonical へ寄せ、重複をゴミ箱へ）。mode 既定 "dryRun"。
+export const dedupeForms = async ({ mode = "dryRun", canonicalOverrides = {} } = {}) => {
+  const r = await fetchGasApi("nfbDedupeForms", { mode, canonicalOverrides }, "重複フォームの整理に失敗しました");
+  return {
+    mode: r.mode || mode,
+    duplicateGroups: r.duplicateGroups || [],
+    duplicateFileCount: r.duplicateFileCount || 0,
+    remap: r.remap || {},
+    trashed: r.trashed || [],
+    truncated: Boolean(r.truncated),
+  };
+};
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
 export const saveFileToDrive = ({ filename, base64, mimeType }) => fetchGasApi("nfbSaveFileToDrive", { filename, base64, mimeType }, "Driveへの保存に失敗しました");
 const isSingleRecordPrintPayload = (payload) => {
