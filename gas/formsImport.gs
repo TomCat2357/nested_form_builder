@@ -46,26 +46,26 @@ function Forms_registerImportedForm_(payload) {
   var fileUrl = placed.fileUrl;
 
   var mapping = Forms_getMapping_();
-  var formId = form.id ? String(form.id) : "";
-  if (formId && mapping[formId] && mapping[formId].fileId && mapping[formId].fileId !== fileId) {
-    Logger.log("[Forms_registerImportedForm_] Existing form id conflict. Assigning new id: " + formId);
-    formId = "";
-  }
-  if (!formId) {
-    formId = Forms_generateFormId_(mapping);
-  }
-  form.id = formId;
-  form.driveFileUrl = fileUrl;
+  // id ＝ Drive fileId へ統一。取り込んだ（必要なら 01_forms へコピーした）ファイルの fileId を id とする。
+  var formId = fileId;
 
-  // タイトル正規化 + 衝突時の自動採番（自分以外の登録済みタイトルと比較）
+  // 名前 ＝ Drive ファイル名。希望タイトル（無ければ現ファイル名）を既存と衝突しないよう自動採番し、
+  // 物理ファイル名もそれに揃える（名前 ＝ Drive ファイル名 を保証）。
   var existingTitlesImport = [];
   for (var otherImportId in mapping) {
     if (!mapping.hasOwnProperty(otherImportId) || otherImportId === formId) continue;
     var ot = mapping[otherImportId] && mapping[otherImportId].title;
     if (ot) existingTitlesImport.push(ot);
   }
-  var desiredImportTitle = (form.settings && form.settings.formTitle) || "";
+  var placedFile = null;
+  try { placedFile = DriveApp.getFileById(fileId); } catch (e) { placedFile = null; }
+  var desiredImportTitle = (form.settings && form.settings.formTitle) || (placedFile ? Nfb_nameFromFile_(placedFile) : "");
   var uniqueImportTitle = Forms_makeUniqueFormTitle_(desiredImportTitle, existingTitlesImport);
+  if (placedFile && placedFile.getName() !== uniqueImportTitle + ".json") {
+    try { placedFile.setName(uniqueImportTitle + ".json"); } catch (eRename) { /* non-critical */ }
+  }
+  form.id = formId;
+  form.driveFileUrl = fileUrl;
   form.settings = form.settings || {};
   form.settings.formTitle = uniqueImportTitle;
 

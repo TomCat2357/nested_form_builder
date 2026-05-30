@@ -134,6 +134,9 @@ var FORMS_HANDLERS_ = {
   },
   "forms_register_import": {
     run: function(raw) { return Forms_registerImportedForm_(raw || {}); }
+  },
+  "forms_resolve_ref": {
+    run: function(raw) { return Forms_resolveFormRef_((raw && raw.ref) || raw || {}); }
   }
 };
 
@@ -178,6 +181,7 @@ function FormsApi_Create_(ctx) { return Forms_dispatch_("forms_save", ctx); }
 function FormsApi_Import_(ctx) { return Forms_dispatch_("forms_import", ctx); }
 function FormsApi_Update_(ctx) { return Forms_dispatch_("forms_update", ctx); }
 function FormsApi_Delete_(ctx) { return Forms_dispatch_("forms_delete_one", ctx); }
+function FormsApi_ResolveFormRef_(ctx) { return Forms_dispatch_("forms_resolve_ref", ctx); }
 
 function FormsApi_SetArchived_(ctx) {
   var raw = (ctx && ctx.raw) || {};
@@ -215,6 +219,7 @@ function nfbClearFormsReadOnly(formIds)    { return Forms_runScriptAction_("form
 function nfbCopyForm(formId)               { return Forms_runScriptAction_("forms_copy",                 { formId: formId }); }
 function nfbImportFormsFromDrive(url)      { return Forms_runScriptAction_("forms_import_drive",         { url: url }); }
 function nfbRegisterImportedForm(payload)  { return Forms_runScriptAction_("forms_register_import",      payload || {}); }
+function nfbResolveFormRef(payload)         { return Forms_runScriptAction_("forms_resolve_ref",          payload || {}); }
 function nfbListFolders()                  { return Forms_runScriptAction_("forms_folders_list",         {}); }
 function nfbCreateFolder(path)             { return Forms_runScriptAction_("forms_folder_create",        { path: path }); }
 function nfbMoveItems(payload)             { return Forms_runScriptAction_("forms_move",                 payload || {}); }

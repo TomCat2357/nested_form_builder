@@ -119,19 +119,22 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
 
 function Forms_saveForm_(form, targetUrl, saveMode) {
   return WithScriptLock_("フォーム保存", function() {
-    if (!form || !form.id) {
-      throw new Error("Form ID is required");
+    if (!form) {
+      throw new Error("Form data is required");
     }
 
     var requestedSaveMode = saveMode || "auto";
+    // id ＝ Drive fileId へ統一。新規フォームは保存（ファイル作成）まで id を持たない。
+    // 既存フォームは form.id（＝fileId）を上書き対象とする。
+    var formId = form.id || "";
     var mapping = Forms_getMapping_();
-    var mappingEntry = mapping[form.id] || {};
-    var existingFileId = mappingEntry.fileId;
+    var mappingEntry = formId ? (mapping[formId] || {}) : {};
+    var existingFileId = Nfb_resolveFileIdFromEntry_(mappingEntry) || (formId || null);
 
     // タイトル正規化 + 衝突時の自動採番
     var existingTitles = [];
     for (var otherId in mapping) {
-      if (!mapping.hasOwnProperty(otherId) || otherId === form.id) continue;
+      if (!mapping.hasOwnProperty(otherId) || otherId === formId) continue;
       var t = mapping[otherId] && mapping[otherId].title;
       if (t) existingTitles.push(t);
     }
@@ -168,9 +171,9 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       }
     }
 
-    // 仮のフォームオブジェクトを作成（driveFileUrlなし）
+    // 仮のフォームオブジェクトを作成（driveFileUrlなし）。id は保存後に fileId で確定する。
     var formWithTimestamp = {
-      id: form.id,
+      id: formId,
       description: form.description || "",
       folder: typeof form.folder === "string" ? form.folder : "",
       schema: form.schema || [],
@@ -188,9 +191,8 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     };
 
     var content = JSON.stringify(formWithTimestamp, null, 2);
-    var formTitle = (form.settings && form.settings.formTitle) || form.description || form.id;
-    var safeTitle = String(formTitle).replace(/[\\/:*?"<>|]/g, "_").substring(0, 100);
-    var fileName = safeTitle + ".json";
+    // ファイル名 ＝ 一意化済みタイトル（名前 ＝ Drive ファイル名 へ統一するため uniqueTitle を権威とする）。
+    var fileName = uniqueTitle.substring(0, 100) + ".json";
 
     var parsedTarget = null;
     if (targetUrl) {
@@ -285,35 +287,48 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     } catch (errGetUrl) {
       throw new Error("[save-stage=get-url] ファイルURLの取得に失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errGetUrl));
     }
+    // id ＝ Drive fileId へ確定。名前 ＝ ファイル名（uniqueTitle）へ揃える。
+    formId = fileId;
+    formWithTimestamp.id = fileId;
     formWithTimestamp.driveFileUrl = fileUrl;
+    formWithTimestamp.settings = (formWithTimestamp.settings && typeof formWithTimestamp.settings === "object" && !Array.isArray(formWithTimestamp.settings)) ? formWithTimestamp.settings : {};
+    formWithTimestamp.settings.formTitle = uniqueTitle;
 
-    // ダウンロード用ファイル内容からIDを除外（外部配布用にID非表示）
+    // 保存する .json は「自分自身の id も名前（ファイル名）も持たない」運用とする。
+    // id と settings.formTitle を除外して書き出す。読み込み時に fileId / ファイル名から復元する。
     var formForFile = {};
     for (var key in formWithTimestamp) {
       if (!formWithTimestamp.hasOwnProperty(key)) continue;
       if (key === "id") continue;
       if (key === "schema") {
         formForFile.schema = Forms_stripSchemaIds_(formWithTimestamp.schema);
+      } else if (key === "settings") {
+        var settingsCopy = {};
+        var srcSettings = formWithTimestamp.settings || {};
+        for (var sk in srcSettings) {
+          if (srcSettings.hasOwnProperty(sk) && sk !== "formTitle") settingsCopy[sk] = srcSettings[sk];
+        }
+        formForFile.settings = settingsCopy;
       } else {
         formForFile[key] = formWithTimestamp[key];
       }
     }
     formForFile.driveFileUrl = fileUrl;
 
-    // driveFileUrlを含めて再度ファイルに書き込み（IDなし）
+    // driveFileUrlを含めて再度ファイルに書き込み（id・名前なし）
     try {
       file.setContent(JSON.stringify(formForFile, null, 2));
     } catch (errWriteFinal) {
-      throw new Error("[save-stage=final-write] driveFileUrl反映書き込みに失敗しました. formId=" + form.id + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errWriteFinal));
+      throw new Error("[save-stage=final-write] driveFileUrl反映書き込みに失敗しました. formId=" + fileId + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errWriteFinal));
     }
 
-    // マッピングを更新（タイトルキャッシュも併せて保存）
-    mapping[form.id] = { fileId: fileId, driveFileUrl: fileUrl, title: uniqueTitle };
+    // マッピング（fileId キー）を更新（タイトルキャッシュも併せて保存）
+    mapping[fileId] = { fileId: fileId, driveFileUrl: fileUrl, title: uniqueTitle };
     Forms_saveMapping_(mapping);
 
     // 認証用URLマップにも登録（?form=xxx でアクセス可能にする）
     try {
-      AddFormUrl_(form.id, fileUrl);
+      AddFormUrl_(fileId, fileUrl);
     } catch (err) {
       Logger.log("[Forms_saveForm_] AddFormUrl_ failed (non-critical): " + err);
     }

@@ -210,32 +210,37 @@ function StdFolders_isFileIdAlive_(fileId) {
   }
 }
 
-// key サブフォルダ（例 01_forms）配下の JSON を走査し、各ファイルの埋め込み json.id を
-// キーに { id: { fileId, fileUrl } } のインデックスを返す。壊れたリンクの再リンク先探索に使う。
-// 同一 id が複数あれば先に見つかったものを採用（先勝ち）。ルート未解決時は空オブジェクト。
-function StdFolders_indexStdFolderByEmbeddedId_(key) {
+// key サブフォルダ（例 01_forms）配下の JSON を（サブフォルダ含め再帰的に）走査し、
+// 各ファイルのファイル名（.json 除去）をキーに { name: { fileId, fileUrl } } のインデックスを返す。
+// id ＝ fileId / 名前 ＝ ファイル名 へ統一したため、壊れたリンク（参照 fileId 消失）の
+// 再リンク先はキャッシュ名で名前解決する。同名が複数あれば先勝ち。ルート未解決時は空。
+function StdFolders_indexStdFolderByName_(key) {
   var index = {};
   try {
     var root = StdFolders_resolveRootFolder_(null);
     var sub = StdFolders_getOrCreateSubfolder_(root, key);
-    var files = sub.getFiles();
-    while (files.hasNext()) {
-      var file = files.next();
-      if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
-      if (!StdFolders_isJsonFile_(file)) continue;
-      var json;
-      try {
-        json = JSON.parse(file.getBlob().getDataAsString());
-      } catch (e) {
-        continue;
-      }
-      if (!json || typeof json.id !== "string" || !json.id) continue;
-      if (!index[json.id]) index[json.id] = { fileId: file.getId(), fileUrl: file.getUrl() };
-    }
+    StdFolders_indexFolderByNameRecursive_(sub, index);
   } catch (err) {
-    Logger.log("[StdFolders_indexStdFolderByEmbeddedId_] " + key + ": " + nfbErrorToString_(err));
+    Logger.log("[StdFolders_indexStdFolderByName_] " + key + ": " + nfbErrorToString_(err));
   }
   return index;
+}
+
+function StdFolders_indexFolderByNameRecursive_(folder, index) {
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var file = files.next();
+    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+    if (!StdFolders_isJsonFile_(file)) continue;
+    var name = Nfb_nameFromFileName_(file.getName());
+    if (name && !index[name]) index[name] = { fileId: file.getId(), fileUrl: file.getUrl() };
+  }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    var sub = subs.next();
+    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
+    StdFolders_indexFolderByNameRecursive_(sub, index);
+  }
 }
 
 // mapping[id] の 1 エントリを修復する。戻り値: "normalized" | "relinked" | "removed" | "none"。
@@ -257,12 +262,17 @@ function StdFolders_repairMappingEntry_(mapping, id, key, indexProvider, onChang
     }
     return "none";
   }
-  // ここから壊れたリンク（参照ファイルが取得不能 / ゴミ箱）
-  var hit = indexProvider()[id];
+  // ここから壊れたリンク（参照ファイルが取得不能 / ゴミ箱）。
+  // id ＝ fileId なので、キャッシュした名前（title/name）で標準フォルダを名前解決し、
+  // 生きているファイルが見つかれば その fileId をキーに張り替える（id を再採用）。
+  var cachedName = entry.title || entry.name || "";
+  var hit = cachedName ? indexProvider()[cachedName] : null;
   if (hit) {
+    delete mapping[id];
     entry.fileId = hit.fileId;
     entry.driveFileUrl = hit.fileUrl;
-    if (onChange) onChange(id, entry);
+    mapping[hit.fileId] = entry;
+    if (onChange) onChange(hit.fileId, entry);
     return "relinked";
   }
   delete mapping[id];
@@ -275,7 +285,7 @@ function StdFolders_repairAndNormalizeMapping_(mapping, key, onChange) {
   var counts = { normalized: 0, relinked: 0, removed: 0, removedIds: [] };
   var cachedIndex = null;
   var provider = function() {
-    if (cachedIndex === null) cachedIndex = StdFolders_indexStdFolderByEmbeddedId_(key);
+    if (cachedIndex === null) cachedIndex = StdFolders_indexStdFolderByName_(key);
     return cachedIndex;
   };
   for (var id in mapping) {
@@ -350,7 +360,7 @@ function StdFolders_normalizeLinkedToStd_() {
     var qMapping = Analytics_getMapping_("questions");
     var cachedQIndex = null;
     var qProvider = function() {
-      if (cachedQIndex === null) cachedQIndex = StdFolders_indexStdFolderByEmbeddedId_("questions");
+      if (cachedQIndex === null) cachedQIndex = StdFolders_indexStdFolderByName_("questions");
       return cachedQIndex;
     };
     var touched = false;
@@ -486,14 +496,10 @@ function StdFolders_copy_(payload) {
     var appsScriptCopyResult = StdFolders_copyAppsScriptBody_(destRoot);
     var appsScriptCopied = appsScriptCopyResult.ok;
 
-    // ソース mapping から fileId → id 逆引き（コピーファイルへ元 id を埋め込むため）
-    var formsRev = StdFolders_buildFileIdToId_(Forms_getMapping_());
-    var questionsRev = StdFolders_buildFileIdToId_(Analytics_getMapping_("questions"));
-    var dashboardsRev = StdFolders_buildFileIdToId_(Analytics_getMapping_("dashboards"));
-
+    // id ＝ Drive fileId へ統一したため、コピー先では全ファイルが新 fileId（＝新 id）になる。
+    // リンク（formId / questionId）はコピー時に idMap（旧fileId→新fileId）で再マップする。
     var idMap = {};         // oldFileId → { newFileId, newUrl }
     var folderIdMap = {};   // srcSubfolderId → destSubfolderUrl
-    var copiedQuestionIds = {}; // 新環境に存在する questionId の集合
     var summary = {};
 
     // どのキーをコピーするか（07_webhooks はオプション）
@@ -542,42 +548,28 @@ function StdFolders_copy_(payload) {
       summary[key] = copied.length;
     }
 
-    // questions の論理 id を確定する（dashboard→question の存在チェック / id 埋め込み用）。
-    // ソースマッピングを最優先しつつ、未登録のファイルは本体に埋め込み済みの json.id で
-    // 救済する。これを怠ると「コピーされた Question」がマッピング漏れというだけで
-    // copiedQuestionIds に載らず、ダッシュボードの正当なリンクが誤って失われてしまう。
-    var qCopied = copiedFilesByKey["questions"] || [];
-    var questionIdByNewFile = {}; // newFileId → 論理 questionId
-    for (var qi = 0; qi < qCopied.length; qi++) {
-      var qid = questionsRev[qCopied[qi].srcFileId];
-      if (!qid) qid = StdFolders_readEmbeddedId_(qCopied[qi].newFileId);
-      if (qid) {
-        copiedQuestionIds[qid] = true;
-        questionIdByNewFile[qCopied[qi].newFileId] = qid;
-      }
-    }
-
-    // --- 第2パス: 定義ファイルへ元 id を埋め込み、リンクを再配線 ---
+    // --- 第2パス: コピー先ファイルのリンク（formId / questionId / 各種 URL）を idMap で再配線 ---
+    // id は埋め込まない（id ＝ fileId）。コピー先では新 fileId が新 id になり、リンクも新 fileId を指す。
     var clearedLinks = 0;
 
-    // forms (01_forms)
+    // forms (01_forms): spreadsheet / フォルダ / webhook URL を再マップ
     var formCopied = copiedFilesByKey["forms"] || [];
     for (var fi = 0; fi < formCopied.length; fi++) {
-      var fEntry = formCopied[fi];
-      clearedLinks += StdFolders_rewireFormFile_(fEntry.newFileId, formsRev[fEntry.srcFileId] || null, idMap, folderIdMap, copyWebhooks);
+      clearedLinks += StdFolders_rewireFormFile_(formCopied[fi].newFileId, idMap, folderIdMap, copyWebhooks);
     }
 
-    // questions (02_questions): 確定した論理 id を埋め込む（コピー先の再構築で同じ id に解決させる）
+    // questions (02_questions): query.gui.formId / query.formSources[].formId を新 fileId へ再マップ
+    var qCopied = copiedFilesByKey["questions"] || [];
     for (var qj = 0; qj < qCopied.length; qj++) {
-      StdFolders_embedIdInFile_(qCopied[qj].newFileId, questionIdByNewFile[qCopied[qj].newFileId] || null);
+      StdFolders_rewireQuestionFile_(qCopied[qj].newFileId, idMap);
     }
 
-    // dashboards (03_dashboards): id 埋め込み + questionId 存在チェック
+    // dashboards (03_dashboards): cards[].questionId を新 fileId へ再マップ。idMap に無い参照は
+    // questionName を残したまま未解決として数える（コピー先の同期で名前フォールバック復旧）。
     var unresolvedQuestionLinks = 0;
     var dCopied = copiedFilesByKey["dashboards"] || [];
     for (var dj = 0; dj < dCopied.length; dj++) {
-      var dEntry = dCopied[dj];
-      unresolvedQuestionLinks += StdFolders_rewireDashboardFile_(dEntry.newFileId, dashboardsRev[dEntry.srcFileId] || null, copiedQuestionIds);
+      unresolvedQuestionLinks += StdFolders_rewireDashboardFile_(dCopied[dj].newFileId, idMap);
     }
 
     // 再構築 ON のときはコピー先ルートへ _nfb_mapping.json を書き出す（新 fileId に振り直し済み）。
@@ -656,39 +648,22 @@ function StdFolders_clearSpreadsheetData_(spreadsheetId) {
   }
 }
 
-// ファイル JSON に既に埋め込まれている id を読む（無ければ null）。
-// コピー時に「ソースマッピングに載っていない Question」の論理 id を救済するために使う。
-function StdFolders_readEmbeddedId_(fileId) {
-  try {
-    var file = DriveApp.getFileById(fileId);
-    var json = JSON.parse(file.getBlob().getDataAsString());
-    return (json && typeof json.id === "string" && json.id) ? json.id : null;
-  } catch (err) {
-    Logger.log("[StdFolders_readEmbeddedId_] " + fileId + ": " + nfbErrorToString_(err));
-    return null;
-  }
+// idMap（旧fileId→{newFileId,newUrl}）を使い、リンク id（旧 fileId）を新 fileId へ写像する。
+// idMap に無い（コピー対象外）の参照はそのまま返し、呼び出し側で名前フォールバックに委ねる。
+// 戻り: { value, status } status は "remapped" | "unchanged"。
+function StdFolders_remapLinkId_(id, idMap) {
+  var raw = String(id || "").trim();
+  if (!raw) return { value: "", status: "unchanged" };
+  if (idMap[raw]) return { value: idMap[raw].newFileId, status: "remapped" };
+  return { value: raw, status: "unchanged" };
 }
 
-// ファイル JSON に id を埋め込む（無ければスキップ）。
-function StdFolders_embedIdInFile_(fileId, id) {
-  if (!id) return;
-  try {
-    var file = DriveApp.getFileById(fileId);
-    var json = JSON.parse(file.getBlob().getDataAsString());
-    json.id = id;
-    file.setContent(JSON.stringify(json, null, 2));
-  } catch (err) {
-    Logger.log("[StdFolders_embedIdInFile_] " + fileId + ": " + nfbErrorToString_(err));
-  }
-}
-
-// フォーム定義ファイルの id 埋め込み + リンク再配線。クリアしたリンク数を返す。
-function StdFolders_rewireFormFile_(fileId, formId, idMap, folderIdMap, copyWebhooks) {
+// フォーム定義ファイルのリンク再配線（id は埋め込まない＝id ＝ fileId）。クリアしたリンク数を返す。
+function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyWebhooks) {
   var cleared = 0;
   try {
     var file = DriveApp.getFileById(fileId);
     var json = JSON.parse(file.getBlob().getDataAsString());
-    if (formId) json.id = formId;
 
     // form → spreadsheet
     if (json.settings && json.settings.spreadsheetId) {
@@ -727,28 +702,52 @@ function StdFolders_rewireFormFile_(fileId, formId, idMap, folderIdMap, copyWebh
   return cleared;
 }
 
-// ダッシュボード定義ファイルの id 埋め込み + questionId 存在チェック。
-// コピー対象に見つからなかった（= 未解決の）リンク数を返す。
-//
-// 重要: ここで card.questionId / questionName を破棄してはならない。
-// Question 本体はコピー時に論理 id を埋め込んだ状態で複製され、コピー先の同期/再構築で
-// 同じ id にマッピングされる。したがって questionId を残しておけば自動で再リンクされる。
-// 仮にコピー対象に無い Question を指していても、参照を保持しておけば後からインポート/同期
-// した時点で id 一致または名前一致（Analytics_resolveQuestionRef_）で復旧できる。
-// 参照を空にすると、この自動復旧の手掛かりごと失われてリンクロストになる。
-function StdFolders_rewireDashboardFile_(fileId, dashboardId, copiedQuestionIds) {
+// クエスチョン定義ファイルの formId 再配線（id は埋め込まない＝id ＝ fileId）。
+// query.gui.formId と query.formSources[].formId を idMap で新 fileId へ写像する。
+// idMap に無い（コピー対象外）の formId は保持し、formName による名前フォールバックに委ねる。
+function StdFolders_rewireQuestionFile_(fileId, idMap) {
+  try {
+    var file = DriveApp.getFileById(fileId);
+    var json = JSON.parse(file.getBlob().getDataAsString());
+    var query = json && json.query;
+    if (query && typeof query === "object") {
+      if (query.gui && typeof query.gui === "object" && query.gui.formId) {
+        query.gui.formId = StdFolders_remapLinkId_(query.gui.formId, idMap).value;
+      }
+      if (Array.isArray(query.formSources)) {
+        for (var i = 0; i < query.formSources.length; i++) {
+          var src = query.formSources[i];
+          if (src && src.formId) src.formId = StdFolders_remapLinkId_(src.formId, idMap).value;
+        }
+      }
+    }
+    file.setContent(JSON.stringify(json, null, 2));
+  } catch (err) {
+    Logger.log("[StdFolders_rewireQuestionFile_] " + fileId + ": " + nfbErrorToString_(err));
+  }
+}
+
+// ダッシュボード定義ファイルの questionId 再配線（id は埋め込まない＝id ＝ fileId）。
+// cards[].questionId を idMap で新 fileId へ写像する。idMap に無い（コピー対象外）の参照は
+// questionId / questionName を保持したまま未解決として数える（コピー先の同期で名前フォールバック復旧）。
+// 戻り値: 未解決リンク数。
+function StdFolders_rewireDashboardFile_(fileId, idMap) {
   var unresolved = 0;
   try {
     var file = DriveApp.getFileById(fileId);
     var json = JSON.parse(file.getBlob().getDataAsString());
-    if (dashboardId) json.id = dashboardId;
 
     if (Array.isArray(json.cards)) {
       for (var i = 0; i < json.cards.length; i++) {
         var card = json.cards[i];
         if (card && typeof card.questionId === "string" && card.questionId) {
-          // 参照は保持したまま、コピー対象に居なかったものだけ件数を数える。
-          if (!copiedQuestionIds[card.questionId]) unresolved++;
+          var r = StdFolders_remapLinkId_(card.questionId, idMap);
+          if (r.status === "remapped") {
+            card.questionId = r.value;
+          } else {
+            // コピー対象外 → 参照は保持し、未解決として数える。
+            unresolved++;
+          }
         }
       }
     }
@@ -1113,8 +1112,9 @@ function StdFolders_scanFormsFolder_(folder, ctx) {
       continue;
     }
     if (!json || !Array.isArray(json.schema)) continue;
-    var id = (typeof json.id === "string" && json.id) ? json.id : Nfb_generateFormId_();
-    var title = (json.settings && json.settings.formTitle) || json.description || id;
+    // id ＝ Drive fileId / 名前 ＝ ファイル名（.json 除去）。走査・同期はファイル名で行う。
+    var id = fileId;
+    var title = Nfb_nameFromFile_(file);
     ctx.mapping[id] = { fileId: fileId, driveFileUrl: file.getUrl(), title: title };
     ctx.mappedFileIds[fileId] = true;
     if (typeof json.folder === "string" && json.folder) ctx.folderPaths.push(json.folder);
@@ -1135,7 +1135,6 @@ function StdFolders_rebuildAnalyticsMapping_(root, type) {
   var sub = root.getFoldersByName(key);
   if (!sub.hasNext()) return { count: 0 };
   var folder = sub.next();
-  var prefix = type === "questions" ? "q" : "d";
   var mapping = Analytics_getMapping_(type);
   var mappedFileIds = StdFolders_mappedFileIdSet_(mapping);
   var folderPaths = Analytics_getFolders_(type);
@@ -1155,8 +1154,10 @@ function StdFolders_rebuildAnalyticsMapping_(root, type) {
       continue;
     }
     if (!json || typeof json !== "object") continue;
-    var id = (typeof json.id === "string" && json.id) ? json.id : (prefix + "_" + Nfb_generateUlid_());
-    mapping[id] = { fileId: fileId, driveFileUrl: file.getUrl(), name: json.name || id };
+    // id ＝ Drive fileId / 名前 ＝ ファイル名（.json 除去）。走査・同期はファイル名で行う。
+    var id = fileId;
+    var name = Nfb_nameFromFile_(file);
+    mapping[id] = { fileId: fileId, driveFileUrl: file.getUrl(), name: name };
     mappedFileIds[fileId] = true;
     if (typeof json.folder === "string" && json.folder) folderPaths.push(json.folder);
     count++;

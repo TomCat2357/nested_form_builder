@@ -86,17 +86,18 @@ function Analytics_registerImportedTemplate_(type, payload) {
     var fileUrl = placed.fileUrl;
 
     var mapping = Analytics_getMapping_(type);
-    // ID 採番: 既存 ID が衝突するなら新規生成
-    var prefix = Analytics_getIdPrefix_(type);
-    var newId;
-    do {
-      newId = prefix + "_" + Nfb_generateUlid_();
-    } while (mapping.hasOwnProperty(newId));
+    // id ＝ Drive fileId / 名前 ＝ ファイル名 へ統一。取り込んだ（必要なら標準フォルダへコピーした）
+    // ファイルの fileId を id とし、名前はファイル名から導出する。
+    var newId = fileId;
+    var name = "";
+    try { name = Nfb_nameFromFile_(DriveApp.getFileById(fileId)); } catch (eName) { name = ""; }
+    if (!name) name = template.name || "";
 
     template.id = newId;
+    template.name = name;
     template.driveFileUrl = fileUrl;
 
-    mapping[newId] = { fileId: fileId, driveFileUrl: fileUrl };
+    mapping[newId] = { fileId: fileId, driveFileUrl: fileUrl, name: name };
     Analytics_saveMapping_(type, mapping);
 
     // 開いていたフォルダ配下へ取り込む。参照先 Drive ファイルの json.folder を書き換える

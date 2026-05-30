@@ -13,6 +13,32 @@ function Nfb_resolveFileIdFromEntry_(entry) {
   return null;
 }
 
+/**
+ * Drive ファイル名（または素の名前文字列）から、システム上の「名前」を導出する。
+ * 末尾の ".json"（大文字小文字問わず）を 1 つだけ取り除く。
+ * id ＝ fileId / 名前 ＝ Drive ファイル名 へ統一したため、フォーム/クエスチョン/
+ * ダッシュボードの表示名は常にこのヘルパでファイル名から導出する。
+ * @param {string} fileName
+ * @return {string}
+ */
+function Nfb_nameFromFileName_(fileName) {
+  var s = (fileName == null) ? "" : String(fileName);
+  return s.replace(/\.json$/i, "");
+}
+
+/**
+ * Drive File オブジェクトからシステム名を導出する薄いラッパ。
+ * @param {GoogleAppsScript.Drive.File} file
+ * @return {string}
+ */
+function Nfb_nameFromFile_(file) {
+  try {
+    return Nfb_nameFromFileName_(file.getName());
+  } catch (e) {
+    return "";
+  }
+}
+
 // リクエスト単位のフォームキャッシュ。executeAction_ の冒頭で {} にリセットされる。
 // 同一リクエスト内で Forms_getForm_ が複数回呼ばれる経路（保存=temporalMap+retention+
 // spreadsheetId 解決 等）の Drive 読み取りを 1 回に集約する。
@@ -50,7 +76,10 @@ function Forms_getForm_(formId) {
 
   var mapping = Forms_getMapping_();
   var mappingEntry = mapping[formId] || {};
-  var fileId = Nfb_resolveFileIdFromEntry_(mappingEntry);
+  // id ＝ Drive fileId へ統一。マッピングに登録があればその fileId を使い、無ければ
+  // formId 自体を fileId とみなす（新方式では formId === fileId。旧 f_... id は移行期間中
+  // マッピング経由で解決される）。
+  var fileId = Nfb_resolveFileIdFromEntry_(mappingEntry) || formId;
   var driveFileUrlFromMap = mappingEntry.driveFileUrl;
 
   if (!fileId) return null;
@@ -60,8 +89,10 @@ function Forms_getForm_(formId) {
     var content = file.getBlob().getDataAsString();
     var form = JSON.parse(content);
 
-    // idはファイルに含めていないためマッピングから復元
+    // id・名前はファイル自体（fileId・ファイル名）から導出する。JSON 内の id/formTitle は持たない運用。
     form.id = formId;
+    form.settings = (form.settings && typeof form.settings === "object" && !Array.isArray(form.settings)) ? form.settings : {};
+    form.settings.formTitle = Nfb_nameFromFile_(file);
 
     // driveFileUrlがない場合はマッピング/ファイルから補完
     if (!form.driveFileUrl) {
@@ -73,6 +104,99 @@ function Forms_getForm_(formId) {
     Logger.log("[Forms_getForm_] Error loading form " + formId + ": " + err);
     return null;
   }
+}
+
+// 01_forms 配下の 1 ファイルを Form として確定する。id ＝ fileId / 名前 ＝ ファイル名 を採用し、
+// マッピング（fileId キー）と認証用 URL マップを最新化する。失敗時は null。
+function Forms_adoptFormFile_(file, mapping) {
+  var fileId = file.getId();
+  var json;
+  try {
+    json = JSON.parse(file.getBlob().getDataAsString());
+  } catch (err) {
+    Logger.log("[Forms_adoptFormFile_] parse failed: " + file.getName());
+    return null;
+  }
+  if (!json || !Array.isArray(json.schema)) return null;
+
+  var name = Nfb_nameFromFile_(file);
+  var fileUrl = file.getUrl();
+  mapping[fileId] = { fileId: fileId, driveFileUrl: fileUrl, title: name };
+  Forms_saveMapping_(mapping);
+
+  json.id = fileId;
+  json.settings = (json.settings && typeof json.settings === "object" && !Array.isArray(json.settings)) ? json.settings : {};
+  json.settings.formTitle = name;
+  if (!json.driveFileUrl) json.driveFileUrl = fileUrl;
+  try { AddFormUrl_(fileId, fileUrl); } catch (e) { /* non-critical */ }
+  return json;
+}
+
+// フォルダ（とサブフォルダ）を再帰探索し、ファイル名が targets のいずれかに一致する
+// 最初の JSON ファイルを返す（無ければ null）。
+function Forms_findFileByNamesRecursive_(folder, targets) {
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var f = files.next();
+    if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
+    if (!StdFolders_isJsonFile_(f)) continue;
+    if (targets[f.getName()]) return f;
+  }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    var sub = subs.next();
+    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
+    var hit = Forms_findFileByNamesRecursive_(sub, targets);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+/**
+ * 壊れた Form 参照（クエスチョンの formId）を解決する。ref = { formId, formName }。
+ *   1) id（＝fileId）で解決。マッピング登録があればその fileId、無ければ formId 自体を
+ *      fileId とみなして直接開く（コピー直後でマッピング未構築のケースを救済）。
+ *   2) 標準フォルダ 01_forms（サブフォルダ含む）を「ファイル名（formName + ".json"）」で探す。
+ * 戻り: { ok:true, form, formId, relinked, matchedBy }。見つからなければ form:null。
+ */
+function Forms_resolveFormRef_(ref) {
+  return nfbSafeCall_(function() {
+    ref = ref || {};
+    var wantId = ref.formId ? String(ref.formId) : "";
+    var wantName = (typeof ref.formName === "string") ? ref.formName : "";
+    var mapping = Forms_getMapping_();
+
+    // 1) id（fileId）で解決を試みる。
+    if (wantId) {
+      var fid = (mapping[wantId] ? Nfb_resolveFileIdFromEntry_(mapping[wantId]) : null) || wantId;
+      if (fid) {
+        try {
+          var f0 = DriveApp.getFileById(fid);
+          if (!(typeof f0.isTrashed === "function" && f0.isTrashed()) && StdFolders_isJsonFile_(f0)) {
+            var fm = Forms_adoptFormFile_(f0, mapping);
+            if (fm) return { ok: true, form: fm, formId: fm.id, relinked: fm.id !== wantId, matchedBy: "id" };
+          }
+        } catch (e0) { /* 壊れている / fileId でない → 名前フォールバックへ */ }
+      }
+    }
+
+    // 2) ファイル名フォールバック（01_forms をサブフォルダ含め再帰探索）。
+    if (wantName) {
+      var base = FormsDrive_baseFolderOrNull_();
+      if (base) {
+        var targets = {};
+        targets[wantName + ".json"] = true;
+        targets[Forms_normalizeFormTitle_(wantName) + ".json"] = true;
+        var found = Forms_findFileByNamesRecursive_(base, targets);
+        if (found) {
+          var fm2 = Forms_adoptFormFile_(found, mapping);
+          if (fm2) return { ok: true, form: fm2, formId: fm2.id, relinked: true, matchedBy: "name" };
+        }
+      }
+    }
+
+    return { ok: true, form: null };
+  });
 }
 
 function Forms_listForms_(options) {
@@ -143,6 +267,11 @@ function Forms_listForms_(options) {
             var form = JSON.parse(result.content);
             form.id = formId;
 
+            // 名前 ＝ Drive ファイル名（.json 除去）。JSON 内の formTitle は持たない運用。
+            var derivedTitle = Nfb_nameFromFileName_(result.fileName);
+            form.settings = (form.settings && typeof form.settings === "object" && !Array.isArray(form.settings)) ? form.settings : {};
+            if (derivedTitle) form.settings.formTitle = derivedTitle;
+
             // driveFileUrlがない場合はマッピング/ファイルから補完
             if (!form.driveFileUrl) {
               form.driveFileUrl = mappingEntry.driveFileUrl || result.fileUrl;
@@ -157,7 +286,7 @@ function Forms_listForms_(options) {
             form.createdAtUnixMs = createdAtSerial;
             form.modifiedAtUnixMs = modifiedAtSerial;
 
-            // タイトルキャッシュの遅延バックフィル
+            // タイトルキャッシュの遅延バックフィル（名前 ＝ ファイル名由来）
             var cachedTitle = mappingEntry && mappingEntry.title;
             var actualTitle = (form.settings && form.settings.formTitle) || "";
             if (actualTitle && cachedTitle !== actualTitle) {
@@ -383,10 +512,9 @@ function Forms_copyForm_(formId) {
     }
   }
 
-  // 3. 新しいフォームデータを作成（新ID、タイトルに「（コピー）」付与）
+  // 3. 新しいフォームデータを作成（id ＝ コピー先ファイルの fileId。事前採番はしない）
   var newForm = JSON.parse(JSON.stringify(sourceForm));
-  var newId = Nfb_generateFormId_();
-  newForm.id = newId;
+  delete newForm.id;
 
   var originalTitle = (sourceForm.settings && sourceForm.settings.formTitle) || "";
   newForm.settings = newForm.settings || {};
