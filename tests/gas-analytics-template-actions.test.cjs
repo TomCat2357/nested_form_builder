@@ -432,6 +432,30 @@ test("Analytics_saveTemplate_ は targetUrl 無し / 既存マッピング無し
   assert.equal(parent.parentId, ctx.__test.stdRootFolder.id);
 });
 
+test("Analytics_saveTemplate_ は新規保存で id ＝ 作成ファイルの fileId を採用し、.json に id/name を書かない", () => {
+  const ctx = loadAnalyticsContext();
+  const res = ctx.Analytics_saveTemplate_("questions", { name: "新規Q", query: { mode: "gui" } });
+  assert.equal(res.ok, true);
+
+  // 返却 id ＝ マッピングの fileId ＝ 実ファイルの fileId。
+  const mapping = JSON.parse(ctx.__test.propsStore.get("nfb.analytics.questions.mapping")).mapping;
+  const fileId = mapping[res.question.id].fileId;
+  assert.equal(res.question.id, fileId, "id ＝ Drive fileId");
+
+  // ファイル名 ＝ 名前 + .json。
+  assert.equal(ctx.__test.fileStore.get(fileId).name, "新規Q.json");
+
+  // .json は自分自身の id も名前も持たない。
+  const content = JSON.parse(ctx.__test.fileStore.get(fileId).content);
+  assert.equal(content.id, undefined);
+  assert.equal(content.name, undefined);
+
+  // 取得時はファイル名から name、fileId から id を注入する。
+  const got = ctx.Analytics_getTemplate_("questions", fileId);
+  assert.equal(got.question.id, fileId);
+  assert.equal(got.question.name, "新規Q");
+});
+
 test("Analytics_saveTemplate_ は2回目以降の保存で既存ファイルを上書きする (overwrite_existing)", () => {
   const ctx = loadAnalyticsContext();
   const first = ctx.Analytics_saveTemplate_("questions", { name: "q", query: { mode: "gui" } });

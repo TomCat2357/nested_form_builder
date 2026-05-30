@@ -2,14 +2,27 @@
 
 CLAUDE.md から分離した、フォームスキーマ／スプレッドシートレイアウト／ソフトデリートの仕様詳細。コード編集時に参照する。
 
+## 識別モデル（id ＝ Drive fileId / 名前 ＝ Drive ファイル名）
+
+フォーム・クエスチョン・ダッシュボードの **id は、その定義 JSON が置かれている Google Drive ファイルの fileId** に統一されている。**名前（フォームは `settings.formTitle`、クエスチョン/ダッシュボードは `name`）は Drive 上のファイル名（拡張子 `.json` を除いたもの）**であり、システム上の名前と Drive ファイル名は常に一致する。
+
+- 保存される `.json` は **自分自身の id も名前（ファイル名）も持たない**。識別情報は常に Drive ファイル（fileId・ファイル名）から導出する。読み込み時に `id = fileId`、`name`/`formTitle` = ファイル名 を注入する。
+- 新規作成時はクライアントで id を採番せず、保存（ファイル作成）後に GAS が返す fileId を id として採用する。
+- フォルダ走査・同期はファイル名で行い、`mapping[fileId] = { fileId, driveFileUrl, name }`（id ＝ fileId）として PropertiesService にレジストリ/キャッシュを保持する。
+- リンク（クエスチョン→フォーム `formId` / ダッシュボード→クエスチョン `questionId`）は id（fileId）で解決し、解決できないときは併せて保持した相手の名前（クエスチョンは `formName`、ダッシュボードカードは `questionName`）で標準フォルダ構成内を名前解決する（`Forms_resolveFormRef_` / `Analytics_resolveQuestionRef_`）。
+- 構成コピー（別ルートへ複製）では全ファイルが新 fileId になるため、リンクは `idMap`（旧fileId→新fileId）で再マップし、構成外参照は名前フォールバックに委ねる。
+- エディタには普段は隠している「リンク先URL（保存先）」欄があり、指定すると別の Drive ファイル/フォルダへ保存（リンク先付け替え）する。ファイル URL は上書き、フォルダ URL は複製。保存先 fileId が変わると id も付け替わる。
+
 ## フォームスキーマ
 
-フォーム定義は Google Drive 上に JSON として保存され、`formsMappingStore` が ID ↔ ファイル対応を管理する。
+フォーム定義は Google Drive 上に JSON として保存され、`formsMappingStore` が ID ↔ ファイル対応を管理する（id ＝ fileId）。
+
+> 注: 下記はアプリ内で扱うフォームオブジェクトの形。`id`（＝Drive fileId）と `settings.formTitle`（＝Drive ファイル名）は **保存される .json には書かれず**、読み込み時に Drive の fileId / ファイル名から注入される。
 
 ```javascript
 {
-  id: "form_xxx",
-  name: "フォーム名",
+  id: "<Drive fileId>",        // 保存 .json には含めない（読込時に fileId から注入）
+  name: "フォーム名",            // legacy。表示名は settings.formTitle（＝ファイル名由来）
   description: "説明",
   schema: [
     {
