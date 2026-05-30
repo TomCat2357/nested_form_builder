@@ -14,6 +14,24 @@ function Nfb_resolveFileIdFromEntry_(entry) {
 }
 
 /**
+ * fileId の Drive ファイルをゴミ箱へ移す（既存の setTrashed ベースの削除と統一）。
+ * フォーム / クエスチョン / ダッシュボードの削除時に、紐付け解除と併せて実体も削除するために使う。
+ * 失敗（既に削除済み・権限不足・存在しない fileId 等）は握りつぶして false を返す。
+ * @param {string} fileId
+ * @return {boolean} ゴミ箱へ移せたら true。
+ */
+function Nfb_trashDriveFileById_(fileId) {
+  if (!fileId) return false;
+  try {
+    DriveApp.getFileById(fileId).setTrashed(true);
+    return true;
+  } catch (err) {
+    Logger.log("[Nfb_trashDriveFileById_] failed " + fileId + ": " + err);
+    return false;
+  }
+}
+
+/**
  * Drive ファイル名（または素の名前文字列）から、システム上の「名前」を導出する。
  * 末尾の ".json"（大文字小文字問わず）を 1 つだけ取り除く。
  * id ＝ fileId / 名前 ＝ Drive ファイル名 へ統一したため、フォーム/クエスチョン/
@@ -384,6 +402,11 @@ function Forms_deleteForms_(formIds) {
 
   ids.forEach(function(formId) {
     if (!formId) return;
+
+    // Drive 上の実体（フォーム定義 JSON）もゴミ箱へ。マッピングが無ければ formId 自体を
+    // fileId とみなす（新方式では formId === fileId）。Forms_getForm_ の fileId 解決と同じ規則。
+    var fileId = Nfb_resolveFileIdFromEntry_(mapping[formId]) || formId;
+    Nfb_trashDriveFileById_(fileId);
 
     if (mapping.hasOwnProperty(formId)) {
       delete mapping[formId];

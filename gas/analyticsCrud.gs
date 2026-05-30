@@ -247,6 +247,10 @@ function Analytics_deleteTemplates_(type, templateIds) {
     var deleted = 0;
     for (var i = 0; i < ids.length; i++) {
       var id = ids[i];
+      // Drive 上の実体（Question / Dashboard 定義 JSON）もゴミ箱へ。マッピングが無ければ
+      // id 自体を fileId とみなす（新方式では id === fileId）。
+      var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]) || id;
+      Nfb_trashDriveFileById_(fileId);
       if (mapping.hasOwnProperty(id)) {
         delete mapping[id];
         deleted += 1;
