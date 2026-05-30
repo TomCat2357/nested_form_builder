@@ -4,7 +4,6 @@ import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
 import { useAuth } from "./authContext.jsx";
 import { evaluateCacheForForms } from "./cachePolicy.js";
 import { perfLogger } from "../../utils/perfLogger.js";
-import { normalizeFormRecord } from "../../utils/formNormalize.js";
 
 const AppDataContext = createContext(null);
 
@@ -247,12 +246,9 @@ export function AppDataProvider({ children }) {
   }, [updateFormsAndCache]);
 
   const createForm = useCallback(async (payload, targetUrl, saveMode = "auto") => {
-    const pendingForm = normalizeFormRecord(payload, { preserveUnknownFields: true });
-    const savedForm = await dataStore.createForm(
-      { ...payload, id: pendingForm.id, createdAt: pendingForm.createdAt },
-      targetUrl,
-      saveMode,
-    );
+    // id ＝ Drive fileId へ統一。新規フォームはクライアントで id を採番せず、保存（ファイル作成）
+    // 後に GAS が返す fileId を id として採用する。
+    const savedForm = await dataStore.createForm(payload, targetUrl, saveMode);
 
     await upsertFormsState(savedForm);
     return savedForm;

@@ -9,7 +9,6 @@ import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { getSheetConfig } from "../../app/state/dataStoreHelpers.js";
 import { executeQuestion, saveQuestion, getQuestionById, getFormColumns, getFormViewColumns, ERR_NO_SPREADSHEET } from "../../features/analytics/analyticsStore.js";
-import { genQuestionId } from "../../core/ids.js";
 import { buildColumnIndex, resolveColumnRef } from "../../features/analytics/utils/columnIdentifierResolver.js";
 import { compileStages } from "../../features/analytics/utils/compileStages.js";
 import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder.jsx";
@@ -18,6 +17,7 @@ import { normalizeTableStyle } from "../../features/analytics/utils/tableStyle.j
 import { DEFAULT_LINE_STYLE } from "../../features/analytics/utils/chartPalette.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
 import { VARIANT_LABELS, VARIANT_DESCRIPTIONS, normalizeVariant } from "../../features/analytics/variantLabels.js";
+import LinkTargetUrlField from "../../features/editor/LinkTargetUrlField.jsx";
 
 function emptyGui(formId, variant) {
   return {
@@ -71,6 +71,8 @@ export default function QuestionEditorPage() {
   const [driveFileUrl, setDriveFileUrl] = useState("");
   // 新規作成時は一覧で開いていたフォルダ (location.state.folder) を初期フォルダにする。
   const [folder, setFolder] = useState(() => isEdit ? "" : normalizeFolderPath(location.state?.folder || ""));
+  // 普段は隠している「リンク先URL（保存先）」。指定時のみ保存の targetUrl として渡す。
+  const [linkTargetUrl, setLinkTargetUrl] = useState("");
   const [selectedFormId, setSelectedFormId] = useState("");
   const [sqlVariant, setSqlVariant] = useState("data");
   const [sql, setSql] = useState("");
@@ -270,10 +272,16 @@ export default function QuestionEditorPage() {
   const handleSave = useCallback(async () => {
     if (!name.trim()) { setSaveError("Question 名を入力してください。"); return; }
 
+    // id 解決失敗時の名前フォールバック用に、リンク先フォーム名（＝Drive ファイル名）を併せて保持する。
+    const formTitleById = (fid) => {
+      const f = forms.find((x) => x.id === fid);
+      return f ? ((f.settings && f.settings.formTitle) || f.name || "") : "";
+    };
+
     let query;
     if (mode === "gui") {
       if (!gui.formId) { setSaveError("フォームを選択してください。"); return; }
-      query = { mode: "gui", gui };
+      query = { mode: "gui", gui: { ...gui, formName: formTitleById(gui.formId) } };
     } else {
       const sources = buildSqlFormSources();
       if (sources.error) {
@@ -282,7 +290,7 @@ export default function QuestionEditorPage() {
       }
       query = {
         mode: "sql",
-        formSources: sources.formSources,
+        formSources: (sources.formSources || []).map((s) => ({ ...s, formName: formTitleById(s.formId) })),
         sql,
       };
     }
@@ -292,7 +300,8 @@ export default function QuestionEditorPage() {
 
     const yFieldsArr = yFields.split(",").map((s) => s.trim()).filter(Boolean);
     const question = {
-      id: questionId || genQuestionId(),
+      // id ＝ Drive fileId。新規はクライアントで採番せず、保存後に GAS が返す fileId を採用する。
+      id: questionId || undefined,
       name: name.trim(),
       folder: normalizeFolderPath(folder),
       schemaVersion: 1,
@@ -325,14 +334,14 @@ export default function QuestionEditorPage() {
     };
 
     try {
-      await saveQuestion(question);
+      await saveQuestion(question, linkTargetUrl.trim() || null);
       navigate(location.state?.from || "/admin/questions");
     } catch (err) {
       setSaveError(err.message || String(err));
     } finally {
       setSaving(false);
     }
-  }, [mode, name, folder, gui, sql, buildSqlFormSources, vizType, xField, yFields, heatmap, vizOptions, questionId, navigate]);
+  }, [mode, name, folder, gui, sql, buildSqlFormSources, vizType, xField, yFields, heatmap, vizOptions, questionId, navigate, forms, linkTargetUrl]);
 
   const handleSwitchToSql = () => {
     if (mode === "sql") return;
@@ -496,6 +505,13 @@ export default function QuestionEditorPage() {
         <p className="nf-text-11 nf-text-muted nf-mb-0">
           Question 定義は標準フォルダ構成の <code>02_questions</code> に保存されます。
         </p>
+
+        <LinkTargetUrlField
+          value={linkTargetUrl}
+          onChange={setLinkTargetUrl}
+          disabled={saving}
+          entityLabel="Question 定義"
+        />
 
         <fieldset style={{ border: "1px solid var(--nf-border)", borderRadius: "4px", padding: "8px 12px", margin: 0 }}>
           <legend style={{ fontSize: "12px", padding: "0 6px" }}>クエリ作成方法</legend>

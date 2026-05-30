@@ -82,6 +82,7 @@ const ACTION_DEFINITIONS_ = {
   "forms_copy":                 { handler: (ctx) => Forms_dispatch_("forms_copy", ctx) },
   "forms_import_drive":         { handler: (ctx) => Forms_dispatch_("forms_import_drive", ctx) },
   "forms_register_import":      { handler: (ctx) => Forms_dispatch_("forms_register_import", ctx) },
+  "forms_resolve_ref":          { handler: FormsApi_ResolveFormRef_ },
   "forms_folders_list":         { handler: (ctx) => Forms_dispatch_("forms_folders_list", ctx) },
   "forms_folder_create":        { handler: (ctx) => Forms_dispatch_("forms_folder_create", ctx), adminOnly: true },
   "forms_move":                 { handler: (ctx) => Forms_dispatch_("forms_move", ctx), adminOnly: true },

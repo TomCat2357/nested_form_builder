@@ -66,4 +66,7 @@ export const analyticsGasClient = {
   // 壊れたカード参照を標準フォルダ 02_questions から名前→id の順で解決する。
   resolveQuestionRef: (ref) =>
     fetchAnalyticsApi_("nfbResolveAnalyticsQuestionRef", { ref }, "Question 解決に失敗しました"),
+  // 壊れたクエスチョン→フォーム参照を標準フォルダ 01_forms から id（fileId）→名前 の順で解決する。
+  resolveFormRef: (ref) =>
+    fetchAnalyticsApi_("nfbResolveFormRef", { ref }, "Form 解決に失敗しました"),
 };

@@ -139,8 +139,9 @@ export const dataStore = {
     return form ? ensureDisplayInfo(form) : null;
   },
   async createForm(payload, targetUrl = null, saveMode = "auto") {
-    // normalizeFormRecordにID生成を委ねる（payloadにidがあればそれを使用、なければ生成）
-    const record = normalizeFormRecord(payload);
+    // id ＝ Drive fileId へ統一。新規フォームはクライアントで id を採番しない（fallbackId: ""）。
+    // 保存後に GAS が返す fileId を id として採用する。
+    const record = normalizeFormRecord(payload, { fallbackId: payload?.id || "" });
     const result = await saveFormToGas(record, targetUrl, saveMode);
     const savedForm = result?.form || result;
     const fileUrl = result?.fileUrl;
@@ -569,11 +570,13 @@ export const dataStore = {
     const created = [];
     for (const item of jsonList) {
       if (!item) continue;
+      // id ＝ Drive fileId へ統一。インポートは常に新規ファイルを作成し、その fileId を id とする。
       const record = normalizeFormRecord({
         ...item,
+        id: "",
         createdAt: item.createdAt,
         schemaVersion: item.schemaVersion,
-      });
+      }, { fallbackId: "" });
       const result = await saveFormToGas(record);
       const savedForm = result?.form || result;
       created.push(ensureDisplayInfo(savedForm));

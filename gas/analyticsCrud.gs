@@ -25,6 +25,8 @@ function Analytics_listTemplates_(type, options) {
         }
         var item = JSON.parse(file.getBlob().getDataAsString());
         item.id = id;
+        // 名前 ＝ Drive ファイル名（.json 除去）。.json 内に name は持たない運用。
+        item.name = Nfb_nameFromFile_(file);
         item.archived = !!item.archived;
         if (!item.driveFileUrl) item.driveFileUrl = entry.driveFileUrl || file.getUrl();
 
@@ -58,6 +60,8 @@ function Analytics_getTemplate_(type, templateId) {
     var file = DriveApp.getFileById(fileId);
     var item = JSON.parse(file.getBlob().getDataAsString());
     item.id = templateId;
+    // 名前 ＝ Drive ファイル名（.json 除去）。.json 内に name は持たない運用。
+    item.name = Nfb_nameFromFile_(file);
     item.archived = !!item.archived;
     if (!item.driveFileUrl) item.driveFileUrl = entry.driveFileUrl || file.getUrl();
 
@@ -77,15 +81,11 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
   return nfbSafeCall_(function() {
     if (!template || typeof template !== "object") throw new Error("テンプレートデータが不正です");
 
-    var id = template.id;
-    var isNew = !id;
-    if (isNew) {
-      id = Analytics_getIdPrefix_(type) + "_" + Nfb_generateUlid_();
-    }
-
+    // id ＝ Drive fileId へ統一。既存は template.id（＝fileId）を上書き、新規は保存後に fileId を採番する。
+    var existingId = template.id || "";
     var mapping = Analytics_getMapping_(type);
-    var existingEntry = mapping[id] || {};
-    var existingFileId = Nfb_resolveFileIdFromEntry_(existingEntry);
+    var existingEntry = existingId ? (mapping[existingId] || {}) : {};
+    var existingFileId = Nfb_resolveFileIdFromEntry_(existingEntry) || (existingId || null);
 
     // archived/createdAt/modifiedAt を正規化
     var nowMs = Date.now();
@@ -112,18 +112,17 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     var existingNames = [];
     for (var otherId in mapping) {
       if (!mapping.hasOwnProperty(otherId)) continue;
-      if (otherId === id) continue; // 自分自身は除外
+      if (otherId === existingId) continue; // 自分自身は除外
       var otherEntry = mapping[otherId] || {};
       var otherName = otherEntry.name;
       if (typeof otherName !== "string" || !otherName) {
-        // 旧 mapping にキャッシュが無いケース。実ファイルから読む（コスト高だが移行期のみ）
+        // mapping にキャッシュが無いケース。名前 ＝ ファイル名なので実ファイル名から導出する。
         var otherFileId = Nfb_resolveFileIdFromEntry_(otherEntry);
         if (otherFileId) {
           try {
             var otherFile = DriveApp.getFileById(otherFileId);
             if (!otherFile.isTrashed()) {
-              var otherItem = JSON.parse(otherFile.getBlob().getDataAsString());
-              otherName = otherItem && otherItem.name;
+              otherName = Nfb_nameFromFile_(otherFile);
               if (typeof otherName === "string" && otherName) {
                 // 次回以降の高速化のため mapping にキャッシュ
                 otherEntry.name = otherName;
@@ -143,13 +142,12 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     normalizedTemplate.name = uniqueName;
 
     var fileName = uniqueName + ".json";
-    // ファイルへ id を埋め込む（リンク切れ時に id でファイルを探せるようにするため）。
-    // list/get は読み出し後に mapping の id で上書きするので副作用はない。
+    // 保存する .json は「自分自身の id も名前（ファイル名）も持たない」運用とする。
+    // id を埋め込まず、name も書かない。読み込み時に fileId / ファイル名から復元する。
     var contentObj = {};
     for (var ck in normalizedTemplate) {
-      if (normalizedTemplate.hasOwnProperty(ck)) contentObj[ck] = normalizedTemplate[ck];
+      if (normalizedTemplate.hasOwnProperty(ck) && ck !== "name") contentObj[ck] = normalizedTemplate[ck];
     }
-    contentObj.id = id;
     var content = JSON.stringify(contentObj, null, 2);
 
     // targetUrl をパースして saveMode を決定
@@ -216,9 +214,10 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     }
 
     fileUrl = file.getUrl();
+    var id = file.getId();   // id ＝ Drive fileId
 
-    // マッピング更新 — name をキャッシュして次回以降の衝突判定を高速化
-    mapping[id] = { fileId: file.getId(), driveFileUrl: fileUrl, name: uniqueName };
+    // マッピング更新（fileId キー）— name をキャッシュして次回以降の衝突判定を高速化
+    mapping[id] = { fileId: id, driveFileUrl: fileUrl, name: uniqueName };
     Analytics_saveMapping_(type, mapping);
 
     var saved = {};
@@ -319,15 +318,15 @@ function Analytics_adoptQuestionFile_(file, mapping) {
   }
   if (!json || typeof json !== "object") return null;
 
-  var rev = StdFolders_buildFileIdToId_(mapping);
-  var id = rev[fileId]
-    || ((typeof json.id === "string" && json.id) ? json.id : ("q_" + Nfb_generateUlid_()));
-
+  // id ＝ Drive fileId / 名前 ＝ Drive ファイル名 へ統一。
+  var id = fileId;
+  var name = Nfb_nameFromFile_(file);
   var fileUrl = file.getUrl();
-  mapping[id] = { fileId: fileId, driveFileUrl: fileUrl, name: json.name || id };
+  mapping[id] = { fileId: fileId, driveFileUrl: fileUrl, name: name };
   Analytics_saveMapping_("questions", mapping);
 
   json.id = id;
+  json.name = name;
   json.archived = !!json.archived;
   if (!json.driveFileUrl) json.driveFileUrl = fileUrl;
   return json;
@@ -349,67 +348,42 @@ function Analytics_resolveQuestionRef_(ref) {
 
     var mapping = Analytics_getMapping_("questions");
 
-    // 1) 既存マッピングで解決を試みる
-    if (wantId && mapping[wantId]) {
-      var fid = Nfb_resolveFileIdFromEntry_(mapping[wantId]);
+    // 1) id（＝fileId）で解決を試みる。マッピング登録があればその fileId、無ければ wantId 自体を
+    //    fileId とみなして直接開く（コピー直後でマッピング未構築のケースを救済）。
+    if (wantId) {
+      var fid = (mapping[wantId] ? Nfb_resolveFileIdFromEntry_(mapping[wantId]) : null) || wantId;
       if (fid) {
         try {
           var f0 = DriveApp.getFileById(fid);
-          if (!f0.isTrashed()) {
+          if (!f0.isTrashed() && StdFolders_isJsonFile_(f0)) {
             var q0 = Analytics_adoptQuestionFile_(f0, mapping);
-            if (q0) return { ok: true, question: q0, questionId: q0.id, relinked: false, matchedBy: "mapping" };
+            if (q0) return { ok: true, question: q0, questionId: q0.id, relinked: q0.id !== wantId, matchedBy: "id" };
           }
-        } catch (e0) { /* 壊れている → フォルダ走査へ */ }
+        } catch (e0) { /* 壊れている / fileId でない → 名前フォールバックへ */ }
       }
     }
 
     var folder = StdFolders_autoFileFolderOrNull_("questions");
     if (!folder) return { ok: true, question: null };
 
-    // 2) ファイル名 / json.name で探す
+    // 2) ファイル名で探す（名前 ＝ Drive ファイル名）。完全一致と正規化一致の両方を試す。
     if (wantName) {
-      var targetFileName = wantName + ".json";
+      var targets = {};
+      targets[wantName + ".json"] = true;
+      targets[Forms_normalizeFormTitle_(wantName) + ".json"] = true;
       var it2 = folder.getFiles();
       while (it2.hasNext()) {
         var fn = it2.next();
         if (typeof fn.isTrashed === "function" && fn.isTrashed()) continue;
         if (!StdFolders_isJsonFile_(fn)) continue;
-        if (fn.getName() !== targetFileName) {
-          // ファイル名が一致しなくても中身の name が一致すれば採用（旧データ救済）。
-          // 一致判定だけ先に行い、不一致ファイルを mapping へ登録しない。
-          var peek;
-          try {
-            peek = JSON.parse(fn.getBlob().getDataAsString());
-          } catch (ePeek) {
-            continue;
-          }
-          if (!peek || peek.name !== wantName) continue;
-        }
+        if (!targets[fn.getName()]) continue;
         var qn = Analytics_adoptQuestionFile_(fn, mapping);
         if (qn) return { ok: true, question: qn, questionId: qn.id, relinked: true, matchedBy: "name" };
       }
     }
 
-    // 3) json.id === questionId で探す
-    if (wantId) {
-      var it3 = folder.getFiles();
-      while (it3.hasNext()) {
-        var fi = it3.next();
-        if (typeof fi.isTrashed === "function" && fi.isTrashed()) continue;
-        if (!StdFolders_isJsonFile_(fi)) continue;
-        var jsonI;
-        try {
-          jsonI = JSON.parse(fi.getBlob().getDataAsString());
-        } catch (eI) {
-          continue;
-        }
-        if (jsonI && jsonI.id === wantId) {
-          var qi = Analytics_adoptQuestionFile_(fi, mapping);
-          if (qi) return { ok: true, question: qi, questionId: qi.id, relinked: true, matchedBy: "id" };
-        }
-      }
-    }
-
+    // id ＝ fileId / 名前 ＝ ファイル名 へ統一したため、.json は自分の id を持たない。
+    // よって「埋め込み json.id 一致」での探索は廃止し、id（fileId）解決→ファイル名解決の 2 段で完結する。
     return { ok: true, question: null };
   });
 }
