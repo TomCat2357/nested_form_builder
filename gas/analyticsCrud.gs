@@ -49,15 +49,51 @@ function Analytics_listTemplates_(type, options) {
   });
 }
 
+// 論理側（mapping）が指す物理ファイルを解決する。
+//   1) fileId が生存（非ゴミ箱）→ そのファイル。
+//   2) fileId 不在 → 論理パス（= 名前）で標準フォルダ配下を探して引き当てる。
+//        探索名は entry.name（キャッシュ名）優先、無ければ id 自体（旧 ULID をファイル名にしていた救済）。
+//   見つからなければ null（呼び出し側でエラー化）。
+function Analytics_resolveItemFileOrNull_(type, fileId, id, entry, mapping) {
+  if (fileId) {
+    try {
+      var f = DriveApp.getFileById(fileId);
+      if (!(typeof f.isTrashed === "function" && f.isTrashed())) return f;
+    } catch (e) { /* 消失 → 名前フォールバックへ */ }
+  }
+  var name = (entry && typeof entry.name === "string" && entry.name) ? entry.name : "";
+  var byName = name ? AnalyticsDrive_findFileByNameInTree_(type, name) : null;
+  if (byName) return byName;
+  // entry.name が無いケース: id 文字列をファイル名候補として最終探索（旧データ救済）。
+  if (id) {
+    var byId = AnalyticsDrive_findFileByNameInTree_(type, Nfb_nameFromFileName_(id));
+    if (byId) return byId;
+  }
+  return null;
+}
+
 function Analytics_getTemplate_(type, templateId) {
   return nfbSafeCall_(function() {
     if (!templateId) throw new Error("IDが指定されていません");
     var mapping = Analytics_getMapping_(type);
     var entry = mapping[templateId] || {};
     var fileId = Nfb_resolveFileIdFromEntry_(entry);
-    if (!fileId) throw new Error("ファイルIDが登録されていません: " + templateId);
 
-    var file = DriveApp.getFileById(fileId);
+    // 論理側が持つ物理ファイル（fileId）が存在しない（消失/ゴミ箱/未登録）ときは、
+    // 論理パス（= 名前）で物理ファイルを探し直して解決する。見つかれば mapping を張り替える。
+    var file = Analytics_resolveItemFileOrNull_(type, fileId, templateId, entry, mapping);
+    if (!file) {
+      throw new Error("ファイルを解決できませんでした（物理ファイルが見つかりません）: " + templateId);
+    }
+    var resolvedFileId = file.getId();
+    if (resolvedFileId !== fileId) {
+      // 解決先の fileId へ論理側を上書き（id ＝ fileId 統一を維持）。
+      delete mapping[templateId];
+      var resolvedName = Nfb_nameFromFile_(file);
+      mapping[resolvedFileId] = { fileId: resolvedFileId, driveFileUrl: file.getUrl(), name: resolvedName };
+      Analytics_saveMapping_(type, mapping);
+      templateId = resolvedFileId;
+    }
     var item = JSON.parse(file.getBlob().getDataAsString());
     item.id = templateId;
     // 名前 ＝ Drive ファイル名（.json 除去）。.json 内に name は持たない運用。
@@ -213,8 +249,16 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
       file = fallbackFolder.createFile(fileName, content, MimeType.PLAIN_TEXT);
     }
 
-    fileUrl = file.getUrl();
     var id = file.getId();   // id ＝ Drive fileId
+
+    // 保存時の物理/論理フォルダ整合: 明示フォルダ指定（copy_to_folder）以外は、
+    // item.folder に対応する物理フォルダ（02_questions / 03_dashboards 配下）へ揃える。
+    // 構成内ファイルは move（fileId 保持）、解決不能時は no-op（安全側）。
+    if (saveMode !== "copy_to_folder") {
+      var folderPath = Forms_normalizeFolderPath_(normalizedTemplate.folder);
+      AnalyticsDrive_moveItemFileToPath_(type, id, folderPath);
+    }
+    fileUrl = file.getUrl();
 
     // マッピング更新（fileId キー）— name をキャッシュして次回以降の衝突判定を高速化
     mapping[id] = { fileId: id, driveFileUrl: fileUrl, name: uniqueName };

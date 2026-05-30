@@ -42,7 +42,13 @@ function Analytics_saveMapping_(type, mapping) {
   var props = Nfb_getActiveProperties_();
   var key = Analytics_getPropertyKey_(type);
   Nfb_serializeVersionedMapping_(props, key, ANALYTICS_MAPPING_VERSION, mapping || {}, function(entry) {
-    return { fileId: entry.fileId || null, driveFileUrl: entry.driveFileUrl || null };
+    // 名前（= Drive ファイル名）をキャッシュ保持する。論理側 fileId が失われたときの
+    // 「論理パス（名前）で物理ファイルを探し直す」フォールバック（forms の title 相当）に使う。
+    return {
+      fileId: entry.fileId || null,
+      driveFileUrl: entry.driveFileUrl || null,
+      name: (typeof entry.name === "string" && entry.name) ? entry.name : null
+    };
   });
 }
 

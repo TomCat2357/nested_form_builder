@@ -106,6 +106,9 @@ function Analytics_createFolder_(type, path) {
     var current = Analytics_getFolders_(type);
     current.push(normalized);
     var folders = Analytics_saveFoldersRegistry_(type, current);
+    // 物理 Drive フォルダ（02_questions / 03_dashboards 配下）も作成（祖先含む）。
+    // 標準フォルダ作成は純粋にそのフォルダ（と祖先）を ensure するだけで、サブフォルダは作らない。
+    AnalyticsDrive_ensureFolderForPath_(type, normalized);
     return { ok: true, folders: folders };
   });
 }
@@ -142,6 +145,8 @@ function Analytics_setItemFolder_(type, id, folderPath) {
     json.folder = Forms_normalizeFolderPath_(folderPath);
     json.modifiedAt = Date.now();
     file.setContent(JSON.stringify(json, null, 2));
+    // 物理 Drive 上でもファイルを folder に対応するフォルダへ移動（既に正しい親なら no-op）。
+    AnalyticsDrive_moveItemFileToPath_(type, fileId, json.folder);
     return true;
   } catch (err) {
     Logger.log("[Analytics_setItemFolder_] Failed for " + type + "/" + id + ": " + err);
@@ -212,6 +217,10 @@ function Analytics_moveItems_(type, payload) {
 //   - 配下アイテムの folder フィールドも同じ prefix 置換で Drive 上で書き換える。
 // 更新後の registry を返し、書き換えたアイテム ID を movedIds に push する。
 function Analytics_relocateFolderPaths_(type, registry, old, next, movedIds) {
+  // 物理 Drive フォルダをサブツリーごと移動/リネーム（1 回の Drive 操作）。配下アイテムファイルは
+  // フォルダごと一緒に動くため、後段の個別移動は no-op になる（フラット保存だった残存ファイルの保険）。
+  AnalyticsDrive_movePathFolder_(type, old, next);
+
   var updated = registry.map(function(p) {
     if (p === old) return next;
     if (p.indexOf(old + "/") === 0) return next + p.slice(old.length);
@@ -234,6 +243,8 @@ function Analytics_relocateFolderPaths_(type, registry, old, next, movedIds) {
       json.folder = newFolder;
       json.modifiedAt = Date.now();
       file.setContent(JSON.stringify(json, null, 2));
+      // 物理ファイルも新フォルダへ揃える（サブツリー移動で済んでいれば no-op）。
+      AnalyticsDrive_moveItemFileToPath_(type, fileId, newFolder);
       movedIds.push(aId);
     } catch (err) {
       Logger.log("[Analytics_relocateFolderPaths_] Failed to update folder for " + type + "/" + aId + ": " + err);
@@ -292,6 +303,8 @@ function Analytics_deleteFolder_(type, path) {
       var res = Analytics_deleteTemplates_(type, ids);
       deletedCount = (res && res.deleted) || 0;
     }
+    // 物理 Drive フォルダ（配下のファイル含む）をゴミ箱へ。auto-organize off では no-op。
+    AnalyticsDrive_trashPathFolder_(type, normalized);
     // 登録簿から path と子孫を除去
     var prefix = normalized + "/";
     var registry = Analytics_getFolders_(type).filter(function(p) {

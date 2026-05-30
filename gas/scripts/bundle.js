@@ -51,6 +51,7 @@ const FILE_ORDER = [
   'analyticsImport.gs',  // Drive URL からのインポート
   'analyticsCopy.gs',         // 同フォルダへの複製
   'analyticsFolderStore.gs', // フォルダ登録簿（Analytics 版）
+  'analyticsDriveFolders.gs', // 仮想フォルダ ↔ 物理 Drive フォルダ（02_questions / 03_dashboards 配下）のミラー
   'model.gs',            // モデル関数
   'standardFolders.gs',  // 標準フォルダ構成（作成 / 自動整理 / 構成コピー）— forms/analytics/model/driveFolder ヘルパーに依存
   // --- sheets ---
