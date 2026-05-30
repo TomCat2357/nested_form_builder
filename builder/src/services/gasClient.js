@@ -223,11 +223,24 @@ export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyW
 };
 // 既リンク資産のうち標準フォルダ構成外のものを構成内へコピーした結果のデフォルト形。
 const emptyNormalized = () => ({ forms: { count: 0 }, questions: { count: 0 }, dashboards: { count: 0 }, cascadedQuestions: 0, total: 0 });
-// 同期（フォルダ走査）。01_forms/02_questions/03_dashboards を走査し未リンク JSON をリンクする。
-// 物理 Drive フォルダがずれていれば物理を正として仮想フォルダ（登録簿・form.folder）も合わせる。
-export const rebuildMappingsFromFolders = async (rootUrl = "") => {
-  const r = await fetchGasApi("nfbRebuildMappingsFromFolders", { rootUrl }, "マッピングの同期に失敗しました");
-  return { forms: r.forms || { count: 0 }, questions: r.questions || { count: 0 }, dashboards: r.dashboards || { count: 0 }, folderReconcile: r.folderReconcile || { migrated: 0, reconciled: 0, folders: 0 }, normalized: r.normalized || emptyNormalized() };
+// 整合同期（フォルダ走査）。論理 L を正に 6 ケースで forms/questions/dashboards を整合する。
+//   ①一致 / ②P≠L→移動or外部コピー / ③同名別id再採用 / ④未発見→エラー / ⑤有効オーファン登録 / ⑥不正候補
+//   applyDelete=true で ⑥ 候補を実際にゴミ箱へ（既定は候補収集のみ）。
+const emptyAlign = () => ({ aligned: 0, moved: 0, copiedExternal: 0, rekeyed: 0, errors: 0 });
+const emptyOrphan = () => ({ scanned: 0, registered: 0, invalid: 0 });
+export const rebuildMappingsFromFolders = async (rootUrl = "", { applyDelete = false } = {}) => {
+  const r = await fetchGasApi("nfbRebuildMappingsFromFolders", { rootUrl, applyDelete }, "マッピングの同期に失敗しました");
+  const align = r.align || {};
+  const orphans = r.orphans || {};
+  return {
+    mode: r.mode || (applyDelete ? "apply" : "dryRun"),
+    align: { forms: align.forms || emptyAlign(), questions: align.questions || emptyAlign(), dashboards: align.dashboards || emptyAlign() },
+    orphans: { forms: orphans.forms || emptyOrphan(), questions: orphans.questions || emptyOrphan(), dashboards: orphans.dashboards || emptyOrphan() },
+    errors: Array.isArray(r.errors) ? r.errors : [],
+    invalidCandidates: Array.isArray(r.invalidCandidates) ? r.invalidCandidates : [],
+    relink: r.relink || null,
+    truncated: Boolean(r.truncated),
+  };
 };
 // 既存の仮想フォルダ/フォームを物理 Drive フォルダ（01_forms 配下）へ反映（移行・冪等）。
 export const backfillPhysicalFolders = async () => {

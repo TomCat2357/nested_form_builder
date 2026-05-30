@@ -208,6 +208,39 @@ function FormsDrive_trashPathFolder_(path) {
   }
 }
 
+// fileId のファイルが base (01_forms) 配下のどの相対フォルダパスにあるかを返す。base 直下なら ""。
+// base 配下に無い / 解決不能なら null（= 構成外）。整合エンジンの「物理パス P」算出に使う。
+// analyticsDriveFolders.gs の AnalyticsDrive_relativeFolderOfFile_ と対称（base が forms 固定なだけ）。
+function FormsDrive_relativeFolderOfFile_(fileId) {
+  if (!fileId) return null;
+  var base = FormsDrive_baseFolderOrNull_();
+  if (!base) return null;
+  try {
+    var baseId = base.getId();
+    var file = DriveApp.getFileById(fileId);
+    var parents = file.getParents();
+    if (!parents || !parents.hasNext()) return null;
+    var parent = parents.next();
+    var segs = [];
+    var seen = {};
+    var cur = parent;
+    var steps = 0;
+    while (cur && steps < 200) {
+      steps++;
+      var id = cur.getId();
+      if (id === baseId) return segs.join("/");
+      if (seen[id]) return null;
+      seen[id] = true;
+      segs.unshift(cur.getName());
+      var ps = cur.getParents();
+      cur = (ps && ps.hasNext()) ? ps.next() : null;
+    }
+  } catch (err) {
+    Logger.log("[FormsDrive_relativeFolderOfFile_] " + fileId + ": " + err);
+  }
+  return null;
+}
+
 // フォームファイルを path に対応する物理フォルダへ移動する（既に正しい親なら no-op）。
 function FormsDrive_moveFormFileToPath_(fileId, path) {
   if (!fileId) return false;

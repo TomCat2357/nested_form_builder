@@ -132,6 +132,10 @@ export default function SettingsAdminTab() {
   // 同名フォーム重複整理の適用前確認（ゴミ箱移動を伴う破壊的操作）。
   const dedupeConfirm = useConfirmDialog();
 
+  // 同期（フォルダ走査）の ⑥ 不正ファイル削除の適用前確認（ゴミ箱移動を伴う破壊的操作）。
+  const pruneConfirm = useConfirmDialog();
+  const [pendingInvalid, setPendingInvalid] = useState([]); // ⑥ 候補（確認ダイアログ表示用）
+
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
 
@@ -505,22 +509,54 @@ export default function SettingsAdminTab() {
     }
   };
 
+  // 整合同期の結果（6 ケース）を人間可読にまとめる。
+  const summarizeAlign = (r) => {
+    const sum = (key) => ["forms", "questions", "dashboards"].reduce((acc, k) => acc + ((r.align?.[k]?.[key]) || 0), 0);
+    const reg = (k) => (r.orphans?.[k]?.registered) || 0;
+    const lines = [
+      `① 一致(変更なし): ${sum("aligned")}件 / ② 物理移動: ${sum("moved")}件 / ② 外部コピー取込: ${sum("copiedExternal")}件 / ③ id再採用: ${sum("rekeyed")}件`,
+      `⑤ 新規登録: フォーム ${reg("forms")} / Question ${reg("questions")} / Dashboard ${reg("dashboards")}`,
+    ];
+    if (r.relink && (r.relink.questions || r.relink.dashboards)) {
+      const q = r.relink.questions || {};
+      const d = r.relink.dashboards || {};
+      lines.push(`参照の自動再リンク: Question ${q.refsRelinked || 0} / Dashboard ${d.refsRelinked || 0} 参照`);
+    }
+    const errs = r.errors || [];
+    if (errs.length) {
+      lines.push(`④ 要対応エラー（物理ファイル未検出・自動修復不可）: ${errs.length}件`);
+      errs.slice(0, 8).forEach((e) => lines.push(`・[${e.kind}] ${e.name || e.id}（${e.folder || "(直下)"}）: ${e.reason}`));
+      if (errs.length > 8) lines.push("…ほか");
+    }
+    const inv = r.invalidCandidates || [];
+    if (inv.length) {
+      lines.push(`⑥ 論理に結びつかない不正ファイル: ${inv.length}件（${r.mode === "apply" ? "ゴミ箱へ移動済み" : "未削除"}）`);
+    }
+    if (r.truncated) lines.push("⚠ 実行時間の安全弁で打ち切りました。再実行してください。");
+    return lines.join("\n");
+  };
+
+  // 同期本体。applyDelete=true で ⑥ 不正ファイルをゴミ箱へ。サマリ文字列を返す。
+  const runSync = async (applyDelete) => {
+    const r = await rebuildMappingsFromFolders("", { applyDelete });
+    await invalidateListCaches();
+    return { r, summary: "フォルダ走査で論理↔物理を整合しました。\n" + summarizeAlign(r) };
+  };
+
   const handleSyncMapping = async () => {
     if (!canManageAdminSettings) return;
     setSyncLoading(true);
     try {
-      const { forms, questions, dashboards, folderReconcile, normalized } = await rebuildMappingsFromFolders("");
-      await invalidateListCaches();
-      const lines = [
-        `フォーム: ${forms.count || 0}件`,
-        `Question: ${questions.count || 0}件`,
-        `Dashboard: ${dashboards.count || 0}件`,
-      ];
-      if (folderReconcile && (folderReconcile.reconciled || folderReconcile.migrated)) {
-        lines.push(`フォルダ整合: ${folderReconcile.reconciled || 0}件をDrive構造に合わせて更新（移行 ${folderReconcile.migrated || 0}件）`);
+      // フェーズ1: ①〜⑤ を適用し、⑥（不正ファイル）は候補収集のみ。
+      const { r, summary } = await runSync(false);
+      const invalid = r.invalidCandidates || [];
+      if (invalid.length > 0) {
+        // ⑥ がある → 削除可否をポップアップで確認（破壊的操作）。
+        setPendingInvalid(invalid);
+        pruneConfirm.open();
+      } else {
+        showAlert(summary);
       }
-      lines.push(...buildNormalizedLines(normalized));
-      showAlert("フォルダ走査で未リンクのファイルをリンクしました。\n" + lines.join("\n"));
     } catch (error) {
       console.error("[SettingsAdminTab] rebuildMappingsFromFolders failed", error);
       showAlert(error?.message || "マッピングの同期に失敗しました");
@@ -528,6 +564,24 @@ export default function SettingsAdminTab() {
       setSyncLoading(false);
     }
   };
+
+  // ⑥ 確認: 「削除する」→ applyDelete:true で再走査してゴミ箱へ。「キャンセル」→ そのまま残す。
+  const pruneConfirmOptions = [
+    { value: "keep", label: "残す（削除しない）", onSelect: async () => {
+      pruneConfirm.close();
+      setSyncLoading(true);
+      try { const { summary } = await runSync(false); showAlert(summary); }
+      catch (error) { showAlert(error?.message || "マッピングの同期に失敗しました"); }
+      finally { setSyncLoading(false); setPendingInvalid([]); }
+    } },
+    { value: "delete", label: "削除する（ゴミ箱へ）", variant: "primary", onSelect: async () => {
+      pruneConfirm.close();
+      setSyncLoading(true);
+      try { const { summary } = await runSync(true); showAlert(summary); }
+      catch (error) { showAlert(error?.message || "不正ファイルの削除に失敗しました"); }
+      finally { setSyncLoading(false); setPendingInvalid([]); }
+    } },
+  ];
 
   return (
     <div className="nf-card">
@@ -742,7 +796,10 @@ export default function SettingsAdminTab() {
           </button>
         </div>
         <p className="nf-mt-6 nf-text-11 nf-text-muted">
-          標準フォルダを走査し、マッピングに無い未リンクのファイルを検出してマッピングへ追加します。
+          論理（登録簿）を正として物理 Drive を整合します：①一致は変更なし、②物理位置のズレは移動（プロジェクト外は取り込みコピー）、
+          ③同名で id が変わったファイルは id を再採用、④物理が見つからないものはエラー表示、⑤正しい場所の未登録ファイルは新規登録、
+          ⑥論理に結びつかない不正ファイルはポップアップ確認のうえゴミ箱へ。
+          ⑥の削除確認が出るため、単体の「未追跡ファイル削除」操作は通常不要です。
         </p>
 
         {/* バックアップ（書き出し）: エクスポートだけが向きの異なる「書き出し」操作。 */}
@@ -799,6 +856,18 @@ export default function SettingsAdminTab() {
         title="同名フォームの重複を整理しますか？"
         message={"同名フォームグループごとに canonical を 1 つ残し、Question の参照を canonical へ付け替えたうえで、残りの重複ファイルを Drive のゴミ箱へ移動します（30 日間は復元可）。まずプレビューで内容を確認することを推奨します。"}
         options={dedupeConfirmOptions}
+      />
+
+      <ConfirmDialog
+        open={pruneConfirm.state.open}
+        title="論理に結びつかない不正ファイルを削除しますか？"
+        message={
+          `標準フォルダ（01_forms / 02_questions / 03_dashboards）内に、論理（登録簿）と結びつかない不正なファイルが ${pendingInvalid.length} 件見つかりました。` +
+          "「削除する」を選ぶと Drive のゴミ箱へ移動します（30 日間は復元可）。\n\n" +
+          pendingInvalid.slice(0, 12).map((f) => `・[${f.kind}] ${f.relPath}`).join("\n") +
+          (pendingInvalid.length > 12 ? `\n…ほか ${pendingInvalid.length - 12} 件` : "")
+        }
+        options={pruneConfirmOptions}
       />
     </div>
   );

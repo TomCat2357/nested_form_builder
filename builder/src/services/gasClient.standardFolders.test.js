@@ -77,15 +77,47 @@ test("copyStandardFolders: appsscript 本体コピー失敗時は理由を appsS
   }
 });
 
-test("rebuildMappingsFromFolders: 件数オブジェクトを返す（同期で流用）", async () => {
-  installGoogleStub("nfbRebuildMappingsFromFolders", {
-    ok: true, forms: { count: 5 }, questions: { count: 3 }, dashboards: { count: 1 },
+test("rebuildMappingsFromFolders: 6ケース整合の結果を整形して返す", async () => {
+  const captured = installGoogleStub("nfbRebuildMappingsFromFolders", {
+    ok: true,
+    mode: "dryRun",
+    align: {
+      forms: { aligned: 2, moved: 1, copiedExternal: 1, rekeyed: 0, errors: 1 },
+      questions: { aligned: 3 },
+    },
+    orphans: {
+      forms: { scanned: 4, registered: 2, invalid: 1 },
+    },
+    errors: [{ kind: "forms", id: "F1", name: "壊れ", folder: "a", reason: "fileId未解決かつ物理ファイル未検出" }],
+    invalidCandidates: [{ kind: "forms", fileId: "BAD1", name: "memo", relPath: "a/memo.txt" }],
+    relink: { questions: { refsRelinked: 1 }, dashboards: { refsRelinked: 0 } },
+    truncated: false,
   });
   try {
-    const r = await rebuildMappingsFromFolders("");
-    assert.equal(r.forms.count, 5);
-    assert.equal(r.questions.count, 3);
-    assert.equal(r.dashboards.count, 1);
+    const r = await rebuildMappingsFromFolders("", { applyDelete: false });
+    assert.deepEqual(captured.payload, { rootUrl: "", applyDelete: false });
+    assert.equal(r.mode, "dryRun");
+    assert.equal(r.align.forms.copiedExternal, 1);
+    assert.equal(r.align.forms.errors, 1);
+    // 欠落 kind はデフォルト形で埋める。
+    assert.equal(r.align.dashboards.aligned, 0);
+    assert.equal(r.orphans.forms.registered, 2);
+    assert.equal(r.orphans.questions.registered, 0);
+    assert.equal(r.errors.length, 1);
+    assert.equal(r.invalidCandidates[0].relPath, "a/memo.txt");
+    assert.equal(r.relink.questions.refsRelinked, 1);
+    assert.equal(r.truncated, false);
+  } finally {
+    clearGoogleStub();
+  }
+});
+
+test("rebuildMappingsFromFolders: applyDelete:true を payload へ渡す", async () => {
+  const captured = installGoogleStub("nfbRebuildMappingsFromFolders", { ok: true, mode: "apply" });
+  try {
+    const r = await rebuildMappingsFromFolders("", { applyDelete: true });
+    assert.deepEqual(captured.payload, { rootUrl: "", applyDelete: true });
+    assert.equal(r.mode, "apply");
   } finally {
     clearGoogleStub();
   }
