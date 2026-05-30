@@ -20,6 +20,7 @@ import ExternalActionsEditor from "../../features/settings/ExternalActionsEditor
 import { DEFAULT_THEME } from "../../app/theme/theme.js";
 import SchemaMapNav from "../../features/nav/SchemaMapNav.jsx";
 import { countSchemaNodes } from "../../core/schema.js";
+import LinkTargetUrlField from "../../features/editor/LinkTargetUrlField.jsx";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/admin/forms");
 
@@ -47,6 +48,8 @@ export default function AdminFormEditorPage() {
   const [localSettings, setLocalSettings] = useState(initialSettings);
   // 保存先スプレッドシートの手動指定欄。標準フォルダ構成が既定のため初期は常に非表示（③）。
   const [showSpreadsheetSetting, setShowSpreadsheetSetting] = useState(false);
+  // 普段は隠している「リンク先URL（保存先）」。指定時のみ保存の targetUrl として渡す。
+  const [linkTargetUrl, setLinkTargetUrl] = useState("");
   const [builderDirty, setBuilderDirty] = useState(false);
   const unsavedDialog = useConfirmDialog();
   const [isSaving, setIsSaving] = useState(false);
@@ -209,10 +212,12 @@ export default function AdminFormEditorPage() {
     };
 
     // 保存先は標準フォルダ構成（01_forms）。新規は copy_to_root → 01_forms、編集は既存ファイルを上書き。
+    // 「リンク先URL（保存先）」が指定されていれば targetUrl として渡し、別ファイル/フォルダへ付け替える。
+    const targetUrl = linkTargetUrl.trim() || null;
     try {
       const savedForm = isEdit
-        ? await updateForm(formId, payload, null, "auto")
-        : await createForm(payload, null, "auto");
+        ? await updateForm(formId, payload, targetUrl, "auto")
+        : await createForm(payload, targetUrl, "auto");
       setCachedForm(savedForm);
       builderRef.current?.commitSavedState?.();
       initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
@@ -403,6 +408,15 @@ export default function AdminFormEditorPage() {
               />
             </div>
           )}
+        </div>
+
+        <div className="nf-card nf-mb-16">
+          <LinkTargetUrlField
+            value={linkTargetUrl}
+            onChange={setLinkTargetUrl}
+            disabled={isReadLocked}
+            entityLabel="フォーム定義"
+          />
         </div>
 
         {SETTINGS_GROUPS.map((group) => (
