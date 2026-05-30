@@ -100,13 +100,20 @@ function Analytics_registerImportedTemplate_(type, payload) {
     mapping[newId] = { fileId: fileId, driveFileUrl: fileUrl, name: name };
     Analytics_saveMapping_(type, mapping);
 
-    // 開いていたフォルダ配下へ取り込む。参照先 Drive ファイルの json.folder を書き換える
-    // （移動/リネームと同じ既存ヘルパ）。マッピング保存後に呼ぶことで fileId 解決が効く。
-    if (payload.folder) {
-      var normFolder = Forms_normalizeFolderPath_(payload.folder);
+    // 論理フォルダの決定:
+    //   - payload.folder（管理画面で開いていた論理フォルダ）が明示指定されていればそれを論理パスとし、
+    //     物理ファイルもその物理フォルダへ移動する（物理パスを論理に合わせる）。
+    //   - 未指定のときは、取り込んだ物理ファイルが種類に対応した場所（02_questions / 03_dashboards
+    //     配下）の何処にあるかをそのまま論理パスとする（物理位置 ＝ 論理パス）。
+    var normFolder;
+    if (typeof payload.folder === "string" && payload.folder.trim() !== "") {
+      normFolder = Forms_normalizeFolderPath_(payload.folder);
       Analytics_setItemFolder_(type, newId, normFolder);
-      template.folder = normFolder;
+    } else {
+      var physical = AnalyticsDrive_relativeFolderOfFile_(type, fileId);
+      normFolder = physical == null ? "" : physical;
     }
+    template.folder = normFolder;
 
     var result = { ok: true, fileId: fileId, fileUrl: fileUrl };
     result[resultKey] = template;

@@ -132,6 +132,12 @@ function loadAnalyticsContext() {
     Number,
     // shims (本来は gas/properties.gs / gas/constants.gs にある共通ヘルパー)
     Nfb_getActiveProperties_: () => propsService,
+    // 物理フォルダミラー（analyticsDriveFolders.gs）が使う定数・正規化ヘルパ。
+    Forms_normalizeFolderPath_: (raw) => (typeof raw !== "string" ? "" :
+      raw.split("/").map((s) => String(s).trim()).filter((s) => s.length > 0).join("/")),
+    NFB_FOLDER_DRIVE_MAP_PROPERTY_VERSION: 1,
+    NFB_ANALYTICS_QUESTIONS_FOLDER_DRIVE_MAP_KEY: "nfb.analytics.questions.folders.drivemap",
+    NFB_ANALYTICS_DASHBOARDS_FOLDER_DRIVE_MAP_KEY: "nfb.analytics.dashboards.folders.drivemap",
     Nfb_generateUlid_: () => `ulid${String(nextUlid++).padStart(10, "0")}`,
     Nfb_parseVersionedMapping_: (json, expectedVersion) => {
       if (!json) return {};
@@ -211,6 +217,10 @@ function loadAnalyticsContext() {
     "gas/analyticsCrud.gs",
     "gas/analyticsImport.gs",
     "gas/analyticsCopy.gs",
+    // 物理フォルダミラー（保存/移動/インポート時の物理配置・名前フォールバック解決）に必要。
+    // 汎用ヘルパ（FormsDrive_folderByIdOrNull_ など）を流用するため forms 版も先に読み込む。
+    "gas/formsDriveFolders.gs",
+    "gas/analyticsDriveFolders.gs",
     // import 時の構成内判定 / 構成外コピー（StdFolders_ensureFileInStdFolder_）に必要
     "gas/standardFolders.gs",
   ];

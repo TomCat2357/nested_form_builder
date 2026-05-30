@@ -601,3 +601,97 @@ test("StdFolders_ensureFileInStdFolder_: 既に構成内（サブフォルダ配
   assert.equal(tree.ops.moved.length, 0, "移動しない");
   assert.equal(tree.ops.copied.length, 0, "コピーしない");
 });
+
+// ---------------------------------------------
+// (2.5) 同期対象外の物理ファイル削除（prune）
+// ---------------------------------------------
+
+// getFoldersByName / getFiles / getFolders / 再帰サブフォルダを備えた最小ツリー。
+function makePruneRoot() {
+  function makeFile(name, parentTrashedRef) {
+    const f = {
+      _name: name, _trashed: false,
+      getId: () => "FILE_" + name,
+      getName: () => name,
+      getMimeType: () => "application/json",
+      isTrashed: () => f._trashed,
+      setTrashed: (v) => { f._trashed = !!v; },
+    };
+    return f;
+  }
+  function makeFolder(name) {
+    const files = [];
+    const subs = [];
+    const folder = {
+      getId: () => "DIR_" + name,
+      getName: () => name,
+      addFile: (n) => { const f = makeFile(n); files.push(f); return f; },
+      addSub: (s) => { subs.push(s); return s; },
+      getFiles: () => { const live = files.filter((x) => !x._trashed); let i = 0; return { hasNext: () => i < live.length, next: () => live[i++] }; },
+      getFolders: () => { let i = 0; return { hasNext: () => i < subs.length, next: () => subs[i++] }; },
+      _files: files,
+    };
+    return folder;
+  }
+  const root = {
+    _subByName: {},
+    getFoldersByName(name) {
+      const arr = root._subByName[name] ? [root._subByName[name]] : [];
+      let i = 0;
+      return { hasNext: () => i < arr.length, next: () => arr[i++] };
+    },
+    addStd(name) { const f = makeFolder(name); root._subByName[name] = f; return f; },
+    getId: () => "ROOT",
+  };
+  return { root, makeFolder };
+}
+
+test("StdFolders_pruneUntrackedFiles_: dryRun は同期対象外をプレビューするだけ（削除しない）", () => {
+  const gas = loadGasContext();
+  gas.Nfb_nameFromFile_ = (f) => f.getName().replace(/\.json$/i, "");
+  const { root } = makePruneRoot();
+  const forms = root.addStd("01_forms");
+  const tracked = forms.addFile("keep.json");
+  const orphan = forms.addFile("orphan.json");
+  root.addStd("02_questions");
+  root.addStd("03_dashboards");
+
+  gas.StdFolders_resolveRootFolder_ = () => root;
+  gas.Forms_getMapping_ = () => ({ "FILE_keep.json": { fileId: "FILE_keep.json" } });
+  gas.Analytics_getMapping_ = () => ({});
+
+  const res = gas.StdFolders_pruneUntrackedFiles_({});
+  assert.equal(res.ok, true);
+  assert.equal(res.mode, "dryRun");
+  assert.equal(res.forms.untracked.length, 1);
+  assert.equal(res.forms.untracked[0].fileId, "FILE_orphan.json");
+  assert.equal(res.totalPruned, 0);
+  assert.equal(orphan._trashed, false, "dryRun では削除しない");
+  assert.equal(tracked._trashed, false);
+});
+
+test("StdFolders_pruneUntrackedFiles_: apply は登録簿に無いファイルを（ネスト含め）ゴミ箱へ", () => {
+  const gas = loadGasContext();
+  gas.Nfb_nameFromFile_ = (f) => f.getName().replace(/\.json$/i, "");
+  const { root, makeFolder } = makePruneRoot();
+  const forms = root.addStd("01_forms");
+  const keep = forms.addFile("keep.json");
+  const orphanTop = forms.addFile("orphanTop.json");
+  const nested = makeFolder("higuma");
+  const orphanNested = nested.addFile("orphanNested.json");
+  forms.addSub(nested);
+  root.addStd("02_questions");
+  root.addStd("03_dashboards");
+
+  gas.StdFolders_resolveRootFolder_ = () => root;
+  gas.Forms_getMapping_ = () => ({ "FILE_keep.json": { fileId: "FILE_keep.json" } });
+  gas.Analytics_getMapping_ = () => ({});
+
+  const res = gas.StdFolders_pruneUntrackedFiles_({ mode: "apply" });
+  assert.equal(res.mode, "apply");
+  assert.equal(res.forms.pruned, 2, "トップとネストの 2 件を削除");
+  assert.equal(res.totalUntracked, 2);
+  assert.equal(orphanTop._trashed, true);
+  assert.equal(orphanNested._trashed, true);
+  assert.equal(keep._trashed, false, "登録簿にある keep は残す");
+});

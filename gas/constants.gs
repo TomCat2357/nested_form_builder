@@ -24,6 +24,11 @@ var NFB_FOLDERS_PROPERTY_VERSION = 1;
 var NFB_FOLDER_DRIVE_MAP_PROPERTY_KEY = "nfb.forms.folders.drivemap";
 var NFB_FOLDER_DRIVE_MAP_PROPERTY_VERSION = 1;
 
+// Question / Dashboard 用の仮想フォルダパス → 物理 Drive フォルダ ID マップ（02_questions / 03_dashboards 配下）。
+// forms の drivemap と同じ形・同じ version 規則で、type ごとに別キーへ保存する。
+var NFB_ANALYTICS_QUESTIONS_FOLDER_DRIVE_MAP_KEY = "nfb.analytics.questions.folders.drivemap";
+var NFB_ANALYTICS_DASHBOARDS_FOLDER_DRIVE_MAP_KEY = "nfb.analytics.dashboards.folders.drivemap";
+
 // API/バッチ処理関連
 var NFB_DRIVE_API_BATCH_SIZE = 100;
 var NFB_LOCK_WAIT_TIMEOUT_MS = 10000;
