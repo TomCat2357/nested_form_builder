@@ -62,6 +62,20 @@ function Forms_normalizeMappingValue_(value) {
 }
 
 /**
+ * 永続化用の最小化正規化。driveFileUrl は fileId から一意に導出でき（読取時に
+ * Forms_normalizeMappingValue_ が再構築する）、1 エントリで最大のフィールドなので
+ * 保存しない。PropertiesService の 9KB/値・500KB/合計 制約に対して件数限界を伸ばす。
+ * fileId / title / folder は維持する（title は fileId 消失時に論理パスで物理を探し直す
+ * 復旧アンカー）。読取側は従来どおり driveFileUrl 込みの完全なエントリを受け取る。
+ * @param {*} value
+ * @returns {{fileId: string|null, title: string|null, folder: string|null}}
+ */
+function Forms_normalizeMappingForStorage_(value) {
+  var v = Forms_normalizeMappingValue_(value);
+  return { fileId: v.fileId, title: v.title, folder: v.folder };
+}
+
+/**
  * マッピング全体を正規化
  * @param {Object} mapping
  * @returns {Object} 正規化済みマッピング
@@ -86,7 +100,7 @@ function Forms_saveMapping_(mapping) {
     FORMS_PROPERTY_KEY,
     FORMS_PROPERTY_VERSION,
     mapping || {},
-    Forms_normalizeMappingValue_
+    Forms_normalizeMappingForStorage_
   );
   Logger.log("[Forms_saveMapping_] Saved successfully. Total forms: " + Object.keys(normalized || {}).length);
 }
