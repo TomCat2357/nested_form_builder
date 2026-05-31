@@ -21,11 +21,8 @@ $ErrorActionPreference = "Stop"
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 
 function Resolve-IndexHtmlPath {
-    $candidates = @("dist/Index.html", "dist/index.html")
-    foreach ($candidate in $candidates) {
-        if (Test-Path $candidate) {
-            return $candidate
-        }
+    if (Test-Path "dist/Index.html") {
+        return "dist/Index.html"
     }
     return ""
 }
@@ -180,10 +177,10 @@ Write-Host "🗂 プロパティ保存先: $PropertyStore" -ForegroundColor Gree
 # デプロイファイルの準備
 Write-Host "📄 デプロイファイルを準備中..." -ForegroundColor Yellow
 
-# dist/Index.html または dist/index.html が生成されているか確認
+# dist/Index.html が生成されているか確認
 $IndexHtmlPath = Resolve-IndexHtmlPath
 if (-not $IndexHtmlPath) {
-    Write-Host "❌ ビルド成果物 dist/Index.html (or dist/index.html) が見つかりません" -ForegroundColor Red
+    Write-Host "❌ ビルド成果物 dist/Index.html が見つかりません" -ForegroundColor Red
     exit 1
 }
 
