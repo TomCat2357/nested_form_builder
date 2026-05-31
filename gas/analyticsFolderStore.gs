@@ -208,7 +208,9 @@ function Analytics_moveItems_(type, payload) {
       if (Analytics_setItemFolder_(type, itemIds[f], destPath)) movedIds.push(itemIds[f]);
     }
 
-    return { ok: true, folders: Analytics_collectFolders_(type), movedIds: movedIds };
+    // 3) 影響アイテムに ①〜④ の整合（物理移動の自己修復 + ④ エラー検出）。
+    var verify = StdFolders_verifyEntriesAfterRelocate_(StdFolders_entityAdapter_(type), movedIds);
+    return { ok: true, folders: Analytics_collectFolders_(type), movedIds: movedIds, verify: verify };
   });
 }
 
@@ -285,7 +287,8 @@ function Analytics_renameFolder_(type, payload) {
     var movedIds = [];
     var registry = Analytics_relocateFolderPaths_(type, Analytics_getFolders_(type), old, next, movedIds);
     Analytics_saveFoldersRegistry_(type, registry);
-    return { ok: true, folders: Analytics_collectFolders_(type), movedIds: movedIds };
+    var verify = StdFolders_verifyEntriesAfterRelocate_(StdFolders_entityAdapter_(type), movedIds);
+    return { ok: true, folders: Analytics_collectFolders_(type), movedIds: movedIds, verify: verify };
   });
 }
 

@@ -210,7 +210,9 @@ function Forms_moveItems_(payload) {
       if (Forms_setFormFolder_(formIds[f], destPath)) movedFormIds.push(formIds[f]);
     }
 
-    return { ok: true, folders: Forms_collectFolders_(), movedFormIds: movedFormIds };
+    // 3) 影響フォームに ①〜④ の整合（物理移動の自己修復 + ④ エラー検出）。
+    var verify = StdFolders_verifyEntriesAfterRelocate_(StdFolders_entityAdapter_("forms"), movedFormIds);
+    return { ok: true, folders: Forms_collectFolders_(), movedFormIds: movedFormIds, verify: verify };
   });
 }
 
@@ -274,7 +276,8 @@ function Forms_renameFolder_(payload) {
     var movedFormIds = [];
     var registry = Forms_relocateFolderPaths_(Forms_getFolders_(), old, next, movedFormIds);
     Forms_saveFolders_(registry);
-    return { ok: true, folders: Forms_collectFolders_(), movedFormIds: movedFormIds };
+    var verify = StdFolders_verifyEntriesAfterRelocate_(StdFolders_entityAdapter_("forms"), movedFormIds);
+    return { ok: true, folders: Forms_collectFolders_(), movedFormIds: movedFormIds, verify: verify };
   });
 }
 
