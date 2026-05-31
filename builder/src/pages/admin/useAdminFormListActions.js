@@ -4,6 +4,7 @@ import { hasScriptRun, importFormsFromDrive } from "../../services/gasClient.js"
 import { toUnixMs } from "../../utils/dateTime.js";
 import { normalizeFolderPath, countItemsUnder, folderExists } from "../../utils/folderTree.js";
 import { sanitizeFileBaseName, downloadJsonOrZip, resolveDialogTargetIds } from "./listActionsShared.js";
+import { asPlainObject } from "../../utils/objectShape.js";
 
 const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
   const parts = [];
@@ -18,7 +19,7 @@ const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = 
 const sanitizeImportedForm = (raw) => {
   if (!raw || typeof raw !== "object") return null;
   const schema = Array.isArray(raw.schema) ? raw.schema : [];
-  const settings = raw && typeof raw.settings === "object" && !Array.isArray(raw.settings) ? raw.settings : {};
+  const settings = asPlainObject(raw.settings);
   const createdAtUnixMs = toUnixMs(raw.createdAtUnixMs ?? raw.createdAt);
   const modifiedAtUnixMs = toUnixMs(raw.modifiedAtUnixMs ?? raw.modifiedAt);
 

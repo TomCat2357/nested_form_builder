@@ -9,6 +9,7 @@ import PivotTable from "./PivotTable.jsx";
 import EchartsRenderer from "./EchartsRenderer.jsx";
 import MapRenderer from "./MapRenderer.jsx";
 import { resolveSeriesColor, normalizeChartStyle } from "../utils/chartPalette.js";
+import { isPlainObject } from "../../../utils/objectShape.js";
 
 // Chart.js を使わず HTML / SVG / Chart.js ラッパで描画する型。
 // useEffect の Chart.js ロードをスキップするための判定にも使う。
@@ -128,7 +129,7 @@ function mergeDeep(base, patch) {
   for (const k of Object.keys(patch)) {
     const bv = base[k];
     const pv = patch[k];
-    if (pv && typeof pv === "object" && !Array.isArray(pv) && bv && typeof bv === "object" && !Array.isArray(bv)) {
+    if (isPlainObject(pv) && isPlainObject(bv)) {
       out[k] = mergeDeep(bv, pv);
     } else {
       out[k] = pv;

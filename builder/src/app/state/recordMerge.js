@@ -5,6 +5,7 @@
  */
 
 import { resolveStrictUnixMs, formatJstString } from "../../utils/dateTime.js";
+import { asPlainObject } from "../../utils/objectShape.js";
 
 // ---------------------------------------------------------------------------
 // Timestamp helpers
@@ -32,9 +33,7 @@ export const withNormalizedModifiedAt = (record) => {
 // Record normalization
 // ---------------------------------------------------------------------------
 
-const normalizeObjectRecord = (value) => (
-  value && typeof value === "object" && !Array.isArray(value) ? value : {}
-);
+const normalizeObjectRecord = (value) => asPlainObject(value);
 
 export const normalizeRecordForCache = (record, { formId } = {}) => {
   const baseRecord = record && typeof record === "object" ? record : {};

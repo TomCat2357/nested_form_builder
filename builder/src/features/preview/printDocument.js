@@ -5,6 +5,7 @@ import { fieldHasValue } from "../../core/fieldValue.js";
 import { CHOICE_TYPES, isChoiceMarkerValue } from "../../utils/responses.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 import { isExcludedSearchOrPrintField } from "../search/searchTable.js";
+import { isPlainObject } from "../../utils/objectShape.js";
 
 export { CHOICE_TYPES, isChoiceMarkerValue };
 
@@ -242,7 +243,7 @@ export const buildFieldPathsMap = (fields, prefix = "", map = {}) => {
     if (field?.id && label) {
       map[field.id] = path;
     }
-    if (field?.childrenByValue && typeof field.childrenByValue === "object" && !Array.isArray(field.childrenByValue)) {
+    if (isPlainObject(field?.childrenByValue)) {
       // 選択肢分岐の子は、選択肢ラベルもパスに含める（traverseSchema / buildDataValueMap と一致）。
       // 例: 選択1|答1|答1補足。これを省くと {...} と {{...}} でパスが食い違い、同名子の衝突も起きる。
       Object.entries(field.childrenByValue).forEach(([optionLabel, children]) => {

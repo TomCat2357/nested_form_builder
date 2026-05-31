@@ -9,8 +9,7 @@ import { resolveTemplateTokens } from "../utils/tokenReplacer.js";
 import { normalizeFileUploadEntries } from "./collect.js";
 import { extractFieldRefs, validateTemplateSyntax } from "../features/expression/templateEvaluator.js";
 import { isChoiceMarkerValue } from "../utils/responses.js";
-
-const isPlainObject = (value) => !!value && typeof value === "object" && !Array.isArray(value);
+import { isPlainObject } from "../utils/objectShape.js";
 
 // ---------------------------------------------------------------------------
 // Dependency extraction

@@ -11,12 +11,13 @@ import { executeQuestion } from "./analyticsStore.js";
 import { runAlaSqlOnArray } from "./analyticsAlaSql.js";
 import { bracketIdent } from "../expression/sqlEmit.js";
 import { formatCanonical } from "../../utils/dateTime.js";
+import { isPlainObject } from "../../utils/objectShape.js";
 
 function isMeaningfulValue(v) {
   if (v === null || v === undefined) return false;
   if (typeof v === "string" && v.trim() === "") return false;
   if (Array.isArray(v) && v.length === 0) return false;
-  if (typeof v === "object" && !Array.isArray(v)) {
+  if (isPlainObject(v)) {
     return Object.values(v).some((x) => x !== null && x !== undefined && x !== "");
   }
   return true;

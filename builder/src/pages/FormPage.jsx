@@ -7,6 +7,7 @@ import FormPageDialogs from "./FormPageDialogs.jsx";
 import FormPageSidebar from "./FormPageSidebar.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { hasDirtyChanges } from "../utils/responses.js";
+import { isPlainObject } from "../utils/objectShape.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
@@ -103,7 +104,7 @@ export default function FormPage() {
       const saved = sessionStorage.getItem(driveFolderDraftKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        if (isPlainObject(parsed)) {
           const next = {};
           for (const [fid, v] of Object.entries(parsed)) {
             next[fid] = normalizeDriveFolderState(v);
@@ -121,7 +122,7 @@ export default function FormPage() {
       const saved = sessionStorage.getItem(driveFolderDraftKey);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        if (isPlainObject(parsed)) {
           const next = {};
           for (const [fid, v] of Object.entries(parsed)) {
             next[fid] = normalizeDriveFolderState(v);
