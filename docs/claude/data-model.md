@@ -2,6 +2,8 @@
 
 CLAUDE.md から分離した、フォームスキーマ／スプレッドシートレイアウト／ソフトデリートの仕様詳細。コード編集時に参照する。
 
+> リンク（参照）の持ち方・保存時のリンク追従・`driveFileUrl` の非永続化の整理は [links-and-save.md](links-and-save.md)。
+
 ## 識別モデル（id ＝ Drive fileId / 名前 ＝ Drive ファイル名）
 
 フォーム・クエスチョン・ダッシュボードの **id は、その定義 JSON が置かれている Google Drive ファイルの fileId** に統一されている。**名前（フォームは `settings.formTitle`、クエスチョン/ダッシュボードは `name`）は Drive 上のファイル名（拡張子 `.json` を除いたもの）**であり、システム上の名前と Drive ファイル名は常に一致する。
