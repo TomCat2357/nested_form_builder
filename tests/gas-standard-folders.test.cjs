@@ -26,7 +26,7 @@ function loadGasContext() {
     ExtractFileIdFromUrl_() { return null; },
   };
   // standardFolders.gs は formsParsing.gs（Forms_parseGoogleDriveUrl_）と model.gs（Model_normalizeSpreadsheetId_）に依存。
-  return loadGasFiles(context, ["formsParsing.gs", "model.gs", "standardFolders.gs"]);
+  return loadGasFiles(context, ["formsParsing.gs", "model.gs", "standardFoldersAlign.gs", "standardFoldersCopy.gs", "standardFolders.gs"]);
 }
 
 // getFilesByName / getFiles / createFile / setTrashed / getLastUpdated を備えた最小フォルダモック。
@@ -303,86 +303,6 @@ test("StdFolders_writeMappingFile_: destRoot に _nfb_mapping.json を 1 件作�
   assert.equal(written.forms.a.fileId, "DST1");
 });
 
-// ---- 壊れたリンクの修復（再リンク / 削除） ----
-
-// DriveApp / ルート解決を使わずに修復ロジックを検証するため、生存判定と
-// 名前インデックス、構成内コピー（既存正規化）を差し替える。
-//   aliveIds   : 生存している fileId の集合
-//   indexByKey : key → { ファイル名(.json除去): { fileId, fileUrl } }
-// id ＝ fileId へ統一したため、壊れたリンクはキャッシュ名（title/name）で名前解決する。
-function stubRepairEnv(gas, { aliveIds = [], indexByKey = {} } = {}) {
-  const alive = new Set(aliveIds);
-  gas.StdFolders_isFileIdAlive_ = (fileId) => alive.has(fileId);
-  gas.StdFolders_indexStdFolderByName_ = (key) => indexByKey[key] || {};
-  // 生存ファイルは「既に構成内」とみなし、コピーによる正規化は発生させない。
-  gas.StdFolders_ensureMappingEntryInStd_ = () => ({ changed: false });
-}
-
-test("StdFolders_repairAndNormalizeMapping_: 壊れたリンクはキャッシュ名一致先へ再リンク（fileId へ再キー）する", () => {
-  const gas = loadGasContext();
-  stubRepairEnv(gas, {
-    aliveIds: [],
-    indexByKey: { forms: { T: { fileId: "NEWF1", fileUrl: "https://drive.google.com/file/d/NEWF1/view" } } },
-  });
-  const mapping = { f1: { fileId: "DEADF1", driveFileUrl: "https://drive.google.com/file/d/DEADF1/view", title: "T" } };
-  const res = gas.StdFolders_repairAndNormalizeMapping_(mapping, "forms", null);
-  assert.equal(res.relinked, 1);
-  assert.equal(res.removed, 0);
-  // id ＝ fileId なので、再リンク後は新 fileId をキーに張り替える（旧キーは削除）。
-  assert.ok(!mapping.f1, "旧キー（死んだ fileId）は削除される");
-  assert.equal(mapping.NEWF1.fileId, "NEWF1");
-  assert.equal(mapping.NEWF1.driveFileUrl, "https://drive.google.com/file/d/NEWF1/view");
-});
-
-test("StdFolders_repairAndNormalizeMapping_: 張替え先が無い壊れたリンクはマッピングから削除する", () => {
-  const gas = loadGasContext();
-  stubRepairEnv(gas, { aliveIds: [], indexByKey: { forms: {} } });
-  const mapping = { f1: { fileId: "DEADF1", driveFileUrl: "u", title: "T" } };
-  const res = gas.StdFolders_repairAndNormalizeMapping_(mapping, "forms", null);
-  assert.equal(res.relinked, 0);
-  assert.equal(res.removed, 1);
-  assert.equal(res.removedIds.length, 1);
-  assert.equal(res.removedIds[0], "f1");
-  assert.ok(!mapping.f1, "壊れたエントリは削除される");
-});
-
-test("StdFolders_repairAndNormalizeMapping_: 生存リンクは変更しない", () => {
-  const gas = loadGasContext();
-  stubRepairEnv(gas, { aliveIds: ["LIVE1"], indexByKey: { forms: {} } });
-  const mapping = { f1: { fileId: "LIVE1", driveFileUrl: "u", title: "T" } };
-  const res = gas.StdFolders_repairAndNormalizeMapping_(mapping, "forms", null);
-  assert.equal(res.normalized, 0);
-  assert.equal(res.relinked, 0);
-  assert.equal(res.removed, 0);
-  assert.equal(mapping.f1.fileId, "LIVE1");
-});
-
-test("StdFolders_normalizeLinkedToStd_: 再リンク時は AddFormUrl_ も更新し、合計件数を返す", () => {
-  const gas = loadGasContext();
-  stubRepairEnv(gas, {
-    aliveIds: ["LIVEQ"],
-    indexByKey: {
-      forms: { T: { fileId: "NEWF1", fileUrl: "https://drive.google.com/file/d/NEWF1/view" } },
-      questions: {},
-      dashboards: {},
-    },
-  });
-  const stores = installStores(gas, {
-    forms: { f1: { fileId: "DEADF1", driveFileUrl: "old", title: "T" } }, // 壊れ → 名前で再リンク（fileId へ再キー）
-    questions: { q1: { fileId: "LIVEQ", driveFileUrl: "qu", name: "Q" } }, // 生存 → 無変更
-    dashboards: { d1: { fileId: "DEADD1", driveFileUrl: "du", name: "D" } }, // 壊れ・張替え先なし → 削除
-  });
-  const res = gas.StdFolders_normalizeLinkedToStd_();
-  assert.equal(res.relinked, 1);
-  assert.equal(res.removed, 1);
-  // 再リンク後は新 fileId（NEWF1）をキーに張り替わる。
-  assert.ok(!stores.forms.f1, "旧キー（死んだ fileId）は削除される");
-  assert.equal(stores.forms.NEWF1.fileId, "NEWF1");
-  assert.equal(stores.formUrls.NEWF1, "https://drive.google.com/file/d/NEWF1/view", "再リンクで AddFormUrl_ も新キーで更新される");
-  assert.ok(!stores.dashboards.d1, "張替え先のない壊れた Dashboard リンクは削除される");
-  assert.equal(stores.questions.q1.fileId, "LIVEQ", "生存 Question は無変更");
-});
-
 // DriveApp.getFileById を差し替えて、JSON 本体を読み書きできる 1 ファイルを用意する。
 function installSingleFile(gas, fileId, content) {
   const state = { content };
@@ -600,98 +520,4 @@ test("StdFolders_ensureFileInStdFolder_: 既に構成内（サブフォルダ配
   assert.equal(res.fileId, "FILE_IN");
   assert.equal(tree.ops.moved.length, 0, "移動しない");
   assert.equal(tree.ops.copied.length, 0, "コピーしない");
-});
-
-// ---------------------------------------------
-// (2.5) 同期対象外の物理ファイル削除（prune）
-// ---------------------------------------------
-
-// getFoldersByName / getFiles / getFolders / 再帰サブフォルダを備えた最小ツリー。
-function makePruneRoot() {
-  function makeFile(name, parentTrashedRef) {
-    const f = {
-      _name: name, _trashed: false,
-      getId: () => "FILE_" + name,
-      getName: () => name,
-      getMimeType: () => "application/json",
-      isTrashed: () => f._trashed,
-      setTrashed: (v) => { f._trashed = !!v; },
-    };
-    return f;
-  }
-  function makeFolder(name) {
-    const files = [];
-    const subs = [];
-    const folder = {
-      getId: () => "DIR_" + name,
-      getName: () => name,
-      addFile: (n) => { const f = makeFile(n); files.push(f); return f; },
-      addSub: (s) => { subs.push(s); return s; },
-      getFiles: () => { const live = files.filter((x) => !x._trashed); let i = 0; return { hasNext: () => i < live.length, next: () => live[i++] }; },
-      getFolders: () => { let i = 0; return { hasNext: () => i < subs.length, next: () => subs[i++] }; },
-      _files: files,
-    };
-    return folder;
-  }
-  const root = {
-    _subByName: {},
-    getFoldersByName(name) {
-      const arr = root._subByName[name] ? [root._subByName[name]] : [];
-      let i = 0;
-      return { hasNext: () => i < arr.length, next: () => arr[i++] };
-    },
-    addStd(name) { const f = makeFolder(name); root._subByName[name] = f; return f; },
-    getId: () => "ROOT",
-  };
-  return { root, makeFolder };
-}
-
-test("StdFolders_pruneUntrackedFiles_: dryRun は同期対象外をプレビューするだけ（削除しない）", () => {
-  const gas = loadGasContext();
-  gas.Nfb_nameFromFile_ = (f) => f.getName().replace(/\.json$/i, "");
-  const { root } = makePruneRoot();
-  const forms = root.addStd("01_forms");
-  const tracked = forms.addFile("keep.json");
-  const orphan = forms.addFile("orphan.json");
-  root.addStd("02_questions");
-  root.addStd("03_dashboards");
-
-  gas.StdFolders_resolveRootFolder_ = () => root;
-  gas.Forms_getMapping_ = () => ({ "FILE_keep.json": { fileId: "FILE_keep.json" } });
-  gas.Analytics_getMapping_ = () => ({});
-
-  const res = gas.StdFolders_pruneUntrackedFiles_({});
-  assert.equal(res.ok, true);
-  assert.equal(res.mode, "dryRun");
-  assert.equal(res.forms.untracked.length, 1);
-  assert.equal(res.forms.untracked[0].fileId, "FILE_orphan.json");
-  assert.equal(res.totalPruned, 0);
-  assert.equal(orphan._trashed, false, "dryRun では削除しない");
-  assert.equal(tracked._trashed, false);
-});
-
-test("StdFolders_pruneUntrackedFiles_: apply は登録簿に無いファイルを（ネスト含め）ゴミ箱へ", () => {
-  const gas = loadGasContext();
-  gas.Nfb_nameFromFile_ = (f) => f.getName().replace(/\.json$/i, "");
-  const { root, makeFolder } = makePruneRoot();
-  const forms = root.addStd("01_forms");
-  const keep = forms.addFile("keep.json");
-  const orphanTop = forms.addFile("orphanTop.json");
-  const nested = makeFolder("higuma");
-  const orphanNested = nested.addFile("orphanNested.json");
-  forms.addSub(nested);
-  root.addStd("02_questions");
-  root.addStd("03_dashboards");
-
-  gas.StdFolders_resolveRootFolder_ = () => root;
-  gas.Forms_getMapping_ = () => ({ "FILE_keep.json": { fileId: "FILE_keep.json" } });
-  gas.Analytics_getMapping_ = () => ({});
-
-  const res = gas.StdFolders_pruneUntrackedFiles_({ mode: "apply" });
-  assert.equal(res.mode, "apply");
-  assert.equal(res.forms.pruned, 2, "トップとネストの 2 件を削除");
-  assert.equal(res.totalUntracked, 2);
-  assert.equal(orphanTop._trashed, true);
-  assert.equal(orphanNested._trashed, true);
-  assert.equal(keep._trashed, false, "登録簿にある keep は残す");
 });

@@ -53,7 +53,9 @@ const FILE_ORDER = [
   'analyticsFolderStore.gs', // フォルダ登録簿（Analytics 版）
   'analyticsDriveFolders.gs', // 仮想フォルダ ↔ 物理 Drive フォルダ（02_questions / 03_dashboards 配下）のミラー
   'model.gs',            // モデル関数
-  'standardFolders.gs',  // 標準フォルダ構成（作成 / 自動整理 / 構成コピー）— forms/analytics/model/driveFolder ヘルパーに依存
+  'standardFoldersAlign.gs', // 論理↔物理 整合同期エンジン（6ケース）— standardFolders.gs から分離
+  'standardFoldersCopy.gs',  // 構成コピー（システムごとコピー）— standardFolders.gs から分離
+  'standardFolders.gs',  // 標準フォルダ構成（作成 / 自動整理 / マッピング I/O / 再リンク / 重複整理）— forms/analytics/model/driveFolder ヘルパーに依存
   // --- sheets ---
   'sheetsDatetime.gs',
   'sheetsHeaders.gs',

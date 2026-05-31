@@ -3,6 +3,7 @@ import { resolveStrictUnixMs } from "../../utils/dateTime.js";
 import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_SHEET_NAME, MS_PER_DAY } from "../../core/constants.js";
 import { deleteRecordsFromCache } from "./recordsMemoryStore.js";
 import { normalizeRecordForCache } from "./recordMerge.js";
+import { asPlainObject } from "../../utils/objectShape.js";
 
 // フォームにレコード保存先スプレッドシートが設定済みか。
 // 管理者は spreadsheetId 本体を、非管理者は GAS が付与する hasSpreadsheet フラグを持つ。
@@ -139,7 +140,7 @@ export const buildUpsertEntryRecord = ({
   const resolvedDeletedAt = hasOwn(safePayload, "deletedAt") ? safePayload.deletedAt : existingEntry?.deletedAt;
   const resolvedDeletedAtUnixMs = hasOwn(safePayload, "deletedAtUnixMs") ? safePayload.deletedAtUnixMs : existingEntry?.deletedAtUnixMs;
   const resolvedDeletedBy = hasOwn(safePayload, "deletedBy") ? safePayload.deletedBy : existingEntry?.deletedBy;
-  const fallbackOrder = Object.keys((resolvedData && typeof resolvedData === "object" && !Array.isArray(resolvedData)) ? resolvedData : {});
+  const fallbackOrder = Object.keys(asPlainObject(resolvedData));
 
   return normalizeRecordForCache({
     ...existingEntry,

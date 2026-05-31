@@ -10,13 +10,7 @@
  * buildFileUploadRowEntries も併せて提供する。
  */
 
-function isPlainObject(value) {
-  return value && typeof value === "object" && !Array.isArray(value);
-}
-
-function plainObject(value) {
-  return isPlainObject(value) ? value : {};
-}
+import { asPlainObject } from "./objectShape.js";
 
 /**
  * 配列内の `{ name }` オブジェクトは name で文字列化する。
@@ -49,9 +43,9 @@ export function templateValueToString(value) {
  * を優先、無ければ responses から文字列化する。
  */
 export function buildLabelValueMap(fieldPaths, fieldValues, responses) {
-  const paths = plainObject(fieldPaths);
-  const values = plainObject(fieldValues);
-  const resp = plainObject(responses);
+  const paths = asPlainObject(fieldPaths);
+  const values = asPlainObject(fieldValues);
+  const resp = asPlainObject(responses);
   const map = {};
   for (const fid in paths) {
     if (!Object.prototype.hasOwnProperty.call(paths, fid)) continue;
@@ -77,8 +71,8 @@ export function buildLabelValueMap(fieldPaths, fieldValues, responses) {
  * 補完する（このユーティリティは meta 単独のパスのみを担う）。
  */
 export function buildFileUploadRowEntries(fieldPaths, fileUploadMeta) {
-  const paths = plainObject(fieldPaths);
-  const metaByFid = plainObject(fileUploadMeta);
+  const paths = asPlainObject(fieldPaths);
+  const metaByFid = asPlainObject(fileUploadMeta);
   const out = {};
   for (const fid in paths) {
     if (!Object.prototype.hasOwnProperty.call(paths, fid)) continue;

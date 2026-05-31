@@ -2,6 +2,8 @@ import { withTransaction, waitForRequest, STORE_NAMES } from './dbHelpers.js';
 
 const META_KEY = '__metadata__';
 
+// フォーム一覧キャッシュ用のメタ（lastSyncedAt / failures / propertyStoreMode / folders）。
+// レコード同期用の recordsMemoryStore.js のメタとは別ドメインなので共通化しない。
 // lastSyncedAt は「最後にサーバから一覧をフル取得した時刻」を表す。
 // stampSyncTime=true はサーバ取得経路（refreshForms）のみが渡す。ローカルの楽観的更新
 // では既存メタの値を据え置き、SWR の再同期タイマーを延長しない。

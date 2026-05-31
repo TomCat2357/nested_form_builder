@@ -3,6 +3,7 @@ import { genFormId } from "../core/ids.js";
 import { collectDisplayFieldSettings } from "./formPaths.js";
 import { toUnixMs } from "./dateTime.js";
 import { normalizeExternalActions } from "./settings.js";
+import { isPlainObject } from "./objectShape.js";
 
 const defaultNowFn = () => toUnixMs(Date.now());
 
@@ -30,10 +31,7 @@ export const normalizeFormRecord = (source = {}, options = {}) => {
   const schema = Array.isArray(source.schema) ? source.schema : [];
   const displayFieldSettings = collectDisplayFieldSettings(schema);
   const createdAt = resolveCreatedAt(source, fallbackCreatedAt, now);
-  const settings =
-    source.settings && typeof source.settings === "object" && !Array.isArray(source.settings)
-      ? { ...source.settings }
-      : {};
+  const settings = isPlainObject(source.settings) ? { ...source.settings } : {};
   const base = preserveUnknownFields ? { ...source } : {};
 
   if (!settings.formTitle) {

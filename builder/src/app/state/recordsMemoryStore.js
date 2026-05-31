@@ -56,6 +56,9 @@ const buildRecordWithMeta = (formId, record, lastSyncedAt, rowIndex) => {
   };
 };
 
+// レコード同期用のメタ（formId / lastSyncedAt / lastSpreadsheetReadAt …）。
+// フォーム一覧キャッシュの formsCache.js のメタ（failures / propertyStoreMode / folders）とは
+// 別ドメインなので共通化しない。共有するのは lastSyncedAt の語彙のみ。
 const buildMetadata = (formId, existingMeta, updates = {}) => {
   const now = Date.now();
   return {

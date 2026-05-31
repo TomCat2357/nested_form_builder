@@ -35,33 +35,6 @@ const normalizeAdminEmailInput = (value) => String(value || "")
   .join(";");
 
 // 既リンク資産のうち標準フォルダ構成外だったものを構成内へコピーした件数と、
-// 壊れたリンクを再リンク／削除した件数を文面にする。
-// コピー・再リンク・削除がいずれも 0 のときは空配列を返し、従来文面のままにする。
-function buildNormalizedLines(normalized) {
-  if (!normalized) return [];
-  const copied = normalized.total || 0;
-  const relinked = normalized.relinked || 0;
-  const removed = normalized.removed || 0;
-  if (!copied && !relinked && !removed) return [];
-  const lines = [];
-  if (copied) {
-    lines.push(
-      "",
-      "標準フォルダ構成外だったため標準フォルダへコピーしました:",
-      `フォーム: ${normalized.forms?.count || 0}件 / Question: ${normalized.questions?.count || 0}件 / Dashboard: ${normalized.dashboards?.count || 0}件`,
-      `（うちダッシュボード連動でコピーした Question: ${normalized.cascadedQuestions || 0}件）`,
-    );
-  }
-  if (relinked || removed) {
-    lines.push(
-      "",
-      "壊れたリンクを修復しました:",
-      `再リンク: ${relinked}件 / 削除: ${removed}件`,
-    );
-  }
-  return lines;
-}
-
 function buildMembershipFailMessage({ userEmail, reason, groupErrors, detail }) {
   const safeUser = userEmail || "不明";
   if (reason === "missing_current_user_email") {
@@ -486,7 +459,7 @@ export default function SettingsAdminTab() {
     if (!canManageAdminSettings) return;
     setImportLoading(true);
     try {
-      const { imported, skipped, errors, normalized } = await importMapping(mappingImportUrl.trim());
+      const { imported, skipped, errors } = await importMapping(mappingImportUrl.trim());
       const lines = [
         `フォーム: ${imported.forms || 0}件`,
         `Question: ${imported.questions || 0}件`,
@@ -498,7 +471,8 @@ export default function SettingsAdminTab() {
         errors.slice(0, 3).forEach((e) => lines.push(`・[${e.section}] ${e.id}: ${e.reason}`));
         if (errors.length > 3) lines.push(`…ほか ${errors.length - 3}件`);
       }
-      lines.push(...buildNormalizedLines(normalized));
+      // インポートはマッピングのマージのみ。物理整列・リンク修復は「同期（フォルダ走査）」が担うため案内する。
+      lines.push("", "続けて「同期（フォルダ走査）」を実行すると、取り込んだ資産を標準フォルダへ整列します。");
       await invalidateListCaches();
       showAlert(`マッピングをインポートしました。\n${lines.join("\n")}`);
     } catch (error) {

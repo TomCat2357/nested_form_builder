@@ -3,6 +3,7 @@ import { deepEqual } from "./deepEqual.js";
 import { traverseSchema } from "../core/schemaUtils.js";
 import { formatPhoneValueForField } from "../core/phone.js";
 import { sanitizeFileUploadEntry, normalizeFileUploadEntries, parseFileUploadStorage } from "../core/collect.js";
+import { isPlainObject } from "./objectShape.js";
 
 // date / time フィールドの保存値を JST 壁時計で正規化する。
 // 入力は dataUnixMs[fieldId] があればそれを優先（unixMs）、無ければ rawValue
@@ -76,7 +77,7 @@ const collectDirectChoiceLabels = (field, directValue) => {
     labels.push(directValue);
   }
 
-  if (directValue && typeof directValue === "object" && !Array.isArray(directValue)) {
+  if (isPlainObject(directValue)) {
     Object.entries(directValue).forEach(([label, marker]) => {
       if (isChoiceMarkerValue(marker)) labels.push(label);
     });
