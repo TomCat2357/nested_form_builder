@@ -634,21 +634,60 @@ function StdFolders_resolveRefByName_(id, name, nameToIds) {
   return { count: list.length, fileId: list.length === 1 ? list[0] : null, ids: list };
 }
 
+// 論理パス folder + 葉名 を folder スコープ索引のキーに正規化する。
+// 中央辞書（マッピング）の folder と present 実体の json.folder を同じ正規化で突き合わせ、
+// 同名異フォルダの誤解決を防ぐ（実行時リゾルバ Forms_resolveFormRef_ の folder スコープ解決と一致）。
+function StdFolders_normFolderKey_(folder, name) {
+  var nf = (typeof Forms_normalizeFolderPath_ === "function")
+    ? Forms_normalizeFolderPath_(folder || "")
+    : String(folder || "");
+  return nf + " " + String(name || "");
+}
+
 // エンティティ相互参照（formId / questionId）の状態を判定する。
-// 実行時リゾルバと同じ階層で評価する:
+// 参照は fileId のみ保持し、復旧は中央辞書（論理パス folder + 名前 → fileId）に集約する
+// 現行方針（commit c8b7bed）に追従する。実行時リゾルバ Forms_resolveFormRef_ と同じ優先順:
 //   1) id（fileId）が構成内に実在 → OK（構成内）
-//   2) 保持名 or id をファイル名として名前解決 → 一意なら「名前一致・要再リンク」/ 複数なら「名前重複・曖昧」
-//   3) マッピングキーのみ存在 → 要確認
-//   4) いずれも該当せず → 真のリンク切れ
-// nameToIds は present 実体の { name: [fileId,...] } 索引。
-function StdFolders_reportRefStatus_(id, name, presentSet, mapSet, nameToIds) {
-  if (!id && !name) return "未設定";
+//   2) 中央辞書（マッピング）の folder + title で folder スコープ解決 → 中央辞書で解決（同期で恒久修復可）
+//   3) 名前で degrade（title or id をファイル名としてツリー探索）→ 一意なら名前一致 / 複数なら曖昧
+//   4) マッピングはあるが物理解決不可 → 要確認 / マッピングも無ければ 真のリンク切れ
+// embeddedName は旧データに残る formName/questionName（新規保存では剥がされる）。
+// 後方互換の最終 degrade にのみ使い、判定は中央辞書を優先する。
+// byFolderName は present 実体の { folderKey: [fileId,...] } 索引、nameToIds は { name: [fileId,...] } 索引。
+function StdFolders_reportRefStatus_(id, embeddedName, mapEntry, presentSet, byFolderName, nameToIds) {
+  if (!id && !embeddedName) return "未設定";
   if (id && presentSet && presentSet[id]) return "OK（構成内）";
-  var matched = StdFolders_resolveRefByName_(id, name, nameToIds);
-  if (matched.count === 1) return "名前一致・要再リンク（実行時は解決）";
-  if (matched.count > 1) return "名前重複・要手動再リンク（曖昧）";
-  if (id && mapSet && mapSet[id]) return "要確認（マッピング有・構成内に実体なし）";
+  if (mapEntry) {
+    var regName = mapEntry.title || mapEntry.name || "";
+    if (regName && typeof mapEntry.folder === "string" && byFolderName) {
+      var hit = byFolderName[StdFolders_normFolderKey_(mapEntry.folder, regName)];
+      if (hit && hit.length === 1) return "中央辞書で解決（同期で恒久修復可）";
+      if (hit && hit.length > 1) return "名前重複・要手動再リンク（曖昧）";
+    }
+    var byName = StdFolders_resolveRefByName_(id, regName, nameToIds);
+    if (byName.count === 1) return "名前一致・要再リンク（実行時は解決）";
+    if (byName.count > 1) return "名前重複・要手動再リンク（曖昧）";
+    return "要確認（中央辞書有・構成内に実体なし）";
+  }
+  var legacy = StdFolders_resolveRefByName_(id, embeddedName, nameToIds);
+  if (legacy.count === 1) return "名前一致・要再リンク（実行時は解決）";
+  if (legacy.count > 1) return "名前重複・要手動再リンク（曖昧）";
   return "未解決（真のリンク切れ）";
+}
+
+// reportRefStatus_ と同じ優先順で解決先 fileId を返す（表示用。解決不能なら null）。
+function StdFolders_resolveRefFileId_(id, mapEntry, byFolderName, nameToIds) {
+  if (mapEntry) {
+    var regName = mapEntry.title || mapEntry.name || "";
+    if (regName && typeof mapEntry.folder === "string" && byFolderName) {
+      var hit = byFolderName[StdFolders_normFolderKey_(mapEntry.folder, regName)];
+      if (hit && hit.length === 1) return hit[0];
+    }
+    var r = StdFolders_resolveRefByName_(id, regName, nameToIds);
+    return r.count === 1 ? r.fileId : null;
+  }
+  var legacy = StdFolders_resolveRefByName_(id, "", nameToIds);
+  return legacy.count === 1 ? legacy.fileId : null;
 }
 
 // Drive ファイル/フォルダ参照（スプレッドシート等）の状態を構成内照合のみで判定する。
@@ -668,7 +707,9 @@ function StdFolders_statusSeverity_(status) {
     case "未解決（真のリンク切れ）":
     case "名前重複・要手動再リンク（曖昧）":
     case "要確認（マッピング有・構成内に実体なし）":
+    case "要確認（中央辞書有・構成内に実体なし）":
       return "manual";
+    case "中央辞書で解決（同期で恒久修復可）":
     case "名前一致・要再リンク（実行時は解決）":
       return "auto";
     case "構成外/外部（未検査）":
@@ -719,16 +760,16 @@ function StdFolders_buildLinkReport_(payload) {
     var formMap = Forms_getMapping_();
     var qMap = Analytics_getMapping_("questions");
     var dMap = Analytics_getMapping_("dashboards");
-    var formMapSet = {}; for (var fk in formMap) { if (formMap.hasOwnProperty(fk)) formMapSet[fk] = true; }
-    var qMapSet = {};    for (var qk in qMap)    { if (qMap.hasOwnProperty(qk))    qMapSet[qk]    = true; }
-    var dMapSet = {};    for (var dk in dMap)    { if (dMap.hasOwnProperty(dk))    dMapSet[dk]    = true; }
 
-    // 構成内に実体のあるフォーム / Question の fileId 集合と、名前→fileId 索引（JSON ファイルのみ）。
-    // 名前索引は実行時リゾルバの名前フォールバック相当の判定と、同名重複の検知に使う。
+    // 構成内に実体のあるフォーム / Question の fileId 集合・名前→fileId 索引・folder スコープ索引（JSON のみ）。
+    // 名前索引は名前フォールバック相当の判定と同名重複検知に、folder 索引は中央辞書の folder + 名前
+    // による folder スコープ解決（実行時リゾルバと一致）に使う。json.folder は各エンティティのパース時に充填する。
     var presentFormIds = {};
     var presentQuestionIds = {};
     var presentFormNameToIds = {};
     var presentQuestionNameToIds = {};
+    var presentFormByFolderName = {};
+    var presentQuestionByFolderName = {};
     (inventory.forms || []).forEach(function(rec) {
       if (!StdFolders_isJsonFile_(rec.file)) return;
       presentFormIds[rec.fileId] = true;
@@ -739,6 +780,8 @@ function StdFolders_buildLinkReport_(payload) {
       presentQuestionIds[rec.fileId] = true;
       StdFolders_indexNameToIds_(presentQuestionNameToIds, Nfb_nameFromFile_(rec.file) || rec.name, rec.fileId);
     });
+
+    var scannedLinks = 0;   // 検査したリンク／参照の総数（OK 件数の算出用）
 
     var broken = [];   // { kind, owner, detail, status }
 
@@ -753,11 +796,14 @@ function StdFolders_buildLinkReport_(payload) {
       catch (e) { forms.push({ name: rec.relPath, fileId: rec.fileId, relPath: rec.relPath, links: [], parseError: true }); return; }
       var displayName = Nfb_nameFromFile_(rec.file) || rec.name;
       var links = [];
+      // 中央辞書の folder スコープ解決に使う present フォーム索引（json.folder + 葉名 → fileId）。
+      StdFolders_indexNameToIds_(presentFormByFolderName, StdFolders_normFolderKey_(json.folder, displayName), rec.fileId);
 
       var ssRaw = json.settings && json.settings.spreadsheetId ? json.settings.spreadsheetId : "";
       if (ssRaw) {
         var ssId = Model_normalizeSpreadsheetId_(ssRaw) || ssRaw;
         var ssStatus = StdFolders_reportFileLinkStatus_(ssId, presentFileIds);
+        scannedLinks++;
         links.push({ label: "スプレッドシート", raw: ssRaw, id: ssId, status: ssStatus });
         if (StdFolders_isBrokenStatus_(ssStatus)) broken.push({ kind: "Form", owner: displayName, detail: "スプレッドシート " + ssId, status: ssStatus, severity: StdFolders_statusSeverity_(ssStatus) });
       }
@@ -767,16 +813,19 @@ function StdFolders_buildLinkReport_(payload) {
         if (field.printTemplateAction && field.printTemplateAction.templateUrl) {
           var t = StdFolders_extractDriveIdNoFetch_(field.printTemplateAction.templateUrl);
           var ts = StdFolders_reportFileLinkStatus_(t.id, presentFileIds);
+          scannedLinks++;
           links.push({ label: "印刷テンプレート [" + fieldLabel + "]", raw: field.printTemplateAction.templateUrl, id: t.id, status: ts });
           if (StdFolders_isBrokenStatus_(ts)) broken.push({ kind: "Form", owner: displayName, detail: "印刷テンプレート [" + fieldLabel + "]", status: ts, severity: StdFolders_statusSeverity_(ts) });
         }
         if (typeof field.driveRootFolderUrl === "string" && field.driveRootFolderUrl) {
           var u = StdFolders_extractDriveIdNoFetch_(field.driveRootFolderUrl);
           var us = StdFolders_reportFileLinkStatus_(u.id, presentFolderIds);
+          scannedLinks++;
           links.push({ label: "アップロード先フォルダ [" + fieldLabel + "]", raw: field.driveRootFolderUrl, id: u.id, status: us });
           if (StdFolders_isBrokenStatus_(us)) broken.push({ kind: "Form", owner: displayName, detail: "アップロード先フォルダ [" + fieldLabel + "]", status: us, severity: StdFolders_statusSeverity_(us) });
         }
         if (field.webhookAction && typeof field.webhookAction.url === "string" && field.webhookAction.url) {
+          scannedLinks++;
           links.push({ label: "webhook [" + fieldLabel + "]", raw: field.webhookAction.url, id: "", status: "外部 webhook（未検査）" });
           webhookSettings.push({ formName: displayName, fieldLabel: fieldLabel, url: field.webhookAction.url, adminOnly: !!field.webhookAction.adminOnly });
         }
@@ -794,14 +843,18 @@ function StdFolders_buildLinkReport_(payload) {
       try { json = JSON.parse(rec.file.getBlob().getDataAsString()); }
       catch (e) { questions.push({ name: rec.relPath, fileId: rec.fileId, relPath: rec.relPath, refs: [], parseError: true }); return; }
       var displayName = Nfb_nameFromFile_(rec.file) || rec.name;
+      // 中央辞書の folder スコープ解決に使う present Question 索引（json.folder + 葉名 → fileId）。
+      StdFolders_indexNameToIds_(presentQuestionByFolderName, StdFolders_normFolderKey_(json.folder, displayName), rec.fileId);
       var refs = [];
       var query = json && json.query;
       if (query && typeof query === "object") {
         if (query.gui && query.gui.formId) {
           var gName = query.gui.formName || "";
-          var st1 = StdFolders_reportRefStatus_(query.gui.formId, gName, presentFormIds, formMapSet, presentFormNameToIds);
-          var r1 = StdFolders_resolveRefByName_(query.gui.formId, gName, presentFormNameToIds);
-          refs.push({ label: "query.gui.formId", id: query.gui.formId, refName: gName, resolvedFileId: r1.fileId, status: st1 });
+          var gEntry = formMap[query.gui.formId] || null;
+          var st1 = StdFolders_reportRefStatus_(query.gui.formId, gName, gEntry, presentFormIds, presentFormByFolderName, presentFormNameToIds);
+          var r1Id = StdFolders_resolveRefFileId_(query.gui.formId, gEntry, presentFormByFolderName, presentFormNameToIds);
+          scannedLinks++;
+          refs.push({ label: "query.gui.formId", id: query.gui.formId, refName: gName, resolvedFileId: r1Id, status: st1 });
           if (StdFolders_isBrokenStatus_(st1)) broken.push({ kind: "Question", owner: displayName, detail: "formId " + query.gui.formId + (gName ? " (name: " + gName + ")" : ""), status: st1, severity: StdFolders_statusSeverity_(st1) });
         }
         if (Array.isArray(query.formSources)) {
@@ -809,9 +862,11 @@ function StdFolders_buildLinkReport_(payload) {
             var src = query.formSources[s];
             if (src && src.formId) {
               var sName = src.formName || "";
-              var st2 = StdFolders_reportRefStatus_(src.formId, sName, presentFormIds, formMapSet, presentFormNameToIds);
-              var r2 = StdFolders_resolveRefByName_(src.formId, sName, presentFormNameToIds);
-              refs.push({ label: "formSources[" + s + "].formId", id: src.formId, refName: sName, resolvedFileId: r2.fileId, status: st2 });
+              var sEntry = formMap[src.formId] || null;
+              var st2 = StdFolders_reportRefStatus_(src.formId, sName, sEntry, presentFormIds, presentFormByFolderName, presentFormNameToIds);
+              var r2Id = StdFolders_resolveRefFileId_(src.formId, sEntry, presentFormByFolderName, presentFormNameToIds);
+              scannedLinks++;
+              refs.push({ label: "formSources[" + s + "].formId", id: src.formId, refName: sName, resolvedFileId: r2Id, status: st2 });
               if (StdFolders_isBrokenStatus_(st2)) broken.push({ kind: "Question", owner: displayName, detail: "formSources[" + s + "].formId " + src.formId + (sName ? " (name: " + sName + ")" : ""), status: st2, severity: StdFolders_statusSeverity_(st2) });
             }
           }
@@ -835,9 +890,11 @@ function StdFolders_buildLinkReport_(payload) {
           var card = json.cards[c];
           if (card && card.questionId) {
             var qName = card.questionName || "";
-            var st3 = StdFolders_reportRefStatus_(card.questionId, qName, presentQuestionIds, qMapSet, presentQuestionNameToIds);
-            var r3 = StdFolders_resolveRefByName_(card.questionId, qName, presentQuestionNameToIds);
-            refs.push({ label: "cards[" + c + "].questionId", id: card.questionId, qname: qName, resolvedFileId: r3.fileId, status: st3 });
+            var qEntry = qMap[card.questionId] || null;
+            var st3 = StdFolders_reportRefStatus_(card.questionId, qName, qEntry, presentQuestionIds, presentQuestionByFolderName, presentQuestionNameToIds);
+            var r3Id = StdFolders_resolveRefFileId_(card.questionId, qEntry, presentQuestionByFolderName, presentQuestionNameToIds);
+            scannedLinks++;
+            refs.push({ label: "cards[" + c + "].questionId", id: card.questionId, qname: qName, resolvedFileId: r3Id, status: st3 });
             if (StdFolders_isBrokenStatus_(st3)) broken.push({ kind: "Dashboard", owner: displayName, detail: "cards[" + c + "].questionId " + card.questionId + (qName ? " (name: " + qName + ")" : ""), status: st3, severity: StdFolders_statusSeverity_(st3) });
           }
         }
@@ -863,8 +920,10 @@ function StdFolders_buildLinkReport_(payload) {
         forms: forms.length,
         questions: questions.length,
         dashboards: dashboards.length,
+        scannedLinks: scannedLinks,                // 検査したリンク／参照の総数
+        okLinks: Math.max(0, scannedLinks - broken.length), // 構成内 / 未設定で問題なし
         brokenCandidates: sevCounts.manual,        // 要手動対応（真のリンク切れ / 曖昧 / 要確認）
-        autoRelinkable: sevCounts.auto,            // 名前一致で自動再リンク可
+        autoRelinkable: sevCounts.auto,            // 中央辞書 or 名前一致で自動再リンク可
         externalRefs: sevCounts.external,          // 外部参照（未検査・対象外）
         surfacedTotal: broken.length,              // 候補セクションに載った総数
         truncated: guard.truncated
@@ -903,16 +962,16 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
   md.push("- 集計: ファイル " + totalFiles + " 件 / フォーム " + ctx.forms.length + " / Question " + ctx.questions.length + " / Dashboard " + ctx.dashboards.length);
   var sev = StdFolders_countBySeverity_(ctx.broken);
   md.push("- 要手動対応（真のリンク切れ / 同名曖昧 / 要確認）: " + sev.manual + " 件");
-  md.push("- 自動再リンク可（名前一致・実行時は解決）: " + sev.auto + " 件 — 「同期（フォルダ走査）」で恒久修復可");
+  md.push("- 自動再リンク可（中央辞書 folder + 名前で解決）: " + sev.auto + " 件 — 「同期（フォルダ走査）」で恒久修復可");
   md.push("- 外部参照（未検査・対象外）: " + sev.external + " 件");
-  md.push("- リンク切れ判定: 構成内照合＋実行時リゾルバ相当の名前フォールバック（外部リンクの生死は未検査）");
+  md.push("- リンク切れ判定: fileId 実在＋中央辞書（論理パス folder + 名前 → fileId）の folder スコープ解決（実行時リゾルバ Forms_resolveFormRef_ と同じ優先順。外部リンクの生死は未検査）");
   md.push("- 実行打ち切り: " + (ctx.truncated ? "あり（実行時間の安全弁により一部のファイルを未処理。再実行してください）" : "なし"));
   md.push("");
 
   // 重大度ごとにグルーピングして列挙する。
   var groups = [
     { sevKey: "manual",   title: "## ⚠ 要手動対応（真のリンク切れ / 同名曖昧 / 要確認）" },
-    { sevKey: "auto",     title: "## 🔧 自動再リンク可（名前一致・実行時は解決）" },
+    { sevKey: "auto",     title: "## 🔧 自動再リンク可（中央辞書 folder + 名前で解決・同期で恒久修復）" },
     { sevKey: "external", title: "## ℹ 外部参照（未検査・対象外）" }
   ];
   var anySurfaced = false;

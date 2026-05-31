@@ -1,7 +1,6 @@
 function doGet(e) {
-  const html = HtmlService.createHtmlOutputFromFile("Index");
+  const output = HtmlService.createHtmlOutputFromFile("Index");
   const webAppUrl = ScriptApp.getService().getUrl();
-  let htmlContent = html.getContent();
 
   const formParam = e?.parameter?.form ? String(e.parameter.form) : "";
   const recordParam = e?.parameter?.record ? String(e.parameter.record) : "";
@@ -39,9 +38,17 @@ function doGet(e) {
     window.__INITIAL_HASH__ = "${EscapeForInlineScript_(routeParam)}";
   </script>`;
 
-  htmlContent = htmlContent.replace('</head>', injectedScript + '</head>');
+  // バンドル全体を createHtmlOutput(string) で再パースすると、インライン script 内に構造タグ
+  // （<script>/<style>/<head>/<body>/<html> 等）の部分文字列があった場合に GAS のパーサが入れ子を
+  // 誤認し「形式が正しくない HTML コンテンツ」で doGet 全体が落ちる。よって getContent()→replace→
+  // createHtmlOutput(string) の往復はやめ、ファイル出力（信頼パス＝厳格検証されない）に注入スクリプト
+  // だけを append する。本体 2MB はパーサに渡らないので、フロントが構造タグ部分文字列を含んでも安全。
+  // append された script は </html> の後ろに付くが classic script なので defer の React module より
+  // 先に実行され、__INITIAL_HASH__ を含む window グローバルは読まれる前にセットされる（順序保証は
+  // 従来の </head> 直前注入と同じ）。
+  output.append(injectedScript);
 
-  return HtmlService.createHtmlOutput(htmlContent)
+  return output
     .setTitle("Nested Form Builder")
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }

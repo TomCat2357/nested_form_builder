@@ -25,6 +25,14 @@ import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { questionCache, dashboardCache } from "../../features/analytics/analyticsCache.js";
 import { triggerBlobDownload } from "../../utils/fileDownload.js";
+import {
+  buildSyncResultMarkdown,
+  buildSyncResultPrintHtml,
+  summarizeSyncSegments,
+  buildLinkReportPrintHtml,
+  summarizeLinkSegments,
+  printHtmlDocument,
+} from "./reportArtifacts.js";
 
 const normalizeAdminEmailInput = (value) => String(value || "")
   .split(";")
@@ -87,6 +95,41 @@ function AdminSettingRow({ title, description, label, inputValue, placeholder, o
   );
 }
 
+// 同期結果 / リンク診断の図表（横棒）。reportArtifacts の summarize*Segments と同じ
+// セグメントを受け取り、画面の図と PDF の図を一致させる。
+function ReportBarChart({ segments }) {
+  const max = Math.max(1, ...segments.map((s) => s.value || 0));
+  return (
+    <div className="nf-mt-6 nf-mb-6">
+      {segments.map((s) => (
+        <div key={s.key} className="nf-row nf-gap-8" style={{ alignItems: "center", margin: "4px 0" }}>
+          <div className="nf-text-12" style={{ flex: "0 0 180px" }}>{s.label}</div>
+          <div style={{ flex: 1, background: "#ecf0f1", borderRadius: 4, height: 16, overflow: "hidden" }}>
+            <div style={{ width: `${Math.round(((s.value || 0) / max) * 100)}%`, background: s.color, height: "100%", minWidth: 2, borderRadius: 4 }} />
+          </div>
+          <div className="nf-text-12" style={{ flex: "0 0 40px", textAlign: "right", fontWeight: 600 }}>{s.value || 0}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// 結果パネル（図表＋ダウンロードリンク）。何度でも .md / PDF を出力できる。
+function ReportResultPanel({ title, meta, segments, onDownloadMd, onPrintPdf, children }) {
+  return (
+    <div className="nf-card nf-mt-12" style={{ background: "#fafbfc" }}>
+      <div className="nf-fw-600 nf-text-13 nf-mb-6">{title}</div>
+      {meta && <p className="nf-text-11 nf-text-muted nf-mb-6">{meta}</p>}
+      <ReportBarChart segments={segments} />
+      {children}
+      <div className="nf-row nf-gap-12 nf-mt-6" style={{ flexWrap: "wrap" }}>
+        <button type="button" className="nf-btn nf-nowrap" onClick={onDownloadMd}>.md をダウンロード</button>
+        <button type="button" className="nf-btn nf-nowrap" onClick={onPrintPdf}>PDF として出力（印刷）</button>
+      </div>
+    </div>
+  );
+}
+
 export default function SettingsAdminTab() {
   const { showAlert } = useAlert();
 
@@ -122,6 +165,10 @@ export default function SettingsAdminTab() {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportIncludeJson, setReportIncludeJson] = useState(false);
   const [reportIncludeWebhook, setReportIncludeWebhook] = useState(false);
+  const [linkReport, setLinkReport] = useState(null);   // { markdown, stats, generatedAt }（結果パネル・再DL用）
+
+  // 同期（フォルダ走査）の最新結果。結果パネルで何度でも .md / PDF を出力できる（セッション内保持）。
+  const [syncResult, setSyncResult] = useState(null);   // { r, summary, generatedAt }
 
   // システムごとコピー
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
@@ -305,24 +352,58 @@ export default function SettingsAdminTab() {
     }
   };
 
+  // 表示用タイムスタンプ（JST 業務利用前提・ロケール日本語）。
+  const nowStamp = () => new Date().toLocaleString("ja-JP", { hour12: false });
+
+  // PDF 出力（ブラウザ印刷）。ポップアップブロック時は例外をアラートで案内する。
+  const safePrint = (bodyHtml, title) => {
+    try {
+      printHtmlDocument(bodyHtml, title);
+    } catch (error) {
+      console.error("[SettingsAdminTab] print failed", error);
+      showAlert(error?.message || "PDF 出力（印刷）に失敗しました");
+    }
+  };
+
   const handleBuildReport = async () => {
     if (!canManageAdminSettings) return;
     setReportLoading(true);
     try {
-      const { markdown } = await buildLinkReport({
+      const { markdown, stats } = await buildLinkReport({
         includeEntityJson: reportIncludeJson,
         includeWebhookText: reportIncludeWebhook,
       });
-      triggerBlobDownload(
-        new Blob([markdown], { type: "text/markdown;charset=utf-8" }),
-        "nfb-structure-report.md",
-      );
+      setLinkReport({ markdown, stats: stats || {}, generatedAt: nowStamp() });
     } catch (error) {
       console.error("[SettingsAdminTab] buildLinkReport failed", error);
       showAlert(error?.message || "レポートの作成に失敗しました");
     } finally {
       setReportLoading(false);
     }
+  };
+
+  const downloadLinkReportMd = () => {
+    if (!linkReport) return;
+    triggerBlobDownload(
+      new Blob([linkReport.markdown], { type: "text/markdown;charset=utf-8" }),
+      "nfb-structure-report.md",
+    );
+  };
+  const printLinkReportPdf = () => {
+    if (!linkReport) return;
+    safePrint(buildLinkReportPrintHtml(linkReport.markdown, linkReport.stats), "構成レポート（リンク診断）");
+  };
+
+  const downloadSyncResultMd = () => {
+    if (!syncResult) return;
+    triggerBlobDownload(
+      new Blob([buildSyncResultMarkdown(syncResult.r, { generatedAt: syncResult.generatedAt })], { type: "text/markdown;charset=utf-8" }),
+      "nfb-sync-result.md",
+    );
+  };
+  const printSyncResultPdf = () => {
+    if (!syncResult) return;
+    safePrint(buildSyncResultPrintHtml(syncResult.r, { generatedAt: syncResult.generatedAt }), "同期（フォルダ走査）結果");
   };
 
   const handleCopyConfirm = async () => {
@@ -460,7 +541,8 @@ export default function SettingsAdminTab() {
     }
     setSyncLoading(true);
     try {
-      const { summary } = await runSync({ deleteDuplicates, deleteInvalid });
+      const { r, summary } = await runSync({ deleteDuplicates, deleteInvalid });
+      setSyncResult({ r, summary, generatedAt: nowStamp() });
       showAlert(summary);
     } catch (error) {
       console.error("[SettingsAdminTab] sync apply failed", error);
@@ -477,6 +559,7 @@ export default function SettingsAdminTab() {
     try {
       // 走査して align＋重複整理（参照寄せ）＋再リンクを適用。削除は候補収集のみ。
       const { r, summary } = await runSync({});
+      setSyncResult({ r, summary, generatedAt: nowStamp() });
       syncSummaryRef.current = summary;
       deleteDuplicatesRef.current = false;
       const dups = r.duplicateCandidates || [];
@@ -655,14 +738,29 @@ export default function SettingsAdminTab() {
         </label>
         <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
           <button type="button" className="nf-btn nf-nowrap" onClick={handleBuildReport} disabled={!canManageAdminSettings || reportLoading}>
-            {reportLoading ? "作成中..." : "レポートを作成（ダウンロード）"}
+            {reportLoading ? "作成中..." : "レポートを作成"}
           </button>
         </div>
         <p className="nf-mt-6 nf-text-11 nf-text-muted">
-          <code>nfb-structure-report.md</code> をダウンロードします。リンク切れ判定は標準フォルダ構成内の照合に加え、
-          実行時リゾルバと同じ名前フォールバックも評価します（外部リンクの生死は未検査）。
+          作成すると下に結果パネルを表示し、<strong>.md と PDF を何度でもダウンロード</strong>できます。
+          リンク切れ判定は fileId の実在に加え、<strong>中央辞書（論理パス folder + 名前 → fileId）の folder スコープ解決</strong>
+          （実行時リゾルバと同じ優先順）で評価します（外部リンクの生死は未検査）。
           フォーム数が多いと GAS の実行時間（6 分）に注意してください。
         </p>
+
+        {linkReport && (
+          <ReportResultPanel
+            title="構成レポート（リンク診断）結果"
+            meta={`生成: ${linkReport.generatedAt} ／ ファイル ${linkReport.stats.files || 0} 件・フォーム ${linkReport.stats.forms || 0}・Question ${linkReport.stats.questions || 0}・Dashboard ${linkReport.stats.dashboards || 0}・検査リンク ${linkReport.stats.scannedLinks || 0}${linkReport.stats.truncated ? "（⚠ 実行打ち切りあり・再実行推奨）" : ""}`}
+            segments={summarizeLinkSegments(linkReport.stats)}
+            onDownloadMd={downloadLinkReportMd}
+            onPrintPdf={printLinkReportPdf}
+          >
+            <p className="nf-text-11 nf-text-muted">
+              要手動対応 {linkReport.stats.brokenCandidates || 0} 件 ／ 自動再リンク可（同期で恒久修復）{linkReport.stats.autoRelinkable || 0} 件 ／ 外部参照 {linkReport.stats.externalRefs || 0} 件
+            </p>
+          </ReportResultPanel>
+        )}
 
       </div>
 
@@ -707,6 +805,18 @@ export default function SettingsAdminTab() {
           削除を伴う操作（同名重複の余り → 不正ファイル）は、実行後にカテゴリ別の確認ダイアログで承認してからゴミ箱へ移動します（30日間は復元可）。
           このため単体の「再リンク」「重複整理」「未追跡ファイル削除」操作は不要です。
         </p>
+
+        {syncResult && (
+          <ReportResultPanel
+            title="同期（フォルダ走査）結果"
+            meta={`生成: ${syncResult.generatedAt} ／ モード: ${syncResult.r?.mode || "dryRun"}`}
+            segments={summarizeSyncSegments(syncResult.r)}
+            onDownloadMd={downloadSyncResultMd}
+            onPrintPdf={printSyncResultPdf}
+          >
+            <pre className="nf-text-11" style={{ whiteSpace: "pre-wrap", margin: "6px 0", color: "#444" }}>{syncResult.summary}</pre>
+          </ReportResultPanel>
+        )}
 
         {/* バックアップ（書き出し）: エクスポートだけが向きの異なる「書き出し」操作。 */}
         <div className="nf-fw-600 nf-text-13 nf-mb-6 nf-mt-24">バックアップ（書き出し）</div>

@@ -328,7 +328,7 @@ export function useSearchPageState({
       setFilterError("検索エラー: " + (err && err.message ? err.message : String(err)));
       setFilteredEntries(baseFilteredEntries);
     }
-  }, [baseFilteredEntries, searchColumns, query, tableSource, searchableTableRows, simpleSearchRows, form]);
+  }, [baseFilteredEntries, searchColumns, query, searchableTableRows, simpleSearchRows, form]);
 
   const sortedEntries = useMemo(() => {
     const list = filteredEntries.slice();
