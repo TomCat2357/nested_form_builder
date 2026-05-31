@@ -35,26 +35,30 @@ function Forms_buildDriveFileUrlFromId_(fileId) {
 }
 
 /**
- * マッピング値を正規化（v2: { fileId, driveFileUrl, title }）。
+ * マッピング値を正規化（{ fileId, driveFileUrl, title, folder }）。
+ * folder は論理パス（中央辞書の第一級フィールド）。文字列なら正規化、未設定は null。
+ * null は「未バックフィル」の sentinel（"" の「ルート」と区別する）。
  * @param {*} value
- * @returns {{fileId: string|null, driveFileUrl: string|null, title: string|null}}
+ * @returns {{fileId: string|null, driveFileUrl: string|null, title: string|null, folder: string|null}}
  */
 function Forms_normalizeMappingValue_(value) {
   var fileId = null;
   var driveFileUrl = null;
   var title = null;
+  var folder = null;
 
   if (value && typeof value === "object" && !Array.isArray(value)) {
     fileId = typeof value.fileId === "string" ? String(value.fileId).trim() : null;
     driveFileUrl = typeof value.driveFileUrl === "string" ? String(value.driveFileUrl).trim() : null;
     title = typeof value.title === "string" ? String(value.title) : null;
+    folder = typeof value.folder === "string" ? Forms_normalizeFolderPath_(value.folder) : null;
   }
 
   if (!driveFileUrl && fileId) {
     driveFileUrl = Forms_buildDriveFileUrlFromId_(fileId);
   }
 
-  return { fileId: fileId, driveFileUrl: driveFileUrl, title: title };
+  return { fileId: fileId, driveFileUrl: driveFileUrl, title: title, folder: folder };
 }
 
 /**

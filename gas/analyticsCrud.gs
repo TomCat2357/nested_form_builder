@@ -51,7 +51,8 @@ function Analytics_listTemplates_(type, options) {
 
 // 論理側（mapping）が指す物理ファイルを解決する。
 //   1) fileId が生存（非ゴミ箱）→ そのファイル。
-//   2) fileId 不在 → 論理パス（= 名前）で標準フォルダ配下を探して引き当てる。
+//   2) fileId 不在 → 中央辞書の論理パス folder + 名前で、まず <folder>/<name>.json をパス限定で探す
+//        （同名異フォルダの誤解決を防ぐ）。見つからなければ名前でツリー全体を探す。
 //        探索名は entry.name（キャッシュ名）優先、無ければ id 自体（旧 ULID をファイル名にしていた救済）。
 //   見つからなければ null（呼び出し側でエラー化）。
 function Analytics_resolveItemFileOrNull_(type, fileId, id, entry, mapping) {
@@ -59,9 +60,20 @@ function Analytics_resolveItemFileOrNull_(type, fileId, id, entry, mapping) {
     try {
       var f = DriveApp.getFileById(fileId);
       if (!(typeof f.isTrashed === "function" && f.isTrashed())) return f;
-    } catch (e) { /* 消失 → 名前フォールバックへ */ }
+    } catch (e) { /* 消失 → 中央辞書アンカーで復旧へ */ }
   }
   var name = (entry && typeof entry.name === "string" && entry.name) ? entry.name : "";
+  // 第一級フィールドの folder があれば、その物理フォルダ内に限定して name.json を探す。
+  if (name && entry && typeof entry.folder === "string") {
+    var scopedFolder = AnalyticsDrive_lookupFolderForPath_(type, entry.folder);
+    if (scopedFolder) {
+      var scoped = StdFolders_findFileByNameInFolder_(scopedFolder, name + ".json");
+      if (!scoped && typeof Forms_normalizeFormTitle_ === "function") {
+        scoped = StdFolders_findFileByNameInFolder_(scopedFolder, Forms_normalizeFormTitle_(name) + ".json");
+      }
+      if (scoped) return scoped;
+    }
+  }
   var byName = name ? AnalyticsDrive_findFileByNameInTree_(type, name) : null;
   if (byName) return byName;
   // entry.name が無いケース: id 文字列をファイル名候補として最終探索（旧データ救済）。
@@ -90,7 +102,13 @@ function Analytics_getTemplate_(type, templateId) {
       // 解決先の fileId へ論理側を上書き（id ＝ fileId 統一を維持）。
       delete mapping[templateId];
       var resolvedName = Nfb_nameFromFile_(file);
-      mapping[resolvedFileId] = { fileId: resolvedFileId, driveFileUrl: file.getUrl(), name: resolvedName };
+      var resolvedFolder = AnalyticsDrive_relativeFolderOfFile_(type, resolvedFileId);
+      mapping[resolvedFileId] = {
+        fileId: resolvedFileId,
+        driveFileUrl: file.getUrl(),
+        name: resolvedName,
+        folder: typeof resolvedFolder === "string" ? resolvedFolder : null
+      };
       Analytics_saveMapping_(type, mapping);
       templateId = resolvedFileId;
     }
@@ -260,8 +278,13 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     }
     fileUrl = file.getUrl();
 
-    // マッピング更新（fileId キー）— name をキャッシュして次回以降の衝突判定を高速化
-    mapping[id] = { fileId: id, driveFileUrl: fileUrl, name: uniqueName };
+    // マッピング更新（fileId キー）— name と論理パス folder を中央辞書へ第一級保存
+    mapping[id] = {
+      fileId: id,
+      driveFileUrl: fileUrl,
+      name: uniqueName,
+      folder: Forms_normalizeFolderPath_(normalizedTemplate.folder)
+    };
     Analytics_saveMapping_(type, mapping);
 
     // 保存後: 参照先（questions→forms / dashboards→questions+forms）に ①〜④ 整合を適用し、
@@ -384,7 +407,12 @@ function Analytics_adoptQuestionFile_(file, mapping) {
   var id = fileId;
   var name = Nfb_nameFromFile_(file);
   var fileUrl = file.getUrl();
-  mapping[id] = { fileId: fileId, driveFileUrl: fileUrl, name: name };
+  mapping[id] = {
+    fileId: fileId,
+    driveFileUrl: fileUrl,
+    name: name,
+    folder: Forms_normalizeFolderPath_(json.folder)
+  };
   Analytics_saveMapping_("questions", mapping);
 
   json.id = id;
@@ -396,56 +424,41 @@ function Analytics_adoptQuestionFile_(file, mapping) {
 
 /**
  * 壊れた Question 参照（ダッシュボードカード）を解決する。
- * ref = { questionId, name }
- *   1) 既存マッピングの questionId が生存ファイルに解決できればそれを返す（relinked:false）。
- *   2) 標準フォルダ 02_questions を「ファイル名 (name + ".json") または json.name」で探す（matchedBy:"name"）。
- *   3) 同フォルダを「json.id === questionId」で探す（matchedBy:"id"）。
+ * ref = { questionId }（参照は fileId のみ。旧 ref.name は受け取っても無視）
+ *   1) questionId（＝fileId）が生存ファイルに解決できればそれを返す（relinked:false）。
+ *   2) id 不在 → 中央辞書（マッピング）の論理パス folder + 名前アンカーで物理ファイルを引き当て直す
+ *      （Analytics_resolveItemFileOrNull_。id 変化＝コピー/再作成の自動再リンク。matchedBy:"registry"）。
  * 戻り: { ok:true, question, questionId, relinked, matchedBy }。見つからなければ question:null。
  */
 function Analytics_resolveQuestionRef_(ref) {
   return nfbSafeCall_(function() {
     ref = ref || {};
     var wantId = ref.questionId ? String(ref.questionId) : "";
-    var wantName = (typeof ref.name === "string") ? ref.name : "";
+    if (!wantId) return { ok: true, question: null };
 
     var mapping = Analytics_getMapping_("questions");
+    var entry = mapping[wantId] || null;
 
     // 1) id（＝fileId）で解決を試みる。マッピング登録があればその fileId、無ければ wantId 自体を
     //    fileId とみなして直接開く（コピー直後でマッピング未構築のケースを救済）。
-    if (wantId) {
-      var fid = (mapping[wantId] ? Nfb_resolveFileIdFromEntry_(mapping[wantId]) : null) || wantId;
-      if (fid) {
-        try {
-          var f0 = DriveApp.getFileById(fid);
-          if (!f0.isTrashed() && StdFolders_isJsonFile_(f0)) {
-            var q0 = Analytics_adoptQuestionFile_(f0, mapping);
-            if (q0) return { ok: true, question: q0, questionId: q0.id, relinked: q0.id !== wantId, matchedBy: "id" };
-          }
-        } catch (e0) { /* 壊れている / fileId でない → 名前フォールバックへ */ }
-      }
+    var fid = (entry ? Nfb_resolveFileIdFromEntry_(entry) : null) || wantId;
+    if (fid) {
+      try {
+        var f0 = DriveApp.getFileById(fid);
+        if (!f0.isTrashed() && StdFolders_isJsonFile_(f0)) {
+          var q0 = Analytics_adoptQuestionFile_(f0, mapping);
+          if (q0) return { ok: true, question: q0, questionId: q0.id, relinked: q0.id !== wantId, matchedBy: "id" };
+        }
+      } catch (e0) { /* 壊れている / fileId でない → 中央辞書アンカーで復旧へ */ }
     }
 
-    var folder = StdFolders_autoFileFolderOrNull_("questions");
-    if (!folder) return { ok: true, question: null };
-
-    // 2) ファイル名で探す（名前 ＝ Drive ファイル名）。完全一致と正規化一致の両方を試す。
-    if (wantName) {
-      var targets = {};
-      targets[wantName + ".json"] = true;
-      targets[Forms_normalizeFormTitle_(wantName) + ".json"] = true;
-      var it2 = folder.getFiles();
-      while (it2.hasNext()) {
-        var fn = it2.next();
-        if (typeof fn.isTrashed === "function" && fn.isTrashed()) continue;
-        if (!StdFolders_isJsonFile_(fn)) continue;
-        if (!targets[fn.getName()]) continue;
-        var qn = Analytics_adoptQuestionFile_(fn, mapping);
-        if (qn) return { ok: true, question: qn, questionId: qn.id, relinked: true, matchedBy: "name" };
-      }
+    // 2) 中央辞書の folder + 名前で物理ファイルを引き当て直す（id 変化の復旧）。
+    var recovered = Analytics_resolveItemFileOrNull_("questions", null, wantId, entry, mapping);
+    if (recovered) {
+      var qn = Analytics_adoptQuestionFile_(recovered, mapping);
+      if (qn) return { ok: true, question: qn, questionId: qn.id, relinked: true, matchedBy: "registry" };
     }
 
-    // id ＝ fileId / 名前 ＝ ファイル名 へ統一したため、.json は自分の id を持たない。
-    // よって「埋め込み json.id 一致」での探索は廃止し、id（fileId）解決→ファイル名解決の 2 段で完結する。
     return { ok: true, question: null };
   });
 }

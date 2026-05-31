@@ -265,17 +265,13 @@ export default function QuestionEditorPage() {
   const handleSave = useCallback(async () => {
     if (!name.trim()) { setSaveError("Question 名を入力してください。"); return; }
 
-    // id 解決失敗時の名前フォールバック用に、リンク先フォームのフォルダ込み名を併せて保持する。
-    // （別フォルダ同名を一意に識別できるよう "フォルダ/サブ/フォーム名" 形式で持つ。）
-    const formTitleById = (fid) => {
-      const f = forms.find((x) => x.id === fid);
-      return f ? formQualifiedName(f) : "";
-    };
-
+    // 参照は fileId（formId）のみで保持する。id 解決失敗時の復旧は中央辞書（論理パス→fileId）に
+    // 集約したため、各参照に formName を二重持ちしない。読み込んだ旧 formName は剥がして保存する。
     let query;
     if (mode === "gui") {
       if (!gui.formId) { setSaveError("フォームを選択してください。"); return; }
-      query = { mode: "gui", gui: { ...gui, formName: formTitleById(gui.formId) } };
+      const { formName: _staleGuiFormName, ...guiRest } = gui;
+      query = { mode: "gui", gui: guiRest };
     } else {
       const sources = buildSqlFormSources();
       if (sources.error) {
@@ -284,7 +280,7 @@ export default function QuestionEditorPage() {
       }
       query = {
         mode: "sql",
-        formSources: (sources.formSources || []).map((s) => ({ ...s, formName: formTitleById(s.formId) })),
+        formSources: (sources.formSources || []).map(({ formName: _staleFormName, ...rest }) => rest),
         sql,
       };
     }

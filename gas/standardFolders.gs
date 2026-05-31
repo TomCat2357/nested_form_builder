@@ -358,7 +358,7 @@ function StdFolders_importMapping_(doc) {
   var formsMapping = Forms_getMapping_();
   var formsRes = StdFolders_mergeMappingSection_(
     "forms", doc.forms, formsMapping,
-    function(e) { return { fileId: e.fileId || null, driveFileUrl: e.driveFileUrl || null, title: e.title || null }; },
+    function(e) { return { fileId: e.fileId || null, driveFileUrl: e.driveFileUrl || null, title: e.title || null, folder: (typeof e.folder === "string") ? e.folder : null }; },
     function(id, entry) { try { if (entry.driveFileUrl) AddFormUrl_(id, entry.driveFileUrl); } catch (e) { /* non-critical */ } }
   );
   Forms_saveMapping_(formsMapping);
@@ -369,7 +369,7 @@ function StdFolders_importMapping_(doc) {
     var mapping = Analytics_getMapping_(type);
     var res = StdFolders_mergeMappingSection_(
       type, doc[type], mapping,
-      function(e) { return { fileId: e.fileId || null, driveFileUrl: e.driveFileUrl || null, name: e.name || null }; },
+      function(e) { return { fileId: e.fileId || null, driveFileUrl: e.driveFileUrl || null, name: e.name || null, folder: (typeof e.folder === "string") ? e.folder : null }; },
       null
     );
     Analytics_saveMapping_(type, mapping);
@@ -490,7 +490,7 @@ function StdFolders_scanFormsFolder_(folder, ctx) {
     // id ＝ Drive fileId / 名前 ＝ ファイル名（.json 除去）。走査・同期はファイル名で行う。
     var id = fileId;
     var title = Nfb_nameFromFile_(file);
-    ctx.mapping[id] = { fileId: fileId, driveFileUrl: file.getUrl(), title: title };
+    ctx.mapping[id] = { fileId: fileId, driveFileUrl: file.getUrl(), title: title, folder: Forms_normalizeFolderPath_(json.folder) };
     ctx.mappedFileIds[fileId] = true;
     if (typeof json.folder === "string" && json.folder) ctx.folderPaths.push(json.folder);
     // 認証用 URL マップにも登録（?form=xxx で開けるように）
@@ -532,7 +532,7 @@ function StdFolders_rebuildAnalyticsMapping_(root, type) {
     // id ＝ Drive fileId / 名前 ＝ ファイル名（.json 除去）。走査・同期はファイル名で行う。
     var id = fileId;
     var name = Nfb_nameFromFile_(file);
-    mapping[id] = { fileId: fileId, driveFileUrl: file.getUrl(), name: name };
+    mapping[id] = { fileId: fileId, driveFileUrl: file.getUrl(), name: name, folder: Forms_normalizeFolderPath_(json.folder) };
     mappedFileIds[fileId] = true;
     if (typeof json.folder === "string" && json.folder) folderPaths.push(json.folder);
     count++;
@@ -1163,7 +1163,8 @@ function StdFolders_applyRefRelink_(obj, idKey, nameKey, label, owner, ownerFile
     res.refsRelinked++;
     res.changes.push({ entity: owner, entityFileId: ownerFileId, ref: label, from: oldId, to: plan.toId, name: plan.toName });
     obj[idKey] = plan.toId;
-    if (nameKey) obj[nameKey] = plan.toName;
+    // 参照は fileId のみで保持する方針のため name は書き戻さない（formName/questionName を再付与しない）。
+    // 旧ファイルに残る nameKey は relink 判定の読取（上の name）にのみ用い、復旧は remap/中央辞書に集約。
     return true;
   }
   if (plan.action === "ambiguous") {

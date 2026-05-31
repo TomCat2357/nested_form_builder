@@ -97,7 +97,15 @@ function Analytics_registerImportedTemplate_(type, payload) {
     template.name = name;
     template.driveFileUrl = fileUrl;
 
-    mapping[newId] = { fileId: fileId, driveFileUrl: fileUrl, name: name };
+    // 論理パス folder のベースラインは物理位置（else 分岐の normFolder と一致）。
+    // payload.folder 明示時は下の Analytics_setItemFolder_ が中央辞書も含め上書きする。
+    var importPhysical = AnalyticsDrive_relativeFolderOfFile_(type, fileId);
+    mapping[newId] = {
+      fileId: fileId,
+      driveFileUrl: fileUrl,
+      name: name,
+      folder: importPhysical == null ? "" : importPhysical
+    };
     Analytics_saveMapping_(type, mapping);
 
     // 論理フォルダの決定:

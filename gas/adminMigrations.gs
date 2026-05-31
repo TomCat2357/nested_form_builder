@@ -606,6 +606,62 @@ function Admin_migrateSingleBraceToDoubleBraceInForms_() {
   return { processedForms: processed, modifiedForms: modified, errors: errors };
 }
 
+// ============================================================================
+// § 中央辞書（マッピングストア）への論理パス folder バックフィル（一回限り・冪等）
+//   リンク先の論理パス／fileId 整理（Option C）で、folder をマッピング entry の第一級
+//   フィールドに昇格した。既存ストアの folder == null（旧スキーマ由来）のエントリに、
+//   Drive 上の json.folder を読んで埋める。
+//   非破壊（Property のみ更新）・冪等（folder が既に入っているものは触らない）・再実行安全。
+//   ※ Drive ファイルが消失したエントリは folder=null のまま残し、次回「同期」の case③ に委ねる。
+// ============================================================================
+
+/**
+ * 1 マッピングの folder==null（未バックフィル）エントリを Drive json.folder から埋める。
+ * @param {Object} mapping fileId -> entry
+ * @return {number} 埋めた件数
+ */
+function Admin_backfillFolderInMapping_(mapping) {
+  var filled = 0;
+  if (!mapping || typeof mapping !== "object") return filled;
+  for (var id in mapping) {
+    if (!mapping.hasOwnProperty(id)) continue;
+    var entry = mapping[id];
+    if (!entry || typeof entry !== "object") continue;
+    if (typeof entry.folder === "string") continue; // 既に第一級 folder あり（"" 含む）→ スキップ
+    var fileId = Nfb_resolveFileIdFromEntry_(entry);
+    if (!fileId) continue;
+    var json = StdFolders_readJsonByFileId_(fileId);
+    if (json && typeof json === "object" && typeof json.folder !== "undefined") {
+      entry.folder = Forms_normalizeFolderPath_(json.folder);
+      filled++;
+    }
+  }
+  return filled;
+}
+
+/**
+ * forms / questions / dashboards の 3 マッピングストアに folder をバックフィルする手動実行エントリ。
+ * 同期は停止してから実行することを推奨（読み取り主体だが Property 書込みが走る）。
+ * @return {{forms:number, questions:number, dashboards:number}}
+ */
+function Admin_backfillRegistryFolders_() {
+  var result = { forms: 0, questions: 0, dashboards: 0 };
+
+  var formsMapping = Forms_getMapping_();
+  result.forms = Admin_backfillFolderInMapping_(formsMapping);
+  if (result.forms > 0) Forms_saveMapping_(formsMapping);
+
+  ["questions", "dashboards"].forEach(function(type) {
+    var mapping = Analytics_getMapping_(type);
+    var n = Admin_backfillFolderInMapping_(mapping);
+    if (n > 0) Analytics_saveMapping_(type, mapping);
+    result[type] = n;
+  });
+
+  Logger.log("[backfill-folder] forms=" + result.forms + " questions=" + result.questions + " dashboards=" + result.dashboards);
+  return result;
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     Admin_rewriteNfbUdfsInExpressionString_: Admin_rewriteNfbUdfsInExpressionString_,
@@ -615,5 +671,7 @@ if (typeof module !== "undefined") {
     Admin_logUdfMigrationWarning_: Admin_logUdfMigrationWarning_,
     Admin_rewriteTemplateBraces_: Admin_rewriteTemplateBraces_,
     Admin_rewriteFormTemplateBraces_: Admin_rewriteFormTemplateBraces_,
+    Admin_backfillFolderInMapping_: Admin_backfillFolderInMapping_,
+    Admin_backfillRegistryFolders_: Admin_backfillRegistryFolders_,
   };
 }

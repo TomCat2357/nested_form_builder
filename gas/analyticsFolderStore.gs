@@ -147,6 +147,12 @@ function Analytics_setItemFolder_(type, id, folderPath) {
     file.setContent(JSON.stringify(json, null, 2));
     // 物理 Drive 上でもファイルを folder に対応するフォルダへ移動（既に正しい親なら no-op）。
     AnalyticsDrive_moveItemFileToPath_(type, fileId, json.folder);
+    // 中央辞書（マッピング）の論理パス folder も追従させる（第一級フィールド）。
+    if (entry && typeof entry === "object") {
+      entry.folder = json.folder;
+      mapping[id] = entry;
+      Analytics_saveMapping_(type, mapping);
+    }
     return true;
   } catch (err) {
     Logger.log("[Analytics_setItemFolder_] Failed for " + type + "/" + id + ": " + err);
@@ -247,6 +253,12 @@ function Analytics_relocateFolderPaths_(type, registry, old, next, movedIds) {
       file.setContent(JSON.stringify(json, null, 2));
       // 物理ファイルも新フォルダへ揃える（サブツリー移動で済んでいれば no-op）。
       AnalyticsDrive_moveItemFileToPath_(type, fileId, newFolder);
+      // 中央辞書（マッピング）の論理パス folder も追従させる（第一級フィールド）。
+      if (entry && typeof entry === "object") {
+        entry.folder = newFolder;
+        mapping[aId] = entry;
+        Analytics_saveMapping_(type, mapping);
+      }
       movedIds.push(aId);
     } catch (err) {
       Logger.log("[Analytics_relocateFolderPaths_] Failed to update folder for " + type + "/" + aId + ": " + err);

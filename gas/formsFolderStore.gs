@@ -149,6 +149,12 @@ function Forms_setFormFolder_(formId, folderPath) {
     file.setContent(JSON.stringify(json, null, 2));
     // 物理 Drive 上でもファイルを folder に対応するフォルダへ移動（既に正しい親なら no-op）。
     FormsDrive_moveFormFileToPath_(fileId, json.folder);
+    // 中央辞書（マッピング）の論理パス folder も追従させる（第一級フィールド）。
+    if (entry && typeof entry === "object") {
+      entry.folder = json.folder;
+      mapping[formId] = entry;
+      Forms_saveMapping_(mapping);
+    }
     return true;
   } catch (err) {
     Logger.log("[Forms_setFormFolder_] Failed for " + formId + ": " + err);

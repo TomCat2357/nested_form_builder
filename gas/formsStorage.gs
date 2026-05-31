@@ -322,8 +322,13 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       throw new Error("[save-stage=final-write] driveFileUrl反映書き込みに失敗しました. formId=" + fileId + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errWriteFinal));
     }
 
-    // マッピング（fileId キー）を更新（タイトルキャッシュも併せて保存）
-    mapping[fileId] = { fileId: fileId, driveFileUrl: fileUrl, title: uniqueTitle };
+    // マッピング（fileId キー）を更新（title / 論理パス folder を中央辞書へ第一級保存）
+    mapping[fileId] = {
+      fileId: fileId,
+      driveFileUrl: fileUrl,
+      title: uniqueTitle,
+      folder: typeof form.folder === "string" ? Forms_normalizeFolderPath_(form.folder) : ""
+    };
     Forms_saveMapping_(mapping);
 
     // 認証用URLマップにも登録（?form=xxx でアクセス可能にする）

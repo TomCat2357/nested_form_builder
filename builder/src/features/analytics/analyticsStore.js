@@ -8,8 +8,7 @@ import { questionCache, dashboardCache } from "./analyticsCache.js";
 import { deepClone } from "../../core/schema.js";
 import { isV2 as isDashboardV2, assertV2 as assertDashboardV2, getCardType, CARD_TYPE_QUESTION } from "./utils/dashboardSchema.js";
 import { registerFormAsTable, dropTables, runAlaSql, applyGlobalWhereToTables, applySourceFilterClauses } from "./analyticsAlaSql.js";
-import { buildFormIndex, formQualifiedName } from "./utils/formIdentifierResolver.js";
-import { normalizeFolderPath } from "../../utils/folderTree.js";
+import { buildFormIndex } from "./utils/formIdentifierResolver.js";
 import { buildColumnIndex } from "./utils/columnIdentifierResolver.js";
 import {
   preprocessSql,
@@ -30,28 +29,12 @@ export { getFormColumns, getFormViewColumns };
 
 export const ERR_NO_SPREADSHEET = "選択したフォームにスプレッドシートが紐付いていません。フォーム設定で spreadsheetId を指定してください。";
 
-// フォームの表示名（＝Drive ファイル名）。
-const formTitleOf = (f) => (f && f.settings && f.settings.formTitle) || (f && f.name) || "";
-
-// クエスチョンのフォーム参照を解決する。id（＝Drive fileId）で見つからないときは、
-// 保持している formName で標準フォルダ内のフォーム名に一致するものへフォールバックする。
-// （コピー/マイグレーションで fileId が変わったケースの自動再リンク。）
-function findFormByRef(forms, formId, formName) {
-  if (!Array.isArray(forms)) return null;
-  let f = formId ? forms.find((x) => x.id === formId) : null;
-  if (!f && formName) {
-    const raw = String(formName);
-    if (raw.indexOf("/") !== -1) {
-      // フォルダ込み名 → 厳密一致。
-      const key = normalizeFolderPath(raw);
-      f = forms.find((x) => formQualifiedName(x) === key) || null;
-    } else {
-      // バレ名（旧 formName / フォルダ無し）→ 葉タイトルが一意のときのみ採用。
-      const matches = forms.filter((x) => formTitleOf(x) === raw);
-      f = matches.length === 1 ? matches[0] : null;
-    }
-  }
-  return f || null;
+// クエスチョンのフォーム参照を解決する。参照は fileId（formId）のみで保持する方針のため、
+// id 一致だけで解決する。id 変化（コピー/マイグレーション）時の再リンクは中央辞書（論理パス→fileId）に
+// 集約した GAS 側の整合エンジン（remap / 保存時 alignReferencesOnSave_）が担う。
+function findFormByRef(forms, formId) {
+  if (!Array.isArray(forms) || !formId) return null;
+  return forms.find((x) => x.id === formId) || null;
 }
 
 // ---- AlaSQL テーブル登録 / Question 実行 ----
@@ -141,11 +124,9 @@ export async function executeQuestion(question, { forms, globalWhereExpr, source
   }
 
   const rawSources = Array.isArray(question.query.formSources) ? question.query.formSources : [];
-  // id（fileId）で見つからない formSources は formName で名前フォールバック解決し、現 fileId に揃える。
-  const explicitSources = rawSources.map((s) => {
-    const f = findFormByRef(forms, s.formId, s.formName);
-    return f && f.id !== s.formId ? { ...s, formId: f.id } : s;
-  });
+  // 参照は fileId（formId）のみ。現在のフォーム一覧に存在する formSources はそのまま使い、
+  // 削除済み等で存在しないものは下流で未選択扱いに落とす（[フォーム名] 直接参照は SQL 本文で解決）。
+  const explicitSources = rawSources.slice();
 
   let transformedSql = sql;
   let formIndex = null;
@@ -236,8 +217,8 @@ async function executeGuiQuestion(question, { forms, globalWhereExpr, sourceFilt
   if (!gui || !gui.formId) {
     return { ok: false, error: "GUI クエリの定義が不正です" };
   }
-  // id（fileId）で見つからなければ formName で名前フォールバック解決する。
-  const form = findFormByRef(forms, gui.formId, gui.formName);
+  // 参照は fileId（formId）のみ。id 一致で解決する（id 変化時の再リンクは GAS 側の整合エンジンが担う）。
+  const form = findFormByRef(forms, gui.formId);
   if (!form) {
     return { ok: false, error: "GUI クエリの対象フォームが見つかりません" };
   }
@@ -245,15 +226,10 @@ async function executeGuiQuestion(question, { forms, globalWhereExpr, sourceFilt
     return { ok: false, error: ERR_NO_SPREADSHEET };
   }
 
-  // 名前フォールバックで別 fileId のフォームに解決された場合に備え、実行用 gui の formId を
-  // 解決後フォームの id（＝fileId）に揃える。これで compileStages が生成する SQL の参照テーブル
-  // alias（data_<id>）と、下で登録するテーブル alias（form.id 由来）が一致する。
-  const resolvedGui = form.id === gui.formId ? gui : { ...gui, formId: form.id };
-
   // データ形式は view 形式に一本化。列メタ・型マップは常に view 形式。
   const formColumns = getFormColumns(form);
 
-  const compiled = compileStages(resolvedGui, { formColumns });
+  const compiled = compileStages(gui, { formColumns });
   if (!compiled.ok) {
     return { ok: false, error: compiled.errors.join(" / ") };
   }
@@ -584,27 +560,24 @@ export async function resolveDashboardLinks(dashboard) {
 
     const existing = card.questionId ? byId.get(card.questionId) : null;
     if (existing) {
-      // 解決済み。name が変わっていれば questionName をバックフィル/更新する。
-      if (card.questionName !== existing.name) {
-        nextCards.push({ ...card, questionName: existing.name });
-        changed = true;
-      } else {
-        nextCards.push(card);
-      }
+      // 解決済み。参照は questionId のみで保持するため questionName のバックフィルはしない
+      // （旧 questionName は編集保存時に剥がれる）。
+      nextCards.push(card);
       continue;
     }
 
-    // リンク切れ → サーバで名前/id の順に解決を試みる。
+    // リンク切れ → サーバで questionId（＝fileId）から解決を試みる。id 失敗時の復旧は
+    // 中央辞書（論理パス→fileId）に集約した GAS 側（folder + 名前アンカー / remap）が担う。
     try {
       const res = await analyticsGasClient.resolveQuestionRef({
         questionId: card.questionId || "",
-        name: card.questionName || "",
       });
       const q = res && res.question;
       if (q && q.id) {
         await questionCache.upsert(q);
         byId.set(q.id, q);
-        nextCards.push({ ...card, questionId: q.id, questionName: q.name || card.questionName || "" });
+        const { questionName: _staleQuestionName, ...rest } = card;
+        nextCards.push({ ...rest, questionId: q.id });
         changed = true;
         continue;
       }

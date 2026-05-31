@@ -69,7 +69,15 @@ function Forms_registerImportedForm_(payload) {
   form.settings = form.settings || {};
   form.settings.formTitle = uniqueImportTitle;
 
-  mapping[formId] = { fileId: fileId, driveFileUrl: fileUrl, title: uniqueImportTitle };
+  // 論理パス folder のベースラインは物理位置。payload.folder 明示時は下の
+  // Forms_setFormFolder_ が中央辞書も含め上書きする。
+  var importFormPhysical = FormsDrive_relativeFolderOfFile_(fileId);
+  mapping[formId] = {
+    fileId: fileId,
+    driveFileUrl: fileUrl,
+    title: uniqueImportTitle,
+    folder: importFormPhysical == null ? "" : importFormPhysical
+  };
   Forms_saveMapping_(mapping);
 
   // 開いていたフォルダ配下へ取り込む。参照先 Drive ファイルの json.folder を書き換える

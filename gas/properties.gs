@@ -81,7 +81,13 @@ function AddFormUrl_(formId, fileUrl) {
 
     var mapping = Forms_getMapping_() || {};
     var existing = mapping[formId] || {};
-    mapping[formId] = { fileId: fileId || existing.fileId || null, driveFileUrl: fileUrl };
+    // 既存の title / 論理パス folder は維持する（URL だけ更新するために中央辞書の他フィールドを消さない）。
+    mapping[formId] = {
+      fileId: fileId || existing.fileId || null,
+      driveFileUrl: fileUrl,
+      title: (typeof existing.title === "string") ? existing.title : null,
+      folder: (typeof existing.folder === "string") ? existing.folder : null
+    };
     Forms_saveMapping_(mapping);
     return { ok: true, message: "フォームURLを追加しました", formId: formId, fileUrl: fileUrl, fileId: fileId };
   } catch (error) {

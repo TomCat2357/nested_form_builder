@@ -139,7 +139,12 @@ function Forms_adoptFormFile_(file, mapping) {
 
   var name = Nfb_nameFromFile_(file);
   var fileUrl = file.getUrl();
-  mapping[fileId] = { fileId: fileId, driveFileUrl: fileUrl, title: name };
+  mapping[fileId] = {
+    fileId: fileId,
+    driveFileUrl: fileUrl,
+    title: name,
+    folder: Forms_normalizeFolderPath_(json.folder)
+  };
   Forms_saveMapping_(mapping);
 
   json.id = fileId;
@@ -206,9 +211,11 @@ function Forms_resolveFormRef_(ref) {
     var wantName = (typeof ref.formName === "string") ? ref.formName : "";
     var mapping = Forms_getMapping_();
 
+    var entry = wantId ? (mapping[wantId] || null) : null;
+
     // 1) id（fileId）で解決を試みる。
     if (wantId) {
-      var fid = (mapping[wantId] ? Nfb_resolveFileIdFromEntry_(mapping[wantId]) : null) || wantId;
+      var fid = (entry ? Nfb_resolveFileIdFromEntry_(entry) : null) || wantId;
       if (fid) {
         try {
           var f0 = DriveApp.getFileById(fid);
@@ -216,11 +223,42 @@ function Forms_resolveFormRef_(ref) {
             var fm = Forms_adoptFormFile_(f0, mapping);
             if (fm) return { ok: true, form: fm, formId: fm.id, relinked: fm.id !== wantId, matchedBy: "id" };
           }
-        } catch (e0) { /* 壊れている / fileId でない → 名前フォールバックへ */ }
+        } catch (e0) { /* 壊れている / fileId でない → 中央辞書アンカーで復旧へ */ }
       }
     }
 
-    // 2) 名前フォールバック。
+    // 2) 中央辞書（マッピング）の論理パス folder + title アンカーで物理ファイルを引き当て直す
+    //    （id 変化＝コピー/再作成の自動再リンク）。参照に formName を持たなくても復旧できる。
+    if (entry && typeof entry.title === "string" && entry.title) {
+      var leafJson = entry.title + ".json";
+      var leafJsonNorm = (typeof Forms_normalizeFormTitle_ === "function")
+        ? Forms_normalizeFormTitle_(entry.title) + ".json" : leafJson;
+      if (typeof entry.folder === "string") {
+        var scopedFolder = FormsDrive_lookupFolderForPath_(entry.folder);
+        if (scopedFolder) {
+          var scoped = StdFolders_findFileByNameInFolder_(scopedFolder, leafJson)
+            || StdFolders_findFileByNameInFolder_(scopedFolder, leafJsonNorm);
+          if (scoped) {
+            var fmS = Forms_adoptFormFile_(scoped, mapping);
+            if (fmS) return { ok: true, form: fmS, formId: fmS.id, relinked: true, matchedBy: "registry" };
+          }
+        }
+      }
+      // folder 不明/未一致 → 名前でツリー全体を探す（degrade）。
+      var baseR = FormsDrive_baseFolderOrNull_();
+      if (baseR) {
+        var targetsR = {};
+        targetsR[leafJson] = true;
+        targetsR[leafJsonNorm] = true;
+        var foundR = Forms_findFileByNamesRecursive_(baseR, targetsR);
+        if (foundR) {
+          var fmR = Forms_adoptFormFile_(foundR, mapping);
+          if (fmR) return { ok: true, form: fmR, formId: fmR.id, relinked: true, matchedBy: "registry" };
+        }
+      }
+    }
+
+    // 3) 名前フォールバック（旧 ref.formName を渡す呼び出し・旧データ救済の後方互換）。
     if (wantName) {
       var base = FormsDrive_baseFolderOrNull_();
       if (base) {
@@ -337,14 +375,17 @@ function Forms_listForms_(options) {
             form.createdAtUnixMs = createdAtSerial;
             form.modifiedAtUnixMs = modifiedAtSerial;
 
-            // タイトルキャッシュの遅延バックフィル（名前 ＝ ファイル名由来）
+            // タイトル／論理パスキャッシュの遅延バックフィル（名前 ＝ ファイル名由来 / folder ＝ JSON 由来）
             var cachedTitle = mappingEntry && mappingEntry.title;
             var actualTitle = (form.settings && form.settings.formTitle) || "";
-            if (actualTitle && cachedTitle !== actualTitle) {
+            var actualFolder = typeof form.folder === "string" ? Forms_normalizeFolderPath_(form.folder) : null;
+            var cachedFolder = (mappingEntry && typeof mappingEntry.folder === "string") ? mappingEntry.folder : null;
+            if ((actualTitle && cachedTitle !== actualTitle) || (actualFolder !== null && cachedFolder !== actualFolder)) {
               mapping[formId] = {
                 fileId: mappingEntry.fileId || null,
                 driveFileUrl: mappingEntry.driveFileUrl || null,
-                title: actualTitle,
+                title: actualTitle || (typeof cachedTitle === "string" ? cachedTitle : null),
+                folder: actualFolder !== null ? actualFolder : cachedFolder,
               };
               titleCacheDirty = true;
             }

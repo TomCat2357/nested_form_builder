@@ -8,8 +8,9 @@
  *   layout: { cols, rowHeight, margin: [x,y], containerPadding: [x,y] },
  *   cards: [
  *     // type === "question"（既定: 後方互換のため type フィールドが無いカードも question 扱い）
- *     // questionName: 保存時の Question 名（= ファイル名）。リンク切れ時にファイル名で探し直すためのキー。
- *     { id, type?: "question", questionId, questionName?, title, x, y, w, h, minW, minH, filterMappings? },
+ *     // 参照は questionId（＝fileId）のみ。リンク切れ時の復旧は中央辞書（論理パス→fileId）が担う。
+ *     // questionName は旧データに残り得るが書き込まない（読取時は無視＝寛容）。
+ *     { id, type?: "question", questionId, title, x, y, w, h, minW, minH, filterMappings? },
  *     // type === "message" — ダッシュボード上で直接編集できるメッセージボックス
  *     { id, type: "message", text, fontSize, color, background, align,
  *       x, y, w, h, minW, minH },

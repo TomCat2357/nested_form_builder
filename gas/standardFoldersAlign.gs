@@ -158,7 +158,8 @@ function StdFolders_alignEntry_(adapter, mapping, id, dryRun, ctx) {
     return "copiedExternal";
   }
 
-  // F 死亡（解決不能）。L は entry.folder（生存時に書き込んだキャッシュ）から。
+  // F 死亡（解決不能）。L は entry.folder（中央辞書の第一級フィールド＝論理パスの正本）から。
+  // 各参照は formName/questionName を持たないため、この folder + 名前が唯一の復旧アンカーになる。
   var Ld = Forms_normalizeFolderPath_(entry.folder);
   var folderAtL = adapter.lookupFolderForPath(Ld);
   var found = folderAtL ? StdFolders_findFileByNameInFolder_(folderAtL, N + ".json") : null;

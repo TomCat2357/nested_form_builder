@@ -167,10 +167,9 @@ export default function DashboardEditorPage() {
     if (!questionId) return;
     const pos = computeDefaultCardPosition(dashboard.cards);
     const newCard = {
+      // 参照は questionId（＝fileId）のみ。リンク切れ時の復旧は中央辞書（論理パス→fileId）が担う。
       id: genCardId(),
       questionId,
-      // リンク切れ時にファイル名で探し直せるよう Question 名を控える。
-      questionName: questionsById.get(questionId)?.name || "",
       title: "",
       ...pos,
       filterMappings: {},
@@ -185,7 +184,7 @@ export default function DashboardEditorPage() {
       ...d,
       cards: d.cards.map((c) =>
         c.id === cardId
-          ? { ...c, questionId, questionName: questionsById.get(questionId)?.name || c.questionName || "" }
+          ? { ...c, questionId }
           : c
       ),
     }));
@@ -363,11 +362,12 @@ export default function DashboardEditorPage() {
       name: dashboard.name.trim(),
       description: (dashboard.description || "").trim(),
       folder: normalizeFolderPath(dashboard.folder),
-      // question カードに最新の Question 名を控える（リンク切れ時のファイル名検索用）。
+      // 参照は fileId（questionId）のみで保持する。リンク切れ時の復旧は中央辞書（論理パス→fileId）に
+      // 集約したため questionName を二重持ちしない。読み込んだ旧 questionName は剥がして保存する。
       cards: (dashboard.cards || []).map((c) => {
         if (c.type === "message" || !c.questionId) return c;
-        const name = questionsById.get(c.questionId)?.name;
-        return name ? { ...c, questionName: name } : c;
+        const { questionName: _staleQuestionName, ...rest } = c;
+        return rest;
       }),
       modifiedAt: Date.now(),
     };
