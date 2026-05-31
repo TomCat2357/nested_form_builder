@@ -223,6 +223,8 @@ function loadAnalyticsContext() {
     "gas/analyticsDriveFolders.gs",
     // import 時の構成内判定 / 構成外コピー（StdFolders_ensureFileInStdFolder_）に必要
     "gas/standardFolders.gs",
+    // 保存後の参照整合（StdFolders_alignReferencesOnSave_, ①〜④）に必要
+    "gas/standardFoldersAlign.gs",
   ];
   for (const rel of filesToLoad) {
     const fullPath = path.join(projectRoot, rel);
