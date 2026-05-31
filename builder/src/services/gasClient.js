@@ -226,16 +226,29 @@ export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyW
 //   applyDelete=true で ⑥ 候補を実際にゴミ箱へ（既定は候補収集のみ）。
 const emptyAlign = () => ({ aligned: 0, moved: 0, copiedExternal: 0, rekeyed: 0, errors: 0 });
 const emptyOrphan = () => ({ scanned: 0, registered: 0, invalid: 0 });
-export const rebuildMappingsFromFolders = async (rootUrl = "", { applyDelete = false } = {}) => {
-  const r = await fetchGasApi("nfbRebuildMappingsFromFolders", { rootUrl, applyDelete }, "マッピングの同期に失敗しました");
+const emptyDedup = () => ({ groups: 0, survivors: 0, losers: 0 });
+// 同期（フォルダ走査）。①〜⑥ ＋ 同フォルダ同名の重複整理 ＋ 毎回の参照再リンクを適用する。
+// applyDeleteDuplicates / applyDeleteInvalid はカテゴリ別にゴミ箱移動を許可（既定は候補収集のみ）。
+export const rebuildMappingsFromFolders = async (rootUrl = "", { applyDeleteInvalid = false, applyDeleteDuplicates = false } = {}) => {
+  const r = await fetchGasApi(
+    "nfbRebuildMappingsFromFolders",
+    { rootUrl, applyDeleteInvalid, applyDeleteDuplicates },
+    "マッピングの同期に失敗しました",
+  );
   const align = r.align || {};
   const orphans = r.orphans || {};
+  const dedup = r.dedup || {};
   return {
-    mode: r.mode || (applyDelete ? "apply" : "dryRun"),
+    mode: r.mode || ((applyDeleteInvalid || applyDeleteDuplicates) ? "apply" : "dryRun"),
     align: { forms: align.forms || emptyAlign(), questions: align.questions || emptyAlign(), dashboards: align.dashboards || emptyAlign() },
     orphans: { forms: orphans.forms || emptyOrphan(), questions: orphans.questions || emptyOrphan(), dashboards: orphans.dashboards || emptyOrphan() },
+    dedup: { forms: dedup.forms || emptyDedup(), questions: dedup.questions || emptyDedup(), dashboards: dedup.dashboards || emptyDedup() },
     errors: Array.isArray(r.errors) ? r.errors : [],
     invalidCandidates: Array.isArray(r.invalidCandidates) ? r.invalidCandidates : [],
+    duplicateCandidates: Array.isArray(r.duplicateCandidates) ? r.duplicateCandidates : [],
+    trashedDuplicates: Array.isArray(r.trashedDuplicates) ? r.trashedDuplicates : [],
+    appliedDeleteInvalid: Boolean(r.appliedDeleteInvalid),
+    appliedDeleteDuplicates: Boolean(r.appliedDeleteDuplicates),
     relink: r.relink || null,
     truncated: Boolean(r.truncated),
   };
@@ -271,29 +284,7 @@ export const buildLinkReport = async ({ includeEntityJson = false, includeWebhoo
   const r = await fetchGasApi("nfbBuildLinkReport", { includeEntityJson, includeWebhookText }, "レポートの作成に失敗しました");
   return { markdown: r.markdown || "", stats: r.stats || {} };
 };
-// Question→Form / Dashboard→Question の旧 id 参照を現 fileId へ恒久再リンク。mode 既定 "dryRun"。
-export const relinkReferences = async ({ mode = "dryRun", rebuildMapping = true } = {}) => {
-  const r = await fetchGasApi("nfbRelinkReferences", { mode, rebuildMapping }, "参照の再リンクに失敗しました");
-  return {
-    mode: r.mode || mode,
-    questions: r.questions || {},
-    dashboards: r.dashboards || {},
-    rebuilt: r.rebuilt || null,
-    truncated: Boolean(r.truncated),
-  };
-};
-// 01_forms 配下の同名フォーム重複を整理（参照を canonical へ寄せ、重複をゴミ箱へ）。mode 既定 "dryRun"。
-export const dedupeForms = async ({ mode = "dryRun", canonicalOverrides = {} } = {}) => {
-  const r = await fetchGasApi("nfbDedupeForms", { mode, canonicalOverrides }, "重複フォームの整理に失敗しました");
-  return {
-    mode: r.mode || mode,
-    duplicateGroups: r.duplicateGroups || [],
-    duplicateFileCount: r.duplicateFileCount || 0,
-    remap: r.remap || {},
-    trashed: r.trashed || [],
-    truncated: Boolean(r.truncated),
-  };
-};
+// 注: 参照の再リンク / 同名重複整理は rebuildMappingsFromFolders（同期）が内包する。単体 API は廃止。
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
 export const saveFileToDrive = ({ filename, base64, mimeType }) => fetchGasApi("nfbSaveFileToDrive", { filename, base64, mimeType }, "Driveへの保存に失敗しました");
 const isSingleRecordPrintPayload = (payload) => {

@@ -22,7 +22,7 @@ const FORM = {
   ],
 };
 
-test("getFormColumns: key/alaSqlKey/path/label/type を返す", () => {
+test("getFormColumns: key/alaSqlKey/path/label/type を返す（view 形式に一本化・選択肢は string）", () => {
   const cols = getFormColumns(FORM);
   const byKey = new Map(cols.map((c) => [c.key, c]));
 
@@ -30,7 +30,8 @@ test("getFormColumns: key/alaSqlKey/path/label/type を返す", () => {
   assert.equal(byKey.get("金額").type, "number");
   assert.equal(byKey.get("日付").type, "date");
   assert.equal(byKey.get("詳細|区分").type, "string");
-  assert.equal(byKey.get("詳細|同意").type, "boolean");
+  // 選択肢は view 形式ではラベル文字列列＝string（旧 data 形式の boolean ではない）
+  assert.equal(byKey.get("詳細|同意").type, "string");
 
   const meikan = byKey.get("氏名");
   assert.deepEqual(meikan.path, ["氏名"]);
@@ -41,27 +42,31 @@ test("getFormColumns: key/alaSqlKey/path/label/type を返す", () => {
   assert.equal(byKey.get("詳細|区分").label, "区分");
 });
 
-test("getFormColumns: schema 無し / 不正は空配列", () => {
-  assert.deepEqual(getFormColumns(null), []);
-  assert.deepEqual(getFormColumns({}), []);
-  assert.deepEqual(getFormColumns({ schema: "x" }), []);
+test("getFormColumns: schema 無し / 不正でもメタ列は返す", () => {
+  // view 形式に一本化されたため、schema が無くてもメタ列（6 列）は常に返る。
+  assert.equal(getFormColumns(null).length, 6);
+  assert.ok(getFormColumns(null).every((c) => c.isMeta));
+  assert.equal(getFormColumns({}).length, 6);
+  assert.equal(getFormColumns({ schema: "x" }).length, 6);
 });
 
-test("getFormColumns: 固定日付キーは date 扱い", () => {
-  const cols = getFormColumns({ schema: [{ id: "x", type: "text", label: "createdAt" }] });
-  // ラベルが createdAt の単純フィールドのパスは "createdAt" になり FIXED_DATE_KEYS に当たる
-  assert.equal(cols[0].key, "createdAt");
-  assert.equal(cols[0].type, "date");
+test("getFormColumns: 固定日付キー createdAt はメタ列として date 扱い", () => {
+  const cols = getFormColumns({ schema: [{ id: "x", type: "date", label: "受付日" }] });
+  const byKey = new Map(cols.map((c) => [c.key, c]));
+  // メタ列 createdAt は date
+  assert.equal(byKey.get("createdAt").type, "date");
+  // schema 由来の date フィールドも date
+  assert.equal(byKey.get("受付日").type, "date");
 });
 
-test("buildAlaSqlTypeMap: alaSqlKey → 正規化型のマップ", () => {
+test("buildAlaSqlTypeMap: alaSqlKey → 正規化型のマップ（メタ列含む）", () => {
   const map = buildAlaSqlTypeMap(FORM);
-  // 値はすべて正規化済みの列型
   for (const v of map.values()) {
-    assert.ok(["number", "date", "string", "boolean", "unknown"].includes(v));
+    assert.ok(["number", "date", "string", "unknown"].includes(v));
   }
   assert.ok(map.size >= 5);
-  assert.equal(buildAlaSqlTypeMap(null).size, 0);
+  // view 形式に一本化されたため、form 無しでもメタ列（6 列）が出る。
+  assert.equal(buildAlaSqlTypeMap(null).size, 6);
 });
 
 const CHOICE_FORM = {
@@ -71,23 +76,21 @@ const CHOICE_FORM = {
   ],
 };
 
-test("buildAlaSqlTypeMap: choice 系の 親|選択肢 列を boolean として含む", () => {
+test("buildAlaSqlTypeMap: 選択肢はフィールド 1 列の string（option 真偽値列は出さない）", () => {
   const map = buildAlaSqlTypeMap(CHOICE_FORM);
-  // 親列（checkboxes）は boolean、選択肢列も boolean
-  assert.equal(map.get("好きな果物"), "boolean");
-  assert.equal(map.get("好きな果物__りんご"), "boolean");
-  assert.equal(map.get("好きな果物__みかん"), "boolean");
+  assert.equal(map.get("好きな果物"), "string");
+  assert.equal(map.has("好きな果物__りんご"), false);
+  assert.equal(map.has("好きな果物__みかん"), false);
 });
 
-test("getFormColumns: choice 系の 親|選択肢 boolean 列を含む（ラベルは選択肢名）", () => {
+test("getFormColumns: 選択肢はフィールド 1 列の string（option 列は出さない）", () => {
   const cols = getFormColumns(CHOICE_FORM);
   const byKey = new Map(cols.map((c) => [c.key, c]));
-  const apple = byKey.get("好きな果物|りんご");
-  assert.ok(apple, "選択肢列 好きな果物|りんご が存在する");
-  assert.equal(apple.type, "boolean");
-  assert.equal(apple.alaSqlKey, "好きな果物__りんご");
-  assert.equal(apple.label, "りんご");
-  assert.deepEqual(apple.path, ["好きな果物", "りんご"]);
+  const fruit = byKey.get("好きな果物");
+  assert.ok(fruit, "選択肢フィールド列 好きな果物 が存在する");
+  assert.equal(fruit.type, "string");
+  // 旧 data 形式の option 列は出さない
+  assert.equal(byKey.has("好きな果物|りんご"), false);
 });
 
 // ---- view 形式（getFormViewColumns / buildViewAlaSqlTypeMap） ----

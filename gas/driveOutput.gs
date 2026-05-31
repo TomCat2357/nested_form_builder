@@ -485,7 +485,7 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
   // ドキュメント全テキストから {TOKEN} を収集して解決値を求める
   // ネストした {...}（サブテンプレート）を含むトークンも拾うため balanced scanner を使う
   var tokenValueMap = {};
-  var rows = nfbBuildTemplateRow_(context, {
+  var row = nfbBuildTemplateRow_(context, {
     allowGmailOnlyTokens: !!(options && options.allowGmailOnlyTokens)
   });
   for (var s = 0; s < sections.length; s++) {
@@ -501,7 +501,7 @@ function nfbApplyTemplateReplacementsToGoogleDocument_(doc, context, options) {
       // トークン単体を再評価（fullToken 全体を評価器に渡す）
       var resolvedString;
       try {
-        resolvedString = nfbEvaluateTemplate_(fullToken, rows.data, { logError: nfbLogTemplateError_, viewRow: rows.view });
+        resolvedString = nfbEvaluateTemplate_(fullToken, row, { logError: nfbLogTemplateError_ });
       } catch (e) {
         nfbLogTemplateError_(e, fullToken);
         resolvedString = fullToken;

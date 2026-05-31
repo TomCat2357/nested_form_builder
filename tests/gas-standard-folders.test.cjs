@@ -439,6 +439,29 @@ test("StdFolders_planRefRelink_: ok / relink / ambiguous / unresolved を返す"
   assert.equal(gas.StdFolders_planRefRelink_("old", "なし", index).action, "unresolved");
 });
 
+test("StdFolders_planRefRelink_: フォルダ込み名は一意解決 / 同フォルダ同名は最新採用 / 別フォルダ同名は曖昧", () => {
+  const gas = loadGasContext();
+  // X,Y は同一フォルダ a の同名 "dup"（Y が新しい）。P,Q は別フォルダ x,y の同名 "two"。
+  const index = {
+    idSet: {},
+    nameToIds: {
+      "dup": ["X", "Y"], "a/dup": ["X", "Y"],
+      "two": ["P", "Q"], "x/two": ["P"], "y/two": ["Q"],
+    },
+    idToName: { X: "dup", Y: "dup", P: "two", Q: "two" },
+    idToFolder: { X: "a", Y: "a", P: "x", Q: "y" },
+    idToUpdated: { X: 100, Y: 200, P: 10, Q: 20 },
+  };
+  // 同フォルダ同名（バレ名）→ 最新（Y）を採用。
+  const sameFolder = gas.StdFolders_planRefRelink_("old", "dup", index);
+  assert.equal(sameFolder.action, "relink"); assert.equal(sameFolder.toId, "Y");
+  // 別フォルダ同名（バレ名）→ 曖昧。
+  assert.equal(gas.StdFolders_planRefRelink_("old", "two", index).action, "ambiguous");
+  // フォルダ込み名 → 一意解決。
+  const qualified = gas.StdFolders_planRefRelink_("old", "x/two", index);
+  assert.equal(qualified.action, "relink"); assert.equal(qualified.toId, "P");
+});
+
 // ---------------------------------------------------------------------------
 // 取り込みの move 優先化（Fix 3: コピーで fileId が変わり参照が孤立するのを防ぐ）
 // ---------------------------------------------------------------------------

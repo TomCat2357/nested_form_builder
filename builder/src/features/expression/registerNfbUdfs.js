@@ -63,6 +63,7 @@ import {
   pad4,
 } from "../../utils/dateTime.js";
 import { MS_PER_DAY, UNIX_MS_THRESHOLD } from "../../core/constants.js";
+import { splitMultiValue } from "../../utils/multiValue.js";
 
 const DAY_OF_WEEK_SHORT = ["日", "月", "火", "水", "木", "金", "土"];
 const DAY_OF_WEEK_LONG = ["日曜日", "月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日"];
@@ -299,19 +300,15 @@ export function ensureNfbUdfsRegistered(alasql) {
   //   alasql WHERE 式へ翻訳するときに使う（searchQueryEngine の matchEqualityOverTokens_ /
   //   matchInOverTokens_ 互換）。
   //   簡易検索は view 行（entriesToViewTableRows）に対して評価し、複数値セル
-  //   （checkboxes / weekday）は `,` 連結で統一されている。よってセル文字列を `,` で
-  //   分割・trim して集合化する。単一値セル（radio / select / text 等）は 1 要素集合に
-  //   なるので通常の等価比較に帰着する。空 / null セルはトークン無し → MV_EQ:false /
-  //   MV_IN:false（否定 `NOT MV_EQ` / `NOT MV_IN` で「空 != 値」「空 not in」が true になる）。
+  //   （checkboxes / weekday）は共有 codec `joinMultiValue` で連結されている（区切り `,`、
+  //   ラベル内の `,`/`\` はバックスラッシュでエスケープ）。よって `splitMultiValue` で
+  //   未エスケープの `,` のみ分割して集合化する（ラベル内カンマは保持）。単一値セル
+  //   （radio / select / text 等）は 1 要素集合になるので通常の等価比較に帰着する。
+  //   空 / null セルはトークン無し → MV_EQ:false / MV_IN:false（否定 `NOT MV_EQ` /
+  //   `NOT MV_IN` で「空 != 値」「空 not in」が true になる）。
   // ---------------------------------------------------------------------------
-  function splitMultiValueCell(cell) {
-    if (cell === null || cell === undefined) return [];
-    const str = String(cell);
-    if (str === "") return [];
-    return str.split(",").map((token) => token.trim()).filter((token) => token !== "");
-  }
   alasql.fn.MV_EQ = function (cell, target) {
-    const tokens = splitMultiValueCell(cell);
+    const tokens = splitMultiValue(cell);
     const t = String(target);
     for (let i = 0; i < tokens.length; i++) {
       if (tokens[i] === t) return true;
@@ -319,7 +316,7 @@ export function ensureNfbUdfsRegistered(alasql) {
     return false;
   };
   alasql.fn.MV_IN = function (cell, ...targets) {
-    const tokens = splitMultiValueCell(cell);
+    const tokens = splitMultiValue(cell);
     if (tokens.length === 0) return false;
     const targetStrs = targets.map((v) => String(v));
     for (let i = 0; i < tokens.length; i++) {

@@ -14,6 +14,16 @@ export function normalizeFolderPath(raw) {
 }
 
 /**
+ * フォルダパスと葉名を "/" で結合し正規化する。folder 空なら leaf のみ。
+ * フォルダ込みフォーム名（"フォルダ/サブ/フォーム名"）の組み立てに使う。
+ */
+export function joinFolderPath(folder, leaf) {
+  const f = typeof folder === "string" ? folder : "";
+  const l = typeof leaf === "string" ? leaf : "";
+  return normalizeFolderPath(f + "/" + l);
+}
+
+/**
  * folder が base 自身またはその子孫かを判定する（検索のフォルダスコープ用）。
  * base="" は全件対象として常に true。
  */

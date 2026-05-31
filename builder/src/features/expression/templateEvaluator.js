@@ -1,7 +1,8 @@
 /**
- * テンプレート文字列内の `{ ... }` を alasql 式として評価するエンジン。
+ * テンプレート文字列内の `{{ ... }}`（ビュー形式）を alasql 式として評価するエンジン。
+ * 単一ブレース `{...}`（旧・元データ形式）は廃止され、リテラルとして出力される。
  *
- * - `{...}` の中身は `alasqlExpressionEvaluator` に渡される単行式。
+ * - `{{...}}` の中身は `alasqlExpressionEvaluator` に渡される単行式。
  * - バッククォート識別子 `` `field` `` は `preprocessAlaSqlExpression` で `|` を
  *   `__` 化してから評価する。
  * - 同期 API (`resolveTemplate`) は precompile 済み前提。alasql 未ロード or 未
@@ -153,12 +154,11 @@ export function _coerceResultToStringForTest(value) {
  * 同期テンプレート解決。precompile 済み前提。
  *
  * @param {string} template
- * @param {object} row 単一ブレース `{...}`（元データモード）評価の暗黙コンテキスト
- *                     （buildRowForExpression 済み）
+ * @param {object} row `{{...}}`（ビュー形式）評価の暗黙コンテキスト
+ *                     （buildRowForExpression 済みの統一 view 行）
  * @param {object} [opts]
  *   - fallback   評価エラー / 未ロード時の置換値 (既定 "")
  *   - logError   (error, fullToken) => void
- *   - viewRow    連続二重ブレース `{{...}}`（ビューモード）評価用の行。未指定時は row。
  * @returns {string}
  */
 export function resolveTemplate(template, row, opts) {
@@ -170,12 +170,10 @@ export function resolveTemplate(template, row, opts) {
   const options = opts || {};
   const fallback = Object.prototype.hasOwnProperty.call(options, "fallback") ? options.fallback : "";
   const logError = typeof options.logError === "function" ? options.logError : null;
-  const dataRow = row || {};
-  const viewRow = options.viewRow || dataRow;
+  const tokRow = row || {};
 
   const escaped = escapeBraces(text);
   const replaced = scanAndReplace(escaped, (tok) => {
-    const tokRow = tok.mode === "view" ? viewRow : dataRow;
     const parts = splitTopLevelCommas(tok.body);
     if (parts.length <= 1) {
       const expr = normalizeBody(tok.body);
@@ -238,8 +236,7 @@ export async function resolveTemplateAsync(template, row, opts) {
   const options = opts || {};
   const fallback = Object.prototype.hasOwnProperty.call(options, "fallback") ? options.fallback : "";
   const logError = typeof options.logError === "function" ? options.logError : null;
-  const dataRow = row || {};
-  const viewRow = options.viewRow || dataRow;
+  const tokRow = row || {};
 
   await precompileTemplate(text);
 
@@ -247,7 +244,6 @@ export async function resolveTemplateAsync(template, row, opts) {
   const tokens = collectBalancedBraces(escaped);
   const valueByToken = new Map();
   for (const tok of tokens) {
-    const tokRow = tok.mode === "view" ? viewRow : dataRow;
     const parts = splitTopLevelCommas(tok.body);
     if (parts.length <= 1) {
       const expr = normalizeBody(tok.body);

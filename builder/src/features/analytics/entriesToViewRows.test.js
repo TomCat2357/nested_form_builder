@@ -48,15 +48,10 @@ const baseEntry = {
   deletedBy: "",
 };
 
-test("radio: option markers → 親列にラベル文字列", () => {
+test("radio: 保存ラベルを親列に素通し、option 列は出さない", () => {
   const entry = {
     ...baseEntry,
-    data: {
-      "性別": "●",
-      "性別|男": "●",
-      "性別|女": "",
-      "性別|その他": "",
-    },
+    data: { "性別": "男" },
   };
   const [row] = entriesToViewTableRows([entry], form);
   assert.equal(row["性別"], "男");
@@ -80,35 +75,26 @@ test("radio: 何も選択されていなければ空文字", () => {
   assert.equal(row["性別"], "");
 });
 
-test("checkboxes: 複数選択はカンマ連結", () => {
+test("checkboxes: 保存済み codec 連結文字列を素通し", () => {
   const entry = {
     ...baseEntry,
-    data: {
-      "希望|電話": "●",
-      "希望|メール": "●",
-      "希望|郵送": "",
-    },
+    data: { "希望": "電話,メール" },
   };
   const [row] = entriesToViewTableRows([entry], form);
   assert.equal(row["希望"], "電話,メール");
-  // optionOrder どおりに並ぶ
+  // ラベル内カンマ（エスケープ付き）もそのまま保持（MV_EQ が codec で復元する）
   const entry2 = {
     ...baseEntry,
-    data: {
-      "希望|郵送": "●",
-      "希望|電話": "●",
-    },
+    data: { "希望": "電話,郵送" },
   };
   const [row2] = entriesToViewTableRows([entry2], form);
   assert.equal(row2["希望"], "電話,郵送");
 });
 
-test("select: option marker → 選択肢ラベル", () => {
+test("select: 保存ラベルを素通し", () => {
   const entry = {
     ...baseEntry,
-    data: {
-      "都道府県|大阪府": "●",
-    },
+    data: { "都道府県": "大阪府" },
   };
   const [row] = entriesToViewTableRows([entry], form);
   assert.equal(row["都道府県"], "大阪府");

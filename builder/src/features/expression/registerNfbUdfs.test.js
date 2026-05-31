@@ -290,8 +290,13 @@ test("MV_EQ: 複数値セルを , で分割し集合一致", () => {
   assert.equal(fn("カラス,キタツネ", "キタツネ"), true);
   assert.equal(fn("カラス,キタツネ", "タヌキ"), false);
   assert.equal(fn("カラス,キタツネ", "カラス"), true);
-  // trim される
-  assert.equal(fn("カラス , キタツネ", "キタツネ"), true);
+  // ラベル内のカンマはバックスラッシュでエスケープされ、1 ラベルとして一致する（codec splitMultiValue）
+  assert.equal(fn("赤\\, 青,カラス", "赤, 青"), true);
+  assert.equal(fn("赤\\, 青,カラス", "カラス"), true);
+  assert.equal(fn("赤\\, 青,カラス", "赤"), false);
+  // 前後空白は保持（trim しない）＝ラベルの一部
+  assert.equal(fn("カラス , キタツネ", "キタツネ"), false);
+  assert.equal(fn("カラス , キタツネ", " キタツネ"), true);
   // 数値も文字列化して比較
   assert.equal(fn(20, "20"), true);
   // 空 / null セルはトークン無し → false（NOT MV_EQ で「空 != 値」が true になる）

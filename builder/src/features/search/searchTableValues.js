@@ -5,6 +5,7 @@ import {
 } from "../../utils/dateTime.js";
 import { isChoiceMarkerValue } from "../../utils/responses.js";
 import { normalizeFileUploadEntries } from "../../core/collect.js";
+import { splitMultiValue as splitMultiValueShared } from "../../utils/multiValue.js";
 
 const FALSE_LIKE_VALUES = new Set([null, undefined, "", false, 0, "0"]);
 
@@ -94,15 +95,10 @@ export const normalizeSearchText = (text) => String(text || "").toLowerCase();
 export const normalizeColumnName = (text) => String(text || "").trim().toLowerCase();
 export const isEntryIdColumnName = (columnName) => normalizeColumnName(columnName) === "id";
 
-// 複数値セル ("カラス,キタツネ") を集合として扱うための分割ヘルパ。
-// collectFieldValue (searchTableValues.js) が values.join(",") で生成する display と対称。
-// 複数値の連結文字は ","（カンマ）で全経路統一（表示 display / view 行 / MV_EQ・MV_IN UDF）。
-export const splitMultiValue = (text) => {
-  if (text === undefined || text === null) return [];
-  const str = String(text);
-  if (str === "") return [];
-  return str.split(",").map((token) => token.trim()).filter((token) => token !== "");
-};
+// 複数値セル ("カラス,キタツネ" / エスケープ付き "赤\, 青,カラス") を集合として扱うための分割ヘルパ。
+// 共有 codec（multiValue.js）に委譲し、保存・再読込・分析 view 行・MV_EQ/MV_IN UDF と
+// 完全に同じエスケープ規則（区切り `,`、ラベル内の `,`/`\` はバックスラッシュエスケープ）で分割する。
+export const splitMultiValue = splitMultiValueShared;
 
 // candidates 配列の各要素を splitMultiValue で平坦化して token 配列を返す。
 // COMPARE / COLUMN_IN の列未解決フォールバックで使用するヘルパ。

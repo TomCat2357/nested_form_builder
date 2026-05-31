@@ -46,27 +46,28 @@ test("findBalancedCloseIndex: 空 {}", () => {
 });
 
 // ---------------------------------------------------------------------------
-// collectBalancedBraces
+// collectBalancedBraces (二重ブレース {{ ... }} のみがトークン)
 // ---------------------------------------------------------------------------
 
-test("collectBalancedBraces: 単一", () => {
-  const tokens = collectBalancedBraces("{abc}");
+test("collectBalancedBraces: 単一トークン (二重ブレース)", () => {
+  const tokens = collectBalancedBraces("{{abc}}");
   assert.equal(tokens.length, 1);
+  assert.equal(tokens[0].mode, "view");
   assert.equal(tokens[0].body, "abc");
-  assert.equal(tokens[0].fullToken, "{abc}");
+  assert.equal(tokens[0].fullToken, "{{abc}}");
   assert.equal(tokens[0].start, 0);
-  assert.equal(tokens[0].end, 5);
+  assert.equal(tokens[0].end, 7);
 });
 
 test("collectBalancedBraces: 複数のトップレベル", () => {
-  const tokens = collectBalancedBraces("{a}-{b}");
+  const tokens = collectBalancedBraces("{{a}}-{{b}}");
   assert.equal(tokens.length, 2);
   assert.equal(tokens[0].body, "a");
   assert.equal(tokens[1].body, "b");
 });
 
 test("collectBalancedBraces: ネストはトップレベルのみ拾う", () => {
-  const tokens = collectBalancedBraces("{a{b}c}");
+  const tokens = collectBalancedBraces("{{a{b}c}}");
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].body, "a{b}c");
 });
@@ -81,45 +82,50 @@ test("collectBalancedBraces: { が無いと空配列", () => {
   assert.deepEqual(collectBalancedBraces("plain text"), []);
 });
 
-test("collectBalancedBraces: 未閉じ { 以降は収集打ち切り", () => {
-  const tokens = collectBalancedBraces("{a}-{b");
+test("collectBalancedBraces: 単一ブレース {...} はトークンではない", () => {
+  assert.deepEqual(collectBalancedBraces("{abc}"), []);
+  assert.deepEqual(collectBalancedBraces("plain {x} text"), []);
+});
+
+test("collectBalancedBraces: 未閉じ {{ 以降は収集打ち切り（リテラル扱い）", () => {
+  const tokens = collectBalancedBraces("{{a}}-{{b");
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].body, "a");
 });
 
 test("collectBalancedBraces: トップレベル } はスキップされる", () => {
-  const tokens = collectBalancedBraces("}{abc}");
+  const tokens = collectBalancedBraces("}}{{abc}}");
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].body, "abc");
 });
 
 test("collectBalancedBraces: 文字列リテラル含む式（{ は文字列内にない）", () => {
-  const tokens = collectBalancedBraces("{UPPER('hi')}");
+  const tokens = collectBalancedBraces("{{UPPER('hi')}}");
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].body, "UPPER('hi')");
 });
 
 test("collectBalancedBraces: 連続トークン", () => {
-  const tokens = collectBalancedBraces("{a}{b}{c}");
+  const tokens = collectBalancedBraces("{{a}}{{b}}{{c}}");
   assert.equal(tokens.length, 3);
   assert.deepEqual(tokens.map((t) => t.body), ["a", "b", "c"]);
 });
 
 test("collectBalancedBraces: テキストとトークンが混在", () => {
-  const tokens = collectBalancedBraces("Hello {name}, your age is {age}!");
+  const tokens = collectBalancedBraces("Hello {{name}}, your age is {{age}}!");
   assert.equal(tokens.length, 2);
   assert.equal(tokens[0].body, "name");
   assert.equal(tokens[1].body, "age");
 });
 
 test("collectBalancedBraces: 深いネスト 3 段", () => {
-  const tokens = collectBalancedBraces("{a{b{c{d}e}f}g}");
+  const tokens = collectBalancedBraces("{{a{b{c{d}e}f}g}}");
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].body, "a{b{c{d}e}f}g");
 });
 
 test("collectBalancedBraces: 空のトークン", () => {
-  const tokens = collectBalancedBraces("{}");
+  const tokens = collectBalancedBraces("{{}}");
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].body, "");
 });
@@ -129,12 +135,12 @@ test("collectBalancedBraces: 空のトークン", () => {
 // ---------------------------------------------------------------------------
 
 test("scanAndReplace: シンプル置換", () => {
-  const out = scanAndReplace("Hello {name}!", (tok) => `<${tok.body}>`);
+  const out = scanAndReplace("Hello {{name}}!", (tok) => `<${tok.body}>`);
   assert.equal(out, "Hello <name>!");
 });
 
 test("scanAndReplace: 複数トークン", () => {
-  const out = scanAndReplace("{a} and {b}", (tok) => tok.body.toUpperCase());
+  const out = scanAndReplace("{{a}} and {{b}}", (tok) => tok.body.toUpperCase());
   assert.equal(out, "A and B");
 });
 
@@ -143,44 +149,49 @@ test("scanAndReplace: トークン無しはそのまま", () => {
   assert.equal(out, "plain");
 });
 
+test("scanAndReplace: 単一ブレース {...} はトークンでなくリテラルとして通過", () => {
+  const out = scanAndReplace("a{b}c", (tok) => `<${tok.body}>`);
+  assert.equal(out, "a{b}c");
+});
+
 test("scanAndReplace: 空入力", () => {
   assert.equal(scanAndReplace("", () => "X"), "");
   assert.equal(scanAndReplace(null, () => "X"), "");
 });
 
-test("scanAndReplace: 未閉じ { はそのまま残る", () => {
-  const out = scanAndReplace("a{b", () => "X");
-  assert.equal(out, "a{b");
+test("scanAndReplace: 未閉じ {{ はそのまま残る", () => {
+  const out = scanAndReplace("a{{b", () => "X");
+  assert.equal(out, "a{{b");
 });
 
 test("scanAndReplace: replacer が空文字列を返したら削除と等価", () => {
-  const out = scanAndReplace("a{x}b", () => "");
+  const out = scanAndReplace("a{{x}}b", () => "");
   assert.equal(out, "ab");
 });
 
 test("scanAndReplace: ネストトークンも 1 つの fullToken として渡される", () => {
   let received = null;
-  scanAndReplace("{a{b}c}", (tok) => { received = tok; return ""; });
+  scanAndReplace("{{a{b}c}}", (tok) => { received = tok; return ""; });
   assert.equal(received.body, "a{b}c");
-  assert.equal(received.fullToken, "{a{b}c}");
+  assert.equal(received.fullToken, "{{a{b}c}}");
 });
 
 test("scanAndReplace: トークン位置情報", () => {
   const collected = [];
-  scanAndReplace("aa{x}bb{yy}", (tok) => { collected.push({ start: tok.start, end: tok.end }); return ""; });
+  scanAndReplace("aa{{x}}bb{{yy}}", (tok) => { collected.push({ start: tok.start, end: tok.end }); return ""; });
   assert.deepEqual(collected, [
-    { start: 2, end: 5 },
-    { start: 7, end: 11 },
+    { start: 2, end: 7 },
+    { start: 9, end: 15 },
   ]);
 });
 
 test("scanAndReplace: 連続トークンの置換", () => {
-  const out = scanAndReplace("{1}{2}{3}", (tok) => `[${tok.body}]`);
+  const out = scanAndReplace("{{1}}{{2}}{{3}}", (tok) => `[${tok.body}]`);
   assert.equal(out, "[1][2][3]");
 });
 
 test("scanAndReplace: 複雑な式テキスト", () => {
-  const out = scanAndReplace("{UPPER(`氏名`)}", (tok) => `<<${tok.body}>>`);
+  const out = scanAndReplace("{{UPPER(`氏名`)}}", (tok) => `<<${tok.body}>>`);
   assert.equal(out, "<<UPPER(`氏名`)>>");
 });
 
@@ -197,7 +208,7 @@ test("escapeBraces: \\{ と \\} を中間表現に置換", () => {
 });
 
 test("escapeBraces + unescapeBraces: round trip", () => {
-  const original = "\\{not\\}-{real}-\\{other";
+  const original = "\\{not\\}-{{real}}-\\{other";
   const escaped = escapeBraces(original);
   // 実トークンは依然 scanAndReplace で処理可能
   const replaced = scanAndReplace(escaped, (tok) => `<${tok.body}>`);
@@ -219,7 +230,7 @@ test("unescapeBraces: 空入力", () => {
 // ---------------------------------------------------------------------------
 
 test("統合: テキスト + 複数トークン + ネスト", () => {
-  const input = "[start] {a} {b{c}d} [end]";
+  const input = "[start] {{a}} {{b{c}d}} [end]";
   const tokens = collectBalancedBraces(input);
   assert.deepEqual(tokens.map((t) => t.body), ["a", "b{c}d"]);
 });
@@ -227,21 +238,18 @@ test("統合: テキスト + 複数トークン + ネスト", () => {
 test("統合: 文字列内の { と } を含む式 (バッククォート識別子)", () => {
   // 注意: シングルクォート文字列内の } はトークン区切りになる。
   //       本実装は文字列リテラル考慮を行わない（構造的に式評価器が処理する責務）。
-  const tokens = collectBalancedBraces("{`a` || 'x'}");
+  const tokens = collectBalancedBraces("{{`a` || 'x'}}");
   assert.equal(tokens.length, 1);
   assert.equal(tokens[0].body, "`a` || 'x'");
 });
 
 // ---------------------------------------------------------------------------
-// 二重ブレース {{ ... }} (view モード) / 単一ブレース { ... } (data モード)
+// 二重ブレース {{ ... }} (view モードのみがトークン)
+// 単一ブレース { ... } はリテラル扱い（トークンではない）
 // ---------------------------------------------------------------------------
 
-test("collectBalancedBraces: 単一ブレースは mode=data", () => {
-  const tokens = collectBalancedBraces("{`氏名`}");
-  assert.equal(tokens.length, 1);
-  assert.equal(tokens[0].mode, "data");
-  assert.equal(tokens[0].body, "`氏名`");
-  assert.equal(tokens[0].fullToken, "{`氏名`}");
+test("collectBalancedBraces: 単一ブレースはトークンにならない（リテラル扱い）", () => {
+  assert.deepEqual(collectBalancedBraces("{`氏名`}"), []);
 });
 
 test("collectBalancedBraces: 連続二重ブレースは mode=view、body は内側", () => {
@@ -252,10 +260,10 @@ test("collectBalancedBraces: 連続二重ブレースは mode=view、body は内
   assert.equal(tokens[0].fullToken, "{{`氏名`}}");
 });
 
-test("collectBalancedBraces: data と view の混在", () => {
+test("collectBalancedBraces: 単一ブレースは無視され view のみ拾う", () => {
+  // `{`a`}` (単一) はトークンではないので無視され、`{{`b`}}` のみ拾う。
   const tokens = collectBalancedBraces("{`a`}/{{`b`}}");
   assert.deepEqual(tokens.map((t) => [t.mode, t.body]), [
-    ["data", "`a`"],
     ["view", "`b`"],
   ]);
 });
@@ -267,17 +275,15 @@ test("collectBalancedBraces: 空の二重ブレース {{}}", () => {
   assert.equal(tokens[0].body, "");
 });
 
-test("collectBalancedBraces: 空白を挟むと二重ブレースにならない（data + ネスト）", () => {
-  // `{ {x} }` は連続していないので data モード（内側に { を含む 1 トークン）
+test("collectBalancedBraces: 空白を挟むと二重ブレースにならない（トークン無し）", () => {
+  // `{ {x} }` は連続二重ブレースではない（単一ブレースのみ）のでトークンとして拾わない。
   const tokens = collectBalancedBraces("{ {x} }");
-  assert.equal(tokens.length, 1);
-  assert.equal(tokens[0].mode, "data");
-  assert.equal(tokens[0].body, " {x} ");
+  assert.deepEqual(tokens, []);
 });
 
 test("scanAndReplace: mode を replacer に渡す", () => {
-  const out = scanAndReplace("{`a`}-{{`b`}}", (tok) => `${tok.mode}:${tok.body}`);
-  assert.equal(out, "data:`a`-view:`b`");
+  const out = scanAndReplace("{{`a`}}-{{`b`}}", (tok) => `${tok.mode}:${tok.body}`);
+  assert.equal(out, "view:`a`-view:`b`");
 });
 
 // ---------------------------------------------------------------------------
@@ -335,19 +341,23 @@ test("統合: 30+ ケースを通せること", () => {
   const cases = [
     ["", []],
     ["plain", []],
-    ["{a}", ["a"]],
-    ["{a}{b}", ["a", "b"]],
-    ["{a{b}c}", ["a{b}c"]],
-    ["text {x} text", ["x"]],
-    ["{}", [""]],
-    ["{a{b{c}d}e}", ["a{b{c}d}e"]],
-    ["{x}{y}{z}", ["x", "y", "z"]],
-    ["{a}{b{c}d}", ["a", "b{c}d"]],
+    ["{{a}}", ["a"]],
+    ["{{a}}{{b}}", ["a", "b"]],
+    ["{{a{b}c}}", ["a{b}c"]],
+    ["text {{x}} text", ["x"]],
+    ["{{}}", [""]],
+    ["{{a{b{c}d}e}}", ["a{b{c}d}e"]],
+    ["{{x}}{{y}}{{z}}", ["x", "y", "z"]],
+    ["{{a}}{{b{c}d}}", ["a", "b{c}d"]],
     ["{未閉じ", []],
-    ["{a}{未閉じ", ["a"]],
-    ["{`field`}", ["`field`"]],
-    ["{UPPER(`a`)}", ["UPPER(`a`)"]],
-    ["{a + b}", ["a + b"]],
+    ["{{未閉じ", []],
+    ["{{a}}{{未閉じ", ["a"]],
+    ["{{`field`}}", ["`field`"]],
+    ["{{UPPER(`a`)}}", ["UPPER(`a`)"]],
+    ["{{a + b}}", ["a + b"]],
+    // 単一ブレースはトークンではない（リテラル扱い）
+    ["{a}", []],
+    ["plain {x} text", []],
   ];
   for (const [input, expected] of cases) {
     const tokens = collectBalancedBraces(input);

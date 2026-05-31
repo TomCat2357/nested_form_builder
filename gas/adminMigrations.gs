@@ -470,6 +470,142 @@ function Admin_rewriteFormJson_(node) {
   return changed;
 }
 
+// ============================================================================
+// 単一ブレース {...}（旧・元データ形式トークン）→ 連続二重ブレース {{...}}（ビュー形式）への一回限り移行
+//
+// データ形式 view 統一に伴い、テンプレートトークンは {{...}} のみ有効になった
+// （単一ブレース {...} はリテラル文字として出力される）。保存済みフォーム定義の
+// テンプレ文字列を {{...}} へ書き換えて従来挙動を保つ。
+//
+// 注意: 印刷様式の Google Document 本文は外部（Drive）にあり本移行の対象外。
+//       管理者は Doc 本文の {...} を手動で {{...}} へ書き換えること。
+// ============================================================================
+
+// 移行対象のテンプレ文字列キー（これら以外の文字列フィールドは触らない＝ラベル/説明等の
+// リテラル `{` を誤って二重化しないため）。
+var ADMIN_TEMPLATE_TEXT_KEYS_ = {
+  templateText: true,             // substitution フィールドの式
+  fileNameTemplate: true,         // printTemplateAction の出力ファイル名
+  gmailTemplateTo: true,
+  gmailTemplateCc: true,
+  gmailTemplateBcc: true,
+  gmailTemplateSubject: true,
+  gmailTemplateBody: true,
+  driveFolderNameTemplate: true,  // fileUpload のフォルダ名テンプレ
+  standardPrintFileNameTemplate: true, // settings 共通の出力ファイル名
+};
+
+/**
+ * テンプレ文字列のトップレベル単一ブレース `{ expr }` を `{{ expr }}` に書き換える。
+ * - 既に `{{ ... }}`（連続二重ブレース）はそのまま（冪等・再実行安全）。
+ * - `\{` `\}` エスケープはリテラルとして保持し、ブレース対応の数えからも除外する。
+ * - 不均衡な `{` は放置（変換しない）。ネスト `{f({x:1})}` は外側ペアのみ二重化。
+ * 依存を持たない自己完結実装（cjs 単体テストでも単独ロードで動く）。
+ */
+function Admin_rewriteTemplateBraces_(text) {
+  if (typeof text !== "string" || text.indexOf("{") < 0) return text;
+  var n = text.length;
+  var out = "";
+  var i = 0;
+  while (i < n) {
+    var ch = text.charAt(i);
+    // \{ \} エスケープはそのまま 2 文字流す（リテラル）。
+    if (ch === "\\" && i + 1 < n && (text.charAt(i + 1) === "{" || text.charAt(i + 1) === "}")) {
+      out += text.substring(i, i + 2);
+      i += 2;
+      continue;
+    }
+    if (ch !== "{") { out += ch; i++; continue; }
+    // 対応する閉じ } を depth で探す（\{ \} は無視）。
+    var depth = 1;
+    var j = i + 1;
+    var close = -1;
+    while (j < n) {
+      var c = text.charAt(j);
+      if (c === "\\" && j + 1 < n && (text.charAt(j + 1) === "{" || text.charAt(j + 1) === "}")) { j += 2; continue; }
+      if (c === "{") depth++;
+      else if (c === "}") { depth--; if (depth === 0) { close = j; break; } }
+      j++;
+    }
+    if (close < 0) { out += ch; i++; continue; } // 不均衡 → 放置
+    // 既に {{ ... }} なら冪等にそのまま流す。
+    if (text.charAt(i + 1) === "{" && close - 1 > i + 1 && text.charAt(close - 1) === "}") {
+      out += text.substring(i, close + 1);
+      i = close + 1;
+      continue;
+    }
+    out += "{{" + text.substring(i + 1, close) + "}}";
+    i = close + 1;
+  }
+  return out;
+}
+
+/**
+ * フォームオブジェクトを再帰走査し、ADMIN_TEMPLATE_TEXT_KEYS_ に該当する文字列キーだけ
+ * Admin_rewriteTemplateBraces_ で書き換える。戻り値は変更があったか。
+ */
+function Admin_rewriteFormTemplateBraces_(node) {
+  if (!node || typeof node !== "object") return false;
+  var changed = false;
+  if (Object.prototype.toString.call(node) === "[object Array]") {
+    for (var i = 0; i < node.length; i++) {
+      if (node[i] && typeof node[i] === "object") {
+        if (Admin_rewriteFormTemplateBraces_(node[i])) changed = true;
+      }
+    }
+    return changed;
+  }
+  for (var k in node) {
+    if (!node.hasOwnProperty(k)) continue;
+    var v = node[k];
+    if (typeof v === "string") {
+      if (ADMIN_TEMPLATE_TEXT_KEYS_[k]) {
+        var rew = Admin_rewriteTemplateBraces_(v);
+        if (rew !== v) { node[k] = rew; changed = true; }
+      }
+    } else if (v && typeof v === "object") {
+      if (Admin_rewriteFormTemplateBraces_(v)) changed = true;
+    }
+  }
+  return changed;
+}
+
+/**
+ * 全フォーム定義の単一ブレーステンプレを {{...}} へ移行する手動実行エントリ。
+ * Admin_migrateNfbUdfNamesInForms_ を踏襲。
+ * @return {{processedForms: number, modifiedForms: number, errors: Array}}
+ */
+function Admin_migrateSingleBraceToDoubleBraceInForms_() {
+  var mapping = (typeof Forms_loadFormMapping_ === "function") ? Forms_loadFormMapping_() : null;
+  if (!mapping || typeof mapping !== "object") {
+    return { processedForms: 0, modifiedForms: 0, errors: ["Form mapping unavailable"] };
+  }
+  var processed = 0;
+  var modified = 0;
+  var errors = [];
+  for (var formId in mapping) {
+    if (!mapping.hasOwnProperty(formId)) continue;
+    try {
+      var form = Forms_getForm_(formId);
+      if (!form) continue;
+      processed++;
+      var changed = Admin_rewriteFormTemplateBraces_(form);
+      if (changed) {
+        var saveResult = Forms_saveForm_(form);
+        if (saveResult && saveResult.ok) {
+          modified++;
+          Logger.log("[brace-migrate] form=" + formId + " saved");
+        } else {
+          errors.push({ formId: formId, error: "Save failed" });
+        }
+      }
+    } catch (e) {
+      errors.push({ formId: formId, error: String(e) });
+    }
+  }
+  return { processedForms: processed, modifiedForms: modified, errors: errors };
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     Admin_rewriteNfbUdfsInExpressionString_: Admin_rewriteNfbUdfsInExpressionString_,
@@ -477,5 +613,7 @@ if (typeof module !== "undefined") {
     Admin_splitArgs_: Admin_splitArgs_,
     Admin_rewriteFormJson_: Admin_rewriteFormJson_,
     Admin_logUdfMigrationWarning_: Admin_logUdfMigrationWarning_,
+    Admin_rewriteTemplateBraces_: Admin_rewriteTemplateBraces_,
+    Admin_rewriteFormTemplateBraces_: Admin_rewriteFormTemplateBraces_,
   };
 }

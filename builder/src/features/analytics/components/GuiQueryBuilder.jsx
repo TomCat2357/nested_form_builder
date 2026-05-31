@@ -1,6 +1,6 @@
 import React from "react";
 import { AGG_TYPE_MATRIX, ALL_COLUMNS_TOKEN, resolveColumnType } from "../utils/aggregationCompatibility.js";
-import { VARIANT_LABELS, VARIANT_DESCRIPTIONS, normalizeVariant } from "../variantLabels.js";
+import { formQualifiedName } from "../utils/formIdentifierResolver.js";
 
 const AGG_LABELS = {
   count: "件数 (COUNT *)",
@@ -122,32 +122,6 @@ export default function GuiQueryBuilder({ gui, onChange, formColumns, activeForm
     onFormChange(newId);
   };
 
-  // データソース形式（元データ形式 = data / ビュー形式 = view）の切替。
-  // 列メタ情報（formColumns）が形式ごとに変わるため、現状の集計・グループ・フィルターを
-  // 維持したまま切り替えると参照列が解決できなくなるリスクがある。状態がある時は確認。
-  const currentVariant = normalizeVariant(gui.variant);
-  const handleVariantChange = (next) => {
-    if (next === currentVariant) return;
-    const hasState = gui.aggregations.length > 1
-      || gui.groupBy.length > 0
-      || gui.filters.length > 0
-      || (gui.aggregations[0] && (gui.aggregations[0].type !== "count" || gui.aggregations[0].column));
-    if (hasState) {
-      const ok = window.confirm(
-        "データソース形式を変更すると参照可能な列が変わるため、現在の集計・グループ化・フィルターはリセットされます。続行しますか？",
-      );
-      if (!ok) return;
-    }
-    onChange({
-      ...gui,
-      variant: next,
-      aggregations: [{ id: nextAggId([]), type: "count" }],
-      groupBy: [],
-      filters: [],
-      orderBy: [],
-    });
-  };
-
   const renderColumnSelect = (value, onChangeFn, allowedTypes, includeAllOption) => {
     const options = allowedTypes
       ? formColumns.filter((c) => {
@@ -175,43 +149,10 @@ export default function GuiQueryBuilder({ gui, onChange, formColumns, activeForm
         <select className="nf-input" value={gui.formId || ""} onChange={handleFormSelect} style={{ maxWidth: 400 }}>
           <option value="">フォームを選択...</option>
           {activeForms.map((f) => (
-            <option key={f.id} value={f.id}>{f.settings?.formTitle || f.id}</option>
+            <option key={f.id} value={f.id}>{formQualifiedName(f) || f.id}</option>
           ))}
         </select>
       </section>
-
-      {gui.formId && (
-        <section>
-          <label className="nf-label">データソース形式</label>
-          <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-            <label>
-              <input
-                type="radio"
-                name="gui-variant"
-                value="data"
-                checked={currentVariant === "data"}
-                onChange={() => handleVariantChange("data")}
-                style={{ marginRight: 4 }}
-              />
-              {VARIANT_LABELS.data}
-            </label>
-            <label>
-              <input
-                type="radio"
-                name="gui-variant"
-                value="view"
-                checked={currentVariant === "view"}
-                onChange={() => handleVariantChange("view")}
-                style={{ marginRight: 4 }}
-              />
-              {VARIANT_LABELS.view}
-            </label>
-            <span className="nf-text-subtle" style={{ fontSize: 12 }}>
-              {VARIANT_DESCRIPTIONS[currentVariant]}
-            </span>
-          </div>
-        </section>
-      )}
 
       {gui.formId && (
         <>

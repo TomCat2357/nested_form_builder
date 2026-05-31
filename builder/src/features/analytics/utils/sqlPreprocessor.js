@@ -1,8 +1,18 @@
-import { resolveFormRef } from "./formIdentifierResolver.js";
+import { resolveFormRef, isAmbiguousBareTitle, formQualifiedName } from "./formIdentifierResolver.js";
 import { resolveColumnRef } from "./columnIdentifierResolver.js";
 import { maskWithPlaceholders } from "./sqlLiteralMask.js";
 
 const DEFAULT_ALIAS = "data";
+
+// 未解決フォーム参照のエラー文。バレ名が同名複数で曖昧なときはフォルダ込み指定を例示して促す。
+function unresolvedFormError(rawRef, base, formIndex) {
+  if (formIndex && isAmbiguousBareTitle(base, formIndex)) {
+    const all = (formIndex.byTitleAll && formIndex.byTitleAll.get(String(base))) || [];
+    const examples = all.slice(0, 3).map((f) => "[" + formQualifiedName(f) + "]").join(" / ");
+    return "同名フォームが複数あります。フォルダ込みで指定してください（例: " + examples + "）: " + rawRef;
+  }
+  return "未定義のフォーム: " + rawRef;
+}
 
 function sanitizeId(formId) {
   return String(formId || "").replace(/[^A-Za-z0-9_]/g, "_");
@@ -133,7 +143,7 @@ export function preprocessSql(sql, opts) {
 
     const form = resolveFormRef(base, formIndex);
     if (!form) {
-      errors.push("未定義のフォーム: " + rawRef);
+      errors.push(unresolvedFormError(rawRef, base, formIndex));
       return match;
     }
     const variant = explicitVariant || "data";
@@ -158,7 +168,7 @@ export function preprocessSql(sql, opts) {
     const { base, variant: explicitVariant } = splitVariantSuffix(fRef);
     const form = resolveFormRef(base, formIndex);
     if (!form) {
-      errors.push("未定義のフォーム: " + fRef);
+      errors.push(unresolvedFormError(fRef, base, formIndex));
       return "[" + fRef + "].[" + cRef + "]";
     }
     const variant = explicitVariant || "data";

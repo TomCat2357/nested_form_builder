@@ -8,15 +8,15 @@ import { useCancellable } from "../../app/hooks/useCancellable.js";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { getSheetConfig } from "../../app/state/dataStoreHelpers.js";
-import { executeQuestion, saveQuestion, getQuestionById, getFormColumns, getFormViewColumns, ERR_NO_SPREADSHEET } from "../../features/analytics/analyticsStore.js";
+import { executeQuestion, saveQuestion, getQuestionById, getFormColumns, ERR_NO_SPREADSHEET } from "../../features/analytics/analyticsStore.js";
 import { buildColumnIndex, resolveColumnRef } from "../../features/analytics/utils/columnIdentifierResolver.js";
+import { formQualifiedName } from "../../features/analytics/utils/formIdentifierResolver.js";
 import { compileStages } from "../../features/analytics/utils/compileStages.js";
 import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder.jsx";
 import VisualizePanel from "../../features/analytics/components/VisualizePanel.jsx";
 import { normalizeTableStyle } from "../../features/analytics/utils/tableStyle.js";
 import { DEFAULT_LINE_STYLE } from "../../features/analytics/utils/chartPalette.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
-import { VARIANT_LABELS, VARIANT_DESCRIPTIONS, normalizeVariant } from "../../features/analytics/variantLabels.js";
 import LinkTargetUrlField from "../../features/editor/LinkTargetUrlField.jsx";
 
 function emptyGui(formId, variant) {
@@ -74,7 +74,6 @@ export default function QuestionEditorPage() {
   // 普段は隠している「リンク先URL（保存先）」。指定時のみ保存の targetUrl として渡す。
   const [linkTargetUrl, setLinkTargetUrl] = useState("");
   const [selectedFormId, setSelectedFormId] = useState("");
-  const [sqlVariant, setSqlVariant] = useState("data");
   const [sql, setSql] = useState("");
   const [gui, setGui] = useState(() => emptyGui(""));
   const [vizType, setVizType] = useState("table");
@@ -128,7 +127,6 @@ export default function QuestionEditorPage() {
         setSql(q.query?.sql || "");
         const fid = q.query?.formSources?.[0]?.formId || "";
         setSelectedFormId(fid);
-        setSqlVariant(normalizeVariant(q.query?.formSources?.[0]?.variant));
       }
       const v = q.visualization || {};
       setVizType(v.type || "table");
@@ -174,16 +172,13 @@ export default function QuestionEditorPage() {
       return { formColumns: [], columnLoadError: ERR_NO_SPREADSHEET };
     }
     try {
-      // GUI / SQL いずれも形式（variant）に応じて列メタを切り替える（view 形式ではメタ列付き）。
-      // SQL モードでは sqlVariant トグルが補完用に提示する列メタを決める。
-      const useView = (mode === "gui" && gui.variant === "view")
-        || (mode === "sql" && sqlVariant === "view");
-      const cols = useView ? getFormViewColumns(targetForm) : getFormColumns(targetForm);
+      // データ形式は view 形式に一本化。GUI / SQL いずれも列メタは getFormColumns（メタ列付き view 形式）。
+      const cols = getFormColumns(targetForm);
       return { formColumns: cols, columnLoadError: null };
     } catch (err) {
       return { formColumns: [], columnLoadError: err.message || String(err) };
     }
-  }, [mode, gui.formId, gui.variant, selectedFormId, sqlVariant, forms]);
+  }, [mode, gui.formId, selectedFormId, forms]);
 
   const handleGuiFormChange = (newFormId) => {
     // フォーム切替時は variant も既定（data）にリセットする。データソース形式は
@@ -272,10 +267,11 @@ export default function QuestionEditorPage() {
   const handleSave = useCallback(async () => {
     if (!name.trim()) { setSaveError("Question 名を入力してください。"); return; }
 
-    // id 解決失敗時の名前フォールバック用に、リンク先フォーム名（＝Drive ファイル名）を併せて保持する。
+    // id 解決失敗時の名前フォールバック用に、リンク先フォームのフォルダ込み名を併せて保持する。
+    // （別フォルダ同名を一意に識別できるよう "フォルダ/サブ/フォーム名" 形式で持つ。）
     const formTitleById = (fid) => {
       const f = forms.find((x) => x.id === fid);
-      return f ? ((f.settings && f.settings.formTitle) || f.name || "") : "";
+      return f ? formQualifiedName(f) : "";
     };
 
     let query;
@@ -569,17 +565,16 @@ export default function QuestionEditorPage() {
                   <option value="">（未選択：SQL 内で [フォーム名] を直接参照）</option>
                   {activeForms.map((f) => (
                     <option key={f.id} value={f.id}>
-                      {f.settings?.formTitle || f.id}
+                      {formQualifiedName(f) || f.id}
                     </option>
                   ))}
                 </select>
                 {selectedFormId && (() => {
                   const f = forms.find((x) => x.id === selectedFormId);
                   if (!f) return null;
-                  const title = f.settings?.formTitle || f.id;
-                  const suffix = sqlVariant === "view" ? ":view" : "";
-                  const tableNameToken = "[" + title + suffix + "]";
-                  const tableIdToken = "[" + f.id + suffix + "]";
+                  const title = formQualifiedName(f) || f.id;
+                  const tableNameToken = "[" + title + "]";
+                  const tableIdToken = "[" + f.id + "]";
                   const copy = (token) => {
                     navigator.clipboard.writeText(token).then(() => {
                       setCopiedToken(token);
@@ -590,33 +585,6 @@ export default function QuestionEditorPage() {
                   const codeStyle = { fontFamily: "monospace", background: "var(--nf-input-bg, #f6f6f6)", border: "1px solid var(--nf-border)", borderRadius: "3px", padding: "2px 6px" };
                   return (
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      <div style={{ display: "flex", gap: "16px", alignItems: "center", flexWrap: "wrap" }}>
-                        <label style={{ fontSize: "12px" }}>
-                          <input
-                            type="radio"
-                            name="sql-variant"
-                            value="data"
-                            checked={sqlVariant === "data"}
-                            onChange={() => setSqlVariant("data")}
-                            style={{ marginRight: 4 }}
-                          />
-                          {VARIANT_LABELS.data}
-                        </label>
-                        <label style={{ fontSize: "12px" }}>
-                          <input
-                            type="radio"
-                            name="sql-variant"
-                            value="view"
-                            checked={sqlVariant === "view"}
-                            onChange={() => setSqlVariant("view")}
-                            style={{ marginRight: 4 }}
-                          />
-                          {VARIANT_LABELS.view}
-                        </label>
-                      </div>
-                      <span className="nf-text-subtle" style={{ fontSize: "12px" }}>
-                        {VARIANT_DESCRIPTIONS[sqlVariant]}
-                      </span>
                       <div style={rowStyle}>
                         <span className="nf-text-muted" style={{ minWidth: "70px" }}>テーブル名:</span>
                         <code style={codeStyle}>{tableNameToken}</code>

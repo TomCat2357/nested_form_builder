@@ -59,8 +59,7 @@ const ACTION_DEFINITIONS_ = {
   "std_folders_get_root":     { handler: () => StdFolders_getRootInfo_(), adminOnly: true },
   "std_folders_ensure":       { handler: (ctx) => StdFolders_ensureFolders_(ctx.raw || {}), adminOnly: true },
   "std_folders_link_report":  { handler: (ctx) => StdFolders_buildLinkReport_(ctx.raw || {}), adminOnly: true },
-  "std_folders_relink_refs":  { handler: (ctx) => StdFolders_relinkReferences_(ctx.raw || {}), adminOnly: true },
-  "std_folders_dedupe_forms": { handler: (ctx) => StdFolders_dedupeForms_(ctx.raw || {}), adminOnly: true },
+  // 注: 参照の再リンク / 同名重複整理は「同期（std_folders_rebuild_map）」が内包する（単体アクションは廃止）。
   // doPost HTTP 用フォームアクション（従来契約）。list/get は nfb* 経由と同じくゲートなし。
   "forms_list":      { handler: FormsApi_List_ },
   "forms_get":       { handler: FormsApi_Get_ },

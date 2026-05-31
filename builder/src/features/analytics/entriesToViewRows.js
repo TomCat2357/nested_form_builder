@@ -1,25 +1,28 @@
 /**
  * 検索結果一覧（view）形式の AlaSQL 行配列を生成する。
  *
- * スプレッドシート由来の data 形式（entriesToAlaSqlRows）との違い：
- *   - radio / select: 親列に「選択肢ラベル文字列」を入れる。option 真偽値列 (`path|opt`) は出さない
- *   - checkboxes / weekday: 親列に「選択ラベルをカンマ "," 連結した文字列」。option 真偽値列は出さない
- *   - date / datetime / time: data 形式と同じ canonical 文字列（date=YYYY/MM/DD / time=HH:mm:ss.SSS / datetime=YYYY/MM/DD HH:mm:ss.SSS）
- *   - number: Number 強制（data 形式と同じ）
- *   - その他: data[pipePath] 素通し
+ * データ形式は view 形式に一本化された（元データ形式＝選択肢ごとの真偽値列は廃止）。
+ * よって本変換は、保存済み `entry.data`（= フィールドごとの 1 列・view 形式）を
+ * ほぼ素通しで AlaSQL 行へ写す薄い変換になる：
+ *   - radio / select: 親列に「選択肢ラベル文字列」。
+ *   - checkboxes / weekday: 親列に「選択ラベルを共有 codec で連結した文字列」
+ *     （区切り `,`、ラベル内の `,`/`\` はバックスラッシュでエスケープ）。MV_EQ/MV_IN UDF が
+ *     同じ codec で分割するので、ラベルにカンマを含んでも集合一致が正しく働く。
+ *   - date / datetime / time: canonical 文字列（date=YYYY/MM/DD / time=HH:mm:ss.SSS /
+ *     datetime=YYYY/MM/DD HH:mm:ss.SSS）に整形。
+ *   - number: Number 強制。
+ *   - その他: data[pipePath] 素通し。
  *   - メタ列: id / No_ / createdAt / modifiedAt / createdBy / modifiedBy / deletedAt / deletedBy
  *
- * 列キーは headerKeyToAlaSqlKey で `|` → `__` 変換（data 形式と同じ命名規則）。
- * メタ列名がフィールドラベルと衝突した場合は最後にメタ列で上書き（data 形式と同じ挙動）。
+ * 列キーは headerKeyToAlaSqlKey で `|` → `__` 変換。
+ * メタ列名がフィールドラベルと衝突した場合は最後にメタ列で上書き。
  */
 
-import { isChoiceMarkerValue } from "../../utils/responses.js";
-import { collectDirectOptionLabels } from "../search/searchTableValues.js";
 import { formatCanonical } from "../../utils/dateTime.js";
-import { forEachFormField, extractOptionOrder } from "./utils/fieldMetas.js";
+import { forEachFormField } from "./utils/fieldMetas.js";
 
 /**
- * フォーム schema を走査して、各フィールドの { path, type, optionOrder, alaSqlKey } 配列を返す。
+ * フォーム schema を走査して、各フィールドの { path, type, alaSqlKey } 配列を返す。
  * 同一 pipePath は最初の出現を採用（先勝ち、getFormColumns と同じポリシー）。
  */
 function collectViewFieldInfos(form) {
@@ -28,35 +31,10 @@ function collectViewFieldInfos(form) {
     out.push({
       path: pipePath,
       type: field && field.type,
-      optionOrder: extractOptionOrder(field),
       alaSqlKey,
     });
   });
   return out;
-}
-
-/**
- * radio / select 1 列の view 値を求める。
- *   - data[path] に「ラベル文字列」が直接入っていればそれを採用（新形式）
- *   - data[path] が choice marker (●/true/1) なら option markers から選択ラベルを引く
- *   - data[path] が無ければ option markers から引く
- *   - どれも無ければ ""（null ではなく空文字、データ形式と整合）
- */
-function radioSelectViewValue(data, path, optionOrder) {
-  const direct = data[path];
-  const hasDirect = Object.prototype.hasOwnProperty.call(data, path);
-  if (hasDirect && direct !== "" && direct != null && !isChoiceMarkerValue(direct)) {
-    return direct;
-  }
-  const labels = collectDirectOptionLabels(data, path, optionOrder);
-  if (labels.length > 0) return labels[0];
-  return "";
-}
-
-function checkboxViewValue(data, path, optionOrder) {
-  const labels = collectDirectOptionLabels(data, path, optionOrder);
-  if (labels.length === 0) return "";
-  return labels.join(",");
 }
 
 function coerceNumberOrNull(v) {
@@ -70,33 +48,29 @@ function fieldViewValue(entry, fieldInfo) {
   const data = (entry && typeof entry.data === "object" && entry.data) ? entry.data : {};
   const path = fieldInfo.path;
   const type = fieldInfo.type;
+  const v = data[path];
 
-  if (type === "radio" || type === "select") {
-    return radioSelectViewValue(data, path, fieldInfo.optionOrder);
-  }
-  if (type === "checkboxes" || type === "weekday") {
-    return checkboxViewValue(data, path, fieldInfo.optionOrder);
+  if (type === "radio" || type === "select" || type === "checkboxes" || type === "weekday") {
+    // view 形式の保存値（選択肢ラベル / checkboxes は codec 連結文字列）をそのまま渡す。
+    // 未選択は "" に揃える（data 形式との整合：選択肢列は空文字、非選択肢列は null）。
+    return (v === undefined || v === null) ? "" : v;
   }
   if (type === "date") {
-    const v = data[path];
     if (v === "" || v == null) return null;
     return formatCanonical(v, "date") ?? null;
   }
   if (type === "datetime") {
-    const v = data[path];
     if (v === "" || v == null) return null;
     return formatCanonical(v, "datetime") ?? null;
   }
   if (type === "time") {
-    const v = data[path];
     if (v === "" || v == null) return null;
     return formatCanonical(v, "time") ?? null;
   }
   if (type === "number") {
-    return coerceNumberOrNull(data[path]);
+    return coerceNumberOrNull(v);
   }
   // text / textarea / email / tel / url / file / その他: 素通し
-  const v = data[path];
   return v === undefined ? null : v;
 }
 

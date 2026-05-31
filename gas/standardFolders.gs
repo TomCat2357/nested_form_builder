@@ -631,7 +631,7 @@ function StdFolders_resolveRefByName_(id, name, nameToIds) {
     }
   }
   var list = Object.keys(ids);
-  return { count: list.length, fileId: list.length === 1 ? list[0] : null };
+  return { count: list.length, fileId: list.length === 1 ? list[0] : null, ids: list };
 }
 
 // エンティティ相互参照（formId / questionId）の状態を判定する。
@@ -884,6 +884,12 @@ function StdFolders_countBySeverity_(broken) {
   return counts;
 }
 
+// レポート用のフォルダ込み表示名（"相対フォルダ/葉名"）。relPath から .json を外して得る。
+function StdFolders_reportQualName_(e) {
+  if (e && e.relPath) return String(e.relPath).replace(/\.json$/i, "");
+  return (e && e.name) || "";
+}
+
 // レポート Markdown を組み立てる（純粋な文字列整形）。
 function StdFolders_renderLinkReportMarkdown_(ctx) {
   var md = [];
@@ -897,7 +903,7 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
   md.push("- 集計: ファイル " + totalFiles + " 件 / フォーム " + ctx.forms.length + " / Question " + ctx.questions.length + " / Dashboard " + ctx.dashboards.length);
   var sev = StdFolders_countBySeverity_(ctx.broken);
   md.push("- 要手動対応（真のリンク切れ / 同名曖昧 / 要確認）: " + sev.manual + " 件");
-  md.push("- 自動再リンク可（名前一致・実行時は解決）: " + sev.auto + " 件 — `nfbRelinkReferences` で恒久修復可");
+  md.push("- 自動再リンク可（名前一致・実行時は解決）: " + sev.auto + " 件 — 「同期（フォルダ走査）」で恒久修復可");
   md.push("- 外部参照（未検査・対象外）: " + sev.external + " 件");
   md.push("- リンク切れ判定: 構成内照合＋実行時リゾルバ相当の名前フォールバック（外部リンクの生死は未検査）");
   md.push("- 実行打ち切り: " + (ctx.truncated ? "あり（実行時間の安全弁により一部のファイルを未処理。再実行してください）" : "なし"));
@@ -952,7 +958,7 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
   if (!ctx.forms.length) md.push("- (なし)");
   ctx.forms.forEach(function(f) {
     md.push("");
-    md.push("#### " + f.name + "（fileId: " + f.fileId + "）");
+    md.push("#### " + StdFolders_reportQualName_(f) + "（fileId: " + f.fileId + "）");
     if (f.parseError) { md.push("- ⚠ JSON 解析に失敗しました: " + StdFolders_mdCode_(f.relPath)); return; }
     if (!f.links.length) { md.push("- (リンクなし)"); return; }
     f.links.forEach(function(l) {
@@ -964,7 +970,7 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
   if (!ctx.questions.length) md.push("- (なし)");
   ctx.questions.forEach(function(q) {
     md.push("");
-    md.push("#### " + q.name + "（fileId: " + q.fileId + "）");
+    md.push("#### " + StdFolders_reportQualName_(q) + "（fileId: " + q.fileId + "）");
     if (q.parseError) { md.push("- ⚠ JSON 解析に失敗しました: " + StdFolders_mdCode_(q.relPath)); return; }
     if (!q.refs.length) { md.push("- (参照なし)"); return; }
     q.refs.forEach(function(r) {
@@ -976,7 +982,7 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
   if (!ctx.dashboards.length) md.push("- (なし)");
   ctx.dashboards.forEach(function(d) {
     md.push("");
-    md.push("#### " + d.name + "（fileId: " + d.fileId + "）");
+    md.push("#### " + StdFolders_reportQualName_(d) + "（fileId: " + d.fileId + "）");
     if (d.parseError) { md.push("- ⚠ JSON 解析に失敗しました: " + StdFolders_mdCode_(d.relPath)); return; }
     if (!d.refs.length) { md.push("- (参照なし)"); return; }
     d.refs.forEach(function(r) {
@@ -1032,7 +1038,7 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
     ctx.forms.forEach(function(f) {
       if (!f.json) return;
       md.push("");
-      md.push("#### " + f.name + "（fileId: " + f.fileId + "）");
+      md.push("#### " + StdFolders_reportQualName_(f) + "（fileId: " + f.fileId + "）");
       md.push("```json");
       md.push(f.json);
       md.push("```");
@@ -1042,7 +1048,7 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
     ctx.questions.forEach(function(q) {
       if (!q.json) return;
       md.push("");
-      md.push("#### " + q.name + "（fileId: " + q.fileId + "）");
+      md.push("#### " + StdFolders_reportQualName_(q) + "（fileId: " + q.fileId + "）");
       md.push("```json");
       md.push(q.json);
       md.push("```");
@@ -1052,7 +1058,7 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
     ctx.dashboards.forEach(function(d) {
       if (!d.json) return;
       md.push("");
-      md.push("#### " + d.name + "（fileId: " + d.fileId + "）");
+      md.push("#### " + StdFolders_reportQualName_(d) + "（fileId: " + d.fileId + "）");
       md.push("```json");
       md.push(d.json);
       md.push("```");
@@ -1070,19 +1076,23 @@ function StdFolders_renderLinkReportMarkdown_(ctx) {
 // ---------------------------------------------
 
 // key サブフォルダ配下（再帰）の JSON を走査し、名前索引を構築する。
-// 戻り: { nameToIds:{name:[fileId,...]}, idToName:{fileId:name}, idSet:{fileId:true} }。
+// 戻り: {
+//   nameToIds:{name:[fileId,...]},  // 葉名キーに加え「フォルダ込み名（相対フォルダ/葉名）」キーも積む
+//   idToName:{fileId:name}, idSet:{fileId:true},
+//   idToFolder:{fileId:relFolder}, idToUpdated:{fileId:ms}  // 同フォルダ重複の最新採用判定用
+// }。
 function StdFolders_buildNameIndexForKey_(root, key) {
-  var out = { nameToIds: {}, idToName: {}, idSet: {} };
+  var out = { nameToIds: {}, idToName: {}, idSet: {}, idToFolder: {}, idToUpdated: {} };
   try {
     var sub = StdFolders_getOrCreateSubfolder_(root, key);
-    StdFolders_walkNameIndex_(sub, out);
+    StdFolders_walkNameIndex_(sub, out, "");
   } catch (err) {
     Logger.log("[StdFolders_buildNameIndexForKey_] " + key + ": " + nfbErrorToString_(err));
   }
   return out;
 }
 
-function StdFolders_walkNameIndex_(folder, out) {
+function StdFolders_walkNameIndex_(folder, out, prefix) {
   var files = folder.getFiles();
   while (files.hasNext()) {
     var file = files.next();
@@ -1092,14 +1102,35 @@ function StdFolders_walkNameIndex_(folder, out) {
     var name = Nfb_nameFromFile_(file);
     out.idSet[id] = true;
     out.idToName[id] = name;
+    out.idToFolder[id] = prefix || "";
+    var updated = 0;
+    try { updated = file.getLastUpdated().getTime(); } catch (e) { updated = 0; }
+    out.idToUpdated[id] = updated;
     StdFolders_indexNameToIds_(out.nameToIds, name, id);
+    // フォルダ込み名キー（"相対フォルダ/葉名"）。フォルダ込みで保持された参照名を一意解決するため。
+    if (prefix) StdFolders_indexNameToIds_(out.nameToIds, prefix + "/" + name, id);
   }
   var subs = folder.getFolders();
   while (subs.hasNext()) {
     var sub = subs.next();
     if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
-    StdFolders_walkNameIndex_(sub, out);
+    StdFolders_walkNameIndex_(sub, out, prefix ? prefix + "/" + sub.getName() : sub.getName());
   }
+}
+
+// 同名複数の候補 ids が「全て同一フォルダ」なら最新（idToUpdated 最大）を返す。
+// 別フォルダが混在するなら null（真の曖昧）。同フォルダ重複の救済に使う。
+function StdFolders_pickNewestSameFolder_(ids, index) {
+  if (!ids || ids.length < 2 || !index.idToFolder) return null;
+  var folder = index.idToFolder[ids[0]];
+  for (var i = 1; i < ids.length; i++) {
+    if (index.idToFolder[ids[i]] !== folder) return null;
+  }
+  var best = ids[0];
+  for (var j = 1; j < ids.length; j++) {
+    if ((index.idToUpdated[ids[j]] || 0) > (index.idToUpdated[best] || 0)) best = ids[j];
+  }
+  return best;
 }
 
 // 1 件の参照 { id, name } を index で解決し、再リンク判断を返す（純粋）。
@@ -1113,7 +1144,12 @@ function StdFolders_planRefRelink_(id, name, index) {
   if (id && index.idSet[id]) return { action: "ok" };
   var m = StdFolders_resolveRefByName_(id, name, index.nameToIds);
   if (m.count === 1) return { action: "relink", toId: m.fileId, toName: index.idToName[m.fileId] || name || "" };
-  if (m.count > 1) return { action: "ambiguous" };
+  if (m.count > 1) {
+    // 同名複数。物理フォルダが同一なら最新を採用（同フォルダ重複の救済）。別フォルダ混在は曖昧。
+    var picked = StdFolders_pickNewestSameFolder_(m.ids, index);
+    if (picked) return { action: "relink", toId: picked, toName: index.idToName[picked] || name || "" };
+    return { action: "ambiguous" };
+  }
   return { action: "unresolved" };
 }
 
@@ -1242,209 +1278,6 @@ function StdFolders_walkRelink_(folder, kind, index, apply, guard, res) {
 }
 
 // ---------------------------------------------
-// 同名フォームの重複整理（dedup）
-// 移動がコピーになっていた不具合（Fix）の名残で 01_forms 配下に同名フォームが複数できている。
-// 同名グループの canonical を 1 つ残し、参照（Question.formId）を canonical へ寄せ、残りをゴミ箱へ。
-// dryRun（既定）は計画のみ返す。canonicalOverrides:{ name: fileId } で canonical を明示指定できる。
-// 推奨運用順: rebuild_map → dedupe(apply) → relink(apply)。
-// ---------------------------------------------
-
-function StdFolders_dedupeForms_(payload) {
-  return nfbSafeCall_(function() {
-    var apply = !!(payload && (payload.mode === "apply" || payload.apply === true));
-    var overrides = (payload && payload.canonicalOverrides && typeof payload.canonicalOverrides === "object") ? payload.canonicalOverrides : {};
-    var manualRootUrl = payload && payload.rootUrl ? String(payload.rootUrl).trim() : "";
-    var root = StdFolders_resolveRootFolder_(manualRootUrl);
-
-    var startMs = (new Date()).getTime();
-    var guard = { truncated: false, checkTime: function() { return ((new Date()).getTime() - startMs) > 300000; } };
-
-    // 1) 01_forms 配下を name でグルーピング（schema を持つフォーム定義のみ）。
-    var groups = {};
-    StdFolders_walkFormGroups_(StdFolders_getOrCreateSubfolder_(root, "forms"), "", groups, guard);
-
-    // 2) 現在 Question から参照されているフォーム fileId 集合（canonical 選定の優先材料）。
-    var referenced = StdFolders_collectReferencedFormIds_(root, guard);
-
-    // 3) グループごとに canonical を決め、idMap（dupId→canonicalId）を作る。
-    var plans = [];
-    var idMap = {};
-    for (var name in groups) {
-      if (!groups.hasOwnProperty(name)) continue;
-      var members = groups[name];
-      if (members.length < 2) continue;
-      var canonical = StdFolders_pickCanonicalForm_(name, members, referenced, overrides);
-      var dups = [];
-      for (var i = 0; i < members.length; i++) {
-        members[i].referenced = !!referenced[members[i].fileId];
-        members[i].canonical = (members[i].fileId === canonical.fileId);
-        if (members[i].fileId !== canonical.fileId) { dups.push(members[i].fileId); idMap[members[i].fileId] = canonical.fileId; }
-      }
-      plans.push({
-        name: name,
-        canonicalId: canonical.fileId,
-        canonicalPath: canonical.path,
-        reason: canonical.reason,
-        duplicates: dups,
-        members: members
-      });
-    }
-
-    // 4) Question.formId を idMap で canonical へ寄せる（現 fileId 一致のみ remap）。
-    var remap = { scanned: 0, filesChanged: 0, refsRemapped: 0 };
-    if (Object.keys(idMap).length) {
-      StdFolders_remapFormIdsInQuestions_(StdFolders_getOrCreateSubfolder_(root, "questions"), idMap, apply, guard, remap);
-    }
-
-    // 5) 重複ファイルをゴミ箱へ（apply のみ）。
-    var trashed = [];
-    if (apply) {
-      for (var p = 0; p < plans.length; p++) {
-        for (var d = 0; d < plans[p].duplicates.length; d++) {
-          try { DriveApp.getFileById(plans[p].duplicates[d]).setTrashed(true); trashed.push(plans[p].duplicates[d]); }
-          catch (e) { Logger.log("[StdFolders_dedupeForms_] trash " + plans[p].duplicates[d] + ": " + nfbErrorToString_(e)); }
-        }
-      }
-    }
-
-    return {
-      ok: true,
-      mode: apply ? "apply" : "dryRun",
-      duplicateGroups: plans,
-      duplicateFileCount: Object.keys(idMap).length,
-      remap: remap,
-      trashed: trashed,
-      truncated: guard.truncated
-    };
-  });
-}
-
-// 01_forms 配下を再帰走査し、フォーム定義（schema あり）を name でグルーピングする。
-//   groups[name] = [ { fileId, path, updated } ]
-function StdFolders_walkFormGroups_(folder, pathPrefix, groups, guard) {
-  if (guard.truncated) return;
-  var files = folder.getFiles();
-  while (files.hasNext()) {
-    if (guard.checkTime()) { guard.truncated = true; return; }
-    var file = files.next();
-    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
-    if (!StdFolders_isJsonFile_(file)) continue;
-    var json;
-    try { json = JSON.parse(file.getBlob().getDataAsString()); } catch (e) { continue; }
-    if (!json || !Array.isArray(json.schema)) continue;
-    var name = Nfb_nameFromFile_(file);
-    if (!name) continue;
-    var updated = 0;
-    try { updated = file.getLastUpdated().getTime(); } catch (e) { updated = 0; }
-    if (!groups[name]) groups[name] = [];
-    groups[name].push({ fileId: file.getId(), path: (pathPrefix ? pathPrefix : "(root)"), depth: pathPrefix ? pathPrefix.split("/").length : 0, updated: updated });
-  }
-  var subs = folder.getFolders();
-  while (subs.hasNext()) {
-    if (guard.checkTime()) { guard.truncated = true; return; }
-    var sub = subs.next();
-    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
-    StdFolders_walkFormGroups_(sub, pathPrefix ? pathPrefix + "/" + sub.getName() : sub.getName(), groups, guard);
-  }
-}
-
-// canonical 選定: ① override 指定 → ② 参照されている唯一の member → ③ 物理パスが深い → ④ 古い（=原本）。
-function StdFolders_pickCanonicalForm_(name, members, referenced, overrides) {
-  if (overrides[name]) {
-    for (var i = 0; i < members.length; i++) {
-      if (members[i].fileId === overrides[name]) return { fileId: members[i].fileId, path: members[i].path, reason: "override" };
-    }
-  }
-  var refd = members.filter(function(m) { return referenced[m.fileId]; });
-  if (refd.length === 1) return { fileId: refd[0].fileId, path: refd[0].path, reason: "referenced" };
-  var pool = refd.length > 1 ? refd : members;   // 複数参照ならその中から、無ければ全体から選ぶ
-  var best = pool[0];
-  for (var j = 1; j < pool.length; j++) {
-    var m = pool[j];
-    if (m.depth > best.depth || (m.depth === best.depth && m.updated < best.updated)) best = m;
-  }
-  return { fileId: best.fileId, path: best.path, reason: refd.length > 1 ? "referenced-multi/deepest-oldest" : "deepest-oldest" };
-}
-
-// 02_questions 配下を走査し、現在の formId / gui.formId 値（=フォーム参照）を集合に集める。
-function StdFolders_collectReferencedFormIds_(root, guard) {
-  var set = {};
-  try { StdFolders_walkCollectFormRefs_(StdFolders_getOrCreateSubfolder_(root, "questions"), set, guard); }
-  catch (e) { Logger.log("[StdFolders_collectReferencedFormIds_] " + nfbErrorToString_(e)); }
-  return set;
-}
-
-function StdFolders_walkCollectFormRefs_(folder, set, guard) {
-  if (guard.truncated) return;
-  var files = folder.getFiles();
-  while (files.hasNext()) {
-    if (guard.checkTime()) { guard.truncated = true; return; }
-    var file = files.next();
-    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
-    if (!StdFolders_isJsonFile_(file)) continue;
-    var json;
-    try { json = JSON.parse(file.getBlob().getDataAsString()); } catch (e) { continue; }
-    var query = json && json.query;
-    if (query && typeof query === "object") {
-      if (query.gui && query.gui.formId) set[query.gui.formId] = true;
-      if (Array.isArray(query.formSources)) {
-        for (var i = 0; i < query.formSources.length; i++) {
-          if (query.formSources[i] && query.formSources[i].formId) set[query.formSources[i].formId] = true;
-        }
-      }
-    }
-  }
-  var subs = folder.getFolders();
-  while (subs.hasNext()) {
-    if (guard.checkTime()) { guard.truncated = true; return; }
-    var sub = subs.next();
-    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
-    StdFolders_walkCollectFormRefs_(sub, set, guard);
-  }
-}
-
-// Question の formId / gui.formId を idMap（dupId→canonicalId）で寄せる。
-function StdFolders_remapFormIdsInQuestions_(folder, idMap, apply, guard, remap) {
-  if (guard.truncated) return;
-  var files = folder.getFiles();
-  while (files.hasNext()) {
-    if (guard.checkTime()) { guard.truncated = true; return; }
-    var file = files.next();
-    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
-    if (!StdFolders_isJsonFile_(file)) continue;
-    remap.scanned++;
-    var json;
-    try { json = JSON.parse(file.getBlob().getDataAsString()); } catch (e) { continue; }
-    var changed = false;
-    var query = json && json.query;
-    if (query && typeof query === "object") {
-      if (query.gui && query.gui.formId && idMap[query.gui.formId]) { query.gui.formId = idMap[query.gui.formId]; remap.refsRemapped++; changed = true; }
-      if (Array.isArray(query.formSources)) {
-        for (var i = 0; i < query.formSources.length; i++) {
-          var src = query.formSources[i];
-          if (src && src.formId && idMap[src.formId]) { src.formId = idMap[src.formId]; remap.refsRemapped++; changed = true; }
-        }
-      }
-    }
-    if (changed) {
-      remap.filesChanged++;
-      if (apply) {
-        try { file.setContent(JSON.stringify(json, null, 2)); }
-        catch (e) { Logger.log("[StdFolders_remapFormIdsInQuestions_] setContent " + file.getId() + ": " + nfbErrorToString_(e)); }
-      }
-    }
-  }
-  var subs = folder.getFolders();
-  while (subs.hasNext()) {
-    if (guard.checkTime()) { guard.truncated = true; return; }
-    var sub = subs.next();
-    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
-    StdFolders_remapFormIdsInQuestions_(sub, idMap, apply, guard, remap);
-  }
-}
-
-
-// ---------------------------------------------
 // 公開 API（google.script.run 用）— executeAction_ 経由で adminOnly ゲートを通す。
 // ---------------------------------------------
 
@@ -1455,8 +1288,6 @@ function nfbImportMapping(payload)           { return Nfb_runScriptAction_("std_
 function nfbGetStdFolderRoot(payload)        { return Nfb_runScriptAction_("std_folders_get_root", payload || {}); }
 function nfbEnsureStdFolders(payload)        { return Nfb_runScriptAction_("std_folders_ensure", payload || {}); }
 function nfbBuildLinkReport(payload)         { return Nfb_runScriptAction_("std_folders_link_report", payload || {}); }
-function nfbRelinkReferences(payload)        { return Nfb_runScriptAction_("std_folders_relink_refs", payload || {}); }
-function nfbDedupeForms(payload)             { return Nfb_runScriptAction_("std_folders_dedupe_forms", payload || {}); }
 
 // 現在のルートフォルダ情報を返す（診断用）。未解決でも例外にせず resolved:false を返す。
 function StdFolders_getRootInfo_() {

@@ -266,3 +266,74 @@ test("Admin_rewriteFormJson_: 変更なしのときは false を返す", () => {
   const changed = ctx.Admin_rewriteFormJson_(form);
   assert.equal(changed, false);
 });
+
+// ---------------------------------------------------------------------------
+// Admin_rewriteTemplateBraces_ — 単一 {...} → 二重 {{...}} 移行
+// ---------------------------------------------------------------------------
+
+test("Admin_rewriteTemplateBraces_: 単一ブレースを二重ブレースに変換", () => {
+  const ctx = loadAdminMigrations();
+  const fn = ctx.Admin_rewriteTemplateBraces_;
+  assert.equal(fn("{`氏名`}"), "{{`氏名`}}");
+  assert.equal(fn("Hello {`氏名`}!"), "Hello {{`氏名`}}!");
+  assert.equal(fn("{`姓` || `名`}"), "{{`姓` || `名`}}");
+});
+
+test("Admin_rewriteTemplateBraces_: 既に {{...}} は冪等（再実行安全）", () => {
+  const ctx = loadAdminMigrations();
+  const fn = ctx.Admin_rewriteTemplateBraces_;
+  assert.equal(fn("{{`氏名`}}"), "{{`氏名`}}");
+  assert.equal(fn(fn("{`氏名`}")), "{{`氏名`}}");
+});
+
+test("Admin_rewriteTemplateBraces_: ネストは外側ペアのみ二重化", () => {
+  const ctx = loadAdminMigrations();
+  const fn = ctx.Admin_rewriteTemplateBraces_;
+  assert.equal(fn("{IIF(`a`>0, 'x', 'y')}"), "{{IIF(`a`>0, 'x', 'y')}}");
+  assert.equal(fn("{f({x:1})}"), "{{f({x:1})}}");
+});
+
+test("Admin_rewriteTemplateBraces_: \{ \} エスケープは保持", () => {
+  const ctx = loadAdminMigrations();
+  const fn = ctx.Admin_rewriteTemplateBraces_;
+  assert.equal(fn("\\{literal\\}"), "\\{literal\\}");
+  assert.equal(fn("\\{lit\\} {`x`}"), "\\{lit\\} {{`x`}}");
+});
+
+test("Admin_rewriteTemplateBraces_: 不均衡な { は放置", () => {
+  const ctx = loadAdminMigrations();
+  const fn = ctx.Admin_rewriteTemplateBraces_;
+  assert.equal(fn("未閉じ {`x`"), "未閉じ {`x`");
+  assert.equal(fn("{ が無い文"), "{ が無い文");
+});
+
+test("Admin_rewriteTemplateBraces_: 複数トークン", () => {
+  const ctx = loadAdminMigrations();
+  const fn = ctx.Admin_rewriteTemplateBraces_;
+  assert.equal(fn("{`a`}-{`b`}"), "{{`a`}}-{{`b`}}");
+});
+
+test("Admin_rewriteFormTemplateBraces_: テンプレキーのみ書き換え、ラベル等は触らない", () => {
+  const ctx = loadAdminMigrations();
+  const form = {
+    schema: [
+      { id: "q1", type: "text", label: "予算{2024}" }, // ラベルはテンプレキーでない → 不変
+      { id: "q2", type: "substitution", templateText: "Hello {`氏名`}" },
+      { id: "q3", type: "printTemplate", printTemplateAction: { fileNameTemplate: "{`_id`}_出力", gmailTemplateBody: "本文 {`氏名`} 様" } },
+    ],
+    settings: { standardPrintFileNameTemplate: "様式_{`_id`}" },
+  };
+  const changed = ctx.Admin_rewriteFormTemplateBraces_(form);
+  assert.equal(changed, true);
+  assert.equal(form.schema[0].label, "予算{2024}"); // ラベルは不変
+  assert.equal(form.schema[1].templateText, "Hello {{`氏名`}}");
+  assert.equal(form.schema[2].printTemplateAction.fileNameTemplate, "{{`_id`}}_出力");
+  assert.equal(form.schema[2].printTemplateAction.gmailTemplateBody, "本文 {{`氏名`}} 様");
+  assert.equal(form.settings.standardPrintFileNameTemplate, "様式_{{`_id`}}");
+});
+
+test("Admin_rewriteFormTemplateBraces_: 変更が無ければ false", () => {
+  const ctx = loadAdminMigrations();
+  const form = { schema: [{ id: "q1", type: "substitution", templateText: "{{`氏名`}}" }] };
+  assert.equal(ctx.Admin_rewriteFormTemplateBraces_(form), false);
+});

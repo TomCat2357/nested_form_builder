@@ -56,11 +56,11 @@ const FORM = {
 const ENTRIES = [
   {
     id: "1", "No.": 1, modifiedAt: Date.UTC(2026, 0, 1), modifiedAtUnixMs: Date.UTC(2026, 0, 1),
-    data: { 氏名: "山田太郎", 年齢: 25, "対象種|カラス": true, "対象種|キタツネ": true, 備考: "" }, dataUnixMs: {},
+    data: { 氏名: "山田太郎", 年齢: 25, "対象種": "カラス,キタツネ", 備考: "" }, dataUnixMs: {},
   },
   {
     id: "2", "No.": 2, modifiedAt: Date.UTC(2026, 0, 2), modifiedAtUnixMs: Date.UTC(2026, 0, 2),
-    data: { 氏名: "田中花子", 年齢: 18, "対象種|タヌキ": true, 備考: "メモあり" }, dataUnixMs: {},
+    data: { 氏名: "田中花子", 年齢: 18, "対象種": "タヌキ", 備考: "メモあり" }, dataUnixMs: {},
   },
   {
     id: "3", "No.": 3, modifiedAt: Date.UTC(2026, 0, 3), modifiedAtUnixMs: Date.UTC(2026, 0, 3),

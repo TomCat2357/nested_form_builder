@@ -1,5 +1,6 @@
 import { traverseSchema } from "./schemaUtils.js";
 import { normalizeDateTimeFieldValue } from "../utils/dateTime.js";
+import { joinMultiValue } from "../utils/multiValue.js";
 
 export const sanitizeFileUploadEntry = (entry) => {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
@@ -66,15 +67,16 @@ export const collectResponses = (fields, responses, options = {}) => {
     const base = context.pathSegments.join("|");
 
     if (field.type === "checkboxes" && Array.isArray(value)) {
-      value.forEach((lbl) => {
-        const key = `${base}|${lbl}`;
-        out[key] = "●";
-        orderList.push(key);
-      });
+      // view 形式: 選択ラベルを共有 codec でエスケープ付きカンマ連結し、フィールドの 1 列に保存。
+      const labels = value.filter((lbl) => typeof lbl === "string" && lbl);
+      if (labels.length > 0) {
+        out[base] = joinMultiValue(labels);
+        orderList.push(base);
+      }
     } else if (["radio", "select", "weekday"].includes(field.type) && typeof value === "string" && value) {
-      const key = `${base}|${value}`;
-      out[key] = "●";
-      orderList.push(key);
+      // view 形式: 単一選択はラベル文字列をそのまま 1 列に保存。
+      out[base] = value;
+      orderList.push(base);
     } else if (field.type === "fileUpload") {
       const folderUrl = typeof fileUploadFolderUrls[field.id] === "string"
         ? fileUploadFolderUrls[field.id]
@@ -120,13 +122,13 @@ const collectSelectedOptionLabels = (type, value) => {
 };
 
 /**
- * 元データ形式（data）の `{ フルパス: 値 }` マップを構築する。単一ブレース `{...}`
- * 置換の行ソースに使う。
+ * テンプレート / substitution 式評価用の **統一 typed view マップ** `{ フルパス: 値 }` を構築する。
+ * `{{...}}`（ビュー形式）トークンの行ソースに使う。元データ形式（選択肢ごとの真偽値展開）は廃止。
  *
- * - 選択肢（checkboxes/radio/select/weekday）はオプション単位パス `親|選択肢` を
- *   キーに、選択 → 真偽値 `true` / 未選択 → `false`（boolean 式の堅牢性のため全
- *   オプションを既定 false で埋める）。
- * - text/number/date 等は `collectResponses` と同じ canonical 正規化値。
+ * - 選択肢（checkboxes/weekday）は選択ラベルを共有 codec でエスケープ付きカンマ連結した
+ *   **フィールド 1 列**（radio/select は単一ラベル）。
+ * - text/number/date 等は `collectResponses` と同じ typed 正規化値（number は数値型・日付は canonical）。
+ *   これにより `{{`金額` + 50}}` のような算術が文字列連結にならず正しく動く。
  * - substitution は計算済み文字列（あれば）。fileUpload は行構築時に FILE_* UDF 用
  *   配列で上書きされるためここでは出力しない。
  */
@@ -137,13 +139,14 @@ export const buildDataValueMap = (fields, responses) => {
     const value = responses?.[field.id];
 
     if (DATA_CHOICE_TYPES.includes(field.type)) {
-      (Array.isArray(field.options) ? field.options : []).forEach((opt) => {
-        const label = typeof opt?.label === "string" ? opt.label : "";
-        if (label) out[`${base}|${label}`] = false;
-      });
-      collectSelectedOptionLabels(field.type, value).forEach((label) => {
-        out[`${base}|${label}`] = true;
-      });
+      // テンプレ行は表示用途なので複数選択は表示区切り ", "（エスケープなし）で連結する。
+      // ※ 保存・検索の正準区切り（codec のエスケープ付き ","）とは別経路。
+      const labels = collectSelectedOptionLabels(field.type, value);
+      if (field.type === "checkboxes") {
+        if (labels.length > 0) out[base] = labels.join(", ");
+      } else if (labels[0]) {
+        out[base] = labels[0];
+      }
     } else if (field.type === "fileUpload") {
       // FILE_* UDF 用配列が行構築時に同じ path へ入るため、ここでは出力しない。
     } else if (field.type === "substitution") {
@@ -172,11 +175,9 @@ export const collectAllPossiblePaths = (fields) => {
   traverseSchema(fields, (field, context) => {
     const base = context.pathSegments.join("|");
 
-    if (["checkboxes", "radio", "select", "weekday"].includes(field.type) && Array.isArray(field.options)) {
-      field.options.forEach((option) => {
-        const optionLabel = option.label || "";
-        paths.push(`${base}|${optionLabel}`);
-      });
+    if (["checkboxes", "radio", "select", "weekday"].includes(field.type)) {
+      // view 形式: 選択肢は「フィールドごとの 1 列」（選択肢ごとの展開はしない）。
+      paths.push(base);
     } else if (field.type === "fileUpload") {
       paths.push(base);
     } else if (field.type === "substitution") {

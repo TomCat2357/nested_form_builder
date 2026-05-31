@@ -290,3 +290,22 @@ test("[Form:view].[Col] 修飾形式（Pass 2）も variant を解釈", () => {
   assert.match(r.transformedSql, new RegExp(canonView + "\\.\\[受付日\\]"));
   assert.deepEqual(r.referencedSources, [{ formId: formA.id, variant: "view" }]);
 });
+
+test("FROM [フォルダ/フォーム名] はフォルダ込みで解決し、同名バレ名は曖昧エラー", () => {
+  const fa = { id: "fa", settings: { formTitle: "苦情データ" }, folder: "受付", createdAtUnixMs: 1, schema: [{ id: "x", type: "text", label: "X" }] };
+  const fb = { id: "fb", settings: { formTitle: "苦情データ" }, folder: "営業", createdAtUnixMs: 2, schema: [{ id: "y", type: "text", label: "Y" }] };
+  const idx = buildFormIndex([fa, fb]);
+  const gci = (fid) => (fid === "fa" ? buildColumnIndex(fa) : fid === "fb" ? buildColumnIndex(fb) : null);
+
+  // フォルダ込み名 → 一意に解決。
+  const ok = preprocessSql("SELECT * FROM [受付/苦情データ]", { defaultFormId: null, formIndex: idx, getColumnIndex: gci });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.referencedFormIds, ["fa"]);
+  assert.match(ok.transformedSql, new RegExp("FROM " + canonicalDataAlias("fa")));
+
+  // バレ名（同名複数）→ エラー（フォルダ込み指定を促す）。
+  const bad = preprocessSql("SELECT * FROM [苦情データ]", { defaultFormId: null, formIndex: idx, getColumnIndex: gci });
+  assert.equal(bad.ok, false);
+  assert.equal(bad.errors.length, 1);
+  assert.match(bad.errors[0], /フォルダ込みで指定/);
+});

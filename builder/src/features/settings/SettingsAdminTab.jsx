@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import ConfirmDialog from "../../app/components/ConfirmDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
@@ -19,8 +19,6 @@ import {
   ensureStdFolders,
   backfillPhysicalFolders,
   buildLinkReport,
-  relinkReferences,
-  dedupeForms,
 } from "../../services/gasClient.js";
 import AdminCopyStructureDialog from "../../pages/admin/AdminCopyStructureDialog.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
@@ -102,12 +100,15 @@ export default function SettingsAdminTab() {
   const [adminEmailLoading, setAdminEmailLoading] = useState(false);
   const adminEmailDialog = useConfirmDialog();
 
-  // 同名フォーム重複整理の適用前確認（ゴミ箱移動を伴う破壊的操作）。
-  const dedupeConfirm = useConfirmDialog();
-
-  // 同期（フォルダ走査）の ⑥ 不正ファイル削除の適用前確認（ゴミ箱移動を伴う破壊的操作）。
+  // 同期後の削除確認（カテゴリ別2段）。いずれもゴミ箱移動を伴う破壊的操作。
+  // ステージ1: 同フォルダ同名の重複（loser）/ ステージ2: 論理に対応先がない不正ファイル(⑥)。
+  const dupConfirm = useConfirmDialog();
   const pruneConfirm = useConfirmDialog();
-  const [pendingInvalid, setPendingInvalid] = useState([]); // ⑥ 候補（確認ダイアログ表示用）
+  const [pendingDuplicates, setPendingDuplicates] = useState([]); // 重複の余り（確認ダイアログ表示用）
+  const [pendingInvalid, setPendingInvalid] = useState([]);       // ⑥ 候補（確認ダイアログ表示用）
+  // 2段ダイアログをまたいで保持する: 初回走査のサマリ と 重複削除の可否。
+  const syncSummaryRef = useRef("");
+  const deleteDuplicatesRef = useRef(false);
 
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
@@ -121,10 +122,6 @@ export default function SettingsAdminTab() {
   const [reportLoading, setReportLoading] = useState(false);
   const [reportIncludeJson, setReportIncludeJson] = useState(false);
   const [reportIncludeWebhook, setReportIncludeWebhook] = useState(false);
-
-  // 参照の再リンク / 同名フォーム重複整理
-  const [relinkLoading, setRelinkLoading] = useState(false);
-  const [dedupeLoading, setDedupeLoading] = useState(false);
 
   // システムごとコピー
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
@@ -328,77 +325,6 @@ export default function SettingsAdminTab() {
     }
   };
 
-  const summarizeRelink = (r) => {
-    const q = r.questions || {};
-    const d = r.dashboards || {};
-    const lines = [
-      `モード: ${r.mode === "apply" ? "適用（JSON を書換え）" : "プレビュー（未変更）"}`,
-      `Question: 走査 ${q.scanned || 0} / 再リンク参照 ${q.refsRelinked || 0}（対象ファイル ${q.filesChanged || 0}）/ 同名曖昧 ${(q.ambiguous || []).length} / 未解決 ${(q.unresolved || []).length}`,
-      `Dashboard: 走査 ${d.scanned || 0} / 再リンク参照 ${d.refsRelinked || 0}（対象ファイル ${d.filesChanged || 0}）/ 同名曖昧 ${(d.ambiguous || []).length} / 未解決 ${(d.unresolved || []).length}`,
-    ];
-    const amb = [...(q.ambiguous || []), ...(d.ambiguous || [])];
-    if (amb.length) {
-      lines.push(`同名複数で曖昧（手動で再リンク要）: ${amb.slice(0, 8).map((a) => `${a.entity}→${a.id}`).join(" / ")}${amb.length > 8 ? " ほか" : ""}`);
-    }
-    if (r.truncated) lines.push("⚠ 実行時間の安全弁で打ち切りました。再実行してください。");
-    return lines.join("\n");
-  };
-
-  const handleRelink = async (mode) => {
-    if (!canManageAdminSettings) return;
-    setRelinkLoading(true);
-    try {
-      const r = await relinkReferences({ mode });
-      if (mode === "apply") await invalidateListCaches();
-      showAlert(summarizeRelink(r));
-    } catch (error) {
-      console.error("[SettingsAdminTab] relinkReferences failed", error);
-      showAlert(error?.message || "参照の再リンクに失敗しました");
-    } finally {
-      setRelinkLoading(false);
-    }
-  };
-
-  const summarizeDedupe = (r) => {
-    const lines = [
-      `モード: ${r.mode === "apply" ? "適用（参照付替え＋重複をゴミ箱へ）" : "プレビュー（未変更）"}`,
-      `同名重複グループ: ${(r.duplicateGroups || []).length} / 重複ファイル: ${r.duplicateFileCount || 0}`,
-      `参照付替え: ${(r.remap && r.remap.refsRemapped) || 0} 件（Question ${(r.remap && r.remap.filesChanged) || 0} ファイル）`,
-    ];
-    if (r.mode === "apply") lines.push(`ゴミ箱へ移動: ${(r.trashed || []).length} ファイル`);
-    (r.duplicateGroups || []).slice(0, 8).forEach((g) => {
-      lines.push(`・「${g.name}」: canonical=${g.canonicalPath}（${g.reason}）/ 重複 ${g.duplicates.length}`);
-    });
-    if ((r.duplicateGroups || []).length > 8) lines.push("…ほか");
-    if (r.truncated) lines.push("⚠ 実行時間の安全弁で打ち切りました。再実行してください。");
-    return lines.join("\n");
-  };
-
-  const runDedupe = async (mode) => {
-    setDedupeLoading(true);
-    try {
-      const r = await dedupeForms({ mode });
-      if (mode === "apply") await invalidateListCaches();
-      showAlert(summarizeDedupe(r));
-    } catch (error) {
-      console.error("[SettingsAdminTab] dedupeForms failed", error);
-      showAlert(error?.message || "重複フォームの整理に失敗しました");
-    } finally {
-      setDedupeLoading(false);
-    }
-  };
-
-  const handleDedupe = async (mode) => {
-    if (!canManageAdminSettings) return;
-    if (mode === "apply") { dedupeConfirm.open(); return; }
-    await runDedupe("dryRun");
-  };
-
-  const dedupeConfirmOptions = [
-    { value: "cancel", label: "キャンセル", onSelect: dedupeConfirm.close },
-    { value: "apply", label: "適用する（重複をゴミ箱へ）", variant: "primary", onSelect: async () => { dedupeConfirm.close(); await runDedupe("apply"); } },
-  ];
-
   const handleCopyConfirm = async () => {
     if (!canManageAdminSettings) return;
     setCopyLoading(true);
@@ -483,10 +409,11 @@ export default function SettingsAdminTab() {
     }
   };
 
-  // 整合同期の結果（6 ケース）を人間可読にまとめる。
+  // 整合同期の結果（6 ケース＋重複整理＋再リンク）を人間可読にまとめる。
   const summarizeAlign = (r) => {
     const sum = (key) => ["forms", "questions", "dashboards"].reduce((acc, k) => acc + ((r.align?.[k]?.[key]) || 0), 0);
     const reg = (k) => (r.orphans?.[k]?.registered) || 0;
+    const dsum = (key) => ["forms", "questions", "dashboards"].reduce((acc, k) => acc + ((r.dedup?.[k]?.[key]) || 0), 0);
     const lines = [
       `① 一致(変更なし): ${sum("aligned")}件 / ② 物理移動: ${sum("moved")}件 / ② 外部コピー取込: ${sum("copiedExternal")}件 / ③ id再採用: ${sum("rekeyed")}件`,
       `⑤ 新規登録: フォーム ${reg("forms")} / Question ${reg("questions")} / Dashboard ${reg("dashboards")}`,
@@ -496,6 +423,11 @@ export default function SettingsAdminTab() {
       const d = r.relink.dashboards || {};
       lines.push(`参照の自動再リンク: Question ${q.refsRelinked || 0} / Dashboard ${d.refsRelinked || 0} 参照`);
     }
+    const dupLosers = dsum("losers");
+    if (dupLosers > 0) {
+      const trashed = (r.trashedDuplicates || []).length;
+      lines.push(`同フォルダ同名 重複整理: 余り ${dupLosers}件（${trashed > 0 ? `ゴミ箱へ移動済み ${trashed}件` : "未削除（候補）"}）`);
+    }
     const errs = r.errors || [];
     if (errs.length) {
       lines.push(`④ 要対応エラー（物理ファイル未検出・自動修復不可）: ${errs.length}件`);
@@ -504,33 +436,57 @@ export default function SettingsAdminTab() {
     }
     const inv = r.invalidCandidates || [];
     if (inv.length) {
-      lines.push(`⑥ 論理に結びつかない不正ファイル: ${inv.length}件（${r.mode === "apply" ? "ゴミ箱へ移動済み" : "未削除"}）`);
+      lines.push(`⑥ 論理に結びつかない不正ファイル: ${inv.length}件（${r.appliedDeleteInvalid ? "ゴミ箱へ移動済み" : "未削除（候補）"}）`);
     }
     if (r.truncated) lines.push("⚠ 実行時間の安全弁で打ち切りました。再実行してください。");
     return lines.join("\n");
   };
 
-  // 同期本体。applyDelete=true で ⑥ 不正ファイルをゴミ箱へ。サマリ文字列を返す。
-  const runSync = async (applyDelete) => {
-    const r = await rebuildMappingsFromFolders("", { applyDelete });
+  // 同期本体。削除フラグはカテゴリ別。常に align＋重複整理（参照寄せ）＋再リンクを適用し、サマリを返す。
+  const runSync = async ({ deleteDuplicates = false, deleteInvalid = false } = {}) => {
+    const r = await rebuildMappingsFromFolders("", { applyDeleteDuplicates: deleteDuplicates, applyDeleteInvalid: deleteInvalid });
     await invalidateListCaches();
     return { r, summary: "フォルダ走査で論理↔物理を整合しました。\n" + summarizeAlign(r) };
+  };
+
+  // 2段ダイアログの決定を集約し、削除があるときだけ apply 走査を1回行う。
+  const finalizeSync = async ({ deleteInvalid = false } = {}) => {
+    const deleteDuplicates = deleteDuplicatesRef.current;
+    if (!deleteDuplicates && !deleteInvalid) {
+      // 何も削除しない → 再走査せず初回サマリを表示（align/再リンク/参照寄せは初回で適用済み）。
+      showAlert(syncSummaryRef.current);
+      setPendingDuplicates([]); setPendingInvalid([]); deleteDuplicatesRef.current = false;
+      return;
+    }
+    setSyncLoading(true);
+    try {
+      const { summary } = await runSync({ deleteDuplicates, deleteInvalid });
+      showAlert(summary);
+    } catch (error) {
+      console.error("[SettingsAdminTab] sync apply failed", error);
+      showAlert(error?.message || "削除の適用に失敗しました");
+    } finally {
+      setSyncLoading(false);
+      setPendingDuplicates([]); setPendingInvalid([]); deleteDuplicatesRef.current = false;
+    }
   };
 
   const handleSyncMapping = async () => {
     if (!canManageAdminSettings) return;
     setSyncLoading(true);
     try {
-      // フェーズ1: ①〜⑤ を適用し、⑥（不正ファイル）は候補収集のみ。
-      const { r, summary } = await runSync(false);
-      const invalid = r.invalidCandidates || [];
-      if (invalid.length > 0) {
-        // ⑥ がある → 削除可否をポップアップで確認（破壊的操作）。
-        setPendingInvalid(invalid);
-        pruneConfirm.open();
-      } else {
-        showAlert(summary);
-      }
+      // 走査して align＋重複整理（参照寄せ）＋再リンクを適用。削除は候補収集のみ。
+      const { r, summary } = await runSync({});
+      syncSummaryRef.current = summary;
+      deleteDuplicatesRef.current = false;
+      const dups = r.duplicateCandidates || [];
+      const inv = r.invalidCandidates || [];
+      setPendingDuplicates(dups);
+      setPendingInvalid(inv);
+      // ステージ1: 同名重複の余り → ステージ2: 不正ファイル(⑥)。どちらも無ければサマリのみ。
+      if (dups.length > 0) { dupConfirm.open(); return; }
+      if (inv.length > 0) { pruneConfirm.open(); return; }
+      showAlert(summary);
     } catch (error) {
       console.error("[SettingsAdminTab] rebuildMappingsFromFolders failed", error);
       showAlert(error?.message || "マッピングの同期に失敗しました");
@@ -539,22 +495,22 @@ export default function SettingsAdminTab() {
     }
   };
 
-  // ⑥ 確認: 「削除する」→ applyDelete:true で再走査してゴミ箱へ。「キャンセル」→ そのまま残す。
+  // ステージ1（同名重複の余り）。決定後、不正ファイルがあればステージ2へ、無ければ確定。
+  const afterDuplicateDecision = async (deleteDuplicates) => {
+    deleteDuplicatesRef.current = deleteDuplicates;
+    dupConfirm.close();
+    if (pendingInvalid.length > 0) { pruneConfirm.open(); return; }
+    await finalizeSync({ deleteInvalid: false });
+  };
+  const dupConfirmOptions = [
+    { value: "keep", label: "残す（削除しない）", onSelect: () => afterDuplicateDecision(false) },
+    { value: "delete", label: "削除する（重複をゴミ箱へ）", variant: "primary", onSelect: () => afterDuplicateDecision(true) },
+  ];
+
+  // ステージ2（不正ファイル⑥）。決定後、ステージ1の重複削除可否と合わせて確定。
   const pruneConfirmOptions = [
-    { value: "keep", label: "残す（削除しない）", onSelect: async () => {
-      pruneConfirm.close();
-      setSyncLoading(true);
-      try { const { summary } = await runSync(false); showAlert(summary); }
-      catch (error) { showAlert(error?.message || "マッピングの同期に失敗しました"); }
-      finally { setSyncLoading(false); setPendingInvalid([]); }
-    } },
-    { value: "delete", label: "削除する（ゴミ箱へ）", variant: "primary", onSelect: async () => {
-      pruneConfirm.close();
-      setSyncLoading(true);
-      try { const { summary } = await runSync(true); showAlert(summary); }
-      catch (error) { showAlert(error?.message || "不正ファイルの削除に失敗しました"); }
-      finally { setSyncLoading(false); setPendingInvalid([]); }
-    } },
+    { value: "keep", label: "残す（削除しない）", onSelect: async () => { pruneConfirm.close(); await finalizeSync({ deleteInvalid: false }); } },
+    { value: "delete", label: "削除する（ゴミ箱へ）", variant: "primary", onSelect: async () => { pruneConfirm.close(); await finalizeSync({ deleteInvalid: true }); } },
   ];
 
   return (
@@ -708,33 +664,6 @@ export default function SettingsAdminTab() {
           フォーム数が多いと GAS の実行時間（6 分）に注意してください。
         </p>
 
-        {/* 機能4: リンク修復（旧 id 参照の恒久再リンク / 同名フォーム重複整理） */}
-        <div className="nf-fw-600 nf-text-13 nf-mb-6 nf-mt-24">④ リンク修復（再リンク / 重複整理）</div>
-        <p className="nf-mb-12 nf-text-12 nf-text-muted">
-          旧 ID のままになっている Question→Form / Dashboard→Question 参照を、現在の fileId へ恒久的に書き換えます。
-          まず<strong>プレビュー</strong>で変更予定を確認してから<strong>適用</strong>してください。
-          推奨順: 「マッピングの管理 ＞ 同期」→「重複整理（適用）」→「参照を再リンク（適用）」。
-        </p>
-        <div className="nf-row nf-gap-12 nf-mb-6" style={{ flexWrap: "wrap" }}>
-          <button type="button" className="nf-btn nf-nowrap" onClick={() => handleRelink("dryRun")} disabled={!canManageAdminSettings || relinkLoading}>
-            {relinkLoading ? "処理中..." : "参照を再リンク（プレビュー）"}
-          </button>
-          <button type="button" className="nf-btn nf-nowrap" onClick={() => handleRelink("apply")} disabled={!canManageAdminSettings || relinkLoading}>
-            {relinkLoading ? "処理中..." : "参照を再リンク（適用）"}
-          </button>
-        </div>
-        <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
-          <button type="button" className="nf-btn nf-nowrap" onClick={() => handleDedupe("dryRun")} disabled={!canManageAdminSettings || dedupeLoading}>
-            {dedupeLoading ? "処理中..." : "同名フォーム重複整理（プレビュー）"}
-          </button>
-          <button type="button" className="nf-btn nf-nowrap" onClick={() => handleDedupe("apply")} disabled={!canManageAdminSettings || dedupeLoading}>
-            {dedupeLoading ? "処理中..." : "同名フォーム重複整理（適用）"}
-          </button>
-        </div>
-        <p className="nf-mt-6 nf-text-11 nf-text-muted">
-          再リンクは非破壊（id を現 fileId へ書き換えるのみ）。重複整理は同名グループの canonical を 1 つ残し、
-          参照を寄せたうえで残りを Drive のゴミ箱へ移動します（30 日間は復元可）。同名複数で曖昧なものは変更されず、手動対応として報告されます。
-        </p>
       </div>
 
       <div className="nf-section-divider">
@@ -773,7 +702,10 @@ export default function SettingsAdminTab() {
           論理（登録簿）を正として物理 Drive を整合します：①一致は変更なし、②物理位置のズレは移動（プロジェクト外は取り込みコピー）、
           ③同名で id が変わったファイルは id を再採用、④物理が見つからないものはエラー表示、⑤正しい場所の未登録ファイルは新規登録、
           ⑥論理に結びつかない不正ファイルはポップアップ確認のうえゴミ箱へ。
-          ⑥の削除確認が出るため、単体の「未追跡ファイル削除」操作は通常不要です。
+          あわせて<strong>参照（Question→Form / Dashboard→Question）を毎回再リンク</strong>し、
+          <strong>同一フォルダ内の同名重複</strong>は最終更新が新しい方を残して参照を寄せます。
+          削除を伴う操作（同名重複の余り → 不正ファイル）は、実行後にカテゴリ別の確認ダイアログで承認してからゴミ箱へ移動します（30日間は復元可）。
+          このため単体の「再リンク」「重複整理」「未追跡ファイル削除」操作は不要です。
         </p>
 
         {/* バックアップ（書き出し）: エクスポートだけが向きの異なる「書き出し」操作。 */}
@@ -825,13 +757,20 @@ export default function SettingsAdminTab() {
         options={adminEmailConfirmOptions}
       />
 
+      {/* ステージ1: 同一フォルダ内の同名重複（最新を残し、参照は寄せ済み）。余りを削除するか確認。 */}
       <ConfirmDialog
-        open={dedupeConfirm.state.open}
-        title="同名フォームの重複を整理しますか？"
-        message={"同名フォームグループごとに canonical を 1 つ残し、Question の参照を canonical へ付け替えたうえで、残りの重複ファイルを Drive のゴミ箱へ移動します（30 日間は復元可）。まずプレビューで内容を確認することを推奨します。"}
-        options={dedupeConfirmOptions}
+        open={dupConfirm.state.open}
+        title="同一フォルダ内の同名重複を削除しますか？"
+        message={
+          `同一フォルダに同名のファイルが重複しています。最終更新が新しい方を残し、参照は新しい方へ寄せました。` +
+          `残り ${pendingDuplicates.length} 件を Drive のゴミ箱へ移動できます（30 日間は復元可）。\n\n` +
+          pendingDuplicates.slice(0, 12).map((f) => `・[${f.kind}] ${f.relPath}`).join("\n") +
+          (pendingDuplicates.length > 12 ? `\n…ほか ${pendingDuplicates.length - 12} 件` : "")
+        }
+        options={dupConfirmOptions}
       />
 
+      {/* ステージ2: 論理に対応先がない不正ファイル(⑥)。 */}
       <ConfirmDialog
         open={pruneConfirm.state.open}
         title="論理に結びつかない不正ファイルを削除しますか？"

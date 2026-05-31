@@ -13,3 +13,4 @@ export {
   parseJstString,
   formatJstString,
 } from "../../utils/dateTime.js";
+export { joinMultiValue, splitMultiValue, MULTI_VALUE_SEP } from "../../utils/multiValue.js";

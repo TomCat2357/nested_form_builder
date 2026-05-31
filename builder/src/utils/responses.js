@@ -3,7 +3,7 @@ import { deepEqual } from "./deepEqual.js";
 import { traverseSchema } from "../core/schemaUtils.js";
 import { formatPhoneValueForField } from "../core/phone.js";
 import { sanitizeFileUploadEntry, normalizeFileUploadEntries, parseFileUploadStorage } from "../core/collect.js";
-import { isPlainObject } from "./objectShape.js";
+import { splitMultiValue } from "./multiValue.js";
 
 // date / time フィールドの保存値を JST 壁時計で正規化する。
 // 入力は dataUnixMs[fieldId] があればそれを優先（unixMs）、無ければ rawValue
@@ -62,6 +62,10 @@ const mergeChoiceLabels = (field, labels) => {
   return ordered;
 };
 
+// view 形式の保存値（フィールドごとの 1 列）から選択ラベルを復元する。
+//   - checkboxes: 文字列は共有 codec splitMultiValue で分解（配列はそのまま）。
+//   - radio/select/weekday: 文字列＝単一ラベル。
+// 旧・選択肢ごとのマーカー列（`親|選択肢`: ●）読み出しは廃止。
 const collectDirectChoiceLabels = (field, directValue) => {
   if (!CHOICE_TYPES.has(field?.type)) return [];
   const labels = [];
@@ -71,41 +75,11 @@ const collectDirectChoiceLabels = (field, directValue) => {
         if (typeof item === "string") labels.push(item);
       });
     } else if (typeof directValue === "string") {
-      labels.push(directValue);
+      splitMultiValue(directValue).forEach((lbl) => labels.push(lbl));
     }
   } else if (typeof directValue === "string") {
     labels.push(directValue);
   }
-
-  if (isPlainObject(directValue)) {
-    Object.entries(directValue).forEach(([label, marker]) => {
-      if (isChoiceMarkerValue(marker)) labels.push(label);
-    });
-  }
-
-  return mergeChoiceLabels(field, labels);
-};
-
-const collectMarkerChoiceLabels = (field, baseKey, data) => {
-  if (!CHOICE_TYPES.has(field?.type)) return [];
-  const labels = [];
-  (Array.isArray(field?.options) ? field.options : []).forEach((opt) => {
-    const optionLabel = typeof opt?.label === "string" ? opt.label : "";
-    if (!optionLabel) return;
-    const markerKey = `${baseKey}|${optionLabel}`;
-    if (isChoiceMarkerValue(data?.[markerKey])) {
-      labels.push(optionLabel);
-    }
-  });
-
-  const prefix = `${baseKey}|`;
-  Object.entries(data || {}).forEach(([key, marker]) => {
-    if (!key.startsWith(prefix)) return;
-    if (!isChoiceMarkerValue(marker)) return;
-    const remainder = key.slice(prefix.length);
-    if (!remainder || remainder.includes("|")) return;
-    labels.push(remainder);
-  });
 
   return mergeChoiceLabels(field, labels);
 };
@@ -146,9 +120,7 @@ export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => 
     const baseKey = context.pathSegments.join("|");
 
     if (CHOICE_TYPES.has(field.type)) {
-      const directLabels = collectDirectChoiceLabels(field, data?.[baseKey]);
-      const markerLabels = collectMarkerChoiceLabels(field, baseKey, data);
-      const selectedLabels = mergeChoiceLabels(field, [...directLabels, ...markerLabels]);
+      const selectedLabels = collectDirectChoiceLabels(field, data?.[baseKey]);
       if (field.type === "checkboxes") {
         if (selectedLabels.length > 0) {
           Object.assign(responses, { [field.id]: selectedLabels });

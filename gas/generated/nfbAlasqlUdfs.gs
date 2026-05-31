@@ -23,11 +23,14 @@ var NfbAlasqlRuntime = (() => {
   // builder/src/features/expression/gasRuntimeEntry.js
   var gasRuntimeEntry_exports = {};
   __export(gasRuntimeEntry_exports, {
+    MULTI_VALUE_SEP: () => MULTI_VALUE_SEP,
     ensureNfbUdfsRegistered: () => ensureNfbUdfsRegistered,
     formatCanonical: () => formatCanonical,
     formatJstString: () => formatJstString,
+    joinMultiValue: () => joinMultiValue,
     parseJstString: () => parseJstString,
     preprocessAlaSqlExpression: () => preprocessAlaSqlExpression,
+    splitMultiValue: () => splitMultiValue,
     toMsUnixTime: () => toMsUnixTime
   });
 
@@ -451,6 +454,49 @@ var NfbAlasqlRuntime = (() => {
     return `${pad4(datedParts.year)}/${pad2(datedParts.month)}/${pad2(datedParts.day)} ${pad2(hh)}:${pad2(mi)}:${pad2(ss)}.${pad3(sss)}`;
   };
 
+  // builder/src/utils/multiValue.js
+  var MULTI_VALUE_SEP = ",";
+  function escapeLabel(label) {
+    return String(label).replace(/\\/g, "\\\\").replace(/,/g, "\\,");
+  }
+  function joinMultiValue(labels) {
+    if (!Array.isArray(labels)) return "";
+    const out = [];
+    for (let i = 0; i < labels.length; i++) {
+      const lbl = labels[i];
+      if (lbl === null || lbl === void 0) continue;
+      const s = String(lbl);
+      if (s === "") continue;
+      out.push(escapeLabel(s));
+    }
+    return out.join(MULTI_VALUE_SEP);
+  }
+  function splitMultiValue(text) {
+    if (text === null || text === void 0) return [];
+    const str = String(text);
+    if (str === "") return [];
+    const tokens = [];
+    let current = "";
+    let escaping = false;
+    for (let i = 0; i < str.length; i++) {
+      const ch = str[i];
+      if (escaping) {
+        current += ch;
+        escaping = false;
+      } else if (ch === "\\") {
+        escaping = true;
+      } else if (ch === MULTI_VALUE_SEP) {
+        if (current !== "") tokens.push(current);
+        current = "";
+      } else {
+        current += ch;
+      }
+    }
+    if (escaping) current += "\\";
+    if (current !== "") tokens.push(current);
+    return tokens;
+  }
+
   // builder/src/features/expression/registerNfbUdfs.js
   var DAY_OF_WEEK_SHORT = ["\u65E5", "\u6708", "\u706B", "\u6C34", "\u6728", "\u91D1", "\u571F"];
   var DAY_OF_WEEK_LONG = ["\u65E5\u66DC\u65E5", "\u6708\u66DC\u65E5", "\u706B\u66DC\u65E5", "\u6C34\u66DC\u65E5", "\u6728\u66DC\u65E5", "\u91D1\u66DC\u65E5", "\u571F\u66DC\u65E5"];
@@ -641,14 +687,8 @@ var NfbAlasqlRuntime = (() => {
       }
       return false;
     };
-    function splitMultiValueCell(cell) {
-      if (cell === null || cell === void 0) return [];
-      const str = String(cell);
-      if (str === "") return [];
-      return str.split(",").map((token) => token.trim()).filter((token) => token !== "");
-    }
     alasql.fn.MV_EQ = function(cell, target) {
-      const tokens = splitMultiValueCell(cell);
+      const tokens = splitMultiValue(cell);
       const t = String(target);
       for (let i = 0; i < tokens.length; i++) {
         if (tokens[i] === t) return true;
@@ -656,7 +696,7 @@ var NfbAlasqlRuntime = (() => {
       return false;
     };
     alasql.fn.MV_IN = function(cell, ...targets) {
-      const tokens = splitMultiValueCell(cell);
+      const tokens = splitMultiValue(cell);
       if (tokens.length === 0) return false;
       const targetStrs = targets.map((v) => String(v));
       for (let i = 0; i < tokens.length; i++) {

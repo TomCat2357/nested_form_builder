@@ -1,5 +1,4 @@
 import { SAVE_AFTER_ACTIONS } from "../../utils/settings.js";
-import { VARIANT_LABELS } from "../analytics/variantLabels.js";
 
 // 保存先スプレッドシートの手動指定グループ。標準フォルダ構成が既定のため常時は表示せず、
 // フォームエディタのチェックボックスで開いたときだけレンダリングする（③）。
@@ -65,18 +64,6 @@ export const SETTINGS_GROUPS = [
         required: false,
         type: "number",
         description: "削除してからこの日数が過ぎたデータは、次回の同期時に完全に消えます",
-      },
-      {
-        key: "searchQueryTableSource",
-        label: "WHERE / SEARCH クエリの参照先",
-        type: "select",
-        required: false,
-        defaultValue: "data",
-        options: [
-          { value: "data", label: `${VARIANT_LABELS.data}で検索（既定 / 選択肢は [親|選択肢] の真偽値）` },
-          { value: "view", label: `${VARIANT_LABELS.view}で検索（選択肢は親列の表示ラベル文字列）` },
-        ],
-        description: "検索バーで WHERE / SEARCH の厳密検索を使うときに、選択肢（ラジオ／チェック等）をどの形で比較するかを選びます。「元データ形式」は選択肢ごとの真偽値列 [親|選択肢]（選択=true / 未選択=false）、「ビュー形式」は親列に入る選択肢ラベル文字列で比較します。日付・数値・テキストはどちらのモードでも同じ扱いです（日付は YYYY/MM/DD の正規化文字列として時系列＝辞書順で比較、数値は数値として比較）。",
       },
     ],
   },

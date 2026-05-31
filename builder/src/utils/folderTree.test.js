@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   normalizeFolderPath,
+  joinFolderPath,
   compileNameMatcher,
   buildFolderLevel,
   splitBreadcrumbs,
@@ -9,6 +10,14 @@ import {
   folderExists,
   isUnderFolder,
 } from "./folderTree.js";
+
+test("joinFolderPath はフォルダと葉名を結合し正規化する（フォルダ空は葉名のみ）", () => {
+  assert.equal(joinFolderPath("受付/2024", "苦情データ"), "受付/2024/苦情データ");
+  assert.equal(joinFolderPath("", "苦情データ"), "苦情データ");
+  assert.equal(joinFolderPath("/受付/ ", " 苦情データ "), "受付/苦情データ");
+  assert.equal(joinFolderPath(null, "x"), "x");
+  assert.equal(joinFolderPath("a", ""), "a");
+});
 
 test("normalizeFolderPath は前後/重複スラッシュと空白を除去する", () => {
   assert.equal(normalizeFolderPath("/営業//見積/ "), "営業/見積");

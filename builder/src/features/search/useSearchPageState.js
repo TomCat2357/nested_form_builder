@@ -21,8 +21,7 @@ import {
 import { buildRowHitExcerpts } from "./searchQueryEngine.js";
 import { buildSearchExpression, stripNonSearchableMetaKeys } from "./searchExpressionBuilder.js";
 import { entriesToViewTableRows } from "../analytics/entriesToViewRows.js";
-import { entriesToAlaSqlRows, filterRowsByExpr } from "../analytics/analyticsAlaSql.js";
-import { buildAlaSqlTypeMap } from "../analytics/analyticsSchemaColumns.js";
+import { filterRowsByExpr } from "../analytics/analyticsAlaSql.js";
 import { STRICT_PREFIX_RE } from "./searchSyntaxPreprocessor.js";
 import { preprocessAlaSqlExpression } from "../expression/preprocessAlaSqlExpression.js";
 import {
@@ -256,37 +255,25 @@ export function useSearchPageState({
   const [filteredEntries, setFilteredEntries] = useState(baseFilteredEntries);
   const [filterError, setFilterError] = useState(null);
 
-  // フォーム設定で「WHERE / SEARCH クエリの参照先」を view にしているとき、
-  // Question 編集の `FROM [<フォーム名>:view]` と同じ形式の行を AlaSQL に渡す。
-  // data は entriesToAlaSqlRows（スプシ形式・選択肢ごとの boolean 列）、
-  // view は entriesToViewTableRows（ラベル文字列）。いずれも各行に row.id を持つ。
-  const tableSource = form?.settings?.searchQueryTableSource === "view" ? "view" : "data";
+  // 検索は data/view の区別なく、唯一のデータ形式である view 形式の行に対して評価する。
+  // entriesToViewTableRows は選択肢ラベル文字列（複数値は codec 連結）を持ち、各行に row.id を持つ。
   const searchTableRows = useMemo(() => {
     if (!form) return [];
     const entriesArr = baseFilteredEntries.map((row) => row.entry);
-    if (tableSource === "view") return entriesToViewTableRows(entriesArr, form);
-    return entriesToAlaSqlRows(entriesArr, { typeMap: buildAlaSqlTypeMap(form) });
-  }, [tableSource, form, baseFilteredEntries]);
+    return entriesToViewTableRows(entriesArr, form);
+  }, [form, baseFilteredEntries]);
 
   // strict（WHERE/SEARCH）評価に渡す行は、検索非対象メタ列（createdBy / modifiedBy /
   // deletedAt / deletedBy）を落として簡易モードとアクセス範囲を揃える。
-  // 行ビルダ（entriesToAlaSqlRows / entriesToViewTableRows）はこれらを含むため、
-  // ここで除かないと WHERE deletedBy = ... 等が通ってしまう。
+  // 行ビルダ（entriesToViewTableRows）はこれらを含むため、ここで除かないと
+  // WHERE deletedBy = ... 等が通ってしまう。
   const searchableTableRows = useMemo(
     () => stripNonSearchableMetaKeys(searchTableRows),
     [searchTableRows],
   );
 
-  // 簡易検索（プレフィックスなし）は常に view 形式の行に対して評価する。
-  // 簡易検索はラベル/結合文字列（display 相当）を照合対象とするため、選択肢を one-hot 化する
-  // data 形式ではなく view 形式（ラベル文字列・複数値は "," 連結）を使う。
-  // 厳密モードは従来どおり searchableTableRows（searchQueryTableSource を尊重）を使う。
-  const simpleSearchRows = useMemo(() => {
-    if (!form) return [];
-    if (tableSource === "view") return searchableTableRows;
-    const entriesArr = baseFilteredEntries.map((row) => row.entry);
-    return stripNonSearchableMetaKeys(entriesToViewTableRows(entriesArr, form));
-  }, [form, tableSource, searchableTableRows, baseFilteredEntries]);
+  // 簡易検索・厳密検索とも同一の view 形式行を使う（元データ形式は廃止）。
+  const simpleSearchRows = searchableTableRows;
 
   useCancellable(async (isCancelled) => {
     const keyword = (query || "").trim();

@@ -1,9 +1,11 @@
 /**
- * テンプレート文字列内の `{ ... }` トップレベルトークンを抽出する balanced scanner。
+ * テンプレート文字列内の `{{ ... }}` トップレベルトークンを抽出する balanced scanner。
  *
+ * - トークンは **連続二重ブレース `{{ ... }}`（ビュー形式）のみ**。単一ブレース
+ *   `{ ... }`（旧・元データ形式）は廃止され、リテラル `{` として扱う。
  * - エスケープは `\{` / `\}` で `{` `}` をリテラル化（呼び出し側が前後で
  *   templateEscape / templateUnescape を行う想定）。
- * - 未閉じの `{` はそのままリテラルとして残す。
+ * - 未閉じの `{` / `}}` で閉じないトークンはそのままリテラルとして残す。
  * - GAS 側の同等実装は gas/templateEvaluator.gs（balanced scanner + splitTopLevelCommas）。
  */
 
@@ -29,26 +31,22 @@ export function findBalancedCloseIndex(text, openIndex) {
 }
 
 /**
- * 開き位置 i のトークンが二重ブレース `{{ ... }}`（ビューモード）かを判定し、
- * mode / body / fullToken を返す。`close` は findBalancedCloseIndex の結果。
+ * 開き位置 i が連続二重ブレース `{{ ... }}`（ビュー形式トークン）かを判定する。
  *
- * - `{{` で始まり対応する `}}` で閉じるトークンは mode="view"、body は内側
- *   （外周の 1 ペアを剥がしたもの）。
- * - それ以外は mode="data"、body は `{ ... }` の内側。
+ * - `{{` で始まり対応する `}}` で閉じるトークンのみ認識し、mode="view"、body は
+ *   内側（外周の 1 ペアを剥がしたもの）を返す。
+ * - 単一ブレース `{ ... }`（旧・元データ形式）は **廃止** され、トークンとして
+ *   認識せず null を返す（呼び出し側でリテラル `{` として扱う）。
+ * - `}}` で閉じない / 未閉じも null（リテラル扱い）。
  */
-function describeToken(text, i, close) {
-  if (text.charAt(i + 1) === "{" && close - 1 > i + 1 && text.charAt(close - 1) === "}") {
-    return {
-      mode: "view",
-      body: text.substring(i + 2, close - 1),
-      fullToken: text.substring(i, close + 1),
-      start: i,
-      end: close + 1,
-    };
-  }
+function describeToken(text, i) {
+  if (text.charAt(i) !== "{" || text.charAt(i + 1) !== "{") return null;
+  const close = findBalancedCloseIndex(text, i);
+  if (close < 0) return null;
+  if (!(close - 1 > i + 1 && text.charAt(close - 1) === "}")) return null;
   return {
-    mode: "data",
-    body: text.substring(i + 1, close),
+    mode: "view",
+    body: text.substring(i + 2, close - 1),
     fullToken: text.substring(i, close + 1),
     start: i,
     end: close + 1,
@@ -56,14 +54,12 @@ function describeToken(text, i, close) {
 }
 
 /**
- * テンプレート文字列を走査し、各 `{ ... }` / `{{ ... }}` トップレベルトークンを
- * replacer に渡して結果を連結した新しい文字列を返す。`{` 以外の文字はそのまま流す。
- *
- * トークンには `mode`（"data" = 単一ブレース＝元データ形式 / "view" = 連続二重
- * ブレース＝ビュー形式）が付く。
+ * テンプレート文字列を走査し、各 `{{ ... }}` トップレベルトークンを replacer に
+ * 渡して結果を連結した新しい文字列を返す。トークンでない `{` を含むその他の文字は
+ * そのままリテラルとして流す（単一ブレース `{...}` は廃止＝リテラル）。
  *
  * @param {string} text
- * @param {(tok: { body: string, fullToken: string, mode: "data"|"view", start: number, end: number }) => string} replacer
+ * @param {(tok: { body: string, fullToken: string, mode: "view", start: number, end: number }) => string} replacer
  * @returns {string}
  */
 export function scanAndReplace(text, replacer) {
@@ -78,24 +74,25 @@ export function scanAndReplace(text, replacer) {
       i++;
       continue;
     }
-    const close = findBalancedCloseIndex(text, i);
-    if (close < 0) {
-      // 未閉じはそのままリテラル化
-      out += text.substring(i);
-      return out;
+    const tok = describeToken(text, i);
+    if (!tok) {
+      // 単一ブレース / 未閉じ / `}}` で閉じない → リテラル `{`
+      out += ch;
+      i++;
+      continue;
     }
-    out += replacer(describeToken(text, i, close));
-    i = close + 1;
+    out += replacer(tok);
+    i = tok.end;
   }
   return out;
 }
 
 /**
- * テンプレート文字列のトップレベル `{ ... }` トークンを全て収集する。
- * 未閉じの `{` 以降は無視される（収集を打ち切り）。
+ * テンプレート文字列のトップレベル `{{ ... }}` トークンを全て収集する。
+ * 単一ブレースや未閉じの `{` はトークンとして扱わずスキップする。
  *
  * @param {string} text
- * @returns {Array<{ body: string, fullToken: string, start: number, end: number }>}
+ * @returns {Array<{ body: string, fullToken: string, mode: "view", start: number, end: number }>}
  */
 export function collectBalancedBraces(text) {
   const results = [];
@@ -103,15 +100,17 @@ export function collectBalancedBraces(text) {
   const n = text.length;
   let i = 0;
   while (i < n) {
-    const ch = text.charAt(i);
-    if (ch !== "{") {
+    if (text.charAt(i) !== "{") {
       i++;
       continue;
     }
-    const close = findBalancedCloseIndex(text, i);
-    if (close < 0) return results;
-    results.push(describeToken(text, i, close));
-    i = close + 1;
+    const tok = describeToken(text, i);
+    if (!tok) {
+      i++;
+      continue;
+    }
+    results.push(tok);
+    i = tok.end;
   }
   return results;
 }

@@ -7,8 +7,9 @@ import { analyticsGasClient } from "./analyticsGasClient.js";
 import { questionCache, dashboardCache } from "./analyticsCache.js";
 import { deepClone } from "../../core/schema.js";
 import { isV2 as isDashboardV2, assertV2 as assertDashboardV2, getCardType, CARD_TYPE_QUESTION } from "./utils/dashboardSchema.js";
-import { registerFormAsTable, registerFormViewAsTable, dropTables, runAlaSql, applyGlobalWhereToTables, applySourceFilterClauses } from "./analyticsAlaSql.js";
-import { buildFormIndex } from "./utils/formIdentifierResolver.js";
+import { registerFormAsTable, dropTables, runAlaSql, applyGlobalWhereToTables, applySourceFilterClauses } from "./analyticsAlaSql.js";
+import { buildFormIndex, formQualifiedName } from "./utils/formIdentifierResolver.js";
+import { normalizeFolderPath } from "../../utils/folderTree.js";
 import { buildColumnIndex } from "./utils/columnIdentifierResolver.js";
 import {
   preprocessSql,
@@ -22,7 +23,6 @@ import { formHasSpreadsheet } from "../../app/state/dataStoreHelpers.js";
 import { evaluateCacheForAnalytics } from "../../app/state/cachePolicy.js";
 import {
   buildAlaSqlTypeMap,
-  buildViewAlaSqlTypeMap,
   getFormColumns,
   getFormViewColumns,
 } from "./analyticsSchemaColumns.js";
@@ -40,7 +40,18 @@ const formTitleOf = (f) => (f && f.settings && f.settings.formTitle) || (f && f.
 function findFormByRef(forms, formId, formName) {
   if (!Array.isArray(forms)) return null;
   let f = formId ? forms.find((x) => x.id === formId) : null;
-  if (!f && formName) f = forms.find((x) => formTitleOf(x) === formName);
+  if (!f && formName) {
+    const raw = String(formName);
+    if (raw.indexOf("/") !== -1) {
+      // フォルダ込み名 → 厳密一致。
+      const key = normalizeFolderPath(raw);
+      f = forms.find((x) => formQualifiedName(x) === key) || null;
+    } else {
+      // バレ名（旧 formName / フォルダ無し）→ 葉タイトルが一意のときのみ採用。
+      const matches = forms.filter((x) => formTitleOf(x) === raw);
+      f = matches.length === 1 ? matches[0] : null;
+    }
+  }
   return f || null;
 }
 
@@ -49,42 +60,28 @@ function findFormByRef(forms, formId, formName) {
 /**
  * 複数フォームを AlaSQL テーブルとして登録する。
  *
- * formSources の各エントリは `{ formId, variant?: "data"|"view" }`。variant 未指定は "data"。
- *
- * 登録される alias：
- *   - variant="data": canonicalDataAlias(formId) = "data_<id>"、加えて legacyFormAlias(formId) = "form_<id>"
- *     （後方互換）、defaultFormId なら bare "data" alias も同じ rows を指すように追加登録
- *   - variant="view": canonicalViewAlias(formId) = "view_<id>"
- *
- * 同一フォームが data / view の両方で参照されている場合は両テーブルが登録される。
- * formIndex を渡すと各フォームの schema 由来の列型マップで値を coerce して登録する。
+ * データ形式は view 形式に一本化された。1 フォーム = 1 テーブル（view 形式）を、
+ * 互換用の全 alias に貼る：
+ *   - canonicalDataAlias(formId) = "data_<id>"（正準）
+ *   - canonicalViewAlias(formId) = "view_<id>"（旧 `:view` 参照の解決用）
+ *   - legacyFormAlias(formId) = "form_<id>"（後方互換）
+ *   - defaultFormId なら bare "data" も同じ rows を指す
+ * いずれの alias も同一 view 形式テーブルを指すため、SQL の `:data`/`:view` どちらでも同じ結果になる。
  */
 export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex } = {}) {
   const aliases = [];
   try {
-    // 同じ (formId, variant) を二重に登録しないよう dedup する。
+    // 同じ formId を二重に登録しないよう dedup する（variant の区別は無い）。
     const seen = new Set();
     for (const src of formSources) {
-      const variant = src.variant === "view" ? "view" : "data";
-      const key = src.formId + "|" + variant;
-      if (seen.has(key)) continue;
-      seen.add(key);
+      if (!src || seen.has(src.formId)) continue;
+      seen.add(src.formId);
       const form = formIndex ? formIndex.byId.get(src.formId) : null;
 
-      if (variant === "view") {
-        const canon = canonicalViewAlias(src.formId);
-        await registerFormViewAsTable(canon, src.formId, form);
-        aliases.push(canon);
-        continue;
-      }
-
-      // data variant
       const canon = canonicalDataAlias(src.formId);
-      const legacy = legacyFormAlias(src.formId);
-      const typeMap = form ? buildAlaSqlTypeMap(form) : null;
-      const extras = [legacy];
+      const extras = [canonicalViewAlias(src.formId), legacyFormAlias(src.formId)];
       if (src.formId === defaultFormId) extras.push("data");
-      await registerFormAsTable(canon, src.formId, { typeMap, aliasAlsoAs: extras });
+      await registerFormAsTable(canon, src.formId, { form, aliasAlsoAs: extras });
       aliases.push(canon, ...extras);
     }
     return aliases;
@@ -98,10 +95,6 @@ export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formInde
  * 複数フォーム参照の SQL Question 用に、各フォーム schema 由来の typeMap を結合する。
  * 同名キーが衝突した場合は defaultFormId のものを優先する（修飾なし参照は default に解決されるため）。
  */
-function typeMapForSource(form, variant) {
-  return variant === "view" ? buildViewAlaSqlTypeMap(form) : buildAlaSqlTypeMap(form);
-}
-
 function mergeTypeMapsForFormSources(formSources, formIndex, defaultFormId) {
   const merged = new Map();
   if (!formIndex || !Array.isArray(formSources)) return merged;
@@ -109,7 +102,7 @@ function mergeTypeMapsForFormSources(formSources, formIndex, defaultFormId) {
     if (!src || src.formId === defaultFormId) continue;
     const f = formIndex.byId.get(src.formId);
     if (!f) continue;
-    for (const [k, v] of typeMapForSource(f, src.variant)) {
+    for (const [k, v] of buildAlaSqlTypeMap(f)) {
       if (!merged.has(k)) merged.set(k, v);
     }
   }
@@ -266,10 +259,8 @@ async function executeGuiQuestion(question, { forms, globalWhereExpr, globalWher
   // alias（data_<id>）と、下で登録するテーブル alias（form.id 由来）が一致する。
   const resolvedGui = form.id === gui.formId ? gui : { ...gui, formId: form.id };
 
-  // gui.variant ("data" | "view") は GUI 側で選んだデータソース形式。
-  // 未指定は data (スプシ形式、後方互換)。
-  const variant = resolvedGui.variant === "view" ? "view" : "data";
-  const formColumns = variant === "view" ? getFormViewColumns(form) : getFormColumns(form);
+  // データ形式は view 形式に一本化。列メタ・型マップは常に view 形式。
+  const formColumns = getFormColumns(form);
 
   const compiled = compileStages(resolvedGui, { formColumns });
   if (!compiled.ok) {
@@ -280,18 +271,14 @@ async function executeGuiQuestion(question, { forms, globalWhereExpr, globalWher
   // register が throw した場合でも finally の dropTables が走り、同 alias を共有する
   // 他カードの参照カウントを巻き添えで 0 にして tables[alias] を消してしまうため。
   const aliases = [];
-  const typeMap = variant === "view" ? buildViewAlaSqlTypeMap(form) : buildAlaSqlTypeMap(form);
+  const typeMap = buildAlaSqlTypeMap(form);
   try {
-    if (variant === "view") {
-      const canon = canonicalViewAlias(form.id);
-      await registerFormViewAsTable(canon, form.id, form);
-      aliases.push(canon);
-    } else {
-      const canon = canonicalDataAlias(form.id);
-      const legacy = legacyFormAlias(form.id);
-      await registerFormAsTable(canon, form.id, { typeMap, aliasAlsoAs: [legacy] });
-      aliases.push(canon, legacy);
-    }
+    // compileStages は gui.variant に応じて data_<id> / view_<id> のどちらかを参照するため、
+    // 両 alias（＋ legacy）を同一 view 形式テーブルに貼っておく。
+    const canon = canonicalDataAlias(form.id);
+    const extras = [canonicalViewAlias(form.id), legacyFormAlias(form.id)];
+    await registerFormAsTable(canon, form.id, { form, aliasAlsoAs: extras });
+    aliases.push(canon, ...extras);
     if (globalWhereExpr) {
       const applied = await applyGlobalWhereToTables(aliases, globalWhereExpr, { variant: globalWhereVariant });
       if (!applied.ok) return { ok: false, error: "一時フィルターの式が不正です: " + applied.error };

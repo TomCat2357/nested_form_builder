@@ -25,8 +25,8 @@ function resolveSearchableName(col) {
  * 検索対象から除外する固定メタ列（簡易・strict 両モード共通ポリシー）。
  * `createdAt`（作成日時）/ `modifiedAt`（最終更新日時）は検索可として残し、
  * `createdBy` / `modifiedBy`（…By 系）と `deletedAt` / `deletedBy`（deleted 系）は除外。
- * strict モードの評価行（entriesToAlaSqlRows / entriesToViewTableRows）はこれらを
- * 全て含むため、stripNonSearchableMetaKeys で評価前に落として両モードのアクセス範囲を揃える。
+ * 評価行（entriesToViewTableRows）はこれらを全て含むため、stripNonSearchableMetaKeys で
+ * 評価前に落として簡易・strict のアクセス範囲を揃える。
  */
 export const EXCLUDED_META_COLUMN_KEYS = new Set([
   "createdBy",
@@ -274,7 +274,7 @@ export function buildSearchRow(row, columns) {
 /**
  * strict モード評価に渡す AlaSQL 行から、検索非対象のメタ列キー
  * （EXCLUDED_META_COLUMN_KEYS = createdBy / modifiedBy / deletedAt / deletedBy）を取り除く。
- * entriesToAlaSqlRows / entriesToViewTableRows はこれらを行 dict に含むため、WHERE で
+ * entriesToViewTableRows はこれらを行 dict に含むため、WHERE で
  * 参照されないよう評価直前に落とし、簡易モード（searchColumns ベース）とアクセス範囲を揃える。
  * 該当キーを持たない行はクローンせずそのまま返す（破壊的変更を避ける）。
  *

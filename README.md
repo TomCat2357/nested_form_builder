@@ -11,7 +11,7 @@
 
 - 視覚的なフォーム設計（最大 11 階層のネスト、`childrenByValue` による条件分岐）
 - 回答の保存・検索（遅延検索／IME 対応・ヒット箇所表示）・並べ替え・Excel エクスポート・ソフトデリート（既定 30 日保持）
-- 印刷 PDF / Google Doc / Gmail 下書きの自動生成（alasql 関数式によるテンプレ。`{...}`=元データ形式 / `{{...}}`=ビュー形式）
+- 印刷 PDF / Google Doc / Gmail 下書きの自動生成（alasql 関数式によるテンプレ。トークンは `{{...}}`（ビュー形式）に統一。単一ブレース `{...}` はリテラル文字）
 - ファイルアップロード（Google Drive 保存）
 - 集計ダッシュボード（Question / Dashboard、ブラウザ内 AlaSQL、Chart.js / ECharts / Leaflet / ピボット）
 - 17 種のテーマ、表示モード、IndexedDB SWR キャッシュ、`LockService` ベースの排他制御

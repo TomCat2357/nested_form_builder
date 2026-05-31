@@ -202,7 +202,7 @@ function StdFolders_alignAllEntries_(adapter, dryRun, ctx) {
 
 // std サブツリーを走査して未登録ファイルを ⑤（有効→登録）/ ⑥（無効→候補, applyDelete で trash）に分類。
 // ①〜④ の後に呼ぶこと（rekey/copy 済み id が trackedIds に入った状態で判定するため）。
-function StdFolders_classifyOrphans_(adapter, applyDelete, ctx) {
+function StdFolders_classifyOrphans_(adapter, applyDelete, ctx, skipIds) {
   var res = { scanned: 0, registered: 0, invalid: 0 };
   var base = adapter.baseFolderOrNull();
   if (!base) { res.skipped = true; return res; }
@@ -214,6 +214,7 @@ function StdFolders_classifyOrphans_(adapter, applyDelete, ctx) {
     trackedIds: StdFolders_trackedFileIdSet_(mapping),
     folders: folders,
     applyDelete: applyDelete,
+    skipIds: skipIds || {},
     res: res,
     ctx: ctx
   };
@@ -236,6 +237,7 @@ function StdFolders_walkOrphans_(folder, prefix, c) {
     c.res.scanned++;
     var fileId = file.getId();
     if (c.trackedIds[fileId]) continue; // 既登録（同期対象）はスキップ
+    if (c.skipIds[fileId]) continue;    // 同フォルダ重複の loser は重複整理側で処理（⑤化けさせない）
     var fileName = file.getName();
     var json = null;
     if (StdFolders_isJsonFile_(file)) {
@@ -298,48 +300,152 @@ function StdFolders_verifyEntriesAfterRelocate_(adapter, affectedIds) {
   return counts;
 }
 
-// 「同期（フォルダ走査）」本体。①〜⑥ を forms/questions/dashboards に適用する。
-//   payload.rootUrl     : 手動ルート指定（任意）
-//   payload.applyDelete : true で ⑥ 候補を実際にゴミ箱へ（既定 false = 候補収集のみ）
+// 「同期（フォルダ走査）」本体。①〜⑥ ＋ 同フォルダ同名の重複整理 ＋ 毎回の参照再リンクを
+// forms/questions/dashboards に適用する。
+//   payload.rootUrl              : 手動ルート指定（任意）
+//   payload.applyDeleteInvalid   : true で ⑥ 不正ファイルをゴミ箱へ（旧 payload.applyDelete も可・後方互換）
+//   payload.applyDeleteDuplicates: true で 同フォルダ同名の余り（loser）をゴミ箱へ
+// 削除フラグは既定 false（候補収集のみ）。フロントがカテゴリ別ダイアログで確認してから apply する。
 function StdFolders_alignFolders_(payload) {
   return nfbSafeCall_(function() {
     var manualRootUrl = payload && payload.rootUrl ? String(payload.rootUrl).trim() : "";
-    var applyDelete = !!(payload && payload.applyDelete === true);
+    var applyDeleteInvalid = !!(payload && (payload.applyDeleteInvalid === true || payload.applyDelete === true));
+    var applyDeleteDuplicates = !!(payload && payload.applyDeleteDuplicates === true);
     var root = StdFolders_resolveRootFolder_(manualRootUrl);
     StdFolders_ensureAllSubfolders_(root);
 
     var startMs = (new Date()).getTime();
     var guard = { truncated: false, checkTime: function() { return ((new Date()).getTime() - startMs) > 300000; } };
-    var ctx = { errors: [], invalidCandidates: [], remap: {}, guard: guard, dirty: false };
+    var ctx = { errors: [], invalidCandidates: [], duplicateCandidates: [], remap: {}, guard: guard, dirty: false };
 
     var kinds = ["forms", "questions", "dashboards"];
     var align = {};
     var orphans = {};
+    var dedup = {};
     for (var i = 0; i < kinds.length; i++) {
       var adapter = StdFolders_entityAdapter_(kinds[i]);
-      align[kinds[i]] = StdFolders_alignAllEntries_(adapter, false, ctx);        // ①〜④
-      orphans[kinds[i]] = StdFolders_classifyOrphans_(adapter, applyDelete, ctx); // ⑤登録 / ⑥候補(or削除)
+      align[kinds[i]] = StdFolders_alignAllEntries_(adapter, false, ctx);                  // ①〜④
+      var consolidated = StdFolders_consolidateSameFolderDuplicates_(adapter, ctx);        // 同フォルダ同名 → 最新を残す
+      dedup[kinds[i]] = { groups: consolidated.groups, survivors: consolidated.survivors, losers: consolidated.losers };
+      orphans[kinds[i]] = StdFolders_classifyOrphans_(adapter, applyDeleteInvalid, ctx, consolidated.loserIds); // ⑤登録 / ⑥候補(or削除)
     }
 
-    // ② 外部コピー等で生じた 旧id→新id を参照（Q→Form / D→Q）へ伝播（自動再リンク）。
-    var relink = null;
-    var hasRemap = false;
-    for (var rk in ctx.remap) { if (ctx.remap.hasOwnProperty(rk)) { hasRemap = true; break; } }
-    if (hasRemap) {
-      relink = StdFolders_relinkReferences_({ mode: "apply", rebuildMapping: false, rootUrl: manualRootUrl, remap: ctx.remap });
+    // 参照（Q→Form / D→Q）を毎回再リンク。②③の id 変化と同フォルダ重複の survivor へ寄せる
+    // （remap 優先 + フォルダ込み名/同フォルダ最新で名前解決）。
+    var relink = StdFolders_relinkReferences_({ mode: "apply", rebuildMapping: false, rootUrl: manualRootUrl, remap: ctx.remap });
+
+    // 同フォルダ重複の余り（loser）は、参照を寄せ終えた後・確認済みのときだけゴミ箱へ。
+    var trashedDuplicates = [];
+    if (applyDeleteDuplicates) {
+      for (var c = 0; c < ctx.duplicateCandidates.length; c++) {
+        try { DriveApp.getFileById(ctx.duplicateCandidates[c].fileId).setTrashed(true); trashedDuplicates.push(ctx.duplicateCandidates[c].fileId); }
+        catch (e) { Logger.log("[StdFolders_alignFolders_] trash dup " + ctx.duplicateCandidates[c].fileId + ": " + nfbErrorToString_(e)); }
+      }
     }
 
     return {
       ok: true,
-      mode: applyDelete ? "apply" : "dryRun",
+      mode: (applyDeleteInvalid || applyDeleteDuplicates) ? "apply" : "dryRun",
       align: align,
       orphans: orphans,
+      dedup: dedup,
       errors: ctx.errors,
       invalidCandidates: ctx.invalidCandidates,
+      duplicateCandidates: ctx.duplicateCandidates,
+      trashedDuplicates: trashedDuplicates,
+      appliedDeleteInvalid: applyDeleteInvalid,
+      appliedDeleteDuplicates: applyDeleteDuplicates,
       relink: relink,
       truncated: guard.truncated
     };
   });
+}
+
+// 同フォルダ同名の重複を整理する。base 配下の有効エンティティ JSON を (相対フォルダ, 葉名) で
+// グルーピングし、2件以上のグループは最終更新が最新の 1 件（survivor）を残す。
+//   - 残り（loser）は ctx.duplicateCandidates へ記録（trash は呼び出し側がフラグ付きで実施）。
+//   - ctx.remap[loserId]=survivorId を積み、毎回の再リンクで参照を survivor へ寄せる。
+//   - mapping に loser が登録されていれば survivor へ振替える（②③相当の id 追従）。
+// 戻り: { groups, survivors, losers, loserIds:{fileId:true} }。loserIds は ⑤⑥ のスキップに使う。
+function StdFolders_consolidateSameFolderDuplicates_(adapter, ctx) {
+  var res = { groups: 0, survivors: 0, losers: 0, loserIds: {} };
+  var base = adapter.baseFolderOrNull();
+  if (!base) { res.skipped = true; return res; }
+
+  var groups = {};
+  StdFolders_walkDupGroups_(adapter, base, "", groups, ctx.guard);
+
+  var mapping = adapter.getMapping();
+  var dirty = false;
+  for (var key in groups) {
+    if (!groups.hasOwnProperty(key)) continue;
+    var members = groups[key];
+    if (members.length < 2) continue;
+    res.groups++;
+    res.survivors++;
+    var survivor = members[0];
+    for (var s = 1; s < members.length; s++) {
+      if (members[s].updated > survivor.updated) survivor = members[s];
+    }
+    for (var j = 0; j < members.length; j++) {
+      var m = members[j];
+      if (m.fileId === survivor.fileId) continue;
+      res.losers++;
+      res.loserIds[m.fileId] = true;
+      ctx.remap[m.fileId] = survivor.fileId;
+      ctx.duplicateCandidates.push({
+        kind: adapter.kind,
+        fileId: m.fileId,
+        name: m.name,
+        relPath: m.relFolder ? (m.relFolder + "/" + m.name + ".json") : (m.name + ".json"),
+        survivorId: survivor.fileId
+      });
+      if (mapping[m.fileId]) {
+        var entry = mapping[m.fileId];
+        delete mapping[m.fileId];
+        if (!mapping[survivor.fileId]) {
+          entry.fileId = survivor.fileId;
+          entry.driveFileUrl = survivor.url;
+          entry.folder = survivor.relFolder;
+          mapping[survivor.fileId] = entry;
+        }
+        dirty = true;
+      }
+    }
+  }
+  if (dirty) { adapter.saveMapping(mapping); ctx.dirty = true; }
+  return res;
+}
+
+// base 配下を再帰走査し、有効エンティティ JSON を (相対フォルダ, 葉名) でグルーピングする。
+//   groups["相対フォルダ/葉名"] = [ { file, fileId, updated, url, relFolder, name } ]
+function StdFolders_walkDupGroups_(adapter, folder, prefix, groups, guard) {
+  if (guard && guard.truncated) return;
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    if (guard && guard.checkTime()) { guard.truncated = true; return; }
+    var file = files.next();
+    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+    if (!StdFolders_isJsonFile_(file)) continue;
+    var json = null;
+    try { json = JSON.parse(file.getBlob().getDataAsString()); } catch (e) { json = null; }
+    if (!json || !adapter.isValidEntityJson(json)) continue;
+    var name = Nfb_nameFromFile_(file);
+    if (!name) continue;
+    var updated = 0;
+    try { updated = file.getLastUpdated().getTime(); } catch (e2) { updated = 0; }
+    // 葉名に "/" は使えない（Drive 制約）ため "相対フォルダ/葉名" は (フォルダ,名前) の一意キー。
+    var key = prefix ? (prefix + "/" + name) : name;
+    if (!groups[key]) groups[key] = [];
+    groups[key].push({ file: file, fileId: file.getId(), updated: updated, url: file.getUrl(), relFolder: prefix || "", name: name });
+  }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    if (guard && guard.checkTime()) { guard.truncated = true; return; }
+    var sub = subs.next();
+    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
+    StdFolders_walkDupGroups_(adapter, sub, prefix ? prefix + "/" + sub.getName() : sub.getName(), groups, guard);
+  }
 }
 
 // =============================================
