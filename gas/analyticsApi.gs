@@ -35,23 +35,63 @@ function Analytics_getIdPrefix_(type) {
 function Analytics_getMapping_(type) {
   var props = Nfb_getActiveProperties_();
   var key = Analytics_getPropertyKey_(type);
-  return Nfb_parseVersionedMapping_(props.getProperty(key), ANALYTICS_MAPPING_VERSION, "analytics:" + type);
+  var mapping = Nfb_parseVersionedMapping_(props.getProperty(key), ANALYTICS_MAPPING_VERSION, "analytics:" + type);
+  return Analytics_normalizeMapping_(mapping);
+}
+
+// fileId から Drive ファイル表示用 URL を組み立てる（forms の Forms_buildDriveFileUrlFromId_ 相当）。
+// forms ストアを読み込まないコンテキストでも動くようインラインへフォールバックする。
+function Analytics_buildDriveFileUrlFromId_(fileId) {
+  if (!fileId) return null;
+  return typeof Forms_buildDriveFileUrlFromId_ === "function"
+    ? Forms_buildDriveFileUrlFromId_(fileId)
+    : "https://drive.google.com/file/d/" + fileId + "/view";
+}
+
+// 読取側の正規化。driveFileUrl は fileId から都度復元し、読取は完全なエントリ
+// （fileId / driveFileUrl / name / folder）を返す（forms の Forms_normalizeMappingValue_ と対称）。
+// name（= Drive ファイル名）と論理パス folder は、論理側 fileId が失われたときに
+// 「論理パス（folder + 名前）で物理ファイルを探し直す」復旧アンカーになる。folder は中央辞書の
+// 第一級フィールドで、null は「未バックフィル」sentinel（"" の「ルート」と区別する）。
+function Analytics_normalizeMappingValue_(value) {
+  var fileId = null;
+  var driveFileUrl = null;
+  var name = null;
+  var folder = null;
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    fileId = typeof value.fileId === "string" ? String(value.fileId).trim() : null;
+    driveFileUrl = typeof value.driveFileUrl === "string" ? String(value.driveFileUrl).trim() : null;
+    name = typeof value.name === "string" ? value.name : null;
+    folder = typeof value.folder === "string" ? Forms_normalizeFolderPath_(value.folder) : null;
+  }
+
+  if (!driveFileUrl && fileId) {
+    driveFileUrl = Analytics_buildDriveFileUrlFromId_(fileId);
+  }
+
+  return { fileId: fileId, driveFileUrl: driveFileUrl, name: name, folder: folder };
+}
+
+function Analytics_normalizeMapping_(mapping) {
+  var normalized = {};
+  for (var id in mapping) {
+    if (!mapping.hasOwnProperty(id)) continue;
+    normalized[id] = Analytics_normalizeMappingValue_(mapping[id]);
+  }
+  return normalized;
 }
 
 function Analytics_saveMapping_(type, mapping) {
   var props = Nfb_getActiveProperties_();
   var key = Analytics_getPropertyKey_(type);
   Nfb_serializeVersionedMapping_(props, key, ANALYTICS_MAPPING_VERSION, mapping || {}, function(entry) {
-    // 名前（= Drive ファイル名）と論理パス folder をキャッシュ保持する。論理側 fileId が
-    // 失われたときに「論理パス（folder + 名前）で物理ファイルを探し直す」復旧アンカー
-    // （forms の title/folder 相当）に使う。folder は中央辞書の第一級フィールド。
-    // null は「未バックフィル」sentinel（"" の「ルート」と区別する）。
-    return {
-      fileId: entry.fileId || null,
-      driveFileUrl: entry.driveFileUrl || null,
-      name: (typeof entry.name === "string" && entry.name) ? entry.name : null,
-      folder: (typeof entry.folder === "string") ? Forms_normalizeFolderPath_(entry.folder) : null
-    };
+    // 永続化用の最小化。driveFileUrl は fileId から読取時に復元できるため捨てる
+    // （forms の Forms_normalizeMappingForStorage_ と対称。PropertiesService の容量制約に対し
+    // 保存件数の上限を伸ばす）。name / folder は fileId 消失時の復旧アンカーとして維持する。
+    // folder の null sentinel（未バックフィル）もそのまま残す。読取側は完全なエントリを受け取る。
+    var v = Analytics_normalizeMappingValue_(entry);
+    return { fileId: v.fileId, name: v.name, folder: v.folder };
   });
 }
 
