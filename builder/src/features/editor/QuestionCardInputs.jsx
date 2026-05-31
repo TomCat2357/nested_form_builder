@@ -5,7 +5,6 @@ import { styles as s } from "./styles.js";
 
 export {
   CHOICE_TYPES,
-  WEEKDAY_TYPE,
   DATE_TIME_TYPES,
   BASIC_INPUT_TYPES,
   MESSAGE_TYPE,

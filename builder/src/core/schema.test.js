@@ -268,7 +268,7 @@ test("findFirstFileUploadField は fileUpload がない場合 null を返す", (
 });
 
 test("supportsChildren は入力タイプのみ true を返す", () => {
-  ["text", "number", "email", "phone", "url", "date", "time", "weekday", "fileUpload"].forEach((t) => {
+  ["text", "number", "email", "phone", "url", "date", "time", "fileUpload"].forEach((t) => {
     assert.equal(supportsChildren(t), true, `${t} should support children`);
   });
   ["radio", "select", "checkboxes", "message", "printTemplate", "substitution"].forEach((t) => {

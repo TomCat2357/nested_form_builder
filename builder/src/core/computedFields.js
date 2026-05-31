@@ -245,12 +245,28 @@ export const evaluateAllComputedFields = (schema, responses, baseMap, tokenConte
 // Entry data enrichment for search
 // ---------------------------------------------------------------------------
 
+// 元データ方式の選択肢マーカー列（`親|選択肢`: ●/true/1）から選択ラベルを集める。
+const collectOptionLabelsForPath = (entryData, path) => {
+  const prefix = `${path}|`;
+  const selected = [];
+  for (const key of Object.keys(entryData)) {
+    if (!key.startsWith(prefix)) continue;
+    const remainder = key.slice(prefix.length);
+    if (!remainder || remainder.includes("|")) continue;
+    const val = entryData[key];
+    if (val !== undefined && val !== null && val !== "" && val !== false && val !== 0 && val !== "0") {
+      selected.push(remainder);
+    }
+  }
+  return selected;
+};
+
 /**
- * entry.data（view 形式: フィールド 1 列）から、テンプレ / substitution 再評価用の
+ * entry.data（元データ方式: 選択肢ごとのマーカー列）から、テンプレ / substitution 再評価用の
  * 統一 typed view マップ `{ フルパス: 値 }` を再構築する（検索時の置換再評価入力）。
  *
- * - checkboxes: 保存値（codec エスケープ付き連結）を分解し表示用 ", " で連結。
- * - radio/select/weekday: 保存値（単一ラベル）をそのまま。
+ * - checkboxes: マーカー列の選択ラベルを表示用 ", " で連結（view 期の codec 連結列とも両対応）。
+ * - radio/select: マーカー列の選択ラベル（view 期の単一ラベル列とも両対応）。
  * - fileUpload: ファイル名を ", " 連結。message / printTemplate は値なし。
  * - その他（text/number/date 等）: 保存値そのまま（number は数値型を保持）。
  */
@@ -264,11 +280,13 @@ export const buildLabelValueMapFromEntryData = (schema, entryData) => {
 
     const type = field.type;
     if (type === "checkboxes") {
-      const labels = splitMultiValue(data[path]);
+      const labels = collectOptionLabelsForPath(data, path);
       if (labels.length > 0) map[path] = labels.join(", ");
-    } else if (type === "radio" || type === "select" || type === "weekday") {
-      const raw = data[path];
-      if (typeof raw === "string" && raw) map[path] = raw;
+      else if (typeof data[path] === "string" && data[path]) map[path] = splitMultiValue(data[path]).join(", ");
+    } else if (type === "radio" || type === "select") {
+      const labels = collectOptionLabelsForPath(data, path);
+      if (labels.length > 0) map[path] = labels[0];
+      else if (typeof data[path] === "string" && data[path]) map[path] = data[path];
     } else if (type === "fileUpload") {
       const files = normalizeFileUploadEntries(data[path]);
       if (files.length > 0) map[path] = files.map((f) => f.name).join(", ");

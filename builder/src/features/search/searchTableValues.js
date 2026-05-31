@@ -25,7 +25,7 @@ export const toBooleanLike = (value) => {
 export const columnType = (column) => column?.sourceType || column?.type || "";
 export const isChoiceColumn = (column) => {
   const type = columnType(column);
-  return type === "checkboxes" || type === "radio" || type === "select" || type === "weekday";
+  return type === "checkboxes" || type === "radio" || type === "select";
 };
 export const isBooleanSortColumn = (column) => columnType(column) === "checkboxes";
 export const isNumericColumn = (column) => {

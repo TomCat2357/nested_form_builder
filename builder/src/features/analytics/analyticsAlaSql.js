@@ -142,11 +142,9 @@ export async function runAlaSql(sql) {
  *
  * @param {string[]} aliases - 登録済みテーブル名
  * @param {string} whereExpr - 例: "[受付日] > '2025-01-01'"
- * @param {object} [_options] - 旧 variant オプションは廃止（データ形式は view 形式に一本化）。
- *   引数は後方互換のため受け取るが無視し、列が揃う全テーブルに適用する。
  * @returns {Promise<{ ok: boolean, error?: string }>} 構文エラーは ok:false を返す（呼び出し側でエラー表示）
  */
-export async function applyGlobalWhereToTables(aliases, whereExpr, _options = {}) {
+export async function applyGlobalWhereToTables(aliases, whereExpr) {
   if (!whereExpr || typeof whereExpr !== "string" || whereExpr.trim() === "") return { ok: true };
   if (!Array.isArray(aliases) || aliases.length === 0) return { ok: true };
   const alasql = await getAlaSql();

@@ -4,7 +4,7 @@
  * データ形式は view 形式に一本化された（元データ形式＝選択肢ごとの boolean 列は廃止）。
  * よって列メタ / 型マップは常に view 形式：
  *   - radio / select の親列は選択肢ラベル文字列（"string"）。
- *   - checkboxes / weekday の親列は共有 codec 連結文字列（"string"）。
+ *   - checkboxes の親列は共有 codec 連結文字列（"string"）。
  *   - option 真偽値列（`親|選択肢`）は出さない。
  *   - メタ列（id / No. / createdAt / modifiedAt / createdBy / modifiedBy）を先頭に含める。
  *   - 型の正規化は aggregationCompatibility.js（buildFieldTypeMap / resolveColumnType）に委ねる。
@@ -18,11 +18,11 @@ import { forEachFormField } from "./utils/fieldMetas.js";
 
 /**
  * view 形式テーブル向けの列型決定ルール。
- * checkboxes / weekday / radio / select は選択ラベル文字列列なので string 扱い。
+ * checkboxes / radio / select は選択ラベル文字列列なので string 扱い。
  * それ以外は通常の field.type 正規化（resolveColumnType 経由で FIXED_DATE_KEYS も尊重）。
  */
 function resolveColumnType_(rawType, pipePath) {
-  if (rawType === "checkboxes" || rawType === "weekday") return "string";
+  if (rawType === "checkboxes") return "string";
   return resolveColumnType(() => rawType, pipePath);
 }
 

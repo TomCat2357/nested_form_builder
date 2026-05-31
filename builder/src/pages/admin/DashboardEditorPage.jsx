@@ -20,7 +20,7 @@ import {
   FILTER_TYPES,
   MAX_SIMPLE_FILTERS,
 } from "../../features/analytics/utils/dashboardSchema.js";
-import { getFormColumns, getFormViewColumns } from "../../features/analytics/analyticsSchemaColumns.js";
+import { getFormColumns } from "../../features/analytics/analyticsSchemaColumns.js";
 import DashboardGrid from "../../features/analytics/components/DashboardGrid.jsx";
 import DashboardFilterBar from "../../features/analytics/components/DashboardFilterBar.jsx";
 import SimpleFilterBar from "../../features/analytics/components/SimpleFilterBar.jsx";
@@ -74,31 +74,26 @@ export default function DashboardEditorPage() {
   }, [questions]);
 
   // 簡易フィルタの項目候補。ダッシュボードの各カード（Question）が参照する
-  // フォーム・variant から列メタを集約し、AlaSQL safe key で重複排除する。
-  // 元レコードテーブルへ適用するため、列識別子は getFormColumns / getFormViewColumns の alaSqlKey。
+  // フォームから列メタ（view 形式）を集約し、AlaSQL safe key で重複排除する。
   const availableColumns = useMemo(() => {
     const formsById = new Map((forms || []).map((f) => [f.id, f]));
     const byKey = new Map(); // alaSqlKey -> { alaSqlKey, key, label, type }
+    const addFormColumns = (formId) => {
+      const form = formsById.get(formId);
+      if (!form) return;
+      for (const c of getFormColumns(form)) {
+        if (!byKey.has(c.alaSqlKey)) {
+          byKey.set(c.alaSqlKey, { alaSqlKey: c.alaSqlKey, key: c.key, label: c.label, type: c.type });
+        }
+      }
+    };
     for (const card of dashboard.cards || []) {
       const q = questionsById.get(card.questionId);
       if (!q || !q.query) continue;
-      const sources = [];
       if (q.query.mode === "gui" && q.query.gui?.formId) {
-        sources.push({ formId: q.query.gui.formId, variant: q.query.gui.variant === "view" ? "view" : "data" });
+        addFormColumns(q.query.gui.formId);
       } else if (q.query.mode === "sql" && Array.isArray(q.query.formSources)) {
-        for (const s of q.query.formSources) {
-          sources.push({ formId: s.formId, variant: s.variant === "view" ? "view" : "data" });
-        }
-      }
-      for (const src of sources) {
-        const form = formsById.get(src.formId);
-        if (!form) continue;
-        const cols = src.variant === "view" ? getFormViewColumns(form) : getFormColumns(form);
-        for (const c of cols) {
-          if (!byKey.has(c.alaSqlKey)) {
-            byKey.set(c.alaSqlKey, { alaSqlKey: c.alaSqlKey, key: c.key, label: c.label, type: c.type });
-          }
-        }
+        for (const s of q.query.formSources) addFormColumns(s.formId);
       }
     }
     return Array.from(byKey.values());

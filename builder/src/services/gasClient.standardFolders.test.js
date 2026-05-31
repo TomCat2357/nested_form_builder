@@ -94,8 +94,8 @@ test("rebuildMappingsFromFolders: 6ケース整合の結果を整形して返す
     truncated: false,
   });
   try {
-    const r = await rebuildMappingsFromFolders("", { applyDelete: false });
-    assert.deepEqual(captured.payload, { rootUrl: "", applyDelete: false });
+    const r = await rebuildMappingsFromFolders("", { applyDeleteInvalid: false, applyDeleteDuplicates: false });
+    assert.deepEqual(captured.payload, { rootUrl: "", applyDeleteInvalid: false, applyDeleteDuplicates: false });
     assert.equal(r.mode, "dryRun");
     assert.equal(r.align.forms.copiedExternal, 1);
     assert.equal(r.align.forms.errors, 1);
@@ -112,11 +112,11 @@ test("rebuildMappingsFromFolders: 6ケース整合の結果を整形して返す
   }
 });
 
-test("rebuildMappingsFromFolders: applyDelete:true を payload へ渡す", async () => {
+test("rebuildMappingsFromFolders: applyDeleteInvalid/Duplicates:true を payload へ渡す", async () => {
   const captured = installGoogleStub("nfbRebuildMappingsFromFolders", { ok: true, mode: "apply" });
   try {
-    const r = await rebuildMappingsFromFolders("", { applyDelete: true });
-    assert.deepEqual(captured.payload, { rootUrl: "", applyDelete: true });
+    const r = await rebuildMappingsFromFolders("", { applyDeleteInvalid: true, applyDeleteDuplicates: true });
+    assert.deepEqual(captured.payload, { rootUrl: "", applyDeleteInvalid: true, applyDeleteDuplicates: true });
     assert.equal(r.mode, "apply");
   } finally {
     clearGoogleStub();

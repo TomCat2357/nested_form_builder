@@ -226,7 +226,7 @@ const collectChoiceOptionOrderByPath = (schema) => {
   traverseSchema(schema || [], (field, context) => {
     const path = context?.pathSegments?.join("|") || "";
     if (!path) return;
-    if (field?.type !== "checkboxes" && field?.type !== "weekday") return;
+    if (field?.type !== "checkboxes") return;
     const options = Array.isArray(field?.options) ? field.options : [];
     const labels = options
       .map((option) => (typeof option?.label === "string" ? option.label : ""))

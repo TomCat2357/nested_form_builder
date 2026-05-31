@@ -46,7 +46,7 @@ const toRawSelectedLabels = (type, value) => {
     return labels;
   }
 
-  if (type === "radio" || type === "select" || type === "weekday") {
+  if (type === "radio" || type === "select") {
     if (typeof value === "string") {
       add(value);
     } else if (Array.isArray(value)) {

@@ -326,7 +326,7 @@ const FieldRenderer = ({
         </div>
       )}
 
-      {(field.type === "select" || field.type === "weekday") && (
+      {field.type === "select" && (
         <select value={selectedSingleChoice} onChange={(event) => onChange(event.target.value)} className={s.input.className}>
           <option value="">-- 未選択 --</option>
           {(field.options || []).map((opt) => {

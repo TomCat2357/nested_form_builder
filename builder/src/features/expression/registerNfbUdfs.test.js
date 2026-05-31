@@ -286,7 +286,7 @@ test("MV_EQ: 複数値セルを , で分割し集合一致", () => {
   // 単一値セル → 通常の等価
   assert.equal(fn("カラス", "カラス"), true);
   assert.equal(fn("カラス", "キツネ"), false);
-  // 複数値（, 連結 = entriesToViewRows の checkboxes / weekday 由来）
+  // 複数値（, 連結 = entriesToViewRows の checkboxes 由来）
   assert.equal(fn("カラス,キタツネ", "キタツネ"), true);
   assert.equal(fn("カラス,キタツネ", "タヌキ"), false);
   assert.equal(fn("カラス,キタツネ", "カラス"), true);

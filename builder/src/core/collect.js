@@ -1,6 +1,5 @@
 import { traverseSchema } from "./schemaUtils.js";
 import { normalizeDateTimeFieldValue } from "../utils/dateTime.js";
-import { joinMultiValue } from "../utils/multiValue.js";
 
 export const sanitizeFileUploadEntry = (entry) => {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
@@ -67,16 +66,18 @@ export const collectResponses = (fields, responses, options = {}) => {
     const base = context.pathSegments.join("|");
 
     if (field.type === "checkboxes" && Array.isArray(value)) {
-      // view 形式: 選択ラベルを共有 codec でエスケープ付きカンマ連結し、フィールドの 1 列に保存。
-      const labels = value.filter((lbl) => typeof lbl === "string" && lbl);
-      if (labels.length > 0) {
-        out[base] = joinMultiValue(labels);
-        orderList.push(base);
-      }
-    } else if (["radio", "select", "weekday"].includes(field.type) && typeof value === "string" && value) {
-      // view 形式: 単一選択はラベル文字列をそのまま 1 列に保存。
-      out[base] = value;
-      orderList.push(base);
+      // 元データ方式: 選択ラベルごとに `親|選択肢` 列へマーカー "●" を立てる。
+      value.forEach((lbl) => {
+        if (typeof lbl !== "string" || !lbl) return;
+        const key = `${base}|${lbl}`;
+        out[key] = "●";
+        orderList.push(key);
+      });
+    } else if (["radio", "select"].includes(field.type) && typeof value === "string" && value) {
+      // 元データ方式: 選択値の `親|選択肢` 列へマーカー "●" を立てる。
+      const key = `${base}|${value}`;
+      out[key] = "●";
+      orderList.push(key);
     } else if (field.type === "fileUpload") {
       const folderUrl = typeof fileUploadFolderUrls[field.id] === "string"
         ? fileUploadFolderUrls[field.id]
@@ -113,7 +114,7 @@ export const collectResponses = (fields, responses, options = {}) => {
   return out;
 };
 
-const DATA_CHOICE_TYPES = ["checkboxes", "radio", "select", "weekday"];
+const DATA_CHOICE_TYPES = ["checkboxes", "radio", "select"];
 const DATA_VALUE_TEXT_TYPES = ["text", "textarea", "number", "regex", "date", "time", "url", "userName", "email", "phone"];
 
 const collectSelectedOptionLabels = (type, value) => {
@@ -125,7 +126,7 @@ const collectSelectedOptionLabels = (type, value) => {
  * テンプレート / substitution 式評価用の **統一 typed view マップ** `{ フルパス: 値 }` を構築する。
  * `{{...}}`（ビュー形式）トークンの行ソースに使う。元データ形式（選択肢ごとの真偽値展開）は廃止。
  *
- * - 選択肢（checkboxes/weekday）は選択ラベルを共有 codec でエスケープ付きカンマ連結した
+ * - 選択肢（checkboxes）は選択ラベルを共有 codec でエスケープ付きカンマ連結した
  *   **フィールド 1 列**（radio/select は単一ラベル）。
  * - text/number/date 等は `collectResponses` と同じ typed 正規化値（number は数値型・日付は canonical）。
  *   これにより `{{`金額` + 50}}` のような算術が文字列連結にならず正しく動く。
@@ -175,9 +176,12 @@ export const collectAllPossiblePaths = (fields) => {
   traverseSchema(fields, (field, context) => {
     const base = context.pathSegments.join("|");
 
-    if (["checkboxes", "radio", "select", "weekday"].includes(field.type)) {
-      // view 形式: 選択肢は「フィールドごとの 1 列」（選択肢ごとの展開はしない）。
-      paths.push(base);
+    if (["checkboxes", "radio", "select"].includes(field.type) && Array.isArray(field.options)) {
+      // 元データ方式: 選択肢はオプションごとに `親|選択肢` 列を列挙する。
+      field.options.forEach((option) => {
+        const optionLabel = option?.label || "";
+        paths.push(`${base}|${optionLabel}`);
+      });
     } else if (field.type === "fileUpload") {
       paths.push(base);
     } else if (field.type === "substitution") {

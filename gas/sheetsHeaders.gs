@@ -186,10 +186,15 @@ function Sheets_buildOrderFromSchema_(schema) {
     var type = field.type !== undefined && field.type !== null ? String(field.type).trim() : "";
     var baseKey = ctx.pathSegments.join("|");
 
-    if (type === "checkboxes" || type === "radio" || type === "select" || type === "weekday") {
-      // view 形式: 選択肢は「フィールドごとの 1 列」（選択肢ごとの展開はしない）。
-      // セルには選択ラベル（checkboxes/weekday は codec でエスケープ付きカンマ連結）が入る。
-      appendKey(baseKey);
+    if (type === "checkboxes" || type === "radio" || type === "select") {
+      // 元データ方式: 選択肢はオプションごとに `親|選択肢` 列を作る（セルはマーカー "●" / 空白）。
+      if (Array.isArray(field.options)) {
+        for (var optIndex = 0; optIndex < field.options.length; optIndex++) {
+          var option = field.options[optIndex];
+          var optionLabel = Sheets_normalizeHeaderSegment_(option && option.label);
+          appendKey(optionLabel ? baseKey + "|" + optionLabel : baseKey + "|");
+        }
+      }
     } else if (type !== "message" && singleValueTypes[type]) {
       appendKey(baseKey);
     }

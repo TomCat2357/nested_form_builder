@@ -25,7 +25,6 @@ export default function DashboardGrid({
   viewerControls,
   refreshNonce = 0,
   globalWhereExpr = "",
-  globalWhereVariant = "data",
   questionsById,
   questions = [],
   onCardsChange,
@@ -133,7 +132,6 @@ export default function DashboardGrid({
               viewerControls={viewerControls}
               refreshNonce={refreshNonce}
               globalWhereExpr={globalWhereExpr}
-              globalWhereVariant={globalWhereVariant}
               questionsById={questionsById}
               questions={questions}
               onRemove={editable ? onRemoveCard : null}

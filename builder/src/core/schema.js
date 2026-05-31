@@ -21,15 +21,6 @@ export const normalizeWebhookAction = (raw) => {
 
 const sanitizeOptionLabel = (label) => (/^選択肢\d+$/.test(label || "") ? "" : label || "");
 
-const WEEKDAY_OPTIONS = [
-  { id: "weekday_mon", label: "月" },
-  { id: "weekday_tue", label: "火" },
-  { id: "weekday_wed", label: "水" },
-  { id: "weekday_thu", label: "木" },
-  { id: "weekday_fri", label: "金" },
-  { id: "weekday_sat", label: "土" },
-  { id: "weekday_sun", label: "日" },
-];
 const UI_TEMP_KEYS = [
   "_savedChoiceState",
   "_savedStyleSettings",
@@ -71,7 +62,7 @@ export const DEFAULT_TEXT_MAX_LENGTH = 20;
 export const DEFAULT_MULTILINE_ROWS = 4;
 
 const SUPPORTS_CHILDREN_TYPES = new Set([
-  "text", "number", "email", "phone", "url", "date", "time", "weekday", "fileUpload",
+  "text", "number", "email", "phone", "url", "date", "time", "fileUpload",
 ]);
 export const supportsChildren = (type) => SUPPORTS_CHILDREN_TYPES.has(type);
 
@@ -132,14 +123,13 @@ const buildMigratedPrintTemplateField = (sourceField, sourceFieldId) => {
 
 export const cleanUnusedFieldProperties = (field) => {
   const type = field.type;
-  const isChoice = ["radio", "select", "checkboxes", "weekday"].includes(type);
+  const isChoice = ["radio", "select", "checkboxes"].includes(type);
   const supportsPattern = ["text", "regex"].includes(type);
   const supportsTextDefaults = ["text", "userName"].includes(type);
   const supportsEmailAutoFill = type === "email";
   const supportsNumberSettings = type === "number";
   const supportsPhone = type === "phone";
   const supportsDefaultNow = ["date", "time"].includes(type);
-  const supportsDefaultToday = type === "weekday";
   const supportsPlaceholder = ["text", "number", "email", "phone", "url", "regex", "textarea"].includes(type);
   const supportsSearchAndPrintExclusion = type === "message";
   const supportsSearchExclusion = type === "substitution";
@@ -159,10 +149,6 @@ export const cleanUnusedFieldProperties = (field) => {
   }
   if (isChoice && Array.isArray(field.options)) {
     field.options = field.options.map((opt) => ({ ...opt, defaultSelected: !!opt?.defaultSelected }));
-  }
-  if (type === "weekday") {
-    field.options = WEEKDAY_OPTIONS.map((opt) => ({ ...opt, defaultSelected: false }));
-    delete field.childrenByValue;
   }
   if (!supportsPattern) {
     delete field.pattern;
@@ -188,7 +174,7 @@ export const cleanUnusedFieldProperties = (field) => {
     // legacy includeSeconds は timePrecision へ集約済み（normalizeSchemaIDs）。残骸を除去。
     delete field.includeSeconds;
   }
-  if (!supportsDefaultToday) delete field.defaultToday;
+  delete field.defaultToday;
   if (!supportsEmailAutoFill) delete field.autoFillUserEmail;
   if (!supportsNumberSettings) {
     delete field.integerOnly;
@@ -296,10 +282,6 @@ export const normalizeSchemaIDs = (nodes) => {
           return opt;
         });
       }
-    } else if (base.type === "weekday") {
-      base.options = WEEKDAY_OPTIONS.map((opt) => ({ ...opt, defaultSelected: false }));
-      base.defaultToday = !!base.defaultToday;
-      delete base.childrenByValue;
     } else if (base.type === "text") {
       base.multiline = !!base.multiline;
       if (base.multiline) {

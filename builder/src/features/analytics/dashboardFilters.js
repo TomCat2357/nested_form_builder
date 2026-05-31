@@ -155,10 +155,10 @@ export function buildCardFilterWhereClause(card, dashboardFilters, filterValues)
  * Question を実行してダッシュボードのフィルタ値を結果行に適用する。
  * @returns {Promise<{ ok: boolean, rows?: Array, columns?: Array, compiledColumns?: Array, fallbackTypeMap?: Map<string,string>|object, error?: string }>}
  */
-export async function executeDashboardCard(question, card, dashboardFilters, filterValues, { forms, globalWhereExpr, globalWhereVariant, simpleFilters, simpleFilterValues } = {}) {
+export async function executeDashboardCard(question, card, dashboardFilters, filterValues, { forms, globalWhereExpr, simpleFilters, simpleFilterValues } = {}) {
   // 簡易フィルタは元レコードテーブル側に適用する（その列を持つカードにだけ効く）。
   const sourceFilterClauses = buildSimpleFilterClauses(simpleFilters, simpleFilterValues);
-  const baseResult = await executeQuestion(question, { forms, globalWhereExpr, globalWhereVariant, sourceFilterClauses });
+  const baseResult = await executeQuestion(question, { forms, globalWhereExpr, sourceFilterClauses });
   if (!baseResult.ok) return baseResult;
 
   const { where, params } = buildCardFilterWhereClause(card, dashboardFilters, filterValues);

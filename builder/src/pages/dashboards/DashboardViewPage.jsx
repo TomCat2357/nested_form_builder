@@ -26,10 +26,6 @@ export default function DashboardViewPage() {
   const [globalWhereExpr, setGlobalWhereExpr] = useState("");
   const [globalFilterDraft, setGlobalFilterDraft] = useState("");
   const [globalFilterOpen, setGlobalFilterOpen] = useState(false);
-  // 詳細フィルターを data（元データ形式・選択肢ごとの真偽値列）/ view（ビュー形式・ラベル文字列）
-  // どちらのテーブルに効かせるか。チェックで view、既定は data。
-  const [globalWhereVariant, setGlobalWhereVariant] = useState("data");
-  const [globalFilterVariantDraft, setGlobalFilterVariantDraft] = useState("data");
 
   const { data: fetched, loading, error } = useAsyncResource(
     async () => {
@@ -92,7 +88,6 @@ export default function DashboardViewPage() {
               type="button"
               onClick={() => {
                 setGlobalFilterDraft(globalWhereExpr);
-                setGlobalFilterVariantDraft(globalWhereVariant);
                 setGlobalFilterOpen((v) => !v);
               }}
               className="nf-btn-outline nf-btn-sidebar"
@@ -112,8 +107,8 @@ export default function DashboardViewPage() {
             <div className="nf-card" style={{ padding: "0.75rem", marginBottom: "0.75rem" }}>
               <div style={{ marginBottom: "0.25rem", fontWeight: 600 }}>一時グローバルフィルター</div>
               <div className="nf-text-subtle" style={{ fontSize: "0.85em", marginBottom: "0.5rem" }}>
-                各カードのソーステーブルに WHERE を適用します。列名は <code>[列名]</code> で囲んでください
-                （ネスト列は <code>[親__子]</code> 形式）。該当列を持たないテーブルは無視されます。
+                各カードのソーステーブル（view 形式）に WHERE を適用します。列名は <code>[列名]</code> で囲んでください
+                （ネスト列は <code>[親__子]</code> 形式）。選択肢列はラベル文字列で比較します。該当列を持たないテーブルは無視されます。
               </div>
               <textarea
                 value={globalFilterDraft}
@@ -122,28 +117,12 @@ export default function DashboardViewPage() {
                 rows={2}
                 style={{ width: "100%", fontFamily: "monospace", marginBottom: "0.5rem" }}
               />
-              <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", marginBottom: "0.5rem", fontSize: "0.85em" }}>
-                <input
-                  type="checkbox"
-                  checked={globalFilterVariantDraft === "view"}
-                  onChange={(e) => setGlobalFilterVariantDraft(e.target.checked ? "view" : "data")}
-                />
-                <span>
-                  ビュー形式（view）の値で絞り込む
-                  <span className="nf-text-subtle">
-                    {" "}（オフ＝元データ形式 data。data では選択肢ごとの <code>[親__選択肢]</code> 真偽値列や、
-                    <code>[日付列] {">"} &apos;2025-01-01&apos;</code> の文字列比較が使えます。
-                    指定 variant のテーブルを持たないカードには適用されません）
-                  </span>
-                </span>
-              </label>
               <div style={{ display: "flex", gap: "0.5rem" }}>
                 <button
                   type="button"
                   className="nf-btn"
                   onClick={() => {
                     setGlobalWhereExpr(globalFilterDraft.trim());
-                    setGlobalWhereVariant(globalFilterVariantDraft);
                     setGlobalFilterOpen(false);
                   }}
                 >
@@ -193,7 +172,6 @@ export default function DashboardViewPage() {
               viewerControls
               refreshNonce={refreshNonce}
               globalWhereExpr={globalWhereExpr}
-              globalWhereVariant={globalWhereVariant}
             />
           )}
         </>

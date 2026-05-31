@@ -19,11 +19,10 @@ import { DEFAULT_LINE_STYLE } from "../../features/analytics/utils/chartPalette.
 import { normalizeFolderPath } from "../../utils/folderTree.js";
 import LinkTargetUrlField from "../../features/editor/LinkTargetUrlField.jsx";
 
-function emptyGui(formId, variant) {
+function emptyGui(formId) {
   return {
     schemaVersion: 1,
     formId: formId || "",
-    variant: variant === "view" ? "view" : "data",
     aggregations: [{ id: "a_1", type: "count" }],
     groupBy: [],
     filters: [],
@@ -121,7 +120,7 @@ export default function QuestionEditorPage() {
       setMode(qMode);
       if (qMode === "gui") {
         const g = q.query.gui;
-        setGui(g ? { ...emptyGui(g.formId || "", g.variant), ...g } : emptyGui(""));
+        setGui(g ? { ...emptyGui(g.formId || ""), ...g } : emptyGui(""));
         setSelectedFormId(g?.formId || "");
       } else {
         setSql(q.query?.sql || "");
@@ -181,8 +180,7 @@ export default function QuestionEditorPage() {
   }, [mode, gui.formId, selectedFormId, forms]);
 
   const handleGuiFormChange = (newFormId) => {
-    // フォーム切替時は variant も既定（data）にリセットする。データソース形式は
-    // フォームの内容と相関するので、変更時に同一 variant を維持する強い理由がない。
+    // フォーム切替時は集計・グループ化・フィルターをリセットする。
     setGui(emptyGui(newFormId));
     setQueryResult(null);
     setVizType("table");

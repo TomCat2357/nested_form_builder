@@ -7,7 +7,6 @@ import {
 } from "../../utils/printTemplateAction.js";
 
 export const CHOICE_TYPES = ["radio", "select", "checkboxes"];
-export const WEEKDAY_TYPE = "weekday";
 export const DATE_TIME_TYPES = ["date", "time"];
 export const BASIC_INPUT_TYPES = ["number", "url"];
 export const MESSAGE_TYPE = "message";
@@ -111,7 +110,6 @@ export function handleTypeChange(field, newType, { getTempState, setTempState } 
       next.defaultNow = !!next.defaultNow;
       if (newType === "time") next.includeSeconds = !!next.includeSeconds;
     }
-    if (newType === WEEKDAY_TYPE) next.defaultToday = !!next.defaultToday;
     if (newType === "fileUpload") {
       next.allowUploadByUrl = next.allowUploadByUrl ?? false;
       next.allowFolderUrlEdit = next.allowFolderUrlEdit ?? false;

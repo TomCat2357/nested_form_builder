@@ -14,7 +14,6 @@ import { buildColumnIndex } from "./utils/columnIdentifierResolver.js";
 import {
   preprocessSql,
   canonicalDataAlias,
-  canonicalViewAlias,
   legacyFormAlias,
 } from "./utils/sqlPreprocessor.js";
 import { compileStages } from "./utils/compileStages.js";
@@ -63,15 +62,14 @@ function findFormByRef(forms, formId, formName) {
  * データ形式は view 形式に一本化された。1 フォーム = 1 テーブル（view 形式）を、
  * 互換用の全 alias に貼る：
  *   - canonicalDataAlias(formId) = "data_<id>"（正準）
- *   - canonicalViewAlias(formId) = "view_<id>"（旧 `:view` 参照の解決用）
  *   - legacyFormAlias(formId) = "form_<id>"（後方互換）
  *   - defaultFormId なら bare "data" も同じ rows を指す
- * いずれの alias も同一 view 形式テーブルを指すため、SQL の `:data`/`:view` どちらでも同じ結果になる。
+ * data/view の variant 区別は廃止（クエリ層は常に view 形式の単一テーブル）。
  */
 export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex } = {}) {
   const aliases = [];
   try {
-    // 同じ formId を二重に登録しないよう dedup する（variant の区別は無い）。
+    // 同じ formId を二重に登録しないよう dedup する。
     const seen = new Set();
     for (const src of formSources) {
       if (!src || seen.has(src.formId)) continue;
@@ -79,7 +77,7 @@ export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formInde
       const form = formIndex ? formIndex.byId.get(src.formId) : null;
 
       const canon = canonicalDataAlias(src.formId);
-      const extras = [canonicalViewAlias(src.formId), legacyFormAlias(src.formId)];
+      const extras = [legacyFormAlias(src.formId)];
       if (src.formId === defaultFormId) extras.push("data");
       await registerFormAsTable(canon, src.formId, { form, aliasAlsoAs: extras });
       aliases.push(canon, ...extras);
@@ -109,8 +107,6 @@ function mergeTypeMapsForFormSources(formSources, formIndex, defaultFormId) {
   if (defaultFormId) {
     const f = formIndex.byId.get(defaultFormId);
     if (f) {
-      // defaultFormId のソースは data variant が前提。view variant 参照があっても
-      // 別ソースとして既に積まれている（同 formId の data/view 両方が referencedSources にあれば 2 つになる）。
       for (const [k, v] of buildAlaSqlTypeMap(f)) {
         merged.set(k, v); // default を最後に書いて優先
       }
@@ -124,7 +120,7 @@ function mergeTypeMapsForFormSources(formSources, formIndex, defaultFormId) {
  * mode === "gui" のときは compileStages で SQL を合成し、対象フォーム 1 件のみを登録して実行する。
  * mode === "sql" のときは forms 配列に基づいて [フォーム名] / [列パイプパス] / [field.id] を解決する。
  */
-export async function executeQuestion(question, { forms, globalWhereExpr, globalWhereVariant, sourceFilterClauses } = {}) {
+export async function executeQuestion(question, { forms, globalWhereExpr, sourceFilterClauses } = {}) {
   if (!question || !question.query) {
     return { ok: false, error: "クエリが定義されていません" };
   }
@@ -132,7 +128,7 @@ export async function executeQuestion(question, { forms, globalWhereExpr, global
   const mode = question.query.mode;
 
   if (mode === "gui") {
-    return await executeGuiQuestion(question, { forms, globalWhereExpr, globalWhereVariant, sourceFilterClauses });
+    return await executeGuiQuestion(question, { forms, globalWhereExpr, sourceFilterClauses });
   }
 
   if (mode !== "sql") {
@@ -179,22 +175,17 @@ export async function executeQuestion(question, { forms, globalWhereExpr, global
       return { ok: false, error: pre.errors.join(" / ") };
     }
     transformedSql = pre.transformedSql;
-    // referencedSources（[{formId, variant}]）から formSources を再構築（(formId, variant) 単位で dedup）。
-    // 既存 formSources は data variant とみなして seen に積む（後方互換）。
-    const seen = new Set(formSources.map((s) => s.formId + "|" + (s.variant === "view" ? "view" : "data")));
-    for (const ref of (pre.referencedSources || [])) {
-      const key = ref.formId + "|" + ref.variant;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const f = formIndex.byId.get(ref.formId);
+    // referencedFormIds から formSources を再構築（formId 単位で dedup）。
+    const seen = new Set(formSources.map((s) => s.formId));
+    for (const fid of (pre.referencedFormIds || [])) {
+      if (seen.has(fid)) continue;
+      seen.add(fid);
+      const f = formIndex.byId.get(fid);
       // レコードは formId 経由で取得するため spreadsheetId は不要。設定済みかだけ確認する。
       if (!f || !formHasSpreadsheet(f)) {
-        return { ok: false, error: ERR_NO_SPREADSHEET + " (form: " + ref.formId + ")" };
+        return { ok: false, error: ERR_NO_SPREADSHEET + " (form: " + fid + ")" };
       }
-      formSources.push({
-        formId: ref.formId,
-        variant: ref.variant,
-      });
+      formSources.push({ formId: fid });
     }
   }
 
@@ -210,7 +201,7 @@ export async function executeQuestion(question, { forms, globalWhereExpr, global
 
   try {
     if (globalWhereExpr) {
-      const applied = await applyGlobalWhereToTables(aliases, globalWhereExpr, { variant: globalWhereVariant });
+      const applied = await applyGlobalWhereToTables(aliases, globalWhereExpr);
       if (!applied.ok) return { ok: false, error: "一時フィルターの式が不正です: " + applied.error };
     }
     if (sourceFilterClauses && sourceFilterClauses.length > 0) {
@@ -240,7 +231,7 @@ export async function executeQuestion(question, { forms, globalWhereExpr, global
   }
 }
 
-async function executeGuiQuestion(question, { forms, globalWhereExpr, globalWhereVariant, sourceFilterClauses } = {}) {
+async function executeGuiQuestion(question, { forms, globalWhereExpr, sourceFilterClauses } = {}) {
   const gui = question.query.gui;
   if (!gui || !gui.formId) {
     return { ok: false, error: "GUI クエリの定義が不正です" };
@@ -273,14 +264,14 @@ async function executeGuiQuestion(question, { forms, globalWhereExpr, globalWher
   const aliases = [];
   const typeMap = buildAlaSqlTypeMap(form);
   try {
-    // compileStages は gui.variant に応じて data_<id> / view_<id> のどちらかを参照するため、
-    // 両 alias（＋ legacy）を同一 view 形式テーブルに貼っておく。
+    // compileStages は単一の data_<id> alias を参照する。canonical（＋ legacy）を
+    // 同一 view 形式テーブルに貼っておく。
     const canon = canonicalDataAlias(form.id);
-    const extras = [canonicalViewAlias(form.id), legacyFormAlias(form.id)];
+    const extras = [legacyFormAlias(form.id)];
     await registerFormAsTable(canon, form.id, { form, aliasAlsoAs: extras });
     aliases.push(canon, ...extras);
     if (globalWhereExpr) {
-      const applied = await applyGlobalWhereToTables(aliases, globalWhereExpr, { variant: globalWhereVariant });
+      const applied = await applyGlobalWhereToTables(aliases, globalWhereExpr);
       if (!applied.ok) return { ok: false, error: "一時フィルターの式が不正です: " + applied.error };
     }
     if (sourceFilterClauses && sourceFilterClauses.length > 0) {

@@ -292,24 +292,6 @@ export function DateTimeFieldSection({ field, onChange }) {
   );
 }
 
-export function WeekdayFieldSection({ field, onChange }) {
-  return (
-    <div className="nf-mt-8">
-      <div className="nf-text-12 nf-text-subtle nf-mb-4">
-        選択肢は固定です: 月・火・水・木・金・土・日
-      </div>
-      <label className="nf-row nf-gap-6">
-        <input
-          type="checkbox"
-          checked={!!field.defaultToday}
-          onChange={(event) => onChange({ ...field, defaultToday: event.target.checked })}
-        />
-        初期値を今日の曜日にする
-      </label>
-    </div>
-  );
-}
-
 export function WebhookSection({ field, onChange }) {
   const action = normalizeWebhookAction(field.webhookAction);
   const urlInvalid = action.url.trim() !== "" && !isValidExternalActionUrl(action.url);

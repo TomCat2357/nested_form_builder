@@ -73,15 +73,11 @@ export function migrateLegacyGui(gui) {
   // ID をリセットして決定的に振り直す
   nextId = 0;
 
-  // gui.variant ("view") は view 形式（検索結果一覧）の明示指定。
-  // データシリアル化を最小に保つため、既定の data 形式の場合は variant フィールドを付けない
-  // （compileStages は variant 未指定を data 扱い）。
-  const source = { kind: "form", formId: gui.formId };
-  if (gui.variant === "view") source.variant = "view";
+  // データ形式は view 形式に一本化。旧 gui.variant ("view"/"data") は読み捨てる。
   stages.push({
     id: makeId("s"),
     type: "pick_data",
-    source,
+    source: { kind: "form", formId: gui.formId },
   });
 
   const filters = Array.isArray(gui.filters) ? gui.filters.filter(Boolean) : [];

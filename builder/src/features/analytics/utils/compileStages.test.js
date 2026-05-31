@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { compileStages } from "./compileStages.js";
-import { canonicalFormAlias, canonicalDataAlias, canonicalViewAlias } from "./sqlPreprocessor.js";
+import { canonicalFormAlias, canonicalDataAlias } from "./sqlPreprocessor.js";
 
 const formId = "f_complaint";
 const tableAlias = canonicalFormAlias(formId);
@@ -445,31 +445,24 @@ test("別名衝突時は _2, _3 を付与する", () => {
   assert.match(r.sql, /COUNT\(\*\) AS \[件数\], COUNT\(\*\) AS \[件数_2\], COUNT\(\*\) AS \[件数_3\]/);
 });
 
-// ---- pick_data.source.variant: data / view 切替 ----
+// ---- pick_data: view 形式に一本化（variant は廃止・無視） ----
 
-test("variant 未指定は data 形式：FROM data_<id> が出る（canonicalFormAlias と一致）", () => {
+test("常に FROM data_<id> を出す（canonicalFormAlias と一致）", () => {
   assert.equal(canonicalFormAlias(formId), canonicalDataAlias(formId));
   const r = compile([PICK]);
   assert.equal(r.ok, true);
   assert.equal(r.sql, "SELECT * FROM " + canonicalDataAlias(formId));
 });
 
-test("variant=\"view\" のときは FROM view_<id> が出る", () => {
-  const r = compileStages({
-    schemaVersion: 2,
-    stages: [{ id: "s_1", type: "pick_data", source: { kind: "form", formId, variant: "view" } }],
-  }, { formColumns });
-  assert.equal(r.ok, true);
-  assert.equal(r.sql, "SELECT * FROM " + canonicalViewAlias(formId));
-});
-
-test("variant=\"data\" を明示しても FROM data_<id>（既定と同じ）", () => {
-  const r = compileStages({
-    schemaVersion: 2,
-    stages: [{ id: "s_1", type: "pick_data", source: { kind: "form", formId, variant: "data" } }],
-  }, { formColumns });
-  assert.equal(r.ok, true);
-  assert.equal(r.sql, "SELECT * FROM " + canonicalDataAlias(formId));
+test("旧 source.variant（view/data）が残っていても無視して FROM data_<id>", () => {
+  for (const variant of ["view", "data"]) {
+    const r = compileStages({
+      schemaVersion: 2,
+      stages: [{ id: "s_1", type: "pick_data", source: { kind: "form", formId, variant } }],
+    }, { formColumns });
+    assert.equal(r.ok, true);
+    assert.equal(r.sql, "SELECT * FROM " + canonicalDataAlias(formId));
+  }
 });
 
 test("agg.label が指定されていれば別名はそれを優先する", () => {

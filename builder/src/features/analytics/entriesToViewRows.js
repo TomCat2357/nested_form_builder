@@ -1,11 +1,11 @@
 /**
  * 検索結果一覧（view）形式の AlaSQL 行配列を生成する。
  *
- * データ形式は view 形式に一本化された（元データ形式＝選択肢ごとの真偽値列は廃止）。
- * よって本変換は、保存済み `entry.data`（= フィールドごとの 1 列・view 形式）を
- * ほぼ素通しで AlaSQL 行へ写す薄い変換になる：
- *   - radio / select: 親列に「選択肢ラベル文字列」。
- *   - checkboxes / weekday: 親列に「選択ラベルを共有 codec で連結した文字列」
+ * スプレッドシート保存は元データ方式（選択肢ごとのマーカー列 `親|選択肢`: ●）。本変換は
+ * その raw な `entry.data` を読取り、選択肢を **view 形式**（フィールド 1 列のラベル文字列）へ
+ * 畳み込んで AlaSQL 行を作る（view 期に保存された直接列データとも両対応）：
+ *   - radio / select: 親列に「選択肢ラベル文字列」（マーカー列から集約。直接ラベルもそのまま採用）。
+ *   - checkboxes: 親列に「選択ラベルを共有 codec で連結した文字列」
  *     （区切り `,`、ラベル内の `,`/`\` はバックスラッシュでエスケープ）。MV_EQ/MV_IN UDF が
  *     同じ codec で分割するので、ラベルにカンマを含んでも集合一致が正しく働く。
  *   - date / datetime / time: canonical 文字列（date=YYYY/MM/DD / time=HH:mm:ss.SSS /
@@ -18,11 +18,14 @@
  * メタ列名がフィールドラベルと衝突した場合は最後にメタ列で上書き。
  */
 
+import { isChoiceMarkerValue } from "../../utils/responses.js";
+import { collectDirectOptionLabels } from "../search/searchTableValues.js";
 import { formatCanonical } from "../../utils/dateTime.js";
-import { forEachFormField } from "./utils/fieldMetas.js";
+import { forEachFormField, extractOptionOrder } from "./utils/fieldMetas.js";
+import { joinMultiValue } from "../../utils/multiValue.js";
 
 /**
- * フォーム schema を走査して、各フィールドの { path, type, alaSqlKey } 配列を返す。
+ * フォーム schema を走査して、各フィールドの { path, type, optionOrder, alaSqlKey } 配列を返す。
  * 同一 pipePath は最初の出現を採用（先勝ち、getFormColumns と同じポリシー）。
  */
 function collectViewFieldInfos(form) {
@@ -31,6 +34,7 @@ function collectViewFieldInfos(form) {
     out.push({
       path: pipePath,
       type: field && field.type,
+      optionOrder: extractOptionOrder(field),
       alaSqlKey,
     });
   });
@@ -44,16 +48,47 @@ function coerceNumberOrNull(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+/**
+ * radio / select 1 列の view 値を求める。
+ *   - 元データ方式: 選択肢マーカー列（`親|選択肢`: ●）から選択ラベルを引く。
+ *   - view 期データ互換: data[path] にラベル文字列が直接入っていればそれを採用。
+ *   - どれも無ければ ""（null ではなく空文字、選択肢列の整合）。
+ */
+function radioSelectViewValue(data, path, optionOrder) {
+  const direct = data[path];
+  const hasDirect = Object.prototype.hasOwnProperty.call(data, path);
+  if (hasDirect && direct !== "" && direct != null && !isChoiceMarkerValue(direct)) {
+    return direct;
+  }
+  const labels = collectDirectOptionLabels(data, path, optionOrder);
+  if (labels.length > 0) return labels[0];
+  return "";
+}
+
+/**
+ * checkboxes 1 列の view 値を求める。選択ラベルを共有 codec で連結（MV_EQ/MV_IN と同形式）。
+ *   - 元データ方式: 選択肢マーカー列から集約。
+ *   - view 期データ互換: data[path] が codec 連結文字列ならそのまま採用。
+ */
+function checkboxViewValue(data, path, optionOrder) {
+  const labels = collectDirectOptionLabels(data, path, optionOrder);
+  if (labels.length > 0) return joinMultiValue(labels);
+  const direct = data[path];
+  if (typeof direct === "string" && direct !== "") return direct;
+  return "";
+}
+
 function fieldViewValue(entry, fieldInfo) {
   const data = (entry && typeof entry.data === "object" && entry.data) ? entry.data : {};
   const path = fieldInfo.path;
   const type = fieldInfo.type;
   const v = data[path];
 
-  if (type === "radio" || type === "select" || type === "checkboxes" || type === "weekday") {
-    // view 形式の保存値（選択肢ラベル / checkboxes は codec 連結文字列）をそのまま渡す。
-    // 未選択は "" に揃える（data 形式との整合：選択肢列は空文字、非選択肢列は null）。
-    return (v === undefined || v === null) ? "" : v;
+  if (type === "radio" || type === "select") {
+    return radioSelectViewValue(data, path, fieldInfo.optionOrder);
+  }
+  if (type === "checkboxes") {
+    return checkboxViewValue(data, path, fieldInfo.optionOrder);
   }
   if (type === "date") {
     if (v === "" || v == null) return null;

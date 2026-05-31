@@ -21,7 +21,7 @@
  */
 
 import { headerKeyToAlaSqlKey } from "./headerToAlaSqlKey.js";
-import { canonicalDataAlias, canonicalViewAlias } from "./sqlPreprocessor.js";
+import { canonicalDataAlias } from "./sqlPreprocessor.js";
 import { assertAggColumnType, isAggCompatible, ALL_COLUMNS_TOKEN } from "./aggregationCompatibility.js";
 import { migrateLegacyGui, isLegacyShape } from "./migrateLegacyGui.js";
 import { bracketIdent, quoteString } from "../../expression/sqlEmit.js";
@@ -324,11 +324,8 @@ export function compileStages(query, opts) {
   }
   if (errors.length > 0) return { ok: false, errors };
 
-  // pick_data.source.variant により、元データ形式 (data) とビュー形式 (view) を切り替える。
-  // 未指定は "data"（後方互換）。
-  const tableAlias = src.variant === "view"
-    ? canonicalViewAlias(src.formId)
-    : canonicalDataAlias(src.formId);
+  // データ形式は view 形式に一本化。1 フォーム = 単一テーブル（data_<id>）を参照する。
+  const tableAlias = canonicalDataAlias(src.formId);
 
   // SELECT/GROUP BY 部の構築
   const selectParts = [];

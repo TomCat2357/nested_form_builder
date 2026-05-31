@@ -18,7 +18,7 @@ const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
   return normalized ? normalized : rawValue;
 };
 
-export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select", "weekday"]);
+export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select"]);
 export const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
 
 const collectOptionLabels = (field) => {
@@ -62,10 +62,10 @@ const mergeChoiceLabels = (field, labels) => {
   return ordered;
 };
 
-// view 形式の保存値（フィールドごとの 1 列）から選択ラベルを復元する。
-//   - checkboxes: 文字列は共有 codec splitMultiValue で分解（配列はそのまま）。
-//   - radio/select/weekday: 文字列＝単一ラベル。
-// 旧・選択肢ごとのマーカー列（`親|選択肢`: ●）読み出しは廃止。
+// フィールド 1 列（`親`）の直接保存値から選択ラベルを復元する（view 期データの互換読取）。
+//   - checkboxes: 配列はそのまま / 文字列は共有 codec splitMultiValue で分解。
+//   - radio/select: 文字列＝単一ラベル。
+//   - オブジェクト `{ラベル: ●}` 形（旧）はマーカー判定でラベル化。
 const collectDirectChoiceLabels = (field, directValue) => {
   if (!CHOICE_TYPES.has(field?.type)) return [];
   const labels = [];
@@ -80,6 +80,38 @@ const collectDirectChoiceLabels = (field, directValue) => {
   } else if (typeof directValue === "string") {
     labels.push(directValue);
   }
+
+  if (directValue && typeof directValue === "object" && !Array.isArray(directValue)) {
+    Object.entries(directValue).forEach(([label, marker]) => {
+      if (isChoiceMarkerValue(marker)) labels.push(label);
+    });
+  }
+
+  return mergeChoiceLabels(field, labels);
+};
+
+// 元データ方式（現行・保存層）の選択肢ごとのマーカー列（`親|選択肢`: ●）から選択ラベルを復元する。
+// options を順に見るほか、未知ラベルの取りこぼし防止に `親|*` プレフィックスも走査する。
+const collectMarkerChoiceLabels = (field, baseKey, data) => {
+  if (!CHOICE_TYPES.has(field?.type)) return [];
+  const labels = [];
+  (Array.isArray(field?.options) ? field.options : []).forEach((opt) => {
+    const optionLabel = typeof opt?.label === "string" ? opt.label : "";
+    if (!optionLabel) return;
+    const markerKey = `${baseKey}|${optionLabel}`;
+    if (isChoiceMarkerValue(data?.[markerKey])) {
+      labels.push(optionLabel);
+    }
+  });
+
+  const prefix = `${baseKey}|`;
+  Object.entries(data || {}).forEach(([key, marker]) => {
+    if (!key.startsWith(prefix)) return;
+    if (!isChoiceMarkerValue(marker)) return;
+    const remainder = key.slice(prefix.length);
+    if (!remainder || remainder.includes("|")) return;
+    labels.push(remainder);
+  });
 
   return mergeChoiceLabels(field, labels);
 };
@@ -120,7 +152,10 @@ export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => 
     const baseKey = context.pathSegments.join("|");
 
     if (CHOICE_TYPES.has(field.type)) {
-      const selectedLabels = collectDirectChoiceLabels(field, data?.[baseKey]);
+      // 元データ方式のマーカー列（`親|選択肢`: ●）と、view 期の直接列（`親`）の両対応。
+      const directLabels = collectDirectChoiceLabels(field, data?.[baseKey]);
+      const markerLabels = collectMarkerChoiceLabels(field, baseKey, data);
+      const selectedLabels = mergeChoiceLabels(field, [...directLabels, ...markerLabels]);
       if (field.type === "checkboxes") {
         if (selectedLabels.length > 0) {
           Object.assign(responses, { [field.id]: selectedLabels });
@@ -206,10 +241,6 @@ export const collectDefaultNowResponses = (schema, now = new Date(), options = {
       if (selected.length > 0) {
         defaults[field.id] = selected;
       }
-    }
-    if (field?.type === "weekday" && field?.defaultToday) {
-      const WEEKDAY_LABELS = ["日", "月", "火", "水", "木", "金", "土"];
-      defaults[field.id] = WEEKDAY_LABELS[now.getDay()];
     }
     if (["radio", "select"].includes(field?.type)) {
       const selected = collectDefaultSelectedLabels(field);

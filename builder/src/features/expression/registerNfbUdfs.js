@@ -300,7 +300,7 @@ export function ensureNfbUdfsRegistered(alasql) {
   //   alasql WHERE 式へ翻訳するときに使う（searchQueryEngine の matchEqualityOverTokens_ /
   //   matchInOverTokens_ 互換）。
   //   簡易検索は view 行（entriesToViewTableRows）に対して評価し、複数値セル
-  //   （checkboxes / weekday）は共有 codec `joinMultiValue` で連結されている（区切り `,`、
+  //   （checkboxes）は共有 codec `joinMultiValue` で連結されている（区切り `,`、
   //   ラベル内の `,`/`\` はバックスラッシュでエスケープ）。よって `splitMultiValue` で
   //   未エスケープの `,` のみ分割して集合化する（ラベル内カンマは保持）。単一値セル
   //   （radio / select / text 等）は 1 要素集合になるので通常の等価比較に帰着する。

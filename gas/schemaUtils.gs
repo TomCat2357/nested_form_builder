@@ -70,9 +70,6 @@ function nfbFieldHasValue_(field, value) {
   if (type === "date" || type === "time") {
     return typeof value === "string" && value !== "";
   }
-  if (type === "weekday") {
-    return typeof value === "string" && value !== "";
-  }
   if (type === "fileUpload") {
     return Array.isArray(value) && value.length > 0;
   }

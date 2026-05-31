@@ -33,13 +33,6 @@ test("fieldHasValue: date / time は文字列で非空", () => {
   assert.equal(fieldHasValue({ type: "time" }, "10:00"), true);
 });
 
-test("fieldHasValue: weekday は単一の曜日文字列で true (空文字は false)", () => {
-  assert.equal(fieldHasValue({ type: "weekday" }, ""), false);
-  assert.equal(fieldHasValue({ type: "weekday" }, null), false);
-  assert.equal(fieldHasValue({ type: "weekday" }, "月"), true);
-  assert.equal(fieldHasValue({ type: "weekday" }, "火"), true);
-});
-
 test("fieldHasValue: fileUpload は配列が空でないとき true", () => {
   assert.equal(fieldHasValue({ type: "fileUpload" }, []), false);
   assert.equal(fieldHasValue({ type: "fileUpload" }, null), false);

@@ -32,7 +32,7 @@ export function forEachFormField(form, callback) {
 }
 
 /**
- * choice 系フィールド（checkboxes / radio / select / weekday）の各選択肢を
+ * choice 系フィールド（checkboxes / radio / select）の各選択肢を
  * `親|選択肢` の列として走査する。スプレッドシートでは選択肢ごとに
  * `親|選択肢` 列（`●`/空白マーカー）が立つので、その boolean 列を列挙する用途。
  *

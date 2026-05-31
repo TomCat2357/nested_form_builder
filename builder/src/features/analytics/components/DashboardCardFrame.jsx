@@ -31,7 +31,6 @@ export default function DashboardCardFrame({
   viewerControls = true,
   refreshNonce = 0,
   globalWhereExpr = "",
-  globalWhereVariant = "data",
   questionsById,
   questions = [],
   onRemove,
@@ -85,7 +84,7 @@ export default function DashboardCardFrame({
     const q = cached || await getQuestionById(card.questionId);
     setQuestion(q || null);
     if (!q) return { ok: false, error: "Question が見つかりません" };
-    return await executeDashboardCard(q, card, filters, filterValues, { forms, globalWhereExpr, globalWhereVariant, simpleFilters, simpleFilterValues });
+    return await executeDashboardCard(q, card, filters, filterValues, { forms, globalWhereExpr, simpleFilters, simpleFilterValues });
     // forms / questionsById はリファレンス変化が頻繁なので deps から外す:
     // forms は formsReady で到着判定、questionsById は同一 questionId に対して
     // キャッシュ内容が変わらない前提（編集後の再表示は再マウントで吸収）。
@@ -93,7 +92,7 @@ export default function DashboardCardFrame({
     // globalWhereExpr は閲覧者の一時グローバルフィルタ（ソーステーブル側を絞る）。
     // simpleFilters* は簡易フィルタ（元レコードテーブル側を絞る）。
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [card.id, card.questionId, filterMappingsKey, filterValuesKey, simpleFiltersKey, simpleFilterValuesKey, formsReady, refreshNonce, globalWhereExpr, globalWhereVariant]);
+  }, [card.id, card.questionId, filterMappingsKey, filterValuesKey, simpleFiltersKey, simpleFilterValuesKey, formsReady, refreshNonce, globalWhereExpr]);
 
   useEffect(() => {
     if (result?.ok && Array.isArray(result.columns) && onColumnsLoaded) {

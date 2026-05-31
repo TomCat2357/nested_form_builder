@@ -6,7 +6,6 @@ import { buildPhonePattern } from "../../core/phone.js";
 import { normalizePrintTemplateAction } from "../../utils/printTemplateAction.js";
 import { styles as s } from "./styles.js";
 import {
-  WEEKDAY_TYPE,
   MESSAGE_TYPE,
   DISPLAY_LABEL,
   isChoiceType,
@@ -34,7 +33,6 @@ import {
   PhoneFieldSection,
   FileUploadFieldSection,
   DateTimeFieldSection,
-  WeekdayFieldSection,
   SubstitutionFieldSection,
   WebhookSection,
 } from "./QuestionCardSections.jsx";
@@ -47,7 +45,6 @@ const FIELD_TYPE_OPTIONS = [
   { value: "number", label: "数値" },
   { value: "date", label: "日付" },
   { value: "time", label: "時間" },
-  { value: "weekday", label: "曜日" },
   { value: "checkboxes", label: "チェックボックス" },
   { value: "radio", label: "ラジオボタン" },
   { value: "select", label: "ドロップダウン" },
@@ -73,7 +70,6 @@ export default function QuestionCard({
   clearTempState,
 }) {
   const isChoice = isChoiceType(field.type);
-  const isWeekday = field.type === WEEKDAY_TYPE;
   const isText = field.type === "text";
   const isNumber = field.type === "number";
   const isDateOrTime = isDateOrTimeType(field.type);
@@ -183,8 +179,6 @@ export default function QuestionCard({
       {field.type === "fileUpload" && <FileUploadFieldSection field={field} onChange={onChange} />}
 
       {isDateOrTime && <DateTimeFieldSection field={field} onChange={onChange} />}
-
-      {isWeekday && <WeekdayFieldSection field={field} onChange={onChange} />}
 
       {isSubstitution && <SubstitutionFieldSection field={field} onChange={onChange} />}
 

@@ -4,7 +4,6 @@ import {
   preprocessSql,
   canonicalFormAlias,
   canonicalDataAlias,
-  canonicalViewAlias,
   legacyFormAlias,
 } from "./sqlPreprocessor.js";
 import { buildFormIndex } from "./formIdentifierResolver.js";
@@ -208,71 +207,42 @@ test("文字列リテラル内のバッククォートは変換しない", () =>
   assert.match(r.transformedSql, /'`基本情報\|区`'/);
 });
 
-// ---- variant suffix（:data / :view）と canonical alias ----
+// ---- canonical alias と :view/:data suffix の廃止 ----
 
 test("canonicalFormAlias は canonicalDataAlias の別名（後方互換）", () => {
   assert.equal(canonicalFormAlias(formA.id), canonicalDataAlias(formA.id));
 });
 
-test("canonicalDataAlias / canonicalViewAlias は data_<id> / view_<id>", () => {
+test("canonicalDataAlias / legacyFormAlias は data_<id> / form_<id>", () => {
   assert.equal(canonicalDataAlias("f_x"), "data_f_x");
-  assert.equal(canonicalViewAlias("f_x"), "view_f_x");
   assert.equal(legacyFormAlias("f_x"), "form_f_x");
 });
 
-test("FROM [タイトル:view] は view_<id> に置換され variant=view が referencedSources に乗る", () => {
-  const r = preprocessSql("SELECT * FROM [苦情データ:view]", {
-    defaultFormId: null, formIndex, getColumnIndex,
-  });
-  assert.equal(r.ok, true);
-  const canon = canonicalViewAlias(formA.id);
-  assert.match(r.transformedSql, new RegExp("FROM " + canon + " AS " + canon));
-  assert.deepEqual(r.referencedSources, [{ formId: formA.id, variant: "view" }]);
-});
-
-test("FROM [タイトル:data] は data_<id> に置換され variant=data が referencedSources に乗る", () => {
-  const r = preprocessSql("SELECT * FROM [苦情データ:data]", {
+test("FROM [タイトル] は data_<id> に置換され referencedFormIds に乗る", () => {
+  const r = preprocessSql("SELECT * FROM [苦情データ]", {
     defaultFormId: null, formIndex, getColumnIndex,
   });
   assert.equal(r.ok, true);
   const canon = canonicalDataAlias(formA.id);
   assert.match(r.transformedSql, new RegExp("FROM " + canon + " AS " + canon));
-  assert.deepEqual(r.referencedSources, [{ formId: formA.id, variant: "data" }]);
-});
-
-test("FROM [タイトル] は variant=data として解決される（既定）", () => {
-  const r = preprocessSql("SELECT * FROM [苦情データ]", {
-    defaultFormId: null, formIndex, getColumnIndex,
-  });
-  assert.equal(r.ok, true);
-  assert.deepEqual(r.referencedSources, [{ formId: formA.id, variant: "data" }]);
-});
-
-test("同一フォームを data / view 両方で参照したら referencedSources に 2 つ乗る", () => {
-  const r = preprocessSql(
-    "SELECT * FROM [苦情データ] AS d JOIN [苦情データ:view] AS v ON d.[id] = v.[id]",
-    { defaultFormId: null, formIndex, getColumnIndex }
-  );
-  assert.equal(r.ok, true);
-  assert.equal(r.referencedSources.length, 2);
-  const variants = r.referencedSources.map((s) => s.variant).sort();
-  assert.deepEqual(variants, ["data", "view"]);
-  // referencedFormIds は formId 単位の dedup なので 1 つだけ
   assert.deepEqual(r.referencedFormIds, [formA.id]);
 });
 
-test("FROM view_<id> をそのまま書いても variant=view として解決される（default form）", () => {
-  const canonView = canonicalViewAlias(formA.id);
-  const r = preprocessSql("SELECT * FROM " + canonView, {
-    defaultFormId: formA.id, formIndex, getColumnIndex,
+test(":view / :data suffix は廃止：FROM [タイトル:view] / [タイトル:data] は未定義フォームとしてエラー", () => {
+  const rv = preprocessSql("SELECT * FROM [苦情データ:view]", {
+    defaultFormId: null, formIndex, getColumnIndex,
   });
-  assert.equal(r.ok, true);
-  assert.match(r.transformedSql, new RegExp("FROM " + canonView));
-  // default form は data / view 両方が登録されているので referencedSources に view が含まれる
-  assert.ok(r.referencedSources.some((s) => s.variant === "view" && s.formId === formA.id));
+  assert.equal(rv.ok, false);
+  assert.ok(rv.errors.some((e) => e.includes("苦情データ:view")));
+
+  const rd = preprocessSql("SELECT * FROM [苦情データ:data]", {
+    defaultFormId: null, formIndex, getColumnIndex,
+  });
+  assert.equal(rd.ok, false);
+  assert.ok(rd.errors.some((e) => e.includes("苦情データ:data")));
 });
 
-test("FROM form_<id>（旧 canonical）は data variant の後方互換 alias", () => {
+test("FROM form_<id>（旧 canonical）は後方互換 alias として解決される", () => {
   const legacy = legacyFormAlias(formA.id);
   const r = preprocessSql("SELECT * FROM " + legacy, {
     defaultFormId: formA.id, formIndex, getColumnIndex,
@@ -281,14 +251,21 @@ test("FROM form_<id>（旧 canonical）は data variant の後方互換 alias", 
   assert.match(r.transformedSql, new RegExp("FROM " + legacy));
 });
 
-test("[Form:view].[Col] 修飾形式（Pass 2）も variant を解釈", () => {
-  const r = preprocessSql("SELECT [苦情データ:view].[受付日] FROM [苦情データ:view]", {
+test("[Form].[Col] 修飾形式（Pass 2）は data_<id> に解決される", () => {
+  const r = preprocessSql("SELECT [苦情データ].[受付日] FROM [苦情データ]", {
     defaultFormId: null, formIndex, getColumnIndex,
   });
   assert.equal(r.ok, true);
-  const canonView = canonicalViewAlias(formA.id);
-  assert.match(r.transformedSql, new RegExp(canonView + "\\.\\[受付日\\]"));
-  assert.deepEqual(r.referencedSources, [{ formId: formA.id, variant: "view" }]);
+  const canon = canonicalDataAlias(formA.id);
+  assert.match(r.transformedSql, new RegExp(canon + "\\.\\[受付日\\]"));
+  assert.deepEqual(r.referencedFormIds, [formA.id]);
+});
+
+test("[Form:view].[Col] 修飾形式も :view 廃止でエラー", () => {
+  const r = preprocessSql("SELECT [苦情データ:view].[受付日] FROM [苦情データ:view]", {
+    defaultFormId: null, formIndex, getColumnIndex,
+  });
+  assert.equal(r.ok, false);
 });
 
 test("FROM [フォルダ/フォーム名] はフォルダ込みで解決し、同名バレ名は曖昧エラー", () => {
