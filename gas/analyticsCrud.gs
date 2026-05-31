@@ -264,6 +264,19 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     mapping[id] = { fileId: id, driveFileUrl: fileUrl, name: uniqueName };
     Analytics_saveMapping_(type, mapping);
 
+    // 保存後: 参照先（questions→forms / dashboards→questions+forms）に ①〜④ 整合を適用し、
+    // ②外部コピー/③再採用で参照先 id が変わったらリンクを追従させる。base 未設定なら no-op。
+    var referenceSync = null;
+    try {
+      referenceSync = StdFolders_alignReferencesOnSave_(type, id);
+      if (referenceSync && referenceSync.remap) {
+        // 返却オブジェクトのリンクも追従させ、クライアント表示と Drive 実体を一致させる。
+        StdFolders_applyRemapToRefs_(normalizedTemplate, type, referenceSync.remap);
+      }
+    } catch (errRefSync) {
+      Logger.log("[Analytics_saveTemplate_] alignReferencesOnSave failed: " + nfbErrorToString_(errRefSync));
+    }
+
     var saved = {};
     for (var sk in normalizedTemplate) {
       if (normalizedTemplate.hasOwnProperty(sk)) saved[sk] = normalizedTemplate[sk];
@@ -274,6 +287,7 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     var resultKey = Analytics_getResultKey_(type);
     var result = { ok: true, fileUrl: fileUrl, saveMode: saveMode };
     result[resultKey] = saved;
+    if (referenceSync) result.referenceSync = referenceSync;
     return result;
   });
 }
