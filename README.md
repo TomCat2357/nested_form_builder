@@ -59,7 +59,7 @@ nested_form_builder/
 | 用途 | 参照先 |
 | --- | --- |
 | 利用者向け操作マニュアル | [`manual/user_manual.pdf`](./manual/user_manual.pdf) |
-| 開発者向けナビ（テーマ別 14 ファイルへの索引） | [`CLAUDE.md`](./CLAUDE.md) |
+| 開発者向けナビ（テーマ別 15 ファイルへの索引） | [`CLAUDE.md`](./CLAUDE.md) |
 | 全体像・データフロー | [`docs/claude/architecture.md`](./docs/claude/architecture.md) |
 | セットアップ詳細 | [`docs/claude/setup.md`](./docs/claude/setup.md) |
 | 日常コマンド | [`docs/claude/development-workflow.md`](./docs/claude/development-workflow.md) |
