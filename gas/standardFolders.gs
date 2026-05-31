@@ -814,150 +814,6 @@ function StdFolders_rebuildMappings_(payload) {
 }
 
 // ---------------------------------------------
-// (2.4) 物理 Drive フォルダ → 仮想フォルダの逆方向リコンサイル
-// 設定＞管理者の「同期（フォルダ走査）」時、物理 Drive フォルダ（01_forms 配下）の実構造を正として
-// 仮想（登録簿・form.folder・drivemap）を合わせる。Drive 上で手動リネーム/移動されたケースを吸収する。
-//
-// 2 フェーズ:
-//   1) 移行: 01_forms 直下にあり form.folder が非空のフォーム = 未移行レガシー。その folder に対応する
-//            物理フォルダを作成しファイルを移動する（json.folder を尊重）。
-//   2) リコンサイル: 01_forms サブツリーを再帰走査し、ネストされた各フォームの json.folder を物理パス
-//            に合わせて書き換える。drivemap と仮想登録簿を物理フォルダ構造から再構築する。
-//
-// 注意: 物理を正とするため、物理フォルダを持たない空の仮想フォルダは登録簿から落ちる。導入時は先に
-//       FormsDrive_backfillPhysicalFolders_() で物理化してから走査することを推奨。
-// auto-organize off（base=01_forms が解決できない）では何もしない。
-// ---------------------------------------------
-function StdFolders_reconcileFormFoldersToPhysical_(root) {
-  var base = FormsDrive_baseFolderOrNull_();
-  if (!base) return { ok: true, skipped: true };
-
-  var result = { migrated: 0, reconciled: 0, folders: 0 };
-
-  // フェーズ1: 01_forms 直下のレガシー（folder 非空）を物理フォルダへ移行。
-  var rootFiles = base.getFiles();
-  while (rootFiles.hasNext()) {
-    var rf = rootFiles.next();
-    if (typeof rf.isTrashed === "function" && rf.isTrashed()) continue;
-    if (!StdFolders_isJsonFile_(rf)) continue;
-    var rjson;
-    try { rjson = JSON.parse(rf.getBlob().getDataAsString()); } catch (e) { continue; }
-    if (!rjson || !Array.isArray(rjson.schema)) continue;
-    var rfolder = Forms_normalizeFolderPath_(rjson.folder);
-    if (rfolder && FormsDrive_moveFormFileToPath_(rf.getId(), rfolder)) result.migrated++;
-  }
-
-  // フェーズ2: サブツリーを再帰走査し、物理パスを正に json.folder / drivemap / 登録簿を再構築。
-  var map = {};            // 物理パス -> folderId
-  var physicalPaths = {};  // 物理フォルダパス集合（空フォルダも保持）
-  StdFolders_walkPhysicalFormFolders_(base, "", map, physicalPaths, result);
-
-  FormsDrive_savePathMap_(map);
-  Forms_saveFolders_(Object.keys(physicalPaths));
-  return { ok: true, migrated: result.migrated, reconciled: result.reconciled, folders: result.folders };
-}
-
-// 物理サブツリーを歩き、フォルダパス→ID（map）と物理パス集合（physicalPaths）を集めつつ、
-// 各フォーム .json の json.folder を物理パスに合わせて書き換える。
-function StdFolders_walkPhysicalFormFolders_(folder, pathPrefix, map, physicalPaths, result) {
-  var subs = folder.getFolders();
-  while (subs.hasNext()) {
-    var sub = subs.next();
-    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
-    var p = pathPrefix ? pathPrefix + "/" + sub.getName() : sub.getName();
-    physicalPaths[p] = true;
-    map[p] = sub.getId();
-    result.folders++;
-
-    var files = sub.getFiles();
-    while (files.hasNext()) {
-      var file = files.next();
-      if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
-      if (!StdFolders_isJsonFile_(file)) continue;
-      var json;
-      try { json = JSON.parse(file.getBlob().getDataAsString()); } catch (e) { continue; }
-      if (!json || !Array.isArray(json.schema)) continue;
-      if (Forms_normalizeFolderPath_(json.folder) !== p) {
-        json.folder = p;
-        var nowSerial = Sheets_dateToSerial_(new Date());
-        json.modifiedAt = Sheets_formatJstString_(nowSerial);
-        json.modifiedAtUnixMs = nowSerial;
-        try { file.setContent(JSON.stringify(json, null, 2)); result.reconciled++; } catch (e) { /* non-critical */ }
-      }
-    }
-    StdFolders_walkPhysicalFormFolders_(sub, p, map, physicalPaths, result);
-  }
-}
-
-// ---------------------------------------------
-// (2.4 拡張) 物理 Drive フォルダ → 仮想フォルダの逆方向リコンサイル（Question / Dashboard 版）
-// forms 版（StdFolders_reconcileFormFoldersToPhysical_）と対称。02_questions / 03_dashboards 配下の
-// 実構造を正として item.folder / drivemap / 登録簿を合わせる。
-//   フェーズ1: base 直下にフラット保存され json.folder が非空のレガシーを物理フォルダへ移行。
-//   フェーズ2: サブツリーを再帰走査し、各 .json の json.folder を物理パスへ合わせ、drivemap と
-//             仮想登録簿を物理から再構築する。
-// auto-organize off（base 解決不能）では何もしない。
-// ---------------------------------------------
-function StdFolders_reconcileAnalyticsFoldersToPhysical_(root, type) {
-  var base = AnalyticsDrive_baseFolderOrNull_(type);
-  if (!base) return { ok: true, skipped: true };
-
-  var result = { migrated: 0, reconciled: 0, folders: 0 };
-
-  // フェーズ1: base 直下のレガシー（folder 非空のフラット保存）を物理フォルダへ移行。
-  var rootFiles = base.getFiles();
-  while (rootFiles.hasNext()) {
-    var rf = rootFiles.next();
-    if (typeof rf.isTrashed === "function" && rf.isTrashed()) continue;
-    if (!StdFolders_isJsonFile_(rf)) continue;
-    var rjson;
-    try { rjson = JSON.parse(rf.getBlob().getDataAsString()); } catch (e) { continue; }
-    if (!rjson || typeof rjson !== "object") continue;
-    var rfolder = Forms_normalizeFolderPath_(rjson.folder);
-    if (rfolder && AnalyticsDrive_moveItemFileToPath_(type, rf.getId(), rfolder)) result.migrated++;
-  }
-
-  // フェーズ2: サブツリーを再帰走査し、物理パスを正に json.folder / drivemap / 登録簿を再構築。
-  var map = {};
-  var physicalPaths = {};
-  StdFolders_walkPhysicalAnalyticsFolders_(base, "", map, physicalPaths, result);
-
-  AnalyticsDrive_savePathMap_(type, map);
-  Analytics_saveFoldersRegistry_(type, Object.keys(physicalPaths));
-  return { ok: true, migrated: result.migrated, reconciled: result.reconciled, folders: result.folders };
-}
-
-// 物理サブツリーを歩き、フォルダパス→ID（map）と物理パス集合（physicalPaths）を集めつつ、
-// 各 .json の json.folder を物理パスに合わせて書き換える（analytics は modifiedAt を ms で更新）。
-function StdFolders_walkPhysicalAnalyticsFolders_(folder, pathPrefix, map, physicalPaths, result) {
-  var subs = folder.getFolders();
-  while (subs.hasNext()) {
-    var sub = subs.next();
-    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
-    var p = pathPrefix ? pathPrefix + "/" + sub.getName() : sub.getName();
-    physicalPaths[p] = true;
-    map[p] = sub.getId();
-    result.folders++;
-
-    var files = sub.getFiles();
-    while (files.hasNext()) {
-      var file = files.next();
-      if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
-      if (!StdFolders_isJsonFile_(file)) continue;
-      var json;
-      try { json = JSON.parse(file.getBlob().getDataAsString()); } catch (e) { continue; }
-      if (!json || typeof json !== "object") continue;
-      if (Forms_normalizeFolderPath_(json.folder) !== p) {
-        json.folder = p;
-        json.modifiedAt = Date.now();
-        try { file.setContent(JSON.stringify(json, null, 2)); result.reconciled++; } catch (e) { /* non-critical */ }
-      }
-    }
-    StdFolders_walkPhysicalAnalyticsFolders_(sub, p, map, physicalPaths, result);
-  }
-}
-
-// ---------------------------------------------
 // マッピングのエクスポート / インポート（手動）
 // ---------------------------------------------
 
@@ -2157,51 +2013,8 @@ function StdFolders_remapFormIdsInQuestions_(folder, idMap, apply, guard, remap)
   }
 }
 
-// ---------------------------------------------
-// (2.5) 同期対象外の物理ファイルの削除（プロジェクト内のオーファン掃除）
-// 論理側（マッピング登録簿）が指す fileId 集合を「同期対象」とし、標準フォルダ
-// （01_forms / 02_questions / 03_dashboards）配下の JSON ファイルのうち、どの登録簿にも
-// 参照されていないもの（= 同期対象外）をゴミ箱へ移す。破壊的なため dryRun（既定）はプレビューのみ。
-// 推奨運用順: 同期（rebuild_map で物理→論理を揃え、登録簿を最新化）→ prune(apply)。
-// ---------------------------------------------
-
-// key サブフォルダ配下（再帰）の JSON ファイルのうち trackedSet に無いものを集める（任意で trash）。
-// 戻り: { scanned, untracked: [{ fileId, name, relPath }], pruned }。
-function StdFolders_collectUntrackedInKey_(root, key, trackedSet, apply, guard) {
-  var res = { scanned: 0, untracked: [], pruned: 0 };
-  var iter = root.getFoldersByName(NFB_STD_FOLDER_NAMES[key]);
-  if (!iter.hasNext()) return res;
-  StdFolders_walkUntracked_(iter.next(), "", key, trackedSet, apply, guard, res);
-  return res;
-}
-
-function StdFolders_walkUntracked_(folder, prefix, key, trackedSet, apply, guard, res) {
-  if (guard && guard.truncated) return;
-  var files = folder.getFiles();
-  while (files.hasNext()) {
-    if (guard && guard.checkTime()) { guard.truncated = true; return; }
-    var file = files.next();
-    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
-    if (!StdFolders_isJsonFile_(file)) continue;
-    res.scanned++;
-    var fileId = file.getId();
-    if (trackedSet[fileId]) continue;
-    res.untracked.push({ fileId: fileId, name: Nfb_nameFromFile_(file), relPath: prefix + file.getName() });
-    if (apply) {
-      try { file.setTrashed(true); res.pruned++; }
-      catch (e) { Logger.log("[StdFolders_walkUntracked_] trash " + fileId + ": " + nfbErrorToString_(e)); }
-    }
-  }
-  var subs = folder.getFolders();
-  while (subs.hasNext()) {
-    if (guard && guard.checkTime()) { guard.truncated = true; return; }
-    var sub = subs.next();
-    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
-    StdFolders_walkUntracked_(sub, prefix + sub.getName() + "/", key, trackedSet, apply, guard, res);
-  }
-}
-
-// 登録簿の fileId 集合（同期対象）を作る。
+// 登録簿の fileId 集合（同期対象）を作る。整合エンジン classifyOrphans_ が
+// 「登録済みファイル」を判定するために使う。
 function StdFolders_trackedFileIdSet_(mapping) {
   var set = {};
   for (var id in mapping) {
@@ -2210,34 +2023,6 @@ function StdFolders_trackedFileIdSet_(mapping) {
     if (fid) set[fid] = true;
   }
   return set;
-}
-
-// forms / questions / dashboards の各標準フォルダで、登録簿に無い JSON ファイルをゴミ箱へ。
-// dryRun（既定）はプレビューのみ。mode:"apply" で実行。
-function StdFolders_pruneUntrackedFiles_(payload) {
-  return nfbSafeCall_(function() {
-    var apply = !!(payload && (payload.mode === "apply" || payload.apply === true));
-    var manualRootUrl = payload && payload.rootUrl ? String(payload.rootUrl).trim() : "";
-    var root = StdFolders_resolveRootFolder_(manualRootUrl);
-
-    var startMs = (new Date()).getTime();
-    var guard = { truncated: false, checkTime: function() { return ((new Date()).getTime() - startMs) > 300000; } };
-
-    var forms = StdFolders_collectUntrackedInKey_(root, "forms", StdFolders_trackedFileIdSet_(Forms_getMapping_()), apply, guard);
-    var questions = StdFolders_collectUntrackedInKey_(root, "questions", StdFolders_trackedFileIdSet_(Analytics_getMapping_("questions")), apply, guard);
-    var dashboards = StdFolders_collectUntrackedInKey_(root, "dashboards", StdFolders_trackedFileIdSet_(Analytics_getMapping_("dashboards")), apply, guard);
-
-    return {
-      ok: true,
-      mode: apply ? "apply" : "dryRun",
-      forms: forms,
-      questions: questions,
-      dashboards: dashboards,
-      totalUntracked: forms.untracked.length + questions.untracked.length + dashboards.untracked.length,
-      totalPruned: forms.pruned + questions.pruned + dashboards.pruned,
-      truncated: guard.truncated
-    };
-  });
 }
 
 // =============================================
@@ -2578,7 +2363,6 @@ function nfbEnsureStdFolders(payload)        { return Nfb_runScriptAction_("std_
 function nfbBuildLinkReport(payload)         { return Nfb_runScriptAction_("std_folders_link_report", payload || {}); }
 function nfbRelinkReferences(payload)        { return Nfb_runScriptAction_("std_folders_relink_refs", payload || {}); }
 function nfbDedupeForms(payload)             { return Nfb_runScriptAction_("std_folders_dedupe_forms", payload || {}); }
-function nfbPruneUntrackedFiles(payload)     { return Nfb_runScriptAction_("std_folders_prune_untracked", payload || {}); }
 
 // 現在のルートフォルダ情報を返す（診断用）。未解決でも例外にせず resolved:false を返す。
 function StdFolders_getRootInfo_() {
