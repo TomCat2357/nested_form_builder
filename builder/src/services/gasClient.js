@@ -221,8 +221,6 @@ export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyW
   const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks, rebuildMapping }, "システムごとコピーに失敗しました");
   return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, unresolvedQuestionLinks: r.unresolvedQuestionLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), appsScriptCopyError: r.appsScriptCopyError || "", message: r.message || "" };
 };
-// 既リンク資産のうち標準フォルダ構成外のものを構成内へコピーした結果のデフォルト形。
-const emptyNormalized = () => ({ forms: { count: 0 }, questions: { count: 0 }, dashboards: { count: 0 }, cascadedQuestions: 0, total: 0 });
 // 整合同期（フォルダ走査）。論理 L を正に 6 ケースで forms/questions/dashboards を整合する。
 //   ①一致 / ②P≠L→移動or外部コピー / ③同名別id再採用 / ④未発見→エラー / ⑤有効オーファン登録 / ⑥不正候補
 //   applyDelete=true で ⑥ 候補を実際にゴミ箱へ（既定は候補収集のみ）。
@@ -253,9 +251,10 @@ export const exportMapping = async () => {
   return r.mapping;
 };
 // マッピングをインポート（マージ）。url 非空ならその Drive ファイル、空ならルート直下の最新 .json を読む。
+// インポートは純粋なマージのみ。取り込んだエントリの物理整列・リンク修復は「同期（フォルダ走査）」の責務。
 export const importMapping = async (url = "") => {
   const r = await fetchGasApi("nfbImportMapping", { url }, "マッピングのインポートに失敗しました");
-  return { imported: r.imported || {}, skipped: r.skipped || 0, errors: r.errors || [], normalized: r.normalized || emptyNormalized() };
+  return { imported: r.imported || {}, skipped: r.skipped || 0, errors: r.errors || [] };
 };
 // 現在解決されるルートフォルダ情報を取得（診断用）。
 export const getStdFolderRoot = async () => {

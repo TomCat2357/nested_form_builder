@@ -214,31 +214,6 @@ function StdFolders_ensureFileInStdFolder_(fileId, key) {
   }
 }
 
-// ---------------------------------------------
-// 既リンク資産の標準フォルダ正規化スイープ
-// インポート / 同期の実行時に、既にマッピング登録済み（= 既リンク）の
-// フォーム・Question・Dashboard を走査し、ファイル本体が標準フォルダ構成の外に
-// あるものは該当サブフォルダへ「移動」（fileId 保持。移動不可時のみコピー）して、
-// マッピングのリンクを揃える。fileId が保持されればマッピング・参照は壊れない。
-// Dashboard を取り込むときは、その cards[].questionId が指す Question も構成内か確認し、
-// 構成外なら同様に取り込む（連動取り込み）。
-// ---------------------------------------------
-
-// mapping entry の参照ファイルを key サブフォルダ内へ揃える。
-// 構成内ならそのまま { changed:false }。fileId 保持の移動でも URL は不変なので変更なし。
-// 移動不可でコピーが発生し fileId が変わったときだけ { changed:true, newFileId, newUrl }
-// を返す（呼び出し側で entry を更新する）。ルート未解決等で何もできなかった場合は changed:false（安全側）。
-function StdFolders_ensureMappingEntryInStd_(entry, key) {
-  var oldFileId = Nfb_resolveFileIdFromEntry_(entry);
-  if (!oldFileId) return { changed: false };
-  if (StdFolders_isFileInStdSubfolder_(oldFileId, key)) return { changed: false };
-  var placed = StdFolders_ensureFileInStdFolder_(oldFileId, key);
-  if (!placed || !placed.fileId || placed.fileId === oldFileId) {
-    return { changed: false };
-  }
-  return { changed: true, newFileId: placed.fileId, newUrl: placed.fileUrl };
-}
-
 // fileId の Drive ファイルが生存しているか（存在しゴミ箱でない）を返す。
 // 取得不能（削除済み・権限喪失など）は false。マッピングの壊れたリンク判定に使う。
 function StdFolders_isFileIdAlive_(fileId) {
@@ -249,185 +224,6 @@ function StdFolders_isFileIdAlive_(fileId) {
   } catch (e) {
     return false;
   }
-}
-
-// key サブフォルダ（例 01_forms）配下の JSON を（サブフォルダ含め再帰的に）走査し、
-// 各ファイルのファイル名（.json 除去）をキーに { name: { fileId, fileUrl } } のインデックスを返す。
-// id ＝ fileId / 名前 ＝ ファイル名 へ統一したため、壊れたリンク（参照 fileId 消失）の
-// 再リンク先はキャッシュ名で名前解決する。同名が複数あれば先勝ち。ルート未解決時は空。
-function StdFolders_indexStdFolderByName_(key) {
-  var index = {};
-  try {
-    var root = StdFolders_resolveRootFolder_(null);
-    var sub = StdFolders_getOrCreateSubfolder_(root, key);
-    StdFolders_indexFolderByNameRecursive_(sub, index);
-  } catch (err) {
-    Logger.log("[StdFolders_indexStdFolderByName_] " + key + ": " + nfbErrorToString_(err));
-  }
-  return index;
-}
-
-function StdFolders_indexFolderByNameRecursive_(folder, index) {
-  var files = folder.getFiles();
-  while (files.hasNext()) {
-    var file = files.next();
-    if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
-    if (!StdFolders_isJsonFile_(file)) continue;
-    var name = Nfb_nameFromFileName_(file.getName());
-    if (name && !index[name]) index[name] = { fileId: file.getId(), fileUrl: file.getUrl() };
-  }
-  var subs = folder.getFolders();
-  while (subs.hasNext()) {
-    var sub = subs.next();
-    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
-    StdFolders_indexFolderByNameRecursive_(sub, index);
-  }
-}
-
-// mapping[id] の 1 エントリを修復する。戻り値: "normalized" | "relinked" | "removed" | "none"。
-//   - 参照ファイルが生存: 従来どおり構成外なら std サブフォルダへコピーして張替え（"normalized"）。
-//   - 壊れたリンク: 埋め込み id インデックス（indexProvider() で遅延取得）に同 id があれば
-//     そのファイルへ再リンク（"relinked"）、無ければ mapping から削除（"removed"）。
-// 変更が成立したら onChange(id, entry) を呼ぶ（削除時は呼ばない）。
-function StdFolders_repairMappingEntry_(mapping, id, key, indexProvider, onChange) {
-  var entry = mapping[id];
-  if (!entry) return "none";
-  var oldFileId = Nfb_resolveFileIdFromEntry_(entry);
-  if (oldFileId && StdFolders_isFileIdAlive_(oldFileId)) {
-    var r = StdFolders_ensureMappingEntryInStd_(entry, key);
-    if (r.changed) {
-      entry.fileId = r.newFileId;
-      entry.driveFileUrl = r.newUrl;
-      if (onChange) onChange(id, entry);
-      return "normalized";
-    }
-    return "none";
-  }
-  // ここから壊れたリンク（参照ファイルが取得不能 / ゴミ箱）。
-  // id ＝ fileId なので、キャッシュした名前（title/name）で標準フォルダを名前解決し、
-  // 生きているファイルが見つかれば その fileId をキーに張り替える（id を再採用）。
-  var cachedName = entry.title || entry.name || "";
-  var hit = cachedName ? indexProvider()[cachedName] : null;
-  if (hit) {
-    delete mapping[id];
-    entry.fileId = hit.fileId;
-    entry.driveFileUrl = hit.fileUrl;
-    mapping[hit.fileId] = entry;
-    if (onChange) onChange(hit.fileId, entry);
-    return "relinked";
-  }
-  delete mapping[id];
-  return "removed";
-}
-
-// mapping 全体を走査して修復・正規化する。戻り: { normalized, relinked, removed, removedIds }。
-// インデックスは壊れたリンクが出たときだけ一度だけ生成する（無駄な Drive 走査を避ける）。
-function StdFolders_repairAndNormalizeMapping_(mapping, key, onChange) {
-  var counts = { normalized: 0, relinked: 0, removed: 0, removedIds: [] };
-  var cachedIndex = null;
-  var provider = function() {
-    if (cachedIndex === null) cachedIndex = StdFolders_indexStdFolderByName_(key);
-    return cachedIndex;
-  };
-  for (var id in mapping) {
-    if (!mapping.hasOwnProperty(id)) continue;
-    var outcome = StdFolders_repairMappingEntry_(mapping, id, key, provider, onChange);
-    if (outcome === "normalized") counts.normalized++;
-    else if (outcome === "relinked") counts.relinked++;
-    else if (outcome === "removed") { counts.removed++; counts.removedIds.push(id); }
-  }
-  return counts;
-}
-
-// Dashboard ファイル JSON から cards[].questionId を集めて out（id の集合）へ追加する。
-function StdFolders_collectDashboardQuestionIds_(fileId, out) {
-  try {
-    var file = DriveApp.getFileById(fileId);
-    var json = JSON.parse(file.getBlob().getDataAsString());
-    if (json && Array.isArray(json.cards)) {
-      for (var i = 0; i < json.cards.length; i++) {
-        var card = json.cards[i];
-        if (card && typeof card.questionId === "string" && card.questionId) {
-          out[card.questionId] = true;
-        }
-      }
-    }
-  } catch (err) {
-    Logger.log("[StdFolders_collectDashboardQuestionIds_] " + fileId + ": " + nfbErrorToString_(err));
-  }
-}
-
-// 既リンクのフォームを 01_forms へ揃え、壊れたリンクは再リンク／削除する。
-// 変更時は AddFormUrl_ も新 URL で更新（forms はマッピングが URL 登録簿を兼ねる）。
-function StdFolders_normalizeFormsToStd_() {
-  var mapping = Forms_getMapping_();
-  var res = StdFolders_repairAndNormalizeMapping_(mapping, "forms", function(id, entry) {
-    try { if (entry.driveFileUrl) AddFormUrl_(id, entry.driveFileUrl); } catch (e) { /* non-critical */ }
-  });
-  if (res.normalized > 0 || res.relinked > 0 || res.removed > 0) Forms_saveMapping_(mapping);
-  return { count: res.normalized, relinked: res.relinked, removed: res.removed };
-}
-
-// 既リンクの Question / Dashboard を 02_questions / 03_dashboards へ揃え、壊れたリンクは再リンク／削除する。
-// Dashboard を揃え／再リンクしたときは、そのコピー先 JSON から linkedQuestionIds を収集して返す。
-function StdFolders_normalizeAnalyticsToStd_(type) {
-  var key = type === "questions" ? "questions" : "dashboards";
-  var mapping = Analytics_getMapping_(type);
-  var linkedQuestionIds = {};
-  var onChange = type === "dashboards"
-    ? function(id, entry) { StdFolders_collectDashboardQuestionIds_(entry.fileId, linkedQuestionIds); }
-    : null;
-  var res = StdFolders_repairAndNormalizeMapping_(mapping, key, onChange);
-  if (res.normalized > 0 || res.relinked > 0 || res.removed > 0) Analytics_saveMapping_(type, mapping);
-  return { count: res.normalized, relinked: res.relinked, removed: res.removed, linkedQuestionIds: linkedQuestionIds };
-}
-
-// 既リンク資産（forms / questions / dashboards）を標準フォルダ構成へ正規化する。
-// 戻り値: { forms:{count}, questions:{count}, dashboards:{count}, cascadedQuestions, total }
-function StdFolders_normalizeLinkedToStd_() {
-  var forms = StdFolders_normalizeFormsToStd_();
-  var questions = StdFolders_normalizeAnalyticsToStd_("questions");
-  var dashboards = StdFolders_normalizeAnalyticsToStd_("dashboards");
-
-  // ダッシュボード連動: コピーされた Dashboard のリンク先 Question を取りこぼし救済する。
-  // （Question 単体のスイープで大半は揃うため、ここは保険。重複コピーは isFileInStdSubfolder で防止。）
-  var cascadedQuestions = 0;
-  var cascadeRelinked = 0;
-  var cascadeRemoved = 0;
-  var linked = dashboards.linkedQuestionIds || {};
-  var hasLinked = false;
-  for (var probeId in linked) { if (linked.hasOwnProperty(probeId)) { hasLinked = true; break; } }
-  if (hasLinked) {
-    var qMapping = Analytics_getMapping_("questions");
-    var cachedQIndex = null;
-    var qProvider = function() {
-      if (cachedQIndex === null) cachedQIndex = StdFolders_indexStdFolderByName_("questions");
-      return cachedQIndex;
-    };
-    var touched = false;
-    for (var questionId in linked) {
-      if (!linked.hasOwnProperty(questionId)) continue;
-      if (!qMapping[questionId]) continue;
-      var outcome = StdFolders_repairMappingEntry_(qMapping, questionId, "questions", qProvider, null);
-      if (outcome === "normalized") { cascadedQuestions++; touched = true; }
-      else if (outcome === "relinked") { cascadeRelinked++; touched = true; }
-      else if (outcome === "removed") { cascadeRemoved++; touched = true; }
-    }
-    if (touched) Analytics_saveMapping_("questions", qMapping);
-  }
-
-  var relinked = (forms.relinked || 0) + (questions.relinked || 0) + (dashboards.relinked || 0) + cascadeRelinked;
-  var removed = (forms.removed || 0) + (questions.removed || 0) + (dashboards.removed || 0) + cascadeRemoved;
-
-  return {
-    forms: { count: forms.count },
-    questions: { count: questions.count },
-    dashboards: { count: dashboards.count },
-    cascadedQuestions: cascadedQuestions,
-    relinked: relinked,
-    removed: removed,
-    total: forms.count + questions.count + dashboards.count + cascadedQuestions
-  };
 }
 
 // ---------------------------------------------
@@ -953,10 +749,11 @@ function StdFolders_importMapping_(doc) {
   if (Array.isArray(folders.questions)) Analytics_saveFoldersRegistry_("questions", Analytics_getFolders_("questions").concat(folders.questions));
   if (Array.isArray(folders.dashboards)) Analytics_saveFoldersRegistry_("dashboards", Analytics_getFolders_("dashboards").concat(folders.dashboards));
 
-  // 既リンク資産のうち構成外のものを標準フォルダへコピーして揃える。
-  var normalized = StdFolders_normalizeLinkedToStd_();
-
-  return { ok: true, imported: imported, skipped: skipped, errors: errors, normalized: normalized };
+  // インポートは「マッピング JSON のマージ」のみを行う純粋な操作。
+  // 取り込んだエントリの物理配置（標準フォルダへの整列）や壊れたリンクの修復は、
+  // 整合エンジン（同期＝std_folders_rebuild_map / alignFolders_）の責務に一本化したため
+  // ここでは行わない。インポート後に「同期（フォルダ走査）」を実行して揃える。
+  return { ok: true, imported: imported, skipped: skipped, errors: errors };
 }
 
 // インポートのソースを解決して取り込む。
