@@ -27,7 +27,8 @@ import DashboardFilterBar from "../../features/analytics/components/DashboardFil
 import SimpleFilterBar from "../../features/analytics/components/SimpleFilterBar.jsx";
 import DashboardCardFilterMappingDialog from "../../features/analytics/components/DashboardCardFilterMappingDialog.jsx";
 import { buildAppUrl } from "../../utils/appUrl.js";
-import { normalizeFolderPath } from "../../utils/folderTree.js";
+import { normalizeFolderPath, joinFolderPath } from "../../utils/folderTree.js";
+import SearchableSelect from "../../app/components/SearchableSelect.jsx";
 
 // フォーム schema の列型 ("number"|"date"|"string"|"boolean"|"unknown") を
 // 簡易フィルタの valueType ("number"|"date"|"text") へマップする。
@@ -621,22 +622,13 @@ export default function DashboardEditorPage() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <label className="nf-label" style={{ marginBottom: 0 }}>カード</label>
             <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-              <select
-                className="nf-input"
-                onChange={(e) => {
-                  if (e.target.value) {
-                    handleAddCard(e.target.value);
-                    e.target.value = "";
-                  }
-                }}
-                defaultValue=""
-                style={{ fontSize: 12 }}
-              >
-                <option value="">+ Question を選んで追加</option>
-                {questions.map((q) => (
-                  <option key={q.id} value={q.id}>{q.name || q.id}</option>
-                ))}
-              </select>
+              <SearchableSelect
+                value=""
+                onChange={(v) => { if (v) handleAddCard(v); }}
+                placeholder="+ Question を選んで追加"
+                options={questions.map((q) => ({ value: q.id, label: joinFolderPath(q.folder, q.name) || q.id, folder: q.folder || "" }))}
+                selectStyle={{ fontSize: 12 }}
+              />
               <button
                 type="button"
                 className="nf-btn-outline"

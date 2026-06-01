@@ -8,8 +8,8 @@
  *   - checkboxes: 親列に「選択ラベルを共有 codec で連結した文字列」
  *     （区切り `,`、ラベル内の `,`/`\` はバックスラッシュでエスケープ）。MV_EQ/MV_IN UDF が
  *     同じ codec で分割するので、ラベルにカンマを含んでも集合一致が正しく働く。
- *   - date / datetime / time: canonical 文字列（date=YYYY/MM/DD / time=HH:mm:ss.SSS /
- *     datetime=YYYY/MM/DD HH:mm:ss.SSS）に整形。
+ *   - date / datetime / time: canonical 文字列（date=YYYY-MM-DD / time=HH:mm:ss.SSS /
+ *     datetime=YYYY-MM-DD_HH:mm:ss.SSS、日付↔時刻は `_` 区切り）に整形。
  *   - number: Number 強制。
  *   - その他: data[pipePath] 素通し。
  *   - メタ列: id / No_ / createdAt / modifiedAt / createdBy / modifiedBy / deletedAt / deletedBy

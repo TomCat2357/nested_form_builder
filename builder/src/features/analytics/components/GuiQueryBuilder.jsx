@@ -1,6 +1,7 @@
 import React from "react";
 import { AGG_TYPE_MATRIX, ALL_COLUMNS_TOKEN, resolveColumnType } from "../utils/aggregationCompatibility.js";
 import { formQualifiedName } from "../utils/formIdentifierResolver.js";
+import SearchableSelect from "../../../app/components/SearchableSelect.jsx";
 
 const AGG_LABELS = {
   count: "件数 (COUNT *)",
@@ -146,12 +147,13 @@ export default function GuiQueryBuilder({ gui, onChange, formColumns, activeForm
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <section>
         <label className="nf-label">データソース（単一フォーム）</label>
-        <select className="nf-input" value={gui.formId || ""} onChange={handleFormSelect} style={{ maxWidth: 400 }}>
-          <option value="">フォームを選択...</option>
-          {activeForms.map((f) => (
-            <option key={f.id} value={f.id}>{formQualifiedName(f) || f.id}</option>
-          ))}
-        </select>
+        <SearchableSelect
+          value={gui.formId || ""}
+          onChange={(value) => handleFormSelect({ target: { value } })}
+          placeholder="フォームを選択..."
+          options={activeForms.map((f) => ({ value: f.id, label: formQualifiedName(f) || f.id, folder: f.folder || "" }))}
+          style={{ maxWidth: 400 }}
+        />
       </section>
 
       {gui.formId && (

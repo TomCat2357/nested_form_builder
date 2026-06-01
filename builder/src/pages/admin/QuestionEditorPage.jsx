@@ -16,6 +16,7 @@ import { formRefsToIds, formRefsToNames } from "../../features/analytics/utils/r
 import { compileStages } from "../../features/analytics/utils/compileStages.js";
 import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder.jsx";
 import VisualizePanel from "../../features/analytics/components/VisualizePanel.jsx";
+import SearchableSelect from "../../app/components/SearchableSelect.jsx";
 import { normalizeTableStyle } from "../../features/analytics/utils/tableStyle.js";
 import { DEFAULT_LINE_STYLE } from "../../features/analytics/utils/chartPalette.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
@@ -559,19 +560,13 @@ export default function QuestionEditorPage() {
             <div>
               <label className="nf-label">データソース（既定フォーム・任意）</label>
               <div style={{ display: "flex", alignItems: "flex-start", gap: "16px", flexWrap: "wrap" }}>
-                <select
-                  className="nf-input"
+                <SearchableSelect
                   value={selectedFormId}
-                  onChange={(e) => setSelectedFormId(e.target.value)}
+                  onChange={setSelectedFormId}
+                  placeholder="（未選択：SQL 内で [フォーム名] を直接参照）"
+                  options={activeForms.map((f) => ({ value: f.id, label: formQualifiedName(f) || f.id, folder: f.folder || "" }))}
                   style={{ maxWidth: "400px", flex: "0 0 auto" }}
-                >
-                  <option value="">（未選択：SQL 内で [フォーム名] を直接参照）</option>
-                  {activeForms.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {formQualifiedName(f) || f.id}
-                    </option>
-                  ))}
-                </select>
+                />
                 {selectedFormId && (() => {
                   const f = forms.find((x) => x.id === selectedFormId);
                   if (!f) return null;
