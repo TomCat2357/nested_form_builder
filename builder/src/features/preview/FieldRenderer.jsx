@@ -1,6 +1,7 @@
 import React from "react";
 import { DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
 import { fieldHasValue } from "../../core/fieldValue.js";
+import { formatCanonical } from "../../utils/dateTime.js";
 import { isNumberInputDraftAllowed, validateByPattern } from "../../core/validate.js";
 import { resolveLabelSize, resolveTextColor, resolveStyleSettingsInlineStyle } from "../../core/styleSettings.js";
 import { getStandardPhonePlaceholder } from "../../core/phone.js";
@@ -20,6 +21,11 @@ const resolveConfiguredPlaceholder = (field, fallback = "") => {
 };
 
 const getNumberInputMode = (field) => (field?.integerOnly ? "numeric" : "decimal");
+
+// `<input type="date">` は `YYYY-MM-DD`（ハイフン）しか受け付けない。
+// 保存済みレコードの date 値は canonical `YYYY-MM-DD`（ハイフン）なのでそのまま渡せる。
+// パース不能・空値は "" を返し、入力を空表示にする。
+const toDateInputValue = (value) => formatCanonical(value, "date") || "";
 
 const identityFn = (v) => v || "";
 
@@ -278,8 +284,8 @@ const FieldRenderer = ({
       {field.type === "date" && (
         <input
           type="date"
-          value={value ?? ""}
-          onChange={(event) => onChange(event.target.value)}
+          value={toDateInputValue(value)}
+          onChange={(event) => onChange(formatCanonical(event.target.value, "date") ?? "")}
           className={s.input.className}
         />
       )}

@@ -40,34 +40,34 @@ test("idempotent: 二度呼んでも問題なし", () => {
   assert.equal(alasql.fn.DATE, ref);
 });
 
-test("DATE: canonical 文字列 YYYY/MM/DD を返す（補完・切り落とし）", () => {
+test("DATE: canonical 文字列 YYYY-MM-DD を返す（補完・切り落とし）", () => {
   const alasql = makeFakeAlaSql();
   ensureNfbUdfsRegistered(alasql);
   const fn = alasql.fn.DATE;
-  assert.equal(fn("2020-1-1"), "2020/01/01");
-  assert.equal(fn("2020-01-01 23:00:23"), "2020/01/01");
-  assert.equal(fn("2025/01/08"), "2025/01/08");
+  assert.equal(fn("2020-1-1"), "2020-01-01");
+  assert.equal(fn("2020-01-01 23:00:23"), "2020-01-01");
+  assert.equal(fn("2025/01/08"), "2025-01-08"); // 旧スラッシュ入力も受理して canonical 化
   // 数値 msunixtime → その瞬間の JST 日付
-  assert.equal(fn(Date.UTC(2026, 4, 6, 5, 0, 0)), "2026/05/06");
+  assert.equal(fn(Date.UTC(2026, 4, 6, 5, 0, 0)), "2026-05-06");
   // 文字列比較が時系列比較になる
   assert.ok(fn("2025-01-08") < fn("2025-01-09"));
-  // TIME-only 文字列は基準日 1970/01/01 を付与（年月日は適当・UNIX エポック日）
-  assert.equal(fn("13:01:00"), "1970/01/01");
+  // TIME-only 文字列は基準日 1970-01-01 を付与（年月日は適当・UNIX エポック日）
+  assert.equal(fn("13:01:00"), "1970-01-01");
   // 空 / 不正は null
   assert.equal(fn(""), null);
   assert.equal(fn("not a date"), null);
 });
 
-test("DATETIME: canonical 文字列 YYYY/MM/DD HH:mm:ss.SSS を返す（補完・切り落とし、ms までゼロ埋め）", () => {
+test("DATETIME: canonical 文字列 YYYY-MM-DD_HH:mm:ss.SSS を返す（補完・切り落とし、ms までゼロ埋め）", () => {
   const alasql = makeFakeAlaSql();
   ensureNfbUdfsRegistered(alasql);
   const fn = alasql.fn.DATETIME;
-  assert.equal(fn("2020-1-1"), "2020/01/01 00:00:00.000");
-  assert.equal(fn("2020-01-01 22:23:34"), "2020/01/01 22:23:34.000"); // 旧スペース区切り入力も受理
-  assert.equal(fn("2020-01-01_22:23:34"), "2020/01/01 22:23:34.000"); // 旧 `_` 区切り入力も受理
-  assert.equal(fn("2020-01-01_22:23:34.567"), "2020/01/01 22:23:34.567");
-  // TIME-only 文字列は基準日 1970/01/01 を付与
-  assert.equal(fn("13:01:00"), "1970/01/01 13:01:00.000");
+  assert.equal(fn("2020-1-1"), "2020-01-01_00:00:00.000");
+  assert.equal(fn("2020-01-01 22:23:34"), "2020-01-01_22:23:34.000"); // 旧スペース区切り入力も受理
+  assert.equal(fn("2020-01-01_22:23:34"), "2020-01-01_22:23:34.000"); // `_` 区切り canonical 入力
+  assert.equal(fn("2020-01-01_22:23:34.567"), "2020-01-01_22:23:34.567");
+  // TIME-only 文字列は基準日 1970-01-01 を付与
+  assert.equal(fn("13:01:00"), "1970-01-01_13:01:00.000");
   assert.equal(fn(""), null);
 });
 
@@ -80,8 +80,8 @@ test("TIMES/TIMEM/TIMEMS: 秒まで / 分まで / ミリ秒まで（TIMEMS は T
   assert.equal(alasql.fn.TIMEMS(T), "12:34:56.789");
   // 合成: TIME(TIMEM(T)) → ミリ秒まで 0 埋め
   assert.equal(alasql.fn.TIME(alasql.fn.TIMEM(T)), "12:34:00.000");
-  // 合成: DATETIME(TIMEM(T)) → 基準日 1970/01/01
-  assert.equal(alasql.fn.DATETIME(alasql.fn.TIMEM(T)), "1970/01/01 12:34:00.000");
+  // 合成: DATETIME(TIMEM(T)) → 基準日 1970-01-01
+  assert.equal(alasql.fn.DATETIME(alasql.fn.TIMEM(T)), "1970-01-01_12:34:00.000");
   assert.equal(alasql.fn.TIMES(""), null);
   assert.equal(alasql.fn.TIMEM(null), null);
 });

@@ -57,15 +57,15 @@ test("比較 / CASE / IIF（文字列比較は alasql ネイティブ）", () =>
 });
 
 test("日付/和暦 UDF（canonical 文字列）", () => {
-  assert.equal(ev("DATE('2020-1-1')"), "2020/01/01");
-  assert.equal(ev("DATE('2020-01-01 23:00:23')"), "2020/01/01");
-  assert.equal(ev("DATETIME('2020-1-1')"), "2020/01/01 00:00:00.000");
+  assert.equal(ev("DATE('2020-1-1')"), "2020-01-01");
+  assert.equal(ev("DATE('2020-01-01 23:00:23')"), "2020-01-01");
+  assert.equal(ev("DATETIME('2020-1-1')"), "2020-01-01_00:00:00.000");
   assert.equal(ev("TIME('2020-01-01 22:23:34')"), "22:23:34.000");
   assert.equal(ev("YEAR('2025-03-15')"), 2025);
   assert.equal(ev("MONTH('2025-03-15')"), 3);
   assert.equal(ev("TIMESTAMP('00:01:00')"), 60000);
   assert.equal(ev("DATE2ERA('2019-05-01')"), "令和元年5月1日");
-  assert.equal(ev("ERA2DATE('令和元年5月1日')"), "2019/05/01");
+  assert.equal(ev("ERA2DATE('令和元年5月1日')"), "2019-05-01");
   assert.equal(ev("TIME_FORMAT('2025-05-05', 'gge年MM月DD日(ddd)')"), "令和7年05月05日(月)");
 });
 
@@ -76,9 +76,9 @@ test("TIMES / TIMEM / TIMEMS と TIME-only→DATETIME 基準日（フロント�
   assert.equal(ev(`TIMEMS('${T}')`), "12:34:56.789");
   // 合成: TIME(TIMEM(T)) → ミリ秒まで 0 埋め
   assert.equal(ev(`TIME(TIMEM('${T}'))`), "12:34:00.000");
-  // 合成: DATETIME(TIMEM(T)) → 基準日 1970/01/01（UNIX エポック日）
-  assert.equal(ev(`DATETIME(TIMEM('${T}'))`), "1970/01/01 12:34:00.000");
-  assert.equal(ev("DATE('13:01:00')"), "1970/01/01");
+  // 合成: DATETIME(TIMEM(T)) → 基準日 1970-01-01（UNIX エポック日）
+  assert.equal(ev(`DATETIME(TIMEM('${T}'))`), "1970-01-01_12:34:00.000");
+  assert.equal(ev("DATE('13:01:00')"), "1970-01-01");
 });
 
 test("文字列/数値/その他 UDF", () => {

@@ -73,11 +73,11 @@ SEARCH REGEXP_MATCH(`メール`, '(.+)@', 1) = 'admin'
 
 ## 日付型列の比較
 
-`isDateLike` メタが付いた列を日付/時刻リテラル（`YYYY-MM-DD` / `YYYY/MM/DD` / `HH:mm:ss` 等）と比較するとき、preprocessor は両辺を `DATE(...)` で自動ラップする（簡易・厳密どちらでも）。
+`isDateLike` メタが付いた列を日付/時刻リテラル（`YYYY-MM-DD` / `YYYY/MM/DD` / `HH:mm:ss` 等）と比較するとき、preprocessor は**列は丸めず、リテラル側のみ** canonical 文字列に正規化する（簡易・厳密どちらでも）。canonical は日付=ハイフン `YYYY-MM-DD`、日付↔時刻=アンダースコア（`YYYY-MM-DD_HH:mm:ss.SSS`）、時刻=`HH:mm:ss.SSS`。値側（`buildSearchRow` / `entriesToViewTableRows`）も日付/時刻列を同じ canonical 文字列で渡すため、固定幅の辞書順比較がそのまま時系列比較になる。旧スラッシュ/半角スペース入力もハイフン/`_` へ正規化される。
 
 ```text
-販売日 >= 2020-04-01      # → DATE(`販売日`) >= DATE('2020-04-01')
-modifiedAt >= 2026/01/01   # → DATE(`modifiedAt`) >= DATE('2026/01/01')
+販売日 >= 2020-04-01      # → `販売日` >= '2020-04-01'
+modifiedAt >= 2026/01/01   # → `modifiedAt` >= '2026-01-01'（旧スラッシュ入力もハイフンへ正規化）
 ```
 
 ## 関連ファイル

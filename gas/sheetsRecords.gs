@@ -103,7 +103,7 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
   var id = rowData[idIdx] ? String(rowData[idIdx]) : "";
   if (!id) return null;
 
-  // 固定メタ列: JST 文字列 `YYYY/MM/DD HH:mm:ss.SSS` を canonical 表現とする。
+  // 固定メタ列: JST 文字列 `YYYY-MM-DD_HH:mm:ss.SSS` を canonical 表現とする。
   // 旧データ救済: 数値 (Unix ms / Excel シリアル値) や Date が来たら JST 文字列に正規化。
   // *UnixMs 系フィールドは過渡期シム（Plan P5 で廃止予定）。
   var formatDt = function(val) {

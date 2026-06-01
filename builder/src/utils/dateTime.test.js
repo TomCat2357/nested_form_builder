@@ -73,17 +73,17 @@ test("toUnixMs: TZ 指定子なしの日時文字列（`_` / 半角スペース 
 });
 
 test("formatCanonical / formatJstString: TZ 指定子付き ISO はその時差を考慮して JST 表現にする", () => {
-  assert.equal(formatCanonical("2026-05-06T05:35:48Z", "datetime"), "2026/05/06 14:35:48.000");
-  assert.equal(formatCanonical("2026-05-06T14:35:48+09:00", "datetime"), "2026/05/06 14:35:48.000");
-  assert.equal(formatCanonical("2026-05-06T14:35:48", "datetime"), "2026/05/06 14:35:48.000"); // 指定子なしは JST 壁時計
-  assert.equal(formatJstString("2026-05-06T05:35:48Z"), "2026/05/06 14:35:48.000");
-  assert.equal(formatCanonical("2026-05-05T20:00:00Z", "date"), "2026/05/06"); // UTC 5/5 20:00 = JST 5/6 05:00
+  assert.equal(formatCanonical("2026-05-06T05:35:48Z", "datetime"), "2026-05-06_14:35:48.000");
+  assert.equal(formatCanonical("2026-05-06T14:35:48+09:00", "datetime"), "2026-05-06_14:35:48.000");
+  assert.equal(formatCanonical("2026-05-06T14:35:48", "datetime"), "2026-05-06_14:35:48.000"); // 指定子なしは JST 壁時計
+  assert.equal(formatJstString("2026-05-06T05:35:48Z"), "2026-05-06_14:35:48.000");
+  assert.equal(formatCanonical("2026-05-05T20:00:00Z", "date"), "2026-05-06"); // UTC 5/5 20:00 = JST 5/6 05:00
 });
 
 test("formatUnixMsDateTimeSec/formatUnixMsDateTimeMs はJST固定で秒/ミリ秒をゼロ埋め表示する", () => {
-  const unixMs = Date.UTC(2026, 0, 1, 0, 0, 0, 7); // JST: 2026/01/01 09:00:00.007
-  assert.equal(formatUnixMsDateTimeSec(unixMs), "2026/01/01 09:00:00");
-  assert.equal(formatUnixMsDateTimeMs(unixMs), "2026/01/01 09:00:00.007");
+  const unixMs = Date.UTC(2026, 0, 1, 0, 0, 0, 7); // JST: 2026-01-01_09:00:00.007
+  assert.equal(formatUnixMsDateTimeSec(unixMs), "2026-01-01_09:00:00");
+  assert.equal(formatUnixMsDateTimeMs(unixMs), "2026-01-01_09:00:00.007");
 });
 
 test("toStrictUnixMs は13桁のUnix msをそのまま返す", () => {
@@ -145,25 +145,25 @@ test("resolveStrictUnixMs は最初に Unix ms 範囲に該当する候補を返
 // JST 文字列ストレージ形式（Plan P4）
 // ---------------------------------------------------------------------------
 
-test("formatJstString: Unix ms から canonical な YYYY/MM/DD HH:mm:ss.SSS を返す", () => {
+test("formatJstString: Unix ms から canonical な YYYY-MM-DD_HH:mm:ss.SSS を返す", () => {
   // 2026-05-06 14:35:48 JST = 2026-05-06 05:35:48 UTC
   const ms = Date.UTC(2026, 4, 6, 5, 35, 48);
-  assert.equal(formatJstString(ms), "2026/05/06 14:35:48.000");
+  assert.equal(formatJstString(ms), "2026-05-06_14:35:48.000");
 });
 
 test("formatJstString: Date オブジェクトを受ける", () => {
   const ms = Date.UTC(2026, 0, 1, 0, 0, 0); // = 2026-01-01 09:00:00 JST
-  assert.equal(formatJstString(new Date(ms)), "2026/01/01 09:00:00.000");
+  assert.equal(formatJstString(new Date(ms)), "2026-01-01_09:00:00.000");
 });
 
 test("formatJstString: 既存 JST 文字列を canonical に再正規化", () => {
-  // 旧区切り（- / _ / T）や 1 桁月日の入力も受け付け、出力はスラッシュ + 半角スペース区切り
-  assert.equal(formatJstString("2026/5/6 14:35:48"), "2026/05/06 14:35:48.000");
-  assert.equal(formatJstString("2026-05-06_14:35:48"), "2026/05/06 14:35:48.000");
-  assert.equal(formatJstString("2026-05-06T14:35:48"), "2026/05/06 14:35:48.000");
-  assert.equal(formatJstString("2026-5-6"), "2026/05/06 00:00:00.000");
+  // 旧区切り（`/` / 半角スペース / T）や 1 桁月日の入力も受け付け、出力はハイフン + アンダースコア区切り
+  assert.equal(formatJstString("2026/5/6 14:35:48"), "2026-05-06_14:35:48.000");
+  assert.equal(formatJstString("2026-05-06_14:35:48"), "2026-05-06_14:35:48.000");
+  assert.equal(formatJstString("2026-05-06T14:35:48"), "2026-05-06_14:35:48.000");
+  assert.equal(formatJstString("2026-5-6"), "2026-05-06_00:00:00.000");
   // ms 入力もそのまま canonical に反映される
-  assert.equal(formatJstString("2026-05-06_14:35:48.123"), "2026/05/06 14:35:48.123");
+  assert.equal(formatJstString("2026-05-06_14:35:48.123"), "2026-05-06_14:35:48.123");
 });
 
 test("formatJstString: null / 不正値は空文字列", () => {
@@ -199,7 +199,7 @@ test("parseJstString: 不正値は null", () => {
 
 test("nowJstString: 現在時刻が JST 文字列で得られる（ms 付き）", () => {
   const s = nowJstString();
-  assert.match(s, /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/);
+  assert.match(s, /^\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}\.\d{3}$/);
 });
 
 test("jstStringToUnixMs: 双方向変換が一貫している", () => {
@@ -220,17 +220,17 @@ test("JST 文字列は辞書順 = 時系列順", () => {
 // normalizeDateTimeFieldValue: レコード保存時の date / time 正規化
 // ============================================================================
 
-test("normalizeDateTimeFieldValue: date 型は YYYY/MM/DD を返す", () => {
-  assert.equal(normalizeDateTimeFieldValue("2026-03-14", "date"), "2026/03/14");
+test("normalizeDateTimeFieldValue: date 型は YYYY-MM-DD を返す", () => {
+  assert.equal(normalizeDateTimeFieldValue("2026-03-14", "date"), "2026-03-14");
 });
 
 test("normalizeDateTimeFieldValue: date 型は時刻成分を削ぎ落とす", () => {
   // ISO 形式に時刻が混じったケース
-  assert.equal(normalizeDateTimeFieldValue("2026-03-14T15:30:45", "date"), "2026/03/14");
-  // YYYY/MM/DD HH:mm:ss 形式
-  assert.equal(normalizeDateTimeFieldValue("2026/03/14 15:30:45", "date"), "2026/03/14");
+  assert.equal(normalizeDateTimeFieldValue("2026-03-14T15:30:45", "date"), "2026-03-14");
+  // 旧 YYYY/MM/DD HH:mm:ss 形式の入力も受理
+  assert.equal(normalizeDateTimeFieldValue("2026/03/14 15:30:45", "date"), "2026-03-14");
   // JST canonical（YYYY-MM-DD HH:mm:ss）
-  assert.equal(normalizeDateTimeFieldValue("2026-03-14 23:59:59", "date"), "2026/03/14");
+  assert.equal(normalizeDateTimeFieldValue("2026-03-14 23:59:59", "date"), "2026-03-14");
 });
 
 test("normalizeDateTimeFieldValue: time 型は HH:mm:ss を返す", () => {
@@ -263,13 +263,13 @@ test("normalizeDateTimeFieldValue: date / time 以外の型は値をそのまま
 
 test("normalizeDateTimeFieldValue: TZ 反転がない（JST 解釈）", () => {
   // 23:59 を入れて翌日にずれないこと
-  assert.equal(normalizeDateTimeFieldValue("2026-03-14 23:59:59", "date"), "2026/03/14");
+  assert.equal(normalizeDateTimeFieldValue("2026-03-14 23:59:59", "date"), "2026-03-14");
   // 00:00 を入れて前日にずれないこと
-  assert.equal(normalizeDateTimeFieldValue("2026-03-14 00:00:00", "date"), "2026/03/14");
+  assert.equal(normalizeDateTimeFieldValue("2026-03-14 00:00:00", "date"), "2026-03-14");
 });
 
 test("normalizeDateTimeFieldValue: 非パディングの YYYY-M-D も補完される", () => {
-  assert.equal(normalizeDateTimeFieldValue("2020-1-1", "date"), "2020/01/01");
+  assert.equal(normalizeDateTimeFieldValue("2020-1-1", "date"), "2020-01-01");
 });
 
 // ============================================================================
@@ -335,16 +335,16 @@ test("toMsUnixTime: 数値・Date・不正値", () => {
 });
 
 test("formatCanonical: date 型 — 補完と切り落とし", () => {
-  assert.equal(formatCanonical("2020-1-1", "date"), "2020/01/01");
-  assert.equal(formatCanonical("2020-01-01 23:00:23", "date"), "2020/01/01");
-  assert.equal(formatCanonical(Date.UTC(2026, 4, 6, 5, 0, 0), "date"), "2026/05/06");
+  assert.equal(formatCanonical("2020-1-1", "date"), "2020-01-01");
+  assert.equal(formatCanonical("2020-01-01 23:00:23", "date"), "2020-01-01");
+  assert.equal(formatCanonical(Date.UTC(2026, 4, 6, 5, 0, 0), "date"), "2026-05-06");
 });
 
-test("formatCanonical: datetime 型 — 補完と切り落とし（日付はスラッシュ、日付↔時刻は半角スペース、ms までゼロ埋め）", () => {
-  assert.equal(formatCanonical("2020-1-1", "datetime"), "2020/01/01 00:00:00.000");
-  assert.equal(formatCanonical("2020-01-01 22:23:34", "datetime"), "2020/01/01 22:23:34.000"); // 旧スペース区切り入力も受理
-  assert.equal(formatCanonical("2020-01-01_22:23:34", "datetime"), "2020/01/01 22:23:34.000"); // 旧 `_` 区切り入力も受理
-  assert.equal(formatCanonical("2020-01-01_22:23:34.123", "datetime"), "2020/01/01 22:23:34.123");
+test("formatCanonical: datetime 型 — 補完と切り落とし（日付はハイフン、日付↔時刻はアンダースコア、ms までゼロ埋め）", () => {
+  assert.equal(formatCanonical("2020-1-1", "datetime"), "2020-01-01_00:00:00.000");
+  assert.equal(formatCanonical("2020-01-01 22:23:34", "datetime"), "2020-01-01_22:23:34.000"); // 旧スペース区切り入力も受理
+  assert.equal(formatCanonical("2020-01-01_22:23:34", "datetime"), "2020-01-01_22:23:34.000"); // `_` 区切り canonical 入力
+  assert.equal(formatCanonical("2020-01-01_22:23:34.123", "datetime"), "2020-01-01_22:23:34.123");
 });
 
 test("formatCanonical: time 型 — TIME-only / datetime / 数値（ms までゼロ埋め）", () => {
@@ -355,11 +355,11 @@ test("formatCanonical: time 型 — TIME-only / datetime / 数値（ms までゼ
   assert.equal(formatCanonical("13:01:00.456", "time"), "13:01:00.456");
 });
 
-test("formatCanonical: date/datetime に TIME-only 文字列を渡すと基準日 1970/01/01 を付与", () => {
-  assert.equal(formatCanonical("13:01:00", "date"), "1970/01/01");
-  assert.equal(formatCanonical("13:01:00", "datetime"), "1970/01/01 13:01:00.000");
-  // 仕様例: DATETIME(TIMEM(T)) → "1970/01/01 12:34:00.000"
-  assert.equal(formatCanonical("12:34", "datetime"), "1970/01/01 12:34:00.000");
+test("formatCanonical: date/datetime に TIME-only 文字列を渡すと基準日 1970-01-01 を付与", () => {
+  assert.equal(formatCanonical("13:01:00", "date"), "1970-01-01");
+  assert.equal(formatCanonical("13:01:00", "datetime"), "1970-01-01_13:01:00.000");
+  // 仕様例: DATETIME(TIMEM(T)) → "1970-01-01_12:34:00.000"
+  assert.equal(formatCanonical("12:34", "datetime"), "1970-01-01_12:34:00.000");
 });
 
 test("formatCanonical: times/timem/timems の切り落とし・合成", () => {

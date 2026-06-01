@@ -193,7 +193,7 @@ var NFB_UDF_RENAME_TABLE_ = [
   // DATE/DATETIME/TIME 型整備（仕様改定）: 廃止・改名された日付 UDF
   //   DATETIME2ERA → DATETIME2ERATIME（注: 出力書式が「令和7年5月6日 14:35:48」→
   //     「令和7年5月6日 14時35分48秒」に変わる。和暦+時刻という意味は同じ。日付↔時刻は半角スペース）
-  //   ERA2DATETIME → ERATIME2DATETIME（戻り値は unix ms → "YYYY/MM/DD HH:mm:ss.SSS" 文字列に変化）
+  //   ERA2DATETIME → ERATIME2DATETIME（戻り値は unix ms → "YYYY-MM-DD_HH:mm:ss.SSS" 文字列に変化）
   //   DATE_BIN(x,n) は廃止 → SUBSTRING(DATETIME(x),1,n) に展開
   //   TIME_SECONDS(x) は廃止 → (HOUR(x)*3600 + MINUTE(x)*60 + SECOND(x)) に展開
   { from: "DATETIME2ERA", to: "DATETIME2ERATIME" },

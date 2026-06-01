@@ -12,13 +12,13 @@ test("buildSimpleFilterClauses は number 型の min/max を Number クローズ
   ]);
 });
 
-test("buildSimpleFilterClauses は date 型を canonical YYYY/MM/DD に正規化する", () => {
+test("buildSimpleFilterClauses は date 型を canonical YYYY-MM-DD に正規化する", () => {
   const simpleFilters = [{ id: "f1", column: "uketsukebi", valueType: "date" }];
   const values = { f1: { min: "2026-01-01", max: "2026-03-31" } };
   const clauses = buildSimpleFilterClauses(simpleFilters, values);
   assert.deepEqual(clauses, [
-    { col: "uketsukebi", comparator: ">=", value: "2026/01/01" },
-    { col: "uketsukebi", comparator: "<=", value: "2026/03/31" },
+    { col: "uketsukebi", comparator: ">=", value: "2026-01-01" },
+    { col: "uketsukebi", comparator: "<=", value: "2026-03-31" },
   ]);
 });
 
@@ -81,7 +81,7 @@ test("buildSimpleFilterClauses は 3 項目を AND 用クローズ配列とし�
   const clauses = buildSimpleFilterClauses(simpleFilters, values);
   assert.deepEqual(clauses, [
     { col: "a", comparator: ">=", value: 1 },
-    { col: "b", comparator: ">=", value: "2026/01/01" },
+    { col: "b", comparator: ">=", value: "2026-01-01" },
     { col: "c", comparator: "<=", value: "z" },
   ]);
 });

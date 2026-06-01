@@ -156,6 +156,19 @@ test("emit: 列指定の正規表現 / 真偽 / 空欄 / 比較 / 集合分解",
   assert.equal(emit("対象種 not in (カラス)"), "NOT MV_IN(`対象種`, 'カラス')");
 });
 
+test("emit: 日付列の COMPARE はリテラルを canonical（ハイフン日付・`_` 区切り）へ正規化する", () => {
+  const cols = [
+    { key: "display:販売日", path: "販売日", sourceType: "date", searchable: true },
+  ];
+  const emit = (q) => buildSimpleSearchExpression(q, cols).expr;
+  // スラッシュ入力 → ハイフン canonical（表示列も canonical 文字列なので生文字列比較で一致する）
+  assert.equal(emit("販売日>=2026/04/01"), "`販売日` >= '2026-04-01'");
+  // 日付 + 時刻 → 区切りはアンダースコア
+  assert.equal(emit("販売日>=2026/04/01 09:00"), "`販売日` >= '2026-04-01_09:00'");
+  // ハイフン入力はそのまま canonical
+  assert.equal(emit("販売日>=2026-04-01"), "`販売日` >= '2026-04-01'");
+});
+
 test("emit: AND / OR / NOT の構造", () => {
   const cols = [
     { key: "display:氏名", path: "氏名", sourceType: "text", searchable: true },

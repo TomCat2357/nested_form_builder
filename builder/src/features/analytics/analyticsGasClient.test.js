@@ -37,14 +37,14 @@ test("各メソッドは正しい GAS 関数名と引数で呼ぶ", async () => 
 
   await analyticsGasClient.listQuestions({ a: 1 });
   await analyticsGasClient.getDashboard("d_1");
-  await analyticsGasClient.saveQuestion({ id: "q_1" }, "https://x/folders/abc");
+  await analyticsGasClient.saveQuestion({ id: "q_1" });
   await analyticsGasClient.deleteDashboards(["d_1", "d_2"]);
   await analyticsGasClient.archiveQuestion("q_1");
   await analyticsGasClient.registerImportedDashboard({ p: 1 });
 
   assert.deepEqual(calls[0], { fn: "nfbListAnalyticsQuestions", args: [{ a: 1 }] });
   assert.deepEqual(calls[1], { fn: "nfbGetAnalyticsDashboard", args: ["d_1"] });
-  assert.deepEqual(calls[2], { fn: "nfbSaveAnalyticsQuestion", args: [{ question: { id: "q_1" }, targetUrl: "https://x/folders/abc" }] });
+  assert.deepEqual(calls[2], { fn: "nfbSaveAnalyticsQuestion", args: [{ question: { id: "q_1" } }] });
   assert.deepEqual(calls[3], { fn: "nfbDeleteAnalyticsDashboards", args: [["d_1", "d_2"]] });
   assert.deepEqual(calls[4], { fn: "nfbArchiveAnalyticsQuestion", args: ["q_1"] });
   assert.deepEqual(calls[5], { fn: "nfbRegisterImportedAnalyticsDashboard", args: [{ p: 1 }] });

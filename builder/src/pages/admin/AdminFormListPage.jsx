@@ -488,10 +488,10 @@ export default function AdminFormListPage() {
         title={confirmDelete.folderPaths?.length ? "フォルダを削除" : "フォームを削除"}
         message={
           confirmDelete.folderPaths?.length
-            ? `選択したフォルダを削除します。中の ${confirmDelete.folderFormCount} 個のフォームも併せて削除されますがよろしいですか？（フォームファイル自体はDriveに残ります）`
+            ? `選択したフォルダを削除します。中の ${confirmDelete.folderFormCount} 個のフォームも併せて削除します（プロジェクト内のフォームは Drive 上の実体ごと、プロジェクト外＝外部リンクはリンク解除のみ）。よろしいですか？`
             : confirmDelete.multiple
-              ? "選択したフォームのリンクを管理一覧から外します。フォームファイル自体は削除されません。よろしいですか？"
-              : "このフォームのリンクを管理一覧から外します。フォームファイル自体は削除されません。よろしいですか？"
+              ? "選択したフォームを削除します。プロジェクト内のフォームは Drive 上の実体ごと削除し、プロジェクト外（外部リンク）はリンク解除のみ行います。よろしいですか？"
+              : "このフォームを削除します。プロジェクト内のフォームは Drive 上の実体ごと削除し、プロジェクト外（外部リンク）はリンク解除のみ行います。よろしいですか？"
         }
         options={[
           {

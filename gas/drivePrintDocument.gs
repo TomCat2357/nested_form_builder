@@ -244,5 +244,5 @@ function nfbFormatPrintDocumentExportedAt_(value) {
   if (!(date instanceof Date) || isNaN(date.getTime())) {
     date = new Date();
   }
-  return Utilities.formatDate(date, NFB_TZ, "yyyy/MM/dd HH:mm:ss");
+  return Utilities.formatDate(date, NFB_TZ, "yyyy-MM-dd_HH:mm:ss");
 }

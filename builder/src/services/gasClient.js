@@ -163,9 +163,9 @@ export const getForm = async (formId) => {
   const r = await fetchGasApi("nfbGetForm", formId, "Get form failed");
   return r.form || null;
 };
-export const saveForm = async (form, targetUrl = null, saveMode = "auto") => {
+export const saveForm = async (form, saveMode = "auto") => {
   if (!form || !form.id) throw new Error("Form with ID is required");
-  const r = await fetchGasApi("nfbSaveForm", { form, targetUrl, saveMode }, "Save form failed");
+  const r = await fetchGasApi("nfbSaveForm", { form, saveMode }, "Save form failed");
   return { form: r.form, fileUrl: r.fileUrl };
 };
 export const copyForm = async (formId) => {

@@ -2,10 +2,15 @@
 // Analytics CRUD — Question / Dashboard list / get / save / delete / archive
 // =============================================
 
+// 同一物理ファイル（fileId）を指す mapping キーが複数あるときの自己修復は、
+// Forms / Analytics 共通の Nfb_dedupeMappingByFileId_（formsCrud.gs）へ集約した。
+
 function Analytics_listTemplates_(type, options) {
   return nfbSafeCall_(function() {
     var includeArchived = !!(options && options.includeArchived);
     var mapping = Analytics_getMapping_(type);
+    // 既存の二重登録（旧 ULID キー + fileId キーが同一ファイルを指す）を畳んでから一覧化する。
+    if (Nfb_dedupeMappingByFileId_(mapping)) Analytics_saveMapping_(type, mapping);
     var items = [];
     var loadFailures = [];
 
@@ -168,6 +173,9 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
       if (!mapping.hasOwnProperty(otherId)) continue;
       if (otherId === existingId) continue; // 自分自身は除外
       var otherEntry = mapping[otherId] || {};
+      // 二重登録が残っている場合、同一物理ファイルを指す別名キー（旧 ULID 等）も
+      // 自分扱いで除外する。除外しないと自分の名前と衝突して誤って ` (1)` が付く。
+      if (existingFileId && Nfb_resolveFileIdFromEntry_(otherEntry) === existingFileId) continue;
       var otherName = otherEntry.name;
       if (typeof otherName !== "string" || !otherName) {
         // mapping にキャッシュが無いケース。名前 ＝ ファイル名なので実ファイル名から導出する。
@@ -278,6 +286,13 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     }
     fileUrl = file.getUrl();
 
+    // 旧 id キー（例: 移行前の ULID キー）が今回保存した fileId と異なる場合は除去し、
+    // 同一ファイルを指すキーが 2 つ残る二重登録を防ぐ。Analytics_getTemplate_ の
+    // 張り替え（delete mapping[templateId]）と対称。existingFileId は旧キーのエントリから
+    // 解決済みなので、この delete は必ず id 確定後に行う（先に消すと上書き先を解決できない）。
+    if (existingId && existingId !== id && mapping.hasOwnProperty(existingId)) {
+      delete mapping[existingId];
+    }
     // マッピング更新（fileId キー）— name と論理パス folder を中央辞書へ第一級保存
     mapping[id] = {
       fileId: id,
@@ -316,7 +331,8 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
 }
 
 /**
- * 複数テンプレートを削除。マッピングからの除去のみ。Drive ファイルは残す。
+ * 複数テンプレートを削除。プロジェクト内（標準フォルダ構成 02_questions / 03_dashboards 配下）の
+ * 実体は Drive からゴミ箱へ移し、プロジェクト外（外部リンク）はマッピング除去のみ行う。
  */
 function Analytics_deleteTemplates_(type, templateIds) {
   return nfbSafeCall_(function() {
@@ -325,13 +341,18 @@ function Analytics_deleteTemplates_(type, templateIds) {
       throw new Error("IDが指定されていません");
     }
     var mapping = Analytics_getMapping_(type);
+    // type ("questions"/"dashboards") は標準フォルダキーと一致。プロジェクト内判定用に
+    // サブフォルダ ID を一度だけ解決する。ルート未確定なら null → 全件リンク解除のみ（安全側）。
+    var stdSubId = StdFolders_autoFileFolderIdOrNull_(type);
     var deleted = 0;
     for (var i = 0; i < ids.length; i++) {
       var id = ids[i];
-      // Drive 上の実体（Question / Dashboard 定義 JSON）もゴミ箱へ。マッピングが無ければ
-      // id 自体を fileId とみなす（新方式では id === fileId）。
+      // マッピングが無ければ id 自体を fileId とみなす（新方式では id === fileId）。
       var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]) || id;
-      Nfb_trashDriveFileById_(fileId);
+      // プロジェクト内の実体だけゴミ箱へ。プロジェクト外（外部リンク）はリンク解除のみ。
+      if (stdSubId && StdFolders_isFileUnderFolder_(fileId, stdSubId)) {
+        Nfb_trashDriveFileById_(fileId);
+      }
       if (mapping.hasOwnProperty(id)) {
         delete mapping[id];
         deleted += 1;

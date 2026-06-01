@@ -50,9 +50,10 @@ var FORMS_HANDLERS_ = {
   "forms_save": {
     run: function(raw) {
       var form = (raw && (raw.form || raw.formData)) || raw || {};
-      var targetUrl = (raw && (raw.targetUrl || raw.saveUrl)) || null;
       var saveMode = (raw && raw.saveMode) || "auto";
-      return Forms_saveForm_(form, targetUrl, saveMode);
+      // 保存先は標準フォルダ構成（01_forms）固定。外部からの保存先 URL 指定は受け付けない。
+      // copy_to_folder（指定フォルダ複製）は Forms_copyForm_ が内部利用するのみ。
+      return Forms_saveForm_(form, null, saveMode);
     }
   },
   "forms_update": {

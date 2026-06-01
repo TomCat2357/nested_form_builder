@@ -354,7 +354,7 @@ var NfbAlasqlRuntime = (() => {
     const mi = pad2(jstDate.getUTCMinutes());
     const ss = pad2(jstDate.getUTCSeconds());
     const sss = pad3(jstDate.getUTCMilliseconds());
-    return `${yyyy}/${mm}/${dd} ${hh}:${mi}:${ss}.${sss}`;
+    return `${yyyy}-${mm}-${dd}_${hh}:${mi}:${ss}.${sss}`;
   };
   var parseJstString = (str) => {
     if (typeof str !== "string") return null;
@@ -449,9 +449,9 @@ var NfbAlasqlRuntime = (() => {
     }
     if (TIME_KINDS_.has(kind)) return formatTimeParts_(hh, mi, ss, sss, kind);
     if (kind === "date") {
-      return `${pad4(datedParts.year)}/${pad2(datedParts.month)}/${pad2(datedParts.day)}`;
+      return `${pad4(datedParts.year)}-${pad2(datedParts.month)}-${pad2(datedParts.day)}`;
     }
-    return `${pad4(datedParts.year)}/${pad2(datedParts.month)}/${pad2(datedParts.day)} ${pad2(hh)}:${pad2(mi)}:${pad2(ss)}.${pad3(sss)}`;
+    return `${pad4(datedParts.year)}-${pad2(datedParts.month)}-${pad2(datedParts.day)}_${pad2(hh)}:${pad2(mi)}:${pad2(ss)}.${pad3(sss)}`;
   };
 
   // builder/src/utils/multiValue.js
@@ -992,12 +992,12 @@ var NfbAlasqlRuntime = (() => {
     alasql.fn.ERA2DATE = function(text) {
       const p = parseEraFlexible(text);
       if (!p) return null;
-      return `${pad4(p.year)}/${pad2(p.month)}/${pad2(p.day)}`;
+      return `${pad4(p.year)}-${pad2(p.month)}-${pad2(p.day)}`;
     };
     alasql.fn.ERATIME2DATETIME = function(text) {
       const p = parseEraFlexible(text);
       if (!p) return null;
-      return `${pad4(p.year)}/${pad2(p.month)}/${pad2(p.day)} ${pad2(p.hour)}:${pad2(p.minute)}:${pad2(p.second)}.${pad3(p.ms || 0)}`;
+      return `${pad4(p.year)}-${pad2(p.month)}-${pad2(p.day)}_${pad2(p.hour)}:${pad2(p.minute)}:${pad2(p.second)}.${pad3(p.ms || 0)}`;
     };
     alasql.aggr.STR_MAX = function(value, accumulator, stage) {
       if (stage === 1) return value === null || value === void 0 ? void 0 : value;

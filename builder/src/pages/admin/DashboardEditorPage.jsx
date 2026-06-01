@@ -27,7 +27,6 @@ import SimpleFilterBar from "../../features/analytics/components/SimpleFilterBar
 import DashboardCardFilterMappingDialog from "../../features/analytics/components/DashboardCardFilterMappingDialog.jsx";
 import { buildAppUrl } from "../../utils/appUrl.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
-import LinkTargetUrlField from "../../features/editor/LinkTargetUrlField.jsx";
 
 // フォーム schema の列型 ("number"|"date"|"string"|"boolean"|"unknown") を
 // 簡易フィルタの valueType ("number"|"date"|"text") へマップする。
@@ -52,8 +51,6 @@ export default function DashboardEditorPage() {
   const [loading, setLoading] = useState(!!dashboardId);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-  // 普段は隠している「リンク先URL（保存先）」。指定時のみ保存の targetUrl として渡す。
-  const [linkTargetUrl, setLinkTargetUrl] = useState("");
   const [previewValues, setPreviewValues] = useState({});
   const [simpleFilterPreviewValues, setSimpleFilterPreviewValues] = useState({});
   const [mappingCardId, setMappingCardId] = useState(null);
@@ -373,7 +370,7 @@ export default function DashboardEditorPage() {
     };
 
     try {
-      await saveDashboard(payload, linkTargetUrl.trim() || null);
+      await saveDashboard(payload);
       navigate(location.state?.from || "/admin/dashboards");
     } catch (err) {
       setError(err.message || String(err));
@@ -483,13 +480,6 @@ export default function DashboardEditorPage() {
           <p className="nf-text-11 nf-text-muted nf-mb-0">
             Dashboard 定義は標準フォルダ構成の <code>03_dashboards</code> に保存されます。
           </p>
-
-          <LinkTargetUrlField
-            value={linkTargetUrl}
-            onChange={setLinkTargetUrl}
-            disabled={saving}
-            entityLabel="Dashboard 定義"
-          />
 
           {/* フィルタ定義 */}
           <div>

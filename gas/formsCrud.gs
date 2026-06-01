@@ -13,6 +13,28 @@ function Nfb_resolveFileIdFromEntry_(entry) {
   return null;
 }
 
+// 同一物理ファイル（fileId）を指す mapping キーが複数あるとき 1 つに畳む共通ヘルパ。
+// 旧 ULID キーのまま rename した際に fileId キーが新規追加され、旧キーが残って
+// 一覧が二重化する不具合の自己修復。fileId キー（key === fileId）を優先して残し、
+// それ以外（旧 ULID 等）を除去する。1 キー＝1 ファイルの正常エントリは衝突しないので不変。
+// Forms / Analytics 両方の mapping store で使う。変更があれば true を返す（呼び出し側で永続化する）。
+function Nfb_dedupeMappingByFileId_(mapping) {
+  var keepFor = {};   // fileId -> 残すキー
+  var toDelete = [];
+  for (var k in mapping) {
+    if (!mapping.hasOwnProperty(k)) continue;
+    var fid = Nfb_resolveFileIdFromEntry_(mapping[k]);
+    if (!fid) continue;   // fileId 不明なエントリは触らない（重複判定の対象外）
+    var cur = keepFor[fid];
+    if (cur === undefined) { keepFor[fid] = k; continue; }
+    // 衝突: fileId キー（key === fid）を優先して残し、もう一方を畳む。
+    if (k === fid && cur !== fid) { toDelete.push(cur); keepFor[fid] = k; }
+    else { toDelete.push(k); }
+  }
+  for (var i = 0; i < toDelete.length; i++) delete mapping[toDelete[i]];
+  return toDelete.length > 0;
+}
+
 /**
  * fileId の Drive ファイルをゴミ箱へ移す（既存の setTrashed ベースの削除と統一）。
  * フォーム / クエスチョン / ダッシュボードの削除時に、紐付け解除と併せて実体も削除するために使う。
@@ -292,6 +314,10 @@ function Forms_listForms_(options) {
   var includeArchived = !!(options && options.includeArchived);
 
   var mapping = Forms_getMapping_();
+  // 既存の二重登録（旧 ULID キー + fileId キーが同一ファイルを指す）を畳んでから一覧化する。
+  // 一覧自体は fileId 単位で表示するため見た目は重複しないが、残存した旧キーが再保存時の
+  // 名前ユニーク化を誤らせる（誤った ` (1)` 付与）ため、ここで永続的に掃除する。
+  if (Nfb_dedupeMappingByFileId_(mapping)) Forms_saveMapping_(mapping);
 
   var forms = [];
   var loadFailures = [];
@@ -460,7 +486,8 @@ function Forms_batchGetFiles_(fileIds) {
 
 
 /**
- * 複数フォームを削除（Driveファイルは削除せず、紐付けのみ解除）
+ * 複数フォームを削除。プロジェクト内（標準フォルダ構成 01_forms 配下）の実体は Drive から
+ * ゴミ箱へ移し、プロジェクト外（外部リンク）はマッピング除去のみ行う。
  * @param {Array<string>} formIds
  * @return {Object} { ok: boolean, deleted: number, errors: Array }
  */
@@ -472,15 +499,21 @@ function Forms_deleteForms_(formIds) {
 
   var ids = Nfb_normalizeIdList_(formIds);
   var mapping = Forms_getMapping_();
+  // プロジェクト内判定用に 01_forms サブフォルダ ID を一度だけ解決する。
+  // ルート未確定（dev 等）なら null → 全件プロジェクト外扱い＝リンク解除のみ（実体を消さない安全側）。
+  var stdSubId = StdFolders_autoFileFolderIdOrNull_("forms");
   var deleted = 0;
 
   ids.forEach(function(formId) {
     if (!formId) return;
 
-    // Drive 上の実体（フォーム定義 JSON）もゴミ箱へ。マッピングが無ければ formId 自体を
-    // fileId とみなす（新方式では formId === fileId）。Forms_getForm_ の fileId 解決と同じ規則。
+    // マッピングが無ければ formId 自体を fileId とみなす（新方式では formId === fileId）。
+    // Forms_getForm_ の fileId 解決と同じ規則。
     var fileId = Nfb_resolveFileIdFromEntry_(mapping[formId]) || formId;
-    Nfb_trashDriveFileById_(fileId);
+    // プロジェクト内の実体だけ Drive からゴミ箱へ。プロジェクト外（外部リンク）はリンク解除のみ。
+    if (stdSubId && StdFolders_isFileUnderFolder_(fileId, stdSubId)) {
+      Nfb_trashDriveFileById_(fileId);
+    }
 
     if (mapping.hasOwnProperty(formId)) {
       delete mapping[formId];

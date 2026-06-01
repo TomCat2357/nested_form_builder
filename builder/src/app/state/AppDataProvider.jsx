@@ -245,16 +245,16 @@ export function AppDataProvider({ children }) {
     );
   }, [updateFormsAndCache]);
 
-  const createForm = useCallback(async (payload, targetUrl, saveMode = "auto") => {
+  const createForm = useCallback(async (payload, saveMode = "auto") => {
     // id ＝ Drive fileId へ統一。新規フォームはクライアントで id を採番せず、保存（ファイル作成）
     // 後に GAS が返す fileId を id として採用する。
-    const savedForm = await dataStore.createForm(payload, targetUrl, saveMode);
+    const savedForm = await dataStore.createForm(payload, saveMode);
 
     await upsertFormsState(savedForm);
     return savedForm;
   }, [upsertFormsState]);
 
-  const updateForm = useCallback(async (formId, updates, targetUrl, saveMode = "auto") => {
+  const updateForm = useCallback(async (formId, updates, saveMode = "auto") => {
     const existing = formsRef.current.find((form) => form.id === formId) || {};
     const preparedUpdates = {
       ...updates,
@@ -264,7 +264,7 @@ export function AppDataProvider({ children }) {
       schemaVersion: updates?.schemaVersion ?? existing.schemaVersion,
       driveFileUrl: updates?.driveFileUrl ?? existing.driveFileUrl,
     };
-    const savedForm = await dataStore.updateForm(formId, preparedUpdates, targetUrl, saveMode);
+    const savedForm = await dataStore.updateForm(formId, preparedUpdates, saveMode);
 
     await upsertFormsState(savedForm);
     return savedForm;

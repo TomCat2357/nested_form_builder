@@ -41,7 +41,7 @@ function makeEntityClient(entity) {
   return {
     [`list${E}s`]: (options = {}) => callPlural("List", options, "一覧取得に失敗しました"),
     [`get${E}`]: (id) => call("Get", id, "取得に失敗しました"),
-    [`save${E}`]: (data, targetUrl = null) => call("Save", { [payloadKey]: data, targetUrl }, "保存に失敗しました"),
+    [`save${E}`]: (data) => call("Save", { [payloadKey]: data }, "保存に失敗しました"),
     [`delete${E}`]: (id) => call("Delete", id, "削除に失敗しました"),
     [`delete${E}s`]: (ids) => callPlural("Delete", ids, "削除に失敗しました"),
     [`archive${E}`]: (id) => call("Archive", id, "アーカイブに失敗しました"),

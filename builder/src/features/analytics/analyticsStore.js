@@ -376,9 +376,9 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     return result?.[one] || null;
   }
 
-  async function save(data, targetUrl = null) {
+  async function save(data) {
     if (validateBeforeSave) validateBeforeSave(data);
-    const result = await gas[`save${E}`](data, targetUrl);
+    const result = await gas[`save${E}`](data);
     await cache.upsert(result[one]);
     return result[one];
   }

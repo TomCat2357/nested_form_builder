@@ -83,10 +83,10 @@ test("TIME_FORMAT: TZ 指定子付き ISO はその時差を考慮（→ JST 壁
 
 test("DATE / DATETIME / TIMESTAMP: TZ 指定子付き ISO はその時差を考慮", () => {
   const fn = setup();
-  assert.equal(fn.DATETIME("2026-05-06T05:35:48Z"), "2026/05/06 14:35:48.000");
-  assert.equal(fn.DATETIME("2026-05-06T14:35:48+09:00"), "2026/05/06 14:35:48.000");
-  assert.equal(fn.DATETIME("2026-05-06T14:35:48"), "2026/05/06 14:35:48.000"); // 指定子なし = JST 壁時計
-  assert.equal(fn.DATE("2026-05-05T20:00:00Z"), "2026/05/06"); // UTC 5/5 20:00 = JST 5/6 05:00
+  assert.equal(fn.DATETIME("2026-05-06T05:35:48Z"), "2026-05-06_14:35:48.000");
+  assert.equal(fn.DATETIME("2026-05-06T14:35:48+09:00"), "2026-05-06_14:35:48.000");
+  assert.equal(fn.DATETIME("2026-05-06T14:35:48"), "2026-05-06_14:35:48.000"); // 指定子なし = JST 壁時計
+  assert.equal(fn.DATE("2026-05-05T20:00:00Z"), "2026-05-06"); // UTC 5/5 20:00 = JST 5/6 05:00
   assert.equal(fn.TIMESTAMP("2026-05-06T05:35:48Z"), Date.UTC(2026, 4, 6, 5, 35, 48));
   assert.equal(fn.TIMESTAMP("2026-05-06T14:35:48+09:00"), Date.UTC(2026, 4, 6, 5, 35, 48));
 });
@@ -211,23 +211,23 @@ test("DATETIME2ERATIME: 和暦 + 時/分/秒（時刻 2 桁パディング、常
   assert.equal(fn(""), null);
 });
 
-test("ERA2DATE: 和暦 → YYYY/MM/DD（DATE2ERA の逆。02月/2月・令和1年/令和元年）", () => {
+test("ERA2DATE: 和暦 → YYYY-MM-DD（DATE2ERA の逆。02月/2月・令和1年/令和元年）", () => {
   const fn = setup().ERA2DATE;
-  assert.equal(fn("令和元年5月1日"), "2019/05/01");
-  assert.equal(fn("令和1年05月1日"), "2019/05/01");
-  assert.equal(fn("令和2年4月15日 10時22分00秒"), "2020/04/15"); // 時刻は削除
-  assert.equal(fn("R7.5.6"), "2025/05/06");
-  assert.equal(fn("令和2年"), "2020/01/01"); // 月日省略は 1
+  assert.equal(fn("令和元年5月1日"), "2019-05-01");
+  assert.equal(fn("令和1年05月1日"), "2019-05-01");
+  assert.equal(fn("令和2年4月15日 10時22分00秒"), "2020-04-15"); // 時刻は削除
+  assert.equal(fn("R7.5.6"), "2025-05-06");
+  assert.equal(fn("令和2年"), "2020-01-01"); // 月日省略は 1
   assert.equal(fn("nope"), null);
   assert.equal(fn(""), null);
 });
 
-test("ERATIME2DATETIME: 和暦 → YYYY/MM/DD HH:mm:ss.SSS（部分時刻も解釈。戻り値は DATETIME canonical なので半角スペースと ms）", () => {
+test("ERATIME2DATETIME: 和暦 → YYYY-MM-DD_HH:mm:ss.SSS（部分時刻も解釈。戻り値は DATETIME canonical なのでアンダースコアと ms）", () => {
   const fn = setup().ERATIME2DATETIME;
-  assert.equal(fn("令和元年02月4日 13時"), "2019/02/04 13:00:00.000");
-  assert.equal(fn("令和2年4月15日 10時22分00秒"), "2020/04/15 10:22:00.000");
-  assert.equal(fn("令和7年5月6日 14:35:48"), "2025/05/06 14:35:48.000");
-  assert.equal(fn("令和元年5月1日"), "2019/05/01 00:00:00.000");
+  assert.equal(fn("令和元年02月4日 13時"), "2019-02-04_13:00:00.000");
+  assert.equal(fn("令和2年4月15日 10時22分00秒"), "2020-04-15_10:22:00.000");
+  assert.equal(fn("令和7年5月6日 14:35:48"), "2025-05-06_14:35:48.000");
+  assert.equal(fn("令和元年5月1日"), "2019-05-01_00:00:00.000");
   assert.equal(fn("nope"), null);
 });
 

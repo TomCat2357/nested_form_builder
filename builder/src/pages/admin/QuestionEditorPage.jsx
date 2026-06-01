@@ -18,7 +18,6 @@ import VisualizePanel from "../../features/analytics/components/VisualizePanel.j
 import { normalizeTableStyle } from "../../features/analytics/utils/tableStyle.js";
 import { DEFAULT_LINE_STYLE } from "../../features/analytics/utils/chartPalette.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
-import LinkTargetUrlField from "../../features/editor/LinkTargetUrlField.jsx";
 
 function emptyGui(formId) {
   return {
@@ -71,8 +70,6 @@ export default function QuestionEditorPage() {
   const [driveFileUrl, setDriveFileUrl] = useState("");
   // 新規作成時は一覧で開いていたフォルダ (location.state.folder) を初期フォルダにする。
   const [folder, setFolder] = useState(() => isEdit ? "" : normalizeFolderPath(location.state?.folder || ""));
-  // 普段は隠している「リンク先URL（保存先）」。指定時のみ保存の targetUrl として渡す。
-  const [linkTargetUrl, setLinkTargetUrl] = useState("");
   const [selectedFormId, setSelectedFormId] = useState("");
   const [sql, setSql] = useState("");
   const [gui, setGui] = useState(() => emptyGui(""));
@@ -335,14 +332,14 @@ export default function QuestionEditorPage() {
     };
 
     try {
-      await saveQuestion(question, linkTargetUrl.trim() || null);
+      await saveQuestion(question);
       navigate(location.state?.from || "/admin/questions");
     } catch (err) {
       setSaveError(err.message || String(err));
     } finally {
       setSaving(false);
     }
-  }, [mode, name, folder, gui, sql, buildSqlFormSources, vizType, xField, yFields, heatmap, vizOptions, questionId, navigate, forms, linkTargetUrl]);
+  }, [mode, name, folder, gui, sql, buildSqlFormSources, vizType, xField, yFields, heatmap, vizOptions, questionId, navigate, forms]);
 
   const handleSwitchToSql = () => {
     if (mode === "sql") return;
@@ -506,13 +503,6 @@ export default function QuestionEditorPage() {
         <p className="nf-text-11 nf-text-muted nf-mb-0">
           Question 定義は標準フォルダ構成の <code>02_questions</code> に保存されます。
         </p>
-
-        <LinkTargetUrlField
-          value={linkTargetUrl}
-          onChange={setLinkTargetUrl}
-          disabled={saving}
-          entityLabel="Question 定義"
-        />
 
         <fieldset style={{ border: "1px solid var(--nf-border)", borderRadius: "4px", padding: "8px 12px", margin: 0 }}>
           <legend style={{ fontSize: "12px", padding: "0 6px" }}>クエリ作成方法</legend>

@@ -189,22 +189,22 @@ const DATE_COLS = [
 
 test("日付型列 = 日付リテラル → リテラルのみ canonical 化（列は生）", () => {
   const r = preprocessSearchQuery("販売日 = 2026/04/01", DATE_COLS);
-  assert.equal(r.expr, "`販売日` = '2026/04/01'");
+  assert.equal(r.expr, "`販売日` = '2026-04-01'");
 });
 
 test("日付型列 > 日付リテラル → リテラルのみ canonical 化", () => {
   const r = preprocessSearchQuery("販売日 > 2020/04/01", DATE_COLS);
-  assert.equal(r.expr, "`販売日` > '2020/04/01'");
+  assert.equal(r.expr, "`販売日` > '2020-04-01'");
 });
 
-test("日付型列 >= ハイフン区切り日付 → スラッシュ canonical に正規化される", () => {
+test("日付型列 >= スラッシュ区切り日付 → ハイフン canonical に正規化される", () => {
   const r = preprocessSearchQuery("販売日 >= 2020-4-1", DATE_COLS);
-  assert.equal(r.expr, "`販売日` >= '2020/04/01'");
+  assert.equal(r.expr, "`販売日` >= '2020-04-01'");
 });
 
 test("日付型列 = クォート付き日付リテラル → リテラルのみ canonical 化", () => {
   const r = preprocessSearchQuery("販売日 = '2026/04/01'", DATE_COLS);
-  assert.equal(r.expr, "`販売日` = '2026/04/01'");
+  assert.equal(r.expr, "`販売日` = '2026-04-01'");
 });
 
 test("非日付型列 = 日付リテラル → 通常の文字列比較（正規化しない）", () => {
@@ -324,7 +324,7 @@ test("strict: 列無し述語と列指定述語の AND 連結", () => {
 
 test("strict: 日付列リテラル比較も列は丸めずリテラルのみ canonical 化", () => {
   const r = preprocessSearchQuery("WHERE 販売日 >= 2020-1-1", DATE_COLS);
-  assert.equal(r.expr, "`販売日` >= '2020/01/01'");
+  assert.equal(r.expr, "`販売日` >= '2020-01-01'");
 });
 
 test("strict: DATE() 関数呼び出しはそのまま alasql に渡る", () => {
@@ -350,9 +350,9 @@ test("strict: 任意の関数呼び出しは pass-through (UPPER 等)", () => {
 test("strict: クォートなし日付リテラルの比較は簡易モードと同じ（リテラルのみ canonical 化）", () => {
   // 簡易・strict どちらも列は丸めず、リテラルのみ canonical 文字列に正規化する。
   const simple = preprocessSearchQuery("販売日 = 2025/01/08", DATE_COLS);
-  assert.equal(simple.expr, "`販売日` = '2025/01/08'");
+  assert.equal(simple.expr, "`販売日` = '2025-01-08'");
   const strict = preprocessSearchQuery("WHERE 販売日 = 2025/01/08", DATE_COLS);
-  assert.equal(strict.expr, "`販売日` = '2025/01/08'");
+  assert.equal(strict.expr, "`販売日` = '2025-01-08'");
 });
 
 // ---------------------------------------------------------------------------

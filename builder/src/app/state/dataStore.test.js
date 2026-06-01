@@ -43,10 +43,10 @@ test("既存レコード更新時は createdAt / createdBy / No. を保持して
   assert.equal(record.id, "rec_existing");
   assert.equal(record["No."], 12);
   // Plan P4 γ: createdAt / modifiedAt は JST 文字列を canonical 表現に
-  assert.equal(record.createdAt, "2023/11/15 07:13:20.123"); // = Unix ms 1700000000123 in JST
+  assert.equal(record.createdAt, "2023-11-15_07:13:20.123"); // = Unix ms 1700000000123 in JST
   assert.equal(record.createdAtUnixMs, 1700000000123);    // 過渡期シム
   assert.equal(record.createdBy, "creator@example.com");
-  assert.equal(record.modifiedAt, "2023/11/15 07:13:22.222"); // = now (1700000002222) in JST
+  assert.equal(record.modifiedAt, "2023-11-15_07:13:22.222"); // = now (1700000002222) in JST
   assert.equal(record.modifiedAtUnixMs, now);
   assert.equal(record.modifiedBy, "editor@example.com");
   assert.deepEqual(record.data, { field_a: "after" });
@@ -72,10 +72,10 @@ test("新規レコードは createdAt / createdAtUnixMs / createdBy をフロン
   assert.equal(record.id, "rec_new");
   assert.equal(record["No."], 5);
   // Plan P4 γ: createdAt / modifiedAt は JST 文字列に
-  assert.equal(record.createdAt, "2023/11/15 07:13:23.333"); // = now (1700000003333) in JST
+  assert.equal(record.createdAt, "2023-11-15_07:13:23.333"); // = now (1700000003333) in JST
   assert.equal(record.createdAtUnixMs, now);
   assert.equal(record.createdBy, "");
-  assert.equal(record.modifiedAt, "2023/11/15 07:13:23.333");
+  assert.equal(record.modifiedAt, "2023-11-15_07:13:23.333");
   assert.equal(record.modifiedAtUnixMs, now);
   assert.equal(record.modifiedBy, "editor@example.com");
   assert.equal(record.deletedAt, null);

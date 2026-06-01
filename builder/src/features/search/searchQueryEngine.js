@@ -166,10 +166,14 @@ export const tokenizeSearchQuery = (query) => {
         continue;
       }
       if (/^\d{4}[/-]\d{1,2}[/-]\d{1,2}$/.test(value)) {
+        // 日付リテラルは canonical 表示（日付=ハイフン、日付↔時刻=アンダースコア）に合わせて
+        // 正規化する。日付列との素の文字列比較なので、ユーザーが `/` 区切りで入力しても `-` に寄せ、
+        // 続く時刻は `_` で結合する（`2026/01/01 09:00` → `2026-01-01_09:00`）。
+        value = value.replace(/\//g, "-");
         const trailing = normalizedQuery.slice(i + consumedLength);
         const timeSuffixMatch = trailing.match(/^\s+(\d{1,2}:\d{2}(?::\d{2})?)(?=\s|$|[()])/);
         if (timeSuffixMatch) {
-          value = `${value} ${timeSuffixMatch[1]}`;
+          value = `${value}_${timeSuffixMatch[1]}`;
           consumedLength += timeSuffixMatch[0].length;
         }
       }

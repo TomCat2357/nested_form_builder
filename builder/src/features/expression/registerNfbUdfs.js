@@ -16,8 +16,8 @@
  *
  * --- 日付の値表現（canonical 文字列） ---
  *   DATE/DATETIME/TIME 型は「ゼロパディング済み canonical 文字列」として扱う:
- *     DATE     → "YYYY/MM/DD"
- *     DATETIME → "YYYY/MM/DD HH:mm:ss.SSS"   (日付はスラッシュ、日付↔時刻は半角スペース。ms までゼロ埋め。createdAt / modifiedAt / deletedAt 専用型)
+ *     DATE     → "YYYY-MM-DD"
+ *     DATETIME → "YYYY-MM-DD_HH:mm:ss.SSS"   (日付はハイフン、日付↔時刻はアンダースコア。ms までゼロ埋め。createdAt / modifiedAt / deletedAt 専用型)
  *     TIME     → "HH:mm:ss.SSS"               (00:00:00 から超過した時間。ms までゼロ埋め)
  *   これらは辞書順 = 時系列順なので alasql の `=` `<` `>` がそのまま機能する
  *   （Date オブジェクトの参照比較問題を避けるための旧 unix ms 統一は不要になった）。
@@ -182,8 +182,8 @@ export function ensureNfbUdfsRegistered(alasql) {
 
   // ---------------------------------------------------------------------------
   // DATE / DATETIME / TIME — canonical 文字列を返す。
-  //   DATE     → "YYYY/MM/DD"
-  //   DATETIME → "YYYY/MM/DD HH:mm:ss.SSS"（日付はスラッシュ、日付↔時刻は半角スペース。ms までゼロ埋め。
+  //   DATE     → "YYYY-MM-DD"
+  //   DATETIME → "YYYY-MM-DD_HH:mm:ss.SSS"（日付はハイフン、日付↔時刻はアンダースコア。ms までゼロ埋め。
   //              createdAt / modifiedAt / deletedAt 専用型だが関数としては誰でも呼べる）
   //   TIME = TIMEMS → "HH:mm:ss.SSS"（00:00:00 から超過した時間。ms までゼロ埋め。
   //              datetime を渡すと時刻成分のみ）
@@ -474,7 +474,7 @@ export function ensureNfbUdfsRegistered(alasql) {
 
   // ---------------------------------------------------------------------------
   // NOW() — 現在時刻を DATETIME canonical 文字列で返す。
-  //   "YYYY/MM/DD HH:mm:ss.SSS"（JST 壁時計時刻、ms までゼロ埋め）。
+  //   "YYYY-MM-DD_HH:mm:ss.SSS"（JST 壁時計時刻、ms までゼロ埋め）。
   //   テンプレート / Question SQL / 検索 SQL のどこでも同じ意味で使える。
   //   YEAR(NOW()) / TIME_FORMAT(NOW(), 'YYYY-MM-DD') / DATE(NOW()) などで加工。
   //   alasql 4.x 組み込みの NOW()（JS Date を返す）を override する。
@@ -682,18 +682,18 @@ export function ensureNfbUdfsRegistered(alasql) {
   alasql.fn.ERA2DATE = function (text) {
     const p = parseEraFlexible(text);
     if (!p) return null;
-    return `${pad4(p.year)}/${pad2(p.month)}/${pad2(p.day)}`;
+    return `${pad4(p.year)}-${pad2(p.month)}-${pad2(p.day)}`;
   };
 
   // ---------------------------------------------------------------------------
-  // ERATIME2DATETIME(text) — 和暦文字列 → "YYYY/MM/DD HH:mm:ss.SSS"（DATETIME2ERATIME の逆）。
-  //   戻り値は canonical DATETIME 文字列なので日付はスラッシュ、日付↔時刻は半角スペース。
+  // ERATIME2DATETIME(text) — 和暦文字列 → "YYYY-MM-DD_HH:mm:ss.SSS"（DATETIME2ERATIME の逆）。
+  //   戻り値は canonical DATETIME 文字列なので日付はハイフン、日付↔時刻はアンダースコア。
   //   "令和元年02月4日 13時" のような部分時刻も解釈。不正は NULL。
   // ---------------------------------------------------------------------------
   alasql.fn.ERATIME2DATETIME = function (text) {
     const p = parseEraFlexible(text);
     if (!p) return null;
-    return `${pad4(p.year)}/${pad2(p.month)}/${pad2(p.day)} ${pad2(p.hour)}:${pad2(p.minute)}:${pad2(p.second)}.${pad3(p.ms || 0)}`;
+    return `${pad4(p.year)}-${pad2(p.month)}-${pad2(p.day)}_${pad2(p.hour)}:${pad2(p.minute)}:${pad2(p.second)}.${pad3(p.ms || 0)}`;
   };
 
   // ===========================================================================

@@ -20,7 +20,7 @@ CLAUDE.md から分離した、GAS 側のエントリポイント・アクショ
 | `forms_delete` | フォーム削除（doPost 旧契約） | 管理者 |
 | `forms_archive` | 公開状態変更（doPost 旧契約、`archived` 真偽） | 管理者 |
 | `forms_readonly` | 参照のみ状態切替（doPost 旧契約、`readOnly` 真偽） | 管理者 |
-| `forms_save` | フォーム保存（`form`/`targetUrl`/`saveMode`、`nfbSaveForm` 経由） | （なし） |
+| `forms_save` | フォーム保存（`form`/`saveMode`、`nfbSaveForm` 経由。保存先は標準フォルダ構成固定） | （なし） |
 | `forms_delete_one` / `forms_delete_batch` | フォーム削除（単一 `formId` / 配列 `formIds`） | （なし） |
 | `forms_archive_one` / `forms_unarchive_one` | アーカイブ/解除（単一 `formId`） | （なし） |
 | `forms_archive_batch` / `forms_unarchive_batch` | アーカイブ/解除（配列 `formIds`） | （なし） |

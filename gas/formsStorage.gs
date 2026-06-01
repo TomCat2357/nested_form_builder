@@ -127,6 +127,8 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     // id ＝ Drive fileId へ統一。新規フォームは保存（ファイル作成）まで id を持たない。
     // 既存フォームは form.id（＝fileId）を上書き対象とする。
     var formId = form.id || "";
+    // 渡された id（旧 ULID キーの可能性あり）を保持。保存後に fileId と異なれば旧キーを掃除する。
+    var originalFormId = formId;
     var mapping = Forms_getMapping_();
     var mappingEntry = formId ? (mapping[formId] || {}) : {};
     var existingFileId = Nfb_resolveFileIdFromEntry_(mappingEntry) || (formId || null);
@@ -135,6 +137,9 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     var existingTitles = [];
     for (var otherId in mapping) {
       if (!mapping.hasOwnProperty(otherId) || otherId === formId) continue;
+      // 二重登録が残っている場合、同一物理ファイル（fileId）を指す別名キー（旧 ULID 等）も
+      // 自分扱いで除外する。除外しないと自分の名前と衝突して誤って ` (1)` が付く。
+      if (existingFileId && Nfb_resolveFileIdFromEntry_(mapping[otherId]) === existingFileId) continue;
       var t = mapping[otherId] && mapping[otherId].title;
       if (t) existingTitles.push(t);
     }
@@ -322,6 +327,12 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       throw new Error("[save-stage=final-write] driveFileUrl反映書き込みに失敗しました. formId=" + fileId + ", fileId=" + fileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errWriteFinal));
     }
 
+    // 旧 id キー（移行前の ULID 等）が今回確定した fileId と異なる場合は除去し、
+    // 同一ファイルを指すキーが 2 つ残る二重登録を防ぐ（Analytics_saveTemplate_ と対称）。
+    // existingFileId は旧キーのエントリから解決済みなので、この delete は fileId 確定後に行う。
+    if (originalFormId && originalFormId !== fileId && mapping.hasOwnProperty(originalFormId)) {
+      delete mapping[originalFormId];
+    }
     // マッピング（fileId キー）を更新（title / 論理パス folder を中央辞書へ第一級保存）
     mapping[fileId] = {
       fileId: fileId,

@@ -149,9 +149,9 @@ const formatFromPartsMs = (formatter, unixMs) => {
     const hh = get("hour");
     const mi = get("minute");
     if (hh !== "" && mi !== "") {
-      return `${yyyy}/${mm}/${dd} ${hh}:${mi}`;
+      return `${yyyy}-${mm}-${dd}_${hh}:${mi}`;
     }
-    return `${yyyy}/${mm}/${dd}`;
+    return `${yyyy}-${mm}-${dd}`;
   } catch (error) {
     return "";
   }
@@ -195,7 +195,7 @@ const formatJstDateTime = (value, { includeSeconds = false, includeMilliseconds 
   const ss = pad2(jstDate.getUTCSeconds());
   const sss = pad3(jstDate.getUTCMilliseconds());
 
-  let formatted = `${yyyy}/${mm}/${dd} ${hh}:${mi}`;
+  let formatted = `${yyyy}-${mm}-${dd}_${hh}:${mi}`;
   if (includeSeconds || includeMilliseconds) formatted += `:${ss}`;
   if (includeMilliseconds) formatted += `.${sss}`;
   return formatted;
@@ -218,8 +218,8 @@ export const formatUnixMsValue = (value) => {
 
 // ============================================================================
 // JST 文字列ストレージ形式（メタ日時）
-// `YYYY/MM/DD HH:mm:ss.SSS` 固定（日付はスラッシュ、日付↔時刻の区切りは半角スペース。ms までゼロ埋め）。
-// スラッシュ+ゼロ埋めの固定幅で「辞書順 = 時系列順」が成立し、`<` `>` `>=` `=` の文字列比較で
+// `YYYY-MM-DD_HH:mm:ss.SSS` 固定（日付はハイフン、日付↔時刻の区切りはアンダースコア。ms までゼロ埋め）。
+// ハイフン+ゼロ埋めの固定幅で「辞書順 = 時系列順」が成立し、`<` `>` `>=` `=` の文字列比較で
 // 正しい時系列比較ができる。
 // createdAt / modifiedAt / deletedAt のシート格納・JSON ワイヤ・JS 内部の唯一の表現。
 // パース時の区切りは `-`/`/` と `_` / 半角スペース / `T` を許容、ms 省略形（`.ss` 末尾なし）も許容（旧データ互換）。
@@ -228,7 +228,7 @@ export const formatUnixMsValue = (value) => {
 const JST_STORAGE_RE = /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})(?:[T\s_]+(\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,3}))?)?)?$/;
 
 /**
- * Date / Unix ms / 文字列 を JST ストレージ文字列 `YYYY/MM/DD HH:mm:ss.SSS` に変換。
+ * Date / Unix ms / 文字列 を JST ストレージ文字列 `YYYY-MM-DD_HH:mm:ss.SSS` に変換。
  * 不正値は空文字列。
  */
 export const formatJstString = (value) => {
@@ -260,7 +260,7 @@ export const formatJstString = (value) => {
   const mi = pad2(jstDate.getUTCMinutes());
   const ss = pad2(jstDate.getUTCSeconds());
   const sss = pad3(jstDate.getUTCMilliseconds());
-  return `${yyyy}/${mm}/${dd} ${hh}:${mi}:${ss}.${sss}`;
+  return `${yyyy}-${mm}-${dd}_${hh}:${mi}:${ss}.${sss}`;
 };
 
 /**
@@ -317,7 +317,7 @@ export const jstStringToUnixMs = (str) => {
 /**
  * date / time フィールド保存値の正規化。整形は formatCanonical に集約し、TIME-only 文字列
  *（ミリ秒含む）も堅牢に扱う。
- * - `fieldType === "date"` → `YYYY/MM/DD`
+ * - `fieldType === "date"` → `YYYY-MM-DD`
  * - `fieldType === "time"` → `options.precision` に応じて
  *     `minute` → `HH:mm` / `second` → `HH:mm:ss` / `millisecond` → `HH:mm:ss.SSS`
  *   `precision` 未指定時は legacy `options.includeSeconds === false → minute` else `second`。
@@ -342,7 +342,7 @@ export const normalizeDateTimeFieldValue = (value, fieldType, options = {}) => {
 
 // ============================================================================
 // DATE / DATETIME / TIME 関数の canonical 文字列コア。
-// 「DATE/DATETIME/TIME 型は文字（canonical 文字列 = スラッシュ/スペース区切り）として
+// 「DATE/DATETIME/TIME 型は文字（canonical 文字列 = ハイフン/アンダースコア区切り）として
 // alasql 上もシート上も一貫して扱う」仕様の中核。registerNfbUdfs.js（フロント alasql UDF）と
 // expressionFunctions.gs（GAS 側 twin nfbDt_*）の両方で同セマンティクスを実装する。
 //
@@ -429,14 +429,14 @@ const formatTimeParts_ = (hh, mi, ss, sss, kind) => {
 
 const TIME_KINDS_ = new Set(["time", "timems", "times", "timem"]);
 
-// 基準日 1970/01/01（UNIX エポック）。時刻のみ文字列を date/datetime へ展開する際の暦日。
+// 基準日 1970-01-01（UNIX エポック）。時刻のみ文字列を date/datetime へ展開する際の暦日。
 // 仕様: 「年月日は適当だが UNIXTIME で一日経過していない日付」。
 const TIME_ONLY_BASE_DATE_ = { year: 1970, month: 1, day: 1 };
 
 /**
  * 日時値を kind に応じた canonical 文字列へ整形する。
- *   kind="date"            → `YYYY/MM/DD`
- *   kind="datetime"        → `YYYY/MM/DD HH:mm:ss.SSS`（日付はスラッシュ、日付↔時刻の区切りは半角スペース。ms までゼロ埋め）
+ *   kind="date"            → `YYYY-MM-DD`
+ *   kind="datetime"        → `YYYY-MM-DD_HH:mm:ss.SSS`（日付はハイフン、日付↔時刻の区切りはアンダースコア。ms までゼロ埋め）
  *   kind="time" / "timems" → `HH:mm:ss.SSS`（ミリ秒まで）
  *   kind="times"           → `HH:mm:ss`（秒まで）
  *   kind="timem"           → `HH:mm`（分まで）
@@ -445,7 +445,7 @@ const TIME_ONLY_BASE_DATE_ = { year: 1970, month: 1, day: 1 };
  * - 数値 msunixtime → その瞬間の JST 壁時計時刻を整形。
  * - TIME-only 文字列（`HH:mm[:ss[.SSS]]`）:
  *     時刻系 kind → mod 24h で整形。
- *     date/datetime → 基準日 1970/01/01 を付与して展開（DATETIME("12:34") → "1970/01/01 12:34:00.000"）。
+ *     date/datetime → 基準日 1970-01-01 を付与して展開（DATETIME("12:34") → "1970-01-01_12:34:00.000"）。
  * 空 / 不正値は null。
  */
 export const formatCanonical = (v, kind) => {
@@ -472,7 +472,7 @@ export const formatCanonical = (v, kind) => {
 
   if (TIME_KINDS_.has(kind)) return formatTimeParts_(hh, mi, ss, sss, kind);
   if (kind === "date") {
-    return `${pad4(datedParts.year)}/${pad2(datedParts.month)}/${pad2(datedParts.day)}`;
+    return `${pad4(datedParts.year)}-${pad2(datedParts.month)}-${pad2(datedParts.day)}`;
   }
-  return `${pad4(datedParts.year)}/${pad2(datedParts.month)}/${pad2(datedParts.day)} ${pad2(hh)}:${pad2(mi)}:${pad2(ss)}.${pad3(sss)}`;
+  return `${pad4(datedParts.year)}-${pad2(datedParts.month)}-${pad2(datedParts.day)}_${pad2(hh)}:${pad2(mi)}:${pad2(ss)}.${pad3(sss)}`;
 };

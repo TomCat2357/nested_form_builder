@@ -138,11 +138,11 @@ export const dataStore = {
     const form = await getFormFromGas(formId);
     return form ? ensureDisplayInfo(form) : null;
   },
-  async createForm(payload, targetUrl = null, saveMode = "auto") {
+  async createForm(payload, saveMode = "auto") {
     // id ＝ Drive fileId へ統一。新規フォームはクライアントで id を採番しない（fallbackId: ""）。
     // 保存後に GAS が返す fileId を id として採用する。
     const record = normalizeFormRecord(payload, { fallbackId: payload?.id || "" });
-    const result = await saveFormToGas(record, targetUrl, saveMode);
+    const result = await saveFormToGas(record, saveMode);
     const savedForm = result?.form || result;
     const fileUrl = result?.fileUrl;
     const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
@@ -162,7 +162,7 @@ export const dataStore = {
     const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
     return formWithUrl ? ensureDisplayInfo(formWithUrl) : null;
   },
-  async updateForm(formId, updates, targetUrl = null, saveMode = "auto") {
+  async updateForm(formId, updates, saveMode = "auto") {
     // First get the current form. If GAS fetch fails, fallback to provided updates.
     let current = null;
     try {
@@ -202,7 +202,7 @@ export const dataStore = {
     if (updates.schema === undefined && current.schemaHash) {
       next.schemaHash = current.schemaHash;
     }
-    const result = await saveFormToGas(next, targetUrl, saveMode);
+    const result = await saveFormToGas(next, saveMode);
     const savedForm = result?.form || result;
     const fileUrl = result?.fileUrl;
 

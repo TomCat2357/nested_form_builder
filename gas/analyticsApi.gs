@@ -111,7 +111,7 @@ function Analytics_getOrCreateFolder_(type) {
 var ANALYTICS_HANDLERS_ = {
   "analytics_questions_list":             { type: "questions",  mode: "list" },
   "analytics_questions_get":              { type: "questions",  mode: "get",            idKey: "questionId" },
-  "analytics_questions_save":             { type: "questions",  mode: "save",           payloadKey: "question",  urlKey: "targetUrl" },
+  "analytics_questions_save":             { type: "questions",  mode: "save",           payloadKey: "question" },
   "analytics_questions_delete":           { type: "questions",  mode: "delete_one",     idKey: "questionId" },
   "analytics_questions_delete_batch":     { type: "questions",  mode: "delete_batch",   idsKey: "questionIds" },
   "analytics_questions_archive":          { type: "questions",  mode: "archive_one",    idKey: "questionId",     archived: true },
@@ -124,7 +124,7 @@ var ANALYTICS_HANDLERS_ = {
   "analytics_questions_resolve_ref":      { type: "questions",  mode: "resolve_ref" },
   "analytics_dashboards_list":            { type: "dashboards", mode: "list" },
   "analytics_dashboards_get":             { type: "dashboards", mode: "get",            idKey: "dashboardId" },
-  "analytics_dashboards_save":            { type: "dashboards", mode: "save",           payloadKey: "dashboard", urlKey: "targetUrl" },
+  "analytics_dashboards_save":            { type: "dashboards", mode: "save",           payloadKey: "dashboard" },
   "analytics_dashboards_delete":          { type: "dashboards", mode: "delete_one",     idKey: "dashboardId" },
   "analytics_dashboards_delete_batch":    { type: "dashboards", mode: "delete_batch",   idsKey: "dashboardIds" },
   "analytics_dashboards_archive":         { type: "dashboards", mode: "archive_one",    idKey: "dashboardId",    archived: true },
@@ -152,7 +152,7 @@ function Analytics_dispatch_(action, ctx) {
   switch (def.mode) {
     case "list":          return Analytics_listTemplates_(def.type, raw.options || {});
     case "get":           return Analytics_getTemplate_(def.type, raw[def.idKey]);
-    case "save":          return Analytics_saveTemplate_(def.type, raw[def.payloadKey], raw[def.urlKey]);
+    case "save":          return Analytics_saveTemplate_(def.type, raw[def.payloadKey]);
     case "delete_one":    return Analytics_deleteTemplates_(def.type, [raw[def.idKey]]);
     case "delete_batch":  return Analytics_deleteTemplates_(def.type, raw[def.idsKey] || []);
     case "archive_one":   return Analytics_setTemplatesArchivedStateWrap_(def.type, [raw[def.idKey]], def.archived);

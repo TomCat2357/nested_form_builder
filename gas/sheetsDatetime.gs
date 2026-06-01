@@ -175,8 +175,8 @@ function Sheets_unixMsToSheetDate_(unixMs) {
   return isNaN(d.getTime()) ? null : d;
 }
 
-// canonical 文字列 ("YYYY/MM/DD" / "HH:mm:ss.SSS" / "YYYY/MM/DD HH:mm:ss.SSS") を
-// シート用 Date に変換する。kind ∈ {"date","datetime","time"}。旧形式(ハイフン/`_`)・ms 省略形も許容。不正値は null。
+// canonical 文字列 ("YYYY-MM-DD" / "HH:mm:ss.SSS" / "YYYY-MM-DD_HH:mm:ss.SSS") を
+// シート用 Date に変換する。kind ∈ {"date","datetime","time"}。旧形式(スラッシュ/半角スペース)・ms 省略形も許容。不正値は null。
 function Sheets_canonicalToSheetDate_(canonical, kind) {
   if (typeof canonical !== "string") return null;
   var s = canonical.replace(/^\s+|\s+$/g, "");
@@ -218,8 +218,8 @@ function Sheets_sheetDateCellToCanonical_(date) {
 
 // ============================================================================
 // § JST 文字列ストレージ形式（メタ日時）
-//   `YYYY/MM/DD HH:mm:ss.SSS` 固定（日付はスラッシュ、日付↔時刻の区切りは半角スペース。ms までゼロ埋め）。
-//   スラッシュ+ゼロ埋めの固定幅で「辞書順 = 時系列順」が成立。createdAt / modifiedAt / deletedAt の
+//   `YYYY-MM-DD_HH:mm:ss.SSS` 固定（日付はハイフン、日付↔時刻の区切りはアンダースコア。ms までゼロ埋め）。
+//   ハイフン+ゼロ埋めの固定幅で「辞書順 = 時系列順」が成立。createdAt / modifiedAt / deletedAt の
 //   シート格納・JSON ワイヤ・JS 内部の唯一の表現。
 //   パース時の区切りは `-`/`/` と `_` / 半角スペース / `T` を許容、ms 省略形（旧データ）も許容。
 // ============================================================================
@@ -227,7 +227,7 @@ function Sheets_sheetDateCellToCanonical_(date) {
 var NFB_JST_STORAGE_RE_ = /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})(?:[T\s_]+(\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,3}))?)?)?$/;
 
 /**
- * Date / Unix ms / 文字列 を JST ストレージ文字列 `YYYY/MM/DD HH:mm:ss.SSS` に変換。
+ * Date / Unix ms / 文字列 を JST ストレージ文字列 `YYYY-MM-DD_HH:mm:ss.SSS` に変換。
  * 不正値は空文字列。
  */
 function Sheets_formatJstString_(value) {
@@ -251,7 +251,7 @@ function Sheets_formatJstString_(value) {
     return "";
   }
   if (!isFinite(unixMs)) return "";
-  return Utilities.formatDate(new Date(unixMs), NFB_TZ, "yyyy/MM/dd HH:mm:ss.SSS");
+  return Utilities.formatDate(new Date(unixMs), NFB_TZ, "yyyy-MM-dd_HH:mm:ss.SSS");
 }
 
 /**
@@ -290,7 +290,7 @@ function Sheets_jstStringToUnixMs_(str) {
 }
 
 
-// date / time 列のセルを canonical 文字列（"YYYY/MM/DD" / "HH:mm:ss.SSS"）にメモリ上で統一する。
+// date / time 列のセルを canonical 文字列（"YYYY-MM-DD" / "HH:mm:ss.SSS"）にメモリ上で統一する。
 // シート上は数値の日時シリアル値 (Date)。Excel シリアル数値 / ISO / ゆる文字列 / 既 canonical も吸収する。
 // 列型はフォームスキーマ由来の typeMap（key → "date" | "time" | "datetime"）のみで決定する
 // （値スキャンによる推測は廃止）。canonical 化は nfbDt_formatCanonical_（expressionEvaluator.gs）に委譲。

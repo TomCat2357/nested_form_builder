@@ -65,7 +65,7 @@ test("buildPrintDocumentPayload は表示順を維持しつつ非表示分岐を
   assert.equal(payload.formTitle, "相談票");
   assert.equal(payload.recordId, "rec:001");
   assert.equal(payload.recordNo, "12/3");
-  assert.equal(payload.modifiedAt, "2026/03/10 08:09:10");
+  assert.equal(payload.modifiedAt, "2026-03-10_08:09:10");
   assert.equal(payload.showHeader, true);
   assert.match(payload.fileName, /^印刷様式_相談票_12-3_20260309_123456$/);
   assert.deepEqual(payload.items, [
@@ -202,7 +202,7 @@ test("resolveShowPrintHeader は未設定時 true、false 明示時のみ false 
 
 test("formatRecordMetaDateTime は UNIX ms を最終更新日時表示へ整形する", () => {
   const unixMs = new Date("2026-03-10T08:09:10+09:00").getTime();
-  assert.equal(formatRecordMetaDateTime(unixMs), "2026/03/10 08:09:10");
+  assert.equal(formatRecordMetaDateTime(unixMs), "2026-03-10_08:09:10");
   assert.equal(formatRecordMetaDateTime(""), "");
   assert.equal(formatRecordMetaDateTime(null), "");
 });

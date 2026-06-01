@@ -500,10 +500,10 @@ export default function AdminAnalyticsListPage({
         title={confirmDelete.folderPaths?.length ? "フォルダを削除" : `${itemLabel} を削除`}
         message={
           confirmDelete.folderPaths?.length
-            ? `選択したフォルダを削除します。中の ${confirmDelete.folderItemCount} 個の ${itemLabel} も併せて削除されますがよろしいですか？（Drive上のファイル自体はDriveに残ります）`
+            ? `選択したフォルダを削除します。中の ${confirmDelete.folderItemCount} 個の ${itemLabel} も併せて削除します（プロジェクト内のファイルは Drive 上の実体ごと、プロジェクト外＝外部リンクはリンク解除のみ）。よろしいですか？`
             : confirmDelete.multiple
-              ? `選択した ${itemLabel} のリンクを管理一覧から外します。Drive 上の JSON ファイル自体は削除されません。よろしいですか？`
-              : `この ${itemLabel} のリンクを管理一覧から外します。Drive 上の JSON ファイル自体は削除されません。よろしいですか？`
+              ? `選択した ${itemLabel} を削除します。プロジェクト内のファイルは Drive 上の実体ごと削除し、プロジェクト外（外部リンク）はリンク解除のみ行います。よろしいですか？`
+              : `この ${itemLabel} を削除します。プロジェクト内のファイルは Drive 上の実体ごと削除し、プロジェクト外（外部リンク）はリンク解除のみ行います。よろしいですか？`
         }
         options={[
           {

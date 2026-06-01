@@ -119,14 +119,14 @@ test("text: data[path] を素通し", () => {
 test("date: canonical 形式に整形", () => {
   const entry = { ...baseEntry, data: { "受付日": "2025-04-15" } };
   const [row] = entriesToViewTableRows([entry], form);
-  assert.equal(row["受付日"], "2025/04/15");
+  assert.equal(row["受付日"], "2025-04-15");
 });
 
 test("datetime: canonical 形式に整形（旧 ISO Z でも吸収）", () => {
   const entry = { ...baseEntry, data: { "受付時刻": "2025-04-15T10:20:30.000Z" } };
   const [row] = entriesToViewTableRows([entry], form);
-  // datetime は "YYYY/MM/DD HH:mm:ss.SSS"（JST、ms までゼロ埋め）。
-  assert.match(row["受付時刻"], /^\d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/);
+  // datetime は "YYYY-MM-DD_HH:mm:ss.SSS"（JST、ms までゼロ埋め）。
+  assert.match(row["受付時刻"], /^\d{4}-\d{2}-\d{2}_\d{2}:\d{2}:\d{2}\.\d{3}$/);
 });
 
 test("メタ列が含まれる", () => {
@@ -135,8 +135,8 @@ test("メタ列が含まれる", () => {
   assert.equal(row.id, baseEntry.id);
   assert.equal(row["No_"], 7);
   // createdAt / modifiedAt は既存の旧形式入力を受け入れて canonical (.SSS 付き) に正規化される
-  assert.match(row.createdAt, /^2025\/04\/01 10:20:30(\.\d{3})?$/);
-  assert.match(row.modifiedAt, /^2025\/04\/02 11:22:33(\.\d{3})?$/);
+  assert.match(row.createdAt, /^2025-04-01_10:20:30(\.\d{3})?$/);
+  assert.match(row.modifiedAt, /^2025-04-02_11:22:33(\.\d{3})?$/);
   assert.equal(row.createdBy, "alice@example.com");
   assert.equal(row.modifiedBy, "bob@example.com");
 });
