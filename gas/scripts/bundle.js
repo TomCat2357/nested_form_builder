@@ -58,7 +58,6 @@ const FILE_ORDER = [
   'standardFoldersAlign.gs', // 論理↔物理 整合同期エンジン（6ケース）— standardFolders.gs から分離
   'standardFoldersCopy.gs',  // 構成コピー（システムごとコピー）— standardFolders.gs から分離
   'standardFolders.gs',  // 標準フォルダ構成（作成 / 自動整理 / マッピング I/O / 重複整理）— forms/analytics/model/driveFolder ヘルパーに依存
-  'standardFoldersDiagnostics.gs',  // 構成リンク診断レポート + 参照の恒久再リンク（standardFolders.gs から分離）
   // --- sheets ---
   'sheetsDatetime.gs',
   'sheetsHeaders.gs',
