@@ -10,7 +10,8 @@ import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { getSheetConfig } from "../../app/state/dataStoreHelpers.js";
 import { executeQuestion, saveQuestion, getQuestionById, getFormColumns, ERR_NO_SPREADSHEET } from "../../features/analytics/analyticsStore.js";
 import { buildColumnIndex, resolveColumnRef } from "../../features/analytics/utils/columnIdentifierResolver.js";
-import { formQualifiedName } from "../../features/analytics/utils/formIdentifierResolver.js";
+import { formQualifiedName, buildFormIndex } from "../../features/analytics/utils/formIdentifierResolver.js";
+import { formRefsToIds, formRefsToNames } from "../../features/analytics/utils/rewriteSqlFormRefs.js";
 import { compileStages } from "../../features/analytics/utils/compileStages.js";
 import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder.jsx";
 import VisualizePanel from "../../features/analytics/components/VisualizePanel.jsx";
@@ -62,7 +63,7 @@ export default function QuestionEditorPage() {
   const { questionId } = useParams();
   const location = useLocation();
   const { isAdmin } = useAuth();
-  const { forms } = useAppData();
+  const { forms, loadingForms } = useAppData();
   const isEdit = Boolean(questionId);
 
   const [mode, setMode] = useState("gui");
@@ -90,6 +91,8 @@ export default function QuestionEditorPage() {
   const [copiedToken, setCopiedToken] = useState("");
   const [definitionLoaded, setDefinitionLoaded] = useState(false);
   const autoRunQuestionIdRef = useRef(null);
+  // forms 確定後に questionId ごと 1 回だけロードするためのガード。
+  const loadedQuestionIdRef = useRef(null);
 
   const unsavedDialog = useConfirmDialog();
   const baselineRef = useRef(null);
@@ -103,6 +106,12 @@ export default function QuestionEditorPage() {
 
   useCancellable(async (isCancelled) => {
     if (!questionId) return;
+    // forms 確定まで待つ（SQL の fileId → フォーム名 置換に formIndex が要る）。
+    if (loadingForms) return;
+    // questionId ごとに 1 回だけロードする（forms の背景リフレッシュで再ロードして
+    // ユーザー編集を潰さないため）。
+    if (loadedQuestionIdRef.current === questionId) return;
+    loadedQuestionIdRef.current = questionId;
     setLoading(true);
     setDefinitionLoaded(false);
     autoRunQuestionIdRef.current = null;
@@ -123,7 +132,8 @@ export default function QuestionEditorPage() {
         setGui(g ? { ...emptyGui(g.formId || ""), ...g } : emptyGui(""));
         setSelectedFormId(g?.formId || "");
       } else {
-        setSql(q.query?.sql || "");
+        // 保存は fileId で持つ方針なので、表示はフォーム名に戻す。
+        setSql(formRefsToNames(q.query?.sql || "", buildFormIndex(forms)));
         const fid = q.query?.formSources?.[0]?.formId || "";
         setSelectedFormId(fid);
       }
@@ -160,7 +170,7 @@ export default function QuestionEditorPage() {
     } catch (_e) {
       if (!isCancelled()) setLoading(false);
     }
-  }, [questionId]);
+  }, [questionId, loadingForms]);
 
   const { formColumns, columnLoadError } = useMemo(() => {
     const fid = mode === "gui" ? gui.formId : selectedFormId;
@@ -278,10 +288,11 @@ export default function QuestionEditorPage() {
         setSaveError(sources.error);
         return;
       }
+      // SQL 本文のフォーム参照は fileId で保存する（リネーム耐性・GUI / formSources と対称）。
       query = {
         mode: "sql",
         formSources: (sources.formSources || []).map(({ formName: _staleFormName, ...rest }) => rest),
-        sql,
+        sql: formRefsToIds(sql, buildFormIndex(forms)),
       };
     }
 
@@ -567,8 +578,8 @@ export default function QuestionEditorPage() {
                   const f = forms.find((x) => x.id === selectedFormId);
                   if (!f) return null;
                   const title = formQualifiedName(f) || f.id;
-                  const tableNameToken = "[" + title + "]";
-                  const tableIdToken = "[" + f.id + "]";
+                  // 参照は常にフォーム名で行う（fileId は保存時に内部で置換される内部表現）。
+                  const formNameToken = "[" + title + "]";
                   const copy = (token) => {
                     navigator.clipboard.writeText(token).then(() => {
                       setCopiedToken(token);
@@ -580,17 +591,10 @@ export default function QuestionEditorPage() {
                   return (
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
                       <div style={rowStyle}>
-                        <span className="nf-text-muted" style={{ minWidth: "70px" }}>テーブル名:</span>
-                        <code style={codeStyle}>{tableNameToken}</code>
-                        <button type="button" className="nf-btn-outline" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={() => copy(tableNameToken)}>
-                          {copiedToken === tableNameToken ? "コピー済" : "コピー"}
-                        </button>
-                      </div>
-                      <div style={rowStyle}>
-                        <span className="nf-text-muted" style={{ minWidth: "70px" }}>テーブルID:</span>
-                        <code style={codeStyle}>{tableIdToken}</code>
-                        <button type="button" className="nf-btn-outline" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={() => copy(tableIdToken)}>
-                          {copiedToken === tableIdToken ? "コピー済" : "コピー"}
+                        <span className="nf-text-muted" style={{ minWidth: "70px" }}>フォーム名:</span>
+                        <code style={codeStyle}>{formNameToken}</code>
+                        <button type="button" className="nf-btn-outline" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={() => copy(formNameToken)}>
+                          {copiedToken === formNameToken ? "コピー済" : "コピー"}
                         </button>
                       </div>
                     </div>
