@@ -4,6 +4,7 @@ import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
 import { useAuth } from "./authContext.jsx";
 import { evaluateCacheForForms } from "./cachePolicy.js";
 import { perfLogger } from "../../utils/perfLogger.js";
+import { registerFormReconciler, startUploadWorker } from "./uploadWorker.js";
 
 const AppDataContext = createContext(null);
 
@@ -222,6 +223,39 @@ export function AppDataProvider({ children }) {
     loadFailuresRef.current = nextFailures;
     await saveCacheWithErrorHandling(updatedForms, nextFailures, setCacheDisabled, propertyStoreModeRef.current, logPrefix);
   }, []);
+
+  // バックグラウンドアップロード成功時に一時 ID(local_…) を実 fileId へ付け替える。
+  // schema 関連（schema/schemaHash/displayInfo）はローカルを正として保持し、サーバが確定した
+  // id / driveFileUrl / タイトル等を反映する（GAS は保存時に field id を落とすため、サーバ
+  // schema から hash を取り直すと records cache を誤って無効化してしまうのを避ける）。
+  const reconcileFormId = useCallback(async (tempId, savedForm) => {
+    if (!savedForm || !savedForm.id) return;
+    const realId = savedForm.id;
+    await updateFormsAndCache((next) => {
+      const local = next.find((form) => form.id === tempId) || null;
+      const merged = {
+        ...(local || {}),
+        ...savedForm,
+        schema: local?.schema ?? savedForm.schema,
+        schemaHash: local?.schemaHash ?? savedForm.schemaHash,
+        displayFieldSettings: local?.displayFieldSettings,
+        importantFields: local?.importantFields,
+        id: realId,
+        pendingUpload: false,
+      };
+      const filtered = next.filter((form) => form.id !== tempId && form.id !== realId);
+      filtered.unshift(merged);
+      return filtered;
+    }, loadFailuresRef.current, "reconcileFormId");
+  }, [updateFormsAndCache]);
+
+  // 起動時に reconcile コールバックを登録してからアップロードワーカーを開始する
+  // （登録前にワーカーが走ると React 状態へ反映できないため、この順序が重要）。
+  useEffect(() => {
+    registerFormReconciler(reconcileFormId);
+    startUploadWorker();
+    return () => registerFormReconciler(null);
+  }, [reconcileFormId]);
 
   const upsertFormsState = useCallback(async (nextForm) => {
     if (!nextForm || !nextForm.id) return;

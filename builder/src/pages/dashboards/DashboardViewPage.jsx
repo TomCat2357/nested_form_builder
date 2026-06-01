@@ -3,6 +3,7 @@ import { useParams, useLocation } from "react-router-dom";
 import AppLayout from "../../app/components/AppLayout.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
+import { useTempIdRedirect } from "../../app/hooks/useTempIdRedirect.js";
 import { useAsyncResource } from "../../app/hooks/useAsyncResource.js";
 import { analyticsGasClient } from "../../features/analytics/analyticsGasClient.js";
 import { resolveDashboardLinks, saveDashboard } from "../../features/analytics/analyticsStore.js";
@@ -12,8 +13,12 @@ import DashboardGrid from "../../features/analytics/components/DashboardGrid.jsx
 import DashboardFilterBar from "../../features/analytics/components/DashboardFilterBar.jsx";
 import SimpleFilterBar from "../../features/analytics/components/SimpleFilterBar.jsx";
 
+const buildDashboardViewPath = (id) => `/dashboards/${id}`;
+
 export default function DashboardViewPage() {
   const { dashboardId } = useParams();
+  // 一時 ID のダッシュボードをディープリンクで開いた場合、アップロード完了後に実 ID へ置き換える。
+  useTempIdRedirect(dashboardId, buildDashboardViewPath);
   const location = useLocation();
   const { isAdmin } = useAuth();
   const { forms } = useAppData();

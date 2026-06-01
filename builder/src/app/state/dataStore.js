@@ -39,6 +39,9 @@ import {
   syncRecordsProxy,
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
+import { genLocalId, isLocalId } from "../../core/ids.js";
+import { enqueueJob, deleteJobsForLocalId } from "./uploadQueue.js";
+import { kickUploadWorker } from "./uploadWorker.js";
 import {
   getSheetConfig,
   getDeletedRetentionDays,
@@ -139,14 +142,14 @@ export const dataStore = {
     return form ? ensureDisplayInfo(form) : null;
   },
   async createForm(payload, saveMode = "auto") {
-    // id ＝ Drive fileId へ統一。新規フォームはクライアントで id を採番しない（fallbackId: ""）。
-    // 保存後に GAS が返す fileId を id として採用する。
-    const record = normalizeFormRecord(payload, { fallbackId: payload?.id || "" });
-    const result = await saveFormToGas(record, saveMode);
-    const savedForm = result?.form || result;
-    const fileUrl = result?.fileUrl;
-    const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
-    return formWithUrl ? ensureDisplayInfo(formWithUrl) : record;
+    // オフラインファースト: まず IndexedDB に保存し、Drive へのアップロードはバックグラウンドへ。
+    // 新規フォームは一時 ID(local_…) を採番しておき、アップロード完了時に GAS が返す実 fileId へ
+    // 付け替える（参照も自動再リンク）。ネット未接続でも作成できる。
+    const record = normalizeFormRecord(payload, { fallbackId: payload?.id || genLocalId() });
+    const localRecord = { ...record, pendingUpload: true };
+    await enqueueJob({ entityType: "form", localId: localRecord.id, payload: localRecord });
+    kickUploadWorker();
+    return ensureDisplayInfo(localRecord);
   },
   async registerImportedForm(payload) {
     // payload: { form, fileId, fileUrl }
@@ -206,13 +209,13 @@ export const dataStore = {
     // 無くても実体ファイルを driveFileUrl で特定して上書き）に使うため明示的に引き継ぐ。
     // 実体 URL は保存後に GAS が確定値で上書きする。
     next.driveFileUrl = updates.driveFileUrl || current.driveFileUrl;
-    const result = await saveFormToGas(next, saveMode);
-    const savedForm = result?.form || result;
-    const fileUrl = result?.fileUrl;
-
-    // fileUrlをフォームに保存（新しいURLが返された場合は更新）
-    const formWithUrl = { ...savedForm, driveFileUrl: fileUrl || next.driveFileUrl };
-    return formWithUrl ? ensureDisplayInfo(formWithUrl) : next;
+    // オフラインファースト: まず IndexedDB に保存し、Drive への上書きはバックグラウンドへ委ねる。
+    // formId が一時 ID（未アップロードのフォーム編集）の場合は enqueueJob 側で既存ジョブと
+    // coalesce され、1 回だけアップロードされる。
+    const localRecord = { ...next, pendingUpload: true };
+    await enqueueJob({ entityType: "form", localId: formId, payload: localRecord });
+    kickUploadWorker();
+    return ensureDisplayInfo(localRecord);
   },
   async setFormArchivedState(formId, archived) {
     const savedForm = archived ? await archiveFormInGas(formId) : await unarchiveFormInGas(formId);
@@ -261,7 +264,13 @@ export const dataStore = {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
     if (!targetIds.length) return;
 
-    await deleteFormsFromGas(targetIds);
+    // 削除対象に未アップロードジョブが残っていれば取り消す（削除済みフォームの再作成を防ぐ）。
+    await Promise.all(targetIds.map((id) => deleteJobsForLocalId(id)));
+    kickUploadWorker();
+
+    // 一時 ID（まだ Drive に存在しない）のフォームは GAS 削除を呼ばない。
+    const remoteIds = targetIds.filter((id) => !isLocalId(id));
+    if (remoteIds.length) await deleteFormsFromGas(remoteIds);
   },
   async deleteForm(formId) {
     await this.deleteForms([formId]);

@@ -79,6 +79,46 @@ export const getGlobalSyncSnapshot = (formId) => {
   };
 };
 
+// ---------------------------------------------------------------------------
+// オフラインファースト保存（フォーム/クエスチョン/ダッシュボード）のアップロード状態。
+// レコード（Sheets）同期の meta / hasAnyUnsynced とは別ドメインなので別名前空間で持つ。
+// AppLayout のグローバルインジケーターが購読し、SearchToolbar のレコード同期表示とは併存する。
+// ---------------------------------------------------------------------------
+export const uploadSyncState = {
+  uploading: 0, // 現在アップロード中のジョブ数（>0 で「同期中」）
+  pending: { form: 0, question: 0, dashboard: 0 }, // 未アップロード件数（種類別）
+  lastError: null, // 直近のアップロードエラー文言（手動再試行の判断用）
+};
+
+export const uploadSyncListeners = new Set();
+export const emitUploadSyncChange = () => {
+  uploadSyncListeners.forEach((listener) => listener());
+};
+
+export const setUploadUploading = (count) => {
+  uploadSyncState.uploading = Math.max(0, Number(count) || 0);
+  emitUploadSyncChange();
+};
+
+export const setUploadPending = (countsByType = {}) => {
+  uploadSyncState.pending = {
+    form: Math.max(0, Number(countsByType.form) || 0),
+    question: Math.max(0, Number(countsByType.question) || 0),
+    dashboard: Math.max(0, Number(countsByType.dashboard) || 0),
+  };
+  emitUploadSyncChange();
+};
+
+export const setUploadLastError = (message) => {
+  uploadSyncState.lastError = message || null;
+  emitUploadSyncChange();
+};
+
+export const totalPendingUpload = () =>
+  Object.values(uploadSyncState.pending).reduce((acc, n) => acc + (Number(n) || 0), 0);
+
+export const hasAnyPendingUpload = () => totalPendingUpload() > 0;
+
 export const defaultAlert = { showAlert: (message) => console.warn("[useEntries]", message) };
 
 export const buildFetchErrorMessage = (error) =>

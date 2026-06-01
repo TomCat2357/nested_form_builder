@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { subscribeAnalyticsCache } from "./analyticsCache.js";
 
 /**
  * Analytics 一覧（Question / Dashboard）の SWR フック。
@@ -69,6 +70,10 @@ export function useAnalyticsList({ listSWR, includeArchived = false }) {
     run();
     return () => { runIdRef.current += 1; };
   }, [run]);
+
+  // オフライン保存の楽観的更新やバックグラウンドアップロード成功（一時 ID→実 ID の付け替え）で
+  // キャッシュが変わったら、キャッシュ優先で再評価して一覧へ反映する。
+  useEffect(() => subscribeAnalyticsCache(() => { run(); }), [run]);
 
   const refresh = useCallback(() => run({ forceRefresh: true }), [run]);
 

@@ -8,12 +8,15 @@ export const GAS_ERROR_CODE_LOCK_TIMEOUT = "LOCK_TIMEOUT";
 
 // IndexedDB ストレージ関連
 export const DB_NAME = "NestedFormBuilder";
-export const DB_VERSION = 7;
+// v8: フォーム/クエスチョン/ダッシュボードのオフラインファースト保存用に
+// アップロードキュー (uploadQueue) ストアを追加。
+export const DB_VERSION = 8;
 export const STORE_NAMES = {
   forms: "formsCache",
   settings: "settingsStore",
   analyticsQuestions: "analyticsQuestions",
   analyticsDashboards: "analyticsDashboards",
+  uploadQueue: "uploadQueue",
 };
 // v5 → v6 で削除した旧ストア (onupgradeneeded で deleteObjectStore する対象)
 export const LEGACY_STORE_NAMES_V5 = [
@@ -35,6 +38,11 @@ export const FORM_CACHE_BACKGROUND_REFRESH_MS = 60 * 60 * 1000;
 // 分析（Question / Dashboard）の元レコードテーブルを React メモリにキャッシュする TTL（1時間）。
 // フィルタの微調整ごとに dataStore.listEntries + 行変換を再実行しないための短期キャッシュ。
 export const ANALYTICS_SOURCE_TABLE_CACHE_TTL_MS = 60 * 60 * 1000;
+
+// オフラインファースト保存のバックグラウンドアップロード再試行（指数バックオフ）。
+//   待機時間 = min(BASE * 2^attempt, MAX) + ジッタ。手動「再試行」でバックオフを解除できる。
+export const UPLOAD_RETRY_BASE_MS = 2 * 1000;
+export const UPLOAD_RETRY_MAX_MS = 5 * 60 * 1000;
 
 // 日時処理関連
 export const MS_PER_DAY = 24 * 60 * 60 * 1000;

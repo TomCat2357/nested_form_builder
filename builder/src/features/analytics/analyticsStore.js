@@ -4,8 +4,11 @@
  */
 
 import { analyticsGasClient } from "./analyticsGasClient.js";
-import { questionCache, dashboardCache } from "./analyticsCache.js";
+import { questionCache, dashboardCache, emitAnalyticsCacheChanged } from "./analyticsCache.js";
 import { deepClone } from "../../core/schema.js";
+import { genLocalId, isLocalId } from "../../core/ids.js";
+import { enqueueJob, deleteJobsForLocalId } from "../../app/state/uploadQueue.js";
+import { kickUploadWorker } from "../../app/state/uploadWorker.js";
 import { isV2 as isDashboardV2, assertV2 as assertDashboardV2, getCardType, CARD_TYPE_QUESTION } from "./utils/dashboardSchema.js";
 import { registerFormAsTable, dropTables, runAlaSql, applyGlobalWhereToTables, applySourceFilterClauses } from "./analyticsAlaSql.js";
 import { buildFormIndex } from "./utils/formIdentifierResolver.js";
@@ -376,22 +379,35 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     return result?.[one] || null;
   }
 
+  // オフラインファースト: まず IndexedDB に保存し、Drive へのアップロードはバックグラウンドへ。
+  // 新規は一時 ID(local_…) を採番し、アップロード完了時に実 fileId へ付け替える（参照も再リンク）。
   async function save(data) {
     if (validateBeforeSave) validateBeforeSave(data);
-    const result = await gas[`save${E}`](data);
-    await cache.upsert(result[one]);
-    return result[one];
+    const localId = data.id || genLocalId();
+    const record = { ...data, id: localId, pendingUpload: true, modifiedAt: Date.now() };
+    await cache.upsert(record);
+    await enqueueJob({ entityType: one, localId, payload: record });
+    kickUploadWorker();
+    emitAnalyticsCacheChanged(one);
+    return record;
   }
 
   async function remove(id) {
-    await gas[`delete${E}`](id);
+    await deleteJobsForLocalId(id);
+    if (!isLocalId(id)) await gas[`delete${E}`](id);
     await cache.remove(id);
+    kickUploadWorker();
+    emitAnalyticsCacheChanged(one);
   }
 
   async function removeBatch(ids) {
     if (!ids?.length) return;
-    await gas[`delete${E}s`](ids);
+    await Promise.all(ids.map((id) => deleteJobsForLocalId(id)));
+    const remoteIds = ids.filter((id) => !isLocalId(id));
+    if (remoteIds.length) await gas[`delete${E}s`](remoteIds);
     for (const id of ids) await cache.remove(id);
+    kickUploadWorker();
+    emitAnalyticsCacheChanged(one);
   }
 
   async function setArchivedOne(verb, id) {

@@ -1,5 +1,10 @@
 import { useEffect } from "react";
-import { hasAnyUnsynced, syncStateListeners } from "../../features/search/globalSyncState.js";
+import {
+  hasAnyUnsynced,
+  syncStateListeners,
+  hasAnyPendingUpload,
+  uploadSyncListeners,
+} from "../../features/search/globalSyncState.js";
 
 /**
  * メモリ上に未アップロードのレコードがある状態でページを離脱しようとしたら、
@@ -11,11 +16,14 @@ import { hasAnyUnsynced, syncStateListeners } from "../../features/search/global
  */
 export function useGlobalUnsyncedGuard() {
   useEffect(() => {
-    let dirty = hasAnyUnsynced();
+    // レコード（Sheets）の未同期に加えて、フォーム/クエスチョン/ダッシュボードの
+    // 未アップロード（Drive 反映待ち）がある場合も離脱を警告する。
+    let dirty = hasAnyUnsynced() || hasAnyPendingUpload();
     const refreshDirty = () => {
-      dirty = hasAnyUnsynced();
+      dirty = hasAnyUnsynced() || hasAnyPendingUpload();
     };
     syncStateListeners.add(refreshDirty);
+    uploadSyncListeners.add(refreshDirty);
 
     const handleBeforeUnload = (event) => {
       if (!dirty) return;
@@ -26,6 +34,7 @@ export function useGlobalUnsyncedGuard() {
     return () => {
       window.removeEventListener("beforeunload", handleBeforeUnload);
       syncStateListeners.delete(refreshDirty);
+      uploadSyncListeners.delete(refreshDirty);
     };
   }, []);
 }

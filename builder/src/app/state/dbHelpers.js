@@ -39,6 +39,15 @@ export function openDB() {
         db.createObjectStore(STORE_NAMES.analyticsDashboards, { keyPath: 'id' });
       }
 
+      // v8: オフラインファースト保存の永続アップロードキュー。
+      // 1 件 = 1 アップロードジョブ。リロードを跨いで残り、起動時に再開する。
+      if (!db.objectStoreNames.contains(STORE_NAMES.uploadQueue)) {
+        const queueStore = db.createObjectStore(STORE_NAMES.uploadQueue, { keyPath: 'jobId' });
+        queueStore.createIndex('status', 'status', { unique: false });
+        queueStore.createIndex('entityType', 'entityType', { unique: false });
+        queueStore.createIndex('localId', 'localId', { unique: false });
+      }
+
       if (oldVersion < 6) {
         for (const legacyName of LEGACY_STORE_NAMES_V5) {
           if (db.objectStoreNames.contains(legacyName)) {
