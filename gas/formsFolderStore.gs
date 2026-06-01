@@ -87,9 +87,6 @@ function Forms_listFolders_(formsArray) {
 function Forms_createFolder_(path) {
   return StdFolderStore_createFolder_(Forms_folderStoreAdapter_(), path);
 }
-function Forms_collectFormIdsUnderFolder_(path) {
-  return StdFolderStore_collectItemIdsUnder_(Forms_folderStoreAdapter_(), path);
-}
 function Forms_setFormFolder_(formId, folderPath) {
   return StdFolderStore_setItemFolder_(Forms_folderStoreAdapter_(), formId, folderPath);
 }

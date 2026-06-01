@@ -39,7 +39,6 @@ function AnalyticsDrive_descriptor_(type) {
 // ---- SharedDrive_* への薄いラッパー（既存の公開シグネチャを維持） ----
 
 function AnalyticsDrive_getPathMap_(type) { return SharedDrive_getPathMap_(AnalyticsDrive_descriptor_(type)); }
-function AnalyticsDrive_savePathMap_(type, map) { return SharedDrive_savePathMap_(AnalyticsDrive_descriptor_(type), map); }
 function AnalyticsDrive_ensureFolderForPath_(type, path) { return SharedDrive_ensureFolderForPath_(AnalyticsDrive_descriptor_(type), path); }
 function AnalyticsDrive_lookupFolderForPath_(type, path) { return SharedDrive_lookupFolderForPath_(AnalyticsDrive_descriptor_(type), path); }
 function AnalyticsDrive_movePathFolder_(type, oldPath, newPath) { return SharedDrive_movePathFolder_(AnalyticsDrive_descriptor_(type), oldPath, newPath); }

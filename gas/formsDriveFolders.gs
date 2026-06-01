@@ -31,7 +31,6 @@ function FormsDrive_descriptor_() {
 // ---- SharedDrive_* への薄いラッパー（既存の公開シグネチャを維持） ----
 
 function FormsDrive_getPathMap_() { return SharedDrive_getPathMap_(FormsDrive_descriptor_()); }
-function FormsDrive_savePathMap_(map) { return SharedDrive_savePathMap_(FormsDrive_descriptor_(), map); }
 function FormsDrive_ensureFolderForPath_(path) { return SharedDrive_ensureFolderForPath_(FormsDrive_descriptor_(), path); }
 function FormsDrive_lookupFolderForPath_(path) { return SharedDrive_lookupFolderForPath_(FormsDrive_descriptor_(), path); }
 function FormsDrive_movePathFolder_(oldPath, newPath) { return SharedDrive_movePathFolder_(FormsDrive_descriptor_(), oldPath, newPath); }

@@ -73,9 +73,6 @@ function Analytics_listFolders_(type) {
 function Analytics_createFolder_(type, path) {
   return StdFolderStore_createFolder_(Analytics_folderStoreAdapter_(type), path);
 }
-function Analytics_collectItemIdsUnderFolder_(type, path) {
-  return StdFolderStore_collectItemIdsUnder_(Analytics_folderStoreAdapter_(type), path);
-}
 function Analytics_setItemFolder_(type, id, folderPath) {
   return StdFolderStore_setItemFolder_(Analytics_folderStoreAdapter_(type), id, folderPath);
 }

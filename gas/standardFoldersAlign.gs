@@ -3,18 +3,6 @@
 // standardFolders.gs から分離。バンドル時に連結されるため関数はグローバル。
 // =============================================
 
-// 登録簿の fileId 集合（同期対象）を作る。整合エンジン classifyOrphans_ が
-// 「登録済みファイル」を判定するために使う。
-function StdFolders_trackedFileIdSet_(mapping) {
-  var set = {};
-  for (var id in mapping) {
-    if (!mapping.hasOwnProperty(id)) continue;
-    var fid = Nfb_resolveFileIdFromEntry_(mapping[id]);
-    if (fid) set[fid] = true;
-  }
-  return set;
-}
-
 // =============================================
 // (2.6) 論理↔物理 整合（①〜④・エントリ単位）
 // 登録エンティティごとに (論理パス L, 物理パス P, fileId 解決) を比較し、論理 L を正として

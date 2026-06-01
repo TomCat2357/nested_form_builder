@@ -41,14 +41,6 @@ function Forms_parseGoogleDriveUrl_(url) {
   return { type: null, id: null };
 }
 
-function Forms_generateFormId_(mapping) {
-  var nextId = "";
-  do {
-    nextId = Nfb_generateFormId_();
-  } while (mapping && mapping[nextId]);
-  return nextId;
-}
-
 function Forms_normalizeImportedFormData_(rawForm) {
   if (!rawForm || typeof rawForm !== "object" || Array.isArray(rawForm)) {
     return null;
