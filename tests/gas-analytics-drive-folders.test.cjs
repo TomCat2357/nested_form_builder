@@ -113,8 +113,9 @@ function loadContext({ baseNull = false } = {}) {
     Analytics_collectFolders_: () => [],
     Analytics_getMapping_: () => ({}),
   };
-  // constants.gs（drivemap キー・version）→ formsDriveFolders.gs（汎用ヘルパ）→ analyticsDriveFolders.gs。
-  loadGasFiles(context, ["constants.gs", "formsDriveFolders.gs", "analyticsDriveFolders.gs"]);
+  // constants.gs（drivemap キー・version）→ driveFile.gs（Nfb_readJsonFileById_）→
+  // sharedDriveFolders.gs（型汎用コア）→ formsDriveFolders.gs（汎用ヘルパ）→ analyticsDriveFolders.gs。
+  loadGasFiles(context, ["constants.gs", "driveFile.gs", "sharedDriveFolders.gs", "formsDriveFolders.gs", "analyticsDriveFolders.gs"]);
   return { context, drive, qBase, dBase, props, store };
 }
 

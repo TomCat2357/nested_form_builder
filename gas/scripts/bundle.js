@@ -39,6 +39,8 @@ const FILE_ORDER = [
   // --- forms ---
   'formsParsing.gs',
   'formsMappingStore.gs',
+  'sharedFolderStore.gs',   // Forms/Analytics 共通のフォルダ登録簿コア（型汎用）
+  'sharedDriveFolders.gs',  // Forms/Analytics 共通の仮想↔物理フォルダミラーコア（型汎用）
   'formsFolderStore.gs',
   'formsDriveFolders.gs', // 仮想フォルダ ↔ 物理 Drive フォルダ（01_forms 配下）のミラー
   'formsTitleHelpers.js',
@@ -55,7 +57,8 @@ const FILE_ORDER = [
   'model.gs',            // モデル関数
   'standardFoldersAlign.gs', // 論理↔物理 整合同期エンジン（6ケース）— standardFolders.gs から分離
   'standardFoldersCopy.gs',  // 構成コピー（システムごとコピー）— standardFolders.gs から分離
-  'standardFolders.gs',  // 標準フォルダ構成（作成 / 自動整理 / マッピング I/O / 再リンク / 重複整理）— forms/analytics/model/driveFolder ヘルパーに依存
+  'standardFolders.gs',  // 標準フォルダ構成（作成 / 自動整理 / マッピング I/O / 重複整理）— forms/analytics/model/driveFolder ヘルパーに依存
+  'standardFoldersDiagnostics.gs',  // 構成リンク診断レポート + 参照の恒久再リンク（standardFolders.gs から分離）
   // --- sheets ---
   'sheetsDatetime.gs',
   'sheetsHeaders.gs',

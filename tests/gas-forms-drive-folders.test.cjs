@@ -106,7 +106,7 @@ function loadContext({ baseNull = false } = {}) {
     Forms_collectFolders_: () => [],
     Nfb_resolveFileIdFromEntry_: (e) => (e && e.fileId) || null,
   };
-  loadGasFiles(context, ["constants.gs", "formsDriveFolders.gs"]);
+  loadGasFiles(context, ["constants.gs", "sharedDriveFolders.gs", "formsDriveFolders.gs"]);
   return { context, drive, base, props, store };
 }
 

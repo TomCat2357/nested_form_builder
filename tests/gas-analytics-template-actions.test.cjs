@@ -239,7 +239,8 @@ function loadAnalyticsContext() {
     "gas/analyticsImport.gs",
     "gas/analyticsCopy.gs",
     // 物理フォルダミラー（保存/移動/インポート時の物理配置・名前フォールバック解決）に必要。
-    // 汎用ヘルパ（FormsDrive_folderByIdOrNull_ など）を流用するため forms 版も先に読み込む。
+    // 型汎用コア（SharedDrive_*）→ forms 版（汎用ヘルパ）→ analytics 版の順で読み込む。
+    "gas/sharedDriveFolders.gs",
     "gas/formsDriveFolders.gs",
     "gas/analyticsDriveFolders.gs",
     // import 時の構成内判定 / 構成外コピー（StdFolders_ensureFileInStdFolder_）に必要

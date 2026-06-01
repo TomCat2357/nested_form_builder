@@ -125,9 +125,9 @@ function Forms_getForm_(formId) {
   if (!fileId) return null;
 
   try {
-    var file = DriveApp.getFileById(fileId);
-    var content = file.getBlob().getDataAsString();
-    var form = JSON.parse(content);
+    var read = Nfb_readJsonFileById_(fileId);
+    var file = read.file;
+    var form = read.json;
 
     // id・名前はファイル自体（fileId・ファイル名）から導出する。JSON 内の id/formTitle は持たない運用。
     form.id = formId;

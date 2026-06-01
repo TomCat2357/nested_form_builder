@@ -3,9 +3,10 @@
 // PropertiesService に { version, folders: ["a", "a/b", ...] } 形で保存する。
 // 画面に出すフォルダ = 登録簿のパス ∪ アイテム由来 (item.folder) のパス。
 //
-// type: "questions" | "dashboards" でパラメータ化する。
-// 文字列操作ヘルパ (Forms_normalizeFolderPath_ / Forms_addPathWithAncestors_ /
-// Forms_sortFolderPaths_) は formsFolderStore.gs で定義済みのものをそのまま流用する。
+// type: "questions" | "dashboards" でパラメータ化する。登録簿 CRUD のロジック本体は
+// sharedFolderStore.gs（StdFolderStore_*）に集約済みで、本ファイルは property key ヘルパ・
+// type 別 adapter・既存公開シグネチャ（Analytics_*）を維持する薄いラッパーのみを持つ。
+// 文字列ヘルパ（Forms_normalizeFolderPath_ など）は formsFolderStore.gs のものを流用する。
 // =============================================
 
 var ANALYTICS_QUESTIONS_FOLDERS_PROPERTY_KEY = "nfb.analytics.questions.folders";
@@ -19,313 +20,76 @@ function Analytics_getFoldersPropertyKey_(type) {
     : ANALYTICS_DASHBOARDS_FOLDERS_PROPERTY_KEY;
 }
 
-// ---- フォルダ登録簿 読み取り ----
-
-// 登録簿（永続化済みフォルダパス）を取得する。正規化・重複除去・ソート済み配列。
-function Analytics_getFolders_(type) {
-  var props = Nfb_getActiveProperties_();
-  var rawJson = props.getProperty(Analytics_getFoldersPropertyKey_(type));
-  var folders = [];
-  if (rawJson) {
-    try {
-      var parsed = JSON.parse(rawJson);
-      if (parsed && parsed.version === NFB_FOLDERS_PROPERTY_VERSION && Array.isArray(parsed.folders)) {
-        folders = parsed.folders;
+// StdFolderStore_* コアに渡す type 別 adapter（型差分をここに閉じ込める）。
+function Analytics_folderStoreAdapter_(type) {
+  return {
+    kind: type,
+    foldersPropertyKey: Analytics_getFoldersPropertyKey_(type),
+    getMapping: function() { return Analytics_getMapping_(type); },
+    saveMapping: function(m) { return Analytics_saveMapping_(type, m); },
+    listItems: function() {
+      var listRes = Analytics_listTemplates_(type, { includeArchived: true });
+      return (listRes && listRes[Analytics_getResultListKey_(type)]) || [];
+    },
+    getItemFolder: function(id) {
+      var mapping = Analytics_getMapping_(type);
+      var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]);
+      if (!fileId) return null;
+      try {
+        return Forms_normalizeFolderPath_(Nfb_readJsonFileById_(fileId).json.folder);
+      } catch (err) {
+        Logger.log("[Analytics_folderStoreAdapter_.getItemFolder:" + type + "] " + id + ": " + err);
+        return null;
       }
-    } catch (err) {
-      Logger.log("[Analytics_getFolders_] Failed to parse folders (" + type + "): " + err);
-    }
-  }
-  var set = {};
-  for (var i = 0; i < folders.length; i++) {
-    Forms_addPathWithAncestors_(set, folders[i]);
-  }
-  return Forms_sortFolderPaths_(Object.keys(set));
+    },
+    // analytics は modifiedAt を ms（Date.now()）で保持する。
+    stampFolderModified: function(json) { json.modifiedAt = Date.now(); },
+    driveEnsureForPath: function(p) { return AnalyticsDrive_ensureFolderForPath_(type, p); },
+    driveMoveFileToPath: function(fileId, p) { return AnalyticsDrive_moveItemFileToPath_(type, fileId, p); },
+    driveMovePathFolder: function(o, n) { return AnalyticsDrive_movePathFolder_(type, o, n); },
+    driveTrashPathFolder: function(p) { return AnalyticsDrive_trashPathFolder_(type, p); },
+    deleteItems: function(ids) { return Analytics_deleteTemplates_(type, ids); },
+    movedIdsKey: "movedIds",
+    deletedCountKey: "deletedCount",
+    itemNoun: "アイテム",
+    lockPrefix: "アナリティクス "
+  };
 }
 
-// ---- フォルダ登録簿 書き込み ----
+// ---- StdFolderStore_* への薄いラッパー（既存の公開シグネチャを維持） ----
 
-// 登録簿を保存する（正規化・dedupe・祖先補完）。
+function Analytics_getFolders_(type) {
+  return StdFolderStore_getFolders_(Analytics_getFoldersPropertyKey_(type));
+}
 function Analytics_saveFoldersRegistry_(type, paths) {
-  var set = {};
-  var list = Array.isArray(paths) ? paths : [];
-  for (var i = 0; i < list.length; i++) {
-    Forms_addPathWithAncestors_(set, list[i]);
-  }
-  var normalized = Forms_sortFolderPaths_(Object.keys(set));
-  var props = Nfb_getActiveProperties_();
-  props.setProperty(
-    Analytics_getFoldersPropertyKey_(type),
-    JSON.stringify({ version: NFB_FOLDERS_PROPERTY_VERSION, folders: normalized })
-  );
-  return normalized;
+  return StdFolderStore_saveFolders_(Analytics_getFoldersPropertyKey_(type), paths);
 }
-
-// ---- フォルダ収集 ----
-
-// 登録簿 ∪ アイテム由来のフォルダを返す。
-// itemsArray があればそれから派生し、無ければ Analytics_listTemplates_ を呼ぶ。
 function Analytics_collectFolders_(type, itemsArray) {
-  var set = {};
-  // 登録簿
-  var registry = Analytics_getFolders_(type);
-  for (var i = 0; i < registry.length; i++) {
-    Forms_addPathWithAncestors_(set, registry[i]);
-  }
-  // アイテム由来
-  var items;
-  if (Array.isArray(itemsArray)) {
-    items = itemsArray;
-  } else {
-    var listRes = Analytics_listTemplates_(type, { includeArchived: true });
-    items = (listRes && listRes[Analytics_getResultListKey_(type)]) || [];
-  }
-  for (var j = 0; j < items.length; j++) {
-    var item = items[j];
-    if (item && typeof item.folder === "string") {
-      Forms_addPathWithAncestors_(set, item.folder);
-    }
-  }
-  return Forms_sortFolderPaths_(Object.keys(set));
+  return StdFolderStore_collectFolders_(Analytics_folderStoreAdapter_(type), itemsArray);
 }
-
-// ---- 公開操作 ----
-
-// 既知フォルダ一覧（登録簿 ∪ アイテム由来）。
 function Analytics_listFolders_(type) {
-  return { ok: true, folders: Analytics_collectFolders_(type) };
+  return StdFolderStore_listFolders_(Analytics_folderStoreAdapter_(type));
 }
-
-// 新規フォルダ作成。空パスはエラー。既存と同名でも dedupe される。
 function Analytics_createFolder_(type, path) {
-  var normalized = Forms_normalizeFolderPath_(path);
-  if (!normalized) {
-    return { ok: false, error: "フォルダ名を入力してください" };
-  }
-  return WithScriptLock_("アナリティクス フォルダ作成", function() {
-    var current = Analytics_getFolders_(type);
-    current.push(normalized);
-    var folders = Analytics_saveFoldersRegistry_(type, current);
-    // 物理 Drive フォルダ（02_questions / 03_dashboards 配下）も作成（祖先含む）。
-    // 標準フォルダ作成は純粋にそのフォルダ（と祖先）を ensure するだけで、サブフォルダは作らない。
-    AnalyticsDrive_ensureFolderForPath_(type, normalized);
-    return { ok: true, folders: folders };
-  });
+  return StdFolderStore_createFolder_(Analytics_folderStoreAdapter_(type), path);
 }
-
-// 指定パス配下（自身 or "path/" 前方一致）のアイテム ID を集める。
 function Analytics_collectItemIdsUnderFolder_(type, path) {
-  var normalized = Forms_normalizeFolderPath_(path);
-  var prefix = normalized + "/";
-  var ids = [];
-  var listRes = Analytics_listTemplates_(type, { includeArchived: true });
-  var items = (listRes && listRes[Analytics_getResultListKey_(type)]) || [];
-  for (var i = 0; i < items.length; i++) {
-    var item = items[i];
-    var folder = Forms_normalizeFolderPath_(item && item.folder);
-    if (folder === normalized || (normalized && folder.indexOf(prefix) === 0)) {
-      ids.push(item.id);
-    }
-  }
-  return ids;
+  return StdFolderStore_collectItemIdsUnder_(Analytics_folderStoreAdapter_(type), path);
 }
-
-// アイテム JSON の folder フィールドだけを Drive 上で書き換える軽量更新。
-// Analytics_saveTemplate_ を通さないことで modifiedAt の全面更新などの副作用を避ける。
-// ただし folder 変更を示す modifiedAt は ms で更新する（analytics は ms 形式）。
 function Analytics_setItemFolder_(type, id, folderPath) {
-  if (!id) return false;
-  var mapping = Analytics_getMapping_(type);
-  var entry = mapping[id];
-  var fileId = Nfb_resolveFileIdFromEntry_(entry);
-  if (!fileId) return false;
-  try {
-    var file = DriveApp.getFileById(fileId);
-    var json = JSON.parse(file.getBlob().getDataAsString());
-    json.folder = Forms_normalizeFolderPath_(folderPath);
-    json.modifiedAt = Date.now();
-    file.setContent(JSON.stringify(json, null, 2));
-    // 物理 Drive 上でもファイルを folder に対応するフォルダへ移動（既に正しい親なら no-op）。
-    AnalyticsDrive_moveItemFileToPath_(type, fileId, json.folder);
-    // 中央辞書（マッピング）の論理パス folder も追従させる（第一級フィールド）。
-    if (entry && typeof entry === "object") {
-      entry.folder = json.folder;
-      mapping[id] = entry;
-      Analytics_saveMapping_(type, mapping);
-    }
-    return true;
-  } catch (err) {
-    Logger.log("[Analytics_setItemFolder_] Failed for " + type + "/" + id + ": " + err);
-    return false;
-  }
+  return StdFolderStore_setItemFolder_(Analytics_folderStoreAdapter_(type), id, folderPath);
 }
-
-// フォルダ/アイテムの移動。
-//   itemIds    : 移動するアイテム ID 配列（folder を destPath に揃える）
-//   folderPaths: 移動するフォルダパス配列（leaf 名を保持して destPath 配下へ）
-//   destPath   : 移動先フォルダ（"" = 最上位）。空でなければ既知フォルダであること。
 function Analytics_moveItems_(type, payload) {
   var raw = payload || {};
-  var itemIds = Nfb_normalizeIdList_(raw.itemIds || []);
-  var folderPaths = [];
-  var rawFolders = Array.isArray(raw.folderPaths) ? raw.folderPaths : [];
-  for (var i = 0; i < rawFolders.length; i++) {
-    var fp = Forms_normalizeFolderPath_(rawFolders[i]);
-    if (fp) folderPaths.push(fp);
-  }
-  var destPath = Forms_normalizeFolderPath_(raw.destPath);
-
-  if (!itemIds.length && !folderPaths.length) {
-    return { ok: false, error: "移動するアイテムまたはフォルダを選択してください" };
-  }
-
-  // 移動先の存在チェック（空 = 最上位は常に許可）。
-  if (destPath) {
-    var known = Analytics_collectFolders_(type);
-    if (known.indexOf(destPath) === -1) {
-      return { ok: false, error: "移動先フォルダ「" + destPath + "」が存在しません" };
-    }
-  }
-
-  // フォルダ自身/子孫への移動を禁止。
-  for (var k = 0; k < folderPaths.length; k++) {
-    var old = folderPaths[k];
-    if (destPath === old || destPath.indexOf(old + "/") === 0) {
-      return { ok: false, error: "フォルダ「" + old + "」を自身またはその配下へは移動できません" };
-    }
-  }
-
-  return WithScriptLock_("アナリティクス フォルダ/アイテム移動", function() {
-    var movedIds = [];
-
-    // 1) フォルダ移動（leaf 名を保持して destPath 配下へ。prefix 置換は relocate コアへ集約）
-    var registry = Analytics_getFolders_(type);
-    for (var i = 0; i < folderPaths.length; i++) {
-      var old = folderPaths[i];
-      var leaf = old.split("/").pop();
-      var next = destPath ? destPath + "/" + leaf : leaf;
-      if (next === old) continue;
-      registry = Analytics_relocateFolderPaths_(type, registry, old, next, movedIds);
-    }
-    if (folderPaths.length) Analytics_saveFoldersRegistry_(type, registry);
-
-    // 2) アイテム単体移動
-    for (var f = 0; f < itemIds.length; f++) {
-      if (Analytics_setItemFolder_(type, itemIds[f], destPath)) movedIds.push(itemIds[f]);
-    }
-
-    // 3) 影響アイテムに ①〜④ の整合（物理移動の自己修復 + ④ エラー検出）。
-    var verify = StdFolders_verifyEntriesAfterRelocate_(StdFolders_entityAdapter_(type), movedIds);
-    return { ok: true, folders: Analytics_collectFolders_(type), movedIds: movedIds, verify: verify };
+  return StdFolderStore_moveItems_(Analytics_folderStoreAdapter_(type), {
+    itemIds: raw.itemIds,
+    folderPaths: raw.folderPaths,
+    destPath: raw.destPath
   });
 }
-
-// 単一フォルダの old → next 付け替えコア（移動・リネーム共通）。
-//   - 登録簿の old とその子孫パスを prefix 置換し、next を追加する。
-//   - 配下アイテムの folder フィールドも同じ prefix 置換で Drive 上で書き換える。
-// 更新後の registry を返し、書き換えたアイテム ID を movedIds に push する。
-function Analytics_relocateFolderPaths_(type, registry, old, next, movedIds) {
-  // 物理 Drive フォルダをサブツリーごと移動/リネーム（1 回の Drive 操作）。配下アイテムファイルは
-  // フォルダごと一緒に動くため、後段の個別移動は no-op になる（フラット保存だった残存ファイルの保険）。
-  AnalyticsDrive_movePathFolder_(type, old, next);
-
-  var updated = registry.map(function(p) {
-    if (p === old) return next;
-    if (p.indexOf(old + "/") === 0) return next + p.slice(old.length);
-    return p;
-  });
-  updated.push(next);
-
-  var underIds = Analytics_collectItemIdsUnderFolder_(type, old);
-  for (var u = 0; u < underIds.length; u++) {
-    var aId = underIds[u];
-    var mapping = Analytics_getMapping_(type);
-    var entry = mapping[aId];
-    var fileId = Nfb_resolveFileIdFromEntry_(entry);
-    if (!fileId) continue;
-    try {
-      var file = DriveApp.getFileById(fileId);
-      var json = JSON.parse(file.getBlob().getDataAsString());
-      var folder = Forms_normalizeFolderPath_(json.folder);
-      var newFolder = (folder === old) ? next : (next + folder.slice(old.length));
-      json.folder = newFolder;
-      json.modifiedAt = Date.now();
-      file.setContent(JSON.stringify(json, null, 2));
-      // 物理ファイルも新フォルダへ揃える（サブツリー移動で済んでいれば no-op）。
-      AnalyticsDrive_moveItemFileToPath_(type, fileId, newFolder);
-      // 中央辞書（マッピング）の論理パス folder も追従させる（第一級フィールド）。
-      if (entry && typeof entry === "object") {
-        entry.folder = newFolder;
-        mapping[aId] = entry;
-        Analytics_saveMapping_(type, mapping);
-      }
-      movedIds.push(aId);
-    } catch (err) {
-      Logger.log("[Analytics_relocateFolderPaths_] Failed to update folder for " + type + "/" + aId + ": " + err);
-    }
-  }
-  return updated;
-}
-
-// フォルダのリネーム（mv の rename 相当）。親パスは保持し leaf 名だけを newName に変える。
-//   path   : リネーム対象フォルダパス
-//   newName: 新しい leaf 名（単一セグメント。"/" は不可）
-// 同名フォルダが既に存在する場合はマージせずエラーにする。
 function Analytics_renameFolder_(type, payload) {
-  var raw = payload || {};
-  var old = Forms_normalizeFolderPath_(raw.path);
-  if (!old) {
-    return { ok: false, error: "リネームするフォルダを指定してください" };
-  }
-  var newName = (typeof raw.newName === "string") ? raw.newName.trim() : "";
-  if (!newName) {
-    return { ok: false, error: "新しいフォルダ名を入力してください" };
-  }
-  if (newName.indexOf("/") !== -1) {
-    return { ok: false, error: "フォルダ名に「/」は使用できません" };
-  }
-  var segs = old.split("/");
-  segs.pop();
-  var parent = segs.join("/");
-  var next = parent ? parent + "/" + newName : newName;
-  if (next === old) {
-    return { ok: true, folders: Analytics_collectFolders_(type), movedIds: [] };
-  }
-  var known = Analytics_collectFolders_(type);
-  if (known.indexOf(next) !== -1) {
-    return { ok: false, error: "同名のフォルダ「" + next + "」が既に存在します" };
-  }
-  return WithScriptLock_("アナリティクス フォルダ名変更", function() {
-    var movedIds = [];
-    var registry = Analytics_relocateFolderPaths_(type, Analytics_getFolders_(type), old, next, movedIds);
-    Analytics_saveFoldersRegistry_(type, registry);
-    var verify = StdFolders_verifyEntriesAfterRelocate_(StdFolders_entityAdapter_(type), movedIds);
-    return { ok: true, folders: Analytics_collectFolders_(type), movedIds: movedIds, verify: verify };
-  });
+  return StdFolderStore_renameFolder_(Analytics_folderStoreAdapter_(type), payload);
 }
-
-// フォルダ削除。配下アイテムを併せて削除（マッピング解除）し、
-// 登録簿から path と子孫を除去する。
 function Analytics_deleteFolder_(type, path) {
-  var normalized = Forms_normalizeFolderPath_(path);
-  if (!normalized) {
-    return { ok: false, error: "削除するフォルダを指定してください" };
-  }
-  return WithScriptLock_("アナリティクス フォルダ削除", function() {
-    var ids = Analytics_collectItemIdsUnderFolder_(type, normalized);
-    var deletedCount = 0;
-    if (ids.length) {
-      var res = Analytics_deleteTemplates_(type, ids);
-      deletedCount = (res && res.deleted) || 0;
-    }
-    // 物理 Drive フォルダ（配下のファイル含む）をゴミ箱へ。auto-organize off では no-op。
-    AnalyticsDrive_trashPathFolder_(type, normalized);
-    // 登録簿から path と子孫を除去
-    var prefix = normalized + "/";
-    var registry = Analytics_getFolders_(type).filter(function(p) {
-      return p !== normalized && p.indexOf(prefix) !== 0;
-    });
-    var folders = Analytics_saveFoldersRegistry_(type, registry);
-    return { ok: true, deletedCount: deletedCount, folders: folders };
-  });
+  return StdFolderStore_deleteFolder_(Analytics_folderStoreAdapter_(type), path);
 }
