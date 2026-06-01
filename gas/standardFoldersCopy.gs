@@ -148,7 +148,7 @@ function StdFolders_copy_(payload) {
     }
 
     // 再構築 ON のときはコピー先ルートへ _nfb_mapping.json を書き出す（新 fileId に振り直し済み）。
-    // 復元はコピー先で手動：設定 > 管理 の「インポート」（URL 空欄でルートの最新 .json を読込）または「同期」。
+    // 復元はコピー先で手動：設定 > 管理 の「インポート」（URL 空欄でルートの最新 .json を読込）。
     if (rebuildMapping) {
       StdFolders_writeMappingFile_(destRoot, StdFolders_buildCopiedMappingDoc_(idMap, srcRoot.getId()));
     }
@@ -165,10 +165,10 @@ function StdFolders_copy_(payload) {
       appsScriptCopied: appsScriptCopied,
       appsScriptCopyError: appsScriptCopied ? "" : (appsScriptCopyResult.reason || ""),
       message: (rebuildMapping
-        ? "コピーが完了しました。コピー先ルートに _nfb_mapping.json を保存しました。コピー先の 設定 > 管理 から「インポート」（URL 空欄でルートの最新を読込）または「同期」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
-        : "コピーが完了しました。コピー先の 設定 > 管理 から「同期」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。")
+        ? "コピーが完了しました。コピー先ルートに _nfb_mapping.json を保存しました。コピー先の 設定 > 管理 から「インポート」（URL 空欄でルートの最新を読込）を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
+        : "コピーが完了しました。コピー先の 設定 > 管理 から「インポート」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。")
         + (unresolvedQuestionLinks > 0
-          ? "\n※ ダッシュボードからコピー対象外の Question を参照しているカードが " + unresolvedQuestionLinks + " 件あります。参照は保持しているので、コピー先で「同期」後に自動再リンクされるか、編集画面のリンク差し替えで復旧できます。"
+          ? "\n※ ダッシュボードからコピー対象外の Question を参照しているカードが " + unresolvedQuestionLinks + " 件あります。参照は保持しているので、コピー先で各エンティティを保存した際に自動再リンクされるか、編集画面のリンク差し替えで復旧できます。"
           : "")
     };
   });

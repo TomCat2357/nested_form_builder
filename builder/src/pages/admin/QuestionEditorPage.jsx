@@ -7,6 +7,7 @@ import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
 import { useCancellable } from "../../app/hooks/useCancellable.js";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
+import { useTempIdRedirect } from "../../app/hooks/useTempIdRedirect.js";
 import { getSheetConfig } from "../../app/state/dataStoreHelpers.js";
 import { executeQuestion, saveQuestion, getQuestionById, getFormColumns, ERR_NO_SPREADSHEET } from "../../features/analytics/analyticsStore.js";
 import { buildColumnIndex, resolveColumnRef } from "../../features/analytics/utils/columnIdentifierResolver.js";
@@ -57,9 +58,13 @@ function emptyVizOptions() {
   };
 }
 
+const buildQuestionEditPath = (id) => `/admin/questions/${id}`;
+
 export default function QuestionEditorPage() {
   const navigate = useNavigate();
   const { questionId } = useParams();
+  // 一時 ID のままディープリンクで開かれた場合、アップロード完了後に実 ID の URL へ置き換える。
+  useTempIdRedirect(questionId, buildQuestionEditPath);
   const location = useLocation();
   const { isAdmin } = useAuth();
   const { forms, loadingForms } = useAppData();

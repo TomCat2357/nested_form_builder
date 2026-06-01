@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import { useBuilderSettings } from "../../features/settings/settingsStore.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../theme/theme.js";
+import UploadSyncIndicator from "./UploadSyncIndicator.jsx";
 
 export default function AppLayout({ themeOverride, title, fallbackPath = "/", onBack, backHidden = false, actions, sidebarActions, badge, children }) {
   const navigate = useNavigate();
@@ -64,7 +65,10 @@ export default function AppLayout({ themeOverride, title, fallbackPath = "/", on
             </span>
           )}
         </div>
-        <div>{actions}</div>
+        <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <UploadSyncIndicator />
+          {actions}
+        </div>
       </header>
       <div className="app-container">
         {(sidebarActions || backButton) && (

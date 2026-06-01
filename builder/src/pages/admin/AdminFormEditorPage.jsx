@@ -7,6 +7,7 @@ import FormBuilderWorkspace from "../../features/admin/FormBuilderWorkspace.jsx"
 import { SETTINGS_GROUPS, SPREADSHEET_SETTINGS_GROUP } from "../../features/settings/settingsSchema.js";
 import { dataStore } from "../../app/state/dataStore.js";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
+import { useTempIdRedirect } from "../../app/hooks/useTempIdRedirect.js";
 import { useFormCacheSync } from "../../app/hooks/useFormCacheSync.js";
 import { useEditLock } from "../../app/hooks/useEditLock.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
@@ -22,9 +23,12 @@ import SchemaMapNav from "../../features/nav/SchemaMapNav.jsx";
 import { countSchemaNodes } from "../../core/schema.js";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/admin/forms");
+const buildFormEditPath = (id) => `/admin/forms/${id}/edit`;
 
 export default function AdminFormEditorPage() {
   const { formId } = useParams();
+  // 一時 ID のままディープリンクで開かれた場合、アップロード完了後に実 ID の URL へ置き換える。
+  useTempIdRedirect(formId, buildFormEditPath);
   const isEdit = Boolean(formId);
   const { forms, getFormById, createForm, updateForm, refreshForms, lastSyncedAt, loadingForms } = useAppData();
   const currentForm = isEdit ? getFormById(formId) : null;

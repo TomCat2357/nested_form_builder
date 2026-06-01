@@ -164,7 +164,10 @@ export const getForm = async (formId) => {
   return r.form || null;
 };
 export const saveForm = async (form, saveMode = "auto") => {
-  if (!form || !form.id) throw new Error("Form with ID is required");
+  // id 省略/空は「新規ファイル作成」を意味する（GAS Forms_saveForm_ が空 id を新規作成として扱う）。
+  // オフラインファーストのバックグラウンドアップロードでは新規フォームを id 無しで送るため、
+  // ここで id 必須にはしない。
+  if (!form) throw new Error("Form data is required");
   const r = await fetchGasApi("nfbSaveForm", { form, saveMode }, "Save form failed");
   return { form: r.form, fileUrl: r.fileUrl };
 };
@@ -221,38 +224,6 @@ export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyW
   const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks, rebuildMapping }, "システムごとコピーに失敗しました");
   return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, unresolvedQuestionLinks: r.unresolvedQuestionLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), appsScriptCopyError: r.appsScriptCopyError || "", message: r.message || "" };
 };
-// 整合同期（フォルダ走査）。論理 L を正に 6 ケースで forms/questions/dashboards を整合する。
-//   ①一致 / ②P≠L→移動or外部コピー / ③同名別id再採用 / ④未発見→エラー / ⑤有効オーファン登録 / ⑥不正候補
-//   applyDelete=true で ⑥ 候補を実際にゴミ箱へ（既定は候補収集のみ）。
-const emptyAlign = () => ({ aligned: 0, moved: 0, copiedExternal: 0, rekeyed: 0, errors: 0 });
-const emptyOrphan = () => ({ scanned: 0, registered: 0, invalid: 0 });
-const emptyDedup = () => ({ groups: 0, survivors: 0, losers: 0 });
-// 同期（フォルダ走査）。①〜⑥ ＋ 同フォルダ同名の重複整理 ＋ 毎回の参照再リンクを適用する。
-// applyDeleteDuplicates / applyDeleteInvalid はカテゴリ別にゴミ箱移動を許可（既定は候補収集のみ）。
-export const rebuildMappingsFromFolders = async (rootUrl = "", { applyDeleteInvalid = false, applyDeleteDuplicates = false } = {}) => {
-  const r = await fetchGasApi(
-    "nfbRebuildMappingsFromFolders",
-    { rootUrl, applyDeleteInvalid, applyDeleteDuplicates },
-    "マッピングの同期に失敗しました",
-  );
-  const align = r.align || {};
-  const orphans = r.orphans || {};
-  const dedup = r.dedup || {};
-  return {
-    mode: r.mode || ((applyDeleteInvalid || applyDeleteDuplicates) ? "apply" : "dryRun"),
-    align: { forms: align.forms || emptyAlign(), questions: align.questions || emptyAlign(), dashboards: align.dashboards || emptyAlign() },
-    orphans: { forms: orphans.forms || emptyOrphan(), questions: orphans.questions || emptyOrphan(), dashboards: orphans.dashboards || emptyOrphan() },
-    dedup: { forms: dedup.forms || emptyDedup(), questions: dedup.questions || emptyDedup(), dashboards: dedup.dashboards || emptyDedup() },
-    errors: Array.isArray(r.errors) ? r.errors : [],
-    invalidCandidates: Array.isArray(r.invalidCandidates) ? r.invalidCandidates : [],
-    duplicateCandidates: Array.isArray(r.duplicateCandidates) ? r.duplicateCandidates : [],
-    trashedDuplicates: Array.isArray(r.trashedDuplicates) ? r.trashedDuplicates : [],
-    appliedDeleteInvalid: Boolean(r.appliedDeleteInvalid),
-    appliedDeleteDuplicates: Boolean(r.appliedDeleteDuplicates),
-    relink: r.relink || null,
-    truncated: Boolean(r.truncated),
-  };
-};
 // 既存の仮想フォルダ/フォームを物理 Drive フォルダ（01_forms 配下）へ反映（移行・冪等）。
 export const backfillPhysicalFolders = async () => {
   const r = await fetchGasApi("nfbBackfillPhysicalFolders", {}, "物理フォルダへの反映に失敗しました");
@@ -264,7 +235,7 @@ export const exportMapping = async () => {
   return r.mapping;
 };
 // マッピングをインポート（マージ）。url 非空ならその Drive ファイル、空ならルート直下の最新 .json を読む。
-// インポートは純粋なマージのみ。取り込んだエントリの物理整列・リンク修復は「同期（フォルダ走査）」の責務。
+// インポートは純粋なマージのみ。取り込んだエントリの物理整列・リンク修復は、各エンティティの次回保存時のサーバ側自動リンク補完が担う。
 export const importMapping = async (url = "") => {
   const r = await fetchGasApi("nfbImportMapping", { url }, "マッピングのインポートに失敗しました");
   return { imported: r.imported || {}, skipped: r.skipped || 0, errors: r.errors || [] };
@@ -279,12 +250,7 @@ export const ensureStdFolders = async (rootUrl = "") => {
   const r = await fetchGasApi("nfbEnsureStdFolders", { rootUrl }, "標準フォルダ構成の作成に失敗しました");
   return { rootUrl: r.rootUrl || "", rootName: r.rootName || "" };
 };
-// 標準フォルダ構成内のファイル目録・リンク関係を Markdown レポート化（LLM へのリンク切れ診断用）。
-export const buildLinkReport = async ({ includeEntityJson = false, includeWebhookText = false } = {}) => {
-  const r = await fetchGasApi("nfbBuildLinkReport", { includeEntityJson, includeWebhookText }, "レポートの作成に失敗しました");
-  return { markdown: r.markdown || "", stats: r.stats || {} };
-};
-// 注: 参照の再リンク / 同名重複整理は rebuildMappingsFromFolders（同期）が内包する。単体 API は廃止。
+// 注: 参照の再リンク / 同名重複整理は保存時のサーバ側自動リンク補完（alignReferencesOnSave_）が担う。
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
 export const saveFileToDrive = ({ filename, base64, mimeType }) => fetchGasApi("nfbSaveFileToDrive", { filename, base64, mimeType }, "Driveへの保存に失敗しました");
 const isSingleRecordPrintPayload = (payload) => {

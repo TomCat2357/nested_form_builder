@@ -2,7 +2,6 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   copyStandardFolders,
-  rebuildMappingsFromFolders,
   exportMapping,
   importMapping,
 } from "./gasClient.js";
@@ -72,52 +71,6 @@ test("copyStandardFolders: appsscript 本体コピー失敗時は理由を appsS
     const r = await copyStandardFolders({ destRootUrl: "https://drive.google.com/drive/folders/DEST" });
     assert.equal(r.appsScriptCopied, false);
     assert.equal(r.appsScriptCopyError, "Apps Script API が無効です。");
-  } finally {
-    clearGoogleStub();
-  }
-});
-
-test("rebuildMappingsFromFolders: 6ケース整合の結果を整形して返す", async () => {
-  const captured = installGoogleStub("nfbRebuildMappingsFromFolders", {
-    ok: true,
-    mode: "dryRun",
-    align: {
-      forms: { aligned: 2, moved: 1, copiedExternal: 1, rekeyed: 0, errors: 1 },
-      questions: { aligned: 3 },
-    },
-    orphans: {
-      forms: { scanned: 4, registered: 2, invalid: 1 },
-    },
-    errors: [{ kind: "forms", id: "F1", name: "壊れ", folder: "a", reason: "fileId未解決かつ物理ファイル未検出" }],
-    invalidCandidates: [{ kind: "forms", fileId: "BAD1", name: "memo", relPath: "a/memo.txt" }],
-    relink: { questions: { refsRelinked: 1 }, dashboards: { refsRelinked: 0 } },
-    truncated: false,
-  });
-  try {
-    const r = await rebuildMappingsFromFolders("", { applyDeleteInvalid: false, applyDeleteDuplicates: false });
-    assert.deepEqual(captured.payload, { rootUrl: "", applyDeleteInvalid: false, applyDeleteDuplicates: false });
-    assert.equal(r.mode, "dryRun");
-    assert.equal(r.align.forms.copiedExternal, 1);
-    assert.equal(r.align.forms.errors, 1);
-    // 欠落 kind はデフォルト形で埋める。
-    assert.equal(r.align.dashboards.aligned, 0);
-    assert.equal(r.orphans.forms.registered, 2);
-    assert.equal(r.orphans.questions.registered, 0);
-    assert.equal(r.errors.length, 1);
-    assert.equal(r.invalidCandidates[0].relPath, "a/memo.txt");
-    assert.equal(r.relink.questions.refsRelinked, 1);
-    assert.equal(r.truncated, false);
-  } finally {
-    clearGoogleStub();
-  }
-});
-
-test("rebuildMappingsFromFolders: applyDeleteInvalid/Duplicates:true を payload へ渡す", async () => {
-  const captured = installGoogleStub("nfbRebuildMappingsFromFolders", { ok: true, mode: "apply" });
-  try {
-    const r = await rebuildMappingsFromFolders("", { applyDeleteInvalid: true, applyDeleteDuplicates: true });
-    assert.deepEqual(captured.payload, { rootUrl: "", applyDeleteInvalid: true, applyDeleteDuplicates: true });
-    assert.equal(r.mode, "apply");
   } finally {
     clearGoogleStub();
   }

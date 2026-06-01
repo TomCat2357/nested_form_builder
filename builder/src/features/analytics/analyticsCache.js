@@ -60,3 +60,17 @@ function makeListCache(storeName) {
 
 export const questionCache = makeListCache(STORE_NAMES.analyticsQuestions);
 export const dashboardCache = makeListCache(STORE_NAMES.analyticsDashboards);
+
+// Question / Dashboard キャッシュがローカルで変化したことを一覧へ通知するための軽量イベント。
+// オフライン保存の楽観的 upsert やバックグラウンドアップロード成功後の付け替えで発火し、
+// useAnalyticsList が購読して再読込する（サーバ強制取得ではなくキャッシュ優先の再評価）。
+const analyticsCacheListeners = new Set();
+export const subscribeAnalyticsCache = (fn) => {
+  analyticsCacheListeners.add(fn);
+  return () => analyticsCacheListeners.delete(fn);
+};
+export const emitAnalyticsCacheChanged = (entityType) => {
+  analyticsCacheListeners.forEach((fn) => {
+    try { fn(entityType); } catch (_e) { /* noop */ }
+  });
+};

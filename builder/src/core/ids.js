@@ -135,3 +135,11 @@ export const genCardId = () => `card_${createUlid()}`;
 export const genFilterId = () => `flt_${createUlid()}`;
 
 export const genId = () => `f_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+
+// オフラインファースト保存用の一時 ID。
+// 新規フォーム/クエスチョン/ダッシュボードはまず IndexedDB に保存し、バックグラウンドで
+// Google Drive へアップロードしてから本物の fileId へ付け替える。アップロード完了までの
+// ローカル識別子として `local_<ULID>` を使う（Drive へ送る際は決して送らない）。
+export const LOCAL_ID_PREFIX = "local_";
+export const genLocalId = () => `${LOCAL_ID_PREFIX}${createUlid()}`;
+export const isLocalId = (id) => typeof id === "string" && id.startsWith(LOCAL_ID_PREFIX);

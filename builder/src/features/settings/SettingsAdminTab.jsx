@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import ConfirmDialog from "../../app/components/ConfirmDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
@@ -14,25 +14,15 @@ import {
   copyStandardFolders,
   exportMapping,
   importMapping,
-  rebuildMappingsFromFolders,
   getStdFolderRoot,
   ensureStdFolders,
   backfillPhysicalFolders,
-  buildLinkReport,
 } from "../../services/gasClient.js";
 import AdminCopyStructureDialog from "../../pages/admin/AdminCopyStructureDialog.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { questionCache, dashboardCache } from "../../features/analytics/analyticsCache.js";
 import { triggerBlobDownload } from "../../utils/fileDownload.js";
-import {
-  buildSyncResultMarkdown,
-  buildSyncResultPrintHtml,
-  summarizeSyncSegments,
-  buildLinkReportPrintHtml,
-  summarizeLinkSegments,
-  printHtmlDocument,
-} from "./reportArtifacts.js";
 
 const normalizeAdminEmailInput = (value) => String(value || "")
   .split(";")
@@ -95,41 +85,6 @@ function AdminSettingRow({ title, description, label, inputValue, placeholder, o
   );
 }
 
-// 同期結果 / リンク診断の図表（横棒）。reportArtifacts の summarize*Segments と同じ
-// セグメントを受け取り、画面の図と PDF の図を一致させる。
-function ReportBarChart({ segments }) {
-  const max = Math.max(1, ...segments.map((s) => s.value || 0));
-  return (
-    <div className="nf-mt-6 nf-mb-6">
-      {segments.map((s) => (
-        <div key={s.key} className="nf-row nf-gap-8" style={{ alignItems: "center", margin: "4px 0" }}>
-          <div className="nf-text-12" style={{ flex: "0 0 180px" }}>{s.label}</div>
-          <div style={{ flex: 1, background: "#ecf0f1", borderRadius: 4, height: 16, overflow: "hidden" }}>
-            <div style={{ width: `${Math.round(((s.value || 0) / max) * 100)}%`, background: s.color, height: "100%", minWidth: 2, borderRadius: 4 }} />
-          </div>
-          <div className="nf-text-12" style={{ flex: "0 0 40px", textAlign: "right", fontWeight: 600 }}>{s.value || 0}</div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// 結果パネル（図表＋ダウンロードリンク）。何度でも .md / PDF を出力できる。
-function ReportResultPanel({ title, meta, segments, onDownloadMd, onPrintPdf, children }) {
-  return (
-    <div className="nf-card nf-mt-12" style={{ background: "#fafbfc" }}>
-      <div className="nf-fw-600 nf-text-13 nf-mb-6">{title}</div>
-      {meta && <p className="nf-text-11 nf-text-muted nf-mb-6">{meta}</p>}
-      <ReportBarChart segments={segments} />
-      {children}
-      <div className="nf-row nf-gap-12 nf-mt-6" style={{ flexWrap: "wrap" }}>
-        <button type="button" className="nf-btn nf-nowrap" onClick={onDownloadMd}>.md をダウンロード</button>
-        <button type="button" className="nf-btn nf-nowrap" onClick={onPrintPdf}>PDF として出力（印刷）</button>
-      </div>
-    </div>
-  );
-}
-
 export default function SettingsAdminTab() {
   const { showAlert } = useAlert();
 
@@ -143,16 +98,6 @@ export default function SettingsAdminTab() {
   const [adminEmailLoading, setAdminEmailLoading] = useState(false);
   const adminEmailDialog = useConfirmDialog();
 
-  // 同期後の削除確認（カテゴリ別2段）。いずれもゴミ箱移動を伴う破壊的操作。
-  // ステージ1: 同フォルダ同名の重複（loser）/ ステージ2: 論理に対応先がない不正ファイル(⑥)。
-  const dupConfirm = useConfirmDialog();
-  const pruneConfirm = useConfirmDialog();
-  const [pendingDuplicates, setPendingDuplicates] = useState([]); // 重複の余り（確認ダイアログ表示用）
-  const [pendingInvalid, setPendingInvalid] = useState([]);       // ⑥ 候補（確認ダイアログ表示用）
-  // 2段ダイアログをまたいで保持する: 初回走査のサマリ と 重複削除の可否。
-  const syncSummaryRef = useRef("");
-  const deleteDuplicatesRef = useRef(false);
-
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
 
@@ -160,15 +105,6 @@ export default function SettingsAdminTab() {
   const [rootInfo, setRootInfo] = useState(null);   // { resolved, rootUrl, rootName, error }
   const [rootUrlInput, setRootUrlInput] = useState("");
   const [ensureLoading, setEnsureLoading] = useState(false);
-
-  // 構成レポート（リンク診断）
-  const [reportLoading, setReportLoading] = useState(false);
-  const [reportIncludeJson, setReportIncludeJson] = useState(false);
-  const [reportIncludeWebhook, setReportIncludeWebhook] = useState(false);
-  const [linkReport, setLinkReport] = useState(null);   // { markdown, stats, generatedAt }（結果パネル・再DL用）
-
-  // 同期（フォルダ走査）の最新結果。結果パネルで何度でも .md / PDF を出力できる（セッション内保持）。
-  const [syncResult, setSyncResult] = useState(null);   // { r, summary, generatedAt }
 
   // システムごとコピー
   const [copyDialogOpen, setCopyDialogOpen] = useState(false);
@@ -178,11 +114,10 @@ export default function SettingsAdminTab() {
   const [rebuildMapping, setRebuildMapping] = useState(true);
   const [copyLoading, setCopyLoading] = useState(false);
 
-  // マッピングの管理（エクスポート / インポート / 同期）
+  // マッピングの管理（エクスポート / インポート）
   const [mappingImportUrl, setMappingImportUrl] = useState("");
   const [exportLoading, setExportLoading] = useState(false);
   const [importLoading, setImportLoading] = useState(false);
-  const [syncLoading, setSyncLoading] = useState(false);
 
   const { refreshForms } = useAppData();
   const { userEmail } = useAuth();
@@ -352,60 +287,6 @@ export default function SettingsAdminTab() {
     }
   };
 
-  // 表示用タイムスタンプ（JST 業務利用前提・ロケール日本語）。
-  const nowStamp = () => new Date().toLocaleString("ja-JP", { hour12: false });
-
-  // PDF 出力（ブラウザ印刷）。ポップアップブロック時は例外をアラートで案内する。
-  const safePrint = (bodyHtml, title) => {
-    try {
-      printHtmlDocument(bodyHtml, title);
-    } catch (error) {
-      console.error("[SettingsAdminTab] print failed", error);
-      showAlert(error?.message || "PDF 出力（印刷）に失敗しました");
-    }
-  };
-
-  const handleBuildReport = async () => {
-    if (!canManageAdminSettings) return;
-    setReportLoading(true);
-    try {
-      const { markdown, stats } = await buildLinkReport({
-        includeEntityJson: reportIncludeJson,
-        includeWebhookText: reportIncludeWebhook,
-      });
-      setLinkReport({ markdown, stats: stats || {}, generatedAt: nowStamp() });
-    } catch (error) {
-      console.error("[SettingsAdminTab] buildLinkReport failed", error);
-      showAlert(error?.message || "レポートの作成に失敗しました");
-    } finally {
-      setReportLoading(false);
-    }
-  };
-
-  const downloadLinkReportMd = () => {
-    if (!linkReport) return;
-    triggerBlobDownload(
-      new Blob([linkReport.markdown], { type: "text/markdown;charset=utf-8" }),
-      "nfb-structure-report.md",
-    );
-  };
-  const printLinkReportPdf = () => {
-    if (!linkReport) return;
-    safePrint(buildLinkReportPrintHtml(linkReport.markdown, linkReport.stats), "構成レポート（リンク診断）");
-  };
-
-  const downloadSyncResultMd = () => {
-    if (!syncResult) return;
-    triggerBlobDownload(
-      new Blob([buildSyncResultMarkdown(syncResult.r, { generatedAt: syncResult.generatedAt })], { type: "text/markdown;charset=utf-8" }),
-      "nfb-sync-result.md",
-    );
-  };
-  const printSyncResultPdf = () => {
-    if (!syncResult) return;
-    safePrint(buildSyncResultPrintHtml(syncResult.r, { generatedAt: syncResult.generatedAt }), "同期（フォルダ走査）結果");
-  };
-
   const handleCopyConfirm = async () => {
     if (!canManageAdminSettings) return;
     setCopyLoading(true);
@@ -478,8 +359,9 @@ export default function SettingsAdminTab() {
         errors.slice(0, 3).forEach((e) => lines.push(`・[${e.section}] ${e.id}: ${e.reason}`));
         if (errors.length > 3) lines.push(`…ほか ${errors.length - 3}件`);
       }
-      // インポートはマッピングのマージのみ。物理整列・リンク修復は「同期（フォルダ走査）」が担うため案内する。
-      lines.push("", "続けて「同期（フォルダ走査）」を実行すると、取り込んだ資産を標準フォルダへ整列します。");
+      // インポートはマッピングのマージのみ。取り込んだ資産の物理整列・リンク補完は、
+      // 各エンティティを次に保存した際のサーバ側自動リンク補完（バックグラウンドアップロード）が担う。
+      lines.push("", "取り込んだフォーム・Question・Dashboard は、次回保存時に標準フォルダへ自動整列・再リンクされます。");
       await invalidateListCaches();
       showAlert(`マッピングをインポートしました。\n${lines.join("\n")}`);
     } catch (error) {
@@ -489,116 +371,6 @@ export default function SettingsAdminTab() {
       setImportLoading(false);
     }
   };
-
-  // 整合同期の結果（6 ケース＋重複整理＋再リンク）を人間可読にまとめる。
-  const summarizeAlign = (r) => {
-    const sum = (key) => ["forms", "questions", "dashboards"].reduce((acc, k) => acc + ((r.align?.[k]?.[key]) || 0), 0);
-    const reg = (k) => (r.orphans?.[k]?.registered) || 0;
-    const dsum = (key) => ["forms", "questions", "dashboards"].reduce((acc, k) => acc + ((r.dedup?.[k]?.[key]) || 0), 0);
-    const fidDedupRemoved = ["forms", "questions", "dashboards"].reduce((acc, k) => acc + ((r.fileIdDedup?.[k]?.removed) || 0), 0);
-    const lines = [
-      `① 一致(変更なし): ${sum("aligned")}件 / ② 物理移動: ${sum("moved")}件 / ② 外部コピー取込: ${sum("copiedExternal")}件 / ③ id再採用: ${sum("rekeyed")}件`,
-      `⑤ 新規登録: フォーム ${reg("forms")} / Question ${reg("questions")} / Dashboard ${reg("dashboards")}`,
-    ];
-    if (r.relink && (r.relink.questions || r.relink.dashboards)) {
-      const q = r.relink.questions || {};
-      const d = r.relink.dashboards || {};
-      lines.push(`参照の自動再リンク: Question ${q.refsRelinked || 0} / Dashboard ${d.refsRelinked || 0} 参照`);
-    }
-    if (fidDedupRemoved > 0) {
-      lines.push(`同一fileIdの論理パス重複整理: 余りの論理パス ${fidDedupRemoved}件を登録簿から除去（物理ファイルは共有のため保持）`);
-    }
-    const dupLosers = dsum("losers");
-    if (dupLosers > 0) {
-      const trashed = (r.trashedDuplicates || []).length;
-      lines.push(`同フォルダ同名 重複整理: 余り ${dupLosers}件（${trashed > 0 ? `ゴミ箱へ移動済み ${trashed}件` : "未削除（候補）"}）`);
-    }
-    const errs = r.errors || [];
-    if (errs.length) {
-      lines.push(`④ 要対応エラー（物理ファイル未検出・自動修復不可）: ${errs.length}件`);
-      errs.slice(0, 8).forEach((e) => lines.push(`・[${e.kind}] ${e.name || e.id}（${e.folder || "(直下)"}）: ${e.reason}`));
-      if (errs.length > 8) lines.push("…ほか");
-    }
-    const inv = r.invalidCandidates || [];
-    if (inv.length) {
-      lines.push(`⑥ 論理に結びつかない不正ファイル: ${inv.length}件（${r.appliedDeleteInvalid ? "ゴミ箱へ移動済み" : "未削除（候補）"}）`);
-    }
-    if (r.truncated) lines.push("⚠ 実行時間の安全弁で打ち切りました。再実行してください。");
-    return lines.join("\n");
-  };
-
-  // 同期本体。削除フラグはカテゴリ別。常に align＋重複整理（参照寄せ）＋再リンクを適用し、サマリを返す。
-  const runSync = async ({ deleteDuplicates = false, deleteInvalid = false } = {}) => {
-    const r = await rebuildMappingsFromFolders("", { applyDeleteDuplicates: deleteDuplicates, applyDeleteInvalid: deleteInvalid });
-    await invalidateListCaches();
-    return { r, summary: "フォルダ走査で論理↔物理を整合しました。\n" + summarizeAlign(r) };
-  };
-
-  // 2段ダイアログの決定を集約し、削除があるときだけ apply 走査を1回行う。
-  const finalizeSync = async ({ deleteInvalid = false } = {}) => {
-    const deleteDuplicates = deleteDuplicatesRef.current;
-    if (!deleteDuplicates && !deleteInvalid) {
-      // 何も削除しない → 再走査せず初回サマリを表示（align/再リンク/参照寄せは初回で適用済み）。
-      showAlert(syncSummaryRef.current);
-      setPendingDuplicates([]); setPendingInvalid([]); deleteDuplicatesRef.current = false;
-      return;
-    }
-    setSyncLoading(true);
-    try {
-      const { r, summary } = await runSync({ deleteDuplicates, deleteInvalid });
-      setSyncResult({ r, summary, generatedAt: nowStamp() });
-      showAlert(summary);
-    } catch (error) {
-      console.error("[SettingsAdminTab] sync apply failed", error);
-      showAlert(error?.message || "削除の適用に失敗しました");
-    } finally {
-      setSyncLoading(false);
-      setPendingDuplicates([]); setPendingInvalid([]); deleteDuplicatesRef.current = false;
-    }
-  };
-
-  const handleSyncMapping = async () => {
-    if (!canManageAdminSettings) return;
-    setSyncLoading(true);
-    try {
-      // 走査して align＋重複整理（参照寄せ）＋再リンクを適用。削除は候補収集のみ。
-      const { r, summary } = await runSync({});
-      setSyncResult({ r, summary, generatedAt: nowStamp() });
-      syncSummaryRef.current = summary;
-      deleteDuplicatesRef.current = false;
-      const dups = r.duplicateCandidates || [];
-      const inv = r.invalidCandidates || [];
-      setPendingDuplicates(dups);
-      setPendingInvalid(inv);
-      // ステージ1: 同名重複の余り → ステージ2: 不正ファイル(⑥)。どちらも無ければサマリのみ。
-      if (dups.length > 0) { dupConfirm.open(); return; }
-      if (inv.length > 0) { pruneConfirm.open(); return; }
-      showAlert(summary);
-    } catch (error) {
-      console.error("[SettingsAdminTab] rebuildMappingsFromFolders failed", error);
-      showAlert(error?.message || "マッピングの同期に失敗しました");
-    } finally {
-      setSyncLoading(false);
-    }
-  };
-
-  // ステージ1（同名重複の余り）。決定後、不正ファイルがあればステージ2へ、無ければ確定。
-  const afterDuplicateDecision = async (deleteDuplicates) => {
-    deleteDuplicatesRef.current = deleteDuplicates;
-    dupConfirm.close();
-    if (pendingInvalid.length > 0) { pruneConfirm.open(); return; }
-    await finalizeSync({ deleteInvalid: false });
-  };
-  const dupConfirmOptions = [
-    { value: "keep", label: "残す（削除しない）", onSelect: () => afterDuplicateDecision(false) },
-    { value: "delete", label: "削除する（重複をゴミ箱へ）", variant: "primary", onSelect: () => afterDuplicateDecision(true) },
-  ];
-
-  // ステージ2（不正ファイル⑥）。決定後、ステージ1の重複削除可否と合わせて確定。
-  const pruneConfirmOptions = [
-    { value: "keep", label: "残す（削除しない）", onSelect: async () => { pruneConfirm.close(); await finalizeSync({ deleteInvalid: false }); } },
-    { value: "delete", label: "削除する（ゴミ箱へ）", variant: "primary", onSelect: async () => { pruneConfirm.close(); await finalizeSync({ deleteInvalid: true }); } },
-  ];
 
   return (
     <div className="nf-card">
@@ -716,56 +488,6 @@ export default function SettingsAdminTab() {
           コピー後の URL で再構成します。コピー先スクリプトの Web アプリは手動で再デプロイしてください。
         </p>
 
-        {/* 機能3: 構成の中身とリンク関係をレポート化（LLM へのリンク切れ診断用） */}
-        <div className="nf-fw-600 nf-text-13 nf-mb-6">③ 構成レポート（リンク診断）</div>
-        <p className="nf-mb-12 nf-text-12 nf-text-muted">
-          標準フォルダ構成内（子フォルダ含む）にどんなファイルがあり、どのファイルが何をリンクしているかを
-          Markdown レポートとして書き出します。リンク切れの診断を LLM に依頼する用途を想定しています。
-        </p>
-        <label className="nf-row nf-gap-8 nf-mb-6" style={{ alignItems: "center", cursor: reportLoading ? "default" : "pointer" }}>
-          <input
-            type="checkbox"
-            checked={reportIncludeJson}
-            disabled={!canManageAdminSettings || reportLoading}
-            onChange={(event) => setReportIncludeJson(event.target.checked)}
-          />
-          <span className="nf-text-13">フォーム・Question・Dashboard の JSON を含める</span>
-        </label>
-        <label className="nf-row nf-gap-8 nf-mb-12" style={{ alignItems: "center", cursor: reportLoading ? "default" : "pointer" }}>
-          <input
-            type="checkbox"
-            checked={reportIncludeWebhook}
-            disabled={!canManageAdminSettings || reportLoading}
-            onChange={(event) => setReportIncludeWebhook(event.target.checked)}
-          />
-          <span className="nf-text-13">Webhook（埋め込み設定＋<code>07_webhooks</code> のファイル）をテキストで含める</span>
-        </label>
-        <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
-          <button type="button" className="nf-btn nf-nowrap" onClick={handleBuildReport} disabled={!canManageAdminSettings || reportLoading}>
-            {reportLoading ? "作成中..." : "レポートを作成"}
-          </button>
-        </div>
-        <p className="nf-mt-6 nf-text-11 nf-text-muted">
-          作成すると下に結果パネルを表示し、<strong>.md と PDF を何度でもダウンロード</strong>できます。
-          リンク切れ判定は fileId の実在に加え、<strong>中央辞書（論理パス folder + 名前 → fileId）の folder スコープ解決</strong>
-          （実行時リゾルバと同じ優先順）で評価します（外部リンクの生死は未検査）。
-          フォーム数が多いと GAS の実行時間（6 分）に注意してください。
-        </p>
-
-        {linkReport && (
-          <ReportResultPanel
-            title="構成レポート（リンク診断）結果"
-            meta={`生成: ${linkReport.generatedAt} ／ ファイル ${linkReport.stats.files || 0} 件・フォーム ${linkReport.stats.forms || 0}・Question ${linkReport.stats.questions || 0}・Dashboard ${linkReport.stats.dashboards || 0}・検査リンク ${linkReport.stats.scannedLinks || 0}${linkReport.stats.truncated ? "（⚠ 実行打ち切りあり・再実行推奨）" : ""}`}
-            segments={summarizeLinkSegments(linkReport.stats)}
-            onDownloadMd={downloadLinkReportMd}
-            onPrintPdf={printLinkReportPdf}
-          >
-            <p className="nf-text-11 nf-text-muted">
-              要手動対応 {linkReport.stats.brokenCandidates || 0} 件 ／ 自動再リンク可（同期で恒久修復）{linkReport.stats.autoRelinkable || 0} 件 ／ 外部参照 {linkReport.stats.externalRefs || 0} 件
-            </p>
-          </ReportResultPanel>
-        )}
-
       </div>
 
       <div className="nf-section-divider">
@@ -773,10 +495,11 @@ export default function SettingsAdminTab() {
         <p className="nf-mb-12 nf-text-12 nf-text-muted">
           フォーム・Question・Dashboard の「ID→Drive ファイル対応表（マッピング）」をエクスポート／インポートします。
           システムをコピーした直後の復元は、コピー先ルートに保存された <code>_nfb_mapping.json</code> を
-          「インポート」（URL 空欄）で取り込むか、「同期」でフォルダを走査して復元してください。
+          「インポート」（URL 空欄）で取り込んでください。取り込んだ資産の物理整列・リンク補完は、
+          各エンティティを次に保存した際にサーバ側で自動的に行われます。
         </p>
 
-        {/* 復元（取り込み）: インポートと同期はどちらもマッピングを「取り込む」復元手段。 */}
+        {/* 復元（取り込み）: マッピングを「取り込む」復元手段。 */}
         <div className="nf-fw-600 nf-text-13 nf-mb-6">復元（取り込み）</div>
         <label className="nf-block nf-fw-600 nf-mb-6">インポート（JSON から復元）</label>
         <div className="nf-row nf-gap-12">
@@ -793,34 +516,8 @@ export default function SettingsAdminTab() {
         </div>
         <p className="nf-mt-6 nf-mb-12 nf-text-11 nf-text-muted">
           インポートは既存マッピングへマージします（同じ fileId は重複としてスキップ）。
+          取り込んだフォーム・Question・Dashboard は、次回保存時にサーバ側で標準フォルダへ自動整列・再リンクされます。
         </p>
-
-        <div className="nf-row nf-gap-12">
-          <button type="button" className="nf-btn nf-nowrap" onClick={handleSyncMapping} disabled={!canManageAdminSettings || syncLoading}>
-            {syncLoading ? "同期中..." : "同期（フォルダ走査）"}
-          </button>
-        </div>
-        <p className="nf-mt-6 nf-text-11 nf-text-muted">
-          論理（登録簿）を正として物理 Drive を整合します：①一致は変更なし、②物理位置のズレは移動（プロジェクト外は取り込みコピー）、
-          ③同名で id が変わったファイルは id を再採用、④物理が見つからないものはエラー表示、⑤正しい場所の未登録ファイルは新規登録、
-          ⑥論理に結びつかない不正ファイルはポップアップ確認のうえゴミ箱へ。
-          あわせて<strong>参照（Question→Form / Dashboard→Question）を毎回再リンク</strong>し、
-          <strong>同一フォルダ内の同名重複</strong>は最終更新が新しい方を残して参照を寄せます。
-          削除を伴う操作（同名重複の余り → 不正ファイル）は、実行後にカテゴリ別の確認ダイアログで承認してからゴミ箱へ移動します（30日間は復元可）。
-          このため単体の「再リンク」「重複整理」「未追跡ファイル削除」操作は不要です。
-        </p>
-
-        {syncResult && (
-          <ReportResultPanel
-            title="同期（フォルダ走査）結果"
-            meta={`生成: ${syncResult.generatedAt} ／ モード: ${syncResult.r?.mode || "dryRun"}`}
-            segments={summarizeSyncSegments(syncResult.r)}
-            onDownloadMd={downloadSyncResultMd}
-            onPrintPdf={printSyncResultPdf}
-          >
-            <pre className="nf-text-11" style={{ whiteSpace: "pre-wrap", margin: "6px 0", color: "#444" }}>{syncResult.summary}</pre>
-          </ReportResultPanel>
-        )}
 
         {/* バックアップ（書き出し）: エクスポートだけが向きの異なる「書き出し」操作。 */}
         <div className="nf-fw-600 nf-text-13 nf-mb-6 nf-mt-24">バックアップ（書き出し）</div>
@@ -869,32 +566,6 @@ export default function SettingsAdminTab() {
             : "管理者メール制限を解除します。メールアドレスによる管理者制限は行われません。"
         }
         options={adminEmailConfirmOptions}
-      />
-
-      {/* ステージ1: 同一フォルダ内の同名重複（最新を残し、参照は寄せ済み）。余りを削除するか確認。 */}
-      <ConfirmDialog
-        open={dupConfirm.state.open}
-        title="同一フォルダ内の同名重複を削除しますか？"
-        message={
-          `同一フォルダに同名のファイルが重複しています。最終更新が新しい方を残し、参照は新しい方へ寄せました。` +
-          `残り ${pendingDuplicates.length} 件を Drive のゴミ箱へ移動できます（30 日間は復元可）。\n\n` +
-          pendingDuplicates.slice(0, 12).map((f) => `・[${f.kind}] ${f.relPath}`).join("\n") +
-          (pendingDuplicates.length > 12 ? `\n…ほか ${pendingDuplicates.length - 12} 件` : "")
-        }
-        options={dupConfirmOptions}
-      />
-
-      {/* ステージ2: 論理に対応先がない不正ファイル(⑥)。 */}
-      <ConfirmDialog
-        open={pruneConfirm.state.open}
-        title="論理に結びつかない不正ファイルを削除しますか？"
-        message={
-          `標準フォルダ（01_forms / 02_questions / 03_dashboards）内に、論理（登録簿）と結びつかない不正なファイルが ${pendingInvalid.length} 件見つかりました。` +
-          "「削除する」を選ぶと Drive のゴミ箱へ移動します（30 日間は復元可）。\n\n" +
-          pendingInvalid.slice(0, 12).map((f) => `・[${f.kind}] ${f.relPath}`).join("\n") +
-          (pendingInvalid.length > 12 ? `\n…ほか ${pendingInvalid.length - 12} 件` : "")
-        }
-        options={pruneConfirmOptions}
       />
     </div>
   );

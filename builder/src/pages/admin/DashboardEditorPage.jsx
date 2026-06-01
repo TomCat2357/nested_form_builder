@@ -7,6 +7,7 @@ import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
 import { useCancellable } from "../../app/hooks/useCancellable.js";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
+import { useTempIdRedirect } from "../../app/hooks/useTempIdRedirect.js";
 import { listQuestions, saveDashboard, resolveDashboardLinks } from "../../features/analytics/analyticsStore.js";
 import { analyticsGasClient } from "../../features/analytics/analyticsGasClient.js";
 import { genCardId, genFilterId } from "../../core/ids.js";
@@ -36,9 +37,13 @@ function columnTypeToValueType(type) {
   return "text";
 }
 
+const buildDashboardEditPath = (id) => `/admin/dashboards/${id}/edit`;
+
 export default function DashboardEditorPage() {
   const navigate = useNavigate();
   const { dashboardId } = useParams();
+  // 一時 ID のままディープリンクで開かれた場合、アップロード完了後に実 ID の URL へ置き換える。
+  useTempIdRedirect(dashboardId, buildDashboardEditPath);
   const location = useLocation();
   const { isAdmin } = useAuth();
   const { forms } = useAppData();

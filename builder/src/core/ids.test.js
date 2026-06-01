@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { genFormId, genRecordId, genQuestionId, genDashboardId, genCardId, genFilterId } from "./ids.js";
+import { genFormId, genRecordId, genQuestionId, genDashboardId, genCardId, genFilterId, genLocalId, isLocalId, LOCAL_ID_PREFIX } from "./ids.js";
 
 const ULID_RE = "[0-9A-HJKMNPQRSTVWXYZ]{26}";
 const BASE64URL8_RE = "[A-Za-z0-9_-]{8}";
@@ -52,6 +52,24 @@ test("genRecordId は同一ミリ秒連続生成でも厳密昇順になる", ()
   } finally {
     Date.now = originalNow;
   }
+});
+
+test("genLocalId は local_ プレフィックス付きの一意な ID を返す", () => {
+  const a = genLocalId();
+  const b = genLocalId();
+  assert.ok(a.startsWith(LOCAL_ID_PREFIX));
+  assert.match(a, new RegExp(`^${LOCAL_ID_PREFIX}${ULID_RE}$`));
+  assert.notEqual(a, b);
+});
+
+test("isLocalId は local_ ID のみ true、実 fileId は false", () => {
+  assert.equal(isLocalId(genLocalId()), true);
+  assert.equal(isLocalId("local_ABC"), true);
+  assert.equal(isLocalId(genFormId()), false);
+  assert.equal(isLocalId("1AbcDriveFileId"), false);
+  assert.equal(isLocalId(""), false);
+  assert.equal(isLocalId(null), false);
+  assert.equal(isLocalId(undefined), false);
 });
 
 test("genRecordId は時計が逆行しても厳密昇順を維持する", () => {
