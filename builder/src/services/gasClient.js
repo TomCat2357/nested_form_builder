@@ -252,7 +252,6 @@ export const ensureStdFolders = async (rootUrl = "") => {
 };
 // 注: 参照の再リンク / 同名重複整理は保存時のサーバ側自動リンク補完（alignReferencesOnSave_）が担う。
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");
-export const saveFileToDrive = ({ filename, base64, mimeType }) => fetchGasApi("nfbSaveFileToDrive", { filename, base64, mimeType }, "Driveへの保存に失敗しました");
 const isSingleRecordPrintPayload = (payload) => {
   return Boolean(payload && payload.fileName && Array.isArray(payload.items));
 };
@@ -272,9 +271,6 @@ export const uploadFileToDrive = ({ base64, fileName, mimeType, driveSettings })
 
 export const copyDriveFileToDrive = ({ sourceUrl, driveSettings, fileNameTemplate }) =>
   fetchGasApi("nfbCopyDriveFileToDrive", { sourceUrl, driveSettings, fileNameTemplate }, "Driveファイルのコピーに失敗しました");
-
-export const findDriveFileInFolder = ({ fileNameTemplate, outputType, driveSettings }) =>
-  fetchGasApi("nfbFindDriveFileInFolder", { fileNameTemplate, outputType, driveSettings }, "Driveファイルの検索に失敗しました");
 
 export const createGoogleDocumentFromTemplate = ({ sourceUrl, driveSettings, fileNameTemplate }) =>
   fetchGasApi(

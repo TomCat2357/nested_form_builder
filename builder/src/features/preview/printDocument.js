@@ -385,16 +385,3 @@ export const buildPrintDocumentPayload = ({
     ...(driveSettings ? { driveSettings } : {}),
   };
 };
-
-export const buildPrintDocumentBundlePayload = ({ formTitle, records, exportedAt = new Date() }) => {
-  const safeExportedAt = exportedAt instanceof Date && !Number.isNaN(exportedAt.getTime()) ? exportedAt : new Date();
-  const safeFormTitle = typeof formTitle === "string" && formTitle.trim() ? formTitle.trim() : "受付フォーム";
-  const safeRecords = Array.isArray(records) ? records : [];
-
-  return {
-    fileName: `印刷様式_${sanitizePrintFileNamePart(safeFormTitle, "form")}_一括_${safeRecords.length}件_${formatFileTimestamp(safeExportedAt)}`,
-    formTitle: safeFormTitle,
-    exportedAtIso: safeExportedAt.toISOString(),
-    records: safeRecords,
-  };
-};

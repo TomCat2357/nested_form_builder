@@ -20,7 +20,6 @@ export const normalizeNumericToUnixMs = (numeric) => {
   return null;
 };
 
-export const unixMsToSerial = (unixMs) => (unixMs - SERIAL_EPOCH_JST_MS) / MS_PER_DAY;
 export const serialToUnixMs = (serial) => SERIAL_EPOCH_JST_MS + serial * MS_PER_DAY;
 
 // タイムゾーン指定子 ("Z" / "+09:00" / "+0900" / "-05:00") → UTC からのオフセット ms。
@@ -81,12 +80,6 @@ const parseStringToUnixMs = (str) => {
   }
 
   return null;
-};
-
-export const parseStringToSerial = (value) => {
-  if (typeof value !== "string") return null;
-  const ms = parseStringToUnixMs(value.trim());
-  return ms !== null ? ms : null;
 };
 
 export const toUnixMs = (value) => {

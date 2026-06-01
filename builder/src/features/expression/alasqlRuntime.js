@@ -24,10 +24,3 @@ export async function getAlaSql() {
   }
   return alaSqlReady;
 }
-
-/**
- * テスト/開発用 — シングルトンをリセットして次回 getAlaSql() で再ロードさせる。
- */
-export function _resetAlaSqlForTest() {
-  alaSqlReady = null;
-}

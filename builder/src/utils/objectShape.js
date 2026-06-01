@@ -8,6 +8,3 @@ export const isPlainObject = (value) =>
 
 // プレーンオブジェクトならそのまま、それ以外は空オブジェクトを返す。
 export const asPlainObject = (value) => (isPlainObject(value) ? value : {});
-
-// 配列ならそのまま、それ以外は空配列を返す。
-export const asArray = (value) => (Array.isArray(value) ? value : []);

@@ -527,7 +527,6 @@ export const deleteQuestionFolder = questionStore.deleteFolder;
 
 export const listDashboards = dashboardStore.list;
 export const listDashboardsSWR = dashboardStore.listSWR;
-export const getDashboardById = dashboardStore.getById;
 export const saveDashboard = dashboardStore.save;
 export const deleteDashboard = dashboardStore.remove;
 export const deleteDashboards = dashboardStore.removeBatch;

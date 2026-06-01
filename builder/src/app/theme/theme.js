@@ -170,12 +170,6 @@ export const removeCustomTheme = async (themeId) => {
   return next;
 };
 
-export const restoreCustomThemes = async () => {
-  const themes = await readCustomThemes();
-  ensureCustomThemeStyle(themes);
-  return themes;
-};
-
 export const applyTheme = (name) => {
   if (typeof document === "undefined") return;
   document.documentElement.dataset.theme = name;
@@ -207,12 +201,4 @@ export const initTheme = (fallback = DEFAULT_THEME) => {
     }
   })();
   return initialTheme;
-};
-
-export const setTheme = (name, options = {}) => {
-  const { persist = true } = options;
-  const resolved = name || DEFAULT_THEME;
-  applyTheme(resolved);
-  if (!persist) return;
-  void writeSettingsValue(THEME_STORAGE_KEY, resolved);
 };

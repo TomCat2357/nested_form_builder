@@ -57,8 +57,6 @@ export const FILTER_TYPES = ["dateRange", "category", "text", "number", "numberR
 
 // 簡易フィルタの最大件数（3項目まで、項目間は AND）。
 export const MAX_SIMPLE_FILTERS = 3;
-// 簡易フィルタの値の型（フォーム schema 由来）。
-export const SIMPLE_FILTER_VALUE_TYPES = ["number", "date", "text"];
 
 export function isV2(dashboard) {
   return !!dashboard && dashboard.schemaVersion === 2;
