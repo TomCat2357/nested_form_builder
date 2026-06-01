@@ -39,8 +39,7 @@ export default function SearchPage() {
     isCreatingPrintDocument,
     showDeleted,
     setShowDeleted,
-    showDisplaySettings,
-    setShowDisplaySettings,
+    displaySettingsDialog,
     query,
     page,
     activeSort,
@@ -174,7 +173,7 @@ export default function SearchPage() {
         hasUnsynced={hasUnsynced}
         unsyncedCount={unsyncedCount}
         syncInProgress={loading || backgroundLoading || waitingForLock}
-        onSettingsClick={() => setShowDisplaySettings(true)}
+        onSettingsClick={() => displaySettingsDialog.open()}
         filterError={filterError}
         debounceMs={manualSearch ? 0 : (Number(settings?.searchDebounceMs) || 0)}
         manualSearch={manualSearch}
@@ -218,8 +217,8 @@ export default function SearchPage() {
       />
 
       <SearchDisplaySettingsDialog
-        open={showDisplaySettings}
-        onClose={() => setShowDisplaySettings(false)}
+        open={displaySettingsDialog.state.open}
+        onClose={() => displaySettingsDialog.close()}
         overrides={searchOverrides}
         onUpdateOverride={updateOverride}
         formSettings={form?.settings}

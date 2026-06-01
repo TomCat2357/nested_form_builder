@@ -107,7 +107,7 @@ export default function SettingsAdminTab() {
   const [ensureLoading, setEnsureLoading] = useState(false);
 
   // システムごとコピー
-  const [copyDialogOpen, setCopyDialogOpen] = useState(false);
+  const copyDialog = useConfirmDialog();
   const [copyUrl, setCopyUrl] = useState("");
   const [copyData, setCopyData] = useState(false);
   const [copyWebhooks, setCopyWebhooks] = useState(false);
@@ -298,7 +298,7 @@ export default function SettingsAdminTab() {
         rebuildMapping,
       });
       const lines = Object.keys(summary).map((k) => `${k}: ${summary[k]}件`);
-      setCopyDialogOpen(false);
+      copyDialog.close();
       setCopyUrl("");
       const appsScriptStatus = appsScriptCopied
         ? "コピーしました"
@@ -479,7 +479,7 @@ export default function SettingsAdminTab() {
         {/* 機能2: システム一式を別ルートへ複製する */}
         <div className="nf-fw-600 nf-text-13 nf-mb-6">② システムごと別ルートへコピー</div>
         <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
-          <button type="button" className="nf-btn nf-nowrap" onClick={() => setCopyDialogOpen(true)} disabled={!canManageAdminSettings}>
+          <button type="button" className="nf-btn nf-nowrap" onClick={() => copyDialog.open()} disabled={!canManageAdminSettings}>
             システムごと別ルートへコピー
           </button>
         </div>
@@ -532,7 +532,7 @@ export default function SettingsAdminTab() {
       </div>
 
       <AdminCopyStructureDialog
-        open={copyDialogOpen}
+        open={copyDialog.state.open}
         url={copyUrl}
         onUrlChange={setCopyUrl}
         copyData={copyData}
@@ -542,7 +542,7 @@ export default function SettingsAdminTab() {
         rebuildMapping={rebuildMapping}
         onRebuildMappingChange={setRebuildMapping}
         onConfirm={handleCopyConfirm}
-        onCancel={() => setCopyDialogOpen(false)}
+        onCancel={() => copyDialog.close()}
         loading={copyLoading}
       />
 

@@ -2,12 +2,15 @@ import React from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
 
 /**
- * 名前変更ダイアログ。既定はフォルダ名変更（親パスを保持し leaf 名だけを変える mv の rename 相当）。
- * props で title / message / label / placeholder / note を渡せばフォーム・Question・Dashboard
- * など任意アイテムの名前変更にも使い回せる（既定値はフォルダ用なので未指定なら従来挙動）。
- * 現在の名前をプリセットし、新しい名前を入力させる。
+ * テキスト 1 行を入力させる汎用ダイアログ。新規フォルダ作成・フォルダ/アイテム名変更を
+ * 1 コンポーネントで賄う（旧 AdminNewFolderDialog / AdminRenameFolderDialog を統合）。
+ * 既定値はフォルダ名変更用なので、未指定なら従来の rename 挙動になる。
+ *
+ * - title / message / label / placeholder / note … 表示文言（省略時はフォルダ rename 用既定）。
+ * - confirmLabel … 確定ボタン文言（既定 "変更"。作成系は "作成" を渡す）。
+ * - currentName … message 未指定時に rename 用の既定メッセージを組み立てるのに使う。
  */
-export default function AdminRenameFolderDialog({
+export default function AdminFolderNameDialog({
   open,
   currentName = "",
   value,
@@ -20,6 +23,7 @@ export default function AdminRenameFolderDialog({
   label = "新しいフォルダ名",
   placeholder = "例: 苦情・通報",
   note = "「/」は使用できません（同じ階層内での名前変更のみ）。",
+  confirmLabel = "変更",
 }) {
   const handleConfirm = () => {
     if (!(value || "").trim()) return;
@@ -42,7 +46,7 @@ export default function AdminRenameFolderDialog({
             キャンセル
           </button>
           <button type="button" className="dialog-btn primary" onClick={handleConfirm}>
-            変更
+            {confirmLabel}
           </button>
         </>
       }
