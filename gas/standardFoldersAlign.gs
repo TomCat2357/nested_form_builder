@@ -28,6 +28,8 @@ function StdFolders_trackedFileIdSet_(mapping) {
 //   ⑥ 不正ファイル・未登録            → 候補化（applyDelete のときだけゴミ箱へ）
 //
 // フルスキャンは ①〜⑥、論理フォルダのリネーム/移動は影響エンティティに ①〜④（verify パス）。
+// フルスキャンは ①〜④ の前に「同一 fileId の論理パス重複」を畳む
+// （StdFolders_consolidateSameFileIdDuplicates_ / (2.6b)）。
 // base（標準フォルダ）が解決できない kind は no-op に degrade する。
 // =============================================
 
@@ -323,8 +325,12 @@ function StdFolders_alignFolders_(payload) {
     var align = {};
     var orphans = {};
     var dedup = {};
+    var fileIdDedup = {};
     for (var i = 0; i < kinds.length; i++) {
       var adapter = StdFolders_entityAdapter_(kinds[i]);
+      // 同一 fileId に解決される複数の論理パス（mapping エントリ）を 1 件へ畳む（①〜④ の前。
+      // ①〜④ が entry.folder を json.folder へ上書きする前に論理パスの差で survivor を選ぶ）。
+      fileIdDedup[kinds[i]] = StdFolders_consolidateSameFileIdDuplicates_(adapter, ctx);
       align[kinds[i]] = StdFolders_alignAllEntries_(adapter, false, ctx);                  // ①〜④
       var consolidated = StdFolders_consolidateSameFolderDuplicates_(adapter, ctx);        // 同フォルダ同名 → 最新を残す
       dedup[kinds[i]] = { groups: consolidated.groups, survivors: consolidated.survivors, losers: consolidated.losers };
@@ -350,6 +356,7 @@ function StdFolders_alignFolders_(payload) {
       align: align,
       orphans: orphans,
       dedup: dedup,
+      fileIdDedup: fileIdDedup,
       errors: ctx.errors,
       invalidCandidates: ctx.invalidCandidates,
       duplicateCandidates: ctx.duplicateCandidates,
@@ -447,6 +454,111 @@ function StdFolders_walkDupGroups_(adapter, folder, prefix, groups, guard) {
     if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
     StdFolders_walkDupGroups_(adapter, sub, prefix ? prefix + "/" + sub.getName() : sub.getName(), groups, guard);
   }
+}
+
+// =============================================
+// (2.6b) 同一 fileId の論理パス重複の畳み込み
+// 同じ物理ファイル（fileId）に解決される mapping エントリ（＝論理パス）が複数あるとき 1 件へ畳む。
+// 同フォルダ同名の重複整理（StdFolders_consolidateSameFolderDuplicates_）が「別 fileId の同名物理
+// ファイル」を対象にするのに対し、こちらは「同一 fileId を指す複数キー（旧 ULID 残骸・別フォルダ
+// 登録の二重化など）」を対象にする。同一物理ファイルは 1 つしかないため削除対象は mapping エントリ
+// （論理パス）だけで、共有する物理 Drive ファイルはゴミ箱に入れない。
+//   survivor（残す 1 件）の優先順位:
+//     ① entry.folder（論理パス）=== relativeFolderOfFile(fileId)（物理パス）が一致
+//     ② キー(id) === fileId（正規エントリ。driveFileUrl は読取時に fileId から再構築されるため
+//        URL は実質キー一致と同義）
+//     ③ 登録順で後（mapping 反復順で後＝後から登録された方）
+//   余り（loser）は mapping から除去し、旧キー→fileId を ctx.remap に積む（毎回の再リンクで
+//   参照を survivor の fileId へ寄せる）。survivor のキーが fileId でなければ fileId キーへ正規化する。
+//   ①〜④ の前に呼ぶこと（①〜④ は entry.folder を json.folder へ上書きするため、後に呼ぶと
+//   論理パスの差が消えて ① が判定不能になる）。base 未解決の kind は skipped:true で no-op。
+// =============================================
+
+// entry の論理パス（folder）が物理パスと一致するか。physical=null（構成外/消失）は一致なし。
+// folder 未設定（null sentinel）は normalize で "" になり、物理ルート("")と一致扱いになる。
+function StdFolders_entryFolderMatchesPhysical_(entry, physical) {
+  if (physical === null || physical === undefined) return false;
+  return Forms_normalizeFolderPath_(entry && entry.folder) === physical;
+}
+
+// cand が cur より survivor としてふさわしければ true（①→②→③ の辞書式優先）。
+function StdFolders_fileIdDupBetter_(cand, cur, physical, fileId) {
+  var candPhys = StdFolders_entryFolderMatchesPhysical_(cand.entry, physical);
+  var curPhys = StdFolders_entryFolderMatchesPhysical_(cur.entry, physical);
+  if (candPhys !== curPhys) return candPhys;          // ① 物理一致を優先
+  var candCanon = (cand.key === fileId);
+  var curCanon = (cur.key === fileId);
+  if (candCanon !== curCanon) return candCanon;       // ② キー===fileId を優先
+  return cand.order > cur.order;                       // ③ 登録順で後勝ち
+}
+
+// 戻り: { groups, survivors, removed, removedPaths:[{kind,fileId,droppedKey,droppedFolder,survivorKey,survivorFolder}] }。
+function StdFolders_consolidateSameFileIdDuplicates_(adapter, ctx) {
+  var res = { groups: 0, survivors: 0, removed: 0, removedPaths: [] };
+  if (!adapter.baseFolderOrNull()) { res.skipped = true; return res; }
+  var mapping = adapter.getMapping();
+
+  // fileId -> [ { key, entry, order } ]（order は反復順＝登録順）。
+  var groups = {};
+  var order = 0;
+  for (var key in mapping) {
+    if (!mapping.hasOwnProperty(key)) continue;
+    var entry = mapping[key];
+    var fid = Nfb_resolveFileIdFromEntry_(entry);
+    if (!fid) continue;   // fileId 不明なエントリは重複判定の対象外（触らない）。
+    if (!groups[fid]) groups[fid] = [];
+    groups[fid].push({ key: key, entry: entry, order: order++ });
+  }
+
+  var dirty = false;
+  for (var fileId in groups) {
+    if (!groups.hasOwnProperty(fileId)) continue;
+    var members = groups[fileId];
+    if (members.length < 2) continue;   // 重複なし。
+    res.groups++;
+
+    // 物理パス（同 fileId は 1 物理ファイル＝全候補共通）。null=構成外/消失。
+    var physical = adapter.relativeFolderOfFile(fileId);
+
+    var survivor = members[0];
+    for (var i = 1; i < members.length; i++) {
+      if (StdFolders_fileIdDupBetter_(members[i], survivor, physical, fileId)) survivor = members[i];
+    }
+    res.survivors++;
+    var survivorFolder = Forms_normalizeFolderPath_(survivor.entry && survivor.entry.folder);
+
+    // 余り（survivor 以外の論理パス）を mapping から除去し、参照を survivor へ寄せる。
+    for (var j = 0; j < members.length; j++) {
+      var m = members[j];
+      if (m.key === survivor.key) continue;
+      res.removed++;
+      res.removedPaths.push({
+        kind: adapter.kind,
+        fileId: fileId,
+        droppedKey: m.key,
+        droppedFolder: Forms_normalizeFolderPath_(m.entry && m.entry.folder),
+        survivorKey: fileId,
+        survivorFolder: survivorFolder
+      });
+      ctx.remap[m.key] = fileId;
+      delete mapping[m.key];
+      dirty = true;
+    }
+
+    // survivor のキーが fileId でなければ fileId キーへ正規化（id ＝ fileId 統一を維持）。
+    // loser は上で除去済みなので fileId スロットは空いている。
+    if (survivor.key !== fileId) {
+      var se = mapping[survivor.key];
+      delete mapping[survivor.key];
+      se.fileId = fileId;
+      mapping[fileId] = se;
+      ctx.remap[survivor.key] = fileId;
+      dirty = true;
+    }
+  }
+
+  if (dirty) { adapter.saveMapping(mapping); ctx.dirty = true; }
+  return res;
 }
 
 // =============================================

@@ -395,6 +395,81 @@ test("整合エンジン: 同一フォルダ同名の重複は最新を残し余
   assert.equal(drive.files[dupOld.getId()]._trashed, true);
 });
 
+test("整合エンジン: 同一 fileId の論理パス重複は ①物理一致 を優先して 1 件に畳む", () => {
+  const env = buildContext();
+  const { context, drive, formsA, store } = env;
+  const qBase = Object.keys(drive.folders).map((k) => drive.folders[k]).find((f) => f._name === "02_questions");
+
+  // 物理は a に 1 ファイルだけ存在（json.folder=a）。
+  const file = drive.makeFile("dup.json", formJson("a"), formsA.getId());
+  const fid = file.getId();
+  // 同一 fileId に解決される論理パスが 2 つ:
+  //   - canonical キー(=fileId) だが論理パス folder=b（物理 a と不一致）
+  //   - 別キー "ALT" で論理パス folder=a（物理 a と一致）→ ① でこちらが survivor。
+  store.formsMapping = {
+    [fid]: { fileId: fid, driveFileUrl: file.getUrl(), title: "dup", folder: "b" },
+    ALT: { fileId: fid, driveFileUrl: file.getUrl(), title: "dup", folder: "a" },
+  };
+  // 旧キー "ALT" を参照するクエスチョン（再リンクで fileId へ寄るはず）。
+  const qFile = drive.makeFile(
+    "q.json",
+    JSON.stringify({ folder: "", query: { mode: "sql", formSources: [{ formId: "ALT", formName: "a/dup" }] } }),
+    qBase.getId()
+  );
+
+  const r = context.StdFolders_alignFolders_({});
+  assert.equal(r.ok, true);
+  assert.equal(r.fileIdDedup.forms.groups, 1, "重複グループ 1 件");
+  assert.equal(r.fileIdDedup.forms.removed, 1, "余りの論理パス 1 件を除去");
+
+  // ① 物理一致した folder=a 側が survivor として fileId キーへ正規化される。
+  const keys = Object.keys(store.formsMapping);
+  assert.deepEqual(keys, [fid], "mapping は fileId キー 1 件のみ");
+  assert.equal(store.formsMapping[fid].folder, "a", "survivor=物理一致の論理パス a");
+
+  // 物理ファイルは共有のため削除されない。
+  assert.equal(drive.files[fid]._trashed, false, "共有物理ファイルはゴミ箱に入れない");
+
+  // 参照は survivor の fileId へ寄る（旧キー ALT → fileId の remap）。
+  const q = JSON.parse(drive.files[qFile.getId()]._content);
+  assert.equal(q.query.formSources[0].formId, fid);
+});
+
+test("整合エンジン: 同一 fileId 重複は ①同点なら ②キー===fileId、それも同点なら ③登録順で後勝ち", () => {
+  // --- ② キー===fileId 優先（① は両者とも物理一致で同点） ---
+  {
+    const env = buildContext();
+    const { context, drive, formsA, store } = env;
+    const file = drive.makeFile("two.json", formJson("a"), formsA.getId());
+    const fid = file.getId();
+    store.formsMapping = {
+      OLD: { fileId: fid, driveFileUrl: file.getUrl(), title: "two", folder: "a" },   // 先・非canonical
+      [fid]: { fileId: fid, driveFileUrl: file.getUrl(), title: "two", folder: "a" }, // 後・canonical
+    };
+    const r = context.StdFolders_alignFolders_({});
+    assert.equal(r.fileIdDedup.forms.removed, 1);
+    assert.deepEqual(Object.keys(store.formsMapping), [fid], "② キー===fileId を残す");
+  }
+
+  // --- ③ 登録順で後勝ち（① も ② も同点: どちらも物理不一致＆非canonical） ---
+  {
+    const env = buildContext();
+    const { context, drive, formsA, store } = env;
+    const file = drive.makeFile("three.json", formJson("a"), formsA.getId()); // 物理=a
+    const fid = file.getId();
+    store.formsMapping = {
+      OLD1: { fileId: fid, driveFileUrl: file.getUrl(), title: "three", folder: "b" }, // 先（物理不一致）
+      OLD2: { fileId: fid, driveFileUrl: file.getUrl(), title: "three", folder: "c" }, // 後（物理不一致）→ ③ で survivor
+    };
+    const r = context.StdFolders_alignFolders_({});
+    assert.equal(r.fileIdDedup.forms.removed, 1);
+    // survivor=OLD2（後勝ち）だが fileId キーへ正規化される。OLD2 の論理パス c を引き継ぐが、
+    // 後続の ①〜④ が json.folder=a に揃えるため最終 folder は a。
+    assert.deepEqual(Object.keys(store.formsMapping), [fid], "survivor を fileId キーへ正規化");
+    assert.equal(store.formsMapping[fid].folder, "a", "①〜④ が物理 a へ整合");
+  }
+});
+
 test("整合エンジン: id 変化が無くても毎回再リンクで腐れ参照を修復する（フォルダ込み名解決）", () => {
   const env = buildContext();
   const { context, drive, formsA, store } = env;

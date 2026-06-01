@@ -495,6 +495,7 @@ export default function SettingsAdminTab() {
     const sum = (key) => ["forms", "questions", "dashboards"].reduce((acc, k) => acc + ((r.align?.[k]?.[key]) || 0), 0);
     const reg = (k) => (r.orphans?.[k]?.registered) || 0;
     const dsum = (key) => ["forms", "questions", "dashboards"].reduce((acc, k) => acc + ((r.dedup?.[k]?.[key]) || 0), 0);
+    const fidDedupRemoved = ["forms", "questions", "dashboards"].reduce((acc, k) => acc + ((r.fileIdDedup?.[k]?.removed) || 0), 0);
     const lines = [
       `① 一致(変更なし): ${sum("aligned")}件 / ② 物理移動: ${sum("moved")}件 / ② 外部コピー取込: ${sum("copiedExternal")}件 / ③ id再採用: ${sum("rekeyed")}件`,
       `⑤ 新規登録: フォーム ${reg("forms")} / Question ${reg("questions")} / Dashboard ${reg("dashboards")}`,
@@ -503,6 +504,9 @@ export default function SettingsAdminTab() {
       const q = r.relink.questions || {};
       const d = r.relink.dashboards || {};
       lines.push(`参照の自動再リンク: Question ${q.refsRelinked || 0} / Dashboard ${d.refsRelinked || 0} 参照`);
+    }
+    if (fidDedupRemoved > 0) {
+      lines.push(`同一fileIdの論理パス重複整理: 余りの論理パス ${fidDedupRemoved}件を登録簿から除去（物理ファイルは共有のため保持）`);
     }
     const dupLosers = dsum("losers");
     if (dupLosers > 0) {

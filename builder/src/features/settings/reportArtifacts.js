@@ -40,6 +40,8 @@ const alignSum = (r, key) => ["forms", "questions", "dashboards"]
 const orphanReg = (r, k) => (r?.orphans?.[k]?.registered) || 0;
 const dedupSum = (r, key) => ["forms", "questions", "dashboards"]
   .reduce((acc, k) => acc + ((r?.dedup?.[k]?.[key]) || 0), 0);
+const fidDedupRemovedSum = (r) => ["forms", "questions", "dashboards"]
+  .reduce((acc, k) => acc + ((r?.fileIdDedup?.[k]?.removed) || 0), 0);
 
 // 整合同期の結果（6 ケース＋重複整理＋再リンク）を人間可読な行配列にまとめる。
 export const buildSyncSummaryLines = (r) => {
@@ -51,6 +53,10 @@ export const buildSyncSummaryLines = (r) => {
     const q = r.relink.questions || {};
     const d = r.relink.dashboards || {};
     lines.push(`参照の自動再リンク: Question ${q.refsRelinked || 0} / Dashboard ${d.refsRelinked || 0} 参照`);
+  }
+  const fidDedupRemoved = fidDedupRemovedSum(r);
+  if (fidDedupRemoved > 0) {
+    lines.push(`同一fileIdの論理パス重複整理: 余りの論理パス ${fidDedupRemoved}件を登録簿から除去（物理ファイルは共有のため保持）`);
   }
   const dupLosers = dedupSum(r, "losers");
   if (dupLosers > 0) {
@@ -81,6 +87,7 @@ export const summarizeSyncSegments = (r) => [
   { key: "rekeyed", label: "③ id再採用", value: alignSum(r, "rekeyed"), color: SEVERITY_COLORS.auto },
   { key: "registered", label: "⑤ 新規登録", value: orphanReg(r, "forms") + orphanReg(r, "questions") + orphanReg(r, "dashboards"), color: SEVERITY_COLORS.neutral },
   { key: "relinked", label: "参照の再リンク", value: ((r?.relink?.questions?.refsRelinked) || 0) + ((r?.relink?.dashboards?.refsRelinked) || 0), color: SEVERITY_COLORS.auto },
+  { key: "fileIdDedup", label: "同fileId論理パス整理", value: fidDedupRemovedSum(r), color: SEVERITY_COLORS.external },
   { key: "dedupLosers", label: "重複整理(余り)", value: dedupSum(r, "losers"), color: SEVERITY_COLORS.external },
   { key: "errors", label: "④ 要対応エラー", value: (r?.errors || []).length, color: SEVERITY_COLORS.manual },
   { key: "invalid", label: "⑥ 不正ファイル", value: (r?.invalidCandidates || []).length, color: SEVERITY_COLORS.manual },
