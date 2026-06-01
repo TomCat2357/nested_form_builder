@@ -51,6 +51,32 @@ function nfbGetDriveFileById_(fileId, errorPrefix) {
 }
 
 /**
+ * fileId の Drive ファイルを取得し、本文 JSON をパースして { file, json } で返す共通ヘルパ。
+ * `DriveApp.getFileById → getBlob().getDataAsString() → JSON.parse` の三連を 1 箇所に集約する。
+ * アクセス不能・parse 失敗は例外を投げる（呼び出し側の try/catch 方針を尊重する）。
+ * trashed 判定や失敗時 null が必要な整合エンジン用途は StdFolders_readJsonByFileId_ を使うこと。
+ * @param {string} fileId
+ * @return {{ file: File, json: Object }}
+ */
+function Nfb_readJsonFileById_(fileId) {
+  var file = DriveApp.getFileById(fileId);
+  return { file: file, json: JSON.parse(file.getBlob().getDataAsString()) };
+}
+
+/**
+ * JSON オブジェクトを Drive ファイル本文へ書き戻す共通ヘルパ（2 スペース整形）。
+ * 既存の各所の `file.setContent(JSON.stringify(json, null, 2))` を統一し、整形差異による
+ * 無意味な Drive 差分を防ぐ。
+ * @param {File} file - Nfb_readJsonFileById_ が返した File（または DriveApp 由来の File）
+ * @param {Object} json
+ * @return {File} 書き込んだ file
+ */
+function Nfb_writeJsonToFile_(file, json) {
+  file.setContent(JSON.stringify(json, null, 2));
+  return file;
+}
+
+/**
  * アップロードを検証する。デコード前に呼ぶことでメモリ枯渇を防ぐ。
  * - サイズ: base64 長から概算バイト数を算出し NFB_MAX_UPLOAD_BYTES 超過を拒否
  * - 拡張子: NFB_BLOCKED_UPLOAD_EXTENSIONS に含まれる実行可能形式を拒否
