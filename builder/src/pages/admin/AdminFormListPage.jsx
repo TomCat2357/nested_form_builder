@@ -10,9 +10,8 @@ import { useBuilderSettings } from "../../features/settings/settingsStore.js";
 import { toUnixMs, toComparableUnixMs, formatUnixMsValue } from "../../utils/dateTime.js";
 import { buildSharedFormUrl } from "../../utils/formShareUrl.js";
 import ImportUrlDialog from "./AdminImportUrlDialog.jsx";
-import AdminNewFolderDialog from "./AdminNewFolderDialog.jsx";
+import AdminFolderNameDialog from "./AdminFolderNameDialog.jsx";
 import AdminMoveDialog from "./AdminMoveDialog.jsx";
-import AdminRenameFolderDialog from "./AdminRenameFolderDialog.jsx";
 import { useAdminFormListActions } from "./useAdminFormListActions.js";
 import { useFolderBrowser } from "../../features/folders/useFolderBrowser.js";
 import FolderSearchBar from "../../features/folders/FolderSearchBar.jsx";
@@ -538,14 +537,21 @@ export default function AdminFormListPage() {
         onCancel={() => setImportDialogOpen(false)}
       />
 
-      <AdminNewFolderDialog
+      <AdminFolderNameDialog
         open={newFolderDialogState.open}
-        parentPath={browser.currentPath}
         value={newFolderName}
         onChange={(v) => { setNewFolderName(v); if (newFolderError) setNewFolderError(""); }}
         onConfirm={confirmCreateFolder}
         onCancel={closeNewFolderDialog}
         error={newFolderError}
+        title="新規フォルダ"
+        confirmLabel="作成"
+        label="フォルダ名"
+        placeholder="例: 苦情・通報"
+        message={browser.currentPath
+          ? `「${browser.currentPath}」の中に新しいフォルダを作成します。`
+          : "最上位に新しいフォルダを作成します。"}
+        note="スラッシュ区切りで複数階層も作成できます（例: 苦情・通報/クマ）。"
       />
 
       <AdminMoveDialog
@@ -558,7 +564,7 @@ export default function AdminFormListPage() {
         error={moveError}
       />
 
-      <AdminRenameFolderDialog
+      <AdminFolderNameDialog
         open={renameDialogState.open}
         currentName={renameDialogState.currentName}
         value={renameName}

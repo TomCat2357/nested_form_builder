@@ -6,8 +6,8 @@ import { isNumberInputDraftAllowed, validateByPattern } from "../../core/validat
 import { resolveLabelSize, resolveTextColor, resolveStyleSettingsInlineStyle } from "../../core/styleSettings.js";
 import { getStandardPhonePlaceholder } from "../../core/phone.js";
 import { getPrintTemplateOutputLabel } from "../../utils/printTemplateAction.js";
+import { CHOICE_TYPES } from "../../utils/responses.js";
 import {
-  CHOICE_TYPES,
   hasVisibleValue,
   isTextareaField,
   toSelectedChoiceLabels,

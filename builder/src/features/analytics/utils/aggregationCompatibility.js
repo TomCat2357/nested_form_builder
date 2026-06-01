@@ -134,10 +134,3 @@ export function assertAggColumnType(agg, columns) {
   }
   return null;
 }
-
-/**
- * 列型に対して使える集計種別の一覧。UI のドロップダウン絞り込み用。
- */
-export function compatibleAggTypesForColumnType(columnType) {
-  return AGG_TYPES.filter((t) => isAggCompatible(t, columnType));
-}

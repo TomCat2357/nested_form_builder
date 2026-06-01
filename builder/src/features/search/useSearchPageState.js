@@ -69,7 +69,7 @@ export function useSearchPageState({
   const { selected: selectedEntries, toggle: toggleSelectEntry, selectAll: selectAllEntriesRaw, clear: clearSelectedEntries } = useSetSelection();
   const [exporting, setExporting] = useState(false);
   const [showDeleted, setShowDeleted] = useState(false);
-  const [showDisplaySettings, setShowDisplaySettings] = useState(false);
+  const displaySettingsDialog = useConfirmDialog();
 
   const form = useMemo(() => (effectiveFormId ? getFormById(effectiveFormId) : null), [effectiveFormId, getFormById]);
   const normalizedSchema = useMemo(() => normalizeSchemaIDs(form?.schema || []), [form?.schema]);
@@ -507,8 +507,7 @@ export function useSearchPageState({
     isCreatingPrintDocument,
     showDeleted,
     setShowDeleted,
-    showDisplaySettings,
-    setShowDisplaySettings,
+    displaySettingsDialog,
 
     // Search / pagination
     query,

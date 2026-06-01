@@ -5,8 +5,10 @@ import { normalizePhoneSettings } from "../../core/phone.js";
 import {
   normalizePrintTemplateAction,
 } from "../../utils/printTemplateAction.js";
+// CHOICE_TYPES は utils/responses.js を単一ソースにする（旧来ここにも配列定義があり二重化していた）。
+import { CHOICE_TYPES } from "../../utils/responses.js";
+export { CHOICE_TYPES };
 
-export const CHOICE_TYPES = ["radio", "select", "checkboxes"];
 export const DATE_TIME_TYPES = ["date", "time"];
 export const BASIC_INPUT_TYPES = ["number", "url"];
 export const MESSAGE_TYPE = "message";
@@ -17,7 +19,7 @@ export const DISPLAY_LABEL = "表示";
 export const EMAIL_PLACEHOLDER = "user@example.com";
 export const EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL = "一覧・印刷から除外";
 
-export const isChoiceType = (type) => CHOICE_TYPES.includes(type);
+export const isChoiceType = (type) => CHOICE_TYPES.has(type);
 export const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 export const isMessageType = (type) => type === MESSAGE_TYPE;
 export const isPrintTemplateType = (type) => type === PRINT_TEMPLATE_TYPE;

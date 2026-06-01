@@ -1,18 +1,6 @@
 // 「設定のデフォルト（指定なし）」を表すセンチネル値。色未指定時に格納する。
 export const STYLE_SETTINGS_DEFAULT_COLOR = "settingsDefault";
 
-// 後方互換のための旧来パレット定数。SETTINGS_DEFAULT はセンチネル参照に使う。
-// 文字色 / 背景色は自由なカラーピッカー（任意の HEX）に移行済み。
-export const STYLE_TEXT_COLORS = {
-  SETTINGS_DEFAULT: STYLE_SETTINGS_DEFAULT_COLOR,
-  WHITE: "#FFFFFF",
-  BLACK: "#000000",
-  RED: "#DC2626",
-  BLUE: "#2563EB",
-  GREEN: "#16A34A",
-  GRAY: "#6B7280",
-};
-
 export const DEFAULT_STYLE_SETTINGS = {
   labelSize: "default",
   textColor: STYLE_SETTINGS_DEFAULT_COLOR,

@@ -150,14 +150,9 @@ const formatFromPartsMs = (formatter, unixMs) => {
   }
 };
 
-const formatterDateTime = buildFormatter({ year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
 const formatterDate = buildFormatter({ year: "numeric", month: "2-digit", day: "2-digit" });
 const formatterTime = buildFormatter({ hour: "2-digit", minute: "2-digit" });
 
-export const formatUnixMsDateTime = (value) => {
-  const ms = toUnixMs(value);
-  return formatFromPartsMs(formatterDateTime, ms);
-};
 export const formatUnixMsDate = (value) => {
   const ms = toUnixMs(value);
   return formatFromPartsMs(formatterDate, ms);
@@ -195,7 +190,6 @@ const formatJstDateTime = (value, { includeSeconds = false, includeMilliseconds 
 };
 
 export const formatUnixMsDateTimeSec = (value) => formatJstDateTime(value, { includeSeconds: true });
-export const formatUnixMsDateTimeMs = (value) => formatJstDateTime(value, { includeSeconds: true, includeMilliseconds: true });
 
 // 一覧の日時列でソート可能な数値へ。数値はそのまま、それ以外は toUnixMs。不正値は 0。
 export const toComparableUnixMs = (value) => {
@@ -286,14 +280,6 @@ export const parseJstString = (str) => {
  * 現在時刻を JST ストレージ文字列で返す。
  */
 export const nowJstString = () => formatJstString(Date.now());
-
-/**
- * JST 文字列 → Unix ms（移行期に旧 `*UnixMs` フィールド消費側のシム用）。
- */
-export const jstStringToUnixMs = (str) => {
-  const d = parseJstString(str);
-  return d ? d.getTime() : null;
-};
 
 // ============================================================================
 // レコード保存時の date / time フィールド値正規化。

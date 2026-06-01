@@ -368,11 +368,3 @@ export const backfillComputedFieldValues = (schema, entryData, tokenContext) => 
   }
   return { data: changed ? nextData : baseData, changed, newPaths };
 };
-
-/**
- * entry.data に置換フィールドの再評価結果を注入した新しい data を返す
- * 保存値（entry.data[path]）があればそれを優先し、空のフィールドだけ動的評価で補完する
- */
-export const enrichEntryDataWithComputedFields = (schema, entryData, tokenContext) => {
-  return backfillComputedFieldValues(schema, entryData, tokenContext).data;
-};

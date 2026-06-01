@@ -1,5 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo } from "react";
 import BaseDialog from "./BaseDialog.jsx";
+import { useSetSelection } from "../hooks/useSetSelection.js";
 
 const hasBranchChildren = (field) => {
   const branches = field?.childrenByValue;
@@ -29,29 +30,20 @@ export default function RecordCopyDialog({ open, schema, sourceResponses, onConf
     [schema, sourceResponses],
   );
 
-  const [selectedFieldIds, setSelectedFieldIds] = useState([]);
+  const { selected, toggle, selectAll, clear } = useSetSelection();
 
   useEffect(() => {
     if (!open) return;
-    setSelectedFieldIds(items.map((item) => item.id));
-  }, [open, items]);
+    selectAll(items.map((item) => item.id));
+  }, [open, items, selectAll]);
 
-  const allChecked = items.length > 0 && selectedFieldIds.length === items.length;
+  const allChecked = items.length > 0 && selected.size === items.length;
+  // schema 順を保って選択 ID を取り出す（Set の挿入順に依存しない）。
+  const selectedFieldIds = items.filter((item) => selected.has(item.id)).map((item) => item.id);
 
   const toggleAll = (checked) => {
-    if (checked) {
-      setSelectedFieldIds(items.map((item) => item.id));
-    } else {
-      setSelectedFieldIds([]);
-    }
-  };
-
-  const toggleItem = (fieldId) => {
-    setSelectedFieldIds((prev) => (
-      prev.includes(fieldId)
-        ? prev.filter((id) => id !== fieldId)
-        : [...prev, fieldId]
-    ));
+    if (checked) selectAll(items.map((item) => item.id));
+    else clear();
   };
 
   const footer = (
@@ -89,8 +81,8 @@ export default function RecordCopyDialog({ open, schema, sourceResponses, onConf
                 <label className="record-copy-dialog__item">
                   <input
                     type="checkbox"
-                    checked={selectedFieldIds.includes(item.id)}
-                    onChange={() => toggleItem(item.id)}
+                    checked={selected.has(item.id)}
+                    onChange={() => toggle(item.id)}
                   />
                   <span className="record-copy-dialog__index">{item.index}.</span>
                   <span className="record-copy-dialog__label">{item.label}</span>

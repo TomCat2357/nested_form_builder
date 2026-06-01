@@ -106,46 +106,6 @@ export function parseEra(text) {
   return d;
 }
 
-/**
- * Date → 和暦文字列。
- * format:
- *   `long`     → 令和7年5月6日
- *   `longdt`   → 令和7年5月6日 14:35:48
- *   `short`    → R7.5.6
- *   `shortdt`  → R7.5.6 14:35:48
- *   `compact`  → R070506
- */
-export function formatEra(d, format) {
-  if (!(d instanceof Date) || isNaN(d.getTime())) return null;
-
-  const era = ERAS.find((e) => d >= e.start);
-  if (!era) return null;
-
-  const eraYearNum = d.getFullYear() - era.start.getFullYear() + 1;
-  const mo = d.getMonth() + 1;
-  const da = d.getDate();
-  const hh = d.getHours();
-  const mi = d.getMinutes();
-  const se = d.getSeconds();
-  const fmt = format || "long";
-  const time = ` ${String(hh).padStart(2, "0")}:${String(mi).padStart(2, "0")}:${String(se).padStart(2, "0")}`;
-
-  if (fmt === "long" || fmt === "longdt") {
-    const y = eraYearNum === 1 ? "元" : eraYearNum;
-    const base = `${era.name}${y}年${mo}月${da}日`;
-    return fmt === "longdt" ? base + time : base;
-  }
-  if (fmt === "short" || fmt === "shortdt") {
-    const base = `${era.short}${eraYearNum}.${mo}.${da}`;
-    return fmt === "shortdt" ? base + time : base;
-  }
-  if (fmt === "compact") {
-    const yy = String(eraYearNum).padStart(2, "0");
-    return `${era.short}${yy}${String(mo).padStart(2, "0")}${String(da).padStart(2, "0")}`;
-  }
-  return null;
-}
-
 // ============================================================================
 // DATE2ERA / DATETIME2ERATIME / ERA2DATE / ERATIME2DATETIME 用（仕様: ゼロ
 // パディングなしの和暦、令和1年→令和元年）。GAS twin は expressionFunctions.gs の

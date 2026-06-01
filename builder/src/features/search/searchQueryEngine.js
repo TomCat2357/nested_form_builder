@@ -715,14 +715,6 @@ export const matchesKeyword = (row, columns, keyword) => {
 };
 
 /**
- * `matchesKeyword` と同じ判定だが、将来 `{matched, ...}` を拡張できるよう
- * オブジェクトで返す。現状 `matched` のみが利用される。
- */
-export const getKeywordMatchDetail = (row, columns, keyword) => ({
-  matched: matchesKeyword(row, columns, keyword),
-});
-
-/**
  * クエリから自由文（PARTIAL / COLUMN_PARTIAL）のリーフを集めて
  * `[{ column: string|null, source }]` を返す。AND/OR/NOT 構造は無視した和集合。
  * column が null のものは全列対象。厳密モード（SEARCH/WHERE）は対象外で空配列。

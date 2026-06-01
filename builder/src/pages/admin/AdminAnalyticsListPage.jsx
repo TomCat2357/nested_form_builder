@@ -6,9 +6,8 @@ import { useAlert } from "../../app/hooks/useAlert.js";
 import { useSetSelection } from "../../app/hooks/useSetSelection.js";
 import { toComparableUnixMs, formatUnixMsValue } from "../../utils/dateTime.js";
 import ImportUrlDialog from "./AdminImportUrlDialog.jsx";
-import AdminNewFolderDialog from "./AdminNewFolderDialog.jsx";
+import AdminFolderNameDialog from "./AdminFolderNameDialog.jsx";
 import AdminMoveDialog from "./AdminMoveDialog.jsx";
-import AdminRenameFolderDialog from "./AdminRenameFolderDialog.jsx";
 import { useAdminAnalyticsListActions } from "./useAdminAnalyticsListActions.js";
 import { useAnalyticsList } from "../../features/analytics/useAnalyticsList.js";
 import { useFolderBrowser } from "../../features/folders/useFolderBrowser.js";
@@ -550,14 +549,21 @@ export default function AdminAnalyticsListPage({
         itemLabel={itemLabel}
       />
 
-      <AdminNewFolderDialog
+      <AdminFolderNameDialog
         open={newFolderDialogState.open}
-        parentPath={browser.currentPath}
         value={newFolderName}
         onChange={(v) => { setNewFolderName(v); if (newFolderError) setNewFolderError(""); }}
         onConfirm={confirmCreateFolder}
         onCancel={closeNewFolderDialog}
         error={newFolderError}
+        title="新規フォルダ"
+        confirmLabel="作成"
+        label="フォルダ名"
+        placeholder="例: 苦情・通報"
+        message={browser.currentPath
+          ? `「${browser.currentPath}」の中に新しいフォルダを作成します。`
+          : "最上位に新しいフォルダを作成します。"}
+        note="スラッシュ区切りで複数階層も作成できます（例: 苦情・通報/クマ）。"
       />
 
       <AdminMoveDialog
@@ -570,7 +576,7 @@ export default function AdminAnalyticsListPage({
         error={moveError}
       />
 
-      <AdminRenameFolderDialog
+      <AdminFolderNameDialog
         open={renameDialogState.open}
         currentName={renameDialogState.currentName}
         value={renameName}

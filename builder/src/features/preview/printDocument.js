@@ -7,8 +7,6 @@ import { traverseSchema } from "../../core/schemaUtils.js";
 import { isExcludedSearchOrPrintField } from "../search/searchTable.js";
 import { isPlainObject } from "../../utils/objectShape.js";
 
-export { CHOICE_TYPES, isChoiceMarkerValue };
-
 export const toChoiceOptionLabels = (field) => {
   const options = Array.isArray(field?.options) ? field.options : [];
   const labels = [];

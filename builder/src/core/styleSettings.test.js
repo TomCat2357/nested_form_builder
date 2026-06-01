@@ -6,7 +6,6 @@ import {
   resolveTextColor,
   resolveBgColor,
   resolveStyleSettingsInlineStyle,
-  STYLE_TEXT_COLORS,
   STYLE_SETTINGS_DEFAULT_COLOR,
 } from "./styleSettings.js";
 
@@ -16,23 +15,23 @@ test("normalizeStyleSettings は未設定時に設定のデフォルト色を使
 
 test("normalizeStyleSettings は許可された文字色を保持する", () => {
   assert.equal(
-    normalizeStyleSettings({ textColor: STYLE_TEXT_COLORS.WHITE }).textColor,
-    STYLE_TEXT_COLORS.WHITE,
+    normalizeStyleSettings({ textColor: "#FFFFFF" }).textColor,
+    "#FFFFFF",
   );
   assert.equal(
-    normalizeStyleSettings({ textColor: STYLE_TEXT_COLORS.BLACK }).textColor,
-    STYLE_TEXT_COLORS.BLACK,
+    normalizeStyleSettings({ textColor: "#000000" }).textColor,
+    "#000000",
   );
 });
 
 test("resolveTextColor は設定のデフォルト時に undefined を返す", () => {
   assert.equal(
-    resolveTextColor({ textColor: STYLE_TEXT_COLORS.SETTINGS_DEFAULT }),
+    resolveTextColor({ textColor: STYLE_SETTINGS_DEFAULT_COLOR }),
     undefined,
   );
   assert.equal(
-    resolveTextColor({ textColor: STYLE_TEXT_COLORS.BLACK }),
-    STYLE_TEXT_COLORS.BLACK,
+    resolveTextColor({ textColor: "#000000" }),
+    "#000000",
   );
 });
 

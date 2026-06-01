@@ -12,7 +12,6 @@
 
 import { traverseSchema } from "../../../core/schemaUtils.js";
 import { headerKeyToAlaSqlKey } from "./headerToAlaSqlKey.js";
-import { CHOICE_TYPES } from "../../../utils/responses.js";
 
 export function forEachFormField(form, callback) {
   if (!form || !Array.isArray(form.schema) || typeof callback !== "function") return;
@@ -28,41 +27,6 @@ export function forEachFormField(form, callback) {
       pipePath,
       alaSqlKey: headerKeyToAlaSqlKey(pipePath),
     });
-  });
-}
-
-/**
- * choice 系フィールド（checkboxes / radio / select）の各選択肢を
- * `親|選択肢` の列として走査する。スプレッドシートでは選択肢ごとに
- * `親|選択肢` 列（`●`/空白マーカー）が立つので、その boolean 列を列挙する用途。
- *
- * 各 callback は `{ field, fieldSegs, optionLabel, segs, pipePath, alaSqlKey }` を受け取る。
- * 同一 pipePath（フィールド × 選択肢）は最初の出現のみ通る（先勝ち）。
- */
-export function forEachChoiceOption(form, callback) {
-  if (!form || !Array.isArray(form.schema) || typeof callback !== "function") return;
-  const seen = new Set();
-  traverseSchema(form.schema, (field, ctx) => {
-    if (!field || !CHOICE_TYPES.has(field.type)) return;
-    const fieldSegs = (ctx && Array.isArray(ctx.pathSegments)) ? ctx.pathSegments : [];
-    const fieldPipePath = fieldSegs.join("|");
-    if (!fieldPipePath) return;
-    const options = extractOptionOrder(field);
-    if (!options) return;
-    for (const optionLabel of options) {
-      if (typeof optionLabel !== "string" || optionLabel === "") continue;
-      const pipePath = fieldPipePath + "|" + optionLabel;
-      if (seen.has(pipePath)) continue;
-      seen.add(pipePath);
-      callback({
-        field,
-        fieldSegs,
-        optionLabel,
-        segs: [...fieldSegs, optionLabel],
-        pipePath,
-        alaSqlKey: headerKeyToAlaSqlKey(pipePath),
-      });
-    }
   });
 }
 
