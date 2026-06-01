@@ -39,7 +39,6 @@ function AnalyticsDrive_descriptor_(type) {
 // ---- SharedDrive_* への薄いラッパー（既存の公開シグネチャを維持） ----
 
 function AnalyticsDrive_getPathMap_(type) { return SharedDrive_getPathMap_(AnalyticsDrive_descriptor_(type)); }
-function AnalyticsDrive_savePathMap_(type, map) { return SharedDrive_savePathMap_(AnalyticsDrive_descriptor_(type), map); }
 function AnalyticsDrive_ensureFolderForPath_(type, path) { return SharedDrive_ensureFolderForPath_(AnalyticsDrive_descriptor_(type), path); }
 function AnalyticsDrive_lookupFolderForPath_(type, path) { return SharedDrive_lookupFolderForPath_(AnalyticsDrive_descriptor_(type), path); }
 function AnalyticsDrive_movePathFolder_(type, oldPath, newPath) { return SharedDrive_movePathFolder_(AnalyticsDrive_descriptor_(type), oldPath, newPath); }
@@ -60,50 +59,7 @@ function AnalyticsDrive_findFileByNameInTree_(type, name) {
     var norm = Forms_normalizeFormTitle_(name);
     if (norm) targets[norm + ".json"] = true;
   }
-  return AnalyticsDrive_findFileByNameRecursive_(base, targets);
+  // analytics は全ファイルを名前一致対象にする（fileFilter なし）。
+  return SharedDrive_findFileByNameRecursive_(base, targets);
 }
 
-function AnalyticsDrive_findFileByNameRecursive_(folder, targets) {
-  var files = folder.getFiles();
-  while (files.hasNext()) {
-    var f = files.next();
-    if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
-    if (targets[f.getName()]) return f;
-  }
-  var subs = folder.getFolders();
-  while (subs.hasNext()) {
-    var sub = subs.next();
-    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
-    var hit = AnalyticsDrive_findFileByNameRecursive_(sub, targets);
-    if (hit) return hit;
-  }
-  return null;
-}
-
-// 既存の仮想フォルダ/アイテムを物理 Drive 構造へ一括反映する（手動・冪等）。
-// auto-organize off では skip。
-function AnalyticsDrive_backfillPhysicalFolders_(type) {
-  var base = AnalyticsDrive_baseFolderOrNull_(type);
-  if (!base) return { ok: true, skipped: true, reason: "標準フォルダが無効です" };
-
-  // 1) 既知フォルダ（登録簿 ∪ item 由来。親→子順）を物理化。
-  var paths = Analytics_collectFolders_(type);
-  for (var i = 0; i < paths.length; i++) {
-    AnalyticsDrive_ensureFolderForPath_(type, paths[i]);
-  }
-
-  // 2) 各アイテムファイルを item.folder に対応する物理フォルダへ移動。
-  var mapping = Analytics_getMapping_(type);
-  var movedFiles = 0;
-  for (var id in mapping) {
-    if (!mapping.hasOwnProperty(id)) continue;
-    var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]);
-    if (!fileId) continue;
-    var folder = "";
-    try {
-      folder = Forms_normalizeFolderPath_(Nfb_readJsonFileById_(fileId).json.folder);
-    } catch (e) { folder = ""; }
-    if (AnalyticsDrive_moveItemFileToPath_(type, fileId, folder)) movedFiles++;
-  }
-  return { ok: true, folders: paths.length, movedFiles: movedFiles };
-}

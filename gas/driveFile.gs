@@ -291,35 +291,3 @@ function nfbCreateGoogleDocumentFromTemplate(payload) {
     return nfbBuildDriveFileResponse_(result.copiedFile, result.folder, result.autoCreated);
   });
 }
-
-function nfbFindDriveFileInFolder(payload) {
-  return nfbSafeCall_(function() {
-    if (!payload || !payload.fileNameTemplate || !payload.driveSettings) {
-      throw new Error("検索条件が不足しています");
-    }
-    var ctx = nfbBuildDriveTemplateContext_(payload.driveSettings);
-    var finalName = nfbResolveTemplateTokens_(String(payload.fileNameTemplate), ctx);
-    var outputType = payload.outputType === "pdf" ? "pdf" : (payload.outputType === "gmail" ? "gmail" : "googleDoc");
-    if (outputType === "pdf" && finalName && !/\.pdf$/i.test(finalName)) {
-      finalName += ".pdf";
-    }
-    if (!finalName) {
-      throw new Error("ファイル名を解決できませんでした");
-    }
-    var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
-    var folder = folderResult.folder;
-    var files = folder.getFilesByName(finalName);
-    if (files.hasNext()) {
-      var found = files.next();
-      return {
-        ok: true,
-        found: true,
-        fileUrl: found.getUrl(),
-        fileName: found.getName(),
-        fileId: found.getId(),
-        folderUrl: folder.getUrl(),
-      };
-    }
-    return { ok: true, found: false, fileName: finalName, folderUrl: folder.getUrl() };
-  });
-}

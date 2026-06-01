@@ -433,38 +433,22 @@ function Admin_migrateNfbUdfNamesInForms_() {
  * 戻り値は変更があったか。
  */
 function Admin_rewriteFormJson_(node) {
-  if (node === null || node === undefined) return false;
+  // null/undefined/文字列を含むプリミティブは書き換え対象外（文字列はキー側から処理される）。
+  if (!node || typeof node !== "object") return false;
   var changed = false;
-  if (typeof node === "string") return false; // 文字列はオブジェクトキーから書き換える
-
-  if (Object.prototype.toString.call(node) === "[object Array]") {
-    for (var i = 0; i < node.length; i++) {
-      if (typeof node[i] === "string") {
-        var rewritten = Admin_rewriteNfbUdfsInExpressionString_(node[i]);
-        if (rewritten !== node[i]) {
-          node[i] = rewritten;
-          changed = true;
-        }
-      } else if (node[i] && typeof node[i] === "object") {
-        if (Admin_rewriteFormJson_(node[i])) changed = true;
+  // 配列なら添字 "0".."n"、オブジェクトなら own enumerable キーを同一ループで処理する。
+  var keys = Object.keys(node);
+  for (var i = 0; i < keys.length; i++) {
+    var key = keys[i];
+    var v = node[key];
+    if (typeof v === "string") {
+      var rew = Admin_rewriteNfbUdfsInExpressionString_(v);
+      if (rew !== v) {
+        node[key] = rew;
+        changed = true;
       }
-    }
-    return changed;
-  }
-
-  if (typeof node === "object") {
-    for (var k in node) {
-      if (!node.hasOwnProperty(k)) continue;
-      var v = node[k];
-      if (typeof v === "string") {
-        var rew = Admin_rewriteNfbUdfsInExpressionString_(v);
-        if (rew !== v) {
-          node[k] = rew;
-          changed = true;
-        }
-      } else if (v && typeof v === "object") {
-        if (Admin_rewriteFormJson_(v)) changed = true;
-      }
+    } else if (v && typeof v === "object") {
+      if (Admin_rewriteFormJson_(v)) changed = true;
     }
   }
   return changed;

@@ -76,9 +76,6 @@ export const areDriveFolderStatesEqual = (left, right) => {
 
 export const createEmptyDriveFolderStates = () => ({});
 
-export const getDriveFolderStateForField = (statesMap, fieldId) =>
-  normalizeDriveFolderState((statesMap || {})[fieldId]);
-
 export const setDriveFolderStateForField = (statesMap, fieldId, updater) => {
   const base = statesMap || {};
   const current = normalizeDriveFolderState(base[fieldId]);

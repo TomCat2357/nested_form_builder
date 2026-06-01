@@ -18,7 +18,6 @@
 
 import {
   resolveTemplate,
-  resolveTemplateAsync,
   precompileTemplate,
   extractFieldRefs,
 } from "../features/expression/templateEvaluator.js";
@@ -86,19 +85,6 @@ export const resolveTemplateTokens = (template, context) => {
   if (text.indexOf("{") < 0) return text;
   const row = buildTemplateRow(context);
   return resolveTemplate(text, row, { fallback: "", logError: logTemplateError });
-};
-
-/**
- * 非同期版 — テンプレート内式を都度 precompile してから sync 評価する。
- * 初回マウント時 / プレビュー直前など同期保証が無い場面で使う。
- */
-export const resolveTemplateTokensAsync = (template, context) => {
-  if (template === undefined || template === null) return Promise.resolve("");
-  const text = String(template);
-  if (!text) return Promise.resolve("");
-  if (text.indexOf("{") < 0) return Promise.resolve(text);
-  const row = buildTemplateRow(context);
-  return resolveTemplateAsync(text, row, { fallback: "", logError: logTemplateError });
 };
 
 /**

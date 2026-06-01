@@ -226,16 +226,3 @@ test("auto-organize off（base=null）: 全操作が安全に no-op", () => {
   assert.equal(context.AnalyticsDrive_findFileByNameInTree_("questions", "x"), null);
 });
 
-test("backfillPhysicalFolders_: 既知フォルダ作成 + アイテム移動", () => {
-  const { context, drive, qBase } = loadContext();
-  const f1 = qBase.createFile("alpha.json", JSON.stringify({ folder: "a/b", query: {} }));
-  const f2 = qBase.createFile("beta.json", JSON.stringify({ folder: "", query: {} }));
-  context.Analytics_collectFolders_ = () => ["a", "a/b"];
-  context.Analytics_getMapping_ = () => ({ id1: { fileId: f1.getId() }, id2: { fileId: f2.getId() } });
-
-  const res = context.AnalyticsDrive_backfillPhysicalFolders_("questions");
-  assert.equal(res.ok, true);
-  assert.equal(res.folders, 2);
-  assert.equal(physicalPathOf(drive, qBase, drive.folders[drive.files[f1.getId()]._parentId]), "a/b");
-  assert.equal(drive.files[f2.getId()]._parentId, qBase.getId(), "folder 空のアイテムは base 直下のまま");
-});

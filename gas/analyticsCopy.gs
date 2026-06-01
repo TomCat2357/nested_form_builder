@@ -17,20 +17,7 @@ function Analytics_copyTemplate_(type, templateId) {
     var mapping = Analytics_getMapping_(type);
     var sourceEntry = mapping[templateId] || {};
     var sourceFileId = Nfb_resolveFileIdFromEntry_(sourceEntry);
-    var parentFolderUrl = null;
-
-    if (sourceFileId) {
-      try {
-        var sourceFile = DriveApp.getFileById(sourceFileId);
-        var parents = sourceFile.getParents();
-        if (parents.hasNext()) {
-          var parentFolder = parents.next();
-          parentFolderUrl = "https://drive.google.com/drive/folders/" + parentFolder.getId();
-        }
-      } catch (err) {
-        Logger.log("[Analytics_copyTemplate_] Failed to get parent folder: " + err);
-      }
-    }
+    var parentFolderUrl = SharedDrive_parentFolderUrlOfFileId_(sourceFileId, "Analytics_copyTemplate_");
 
     // クローンを作成（id を捨てて Analytics_saveTemplate_ で新 ID 採番）
     // 名前は元名のまま渡し、衝突回避は Analytics_saveTemplate_ 内の

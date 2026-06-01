@@ -222,3 +222,41 @@ function SharedDrive_moveFileToPath_(desc, fileId, path) {
     return false;
   }
 }
+
+// fileId が属する親フォルダの Drive URL を返す（コピー先を元と同じフォルダに揃えるため）。
+// fileId 未指定 / 親なし / 取得失敗時は null。失敗は非クリティカルなので label 付きで Log に残す。
+// Forms / Analytics の複製処理で共用する。
+function SharedDrive_parentFolderUrlOfFileId_(fileId, label) {
+  if (!fileId) return null;
+  try {
+    var parents = DriveApp.getFileById(fileId).getParents();
+    if (parents.hasNext()) {
+      return "https://drive.google.com/drive/folders/" + parents.next().getId();
+    }
+  } catch (e) {
+    Logger.log("[" + (label || "SharedDrive_parentFolderUrlOfFileId_") + "] Failed to get parent folder: " + e);
+  }
+  return null;
+}
+
+// フォルダ階層を再帰的に走査し、targets（{ファイル名: 任意の真値}）に一致する最初の
+// ファイルを返す。trash 済みのファイル/フォルダはスキップ。fileFilter を渡すと、名前一致の
+// 前段でその述語を満たさないファイルを除外する（forms は JSON ファイルのみ対象、analytics は
+// 全ファイル対象、という差をこの引数で吸収する）。
+function SharedDrive_findFileByNameRecursive_(folder, targets, fileFilter) {
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var f = files.next();
+    if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
+    if (fileFilter && !fileFilter(f)) continue;
+    if (targets[f.getName()]) return f;
+  }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    var sub = subs.next();
+    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
+    var hit = SharedDrive_findFileByNameRecursive_(sub, targets, fileFilter);
+    if (hit) return hit;
+  }
+  return null;
+}

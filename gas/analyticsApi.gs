@@ -28,10 +28,6 @@ function Analytics_getResultListKey_(type) {
   return type === "questions" ? "questions" : "dashboards";
 }
 
-function Analytics_getIdPrefix_(type) {
-  return type === "questions" ? "q" : "d";
-}
-
 function Analytics_getMapping_(type) {
   var props = Nfb_getActiveProperties_();
   var key = Analytics_getPropertyKey_(type);

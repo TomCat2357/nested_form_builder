@@ -192,10 +192,6 @@ function Nfb_generateCompactId_(prefix) {
   return String(prefix || "") + "_" + ulidPart + "_" + randomPart;
 }
 
-function Nfb_generateFormId_() {
-  return Nfb_generateCompactId_("f");
-}
-
 function Nfb_generateRecordId_() {
   return Nfb_generateCompactId_("r");
 }
