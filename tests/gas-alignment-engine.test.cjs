@@ -133,7 +133,7 @@ function buildContext() {
   loadGasFiles(context, [
     "constants.gs", "formsParsing.gs", "model.gs",
     "sharedDriveFolders.gs", "formsDriveFolders.gs", "analyticsDriveFolders.gs",
-    "standardFoldersAlign.gs", "standardFoldersCopy.gs", "standardFolders.gs",
+    "standardFoldersAlign.gs", "standardFoldersCopy.gs", "standardFolders.gs", "standardFoldersDiagnostics.gs",
   ]);
   // ルート解決をモックへ差し替え（後付け上書き。autoFileFolderOrNull_ もこれ経由で解決される）。
   context.StdFolders_resolveRootFolder_ = () => root;
