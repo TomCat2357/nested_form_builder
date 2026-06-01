@@ -60,24 +60,8 @@ function AnalyticsDrive_findFileByNameInTree_(type, name) {
     var norm = Forms_normalizeFormTitle_(name);
     if (norm) targets[norm + ".json"] = true;
   }
-  return AnalyticsDrive_findFileByNameRecursive_(base, targets);
-}
-
-function AnalyticsDrive_findFileByNameRecursive_(folder, targets) {
-  var files = folder.getFiles();
-  while (files.hasNext()) {
-    var f = files.next();
-    if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
-    if (targets[f.getName()]) return f;
-  }
-  var subs = folder.getFolders();
-  while (subs.hasNext()) {
-    var sub = subs.next();
-    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
-    var hit = AnalyticsDrive_findFileByNameRecursive_(sub, targets);
-    if (hit) return hit;
-  }
-  return null;
+  // analytics は全ファイルを名前一致対象にする（fileFilter なし）。
+  return SharedDrive_findFileByNameRecursive_(base, targets);
 }
 
 // 既存の仮想フォルダ/アイテムを物理 Drive 構造へ一括反映する（手動・冪等）。

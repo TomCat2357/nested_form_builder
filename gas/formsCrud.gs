@@ -179,22 +179,9 @@ function Forms_adoptFormFile_(file, mapping) {
 
 // フォルダ（とサブフォルダ）を再帰探索し、ファイル名が targets のいずれかに一致する
 // 最初の JSON ファイルを返す（無ければ null）。
+// forms は JSON ファイルのみを名前一致対象にする（StdFolders_isJsonFile_ を fileFilter に渡す）。
 function Forms_findFileByNamesRecursive_(folder, targets) {
-  var files = folder.getFiles();
-  while (files.hasNext()) {
-    var f = files.next();
-    if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
-    if (!StdFolders_isJsonFile_(f)) continue;
-    if (targets[f.getName()]) return f;
-  }
-  var subs = folder.getFolders();
-  while (subs.hasNext()) {
-    var sub = subs.next();
-    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
-    var hit = Forms_findFileByNamesRecursive_(sub, targets);
-    if (hit) return hit;
-  }
-  return null;
+  return SharedDrive_findFileByNameRecursive_(folder, targets, StdFolders_isJsonFile_);
 }
 
 // 既存フォームの物理ファイルを「fileId → 実体 URL → 中央辞書(folder+title)アンカー」の順で解決する。
@@ -675,21 +662,7 @@ function Forms_copyForm_(formId) {
   // 2. 元ファイルの親フォルダURLを取得
   var mapping = Forms_getMapping_();
   var mappingEntry = mapping[formId] || {};
-  var sourceFileId = mappingEntry.fileId;
-  var parentFolderUrl = null;
-
-  if (sourceFileId) {
-    try {
-      var sourceFile = DriveApp.getFileById(sourceFileId);
-      var parents = sourceFile.getParents();
-      if (parents.hasNext()) {
-        var parentFolder = parents.next();
-        parentFolderUrl = "https://drive.google.com/drive/folders/" + parentFolder.getId();
-      }
-    } catch (e) {
-      Logger.log("[Forms_copyForm_] Failed to get parent folder: " + e);
-    }
-  }
+  var parentFolderUrl = SharedDrive_parentFolderUrlOfFileId_(mappingEntry.fileId, "Forms_copyForm_");
 
   // 3. 新しいフォームデータを作成（id ＝ コピー先ファイルの fileId。事前採番はしない）
   var newForm = JSON.parse(JSON.stringify(sourceForm));
