@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { genFormId, genRecordId, genQuestionId, genDashboardId, genCardId, genFilterId, genLocalId, isLocalId, LOCAL_ID_PREFIX } from "./ids.js";
+import { genFormId, genRecordId, genCardId, genFilterId, genLocalId, isLocalId, LOCAL_ID_PREFIX } from "./ids.js";
 
 const ULID_RE = "[0-9A-HJKMNPQRSTVWXYZ]{26}";
 const BASE64URL8_RE = "[A-Za-z0-9_-]{8}";
@@ -25,8 +25,6 @@ test("genRecordId は ULID + base64url8 形式を返す", () => {
 });
 
 test("Analytics ID は <prefix>_<26文字ULID> 形式（GAS と byte 互換）", () => {
-  assert.match(genQuestionId(), new RegExp(`^q_${ULID_RE}$`));
-  assert.match(genDashboardId(), new RegExp(`^d_${ULID_RE}$`));
   assert.match(genCardId(), new RegExp(`^card_${ULID_RE}$`));
   assert.match(genFilterId(), new RegExp(`^flt_${ULID_RE}$`));
 });

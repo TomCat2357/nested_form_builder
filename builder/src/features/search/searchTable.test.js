@@ -8,7 +8,6 @@ import {
   isNumericColumn,
 } from "./searchTableValues.js";
 import {
-  getKeywordMatchDetail,
   matchesKeyword,
 } from "./searchQueryEngine.js";
 

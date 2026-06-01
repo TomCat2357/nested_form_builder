@@ -8,8 +8,6 @@ import { headerKeyToAlaSqlKey } from "../analytics/utils/headerToAlaSqlKey.js";
 import { columnType } from "./searchTableValues.js";
 import { formatCanonical } from "../../utils/dateTime.js";
 import { entriesToViewTableRows } from "../analytics/entriesToViewRows.js";
-import { traverseSchema } from "../../core/schemaUtils.js";
-import { splitFieldPath } from "../../utils/formPaths.js";
 
 /**
  * 検索バーで識別子として有効な「列名」を返す。
@@ -39,24 +37,6 @@ function isExcludedMetaColumn(col) {
   if (!col) return false;
   const key = col.key || "";
   return EXCLUDED_META_COLUMN_KEYS.has(key);
-}
-
-/**
- * columns 配列から alasql 安全名のキー + 列メタを生成。
- * 検索可能でない (searchable=false) 列は除外。
- */
-export function buildSearchableColumnKeys(columns) {
-  if (!Array.isArray(columns)) return [];
-  const keys = [];
-  for (const col of columns) {
-    if (!col) continue;
-    if (col.searchable === false) continue;
-    if (isExcludedMetaColumn(col)) continue;
-    const name = resolveSearchableName(col);
-    if (!name) continue;
-    keys.push(headerKeyToAlaSqlKey(name));
-  }
-  return keys;
 }
 
 /**
@@ -114,76 +94,6 @@ export function buildSearchExpression(query, columns) {
     return preprocessSearchQuery(query, meta);
   }
   return buildSimpleSearchExpression(query, columns);
-}
-
-/**
- * 表示列 (columns) と schema 全列 (schemaCols) を path / key で dedup マージする。
- * 表示列を先頭に保持し、schema 側にしかない非表示列を後ろに追加する。
- * ALASQL モード WHERE で非表示列条件を効かせるための行 dict 構築に使う。
- */
-export function mergeDisplayAndSchemaColumns(columns, schemaCols) {
-  const hasColumns = Array.isArray(columns) && columns.length > 0;
-  const hasSchema = Array.isArray(schemaCols) && schemaCols.length > 0;
-  if (!hasColumns) return hasSchema ? schemaCols : [];
-  const seenPaths = new Set();
-  const seenKeys = new Set();
-  const merged = [];
-  for (const col of columns) {
-    if (!col) continue;
-    merged.push(col);
-    if (col.path) seenPaths.add(col.path);
-    if (col.key) seenKeys.add(col.key);
-  }
-  if (!hasSchema) return merged;
-  for (const col of schemaCols) {
-    if (!col) continue;
-    if (col.path && seenPaths.has(col.path)) continue;
-    if (col.key && seenKeys.has(col.key)) continue;
-    merged.push(col);
-  }
-  return merged;
-}
-
-/**
- * フォーム schema を走査して、表示状態に依存しない全 searchable 列を返す。
- * useSearchPageState から buildSearchRow に渡す「行 dict に入れる列」用。
- * 列構造は createDisplayColumn 互換の最小形（key/path/sourceType/searchable）。
- *
- * 用途: 検索 ALASQL モードで非表示列に対する `IS NOT NULL` / `=` / `LIKE` 等を効かせる。
- * LIKE_ANY 等の列無し OR 展開（buildSearchExpression 側）には使わない — そちらは表示列のみ対象。
- */
-export function buildAllSearchableColumns(form) {
-  const out = [];
-  const seen = new Set();
-  traverseSchema(form?.schema || [], (field, ctx) => {
-    if (!field || typeof field !== "object") return;
-    const segments = Array.isArray(ctx?.pathSegments) ? ctx.pathSegments : [];
-    const path = segments.join("|");
-    if (!path || seen.has(path)) return;
-    seen.add(path);
-    out.push({
-      key: "display:" + path,
-      segments: splitFieldPath(path),
-      path,
-      sourceType: field.type || "",
-      searchable: true,
-    });
-  });
-  return out;
-}
-
-/**
- * view 形式の行データを作る。Question の `FROM [<フォーム名>:view]` と同じく
- * entriesToViewTableRows() の出力をそのまま AlaSQL 行として使う。
- * （radio/select → ラベル文字列、checkboxes → 「、」連結、date/datetime → canonical 文字列）
- *
- * @param {{ entry: object }} row useSearchPageState の processedEntries 要素
- * @param {object} form スキーマ走査用フォーム本体
- */
-export function buildSearchRowView(row, form) {
-  if (!row || !row.entry || !form) return {};
-  const rows = entriesToViewTableRows([row.entry], form);
-  return rows[0] || {};
 }
 
 /**

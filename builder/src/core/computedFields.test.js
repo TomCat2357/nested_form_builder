@@ -7,7 +7,6 @@ import {
   evaluateAllComputedFields,
   buildLabelValueMapFromEntryData,
   buildComputedFieldPathsById,
-  enrichEntryDataWithComputedFields,
   validateSubstitutionTemplates,
 } from "./computedFields.js";
 import {
@@ -309,7 +308,7 @@ test("evaluateAllComputedFields は単一の typed view マップで {{...}} を
 });
 
 // ---------------------------------------------------------------------------
-// buildLabelValueMapFromEntryData / enrichEntryDataWithComputedFields
+// buildLabelValueMapFromEntryData
 // ---------------------------------------------------------------------------
 
 test("buildLabelValueMapFromEntryData は radio の選択ラベル（view 1 列）を再構築する", () => {
@@ -401,69 +400,6 @@ test("buildComputedFieldPathsById は置換フィールドの fieldId→path を
   assert.equal(paths.q2, "二倍");
   assert.equal(paths.q3, "挨拶");
   assert.equal(paths.q1, undefined);
-});
-
-test("enrichEntryDataWithComputedFields は保存値が空のとき動的計算で補完する", () => {
-  _clearExpressionCacheForTest();
-  _registerCompiledForTest("`氏名`", (row) => row["氏名"]);
-  const schema = [
-    makeField({ id: "q1", label: "氏名", type: "text" }),
-    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "Hello {{`氏名`}}" }),
-  ];
-  const entryData = { "氏名": "太郎" };
-  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
-  assert.equal(enriched["挨拶"], "Hello 太郎");
-});
-
-test("enrichEntryDataWithComputedFields は radio の選択ラベルを参照して補完する", () => {
-  _clearExpressionCacheForTest();
-  _registerCompiledForTest("`ラジオ項目`", (row) => row["ラジオ項目"]);
-  const schema = [
-    makeField({ id: "q1", label: "ラジオ項目", type: "radio", options: ["低", "中", "高"] }),
-    makeField({ id: "q2", label: "表示", type: "substitution", templateText: "判定:{{`ラジオ項目`}}" }),
-  ];
-  const entryData = { "ラジオ項目": "低" };
-  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
-  assert.equal(enriched["表示"], "判定:低");
-});
-
-test("enrichEntryDataWithComputedFields は保存値があれば動的再評価せず保存値を使う", () => {
-  _clearExpressionCacheForTest();
-  _registerCompiledForTest("`氏名`", (row) => row["氏名"]);
-  const schema = [
-    makeField({ id: "q1", label: "氏名", type: "text" }),
-    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "Hello {{`氏名`}}" }),
-  ];
-  const entryData = { "氏名": "太郎", "挨拶": "こんにちは 太郎" };
-  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
-  assert.equal(enriched["挨拶"], "こんにちは 太郎");
-});
-
-test("enrichEntryDataWithComputedFields は保存値と空の混在で空だけ補完する", () => {
-  _clearExpressionCacheForTest();
-  _registerCompiledForTest("`氏名`", (row) => row["氏名"]);
-  _registerCompiledForTest("`氏名` || '!'", (row) => String(row["氏名"] || "") + "!");
-  const schema = [
-    makeField({ id: "q1", label: "氏名", type: "text" }),
-    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "Hello {{`氏名`}}" }),
-    makeField({ id: "q3", label: "呼び捨て", type: "substitution", templateText: "{{`氏名` || '!'}}" }),
-  ];
-  const entryData = { "氏名": "太郎", "挨拶": "こんにちは 太郎" };
-  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
-  assert.equal(enriched["挨拶"], "こんにちは 太郎");
-  assert.equal(enriched["呼び捨て"], "太郎!");
-});
-
-test("enrichEntryDataWithComputedFields は空の計算結果で path を作らない", () => {
-  _clearExpressionCacheForTest();
-  _registerCompiledForTest("`氏名`", (row) => row["氏名"]);
-  const schema = [
-    makeField({ id: "q1", label: "氏名", type: "text" }),
-    makeField({ id: "q2", label: "挨拶", type: "substitution", templateText: "{{`氏名`}}" }),
-  ];
-  const entryData = {};
-  const enriched = enrichEntryDataWithComputedFields(schema, entryData);
-  assert.equal(enriched["挨拶"], undefined);
 });
 
 // ---------------------------------------------------------------------------

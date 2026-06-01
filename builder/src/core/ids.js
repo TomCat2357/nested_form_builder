@@ -129,8 +129,6 @@ export const genRecordId = () => createCompactId("r");
 
 // Analytics の Question / Dashboard / カード / フィルタ ID。
 // `<prefix>_<26文字 ULID>` 形式（GAS 側 Nfb_generateUlid_ 由来の検証・保存と byte 互換）。
-export const genQuestionId = () => `q_${createUlid()}`;
-export const genDashboardId = () => `d_${createUlid()}`;
 export const genCardId = () => `card_${createUlid()}`;
 export const genFilterId = () => `flt_${createUlid()}`;
 

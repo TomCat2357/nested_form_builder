@@ -7,7 +7,6 @@ import {
   FIXED_DATE_KEYS,
   assertAggColumnType,
   buildFieldTypeMap,
-  compatibleAggTypesForColumnType,
   isAggCompatible,
   normalizeFieldType,
   resolveColumnType,
@@ -48,20 +47,6 @@ test("isAggCompatible: unknown 型は全集計許容", () => {
 
 test("isAggCompatible: 未知の集計種別は false", () => {
   assert.equal(isAggCompatible("median", "number"), false);
-});
-
-test("compatibleAggTypesForColumnType: 列型で集計を絞り込める (raw は全型で許容)", () => {
-  const numAggs = compatibleAggTypesForColumnType("number").sort();
-  assert.deepEqual(numAggs, ["avg", "count", "countNotNull", "max", "min", "raw", "sum"]);
-
-  const strAggs = compatibleAggTypesForColumnType("string").sort();
-  assert.deepEqual(strAggs, ["count", "countNotNull", "max", "min", "raw"]);
-
-  const dateAggs = compatibleAggTypesForColumnType("date").sort();
-  assert.deepEqual(dateAggs, ["count", "countNotNull", "max", "min", "raw"]);
-
-  const boolAggs = compatibleAggTypesForColumnType("boolean").sort();
-  assert.deepEqual(boolAggs, ["count", "countNotNull", "raw"]);
 });
 
 test("assertAggColumnType: 数値列に sum は OK", () => {
