@@ -127,6 +127,8 @@ export const getUnsyncedState = (cache) => {
 export const LOCK_WAIT_RETRY_MS = 1000;
 export const READ_RETRY_INTERVAL_MS = 1000;
 export const READ_RETRY_MAX_ATTEMPTS = 3;
+export const WRITE_RETRY_INTERVAL_MS = 1000;
+export const WRITE_RETRY_MAX_ATTEMPTS = 3;
 export const SYNC_INTERVAL_MS = RECORD_CACHE_BACKGROUND_REFRESH_MS;
 
 export const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));

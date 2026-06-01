@@ -22,12 +22,11 @@ import {
   LOCK_WAIT_RETRY_MS,
   READ_RETRY_INTERVAL_MS,
   READ_RETRY_MAX_ATTEMPTS,
+  WRITE_RETRY_INTERVAL_MS,
+  WRITE_RETRY_MAX_ATTEMPTS,
   SYNC_INTERVAL_MS,
   wait,
 } from "./globalSyncState.js";
-
-const WRITE_RETRY_INTERVAL_MS = 1000;
-const WRITE_RETRY_MAX_ATTEMPTS = 3;
 
 export const useEntries = ({
   formId,

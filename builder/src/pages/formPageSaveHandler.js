@@ -19,6 +19,12 @@ import { collectResponses as coreCollectResponses } from "../core/collect.js";
 import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../core/constants.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsMemoryStore.js";
 import {
+  canRetryOperationSync,
+  wait,
+  WRITE_RETRY_INTERVAL_MS,
+  WRITE_RETRY_MAX_ATTEMPTS,
+} from "../features/search/globalSyncState.js";
+import {
   buildFieldValuesMap,
   collectFileUploadMeta,
 } from "../features/preview/printDocument.js";
@@ -40,6 +46,55 @@ export class DriveFolderFinalizeError extends Error {
     super("drive_folder_finalize_failed");
     this.originalError = originalError;
   }
+}
+
+/**
+ * バックグラウンドのスプレッドシート書き込みをリトライ付きで実行する。
+ *
+ * ロック競合 (LOCK_TIMEOUT) や一時的なスプレッドシートエラーは `canRetryOperationSync`
+ * が true を返す間だけ `waitFn(retryIntervalMs)` を挟んで再試行する。成功時・リトライ中は
+ * アラートを出さない。全リトライ枯渇時のみ、ローカル保存済みである旨の正確な文言で
+ * 1 度だけ `showAlert` する（LOCK_TIMEOUT は安心文言、それ以外は汎用エラー文言）。
+ *
+ * @param {object} args
+ * @param {() => Promise<void>} args.attemptSave 1 回分の書き込み（acquire→submit→recordNo 同期）
+ * @param {Function} args.showAlert
+ * @param {(ms: number) => Promise<void>} [args.waitFn]
+ * @param {number} [args.maxAttempts]
+ * @param {number} [args.retryIntervalMs]
+ * @returns {Promise<{ ok: boolean, error?: any }>}
+ */
+export async function runWithSaveRetry_({
+  attemptSave,
+  showAlert,
+  waitFn = wait,
+  maxAttempts = WRITE_RETRY_MAX_ATTEMPTS,
+  retryIntervalMs = WRITE_RETRY_INTERVAL_MS,
+}) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await attemptSave();
+      return { ok: true };
+    } catch (error) {
+      lastError = error;
+      if (canRetryOperationSync(error) && attempt < maxAttempts) {
+        await waitFn(retryIntervalMs);
+        continue;
+      }
+      break;
+    }
+  }
+  console.error("[FormPage] Background spreadsheet save failed after retries:", lastError);
+  if (lastError?.code === GAS_ERROR_CODE_LOCK_TIMEOUT) {
+    showAlert(
+      "ローカルには保存しました。スプレッドシートへの即時反映に繰り返し失敗したため、次回の同期で自動的に再試行します。",
+      "スプレッドシートへの反映を保留しました",
+    );
+  } else {
+    showAlert(`スプレッドシート保存に失敗しました: ${lastError?.message || lastError}`);
+  }
+  return { ok: false, error: lastError };
 }
 
 /**
@@ -250,25 +305,29 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
   }
 
   if (requiresSpreadsheetSave) {
-    void acquireSaveLock({ formId: form.id, sheetName })
-      .then(() => submitResponses({
-        formId: form.id,
-        sheetName,
-        payload: {
-          ...payloadWithFormId,
-          responses: saveData,
-          order: saveOrder,
-          id: saved.id,
-          createdAt: saved.createdAt,
-          createdAtUnixMs: saved.createdAtUnixMs,
-          createdBy: saved.createdBy,
-          "No.": saved["No."],
-        },
-      }))
-      .then(async (gasResult) => {
-        if (gasResult?.recordNo === undefined || gasResult?.recordNo === null || gasResult?.recordNo === "") return;
-        if (String(gasResult.recordNo) === String(saved["No."])) return;
-
+    const submitPayload = {
+      ...payloadWithFormId,
+      responses: saveData,
+      order: saveOrder,
+      id: saved.id,
+      createdAt: saved.createdAt,
+      createdAtUnixMs: saved.createdAtUnixMs,
+      createdBy: saved.createdBy,
+      "No.": saved["No."],
+    };
+    // バックグラウンドでスプレッドシートへ書き込む。ロック競合 (LOCK_TIMEOUT) は一時的な
+    // ことが多いので数回リトライし、その間はアラートを出さない。楽観的保存でメモリには
+    // 反映済みかつ未同期レコードは次回同期で再プッシュされるため、誤報を避ける。全リトライ
+    // 枯渇時のみ、ローカル保存済みである旨の正確な文言で 1 度だけ通知する。
+    const attemptSpreadsheetSave = async () => {
+      await acquireSaveLock({ formId: form.id, sheetName });
+      const gasResult = await submitResponses({ formId: form.id, sheetName, payload: submitPayload });
+      if (
+        gasResult?.recordNo !== undefined
+        && gasResult?.recordNo !== null
+        && gasResult?.recordNo !== ""
+        && String(gasResult.recordNo) !== String(saved["No."])
+      ) {
         const { entry: currentCached } = await getCachedEntryWithIndex(form.id, saved.id);
         const baseRecord = currentCached || saved;
         const synced = await dataStore.upsertEntry(form.id, {
@@ -276,18 +335,9 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
           "No.": gasResult.recordNo,
         });
         setEntry((prev) => (prev?.id === synced.id ? synced : prev));
-      })
-      .catch((error) => {
-        console.error("[FormPage] Background spreadsheet save failed:", error);
-        if (error?.code === GAS_ERROR_CODE_LOCK_TIMEOUT) {
-          showAlert(
-            "現在、他のユーザーによる更新処理が実行中のためスプレッドシートへの保存を完了できませんでした。少し時間をおいて再度お試しください。",
-            "スプレッドシート保存を完了できませんでした",
-          );
-          return;
-        }
-        showAlert(`スプレッドシート保存に失敗しました: ${error?.message || error}`);
-      });
+      }
+    };
+    void runWithSaveRetry_({ attemptSave: attemptSpreadsheetSave, showAlert });
   }
   try {
     sessionStorage.removeItem(draftKey);
