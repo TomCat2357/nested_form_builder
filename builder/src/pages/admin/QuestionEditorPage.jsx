@@ -300,6 +300,9 @@ export default function QuestionEditorPage() {
     const question = {
       // id ＝ Drive fileId。新規はクライアントで採番せず、保存後に GAS が返す fileId を採用する。
       id: questionId || undefined,
+      // 旧 ULID id（q_...）が mapping に無い stale ケースでも、GAS が実体ファイルを driveFileUrl から
+      // 特定して上書きできるよう実体 URL を保存ペイロードへ載せる（保存 JSON 本文からは除外される）。
+      driveFileUrl: driveFileUrl || undefined,
       name: name.trim(),
       folder: normalizeFolderPath(folder),
       schemaVersion: 1,

@@ -144,7 +144,27 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     var existingId = template.id || "";
     var mapping = Analytics_getMapping_(type);
     var existingEntry = existingId ? (mapping[existingId] || {}) : {};
-    var existingFileId = Nfb_resolveFileIdFromEntry_(existingEntry) || (existingId || null);
+    // 既存ファイルを「fileId → 論理パス folder + 名前アンカー」の順で解決する（Analytics_getTemplate_ と対称）。
+    // cache 優先 getById が渡す stale な id（実体とずれた fileId / 旧 ULID）でも実体を引き当て、
+    // リネームを「別ファイル新規作成」ではなく「実体の上書き(setName)」へ倒して重複を防ぐ。
+    var existingFile = existingId
+      ? Analytics_resolveItemFileOrNull_(type, Nfb_resolveFileIdFromEntry_(existingEntry), existingId, existingEntry, mapping)
+      : null;
+    // 名前/フォルダで実体を引き当てられない場合、テンプレート自身が持つ driveFileUrl から救済する
+    // （フロントの IndexedDB キャッシュに残った stale id で mapping にエントリ自体が無い／名前を
+    //  失っているケース。これをしないと存在しない id を fileId 扱いして新規ファイルを作り二重化する）。
+    if (!existingFile && template.driveFileUrl) {
+      var parsedSelfUrl = Forms_parseGoogleDriveUrl_(template.driveFileUrl);
+      if (parsedSelfUrl && parsedSelfUrl.type === "file" && parsedSelfUrl.id) {
+        try {
+          var selfFile = DriveApp.getFileById(parsedSelfUrl.id);
+          if (!(typeof selfFile.isTrashed === "function" && selfFile.isTrashed())) existingFile = selfFile;
+        } catch (eSelf) { /* fallthrough */ }
+      }
+    }
+    var existingFileId = existingFile
+      ? existingFile.getId()
+      : (Nfb_resolveFileIdFromEntry_(existingEntry) || (existingId || null));
 
     // archived/createdAt/modifiedAt を正規化
     var nowMs = Date.now();
@@ -241,7 +261,10 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
         throw new Error("上書き先のファイルIDを解決できません");
       }
       try {
-        file = DriveApp.getFileById(overwriteFileId);
+        // 既に解決済みの実体があれば再取得を避けて再利用する（同一 fileId のとき）。
+        file = (existingFile && overwriteFileId === existingFile.getId())
+          ? existingFile
+          : DriveApp.getFileById(overwriteFileId);
         if (file.isTrashed()) {
           // ゴミ箱に入っていたら新規作成にフォールバック
           file = null;

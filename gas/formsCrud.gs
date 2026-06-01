@@ -197,6 +197,55 @@ function Forms_findFileByNamesRecursive_(folder, targets) {
   return null;
 }
 
+// 既存フォームの物理ファイルを「fileId → 実体 URL → 中央辞書(folder+title)アンカー」の順で解決する。
+// Analytics_resolveItemFileOrNull_ の forms 版。フロントの cache 優先取得が渡す stale な id
+// （実体とずれた fileId / 旧 f_... ULID）でも実体を引き当て、保存時に「別ファイル新規作成 /
+// 上書き失敗」ではなく「実体の上書き(setName)」へ倒して二重化・保存エラーを防ぐ。
+// 見つからなければ null（呼び出し側で従来フォールバックへ）。
+function Forms_resolveFormFileOrNull_(fileId, formId, entry, driveFileUrl) {
+  if (fileId) {
+    try {
+      var f = DriveApp.getFileById(fileId);
+      if (!(typeof f.isTrashed === "function" && f.isTrashed())) return f;
+    } catch (e) { /* 消失/不正 fileId → URL / アンカーで復旧へ */ }
+  }
+  // フォーム自身（またはマッピング）が持つ実体 URL から引き当てる（mapping にエントリが
+  // 無い / 名前を失っている stale id ケースの最終救済）。
+  var url = driveFileUrl || (entry && entry.driveFileUrl) || "";
+  if (url) {
+    var parsed = Forms_parseGoogleDriveUrl_(url);
+    if (parsed && parsed.type === "file" && parsed.id) {
+      try {
+        var fu = DriveApp.getFileById(parsed.id);
+        if (!(typeof fu.isTrashed === "function" && fu.isTrashed())) return fu;
+      } catch (eu) { /* fallthrough */ }
+    }
+  }
+  // 中央辞書の論理パス folder + title（キャッシュ名）アンカーで実体を引き当てる。
+  var title = (entry && typeof entry.title === "string" && entry.title) ? entry.title : "";
+  if (title && entry && typeof entry.folder === "string") {
+    var scopedFolder = FormsDrive_lookupFolderForPath_(entry.folder);
+    if (scopedFolder) {
+      var scoped = StdFolders_findFileByNameInFolder_(scopedFolder, title + ".json");
+      if (!scoped && typeof Forms_normalizeFormTitle_ === "function") {
+        scoped = StdFolders_findFileByNameInFolder_(scopedFolder, Forms_normalizeFormTitle_(title) + ".json");
+      }
+      if (scoped) return scoped;
+    }
+  }
+  if (title) {
+    var base = FormsDrive_baseFolderOrNull_();
+    if (base) {
+      var targets = {};
+      targets[title + ".json"] = true;
+      if (typeof Forms_normalizeFormTitle_ === "function") targets[Forms_normalizeFormTitle_(title) + ".json"] = true;
+      var byName = Forms_findFileByNamesRecursive_(base, targets);
+      if (byName) return byName;
+    }
+  }
+  return null;
+}
+
 // フォルダ込みフォーム名（"フォルダ/サブ/葉"）を、その物理フォルダ「直下のみ」で葉名一致解決する。
 // 別フォルダの同名へ波及しないようパス厳密（非再帰）。フォルダ込みでない / 物理未解決は null。
 function Forms_findFileByQualifiedName_(qualifiedName) {

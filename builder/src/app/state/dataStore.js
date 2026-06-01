@@ -202,6 +202,10 @@ export const dataStore = {
     if (updates.schema === undefined && current.schemaHash) {
       next.schemaHash = current.schemaHash;
     }
+    // driveFileUrl は normalizeFormRecord で落ちるが、GAS 側の stale id 救済（旧 id が mapping に
+    // 無くても実体ファイルを driveFileUrl で特定して上書き）に使うため明示的に引き継ぐ。
+    // 実体 URL は保存後に GAS が確定値で上書きする。
+    next.driveFileUrl = updates.driveFileUrl || current.driveFileUrl;
     const result = await saveFormToGas(next, saveMode);
     const savedForm = result?.form || result;
     const fileUrl = result?.fileUrl;

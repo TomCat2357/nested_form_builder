@@ -131,7 +131,16 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     var originalFormId = formId;
     var mapping = Forms_getMapping_();
     var mappingEntry = formId ? (mapping[formId] || {}) : {};
-    var existingFileId = Nfb_resolveFileIdFromEntry_(mappingEntry) || (formId || null);
+    // 既存ファイルを「fileId → 実体 URL → 論理パス folder + title アンカー」の順で解決する
+    // （Forms_getForm_ / Forms_resolveFormRef_ と対称）。フロントの cache 優先取得が渡す stale な
+    // id（実体とずれた fileId / 旧 f_... ULID）でも実体を引き当て、リネームを「別ファイル新規作成 /
+    // 上書き失敗」ではなく「実体の上書き(setName)」へ倒して二重化・保存エラーを防ぐ。
+    var existingFile = formId
+      ? Forms_resolveFormFileOrNull_(Nfb_resolveFileIdFromEntry_(mappingEntry), formId, mappingEntry, form.driveFileUrl)
+      : null;
+    var existingFileId = existingFile
+      ? existingFile.getId()
+      : (Nfb_resolveFileIdFromEntry_(mappingEntry) || (formId || null));
 
     // タイトル正規化 + 衝突時の自動採番
     var existingTitles = [];
@@ -233,7 +242,10 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       }
 
       try {
-        file = DriveApp.getFileById(overwriteFileId);
+        // 既に解決済みの実体があれば再取得を避けて再利用する（同一 fileId のとき）。
+        file = (existingFile && overwriteFileId === existingFile.getId())
+          ? existingFile
+          : DriveApp.getFileById(overwriteFileId);
       } catch (errOpenFile) {
         throw new Error("[save-stage=open-file] ファイルにアクセスできません. formId=" + form.id + ", fileId=" + overwriteFileId + ", saveMode=" + effectiveSaveMode + ", error=" + nfbErrorToString_(errOpenFile));
       }
