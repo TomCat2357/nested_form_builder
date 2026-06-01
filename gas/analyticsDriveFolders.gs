@@ -63,30 +63,3 @@ function AnalyticsDrive_findFileByNameInTree_(type, name) {
   return SharedDrive_findFileByNameRecursive_(base, targets);
 }
 
-// 既存の仮想フォルダ/アイテムを物理 Drive 構造へ一括反映する（手動・冪等）。
-// auto-organize off では skip。
-function AnalyticsDrive_backfillPhysicalFolders_(type) {
-  var base = AnalyticsDrive_baseFolderOrNull_(type);
-  if (!base) return { ok: true, skipped: true, reason: "標準フォルダが無効です" };
-
-  // 1) 既知フォルダ（登録簿 ∪ item 由来。親→子順）を物理化。
-  var paths = Analytics_collectFolders_(type);
-  for (var i = 0; i < paths.length; i++) {
-    AnalyticsDrive_ensureFolderForPath_(type, paths[i]);
-  }
-
-  // 2) 各アイテムファイルを item.folder に対応する物理フォルダへ移動。
-  var mapping = Analytics_getMapping_(type);
-  var movedFiles = 0;
-  for (var id in mapping) {
-    if (!mapping.hasOwnProperty(id)) continue;
-    var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]);
-    if (!fileId) continue;
-    var folder = "";
-    try {
-      folder = Forms_normalizeFolderPath_(Nfb_readJsonFileById_(fileId).json.folder);
-    } catch (e) { folder = ""; }
-    if (AnalyticsDrive_moveItemFileToPath_(type, fileId, folder)) movedFiles++;
-  }
-  return { ok: true, folders: paths.length, movedFiles: movedFiles };
-}
