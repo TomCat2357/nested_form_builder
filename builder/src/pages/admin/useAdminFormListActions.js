@@ -9,7 +9,7 @@ import { asPlainObject } from "../../utils/objectShape.js";
 const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
   const parts = [];
   if (skipped > 0) {
-    const label = useRegisteredLabel ? "登録済みスキップ" : "スキップ";
+    const label = useRegisteredLabel ? "登録済み（リンク済み）スキップ" : "スキップ";
     parts.push(`${label} ${skipped} 件`);
   }
   if (parseFailed > 0) parts.push(`読込失敗 ${parseFailed} 件`);
@@ -157,7 +157,7 @@ export function useAdminFormListActions({
   const handleDeleteSelected = () => {
     const { formIds, folderPaths } = collectSelection();
     if (!formIds.length && !folderPaths.length) {
-      showAlert("削除するフォームまたはフォルダを選択してください。");
+      showAlert("リンク解除するフォームまたはフォルダを選択してください。");
       return;
     }
     // フォルダ配下のフォーム件数（直接選択フォームと重複し得るが、サーバ側で冪等に解決される）。
@@ -276,10 +276,15 @@ export function useAdminFormListActions({
     try {
       const result = await importFormsFromDrive(url);
       const { forms: importedForms, skipped = 0, parseFailed = 0 } = result;
-      const detail = buildImportDetail(skipped, parseFailed);
 
       if (!importedForms || importedForms.length === 0) {
-        showAlert(`有効なフォームがありませんでした${detail}。`);
+        // 取り込む新規ファイルが無い。既登録（リンク済み）でスキップした場合は、
+        // 「失敗」ではなく「登録済みのため取り込み不要」と分かる表現にする。
+        if (skipped > 0 && parseFailed === 0) {
+          showAlert(`すべて登録済み（リンク済み）のためスキップしました（${skipped} 件）。`);
+        } else {
+          showAlert(`有効なフォームがありませんでした${buildImportDetail(skipped, parseFailed, { useRegisteredLabel: true })}。`);
+        }
         setImporting(false);
         return;
       }

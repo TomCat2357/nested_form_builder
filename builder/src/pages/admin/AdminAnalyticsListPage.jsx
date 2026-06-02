@@ -365,7 +365,7 @@ export default function AdminAnalyticsListPage({
             onClick={handleDeleteSelected}
             disabled={selected.size === 0 && selectedFolders.size === 0}
           >
-            削除
+            リンク解除
           </button>
 
           <div className="nf-spacer-16" />
@@ -496,13 +496,13 @@ export default function AdminAnalyticsListPage({
 
       <ConfirmDialog
         open={confirmDelete.open}
-        title={confirmDelete.folderPaths?.length ? "フォルダを削除" : `${itemLabel} を削除`}
+        title={confirmDelete.folderPaths?.length ? "フォルダをリンク解除" : `${itemLabel} をリンク解除`}
         message={
           confirmDelete.folderPaths?.length
-            ? `選択したフォルダを削除します。中の ${confirmDelete.folderItemCount} 個の ${itemLabel} も併せて削除します（プロジェクト内のファイルは Drive 上の実体ごと、プロジェクト外＝外部リンクはリンク解除のみ）。よろしいですか？`
+            ? `選択したフォルダのリンクを解除します。中の ${confirmDelete.folderItemCount} 個の ${itemLabel} のリンクも併せて解除します。Drive 上のファイル本体は削除されません。よろしいですか？`
             : confirmDelete.multiple
-              ? `選択した ${itemLabel} を削除します。プロジェクト内のファイルは Drive 上の実体ごと削除し、プロジェクト外（外部リンク）はリンク解除のみ行います。よろしいですか？`
-              : `この ${itemLabel} を削除します。プロジェクト内のファイルは Drive 上の実体ごと削除し、プロジェクト外（外部リンク）はリンク解除のみ行います。よろしいですか？`
+              ? `選択した ${itemLabel} のリンク（登録）を解除します。Drive 上のファイル本体は削除されません。よろしいですか？`
+              : `この ${itemLabel} のリンク（登録）を解除します。Drive 上のファイル本体は削除されません。よろしいですか？`
         }
         options={[
           {
@@ -511,7 +511,7 @@ export default function AdminAnalyticsListPage({
             onSelect: () => setConfirmDelete({ open: false, id: null, targetIds: [], folderPaths: [], multiple: false, folderItemCount: 0 }),
           },
           {
-            label: "削除",
+            label: "リンク解除",
             value: "delete",
             variant: "danger",
             onSelect: confirmDeleteAction,

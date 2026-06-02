@@ -278,21 +278,21 @@ function StdFolderStore_renameFolder_(adapter, payload) {
   });
 }
 
-// フォルダ削除。配下アイテムを併せて削除（マッピング解除）し、登録簿から path と子孫を除去する。
+// フォルダのリンク解除（アンマウント）。配下アイテムのリンクを併せて解除（マッピング除去）し、
+// 登録簿から path と子孫を除去する。Drive 上の物理フォルダ・ファイル本体は削除しない。
 function StdFolderStore_deleteFolder_(adapter, path) {
   var normalized = Forms_normalizeFolderPath_(path);
   if (!normalized) {
-    return { ok: false, error: "削除するフォルダを指定してください" };
+    return { ok: false, error: "リンク解除するフォルダを指定してください" };
   }
-  return WithScriptLock_(adapter.lockPrefix + "フォルダ削除", function() {
+  return WithScriptLock_(adapter.lockPrefix + "フォルダリンク解除", function() {
     var ids = StdFolderStore_collectItemIdsUnder_(adapter, normalized);
     var deletedCount = 0;
     if (ids.length) {
       var res = adapter.deleteItems(ids);
       deletedCount = (res && res.deleted) || 0;
     }
-    // 物理 Drive フォルダ（配下のファイル含む）をゴミ箱へ。auto-organize off では no-op。
-    adapter.driveTrashPathFolder(normalized);
+    // Drive 上の物理フォルダ・ファイル本体は残す（リンク解除のみ）。
     // 登録簿から path と子孫を除去
     var prefix = normalized + "/";
     var registry = StdFolderStore_getFolders_(adapter.foldersPropertyKey).filter(function(p) {

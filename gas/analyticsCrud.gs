@@ -354,8 +354,9 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
 }
 
 /**
- * 複数テンプレートを削除。プロジェクト内（標準フォルダ構成 02_questions / 03_dashboards 配下）の
- * 実体は Drive からゴミ箱へ移し、プロジェクト外（外部リンク）はマッピング除去のみ行う。
+ * 複数テンプレート（クエスチョン / ダッシュボード）のリンクを解除（アンマウント）する。
+ * Drive 上の実体は削除せず残し、中央辞書（マッピング）の登録のみを除去する。
+ * 戻り値の deleted は「リンク解除した件数」（後方互換のためキー名は据え置き）。
  */
 function Analytics_deleteTemplates_(type, templateIds) {
   return nfbSafeCall_(function() {
@@ -364,18 +365,10 @@ function Analytics_deleteTemplates_(type, templateIds) {
       throw new Error("IDが指定されていません");
     }
     var mapping = Analytics_getMapping_(type);
-    // type ("questions"/"dashboards") は標準フォルダキーと一致。プロジェクト内判定用に
-    // サブフォルダ ID を一度だけ解決する。ルート未確定なら null → 全件リンク解除のみ（安全側）。
-    var stdSubId = StdFolders_autoFileFolderIdOrNull_(type);
     var deleted = 0;
     for (var i = 0; i < ids.length; i++) {
       var id = ids[i];
-      // マッピングが無ければ id 自体を fileId とみなす（新方式では id === fileId）。
-      var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]) || id;
-      // プロジェクト内の実体だけゴミ箱へ。プロジェクト外（外部リンク）はリンク解除のみ。
-      if (stdSubId && StdFolders_isFileUnderFolder_(fileId, stdSubId)) {
-        Nfb_trashDriveFileById_(fileId);
-      }
+      // リンク（登録）のみ解除する。Drive 上のファイル本体は削除しない。
       if (mapping.hasOwnProperty(id)) {
         delete mapping[id];
         deleted += 1;
