@@ -55,6 +55,14 @@ function makeListCache(storeName) {
         await waitForRequest(store.delete(id));
       });
     },
+    // 移動・名前変更などサーバ側でフォルダ構造が変わった後に呼ぶ。
+    // lastSyncedAt を null にして次回 listSWR が GAS から再取得するよう強制失効させる。
+    async resetSyncTime() {
+      await withTransaction(storeName, "readwrite", async (store) => {
+        const meta = await waitForRequest(store.get(META_KEY));
+        await waitForRequest(store.put({ ...(meta || {}), id: META_KEY, lastSyncedAt: null }));
+      });
+    },
   };
 }
 

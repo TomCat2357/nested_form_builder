@@ -435,10 +435,10 @@ export function AppDataProvider({ children }) {
     return folders;
   }, []);
 
-  // フォーム/フォルダ移動。フォームの folder が変わるため一覧を再取得して整合させる。
+  // フォーム/フォルダ移動。GAS 完了後にバックグラウンドで一覧を再取得して整合させる。
   const moveItems = useCallback(async (payload) => {
     const result = await dataStore.moveItems(payload);
-    await refreshForms({ reason: "move-items", background: false });
+    refreshForms({ reason: "move-items", background: true }).catch(console.error);
     return result;
   }, [refreshForms]);
 

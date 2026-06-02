@@ -453,6 +453,9 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
 
   async function moveItems(payload) {
     const result = await gas[`move${E}s`](payload);
+    // GAS がフォルダ構造を書き換えたので、次回 listSWR でサーバから再取得させる。
+    await cache.resetSyncTime();
+    emitAnalyticsCacheChanged(one);
     return { folders: result.folders || [], movedIds: result.movedIds || [] };
   }
 

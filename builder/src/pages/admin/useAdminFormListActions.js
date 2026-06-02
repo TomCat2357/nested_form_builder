@@ -406,7 +406,7 @@ export function useAdminFormListActions({
     moveDialog.open({ formIds, folderPaths, count: formIds.length + folderPaths.length });
   };
 
-  const confirmMove = async () => {
+  const confirmMove = () => {
     const formIds = Array.isArray(moveDialog.state.formIds) ? moveDialog.state.formIds : [];
     const folderPaths = Array.isArray(moveDialog.state.folderPaths) ? moveDialog.state.folderPaths : [];
     const destPath = normalizeFolderPath(moveDest);
@@ -425,17 +425,16 @@ export function useAdminFormListActions({
       }
     }
 
-    try {
-      await moveItems({ formIds, folderPaths, destPath });
-      if (formIds.length) clearSelectionByIds(formIds);
-      if (folderPaths.length && clearFolderSelection) clearFolderSelection();
-      moveDialog.reset();
-      setMoveDest("");
-      setMoveError("");
-    } catch (error) {
+    // ダイアログを先に閉じ、GAS はバックグラウンドで実行（完了後にリスト自動更新）。
+    if (formIds.length) clearSelectionByIds(formIds);
+    if (folderPaths.length && clearFolderSelection) clearFolderSelection();
+    moveDialog.reset();
+    setMoveDest("");
+    setMoveError("");
+    moveItems({ formIds, folderPaths, destPath }).catch((error) => {
       console.error("[AdminFormList] Move failed:", error);
-      setMoveError(error?.message || "移動に失敗しました");
-    }
+      showAlert(error?.message || "移動に失敗しました");
+    });
   };
 
   // ---- 名前変更 ----

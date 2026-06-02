@@ -319,7 +319,7 @@ export function useAdminAnalyticsListActions({
     moveDialog.open({ itemIds, folderPaths, count: itemIds.length + folderPaths.length });
   };
 
-  const confirmMove = async () => {
+  const confirmMove = () => {
     const itemIds = Array.isArray(moveDialog.state.itemIds) ? moveDialog.state.itemIds : [];
     const folderPaths = Array.isArray(moveDialog.state.folderPaths) ? moveDialog.state.folderPaths : [];
     const destPath = normalizeFolderPath(moveDest);
@@ -338,16 +338,15 @@ export function useAdminAnalyticsListActions({
       }
     }
 
-    try {
-      await moveItems({ itemIds, folderPaths, destPath });
-      if (itemIds.length) clearSelectionByIds(itemIds);
-      if (folderPaths.length && clearFolderSelection) clearFolderSelection();
-      moveDialog.reset();
-      setMoveDest("");
-      setMoveError("");
-    } catch (error) {
-      setMoveError(error?.message || "移動に失敗しました");
-    }
+    // ダイアログを先に閉じ、GAS はバックグラウンドで実行（完了後にリスト自動更新）。
+    if (itemIds.length) clearSelectionByIds(itemIds);
+    if (folderPaths.length && clearFolderSelection) clearFolderSelection();
+    moveDialog.reset();
+    setMoveDest("");
+    setMoveError("");
+    moveItems({ itemIds, folderPaths, destPath }).catch((error) => {
+      showAlert(error?.message || "移動に失敗しました");
+    });
   };
 
   // ---- 名前変更 ----
