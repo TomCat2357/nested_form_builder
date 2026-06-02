@@ -1,5 +1,20 @@
 export const hasScriptRun = () => typeof google !== "undefined" && google?.script?.run;
 
+// URL で指定された pid（親レコード ID）。doGet が window.__PID__ に注入する。
+// pid が指定されている間はレコード系 API へ自動付与し、サーバ側で「その pid に等しい行」だけを
+// 返させ、新規行にはその pid を必ず刻ませる。空文字なら従来どおり全件・刻印なし。
+export const getUrlPid = () => {
+  if (typeof window === "undefined") return "";
+  const raw = window.__PID__;
+  return raw === undefined || raw === null ? "" : String(raw).trim();
+};
+
+// pid が非空のときだけ payload に { pid } を足して返す（空のときは payload をそのまま）。
+const withUrlPid = (payload) => {
+  const pid = getUrlPid();
+  return pid ? { ...payload, pid } : payload;
+};
+
 const normalizeScriptRunError = (err) => {
   if (err instanceof Error) return err;
   if (typeof err === "string") return new Error(err);
@@ -91,7 +106,7 @@ const validateFormIds = (formIds) => {
 // （非管理者には spreadsheetId を返さないため）。詳細は docs/claude/data-model.md を参照。
 export const submitResponses = ({ formId, sheetName = "Data", payload }) => {
   if (!formId) throw new Error("formId is required");
-  return fetchGasApi("saveResponses", { ...payload, formId, sheetName }, "Apps Script call failed");
+  return fetchGasApi("saveResponses", withUrlPid({ ...payload, formId, sheetName }), "Apps Script call failed");
 };
 
 export const acquireSaveLock = ({ formId, sheetName = "Data" }) => {
@@ -108,7 +123,7 @@ export const deleteEntry = ({ formId, sheetName = "Data", entryId }) => {
 export const getEntry = async ({ formId, sheetName = "Data", entryId, rowIndexHint = null }) => {
   if (!formId) throw new Error("formId is required");
   if (!entryId) throw new Error("entryId is required");
-  const result = await fetchGasApi("getRecord", { formId, sheetName, id: entryId, rowIndexHint }, "Get record failed");
+  const result = await fetchGasApi("getRecord", withUrlPid({ formId, sheetName, id: entryId, rowIndexHint }), "Get record failed");
   return { record: result.record || null, rowIndex: typeof result.rowIndex === "number" ? result.rowIndex : null };
 };
 
@@ -123,7 +138,7 @@ export const listEntries = async ({ sheetName = "Data", formId = null, lastSprea
   if (!forceFullSync && Number.isFinite(normalizedLastSpreadsheetReadAt) && normalizedLastSpreadsheetReadAt > 0) {
     payload.lastSpreadsheetReadAt = normalizedLastSpreadsheetReadAt;
   }
-  const result = await fetchGasApi("listRecords", payload, "スプレッドシートからデータ一覧を読み取れませんでした");
+  const result = await fetchGasApi("listRecords", withUrlPid(payload), "スプレッドシートからデータ一覧を読み取れませんでした");
   return {
     records: result.records || [],
     headerMatrix: result.headerMatrix || [],
@@ -305,6 +320,6 @@ export const runPurgeCheck = ({ formId } = {}) =>
 
 export const syncRecordsProxy = async (payload) => {
   if (!payload?.formId) throw new Error("formId is required");
-  const result = await fetchGasApi("syncRecordsProxy", { ...payload }, "Sync failed");
+  const result = await fetchGasApi("syncRecordsProxy", withUrlPid({ ...payload }), "Sync failed");
   return result;
 };

@@ -191,6 +191,16 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
     if (norm.numberFormat) formats[cIdx] = norm.numberFormat;
   }
 
+  // URL で pid 指定中は、保存する行に必ずその pid を刻む（新規行はもちろん、既存行も整合させる）。
+  // pid 列はメタ列ブロックの固定メタ列で、Sheets_ensureHeaderMatrix_ が正規位置へ揃え済み（keyToColumn で解決）。
+  var pid = Nfb_resolvePidFromCtx_(ctx);
+  if (pid && keyToColumn.hasOwnProperty("pid")) {
+    var pidColIdx = keyToColumn["pid"] - 1;
+    if (pidColIdx >= 0 && pidColIdx < lastColumn) {
+      rowData[pidColIdx] = Sheets_neutralizeFormulaPrefix_(pid);
+    }
+  }
+
   var range = sheet.getRange(rowIndex, 1, 1, lastColumn);
   range.setValues([rowData]);
 

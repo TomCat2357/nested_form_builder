@@ -65,6 +65,7 @@ function SerializeRecord_(record) {
     modifiedBy: record.modifiedBy || "",
     createdBy: record.createdBy || "",
     deletedBy: record.deletedBy || "",
+    pid: record.pid == null ? "" : String(record.pid),
     createdAt: unixMsOrFallback(record.createdAt, ""),
     modifiedAt: unixMsOrFallback(record.modifiedAt, ""),
     deletedAt: unixMsNullableOrFallback(record.deletedAt),
@@ -381,9 +382,11 @@ function ListRecords_(ctx) {
       const allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: shouldNormalize });
       const headerMatrix = Sheets_readHeaderMatrix_(sheet);
       const isAdmin = Nfb_isAdminFromCtx_(ctx);
+      const pid = Nfb_resolvePidFromCtx_(ctx);
+      const pidFiltered = pid ? allRecords.filter((r) => Nfb_recordMatchesPid_(r, pid)) : allRecords;
       const visibleRecords = isAdmin
-        ? allRecords
-        : allRecords.filter((r) => !Nfb_isSoftDeletedRecord_(r));
+        ? pidFiltered
+        : pidFiltered.filter((r) => !Nfb_isSoftDeletedRecord_(r));
 
       if (ctx.forceFullSync || !ctx.lastSpreadsheetReadAt) {
         return {
@@ -455,6 +458,21 @@ function Nfb_isAdminFromCtx_(ctx) {
     Logger.log("[Nfb_isAdminFromCtx_] failed: " + err);
     return false;
   }
+}
+
+// URL から渡された pid（親レコード ID）を ctx から取り出す。空文字/未指定なら "" を返す。
+// pid が指定されている間は「その pid に等しい行」だけを返し、新規行にはその pid を必ず刻む。
+function Nfb_resolvePidFromCtx_(ctx) {
+  var raw = ctx && ctx.raw ? ctx.raw.pid : "";
+  if (raw === null || raw === undefined) return "";
+  return String(raw).trim();
+}
+
+// pid フィルタ適用後に残すべきレコードか判定する。pid が空なら全件許可（従来動作）。
+function Nfb_recordMatchesPid_(record, pid) {
+  if (!pid) return true;
+  if (!record) return false;
+  return String(record.pid == null ? "" : record.pid) === pid;
 }
 
 function Nfb_isSoftDeletedRecord_(record) {

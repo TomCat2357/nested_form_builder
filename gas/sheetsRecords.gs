@@ -143,6 +143,7 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
   var createdAtRaw = pick("createdAt", "");
   var modifiedAtRaw = pick("modifiedAt", "");
   var deletedAtRaw = pick("deletedAt", "");
+  var pidRaw = pick("pid", "");
 
   var createdAtJst = formatDt(createdAtRaw);
   var modifiedAtJst = formatDt(modifiedAtRaw);
@@ -157,6 +158,7 @@ function Sheets_buildRecordFromRow_(rowData, columnPaths) {
     createdBy: pick("createdBy", "") || "",
     modifiedBy: pick("modifiedBy", "") || "",
     deletedBy: pick("deletedBy", "") || "",
+    pid: (pidRaw === "" || pidRaw === null || pidRaw === undefined) ? "" : String(pidRaw),
     createdAtUnixMs: deriveUnixMs(createdAtJst),
     modifiedAtUnixMs: deriveUnixMs(modifiedAtJst),
     deletedAtUnixMs: deletedAtJst ? deriveUnixMs(deletedAtJst) : null,

@@ -57,7 +57,14 @@ var NFB_DATA_START_ROW = NFB_HEADER_START_ROW + NFB_HEADER_DEPTH;
 var NFB_SERVER_MODIFIED_AT = "NFB_SERVER_MODIFIED_AT";
 var NFB_SERVER_COMMIT_TOKEN = NFB_SERVER_MODIFIED_AT;
 var NFB_SHEET_LAST_UPDATED_AT_PREFIX = "NFB_SHEET_LAST_UPDATED_AT";
-var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["deletedAt"], ["createdBy"], ["modifiedBy"], ["deletedBy"]];
+// 固定メタ列。この配列順がそのまま物理列の先頭固定位置（メタ列 i → 物理列 i+1）になる。
+// 順序は sheetsRowOps.gs / codeSyncRecords.gs の位置決め書き込み (rowData[0..7]) が依存するため不変。
+// pid は親レコード ID を保持する追加メタ列で、メタ列ブロックの最後（deletedBy の直後・データ列の前）に置く。
+// Sheets_ensureHeaderMatrix_ → Sheets_repairMetaColumnPositions_ が全メタ列を一律に正規位置へ揃える
+// （欠落は正規位置へ挿入、位置ずれは移動。pid だけの特別処理は持たない）。既存シートで pid が無ければ
+// deletedBy の直後へ挿入され、既存のデータ列は右へシフトする。fixedColMap は読み取り経路（修整前の
+// シート）でもヘッダーパスから動的解決できるよう維持する。
+var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["deletedAt"], ["createdBy"], ["modifiedBy"], ["deletedBy"], ["pid"]];
 var NFB_RESERVED_HEADER_KEYS = {};
 for (var i = 0; i < NFB_FIXED_HEADER_PATHS.length; i++) {
   NFB_RESERVED_HEADER_KEYS[NFB_FIXED_HEADER_PATHS[i][0]] = true;
