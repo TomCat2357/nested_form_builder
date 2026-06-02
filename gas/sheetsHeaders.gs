@@ -258,32 +258,89 @@ function Sheets_writeHeaderPath_(sheet, columnIndex, path) {
   sheet.getRange(NFB_HEADER_START_ROW, columnIndex, NFB_HEADER_DEPTH, 1).setValues(values);
 }
 
+// 指定の 1-based 位置に空列を 1 本挿入する。col1Based が現行の最大列数以内なら
+// その位置の手前へ挿入（既存列を右へシフト）、超える場合は末尾へ不足分を追加する。
+function Sheets_insertColumnAt_(sheet, col1Based) {
+  var maxCols = sheet.getMaxColumns();
+  if (col1Based <= maxCols) {
+    sheet.insertColumnsBefore(col1Based, 1);
+  } else {
+    sheet.insertColumnsAfter(maxCols, col1Based - maxCols);
+  }
+}
+
+// 予約メタ列（NFB_FIXED_HEADER_PATHS）を配列順どおり先頭の固定位置（メタ列 i → 物理列 i+1）へ揃える。
+// 位置が正規でなければ修整する: 欠落していれば正規位置へ挿入、別位置にあれば正規位置へ移動。
+// pid を含む全メタ列を一律に扱い、pid だけの特別処理は持たない。データ列は後方へ押し出される。
+// 既に正規配置のシート（通常ケース）では一切ミューテートしない。
+function Sheets_repairMetaColumnPositions_(sheet) {
+  var changed = false;
+  var colPaths = [];
+  var refresh = function() {
+    var lc = sheet.getLastColumn();
+    colPaths = lc > 0 ? Sheets_readColumnPaths_(sheet, lc) : [];
+  };
+  var findCol1Based = function(key) {
+    for (var c = 0; c < colPaths.length; c++) {
+      if (colPaths[c].key === key) return colPaths[c].index + 1;
+    }
+    return -1;
+  };
+
+  refresh();
+  for (var i = 0; i < NFB_FIXED_HEADER_PATHS.length; i++) {
+    var path = Sheets_normalizeHeaderPath_(NFB_FIXED_HEADER_PATHS[i]);
+    if (!path.length) continue;
+    var targetCol = i + 1; // 1-based 正規位置
+    var key = Sheets_pathKey_(path);
+    var current = findCol1Based(key);
+
+    if (current === targetCol) continue;
+
+    if (current === -1) {
+      // 欠落 → 正規位置へ挿入してヘッダーを書く
+      Sheets_insertColumnAt_(sheet, targetCol);
+      Sheets_writeHeaderPath_(sheet, targetCol, path);
+    } else {
+      // 位置ずれ → 正規位置へ移動。先行メタ列は確定済みなので current > targetCol が保証され、
+      // moveColumns は移動先 < 移動元で安定動作する。
+      sheet.moveColumns(sheet.getRange(1, current, sheet.getMaxRows(), 1), targetCol);
+    }
+    changed = true;
+    refresh(); // 列位置が変わったので取り直す
+  }
+  return changed;
+}
+
 function Sheets_ensureHeaderMatrix_(sheet, order) {
   Sheets_ensureRowCapacity_(sheet, NFB_DATA_START_ROW);
   if (sheet.getFrozenRows() !== NFB_DATA_START_ROW - 1) {
     sheet.setFrozenRows(NFB_DATA_START_ROW - 1);
   }
 
+  // 1) 予約メタ列を正規の先頭固定位置へ揃える（欠落は挿入・位置ずれは移動）。
+  Sheets_repairMetaColumnPositions_(sheet);
+
+  // 2) データ列（非予約）で欠けているものを末尾へ追加（既存データ列は移動しない）。
   var matrix = Sheets_readHeaderMatrix_(sheet);
   var existingPaths = Sheets_extractColumnPaths_(matrix);
   var desired = Sheets_buildDesiredPaths_(order, existingPaths);
 
-  // 既存列のキーセットを構築
   var existingKeySet = {};
   existingPaths.forEach(function(path) {
     existingKeySet[Sheets_pathKey_(path)] = true;
   });
 
-  // 新しい列のみ末尾に追加（既存列は移動しない）
   for (var i = 0; i < desired.length; i++) {
     var path = desired[i];
     var key = Sheets_pathKey_(path);
-    if (!existingKeySet[key]) {
-      var newColIndex = sheet.getLastColumn() + 1;
-      Sheets_ensureColumnExists_(sheet, newColIndex);
-      Sheets_writeHeaderPath_(sheet, newColIndex, path);
-      existingKeySet[key] = true;
-    }
+    if (existingKeySet[key]) continue;
+    // 予約メタ列は手順1で配置済み。残り（データ列）だけ末尾へ追加する。
+    if (path.length === 1 && NFB_RESERVED_HEADER_KEYS[path[0]]) continue;
+    var newColIndex = sheet.getLastColumn() + 1;
+    Sheets_ensureColumnExists_(sheet, newColIndex);
+    Sheets_writeHeaderPath_(sheet, newColIndex, path);
+    existingKeySet[key] = true;
   }
 
   Sheets_touchSheetLastUpdated_(sheet);
