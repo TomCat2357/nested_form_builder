@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formRefsToIds, formRefsToNames } from "./rewriteSqlFormRefs.js";
+import { formRefsToIds, formRefsToNames, canonicalAliasToName } from "./rewriteSqlFormRefs.js";
 import { buildFormIndex } from "./formIdentifierResolver.js";
 
 // 苦情データ（フォルダなし）, 別フォーム（フォルダなし）, さらにフォルダ込みフォームを用意。
@@ -110,6 +110,42 @@ test("往復安定: ID → 名前 → ID で元に戻る", () => {
   const names = formRefsToNames(stored, formIndex);
   const ids = formRefsToIds(names, formIndex);
   assert.equal(ids, stored);
+});
+
+test("canonicalAliasToName: GUI→SQL の FROM data_<id> が [フォーム名] になる", () => {
+  const out = canonicalAliasToName(
+    "SELECT COUNT(*) AS [件数] FROM data_f_complaint",
+    "f_complaint",
+    formIndex,
+  );
+  assert.equal(out, "SELECT COUNT(*) AS [件数] FROM [苦情データ]");
+});
+
+test("canonicalAliasToName: フォルダ込みフォームは folder/title 形式で表示", () => {
+  const out = canonicalAliasToName(
+    "SELECT * FROM data_f_in_folder WHERE [x] = 1",
+    "f_in_folder",
+    formIndex,
+  );
+  assert.equal(out, "SELECT * FROM [相談/対応一覧] WHERE [x] = 1");
+});
+
+test("canonicalAliasToName→保存(formRefsToIds): [フォーム名] が fileId に戻る（往復）", () => {
+  const compiled = "SELECT COUNT(*) AS [件数] FROM data_f_complaint";
+  const display = canonicalAliasToName(compiled, "f_complaint", formIndex);
+  assert.equal(display, "SELECT COUNT(*) AS [件数] FROM [苦情データ]");
+  const saved = formRefsToIds(display, formIndex);
+  assert.equal(saved, "SELECT COUNT(*) AS [件数] FROM [f_complaint]");
+});
+
+test("canonicalAliasToName: SELECT の列名に紛れた data_ 風トークンは触らない", () => {
+  // FROM 句以外（列名など）にある data_f_complaint は置換対象外。
+  const out = canonicalAliasToName(
+    "SELECT [data_f_complaint_label] FROM data_f_complaint",
+    "f_complaint",
+    formIndex,
+  );
+  assert.equal(out, "SELECT [data_f_complaint_label] FROM [苦情データ]");
 });
 
 test("空 / null SQL は素通し", () => {

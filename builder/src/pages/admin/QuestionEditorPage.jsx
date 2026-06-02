@@ -12,7 +12,7 @@ import { getSheetConfig } from "../../app/state/dataStoreHelpers.js";
 import { executeQuestion, saveQuestion, getQuestionById, getFormColumns, ERR_NO_SPREADSHEET } from "../../features/analytics/analyticsStore.js";
 import { buildColumnIndex, resolveColumnRef } from "../../features/analytics/utils/columnIdentifierResolver.js";
 import { formQualifiedName, buildFormIndex } from "../../features/analytics/utils/formIdentifierResolver.js";
-import { formRefsToIds, formRefsToNames } from "../../features/analytics/utils/rewriteSqlFormRefs.js";
+import { formRefsToIds, formRefsToNames, canonicalAliasToName } from "../../features/analytics/utils/rewriteSqlFormRefs.js";
 import { compileStages } from "../../features/analytics/utils/compileStages.js";
 import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder.jsx";
 import VisualizePanel from "../../features/analytics/components/VisualizePanel.jsx";
@@ -363,7 +363,9 @@ export default function QuestionEditorPage() {
     }
     const ok = window.confirm("GUI 状態を SQL に変換して以後 SQL として編集します。GUI へは戻せません。続行しますか？");
     if (!ok) return;
-    setSql(compiled.sql);
+    // compileStages の出力は FROM data_<id>（canonical alias）。手書き SQL と同じく
+    // エディタ表示は [フォーム名] に寄せる（保存時に formRefsToIds で fileId へ戻る）。
+    setSql(canonicalAliasToName(compiled.sql, gui.formId, buildFormIndex(forms)));
     setSelectedFormId(gui.formId);
     setMode("sql");
   };

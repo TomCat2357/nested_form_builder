@@ -14,6 +14,7 @@
 
 import { maskWithPlaceholders } from "./sqlLiteralMask.js";
 import { resolveFormRef, formQualifiedName } from "./formIdentifierResolver.js";
+import { canonicalDataAlias } from "./sqlPreprocessor.js";
 
 /**
  * SQL 内のテーブル参照トークンを mapToken で書き換える。
@@ -82,4 +83,26 @@ export function formRefsToNames(sql, formIndex) {
     if (!formIndex || !formIndex.byId || !formIndex.byId.has(ref)) return null;
     return formQualifiedName(formIndex.byId.get(ref)) || null;
   });
+}
+
+/**
+ * GUI→SQL 変換専用: compileStages が出力する canonical alias（`FROM data_<id>`）を
+ * エディタ表示用の `[フォーム名]` に寄せる。手書き SQL と同じ表示規約に揃えるため、
+ * まず `data_<id>` を `[<fileId>]` に正規化し、続いて formRefsToNames で名前化する。
+ * 保存時は formRefsToIds が `[フォーム名]` → `[fileId]` に戻すのでリネーム耐性も保たれる。
+ *
+ * @param {string} sql - compileStages が返した SQL
+ * @param {string} formId - GUI で選択されていたフォームの fileId
+ * @param {object} formIndex - buildFormIndex の戻り値
+ * @returns {string}
+ */
+export function canonicalAliasToName(sql, formId, formIndex) {
+  if (!sql || !formId) return sql || "";
+  const canon = canonicalDataAlias(formId);
+  const escaped = canon.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const bracketed = sql.replace(
+    new RegExp("\\b(FROM|JOIN)\\b(\\s+)" + escaped + "\\b", "gi"),
+    (_m, kw, ws) => kw + ws + "[" + formId + "]",
+  );
+  return formRefsToNames(bracketed, formIndex);
 }
