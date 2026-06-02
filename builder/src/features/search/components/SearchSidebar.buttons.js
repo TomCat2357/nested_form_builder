@@ -3,9 +3,9 @@ import { submitExternalActionPost, buildExternalActionPayload } from "../../../u
 import { resolveStyleSettingsInlineStyle } from "../../../core/styleSettings.js";
 import { buildExportTableData } from "../searchExport.js";
 
-// 現在フィルタ後の全行を表示用ビュー行に整形して payload の base を組む。
-const buildSearchPayloadBase = (form, sortedEntries) => {
-  const entries = Array.isArray(sortedEntries) ? sortedEntries.map((row) => row.entry).filter(Boolean) : [];
+// 対象行 (選択行があればその行、なければフィルタ後の全行) を表示用ビュー行に整形して payload の base を組む。
+const buildSearchPayloadBase = (form, outputTargetRows) => {
+  const entries = Array.isArray(outputTargetRows) ? outputTargetRows.map((row) => row.entry).filter(Boolean) : [];
   const table = buildExportTableData({ form, entries });
   return {
     list: {
@@ -18,7 +18,7 @@ const buildSearchPayloadBase = (form, sortedEntries) => {
   };
 };
 
-const handleExternalActionClick = (action, { formContext, isAdmin, form, sortedEntries }) => {
+const handleExternalActionClick = (action, { formContext, isAdmin, form, outputTargetRows }) => {
   const gate = { adminOnly: !!action.adminOnly, isAdmin };
   // 既存設定の URL トークン置換は後方互換のため維持 (機微トークンの gating も従来通り)
   const resolvedUrl = resolveExternalActionUrl(action.url, formContext, gate);
@@ -31,14 +31,14 @@ const handleExternalActionClick = (action, { formContext, isAdmin, form, sortedE
     context: "search",
     formId: formContext?.formId,
     formName: formContext?.formName,
-    base: buildSearchPayloadBase(form, sortedEntries),
+    base: buildSearchPayloadBase(form, outputTargetRows),
     storageFields: formContext,
     gate,
   });
   submitExternalActionPost(resolvedUrl, payload);
 };
 
-const buildExternalActionButtons = (externalActions, formContext, { isAdmin = false, form = null, sortedEntries = null } = {}) => {
+const buildExternalActionButtons = (externalActions, formContext, { isAdmin = false, form = null, outputTargetRows = null } = {}) => {
   if (!Array.isArray(externalActions) || externalActions.length === 0) return [];
   return externalActions
     .filter((action) => action && typeof action.url === "string" && action.url.trim() !== "")
@@ -50,7 +50,7 @@ const buildExternalActionButtons = (externalActions, formContext, { isAdmin = fa
       const style = enabled ? resolveStyleSettingsInlineStyle(action.styleSettings || {}) : undefined;
       return {
         label: (action.label && action.label.trim()) || "外部アクション",
-        onClick: () => handleExternalActionClick(action, { formContext, isAdmin, form, sortedEntries }),
+        onClick: () => handleExternalActionClick(action, { formContext, isAdmin, form, outputTargetRows }),
         title: action.url,
         style: style && Object.keys(style).length > 0 ? style : undefined,
       };
@@ -80,13 +80,13 @@ export const buildSearchSidebarButtons = ({
   formContext = null,
   isAdmin = false,
   form = null,
-  sortedEntries = null,
+  outputTargetRows = null,
 }) => {
   const deleteBtn = isUndoDelete
     ? { label: "削除取消し", onClick: onUndelete, disabled: selectedCount === 0 || readOnly, className: "search-sidebar-btn-warning" }
     : { label: "削除", onClick: onDelete, disabled: selectedCount === 0 || readOnly, className: "search-sidebar-btn-danger" };
 
-  const externalButtons = buildExternalActionButtons(externalActions, formContext, { isAdmin, form, sortedEntries });
+  const externalButtons = buildExternalActionButtons(externalActions, formContext, { isAdmin, form, outputTargetRows });
 
   return [
     showBack && onBack && { label: "← 戻る", onClick: onBack },
