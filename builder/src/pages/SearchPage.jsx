@@ -62,6 +62,7 @@ export default function SearchPage() {
     cacheDisabled,
     forceRefreshAll,
     sortedEntries,
+    outputTargetRows,
     filterError,
     totalPages,
     totalEntries,
@@ -156,7 +157,7 @@ export default function SearchPage() {
             userEmail,
           }}
           form={form}
-          sortedEntries={sortedEntries}
+          outputTargetRows={outputTargetRows}
           isAdmin={isAdmin}
         />
         </>

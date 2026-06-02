@@ -344,6 +344,13 @@ export function useSearchPageState({
     [selectedEntries, sortedEntries],
   );
 
+  // webhook / 検索結果の出力で使う対象行: チェックがあればその行だけ、なければ全行。
+  // (印刷は selectedPrintableRows のまま = 選択必須で例外)
+  const outputTargetRows = useMemo(
+    () => (selectedEntries.size > 0 ? selectedPrintableRows : sortedEntries),
+    [selectedEntries, selectedPrintableRows, sortedEntries],
+  );
+
   const pagedEntries = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
     return sortedEntries.slice(start, start + PAGE_SIZE);
@@ -440,10 +447,10 @@ export function useSearchPageState({
   };
 
   const handleExportResults = useCallback(async () => {
-    if (sortedEntries.length === 0) return;
+    if (outputTargetRows.length === 0) return;
     setExporting(true);
     try {
-      const exportingEntries = sortedEntries.map((row) => row.entry);
+      const exportingEntries = outputTargetRows.map((row) => row.entry);
       const exportTable = buildExportTableData({ form, entries: exportingEntries });
       const themeColors = getThemeColors();
 
@@ -463,7 +470,7 @@ export function useSearchPageState({
     } finally {
       setExporting(false);
     }
-  }, [form, sortedEntries, showAlert]);
+  }, [form, outputTargetRows, showAlert]);
 
   const confirmDelete = useCallback(async () => {
     if (!effectiveFormId || deleteDialog.state.entryIds.length === 0) return;
@@ -537,6 +544,7 @@ export function useSearchPageState({
     cacheDisabled,
     forceRefreshAll,
     sortedEntries,
+    outputTargetRows,
     pagedEntries,
     filterError,
 
