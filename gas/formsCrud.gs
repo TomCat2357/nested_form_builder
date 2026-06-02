@@ -36,24 +36,6 @@ function Nfb_dedupeMappingByFileId_(mapping) {
 }
 
 /**
- * fileId の Drive ファイルをゴミ箱へ移す（既存の setTrashed ベースの削除と統一）。
- * フォーム / クエスチョン / ダッシュボードの削除時に、紐付け解除と併せて実体も削除するために使う。
- * 失敗（既に削除済み・権限不足・存在しない fileId 等）は握りつぶして false を返す。
- * @param {string} fileId
- * @return {boolean} ゴミ箱へ移せたら true。
- */
-function Nfb_trashDriveFileById_(fileId) {
-  if (!fileId) return false;
-  try {
-    DriveApp.getFileById(fileId).setTrashed(true);
-    return true;
-  } catch (err) {
-    Logger.log("[Nfb_trashDriveFileById_] failed " + fileId + ": " + err);
-    return false;
-  }
-}
-
-/**
  * Drive ファイル名（または素の名前文字列）から、システム上の「名前」を導出する。
  * 末尾の ".json"（大文字小文字問わず）を 1 つだけ取り除く。
  * id ＝ fileId / 名前 ＝ Drive ファイル名 へ統一したため、フォーム/クエスチョン/
@@ -522,8 +504,9 @@ function Forms_batchGetFiles_(fileIds) {
 
 
 /**
- * 複数フォームを削除。プロジェクト内（標準フォルダ構成 01_forms 配下）の実体は Drive から
- * ゴミ箱へ移し、プロジェクト外（外部リンク）はマッピング除去のみ行う。
+ * 複数フォームのリンクを解除（アンマウント）する。Drive 上の実体は削除せず残し、
+ * 中央辞書（マッピング）の登録のみを除去する。
+ * 戻り値の deleted は「リンク解除した件数」（後方互換のためキー名は据え置き）。
  * @param {Array<string>} formIds
  * @return {Object} { ok: boolean, deleted: number, errors: Array }
  */
@@ -535,22 +518,12 @@ function Forms_deleteForms_(formIds) {
 
   var ids = Nfb_normalizeIdList_(formIds);
   var mapping = Forms_getMapping_();
-  // プロジェクト内判定用に 01_forms サブフォルダ ID を一度だけ解決する。
-  // ルート未確定（dev 等）なら null → 全件プロジェクト外扱い＝リンク解除のみ（実体を消さない安全側）。
-  var stdSubId = StdFolders_autoFileFolderIdOrNull_("forms");
   var deleted = 0;
 
   ids.forEach(function(formId) {
     if (!formId) return;
 
-    // マッピングが無ければ formId 自体を fileId とみなす（新方式では formId === fileId）。
-    // Forms_getForm_ の fileId 解決と同じ規則。
-    var fileId = Nfb_resolveFileIdFromEntry_(mapping[formId]) || formId;
-    // プロジェクト内の実体だけ Drive からゴミ箱へ。プロジェクト外（外部リンク）はリンク解除のみ。
-    if (stdSubId && StdFolders_isFileUnderFolder_(fileId, stdSubId)) {
-      Nfb_trashDriveFileById_(fileId);
-    }
-
+    // リンク（登録）のみ解除する。Drive 上のファイル本体は削除しない。
     if (mapping.hasOwnProperty(formId)) {
       delete mapping[formId];
       deleted += 1;

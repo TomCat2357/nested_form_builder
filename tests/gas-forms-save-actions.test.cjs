@@ -136,6 +136,20 @@ function loadFormsSaveContext() {
     AddFormUrl_: () => {},
     nfbErrorToString_: (err) => (err && err.message ? err.message : String(err)),
     WithScriptLock_: (label, fn) => fn(),
+    // constants.gs を読まないので shim（重複除去した文字列 id 配列）。
+    Nfb_normalizeIdList_: (ids) => {
+      const source = Array.isArray(ids) ? ids : [ids];
+      const seen = new Set();
+      const out = [];
+      source.forEach((raw) => {
+        if (!raw) return;
+        const id = String(raw);
+        if (seen.has(id)) return;
+        seen.add(id);
+        out.push(id);
+      });
+      return out;
+    },
   };
 
   // ロジック本体（テスト対象 + 直接依存）を実ファイルからロードする。
@@ -253,4 +267,40 @@ test("Forms_saveForm_ は mapping から消えた stale id でも form.driveFile
   assert.ok(mapping[fileId], "fileId キーで再登録される");
   assert.equal(Object.keys(mapping).length, 1, "stale キーは増えも残りもしない");
   void fileUrl;
+});
+
+// ---- id ＝ fileId 強制: 保存 .json は id / formTitle を持たず、戻り値の id は fileId ----
+
+test("Forms_saveForm_ は保存 .json に id / settings.formTitle を書かず、戻り form.id ＝ fileId", () => {
+  const ctx = loadFormsSaveContext();
+  const res = ctx.Forms_saveForm_(baseForm({ id: "" }), null, "auto");
+  assert.equal(res.ok, true);
+  const fileId = res.fileId;
+
+  // 戻り値の form.id は fileId（local_/f_ ではない）。
+  assert.equal(res.form.id, fileId, "戻り form.id ＝ fileId");
+
+  // 保存された .json 実体には id も settings.formTitle も含まれない（読込時に fileId / ファイル名から復元）。
+  const saved = JSON.parse(ctx.__test.fileStore.get(fileId).content);
+  assert.ok(!("id" in saved), "保存 .json に id を持たない");
+  assert.ok(!(saved.settings && "formTitle" in saved.settings), "保存 .json に settings.formTitle を持たない");
+});
+
+// ---- 削除 ＝ リンク解除（アンマウント）: mapping から外すが Drive 実体は残す ----
+
+test("Forms_deleteForms_ はマッピングを除去するが Drive ファイル本体は残す（リンク解除のみ）", () => {
+  const ctx = loadFormsSaveContext();
+  const saved = ctx.Forms_saveForm_(baseForm({ id: "" }), null, "auto");
+  const fileId = saved.fileId;
+  assert.ok(readMapping(ctx)[fileId], "保存直後は mapping にある");
+
+  const del = ctx.Forms_deleteForms_([fileId]);
+  assert.equal(del.ok, true);
+  assert.equal(del.deleted, 1);
+
+  // mapping からは外れる（リンク解除）。
+  assert.ok(!readMapping(ctx)[fileId], "mapping から除去される");
+  // Drive ファイル本体は削除されず残る（trashed=false）。
+  assert.equal(ctx.__test.fileStore.get(fileId).trashed, false, "Drive 実体は trash されない");
+  assert.equal(liveJsonFiles(ctx).length, 1, "実体ファイルは残る");
 });

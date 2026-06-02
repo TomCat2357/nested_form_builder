@@ -210,7 +210,7 @@ for (const kind of ["forms", "questions"]) {
     assert.deepEqual(res, { ok: false, error: "同名のフォルダ「x/yy」が既に存在します" });
   });
 
-  test(`[${kind}] deleteFolder: 配下アイテムと登録簿サブツリーを除去`, () => {
+  test(`[${kind}] deleteFolder: 配下アイテムのリンク解除と登録簿サブツリー除去（実体は残す）`, () => {
     const env = makeEnv(kind);
     env.addItem("id1", "d");
     env.addItem("id2", "d/sub");
@@ -226,7 +226,7 @@ for (const kind of ["forms", "questions"]) {
     const folders = env.api.listFolders();
     assert.ok(!folders.includes("d") && !folders.includes("d/sub"));
     assert.ok(folders.includes("other"));
-    // 物理フォルダ trash が呼ばれる
-    assert.deepEqual(env.driveOps.filter((o) => o[0] === "trash"), [["trash", "d"]]);
+    // リンク解除のみ: 物理フォルダ trash は呼ばれない
+    assert.deepEqual(env.driveOps.filter((o) => o[0] === "trash"), []);
   });
 }

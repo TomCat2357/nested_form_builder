@@ -277,7 +277,7 @@ export default function AdminFormListPage() {
             onClick={handleDeleteSelected}
             disabled={selected.size === 0 && selectedFolders.size === 0}
           >
-            削除
+            リンク解除
           </button>
 
           <div className="nf-spacer-16" />
@@ -484,13 +484,13 @@ export default function AdminFormListPage() {
 
       <ConfirmDialog
         open={confirmDelete.open}
-        title={confirmDelete.folderPaths?.length ? "フォルダを削除" : "フォームを削除"}
+        title={confirmDelete.folderPaths?.length ? "フォルダをリンク解除" : "フォームをリンク解除"}
         message={
           confirmDelete.folderPaths?.length
-            ? `選択したフォルダを削除します。中の ${confirmDelete.folderFormCount} 個のフォームも併せて削除します（プロジェクト内のフォームは Drive 上の実体ごと、プロジェクト外＝外部リンクはリンク解除のみ）。よろしいですか？`
+            ? `選択したフォルダのリンクを解除します。中の ${confirmDelete.folderFormCount} 個のフォームのリンクも併せて解除します。Drive 上のファイル本体は削除されません。よろしいですか？`
             : confirmDelete.multiple
-              ? "選択したフォームを削除します。プロジェクト内のフォームは Drive 上の実体ごと削除し、プロジェクト外（外部リンク）はリンク解除のみ行います。よろしいですか？"
-              : "このフォームを削除します。プロジェクト内のフォームは Drive 上の実体ごと削除し、プロジェクト外（外部リンク）はリンク解除のみ行います。よろしいですか？"
+              ? "選択したフォームのリンク（登録）を解除します。Drive 上のファイル本体は削除されません。よろしいですか？"
+              : "このフォームのリンク（登録）を解除します。Drive 上のファイル本体は削除されません。よろしいですか？"
         }
         options={[
           {
@@ -499,7 +499,7 @@ export default function AdminFormListPage() {
             onSelect: () => setConfirmDelete({ open: false, formId: null, targetIds: [], folderPaths: [], multiple: false, folderFormCount: 0 }),
           },
           {
-            label: "削除",
+            label: "リンク解除",
             value: "delete",
             variant: "danger",
             onSelect: confirmDeleteAction,

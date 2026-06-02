@@ -91,7 +91,7 @@ export function useAdminAnalyticsListActions({
   const handleDeleteSelected = () => {
     const { itemIds, folderPaths } = collectSelection();
     if (!itemIds.length && !folderPaths.length) {
-      showAlert(`削除する ${itemLabel} またはフォルダを選択してください。`);
+      showAlert(`リンク解除する ${itemLabel} またはフォルダを選択してください。`);
       return;
     }
     // フォルダ配下のアイテム件数（直接選択アイテムと重複し得るが、サーバ側で冪等に解決される）。
@@ -179,10 +179,16 @@ export function useAdminAnalyticsListActions({
       const parseFailed = result?.parseFailed || 0;
 
       if (!items.length) {
-        const detail = [];
-        if (skipped > 0) detail.push(`スキップ ${skipped} 件`);
-        if (parseFailed > 0) detail.push(`読込失敗 ${parseFailed} 件`);
-        showAlert(`取り込める ${itemLabel} はありませんでした${detail.length ? `（${detail.join("、")}）` : ""}。`);
+        // 取り込む新規ファイルが無い。既登録（リンク済み）でスキップした場合は、
+        // 「失敗」ではなく「登録済みのため取り込み不要」と分かる表現にする。
+        if (skipped > 0 && parseFailed === 0) {
+          showAlert(`すべて登録済み（リンク済み）のためスキップしました（${skipped} 件）。`);
+        } else {
+          const detail = [];
+          if (skipped > 0) detail.push(`登録済み（リンク済み）スキップ ${skipped} 件`);
+          if (parseFailed > 0) detail.push(`読込失敗 ${parseFailed} 件`);
+          showAlert(`取り込める ${itemLabel} はありませんでした${detail.length ? `（${detail.join("、")}）` : ""}。`);
+        }
         setImporting(false);
         return;
       }
@@ -201,7 +207,7 @@ export function useAdminAnalyticsListActions({
 
       clearSelection();
       const summary = [];
-      if (skipped > 0) summary.push(`登録済みスキップ ${skipped} 件`);
+      if (skipped > 0) summary.push(`登録済み（リンク済み）スキップ ${skipped} 件`);
       if (parseFailed > 0) summary.push(`読込失敗 ${parseFailed} 件`);
       if (saveFailed > 0) summary.push(`保存失敗 ${saveFailed} 件`);
       const detailText = summary.length ? `（${summary.join("、")}）` : "";
