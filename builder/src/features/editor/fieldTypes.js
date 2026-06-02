@@ -14,6 +14,7 @@ export const BASIC_INPUT_TYPES = ["number", "url"];
 export const MESSAGE_TYPE = "message";
 export const PRINT_TEMPLATE_TYPE = "printTemplate";
 export const WEBHOOK_TYPE = "webhook";
+export const FORM_LINK_TYPE = "formLink";
 export const SUBSTITUTION_TYPE = "substitution";
 export const DISPLAY_LABEL = "表示";
 export const EMAIL_PLACEHOLDER = "user@example.com";
@@ -24,6 +25,7 @@ export const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 export const isMessageType = (type) => type === MESSAGE_TYPE;
 export const isPrintTemplateType = (type) => type === PRINT_TEMPLATE_TYPE;
 export const isWebhookType = (type) => type === WEBHOOK_TYPE;
+export const isFormLinkType = (type) => type === FORM_LINK_TYPE;
 export const isBasicInputType = (type) => BASIC_INPUT_TYPES.includes(type);
 export const isSubstitutionType = (type) => type === SUBSTITUTION_TYPE;
 export const isComputedType = (type) => type === SUBSTITUTION_TYPE;
@@ -124,6 +126,10 @@ export function handleTypeChange(field, newType, { getTempState, setTempState } 
     }
     if (newType === WEBHOOK_TYPE) {
       next.webhookAction = normalizeWebhookAction(next.webhookAction);
+    }
+    if (newType === FORM_LINK_TYPE) {
+      next.childFormId = typeof next.childFormId === "string" ? next.childFormId : "";
+      next.childFormPath = typeof next.childFormPath === "string" ? next.childFormPath : "";
     }
     if (newType === SUBSTITUTION_TYPE) {
       next.templateText = typeof next.templateText === "string" ? next.templateText : "";

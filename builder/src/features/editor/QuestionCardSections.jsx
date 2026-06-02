@@ -1,6 +1,10 @@
 import React from "react";
 import { DEFAULT_MULTILINE_ROWS, normalizeWebhookAction } from "../../core/schema.js";
 import { isValidExternalActionUrl } from "../../utils/externalActionUrl.js";
+import { useAppData } from "../../app/state/AppDataProvider.jsx";
+import SearchableSelect from "../../app/components/SearchableSelect.jsx";
+import { formQualifiedName } from "../analytics/utils/formIdentifierResolver.js";
+import { buildChildFormUrl } from "../../utils/formShareUrl.js";
 import { styles as s } from "./styles.js";
 import {
   EMAIL_PLACEHOLDER,
@@ -323,6 +327,65 @@ export function WebhookSection({ field, onChange }) {
         </label>
         <div className="nf-text-11 nf-text-muted">
           {"ボタンを押すと新しいタブで URL を開き、同時にこのレコードの内容を POST 送信します（GAS 側は doPost(e) の e.parameter.payload を JSON.parse して受信）。管理者限定を ON にすると、管理者以外にはこのボタンが表示されません。管理者限定のときだけ保存先情報（spreadsheetId 等）も送られます。"}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function FormLinkSection({ field, onChange }) {
+  const { forms } = useAppData();
+  const [showUrl, setShowUrl] = React.useState(false);
+  const childFormId = typeof field.childFormId === "string" ? field.childFormId : "";
+
+  const formOptions = React.useMemo(
+    () => (Array.isArray(forms) ? forms : [])
+      .filter((f) => f && f.id)
+      .map((f) => ({ value: f.id, label: formQualifiedName(f) || f.id, folder: f.folder || "" })),
+    [forms],
+  );
+
+  const handleSelect = (selectedId) => {
+    const selectedForm = (Array.isArray(forms) ? forms : []).find((f) => f && f.id === selectedId) || null;
+    onChange({
+      ...field,
+      childFormId: selectedId || "",
+      childFormPath: selectedForm ? (formQualifiedName(selectedForm) || "") : "",
+    });
+  };
+
+  const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
+  // 確認用にリンク先フォームの物理 URL（?form=<fileId>）を表示する。pid は実行時にこのレコードの
+  // ID が付与される（下の注記参照）ため、ここでは付けずに表示する。
+  const physicalUrl = childFormId ? buildChildFormUrl(baseUrl, childFormId, "") : "";
+
+  return (
+    <div className="nf-mt-8">
+      <div className="nf-col nf-gap-8">
+        <label className="nf-col nf-gap-4">
+          <span className="nf-text-12 nf-fw-600">開くフォーム（論理パス）</span>
+          <SearchableSelect
+            value={childFormId}
+            onChange={handleSelect}
+            options={formOptions}
+            placeholder="フォームを選択"
+          />
+        </label>
+        <label className="nf-row nf-gap-6">
+          <input
+            type="checkbox"
+            checked={showUrl}
+            onChange={(event) => setShowUrl(event.target.checked)}
+          />
+          物理 URL を表示
+        </label>
+        {showUrl && (
+          <div className="nf-input nf-input--readonly nf-text-12 nf-text-subtle" style={{ wordBreak: "break-all" }}>
+            {physicalUrl || "フォームを選択すると URL が表示されます"}
+          </div>
+        )}
+        <div className="nf-text-11 nf-text-muted">
+          {"ボタンを押すと、選択したフォームを別タブで開きます（?form=対象フォームのID&pid=このレコードのID）。pid はボタンを押したレコードの ID になり、開いた先ではその pid に紐づく行だけが表示され、新規行にもその pid が刻まれます。"}
         </div>
       </div>
     </div>

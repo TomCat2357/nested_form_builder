@@ -25,6 +25,7 @@ export function performFormPageNavigateBack({ saved = false, deleted = false } =
     formId,
     entryId,
     isDirectRecordMode,
+    isFormScoped,
     fallbackPath,
     location,
     navigate,
@@ -39,6 +40,12 @@ export function performFormPageNavigateBack({ saved = false, deleted = false } =
   const state = (saved || deleted)
     ? { ...(saved || deleted ? { saved, deleted } : {}) }
     : undefined;
+  // formid 固定で開いたスコープ時は、location.state.from（メインや admin ルートを指す可能性）に
+  // 依存せず、必ずそのフォームの絞り込み一覧へ戻す。メイン画面へは戻れないようにする。
+  if (isFormScoped) {
+    navigate(`/search?form=${formId}`, { replace: true, state });
+    return;
+  }
   if (location.state?.from) {
     navigate(location.state.from, { replace: true, state });
     return;

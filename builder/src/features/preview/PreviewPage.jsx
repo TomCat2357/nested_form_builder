@@ -38,7 +38,7 @@ import {
   resolveEffectiveDriveFolderUrl,
 } from "../../utils/driveFolderState.js";
 import { collectFileUploadFields } from "../../core/schema.js";
-import { buildSharedFormUrl, buildSharedRecordUrl } from "../../utils/formShareUrl.js";
+import { buildSharedFormUrl, buildSharedRecordUrl, buildChildFormUrl } from "../../utils/formShareUrl.js";
 import { RendererRecursive } from "./FieldRenderer.jsx";
 
 const PreviewPage = React.forwardRef(function PreviewPage(
@@ -342,6 +342,24 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     submitExternalActionPost(resolvedUrl, payload);
   };
 
+  // 「別フォームを開く」カードのボタン押下時。選択フォームを別タブで開く。
+  // pid はこのレコードの ID（recordIdRef.current）。開いた先はその pid に紐づく行だけを表示し、
+  // 新規行にもその pid が刻まれる（＝そのレコードに紐づく子フォーム）。
+  const handleFieldFormLinkAction = (field) => {
+    const childFormId = typeof field?.childFormId === "string" ? field.childFormId.trim() : "";
+    if (!childFormId) {
+      showAlert("開くフォームが設定されていません。質問カードの設定で対象フォームを選択してください。");
+      return;
+    }
+    const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
+    const url = buildChildFormUrl(baseUrl, childFormId, recordIdRef.current);
+    if (!url) {
+      showAlert("フォームの URL を組み立てられませんでした。");
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   const getPrintDocumentPayload = (options = {}) => buildPrintDocumentPayload({
     schema,
     responses,
@@ -480,6 +498,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         onFieldDriveFolderStateChange={onFieldDriveFolderStateChange}
         onTemplateAction={handleFieldTemplateAction}
         onWebhookAction={handleFieldWebhookAction}
+        onFormLinkAction={handleFieldFormLinkAction}
         isAdmin={isAdmin}
         canDeleteDriveFolder={canDeleteDriveFolder}
         onDeleteDriveFolder={onDeleteDriveFolder}

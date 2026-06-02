@@ -13,6 +13,7 @@ import {
   isMessageType,
   isPrintTemplateType,
   isWebhookType,
+  isFormLinkType,
   isBasicInputType,
   isComputedType,
   applyDisplayedFlag,
@@ -35,6 +36,7 @@ import {
   DateTimeFieldSection,
   SubstitutionFieldSection,
   WebhookSection,
+  FormLinkSection,
 } from "./QuestionCardSections.jsx";
 
 const FIELD_TYPE_OPTIONS = [
@@ -51,6 +53,7 @@ const FIELD_TYPE_OPTIONS = [
   { value: "fileUpload", label: "ファイルアップロード" },
   { value: "printTemplate", label: "様式出力" },
   { value: "webhook", label: "Webhook" },
+  { value: "formLink", label: "別フォームを開く" },
   { value: "message", label: "メッセージ" },
   { value: "substitution", label: "置換" },
 ];
@@ -77,6 +80,7 @@ export default function QuestionCard({
   const isMessage = isMessageType(field.type);
   const isPrintTemplate = isPrintTemplateType(field.type);
   const isWebhook = isWebhookType(field.type);
+  const isFormLink = isFormLinkType(field.type);
   const isEmail = field.type === "email";
   const isPhone = field.type === "phone";
   const isComputed = isComputedType(field.type);
@@ -136,7 +140,7 @@ export default function QuestionCard({
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-        {!isMessage && !isPrintTemplate && !isWebhook && !isComputed && (
+        {!isMessage && !isPrintTemplate && !isWebhook && !isFormLink && !isComputed && (
           <label className="nf-row nf-gap-4 nf-nowrap">
             <input
               type="checkbox"
@@ -159,6 +163,8 @@ export default function QuestionCard({
       {isPrintTemplate && <PrintTemplateSection field={field} onChange={onChange} printTemplateAction={printTemplateAction} />}
 
       {isWebhook && <WebhookSection field={field} onChange={onChange} />}
+
+      {isFormLink && <FormLinkSection field={field} onChange={onChange} />}
 
       {!isText && (
         <StyleSettingsInput field={field} onChange={onChange} onFocus={onFocus} getTempState={getTempState} setTempState={setTempState} />

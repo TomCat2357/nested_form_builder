@@ -137,6 +137,7 @@ export const cleanUnusedFieldProperties = (field) => {
   const supportsTemplateText = type === "substitution";
   const supportsPrintTemplateAction = type === "printTemplate";
   const supportsWebhookAction = type === "webhook";
+  const supportsFormLink = type === "formLink";
 
   if (!isChoice) {
     delete field.options;
@@ -213,6 +214,13 @@ export const cleanUnusedFieldProperties = (field) => {
   } else {
     delete field.webhookAction;
   }
+  if (supportsFormLink) {
+    field.childFormId = typeof field.childFormId === "string" ? field.childFormId : "";
+    field.childFormPath = typeof field.childFormPath === "string" ? field.childFormPath : "";
+  } else {
+    delete field.childFormId;
+    delete field.childFormPath;
+  }
   delete field.formula;
   if (supportsTemplateText) {
     field.templateText = typeof field.templateText === "string" ? field.templateText : "";
@@ -229,7 +237,7 @@ export const cleanUnusedFieldProperties = (field) => {
   } else {
     delete field.hideFromRecordView;
   }
-  if (type === "message" || type === "printTemplate" || type === "substitution" || type === "webhook") delete field.required;
+  if (type === "message" || type === "printTemplate" || type === "substitution" || type === "webhook" || type === "formLink") delete field.required;
   if (type === "fileUpload") {
     field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
     field.allowFolderUrlEdit = normalizeBooleanSetting(field.allowFolderUrlEdit, false);
@@ -339,6 +347,10 @@ export const normalizeSchemaIDs = (nodes) => {
       base.templateText = typeof base.templateText === "string" ? base.templateText : "";
       base.excludeFromSearch = !!base.excludeFromSearch;
       base.hideFromRecordView = !!base.hideFromRecordView;
+    } else if (base.type === "formLink") {
+      base.label = typeof base.label === "string" ? base.label : "";
+      base.childFormId = typeof base.childFormId === "string" ? base.childFormId : "";
+      base.childFormPath = typeof base.childFormPath === "string" ? base.childFormPath : "";
     }
 
     cleanUnusedFieldProperties(base);

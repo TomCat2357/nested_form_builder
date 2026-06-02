@@ -230,6 +230,39 @@ test("normalizeSchemaIDs は非 webhook 型から webhookAction を除去する"
   assert.equal("webhookAction" in schema[0], false);
 });
 
+test("normalizeSchemaIDs は formLink の childFormId/childFormPath を保持し required を除去する", () => {
+  const schema = normalizeSchemaIDs([
+    {
+      id: "fl_1",
+      type: "formLink",
+      label: "子フォームを開く",
+      required: true,
+      childFormId: "file123",
+      childFormPath: "親フォルダ/子フォーム",
+    },
+  ]);
+
+  assert.equal(schema[0].type, "formLink");
+  assert.equal(schema[0].childFormId, "file123");
+  assert.equal(schema[0].childFormPath, "親フォルダ/子フォーム");
+  assert.equal("required" in schema[0], false);
+});
+
+test("normalizeSchemaIDs は非 formLink 型から childFormId/childFormPath を除去する", () => {
+  const schema = normalizeSchemaIDs([
+    {
+      id: "t_2",
+      type: "text",
+      label: "氏名",
+      childFormId: "file123",
+      childFormPath: "x",
+    },
+  ]);
+
+  assert.equal("childFormId" in schema[0], false);
+  assert.equal("childFormPath" in schema[0], false);
+});
+
 test("findFirstFileUploadField はトップレベルの fileUpload を返す", () => {
   const fields = [
     { type: "text", label: "名前" },

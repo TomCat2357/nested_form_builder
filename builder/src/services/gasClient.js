@@ -1,15 +1,21 @@
 export const hasScriptRun = () => typeof google !== "undefined" && google?.script?.run;
 
-// URL で指定された pid（親レコード ID）。doGet が window.__PID__ に注入する。
-// pid が指定されている間はレコード系 API へ自動付与し、サーバ側で「その pid に等しい行」だけを
-// 返させ、新規行にはその pid を必ず刻ませる。空文字なら従来どおり全件・刻印なし。
+// URL で指定された pid（親レコード ID）。doGet が window.__PID__ に、固定フォーム ID を
+// window.__FORM_ID__ に注入する。pid は「formid（?form=）と pid（?pid=）の両方が指定された
+// ときだけ」有効化する設計のため、__FORM_ID__ が非空のときのみ pid を返す。フォームが URL で
+// 固定されていない（管理画面など）状態で pid が紛れ込んでも、従来どおり全件・刻印なしのままにする。
+// 有効時はレコード系 API へ自動付与し、サーバ側で「その pid に等しい行」だけを返させ、新規行には
+// その pid を必ず刻ませる。
 export const getUrlPid = () => {
   if (typeof window === "undefined") return "";
+  // フォームが URL で固定されていない（__FORM_ID__ 空）ときは pid を無効化する。
+  const formId = window.__FORM_ID__;
+  if (formId === undefined || formId === null || String(formId).trim() === "") return "";
   const raw = window.__PID__;
   return raw === undefined || raw === null ? "" : String(raw).trim();
 };
 
-// pid が非空のときだけ payload に { pid } を足して返す（空のときは payload をそのまま）。
+// pid が有効（formid 併用かつ非空）のときだけ payload に { pid } を足して返す（無効なら payload をそのまま）。
 const withUrlPid = (payload) => {
   const pid = getUrlPid();
   return pid ? { ...payload, pid } : payload;

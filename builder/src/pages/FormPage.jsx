@@ -186,6 +186,9 @@ export default function FormPage() {
   const formLoadedStateRef = useRef(null);
   const pendingSyncedEntryRef = useRef(null);
   const isDirectRecordMode = sharedFormId === formId && sharedRecordId !== "" && sharedRecordId === entryId;
+  // URL で formid を固定して開いた（スコープ）状態。管理者如何に関わらず、戻る先はそのフォームの
+  // 絞り込み一覧（/search?form=X）に限定し、メイン画面へは決して戻さない。
+  const isFormScoped = sharedFormId !== "" && sharedFormId === formId;
 
   const fallbackPath = useMemo(() => fallbackForForm(formId, location.state), [formId, location.state]);
   const omitEmptyRowsOnPrint = resolveOmitEmptyRowsOnPrint(form?.settings);
@@ -410,7 +413,7 @@ export default function FormPage() {
   useBeforeUnloadGuard(isDirty);
 
   const navigateBack = (args = {}) => performFormPageNavigateBack(args, {
-    formId, entryId, isDirectRecordMode, fallbackPath, location, navigate, clearNewEntryDraft,
+    formId, entryId, isDirectRecordMode, isFormScoped, fallbackPath, location, navigate, clearNewEntryDraft,
   });
 
   const handleSaveToStore = ({ payload, responses: rawResponses, options = {} }) => (

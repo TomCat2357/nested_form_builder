@@ -134,6 +134,36 @@ test("getEntry は formId/id を送り spreadsheetId を含めない", async () 
   }
 });
 
+test("withUrlPid: pid は __FORM_ID__ と __PID__ が両方非空のときだけ付与される", async () => {
+  const originalGoogle = globalThis.google;
+  const originalWindow = globalThis.window;
+  const { run, calls } = createGoogleScriptRunStub({
+    listRecords: (payload) => ({ ok: true, records: [], payload }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    // formid 固定（__FORM_ID__ 非空）＋ pid → pid 付与
+    globalThis.window = { __FORM_ID__: "form_1", __PID__: "rec_parent" };
+    await listEntries({ formId: "form_1", sheetName: "Data" });
+    assert.equal(calls.at(-1).payload.pid, "rec_parent");
+
+    // formid 未固定（__FORM_ID__ 空）→ pid 非付与（pid が URL に紛れていても無効）
+    globalThis.window = { __FORM_ID__: "", __PID__: "rec_parent" };
+    await listEntries({ formId: "form_1", sheetName: "Data" });
+    assert.equal("pid" in calls.at(-1).payload, false);
+
+    // pid 空 → 非付与
+    globalThis.window = { __FORM_ID__: "form_1", __PID__: "" };
+    await listEntries({ formId: "form_1", sheetName: "Data" });
+    assert.equal("pid" in calls.at(-1).payload, false);
+  } finally {
+    globalThis.google = originalGoogle;
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
 test("Apps Script 関数が未定義の場合は関数名を含むエラーを返す", async () => {
   const originalGoogle = globalThis.google;
   const { run } = createGoogleScriptRunStub();

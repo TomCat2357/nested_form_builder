@@ -42,6 +42,7 @@ const FieldRenderer = ({
   onFieldDriveFolderStateChange,
   onTemplateAction,
   onWebhookAction,
+  onFormLinkAction,
   isAdmin = true,
   canDeleteDriveFolder,
   onDeleteDriveFolder,
@@ -149,6 +150,23 @@ const FieldRenderer = ({
           onClick={() => onWebhookAction?.(field)}
         >
           Webhook
+        </button>
+      </div>
+    );
+  }
+
+
+  if (field.type === "formLink") {
+    return (
+      <div className="preview-field">
+        <button
+          type="button"
+          className="nf-btn-outline nf-text-13"
+          style={actionButtonStyleProp}
+          disabled={!field.childFormId}
+          onClick={() => onFormLinkAction?.(field)}
+        >
+          {field.label || "フォームを開く"}
         </button>
       </div>
     );
@@ -393,6 +411,7 @@ export const RendererRecursive = ({
   onFieldDriveFolderStateChange,
   onTemplateAction,
   onWebhookAction,
+  onFormLinkAction,
   isAdmin = true,
   canDeleteDriveFolder,
   onDeleteDriveFolder,
@@ -403,7 +422,7 @@ export const RendererRecursive = ({
   const recursiveProps = {
     responses, onChange, depth: depth + 1, readOnly, entryId, onChildFormJump,
     driveSettings, gasClientRef, driveFolderStates, onFieldDriveFolderStateChange,
-    onTemplateAction, onWebhookAction, isAdmin, canDeleteDriveFolder, onDeleteDriveFolder, resolveTokens,
+    onTemplateAction, onWebhookAction, onFormLinkAction, isAdmin, canDeleteDriveFolder, onDeleteDriveFolder, resolveTokens,
     computedValues, computedErrors,
   };
 
@@ -475,6 +494,7 @@ export const RendererRecursive = ({
               onFieldDriveFolderStateChange={onFieldDriveFolderStateChange}
               onTemplateAction={onTemplateAction}
               onWebhookAction={onWebhookAction}
+              onFormLinkAction={onFormLinkAction}
               isAdmin={isAdmin}
               canDeleteDriveFolder={canDeleteDriveFolder}
               onDeleteDriveFolder={onDeleteDriveFolder}
