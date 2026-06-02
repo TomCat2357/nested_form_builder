@@ -15,11 +15,14 @@ function SyncRecords_(ctx) {
     var sheetLastUpdatedAt = Sheets_readSheetLastUpdated_(sheet);
     var serverModifiedAt = GetServerModifiedAt_();
     var isAdmin = Nfb_isAdminFromCtx_(ctx);
+    // URL で pid が指定されている間は、その pid に等しい行だけを同期対象にする。
+    var pid = Nfb_resolvePidFromCtx_(ctx);
     var filterVisibleRecords = function(records) {
-      if (isAdmin) return records;
       var out = [];
       for (var i = 0; i < records.length; i++) {
-        if (!Nfb_isSoftDeletedRecord_(records[i])) out.push(records[i]);
+        if (!Nfb_recordMatchesPid_(records[i], pid)) continue;
+        if (!isAdmin && Nfb_isSoftDeletedRecord_(records[i])) continue;
+        out.push(records[i]);
       }
       return out;
     };
@@ -185,6 +188,10 @@ function SyncRecords_(ctx) {
             rowData[2] = Sheets_unixMsToSheetDate_(insertMeta.createdAt) || "";
             rowFormats[2] = NFB_SHEETS_DATETIME_FORMAT;
             rowData[5] = insertMeta.createdBy;
+            // URL で pid 指定中の新規行には、その pid を必ず刻む（親レコードへの所属）。
+            if (pid && fixedColMap.hasOwnProperty("pid") && fixedColMap.pid >= 0 && fixedColMap.pid < lastColumn) {
+              rowData[fixedColMap.pid] = Sheets_neutralizeFormulaPrefix_(pid);
+            }
             maxNo = Math.max(maxNo, insertMeta.recordNo);
 
             localIndex = existingData.length;
@@ -273,6 +280,7 @@ function SyncRecords_(ctx) {
       for (var r = 0; r < existingData.length; r++) {
         var aRec = Sheets_buildRecordFromRow_(existingData[r], columnPaths);
         if (!aRec) continue;
+        if (!Nfb_recordMatchesPid_(aRec, pid)) continue;
         if (!isAdmin && Nfb_isSoftDeletedRecord_(aRec)) continue;
 
         if (forceFullSync) {

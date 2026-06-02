@@ -57,7 +57,11 @@ var NFB_DATA_START_ROW = NFB_HEADER_START_ROW + NFB_HEADER_DEPTH;
 var NFB_SERVER_MODIFIED_AT = "NFB_SERVER_MODIFIED_AT";
 var NFB_SERVER_COMMIT_TOKEN = NFB_SERVER_MODIFIED_AT;
 var NFB_SHEET_LAST_UPDATED_AT_PREFIX = "NFB_SHEET_LAST_UPDATED_AT";
-var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["deletedAt"], ["createdBy"], ["modifiedBy"], ["deletedBy"]];
+// 固定メタ列。先頭 8 列 (id..deletedBy) の順序は sheetsRowOps.gs / codeSyncRecords.gs の
+// 位置決め書き込み (rowData[0..7]) が依存するため不変。pid は親レコード ID を保持する追加メタ列で、
+// 既存レイアウトを崩さないよう必ず末尾に置く。シートに無ければ Sheets_ensureHeaderMatrix_ が末尾へ
+// 列を挿入する。fixedColMap はヘッダーパスから動的解決するので物理列位置は問わない。
+var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["deletedAt"], ["createdBy"], ["modifiedBy"], ["deletedBy"], ["pid"]];
 var NFB_RESERVED_HEADER_KEYS = {};
 for (var i = 0; i < NFB_FIXED_HEADER_PATHS.length; i++) {
   NFB_RESERVED_HEADER_KEYS[NFB_FIXED_HEADER_PATHS[i][0]] = true;

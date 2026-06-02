@@ -4,6 +4,9 @@ function doGet(e) {
 
   const formParam = e?.parameter?.form ? String(e.parameter.form) : "";
   const recordParam = e?.parameter?.record ? String(e.parameter.record) : "";
+  // pid（親レコード ID）。指定されている間は、その pid に等しい行だけを一覧し、
+  // 新規行にはその pid を必ず刻む。フロントは window.__PID__ を読んで各 API 呼び出しに付与する。
+  const pidParam = e?.parameter?.pid ? String(e.parameter.pid) : "";
   const adminkeyParam = e?.parameter?.adminkey ? String(e.parameter.adminkey) : "";
   // 新しいタブで開いた Question 編集等の SPA ルートを iframe 内 React に伝えるためのパラメータ。
   // GAS は二重 iframe 構造で外側 URL のハッシュが内側に伝播しないため、ハッシュではなく ?route= で渡す。
@@ -26,6 +29,7 @@ function doGet(e) {
     window.__IS_ADMIN__ = ${authResult.isAdmin};
     window.__FORM_ID__ = "${EscapeForInlineScript_(authResult.formId)}";
     window.__RECORD_ID__ = "${EscapeForInlineScript_(recordParam)}";
+    window.__PID__ = "${EscapeForInlineScript_(pidParam)}";
     window.__AUTH_ERROR__ = "${EscapeForInlineScript_(authResult.authError)}";
     window.__USER_EMAIL__ = "${EscapeForInlineScript_(userEmail)}";
     window.__USER_NAME__ = "${EscapeForInlineScript_(userName)}";
