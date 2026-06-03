@@ -77,6 +77,17 @@ function nfbFieldHasValue_(field, value) {
 }
 
 /**
+ * 無条件子質問 (field.children) を表示・走査すべきかを判定する。
+ * message は「回答」概念を持たず値が入らないため、子質問は常に表示する (無条件)。
+ * それ以外の入力タイプは値が入っているとき (nfbFieldHasValue_) に表示する。
+ * フロント双子は shouldShowUnconditionalChildren (builder/src/core/fieldValue.js)。
+ * 振る舞いを変える場合は両側を揃えること (tests/schema-walkers-equivalence.test.cjs)。
+ */
+function nfbShouldShowUnconditionalChildren_(field, value) {
+  return (field && field.type === "message") || nfbFieldHasValue_(field, value);
+}
+
+/**
  * Read-only 再帰走査。visitor(field, context) が false を返すとその subtree を
  * 打ち切る。context = { pathSegments, depth, index, indexTrail }。
  *
@@ -163,7 +174,7 @@ function nfbTraverseSchema_(schema, visitor, options) {
         var traverseChildren = true;
         if (hasResponses) {
           var inputValue = opts.responses[field.id];
-          traverseChildren = nfbFieldHasValue_(field, inputValue);
+          traverseChildren = nfbShouldShowUnconditionalChildren_(field, inputValue);
         }
         if (traverseChildren) {
           walk(field.children, currentPath, depth + 1, currentIndexTrail);

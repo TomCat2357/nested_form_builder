@@ -1,7 +1,7 @@
 import { extractJstPartsFull, formatUnixMsDateTimeSec, toUnixMs, pad2 } from "../../utils/dateTime.js";
 import { resolveFileDisplayName, buildDataValueMap } from "../../core/collect.js";
 import { findFirstFileUploadField } from "../../core/schema.js";
-import { fieldHasValue } from "../../core/fieldValue.js";
+import { shouldShowUnconditionalChildren } from "../../core/fieldValue.js";
 import { CHOICE_TYPES, isChoiceMarkerValue } from "../../utils/responses.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 import { isExcludedSearchOrPrintField } from "../search/searchTable.js";
@@ -226,7 +226,7 @@ const appendPrintItems = (fields, responses, depth, items, options = {}) => {
     }
 
     if (Array.isArray(normalizedField?.children) && normalizedField.children.length > 0) {
-      if (fieldHasValue(normalizedField, value)) {
+      if (shouldShowUnconditionalChildren(normalizedField, value)) {
         appendPrintItems(normalizedField.children, responses, depth + 1, items, options);
       }
     }
@@ -309,7 +309,7 @@ const assignFieldValues = (fields, responses, map, isActive = true, depth = 0) =
     }
 
     if (Array.isArray(normalizedField?.children) && normalizedField.children.length > 0) {
-      const childActive = isActive && fieldHasValue(normalizedField, rawValue);
+      const childActive = isActive && shouldShowUnconditionalChildren(normalizedField, rawValue);
       assignFieldValues(normalizedField.children, responses, map, childActive, depth + 1);
     }
   });

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE,
+  extractDriveFileId,
   getPrintTemplateOutputLabel,
   normalizePrintTemplateAction,
   normalizePrintTemplateOutputType,
@@ -9,6 +10,20 @@ import {
   resolveEffectivePrintTemplateFileNameTemplate,
   resolveSharedPrintFileNameTemplate,
 } from "./printTemplateAction.js";
+
+test("extractDriveFileId は Docs/Drive の各種 URL からファイル ID を取り出す", () => {
+  assert.equal(
+    extractDriveFileId("https://docs.google.com/document/d/1AbcDEF_ghiJKLmnopQRstuvWXyz12345/edit"),
+    "1AbcDEF_ghiJKLmnopQRstuvWXyz12345",
+  );
+  assert.equal(
+    extractDriveFileId("https://drive.google.com/open?id=1AbcDEF_ghiJKLmnopQRstuvWXyz12345"),
+    "1AbcDEF_ghiJKLmnopQRstuvWXyz12345",
+  );
+  assert.equal(extractDriveFileId(""), "");
+  assert.equal(extractDriveFileId(null), "");
+  assert.equal(extractDriveFileId("not a url"), "");
+});
 
 test("normalizePrintTemplateAction は Gmail 設定項目を文字列で正規化する", () => {
   const action = normalizePrintTemplateAction({

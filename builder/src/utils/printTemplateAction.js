@@ -12,6 +12,19 @@ export const PRINT_TEMPLATE_OUTPUT_OPTIONS = [
   { value: PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL, label: "Gmail" },
 ];
 
+// Google Drive / Docs の URL からファイル ID を取り出す（GAS ExtractFileIdFromUrl_ 相当）。
+// .../d/<id>/... 形式を優先し、無ければ URL 中の最初の 25 文字以上の ID 様トークンを拾う。
+export const extractDriveFileId = (url) => {
+  const text = typeof url === "string" ? url.trim() : "";
+  if (!text) return "";
+  const byPath = text.match(/\/d\/([-\w]{10,})/);
+  if (byPath) return byPath[1];
+  const byParam = text.match(/[?&]id=([-\w]{10,})/);
+  if (byParam) return byParam[1];
+  const bare = text.match(/[-\w]{25,}/);
+  return bare ? bare[0] : "";
+};
+
 export const normalizePrintTemplateOutputType = (value) => {
   if (value === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL) return PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL;
   if (value === PRINT_TEMPLATE_OUTPUT_TYPES.GOOGLE_DOC) return PRINT_TEMPLATE_OUTPUT_TYPES.GOOGLE_DOC;

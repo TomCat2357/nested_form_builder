@@ -27,7 +27,7 @@ export default function NonChoiceChildrenSection({
   return (
     <div className="nf-mt-8">
       <div className="nf-row-between nf-mb-6">
-        <strong>子質問（値が入力されたとき表示）</strong>
+        <strong>{field.type === "message" ? "子質問（常に表示）" : "子質問（値が入力されたとき表示）"}</strong>
         <button
           type="button"
           className={s.btn.className}

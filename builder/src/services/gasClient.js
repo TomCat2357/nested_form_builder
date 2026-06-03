@@ -163,6 +163,11 @@ export const listFolders = async () => {
   const r = await fetchGasApi("nfbListFolders", {}, "List folders failed");
   return { folders: r.folders || [] };
 };
+// 印刷様式テンプレート一覧（05_report_templates 配下の Google ドキュメント）を取得する。
+export const listReportTemplates = async () => {
+  const r = await fetchGasApi("nfbListReportTemplates", {}, "List report templates failed");
+  return { files: r.files || [], truncated: !!r.truncated };
+};
 export const createFolder = async (path) => {
   const r = await fetchGasApi("nfbCreateFolder", path, "Create folder failed");
   return { folders: r.folders || [] };

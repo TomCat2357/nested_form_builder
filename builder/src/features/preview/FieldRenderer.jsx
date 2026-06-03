@@ -1,6 +1,6 @@
 import React from "react";
 import { DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
-import { fieldHasValue } from "../../core/fieldValue.js";
+import { shouldShowUnconditionalChildren } from "../../core/fieldValue.js";
 import { formatCanonical } from "../../utils/dateTime.js";
 import { isNumberInputDraftAllowed, validateByPattern } from "../../core/validate.js";
 import { resolveLabelSize, resolveTextColor, resolveStyleSettingsInlineStyle } from "../../core/styleSettings.js";
@@ -97,11 +97,26 @@ const FieldRenderer = ({
     </Tag>
   );
 
-  // メッセージタイプの場合はラベルのみ表示
+  // 補足コメント（プレースホルダー非対応タイプのみ保持）。ラベル直下に表示し改行を保持する。
+  // placeholder 対応タイプでは supplementaryComment が prune 済みのため null になる。
+  const renderComment = () => {
+    const comment = typeof field.supplementaryComment === "string" ? field.supplementaryComment : "";
+    if (!comment.trim()) return null;
+    return (
+      <div className="nf-text-12 nf-text-subtle nf-mt-2 nf-mb-4" style={{ whiteSpace: "pre-wrap" }}>
+        {comment}
+      </div>
+    );
+  };
+
+  // メッセージタイプはラベル（メッセージ本文）のみ。子質問は「回答」概念が無いため常に表示。
+  // この early-return は if (readOnly) の手前なので、編集・閲覧の両モードを同時にカバーする。
   if (field.type === "message") {
     return (
       <div className="preview-field">
         {renderLabel({ tag: "div", fallback: "メッセージ", showRequired: false })}
+        {renderComment()}
+        {renderChildrenAll ? <div className={s.child.className}>{renderChildrenAll()}</div> : null}
       </div>
     );
   }
@@ -113,6 +128,7 @@ const FieldRenderer = ({
     return (
       <div className="preview-field">
         {renderLabel({ tag: "div", showRequired: false })}
+        {renderComment()}
         {computedError
           ? <div className="nf-text-danger-ink nf-text-12">{computedError}</div>
           : <div className="nf-input nf-input--readonly">{computedValue != null && computedValue !== "" ? String(computedValue) : "\u00A0"}</div>
@@ -125,6 +141,7 @@ const FieldRenderer = ({
     return (
       <div className="preview-field">
         {renderLabel({ showRequired: false })}
+        {renderComment()}
         <button
           type="button"
           className="nf-btn-outline nf-text-13"
@@ -143,6 +160,7 @@ const FieldRenderer = ({
     return (
       <div className="preview-field">
         {renderLabel({ showRequired: false })}
+        {renderComment()}
         <button
           type="button"
           className="nf-btn-outline nf-text-13"
@@ -159,6 +177,7 @@ const FieldRenderer = ({
   if (field.type === "formLink") {
     return (
       <div className="preview-field">
+        {renderComment()}
         <button
           type="button"
           className="nf-btn-outline nf-text-13"
@@ -184,6 +203,7 @@ const FieldRenderer = ({
     return (
       <div className="preview-field">
         {renderLabel()}
+        {renderComment()}
         <FileUploadField
           field={field}
           value={value}
@@ -226,6 +246,7 @@ const FieldRenderer = ({
     return (
       <div className="preview-field">
         {renderLabel()}
+        {renderComment()}
         <div className={readOnlyClassName} style={readOnlyTextareaStyle}>{renderReadOnlyValue()}</div>
         {childrenForCheckboxes}
         {childrenCommon}
@@ -238,6 +259,7 @@ const FieldRenderer = ({
   return (
     <div className="preview-field">
       {renderLabel()}
+      {renderComment()}
 
       {(field.type === "text" || field.type === "userName" || field.type === "email" || field.type === "phone") && !isTextareaField(field) && (
         <input
@@ -451,7 +473,7 @@ export const RendererRecursive = ({
     }
     if (Array.isArray(field?.children) && field.children.length > 0) {
       const value = (responses || {})[fid];
-      if (fieldHasValue(field, value)) {
+      if (shouldShowUnconditionalChildren(field, value)) {
         return (
           <RendererRecursive
             fields={field.children}

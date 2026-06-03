@@ -1,7 +1,48 @@
 import React from "react";
 import { resolveSettingsCheckboxChecked, resolveSettingsFieldValue } from "../../utils/settings.js";
+import SearchableSelect from "../../app/components/SearchableSelect.jsx";
+import { extractDriveFileId } from "../../utils/printTemplateAction.js";
+import { useReportTemplateOptions } from "../editor/useReportTemplateOptions.js";
+
+// 標準印刷様式テンプレートを 05_report_templates 内の Google ドキュメントから論理パスで選ぶ。
+// 保存値は従来どおり URL 文字列。value=fileId とマッピングして既存 URL からも選択状態を復元する。
+function ReportTemplateSelectField({ field, value, onChange, disabled }) {
+  const { options, loading, error } = useReportTemplateOptions();
+  const currentFileId = extractDriveFileId(value);
+  const matched = options.find((opt) => opt.value === currentFileId);
+  const hasUnlistedValue = !!currentFileId && !matched && !loading && !error;
+
+  const handleSelect = (fileId) => {
+    const opt = options.find((o) => o.value === fileId);
+    onChange(field.key, opt ? (opt.url || "") : "");
+  };
+
+  return (
+    <div className="nf-col nf-gap-4">
+      <SearchableSelect
+        value={matched ? currentFileId : ""}
+        onChange={handleSelect}
+        options={options}
+        placeholder={loading ? "読み込み中..." : "05_report_templates から選択（未選択で自動生成）"}
+        searchPlaceholder="様式名で絞り込み..."
+        style={disabled ? { pointerEvents: "none", opacity: 0.6 } : undefined}
+      />
+      {error && (
+        <span className="nf-text-11 nf-text-muted">テンプレート一覧を取得できませんでした（{error}）。</span>
+      )}
+      {hasUnlistedValue && (
+        <span className="nf-text-11 nf-text-muted" style={{ wordBreak: "break-all" }}>
+          現在の設定: {value}（一覧に無いため未選択表示。選び直すと置き換わります）
+        </span>
+      )}
+    </div>
+  );
+}
 
 export function SettingsField({ field, value, onChange, disabled }) {
+  if (field.type === "reportTemplateSelect") {
+    return <ReportTemplateSelectField field={field} value={value} onChange={onChange} disabled={disabled} />;
+  }
   const isSelect = field.type === "select" || Array.isArray(field.options);
 
   if (isSelect) {

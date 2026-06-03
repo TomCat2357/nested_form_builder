@@ -73,10 +73,10 @@ export const SETTINGS_GROUPS = [
     fields: [
       {
         key: "standardPrintTemplateUrl",
-        label: "印刷様式テンプレートURL",
-        placeholder: "https://docs.google.com/document/d/...",
+        label: "標準印刷様式テンプレート",
+        type: "reportTemplateSelect",
         required: false,
-        description: "未設定時は既存の自動生成ドキュメントを使います",
+        description: "05_report_templates 内の Google ドキュメントから選びます。未選択時は既存の自動生成ドキュメントを使います。",
       },
       {
         key: "standardPrintFileNameTemplate",

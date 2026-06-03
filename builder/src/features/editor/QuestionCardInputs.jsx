@@ -82,6 +82,27 @@ export function PlaceholderInput({
   );
 }
 
+// 補足コメント入力。プレースホルダーを書けない（placeholder 非対応の）質問カード向け。
+// 空文字は schema 正規化で prune されるため、トグルは設けず常時テキストエリアを出す。
+export function SupplementaryCommentInput({ field, onChange, onFocus }) {
+  return (
+    <div className="nf-mt-8">
+      <label className="nf-text-12 nf-fw-600 nf-mb-4 nf-block">補足コメント（任意）</label>
+      <textarea
+        className={s.input.className}
+        placeholder="例: 記入時の注意事項などを表示できます"
+        rows={2}
+        value={field.supplementaryComment || ""}
+        onChange={(event) => onChange({ ...field, supplementaryComment: event.target.value })}
+        onFocus={onFocus}
+      />
+      <div className="nf-text-11 nf-text-muted nf-mt-4">
+        質問のラベル下に表示されます（改行はそのまま反映されます）。
+      </div>
+    </div>
+  );
+}
+
 // 文字色 / 背景色の共通カラーピッカー。
 // 「設定のデフォルト」チェック時はセンチネル値を保持し、外すと任意の HEX を選べる。
 export function StyleColorField({ label, value, defaultPickerColor, onChange, disabled, onFocus }) {

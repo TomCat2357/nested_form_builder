@@ -250,6 +250,62 @@ function StdFolders_autoFileFolderIdOrNull_(key) {
 }
 
 // ---------------------------------------------
+// 標準サブフォルダ内ファイルの列挙（読み取り専用・論理パス選択 UI 用）
+// ---------------------------------------------
+
+// folderKey サブフォルダ配下（サブフォルダ含む再帰）のファイルを列挙する。
+// mimeType を指定するとその MIME のみ返す（例: Google ドキュメント）。
+// path は folderKey 直下からの相対パス（サブフォルダ名を "/" 連結 + ファイル名）。
+// ノード数上限・深さ上限・多親/循環保護を入れ、超過時は Logger.log（サイレント打切回避）。
+// 戻り: { ok:true, files:[{ fileId, name, path, url }], truncated } / 失敗は nfbSafeCall_。
+function StdFolders_listFiles_(folderKey, mimeType) {
+  return nfbSafeCall_(function() {
+    var root = StdFolders_resolveRootFolder_(null);
+    var sub = StdFolders_getOrCreateSubfolder_(root, folderKey);
+    var wantMime = mimeType ? String(mimeType) : "";
+    var MAX_NODES = 2000;
+    var MAX_DEPTH = 20;
+    var files = [];
+    var visited = {};
+    var truncated = false;
+
+    function walk(folder, prefix, depth) {
+      if (truncated || depth > MAX_DEPTH) return;
+      var fileIter = folder.getFiles();
+      while (fileIter.hasNext()) {
+        if (files.length >= MAX_NODES) { truncated = true; return; }
+        var f = fileIter.next();
+        if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
+        if (wantMime && f.getMimeType() !== wantMime) continue;
+        var name = f.getName();
+        files.push({
+          fileId: f.getId(),
+          name: name,
+          path: prefix ? (prefix + "/" + name) : name,
+          url: f.getUrl()
+        });
+      }
+      var folderIter = folder.getFolders();
+      while (folderIter.hasNext()) {
+        if (truncated) return;
+        var sf = folderIter.next();
+        if (typeof sf.isTrashed === "function" && sf.isTrashed()) continue;
+        var sid = sf.getId();
+        if (visited[sid]) continue;   // 多親/循環保護
+        visited[sid] = true;
+        walk(sf, prefix ? (prefix + "/" + sf.getName()) : sf.getName(), depth + 1);
+      }
+    }
+
+    walk(sub, "", 0);
+    if (truncated) {
+      Logger.log("[StdFolders_listFiles_] 上限 " + MAX_NODES + " 件で打ち切りました (" + folderKey + ")");
+    }
+    return { ok: true, files: files, truncated: truncated };
+  });
+}
+
+// ---------------------------------------------
 // 内部: スキーマ走査ユーティリティ（フォーム定義のリンク再配線用）
 // ---------------------------------------------
 
@@ -454,6 +510,7 @@ function nfbExportMapping(payload)           { return Nfb_runScriptAction_("std_
 function nfbImportMapping(payload)           { return Nfb_runScriptAction_("std_folders_import_map", payload || {}); }
 function nfbGetStdFolderRoot(payload)        { return Nfb_runScriptAction_("std_folders_get_root", payload || {}); }
 function nfbEnsureStdFolders(payload)        { return Nfb_runScriptAction_("std_folders_ensure", payload || {}); }
+function nfbListReportTemplates(payload)     { return Nfb_runScriptAction_("report_templates_list", payload || {}); }
 
 // 現在のルートフォルダ情報を返す（診断用）。未解決でも例外にせず resolved:false を返す。
 function StdFolders_getRootInfo_() {

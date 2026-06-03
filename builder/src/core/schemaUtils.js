@@ -9,7 +9,7 @@
  * 両側を揃えること。等価性は tests/schema-walkers-equivalence.test.cjs で担保。
  */
 
-import { fieldHasValue } from "./fieldValue.js";
+import { shouldShowUnconditionalChildren } from "./fieldValue.js";
 
 /**
  * options ラベル順で childrenByValue のキーを並べ替えて返す。options に無い
@@ -128,7 +128,7 @@ export const traverseSchema = (schema, visitor, options = {}) => {
         let traverseChildren = true;
         if (hasResponses) {
           const inputValue = opts.responses[field.id];
-          traverseChildren = fieldHasValue(field, inputValue);
+          traverseChildren = shouldShowUnconditionalChildren(field, inputValue);
         }
         if (traverseChildren) {
           walk(field.children, currentPath, depth + 1, currentIndexTrail);

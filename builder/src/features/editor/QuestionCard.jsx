@@ -1,6 +1,6 @@
 import React from "react";
 import { buildSafeRegex } from "../../core/validate.js";
-import { MAX_DEPTH, supportsChildren } from "../../core/schema.js";
+import { MAX_DEPTH, supportsChildren, supportsSupplementaryComment } from "../../core/schema.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { buildPhonePattern } from "../../core/phone.js";
 import { normalizePrintTemplateAction } from "../../utils/printTemplateAction.js";
@@ -19,6 +19,7 @@ import {
   applyDisplayedFlag,
   handleTypeChange,
   PlaceholderInput,
+  SupplementaryCommentInput,
   StyleSettingsInput,
   NumberSettingsInput,
 } from "./QuestionCardInputs.jsx";
@@ -187,6 +188,10 @@ export default function QuestionCard({
       {isDateOrTime && <DateTimeFieldSection field={field} onChange={onChange} />}
 
       {isSubstitution && <SubstitutionFieldSection field={field} onChange={onChange} />}
+
+      {supportsSupplementaryComment(field.type) && (
+        <SupplementaryCommentInput field={field} onChange={onChange} onFocus={onFocus} />
+      )}
 
       {isChoice && (
         <ChoiceOptionsSection

@@ -63,8 +63,15 @@ export const DEFAULT_MULTILINE_ROWS = 4;
 
 const SUPPORTS_CHILDREN_TYPES = new Set([
   "text", "number", "email", "phone", "url", "date", "time", "fileUpload",
+  // message は「回答」概念を持たないが、子質問を無条件（常に表示）で持てる。
+  "message",
 ]);
 export const supportsChildren = (type) => SUPPORTS_CHILDREN_TYPES.has(type);
+
+// プレースホルダーを書けない（= placeholder 非対応の）全タイプで補足コメントを書ける。
+// 正規化後タイプで判定する（textarea / regex / userName は text 等へ正規化済み）。
+const SUPPORTS_PLACEHOLDER_TYPES = ["text", "number", "email", "phone", "url", "regex", "textarea"];
+export const supportsSupplementaryComment = (type) => !SUPPORTS_PLACEHOLDER_TYPES.includes(type);
 
 const normalizeBooleanSetting = (value, defaultValue = false) => {
   if (value === undefined) return defaultValue;
@@ -195,6 +202,12 @@ export const cleanUnusedFieldProperties = (field) => {
   if (!supportsPlaceholder) {
     delete field.placeholder;
     delete field.showPlaceholder;
+  }
+  // 補足コメント: placeholder 非対応タイプのみ保持。空文字は prune してデータを膨らませない。
+  if (!supportsSupplementaryComment(type)
+      || typeof field.supplementaryComment !== "string"
+      || !field.supplementaryComment.trim()) {
+    delete field.supplementaryComment;
   }
   if (!supportsSearchAndPrintExclusion) {
     delete field.excludeFromSearchAndPrint;

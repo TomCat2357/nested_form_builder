@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { fieldHasValue } from "./fieldValue.js";
+import { fieldHasValue, shouldShowUnconditionalChildren } from "./fieldValue.js";
 
 test("fieldHasValue: text 系は trim 後に非空でのみ true", () => {
   assert.equal(fieldHasValue({ type: "text" }, ""), false);
@@ -43,4 +43,14 @@ test("fieldHasValue: 非対応タイプは常に false", () => {
   assert.equal(fieldHasValue({ type: "radio" }, "A"), false);
   assert.equal(fieldHasValue({ type: "message" }, "x"), false);
   assert.equal(fieldHasValue(null, "x"), false);
+});
+
+test("shouldShowUnconditionalChildren: message は値が無くても常に true", () => {
+  // message は「回答」概念を持たないため、子質問は常に表示する（無条件）。
+  assert.equal(shouldShowUnconditionalChildren({ type: "message" }, undefined), true);
+  assert.equal(shouldShowUnconditionalChildren({ type: "message" }, ""), true);
+  // それ以外は fieldHasValue に委譲する。
+  assert.equal(shouldShowUnconditionalChildren({ type: "text" }, ""), false);
+  assert.equal(shouldShowUnconditionalChildren({ type: "text" }, "a"), true);
+  assert.equal(shouldShowUnconditionalChildren({ type: "fileUpload" }, [{ name: "f" }]), true);
 });

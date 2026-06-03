@@ -70,6 +70,8 @@ const ACTION_DEFINITIONS_ = {
   "std_folders_import_map":   { handler: (ctx) => StdFolders_importMappingFromSource_(ctx.raw || {}), adminOnly: true },
   "std_folders_get_root":     { handler: () => StdFolders_getRootInfo_(), adminOnly: true },
   "std_folders_ensure":       { handler: (ctx) => StdFolders_ensureFolders_(ctx.raw || {}), adminOnly: true },
+  // 印刷様式テンプレート一覧（05_report_templates 配下の Google ドキュメント）。論理パス選択 UI 用の読み取り専用。
+  "report_templates_list":    { handler: () => StdFolders_listFiles_("report_templates", "application/vnd.google-apps.document") },
   // doPost HTTP 用フォームアクション（従来契約）。list/get は nfb* 経由と同じくゲートなし。
   "forms_list":      { handler: FormsApi_List_ },
   "forms_get":       { handler: FormsApi_Get_ },
