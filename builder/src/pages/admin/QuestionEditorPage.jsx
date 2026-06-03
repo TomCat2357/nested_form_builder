@@ -18,6 +18,7 @@ import { compileStages } from "../../features/analytics/utils/compileStages.js";
 import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder.jsx";
 import VisualizePanel from "../../features/analytics/components/VisualizePanel.jsx";
 import SearchableSelect from "../../app/components/SearchableSelect.jsx";
+import { formsToOptions } from "../../app/components/searchableSelectOptions.js";
 import { normalizeTableStyle } from "../../features/analytics/utils/tableStyle.js";
 import { DEFAULT_LINE_STYLE } from "../../features/analytics/utils/chartPalette.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
@@ -556,7 +557,7 @@ export default function QuestionEditorPage() {
                   value={selectedFormId}
                   onChange={setSelectedFormId}
                   placeholder="（未選択：SQL 内で [フォーム名] を直接参照）"
-                  options={activeForms.map((f) => ({ value: f.id, label: formQualifiedName(f) || f.id, folder: f.folder || "" }))}
+                  options={formsToOptions(activeForms)}
                   style={{ maxWidth: "400px", flex: "0 0 auto" }}
                 />
                 {selectedFormId && (() => {

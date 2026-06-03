@@ -28,8 +28,9 @@ import DashboardFilterBar from "../../features/analytics/components/DashboardFil
 import SimpleFilterBar from "../../features/analytics/components/SimpleFilterBar.jsx";
 import DashboardCardFilterMappingDialog from "../../features/analytics/components/DashboardCardFilterMappingDialog.jsx";
 import { buildAppUrl } from "../../utils/appUrl.js";
-import { normalizeFolderPath, joinFolderPath } from "../../utils/folderTree.js";
+import { normalizeFolderPath } from "../../utils/folderTree.js";
 import SearchableSelect from "../../app/components/SearchableSelect.jsx";
+import { questionsToOptions } from "../../app/components/searchableSelectOptions.js";
 
 // フォーム schema の列型 ("number"|"date"|"string"|"boolean"|"unknown") を
 // 簡易フィルタの valueType ("number"|"date"|"text") へマップする。
@@ -620,7 +621,7 @@ export default function DashboardEditorPage() {
                 value=""
                 onChange={(v) => { if (v) handleAddCard(v); }}
                 placeholder="+ Question を選んで追加"
-                options={questions.map((q) => ({ value: q.id, label: joinFolderPath(q.folder, q.name) || q.id, folder: q.folder || "" }))}
+                options={questionsToOptions(questions)}
                 selectStyle={{ fontSize: 12 }}
               />
               <button
