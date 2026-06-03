@@ -245,6 +245,8 @@ var NfbAlasqlRuntime = (() => {
   var FORM_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1e3;
   var FORM_CACHE_BACKGROUND_REFRESH_MS = 60 * 60 * 1e3;
   var ANALYTICS_SOURCE_TABLE_CACHE_TTL_MS = 60 * 60 * 1e3;
+  var UPLOAD_RETRY_BASE_MS = 2 * 1e3;
+  var UPLOAD_RETRY_MAX_MS = 5 * 60 * 1e3;
   var MS_PER_DAY = 24 * 60 * 60 * 1e3;
   var SERIAL_EPOCH_UTC_MS = Date.UTC(1899, 11, 30);
   var JST_OFFSET_MS = 9 * 60 * 60 * 1e3;
@@ -322,7 +324,6 @@ var NfbAlasqlRuntime = (() => {
     return Number.isFinite(parsed) ? parsed : null;
   };
   var buildFormatter = (options) => new Intl.DateTimeFormat(DEFAULT_LOCALE, { timeZone: TIME_ZONE, hour12: false, ...options });
-  var formatterDateTime = buildFormatter({ year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
   var formatterDate = buildFormatter({ year: "numeric", month: "2-digit", day: "2-digit" });
   var formatterTime = buildFormatter({ hour: "2-digit", minute: "2-digit" });
   var JST_STORAGE_RE = /^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})(?:[T\s_]+(\d{1,2}):(\d{1,2})(?::(\d{1,2})(?:\.(\d{1,3}))?)?)?$/;
@@ -975,6 +976,33 @@ var NfbAlasqlRuntime = (() => {
       }
       if (value && typeof value === "object" && value.folderUrl) return String(value.folderUrl);
       return "";
+    };
+    function pickChildObject(value) {
+      if (Array.isArray(value)) {
+        for (let i = 0; i < value.length; i++) {
+          if (value[i] && typeof value[i] === "object") return value[i];
+        }
+        return null;
+      }
+      return value && typeof value === "object" ? value : null;
+    }
+    alasql.fn.CHILD_FORM_NAME = function(value) {
+      const obj = pickChildObject(value);
+      return obj && obj.childFormName ? String(obj.childFormName) : "";
+    };
+    alasql.fn.CHILD_FORM_ID = function(value) {
+      const obj = pickChildObject(value);
+      return obj && obj.childFormId ? String(obj.childFormId) : "";
+    };
+    alasql.fn.CHILD_FORM_URL = function(value) {
+      const obj = pickChildObject(value);
+      return obj && obj.childFormUrl ? String(obj.childFormUrl) : "";
+    };
+    alasql.fn.CHILD_FORM_COUNT = function(value) {
+      const obj = pickChildObject(value);
+      if (!obj) return 0;
+      if (Number.isFinite(obj.count)) return obj.count;
+      return Array.isArray(obj.records) ? obj.records.length : 0;
     };
     alasql.fn.DATE2ERA = function(value) {
       const p = valueToFullParts(value);

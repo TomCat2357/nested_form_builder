@@ -116,6 +116,9 @@ const normalizeNumberFieldSettings = (field) => {
 export const normalizeFormLinkSettings = (field) => {
   field.childFormId = typeof field.childFormId === "string" ? field.childFormId : "";
   field.childFormPath = typeof field.childFormPath === "string" ? field.childFormPath : "";
+  // 子フォーム（pid==このレコード id の別フォーム行）のデータを Webhook / 印刷様式へ渡すか。
+  // 既定 false（既存フォームは従来どおり子データ無し）。
+  field.includeChildData = normalizeBooleanSetting(field.includeChildData, false);
   return field;
 };
 
@@ -252,6 +255,7 @@ export const cleanUnusedFieldProperties = (field) => {
   } else {
     delete field.childFormId;
     delete field.childFormPath;
+    delete field.includeChildData;
   }
   delete field.formula;
   if (supportsTemplateText) {

@@ -14,6 +14,7 @@ import {
   getEntry,
   listEntries,
   listForms,
+  listRecordsByPids,
   setAdminEmail,
   setAdminKey,
   submitResponses,
@@ -106,6 +107,47 @@ test("submitResponses は formId が無ければエラーにする", async () =>
     async () => submitResponses({ sheetName: "Data", payload: {} }),
     /formId is required/,
   );
+});
+
+test("listRecordsByPids は pids 配列を dedupe/trim して listRecords へ送り records を返す", async () => {
+  const originalGoogle = globalThis.google;
+  const { run, calls } = createGoogleScriptRunStub({
+    listRecords: (payload) => ({ ok: true, records: [{ id: "c1", pid: payload.pids[0] }], count: 1 }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    const records = await listRecordsByPids({ formId: "childForm", pids: [" p1 ", "p2", "p1", "", null] });
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].functionName, "listRecords");
+    assert.equal(calls[0].payload.formId, "childForm");
+    assert.equal(calls[0].payload.forceFullSync, true);
+    assert.deepEqual(calls[0].payload.pids, ["p1", "p2"]);
+    assert.equal("pid" in calls[0].payload, false);
+    assert.equal(records.length, 1);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});
+
+test("listRecordsByPids は pids が空なら呼ばずに空配列を返す", async () => {
+  const originalGoogle = globalThis.google;
+  const { run, calls } = createGoogleScriptRunStub({
+    listRecords: () => ({ ok: true, records: [{ id: "x" }], count: 1 }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    assert.deepEqual(await listRecordsByPids({ formId: "childForm", pids: [] }), []);
+    assert.deepEqual(await listRecordsByPids({ formId: "childForm", pids: ["", null] }), []);
+    assert.equal(calls.length, 0);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});
+
+test("listRecordsByPids は formId が無ければエラーにする", async () => {
+  await assert.rejects(async () => listRecordsByPids({ pids: ["p1"] }), /formId is required/);
 });
 
 test("acquireSaveLock / getEntry / listEntries / deleteEntry は formId を必須とする", async () => {

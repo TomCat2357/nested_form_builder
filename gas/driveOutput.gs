@@ -309,6 +309,7 @@ function nfbNormalizeRecordTemplateContext_(sources) {
     fieldValues: nfbPlainObject_(dataSrc && dataSrc.fieldValues),
     dataValues: nfbPlainObject_(dataSrc && dataSrc.dataValues),
     fileUploadMeta: nfbPlainObject_(dataSrc && dataSrc.fileUploadMeta),
+    childFormMeta: nfbPlainObject_(dataSrc && dataSrc.childFormMeta),
     recordId: pickStr("recordId") || fallbackRecordId,
     formId: pickStr("formId"),
     recordNo: pickStr("recordNo"),

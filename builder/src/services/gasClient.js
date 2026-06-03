@@ -181,6 +181,30 @@ export const countRecordsByPid = async (args) => (await listRecordsByPidRaw_(arg
 // 指定フォーム（formId）で pid に一致するレコード配列を返す。子レコードのコピー複製用。
 export const listRecordsByPid = async (args) => (await listRecordsByPidRaw_(args)).records;
 
+// 複数の pid を一括（WHERE pid IN (...) 相当）で取得する。検索結果一覧から「行 × 子フォーム数」で
+// 膨らむのを避けるため、子フォームごとに 1 回だけ叩いてフロントで pid 分配する用途。
+// pids が空なら呼ばずに空配列を返す。各レコードは .pid を持つので呼び出し側で groupBy する。
+const listRecordsByPidsRaw_ = async ({ formId, pids, sheetName = "Data" }) => {
+  if (!formId) throw new Error("formId is required");
+  const normalizedPids = Array.from(
+    new Set((Array.isArray(pids) ? pids : []).map((p) => String(p || "").trim()).filter(Boolean)),
+  );
+  if (normalizedPids.length === 0) return { records: [], count: 0 };
+  const result = await fetchGasApi(
+    "listRecords",
+    { sheetName, formId, forceFullSync: true, pids: normalizedPids },
+    "子レコードの取得に失敗しました",
+  );
+  const records = result.records || [];
+  return {
+    records,
+    count: Number.isFinite(result.count) ? result.count : records.length,
+  };
+};
+
+// 指定フォーム（formId）で pids のいずれかに一致するレコード配列を返す。一括子レコード取得用。
+export const listRecordsByPids = async (args) => (await listRecordsByPidsRaw_(args)).records;
+
 export const listForms = async (options = {}) => {
   const r = await fetchGasApi("nfbListForms", options, "List forms failed");
   return { forms: r.forms || [], loadFailures: r.loadFailures || [], folders: r.folders || [] };

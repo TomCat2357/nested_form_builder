@@ -382,8 +382,19 @@ function ListRecords_(ctx) {
       const allRecords = Sheets_getAllRecords_(sheet, temporalTypeMap, { normalize: shouldNormalize });
       const headerMatrix = Sheets_readHeaderMatrix_(sheet);
       const isAdmin = Nfb_isAdminFromCtx_(ctx);
-      const pid = Nfb_resolvePidFromCtx_(ctx);
-      const pidFiltered = pid ? allRecords.filter((r) => Nfb_recordMatchesPid_(r, pid)) : allRecords;
+      // pids（配列）優先：検索一覧の一括子レコード取得（WHERE pid IN (...) 相当）。
+      // pids が無ければ従来どおり単一 pid フィルタにフォールバック。読込パス専用で、
+      // 新規行への pid 刻印（codeSyncRecords / sheetsRowOps）は単一 pid のまま不変。
+      const pids = Nfb_resolvePidsFromCtx_(ctx);
+      var pidFiltered;
+      if (pids.length > 0) {
+        const pidsSet = {};
+        for (var pi = 0; pi < pids.length; pi++) pidsSet[pids[pi]] = true;
+        pidFiltered = allRecords.filter((r) => Nfb_recordMatchesPids_(r, pidsSet));
+      } else {
+        const pid = Nfb_resolvePidFromCtx_(ctx);
+        pidFiltered = pid ? allRecords.filter((r) => Nfb_recordMatchesPid_(r, pid)) : allRecords;
+      }
       const visibleRecords = isAdmin
         ? pidFiltered
         : pidFiltered.filter((r) => !Nfb_isSoftDeletedRecord_(r));
@@ -473,6 +484,29 @@ function Nfb_recordMatchesPid_(record, pid) {
   if (!pid) return true;
   if (!record) return false;
   return String(record.pid == null ? "" : record.pid) === pid;
+}
+
+// URL/payload から渡された pids（親レコード ID の配列）を ctx から取り出す。
+// 一括子レコード取得（WHERE pid IN (...) 相当）用。trim 済み非空文字列の配列を返す。
+// 配列でない/未指定なら空配列（呼び出し側は単一 pid パスへフォールバック）。
+function Nfb_resolvePidsFromCtx_(ctx) {
+  var raw = ctx && ctx.raw ? ctx.raw.pids : null;
+  if (!raw || !Array.isArray(raw)) return [];
+  var out = [];
+  for (var i = 0; i < raw.length; i++) {
+    var v = raw[i];
+    if (v === null || v === undefined) continue;
+    var s = String(v).trim();
+    if (s) out.push(s);
+  }
+  return out;
+}
+
+// pidsSet（{ pid: true }）のいずれかに一致するレコードか判定する。
+function Nfb_recordMatchesPids_(record, pidsSet) {
+  if (!record) return false;
+  var key = String(record.pid == null ? "" : record.pid);
+  return pidsSet[key] === true;
 }
 
 function Nfb_isSoftDeletedRecord_(record) {

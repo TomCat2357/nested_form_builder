@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildFieldValuesMap,
   collectFileUploadMeta,
+  collectChildFormMeta,
   buildPrintDocumentPayload,
   formatRecordMetaDateTime,
   resolveOmitEmptyRowsOnPrint,
@@ -508,4 +509,56 @@ test("collectFileUploadMeta は children 配下の fileUpload も収集する", 
   ];
   const meta = collectFileUploadMeta(schema);
   assert.deepEqual(meta, { c1: { hideFileExtension: true } });
+});
+
+test("collectChildFormMeta は includeChildData=ON の formLink だけ拾う", () => {
+  const schema = [
+    { id: "l1", type: "formLink", label: "子A", childFormId: "fA", includeChildData: true },
+    { id: "l2", type: "formLink", label: "子B", childFormId: "fB", includeChildData: false },
+    { id: "l3", type: "formLink", label: "子C", childFormId: "fC" },
+    {
+      id: "p1",
+      type: "text",
+      label: "親",
+      children: [{ id: "l4", type: "formLink", label: "ネスト子", childFormId: "fD", includeChildData: true }],
+    },
+  ];
+  const childDataByFieldId = {
+    l1: { childFormId: "fA", count: 2, records: [] },
+    l2: { childFormId: "fB", count: 1, records: [] },
+    l4: { childFormId: "fD", count: 0, records: [] },
+  };
+  const meta = collectChildFormMeta(schema, childDataByFieldId);
+  assert.deepEqual(Object.keys(meta).sort(), ["l1", "l4"]);
+  assert.equal(meta.l1.childFormId, "fA");
+});
+
+test("buildPrintDocumentPayload は childFormMeta を driveSettings に載せる", () => {
+  const schema = [
+    { id: "l1", type: "formLink", label: "子A", childFormId: "fA", includeChildData: true },
+  ];
+  const payload = buildPrintDocumentPayload({
+    schema,
+    responses: {},
+    settings: { formTitle: "親フォーム", formId: "parent" },
+    recordId: "p1",
+    childDataByFieldId: { l1: { childFormId: "fA", childFormName: "子A", count: 2, records: [] } },
+  });
+  assert.ok(payload.driveSettings, "driveSettings should exist");
+  assert.deepEqual(Object.keys(payload.driveSettings.childFormMeta), ["l1"]);
+  assert.equal(payload.driveSettings.childFormMeta.l1.count, 2);
+});
+
+test("buildPrintDocumentPayload は childData 無しなら childFormMeta を付けない", () => {
+  const schema = [
+    { id: "l1", type: "formLink", label: "子A", childFormId: "fA", includeChildData: true },
+  ];
+  const payload = buildPrintDocumentPayload({
+    schema,
+    responses: {},
+    settings: { formTitle: "親フォーム", formId: "parent" },
+    recordId: "p1",
+  });
+  // driveSettings 自体が無いか、あっても childFormMeta は無い
+  assert.ok(!payload.driveSettings || !("childFormMeta" in payload.driveSettings));
 });

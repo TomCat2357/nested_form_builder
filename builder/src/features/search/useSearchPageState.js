@@ -13,6 +13,10 @@ import {
 import { buildBackfilledRecord } from "./backfillComputedValues.js";
 import { buildSearchTableLayout, buildHeaderRowsLayout, createHitExcerptColumn, createBaseColumns, DEFAULT_HIT_COLUMN_MIN_WIDTH } from "./searchTable.js";
 import { buildExportTableData } from "./searchExport.js";
+import { traverseSchema } from "../../core/schemaUtils.js";
+import { hasScriptRun, listRecordsByPids } from "../../services/gasClient.js";
+import { buildChildFormUrl } from "../../utils/formShareUrl.js";
+import { buildChildDataObject, distributeChildRecordsByPid, getChildFormCached_ } from "../preview/childFormData.js";
 import {
   computeRowValues,
   compareByColumn,
@@ -351,6 +355,81 @@ export function useSearchPageState({
     [selectedEntries, selectedPrintableRows, sortedEntries],
   );
 
+  // ---- 子フォームデータの一括プリロード（検索結果一覧の Webhook 用） ----
+  // includeChildData=ON の formLink 項目について、表示中の全行の親 id を pids にまとめ、
+  // 子フォームごとに 1 回だけ listRecordsByPids（WHERE pid IN (...) 相当）で取得し、
+  // フロントで pid 分配する（行 × 子フォーム数の N+1 リクエストを避ける）。
+  const childFormLinkFields = useMemo(() => {
+    const out = [];
+    traverseSchema(normalizedSchema, (field, context) => {
+      if (field?.type !== "formLink" || field.includeChildData !== true) return;
+      const childFormId = typeof field.childFormId === "string" ? field.childFormId.trim() : "";
+      const id = typeof field.id === "string" ? field.id.trim() : "";
+      if (childFormId && id) {
+        out.push({
+          id,
+          childFormId,
+          childFormName: typeof field.childFormPath === "string" ? field.childFormPath : "",
+          path: (context.pathSegments || []).join("|"),
+        });
+      }
+    });
+    return out;
+  }, [normalizedSchema]);
+
+  const [searchChildDataByField, setSearchChildDataByField] = useState({});
+  const visiblePidSignature = useMemo(
+    () => sortedEntries.map((r) => r.entry?.id).filter(Boolean).join(","),
+    [sortedEntries],
+  );
+  const childFormLinkSignature = childFormLinkFields.map((f) => `${f.id}:${f.childFormId}`).join("|");
+  useCancellable(async (isCancelled) => {
+    setSearchChildDataByField({});
+    if (childFormLinkFields.length === 0) return;
+    if (typeof listRecordsByPids !== "function" || !hasScriptRun()) return;
+    const pids = sortedEntries.map((r) => r.entry?.id).filter(Boolean);
+    if (pids.length === 0) return;
+    const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
+    for (const field of childFormLinkFields) {
+      try {
+        const [childForm, records] = await Promise.all([
+          getChildFormCached_(field.childFormId),
+          listRecordsByPids({ formId: field.childFormId, pids }),
+        ]);
+        if (isCancelled()) return;
+        const childSchema = childForm && childForm.schema ? childForm.schema : [];
+        const grouped = distributeChildRecordsByPid(records);
+        const byPid = {};
+        // 子レコードを持つ pid のみ合成オブジェクトを作る（payload 肥大を抑える）。
+        grouped.forEach((recs, pid) => {
+          byPid[pid] = buildChildDataObject({
+            childFormId: field.childFormId,
+            childFormName: field.childFormName,
+            childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, pid),
+            childSchema,
+            records: recs,
+          });
+        });
+        setSearchChildDataByField((prev) => ({ ...prev, [field.id]: { path: field.path, byPid } }));
+      } catch (_e) {
+        // 取得失敗時は子データを出さない（無言）。
+      }
+    }
+  }, [childFormLinkSignature, visiblePidSignature]);
+
+  // pid（=親レコード id）に紐づく子フォーム合成オブジェクト配列を返す。検索 Webhook payload 用。
+  const getSearchChildFormsForPid = useCallback((pid) => {
+    const key = String(pid || "");
+    if (!key) return [];
+    const out = [];
+    for (const field of childFormLinkFields) {
+      const entry = searchChildDataByField[field.id];
+      const obj = entry && entry.byPid ? entry.byPid[key] : null;
+      if (obj) out.push({ fieldPath: field.path, ...obj });
+    }
+    return out;
+  }, [childFormLinkFields, searchChildDataByField]);
+
   const pagedEntries = useMemo(() => {
     const start = (page - 1) * PAGE_SIZE;
     return sortedEntries.slice(start, start + PAGE_SIZE);
@@ -545,6 +624,7 @@ export function useSearchPageState({
     forceRefreshAll,
     sortedEntries,
     outputTargetRows,
+    getSearchChildFormsForPid,
     pagedEntries,
     filterError,
 

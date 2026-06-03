@@ -644,6 +644,41 @@ export function ensureNfbUdfsRegistered(alasql) {
     return "";
   };
 
+  // ---------------------------------------------------------------------------
+  // CHILD_FORM_NAME / CHILD_FORM_ID / CHILD_FORM_URL / CHILD_FORM_COUNT
+  //   formLink フィールド（「別フォームを開く」）の値として注入される合成オブジェクト
+  //   { childFormId, childFormName, childFormUrl, count, records:[{id,no,items}] } を読む UDF。
+  //   includeChildData=ON の formLink 項目を `項目名` で参照して使う（FILE_NAMES 等と同じ流儀）。
+  //   値が無い / 文字列のときは空文字 / 0 を返す（堅牢に passthrough）。
+  // ---------------------------------------------------------------------------
+  function pickChildObject(value) {
+    if (Array.isArray(value)) {
+      for (let i = 0; i < value.length; i++) {
+        if (value[i] && typeof value[i] === "object") return value[i];
+      }
+      return null;
+    }
+    return value && typeof value === "object" ? value : null;
+  }
+  alasql.fn.CHILD_FORM_NAME = function (value) {
+    const obj = pickChildObject(value);
+    return obj && obj.childFormName ? String(obj.childFormName) : "";
+  };
+  alasql.fn.CHILD_FORM_ID = function (value) {
+    const obj = pickChildObject(value);
+    return obj && obj.childFormId ? String(obj.childFormId) : "";
+  };
+  alasql.fn.CHILD_FORM_URL = function (value) {
+    const obj = pickChildObject(value);
+    return obj && obj.childFormUrl ? String(obj.childFormUrl) : "";
+  };
+  alasql.fn.CHILD_FORM_COUNT = function (value) {
+    const obj = pickChildObject(value);
+    if (!obj) return 0;
+    if (Number.isFinite(obj.count)) return obj.count;
+    return Array.isArray(obj.records) ? obj.records.length : 0;
+  };
+
   // ===========================================================================
   // 和暦変換 UDF（DATE2ERA / DATETIME2ERATIME / ERA2DATE / ERATIME2DATETIME）
   //   元号テーブル / formatEraNonPadded / parseEraFlexible は eraConversion.js から import。
