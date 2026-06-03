@@ -43,6 +43,8 @@ const FieldRenderer = ({
   onTemplateAction,
   onWebhookAction,
   onFormLinkAction,
+  formLinkChildCounts,
+  hideFormLink = false,
   isAdmin = true,
   canDeleteDriveFolder,
   onDeleteDriveFolder,
@@ -175,18 +177,25 @@ const FieldRenderer = ({
 
 
   if (field.type === "formLink") {
+    // 子フォーム文脈（URL に pid あり）では「別フォームを開く」ボタンを出さない＝
+    // 子フォームからさらに子フォームを作れないようにする。
+    if (hideFormLink) return null;
+    const childCount = formLinkChildCounts?.[field.id];
     return (
       <div className="preview-field">
         {renderComment()}
-        <button
-          type="button"
-          className="nf-btn-outline nf-text-13"
-          style={actionButtonStyleProp}
-          disabled={!field.childFormId}
-          onClick={() => onFormLinkAction?.(field)}
-        >
-          {field.label || "フォームを開く"}
-        </button>
+        <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
+          <button
+            type="button"
+            className="nf-btn-outline nf-text-13"
+            style={actionButtonStyleProp}
+            disabled={!field.childFormId}
+            onClick={() => onFormLinkAction?.(field)}
+          >
+            {field.label || "フォームを開く"}
+          </button>
+          {Number.isFinite(childCount) && <span className="badge ghost">{childCount}件</span>}
+        </span>
       </div>
     );
   }
@@ -434,6 +443,8 @@ export const RendererRecursive = ({
   onTemplateAction,
   onWebhookAction,
   onFormLinkAction,
+  formLinkChildCounts,
+  hideFormLink = false,
   isAdmin = true,
   canDeleteDriveFolder,
   onDeleteDriveFolder,
@@ -444,7 +455,8 @@ export const RendererRecursive = ({
   const recursiveProps = {
     responses, onChange, depth: depth + 1, readOnly, entryId, onChildFormJump,
     driveSettings, gasClientRef, driveFolderStates, onFieldDriveFolderStateChange,
-    onTemplateAction, onWebhookAction, onFormLinkAction, isAdmin, canDeleteDriveFolder, onDeleteDriveFolder, resolveTokens,
+    onTemplateAction, onWebhookAction, onFormLinkAction, formLinkChildCounts, hideFormLink,
+    isAdmin, canDeleteDriveFolder, onDeleteDriveFolder, resolveTokens,
     computedValues, computedErrors,
   };
 
@@ -517,6 +529,8 @@ export const RendererRecursive = ({
               onTemplateAction={onTemplateAction}
               onWebhookAction={onWebhookAction}
               onFormLinkAction={onFormLinkAction}
+              formLinkChildCounts={formLinkChildCounts}
+              hideFormLink={hideFormLink}
               isAdmin={isAdmin}
               canDeleteDriveFolder={canDeleteDriveFolder}
               onDeleteDriveFolder={onDeleteDriveFolder}

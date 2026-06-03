@@ -155,8 +155,11 @@ export default function FormPage() {
   const driveFolderDialog = useConfirmDialog({ fieldId: "" });
   const unlinkFolderDialog = useConfirmDialog({ errorMessage: "" });
   const pendingUnlinkSaveRef = useRef(null);
+  // formLink でコピー予約された子レコード複製タスク（保存後に実行）。{ sourceRecordId, links }。
+  const pendingChildRecordCopyRef = useRef(null);
   const [copySourceId, setCopySourceId] = useState("");
   const [copySourceResponses, setCopySourceResponses] = useState({});
+  const [copySourceRecordId, setCopySourceRecordId] = useState("");
   const [isCopyDialogOpen, setIsCopyDialogOpen] = useState(false);
   const [isCopySourceLoading, setIsCopySourceLoading] = useState(false);
   const { isReadLocked, withReadLock } = useEditLock();
@@ -451,6 +454,7 @@ export default function FormPage() {
     location,
     previewRef,
     pendingUnlinkSaveRef,
+    pendingChildRecordCopyRef,
     unlinkFolderDialog,
     setIsSaving,
     setMode,
@@ -527,6 +531,7 @@ export default function FormPage() {
       showAlert,
       setIsCopySourceLoading,
       setCopySourceResponses,
+      setCopySourceRecordId,
       setIsCopyDialogOpen,
     })
   ), [copySourceId, formId, isAdmin, normalizedSchema, showAlert]);
@@ -535,12 +540,14 @@ export default function FormPage() {
     performFormPageConfirmRecordCopy(selectedFieldIds, {
       topLevelFieldMap,
       copySourceResponses,
+      copySourceRecordId,
+      pendingChildRecordCopyRef,
       commitResponses,
       setIsCopyDialogOpen,
       showAlert,
       showToast,
     })
-  ), [copySourceResponses, showAlert, showToast, topLevelFieldMap]);
+  ), [copySourceResponses, copySourceRecordId, showAlert, showToast, topLevelFieldMap]);
 
   const handleResponsesChange = useCallback((updater) => {
     commitResponses("preview:change", updater);

@@ -155,6 +155,32 @@ export const listEntries = async ({ sheetName = "Data", formId = null, lastSprea
   };
 };
 
+// listRecords を「明示 pid + 全件」で叩く内部ヘルパ。URL の window.__PID__ には依存せず、
+// 引数で渡した pid をそのまま payload に乗せてサーバ側フィルタさせる（withUrlPid を通さない）。
+// formLink 子レコードの件数取得・コピー複製のように、現在の URL とは別フォーム/別 pid を
+// 対象にしたいときに使う。pid が空なら呼ばずに空を返す。
+const listRecordsByPidRaw_ = async ({ formId, pid, sheetName = "Data" }) => {
+  if (!formId) throw new Error("formId is required");
+  const normalizedPid = String(pid || "").trim();
+  if (!normalizedPid) return { records: [], count: 0 };
+  const result = await fetchGasApi(
+    "listRecords",
+    { sheetName, formId, forceFullSync: true, pid: normalizedPid },
+    "子レコードの取得に失敗しました",
+  );
+  const records = result.records || [];
+  return {
+    records,
+    count: Number.isFinite(result.count) ? result.count : records.length,
+  };
+};
+
+// 指定フォーム（formId）で pid に一致するレコード件数を返す。子レコードの件数バッジ用。
+export const countRecordsByPid = async (args) => (await listRecordsByPidRaw_(args)).count;
+
+// 指定フォーム（formId）で pid に一致するレコード配列を返す。子レコードのコピー複製用。
+export const listRecordsByPid = async (args) => (await listRecordsByPidRaw_(args)).records;
+
 export const listForms = async (options = {}) => {
   const r = await fetchGasApi("nfbListForms", options, "List forms failed");
   return { forms: r.forms || [], loadFailures: r.loadFailures || [], folders: r.folders || [] };

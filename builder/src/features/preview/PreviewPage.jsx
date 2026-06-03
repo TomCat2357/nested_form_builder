@@ -3,7 +3,7 @@ import { collectResponses, sortResponses, buildDataValueMap } from "../../core/c
 import { computeSchemaHash } from "../../core/schema.js";
 import { collectValidationErrors, formatValidationErrors } from "../../core/validate.js";
 import * as gasClientModule from "../../services/gasClient.js";
-const { submitResponses, hasScriptRun } = gasClientModule;
+const { submitResponses, hasScriptRun, countRecordsByPid, getUrlPid } = gasClientModule;
 import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
@@ -124,6 +124,46 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const dataValueMap = useMemo(() => buildDataValueMap(schema, responses), [schema, responses]);
 
   const gasClientRef = useRef(gasClientModule);
+
+  // 子フォーム文脈（URL に form+pid あり）では formLink ボタンを出さない＝子フォームから
+  // さらに子フォームを作らせない。getUrlPid は form+pid 併用かつ非空のときだけ非空を返す。
+  const inChildContext = useMemo(() => !!(typeof getUrlPid === "function" && getUrlPid()), []);
+
+  // schema 内の formLink フィールド（childFormId あり）を収集する。各々について子フォームの
+  // 子レコード件数（pid == このレコード id）をバッジ表示する。
+  const formLinkFields = useMemo(() => {
+    const out = [];
+    traverseSchema(schema, (field) => {
+      if (field?.type !== "formLink") return;
+      const childFormId = typeof field.childFormId === "string" ? field.childFormId.trim() : "";
+      const id = typeof field.id === "string" ? field.id.trim() : "";
+      if (childFormId && id) out.push({ id, childFormId });
+    });
+    return out;
+  }, [schema]);
+
+  const [formLinkChildCounts, setFormLinkChildCounts] = useState({});
+  // 件数取得は「既存レコード（保存済み id あり）」かつ GAS 利用可かつ子フォーム文脈でない場合のみ。
+  // formLink ごとに 1 回 listRecords を叩く。失敗は無言（dev / GAS 無しでもバッジ非表示で成立）。
+  const formLinkSignature = formLinkFields.map((f) => `${f.id}:${f.childFormId}`).join("|");
+  useCancellable(async (isCancelled) => {
+    setFormLinkChildCounts({});
+    const recordId = recordIdRef.current;
+    if (inChildContext) return;
+    if (!settings.recordId || !recordId) return;
+    if (typeof countRecordsByPid !== "function" || !hasScriptRun()) return;
+    if (formLinkFields.length === 0) return;
+    for (const field of formLinkFields) {
+      try {
+        const count = await countRecordsByPid({ formId: field.childFormId, pid: recordId });
+        if (isCancelled()) return;
+        setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: count }));
+      } catch (_e) {
+        // 取得失敗時はバッジを出さない（無言）。
+      }
+    }
+  }, [settings.recordId, formLinkSignature, inChildContext]);
+
   const folderUrlsByField = useMemo(() => {
     const out = {};
     for (const [fid, st] of Object.entries(driveFolderStates || {})) {
@@ -499,6 +539,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         onTemplateAction={handleFieldTemplateAction}
         onWebhookAction={handleFieldWebhookAction}
         onFormLinkAction={handleFieldFormLinkAction}
+        formLinkChildCounts={formLinkChildCounts}
+        hideFormLink={inChildContext}
         isAdmin={isAdmin}
         canDeleteDriveFolder={canDeleteDriveFolder}
         onDeleteDriveFolder={onDeleteDriveFolder}
