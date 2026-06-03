@@ -89,29 +89,41 @@ test("normalizeSchemaIDs は初期選択と電話番号設定を正規化する"
   assert.equal(schema[2].maxLength, 20);
 });
 
-test("normalizeSchemaIDs は数値設定を正規化し不要な値を除去する", () => {
+test("normalizeSchemaIDs は数値設定を numberMode へ正規化し不要な値を除去する", () => {
   const schema = normalizeSchemaIDs([
     { type: "number", label: "件数" },
     { type: "number", label: "下限のみ", integerOnly: "true", minValue: "-5", maxValue: "" },
     { type: "number", label: "上限のみ", integerOnly: false, minValue: "", maxValue: "10.5" },
-    { type: "text", label: "備考", integerOnly: true, minValue: 1, maxValue: 2 },
+    { type: "number", label: "明示モード", numberMode: "naturalNumber", minValue: 1 },
+    { type: "text", label: "備考", integerOnly: true, numberMode: "integer", minValue: 1, maxValue: 2 },
   ]);
 
-  assert.equal(schema[0].integerOnly, false);
+  // 既定は制限なし。旧 integerOnly は削除される。
+  assert.equal(schema[0].numberMode, "unrestricted");
+  assert.equal("integerOnly" in schema[0], false);
   assert.equal("minValue" in schema[0], false);
   assert.equal("maxValue" in schema[0], false);
 
-  assert.equal(schema[1].integerOnly, true);
+  // 旧 integerOnly:"true" は numberMode:"integer" へ移行。
+  assert.equal(schema[1].numberMode, "integer");
+  assert.equal("integerOnly" in schema[1], false);
   assert.equal(schema[1].minValue, -5);
   assert.equal("maxValue" in schema[1], false);
 
-  assert.equal(schema[2].integerOnly, false);
+  assert.equal(schema[2].numberMode, "unrestricted");
+  assert.equal("integerOnly" in schema[2], false);
   assert.equal("minValue" in schema[2], false);
   assert.equal(schema[2].maxValue, 10.5);
 
-  assert.equal("integerOnly" in schema[3], false);
-  assert.equal("minValue" in schema[3], false);
-  assert.equal("maxValue" in schema[3], false);
+  // 明示的な numberMode は維持される。
+  assert.equal(schema[3].numberMode, "naturalNumber");
+  assert.equal(schema[3].minValue, 1);
+
+  // 非数値型は numberMode / integerOnly / min / max を剥がす。
+  assert.equal("integerOnly" in schema[4], false);
+  assert.equal("numberMode" in schema[4], false);
+  assert.equal("minValue" in schema[4], false);
+  assert.equal("maxValue" in schema[4], false);
 });
 
 test("normalizeSchemaIDs は fileUpload 設定を allowUploadByUrl へ正規化する", () => {

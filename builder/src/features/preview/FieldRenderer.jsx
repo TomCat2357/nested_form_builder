@@ -2,7 +2,7 @@ import React from "react";
 import { DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
 import { shouldShowUnconditionalChildren } from "../../core/fieldValue.js";
 import { formatCanonical } from "../../utils/dateTime.js";
-import { isNumberInputDraftAllowed, validateByPattern } from "../../core/validate.js";
+import { getNumberMode, isNumberInputDraftAllowed, validateByPattern } from "../../core/validate.js";
 import { resolveLabelSize, resolveTextColor, resolveStyleSettingsInlineStyle } from "../../core/styleSettings.js";
 import { getStandardPhonePlaceholder } from "../../core/phone.js";
 import { getPrintTemplateOutputLabel } from "../../utils/printTemplateAction.js";
@@ -20,7 +20,7 @@ const resolveConfiguredPlaceholder = (field, fallback = "") => {
   return field?.placeholder || fallback;
 };
 
-const getNumberInputMode = (field) => (field?.integerOnly ? "numeric" : "decimal");
+const getNumberInputMode = (field) => (getNumberMode(field) === "unrestricted" ? "decimal" : "numeric");
 
 // `<input type="date">` は `YYYY-MM-DD`（ハイフン）しか受け付けない。
 // 保存済みレコードの date 値は canonical `YYYY-MM-DD`（ハイフン）なのでそのまま渡せる。
@@ -296,7 +296,7 @@ const FieldRenderer = ({
           value={value ?? ""}
           onChange={(event) => {
             const val = event.target.value;
-            if (isNumberInputDraftAllowed(val, !!field.integerOnly)) {
+            if (isNumberInputDraftAllowed(val, getNumberMode(field))) {
               onChange(val);
             }
           }}

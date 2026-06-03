@@ -5,6 +5,7 @@ import { toFiniteNumberOrNull as toFiniteNumberSetting } from "../utils/numbers.
 const regexCache = new Map();
 const NUMBER_INTEGER_DRAFT_REGEX = /^-?\d*$/;
 const NUMBER_DECIMAL_DRAFT_REGEX = /^-?\d*(?:\.\d*)?$/;
+const NUMBER_NONNEGATIVE_DRAFT_REGEX = /^\d*$/;
 const NUMBER_INTEGER_FINAL_REGEX = /^-?\d+$/;
 const URL_REGEX = /^https?:\/\/.+$/;
 const ASCII_ONLY_REGEX = /^[\x00-\x7F]+$/;
@@ -45,9 +46,28 @@ const getRegexResult = (pattern) => {
   return regexCache.get(key);
 };
 
-export const isNumberInputDraftAllowed = (value, integerOnly = false) => {
+export const NUMBER_MODES = ["unrestricted", "integer", "nonNegativeInteger", "naturalNumber"];
+export const DEFAULT_NUMBER_MODE = "unrestricted";
+
+// モードごとの制約。integer=整数限定か / floor=最小値の下限（null は下限なし） /
+// minRequired=最小値の入力必須か / minDefault=モード選択時に最小値ボックスへ入れる初期値。
+export const NUMBER_MODE_CONFIG = {
+  unrestricted: { integer: false, floor: null, minRequired: false, minDefault: null },
+  integer: { integer: true, floor: null, minRequired: false, minDefault: null },
+  nonNegativeInteger: { integer: true, floor: 0, minRequired: true, minDefault: 0 },
+  naturalNumber: { integer: true, floor: 1, minRequired: true, minDefault: 1 },
+};
+
+export const getNumberMode = (field) => {
+  const mode = field?.numberMode;
+  return NUMBER_MODES.includes(mode) ? mode : DEFAULT_NUMBER_MODE;
+};
+
+export const isNumberInputDraftAllowed = (value, mode = DEFAULT_NUMBER_MODE) => {
   const source = typeof value === "string" ? value : String(value ?? "");
-  return (integerOnly ? NUMBER_INTEGER_DRAFT_REGEX : NUMBER_DECIMAL_DRAFT_REGEX).test(source);
+  if (mode === "integer") return NUMBER_INTEGER_DRAFT_REGEX.test(source);
+  if (mode === "nonNegativeInteger" || mode === "naturalNumber") return NUMBER_NONNEGATIVE_DRAFT_REGEX.test(source);
+  return NUMBER_DECIMAL_DRAFT_REGEX.test(source);
 };
 
 const EMAIL_INVALID = { ok: false, code: "email_invalid", message: "メールアドレスの形式が正しくありません" };
@@ -94,7 +114,10 @@ const validateNumberField = (field, value) => {
     return { ok: false, code: "number_invalid", message: "数値を入力してください" };
   }
 
-  if (field?.integerOnly) {
+  // 整数限定モード（整数 / ０と自然数 / 自然数）は整数のみ許可。
+  // 下限・上限（0以上 / 1以上 を含む）はモード選択時に最小値ボックスへ反映されるため、
+  // ここでは最小値/最大値チェックに一本化する（下の min/max を参照）。
+  if (NUMBER_MODE_CONFIG[getNumberMode(field)].integer) {
     if (!NUMBER_INTEGER_FINAL_REGEX.test(source) || !Number.isInteger(parsed)) {
       return { ok: false, code: "number_integer_invalid", message: "整数で入力してください" };
     }
@@ -119,6 +142,39 @@ const validateNumberField = (field, value) => {
   }
 
   return { ok: true, code: "", message: "" };
+};
+
+// 数値フィールドの「設定」を検証する（回答ではなくフォーム保存時のフィールド設定チェック）。
+// { ok, message } を返す。NumberSettingsInput のインライン表示と保存時バリデーションで共用。
+export const checkNumberFieldConfig = (field) => {
+  const cfg = NUMBER_MODE_CONFIG[getNumberMode(field)];
+  const minValue = toFiniteNumberSetting(field?.minValue);
+  const maxValue = toFiniteNumberSetting(field?.maxValue);
+  const floorLabel = cfg.floor === null ? "" : `${cfg.floor}以上`;
+
+  if (cfg.minRequired && minValue === null) {
+    return { ok: false, message: "最小値を入力してください" };
+  }
+  if (cfg.integer) {
+    if (minValue !== null && !Number.isInteger(minValue)) {
+      return { ok: false, message: "最小値は整数で入力してください" };
+    }
+    if (maxValue !== null && !Number.isInteger(maxValue)) {
+      return { ok: false, message: "最大値は整数で入力してください" };
+    }
+  }
+  if (cfg.floor !== null) {
+    if (minValue !== null && minValue < cfg.floor) {
+      return { ok: false, message: `最小値は${floorLabel}で入力してください` };
+    }
+    if (maxValue !== null && maxValue < cfg.floor) {
+      return { ok: false, message: `最大値は${floorLabel}で入力してください` };
+    }
+  }
+  if (minValue !== null && maxValue !== null && minValue > maxValue) {
+    return { ok: false, message: "最小値は最大値以下にしてください" };
+  }
+  return { ok: true, message: "" };
 };
 
 const isEmpty = (field, value) => {

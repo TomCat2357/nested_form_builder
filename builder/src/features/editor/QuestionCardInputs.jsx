@@ -1,6 +1,7 @@
 import React from "react";
 import { deepClone, DEFAULT_TEXT_MAX_LENGTH } from "../../core/schema.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings, STYLE_SETTINGS_DEFAULT_COLOR } from "../../core/styleSettings.js";
+import { NUMBER_MODE_CONFIG, checkNumberFieldConfig } from "../../core/validate.js";
 import { styles as s } from "./styles.js";
 
 export {
@@ -354,8 +355,17 @@ const parseNumberSettingValue = (value) => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const NUMBER_MODE_OPTIONS = [
+  { value: "unrestricted", label: "制限なし" },
+  { value: "integer", label: "整数" },
+  { value: "nonNegativeInteger", label: "０と自然数" },
+  { value: "naturalNumber", label: "自然数" },
+];
+
 export function NumberSettingsInput({ field, onChange, onFocus }) {
-  const step = field.integerOnly ? "1" : "any";
+  const mode = NUMBER_MODE_OPTIONS.some((opt) => opt.value === field.numberMode) ? field.numberMode : "unrestricted";
+  const step = mode === "unrestricted" ? "any" : "1";
+  const configError = checkNumberFieldConfig({ ...field, numberMode: mode });
 
   const updateBound = (key, rawValue) => {
     const nextField = { ...field };
@@ -365,16 +375,32 @@ export function NumberSettingsInput({ field, onChange, onFocus }) {
     onChange(nextField);
   };
 
+  // モード切替時、下限を持つモード（０と自然数 / 自然数）は最小値が空なら初期値を入れる。
+  const handleModeChange = (nextMode) => {
+    const nextField = { ...field, numberMode: nextMode };
+    const minDefault = NUMBER_MODE_CONFIG[nextMode]?.minDefault;
+    if (minDefault !== null && minDefault !== undefined && nextField.minValue == null) {
+      nextField.minValue = minDefault;
+    }
+    onChange(nextField);
+  };
+
   return (
     <div className="nf-mt-8">
-      <label className="nf-row nf-gap-6">
-        <input
-          type="checkbox"
-          checked={!!field.integerOnly}
-          onChange={(event) => onChange({ ...field, integerOnly: event.target.checked })}
-        />
-        整数のみ
-      </label>
+      <div className="nf-text-12 nf-mb-4 nf-text-subtle">数値の種類</div>
+      <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
+        {NUMBER_MODE_OPTIONS.map((opt) => (
+          <label key={opt.value} className="nf-row nf-gap-6">
+            <input
+              type="radio"
+              name={`number-mode-${field.id}`}
+              checked={mode === opt.value}
+              onChange={() => handleModeChange(opt.value)}
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
       <div className="nf-row nf-gap-8 nf-mt-8" style={{ flexWrap: "nowrap" }}>
         <div className="nf-flex-1 nf-min-w-0">
           <label className="nf-text-12 nf-mb-2 nf-text-subtle">最小値</label>
@@ -399,6 +425,9 @@ export function NumberSettingsInput({ field, onChange, onFocus }) {
           />
         </div>
       </div>
+      {!configError.ok && (
+        <div className="nf-text-danger-ink nf-text-12 nf-mt-4">{configError.message}</div>
+      )}
     </div>
   );
 }

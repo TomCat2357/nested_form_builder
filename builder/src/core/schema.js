@@ -7,6 +7,7 @@ import {
   normalizePrintTemplateAction,
   resolvePrintTemplateFieldLabel,
 } from "../utils/printTemplateAction.js";
+import { checkNumberFieldConfig } from "./validate.js";
 export { countSchemaNodes };
 
 // Webhook 質問カードの設定を正規化する。{ url, adminOnly } の形に揃える。
@@ -89,8 +90,17 @@ const normalizeFiniteNumberSetting = (value) => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const NUMBER_MODES = ["unrestricted", "integer", "nonNegativeInteger", "naturalNumber"];
+
+const normalizeNumberMode = (field) => {
+  if (NUMBER_MODES.includes(field.numberMode)) return field.numberMode;
+  if (normalizeBooleanSetting(field.integerOnly, false)) return "integer";
+  return "unrestricted";
+};
+
 const normalizeNumberFieldSettings = (field) => {
-  field.integerOnly = normalizeBooleanSetting(field.integerOnly, false);
+  field.numberMode = normalizeNumberMode(field);
+  delete field.integerOnly;
 
   const minValue = normalizeFiniteNumberSetting(field.minValue);
   if (minValue === undefined) delete field.minValue;
@@ -186,6 +196,7 @@ export const cleanUnusedFieldProperties = (field) => {
   if (!supportsEmailAutoFill) delete field.autoFillUserEmail;
   if (!supportsNumberSettings) {
     delete field.integerOnly;
+    delete field.numberMode;
     delete field.minValue;
     delete field.maxValue;
   } else {
@@ -562,6 +573,21 @@ export const validateRequiredLabels = (fields, { responses = null, visibleOnly =
   }, { responses: visibleOnly ? responses : null });
 
   if (emptyLabels.length > 0) return { ok: false, emptyLabels };
+  return { ok: true };
+};
+
+// 数値フィールドの設定（モード別の最小値必須・整数・下限・min≤max）を検証する。
+// FormBuilderWorkspace.handleSave から呼び、不正があれば保存をブロックする。
+export const validateNumberFieldConfigs = (fields) => {
+  const invalidFields = [];
+  traverseSchema(fields, (field, context) => {
+    if (field?.type !== "number") return;
+    const result = checkNumberFieldConfig(field);
+    if (!result.ok) {
+      invalidFields.push({ path: context.pathSegments.join(" > "), message: result.message });
+    }
+  });
+  if (invalidFields.length > 0) return { ok: false, invalidFields };
   return { ok: true };
 };
 
