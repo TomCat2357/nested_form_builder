@@ -1,6 +1,7 @@
 import React from "react";
 import { deepClone, DEFAULT_TEXT_MAX_LENGTH } from "../../core/schema.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings, STYLE_SETTINGS_DEFAULT_COLOR } from "../../core/styleSettings.js";
+import { NUMBER_MODE_CONFIG, checkNumberFieldConfig } from "../../core/validate.js";
 import { styles as s } from "./styles.js";
 
 export {
@@ -82,23 +83,35 @@ export function PlaceholderInput({
   );
 }
 
-// 補足コメント入力。プレースホルダーを書けない（placeholder 非対応の）質問カード向け。
-// 空文字は schema 正規化で prune されるため、トグルは設けず常時テキストエリアを出す。
 export function SupplementaryCommentInput({ field, onChange, onFocus }) {
+  const showComment = !!field.showSupplementaryComment;
   return (
     <div className="nf-mt-8">
-      <label className="nf-text-12 nf-fw-600 nf-mb-4 nf-block">補足コメント（任意）</label>
-      <textarea
-        className={s.input.className}
-        placeholder="例: 記入時の注意事項などを表示できます"
-        rows={2}
-        value={field.supplementaryComment || ""}
-        onChange={(event) => onChange({ ...field, supplementaryComment: event.target.value })}
-        onFocus={onFocus}
-      />
-      <div className="nf-text-11 nf-text-muted nf-mt-4">
-        質問のラベル下に表示されます（改行はそのまま反映されます）。
-      </div>
+      <label className={`nf-row nf-gap-6${showComment ? " nf-mb-4" : ""}`}>
+        <input
+          type="checkbox"
+          checked={showComment}
+          onChange={(event) => {
+            onChange({ ...field, showSupplementaryComment: event.target.checked });
+          }}
+        />
+        補足コメント（任意）
+      </label>
+      {showComment && (
+        <>
+          <textarea
+            className={s.input.className}
+            placeholder="例: 記入時の注意事項などを表示できます"
+            rows={2}
+            value={field.supplementaryComment || ""}
+            onChange={(event) => onChange({ ...field, supplementaryComment: event.target.value })}
+            onFocus={onFocus}
+          />
+          <div className="nf-text-11 nf-text-muted nf-mt-4">
+            質問のラベル下に表示されます（改行はそのまま反映されます）。
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -354,8 +367,17 @@ const parseNumberSettingValue = (value) => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
+const NUMBER_MODE_OPTIONS = [
+  { value: "unrestricted", label: "制限なし" },
+  { value: "integer", label: "整数" },
+  { value: "nonNegativeInteger", label: "０と自然数" },
+  { value: "naturalNumber", label: "自然数" },
+];
+
 export function NumberSettingsInput({ field, onChange, onFocus }) {
-  const step = field.integerOnly ? "1" : "any";
+  const mode = NUMBER_MODE_OPTIONS.some((opt) => opt.value === field.numberMode) ? field.numberMode : "unrestricted";
+  const step = mode === "unrestricted" ? "any" : "1";
+  const configError = checkNumberFieldConfig({ ...field, numberMode: mode });
 
   const updateBound = (key, rawValue) => {
     const nextField = { ...field };
@@ -365,18 +387,37 @@ export function NumberSettingsInput({ field, onChange, onFocus }) {
     onChange(nextField);
   };
 
+  // モード切替時、下限を持つモード（０と自然数 / 自然数）は最小値が不正（未設定・小数・floor 未満）なら floor 値に強制する。
+  const handleModeChange = (nextMode) => {
+    const nextField = { ...field, numberMode: nextMode };
+    const floor = NUMBER_MODE_CONFIG[nextMode]?.floor;
+    if (floor !== null && floor !== undefined) {
+      const current = nextField.minValue;
+      if (current == null || !Number.isInteger(current) || current < floor) {
+        nextField.minValue = floor;
+      }
+    }
+    onChange(nextField);
+  };
+
   return (
     <div className="nf-mt-8">
-      <label className="nf-row nf-gap-6">
-        <input
-          type="checkbox"
-          checked={!!field.integerOnly}
-          onChange={(event) => onChange({ ...field, integerOnly: event.target.checked })}
-        />
-        整数のみ
-      </label>
-      <div className="nf-row nf-gap-8 nf-mt-8" style={{ flexWrap: "nowrap" }}>
-        <div className="nf-flex-1 nf-min-w-0">
+      <div className="nf-text-12 nf-mb-4 nf-text-subtle">数値の種類</div>
+      <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
+        {NUMBER_MODE_OPTIONS.map((opt) => (
+          <label key={opt.value} className="nf-row nf-gap-6">
+            <input
+              type="radio"
+              name={`number-mode-${field.id}`}
+              checked={mode === opt.value}
+              onChange={() => handleModeChange(opt.value)}
+            />
+            {opt.label}
+          </label>
+        ))}
+      </div>
+      <div className="nf-row nf-gap-8 nf-mt-8">
+        <div style={{ maxWidth: "160px", flex: "1 1 0" }}>
           <label className="nf-text-12 nf-mb-2 nf-text-subtle">最小値</label>
           <input
             type="number"
@@ -387,7 +428,7 @@ export function NumberSettingsInput({ field, onChange, onFocus }) {
             onFocus={onFocus}
           />
         </div>
-        <div className="nf-flex-1 nf-min-w-0">
+        <div style={{ maxWidth: "160px", flex: "1 1 0" }}>
           <label className="nf-text-12 nf-mb-2 nf-text-subtle">最大値</label>
           <input
             type="number"
@@ -399,6 +440,9 @@ export function NumberSettingsInput({ field, onChange, onFocus }) {
           />
         </div>
       </div>
+      {!configError.ok && (
+        <div className="nf-text-danger-ink nf-text-12 nf-mt-4">{configError.message}</div>
+      )}
     </div>
   );
 }

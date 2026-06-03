@@ -3,7 +3,7 @@ import EditorPage from "../editor/EditorPage.jsx";
 import PreviewPage from "../preview/PreviewPage.jsx";
 import SearchPreviewPanel from "./SearchPreviewPanel.jsx";
 import { DEFAULT_SETTINGS } from "../../core/storage.js";
-import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, validateLabelCharacters, MAX_DEPTH, countSchemaNodes } from "../../core/schema.js";
+import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, validateLabelCharacters, validateNumberFieldConfigs, MAX_DEPTH, countSchemaNodes } from "../../core/schema.js";
 import { detectCircularReferences, validateSubstitutionTemplates } from "../../core/computedFields.js";
 import { runSelfTests } from "../../core/selfTests.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
@@ -148,6 +148,15 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
         .map((entry, index) => `${index + 1}. ${entry.path}（"${entry.label}" に使えない文字「${entry.char}」が含まれます）`)
         .join("\n");
       showAlert(`ラベルに使用できない文字が含まれています:\n\n${items}`, "ラベルの不正な文字");
+      return false;
+    }
+
+    const numberConfigCheck = validateNumberFieldConfigs(schema);
+    if (!numberConfigCheck.ok) {
+      const items = numberConfigCheck.invalidFields
+        .map((entry, index) => `${index + 1}. ${entry.path}\n   ${entry.message}`)
+        .join("\n\n");
+      showAlert(`数値項目の設定にエラーがあります。修正してから保存してください:\n\n${items}`, "数値設定エラー");
       return false;
     }
 
