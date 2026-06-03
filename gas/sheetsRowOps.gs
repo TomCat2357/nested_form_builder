@@ -85,6 +85,15 @@ function Sheets_neutralizeFormulaPrefix_(s) {
   return s;
 }
 
+// URL で pid 指定中の行に、その pid を 0-based の列位置へ刻む（数式化は中和する）。
+// upsert（keyToColumn は 1-based）/ 同期の新規行（fixedColMap は 0-based）で共有する。
+// pid が空、または colIdx0 が範囲外なら何もしない。
+function Sheets_stampPid_(rowData, colIdx0, pid, lastColumn) {
+  if (!pid) return;
+  if (typeof colIdx0 !== "number" || colIdx0 < 0 || colIdx0 >= lastColumn) return;
+  rowData[colIdx0] = Sheets_neutralizeFormulaPrefix_(pid);
+}
+
 
 // date / time フィールドの値をシートに「数値の日時シリアル値」(Date オブジェクト) で書き込む。
 // canonical 化は nfbDt_formatCanonical_（expressionEvaluator.gs → NfbAlasqlRuntime.formatCanonical）に
@@ -194,12 +203,7 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
   // URL で pid 指定中は、保存する行に必ずその pid を刻む（新規行はもちろん、既存行も整合させる）。
   // pid 列はメタ列ブロックの固定メタ列で、Sheets_ensureHeaderMatrix_ が正規位置へ揃え済み（keyToColumn で解決）。
   var pid = Nfb_resolvePidFromCtx_(ctx);
-  if (pid && keyToColumn.hasOwnProperty("pid")) {
-    var pidColIdx = keyToColumn["pid"] - 1;
-    if (pidColIdx >= 0 && pidColIdx < lastColumn) {
-      rowData[pidColIdx] = Sheets_neutralizeFormulaPrefix_(pid);
-    }
-  }
+  Sheets_stampPid_(rowData, keyToColumn.hasOwnProperty("pid") ? keyToColumn["pid"] - 1 : -1, pid, lastColumn);
 
   var range = sheet.getRange(rowIndex, 1, 1, lastColumn);
   range.setValues([rowData]);

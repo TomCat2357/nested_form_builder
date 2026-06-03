@@ -1,9 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams, useLocation } from "react-router-dom";
 import AppLayout from "../../app/components/AppLayout.jsx";
 import ConfirmDialog from "../../app/components/ConfirmDialog.jsx";
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
+import { useDirtyTracking } from "../../app/hooks/useDirtyTracking.js";
 import { useCancellable } from "../../app/hooks/useCancellable.js";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
@@ -63,8 +64,6 @@ export default function DashboardEditorPage() {
   const [cardColumnsMap, setCardColumnsMap] = useState({}); // cardId -> columns
 
   const unsavedDialog = useConfirmDialog();
-  const baselineRef = useRef(null);
-  const [isDirty, setIsDirty] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) navigate("/", { replace: true });
@@ -329,16 +328,7 @@ export default function DashboardEditorPage() {
   // ----- Dirty tracking -----
   const snapshot = useMemo(() => JSON.stringify({ dashboard }), [dashboard]);
   const baselineReady = !dashboardId || !loading;
-
-  useEffect(() => {
-    if (!baselineReady) return;
-    if (baselineRef.current === null) {
-      baselineRef.current = snapshot;
-      setIsDirty(false);
-      return;
-    }
-    setIsDirty(baselineRef.current !== snapshot);
-  }, [baselineReady, snapshot]);
+  const isDirty = useDirtyTracking(snapshot, baselineReady);
 
   useBeforeUnloadGuard(isDirty);
 
