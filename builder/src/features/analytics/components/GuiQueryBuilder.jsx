@@ -1,7 +1,7 @@
 import React from "react";
 import { AGG_TYPE_MATRIX, ALL_COLUMNS_TOKEN, resolveColumnType } from "../utils/aggregationCompatibility.js";
-import { formQualifiedName } from "../utils/formIdentifierResolver.js";
 import SearchableSelect from "../../../app/components/SearchableSelect.jsx";
+import { formsToOptions } from "../../../app/components/searchableSelectOptions.js";
 
 const AGG_LABELS = {
   count: "件数 (COUNT *)",
@@ -151,7 +151,7 @@ export default function GuiQueryBuilder({ gui, onChange, formColumns, activeForm
           value={gui.formId || ""}
           onChange={(value) => handleFormSelect({ target: { value } })}
           placeholder="フォームを選択..."
-          options={activeForms.map((f) => ({ value: f.id, label: formQualifiedName(f) || f.id, folder: f.folder || "" }))}
+          options={formsToOptions(activeForms)}
           style={{ maxWidth: 400 }}
         />
       </section>

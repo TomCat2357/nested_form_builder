@@ -3,6 +3,7 @@ import { DEFAULT_MULTILINE_ROWS, normalizeWebhookAction } from "../../core/schem
 import { isValidExternalActionUrl } from "../../utils/externalActionUrl.js";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import SearchableSelect from "../../app/components/SearchableSelect.jsx";
+import { formsToOptions } from "../../app/components/searchableSelectOptions.js";
 import { formQualifiedName } from "../analytics/utils/formIdentifierResolver.js";
 import { buildChildFormUrl } from "../../utils/formShareUrl.js";
 import { styles as s } from "./styles.js";
@@ -338,12 +339,7 @@ export function FormLinkSection({ field, onChange }) {
   const [showUrl, setShowUrl] = React.useState(false);
   const childFormId = typeof field.childFormId === "string" ? field.childFormId : "";
 
-  const formOptions = React.useMemo(
-    () => (Array.isArray(forms) ? forms : [])
-      .filter((f) => f && f.id)
-      .map((f) => ({ value: f.id, label: formQualifiedName(f) || f.id, folder: f.folder || "" })),
-    [forms],
-  );
+  const formOptions = React.useMemo(() => formsToOptions(forms), [forms]);
 
   const handleSelect = (selectedId) => {
     const selectedForm = (Array.isArray(forms) ? forms : []).find((f) => f && f.id === selectedId) || null;
