@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { hasScriptRun } from "../../services/gasClient.js";
 import { normalizeFolderPath, countItemsUnder, folderExists } from "../../utils/folderTree.js";
-import { sanitizeFileBaseName, downloadJsonOrZip, resolveDialogTargetIds } from "./listActionsShared.js";
+import { sanitizeFileBaseName, downloadJsonOrZip, resolveDialogTargetIds, createMoveActions } from "./listActionsShared.js";
 
 /**
  * Question / Dashboard 一覧アクションを一括提供する汎用 hook。
@@ -310,50 +310,23 @@ export function useAdminAnalyticsListActions({
   };
 
   // ---- 移動 ----
-  const handleMoveSelected = () => {
-    if (!hasScriptRun()) {
-      showAlert("移動はGoogle Apps Script環境でのみ利用可能です");
-      return;
-    }
-    const { itemIds, folderPaths } = collectSelection();
-    if (!itemIds.length && !folderPaths.length) {
-      showAlert(`移動する ${itemLabel} またはフォルダを選択してください。`);
-      return;
-    }
-    setMoveDest("");
-    setMoveError("");
-    moveDialog.open({ itemIds, folderPaths, count: itemIds.length + folderPaths.length });
-  };
-
-  const confirmMove = () => {
-    const itemIds = Array.isArray(moveDialog.state.itemIds) ? moveDialog.state.itemIds : [];
-    const folderPaths = Array.isArray(moveDialog.state.folderPaths) ? moveDialog.state.folderPaths : [];
-    const destPath = normalizeFolderPath(moveDest);
-
-    // クライアント側の存在チェック（最終判定はサーバ）。空欄=最上位は常に許可。
-    if (destPath && !folderExists(registeredFolders, destPath)) {
-      setMoveError(`移動先フォルダ「${destPath}」が存在しません`);
-      return;
-    }
-    // フォルダを自身/配下へ移動しようとしていないか
-    for (const old of folderPaths) {
-      const o = normalizeFolderPath(old);
-      if (destPath === o || destPath.startsWith(o + "/")) {
-        setMoveError(`フォルダ「${o}」を自身またはその配下へは移動できません`);
-        return;
-      }
-    }
-
-    // ダイアログを先に閉じ、GAS はバックグラウンドで実行（完了後にリスト自動更新）。
-    if (itemIds.length) clearSelectionByIds(itemIds);
-    if (folderPaths.length && clearFolderSelection) clearFolderSelection();
-    moveDialog.reset();
-    setMoveDest("");
-    setMoveError("");
-    moveItems({ itemIds, folderPaths, destPath }).catch((error) => {
-      showAlert(error?.message || "移動に失敗しました");
-    });
-  };
+  const { handleMoveSelected, confirmMove } = createMoveActions({
+    idsKey: "itemIds",
+    collectSelection: () => {
+      const { itemIds, folderPaths } = collectSelection();
+      return { ids: itemIds, folderPaths };
+    },
+    emptySelectionMessage: `移動する ${itemLabel} またはフォルダを選択してください。`,
+    moveDialog,
+    moveDest,
+    setMoveDest,
+    setMoveError,
+    registeredFolders,
+    moveItems,
+    clearSelectionByIds,
+    clearFolderSelection,
+    showAlert,
+  });
 
   // ---- 名前変更 ----
   // フォルダ1件 → フォルダ名変更（mv の rename 相当）。アイテム1件 → アイテム自体の name 変更。

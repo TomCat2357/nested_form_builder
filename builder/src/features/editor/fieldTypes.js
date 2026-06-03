@@ -1,4 +1,4 @@
-import { deepClone, cleanUnusedFieldProperties, supportsChildren, normalizeWebhookAction, DEFAULT_TEXT_MAX_LENGTH, DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
+import { deepClone, cleanUnusedFieldProperties, supportsChildren, normalizeWebhookAction, normalizeFormLinkSettings, DEFAULT_TEXT_MAX_LENGTH, DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { normalizePhoneSettings } from "../../core/phone.js";
@@ -128,8 +128,7 @@ export function handleTypeChange(field, newType, { getTempState, setTempState } 
       next.webhookAction = normalizeWebhookAction(next.webhookAction);
     }
     if (newType === FORM_LINK_TYPE) {
-      next.childFormId = typeof next.childFormId === "string" ? next.childFormId : "";
-      next.childFormPath = typeof next.childFormPath === "string" ? next.childFormPath : "";
+      normalizeFormLinkSettings(next);
     }
     if (newType === SUBSTITUTION_TYPE) {
       next.templateText = typeof next.templateText === "string" ? next.templateText : "";

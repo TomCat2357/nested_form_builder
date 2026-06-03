@@ -7,7 +7,7 @@ import {
   normalizePrintTemplateAction,
   resolvePrintTemplateFieldLabel,
 } from "../utils/printTemplateAction.js";
-import { checkNumberFieldConfig } from "./validate.js";
+import { checkNumberFieldConfig, NUMBER_MODES } from "./validate.js";
 export { countSchemaNodes };
 
 // Webhook 質問カードの設定を正規化する。{ url, adminOnly } の形に揃える。
@@ -90,8 +90,6 @@ const normalizeFiniteNumberSetting = (value) => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const NUMBER_MODES = ["unrestricted", "integer", "nonNegativeInteger", "naturalNumber"];
-
 const normalizeNumberMode = (field) => {
   if (NUMBER_MODES.includes(field.numberMode)) return field.numberMode;
   if (normalizeBooleanSetting(field.integerOnly, false)) return "integer";
@@ -110,6 +108,14 @@ const normalizeNumberFieldSettings = (field) => {
   if (maxValue === undefined) delete field.maxValue;
   else field.maxValue = maxValue;
 
+  return field;
+};
+
+// formLink フィールドの参照先（childFormId=対象fileId / childFormPath=表示用の論理パス）を
+// 文字列へ揃える。schema 正規化・型変更ハンドラで共有する。
+export const normalizeFormLinkSettings = (field) => {
+  field.childFormId = typeof field.childFormId === "string" ? field.childFormId : "";
+  field.childFormPath = typeof field.childFormPath === "string" ? field.childFormPath : "";
   return field;
 };
 
@@ -242,8 +248,7 @@ export const cleanUnusedFieldProperties = (field) => {
     delete field.webhookAction;
   }
   if (supportsFormLink) {
-    field.childFormId = typeof field.childFormId === "string" ? field.childFormId : "";
-    field.childFormPath = typeof field.childFormPath === "string" ? field.childFormPath : "";
+    normalizeFormLinkSettings(field);
   } else {
     delete field.childFormId;
     delete field.childFormPath;
@@ -376,8 +381,7 @@ export const normalizeSchemaIDs = (nodes) => {
       base.hideFromRecordView = !!base.hideFromRecordView;
     } else if (base.type === "formLink") {
       base.label = typeof base.label === "string" ? base.label : "";
-      base.childFormId = typeof base.childFormId === "string" ? base.childFormId : "";
-      base.childFormPath = typeof base.childFormPath === "string" ? base.childFormPath : "";
+      normalizeFormLinkSettings(base);
     }
 
     cleanUnusedFieldProperties(base);

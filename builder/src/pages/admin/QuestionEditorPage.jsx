@@ -4,6 +4,7 @@ import AppLayout from "../../app/components/AppLayout.jsx";
 import ConfirmDialog from "../../app/components/ConfirmDialog.jsx";
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
+import { useDirtyTracking } from "../../app/hooks/useDirtyTracking.js";
 import { useCancellable } from "../../app/hooks/useCancellable.js";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
@@ -98,8 +99,6 @@ export default function QuestionEditorPage() {
   const loadedQuestionIdRef = useRef(null);
 
   const unsavedDialog = useConfirmDialog();
-  const baselineRef = useRef(null);
-  const [isDirty, setIsDirty] = useState(false);
 
   useEffect(() => {
     if (!isAdmin) navigate("/", { replace: true });
@@ -385,16 +384,7 @@ export default function QuestionEditorPage() {
   }), [name, folder, mode, sql, gui, vizType, xField, yFields, heatmap, vizOptions, selectedFormId]);
 
   const baselineReady = !questionId || definitionLoaded;
-
-  useEffect(() => {
-    if (!baselineReady) return;
-    if (baselineRef.current === null) {
-      baselineRef.current = snapshot;
-      setIsDirty(false);
-      return;
-    }
-    setIsDirty(baselineRef.current !== snapshot);
-  }, [baselineReady, snapshot]);
+  const isDirty = useDirtyTracking(snapshot, baselineReady);
 
   useBeforeUnloadGuard(isDirty);
 

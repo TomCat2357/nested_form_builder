@@ -3,7 +3,7 @@ import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { hasScriptRun, importFormsFromDrive } from "../../services/gasClient.js";
 import { toUnixMs } from "../../utils/dateTime.js";
 import { normalizeFolderPath, countItemsUnder, folderExists } from "../../utils/folderTree.js";
-import { sanitizeFileBaseName, downloadJsonOrZip, resolveDialogTargetIds } from "./listActionsShared.js";
+import { sanitizeFileBaseName, downloadJsonOrZip, resolveDialogTargetIds, createMoveActions } from "./listActionsShared.js";
 import { asPlainObject } from "../../utils/objectShape.js";
 
 const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
@@ -396,51 +396,24 @@ export function useAdminFormListActions({
   };
 
   // ---- 移動 ----
-  const handleMoveSelected = () => {
-    if (!hasScriptRun()) {
-      showAlert("移動はGoogle Apps Script環境でのみ利用可能です");
-      return;
-    }
-    const { formIds, folderPaths } = collectSelection();
-    if (!formIds.length && !folderPaths.length) {
-      showAlert("移動するフォームまたはフォルダを選択してください。");
-      return;
-    }
-    setMoveDest("");
-    setMoveError("");
-    moveDialog.open({ formIds, folderPaths, count: formIds.length + folderPaths.length });
-  };
-
-  const confirmMove = () => {
-    const formIds = Array.isArray(moveDialog.state.formIds) ? moveDialog.state.formIds : [];
-    const folderPaths = Array.isArray(moveDialog.state.folderPaths) ? moveDialog.state.folderPaths : [];
-    const destPath = normalizeFolderPath(moveDest);
-
-    // クライアント側の存在チェック（最終判定はサーバ）。空欄=最上位は常に許可。
-    if (destPath && !folderExists(registeredFolders, destPath)) {
-      setMoveError(`移動先フォルダ「${destPath}」が存在しません`);
-      return;
-    }
-    // フォルダを自身/配下へ移動しようとしていないか
-    for (const old of folderPaths) {
-      const o = normalizeFolderPath(old);
-      if (destPath === o || destPath.startsWith(o + "/")) {
-        setMoveError(`フォルダ「${o}」を自身またはその配下へは移動できません`);
-        return;
-      }
-    }
-
-    // ダイアログを先に閉じ、GAS はバックグラウンドで実行（完了後にリスト自動更新）。
-    if (formIds.length) clearSelectionByIds(formIds);
-    if (folderPaths.length && clearFolderSelection) clearFolderSelection();
-    moveDialog.reset();
-    setMoveDest("");
-    setMoveError("");
-    moveItems({ formIds, folderPaths, destPath }).catch((error) => {
-      console.error("[AdminFormList] Move failed:", error);
-      showAlert(error?.message || "移動に失敗しました");
-    });
-  };
+  const { handleMoveSelected, confirmMove } = createMoveActions({
+    idsKey: "formIds",
+    collectSelection: () => {
+      const { formIds, folderPaths } = collectSelection();
+      return { ids: formIds, folderPaths };
+    },
+    emptySelectionMessage: "移動するフォームまたはフォルダを選択してください。",
+    moveDialog,
+    moveDest,
+    setMoveDest,
+    setMoveError,
+    registeredFolders,
+    moveItems,
+    clearSelectionByIds,
+    clearFolderSelection,
+    showAlert,
+    onError: (error) => console.error("[AdminFormList] Move failed:", error),
+  });
 
   // ---- 名前変更 ----
   // フォルダ1件 → フォルダ名変更（mv の rename 相当。親は保持し leaf 名だけ変える）。

@@ -189,9 +189,7 @@ function SyncRecords_(ctx) {
             rowFormats[2] = NFB_SHEETS_DATETIME_FORMAT;
             rowData[5] = insertMeta.createdBy;
             // URL で pid 指定中の新規行には、その pid を必ず刻む（親レコードへの所属）。
-            if (pid && fixedColMap.hasOwnProperty("pid") && fixedColMap.pid >= 0 && fixedColMap.pid < lastColumn) {
-              rowData[fixedColMap.pid] = Sheets_neutralizeFormulaPrefix_(pid);
-            }
+            Sheets_stampPid_(rowData, fixedColMap.hasOwnProperty("pid") ? fixedColMap.pid : -1, pid, lastColumn);
             maxNo = Math.max(maxNo, insertMeta.recordNo);
 
             localIndex = existingData.length;
