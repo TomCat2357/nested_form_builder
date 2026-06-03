@@ -574,6 +574,8 @@ export default function AdminAnalyticsListPage({
         onConfirm={confirmMove}
         onCancel={closeMoveDialog}
         error={moveError}
+        folders={registeredFolders}
+        excludePaths={moveDialogState.folderPaths}
       />
 
       <AdminFolderNameDialog

@@ -83,23 +83,35 @@ export function PlaceholderInput({
   );
 }
 
-// 補足コメント入力。プレースホルダーを書けない（placeholder 非対応の）質問カード向け。
-// 空文字は schema 正規化で prune されるため、トグルは設けず常時テキストエリアを出す。
 export function SupplementaryCommentInput({ field, onChange, onFocus }) {
+  const showComment = !!field.showSupplementaryComment;
   return (
     <div className="nf-mt-8">
-      <label className="nf-text-12 nf-fw-600 nf-mb-4 nf-block">補足コメント（任意）</label>
-      <textarea
-        className={s.input.className}
-        placeholder="例: 記入時の注意事項などを表示できます"
-        rows={2}
-        value={field.supplementaryComment || ""}
-        onChange={(event) => onChange({ ...field, supplementaryComment: event.target.value })}
-        onFocus={onFocus}
-      />
-      <div className="nf-text-11 nf-text-muted nf-mt-4">
-        質問のラベル下に表示されます（改行はそのまま反映されます）。
-      </div>
+      <label className={`nf-row nf-gap-6${showComment ? " nf-mb-4" : ""}`}>
+        <input
+          type="checkbox"
+          checked={showComment}
+          onChange={(event) => {
+            onChange({ ...field, showSupplementaryComment: event.target.checked });
+          }}
+        />
+        補足コメント（任意）
+      </label>
+      {showComment && (
+        <>
+          <textarea
+            className={s.input.className}
+            placeholder="例: 記入時の注意事項などを表示できます"
+            rows={2}
+            value={field.supplementaryComment || ""}
+            onChange={(event) => onChange({ ...field, supplementaryComment: event.target.value })}
+            onFocus={onFocus}
+          />
+          <div className="nf-text-11 nf-text-muted nf-mt-4">
+            質問のラベル下に表示されます（改行はそのまま反映されます）。
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -375,12 +387,15 @@ export function NumberSettingsInput({ field, onChange, onFocus }) {
     onChange(nextField);
   };
 
-  // モード切替時、下限を持つモード（０と自然数 / 自然数）は最小値が空なら初期値を入れる。
+  // モード切替時、下限を持つモード（０と自然数 / 自然数）は最小値が不正（未設定・小数・floor 未満）なら floor 値に強制する。
   const handleModeChange = (nextMode) => {
     const nextField = { ...field, numberMode: nextMode };
-    const minDefault = NUMBER_MODE_CONFIG[nextMode]?.minDefault;
-    if (minDefault !== null && minDefault !== undefined && nextField.minValue == null) {
-      nextField.minValue = minDefault;
+    const floor = NUMBER_MODE_CONFIG[nextMode]?.floor;
+    if (floor !== null && floor !== undefined) {
+      const current = nextField.minValue;
+      if (current == null || !Number.isInteger(current) || current < floor) {
+        nextField.minValue = floor;
+      }
     }
     onChange(nextField);
   };
@@ -401,8 +416,8 @@ export function NumberSettingsInput({ field, onChange, onFocus }) {
           </label>
         ))}
       </div>
-      <div className="nf-row nf-gap-8 nf-mt-8" style={{ flexWrap: "nowrap" }}>
-        <div className="nf-flex-1 nf-min-w-0">
+      <div className="nf-row nf-gap-8 nf-mt-8">
+        <div style={{ maxWidth: "160px", flex: "1 1 0" }}>
           <label className="nf-text-12 nf-mb-2 nf-text-subtle">最小値</label>
           <input
             type="number"
@@ -413,7 +428,7 @@ export function NumberSettingsInput({ field, onChange, onFocus }) {
             onFocus={onFocus}
           />
         </div>
-        <div className="nf-flex-1 nf-min-w-0">
+        <div style={{ maxWidth: "160px", flex: "1 1 0" }}>
           <label className="nf-text-12 nf-mb-2 nf-text-subtle">最大値</label>
           <input
             type="number"

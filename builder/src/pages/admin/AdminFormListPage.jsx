@@ -562,6 +562,8 @@ export default function AdminFormListPage() {
         onConfirm={confirmMove}
         onCancel={closeMoveDialog}
         error={moveError}
+        folders={registeredFolders}
+        excludePaths={moveDialogState.folderPaths}
       />
 
       <AdminFolderNameDialog

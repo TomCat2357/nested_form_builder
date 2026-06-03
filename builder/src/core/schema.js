@@ -220,6 +220,9 @@ export const cleanUnusedFieldProperties = (field) => {
       || !field.supplementaryComment.trim()) {
     delete field.supplementaryComment;
   }
+  if (!supportsSupplementaryComment(type)) {
+    delete field.showSupplementaryComment;
+  }
   if (!supportsSearchAndPrintExclusion) {
     delete field.excludeFromSearchAndPrint;
   } else {
