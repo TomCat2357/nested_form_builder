@@ -13,6 +13,7 @@ import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../core/constants.js";
 import { restoreResponsesFromData } from "../utils/responses.js";
 import { DriveFolderFinalizeError } from "./formPageSaveHandler.js";
 import { toResponseObject } from "./formPageHelpers.js";
+import { selectFormLinkCopyTargets, copyChildRecordsForLinks } from "./childRecordCopy.js";
 
 /**
  * 戻る系ナビゲーション。
@@ -166,6 +167,7 @@ export async function performFormPageTriggerSave(args, ctx) {
     location,
     previewRef,
     pendingUnlinkSaveRef,
+    pendingChildRecordCopyRef,
     unlinkFolderDialog,
     setIsSaving,
     setMode,
@@ -187,6 +189,25 @@ export async function performFormPageTriggerSave(args, ctx) {
     if (!preview) throw new Error("preview_not_ready");
     const result = await preview.submit({ silent: true, unlinkDriveFolder });
     const savedId = String(preview.getRecordId?.() || result?.id || currentRecordId || entryId || "").trim();
+
+    // 新規レコード保存後、formLink でコピー予約された子レコードを子フォームへ複製する
+    // （pid == 新しい親レコードの id）。ナビゲーション前に直列実行する。
+    const pendingChildCopy = pendingChildRecordCopyRef?.current;
+    if (!entryId && savedId && pendingChildCopy?.links?.length) {
+      try {
+        await copyChildRecordsForLinks({
+          pending: pendingChildCopy,
+          newParentId: savedId,
+          showToast,
+          showAlert,
+        });
+      } catch (childCopyError) {
+        console.error("[FormPage] child record copy failed:", childCopyError);
+        showAlert(`子レコードのコピーに失敗しました: ${childCopyError?.message || childCopyError}`);
+      } finally {
+        if (pendingChildRecordCopyRef) pendingChildRecordCopyRef.current = null;
+      }
+    }
 
     if (stayAsView) {
       if (!skipStayAsViewNavigation) {
@@ -273,6 +294,7 @@ export async function performFormPageFetchCopySource(ctx) {
     showAlert,
     setIsCopySourceLoading,
     setCopySourceResponses,
+    setCopySourceRecordId,
     setIsCopyDialogOpen,
   } = ctx;
 
@@ -296,6 +318,11 @@ export async function performFormPageFetchCopySource(ctx) {
     }
     const restored = restoreResponsesFromData(normalizedSchema, sourceData.data || {}, sourceData.dataUnixMs || {});
     setCopySourceResponses(restored);
+    // 確定したコピー元 id を保持する（copySourceId 入力欄は後で編集され得るため別途記録）。
+    // formLink 子レコードの複製で pid フィルタに使う。
+    if (typeof setCopySourceRecordId === "function") {
+      setCopySourceRecordId(String(sourceData.id || sourceId));
+    }
     setIsCopyDialogOpen(true);
   } catch (error) {
     console.error("[FormPage] failed to fetch source record for copy:", error);
@@ -312,6 +339,8 @@ export function performFormPageConfirmRecordCopy(selectedFieldIds, ctx) {
   const {
     topLevelFieldMap,
     copySourceResponses,
+    copySourceRecordId,
+    pendingChildRecordCopyRef,
     commitResponses,
     setIsCopyDialogOpen,
     showAlert,
@@ -322,6 +351,16 @@ export function performFormPageConfirmRecordCopy(selectedFieldIds, ctx) {
   if (!selectedIds.length) {
     showAlert("コピーする項目を選択してください");
     return;
+  }
+
+  // 選択された formLink 項目は「保存後にまとめて子レコードを複製する」保留タスクとして記録する。
+  // （formLink は値を持たないため、下の値マージ処理では何もコピーされない。）
+  const formLinkTargets = selectFormLinkCopyTargets(selectedIds, topLevelFieldMap);
+  const sourceRecordId = String(copySourceRecordId || "").trim();
+  if (pendingChildRecordCopyRef) {
+    pendingChildRecordCopyRef.current = (formLinkTargets.length > 0 && sourceRecordId)
+      ? { sourceRecordId, links: formLinkTargets }
+      : null;
   }
 
   const copyTargetFieldIds = {};
@@ -353,8 +392,13 @@ export function performFormPageConfirmRecordCopy(selectedFieldIds, ctx) {
   setIsCopyDialogOpen(false);
 
   const copiedCount = Object.keys(filteredResponses).length;
+  const hasPendingChildCopy = Boolean(pendingChildRecordCopyRef?.current?.links?.length);
   if (copiedCount > 0) {
-    showToast(`${copiedCount} 項目をコピーしました`);
+    showToast(hasPendingChildCopy
+      ? `${copiedCount} 項目をコピーしました（子レコードは保存時にコピーします）`
+      : `${copiedCount} 項目をコピーしました`);
+  } else if (hasPendingChildCopy) {
+    showToast("子レコードは保存時にコピーします");
   } else {
     showAlert("コピー対象の回答が見つかりませんでした");
   }
