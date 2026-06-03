@@ -6,7 +6,7 @@ import ChartStyleControls, { isChartStyleSupported } from "./ChartStyleControls.
 import ResizablePreview from "./ResizablePreview.jsx";
 import { CHART_AXIS_REQUIREMENTS, VIZ_TYPES } from "../utils/suggestChartType.js";
 import { filterDisplayColumns, getColumnDisplayLabel, resolveColumnKey, rawYFieldsToDisplay, displayYFieldsToRaw } from "../utils/metaColumnDisplay.js";
-import { detectColumnType, getValueColumnsForAgg } from "../utils/columnValueInference.js";
+import { detectColumnType, getValueColumnsForAgg, getValueColumnsFromColumns } from "../utils/columnValueInference.js";
 import { AGG_TYPE_MATRIX } from "../utils/aggregationCompatibility.js";
 import { detectAxisTypes } from "../utils/axisTypes.js";
 
@@ -48,18 +48,17 @@ export default function VisualizePanel({
     [result]
   );
 
-  // 候補となる条件 (detectColumnType に委譲):
+  // 候補となる条件 (getValueColumnsFromColumns → detectColumnType に委譲):
   //   1. compiledColumns の type / role (compileStages または inferCompiledColumnsFromSql が構築)
   //   2. result.fallbackTypeMap (フォーム schema 由来の AlaSQL safe key → 型) — compiledColumns で
-  //      解決できなかった列の補完。SQL モードで複合式の出力列はここでも解決できないため degrade する。
+  //      解決できなかった列の補完。
   //   3. FIXED_DATE_KEYS (createdAt 等) は常に date
-  //   4. それ以外は型不明 → 候補から外れて UI は自由入力に degrade
-  const valueColumns = useMemo(() => {
-    return availableColumns.filter((name) => {
-      const t = detectColumnType(compiledColumns, name, fallbackTypeMap);
-      return t === "number" || t === "date";
-    });
-  }, [compiledColumns, availableColumns, fallbackTypeMap]);
+  //   4. 上記いずれでも型不明な列のみ、result.rows の実値から数値/日付を推定して補完する
+  //      （SQL の別名なし集計・複合式の出力列など schema にマッピングできない列の救済）。
+  const valueColumns = useMemo(
+    () => getValueColumnsFromColumns(availableColumns, compiledColumns, fallbackTypeMap, result?.rows),
+    [compiledColumns, availableColumns, fallbackTypeMap, result]
+  );
 
   // 軸スケール UI 用の x/y 軸型と表示フラグ。yFields 未指定時はエディタでは軸 UI を出さない (yTypeWhenEmpty: null)。
   const { xAxisType, yAxisType, showAxis: showAxisControls, showX: showAxisX, showY: showAxisY } = useMemo(
