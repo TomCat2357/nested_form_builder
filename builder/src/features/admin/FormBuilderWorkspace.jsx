@@ -41,26 +41,47 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     runSelfTests();
   }, []);
 
-  // initialSchema/initialSettingsが変わったら、リセット
+  // initialSchema/initialSettings が変わったらベースラインを再初期化する。
+  // ただし「編集中（内部 schema/settings がベースラインと相違）」のときは、遅延更新などの
+  // 外部 props 変化で作業コピーを破棄しない。clean のときだけ取り込む（作業コピーの最終防御線）。
   useEffect(() => {
     const normalized = normalizeSchemaIDs(initialSchema || []);
-    const previousSchemaNodeCount = countSchemaNodes(initialSchemaRef.current);
-    const nextSchemaNodeCount = countSchemaNodes(normalized);
-    if (previousSchemaNodeCount > 0 || nextSchemaNodeCount > 0 || initialSchemaRef.current !== null) {
-      console.log("[FormBuilderWorkspace] reset from incoming props", {
-        previousSchemaNodeCount,
-        nextSchemaNodeCount,
-      });
-    }
-    setSchema(normalized);
     const mergedSettings = { ...DEFAULT_SETTINGS, ...(initialSettings || {}) };
+
+    // ベースラインが実質同一なら何もしない（同期チャーンでの不要な再初期化を防ぐ）。
+    if (
+      initialSchemaRef.current !== null &&
+      deepEqual(initialSchemaRef.current, normalized) &&
+      deepEqual(omitThemeSetting(initialSettingsRef.current), omitThemeSetting(mergedSettings))
+    ) {
+      return;
+    }
+
+    // 初期化済みで、かつ編集中（内部状態がベースラインと相違）なら上書きしない＝編集を守る。
+    if (isInitialized && initialSchemaRef.current !== null) {
+      const schemaDirty = !deepEqual(initialSchemaRef.current, schema);
+      const settingsDirty = !deepEqual(omitThemeSetting(initialSettingsRef.current), omitThemeSetting(settings));
+      if (schemaDirty || settingsDirty) {
+        console.log("[FormBuilderWorkspace] keep working copy; skip reset during dirty edit", {
+          cachedSchemaNodeCount: countSchemaNodes(schema),
+          incomingSchemaNodeCount: countSchemaNodes(normalized),
+        });
+        return;
+      }
+    }
+
+    console.log("[FormBuilderWorkspace] reset from incoming props", {
+      previousSchemaNodeCount: countSchemaNodes(initialSchemaRef.current),
+      nextSchemaNodeCount: countSchemaNodes(normalized),
+    });
+    setSchema(normalized);
     setSettings((prev) => (deepEqual(prev, mergedSettings) ? prev : mergedSettings));
 
     initialSchemaRef.current = normalized;
     initialSettingsRef.current = mergedSettings;
     setIsInitialized(true);
     onDirtyChange?.(false);
-  }, [initialSchema, initialSettings, onDirtyChange]);
+  }, [initialSchema, initialSettings, onDirtyChange, isInitialized, schema, settings]);
 
   // schema/settingsが変わったらdirty判定（初期化完了後のみ）
   useEffect(() => {
@@ -162,8 +183,16 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
       updateSetting: updateSetting,
       setMode: setActiveTab,
       getQuestionControl: () => questionControl,
+      // 親（AdminFormEditorPage）が外部更新の取り込み可否を判断するための同期 dirty 判定。
+      // 派生フラグの遅延に依存せず、内部状態を直接ベースラインと比較する。
+      isDirty: () => {
+        if (!isInitialized || initialSchemaRef.current === null) return false;
+        const schemaDirty = !deepEqual(initialSchemaRef.current, schema);
+        const settingsDirty = !deepEqual(omitThemeSetting(initialSettingsRef.current), omitThemeSetting(settings));
+        return schemaDirty || settingsDirty;
+      },
     }),
-    [handleSave, commitSavedState, schema, settings, updateSetting, questionControl],
+    [handleSave, commitSavedState, schema, settings, updateSetting, questionControl, isInitialized],
   );
 
   const previewSettings = useMemo(

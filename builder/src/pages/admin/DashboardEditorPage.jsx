@@ -102,6 +102,8 @@ export default function DashboardEditorPage() {
     return Array.from(byKey.values());
   }, [dashboard.cards, questionsById, forms]);
 
+  // Question 一覧は初回のみロード（deps []）。背景リフレッシュで再ロードせず、編集中に
+  // 参照解決（questionsById 経由のカード表示）が裏で揺れないようにする保護。
   useCancellable(async (isCancelled) => {
     try {
       const qs = await listQuestions();
@@ -113,6 +115,8 @@ export default function DashboardEditorPage() {
     }
   }, []);
 
+  // dashboard 本体は dashboardId ごとに 1 回だけロード（deps [dashboardId]）。遅延更新で
+  // setDashboard を再実行せず、編集中の作業コピー（dashboard ドラフト）を潰さないための保護。
   useCancellable(async (isCancelled) => {
     if (!dashboardId) {
       setDashboard(createEmptyV2({ id: null }));

@@ -88,7 +88,10 @@ export default function AdminFormEditorPage() {
       return;
     }
 
-    if (isDirtyRef.current) {
+    // useLatestRef は 1 コミット遅れるため、同レンダーの isDirty 変数（meta 同期）と
+    // ビルダーの同期 isDirty()（builder 同期）を併用し、「編集開始直後でフラグ未伝播」の
+    // 窓でも作業コピーを取り込みで潰さない。
+    if (isDirty || builderRef.current?.isDirty?.()) {
       console.log("[AdminFormEditorPage] defer applying refreshed form during dirty edit", {
         formId,
         cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
@@ -121,7 +124,7 @@ export default function AdminFormEditorPage() {
       });
       return;
     }
-    if (isDirtyRef.current) {
+    if (isDirty || builderRef.current?.isDirty?.()) {
       console.log("[AdminFormEditorPage] defer applying form meta during dirty edit", {
         formId,
         cachedSchemaNodeCount: countSchemaNodes(form?.schema),
@@ -146,7 +149,7 @@ export default function AdminFormEditorPage() {
     loadingForms,
     refreshForms,
     label: "admin-form-editor",
-    shouldSkip: () => isSavingRef.current || isReadLockedRef.current || isDirtyRef.current,
+    shouldSkip: () => isSavingRef.current || isReadLockedRef.current || isDirtyRef.current || !!builderRef.current?.isDirty?.(),
     onRefresh: async (source, cacheDecision) => {
       await withReadLock(async () => {
         console.log("[AdminFormEditorPage] run refreshForms from operation trigger", {
