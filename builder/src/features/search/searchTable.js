@@ -6,6 +6,7 @@ import {
 } from "../../utils/dateTime.js";
 import { MAX_DEPTH as MAX_HEADER_DEPTH } from "../../core/constants.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
+import { forEachFormField, extractOptionOrder } from "../analytics/utils/fieldMetas.js";
 import { getPrintTemplateOutputLabel, normalizePrintTemplateAction } from "../../utils/printTemplateAction.js";
 import {
   columnType,
@@ -368,6 +369,52 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
   const columns = [...metaColumns, ...parentColumns];
   if (includeOperations) columns.push(actionsColumn);
   return columns;
+};
+
+// 簡易検索の式生成でだけ補う「スキーマ全フィールド列」から除外する型。
+// 値列を生成しないアクション/表示専用フィールド（buildSearchColumns の判定と整合）。
+const SIMPLE_SEARCH_EXTRA_SKIP_TYPES = new Set(["webhook", "printTemplate", "formLink", "message"]);
+
+/**
+ * 簡易検索（プレフィックスなし）の式生成にだけ渡す列集合を作る。
+ *
+ * 背景: 検索評価行（entriesToViewTableRows）はスキーマ全フィールドのキーを持つが、
+ * 表示列（buildSearchColumns = isDisplayed なフィールド）には「表示列に設定していない
+ * 深いネストフィールド」が含まれない。そのため裸単語の全列 OR（columnlessOr）や
+ * リーフ名での `列名:値` 解決（matchColumnName）がそれらに届かず、フルパス指定でしか
+ * ヒットしなかった（行キーへのフォールスルー頼み）。参照実装 matchesKeyword は
+ * 全 entry.data を横断するため、これは簡易検索フィルタ側のパリティ崩れだった。
+ *
+ * ここでは表示列（baseColumns）を土台に、未カバーの pipePath を持つフィールドぶんの
+ * 軽量列（createDisplayColumn）を補って superset を返す。表示列は richer なメタ
+ * （searchAliases / getValue / printTemplate 等）を持つため pipePath が衝突する場合は
+ * 表示列を優先する（先勝ち）。表示・ソート・値計算には使わず、式生成専用。
+ *
+ * @param {object} form スキーマ走査用フォーム本体
+ * @param {Array<object>} baseColumns 表示列ベースの検索列（searchColumns）
+ * @returns {Array<object>}
+ */
+export const buildSimpleSearchColumns = (form, baseColumns = []) => {
+  const base = Array.isArray(baseColumns) ? baseColumns : [];
+  const coveredPaths = new Set();
+  base.forEach((column) => {
+    if (column && column.path) coveredPaths.add(String(column.path));
+  });
+  const extras = [];
+  forEachFormField(form, ({ field, pipePath, segs }) => {
+    if (!pipePath || coveredPaths.has(pipePath)) return;
+    const type = field?.type || "";
+    if (SIMPLE_SEARCH_EXTRA_SKIP_TYPES.has(type)) return;
+    if (type === "substitution" && field?.excludeFromSearch === true) return;
+    coveredPaths.add(pipePath);
+    extras.push(createDisplayColumn(pipePath, type, {
+      segments: segs,
+      optionOrder: extractOptionOrder(field),
+      fieldId: field?.id || "",
+      timePrecision: type === "time" ? (field?.timePrecision || "second") : "",
+    }));
+  });
+  return extras.length ? [...base, ...extras] : base;
 };
 
 const normalizeHeaderLabel = (value) => (value === null || value === undefined ? "" : String(value));

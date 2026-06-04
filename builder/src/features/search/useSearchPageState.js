@@ -11,7 +11,7 @@ import {
   buildComputedFieldPathsById,
 } from "../../core/computedFields.js";
 import { buildBackfilledRecord } from "./backfillComputedValues.js";
-import { buildSearchTableLayout, buildHeaderRowsLayout, createHitExcerptColumn, createBaseColumns, DEFAULT_HIT_COLUMN_MIN_WIDTH } from "./searchTable.js";
+import { buildSearchTableLayout, buildHeaderRowsLayout, createHitExcerptColumn, createBaseColumns, buildSimpleSearchColumns, DEFAULT_HIT_COLUMN_MIN_WIDTH } from "./searchTable.js";
 import { buildExportTableData } from "./searchExport.js";
 import { hasScriptRun, listRecordsByPids } from "../../services/gasClient.js";
 import { buildChildFormUrl } from "../../utils/formShareUrl.js";
@@ -149,6 +149,16 @@ export function useSearchPageState({
     const hiddenMeta = createBaseColumns().filter((column) => !presentKeys.has(column.key));
     return hiddenMeta.length ? [...columns, ...hiddenMeta] : columns;
   }, [columns]);
+
+  // 簡易検索（プレフィックスなし）の式生成専用の列集合。表示列に設定していない
+  // 深いネストフィールドにも裸単語 / `列名:値`（リーフ名）が届くよう、スキーマ全
+  // フィールドぶんを補った superset。評価行（entriesToViewTableRows）は元々全
+  // フィールドのキーを持つので、ここで列側を揃えるとフルパス指定でなくてもヒットする。
+  // 値計算 / ソート / ヒット抜粋 / 厳密モードには searchColumns を使い続ける。
+  const simpleSearchColumns = useMemo(
+    () => buildSimpleSearchColumns(form, searchColumns),
+    [form, searchColumns],
+  );
 
   // 簡易検索モード（キーワード入力あり かつ SEARCH/WHERE 厳密モードでない）のときだけ
   // 「検索ヒット箇所」列を最左に挿入する。
@@ -292,7 +302,11 @@ export function useSearchPageState({
     //   評価行は simpleSearchRows（常に view 形式）。
     // いずれも preprocessAlaSqlExpression → filterRowsByExpr（SELECT * FROM ? WHERE <expr>）で評価。
     const isStrict = STRICT_PREFIX_RE.test(keyword);
-    const { expr, errors } = buildSearchExpression(keyword, searchColumns);
+    // 簡易モードはスキーマ全フィールドを横断できる superset（simpleSearchColumns）を使う。
+    // 厳密モード（SEARCH/WHERE）は従来どおり表示列ベース（列無し述語の OR 展開範囲も含め
+    // 振る舞いを変えない。明示的な列参照は行キーへのフォールスルーで全フィールドに届く）。
+    const exprColumns = isStrict ? searchColumns : simpleSearchColumns;
+    const { expr, errors } = buildSearchExpression(keyword, exprColumns);
     if (errors && errors.length > 0) {
       setFilteredEntries([]);
       setFilterError(errors.join(", "));
@@ -331,7 +345,7 @@ export function useSearchPageState({
       setFilterError("検索エラー: " + (err && err.message ? err.message : String(err)));
       setFilteredEntries(baseFilteredEntries);
     }
-  }, [baseFilteredEntries, searchColumns, query, searchableTableRows, simpleSearchRows, form]);
+  }, [baseFilteredEntries, searchColumns, simpleSearchColumns, query, searchableTableRows, simpleSearchRows, form]);
 
   const sortedEntries = useMemo(() => {
     const list = filteredEntries.slice();
