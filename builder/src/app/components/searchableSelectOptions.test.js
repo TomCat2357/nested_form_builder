@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formsToOptions, questionsToOptions } from "./searchableSelectOptions.js";
+import { formsToOptions, questionsToOptions, columnsToOptions } from "./searchableSelectOptions.js";
 
 // formQualifiedName は settings.formTitle（無ければ name）+ folder からフォルダ込み名を作る。
 const mkForm = (id, title, folder) => ({ id, settings: { formTitle: title }, folder });
@@ -53,4 +53,24 @@ test("questionsToOptions は null / id 欠落の要素をスキップする", ()
 test("questionsToOptions は非配列入力で空配列を返す", () => {
   assert.deepEqual(questionsToOptions(undefined), []);
   assert.deepEqual(questionsToOptions(null), []);
+});
+
+test("columnsToOptions は通常列を value=key / label=key / folder=空文字 にする", () => {
+  const opts = columnsToOptions([{ key: "基本情報|区", label: "区", isMeta: false }]);
+  assert.deepEqual(opts, [{ value: "基本情報|区", label: "基本情報|区", folder: "" }]);
+});
+
+test("columnsToOptions はメタ列の label に（メタ）を付ける", () => {
+  const opts = columnsToOptions([{ key: "createdAt", label: "作成日時", isMeta: true }]);
+  assert.deepEqual(opts, [{ value: "createdAt", label: "createdAt（メタ）", folder: "" }]);
+});
+
+test("columnsToOptions は key 欠落の要素をスキップする", () => {
+  const opts = columnsToOptions([null, { label: "x" }, { key: "氏名", label: "氏名" }]);
+  assert.deepEqual(opts, [{ value: "氏名", label: "氏名", folder: "" }]);
+});
+
+test("columnsToOptions は非配列入力で空配列を返す", () => {
+  assert.deepEqual(columnsToOptions(undefined), []);
+  assert.deepEqual(columnsToOptions(null), []);
 });

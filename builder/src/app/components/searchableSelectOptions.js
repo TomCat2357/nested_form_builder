@@ -45,3 +45,23 @@ export function questionsToOptions(questions) {
     .filter((q) => q && q.id)
     .map((q) => ({ value: q.id, label: joinFolderPath(q.folder, q.name) || q.id, folder: q.folder || "" }));
 }
+
+/**
+ * getFormColumns() の列メタ配列を SearchableSelect の option[] に変換する純関数。
+ * value = 列の pipe-path（key）。SQL 内で [列名] として参照する識別子そのもので、
+ * コピーするトークンとも一致する。
+ * label も key（フルパス）を使う：葉ラベルは別グループで重複しうるので、フルパスを
+ * 表示かつ検索対象にして曖昧さを排除する。メタ列（id / No. / createdAt 等）は
+ * 「（メタ）」を付けて識別できるようにする。
+ * folder は持たないので空文字（sortAndFilterOptions は label 昇順で安定整列）。
+ * key 欠落の要素はスキップ、非配列入力は空配列を返す。
+ */
+export function columnsToOptions(columns) {
+  return (Array.isArray(columns) ? columns : [])
+    .filter((c) => c && c.key)
+    .map((c) => ({
+      value: c.key,
+      label: c.isMeta ? c.key + "（メタ）" : c.key,
+      folder: "",
+    }));
+}
