@@ -87,6 +87,47 @@ test("ListRecords_: pid 指定でその pid の行だけ返す", () => {
   assert.deepEqual(Array.from(result.records, (r) => r.id).sort(), ["r1", "r3"]);
 });
 
+test("Nfb_resolvePidsFromCtx_: 配列を trim、非配列/空は空配列", () => {
+  const ctx = loadFilterContext();
+  // VM 越しの配列はプロトタイプが異なるため Array.from で同レルムへ写してから比較する。
+  assert.deepEqual(Array.from(ctx.Nfb_resolvePidsFromCtx_({ raw: { pids: [" p100 ", "p200", "", null] } })), ["p100", "p200"]);
+  assert.deepEqual(Array.from(ctx.Nfb_resolvePidsFromCtx_({ raw: { pids: [] } })), []);
+  assert.deepEqual(Array.from(ctx.Nfb_resolvePidsFromCtx_({ raw: { pids: "p100" } })), []);
+  assert.deepEqual(Array.from(ctx.Nfb_resolvePidsFromCtx_({ raw: {} })), []);
+  assert.deepEqual(Array.from(ctx.Nfb_resolvePidsFromCtx_({})), []);
+});
+
+test("Nfb_recordMatchesPids_: pidsSet のいずれかに一致", () => {
+  const ctx = loadFilterContext();
+  const set = { p100: true, p200: true };
+  assert.equal(ctx.Nfb_recordMatchesPids_(recA, set), true);
+  assert.equal(ctx.Nfb_recordMatchesPids_(recB, set), true);
+  assert.equal(ctx.Nfb_recordMatchesPids_({ id: "x", pid: "p999" }, set), false);
+  assert.equal(ctx.Nfb_recordMatchesPids_({ id: "x", pid: 100 }, { "100": true }), true);
+});
+
+test("ListRecords_: pids 配列で OR 一括取得（複数 pid の行をまとめて返す）", () => {
+  const ctx = loadFilterContext({ isAdmin: true });
+  ctx.__testRecords = [recA, recB, recC];
+  const result = ctx.ListRecords_({
+    spreadsheetId: "ss1", sheetName: "Data", forceFullSync: true,
+    raw: { authKey: "ADMIN_KEY", pids: ["p100", "p200"] },
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(Array.from(result.records, (r) => r.id).sort(), ["r1", "r2", "r3"]);
+});
+
+test("ListRecords_: pids が空配列なら単一 pid パスにフォールバック", () => {
+  const ctx = loadFilterContext({ isAdmin: true });
+  ctx.__testRecords = [recA, recB, recC];
+  const result = ctx.ListRecords_({
+    spreadsheetId: "ss1", sheetName: "Data", forceFullSync: true,
+    raw: { authKey: "ADMIN_KEY", pids: [], pid: "p200" },
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(Array.from(result.records, (r) => r.id), ["r2"]);
+});
+
 test("ListRecords_: pid 未指定なら全件", () => {
   const ctx = loadFilterContext({ isAdmin: true });
   ctx.__testRecords = [recA, recB, recC];

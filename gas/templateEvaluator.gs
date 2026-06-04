@@ -330,6 +330,27 @@ function nfbTplBuildFileUploadRowEntries_(fieldPaths, fileUploadMeta) {
 }
 
 /**
+ * `{ fid: path }` + `{ fid: childObj }` から `{ path: childObj }` を作る。
+ * CHILD_FORM_NAME / CHILD_FORM_ID / CHILD_FORM_URL / CHILD_FORM_COUNT UDF が
+ * row[path] を合成オブジェクト（{ childFormId, childFormName, childFormUrl, count, records }）
+ * として読むので、formLink 項目のパスにそのまま載せる。
+ */
+function nfbTplBuildChildFormRowEntries_(fieldPaths, childFormMeta) {
+  var paths = nfbPlainObject_(fieldPaths);
+  var metaByFid = nfbPlainObject_(childFormMeta);
+  var out = {};
+  for (var fid in paths) {
+    if (!Object.prototype.hasOwnProperty.call(paths, fid)) continue;
+    var path = paths[fid];
+    if (!path || Object.prototype.hasOwnProperty.call(out, path)) continue;
+    var obj = metaByFid[fid];
+    if (!obj || typeof obj !== "object") continue;
+    out[path] = obj;
+  }
+  return out;
+}
+
+/**
  * `{ fid: path }` + `{ fid: rawValue }` + meta から `{ path: value }` を組む。
  * fieldValues に値がある fid は応答整形済み、ない fid だけが responses から来る。
  * 数値・真偽値はそのまま（式の `+` / 比較で型が保たれるように — フロント
@@ -399,6 +420,7 @@ function nfbBuildTemplateRow_(context, options) {
   }
   var baseMap = hasDataValues ? dataValues : labelValueMap;
   var fileEntries = nfbTplBuildFileUploadRowEntries_(ctx.fieldPaths, ctx.fileUploadMeta);
+  var childEntries = nfbTplBuildChildFormRowEntries_(ctx.fieldPaths, ctx.childFormMeta);
 
   var row = {};
   for (var k in baseMap) {
@@ -406,6 +428,10 @@ function nfbBuildTemplateRow_(context, options) {
   }
   for (var k2 in fileEntries) {
     if (Object.prototype.hasOwnProperty.call(fileEntries, k2)) row[k2] = fileEntries[k2];
+  }
+  // 子フォーム合成オブジェクトはオブジェクトのまま載せる（CHILD_FORM_* UDF が読む）。
+  for (var k3 in childEntries) {
+    if (Object.prototype.hasOwnProperty.call(childEntries, k3)) row[k3] = childEntries[k3];
   }
   // 予約値（現在時刻は alasql UDF NOW() を使うので行に注入しない）
   row._id = ctx.recordId ? String(ctx.recordId) : "";

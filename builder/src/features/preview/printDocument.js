@@ -293,6 +293,30 @@ export const collectFileUploadMeta = (fields, options = {}) => {
   return meta;
 };
 
+// includeChildData=ON の formLink 項目について、プリロード済みの子フォーム合成オブジェクトを
+// { fieldId: childObj } に整形する。childDataByFieldId（PreviewPage の childFormMeta）から
+// schema 上に実在する formLink フィールドの分だけ拾う（GAS の row 注入で path へ展開する）。
+export const collectChildFormMeta = (fields, childDataByFieldId = {}) => {
+  const meta = {};
+  const source = childDataByFieldId && typeof childDataByFieldId === "object" ? childDataByFieldId : {};
+  const walk = (flds) => {
+    (flds || []).forEach((field) => {
+      if (field?.type === "formLink" && field?.id && field.includeChildData === true) {
+        const obj = source[field.id];
+        if (obj && typeof obj === "object") meta[field.id] = obj;
+      }
+      if (field?.childrenByValue) {
+        Object.values(field.childrenByValue).forEach(walk);
+      }
+      if (Array.isArray(field?.children)) {
+        walk(field.children);
+      }
+    });
+  };
+  walk(fields);
+  return meta;
+};
+
 const assignFieldValues = (fields, responses, map, isActive = true, depth = 0) => {
   (fields || []).forEach((field, index) => {
     const fieldId = resolveFieldId(field, depth, index);
@@ -336,6 +360,7 @@ export const buildPrintDocumentPayload = ({
   driveFolderState = null,
   useTemporaryFolder = false,
   folderUrlsByField = {},
+  childDataByFieldId = {},
 }) => {
   const safeExportedAt = exportedAt instanceof Date && !Number.isNaN(exportedAt.getTime()) ? exportedAt : new Date();
   const formTitle = typeof settings.formTitle === "string" && settings.formTitle.trim() ? settings.formTitle.trim() : "受付フォーム";
@@ -351,7 +376,10 @@ export const buildPrintDocumentPayload = ({
   const fieldRootFolderUrl = firstUploadField?.driveRootFolderUrl || "";
   const fieldFolderNameTemplate = firstUploadField?.driveFolderNameTemplate || "";
 
-  const hasDriveSettings = fieldRootFolderUrl || fieldFolderNameTemplate || folderUrl || useTemporaryFolder;
+  const childFormMeta = collectChildFormMeta(schema, childDataByFieldId);
+  const hasChildFormMeta = Object.keys(childFormMeta).length > 0;
+
+  const hasDriveSettings = fieldRootFolderUrl || fieldFolderNameTemplate || folderUrl || useTemporaryFolder || hasChildFormMeta;
   const driveSettings = hasDriveSettings ? {
     rootFolderUrl: fieldRootFolderUrl,
     folderNameTemplate: fieldFolderNameTemplate,
@@ -367,6 +395,7 @@ export const buildPrintDocumentPayload = ({
       responses: responses || {},
       folderUrlsByField,
     }),
+    ...(hasChildFormMeta ? { childFormMeta } : {}),
   } : undefined;
 
   return {

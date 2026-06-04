@@ -99,3 +99,24 @@ export function buildFileUploadRowEntries(fieldPaths, fileUploadMeta) {
   }
   return out;
 }
+
+/**
+ * `{ fid: fullPath }` + `{ fid: childObj }` から `{ fullPath: childObj }` を構築する。
+ * CHILD_FORM_NAME / CHILD_FORM_ID / CHILD_FORM_URL / CHILD_FORM_COUNT UDF が
+ * `row[fullPath]` を合成オブジェクト（{ childFormId, childFormName, childFormUrl,
+ * count, records }）として読むので、formLink 項目のパスにそのまま載せる。
+ */
+export function buildChildFormRowEntries(fieldPaths, childFormMeta) {
+  const paths = asPlainObject(fieldPaths);
+  const metaByFid = asPlainObject(childFormMeta);
+  const out = {};
+  for (const fid in paths) {
+    if (!Object.prototype.hasOwnProperty.call(paths, fid)) continue;
+    const path = paths[fid];
+    if (!path) continue;
+    const obj = metaByFid[fid];
+    if (!obj || typeof obj !== "object") continue;
+    out[path] = obj;
+  }
+  return out;
+}

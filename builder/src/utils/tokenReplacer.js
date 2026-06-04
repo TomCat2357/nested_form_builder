@@ -25,6 +25,7 @@ import { buildRowForExpression } from "../features/expression/buildRowForExpress
 import {
   buildLabelValueMap as sharedBuildLabelValueMap,
   buildFileUploadRowEntries,
+  buildChildFormRowEntries,
 } from "./labelValueMap.js";
 
 const logTemplateError = (error, fullToken) => {
@@ -51,6 +52,7 @@ function buildTemplateRow(context) {
   const ctx = context || {};
   const valueMap = ctx.dataValueMap || ctx.labelValueMap || {};
   const fileEntries = buildFileUploadRowEntries(ctx.fieldPaths || {}, ctx.fileUploadMeta || {});
+  const childEntries = buildChildFormRowEntries(ctx.fieldPaths || {}, ctx.childFormMeta || {});
   const fixed = {
     _id: ctx.recordId || "",
     _record_url: ctx.recordUrl || "",
@@ -59,6 +61,10 @@ function buildTemplateRow(context) {
   const source = { ...valueMap };
   for (const path of Object.keys(fileEntries)) {
     source[path] = fileEntries[path];
+  }
+  // 子フォーム合成オブジェクトは文字列化せずオブジェクトのまま載せる（CHILD_FORM_* UDF が読む）。
+  for (const path of Object.keys(childEntries)) {
+    source[path] = childEntries[path];
   }
   return buildRowForExpression(source, fixed);
 }

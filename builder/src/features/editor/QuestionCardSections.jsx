@@ -380,8 +380,19 @@ export function FormLinkSection({ field, onChange }) {
             {physicalUrl || "フォームを選択すると URL が表示されます"}
           </div>
         )}
+        <label className="nf-row nf-gap-6">
+          <input
+            type="checkbox"
+            checked={!!field.includeChildData}
+            onChange={(event) => onChange({ ...field, includeChildData: event.target.checked })}
+          />
+          子フォームのデータを Webhook・印刷様式に渡す
+        </label>
         <div className="nf-text-11 nf-text-muted">
           {"ボタンを押すと、選択したフォームを別タブで開きます（?form=対象フォームのID&pid=このレコードのID）。pid はボタンを押したレコードの ID になり、開いた先ではその pid に紐づく行だけが表示され、新規行にもその pid が刻まれます。"}
+        </div>
+        <div className="nf-text-11 nf-text-muted">
+          {"「子フォームのデータを渡す」を ON にすると、このレコードに紐づく子フォーム行を Webhook 送信・印刷様式に含めます。SQL 式では CHILD_FORM_COUNT(`この項目名`)（件数）、CHILD_FORM_NAME / CHILD_FORM_ID / CHILD_FORM_URL でフォーム名・ID・URL を参照できます。"}
         </div>
       </div>
     </div>

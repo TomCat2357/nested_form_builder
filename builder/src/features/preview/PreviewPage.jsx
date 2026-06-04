@@ -3,7 +3,7 @@ import { collectResponses, sortResponses, buildDataValueMap } from "../../core/c
 import { computeSchemaHash } from "../../core/schema.js";
 import { collectValidationErrors, formatValidationErrors } from "../../core/validate.js";
 import * as gasClientModule from "../../services/gasClient.js";
-const { submitResponses, hasScriptRun, countRecordsByPid, getUrlPid } = gasClientModule;
+const { submitResponses, hasScriptRun, countRecordsByPid, listRecordsByPids, getUrlPid } = gasClientModule;
 import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
@@ -39,6 +39,7 @@ import {
 } from "../../utils/driveFolderState.js";
 import { collectFileUploadFields } from "../../core/schema.js";
 import { buildSharedFormUrl, buildSharedRecordUrl, buildChildFormUrl } from "../../utils/formShareUrl.js";
+import { buildChildDataObject, getChildFormCached_ } from "./childFormData.js";
 import { RendererRecursive } from "./FieldRenderer.jsx";
 
 const PreviewPage = React.forwardRef(function PreviewPage(
@@ -133,36 +134,83 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   // 子レコード件数（pid == このレコード id）をバッジ表示する。
   const formLinkFields = useMemo(() => {
     const out = [];
-    traverseSchema(schema, (field) => {
+    traverseSchema(schema, (field, context) => {
       if (field?.type !== "formLink") return;
       const childFormId = typeof field.childFormId === "string" ? field.childFormId.trim() : "";
       const id = typeof field.id === "string" ? field.id.trim() : "";
-      if (childFormId && id) out.push({ id, childFormId });
+      if (childFormId && id) {
+        out.push({
+          id,
+          childFormId,
+          // includeChildData=ON の項目は子レコード全件を Webhook/印刷へ渡すため詳細ロードする。
+          includeChildData: field.includeChildData === true,
+          childFormName: typeof field.childFormPath === "string" ? field.childFormPath : "",
+          path: (context.pathSegments || []).join("|"),
+        });
+      }
     });
     return out;
   }, [schema]);
 
   const [formLinkChildCounts, setFormLinkChildCounts] = useState({});
+  // 子フォームの合成オブジェクト（fieldId → { childFormId, childFormName, childFormUrl, count, records }）。
+  // includeChildData=ON の formLink 項目だけ詰める。Webhook 送信・印刷・プレビューの CHILD_FORM_* で参照。
+  const [formLinkChildData, setFormLinkChildData] = useState({});
   // 件数取得は「既存レコード（保存済み id あり）」かつ GAS 利用可かつ子フォーム文脈でない場合のみ。
   // formLink ごとに 1 回 listRecords を叩く。失敗は無言（dev / GAS 無しでもバッジ非表示で成立）。
-  const formLinkSignature = formLinkFields.map((f) => `${f.id}:${f.childFormId}`).join("|");
+  // 親レコードを開いた時点で非同期に呼び、親の同期（modifiedAtUnixMs 変化）で再取得する。
+  const formLinkSignature = formLinkFields
+    .map((f) => `${f.id}:${f.childFormId}:${f.includeChildData ? 1 : 0}`)
+    .join("|");
   useCancellable(async (isCancelled) => {
     setFormLinkChildCounts({});
+    setFormLinkChildData({});
     const recordId = recordIdRef.current;
     if (inChildContext) return;
     if (!settings.recordId || !recordId) return;
-    if (typeof countRecordsByPid !== "function" || !hasScriptRun()) return;
+    if (!hasScriptRun()) return;
     if (formLinkFields.length === 0) return;
+    const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
     for (const field of formLinkFields) {
       try {
-        const count = await countRecordsByPid({ formId: field.childFormId, pid: recordId });
-        if (isCancelled()) return;
-        setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: count }));
+        if (field.includeChildData && typeof listRecordsByPids === "function") {
+          // 子レコード全件 + 子 schema を取得し、合成オブジェクトを組む（件数も records から導出）。
+          const [childForm, records] = await Promise.all([
+            getChildFormCached_(field.childFormId),
+            listRecordsByPids({ formId: field.childFormId, pids: [recordId] }),
+          ]);
+          if (isCancelled()) return;
+          const childObj = buildChildDataObject({
+            childFormId: field.childFormId,
+            childFormName: field.childFormName,
+            childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, recordId),
+            childSchema: childForm && childForm.schema ? childForm.schema : [],
+            records,
+          });
+          setFormLinkChildData((prev) => ({ ...prev, [field.id]: childObj }));
+          setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: childObj.count }));
+        } else if (typeof countRecordsByPid === "function") {
+          const count = await countRecordsByPid({ formId: field.childFormId, pid: recordId });
+          if (isCancelled()) return;
+          setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: count }));
+        }
       } catch (_e) {
-        // 取得失敗時はバッジを出さない（無言）。
+        // 取得失敗時はバッジ / 子データを出さない（無言）。
       }
     }
-  }, [settings.recordId, formLinkSignature, inChildContext]);
+  }, [settings.recordId, settings.modifiedAtUnixMs, formLinkSignature, inChildContext]);
+
+  // includeChildData=ON の formLink 項目のみの { fieldId: 合成オブジェクト } マップ。
+  // 印刷 payload（driveSettings.childFormMeta）とプレビュー row 注入で共有する。
+  const childFormMeta = useMemo(() => {
+    const out = {};
+    for (const field of formLinkFields) {
+      if (!field.includeChildData) continue;
+      const obj = formLinkChildData[field.id];
+      if (obj) out[field.id] = obj;
+    }
+    return out;
+  }, [formLinkFields, formLinkChildData]);
 
   const folderUrlsByField = useMemo(() => {
     const out = {};
@@ -184,7 +232,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     fieldValues,
     dataValues: dataValueMap,
     fileUploadMeta,
-  }), [settings.formId, responses, fieldPaths, fieldValues, dataValueMap, fileUploadMeta]);
+    childFormMeta,
+  }), [settings.formId, responses, fieldPaths, fieldValues, dataValueMap, fileUploadMeta, childFormMeta]);
 
   const primaryFileUploadFieldId = useMemo(
     () => collectFileUploadFields(schema)[0]?.id || "",
@@ -201,8 +250,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     const recordId = recordIdRef.current;
     const formUrl = buildSharedFormUrl(baseUrl, formId);
     const recordUrl = buildSharedRecordUrl(baseUrl, formId, recordId);
-    return { now: new Date(), recordId, formUrl, recordUrl, fieldPaths, fileUploadMeta };
-  }, [settings.formId, fieldPaths, fileUploadMeta]);
+    return { now: new Date(), recordId, formUrl, recordUrl, fieldPaths, fileUploadMeta, childFormMeta };
+  }, [settings.formId, fieldPaths, fileUploadMeta, childFormMeta]);
 
   // schema 内のテンプレ式を一括 precompile して同期 resolveTemplateTokens を保証する。
   // alasql のロード + コンパイルが完了したら epoch を進めて再評価をトリガする。
@@ -365,17 +414,21 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       showAlert("URL が不正です (http:// または https:// で始まる必要があります)。質問カードの設定を確認してください。");
       return;
     }
+    // includeChildData=ON の formLink 項目について、プリロード済みの子フォームデータを付加する。
+    const childForms = formLinkFields
+      .filter((f) => f.includeChildData && formLinkChildData[f.id])
+      .map((f) => ({ fieldPath: f.path, ...formLinkChildData[f.id] }));
+    const record = {
+      id: recordIdRef.current,
+      no: settings.recordNo ?? "",
+      items: buildRecordItems(schema, responses),
+    };
+    if (childForms.length > 0) record.childForms = childForms;
     const payload = buildExternalActionPayload({
       context: "record",
       formId: settings.formId || "",
       formName: formTitle,
-      base: {
-        record: {
-          id: recordIdRef.current,
-          no: settings.recordNo ?? "",
-          items: buildRecordItems(schema, responses),
-        },
-      },
+      base: { record },
       storageFields: ctx,
       gate,
     });
@@ -409,6 +462,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     driveFolderState: options.driveFolderState ?? primaryDriveFolderState,
     useTemporaryFolder: options.useTemporaryFolder === true,
     folderUrlsByField,
+    childDataByFieldId: childFormMeta,
   });
 
   const handleSaveToSheet = async (options = {}) => {

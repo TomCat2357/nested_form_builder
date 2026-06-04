@@ -477,3 +477,22 @@ test("validateLabelCharacters: 空ラベルは無視", () => {
   const result = validateLabelCharacters(fields);
   assert.equal(result.ok, true);
 });
+
+test("normalizeSchemaIDs: formLink の includeChildData を永続化（既定 false）", () => {
+  const schema = normalizeSchemaIDs([
+    { type: "formLink", label: "子ON", childFormId: "fA", includeChildData: true },
+    { type: "formLink", label: "子OFF", childFormId: "fB", includeChildData: false },
+    { type: "formLink", label: "子未設定", childFormId: "fC" },
+  ]);
+  assert.equal(schema[0].includeChildData, true);
+  assert.equal(schema[1].includeChildData, false);
+  assert.equal(schema[2].includeChildData, false);
+});
+
+test("normalizeSchemaIDs: 非 formLink へ変えると includeChildData を落とす", () => {
+  const schema = normalizeSchemaIDs([
+    { type: "text", label: "テキスト", includeChildData: true, childFormId: "fA" },
+  ]);
+  assert.equal("includeChildData" in schema[0], false);
+  assert.equal("childFormId" in schema[0], false);
+});

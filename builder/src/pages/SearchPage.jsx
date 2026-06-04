@@ -63,6 +63,7 @@ export default function SearchPage() {
     forceRefreshAll,
     sortedEntries,
     outputTargetRows,
+    getSearchChildFormsForPid,
     filterError,
     totalPages,
     totalEntries,
@@ -158,6 +159,7 @@ export default function SearchPage() {
           }}
           form={form}
           outputTargetRows={outputTargetRows}
+          searchChildFormsResolver={getSearchChildFormsForPid}
           isAdmin={isAdmin}
         />
         </>
