@@ -18,7 +18,7 @@ import { compileStages } from "../../features/analytics/utils/compileStages.js";
 import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder.jsx";
 import VisualizePanel from "../../features/analytics/components/VisualizePanel.jsx";
 import SearchableSelect from "../../app/components/SearchableSelect.jsx";
-import { formsToOptions } from "../../app/components/searchableSelectOptions.js";
+import { formsToOptions, columnsToOptions } from "../../app/components/searchableSelectOptions.js";
 import { normalizeTableStyle } from "../../features/analytics/utils/tableStyle.js";
 import { DEFAULT_LINE_STYLE } from "../../features/analytics/utils/chartPalette.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
@@ -94,6 +94,7 @@ export default function QuestionEditorPage() {
   const [saveError, setSaveError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [copiedToken, setCopiedToken] = useState("");
+  const [selectedColumnKey, setSelectedColumnKey] = useState("");
   const [definitionLoaded, setDefinitionLoaded] = useState(false);
   const autoRunQuestionIdRef = useRef(null);
   // forms 確定後に questionId ごと 1 回だけロードするためのガード。
@@ -191,6 +192,25 @@ export default function QuestionEditorPage() {
       return { formColumns: [], columnLoadError: err.message || String(err) };
     }
   }, [mode, gui.formId, selectedFormId, forms]);
+
+  // フォーム切替・未選択・GUI 切替で選択中の列が候補から消えたら選択を解除する。
+  useEffect(() => {
+    if (selectedColumnKey && !formColumns.some((c) => c.key === selectedColumnKey)) {
+      setSelectedColumnKey("");
+    }
+  }, [formColumns, selectedColumnKey]);
+
+  // 識別子トークンをクリップボードへコピーし、一時的に「コピー済」表示にする（フォーム名 / 列名で共用）。
+  const copyToken = useCallback((token) => {
+    navigator.clipboard.writeText(token).then(() => {
+      setCopiedToken(token);
+      setTimeout(() => setCopiedToken(""), 1500);
+    }).catch(() => {});
+  }, []);
+
+  // フォーム名 / 列名のトークン表示行で共用するスタイル。
+  const tokenRowStyle = { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" };
+  const tokenCodeStyle = { fontFamily: "monospace", background: "var(--nf-input-bg, #f6f6f6)", border: "1px solid var(--nf-border)", borderRadius: "3px", padding: "2px 6px" };
 
   const handleGuiFormChange = (newFormId) => {
     // フォーム切替時は集計・グループ化・フィルターをリセットする。
@@ -566,23 +586,36 @@ export default function QuestionEditorPage() {
                   const title = formQualifiedName(f) || f.id;
                   // 参照は常にフォーム名で行う（fileId は保存時に内部で置換される内部表現）。
                   const formNameToken = "[" + title + "]";
-                  const copy = (token) => {
-                    navigator.clipboard.writeText(token).then(() => {
-                      setCopiedToken(token);
-                      setTimeout(() => setCopiedToken(""), 1500);
-                    }).catch(() => {});
-                  };
-                  const rowStyle = { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" };
-                  const codeStyle = { fontFamily: "monospace", background: "var(--nf-input-bg, #f6f6f6)", border: "1px solid var(--nf-border)", borderRadius: "3px", padding: "2px 6px" };
+                  const selectedCol = formColumns.find((c) => c.key === selectedColumnKey);
+                  const columnToken = selectedCol ? "[" + selectedCol.key + "]" : "";
                   return (
                     <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      <div style={rowStyle}>
+                      <div style={tokenRowStyle}>
                         <span className="nf-text-muted" style={{ minWidth: "70px" }}>フォーム名:</span>
-                        <code style={codeStyle}>{formNameToken}</code>
-                        <button type="button" className="nf-btn-outline" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={() => copy(formNameToken)}>
+                        <code style={tokenCodeStyle}>{formNameToken}</code>
+                        <button type="button" className="nf-btn-outline" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={() => copyToken(formNameToken)}>
                           {copiedToken === formNameToken ? "コピー済" : "コピー"}
                         </button>
                       </div>
+                      {formColumns.length > 0 && (
+                        <div style={tokenRowStyle}>
+                          <span className="nf-text-muted" style={{ minWidth: "70px" }}>列名:</span>
+                          <SearchableSelect
+                            value={selectedColumnKey}
+                            onChange={setSelectedColumnKey}
+                            placeholder="（列を選択）"
+                            searchPlaceholder="列名で絞り込み..."
+                            options={columnsToOptions(formColumns)}
+                            style={{ maxWidth: "300px", flex: "0 0 auto" }}
+                          />
+                          {columnToken && <code style={tokenCodeStyle}>{columnToken}</code>}
+                          {columnToken && (
+                            <button type="button" className="nf-btn-outline" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={() => copyToken(columnToken)}>
+                              {copiedToken === columnToken ? "コピー済" : "コピー"}
+                            </button>
+                          )}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
