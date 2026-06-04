@@ -72,6 +72,7 @@ export default function QuestionCard({
   getTempState,
   setTempState,
   clearTempState,
+  onPromoteChild,
 }) {
   const isChoice = isChoiceType(field.type);
   const isText = field.type === "text";
@@ -209,6 +210,7 @@ export default function QuestionCard({
           getTempState={getTempState}
           setTempState={setTempState}
           clearTempState={clearTempState}
+          onPromoteChild={onPromoteChild}
         />
       )}
 
@@ -223,6 +225,7 @@ export default function QuestionCard({
           getTempState={getTempState}
           setTempState={setTempState}
           clearTempState={clearTempState}
+          onPromoteChild={onPromoteChild}
         />
       )}
 
