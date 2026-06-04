@@ -19,6 +19,7 @@ export default function ChoiceOptionsSection({
   getTempState,
   setTempState,
   clearTempState,
+  onPromoteChild,
 }) {
   const handleAddOption = () => {
     const next = deepClone(field);
@@ -94,6 +95,11 @@ export default function ChoiceOptionsSection({
           getTempState={getTempState}
           setTempState={setTempState}
           clearTempState={clearTempState}
+          onPromoteSelf={
+            onPromoteChild
+              ? (childIndex) => onPromoteChild((parent) => parent.childrenByValue[opt.label].splice(childIndex, 1)[0])
+              : undefined
+          }
         />
       </div>
     );

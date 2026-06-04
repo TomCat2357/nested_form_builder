@@ -13,6 +13,7 @@ export default function NonChoiceChildrenSection({
   getTempState,
   setTempState,
   clearTempState,
+  onPromoteChild,
 }) {
   const handleAddChild = () => {
     if (!canAddChild) return;
@@ -51,6 +52,11 @@ export default function NonChoiceChildrenSection({
             getTempState={getTempState}
             setTempState={setTempState}
             clearTempState={clearTempState}
+            onPromoteSelf={
+              onPromoteChild
+                ? (childIndex) => onPromoteChild((parent) => parent.children.splice(childIndex, 1)[0])
+                : undefined
+            }
           />
         </div>
       )}

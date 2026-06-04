@@ -3,6 +3,7 @@ import { deepClone, normalizeSchemaIDs, validateMaxDepth, MAX_DEPTH } from "../.
 import { genId } from "../../core/ids.js";
 import QuestionCard from "./QuestionCard.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
+import { canAcceptChildren, demoteIntoPrevSibling, promoteChildToParentLevel } from "./questionTreeOps.js";
 
 /**
  * スキーマのバリデーションを実行
@@ -30,7 +31,7 @@ function swapItems(array, index1, index2) {
 /**
  * 質問制御情報を生成
  */
-function buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown) {
+function buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown, demote, onPromoteSelf) {
   if (selectedIndex === null) return null;
 
   const fieldId = normalized[selectedIndex]?.id;
@@ -39,6 +40,10 @@ function buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown) {
   const questionLabel = normalized[selectedIndex]?.label || `質問 ${selectedIndex + 1}`;
   const canMoveUp = selectedIndex > 0;
   const canMoveDown = selectedIndex < normalized.length - 1;
+  // 降格: すぐ上の兄弟が子質問を受け入れられる場合のみ可能。
+  const canDemote = selectedIndex > 0 && canAcceptChildren(normalized[selectedIndex - 1]);
+  // 昇格: 親が存在する（=最上位でない）場合のみ可能。
+  const canPromote = !!onPromoteSelf;
 
   return {
     focusId,
@@ -48,6 +53,10 @@ function buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown) {
     canMoveDown,
     moveUp: () => moveUp(selectedIndex),
     moveDown: () => moveDown(selectedIndex),
+    canDemote,
+    canPromote,
+    demote: () => demote(selectedIndex),
+    promote: () => onPromoteSelf?.(selectedIndex),
     isOption: false
   };
 }
@@ -120,6 +129,7 @@ export default function QuestionList({
   getTempState,
   setTempState,
   clearTempState,
+  onPromoteSelf,
 }) {
   const { showAlert } = useAlert();
   const activeFocusRef = useActiveFocusRef();
@@ -145,7 +155,7 @@ export default function QuestionList({
         controlInfo = buildOptionControlInfo(selectedIndex, latestOptionControl, normalized);
       } else if (selectedIndex !== null) {
         // 質問が選択されている場合
-        controlInfo = buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown);
+        controlInfo = buildQuestionControlInfo(selectedIndex, normalized, moveUp, moveDown, demote, onPromoteSelf);
       }
 
       if (controlInfo && controlInfo.focusId === activeFocusRef.current) {
@@ -154,7 +164,7 @@ export default function QuestionList({
         onQuestionControlChange(null);
       }
     }
-  }, [selectedIndex, optionControl, selectedField?.id, selectedField?.label, selectedOptionLabel, depth, onQuestionControlChange]);
+  }, [selectedIndex, optionControl, selectedField?.id, selectedField?.label, selectedOptionLabel, depth, onQuestionControlChange, onPromoteSelf]);
 
   const commit = (next) => {
     const fixed = normalizeSchemaIDs(next);
@@ -214,6 +224,23 @@ export default function QuestionList({
     }
   };
 
+  // 降格: この階層の質問を、すぐ上の兄弟質問の子質問にする。
+  const demote = (index) => {
+    const next = demoteIntoPrevSibling(latestNormalizedRef.current, index);
+    if (!next) return;
+    commit(next);
+    // 質問は1つ下の階層へ移動したため、この階層での選択を解除する。
+    setSelectedIndex(null);
+  };
+
+  // 昇格: 親（この階層の fields[parentIndex]）の子質問を1つ取り出し、親の直後へ引き上げる。
+  // removeChild は親クローンから対象の子を切り出して返す（children / childrenByValue の差異を吸収）。
+  const promoteChildToHere = (parentIndex, removeChild) => {
+    const next = promoteChildToParentLevel(latestNormalizedRef.current, parentIndex, removeChild);
+    if (!next) return;
+    commit(next);
+  };
+
   return (
     <>
       <div className="nf-col nf-gap-12">
@@ -245,6 +272,7 @@ export default function QuestionList({
             getTempState={getTempState}
             setTempState={setTempState}
             clearTempState={clearTempState}
+            onPromoteChild={(removeChild) => promoteChildToHere(index, removeChild)}
           />
         ))}
       </div>

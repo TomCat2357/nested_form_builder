@@ -309,6 +309,22 @@ export default function AdminFormEditorPage() {
           >
             ↓ 下へ
           </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-14 admin-move-btn"
+            disabled={isReadLocked || !questionControl?.canPromote}
+            onClick={() => questionControl?.promote?.()}
+          >
+            ⇤ 昇格
+          </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-14 admin-move-btn"
+            disabled={isReadLocked || !questionControl?.canDemote}
+            onClick={() => questionControl?.demote?.()}
+          >
+            ⇥ 降格
+          </button>
           {questionControl?.selectedIndex !== null && (
             <div className="nf-text-11 nf-text-muted nf-pad-4-8 nf-text-center nf-word-break">
               {questionControl?.isOption
