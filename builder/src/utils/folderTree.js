@@ -3,11 +3,22 @@
  * folder は "a/b/c" 形式の正規化済みパス、未指定は ""。
  */
 
-/** 生のフォルダ入力を正規化する。"/a//b/ " → "a/b"、未指定や非文字列は ""。 */
+/**
+ * フォルダ階層の区切り文字。正規表現クラスとして "/"（正規）と "|" の両方を区切りとして受理する。
+ * 入力では "/" でも "|" でも階層を指定でき、正規化後は常に "/" 区切りへ揃える。
+ */
+export const FOLDER_DELIMITER_RE = /[/|]/;
+
+/** 文字列がフォルダ階層の区切り（"/" または "|"）を含むか。フォルダ込み名の判定に使う。 */
+export function hasFolderDelimiter(str) {
+  return typeof str === "string" && FOLDER_DELIMITER_RE.test(str);
+}
+
+/** 生のフォルダ入力を正規化する。"/a//b/ " → "a/b"、"a|b" → "a/b"、未指定や非文字列は ""。 */
 export function normalizeFolderPath(raw) {
   if (typeof raw !== "string") return "";
   return raw
-    .split("/")
+    .split(FOLDER_DELIMITER_RE)
     .map((seg) => seg.trim())
     .filter((seg) => seg.length > 0)
     .join("/");

@@ -563,7 +563,7 @@ export default function AdminAnalyticsListPage({
         message={browser.currentPath
           ? `「${browser.currentPath}」の中に新しいフォルダを作成します。`
           : "最上位に新しいフォルダを作成します。"}
-        note="スラッシュ区切りで複数階層も作成できます（例: 苦情・通報/クマ）。"
+        note="スラッシュ「/」またはパイプ「|」区切りで複数階層も作成できます（例: 苦情・通報/クマ）。"
       />
 
       <AdminMoveDialog

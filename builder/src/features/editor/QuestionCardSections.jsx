@@ -241,7 +241,7 @@ export function FileUploadFieldSection({ field, onChange }) {
           onChange={(event) => onChange({ ...field, driveFolderNameTemplate: event.target.value })}
         />
         <div className="nf-text-11 nf-text-muted nf-mt-4">
-          {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{`_id`}, {NOW()}, {`フィールド名`} を使えます。ネストされた子質問は {`親|子`} のフルパスで指定。{TIME_FORMAT(NOW(), 'YYYY-MM-DD')} のように関数で書式を指定できます。"}
+          {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{`_id`}, {NOW()}, {`フィールド名`} を使えます。ネストされた子質問は {`親|子`}（または {`親/子`}）のフルパスで指定。{TIME_FORMAT(NOW(), 'YYYY-MM-DD')} のように関数で書式を指定できます。"}
         </div>
       </div>
     </div>

@@ -11,11 +11,12 @@
 // =============================================
 
 // フロント normalizeFolderPath (builder/src/utils/folderTree.js) と同一規則。
-// "/a//b/ " → "a/b"、未指定や非文字列は ""。
+// "/a//b/ " → "a/b"、"a|b" → "a/b"、未指定や非文字列は ""。
+// 区切りは "/"（正規）と "|" の両方を受理し、正規化後は常に "/" 区切りへ揃える。
 function Forms_normalizeFolderPath_(raw) {
   if (typeof raw !== "string") return "";
   return raw
-    .split("/")
+    .split(/[/|]/)
     .map(function(seg) { return String(seg).trim(); })
     .filter(function(seg) { return seg.length > 0; })
     .join("/");

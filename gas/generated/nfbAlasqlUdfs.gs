@@ -1051,7 +1051,7 @@ var NfbAlasqlRuntime = (() => {
   // builder/src/features/analytics/utils/headerToAlaSqlKey.js
   function headerKeyToAlaSqlKey(key) {
     if (!key) return "";
-    return key.replace(/\|/g, "__");
+    return key.replace(/[|/]/g, "__");
   }
 
   // builder/src/features/analytics/utils/sqlLiteralMask.js

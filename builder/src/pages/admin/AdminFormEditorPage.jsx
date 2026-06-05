@@ -379,7 +379,7 @@ export default function AdminFormEditorPage() {
               disabled={isReadLocked}
             />
             <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
-              スラッシュ区切りで階層を指定します。一覧画面でフォルダとして表示され、クリックで中に入れます。
+              スラッシュ「/」またはパイプ「|」区切りで階層を指定します。一覧画面でフォルダとして表示され、クリックで中に入れます。
             </p>
           </div>
 

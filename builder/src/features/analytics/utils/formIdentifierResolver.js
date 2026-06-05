@@ -1,4 +1,4 @@
-import { normalizeFolderPath, joinFolderPath } from "../../../utils/folderTree.js";
+import { normalizeFolderPath, joinFolderPath, hasFolderDelimiter } from "../../../utils/folderTree.js";
 
 // フォームの葉タイトル（＝Drive ファイル名・フォルダを含まない表示名）。
 function formLeafTitle(form) {
@@ -52,20 +52,20 @@ export function buildFormIndex(forms) {
 export function isAmbiguousBareTitle(token, index) {
   if (!token || !index || !index.byTitleAll) return false;
   const key = String(token);
-  if (key.indexOf("/") !== -1) return false;
+  if (hasFolderDelimiter(key)) return false;
   const all = index.byTitleAll.get(key);
   return !!(all && all.length > 1);
 }
 
 /**
  * 参照トークンをフォームへ解決する。
- *   - "/" を含む → フォルダ込み名としてパス厳密一致（無ければ null）。
+ *   - "/" または "|" を含む → フォルダ込み名としてパス厳密一致（無ければ null）。
  *   - バレ名     → 葉タイトルが一意なら解決 / 同名複数は曖昧として null / それ以外は id 一致。
  */
 export function resolveFormRef(token, index) {
   if (!token || !index) return null;
   const key = String(token);
-  if (key.indexOf("/") !== -1) {
+  if (hasFolderDelimiter(key)) {
     const path = normalizeFolderPath(key);
     return (index.byPath && index.byPath.get(path)) || null;
   }
