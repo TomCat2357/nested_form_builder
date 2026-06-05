@@ -13,10 +13,9 @@ import {
 import { buildBackfilledRecord } from "./backfillComputedValues.js";
 import { buildSearchTableLayout, buildHeaderRowsLayout, createHitExcerptColumn, createBaseColumns, DEFAULT_HIT_COLUMN_MIN_WIDTH } from "./searchTable.js";
 import { buildExportTableData } from "./searchExport.js";
-import { traverseSchema } from "../../core/schemaUtils.js";
 import { hasScriptRun, listRecordsByPids } from "../../services/gasClient.js";
 import { buildChildFormUrl } from "../../utils/formShareUrl.js";
-import { buildChildDataObject, distributeChildRecordsByPid, getChildFormCached_ } from "../preview/childFormData.js";
+import { buildChildDataObject, distributeChildRecordsByPid, getChildFormCached_, collectFormLinkFields } from "../preview/childFormData.js";
 import {
   computeRowValues,
   compareByColumn,
@@ -359,23 +358,10 @@ export function useSearchPageState({
   // includeChildData=ON の formLink 項目について、表示中の全行の親 id を pids にまとめ、
   // 子フォームごとに 1 回だけ listRecordsByPids（WHERE pid IN (...) 相当）で取得し、
   // フロントで pid 分配する（行 × 子フォーム数の N+1 リクエストを避ける）。
-  const childFormLinkFields = useMemo(() => {
-    const out = [];
-    traverseSchema(normalizedSchema, (field, context) => {
-      if (field?.type !== "formLink" || field.includeChildData !== true) return;
-      const childFormId = typeof field.childFormId === "string" ? field.childFormId.trim() : "";
-      const id = typeof field.id === "string" ? field.id.trim() : "";
-      if (childFormId && id) {
-        out.push({
-          id,
-          childFormId,
-          childFormName: typeof field.childFormPath === "string" ? field.childFormPath : "",
-          path: (context.pathSegments || []).join("|"),
-        });
-      }
-    });
-    return out;
-  }, [normalizedSchema]);
+  const childFormLinkFields = useMemo(
+    () => collectFormLinkFields(normalizedSchema).filter((f) => f.includeChildData),
+    [normalizedSchema],
+  );
 
   const [searchChildDataByField, setSearchChildDataByField] = useState({});
   const visiblePidSignature = useMemo(

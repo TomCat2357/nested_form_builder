@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildChildDataObject,
   distributeChildRecordsByPid,
+  collectFormLinkFields,
   MAX_CHILD_RECORDS_PER_FIELD,
 } from "./childFormData.js";
 
@@ -81,4 +82,49 @@ test("distributeChildRecordsByPid: pid ごとに分配し、pid 無しは捨て�
 test("distributeChildRecordsByPid: 非配列は空 Map", () => {
   assert.equal(distributeChildRecordsByPid(null).size, 0);
   assert.equal(distributeChildRecordsByPid(undefined).size, 0);
+});
+
+test("collectFormLinkFields: childFormId/id を trim し、空は除外", () => {
+  const out = collectFormLinkFields([
+    { id: " fl1 ", type: "formLink", childFormId: " fileA ", childFormPath: "親/子A" },
+    { id: "fl2", type: "formLink", childFormId: "   " }, // childFormId 空 → 除外
+    { id: "   ", type: "formLink", childFormId: "fileB" }, // id 空 → 除外
+    { id: "txt", type: "text", label: "氏名" }, // formLink 以外 → 除外
+  ]);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].id, "fl1");
+  assert.equal(out[0].childFormId, "fileA");
+  assert.equal(out[0].childFormName, "親/子A");
+});
+
+test("collectFormLinkFields: includeChildData の true/非true を反映", () => {
+  const out = collectFormLinkFields([
+    { id: "fl1", type: "formLink", childFormId: "fileA", includeChildData: true },
+    { id: "fl2", type: "formLink", childFormId: "fileB", includeChildData: false },
+    { id: "fl3", type: "formLink", childFormId: "fileC" },
+  ]);
+  assert.equal(out.length, 3);
+  assert.equal(out.find((f) => f.id === "fl1").includeChildData, true);
+  assert.equal(out.find((f) => f.id === "fl2").includeChildData, false);
+  assert.equal(out.find((f) => f.id === "fl3").includeChildData, false);
+});
+
+test("collectFormLinkFields: ネスト schema で path（pathSegments 連結）を組む", () => {
+  const out = collectFormLinkFields([
+    {
+      id: "radio",
+      type: "radio",
+      label: "選択",
+      options: [{ id: "o1", label: "はい" }],
+      childrenByValue: {
+        "はい": [
+          { id: "flNested", type: "formLink", childFormId: "fileX", childFormPath: "子X" },
+        ],
+      },
+    },
+  ]);
+  assert.equal(out.length, 1);
+  assert.equal(out[0].id, "flNested");
+  // path は "|" 区切りの pathSegments。ネストしている＝複数セグメントになる。
+  assert.ok(out[0].path.includes("|"), `path should be nested: ${out[0].path}`);
 });

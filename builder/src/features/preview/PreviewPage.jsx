@@ -39,7 +39,7 @@ import {
 } from "../../utils/driveFolderState.js";
 import { collectFileUploadFields } from "../../core/schema.js";
 import { buildSharedFormUrl, buildSharedRecordUrl, buildChildFormUrl } from "../../utils/formShareUrl.js";
-import { buildChildDataObject, getChildFormCached_ } from "./childFormData.js";
+import { buildChildDataObject, getChildFormCached_, collectFormLinkFields } from "./childFormData.js";
 import { RendererRecursive } from "./FieldRenderer.jsx";
 
 const PreviewPage = React.forwardRef(function PreviewPage(
@@ -132,25 +132,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 
   // schema 内の formLink フィールド（childFormId あり）を収集する。各々について子フォームの
   // 子レコード件数（pid == このレコード id）をバッジ表示する。
-  const formLinkFields = useMemo(() => {
-    const out = [];
-    traverseSchema(schema, (field, context) => {
-      if (field?.type !== "formLink") return;
-      const childFormId = typeof field.childFormId === "string" ? field.childFormId.trim() : "";
-      const id = typeof field.id === "string" ? field.id.trim() : "";
-      if (childFormId && id) {
-        out.push({
-          id,
-          childFormId,
-          // includeChildData=ON の項目は子レコード全件を Webhook/印刷へ渡すため詳細ロードする。
-          includeChildData: field.includeChildData === true,
-          childFormName: typeof field.childFormPath === "string" ? field.childFormPath : "",
-          path: (context.pathSegments || []).join("|"),
-        });
-      }
-    });
-    return out;
-  }, [schema]);
+  // includeChildData=ON の項目は子レコード全件を Webhook/印刷へ渡すため詳細ロードする。
+  const formLinkFields = useMemo(() => collectFormLinkFields(schema), [schema]);
 
   const [formLinkChildCounts, setFormLinkChildCounts] = useState({});
   // 子フォームの合成オブジェクト（fieldId → { childFormId, childFormName, childFormUrl, count, records }）。

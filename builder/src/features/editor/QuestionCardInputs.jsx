@@ -1,7 +1,8 @@
 import React from "react";
 import { deepClone, DEFAULT_TEXT_MAX_LENGTH } from "../../core/schema.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings, STYLE_SETTINGS_DEFAULT_COLOR } from "../../core/styleSettings.js";
-import { NUMBER_MODE_CONFIG, checkNumberFieldConfig } from "../../core/validate.js";
+import { NUMBER_MODES, NUMBER_MODE_CONFIG, getNumberMode, checkNumberFieldConfig } from "../../core/validate.js";
+import { NUMBER_MODE_LABELS } from "./fieldTypes.js";
 import { styles as s } from "./styles.js";
 
 export {
@@ -367,15 +368,10 @@ const parseNumberSettingValue = (value) => {
   return Number.isFinite(parsed) ? parsed : undefined;
 };
 
-const NUMBER_MODE_OPTIONS = [
-  { value: "unrestricted", label: "制限なし" },
-  { value: "integer", label: "整数" },
-  { value: "nonNegativeInteger", label: "０と自然数" },
-  { value: "naturalNumber", label: "自然数" },
-];
+const NUMBER_MODE_OPTIONS = NUMBER_MODES.map((value) => ({ value, label: NUMBER_MODE_LABELS[value] }));
 
 export function NumberSettingsInput({ field, onChange, onFocus }) {
-  const mode = NUMBER_MODE_OPTIONS.some((opt) => opt.value === field.numberMode) ? field.numberMode : "unrestricted";
+  const mode = getNumberMode(field);
   const step = mode === "unrestricted" ? "any" : "1";
   const configError = checkNumberFieldConfig({ ...field, numberMode: mode });
 

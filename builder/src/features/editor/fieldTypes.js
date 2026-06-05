@@ -20,6 +20,15 @@ export const DISPLAY_LABEL = "表示";
 export const EMAIL_PLACEHOLDER = "user@example.com";
 export const EXCLUDE_FROM_SEARCH_AND_PRINT_LABEL = "一覧・印刷から除外";
 
+// numberMode（core/validate.js の NUMBER_MODES）の UI ラベル。value の単一ソースは
+// validate.js、ラベルの単一ソースはここ。選択肢配列は NUMBER_MODES から導出する。
+export const NUMBER_MODE_LABELS = {
+  unrestricted: "制限なし",
+  integer: "整数",
+  nonNegativeInteger: "０と自然数",
+  naturalNumber: "自然数",
+};
+
 export const isChoiceType = (type) => CHOICE_TYPES.has(type);
 export const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 export const isMessageType = (type) => type === MESSAGE_TYPE;
