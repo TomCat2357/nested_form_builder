@@ -17,6 +17,34 @@
 import { restoreResponsesFromData } from "../../utils/responses.js";
 import { buildRecordItems } from "./printDocument.js";
 import { dataStore } from "../../app/state/dataStore.js";
+import { traverseSchema } from "../../core/schemaUtils.js";
+
+/**
+ * schema 内の formLink フィールド（childFormId と id がともに非空）を収集する純関数。
+ * プレビュー（子レコード件数バッジ・子データ詳細）と検索結果一覧（Webhook 用プリロード）で
+ * 共有する。includeChildData を必ず含めて全件返すので、includeChildData=ON だけ必要な
+ * 呼び出し側は `.filter((f) => f.includeChildData)` する。正規化は行わない（呼び出し側責務）。
+ *
+ * @param {Array} schema
+ * @returns {Array<{id:string, childFormId:string, includeChildData:boolean, childFormName:string, path:string}>}
+ */
+export const collectFormLinkFields = (schema) => {
+  const out = [];
+  traverseSchema(schema, (field, context) => {
+    if (field?.type !== "formLink") return;
+    const childFormId = typeof field.childFormId === "string" ? field.childFormId.trim() : "";
+    const id = typeof field.id === "string" ? field.id.trim() : "";
+    if (!childFormId || !id) return;
+    out.push({
+      id,
+      childFormId,
+      includeChildData: field.includeChildData === true,
+      childFormName: typeof field.childFormPath === "string" ? field.childFormPath : "",
+      path: (context.pathSegments || []).join("|"),
+    });
+  });
+  return out;
+};
 
 // payload / Doc 肥大を防ぐための 1 項目あたり最大子レコード数。超過時は records を
 // 切り詰め、truncated:true を立てる（count は元の総数を維持する）。
