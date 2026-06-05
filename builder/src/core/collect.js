@@ -1,5 +1,6 @@
 import { traverseSchema } from "./schemaUtils.js";
 import { normalizeDateTimeFieldValue } from "../utils/dateTime.js";
+import { joinFieldPath } from "../utils/pathCodec.js";
 
 export const sanitizeFileUploadEntry = (entry) => {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
@@ -63,19 +64,19 @@ export const collectResponses = (fields, responses, options = {}) => {
 
   traverseSchema(fields, (field, context) => {
     const value = responses?.[field.id];
-    const base = context.pathSegments.join("|");
+    const base = joinFieldPath(context.pathSegments);
 
     if (field.type === "checkboxes" && Array.isArray(value)) {
-      // 元データ方式: 選択ラベルごとに `親|選択肢` 列へマーカー "●" を立てる。
+      // 元データ方式: 選択ラベルごとに `親/選択肢` 列へマーカー "●" を立てる。
       value.forEach((lbl) => {
         if (typeof lbl !== "string" || !lbl) return;
-        const key = `${base}|${lbl}`;
+        const key = joinFieldPath(context.pathSegments.concat(lbl));
         out[key] = "●";
         orderList.push(key);
       });
     } else if (["radio", "select"].includes(field.type) && typeof value === "string" && value) {
-      // 元データ方式: 選択値の `親|選択肢` 列へマーカー "●" を立てる。
-      const key = `${base}|${value}`;
+      // 元データ方式: 選択値の `親/選択肢` 列へマーカー "●" を立てる。
+      const key = joinFieldPath(context.pathSegments.concat(value));
       out[key] = "●";
       orderList.push(key);
     } else if (field.type === "fileUpload") {
@@ -136,7 +137,7 @@ const collectSelectedOptionLabels = (type, value) => {
 export const buildDataValueMap = (fields, responses) => {
   const out = {};
   traverseSchema(fields, (field, context) => {
-    const base = context.pathSegments.join("|");
+    const base = joinFieldPath(context.pathSegments);
     const value = responses?.[field.id];
 
     if (DATA_CHOICE_TYPES.includes(field.type)) {
@@ -174,13 +175,13 @@ export const collectAllPossiblePaths = (fields) => {
   const paths = [];
 
   traverseSchema(fields, (field, context) => {
-    const base = context.pathSegments.join("|");
+    const base = joinFieldPath(context.pathSegments);
 
     if (["checkboxes", "radio", "select"].includes(field.type) && Array.isArray(field.options)) {
-      // 元データ方式: 選択肢はオプションごとに `親|選択肢` 列を列挙する。
+      // 元データ方式: 選択肢はオプションごとに `親/選択肢` 列を列挙する。
       field.options.forEach((option) => {
         const optionLabel = option?.label || "";
-        paths.push(`${base}|${optionLabel}`);
+        paths.push(joinFieldPath(context.pathSegments.concat(optionLabel)));
       });
     } else if (field.type === "fileUpload") {
       paths.push(base);

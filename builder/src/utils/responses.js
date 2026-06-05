@@ -4,6 +4,7 @@ import { traverseSchema } from "../core/schemaUtils.js";
 import { formatPhoneValueForField } from "../core/phone.js";
 import { sanitizeFileUploadEntry, normalizeFileUploadEntries, parseFileUploadStorage } from "../core/collect.js";
 import { splitMultiValue } from "./multiValue.js";
+import { joinFieldPath, splitFieldKey, escapeSegment, PATH_SEP } from "./pathCodec.js";
 
 // date / time フィールドの保存値を JST 壁時計で正規化する。
 // 入力は dataUnixMs[fieldId] があればそれを優先（unixMs）、無ければ rawValue
@@ -98,19 +99,21 @@ const collectMarkerChoiceLabels = (field, baseKey, data) => {
   (Array.isArray(field?.options) ? field.options : []).forEach((opt) => {
     const optionLabel = typeof opt?.label === "string" ? opt.label : "";
     if (!optionLabel) return;
-    const markerKey = `${baseKey}|${optionLabel}`;
+    const markerKey = `${baseKey}${PATH_SEP}${escapeSegment(optionLabel, PATH_SEP)}`;
     if (isChoiceMarkerValue(data?.[markerKey])) {
       labels.push(optionLabel);
     }
   });
 
-  const prefix = `${baseKey}|`;
+  const prefix = `${baseKey}${PATH_SEP}`;
   Object.entries(data || {}).forEach(([key, marker]) => {
     if (!key.startsWith(prefix)) return;
     if (!isChoiceMarkerValue(marker)) return;
-    const remainder = key.slice(prefix.length);
-    if (!remainder || remainder.includes("|")) return;
-    labels.push(remainder);
+    // remainder はエスケープ済みの「1 セグメント」のはず。直下の選択肢ラベルのみ採用し、
+    // さらにネストした孫マーカー（未エスケープの "/" を含む）は除外する。
+    const remSegs = splitFieldKey(key.slice(prefix.length));
+    if (remSegs.length !== 1 || remSegs[0] === "") return;
+    labels.push(remSegs[0]);
   });
 
   return mergeChoiceLabels(field, labels);
@@ -149,10 +152,10 @@ export const restoreResponsesFromData = (schema, data = {}, dataUnixMs = {}) => 
   const responses = {};
 
   traverseSchema(schema, (field, context) => {
-    const baseKey = context.pathSegments.join("|");
+    const baseKey = joinFieldPath(context.pathSegments);
 
     if (CHOICE_TYPES.has(field.type)) {
-      // 元データ方式のマーカー列（`親|選択肢`: ●）と、view 期の直接列（`親`）の両対応。
+      // 元データ方式のマーカー列（`親/選択肢`: ●）と、view 期の直接列（`親`）の両対応。
       const directLabels = collectDirectChoiceLabels(field, data?.[baseKey]);
       const markerLabels = collectMarkerChoiceLabels(field, baseKey, data);
       const selectedLabels = mergeChoiceLabels(field, [...directLabels, ...markerLabels]);
@@ -261,7 +264,7 @@ export const collectFileUploadFolderUrls = (schema, data = {}) => {
   const folderUrls = {};
   traverseSchema(schema, (field, context) => {
     if (field?.type !== "fileUpload" || !field?.id) return;
-    const baseKey = context.pathSegments.join("|");
+    const baseKey = joinFieldPath(context.pathSegments);
     const parsed = parseFileUploadStorage(data?.[baseKey]);
     if (parsed.folderUrl) folderUrls[field.id] = parsed.folderUrl;
   });

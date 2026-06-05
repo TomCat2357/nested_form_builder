@@ -23,7 +23,7 @@ function loadGasContext() {
   // Sheets_canonicalToSheetDate_（sheetsDatetime.gs）に依存。
   return loadGasFiles(context, [
     "generated/nfbAlasqlUdfs.gs",
-    "expressionEvaluator.gs",
+    "pathCodec.gs", "expressionEvaluator.gs",
     "sheetsDatetime.gs",
     "sheetsRowOps.gs",
   ]);

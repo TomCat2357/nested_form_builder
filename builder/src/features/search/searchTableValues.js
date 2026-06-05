@@ -6,6 +6,7 @@ import {
 import { isChoiceMarkerValue } from "../../utils/responses.js";
 import { normalizeFileUploadEntries } from "../../core/collect.js";
 import { splitMultiValue as splitMultiValueShared } from "../../utils/multiValue.js";
+import { joinFieldPath, splitFieldKey, PATH_SEP } from "../../utils/pathCodec.js";
 
 const FALSE_LIKE_VALUES = new Set([null, undefined, "", false, 0, "0"]);
 
@@ -79,10 +80,11 @@ export const formatTemporalValue = (rawValue, unixMs, column) => {
 
 export const deriveChoiceLabels = (key, value) => {
   if (!isChoiceMarkerValue(value)) return null;
-  if (typeof key !== "string" || !key.includes("|")) return null;
+  if (typeof key !== "string") return null;
 
-  const segments = key.split("|").filter(Boolean);
-  if (segments.length === 0) return null;
+  // マーカー列キー（`親/選択肢`）はセグメント 2 つ以上。"/" は "\/" エスケープ対応で分割する。
+  const segments = splitFieldKey(key).filter(Boolean);
+  if (segments.length < 2) return null;
 
   const optionLabel = segments[segments.length - 1];
 
@@ -165,15 +167,14 @@ export const compareValues = (a, b) => {
 
 export const collectDirectOptionLabels = (data, path, optionOrder = null) => {
   const optionValues = [];
-  const prefix = `${path}|`;
+  const prefix = `${path}${PATH_SEP}`;
   Object.entries(data).forEach(([key, value]) => {
     if (!key.startsWith(prefix) || key === path) return;
-    const remainder = key.slice(prefix.length);
-    if (!remainder) return;
-    const [head, ...rest] = remainder.split("|");
-    if (!head || rest.length > 0) return;
+    // remainder はエスケープ済みの 1 セグメント（直下の選択肢）のときのみ採用。
+    const remSegs = splitFieldKey(key.slice(prefix.length));
+    if (remSegs.length !== 1 || remSegs[0] === "") return;
     if (toBooleanLike(value)) {
-      optionValues.push(head);
+      optionValues.push(remSegs[0]);
     }
   });
   if (Array.isArray(optionOrder) && optionOrder.length > 0) {
@@ -198,10 +199,12 @@ export const buildEntryLogicalFields = (entry) => {
   const dataUnixMs = entry?.dataUnixMs || {};
   const keys = Object.keys(data);
 
-  const choiceParentOf = (key) =>
-    isChoiceMarkerValue(data[key]) && key.includes("|")
-      ? key.slice(0, key.lastIndexOf("|"))
-      : null;
+  const choiceParentOf = (key) => {
+    if (!isChoiceMarkerValue(data[key])) return null;
+    const segs = splitFieldKey(key);
+    if (segs.length < 2) return null;
+    return joinFieldPath(segs.slice(0, -1));
+  };
 
   // 集約対象の親パス集合（裸の親マーカー/重複値を除外するため先に収集）。
   const choiceParents = new Set();
@@ -334,7 +337,7 @@ export const matchColumnName = (column, normalized) => {
     const lastSegment = column.segments[column.segments.length - 1];
     if (lastSegment && String(lastSegment).toLowerCase() === normalized) return true;
 
-    const fullName = column.segments.join("|").toLowerCase();
+    const fullName = joinFieldPath(column.segments).toLowerCase();
     if (fullName === normalized) return true;
   }
 

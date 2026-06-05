@@ -1,6 +1,10 @@
 import { resolveIsDisplayed } from "../core/displayModes.js";
 import { traverseSchema } from "../core/schemaUtils.js";
 import { resolvePrintTemplateFieldLabel } from "../core/schema.js";
+import { joinFieldPath, splitFieldPath } from "./pathCodec.js";
+
+// 後方互換のための再エクスポート（従来は本モジュールが splitFieldPath を実装していた）。
+export { splitFieldPath };
 
 const isExcludedDisplayField = (field) => (
   field?.type === "webhook"
@@ -22,7 +26,7 @@ export const collectDisplayFieldSettings = (schema) => {
         }
       }
       collected.push({
-        path: pathSegments.join("|"),
+        path: joinFieldPath(pathSegments),
         type: field.type || "",
         fieldId: field.id || "",
         printTemplateAction: field.type === "printTemplate" ? (field.printTemplateAction ?? null) : undefined,
@@ -31,12 +35,4 @@ export const collectDisplayFieldSettings = (schema) => {
   });
 
   return collected;
-};
-
-export const splitFieldPath = (path) => {
-  if (!path) return [];
-  return String(path)
-    .split("|")
-    .map((part) => part.trim())
-    .filter((part) => part);
 };

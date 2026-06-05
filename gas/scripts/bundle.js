@@ -24,6 +24,7 @@ const FILE_ORDER = [
   'settings.gs',         // 一般設定（restrictToFormOnly / DetermineAccess_ / 公開 API ラッパー）
   'properties.gs',       // プロパティサービス管理
   'schemaUtils.gs',      // pure schema walkers (nfbTraverseSchema_ など)
+  'pathCodec.gs',        // フィールド/フォルダ階層パスの可逆エスケープ共有コーデック（Nfb_* / フロント pathCodec.js 双子）
   // --- alasql ランタイム + UDF + 式評価器・テンプレート（driveTemplate より前） ---
   'vendor/alasql.min.js',       // alasql 本体（グローバル alasql）
   'generated/nfbAlasqlUdfs.gs', // builder ESM ソースから esbuild 生成（UDF / 日付ユーティリティ）

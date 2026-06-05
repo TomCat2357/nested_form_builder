@@ -2,6 +2,7 @@ import { resolveExternalActionUrl } from "../../../utils/externalActionUrl.js";
 import { submitExternalActionPost, buildExternalActionPayload } from "../../../utils/externalActionPost.js";
 import { resolveStyleSettingsInlineStyle } from "../../../core/styleSettings.js";
 import { buildExportTableData } from "../searchExport.js";
+import { joinFieldPath } from "../../../utils/pathCodec.js";
 
 // 対象行 (選択行があればその行、なければフィルタ後の全行) を表示用ビュー行に整形して payload の base を組む。
 // childFormsResolver(pid) があれば、includeChildData=ON の子フォームデータを行と同順の
@@ -10,9 +11,9 @@ const buildSearchPayloadBase = (form, outputTargetRows, childFormsResolver) => {
   const entries = Array.isArray(outputTargetRows) ? outputTargetRows.map((row) => row.entry).filter(Boolean) : [];
   const table = buildExportTableData({ form, entries });
   const list = {
-    // 質問 (ヘッダー) は階層を "|" で連結した「1 列 = 1 文字列」に統一する
+    // 質問 (ヘッダー) は階層を "/" で連結した「1 列 = 1 文字列」に統一する
     // (検索カラムの正規パス = traverseSchema の pathSegments と同じ表現)。
-    headers: table.columns.map((column) => (Array.isArray(column.segments) ? column.segments.join("|") : "")),
+    headers: table.columns.map((column) => (Array.isArray(column.segments) ? joinFieldPath(column.segments) : "")),
     rows: table.rows,
     rowCount: table.rows.length,
   };

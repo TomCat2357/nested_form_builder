@@ -9,6 +9,7 @@ import { resolveTemplateTokens } from "../utils/tokenReplacer.js";
 import { normalizeFileUploadEntries } from "./collect.js";
 import { extractFieldRefs, validateTemplateSyntax } from "../features/expression/templateEvaluator.js";
 import { splitMultiValue } from "../utils/multiValue.js";
+import { joinFieldPath, splitFieldKey, PATH_SEP } from "../utils/pathCodec.js";
 
 // ---------------------------------------------------------------------------
 // Dependency extraction
@@ -62,7 +63,7 @@ export const buildDependencyGraph = (schema) => {
 
   traverseSchema(schema, (field, context) => {
     const label = (field?.label || "").trim();
-    const path = (context?.pathSegments || []).join("|");
+    const path = joinFieldPath(context?.pathSegments || []);
     if (path && field?.id) {
       pathToId[path] = field.id;
     }
@@ -247,15 +248,16 @@ export const evaluateAllComputedFields = (schema, responses, baseMap, tokenConte
 
 // 元データ方式の選択肢マーカー列（`親|選択肢`: ●/true/1）から選択ラベルを集める。
 const collectOptionLabelsForPath = (entryData, path) => {
-  const prefix = `${path}|`;
+  const prefix = `${path}${PATH_SEP}`;
   const selected = [];
   for (const key of Object.keys(entryData)) {
     if (!key.startsWith(prefix)) continue;
-    const remainder = key.slice(prefix.length);
-    if (!remainder || remainder.includes("|")) continue;
+    // remainder はエスケープ済みの 1 セグメント（直下の選択肢）のみ採用。孫マーカーは除外。
+    const remSegs = splitFieldKey(key.slice(prefix.length));
+    if (remSegs.length !== 1 || remSegs[0] === "") continue;
     const val = entryData[key];
     if (val !== undefined && val !== null && val !== "" && val !== false && val !== 0 && val !== "0") {
-      selected.push(remainder);
+      selected.push(remSegs[0]);
     }
   }
   return selected;
@@ -275,7 +277,7 @@ export const buildLabelValueMapFromEntryData = (schema, entryData) => {
   const data = entryData || {};
   traverseSchema(schema, (field, context) => {
     if (!field?.label) return;
-    const path = (context.pathSegments || []).join("|");
+    const path = joinFieldPath(context.pathSegments || []);
     if (!path || Object.prototype.hasOwnProperty.call(map, path)) return;
 
     const type = field.type;
@@ -311,7 +313,7 @@ export const buildComputedFieldPathsById = (schema) => {
     if (field?.type !== "substitution") return;
     const fid = field?.id;
     if (!fid) return;
-    paths[fid] = (context.pathSegments || []).join("|");
+    paths[fid] = joinFieldPath(context.pathSegments || []);
   });
   return paths;
 };

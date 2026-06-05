@@ -123,7 +123,7 @@ function loadContext() {
     NFB_RESERVED_HEADER_KEYS: reservedKeys,
     SetSheetLastUpdatedAt_: function () {},
   };
-  return loadGasFiles(context, ["sheetsHeaders.gs", "sheetsRecords.gs"]);
+  return loadGasFiles(context, ["pathCodec.gs", "sheetsHeaders.gs", "sheetsRecords.gs"]);
 }
 
 // ensureHeaderMatrix 実行後の列キー順（左→右）を返す。

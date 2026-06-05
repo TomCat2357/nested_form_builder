@@ -76,7 +76,7 @@ function Sheets_normalizeHeaderPath_(path) {
 
 function Sheets_normalizeHeaderKey_(key) {
   if (key === undefined || key === null) return "";
-  return Sheets_pathKey_(String(key).split("|"));
+  return Sheets_pathKey_(Nfb_splitFieldKey_(key));
 }
 
 function Sheets_normalizeHeaderKeyList_(keys) {
@@ -122,7 +122,7 @@ function Sheets_extractColumnPaths_(matrix) {
 }
 
 function Sheets_pathKey_(path) {
-  return Sheets_normalizeHeaderPath_(path).join("|");
+  return Nfb_joinFieldPath_(Sheets_normalizeHeaderPath_(path));
 }
 
 // シートヘッダ用のパスセグメント解決 (改行正規化 + 空ラベル扱い)。
@@ -148,7 +148,7 @@ function Sheets_collectTemporalPathMap_(schema) {
   var map = {};
   nfbTraverseSchema_(schema, function(field, ctx) {
     if (field.type === "date" || field.type === "time") {
-      map[ctx.pathSegments.join("|")] = field.type;
+      map[Nfb_joinFieldPath_(ctx.pathSegments)] = field.type;
     }
   }, {
     fieldSegment: Sheets_headerFieldSegmentSkipEmpty_,
@@ -184,15 +184,17 @@ function Sheets_buildOrderFromSchema_(schema) {
 
   nfbTraverseSchema_(schema, function(field, ctx) {
     var type = field.type !== undefined && field.type !== null ? String(field.type).trim() : "";
-    var baseKey = ctx.pathSegments.join("|");
+    var baseKey = Nfb_joinFieldPath_(ctx.pathSegments);
 
     if (type === "checkboxes" || type === "radio" || type === "select") {
-      // 元データ方式: 選択肢はオプションごとに `親|選択肢` 列を作る（セルはマーカー "●" / 空白）。
+      // 元データ方式: 選択肢はオプションごとに `親/選択肢` 列を作る（セルはマーカー "●" / 空白）。
       if (Array.isArray(field.options)) {
         for (var optIndex = 0; optIndex < field.options.length; optIndex++) {
           var option = field.options[optIndex];
           var optionLabel = Sheets_normalizeHeaderSegment_(option && option.label);
-          appendKey(optionLabel ? baseKey + "|" + optionLabel : baseKey + "|");
+          appendKey(optionLabel
+            ? baseKey + NFB_PATH_SEP + Nfb_escapeSegment_(optionLabel, NFB_PATH_SEP)
+            : baseKey + NFB_PATH_SEP);
         }
       }
     } else if (type !== "message" && singleValueTypes[type]) {
@@ -227,7 +229,7 @@ function Sheets_buildDesiredPaths_(order, existingPaths) {
   });
 
   (order || []).forEach(function (keyRaw) {
-    var parts = Sheets_normalizeHeaderPath_(String(keyRaw || "").split("|"));
+    var parts = Sheets_normalizeHeaderPath_(Nfb_splitFieldKey_(keyRaw || ""));
     if (!parts.length) return;
     var key = Sheets_pathKey_(parts);
     if (!seen[key]) {

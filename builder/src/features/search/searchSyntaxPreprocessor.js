@@ -33,6 +33,14 @@
 import { headerKeyToAlaSqlKey } from "../analytics/utils/headerToAlaSqlKey.js";
 import { quoteString } from "../expression/sqlEmit.js";
 import { formatCanonical } from "../../utils/dateTime.js";
+import { joinFieldPath, splitFieldPath } from "../../utils/pathCodec.js";
+
+// 列参照（識別子 / バッククォート）→ AlaSQL 安全列名。
+// ユーザーが打つ "/" 区切りパス（クォート `'cc/c'` / バックスラッシュ `cc\/c` のエスケープ込み）を
+// セグメント配列に分解し、正準バックスラッシュ形へ畳んでから headerKeyToAlaSqlKey（legacy "|" も受理）に渡す。
+function columnRefToAlaSqlKey(raw) {
+  return headerKeyToAlaSqlKey(joinFieldPath(splitFieldPath(raw)));
+}
 
 const KEYWORDS = new Set(["AND", "OR", "NOT", "IS", "NULL", "LIKE", "IN", "TRUE", "FALSE"]);
 const CMP_OPS = ["<=", ">=", "<>", "!=", "=", "<", ">"];
@@ -90,8 +98,41 @@ function isIdentStartChar(ch) {
 function isIdentBodyChar(ch) {
   if (!ch) return false;
   if (isIdentStartChar(ch)) return true;
-  // 数字に加え、列名で頻出する . （例: "No."）と | （例: "親質問|子質問"）も識別子本体に許可
+  // 数字に加え、列名で頻出する . （例: "No."）と | （legacy 互換の通常文字）も識別子本体に許可。
   return /[0-9.|]/.test(ch);
+}
+
+// 識別子開始位置から「階層パス」を読む。区切り `/`、セグメント内の `\x` エスケープ、
+// `'...'` / `"..."` クォートされたセグメントを 1 トークンとしてまとめて取り込む。
+// 例: 親/子/'cc/c' や 親/子/cc\/c を 1 つの IDENT として捕捉する。
+function readPathToken(src, start, n) {
+  let j = start;
+  let raw = "";
+  while (j < n) {
+    const ch = src.charAt(j);
+    if (ch === "\\") {
+      raw += ch;
+      if (j + 1 < n) { raw += src.charAt(j + 1); j += 2; } else { j += 1; }
+      continue;
+    }
+    if (ch === "'" || ch === '"') {
+      const q = ch;
+      raw += ch; j++;
+      while (j < n) {
+        const c2 = src.charAt(j);
+        if (c2 === q) {
+          if (src.charAt(j + 1) === q) { raw += q + q; j += 2; continue; } // クォート重ね
+          raw += q; j++; break;
+        }
+        raw += c2; j++;
+      }
+      continue;
+    }
+    if (ch === "/") { raw += ch; j++; continue; } // 階層区切り
+    if (isIdentBodyChar(ch)) { raw += ch; j++; continue; }
+    break;
+  }
+  return { raw, end: j };
 }
 
 function tokenize(input) {
@@ -174,18 +215,16 @@ function tokenize(input) {
     if (ch === "(") { tokens.push({ type: "LP" }); i++; continue; }
     if (ch === ")") { tokens.push({ type: "RP" }); i++; continue; }
     if (ch === ",") { tokens.push({ type: "COMMA" }); i++; continue; }
-    // identifier / keyword
+    // identifier / keyword / 階層パス（"/" 区切り + クォート / バックスラッシュエスケープ）
     if (isIdentStartChar(ch)) {
-      let j = i + 1;
-      while (j < n && isIdentBodyChar(src.charAt(j))) j++;
-      const word = src.substring(i, j);
-      const upper = word.toUpperCase();
+      const { raw, end } = readPathToken(src, i, n);
+      const upper = raw.toUpperCase();
       if (KEYWORDS.has(upper)) {
         tokens.push({ type: "KEYWORD", value: upper });
       } else {
-        tokens.push({ type: "IDENT", value: word });
+        tokens.push({ type: "IDENT", value: raw });
       }
-      i = j;
+      i = end;
       continue;
     }
     // 不明文字: そのままスキップ（緩いパース）
@@ -542,8 +581,8 @@ function emitAtom(node, ctx) {
     case "number": return node.value;
     case "bool":   return node.value ? "TRUE" : "FALSE";
     case "null":   return "NULL";
-    case "backtick": return "`" + headerKeyToAlaSqlKey(node.value) + "`";
-    case "ident":  return "`" + headerKeyToAlaSqlKey(node.value) + "`";
+    case "backtick": return "`" + columnRefToAlaSqlKey(node.value) + "`";
+    case "ident":  return "`" + columnRefToAlaSqlKey(node.value) + "`";
     case "fncall": return node.name + "(" + node.args.map((a) => emit(a, ctx)).join(", ") + ")";
     case "paren":  return "(" + emit(node.expr, ctx) + ")";
     default: return "";

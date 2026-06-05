@@ -14,11 +14,9 @@
  * できる（formatCanonical 等と同じ集約方式）。
  */
 
-export const MULTI_VALUE_SEP = ",";
+import { escapeSegment, splitEscaped } from "./pathCodec.js";
 
-function escapeLabel(label) {
-  return String(label).replace(/\\/g, "\\\\").replace(/,/g, "\\,");
-}
+export const MULTI_VALUE_SEP = ",";
 
 /**
  * ラベル配列 → エスケープ付きカンマ連結文字列。
@@ -34,7 +32,7 @@ export function joinMultiValue(labels) {
     if (lbl === null || lbl === undefined) continue;
     const s = String(lbl);
     if (s === "") continue;
-    out.push(escapeLabel(s));
+    out.push(escapeSegment(s, MULTI_VALUE_SEP));
   }
   return out.join(MULTI_VALUE_SEP);
 }
@@ -50,24 +48,10 @@ export function splitMultiValue(text) {
   if (text === null || text === undefined) return [];
   const str = String(text);
   if (str === "") return [];
-  const tokens = [];
-  let current = "";
-  let escaping = false;
-  for (let i = 0; i < str.length; i++) {
-    const ch = str[i];
-    if (escaping) {
-      current += ch;
-      escaping = false;
-    } else if (ch === "\\") {
-      escaping = true;
-    } else if (ch === MULTI_VALUE_SEP) {
-      if (current !== "") tokens.push(current);
-      current = "";
-    } else {
-      current += ch;
-    }
+  const tokens = splitEscaped(str, MULTI_VALUE_SEP, false);
+  const out = [];
+  for (let i = 0; i < tokens.length; i++) {
+    if (tokens[i] !== "") out.push(tokens[i]);
   }
-  if (escaping) current += "\\"; // 末尾の孤立した "\" はリテラル扱い
-  if (current !== "") tokens.push(current);
-  return tokens;
+  return out;
 }

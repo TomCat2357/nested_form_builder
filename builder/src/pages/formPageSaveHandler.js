@@ -16,6 +16,7 @@ import { formHasSpreadsheet } from "../app/state/dataStoreHelpers.js";
 import { collectFileUploadFields } from "../core/schema.js";
 import { traverseSchema } from "../core/schemaUtils.js";
 import { collectResponses as coreCollectResponses } from "../core/collect.js";
+import { joinFieldPath } from "../utils/pathCodec.js";
 import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../core/constants.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsMemoryStore.js";
 import {
@@ -275,7 +276,7 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
     const fileUploadBaseKeys = new Set();
     traverseSchema(normalizedSchema, (field, context) => {
       if (field?.type === "fileUpload") {
-        fileUploadBaseKeys.add(context.pathSegments.join("|"));
+        fileUploadBaseKeys.add(joinFieldPath(context.pathSegments));
       }
     });
     fileUploadBaseKeys.forEach((key) => {

@@ -209,7 +209,7 @@ function loadRecordsContext() {
     Sheets_ensureColumnExists_: () => {},
     Sheets_touchSheetLastUpdated_: () => {},
   };
-  return loadGasFiles(context, ["sheetsDatetime.gs", "sheetsHeaders.gs", "sheetsRecords.gs"]);
+  return loadGasFiles(context, ["sheetsDatetime.gs", "pathCodec.gs", "sheetsHeaders.gs", "sheetsRecords.gs"]);
 }
 
 test("Sheets_buildRecordFromRow_: pid 列の値を record.pid として取り出し、data には混ぜない", () => {

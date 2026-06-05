@@ -78,7 +78,7 @@ function loadGasContext() {
   return loadGasFiles(context, [
     "vendor/alasql.min.js",
     "generated/nfbAlasqlUdfs.gs",
-    "expressionEvaluator.gs",
+    "pathCodec.gs", "expressionEvaluator.gs",
     "templateEvaluator.gs",
     "driveTemplate.gs",
     "drivePrintDocument.gs",

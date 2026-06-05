@@ -1,4 +1,5 @@
 import { escapeRegExp } from "../../utils/folderTree.js";
+import { splitFieldKey, splitEscaped, PATH_SEP } from "../../utils/pathCodec.js";
 import { STRICT_PREFIX_RE, normalizeFullWidthSearchOperators } from "./searchSyntaxPreprocessor.js";
 import {
   toBooleanLike,
@@ -31,38 +32,14 @@ const compilePattern_ = (source) => {
   }
 };
 
-// `in (...)` / `not in (...)` の値リストを引用符・カンマ対応で分解
+// `in (...)` / `not in (...)` の値リストを引用符・バックスラッシュ・カンマ対応で分解。
+// 共有 codec（splitEscaped, 区切り `,`）に委譲し、`in ('a,b', c)` も `in (a\,b, c)` も
+// 同じく「a,b」「c」に分解する（クォート / バックスラッシュ両エスケープを受理）。
 const parseInList = (raw) => {
   if (raw === undefined || raw === null) return [];
-  const str = String(raw);
-  const result = [];
-  let buf = "";
-  let inQuote = null;
-  for (let j = 0; j < str.length; j++) {
-    const c = str[j];
-    if (inQuote) {
-      if (c === inQuote) {
-        inQuote = null;
-      } else {
-        buf += c;
-      }
-      continue;
-    }
-    if (c === '"' || c === "'") {
-      inQuote = c;
-      continue;
-    }
-    if (c === ',') {
-      const tok = buf.trim();
-      if (tok !== "") result.push(tok);
-      buf = "";
-      continue;
-    }
-    buf += c;
-  }
-  const lastTok = buf.trim();
-  if (lastTok !== "") result.push(lastTok);
-  return result;
+  return splitEscaped(String(raw), ",", true)
+    .map((tok) => tok.trim())
+    .filter((tok) => tok !== "");
 };
 
 /**
@@ -480,7 +457,7 @@ const resolveBooleanValueForRow = (row, column, columnName) => {
     let truthy = false;
     Object.entries(entryData || {}).forEach(([key, value]) => {
       const lower = String(key).toLowerCase();
-      if (lower === targetLower || lower.startsWith(`${targetLower}|`)) {
+      if (lower === targetLower || lower.startsWith(`${targetLower}${PATH_SEP}`)) {
         found = true;
         if (toBooleanLike(value)) truthy = true;
       }
@@ -953,7 +930,7 @@ export const buildRowHitExcerpts = (row, columns, keyword, { cellDisplayLimit } 
     if (!segments) return;
 
     coveredNames.add(normalizedKey);
-    const columnLabel = String(field.key).split("|").join(" / ");
+    const columnLabel = splitFieldKey(String(field.key)).join(" / ");
     result.push({ columnKey: `data:${field.key}`, columnLabel, segments });
   });
 

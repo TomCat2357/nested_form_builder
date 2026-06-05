@@ -15,6 +15,7 @@
 
 import { resolveColumnType } from "./utils/aggregationCompatibility.js";
 import { forEachFormField } from "./utils/fieldMetas.js";
+import { joinFieldPath } from "../../utils/pathCodec.js";
 
 /**
  * view 形式テーブル向けの列型決定ルール。
@@ -47,7 +48,7 @@ export function getFormColumns(form) {
   const usedAlaSqlKeys = new Set();
   for (const m of META_COLUMNS) {
     cols.push({
-      key: m.path.join("|"),
+      key: joinFieldPath(m.path),
       alaSqlKey: m.alaSqlKey,
       path: m.path.slice(),
       label: m.label,

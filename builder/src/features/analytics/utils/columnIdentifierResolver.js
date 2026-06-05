@@ -1,5 +1,6 @@
 import { traverseSchema } from "../../../core/schemaUtils.js";
 import { headerKeyToAlaSqlKey } from "./headerToAlaSqlKey.js";
+import { joinFieldPath } from "../../../utils/pathCodec.js";
 
 const FIXED_PATHS = ["id", "No.", "createdAt", "createdBy", "modifiedAt", "modifiedBy", "deletedAt", "deletedBy"];
 
@@ -14,7 +15,7 @@ export function buildColumnIndex(form) {
   if (form && Array.isArray(form.schema)) {
     traverseSchema(form.schema, (field, ctx) => {
       const segments = Array.isArray(ctx?.pathSegments) ? ctx.pathSegments : [];
-      const pipePath = segments.join("|");
+      const pipePath = joinFieldPath(segments);
       if (!pipePath) return;
       const alaSqlKey = headerKeyToAlaSqlKey(pipePath);
       if (!byPipePath.has(pipePath)) byPipePath.set(pipePath, alaSqlKey);
