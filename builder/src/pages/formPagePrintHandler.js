@@ -5,6 +5,7 @@
  */
 
 import { createRecordPrintDocument } from "../services/gasClient.js";
+import { toErrorMessage } from "../utils/errorMessage.js";
 import {
   buildFieldValuesMap,
   collectFileUploadMeta,
@@ -80,7 +81,7 @@ export async function performFormPagePrintDocument(ctx) {
     showOutputAlert({ message: "マイドライブに Google ドキュメントを保存しました。", url: result.fileUrl, linkLabel: "ファイルを開く" });
   } catch (error) {
     console.error("[FormPage] failed to create print document:", error);
-    showAlert(`印刷様式の出力に失敗しました: ${error?.message || error}`);
+    showAlert(`印刷様式の出力に失敗しました: ${toErrorMessage(error)}`);
   } finally {
     setIsCreatingPrintDocument(false);
   }

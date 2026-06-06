@@ -6,6 +6,7 @@
  */
 
 import { dataStore } from "../app/state/dataStore.js";
+import { toErrorMessage } from "../utils/errorMessage.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsMemoryStore.js";
 import { evaluateCacheForRecords } from "../app/state/cachePolicy.js";
 import { traverseSchema } from "../core/schemaUtils.js";
@@ -203,7 +204,7 @@ export async function performFormPageTriggerSave(args, ctx) {
         });
       } catch (childCopyError) {
         console.error("[FormPage] child record copy failed:", childCopyError);
-        showAlert(`子レコードのコピーに失敗しました: ${childCopyError?.message || childCopyError}`);
+        showAlert(`子レコードのコピーに失敗しました: ${toErrorMessage(childCopyError)}`);
       } finally {
         if (pendingChildRecordCopyRef) pendingChildRecordCopyRef.current = null;
       }
@@ -246,7 +247,7 @@ export async function performFormPageTriggerSave(args, ctx) {
       );
       return { ok: false, recordId: "" };
     }
-    showAlert(`保存に失敗しました: ${error?.message || error}`);
+    showAlert(`保存に失敗しました: ${toErrorMessage(error)}`);
     return { ok: false, recordId: "" };
   } finally {
     setIsSaving(false);
@@ -326,7 +327,7 @@ export async function performFormPageFetchCopySource(ctx) {
     setIsCopyDialogOpen(true);
   } catch (error) {
     console.error("[FormPage] failed to fetch source record for copy:", error);
-    showAlert(`コピー元レコードの取得に失敗しました: ${error?.message || error}`);
+    showAlert(`コピー元レコードの取得に失敗しました: ${toErrorMessage(error)}`);
   } finally {
     setIsCopySourceLoading(false);
   }

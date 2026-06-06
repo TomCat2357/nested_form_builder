@@ -1,4 +1,5 @@
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import { toErrorMessage } from "../../utils/errorMessage.js";
 import { collectResponses, sortResponses, buildDataValueMap } from "../../core/collect.js";
 import { computeSchemaHash } from "../../core/schema.js";
 import { collectValidationErrors, formatValidationErrors } from "../../core/validate.js";
@@ -374,7 +375,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         downloadPdfFromBase64(result.pdfBase64, result.fileName);
       }
     } catch (error) {
-      showAlert(`様式出力に失敗しました: ${error?.message || error}`);
+      showAlert(`様式出力に失敗しました: ${toErrorMessage(error)}`);
     }
   };
 
@@ -517,7 +518,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         || error?.message === "missing_script_run"
         || error?.message === "read_only_mode";
       if (!options?.silent && !suppressAlert) {
-        showAlert(`送信に失敗しました: ${error?.message || error}`);
+        showAlert(`送信に失敗しました: ${toErrorMessage(error)}`);
       }
       throw error;
     } finally {
