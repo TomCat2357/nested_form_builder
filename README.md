@@ -10,7 +10,7 @@
 ## できること
 
 - 視覚的なフォーム設計（最大 11 階層のネスト、`childrenByValue` による条件分岐）
-- 回答の保存・検索（遅延検索／IME 対応・ヒット箇所表示）・並べ替え・Excel エクスポート・ソフトデリート（既定 30 日保持）
+- 回答の保存・検索（簡易モード／IME 対応・ヒット箇所表示、先頭 `SELECT` の SQL モードで親子横断・別フォーム参照）・並べ替え・Excel エクスポート・ソフトデリート（既定 30 日保持）
 - 印刷 PDF / Google Doc / Gmail 下書きの自動生成（alasql 関数式によるテンプレ。トークンは `{{...}}`（ビュー形式）に統一。単一ブレース `{...}` はリテラル文字）
 - ファイルアップロード（Google Drive 保存）
 - 集計ダッシュボード（Question / Dashboard、ブラウザ内 AlaSQL、Chart.js / ECharts / Leaflet / ピボット）
@@ -47,9 +47,10 @@ nested_form_builder/
 ├── gas/              # Apps Script 分割ソース（dist/Bundle.gs に結合される）
 ├── gas_for_spreadsheet/  # 保存先スプレッドシート用の補助スクリプト
 ├── gas_for_webhook/      # 「外部アクションボタン」の POST 受信 Web アプリ雛形
-├── dist/             # clasp push 対象（自動生成）
-├── docs/             # ユーザーマニュアル + claude/ 配下に開発者向け補足
+├── dist/             # clasp push 対象（自動生成・コミットしない）
+├── docs/claude/      # 開発者向け詳細ドキュメント（テーマ別 15 本）
 ├── tests/ / e2e/     # GAS 横断テスト・Playwright E2E
+├── md2pdf/ / scripts/  # ユーザーマニュアル生成ツール群（manual/ は gitignore）
 ├── deploy.ps1        # Windows 用ワンショットデプロイ
 └── CLAUDE.md         # 開発者向けの入口（docs/claude/ への索引）
 ```
@@ -58,13 +59,14 @@ nested_form_builder/
 
 | 用途 | 参照先 |
 | --- | --- |
-| 利用者向け操作マニュアル | [`manual/user_manual.pdf`](./manual/user_manual.pdf) |
 | 開発者向けナビ（テーマ別 15 ファイルへの索引） | [`CLAUDE.md`](./CLAUDE.md) |
 | 全体像・データフロー | [`docs/claude/architecture.md`](./docs/claude/architecture.md) |
 | セットアップ詳細 | [`docs/claude/setup.md`](./docs/claude/setup.md) |
 | 日常コマンド | [`docs/claude/development-workflow.md`](./docs/claude/development-workflow.md) |
 | デプロイ（`deploy.ps1`） | [`docs/claude/deployment.md`](./docs/claude/deployment.md) |
 | トラブルシュート | [`docs/claude/troubleshooting.md`](./docs/claude/troubleshooting.md) |
+
+> 利用者向け操作マニュアル（`manual/user_manual.pdf`）は `scripts/` と `md2pdf/` で生成する成果物で、`manual/` は `.gitignore` 対象のためリポジトリには含まれません。
 
 ## ライセンス
 
