@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toErrorMessage } from "../../utils/errorMessage.js";
 import { useLatestRef } from "../../app/hooks/useLatestRef.js";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../../app/components/AppLayout.jsx";
@@ -230,7 +231,7 @@ export default function AdminFormEditorPage() {
     } catch (error) {
       console.error(error);
       setIsSaving(false);
-      showAlert(`保存に失敗しました: ${error?.message || error}`);
+      showAlert(`保存に失敗しました: ${toErrorMessage(error)}`);
     }
   };
 

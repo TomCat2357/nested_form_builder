@@ -1,4 +1,5 @@
 import { RECORD_CACHE_BACKGROUND_REFRESH_MS } from "../../app/state/cachePolicy.js";
+import { toErrorMessage } from "../../utils/errorMessage.js";
 import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../../core/constants.js";
 
 
@@ -122,7 +123,7 @@ export const hasAnyPendingUpload = () => totalPendingUpload() > 0;
 export const defaultAlert = { showAlert: (message) => console.warn("[useEntries]", message) };
 
 export const buildFetchErrorMessage = (error) =>
-  `スプレッドシートからデータを読み取れませんでした。\n接続設定やスプレッドシートの共有設定を確認してください。\n\n詳細: ${error?.message || error}`;
+  `スプレッドシートからデータを読み取れませんでした。\n接続設定やスプレッドシートの共有設定を確認してください。\n\n詳細: ${toErrorMessage(error)}`;
 
 export const shouldForceSync = (locationState) => {
   if (!locationState || typeof locationState !== "object") return false;
@@ -132,7 +133,7 @@ export const shouldForceSync = (locationState) => {
 export const shouldRetryListReadError = (error) => {
   if (!error) return false;
   if (error.code === GAS_ERROR_CODE_LOCK_TIMEOUT) return false;
-  const message = String(error?.message || error);
+  const message = String(toErrorMessage(error));
   return message.includes("スプレッドシート");
 };
 

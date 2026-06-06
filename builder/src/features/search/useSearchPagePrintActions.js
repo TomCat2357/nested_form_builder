@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { toErrorMessage } from "../../utils/errorMessage.js";
 import {
   buildPrintDocumentPayload,
   buildFieldValuesMap,
@@ -219,7 +220,7 @@ export function useSearchPagePrintActions({
       }
     } catch (error) {
       console.error("[SearchPage] failed to create print document:", error);
-      showAlert(`印刷様式の出力に失敗しました: ${error?.message || error}`);
+      showAlert(`印刷様式の出力に失敗しました: ${toErrorMessage(error)}`);
     } finally {
       setIsCreatingPrintDocument(false);
     }

@@ -6,6 +6,7 @@
  */
 
 import { dataStore } from "../app/state/dataStore.js";
+import { toErrorMessage } from "../utils/errorMessage.js";
 import {
   acquireSaveLock,
   finalizeRecordDriveFolder,
@@ -93,7 +94,7 @@ export async function runWithSaveRetry_({
       "スプレッドシートへの反映を保留しました",
     );
   } else {
-    showAlert(`スプレッドシート保存に失敗しました: ${lastError?.message || lastError}`);
+    showAlert(`スプレッドシート保存に失敗しました: ${toErrorMessage(lastError)}`);
   }
   return { ok: false, error: lastError };
 }

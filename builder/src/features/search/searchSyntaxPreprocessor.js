@@ -34,6 +34,13 @@ import { headerKeyToAlaSqlKey } from "../analytics/utils/headerToAlaSqlKey.js";
 import { quoteString } from "../expression/sqlEmit.js";
 import { formatCanonical } from "../../utils/dateTime.js";
 import { joinFieldPath, splitFieldPath } from "../../utils/pathCodec.js";
+import { expandColumnlessOr } from "./searchQueryShared.js";
+
+// 日付/時刻リテラルの正規表現本体（tokenize のスキャンと DATE_LITERAL_RE の検証で共有）。
+// アンカー（^ / $）と TZ 部の差分は利用側で付与する（スキャンは前方一致 + TZ 前空白なし、
+// 検証は完全一致 + TZ 前 \s* 許容）。
+const DATE_PART = String.raw`\d{4}[-\/]\d{1,2}[-\/]\d{1,2}`;
+const TIME_TAIL = String.raw`[T\s_]\d{1,2}:\d{1,2}(?::\d{1,2}(?:\.\d+)?)?`;
 
 // 列参照（識別子 / バッククォート）→ AlaSQL 安全列名。
 // ユーザーが打つ "/" 区切りパス（クォート `'cc/c'` / バックスラッシュ `cc\/c` のエスケープ込み）を
@@ -177,7 +184,7 @@ function tokenize(input) {
     }
     // 日付/時刻リテラル（YYYY-MM-DD, YYYY/MM/DD, optional time 部。日付↔時刻の区切りは `_` / 半角スペース / `T`）→ 文字列扱い
     {
-      const dateMatch = src.substring(i).match(/^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}(?:[T\s_]\d{1,2}:\d{1,2}(?::\d{1,2}(?:\.\d+)?)?(?:Z|z|[+-]\d{2}:?\d{2})?)?/);
+      const dateMatch = src.substring(i).match(new RegExp(`^${DATE_PART}(?:${TIME_TAIL}(?:Z|z|[+-]\\d{2}:?\\d{2})?)?`));
       if (dateMatch) {
         tokens.push({ type: "STRING", raw: dateMatch[0], value: dateMatch[0] });
         i += dateMatch[0].length;
@@ -505,15 +512,12 @@ class Parser {
  * @param {(colExpr: string) => string} buildPredicate 列式 (`\`safeKey\``) を受け取り 1 列分の述語文字列を返す関数
  */
 function emitColumnlessOr(ctx, buildPredicate) {
-  const keys = (ctx && ctx.safeKeys) || [];
-  if (keys.length === 0) return "FALSE";
-  const parts = keys.map((k) => "(" + buildPredicate("`" + k + "`") + ")");
-  return "(" + parts.join(" OR ") + ")";
+  return expandColumnlessOr((ctx && ctx.safeKeys) || [], (k) => buildPredicate("`" + k + "`"));
 }
 
 // 日付/時刻リテラル判定（tokenize の date/time 検出と同等。日付↔時刻の区切りは `_` / 半角スペース / `T`、
 // 任意のミリ秒・TZ 指定子（`Z` / `±HH:MM`）も許容）
-const DATE_LITERAL_RE = /^\d{4}[-\/]\d{1,2}[-\/]\d{1,2}(?:[T\s_]\d{1,2}:\d{1,2}(?::\d{1,2}(?:\.\d+)?)?(?:\s*(?:Z|z|[+-]\d{2}:?\d{2}))?)?$/;
+const DATE_LITERAL_RE = new RegExp(`^${DATE_PART}(?:${TIME_TAIL}(?:\\s*(?:Z|z|[+-]\\d{2}:?\\d{2}))?)?$`);
 const TIME_ONLY_LITERAL_RE = /^\d{1,2}:\d{2}(?::\d{2})?$/;
 
 // 日付/時刻リテラルの「自身の kind」を返す。日付/時刻リテラルでなければ null。

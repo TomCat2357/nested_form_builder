@@ -1,6 +1,10 @@
-import { escapeRegExp } from "../../utils/folderTree.js";
 import { splitFieldKey, splitEscaped, PATH_SEP } from "../../utils/pathCodec.js";
 import { STRICT_PREFIX_RE, normalizeFullWidthSearchOperators } from "./searchSyntaxPreprocessor.js";
+import {
+  canonicalSearchOperator,
+  compileSearchRegex,
+  findColumnByName,
+} from "./searchQueryShared.js";
 import {
   toBooleanLike,
   isChoiceColumn,
@@ -15,22 +19,6 @@ import {
   collectMultiValueTokens,
   isEmptyCell,
 } from "./searchTableValues.js";
-
-// 簡易検索の自由文（裸単語・`列名:値`）を正規表現としてコンパイルする。
-// - 前後を `/.../` で囲んだ旧構文は囲みスラッシュを剥がす（後方互換）。
-// - 大文字小文字無視（i）。
-// - 不正な正規表現は escapeRegExp 済みリテラルにフォールバックし、入力途中で壊れない。
-const compilePattern_ = (source) => {
-  let src = String(source ?? "");
-  if (src.length >= 2 && src.startsWith("/") && src.endsWith("/")) {
-    src = src.slice(1, -1);
-  }
-  try {
-    return new RegExp(src, "i");
-  } catch {
-    return new RegExp(escapeRegExp(src), "i");
-  }
-};
 
 // `in (...)` / `not in (...)` の値リストを引用符・バックスラッシュ・カンマ対応で分解。
 // 共有 codec（splitEscaped, 区切り `,`）に委譲し、`in ('a,b', c)` も `in (a\,b, c)` も
@@ -334,19 +322,6 @@ export const parseTokens = (tokens) => {
   return parseExpression();
 };
 
-/**
- * 列名から対応する column オブジェクトを取得。
- * 見つからなければ null。一致は matchColumnName（key / path / aliases / segments）の OR。
- */
-const resolveColumnByName = (columns, colName) => {
-  if (!columns || !colName) return null;
-  const normalized = colName.trim().toLowerCase();
-  for (const column of columns) {
-    if (matchColumnName(column, normalized)) return column;
-  }
-  return null;
-};
-
 const findMatchingEntryField = (row, columnName) => {
   const normalizedColName = normalizeColumnName(columnName);
   if (!normalizedColName) return null;
@@ -398,14 +373,6 @@ const matchInOverTokens_ = (tokens, targets, negate) => {
   return negate ? !anyMatch : anyMatch;
 };
 
-// 比較演算子の別名を正規化する: ":" "==" → "=" / "!=" "><" → "<>"。
-// compareValue と COMPARE リーフ評価の双方で同じ正規化を使う。
-const canonicalOperator_ = (operator) => {
-  if (operator === ':' || operator === '==') return '=';
-  if (operator === '!=' || operator === '><') return '<>';
-  return operator;
-};
-
 /**
  * 値の比較（数値/文字列/日時を適切に処理）
  */
@@ -416,7 +383,7 @@ const compareValue = (rowValue, operator, targetValue, { allowNumeric = true } =
     return String(val);
   };
 
-  const normalizedOperator = canonicalOperator_(operator);
+  const normalizedOperator = canonicalSearchOperator(operator);
 
   const rowStr = normalizeValue(rowValue);
   const targetStr = normalizeValue(targetValue);
@@ -494,7 +461,7 @@ const evaluateLeafOnRow = (ast, row, columns) => {
   switch (ast.type) {
     case 'PARTIAL': {
       if (!ast.keyword) return true;
-      const regex = compilePattern_(ast.keyword);
+      const regex = compileSearchRegex(ast.keyword);
 
       const matchesInColumns = (columns || []).some((column) => {
         if (column.searchable === false) return false;
@@ -522,8 +489,8 @@ const evaluateLeafOnRow = (ast, row, columns) => {
 
     case 'COLUMN_PARTIAL': {
       if (!ast.keyword) return false;
-      const regex = compilePattern_(ast.keyword);
-      const column = resolveColumnByName(columns, ast.column);
+      const regex = compileSearchRegex(ast.keyword);
+      const column = findColumnByName(columns, ast.column);
       if (column) {
         const text = row?.values?.[column.key]?.display;
         return Boolean(text && regex.test(text));
@@ -538,7 +505,7 @@ const evaluateLeafOnRow = (ast, row, columns) => {
     }
 
     case 'COLUMN_BOOL': {
-      const column = resolveColumnByName(columns, ast.column);
+      const column = findColumnByName(columns, ast.column);
       const boolValue = resolveBooleanValueForRow(row, column, ast.column);
       return boolValue === ast.value;
     }
@@ -546,7 +513,7 @@ const evaluateLeafOnRow = (ast, row, columns) => {
     case 'COLUMN_EMPTY': {
       // 引用付き空文字 `field=""` / `field:""` の評価。
       // 簡易検索は cell.display 基準で「表示が空」を空欄とみなす（null/"" を区別しない）。
-      const column = resolveColumnByName(columns, ast.column);
+      const column = findColumnByName(columns, ast.column);
       if (column) {
         return isEmptyCell(row?.values?.[column.key]?.display);
       }
@@ -556,7 +523,7 @@ const evaluateLeafOnRow = (ast, row, columns) => {
     }
 
     case 'COLUMN_NOT_EMPTY': {
-      const column = resolveColumnByName(columns, ast.column);
+      const column = findColumnByName(columns, ast.column);
       if (column) {
         return !isEmptyCell(row?.values?.[column.key]?.display);
       }
@@ -567,8 +534,8 @@ const evaluateLeafOnRow = (ast, row, columns) => {
 
     case 'COMPARE': {
       if (ast.value === "") return false;
-      const column = resolveColumnByName(columns, ast.column);
-      const normalizedOp = canonicalOperator_(ast.operator);
+      const column = findColumnByName(columns, ast.column);
+      const normalizedOp = canonicalSearchOperator(ast.operator);
       const isEqualityOp = normalizedOp === '=' || normalizedOp === '<>';
 
       if (column) {
@@ -625,7 +592,7 @@ const evaluateLeafOnRow = (ast, row, columns) => {
       const targets = Array.isArray(ast.values) ? ast.values : [];
       const negate = Boolean(ast.negate);
       if (targets.length === 0) return negate; // 空リスト: in→false, not in→true（恒真）
-      const column = resolveColumnByName(columns, ast.column);
+      const column = findColumnByName(columns, ast.column);
 
       // 空セル / トークン無しは matchInOverTokens_ が in→false・not in→true に解決する。
       if (column) {
@@ -776,7 +743,7 @@ const buildExcerptSegments_ = (text, regex, budget) => {
 // 与えられたパターン群から最初にヒットする抜粋セグメントを返す（無ければ null）。
 const firstHitSegments_ = (text, patterns, budget) => {
   for (const p of patterns) {
-    const regex = compilePattern_(p.source);
+    const regex = compileSearchRegex(p.source);
     const seg = buildExcerptSegments_(text, regex, budget);
     if (seg) return seg;
   }

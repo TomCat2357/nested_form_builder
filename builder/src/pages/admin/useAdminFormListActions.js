@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { toErrorMessage } from "../../utils/errorMessage.js";
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { hasScriptRun, importFormsFromDrive } from "../../services/gasClient.js";
 import { toUnixMs } from "../../utils/dateTime.js";
@@ -237,7 +238,7 @@ export function useAdminFormListActions({
             console.warn("[DriveImport] failed to import one form", {
               formId: item?.form?.id,
               title: item?.form?.settings?.formTitle,
-              error: error?.message || error,
+              error: toErrorMessage(error),
             });
           }
         }

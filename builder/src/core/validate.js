@@ -186,6 +186,21 @@ const isEmpty = (field, value) => {
   return value === "";
 };
 
+// フィールド型ごとの値バリデータ。共通の必須/空欄/パターン検査を通過したあとに呼ばれる。
+// text の最大文字数チェックはパターン検査より前に行う必要があるため、ここには含めず本体に残す。
+const TYPE_VALUE_VALIDATORS = {
+  number: (field, value) => validateNumberField(field, value),
+  email: (_field, value) => validateEmailAddress(value),
+  url: (_field, value) =>
+    URL_REGEX.test(String(value))
+      ? { ok: true, code: "", message: "" }
+      : { ok: false, code: "url_invalid", message: "URLの形式が正しくありません" },
+  phone: (field, value) =>
+    getPhoneRegex(field).test(String(value))
+      ? { ok: true, code: "", message: "" }
+      : { ok: false, code: "phone_invalid", message: "電話番号の形式が正しくありません" },
+};
+
 export const validateByPattern = (field, value, cachedRegex = null) => {
   const patternSource = getPatternSource(field);
   const regexResult = patternSource ? (cachedRegex || getRegexResult(patternSource)) : null;
@@ -221,32 +236,8 @@ export const validateByPattern = (field, value, cachedRegex = null) => {
     };
   }
 
-  if (field.type === "number") {
-    return validateNumberField(field, value);
-  }
-
-  if (field.type === "email") {
-    return validateEmailAddress(value);
-  }
-
-  if (field.type === "url" && !URL_REGEX.test(String(value))) {
-    return {
-      ok: false,
-      code: "url_invalid",
-      message: "URLの形式が正しくありません",
-    };
-  }
-
-  if (field.type === "phone") {
-    const phoneRegex = getPhoneRegex(field);
-    if (!phoneRegex.test(String(value))) {
-      return {
-        ok: false,
-        code: "phone_invalid",
-        message: "電話番号の形式が正しくありません",
-      };
-    }
-  }
+  const typeValidator = TYPE_VALUE_VALIDATORS[field.type];
+  if (typeValidator) return typeValidator(field, value);
 
   return { ok: true, code: "", message: "" };
 };

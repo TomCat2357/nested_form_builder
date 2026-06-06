@@ -12,6 +12,7 @@
  */
 
 import { UPLOAD_RETRY_BASE_MS, UPLOAD_RETRY_MAX_MS } from "../../core/constants.js";
+import { toErrorMessage } from "../../utils/errorMessage.js";
 import { isLocalId } from "../../core/ids.js";
 import { saveForm } from "../../services/gasClient.js";
 import { analyticsGasClient } from "../../features/analytics/analyticsGasClient.js";
@@ -205,7 +206,7 @@ const runJob = async (job) => {
     await deleteJob(job.jobId);
     setUploadLastError(null);
   } catch (err) {
-    const message = String(err?.message || err);
+    const message = String(toErrorMessage(err));
     const attempt = (job.attempt || 0) + 1;
     await updateJob(job.jobId, {
       status: "error",
