@@ -20,16 +20,21 @@ const normalizePath = (raw) =>
 
 // kind ("forms" | "questions") ごとに公開ラッパーを呼べる context を組み立てる。
 function makeEnv(kind) {
-  let mapping = {};        // id -> { fileId, folder }
+  let mapping = {};        // id -> { fileId, folder, title|name }
   const fileBodies = {};   // fileId -> JSON 文字列（Drive ファイル本文）
+  const fileNames = {};    // fileId -> Drive ファイル名（"名前.json"）
   const store = {};        // PropertiesService
   const driveOps = [];     // 物理 Drive 操作ログ
   let seq = 0;
+  // 中央辞書で「名前」を保持するキーは型で異なる（forms=title / analytics=name）。
+  const nameKey = kind === "forms" ? "title" : "name";
 
-  function addItem(id, folder) {
+  function addItem(id, folder, name) {
     const fileId = "file_" + ++seq;
+    const nm = name == null ? id : name;
     fileBodies[fileId] = JSON.stringify({ folder, schema: [] });
-    mapping[id] = { fileId, folder };
+    fileNames[fileId] = nm + ".json";
+    mapping[id] = { fileId, folder, [nameKey]: nm };
     return id;
   }
   function itemFolder(fileId) {
@@ -48,6 +53,8 @@ function makeEnv(kind) {
       if (!(id in fileBodies)) throw new Error("no file " + id);
       return {
         getId: () => id,
+        getName: () => fileNames[id],
+        setName: (n) => { fileNames[id] = n; },
         getBlob: () => ({ getDataAsString: () => fileBodies[id] }),
         setContent: (c) => { fileBodies[id] = c; },
       };
@@ -64,6 +71,11 @@ function makeEnv(kind) {
     Nfb_getActiveProperties_: () => props,
     Nfb_resolveFileIdFromEntry_: (e) => (e && e.fileId) || null,
     Nfb_normalizeIdList_: (arr) => (Array.isArray(arr) ? arr.filter(Boolean) : []),
+    // 名前 ＝ Drive ファイル名（.json 除去）。本来は gas/formsCrud.gs 定義（ここではロードしないため shim）。
+    Nfb_nameFromFileName_: (fileName) => (fileName == null ? "" : String(fileName)).replace(/\.json$/i, ""),
+    Nfb_nameFromFile_: (file) => {
+      try { return (file.getName() == null ? "" : String(file.getName())).replace(/\.json$/i, ""); } catch (e) { return ""; }
+    },
     // verify は別レイヤ（標準フォルダ整合エンジン）。folder store ロジックの検証では透過スタブ。
     StdFolders_entityAdapter_: (k) => ({ kind: k }),
     StdFolders_verifyEntriesAfterRelocate_: (adapter, ids) => ({ checked: ids.length }),
@@ -100,6 +112,8 @@ function makeEnv(kind) {
   loadGasFiles(context, [
     "constants.gs",
     "driveFile.gs",
+    // 移動時の同名衝突採番（StdFolderStore_uniqueNameInFolder_ → Forms_makeUniqueFormTitle_）で必要。
+    "formsTitleHelpers.js",
     "sharedFolderStore.gs",
     "formsFolderStore.gs",
     "analyticsFolderStore.gs",
@@ -124,7 +138,11 @@ function makeEnv(kind) {
         listFolders: () => context.Analytics_collectFolders_(T),
       };
 
-  return { context, api, addItem, itemFolder, mapping: () => mapping, fileBodies, store, driveOps };
+  const itemName = (id) => {
+    const fid = mapping[id] && mapping[id].fileId;
+    return fid ? String(fileNames[fid] || "").replace(/\.json$/i, "") : "";
+  };
+  return { context, api, addItem, itemFolder, itemName, mapping: () => mapping, fileBodies, fileNames, store, driveOps, nameKey };
 }
 
 const movedKey = (kind) => (kind === "forms" ? "movedFormIds" : "movedIds");
@@ -189,6 +207,52 @@ for (const kind of ["forms", "questions"]) {
     assert.equal(res.ok, false);
     const noun = kind === "forms" ? "フォーム" : "アイテム";
     assert.equal(res.error, "移動する" + noun + "またはフォルダを選択してください");
+  });
+
+  test(`[${kind}] moveItems: 移動先に同名アイテムがあれば (1) を付けてリネームする`, () => {
+    const env = makeEnv(kind);
+    env.addItem("keep", "dest", "見積書"); // 移動先に既存の同名
+    env.addItem("mover", "src", "見積書"); // 別フォルダの同名を移動
+    env.api.create("dest");
+    const res = env.api.move(kind === "forms"
+      ? { formIds: ["mover"], destPath: "dest" }
+      : { itemIds: ["mover"], destPath: "dest" });
+    assert.equal(res.ok, true);
+    assert.deepEqual(res[movedKey(kind)], ["mover"]);
+    // 移動した方が ` (1)` で採番される（既存は不変）。
+    assert.equal(env.itemName("mover"), "見積書 (1)");
+    assert.equal(env.fileNames[env.mapping()["mover"].fileId], "見積書 (1).json");
+    assert.equal(env.mapping()["mover"][env.nameKey], "見積書 (1)");
+    assert.equal(env.mapping()["mover"].folder, "dest");
+    assert.equal(env.itemName("keep"), "見積書", "既存アイテムの名前は変わらない");
+  });
+
+  test(`[${kind}] moveItems: 移動先に同名が無ければ名前を保持する（フォルダ違いの同名は許容）`, () => {
+    const env = makeEnv(kind);
+    env.addItem("other", "dest", "売上集計"); // 別の名前なので衝突しない
+    env.addItem("mover", "src", "見積書");
+    env.api.create("dest");
+    const res = env.api.move(kind === "forms"
+      ? { formIds: ["mover"], destPath: "dest" }
+      : { itemIds: ["mover"], destPath: "dest" });
+    assert.equal(res.ok, true);
+    assert.equal(env.itemName("mover"), "見積書", "衝突しないので名前は再正規化されない");
+    assert.equal(env.mapping()["mover"].folder, "dest");
+  });
+
+  test(`[${kind}] moveItems: 同名アイテムを複数まとめて同一フォルダへ移動すると一方に (1)`, () => {
+    const env = makeEnv(kind);
+    env.addItem("a", "fa", "レポート");
+    env.addItem("b", "fb", "レポート");
+    env.api.create("dest");
+    const res = env.api.move(kind === "forms"
+      ? { formIds: ["a", "b"], destPath: "dest" }
+      : { itemIds: ["a", "b"], destPath: "dest" });
+    assert.equal(res.ok, true);
+    const names = [env.itemName("a"), env.itemName("b")].sort();
+    assert.deepEqual(names, ["レポート", "レポート (1)"]);
+    assert.equal(env.mapping()["a"].folder, "dest");
+    assert.equal(env.mapping()["b"].folder, "dest");
   });
 
   test(`[${kind}] renameFolder: leaf 名だけ変更し配下を追従`, () => {

@@ -102,6 +102,34 @@ function StdFolderStore_collectItemIdsUnder_(adapter, path) {
   return ids;
 }
 
+// 移動先フォルダ destFolder 内で currentName が他アイテムと衝突する場合のみ ` (1)` 等を付与した
+// 一意名を返す。衝突しなければ currentName をそのまま返す（再正規化しない＝既存の ` (1)` を壊さない）。
+// 衝突対象は「同一論理フォルダ ∧ 自分以外（id / fileId で除外）」のアイテム名のみ。論理パス（フォルダ）
+// や種類が違えば同名は許容する、という規則を移動経路でも貫くための採番ロジック。
+// 名前は中央辞書のキャッシュ（forms=title / analytics=name）を優先し、無ければ Drive ファイル名から導出する。
+function StdFolderStore_uniqueNameInFolder_(adapter, mapping, destFolder, currentName, selfId, selfFileId) {
+  var target = Forms_normalizeFolderPath_(destFolder);
+  var nameKey = adapter.entryNameKey;
+  var siblings = [];
+  for (var otherId in mapping) {
+    if (!mapping.hasOwnProperty(otherId)) continue;
+    if (otherId === selfId) continue;
+    var e = mapping[otherId] || {};
+    var efid = Nfb_resolveFileIdFromEntry_(e);
+    if (selfFileId && efid === selfFileId) continue; // 同一物理ファイルを指す別名キーは自分扱い
+    if (Forms_normalizeFolderPath_(e.folder) !== target) continue; // フォルダが違えば衝突対象外
+    var nm = nameKey ? e[nameKey] : null;
+    if ((typeof nm !== "string" || !nm) && efid) {
+      // キャッシュ名が無い旧データの保険: 実ファイル名から導出する（同一フォルダのみなので件数は限定的）。
+      try { nm = Nfb_nameFromFile_(DriveApp.getFileById(efid)); } catch (errName) { nm = ""; }
+    }
+    if (typeof nm === "string" && nm) siblings.push(nm);
+  }
+  // 衝突が無ければ現在名を保持（再正規化しない）。衝突するときだけ採番する。
+  if (siblings.indexOf(currentName) === -1) return currentName;
+  return Forms_makeUniqueFormTitle_(currentName, siblings);
+}
+
 // アイテム JSON の folder フィールドだけを Drive 上で書き換える軽量更新。
 // 保存系（saveForm/saveTemplate）を通さないことで余計な副作用を避ける。modifiedAt の形式は
 // adapter.stampFolderModified に委譲する（forms=JST 文字列+serial / analytics=ms）。
@@ -114,8 +142,19 @@ function StdFolderStore_setItemFolder_(adapter, id, folderPath) {
   try {
     var read = Nfb_readJsonFileById_(fileId);
     var json = read.json;
-    json.folder = Forms_normalizeFolderPath_(folderPath);
+    var destFolder = Forms_normalizeFolderPath_(folderPath);
+    json.folder = destFolder;
     adapter.stampFolderModified(json);
+
+    // 移動先フォルダ内で名前が衝突する場合のみ ` (1)` 等を付与してリネームする（移動で同名に
+    // なるときの採番）。衝突しない限り名前は保持する（論理パス/種類が違えば同名可）。
+    var currentName = Nfb_nameFromFile_(read.file);
+    var uniqueName = StdFolderStore_uniqueNameInFolder_(adapter, mapping, destFolder, currentName, id, fileId);
+    if (uniqueName && uniqueName !== currentName) {
+      read.file.setName(uniqueName + ".json");
+      if (entry && typeof entry === "object" && adapter.entryNameKey) entry[adapter.entryNameKey] = uniqueName;
+    }
+
     Nfb_writeJsonToFile_(read.file, json);
     // 物理 Drive 上でもファイルを folder に対応するフォルダへ移動（既に正しい親なら no-op）。
     adapter.driveMoveFileToPath(fileId, json.folder);

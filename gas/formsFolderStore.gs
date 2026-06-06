@@ -66,7 +66,9 @@ function Forms_folderStoreAdapter_() {
     movedIdsKey: "movedFormIds",
     deletedCountKey: "deletedFormCount",
     itemNoun: "フォーム",
-    lockPrefix: ""
+    lockPrefix: "",
+    // 中央辞書エントリで「名前」を保持するキー（移動時の同名衝突採番で参照/更新する）。
+    entryNameKey: "title"
   };
 }
 
