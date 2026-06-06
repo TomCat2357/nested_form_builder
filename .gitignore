@@ -3,7 +3,6 @@
 # =============================================================================
 *.zip
 form_data/
-CLAUDE.md
 .gas-deployment.json.*
 .cocoindex_code/*
 # 依存関係
