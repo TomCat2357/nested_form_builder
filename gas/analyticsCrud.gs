@@ -186,8 +186,11 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
       normalizedTemplate.schemaVersion = normalizedTemplate.schemaVersion || 1;
     }
 
-    // 名前のユニーク化: 既存テンプレート名と衝突する場合は ` (1)` ` (2)` を付与
+    // 名前のユニーク化: 既存テンプレート名と衝突する場合は ` (1)` ` (2)` を付与。
+    // 衝突判定は「同一論理フォルダ内」に限定する。論理パス folder が違えば同名を許容する
+    // （questions / dashboards / forms は種類ごとに mapping が別なので互いに衝突しない）。
     // mapping にキャッシュされた name を優先し、無ければ各ファイルを読みに行く。
+    var targetFolderPath = Forms_normalizeFolderPath_(normalizedTemplate.folder);
     var existingNames = [];
     for (var otherId in mapping) {
       if (!mapping.hasOwnProperty(otherId)) continue;
@@ -196,6 +199,8 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
       // 二重登録が残っている場合、同一物理ファイルを指す別名キー（旧 ULID 等）も
       // 自分扱いで除外する。除外しないと自分の名前と衝突して誤って ` (1)` が付く。
       if (existingFileId && Nfb_resolveFileIdFromEntry_(otherEntry) === existingFileId) continue;
+      // 論理フォルダが異なるアイテムは衝突対象外（フォルダが違えば同名可）。
+      if (Forms_normalizeFolderPath_(otherEntry.folder) !== targetFolderPath) continue;
       var otherName = otherEntry.name;
       if (typeof otherName !== "string" || !otherName) {
         // mapping にキャッシュが無いケース。名前 ＝ ファイル名なので実ファイル名から導出する。
