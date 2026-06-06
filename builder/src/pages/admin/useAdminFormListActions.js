@@ -2,64 +2,9 @@ import { useCallback, useState } from "react";
 import { toErrorMessage } from "../../utils/errorMessage.js";
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { hasScriptRun, importFormsFromDrive } from "../../services/gasClient.js";
-import { toUnixMs } from "../../utils/dateTime.js";
-import { normalizeFolderPath, countItemsUnder, folderExists } from "../../utils/folderTree.js";
-import { sanitizeFileBaseName, downloadJsonOrZip, resolveDialogTargetIds, createMoveActions } from "./listActionsShared.js";
-import { asPlainObject } from "../../utils/objectShape.js";
-
-const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
-  const parts = [];
-  if (skipped > 0) {
-    const label = useRegisteredLabel ? "登録済み（リンク済み）スキップ" : "スキップ";
-    parts.push(`${label} ${skipped} 件`);
-  }
-  if (parseFailed > 0) parts.push(`読込失敗 ${parseFailed} 件`);
-  return parts.length > 0 ? `（${parts.join("、")}）` : "";
-};
-
-const sanitizeImportedForm = (raw) => {
-  if (!raw || typeof raw !== "object") return null;
-  const schema = Array.isArray(raw.schema) ? raw.schema : [];
-  const settings = asPlainObject(raw.settings);
-  const createdAtUnixMs = toUnixMs(raw.createdAtUnixMs ?? raw.createdAt);
-  const modifiedAtUnixMs = toUnixMs(raw.modifiedAtUnixMs ?? raw.modifiedAt);
-
-  if (!settings.formTitle && typeof raw.name === "string") {
-    settings.formTitle = raw.name;
-  }
-
-  return {
-    id: raw.id,
-    description: typeof raw.description === "string" ? raw.description : "",
-    schema,
-    settings,
-    archived: !!raw.archived,
-    readOnly: !!raw.readOnly,
-    schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1,
-    createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : raw.createdAt,
-    modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : raw.modifiedAt,
-    createdAtUnixMs: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : null,
-    modifiedAtUnixMs: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : null,
-  };
-};
-
-const flattenImportedContents = (contents) => {
-  const list = [];
-  let invalidPayloadCount = 0;
-  (Array.isArray(contents) ? contents : []).forEach((item) => {
-    if (item && item.form && item.fileId) {
-      const sanitized = sanitizeImportedForm(item.form);
-      if (sanitized) {
-        list.push({ form: sanitized, fileId: item.fileId, fileUrl: item.fileUrl || null });
-      } else {
-        invalidPayloadCount += 1;
-      }
-    } else {
-      invalidPayloadCount += 1;
-    }
-  });
-  return { list, invalidPayloadCount };
-};
+import { countItemsUnder } from "../../utils/folderTree.js";
+import { sanitizeFileBaseName, downloadJsonOrZip, resolveDialogTargetIds, createMoveActions, createFolderCreateActions, createRenameActions } from "./listActionsShared.js";
+import { buildImportDetail, flattenImportedContents } from "./formImportWorkflow.js";
 
 export function useAdminFormListActions({
   sortedForms,
@@ -368,33 +313,16 @@ export function useAdminFormListActions({
   };
 
   // ---- 新規フォルダ ----
-  const handleCreateFolder = () => {
-    if (!hasScriptRun()) {
-      showAlert("フォルダ作成はGoogle Apps Script環境でのみ利用可能です");
-      return;
-    }
-    setNewFolderName("");
-    setNewFolderError("");
-    newFolderDialog.open();
-  };
-
-  const confirmCreateFolder = async () => {
-    const name = (newFolderName || "").trim();
-    if (!name) {
-      setNewFolderError("フォルダ名を入力してください");
-      return;
-    }
-    const path = normalizeFolderPath([currentPath, name].filter(Boolean).join("/"));
-    try {
-      await createFolder(path);
-      newFolderDialog.reset();
-      setNewFolderName("");
-      setNewFolderError("");
-    } catch (error) {
-      console.error("[AdminFormList] Create folder failed:", error);
-      setNewFolderError(error?.message || "フォルダの作成に失敗しました");
-    }
-  };
+  const { handleCreateFolder, confirmCreateFolder } = createFolderCreateActions({
+    showAlert,
+    currentPath,
+    createFolder,
+    newFolderDialog,
+    newFolderName,
+    setNewFolderName,
+    setNewFolderError,
+    onError: (error) => console.error("[AdminFormList] Create folder failed:", error),
+  });
 
   // ---- 移動 ----
   const { handleMoveSelected, confirmMove } = createMoveActions({
@@ -419,95 +347,30 @@ export function useAdminFormListActions({
   // ---- 名前変更 ----
   // フォルダ1件 → フォルダ名変更（mv の rename 相当。親は保持し leaf 名だけ変える）。
   // フォーム1件 → フォーム自体の名前（settings.formTitle）変更。文脈で切り替える。
-  const handleRenameSelected = () => {
-    if (!hasScriptRun()) {
-      showAlert("名前変更はGoogle Apps Script環境でのみ利用可能です");
-      return;
-    }
-    const folderPaths = Array.from(selectedFolders || []);
-    const formIds = Array.from(selected || []);
-    if (folderPaths.length === 1 && formIds.length === 0) {
-      const path = normalizeFolderPath(folderPaths[0]);
-      const currentName = path.split("/").pop() || "";
-      setRenameName(currentName);
-      setRenameError("");
-      renameDialog.open({ kind: "folder", path, currentName });
-      return;
-    }
-    if (formIds.length === 1 && folderPaths.length === 0) {
-      const form = sortedForms.find((f) => f.id === formIds[0]);
-      if (!form || form.loadError) {
-        showAlert("名前を変更できるフォームを選択してください。");
-        return;
-      }
-      const currentName = form.settings?.formTitle || "";
-      setRenameName(currentName);
-      setRenameError("");
-      renameDialog.open({ kind: "item", id: form.id, currentName });
-      return;
-    }
-    showAlert("名前を変更するフォルダまたはフォームを1つだけ選択してください。");
-  };
-
-  const confirmRenameItem = async () => {
-    const formId = renameDialog.state.id;
-    const newName = (renameName || "").trim();
-    if (!newName) {
-      setRenameError("新しい名前を入力してください");
-      return;
-    }
-    try {
-      await renameForm(formId, newName);
-      clearSelectionByIds([formId]);
-      renameDialog.reset();
-      setRenameName("");
-      setRenameError("");
-    } catch (error) {
-      console.error("[AdminFormList] Rename form failed:", error);
-      setRenameError(error?.message || "名前の変更に失敗しました");
-    }
-  };
-
-  const confirmRename = async () => {
-    if (renameDialog.state.kind === "item") {
-      await confirmRenameItem();
-      return;
-    }
-    await confirmRenameFolder();
-  };
-
-  const confirmRenameFolder = async () => {
-    const path = normalizeFolderPath(renameDialog.state.path);
-    const newName = (renameName || "").trim();
-    if (!newName) {
-      setRenameError("新しいフォルダ名を入力してください");
-      return;
-    }
-    if (newName.includes("/")) {
-      setRenameError("フォルダ名に「/」は使用できません");
-      return;
-    }
-    // 同じ階層内での同名衝突をクライアント側でも先取りチェック（最終判定はサーバ）。
-    const segs = path.split("/");
-    segs.pop();
-    const parent = segs.join("/");
-    const next = parent ? `${parent}/${newName}` : newName;
-    if (next !== path && folderExists(registeredFolders, next)) {
-      setRenameError(`同名のフォルダ「${next}」が既に存在します`);
-      return;
-    }
-
-    try {
-      await renameFolder({ path, newName });
-      if (clearFolderSelection) clearFolderSelection();
-      renameDialog.reset();
-      setRenameName("");
-      setRenameError("");
-    } catch (error) {
-      console.error("[AdminFormList] Rename folder failed:", error);
-      setRenameError(error?.message || "名前の変更に失敗しました");
-    }
-  };
+  const { handleRenameSelected, confirmRename } = createRenameActions({
+    sortedItems: sortedForms,
+    selected,
+    selectedFolders,
+    renameDialog,
+    renameName,
+    setRenameName,
+    setRenameError,
+    registeredFolders,
+    renameItem: renameForm,
+    renameFolder,
+    clearSelectionByIds,
+    clearFolderSelection,
+    getItemName: (form) => form.settings?.formTitle || "",
+    isItemRenamable: (form) => !form.loadError,
+    emptyRenameMessage: "名前を変更できるフォームを選択してください。",
+    ambiguousRenameMessage: "名前を変更するフォルダまたはフォームを1つだけ選択してください。",
+    showAlert,
+    onError: (error, kind) =>
+      console.error(
+        kind === "item" ? "[AdminFormList] Rename form failed:" : "[AdminFormList] Rename folder failed:",
+        error,
+      ),
+  });
 
   const handleCopySelected = () => {
     if (copying) return;
