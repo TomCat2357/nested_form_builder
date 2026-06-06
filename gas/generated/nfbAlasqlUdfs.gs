@@ -455,11 +455,73 @@ var NfbAlasqlRuntime = (() => {
     return `${pad4(datedParts.year)}-${pad2(datedParts.month)}-${pad2(datedParts.day)}_${pad2(hh)}:${pad2(mi)}:${pad2(ss)}.${pad3(sss)}`;
   };
 
+  // builder/src/utils/pathCodec.js
+  function escapeSegment(segment, sep) {
+    const s = String(segment === null || segment === void 0 ? "" : segment);
+    let out = "";
+    for (let i = 0; i < s.length; i++) {
+      const ch = s[i];
+      if (ch === "\\" || ch === sep) out += "\\";
+      out += ch;
+    }
+    return out;
+  }
+  function splitEscaped(text, sep, allowQuotes) {
+    const str = String(text === null || text === void 0 ? "" : text);
+    const tokens = [];
+    let current = "";
+    let escaping = false;
+    let quote = null;
+    let i = 0;
+    while (i < str.length) {
+      const ch = str[i];
+      if (escaping) {
+        current += ch;
+        escaping = false;
+        i++;
+        continue;
+      }
+      if (ch === "\\") {
+        escaping = true;
+        i++;
+        continue;
+      }
+      if (quote) {
+        if (ch === quote) {
+          if (str[i + 1] === quote) {
+            current += quote;
+            i += 2;
+            continue;
+          }
+          quote = null;
+          i++;
+          continue;
+        }
+        current += ch;
+        i++;
+        continue;
+      }
+      if (allowQuotes && (ch === "'" || ch === '"')) {
+        quote = ch;
+        i++;
+        continue;
+      }
+      if (ch === sep) {
+        tokens.push(current);
+        current = "";
+        i++;
+        continue;
+      }
+      current += ch;
+      i++;
+    }
+    if (escaping) current += "\\";
+    tokens.push(current);
+    return tokens;
+  }
+
   // builder/src/utils/multiValue.js
   var MULTI_VALUE_SEP = ",";
-  function escapeLabel(label) {
-    return String(label).replace(/\\/g, "\\\\").replace(/,/g, "\\,");
-  }
   function joinMultiValue(labels) {
     if (!Array.isArray(labels)) return "";
     const out = [];
@@ -468,7 +530,7 @@ var NfbAlasqlRuntime = (() => {
       if (lbl === null || lbl === void 0) continue;
       const s = String(lbl);
       if (s === "") continue;
-      out.push(escapeLabel(s));
+      out.push(escapeSegment(s, MULTI_VALUE_SEP));
     }
     return out.join(MULTI_VALUE_SEP);
   }
@@ -476,26 +538,12 @@ var NfbAlasqlRuntime = (() => {
     if (text === null || text === void 0) return [];
     const str = String(text);
     if (str === "") return [];
-    const tokens = [];
-    let current = "";
-    let escaping = false;
-    for (let i = 0; i < str.length; i++) {
-      const ch = str[i];
-      if (escaping) {
-        current += ch;
-        escaping = false;
-      } else if (ch === "\\") {
-        escaping = true;
-      } else if (ch === MULTI_VALUE_SEP) {
-        if (current !== "") tokens.push(current);
-        current = "";
-      } else {
-        current += ch;
-      }
+    const tokens = splitEscaped(str, MULTI_VALUE_SEP, false);
+    const out = [];
+    for (let i = 0; i < tokens.length; i++) {
+      if (tokens[i] !== "") out.push(tokens[i]);
     }
-    if (escaping) current += "\\";
-    if (current !== "") tokens.push(current);
-    return tokens;
+    return out;
   }
 
   // builder/src/features/expression/registerNfbUdfs.js
@@ -1051,7 +1099,13 @@ var NfbAlasqlRuntime = (() => {
   // builder/src/features/analytics/utils/headerToAlaSqlKey.js
   function headerKeyToAlaSqlKey(key) {
     if (!key) return "";
-    return key.replace(/\|/g, "__");
+    const out = [];
+    const parts = splitEscaped(String(key), "/", false);
+    for (let i = 0; i < parts.length; i++) {
+      const sub = parts[i].split("|");
+      for (let j = 0; j < sub.length; j++) out.push(sub[j]);
+    }
+    return out.join("__");
   }
 
   // builder/src/features/analytics/utils/sqlLiteralMask.js

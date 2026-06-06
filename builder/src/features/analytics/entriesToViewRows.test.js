@@ -103,7 +103,7 @@ test("select: 保存ラベルを素通し", () => {
 test("number: 文字列でも Number に強制", () => {
   const entry = {
     ...baseEntry,
-    data: { "基本情報|金額": "1500" },
+    data: { "基本情報/金額": "1500" },
   };
   const [row] = entriesToViewTableRows([entry], form);
   assert.equal(row["基本情報__金額"], 1500);
@@ -111,7 +111,7 @@ test("number: 文字列でも Number に強制", () => {
 });
 
 test("text: data[path] を素通し", () => {
-  const entry = { ...baseEntry, data: { "基本情報|区": "東区" } };
+  const entry = { ...baseEntry, data: { "基本情報/区": "東区" } };
   const [row] = entriesToViewTableRows([entry], form);
   assert.equal(row["基本情報__区"], "東区");
 });
@@ -145,10 +145,10 @@ test("option 真偽値列はそもそも row に出さない（data 形式との
   const entry = {
     ...baseEntry,
     data: {
-      "性別|男": "●",
-      "希望|電話": "●",
-      "希望|メール": "●",
-      "都道府県|東京都": "●",
+      "性別/男": "●",
+      "希望/電話": "●",
+      "希望/メール": "●",
+      "都道府県/東京都": "●",
     },
   };
   const [row] = entriesToViewTableRows([entry], form);
@@ -173,8 +173,8 @@ test("値が無いフィールドは null で初期化（SELECT * で schema 全
 
 test("複数 entries を順序保証で返す", () => {
   const entries = [
-    { ...baseEntry, id: "A", data: { "基本情報|区": "東区" } },
-    { ...baseEntry, id: "B", data: { "基本情報|区": "西区" } },
+    { ...baseEntry, id: "A", data: { "基本情報/区": "東区" } },
+    { ...baseEntry, id: "B", data: { "基本情報/区": "西区" } },
   ];
   const rows = entriesToViewTableRows(entries, form);
   assert.equal(rows.length, 2);

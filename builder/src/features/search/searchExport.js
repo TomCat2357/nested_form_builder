@@ -1,5 +1,6 @@
 import { traverseSchema } from "../../core/schemaUtils.js";
 import { computeRowValues } from "./searchTableValues.js";
+import { joinFieldPath } from "../../utils/pathCodec.js";
 import {
   createBaseColumns,
   createDisplayColumn,
@@ -15,7 +16,7 @@ const collectAllFieldSettings = (schema) => {
   const seen = new Set();
   traverseSchema(schema || [], (field, context) => {
     if (isExcludedSearchOrPrintField(field)) return;
-    const path = context?.pathSegments?.join("|") || "";
+    const path = joinFieldPath(context?.pathSegments || []);
     if (!path || seen.has(path)) return;
     seen.add(path);
     collected.push({

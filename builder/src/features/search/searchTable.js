@@ -1,4 +1,5 @@
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
+import { joinFieldPath, splitFieldKey, PATH_SEP } from "../../utils/pathCodec.js";
 import { resolveFileDisplayName, normalizeFileUploadEntries, parseFileUploadStorage } from "../../core/collect.js";
 import {
   formatUnixMsDateTimeSec,
@@ -50,7 +51,7 @@ const buildHeaderFullPath = (matrix, columnIndex) => {
       parts.push(String(val));
     }
   }
-  return parts.join("|");
+  return joinFieldPath(parts);
 };
 
 const matchBaseDisplayColumn = (columns, fullPath) => {
@@ -61,9 +62,10 @@ const matchBaseDisplayColumn = (columns, fullPath) => {
     if (fullPath === pathStr) {
       return column;
     }
-    if (fullPath.startsWith(`${pathStr}|`)) {
-      const remainder = fullPath.slice(pathStr.length + 1);
-      if (remainder && !remainder.includes("|")) {
+    if (fullPath.startsWith(`${pathStr}${PATH_SEP}`)) {
+      // remainder はエスケープ済みの 1 セグメント（直下の選択肢）のときのみ採用。
+      const remSegs = splitFieldKey(fullPath.slice(pathStr.length + PATH_SEP.length));
+      if (remSegs.length === 1 && remSegs[0] !== "") {
         return column;
       }
     }
@@ -225,7 +227,7 @@ const actionsColumn = {
 const collectChoiceOptionOrderByPath = (schema) => {
   const optionOrderByPath = new Map();
   traverseSchema(schema || [], (field, context) => {
-    const path = context?.pathSegments?.join("|") || "";
+    const path = joinFieldPath(context?.pathSegments || []);
     if (!path) return;
     if (field?.type !== "checkboxes") return;
     const options = Array.isArray(field?.options) ? field.options : [];
@@ -243,7 +245,7 @@ const collectFieldMeta = (schema) => {
   traverseSchema(schema || [], (field, context) => {
     const fieldId = typeof field?.id === "string" ? field.id.trim() : "";
     if (fieldId) byId.set(fieldId, field);
-    const path = Array.isArray(context?.pathSegments) ? context.pathSegments.join("|") : "";
+    const path = Array.isArray(context?.pathSegments) ? joinFieldPath(context.pathSegments) : "";
     if (path && !byPath.has(path)) byPath.set(path, field);
   });
   return { byId, byPath };

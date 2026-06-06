@@ -18,6 +18,7 @@ import { restoreResponsesFromData } from "../../utils/responses.js";
 import { buildRecordItems } from "./printDocument.js";
 import { dataStore } from "../../app/state/dataStore.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
+import { joinFieldPath } from "../../utils/pathCodec.js";
 
 /**
  * schema 内の formLink フィールド（childFormId と id がともに非空）を収集する純関数。
@@ -40,7 +41,7 @@ export const collectFormLinkFields = (schema) => {
       childFormId,
       includeChildData: field.includeChildData === true,
       childFormName: typeof field.childFormPath === "string" ? field.childFormPath : "",
-      path: (context.pathSegments || []).join("|"),
+      path: joinFieldPath(context.pathSegments || []),
     });
   });
   return out;

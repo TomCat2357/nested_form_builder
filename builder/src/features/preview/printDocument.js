@@ -6,6 +6,7 @@ import { CHOICE_TYPES, isChoiceMarkerValue } from "../../utils/responses.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 import { isExcludedSearchOrPrintField } from "../search/searchTable.js";
 import { isPlainObject } from "../../utils/objectShape.js";
+import { joinFieldPath } from "../../utils/pathCodec.js";
 
 export const toChoiceOptionLabels = (field) => {
   const options = Array.isArray(field?.options) ? field.options : [];
@@ -163,7 +164,7 @@ const isExcludedPrintField = (field) => (
 );
 
 // レコードの質問内容と入力情報を { question, value, type }[] に整形する。
-// question は「ヘッダー階層を "|" で連結した文字列」で、検索一覧のヘッダー
+// question は「ヘッダー階層を "/" で連結した文字列」で、検索一覧のヘッダー
 // (= traverseSchema の pathSegments) と同じ表現に統一する。Webhook 送信や
 // 外部アクションの payload (record.items) で共有する。
 export const buildRecordItems = (schema, responses) => {
@@ -171,7 +172,7 @@ export const buildRecordItems = (schema, responses) => {
   traverseSchema(schema || [], (field, context) => {
     if (isExcludedSearchOrPrintField(field)) return;
     items.push({
-      question: (context.pathSegments || []).join("|"),
+      question: joinFieldPath(context.pathSegments || []),
       value: formatPrintItemValue(field, (responses || {})[field?.id]),
       type: field?.type || "text",
     });

@@ -46,13 +46,13 @@ function nfbExprCompile_(rawExpr) {
   return fn;
 }
 
-// 行キーの `|` を `__` に寄せる（フロント headerKeyToAlaSqlKey と同じ。冪等）。
+// 行キー（"/" 連結・legacy "|" も受理）を `__` に寄せる（フロント headerKeyToAlaSqlKey と同じ。冪等）。
 function nfbExprNormalizeRowKeys_(row) {
   if (!row || typeof row !== "object") return {};
   var out = {};
   for (var k in row) {
     if (Object.prototype.hasOwnProperty.call(row, k)) {
-      out[String(k).replace(/\|/g, "__")] = row[k];
+      out[Nfb_headerKeyToAlaSqlKey_(String(k))] = row[k];
     }
   }
   return out;

@@ -8,6 +8,7 @@
  */
 
 import { traverseSchema } from "../../../core/schemaUtils.js";
+import { joinFieldPath } from "../../../utils/pathCodec.js";
 
 export const COLUMN_TYPES = ["number", "date", "string", "boolean", "unknown"];
 
@@ -60,7 +61,7 @@ export function buildFieldTypeMap(schema) {
   const map = new Map();
   if (!Array.isArray(schema)) return map;
   traverseSchema(schema, (field, ctx) => {
-    const pipePath = (ctx && Array.isArray(ctx.pathSegments)) ? ctx.pathSegments.join("|") : "";
+    const pipePath = (ctx && Array.isArray(ctx.pathSegments)) ? joinFieldPath(ctx.pathSegments) : "";
     if (!pipePath) return;
     if (map.has(pipePath)) return;
     map.set(pipePath, normalizeFieldType(field && field.type));

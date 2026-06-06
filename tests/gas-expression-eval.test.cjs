@@ -20,7 +20,7 @@ function loadEvaluator() {
   const ctx = { console };
   vm.createContext(ctx);
   const gasDir = path.join(__dirname, "..", "gas");
-  for (const name of ["vendor/alasql.min.js", "generated/nfbAlasqlUdfs.gs", "expressionEvaluator.gs"]) {
+  for (const name of ["vendor/alasql.min.js", "generated/nfbAlasqlUdfs.gs", "pathCodec.gs", "expressionEvaluator.gs"]) {
     const gasFile = path.join(gasDir, name);
     vm.runInContext(fs.readFileSync(gasFile, "utf8"), ctx, { filename: gasFile });
   }

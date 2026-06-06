@@ -12,13 +12,14 @@
 
 import { traverseSchema } from "../../../core/schemaUtils.js";
 import { headerKeyToAlaSqlKey } from "./headerToAlaSqlKey.js";
+import { joinFieldPath } from "../../../utils/pathCodec.js";
 
 export function forEachFormField(form, callback) {
   if (!form || !Array.isArray(form.schema) || typeof callback !== "function") return;
   const seen = new Set();
   traverseSchema(form.schema, (field, ctx) => {
     const segs = (ctx && Array.isArray(ctx.pathSegments)) ? ctx.pathSegments : [];
-    const pipePath = segs.join("|");
+    const pipePath = joinFieldPath(segs);
     if (!pipePath || seen.has(pipePath)) return;
     seen.add(pipePath);
     callback({

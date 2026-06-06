@@ -57,14 +57,25 @@ function formatNumeric(value) {
 function buildColumnIndex(formColumns) {
   const index = new Map();
   for (const col of formColumns || []) {
-    if (col && col.key) index.set(col.key, col);
+    if (!col || !col.key) continue;
+    index.set(col.key, col);
+    // 後方互換: 保存済みダッシュボードの列参照が旧 `親|子`（パイプ連結）形式でも、
+    // 安定した alaSqlKey（`親__子`、`/` でも `|` でも同一）で同じ列に解決できるようにする。
+    const norm = headerKeyToAlaSqlKey(col.key);
+    if (norm && !index.has(norm)) index.set(norm, col);
   }
   return index;
 }
 
+// 保存トークン（新 `/` 形式 / 旧 `|` 形式どちらでも）→ 列メタ。alaSqlKey は両形式で同一なのでそれで突き合わせる。
+function findColumnByRef(columnIndex, ref) {
+  if (!ref) return null;
+  return columnIndex.get(ref) || columnIndex.get(headerKeyToAlaSqlKey(String(ref))) || null;
+}
+
 function resolveAlaSqlKey(columnKey, columnIndex) {
   if (!columnKey) return "";
-  const col = columnIndex.get(columnKey);
+  const col = findColumnByRef(columnIndex, columnKey);
   return col ? col.alaSqlKey : headerKeyToAlaSqlKey(columnKey);
 }
 
@@ -106,7 +117,7 @@ function aggregationExpression(agg, columnIndex) {
     // alasql 4 の組み込み MIN/MAX は値を number/bigint に強制し、文字列・canonical 日付文字列を捨てる
     // （非数値列の結果が NULL になる）。数値列のみネイティブを使い、それ以外（date / string / unknown）は
     // STR_MIN / STR_MAX UDF（辞書順 = 日付の時系列順で `<` / `>` 比較）に委ねる。registerNfbUdfs.js 参照。
-    const col = columnIndex.get(agg.column);
+    const col = findColumnByRef(columnIndex, agg.column);
     const colType = (col && col.type) ? col.type : "unknown";
     if (colType === "number") {
       return { ok: true, expr: (agg.type === "max" ? "MAX(" : "MIN(") + bracketed + ")" };
@@ -151,7 +162,8 @@ function metricDisplayLabel(agg, formColumns) {
   if (!suffix) return agg && agg.id ? agg.id : "値";
   let sourceLabel = "";
   if (agg && agg.column) {
-    const sourceCol = (formColumns || []).find((c) => c && c.key === agg.column);
+    const aggColNorm = headerKeyToAlaSqlKey(String(agg.column));
+    const sourceCol = (formColumns || []).find((c) => c && (c.key === agg.column || c.alaSqlKey === aggColNorm));
     sourceLabel = (sourceCol && sourceCol.label) ? sourceCol.label : String(agg.column);
   }
   return sourceLabel ? sourceLabel + " " + suffix : suffix;
@@ -341,7 +353,8 @@ export function compileStages(query, opts) {
 
   if (cat.summarize) {
     const groupBy = Array.isArray(cat.summarize.groupBy) ? cat.summarize.groupBy : [];
-    const groupedKeys = new Set(groupBy.map((g) => g && g.column).filter(Boolean));
+    // alaSqlKey で正規化（新 `/` / 旧 `|` どちらの参照でも同じ列を「グループ化済み」と判定する）。
+    const groupedKeys = new Set(groupBy.map((g) => g && g.column).filter(Boolean).map((c) => headerKeyToAlaSqlKey(String(c))));
     for (const g of groupBy) {
       if (!g || !g.column) continue;
       const dim = dimensionExpression(g, columnIndex);
@@ -350,7 +363,7 @@ export function compileStages(query, opts) {
       dimAliases.add(dim.alias);
       selectAliases.add(dim.alias);
       // bucket 適用後の型は基本的に "string"（年/月/日は文字列扱い）。それ以外は元列の型を継承。
-      const sourceCol = formColumns.find((c) => c && c.key === g.column);
+      const sourceCol = findColumnByRef(columnIndex, g.column);
       const sourceType = sourceCol && sourceCol.type ? sourceCol.type : "unknown";
       const dimType = g.bucket ? "string" : sourceType;
       const sourceLabel = sourceCol && sourceCol.label ? sourceCol.label : String(g.column || dim.alias);
@@ -376,7 +389,7 @@ export function compileStages(query, opts) {
       // 集計結果の型: count/countNotNull/sum/avg は number。min/max は元列の型を継承。
       let metricType = "number";
       if ((perCol.type === "min" || perCol.type === "max") && perCol.column) {
-        const sourceCol = formColumns.find((c) => c && c.key === perCol.column);
+        const sourceCol = findColumnByRef(columnIndex, perCol.column);
         if (sourceCol && sourceCol.type) metricType = sourceCol.type;
       }
       metricColumns.push({
@@ -405,7 +418,7 @@ export function compileStages(query, opts) {
           continue;
         }
         const targets = formColumns.filter((c) =>
-          c && c.key && !groupedKeys.has(c.key) && isAggCompatible(a.type, c.type));
+          c && c.key && !groupedKeys.has(c.alaSqlKey) && isAggCompatible(a.type, c.type));
         if (targets.length === 0) {
           errors.push(a.type + " を適用できる列がありません（全列対象）");
           continue;

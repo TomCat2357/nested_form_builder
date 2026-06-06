@@ -20,7 +20,7 @@ const mkForm = () => ({
 
 test("buildColumnIndex はパイプパスと field.id の引きを構築する", () => {
   const idx = buildColumnIndex(mkForm());
-  assert.equal(idx.byPipePath.get("基本情報|区"), "基本情報__区");
+  assert.equal(idx.byPipePath.get("基本情報/区"), "基本情報__区");
   assert.equal(idx.byPipePath.get("受付日"), "受付日");
   assert.equal(idx.byFieldId.get("f_auto_bbb"), "基本情報__区");
   assert.equal(idx.byFieldId.get("f_auto_ddd"), "受付日");

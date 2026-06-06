@@ -478,3 +478,22 @@ test("agg.label が指定されていれば別名はそれを優先する", () =
   assert.equal(r.columns[0].name, "合計金額");
   assert.equal(r.columns[0].displayLabel, "合計金額");
 });
+
+test("後方互換: 旧パイプ形式の保存列参照も新スラッシュ列（数値）に解決し NUMERIC MIN を使う", () => {
+  const slashColumns = [
+    { key: "基本情報/金額", alaSqlKey: "基本情報__金額", path: ["基本情報", "金額"], label: "金額", type: "number" },
+  ];
+  const compileSlash = (stages) => compileStages({ schemaVersion: 2, stages }, { formColumns: slashColumns });
+  const legacy = compileSlash([
+    PICK,
+    { id: "s2", type: "summarize", aggregations: [{ id: "a1", type: "min", column: "基本情報|金額" }], groupBy: [] },
+  ]);
+  const modern = compileSlash([
+    PICK,
+    { id: "s2", type: "summarize", aggregations: [{ id: "a1", type: "min", column: "基本情報/金額" }], groupBy: [] },
+  ]);
+  assert.equal(legacy.ok, true);
+  assert.equal(legacy.sql, modern.sql);
+  // 数値列なので STR_MIN ではなくネイティブ MIN（型解決が旧参照でも効いている証拠）
+  assert.match(legacy.sql, /MIN\(\[基本情報__金額\]\)/);
+});
