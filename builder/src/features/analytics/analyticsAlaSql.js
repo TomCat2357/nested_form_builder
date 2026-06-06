@@ -42,6 +42,22 @@ function getCachedSourceRows_(cacheKey) {
   return hit.rows;
 }
 
+// 検索の SQL モードで登録テーブルから落とす固定メタ列キー
+// （searchExpressionBuilder.EXCLUDED_META_COLUMN_KEYS / searchSimpleTranslate と同一ポリシー。
+//  循環 import を避けるためここで再定義する。変更時は揃えること）。
+const NON_SEARCHABLE_META_KEYS = ["createdBy", "modifiedBy", "deletedAt", "deletedBy"];
+
+// 検索非対象メタ列を落とした新しい行配列を返す（キャッシュ済みの pristine 行は破壊しない）。
+// registerFormAsTable の excludeMetaColumns で使う。テスト用に export する。
+export function stripNonSearchableMetaColumns(rows) {
+  if (!Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    const out = { ...row };
+    for (const key of NON_SEARCHABLE_META_KEYS) delete out[key];
+    return out;
+  });
+}
+
 // 削除済みエントリを除外する（data / view 共通）。
 function filterNotDeleted_(entries) {
   return (entries || []).filter((e) => {
@@ -85,6 +101,9 @@ async function injectChildFormDataIntoRows_(rows, form) {
  * @param {string[]} [options.aliasAlsoAs] - 同一テーブルに貼る追加 alias（data_<id> / form_<id> / "data" など）
  * @param {boolean} [options.injectChildData] - formLink 列へ子フォーム合成オブジェクトを注入する
  *   （CHILD_FORM_* UDF 用）。SQL に CHILD_FORM_ が含まれるときだけ呼び出し側が立てる。
+ * @param {boolean} [options.excludeMetaColumns] - 検索非対象の固定メタ列（createdBy / modifiedBy /
+ *   deletedAt / deletedBy）を登録テーブルから落とす。検索の SQL モード（runSearchSelect）だけ true。
+ *   Question/Dashboard は分析用途のため false（全列アクセス可）。
  */
 export async function registerFormAsTable(alias, formId, options = {}) {
   if (!alias) throw new Error("alias is required");
@@ -102,17 +121,20 @@ export async function registerFormAsTable(alias, formId, options = {}) {
     if (wantChild) await injectChildFormDataIntoRows_(rows, options.form);
     sourceTableCache.set(cacheKey, { rows, ts: Date.now() });
   }
+  // 検索の SQL モードは検索非対象メタ列を落とす（Question/Dashboard は false で全列のまま）。
+  // strip は新オブジェクトを生成するのでキャッシュ済み rows は汚さない。
+  const tableRows = options.excludeMetaColumns === true ? stripNonSearchableMetaColumns(rows) : rows;
   // 既に同一 alias で登録済みなら参照カウントだけ進めて rows は使い回す。
   // 同じテーブルに別 alias を貼る場合（data_<id> と form_<id> など）の追加登録は
   // 呼び出し側で aliasAlsoAs を渡してこの関数で一括処理する。
   // 登録は slice() コピーで行い、applyGlobalWhereToTables 等の table.data 再代入から
   // キャッシュ配列（pristine rows）を保護する。
-  alasql.tables[alias] = { data: rows.slice() };
+  alasql.tables[alias] = { data: tableRows.slice() };
   tableRefCounts.set(alias, (tableRefCounts.get(alias) || 0) + 1);
   if (Array.isArray(options.aliasAlsoAs)) {
     for (const extra of options.aliasAlsoAs) {
       if (!extra || extra === alias) continue;
-      alasql.tables[extra] = { data: rows.slice() };
+      alasql.tables[extra] = { data: tableRows.slice() };
       tableRefCounts.set(extra, (tableRefCounts.get(extra) || 0) + 1);
     }
   }

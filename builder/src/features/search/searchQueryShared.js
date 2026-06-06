@@ -1,10 +1,10 @@
 /**
  * 検索クエリ変換の共有ヘルパ。
  *
- * 簡易検索（searchSimpleTranslate.js）・ヒット抜粋ハイライト（searchQueryEngine.js）・
- * 厳密モード変換（searchSyntaxPreprocessor.js）の 3 経路で重複していた純粋関数を集約する。
+ * 簡易検索（searchSimpleTranslate.js）とヒット抜粋ハイライト（searchQueryEngine.js）で
+ * 重複していた純粋関数を集約する。
  * ここに置くのは「入力 → 出力」が副作用なく決まるユーティリティのみ（トークナイザ/パーサ本体は
- * 各モードの意味論が異なるため各ファイルに残す）。
+ * 各経路の意味論が異なるため各ファイルに残す）。
  */
 import { escapeRegExp } from "../../utils/folderTree.js";
 import { matchColumnName, normalizeColumnName } from "./searchTableValues.js";

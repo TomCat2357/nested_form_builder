@@ -1,5 +1,5 @@
 import { splitFieldKey, splitEscaped, PATH_SEP } from "../../utils/pathCodec.js";
-import { STRICT_PREFIX_RE, normalizeFullWidthSearchOperators } from "./searchSyntaxPreprocessor.js";
+import { SQL_MODE_RE, normalizeFullWidthSearchOperators } from "./searchSyntaxPreprocessor.js";
 import {
   canonicalSearchOperator,
   compileSearchRegex,
@@ -42,8 +42,8 @@ export const tokenizeSearchQuery = (query) => {
   if (!query || typeof query !== 'string') return [];
 
   const tokens = [];
-  // 簡易モードのみ全角記号オペレータを半角化（厳密モード SEARCH/WHERE はそのまま）。
-  const base = STRICT_PREFIX_RE.test(query) ? query : normalizeFullWidthSearchOperators(query);
+  // 簡易モードのみ全角記号オペレータを半角化（SQL モード SELECT はそのまま）。
+  const base = SQL_MODE_RE.test(query) ? query : normalizeFullWidthSearchOperators(query);
   const normalizedQuery = base.replace(/==/g, "=");
   let i = 0;
   const len = normalizedQuery.length;
@@ -544,7 +544,7 @@ const evaluateLeafOnRow = (ast, row, columns) => {
         if (isDateLikeColumn(column)) {
           // 日付関連型は「表示文字列 vs リテラル」の単純な文字列比較のみ行う。
           // canonical 化・前方一致補正・時刻のゼロ埋めなどの自動整形はしない。
-          // 型(精度)を揃えて比較したい場合は DATE()/TIME() 等を明示的に使う（厳密モード）。
+          // 型(精度)を揃えて比較したい場合は DATE()/TIME() 等を明示的に使う（SQL モード）。
           const rowStr = cellValue?.display ?? '';
           return compareValue(rowStr, ast.operator, ast.value, { allowNumeric: false });
         }
@@ -661,11 +661,11 @@ export const matchesKeyword = (row, columns, keyword) => {
 /**
  * クエリから自由文（PARTIAL / COLUMN_PARTIAL）のリーフを集めて
  * `[{ column: string|null, source }]` を返す。AND/OR/NOT 構造は無視した和集合。
- * column が null のものは全列対象。厳密モード（SEARCH/WHERE）は対象外で空配列。
+ * column が null のものは全列対象。SQL モード（SELECT）は対象外で空配列。
  */
 export const collectSearchPatterns = (keyword) => {
   if (!keyword || typeof keyword !== 'string' || !keyword.trim()) return [];
-  if (STRICT_PREFIX_RE.test(keyword.trim())) return [];
+  if (SQL_MODE_RE.test(keyword.trim())) return [];
   const tokens = tokenizeSearchQuery(keyword);
   const patterns = [];
   tokens.forEach((token) => {
@@ -774,11 +774,11 @@ const CONDITION_COLUMN_TYPES_ = new Set([
 /**
  * クエリから列指定の条件トークン（COMPARE / COLUMN_IN / COLUMN_BOOL / COLUMN_EMPTY /
  * COLUMN_NOT_EMPTY）を集めて返す。AND/OR/NOT 構造は無視した和集合。
- * 厳密モード（SEARCH/WHERE）は対象外で空配列。
+ * SQL モード（SELECT）は対象外で空配列。
  */
 export const collectConditionColumns = (keyword) => {
   if (!keyword || typeof keyword !== 'string' || !keyword.trim()) return [];
-  if (STRICT_PREFIX_RE.test(keyword.trim())) return [];
+  if (SQL_MODE_RE.test(keyword.trim())) return [];
   const tokens = tokenizeSearchQuery(keyword);
   return tokens.filter((token) => CONDITION_COLUMN_TYPES_.has(token.type) && token.column);
 };
