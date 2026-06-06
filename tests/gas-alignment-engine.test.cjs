@@ -131,7 +131,7 @@ function buildContext() {
   };
 
   loadGasFiles(context, [
-    "constants.gs", "formsParsing.gs", "model.gs",
+    "constants.gs", "formsParsing.gs", "model.gs", "driveFile.gs",
     "sharedDriveFolders.gs", "formsDriveFolders.gs", "analyticsDriveFolders.gs",
     "standardFoldersAlign.gs", "standardFoldersCopy.gs", "standardFolders.gs",
   ]);

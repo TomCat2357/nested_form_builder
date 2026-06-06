@@ -26,7 +26,8 @@ function loadGasContext() {
     ExtractFileIdFromUrl_() { return null; },
   };
   // standardFolders.gs は formsParsing.gs（Forms_parseGoogleDriveUrl_）と model.gs（Model_normalizeSpreadsheetId_）に依存。
-  return loadGasFiles(context, ["formsParsing.gs", "model.gs", "standardFoldersAlign.gs", "standardFoldersCopy.gs", "standardFolders.gs"]);
+  // standardFoldersCopy.gs は driveFile.gs（Nfb_readJsonFileById_ / Nfb_writeJsonToFile_）に依存。
+  return loadGasFiles(context, ["formsParsing.gs", "model.gs", "driveFile.gs", "standardFoldersAlign.gs", "standardFoldersCopy.gs", "standardFolders.gs"]);
 }
 
 // getFilesByName / getFiles / createFile / setTrashed / getLastUpdated を備えた最小フォルダモック。

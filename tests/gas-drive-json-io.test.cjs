@@ -27,15 +27,29 @@ function makeDrive() {
     files[id] = fl;
     return fl;
   }
+  const folders = {};
+  function makeFolder(name) {
+    const id = "d" + ++seq;
+    const fd = { _id: id, getId: () => id, getName: () => name };
+    folders[id] = fd;
+    return fd;
+  }
   const DriveApp = {
     getFileById: (id) => { if (!files[id]) throw new Error("no file " + id); return files[id]; },
+    getFolderById: (id) => { if (!folders[id]) throw new Error("no folder " + id); return folders[id]; },
   };
-  return { DriveApp, makeFile, files };
+  return { DriveApp, makeFile, makeFolder, files, folders };
 }
 
 function loadContext() {
   const drive = makeDrive();
-  const context = { console, Logger: { log() {} }, JSON, DriveApp: drive.DriveApp };
+  const context = {
+    console,
+    Logger: { log() {} },
+    JSON,
+    DriveApp: drive.DriveApp,
+    nfbErrorToString_: (e) => String(e && e.message ? e.message : e),
+  };
   loadGasFiles(context, ["driveFile.gs"]);
   return { context, drive };
 }
@@ -53,6 +67,21 @@ test("Nfb_readJsonFileById_: 取得不能・parse 失敗は throw", () => {
   assert.throws(() => context.Nfb_readJsonFileById_("missing"));
   const bad = drive.makeFile("bad.json", "{not json");
   assert.throws(() => context.Nfb_readJsonFileById_(bad.getId()));
+});
+
+test("nfbGetDriveFolderById_: 取得できればフォルダを返す", () => {
+  const { context, drive } = loadContext();
+  const folder = drive.makeFolder("F1");
+  const res = context.nfbGetDriveFolderById_(folder.getId(), "フォルダへのアクセスに失敗しました: ");
+  assert.equal(res.getId(), folder.getId());
+});
+
+test("nfbGetDriveFolderById_: 取得不能は errorPrefix 付きで throw", () => {
+  const { context } = loadContext();
+  assert.throws(
+    () => context.nfbGetDriveFolderById_("missing", "フォルダへのアクセスに失敗しました: "),
+    /フォルダへのアクセスに失敗しました: /,
+  );
 });
 
 test("Nfb_writeJsonToFile_: 2スペース整形で書き戻し、read で往復一致", () => {

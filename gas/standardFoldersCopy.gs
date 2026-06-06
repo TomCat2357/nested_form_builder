@@ -237,8 +237,9 @@ function StdFolders_remapLinkId_(id, idMap) {
 function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyWebhooks) {
   var cleared = 0;
   try {
-    var file = DriveApp.getFileById(fileId);
-    var json = JSON.parse(file.getBlob().getDataAsString());
+    var read = Nfb_readJsonFileById_(fileId);
+    var file = read.file;
+    var json = read.json;
 
     // form → spreadsheet
     if (json.settings && json.settings.spreadsheetId) {
@@ -270,7 +271,7 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyWebhooks) {
       }
     });
 
-    file.setContent(JSON.stringify(json, null, 2));
+    Nfb_writeJsonToFile_(file, json);
   } catch (err) {
     Logger.log("[StdFolders_rewireFormFile_] " + fileId + ": " + nfbErrorToString_(err));
   }
@@ -282,8 +283,9 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyWebhooks) {
 // idMap に無い（コピー対象外）の formId は保持し、formName による名前フォールバックに委ねる。
 function StdFolders_rewireQuestionFile_(fileId, idMap) {
   try {
-    var file = DriveApp.getFileById(fileId);
-    var json = JSON.parse(file.getBlob().getDataAsString());
+    var read = Nfb_readJsonFileById_(fileId);
+    var file = read.file;
+    var json = read.json;
     var query = json && json.query;
     if (query && typeof query === "object") {
       if (query.gui && typeof query.gui === "object" && query.gui.formId) {
@@ -296,7 +298,7 @@ function StdFolders_rewireQuestionFile_(fileId, idMap) {
         }
       }
     }
-    file.setContent(JSON.stringify(json, null, 2));
+    Nfb_writeJsonToFile_(file, json);
   } catch (err) {
     Logger.log("[StdFolders_rewireQuestionFile_] " + fileId + ": " + nfbErrorToString_(err));
   }
@@ -309,8 +311,9 @@ function StdFolders_rewireQuestionFile_(fileId, idMap) {
 function StdFolders_rewireDashboardFile_(fileId, idMap) {
   var unresolved = 0;
   try {
-    var file = DriveApp.getFileById(fileId);
-    var json = JSON.parse(file.getBlob().getDataAsString());
+    var read = Nfb_readJsonFileById_(fileId);
+    var file = read.file;
+    var json = read.json;
 
     if (Array.isArray(json.cards)) {
       for (var i = 0; i < json.cards.length; i++) {
@@ -327,7 +330,7 @@ function StdFolders_rewireDashboardFile_(fileId, idMap) {
       }
     }
 
-    file.setContent(JSON.stringify(json, null, 2));
+    Nfb_writeJsonToFile_(file, json);
   } catch (err) {
     Logger.log("[StdFolders_rewireDashboardFile_] " + fileId + ": " + nfbErrorToString_(err));
   }
