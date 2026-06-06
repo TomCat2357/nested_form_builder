@@ -269,6 +269,30 @@ test("Forms_saveForm_ は mapping から消えた stale id でも form.driveFile
   void fileUrl;
 });
 
+// ---- 同名許容: 論理フォルダが違えば同名フォームを許容（衝突採番はフォルダ内のみ） ----
+
+test("Forms_saveForm_ は論理フォルダが違えば同名フォームを許容する（` (1)` を付けない）", () => {
+  const ctx = loadFormsSaveContext();
+  // フォルダ A に「見積書」
+  const a = ctx.Forms_saveForm_(baseForm({ id: "", folder: "A", settings: { formTitle: "見積書", spreadsheetId: SS_URL } }), null, "auto");
+  assert.equal(a.ok, true);
+  assert.equal(ctx.__test.fileStore.get(a.fileId).name, "見積書.json");
+  // フォルダ B にも「見積書」→ フォルダが違うので採番されない
+  const b = ctx.Forms_saveForm_(baseForm({ id: "", folder: "B", settings: { formTitle: "見積書", spreadsheetId: SS_URL } }), null, "auto");
+  assert.equal(b.ok, true);
+  assert.equal(ctx.__test.fileStore.get(b.fileId).name, "見積書.json", "別フォルダなので (1) は付かない");
+  assert.equal(readMapping(ctx)[a.fileId].title, "見積書");
+  assert.equal(readMapping(ctx)[b.fileId].title, "見積書");
+});
+
+test("Forms_saveForm_ は同一フォルダ内の同名は従来どおり ` (1)` を付ける", () => {
+  const ctx = loadFormsSaveContext();
+  const a = ctx.Forms_saveForm_(baseForm({ id: "", folder: "A", settings: { formTitle: "見積書", spreadsheetId: SS_URL } }), null, "auto");
+  const b = ctx.Forms_saveForm_(baseForm({ id: "", folder: "A", settings: { formTitle: "見積書", spreadsheetId: SS_URL } }), null, "auto");
+  assert.equal(ctx.__test.fileStore.get(a.fileId).name, "見積書.json");
+  assert.equal(ctx.__test.fileStore.get(b.fileId).name, "見積書 (1).json", "同一フォルダ内は採番される");
+});
+
 // ---- id ＝ fileId 強制: 保存 .json は id / formTitle を持たず、戻り値の id は fileId ----
 
 test("Forms_saveForm_ は保存 .json に id / settings.formTitle を書かず、戻り form.id ＝ fileId", () => {

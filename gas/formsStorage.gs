@@ -142,13 +142,18 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       ? existingFile.getId()
       : (Nfb_resolveFileIdFromEntry_(mappingEntry) || (formId || null));
 
-    // タイトル正規化 + 衝突時の自動採番
+    // タイトル正規化 + 衝突時の自動採番。衝突判定は「同一論理フォルダ内」に限定する。
+    // 論理パス folder が違えば同名フォームを許容する（種類が違う Question / Dashboard とは
+    // そもそも mapping が別物なので衝突しない）。
+    var targetFolderPath = typeof form.folder === "string" ? Forms_normalizeFolderPath_(form.folder) : "";
     var existingTitles = [];
     for (var otherId in mapping) {
       if (!mapping.hasOwnProperty(otherId) || otherId === formId) continue;
       // 二重登録が残っている場合、同一物理ファイル（fileId）を指す別名キー（旧 ULID 等）も
       // 自分扱いで除外する。除外しないと自分の名前と衝突して誤って ` (1)` が付く。
       if (existingFileId && Nfb_resolveFileIdFromEntry_(mapping[otherId]) === existingFileId) continue;
+      // 論理フォルダが異なるフォームは衝突対象外（フォルダが違えば同名可）。
+      if (Forms_normalizeFolderPath_(mapping[otherId] && mapping[otherId].folder) !== targetFolderPath) continue;
       var t = mapping[otherId] && mapping[otherId].title;
       if (t) existingTitles.push(t);
     }

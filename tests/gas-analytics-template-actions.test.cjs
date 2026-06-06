@@ -403,6 +403,30 @@ test("Analytics_copyTemplate_ は同じフォルダに `名前 (1)` 形式で複
   assert.equal(copyRes2.question.name, "orig (2)");
 });
 
+// ---- 同名許容: 論理フォルダが違えば同名アイテムを許容（衝突採番はフォルダ内のみ） ----
+
+test("Analytics_saveTemplate_ は論理フォルダが違えば同名 Question を許容する（採番しない）", () => {
+  const ctx = loadAnalyticsContext();
+  const a = ctx.Analytics_saveTemplate_("questions", { name: "比較表", folder: "A", query: { mode: "gui" } });
+  assert.equal(a.ok, true);
+  assert.equal(a.question.name, "比較表");
+  // 別フォルダ B の同名 → 採番されない
+  const b = ctx.Analytics_saveTemplate_("questions", { name: "比較表", folder: "B", query: { mode: "gui" } });
+  assert.equal(b.ok, true);
+  assert.equal(b.question.name, "比較表", "別フォルダなので (1) は付かない");
+  // 同一フォルダ A の同名 → 従来どおり採番
+  const a2 = ctx.Analytics_saveTemplate_("questions", { name: "比較表", folder: "A", query: { mode: "gui" } });
+  assert.equal(a2.question.name, "比較表 (1)", "同一フォルダ内は採番される");
+});
+
+test("Analytics_saveTemplate_ は種類が違えば（questions/dashboards）同名・同フォルダでも別管理", () => {
+  const ctx = loadAnalyticsContext();
+  const q = ctx.Analytics_saveTemplate_("questions", { name: "売上", folder: "共通", query: { mode: "gui" } });
+  const d = ctx.Analytics_saveTemplate_("dashboards", { name: "売上", folder: "共通", cards: [] });
+  assert.equal(q.question.name, "売上");
+  assert.equal(d.dashboard.name, "売上", "種類が違えば同名・同フォルダでも採番されない");
+});
+
 // ---- import / register ----
 
 test("Analytics import (④): 構成外のファイルは 02_questions へコピーしてリンクする", () => {
