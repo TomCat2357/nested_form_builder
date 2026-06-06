@@ -32,6 +32,12 @@ test("buildColumnIndex は固定列(id, createdAt 等) も登録する", () => {
   assert.equal(idx.byPipePath.get("id"), "id");
 });
 
+test("buildColumnIndex / resolveColumnRef は pid メタ列を解決する（親子 JOIN 用）", () => {
+  const idx = buildColumnIndex(mkForm());
+  assert.equal(idx.byPipePath.get("pid"), "pid");
+  assert.equal(resolveColumnRef("pid", idx), "pid");
+});
+
 test("resolveColumnRef: パイプパス → AlaSQL キー", () => {
   const idx = buildColumnIndex(mkForm());
   assert.equal(resolveColumnRef("基本情報|区", idx), "基本情報__区");

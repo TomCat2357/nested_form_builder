@@ -25,7 +25,8 @@ import { buildRowHitExcerpts } from "./searchQueryEngine.js";
 import { buildSearchExpression, stripNonSearchableMetaKeys } from "./searchExpressionBuilder.js";
 import { entriesToViewTableRows } from "../analytics/entriesToViewRows.js";
 import { filterRowsByExpr } from "../analytics/analyticsAlaSql.js";
-import { STRICT_PREFIX_RE } from "./searchSyntaxPreprocessor.js";
+import { runSearchSelect } from "../analytics/analyticsStore.js";
+import { STRICT_PREFIX_RE, FULL_SELECT_RE } from "./searchSyntaxPreprocessor.js";
 import { preprocessAlaSqlExpression } from "../expression/preprocessAlaSqlExpression.js";
 import {
   buildFieldPathsMap,
@@ -60,6 +61,7 @@ export function useSearchPageState({
   userEmail,
   scopedFormId,
   getFormById,
+  forms,
   settings,
 }) {
   const queryFormId = (searchParams.get("form") || "").trim();
@@ -164,7 +166,7 @@ export function useSearchPageState({
   // 「検索ヒット箇所」列を最左に挿入する。
   const hitColumnActive = useMemo(() => {
     const keyword = (query || "").trim();
-    return Boolean(keyword) && !STRICT_PREFIX_RE.test(keyword);
+    return Boolean(keyword) && !STRICT_PREFIX_RE.test(keyword) && !FULL_SELECT_RE.test(keyword);
   }, [query]);
 
   // 表示専用の列構成。値計算 / 検索 / ソートには素の columns を使い続け、
@@ -295,6 +297,31 @@ export function useSearchPageState({
       setFilteredEntries(baseFilteredEntries);
       return;
     }
+    // full-SELECT モード（先頭 SELECT）: 検索バーに最上位 SQL を直接書く。
+    // 自フォームを `_`、本文にサブクエリ / 別フォーム参照を書ける。結果行の自フォーム id 集合で
+    // baseFilteredEntries を絞り込む（id を持たない射影 / 別フォームの id は一致せず 0 件）。
+    if (FULL_SELECT_RE.test(keyword)) {
+      setFilterError(null);
+      try {
+        const res = await runSearchSelect(keyword, { forms, defaultFormId: effectiveFormId });
+        if (isCancelled()) return;
+        if (!res.ok) {
+          setFilterError("検索エラー: " + (res.error || "SQL を評価できませんでした"));
+          setFilteredEntries(baseFilteredEntries);
+          return;
+        }
+        const idSet = new Set();
+        for (const r of (res.rows || [])) {
+          if (r && r.id != null && r.id !== "") idSet.add(r.id);
+        }
+        setFilteredEntries(baseFilteredEntries.filter((row) => idSet.has(row.entry?.id)));
+      } catch (err) {
+        if (isCancelled()) return;
+        setFilterError("検索エラー: " + (err && err.message ? err.message : String(err)));
+        setFilteredEntries(baseFilteredEntries);
+      }
+      return;
+    }
     // 簡易・厳密の両モードを共通 alasql エンジンへ統一。
     // - 厳密モード（先頭 SEARCH/WHERE）: searchSyntaxPreprocessor が WHERE 節相当へ変換。
     //   評価行は searchableTableRows（searchQueryTableSource を尊重）。
@@ -345,7 +372,7 @@ export function useSearchPageState({
       setFilterError("検索エラー: " + (err && err.message ? err.message : String(err)));
       setFilteredEntries(baseFilteredEntries);
     }
-  }, [baseFilteredEntries, searchColumns, simpleSearchColumns, query, searchableTableRows, simpleSearchRows, form]);
+  }, [baseFilteredEntries, searchColumns, simpleSearchColumns, query, searchableTableRows, simpleSearchRows, form, forms, effectiveFormId]);
 
   const sortedEntries = useMemo(() => {
     const list = filteredEntries.slice();

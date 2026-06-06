@@ -16,7 +16,7 @@ import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { runPurgeCheck } from "../services/gasClient.js";
 
 export default function SearchPage() {
-  const { getFormById } = useAppData();
+  const { getFormById, forms } = useAppData();
   const { settings, updateSetting } = useBuilderSettings({ applyGlobalTheme: false });
   // 検索の遅延時間が空欄（"" / 未設定）のときは手動検索モード（検索ボタン）。0 を含む数値は自動検索。
   const manualSearch = settings?.searchDebounceMs === "" || settings?.searchDebounceMs == null;
@@ -97,6 +97,7 @@ export default function SearchPage() {
     userEmail,
     scopedFormId,
     getFormById,
+    forms,
     settings,
   });
 

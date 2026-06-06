@@ -19,6 +19,8 @@ import { buildRecordItems } from "./printDocument.js";
 import { dataStore } from "../../app/state/dataStore.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 import { joinFieldPath } from "../../utils/pathCodec.js";
+import { hasScriptRun, listRecordsByPids } from "../../services/gasClient.js";
+import { buildChildFormUrl } from "../../utils/formShareUrl.js";
 
 /**
  * schema 内の formLink フィールド（childFormId と id がともに非空）を収集する純関数。
@@ -129,4 +131,55 @@ export const distributeChildRecordsByPid = (records) => {
     map.get(pid).push(r);
   });
   return map;
+};
+
+/**
+ * Question SQL / 検索の厳密モードで CHILD_FORM_NAME / CHILD_FORM_ID / CHILD_FORM_URL /
+ * CHILD_FORM_COUNT UDF を使えるようにするための「軽量」子フォーム注入オブジェクトを構築する。
+ *
+ * クエリ用途では子レコード本体（records / items）は不要で、4 つの UDF はいずれも
+ * { childFormId, childFormName, childFormUrl, count } だけ読む（CHILD_FORM_COUNT は count を優先）。
+ * そこで items 整形（buildRecordItems）も子 schema 取得もせず、子フォームごとに 1 回だけ
+ * listRecordsByPids で親 id 群に紐づく子レコードを取得し、pid ごとの件数のみ集計する。
+ *
+ * includeChildData フラグでは絞らない（クエリでは Webhook/印刷とは別目的で件数を出したいため）。
+ *
+ * @param {Object} args
+ * @param {Array}  args.schema      親フォーム schema
+ * @param {Array<string>} args.parentIds 親レコード id 群（重複可、内部で dedup）
+ * @param {string} [args.baseUrl]   childFormUrl 生成用の Web アプリ URL
+ * @param {Function} [args.listRecordsByPids] 注入用（テスト）。未指定なら gasClient の実体を使う。
+ * @returns {Promise<Array<{ path:string, byPid: Map<string, {childFormId,childFormName,childFormUrl,count}> }>>}
+ */
+export const buildChildFormInjections = async ({ schema, parentIds, baseUrl = "", listRecordsByPids: listFn } = {}) => {
+  const fields = collectFormLinkFields(schema);
+  if (fields.length === 0) return [];
+  const fetchByPids = typeof listFn === "function" ? listFn : (hasScriptRun() ? listRecordsByPids : null);
+  if (typeof fetchByPids !== "function") return [];
+
+  const pids = Array.from(new Set((Array.isArray(parentIds) ? parentIds : []).map((x) => String(x || "")).filter(Boolean)));
+  const out = [];
+  for (const field of fields) {
+    let grouped = new Map();
+    if (pids.length > 0) {
+      try {
+        const records = await fetchByPids({ formId: field.childFormId, pids });
+        grouped = distributeChildRecordsByPid(records);
+      } catch (_e) {
+        grouped = new Map(); // 取得失敗時は件数 0（無言）。
+      }
+    }
+    const byPid = new Map();
+    for (const pid of pids) {
+      const recs = grouped.get(pid) || [];
+      byPid.set(pid, {
+        childFormId: field.childFormId,
+        childFormName: field.childFormName,
+        childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, pid),
+        count: recs.length,
+      });
+    }
+    out.push({ path: field.path, byPid });
+  }
+  return out;
 };
