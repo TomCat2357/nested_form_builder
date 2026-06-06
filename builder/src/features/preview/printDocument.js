@@ -263,34 +263,26 @@ export const collectFileUploadMeta = (fields, options = {}) => {
   const folderUrlsByField = options?.folderUrlsByField || {};
   const folderNamesByField = options?.folderNamesByField || {};
 
-  const walk = (flds) => {
-    (flds || []).forEach((field) => {
-      if (field?.type === "fileUpload" && field?.id) {
-        const entry = {};
-        if (field.hideFileExtension) entry.hideFileExtension = true;
-        if (responses) {
-          const value = responses[field.id];
-          const files = Array.isArray(value) ? value : [];
-          entry.fileNames = files
-            .map((f) => resolveFileDisplayName(f?.name || "", field?.hideFileExtension))
-            .filter(Boolean);
-          entry.fileUrls = files.map((f) => f?.driveFileUrl || "").filter(Boolean);
-        }
-        const folderUrl = folderUrlsByField[field.id];
-        if (typeof folderUrl === "string" && folderUrl) entry.folderUrl = folderUrl;
-        const folderName = folderNamesByField[field.id];
-        if (typeof folderName === "string" && folderName) entry.folderName = folderName;
-        if (Object.keys(entry).length > 0) meta[field.id] = entry;
+  // 全ノードを訪問して fileUpload 項目だけ拾う（パス不要なので共有 traverseSchema を使う）。
+  traverseSchema(fields, (field) => {
+    if (field?.type === "fileUpload" && field?.id) {
+      const entry = {};
+      if (field.hideFileExtension) entry.hideFileExtension = true;
+      if (responses) {
+        const value = responses[field.id];
+        const files = Array.isArray(value) ? value : [];
+        entry.fileNames = files
+          .map((f) => resolveFileDisplayName(f?.name || "", field?.hideFileExtension))
+          .filter(Boolean);
+        entry.fileUrls = files.map((f) => f?.driveFileUrl || "").filter(Boolean);
       }
-      if (field?.childrenByValue) {
-        Object.values(field.childrenByValue).forEach(walk);
-      }
-      if (Array.isArray(field?.children)) {
-        walk(field.children);
-      }
-    });
-  };
-  walk(fields);
+      const folderUrl = folderUrlsByField[field.id];
+      if (typeof folderUrl === "string" && folderUrl) entry.folderUrl = folderUrl;
+      const folderName = folderNamesByField[field.id];
+      if (typeof folderName === "string" && folderName) entry.folderName = folderName;
+      if (Object.keys(entry).length > 0) meta[field.id] = entry;
+    }
+  });
   return meta;
 };
 
@@ -300,21 +292,13 @@ export const collectFileUploadMeta = (fields, options = {}) => {
 export const collectChildFormMeta = (fields, childDataByFieldId = {}) => {
   const meta = {};
   const source = childDataByFieldId && typeof childDataByFieldId === "object" ? childDataByFieldId : {};
-  const walk = (flds) => {
-    (flds || []).forEach((field) => {
-      if (field?.type === "formLink" && field?.id && field.includeChildData === true) {
-        const obj = source[field.id];
-        if (obj && typeof obj === "object") meta[field.id] = obj;
-      }
-      if (field?.childrenByValue) {
-        Object.values(field.childrenByValue).forEach(walk);
-      }
-      if (Array.isArray(field?.children)) {
-        walk(field.children);
-      }
-    });
-  };
-  walk(fields);
+  // 全ノードを訪問して formLink(includeChildData) 項目だけ拾う（共有 traverseSchema を使う）。
+  traverseSchema(fields, (field) => {
+    if (field?.type === "formLink" && field?.id && field.includeChildData === true) {
+      const obj = source[field.id];
+      if (obj && typeof obj === "object") meta[field.id] = obj;
+    }
+  });
   return meta;
 };
 

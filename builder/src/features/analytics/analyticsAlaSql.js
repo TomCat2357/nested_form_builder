@@ -9,7 +9,7 @@ import { unionRowKeys } from "./utils/computeShared.js";
 import { dataStore } from "../../app/state/dataStore.js";
 import { entriesToViewTableRows } from "./entriesToViewRows.js";
 import { bracketIdent } from "../expression/sqlEmit.js";
-import { ANALYTICS_SOURCE_TABLE_CACHE_TTL_MS } from "../../core/constants.js";
+import { ANALYTICS_SOURCE_TABLE_CACHE_TTL_MS, NON_SEARCHABLE_META_KEYS } from "../../core/constants.js";
 import { collectFormLinkFields, buildChildFormInjections } from "../preview/childFormData.js";
 import { headerKeyToAlaSqlKey } from "./utils/headerToAlaSqlKey.js";
 
@@ -42,10 +42,8 @@ function getCachedSourceRows_(cacheKey) {
   return hit.rows;
 }
 
-// 検索の SQL モードで登録テーブルから落とす固定メタ列キー
-// （searchExpressionBuilder.EXCLUDED_META_COLUMN_KEYS / searchSimpleTranslate と同一ポリシー。
-//  循環 import を避けるためここで再定義する。変更時は揃えること）。
-const NON_SEARCHABLE_META_KEYS = ["createdBy", "modifiedBy", "deletedAt", "deletedBy"];
+// 検索の SQL モードで登録テーブルから落とす固定メタ列キーは
+// core/constants.js の NON_SEARCHABLE_META_KEYS に一元化（簡易検索の列フィルタと同一ポリシー）。
 
 // 検索非対象メタ列を落とした新しい行配列を返す（キャッシュ済みの pristine 行は破壊しない）。
 // registerFormAsTable の excludeMetaColumns で使う。テスト用に export する。
