@@ -122,6 +122,17 @@ export const normalizeFormLinkSettings = (field) => {
   return field;
 };
 
+// fileUpload フィールドの Drive 連携設定を正規化する。schema 正規化（normalizeField）と
+// 不要プロパティ整理（cleanUnusedFieldProperties）の双方で共有する。
+export const normalizeFileUploadSettings = (field) => {
+  field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
+  field.allowFolderUrlEdit = normalizeBooleanSetting(field.allowFolderUrlEdit, false);
+  field.hideFileExtension = normalizeBooleanSetting(field.hideFileExtension, true);
+  field.driveRootFolderUrl = typeof field.driveRootFolderUrl === "string" ? field.driveRootFolderUrl : "";
+  field.driveFolderNameTemplate = typeof field.driveFolderNameTemplate === "string" ? field.driveFolderNameTemplate : "";
+  return field;
+};
+
 export const deepClone = (value) => {
   if (typeof structuredClone === "function") return structuredClone(value);
   return JSON.parse(JSON.stringify(value));
@@ -275,11 +286,7 @@ export const cleanUnusedFieldProperties = (field) => {
   }
   if (type === "message" || type === "printTemplate" || type === "substitution" || type === "webhook" || type === "formLink") delete field.required;
   if (type === "fileUpload") {
-    field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
-    field.allowFolderUrlEdit = normalizeBooleanSetting(field.allowFolderUrlEdit, false);
-    field.hideFileExtension = normalizeBooleanSetting(field.hideFileExtension, true);
-    field.driveRootFolderUrl = typeof field.driveRootFolderUrl === "string" ? field.driveRootFolderUrl : "";
-    field.driveFolderNameTemplate = typeof field.driveFolderNameTemplate === "string" ? field.driveFolderNameTemplate : "";
+    normalizeFileUploadSettings(field);
   } else {
     delete field.allowUploadByUrl;
     delete field.allowFolderUrlEdit;
@@ -368,11 +375,7 @@ export const normalizeSchemaIDs = (nodes) => {
     } else if (base.type === "phone") {
       Object.assign(base, normalizePhoneSettings(base));
     } else if (base.type === "fileUpload") {
-      base.allowUploadByUrl = normalizeBooleanSetting(base.allowUploadByUrl, false);
-      base.allowFolderUrlEdit = normalizeBooleanSetting(base.allowFolderUrlEdit, false);
-      base.hideFileExtension = normalizeBooleanSetting(base.hideFileExtension, true);
-      base.driveRootFolderUrl = typeof base.driveRootFolderUrl === "string" ? base.driveRootFolderUrl : "";
-      base.driveFolderNameTemplate = typeof base.driveFolderNameTemplate === "string" ? base.driveFolderNameTemplate : "";
+      normalizeFileUploadSettings(base);
     } else if (base.type === "printTemplate") {
       base.label = typeof base.label === "string" ? base.label : "";
       base.printTemplateAction = {
@@ -612,40 +615,27 @@ export const computeSchemaHash = (schema) => {
   return `v1-${Math.abs(hash)}`;
 };
 
-export const findFirstFileUploadField = (fields) => {
-  for (const field of (fields || [])) {
-    if (field?.type === "fileUpload") return field;
-    if (field?.childrenByValue) {
-      for (const children of Object.values(field.childrenByValue)) {
-        const found = findFirstFileUploadField(children);
-        if (found) return found;
-      }
-    }
-    if (Array.isArray(field?.children)) {
-      const found = findFirstFileUploadField(field.children);
-      if (found) return found;
-    }
-  }
-  return null;
-};
-
+// fileUpload フィールドの収集は共有走査 traverseSchema に委譲する（DFS pre-order）。
+// 正規化済みスキーマでは childrenByValue の挿入順 = options 順 = resolveOrderedChildKeys 順
+// のため、従来の手書き走査と同じ順序で訪問する。
 export const collectFileUploadFields = (fields) => {
   const out = [];
-  const walk = (list) => {
-    for (const field of (list || [])) {
-      if (field?.type === "fileUpload") out.push(field);
-      if (field?.childrenByValue) {
-        for (const children of Object.values(field.childrenByValue)) {
-          walk(children);
-        }
-      }
-      if (Array.isArray(field?.children)) {
-        walk(field.children);
-      }
-    }
-  };
-  walk(fields);
+  traverseSchema(fields, (field) => {
+    if (field?.type === "fileUpload") out.push(field);
+  });
   return out;
+};
+
+export const findFirstFileUploadField = (fields) => {
+  let found = null;
+  traverseSchema(fields, (field) => {
+    if (found) return false;
+    if (field?.type === "fileUpload") {
+      found = field;
+      return false;
+    }
+  });
+  return found;
 };
 
 export { resolvePrintTemplateFieldLabel };
