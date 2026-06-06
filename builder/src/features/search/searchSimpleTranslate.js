@@ -18,17 +18,19 @@
  *
  * 列名の解決は searchQueryEngine と同じ matchColumnName（key/path/aliases/segments）で行う。
  */
-import { escapeRegExp } from "../../utils/folderTree.js";
 import { headerKeyToAlaSqlKey } from "../analytics/utils/headerToAlaSqlKey.js";
 import { quoteString } from "../expression/sqlEmit.js";
 import {
-  matchColumnName,
-  isChoiceColumn,
   isDateLikeColumn,
   isNumericColumn,
-  normalizeColumnName,
 } from "./searchTableValues.js";
 import { tokenizeSearchQuery, parseTokens } from "./searchQueryEngine.js";
+import {
+  canonicalSearchOperator,
+  toSafeRegexSource,
+  findColumnByName,
+  expandColumnlessOr,
+} from "./searchQueryShared.js";
 
 // 検索対象外の固定メタ列（searchExpressionBuilder.EXCLUDED_META_COLUMN_KEYS と同一ポリシー）。
 // 循環 import を避けるためここで再定義する。変更時は両者を揃えること。
@@ -49,28 +51,6 @@ const columnToSafeKey = (col) => {
 
 const isNumericLiteral = (value) => /^-?\d+(?:\.\d+)?$/.test(String(value).trim());
 
-// 比較演算子の別名正規化: != / >< → <> （: と == は tokenizer で処理済み）。
-const canonicalOperator = (operator) => {
-  if (operator === "!=" || operator === "><") return "<>";
-  return operator;
-};
-
-// 自由文を正規表現パターン文字列へ変換（searchQueryEngine.compilePattern_ と同等）:
-// 前後 /.../ を剥がし（後方互換）、不正な正規表現は escapeRegExp 済みリテラルへフォールバック。
-const toRegexPattern = (source) => {
-  let src = String(source ?? "");
-  if (src.length >= 2 && src.startsWith("/") && src.endsWith("/")) {
-    src = src.slice(1, -1);
-  }
-  try {
-    // eslint-disable-next-line no-new
-    new RegExp(src, "i");
-    return src;
-  } catch {
-    return escapeRegExp(src);
-  }
-};
-
 // 列値を文字列化してから大小無視の正規表現判定を行う。
 // 数値列（年齢 / No_ 等）や null を REGEXP_LIKE に直接渡すと
 // 「.search is not a function」で落ちるため `|| ''` で文字列強制する
@@ -86,28 +66,22 @@ function buildContext(columns) {
 }
 
 // 列名 → { safeKey, col }。見つからなければ col=null・safeKey は入力名から導出（行に無い列は
-// NULL 扱いになる）。matchColumnName で key/path/aliases/segments を OR 一致（searchQueryEngine 同等）。
+// NULL 扱いになる）。列解決は findColumnByName（key/path/aliases/segments を OR 一致）に委譲。
 function resolveColumn(ctx, name) {
-  const normalized = normalizeColumnName(name);
-  for (const col of ctx.cols) {
-    if (matchColumnName(col, normalized)) {
-      return { safeKey: columnToSafeKey(col), col };
-    }
-  }
+  const col = findColumnByName(ctx.cols, name);
+  if (col) return { safeKey: columnToSafeKey(col), col };
   return { safeKey: headerKeyToAlaSqlKey(String(name || "")), col: null };
 }
 
 // 列無し述語: 全検索対象列への OR 展開。safeKeys が空なら FALSE。
 function columnlessOr(ctx, buildPredicate) {
-  if (ctx.safeKeys.length === 0) return "FALSE";
-  const parts = ctx.safeKeys.map((k) => "(" + buildPredicate(k) + ")");
-  return "(" + parts.join(" OR ") + ")";
+  return expandColumnlessOr(ctx.safeKeys, buildPredicate);
 }
 
 function emitCompare(token, ctx) {
   const value = token.value;
   if (value === "") return "FALSE";
-  const op = canonicalOperator(token.operator);
+  const op = canonicalSearchOperator(token.operator);
   const { safeKey, col } = resolveColumn(ctx, token.column);
   const colExpr = "`" + safeKey + "`";
   const isEquality = op === "=" || op === "<>";
@@ -135,12 +109,12 @@ function emitLeaf(token, ctx) {
   switch (token.type) {
     case "PARTIAL": {
       if (!token.keyword) return "TRUE";
-      const pattern = toRegexPattern(token.keyword);
+      const pattern = toSafeRegexSource(token.keyword);
       return columnlessOr(ctx, (k) => regexLike(k, pattern));
     }
     case "COLUMN_PARTIAL": {
       if (!token.keyword) return "FALSE";
-      const pattern = toRegexPattern(token.keyword);
+      const pattern = toSafeRegexSource(token.keyword);
       const { safeKey } = resolveColumn(ctx, token.column);
       return regexLike(safeKey, pattern);
     }
