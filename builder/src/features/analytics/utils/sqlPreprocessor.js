@@ -88,7 +88,7 @@ export function preprocessSql(sql, opts) {
     }
     const trailing = aliasCandidate && !aliasName ? " " + aliasCandidate : "";
 
-    // 検索・厳密モードの「自フォーム」別名 "_"。defaultFormId（=対象フォーム）に解決する。
+    // 検索の SQL モードの「自フォーム」別名 "_"。defaultFormId（=対象フォーム）に解決する。
     // canonical テーブルを `AS _` で貼り、_.[col] 修飾参照（Pass 3）も使えるよう "_" alias を登録する。
     if (rawRef === "_") {
       if (!defaultFormId) {

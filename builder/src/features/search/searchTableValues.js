@@ -193,7 +193,7 @@ export const collectDirectOptionLabels = (data, path, optionOrder = null) => {
 // 選択肢マーカー（"親|オプション": ●）は親フィールドへ集約し、選択中オプションを「、」で
 // 結合した値だけを検索対象にする（● 値や個別オプションキー自体は対象にしない）。
 // 非マーカーキーはそのまま 1 フィールドとして返す。
-// 厳密モード（alasql / buildSearchRow）は通らないため簡易モード専用。
+// SQL モード（alasql / buildSearchRow）は通らないため簡易モード専用。
 export const buildEntryLogicalFields = (entry) => {
   const data = entry?.data || {};
   const dataUnixMs = entry?.dataUnixMs || {};

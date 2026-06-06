@@ -2,12 +2,10 @@
  * 検索クエリ → alasql 式 への変換 + 行データの構築。
  * useSearchPageState から呼ばれるエントリポイント。
  */
-import { preprocessSearchQuery, STRICT_PREFIX_RE } from "./searchSyntaxPreprocessor.js";
 import { buildSimpleSearchExpression } from "./searchSimpleTranslate.js";
 import { headerKeyToAlaSqlKey } from "../analytics/utils/headerToAlaSqlKey.js";
 import { columnType } from "./searchTableValues.js";
 import { formatCanonical } from "../../utils/dateTime.js";
-import { entriesToViewTableRows } from "../analytics/entriesToViewRows.js";
 
 /**
  * 検索バーで識別子として有効な「列名」を返す。
@@ -20,11 +18,11 @@ function resolveSearchableName(col) {
 }
 
 /**
- * 検索対象から除外する固定メタ列（簡易・strict 両モード共通ポリシー）。
+ * 検索対象から除外する固定メタ列。
  * `createdAt`（作成日時）/ `modifiedAt`（最終更新日時）は検索可として残し、
  * `createdBy` / `modifiedBy`（…By 系）と `deletedAt` / `deletedBy`（deleted 系）は除外。
- * 評価行（entriesToViewTableRows）はこれらを全て含むため、stripNonSearchableMetaKeys で
- * 評価前に落として簡易・strict のアクセス範囲を揃える。
+ * 簡易検索はこの集合で列をフィルタし、検索の SQL モードはテーブル登録時に同じ列を落とす
+ * （analyticsAlaSql.registerFormAsTable の excludeMetaColumns）。
  */
 export const EXCLUDED_META_COLUMN_KEYS = new Set([
   "createdBy",
@@ -53,46 +51,18 @@ function dateLikeKind(col) {
 }
 
 /**
- * preprocessor に渡す列メタ情報。識別子解決と日付型比較変換に使う。
- * view / data 両モードとも日付列は canonical 文字列を持つので、同じく日付列として扱い
- * （isDateLike + kind）、文字列としての日付比較に倒す。
- */
-function buildSearchableColumnMeta(columns) {
-  if (!Array.isArray(columns)) return [];
-  const meta = [];
-  for (const col of columns) {
-    if (!col) continue;
-    if (col.searchable === false) continue;
-    if (isExcludedMetaColumn(col)) continue;
-    const name = resolveSearchableName(col);
-    if (!name) continue;
-    meta.push({
-      name,
-      safeKey: headerKeyToAlaSqlKey(name),
-      sourceType: col.sourceType || col.type || "",
-      isDateLike: !!dateLikeKind(col),
-    });
-  }
-  return meta;
-}
-
-/**
- * クエリ文字列 → { expr, errors }
+ * 検索クエリ文字列 → { expr, errors }。
  *
- * モード:
- * - 厳密モード（先頭 `SEARCH`/`WHERE`）: searchSyntaxPreprocessor（alasql 標準 WHERE 節）。
- * - 簡易モード（プレフィックスなし）: searchSimpleTranslate（正規表現 / 複数値集合分解などを
- *   alasql WHERE 式へ忠実に翻訳。トークナイザ/パーサは searchQueryEngine と共有）。
+ * 簡易モード（プレフィックスなし）専用: searchSimpleTranslate（正規表現 / 複数値集合分解などを
+ * alasql WHERE 式へ忠実に翻訳。トークナイザ/パーサは searchQueryEngine と共有）。
+ * SQL モード（先頭 SELECT）は呼び出し側（useSearchPageState）が runSearchSelect へ振り分けるため
+ * ここには来ない。
  *
- * 日付列は view / data 両モードとも canonical 文字列として文字列比較する（variant 非依存）。
+ * 日付列は canonical 文字列として文字列比較する。
  * @param {string} query
  * @param {Array<{ key: string, path?: string, sourceType?: string, type?: string, searchable?: boolean }>} columns
  */
 export function buildSearchExpression(query, columns) {
-  if (STRICT_PREFIX_RE.test(String(query == null ? "" : query))) {
-    const meta = buildSearchableColumnMeta(columns);
-    return preprocessSearchQuery(query, meta);
-  }
   return buildSimpleSearchExpression(query, columns);
 }
 
@@ -181,27 +151,3 @@ export function buildSearchRow(row, columns) {
   return out;
 }
 
-/**
- * strict モード評価に渡す AlaSQL 行から、検索非対象のメタ列キー
- * （EXCLUDED_META_COLUMN_KEYS = createdBy / modifiedBy / deletedAt / deletedBy）を取り除く。
- * entriesToViewTableRows はこれらを行 dict に含むため、WHERE で
- * 参照されないよう評価直前に落とし、簡易モード（searchColumns ベース）とアクセス範囲を揃える。
- * 該当キーを持たない行はクローンせずそのまま返す（破壊的変更を避ける）。
- *
- * @param {Array<object>} rows AlaSQL 評価用の行 dict 配列
- * @returns {Array<object>} 非対象メタ列を除いた行配列
- */
-export function stripNonSearchableMetaKeys(rows) {
-  if (!Array.isArray(rows)) return [];
-  return rows.map((row) => {
-    if (!row || typeof row !== "object") return row;
-    let clone = null;
-    for (const key of EXCLUDED_META_COLUMN_KEYS) {
-      if (Object.prototype.hasOwnProperty.call(row, key)) {
-        if (!clone) clone = { ...row };
-        delete clone[key];
-      }
-    }
-    return clone || row;
-  });
-}

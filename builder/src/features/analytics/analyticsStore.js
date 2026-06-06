@@ -52,7 +52,7 @@ function findFormByRef(forms, formId) {
  *   - defaultFormId なら bare "data" も同じ rows を指す
  * data/view の variant 区別は廃止（クエリ層は常に view 形式の単一テーブル）。
  */
-export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData = false } = {}) {
+export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData = false, excludeMetaColumns = false } = {}) {
   const aliases = [];
   try {
     // 同じ formId を二重に登録しないよう dedup する。
@@ -65,13 +65,51 @@ export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formInde
       const canon = canonicalDataAlias(src.formId);
       const extras = [legacyFormAlias(src.formId)];
       if (src.formId === defaultFormId) extras.push("data");
-      await registerFormAsTable(canon, src.formId, { form, aliasAlsoAs: extras, injectChildData });
+      await registerFormAsTable(canon, src.formId, { form, aliasAlsoAs: extras, injectChildData, excludeMetaColumns });
       aliases.push(canon, ...extras);
     }
     return aliases;
   } catch (err) {
     if (aliases.length > 0) await dropTables(aliases);
     throw err;
+  }
+}
+
+/**
+ * 前処理済み SQL を AlaSQL で実行する共通コア。
+ * テーブル登録 → 一時 WHERE / 簡易フィルタ適用 → 実行 → 後片付け（dropTables）までを一本化し、
+ * 検索の SQL モード（runSearchSelect）と Question の SQL モード（executeQuestion）で共有する。
+ *
+ * @param {string} transformedSql preprocessSql 済みの SQL 本文
+ * @param {object} args
+ * @param {Array<{ formId: string }>} args.formSources 登録対象フォーム
+ * @param {string|null} args.defaultFormId
+ * @param {object|null} args.formIndex
+ * @param {boolean} [args.injectChildData] CHILD_FORM_* 用の子データ注入
+ * @param {boolean} [args.excludeMetaColumns] 検索非対象メタ列を落とす（検索 SQL モードのみ true）
+ * @param {string} [args.globalWhereExpr] ダッシュボードの一時グローバル WHERE
+ * @param {Array} [args.sourceFilterClauses] ダッシュボードの簡易フィルタ
+ * @returns {Promise<{ ok: boolean, rows?: any[], columns?: string[], error?: string }>}
+ */
+async function executeSqlCore(transformedSql, { formSources, defaultFormId, formIndex, injectChildData = false, excludeMetaColumns = false, globalWhereExpr, sourceFilterClauses } = {}) {
+  let aliases = [];
+  try {
+    aliases = await loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData, excludeMetaColumns });
+  } catch (err) {
+    return { ok: false, error: "データ取得に失敗しました: " + (err.message || String(err)) };
+  }
+  try {
+    if (globalWhereExpr) {
+      const applied = await applyGlobalWhereToTables(aliases, globalWhereExpr);
+      if (!applied.ok) return { ok: false, error: "一時フィルターの式が不正です: " + applied.error };
+    }
+    if (sourceFilterClauses && sourceFilterClauses.length > 0) {
+      const applied = await applySourceFilterClauses(aliases, sourceFilterClauses);
+      if (!applied.ok) return { ok: false, error: "簡易フィルタの適用に失敗しました: " + applied.error };
+    }
+    return await runAlaSql(transformedSql);
+  } finally {
+    await dropTables(aliases);
   }
 }
 
@@ -178,52 +216,44 @@ export async function executeQuestion(question, { forms, globalWhereExpr, source
   // 具体的なエラーで返る。
   // SQL が CHILD_FORM_* UDF を使うときだけ、formLink 列へ子フォーム合成オブジェクトを注入する
   // （件数取得のため子レコードを fetch するので、不要なクエリには負荷をかけないようゲートする）。
+  // Question/Dashboard は分析用途のためメタ列を除外しない（全列アクセス可）。
   const injectChildData = /CHILD_FORM_/i.test(sql);
-  let aliases = [];
-  try {
-    aliases = await loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData });
-  } catch (err) {
-    return { ok: false, error: "データ取得に失敗しました: " + (err.message || String(err)) };
-  }
-
-  try {
-    if (globalWhereExpr) {
-      const applied = await applyGlobalWhereToTables(aliases, globalWhereExpr);
-      if (!applied.ok) return { ok: false, error: "一時フィルターの式が不正です: " + applied.error };
-    }
-    if (sourceFilterClauses && sourceFilterClauses.length > 0) {
-      const applied = await applySourceFilterClauses(aliases, sourceFilterClauses);
-      if (!applied.ok) return { ok: false, error: "簡易フィルタの適用に失敗しました: " + applied.error };
-    }
-    const result = await runAlaSql(transformedSql);
-    if (!result.ok) return result;
-    const columns = result.columns || [];
-    // SQL モードでも UI が型ベースの判定（Y 軸候補・グラフ描画）に必要な
-    // compiledColumns を返す。GUI モードと違い AST から直接導けないので、
-    // 実行 SQL の SELECT 句を文字列パースして集計関数のエイリアスや単純列を
-    // 分類する。フォーム schema 由来の fallbackTypeMap も同梱して、
-    // compiledColumns で解決できなかった列を呼び出し側で補完できるようにする。
-    const fallbackTypeMap = mergeTypeMapsForFormSources(formSources, formIndex, defaultFormId);
-    const compiledColumns = inferCompiledColumnsFromSql(transformedSql, fallbackTypeMap);
-    return {
-      ok: true,
-      rows: result.rows,
-      columns,
-      compiledColumns,
-      fallbackTypeMap,
-      compiledSql: transformedSql,
-    };
-  } finally {
-    await dropTables(aliases);
-  }
+  const result = await executeSqlCore(transformedSql, {
+    formSources,
+    defaultFormId,
+    formIndex,
+    injectChildData,
+    excludeMetaColumns: false,
+    globalWhereExpr,
+    sourceFilterClauses,
+  });
+  if (!result.ok) return result;
+  const columns = result.columns || [];
+  // SQL モードでも UI が型ベースの判定（Y 軸候補・グラフ描画）に必要な
+  // compiledColumns を返す。GUI モードと違い AST から直接導けないので、
+  // 実行 SQL の SELECT 句を文字列パースして集計関数のエイリアスや単純列を
+  // 分類する。フォーム schema 由来の fallbackTypeMap も同梱して、
+  // compiledColumns で解決できなかった列を呼び出し側で補完できるようにする。
+  const fallbackTypeMap = mergeTypeMapsForFormSources(formSources, formIndex, defaultFormId);
+  const compiledColumns = inferCompiledColumnsFromSql(transformedSql, fallbackTypeMap);
+  return {
+    ok: true,
+    rows: result.rows,
+    columns,
+    compiledColumns,
+    fallbackTypeMap,
+    compiledSql: transformedSql,
+  };
 }
 
 /**
- * 検索ページの full-SELECT モード用に、最上位 SQL を実行して結果行を返す。
+ * 検索ページの SQL モード用に、最上位 SQL を実行して結果行を返す。
  *
  * - `_` は対象（自）フォーム（defaultFormId）に解決される。
  * - 本文のサブクエリ / 別フォーム参照（`IN (SELECT ...)` / JOIN）も preprocessSql が解決し、
  *   referencedFormIds のフォームを AlaSQL テーブルとして自動登録する。
+ * - Question/Dashboard と違い、検索非対象メタ列（createdBy / modifiedBy / deletedAt / deletedBy）は
+ *   テーブル登録時に除外する（excludeMetaColumns）。
  *
  * 呼び出し側（useSearchPageState）は結果行の `id`（自フォームの id）集合で baseFilteredEntries を
  * 絞り込む。id を持たない射影や別フォームの id は自フォームの id 集合に一致しないため、
@@ -266,18 +296,15 @@ export async function runSearchSelect(sql, { forms, defaultFormId } = {}) {
   }
 
   // CHILD_FORM_* を使うときだけ子フォーム合成オブジェクトを注入する（Stage B と同じゲート）。
+  // 検索の SQL モードは検索非対象メタ列（createdBy / modifiedBy / deletedAt / deletedBy）を除外する。
   const injectChildData = /CHILD_FORM_/i.test(sql);
-  let aliases = [];
-  try {
-    aliases = await loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData });
-  } catch (err) {
-    return { ok: false, error: "データ取得に失敗しました: " + (err.message || String(err)) };
-  }
-  try {
-    return await runAlaSql(pre.transformedSql);
-  } finally {
-    await dropTables(aliases);
-  }
+  return await executeSqlCore(pre.transformedSql, {
+    formSources,
+    defaultFormId,
+    formIndex,
+    injectChildData,
+    excludeMetaColumns: true,
+  });
 }
 
 async function executeGuiQuestion(question, { forms, globalWhereExpr, sourceFilterClauses } = {}) {

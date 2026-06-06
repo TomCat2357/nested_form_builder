@@ -22,11 +22,11 @@ import {
   parseSearchCellDisplayLimit,
 } from "./searchTableValues.js";
 import { buildRowHitExcerpts } from "./searchQueryEngine.js";
-import { buildSearchExpression, stripNonSearchableMetaKeys } from "./searchExpressionBuilder.js";
+import { buildSearchExpression } from "./searchExpressionBuilder.js";
 import { entriesToViewTableRows } from "../analytics/entriesToViewRows.js";
 import { filterRowsByExpr } from "../analytics/analyticsAlaSql.js";
 import { runSearchSelect } from "../analytics/analyticsStore.js";
-import { STRICT_PREFIX_RE, FULL_SELECT_RE } from "./searchSyntaxPreprocessor.js";
+import { SQL_MODE_RE } from "./searchSyntaxPreprocessor.js";
 import { preprocessAlaSqlExpression } from "../expression/preprocessAlaSqlExpression.js";
 import {
   buildFieldPathsMap,
@@ -156,17 +156,17 @@ export function useSearchPageState({
   // 深いネストフィールドにも裸単語 / `列名:値`（リーフ名）が届くよう、スキーマ全
   // フィールドぶんを補った superset。評価行（entriesToViewTableRows）は元々全
   // フィールドのキーを持つので、ここで列側を揃えるとフルパス指定でなくてもヒットする。
-  // 値計算 / ソート / ヒット抜粋 / 厳密モードには searchColumns を使い続ける。
+  // 値計算 / ソート / ヒット抜粋には searchColumns を使い続ける。
   const simpleSearchColumns = useMemo(
     () => buildSimpleSearchColumns(form, searchColumns),
     [form, searchColumns],
   );
 
-  // 簡易検索モード（キーワード入力あり かつ SEARCH/WHERE 厳密モードでない）のときだけ
+  // 簡易検索モード（キーワード入力あり かつ SQL モードでない）のときだけ
   // 「検索ヒット箇所」列を最左に挿入する。
   const hitColumnActive = useMemo(() => {
     const keyword = (query || "").trim();
-    return Boolean(keyword) && !STRICT_PREFIX_RE.test(keyword) && !FULL_SELECT_RE.test(keyword);
+    return Boolean(keyword) && !SQL_MODE_RE.test(keyword);
   }, [query]);
 
   // 表示専用の列構成。値計算 / 検索 / ソートには素の columns を使い続け、
@@ -278,17 +278,9 @@ export function useSearchPageState({
     return entriesToViewTableRows(entriesArr, form);
   }, [form, baseFilteredEntries]);
 
-  // strict（WHERE/SEARCH）評価に渡す行は、検索非対象メタ列（createdBy / modifiedBy /
-  // deletedAt / deletedBy）を落として簡易モードとアクセス範囲を揃える。
-  // 行ビルダ（entriesToViewTableRows）はこれらを含むため、ここで除かないと
-  // WHERE deletedBy = ... 等が通ってしまう。
-  const searchableTableRows = useMemo(
-    () => stripNonSearchableMetaKeys(searchTableRows),
-    [searchTableRows],
-  );
-
-  // 簡易検索・厳密検索とも同一の view 形式行を使う（元データ形式は廃止）。
-  const simpleSearchRows = searchableTableRows;
+  // 簡易検索は view 形式行をそのまま評価する。簡易モードの式は検索対象外メタ列
+  // （createdBy / modifiedBy / deletedAt / deletedBy）を参照しないため、行側から落とす必要はない。
+  const simpleSearchRows = searchTableRows;
 
   useCancellable(async (isCancelled) => {
     const keyword = (query || "").trim();
@@ -297,10 +289,10 @@ export function useSearchPageState({
       setFilteredEntries(baseFilteredEntries);
       return;
     }
-    // full-SELECT モード（先頭 SELECT）: 検索バーに最上位 SQL を直接書く。
+    // SQL モード（先頭 SELECT）: 検索バーに最上位 SQL を直接書く。
     // 自フォームを `_`、本文にサブクエリ / 別フォーム参照を書ける。結果行の自フォーム id 集合で
     // baseFilteredEntries を絞り込む（id を持たない射影 / 別フォームの id は一致せず 0 件）。
-    if (FULL_SELECT_RE.test(keyword)) {
+    if (SQL_MODE_RE.test(keyword)) {
       setFilterError(null);
       try {
         const res = await runSearchSelect(keyword, { forms, defaultFormId: effectiveFormId });
@@ -322,40 +314,25 @@ export function useSearchPageState({
       }
       return;
     }
-    // 簡易・厳密の両モードを共通 alasql エンジンへ統一。
-    // - 厳密モード（先頭 SEARCH/WHERE）: searchSyntaxPreprocessor が WHERE 節相当へ変換。
-    //   評価行は searchableTableRows（searchQueryTableSource を尊重）。
-    // - 簡易モード: searchSimpleTranslate が正規表現 / 複数値集合分解などを WHERE 式へ翻訳。
-    //   評価行は simpleSearchRows（常に view 形式）。
-    // いずれも preprocessAlaSqlExpression → filterRowsByExpr（SELECT * FROM ? WHERE <expr>）で評価。
-    const isStrict = STRICT_PREFIX_RE.test(keyword);
-    // 簡易モードはスキーマ全フィールドを横断できる superset（simpleSearchColumns）を使う。
-    // 厳密モード（SEARCH/WHERE）は従来どおり表示列ベース（列無し述語の OR 展開範囲も含め
-    // 振る舞いを変えない。明示的な列参照は行キーへのフォールスルーで全フィールドに届く）。
-    const exprColumns = isStrict ? searchColumns : simpleSearchColumns;
-    const { expr, errors } = buildSearchExpression(keyword, exprColumns);
+    // 簡易検索モード: searchSimpleTranslate が正規表現 / 複数値集合分解などを WHERE 式へ翻訳し、
+    // preprocessAlaSqlExpression → filterRowsByExpr（SELECT * FROM ? WHERE <expr>）で評価する。
+    // 列はスキーマ全フィールドを横断できる superset（simpleSearchColumns）を使う。
+    const { expr, errors } = buildSearchExpression(keyword, simpleSearchColumns);
     if (errors && errors.length > 0) {
       setFilteredEntries([]);
       setFilterError(errors.join(", "));
       return;
     }
     if (!expr) {
-      // 厳密モードで式が空（`WHERE ` のみ等）は従来どおり解析エラー扱い。
-      // 簡易モードで式が空になるのは空 AST（例 "()"）のみで、旧エンジンは全件一致だったため全件表示。
-      if (isStrict) {
-        setFilteredEntries([]);
-        setFilterError("検索式を解析できませんでした");
-      } else {
-        setFilterError(null);
-        setFilteredEntries(baseFilteredEntries);
-      }
+      // 式が空になるのは空 AST（例 "()"）のみ。全件一致として全件表示する。
+      setFilterError(null);
+      setFilteredEntries(baseFilteredEntries);
       return;
     }
     setFilterError(null);
     try {
       const whereExpr = preprocessAlaSqlExpression(expr);
-      const rows = isStrict ? searchableTableRows : simpleSearchRows;
-      const res = await filterRowsByExpr(rows, whereExpr);
+      const res = await filterRowsByExpr(simpleSearchRows, whereExpr);
       if (isCancelled()) return;
       if (!res.ok) {
         setFilterError("検索エラー: " + (res.error || "式を評価できませんでした"));

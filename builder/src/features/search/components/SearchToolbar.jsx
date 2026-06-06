@@ -15,7 +15,7 @@ export default function SearchToolbar({ query, onChange, lastSyncedAt, useCache,
       {showSearch && (
         <input
           type="search"
-          placeholder="検索（正規表現）: 田中 / 氏名:^山田 / 年齢>=20  （WHERE・SEARCH で厳密検索も可）"
+          placeholder="検索（正規表現）: 田中 / 氏名:^山田 / 年齢>=20  （SELECT ... で SQL 検索も可）"
           value={inputValue}
           onChange={(event) => handleChange(event.target.value)}
           onCompositionStart={handleCompositionStart}

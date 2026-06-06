@@ -9,7 +9,7 @@ import { buildSearchTableLayout, createBaseColumns, buildSimpleSearchColumns } f
 import { computeRowValues } from "./searchTableValues.js";
 import { matchesKeyword } from "./searchQueryEngine.js";
 import { buildSimpleSearchExpression } from "./searchSimpleTranslate.js";
-import { buildSearchExpression, stripNonSearchableMetaKeys } from "./searchExpressionBuilder.js";
+import { buildSearchExpression } from "./searchExpressionBuilder.js";
 import { entriesToViewTableRows } from "../analytics/entriesToViewRows.js";
 import { preprocessAlaSqlExpression } from "../expression/preprocessAlaSqlExpression.js";
 import { ensureNfbUdfsRegistered } from "../expression/registerNfbUdfs.js";
@@ -75,7 +75,7 @@ function buildSearchColumns(form) {
   return hiddenMeta.length ? [...columns, ...hiddenMeta] : columns;
 }
 const SEARCH_COLUMNS = buildSearchColumns(FORM);
-const VIEW_ROWS = stripNonSearchableMetaKeys(entriesToViewTableRows(ENTRIES, FORM));
+const VIEW_ROWS = entriesToViewTableRows(ENTRIES, FORM);
 const PROCESSED = ENTRIES.map((entry) => ({ entry, values: computeRowValues(entry, SEARCH_COLUMNS) }));
 
 // 旧エンジン（matchesKeyword）のヒット id 集合（オラクル）。
@@ -197,15 +197,12 @@ test("emit: No. メタ列は alasql 行キー No_ にマップされる", () => 
 });
 
 // ────────────────────────────────────────────────────────────
-// buildSearchExpression のルーティング（簡易 / 厳密）
+// buildSearchExpression は簡易検索翻訳器へ委譲する（厳密モードは廃止）
 // ────────────────────────────────────────────────────────────
-test("buildSearchExpression: 簡易は翻訳器、厳密は preprocessor へ振り分ける", () => {
+test("buildSearchExpression: 簡易検索翻訳器（searchSimpleTranslate）へ委譲する", () => {
   const cols = [{ key: "display:氏名", path: "氏名", sourceType: "text", searchable: true }];
   // 簡易: REGEXP_LIKE（翻訳器）
   assert.equal(buildSearchExpression("氏名:^山田", cols).expr, "REGEXP_LIKE(`氏名` || '', '^山田', 'i')");
-  // 厳密: alasql 標準（LIKE）— preprocessor 経路
-  const strict = buildSearchExpression("WHERE `氏名` LIKE '%山田%'", cols);
-  assert.equal(strict.expr, "`氏名` LIKE '%山田%'");
 });
 
 // ────────────────────────────────────────────────────────────
@@ -257,7 +254,7 @@ const NESTED_ENTRIES = [
 ];
 const NESTED_DISPLAY_COLUMNS = buildSearchColumns(NESTED_FORM); // 表示列（+メタ）のみ
 const NESTED_SIMPLE_COLUMNS = buildSimpleSearchColumns(NESTED_FORM, NESTED_DISPLAY_COLUMNS); // 全フィールド superset
-const NESTED_VIEW_ROWS = stripNonSearchableMetaKeys(entriesToViewTableRows(NESTED_ENTRIES, NESTED_FORM));
+const NESTED_VIEW_ROWS = entriesToViewTableRows(NESTED_ENTRIES, NESTED_FORM);
 const NESTED_PROCESSED = NESTED_ENTRIES.map((entry) => ({ entry, values: computeRowValues(entry, NESTED_DISPLAY_COLUMNS) }));
 
 function nestedMatchedIds(keyword, cols) {

@@ -134,7 +134,7 @@ export const distributeChildRecordsByPid = (records) => {
 };
 
 /**
- * Question SQL / 検索の厳密モードで CHILD_FORM_NAME / CHILD_FORM_ID / CHILD_FORM_URL /
+ * Question SQL / 検索の SQL モードで CHILD_FORM_NAME / CHILD_FORM_ID / CHILD_FORM_URL /
  * CHILD_FORM_COUNT UDF を使えるようにするための「軽量」子フォーム注入オブジェクトを構築する。
  *
  * クエリ用途では子レコード本体（records / items）は不要で、4 つの UDF はいずれも
