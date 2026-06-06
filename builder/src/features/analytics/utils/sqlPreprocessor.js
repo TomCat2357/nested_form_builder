@@ -88,6 +88,22 @@ export function preprocessSql(sql, opts) {
     }
     const trailing = aliasCandidate && !aliasName ? " " + aliasCandidate : "";
 
+    // 検索・厳密モードの「自フォーム」別名 "_"。defaultFormId（=対象フォーム）に解決する。
+    // canonical テーブルを `AS _` で貼り、_.[col] 修飾参照（Pass 3）も使えるよう "_" alias を登録する。
+    if (rawRef === "_") {
+      if (!defaultFormId) {
+        errors.push("対象フォーム未指定では FROM _ を使えません");
+        return match;
+      }
+      recordReference(defaultFormId);
+      const canon = canonicalDataAlias(defaultFormId);
+      registerAlias(canon, defaultFormId);
+      registerAlias("_", defaultFormId);
+      if (aliasName) registerAlias(aliasName, defaultFormId);
+      const aliasPart = aliasName ? " AS " + aliasName : " AS _";
+      return kw + " " + canon + aliasPart + trailing;
+    }
+
     // 既に登録済み alias (data, data_<id>, form_<id>, または FROM 句のユーザー定義 AS) はそのまま
     if (aliasToFormId.has(rawRef)) {
       const fid = aliasToFormId.get(rawRef);
@@ -111,6 +127,11 @@ export function preprocessSql(sql, opts) {
 
   // Pass 2: [A].[B] (修飾付き列参照: A はフォーム名/ID)
   work = work.replace(/\[([^\]]+)\]\s*\.\s*\[([^\]]+)\]/g, (_m, fRef, cRef) => {
+    // 自フォーム別名 [_].[col]: Pass 1 で canon AS _ を貼っているので _ alias で参照する。
+    if (fRef === "_" && defaultFormId) {
+      const colIdx = getColumnIndex ? getColumnIndex(defaultFormId) : null;
+      return "_.[" + resolveColumnRef(cRef, colIdx) + "]";
+    }
     // 既に登録済み alias ならそれを使う
     if (aliasToFormId.has(fRef)) {
       const fid = aliasToFormId.get(fRef);

@@ -10,6 +10,8 @@ import { dataStore } from "../../app/state/dataStore.js";
 import { entriesToViewTableRows } from "./entriesToViewRows.js";
 import { bracketIdent } from "../expression/sqlEmit.js";
 import { ANALYTICS_SOURCE_TABLE_CACHE_TTL_MS } from "../../core/constants.js";
+import { collectFormLinkFields, buildChildFormInjections } from "../preview/childFormData.js";
+import { headerKeyToAlaSqlKey } from "./utils/headerToAlaSqlKey.js";
 
 // alias ごとの利用カウント。並列実行されるカードが同じ alias を共有しても、
 // 最後の利用者が dropTables するまでテーブルが残るようにするため。
@@ -48,6 +50,29 @@ function filterNotDeleted_(entries) {
   });
 }
 
+// フォームが formLink（別フォームを開く）項目を 1 つ以上持つか。
+function formHasFormLink_(form) {
+  return !!(form && Array.isArray(form.schema) && collectFormLinkFields(form.schema).length > 0);
+}
+
+/**
+ * view 行の formLink 列へ子フォーム合成オブジェクトを注入する（CHILD_FORM_* UDF 用）。
+ * CHILD_FORM_NAME / COUNT 等を含む SQL のときだけ呼ばれる（registerFormAsTable の injectChildData ゲート）。
+ * 取得不可（headless 等）なら buildChildFormInjections が [] を返すので何もしない。
+ */
+async function injectChildFormDataIntoRows_(rows, form) {
+  if (!Array.isArray(rows) || rows.length === 0) return;
+  const parentIds = rows.map((r) => r && r.id).filter(Boolean);
+  const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
+  const injections = await buildChildFormInjections({ schema: form.schema, parentIds, baseUrl });
+  for (const inj of injections) {
+    const key = headerKeyToAlaSqlKey(inj.path);
+    for (const row of rows) {
+      row[key] = inj.byPid.get(String(row.id || "")) || { childFormId: "", childFormName: "", childFormUrl: "", count: 0 };
+    }
+  }
+}
+
 /**
  * フォームを AlaSQL インメモリテーブルとして登録する（唯一のデータ形式＝view 形式）。
  * dataStore.listEntries で最新のメモリ常駐 records を取り出し、削除済みを除外し、
@@ -58,18 +83,23 @@ function filterNotDeleted_(entries) {
  * @param {object} [options]
  * @param {object} [options.form] - スキーマ走査用フォーム本体（radio/checkbox の整形に使う）
  * @param {string[]} [options.aliasAlsoAs] - 同一テーブルに貼る追加 alias（data_<id> / form_<id> / "data" など）
+ * @param {boolean} [options.injectChildData] - formLink 列へ子フォーム合成オブジェクトを注入する
+ *   （CHILD_FORM_* UDF 用）。SQL に CHILD_FORM_ が含まれるときだけ呼び出し側が立てる。
  */
 export async function registerFormAsTable(alias, formId, options = {}) {
   if (!alias) throw new Error("alias is required");
   if (!formId) throw new Error("formId is required");
   const alasql = await getAlaSql();
+  // 子データ注入の有無で view 行の形が変わるため、キャッシュキーを分ける（注入版/非注入版を混同しない）。
+  const wantChild = options.injectChildData === true && formHasFormLink_(options.form);
   // 元レコードテーブルは formId 単位でキャッシュ（TTL 内はサーバ同期も行変換もスキップ）。
-  const cacheKey = formId;
+  const cacheKey = wantChild ? formId + "#child" : formId;
   let rows = getCachedSourceRows_(cacheKey);
   if (!rows) {
     const result = await dataStore.listEntries(formId);
     const entries = filterNotDeleted_(result?.entries);
     rows = entriesToViewTableRows(entries, options.form);
+    if (wantChild) await injectChildFormDataIntoRows_(rows, options.form);
     sourceTableCache.set(cacheKey, { rows, ts: Date.now() });
   }
   // 既に同一 alias で登録済みなら参照カウントだけ進めて rows は使い回す。

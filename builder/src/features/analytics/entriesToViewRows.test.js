@@ -141,6 +141,18 @@ test("メタ列が含まれる", () => {
   assert.equal(row.modifiedBy, "bob@example.com");
 });
 
+test("pid: 親レコード ID をメタ列として露出（親子 JOIN 用）", () => {
+  const entry = { ...baseEntry, pid: "01HX0000000000000000000PARENT", data: {} };
+  const [row] = entriesToViewTableRows([entry], form);
+  assert.equal(row.pid, "01HX0000000000000000000PARENT");
+});
+
+test("pid: 欠落時は空文字（id/No_ と同じ既存ポリシー）", () => {
+  const entry = { ...baseEntry, data: {} }; // pid 未設定
+  const [row] = entriesToViewTableRows([entry], form);
+  assert.equal(row.pid, "");
+});
+
 test("option 真偽値列はそもそも row に出さない（data 形式との違い）", () => {
   const entry = {
     ...baseEntry,

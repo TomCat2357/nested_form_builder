@@ -12,7 +12,7 @@
  *     datetime=YYYY-MM-DD_HH:mm:ss.SSS、日付↔時刻は `_` 区切り）に整形。
  *   - number: Number 強制。
  *   - その他: data[pipePath] 素通し。
- *   - メタ列: id / No_ / createdAt / modifiedAt / createdBy / modifiedBy / deletedAt / deletedBy
+ *   - メタ列: id / No_ / createdAt / modifiedAt / createdBy / modifiedBy / deletedAt / deletedBy / pid
  *
  * 列キーは headerKeyToAlaSqlKey で `|` → `__` 変換。
  * メタ列名がフィールドラベルと衝突した場合は最後にメタ列で上書き。
@@ -137,6 +137,7 @@ export function entriesToViewTableRows(entries, form) {
     row.createdBy = entry?.createdBy ?? "";
     row.modifiedBy = entry?.modifiedBy ?? "";
     row.deletedBy = entry?.deletedBy ?? "";
+    row.pid = entry?.pid ?? "";
     row._row = idx + 1;
     return row;
   });

@@ -662,6 +662,12 @@ const STRICT_FORBIDDEN_CLAUSES = /(?:^|\s)(FROM|GROUP\s+BY|ORDER\s+BY|HAVING|LIM
 
 export const STRICT_PREFIX_RE = /^\s*(SEARCH|WHERE)\s+/i;
 
+// full-SELECT モード判定。検索バーに `SELECT ... FROM ...` を直接書く最上位 SQL。
+// 自フォームは `_` で参照でき、本文にサブクエリ・別フォーム参照（JOIN/IN）を書ける。
+// 実行結果のうち「自フォームの id」を持つ行だけが検索結果（その id のレコード）に対応する
+// （SELECT * / SELECT [id] FROM _ は対応づき表示、id 以外の射影や別フォーム最上位は対応せず 0 件）。
+export const FULL_SELECT_RE = /^\s*SELECT\b/i;
+
 /**
  * 検索クエリ文字列 → alasql 式文字列 への変換。
  *

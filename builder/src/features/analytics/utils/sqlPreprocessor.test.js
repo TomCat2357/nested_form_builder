@@ -99,6 +99,60 @@ test("複数フォームの JOIN で referencedFormIds が両方含まれる", (
   assert.ok(r.referencedFormIds.includes(formB.id));
 });
 
+test("親子 JOIN: pid 修飾参照が解決され referencedFormIds に両フォーム乗る", () => {
+  const r = preprocessSql(
+    "SELECT p.`基本情報|区`, COUNT(c.`id`) AS 件数 FROM `苦情データ` AS p LEFT JOIN `別フォーム` AS c ON c.`pid` = p.`id` GROUP BY p.`id`",
+    { defaultFormId: formA.id, formIndex, getColumnIndex }
+  );
+  assert.equal(r.ok, true);
+  // pid は既知メタ列として c.[pid] に解決される（未定義列の素通しではなく FIXED_PATHS 経由）。
+  assert.match(r.transformedSql, /c\.\[pid\]/);
+  assert.match(r.transformedSql, /p\.\[id\]/);
+  assert.equal(r.referencedFormIds.length, 2);
+  assert.ok(r.referencedFormIds.includes(formA.id));
+  assert.ok(r.referencedFormIds.includes(formB.id));
+});
+
+test("検索 full-SELECT: FROM _ は自フォーム（defaultFormId）の canonical を AS _ で貼る", () => {
+  const r = preprocessSql("SELECT * FROM _", {
+    defaultFormId: formA.id, formIndex, getColumnIndex,
+  });
+  assert.equal(r.ok, true);
+  const canon = canonicalDataAlias(formA.id);
+  assert.match(r.transformedSql, new RegExp("FROM " + canon + " AS _"));
+  assert.deepEqual(r.referencedFormIds, [formA.id]);
+});
+
+test("検索 full-SELECT: _.[col] は _ alias 修飾で解決される", () => {
+  const r = preprocessSql("SELECT _.`基本情報|区` FROM _", {
+    defaultFormId: formA.id, formIndex, getColumnIndex,
+  });
+  assert.equal(r.ok, true);
+  assert.match(r.transformedSql, /_\.\[基本情報__区\]/);
+});
+
+test("検索 full-SELECT: サブクエリで別フォームの pid を参照（横断フィルタ）", () => {
+  const r = preprocessSql(
+    "SELECT * FROM _ WHERE `id` IN (SELECT `pid` FROM `別フォーム`)",
+    { defaultFormId: formA.id, formIndex, getColumnIndex }
+  );
+  assert.equal(r.ok, true);
+  // 自フォームと子フォームの両方が referencedFormIds に乗る（子は自動登録対象）。
+  assert.ok(r.referencedFormIds.includes(formA.id));
+  assert.ok(r.referencedFormIds.includes(formB.id));
+  // サブクエリの FROM 別フォーム → canonical、pid は既知メタ列として解決。
+  assert.match(r.transformedSql, new RegExp("FROM " + canonicalDataAlias(formB.id)));
+  assert.match(r.transformedSql, /\[pid\]/);
+});
+
+test("検索 full-SELECT: defaultFormId 未指定で FROM _ はエラー", () => {
+  const r = preprocessSql("SELECT * FROM _", {
+    defaultFormId: null, formIndex, getColumnIndex,
+  });
+  assert.equal(r.ok, false);
+  assert.match(r.errors[0], /_/);
+});
+
 test("未定義フォーム参照はエラーを返す", () => {
   const r = preprocessSql("SELECT * FROM [存在しないフォーム]", {
     defaultFormId: null, formIndex, getColumnIndex,

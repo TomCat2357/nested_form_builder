@@ -4,6 +4,7 @@ import {
   buildChildDataObject,
   distributeChildRecordsByPid,
   collectFormLinkFields,
+  buildChildFormInjections,
   MAX_CHILD_RECORDS_PER_FIELD,
 } from "./childFormData.js";
 
@@ -107,6 +108,60 @@ test("collectFormLinkFields: includeChildData の true/非true を反映", () =>
   assert.equal(out.find((f) => f.id === "fl1").includeChildData, true);
   assert.equal(out.find((f) => f.id === "fl2").includeChildData, false);
   assert.equal(out.find((f) => f.id === "fl3").includeChildData, false);
+});
+
+test("buildChildFormInjections: formLink ごとに pid 件数を集計（子フォーム 1 回だけ fetch・軽量版）", async () => {
+  const schema = [
+    { id: "fl1", type: "formLink", childFormId: "childA", childFormPath: "親/子A" },
+  ];
+  const calls = [];
+  const mockList = async ({ formId, pids }) => {
+    calls.push({ formId, pids: [...pids] });
+    return [
+      { id: "c1", pid: "p1", data: {} },
+      { id: "c2", pid: "p1", data: {} },
+      { id: "c3", pid: "p2", data: {} },
+    ];
+  };
+  const injections = await buildChildFormInjections({
+    schema,
+    parentIds: ["p1", "p2", "p3", "p1"], // 重複は dedup される
+    listRecordsByPids: mockList,
+  });
+  assert.equal(injections.length, 1);
+  // 子フォームごとに 1 回だけ呼ぶ（N+1 回避）。pids は dedup 済み。
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].formId, "childA");
+  assert.deepEqual([...calls[0].pids].sort(), ["p1", "p2", "p3"]);
+  const { byPid } = injections[0];
+  assert.equal(byPid.get("p1").count, 2);
+  assert.equal(byPid.get("p2").count, 1);
+  assert.equal(byPid.get("p3").count, 0); // 子なしの親も 0 件エントリを作る
+  assert.equal(byPid.get("p1").childFormId, "childA");
+  assert.equal(byPid.get("p1").childFormName, "親/子A");
+  // 軽量版なので records/items は持たない（4 つの UDF は name/id/url/count だけ読む）。
+  assert.ok(!("records" in byPid.get("p1")));
+});
+
+test("buildChildFormInjections: formLink が無ければ fetch せず空配列", async () => {
+  let called = false;
+  const out = await buildChildFormInjections({
+    schema: [{ id: "t", type: "text", label: "氏名" }],
+    parentIds: ["p1"],
+    listRecordsByPids: async () => { called = true; return []; },
+  });
+  assert.deepEqual(out, []);
+  assert.equal(called, false);
+});
+
+test("buildChildFormInjections: fetch 失敗は無言で件数 0", async () => {
+  const out = await buildChildFormInjections({
+    schema: [{ id: "fl1", type: "formLink", childFormId: "childA", childFormPath: "子" }],
+    parentIds: ["p1"],
+    listRecordsByPids: async () => { throw new Error("boom"); },
+  });
+  assert.equal(out.length, 1);
+  assert.equal(out[0].byPid.get("p1").count, 0);
 });
 
 test("collectFormLinkFields: ネスト schema で path（pathSegments 連結）を組む", () => {
