@@ -8,7 +8,6 @@ import FormPageDialogs from "./FormPageDialogs.jsx";
 import FormPageSidebar from "./FormPageSidebar.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { hasDirtyChanges } from "../utils/responses.js";
-import { isPlainObject } from "../utils/objectShape.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import { useConfirmDialog } from "../app/hooks/useConfirmDialog.js";
 import { useBeforeUnloadGuard } from "../app/hooks/useBeforeUnloadGuard.js";
@@ -30,6 +29,7 @@ import {
   createEmptyDriveFolderState,
   createEmptyDriveFolderStates,
   hasAnyConfiguredDriveFolder,
+  loadDriveFolderStatesDraft,
   markDriveFolderForDeletion,
   setDriveFolderStateForField,
 } from "../utils/driveFolderState.js";
@@ -99,43 +99,13 @@ export default function FormPage() {
       } catch(e) {}
     }
   }, [responses, draftKey, entryId]);
-  const [driveFolderStates, setDriveFolderStates] = useState(() => {
-    if (entryId) return createEmptyDriveFolderStates();
-    try {
-      const saved = sessionStorage.getItem(driveFolderDraftKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (isPlainObject(parsed)) {
-          const next = {};
-          for (const [fid, v] of Object.entries(parsed)) {
-            next[fid] = normalizeDriveFolderState(v);
-          }
-          return next;
-        }
-      }
-    } catch (e) {}
-    return createEmptyDriveFolderStates();
-  });
+  const [driveFolderStates, setDriveFolderStates] = useState(() =>
+    entryId ? createEmptyDriveFolderStates() : loadDriveFolderStatesDraft(driveFolderDraftKey)
+  );
 
   useEffect(() => {
     if (entryId) return;
-    try {
-      const saved = sessionStorage.getItem(driveFolderDraftKey);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (isPlainObject(parsed)) {
-          const next = {};
-          for (const [fid, v] of Object.entries(parsed)) {
-            next[fid] = normalizeDriveFolderState(v);
-          }
-          setDriveFolderStates(next);
-          return;
-        }
-      }
-      setDriveFolderStates(createEmptyDriveFolderStates());
-    } catch (e) {
-      setDriveFolderStates(createEmptyDriveFolderStates());
-    }
+    setDriveFolderStates(loadDriveFolderStatesDraft(driveFolderDraftKey));
   }, [driveFolderDraftKey, entryId]);
 
   useEffect(() => {

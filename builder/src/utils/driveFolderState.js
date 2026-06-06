@@ -1,3 +1,5 @@
+import { isPlainObject } from "./objectShape.js";
+
 const EMPTY_DRIVE_FOLDER_STATE = {
   resolvedUrl: "",
   inputUrl: "",
@@ -75,6 +77,28 @@ export const areDriveFolderStatesEqual = (left, right) => {
 };
 
 export const createEmptyDriveFolderStates = () => ({});
+
+// sessionStorage に保存された Drive フォルダ下書き（{ fieldId: state } マップ）を読み出し、
+// 各 state を normalizeDriveFolderState で正規化したマップを返す。
+// 未保存・JSON 破損・非オブジェクトはすべて空マップにフォールバックする。
+export const loadDriveFolderStatesDraft = (storageKey) => {
+  try {
+    const saved = sessionStorage.getItem(storageKey);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (isPlainObject(parsed)) {
+        const next = {};
+        for (const [fid, value] of Object.entries(parsed)) {
+          next[fid] = normalizeDriveFolderState(value);
+        }
+        return next;
+      }
+    }
+  } catch (e) {
+    /* 破損データは無視して空マップ */
+  }
+  return createEmptyDriveFolderStates();
+};
 
 export const setDriveFolderStateForField = (statesMap, fieldId, updater) => {
   const base = statesMap || {};
