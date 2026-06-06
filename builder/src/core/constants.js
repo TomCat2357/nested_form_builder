@@ -1,3 +1,11 @@
+// 検索対象外の固定メタ列キー。
+//   - createdAt / modifiedAt（作成・更新日時）は検索可として残す。
+//   - createdBy / modifiedBy（…By 系）と deletedAt / deletedBy（deleted 系）は除外。
+// 簡易検索はこの集合で列をフィルタし、SQL モードはテーブル登録時に同じ列を落とす
+// （analyticsAlaSql.registerFormAsTable の excludeMetaColumns）。
+// core/constants.js は依存の末端なので、3 箇所からここを import しても循環参照は起きない。
+export const NON_SEARCHABLE_META_KEYS = ["createdBy", "modifiedBy", "deletedAt", "deletedBy"];
+
 // UI・動作関連
 export const MAX_DEPTH = 11;
 export const DEFAULT_PAGE_SIZE = 20;

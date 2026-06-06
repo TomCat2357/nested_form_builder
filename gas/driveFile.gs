@@ -51,6 +51,21 @@ function nfbGetDriveFileById_(fileId, errorPrefix) {
 }
 
 /**
+ * DriveApp.getFolderById のラッパ。アクセス失敗時は errorPrefix を付けて日本語例外を投げる。
+ * nfbGetDriveFileById_ のフォルダ版。失敗時 null が必要な用途は別途 isTrashed 判定を行うこと。
+ * @param {string} folderId
+ * @param {string} errorPrefix - 例: "フォルダへのアクセスに失敗しました: "
+ * @return {Folder}
+ */
+function nfbGetDriveFolderById_(folderId, errorPrefix) {
+  try {
+    return DriveApp.getFolderById(folderId);
+  } catch (accessError) {
+    throw new Error(errorPrefix + nfbErrorToString_(accessError));
+  }
+}
+
+/**
  * fileId の Drive ファイルを取得し、本文 JSON をパースして { file, json } で返す共通ヘルパ。
  * `DriveApp.getFileById → getBlob().getDataAsString() → JSON.parse` の三連を 1 箇所に集約する。
  * アクセス不能・parse 失敗は例外を投げる（呼び出し側の try/catch 方針を尊重する）。

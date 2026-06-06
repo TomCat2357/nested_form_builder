@@ -14,11 +14,7 @@ function nfbResolveFolderFromInput_(input) {
     throw new Error("無効なフォルダURLです: " + normalizedInput);
   }
 
-  try {
-    return DriveApp.getFolderById(parsed.id);
-  } catch (error) {
-    throw new Error("フォルダへのアクセスに失敗しました: " + nfbErrorToString_(error));
-  }
+  return nfbGetDriveFolderById_(parsed.id, "フォルダへのアクセスに失敗しました: ");
 }
 
 function nfbResolveFolderFromInputIfExists_(input) {

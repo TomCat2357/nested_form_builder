@@ -1,8 +1,8 @@
 import { useCallback, useState } from "react";
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { hasScriptRun } from "../../services/gasClient.js";
-import { normalizeFolderPath, countItemsUnder, folderExists } from "../../utils/folderTree.js";
-import { sanitizeFileBaseName, downloadJsonOrZip, resolveDialogTargetIds, createMoveActions } from "./listActionsShared.js";
+import { countItemsUnder } from "../../utils/folderTree.js";
+import { sanitizeFileBaseName, downloadJsonOrZip, resolveDialogTargetIds, createMoveActions, createFolderCreateActions, createRenameActions } from "./listActionsShared.js";
 
 /**
  * Question / Dashboard 一覧アクションを一括提供する汎用 hook。
@@ -282,32 +282,15 @@ export function useAdminAnalyticsListActions({
   };
 
   // ---- 新規フォルダ ----
-  const handleCreateFolder = () => {
-    if (!hasScriptRun()) {
-      showAlert("フォルダ作成はGoogle Apps Script環境でのみ利用可能です");
-      return;
-    }
-    setNewFolderName("");
-    setNewFolderError("");
-    newFolderDialog.open();
-  };
-
-  const confirmCreateFolder = async () => {
-    const name = (newFolderName || "").trim();
-    if (!name) {
-      setNewFolderError("フォルダ名を入力してください");
-      return;
-    }
-    const path = normalizeFolderPath([currentPath, name].filter(Boolean).join("/"));
-    try {
-      await createFolder(path);
-      newFolderDialog.reset();
-      setNewFolderName("");
-      setNewFolderError("");
-    } catch (error) {
-      setNewFolderError(error?.message || "フォルダの作成に失敗しました");
-    }
-  };
+  const { handleCreateFolder, confirmCreateFolder } = createFolderCreateActions({
+    showAlert,
+    currentPath,
+    createFolder,
+    newFolderDialog,
+    newFolderName,
+    setNewFolderName,
+    setNewFolderError,
+  });
 
   // ---- 移動 ----
   const { handleMoveSelected, confirmMove } = createMoveActions({
@@ -330,92 +313,24 @@ export function useAdminAnalyticsListActions({
 
   // ---- 名前変更 ----
   // フォルダ1件 → フォルダ名変更（mv の rename 相当）。アイテム1件 → アイテム自体の name 変更。
-  const handleRenameSelected = () => {
-    if (!hasScriptRun()) {
-      showAlert("名前変更はGoogle Apps Script環境でのみ利用可能です");
-      return;
-    }
-    const folderPaths = Array.from(selectedFolders || []);
-    const itemIds = Array.from(selected || []);
-    if (folderPaths.length === 1 && itemIds.length === 0) {
-      const path = normalizeFolderPath(folderPaths[0]);
-      const currentName = path.split("/").pop() || "";
-      setRenameName(currentName);
-      setRenameError("");
-      renameDialog.open({ kind: "folder", path, currentName });
-      return;
-    }
-    if (itemIds.length === 1 && folderPaths.length === 0) {
-      const item = sortedItems.find((it) => it.id === itemIds[0]);
-      if (!item) {
-        showAlert(`名前を変更できる ${itemLabel} を選択してください。`);
-        return;
-      }
-      const currentName = item.name || "";
-      setRenameName(currentName);
-      setRenameError("");
-      renameDialog.open({ kind: "item", id: item.id, currentName });
-      return;
-    }
-    showAlert(`名前を変更するフォルダまたは ${itemLabel} を1つだけ選択してください。`);
-  };
-
-  const confirmRenameItem = async () => {
-    const id = renameDialog.state.id;
-    const newName = (renameName || "").trim();
-    if (!newName) {
-      setRenameError("新しい名前を入力してください");
-      return;
-    }
-    try {
-      await renameItem(id, newName);
-      clearSelectionByIds([id]);
-      renameDialog.reset();
-      setRenameName("");
-      setRenameError("");
-    } catch (error) {
-      setRenameError(error?.message || "名前の変更に失敗しました");
-    }
-  };
-
-  const confirmRename = async () => {
-    if (renameDialog.state.kind === "item") {
-      await confirmRenameItem();
-      return;
-    }
-    await confirmRenameFolder();
-  };
-
-  const confirmRenameFolder = async () => {
-    const path = normalizeFolderPath(renameDialog.state.path);
-    const newName = (renameName || "").trim();
-    if (!newName) {
-      setRenameError("新しいフォルダ名を入力してください");
-      return;
-    }
-    if (newName.includes("/")) {
-      setRenameError("フォルダ名に「/」は使用できません");
-      return;
-    }
-    const segs = path.split("/");
-    segs.pop();
-    const parent = segs.join("/");
-    const next = parent ? `${parent}/${newName}` : newName;
-    if (next !== path && folderExists(registeredFolders, next)) {
-      setRenameError(`同名のフォルダ「${next}」が既に存在します`);
-      return;
-    }
-
-    try {
-      await renameFolder({ path, newName });
-      if (clearFolderSelection) clearFolderSelection();
-      renameDialog.reset();
-      setRenameName("");
-      setRenameError("");
-    } catch (error) {
-      setRenameError(error?.message || "名前の変更に失敗しました");
-    }
-  };
+  const { handleRenameSelected, confirmRename } = createRenameActions({
+    sortedItems,
+    selected,
+    selectedFolders,
+    renameDialog,
+    renameName,
+    setRenameName,
+    setRenameError,
+    registeredFolders,
+    renameItem,
+    renameFolder,
+    clearSelectionByIds,
+    clearFolderSelection,
+    getItemName: (item) => item.name || "",
+    emptyRenameMessage: `名前を変更できる ${itemLabel} を選択してください。`,
+    ambiguousRenameMessage: `名前を変更するフォルダまたは ${itemLabel} を1つだけ選択してください。`,
+    showAlert,
+  });
 
   return {
     confirmArchive: archiveDialog.state,

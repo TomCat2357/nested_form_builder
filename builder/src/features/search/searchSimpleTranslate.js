@@ -31,10 +31,10 @@ import {
   findColumnByName,
   expandColumnlessOr,
 } from "./searchQueryShared.js";
+import { NON_SEARCHABLE_META_KEYS } from "../../core/constants.js";
 
-// 検索対象外の固定メタ列（searchExpressionBuilder.EXCLUDED_META_COLUMN_KEYS と同一ポリシー）。
-// 循環 import を避けるためここで再定義する。変更時は両者を揃えること。
-const EXCLUDED_META_COLUMN_KEYS = new Set(["createdBy", "modifiedBy", "deletedAt", "deletedBy"]);
+// 検索対象外の固定メタ列。キー一覧は core/constants.js に一元化（NON_SEARCHABLE_META_KEYS）。
+const EXCLUDED_META_COLUMN_KEYS = new Set(NON_SEARCHABLE_META_KEYS);
 
 const isSearchableColumn = (col) =>
   !!col && col.searchable !== false && !EXCLUDED_META_COLUMN_KEYS.has(col.key);

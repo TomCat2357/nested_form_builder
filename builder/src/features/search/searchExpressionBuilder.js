@@ -6,6 +6,7 @@ import { buildSimpleSearchExpression } from "./searchSimpleTranslate.js";
 import { headerKeyToAlaSqlKey } from "../analytics/utils/headerToAlaSqlKey.js";
 import { columnType } from "./searchTableValues.js";
 import { formatCanonical } from "../../utils/dateTime.js";
+import { NON_SEARCHABLE_META_KEYS } from "../../core/constants.js";
 
 /**
  * 検索バーで識別子として有効な「列名」を返す。
@@ -18,18 +19,10 @@ function resolveSearchableName(col) {
 }
 
 /**
- * 検索対象から除外する固定メタ列。
- * `createdAt`（作成日時）/ `modifiedAt`（最終更新日時）は検索可として残し、
- * `createdBy` / `modifiedBy`（…By 系）と `deletedAt` / `deletedBy`（deleted 系）は除外。
- * 簡易検索はこの集合で列をフィルタし、検索の SQL モードはテーブル登録時に同じ列を落とす
- * （analyticsAlaSql.registerFormAsTable の excludeMetaColumns）。
+ * 検索対象から除外する固定メタ列。キー一覧は core/constants.js に一元化
+ * （NON_SEARCHABLE_META_KEYS）。後方互換のため Set ラップを再 export する。
  */
-export const EXCLUDED_META_COLUMN_KEYS = new Set([
-  "createdBy",
-  "modifiedBy",
-  "deletedAt",
-  "deletedBy",
-]);
+export const EXCLUDED_META_COLUMN_KEYS = new Set(NON_SEARCHABLE_META_KEYS);
 
 function isExcludedMetaColumn(col) {
   if (!col) return false;
