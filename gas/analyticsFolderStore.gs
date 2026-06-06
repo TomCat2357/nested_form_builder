@@ -52,7 +52,9 @@ function Analytics_folderStoreAdapter_(type) {
     movedIdsKey: "movedIds",
     deletedCountKey: "deletedCount",
     itemNoun: "アイテム",
-    lockPrefix: "アナリティクス "
+    lockPrefix: "アナリティクス ",
+    // 中央辞書エントリで「名前」を保持するキー（移動時の同名衝突採番で参照/更新する）。
+    entryNameKey: "name"
   };
 }
 
