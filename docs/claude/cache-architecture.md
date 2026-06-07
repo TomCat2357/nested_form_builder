@@ -66,6 +66,23 @@ CLAUDE.md から分離した、IndexedDB キャッシュと差分同期の実装
 node tests/gas-sync-records-merge.test.js
 ```
 
+## 子フォーム（formLink）データの事前キャッシュ
+
+親レコードを開くと、formLink 項目ごとに子フォームの「件数バッジ」または「子レコード詳細
+（includeChildData=ON）」を取得する。schema 自体は一覧キャッシュ（`formsCache`）に全件
+格納済みなので子フォームの schema は既に事前キャッシュされている。子の**レコード／件数**だけは
+未キャッシュだったため、`builder/src/app/state/childRecordsMemoryStore.js` に per-session
+メモリキャッシュを設けた。
+
+- キー: `childFormId::pid`。1 エントリは `{ childData, count, lastSyncedAt }`。
+- `detail`（includeChildData=ON）エントリは `count` も持つので count 読みも満たす（逆は不可）。
+- SWR 評価はレコードと同じ `cachePolicy.js` の `evaluateCacheForRecords`（30分で要再取得 /
+  5分で裏更新）を流用。`PreviewPage.jsx` がキャッシュ即表示 → 裏で再検証する。
+- 親再同期（`modifiedAtUnixMs` 変化）時は `forceSync` でハード再取得。
+- 無効化: 子レコード保存（`formPageSaveHandler.js`）・子レコード複製（`childRecordCopy.js`）で
+  該当 `childFormId` の全 pid を `invalidateChildForm` で破棄。
+- reload で消える（`recordsMemoryStore` と同じ揮発キャッシュ）。
+
 ## 注意点
 
 - 複合キー `formId::entryId` を扱うときは、必ず `recordsCache` 内のヘルパー関数を使う（文字列結合を直書きしない）

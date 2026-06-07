@@ -41,6 +41,12 @@ import {
 import { collectFileUploadFields } from "../../core/schema.js";
 import { buildSharedFormUrl, buildSharedRecordUrl, buildChildFormUrl } from "../../utils/formShareUrl.js";
 import { buildChildDataObject, getChildFormCached_, collectFormLinkFields } from "./childFormData.js";
+import {
+  getChildRecordsFromCache,
+  saveChildDataToCache,
+  saveChildCountToCache,
+} from "../../app/state/childRecordsMemoryStore.js";
+import { evaluateCacheForRecords } from "../../app/state/cachePolicy.js";
 import { RendererRecursive } from "./FieldRenderer.jsx";
 
 const PreviewPage = React.forwardRef(function PreviewPage(
@@ -141,42 +147,87 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   // includeChildData=ON の formLink 項目だけ詰める。Webhook 送信・印刷・プレビューの CHILD_FORM_* で参照。
   const [formLinkChildData, setFormLinkChildData] = useState({});
   // 件数取得は「既存レコード（保存済み id あり）」かつ GAS 利用可かつ子フォーム文脈でない場合のみ。
-  // formLink ごとに 1 回 listRecords を叩く。失敗は無言（dev / GAS 無しでもバッジ非表示で成立）。
-  // 親レコードを開いた時点で非同期に呼び、親の同期（modifiedAtUnixMs 変化）で再取得する。
+  // 子レコード / 件数は childRecordsMemoryStore に SWR キャッシュする：キャッシュがあれば即表示し、
+  // しきい値（cachePolicy）に従って裏で再検証。新鮮なら GAS 往復しない。
+  // 親の同期（modifiedAtUnixMs 変化）時は forceSync で必ずハード再取得する。失敗は無言。
   const formLinkSignature = formLinkFields
     .map((f) => `${f.id}:${f.childFormId}:${f.includeChildData ? 1 : 0}`)
     .join("|");
+  // 別レコードを開いた瞬間の残像を防ぐためのリセット判定 / 親再同期の強制更新判定に使う。
+  const prevChildRecordIdRef = useRef(null);
+  const prevChildModifiedAtRef = useRef(undefined);
   useCancellable(async (isCancelled) => {
-    setFormLinkChildCounts({});
-    setFormLinkChildData({});
     const recordId = recordIdRef.current;
+    // レコードが切り替わった時だけ state をリセット（同一レコードの再評価ではキャッシュ即表示を維持）。
+    const recordChanged = prevChildRecordIdRef.current !== recordId;
+    // 同一レコードで modifiedAtUnixMs が変わった＝親が再同期された → 子データを強制再取得。
+    const parentChanged =
+      !recordChanged &&
+      prevChildModifiedAtRef.current !== undefined &&
+      prevChildModifiedAtRef.current !== settings.modifiedAtUnixMs;
+    prevChildRecordIdRef.current = recordId;
+    prevChildModifiedAtRef.current = settings.modifiedAtUnixMs;
+    if (recordChanged) {
+      setFormLinkChildCounts({});
+      setFormLinkChildData({});
+    }
     if (inChildContext) return;
     if (!settings.recordId || !recordId) return;
     if (!hasScriptRun()) return;
     if (formLinkFields.length === 0) return;
     const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
+
+    // 1 項目ぶんの取得 → state 反映 → キャッシュ書き戻し。shouldSync は await、shouldBackground は
+    // fire-and-forget で使う。state 反映はキャンセルガードするが、キャッシュ書き戻しは常に行う。
+    const fetchField = async (field) => {
+      if (field.includeChildData && typeof listRecordsByPids === "function") {
+        // 子レコード全件 + 子 schema を取得し、合成オブジェクトを組む（件数も records から導出）。
+        const [childForm, records] = await Promise.all([
+          getChildFormCached_(field.childFormId),
+          listRecordsByPids({ formId: field.childFormId, pids: [recordId] }),
+        ]);
+        const childObj = buildChildDataObject({
+          childFormId: field.childFormId,
+          childFormName: field.childFormName,
+          childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, recordId),
+          childSchema: childForm && childForm.schema ? childForm.schema : [],
+          records,
+        });
+        await saveChildDataToCache(field.childFormId, recordId, childObj);
+        if (isCancelled()) return;
+        setFormLinkChildData((prev) => ({ ...prev, [field.id]: childObj }));
+        setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: childObj.count }));
+      } else if (typeof countRecordsByPid === "function") {
+        const count = await countRecordsByPid({ formId: field.childFormId, pid: recordId });
+        await saveChildCountToCache(field.childFormId, recordId, count);
+        if (isCancelled()) return;
+        setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: count }));
+      }
+    };
+
     for (const field of formLinkFields) {
       try {
-        if (field.includeChildData && typeof listRecordsByPids === "function") {
-          // 子レコード全件 + 子 schema を取得し、合成オブジェクトを組む（件数も records から導出）。
-          const [childForm, records] = await Promise.all([
-            getChildFormCached_(field.childFormId),
-            listRecordsByPids({ formId: field.childFormId, pids: [recordId] }),
-          ]);
+        const kind = field.includeChildData ? "detail" : "count";
+        const cached = await getChildRecordsFromCache(field.childFormId, recordId, { kind });
+        if (isCancelled()) return;
+        // キャッシュ即表示（cache-first）。
+        if (cached.hasData) {
+          if (kind === "detail" && cached.childData) {
+            setFormLinkChildData((prev) => ({ ...prev, [field.id]: cached.childData }));
+          }
+          setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: cached.count }));
+        }
+        const { shouldSync, shouldBackground } = evaluateCacheForRecords({
+          lastSyncedAt: cached.lastSyncedAt,
+          hasData: cached.hasData,
+          forceSync: parentChanged,
+        });
+        if (shouldSync) {
+          await fetchField(field);
           if (isCancelled()) return;
-          const childObj = buildChildDataObject({
-            childFormId: field.childFormId,
-            childFormName: field.childFormName,
-            childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, recordId),
-            childSchema: childForm && childForm.schema ? childForm.schema : [],
-            records,
-          });
-          setFormLinkChildData((prev) => ({ ...prev, [field.id]: childObj }));
-          setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: childObj.count }));
-        } else if (typeof countRecordsByPid === "function") {
-          const count = await countRecordsByPid({ formId: field.childFormId, pid: recordId });
-          if (isCancelled()) return;
-          setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: count }));
+        } else if (shouldBackground) {
+          // 裏で再検証（非ブロッキング）。内部で isCancelled ガード済み。
+          fetchField(field).catch(() => {});
         }
       } catch (_e) {
         // 取得失敗時はバッジ / 子データを出さない（無言）。
