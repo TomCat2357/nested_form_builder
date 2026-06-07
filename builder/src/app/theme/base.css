@@ -256,6 +256,41 @@ button:disabled {
   gap: 12px;
 }
 
+/* 折りたたみ時はトグルボタンだけを載せる細いレール。 */
+.app-sidebar--collapsed {
+  width: auto;
+  padding: 8px;
+  gap: 0;
+}
+
+/* サイドバーの開閉トグル。展開時は右上、折りたたみ時は中央に配置する。 */
+.app-sidebar-toggle {
+  align-self: flex-end;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.app-sidebar--collapsed .app-sidebar-toggle {
+  align-self: center;
+}
+
+.app-sidebar-toggle:hover {
+  background: var(--primary-soft);
+  border-color: var(--primary-border-soft, var(--border-strong));
+}
+
 .app-main {
   flex: 1;
   padding: 24px 16px;

@@ -4,10 +4,13 @@ import { useEffect } from "react";
 import { useBuilderSettings } from "../../features/settings/settingsStore.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../theme/theme.js";
 import UploadSyncIndicator from "./UploadSyncIndicator.jsx";
+import { useSidebarCollapsed } from "../hooks/useSidebarCollapsed.js";
+import { toggleSidebarCollapsed } from "../state/sidebarCollapseStore.js";
 
 export default function AppLayout({ themeOverride, title, fallbackPath = "/", onBack, backHidden = false, actions, sidebarActions, badge, children }) {
   const navigate = useNavigate();
   const { settings } = useBuilderSettings({ applyGlobalTheme: false });
+  const sidebarCollapsed = useSidebarCollapsed();
 
   useEffect(() => {
     const themeToApply = themeOverride || settings?.theme || DEFAULT_THEME;
@@ -54,6 +57,8 @@ export default function AppLayout({ themeOverride, title, fallbackPath = "/", on
 
   const resolvedBadge = typeof badge === "string" ? { label: badge } : badge;
 
+  const hasSidebar = !!(sidebarActions || backButton);
+
   return (
     <div className="app-root">
       <header className="app-header">
@@ -71,11 +76,36 @@ export default function AppLayout({ themeOverride, title, fallbackPath = "/", on
         </div>
       </header>
       <div className="app-container">
-        {(sidebarActions || backButton) && (
-          <aside className="app-sidebar">
-            {backButton}
-            {sidebarActions}
-          </aside>
+        {hasSidebar && (
+          sidebarCollapsed ? (
+            <aside className="app-sidebar app-sidebar--collapsed">
+              <button
+                type="button"
+                className="app-sidebar-toggle"
+                onClick={toggleSidebarCollapsed}
+                title="サイドバーを表示"
+                aria-label="サイドバーを表示"
+                aria-expanded={false}
+              >
+                »
+              </button>
+            </aside>
+          ) : (
+            <aside className="app-sidebar">
+              <button
+                type="button"
+                className="app-sidebar-toggle"
+                onClick={toggleSidebarCollapsed}
+                title="サイドバーを隠す"
+                aria-label="サイドバーを隠す"
+                aria-expanded={true}
+              >
+                «
+              </button>
+              {backButton}
+              {sidebarActions}
+            </aside>
+          )
         )}
         <main className="app-main">{children}</main>
       </div>
