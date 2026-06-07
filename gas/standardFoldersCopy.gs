@@ -39,17 +39,6 @@ function StdFolders_remapFolderUrl_(url, folderIdMap) {
 // (2.3) 構成コピー
 // ---------------------------------------------
 
-// ソース mapping から fileId → id の逆引き表を作る。
-function StdFolders_buildFileIdToId_(mapping) {
-  var rev = {};
-  for (var id in mapping) {
-    if (!mapping.hasOwnProperty(id)) continue;
-    var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]);
-    if (fileId) rev[fileId] = id;
-  }
-  return rev;
-}
-
 function StdFolders_copy_(payload) {
   return nfbSafeCall_(function() {
     var destRootUrl = payload && payload.destRootUrl ? String(payload.destRootUrl).trim() : "";
