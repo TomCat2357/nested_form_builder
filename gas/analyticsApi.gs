@@ -49,24 +49,10 @@ function Analytics_buildDriveFileUrlFromId_(fileId) {
 // name（= Drive ファイル名）と論理パス folder は、論理側 fileId が失われたときに
 // 「論理パス（folder + 名前）で物理ファイルを探し直す」復旧アンカーになる。folder は中央辞書の
 // 第一級フィールドで、null は「未バックフィル」sentinel（"" の「ルート」と区別する）。
+// 共通コア Nfb_normalizeMappingValue_（gas/formsMappingStore.gs）への薄いラッパー。
+// Analytics（questions/dashboards）は name キーでラベルを保持する。
 function Analytics_normalizeMappingValue_(value) {
-  var fileId = null;
-  var driveFileUrl = null;
-  var name = null;
-  var folder = null;
-
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    fileId = typeof value.fileId === "string" ? String(value.fileId).trim() : null;
-    driveFileUrl = typeof value.driveFileUrl === "string" ? String(value.driveFileUrl).trim() : null;
-    name = typeof value.name === "string" ? value.name : null;
-    folder = typeof value.folder === "string" ? Forms_normalizeFolderPath_(value.folder) : null;
-  }
-
-  if (!driveFileUrl && fileId) {
-    driveFileUrl = Analytics_buildDriveFileUrlFromId_(fileId);
-  }
-
-  return { fileId: fileId, driveFileUrl: driveFileUrl, name: name, folder: folder };
+  return Nfb_normalizeMappingValue_(value, "name");
 }
 
 function Analytics_normalizeMapping_(mapping) {

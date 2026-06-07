@@ -224,6 +224,8 @@ function loadAnalyticsContext() {
     "gas/formsParsing.gs",
     // Analytics_saveTemplate_ が Forms_makeUniqueFormTitle_ / Forms_normalizeFormTitle_ を呼ぶため事前ロード
     "gas/formsTitleHelpers.js",
+    // Analytics_normalizeMappingValue_ が共通コア Nfb_normalizeMappingValue_ に委譲するため事前ロード
+    "gas/formsMappingStore.gs",
     "gas/analyticsApi.gs",
     // SharedCrud_resolveEntityFileOrNull_（Analytics_resolveItemFileOrNull_ が委譲）
     "gas/sharedEntityCrud.gs",

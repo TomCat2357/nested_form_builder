@@ -35,22 +35,24 @@ function Forms_buildDriveFileUrlFromId_(fileId) {
 }
 
 /**
- * マッピング値を正規化（{ fileId, driveFileUrl, title, folder }）。
+ * マッピング値正規化の共通コア。Forms（nameKey="title"）/ Analytics（nameKey="name"）で共有する。
  * folder は論理パス（中央辞書の第一級フィールド）。文字列なら正規化、未設定は null。
  * null は「未バックフィル」の sentinel（"" の「ルート」と区別する）。
+ * driveFileUrl は欠落時 fileId から再構築する（forms / questions / dashboards で同一 URL 形式）。
  * @param {*} value
- * @returns {{fileId: string|null, driveFileUrl: string|null, title: string|null, folder: string|null}}
+ * @param {string} nameKey ラベル文字列を格納するキー名（"title" or "name"）
+ * @returns {{fileId: string|null, driveFileUrl: string|null, folder: string|null}} + [nameKey]
  */
-function Forms_normalizeMappingValue_(value) {
+function Nfb_normalizeMappingValue_(value, nameKey) {
   var fileId = null;
   var driveFileUrl = null;
-  var title = null;
+  var name = null;
   var folder = null;
 
   if (value && typeof value === "object" && !Array.isArray(value)) {
     fileId = typeof value.fileId === "string" ? String(value.fileId).trim() : null;
     driveFileUrl = typeof value.driveFileUrl === "string" ? String(value.driveFileUrl).trim() : null;
-    title = typeof value.title === "string" ? String(value.title) : null;
+    name = typeof value[nameKey] === "string" ? String(value[nameKey]) : null;
     folder = typeof value.folder === "string" ? Forms_normalizeFolderPath_(value.folder) : null;
   }
 
@@ -58,7 +60,21 @@ function Forms_normalizeMappingValue_(value) {
     driveFileUrl = Forms_buildDriveFileUrlFromId_(fileId);
   }
 
-  return { fileId: fileId, driveFileUrl: driveFileUrl, title: title, folder: folder };
+  var out = {};
+  out.fileId = fileId;
+  out.driveFileUrl = driveFileUrl;
+  out[nameKey] = name;
+  out.folder = folder;
+  return out;
+}
+
+/**
+ * マッピング値を正規化（{ fileId, driveFileUrl, title, folder }）。Forms 用の薄いラッパー。
+ * @param {*} value
+ * @returns {{fileId: string|null, driveFileUrl: string|null, title: string|null, folder: string|null}}
+ */
+function Forms_normalizeMappingValue_(value) {
+  return Nfb_normalizeMappingValue_(value, "title");
 }
 
 /**
