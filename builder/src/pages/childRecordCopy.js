@@ -9,6 +9,7 @@
 
 import { genRecordId } from "../core/ids.js";
 import { listRecordsByPid, submitResponses } from "../services/gasClient.js";
+import { invalidateChildForm } from "../app/state/childRecordsMemoryStore.js";
 
 /**
  * 選択された項目 ID のうち、formLink 型かつ childFormId を持つトップレベル項目を抽出する。
@@ -95,6 +96,8 @@ export async function copyChildRecordsForLinks({ pending, newParentId, showToast
         failed += 1;
       }
     }
+    // 新しい子レコード（pid == 新親 id）を作ったので、親が参照する子レコード/件数キャッシュを無効化。
+    void invalidateChildForm(childFormId);
   }
 
   if (copied > 0 && typeof showToast === "function") {

@@ -6,6 +6,7 @@
  */
 
 import { dataStore } from "../app/state/dataStore.js";
+import { invalidateChildForm } from "../app/state/childRecordsMemoryStore.js";
 import { toErrorMessage } from "../utils/errorMessage.js";
 import {
   acquireSaveLock,
@@ -300,6 +301,9 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
   applyEntryToState(saved, saved.id, "save:new-entry");
   pendingSyncedEntryRef.current = null;
   reloadListFromCache();
+  // 子フォーム文脈での保存なら、親が参照する子レコード/件数キャッシュを無効化する。
+  // form.id が formLink から参照されていなければ no-op なので無条件で安全。
+  void invalidateChildForm(form.id);
   if (options.unlinkDriveFolder === true) {
     const emptyStates = createEmptyDriveFolderStates();
     setDriveFolderStates(emptyStates);
