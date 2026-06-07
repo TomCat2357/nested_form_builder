@@ -15,7 +15,8 @@
     "test": "node --test \"tests/**/*.test.cjs\" \"tests/**/*.test.js\"",
     "test:builder": "node --test \"builder/src/**/*.test.js\"",
     "test:all": "npm test && npm run test:builder",
-    "test:playwright": "node tests/test-playwright.js"
+    "test:playwright": "node tests/test-playwright.js",
+    "test:playwright:save": "node tests/test-playwright-save.js"
   },
   "devDependencies": {
     "@google/clasp": "^3.0.6-alpha",
