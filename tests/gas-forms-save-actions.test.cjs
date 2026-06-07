@@ -157,6 +157,7 @@ function loadFormsSaveContext() {
     "formsParsing.gs",       // Forms_parseGoogleDriveUrl_ / Forms_parseSpreadsheetTarget_
     "formsTitleHelpers.js",  // Forms_makeUniqueFormTitle_ / Forms_normalizeFormTitle_
     "formsMappingStore.gs",  // Forms_getMapping_ / Forms_saveMapping_ / Forms_stripSchemaIds_
+    "sharedEntityCrud.gs",   // SharedCrud_resolveEntityFileOrNull_（Forms_resolveFormFileOrNull_ が委譲）
     "formsCrud.gs",          // Nfb_resolveFileIdFromEntry_ / Forms_resolveFormFileOrNull_ ほか
     "formsStorage.gs",       // Forms_saveForm_（テスト対象）
   ]);

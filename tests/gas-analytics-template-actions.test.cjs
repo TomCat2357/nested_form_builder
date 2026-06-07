@@ -225,6 +225,8 @@ function loadAnalyticsContext() {
     // Analytics_saveTemplate_ が Forms_makeUniqueFormTitle_ / Forms_normalizeFormTitle_ を呼ぶため事前ロード
     "gas/formsTitleHelpers.js",
     "gas/analyticsApi.gs",
+    // SharedCrud_resolveEntityFileOrNull_（Analytics_resolveItemFileOrNull_ が委譲）
+    "gas/sharedEntityCrud.gs",
     "gas/analyticsCrud.gs",
     "gas/analyticsImport.gs",
     "gas/analyticsCopy.gs",
