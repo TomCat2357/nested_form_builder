@@ -53,6 +53,7 @@ npm run test:playwright                    # E2E
 | テンプレートトークン `{{...}}`・alasql 式評価のリファレンス | [drive-template-tokens.md](docs/claude/drive-template-tokens.md) |
 | 検索クエリ構文（簡易モード / SQL モード） | [search-query-syntax.md](docs/claude/search-query-syntax.md) |
 | ハマりどころとデプロイ情報の確認手順 | [troubleshooting.md](docs/claude/troubleshooting.md) |
+| 簡素化リファクタリングの進捗・残タスク（セッション跨ぎの台帳） | [simplification-roadmap.md](docs/claude/simplification-roadmap.md) |
 
 ## ディレクトリの最短ガイド
 
