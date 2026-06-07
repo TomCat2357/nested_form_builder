@@ -13,7 +13,7 @@ import { getSheetConfig } from "../../app/state/dataStoreHelpers.js";
 import { executeQuestion, saveQuestion, getQuestionById, getFormColumns, ERR_NO_SPREADSHEET } from "../../features/analytics/analyticsStore.js";
 import { buildColumnIndex, resolveColumnRef } from "../../features/analytics/utils/columnIdentifierResolver.js";
 import { formQualifiedName, buildFormIndex } from "../../features/analytics/utils/formIdentifierResolver.js";
-import { formRefsToIds, formRefsToNames, canonicalAliasToName } from "../../features/analytics/utils/rewriteSqlFormRefs.js";
+import { formRefsToNames, canonicalAliasToName } from "../../features/analytics/utils/rewriteSqlFormRefs.js";
 import { compileStages } from "../../features/analytics/utils/compileStages.js";
 import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder.jsx";
 import VisualizePanel from "../../features/analytics/components/VisualizePanel.jsx";
@@ -22,6 +22,7 @@ import { formsToOptions, columnsToOptions } from "../../app/components/searchabl
 import { normalizeTableStyle } from "../../features/analytics/utils/tableStyle.js";
 import { DEFAULT_LINE_STYLE } from "../../features/analytics/utils/chartPalette.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
+import { buildRunQuery, buildSaveQuery, buildQuestionVisualization } from "./questionEditorPayload.js";
 
 function emptyGui(formId) {
   return {
@@ -247,33 +248,16 @@ export default function QuestionEditorPage() {
     setRunError(null);
     setQueryResult(null);
 
-    let questionForRun;
-    if (mode === "gui") {
-      if (!gui.formId) {
-        setRunError("フォームを選択してください。");
-        setRunning(false);
-        return;
-      }
-      questionForRun = { query: { mode: "gui", gui } };
-    } else {
-      if (!sql.trim()) { setRunning(false); return; }
-      const sources = buildSqlFormSources();
-      if (sources.error) {
-        setRunError(sources.error);
-        setRunning(false);
-        return;
-      }
-      questionForRun = {
-        query: {
-          mode: "sql",
-          formSources: sources.formSources,
-          sql,
-        },
-      };
+    const run = buildRunQuery({ mode, gui, sql, sources: mode === "sql" ? buildSqlFormSources() : null });
+    if (run.skip) { setRunning(false); return; }
+    if (run.error) {
+      setRunError(run.error);
+      setRunning(false);
+      return;
     }
 
     try {
-      const result = await executeQuestion(questionForRun, { forms });
+      const result = await executeQuestion({ query: run.query }, { forms });
       if (result.ok) {
         setQueryResult(result);
       } else {
@@ -300,29 +284,19 @@ export default function QuestionEditorPage() {
 
     // 参照は fileId（formId）のみで保持する。id 解決失敗時の復旧は中央辞書（論理パス→fileId）に
     // 集約したため、各参照に formName を二重持ちしない。読み込んだ旧 formName は剥がして保存する。
-    let query;
-    if (mode === "gui") {
-      if (!gui.formId) { setSaveError("フォームを選択してください。"); return; }
-      const { formName: _staleGuiFormName, ...guiRest } = gui;
-      query = { mode: "gui", gui: guiRest };
-    } else {
-      const sources = buildSqlFormSources();
-      if (sources.error) {
-        setSaveError(sources.error);
-        return;
-      }
-      // SQL 本文のフォーム参照は fileId で保存する（リネーム耐性・GUI / formSources と対称）。
-      query = {
-        mode: "sql",
-        formSources: (sources.formSources || []).map(({ formName: _staleFormName, ...rest }) => rest),
-        sql: formRefsToIds(sql, buildFormIndex(forms)),
-      };
-    }
+    const saveQuery = buildSaveQuery({
+      mode,
+      gui,
+      sql,
+      sources: mode === "sql" ? buildSqlFormSources() : null,
+      forms,
+    });
+    if (saveQuery.error) { setSaveError(saveQuery.error); return; }
+    const query = saveQuery.query;
 
     setSaving(true);
     setSaveError(null);
 
-    const yFieldsArr = yFields.split(",").map((s) => s.trim()).filter(Boolean);
     const question = {
       // id ＝ Drive fileId。新規はクライアントで採番せず、保存後に GAS が返す fileId を採用する。
       id: questionId || undefined,
@@ -333,30 +307,7 @@ export default function QuestionEditorPage() {
       folder: normalizeFolderPath(folder),
       schemaVersion: 1,
       query,
-      visualization: {
-        type: vizType,
-        xField: xField.trim(),
-        yFields: yFieldsArr,
-        showLegend: true,
-        heatmap: {
-          enabled: !!heatmap.enabled,
-          direction: heatmap.direction || "column",
-          excludeRows: typeof heatmap.excludeRows === "string" ? heatmap.excludeRows.slice(0, 500) : "",
-          excludeColumns: typeof heatmap.excludeColumns === "string" ? heatmap.excludeColumns : "",
-          minColor: typeof heatmap.minColor === "string" ? heatmap.minColor : "",
-          maxColor: typeof heatmap.maxColor === "string" ? heatmap.maxColor : "",
-        },
-        format: vizOptions.format,
-        goal: vizOptions.goal,
-        pivot: vizOptions.pivot,
-        geo: vizOptions.geo,
-        sankey: vizOptions.sankey,
-        axis: vizOptions.axis,
-        lineStyle: vizOptions.lineStyle,
-        series: vizOptions.series || {},
-        tableStyle: normalizeTableStyle(vizOptions.tableStyle),
-        chartStyle: vizOptions.chartStyle || null,
-      },
+      visualization: buildQuestionVisualization({ vizType, xField, yFields, heatmap, vizOptions }),
       modifiedAt: Date.now(),
     };
 

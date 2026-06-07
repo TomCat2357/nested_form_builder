@@ -29,6 +29,7 @@ import SimpleFilterBar from "../../features/analytics/components/SimpleFilterBar
 import DashboardCardFilterMappingDialog from "../../features/analytics/components/DashboardCardFilterMappingDialog.jsx";
 import { buildAppUrl } from "../../utils/appUrl.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
+import { buildDashboardPayload } from "./dashboardEditorPayload.js";
 import SearchableSelect from "../../app/components/SearchableSelect.jsx";
 import { questionsToOptions } from "../../app/components/searchableSelectOptions.js";
 
@@ -344,31 +345,15 @@ export default function DashboardEditorPage() {
 
   // ----- Save -----
   const handleSave = async () => {
-    if (!dashboard.name || !dashboard.name.trim()) {
-      setError("ダッシュボード名を入力してください。");
+    const built = buildDashboardPayload({ dashboard, dashboardId });
+    if (built.error) {
+      setError(built.error);
       return;
     }
+    const payload = built.payload;
 
     setSaving(true);
     setError(null);
-
-    const payload = {
-      ...dashboard,
-      // id ＝ Drive fileId。新規はクライアントで採番せず、保存後に GAS が返す fileId を採用する。
-      id: dashboard.id || dashboardId || undefined,
-      schemaVersion: 2,
-      name: dashboard.name.trim(),
-      description: (dashboard.description || "").trim(),
-      folder: normalizeFolderPath(dashboard.folder),
-      // 参照は fileId（questionId）のみで保持する。リンク切れ時の復旧は中央辞書（論理パス→fileId）に
-      // 集約したため questionName を二重持ちしない。読み込んだ旧 questionName は剥がして保存する。
-      cards: (dashboard.cards || []).map((c) => {
-        if (c.type === "message" || !c.questionId) return c;
-        const { questionName: _staleQuestionName, ...rest } = c;
-        return rest;
-      }),
-      modifiedAt: Date.now(),
-    };
 
     try {
       await saveDashboard(payload);

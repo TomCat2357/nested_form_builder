@@ -1,7 +1,10 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import { viteSingleFile } from "vite-plugin-singlefile";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
+const here = path.dirname(fileURLToPath(import.meta.url));
 const readable = process.env.NFB_READABLE === "1";
 
 export default defineConfig({
@@ -22,5 +25,10 @@ export default defineConfig({
     emptyOutDir: true,
     sourcemap: readable ? "inline" : false,
     minify: !readable,
+    // エントリ HTML は `Index.html`（大文字 I）。Vite 既定の `index.html` 探索は
+    // 大文字小文字を区別する Linux（CI/コンテナ）で解決に失敗するため、明示指定する。
+    rollupOptions: {
+      input: path.resolve(here, "Index.html"),
+    },
   },
 });
