@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+      - name: Install builder dependencies
+        run: npm ci --prefix builder
+
+      # GAS ユニット + JS↔GAS 等価性テスト（pathCodec / templateEvaluator / schema walkers /
+      # coerce-to-string の双子ロジックの乖離をここで必ず検知する）。
+      - name: GAS unit & equivalence tests
+        run: npm test
+
+      # フロントのインラインテスト（等価性テストのフロント側も含む）。
+      - name: Builder tests
+        run: npm run test:builder
+
+      # GAS バンドルが結合できること。
+      - name: GAS bundle builds
+        run: npm run bundle:gas
+
+      # フロントの単一 HTML ビルドが通ること。
+      - name: Builder build
+        run: npm run builder:build
+
+      # 生成物（builder ESM → gas/generated）がコミット済みファイルと一致すること。
+      # 双子ロジックを単一ソースから生成している箇所の乖離（再生成忘れ）を検知する。
+      - name: Generated GAS files are in sync
+        run: |
+          npm run build:gas-udfs
+          git diff --exit-code -- gas/generated/ \
+            || (echo "::error::gas/generated/ が古いです。'npm run build:gas-udfs' を実行してコミットしてください。" && exit 1)
