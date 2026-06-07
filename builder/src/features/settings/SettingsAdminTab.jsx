@@ -16,7 +16,7 @@ import {
   importMapping,
   getStdFolderRoot,
   ensureStdFolders,
-  backfillPhysicalFolders,
+  alignAllStdFolders,
 } from "../../services/gasClient.js";
 import AdminCopyStructureDialog from "../../pages/admin/AdminCopyStructureDialog.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
@@ -101,7 +101,7 @@ export default function SettingsAdminTab() {
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
 
-  // ルートフォルダ診断 / 標準フォルダ作成（作成と同時に仮想→物理フォルダ反映も実行）
+  // プロジェクトフォルダ診断 / 標準フォルダ作成（作成と同時に全エンティティの整列も実行）
   const [rootInfo, setRootInfo] = useState(null);   // { resolved, rootUrl, rootName, error }
   const [rootUrlInput, setRootUrlInput] = useState("");
   const [ensureLoading, setEnsureLoading] = useState(false);
@@ -143,12 +143,12 @@ export default function SettingsAdminTab() {
         console.error("[SettingsAdminTab] load failed", error);
         showAlert(error?.message || "管理者設定の読み込みに失敗しました");
       }
-      // ルートフォルダ診断は失敗しても他設定の読み込みを妨げないよう分離して取得。
+      // プロジェクトフォルダ診断は失敗しても他設定の読み込みを妨げないよう分離して取得。
       try {
         setRootInfo(await getStdFolderRoot());
       } catch (error) {
         console.error("[SettingsAdminTab] getStdFolderRoot failed", error);
-        setRootInfo({ resolved: false, error: error?.message || "ルートフォルダの取得に失敗しました" });
+        setRootInfo({ resolved: false, error: error?.message || "プロジェクトフォルダの取得に失敗しました" });
       }
     })();
   }, [canManageAdminSettings, showAlert]);
@@ -261,27 +261,48 @@ export default function SettingsAdminTab() {
     }
   };
 
-  // 標準フォルダ構成を作成し、続けて仮想フォルダを物理フォルダへ反映する（一連の「整える」操作）。
-  // フォームが無ければ反映は 0 件で無害に終わる。冪等。
+  // 標準フォルダ構成を作成し、続けて登録済みフォーム・Question・Dashboard を全件整列する
+  // （実フォルダ位置 ↔ 登録論理パスを照合し、プロジェクト内は移動・外はコピー取り込み＋参照再リンク）。
+  // 対象が無ければ全件 0 件で無害に終わる。冪等。
   const handleEnsureFolders = async () => {
     if (!canManageAdminSettings) return;
     setEnsureLoading(true);
     try {
       const { rootName } = await ensureStdFolders(rootUrlInput.trim());
-      const backfill = await backfillPhysicalFolders();
+      const align = await alignAllStdFolders();
       const fresh = await getStdFolderRoot();
       setRootInfo(fresh);
       setRootUrlInput("");
-      const lines = [`「${rootName}」配下に標準フォルダ構成（01_forms〜08_documents）を作成しました。`];
-      if (backfill.skipped) {
-        lines.push(`仮想フォルダの物理反映はスキップしました（${backfill.reason || "標準フォルダが無効です"}）。`);
-      } else {
-        lines.push(`仮想フォルダ→物理フォルダ反映: フォルダ ${backfill.folders}件 / 移動 ${backfill.movedFiles}件`);
+
+      const fmt = (label, c) => (c.skipped
+        ? `${label}: スキップ（標準フォルダが無効）`
+        : `${label}: 移動 ${c.moved}件 / 取込(コピー) ${c.copiedExternal}件 / 再リンク ${c.rekeyed}件 / 整合済 ${c.aligned}件${c.errors ? ` / エラー ${c.errors}件` : ""}`);
+
+      const lines = [
+        `「${rootName}」配下に標準フォルダ構成（01_forms〜08_documents）を作成しました。`,
+        fmt("フォーム", align.forms),
+        fmt("Question", align.questions),
+        fmt("Dashboard", align.dashboards),
+        `参照リンク再構成: ${align.relinkedFiles}件`,
+      ];
+      if (align.errors.length) {
+        lines.push(`エラー ${align.errors.length}件:`);
+        align.errors.slice(0, 3).forEach((e) => lines.push(`・[${e.kind}] ${e.name || e.id}（${e.folder}）: ${e.reason}`));
+        if (align.errors.length > 3) lines.push(`…ほか ${align.errors.length - 3}件`);
+      }
+
+      // id 変化（コピー/再採用）や参照張り替えがあれば一覧キャッシュを無効化（陳腐リンク防止）。
+      const idsChanged = align.forms.copiedExternal || align.forms.rekeyed
+        || align.questions.copiedExternal || align.questions.rekeyed
+        || align.dashboards.copiedExternal || align.dashboards.rekeyed
+        || align.relinkedFiles;
+      if (idsChanged) {
+        await invalidateListCaches();
       }
       showAlert(lines.join("\n"));
     } catch (error) {
-      console.error("[SettingsAdminTab] ensureStdFolders failed", error);
-      showAlert(error?.message || "標準フォルダ構成の作成に失敗しました");
+      console.error("[SettingsAdminTab] ensureFolders/align failed", error);
+      showAlert(error?.message || "標準フォルダ構成の作成・整理に失敗しました");
     } finally {
       setEnsureLoading(false);
     }
@@ -431,26 +452,26 @@ export default function SettingsAdminTab() {
         <div className="nf-settings-group-title nf-mb-6">フォルダ構成 / システムコピー</div>
         <p className="nf-mb-12 nf-text-12 nf-text-muted">
           フォーム・Question・Dashboard・スプレッドシート・アップロードファイルは、appsscript 本体が置かれた
-          親フォルダをルートとする標準フォルダ構成（<code>01_forms</code>〜<code>08_documents</code>）に保存されます。
+          親フォルダ（プロジェクトフォルダ）を基点とする標準フォルダ構成（<code>01_forms</code>〜<code>08_documents</code>）に保存されます。
         </p>
 
-        {/* 機能1: いまのルート配下に標準フォルダを用意するだけ（コピーではない） */}
-        <div className="nf-fw-600 nf-text-13 nf-mb-6">① 標準フォルダ構成を作成（このルート配下）</div>
+        {/* 機能1: いまのプロジェクトフォルダ配下に標準フォルダを用意し、全エンティティを整列する（コピーではない） */}
+        <div className="nf-fw-600 nf-text-13 nf-mb-6">① 標準フォルダ構成を作成・整理（このプロジェクトフォルダ配下）</div>
 
         {rootInfo === null ? (
-          <p className="nf-mb-12 nf-text-12 nf-text-muted">現在のルートフォルダを確認中…</p>
+          <p className="nf-mb-12 nf-text-12 nf-text-muted">現在のプロジェクトフォルダを確認中…</p>
         ) : (
           rootInfo.resolved ? (
             <p className="nf-mb-12 nf-text-12">
-              現在のルートフォルダ:{" "}
+              現在のプロジェクトフォルダ:{" "}
               {rootInfo.rootUrl
                 ? <a href={rootInfo.rootUrl} target="_blank" rel="noreferrer"><code>{rootInfo.rootName || rootInfo.rootUrl}</code></a>
                 : <code>{rootInfo.rootName || "(名称不明)"}</code>}
             </p>
           ) : (
             <p className="nf-mb-12 nf-text-12" style={{ color: "#c0392b" }}>
-              ルートフォルダを自動検出できませんでした{rootInfo.error ? `（${rootInfo.error}）` : ""}。
-              下の入力欄にルートフォルダの URL を指定してから「標準フォルダ構成を今すぐ作成」を実行してください。
+              プロジェクトフォルダを自動検出できませんでした{rootInfo.error ? `（${rootInfo.error}）` : ""}。
+              下の入力欄にプロジェクトフォルダ（appsscript 本体が置かれたフォルダ）の URL を指定してから「標準フォルダ構成を今すぐ作成・整理」を実行してください。
             </p>
           )
         )}
@@ -460,31 +481,32 @@ export default function SettingsAdminTab() {
             className="nf-input nf-flex-1 nf-min-w-0"
             type="text"
             value={rootUrlInput}
-            placeholder="ルートフォルダの URL（空欄なら自動検出。指定すると手動ルートとして固定）"
+            placeholder="プロジェクトフォルダの URL（空欄なら自動検出。指定すると手動で固定）"
             onChange={(event) => setRootUrlInput(event.target.value)}
           />
         </div>
 
         <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
           <button type="button" className="nf-btn nf-nowrap" onClick={handleEnsureFolders} disabled={!canManageAdminSettings || ensureLoading}>
-            {ensureLoading ? "作成中..." : "標準フォルダ構成を今すぐ作成"}
+            {ensureLoading ? "作成・整理中..." : "標準フォルダ構成を今すぐ作成・整理"}
           </button>
         </div>
         <p className="nf-mt-6 nf-mb-24 nf-text-11 nf-text-muted">
-          このルート配下に <code>01_forms</code>〜<code>08_documents</code> を作成します（不足分のみ補完）。中身の複製は行いません。
-          作成と同時に、これまで <code>01_forms</code> 直下にフラット保存されていたフォームを、仮想フォルダと同じ階層の
-          物理フォルダ（<code>01_forms/フォルダ名/…</code>）へ移動して反映します（移行用・冪等。フォームが無ければ作成のみ）。
+          このプロジェクトフォルダ配下に <code>01_forms</code>〜<code>08_documents</code> を作成します（不足分のみ補完）。
+          あわせて、リンク済みのフォーム・Question・Dashboard について、各ファイルの実フォルダ位置を登録済みの論理パスと照合し、ずれていれば整列します。
+          <strong>このプロジェクトフォルダ内のファイルは移動</strong>し、<strong>プロジェクト外のファイルは正しい論理フォルダへコピー取り込み</strong>します
+          （コピー時は fileId を付け替え、参照リンクも自動で張り直します）。中身の不要な複製は行いません。何度実行しても結果は同じです（冪等）。
         </p>
 
-        {/* 機能2: システム一式を別ルートへ複製する */}
-        <div className="nf-fw-600 nf-text-13 nf-mb-6">② システムごと別ルートへコピー</div>
+        {/* 機能2: システム一式を別のプロジェクトフォルダへ複製する */}
+        <div className="nf-fw-600 nf-text-13 nf-mb-6">② システムごと別のプロジェクトフォルダへコピー</div>
         <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
           <button type="button" className="nf-btn nf-nowrap" onClick={() => copyDialog.open()} disabled={!canManageAdminSettings}>
-            システムごと別ルートへコピー
+            システムごと別のプロジェクトフォルダへコピー
           </button>
         </div>
         <p className="nf-mt-6 nf-mb-24 nf-text-11 nf-text-muted">
-          appsscript 本体と標準フォルダ構成の中身を<strong>別のルート</strong>へ複製し、フォーム→スプレッドシート等のリンクを
+          appsscript 本体と標準フォルダ構成の中身を<strong>別のプロジェクトフォルダ</strong>へ複製し、フォーム→スプレッドシート等のリンクを
           コピー後の URL で再構成します。コピー先スクリプトの Web アプリは手動で再デプロイしてください。
         </p>
 
@@ -494,7 +516,7 @@ export default function SettingsAdminTab() {
         <div className="nf-settings-group-title nf-mb-6">マッピングの管理</div>
         <p className="nf-mb-12 nf-text-12 nf-text-muted">
           フォーム・Question・Dashboard の「ID→Drive ファイル対応表（マッピング）」をエクスポート／インポートします。
-          システムをコピーした直後の復元は、コピー先ルートに保存された <code>_nfb_mapping.json</code> を
+          システムをコピーした直後の復元は、コピー先プロジェクトフォルダに保存された <code>_nfb_mapping.json</code> を
           「インポート」（URL 空欄）で取り込んでください。取り込んだ資産の物理整列・リンク補完は、
           各エンティティを次に保存した際にサーバ側で自動的に行われます。
         </p>
@@ -507,7 +529,7 @@ export default function SettingsAdminTab() {
             className="nf-input nf-flex-1 nf-min-w-0"
             type="text"
             value={mappingImportUrl}
-            placeholder="マッピング JSON の URL（空欄ならコピー先ルートの最新 .json を読み込み）"
+            placeholder="マッピング JSON の URL（空欄ならコピー先プロジェクトフォルダの最新 .json を読み込み）"
             onChange={(event) => setMappingImportUrl(event.target.value)}
           />
           <button type="button" className="nf-btn nf-nowrap" onClick={handleImportMapping} disabled={!canManageAdminSettings || importLoading}>

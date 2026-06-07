@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
 
-// システムごと（appsscript 本体 + 標準フォルダ構成）を別ルートへコピーするダイアログ。
-// コピー先ルート URL +「データもコピー」「webhooks もコピー」「マッピング JSON を書き出す」オプションを受け取る。
+// システムごと（appsscript 本体 + 標準フォルダ構成）を別のプロジェクトフォルダへコピーするダイアログ。
+// コピー先プロジェクトフォルダ URL +「データもコピー」「webhooks もコピー」「マッピング JSON を書き出す」オプションを受け取る。
 export default function AdminCopyStructureDialog({
   open,
   url,
@@ -26,7 +26,7 @@ export default function AdminCopyStructureDialog({
   const handleConfirm = () => {
     const trimmed = (url || "").trim();
     if (!trimmed) {
-      setError("コピー先ルートフォルダの URL を入力してください");
+      setError("コピー先プロジェクトフォルダの URL を入力してください");
       return;
     }
     setError("");
@@ -43,13 +43,13 @@ export default function AdminCopyStructureDialog({
             キャンセル
           </button>
           <button type="button" className="dialog-btn primary" onClick={handleConfirm} disabled={loading}>
-            {loading ? "コピー中..." : "別ルートへコピー"}
+            {loading ? "コピー中..." : "別のプロジェクトフォルダへコピー"}
           </button>
         </>
       }
     >
       <p className="dialog-message">
-        appsscript 本体と標準フォルダ構成（01_forms〜08_documents）をコピー先ルートへ複製し、
+        appsscript 本体と標準フォルダ構成（01_forms〜08_documents）をコピー先プロジェクトフォルダへ複製し、
         フォーム→スプレッドシート等のリンクをコピー後の URL で再構成します。標準フォルダ構成外を指すリンクは
         削除されます。コピー先スクリプトの Web アプリは手動で再デプロイが必要です（Script Properties は
         引き継がれず、マッピングはコピー先の 設定 &gt; 管理 から「インポート」または「同期」で手動復元します）。
@@ -60,7 +60,7 @@ export default function AdminCopyStructureDialog({
       </p>
 
       <div>
-        <label className="nf-block nf-mb-6 nf-text-13 nf-fw-600">コピー先ルートフォルダ URL</label>
+        <label className="nf-block nf-mb-6 nf-text-13 nf-fw-600">コピー先プロジェクトフォルダ URL</label>
         <input
           type="text"
           value={url}
@@ -108,8 +108,8 @@ export default function AdminCopyStructureDialog({
         <span className="nf-text-13">マッピング JSON を書き出す（推奨）</span>
       </label>
       <p className="nf-mt-2 nf-text-11 nf-text-muted">
-        ON の場合、コピー先ルートに _nfb_mapping.json（新 fileId に振り直し済み）を保存します。コピー先の
-        設定 &gt; 管理 から「インポート」（URL 空欄でルートの最新を読込）または「同期」を実行してマッピングを
+        ON の場合、コピー先プロジェクトフォルダに _nfb_mapping.json（新 fileId に振り直し済み）を保存します。コピー先の
+        設定 &gt; 管理 から「インポート」（URL 空欄でプロジェクトフォルダの最新を読込）または「同期」を実行してマッピングを
         復元してください。OFF の場合は JSON を残さず、コピー先では「同期」のみで復元します。
       </p>
     </BaseDialog>

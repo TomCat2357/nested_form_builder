@@ -296,14 +296,9 @@ export const getRestrictToFormOnly = async () => { const r = await fetchGasApi("
 export const setRestrictToFormOnly = async (value) => { const r = await fetchGasApi("nfbSetRestrictToFormOnly", value, "Set restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
 // 標準フォルダ構成（システムごとコピー / マッピング再構築）
 export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyWebhooks = false, rebuildMapping = true } = {}) => {
-  if (!destRootUrl) throw new Error("コピー先ルートフォルダの URL を指定してください");
+  if (!destRootUrl) throw new Error("コピー先プロジェクトフォルダの URL を指定してください");
   const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks, rebuildMapping }, "システムごとコピーに失敗しました");
   return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, unresolvedQuestionLinks: r.unresolvedQuestionLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), appsScriptCopyError: r.appsScriptCopyError || "", message: r.message || "" };
-};
-// 既存の仮想フォルダ/フォームを物理 Drive フォルダ（01_forms 配下）へ反映（移行・冪等）。
-export const backfillPhysicalFolders = async () => {
-  const r = await fetchGasApi("nfbBackfillPhysicalFolders", {}, "物理フォルダへの反映に失敗しました");
-  return { skipped: Boolean(r.skipped), reason: r.reason || "", folders: r.folders || 0, movedFiles: r.movedFiles || 0 };
 };
 // 現在のマッピングを _nfb_mapping.json 形のドキュメントで取得（ダウンロード用）。
 export const exportMapping = async () => {
@@ -316,15 +311,27 @@ export const importMapping = async (url = "") => {
   const r = await fetchGasApi("nfbImportMapping", { url }, "マッピングのインポートに失敗しました");
   return { imported: r.imported || {}, skipped: r.skipped || 0, errors: r.errors || [] };
 };
-// 現在解決されるルートフォルダ情報を取得（診断用）。
+// 現在解決されるプロジェクトフォルダ情報を取得（診断用）。
 export const getStdFolderRoot = async () => {
-  const r = await fetchGasApi("nfbGetStdFolderRoot", {}, "ルートフォルダの取得に失敗しました");
+  const r = await fetchGasApi("nfbGetStdFolderRoot", {}, "プロジェクトフォルダの取得に失敗しました");
   return { resolved: Boolean(r.resolved), rootUrl: r.rootUrl || "", rootName: r.rootName || "", rootId: r.rootId || "", error: r.error || "" };
 };
 // 標準フォルダ構成（01_forms〜08_documents）を今すぐ全て作成。rootUrl 非空なら手動指定。
 export const ensureStdFolders = async (rootUrl = "") => {
   const r = await fetchGasApi("nfbEnsureStdFolders", { rootUrl }, "標準フォルダ構成の作成に失敗しました");
   return { rootUrl: r.rootUrl || "", rootName: r.rootName || "" };
+};
+// 登録済みフォーム・Question・Dashboard を全件整列（物理位置 ↔ 論理パスの照合・move/copy・参照再リンク）。冪等。
+export const alignAllStdFolders = async () => {
+  const r = await fetchGasApi("nfbAlignAllStdFolders", {}, "標準フォルダ整列に失敗しました");
+  const z = { aligned: 0, moved: 0, copiedExternal: 0, rekeyed: 0, errors: 0 };
+  return {
+    forms: { ...z, ...(r.forms || {}) },
+    questions: { ...z, ...(r.questions || {}) },
+    dashboards: { ...z, ...(r.dashboards || {}) },
+    relinkedFiles: r.relinkedFiles || 0,
+    errors: r.errors || [],
+  };
 };
 // 注: 参照の再リンク / 同名重複整理は保存時のサーバ側自動リンク補完（alignReferencesOnSave_）が担う。
 export const saveExcelToDrive = ({ filename, base64 }) => fetchGasApi("nfbSaveExcelToDrive", { filename, base64 }, "Driveへの保存に失敗しました");

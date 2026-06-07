@@ -510,6 +510,7 @@ function nfbExportMapping(payload)           { return Nfb_runScriptAction_("std_
 function nfbImportMapping(payload)           { return Nfb_runScriptAction_("std_folders_import_map", payload || {}); }
 function nfbGetStdFolderRoot(payload)        { return Nfb_runScriptAction_("std_folders_get_root", payload || {}); }
 function nfbEnsureStdFolders(payload)        { return Nfb_runScriptAction_("std_folders_ensure", payload || {}); }
+function nfbAlignAllStdFolders(payload)      { return Nfb_runScriptAction_("std_folders_align_all", payload || {}); }
 function nfbListReportTemplates(payload)     { return Nfb_runScriptAction_("report_templates_list", payload || {}); }
 
 // 現在のルートフォルダ情報を返す（診断用）。未解決でも例外にせず resolved:false を返す。

@@ -187,3 +187,84 @@ function StdFolders_verifyEntriesAfterRelocate_(adapter, affectedIds) {
   counts.errorList = ctx.errors;
   return counts;
 }
+
+// =============================================
+// (2.7) 全件整列オーケストレータ（手動・冪等）
+// 設定「① 標準フォルダ構成を作成・整理」ボタンから呼ばれる。
+// 登録済みのフォーム・Question・Dashboard を全件 ①〜④ にかけ、
+//   ・物理位置が論理パスとずれていれば: プロジェクト内 move / プロジェクト外 copy（fileId 付け替え）
+//   ・コピー/再採用で id が変わったら、参照（Q→Form / D→Question）を remap で張り替え
+// を一括で行う。base（標準フォルダ）未解決の kind は skipped で no-op に degrade する。
+// =============================================
+
+// 1 kind の全 id を alignEntry_ にかけ、共有 ctx に積む（remap/errors を集約）。
+// alignEntry_ が反復中に mapping を mutate（外部コピー/③再採用で delete + 新キー追加）するため、
+// キーを先にスナップショットして回し、新キー再処理を ctx.remap / !mapping[id] ガードで防ぐ。
+function StdFolders_sweepAlignKind_(adapter, ctx) {
+  var counts = { aligned: 0, moved: 0, copiedExternal: 0, rekeyed: 0, errors: 0 };
+  var mapping = adapter.getMapping();
+  ctx.dirty = false;
+  var ids = [];
+  for (var id in mapping) { if (mapping.hasOwnProperty(id)) ids.push(id); }   // snapshot
+  for (var i = 0; i < ids.length; i++) {
+    var curId = ids[i];
+    if (ctx.remap[curId]) continue;   // 別経路で既に振替済みの旧 id
+    if (!mapping[curId]) continue;     // 振替で消えた旧キー
+    var outcome = StdFolders_alignEntry_(adapter, mapping, curId, false, ctx);
+    if (counts.hasOwnProperty(outcome)) counts[outcome]++;
+    else if (outcome === "error") counts.errors++;
+  }
+  if (ctx.dirty) adapter.saveMapping(mapping);
+  return counts;
+}
+
+// 全エンティティ（forms→questions→dashboards）を共有 ctx でスイープし、最後に remap を
+// 参照グラフ全体へ伝播する。戻り: { ok, forms, questions, dashboards, relinkedFiles, errors }。
+function StdFolders_alignAllEntries_() {
+  return nfbSafeCall_(function () {
+    return WithScriptLock_("標準フォルダ整列（全体）", function () {
+      var ctx = { errors: [], invalidCandidates: [], remap: {}, dirty: false, guard: null };
+      var kinds = ["forms", "questions", "dashboards"];
+      var perKind = {};
+
+      // Phase A: フォルダ確保（空フォルダ含む既知パス）+ 全件 alignEntry_。
+      for (var k = 0; k < kinds.length; k++) {
+        var kind = kinds[k];
+        var adapter = StdFolders_entityAdapter_(kind);
+        if (!adapter.baseFolderOrNull()) {
+          perKind[kind] = { aligned: 0, moved: 0, copiedExternal: 0, rekeyed: 0, errors: 0, skipped: true };
+          continue;
+        }
+        var paths = (kind === "forms") ? Forms_collectFolders_() : Analytics_collectFolders_(kind);
+        for (var p = 0; p < paths.length; p++) adapter.ensureFolderForPath(paths[p]);
+        perKind[kind] = StdFolders_sweepAlignKind_(adapter, ctx);
+      }
+
+      // Phase B: id 変化（コピー/再採用）を参照グラフ全体へ伝播。remap が空なら丸ごとスキップ（冪等時に軽い）。
+      var relinked = 0;
+      if (StdFolders_hasOwnKeys_(ctx.remap)) {
+        var qMap = StdFolders_entityAdapter_("questions").getMapping();   // Phase A 後の現行キー
+        for (var qid in qMap) {
+          if (!qMap.hasOwnProperty(qid)) continue;
+          var qFileId = Nfb_resolveFileIdFromEntry_(qMap[qid]);
+          if (qFileId && StdFolders_rewriteRefsInFile_(qFileId, "questions", ctx.remap)) relinked++;
+        }
+        var dMap = StdFolders_entityAdapter_("dashboards").getMapping();
+        for (var did in dMap) {
+          if (!dMap.hasOwnProperty(did)) continue;
+          var dFileId = Nfb_resolveFileIdFromEntry_(dMap[did]);
+          if (dFileId && StdFolders_rewriteRefsInFile_(dFileId, "dashboards", ctx.remap)) relinked++;
+        }
+      }
+
+      return {
+        ok: true,
+        forms: perKind.forms,
+        questions: perKind.questions,
+        dashboards: perKind.dashboards,
+        relinkedFiles: relinked,
+        errors: ctx.errors
+      };
+    });
+  });
+}
