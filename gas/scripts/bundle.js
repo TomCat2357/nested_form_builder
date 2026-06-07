@@ -20,7 +20,9 @@ const OUTPUT_FILE = path.join(DIST_DIR, 'Bundle.gs');
 const FILE_ORDER = [
   'constants.gs',
   'errors.gs',           // エラーハンドリング・レスポンス共通
-  'adminAuth.gs',        // 管理者キー / 管理者メール / Google Group メンバーシップ / 管理者判定
+  'adminAuthKey.gs',         // 管理者キーの取得/設定・設定有効判定
+  'adminAuthGroupCache.gs',  // Google Group メンバー一覧の Script Properties キャッシュ
+  'adminAuthEmail.gs',       // 管理者メール / Google Group メンバーシップ解決 / 管理者判定
   'settings.gs',         // 一般設定（restrictToFormOnly / DetermineAccess_ / 公開 API ラッパー）
   'properties.gs',       // プロパティサービス管理
   'schemaUtils.gs',      // pure schema walkers (nfbTraverseSchema_ など)
@@ -34,7 +36,8 @@ const FILE_ORDER = [
   'driveTemplate.gs',       // テンプレート解決
   'drivePrintDocument.gs',  // 印刷様式ドキュメント
   'driveFolder.gs',         // フォルダ管理
-  'driveOutput.gs',         // 出力オーケストレーション（PDF/GoogleDoc）
+  'driveOutput.gs',         // 出力オーケストレーション（出力種別の振り分け・テンプレートコンテキスト合成）
+  'driveOutputDocument.gs', // 出力ドキュメント（Google Doc/PDF）生成プリミティブ + テンプレート差し込み
   'driveGmailOutput.gs',    // Gmail下書き出力
   'driveFile.gs',           // ファイル操作（公開API）
   // --- forms ---
@@ -58,6 +61,7 @@ const FILE_ORDER = [
   'analyticsDriveFolders.gs', // 仮想フォルダ ↔ 物理 Drive フォルダ（02_questions / 03_dashboards 配下）のミラー
   'model.gs',            // モデル関数
   'standardFoldersAlign.gs', // 論理↔物理 整合同期エンジン（6ケース）— standardFolders.gs から分離
+  'standardFoldersAlignRefs.gs', // 保存時の参照整合（参照グラフ収集・remap 追従・保存後フック）
   'standardFoldersCopy.gs',  // 構成コピー（システムごとコピー）— standardFolders.gs から分離
   'standardFolders.gs',  // 標準フォルダ構成（作成 / 自動整理 / マッピング I/O / 重複整理）— forms/analytics/model/driveFolder ヘルパーに依存
   // --- sheets ---

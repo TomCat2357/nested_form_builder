@@ -1,43 +1,9 @@
 // ========================================
-// 管理者認証 — 管理者キー / 管理者メール（個人 + Google Group）/ アクセス判定の中核
-//
-// settings.gs から分離。一般設定（restrictToFormOnly / DetermineAccess_ / 公開ラッパー）は
-// settings.gs に残置。FILE_ORDER では settings.gs より前に配置すること。
+// 管理者認証(メール/グループ解決/判定) — 管理者メールの取得/設定、
+// Google Group メンバーシップのライブ解決、管理者アクセス判定。
+// adminAuth.gs から分離。バンドル時に連結されるため関数はグローバル。
+// グループメンバーの永続キャッシュは adminAuthGroupCache.gs を参照。
 // ========================================
-
-/**
- * 管理者設定が無効なときは例外を投げる
- */
-function EnsureAdminSettingsEnabled_() {
-  if (!Nfb_isAdminSettingsEnabled_()) {
-    throw new Error("管理者設定は現在のプロパティ保存モードでは利用できません");
-  }
-}
-
-/**
- * 管理者キーを取得する
- * @return {string} 管理者キー（未設定の場合は空文字）
- */
-function GetAdminKey_() {
-  if (!Nfb_isAdminSettingsEnabled_()) {
-    return "";
-  }
-  var props = Nfb_getScriptProperties_();
-  return props.getProperty(NFB_ADMIN_KEY) || "";
-}
-
-/**
- * 管理者キーを設定する
- * @param {string} newKey - 新しい管理者キー（空文字で認証無効化）
- * @return {Object} 結果オブジェクト
- */
-function SetAdminKey_(newKey) {
-  EnsureAdminSettingsEnabled_();
-  var props = Nfb_getScriptProperties_();
-  var key = String(newKey || "");
-  props.setProperty(NFB_ADMIN_KEY, key);
-  return { ok: true, adminKey: key };
-}
 
 /**
  * メールアドレスを比較用に正規化する
@@ -200,28 +166,6 @@ function ResolveAllGroupMembers_(emails) {
 }
 
 /**
- * 解決済みグループメンバーをキャッシュに保存する
- * @param {Object} resolvedGroups - グループメール→メンバー配列のマップ
- */
-function SaveResolvedGroupCache_(resolvedGroups) {
-  var props = Nfb_getScriptProperties_();
-  var hasAny = false;
-  for (var k in resolvedGroups) {
-    if (resolvedGroups.hasOwnProperty(k)) { hasAny = true; break; }
-  }
-  if (!hasAny) {
-    props.deleteProperty(NFB_GROUP_MEMBER_CACHE);
-    return;
-  }
-  var json = JSON.stringify({ updatedAt: Date.now(), groups: resolvedGroups });
-  if (json.length > 9000) {
-    props.deleteProperty(NFB_GROUP_MEMBER_CACHE);
-    return;
-  }
-  props.setProperty(NFB_GROUP_MEMBER_CACHE, json);
-}
-
-/**
  * 解決済みグループマップ内にユーザーが含まれるか確認する
  * @param {string} userEmail - 正規化済みユーザーメール
  * @param {Object} resolvedGroups - グループメール→メンバー配列のマップ
@@ -234,92 +178,6 @@ function IsUserInResolvedGroups_(userEmail, resolvedGroups) {
     for (var j = 0; j < members.length; j++) {
       if (members[j] === userEmail) return true;
     }
-  }
-  return false;
-}
-
-/**
- * 管理者グループのメンバーをScript Propertiesにキャッシュする
- * 管理者権限で呼び出すことでGroupsApp照合が可能
- * @return {Object}
- */
-function RefreshGroupMemberCache_() {
-  var adminEmails = ParseAdminEmails_(GetAdminEmail_());
-  var cache = {};
-  var hasAnyGroup = false;
-  for (var i = 0; i < adminEmails.length; i++) {
-    var result = ResolveGroupMembers_(adminEmails[i]);
-    if (result && result.members) {
-      cache[adminEmails[i]] = result.members;
-      hasAnyGroup = true;
-    }
-  }
-  var props = Nfb_getScriptProperties_();
-  props.setProperty(NFB_GROUP_CACHE_LAST_ATTEMPT_AT, String(Date.now()));
-  if (hasAnyGroup) {
-    var json = JSON.stringify({ updatedAt: Date.now(), groups: cache });
-    if (json.length > 9000) {
-      props.deleteProperty(NFB_GROUP_MEMBER_CACHE);
-      return { ok: true, cached: false, reason: "too_large" };
-    }
-    props.setProperty(NFB_GROUP_MEMBER_CACHE, json);
-  } else {
-    props.deleteProperty(NFB_GROUP_MEMBER_CACHE);
-  }
-  return { ok: true, cached: hasAnyGroup, updatedAt: hasAnyGroup ? Date.now() : null };
-}
-
-/**
- * キャッシュされたグループメンバー情報を取得する
- * @return {Object|null}
- */
-function GetGroupMemberCache_() {
-  try {
-    var props = Nfb_getScriptProperties_();
-    var raw = props.getProperty(NFB_GROUP_MEMBER_CACHE);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch (e) {
-    return null;
-  }
-}
-
-/**
- * キャッシュが古い/空であれば裏で再構築する
- * - ロックが取れない（他プロセスが更新中）場合は何もしない
- * - 直近試行から NFB_GROUP_CACHE_RETRY_INTERVAL_MS 以内は連続実行を避ける
- */
-function MaybeRefreshGroupCacheIfStale_() {
-  try {
-    var props = Nfb_getScriptProperties_();
-    var adminEmailsRaw = props.getProperty(NFB_ADMIN_EMAIL) || "";
-    if (!adminEmailsRaw) return;
-    var cache = GetGroupMemberCache_();
-    var now = Date.now();
-    var stale = !cache || !cache.updatedAt || (now - cache.updatedAt) > NFB_GROUP_CACHE_TTL_MS;
-    if (!stale) return;
-    var lastAttemptRaw = props.getProperty(NFB_GROUP_CACHE_LAST_ATTEMPT_AT);
-    var lastAttempt = lastAttemptRaw ? Number(lastAttemptRaw) : 0;
-    if (lastAttempt && (now - lastAttempt) < NFB_GROUP_CACHE_RETRY_INTERVAL_MS) return;
-    var lock = LockService.getScriptLock();
-    if (!lock.tryLock(0)) return;
-    try { RefreshGroupMemberCache_(); } finally { lock.releaseLock(); }
-  } catch (e) { /* 非致命的 */ }
-}
-
-/**
- * キャッシュからグループメンバーシップを確認する
- * @param {string} userEmail - 正規化済みユーザーメール
- * @param {string} groupEmail - 正規化済みグループメール
- * @return {boolean}
- */
-function IsUserInCachedGroup_(userEmail, groupEmail) {
-  var cache = GetGroupMemberCache_();
-  if (!cache || !cache.groups || !cache.groups[groupEmail]) return false;
-  var members = cache.groups[groupEmail];
-  if (!Array.isArray(members)) return false;
-  for (var i = 0; i < members.length; i++) {
-    if (members[i] === userEmail) return true;
   }
   return false;
 }

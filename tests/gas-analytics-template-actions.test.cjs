@@ -239,6 +239,7 @@ function loadAnalyticsContext() {
     "gas/standardFolders.gs",
     // 保存後の参照整合（StdFolders_alignReferencesOnSave_, ①〜④）に必要
     "gas/standardFoldersAlign.gs",
+    "gas/standardFoldersAlignRefs.gs",
   ];
   for (const rel of filesToLoad) {
     const fullPath = path.join(projectRoot, rel);
