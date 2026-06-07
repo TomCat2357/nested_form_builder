@@ -12,3 +12,14 @@ export const toFiniteNumberOrNull = (raw) => {
   const n = typeof raw === "number" ? raw : Number(raw);
   return Number.isFinite(n) ? n : null;
 };
+
+/**
+ * 値を有限数値へ。数値化できない場合は fallback を返す（カウント・タイムスタンプ等の既定 0 用途）。
+ * @param {*} raw
+ * @param {number} [fallback=0]
+ * @returns {number}
+ */
+export const toFiniteNumberOr = (raw, fallback = 0) => {
+  const n = toFiniteNumberOrNull(raw);
+  return n === null ? fallback : n;
+};

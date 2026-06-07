@@ -1,4 +1,5 @@
 import { resolveStrictUnixMs } from "../../utils/dateTime.js";
+import { toFiniteNumberOr } from "../../utils/numbers.js";
 
 const toUploadRecord = (entry) => {
   // 固定メタ列は Unix ms 厳密解釈（×1000 / Excel シリアル値の再解釈をしない）
@@ -15,7 +16,7 @@ const toUploadRecord = (entry) => {
 
 export const buildUploadRecordsForSync = ({ entries = [], baseServerReadAt = 0, forceFullSync = false } = {}) => {
   const safeEntries = Array.isArray(entries) ? entries : [];
-  const normalizedBaseServerReadAt = Number.isFinite(Number(baseServerReadAt)) ? Number(baseServerReadAt) : 0;
+  const normalizedBaseServerReadAt = toFiniteNumberOr(baseServerReadAt, 0);
   const targets = forceFullSync
     ? safeEntries
     : safeEntries.filter((entry) => (entry?.modifiedAtUnixMs || 0) > normalizedBaseServerReadAt);
