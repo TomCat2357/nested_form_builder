@@ -111,30 +111,30 @@ const validateFormIds = (formIds) => {
 // spreadsheetId はクライアントから送らない。GAS が formId からサーバ側で解決する
 // （非管理者には spreadsheetId を返さないため）。詳細は docs/claude/data-model.md を参照。
 export const submitResponses = ({ formId, sheetName = "Data", payload }) => {
-  if (!formId) throw new Error("formId is required");
+  validateFormId(formId);
   return fetchGasApi("saveResponses", withUrlPid({ ...payload, formId, sheetName }), "Apps Script call failed");
 };
 
 export const acquireSaveLock = ({ formId, sheetName = "Data" }) => {
-  if (!formId) throw new Error("formId is required");
+  validateFormId(formId);
   return fetchGasApi("nfbAcquireSaveLock", { formId, sheetName }, "Apps Script call failed");
 };
 
 export const deleteEntry = ({ formId, sheetName = "Data", entryId }) => {
-  if (!formId) throw new Error("formId is required");
+  validateFormId(formId);
   if (!entryId) throw new Error("entryId is required");
   return fetchGasApi("deleteRecord", { formId, sheetName, id: entryId }, "Delete failed");
 };
 
 export const getEntry = async ({ formId, sheetName = "Data", entryId, rowIndexHint = null }) => {
-  if (!formId) throw new Error("formId is required");
+  validateFormId(formId);
   if (!entryId) throw new Error("entryId is required");
   const result = await fetchGasApi("getRecord", withUrlPid({ formId, sheetName, id: entryId, rowIndexHint }), "Get record failed");
   return { record: result.record || null, rowIndex: typeof result.rowIndex === "number" ? result.rowIndex : null };
 };
 
 export const listEntries = async ({ sheetName = "Data", formId = null, lastSpreadsheetReadAt = null, forceFullSync = false }) => {
-  if (!formId) throw new Error("formId is required");
+  validateFormId(formId);
   const normalizedLastSpreadsheetReadAt = Number(lastSpreadsheetReadAt);
   const payload = {
     sheetName,
@@ -160,7 +160,7 @@ export const listEntries = async ({ sheetName = "Data", formId = null, lastSprea
 // formLink 子レコードの件数取得・コピー複製のように、現在の URL とは別フォーム/別 pid を
 // 対象にしたいときに使う。pid が空なら呼ばずに空を返す。
 const listRecordsByPidRaw_ = async ({ formId, pid, sheetName = "Data" }) => {
-  if (!formId) throw new Error("formId is required");
+  validateFormId(formId);
   const normalizedPid = String(pid || "").trim();
   if (!normalizedPid) return { records: [], count: 0 };
   const result = await fetchGasApi(
@@ -185,7 +185,7 @@ export const listRecordsByPid = async (args) => (await listRecordsByPidRaw_(args
 // 膨らむのを避けるため、子フォームごとに 1 回だけ叩いてフロントで pid 分配する用途。
 // pids が空なら呼ばずに空配列を返す。各レコードは .pid を持つので呼び出し側で groupBy する。
 const listRecordsByPidsRaw_ = async ({ formId, pids, sheetName = "Data" }) => {
-  if (!formId) throw new Error("formId is required");
+  validateFormId(formId);
   const normalizedPids = Array.from(
     new Set((Array.isArray(pids) ? pids : []).map((p) => String(p || "").trim()).filter(Boolean)),
   );
@@ -235,7 +235,7 @@ export const deleteFolder = async (path) => {
   return { folders: r.folders || [], deletedFormCount: r.deletedFormCount || 0 };
 };
 export const getForm = async (formId) => {
-  if (!formId) throw new Error("formId is required");
+  validateFormId(formId);
   const r = await fetchGasApi("nfbGetForm", formId, "Get form failed");
   return r.form || null;
 };
@@ -248,7 +248,7 @@ export const saveForm = async (form, saveMode = "auto") => {
   return { form: r.form, fileUrl: r.fileUrl };
 };
 export const copyForm = async (formId) => {
-  if (!formId) throw new Error("formId is required");
+  validateFormId(formId);
   const r = await fetchGasApi("nfbCopyForm", formId, "Copy form failed");
   return { form: r.form, fileUrl: r.fileUrl };
 };
