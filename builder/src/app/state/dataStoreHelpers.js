@@ -4,6 +4,7 @@ import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_SHEET_NAME, MS_PER_DAY } from "
 import { deleteRecordsFromCache } from "./recordsMemoryStore.js";
 import { normalizeRecordForCache } from "./recordMerge.js";
 import { asPlainObject } from "../../utils/objectShape.js";
+import { toFiniteNumberOr } from "../../utils/numbers.js";
 
 // フォームにレコード保存先スプレッドシートが設定済みか。
 // 管理者は spreadsheetId 本体を、非管理者は GAS が付与する hasSpreadsheet フラグを持つ。
@@ -100,11 +101,11 @@ export const buildListEntriesResult = ({
   lastSyncedAt,
   lastSpreadsheetReadAt,
   hasUnsynced: !!hasUnsynced,
-  unsyncedCount: Number.isFinite(Number(unsyncedCount)) ? Number(unsyncedCount) : 0,
+  unsyncedCount: toFiniteNumberOr(unsyncedCount, 0),
   isDelta: isDelta === true,
   unchanged: unchanged === true,
-  fetchedCount: Number.isFinite(Number(fetchedCount)) ? Number(fetchedCount) : 0,
-  sheetLastUpdatedAt: Number.isFinite(Number(sheetLastUpdatedAt)) ? Number(sheetLastUpdatedAt) : 0,
+  fetchedCount: toFiniteNumberOr(fetchedCount, 0),
+  sheetLastUpdatedAt: toFiniteNumberOr(sheetLastUpdatedAt, 0),
 });
 
 export const buildUpsertEntryRecord = ({

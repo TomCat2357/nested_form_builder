@@ -172,47 +172,24 @@ function Forms_findFileByNamesRecursive_(folder, targets) {
 // 上書き失敗」ではなく「実体の上書き(setName)」へ倒して二重化・保存エラーを防ぐ。
 // 見つからなければ null（呼び出し側で従来フォールバックへ）。
 function Forms_resolveFormFileOrNull_(fileId, formId, entry, driveFileUrl) {
-  if (fileId) {
-    try {
-      var f = DriveApp.getFileById(fileId);
-      if (!(typeof f.isTrashed === "function" && f.isTrashed())) return f;
-    } catch (e) { /* 消失/不正 fileId → URL / アンカーで復旧へ */ }
-  }
-  // フォーム自身（またはマッピング）が持つ実体 URL から引き当てる（mapping にエントリが
-  // 無い / 名前を失っている stale id ケースの最終救済）。
-  var url = driveFileUrl || (entry && entry.driveFileUrl) || "";
-  if (url) {
-    var parsed = Forms_parseGoogleDriveUrl_(url);
-    if (parsed && parsed.type === "file" && parsed.id) {
-      try {
-        var fu = DriveApp.getFileById(parsed.id);
-        if (!(typeof fu.isTrashed === "function" && fu.isTrashed())) return fu;
-      } catch (eu) { /* fallthrough */ }
-    }
-  }
-  // 中央辞書の論理パス folder + title（キャッシュ名）アンカーで実体を引き当てる。
-  var title = (entry && typeof entry.title === "string" && entry.title) ? entry.title : "";
-  if (title && entry && typeof entry.folder === "string") {
-    var scopedFolder = FormsDrive_lookupFolderForPath_(entry.folder);
-    if (scopedFolder) {
-      var scoped = StdFolders_findFileByNameInFolder_(scopedFolder, title + ".json");
-      if (!scoped && typeof Forms_normalizeFormTitle_ === "function") {
-        scoped = StdFolders_findFileByNameInFolder_(scopedFolder, Forms_normalizeFormTitle_(title) + ".json");
-      }
-      if (scoped) return scoped;
-    }
-  }
-  if (title) {
-    var base = FormsDrive_baseFolderOrNull_();
-    if (base) {
+  // 多段解決の本体は SharedCrud_resolveEntityFileOrNull_（sharedEntityCrud.gs）に集約。
+  // forms 固有の差分（title をアンカー名に使う / URL 救済あり / base ツリーを再帰探索 /
+  // id 名フォールバックなし）を opts で注入する。
+  return SharedCrud_resolveEntityFileOrNull_(fileId, {
+    name: (entry && typeof entry.title === "string") ? entry.title : "",
+    folder: (entry && typeof entry.folder === "string") ? entry.folder : null,
+    driveFileUrl: driveFileUrl || (entry && entry.driveFileUrl) || "",
+    lookupFolderForPath: FormsDrive_lookupFolderForPath_,
+    findInTree: function(name) {
+      var base = FormsDrive_baseFolderOrNull_();
+      if (!base) return null;
       var targets = {};
-      targets[title + ".json"] = true;
-      if (typeof Forms_normalizeFormTitle_ === "function") targets[Forms_normalizeFormTitle_(title) + ".json"] = true;
-      var byName = Forms_findFileByNamesRecursive_(base, targets);
-      if (byName) return byName;
-    }
-  }
-  return null;
+      targets[name + ".json"] = true;
+      if (typeof Forms_normalizeFormTitle_ === "function") targets[Forms_normalizeFormTitle_(name) + ".json"] = true;
+      return Forms_findFileByNamesRecursive_(base, targets);
+    },
+    idFallbackName: "",
+  });
 }
 
 // フォルダ込みフォーム名（"フォルダ/サブ/葉"）を、その物理フォルダ「直下のみ」で葉名一致解決する。

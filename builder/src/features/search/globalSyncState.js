@@ -1,6 +1,7 @@
 import { RECORD_CACHE_BACKGROUND_REFRESH_MS } from "../../app/state/cachePolicy.js";
 import { toErrorMessage } from "../../utils/errorMessage.js";
 import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../../core/constants.js";
+import { toFiniteNumberOr } from "../../utils/numbers.js";
 
 
 export const syncStateListeners = new Set();
@@ -72,7 +73,7 @@ export const getGlobalSyncSnapshot = (formId) => {
     backgroundLoading: (globalSyncState.background.get(formId) || 0) > 0,
     waitingForLock: !!meta.waitingForLock,
     hasUnsynced: !!meta.hasUnsynced,
-    unsyncedCount: Number.isFinite(Number(meta.unsyncedCount)) ? Number(meta.unsyncedCount) : 0,
+    unsyncedCount: toFiniteNumberOr(meta.unsyncedCount, 0),
     lastSyncedAt: meta.lastSyncedAt || null,
     lastSpreadsheetReadAt: meta.lastSpreadsheetReadAt || null,
     useCache: !!meta.useCache,

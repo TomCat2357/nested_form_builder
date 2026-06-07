@@ -61,32 +61,17 @@ function Analytics_listTemplates_(type, options) {
 //        探索名は entry.name（キャッシュ名）優先、無ければ id 自体（旧 ULID をファイル名にしていた救済）。
 //   見つからなければ null（呼び出し側でエラー化）。
 function Analytics_resolveItemFileOrNull_(type, fileId, id, entry, mapping) {
-  if (fileId) {
-    try {
-      var f = DriveApp.getFileById(fileId);
-      if (!(typeof f.isTrashed === "function" && f.isTrashed())) return f;
-    } catch (e) { /* 消失 → 中央辞書アンカーで復旧へ */ }
-  }
-  var name = (entry && typeof entry.name === "string" && entry.name) ? entry.name : "";
-  // 第一級フィールドの folder があれば、その物理フォルダ内に限定して name.json を探す。
-  if (name && entry && typeof entry.folder === "string") {
-    var scopedFolder = AnalyticsDrive_lookupFolderForPath_(type, entry.folder);
-    if (scopedFolder) {
-      var scoped = StdFolders_findFileByNameInFolder_(scopedFolder, name + ".json");
-      if (!scoped && typeof Forms_normalizeFormTitle_ === "function") {
-        scoped = StdFolders_findFileByNameInFolder_(scopedFolder, Forms_normalizeFormTitle_(name) + ".json");
-      }
-      if (scoped) return scoped;
-    }
-  }
-  var byName = name ? AnalyticsDrive_findFileByNameInTree_(type, name) : null;
-  if (byName) return byName;
-  // entry.name が無いケース: id 文字列をファイル名候補として最終探索（旧データ救済）。
-  if (id) {
-    var byId = AnalyticsDrive_findFileByNameInTree_(type, Nfb_nameFromFileName_(id));
-    if (byId) return byId;
-  }
-  return null;
+  // 多段解決の本体は SharedCrud_resolveEntityFileOrNull_（sharedEntityCrud.gs）に集約。
+  // analytics 固有の差分（name をアンカー名に使う / resolver では URL 救済しない＝save 側で別途実施 /
+  // type 別の Drive ツリー探索 / id 名フォールバックあり）を opts で注入する。
+  return SharedCrud_resolveEntityFileOrNull_(fileId, {
+    name: (entry && typeof entry.name === "string") ? entry.name : "",
+    folder: (entry && typeof entry.folder === "string") ? entry.folder : null,
+    driveFileUrl: "",
+    lookupFolderForPath: function(path) { return AnalyticsDrive_lookupFolderForPath_(type, path); },
+    findInTree: function(name) { return AnalyticsDrive_findFileByNameInTree_(type, name); },
+    idFallbackName: id ? Nfb_nameFromFileName_(id) : "",
+  });
 }
 
 function Analytics_getTemplate_(type, templateId) {

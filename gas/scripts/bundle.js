@@ -42,6 +42,7 @@ const FILE_ORDER = [
   'formsMappingStore.gs',
   'sharedFolderStore.gs',   // Forms/Analytics 共通のフォルダ登録簿コア（型汎用）
   'sharedDriveFolders.gs',  // Forms/Analytics 共通の仮想↔物理フォルダミラーコア（型汎用）
+  'sharedEntityCrud.gs',    // Forms/Analytics 共通の「論理参照→物理 Drive ファイル解決」コア（型汎用）
   'formsFolderStore.gs',
   'formsDriveFolders.gs', // 仮想フォルダ ↔ 物理 Drive フォルダ（01_forms 配下）のミラー
   'formsTitleHelpers.js',

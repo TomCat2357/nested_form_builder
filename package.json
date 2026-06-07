@@ -13,6 +13,8 @@
     "build:gas-udfs": "node builder/scripts/build-gas-udfs.mjs",
     "bundle:gas": "node gas/scripts/bundle.js",
     "test": "node --test \"tests/**/*.test.cjs\" \"tests/**/*.test.js\"",
+    "test:builder": "node --test \"builder/src/**/*.test.js\"",
+    "test:all": "npm test && npm run test:builder",
     "test:playwright": "node tests/test-playwright.js"
   },
   "devDependencies": {
