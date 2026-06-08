@@ -273,30 +273,42 @@ function RunPurgeCheck_(ctx) {
   return { ok: true };
 }
 
-function ResolveTemporalTypeMap_(ctx) {
+// ctx からフォームスキーマ配列を解決する（リクエスト同梱 formSchema 優先、無ければ formId でキャッシュ取得）。
+function Nfb_resolveFormSchemaArray_(ctx) {
   if (ctx?.raw?.formSchema && Array.isArray(ctx.raw.formSchema)) {
-    return Sheets_collectTemporalPathMap_(ctx.raw.formSchema);
+    return ctx.raw.formSchema;
   }
   var formId = ctx?.raw?.formId;
   if (!formId) return null;
   try {
     var form = Nfb_getFormCached_(formId);
-    if (form?.schema && Array.isArray(form.schema)) {
-      return Sheets_collectTemporalPathMap_(form.schema);
-    }
+    if (form?.schema && Array.isArray(form.schema)) return form.schema;
   } catch (error) {
-    Logger.log("[ResolveTemporalTypeMap_] Failed to load schema: " + error);
+    Logger.log("[Nfb_resolveFormSchemaArray_] Failed to load schema: " + error);
   }
   return null;
+}
+
+function ResolveTemporalTypeMap_(ctx) {
+  var schema = Nfb_resolveFormSchemaArray_(ctx);
+  return schema ? Sheets_collectTemporalPathMap_(schema) : null;
+}
+
+// 列ごとのスプレッドシート数値書式マップ（テキスト列 → "@"）。型不明時は null。
+function ResolveColumnFormatMap_(ctx) {
+  var schema = Nfb_resolveFormSchemaArray_(ctx);
+  return schema ? Sheets_collectColumnFormatMap_(schema) : null;
 }
 
 function SubmitResponses_(ctx) {
   return ExecuteWithSheet_(ctx, (sheet) => {
     return WithScriptLock_("保存", () => {
-      const temporalTypeMap = ResolveTemporalTypeMap_(ctx);
+      const schema = Nfb_resolveFormSchemaArray_(ctx);
+      const temporalTypeMap = schema ? Sheets_collectTemporalPathMap_(schema) : null;
+      const columnFormatMap = schema ? Sheets_collectColumnFormatMap_(schema) : null;
       Sheets_purgeExpiredDeletedRows_(sheet, ResolveDeletedRecordRetentionDays_(ctx));
       Nfb_updatePurgeKeyFromSheet_(ctx?.raw?.formId, sheet);
-      const result = Sheets_upsertRecordById_(sheet, ctx.order, ctx, temporalTypeMap);
+      const result = Sheets_upsertRecordById_(sheet, ctx.order, ctx, temporalTypeMap, columnFormatMap);
       return {
         ok: true,
         spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${ctx.spreadsheetId}`,

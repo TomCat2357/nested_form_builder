@@ -14,14 +14,14 @@
 //     formName    : string
 //     generatedAt : ISO8601 文字列 (送信時刻 UTC)
 //   context === "search" のとき:
-//     list.headers : string[]   各列の質問 = ヘッダー階層を "|" で連結した文字列
-//                    (例: "講座の種類|ヒグマ講座|実施場所")
+//     list.headers : string[]   各列の質問 = ヘッダー階層を "/" で連結した文字列
+//                    (例: "講座の種類/ヒグマ講座/実施場所")
 //     list.rows    : (string | {text, hyperlink})[][]  フィルタ後の全データ行 (列順は headers と一致)
 //     list.rowCount: number
 //   context === "record" のとき:
 //     record.id    : string
 //     record.no    : string | number
-//     record.items : { question, value, type }[]  question = ヘッダー階層を "|" 連結した質問
+//     record.items : { question, value, type }[]  question = ヘッダー階層を "/" 連結した質問
 //   管理者限定ボタンのときのみ付与:
 //     storage.spreadsheetId / spreadsheetUrl / sheetName / driveFileUrl / userEmail
 //
@@ -126,7 +126,7 @@ function handleSearchPayload_(data) {
   }
 
   // TODO: ここに業務処理を書く (例: 別シートへ転記、集計、通知 など)。
-  //   headers[i] が i 列目の質問 (ヘッダー階層を "|" 連結)、rows[r][i] がその値。
+  //   headers[i] が i 列目の質問 (ヘッダー階層を "/" 連結)、rows[r][i] がその値。
   //   各セルは文字列、またはファイル列のとき { text, hyperlink } オブジェクト。
   //   cellToText_(cell) で表示文字列に正規化できる。
 
@@ -168,8 +168,8 @@ function handleRecordPayload_(data) {
   Logger.log("record.id = %s / record.no = %s / 項目数 = %s", record.id, record.no, items.length);
   for (var i = 0; i < items.length; i++) {
     var it = items[i] || {};
-    // question は "親|子|孫" 形式。"|" の数だけインデントするとネスト構造が読みやすい。
-    var depth = String(it.question || "").split("|").length - 1;
+    // question は "親/子/孫" 形式。"/" の数だけインデントするとネスト構造が読みやすい。
+    var depth = String(it.question || "").split("/").length - 1;
     var indent = repeat_("  ", depth > 0 ? depth : 0);
     Logger.log("%s[%s] %s = %s", indent, it.type, it.question, it.value);
   }
@@ -194,8 +194,8 @@ function handleRecordPayload_(data) {
       '<th>質問 (ネスト)</th><th>type</th><th>値</th></tr></thead><tbody>';
     for (var i = 0; i < items.length; i++) {
       var it = items[i] || {};
-      // question は "親|子|孫" 形式。"|" の数だけインデントしてネスト構造を表現する。
-      var parts = String(it.question || "").split("|");
+      // question は "親/子/孫" 形式。"/" の数だけインデントしてネスト構造を表現する。
+      var parts = String(it.question || "").split("/");
       var depth = parts.length - 1;
       var leaf = parts[parts.length - 1];
       var pad = depth > 0 ? ' style="padding-left:' + (depth * 18) + 'px"' : '';

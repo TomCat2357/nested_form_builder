@@ -157,31 +157,43 @@ function Sheets_collectTemporalPathMap_(schema) {
   return map;
 }
 
-function Sheets_buildOrderFromSchema_(schema) {
-  var order = [];
-  var seen = {};
-  var singleValueTypes = {
-    text: true,
-    textarea: true,
-    number: true,
-    regex: true,
-    date: true,
-    time: true,
-    url: true,
-    userName: true,
-    email: true,
-    phone: true,
-    fileUpload: true,
-    substitution: true
-  };
+// 単一値フィールド（オプション展開しない型）と、それぞれの「列としての種別」。
+// number は数値、date / time は日時、その他はテキスト系（自由記述）。
+var NFB_SINGLE_VALUE_FIELD_TYPES = {
+  text: true,
+  textarea: true,
+  number: true,
+  regex: true,
+  date: true,
+  time: true,
+  url: true,
+  userName: true,
+  email: true,
+  phone: true,
+  fileUpload: true,
+  substitution: true
+};
 
-  var appendKey = function(key) {
-    var normalized = Sheets_normalizeHeaderKey_(key);
-    if (!normalized || seen[normalized]) return;
-    seen[normalized] = true;
-    order.push(normalized);
-  };
+// プレーンテキスト ("@") 書式にすべきフィールド種別。number は数値のまま（集計のため）、
+// date / time は専用の日時セル経路で扱うので含めない。"marker" は選択肢列（"●" / 空白）。
+var NFB_SHEETS_TEXT_FIELD_TYPES = {
+  text: true,
+  textarea: true,
+  regex: true,
+  url: true,
+  userName: true,
+  email: true,
+  phone: true,
+  fileUpload: true,
+  substitution: true,
+  marker: true
+};
 
+// スキーマを走査して物理データ列を出現順に列挙し、emit(rawKey, type) を呼ぶ共通ヘルパ。
+// type は単一値型はその型名、選択肢系 (checkboxes / radio / select) の各オプション列は "marker"。
+// 列キーの組み立ては Sheets_buildOrderFromSchema_ と Sheets_collectColumnFormatMap_ で共有し、
+// 両者が必ず同じ列キーを生成するようにする。
+function Sheets_forEachSchemaColumn_(schema, emit) {
   nfbTraverseSchema_(schema, function(field, ctx) {
     var type = field.type !== undefined && field.type !== null ? String(field.type).trim() : "";
     var baseKey = Nfb_joinFieldPath_(ctx.pathSegments);
@@ -192,20 +204,45 @@ function Sheets_buildOrderFromSchema_(schema) {
         for (var optIndex = 0; optIndex < field.options.length; optIndex++) {
           var option = field.options[optIndex];
           var optionLabel = Sheets_normalizeHeaderSegment_(option && option.label);
-          appendKey(optionLabel
+          emit(optionLabel
             ? baseKey + NFB_PATH_SEP + Nfb_escapeSegment_(optionLabel, NFB_PATH_SEP)
-            : baseKey + NFB_PATH_SEP);
+            : baseKey + NFB_PATH_SEP, "marker");
         }
       }
-    } else if (type !== "message" && singleValueTypes[type]) {
-      appendKey(baseKey);
+    } else if (type !== "message" && NFB_SINGLE_VALUE_FIELD_TYPES[type]) {
+      emit(baseKey, type);
     }
   }, {
     fieldSegment: Sheets_headerFieldSegmentWithFallback_,
     branchSegment: Sheets_headerBranchSegment_
   });
+}
 
+function Sheets_buildOrderFromSchema_(schema) {
+  var order = [];
+  var seen = {};
+  Sheets_forEachSchemaColumn_(schema, function(rawKey) {
+    var normalized = Sheets_normalizeHeaderKey_(rawKey);
+    if (!normalized || seen[normalized]) return;
+    seen[normalized] = true;
+    order.push(normalized);
+  });
   return order;
+}
+
+// 列キー → スプレッドシート数値書式マップ。Sheets が "1-1" を日付へ、"007" を数値へ等と
+// 自動変換しないよう、自由記述系フィールドと選択肢マーカー列を "@"（プレーンテキスト）にする。
+// number は数値のまま（集計のため）、date / time は専用の日時セル経路で扱うため、ここには含めない。
+function Sheets_collectColumnFormatMap_(schema) {
+  var map = {};
+  Sheets_forEachSchemaColumn_(schema, function(rawKey, type) {
+    var normalized = Sheets_normalizeHeaderKey_(rawKey);
+    if (!normalized) return;
+    if (NFB_SHEETS_TEXT_FIELD_TYPES[type]) {
+      map[normalized] = NFB_SHEETS_TEXT_FORMAT;
+    }
+  });
+  return map;
 }
 
 function Sheets_initializeHeaders_(spreadsheetId, sheetName, schema) {

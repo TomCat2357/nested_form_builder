@@ -42,8 +42,8 @@ function testDoPost_search() {
     formName: "デモ受付フォーム",
     generatedAt: new Date().toISOString(),
     list: {
-      // 各列の質問 = ヘッダー階層を "|" で連結した文字列 (列順は rows と一致)
-      headers: ["No.", "氏名", "種類|ヒグマ講座", "種類|出前講座"],
+      // 各列の質問 = ヘッダー階層を "/" で連結した文字列 (列順は rows と一致)
+      headers: ["No.", "氏名", "種類/ヒグマ講座", "種類/出前講座"],
       rows: [
         ["1", "山田 太郎", "●", ""],
         ["2", "佐藤 花子", "", "●"],
@@ -70,7 +70,7 @@ function testDoPost_record() {
         { question: "氏名", value: "山田 太郎", type: "text" },
         { question: "講座の種類", value: "ヒグマ講座", type: "radio" },
         // 選択肢配下の項目は親質問・選択肢ラベルも階層に含まれる
-        { question: "講座の種類|ヒグマ講座|実施場所", value: "市民ホール", type: "text" },
+        { question: "講座の種類/ヒグマ講座/実施場所", value: "市民ホール", type: "text" },
         { question: "備考", value: "", type: "textarea" }
       ]
     }

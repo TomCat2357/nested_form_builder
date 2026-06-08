@@ -122,7 +122,7 @@ function Sheets_resolveTemporalCell_(value, temporalType) {
 }
 
 
-function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
+function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap, columnFormatMap) {
   Sheets_prepareResponses_(ctx);
   Sheets_ensureHeaderMatrix_(sheet, ctx.order);
   var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
@@ -205,9 +205,22 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
   var pid = Nfb_resolvePidFromCtx_(ctx);
   Sheets_stampPid_(rowData, keyToColumn.hasOwnProperty("pid") ? keyToColumn["pid"] - 1 : -1, pid, lastColumn);
 
-  var range = sheet.getRange(rowIndex, 1, 1, lastColumn);
-  range.setValues([rowData]);
+  // テキスト系の列は "@"（プレーンテキスト）書式に揃える。ctx.order に含まれない列も対象にして、
+  // 列全体で型を一定にしておく（書式はセル単位で永続するため、後続の書き込みでも文字列が保たれる）。
+  if (columnFormatMap) {
+    for (var fk in columnFormatMap) {
+      if (!columnFormatMap.hasOwnProperty(fk)) continue;
+      if (NFB_RESERVED_HEADER_KEYS[fk]) continue;
+      if (!keyToColumn.hasOwnProperty(fk)) continue;
+      var fmtColIdx = keyToColumn[fk] - 1;
+      if (fmtColIdx >= 0 && fmtColIdx < lastColumn) formats[fmtColIdx] = columnFormatMap[fk];
+    }
+  }
 
+  var range = sheet.getRange(rowIndex, 1, 1, lastColumn);
+
+  // 数値書式は setValues より前に適用する。テキスト列を先に "@" にしておかないと、
+  // setValues が "1-1" を日付へ、"007" を数値へ自動変換してしまう。
   var needFormatWrite = false;
   for (var f = 0; f < formats.length; f++) {
     if (formats[f]) { needFormatWrite = true; break; }
@@ -219,6 +232,8 @@ function Sheets_upsertRecordById_(sheet, order, ctx, temporalTypeMap) {
     }
     range.setNumberFormats([currentFormats]);
   }
+
+  range.setValues([rowData]);
 
   Sheets_touchSheetLastUpdated_(sheet, currentTs);
 

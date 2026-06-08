@@ -23,6 +23,7 @@ import {
   unarchiveForm,
   unarchiveForms,
 } from "./gasClient.js";
+import { registerFormPid, unregisterFormPid } from "./formPidContext.js";
 
 const createGoogleScriptRunStub = (handlers = {}) => {
   const calls = [];
@@ -200,6 +201,61 @@ test("withUrlPid: pid は __FORM_ID__ と __PID__ が両方非空のときだけ
     await listEntries({ formId: "form_1", sheetName: "Data" });
     assert.equal("pid" in calls.at(-1).payload, false);
   } finally {
+    globalThis.google = originalGoogle;
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("withUrlPid: URL グローバル pid は payload.formId が __FORM_ID__ と一致するときだけ付く", async () => {
+  const originalGoogle = globalThis.google;
+  const originalWindow = globalThis.window;
+  const { run, calls } = createGoogleScriptRunStub({
+    listRecords: (payload) => ({ ok: true, records: [], payload }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    // 親タブは form_1 に固定（pid 空）。別フォーム form_2 への呼び出しに親 pid が漏れないこと。
+    globalThis.window = { __FORM_ID__: "form_1", __PID__: "rec_parent" };
+    await listEntries({ formId: "form_1", sheetName: "Data" });
+    assert.equal(calls.at(-1).payload.pid, "rec_parent");
+    await listEntries({ formId: "form_2", sheetName: "Data" });
+    assert.equal("pid" in calls.at(-1).payload, false);
+  } finally {
+    globalThis.google = originalGoogle;
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("withUrlPid: formPidContext の登録 pid が formId 単位で最優先される", async () => {
+  const originalGoogle = globalThis.google;
+  const originalWindow = globalThis.window;
+  const { run, calls } = createGoogleScriptRunStub({
+    listRecords: (payload) => ({ ok: true, records: [], payload }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    // 親タブは form_parent 固定・pid 空。オーバーレイが子 form_child に pid を登録。
+    globalThis.window = { __FORM_ID__: "form_parent", __PID__: "" };
+    registerFormPid("form_child", "rec_parent");
+
+    // 子フォームへの呼び出しは登録 pid が付く。
+    await listEntries({ formId: "form_child", sheetName: "Data" });
+    assert.equal(calls.at(-1).payload.pid, "rec_parent");
+
+    // 親フォームへの同時呼び出しは登録が無く pid 無し（混線しない）。
+    await listEntries({ formId: "form_parent", sheetName: "Data" });
+    assert.equal("pid" in calls.at(-1).payload, false);
+
+    // 解除後は子フォームにも付かない。
+    unregisterFormPid("form_child");
+    await listEntries({ formId: "form_child", sheetName: "Data" });
+    assert.equal("pid" in calls.at(-1).payload, false);
+  } finally {
+    unregisterFormPid("form_child");
     globalThis.google = originalGoogle;
     if (originalWindow === undefined) delete globalThis.window;
     else globalThis.window = originalWindow;

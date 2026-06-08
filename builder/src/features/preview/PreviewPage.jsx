@@ -48,6 +48,9 @@ import {
   saveChildCountToCache,
 } from "../../app/state/childRecordsMemoryStore.js";
 import { evaluateCacheForRecords } from "../../app/state/cachePolicy.js";
+import { dataStore } from "../../app/state/dataStore.js";
+import { getRecordsFromCache } from "../../app/state/recordsMemoryStore.js";
+import { useFormContext, useChildForm } from "../../app/state/formContext.jsx";
 import { RendererRecursive } from "./FieldRenderer.jsx";
 
 // 置換フィールドの templateText が full-query トークン（`{{SELECT ...}}`）を含むかの判定。
@@ -140,9 +143,19 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 
   const gasClientRef = useRef(gasClientModule);
 
-  // 子フォーム文脈（URL に form+pid あり）では formLink ボタンを出さない＝子フォームから
-  // さらに子フォームを作らせない。getUrlPid は form+pid 併用かつ非空のときだけ非空を返す。
-  const inChildContext = useMemo(() => !!(typeof getUrlPid === "function" && getUrlPid()), []);
+  // 子フォーム文脈（オーバーレイ or URL に form+pid あり）では formLink ボタンを出さない＝
+  // 子フォームからさらに子フォームを作らせない。オーバーレイ表示時は FormContext が
+  // inChildContext を供給する。Provider 配下でない（＝新規タブで開いた既存経路）ときは
+  // 従来どおり URL グローバル getUrlPid() にフォールバックする。
+  const formContext = useFormContext();
+  const inChildContext = useMemo(
+    () => (formContext
+      ? !!formContext.inChildContext
+      : !!(typeof getUrlPid === "function" && getUrlPid())),
+    [formContext],
+  );
+  // 「別フォームを開く（formLink）」をオーバーレイで開くためのトリガ。
+  const { openChildForm } = useChildForm();
 
   // schema 内の formLink フィールド（childFormId あり）を収集する。各々について子フォームの
   // 子レコード件数（pid == このレコード id）をバッジ表示する。
@@ -340,14 +353,80 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     return found;
   }, [schema]);
 
-  // full-query 解決へ渡す現フォーム（自フォームのみ参照可なのでこの 1 件で足りる）。
-  // ネットワーク（dataStore.listForms）も IndexedDB（getFormsFromCache）も介さず、プレビュー中の
-  // ライブ schema をそのまま使う。これで `_form` 基底テーブルの view 変換と buildLiveRow の
-  // ライブ行が同一 schema で整形され、未保存スキーマ変更のプレビューでも行形状が一致する。
+  // full-query 解決へ渡すフォーム群。現フォーム（プレビュー中のライブ schema）に加え、
+  // 「別フォームを開く（formLink）」で紐づく子フォーム定義を含める。これにより full-query で
+  // `FROM [子フォーム名]` ＋ `pid` 結合の参照が解決できる。現フォームはネットワーク／IndexedDB を
+  // 介さずライブ schema をそのまま使うので、`_form` 基底テーブルの view 変換と buildLiveRow の
+  // ライブ行が同一 schema で整形される（未保存スキーマ変更のプレビューでも行形状が一致）。
+  // 子フォーム定義は下の effect が getChildFormCached_ で取得して childForms に積む（取得不可なら現フォームのみ）。
+  const [childForms, setChildForms] = useState([]);
+  // 子フォーム定義のロード＋レコード warming 完了を prefetch effect へ伝えるための epoch。
+  const [childReadyEpoch, setChildReadyEpoch] = useState(0);
+  // formLink 子フォームの初回ロード（定義取得＋レコード warm）が完了したか。full-query 置換が
+  // 別フォームを参照していて未ロードの過渡状態（runFullQuery が「未定義のフォーム」を返す間）を、
+  // substitution の「読込中…」表示に使う。完了後に空のままなら本物の欠落として空表示へ落ちる。
+  const [childFormsReady, setChildFormsReady] = useState(false);
   const previewForms = useMemo(
-    () => [{ id: settings.formId || "", name: formTitle, schema }],
-    [settings.formId, formTitle, schema],
+    () => [{ id: settings.formId || "", name: formTitle, schema }, ...childForms],
+    [settings.formId, formTitle, schema, childForms],
   );
+
+  // 「別フォームを開く（formLink）」で紐づく子フォームを、親フォームと同様に扱う:
+  //   (1) フォーム定義（schema）を取得して previewForms に載せる（full-query の FROM／pid 解決用）
+  //   (2) レコードを recordsMemoryStore に常駐 warm（SWR ゲート）— cacheOnly な full-query は
+  //       getRecordsFromCache から読むため、子レコードを引けるようにここで常駐させる。
+  // includeChildData フラグでは絞らない（本機能は件数バッジ／CHILD_FORM_* とは独立）。
+  // headless / google.script.run 不可のときは無言でスキップ（現フォームのみで解決）。
+  // 親レコードが再同期された（modifiedAtUnixMs が進んだ）ときも再走し、子レコードを SWR で
+  // 検証する（forceSync しない＝stale のときだけサーバ往復）。これで CHILD_FORM_* 側（件数バッジ
+  // 等）と追従タイミングが揃い、別フォーム参照の full-query 置換も親更新に合わせて再解決される。
+  useCancellable(async (isCancelled) => {
+    if (inChildContext) {
+      // 子フォーム文脈では formLink を辿らない＝ロード待ちは無いので即「完了」。
+      setChildFormsReady(true);
+      return;
+    }
+    if (formLinkFields.length === 0 || !hasScriptRun()) {
+      setChildForms((prev) => (prev.length === 0 ? prev : []));
+      setChildFormsReady(true);
+      return;
+    }
+    setChildFormsReady(false);
+    // 1. 子フォーム定義を並列取得（FROM 名解決用 title／pid 列を含む schema）。
+    //    取得失敗は null に畳んで以降フィルタ（その子フォームは参照不可のまま）。
+    const defResults = await Promise.all(
+      formLinkFields.map((field) => getChildFormCached_(field.childFormId).catch(() => null)),
+    );
+    if (isCancelled()) return;
+    const defs = defResults.filter((def) => def && def.id);
+    // 2. 子フォームレコードを SWR で並列 warm。shouldSync は await（公開前に常駐させる）、
+    //    shouldBackground は裏更新し、完了時に epoch を進めて prefetch を再走させる。
+    await Promise.all(
+      formLinkFields.map(async (field) => {
+        try {
+          const cache = await getRecordsFromCache(field.childFormId);
+          const { shouldSync, shouldBackground } = evaluateCacheForRecords({
+            lastSyncedAt: cache.lastSyncedAt,
+            hasData: Array.isArray(cache.entries) && cache.entries.length > 0,
+            forceSync: false,
+          });
+          if (shouldSync) {
+            await dataStore.listEntries(field.childFormId);
+          } else if (shouldBackground) {
+            dataStore.listEntries(field.childFormId)
+              .then(() => { if (!isCancelled()) setChildReadyEpoch((n) => n + 1); })
+              .catch(() => {});
+          }
+        } catch (_e) { /* warm 失敗は無言（その子フォームは 0 件のまま） */ }
+      }),
+    );
+    if (isCancelled()) return;
+    // 3. 定義を公開し、prefetch を再走させる（同期 warm 済みレコードが常駐した状態で解決）。
+    setChildForms(defs);
+    setChildReadyEpoch((n) => n + 1);
+    setChildFormsReady(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formLinkSignature, inChildContext, settings.modifiedAtUnixMs]);
 
   // 現レコードの「入力中ライブ値」を view 行に変換する。保存と同じ collectResponses →
   // entriesToViewTableRows 経路を使うので、キャッシュ行と同形状になり `_form` の現レコード行を
@@ -410,7 +489,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     setQueryTokenValues((prev) => (map.size === 0 && prev.size === 0 ? prev : map));
     setQueryTokensReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [schema, settings.formId, entryId, liveQueryEpoch]);
+  }, [schema, settings.formId, entryId, liveQueryEpoch, childReadyEpoch]);
 
   const { computedValues, computedErrors } = useMemo(
     () => evaluateAllComputedFields(schema, responses, dataValueMap, tokenContext),
@@ -601,6 +680,17 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       showAlert("開くフォームが設定されていません。質問カードの設定で対象フォームを選択してください。");
       return;
     }
+    // 子フォームを同一 SPA のオーバーレイで開く（新規タブのフルロードを避ける）。pid に現レコード
+    // ID を渡し、子フォームの検索を pid 絞り込み・新規レコードに pid 刻印させる。親はマウントしたまま
+    // 残り、「← 戻る」で復帰する。openChildForm が未提供（Provider 外）なら従来の新規タブへフォールバック。
+    if (typeof openChildForm === "function") {
+      openChildForm({
+        childFormId,
+        pid: recordIdRef.current,
+        childFormName: field?.childFormName || field?.label || "",
+      });
+      return;
+    }
     const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
     const url = buildChildFormUrl(baseUrl, childFormId, recordIdRef.current);
     if (!url) {
@@ -768,6 +858,12 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         <label className="preview-label">ID</label>
         <input type="text" value={recordIdRef.current} readOnly className="nf-input nf-input--readonly" />
       </div>
+      {settings.pid ? (
+        <div className="nf-mb-12">
+          <label className="preview-label">親レコードID（pid）</label>
+          <input type="text" value={settings.pid} readOnly disabled className="nf-input nf-input--disabled" />
+        </div>
+      ) : null}
       <div className="nf-mb-12">
         <label className="preview-label">最終更新日時</label>
         <input type="text" value={modifiedAtDisplay || "-"} readOnly className="nf-input nf-input--readonly" />
@@ -792,6 +888,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         canDeleteDriveFolder={canDeleteDriveFolder}
         onDeleteDriveFolder={onDeleteDriveFolder}
         resolveTokens={resolveTokens}
+        substitutionPending={!queryTokensReady || !childFormsReady}
         computedValues={computedValues}
         computedErrors={computedErrors}
       />

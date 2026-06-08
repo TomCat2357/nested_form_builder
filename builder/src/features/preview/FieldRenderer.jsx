@@ -49,6 +49,10 @@ const toDateInputValue = (value) => formatCanonical(value, "date") || "";
 
 const identityFn = (v) => v || "";
 
+// full-query 置換（`{{SELECT ...}}`）が別フォーム参照などで未解決の過渡状態に出す表示。
+const SUBSTITUTION_LOADING_PLACEHOLDER = "読込中…";
+const FULL_QUERY_SUBST_RE = /\{\{\s*SELECT\b/i;
+
 const FieldRenderer = ({
   field,
   value,
@@ -69,6 +73,7 @@ const FieldRenderer = ({
   canDeleteDriveFolder,
   onDeleteDriveFolder,
   resolveTokens = identityFn,
+  substitutionPending = false,
   computedValues,
   computedErrors,
   depth = 0,
@@ -148,13 +153,23 @@ const FieldRenderer = ({
     if (field.hideFromRecordView) return null;
     const computedValue = computedValues?.[field.id];
     const computedError = computedErrors?.[field.id];
+    const isEmptyValue = computedValue == null || computedValue === "";
+    // full-query \u7F6E\u63DB\uFF08\u5225\u30D5\u30A9\u30FC\u30E0\u53C2\u7167\u306A\u3069\uFF09\u306F prefetch\uFF0F\u5B50\u30D5\u30A9\u30FC\u30E0\u30ED\u30FC\u30C9\u304C\u7D42\u308F\u308B\u307E\u3067\u7A7A\u306B\u306A\u308B\u3002
+    // \u305D\u306E\u904E\u6E21\u72B6\u614B\uFF08substitutionPending\uFF09\u306F\u7A7A\u767D\u3067\u306F\u306A\u304F\u300C\u8AAD\u8FBC\u4E2D\u2026\u300D\u3092\u51FA\u3057\u3066\u3061\u3089\u3064\u304D\u3092\u6291\u3048\u308B\u3002
+    // \u30ED\u30FC\u30C9\u5B8C\u4E86\u5F8C\uFF08pending=false\uFF09\u306B\u7A7A\u306E\u307E\u307E\u306A\u3089\u672C\u7269\u306E\u6B20\u843D\u3068\u3057\u3066\u7A7A\u8868\u793A\u3078\u843D\u3068\u3059\u3002
+    const isFullQueryTpl = typeof field.templateText === "string" && FULL_QUERY_SUBST_RE.test(field.templateText);
+    const showLoading = substitutionPending && isFullQueryTpl && isEmptyValue;
     return (
       <div className="preview-field">
         {renderLabel({ tag: "div", showRequired: false })}
         {renderComment()}
         {computedError
           ? <div className="nf-text-danger-ink nf-text-12">{computedError}</div>
-          : <div className="nf-input nf-input--readonly">{computedValue != null && computedValue !== "" ? String(computedValue) : "\u00A0"}</div>
+          : <div className="nf-input nf-input--readonly">
+              {showLoading
+                ? <span className="nf-text-12" style={{ opacity: 0.55 }}>{SUBSTITUTION_LOADING_PLACEHOLDER}</span>
+                : (!isEmptyValue ? String(computedValue) : "\u00A0")}
+            </div>
         }
       </div>
     );
@@ -476,6 +491,7 @@ export const RendererRecursive = ({
   canDeleteDriveFolder,
   onDeleteDriveFolder,
   resolveTokens,
+  substitutionPending = false,
   computedValues,
   computedErrors,
 }) => {
@@ -483,7 +499,7 @@ export const RendererRecursive = ({
     responses, onChange, depth: depth + 1, readOnly, entryId, onChildFormJump,
     driveSettings, gasClientRef, driveFolderStates, onFieldDriveFolderStateChange,
     onTemplateAction, onWebhookAction, onFormLinkAction, formLinkChildCounts, hideFormLink,
-    isAdmin, canDeleteDriveFolder, onDeleteDriveFolder, resolveTokens,
+    isAdmin, canDeleteDriveFolder, onDeleteDriveFolder, resolveTokens, substitutionPending,
     computedValues, computedErrors,
   };
 
@@ -563,6 +579,7 @@ export const RendererRecursive = ({
               canDeleteDriveFolder={canDeleteDriveFolder}
               onDeleteDriveFolder={onDeleteDriveFolder}
               resolveTokens={resolveTokens}
+              substitutionPending={substitutionPending}
               computedValues={computedValues}
               computedErrors={computedErrors}
             />

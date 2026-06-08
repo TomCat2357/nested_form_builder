@@ -29,6 +29,7 @@ import {
 import { compileStages } from "./utils/compileStages.js";
 import { inferCompiledColumnsFromSql } from "./utils/sqlColumnInference.js";
 import { formHasSpreadsheet } from "../../app/state/dataStoreHelpers.js";
+import { collectFormLinkFields } from "../preview/childFormData.js";
 import { evaluateCacheForAnalytics } from "../../app/state/cachePolicy.js";
 import {
   buildAlaSqlTypeMap,
@@ -324,8 +325,10 @@ export async function runSearchSelect(sql, { forms, defaultFormId } = {}) {
  * 現フォーム = `_form`（defaultFormId）。現レコード ID = `_id` は呼び出し側
  * （prefetchQueryTokens）が substituteCurrentIdLiteral で sql に埋め込み済みの想定。
  *
- * 参照スコープは **自フォームのみ**に制限する（allowedFormIds = {defaultFormId}）。他フォーム参照は
- * preprocessSql がエラーにする（子フォーム件数等は式トークンの CHILD_FORM_* UDF を使う）。
+ * 参照スコープは **自フォーム＋「別フォームを開く（formLink）」で紐づく子フォーム**に制限する
+ * （allowedFormIds = {defaultFormId} ∪ {親 schema の childFormId 群}）。それ以外の他フォーム参照は
+ * preprocessSql がエラーにする。子フォームは `FROM [子フォーム名]` ＋ `pid` 結合で参照でき、
+ * 件数・名前・URL だけなら式トークンの CHILD_FORM_* UDF でも取得できる。
  * liveRowOverride を渡すと、`_form` の現レコード行を入力中のライブ値で上書きして解決する。
  *
  * @param {string} sql `_id` 置換済みの SELECT 文
@@ -349,8 +352,14 @@ export async function runFullQuery(sql, { forms, defaultFormId, liveRowOverride 
     return columnIndexCache.get(formId);
   };
 
-  // 置換 full-query は自フォームのみ参照可（他フォームは式トークンの CHILD_FORM_* を案内する）。
-  const allowedFormIds = new Set([defaultFormId]);
+  // 置換 full-query は自フォーム＋「別フォームを開く（formLink）」で紐づく子フォームのみ参照可。
+  // それ以外の他フォーム参照は preprocessSql が outOfScopeFormError で弾く（任意フォームの読み取りは不可）。
+  // 子フォームの件数・名前・URL だけなら式トークンの CHILD_FORM_* UDF でも取得できる。
+  const parentForm = formIndex.byId.get(defaultFormId);
+  const childFormIds = parentForm && Array.isArray(parentForm.schema)
+    ? collectFormLinkFields(parentForm.schema).map((f) => f.childFormId).filter(Boolean)
+    : [];
+  const allowedFormIds = new Set([defaultFormId, ...childFormIds]);
   const pre = preprocessSql(sql, { defaultFormId, formIndex, getColumnIndex, allowedFormIds });
   if (!pre.ok) return { ok: false, error: pre.errors.join(" / ") };
 
