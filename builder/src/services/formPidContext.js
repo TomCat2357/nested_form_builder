@@ -45,8 +45,3 @@ export const getRegisteredFormPid = (formId) => {
   if (!id) return "";
   return formPidMap.get(id) || "";
 };
-
-/**
- * formId に明示登録があるか。
- */
-export const hasRegisteredFormPid = (formId) => formPidMap.has(normalizeId(formId));
