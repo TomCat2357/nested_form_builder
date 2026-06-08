@@ -340,6 +340,15 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     return found;
   }, [schema]);
 
+  // full-query 解決へ渡す現フォーム（自フォームのみ参照可なのでこの 1 件で足りる）。
+  // ネットワーク（dataStore.listForms）も IndexedDB（getFormsFromCache）も介さず、プレビュー中の
+  // ライブ schema をそのまま使う。これで `_form` 基底テーブルの view 変換と buildLiveRow の
+  // ライブ行が同一 schema で整形され、未保存スキーマ変更のプレビューでも行形状が一致する。
+  const previewForms = useMemo(
+    () => [{ id: settings.formId || "", name: formTitle, schema }],
+    [settings.formId, formTitle, schema],
+  );
+
   // 現レコードの「入力中ライブ値」を view 行に変換する。保存と同じ collectResponses →
   // entriesToViewTableRows 経路を使うので、キャッシュ行と同形状になり `_form` の現レコード行を
   // 上書きできる（自己参照・新規レコードでも入力中の値で full-query が解決する）。
@@ -385,7 +394,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     // 全テンプレを連結して一括 prefetch（forms 取得・テーブル登録を 1 回で共有）。
     // full-query トークンが無ければ prefetchQueryTokens は空 Map を返す（高速パス）。
     // liveRowOverride: 現レコード行を入力中のライブ値で上書きして解決する。
-    const ctx = { recordId: recordIdRef.current, formId: settings.formId || "", liveRowOverride: buildLiveRow(responses) };
+    const ctx = { recordId: recordIdRef.current, formId: settings.formId || "", forms: previewForms, liveRowOverride: buildLiveRow(responses) };
     let map;
     try {
       map = await prefetchQueryTokens(templates.join("\n"), ctx);
@@ -472,7 +481,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     // full-query トークン（`{{SELECT ...}}`）はクライアントで事前解決して GAS へ渡す
     // （GAS にクエリエンジンは無い）。単純な式トークンは原文のまま GAS が payload から解決。
     // 失敗しても出力は継続（未解決トークンは GAS 側でリテラル/フォールバック）。
-    const qctx = { recordId: recordIdRef.current, formId: settings.formId || "" };
+    const qctx = { recordId: recordIdRef.current, formId: settings.formId || "", forms: previewForms };
     let resolvedFileNameTemplate = effectiveFileNameTemplate;
     let outAction = action;
     try {
@@ -661,6 +670,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
           const freshMap = await prefetchQueryTokens(fqTemplates.join("\n"), {
             recordId: recordIdRef.current,
             formId: settings.formId || "",
+            forms: previewForms,
             liveRowOverride: buildLiveRow(responses),
           });
           const { computedValues: freshComputed } = evaluateAllComputedFields(

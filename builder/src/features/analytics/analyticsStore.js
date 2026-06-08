@@ -60,7 +60,7 @@ function findFormByRef(forms, formId) {
  *   - defaultFormId なら bare "data" も同じ rows を指す
  * data/view の variant 区別は廃止（クエリ層は常に view 形式の単一テーブル）。
  */
-export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData = false, excludeMetaColumns = false, liveRowOverride = null } = {}) {
+export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData = false, excludeMetaColumns = false, liveRowOverride = null, cacheOnly = false } = {}) {
   const aliases = [];
   try {
     // 同じ formId を二重に登録しないよう dedup する。
@@ -75,7 +75,7 @@ export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formInde
       if (src.formId === defaultFormId) extras.push("data");
       // ライブ行の上書きは現（default）フォームにのみ適用する。
       const liveRowForThis = src.formId === defaultFormId ? liveRowOverride : null;
-      await registerFormAsTable(canon, src.formId, { form, aliasAlsoAs: extras, injectChildData, excludeMetaColumns, liveRowOverride: liveRowForThis });
+      await registerFormAsTable(canon, src.formId, { form, aliasAlsoAs: extras, injectChildData, excludeMetaColumns, liveRowOverride: liveRowForThis, cacheOnly });
       aliases.push(canon, ...extras);
     }
     return aliases;
@@ -101,10 +101,10 @@ export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formInde
  * @param {Array} [args.sourceFilterClauses] ダッシュボードの簡易フィルタ
  * @returns {Promise<{ ok: boolean, rows?: any[], columns?: string[], error?: string }>}
  */
-async function executeSqlCore(transformedSql, { formSources, defaultFormId, formIndex, injectChildData = false, excludeMetaColumns = false, globalWhereExpr, sourceFilterClauses, liveRowOverride = null } = {}) {
+async function executeSqlCore(transformedSql, { formSources, defaultFormId, formIndex, injectChildData = false, excludeMetaColumns = false, globalWhereExpr, sourceFilterClauses, liveRowOverride = null, cacheOnly = false } = {}) {
   let aliases = [];
   try {
-    aliases = await loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData, excludeMetaColumns, liveRowOverride });
+    aliases = await loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData, excludeMetaColumns, liveRowOverride, cacheOnly });
   } catch (err) {
     return { ok: false, error: "データ取得に失敗しました: " + (err.message || String(err)) };
   }
@@ -360,8 +360,10 @@ export async function runFullQuery(sql, { forms, defaultFormId, liveRowOverride 
     if (seen.has(fid)) continue;
     seen.add(fid);
     const f = formIndex.byId.get(fid);
-    if (!f || !formHasSpreadsheet(f)) {
-      return { ok: false, error: ERR_NO_SPREADSHEET + " (form: " + fid + ")" };
+    // cache-only 経路（メモリ常駐レコード＋入力中ライブ行で解決）なのでスプレッドシート連携は
+    // 要求しない。列解決用 schema を持つフォーム本体がローカルに在ることだけを要求する。
+    if (!f) {
+      return { ok: false, error: "対象フォームがローカルに見つかりません (form: " + fid + ")" };
     }
     formSources.push({ formId: fid });
   }
@@ -374,6 +376,8 @@ export async function runFullQuery(sql, { forms, defaultFormId, liveRowOverride 
     injectChildData,
     excludeMetaColumns: false,
     liveRowOverride,
+    // フロント常駐データのみで解決（サーバ同期しない＝即時）。
+    cacheOnly: true,
   });
 }
 

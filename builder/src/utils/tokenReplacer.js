@@ -150,12 +150,15 @@ export const prefetchQueryTokens = async (template, context) => {
   const liveRowOverride = ctx.liveRowOverride || null;
   let forms = Array.isArray(ctx.forms) ? ctx.forms : null;
   if (!forms) {
+    // full-query はフロント常駐データのみで解決する（サーバ同期しない）。フォーム一覧も
+    // ネットワーク（dataStore.listForms → listFormsFromGas）ではなくローカルの IndexedDB
+    // キャッシュ（getFormsFromCache）から取る。未取得なら空配列にフォールバック。
     try {
-      const { dataStore } = await import("../app/state/dataStore.js");
-      const res = await dataStore.listForms();
+      const { getFormsFromCache } = await import("../app/state/formsCache.js");
+      const res = await getFormsFromCache();
       forms = Array.isArray(res?.forms) ? res.forms : [];
     } catch (err) {
-      logTemplateError(err, "(listForms)");
+      logTemplateError(err, "(getFormsFromCache)");
       forms = [];
     }
   }
