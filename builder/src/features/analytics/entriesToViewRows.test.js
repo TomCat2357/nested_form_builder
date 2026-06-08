@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { entriesToViewTableRows } from "./entriesToViewRows.js";
+import { entriesToViewTableRows, buildLiveViewRow } from "./entriesToViewRows.js";
+import { collectResponses } from "../../core/collect.js";
 
 const form = {
   id: "f_x",
@@ -47,6 +48,44 @@ const baseEntry = {
   deletedAt: "",
   deletedBy: "",
 };
+
+// buildLiveViewRow: 置換 full-query の `_form` 現レコード行を「入力中のライブ値」で上書きするための
+// 単一 view 行。collectResponses → entriesToViewTableRows を再利用するのでキャッシュ行と同形状。
+// 実運用と同じく message コンテナ配下のネスト項目（例: 許可処分情報/処分の種類）を検証する。
+const liveTestForm = {
+  id: "f_live",
+  schema: [
+    { id: "f_dt2", type: "date", label: "受付日" },
+    {
+      id: "f_msg",
+      type: "message",
+      label: "許可処分情報",
+      children: [
+        { id: "f_kind", type: "radio", label: "処分の種類", options: [{ label: "許可" }, { label: "不許可" }] },
+      ],
+    },
+    { id: "f_amt2", type: "number", label: "金額" },
+  ],
+};
+
+test("buildLiveViewRow: 入力中レコードを 1 件の view 行へ（collectResponses → entriesToViewTableRows で同形状）", () => {
+  const responses = { f_dt2: "2025-04-15", f_kind: "許可", f_amt2: "1500" };
+  const liveEntry = { id: "REC_LIVE", "No.": 3, data: collectResponses(liveTestForm.schema, responses) };
+  const row = buildLiveViewRow(liveTestForm, liveEntry);
+  assert.ok(row);
+  assert.equal(row.id, "REC_LIVE");
+  assert.equal(row["No_"], 3);
+  // 置換 `{{SELECT [許可処分情報/処分の種類] FROM _form WHERE [id]=_id}}` が参照する列。
+  assert.equal(row["許可処分情報__処分の種類"], "許可");
+  assert.equal(row["金額"], 1500);
+  assert.equal(typeof row["金額"], "number");
+  assert.equal(row["受付日"], "2025-04-15");
+});
+
+test("buildLiveViewRow: form / liveEntry が無ければ null", () => {
+  assert.equal(buildLiveViewRow(liveTestForm, null), null);
+  assert.equal(buildLiveViewRow(null, { id: "x", data: {} }), null);
+});
 
 test("radio: 保存ラベルを親列に素通し、option 列は出さない", () => {
   const entry = {

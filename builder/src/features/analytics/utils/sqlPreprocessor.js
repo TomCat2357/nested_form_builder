@@ -14,6 +14,11 @@ function unresolvedFormError(rawRef, base, formIndex) {
   return "未定義のフォーム: " + rawRef;
 }
 
+// 参照スコープ外フォームのエラー文。置換 full-query（自フォームのみ可）で他フォーム参照したとき。
+function outOfScopeFormError(rawRef) {
+  return "このフォーム外のデータは参照できません（自フォーム _form のみ）。子フォームの件数・名前・URL は CHILD_FORM_COUNT / CHILD_FORM_NAME / CHILD_FORM_URL をご利用ください: " + rawRef;
+}
+
 function sanitizeId(formId) {
   return String(formId || "").replace(/[^A-Za-z0-9_]/g, "_");
 }
@@ -46,6 +51,9 @@ export function preprocessSql(sql, opts) {
   const formIndex = options.formIndex;
   const getColumnIndex = options.getColumnIndex;
   const defaultFormId = options.defaultFormId || null;
+  // 参照を許可するフォーム id 集合（Set）。未指定（null）なら全フォーム許可（検索 / Question /
+  // Dashboard は従来どおり）。置換 full-query は { defaultFormId } のみを渡してスコープを絞る。
+  const allowedFormIds = options.allowedFormIds instanceof Set ? options.allowedFormIds : null;
 
   const errors = [];
   // alias → formId
@@ -88,19 +96,21 @@ export function preprocessSql(sql, opts) {
     }
     const trailing = aliasCandidate && !aliasName ? " " + aliasCandidate : "";
 
-    // 検索の SQL モードの「自フォーム」別名 "_"。defaultFormId（=対象フォーム）に解決する。
-    // canonical テーブルを `AS _` で貼り、_.[col] 修飾参照（Pass 3）も使えるよう "_" alias を登録する。
-    if (rawRef === "_") {
+    // 検索 / Question SQL / テンプレート full-query モードの「現フォーム」別名 "_form"。
+    // defaultFormId（=対象フォーム）に解決する。canonical テーブルを `AS _form` で貼り、
+    // _form.[col] 修飾参照（Pass 3）も使えるよう "_form" alias を登録する。
+    // （旧 "_" は廃止。後方互換なし。）
+    if (rawRef === "_form") {
       if (!defaultFormId) {
-        errors.push("対象フォーム未指定では FROM _ を使えません");
+        errors.push("対象フォーム未指定では FROM _form を使えません");
         return match;
       }
       recordReference(defaultFormId);
       const canon = canonicalDataAlias(defaultFormId);
       registerAlias(canon, defaultFormId);
-      registerAlias("_", defaultFormId);
+      registerAlias("_form", defaultFormId);
       if (aliasName) registerAlias(aliasName, defaultFormId);
-      const aliasPart = aliasName ? " AS " + aliasName : " AS _";
+      const aliasPart = aliasName ? " AS " + aliasName : " AS _form";
       return kw + " " + canon + aliasPart + trailing;
     }
 
@@ -117,6 +127,10 @@ export function preprocessSql(sql, opts) {
       errors.push(unresolvedFormError(rawRef, rawRef, formIndex));
       return match;
     }
+    if (allowedFormIds && !allowedFormIds.has(form.id)) {
+      errors.push(outOfScopeFormError(rawRef));
+      return match;
+    }
     recordReference(form.id);
     const canon = canonicalDataAlias(form.id);
     registerAlias(canon, form.id);
@@ -127,10 +141,10 @@ export function preprocessSql(sql, opts) {
 
   // Pass 2: [A].[B] (修飾付き列参照: A はフォーム名/ID)
   work = work.replace(/\[([^\]]+)\]\s*\.\s*\[([^\]]+)\]/g, (_m, fRef, cRef) => {
-    // 自フォーム別名 [_].[col]: Pass 1 で canon AS _ を貼っているので _ alias で参照する。
-    if (fRef === "_" && defaultFormId) {
+    // 現フォーム別名 [_form].[col]: Pass 1 で canon AS _form を貼っているので _form alias で参照する。
+    if (fRef === "_form" && defaultFormId) {
       const colIdx = getColumnIndex ? getColumnIndex(defaultFormId) : null;
-      return "_.[" + resolveColumnRef(cRef, colIdx) + "]";
+      return "_form.[" + resolveColumnRef(cRef, colIdx) + "]";
     }
     // 既に登録済み alias ならそれを使う
     if (aliasToFormId.has(fRef)) {
@@ -143,6 +157,10 @@ export function preprocessSql(sql, opts) {
     const form = resolveFormRef(fRef, formIndex);
     if (!form) {
       errors.push(unresolvedFormError(fRef, fRef, formIndex));
+      return "[" + fRef + "].[" + cRef + "]";
+    }
+    if (allowedFormIds && !allowedFormIds.has(form.id)) {
+      errors.push(outOfScopeFormError(fRef));
       return "[" + fRef + "].[" + cRef + "]";
     }
     recordReference(form.id);

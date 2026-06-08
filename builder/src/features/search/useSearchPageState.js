@@ -290,7 +290,7 @@ export function useSearchPageState({
       return;
     }
     // SQL モード（先頭 SELECT）: 検索バーに最上位 SQL を直接書く。
-    // 自フォームを `_`、本文にサブクエリ / 別フォーム参照を書ける。結果行の自フォーム id 集合で
+    // 現フォームを `_form`、本文にサブクエリ / 別フォーム参照を書ける。結果行の現フォーム id 集合で
     // baseFilteredEntries を絞り込む（id を持たない射影 / 別フォームの id は一致せず 0 件）。
     if (SQL_MODE_RE.test(keyword)) {
       setFilterError(null);

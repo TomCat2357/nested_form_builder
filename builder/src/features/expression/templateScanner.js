@@ -9,6 +9,22 @@
  * - GAS 側の同等実装は gas/templateEvaluator.gs（balanced scanner + splitTopLevelCommas）。
  */
 
+// full-query モード判定: トークン本文（trim 前後どちらでも可）が先頭 SELECT で
+// 始まるか。true のときは「単一スカラ式」ではなく完全な AlaSQL クエリとして扱う
+// （splitTopLevelCommas を通さず、SELECT (<expr>) ラップもしない）。
+// 検索バーの searchSyntaxPreprocessor.js SQL_MODE_RE と同型。
+// GAS 側の双子は gas/templateEvaluator.gs の nfbTplIsFullQueryBody_。
+const FULL_QUERY_RE = /^\s*SELECT\b/i;
+
+/**
+ * トークン本文がフル SQL クエリ（先頭 SELECT）かどうか。
+ * @param {string} body
+ * @returns {boolean}
+ */
+export function isFullQueryBody(body) {
+  return FULL_QUERY_RE.test(String(body == null ? "" : body));
+}
+
 /**
  * `{` の位置 openIndex から対応する `}` の位置を返す。
  * 見つからなければ -1。
@@ -205,4 +221,19 @@ export function unescapeBraces(text) {
   return String(text)
     .split(ESCAPE_OPEN).join("{")
     .split(ESCAPE_CLOSE).join("}");
+}
+
+/**
+ * escapeBraces で退避したマーカを **バックスラッシュ付き** `\{` `\}` に戻す。
+ *
+ * 出力用テンプレ生成（tokenReplacer.resolveQueryTokensInTemplate）専用。
+ * クライアントで full-query トークンだけを事前解決して残りを GAS に渡すとき、
+ * 著者エスケープ `\{` をそのまま GAS へ届けたい（GAS 側が後段で `\{`→リテラル `{` に
+ * 変換するため）。通常の unescapeBraces は `{` に戻して backslash を落とすので使えない。
+ */
+export function restoreEscapedBraces(text) {
+  if (!text) return "";
+  return String(text)
+    .split(ESCAPE_OPEN).join("\\{")
+    .split(ESCAPE_CLOSE).join("\\}");
 }

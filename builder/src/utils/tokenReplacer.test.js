@@ -4,7 +4,9 @@ import {
   buildLabelValueMap,
   resolveTemplateTokens,
   extractTemplateFieldRefs,
+  injectResolvedQueryTokens,
 } from "./tokenReplacer.js";
+import { escapeBraces, collectBalancedBraces } from "../features/expression/templateScanner.js";
 import {
   _clearExpressionCacheForTest,
   _registerCompiledForTest,
@@ -366,4 +368,80 @@ test("resolveTemplateTokens: カンマ列リスト — 部分式の1つでもエ
   } finally {
     console.warn = origWarn;
   }
+});
+
+// ---------------------------------------------------------------------------
+// full-query モード（{{SELECT ...}}）— queryTokenValues 経由 / 出力用注入
+// ---------------------------------------------------------------------------
+
+// escape 済み fullToken をキーにした queryTokenValues Map を組むヘルパ。
+function buildQueryMap(template, values) {
+  const tokens = collectBalancedBraces(escapeBraces(template));
+  const map = new Map();
+  let i = 0;
+  for (const tok of tokens) {
+    if (tok.body.trim().toUpperCase().startsWith("SELECT")) {
+      map.set(tok.fullToken, values[i++]);
+    }
+  }
+  return map;
+}
+
+test("resolveTemplateTokens: full-query は context.queryTokenValues から解決", () => {
+  setup();
+  const tpl = "件数: {{SELECT COUNT(*) FROM [子] WHERE [pid]=_id}}";
+  const queryTokenValues = buildQueryMap(tpl, ["3"]);
+  assert.equal(resolveTemplateTokens(tpl, { queryTokenValues }), "件数: 3");
+});
+
+test("resolveTemplateTokens: 未解決 full-query は queryTokensReady 未指定なら warn しない", () => {
+  setup();
+  const origWarn = console.warn;
+  let warned = 0;
+  console.warn = () => { warned++; };
+  try {
+    const out = resolveTemplateTokens("v={{SELECT 1}}", { queryTokenValues: new Map() });
+    assert.equal(out, "v=");
+    assert.equal(warned, 0);
+  } finally {
+    console.warn = origWarn;
+  }
+});
+
+test("resolveTemplateTokens: 未解決 full-query は queryTokensReady=true で warn する", () => {
+  setup();
+  const origWarn = console.warn;
+  let warned = 0;
+  console.warn = () => { warned++; };
+  try {
+    resolveTemplateTokens("v={{SELECT 1}}", { queryTokenValues: new Map(), queryTokensReady: true });
+    assert.equal(warned, 1);
+  } finally {
+    console.warn = origWarn;
+  }
+});
+
+test("injectResolvedQueryTokens: full-query を解決値に差し替え、式トークンは原文温存", () => {
+  const tpl = "{{`氏名`}}-{{SELECT COUNT(*) FROM [子]}}";
+  const queryTokenValues = buildQueryMap(tpl, ["5"]);
+  const out = injectResolvedQueryTokens(tpl, queryTokenValues);
+  // full-query は解決され、式トークンは GAS 用に原文のまま
+  assert.equal(out, "{{`氏名`}}-5");
+});
+
+test("injectResolvedQueryTokens: 結果中のブレースは \\{ \\} にエスケープ", () => {
+  const tpl = "{{SELECT 1}}";
+  const queryTokenValues = buildQueryMap(tpl, ["a{b}c"]);
+  assert.equal(injectResolvedQueryTokens(tpl, queryTokenValues), "a\\{b\\}c");
+});
+
+test("injectResolvedQueryTokens: 著者エスケープ \\{ は \\{ のまま温存（GAS が後段で解決）", () => {
+  const tpl = "\\{lit\\} {{SELECT 1}}";
+  const queryTokenValues = buildQueryMap(tpl, ["v"]);
+  assert.equal(injectResolvedQueryTokens(tpl, queryTokenValues), "\\{lit\\} v");
+});
+
+test("injectResolvedQueryTokens: full-query 無しは原文そのまま", () => {
+  assert.equal(injectResolvedQueryTokens("{{`氏名`}} plain", new Map()), "{{`氏名`}} plain");
+  assert.equal(injectResolvedQueryTokens("plain", new Map([["x", "y"]])), "plain");
 });

@@ -15,8 +15,8 @@ test("normalizeFullWidthSearchOperators: 記号一式を半角化しクォート
 });
 
 test("SQL_MODE_RE: 先頭 SELECT（大小無視・先頭空白許容）だけ SQL モード判定", () => {
-  assert.ok(SQL_MODE_RE.test("SELECT * FROM _"));
-  assert.ok(SQL_MODE_RE.test("  select [id] from _"));
+  assert.ok(SQL_MODE_RE.test("SELECT * FROM _form"));
+  assert.ok(SQL_MODE_RE.test("  select [id] from _form"));
   assert.ok(!SQL_MODE_RE.test("田中"));
   assert.ok(!SQL_MODE_RE.test("年齢 >= 20"));
   // 旧厳密モードのプレフィックスは SQL モードではない（素の簡易検索テキスト扱い）。

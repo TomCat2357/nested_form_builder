@@ -142,3 +142,24 @@ export function entriesToViewTableRows(entries, form) {
     return row;
   });
 }
+
+/**
+ * 単一エントリ（入力中のライブレコード）→ view 形式の AlaSQL 行 1 件。
+ *
+ * 置換フィールド full-query（`{{SELECT ... FROM _form WHERE [id]=_id}}`）の解決で、
+ * `_form` テーブルの現レコード行を「保存済みキャッシュ」ではなく「入力中のライブ値」で
+ * 上書きするために使う。entriesToViewTableRows をそのまま再利用するので、キャッシュ行と
+ * 完全に同一形状（AlaSQL キー = headerKeyToAlaSqlKey、型付き view 値）になる。
+ *
+ * liveEntry.data は collectResponses(schema, responses) の出力（元データ方式＝選択肢マーカー列）を
+ * 渡すこと（buildDataValueMap はラベル連結済みで view 変換と不整合になるため不可）。
+ *
+ * @param {object} form - スキーマ走査用フォーム本体（{ id, schema }）。schema を読む。
+ * @param {object} liveEntry - { id, data, "No."?, createdAt?, ... }
+ * @returns {object|null}
+ */
+export function buildLiveViewRow(form, liveEntry) {
+  if (!form || !liveEntry) return null;
+  const rows = entriesToViewTableRows([liveEntry], form);
+  return rows.length > 0 ? rows[0] : null;
+}

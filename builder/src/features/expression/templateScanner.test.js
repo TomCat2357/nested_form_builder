@@ -6,8 +6,44 @@ import {
   findBalancedCloseIndex,
   escapeBraces,
   unescapeBraces,
+  restoreEscapedBraces,
   splitTopLevelCommas,
+  isFullQueryBody,
 } from "./templateScanner.js";
+
+// ---------------------------------------------------------------------------
+// isFullQueryBody
+// ---------------------------------------------------------------------------
+
+test("isFullQueryBody: 先頭 SELECT（大小・先頭空白許容）", () => {
+  assert.ok(isFullQueryBody("SELECT [a] FROM _form"));
+  assert.ok(isFullQueryBody("  select 1"));
+  assert.ok(isFullQueryBody("\nSELECT COUNT(*) FROM [子]"));
+});
+
+test("isFullQueryBody: 式トークンは false", () => {
+  assert.ok(!isFullQueryBody("`氏名`"));
+  assert.ok(!isFullQueryBody("UPPER(`氏名`)"));
+  assert.ok(!isFullQueryBody("'SELECT in a string'"));
+  assert.ok(!isFullQueryBody("SELECTED")); // 単語境界
+  assert.ok(!isFullQueryBody(""));
+  assert.ok(!isFullQueryBody(null));
+});
+
+// ---------------------------------------------------------------------------
+// restoreEscapedBraces
+// ---------------------------------------------------------------------------
+
+test("restoreEscapedBraces: マーカを \\{ \\} に戻す（backslash 保持）", () => {
+  const round = restoreEscapedBraces(escapeBraces("a \\{x\\} b"));
+  assert.equal(round, "a \\{x\\} b");
+});
+
+test("restoreEscapedBraces vs unescapeBraces: backslash の有無", () => {
+  const esc = escapeBraces("\\{");
+  assert.equal(unescapeBraces(esc), "{"); // backslash を落とす
+  assert.equal(restoreEscapedBraces(esc), "\\{"); // backslash を保つ
+});
 
 // ---------------------------------------------------------------------------
 // findBalancedCloseIndex

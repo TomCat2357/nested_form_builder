@@ -11,9 +11,10 @@ import { useAlert } from "../../app/hooks/useAlert.js";
 import { useCancellable } from "../../app/hooks/useCancellable.js";
 import { collectDefaultNowResponses } from "../../utils/responses.js";
 import { genRecordId } from "../../core/ids.js";
-import { resolveTemplateTokens, precompileTemplateTokens } from "../../utils/tokenReplacer.js";
+import { resolveTemplateTokens, precompileTemplateTokens, prefetchQueryTokens, resolveQueryTokensInTemplate } from "../../utils/tokenReplacer.js";
 import { evaluateAllComputedFields } from "../../core/computedFields.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
+import { buildLiveViewRow } from "../analytics/entriesToViewRows.js";
 import {
   buildPrintDocumentPayload,
   buildFieldPathsMap,
@@ -48,6 +49,12 @@ import {
 } from "../../app/state/childRecordsMemoryStore.js";
 import { evaluateCacheForRecords } from "../../app/state/cachePolicy.js";
 import { RendererRecursive } from "./FieldRenderer.jsx";
+
+// 置換フィールドの templateText が full-query トークン（`{{SELECT ...}}`）を含むかの判定。
+// 含むときだけ、入力中のライブ値で `_form` を再解決する（デバウンス再評価・保存時 await）。
+const FULL_QUERY_SUBST_RE = /\{\{\s*SELECT\b/i;
+// 入力中の full-query 置換を再解決するデバウンス（ms）。検索バーと同じ既定値。
+const LIVE_QUERY_DEBOUNCE_MS = 300;
 
 const PreviewPage = React.forwardRef(function PreviewPage(
   {
@@ -279,14 +286,22 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     [driveFolderStates, primaryFileUploadFieldId],
   );
 
+  // full-query トークン（`{{SELECT ...}}`）の解決値 Map<fullToken, string>。
+  // 非同期 prefetch（下の effect）が用意し、tokenContext 経由で同期 resolve に供給する。
+  const [queryTokenValues, setQueryTokenValues] = useState(() => new Map());
+  // full-query prefetch が現在の schema/formId/entryId について完了したか。
+  // 完了前（=false）は同期 resolve が prefetch を先回りするのが正常なので、未解決トークンを
+  // 警告しない。完了後（=true）に欠落していれば本物の配線/SQL バグとして警告する。
+  const [queryTokensReady, setQueryTokensReady] = useState(false);
+
   const tokenContext = useMemo(() => {
     const baseUrl = typeof window !== "undefined" ? (window.__GAS_WEBAPP_URL__ || window.location.origin) : "";
     const formId = settings.formId || "";
     const recordId = recordIdRef.current;
     const formUrl = buildSharedFormUrl(baseUrl, formId);
     const recordUrl = buildSharedRecordUrl(baseUrl, formId, recordId);
-    return { now: new Date(), recordId, formUrl, recordUrl, fieldPaths, fileUploadMeta, childFormMeta };
-  }, [settings.formId, fieldPaths, fileUploadMeta, childFormMeta]);
+    return { now: new Date(), formId, recordId, formUrl, recordUrl, fieldPaths, fileUploadMeta, childFormMeta, queryTokenValues, queryTokensReady };
+  }, [settings.formId, fieldPaths, fileUploadMeta, childFormMeta, queryTokenValues, queryTokensReady]);
 
   // schema 内のテンプレ式を一括 precompile して同期 resolveTemplateTokens を保証する。
   // alasql のロード + コンパイルが完了したら epoch を進めて再評価をトリガする。
@@ -313,6 +328,80 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       }
     }
   }, [schema]);
+
+  // 置換 full-query を「入力中のライブ値」で解決するための補助。full-query 置換が無ければ
+  // 何もしない（高速パス）。
+  const hasFullQuerySubstitution = useMemo(() => {
+    let found = false;
+    traverseSchema(schema, (field) => {
+      if (found || field?.type !== "substitution") return;
+      if (typeof field?.templateText === "string" && FULL_QUERY_SUBST_RE.test(field.templateText)) found = true;
+    });
+    return found;
+  }, [schema]);
+
+  // 現レコードの「入力中ライブ値」を view 行に変換する。保存と同じ collectResponses →
+  // entriesToViewTableRows 経路を使うので、キャッシュ行と同形状になり `_form` の現レコード行を
+  // 上書きできる（自己参照・新規レコードでも入力中の値で full-query が解決する）。
+  const buildLiveRow = (currentResponses) => {
+    const liveEntry = {
+      id: recordIdRef.current,
+      "No.": settings.recordNo,
+      data: collectResponses(schema, currentResponses || {}),
+      createdAt: settings.createdAt,
+      createdBy: settings.createdBy,
+      modifiedBy: settings.modifiedBy,
+    };
+    return buildLiveViewRow({ id: settings.formId || "", schema }, liveEntry);
+  };
+
+  // 入力に応じて full-query 置換を再解決するためのデバウンス済みトリガ。dataValueMap（=入力）が
+  // 変わるたびにタイマをリセットし、一定時間アイドルで epoch を進めて下の prefetch effect を再実行する。
+  const [liveQueryEpoch, setLiveQueryEpoch] = useState(0);
+  useEffect(() => {
+    if (!hasFullQuerySubstitution) return undefined;
+    const t = setTimeout(() => setLiveQueryEpoch((n) => n + 1), LIVE_QUERY_DEBOUNCE_MS);
+    return () => clearTimeout(t);
+  }, [dataValueMap, hasFullQuerySubstitution]);
+
+  // substitution テンプレ内の full-query トークン（`{{SELECT ...}}`）を非同期に解決して
+  // queryTokenValues に載せる。式トークンは precompile 経路、full-query はこの経路で別々に
+  // 解決し、どちらも resolveTemplate（同期）へ供給する。liveRowOverride で現レコード行を
+  // 入力中の値に差し替えるため、liveQueryEpoch（デバウンス済みの入力変化）でも再実行する。
+  useCancellable(async (isCancelled) => {
+    // schema/formId/entryId が変わるたびに「未完了」へ戻す（初回は同値で React がバイパス）。
+    setQueryTokensReady(false);
+    const templates = [];
+    traverseSchema(schema, (field) => {
+      if (typeof field?.templateText === "string" && field.templateText.indexOf("{") >= 0) {
+        templates.push(field.templateText);
+      }
+    });
+    if (templates.length === 0) {
+      // prefetch すべき full-query が無い＝完了扱い（万一の欠落トークンは警告対象にする）。
+      if (!isCancelled()) setQueryTokensReady(true);
+      return;
+    }
+    // 全テンプレを連結して一括 prefetch（forms 取得・テーブル登録を 1 回で共有）。
+    // full-query トークンが無ければ prefetchQueryTokens は空 Map を返す（高速パス）。
+    // liveRowOverride: 現レコード行を入力中のライブ値で上書きして解決する。
+    const ctx = { recordId: recordIdRef.current, formId: settings.formId || "", liveRowOverride: buildLiveRow(responses) };
+    let map;
+    try {
+      map = await prefetchQueryTokens(templates.join("\n"), ctx);
+    } catch (err) {
+      if (typeof console !== "undefined") {
+        console.warn("[PreviewPage] full-query prefetch failed", err && err.message);
+      }
+      // prefetch 失敗も「完了」: 以降の未解決は本物の失敗として警告に出す。
+      if (!isCancelled()) setQueryTokensReady(true);
+      return;
+    }
+    if (isCancelled()) return;
+    setQueryTokenValues((prev) => (map.size === 0 && prev.size === 0 ? prev : map));
+    setQueryTokensReady(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schema, settings.formId, entryId, liveQueryEpoch]);
 
   const { computedValues, computedErrors } = useMemo(
     () => evaluateAllComputedFields(schema, responses, dataValueMap, tokenContext),
@@ -379,6 +468,30 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 
     const effectiveFileNameTemplate = resolveEffectivePrintTemplateFileNameTemplate(action, settings);
     const effectiveFolderUrl = resolveEffectiveDriveFolderUrl(primaryDriveFolderState);
+
+    // full-query トークン（`{{SELECT ...}}`）はクライアントで事前解決して GAS へ渡す
+    // （GAS にクエリエンジンは無い）。単純な式トークンは原文のまま GAS が payload から解決。
+    // 失敗しても出力は継続（未解決トークンは GAS 側でリテラル/フォールバック）。
+    const qctx = { recordId: recordIdRef.current, formId: settings.formId || "" };
+    let resolvedFileNameTemplate = effectiveFileNameTemplate;
+    let outAction = action;
+    try {
+      resolvedFileNameTemplate = await resolveQueryTokensInTemplate(effectiveFileNameTemplate, qctx);
+      outAction = {
+        ...action,
+        fileNameTemplate: await resolveQueryTokensInTemplate(action.fileNameTemplate, qctx),
+        gmailTemplateTo: await resolveQueryTokensInTemplate(action.gmailTemplateTo, qctx),
+        gmailTemplateCc: await resolveQueryTokensInTemplate(action.gmailTemplateCc, qctx),
+        gmailTemplateBcc: await resolveQueryTokensInTemplate(action.gmailTemplateBcc, qctx),
+        gmailTemplateSubject: await resolveQueryTokensInTemplate(action.gmailTemplateSubject, qctx),
+        gmailTemplateBody: await resolveQueryTokensInTemplate(action.gmailTemplateBody, qctx),
+      };
+    } catch (err) {
+      if (typeof console !== "undefined") {
+        console.warn("[PreviewPage] full-query 事前解決に失敗", err && err.message);
+      }
+    }
+
     const baseDriveTemplateSettings = {
       ...driveSettings,
       ...(effectiveFolderUrl ? { folderUrl: effectiveFolderUrl } : {}),
@@ -388,7 +501,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     };
     try {
       const result = await gasClientRef.current.executeRecordOutputAction({
-        action,
+        action: outAction,
         settings: {
           standardPrintTemplateUrl: settings.standardPrintTemplateUrl || "",
           standardPrintFileNameTemplate: settings.standardPrintFileNameTemplate || "",
@@ -406,7 +519,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         },
         driveSettings: {
           ...baseDriveTemplateSettings,
-          fileNameTemplate: effectiveFileNameTemplate,
+          fileNameTemplate: resolvedFileNameTemplate,
         },
       });
       if (result?.fileId || result?.folderUrl) {
@@ -532,19 +645,54 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         }
       }
 
+      // full-query 置換は非同期 prefetch で解決されるため、保存時に解決値を確実に確定させる。
+      // 入力中のライブ行で再 prefetch → computedValues 再計算 → シリアライズ（描画時の output は
+      // prefetch 未完了だと空のことがあり、collectResponses の空値ガードに弾かれて保存漏れする）。
+      let saveResponses = output;
+      let saveOrder = sortedKeys;
+      if (hasFullQuerySubstitution) {
+        try {
+          const fqTemplates = [];
+          traverseSchema(schema, (field) => {
+            if (field?.type === "substitution" && typeof field?.templateText === "string" && field.templateText.indexOf("{") >= 0) {
+              fqTemplates.push(field.templateText);
+            }
+          });
+          const freshMap = await prefetchQueryTokens(fqTemplates.join("\n"), {
+            recordId: recordIdRef.current,
+            formId: settings.formId || "",
+            liveRowOverride: buildLiveRow(responses),
+          });
+          const { computedValues: freshComputed } = evaluateAllComputedFields(
+            schema,
+            responses,
+            dataValueMap,
+            { ...tokenContext, queryTokenValues: freshMap, queryTokensReady: true },
+          );
+          const freshMerged = { ...responses, ...freshComputed };
+          const freshSorted = sortResponses(collectResponses(schema, freshMerged), schema, freshMerged);
+          saveResponses = freshSorted.map;
+          saveOrder = freshSorted.keys;
+        } catch (err) {
+          if (typeof console !== "undefined") {
+            console.warn("[PreviewPage] save-time full-query resolve failed; using last render", err && err.message);
+          }
+        }
+      }
+
       const payload = {
         version: 1,
         formTitle,
         schemaHash: computeSchemaHash(schema),
         id: recordIdRef.current,
-        responses: output,
-        order: sortedKeys,
+        responses: saveResponses,
+        order: saveOrder,
       };
 
       if (onSave) {
         const result = await onSave({
           payload,
-          sortedKeys,
+          sortedKeys: saveOrder,
           recordId: recordIdRef.current,
           responses,
           options,

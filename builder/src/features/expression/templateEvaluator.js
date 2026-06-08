@@ -17,7 +17,7 @@
  * なお唯一のフロント呼び出し元 utils/tokenReplacer.js は常に { fallback: "" } を明示渡し。
  */
 
-import { collectBalancedBraces, scanAndReplace, escapeBraces, unescapeBraces, splitTopLevelCommas, findBalancedCloseIndex } from "./templateScanner.js";
+import { collectBalancedBraces, scanAndReplace, escapeBraces, unescapeBraces, splitTopLevelCommas, findBalancedCloseIndex, isFullQueryBody } from "./templateScanner.js";
 import {
   precompileExpressions,
   getCompiledExpressionSync,
@@ -25,6 +25,7 @@ import {
   compileExpression,
 } from "./alasqlExpressionEvaluator.js";
 import { preprocessAlaSqlExpression } from "./preprocessAlaSqlExpression.js";
+import { coerceResultToString } from "./coerceResultToString.js";
 
 const NFB_RESERVED_PREFIX = "_";
 
@@ -42,6 +43,9 @@ export function extractExpressions(template) {
   const tokens = collectBalancedBraces(escaped);
   const out = [];
   for (const tok of tokens) {
+    // full-query トークン（先頭 SELECT）は単一スカラ式ではないので式コンパイル対象外。
+    // 解決は prefetchQueryTokens（tokenReplacer）で別経路。
+    if (isFullQueryBody(tok.body)) continue;
     const parts = splitTopLevelCommas(tok.body);
     for (const raw of parts) {
       const expr = normalizeBody(raw);
@@ -98,6 +102,9 @@ export async function validateTemplateSyntax(template) {
     return { ok: false, message: "波括弧 { } が対応していません（閉じ括弧「}」が不足しています）。" };
   }
 
+  // full-query トークン（先頭 SELECT）は extractExpressions が除外するため、ここでは
+  // 式コンパイル検証の対象にならない（フォーム/列インデックスが保存時には無く、
+  // false positive で保存をブロックしないための意図的なスキップ）。括弧対応チェックは上で全件実施済み。
   const exprs = extractExpressions(text);
   for (const expr of exprs) {
     try {
@@ -117,30 +124,6 @@ export async function validateTemplateSyntax(template) {
   return { ok: true };
 }
 
-// GAS 側の双子は gas/templateEvaluator.gs の nfbTplCoerceToString_。
-// 振る舞いを変える場合は両側を揃えること。等価性は tests/coerce-to-string-equivalence.test.cjs で担保。
-function coerceResultToString(value) {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value;
-  if (typeof value === "number") {
-    if (!Number.isFinite(value)) return "";
-    return String(value);
-  }
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (value instanceof Date) {
-    const t = value.getTime();
-    return Number.isFinite(t) ? String(t) : "";
-  }
-  if (Array.isArray(value)) {
-    return value.map((v) => coerceResultToString(v)).filter((s) => s !== "").join(", ");
-  }
-  if (typeof value === "object") {
-    if (typeof value.name === "string") return value.name;
-    try { return JSON.stringify(value); } catch (_e) { return ""; }
-  }
-  return String(value);
-}
-
 /**
  * テスト用 — coerceResultToString を外部から呼べるようにするフック。
  * tests/coerce-to-string-equivalence.test.cjs で GAS 側 nfbTplCoerceToString_ との
@@ -157,8 +140,14 @@ export function _coerceResultToStringForTest(value) {
  * @param {object} row `{{...}}`（ビュー形式）評価の暗黙コンテキスト
  *                     （buildRowForExpression 済みの統一 view 行）
  * @param {object} [opts]
- *   - fallback   評価エラー / 未ロード時の置換値 (既定 "")
- *   - logError   (error, fullToken) => void
+ *   - fallback          評価エラー / 未ロード時の置換値 (既定 "")
+ *   - logError          (error, fullToken) => void
+ *   - queryTokenValues  Map<fullToken, string>。full-query トークン（先頭 SELECT）の
+ *                       解決済み値。prefetchQueryTokens（非同期）が事前に用意する。
+ *                       無い / 未解決のトークンは fallback になる。
+ *   - queryTokensReady  true のとき、未解決 full-query トークンを logError で警告する
+ *                       （既定 false）。prefetch が非同期で完了する前の同期 resolve では
+ *                       未解決が正常なので、prefetch 完了を呼び出し側が保証できるときだけ true。
  * @returns {string}
  */
 export function resolveTemplate(template, row, opts) {
@@ -170,10 +159,21 @@ export function resolveTemplate(template, row, opts) {
   const options = opts || {};
   const fallback = Object.prototype.hasOwnProperty.call(options, "fallback") ? options.fallback : "";
   const logError = typeof options.logError === "function" ? options.logError : null;
+  const queryTokenValues = options.queryTokenValues instanceof Map ? options.queryTokenValues : null;
+  // prefetch が完了している（=未解決トークンは本物の欠落）ことを呼び出し側が保証するフラグ。
+  // 既定 false。full-query は非同期 prefetch なので、同期 resolve が prefetch 前に走る初回描画では
+  // 未解決が正常。false の間は警告を抑止し、prefetch 完了後の欠落だけ警告する。
+  const queryTokensReady = options.queryTokensReady === true;
   const tokRow = row || {};
 
   const escaped = escapeBraces(text);
   const replaced = scanAndReplace(escaped, (tok) => {
+    // full-query トークンは prefetch 済みの値を引くだけ（同期評価しない）。
+    if (isFullQueryBody(tok.body)) {
+      if (queryTokenValues && queryTokenValues.has(tok.fullToken)) return queryTokenValues.get(tok.fullToken);
+      if (logError && queryTokensReady) logError(new Error("full-query token not prefetched: " + tok.fullToken), tok.fullToken);
+      return fallback;
+    }
     const parts = splitTopLevelCommas(tok.body);
     if (parts.length <= 1) {
       const expr = normalizeBody(tok.body);
@@ -236,6 +236,7 @@ export async function resolveTemplateAsync(template, row, opts) {
   const options = opts || {};
   const fallback = Object.prototype.hasOwnProperty.call(options, "fallback") ? options.fallback : "";
   const logError = typeof options.logError === "function" ? options.logError : null;
+  const queryTokenValues = options.queryTokenValues instanceof Map ? options.queryTokenValues : null;
   const tokRow = row || {};
 
   await precompileTemplate(text);
@@ -244,6 +245,16 @@ export async function resolveTemplateAsync(template, row, opts) {
   const tokens = collectBalancedBraces(escaped);
   const valueByToken = new Map();
   for (const tok of tokens) {
+    // full-query トークンは prefetch 済みの値を引くだけ（このメソッドでは実行しない）。
+    if (isFullQueryBody(tok.body)) {
+      if (queryTokenValues && queryTokenValues.has(tok.fullToken)) {
+        valueByToken.set(tok.fullToken, queryTokenValues.get(tok.fullToken));
+      } else {
+        if (logError) logError(new Error("full-query token not prefetched: " + tok.fullToken), tok.fullToken);
+        valueByToken.set(tok.fullToken, fallback);
+      }
+      continue;
+    }
     const parts = splitTopLevelCommas(tok.body);
     if (parts.length <= 1) {
       const expr = normalizeBody(tok.body);
