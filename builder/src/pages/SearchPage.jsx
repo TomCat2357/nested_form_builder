@@ -25,7 +25,10 @@ export default function SearchPage() {
   // 子フォームをオーバーレイで開いているときは、開いた元の親レコード id（pid）に
   // 等しい行だけを検索一覧に出す。Provider 外（通常ページ）では childPid="" で従来どおり全件。
   const formCtx = useFormContext();
-  const childPid = formCtx?.inChildContext ? String(formCtx.pid || "") : "";
+  const inChildContext = !!formCtx?.inChildContext;
+  const childPid = inChildContext ? String(formCtx.pid || "") : "";
+  // 子フォームをオーバーレイで開いているときの「オーバーレイを閉じる」要求（dirty チェック付き close）。
+  const onRequestClose = formCtx?.onRequestClose;
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -137,8 +140,8 @@ export default function SearchPage() {
       sidebarActions={(
         <>
           <SearchSidebar
-          onBack={handleBackToMain}
-          showBack={!isScopedByAuth}
+          onBack={inChildContext && onRequestClose ? onRequestClose : handleBackToMain}
+          showBack={inChildContext ? true : !isScopedByAuth}
           onCreate={handleCreateNew}
           onConfig={handleOpenFormConfig}
           onDelete={handleDeleteSelected}

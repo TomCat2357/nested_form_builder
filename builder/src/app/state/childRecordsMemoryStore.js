@@ -20,6 +20,32 @@
 // childFormId::pid → { childData, count, lastSyncedAt }
 const store = new Map();
 
+// 子フォームのレコード変化（保存・複製による invalidate）を購読するリスナ集合。
+// 親の PreviewPage が自分の formLink 子フォームの変化を受けて、件数バッジ・取り込み子データ・
+// full-query 集計を再計算するために使う（サーバ往復せずローカル warm ストアから再計算する）。
+const changeListeners = new Set();
+
+/**
+ * 子フォームのレコード変化を購読する。invalidateChildForm / invalidateChildRecords が呼ばれると
+ * 該当 childFormId を引数にリスナが呼ばれる。返り値の関数で購読解除する。
+ *
+ * @param {(childFormId: string) => void} fn
+ * @returns {() => void} unsubscribe
+ */
+export function subscribeChildFormChange(fn) {
+  if (typeof fn !== "function") return () => {};
+  changeListeners.add(fn);
+  return () => { changeListeners.delete(fn); };
+}
+
+function notifyChildFormChange_(childFormId) {
+  const id = String(childFormId || "").trim();
+  if (!id) return;
+  for (const fn of changeListeners) {
+    try { fn(id); } catch (_e) { /* リスナ例外は他リスナへ波及させない */ }
+  }
+}
+
 export const childCacheKey = (childFormId, pid) =>
   `${String(childFormId || "").trim()}::${String(pid || "").trim()}`;
 
@@ -86,6 +112,7 @@ export async function invalidateChildForm(childFormId) {
   for (const key of store.keys()) {
     if (key.startsWith(prefix)) store.delete(key);
   }
+  notifyChildFormChange_(id);
 }
 
 /**
@@ -96,6 +123,7 @@ export async function invalidateChildForm(childFormId) {
  */
 export async function invalidateChildRecords(childFormId, pid) {
   store.delete(childCacheKey(childFormId, pid));
+  notifyChildFormChange_(childFormId);
 }
 
 // テスト用 — キャッシュを空にする。

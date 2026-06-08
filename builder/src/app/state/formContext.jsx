@@ -15,7 +15,7 @@ import React, { createContext, useContext, useMemo } from "react";
  */
 const FormContext = createContext(null);
 
-export function FormContextProvider({ formId = "", pid = "", inChildContext = false, registerDirtyChecker = null, children }) {
+export function FormContextProvider({ formId = "", pid = "", inChildContext = false, registerDirtyChecker = null, onRequestClose = null, children }) {
   const value = useMemo(
     () => ({
       formId: String(formId || ""),
@@ -24,8 +24,11 @@ export function FormContextProvider({ formId = "", pid = "", inChildContext = fa
       // 配下の FormPage が「未保存編集あり」を返す関数を登録するためのフック。オーバーレイは
       // 閉じる前にこれを呼んで dirty なら確認する（子フォームの誤クローズによる入力消失を防ぐ）。
       registerDirtyChecker: typeof registerDirtyChecker === "function" ? registerDirtyChecker : null,
+      // オーバーレイ自体を閉じる要求を出すためのフック（dirty チェック付き close）。子レコード一覧の
+      // 「戻る」はこれを呼んでオーバーレイごと閉じる（MemoryRouter 内を空回りさせない）。
+      onRequestClose: typeof onRequestClose === "function" ? onRequestClose : null,
     }),
-    [formId, pid, inChildContext, registerDirtyChecker],
+    [formId, pid, inChildContext, registerDirtyChecker, onRequestClose],
   );
   return <FormContext.Provider value={value}>{children}</FormContext.Provider>;
 }

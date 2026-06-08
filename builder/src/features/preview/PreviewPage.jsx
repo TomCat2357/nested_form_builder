@@ -46,6 +46,7 @@ import {
   getChildRecordsFromCache,
   saveChildDataToCache,
   saveChildCountToCache,
+  subscribeChildFormChange,
 } from "../../app/state/childRecordsMemoryStore.js";
 import { evaluateCacheForRecords } from "../../app/state/cachePolicy.js";
 import { dataStore } from "../../app/state/dataStore.js";
@@ -427,6 +428,54 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     setChildFormsReady(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formLinkSignature, inChildContext, settings.modifiedAtUnixMs]);
+
+  // オーバーレイ等で子レコードが保存/複製されると childRecordsMemoryStore が invalidate される。
+  // その通知を受けて、親プレビューの「子件数バッジ・取り込み子データ（includeChildData）・
+  // full-query({{SELECT}}) 集計」を再計算する。再計算はローカル warm ストア（recordsMemoryStore：
+  // 楽観保存で更新済み）から行うのでサーバ往復せず、背景のスプレッドシート書き込み完了を待たずに
+  // 即座に正しい値へ反映できる（保存直後のサーバ未反映によるレースを避ける）。
+  useEffect(() => {
+    if (inChildContext) return undefined;
+    const childIds = new Set(formLinkFields.map((f) => f.childFormId));
+    if (childIds.size === 0) return undefined;
+    const unsubscribe = subscribeChildFormChange((changedChildFormId) => {
+      if (!childIds.has(changedChildFormId)) return;
+      const recordId = recordIdRef.current;
+      if (!recordId) return;
+      const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
+      (async () => {
+        for (const field of formLinkFields) {
+          if (field.childFormId !== changedChildFormId) continue;
+          try {
+            const cache = await getRecordsFromCache(field.childFormId);
+            const recs = (Array.isArray(cache.entries) ? cache.entries : [])
+              .filter((e) => String(e?.pid ?? "") === recordId)
+              .filter((e) => !(e?.deletedAtUnixMs || e?.deletedAt));
+            if (field.includeChildData) {
+              const childForm = await getChildFormCached_(field.childFormId);
+              const childObj = buildChildDataObject({
+                childFormId: field.childFormId,
+                childFormName: field.childFormName,
+                childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, recordId),
+                childSchema: childForm && childForm.schema ? childForm.schema : [],
+                records: recs,
+              });
+              setFormLinkChildData((prev) => ({ ...prev, [field.id]: childObj }));
+              setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: childObj.count }));
+              await saveChildDataToCache(field.childFormId, recordId, childObj);
+            } else {
+              setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: recs.length }));
+              await saveChildCountToCache(field.childFormId, recordId, recs.length);
+            }
+          } catch (_e) { /* 再計算失敗は無言（次回の通常再取得で整合） */ }
+        }
+        // full-query（{{SELECT}}）置換も子レコード変化に追従させる（warm ストアは更新済み）。
+        setChildReadyEpoch((n) => n + 1);
+      })();
+    });
+    return unsubscribe;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formLinkSignature, inChildContext]);
 
   // 現レコードの「入力中ライブ値」を view 行に変換する。保存と同じ collectResponses →
   // entriesToViewTableRows 経路を使うので、キャッシュ行と同形状になり `_form` の現レコード行を

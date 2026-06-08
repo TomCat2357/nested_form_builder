@@ -50,14 +50,14 @@ const HEADER_STYLE = {
 const BODY_STYLE = { flex: 1, minHeight: 0, overflow: "auto" };
 
 // 子フォームの検索＋入力を独立した MemoryRouter で動かす。親 URL/状態は不変。
-function ChildFormApp({ childFormId, pid, registerDirtyChecker }) {
+function ChildFormApp({ childFormId, pid, registerDirtyChecker, onRequestClose }) {
   const initialEntries = useMemo(
     () => [`/search?form=${encodeURIComponent(childFormId)}`],
     [childFormId],
   );
   const fallback = `/search?form=${encodeURIComponent(childFormId)}`;
   return (
-    <FormContextProvider formId={childFormId} pid={pid} inChildContext registerDirtyChecker={registerDirtyChecker}>
+    <FormContextProvider formId={childFormId} pid={pid} inChildContext registerDirtyChecker={registerDirtyChecker} onRequestClose={onRequestClose}>
       <MemoryRouter initialEntries={initialEntries}>
         <Routes>
           <Route path="/search" element={<SearchPage />} />
@@ -146,6 +146,7 @@ export function ChildFormProvider({ children }) {
             childFormId={active.childFormId}
             pid={active.pid}
             registerDirtyChecker={registerDirtyChecker}
+            onRequestClose={close}
           />
         ) : null}
       </OverlayDialog>

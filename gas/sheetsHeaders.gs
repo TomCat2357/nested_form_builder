@@ -174,21 +174,6 @@ var NFB_SINGLE_VALUE_FIELD_TYPES = {
   substitution: true
 };
 
-// プレーンテキスト ("@") 書式にすべきフィールド種別。number は数値のまま（集計のため）、
-// date / time は専用の日時セル経路で扱うので含めない。"marker" は選択肢列（"●" / 空白）。
-var NFB_SHEETS_TEXT_FIELD_TYPES = {
-  text: true,
-  textarea: true,
-  regex: true,
-  url: true,
-  userName: true,
-  email: true,
-  phone: true,
-  fileUpload: true,
-  substitution: true,
-  marker: true
-};
-
 // スキーマを走査して物理データ列を出現順に列挙し、emit(rawKey, type) を呼ぶ共通ヘルパ。
 // type は単一値型はその型名、選択肢系 (checkboxes / radio / select) の各オプション列は "marker"。
 // 列キーの組み立ては Sheets_buildOrderFromSchema_ と Sheets_collectColumnFormatMap_ で共有し、
@@ -231,14 +216,16 @@ function Sheets_buildOrderFromSchema_(schema) {
 }
 
 // 列キー → スプレッドシート数値書式マップ。Sheets が "1-1" を日付へ、"007" を数値へ等と
-// 自動変換しないよう、自由記述系フィールドと選択肢マーカー列を "@"（プレーンテキスト）にする。
-// number は数値のまま（集計のため）、date / time は専用の日時セル経路で扱うため、ここには含めない。
+// 自動変換しないよう、日付/時間型を除く全データ列（number / 選択肢マーカー / 自由記述系）を
+// "@"（プレーンテキスト）にする。date / time は専用の日時セル経路（Sheets_resolveTemporalCell_）で
+// 日時書式を付けるため、ここには含めない。number もテキスト化するが、フロントの view 変換
+// （entriesToViewRows の coerceNumberOrNull）が数値へ戻すのでアプリ側の集計には影響しない。
 function Sheets_collectColumnFormatMap_(schema) {
   var map = {};
   Sheets_forEachSchemaColumn_(schema, function(rawKey, type) {
     var normalized = Sheets_normalizeHeaderKey_(rawKey);
     if (!normalized) return;
-    if (NFB_SHEETS_TEXT_FIELD_TYPES[type]) {
+    if (type !== "date" && type !== "time") {
       map[normalized] = NFB_SHEETS_TEXT_FORMAT;
     }
   });
