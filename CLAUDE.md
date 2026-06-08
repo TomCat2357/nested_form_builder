@@ -1,72 +1,87 @@
-# CLAUDE.md — 開発者向けナビ
+# CLAUDE.md
 
-Claude（および開発者）がこのリポジトリで作業を始めるための入口。**全体像とテーマ別ドキュメントへの索引**を提供する。詳細仕様は `docs/claude/` 配下のテーマ別ファイルに分離してあるので、編集対象に応じて該当ファイルを開くこと。
+このファイルは Claude Code がこのリポジトリで作業するときの **入口** です。
+詳細は `docs/claude/` 配下にテーマ別で分割しているので、タスクに応じて該当するものだけを開いてください。
 
-## このプロジェクトは何か
+## このプロジェクト
 
-最大 11 階層（`core/constants.js` の `MAX_DEPTH = 11`）のネスト構造を持つフォームをブラウザ上で設計し、**単一 HTML を Google Apps Script Web アプリとして配信**するツール。
+**Nested Form Builder** — 最大 11 階層のネスト構造を持つフォームを視覚的に設計し、スタンドアロン HTML を Google Apps Script Web アプリとして配信するツール。回答は Google Sheets に保存し、ファイルは Google Drive に格納、Google Doc / PDF / Gmail 出力、ブラウザ内 AlaSQL によるダッシュボード集計に対応。
 
-- **フロント**: React 19 + Vite 7。`vite-plugin-singlefile` で 1 枚の `Index.html` に固める。
-- **バック**: Google Apps Script V8。`gas/*.gs`（44 ファイル）を `gas/scripts/bundle.js` が `dist/Bundle.gs` に結合し、`clasp` でデプロイ。
-- **保存先**: Google Drive（フォーム/Question/Dashboard 定義 JSON・添付・出力ドキュメント）、Google Sheets（回答レコード）、Properties Service（fileId↔URL マッピング・管理者設定・更新時刻）、IndexedDB（ブラウザキャッシュ）。
+**スタック**: React 19 + Vite 7 (`vite-plugin-singlefile` で単一 HTML 化) / Google Apps Script V8 / Google Sheets + Drive + Gmail + People API / IndexedDB / clasp デプロイ
 
-## まず押さえる不変条件（コードを触る前に）
+## 全体把握
 
-- **id ＝ Drive fileId / 名前 ＝ Drive ファイル名**。フォーム・Question・Dashboard の id はその定義 JSON が置かれた Drive ファイルの fileId に統一。保存される `.json` は自分の id も名前も持たず、読み込み時に Drive から導出する。→ [data-model.md](docs/claude/data-model.md)
-- **論理フォルダは標準フォルダ配下の物理フォルダをミラーする**（`01_forms` / `02_questions` / `03_dashboards`）。名前の一意性は〈種類 × 論理フォルダ〉単位。→ [data-model.md](docs/claude/data-model.md) / [links-and-save.md](docs/claude/links-and-save.md)
-- **階層パスの区切りは `/`**、エスケープは共有コーデック `pathCodec.js`（GAS 双子は `pathCodec.gs`）に統一。テンプレ参照・検索の列名・フィールドパスすべて同じ規則。
-- **テンプレートトークンは連続二重ブレース `{{ alasql 式 }}` のみ**（ビュー形式）。単一ブレース `{...}` は廃止＝リテラル文字。旧 `{@field|pipe}` / `[...]` JS 式も廃止。→ [drive-template-tokens.md](docs/claude/drive-template-tokens.md)
-- **検索バーは簡易モード（プレフィックスなし）と SQL モード（先頭 `SELECT`）の 2 つ**。旧「厳密モード」（`SEARCH` / `WHERE`）は廃止。SQL モードは Question SQL と同じ実行基盤を共有。→ [search-query-syntax.md](docs/claude/search-query-syntax.md)
-- **GAS の公開 API はすべて `executeAction_` の 1 経路に集約**（`doPost` 経由も `google.script.run` 経由も）。→ [apps-script-backend.md](docs/claude/apps-script-backend.md)
+大きめのタスクに着手する前に、`/understand-anything:understand-dashboard` スキルでナレッジグラフを開いてアーキテクチャ全体を俯瞰すること。
 
-## クイックコマンド
+## ナビゲーション（必要なときだけ開く）
 
-```bash
-npm install && npm run builder:install   # 依存インストール（ルート + builder）
-npm run builder:dev                       # ローカル開発（http://localhost:5173）
-npm run builder:build                     # React ビルド
-npm run bundle:gas                         # gas/*.gs → dist/Bundle.gs 結合
-npm run clasp:push                         # dist/ → Apps Script
-npm test                                   # GAS ユニットテスト（tests/**）
-npm run test:playwright                    # E2E
-.\deploy.ps1                               # Windows: ビルド〜push〜deploy ワンショット
-```
-
-非 Windows でのデプロイは `npm run builder:build && npm run bundle:gas && cp gas/appsscript.json dist/ && npm run clasp:push && npx --yes @google/clasp deploy`。
-
-## テーマ別ドキュメント索引（`docs/claude/`）
-
-| 読むタイミング | ドキュメント |
+| やりたいこと | 参照先 |
 | --- | --- |
-| どこに何があるか（トップレベル構成）を掴む | [repo-structure.md](docs/claude/repo-structure.md) |
-| フロント／バックのモジュール構成と連携を俯瞰する | [feature-map.md](docs/claude/feature-map.md) |
-| データフロー・Provider 構成・保存先の役割分担を知る | [architecture.md](docs/claude/architecture.md) |
-| 新しい環境でセットアップする（前提・`.clasp.json`） | [setup.md](docs/claude/setup.md) |
-| 日常の開発・ビルド・GAS 同期コマンド | [development-workflow.md](docs/claude/development-workflow.md) |
-| `deploy.ps1` と手動デプロイの手順・オプション | [deployment.md](docs/claude/deployment.md) |
-| テストの配置と実行（GAS ユニット / フロント / E2E） | [testing.md](docs/claude/testing.md) |
-| 画面の URL ルーティングと対応フィールドタイプ | [routing.md](docs/claude/routing.md) |
-| フォームスキーマ／シートレイアウト／id＝fileId／ソフトデリート | [data-model.md](docs/claude/data-model.md) |
-| IndexedDB キャッシュと差分同期の実装詳細 | [cache-architecture.md](docs/claude/cache-architecture.md) |
-| GAS のエントリポイント・アクション定義・公開関数 | [apps-script-backend.md](docs/claude/apps-script-backend.md) |
-| リンク（参照）の持ち方・保存時のリンク追従・派生値の非永続化 | [links-and-save.md](docs/claude/links-and-save.md) |
-| テンプレートトークン `{{...}}`・alasql 式評価のリファレンス | [drive-template-tokens.md](docs/claude/drive-template-tokens.md) |
-| 検索クエリ構文（簡易モード / SQL モード） | [search-query-syntax.md](docs/claude/search-query-syntax.md) |
-| ハマりどころとデプロイ情報の確認手順 | [troubleshooting.md](docs/claude/troubleshooting.md) |
-| 簡素化リファクタリングの進捗・残タスク（セッション跨ぎの台帳） | [simplification-roadmap.md](docs/claude/simplification-roadmap.md) |
+| 全体像・データフロー・Provider・保存先の分担 | [docs/claude/architecture.md](./docs/claude/architecture.md) |
+| フロント / バックの機能モジュールを俯瞰したい | [docs/claude/feature-map.md](./docs/claude/feature-map.md) |
+| ファイルがどこにあるか当たりをつけたい | [docs/claude/repo-structure.md](./docs/claude/repo-structure.md) |
+| `doGet` / `doPost` / `ACTION_DEFINITIONS_` / `nfb*` 公開 API | [docs/claude/apps-script-backend.md](./docs/claude/apps-script-backend.md) |
+| ルート定義・対応フィールドタイプ | [docs/claude/routing.md](./docs/claude/routing.md) |
+| 初回セットアップ | [docs/claude/setup.md](./docs/claude/setup.md) |
+| 日常の dev / build / GAS 同期コマンド | [docs/claude/development-workflow.md](./docs/claude/development-workflow.md) |
+| `deploy.ps1` のオプションと手動デプロイ | [docs/claude/deployment.md](./docs/claude/deployment.md) |
+| テスト配置・実行コマンド | [docs/claude/testing.md](./docs/claude/testing.md) |
+| 検索クエリ構文 | [docs/claude/search-query-syntax.md](./docs/claude/search-query-syntax.md) |
+| テンプレートトークン（alasql 関数式） | [docs/claude/drive-template-tokens.md](./docs/claude/drive-template-tokens.md) |
+| スキーマ / シートレイアウト / 日時 / ソフトデリート | [docs/claude/data-model.md](./docs/claude/data-model.md) |
+| キャッシュ階層と差分同期 | [docs/claude/cache-architecture.md](./docs/claude/cache-architecture.md) |
+| Question / Dashboard（集計・可視化） | [docs/claude/analytics.md](./docs/claude/analytics.md) |
+| 詰まったときの確認ポイント | [docs/claude/troubleshooting.md](./docs/claude/troubleshooting.md) |
 
-## ディレクトリの最短ガイド
+## コーディング規約（圧縮版・常時適用）
 
-```text
-builder/   React 19 + Vite 7 SPA（実装本体）。src/{app,core,features,pages,services,utils}
-gas/       Apps Script 分割ソース（44 *.gs）。bundle.js が dist/Bundle.gs に結合
-gas_for_spreadsheet/  保存先スプレッドシート用の補助スクリプト
-gas_for_webhook/      「外部アクションボタン」の POST 受信 Web アプリ雛形
-dist/      clasp push 対象（自動生成・コミットしない）
-docs/claude/  本ファイルから分離した開発者向け詳細 15 本
-tests/ e2e/  GAS 横断ユニットテスト・Playwright E2E
-md2pdf/ scripts/  ユーザーマニュアル生成ツール群（manual/ は gitignore）
-deploy.ps1  Windows 用ワンショットデプロイ
-```
+### React（`builder/src/`）
 
-> フロント側のインラインテストは `builder/src/**/*.test.js` として**ソースと同ディレクトリ**に置く。GAS のユニットテストは `tests/**/*.test.{cjs,js}`。
+- 関数コンポーネント + Hooks、JSX は **ダブルクォート**、**2 スペース**、ES Modules（`"type": "module"`）
+- 命名: コンポーネント `PascalCase` / 変数・関数 `camelCase` / 定数 `UPPER_SNAKE_CASE`
+- 状態管理: グローバル = `AppDataProvider`（Context） / データアクセス = `dataStore`（GAS + IndexedDB 抽象化） / UI 設定 = `settingsStore`（IndexedDB）
+- 本番で `console.log` を残さない
+- テストは **ソースと同ディレクトリ** に `*.test.js` で配置
+
+### Google Apps Script（`gas/`）
+
+- V8 ランタイムだが **既存コードは `var` + `function name() {}` スタイル** — 新規も合わせる（`let` / `const` / arrow を勝手に導入しない）
+- 公開 API: **`nfb` プレフィックス**（例: `nfbListForms` / `nfbGetForm` / `nfbSaveForm`）
+- 内部ヘルパー: **末尾アンダースコア**（例: `Forms_getForm_` / `nfbSafeCall_`）
+- ドメインプレフィックス: `Sheets_` / `Forms_` / `Nfb_` / `Sync_` / `Admin_` / `Analytics_`
+- エラーハンドリングは `nfbSafeCall_` ラッパーで `{ ok, error, code }` を返す形に統一
+
+## 覚えておく定数
+
+- `NFB_HEADER_DEPTH = 11` / `NFB_DATA_START_ROW = 12` / フロント `MAX_DEPTH = 11`
+- `NFB_LOCK_WAIT_TIMEOUT_MS = 10000` ms（保存ロックタイムアウト、コード `LOCK_TIMEOUT`）
+- `NFB_DEFAULT_DELETED_RECORD_RETENTION_DAYS = 30`（ソフトデリート保持期間）
+- IndexedDB: `NestedFormBuilder` v7。SWR しきい値はキャッシュ種別で別。レコード（`RECORD_CACHE_*`）= fresh 5 分・要再取得 30 分。一覧（フォーム / Dashboard / Question、`FORM_CACHE_*` を共用）= fresh 1 時間・1〜24 時間は裏更新・24 時間超で同期再取得。`recordsCache` / `analyticsSnapshots` 系は v6 で撤去済み（メモリ常駐に移行）
+- フロント `DEFAULT_SEARCH_DEBOUNCE_MS = 300`（検索バー遅延検索。設定 `searchDebounceMs` で変更、`0` で即時。IME 変換中は確定時のみコミット）
+
+## 影響範囲の広い重要ファイル
+
+| ファイル | 何のために重要か |
+| --- | --- |
+| [gas/Code.gs](./gas/Code.gs) | `doGet` / `doPost` / `ACTION_DEFINITIONS_` の dispatch table |
+| [gas/constants.gs](./gas/constants.gs) | 全 GAS 定数・ULID 生成・`NFB_FIXED_HEADER_PATHS` |
+| [gas/scripts/bundle.js](./gas/scripts/bundle.js) | `FILE_ORDER`（gas/ → `dist/Bundle.gs` 結合順序）・alasql ES2019 lower・UDF 再生成 |
+| [gas/formsPublicApi.gs](./gas/formsPublicApi.gs) | フォーム関連の `nfb*` 公開 API 一覧 |
+| [gas/expressionEvaluator.gs](./gas/expressionEvaluator.gs) / [gas/templateEvaluator.gs](./gas/templateEvaluator.gs) | alasql 互換式評価器・テンプレ解決 |
+| [gas/driveTemplate.gs](./gas/driveTemplate.gs) / [gas/driveOutput.gs](./gas/driveOutput.gs) | トークン置換・PDF / Gmail / Doc 出力 |
+| [gas/syncRecordsMerge.js](./gas/syncRecordsMerge.js) | 差分同期の純関数群 |
+| [builder/src/core/schema.js](./builder/src/core/schema.js) | スキーマ正規化・バリデーション |
+| [builder/src/core/constants.js](./builder/src/core/constants.js) | フロント定数（`MAX_DEPTH` / キャッシュ TTL 等） |
+| [builder/src/features/expression/templateEvaluator.js](./builder/src/features/expression/templateEvaluator.js) | フロント側 alasql テンプレ評価器 |
+| [builder/src/app/state/dataStore.js](./builder/src/app/state/dataStore.js) / [recordsMemoryStore.js](./builder/src/app/state/recordsMemoryStore.js) | データアクセスとメモリ常駐レコードストア |
+| [builder/src/services/gasClient.js](./builder/src/services/gasClient.js) | GAS API クライアント（`google.script.run` の Promise ラッパー） |
+
+## 絶対ルール
+
+1. **新規ファイル作成前にユーザー確認** — 勝手に増やさない
+2. **既存パターンを踏襲** — 特に GAS の `var` + `function` 宣言スタイル
+3. **`dist/` は自動生成物** — 直接編集しない（gitignore 対象）
+4. **`.clasp.json` はローカル専用**（gitignore）。`rootDir: "dist"` で作成
+5. **OAuth スコープ変更は全ユーザー再認証を招く** — 安易に触らない
+6. **GAS 実行時間制限は 6 分** — 長時間処理はバッチ分割を検討
+7. **テスト配置の分散**: フロント `*.test.js` はソースと同居 / GAS は `tests/` 配下
