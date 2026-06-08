@@ -4,7 +4,15 @@ import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
 import { useAuth } from "./authContext.jsx";
 import { evaluateCacheForForms } from "./cachePolicy.js";
 import { perfLogger } from "../../utils/perfLogger.js";
-import { registerFormReconciler, startUploadWorker } from "./uploadWorker.js";
+import { registerFormReconciler, registerFolderReconciler, startUploadWorker } from "./uploadWorker.js";
+import {
+  normalizeFolderPath,
+  isUnderFolder,
+  reassignEntityFolder,
+  reparentFolders,
+  renameFolderPaths,
+  removeFolderSubtree,
+} from "../../utils/folderTree.js";
 
 const AppDataContext = createContext(null);
 
@@ -249,13 +257,26 @@ export function AppDataProvider({ children }) {
     }, loadFailuresRef.current, "reconcileFormId");
   }, [updateFormsAndCache]);
 
+  // フォーム / フォルダ操作（move / rename / deleteFolder）の op ジョブがバックグラウンドで
+  // 成功したら、サーバ確定の folders 一覧を静かに採用する（各フォームの folder はローカルが正）。
+  const reconcileFolders = useCallback((folders) => {
+    if (!Array.isArray(folders)) return;
+    setRegisteredFolders(folders);
+    saveFormsToCache(formsRef.current, loadFailuresRef.current, propertyStoreModeRef.current, { folders })
+      .catch((err) => console.warn("[AppDataProvider] folder reconcile cache update failed:", err));
+  }, []);
+
   // 起動時に reconcile コールバックを登録してからアップロードワーカーを開始する
   // （登録前にワーカーが走ると React 状態へ反映できないため、この順序が重要）。
   useEffect(() => {
     registerFormReconciler(reconcileFormId);
+    registerFolderReconciler("form", reconcileFolders);
     startUploadWorker();
-    return () => registerFormReconciler(null);
-  }, [reconcileFormId]);
+    return () => {
+      registerFormReconciler(null);
+      registerFolderReconciler("form", null);
+    };
+  }, [reconcileFormId, reconcileFolders]);
 
   const upsertFormsState = useCallback(async (nextForm) => {
     if (!nextForm || !nextForm.id) return;
@@ -307,14 +328,15 @@ export function AppDataProvider({ children }) {
   const archiveForm = useCallback(async (formId) => {
     const existing = formsRef.current.find((form) => form.id === formId);
     if (existing) await upsertFormsState({ ...existing, archived: true });
-    void dataStore.archiveForm(formId).then((res) => { if (res) upsertFormsState(res); });
+    // 楽観的＋遅延: GAS 反映は write-behind の op ジョブへ（失敗は既存方針で裏リトライ）。
+    void dataStore.archiveForm(formId);
     return existing ? { ...existing, archived: true } : null;
   }, [upsertFormsState]);
 
   const unarchiveForm = useCallback(async (formId) => {
     const existing = formsRef.current.find((form) => form.id === formId);
     if (existing) await upsertFormsState({ ...existing, archived: false });
-    void dataStore.unarchiveForm(formId).then((res) => { if (res) upsertFormsState(res); });
+    void dataStore.unarchiveForm(formId);
     return existing ? { ...existing, archived: false } : null;
   }, [upsertFormsState]);
 
@@ -422,39 +444,79 @@ export function AppDataProvider({ children }) {
   const exportForms = useCallback(async (formIds) => dataStore.exportForms(formIds), []);
   const getFormById = useCallback((formId) => forms.find((form) => form.id === formId) || null, [forms]);
 
-  // 空フォルダを登録簿に追加。フォーム自体は変わらないので folders state とキャッシュのみ更新。
+  // 空フォルダを登録簿に追加。楽観的＋遅延: folders state/キャッシュを即時更新し、GAS 実体作成は
+  // write-behind の op ジョブへ委ねる（フォーム自体は変わらない）。
   const createFolder = useCallback(async (path) => {
-    const result = await dataStore.createFolder(path);
-    const folders = result.folders || [];
+    const normalized = normalizeFolderPath(path);
+    const current = registeredFoldersRef.current;
+    if (!normalized) return current;
+    const folders = current.some((p) => normalizeFolderPath(p) === normalized) ? current : [...current, normalized];
     setRegisteredFolders(folders);
     try {
       await saveFormsToCache(formsRef.current, loadFailuresRef.current, propertyStoreModeRef.current, { folders });
     } catch (err) {
       console.warn("[AppDataProvider] createFolder cache update failed:", err);
     }
+    await dataStore.createFolder(path);
     return folders;
   }, []);
 
-  // フォーム/フォルダ移動。GAS 完了後にバックグラウンドで一覧を再取得して整合させる。
+  // forms 状態と folders 登録簿を 1 回のキャッシュ書き込みで同時更新する（フォルダ操作用）。
+  const persistFormsAndFolders = useCallback(async (nextForms, nextFolders, logPrefix) => {
+    setForms(nextForms);
+    formsRef.current = nextForms;
+    setRegisteredFolders(nextFolders);
+    try {
+      await saveFormsToCache(nextForms, loadFailuresRef.current, propertyStoreModeRef.current, { folders: nextFolders });
+    } catch (err) {
+      console.warn(`[${logPrefix}] cache update failed:`, err);
+      setCacheDisabled(true);
+    }
+  }, []);
+
+  // フォーム/フォルダ移動。楽観的＋遅延: ローカル（state/キャッシュ/folders）を即時更新し、
+  // GAS 移動は write-behind の op ジョブへ委ねる（dataStore.moveItems が enqueue）。
   const moveItems = useCallback(async (payload) => {
-    const result = await dataStore.moveItems(payload);
-    refreshForms({ reason: "move-items", background: true }).catch(console.error);
-    return result;
-  }, [refreshForms]);
+    const formIds = Array.isArray(payload?.formIds) ? payload.formIds : [];
+    const folderPaths = Array.isArray(payload?.folderPaths) ? payload.folderPaths : [];
+    const destPath = payload?.destPath || "";
 
-  // フォルダ名変更（親は保持し leaf 名だけ変更）。配下フォームの folder が変わるため一覧を再取得する。
+    const nextForms = formsRef.current.map((form) => {
+      const nf = reassignEntityFolder(form.folder, "move", { itemId: form.id, itemIds: formIds, folderPaths, destPath });
+      return nf === normalizeFolderPath(form.folder) ? form : { ...form, folder: nf };
+    });
+    const nextFolders = reparentFolders(registeredFoldersRef.current, folderPaths, destPath);
+    await persistFormsAndFolders(nextForms, nextFolders, "moveItems");
+
+    return dataStore.moveItems(payload);
+  }, [persistFormsAndFolders]);
+
+  // フォルダ名変更（親は保持し leaf 名だけ変更）。配下フォームの folder prefix も即時書換え。
   const renameFolder = useCallback(async (payload) => {
-    const result = await dataStore.renameFolder(payload);
-    await refreshForms({ reason: "rename-folder", background: false });
-    return result;
-  }, [refreshForms]);
+    const path = payload?.path || "";
+    const newName = payload?.newName || "";
 
-  // フォルダ削除（配下フォームも削除）。一覧を再取得して反映する。
+    const nextForms = formsRef.current.map((form) => {
+      const nf = reassignEntityFolder(form.folder, "rename", { path, newName });
+      return nf === normalizeFolderPath(form.folder) ? form : { ...form, folder: nf };
+    });
+    const nextFolders = renameFolderPaths(registeredFoldersRef.current, path, newName);
+    await persistFormsAndFolders(nextForms, nextFolders, "renameFolder");
+
+    return dataStore.renameFolder(payload);
+  }, [persistFormsAndFolders]);
+
+  // フォルダ削除（配下フォームも削除）。ローカルから配下を即時除去し、保留ジョブも取り消す。
   const deleteFolder = useCallback(async (path) => {
-    const result = await dataStore.deleteFolder(path);
-    await refreshForms({ reason: "delete-folder", background: false });
-    return result;
-  }, [refreshForms]);
+    const target = normalizeFolderPath(path);
+    const containedIds = formsRef.current.filter((form) => isUnderFolder(form.folder, target)).map((form) => form.id);
+    const nextForms = formsRef.current.filter((form) => !isUnderFolder(form.folder, target));
+    const nextFolders = removeFolderSubtree(registeredFoldersRef.current, target);
+    await persistFormsAndFolders(nextForms, nextFolders, "deleteFolder");
+
+    await dataStore.deleteFolder(path, { containedIds });
+    return { folders: nextFolders, deletedFormCount: containedIds.length };
+  }, [persistFormsAndFolders]);
 
   const registerImportedForm = useCallback(async (payload) => {
     const result = await dataStore.registerImportedForm(payload);

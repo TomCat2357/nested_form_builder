@@ -82,3 +82,17 @@ export const emitAnalyticsCacheChanged = (entityType) => {
     try { fn(entityType); } catch (_e) { /* noop */ }
   });
 };
+
+// フォルダ登録簿（Question/Dashboard）の変化を一覧へ通知する軽量イベント。
+// 楽観的なフォルダ操作（移動/名前変更/削除）の即時反映や、バックグラウンド op ジョブ成功後の
+// サーバ確定 folders 採用で発火する。一覧ページが購読して registeredFolders を更新する。
+const analyticsFolderListeners = new Set();
+export const subscribeAnalyticsFolders = (fn) => {
+  analyticsFolderListeners.add(fn);
+  return () => analyticsFolderListeners.delete(fn);
+};
+export const emitAnalyticsFoldersChanged = (entityType, folders) => {
+  analyticsFolderListeners.forEach((fn) => {
+    try { fn(entityType, folders); } catch (_e) { /* noop */ }
+  });
+};

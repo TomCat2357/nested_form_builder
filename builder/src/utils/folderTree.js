@@ -133,6 +133,137 @@ export function folderExists(paths, path) {
   return (paths || []).some((p) => normalizeFolderPath(p) === target);
 }
 
+// ---------------------------------------------------------------------------
+// 楽観的フォルダ操作のためのパス書換え純関数（move / rename / delete）。
+// エンティティの folder 文字列にも folders 登録簿にも同じロジックを使う。
+// 「対象外」は null を返し、呼び出し側で「変更なし＝元の値を据え置き」と解釈する。
+// ---------------------------------------------------------------------------
+
+/** path の葉名（最後のセグメント）。 */
+function leafName(path) {
+  const p = normalizeFolderPath(path);
+  if (!p) return "";
+  const segs = p.split("/");
+  return segs[segs.length - 1];
+}
+
+/** path の親パス（葉を除いた部分）。最上位は ""。 */
+function parentPath(path) {
+  const p = normalizeFolderPath(path);
+  if (!p) return "";
+  return p.split("/").slice(0, -1).join("/");
+}
+
+/** 順序を保ったまま重複パスを除去する。 */
+function dedupePaths(paths) {
+  const seen = new Set();
+  const out = [];
+  for (const raw of paths || []) {
+    const p = normalizeFolderPath(raw);
+    if (seen.has(p)) continue;
+    seen.add(p);
+    out.push(p);
+  }
+  return out;
+}
+
+/**
+ * 移動: targetPath（フォルダ）を destPath 配下へ移したときの path の新パスを返す。
+ * path が target 自身またはその子孫のときのみ新パス、無関係なら null。
+ * 例: reparentFolderPath("a/b/c", "a/b", "x") → "x/b/c"
+ */
+export function reparentFolderPath(path, targetPath, destPath) {
+  const p = normalizeFolderPath(path);
+  const t = normalizeFolderPath(targetPath);
+  if (!t) return null; // 最上位そのものは移動対象にできない
+  const newBase = normalizeFolderPath(joinFolderPath(destPath, leafName(t)));
+  if (p === t) return newBase;
+  if (p.startsWith(t + "/")) return normalizeFolderPath(newBase + p.slice(t.length));
+  return null;
+}
+
+/** folders 一覧へ複数フォルダ移動（movedPaths → destPath 配下）を適用した新配列。 */
+export function reparentFolders(folders, movedPaths, destPath) {
+  const moved = (movedPaths || []).map(normalizeFolderPath).filter(Boolean);
+  const next = (folders || []).map((raw) => {
+    const p = normalizeFolderPath(raw);
+    for (const m of moved) {
+      const np = reparentFolderPath(p, m, destPath);
+      if (np !== null) return np;
+    }
+    return p;
+  });
+  return dedupePaths(next);
+}
+
+/**
+ * 名前変更: targetPath の葉名を newName にしたときの path の新パスを返す。
+ * path が target 自身またはその子孫のときのみ新パス、無関係なら null。
+ * 例: renameFolderPath("a/b/c", "a/b", "B2") → "a/B2/c"
+ */
+export function renameFolderPath(path, targetPath, newName) {
+  const p = normalizeFolderPath(path);
+  const t = normalizeFolderPath(targetPath);
+  if (!t) return null;
+  const newBase = normalizeFolderPath(joinFolderPath(parentPath(t), newName));
+  if (!newBase) return null; // 空名は不可
+  if (p === t) return newBase;
+  if (p.startsWith(t + "/")) return normalizeFolderPath(newBase + p.slice(t.length));
+  return null;
+}
+
+/** folders 一覧へフォルダ名変更を適用した新配列。 */
+export function renameFolderPaths(folders, targetPath, newName) {
+  const next = (folders || []).map((raw) => {
+    const p = normalizeFolderPath(raw);
+    const np = renameFolderPath(p, targetPath, newName);
+    return np !== null ? np : p;
+  });
+  return dedupePaths(next);
+}
+
+/** 削除: path 自身およびその子孫を folders 一覧から除去した新配列。 */
+export function removeFolderSubtree(folders, path) {
+  const base = normalizeFolderPath(path);
+  if (!base) return (folders || []).map(normalizeFolderPath); // 最上位は削除しない
+  return (folders || [])
+    .map(normalizeFolderPath)
+    .filter((p) => p !== base && !p.startsWith(base + "/"));
+}
+
+/**
+ * 1 エンティティの folder 文字列を操作後の値に再計算する。
+ * - op="move":   itemIds に id が含まれれば destPath、配下フォルダ移動なら reparent。
+ * - op="rename": 配下なら rename 後のパス。
+ * - op="delete": 配下なら null（＝削除対象。呼び出し側でキャッシュ除去）。
+ * いずれも対象外なら「変更なし」を表す元の folder（delete は元の folder）を返す。
+ * 返り値 null は delete 対象のときのみ。
+ *
+ * @returns {string|null} 新しい folder（delete 対象は null）
+ */
+export function reassignEntityFolder(entityFolder, op, params = {}) {
+  const folder = normalizeFolderPath(entityFolder);
+  if (op === "move") {
+    const { itemId, itemIds = [], folderPaths = [], destPath = "" } = params;
+    if (itemId && (itemIds || []).includes(itemId)) return normalizeFolderPath(destPath);
+    for (const m of folderPaths || []) {
+      const np = reparentFolderPath(folder, m, destPath);
+      if (np !== null) return np;
+    }
+    return folder;
+  }
+  if (op === "rename") {
+    const { path, newName } = params;
+    const np = renameFolderPath(folder, path, newName);
+    return np !== null ? np : folder;
+  }
+  if (op === "delete") {
+    const { path } = params;
+    return isUnderFolder(folder, path) ? null : folder;
+  }
+  return folder;
+}
+
 /** パンくず用にパスをセグメント配列へ。"a/b" → [{name:"a",path:"a"},{name:"b",path:"a/b"}] */
 export function splitBreadcrumbs(currentPath) {
   const base = normalizeFolderPath(currentPath);

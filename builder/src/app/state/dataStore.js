@@ -22,25 +22,17 @@ import {
   saveForm as saveFormToGas,
   deleteFormFromDrive as deleteFormFromGas,
   deleteFormsFromDrive as deleteFormsFromGas,
-  archiveForm as archiveFormInGas,
-  unarchiveForm as unarchiveFormInGas,
-  archiveForms as archiveFormsInGas,
-  unarchiveForms as unarchiveFormsInGas,
   setFormReadOnly as setFormReadOnlyInGas,
   clearFormReadOnly as clearFormReadOnlyInGas,
   setFormsReadOnly as setFormsReadOnlyInGas,
   clearFormsReadOnly as clearFormsReadOnlyInGas,
   registerImportedForm as registerImportedFormInGas,
   copyForm as copyFormFromGas,
-  createFolder as createFolderInGas,
-  moveItems as moveItemsInGas,
-  renameFolder as renameFolderInGas,
-  deleteFolder as deleteFolderInGas,
   syncRecordsProxy,
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 import { genLocalId, isLocalId } from "../../core/ids.js";
-import { enqueueJob, deleteJobsForLocalId } from "./uploadQueue.js";
+import { enqueueJob, enqueueOpJob, deleteJobsForLocalId, deleteOpJobsForFolderPrefix } from "./uploadQueue.js";
 import { kickUploadWorker } from "./uploadWorker.js";
 import {
   getSheetConfig,
@@ -104,29 +96,38 @@ export const dataStore = {
     };
   },
   async createFolder(path) {
-    const result = await createFolderInGas(path);
-    return { folders: Array.isArray(result.folders) ? result.folders : [] };
+    // 楽観的＋遅延: folders 登録簿の即時更新は AppDataProvider が担う。GAS 実体作成は op ジョブへ。
+    await enqueueOpJob({ entityType: "form", opType: "createFolder", opPayload: { path } });
+    kickUploadWorker();
+    return { folders: [] };
   },
   async moveItems(payload) {
-    const result = await moveItemsInGas(payload);
-    return {
-      folders: Array.isArray(result.folders) ? result.folders : [],
-      movedFormIds: Array.isArray(result.movedFormIds) ? result.movedFormIds : [],
-    };
+    // 楽観的＋遅延: React 状態 / キャッシュ / folders の即時更新は AppDataProvider が担う。
+    // ここでは GAS 移動を write-behind ジョブとしてキューへ積むだけ。未アップロードの
+    // local_ フォームを移動する場合は、その save 完了まで依存（dependsOnLocalIds）で待つ。
+    const formIds = Array.isArray(payload?.formIds) ? payload.formIds : [];
+    await enqueueOpJob({
+      entityType: "form",
+      opType: "move",
+      opPayload: payload,
+      dependsOnLocalIds: formIds.filter(isLocalId),
+    });
+    kickUploadWorker();
+    return { folders: [], movedFormIds: formIds };
   },
   async renameFolder(payload) {
-    const result = await renameFolderInGas(payload);
-    return {
-      folders: Array.isArray(result.folders) ? result.folders : [],
-      movedFormIds: Array.isArray(result.movedFormIds) ? result.movedFormIds : [],
-    };
+    await enqueueOpJob({ entityType: "form", opType: "renameFolder", opPayload: payload });
+    kickUploadWorker();
+    return { folders: [], movedFormIds: [] };
   },
-  async deleteFolder(path) {
-    const result = await deleteFolderInGas(path);
-    return {
-      folders: Array.isArray(result.folders) ? result.folders : [],
-      deletedFormCount: Number.isFinite(result.deletedFormCount) ? result.deletedFormCount : 0,
-    };
+  async deleteFolder(path, { containedIds = [] } = {}) {
+    // 配下エンティティの保留 save/move ジョブを取り消す（削除済みフォームの再作成・再移動を防ぐ）。
+    await Promise.all(containedIds.map((id) => deleteJobsForLocalId(id)));
+    await deleteOpJobsForFolderPrefix("form", path);
+    // createFolder は GAS 実体を作るため、サーバのフォルダ削除は deleteFolder op で行う。
+    await enqueueOpJob({ entityType: "form", opType: "deleteFolder", opPayload: { path } });
+    kickUploadWorker();
+    return { folders: [], deletedFormCount: containedIds.length };
   },
   async getForm(formId) {
     try {
@@ -159,11 +160,47 @@ export const dataStore = {
     return form ? ensureDisplayInfo({ ...form, driveFileUrl: fileUrl }) : null;
   },
   async copyForm(formId) {
-    const result = await copyFormFromGas(formId);
-    const savedForm = result?.form || result;
-    const fileUrl = result?.fileUrl;
-    const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
-    return formWithUrl ? ensureDisplayInfo(formWithUrl) : null;
+    // オフラインファースト: キャッシュ上の元フォームを複製し、新規 save ジョブとしてキューへ。
+    // GAS の Forms_copyForm_ と同様に spreadsheetId 等の設定はそのまま引き継ぐ（コピー同士で
+    // 同じスプレッドシートを共有する既存挙動と一致）。アップロード完了で local_ → 実 fileId へ付け替え。
+    let source = null;
+    try {
+      const { forms = [] } = await getFormsFromCache();
+      source = forms.find((form) => form.id === formId) || null;
+    } catch (error) {
+      console.warn("[dataStore.copyForm] Cache lookup failed, falling back to GAS:", error);
+    }
+    if (!source) {
+      // キャッシュ未ヒット時のみ従来のサーバコピーにフォールバック。
+      const result = await copyFormFromGas(formId);
+      const savedForm = result?.form || result;
+      const fileUrl = result?.fileUrl;
+      const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
+      return formWithUrl ? ensureDisplayInfo(formWithUrl) : null;
+    }
+    const localId = genLocalId();
+    const {
+      id: _id,
+      createdAt: _createdAt,
+      createdAtUnixMs: _createdAtUnixMs,
+      modifiedAt: _modifiedAt,
+      modifiedAtUnixMs: _modifiedAtUnixMs,
+      driveFileUrl: _driveFileUrl,
+      pendingUpload: _pendingUpload,
+      ...rest
+    } = deepClone(source);
+    const baseTitle = rest?.settings?.formTitle || rest?.name || "無題のフォーム";
+    const clone = normalizeFormRecord({
+      ...rest,
+      name: undefined,
+      settings: { ...(rest.settings || {}), formTitle: `${baseTitle}（コピー）` },
+      archived: false,
+      readOnly: false,
+    }, { fallbackId: localId });
+    const localRecord = { ...clone, pendingUpload: true };
+    await enqueueJob({ entityType: "form", localId, payload: localRecord });
+    kickUploadWorker();
+    return ensureDisplayInfo(localRecord);
   },
   async updateForm(formId, updates, saveMode = "auto") {
     // First get the current form. If GAS fetch fails, fallback to provided updates.
@@ -217,15 +254,27 @@ export const dataStore = {
     kickUploadWorker();
     return ensureDisplayInfo(localRecord);
   },
-  async setFormArchivedState(formId, archived) {
-    const savedForm = archived ? await archiveFormInGas(formId) : await unarchiveFormInGas(formId);
-    return savedForm ? ensureDisplayInfo(savedForm) : null;
+  // 楽観的＋遅延: アーカイブ状態のフリップは AppDataProvider が即時反映。ここでは GAS 呼び出しを
+  // write-behind の op ジョブへ積むだけ（local_ フォームは save 完了まで依存で待つ）。
+  async _enqueueArchiveOp(formIds, opType) {
+    const ids = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
+    if (!ids.length) return { forms: [], updated: 0 };
+    await enqueueOpJob({
+      entityType: "form",
+      opType,
+      opPayload: { ids },
+      dependsOnLocalIds: ids.filter(isLocalId),
+    });
+    kickUploadWorker();
+    return { forms: [], updated: ids.length };
   },
   async archiveForm(formId) {
-    return this.setFormArchivedState(formId, true);
+    await this._enqueueArchiveOp([formId], "archive");
+    return null;
   },
   async unarchiveForm(formId) {
-    return this.setFormArchivedState(formId, false);
+    await this._enqueueArchiveOp([formId], "unarchive");
+    return null;
   },
   async _batchArchiveAction(formIds, gasFn) {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
@@ -239,10 +288,10 @@ export const dataStore = {
     };
   },
   async archiveForms(formIds) {
-    return this._batchArchiveAction(formIds, archiveFormsInGas);
+    return this._enqueueArchiveOp(formIds, "archive");
   },
   async unarchiveForms(formIds) {
-    return this._batchArchiveAction(formIds, unarchiveFormsInGas);
+    return this._enqueueArchiveOp(formIds, "unarchive");
   },
   async setFormReadOnlyState(formId, readOnly) {
     const savedForm = readOnly ? await setFormReadOnlyInGas(formId) : await clearFormReadOnlyInGas(formId);

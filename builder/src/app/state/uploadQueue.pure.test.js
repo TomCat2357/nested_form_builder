@@ -4,6 +4,7 @@ import {
   collectReferencedIds,
   collectDependsOnLocalIds,
   applyRefRemapToPayload,
+  applyRefRemapToOpPayload,
   toUploadPayload,
 } from "./uploadQueue.js";
 
@@ -45,6 +46,30 @@ test("applyRefRemapToPayload: dashboard の questionId 参照を実 ID へ書き
 test("applyRefRemapToPayload: 該当参照が無ければ false（変更なし）", () => {
   const q = { query: { gui: { formId: "Z" } } };
   assert.equal(applyRefRemapToPayload("question", q, { local_AAA: "REAL1" }), false);
+});
+
+test("applyRefRemapToOpPayload: move op の formIds / itemIds 内の local_ id を実 ID へ書き換える", () => {
+  const move = { formIds: ["local_A", "RealB"], folderPaths: [], destPath: "dst" };
+  const changed = applyRefRemapToOpPayload("move", move, { local_A: "REALA" });
+  assert.equal(changed, true);
+  assert.deepEqual(move.formIds, ["REALA", "RealB"]);
+
+  const moveItems = { itemIds: ["local_Q"], destPath: "" };
+  assert.equal(applyRefRemapToOpPayload("move", moveItems, { local_Q: "REALQ" }), true);
+  assert.deepEqual(moveItems.itemIds, ["REALQ"]);
+});
+
+test("applyRefRemapToOpPayload: archive op の ids を書き換える", () => {
+  const op = { ids: ["local_X", "keep"] };
+  const changed = applyRefRemapToOpPayload("archive", op, { local_X: "REALX" });
+  assert.equal(changed, true);
+  assert.deepEqual(op.ids, ["REALX", "keep"]);
+});
+
+test("applyRefRemapToOpPayload: 該当 id が無ければ false（変更なし）", () => {
+  const op = { ids: ["A", "B"], path: "x/y" };
+  assert.equal(applyRefRemapToOpPayload("archive", op, { local_Z: "REALZ" }), false);
+  assert.deepEqual(op.ids, ["A", "B"]);
 });
 
 test("toUploadPayload: 新規(local_ id)は id を外して送る（GAS に新規ファイルを作らせる）", () => {

@@ -14,13 +14,22 @@
 import { UPLOAD_RETRY_BASE_MS, UPLOAD_RETRY_MAX_MS } from "../../core/constants.js";
 import { toErrorMessage } from "../../utils/errorMessage.js";
 import { isLocalId } from "../../core/ids.js";
-import { saveForm } from "../../services/gasClient.js";
+import {
+  saveForm,
+  createFolder as createFolderInGas,
+  moveItems as moveItemsInGas,
+  renameFolder as renameFolderInGas,
+  deleteFolder as deleteFolderInGas,
+  archiveForms as archiveFormsInGas,
+  unarchiveForms as unarchiveFormsInGas,
+} from "../../services/gasClient.js";
 import { analyticsGasClient } from "../../features/analytics/analyticsGasClient.js";
 import { saveFormsToCache, getFormsFromCache } from "./formsCache.js";
 import {
   questionCache,
   dashboardCache,
   emitAnalyticsCacheChanged,
+  emitAnalyticsFoldersChanged,
 } from "../../features/analytics/analyticsCache.js";
 import {
   getAllJobs,
@@ -43,6 +52,17 @@ import {
 let formReconciler = null;
 export const registerFormReconciler = (fn) => {
   formReconciler = typeof fn === "function" ? fn : null;
+};
+
+// ---------------------------------------------------------------------------
+// フォルダ reconcile コールバック（種類別）。op ジョブ成功後、サーバ確定の folders 一覧を
+// 各一覧 UI へ静かに反映する（ネット往復なし）。form は AppDataProvider、
+// question/dashboard は一覧ページが登録する。
+// ---------------------------------------------------------------------------
+const folderReconcilers = Object.create(null); // entityType -> fn(folders)
+export const registerFolderReconciler = (entityType, fn) => {
+  if (typeof fn === "function") folderReconcilers[entityType] = fn;
+  else delete folderReconcilers[entityType];
 };
 
 // ---------------------------------------------------------------------------
@@ -98,12 +118,42 @@ const pickRunnableJob = async () => {
     const ta = TYPE_ORDER[a.entityType] ?? 9;
     const tb = TYPE_ORDER[b.entityType] ?? 9;
     if (ta !== tb) return ta - tb;
-    return (a.createdAt || 0) - (b.createdAt || 0);
+    const ca = a.createdAt || 0;
+    const cb = b.createdAt || 0;
+    if (ca !== cb) return ca - cb;
+    return (a.opSeq || 0) - (b.opSeq || 0);
   });
   return runnable[0] || null;
 };
 
+// 操作（op）ジョブを対応する GAS 呼び出しへ振り分ける。
+const uploadOp = async (job) => {
+  const p = job.opPayload || {};
+  if (job.entityType === "form") {
+    switch (job.opType) {
+      case "createFolder": return createFolderInGas(p.path);
+      case "move": return moveItemsInGas(p);
+      case "renameFolder": return renameFolderInGas(p);
+      case "deleteFolder": return deleteFolderInGas(p.path);
+      case "archive": return archiveFormsInGas(p.ids);
+      case "unarchive": return unarchiveFormsInGas(p.ids);
+      default: throw new Error(`unknown form op: ${job.opType}`);
+    }
+  }
+  const E = job.entityType === "dashboard" ? "Dashboard" : "Question";
+  switch (job.opType) {
+    case "createFolder": return analyticsGasClient[`create${E}Folder`](p.path);
+    case "move": return analyticsGasClient[`move${E}s`](p);
+    case "renameFolder": return analyticsGasClient[`rename${E}Folder`](p);
+    case "deleteFolder": return analyticsGasClient[`delete${E}Folder`](p.path);
+    case "archive": return analyticsGasClient[`archive${E}s`](p.ids);
+    case "unarchive": return analyticsGasClient[`unarchive${E}s`](p.ids);
+    default: throw new Error(`unknown analytics op: ${job.opType}`);
+  }
+};
+
 const uploadByType = async (job) => {
+  if (job.kind === "op") return uploadOp(job);
   const payload = toUploadPayload(job);
   if (job.entityType === "form") return saveForm(payload, "auto");
   if (job.entityType === "question") return analyticsGasClient.saveQuestion(payload);
@@ -170,7 +220,29 @@ const applyServerRemap = async (remap) => {
   emitAnalyticsCacheChanged("dashboard");
 };
 
+// op ジョブ成功後の reconcile。フォルダ構造を変える op はサーバ確定 folders を静かに採用し、
+// 各エンティティの folder はローカルが正なので触らない。archive/unarchive は反映済みで何もしない。
+const FOLDER_STRUCTURE_OPS = new Set(["createFolder", "move", "renameFolder", "deleteFolder"]);
+const reconcileOp = async (job, result) => {
+  if (FOLDER_STRUCTURE_OPS.has(job.opType)) {
+    const folders = Array.isArray(result?.folders) ? result.folders : null;
+    if (job.entityType === "form") {
+      const fn = folderReconcilers.form;
+      if (folders && fn) {
+        try { await fn(folders); } catch (_e) { /* noop */ }
+      }
+    } else if (folders) {
+      // question / dashboard はフォルダ pub/sub で一覧ページへサーバ確定 folders を反映する。
+      emitAnalyticsFoldersChanged(job.entityType, folders);
+    }
+  }
+};
+
 const reconcile = async (job, result) => {
+  if (job.kind === "op") {
+    await reconcileOp(job, result);
+    return;
+  }
   const tempId = job.localId;
   let realId = tempId;
   let savedEntity = null;

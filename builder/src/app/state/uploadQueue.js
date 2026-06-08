@@ -25,6 +25,7 @@ import { STORE_NAMES } from "../../core/constants.js";
 import { withTransaction, waitForRequest } from "./dbHelpers.js";
 import { deepClone } from "../../core/schema.js";
 import { genId, isLocalId } from "../../core/ids.js";
+import { isUnderFolder } from "../../utils/folderTree.js";
 
 const STORE = STORE_NAMES.uploadQueue;
 
@@ -98,6 +99,25 @@ export const applyRefRemapToPayload = (entityType, payload, remap) => {
   return changed;
 };
 
+// op ジョブの opPayload 内 id 配列（formIds / itemIds / ids）に remap を適用する。
+// 移動/アーカイブが未アップロードの local_ エンティティを参照していた場合、その save 完了で
+// local_ → 実 fileId へ付け替えるために使う。変更があれば true。
+export const applyRefRemapToOpPayload = (opType, opPayload, remap) => {
+  if (!opPayload || !remap || Object.keys(remap).length === 0) return false;
+  let changed = false;
+  for (const key of ["formIds", "itemIds", "ids"]) {
+    const arr = opPayload[key];
+    if (!Array.isArray(arr)) continue;
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i] && remap[arr[i]]) {
+        arr[i] = remap[arr[i]];
+        changed = true;
+      }
+    }
+  }
+  return changed;
+};
+
 // ---------------------------------------------------------------------------
 // CRUD
 // ---------------------------------------------------------------------------
@@ -114,9 +134,10 @@ export const enqueueJob = async ({ entityType, localId, payload, dependsOnLocalI
   return withTransaction(STORE, "readwrite", async (store) => {
     const all = (await waitForRequest(store.getAll())) || [];
     const existing = all.find(
-      (j) => j.entityType === entityType && j.localId === localId && j.status !== "uploading",
+      (j) => j.kind !== "op" && j.entityType === entityType && j.localId === localId && j.status !== "uploading",
     );
     const base = {
+      kind: "save",
       entityType,
       localId,
       realId: null,
@@ -133,6 +154,38 @@ export const enqueueJob = async ({ entityType, localId, payload, dependsOnLocalI
       return merged;
     }
     const job = { ...base, jobId: genId(), createdAt: nowMs() };
+    await waitForRequest(store.put(job));
+    return job;
+  });
+};
+
+// 操作ジョブ（move / renameFolder / deleteFolder / archive / unarchive）を積む。
+// save と違い coalesce しない（localId:null）。連続操作は opSeq 昇順で逐次適用される。
+// dependsOnLocalIds に未アップロードの local_ id を渡すと、その save 完了まで実行を待つ。
+export const enqueueOpJob = async ({ entityType, opType, opPayload, dependsOnLocalIds }) => {
+  const deps = Array.isArray(dependsOnLocalIds) ? dependsOnLocalIds.slice() : [];
+  return withTransaction(STORE, "readwrite", async (store) => {
+    const all = (await waitForRequest(store.getAll())) || [];
+    let maxSeq = 0;
+    for (const j of all) {
+      if (typeof j.opSeq === "number" && j.opSeq > maxSeq) maxSeq = j.opSeq;
+    }
+    const job = {
+      jobId: genId(),
+      kind: "op",
+      entityType,
+      opType,
+      opPayload: deepClone(opPayload || {}),
+      opSeq: maxSeq + 1,
+      localId: null,
+      realId: null,
+      status: "pending",
+      attempt: 0,
+      lastError: null,
+      dependsOnLocalIds: deps,
+      createdAt: nowMs(),
+      updatedAt: nowMs(),
+    };
     await waitForRequest(store.put(job));
     return job;
   });
@@ -164,6 +217,23 @@ export const deleteJobsForLocalId = async (localId) =>
     }
   });
 
+// 指定フォルダ（path 自身/配下）を対象にする保留 op を取り消す。
+// deleteFolder で配下を消す際、そこへ移動する move や、そこに作る createFolder が
+// あとから再生成するのを防ぐ（消す前に積んだ操作を無効化する）。
+export const deleteOpJobsForFolderPrefix = async (entityType, path) =>
+  withTransaction(STORE, "readwrite", async (store) => {
+    const all = (await waitForRequest(store.getAll())) || [];
+    for (const job of all) {
+      if (job.kind !== "op" || job.entityType !== entityType) continue;
+      if (job.status === "uploading") continue;
+      const p = job.opPayload || {};
+      const targets =
+        (job.opType === "move" && isUnderFolder(p.destPath, path)) ||
+        (job.opType === "createFolder" && isUnderFolder(p.path, path));
+      if (targets) await waitForRequest(store.delete(job.jobId));
+    }
+  });
+
 // 種類別の未アップロード（pending + error + uploading）件数。インジケーター用。
 export const countPendingByType = async () => {
   const all = await getAllJobs();
@@ -190,7 +260,11 @@ export const remapLocalIdInJobs = async (tempId, realId) => {
         job.realId = realId;
         changed = true;
       }
-      if (applyRefRemapToPayload(job.entityType, job.payload, remap)) changed = true;
+      if (job.kind === "op") {
+        if (applyRefRemapToOpPayload(job.opType, job.opPayload, remap)) changed = true;
+      } else if (applyRefRemapToPayload(job.entityType, job.payload, remap)) {
+        changed = true;
+      }
       if (Array.isArray(job.dependsOnLocalIds) && job.dependsOnLocalIds.includes(tempId)) {
         job.dependsOnLocalIds = job.dependsOnLocalIds.filter((id) => id !== tempId);
         changed = true;

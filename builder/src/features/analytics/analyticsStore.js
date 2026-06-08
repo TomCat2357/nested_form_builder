@@ -7,8 +7,16 @@ import { analyticsGasClient } from "./analyticsGasClient.js";
 import { questionCache, dashboardCache, emitAnalyticsCacheChanged } from "./analyticsCache.js";
 import { deepClone } from "../../core/schema.js";
 import { genLocalId, isLocalId } from "../../core/ids.js";
-import { enqueueJob, deleteJobsForLocalId } from "../../app/state/uploadQueue.js";
+import { enqueueJob, enqueueOpJob, deleteJobsForLocalId, deleteOpJobsForFolderPrefix } from "../../app/state/uploadQueue.js";
 import { kickUploadWorker } from "../../app/state/uploadWorker.js";
+import {
+  normalizeFolderPath,
+  isUnderFolder,
+  reassignEntityFolder,
+  reparentFolders,
+  renameFolderPaths,
+  removeFolderSubtree,
+} from "../../utils/folderTree.js";
 import { isV2 as isDashboardV2, assertV2 as assertDashboardV2, getCardType, CARD_TYPE_QUESTION } from "./utils/dashboardSchema.js";
 import { registerFormAsTable, dropTables, runAlaSql, applyGlobalWhereToTables, applySourceFilterClauses } from "./analyticsAlaSql.js";
 import { buildFormIndex } from "./utils/formIdentifierResolver.js";
@@ -502,23 +510,73 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     emitAnalyticsCacheChanged(one);
   }
 
+  // 楽観的＋遅延: アーカイブ状態をキャッシュ上で即時フリップし、GAS 反映は write-behind の
+  // op ジョブへ積む（local_ エンティティは save 完了まで依存で待つ）。verb は "archive" / "unarchive"。
   async function setArchivedOne(verb, id) {
-    const result = await gas[`${verb}${E}`](id);
-    if (result?.[one]) await cache.upsert(result[one]);
-    return result;
+    const archived = verb === "archive";
+    const all = await cache.getAll();
+    const item = all.find((x) => x.id === id);
+    const next = item ? { ...item, archived } : null;
+    if (next) await cache.upsert(next);
+    await enqueueOpJob({ entityType: one, opType: verb, opPayload: { ids: [id] }, dependsOnLocalIds: isLocalId(id) ? [id] : [] });
+    kickUploadWorker();
+    emitAnalyticsCacheChanged(one);
+    return { [one]: next };
   }
 
   async function setArchivedBatch(verb, ids) {
     if (!ids?.length) return { ok: true, updated: 0, errors: [], [many]: [] };
-    const result = await gas[`${verb}${E}s`](ids);
-    await upsertAll(result?.[many]);
-    return result;
+    const archived = verb === "archive";
+    const all = await cache.getAll();
+    const byId = new Map(all.map((x) => [x.id, x]));
+    const updated = [];
+    for (const id of ids) {
+      const item = byId.get(id);
+      if (!item) continue;
+      const next = { ...item, archived };
+      await cache.upsert(next);
+      updated.push(next);
+    }
+    await enqueueOpJob({ entityType: one, opType: verb, opPayload: { ids: ids.slice() }, dependsOnLocalIds: ids.filter(isLocalId) });
+    kickUploadWorker();
+    emitAnalyticsCacheChanged(one);
+    return { ok: true, updated: updated.length, errors: [], [many]: updated };
   }
 
+  // 楽観的＋遅延: キャッシュ上の元エンティティを複製し、新規 save ジョブとしてキューへ積む。
+  // 名前に「（コピー）」を付与し、アップロード完了で local_ → 実 fileId へ付け替える。
   async function copy(id) {
-    const result = await gas[`copy${E}`](id);
-    if (result?.[one]) await cache.upsert(result[one]);
-    return result[one];
+    const all = await cache.getAll();
+    const source = all.find((x) => x.id === id);
+    if (!source) {
+      // キャッシュ未ヒット時のみ従来のサーバコピーにフォールバック。
+      const result = await gas[`copy${E}`](id);
+      if (result?.[one]) await cache.upsert(result[one]);
+      return result[one];
+    }
+    const localId = genLocalId();
+    const {
+      id: _id,
+      createdAt: _createdAt,
+      modifiedAt: _modifiedAt,
+      driveFileUrl: _driveFileUrl,
+      pendingUpload: _pendingUpload,
+      ...rest
+    } = deepClone(source);
+    const clone = {
+      ...rest,
+      id: localId,
+      name: `${source.name || ""}（コピー）`,
+      archived: false,
+      pendingUpload: true,
+      modifiedAt: Date.now(),
+    };
+    if (validateBeforeSave) validateBeforeSave(clone);
+    await cache.upsert(clone);
+    await enqueueJob({ entityType: one, localId, payload: clone });
+    kickUploadWorker();
+    emitAnalyticsCacheChanged(one);
+    return clone;
   }
 
   async function registerImported(payload) {
@@ -538,27 +596,65 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     return result.folders || [];
   }
 
-  async function createFolder(path) {
-    const result = await gas[`create${E}Folder`](path);
-    return result.folders || [];
+  // 楽観的＋遅延: folders 登録簿（一覧ページ保持）へ追加した配列を返し、GAS 実体作成は op ジョブへ。
+  async function createFolder(path, { folders = [] } = {}) {
+    const normalized = normalizeFolderPath(path);
+    const next = !normalized || folders.some((p) => normalizeFolderPath(p) === normalized)
+      ? folders.slice()
+      : [...folders, normalized];
+    await enqueueOpJob({ entityType: one, opType: "createFolder", opPayload: { path } });
+    kickUploadWorker();
+    return next;
   }
 
-  async function moveItems(payload) {
-    const result = await gas[`move${E}s`](payload);
-    // GAS がフォルダ構造を書き換えたので、次回 listSWR でサーバから再取得させる。
-    await cache.resetSyncTime();
+  // 楽観的＋遅延: エンティティの folder をキャッシュ上で即時書換え、GAS 移動は write-behind の
+  // op ジョブへ。folders 登録簿は一覧ページが保持するため引数で受け取り、再親付け後の配列を返す。
+  async function moveItems(payload, { folders = [] } = {}) {
+    const itemIds = Array.isArray(payload?.itemIds) ? payload.itemIds : [];
+    const folderPaths = Array.isArray(payload?.folderPaths) ? payload.folderPaths : [];
+    const destPath = payload?.destPath || "";
+
+    const all = await cache.getAll();
+    for (const item of all) {
+      const nf = reassignEntityFolder(item.folder, "move", { itemId: item.id, itemIds, folderPaths, destPath });
+      if (nf !== normalizeFolderPath(item.folder)) await cache.upsert({ ...item, folder: nf });
+    }
+    await enqueueOpJob({ entityType: one, opType: "move", opPayload: payload, dependsOnLocalIds: itemIds.filter(isLocalId) });
+    kickUploadWorker();
     emitAnalyticsCacheChanged(one);
-    return { folders: result.folders || [], movedIds: result.movedIds || [] };
+    return { folders: reparentFolders(folders, folderPaths, destPath), movedIds: itemIds };
   }
 
-  async function renameFolder(payload) {
-    const result = await gas[`rename${E}Folder`](payload);
-    return { folders: result.folders || [], movedIds: result.movedIds || [] };
+  async function renameFolder(payload, { folders = [] } = {}) {
+    const path = payload?.path || "";
+    const newName = payload?.newName || "";
+
+    const all = await cache.getAll();
+    for (const item of all) {
+      const nf = reassignEntityFolder(item.folder, "rename", { path, newName });
+      if (nf !== normalizeFolderPath(item.folder)) await cache.upsert({ ...item, folder: nf });
+    }
+    await enqueueOpJob({ entityType: one, opType: "renameFolder", opPayload: payload });
+    kickUploadWorker();
+    emitAnalyticsCacheChanged(one);
+    return { folders: renameFolderPaths(folders, path, newName), movedIds: [] };
   }
 
-  async function deleteFolder(path) {
-    const result = await gas[`delete${E}Folder`](path);
-    return { folders: result.folders || [], deletedCount: result.deletedCount || 0 };
+  async function deleteFolder(path, { folders = [] } = {}) {
+    const target = normalizeFolderPath(path);
+    const all = await cache.getAll();
+    let deletedCount = 0;
+    for (const item of all) {
+      if (!isUnderFolder(item.folder, target)) continue;
+      await deleteJobsForLocalId(item.id);
+      await cache.remove(item.id);
+      deletedCount += 1;
+    }
+    await deleteOpJobsForFolderPrefix(one, target);
+    await enqueueOpJob({ entityType: one, opType: "deleteFolder", opPayload: { path } });
+    kickUploadWorker();
+    emitAnalyticsCacheChanged(one);
+    return { folders: removeFolderSubtree(folders, target), deletedCount };
   }
 
   return {

@@ -10,6 +10,7 @@ import AdminFolderNameDialog from "./AdminFolderNameDialog.jsx";
 import AdminMoveDialog from "./AdminMoveDialog.jsx";
 import { useAdminAnalyticsListActions } from "./useAdminAnalyticsListActions.js";
 import { useAnalyticsList } from "../../features/analytics/useAnalyticsList.js";
+import { subscribeAnalyticsFolders } from "../../features/analytics/analyticsCache.js";
 import { useFolderBrowser } from "../../features/folders/useFolderBrowser.js";
 import { buildAppUrl } from "../../utils/appUrl.js";
 import FolderSearchBar from "../../features/folders/FolderSearchBar.jsx";
@@ -75,6 +76,16 @@ export default function AdminAnalyticsListPage({
     store.listFolders().then(setRegisteredFolders).catch(() => {});
   }, [store]);
 
+  // op ジョブ（move / rename / deleteFolder）成功後、ワーカーがサーバ確定 folders を通知してくる。
+  // kind は複数形（"questions"）、op ジョブの entityType は単数形（"question"）なので合わせる。
+  const entityType = kind.endsWith("s") ? kind.slice(0, -1) : kind;
+  useEffect(
+    () => subscribeAnalyticsFolders((et, folders) => {
+      if (et === entityType && Array.isArray(folders)) setRegisteredFolders(folders);
+    }),
+    [entityType],
+  );
+
   const filteredItems = useMemo(() => {
     return showArchived ? items : items.filter((item) => !item.archived);
   }, [items, showArchived]);
@@ -114,20 +125,19 @@ export default function AdminAnalyticsListPage({
     else clearSelection();
   };
 
+  // 楽観的＋遅延: store がキャッシュを即時更新し emitAnalyticsCacheChanged で一覧へ反映する。
+  // ここで refresh（forceRefresh）すると未同期のサーバ取得が楽観的変更を巻き戻すため呼ばない。
   const archive = useCallback(async (ids) => {
     await store.archive(ids);
-    await refresh();
-  }, [store, refresh]);
+  }, [store]);
 
   const unarchive = useCallback(async (ids) => {
     await store.unarchive(ids);
-    await refresh();
-  }, [store, refresh]);
+  }, [store]);
 
   const copy = useCallback(async (id) => {
     await store.copy(id);
-    await refresh();
-  }, [store, refresh]);
+  }, [store]);
 
   const remove = useCallback(async (ids) => {
     await store.remove(ids);
@@ -141,30 +151,30 @@ export default function AdminAnalyticsListPage({
   // フォルダ操作ラッパ（結果の folders で registeredFolders を更新し、move/delete 後は items も再取得）
   const createFolderWrapper = useCallback(async (path) => {
     if (!store.createFolder) return;
-    const folders = await store.createFolder(path);
+    const folders = await store.createFolder(path, { folders: registeredFolders });
     setRegisteredFolders(folders);
-  }, [store]);
+  }, [store, registeredFolders]);
 
+  // 楽観的＋遅延: store 側がエンティティ folder をキャッシュ即時更新（一覧は
+  // emitAnalyticsCacheChanged で再読込）し、GAS は write-behind の op ジョブへ。
+  // 返り値の folders 登録簿を即時反映する（サーバ往復を待たない）。
   const moveItemsWrapper = useCallback(async (payload) => {
     if (!store.moveItems) return;
-    const result = await store.moveItems(payload);
+    const result = await store.moveItems(payload, { folders: registeredFolders });
     setRegisteredFolders(result.folders);
-    await refresh();
-  }, [store, refresh]);
+  }, [store, registeredFolders]);
 
   const renameFolderWrapper = useCallback(async (payload) => {
     if (!store.renameFolder) return;
-    const result = await store.renameFolder(payload);
+    const result = await store.renameFolder(payload, { folders: registeredFolders });
     setRegisteredFolders(result.folders);
-    await refresh();
-  }, [store, refresh]);
+  }, [store, registeredFolders]);
 
   const deleteFolderWrapper = useCallback(async (path) => {
     if (!store.deleteFolder) return;
-    const result = await store.deleteFolder(path);
+    const result = await store.deleteFolder(path, { folders: registeredFolders });
     setRegisteredFolders(result.folders);
-    await refresh();
-  }, [store, refresh]);
+  }, [store, registeredFolders]);
 
   // アイテム自体の名前変更。完全オブジェクトを読み込み name だけ差し替えて再保存する
   // （Question/Dashboard には rename 専用 API がないため）。一意採番は保存時に委ねる。
