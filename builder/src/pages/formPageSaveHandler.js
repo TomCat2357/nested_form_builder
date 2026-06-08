@@ -148,6 +148,7 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
     setDriveFolderStates,
     setEntry,
     showAlert,
+    childPid = "",
   } = ctx;
 
   if (!form) throw new Error("form_not_found");
@@ -290,14 +291,19 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
     });
   }
 
-  const saved = await dataStore.upsertEntry(form.id, {
+  const upsertPayload = {
     id: payloadWithFormId.id,
     data: saveData,
     order: saveOrder,
     createdBy,
     modifiedBy,
     "No.": normalizedRecordNo === "" ? entry?.["No."] : normalizedRecordNo,
-  });
+  };
+  // 子フォームのオーバーレイ文脈では、楽観的に保存するローカルレコードへ親レコード id（pid）を刻む。
+  // サーバは withUrlPid 経由で必ず同じ pid を刻むので整合する。これにより pid 絞り込みの検索一覧へ
+  // 新規レコードが即座に反映される（pid 未刻印だとフィルタから漏れて保存直後に消えて見える）。
+  if (childPid) upsertPayload.pid = childPid;
+  const saved = await dataStore.upsertEntry(form.id, upsertPayload);
   applyEntryToState(saved, saved.id, "save:new-entry");
   pendingSyncedEntryRef.current = null;
   reloadListFromCache();

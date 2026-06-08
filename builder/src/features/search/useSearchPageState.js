@@ -63,6 +63,7 @@ export function useSearchPageState({
   getFormById,
   forms,
   settings,
+  childPid = "",
 }) {
   const queryFormId = (searchParams.get("form") || "").trim();
   const effectiveFormId = queryFormId || scopedFormId;
@@ -116,7 +117,7 @@ export function useSearchPageState({
   })();
 
   const {
-    entries,
+    entries: allEntries,
     loading,
     backgroundLoading,
     waitingForLock,
@@ -134,6 +135,15 @@ export function useSearchPageState({
     locationState: location.state,
     showAlert,
   });
+
+  // 子フォームのオーバーレイ文脈では、開いた元の親レコード id（childPid）に等しい行だけを対象にする。
+  // レコードキャッシュは formId 単位で共有され他 pid の行も載りうる（SWR の即時表示・差分同期の
+  // 残留）ため、サーバ側 pid フィルタに加えてここでも絞り込み、表示・検索・ソート・出力の全段を
+  // pid スコープに揃える。childPid が空（通常ページ）なら従来どおり全件。
+  const entries = useMemo(() => {
+    if (!childPid) return allEntries;
+    return allEntries.filter((entry) => String(entry?.pid ?? "") === childPid);
+  }, [allEntries, childPid]);
 
   const { columns, headerRows } = useMemo(
     () => buildSearchTableLayout(form, {

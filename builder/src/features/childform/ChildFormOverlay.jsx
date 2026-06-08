@@ -15,7 +15,7 @@ import { applyTheme } from "../../app/theme/theme.js";
  *   PreviewPage はこれを呼ぶだけ（従来の window.open を置換）。
  * - オーバーレイ内は **独立した MemoryRouter** で既存の SearchPage / FormPage をそのまま動かす。
  *   検索↔レコード編集・保存後遷移はすべてオーバーレイ内で完結し、親の URL/状態は触らない
- *   （親は編集モードのままマウント継続＝編集内容を保持。「← 戻る」で閉じると親へ復帰）。
+ *   （親は編集モードのままマウント継続＝編集内容を保持。✕／Escape／背景クリックで閉じると親へ復帰）。
  * - 開いている間 `registerFormPid(childFormId, pid)` でデータ層に pid を登録する。gasClient の
  *   withUrlPid が payload.formId 連動で pid を引くので、子の検索は pid 絞り込み・新規レコードは
  *   pid 刻印になる（親の裏更新と混線しない）。
@@ -48,8 +48,6 @@ const HEADER_STYLE = {
 };
 
 const BODY_STYLE = { flex: 1, minHeight: 0, overflow: "auto" };
-
-const BACK_BTN_STYLE = { fontSize: 12, padding: "2px 10px" };
 
 // 子フォームの検索＋入力を独立した MemoryRouter で動かす。親 URL/状態は不変。
 function ChildFormApp({ childFormId, pid, registerDirtyChecker }) {
@@ -107,7 +105,7 @@ export function ChildFormProvider({ children }) {
     }
   }, []);
 
-  // 子フォームに未保存編集があれば確認してから閉じる（← 戻る／✕／Escape／背景クリック共通）。
+  // 子フォームに未保存編集があれば確認してから閉じる（✕／Escape／背景クリック共通）。
   const close = useCallback(() => {
     const checker = dirtyCheckerRef.current;
     if (typeof checker === "function" && checker()) {
@@ -141,11 +139,6 @@ export function ChildFormProvider({ children }) {
         headerStyle={HEADER_STYLE}
         bodyStyle={BODY_STYLE}
         closeLabel="子フォームを閉じる"
-        headerActions={(
-          <button type="button" className="nf-btn-outline" style={BACK_BTN_STYLE} onClick={close}>
-            ← 戻る
-          </button>
-        )}
       >
         {active ? (
           <ChildFormApp

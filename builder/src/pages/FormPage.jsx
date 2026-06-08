@@ -392,6 +392,10 @@ export default function FormPage() {
   // Provider 配下でない（新規タブ／通常ページ）ときは registerDirtyChecker が無く no-op。
   const childFormCtx = useFormContext();
   const registerDirtyChecker = childFormCtx?.registerDirtyChecker;
+  // 子フォームのオーバーレイ文脈なら、保存するレコードへ刻む親レコード id（pid）。
+  // サーバは withUrlPid 経由で pid を刻むが、楽観的に保存するローカルレコードには載らないため
+  // ここでも明示して、pid 絞り込みの検索一覧から新規レコードが即座に漏れるのを防ぐ。
+  const childPid = childFormCtx?.inChildContext ? String(childFormCtx.pid || "") : "";
   useEffect(() => {
     if (typeof registerDirtyChecker !== "function") return undefined;
     registerDirtyChecker(() => isDirtyRef.current);
@@ -423,6 +427,7 @@ export default function FormPage() {
         setDriveFolderStates,
         setEntry,
         showAlert,
+        childPid,
       },
     )
   );

@@ -4,6 +4,7 @@ import AppLayout from "../app/components/AppLayout.jsx";
 import ConfirmDialog from "../app/components/ConfirmDialog.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
 import { useAuth } from "../app/state/authContext.jsx";
+import { useFormContext } from "../app/state/formContext.jsx";
 import { useBuilderSettings } from "../features/settings/settingsStore.js";
 import { useAlert } from "../app/hooks/useAlert.js";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
@@ -21,6 +22,10 @@ export default function SearchPage() {
   // 検索の遅延時間が空欄（"" / 未設定）のときは手動検索モード（検索ボタン）。0 を含む数値は自動検索。
   const manualSearch = settings?.searchDebounceMs === "" || settings?.searchDebounceMs == null;
   const { isAdmin, userEmail, formId: scopedFormId } = useAuth();
+  // 子フォームをオーバーレイで開いているときは、開いた元の親レコード id（pid）に
+  // 等しい行だけを検索一覧に出す。Provider 外（通常ページ）では childPid="" で従来どおり全件。
+  const formCtx = useFormContext();
+  const childPid = formCtx?.inChildContext ? String(formCtx.pid || "") : "";
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -99,6 +104,7 @@ export default function SearchPage() {
     getFormById,
     forms,
     settings,
+    childPid,
   });
 
   // 更新ボタン: 通常のリフレッシュに加え、期限切れソフトデリート行の purge を付帯起動する。
