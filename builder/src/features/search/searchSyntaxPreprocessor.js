@@ -55,7 +55,7 @@ export function normalizeFullWidthSearchOperators(input) {
 }
 
 // SQL モード判定。検索バーに `SELECT ... FROM ...` を直接書く最上位 SQL。
-// 自フォームは `_` で参照でき、本文にサブクエリ・別フォーム参照（JOIN/IN）を書ける。
-// 実行結果のうち「自フォームの id」を持つ行だけが検索結果（その id のレコード）に対応する
-// （SELECT * / SELECT [id] FROM _ は対応づき表示、id を含まない射影や別フォーム最上位は対応せず 0 件）。
+// 現フォームは `_form` で参照でき、本文にサブクエリ・別フォーム参照（JOIN/IN）を書ける。
+// 実行結果のうち「現フォームの id」を持つ行だけが検索結果（その id のレコード）に対応する
+// （SELECT * / SELECT [id] FROM _form は対応づき表示、id を含まない射影や別フォーム最上位は対応せず 0 件）。
 export const SQL_MODE_RE = /^\s*SELECT\b/i;

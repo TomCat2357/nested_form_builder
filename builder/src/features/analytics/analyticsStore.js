@@ -29,6 +29,7 @@ import {
 import { compileStages } from "./utils/compileStages.js";
 import { inferCompiledColumnsFromSql } from "./utils/sqlColumnInference.js";
 import { formHasSpreadsheet } from "../../app/state/dataStoreHelpers.js";
+import { collectFormLinkFields } from "../preview/childFormData.js";
 import { evaluateCacheForAnalytics } from "../../app/state/cachePolicy.js";
 import {
   buildAlaSqlTypeMap,
@@ -60,7 +61,7 @@ function findFormByRef(forms, formId) {
  *   - defaultFormId なら bare "data" も同じ rows を指す
  * data/view の variant 区別は廃止（クエリ層は常に view 形式の単一テーブル）。
  */
-export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData = false, excludeMetaColumns = false } = {}) {
+export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData = false, excludeMetaColumns = false, liveRowOverride = null, cacheOnly = false } = {}) {
   const aliases = [];
   try {
     // 同じ formId を二重に登録しないよう dedup する。
@@ -73,7 +74,9 @@ export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formInde
       const canon = canonicalDataAlias(src.formId);
       const extras = [legacyFormAlias(src.formId)];
       if (src.formId === defaultFormId) extras.push("data");
-      await registerFormAsTable(canon, src.formId, { form, aliasAlsoAs: extras, injectChildData, excludeMetaColumns });
+      // ライブ行の上書きは現（default）フォームにのみ適用する。
+      const liveRowForThis = src.formId === defaultFormId ? liveRowOverride : null;
+      await registerFormAsTable(canon, src.formId, { form, aliasAlsoAs: extras, injectChildData, excludeMetaColumns, liveRowOverride: liveRowForThis, cacheOnly });
       aliases.push(canon, ...extras);
     }
     return aliases;
@@ -99,10 +102,10 @@ export async function loadFormsIntoAlaSql(formSources, { defaultFormId, formInde
  * @param {Array} [args.sourceFilterClauses] ダッシュボードの簡易フィルタ
  * @returns {Promise<{ ok: boolean, rows?: any[], columns?: string[], error?: string }>}
  */
-async function executeSqlCore(transformedSql, { formSources, defaultFormId, formIndex, injectChildData = false, excludeMetaColumns = false, globalWhereExpr, sourceFilterClauses } = {}) {
+async function executeSqlCore(transformedSql, { formSources, defaultFormId, formIndex, injectChildData = false, excludeMetaColumns = false, globalWhereExpr, sourceFilterClauses, liveRowOverride = null, cacheOnly = false } = {}) {
   let aliases = [];
   try {
-    aliases = await loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData, excludeMetaColumns });
+    aliases = await loadFormsIntoAlaSql(formSources, { defaultFormId, formIndex, injectChildData, excludeMetaColumns, liveRowOverride, cacheOnly });
   } catch (err) {
     return { ok: false, error: "データ取得に失敗しました: " + (err.message || String(err)) };
   }
@@ -263,9 +266,9 @@ export async function executeQuestion(question, { forms, globalWhereExpr, source
  * - Question/Dashboard と違い、検索非対象メタ列（createdBy / modifiedBy / deletedAt / deletedBy）は
  *   テーブル登録時に除外する（excludeMetaColumns）。
  *
- * 呼び出し側（useSearchPageState）は結果行の `id`（自フォームの id）集合で baseFilteredEntries を
- * 絞り込む。id を持たない射影や別フォームの id は自フォームの id 集合に一致しないため、
- * 「対応するレコードが無い＝0 件」に自然に落ちる（＝メインは SELECT * / SELECT [id] FROM _ 想定）。
+ * 呼び出し側（useSearchPageState）は結果行の `id`（現フォームの id）集合で baseFilteredEntries を
+ * 絞り込む。id を持たない射影や別フォームの id は現フォームの id 集合に一致しないため、
+ * 「対応するレコードが無い＝0 件」に自然に落ちる（＝メインは SELECT * / SELECT [id] FROM _form 想定）。
  *
  * @param {string} sql 検索バーに入力された SELECT 文
  * @param {Object} args
@@ -312,6 +315,78 @@ export async function runSearchSelect(sql, { forms, defaultFormId } = {}) {
     formIndex,
     injectChildData,
     excludeMetaColumns: true,
+  });
+}
+
+/**
+ * テンプレート full-query モード（`{{SELECT ...}}`）の実行。
+ * runSearchSelect と同じ実行基盤（preprocessSql → executeSqlCore）を共有するが、
+ * 分析用途のため検索非対象メタ列を除外しない（excludeMetaColumns:false）。
+ * 現フォーム = `_form`（defaultFormId）。現レコード ID = `_id` は呼び出し側
+ * （prefetchQueryTokens）が substituteCurrentIdLiteral で sql に埋め込み済みの想定。
+ *
+ * 参照スコープは **自フォーム＋「別フォームを開く（formLink）」で紐づく子フォーム**に制限する
+ * （allowedFormIds = {defaultFormId} ∪ {親 schema の childFormId 群}）。それ以外の他フォーム参照は
+ * preprocessSql がエラーにする。子フォームは `FROM [子フォーム名]` ＋ `pid` 結合で参照でき、
+ * 件数・名前・URL だけなら式トークンの CHILD_FORM_* UDF でも取得できる。
+ * liveRowOverride を渡すと、`_form` の現レコード行を入力中のライブ値で上書きして解決する。
+ *
+ * @param {string} sql `_id` 置換済みの SELECT 文
+ * @param {Object} args
+ * @param {Array} args.forms 全フォーム（[フォーム名] 解決用）
+ * @param {string} args.defaultFormId 現フォームの fileId
+ * @param {object} [args.liveRowOverride] 現レコードのライブ view 行（buildLiveViewRow の出力）
+ * @returns {Promise<{ ok:boolean, rows?:any[], columns?:string[], error?:string }>}
+ */
+export async function runFullQuery(sql, { forms, defaultFormId, liveRowOverride = null } = {}) {
+  if (!sql || !sql.trim()) return { ok: false, error: "SQL が入力されていません" };
+  if (!defaultFormId) return { ok: false, error: "対象フォームが特定できません" };
+
+  const formIndex = buildFormIndex(Array.isArray(forms) ? forms : []);
+  const columnIndexCache = new Map();
+  const getColumnIndex = (formId) => {
+    if (!columnIndexCache.has(formId)) {
+      const f = formIndex.byId.get(formId);
+      columnIndexCache.set(formId, f ? buildColumnIndex(f) : null);
+    }
+    return columnIndexCache.get(formId);
+  };
+
+  // 置換 full-query は自フォーム＋「別フォームを開く（formLink）」で紐づく子フォームのみ参照可。
+  // それ以外の他フォーム参照は preprocessSql が outOfScopeFormError で弾く（任意フォームの読み取りは不可）。
+  // 子フォームの件数・名前・URL だけなら式トークンの CHILD_FORM_* UDF でも取得できる。
+  const parentForm = formIndex.byId.get(defaultFormId);
+  const childFormIds = parentForm && Array.isArray(parentForm.schema)
+    ? collectFormLinkFields(parentForm.schema).map((f) => f.childFormId).filter(Boolean)
+    : [];
+  const allowedFormIds = new Set([defaultFormId, ...childFormIds]);
+  const pre = preprocessSql(sql, { defaultFormId, formIndex, getColumnIndex, allowedFormIds });
+  if (!pre.ok) return { ok: false, error: pre.errors.join(" / ") };
+
+  const formSources = [];
+  const seen = new Set();
+  for (const fid of (pre.referencedFormIds || [])) {
+    if (seen.has(fid)) continue;
+    seen.add(fid);
+    const f = formIndex.byId.get(fid);
+    // cache-only 経路（メモリ常駐レコード＋入力中ライブ行で解決）なのでスプレッドシート連携は
+    // 要求しない。列解決用 schema を持つフォーム本体がローカルに在ることだけを要求する。
+    if (!f) {
+      return { ok: false, error: "対象フォームがローカルに見つかりません (form: " + fid + ")" };
+    }
+    formSources.push({ formId: fid });
+  }
+
+  const injectChildData = /CHILD_FORM_/i.test(sql);
+  return await executeSqlCore(pre.transformedSql, {
+    formSources,
+    defaultFormId,
+    formIndex,
+    injectChildData,
+    excludeMetaColumns: false,
+    liveRowOverride,
+    // フロント常駐データのみで解決（サーバ同期しない＝即時）。
+    cacheOnly: true,
   });
 }
 

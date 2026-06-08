@@ -11,7 +11,6 @@ import {
   getRecordsFromCache,
   applySyncResultToCache,
 } from "./recordsMemoryStore.js";
-import { mergeRecordsByModifiedAt } from "./recordMerge.js";
 import { buildUploadRecordsForSync } from "./syncUploadPlan.js";
 import { getFormsFromCache } from "./formsCache.js";
 import { evaluateCacheForRecords } from "./cachePolicy.js";
@@ -390,6 +389,9 @@ export const dataStore = {
       deletedRetentionDays
     };
 
+    // この時点でアップロードのスナップショット（uploadRecords）は確定済み。これ以降に
+    // ローカル編集されたレコードは未アップロードなので、古いサーバー応答で上書きしない。
+    const syncStartedAt = Date.now();
     const gasResult = await syncRecordsProxy(payload);
     const unchanged = gasResult?.unchanged === true;
     const syncedRecords = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
@@ -441,19 +443,17 @@ export const dataStore = {
         serverCommitToken: gasResult.serverCommitToken,
         serverModifiedAt: serverModifiedAt > 0 ? serverModifiedAt : 0,
         lastServerReadAt: nextLastServerReadAt,
+        syncStartedAt,
       });
     }
 
-    // シンク後の状態をメモリ内で計算し、不要な2回目のIDB読み取りを回避する
+    // シンク後の状態を取得する。差分マージは applySyncResultToCache が syncStartedAt 保護つきで
+    // ストアへ反映済みなので、保護結果を正しく返すためストア（メモリ）から読み戻す。
     let postSyncEntries;
     if (forceFullSync) {
       postSyncEntries = syncedRecords;
     } else {
-      const existingById = {};
-      prunedCachedEntries.forEach((e) => { existingById[e.id] = e; });
-      postSyncEntries = Object.values(mergeRecordsByModifiedAt(existingById, syncedRecords)).sort((a, b) =>
-        a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-      );
+      postSyncEntries = (await getRecordsFromCache(formId)).entries;
     }
 
     // 期限切れ tombstone だけをキャッシュから物理除去し、削除済み表示の制御は UI 側に委ねる

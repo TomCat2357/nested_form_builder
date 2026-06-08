@@ -100,7 +100,9 @@ function SyncRecords_(ctx) {
       } else {
         order = Sheets_normalizeHeaderKeyList_(order);
       }
-      var temporalTypeMap = ResolveTemporalTypeMap_(ctx);
+      var syncSchema = Nfb_resolveFormSchemaArray_(ctx);
+      var temporalTypeMap = syncSchema ? Sheets_collectTemporalPathMap_(syncSchema) : null;
+      var columnFormatMap = syncSchema ? Sheets_collectColumnFormatMap_(syncSchema) : null;
       Sheets_ensureHeaderMatrix_(sheet, order);
       var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
       var fixedColMap = Sheets_buildFixedColMapFromSheet_(sheet);
@@ -256,9 +258,27 @@ function SyncRecords_(ctx) {
       if (modifiedCount > 0) {
         Sheets_ensureRowCapacity_(sheet, dataStartRow + existingData.length - 1);
         if (existingData.length > 0) {
+          // テキスト系の列は全行 "@"（プレーンテキスト）に統一する。ブロック書き込みでは
+          // 未変更行の値もそのまま setValues するため、書式を先に確定しないと文字列が
+          // 日付/数値へ自動変換されてしまう。
+          if (columnFormatMap) {
+            for (var fk in columnFormatMap) {
+              if (!columnFormatMap.hasOwnProperty(fk)) continue;
+              if (NFB_RESERVED_HEADER_KEYS[fk]) continue;
+              if (!keyToColumn.hasOwnProperty(fk)) continue;
+              var fmtCol0 = keyToColumn[fk] - 1;
+              if (fmtCol0 < 0 || fmtCol0 >= lastColumn) continue;
+              var fmtVal = columnFormatMap[fk];
+              for (var fr = 0; fr < existingFormats.length; fr++) {
+                if (existingFormats[fr] && fmtCol0 < existingFormats[fr].length) {
+                  existingFormats[fr][fmtCol0] = fmtVal;
+                }
+              }
+            }
+          }
           var outRange = sheet.getRange(dataStartRow, 1, existingData.length, lastColumn);
-          outRange.setValues(existingData);
           outRange.setNumberFormats(existingFormats);
+          outRange.setValues(existingData);
         }
         SetServerModifiedAt_(nowMs);
         Sheets_touchSheetLastUpdated_(sheet, nowMs);

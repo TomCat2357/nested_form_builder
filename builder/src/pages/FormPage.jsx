@@ -16,6 +16,7 @@ import { useOperationCacheTrigger } from "../app/hooks/useOperationCacheTrigger.
 import { useEditLock } from "../app/hooks/useEditLock.js";
 import { useRefreshFormsIfNeeded } from "../app/hooks/useRefreshFormsIfNeeded.js";
 import { useAuth } from "../app/state/authContext.jsx";
+import { useFormContext } from "../app/state/formContext.jsx";
 import { useApplyTheme } from "../app/hooks/useApplyTheme.js";
 import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import { useEntries } from "../features/search/useEntries.js";
@@ -386,6 +387,21 @@ export default function FormPage() {
 
   useBeforeUnloadGuard(isDirty);
 
+  // 子フォームをオーバーレイで開いている場合、未保存編集の有無をオーバーレイへ通知する。
+  // オーバーレイは閉じる前にこれを参照し、dirty なら確認する（誤クローズによる入力消失を防ぐ）。
+  // Provider 配下でない（新規タブ／通常ページ）ときは registerDirtyChecker が無く no-op。
+  const childFormCtx = useFormContext();
+  const registerDirtyChecker = childFormCtx?.registerDirtyChecker;
+  // 子フォームのオーバーレイ文脈なら、保存するレコードへ刻む親レコード id（pid）。
+  // サーバは withUrlPid 経由で pid を刻むが、楽観的に保存するローカルレコードには載らないため
+  // ここでも明示して、pid 絞り込みの検索一覧から新規レコードが即座に漏れるのを防ぐ。
+  const childPid = childFormCtx?.inChildContext ? String(childFormCtx.pid || "") : "";
+  useEffect(() => {
+    if (typeof registerDirtyChecker !== "function") return undefined;
+    registerDirtyChecker(() => isDirtyRef.current);
+    return () => registerDirtyChecker(null);
+  }, [registerDirtyChecker, isDirtyRef]);
+
   const navigateBack = (args = {}) => performFormPageNavigateBack(args, {
     formId, entryId, isDirectRecordMode, isFormScoped, fallbackPath, location, navigate, clearNewEntryDraft,
   });
@@ -411,6 +427,7 @@ export default function FormPage() {
         setDriveFolderStates,
         setEntry,
         showAlert,
+        childPid,
       },
     )
   );
@@ -711,6 +728,7 @@ export default function FormPage() {
             formId: form.id,
             recordId: currentRecordId,
             recordNo: recordNoInput,
+            pid: entry?.pid || "",
             modifiedAt: entry?.modifiedAt,
             modifiedAtUnixMs: entry?.modifiedAtUnixMs,
             driveFileUrl: form?.driveFileUrl || "",

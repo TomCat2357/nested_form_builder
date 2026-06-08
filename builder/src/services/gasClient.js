@@ -1,3 +1,5 @@
+import { getRegisteredFormPid } from "./formPidContext.js";
+
 export const hasScriptRun = () => typeof google !== "undefined" && google?.script?.run;
 
 // URL で指定された pid（親レコード ID）。doGet が window.__PID__ に、固定フォーム ID を
@@ -6,18 +8,28 @@ export const hasScriptRun = () => typeof google !== "undefined" && google?.scrip
 // 固定されていない（管理画面など）状態で pid が紛れ込んでも、従来どおり全件・刻印なしのままにする。
 // 有効時はレコード系 API へ自動付与し、サーバ側で「その pid に等しい行」だけを返させ、新規行には
 // その pid を必ず刻ませる。
-export const getUrlPid = () => {
+//
+// 引数 formId を渡した場合は「その呼び出し先フォームが URL 固定フォーム（__FORM_ID__）と一致
+// するときだけ」グローバル pid を適用する（子フォームのオーバーレイ等、別フォームへの呼び出しに
+// 親タブの pid が紛れ込まないようにする）。formId 省略時は従来どおり（__FORM_ID__ 非空なら適用）。
+export const getUrlPid = (formId) => {
   if (typeof window === "undefined") return "";
   // フォームが URL で固定されていない（__FORM_ID__ 空）ときは pid を無効化する。
-  const formId = window.__FORM_ID__;
-  if (formId === undefined || formId === null || String(formId).trim() === "") return "";
+  const urlFormId = window.__FORM_ID__;
+  if (urlFormId === undefined || urlFormId === null || String(urlFormId).trim() === "") return "";
+  if (formId !== undefined && String(formId).trim() !== String(urlFormId).trim()) return "";
   const raw = window.__PID__;
   return raw === undefined || raw === null ? "" : String(raw).trim();
 };
 
-// pid が有効（formid 併用かつ非空）のときだけ payload に { pid } を足して返す（無効なら payload をそのまま）。
+// payload.formId に対する pid を解決して { pid } を付与する。
+// 1) formPidContext に明示登録があれば最優先（子フォームのオーバーレイ文脈）。
+// 2) 無ければ URL グローバル（__FORM_ID__ と payload.formId が一致するときの __PID__）。
+// どちらも空なら payload をそのまま返す。payload.formId をキーに解決するので、親子が同時に
+// マウントされていても呼び出し先ごとに正しい pid を引ける。
 const withUrlPid = (payload) => {
-  const pid = getUrlPid();
+  const formId = payload && payload.formId;
+  const pid = getRegisteredFormPid(formId) || getUrlPid(formId);
   return pid ? { ...payload, pid } : payload;
 };
 

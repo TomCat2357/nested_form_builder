@@ -21,6 +21,15 @@ import {
   precompileTemplate,
   extractFieldRefs,
 } from "../features/expression/templateEvaluator.js";
+import {
+  collectBalancedBraces,
+  escapeBraces,
+  unescapeBraces,
+  scanAndReplace,
+  isFullQueryBody,
+  restoreEscapedBraces,
+} from "../features/expression/templateScanner.js";
+import { substituteCurrentIdLiteral, collapseQueryResult } from "../features/expression/fullQuerySql.js";
 import { buildRowForExpression } from "../features/expression/buildRowForExpression.js";
 import {
   buildLabelValueMap as sharedBuildLabelValueMap,
@@ -89,8 +98,149 @@ export const resolveTemplateTokens = (template, context) => {
   const text = String(template);
   if (!text) return "";
   if (text.indexOf("{") < 0) return text;
-  const row = buildTemplateRow(context);
-  return resolveTemplate(text, row, { fallback: "", logError: logTemplateError });
+  const ctx = context || {};
+  const row = buildTemplateRow(ctx);
+  // full-query トークン（先頭 SELECT）は同期評価できないため、context.queryTokenValues
+  // （prefetchQueryTokens の結果 Map）から引く。無いトークンは fallback ("")。
+  const queryTokenValues = ctx.queryTokenValues instanceof Map ? ctx.queryTokenValues : undefined;
+  // prefetch 完了を呼び出し側（PreviewPage）が ctx.queryTokensReady で伝える。未指定/false の間は
+  // 未解決 full-query を警告しない（非同期 prefetch 前の同期 resolve は未解決が正常なため）。
+  const queryTokensReady = ctx.queryTokensReady === true;
+  return resolveTemplate(text, row, { fallback: "", logError: logTemplateError, queryTokenValues, queryTokensReady });
+};
+
+// full-query 結果中の `{` `}` を `\{` `\}` にエスケープする。GAS 送信用テンプレに
+// 結果を埋め込む際、ブレースがトークン誤認・破損しないようにする（GAS 側 nfbTplEscape_/
+// nfbTplUnescape_ が `\{` をリテラル `{` に戻す）。
+function escapeBraceLiteral_(value) {
+  return String(value === undefined || value === null ? "" : value)
+    .split("{").join("\\{")
+    .split("}").join("\\}");
+}
+
+/**
+ * テンプレート中の full-query トークン（`{{SELECT ...}}`）を実行し、
+ * `Map<fullToken(escape 済み), 解決文字列>` を返す。式トークンは対象外。
+ * full-query が無ければ空 Map（既存の式のみテンプレはほぼ無コスト）。
+ *
+ * context: { recordId, formId, forms?, liveRowOverride?, fallback? }
+ *   - recordId        現レコード ID（`_id` 置換に使う）
+ *   - formId          現フォーム ID（`_form` / 修飾なし列の defaultFormId）
+ *   - forms           全フォーム配列（[フォーム名] 解決用）。無ければ dataStore.listForms で取得。
+ *   - liveRowOverride 現レコードの入力中ライブ view 行（buildLiveViewRow の出力）。`_form` の
+ *                     現レコード行を保存済みキャッシュではなくこのライブ値で解決する。
+ */
+export const prefetchQueryTokens = async (template, context) => {
+  const cache = new Map();
+  if (template === undefined || template === null) return cache;
+  const text = String(template);
+  if (text.indexOf("{") < 0) return cache;
+  const ctx = context || {};
+  const escaped = escapeBraces(text);
+  const tokens = collectBalancedBraces(escaped).filter((t) => isFullQueryBody(t.body));
+  if (tokens.length === 0) return cache;
+
+  // データ層（analyticsStore / dataStore）は full-query が実在するときだけ動的 import する。
+  // tokenReplacer の純関数（resolveTemplateTokens / injectResolvedQueryTokens 等）を
+  // node のユニットテストで読み込む際にブラウザ専用依存を巻き込まないため。
+  const { runFullQuery } = await import("../features/analytics/analyticsStore.js");
+
+  const recordId = ctx.recordId || "";
+  const defaultFormId = ctx.formId || "";
+  const liveRowOverride = ctx.liveRowOverride || null;
+  let forms = Array.isArray(ctx.forms) ? ctx.forms : null;
+  if (!forms) {
+    // full-query はフロント常駐データのみで解決する（サーバ同期しない）。フォーム一覧も
+    // ネットワーク（dataStore.listForms → listFormsFromGas）ではなくローカルの IndexedDB
+    // キャッシュ（getFormsFromCache）から取る。未取得なら空配列にフォールバック。
+    try {
+      const { getFormsFromCache } = await import("../app/state/formsCache.js");
+      const res = await getFormsFromCache();
+      forms = Array.isArray(res?.forms) ? res.forms : [];
+    } catch (err) {
+      logTemplateError(err, "(getFormsFromCache)");
+      forms = [];
+    }
+  }
+
+  for (const tok of tokens) {
+    if (cache.has(tok.fullToken)) continue;
+    const rawSql = unescapeBraces(tok.body);
+    let value = "";
+    try {
+      const sql = substituteCurrentIdLiteral(rawSql, recordId);
+      const res = await runFullQuery(sql, { forms, defaultFormId, liveRowOverride });
+      if (res && res.ok) {
+        value = collapseQueryResult(res.rows, res.columns);
+      } else {
+        logTemplateError(new Error((res && res.error) || "full-query failed"), tok.fullToken);
+      }
+    } catch (err) {
+      logTemplateError(err, tok.fullToken);
+    }
+    cache.set(tok.fullToken, value);
+  }
+  return cache;
+};
+
+/**
+ * テンプレートトークンを非同期に解決する。full-query を prefetch → 式を precompile →
+ * 同期 resolve（full-query 値は Map から、式は compile キャッシュから）。
+ * フロントの表示・プレビュー用途の移行 API。
+ */
+export const resolveTemplateTokensAsync = async (template, context) => {
+  if (template === undefined || template === null) return "";
+  const text = String(template);
+  if (!text) return "";
+  if (text.indexOf("{") < 0) return text;
+  const ctx = context || {};
+  const queryTokenValues = await prefetchQueryTokens(text, ctx);
+  await precompileTemplate(text);
+  const row = buildTemplateRow(ctx);
+  // ここでは prefetch を await 済みなので、未解決 full-query は本物の欠落 → 警告する。
+  return resolveTemplate(text, row, { fallback: "", logError: logTemplateError, queryTokenValues, queryTokensReady: true });
+};
+
+/**
+ * 出力（PDF/Gmail/Doc ファイル名・Gmail 本文等）用に、テンプレート中の full-query
+ * トークンだけをクライアントで事前解決し、結果を `\{` `\}` エスケープして埋め込んだ
+ * 新しいテンプレ文字列を返す。単純式トークン（`{{`field`}}` 等）は原文のまま残し、
+ * GAS が payload から解決する。full-query が無ければ原文をそのまま返す（GAS が全解決）。
+ *
+ * GAS にはクエリエンジンが無いため、この事前解決を経ずに `{{SELECT ...}}` が GAS へ
+ * 届いた場合は GAS 側でリテラル/フォールバック扱いになる（Google Doc 本文経路など）。
+ */
+/**
+ * テンプレート中の full-query トークンだけを queryTokenValues（escape 済み fullToken→値）
+ * の解決値（`\{` `\}` エスケープ済み）に差し替え、単純式トークン・著者エスケープ・
+ * リテラルは原文のまま残した新テンプレ文字列を返す純関数。
+ * full-query が無ければ原文をそのまま返す。
+ */
+export const injectResolvedQueryTokens = (template, queryTokenValues) => {
+  if (template === undefined || template === null) return "";
+  const text = String(template);
+  if (!text || text.indexOf("{") < 0) return text;
+  const map = queryTokenValues instanceof Map ? queryTokenValues : null;
+  if (!map || map.size === 0) return text;
+  const escaped = escapeBraces(text);
+  const replaced = scanAndReplace(escaped, (tok) => {
+    if (isFullQueryBody(tok.body)) {
+      const v = map.has(tok.fullToken) ? map.get(tok.fullToken) : "";
+      return escapeBraceLiteral_(v);
+    }
+    return tok.fullToken;
+  });
+  return restoreEscapedBraces(replaced);
+};
+
+export const resolveQueryTokensInTemplate = async (template, context) => {
+  if (template === undefined || template === null) return "";
+  const text = String(template);
+  if (!text) return text;
+  if (text.indexOf("{") < 0) return text;
+  const ctx = context || {};
+  const queryTokenValues = await prefetchQueryTokens(text, ctx);
+  return injectResolvedQueryTokens(text, queryTokenValues);
 };
 
 /**

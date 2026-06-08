@@ -63,6 +63,7 @@ export function useSearchPageState({
   getFormById,
   forms,
   settings,
+  childPid = "",
 }) {
   const queryFormId = (searchParams.get("form") || "").trim();
   const effectiveFormId = queryFormId || scopedFormId;
@@ -116,7 +117,7 @@ export function useSearchPageState({
   })();
 
   const {
-    entries,
+    entries: allEntries,
     loading,
     backgroundLoading,
     waitingForLock,
@@ -134,6 +135,15 @@ export function useSearchPageState({
     locationState: location.state,
     showAlert,
   });
+
+  // 子フォームのオーバーレイ文脈では、開いた元の親レコード id（childPid）に等しい行だけを対象にする。
+  // レコードキャッシュは formId 単位で共有され他 pid の行も載りうる（SWR の即時表示・差分同期の
+  // 残留）ため、サーバ側 pid フィルタに加えてここでも絞り込み、表示・検索・ソート・出力の全段を
+  // pid スコープに揃える。childPid が空（通常ページ）なら従来どおり全件。
+  const entries = useMemo(() => {
+    if (!childPid) return allEntries;
+    return allEntries.filter((entry) => String(entry?.pid ?? "") === childPid);
+  }, [allEntries, childPid]);
 
   const { columns, headerRows } = useMemo(
     () => buildSearchTableLayout(form, {
@@ -290,7 +300,7 @@ export function useSearchPageState({
       return;
     }
     // SQL モード（先頭 SELECT）: 検索バーに最上位 SQL を直接書く。
-    // 自フォームを `_`、本文にサブクエリ / 別フォーム参照を書ける。結果行の自フォーム id 集合で
+    // 現フォームを `_form`、本文にサブクエリ / 別フォーム参照を書ける。結果行の現フォーム id 集合で
     // baseFilteredEntries を絞り込む（id を持たない射影 / 別フォームの id は一致せず 0 件）。
     if (SQL_MODE_RE.test(keyword)) {
       setFilterError(null);

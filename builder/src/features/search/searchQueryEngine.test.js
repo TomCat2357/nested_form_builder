@@ -492,7 +492,7 @@ test("collectSearchPatterns: 裸単語と列指定を収集", () => {
 });
 
 test("collectSearchPatterns: SQL モード（先頭 SELECT）は空配列", () => {
-  assert.deepEqual(collectSearchPatterns("SELECT * FROM _ WHERE `氏名` LIKE '%田%'"), []);
+  assert.deepEqual(collectSearchPatterns("SELECT * FROM _form WHERE `氏名` LIKE '%田%'"), []);
 });
 
 test("buildRowHitExcerpts: ヒット列にセグメントとラベルを返す", () => {
@@ -709,7 +709,7 @@ test("collectConditionColumns: COMPARE / IN / BOOL を列条件として収集",
 });
 
 test("collectConditionColumns: SQL モード（先頭 SELECT）は対象外", () => {
-  assert.deepEqual(collectConditionColumns("SELECT * FROM _ WHERE 実施年月日>=2026/05/01"), []);
+  assert.deepEqual(collectConditionColumns("SELECT * FROM _form WHERE 実施年月日>=2026/05/01"), []);
 });
 
 test("buildRowHitExcerpts: 比較条件が一致した列を値付きで返す（(他の項目に一致) にしない）", () => {

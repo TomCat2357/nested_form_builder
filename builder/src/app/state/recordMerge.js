@@ -97,7 +97,7 @@ export const buildEntryIndexMap = (records) => {
 // Merge logic
 // ---------------------------------------------------------------------------
 
-export const mergeRecordsByModifiedAt = (existingMap, newRecords) => {
+export const mergeRecordsByModifiedAt = (existingMap, newRecords, { syncStartedAt = 0 } = {}) => {
   const merged = { ...(existingMap || {}) };
   const safeNewRecords = Array.isArray(newRecords) ? newRecords : [];
 
@@ -105,6 +105,12 @@ export const mergeRecordsByModifiedAt = (existingMap, newRecords) => {
     const entryId = record?.id ?? record?.entryId;
     if (!entryId) continue;
     const existing = merged[entryId];
+    // syncStartedAt ガード: 同期開始後にローカル変更されたレコード（lastSyncedAt > syncStartedAt）は
+    // サーバー版で丸ごと上書きしない。楽観的に付けた値（例: 特勤フラグ）が、その値をまだ含まない
+    // 古いサーバー応答で消えるのを防ぐ。upsertRecordInCache（recordsMemoryStore.js）の保護と同じ規則。
+    if (existing && syncStartedAt && existing.lastSyncedAt > syncStartedAt) {
+      continue;
+    }
     if (!existing || getComparableModifiedAt(record) >= getComparableModifiedAt(existing)) {
       merged[entryId] = existing?.rowIndex !== undefined && record?.rowIndex === undefined
         ? { ...record, rowIndex: existing.rowIndex }

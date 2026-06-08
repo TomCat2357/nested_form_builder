@@ -7,6 +7,7 @@
 import { getAlaSql } from "../expression/alasqlRuntime.js";
 import { unionRowKeys } from "./utils/computeShared.js";
 import { dataStore } from "../../app/state/dataStore.js";
+import { getRecordsFromCache } from "../../app/state/recordsMemoryStore.js";
 import { entriesToViewTableRows } from "./entriesToViewRows.js";
 import { bracketIdent } from "../expression/sqlEmit.js";
 import { ANALYTICS_SOURCE_TABLE_CACHE_TTL_MS, NON_SEARCHABLE_META_KEYS } from "../../core/constants.js";
@@ -102,6 +103,12 @@ async function injectChildFormDataIntoRows_(rows, form) {
  * @param {boolean} [options.excludeMetaColumns] - 検索非対象の固定メタ列（createdBy / modifiedBy /
  *   deletedAt / deletedBy）を登録テーブルから落とす。検索の SQL モード（runSearchSelect）だけ true。
  *   Question/Dashboard は分析用途のため false（全列アクセス可）。
+ * @param {object} [options.liveRowOverride] - 置換 full-query 用。現レコードの「入力中のライブ行」
+ *   （buildLiveViewRow の出力）。登録テーブルから同 id の行を除き、この行で置換する（id 未存在なら追加）。
+ *   キャッシュ（sourceTableCache）は汚さない（新配列で適用）。呼び出し側が default フォームのときだけ渡す。
+ * @param {boolean} [options.cacheOnly] - テンプレ full-query 用。true のときサーバ同期せず
+ *   getRecordsFromCache（メモリ常駐レコード）から基底行を取得する。sourceTableCache も使わず
+ *   毎回現状態を反映する。検索 / Question / Dashboard は false のまま（dataStore.listEntries で同期）。
  */
 export async function registerFormAsTable(alias, formId, options = {}) {
   if (!alias) throw new Error("alias is required");
@@ -111,13 +118,31 @@ export async function registerFormAsTable(alias, formId, options = {}) {
   const wantChild = options.injectChildData === true && formHasFormLink_(options.form);
   // 元レコードテーブルは formId 単位でキャッシュ（TTL 内はサーバ同期も行変換もスキップ）。
   const cacheKey = wantChild ? formId + "#child" : formId;
-  let rows = getCachedSourceRows_(cacheKey);
-  if (!rows) {
-    const result = await dataStore.listEntries(formId);
-    const entries = filterNotDeleted_(result?.entries);
+  let rows;
+  if (options.cacheOnly === true) {
+    // cache-only（テンプレ full-query）: サーバ同期（dataStore.listEntries → syncRecordsProxy）を
+    // せず、メモリ常駐レコードだけを読む。sourceTableCache は使わず毎回現状態を反映する
+    // （TTL 由来の陳腐化を避け、別経路の同期がメモリ常駐へ反映した結果は次回呼び出しで自然に拾う）。
+    const cache = await getRecordsFromCache(formId);
+    const entries = filterNotDeleted_(cache?.entries);
     rows = entriesToViewTableRows(entries, options.form);
     if (wantChild) await injectChildFormDataIntoRows_(rows, options.form);
-    sourceTableCache.set(cacheKey, { rows, ts: Date.now() });
+  } else {
+    rows = getCachedSourceRows_(cacheKey);
+    if (!rows) {
+      const result = await dataStore.listEntries(formId);
+      const entries = filterNotDeleted_(result?.entries);
+      rows = entriesToViewTableRows(entries, options.form);
+      if (wantChild) await injectChildFormDataIntoRows_(rows, options.form);
+      sourceTableCache.set(cacheKey, { rows, ts: Date.now() });
+    }
+  }
+  // 置換 full-query の現レコード行を「入力中のライブ値」で上書きする。filter+concat で
+  // 新配列を作るためキャッシュ（上で set した rows 参照）は汚れない。id 一致行を除いて末尾に足す。
+  const liveRowOverride = options.liveRowOverride;
+  if (liveRowOverride && liveRowOverride.id != null) {
+    const ovId = String(liveRowOverride.id);
+    rows = rows.filter((r) => String(r && r.id) !== ovId).concat([liveRowOverride]);
   }
   // 検索の SQL モードは検索非対象メタ列を落とす（Question/Dashboard は false で全列のまま）。
   // strip は新オブジェクトを生成するのでキャッシュ済み rows は汚さない。

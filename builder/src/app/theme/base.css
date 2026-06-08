@@ -373,6 +373,14 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* 編集不可かつ視覚的にグレーアウトする入力（例: 親レコードID pid） */
+.nf-input--disabled {
+  cursor: not-allowed;
+  background: var(--input-disabled-bg, var(--surface-muted, var(--surface)));
+  color: var(--text-muted);
+  opacity: 0.7;
+}
+
 .nf-input--error {
   border-color: var(--input-error-border, var(--danger-bright));
 }

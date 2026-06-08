@@ -3,6 +3,7 @@ import { HashRouter, Route, Routes, Navigate, useParams, useSearchParams } from 
 import { AppDataProvider } from "./state/AppDataProvider.jsx";
 import { AlertProvider } from "./state/AlertProvider.jsx";
 import { AuthProvider, useAuth } from "./state/authContext.jsx";
+import { ChildFormProvider } from "../features/childform/ChildFormOverlay.jsx";
 import { useGlobalUnsyncedGuard } from "./hooks/useGlobalUnsyncedGuard.js";
 import HomePage from "../pages/HomePage.jsx";
 import SearchPage from "../pages/SearchPage.jsx";
@@ -315,9 +316,11 @@ export default function App() {
     <AuthProvider>
       <AppDataProvider>
         <AlertProvider>
-          <HashRouter>
-            <AppRoutes />
-          </HashRouter>
+          <ChildFormProvider>
+            <HashRouter>
+              <AppRoutes />
+            </HashRouter>
+          </ChildFormProvider>
         </AlertProvider>
       </AppDataProvider>
     </AuthProvider>

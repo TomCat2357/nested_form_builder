@@ -45,6 +45,15 @@ function nfbTplUnescape_(text) {
     .split(NFB_TPL_ESC_CLOSE_).join("}");
 }
 
+// full-query モード判定（フロント templateScanner.js isFullQueryBody の双子）。
+// 本文が先頭 SELECT のトークンはフル SQL クエリ。GAS にはクエリエンジンが無いため、
+// nfbEvaluateTemplate_ はこれを評価せずリテラル/フォールバックで残す（クライアント
+// が出力前に事前解決する前提。Google Doc 本文など事前解決できない経路では原文が残る）。
+var NFB_TPL_FULL_QUERY_RE_ = /^\s*SELECT\b/i;
+function nfbTplIsFullQueryBody_(body) {
+  return NFB_TPL_FULL_QUERY_RE_.test(String(body === undefined || body === null ? "" : body));
+}
+
 function nfbTplFindBalancedClose_(text, openIndex) {
   if (text.charAt(openIndex) !== "{") return -1;
   var n = text.length;
@@ -232,6 +241,13 @@ function nfbEvaluateTemplate_(template, row, options) {
 
   var escaped = nfbTplEscape_(text);
   var replaced = nfbTplScanAndReplace_(escaped, function(tok) {
+    // full-query トークン（先頭 SELECT）は GAS にクエリエンジンが無いため評価しない。
+    // クライアントが出力前に事前解決する想定。未解決で届いた場合（Google Doc 本文など
+    // クライアント payload を通らない経路）は原文/フォールバックのまま残す（式評価に渡すと
+    // SELECT (SELECT ...) で throw するため、リテラル化して問題に気づけるようにする）。
+    if (nfbTplIsFullQueryBody_(tok.body)) {
+      return hasFallback ? opts.fallback : tok.fullToken;
+    }
     var tokRow = theRow;
     var parts = nfbTplSplitTopLevelCommas_(tok.body);
     if (parts.length <= 1) {

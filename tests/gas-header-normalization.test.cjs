@@ -26,12 +26,14 @@ function loadGasContext() {
     NFB_DATA_START_ROW: 12,
     NFB_FIXED_HEADER_PATHS: fixedHeaderPaths,
     NFB_RESERVED_HEADER_KEYS: reservedKeys,
+    NFB_SHEETS_TEXT_FORMAT: "@",
     Sheets_ensureRowCapacity_: () => {},
     Sheets_ensureColumnExists_: () => {},
     Sheets_touchSheetLastUpdated_: () => {},
   };
 
   return loadGasFiles(context, [
+    "schemaUtils.gs",
     "pathCodec.gs", "sheetsHeaders.gs",
     "sheetsRecords.gs",
     "sheetsRowOps.gs",
@@ -75,6 +77,51 @@ test("保存時の order と responses も同じキー正規化を通す", () =>
 
   assert.deepEqual(toPlain(ctx.order), ["質問カード/選択肢A"]);
   assert.deepEqual(toPlain(ctx.responses), { "質問カード/選択肢A": "回答" });
+});
+
+test("Sheets_collectColumnFormatMap_ は日付/時間以外の全データ列を '@' にし date/time だけ除外する", () => {
+  const gas = loadGasContext();
+  const schema = [
+    { id: "q1", type: "text", label: "氏名" },
+    { id: "q2", type: "number", label: "年齢" },
+    { id: "q3", type: "date", label: "生年月日" },
+    { id: "q4", type: "phone", label: "電話" },
+    {
+      id: "q5",
+      type: "select",
+      label: "性別",
+      options: [{ id: "o1", label: "男" }, { id: "o2", label: "女" }],
+    },
+    { id: "q6", type: "time", label: "開始時刻" },
+  ];
+
+  const map = toPlain(gas.Sheets_collectColumnFormatMap_(schema));
+
+  // テキスト系（text / phone）・数値（number）・選択肢マーカー列はすべて "@"
+  assert.equal(map["氏名"], "@");
+  assert.equal(map["電話"], "@");
+  assert.equal(map["年齢"], "@");
+  assert.equal(map["性別/男"], "@");
+  assert.equal(map["性別/女"], "@");
+  // date / time 列だけはマップに含めない（専用の日時セル経路で日時書式を付ける）
+  assert.ok(!("生年月日" in map));
+  assert.ok(!("開始時刻" in map));
+});
+
+test("Sheets_buildOrderFromSchema_ は列キーを Sheets_collectColumnFormatMap_ と同じ規則で生成する", () => {
+  const gas = loadGasContext();
+  const schema = [
+    { id: "q1", type: "text", label: "氏名" },
+    {
+      id: "q5",
+      type: "select",
+      label: "性別",
+      options: [{ id: "o1", label: "男" }, { id: "o2", label: "女" }],
+    },
+  ];
+
+  const order = toPlain(gas.Sheets_buildOrderFromSchema_(schema));
+  assert.deepEqual(order, ["氏名", "性別/男", "性別/女"]);
 });
 
 test("ヘッダーマップ生成でも前後空白を無視する", () => {

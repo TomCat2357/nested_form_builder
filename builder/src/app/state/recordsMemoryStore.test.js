@@ -228,6 +228,47 @@ test("applySyncResultToCache preserves a locally newer record over older server 
   assert.equal(entries[0].data.field_a, "fresh-local");
 });
 
+test("applySyncResultToCache protects a record edited after the sync started (syncStartedAt guard)", async () => {
+  __resetMemoryStoreForTests();
+  const t0 = 1_700_000_000_000;
+  await saveRecordsToCache(FORM_ID, [
+    sampleRecord("rec_1", { data: { field_a: "base" }, modifiedAtUnixMs: t0 }),
+  ]);
+
+  // 同期はローカル編集より前に開始した。
+  const syncStartedAt = Date.now() - 1000 * 60 * 60;
+  // 同期往復の最中にローカルで特勤フラグを付けた（lastSyncedAt = 現在 > syncStartedAt）。
+  await upsertRecordInCache(FORM_ID, sampleRecord("rec_1", {
+    data: { field_a: "base", 特勤: true },
+    modifiedAtUnixMs: t0 + 1_000,
+  }));
+
+  // サーバーは modifiedAt がより新しいが特勤を含まない（アップロード前のスナップショット）応答を返す。
+  await applySyncResultToCache(FORM_ID, [
+    sampleRecord("rec_1", { data: { field_a: "base" }, modifiedAtUnixMs: t0 + 9_000 }),
+  ], [], { syncStartedAt });
+
+  const { entries } = await getRecordsFromCache(FORM_ID);
+  assert.equal(entries[0].data.特勤, true, "同期開始後に付けた特勤は、古いサーバー応答で消えてはならない");
+});
+
+test("applySyncResultToCache overwrites with a newer server record when no local edit raced the sync", async () => {
+  __resetMemoryStoreForTests();
+  const t0 = 1_700_000_000_000;
+  await saveRecordsToCache(FORM_ID, [
+    sampleRecord("rec_1", { data: { field_a: "base" }, modifiedAtUnixMs: t0 }),
+  ]);
+
+  // 同期はローカルの最終更新より後に開始（= レース無し）。サーバーの新しい版が正しく勝つ。
+  const syncStartedAt = Date.now() + 1000 * 60 * 60;
+  await applySyncResultToCache(FORM_ID, [
+    sampleRecord("rec_1", { data: { field_a: "from-server" }, modifiedAtUnixMs: t0 + 5_000 }),
+  ], [], { syncStartedAt });
+
+  const { entries } = await getRecordsFromCache(FORM_ID);
+  assert.equal(entries[0].data.field_a, "from-server");
+});
+
 test("updateRecordsMeta merges metadata fields without losing entries", async () => {
   __resetMemoryStoreForTests();
   await saveRecordsToCache(FORM_ID, [sampleRecord("rec_1")]);

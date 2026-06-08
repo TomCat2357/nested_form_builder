@@ -316,7 +316,10 @@ export async function applySyncResultToCache(formId, syncedRecords, headerMatrix
     if (entryId) existingMap[entryId] = record;
   }
 
-  const mergedMap = mergeRecordsByModifiedAt(existingMap, syncedRecords);
+  // syncStartedAt 以降にローカル編集されたレコードはサーバー版で上書きしない（未確定編集の保護）。
+  const mergedMap = mergeRecordsByModifiedAt(existingMap, syncedRecords, {
+    syncStartedAt: metaUpdates.syncStartedAt || 0,
+  });
   for (const [entryId, record] of Object.entries(mergedMap)) {
     if (existingMap[entryId] === record) continue;
     const built = buildRecordWithMeta(formId, record, lastSyncedAt, record?.rowIndex);

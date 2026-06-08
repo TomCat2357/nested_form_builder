@@ -83,6 +83,9 @@ var NFB_SHEETS_EPOCH_MS = new Date(1899, 11, 30, 0, 0, 0).getTime();
 var NFB_SHEETS_DATE_FORMAT = "yyyy/mm/dd";
 var NFB_SHEETS_TIME_FORMAT = "hh:mm:ss";
 var NFB_SHEETS_DATETIME_FORMAT = "yyyy/mm/dd hh:mm:ss";
+// 自由記述系フィールド（text / phone など）と選択肢マーカー列に与えるプレーンテキスト書式。
+// "1-1" を日付に、"007" を数値に勝手に変換させないため、値書き込み前にこの書式を割り当てる。
+var NFB_SHEETS_TEXT_FORMAT = "@";
 var NFB_ULID_RANDOM_LENGTH = 16;
 var NFB_LAST_ULID_TS_MS = -1;
 var NFB_LAST_ULID_RANDOM = "";
