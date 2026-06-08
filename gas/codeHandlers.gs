@@ -294,12 +294,6 @@ function ResolveTemporalTypeMap_(ctx) {
   return schema ? Sheets_collectTemporalPathMap_(schema) : null;
 }
 
-// 列ごとのスプレッドシート数値書式マップ（テキスト列 → "@"）。型不明時は null。
-function ResolveColumnFormatMap_(ctx) {
-  var schema = Nfb_resolveFormSchemaArray_(ctx);
-  return schema ? Sheets_collectColumnFormatMap_(schema) : null;
-}
-
 function SubmitResponses_(ctx) {
   return ExecuteWithSheet_(ctx, (sheet) => {
     return WithScriptLock_("保存", () => {
