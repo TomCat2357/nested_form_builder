@@ -41,15 +41,15 @@ test("demoteIntoPrevSibling: 既存 children の末尾に追加される", () =>
   assert.deepEqual(next[0].children.map((c) => c.id), ["a1", "b"]);
 });
 
-test("demoteIntoPrevSibling: 選択肢型は最初の選択肢の childrenByValue へ入る", () => {
+test("demoteIntoPrevSibling: 選択肢型は最後の選択肢の childrenByValue へ入る", () => {
   const fields = [
     { id: "a", type: "radio", label: "A", options: [{ id: "o1", label: "選択肢1" }, { id: "o2", label: "選択肢2" }] },
     { id: "b", type: "text", label: "B" },
   ];
   const next = demoteIntoPrevSibling(fields, 1);
   assert.equal(next.length, 1);
-  assert.deepEqual(next[0].childrenByValue["選択肢1"].map((c) => c.id), ["b"]);
-  assert.equal(next[0].childrenByValue["選択肢2"], undefined);
+  assert.deepEqual(next[0].childrenByValue["選択肢2"].map((c) => c.id), ["b"]);
+  assert.equal(next[0].childrenByValue["選択肢1"], undefined);
 });
 
 test("demoteIntoPrevSibling: 先頭要素は降格できず null", () => {

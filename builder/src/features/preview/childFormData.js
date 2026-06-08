@@ -84,6 +84,8 @@ const toChildRecordItem_ = (childSchema, record) => {
   return {
     id: String(record && record.id ? record.id : ""),
     no: record && record["No."] != null ? record["No."] : "",
+    // 第3引数（childDataByFieldId）は意図的に省く。子フォーム内のさらなる子 formLink は
+    // 再帰展開せず空 placeholder も出さない（無限ネストと payload 肥大を防ぐ）。
     items: buildRecordItems(childSchema || [], responses),
   };
 };
