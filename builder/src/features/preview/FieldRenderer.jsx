@@ -2,7 +2,7 @@ import React from "react";
 import { DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
 import { shouldShowUnconditionalChildren } from "../../core/fieldValue.js";
 import { formatCanonical } from "../../utils/dateTime.js";
-import { getNumberMode, isNumberInputDraftAllowed, validateByPattern } from "../../core/validate.js";
+import { getNumberMode, isNumberInputDraftAllowed, validateByPattern, NUMBER_MODE_CONFIG } from "../../core/validate.js";
 import { resolveLabelSize, resolveTextColor, resolveStyleSettingsInlineStyle } from "../../core/styleSettings.js";
 import { getStandardPhonePlaceholder } from "../../core/phone.js";
 import { getPrintTemplateOutputLabel } from "../../utils/printTemplateAction.js";
@@ -51,6 +51,7 @@ const FieldRenderer = ({
   resolveTokens = identityFn,
   computedValues,
   computedErrors,
+  depth = 0,
 }) => {
   const validation = validateByPattern(field, value);
   const selectedChoiceLabels = toSelectedChoiceLabels(field, value);
@@ -118,7 +119,7 @@ const FieldRenderer = ({
       <div className="preview-field">
         {renderLabel({ tag: "div", fallback: "メッセージ", showRequired: false })}
         {renderComment()}
-        {renderChildrenAll ? <div className={s.child.className}>{renderChildrenAll()}</div> : null}
+        {renderChildrenAll ? <div className={s.child.className} data-depth={depth + 1}>{renderChildrenAll()}</div> : null}
       </div>
     );
   }
@@ -233,7 +234,7 @@ const FieldRenderer = ({
     const childrenForCheckboxes =
       field.type === "checkboxes" && renderChildrenForOption
         ? selectedChoiceLabels.map((label) => (
-            <div key={`ro_child_${field.id}_${label}`} className={s.child.className}>
+            <div key={`ro_child_${field.id}_${label}`} className={s.child.className} data-depth={depth + 1}>
               {renderChildrenForOption(label)}
             </div>
           ))
@@ -241,7 +242,7 @@ const FieldRenderer = ({
 
     const childrenCommon =
       field.type !== "checkboxes" && renderChildrenAll
-        ? <div className={s.child.className}>{renderChildrenAll()}</div>
+        ? <div className={s.child.className} data-depth={depth + 1}>{renderChildrenAll()}</div>
         : null;
 
     const readOnlyClassName =
@@ -415,7 +416,7 @@ const FieldRenderer = ({
                   <span className="nf-ml-6">{optionLabel || "選択肢"}</span>
                 </label>
                 {checked && renderChildrenForOption && (
-                  <div className={s.child.className}>{renderChildrenForOption(optionLabel)}</div>
+                  <div className={s.child.className} data-depth={depth + 1}>{renderChildrenForOption(optionLabel)}</div>
                 )}
               </div>
             );
@@ -423,7 +424,7 @@ const FieldRenderer = ({
         </div>
       )}
 
-      {renderChildrenAll && field.type !== "checkboxes" && <div className={s.child.className}>{renderChildrenAll()}</div>}
+      {renderChildrenAll && field.type !== "checkboxes" && <div className={s.child.className} data-depth={depth + 1}>{renderChildrenAll()}</div>}
     </div>
   );
 };
@@ -518,6 +519,7 @@ export const RendererRecursive = ({
             <FieldRenderer
               field={{ ...field, id: fid }}
               value={value}
+              depth={depth}
               onChange={(nextValue) => onChange((prev) => ({ ...(prev || {}), [fid]: nextValue }))}
               renderChildrenAll={renderChildrenAll(field, fid)}
               renderChildrenForOption={(label) => renderChildrenForOption(field, fid, label)}

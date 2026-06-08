@@ -404,9 +404,37 @@ button:disabled {
 }
 
 .nf-child {
-  border-left: 2px solid var(--child-border, var(--border));
+  border-left: 3px solid var(--child-border, var(--border));
   padding-left: 12px;
   margin-top: 8px;
+}
+
+/* レインボーインデント: ネストの深さ(data-depth)に応じて境界線を色分けし、
+   深い階層でも今どの段にいるか視覚的に追えるようにする。7 色を循環。 */
+.nf-child[data-depth="1"],
+.nf-child[data-depth="8"] {
+  border-left-color: var(--nf-indent-1);
+}
+.nf-child[data-depth="2"],
+.nf-child[data-depth="9"] {
+  border-left-color: var(--nf-indent-2);
+}
+.nf-child[data-depth="3"],
+.nf-child[data-depth="10"] {
+  border-left-color: var(--nf-indent-3);
+}
+.nf-child[data-depth="4"],
+.nf-child[data-depth="11"] {
+  border-left-color: var(--nf-indent-4);
+}
+.nf-child[data-depth="5"] {
+  border-left-color: var(--nf-indent-5);
+}
+.nf-child[data-depth="6"] {
+  border-left-color: var(--nf-indent-6);
+}
+.nf-child[data-depth="7"] {
+  border-left-color: var(--nf-indent-7);
 }
 
 /* Utilities */

@@ -82,7 +82,7 @@ export default function ChoiceOptionsSection({
     const hasChildren = field.childrenByValue && field.childrenByValue[opt.label]?.length;
     if (!hasChildren) return null;
     return (
-      <div className={s.child.className}>
+      <div className={s.child.className} data-depth={depth + 1}>
         <QuestionListComponent
           fields={field.childrenByValue[opt.label]}
           onChange={(childFields) => {

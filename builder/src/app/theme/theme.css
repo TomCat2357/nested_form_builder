@@ -134,4 +134,14 @@
   --button-danger-border: var(--danger-border-strong);
 
   --child-border: var(--border);
+
+  /* レインボーインデント: ネスト境界線(.nf-child)の階層別カラー。
+     7 色を循環し、最大 11 階層をカバーする。各テーマで上書き可能。 */
+  --nf-indent-1: #e5484d;
+  --nf-indent-2: #f76808;
+  --nf-indent-3: #f5a623;
+  --nf-indent-4: #46a758;
+  --nf-indent-5: #00a2c7;
+  --nf-indent-6: #3e63dd;
+  --nf-indent-7: #8e4ec6;
 }

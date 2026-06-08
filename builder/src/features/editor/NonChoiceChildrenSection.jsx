@@ -39,7 +39,7 @@ export default function NonChoiceChildrenSection({
         </button>
       </div>
       {hasChildren && (
-        <div className={s.child.className}>
+        <div className={s.child.className} data-depth={depth + 1}>
           <QuestionListComponent
             fields={field.children}
             onChange={(childFields) => {
