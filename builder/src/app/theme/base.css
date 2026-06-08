@@ -377,6 +377,57 @@ button:disabled {
   border-color: var(--input-error-border, var(--danger-bright));
 }
 
+/* 数値入力の ▲▼ スピナー（入力欄右端に縦並び） */
+.nf-number-field {
+  position: relative;
+  display: block;
+}
+
+.nf-number-input {
+  padding-right: 30px;
+}
+
+.nf-number-spin {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  bottom: 1px;
+  width: 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.nf-number-spin button {
+  flex: 1 1 0;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-left: 1px solid var(--input-border, var(--border-strong));
+  background: var(--button-bg, var(--surface-subtle));
+  color: var(--input-text, var(--text));
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+.nf-number-spin button:first-child {
+  border-bottom: 1px solid var(--input-border, var(--border-strong));
+  border-top-right-radius: var(--input-radius, var(--radius-sm));
+}
+
+.nf-number-spin button:last-child {
+  border-bottom-right-radius: var(--input-radius, var(--radius-sm));
+}
+
+.nf-number-spin button:hover {
+  background: var(--button-hover-bg, var(--surface));
+}
+
 .nf-textarea-readonly {
   overflow-y: auto;
   white-space: pre-wrap;

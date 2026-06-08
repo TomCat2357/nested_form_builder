@@ -3,6 +3,7 @@ import { DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
 import { shouldShowUnconditionalChildren } from "../../core/fieldValue.js";
 import { formatCanonical } from "../../utils/dateTime.js";
 import { getNumberMode, isNumberInputDraftAllowed, validateByPattern, NUMBER_MODE_CONFIG } from "../../core/validate.js";
+import { toFiniteNumberOrNull } from "../../utils/numbers.js";
 import { resolveLabelSize, resolveTextColor, resolveStyleSettingsInlineStyle } from "../../core/styleSettings.js";
 import { getStandardPhonePlaceholder } from "../../core/phone.js";
 import { getPrintTemplateOutputLabel } from "../../utils/printTemplateAction.js";
@@ -21,6 +22,25 @@ const resolveConfiguredPlaceholder = (field, fallback = "") => {
 };
 
 const getNumberInputMode = (field) => (getNumberMode(field) === "unrestricted" ? "decimal" : "numeric");
+
+// ▲▼ スピナーで数値を 1 ずつ増減する。モードの下限（floor）と最小値/最大値設定でクランプし、
+// 整数モードでは整数へ丸める。空欄や非数値は 0 を起点に増減する。
+const stepNumberValue = (field, value, direction) => {
+  const cfg = NUMBER_MODE_CONFIG[getNumberMode(field)];
+  const minSetting = toFiniteNumberOrNull(field?.minValue);
+  const maxSetting = toFiniteNumberOrNull(field?.maxValue);
+  const lowerBound = [cfg.floor, minSetting].reduce((acc, v) => {
+    if (v === null || v === undefined) return acc;
+    return acc === null ? v : Math.max(acc, v);
+  }, null);
+  const current = Number(String(value ?? "").trim());
+  const base = Number.isFinite(current) ? current : 0;
+  let next = base + direction;
+  if (lowerBound !== null && next < lowerBound) next = lowerBound;
+  if (maxSetting !== null && next > maxSetting) next = maxSetting;
+  if (cfg.integer) next = Math.round(next);
+  return String(next);
+};
 
 // `<input type="date">` は `YYYY-MM-DD`（ハイフン）しか受け付けない。
 // 保存済みレコードの date 値は canonical `YYYY-MM-DD`（ハイフン）なのでそのまま渡せる。
@@ -301,19 +321,25 @@ const FieldRenderer = ({
       )}
 
       {field.type === "number" && (
-        <input
-          type="text"
-          value={value ?? ""}
-          onChange={(event) => {
-            const val = event.target.value;
-            if (isNumberInputDraftAllowed(val, getNumberMode(field))) {
-              onChange(val);
-            }
-          }}
-          className={showInlineValidation ? `${s.input.className} nf-input--error` : s.input.className}
-          placeholder={rph("")}
-          inputMode={getNumberInputMode(field)}
-        />
+        <div className="nf-number-field">
+          <input
+            type="text"
+            value={value ?? ""}
+            onChange={(event) => {
+              const val = event.target.value;
+              if (isNumberInputDraftAllowed(val, getNumberMode(field))) {
+                onChange(val);
+              }
+            }}
+            className={`${showInlineValidation ? `${s.input.className} nf-input--error` : s.input.className} nf-number-input`}
+            placeholder={rph("")}
+            inputMode={getNumberInputMode(field)}
+          />
+          <span className="nf-number-spin">
+            <button type="button" tabIndex={-1} aria-label="数値を増やす" onClick={() => onChange(stepNumberValue(field, value, 1))}>▲</button>
+            <button type="button" tabIndex={-1} aria-label="数値を減らす" onClick={() => onChange(stepNumberValue(field, value, -1))}>▼</button>
+          </span>
+        </div>
       )}
 
       {field.type === "regex" && (
