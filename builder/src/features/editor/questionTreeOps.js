@@ -14,7 +14,7 @@ export function canAcceptChildren(field) {
 
 /**
  * fields[index] を、すぐ上の兄弟 fields[index-1] の子質問として降格させる。
- * - 上の兄弟が選択肢型なら最初の選択肢の childrenByValue 配下へ。
+ * - 上の兄弟が選択肢型なら最後の選択肢の childrenByValue 配下へ。
  * - それ以外（子を持てるタイプ）なら children 末尾へ。
  * 降格できない場合（先頭要素、上の兄弟が子を持てない）は null を返す。
  * @returns {Array|null} 変更後の新しい配列、または null
@@ -30,7 +30,7 @@ export function demoteIntoPrevSibling(fields, index) {
   const targetNode = next[index - 1];
 
   if (isChoiceType(targetNode.type)) {
-    const key = targetNode.options[0].label;
+    const key = targetNode.options[targetNode.options.length - 1].label;
     targetNode.childrenByValue = targetNode.childrenByValue || {};
     targetNode.childrenByValue[key] = [...(targetNode.childrenByValue[key] || []), moving];
   } else {

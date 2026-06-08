@@ -172,7 +172,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   // しきい値（cachePolicy）に従って裏で再検証。新鮮なら GAS 往復しない。
   // 親の同期（modifiedAtUnixMs 変化）時は forceSync で必ずハード再取得する。失敗は無言。
   const formLinkSignature = formLinkFields
-    .map((f) => `${f.id}:${f.childFormId}:${f.includeChildData ? 1 : 0}`)
+    .map((f) => `${f.id}:${f.childFormId}`)
     .join("|");
   // 別レコードを開いた瞬間の残像を防ぐためのリセット判定 / 親再同期の強制更新判定に使う。
   const prevChildRecordIdRef = useRef(null);
@@ -201,8 +201,9 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     // 1 項目ぶんの取得 → state 反映 → キャッシュ書き戻し。shouldSync は await、shouldBackground は
     // fire-and-forget で使う。state 反映はキャンセルガードするが、キャッシュ書き戻しは常に行う。
     const fetchField = async (field) => {
-      if (field.includeChildData && typeof listRecordsByPids === "function") {
+      if (typeof listRecordsByPids === "function") {
         // 子レコード全件 + 子 schema を取得し、合成オブジェクトを組む（件数も records から導出）。
+        // 全 formLink で常に詳細を取得し、Webhook/印刷の items 列へ展開できるようにする。
         const [childForm, records] = await Promise.all([
           getChildFormCached_(field.childFormId),
           listRecordsByPids({ formId: field.childFormId, pids: [recordId] }),
@@ -228,7 +229,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 
     for (const field of formLinkFields) {
       try {
-        const kind = field.includeChildData ? "detail" : "count";
+        const kind = "detail";
         const cached = await getChildRecordsFromCache(field.childFormId, recordId, { kind });
         if (isCancelled()) return;
         // キャッシュ即表示（cache-first）。
@@ -256,12 +257,11 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     }
   }, [settings.recordId, settings.modifiedAtUnixMs, formLinkSignature, inChildContext]);
 
-  // includeChildData=ON の formLink 項目のみの { fieldId: 合成オブジェクト } マップ。
-  // 印刷 payload（driveSettings.childFormMeta）とプレビュー row 注入で共有する。
+  // 全 formLink 項目の { fieldId: 合成オブジェクト } マップ。Webhook の record.items 展開・
+  // 印刷 payload（items 展開 + driveSettings.childFormMeta）・プレビュー row 注入で共有する。
   const childFormMeta = useMemo(() => {
     const out = {};
     for (const field of formLinkFields) {
-      if (!field.includeChildData) continue;
       const obj = formLinkChildData[field.id];
       if (obj) out[field.id] = obj;
     }
@@ -699,16 +699,13 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       showAlert("URL が不正です (http:// または https:// で始まる必要があります)。質問カードの設定を確認してください。");
       return;
     }
-    // includeChildData=ON の formLink 項目について、プリロード済みの子フォームデータを付加する。
-    const childForms = formLinkFields
-      .filter((f) => f.includeChildData && formLinkChildData[f.id])
-      .map((f) => ({ fieldPath: f.path, ...formLinkChildData[f.id] }));
+    // formLink 項目の子フォームデータを、他の質問カードと同じ record.items 列へ展開する
+    // （印刷様式と同じ childFormMeta マップを使い Webhook/印刷の渡し方を揃える）。
     const record = {
       id: recordIdRef.current,
       no: settings.recordNo ?? "",
-      items: buildRecordItems(schema, responses),
+      items: buildRecordItems(schema, responses, { childDataByFieldId: childFormMeta }),
     };
-    if (childForms.length > 0) record.childForms = childForms;
     const payload = buildExternalActionPayload({
       context: "record",
       formId: settings.formId || "",

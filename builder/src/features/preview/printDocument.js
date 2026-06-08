@@ -6,7 +6,7 @@ import { CHOICE_TYPES, isChoiceMarkerValue } from "../../utils/responses.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 import { isExcludedSearchOrPrintField } from "../search/searchTable.js";
 import { isPlainObject } from "../../utils/objectShape.js";
-import { joinFieldPath } from "../../utils/pathCodec.js";
+import { joinFieldPath, escapeSegment, PATH_SEP } from "../../utils/pathCodec.js";
 
 export const toChoiceOptionLabels = (field) => {
   const options = Array.isArray(field?.options) ? field.options : [];
@@ -163,14 +163,44 @@ const isExcludedPrintField = (field) => (
   || (field?.type === "substitution" && field?.excludeFromSearch === true)
 );
 
+// 子レコードの識別マーカー（webhook の question セグメント / 印刷のマーカー行ラベルに使う）。
+// record.no（子フォーム内で一意）優先、空なら 1 始まりのインデックス。"#" 接頭辞で実フィールド
+// ラベルと衝突しないようにする。
+const resolveChildRecordMarker = (record, index) => {
+  const no = record && record.no != null ? String(record.no).trim() : "";
+  return `#${no || (index + 1)}`;
+};
+
 // レコードの質問内容と入力情報を { question, value, type }[] に整形する。
 // question は「ヘッダー階層を "/" で連結した文字列」で、検索一覧のヘッダー
 // (= traverseSchema の pathSegments) と同じ表現に統一する。Webhook 送信や
 // 外部アクションの payload (record.items) で共有する。
-export const buildRecordItems = (schema, responses) => {
+//
+// childDataByFieldId（{ fieldId: 子フォーム合成オブジェクト }）を渡すと、formLink 項目を
+// 他の質問カードと同じ items 列へ展開する。question は「親カードパス / #レコードNo / 子質問パス」で、
+// 通常のネスト質問と同じ "/" 連結（マーカーのみ escapeSegment、既連結のカードパス/子質問は verbatim）。
+export const buildRecordItems = (schema, responses, { childDataByFieldId } = {}) => {
   const items = [];
   traverseSchema(schema || [], (field, context) => {
     if (isExcludedSearchOrPrintField(field)) return;
+    if (field?.type === "formLink") {
+      const childObj = childDataByFieldId && field?.id ? childDataByFieldId[field.id] : undefined;
+      const records = childObj && Array.isArray(childObj.records) ? childObj.records : [];
+      if (records.length === 0) return; // 子データ無しは空の placeholder 行を出さず skip。
+      const cardPathJoined = joinFieldPath(context.pathSegments || []);
+      records.forEach((record, ri) => {
+        const markerSeg = escapeSegment(resolveChildRecordMarker(record, ri), PATH_SEP);
+        const childItems = record && Array.isArray(record.items) ? record.items : [];
+        childItems.forEach((childItem) => {
+          items.push({
+            question: cardPathJoined + PATH_SEP + markerSeg + PATH_SEP + childItem.question,
+            value: childItem.value,
+            type: childItem.type || "text",
+          });
+        });
+      });
+      return;
+    }
     items.push({
       question: joinFieldPath(context.pathSegments || []),
       value: formatPrintItemValue(field, (responses || {})[field?.id]),
@@ -200,6 +230,32 @@ const appendPrintItems = (fields, responses, depth, items, options = {}) => {
     const fieldId = resolveFieldId(field, depth, index);
     const normalizedField = { ...field, id: fieldId };
     if (isExcludedPrintField(normalizedField)) return;
+
+    if (normalizedField?.type === "formLink") {
+      // 子フォームデータを印刷様式の項目表へ展開する。子データは実 field.id でキー付け。
+      const childObj = options.childDataByFieldId && field?.id ? options.childDataByFieldId[field.id] : undefined;
+      const records = childObj && Array.isArray(childObj.records) ? childObj.records : [];
+      if (records.length === 0) return; // 子データ無しは行を出さず skip。
+      const total = Number.isFinite(childObj.count) ? childObj.count : records.length;
+      const countText = childObj.truncated ? `${total}件（先頭${records.length}件を表示）` : `${total}件`;
+      // カードヘッダ・レコードマーカー行は omitEmptyRows でも常時表示（子データの存在を示すため）。
+      items.push({ label: resolveFieldLabel(normalizedField), value: countText, depth, type: "formLink" });
+      records.forEach((record, ri) => {
+        items.push({ label: resolveChildRecordMarker(record, ri), value: "", depth: depth + 1, type: "formLinkRecord" });
+        const childItems = record && Array.isArray(record.items) ? record.items : [];
+        childItems.forEach((childItem) => {
+          const childRow = {
+            label: childItem.question,
+            value: childItem.value,
+            depth: depth + 2,
+            type: childItem.type || "text",
+          };
+          if (shouldIncludePrintItem(childRow, options.omitEmptyRows)) items.push(childRow);
+        });
+      });
+      return;
+    }
+
     const value = (responses || {})[fieldId] ?? (responses || {})[field?.id];
 
     const nextItem = {
@@ -286,15 +342,15 @@ export const collectFileUploadMeta = (fields, options = {}) => {
   return meta;
 };
 
-// includeChildData=ON の formLink 項目について、プリロード済みの子フォーム合成オブジェクトを
-// { fieldId: childObj } に整形する。childDataByFieldId（PreviewPage の childFormMeta）から
-// schema 上に実在する formLink フィールドの分だけ拾う（GAS の row 注入で path へ展開する）。
+// formLink 項目について、プリロード済みの子フォーム合成オブジェクトを { fieldId: childObj } に
+// 整形する。childDataByFieldId（PreviewPage の childFormMeta）から schema 上に実在する formLink
+// フィールドの分だけ拾う（GAS の row 注入で path へ展開し CHILD_FORM_* UDF が参照する）。
 export const collectChildFormMeta = (fields, childDataByFieldId = {}) => {
   const meta = {};
   const source = childDataByFieldId && typeof childDataByFieldId === "object" ? childDataByFieldId : {};
-  // 全ノードを訪問して formLink(includeChildData) 項目だけ拾う（共有 traverseSchema を使う）。
+  // 全ノードを訪問して formLink 項目だけ拾う（共有 traverseSchema を使う）。
   traverseSchema(fields, (field) => {
-    if (field?.type === "formLink" && field?.id && field.includeChildData === true) {
+    if (field?.type === "formLink" && field?.id) {
       const obj = source[field.id];
       if (obj && typeof obj === "object") meta[field.id] = obj;
     }
@@ -393,7 +449,7 @@ export const buildPrintDocumentPayload = ({
     modifiedAt,
     showHeader: shouldShowHeader,
     exportedAtIso: safeExportedAt.toISOString(),
-    items: appendPrintItems(schema, responses, 0, [], { omitEmptyRows: shouldOmitEmptyRows }),
+    items: appendPrintItems(schema, responses, 0, [], { omitEmptyRows: shouldOmitEmptyRows, childDataByFieldId }),
     ...(driveSettings ? { driveSettings } : {}),
   };
 };
