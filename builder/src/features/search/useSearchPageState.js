@@ -27,7 +27,6 @@ import { entriesToViewTableRows } from "../analytics/entriesToViewRows.js";
 import { filterRowsByExpr } from "../analytics/analyticsAlaSql.js";
 import { runSearchSelect } from "../analytics/analyticsStore.js";
 import { SQL_MODE_RE } from "./searchSyntaxPreprocessor.js";
-import { preprocessAlaSqlExpression } from "../expression/preprocessAlaSqlExpression.js";
 import {
   buildFieldPathsMap,
   resolveOmitEmptyRowsOnPrint,
@@ -325,7 +324,7 @@ export function useSearchPageState({
       return;
     }
     // 簡易検索モード: searchSimpleTranslate が正規表現 / 複数値集合分解などを WHERE 式へ翻訳し、
-    // preprocessAlaSqlExpression → filterRowsByExpr（SELECT * FROM ? WHERE <expr>）で評価する。
+    // filterRowsByExpr（SELECT * FROM ? WHERE <expr>）で評価する。
     // 列はスキーマ全フィールドを横断できる superset（simpleSearchColumns）を使う。
     const { expr, errors } = buildSearchExpression(keyword, simpleSearchColumns);
     if (errors && errors.length > 0) {
@@ -341,8 +340,12 @@ export function useSearchPageState({
     }
     setFilterError(null);
     try {
-      const whereExpr = preprocessAlaSqlExpression(expr);
-      const res = await filterRowsByExpr(simpleSearchRows, whereExpr);
+      // expr は searchSimpleTranslate が columnToSafeKey（= headerKeyToAlaSqlKey）で
+      // 既に safe key 化済み。ここで preprocessAlaSqlExpression を再適用すると、ラベルに
+      // "/" を含む列の safe key（"継続\/完結" → "継続/完結"）に headerKeyToAlaSqlKey が
+      // 二重適用され "継続__完結" に化けて view 行のキー（"継続/完結"）と食い違う（0 件回帰）。
+      // 生成式はバッククォート/UDF 解決済みなので、そのまま filterRowsByExpr へ渡す。
+      const res = await filterRowsByExpr(simpleSearchRows, expr);
       if (isCancelled()) return;
       if (!res.ok) {
         setFilterError("検索エラー: " + (res.error || "式を評価できませんでした"));

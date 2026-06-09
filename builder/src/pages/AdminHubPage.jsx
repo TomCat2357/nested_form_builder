@@ -51,6 +51,12 @@ export default function AdminHubPage() {
           </p>
           <div className="main-meta nf-mt-8">→ 開く</div>
         </div>
+
+        <div className="main-card admin-hub-card" onClick={() => navigate("/admin/playground")}>
+          <h2 className="main-title">Playground</h2>
+          <p className="nf-m-0 nf-text-muted">クエリ / 置換 / Webhook を実データで試す</p>
+          <div className="main-meta nf-mt-8">→ 開く</div>
+        </div>
       </div>
     </AppLayout>
   );

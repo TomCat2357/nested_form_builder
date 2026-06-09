@@ -16,6 +16,7 @@ import AdminFormEditorPage from "../pages/admin/AdminFormEditorPage.jsx";
 import AdminDashboardListPage from "../pages/admin/AdminDashboardListPage.jsx";
 import AdminQuestionListPage from "../pages/admin/AdminQuestionListPage.jsx";
 import QuestionEditorPage from "../pages/admin/QuestionEditorPage.jsx";
+import PlaygroundPage from "../pages/PlaygroundPage.jsx";
 import DashboardEditorPage from "../pages/admin/DashboardEditorPage.jsx";
 import DashboardViewPage from "../pages/dashboards/DashboardViewPage.jsx";
 import NotFoundPage from "../pages/NotFoundPage.jsx";
@@ -285,6 +286,16 @@ function AppRoutes() {
         element={(
           <AdminRoute>
             <QuestionEditorPage />
+          </AdminRoute>
+        )}
+      />
+
+      {/* Playground（クエリ / 置換 / Webhook を実データで試す・管理者専用） */}
+      <Route
+        path="/admin/playground"
+        element={(
+          <AdminRoute>
+            <PlaygroundPage />
           </AdminRoute>
         )}
       />

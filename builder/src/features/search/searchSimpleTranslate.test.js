@@ -83,14 +83,16 @@ function oldMatchedIds(keyword) {
   return PROCESSED.filter((row) => matchesKeyword(row, SEARCH_COLUMNS, keyword)).map((r) => r.entry.id).sort();
 }
 // 新エンジン（翻訳器 → alasql）のヒット id 集合。
+// 本番（useSearchPageState 簡易検索）に合わせて preprocessAlaSqlExpression は通さない。
+// 生成式は columnToSafeKey（= headerKeyToAlaSqlKey）で既に safe key 化済みで、再適用すると
+// ラベルに "/" を含む列の safe key が二重変換で壊れるため（詳細は末尾のスラッシュ列回帰テスト）。
 function newMatchedIds(keyword) {
   const { expr } = buildSimpleSearchExpression(keyword, SEARCH_COLUMNS);
   if (!expr) return ENTRIES.map((e) => e.id).sort();
-  const whereExpr = preprocessAlaSqlExpression(expr);
   // alasql は vm サンドボックス realm で動くため、戻り値配列の prototype が
   // メインrealmと異なる。Array.from でメインrealm配列へ正規化してから比較する
   // （本番は同一 realm なので不要。テスト固有の事情）。
-  const res = Array.from(alasql("SELECT * FROM ? WHERE " + whereExpr, [VIEW_ROWS]));
+  const res = Array.from(alasql("SELECT * FROM ? WHERE " + expr, [VIEW_ROWS]));
   return res.map((r) => r.id).filter((id) => id != null && id !== "").sort();
 }
 
@@ -260,8 +262,7 @@ const NESTED_PROCESSED = NESTED_ENTRIES.map((entry) => ({ entry, values: compute
 function nestedMatchedIds(keyword, cols) {
   const { expr } = buildSimpleSearchExpression(keyword, cols);
   if (!expr) return NESTED_ENTRIES.map((e) => e.id).sort();
-  const whereExpr = preprocessAlaSqlExpression(expr);
-  const res = Array.from(alasql("SELECT * FROM ? WHERE " + whereExpr, [NESTED_VIEW_ROWS]));
+  const res = Array.from(alasql("SELECT * FROM ? WHERE " + expr, [NESTED_VIEW_ROWS]));
   return res.map((r) => r.id).filter((id) => id != null && id !== "").sort();
 }
 function nestedOracleIds(keyword) {
@@ -291,4 +292,81 @@ test("修正: 全フィールド superset は参照実装（matchesKeyword）と
   for (const q of ["該当", "餌付け", "特定餌付け:該当", "相談種類:餌付け", "特定餌付け:非該当"]) {
     assert.deepEqual(nestedMatchedIds(q, NESTED_SIMPLE_COLUMNS), nestedOracleIds(q), `query=${q}`);
   }
+});
+
+// ────────────────────────────────────────────────────────────
+// 回帰: ラベルに "/" を含む列（例 "継続/完結"）の簡易検索。
+// "/" は階層区切りなので、ラベル内の "/" は canonical pipePath で "\/" にエスケープされる。
+// その列の safe key は headerKeyToAlaSqlKey("継続\/完結") = "継続/完結"（リテラルの "/" を含む）。
+// view 行も生成式も同じ "継続/完結" キーで一致するため本来ヒットするはずだが、実行直前に
+// preprocessAlaSqlExpression を再適用すると headerKeyToAlaSqlKey が "継続/完結" を更に
+// "継続__完結" へ二重変換して食い違い、0 件に化けていた（このバグの記録 + 修正の固定）。
+// ────────────────────────────────────────────────────────────
+const SLASH_FORM = {
+  settings: {},
+  schema: [
+    { type: "text", label: "氏名" },
+    { type: "radio", label: "継続/完結", options: [{ label: "継続" }, { label: "完結" }] },
+  ],
+  // displayFieldSettings.path は collectDisplayFieldSettings と同じ canonical エスケープ形。
+  displayFieldSettings: [
+    { path: "氏名", type: "text" },
+    { path: "継続\\/完結", type: "radio" },
+  ],
+};
+const SLASH_ENTRIES = [
+  {
+    id: "X", "No.": 1, modifiedAt: Date.UTC(2026, 0, 1), modifiedAtUnixMs: Date.UTC(2026, 0, 1),
+    data: { 氏名: "山田", "継続\\/完結": "完結" }, dataUnixMs: {},
+  },
+  {
+    id: "Y", "No.": 2, modifiedAt: Date.UTC(2026, 0, 2), modifiedAtUnixMs: Date.UTC(2026, 0, 2),
+    data: { 氏名: "田中", "継続\\/完結": "継続" }, dataUnixMs: {},
+  },
+];
+const SLASH_DISPLAY_COLUMNS = buildSearchColumns(SLASH_FORM);
+const SLASH_SIMPLE_COLUMNS = buildSimpleSearchColumns(SLASH_FORM, SLASH_DISPLAY_COLUMNS);
+const SLASH_VIEW_ROWS = entriesToViewTableRows(SLASH_ENTRIES, SLASH_FORM);
+const SLASH_PROCESSED = SLASH_ENTRIES.map((entry) => ({ entry, values: computeRowValues(entry, SLASH_DISPLAY_COLUMNS) }));
+
+function slashMatchedIds(keyword) {
+  const { expr } = buildSimpleSearchExpression(keyword, SLASH_SIMPLE_COLUMNS);
+  if (!expr) return SLASH_ENTRIES.map((e) => e.id).sort();
+  const res = Array.from(alasql("SELECT * FROM ? WHERE " + expr, [SLASH_VIEW_ROWS]));
+  return res.map((r) => r.id).filter((id) => id != null && id !== "").sort();
+}
+function slashOracleIds(keyword) {
+  return SLASH_PROCESSED.filter((row) => matchesKeyword(row, SLASH_DISPLAY_COLUMNS, keyword)).map((r) => r.entry.id).sort();
+}
+
+test('修正: ラベルに "/" を含む列を 列名:値 / 列名=値 で絞り込める', () => {
+  assert.deepEqual(slashMatchedIds("継続/完結:完結"), ["X"]);
+  assert.deepEqual(slashMatchedIds("継続/完結:継続"), ["Y"]);
+  assert.deepEqual(slashMatchedIds("継続/完結=完結"), ["X"]);
+  // 裸単語（全列 OR）でもその列に届く
+  assert.deepEqual(slashMatchedIds("完結"), ["X"]);
+});
+
+test('修正: ラベルに "/" を含む列の簡易検索が参照実装（matchesKeyword）とパリティする', () => {
+  for (const q of ["継続/完結:完結", "継続/完結:継続", "継続/完結=完結", "完結", "継続"]) {
+    assert.deepEqual(slashMatchedIds(q), slashOracleIds(q), `query=${q}`);
+  }
+});
+
+test('回帰の根因: preprocessAlaSqlExpression を再適用すると "/" 列の safe key が二重変換で壊れる', () => {
+  const { expr } = buildSimpleSearchExpression("継続/完結:完結", SLASH_SIMPLE_COLUMNS);
+  // 生成式は view 行と一致する safe key "継続/完結" を参照する。
+  assert.ok(expr.includes("`継続/完結`"), `expr=${expr}`);
+  // 修正後の本番経路（preprocess なし）はヒットする。
+  assert.deepEqual(
+    Array.from(alasql("SELECT * FROM ? WHERE " + expr, [SLASH_VIEW_ROWS])).map((r) => r.id),
+    ["X"],
+  );
+  // preprocess を再適用すると "継続__完結" に化けて view 行キーと食い違い 0 件（旧バグ）。
+  const corrupted = preprocessAlaSqlExpression(expr);
+  assert.ok(corrupted.includes("`継続__完結`"), `corrupted=${corrupted}`);
+  assert.deepEqual(
+    Array.from(alasql("SELECT * FROM ? WHERE " + corrupted, [SLASH_VIEW_ROWS])).map((r) => r.id),
+    [],
+  );
 });

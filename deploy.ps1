@@ -19,6 +19,7 @@ if ($TestMode -and $ManifestOverride -eq "") {
 
 $ErrorActionPreference = "Stop"
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+$DeployStartTime = Get-Date
 
 function Resolve-IndexHtmlPath {
     if (Test-Path "dist/Index.html") {
@@ -252,7 +253,8 @@ if ($ManifestOverride -ne "") {
 # BundleOnlyモードの場合はここで終了
 if ($BundleOnly) {
     Write-Host ""
-    Write-Host "✅ BundleOnly モード: ビルド＆バンドルが完了しました（clasp push/deploy はスキップ）" -ForegroundColor Green
+    $elapsed = [math]::Round(((Get-Date) - $DeployStartTime).TotalSeconds, 1)
+    Write-Host "✅ BundleOnly モード: ビルド＆バンドルが完了しました（clasp push/deploy はスキップ）  [$elapsed 秒]" -ForegroundColor Green
     exit 0
 }
 
@@ -268,7 +270,8 @@ Write-Host "✅ プッシュが完了しました" -ForegroundColor Green
 # PushOnlyモードの場合はここで終了
 if ($PushOnly) {
     Write-Host ""
-    Write-Host "✅ PushOnly モード: ビルド＆バンドル＆clasp push が完了しました（deploy はスキップ）" -ForegroundColor Green
+    $elapsed = [math]::Round(((Get-Date) - $DeployStartTime).TotalSeconds, 1)
+    Write-Host "✅ PushOnly モード: ビルド＆バンドル＆clasp push が完了しました（deploy はスキップ）  [$elapsed 秒]" -ForegroundColor Green
     exit 0
 }
 
@@ -397,6 +400,7 @@ if ($WebAppUrl -ne "") {
     }
 }
 
+$elapsed = [math]::Round(((Get-Date) - $DeployStartTime).TotalSeconds, 1)
 Write-Host ""
-Write-Host "🎉 デプロイが正常に完了しました！" -ForegroundColor Green
+Write-Host "🎉 デプロイが正常に完了しました！  [$elapsed 秒]" -ForegroundColor Green
 Write-Host "📚 詳細な使用方法はREADME.mdを参照してください"
