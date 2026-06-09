@@ -29,7 +29,7 @@ import {
 import { compileStages } from "./utils/compileStages.js";
 import { inferCompiledColumnsFromSql } from "./utils/sqlColumnInference.js";
 import { formHasSpreadsheet } from "../../app/state/dataStoreHelpers.js";
-import { collectFormLinkFields } from "../preview/childFormData.js";
+import { collectFormLinkChildFormIds } from "../preview/childFormData.js";
 import { evaluateCacheForAnalytics } from "../../app/state/cachePolicy.js";
 import {
   buildAlaSqlTypeMap,
@@ -355,9 +355,11 @@ export async function runFullQuery(sql, { forms, defaultFormId, liveRowOverride 
   // 置換 full-query は自フォーム＋「別フォームを開く（formLink）」で紐づく子フォームのみ参照可。
   // それ以外の他フォーム参照は preprocessSql が outOfScopeFormError で弾く（任意フォームの読み取りは不可）。
   // 子フォームの件数・名前・URL だけなら式トークンの CHILD_FORM_* UDF でも取得できる。
+  // childFormId だけで判定する（GAS は保存時に formLink の field id を落とすため、listForms 由来の
+  // 未正規化 schema では collectFormLinkFields の id 要求に引っかかり子フォームが全て除外される）。
   const parentForm = formIndex.byId.get(defaultFormId);
   const childFormIds = parentForm && Array.isArray(parentForm.schema)
-    ? collectFormLinkFields(parentForm.schema).map((f) => f.childFormId).filter(Boolean)
+    ? collectFormLinkChildFormIds(parentForm.schema)
     : [];
   const allowedFormIds = new Set([defaultFormId, ...childFormIds]);
   const pre = preprocessSql(sql, { defaultFormId, formIndex, getColumnIndex, allowedFormIds });

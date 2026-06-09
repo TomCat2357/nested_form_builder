@@ -49,6 +49,30 @@ export const collectFormLinkFields = (schema) => {
   return out;
 };
 
+/**
+ * schema 内の formLink フィールドが指す子フォーム fileId（childFormId）を重複排除して集める純関数。
+ *
+ * collectFormLinkFields と違い field.id は要求しない。GAS は保存時に Forms_stripSchemaIds_ で
+ * field id を落とすため、listForms / getForm でロードした（未正規化の）schema では formLink の
+ * `id` が空になる。子フォーム参照スコープ（置換 full-query で許可するフォーム集合）の判定は
+ * childFormId だけで足りるので、`id` 有無に関わらず収集する。
+ *
+ * @param {Array} schema
+ * @returns {string[]} 重複排除済みの childFormId 配列
+ */
+export const collectFormLinkChildFormIds = (schema) => {
+  const seen = new Set();
+  const out = [];
+  traverseSchema(schema, (field) => {
+    if (field?.type !== "formLink") return;
+    const childFormId = typeof field.childFormId === "string" ? field.childFormId.trim() : "";
+    if (!childFormId || seen.has(childFormId)) return;
+    seen.add(childFormId);
+    out.push(childFormId);
+  });
+  return out;
+};
+
 // payload / Doc 肥大を防ぐための 1 項目あたり最大子レコード数。超過時は records を
 // 切り詰め、truncated:true を立てる（count は元の総数を維持する）。
 export const MAX_CHILD_RECORDS_PER_FIELD = 200;

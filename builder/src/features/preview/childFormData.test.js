@@ -4,6 +4,7 @@ import {
   buildChildDataObject,
   distributeChildRecordsByPid,
   collectFormLinkFields,
+  collectFormLinkChildFormIds,
   buildChildFormInjections,
   MAX_CHILD_RECORDS_PER_FIELD,
 } from "./childFormData.js";
@@ -108,6 +109,40 @@ test("collectFormLinkFields: includeChildData の true/非true を反映", () =>
   assert.equal(out.find((f) => f.id === "fl1").includeChildData, true);
   assert.equal(out.find((f) => f.id === "fl2").includeChildData, false);
   assert.equal(out.find((f) => f.id === "fl3").includeChildData, false);
+});
+
+test("collectFormLinkChildFormIds: field id が無くても childFormId を集める（GAS の id ストリップ耐性）", () => {
+  // GAS は保存時に formLink の field id を落とす。未正規化 schema（id 欠落）でも子フォームを拾えること。
+  const out = collectFormLinkChildFormIds([
+    { type: "formLink", childFormId: " fileA ", childFormPath: "親/子A" }, // id 無し → 拾う・trim
+    { type: "formLink", childFormId: "fileB", id: "fl2" }, // id 有り → 拾う
+    { type: "formLink", childFormId: "   " }, // childFormId 空 → 除外
+    { type: "text", label: "氏名" }, // formLink 以外 → 除外
+  ]);
+  assert.deepEqual(out, ["fileA", "fileB"]);
+});
+
+test("collectFormLinkChildFormIds: 同一 childFormId は重複排除する", () => {
+  const out = collectFormLinkChildFormIds([
+    { type: "formLink", childFormId: "fileA" },
+    { type: "formLink", childFormId: "fileA" },
+    { type: "formLink", childFormId: "fileB" },
+  ]);
+  assert.deepEqual(out, ["fileA", "fileB"]);
+});
+
+test("collectFormLinkChildFormIds: ネスト schema（childrenByValue）配下も拾う", () => {
+  const out = collectFormLinkChildFormIds([
+    {
+      type: "radio",
+      label: "選択",
+      options: [{ id: "o1", label: "はい" }],
+      childrenByValue: {
+        "はい": [{ type: "formLink", childFormId: "fileNested" }],
+      },
+    },
+  ]);
+  assert.deepEqual(out, ["fileNested"]);
 });
 
 test("buildChildFormInjections: formLink ごとに pid 件数を集計（子フォーム 1 回だけ fetch・軽量版）", async () => {
