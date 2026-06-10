@@ -22,6 +22,14 @@ import ExternalActionsEditor from "../../features/settings/ExternalActionsEditor
 import { DEFAULT_THEME } from "../../app/theme/theme.js";
 import SchemaMapNav from "../../features/nav/SchemaMapNav.jsx";
 import { countSchemaNodes } from "../../core/schema.js";
+import { buildFormIndex } from "../../features/analytics/utils/formIdentifierResolver.js";
+import {
+  schemaTemplateFormRefsToIds,
+  schemaTemplateFormRefsToNames,
+  settingsTemplateFormRefsToIds,
+  settingsTemplateFormRefsToNames,
+  refreshFormLinkPaths,
+} from "../../features/analytics/utils/rewriteSqlFormRefs.js";
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/admin/forms");
 const buildFormEditPath = (id) => `/admin/forms/${id}/edit`;
@@ -43,8 +51,17 @@ export default function AdminFormEditorPage() {
   // 新規作成時は一覧で開いていたフォルダ (location.state.folder) を初期フォルダにする。
   const initialFolder = isEdit ? (form?.folder || "") : normalizeFolderPath(location.state?.folder || "");
   const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "", folder: initialFolder });
-  const initialSchema = useMemo(() => (form?.schema ? form.schema : []), [form]);
-  const initialSettings = useMemo(() => omitThemeSetting(form?.settings || {}), [form]);
+  // 表示用: 保存スキーマ/設定は full-query フォーム参照を fileId で保持しているため、
+  // エディタ表示時は論理パスへ戻し、formLink の表示パスも childFormId から再計算する（リネーム追従）。
+  const formIndex = useMemo(() => buildFormIndex(forms || []), [forms]);
+  const initialSchema = useMemo(
+    () => (form?.schema ? refreshFormLinkPaths(schemaTemplateFormRefsToNames(form.schema, formIndex), formIndex) : []),
+    [form, formIndex],
+  );
+  const initialSettings = useMemo(
+    () => settingsTemplateFormRefsToNames(omitThemeSetting(form?.settings || {}), formIndex),
+    [form, formIndex],
+  );
 
   const [name, setName] = useState(initialMetaRef.current.name);
   const [description, setDescription] = useState(initialMetaRef.current.description);
@@ -138,10 +155,10 @@ export default function AdminFormEditorPage() {
     setName(formTitle);
     setDescription(form.description || "");
     setFolder(form.folder || "");
-    setLocalSettings(omitThemeSetting(form.settings || {}));
+    setLocalSettings(settingsTemplateFormRefsToNames(omitThemeSetting(form.settings || {}), formIndex));
     setQuestionControl(null);
     setNameError("");
-  }, [form, formId, isDirty, isDirtyRef, isSavingRef]);
+  }, [form, formId, isDirty, isDirtyRef, isSavingRef, formIndex]);
 
   useFormCacheSync({
     enabled: isEdit && !!formId,
@@ -202,14 +219,17 @@ export default function AdminFormEditorPage() {
     }
 
     const schema = builderRef.current.getSchema();
-    const trimmedSettings = omitThemeSetting(localSettings);
+    // 保存用: full-query フォーム参照を論理パス → fileId に変換（リネーム耐性）。formLink は
+    // childFormId 保持なので不変、childFormPath は現在パスのまま保存される（追従）。
+    const schemaForSave = schemaTemplateFormRefsToIds(schema, formIndex);
+    const trimmedSettings = settingsTemplateFormRefsToIds(omitThemeSetting(localSettings), formIndex);
     const preservedTheme = form?.settings?.theme || DEFAULT_THEME;
 
     const payload = {
       ...(isEdit && form ? { id: form.id, createdAt: form.createdAt, driveFileUrl: form.driveFileUrl } : {}),
       description,
       folder: normalizeFolderPath(folder),
-      schema,
+      schema: schemaForSave,
       settings: { ...trimmedSettings, theme: preservedTheme, formTitle: trimmedName },
       archived: form?.archived ?? false,
       readOnly: form?.readOnly ?? false,

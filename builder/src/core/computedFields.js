@@ -10,6 +10,7 @@ import { normalizeFileUploadEntries } from "./collect.js";
 import { extractFieldRefs, validateTemplateSyntax } from "../features/expression/templateEvaluator.js";
 import { splitMultiValue } from "../utils/multiValue.js";
 import { joinFieldPath, splitFieldKey, PATH_SEP } from "../utils/pathCodec.js";
+import { FULL_QUERY_SUBST_RE } from "./constants.js";
 
 // ---------------------------------------------------------------------------
 // Dependency extraction
@@ -321,30 +322,44 @@ export const buildComputedFieldPathsById = (schema) => {
 const isEmptyComputedValue = (value) => value === undefined || value === null || value === "";
 
 /**
- * entry.data の空欄の置換フィールドだけを動的評価で補完する共通コア。
- * 補完対象が無い場合や評価値が全て空だった場合は changed=false を返し、data は元の参照をそのまま返す。
+ * 置換フィールドを動的評価して entry.data へ反映する共通コア。
+ *
+ * - onlyEmpty=true（バックフィル）: 値が空欄の置換 path だけを対象に補完する。
+ * - onlyEmpty=false（再評価）: 全置換 path を再評価し、既存値と異なるものだけ更新する。
+ *
+ * いずれも「評価値が空」のときは既存値を空で潰さない（保守的に据え置く）。差分が無ければ
+ * changed=false を返し、data は元の参照をそのまま返す（再レンダー・再同期の連鎖を抑える）。
+ *
+ * 評価（評価器）は依存チェーンのため常に全置換を対象に行うが、data へ書き込む対象は
+ * fieldIds（指定時）に絞れる。これにより「子データ/full-query 依存の置換だけ上書き再評価し、
+ * 同一レコード参照や NOW() 系は据え置く（毎表示で値が変わって書き戻しが暴れるのを防ぐ）」を実現する。
  *
  * @param {Array} schema
  * @param {Object} entryData
  * @param {Object} [tokenContext] - resolveTemplateTokens 用コンテキスト
- * @returns {{ data: Object, changed: boolean, newPaths: string[] }}
- *   newPaths: baseData に元々存在しなかった path のみ
+ * @param {{ onlyEmpty?: boolean, fieldIds?: string[]|Set<string>|null }} [opts]
+ *   onlyEmpty: 空欄のみ対象 / fieldIds: 書き込み対象を限定（null なら全置換）
+ * @returns {{ data: Object, changed: boolean, newPaths: string[], changedPaths: string[] }}
+ *   newPaths: baseData に元々存在しなかった path のみ / changedPaths: 値が変わった全 path
  */
-export const backfillComputedFieldValues = (schema, entryData, tokenContext) => {
+const applyComputedFieldValues = (schema, entryData, tokenContext, { onlyEmpty = true, fieldIds = null } = {}) => {
   const baseData = entryData && typeof entryData === "object" ? entryData : {};
   const pathsById = buildComputedFieldPathsById(schema);
-  const fieldIds = Object.keys(pathsById);
-  if (fieldIds.length === 0) {
-    return { data: baseData, changed: false, newPaths: [] };
+  const allFieldIds = Object.keys(pathsById).filter((fid) => Boolean(pathsById[fid]));
+  if (allFieldIds.length === 0) {
+    return { data: baseData, changed: false, newPaths: [], changedPaths: [] };
   }
 
-  const missingFieldIds = fieldIds.filter((fid) => {
-    const path = pathsById[fid];
-    if (!path) return false;
-    return isEmptyComputedValue(baseData[path]);
-  });
-  if (missingFieldIds.length === 0) {
-    return { data: baseData, changed: false, newPaths: [] };
+  const restrictSet = Array.isArray(fieldIds)
+    ? new Set(fieldIds)
+    : (fieldIds instanceof Set ? fieldIds : null);
+  const candidateFieldIds = restrictSet ? allFieldIds.filter((fid) => restrictSet.has(fid)) : allFieldIds;
+
+  const targetFieldIds = onlyEmpty
+    ? candidateFieldIds.filter((fid) => isEmptyComputedValue(baseData[pathsById[fid]]))
+    : candidateFieldIds;
+  if (targetFieldIds.length === 0) {
+    return { data: baseData, changed: false, newPaths: [], changedPaths: [] };
   }
 
   const baseValueMap = buildLabelValueMapFromEntryData(schema, baseData);
@@ -357,16 +372,103 @@ export const backfillComputedFieldValues = (schema, entryData, tokenContext) => 
 
   const nextData = { ...baseData };
   const newPaths = [];
+  const changedPaths = [];
   let changed = false;
-  for (const fid of missingFieldIds) {
+  for (const fid of targetFieldIds) {
     const path = pathsById[fid];
     const value = computedValues[fid];
+    // 評価値が空なら既存値を据え置く（空欄補完・再評価とも、空で上書きしない）。
     if (isEmptyComputedValue(value)) continue;
-    nextData[path] = String(value);
+    const nextStr = String(value);
+    const prevStr = isEmptyComputedValue(baseData[path]) ? "" : String(baseData[path]);
+    if (nextStr === prevStr) continue;
+    nextData[path] = nextStr;
     if (!Object.prototype.hasOwnProperty.call(baseData, path)) {
       newPaths.push(path);
     }
+    changedPaths.push(path);
     changed = true;
   }
-  return { data: changed ? nextData : baseData, changed, newPaths };
+  return { data: changed ? nextData : baseData, changed, newPaths, changedPaths };
+};
+
+/**
+ * entry.data の空欄の置換フィールドだけを動的評価で補完する。
+ * 補完対象が無い場合や評価値が全て空だった場合は changed=false を返し、data は元の参照をそのまま返す。
+ * fieldIds を渡すと補完対象をその集合に限定する（子データ/full-query 依存の置換を、子データ無しで
+ * 誤って補完してしまうのを避けるための除外などに使う）。
+ *
+ * @param {Array} schema
+ * @param {Object} entryData
+ * @param {Object} [tokenContext]
+ * @param {string[]|Set<string>|null} [fieldIds] - 補完対象に限定する fieldId 集合（null なら全置換）
+ */
+export const backfillComputedFieldValues = (schema, entryData, tokenContext, fieldIds = null) =>
+  applyComputedFieldValues(schema, entryData, tokenContext, { onlyEmpty: true, fieldIds });
+
+/**
+ * 置換フィールドを再評価し、既存値と異なるものだけ data に反映する（stale 上書き用）。
+ * 子フォームデータ変更・スキーマ変更・明示再同期で、保存済み置換値を新しい値へ更新する。
+ * fieldIds を渡すと書き込み対象をその集合に限定する（子データ/full-query 依存のみ上書きし、
+ * 同一レコード参照・NOW() 系は据え置く）。差分が無ければ changed=false を返す（冪等）。
+ *
+ * @param {Array} schema
+ * @param {Object} entryData
+ * @param {Object} [tokenContext]
+ * @param {string[]|Set<string>|null} [fieldIds] - 書き込み対象に限定する fieldId 集合（null なら全置換）
+ */
+export const recomputeComputedFieldValues = (schema, entryData, tokenContext, fieldIds = null) =>
+  applyComputedFieldValues(schema, entryData, tokenContext, { onlyEmpty: false, fieldIds });
+
+/**
+ * 置換フィールド（substitution）が参照する子フォーム（formLink の childFormId）と、
+ * full-query（{{SELECT}}）を含むかを収集する純関数。検索結果一覧で「どの子フォームの
+ * データを取得して childFormMeta に注入するか」「full-query 解決が必要か」を判定するために使う。
+ *
+ * - CHILD_FORM_*(`項目名`) は formLink のラベルパスを引数に取るので、置換テンプレの
+ *   バッククォート参照（extractTemplateDependencies）と formLink パスの一致で childFormId を引く。
+ * - full-query は FROM [フォーム名] で参照するため静的に childFormId を特定できない。
+ *   hasFullQuery を立て、呼び出し側は必要に応じて全 formLink 子フォームを対象にする。
+ *
+ * @param {Array} schema
+ * @returns {{
+ *   childFormIds: string[],
+ *   hasFullQuery: boolean,
+ *   byFieldId: Object  // { [fieldId]: { childFormIds: string[], hasFullQuery: boolean } }
+ * }}
+ */
+export const collectSubstitutionChildFormRefs = (schema) => {
+  const formLinkByPath = {};
+  traverseSchema(schema, (field, context) => {
+    if (field?.type !== "formLink") return;
+    const path = joinFieldPath(context?.pathSegments || []);
+    const childFormId = typeof field.childFormId === "string" ? field.childFormId.trim() : "";
+    if (path && childFormId) formLinkByPath[path] = childFormId;
+  });
+
+  const childFormIdSet = new Set();
+  let hasFullQuery = false;
+  const byFieldId = {};
+
+  traverseSchema(schema, (field) => {
+    if (field?.type !== "substitution") return;
+    const fid = field?.id;
+    const tpl = typeof field.templateText === "string" ? field.templateText : "";
+    if (!fid || !tpl || tpl.indexOf("{") < 0) return;
+    const fieldFullQuery = FULL_QUERY_SUBST_RE.test(tpl);
+    const refSet = new Set();
+    for (const dep of extractTemplateDependencies(tpl)) {
+      const childFormId = formLinkByPath[dep];
+      if (childFormId) {
+        refSet.add(childFormId);
+        childFormIdSet.add(childFormId);
+      }
+    }
+    if (fieldFullQuery) hasFullQuery = true;
+    if (refSet.size > 0 || fieldFullQuery) {
+      byFieldId[fid] = { childFormIds: Array.from(refSet), hasFullQuery: fieldFullQuery };
+    }
+  });
+
+  return { childFormIds: Array.from(childFormIdSet), hasFullQuery, byFieldId };
 };

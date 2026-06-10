@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { applyDisplayLengthLimit } from "../searchTableValues.js";
 import { HIT_EXCERPT_COLUMN_KEY } from "../searchTable.js";
+import { SUBSTITUTION_LOADING_PLACEHOLDER } from "../../../core/constants.js";
 
 const headerSortLabel = (activeSort, columnKey) => {
   if (activeSort.key !== columnKey) return "";
@@ -53,6 +54,11 @@ export default function SearchTable({
   };
 
   const renderCellContent = (column, rawDisplayText, row, cellValue) => {
+    // 子データ / full-query 依存の置換セルが未解決（空 かつ 取得・計算待ち）なら「読込中…」を出す。
+    // pendingCellKeys は該当列キーのみ含むので、他の列タイプには影響しない。
+    if (row?.pendingCellKeys?.has(column.key)) {
+      return <span className="nf-text-12" style={{ opacity: 0.55 }}>{SUBSTITUTION_LOADING_PLACEHOLDER}</span>;
+    }
     const limitedText = applyDisplayLengthLimit(rawDisplayText || "", cellDisplayLimit);
     const isUrl = column.sourceType === "url" && rawDisplayText;
     const isRecordIdColumn = column.key === "id";

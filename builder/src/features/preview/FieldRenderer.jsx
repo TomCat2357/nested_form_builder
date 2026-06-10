@@ -1,5 +1,6 @@
 import React from "react";
 import { DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
+import { SUBSTITUTION_LOADING_PLACEHOLDER, FULL_QUERY_SUBST_RE } from "../../core/constants.js";
 import { shouldShowUnconditionalChildren } from "../../core/fieldValue.js";
 import { formatCanonical } from "../../utils/dateTime.js";
 import { getNumberMode, isNumberInputDraftAllowed, validateByPattern, NUMBER_MODE_CONFIG } from "../../core/validate.js";
@@ -48,10 +49,6 @@ const stepNumberValue = (field, value, direction) => {
 const toDateInputValue = (value) => formatCanonical(value, "date") || "";
 
 const identityFn = (v) => v || "";
-
-// full-query 置換（`{{SELECT ...}}`）が別フォーム参照などで未解決の過渡状態に出す表示。
-const SUBSTITUTION_LOADING_PLACEHOLDER = "読込中…";
-const FULL_QUERY_SUBST_RE = /\{\{\s*SELECT\b/i;
 
 const FieldRenderer = ({
   field,

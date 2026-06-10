@@ -1,20 +1,27 @@
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { useSetSelection } from "../../app/hooks/useSetSelection.js";
 import { useCancellable } from "../../app/hooks/useCancellable.js";
-import { useMemo, useState, useCallback, useEffect } from "react";
+import { useMemo, useState, useCallback, useEffect, useRef } from "react";
 import { pad2 } from "../../utils/dateTime.js";
 import { dataStore } from "../../app/state/dataStore.js";
 import { getRecordsFromCache, upsertRecordInCache } from "../../app/state/recordsMemoryStore.js";
 import { normalizeSchemaIDs } from "../../core/schema.js";
 import {
   backfillComputedFieldValues,
+  recomputeComputedFieldValues,
   buildComputedFieldPathsById,
+  collectSubstitutionChildFormRefs,
 } from "../../core/computedFields.js";
+import { traverseSchema } from "../../core/schemaUtils.js";
+import { FULL_QUERY_SUBST_RE } from "../../core/constants.js";
+import { prefetchQueryTokens } from "../../utils/tokenReplacer.js";
+import { subscribeChildFormChange } from "../../app/state/childRecordsMemoryStore.js";
+import { evaluateCacheForRecords } from "../../app/state/cachePolicy.js";
 import { buildBackfilledRecord } from "./backfillComputedValues.js";
 import { buildSearchTableLayout, buildHeaderRowsLayout, createHitExcerptColumn, createBaseColumns, buildSimpleSearchColumns, DEFAULT_HIT_COLUMN_MIN_WIDTH } from "./searchTable.js";
 import { buildExportTableData } from "./searchExport.js";
 import { hasScriptRun, listRecordsByPids } from "../../services/gasClient.js";
-import { buildChildFormUrl } from "../../utils/formShareUrl.js";
+import { buildChildFormUrl, buildSharedFormUrl, buildSharedRecordUrl } from "../../utils/formShareUrl.js";
 import { buildChildDataObject, distributeChildRecordsByPid, getChildFormCached_, collectFormLinkFields } from "../preview/childFormData.js";
 import {
   computeRowValues,
@@ -224,6 +231,110 @@ export function useSearchPageState({
     [normalizedSchema],
   );
 
+  // ============================================================================
+  // 子フォーム参照の置換（substitution）を一覧で解決・表示・保存する。
+  //   - CHILD_FORM_*(`項目名`) 置換: listRecordsByPids でバッチ取得した子データを childFormMeta
+  //     として注入して評価。
+  //   - full-query({{SELECT}}) 置換: 子フォーム定義を warm し、行ごとに prefetchQueryTokens で解決。
+  //   解決値は recomputeComputedFieldValues で entry.data へ反映し、buildBackfilledRecord 経由で
+  //   キャッシュ→次回同期でシートへ永続化する（要望1）。未解決の間はセルに「読込中…」を出す（要望2）。
+  //   state はここで宣言し、取得/解決の effect は下方（pagedEntries 確定後）に置く。
+  // ============================================================================
+  const substitutionChildRefs = useMemo(
+    () => collectSubstitutionChildFormRefs(normalizedSchema),
+    [normalizedSchema],
+  );
+  const hasFullQuerySubstitution = substitutionChildRefs.hasFullQuery;
+  const hasDependentSubstitutions = Object.keys(substitutionChildRefs.byFieldId).length > 0;
+
+  // Webhook payload 用（includeChildData=ON のみ）。
+  const webhookChildFormFields = useMemo(
+    () => collectFormLinkFields(normalizedSchema).filter((f) => f.includeChildData),
+    [normalizedSchema],
+  );
+  // 子データのバッチ取得対象。Webhook 用(includeChildData) ＋ 置換が参照する子フォーム
+  // （full-query があるときは参照先を静的特定できないため全 formLink）。
+  const childDataTargetFields = useMemo(() => {
+    const refIds = new Set(substitutionChildRefs.childFormIds);
+    const wantAll = substitutionChildRefs.hasFullQuery;
+    return collectFormLinkFields(normalizedSchema).filter(
+      (f) => f.includeChildData || wantAll || refIds.has(f.childFormId),
+    );
+  }, [normalizedSchema, substitutionChildRefs]);
+
+  // 取得結果: { [fieldId]: { path, byPid: { [pid]: 合成オブジェクト } } }
+  const [searchChildDataByField, setSearchChildDataByField] = useState({});
+  const [childDataReady, setChildDataReady] = useState(false);
+  const [childFetchEpoch, setChildFetchEpoch] = useState(0);
+  // full-query 用
+  const [searchChildForms, setSearchChildForms] = useState([]);
+  const [fullQueryReady, setFullQueryReady] = useState(() => !substitutionChildRefs.hasFullQuery);
+  const [queryTokensByEntry, setQueryTokensByEntry] = useState(() => new Map());
+  const [fullQueryAllRows, setFullQueryAllRows] = useState(false);
+  const [recomputePending, setRecomputePending] = useState(false);
+  // full-query を行ごとに 1 回だけ prefetch するための解決済み id 集合（再 prefetch を避ける）。
+  const resolvedQueryIdsRef = useRef(new Set());
+
+  // pid → { [fieldId]: 子フォーム合成オブジェクト }（tokenContext.childFormMeta 形）。
+  const getChildFormMetaForPid = useCallback((pid) => {
+    const key = String(pid || "");
+    const out = {};
+    if (!key) return out;
+    for (const field of childDataTargetFields) {
+      const fieldData = searchChildDataByField[field.id];
+      const obj = fieldData && fieldData.byPid ? fieldData.byPid[key] : null;
+      if (obj) out[field.id] = obj;
+    }
+    return out;
+  }, [childDataTargetFields, searchChildDataByField]);
+
+  // pid に紐づく子フォーム合成オブジェクト配列（Webhook payload 用、includeChildData のみ）。
+  const getSearchChildFormsForPid = useCallback((pid) => {
+    const key = String(pid || "");
+    if (!key) return [];
+    const out = [];
+    for (const field of webhookChildFormFields) {
+      const fieldData = searchChildDataByField[field.id];
+      const obj = fieldData && fieldData.byPid ? fieldData.byPid[key] : null;
+      if (obj) out.push({ fieldPath: field.path, ...obj });
+    }
+    return out;
+  }, [webhookChildFormFields, searchChildDataByField]);
+
+  // 「子データ / full-query 依存の置換」が出る表示列（読込中・再計算の対象判定に使う）。
+  const dependentSubstColumns = useMemo(() => {
+    if (!hasDependentSubstitutions) return [];
+    const byFieldId = substitutionChildRefs.byFieldId;
+    const pathsById = buildComputedFieldPathsById(normalizedSchema);
+    const out = [];
+    for (const col of displayColumns) {
+      if (!col || !col.path) continue;
+      let info = col.fieldId && byFieldId[col.fieldId] ? byFieldId[col.fieldId] : null;
+      if (!info) {
+        for (const fid of Object.keys(byFieldId)) {
+          if (pathsById[fid] === col.path) { info = byFieldId[fid]; break; }
+        }
+      }
+      if (!info) continue;
+      out.push({
+        columnKey: col.key,
+        path: col.path,
+        needsChild: info.childFormIds.length > 0,
+        needsFullQuery: info.hasFullQuery === true,
+      });
+    }
+    return out;
+  }, [hasDependentSubstitutions, substitutionChildRefs, normalizedSchema, displayColumns]);
+
+  // 同期バックフィル（processedEntries）が補完してよい置換 fieldId。子データ/full-query 依存の
+  // 置換は子データ無しで誤った値（例: 件数 0）を書かないよう除外し、recompute effect に任せる。
+  const sameRecordBackfillFieldIds = useMemo(() => {
+    if (!hasDependentSubstitutions) return null; // 除外対象なし = 全置換（従来挙動）
+    const all = Object.keys(buildComputedFieldPathsById(normalizedSchema));
+    const dependent = new Set(Object.keys(substitutionChildRefs.byFieldId));
+    return all.filter((fid) => !dependent.has(fid));
+  }, [hasDependentSubstitutions, normalizedSchema, substitutionChildRefs]);
+
   const processedEntries = useMemo(() => {
     return entries.map((entry) => {
       if (!hasComputedFields) {
@@ -234,7 +345,7 @@ export function useSearchPageState({
           originalEntry: entry,
         };
       }
-      const backfillResult = backfillComputedFieldValues(normalizedSchema, entry?.data);
+      const backfillResult = backfillComputedFieldValues(normalizedSchema, entry?.data, undefined, sameRecordBackfillFieldIds);
       const effectiveEntry = backfillResult.changed ? { ...entry, data: backfillResult.data } : entry;
       return {
         entry: effectiveEntry,
@@ -243,7 +354,7 @@ export function useSearchPageState({
         originalEntry: entry,
       };
     });
-  }, [entries, searchColumns, normalizedSchema, hasComputedFields]);
+  }, [entries, searchColumns, normalizedSchema, hasComputedFields, sameRecordBackfillFieldIds]);
 
   const recordsNeedingBackfill = useMemo(
     () => processedEntries.filter((row) => row.backfillResult?.changed),
@@ -385,39 +496,70 @@ export function useSearchPageState({
     [selectedEntries, selectedPrintableRows, sortedEntries],
   );
 
-  // ---- 子フォームデータの一括プリロード（検索結果一覧の Webhook 用） ----
-  // includeChildData=ON の formLink 項目について、表示中の全行の親 id を pids にまとめ、
-  // 子フォームごとに 1 回だけ listRecordsByPids（WHERE pid IN (...) 相当）で取得し、
-  // フロントで pid 分配する（行 × 子フォーム数の N+1 リクエストを避ける）。
-  const childFormLinkFields = useMemo(
-    () => collectFormLinkFields(normalizedSchema).filter((f) => f.includeChildData),
-    [normalizedSchema],
-  );
+  // 子データの取得・解決 effect は displayPagedEntries の後（下方）に置く。
+  // state / getter（searchChildDataByField / getChildFormMetaForPid / getSearchChildFormsForPid）は
+  // 上部の「子フォーム参照の置換」ブロックで宣言済み。
 
-  const [searchChildDataByField, setSearchChildDataByField] = useState({});
-  const visiblePidSignature = useMemo(
-    () => sortedEntries.map((r) => r.entry?.id).filter(Boolean).join(","),
-    [sortedEntries],
+  const pagedEntries = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return sortedEntries.slice(start, start + PAGE_SIZE);
+  }, [sortedEntries, page, PAGE_SIZE]);
+
+  // 表示中ページの各行にヒット抜粋を付与（最大 PAGE_SIZE 件のみ計算）。
+  // さらに「子データ / full-query 依存の置換セルが 空 かつ 未解決」の列キーを pendingCellKeys に
+  // 集めて行へ付与する（SearchTable が該当セルに「読込中…」を出す）。
+  const displayPagedEntries = useMemo(() => {
+    const withHits = hitColumnActive
+      ? pagedEntries.map((row) => ({
+          ...row,
+          hitExcerpts: buildRowHitExcerpts(row, searchColumns, query, { cellDisplayLimit }),
+        }))
+      : pagedEntries;
+    if (dependentSubstColumns.length === 0) return withHits;
+    return withHits.map((row) => {
+      const data = row.entry?.data || {};
+      const id = String(row.entry?.id || "");
+      const pending = new Set();
+      for (const c of dependentSubstColumns) {
+        const stored = data[c.path];
+        if (!(stored === undefined || stored === null || stored === "")) continue;
+        let ready = true;
+        if (c.needsChild && !childDataReady) ready = false;
+        if (c.needsFullQuery && !(fullQueryReady && queryTokensByEntry.has(id))) ready = false;
+        if (recomputePending && (c.needsChild || c.needsFullQuery)) ready = false;
+        if (!ready) pending.add(c.columnKey);
+      }
+      return pending.size > 0 ? { ...row, pendingCellKeys: pending } : row;
+    });
+  }, [hitColumnActive, pagedEntries, searchColumns, query, cellDisplayLimit, dependentSubstColumns, childDataReady, fullQueryReady, queryTokensByEntry, recomputePending]);
+
+  // ---- 子データ取得 / full-query 解決 / 置換値の再計算・書き戻し（state は上部で宣言済み）----
+  // 取得対象 pid（表示・非表示問わず読み込み済みの全レコード）。順序非依存の安定シグネチャ。
+  const childFetchPids = useMemo(
+    () => Array.from(new Set(entries.map((e) => e?.id).filter(Boolean))),
+    [entries],
   );
-  const childFormLinkSignature = childFormLinkFields.map((f) => `${f.id}:${f.childFormId}`).join("|");
+  const childFetchPidSignature = useMemo(() => [...childFetchPids].sort().join(","), [childFetchPids]);
+  const childTargetSignature = childDataTargetFields.map((f) => `${f.id}:${f.childFormId}`).join("|");
+
+  // 子フォームごとに 1 回だけ listRecordsByPids でバッチ取得し、pid 分配して合成オブジェクトを作る。
   useCancellable(async (isCancelled) => {
+    setChildDataReady(false);
     setSearchChildDataByField({});
-    if (childFormLinkFields.length === 0) return;
-    if (typeof listRecordsByPids !== "function" || !hasScriptRun()) return;
-    const pids = sortedEntries.map((r) => r.entry?.id).filter(Boolean);
-    if (pids.length === 0) return;
+    if (childDataTargetFields.length === 0) { if (!isCancelled()) setChildDataReady(true); return; }
+    if (typeof listRecordsByPids !== "function" || !hasScriptRun()) { if (!isCancelled()) setChildDataReady(true); return; }
+    if (childFetchPids.length === 0) { if (!isCancelled()) setChildDataReady(true); return; }
     const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
-    for (const field of childFormLinkFields) {
+    for (const field of childDataTargetFields) {
       try {
         const [childForm, records] = await Promise.all([
           getChildFormCached_(field.childFormId),
-          listRecordsByPids({ formId: field.childFormId, pids }),
+          listRecordsByPids({ formId: field.childFormId, pids: childFetchPids }),
         ]);
         if (isCancelled()) return;
         const childSchema = childForm && childForm.schema ? childForm.schema : [];
         const grouped = distributeChildRecordsByPid(records);
         const byPid = {};
-        // 子レコードを持つ pid のみ合成オブジェクトを作る（payload 肥大を抑える）。
         grouped.forEach((recs, pid) => {
           byPid[pid] = buildChildDataObject({
             childFormId: field.childFormId,
@@ -429,37 +571,178 @@ export function useSearchPageState({
         });
         setSearchChildDataByField((prev) => ({ ...prev, [field.id]: { path: field.path, byPid } }));
       } catch (_e) {
-        // 取得失敗時は子データを出さない（無言）。
+        // 取得失敗時はその子フォームのデータを出さない（無言）。
       }
     }
-  }, [childFormLinkSignature, visiblePidSignature]);
+    if (!isCancelled()) setChildDataReady(true);
+  }, [childTargetSignature, childFetchPidSignature, childFetchEpoch]);
 
-  // pid（=親レコード id）に紐づく子フォーム合成オブジェクト配列を返す。検索 Webhook payload 用。
-  const getSearchChildFormsForPid = useCallback((pid) => {
-    const key = String(pid || "");
-    if (!key) return [];
-    const out = [];
-    for (const field of childFormLinkFields) {
-      const entry = searchChildDataByField[field.id];
-      const obj = entry && entry.byPid ? entry.byPid[key] : null;
-      if (obj) out.push({ fieldPath: field.path, ...obj });
+  // T1: 子フォームのレコード変化（オーバーレイ編集・複製）を購読し、子データを再取得する。
+  // 再取得 → searchChildDataByField 変化 → 再計算 effect が走り、該当親レコードだけ差分更新される。
+  useEffect(() => {
+    const targetIds = new Set(childDataTargetFields.map((f) => f.childFormId));
+    if (targetIds.size === 0) return undefined;
+    const unsubscribe = subscribeChildFormChange((changedChildFormId) => {
+      if (targetIds.has(changedChildFormId)) setChildFetchEpoch((n) => n + 1);
+    });
+    return unsubscribe;
+  }, [childTargetSignature]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // full-query 置換のための子フォーム定義ロード + 子レコード warm（runFullQuery が getRecordsFromCache から読む）。
+  useCancellable(async (isCancelled) => {
+    if (!hasFullQuerySubstitution || !effectiveFormId || !hasScriptRun()) {
+      if (!isCancelled()) setFullQueryReady(true);
+      return;
     }
-    return out;
-  }, [childFormLinkFields, searchChildDataByField]);
-
-  const pagedEntries = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return sortedEntries.slice(start, start + PAGE_SIZE);
-  }, [sortedEntries, page, PAGE_SIZE]);
-
-  // 表示中ページの各行にヒット抜粋を付与（最大 PAGE_SIZE 件のみ計算）。
-  const displayPagedEntries = useMemo(() => {
-    if (!hitColumnActive) return pagedEntries;
-    return pagedEntries.map((row) => ({
-      ...row,
-      hitExcerpts: buildRowHitExcerpts(row, searchColumns, query, { cellDisplayLimit }),
+    setFullQueryReady(false);
+    const linkFields = collectFormLinkFields(normalizedSchema);
+    const defResults = await Promise.all(
+      linkFields.map((f) => getChildFormCached_(f.childFormId).catch(() => null)),
+    );
+    if (isCancelled()) return;
+    const defs = defResults.filter((d) => d && d.id);
+    await Promise.all(linkFields.map(async (f) => {
+      try {
+        const cache = await getRecordsFromCache(f.childFormId);
+        const { shouldSync } = evaluateCacheForRecords({
+          lastSyncedAt: cache.lastSyncedAt,
+          hasData: Array.isArray(cache.entries) && cache.entries.length > 0,
+          forceSync: false,
+        });
+        if (shouldSync) await dataStore.listEntries(f.childFormId);
+      } catch (_e) { /* warm 失敗は無言 */ }
     }));
-  }, [hitColumnActive, pagedEntries, searchColumns, query, cellDisplayLimit]);
+    if (isCancelled()) return;
+    setSearchChildForms(defs);
+    setFullQueryReady(true);
+  }, [hasFullQuerySubstitution, effectiveFormId, childTargetSignature, childFetchEpoch]);
+
+  const searchForms = useMemo(
+    () => [
+      { id: effectiveFormId || "", name: form?.settings?.formTitle || effectiveFormId || "", schema: normalizedSchema },
+      ...searchChildForms,
+    ],
+    [effectiveFormId, form?.settings?.formTitle, normalizedSchema, searchChildForms],
+  );
+
+  const fullQueryTemplates = useMemo(() => {
+    if (!hasFullQuerySubstitution) return "";
+    const tpls = [];
+    traverseSchema(normalizedSchema, (field) => {
+      if (field?.type === "substitution" && typeof field?.templateText === "string" && FULL_QUERY_SUBST_RE.test(field.templateText)) {
+        tpls.push(field.templateText);
+      }
+    });
+    return tpls.join("\n");
+  }, [normalizedSchema, hasFullQuerySubstitution]);
+
+  // T3: テンプレ（=スキーマ）/ フォームが変わったら full-query 解決値を破棄して取り直す。
+  // 破棄後は recompute 側が再解決トークンで full-query 値を上書きする（可視行から順次）。
+  useEffect(() => {
+    resolvedQueryIdsRef.current = new Set();
+    setQueryTokensByEntry((prev) => (prev.size === 0 ? prev : new Map()));
+  }, [fullQueryTemplates, effectiveFormId]);
+
+  // 行ごとに full-query を prefetch（重い AlaSQL）。通常は可視ページ、更新ボタン後は全行。
+  const fullQueryTargetIds = useMemo(() => {
+    if (!hasFullQuerySubstitution) return [];
+    const rows = fullQueryAllRows ? sortedEntries : pagedEntries;
+    return rows.map((r) => r.entry?.id).filter(Boolean);
+  }, [hasFullQuerySubstitution, fullQueryAllRows, sortedEntries, pagedEntries]);
+  const fullQueryTargetSignature = fullQueryTargetIds.join(",");
+
+  useCancellable(async (isCancelled) => {
+    if (!hasFullQuerySubstitution || !fullQueryReady || !fullQueryTemplates) return;
+    const pendingIds = fullQueryTargetIds.filter((id) => !resolvedQueryIdsRef.current.has(id));
+    if (pendingIds.length === 0) return;
+    const resolved = new Map();
+    for (const id of pendingIds) {
+      if (isCancelled()) return;
+      try {
+        const map = await prefetchQueryTokens(fullQueryTemplates, {
+          recordId: id,
+          formId: effectiveFormId,
+          forms: searchForms,
+        });
+        resolved.set(id, map);
+        resolvedQueryIdsRef.current.add(id);
+      } catch (_e) { /* prefetch 失敗は無言（未解決のまま） */ }
+    }
+    if (isCancelled() || resolved.size === 0) return;
+    setQueryTokensByEntry((prev) => {
+      const merged = new Map(prev);
+      for (const [k, v] of resolved) merged.set(k, v);
+      return merged;
+    });
+  }, [hasFullQuerySubstitution, fullQueryReady, fullQueryTemplates, fullQueryTargetSignature, searchForms, childFetchEpoch]);
+
+  // 子データ / full-query が揃った行の置換を再計算し、値が変わったものだけキャッシュへ書き戻す。
+  // 空の評価値は据え置く（recomputeComputedFieldValues の仕様）ので、full-query 未解決行は child 系
+  // のみ反映され、トークン到着後の再走で full-query 値も反映される。書き戻しは modifiedAt を更新し
+  // （既存踏襲）、次回同期でシートへ永続化される（要望1）。差分が無ければ書き戻さない（冪等）。
+  useCancellable(async (isCancelled) => {
+    if (!effectiveFormId || !hasDependentSubstitutions || !childDataReady) return;
+    const rows = sortedEntries;
+    if (rows.length === 0) return;
+    const baseUrl = (typeof window !== "undefined")
+      ? (window.__GAS_WEBAPP_URL__ || window.location.origin)
+      : "";
+    const formUrl = buildSharedFormUrl(baseUrl, effectiveFormId);
+    // 上書き対象は「子データ / full-query 依存の置換」だけに限定（同一レコード参照・NOW() 系の churn を防ぐ）。
+    // full-query 依存の置換はトークン未取得の行では書かない（"件数: " のような部分解決値の保存を防ぐ）。
+    const byFieldId = substitutionChildRefs.byFieldId;
+    const childOnlyFieldIds = Object.keys(byFieldId).filter((fid) => !byFieldId[fid].hasFullQuery);
+    const fullQueryFieldIds = Object.keys(byFieldId).filter((fid) => byFieldId[fid].hasFullQuery);
+    setRecomputePending(true);
+    try {
+      const { headerMatrix, schemaHash } = await getRecordsFromCache(effectiveFormId);
+      const now = Date.now();
+      let wroteAny = false;
+      for (const row of rows) {
+        if (isCancelled()) return;
+        const entry = row.originalEntry || row.entry;
+        const id = String(entry?.id || "");
+        if (!id || isDeletedEntry(entry)) continue;
+        const queryTokenValues = queryTokensByEntry.get(id);
+        const writeFieldIds = queryTokenValues
+          ? [...childOnlyFieldIds, ...fullQueryFieldIds]
+          : childOnlyFieldIds;
+        if (writeFieldIds.length === 0) continue;
+        const tokenContext = {
+          fieldPaths,
+          childFormMeta: getChildFormMetaForPid(id),
+          queryTokenValues: queryTokenValues || undefined,
+          queryTokensReady: Boolean(queryTokenValues),
+          recordId: id,
+          formId: effectiveFormId,
+          formUrl,
+          recordUrl: buildSharedRecordUrl(baseUrl, effectiveFormId, id),
+        };
+        const result = recomputeComputedFieldValues(normalizedSchema, entry.data, tokenContext, writeFieldIds);
+        if (!result.changed) continue;
+        const next = buildBackfilledRecord(entry, result, { now, userEmail });
+        if (!next) continue;
+        await upsertRecordInCache(effectiveFormId, next, { headerMatrix, schemaHash });
+        wroteAny = true;
+      }
+      if (!isCancelled() && wroteAny) await reloadFromCache();
+    } catch (error) {
+      console.warn("[SearchPage] substitution recompute failed:", error);
+    } finally {
+      if (!isCancelled()) setRecomputePending(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveFormId, normalizedSchema, sortedEntries, searchChildDataByField, queryTokensByEntry, childDataReady, fullQueryReady]);
+
+  // T2: 更新（再同期）ボタン。通常のリフレッシュに加え、子データ再取得 + full-query 全行の
+  // 再解決（解決済みキャッシュを破棄）を促し、全件の置換値を再計算させる。
+  const handleForceRefreshAll = useCallback(() => {
+    resolvedQueryIdsRef.current = new Set();
+    setQueryTokensByEntry((prev) => (prev.size === 0 ? prev : new Map()));
+    setChildFetchEpoch((n) => n + 1);
+    setFullQueryAllRows(true);
+    forceRefreshAll();
+  }, [forceRefreshAll]);
 
   const totalPages = Math.max(1, Math.ceil(sortedEntries.length / PAGE_SIZE));
   const totalEntries = sortedEntries.length;
@@ -638,7 +921,8 @@ export function useSearchPageState({
     hasUnsynced,
     unsyncedCount,
     cacheDisabled,
-    forceRefreshAll,
+    // 更新ボタンは T2（全件再計算）も起動するラッパを公開する。内部の削除/復元は raw を使う。
+    forceRefreshAll: handleForceRefreshAll,
     sortedEntries,
     outputTargetRows,
     getSearchChildFormsForPid,

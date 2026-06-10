@@ -15,6 +15,13 @@
 import { maskWithPlaceholders } from "./sqlLiteralMask.js";
 import { resolveFormRef, formQualifiedName } from "./formIdentifierResolver.js";
 import { canonicalDataAlias } from "./sqlPreprocessor.js";
+import {
+  scanAndReplace,
+  isFullQueryBody,
+  escapeBraces,
+  restoreEscapedBraces,
+} from "../../expression/templateScanner.js";
+import { traverseSchema } from "../../../core/schemaUtils.js";
 
 /**
  * SQL 内のテーブル参照トークンを mapToken で書き換える。
@@ -105,4 +112,153 @@ export function canonicalAliasToName(sql, formId, formIndex) {
     (_m, kw, ws) => kw + ws + "[" + formId + "]",
   );
   return formRefsToNames(bracketed, formIndex);
+}
+
+// ---------------------------------------------------------------------------
+// テンプレート文字列（`{{ ... }}`）に埋め込まれた full-query トークン（本文先頭
+// SELECT）の **フォーム参照だけ** を双方向置換する。式トークン・地のテキスト・著者
+// エスケープ `\{` `\}` は逐語のまま残す。フォーム編集時の「保存=fileId / 表示=論理パス」
+// ラウンドトリップ用（Question SQL の formRefsToIds/Names と対称）。
+// ---------------------------------------------------------------------------
+
+/**
+ * テンプレート文字列中の full-query トークン本文だけを transformSql で書き換える。
+ *
+ * - `escapeBraces` で著者エスケープ `\{` `\}` を退避してから走査するので、エスケープ列が
+ *   誤ってトークン開始扱いされない。最後に `restoreEscapedBraces` で `\{` `\}` を逐語復元する。
+ * - full-query 本文（`tok.body`）は退避マーカ込みのまま transformSql に渡す。form 参照書換は
+ *   FROM/JOIN 後の `[..]` と `[form].[col]` 先頭しか触らず、マーカ（NFB_LBRACE 等）は
+ *   `[..]` 外の素のテキストなので影響を受けない（= unescape/re-escape の往復破損を避ける）。
+ * - 非 full-query トークンは `tok.fullToken` を逐語返却。
+ *
+ * @param {string} template
+ * @param {(sql: string) => string} transformSql
+ * @returns {string}
+ */
+function rewriteTemplateFullQueries(template, transformSql) {
+  if (template === undefined || template === null) return "";
+  const text = String(template);
+  if (!text || text.indexOf("{") < 0) return text;
+  const escaped = escapeBraces(text);
+  const replaced = scanAndReplace(escaped, (tok) => {
+    if (!isFullQueryBody(tok.body)) return tok.fullToken;
+    return "{{" + transformSql(tok.body) + "}}";
+  });
+  return restoreEscapedBraces(replaced);
+}
+
+/**
+ * 保存用: テンプレ内 full-query のフォーム参照（パス / バレ名）→ fileId に置換。
+ * @param {string} template
+ * @param {object} formIndex - buildFormIndex の戻り値
+ * @returns {string}
+ */
+export function templateFormRefsToIds(template, formIndex) {
+  return rewriteTemplateFullQueries(template, (sql) => formRefsToIds(sql, formIndex));
+}
+
+/**
+ * 表示用: テンプレ内 full-query の fileId → フォーム名（論理パス）に置換。
+ * @param {string} template
+ * @param {object} formIndex - buildFormIndex の戻り値
+ * @returns {string}
+ */
+export function templateFormRefsToNames(template, formIndex) {
+  return rewriteTemplateFullQueries(template, (sql) => formRefsToNames(sql, formIndex));
+}
+
+// full-query を埋め込めるテンプレ文字列キー（substitution / printTemplate）。
+const PRINT_TEMPLATE_KEYS = [
+  "fileNameTemplate",
+  "gmailTemplateTo",
+  "gmailTemplateCc",
+  "gmailTemplateBcc",
+  "gmailTemplateSubject",
+  "gmailTemplateBody",
+];
+
+/**
+ * スキーマ（深いネスト込み）を deep clone し、テンプレ文字列キーに mapStr を適用した
+ * 新スキーマを返す（入力は非破壊）。スキーマは JSON シリアライズ可能。
+ *
+ * @param {Array} schema
+ * @param {(template: string) => string} mapStr
+ * @returns {Array}
+ */
+function mapSchemaTemplates(schema, mapStr) {
+  if (!Array.isArray(schema)) return schema;
+  const clone = JSON.parse(JSON.stringify(schema));
+  traverseSchema(clone, (field) => {
+    if (!field || typeof field !== "object") return;
+    if (field.type === "substitution" && typeof field.templateText === "string") {
+      field.templateText = mapStr(field.templateText);
+    }
+    if (field.type === "printTemplate" && field.printTemplateAction && typeof field.printTemplateAction === "object") {
+      const action = field.printTemplateAction;
+      for (const key of PRINT_TEMPLATE_KEYS) {
+        if (typeof action[key] === "string") action[key] = mapStr(action[key]);
+      }
+    }
+  });
+  return clone;
+}
+
+/**
+ * 設定（form.settings）を浅く clone し、full-query を埋め込めるテンプレ設定キーに
+ * mapStr を適用して返す（入力は非破壊）。対象は standardPrintFileNameTemplate のみ。
+ *
+ * @param {object} settings
+ * @param {(template: string) => string} mapStr
+ * @returns {object}
+ */
+function mapSettingsTemplates(settings, mapStr) {
+  if (!settings || typeof settings !== "object") return settings;
+  const clone = { ...settings };
+  if (typeof clone.standardPrintFileNameTemplate === "string") {
+    clone.standardPrintFileNameTemplate = mapStr(clone.standardPrintFileNameTemplate);
+  }
+  return clone;
+}
+
+/** 保存用: スキーマ内全テンプレの full-query フォーム参照を fileId 化。 */
+export function schemaTemplateFormRefsToIds(schema, formIndex) {
+  return mapSchemaTemplates(schema, (t) => templateFormRefsToIds(t, formIndex));
+}
+
+/** 表示用: スキーマ内全テンプレの full-query フォーム参照を論理パス化。 */
+export function schemaTemplateFormRefsToNames(schema, formIndex) {
+  return mapSchemaTemplates(schema, (t) => templateFormRefsToNames(t, formIndex));
+}
+
+/** 保存用: 設定内テンプレの full-query フォーム参照を fileId 化。 */
+export function settingsTemplateFormRefsToIds(settings, formIndex) {
+  return mapSettingsTemplates(settings, (t) => templateFormRefsToIds(t, formIndex));
+}
+
+/** 表示用: 設定内テンプレの full-query フォーム参照を論理パス化。 */
+export function settingsTemplateFormRefsToNames(settings, formIndex) {
+  return mapSettingsTemplates(settings, (t) => templateFormRefsToNames(t, formIndex));
+}
+
+/**
+ * 表示用: formLink フィールドの表示キャッシュ childFormPath を、安定 ID childFormId から
+ * 現在の論理パスに再計算する（リネーム追従）。childFormId 解決不可なら現状維持。
+ * 表示専用で childFormId / 評価には無影響。入力は非破壊（deep clone）。
+ *
+ * @param {Array} schema
+ * @param {object} formIndex - buildFormIndex の戻り値
+ * @returns {Array}
+ */
+export function refreshFormLinkPaths(schema, formIndex) {
+  if (!Array.isArray(schema)) return schema;
+  if (!formIndex || !formIndex.byId) return schema;
+  const clone = JSON.parse(JSON.stringify(schema));
+  traverseSchema(clone, (field) => {
+    if (!field || field.type !== "formLink") return;
+    const id = typeof field.childFormId === "string" ? field.childFormId : "";
+    if (!id || !formIndex.byId.has(id)) return;
+    const path = formQualifiedName(formIndex.byId.get(id));
+    if (path) field.childFormPath = path;
+  });
+  return clone;
 }

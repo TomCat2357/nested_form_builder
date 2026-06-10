@@ -14,6 +14,13 @@ export const DEFAULT_DELETED_RETENTION_DAYS = 30;
 export const DEFAULT_SHEET_NAME = "Data";
 export const GAS_ERROR_CODE_LOCK_TIMEOUT = "LOCK_TIMEOUT";
 
+// 置換フィールド（type:"substitution"）の表示まわり。プレビュー（FieldRenderer）と
+// 検索結果一覧（SearchTable）で文言・判定を共有するため、末端の constants へ集約する。
+//   - SUBSTITUTION_LOADING_PLACEHOLDER: 子フォームデータ / full-query が未解決の過渡状態に出す表示。
+//   - FULL_QUERY_SUBST_RE: templateText が full-query トークン（`{{SELECT ...}}`）を含むかの判定。
+export const SUBSTITUTION_LOADING_PLACEHOLDER = "読込中…";
+export const FULL_QUERY_SUBST_RE = /\{\{\s*SELECT\b/i;
+
 // IndexedDB ストレージ関連
 export const DB_NAME = "NestedFormBuilder";
 // v8: フォーム/クエスチョン/ダッシュボードのオフラインファースト保存用に
