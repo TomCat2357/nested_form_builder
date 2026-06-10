@@ -1,5 +1,5 @@
 // =============================================
-// Forms Public API — フォーム CRUD / Archive / ReadOnly / Copy / Import
+// Forms Public API — フォーム CRUD / Archive / ReadOnly / ChildOnly / Copy / Import
 // =============================================
 //
 // Analytics API と同様に、公開 API は `executeAction_` の 1 経路へ統一する。
@@ -126,6 +126,18 @@ var FORMS_HANDLERS_ = {
   "forms_readonly_clear_batch": {
     run: function(raw) { return Forms_setFormsReadOnlyState_((raw && raw.formIds) || [], false); }
   },
+  "forms_childonly_set_one": {
+    run: function(raw) { return Nfb_unwrapSingleResult_(Forms_setFormsChildOnlyState_([raw && raw.formId], true), "forms", "form"); }
+  },
+  "forms_childonly_clear_one": {
+    run: function(raw) { return Nfb_unwrapSingleResult_(Forms_setFormsChildOnlyState_([raw && raw.formId], false), "forms", "form"); }
+  },
+  "forms_childonly_set_batch": {
+    run: function(raw) { return Forms_setFormsChildOnlyState_((raw && raw.formIds) || [], true); }
+  },
+  "forms_childonly_clear_batch": {
+    run: function(raw) { return Forms_setFormsChildOnlyState_((raw && raw.formIds) || [], false); }
+  },
   "forms_copy": {
     run: function(raw) {
       var formId = raw && raw.formId;
@@ -221,6 +233,10 @@ function nfbSetFormReadOnly(formId)        { return Forms_runScriptAction_("form
 function nfbClearFormReadOnly(formId)      { return Forms_runScriptAction_("forms_readonly_clear_one",   { formId: formId }); }
 function nfbSetFormsReadOnly(formIds)      { return Forms_runScriptAction_("forms_readonly_set_batch",   { formIds: formIds }); }
 function nfbClearFormsReadOnly(formIds)    { return Forms_runScriptAction_("forms_readonly_clear_batch", { formIds: formIds }); }
+function nfbSetFormChildOnly(formId)       { return Forms_runScriptAction_("forms_childonly_set_one",    { formId: formId }); }
+function nfbClearFormChildOnly(formId)     { return Forms_runScriptAction_("forms_childonly_clear_one",  { formId: formId }); }
+function nfbSetFormsChildOnly(formIds)     { return Forms_runScriptAction_("forms_childonly_set_batch",  { formIds: formIds }); }
+function nfbClearFormsChildOnly(formIds)   { return Forms_runScriptAction_("forms_childonly_clear_batch", { formIds: formIds }); }
 function nfbCopyForm(formId)               { return Forms_runScriptAction_("forms_copy",                 { formId: formId }); }
 function nfbImportFormsFromDrive(url)      { return Forms_runScriptAction_("forms_import_drive",         { url: url }); }
 function nfbRegisterImportedForm(payload)  { return Forms_runScriptAction_("forms_register_import",      payload || {}); }

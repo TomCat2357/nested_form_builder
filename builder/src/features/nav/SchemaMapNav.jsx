@@ -17,7 +17,7 @@ function SchemaMapNavList({ items, expandedIds, onToggle, onScroll }) {
 
         return (
           <li key={item.id} className="schema-map-nav__item">
-            <div className="schema-map-nav__row" style={{ "--schema-map-depth": item.depth }}>
+            <div className="schema-map-nav__row" data-depth={item.depth} style={{ "--schema-map-depth": item.depth }}>
               {hasChildren ? (
                 <button
                   type="button"

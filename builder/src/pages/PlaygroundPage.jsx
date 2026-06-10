@@ -50,7 +50,7 @@ const baseUrl_ = () => (typeof window !== "undefined" && window.__GAS_WEBAPP_URL
 export default function PlaygroundPage() {
   const { isAdmin, userEmail } = useAuth();
   const { forms } = useAppData();
-  const activeForms = useMemo(() => (forms || []).filter((f) => !f.archived), [forms]);
+  const activeForms = useMemo(() => (forms || []).filter((f) => !f.archived && !f.childOnly), [forms]);
 
   const [mode, setMode] = useState("question"); // "question" | "template" | "webhook"
 

@@ -151,6 +151,7 @@ function SharedEntity_deleteWithFiles_(ids, stdSubfolderKey, adapter) {
 //   field       設定するフィールド名（"archived" / "readOnly"）
 //   value       設定値
 //   clearField  value が truthy のとき false へ強制する相互排他フィールド名（任意）
+//   clearFields value が truthy のとき false へ強制する相互排他フィールド名の配列（任意、3 値以上の排他用）
 //   idKey       errors[].のキー名（forms: "formId" / analytics: "id"）
 //   listKey     更新済みアイテム配列を返すキー名（forms: "forms" / analytics: resultListKey）
 //   notFoundMsg / saveFailMsg  エラーメッセージ
@@ -180,6 +181,12 @@ function SharedEntity_setStateField_(ids, field, value, opts) {
 
       item[field] = nextValue;
       if (nextValue && opts.clearField) item[opts.clearField] = false;
+      // clearFields（配列）: 3 値以上の相互排他で、設定時に複数フィールドを false へ落とす。
+      if (nextValue && opts.clearFields) {
+        for (var c = 0; c < opts.clearFields.length; c++) {
+          if (opts.clearFields[c]) item[opts.clearFields[c]] = false;
+        }
+      }
       if (typeof opts.beforeSave === "function") opts.beforeSave(item);
 
       var saved = opts.saveItem(item);

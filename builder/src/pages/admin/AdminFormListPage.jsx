@@ -31,7 +31,7 @@ const formatDisplayFieldsSummary = (form) => {
 };
 
 export default function AdminFormListPage() {
-  const { forms, loadFailures, loadingForms, lastSyncedAt, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, archiveForms, unarchiveForms, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteFormsWithFiles, refreshForms, exportForms, copyForm, registerImportedForm, updateForm } = useAppData();
+  const { forms, loadFailures, loadingForms, lastSyncedAt, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, archiveForms, unarchiveForms, setFormsReadOnly, clearFormsReadOnly, setFormsChildOnly, clearFormsChildOnly, deleteForms, deleteFormsWithFiles, refreshForms, exportForms, copyForm, registerImportedForm, updateForm } = useAppData();
   useBuilderSettings();
   const navigate = useNavigate();
   const { showAlert } = useAlert();
@@ -105,6 +105,8 @@ export default function AdminFormListPage() {
     setConfirmArchive,
     confirmReadOnly,
     setConfirmReadOnly,
+    confirmChildOnly,
+    setConfirmChildOnly,
     confirmDelete,
     setConfirmDelete,
     confirmHardDelete,
@@ -120,6 +122,7 @@ export default function AdminFormListPage() {
     copying,
     handleArchiveSelected,
     handleReadOnlySelected,
+    handleChildOnlySelected,
     handleDeleteSelected,
     handleHardDeleteSelected,
     handleExport,
@@ -127,6 +130,7 @@ export default function AdminFormListPage() {
     handleImportFromDrive,
     confirmArchiveAction,
     confirmReadOnlyAction,
+    confirmChildOnlyAction,
     confirmDeleteAction,
     confirmHardDeleteAction,
     handleCopySelected,
@@ -165,6 +169,8 @@ export default function AdminFormListPage() {
     unarchiveForms,
     setFormsReadOnly,
     clearFormsReadOnly,
+    setFormsChildOnly,
+    clearFormsChildOnly,
     deleteForms,
     deleteFormsWithFiles,
     exportForms,
@@ -272,6 +278,14 @@ export default function AdminFormListPage() {
             disabled={selected.size === 0}
           >
             参照のみ
+          </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-13"
+            onClick={handleChildOnlySelected}
+            disabled={selected.size === 0}
+          >
+            子フォーム専用
           </button>
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleExport} disabled={exporting || selected.size === 0}>
             {exporting ? "↓ エクスポート中..." : "↓ エクスポート"}
@@ -427,6 +441,8 @@ export default function AdminFormListPage() {
                         <span className="nf-text-danger-strong nf-fw-600">読み込みエラー</span>
                       ) : form.archived ? (
                         <span className="nf-text-danger-strong">アーカイブ済み</span>
+                      ) : form.childOnly ? (
+                        <span className="nf-text-warning nf-fw-600">子フォーム専用</span>
                       ) : form.readOnly ? (
                         <span className="nf-text-warning nf-fw-600">参照のみ</span>
                       ) : (
@@ -491,6 +507,29 @@ export default function AdminFormListPage() {
             value: "readOnly",
             variant: "primary",
             onSelect: confirmReadOnlyAction,
+          },
+        ]}
+      />
+
+      <ConfirmDialog
+        open={confirmChildOnly.open}
+        title={confirmChildOnly.allChildOnly ? "子フォーム専用を解除" : "フォームを子フォーム専用に設定"}
+        message={
+          confirmChildOnly.allChildOnly
+            ? "このフォームの子フォーム専用設定を解除して公開中に戻します。よろしいですか？"
+            : "このフォームを子フォーム専用に設定します。選択画面（一覧）には表示されなくなり、他フォームの子フォームとしてのみ開けるようになります。アーカイブ・参照のみのフォームは公開中に戻した上で子フォーム専用に設定されます。よろしいですか？"
+        }
+        options={[
+          {
+            label: "キャンセル",
+            value: "cancel",
+            onSelect: () => setConfirmChildOnly({ open: false, formId: null, targetIds: [], multiple: false, allChildOnly: false }),
+          },
+          {
+            label: confirmChildOnly.allChildOnly ? "解除" : "子フォーム専用に設定",
+            value: "childOnly",
+            variant: "primary",
+            onSelect: confirmChildOnlyAction,
           },
         ]}
       />

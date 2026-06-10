@@ -325,6 +325,7 @@ export function AppDataProvider({ children }) {
       createdAt: updates?.createdAt ?? existing.createdAt,
       createdAtUnixMs: updates?.createdAtUnixMs ?? existing.createdAtUnixMs,
       archived: updates?.archived ?? existing.archived,
+      childOnly: updates?.childOnly ?? existing.childOnly,
       schemaVersion: updates?.schemaVersion ?? existing.schemaVersion,
       driveFileUrl: updates?.driveFileUrl ?? existing.driveFileUrl,
     };
@@ -383,7 +384,7 @@ export function AppDataProvider({ children }) {
   }, [updateFormsAndCache]);
 
   const archiveForms = useCallback(
-    (formIds) => batchUpdateFormsState(dataStore.archiveForms.bind(dataStore), formIds, { archived: true, readOnly: false }, "archiveForms"),
+    (formIds) => batchUpdateFormsState(dataStore.archiveForms.bind(dataStore), formIds, { archived: true, readOnly: false, childOnly: false }, "archiveForms"),
     [batchUpdateFormsState],
   );
 
@@ -407,12 +408,22 @@ export function AppDataProvider({ children }) {
   }, [upsertFormsState]);
 
   const setFormsReadOnly = useCallback(
-    (formIds) => batchUpdateFormsState(dataStore.setFormsReadOnly.bind(dataStore), formIds, { readOnly: true, archived: false }, "setFormsReadOnly"),
+    (formIds) => batchUpdateFormsState(dataStore.setFormsReadOnly.bind(dataStore), formIds, { readOnly: true, archived: false, childOnly: false }, "setFormsReadOnly"),
     [batchUpdateFormsState],
   );
 
   const clearFormsReadOnly = useCallback(
     (formIds) => batchUpdateFormsState(dataStore.clearFormsReadOnly.bind(dataStore), formIds, { readOnly: false }, "clearFormsReadOnly"),
+    [batchUpdateFormsState],
+  );
+
+  const setFormsChildOnly = useCallback(
+    (formIds) => batchUpdateFormsState(dataStore.setFormsChildOnly.bind(dataStore), formIds, { childOnly: true, archived: false, readOnly: false }, "setFormsChildOnly"),
+    [batchUpdateFormsState],
+  );
+
+  const clearFormsChildOnly = useCallback(
+    (formIds) => batchUpdateFormsState(dataStore.clearFormsChildOnly.bind(dataStore), formIds, { childOnly: false }, "clearFormsChildOnly"),
     [batchUpdateFormsState],
   );
 
@@ -570,6 +581,8 @@ export function AppDataProvider({ children }) {
       clearFormReadOnly,
       setFormsReadOnly,
       clearFormsReadOnly,
+      setFormsChildOnly,
+      clearFormsChildOnly,
       deleteForms,
       deleteForm,
       deleteFormsWithFiles,
@@ -579,7 +592,7 @@ export function AppDataProvider({ children }) {
       getFormById,
       registerImportedForm,
     }),
-    [forms, loadFailures, loadingForms, refreshingForms, error, lastSyncedAt, cacheDisabled, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteForm, deleteFormsWithFiles, importForms, exportForms, copyForm, getFormById, registerImportedForm],
+    [forms, loadFailures, loadingForms, refreshingForms, error, lastSyncedAt, cacheDisabled, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, setFormsChildOnly, clearFormsChildOnly, deleteForms, deleteForm, deleteFormsWithFiles, importForms, exportForms, copyForm, getFormById, registerImportedForm],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;
