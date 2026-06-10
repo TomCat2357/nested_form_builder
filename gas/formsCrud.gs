@@ -492,28 +492,11 @@ function Forms_deleteForms_(formIds) {
   if (!formIds || !formIds.length) {
     throw new Error("Form IDs are required");
   }
-
-  var ids = Nfb_normalizeIdList_(formIds);
-  var mapping = Forms_getMapping_();
-  var deleted = 0;
-
-  ids.forEach(function(formId) {
-    if (!formId) return;
-
-    // リンク（登録）のみ解除する。Drive 上のファイル本体は削除しない。
-    if (mapping.hasOwnProperty(formId)) {
-      delete mapping[formId];
-      deleted += 1;
-    }
+  // 本体は SharedEntity_deleteByIds_（sharedEntityCrud.gs）。forms 固有の差分は mapping store のみ。
+  return SharedEntity_deleteByIds_(formIds, {
+    getMapping: Forms_getMapping_,
+    saveMapping: Forms_saveMapping_,
   });
-
-  Forms_saveMapping_(mapping);
-
-  return {
-    ok: true,
-    deleted: deleted,
-    errors: []
-  };
 }
 
 
@@ -528,44 +511,11 @@ function Forms_deleteFormsWithFiles_(formIds) {
   if (!formIds || !formIds.length) {
     throw new Error("Form IDs are required");
   }
-
-  var ids = Nfb_normalizeIdList_(formIds);
-  var mapping = Forms_getMapping_();
-  var deleted = 0;
-  var trashed = 0;
-  var errors = [];
-
-  ids.forEach(function(formId) {
-    if (!formId) return;
-
-    // 実体トラッシュ判定用の fileId（id ≠ fileId に備えてマッピングからも解決）。
-    var fileId = Nfb_resolveFileIdFromEntry_(mapping[formId]) || formId;
-
-    // リンク（登録）を解除する。
-    if (mapping.hasOwnProperty(formId)) {
-      delete mapping[formId];
-      deleted += 1;
-    }
-
-    // プロジェクト内のファイルだけ実体をゴミ箱へ移動する。
-    if (fileId && StdFolders_isFileInStdSubfolder_(fileId, "forms")) {
-      try {
-        DriveApp.getFileById(fileId).setTrashed(true);
-        trashed += 1;
-      } catch (err) {
-        errors.push({ id: formId, fileId: fileId, reason: nfbErrorToString_(err) });
-      }
-    }
+  // 本体は SharedEntity_deleteWithFiles_（sharedEntityCrud.gs）。forms は標準サブフォルダ "forms"。
+  return SharedEntity_deleteWithFiles_(formIds, "forms", {
+    getMapping: Forms_getMapping_,
+    saveMapping: Forms_saveMapping_,
   });
-
-  Forms_saveMapping_(mapping);
-
-  return {
-    ok: true,
-    deleted: deleted,
-    trashed: trashed,
-    errors: errors
-  };
 }
 
 
@@ -582,51 +532,28 @@ function Forms_setFormsStateField_(formIds, field, value, clearField) {
     throw new Error("Form IDs are required");
   }
 
-  var ids = Nfb_normalizeIdList_(formIds);
-  var errors = [];
-  var updated = 0;
-  var updatedForms = [];
+  // forms 固有: 保存前に JST の modifiedAt を打刻する（save 側は打刻しない）。
   var currentTsUnixMs = Sheets_dateToSerial_(new Date());
   var currentTsJst = Sheets_formatJstString_(currentTsUnixMs);
-  var nextValue = !!value;
-  var logTag = "[Forms_setFormsStateField_:" + field + "]";
 
-  ids.forEach(function(formId) {
-    if (!formId) return;
-
-    try {
-      var form = Forms_getForm_(formId);
-      if (!form) {
-        errors.push({ formId: formId, error: "Form not found" });
-        return;
-      }
-
-      form[field] = nextValue;
-      if (nextValue && clearField) {
-        form[clearField] = false;
-      }
+  // 本体は SharedEntity_setStateField_（sharedEntityCrud.gs）。
+  return SharedEntity_setStateField_(formIds, field, value, {
+    clearField: clearField,
+    idKey: "formId",
+    listKey: "forms",
+    notFoundMsg: "Form not found",
+    saveFailMsg: "Save failed",
+    logTag: "[Forms_setFormsStateField_:" + field + "]",
+    getItem: function(formId) { return Forms_getForm_(formId); },
+    beforeSave: function(form) {
       form.modifiedAt = currentTsJst;
       form.modifiedAtUnixMs = currentTsUnixMs;
-
+    },
+    saveItem: function(form) {
       var result = Forms_saveForm_(form);
-      if (result && result.ok) {
-        updated += 1;
-        updatedForms.push(result.form);
-      } else {
-        errors.push({ formId: formId, error: "Save failed" });
-      }
-    } catch (err) {
-      Logger.log(logTag + " Error updating " + field + " state for form " + formId + ": " + err);
-      errors.push({ formId: formId, error: err.message || String(err) });
-    }
+      return (result && result.ok) ? { ok: true, item: result.form } : { ok: false };
+    },
   });
-
-  return {
-    ok: errors.length === 0,
-    updated: updated,
-    errors: errors,
-    forms: updatedForms
-  };
 }
 
 /**
@@ -657,31 +584,30 @@ function Forms_setFormsReadOnlyState_(formIds, readOnly) {
 function Forms_copyForm_(formId) {
   if (!formId) throw new Error("formId is required");
 
-  // 1. 元フォームを取得
-  var sourceForm = Forms_getForm_(formId);
-  if (!sourceForm) throw new Error("コピー元フォームが見つかりません: " + formId);
-
-  // 2. 元ファイルの親フォルダURLを取得
-  var mapping = Forms_getMapping_();
-  var mappingEntry = mapping[formId] || {};
-  var parentFolderUrl = SharedDrive_parentFolderUrlOfFileId_(mappingEntry.fileId, "Forms_copyForm_");
-
-  // 3. 新しいフォームデータを作成（id ＝ コピー先ファイルの fileId。事前採番はしない）
-  var newForm = JSON.parse(JSON.stringify(sourceForm));
-  delete newForm.id;
-
-  var originalTitle = (sourceForm.settings && sourceForm.settings.formTitle) || "";
-  newForm.settings = newForm.settings || {};
-  // 同名フォームが既に存在するため、Forms_saveForm_ 内の auto-numbering で (1)(2)... が付く
-  newForm.settings.formTitle = originalTitle;
-  newForm.archived = false;
-  newForm.readOnly = false;
-  delete newForm.driveFileUrl;
-
-  // 4. 同じフォルダに保存（フォルダが不明ならルートに保存）
-  var saveMode = parentFolderUrl ? "copy_to_folder" : "copy_to_root";
-  var result = Forms_saveForm_(newForm, parentFolderUrl, saveMode);
-
-  return result;
+  // 本体は SharedEntity_copyEntity_（sharedEntityCrud.gs）。forms 固有の差分を opts で注入する。
+  return SharedEntity_copyEntity_(formId, {
+    logLabel: "Forms_copyForm_",
+    loadItem: function(id) {
+      var sourceForm = Forms_getForm_(id);
+      if (!sourceForm) throw new Error("コピー元フォームが見つかりません: " + id);
+      return sourceForm;
+    },
+    getSourceFileId: function(id) {
+      var mappingEntry = Forms_getMapping_()[id] || {};
+      return mappingEntry.fileId;
+    },
+    prepCopy: function(newForm, sourceForm) {
+      // 同名フォームが既に存在するため、Forms_saveForm_ 内の auto-numbering で (1)(2)... が付く。
+      var originalTitle = (sourceForm.settings && sourceForm.settings.formTitle) || "";
+      newForm.settings = newForm.settings || {};
+      newForm.settings.formTitle = originalTitle;
+      newForm.readOnly = false;
+    },
+    saveCopy: function(newForm, parentFolderUrl) {
+      // 同じフォルダに保存（フォルダが不明ならルートに保存）。
+      var saveMode = parentFolderUrl ? "copy_to_folder" : "copy_to_root";
+      return Forms_saveForm_(newForm, parentFolderUrl, saveMode);
+    },
+  });
 }
 

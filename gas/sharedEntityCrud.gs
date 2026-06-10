@@ -74,3 +74,190 @@ function SharedCrud_resolveEntityFileOrNull_(fileId, opts) {
 
   return null;
 }
+
+// =============================================
+// Shared Entity CRUD — Forms / Analytics の delete / archive / copy 系で
+// 「ほぼ行単位で同一」だった本体ロジックを adapter 注入方式で集約したコア群。
+// 各 public 関数（Forms_*_ / Analytics_*_）は空チェック・nfbSafeCall_ ラップ位置・
+// メッセージ文言の差分だけを保持した薄い委譲ラッパーになる。
+//
+// adapter（マッピング store の差分をここ 1 箇所に閉じ込める）:
+//   getMapping() -> mapping            論理側マッピングを読む（forms: Forms_getMapping_ /
+//                                      analytics: type つき）
+//   saveMapping(mapping)               マッピングを永続化する
+// =============================================
+
+// 複数 ID のリンク（マッピング登録）のみを解除する共通本体。Drive 実体は触らない。
+// Forms_deleteForms_ / Analytics_deleteTemplates_ の共通コア。
+// 戻り値の deleted は「リンク解除した件数」（後方互換のためキー名は据え置き）。
+function SharedEntity_deleteByIds_(ids, adapter) {
+  var normalized = Nfb_normalizeIdList_(ids);
+  var mapping = adapter.getMapping();
+  var deleted = 0;
+  for (var i = 0; i < normalized.length; i++) {
+    var id = normalized[i];
+    if (!id) continue;
+    // リンク（登録）のみ解除する。Drive 上のファイル本体は削除しない。
+    if (mapping.hasOwnProperty(id)) {
+      delete mapping[id];
+      deleted += 1;
+    }
+  }
+  adapter.saveMapping(mapping);
+  return { ok: true, deleted: deleted, errors: [] };
+}
+
+// 複数 ID を「削除」する共通本体。リンク解除に加え、プロジェクト内（標準フォルダ
+// stdSubfolderKey 配下、ネスト含む）にある実体ファイルだけを Drive のゴミ箱へ移動する。
+// プロジェクト外のファイルはリンク解除のみで実体は残す。
+// Forms_deleteFormsWithFiles_ / Analytics_deleteTemplatesWithFiles_ の共通コア。
+function SharedEntity_deleteWithFiles_(ids, stdSubfolderKey, adapter) {
+  var normalized = Nfb_normalizeIdList_(ids);
+  var mapping = adapter.getMapping();
+  var deleted = 0;
+  var trashed = 0;
+  var errors = [];
+  for (var i = 0; i < normalized.length; i++) {
+    var id = normalized[i];
+    if (!id) continue;
+
+    // 実体トラッシュ判定用の fileId（id ≠ fileId に備えてマッピングからも解決）。
+    var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]) || id;
+
+    // リンク（登録）を解除する。
+    if (mapping.hasOwnProperty(id)) {
+      delete mapping[id];
+      deleted += 1;
+    }
+
+    // プロジェクト内のファイルだけ実体をゴミ箱へ移動する。
+    if (fileId && StdFolders_isFileInStdSubfolder_(fileId, stdSubfolderKey)) {
+      try {
+        DriveApp.getFileById(fileId).setTrashed(true);
+        trashed += 1;
+      } catch (err) {
+        errors.push({ id: id, fileId: fileId, reason: nfbErrorToString_(err) });
+      }
+    }
+  }
+  adapter.saveMapping(mapping);
+  return { ok: true, deleted: deleted, trashed: trashed, errors: errors };
+}
+
+// 複数アイテムの真偽状態フラグを一括変更する共通本体（get → フラグ更新 → save → 結果集計）。
+// Forms_setFormsStateField_ / Analytics_setTemplatesArchivedState_ の共通コア。
+//
+// opts（型ごとの差分）:
+//   field       設定するフィールド名（"archived" / "readOnly"）
+//   value       設定値
+//   clearField  value が truthy のとき false へ強制する相互排他フィールド名（任意）
+//   idKey       errors[].のキー名（forms: "formId" / analytics: "id"）
+//   listKey     更新済みアイテム配列を返すキー名（forms: "forms" / analytics: resultListKey）
+//   notFoundMsg / saveFailMsg  エラーメッセージ
+//   logTag      Logger.log 用タグ
+//   getItem(id) -> item|null              対象アイテムを取得
+//   beforeSave(item)                      save 直前の追加更新（任意。forms の modifiedAt 等）
+//   saveItem(item) -> { ok, item, error } 保存（item は更新後の値、error は失敗時の文言）
+function SharedEntity_setStateField_(ids, field, value, opts) {
+  var normalized = Nfb_normalizeIdList_(ids);
+  var errors = [];
+  var updated = 0;
+  var updatedItems = [];
+  var nextValue = !!value;
+  var idKey = opts.idKey;
+
+  for (var i = 0; i < normalized.length; i++) {
+    var id = normalized[i];
+    if (!id) continue;
+
+    try {
+      var item = opts.getItem(id);
+      if (!item) {
+        var eNotFound = {}; eNotFound[idKey] = id; eNotFound.error = opts.notFoundMsg;
+        errors.push(eNotFound);
+        continue;
+      }
+
+      item[field] = nextValue;
+      if (nextValue && opts.clearField) item[opts.clearField] = false;
+      if (typeof opts.beforeSave === "function") opts.beforeSave(item);
+
+      var saved = opts.saveItem(item);
+      if (saved && saved.ok) {
+        updated += 1;
+        updatedItems.push(saved.item);
+      } else {
+        var eSave = {}; eSave[idKey] = id; eSave.error = (saved && saved.error) || opts.saveFailMsg;
+        errors.push(eSave);
+      }
+    } catch (err) {
+      Logger.log((opts.logTag || "[SharedEntity_setStateField_]") + " Error for " + id + ": " + err);
+      var eThrow = {}; eThrow[idKey] = id; eThrow.error = err.message || String(err);
+      errors.push(eThrow);
+    }
+  }
+
+  var result = { ok: errors.length === 0, updated: updated, errors: errors };
+  result[opts.listKey] = updatedItems;
+  return result;
+}
+
+// 既存アイテムを同じフォルダに新 ID で複製する共通本体（load → deep copy → id 削除 → save）。
+// Forms_copyForm_ / Analytics_copyTemplate_ の共通コア。空チェック・nfbSafeCall_ ラップは
+// 呼び出し側に残す。
+//
+// opts:
+//   logLabel                   SharedDrive_parentFolderUrlOfFileId_ のログ識別子
+//   loadItem(id) -> item       コピー元を取得（見つからなければ throw）
+//   getSourceFileId(id) -> id  親フォルダ解決に使う元ファイルの fileId
+//   prepCopy(copy, source)     deep copy 後の型固有初期化（任意。title/name 引き継ぎ・readOnly 等）
+//   saveCopy(copy, parentFolderUrl) -> result  保存（戻り値をそのまま返す）
+function SharedEntity_copyEntity_(srcId, opts) {
+  var source = opts.loadItem(srcId);
+
+  // 元ファイルの親フォルダ URL を取得（不明なら null → 呼び出し側 saveCopy がルート扱い）。
+  var parentFolderUrl = SharedDrive_parentFolderUrlOfFileId_(opts.getSourceFileId(srcId), opts.logLabel);
+
+  // クローンを作成（id / driveFileUrl を捨てて save 側で新 ID 採番、衝突名は採番に委譲）。
+  var copy = JSON.parse(JSON.stringify(source));
+  delete copy.id;
+  delete copy.driveFileUrl;
+  copy.archived = false;
+  if (typeof opts.prepCopy === "function") opts.prepCopy(copy, source);
+
+  return opts.saveCopy(copy, parentFolderUrl);
+}
+
+// インポート済みファイルを「標準フォルダ構成内へ配置 → 中央辞書（マッピング）へ登録」する共通本体。
+// 標準フォルダ構成内（01_forms / 02_questions / 03_dashboards）からの取り込みは参照のまま、
+// 構成外なら該当サブフォルダへコピーしてリンクする。id ＝ Drive fileId へ統一する。
+// Forms_registerImportedForm_ / Analytics_registerImportedTemplate_ の共通コア。
+// ラベル（forms: title / analytics: name）の決定だけは型ごとに大きく異なるため resolveLabel で注入する。
+//
+// opts:
+//   stdKey                          StdFolders_ensureFileInStdFolder_ のサブフォルダ key
+//   getMapping() / saveMapping(m)   マッピング store
+//   labelKey                        マッピングエントリのラベルキー（"title" / "name"）
+//   relativeFolderOfFile(fileId)    物理位置から論理パスのベースラインを導出
+//   resolveLabel(mapping, newId, placedFileId) -> label  ラベル決定（forms はユニーク化 + 物理名追従）
+// 戻り: { newId, fileId, fileUrl, label, mapping }
+function SharedEntity_registerImported_(fileId, opts) {
+  var placed = StdFolders_ensureFileInStdFolder_(fileId, opts.stdKey);
+  var placedFileId = placed.fileId;
+  var fileUrl = placed.fileUrl;
+
+  var mapping = opts.getMapping();
+  var newId = placedFileId;   // id ＝ Drive fileId へ統一
+
+  var label = opts.resolveLabel(mapping, newId, placedFileId);
+
+  // 論理パス folder のベースラインは物理位置。payload.folder 明示時は呼び出し側が中央辞書も含め上書きする。
+  var baseFolder = opts.relativeFolderOfFile(placedFileId);
+  var entry = { fileId: placedFileId, driveFileUrl: fileUrl };
+  entry[opts.labelKey] = label;
+  entry.folder = baseFolder == null ? "" : baseFolder;
+  mapping[newId] = entry;
+  opts.saveMapping(mapping);
+
+  return { newId: newId, fileId: placedFileId, fileUrl: fileUrl, label: label, mapping: mapping };
+}

@@ -79,34 +79,29 @@ function Analytics_registerImportedTemplate_(type, payload) {
     if (!template) {
       throw new Error(resultKey + " の JSON が有効な形式ではありません");
     }
-    // 標準フォルダ構成内（02_questions / 03_dashboards）からの取り込みは参照のまま、
-    // 構成外なら該当サブフォルダへコピーしてリンクする。
-    var placed = StdFolders_ensureFileInStdFolder_(fileId, type === "questions" ? "questions" : "dashboards");
-    fileId = placed.fileId;
-    var fileUrl = placed.fileUrl;
 
-    var mapping = Analytics_getMapping_(type);
-    // id ＝ Drive fileId / 名前 ＝ ファイル名 へ統一。取り込んだ（必要なら標準フォルダへコピーした）
-    // ファイルの fileId を id とし、名前はファイル名から導出する。
-    var newId = fileId;
-    var name = "";
-    try { name = Nfb_nameFromFile_(DriveApp.getFileById(fileId)); } catch (eName) { name = ""; }
-    if (!name) name = template.name || "";
+    // 配置（構成内なら参照のまま / 構成外なら該当サブフォルダへコピー）+ マッピング登録は共通本体に委譲。
+    // id ＝ Drive fileId / 名前 ＝ ファイル名 へ統一。名前はファイル名から導出し、空なら template.name。
+    var reg = SharedEntity_registerImported_(fileId, {
+      stdKey: type === "questions" ? "questions" : "dashboards",
+      getMapping: function() { return Analytics_getMapping_(type); },
+      saveMapping: function(m) { return Analytics_saveMapping_(type, m); },
+      labelKey: "name",
+      relativeFolderOfFile: function(fid) { return AnalyticsDrive_relativeFolderOfFile_(type, fid); },
+      resolveLabel: function(mapping, newId, placedFileId) {
+        var name = "";
+        try { name = Nfb_nameFromFile_(DriveApp.getFileById(placedFileId)); } catch (eName) { name = ""; }
+        if (!name) name = template.name || "";
+        return name;
+      }
+    });
+    var newId = reg.newId;
+    fileId = reg.fileId;
+    var fileUrl = reg.fileUrl;
 
     template.id = newId;
-    template.name = name;
+    template.name = reg.label;
     template.driveFileUrl = fileUrl;
-
-    // 論理パス folder のベースラインは物理位置（else 分岐の normFolder と一致）。
-    // payload.folder 明示時は下の Analytics_setItemFolder_ が中央辞書も含め上書きする。
-    var importPhysical = AnalyticsDrive_relativeFolderOfFile_(type, fileId);
-    mapping[newId] = {
-      fileId: fileId,
-      driveFileUrl: fileUrl,
-      name: name,
-      folder: importPhysical == null ? "" : importPhysical
-    };
-    Analytics_saveMapping_(type, mapping);
 
     // 論理フォルダの決定:
     //   - payload.folder（管理画面で開いていた論理フォルダ）が明示指定されていればそれを論理パスとし、
