@@ -143,6 +143,14 @@ function buildContext() {
 
 const formJson = (folder) => JSON.stringify({ folder, schema: [{ id: "q1", type: "text" }] });
 
+// formLink フィールドを持つ親フォーム json。links = [{ id, path }]。
+const parentFormJson = (folder, links) => JSON.stringify({
+  folder,
+  schema: [{ id: "p1", type: "text" }].concat(
+    (links || []).map((l, i) => ({ id: "fl" + i, type: "formLink", childFormId: l.id, childFormPath: l.path }))
+  ),
+});
+
 // 標準フォルダ（02_questions / 03_dashboards 等）を名前で引く。
 function findFolderByName(drive, name) {
   return Object.keys(drive.folders).map((k) => drive.folders[k]).find((f) => f._name === name);
@@ -312,5 +320,53 @@ test("全件整列: プロジェクト外フォームをコピー取り込みし
   assert.equal(r2.forms.copiedExternal, 0);
   assert.equal(r2.forms.aligned, 1, "コピー済みファイルは ① 整合");
   assert.equal(r2.relinkedFiles, 0);
+});
+
+test("formLink: 親保存でプロジェクト外の子フォームを③コピー取り込みし childFormId/childFormPath を追従", () => {
+  const env = buildContext();
+  const { context, drive, store, formsA, ext, forms } = env;
+
+  // プロジェクト外の子フォーム（EXTERNAL 配下、json.folder=a, title=child）。登録済み。
+  const childExt = drive.makeFile("child.json", formJson("a"), ext.getId());
+  const childExtId = childExt.getId();
+  store.formsMapping = { [childExtId]: { fileId: childExtId, driveFileUrl: childExt.getUrl(), title: "child", folder: "a" } };
+
+  // 親フォーム（01_forms 直下）。formLink で childExtId を参照。
+  const parent = drive.makeFile("parent.json", parentFormJson("", [{ id: childExtId, path: "a/child" }]), forms.getId());
+
+  const r = context.StdFolders_alignReferencesOnSave_("forms", parent.getId());
+  assert.equal(r.ok, true);
+  assert.equal(r.forms.copiedExternal, 1, "子フォームを ③ コピー取り込み");
+  assert.ok(!store.formsMapping[childExtId], "旧外部 id は登録簿から除去");
+  const newIds = Object.keys(store.formsMapping);
+  assert.equal(newIds.length, 1, "コピー先 id 1 件");
+  const newId = newIds[0];
+  assert.notEqual(newId, childExtId);
+  assert.equal(drive.files[newId]._parentId, formsA.getId(), "コピー先は 01_forms/a 配下");
+  // 親の childFormId / childFormPath が追従。
+  assert.equal(r.relinkedFiles, 1);
+  const pj = JSON.parse(drive.files[parent.getId()]._content);
+  const fl = pj.schema.find((f) => f.type === "formLink");
+  assert.equal(fl.childFormId, newId, "childFormId が新 id へ");
+  assert.equal(fl.childFormPath, "a/child", "childFormPath が新 id の論理パスへ");
+});
+
+test("formLink: childFormId 切れ・未登録でも childFormPath で物理を再探索して貼り直す", () => {
+  const env = buildContext();
+  const { context, drive, store, formsA, forms } = env;
+
+  // 物理子フォームは 01_forms/a/child.json に存在（登録簿には無い）。
+  const child = drive.makeFile("child.json", formJson("a"), formsA.getId());
+  store.formsMapping = {}; // 未登録
+
+  // 親は死んだ childFormId を参照、childFormPath="a/child"。
+  const parent = drive.makeFile("parent.json", parentFormJson("", [{ id: "DEAD_CHILD", path: "a/child" }]), forms.getId());
+
+  const r = context.StdFolders_alignReferencesOnSave_("forms", parent.getId());
+  assert.equal(r.ok, true);
+  assert.equal(r.relinkedFiles, 1, "path 復旧で親リンク貼り直し");
+  const pj = JSON.parse(drive.files[parent.getId()]._content);
+  const fl = pj.schema.find((f) => f.type === "formLink");
+  assert.equal(fl.childFormId, child.getId(), "childFormId が物理 child へ復旧");
 });
 

@@ -366,6 +366,19 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       Logger.log("[Forms_saveForm_] AddFormUrl_ failed (non-critical): " + err);
     }
 
+    // 保存後: formLink フィールドの参照先（子フォーム）に ⓪①②③ 整合を適用し、
+    // ②③ で子フォーム id が変わったら親スキーマの childFormId を追従させる
+    // （Analytics_saveTemplate_ と対称）。base 未設定なら no-op。
+    var referenceSync = null;
+    try {
+      referenceSync = StdFolders_alignReferencesOnSave_("forms", fileId);
+      if (referenceSync && referenceSync.remap) {
+        StdFolders_applyRemapToRefs_(formWithTimestamp, "forms", referenceSync.remap);
+      }
+    } catch (errRefSync) {
+      Logger.log("[Forms_saveForm_] alignReferencesOnSave failed: " + nfbErrorToString_(errRefSync));
+    }
+
     return {
       ok: true,
       fileId: fileId,

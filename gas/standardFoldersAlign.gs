@@ -263,6 +263,13 @@ function StdFolders_alignAllEntries_() {
       // Phase B: id 変化（コピー/再採用）を参照グラフ全体へ伝播。remap が空なら丸ごとスキップ（冪等時に軽い）。
       var relinked = 0;
       if (StdFolders_hasOwnKeys_(ctx.remap)) {
+        // form→childForm（formLink）リンクを追従。
+        var fMap = StdFolders_entityAdapter_("forms").getMapping();
+        for (var fid in fMap) {
+          if (!fMap.hasOwnProperty(fid)) continue;
+          var fFileId = Nfb_resolveFileIdFromEntry_(fMap[fid]);
+          if (fFileId && StdFolders_rewriteRefsInFile_(fFileId, "forms", ctx.remap)) relinked++;
+        }
         var qMap = StdFolders_entityAdapter_("questions").getMapping();   // Phase A 後の現行キー
         for (var qid in qMap) {
           if (!qMap.hasOwnProperty(qid)) continue;
