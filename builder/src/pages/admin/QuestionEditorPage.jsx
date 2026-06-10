@@ -107,7 +107,7 @@ export default function QuestionEditorPage() {
     if (!isAdmin) navigate("/", { replace: true });
   }, [isAdmin, navigate]);
 
-  const activeForms = forms.filter((f) => !f.archived);
+  const activeForms = forms.filter((f) => !f.archived && !f.childOnly);
 
   useCancellable(async (isCancelled) => {
     if (!questionId) return;

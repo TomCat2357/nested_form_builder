@@ -206,6 +206,7 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       modifiedAtUnixMs: currentTs,
       archived: !!form.archived,
       readOnly: !!form.readOnly,
+      childOnly: !!form.childOnly,
       schemaVersion: form.schemaVersion || 1,
     };
 

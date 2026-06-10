@@ -26,6 +26,10 @@ import {
   clearFormReadOnly as clearFormReadOnlyInGas,
   setFormsReadOnly as setFormsReadOnlyInGas,
   clearFormsReadOnly as clearFormsReadOnlyInGas,
+  setFormChildOnly as setFormChildOnlyInGas,
+  clearFormChildOnly as clearFormChildOnlyInGas,
+  setFormsChildOnly as setFormsChildOnlyInGas,
+  clearFormsChildOnly as clearFormsChildOnlyInGas,
   registerImportedForm as registerImportedFormInGas,
   copyForm as copyFormFromGas,
   syncRecordsProxy,
@@ -217,6 +221,7 @@ export const dataStore = {
           id: formId,
           createdAt: updates.createdAt,
           archived: updates.archived,
+          childOnly: updates.childOnly,
           schemaVersion: updates.schemaVersion,
           driveFileUrl: updates.driveFileUrl,
           ...updates,
@@ -232,6 +237,7 @@ export const dataStore = {
       id: current.id,
       createdAt: current.createdAt,
       archived: updates.archived ?? current.archived,
+      childOnly: updates.childOnly ?? current.childOnly,
       schemaVersion: updates.schemaVersion ?? current.schemaVersion,
       driveFileUrl: current.driveFileUrl, // 既存のURLを保持
     });
@@ -308,6 +314,22 @@ export const dataStore = {
   },
   async clearFormsReadOnly(formIds) {
     return this._batchArchiveAction(formIds, clearFormsReadOnlyInGas);
+  },
+  async setFormChildOnlyState(formId, childOnly) {
+    const savedForm = childOnly ? await setFormChildOnlyInGas(formId) : await clearFormChildOnlyInGas(formId);
+    return savedForm ? ensureDisplayInfo(savedForm) : null;
+  },
+  async setFormChildOnly(formId) {
+    return this.setFormChildOnlyState(formId, true);
+  },
+  async clearFormChildOnly(formId) {
+    return this.setFormChildOnlyState(formId, false);
+  },
+  async setFormsChildOnly(formIds) {
+    return this._batchArchiveAction(formIds, setFormsChildOnlyInGas);
+  },
+  async clearFormsChildOnly(formIds) {
+    return this._batchArchiveAction(formIds, clearFormsChildOnlyInGas);
   },
   async deleteForms(formIds) {
     const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);

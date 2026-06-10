@@ -411,9 +411,9 @@ function Forms_listForms_(options) {
               titleCacheDirty = true;
             }
 
-            // アーカイブフィルタリング
-            if (!includeArchived && form.archived) {
-              Logger.log("[Forms_listForms_] Skipping archived form: " + formId);
+            // アーカイブ／子フォーム専用フィルタリング（非管理コンテキストでは一覧から除外）
+            if (!includeArchived && (form.archived || form.childOnly)) {
+              Logger.log("[Forms_listForms_] Skipping hidden form: " + formId);
               continue;
             }
 
@@ -521,13 +521,14 @@ function Forms_deleteFormsWithFiles_(formIds) {
 
 /**
  * 複数フォームの真偽状態フラグを一括変更する内部ヘルパ。
- *   field       : 設定するフィールド名（"archived" or "readOnly"）
+ *   field       : 設定するフィールド名（"archived" / "readOnly" / "childOnly"）
  *   value       : 設定値
- *   clearField  : value が truthy のとき false に強制する相互排他フィールド名。
+ *   clearField  : value が truthy のとき false に強制する相互排他フィールド名（単一）。
  *                 null / "" の場合は相互排他処理を行わない。
+ *   clearFields : value が truthy のとき false に強制する相互排他フィールド名の配列（3 値以上の排他用）。
  * 返り値の形は元の Forms_setFormsArchivedState_ / Forms_setFormsReadOnlyState_ と同等。
  */
-function Forms_setFormsStateField_(formIds, field, value, clearField) {
+function Forms_setFormsStateField_(formIds, field, value, clearField, clearFields) {
   if (!formIds || !formIds.length) {
     throw new Error("Form IDs are required");
   }
@@ -539,6 +540,7 @@ function Forms_setFormsStateField_(formIds, field, value, clearField) {
   // 本体は SharedEntity_setStateField_（sharedEntityCrud.gs）。
   return SharedEntity_setStateField_(formIds, field, value, {
     clearField: clearField,
+    clearFields: clearFields,
     idKey: "formId",
     listKey: "forms",
     notFoundMsg: "Form not found",
@@ -563,7 +565,7 @@ function Forms_setFormsStateField_(formIds, field, value, clearField) {
  * @return {Object} { ok: boolean, updated: number, errors: Array, forms: Array }
  */
 function Forms_setFormsArchivedState_(formIds, archived) {
-  return Forms_setFormsStateField_(formIds, "archived", archived, "readOnly");
+  return Forms_setFormsStateField_(formIds, "archived", archived, null, ["readOnly", "childOnly"]);
 }
 
 /**
@@ -573,7 +575,19 @@ function Forms_setFormsArchivedState_(formIds, archived) {
  * @return {Object} { ok: boolean, updated: number, errors: Array, forms: Array }
  */
 function Forms_setFormsReadOnlyState_(formIds, readOnly) {
-  return Forms_setFormsStateField_(formIds, "readOnly", readOnly, "archived");
+  return Forms_setFormsStateField_(formIds, "readOnly", readOnly, null, ["archived", "childOnly"]);
+}
+
+/**
+ * 複数フォームの子フォーム専用状態を一括変更。
+ * 子フォーム専用フォームは選択画面（一覧）から除外され、formLink の子フォームとしてのみ開ける。
+ * アーカイブ・参照のみとは相互排他。
+ * @param {Array<string>} formIds
+ * @param {boolean} childOnly
+ * @return {Object} { ok: boolean, updated: number, errors: Array, forms: Array }
+ */
+function Forms_setFormsChildOnlyState_(formIds, childOnly) {
+  return Forms_setFormsStateField_(formIds, "childOnly", childOnly, null, ["archived", "readOnly"]);
 }
 
 /**

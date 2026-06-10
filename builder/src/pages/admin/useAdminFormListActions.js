@@ -22,6 +22,8 @@ export function useAdminFormListActions({
   unarchiveForms,
   setFormsReadOnly,
   clearFormsReadOnly,
+  setFormsChildOnly,
+  clearFormsChildOnly,
   deleteForms,
   deleteFormsWithFiles,
   exportForms,
@@ -152,6 +154,46 @@ export function useAdminFormListActions({
     })();
   };
 
+  // ---- Form 限定: 「子フォーム専用」ダイアログ（アーカイブ・参照のみと相互排他）。共通 hook には載せない。 ----
+  const childOnlyDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false, allChildOnly: false });
+
+  const handleChildOnlySelected = () => {
+    const selectedForms = sortedForms.filter((form) => selected.has(form.id) && !form.loadError);
+    if (!selectedForms.length) {
+      showAlert("子フォーム専用に設定可能なフォームを選択してください。");
+      return;
+    }
+    const allChildOnly = selectedForms.every((form) => form.childOnly);
+    const targetIds = selectedForms.map((form) => form.id);
+    childOnlyDialog.open({
+      formId: targetIds[0],
+      targetIds,
+      multiple: targetIds.length > 1,
+      allChildOnly,
+    });
+  };
+
+  const confirmChildOnlyAction = () => {
+    const targetIds = resolveDialogTargetIds(childOnlyDialog.state, "formId");
+    if (!targetIds.length) return;
+    const shouldClear = childOnlyDialog.state.allChildOnly;
+    clearSelectionByIds(targetIds);
+    childOnlyDialog.reset();
+
+    (async () => {
+      try {
+        if (shouldClear) {
+          await clearFormsChildOnly(targetIds);
+        } else {
+          await setFormsChildOnly(targetIds);
+        }
+      } catch (error) {
+        console.error("[AdminFormList] ChildOnly action failed:", error);
+        showAlert(`子フォーム専用設定中にエラーが発生しました: ${error.message}`);
+      }
+    })();
+  };
+
   // ---- import workflow（ネスト対応・flatten/detail を formImportWorkflow.js から注入） ----
   const startImportWorkflow = useCallback(
     async (parsedContents, { skipped = 0, parseFailed = 0 } = {}) => {
@@ -247,6 +289,10 @@ export function useAdminFormListActions({
     setConfirmReadOnly: readOnlyDialog.setState,
     handleReadOnlySelected,
     confirmReadOnlyAction,
+    confirmChildOnly: childOnlyDialog.state,
+    setConfirmChildOnly: childOnlyDialog.setState,
+    handleChildOnlySelected,
+    confirmChildOnlyAction,
     handleImportFromDrive,
   };
 }

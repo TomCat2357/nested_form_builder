@@ -22,7 +22,7 @@ export default function AdminHubPage() {
     }
   }, []);
 
-  const formsCount = (forms || []).filter((form) => !form.archived).length;
+  const formsCount = (forms || []).filter((form) => !form.archived && !form.childOnly).length;
   const totalForms = (forms || []).length;
 
   return (

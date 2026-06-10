@@ -18,7 +18,7 @@ export default function HomeForms({ resetNonce = 0 }) {
   const sortOrder = settings?.formListSortOrder || "desc";
 
   const activeForms = useMemo(() => {
-    const list = forms.filter((form) => !form.archived);
+    const list = forms.filter((form) => !form.archived && !form.childOnly);
     const dir = sortOrder === "asc" ? 1 : -1;
     const titleOf = (form) => String(form?.settings?.formTitle || "");
     const msOf = (form) => {

@@ -281,6 +281,10 @@ export const setFormReadOnly = createGasEndpoint({ fnName: "nfbSetFormReadOnly",
 export const clearFormReadOnly = createGasEndpoint({ fnName: "nfbClearFormReadOnly", validate: validateFormId, mapResult: (r) => r.form || null, defaultError: "Clear form readOnly failed" });
 export const setFormsReadOnly = createGasEndpoint({ fnName: "nfbSetFormsReadOnly", validate: validateFormIds, defaultError: "Batch set forms readOnly failed" });
 export const clearFormsReadOnly = createGasEndpoint({ fnName: "nfbClearFormsReadOnly", validate: validateFormIds, defaultError: "Batch clear forms readOnly failed" });
+export const setFormChildOnly = createGasEndpoint({ fnName: "nfbSetFormChildOnly", validate: validateFormId, mapResult: (r) => r.form || null, defaultError: "Set form childOnly failed" });
+export const clearFormChildOnly = createGasEndpoint({ fnName: "nfbClearFormChildOnly", validate: validateFormId, mapResult: (r) => r.form || null, defaultError: "Clear form childOnly failed" });
+export const setFormsChildOnly = createGasEndpoint({ fnName: "nfbSetFormsChildOnly", validate: validateFormIds, defaultError: "Batch set forms childOnly failed" });
+export const clearFormsChildOnly = createGasEndpoint({ fnName: "nfbClearFormsChildOnly", validate: validateFormIds, defaultError: "Batch clear forms childOnly failed" });
 export const importFormsFromDrive = async (url) => {
   if (!url) throw new Error("Google Drive URL is required");
   const r = await fetchGasApi("nfbImportFormsFromDrive", url, "Import from Drive failed");

@@ -40,6 +40,7 @@ export const sanitizeImportedForm = (raw) => {
     settings,
     archived: !!raw.archived,
     readOnly: !!raw.readOnly,
+    childOnly: !!raw.childOnly,
     schemaVersion: Number.isFinite(raw.schemaVersion) ? raw.schemaVersion : 1,
     createdAt: Number.isFinite(createdAtUnixMs) ? createdAtUnixMs : raw.createdAt,
     modifiedAt: Number.isFinite(modifiedAtUnixMs) ? modifiedAtUnixMs : raw.modifiedAt,
