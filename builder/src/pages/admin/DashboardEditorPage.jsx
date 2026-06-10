@@ -345,7 +345,7 @@ export default function DashboardEditorPage() {
 
   // ----- Save -----
   const handleSave = async () => {
-    const built = buildDashboardPayload({ dashboard, dashboardId });
+    const built = buildDashboardPayload({ dashboard, dashboardId, questions });
     if (built.error) {
       setError(built.error);
       return;

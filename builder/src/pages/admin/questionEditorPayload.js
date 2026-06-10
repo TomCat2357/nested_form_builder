@@ -3,8 +3,15 @@
 // コンポーネントから切り出してユニットテスト可能にする。state を読まず副作用も持たない。
 
 import { formRefsToIds } from "../../features/analytics/utils/rewriteSqlFormRefs.js";
-import { buildFormIndex } from "../../features/analytics/utils/formIdentifierResolver.js";
+import { buildFormIndex, formQualifiedName } from "../../features/analytics/utils/formIdentifierResolver.js";
 import { normalizeTableStyle } from "../../features/analytics/utils/tableStyle.js";
+
+// formId から論理パス（formQualifiedName）を導出する。未解決は "" を返す。
+function formPathForId(formId, formIndex) {
+  if (!formId || !formIndex || !formIndex.byId) return "";
+  const form = formIndex.byId.get(String(formId));
+  return form ? (formQualifiedName(form) || "") : "";
+}
 
 // "a, b ,,c" → ["a","b","c"]
 export function parseYFields(yFields) {
@@ -35,25 +42,29 @@ export function buildRunQuery({ mode, gui, sql, sources }) {
   };
 }
 
-// 保存用クエリを組み立てる。参照は fileId（formId）のみで保持し、読み込んだ旧 formName は剥がす。
-// SQL 本文のフォーム参照は formRefsToIds で fileId へ変換する（リネーム耐性）。
+// 保存用クエリを組み立てる。参照は fileId（formId）を正本に持ち、復旧アンカーとして論理パス formPath を
+// 冗長保存する（旧 formName は剥がす）。SQL 本文のフォーム参照は formRefsToIds で fileId へ変換する。
 //  - gui モードで formId 未選択 → { error }
 //  - sources.error あり          → { error }
 //  - 成功                         → { query }
 export function buildSaveQuery({ mode, gui, sql, sources, forms }) {
+  const formIndex = buildFormIndex(forms || []);
   if (mode === "gui") {
     if (!gui || !gui.formId) return { error: "フォームを選択してください。" };
-    const { formName: _staleGuiFormName, ...guiRest } = gui;
-    return { query: { mode: "gui", gui: guiRest } };
+    const { formName: _staleGuiFormName, formPath: _staleGuiFormPath, ...guiRest } = gui;
+    return { query: { mode: "gui", gui: { ...guiRest, formPath: formPathForId(gui.formId, formIndex) } } };
   }
   if (sources && sources.error) return { error: sources.error };
   return {
     query: {
       mode: "sql",
       formSources: ((sources && sources.formSources) || []).map(
-        ({ formName: _staleFormName, ...rest }) => rest
+        ({ formName: _staleFormName, formPath: _staleFormPath, ...rest }) => ({
+          ...rest,
+          formPath: formPathForId(rest.formId, formIndex),
+        })
       ),
-      sql: formRefsToIds(sql, buildFormIndex(forms || [])),
+      sql: formRefsToIds(sql, formIndex),
     },
   };
 }

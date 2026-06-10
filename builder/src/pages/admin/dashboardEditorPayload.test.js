@@ -57,6 +57,24 @@ test("buildDashboardPayload: question カードから stale questionName を剥�
   assert.equal(c3.type, "chart");
 });
 
+test("buildDashboardPayload: question カードに questionPath を冗長保存する", () => {
+  const out = buildDashboardPayload({
+    dashboard: {
+      name: "D",
+      cards: [
+        { id: "c1", type: "chart", questionId: "Q1", questionName: "旧", questionPath: "旧/パス" },
+        { id: "c2", type: "chart", questionId: "MISSING" },
+      ],
+    },
+    questions: [{ id: "Q1", folder: "営業", name: "集計" }],
+    now: 1,
+  });
+  const [c1, c2] = out.payload.cards;
+  assert.equal(c1.questionPath, "営業/集計", "解決できた id は論理パスを stamp");
+  assert.ok(!("questionName" in c1));
+  assert.equal(c2.questionPath, "", "未解決 id は空文字");
+});
+
 test("buildDashboardPayload: cards 未定義でも空配列", () => {
   const out = buildDashboardPayload({ dashboard: { name: "D" }, now: 1 });
   assert.deepEqual(out.payload.cards, []);

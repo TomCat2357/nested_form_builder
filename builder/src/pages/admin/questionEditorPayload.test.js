@@ -42,12 +42,14 @@ test("buildRunQuery: sql 成功（formSources は実行時はそのまま）", (
   });
 });
 
-test("buildSaveQuery: gui モードは stale formName を剥がす", () => {
+test("buildSaveQuery: gui モードは stale formName を剥がし formPath を冗長保存する", () => {
   const gui = { formId: "F1", formName: "旧名", aggregations: [] };
-  const out = buildSaveQuery({ mode: "gui", gui });
+  const forms = [{ id: "F1", folder: "営業", settings: { formTitle: "売上" } }];
+  const out = buildSaveQuery({ mode: "gui", gui, forms });
   assert.equal(out.query.mode, "gui");
   assert.equal(out.query.gui.formId, "F1");
   assert.ok(!("formName" in out.query.gui));
+  assert.equal(out.query.gui.formPath, "営業/売上");
 });
 
 test("buildSaveQuery: gui モードは formId 必須", () => {
@@ -56,11 +58,18 @@ test("buildSaveQuery: gui モードは formId 必須", () => {
   });
 });
 
-test("buildSaveQuery: sql の formSources から formName を剥がす", () => {
+test("buildSaveQuery: sql の formSources は formName を剥がし formPath を冗長保存する", () => {
   const sources = { formSources: [{ formId: "F1", alias: "data", formName: "旧" }] };
-  const out = buildSaveQuery({ mode: "sql", sql: "SELECT 1", sources, forms: [] });
-  assert.deepEqual(out.query.formSources, [{ formId: "F1", alias: "data" }]);
+  const forms = [{ id: "F1", folder: "営業", settings: { formTitle: "売上" } }];
+  const out = buildSaveQuery({ mode: "sql", sql: "SELECT 1", sources, forms });
+  assert.deepEqual(out.query.formSources, [{ formId: "F1", alias: "data", formPath: "営業/売上" }]);
   assert.equal(out.query.mode, "sql");
+});
+
+test("buildSaveQuery: 未解決 formId の formPath は空文字", () => {
+  const sources = { formSources: [{ formId: "F1", alias: "data" }] };
+  const out = buildSaveQuery({ mode: "sql", sql: "SELECT 1", sources, forms: [] });
+  assert.deepEqual(out.query.formSources, [{ formId: "F1", alias: "data", formPath: "" }]);
 });
 
 test("buildQuestionVisualization: heatmap 既定とフィールド整形", () => {
