@@ -101,6 +101,51 @@ function StdFolders_qualifiedPathForId_(kind, id) {
   return folder ? (folder + "/" + name) : name;
 }
 
+// json 内の参照に、中央辞書から導出した論理パスを冗長保存（stamp）する。リンク切れ時の復旧アンカー。
+//   kind="questions"  → query.gui.formPath / query.formSources[].formPath
+//   kind="dashboards" → cards[].questionPath
+//   kind="forms"      → schema 内 formLink の childFormPath
+// 解決できない id は据え置き（既存値維持）。書き換えたら true。
+function StdFolders_stampRefPaths_(json, kind) {
+  if (!json) return false;
+  var changed = false;
+  if (kind === "questions") {
+    var query = json.query;
+    if (query && typeof query === "object") {
+      if (query.gui && typeof query.gui === "object" && query.gui.formId) {
+        var gp = StdFolders_qualifiedPathForId_("forms", query.gui.formId);
+        if (gp !== null && query.gui.formPath !== gp) { query.gui.formPath = gp; changed = true; }
+      }
+      if (Array.isArray(query.formSources)) {
+        for (var i = 0; i < query.formSources.length; i++) {
+          var src = query.formSources[i];
+          if (src && src.formId) {
+            var sp = StdFolders_qualifiedPathForId_("forms", src.formId);
+            if (sp !== null && src.formPath !== sp) { src.formPath = sp; changed = true; }
+          }
+        }
+      }
+    }
+  } else if (kind === "dashboards") {
+    if (Array.isArray(json.cards)) {
+      for (var c = 0; c < json.cards.length; c++) {
+        var card = json.cards[c];
+        if (card && card.questionId) {
+          var qp = StdFolders_qualifiedPathForId_("questions", card.questionId);
+          if (qp !== null && card.questionPath !== qp) { card.questionPath = qp; changed = true; }
+        }
+      }
+    }
+  } else if (kind === "forms") {
+    StdFolders_walkFields_(json.schema, function(field) {
+      if (!field || field.type !== "formLink" || !field.childFormId) return;
+      var p = StdFolders_qualifiedPathForId_("forms", field.childFormId);
+      if (p !== null && field.childFormPath !== p) { field.childFormPath = p; changed = true; }
+    });
+  }
+  return changed;
+}
+
 // 論理パス path（"folder/.../葉名"）で物理ファイルを再探索し、生存する新 id を返す。
 // brokenId が生存していれば復旧不要として null。見つからなければ null（削除はしない＝呼び出し側でエラー扱い）。
 function StdFolders_recoverRefByPath_(adapter, brokenId, path) {

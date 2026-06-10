@@ -209,6 +209,10 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       schemaVersion: form.schemaVersion || 1,
     };
 
+    // formLink の childFormPath を中央辞書から導出して冗長保存（stamp）する。リンク切れ時の復旧アンカー。
+    try { StdFolders_stampRefPaths_(formWithTimestamp, "forms"); }
+    catch (errStamp) { Logger.log("[Forms_saveForm_] stampRefPaths failed: " + nfbErrorToString_(errStamp)); }
+
     var content = JSON.stringify(formWithTimestamp, null, 2);
     // ファイル名 ＝ 一意化済みタイトル（名前 ＝ Drive ファイル名 へ統一するため uniqueTitle を権威とする）。
     var fileName = uniqueTitle.substring(0, 100) + ".json";
