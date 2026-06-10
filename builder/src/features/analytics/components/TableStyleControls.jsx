@@ -12,8 +12,8 @@ import {
 } from "../utils/tableStyle.js";
 import { parseRowSelector, parseColumnSelector } from "../utils/tableStyleRowSelector.js";
 import HeatmapStyleControls from "./HeatmapStyleControls.jsx";
-import { deepClone } from "../../../core/schema.js";
 import { LABEL_STYLE, HEADER_LABEL_STYLE, RESET_BUTTON_STYLE } from "../utils/styleConstants.js";
+import { useStylePathSetter } from "./useStylePathSetter.js";
 
 const ROW_EDGE_LABELS = { top: "上", bottom: "下", both: "上下" };
 const COLUMN_EDGE_LABELS = { left: "左", right: "右", both: "左右" };
@@ -52,15 +52,8 @@ export default function TableStyleControls({
   const isUnset = !tableStyle;
   const ts = tableStyle || DEFAULT_TABLE_STYLE;
 
-  const cloneBase = () => deepClone(isUnset ? DEFAULT_TABLE_STYLE : tableStyle);
-
-  const setPath = (path, value) => {
-    const next = cloneBase();
-    let cur = next;
-    for (let i = 0; i < path.length - 1; i += 1) cur = cur[path[i]];
-    cur[path[path.length - 1]] = value;
-    onChange(next);
-  };
+  // 罫線オーバーライド / 列幅などの多段更新は cloneBase 経由、リーフ更新は setPath 経由。
+  const { cloneBase, setPath } = useStylePathSetter(isUnset ? DEFAULT_TABLE_STYLE : tableStyle, onChange);
 
   const addOverride = (target) => {
     const next = cloneBase();

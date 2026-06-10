@@ -40,45 +40,41 @@ function Forms_registerImportedForm_(payload) {
   if (!form) {
     throw new Error("フォームJSONが有効な形式ではありません");
   }
-  // 標準フォルダ構成内（01_forms）からの取り込みは参照のまま、構成外なら 01_forms へコピーしてリンクする。
-  var placed = StdFolders_ensureFileInStdFolder_(payload.fileId, "forms");
-  var fileId = placed.fileId;
-  var fileUrl = placed.fileUrl;
 
-  var mapping = Forms_getMapping_();
-  // id ＝ Drive fileId へ統一。取り込んだ（必要なら 01_forms へコピーした）ファイルの fileId を id とする。
-  var formId = fileId;
+  // 配置（構成内なら参照のまま / 構成外なら 01_forms へコピー）+ マッピング登録は共通本体に委譲。
+  // forms 固有: 名前 ＝ Drive ファイル名。希望タイトル（無ければ現ファイル名）を既存と衝突しないよう
+  // 自動採番し、物理ファイル名もそれに揃える（名前 ＝ Drive ファイル名 を保証）。
+  var reg = SharedEntity_registerImported_(payload.fileId, {
+    stdKey: "forms",
+    getMapping: Forms_getMapping_,
+    saveMapping: Forms_saveMapping_,
+    labelKey: "title",
+    relativeFolderOfFile: FormsDrive_relativeFolderOfFile_,
+    resolveLabel: function(mapping, formId, placedFileId) {
+      var existingTitlesImport = [];
+      for (var otherImportId in mapping) {
+        if (!mapping.hasOwnProperty(otherImportId) || otherImportId === formId) continue;
+        var ot = mapping[otherImportId] && mapping[otherImportId].title;
+        if (ot) existingTitlesImport.push(ot);
+      }
+      var placedFile = null;
+      try { placedFile = DriveApp.getFileById(placedFileId); } catch (e) { placedFile = null; }
+      var desiredImportTitle = (form.settings && form.settings.formTitle) || (placedFile ? Nfb_nameFromFile_(placedFile) : "");
+      var uniqueImportTitle = Forms_makeUniqueFormTitle_(desiredImportTitle, existingTitlesImport);
+      if (placedFile && placedFile.getName() !== uniqueImportTitle + ".json") {
+        try { placedFile.setName(uniqueImportTitle + ".json"); } catch (eRename) { /* non-critical */ }
+      }
+      return uniqueImportTitle;
+    }
+  });
+  var formId = reg.newId;   // id ＝ Drive fileId へ統一
+  var fileId = reg.fileId;
+  var fileUrl = reg.fileUrl;
 
-  // 名前 ＝ Drive ファイル名。希望タイトル（無ければ現ファイル名）を既存と衝突しないよう自動採番し、
-  // 物理ファイル名もそれに揃える（名前 ＝ Drive ファイル名 を保証）。
-  var existingTitlesImport = [];
-  for (var otherImportId in mapping) {
-    if (!mapping.hasOwnProperty(otherImportId) || otherImportId === formId) continue;
-    var ot = mapping[otherImportId] && mapping[otherImportId].title;
-    if (ot) existingTitlesImport.push(ot);
-  }
-  var placedFile = null;
-  try { placedFile = DriveApp.getFileById(fileId); } catch (e) { placedFile = null; }
-  var desiredImportTitle = (form.settings && form.settings.formTitle) || (placedFile ? Nfb_nameFromFile_(placedFile) : "");
-  var uniqueImportTitle = Forms_makeUniqueFormTitle_(desiredImportTitle, existingTitlesImport);
-  if (placedFile && placedFile.getName() !== uniqueImportTitle + ".json") {
-    try { placedFile.setName(uniqueImportTitle + ".json"); } catch (eRename) { /* non-critical */ }
-  }
   form.id = formId;
   form.driveFileUrl = fileUrl;
   form.settings = form.settings || {};
-  form.settings.formTitle = uniqueImportTitle;
-
-  // 論理パス folder のベースラインは物理位置。payload.folder 明示時は下の
-  // Forms_setFormFolder_ が中央辞書も含め上書きする。
-  var importFormPhysical = FormsDrive_relativeFolderOfFile_(fileId);
-  mapping[formId] = {
-    fileId: fileId,
-    driveFileUrl: fileUrl,
-    title: uniqueImportTitle,
-    folder: importFormPhysical == null ? "" : importFormPhysical
-  };
-  Forms_saveMapping_(mapping);
+  form.settings.formTitle = reg.label;
 
   // 開いていたフォルダ配下へ取り込む。参照先 Drive ファイルの json.folder を書き換える
   // （移動/リネームと同じ既存ヘルパ）。マッピング保存後に呼ぶことで fileId 解決が効く。

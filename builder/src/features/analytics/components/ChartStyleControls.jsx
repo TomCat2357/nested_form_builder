@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { CHART_PALETTE, DEFAULT_LINE_STYLE, DEFAULT_CHART_STYLE, normalizeChartStyle } from "../utils/chartPalette.js";
-import { deepClone } from "../../../core/schema.js";
 import { LABEL_STYLE, HEADER_LABEL_STYLE, RESET_BUTTON_STYLE } from "../utils/styleConstants.js";
+import { useStylePathSetter } from "./useStylePathSetter.js";
 
 // 折れ線・棒・円・散布図 共通のスタイルカスタマイズ UI。
 // 既存 TableStyleControls の minColor/maxColor パターンを踏襲（カラーピッカー + 既定リセット）。
@@ -95,13 +95,7 @@ export default function ChartStyleControls({
 
   const cs = useMemo(() => normalizeChartStyle(chartStyle), [chartStyle]);
   const setCs = (patch) => onChartStyleChange?.({ ...cs, ...patch });
-  const setCsPath = (path, value) => {
-    const next = deepClone(cs);
-    let cur = next;
-    for (let i = 0; i < path.length - 1; i += 1) cur = cur[path[i]];
-    cur[path[path.length - 1]] = value;
-    onChartStyleChange?.(next);
-  };
+  const { setPath: setCsPath } = useStylePathSetter(cs, onChartStyleChange);
   const resetChartStyle = () => onChartStyleChange?.(null);
   const isCsUnset = !chartStyle;
 

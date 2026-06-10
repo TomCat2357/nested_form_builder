@@ -354,18 +354,11 @@ function Analytics_deleteTemplates_(type, templateIds) {
     if (!ids.length) {
       throw new Error("IDが指定されていません");
     }
-    var mapping = Analytics_getMapping_(type);
-    var deleted = 0;
-    for (var i = 0; i < ids.length; i++) {
-      var id = ids[i];
-      // リンク（登録）のみ解除する。Drive 上のファイル本体は削除しない。
-      if (mapping.hasOwnProperty(id)) {
-        delete mapping[id];
-        deleted += 1;
-      }
-    }
-    Analytics_saveMapping_(type, mapping);
-    return { ok: true, deleted: deleted, errors: [] };
+    // 本体は SharedEntity_deleteByIds_（sharedEntityCrud.gs）。analytics 固有の差分は mapping store のみ。
+    return SharedEntity_deleteByIds_(ids, {
+      getMapping: function() { return Analytics_getMapping_(type); },
+      saveMapping: function(mapping) { return Analytics_saveMapping_(type, mapping); },
+    });
   });
 }
 
@@ -382,35 +375,11 @@ function Analytics_deleteTemplatesWithFiles_(type, templateIds) {
     if (!ids.length) {
       throw new Error("IDが指定されていません");
     }
-    var mapping = Analytics_getMapping_(type);
-    var deleted = 0;
-    var trashed = 0;
-    var errors = [];
-    for (var i = 0; i < ids.length; i++) {
-      var id = ids[i];
-      if (!id) continue;
-
-      // 実体トラッシュ判定用の fileId（id ≠ fileId に備えてマッピングからも解決）。
-      var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]) || id;
-
-      // リンク（登録）を解除する。
-      if (mapping.hasOwnProperty(id)) {
-        delete mapping[id];
-        deleted += 1;
-      }
-
-      // プロジェクト内のファイルだけ実体をゴミ箱へ移動する（key は type と一致）。
-      if (fileId && StdFolders_isFileInStdSubfolder_(fileId, type)) {
-        try {
-          DriveApp.getFileById(fileId).setTrashed(true);
-          trashed += 1;
-        } catch (err) {
-          errors.push({ id: id, fileId: fileId, reason: nfbErrorToString_(err) });
-        }
-      }
-    }
-    Analytics_saveMapping_(type, mapping);
-    return { ok: true, deleted: deleted, trashed: trashed, errors: errors };
+    // 本体は SharedEntity_deleteWithFiles_（sharedEntityCrud.gs）。標準サブフォルダ key は type と一致。
+    return SharedEntity_deleteWithFiles_(ids, type, {
+      getMapping: function() { return Analytics_getMapping_(type); },
+      saveMapping: function(mapping) { return Analytics_saveMapping_(type, mapping); },
+    });
   });
 }
 
@@ -423,41 +392,26 @@ function Analytics_setTemplatesArchivedState_(type, templateIds, archived) {
     if (!ids.length) {
       throw new Error("IDが指定されていません");
     }
-    var errors = [];
-    var updated = 0;
-    var updatedItems = [];
     var resultKey = Analytics_getResultKey_(type);
 
-    for (var i = 0; i < ids.length; i++) {
-      var id = ids[i];
-      try {
+    // 本体は SharedEntity_setStateField_（sharedEntityCrud.gs）。analytics は archived のみ
+    // （相互排他フィールドなし）。save 側が modifiedAt を打刻するため beforeSave は不要。
+    return SharedEntity_setStateField_(ids, "archived", archived, {
+      idKey: "id",
+      listKey: Analytics_getResultListKey_(type),
+      notFoundMsg: "テンプレートが見つかりません",
+      saveFailMsg: "保存に失敗しました",
+      logTag: "[Analytics_setTemplatesArchivedState_]",
+      getItem: function(id) {
         var getRes = Analytics_getTemplate_(type, id);
-        if (!getRes || !getRes.ok || !getRes[resultKey]) {
-          errors.push({ id: id, error: "テンプレートが見つかりません" });
-          continue;
-        }
-        var template = getRes[resultKey];
-        template.archived = !!archived;
+        return (getRes && getRes.ok && getRes[resultKey]) ? getRes[resultKey] : null;
+      },
+      saveItem: function(template) {
         var saveRes = Analytics_saveTemplate_(type, template);
-        if (saveRes && saveRes.ok && saveRes[resultKey]) {
-          updated += 1;
-          updatedItems.push(saveRes[resultKey]);
-        } else {
-          errors.push({ id: id, error: (saveRes && saveRes.error) || "保存に失敗しました" });
-        }
-      } catch (err) {
-        Logger.log("[Analytics_setTemplatesArchivedState_] Error for id " + id + ": " + err);
-        errors.push({ id: id, error: nfbErrorToString_(err) });
-      }
-    }
-
-    var result = {
-      ok: errors.length === 0,
-      updated: updated,
-      errors: errors,
-    };
-    result[Analytics_getResultListKey_(type)] = updatedItems;
-    return result;
+        if (saveRes && saveRes.ok && saveRes[resultKey]) return { ok: true, item: saveRes[resultKey] };
+        return { ok: false, error: saveRes && saveRes.error };
+      },
+    });
   });
 }
 
