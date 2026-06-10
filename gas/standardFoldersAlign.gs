@@ -4,17 +4,22 @@
 // =============================================
 
 // =============================================
-// (2.6) 論理↔物理 整合（①〜④・エントリ単位）
-// 登録エンティティごとに (論理パス L, 物理パス P, fileId 解決) を比較し、論理 L を正として
-// 物理/マッピングを揃える。手動の「同期（フォルダ走査）」は廃止され、現在は保存時の参照整合
-// （alignReferencesOnSave_）と、フォルダのリネーム/移動後の自己修復（verify パス）から呼ばれる。
+// (2.6) 論理↔物理 整合（⓪①②③・エントリ単位）
+// 登録エンティティごとに (論理パス, 物理位置 P, fileId 解決) を比較する。修復方向は「物理が今どこに
+// あるか」で決める（ハイブリッド: ホーム内は物理優先 / ホーム外は論理優先）。手動の「同期（フォルダ
+// 走査）」は廃止され、現在は保存時の参照整合（alignReferencesOnSave_）と、フォルダのリネーム/移動後の
+// 自己修復（verify パス）から呼ばれる。
 //
-//   ① L==P かつ fileId 一致         → 何もしない
-//   ② fileId 解決・P≠L              → 物理を L へ。プロジェクト内 move / 外 copy（コピー先新 id 採用）
-//   ③ fileId 未解決・L に同名別id    → その物理 id を論理に再採用（mapping 振替え）
-//   ④ fileId 未解決・物理も未発見     → 削除せずエラー報告
+//   生存 fileId:
+//     ⓪/① 物理がホーム標準フォルダ配下 → 物理優先。json.folder / entry.folder / 名前を物理に合わせる
+//                                          （フォルダ移動・改名いずれも物理を採用、move/copy しない）
+//     ②   物理がプロジェクト内の別標準フォルダ → 論理優先。ホームの元論理パス位置へ move（id 保持）
+//     ③   物理がプロジェクト外                 → 論理優先。ホームへ copy 取り込み + コピー先新 id 採用
+//   死亡 fileId:
+//     ・論理パスに同名別 id → その物理 id を再採用（mapping 振替え rekey）
+//     ・物理も未発見        → 削除せずエラー報告
 //
-// 論理フォルダのリネーム/移動は影響エンティティに ①〜④（verify パス）を適用する。
+// 論理フォルダのリネーム/移動は影響エンティティに ⓪①②③（verify パス）を適用する。
 // base（標準フォルダ）が解決できない kind は no-op に degrade する。
 // =============================================
 
@@ -107,25 +112,40 @@ function StdFolders_alignEntry_(adapter, mapping, id, dryRun, ctx) {
   var N = entry[adapter.nameField] || "";
 
   if (F && StdFolders_isFileIdAlive_(F)) {
-    // L = 生存ファイルの json.folder（システム全体の規約に一致）。
+    var liveFile = null;
+    try { liveFile = DriveApp.getFileById(F); } catch (eF) { liveFile = null; }
     var json = StdFolders_readJsonByFileId_(F);
-    var L = Forms_normalizeFolderPath_(json && json.folder);
-    var P = adapter.relativeFolderOfFile(F);   // base 配下の相対パス / null=構成外
+    var P = adapter.relativeFolderOfFile(F);   // 自分のホーム標準フォルダ配下の相対パス / null=ホーム外
 
-    if (P === L) {
-      // ① 一致。entry.folder を最新化（dead-F 時の L 解決の保険）。
-      if (entry.folder !== L) { entry.folder = L; ctx.dirty = true; }
+    if (P !== null) {
+      // ⓪/① 物理がホーム標準フォルダ配下 → 物理を正として論理（json.folder / entry.folder / 名前）を
+      //     物理に合わせる。フォルダ移動・ファイル名変更は外部 Drive 操作でも物理側を採用する。
+      //     アプリ側のリネームは物理ファイル名も同時に変えるため双方向で整合する前提。
+      if (!dryRun) {
+        var Lj = Forms_normalizeFolderPath_(json && json.folder);
+        if (json && liveFile && Lj !== P) {
+          json.folder = P;
+          try { liveFile.setContent(JSON.stringify(json, null, 2)); }
+          catch (eW) { Logger.log("[StdFolders_alignEntry_] json.folder 書戻し失敗 " + F + ": " + nfbErrorToString_(eW)); }
+        }
+        if (entry.folder !== P) { entry.folder = P; ctx.dirty = true; }
+        var fname = liveFile ? Nfb_nameFromFile_(liveFile) : "";
+        if (fname && entry[adapter.nameField] !== fname) { entry[adapter.nameField] = fname; ctx.dirty = true; }
+      }
       return "aligned";
     }
-    if (P !== null) {
-      // ② プロジェクト内・P≠L → L へ移動（json.folder は既に L）。
+
+    // P===null：物理がホーム標準フォルダ外。論理パス（生存ファイルの json.folder）を正として戻す。
+    var L = Forms_normalizeFolderPath_(json && json.folder);
+    if (StdFolders_isFileUnderProjectRoot_(F)) {
+      // ② プロジェクト内の別標準フォルダ（例: form が 02_questions 内）→ ホームの L へ移動（id 保持）。
       if (!dryRun) {
         adapter.moveFileToPath(F, L);
-        entry.folder = L; ctx.dirty = true;
+        if (entry.folder !== L) { entry.folder = L; ctx.dirty = true; }
       }
       return "moved";
     }
-    // ② プロジェクト外 → L へコピー取り込み + コピー先 id を正本採用。
+    // ③ プロジェクト外 → ホームの L へコピー取り込み + コピー先 id を正本採用（rekey）。
     if (!dryRun) {
       var copied = StdFolders_copyEntryIntoProject_(adapter, F, L, N);
       if (copied && copied.newFileId && copied.newFileId !== id) {
@@ -243,6 +263,13 @@ function StdFolders_alignAllEntries_() {
       // Phase B: id 変化（コピー/再採用）を参照グラフ全体へ伝播。remap が空なら丸ごとスキップ（冪等時に軽い）。
       var relinked = 0;
       if (StdFolders_hasOwnKeys_(ctx.remap)) {
+        // form→childForm（formLink）リンクを追従。
+        var fMap = StdFolders_entityAdapter_("forms").getMapping();
+        for (var fid in fMap) {
+          if (!fMap.hasOwnProperty(fid)) continue;
+          var fFileId = Nfb_resolveFileIdFromEntry_(fMap[fid]);
+          if (fFileId && StdFolders_rewriteRefsInFile_(fFileId, "forms", ctx.remap)) relinked++;
+        }
         var qMap = StdFolders_entityAdapter_("questions").getMapping();   // Phase A 後の現行キー
         for (var qid in qMap) {
           if (!qMap.hasOwnProperty(qid)) continue;

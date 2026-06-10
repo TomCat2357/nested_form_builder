@@ -646,6 +646,44 @@ function Admin_backfillRegistryFolders_() {
   return result;
 }
 
+/**
+ * 全 forms / questions / dashboards の参照（Q→Form / D→Q / formLink）に論理パスを冗長保存（stamp）
+ * するバックフィル手動実行エントリ。冪等。中央辞書から導出できない id は据え置く（リンク切れ復旧アンカー）。
+ * @return {{forms:number, questions:number, dashboards:number}}
+ */
+function Admin_backfillRefPaths_() {
+  var result = { forms: 0, questions: 0, dashboards: 0 };
+  var kinds = [
+    ["forms", Forms_getMapping_()],
+    ["questions", Analytics_getMapping_("questions")],
+    ["dashboards", Analytics_getMapping_("dashboards")]
+  ];
+  for (var ki = 0; ki < kinds.length; ki++) {
+    var kind = kinds[ki][0];
+    var mapping = kinds[ki][1];
+    var n = 0;
+    for (var id in mapping) {
+      if (!mapping.hasOwnProperty(id)) continue;
+      var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]);
+      if (!fileId) continue;
+      try {
+        var file = DriveApp.getFileById(fileId);
+        if (typeof file.isTrashed === "function" && file.isTrashed()) continue;
+        var json = JSON.parse(file.getBlob().getDataAsString());
+        if (StdFolders_stampRefPaths_(json, kind)) {
+          file.setContent(JSON.stringify(json, null, 2));
+          n++;
+        }
+      } catch (e) {
+        Logger.log("[backfill-refpaths] " + kind + " " + fileId + ": " + nfbErrorToString_(e));
+      }
+    }
+    result[kind] = n;
+  }
+  Logger.log("[backfill-refpaths] forms=" + result.forms + " questions=" + result.questions + " dashboards=" + result.dashboards);
+  return result;
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     Admin_rewriteNfbUdfsInExpressionString_: Admin_rewriteNfbUdfsInExpressionString_,
@@ -657,5 +695,6 @@ if (typeof module !== "undefined") {
     Admin_rewriteFormTemplateBraces_: Admin_rewriteFormTemplateBraces_,
     Admin_backfillFolderInMapping_: Admin_backfillFolderInMapping_,
     Admin_backfillRegistryFolders_: Admin_backfillRegistryFolders_,
+    Admin_backfillRefPaths_: Admin_backfillRefPaths_,
   };
 }

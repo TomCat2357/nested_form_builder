@@ -210,6 +210,10 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       schemaVersion: form.schemaVersion || 1,
     };
 
+    // formLink の childFormPath を中央辞書から導出して冗長保存（stamp）する。リンク切れ時の復旧アンカー。
+    try { StdFolders_stampRefPaths_(formWithTimestamp, "forms"); }
+    catch (errStamp) { Logger.log("[Forms_saveForm_] stampRefPaths failed: " + nfbErrorToString_(errStamp)); }
+
     var content = JSON.stringify(formWithTimestamp, null, 2);
     // ファイル名 ＝ 一意化済みタイトル（名前 ＝ Drive ファイル名 へ統一するため uniqueTitle を権威とする）。
     var fileName = uniqueTitle.substring(0, 100) + ".json";
@@ -365,6 +369,19 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       AddFormUrl_(fileId, fileUrl);
     } catch (err) {
       Logger.log("[Forms_saveForm_] AddFormUrl_ failed (non-critical): " + err);
+    }
+
+    // 保存後: formLink フィールドの参照先（子フォーム）に ⓪①②③ 整合を適用し、
+    // ②③ で子フォーム id が変わったら親スキーマの childFormId を追従させる
+    // （Analytics_saveTemplate_ と対称）。base 未設定なら no-op。
+    var referenceSync = null;
+    try {
+      referenceSync = StdFolders_alignReferencesOnSave_("forms", fileId);
+      if (referenceSync && referenceSync.remap) {
+        StdFolders_applyRemapToRefs_(formWithTimestamp, "forms", referenceSync.remap);
+      }
+    } catch (errRefSync) {
+      Logger.log("[Forms_saveForm_] alignReferencesOnSave failed: " + nfbErrorToString_(errRefSync));
     }
 
     return {

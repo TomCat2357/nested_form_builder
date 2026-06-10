@@ -159,6 +159,20 @@ function StdFolders_isFileUnderFolder_(fileId, folderId) {
   return false;
 }
 
+// fileId のファイルが、解決済みプロジェクトルート配下（どの標準サブフォルダでもよい）に在るか判定する。
+// 整合エンジンの ②（プロジェクト内・別標準フォルダ → move）/ ③（プロジェクト外 → copy）分離に使う。
+// relativeFolderOfFile は「自分のホーム標準フォルダ配下か」しか分からないため、これで補う。ルート未解決時は false。
+function StdFolders_isFileUnderProjectRoot_(fileId) {
+  if (!fileId) return false;
+  try {
+    var root = StdFolders_resolveRootFolder_(null);
+    return StdFolders_isFileUnderFolder_(fileId, root.getId());
+  } catch (err) {
+    Logger.log("[StdFolders_isFileUnderProjectRoot_] " + fileId + ": " + nfbErrorToString_(err));
+  }
+  return false;
+}
+
 // fileId のファイルが、解決済みルートの key サブフォルダ配下（直下・ネスト問わず）に在るか判定する。
 // ルート未解決時は false（= 構成外扱い）。
 function StdFolders_isFileInStdSubfolder_(fileId, key) {

@@ -143,6 +143,14 @@ function buildContext() {
 
 const formJson = (folder) => JSON.stringify({ folder, schema: [{ id: "q1", type: "text" }] });
 
+// formLink フィールドを持つ親フォーム json。links = [{ id, path }]。
+const parentFormJson = (folder, links) => JSON.stringify({
+  folder,
+  schema: [{ id: "p1", type: "text" }].concat(
+    (links || []).map((l, i) => ({ id: "fl" + i, type: "formLink", childFormId: l.id, childFormPath: l.path }))
+  ),
+});
+
 // 標準フォルダ（02_questions / 03_dashboards 等）を名前で引く。
 function findFolderByName(drive, name) {
   return Object.keys(drive.folders).map((k) => drive.folders[k]).find((f) => f._name === name);
@@ -215,12 +223,13 @@ test("保存時参照整合: ダッシュボード保存でクエスチョン→
   assert.equal(d.cards[0].questionId, qFile.getId());
 });
 
-test("保存時参照整合: ②内部移動は id 保持のためリンク不変", () => {
+test("保存時参照整合: ①ホーム内移動は物理優先で論理パスを追従（移動しない・id 保持）", () => {
   const env = buildContext();
   const { context, drive, formsA, formsB, store } = env;
   const qBase = findFolderByName(drive, "02_questions");
 
-  // 物理フォームは b にあるが json.folder=a・登録簿も a（生存 id）→ ② 内部移動。
+  // 物理フォームは 01_forms/b にあるが json.folder=a・登録簿も a（生存 id）。
+  // 新方針 ①: 物理がホーム配下なので物理優先 → 論理（json.folder / entry.folder）を b へ合わせる。move しない。
   const fForm = drive.makeFile("mv.json", formJson("a"), formsB.getId());
   store.formsMapping = { [fForm.getId()]: { fileId: fForm.getId(), driveFileUrl: fForm.getUrl(), title: "mv", folder: "a" } };
   const qFile = drive.makeFile(
@@ -230,9 +239,38 @@ test("保存時参照整合: ②内部移動は id 保持のためリンク不�
   );
 
   const r = context.StdFolders_alignReferencesOnSave_("questions", qFile.getId());
-  assert.equal(r.forms.moved, 1, "② 内部移動");
-  assert.equal(drive.files[fForm.getId()]._parentId, formsA.getId(), "物理が a へ移動");
+  assert.equal(r.forms.aligned, 1, "① 物理優先で整合");
+  assert.equal(r.forms.moved, 0, "物理移動しない");
+  assert.equal(drive.files[fForm.getId()]._parentId, formsB.getId(), "物理は b のまま");
+  // 論理が物理 b に追従。
+  assert.equal(store.formsMapping[fForm.getId()].folder, "b", "entry.folder が物理 b へ追従");
+  assert.equal(JSON.parse(drive.files[fForm.getId()]._content).folder, "b", "json.folder が物理 b へ追従");
   // id 保持なのでリンク不変・追従ファイルなし。
+  assert.equal(r.relinkedFiles, 0);
+  const q = JSON.parse(drive.files[qFile.getId()]._content);
+  assert.equal(q.query.formSources[0].formId, fForm.getId());
+});
+
+test("保存時参照整合: ②プロジェクト内の別標準フォルダにある form はホームへ move（id 保持）", () => {
+  const env = buildContext();
+  const { context, drive, formsA, store } = env;
+  const qBase = findFolderByName(drive, "02_questions");
+
+  // 物理フォームが 02_questions 内に在る（ホーム 01_forms 外だがプロジェクト内）。json.folder=a・登録簿も a。
+  // 新方針 ②: 論理優先 → ホーム 01_forms/a へ移動（id 保持）。
+  const fForm = drive.makeFile("stray.json", formJson("a"), qBase.getId());
+  store.formsMapping = { [fForm.getId()]: { fileId: fForm.getId(), driveFileUrl: fForm.getUrl(), title: "stray", folder: "a" } };
+  const qFile = drive.makeFile(
+    "q.json",
+    JSON.stringify({ folder: "", query: { mode: "sql", formSources: [{ formId: fForm.getId(), formName: "stray" }] } }),
+    qBase.getId()
+  );
+
+  const r = context.StdFolders_alignReferencesOnSave_("questions", qFile.getId());
+  assert.equal(r.forms.moved, 1, "② プロジェクト内別フォルダから move");
+  assert.equal(drive.files[fForm.getId()]._parentId, formsA.getId(), "物理が 01_forms/a へ移動");
+  assert.equal(store.formsMapping[fForm.getId()].folder, "a", "entry.folder は a 維持");
+  // id 保持なのでリンク不変。
   assert.equal(r.relinkedFiles, 0);
   const q = JSON.parse(drive.files[qFile.getId()]._content);
   assert.equal(q.query.formSources[0].formId, fForm.getId());
@@ -282,5 +320,82 @@ test("全件整列: プロジェクト外フォームをコピー取り込みし
   assert.equal(r2.forms.copiedExternal, 0);
   assert.equal(r2.forms.aligned, 1, "コピー済みファイルは ① 整合");
   assert.equal(r2.relinkedFiles, 0);
+});
+
+test("formLink: 親保存でプロジェクト外の子フォームを③コピー取り込みし childFormId/childFormPath を追従", () => {
+  const env = buildContext();
+  const { context, drive, store, formsA, ext, forms } = env;
+
+  // プロジェクト外の子フォーム（EXTERNAL 配下、json.folder=a, title=child）。登録済み。
+  const childExt = drive.makeFile("child.json", formJson("a"), ext.getId());
+  const childExtId = childExt.getId();
+  store.formsMapping = { [childExtId]: { fileId: childExtId, driveFileUrl: childExt.getUrl(), title: "child", folder: "a" } };
+
+  // 親フォーム（01_forms 直下）。formLink で childExtId を参照。
+  const parent = drive.makeFile("parent.json", parentFormJson("", [{ id: childExtId, path: "a/child" }]), forms.getId());
+
+  const r = context.StdFolders_alignReferencesOnSave_("forms", parent.getId());
+  assert.equal(r.ok, true);
+  assert.equal(r.forms.copiedExternal, 1, "子フォームを ③ コピー取り込み");
+  assert.ok(!store.formsMapping[childExtId], "旧外部 id は登録簿から除去");
+  const newIds = Object.keys(store.formsMapping);
+  assert.equal(newIds.length, 1, "コピー先 id 1 件");
+  const newId = newIds[0];
+  assert.notEqual(newId, childExtId);
+  assert.equal(drive.files[newId]._parentId, formsA.getId(), "コピー先は 01_forms/a 配下");
+  // 親の childFormId / childFormPath が追従。
+  assert.equal(r.relinkedFiles, 1);
+  const pj = JSON.parse(drive.files[parent.getId()]._content);
+  const fl = pj.schema.find((f) => f.type === "formLink");
+  assert.equal(fl.childFormId, newId, "childFormId が新 id へ");
+  assert.equal(fl.childFormPath, "a/child", "childFormPath が新 id の論理パスへ");
+});
+
+test("stampRefPaths_: 中央辞書から formPath/questionPath/childFormPath を冗長保存する", () => {
+  const env = buildContext();
+  const { context, store } = env;
+
+  store.formsMapping = { FORM1: { fileId: "FORM1", title: "売上", folder: "営業" } };
+  store.analyticsMapping.questions = { Q1: { fileId: "Q1", name: "集計", folder: "" } };
+
+  // questions: gui.formId / formSources[].formId に formPath を stamp。
+  const qjson = { query: { mode: "gui", gui: { formId: "FORM1" }, formSources: [{ formId: "FORM1" }] } };
+  assert.equal(context.StdFolders_stampRefPaths_(qjson, "questions"), true);
+  assert.equal(qjson.query.gui.formPath, "営業/売上");
+  assert.equal(qjson.query.formSources[0].formPath, "営業/売上");
+
+  // dashboards: cards[].questionId に questionPath を stamp（folder 空なら葉名のみ）。
+  const djson = { cards: [{ questionId: "Q1" }] };
+  assert.equal(context.StdFolders_stampRefPaths_(djson, "dashboards"), true);
+  assert.equal(djson.cards[0].questionPath, "集計");
+
+  // forms: formLink の childFormId に childFormPath を stamp。
+  const fjson = { schema: [{ id: "fl0", type: "formLink", childFormId: "FORM1" }] };
+  assert.equal(context.StdFolders_stampRefPaths_(fjson, "forms"), true);
+  assert.equal(fjson.schema[0].childFormPath, "営業/売上");
+
+  // 未解決 id は据え置き（変更なし）。
+  const unresolved = { query: { mode: "gui", gui: { formId: "MISSING", formPath: "旧/パス" } } };
+  assert.equal(context.StdFolders_stampRefPaths_(unresolved, "questions"), false);
+  assert.equal(unresolved.query.gui.formPath, "旧/パス");
+});
+
+test("formLink: childFormId 切れ・未登録でも childFormPath で物理を再探索して貼り直す", () => {
+  const env = buildContext();
+  const { context, drive, store, formsA, forms } = env;
+
+  // 物理子フォームは 01_forms/a/child.json に存在（登録簿には無い）。
+  const child = drive.makeFile("child.json", formJson("a"), formsA.getId());
+  store.formsMapping = {}; // 未登録
+
+  // 親は死んだ childFormId を参照、childFormPath="a/child"。
+  const parent = drive.makeFile("parent.json", parentFormJson("", [{ id: "DEAD_CHILD", path: "a/child" }]), forms.getId());
+
+  const r = context.StdFolders_alignReferencesOnSave_("forms", parent.getId());
+  assert.equal(r.ok, true);
+  assert.equal(r.relinkedFiles, 1, "path 復旧で親リンク貼り直し");
+  const pj = JSON.parse(drive.files[parent.getId()]._content);
+  const fl = pj.schema.find((f) => f.type === "formLink");
+  assert.equal(fl.childFormId, child.getId(), "childFormId が物理 child へ復旧");
 });
 

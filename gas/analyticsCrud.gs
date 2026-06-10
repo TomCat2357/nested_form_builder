@@ -214,6 +214,10 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     normalizedTemplate.name = uniqueName;
 
     var fileName = uniqueName + ".json";
+    // 参照（Q→Form / D→Q）に論理パスを冗長保存（stamp）する。リンク切れ時の復旧アンカー。
+    // 解決は中央辞書に依存するため、try で囲み失敗しても保存は継続する。
+    try { StdFolders_stampRefPaths_(normalizedTemplate, type); }
+    catch (errStamp) { Logger.log("[Analytics_saveTemplate_] stampRefPaths failed: " + nfbErrorToString_(errStamp)); }
     // 保存する .json は「自分自身の id も名前（ファイル名）も持たない」運用とする。
     // id を埋め込まず、name も書かない。読み込み時に fileId / ファイル名から復元する。
     var contentObj = {};
