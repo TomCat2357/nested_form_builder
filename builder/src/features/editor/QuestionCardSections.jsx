@@ -367,6 +367,9 @@ export function FormLinkSection({ field, onChange }) {
             placeholder="フォームを選択"
           />
         </label>
+        <div className="nf-text-11 nf-text-muted">
+          {"このフォームに紐づく子フォームの行（住所・項目など全件）は、レコードの印刷様式・Webhook payload に自動で含まれます（個別設定は不要）。"}
+        </div>
         <label className="nf-row nf-gap-6">
           <input
             type="checkbox"

@@ -69,9 +69,22 @@ export default function EditorPage({ schema, onSchemaChange, onQuestionControlCh
     onSchemaChange(next);
   };
 
+  /**
+   * 新しい質問を先頭に追加
+   */
+  const handleAddQuestionTop = () => {
+    const next = normalizeSchemaIDs([{ id: genId(), type: "text", label: "" }, ...(schema || [])]);
+    onSchemaChange(next);
+  };
+
   return (
     <ActiveFocusProvider>
       <div>
+        {schema?.length > 0 && (
+          <div className="nf-row-center nf-mb-12">
+            <button type="button" className={s.btn.className} onClick={handleAddQuestionTop}>次の質問を追加</button>
+          </div>
+        )}
         <QuestionList
           fields={schema}
           onChange={onSchemaChange}

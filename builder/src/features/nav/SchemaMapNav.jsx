@@ -49,8 +49,12 @@ function SchemaMapNavList({ items, expandedIds, onToggle, onScroll }) {
   );
 }
 
-export default function SchemaMapNav({ schema, responses = {}, scope = "all" }) {
-  const items = useMemo(() => buildSchemaMapItems({ schema, responses, scope }), [schema, responses, scope]);
+export default function SchemaMapNav({ schema, responses = {}, scope = "all", leadingItems = [] }) {
+  const items = useMemo(() => {
+    const built = buildSchemaMapItems({ schema, responses, scope });
+    const leading = (leadingItems || []).map((item) => ({ depth: 0, children: [], ...item }));
+    return [...leading, ...built];
+  }, [schema, responses, scope, leadingItems]);
   const expandableIds = useMemo(() => collectExpandableIds(items), [items]);
   const [expandedIds, setExpandedIds] = useState(() => new Set());
 
@@ -66,9 +70,10 @@ export default function SchemaMapNav({ schema, responses = {}, scope = "all" }) 
 
   if (items.length === 0) return null;
 
-  const scrollToQuestion = (questionId) => {
-    const escaped = escapeForAttrSelector(questionId);
-    const target = document.querySelector(`[data-question-id="${escaped}"]`);
+  const scrollToTarget = (targetId) => {
+    const escaped = escapeForAttrSelector(targetId);
+    const target =
+      document.querySelector(`[data-question-id="${escaped}"]`) || document.querySelector(`#${escaped}`);
     if (!target) return;
     target.scrollIntoView({ behavior: "smooth", block: "start", inline: "nearest" });
   };
@@ -88,7 +93,7 @@ export default function SchemaMapNav({ schema, responses = {}, scope = "all" }) 
   return (
     <nav className="schema-map-nav" aria-label="目次ナビ">
       <div className="schema-map-nav__title">目次</div>
-      <SchemaMapNavList items={items} expandedIds={expandedIds} onToggle={toggleExpanded} onScroll={scrollToQuestion} />
+      <SchemaMapNavList items={items} expandedIds={expandedIds} onToggle={toggleExpanded} onScroll={scrollToTarget} />
     </nav>
   );
 }

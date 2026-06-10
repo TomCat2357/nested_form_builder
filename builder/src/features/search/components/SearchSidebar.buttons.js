@@ -1,13 +1,12 @@
 import { resolveExternalActionUrl } from "../../../utils/externalActionUrl.js";
-import { submitExternalActionPost, buildExternalActionPayload } from "../../../utils/externalActionPost.js";
+import { submitExternalActionPost, buildExternalActionPayload, openExternalActionWindow } from "../../../utils/externalActionPost.js";
 import { resolveStyleSettingsInlineStyle } from "../../../core/styleSettings.js";
 import { buildExportTableData } from "../searchExport.js";
 import { joinFieldPath } from "../../../utils/pathCodec.js";
 
 // 対象行 (選択行があればその行、なければフィルタ後の全行) を表示用ビュー行に整形して payload の base を組む。
-// childFormsResolver(pid) があれば、includeChildData=ON の子フォームデータを行と同順の
-// childFormsByRow（各行 = 子フォーム合成オブジェクト配列）として付加する。
-const buildSearchPayloadBase = (form, outputTargetRows, childFormsResolver) => {
+// childFormsByRow（entries と同順・各行 = 子フォーム合成オブジェクト配列）があれば付加する。
+const buildSearchPayloadBase = (form, outputTargetRows, childFormsByRow) => {
   const entries = Array.isArray(outputTargetRows) ? outputTargetRows.map((row) => row.entry).filter(Boolean) : [];
   const table = buildExportTableData({ form, entries });
   const list = {
@@ -17,16 +16,16 @@ const buildSearchPayloadBase = (form, outputTargetRows, childFormsResolver) => {
     rows: table.rows,
     rowCount: table.rows.length,
   };
-  if (typeof childFormsResolver === "function") {
-    const childFormsByRow = entries.map((entry) => childFormsResolver(entry && entry.id));
-    if (childFormsByRow.some((cf) => Array.isArray(cf) && cf.length > 0)) {
-      list.childFormsByRow = childFormsByRow;
-    }
+  if (Array.isArray(childFormsByRow) && childFormsByRow.some((cf) => Array.isArray(cf) && cf.length > 0)) {
+    list.childFormsByRow = childFormsByRow;
   }
   return { list };
 };
 
-const handleExternalActionClick = (action, { formContext, isAdmin, form, outputTargetRows, searchChildFormsResolver }) => {
+// 外部アクション（Webhook）送信。子データは「送信時のみ」on-demand 取得する方針のため、
+// クリック時点で結果タブを同期 open（ポップアップブロック回避）してから子データを await 取得し、
+// その既存タブへ POST する。searchChildFormsResolver(entries) は childFormsByRow を返す async 関数。
+const handleExternalActionClick = async (action, { formContext, isAdmin, form, outputTargetRows, searchChildFormsResolver }) => {
   const gate = { adminOnly: !!action.adminOnly, isAdmin };
   // 既存設定の URL トークン置換は後方互換のため維持 (機微トークンの gating も従来通り)
   const resolvedUrl = resolveExternalActionUrl(action.url, formContext, gate);
@@ -35,15 +34,26 @@ const handleExternalActionClick = (action, { formContext, isAdmin, form, outputT
     window.alert("URL が不正です (http:// または https:// で始まる必要があります)。フォーム設定を確認してください。");
     return;
   }
+  // ユーザージェスチャ中に結果タブを確保（この後 await を挟んでも POST 先を失わない）。
+  const target = openExternalActionWindow();
+  let childFormsByRow = null;
+  if (typeof searchChildFormsResolver === "function") {
+    const entries = Array.isArray(outputTargetRows) ? outputTargetRows.map((row) => row.entry).filter(Boolean) : [];
+    try {
+      childFormsByRow = await searchChildFormsResolver(entries);
+    } catch (_e) {
+      childFormsByRow = null; // 取得失敗時は子データ無しで送信（無言）。
+    }
+  }
   const payload = buildExternalActionPayload({
     context: "search",
     formId: formContext?.formId,
     formName: formContext?.formName,
-    base: buildSearchPayloadBase(form, outputTargetRows, searchChildFormsResolver),
+    base: buildSearchPayloadBase(form, outputTargetRows, childFormsByRow),
     storageFields: formContext,
     gate,
   });
-  submitExternalActionPost(resolvedUrl, payload);
+  submitExternalActionPost(resolvedUrl, payload, target);
 };
 
 const buildExternalActionButtons = (externalActions, formContext, { isAdmin = false, form = null, outputTargetRows = null, searchChildFormsResolver = null } = {}) => {
@@ -58,7 +68,7 @@ const buildExternalActionButtons = (externalActions, formContext, { isAdmin = fa
       const style = enabled ? resolveStyleSettingsInlineStyle(action.styleSettings || {}) : undefined;
       return {
         label: (action.label && action.label.trim()) || "外部アクション",
-        onClick: () => handleExternalActionClick(action, { formContext, isAdmin, form, outputTargetRows, searchChildFormsResolver }),
+        onClick: () => { handleExternalActionClick(action, { formContext, isAdmin, form, outputTargetRows, searchChildFormsResolver }).catch(() => {}); },
         title: action.url,
         style: style && Object.keys(style).length > 0 ? style : undefined,
       };

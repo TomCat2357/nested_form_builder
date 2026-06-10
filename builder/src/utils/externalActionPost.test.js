@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildExternalActionPayload, submitExternalActionPost } from "./externalActionPost.js";
+import { buildExternalActionPayload, submitExternalActionPost, openExternalActionWindow } from "./externalActionPost.js";
 
 // --- buildExternalActionPayload ---
 
@@ -125,5 +125,60 @@ test("submitExternalActionPost は隠しフォームを生成・送信・除去�
     assert.equal(removed[0], form, "送信後に body から remove される");
   } finally {
     globalThis.document = originalDocument;
+  }
+});
+
+test("submitExternalActionPost は target.name を form.target に使う（事前 open タブへ POST）", () => {
+  const created = [];
+  const makeEl = () => ({ style: {}, children: [], appendChild(c) { this.children.push(c); }, submit() {} });
+  const originalDocument = globalThis.document;
+  globalThis.document = {
+    createElement(tag) { const el = makeEl(); el.tagName = tag; created.push(el); return el; },
+    body: { appendChild() {}, removeChild() {} },
+  };
+  try {
+    const ok = submitExternalActionPost("https://example.com/exec", { n: 1 }, { win: {}, name: "nfbExternalAction_7" });
+    assert.equal(ok, true);
+    const form = created.find((el) => el.tagName === "form");
+    assert.equal(form.target, "nfbExternalAction_7");
+  } finally {
+    globalThis.document = originalDocument;
+  }
+});
+
+test("submitExternalActionPost は不正 URL のとき事前 open タブを閉じる", () => {
+  let closed = false;
+  const ok = submitExternalActionPost("javascript:alert(1)", { n: 1 }, { win: { close() { closed = true; } }, name: "nfbExternalAction_8" });
+  assert.equal(ok, false);
+  assert.equal(closed, true, "不正 URL では空タブを残さず閉じる");
+});
+
+// --- openExternalActionWindow ---
+
+test("openExternalActionWindow は window.open を空 URL + 一意名で呼び { win, name } を返す", () => {
+  const calls = [];
+  const fakeWin = { document: { write() {}, close() {} } };
+  const originalWindow = globalThis.window;
+  globalThis.window = { open(url, name) { calls.push({ url, name }); return fakeWin; } };
+  try {
+    const a = openExternalActionWindow();
+    const b = openExternalActionWindow();
+    assert.equal(calls[0].url, "", "空 URL で開く");
+    assert.ok(/^nfbExternalAction_\d+$/.test(a.name), "一意名が付く");
+    assert.notEqual(a.name, b.name, "呼ぶたびに名前が変わる");
+    assert.equal(a.win, fakeWin);
+    assert.equal(calls[0].name, a.name, "form.target に使う名前で open する");
+  } finally {
+    globalThis.window = originalWindow;
+  }
+});
+
+test("openExternalActionWindow は window.open が null を返すとき null（ブロック時）", () => {
+  const originalWindow = globalThis.window;
+  globalThis.window = { open() { return null; } };
+  try {
+    assert.equal(openExternalActionWindow(), null);
+  } finally {
+    globalThis.window = originalWindow;
   }
 });

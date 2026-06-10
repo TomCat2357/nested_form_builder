@@ -160,12 +160,12 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 
   // schema 内の formLink フィールド（childFormId あり）を収集する。各々について子フォームの
   // 子レコード件数（pid == このレコード id）をバッジ表示する。
-  // includeChildData=ON の項目は子レコード全件を Webhook/印刷へ渡すため詳細ロードする。
+  // 全 formLink 項目について子レコード全件を Webhook/印刷へ渡すため常に詳細ロードする。
   const formLinkFields = useMemo(() => collectFormLinkFields(schema), [schema]);
 
   const [formLinkChildCounts, setFormLinkChildCounts] = useState({});
   // 子フォームの合成オブジェクト（fieldId → { childFormId, childFormName, childFormUrl, count, records }）。
-  // includeChildData=ON の formLink 項目だけ詰める。Webhook 送信・印刷・プレビューの CHILD_FORM_* で参照。
+  // 全 formLink 項目を詰める。Webhook 送信・印刷・プレビューの CHILD_FORM_* で参照。
   const [formLinkChildData, setFormLinkChildData] = useState({});
   // 件数取得は「既存レコード（保存済み id あり）」かつ GAS 利用可かつ子フォーム文脈でない場合のみ。
   // 子レコード / 件数は childRecordsMemoryStore に SWR キャッシュする：キャッシュがあれば即表示し、
@@ -451,22 +451,18 @@ const PreviewPage = React.forwardRef(function PreviewPage(
             const recs = (Array.isArray(cache.entries) ? cache.entries : [])
               .filter((e) => String(e?.pid ?? "") === recordId)
               .filter((e) => !(e?.deletedAtUnixMs || e?.deletedAt));
-            if (field.includeChildData) {
-              const childForm = await getChildFormCached_(field.childFormId);
-              const childObj = buildChildDataObject({
-                childFormId: field.childFormId,
-                childFormName: field.childFormName,
-                childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, recordId),
-                childSchema: childForm && childForm.schema ? childForm.schema : [],
-                records: recs,
-              });
-              setFormLinkChildData((prev) => ({ ...prev, [field.id]: childObj }));
-              setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: childObj.count }));
-              await saveChildDataToCache(field.childFormId, recordId, childObj);
-            } else {
-              setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: recs.length }));
-              await saveChildCountToCache(field.childFormId, recordId, recs.length);
-            }
+            // 全 formLink で常に詳細を再構築する（メイン取得 effect と同じ always-detail 方針）。
+            const childForm = await getChildFormCached_(field.childFormId);
+            const childObj = buildChildDataObject({
+              childFormId: field.childFormId,
+              childFormName: field.childFormName,
+              childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, recordId),
+              childSchema: childForm && childForm.schema ? childForm.schema : [],
+              records: recs,
+            });
+            setFormLinkChildData((prev) => ({ ...prev, [field.id]: childObj }));
+            setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: childObj.count }));
+            await saveChildDataToCache(field.childFormId, recordId, childObj);
           } catch (_e) { /* 再計算失敗は無言（次回の通常再取得で整合） */ }
         }
         // full-query（{{SELECT}}）置換も子レコード変化に追従させる（warm ストアは更新済み）。

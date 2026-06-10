@@ -362,12 +362,16 @@ export default function AdminFormEditorPage() {
           >
             📊 スプレッドシートを開く
           </button>
-          <SchemaMapNav schema={builderRef.current?.getSchema?.() || initialSchema} scope="all" />
+          <SchemaMapNav
+            schema={builderRef.current?.getSchema?.() || initialSchema}
+            scope="all"
+            leadingItems={[{ id: "form-meta-info", label: "フォーム基本情報", indexLabel: "■" }]}
+          />
         </>
       }
     >
       <div className="nf-card nf-mb-24">
-        <div className="nf-card nf-mb-16">
+        <div className="nf-card nf-mb-16" id="form-meta-info">
           <h3 className="nf-settings-group-title nf-mb-16">フォームの基本情報</h3>
 
           <div className="nf-col nf-gap-6 nf-mb-16">

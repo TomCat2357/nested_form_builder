@@ -247,18 +247,21 @@ export function useSearchPageState({
   const hasFullQuerySubstitution = substitutionChildRefs.hasFullQuery;
   const hasDependentSubstitutions = Object.keys(substitutionChildRefs.byFieldId).length > 0;
 
-  // Webhook payload 用（includeChildData=ON のみ）。
+  // Webhook payload 用 = 全 formLink。ただし一覧では eager 取得せず、外部アクション送信時に
+  // resolveSearchChildFormsForRows で対象行ぶんだけ on-demand バッチ取得する（下記）。
   const webhookChildFormFields = useMemo(
-    () => collectFormLinkFields(normalizedSchema).filter((f) => f.includeChildData),
+    () => collectFormLinkFields(normalizedSchema),
     [normalizedSchema],
   );
-  // 子データのバッチ取得対象。Webhook 用(includeChildData) ＋ 置換が参照する子フォーム
-  // （full-query があるときは参照先を静的特定できないため全 formLink）。
+  // eager バッチ取得の対象は「表示に必要な子データ」だけ＝置換参照＋full-query。
+  // （full-query があるときは参照先を静的特定できないため全 formLink）。Webhook 専用の formLink は
+  // 一覧表示中は取得しない（送信時に on-demand 取得するためコストを払わない）。
   const childDataTargetFields = useMemo(() => {
     const refIds = new Set(substitutionChildRefs.childFormIds);
     const wantAll = substitutionChildRefs.hasFullQuery;
+    if (!wantAll && refIds.size === 0) return [];
     return collectFormLinkFields(normalizedSchema).filter(
-      (f) => f.includeChildData || wantAll || refIds.has(f.childFormId),
+      (f) => wantAll || refIds.has(f.childFormId),
     );
   }, [normalizedSchema, substitutionChildRefs]);
 
@@ -288,17 +291,59 @@ export function useSearchPageState({
     return out;
   }, [childDataTargetFields, searchChildDataByField]);
 
-  // pid に紐づく子フォーム合成オブジェクト配列（Webhook payload 用、includeChildData のみ）。
-  const getSearchChildFormsForPid = useCallback((pid) => {
-    const key = String(pid || "");
-    if (!key) return [];
-    const out = [];
+  // 外部アクション（Webhook）送信時に呼ぶ on-demand リゾルバ。対象行ぶんの子データを
+  // 子フォームごとに 1 回の listRecordsByPids でバッチ取得し、entries と同順の childFormsByRow
+  // （各行 = 子フォーム合成オブジェクト配列）を返す。一覧表示中は取得しないことでコストを払わない。
+  // 表示用に既に eager 取得済み（searchChildDataByField）の子フォームはそれを再利用し、再取得しない。
+  const resolveSearchChildFormsForRows = useCallback(async (entries) => {
+    const rows = Array.isArray(entries) ? entries.filter(Boolean) : [];
+    if (rows.length === 0 || webhookChildFormFields.length === 0) return null;
+    const pids = Array.from(new Set(rows.map((e) => String(e && e.id != null ? e.id : "")).filter(Boolean)));
+    if (pids.length === 0) return null;
+    const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
+    const canFetch = typeof listRecordsByPids === "function" && hasScriptRun();
+    // fieldId → { [pid]: 合成オブジェクト }
+    const byField = {};
     for (const field of webhookChildFormFields) {
-      const fieldData = searchChildDataByField[field.id];
-      const obj = fieldData && fieldData.byPid ? fieldData.byPid[key] : null;
-      if (obj) out.push({ fieldPath: field.path, ...obj });
+      // 表示用に eager 取得済みなら再利用（同じ子フォーム・同じ pid 集合を満たす範囲で）。
+      const cached = searchChildDataByField[field.id];
+      if (cached && cached.byPid && pids.every((pid) => cached.byPid[pid] !== undefined)) {
+        byField[field.id] = cached.byPid;
+        continue;
+      }
+      if (!canFetch) continue;
+      try {
+        const [childForm, records] = await Promise.all([
+          getChildFormCached_(field.childFormId),
+          listRecordsByPids({ formId: field.childFormId, pids }),
+        ]);
+        const childSchema = childForm && childForm.schema ? childForm.schema : [];
+        const grouped = distributeChildRecordsByPid(records);
+        const byPid = {};
+        grouped.forEach((recs, pid) => {
+          byPid[pid] = buildChildDataObject({
+            childFormId: field.childFormId,
+            childFormName: field.childFormName,
+            childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, pid),
+            childSchema,
+            records: recs,
+          });
+        });
+        byField[field.id] = byPid;
+      } catch (_e) {
+        // 取得失敗時はその子フォームを欠落させる（無言）。
+      }
     }
-    return out;
+    return rows.map((entry) => {
+      const key = String(entry && entry.id != null ? entry.id : "");
+      const out = [];
+      for (const field of webhookChildFormFields) {
+        const byPid = byField[field.id];
+        const obj = byPid ? byPid[key] : null;
+        if (obj) out.push({ fieldPath: field.path, ...obj });
+      }
+      return out;
+    });
   }, [webhookChildFormFields, searchChildDataByField]);
 
   // 「子データ / full-query 依存の置換」が出る表示列（読込中・再計算の対象判定に使う）。
@@ -497,7 +542,7 @@ export function useSearchPageState({
   );
 
   // 子データの取得・解決 effect は displayPagedEntries の後（下方）に置く。
-  // state / getter（searchChildDataByField / getChildFormMetaForPid / getSearchChildFormsForPid）は
+  // state / getter（searchChildDataByField / getChildFormMetaForPid / resolveSearchChildFormsForRows）は
   // 上部の「子フォーム参照の置換」ブロックで宣言済み。
 
   const pagedEntries = useMemo(() => {
@@ -925,7 +970,7 @@ export function useSearchPageState({
     forceRefreshAll: handleForceRefreshAll,
     sortedEntries,
     outputTargetRows,
-    getSearchChildFormsForPid,
+    resolveSearchChildFormsForRows,
     pagedEntries,
     filterError,
 
