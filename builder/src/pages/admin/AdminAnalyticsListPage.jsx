@@ -144,6 +144,11 @@ export default function AdminAnalyticsListPage({
     await refresh();
   }, [store, refresh]);
 
+  const removeWithFiles = useCallback(async (ids) => {
+    await store.removeWithFiles(ids);
+    await refresh();
+  }, [store, refresh]);
+
   const registerImported = useCallback(async (item) => {
     await store.registerImported(item);
   }, [store]);
@@ -189,18 +194,21 @@ export default function AdminAnalyticsListPage({
   const {
     confirmArchive, setConfirmArchive,
     confirmDelete, setConfirmDelete,
+    confirmHardDelete, setConfirmHardDelete,
     confirmCopy, setConfirmCopy,
     importDialogOpen, setImportDialogOpen,
     importUrl, setImportUrl,
     importing, exporting, copying,
     handleArchiveSelected,
     handleDeleteSelected,
+    handleHardDeleteSelected,
     handleCopySelected,
     handleExport,
     handleImport,
     handleImportFromDrive,
     confirmArchiveAction,
     confirmDeleteAction,
+    confirmHardDeleteAction,
     confirmCopyAction,
     newFolderDialogState,
     newFolderName,
@@ -238,6 +246,7 @@ export default function AdminAnalyticsListPage({
     unarchive,
     copy,
     remove,
+    removeWithFiles,
     exportItems: store.exportItems,
     importFromDrive: store.importFromDrive,
     registerImported,
@@ -324,7 +333,7 @@ export default function AdminAnalyticsListPage({
             className="nf-btn-outline nf-btn-sidebar nf-text-13"
             onClick={handleImport}
           >
-            {importing ? "インポート中..." : "↓ インポート"}
+            {importing ? "↑ インポート中..." : "↑ インポート"}
           </button>
 
           <div className="nf-spacer-16" />
@@ -367,7 +376,7 @@ export default function AdminAnalyticsListPage({
             onClick={handleExport}
             disabled={exporting || selected.size === 0}
           >
-            {exporting ? "エクスポート中..." : "エクスポート"}
+            {exporting ? "↓ エクスポート中..." : "↓ エクスポート"}
           </button>
           <button
             type="button"
@@ -376,6 +385,14 @@ export default function AdminAnalyticsListPage({
             disabled={selected.size === 0 && selectedFolders.size === 0}
           >
             リンク解除
+          </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-13 admin-danger-btn"
+            onClick={handleHardDeleteSelected}
+            disabled={selected.size === 0}
+          >
+            削除
           </button>
 
           <div className="nf-spacer-16" />
@@ -525,6 +542,31 @@ export default function AdminAnalyticsListPage({
             value: "delete",
             variant: "danger",
             onSelect: confirmDeleteAction,
+          },
+        ]}
+      />
+
+      <ConfirmDialog
+        open={confirmHardDelete.open}
+        title={`${itemLabel} を削除`}
+        message={
+          (confirmHardDelete.multiple
+            ? `選択した ${itemLabel} を削除します。`
+            : `この ${itemLabel} を削除します。`) +
+          "プロジェクト内（標準フォルダ配下）のファイルは Drive のゴミ箱へ移動します。" +
+          "プロジェクト外のファイルはリンク（登録）解除のみで実体は残します。よろしいですか？"
+        }
+        options={[
+          {
+            label: "キャンセル",
+            value: "cancel",
+            onSelect: () => setConfirmHardDelete({ open: false, id: null, targetIds: [], multiple: false }),
+          },
+          {
+            label: "削除",
+            value: "delete",
+            variant: "danger",
+            onSelect: confirmHardDeleteAction,
           },
         ]}
       />

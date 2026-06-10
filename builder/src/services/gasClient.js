@@ -266,6 +266,8 @@ export const copyForm = async (formId) => {
 };
 export const deleteFormFromDrive = createGasEndpoint({ fnName: "nfbDeleteForm", validate: validateFormId, defaultError: "Delete form failed" });
 export const deleteFormsFromDrive = createGasEndpoint({ fnName: "nfbDeleteForms", validate: validateFormIds, defaultError: "Batch delete forms failed" });
+// リンク解除＋プロジェクト内ファイルはゴミ箱へ移動（プロジェクト外は実体を残す）。
+export const deleteFormsWithFiles = createGasEndpoint({ fnName: "nfbDeleteFormsWithFiles", validate: validateFormIds, defaultError: "Batch delete forms (with files) failed" });
 // 単数フォーム操作は GAS 側 (gas/errors.gs Nfb_unwrapSingleResult_, gas/formsPublicApi.gs) が
 // バッチ結果を { ok, form } に畳んでから返すので、ここでは r.form を取り出す（呼び出し側は
 // AppDataProvider.upsertFormsState に渡す単一フォーム前提）。

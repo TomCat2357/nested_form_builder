@@ -98,6 +98,7 @@ var ANALYTICS_HANDLERS_ = {
   "analytics_questions_delete_batch":     { type: "questions",  mode: "delete_batch",   idsKey: "questionIds" },
   "analytics_questions_archive":          { type: "questions",  mode: "archive_one",    idKey: "questionId",     archived: true },
   "analytics_questions_unarchive":        { type: "questions",  mode: "archive_one",    idKey: "questionId",     archived: false },
+  "analytics_questions_delete_with_files_batch": { type: "questions",  mode: "delete_with_files_batch", idsKey: "questionIds" },
   "analytics_questions_archive_batch":    { type: "questions",  mode: "archive_batch",  idsKey: "questionIds",   archived: true },
   "analytics_questions_unarchive_batch":  { type: "questions",  mode: "archive_batch",  idsKey: "questionIds",   archived: false },
   "analytics_questions_copy":             { type: "questions",  mode: "copy",           idKey: "questionId" },
@@ -111,6 +112,7 @@ var ANALYTICS_HANDLERS_ = {
   "analytics_dashboards_delete_batch":    { type: "dashboards", mode: "delete_batch",   idsKey: "dashboardIds" },
   "analytics_dashboards_archive":         { type: "dashboards", mode: "archive_one",    idKey: "dashboardId",    archived: true },
   "analytics_dashboards_unarchive":       { type: "dashboards", mode: "archive_one",    idKey: "dashboardId",    archived: false },
+  "analytics_dashboards_delete_with_files_batch": { type: "dashboards", mode: "delete_with_files_batch", idsKey: "dashboardIds" },
   "analytics_dashboards_archive_batch":   { type: "dashboards", mode: "archive_batch",  idsKey: "dashboardIds",  archived: true },
   "analytics_dashboards_unarchive_batch": { type: "dashboards", mode: "archive_batch",  idsKey: "dashboardIds",  archived: false },
   "analytics_dashboards_copy":            { type: "dashboards", mode: "copy",           idKey: "dashboardId" },
@@ -137,6 +139,7 @@ function Analytics_dispatch_(action, ctx) {
     case "save":          return Analytics_saveTemplate_(def.type, raw[def.payloadKey]);
     case "delete_one":    return Analytics_deleteTemplates_(def.type, [raw[def.idKey]]);
     case "delete_batch":  return Analytics_deleteTemplates_(def.type, raw[def.idsKey] || []);
+    case "delete_with_files_batch": return Analytics_deleteTemplatesWithFiles_(def.type, raw[def.idsKey] || []);
     case "archive_one":   return Analytics_setTemplatesArchivedStateWrap_(def.type, [raw[def.idKey]], def.archived);
     case "archive_batch": return Analytics_setTemplatesArchivedState_(def.type, raw[def.idsKey] || [], def.archived);
     case "copy":          return Analytics_copyTemplate_(def.type, raw[def.idKey]);
@@ -159,6 +162,7 @@ function AnalyticsApi_GetQuestion_(ctx)               { return Analytics_dispatc
 function AnalyticsApi_SaveQuestion_(ctx)              { return Analytics_dispatch_("analytics_questions_save", ctx); }
 function AnalyticsApi_DeleteQuestion_(ctx)            { return Analytics_dispatch_("analytics_questions_delete", ctx); }
 function AnalyticsApi_DeleteQuestions_(ctx)           { return Analytics_dispatch_("analytics_questions_delete_batch", ctx); }
+function AnalyticsApi_DeleteQuestionsWithFiles_(ctx)  { return Analytics_dispatch_("analytics_questions_delete_with_files_batch", ctx); }
 function AnalyticsApi_ArchiveQuestion_(ctx)           { return Analytics_dispatch_("analytics_questions_archive", ctx); }
 function AnalyticsApi_UnarchiveQuestion_(ctx)         { return Analytics_dispatch_("analytics_questions_unarchive", ctx); }
 function AnalyticsApi_ArchiveQuestions_(ctx)          { return Analytics_dispatch_("analytics_questions_archive_batch", ctx); }
@@ -172,6 +176,7 @@ function AnalyticsApi_GetDashboard_(ctx)              { return Analytics_dispatc
 function AnalyticsApi_SaveDashboard_(ctx)             { return Analytics_dispatch_("analytics_dashboards_save", ctx); }
 function AnalyticsApi_DeleteDashboard_(ctx)           { return Analytics_dispatch_("analytics_dashboards_delete", ctx); }
 function AnalyticsApi_DeleteDashboards_(ctx)          { return Analytics_dispatch_("analytics_dashboards_delete_batch", ctx); }
+function AnalyticsApi_DeleteDashboardsWithFiles_(ctx) { return Analytics_dispatch_("analytics_dashboards_delete_with_files_batch", ctx); }
 function AnalyticsApi_ArchiveDashboard_(ctx)          { return Analytics_dispatch_("analytics_dashboards_archive", ctx); }
 function AnalyticsApi_UnarchiveDashboard_(ctx)        { return Analytics_dispatch_("analytics_dashboards_unarchive", ctx); }
 function AnalyticsApi_ArchiveDashboards_(ctx)         { return Analytics_dispatch_("analytics_dashboards_archive_batch", ctx); }
@@ -213,6 +218,7 @@ function nfbGetAnalyticsQuestion(questionId)             { return Analytics_runS
 function nfbSaveAnalyticsQuestion(payload)               { return Analytics_runScriptAction_("analytics_questions_save",             payload); }
 function nfbDeleteAnalyticsQuestion(questionId)          { return Analytics_runScriptAction_("analytics_questions_delete",           { questionId: questionId }); }
 function nfbDeleteAnalyticsQuestions(questionIds)        { return Analytics_runScriptAction_("analytics_questions_delete_batch",     { questionIds: questionIds }); }
+function nfbDeleteAnalyticsQuestionsWithFiles(questionIds) { return Analytics_runScriptAction_("analytics_questions_delete_with_files_batch", { questionIds: questionIds }); }
 function nfbArchiveAnalyticsQuestion(questionId)         { return Analytics_runScriptAction_("analytics_questions_archive",          { questionId: questionId }); }
 function nfbUnarchiveAnalyticsQuestion(questionId)       { return Analytics_runScriptAction_("analytics_questions_unarchive",        { questionId: questionId }); }
 function nfbArchiveAnalyticsQuestions(questionIds)       { return Analytics_runScriptAction_("analytics_questions_archive_batch",    { questionIds: questionIds }); }
@@ -226,6 +232,7 @@ function nfbGetAnalyticsDashboard(dashboardId)           { return Analytics_runS
 function nfbSaveAnalyticsDashboard(payload)              { return Analytics_runScriptAction_("analytics_dashboards_save",            payload); }
 function nfbDeleteAnalyticsDashboard(dashboardId)        { return Analytics_runScriptAction_("analytics_dashboards_delete",          { dashboardId: dashboardId }); }
 function nfbDeleteAnalyticsDashboards(dashboardIds)      { return Analytics_runScriptAction_("analytics_dashboards_delete_batch",    { dashboardIds: dashboardIds }); }
+function nfbDeleteAnalyticsDashboardsWithFiles(dashboardIds) { return Analytics_runScriptAction_("analytics_dashboards_delete_with_files_batch", { dashboardIds: dashboardIds }); }
 function nfbArchiveAnalyticsDashboard(dashboardId)       { return Analytics_runScriptAction_("analytics_dashboards_archive",         { dashboardId: dashboardId }); }
 function nfbUnarchiveAnalyticsDashboard(dashboardId)     { return Analytics_runScriptAction_("analytics_dashboards_unarchive",       { dashboardId: dashboardId }); }
 function nfbArchiveAnalyticsDashboards(dashboardIds)     { return Analytics_runScriptAction_("analytics_dashboards_archive_batch",   { dashboardIds: dashboardIds }); }

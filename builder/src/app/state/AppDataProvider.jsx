@@ -76,7 +76,16 @@ export function AppDataProvider({ children }) {
       const apiCallEnd = Date.now();
       const apiCallDuration = apiCallEnd - apiCallStart;
 
-      const allForms = result.forms || [];
+      const serverForms = result.forms || [];
+      // まだ Drive へ上がっていないローカル pending フォームはサーバ応答に無いため保持マージする。
+      // さもないと保存直後のフォームがサーバ再取得で消える（更新を押すまで反映されない根本原因）。
+      // アップロード完了時の reconcileFormId が pendingUpload:false にするので次回取得で収束する。
+      const pendingById = new Map(
+        formsRef.current.filter((f) => f && f.pendingUpload).map((f) => [f.id, f])
+      );
+      const serverIds = new Set(serverForms.map((f) => f.id));
+      const allForms = serverForms.map((f) => (pendingById.has(f.id) ? pendingById.get(f.id) : f));
+      for (const [id, f] of pendingById) if (!serverIds.has(id)) allForms.unshift(f);
       const failures = result.loadFailures || [];
       const folders = Array.isArray(result.folders) ? result.folders : [];
 
@@ -417,6 +426,16 @@ export function AppDataProvider({ children }) {
 
   const deleteForm = useCallback((formId) => deleteForms([formId]), [deleteForms]);
 
+  // 「削除」: 楽観的にローカルから除去し、裏でプロジェクト内ファイルはゴミ箱へ移動する
+  // （プロジェクト外はリンク解除のみ。判定は GAS 側がファイルごとに行う）。
+  const deleteFormsWithFiles = useCallback(async (formIds) => {
+    await removeFormsState(formIds);
+
+    void dataStore.deleteFormsWithFiles(formIds).catch((err) => {
+      console.error("[AppDataProvider] Background deleteFormsWithFiles failed:", err);
+    });
+  }, [removeFormsState]);
+
   const importForms = useCallback(async (jsonList) => {
     const created = await dataStore.importForms(jsonList);
     if (Array.isArray(created)) {
@@ -553,13 +572,14 @@ export function AppDataProvider({ children }) {
       clearFormsReadOnly,
       deleteForms,
       deleteForm,
+      deleteFormsWithFiles,
       importForms,
       exportForms,
       copyForm,
       getFormById,
       registerImportedForm,
     }),
-    [forms, loadFailures, loadingForms, refreshingForms, error, lastSyncedAt, cacheDisabled, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteForm, importForms, exportForms, copyForm, getFormById, registerImportedForm],
+    [forms, loadFailures, loadingForms, refreshingForms, error, lastSyncedAt, cacheDisabled, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteForm, deleteFormsWithFiles, importForms, exportForms, copyForm, getFormById, registerImportedForm],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;

@@ -44,6 +44,8 @@ function makeEntityClient(entity) {
     [`save${E}`]: (data) => call("Save", { [payloadKey]: data }, "保存に失敗しました"),
     [`delete${E}`]: (id) => call("Delete", id, "削除に失敗しました"),
     [`delete${E}s`]: (ids) => callPlural("Delete", ids, "削除に失敗しました"),
+    // リンク解除＋プロジェクト内ファイルはゴミ箱へ移動（プロジェクト外は実体を残す）。
+    [`delete${E}sWithFiles`]: (ids) => fetchAnalyticsApi_(`nfbDeleteAnalytics${E}sWithFiles`, ids, `${E} 削除に失敗しました`),
     [`archive${E}`]: (id) => call("Archive", id, "アーカイブに失敗しました"),
     [`unarchive${E}`]: (id) => call("Unarchive", id, "アーカイブ解除に失敗しました"),
     [`archive${E}s`]: (ids) => callPlural("Archive", ids, "アーカイブに失敗しました"),

@@ -21,6 +21,7 @@ import {
   saveForm as saveFormToGas,
   deleteFormFromDrive as deleteFormFromGas,
   deleteFormsFromDrive as deleteFormsFromGas,
+  deleteFormsWithFiles as deleteFormsWithFilesInGas,
   setFormReadOnly as setFormReadOnlyInGas,
   clearFormReadOnly as clearFormReadOnlyInGas,
   setFormsReadOnly as setFormsReadOnlyInGas,
@@ -322,6 +323,18 @@ export const dataStore = {
   },
   async deleteForm(formId) {
     await this.deleteForms([formId]);
+  },
+  // deleteForms と同じだが、プロジェクト内（標準フォルダ配下）のファイルは実体も Drive ゴミ箱へ
+  // 移動する。プロジェクト外はリンク解除のみで実体を残す（判定は GAS 側がファイルごとに行う）。
+  async deleteFormsWithFiles(formIds) {
+    const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
+    if (!targetIds.length) return;
+
+    await Promise.all(targetIds.map((id) => deleteJobsForLocalId(id)));
+    kickUploadWorker();
+
+    const remoteIds = targetIds.filter((id) => !isLocalId(id));
+    if (remoteIds.length) await deleteFormsWithFilesInGas(remoteIds);
   },
   async upsertEntry(formId, payload) {
     const safePayload = payload && typeof payload === "object" ? payload : {};

@@ -504,9 +504,21 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
 
   // サーバから全件取得してキャッシュへ保存し、フィルタ済み配列を返す。
   // lastSyncedAt はこの経路でのみ更新する（stampSyncTime: true）。
+  // まだ Drive へ上がっていないローカル pending（pendingUpload / 一時 ID = local_…）は
+  // サーバ応答に含まれないため、ここで保持マージする。さもないと保存直後のアイテムが
+  // サーバ再取得で消える（更新ボタンを押すまで反映されない、の根本原因）。
+  // 一時 ID の付け替え（reconcile）後は pendingUpload:false になり次回取得で収束する。
   async function fetchAndStore_(includeArchived) {
     const result = await gas[`list${E}s`]({ includeArchived: true });
-    const all = sanitizeList(result[many] || []);
+    const serverAll = sanitizeList(result[many] || []);
+    const cached = await cache.getAll();
+    const pendingById = new Map(
+      cached.filter((x) => x && (x.pendingUpload || isLocalId(x.id))).map((x) => [x.id, x])
+    );
+    const serverIds = new Set(serverAll.map((x) => x.id));
+    // 既存の編集はローカル pending を上書き勝ちにし、新規（サーバ未知）は先頭へ追加する。
+    const all = serverAll.map((s) => (pendingById.has(s.id) ? pendingById.get(s.id) : s));
+    for (const [id, item] of pendingById) if (!serverIds.has(id)) all.unshift(item);
     await cache.saveAll(all, { stampSyncTime: true });
     return filterArchived_(all, includeArchived);
   }
@@ -582,6 +594,18 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     await Promise.all(ids.map((id) => deleteJobsForLocalId(id)));
     const remoteIds = ids.filter((id) => !isLocalId(id));
     if (remoteIds.length) await gas[`delete${E}s`](remoteIds);
+    for (const id of ids) await cache.remove(id);
+    kickUploadWorker();
+    emitAnalyticsCacheChanged(one);
+  }
+
+  // removeBatch と同じだが、プロジェクト内（標準フォルダ配下）のファイルは実体も Drive ゴミ箱へ
+  // 移動する。プロジェクト外はリンク解除のみで実体を残す（判定は GAS 側がファイルごとに行う）。
+  async function removeBatchWithFiles(ids) {
+    if (!ids?.length) return;
+    await Promise.all(ids.map((id) => deleteJobsForLocalId(id)));
+    const remoteIds = ids.filter((id) => !isLocalId(id));
+    if (remoteIds.length) await gas[`delete${E}sWithFiles`](remoteIds);
     for (const id of ids) await cache.remove(id);
     kickUploadWorker();
     emitAnalyticsCacheChanged(one);
@@ -741,6 +765,7 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     save,
     remove,
     removeBatch,
+    removeBatchWithFiles,
     archiveOne: (id) => setArchivedOne("archive", id),
     unarchiveOne: (id) => setArchivedOne("unarchive", id),
     archiveBatch: (ids) => setArchivedBatch("archive", ids),
@@ -778,6 +803,7 @@ export const listQuestionsSWR = questionStore.listSWR;
 export const getQuestionById = questionStore.getById;
 export const saveQuestion = questionStore.save;
 export const deleteQuestions = questionStore.removeBatch;
+export const deleteQuestionsWithFiles = questionStore.removeBatchWithFiles;
 export const archiveQuestions = questionStore.archiveBatch;
 export const unarchiveQuestions = questionStore.unarchiveBatch;
 export const copyQuestion = questionStore.copy;
@@ -794,6 +820,7 @@ export const listDashboards = dashboardStore.list;
 export const listDashboardsSWR = dashboardStore.listSWR;
 export const saveDashboard = dashboardStore.save;
 export const deleteDashboards = dashboardStore.removeBatch;
+export const deleteDashboardsWithFiles = dashboardStore.removeBatchWithFiles;
 export const archiveDashboards = dashboardStore.archiveBatch;
 export const unarchiveDashboards = dashboardStore.unarchiveBatch;
 export const copyDashboard = dashboardStore.copy;

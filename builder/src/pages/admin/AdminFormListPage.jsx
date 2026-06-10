@@ -31,7 +31,7 @@ const formatDisplayFieldsSummary = (form) => {
 };
 
 export default function AdminFormListPage() {
-  const { forms, loadFailures, loadingForms, lastSyncedAt, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, archiveForms, unarchiveForms, setFormsReadOnly, clearFormsReadOnly, deleteForms, refreshForms, exportForms, copyForm, registerImportedForm, updateForm } = useAppData();
+  const { forms, loadFailures, loadingForms, lastSyncedAt, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, archiveForms, unarchiveForms, setFormsReadOnly, clearFormsReadOnly, deleteForms, deleteFormsWithFiles, refreshForms, exportForms, copyForm, registerImportedForm, updateForm } = useAppData();
   useBuilderSettings();
   const navigate = useNavigate();
   const { showAlert } = useAlert();
@@ -107,6 +107,8 @@ export default function AdminFormListPage() {
     setConfirmReadOnly,
     confirmDelete,
     setConfirmDelete,
+    confirmHardDelete,
+    setConfirmHardDelete,
     importDialogOpen,
     setImportDialogOpen,
     importUrl,
@@ -119,12 +121,14 @@ export default function AdminFormListPage() {
     handleArchiveSelected,
     handleReadOnlySelected,
     handleDeleteSelected,
+    handleHardDeleteSelected,
     handleExport,
     handleImport,
     handleImportFromDrive,
     confirmArchiveAction,
     confirmReadOnlyAction,
     confirmDeleteAction,
+    confirmHardDeleteAction,
     handleCopySelected,
     confirmCopyAction,
     newFolderDialogState,
@@ -162,6 +166,7 @@ export default function AdminFormListPage() {
     setFormsReadOnly,
     clearFormsReadOnly,
     deleteForms,
+    deleteFormsWithFiles,
     exportForms,
     copyForm,
     registerImportedForm,
@@ -223,7 +228,7 @@ export default function AdminFormListPage() {
             + 新規フォルダ
           </button>
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleImport}>
-            {importing ? "インポート中..." : "↓ インポート"}
+            {importing ? "↑ インポート中..." : "↑ インポート"}
           </button>
 
           <div className="nf-spacer-16" />
@@ -269,7 +274,7 @@ export default function AdminFormListPage() {
             参照のみ
           </button>
           <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleExport} disabled={exporting || selected.size === 0}>
-            {exporting ? "エクスポート中..." : "エクスポート"}
+            {exporting ? "↓ エクスポート中..." : "↓ エクスポート"}
           </button>
           <button
             type="button"
@@ -278,6 +283,14 @@ export default function AdminFormListPage() {
             disabled={selected.size === 0 && selectedFolders.size === 0}
           >
             リンク解除
+          </button>
+          <button
+            type="button"
+            className="nf-btn-outline nf-btn-sidebar nf-text-13 admin-danger-btn"
+            onClick={handleHardDeleteSelected}
+            disabled={selected.size === 0}
+          >
+            削除
           </button>
 
           <div className="nf-spacer-16" />
@@ -503,6 +516,31 @@ export default function AdminFormListPage() {
             value: "delete",
             variant: "danger",
             onSelect: confirmDeleteAction,
+          },
+        ]}
+      />
+
+      <ConfirmDialog
+        open={confirmHardDelete.open}
+        title={confirmHardDelete.multiple ? "フォームを削除" : "フォームを削除"}
+        message={
+          (confirmHardDelete.multiple
+            ? "選択したフォームを削除します。"
+            : "このフォームを削除します。") +
+          "プロジェクト内（標準フォルダ配下）のファイルは Drive のゴミ箱へ移動します。" +
+          "プロジェクト外のファイルはリンク（登録）解除のみで実体は残します。よろしいですか？"
+        }
+        options={[
+          {
+            label: "キャンセル",
+            value: "cancel",
+            onSelect: () => setConfirmHardDelete({ open: false, formId: null, targetIds: [], multiple: false }),
+          },
+          {
+            label: "削除",
+            value: "delete",
+            variant: "danger",
+            onSelect: confirmHardDeleteAction,
           },
         ]}
       />

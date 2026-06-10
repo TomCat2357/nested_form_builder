@@ -99,6 +99,9 @@ var FORMS_HANDLERS_ = {
   "forms_delete_batch": {
     run: function(raw) { return Forms_deleteForms_((raw && raw.formIds) || []); }
   },
+  "forms_delete_with_files_batch": {
+    run: function(raw) { return Forms_deleteFormsWithFiles_((raw && raw.formIds) || []); }
+  },
   "forms_archive_one": {
     run: function(raw) { return Nfb_unwrapSingleResult_(Forms_setFormsArchivedState_([raw && raw.formId], true), "forms", "form"); }
   },
@@ -209,6 +212,7 @@ function nfbGetForm(formId)                { return Forms_runScriptAction_("form
 function nfbSaveForm(payload)              { return Forms_runScriptAction_("forms_save",                 payload || {}); }
 function nfbDeleteForm(formId)             { return Forms_runScriptAction_("forms_delete_one",           { formId: formId }); }
 function nfbDeleteForms(formIds)           { return Forms_runScriptAction_("forms_delete_batch",         { formIds: formIds }); }
+function nfbDeleteFormsWithFiles(formIds)  { return Forms_runScriptAction_("forms_delete_with_files_batch", { formIds: formIds }); }
 function nfbArchiveForm(formId)            { return Forms_runScriptAction_("forms_archive_one",          { formId: formId }); }
 function nfbUnarchiveForm(formId)          { return Forms_runScriptAction_("forms_unarchive_one",        { formId: formId }); }
 function nfbArchiveForms(formIds)          { return Forms_runScriptAction_("forms_archive_batch",        { formIds: formIds }); }

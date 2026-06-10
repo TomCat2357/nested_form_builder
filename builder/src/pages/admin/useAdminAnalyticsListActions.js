@@ -26,6 +26,7 @@ export function useAdminAnalyticsListActions({
   unarchive,
   copy,
   remove,
+  removeWithFiles,
   exportItems,
   importFromDrive,
   registerImported,
@@ -43,6 +44,7 @@ export function useAdminAnalyticsListActions({
 }) {
   const archiveDialog = useConfirmDialog({ id: null, targetIds: [], multiple: false, allArchived: false });
   const deleteDialog = useConfirmDialog({ id: null, targetIds: [], multiple: false });
+  const hardDeleteDialog = useConfirmDialog({ id: null, targetIds: [], multiple: false });
   const copyDialog = useConfirmDialog({ id: null });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importUrl, setImportUrl] = useState("");
@@ -105,6 +107,20 @@ export function useAdminAnalyticsListActions({
       folderPaths,
       multiple: itemIds.length > 1,
       folderItemCount,
+    });
+  };
+
+  // 「削除」: 選択アイテムのみ対象（フォルダは対象外）。プロジェクト内ファイルは実体もゴミ箱へ。
+  const handleHardDeleteSelected = () => {
+    const itemIds = Array.from(selected || []);
+    if (!itemIds.length) {
+      showAlert(`削除する ${itemLabel} を選択してください。`);
+      return;
+    }
+    hardDeleteDialog.open({
+      id: itemIds[0] || null,
+      targetIds: itemIds,
+      multiple: itemIds.length > 1,
     });
   };
 
@@ -265,6 +281,18 @@ export function useAdminAnalyticsListActions({
     }
   };
 
+  const confirmHardDeleteAction = async () => {
+    const targetIds = resolveDialogTargetIds(hardDeleteDialog.state, "id");
+    if (!targetIds.length) return;
+    try {
+      await removeWithFiles(targetIds);
+      clearSelectionByIds(targetIds);
+      hardDeleteDialog.reset();
+    } catch (err) {
+      showAlert(err?.message || `${itemLabel} の削除中にエラーが発生しました`);
+    }
+  };
+
   const confirmCopyAction = async () => {
     const id = copyDialog.state.id;
     copyDialog.reset();
@@ -337,6 +365,8 @@ export function useAdminAnalyticsListActions({
     setConfirmArchive: archiveDialog.setState,
     confirmDelete: deleteDialog.state,
     setConfirmDelete: deleteDialog.setState,
+    confirmHardDelete: hardDeleteDialog.state,
+    setConfirmHardDelete: hardDeleteDialog.setState,
     confirmCopy: copyDialog.state,
     setConfirmCopy: copyDialog.setState,
     importDialogOpen,
@@ -348,12 +378,14 @@ export function useAdminAnalyticsListActions({
     copying,
     handleArchiveSelected,
     handleDeleteSelected,
+    handleHardDeleteSelected,
     handleCopySelected,
     handleExport,
     handleImport,
     handleImportFromDrive,
     confirmArchiveAction,
     confirmDeleteAction,
+    confirmHardDeleteAction,
     confirmCopyAction,
     resultListKey,
     resultSingleKey,

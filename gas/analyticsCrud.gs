@@ -370,6 +370,51 @@ function Analytics_deleteTemplates_(type, templateIds) {
 }
 
 /**
+ * 複数テンプレート（クエスチョン / ダッシュボード）を「削除」する。
+ * リンク解除（マッピング除去）に加え、プロジェクト内（標準フォルダ 02_questions /
+ * 03_dashboards 配下、ネスト含む）にある実体ファイルだけを Drive のゴミ箱へ移動する。
+ * プロジェクト外のファイルはリンク解除のみで実体は残す。
+ * 戻り: { ok, deleted, trashed, errors }
+ */
+function Analytics_deleteTemplatesWithFiles_(type, templateIds) {
+  return nfbSafeCall_(function() {
+    var ids = Nfb_normalizeIdList_(templateIds);
+    if (!ids.length) {
+      throw new Error("IDが指定されていません");
+    }
+    var mapping = Analytics_getMapping_(type);
+    var deleted = 0;
+    var trashed = 0;
+    var errors = [];
+    for (var i = 0; i < ids.length; i++) {
+      var id = ids[i];
+      if (!id) continue;
+
+      // 実体トラッシュ判定用の fileId（id ≠ fileId に備えてマッピングからも解決）。
+      var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]) || id;
+
+      // リンク（登録）を解除する。
+      if (mapping.hasOwnProperty(id)) {
+        delete mapping[id];
+        deleted += 1;
+      }
+
+      // プロジェクト内のファイルだけ実体をゴミ箱へ移動する（key は type と一致）。
+      if (fileId && StdFolders_isFileInStdSubfolder_(fileId, type)) {
+        try {
+          DriveApp.getFileById(fileId).setTrashed(true);
+          trashed += 1;
+        } catch (err) {
+          errors.push({ id: id, fileId: fileId, reason: nfbErrorToString_(err) });
+        }
+      }
+    }
+    Analytics_saveMapping_(type, mapping);
+    return { ok: true, deleted: deleted, trashed: trashed, errors: errors };
+  });
+}
+
+/**
  * 複数テンプレートのアーカイブ状態を一括変更
  */
 function Analytics_setTemplatesArchivedState_(type, templateIds, archived) {

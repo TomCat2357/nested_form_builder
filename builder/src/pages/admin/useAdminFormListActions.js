@@ -17,6 +17,7 @@ export function useAdminFormListActions({
   setFormsReadOnly,
   clearFormsReadOnly,
   deleteForms,
+  deleteFormsWithFiles,
   exportForms,
   copyForm,
   registerImportedForm,
@@ -35,6 +36,7 @@ export function useAdminFormListActions({
   const archiveDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false });
   const readOnlyDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false, allReadOnly: false });
   const deleteDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false });
+  const hardDeleteDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false });
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
@@ -117,6 +119,20 @@ export function useAdminFormListActions({
       folderPaths,
       multiple: formIds.length > 1,
       folderFormCount,
+    });
+  };
+
+  // 「削除」: 選択フォームのみ対象（フォルダは対象外）。プロジェクト内ファイルは実体もゴミ箱へ。
+  const handleHardDeleteSelected = () => {
+    const formIds = Array.from(selected || []);
+    if (!formIds.length) {
+      showAlert("削除するフォームを選択してください。");
+      return;
+    }
+    hardDeleteDialog.open({
+      formId: formIds[0] || null,
+      targetIds: formIds,
+      multiple: formIds.length > 1,
     });
   };
 
@@ -312,6 +328,20 @@ export function useAdminFormListActions({
     }
   };
 
+  const confirmHardDeleteAction = async () => {
+    const targetIds = resolveDialogTargetIds(hardDeleteDialog.state, "formId");
+    if (!targetIds.length) return;
+
+    try {
+      await deleteFormsWithFiles(targetIds);
+      clearSelectionByIds(targetIds);
+      hardDeleteDialog.reset();
+    } catch (error) {
+      console.error("[AdminFormList] Hard delete action failed:", error);
+      showAlert(error?.message || "削除中にエラーが発生しました");
+    }
+  };
+
   // ---- 新規フォルダ ----
   const { handleCreateFolder, confirmCreateFolder } = createFolderCreateActions({
     showAlert,
@@ -410,6 +440,8 @@ export function useAdminFormListActions({
     setConfirmReadOnly: readOnlyDialog.setState,
     confirmDelete: deleteDialog.state,
     setConfirmDelete: deleteDialog.setState,
+    confirmHardDelete: hardDeleteDialog.state,
+    setConfirmHardDelete: hardDeleteDialog.setState,
     importDialogOpen,
     setImportDialogOpen,
     importUrl,
@@ -422,12 +454,14 @@ export function useAdminFormListActions({
     handleArchiveSelected,
     handleReadOnlySelected,
     handleDeleteSelected,
+    handleHardDeleteSelected,
     handleExport,
     handleImport,
     handleImportFromDrive,
     confirmArchiveAction,
     confirmReadOnlyAction,
     confirmDeleteAction,
+    confirmHardDeleteAction,
     handleCopySelected,
     confirmCopyAction,
     // フォルダ操作

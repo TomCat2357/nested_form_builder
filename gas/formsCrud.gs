@@ -518,6 +518,58 @@ function Forms_deleteForms_(formIds) {
 
 
 /**
+ * 複数フォームを「削除」する。リンク解除（マッピング除去）に加え、
+ * プロジェクト内（標準フォルダ 01_forms 配下、ネスト含む）にある実体ファイルだけを
+ * Drive のゴミ箱へ移動する。プロジェクト外のファイルはリンク解除のみで実体は残す。
+ * @param {Array<string>} formIds
+ * @return {Object} { ok, deleted, trashed, errors }
+ */
+function Forms_deleteFormsWithFiles_(formIds) {
+  if (!formIds || !formIds.length) {
+    throw new Error("Form IDs are required");
+  }
+
+  var ids = Nfb_normalizeIdList_(formIds);
+  var mapping = Forms_getMapping_();
+  var deleted = 0;
+  var trashed = 0;
+  var errors = [];
+
+  ids.forEach(function(formId) {
+    if (!formId) return;
+
+    // 実体トラッシュ判定用の fileId（id ≠ fileId に備えてマッピングからも解決）。
+    var fileId = Nfb_resolveFileIdFromEntry_(mapping[formId]) || formId;
+
+    // リンク（登録）を解除する。
+    if (mapping.hasOwnProperty(formId)) {
+      delete mapping[formId];
+      deleted += 1;
+    }
+
+    // プロジェクト内のファイルだけ実体をゴミ箱へ移動する。
+    if (fileId && StdFolders_isFileInStdSubfolder_(fileId, "forms")) {
+      try {
+        DriveApp.getFileById(fileId).setTrashed(true);
+        trashed += 1;
+      } catch (err) {
+        errors.push({ id: formId, fileId: fileId, reason: nfbErrorToString_(err) });
+      }
+    }
+  });
+
+  Forms_saveMapping_(mapping);
+
+  return {
+    ok: true,
+    deleted: deleted,
+    trashed: trashed,
+    errors: errors
+  };
+}
+
+
+/**
  * 複数フォームの真偽状態フラグを一括変更する内部ヘルパ。
  *   field       : 設定するフィールド名（"archived" or "readOnly"）
  *   value       : 設定値
