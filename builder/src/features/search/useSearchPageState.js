@@ -265,10 +265,22 @@ export function useSearchPageState({
     );
   }, [normalizedSchema, substitutionChildRefs]);
 
+  // 「別フォームを開く（formLink）」を表示列に設定した項目。一覧の各行で、このレコードに
+  // 紐づく子フォームの件数バッジを出すために pid ごとの件数を取得する（表示にした時だけ）。
+  const displayedFormLinkFields = useMemo(
+    () => collectFormLinkFields(normalizedSchema).filter((f) => f.isDisplayed),
+    [normalizedSchema],
+  );
+
   // 取得結果: { [fieldId]: { path, byPid: { [pid]: 合成オブジェクト } } }
   const [searchChildDataByField, setSearchChildDataByField] = useState({});
   const [childDataReady, setChildDataReady] = useState(false);
   const [childFetchEpoch, setChildFetchEpoch] = useState(0);
+  // 表示列にした formLink の件数: { [path]: { [pid]: number } }。
+  // 列（buildSearchColumns）は素の form.schema 由来で field id が空になりうる（GAS 保存で
+  // strip）ため、列とのキーは論理パス（ラベル由来で両者一致）で突き合わせる。
+  const [formLinkCountsByPath, setFormLinkCountsByPath] = useState({});
+  const [formLinkCountEpoch, setFormLinkCountEpoch] = useState(0);
   // full-query 用
   const [searchChildForms, setSearchChildForms] = useState([]);
   const [fullQueryReady, setFullQueryReady] = useState(() => !substitutionChildRefs.hasFullQuery);
@@ -633,6 +645,41 @@ export function useSearchPageState({
     return unsubscribe;
   }, [childTargetSignature]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // 表示列にした formLink の件数を pid ごとに取得する。子フォームごとに 1 回の
+  // listRecordsByPids でまとめて取得し、pid 分配して件数だけ集計する（レコード詳細画面の
+  // 件数バッジと同じく listRecordsByPids の返却件数 = ソフトデリート除外済みに揃う）。
+  const displayedFormLinkSignature = displayedFormLinkFields
+    .map((f) => `${f.path}:${f.childFormId}`)
+    .join("|");
+  useCancellable(async (isCancelled) => {
+    setFormLinkCountsByPath({});
+    if (displayedFormLinkFields.length === 0) return;
+    if (typeof listRecordsByPids !== "function" || !hasScriptRun()) return;
+    if (childFetchPids.length === 0) return;
+    for (const field of displayedFormLinkFields) {
+      try {
+        const records = await listRecordsByPids({ formId: field.childFormId, pids: childFetchPids });
+        if (isCancelled()) return;
+        const grouped = distributeChildRecordsByPid(records);
+        const byPid = {};
+        grouped.forEach((recs, pid) => { byPid[pid] = recs.length; });
+        setFormLinkCountsByPath((prev) => ({ ...prev, [field.path]: byPid }));
+      } catch (_e) {
+        // 取得失敗時はその項目の件数を出さない（無言）。
+      }
+    }
+  }, [displayedFormLinkSignature, childFetchPidSignature, formLinkCountEpoch]);
+
+  // 表示列 formLink の子フォーム変化（オーバーレイ編集・複製）を購読し、件数を再取得する。
+  useEffect(() => {
+    const targetIds = new Set(displayedFormLinkFields.map((f) => f.childFormId));
+    if (targetIds.size === 0) return undefined;
+    const unsubscribe = subscribeChildFormChange((changedChildFormId) => {
+      if (targetIds.has(changedChildFormId)) setFormLinkCountEpoch((n) => n + 1);
+    });
+    return unsubscribe;
+  }, [displayedFormLinkSignature]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // full-query 置換のための子フォーム定義ロード + 子レコード warm（runFullQuery が getRecordsFromCache から読む）。
   useCancellable(async (isCancelled) => {
     if (!hasFullQuerySubstitution || !effectiveFormId || !hasScriptRun()) {
@@ -958,6 +1005,7 @@ export function useSearchPageState({
     displayColumns,
     displayHeaderRows,
     displayPagedEntries,
+    formLinkChildCounts: formLinkCountsByPath,
     loading,
     backgroundLoading,
     waitingForLock,

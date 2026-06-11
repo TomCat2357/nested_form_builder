@@ -29,7 +29,7 @@ import { buildChildFormUrl } from "../../utils/formShareUrl.js";
  * 呼び出し側は `.filter((f) => f.includeChildData)` する。正規化は行わない（呼び出し側責務）。
  *
  * @param {Array} schema
- * @returns {Array<{id:string, childFormId:string, includeChildData:boolean, childFormName:string, path:string}>}
+ * @returns {Array<{id:string, childFormId:string, includeChildData:boolean, isDisplayed:boolean, childFormName:string, path:string}>}
  */
 export const collectFormLinkFields = (schema) => {
   const out = [];
@@ -42,6 +42,7 @@ export const collectFormLinkFields = (schema) => {
       id,
       childFormId,
       includeChildData: field.includeChildData === true,
+      isDisplayed: field.isDisplayed === true,
       childFormName: typeof field.childFormPath === "string" ? field.childFormPath : "",
       path: joinFieldPath(context.pathSegments || []),
     });

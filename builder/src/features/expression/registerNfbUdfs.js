@@ -32,6 +32,7 @@
  *     DATETIME2ERATIME の逆）。
  *   - YEAR/MONTH/DAY/HOUR/MINUTE/SECOND: 数値。SECOND のみ小数あり得る（msunixtime の
  *     ミリ秒成分を反映）。
+ *   - NENDO: 日本の年度（西暦・数値）。4 月始まりなので 1〜3 月は前年（YEAR-1）。
  *   日時値の canonical 化・パーツ抽出は utils/dateTime.js（formatCanonical /
  *   toMsUnixTime / extractJstPartsFull / parseTimeStringToMsSinceMidnight）を共有する。
  *   GAS 側の双子は gas/expressionFunctions.gs（nfbDt_* / EXPR_FUNCTIONS_）。
@@ -248,6 +249,18 @@ export function ensureNfbUdfsRegistered(alasql) {
     const p = valueToFullParts(value);
     if (!p || p.second == null) return null;
     return p.ms ? p.second + p.ms / 1000 : p.second;
+  };
+
+  // ---------------------------------------------------------------------------
+  // NENDO — 日本の年度（西暦）を数値で返す。年度は 4 月始まり 3 月終わり。
+  //   1〜3 月は前年が年度（例: NENDO('2025-12-01')=2025 / NENDO('2025-03-01')=2024）。
+  //   canonical 文字列 / msunixtime / ゆる日時文字列を受ける。暦日成分（年・月）を
+  //   持たない TIME-only 文字列や空 / 不正は NULL。
+  // ---------------------------------------------------------------------------
+  alasql.fn.NENDO = function (value) {
+    const p = valueToFullParts(value);
+    if (!p || p.year == null || p.month == null) return null;
+    return p.month >= 4 ? p.year : p.year - 1;
   };
 
   // ---------------------------------------------------------------------------

@@ -171,8 +171,8 @@ export const createDisplayColumn = (path, sourceType = "", options = {}) => {
   return {
     key,
     segments: limitedSegments.length > 0 ? limitedSegments : ["回答"],
-    sortable: true,
-    searchable: true,
+    sortable: options.sortable !== false,
+    searchable: options.searchable !== false,
     path,
     sourceType,
     optionOrder,
@@ -210,6 +210,11 @@ export const createDisplayColumn = (path, sourceType = "", options = {}) => {
           search: normalizeSearchText(label),
           sort: label,
         };
+      }
+      if (actionKind === "formLink") {
+        // 件数は SearchPage 側で pid ごとに取得し、SearchTable のセル描画時に注入する
+        // （行データには値が無い）。ここでは空セルを返す。
+        return { display: "", search: "", sort: "" };
       }
       return collectFieldValue(entry, path, column);
     },
@@ -359,6 +364,19 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
         fieldId,
         actionKind: "printTemplate",
         action,
+      }));
+      return;
+    }
+    if (type === "formLink") {
+      // 「別フォームを開く」を表示列にすると、各行でこのレコードに紐づく子フォームの
+      // 件数バッジを出す（値は SearchPage 側で pid ごとに取得 → セル描画時に注入）。
+      // セル自体に検索可能な値は持たないため sortable / searchable を落とす。
+      parentColumns.push(createDisplayColumn(path, type, {
+        optionOrder,
+        fieldId,
+        actionKind: "formLink",
+        sortable: false,
+        searchable: false,
       }));
       return;
     }
