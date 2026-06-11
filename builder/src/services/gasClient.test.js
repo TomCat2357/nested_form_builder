@@ -5,6 +5,7 @@ import {
   archiveForm,
   archiveForms,
   createGoogleDocumentFromTemplate,
+  countRecordsByPid,
   createRecordPrintDocument,
   deleteEntry,
   executeRecordOutputAction,
@@ -14,6 +15,7 @@ import {
   getEntry,
   listEntries,
   listForms,
+  listRecordsByPid,
   listRecordsByPids,
   setAdminEmail,
   setAdminKey,
@@ -149,6 +151,56 @@ test("listRecordsByPids は pids が空なら呼ばずに空配列を返す", as
 
 test("listRecordsByPids は formId が無ければエラーにする", async () => {
   await assert.rejects(async () => listRecordsByPids({ pids: ["p1"] }), /formId is required/);
+});
+
+// GAS の listRecords は admin にはソフトデリート行も返すため、formLink 子データ用途の
+// ラッパーはクライアント側で必ず除外する（件数バッジ・Webhook payload・コピー複製の混入防止）。
+test("listRecordsByPids はソフトデリート済みレコードを除外する", async () => {
+  const originalGoogle = globalThis.google;
+  const { run } = createGoogleScriptRunStub({
+    listRecords: () => ({
+      ok: true,
+      records: [
+        { id: "c1", pid: "p1" },
+        { id: "c2", pid: "p1", deletedAt: 1781000000000, deletedAtUnixMs: 1781000000000 },
+        { id: "c3", pid: "p1", deletedAtUnixMs: 1781000000000 },
+        { id: "c4", pid: "p1", deletedAt: null, deletedAtUnixMs: null },
+      ],
+      count: 4,
+    }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    const records = await listRecordsByPids({ formId: "childForm", pids: ["p1"] });
+    assert.deepEqual(records.map((r) => r.id), ["c1", "c4"]);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
+});
+
+test("listRecordsByPid / countRecordsByPid もソフトデリート済みを除外した結果を返す", async () => {
+  const originalGoogle = globalThis.google;
+  const { run } = createGoogleScriptRunStub({
+    listRecords: () => ({
+      ok: true,
+      records: [
+        { id: "c1", pid: "p1" },
+        { id: "c2", pid: "p1", deletedAt: 1781000000000, deletedAtUnixMs: 1781000000000 },
+      ],
+      count: 2,
+    }),
+  });
+  globalThis.google = { script: { run } };
+
+  try {
+    const records = await listRecordsByPid({ formId: "childForm", pid: "p1" });
+    assert.deepEqual(records.map((r) => r.id), ["c1"]);
+    const count = await countRecordsByPid({ formId: "childForm", pid: "p1" });
+    assert.equal(count, 1);
+  } finally {
+    globalThis.google = originalGoogle;
+  }
 });
 
 test("acquireSaveLock / getEntry / listEntries / deleteEntry は formId を必須とする", async () => {

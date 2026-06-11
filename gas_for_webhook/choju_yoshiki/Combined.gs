@@ -538,6 +538,7 @@ function Cho_buildModel_(payload) {
     certDamageContent: idx.get(certBase + "被害の内容"),
     certCountermeasure: idx.get(certBase + "被害防除対策の実施内容及び実施効果"),
     certPastResults: idx.get(certBase + "過去数年間の捕獲実績"),
+    certifierName: idx.get(certBase + "証明者氏名"),
 
     requesterAddress: idx.get(reqBase + "依頼者住所"),
     requesterName: requesterName,
@@ -803,8 +804,8 @@ var CHO_SHEET_MAPS_ = {
     { cell: "E20", get: "certDamageArea" },
     { cell: "E21", get: "certDamageContent" },
     { cell: "E22", get: "certCountermeasure" },
-    { cell: "E23", get: "certPastResults" }
-    // E24（証明者氏名）はフォームに該当項目が無いため空欄のまま
+    { cell: "E23", get: "certPastResults" },
+    { cell: "E24", get: "certifierName" } // 旧数式 ='申請内容'!B8（備考行の証明者氏名）
   ],
   "依頼書": [
     { cell: "I2", get: "applicationDate" },

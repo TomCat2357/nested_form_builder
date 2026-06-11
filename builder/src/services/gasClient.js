@@ -167,6 +167,13 @@ export const listEntries = async ({ sheetName = "Data", formId = null, lastSprea
   };
 };
 
+// ソフトデリート済み（deletedAt / deletedAtUnixMs が非空）レコードを除外する。
+// GAS の listRecords は admin にはソフトデリート行も返す（codeHandlers.gs ListRecords_）ため、
+// formLink 子データ用途（件数バッジ・Webhook/印刷 payload・コピー複製・CHILD_FORM_*）では
+// クライアント側で必ず除外する。
+const filterNotDeleted_ = (records) =>
+  (Array.isArray(records) ? records : []).filter((r) => !(r?.deletedAtUnixMs || r?.deletedAt));
+
 // listRecords を「明示 pid + 全件」で叩く内部ヘルパ。URL の window.__PID__ には依存せず、
 // 引数で渡した pid をそのまま payload に乗せてサーバ側フィルタさせる（withUrlPid を通さない）。
 // formLink 子レコードの件数取得・コピー複製のように、現在の URL とは別フォーム/別 pid を
@@ -180,11 +187,9 @@ const listRecordsByPidRaw_ = async ({ formId, pid, sheetName = "Data" }) => {
     { sheetName, formId, forceFullSync: true, pid: normalizedPid },
     "子レコードの取得に失敗しました",
   );
-  const records = result.records || [];
-  return {
-    records,
-    count: Number.isFinite(result.count) ? result.count : records.length,
-  };
+  // count はソフトデリート除外後の records から導出する（サーバの count は admin だと削除込み）。
+  const records = filterNotDeleted_(result.records);
+  return { records, count: records.length };
 };
 
 // 指定フォーム（formId）で pid に一致するレコード件数を返す。子レコードの件数バッジ用。
@@ -207,11 +212,9 @@ const listRecordsByPidsRaw_ = async ({ formId, pids, sheetName = "Data" }) => {
     { sheetName, formId, forceFullSync: true, pids: normalizedPids },
     "子レコードの取得に失敗しました",
   );
-  const records = result.records || [];
-  return {
-    records,
-    count: Number.isFinite(result.count) ? result.count : records.length,
-  };
+  // count はソフトデリート除外後の records から導出する（サーバの count は admin だと削除込み）。
+  const records = filterNotDeleted_(result.records);
+  return { records, count: records.length };
 };
 
 // 指定フォーム（formId）で pids のいずれかに一致するレコード配列を返す。一括子レコード取得用。
