@@ -13,7 +13,7 @@ test("UDF が登録される / 廃止・改名された関数は無い", () => {
   for (const name of [
     "DATE", "DATETIME", "TIME", "TIMES", "TIMEM", "TIMEMS", "TIMESTAMP", "TIME_FORMAT",
     "DATE2ERA", "DATETIME2ERATIME", "ERA2DATE", "ERATIME2DATETIME",
-    "YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND",
+    "YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND", "NENDO",
     "TO_BOOL", "TO_NUMBER", "REGEXP_MATCH", "REGEXP_REPLACE", "LIKE_ANY",
     "MV_EQ", "MV_IN",
   ]) {
@@ -30,6 +30,26 @@ test("UDF が登録される / 廃止・改名された関数は無い", () => {
   ]) {
     assert.equal(typeof alasql.fn[name], "undefined", `${name} should be removed`);
   }
+});
+
+test("NENDO: 日本の年度（4 月始まり、1〜3 月は前年）", () => {
+  const alasql = makeFakeAlaSql();
+  ensureNfbUdfsRegistered(alasql);
+  const fn = alasql.fn.NENDO;
+  // 仕様例
+  assert.equal(fn("2025-12-01"), 2025);
+  assert.equal(fn("2025-03-01"), 2024);
+  // 境界: 4/1 はその年、3/31 は前年
+  assert.equal(fn("2025-04-01"), 2025);
+  assert.equal(fn("2025-03-31"), 2024);
+  assert.equal(fn("2025-01-01"), 2024);
+  // datetime / 数値 msunixtime も受ける
+  assert.equal(fn("2025-12-01_09:30:00.000"), 2025);
+  assert.equal(fn(Date.UTC(2026, 4, 6, 5, 0, 0)), 2026); // 2026-05-06 JST
+  // 暦日成分なし（TIME-only）/ 空 / 不正は null
+  assert.equal(fn("13:01:00"), null);
+  assert.equal(fn(""), null);
+  assert.equal(fn("not a date"), null);
 });
 
 test("idempotent: 二度呼んでも問題なし", () => {

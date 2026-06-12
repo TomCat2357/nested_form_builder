@@ -1543,7 +1543,9 @@ button:disabled {
   position: fixed;
   bottom: 16px;
   right: 16px;
-  z-index: 1000;
+  /* OverlayDialog / .dialog-overlay（いずれも z-index:1000）より上に出す。
+     子フォームオーバーレイ内の保存時に入力エラー通知を裏に隠さないため。 */
+  z-index: 1100;
   display: flex;
   flex-direction: column-reverse;
   gap: 8px;

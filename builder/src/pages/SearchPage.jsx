@@ -60,6 +60,7 @@ export default function SearchPage() {
     displayColumns,
     displayHeaderRows,
     displayPagedEntries,
+    formLinkChildCounts,
     loading,
     backgroundLoading,
     waitingForLock,
@@ -212,6 +213,7 @@ export default function SearchPage() {
           cellDisplayLimit={cellDisplayLimit}
           tableMaxWidth={TABLE_MAX_WIDTH}
           hitColumnMinWidth={HIT_COLUMN_MIN_WIDTH}
+          formLinkChildCounts={formLinkChildCounts}
           onSortToggle={handleSortToggle}
           onSelectAll={selectAllEntries}
           onToggleSelect={toggleSelectEntry}

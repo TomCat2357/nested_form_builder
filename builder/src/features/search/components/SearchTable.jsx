@@ -39,6 +39,7 @@ export default function SearchTable({
   onToggleSelect,
   onRowClick,
   onCellAction,
+  formLinkChildCounts,
 }) {
   const handleCopyId = async (event, id) => {
     event.stopPropagation();
@@ -135,6 +136,17 @@ export default function SearchTable({
         );
       }
       return "なし";
+    }
+
+    if (column.actionKind === "formLink") {
+      // 「別フォームを開く」を表示列にした場合、この行のレコードに紐づく子フォーム件数を出す。
+      const counts = formLinkChildCounts?.[column.path];
+      const count = counts ? counts[String(row?.entry?.id ?? "")] : undefined;
+      if (Number.isFinite(count)) {
+        return <span className="badge ghost">{count}件</span>;
+      }
+      // 取得待ち / GAS 未接続では空表示（数値が確定したらバッジに切り替わる）。
+      return <span className="nf-text-muted">—</span>;
     }
 
     if (column.actionKind && rawDisplayText) {
