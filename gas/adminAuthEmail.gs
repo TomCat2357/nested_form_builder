@@ -14,18 +14,7 @@ function NormalizeEmail_(value) {
   return String(value || "").trim().toLowerCase();
 }
 
-/**
- * オブジェクトが自己所有キーを1つでも持つか判定する
- * @param {Object|null|undefined} obj
- * @return {boolean}
- */
-function nfbHasOwnKeys_(obj) {
-  if (!obj) return false;
-  for (var k in obj) {
-    if (obj.hasOwnProperty(k)) return true;
-  }
-  return false;
-}
+// nfbHasOwnKeys_ は standardFoldersAlignRefs.gs に定義（バンドル連結でグローバル）。
 
 /**
  * 管理者メール設定値（";"区切り）を配列化して返す

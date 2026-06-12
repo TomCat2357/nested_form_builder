@@ -32,7 +32,6 @@ import {
 import { substituteCurrentIdLiteral, collapseQueryResult } from "../features/expression/fullQuerySql.js";
 import { buildRowForExpression } from "../features/expression/buildRowForExpression.js";
 import {
-  buildLabelValueMap as sharedBuildLabelValueMap,
   buildFileUploadRowEntries,
   buildChildFormRowEntries,
 } from "./labelValueMap.js";
@@ -81,12 +80,6 @@ function buildTemplateRow(context) {
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
-
-/**
- * fieldPaths + fieldValues + responses から { fullPath: 表示用文字列 } マップを構築。
- */
-export const buildLabelValueMap = (fieldPaths, fieldValues, responses) =>
-  sharedBuildLabelValueMap(fieldPaths, fieldValues, responses);
 
 /**
  * テンプレートトークンを同期的に解決する。

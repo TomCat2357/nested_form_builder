@@ -6,6 +6,62 @@ import { sanitizeFileBaseName, resolveDialogTargetIds } from "./listActionsShare
 import { buildImportDetail, flattenImportedContents } from "./formImportWorkflow.js";
 import { useAdminListActions } from "./useAdminListActions.js";
 
+// 「参照のみ」「子フォーム専用」のような真偽フラグ系ダイアログの handle/confirm ペアを生成する
+// ファクトリ（listActionsShared.js の createMoveActions 等と同じ「dialog オブジェクトを受け取る
+// 素の関数」パターン。フックではないので Hooks ルールに抵触しない）。
+function createFlagDialogActions({
+  dialog,
+  allKey,
+  flagOf,
+  emptyMessage,
+  applySet,
+  applyClear,
+  errorLabel,
+  errorMessageLabel,
+  sortedForms,
+  selected,
+  clearSelectionByIds,
+  showAlert,
+}) {
+  const handleSelected = () => {
+    const selectedForms = sortedForms.filter((form) => selected.has(form.id) && !form.loadError);
+    if (!selectedForms.length) {
+      showAlert(emptyMessage);
+      return;
+    }
+    const targetIds = selectedForms.map((form) => form.id);
+    dialog.open({
+      formId: targetIds[0],
+      targetIds,
+      multiple: targetIds.length > 1,
+      [allKey]: selectedForms.every(flagOf),
+    });
+  };
+
+  const confirmAction = () => {
+    const targetIds = resolveDialogTargetIds(dialog.state, "formId");
+    if (!targetIds.length) return;
+    const shouldClear = dialog.state[allKey];
+    clearSelectionByIds(targetIds);
+    dialog.reset();
+
+    (async () => {
+      try {
+        if (shouldClear) {
+          await applyClear(targetIds);
+        } else {
+          await applySet(targetIds);
+        }
+      } catch (error) {
+        console.error(`[AdminFormList] ${errorLabel} action failed:`, error);
+        showAlert(`${errorMessageLabel}中にエラーが発生しました: ${error.message}`);
+      }
+    })();
+  };
+
+  return { handleSelected, confirmAction };
+}
+
 /**
  * フォーム一覧アクションを一括提供する hook。
  * 共通本体は useAdminListActions。Form 固有の差分（id キー・文言・export 整形・コピー対象の選別・
@@ -116,83 +172,37 @@ export function useAdminFormListActions({
 
   // ---- Form 限定: 「参照のみ」ダイアログ（アーカイブと相互排他）。共通 hook には載せない。 ----
   const readOnlyDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false, allReadOnly: false });
-
-  const handleReadOnlySelected = () => {
-    const selectedForms = sortedForms.filter((form) => selected.has(form.id) && !form.loadError);
-    if (!selectedForms.length) {
-      showAlert("参照のみ設定可能なフォームを選択してください。");
-      return;
-    }
-    const allReadOnly = selectedForms.every((form) => form.readOnly);
-    const targetIds = selectedForms.map((form) => form.id);
-    readOnlyDialog.open({
-      formId: targetIds[0],
-      targetIds,
-      multiple: targetIds.length > 1,
-      allReadOnly,
-    });
-  };
-
-  const confirmReadOnlyAction = () => {
-    const targetIds = resolveDialogTargetIds(readOnlyDialog.state, "formId");
-    if (!targetIds.length) return;
-    const shouldClear = readOnlyDialog.state.allReadOnly;
-    clearSelectionByIds(targetIds);
-    readOnlyDialog.reset();
-
-    (async () => {
-      try {
-        if (shouldClear) {
-          await clearFormsReadOnly(targetIds);
-        } else {
-          await setFormsReadOnly(targetIds);
-        }
-      } catch (error) {
-        console.error("[AdminFormList] ReadOnly action failed:", error);
-        showAlert(`参照のみ設定中にエラーが発生しました: ${error.message}`);
-      }
-    })();
-  };
+  const { handleSelected: handleReadOnlySelected, confirmAction: confirmReadOnlyAction } = createFlagDialogActions({
+    dialog: readOnlyDialog,
+    allKey: "allReadOnly",
+    flagOf: (form) => form.readOnly,
+    emptyMessage: "参照のみ設定可能なフォームを選択してください。",
+    applySet: setFormsReadOnly,
+    applyClear: clearFormsReadOnly,
+    errorLabel: "ReadOnly",
+    errorMessageLabel: "参照のみ設定",
+    sortedForms,
+    selected,
+    clearSelectionByIds,
+    showAlert,
+  });
 
   // ---- Form 限定: 「子フォーム専用」ダイアログ（アーカイブ・参照のみと相互排他）。共通 hook には載せない。 ----
   const childOnlyDialog = useConfirmDialog({ formId: null, targetIds: [], multiple: false, allChildOnly: false });
-
-  const handleChildOnlySelected = () => {
-    const selectedForms = sortedForms.filter((form) => selected.has(form.id) && !form.loadError);
-    if (!selectedForms.length) {
-      showAlert("子フォーム専用に設定可能なフォームを選択してください。");
-      return;
-    }
-    const allChildOnly = selectedForms.every((form) => form.childOnly);
-    const targetIds = selectedForms.map((form) => form.id);
-    childOnlyDialog.open({
-      formId: targetIds[0],
-      targetIds,
-      multiple: targetIds.length > 1,
-      allChildOnly,
-    });
-  };
-
-  const confirmChildOnlyAction = () => {
-    const targetIds = resolveDialogTargetIds(childOnlyDialog.state, "formId");
-    if (!targetIds.length) return;
-    const shouldClear = childOnlyDialog.state.allChildOnly;
-    clearSelectionByIds(targetIds);
-    childOnlyDialog.reset();
-
-    (async () => {
-      try {
-        if (shouldClear) {
-          await clearFormsChildOnly(targetIds);
-        } else {
-          await setFormsChildOnly(targetIds);
-        }
-      } catch (error) {
-        console.error("[AdminFormList] ChildOnly action failed:", error);
-        showAlert(`子フォーム専用設定中にエラーが発生しました: ${error.message}`);
-      }
-    })();
-  };
+  const { handleSelected: handleChildOnlySelected, confirmAction: confirmChildOnlyAction } = createFlagDialogActions({
+    dialog: childOnlyDialog,
+    allKey: "allChildOnly",
+    flagOf: (form) => form.childOnly,
+    emptyMessage: "子フォーム専用に設定可能なフォームを選択してください。",
+    applySet: setFormsChildOnly,
+    applyClear: clearFormsChildOnly,
+    errorLabel: "ChildOnly",
+    errorMessageLabel: "子フォーム専用設定",
+    sortedForms,
+    selected,
+    clearSelectionByIds,
+    showAlert,
+  });
 
   // ---- import workflow（ネスト対応・flatten/detail を formImportWorkflow.js から注入） ----
   const startImportWorkflow = useCallback(

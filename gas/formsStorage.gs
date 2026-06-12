@@ -226,18 +226,9 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       }
     }
 
-    var effectiveSaveMode = requestedSaveMode;
-    if (effectiveSaveMode === "auto") {
-      if (parsedTarget && parsedTarget.type === "folder") {
-        effectiveSaveMode = "copy_to_folder";
-      } else if (parsedTarget && parsedTarget.type === "file") {
-        effectiveSaveMode = "overwrite_existing";
-      } else if (existingFileId) {
-        effectiveSaveMode = "overwrite_existing";
-      } else {
-        effectiveSaveMode = "copy_to_root";
-      }
-    }
+    var effectiveSaveMode = requestedSaveMode === "auto"
+      ? SharedCrud_resolveSaveMode_(parsedTarget, existingFileId)
+      : requestedSaveMode;
 
     if (effectiveSaveMode === "overwrite_existing") {
       var overwriteFileId = null;
