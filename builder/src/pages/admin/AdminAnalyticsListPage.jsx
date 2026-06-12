@@ -6,8 +6,7 @@ import { useAlert } from "../../app/hooks/useAlert.js";
 import { useSetSelection } from "../../app/hooks/useSetSelection.js";
 import { toComparableUnixMs, formatUnixMsValue } from "../../utils/dateTime.js";
 import ImportUrlDialog from "./AdminImportUrlDialog.jsx";
-import AdminFolderNameDialog from "./AdminFolderNameDialog.jsx";
-import AdminMoveDialog from "./AdminMoveDialog.jsx";
+import { AdminListSidebarActions, AdminListFolderDialogs } from "./AdminListShared.jsx";
 import { useAdminAnalyticsListActions } from "./useAdminAnalyticsListActions.js";
 import { useAnalyticsList } from "../../features/analytics/useAnalyticsList.js";
 import { subscribeAnalyticsFolders } from "../../features/analytics/analyticsCache.js";
@@ -191,50 +190,7 @@ export default function AdminAnalyticsListPage({
     await refresh();
   }, [store, items, refresh]);
 
-  const {
-    confirmArchive, setConfirmArchive,
-    confirmDelete, setConfirmDelete,
-    confirmHardDelete, setConfirmHardDelete,
-    confirmCopy, setConfirmCopy,
-    importDialogOpen, setImportDialogOpen,
-    importUrl, setImportUrl,
-    importing, exporting, copying,
-    handleArchiveSelected,
-    handleDeleteSelected,
-    handleHardDeleteSelected,
-    handleCopySelected,
-    handleExport,
-    handleImport,
-    handleImportFromDrive,
-    confirmArchiveAction,
-    confirmDeleteAction,
-    confirmHardDeleteAction,
-    confirmCopyAction,
-    newFolderDialogState,
-    newFolderName,
-    setNewFolderName,
-    newFolderError,
-    setNewFolderError,
-    handleCreateFolder,
-    confirmCreateFolder,
-    closeNewFolderDialog,
-    moveDialogState,
-    moveDest,
-    setMoveDest,
-    moveError,
-    setMoveError,
-    handleMoveSelected,
-    confirmMove,
-    closeMoveDialog,
-    renameDialogState,
-    renameName,
-    setRenameName,
-    renameError,
-    setRenameError,
-    handleRenameSelected,
-    confirmRename,
-    closeRenameDialog,
-  } = useAdminAnalyticsListActions({
+  const actions = useAdminAnalyticsListActions({
     kind,
     itemLabel,
     sortedItems,
@@ -261,6 +217,29 @@ export default function AdminAnalyticsListPage({
     renameItem: renameItemWrapper,
     deleteFolder: deleteFolderWrapper,
   });
+  const {
+    confirmArchive, setConfirmArchive,
+    confirmDelete, setConfirmDelete,
+    confirmHardDelete, setConfirmHardDelete,
+    confirmCopy, setConfirmCopy,
+    importDialogOpen, setImportDialogOpen,
+    importUrl, setImportUrl,
+    importing, exporting, copying,
+    handleArchiveSelected,
+    handleDeleteSelected,
+    handleHardDeleteSelected,
+    handleCopySelected,
+    handleExport,
+    handleImport,
+    handleImportFromDrive,
+    confirmArchiveAction,
+    confirmDeleteAction,
+    confirmHardDeleteAction,
+    confirmCopyAction,
+    handleCreateFolder,
+    handleMoveSelected,
+    handleRenameSelected,
+  } = actions;
 
   const handleImportFromDriveAndReload = useCallback(async () => {
     await handleImportFromDrive();
@@ -312,109 +291,39 @@ export default function AdminAnalyticsListPage({
       badge="管理"
       fallbackPath={fallbackPath}
       sidebarActions={
-        <>
-          <div className="sidebar-section-label">作成</div>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={() => navigate(newItemPath, { state: { folder: browser.currentPath, from: listUrlWithFolder() } })}
-          >
-            + 新規作成
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleCreateFolder}
-          >
-            + 新規フォルダ
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleImport}
-          >
-            {importing ? "↑ インポート中..." : "↑ インポート"}
-          </button>
-
-          <div className="nf-spacer-16" />
-          <div className="sidebar-section-label">選択中アクション</div>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleMoveSelected}
-            disabled={selected.size === 0 && selectedFolders.size === 0}
-          >
-            移動
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleRenameSelected}
-            disabled={!((selectedFolders.size === 1 && selected.size === 0) || (selected.size === 1 && selectedFolders.size === 0))}
-          >
-            名前変更
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleCopySelected}
-            disabled={copying || selected.size !== 1}
-          >
-            {copying ? "コピー中..." : "コピー"}
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleArchiveSelected}
-            disabled={selected.size === 0}
-          >
-            アーカイブ
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleExport}
-            disabled={exporting || selected.size === 0}
-          >
-            {exporting ? "↓ エクスポート中..." : "↓ エクスポート"}
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13 admin-danger-btn"
-            onClick={handleDeleteSelected}
-            disabled={selected.size === 0 && selectedFolders.size === 0}
-          >
-            リンク解除
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13 admin-danger-btn"
-            onClick={handleHardDeleteSelected}
-            disabled={selected.size === 0}
-          >
-            削除
-          </button>
-
-          <div className="nf-spacer-16" />
-          <label className="nf-text-13" style={{ display: "flex", gap: "6px", alignItems: "center", padding: "0 8px" }}>
-            <input
-              type="checkbox"
-              checked={showArchived}
-              onChange={(e) => setShowArchived(e.target.checked)}
-            />
-            アーカイブ済みも表示
-          </label>
-
-          <div className="nf-spacer-16" />
-          <button
-            type="button"
-            className={`nf-btn-outline nf-btn-sidebar nf-text-13${!(loading || refreshing) ? " admin-refresh-btn" : ""}`}
-            onClick={refresh}
-            disabled={loading || refreshing}
-          >
-            {(loading || refreshing) ? "🔄 更新中..." : "🔄 更新"}
-          </button>
-        </>
+        <AdminListSidebarActions
+          createLabel="+ 新規作成"
+          onCreateNew={() => navigate(newItemPath, { state: { folder: browser.currentPath, from: listUrlWithFolder() } })}
+          onCreateFolder={handleCreateFolder}
+          onImport={handleImport}
+          importing={importing}
+          onMove={handleMoveSelected}
+          onRename={handleRenameSelected}
+          onCopy={handleCopySelected}
+          copying={copying}
+          onArchive={handleArchiveSelected}
+          onExport={handleExport}
+          exporting={exporting}
+          onDelete={handleDeleteSelected}
+          onHardDelete={handleHardDeleteSelected}
+          beforeRefreshSlot={
+            <>
+              <div className="nf-spacer-16" />
+              <label className="nf-text-13" style={{ display: "flex", gap: "6px", alignItems: "center", padding: "0 8px" }}>
+                <input
+                  type="checkbox"
+                  checked={showArchived}
+                  onChange={(e) => setShowArchived(e.target.checked)}
+                />
+                アーカイブ済みも表示
+              </label>
+            </>
+          }
+          onRefresh={refresh}
+          refreshing={loading || refreshing}
+          selectedCount={selected.size}
+          selectedFolderCount={selectedFolders.size}
+        />
       }
     >
       {error && <p className="nf-text-warning">{error}</p>}
@@ -601,54 +510,18 @@ export default function AdminAnalyticsListPage({
         itemLabel={itemLabel}
       />
 
-      <AdminFolderNameDialog
-        open={newFolderDialogState.open}
-        value={newFolderName}
-        onChange={(v) => { setNewFolderName(v); if (newFolderError) setNewFolderError(""); }}
-        onConfirm={confirmCreateFolder}
-        onCancel={closeNewFolderDialog}
-        error={newFolderError}
-        title="新規フォルダ"
-        confirmLabel="作成"
-        label="フォルダ名"
-        placeholder="例: 苦情・通報"
-        message={browser.currentPath
-          ? `「${browser.currentPath}」の中に新しいフォルダを作成します。`
-          : "最上位に新しいフォルダを作成します。"}
-        note="スラッシュ区切りで複数階層も作成できます（例: 苦情・通報/クマ）。"
-      />
-
-      <AdminMoveDialog
-        open={moveDialogState.open}
-        count={moveDialogState.count}
-        value={moveDest}
-        onChange={(v) => { setMoveDest(v); if (moveError) setMoveError(""); }}
-        onConfirm={confirmMove}
-        onCancel={closeMoveDialog}
-        error={moveError}
+      <AdminListFolderDialogs
+        actions={actions}
+        currentPath={browser.currentPath}
         folders={registeredFolders}
-        excludePaths={moveDialogState.folderPaths}
-      />
-
-      <AdminFolderNameDialog
-        open={renameDialogState.open}
-        currentName={renameDialogState.currentName}
-        value={renameName}
-        onChange={(v) => { setRenameName(v); if (renameError) setRenameError(""); }}
-        onConfirm={confirmRename}
-        onCancel={closeRenameDialog}
-        error={renameError}
-        {...(renameDialogState.kind === "item"
-          ? {
-              title: `${itemLabel} 名を変更`,
-              message: renameDialogState.currentName
-                ? `${itemLabel}「${renameDialogState.currentName}」の名前を変更します。`
-                : `${itemLabel} の名前を変更します。`,
-              label: "新しい名前",
-              placeholder: `例: 月次集計`,
-              note: "",
-            }
-          : {})}
+        renameItemTexts={{
+          title: `${itemLabel} 名を変更`,
+          message: (currentName) => currentName
+            ? `${itemLabel}「${currentName}」の名前を変更します。`
+            : `${itemLabel} の名前を変更します。`,
+          label: "新しい名前",
+          placeholder: "例: 月次集計",
+        }}
       />
     </AppLayout>
   );

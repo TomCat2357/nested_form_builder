@@ -10,8 +10,7 @@ import { useBuilderSettings } from "../../features/settings/settingsStore.js";
 import { toUnixMs, toComparableUnixMs, formatUnixMsValue } from "../../utils/dateTime.js";
 import { buildSharedFormUrl } from "../../utils/formShareUrl.js";
 import ImportUrlDialog from "./AdminImportUrlDialog.jsx";
-import AdminFolderNameDialog from "./AdminFolderNameDialog.jsx";
-import AdminMoveDialog from "./AdminMoveDialog.jsx";
+import { AdminListSidebarActions, AdminListFolderDialogs } from "./AdminListShared.jsx";
 import { useAdminFormListActions } from "./useAdminFormListActions.js";
 import { useFolderBrowser } from "../../features/folders/useFolderBrowser.js";
 import FolderSearchBar from "../../features/folders/FolderSearchBar.jsx";
@@ -100,6 +99,34 @@ export default function AdminFormListPage() {
     await updateForm(formId, { settings: { ...(form.settings || {}), formTitle: newName } });
   }, [sortedForms, updateForm]);
 
+  const actions = useAdminFormListActions({
+    sortedForms,
+    selected,
+    clearSelection,
+    clearSelectionByIds,
+    showAlert,
+    archiveForms,
+    unarchiveForms,
+    setFormsReadOnly,
+    clearFormsReadOnly,
+    setFormsChildOnly,
+    clearFormsChildOnly,
+    deleteForms,
+    deleteFormsWithFiles,
+    exportForms,
+    copyForm,
+    registerImportedForm,
+    allItems: adminForms,
+    registeredFolders,
+    selectedFolders,
+    clearFolderSelection,
+    currentPath: browser.currentPath,
+    createFolder,
+    moveItems,
+    renameFolder,
+    renameForm,
+    deleteFolder,
+  });
   const {
     confirmArchive,
     setConfirmArchive,
@@ -135,58 +162,10 @@ export default function AdminFormListPage() {
     confirmHardDeleteAction,
     handleCopySelected,
     confirmCopyAction,
-    newFolderDialogState,
-    newFolderName,
-    setNewFolderName,
-    newFolderError,
-    setNewFolderError,
     handleCreateFolder,
-    confirmCreateFolder,
-    closeNewFolderDialog,
-    moveDialogState,
-    moveDest,
-    setMoveDest,
-    moveError,
-    setMoveError,
     handleMoveSelected,
-    confirmMove,
-    closeMoveDialog,
-    renameDialogState,
-    renameName,
-    setRenameName,
-    renameError,
-    setRenameError,
     handleRenameSelected,
-    confirmRename,
-    closeRenameDialog,
-  } = useAdminFormListActions({
-    sortedForms,
-    selected,
-    clearSelection,
-    clearSelectionByIds,
-    showAlert,
-    archiveForms,
-    unarchiveForms,
-    setFormsReadOnly,
-    clearFormsReadOnly,
-    setFormsChildOnly,
-    clearFormsChildOnly,
-    deleteForms,
-    deleteFormsWithFiles,
-    exportForms,
-    copyForm,
-    registerImportedForm,
-    allItems: adminForms,
-    registeredFolders,
-    selectedFolders,
-    clearFolderSelection,
-    currentPath: browser.currentPath,
-    createFolder,
-    moveItems,
-    renameFolder,
-    renameForm,
-    deleteFolder,
-  });
+  } = actions;
 
   const goToEditor = (formId) => {
     navigate(`/admin/forms/${formId}/edit`, { state: { from: listUrlWithFolder() } });
@@ -225,98 +204,46 @@ export default function AdminFormListPage() {
       fallbackPath="/admin"
       actions={null}
       sidebarActions={
-        <>
-          <div className="sidebar-section-label">作成</div>
-          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleCreateNew}>
-            + 新規フォーム
-          </button>
-          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleCreateFolder}>
-            + 新規フォルダ
-          </button>
-          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleImport}>
-            {importing ? "↑ インポート中..." : "↑ インポート"}
-          </button>
-
-          <div className="nf-spacer-16" />
-          <div className="sidebar-section-label">選択中アクション</div>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleMoveSelected}
-            disabled={selected.size === 0 && selectedFolders.size === 0}
-          >
-            移動
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleRenameSelected}
-            disabled={!((selectedFolders.size === 1 && selected.size === 0) || (selected.size === 1 && selectedFolders.size === 0))}
-          >
-            名前変更
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleCopySelected}
-            disabled={copying || selected.size !== 1}
-          >
-            {copying ? "コピー中..." : "コピー"}
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleArchiveSelected}
-            disabled={selected.size === 0}
-          >
-            アーカイブ
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleReadOnlySelected}
-            disabled={selected.size === 0}
-          >
-            参照のみ
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13"
-            onClick={handleChildOnlySelected}
-            disabled={selected.size === 0}
-          >
-            子フォーム専用
-          </button>
-          <button type="button" className="nf-btn-outline nf-btn-sidebar nf-text-13" onClick={handleExport} disabled={exporting || selected.size === 0}>
-            {exporting ? "↓ エクスポート中..." : "↓ エクスポート"}
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13 admin-danger-btn"
-            onClick={handleDeleteSelected}
-            disabled={selected.size === 0 && selectedFolders.size === 0}
-          >
-            リンク解除
-          </button>
-          <button
-            type="button"
-            className="nf-btn-outline nf-btn-sidebar nf-text-13 admin-danger-btn"
-            onClick={handleHardDeleteSelected}
-            disabled={selected.size === 0}
-          >
-            削除
-          </button>
-
-          <div className="nf-spacer-16" />
-          <button
-            type="button"
-            className={`nf-btn-outline nf-btn-sidebar nf-text-13${!loadingForms ? " admin-refresh-btn" : ""}`}
-            onClick={() => refreshForms({ reason: "manual:admin-form-list", background: false })}
-            disabled={loadingForms}
-          >
-            {loadingForms ? "🔄 更新中..." : "🔄 更新"}
-          </button>
-        </>
+        <AdminListSidebarActions
+          createLabel="+ 新規フォーム"
+          onCreateNew={handleCreateNew}
+          onCreateFolder={handleCreateFolder}
+          onImport={handleImport}
+          importing={importing}
+          onMove={handleMoveSelected}
+          onRename={handleRenameSelected}
+          onCopy={handleCopySelected}
+          copying={copying}
+          onArchive={handleArchiveSelected}
+          afterArchiveSlot={
+            <>
+              <button
+                type="button"
+                className="nf-btn-outline nf-btn-sidebar nf-text-13"
+                onClick={handleReadOnlySelected}
+                disabled={selected.size === 0}
+              >
+                参照のみ
+              </button>
+              <button
+                type="button"
+                className="nf-btn-outline nf-btn-sidebar nf-text-13"
+                onClick={handleChildOnlySelected}
+                disabled={selected.size === 0}
+              >
+                子フォーム専用
+              </button>
+            </>
+          }
+          onExport={handleExport}
+          exporting={exporting}
+          onDelete={handleDeleteSelected}
+          onHardDelete={handleHardDeleteSelected}
+          onRefresh={() => refreshForms({ reason: "manual:admin-form-list", background: false })}
+          refreshing={loadingForms}
+          selectedCount={selected.size}
+          selectedFolderCount={selectedFolders.size}
+        />
       }
     >
       {loadingForms ? (
@@ -614,54 +541,18 @@ export default function AdminFormListPage() {
         onCancel={() => setImportDialogOpen(false)}
       />
 
-      <AdminFolderNameDialog
-        open={newFolderDialogState.open}
-        value={newFolderName}
-        onChange={(v) => { setNewFolderName(v); if (newFolderError) setNewFolderError(""); }}
-        onConfirm={confirmCreateFolder}
-        onCancel={closeNewFolderDialog}
-        error={newFolderError}
-        title="新規フォルダ"
-        confirmLabel="作成"
-        label="フォルダ名"
-        placeholder="例: 苦情・通報"
-        message={browser.currentPath
-          ? `「${browser.currentPath}」の中に新しいフォルダを作成します。`
-          : "最上位に新しいフォルダを作成します。"}
-        note="スラッシュ区切りで複数階層も作成できます（例: 苦情・通報/クマ）。"
-      />
-
-      <AdminMoveDialog
-        open={moveDialogState.open}
-        count={moveDialogState.count}
-        value={moveDest}
-        onChange={(v) => { setMoveDest(v); if (moveError) setMoveError(""); }}
-        onConfirm={confirmMove}
-        onCancel={closeMoveDialog}
-        error={moveError}
+      <AdminListFolderDialogs
+        actions={actions}
+        currentPath={browser.currentPath}
         folders={registeredFolders}
-        excludePaths={moveDialogState.folderPaths}
-      />
-
-      <AdminFolderNameDialog
-        open={renameDialogState.open}
-        currentName={renameDialogState.currentName}
-        value={renameName}
-        onChange={(v) => { setRenameName(v); if (renameError) setRenameError(""); }}
-        onConfirm={confirmRename}
-        onCancel={closeRenameDialog}
-        error={renameError}
-        {...(renameDialogState.kind === "item"
-          ? {
-              title: "フォーム名を変更",
-              message: renameDialogState.currentName
-                ? `フォーム「${renameDialogState.currentName}」の名前を変更します。`
-                : "フォームの名前を変更します。",
-              label: "新しいフォーム名",
-              placeholder: "例: 入会申込フォーム",
-              note: "",
-            }
-          : {})}
+        renameItemTexts={{
+          title: "フォーム名を変更",
+          message: (currentName) => currentName
+            ? `フォーム「${currentName}」の名前を変更します。`
+            : "フォームの名前を変更します。",
+          label: "新しいフォーム名",
+          placeholder: "例: 入会申込フォーム",
+        }}
       />
     </AppLayout>
   );

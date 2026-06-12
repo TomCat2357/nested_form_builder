@@ -108,7 +108,7 @@ function Admin_migrateMetaDatetimesToSheetDates_(spreadsheetId, sheetName) {
  * @return {{processedForms: number, totalUpdatedRows: number, errors: Array}}
  */
 function Admin_migrateAllFormsMetaDatetimesToSheetDates_() {
-  var mapping = Forms_loadFormMapping_ ? Forms_loadFormMapping_() : null;
+  var mapping = Forms_getMapping_();
   if (!mapping || typeof mapping !== "object") {
     return { processedForms: 0, totalUpdatedRows: 0, errors: ["Form mapping unavailable"] };
   }
@@ -394,7 +394,7 @@ function Admin_splitArgs_(s) {
  * @return {{processedForms: number, modifiedForms: number, errors: Array}}
  */
 function Admin_migrateNfbUdfNamesInForms_() {
-  var mapping = Forms_loadFormMapping_ ? Forms_loadFormMapping_() : null;
+  var mapping = Forms_getMapping_();
   if (!mapping || typeof mapping !== "object") {
     return { processedForms: 0, modifiedForms: 0, errors: ["Form mapping unavailable"] };
   }
@@ -560,7 +560,7 @@ function Admin_rewriteFormTemplateBraces_(node) {
  * @return {{processedForms: number, modifiedForms: number, errors: Array}}
  */
 function Admin_migrateSingleBraceToDoubleBraceInForms_() {
-  var mapping = (typeof Forms_loadFormMapping_ === "function") ? Forms_loadFormMapping_() : null;
+  var mapping = Forms_getMapping_();
   if (!mapping || typeof mapping !== "object") {
     return { processedForms: 0, modifiedForms: 0, errors: ["Form mapping unavailable"] };
   }

@@ -262,7 +262,7 @@ function StdFolders_alignAllEntries_() {
 
       // Phase B: id 変化（コピー/再採用）を参照グラフ全体へ伝播。remap が空なら丸ごとスキップ（冪等時に軽い）。
       var relinked = 0;
-      if (StdFolders_hasOwnKeys_(ctx.remap)) {
+      if (nfbHasOwnKeys_(ctx.remap)) {
         // form→childForm（formLink）リンクを追従。
         var fMap = StdFolders_entityAdapter_("forms").getMapping();
         for (var fid in fMap) {

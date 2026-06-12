@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  buildLabelValueMap,
   resolveTemplateTokens,
   extractTemplateFieldRefs,
   injectResolvedQueryTokens,
 } from "./tokenReplacer.js";
+import { buildLabelValueMap } from "./labelValueMap.js";
 import { escapeBraces, collectBalancedBraces } from "../features/expression/templateScanner.js";
 import {
   _clearExpressionCacheForTest,
@@ -24,7 +24,7 @@ function setup() {
 }
 
 // ---------------------------------------------------------------------------
-// buildLabelValueMap (アダプタ → labelValueMap.js への薄い再 export)
+// buildLabelValueMap (labelValueMap.js)
 // 行キーは fieldPaths (`親|子`) のみ。トップレベル質問は path = leaf label と同値。
 // ---------------------------------------------------------------------------
 

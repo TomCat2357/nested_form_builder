@@ -235,16 +235,7 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
       }
     }
 
-    var saveMode = "auto";
-    if (parsedTarget && parsedTarget.type === "folder") {
-      saveMode = "copy_to_folder";
-    } else if (parsedTarget && parsedTarget.type === "file") {
-      saveMode = "overwrite_existing";
-    } else if (existingFileId) {
-      saveMode = "overwrite_existing";
-    } else {
-      saveMode = "copy_to_root";
-    }
+    var saveMode = SharedCrud_resolveSaveMode_(parsedTarget, existingFileId);
 
     var file = null;
     var fileUrl = null;

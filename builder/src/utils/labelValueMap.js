@@ -15,7 +15,7 @@ import { asPlainObject } from "./objectShape.js";
 /**
  * 配列内の `{ name }` オブジェクトは name で文字列化する。
  */
-export function templateValueToString(value) {
+function templateValueToString(value) {
   if (value === undefined || value === null) return "";
   if (Array.isArray(value)) {
     const parts = [];

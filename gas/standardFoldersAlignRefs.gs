@@ -5,86 +5,57 @@
 // バンドル時に連結されるため関数はグローバル。
 // =============================================
 
-function StdFolders_hasOwnKeys_(obj) {
+// 汎用ヘルパー: 自己所有キーを 1 つでも持つか。adminAuthEmail.gs にあった同一実装を統合。
+function nfbHasOwnKeys_(obj) {
   if (!obj) return false;
   for (var k in obj) { if (obj.hasOwnProperty(k)) return true; }
   return false;
 }
 
-// クエスチョン json から参照フォーム id を集める（query.gui.formId + query.formSources[].formId）。
-function StdFolders_collectFormIdsFromQuestionJson_(json) {
-  var ids = [];
-  var query = json && json.query;
-  if (query && typeof query === "object") {
-    if (query.gui && typeof query.gui === "object" && query.gui.formId) ids.push(query.gui.formId);
+// 参照種別ごとの参照ホルダーを列挙する共通ビジター。3 種の参照形状の走査を 1 箇所に集約する。
+//   kind="questions"  → Q→Form（query.gui.formId/formPath + query.formSources[].formId/formPath）
+//   kind="dashboards" → D→Q（cards[].questionId/questionPath）
+//   kind="forms"      → form→childForm（schema 内 formLink の childFormId/childFormPath）
+// visit には { holder, idKey, pathKey, targetKind } を渡す（targetKind ＝ 参照先エンティティ種別。
+// StdFolders_qualifiedPathForId_ の第 1 引数に使う）。id が truthy の参照のみ visit する。
+function StdFolders_forEachRef_(json, kind, visit) {
+  if (!json) return;
+  if (kind === "questions") {
+    var query = json.query;
+    if (!query || typeof query !== "object") return;
+    if (query.gui && typeof query.gui === "object" && query.gui.formId) {
+      visit({ holder: query.gui, idKey: "formId", pathKey: "formPath", targetKind: "forms" });
+    }
     if (Array.isArray(query.formSources)) {
       for (var i = 0; i < query.formSources.length; i++) {
-        if (query.formSources[i] && query.formSources[i].formId) ids.push(query.formSources[i].formId);
+        var src = query.formSources[i];
+        if (src && src.formId) visit({ holder: src, idKey: "formId", pathKey: "formPath", targetKind: "forms" });
       }
     }
-  }
-  return ids;
-}
-
-// ダッシュボード json から参照クエスチョン id を集める（cards[].questionId）。
-function StdFolders_collectQuestionIdsFromDashboardJson_(json) {
-  var ids = [];
-  if (json && Array.isArray(json.cards)) {
-    for (var c = 0; c < json.cards.length; c++) {
-      if (json.cards[c] && json.cards[c].questionId) ids.push(json.cards[c].questionId);
+  } else if (kind === "dashboards") {
+    if (Array.isArray(json.cards)) {
+      for (var c = 0; c < json.cards.length; c++) {
+        var card = json.cards[c];
+        if (card && card.questionId) visit({ holder: card, idKey: "questionId", pathKey: "questionPath", targetKind: "questions" });
+      }
     }
-  }
-  return ids;
-}
-
-// フォーム json の schema から formLink 参照の子フォーム id を集める（childFormId）。
-function StdFolders_collectChildFormIdsFromFormJson_(json) {
-  var ids = [];
-  if (json && Array.isArray(json.schema)) {
+  } else if (kind === "forms") {
     StdFolders_walkFields_(json.schema, function(field) {
-      if (field && field.type === "formLink" && field.childFormId) ids.push(field.childFormId);
+      if (field && field.type === "formLink" && field.childFormId) {
+        visit({ holder: field, idKey: "childFormId", pathKey: "childFormPath", targetKind: "forms" });
+      }
     });
   }
-  return ids;
 }
 
 // 参照種別ごとに {id, path}（path＝冗長保存した論理パス、無ければ ""）の組を集める。
 // fileId 切れ時の「論理パス再探索による復旧」に使う。
-//   refKind="questions"  → Q→Form（query.gui.formPath / query.formSources[].formPath）
-//   refKind="dashboards" → D→Q（cards[].questionPath）
-//   refKind="forms"      → form→childForm（schema 内 formLink の childFormPath）
 function StdFolders_collectRefPairs_(json, refKind) {
   var pairs = [];
-  if (!json) return pairs;
-  if (refKind === "questions") {
-    var query = json.query;
-    if (query && typeof query === "object") {
-      if (query.gui && typeof query.gui === "object" && query.gui.formId) {
-        pairs.push({ id: query.gui.formId, path: typeof query.gui.formPath === "string" ? query.gui.formPath : "" });
-      }
-      if (Array.isArray(query.formSources)) {
-        for (var i = 0; i < query.formSources.length; i++) {
-          var src = query.formSources[i];
-          if (src && src.formId) pairs.push({ id: src.formId, path: typeof src.formPath === "string" ? src.formPath : "" });
-        }
-      }
-    }
-  } else if (refKind === "dashboards") {
-    if (Array.isArray(json.cards)) {
-      for (var c = 0; c < json.cards.length; c++) {
-        var card = json.cards[c];
-        if (card && card.questionId) pairs.push({ id: card.questionId, path: typeof card.questionPath === "string" ? card.questionPath : "" });
-      }
-    }
-  } else if (refKind === "forms") {
-    if (Array.isArray(json.schema)) {
-      StdFolders_walkFields_(json.schema, function(field) {
-        if (field && field.type === "formLink" && field.childFormId) {
-          pairs.push({ id: field.childFormId, path: typeof field.childFormPath === "string" ? field.childFormPath : "" });
-        }
-      });
-    }
-  }
+  StdFolders_forEachRef_(json, refKind, function(ref) {
+    var path = ref.holder[ref.pathKey];
+    pairs.push({ id: ref.holder[ref.idKey], path: typeof path === "string" ? path : "" });
+  });
   return pairs;
 }
 
@@ -102,47 +73,13 @@ function StdFolders_qualifiedPathForId_(kind, id) {
 }
 
 // json 内の参照に、中央辞書から導出した論理パスを冗長保存（stamp）する。リンク切れ時の復旧アンカー。
-//   kind="questions"  → query.gui.formPath / query.formSources[].formPath
-//   kind="dashboards" → cards[].questionPath
-//   kind="forms"      → schema 内 formLink の childFormPath
-// 解決できない id は据え置き（既存値維持）。書き換えたら true。
+// 解決できない id は据え置き（既存値維持・changed 扱いにしない）。書き換えたら true。
 function StdFolders_stampRefPaths_(json, kind) {
-  if (!json) return false;
   var changed = false;
-  if (kind === "questions") {
-    var query = json.query;
-    if (query && typeof query === "object") {
-      if (query.gui && typeof query.gui === "object" && query.gui.formId) {
-        var gp = StdFolders_qualifiedPathForId_("forms", query.gui.formId);
-        if (gp !== null && query.gui.formPath !== gp) { query.gui.formPath = gp; changed = true; }
-      }
-      if (Array.isArray(query.formSources)) {
-        for (var i = 0; i < query.formSources.length; i++) {
-          var src = query.formSources[i];
-          if (src && src.formId) {
-            var sp = StdFolders_qualifiedPathForId_("forms", src.formId);
-            if (sp !== null && src.formPath !== sp) { src.formPath = sp; changed = true; }
-          }
-        }
-      }
-    }
-  } else if (kind === "dashboards") {
-    if (Array.isArray(json.cards)) {
-      for (var c = 0; c < json.cards.length; c++) {
-        var card = json.cards[c];
-        if (card && card.questionId) {
-          var qp = StdFolders_qualifiedPathForId_("questions", card.questionId);
-          if (qp !== null && card.questionPath !== qp) { card.questionPath = qp; changed = true; }
-        }
-      }
-    }
-  } else if (kind === "forms") {
-    StdFolders_walkFields_(json.schema, function(field) {
-      if (!field || field.type !== "formLink" || !field.childFormId) return;
-      var p = StdFolders_qualifiedPathForId_("forms", field.childFormId);
-      if (p !== null && field.childFormPath !== p) { field.childFormPath = p; changed = true; }
-    });
-  }
+  StdFolders_forEachRef_(json, kind, function(ref) {
+    var p = StdFolders_qualifiedPathForId_(ref.targetKind, ref.holder[ref.idKey]);
+    if (p !== null && ref.holder[ref.pathKey] !== p) { ref.holder[ref.pathKey] = p; changed = true; }
+  });
   return changed;
 }
 
@@ -179,66 +116,25 @@ function StdFolders_recoverUnregisteredRefs_(adapter, pairs, ctx) {
   }
 }
 
-// remap（旧id→新id）を json 内の参照に適用する。
-//   kind="questions" → query.gui.formId(+formPath) / query.formSources[].formId(+formPath)
-//   kind="dashboards"→ cards[].questionId(+questionPath)
-//   kind="forms"     → schema 内 formLink の childFormId(+childFormPath)
-// 書き換えたら true。冗長保存の path は新 id の論理パスへ再計算する。
+// remap（旧id→新id）を json 内の参照に適用する。書き換えたら true（path 解決不能でも id を
+// 書き換えた時点で true・path は旧値維持）。冗長保存の path は新 id の論理パスへ再計算する。
 function StdFolders_applyRemapToRefs_(json, kind, remap) {
-  if (!json || !StdFolders_hasOwnKeys_(remap)) return false;
+  if (!json || !nfbHasOwnKeys_(remap)) return false;
   var changed = false;
-  if (kind === "forms") {
-    StdFolders_walkFields_(json.schema, function(field) {
-      if (!field || field.type !== "formLink") return;
-      if (field.childFormId && remap[field.childFormId]) {
-        field.childFormId = remap[field.childFormId];
-        var p = StdFolders_qualifiedPathForId_("forms", field.childFormId);
-        if (p !== null) field.childFormPath = p;
-        changed = true;
-      }
-    });
-    return changed;
-  }
-  if (kind === "questions") {
-    var query = json.query;
-    if (query && typeof query === "object") {
-      if (query.gui && typeof query.gui === "object" && query.gui.formId && remap[query.gui.formId]) {
-        query.gui.formId = remap[query.gui.formId];
-        var gp = StdFolders_qualifiedPathForId_("forms", query.gui.formId);
-        if (gp !== null) query.gui.formPath = gp;
-        changed = true;
-      }
-      if (Array.isArray(query.formSources)) {
-        for (var i = 0; i < query.formSources.length; i++) {
-          var src = query.formSources[i];
-          if (src && src.formId && remap[src.formId]) {
-            src.formId = remap[src.formId];
-            var sp = StdFolders_qualifiedPathForId_("forms", src.formId);
-            if (sp !== null) src.formPath = sp;
-            changed = true;
-          }
-        }
-      }
-    }
-  } else if (kind === "dashboards") {
-    if (Array.isArray(json.cards)) {
-      for (var c = 0; c < json.cards.length; c++) {
-        var card = json.cards[c];
-        if (card && card.questionId && remap[card.questionId]) {
-          card.questionId = remap[card.questionId];
-          var qp = StdFolders_qualifiedPathForId_("questions", card.questionId);
-          if (qp !== null) card.questionPath = qp;
-          changed = true;
-        }
-      }
-    }
-  }
+  StdFolders_forEachRef_(json, kind, function(ref) {
+    var newId = remap[ref.holder[ref.idKey]];
+    if (!newId) return;
+    ref.holder[ref.idKey] = newId;
+    var p = StdFolders_qualifiedPathForId_(ref.targetKind, newId);
+    if (p !== null) ref.holder[ref.pathKey] = p;
+    changed = true;
+  });
   return changed;
 }
 
 // fileId の json を読み、remap を参照に適用して書き戻す。書き換えたら true。
 function StdFolders_rewriteRefsInFile_(fileId, kind, remap) {
-  if (!fileId || !StdFolders_hasOwnKeys_(remap)) return false;
+  if (!fileId || !nfbHasOwnKeys_(remap)) return false;
   try {
     var file = DriveApp.getFileById(fileId);
     if (typeof file.isTrashed === "function" && file.isTrashed()) return false;
@@ -290,27 +186,34 @@ function StdFolders_alignReferencesOnSave_(kind, savedFileId) {
     var ctx = { errors: [], invalidCandidates: [], remap: {}, dirty: false, guard: null };
     var formsAdapter = StdFolders_entityAdapter_("forms");
 
+    // 参照 {id, path} の収集は 1 回で済ませ、alignIdSet 用の id 配列は pairs から導出する。
+    var refIdsOf = function(pairs) {
+      var ids = [];
+      for (var pi = 0; pi < pairs.length; pi++) ids.push(pairs[pi].id);
+      return ids;
+    };
+
     if (kind === "forms") {
       // form→childForm（formLink）。子フォームへ ⓪①②③ + path 復旧を適用し、親の childFormId を追従。
-      StdFolders_recoverUnregisteredRefs_(formsAdapter, StdFolders_collectRefPairs_(savedJson, "forms"), ctx);
-      var childIds = StdFolders_collectChildFormIdsFromFormJson_(savedJson);
-      result.forms = StdFolders_alignIdSet_(formsAdapter, childIds, ctx);
+      var childPairs = StdFolders_collectRefPairs_(savedJson, "forms");
+      StdFolders_recoverUnregisteredRefs_(formsAdapter, childPairs, ctx);
+      result.forms = StdFolders_alignIdSet_(formsAdapter, refIdsOf(childPairs), ctx);
       if (StdFolders_rewriteRefsInFile_(savedFileId, "forms", ctx.remap)) result.relinkedFiles++;
     } else if (kind === "questions") {
-      StdFolders_recoverUnregisteredRefs_(formsAdapter, StdFolders_collectRefPairs_(savedJson, "questions"), ctx);
-      var formIds = StdFolders_collectFormIdsFromQuestionJson_(savedJson);
-      result.forms = StdFolders_alignIdSet_(formsAdapter, formIds, ctx);
+      var formPairs = StdFolders_collectRefPairs_(savedJson, "questions");
+      StdFolders_recoverUnregisteredRefs_(formsAdapter, formPairs, ctx);
+      result.forms = StdFolders_alignIdSet_(formsAdapter, refIdsOf(formPairs), ctx);
       // 参照先フォームの id が変わったら、保存済みクエスチョンのリンクを追従。
       if (StdFolders_rewriteRefsInFile_(savedFileId, "questions", ctx.remap)) result.relinkedFiles++;
     } else {
       var questionsAdapter = StdFolders_entityAdapter_("questions");
-      StdFolders_recoverUnregisteredRefs_(questionsAdapter, StdFolders_collectRefPairs_(savedJson, "dashboards"), ctx);
-      var questionIds = StdFolders_collectQuestionIdsFromDashboardJson_(savedJson);
+      var questionPairs = StdFolders_collectRefPairs_(savedJson, "dashboards");
+      StdFolders_recoverUnregisteredRefs_(questionsAdapter, questionPairs, ctx);
+      var questionIds = refIdsOf(questionPairs);
       result.questions = StdFolders_alignIdSet_(questionsAdapter, questionIds, ctx);
 
       // クエスチョンから先のフォームも整合する（remap 後の実 id でクエスチョン json を読む）。
       var qFileIds = [];
-      var allFormIds = [];
       var allFormPairs = [];
       var seenQ = {};
       for (var i = 0; i < questionIds.length; i++) {
@@ -320,12 +223,11 @@ function StdFolders_alignReferencesOnSave_(kind, savedFileId) {
         qFileIds.push(qid);
         var qjson = StdFolders_readJsonByFileId_(qid);
         if (qjson) {
-          allFormIds = allFormIds.concat(StdFolders_collectFormIdsFromQuestionJson_(qjson));
           allFormPairs = allFormPairs.concat(StdFolders_collectRefPairs_(qjson, "questions"));
         }
       }
       StdFolders_recoverUnregisteredRefs_(formsAdapter, allFormPairs, ctx);
-      result.forms = StdFolders_alignIdSet_(formsAdapter, allFormIds, ctx);
+      result.forms = StdFolders_alignIdSet_(formsAdapter, refIdsOf(allFormPairs), ctx);
 
       // フォーム id が変わったら各中間クエスチョンのリンクを追従。
       for (var j = 0; j < qFileIds.length; j++) {

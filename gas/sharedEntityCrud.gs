@@ -75,6 +75,17 @@ function SharedCrud_resolveEntityFileOrNull_(fileId, opts) {
   return null;
 }
 
+// 保存先（targetUrl パース結果）と既存ファイルの有無から saveMode を決定する共通本体。
+// Forms_saveForm_ / Analytics_saveTemplate_ で同一だった優先順位:
+//   フォルダ指定 → copy_to_folder / ファイル指定 → overwrite_existing /
+//   既存ファイルあり → overwrite_existing / それ以外 → copy_to_root。
+function SharedCrud_resolveSaveMode_(parsedTarget, existingFileId) {
+  if (parsedTarget && parsedTarget.type === "folder") return "copy_to_folder";
+  if (parsedTarget && parsedTarget.type === "file") return "overwrite_existing";
+  if (existingFileId) return "overwrite_existing";
+  return "copy_to_root";
+}
+
 // =============================================
 // Shared Entity CRUD — Forms / Analytics の delete / archive / copy 系で
 // 「ほぼ行単位で同一」だった本体ロジックを adapter 注入方式で集約したコア群。
