@@ -5,7 +5,7 @@
 
 - **フロント**: React 19 + Vite 7（`vite-plugin-singlefile` で単一 HTML 化）
 - **バック**: Google Apps Script V8（`clasp` でデプロイ）
-- **保存先**: Google Sheets（回答）/ Google Drive（フォーム定義・添付・出力）/ Properties Service / IndexedDB（ブラウザキャッシュ）
+- **保存先**: Google Sheets（回答）/ Google Drive（フォーム定義・添付・出力）/ Properties Service / IndexedDB（ブラウザキャッシュ・オフライン保存キュー）
 
 ## できること
 
@@ -14,6 +14,7 @@
 - 印刷 PDF / Google Doc / Gmail 下書きの自動生成（alasql 関数式によるテンプレ。トークンは `{{...}}`（ビュー形式）に統一。単一ブレース `{...}` はリテラル文字）
 - ファイルアップロード（Google Drive 保存）
 - 集計ダッシュボード（Question / Dashboard、ブラウザ内 AlaSQL、Chart.js / ECharts / Leaflet / ピボット）
+- オフラインファースト保存（フォーム / Question / Dashboard は IndexedDB へ即保存 → バックグラウンドで Drive へ write-behind アップロード、指数バックオフで再試行）
 - 17 種のテーマ、表示モード、IndexedDB SWR キャッシュ、`LockService` ベースの排他制御
 
 ## クイックスタート
