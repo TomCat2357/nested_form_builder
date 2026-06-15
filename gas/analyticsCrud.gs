@@ -122,7 +122,10 @@ function Analytics_getTemplate_(type, templateId) {
  * (auto/overwrite_existing/copy_to_folder/copy_to_root) を解釈する。
  */
 function Analytics_saveTemplate_(type, template, targetUrl) {
+  // Forms_saveForm_ と対称に、nfbSafeCall_（外）→ WithScriptLock_（内）でラップする。
+  // mapping（PropertiesService）の read-modify-write を排他し、並行保存でのロストアップデートを防ぐ。
   return nfbSafeCall_(function() {
+    return WithScriptLock_("テンプレート保存", function() {
     if (!template || typeof template !== "object") throw new Error("テンプレートデータが不正です");
 
     // id ＝ Drive fileId へ統一。既存は template.id（＝fileId）を上書き、新規は保存後に fileId を採番する。
@@ -335,6 +338,7 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     result[resultKey] = saved;
     if (referenceSync) result.referenceSync = referenceSync;
     return result;
+    });
   });
 }
 
@@ -345,14 +349,17 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
  */
 function Analytics_deleteTemplates_(type, templateIds) {
   return nfbSafeCall_(function() {
-    var ids = Nfb_normalizeIdList_(templateIds);
-    if (!ids.length) {
-      throw new Error("IDが指定されていません");
-    }
-    // 本体は SharedEntity_deleteByIds_（sharedEntityCrud.gs）。analytics 固有の差分は mapping store のみ。
-    return SharedEntity_deleteByIds_(ids, {
-      getMapping: function() { return Analytics_getMapping_(type); },
-      saveMapping: function(mapping) { return Analytics_saveMapping_(type, mapping); },
+    // 保存と同じく mapping の read-modify-write を排他する（WithScriptLock_ は再入可）。
+    return WithScriptLock_("テンプレート削除", function() {
+      var ids = Nfb_normalizeIdList_(templateIds);
+      if (!ids.length) {
+        throw new Error("IDが指定されていません");
+      }
+      // 本体は SharedEntity_deleteByIds_（sharedEntityCrud.gs）。analytics 固有の差分は mapping store のみ。
+      return SharedEntity_deleteByIds_(ids, {
+        getMapping: function() { return Analytics_getMapping_(type); },
+        saveMapping: function(mapping) { return Analytics_saveMapping_(type, mapping); },
+      });
     });
   });
 }
@@ -366,14 +373,17 @@ function Analytics_deleteTemplates_(type, templateIds) {
  */
 function Analytics_deleteTemplatesWithFiles_(type, templateIds) {
   return nfbSafeCall_(function() {
-    var ids = Nfb_normalizeIdList_(templateIds);
-    if (!ids.length) {
-      throw new Error("IDが指定されていません");
-    }
-    // 本体は SharedEntity_deleteWithFiles_（sharedEntityCrud.gs）。標準サブフォルダ key は type と一致。
-    return SharedEntity_deleteWithFiles_(ids, type, {
-      getMapping: function() { return Analytics_getMapping_(type); },
-      saveMapping: function(mapping) { return Analytics_saveMapping_(type, mapping); },
+    // 保存と同じく mapping の read-modify-write を排他する（WithScriptLock_ は再入可）。
+    return WithScriptLock_("テンプレート削除", function() {
+      var ids = Nfb_normalizeIdList_(templateIds);
+      if (!ids.length) {
+        throw new Error("IDが指定されていません");
+      }
+      // 本体は SharedEntity_deleteWithFiles_（sharedEntityCrud.gs）。標準サブフォルダ key は type と一致。
+      return SharedEntity_deleteWithFiles_(ids, type, {
+        getMapping: function() { return Analytics_getMapping_(type); },
+        saveMapping: function(mapping) { return Analytics_saveMapping_(type, mapping); },
+      });
     });
   });
 }

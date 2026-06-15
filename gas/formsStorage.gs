@@ -118,7 +118,10 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
  */
 
 function Forms_saveForm_(form, targetUrl, saveMode) {
-  return WithScriptLock_("フォーム保存", function() {
+  // Analytics_saveTemplate_ と対称に、nfbSafeCall_（外）→ WithScriptLock_（内）でラップする。
+  // 生例外は executeAction_ でも捕捉されるが、ハンドラ内で構造化・伏字化（nfbFail_）する方を統一形とする。
+  return nfbSafeCall_(function() {
+    return WithScriptLock_("フォーム保存", function() {
     if (!form) {
       throw new Error("Form data is required");
     }
@@ -382,6 +385,7 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       saveMode: effectiveSaveMode,
       form: formWithTimestamp,
     };
+    });
   });
 }
 
