@@ -111,6 +111,8 @@
   --if-chip-bg: rgba(234, 191, 106, 0.16);
   --if-chip-border: rgba(234, 191, 106, 0.28);
   --if-badge-border: rgba(74, 222, 128, 0.22);
+
+  --nf-zebra: rgba(255, 255, 255, 0.05);
 }
 
 :root[data-theme="midnight"] { color-scheme: dark; }
