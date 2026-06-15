@@ -326,7 +326,7 @@ function nfbResolveStandardPrintFileNameTemplate_(settings) {
   var configuredTemplate = settings && settings.standardPrintFileNameTemplate
     ? String(settings.standardPrintFileNameTemplate).trim()
     : "";
-  return configuredTemplate || "{`_id`}_{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}";
+  return configuredTemplate || "{{`_id`}}_{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}}";
 }
 
 // gmail 以外（pdf / googleDoc）はファイル名テンプレートが必須。

@@ -8,14 +8,16 @@ import {
   resolvePrintTemplateFieldLabel,
 } from "../utils/printTemplateAction.js";
 import { checkNumberFieldConfig, NUMBER_MODES } from "./validate.js";
+import { migrateLegacyWebhookUrlTokens } from "../utils/externalActionUrl.js";
 export { countSchemaNodes };
 
 // Webhook 質問カードの設定を正規化する。{ url, adminOnly } の形に揃える。
 // URL の妥当性チェック（http(s) 始まりか）は編集 UI / 送信時に行う。
+// 旧・単括弧固定トークン（{id} 等）は読み込み時に alasql 予約参照へ自動マップ（冪等）。
 export const normalizeWebhookAction = (raw) => {
   const obj = raw && typeof raw === "object" ? raw : {};
   return {
-    url: typeof obj.url === "string" ? obj.url : "",
+    url: migrateLegacyWebhookUrlTokens(typeof obj.url === "string" ? obj.url : ""),
     adminOnly: !!obj.adminOnly,
   };
 };

@@ -229,7 +229,7 @@ async function buildManualForm(frame) {
   // PDF モード（既定）: カスタムテンプレートと出力ファイル名規則を設定
   await setCheckboxByLabel(q6, "カスタムテンプレートを使う", true);
   await q6.locator('input[placeholder^="印刷様式テンプレートURL"]').first().fill("https://docs.google.com/document/d/DOC_ID/edit");
-  await q6.locator('input[placeholder^="出力ファイル名"]').first().fill("申請書_{`相談者名`}_{TIME_FORMAT(NOW(),'YYYYMMDD')}");
+  await q6.locator('input[placeholder^="出力ファイル名"]').first().fill("申請書_{{`相談者名`}}_{{TIME_FORMAT(NOW(),'YYYYMMDD')}}");
 }
 
 async function createManualForm(frame) {
@@ -513,10 +513,10 @@ async function captureEditorScreens(context, formId) {
     await setCheckboxByLabel(q6, "添付 PDF にカスタムテンプレートを使う", true);
     await q6.locator('input[placeholder^="印刷様式テンプレートURL"]').first().fill("https://docs.google.com/document/d/DOC_ID/edit");
     // To / Cc / Bcc は同じ placeholder（"例: {...}"）、件名は "例: 【申請】..."、本文は textarea
-    await q6.locator('input[placeholder^="例: {"]').first().fill("{`メールアドレス`}");
-    await q6.locator('input[placeholder^="例: 【申請】"]').first().fill("【受付完了】{`相談者名`} 様 ({`受付番号`})");
+    await q6.locator('input[placeholder^="例: {"]').first().fill("{{`メールアドレス`}}");
+    await q6.locator('input[placeholder^="例: 【申請】"]').first().fill("【受付完了】{{`相談者名`}} 様 ({{`受付番号`}})");
     await q6.locator('textarea[placeholder="本文テンプレートを入力"]').first().fill(
-      "{`相談者名`} 様\n\n相談を受け付けました。\n受付番号: {`受付番号`}\n受付日: {TIME_FORMAT(`受付日`,'YYYY年M月D日')}\n\n詳細はこちら: {`_record_url`}"
+      "{{`相談者名`}} 様\n\n相談を受け付けました。\n受付番号: {{`受付番号`}}\n受付日: {{TIME_FORMAT(`受付日`,'YYYY年M月D日')}}\n\n詳細はこちら: {{`_record_url`}}"
     );
     await frame.page().waitForTimeout(500);
     await q6.scrollIntoViewIfNeeded();

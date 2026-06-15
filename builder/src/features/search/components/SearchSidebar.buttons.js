@@ -1,5 +1,12 @@
-import { resolveExternalActionUrl } from "../../../utils/externalActionUrl.js";
+import {
+  isValidExternalActionUrl,
+  buildSpreadsheetUrl,
+  hasBlockedSensitiveRefs,
+  migrateLegacyWebhookUrlTokens,
+} from "../../../utils/externalActionUrl.js";
 import { submitExternalActionPost, buildExternalActionPayload, openExternalActionWindow } from "../../../utils/externalActionPost.js";
+import { resolveTemplateTokensAsync } from "../../../utils/tokenReplacer.js";
+import { extractReservedRefs } from "../../expression/templateEvaluator.js";
 import { resolveStyleSettingsInlineStyle } from "../../../core/styleSettings.js";
 import { buildExportTableData } from "../searchExport.js";
 import { joinFieldPath } from "../../../utils/pathCodec.js";
@@ -27,15 +34,44 @@ const buildSearchPayloadBase = (form, outputTargetRows, childFormsByRow) => {
 // その既存タブへ POST する。searchChildFormsResolver(entries) は childFormsByRow を返す async 関数。
 const handleExternalActionClick = async (action, { formContext, isAdmin, form, outputTargetRows, searchChildFormsResolver }) => {
   const gate = { adminOnly: !!action.adminOnly, isAdmin };
-  // 既存設定の URL トークン置換は後方互換のため維持 (機微トークンの gating も従来通り)
-  const resolvedUrl = resolveExternalActionUrl(action.url, formContext, gate);
-  if (!resolvedUrl) {
+  // URL トークン解決は印刷様式と共通の alasql `{{...}}` エンジンに統一。旧・単括弧固定トークンは
+  // 自動マップ。機微予約トークンは adminOnly && isAdmin のときだけ展開を許可（早期失敗を維持）。
+  const migratedUrl = migrateLegacyWebhookUrlTokens(action.url);
+  if (hasBlockedSensitiveRefs(extractReservedRefs(migratedUrl), gate)) {
     // eslint-disable-next-line no-alert
-    window.alert("URL が不正です (http:// または https:// で始まる必要があります)。フォーム設定を確認してください。");
+    window.alert("この URL には管理者限定のトークンが含まれています。フォーム設定で「管理者のみ」を有効にするか、トークンを見直してください。");
     return;
   }
   // ユーザージェスチャ中に結果タブを確保（この後 await を挟んでも POST 先を失わない）。
   const target = openExternalActionWindow();
+  const sensitiveAllowed = gate.adminOnly && gate.isAdmin;
+  const fc = formContext || {};
+  const urlCtx = {
+    formId: fc.formId || "",
+    formName: fc.formName || "",
+    valueTransform: encodeURIComponent,
+    ...(sensitiveAllowed ? {
+      spreadsheetId: fc.spreadsheetId || "",
+      spreadsheetUrl: buildSpreadsheetUrl(fc.spreadsheetId || ""),
+      sheetName: fc.sheetName || "",
+      driveFileUrl: fc.driveFileUrl || "",
+      userEmail: fc.userEmail || "",
+    } : {}),
+  };
+  let resolvedUrl = "";
+  try {
+    resolvedUrl = await resolveTemplateTokensAsync(migratedUrl, urlCtx);
+  } catch (_e) {
+    resolvedUrl = "";
+  }
+  if (!isValidExternalActionUrl(resolvedUrl)) {
+    if (target && target.win && typeof target.win.close === "function") {
+      try { target.win.close(); } catch (_e2) { /* noop */ }
+    }
+    // eslint-disable-next-line no-alert
+    window.alert("URL が不正です (http:// または https:// で始まる必要があります)。フォーム設定を確認してください。");
+    return;
+  }
   let childFormsByRow = null;
   if (typeof searchChildFormsResolver === "function") {
     const entries = Array.isArray(outputTargetRows) ? outputTargetRows.map((row) => row.entry).filter(Boolean) : [];

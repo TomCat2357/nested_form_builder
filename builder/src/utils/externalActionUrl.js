@@ -1,22 +1,38 @@
-// 外部アクションボタンの URL を解決するユーティリティ。
-// - {id} / {formId} / {formName} を encodeURIComponent して置換する
-// - 機微トークン ({spreadsheetId} / {spreadsheetUrl} / {sheetName} / {driveFileUrl} / {userEmail})
-//   は adminOnly && isAdmin のときのみ展開。それ以外では URL 全体を null 化して早期失敗させる
-// - http:// または https:// で始まらない URL は null を返す (javascript: 等のXSS対策)
-
-const TOKEN_PATTERN = /\{(id|formId|formName|spreadsheetId|spreadsheetUrl|sheetName|driveFileUrl|userEmail)\}/g;
+// 外部アクション（Webhook）URL のユーティリティ。
+// - URL のトークン解決は印刷様式と共通の alasql `{{...}}` エンジン（tokenReplacer）に統一済み。
+//   本モジュールは「http(s) 検証」「旧・単括弧固定トークンの予約参照への自動マップ」
+//   「機微予約トークンの管理者ゲート判定」のみを担う純ユーティリティ。
+// - 機微トークン（_spreadsheet_id / _spreadsheet_url / _sheet_name / _drive_file_url / _user_email）
+//   は adminOnly && isAdmin のときだけ展開を許可。違反時は送信側で URL を null 化して早期失敗させる。
 
 const HTTP_URL_PATTERN = /^https?:\/\//i;
 
-const SENSITIVE_TOKENS = new Set([
-  "spreadsheetId",
-  "spreadsheetUrl",
-  "sheetName",
-  "driveFileUrl",
-  "userEmail",
+// 機微予約参照（バッククォート無しの素の名前）。これらが許可なく参照されたら送信を止める。
+export const SENSITIVE_RESERVED_REFS = new Set([
+  "_spreadsheet_id",
+  "_spreadsheet_url",
+  "_sheet_name",
+  "_drive_file_url",
+  "_user_email",
 ]);
 
-const buildSpreadsheetUrl = (spreadsheetId) => (
+// 旧・単括弧固定トークン（{id} 等）→ 新・alasql 予約参照名の対応。
+// トークンは増やさない方針（統一性のための機構統合のみ）。
+export const LEGACY_WEBHOOK_TOKEN_MAP = Object.freeze({
+  id: "_id",
+  formId: "_form_id",
+  formName: "_form_name",
+  spreadsheetId: "_spreadsheet_id",
+  spreadsheetUrl: "_spreadsheet_url",
+  sheetName: "_sheet_name",
+  driveFileUrl: "_drive_file_url",
+  userEmail: "_user_email",
+});
+
+// 旧単括弧トークンだけを厳密一致で拾う（前後がブレースのものは除外＝二重括弧を壊さない）。
+const LEGACY_TOKEN_PATTERN = /(?<!\{)\{(id|formId|formName|spreadsheetId|spreadsheetUrl|sheetName|driveFileUrl|userEmail)\}(?!\})/g;
+
+export const buildSpreadsheetUrl = (spreadsheetId) => (
   spreadsheetId ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}` : ""
 );
 
@@ -25,29 +41,20 @@ export const isValidExternalActionUrl = (url) => {
   return HTTP_URL_PATTERN.test(url.trim());
 };
 
-export const resolveExternalActionUrl = (url, context, gate) => {
-  if (typeof url !== "string") return null;
-  const trimmed = url.trim();
-  if (!trimmed) return null;
-  const ctx = context && typeof context === "object" ? context : {};
-  const { adminOnly = false, isAdmin = false } = gate && typeof gate === "object" ? gate : {};
-  const sensitiveAllowed = adminOnly === true && isAdmin === true;
-  let blocked = false;
-  const replaced = trimmed.replace(TOKEN_PATTERN, (_match, name) => {
-    if (SENSITIVE_TOKENS.has(name) && !sensitiveAllowed) {
-      blocked = true;
-      return "";
-    }
-    let raw;
-    if (name === "spreadsheetUrl") {
-      raw = buildSpreadsheetUrl(ctx.spreadsheetId);
-    } else {
-      raw = ctx[name];
-    }
-    if (raw === undefined || raw === null) return "";
-    return encodeURIComponent(String(raw));
+// 旧 webhook URL（`{id}` 等の単括弧固定トークン）を alasql 予約参照 `` {{`_id`}} `` へ
+// 自動マップする。冪等：対象は 8 個の完全一致のみ・既に `{{...}}` のものは触らない。
+export const migrateLegacyWebhookUrlTokens = (url) => {
+  if (typeof url !== "string" || url.indexOf("{") < 0) return typeof url === "string" ? url : "";
+  return url.replace(LEGACY_TOKEN_PATTERN, (_match, name) => {
+    const reserved = LEGACY_WEBHOOK_TOKEN_MAP[name];
+    return reserved ? "{{`" + reserved + "`}}" : _match;
   });
-  if (blocked) return null;
-  if (!HTTP_URL_PATTERN.test(replaced)) return null;
-  return replaced;
+};
+
+// テンプレ中で参照された予約名（extractReservedRefs の結果）に、許可されていない機微参照が
+// 含まれるかを判定する。true なら送信側で URL を null 化して早期失敗させる。
+export const hasBlockedSensitiveRefs = (reservedRefs, gate) => {
+  const allowed = gate && gate.adminOnly === true && gate.isAdmin === true;
+  if (allowed) return false;
+  return (reservedRefs || []).some((name) => SENSITIVE_RESERVED_REFS.has(name));
 };

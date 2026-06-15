@@ -118,9 +118,88 @@ export const collectResponses = (fields, responses, options = {}) => {
 const DATA_CHOICE_TYPES = ["checkboxes", "radio", "select"];
 const DATA_VALUE_TEXT_TYPES = ["text", "textarea", "number", "regex", "date", "time", "url", "userName", "email", "phone"];
 
-const collectSelectedOptionLabels = (type, value) => {
-  if (type === "checkboxes") return Array.isArray(value) ? value.filter((v) => typeof v === "string" && v) : [];
-  return typeof value === "string" && value ? [value] : [];
+const isChoiceMarker = (value) => value === true || value === 1 || value === "1" || value === "●";
+
+// 選択肢フィールドの options ラベルを重複除去して取得する。
+export const toChoiceOptionLabels = (field) => {
+  const options = Array.isArray(field?.options) ? field.options : [];
+  const labels = [];
+  const seen = new Set();
+  options.forEach((opt) => {
+    const label = typeof opt?.label === "string" ? opt.label : "";
+    if (!label || seen.has(label)) return;
+    labels.push(label);
+    seen.add(label);
+  });
+  return labels;
+};
+
+const toRawSelectedLabels = (type, value) => {
+  const labels = [];
+  const seen = new Set();
+  const add = (candidate) => {
+    if (typeof candidate !== "string" || !candidate || seen.has(candidate)) return;
+    labels.push(candidate);
+    seen.add(candidate);
+  };
+
+  if (type === "checkboxes") {
+    if (Array.isArray(value)) {
+      value.forEach((item) => add(item));
+      return labels;
+    }
+    if (typeof value === "string") {
+      add(value);
+    } else if (value && typeof value === "object") {
+      Object.entries(value).forEach(([label, marker]) => {
+        if (isChoiceMarker(marker)) add(label);
+      });
+    }
+    return labels;
+  }
+
+  if (type === "radio" || type === "select") {
+    if (typeof value === "string") {
+      add(value);
+    } else if (Array.isArray(value)) {
+      value.forEach((item) => add(item));
+    } else if (value && typeof value === "object") {
+      Object.entries(value).forEach(([label, marker]) => {
+        if (isChoiceMarker(marker)) add(label);
+      });
+    }
+    return labels;
+  }
+
+  return labels;
+};
+
+// 選択肢フィールドの選択ラベルを options 順（＋未知ラベルは末尾）に正規化する。
+// Webhook/印刷 items（表示文字列）と template view 値（dataValueMap）で共有する正準実装。
+export const toSelectedChoiceLabels = (field, value) => {
+  const type = field?.type;
+  if (!DATA_CHOICE_TYPES.includes(type)) return [];
+
+  const rawSelected = toRawSelectedLabels(type, value);
+  if (rawSelected.length === 0) return [];
+
+  const selectedSet = new Set(rawSelected);
+  const ordered = [];
+  const seen = new Set();
+
+  toChoiceOptionLabels(field).forEach((label) => {
+    if (!selectedSet.has(label) || seen.has(label)) return;
+    ordered.push(label);
+    seen.add(label);
+  });
+
+  rawSelected.forEach((label) => {
+    if (seen.has(label)) return;
+    ordered.push(label);
+    seen.add(label);
+  });
+
+  return type === "checkboxes" ? ordered : ordered.slice(0, 1);
 };
 
 /**
@@ -143,7 +222,7 @@ export const buildDataValueMap = (fields, responses) => {
     if (DATA_CHOICE_TYPES.includes(field.type)) {
       // テンプレ行は表示用途なので複数選択は表示区切り ", "（エスケープなし）で連結する。
       // ※ 保存・検索の正準区切り（codec のエスケープ付き ","）とは別経路。
-      const labels = collectSelectedOptionLabels(field.type, value);
+      const labels = toSelectedChoiceLabels(field, value);
       if (field.type === "checkboxes") {
         if (labels.length > 0) out[base] = labels.join(", ");
       } else if (labels[0]) {
