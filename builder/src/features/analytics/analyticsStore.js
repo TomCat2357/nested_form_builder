@@ -7,8 +7,8 @@ import { analyticsGasClient } from "./analyticsGasClient.js";
 import { questionCache, dashboardCache, emitAnalyticsCacheChanged } from "./analyticsCache.js";
 import { deepClone } from "../../core/schema.js";
 import { genLocalId, isLocalId } from "../../core/ids.js";
-import { enqueueJob, enqueueOpJob, deleteJobsForLocalId, deleteOpJobsForFolderPrefix } from "../../app/state/uploadQueue.js";
-import { kickUploadWorker } from "../../app/state/uploadWorker.js";
+import { enqueueOpJob, deleteJobsForLocalId, deleteOpJobsForFolderPrefix } from "../../app/state/uploadQueue.js";
+import { kickUploadWorker, enqueueEntitySave } from "../../app/state/uploadWorker.js";
 import {
   normalizeFolderPath,
   isUnderFolder,
@@ -574,11 +574,12 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     if (validateBeforeSave) validateBeforeSave(data);
     const localId = data.id || genLocalId();
     const record = { ...data, id: localId, pendingUpload: true, modifiedAt: Date.now() };
-    await cache.upsert(record);
-    await enqueueJob({ entityType: one, localId, payload: record });
-    kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
-    return record;
+    return await enqueueEntitySave({
+      entityType: one,
+      record,
+      upsertCache: (r) => cache.upsert(r),
+      emit: emitAnalyticsCacheChanged,
+    });
   }
 
   async function remove(id) {
@@ -673,11 +674,12 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
       modifiedAt: Date.now(),
     };
     if (validateBeforeSave) validateBeforeSave(clone);
-    await cache.upsert(clone);
-    await enqueueJob({ entityType: one, localId, payload: clone });
-    kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
-    return clone;
+    return await enqueueEntitySave({
+      entityType: one,
+      record: clone,
+      upsertCache: (r) => cache.upsert(r),
+      emit: emitAnalyticsCacheChanged,
+    });
   }
 
   async function registerImported(payload) {

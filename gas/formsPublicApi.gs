@@ -5,6 +5,14 @@
 // Analytics API と同様に、公開 API は `executeAction_` の 1 経路へ統一する。
 // google.script.run 用の `nfb*` 関数も doPost の `forms_*` アクション用ハンドラ
 // (FormsApi_*_) も、共通の `Forms_dispatch_` を経由して `Forms_*_` ヘルパへ中継する。
+//
+// ［ハンドラ表の流派について（意図的差異）］
+// Forms は import / resolve_ref / folder 系などアドホックなロジックを持つアクションが多いため、
+// FORMS_HANDLERS_ は `{ run: function(raw){...} }` クロージャ方式（アクションごとに任意処理）を採る。
+// 一方 Analytics（analyticsApi.gs）は type × mode が直交するため宣言的 `{ type, mode, idKey, ... }`
+// ＋中央 switch 方式を採る。両者は `*_dispatch_ → Nfb_runScriptAction_ → executeAction_` の単一経路へ
+// 収束済みで機能的な不整合は無い。表の書き味の違いは各ドメインの性質に合わせた意図的なもので、
+// どちらかへの一律統一は不要（むしろ可読性を損なう）。必須フィールド検証は Nfb_requireField_ で共通化。
 
 // ---- Action handler ディスパッチテーブル ----
 // 各エントリの run(raw) は ctx.raw（リクエストペイロード）を受け取り、正規化済み
@@ -40,9 +48,9 @@ var FORMS_HANDLERS_ = {
   },
   "forms_get": {
     run: function(raw) {
-      var formId = raw && raw.formId;
-      if (!formId) return { ok: false, error: "フォームIDが指定されていません" };
-      var form = Forms_getForm_(formId);
+      var err = Nfb_requireField_(raw, "formId", "フォームIDが指定されていません");
+      if (err) return err;
+      var form = Forms_getForm_(raw.formId);
       if (!form) return { ok: false, error: "Form not found" };
       return { ok: true, form: form };
     }
@@ -74,9 +82,9 @@ var FORMS_HANDLERS_ = {
   },
   "forms_import": {
     run: function(raw) {
-      var fileUrl = raw && raw.fileUrl;
-      if (!fileUrl) return { ok: false, error: "ファイルURLが指定されていません" };
-      var parsed = Forms_parseGoogleDriveUrl_(fileUrl);
+      var err = Nfb_requireField_(raw, "fileUrl", "ファイルURLが指定されていません");
+      if (err) return err;
+      var parsed = Forms_parseGoogleDriveUrl_(raw.fileUrl);
       if (!parsed || parsed.type !== "file" || !parsed.id) return { ok: false, error: "無効なファイルURLです" };
       var formData;
       try {
@@ -140,9 +148,9 @@ var FORMS_HANDLERS_ = {
   },
   "forms_copy": {
     run: function(raw) {
-      var formId = raw && raw.formId;
-      if (!formId) return { ok: false, error: "formId is required" };
-      return Forms_copyForm_(formId);
+      var err = Nfb_requireField_(raw, "formId", "formId is required");
+      if (err) return err;
+      return Forms_copyForm_(raw.formId);
     }
   },
   "forms_import_drive": {

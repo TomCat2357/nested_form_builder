@@ -6,6 +6,13 @@
 // 共通ロジック (Analytics_*Template*_ 系) でフォームと同等の管理機能を提供する。
 //
 // 公開 API は `nfb*Analytics*` プレフィックスで `executeAction_` 経由で呼ばれる。
+//
+// ［ハンドラ表の流派について（意図的差異）］
+// Analytics は type × mode が直交するため ANALYTICS_HANDLERS_ は宣言的 `{ type, mode, idKey, ... }`
+// ＋中央 Analytics_dispatch_ の switch 方式を採る。一方 Forms（formsPublicApi.gs）はアドホックな
+// アクションが多く `{ run: function(raw){...} }` クロージャ方式。両者は `*_dispatch_ →
+// Nfb_runScriptAction_ → executeAction_` の単一経路へ収束済みで機能的な不整合は無い。表の書き味の
+// 違いは各ドメインの性質に合わせた意図的なもので、一律統一はしない（formsPublicApi.gs 冒頭も参照）。
 
 var ANALYTICS_FOLDER_NAME = "Nested Form Builder - Analytics";
 var ANALYTICS_QUESTIONS_SUBFOLDER_NAME = "Questions";

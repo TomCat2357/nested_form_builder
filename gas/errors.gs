@@ -53,6 +53,14 @@ function Nfb_unwrapSingleResult_(res, listKey, resultKey) {
   return { ok: false, error: (res.errors && res.errors[0]) ? res.errors[0].error : "Unknown error" };
 }
 
+// raw[key] が空（falsy）なら { ok:false, error } を返し、値があれば null。
+// FORMS_HANDLERS_ の run クロージャ内に散在する「ID/URL 必須」インラインチェックの重複を畳む。
+// 既存の RequireFormId_ 系（ctx ベース・nfbFail_ 返し）とは別系統で、run(raw) の戻り値形式
+// （{ ok:false, error } を return）に合わせた薄い純関数。
+function Nfb_requireField_(raw, key, msg) {
+  return (raw && raw[key]) ? null : { ok: false, error: msg };
+}
+
 function JsonOutput_(payload, status) {
   var output = ContentService.createTextOutput(JSON.stringify(payload || {})).setMimeType(ContentService.MimeType.JSON);
   if (typeof status === "number" && output.setStatusCode) output.setStatusCode(status);

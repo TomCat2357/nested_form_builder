@@ -135,6 +135,10 @@ function loadFormsSaveContext() {
     NFB_UI_TEMP_KEYS: [],
     AddFormUrl_: () => {},
     nfbErrorToString_: (err) => (err && err.message ? err.message : String(err)),
+    // Forms_saveForm_ / Forms_deleteForms_ が nfbSafeCall_（外）→ WithScriptLock_（内）でラップされたため両方を shim。
+    nfbSafeCall_: (fn) => {
+      try { return fn(); } catch (err) { return { ok: false, error: err && err.message ? err.message : String(err) }; }
+    },
     WithScriptLock_: (label, fn) => fn(),
     // constants.gs を読まないので shim（重複除去した文字列 id 配列）。
     Nfb_normalizeIdList_: (ids) => {

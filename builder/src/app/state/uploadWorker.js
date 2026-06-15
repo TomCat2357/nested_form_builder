@@ -32,6 +32,7 @@ import {
   emitAnalyticsFoldersChanged,
 } from "../../features/analytics/analyticsCache.js";
 import {
+  enqueueJob,
   getAllJobs,
   updateJob,
   deleteJob,
@@ -330,6 +331,31 @@ export async function processQueue() {
 
 // 新しいジョブを積んだ後などに呼ぶ（多重起動は processing ガードで吸収）。
 export const kickUploadWorker = () => { void processQueue(); };
+
+/**
+ * オフラインファースト保存の共通プリミティブ。
+ *
+ * Form / Question / Dashboard はいずれも「（任意で）キャッシュへ即時反映 → uploadQueue へ
+ * write-behind ジョブを積む → ワーカー起動 →（任意で）一覧へ変更通知」という同型の保存パスを持つ。
+ * 種別ごとの差異（キャッシュ書き込み手段・変更通知の有無）だけを引数で受け取り、
+ * write-behind プリミティブ本体（enqueueJob + kickUploadWorker）を 1 箇所へ集約する。
+ *
+ * @param {Object} args
+ * @param {"form"|"question"|"dashboard"} args.entityType uploadQueue のジョブ種別
+ * @param {Object} args.record 保存レコード。record.id を localId として使う（新規は呼び出し側で local_… を採番済み）
+ * @param {(record: Object) => (Promise<void>|void)} [args.upsertCache] キャッシュ即時反映。
+ *   Question/Dashboard は cache.upsert。Form は AppDataProvider 側が反映するため省略する。
+ * @param {(entityType: string) => void} [args.emit] 一覧への変更通知。analytics は emitAnalyticsCacheChanged。Form は省略。
+ * @param {string[]} [args.dependsOnLocalIds] 参照先 local_… への依存（参照先 save 完了まで待つ）。
+ * @returns {Promise<Object>} 渡した record をそのまま返す。
+ */
+export const enqueueEntitySave = async ({ entityType, record, upsertCache, emit, dependsOnLocalIds }) => {
+  if (upsertCache) await upsertCache(record);
+  await enqueueJob({ entityType, localId: record.id, payload: record, dependsOnLocalIds });
+  kickUploadWorker();
+  if (emit) emit(entityType);
+  return record;
+};
 
 // 手動「再試行」: エラージョブのバックオフを解除して即再開する。
 export const retryNow = async () => {

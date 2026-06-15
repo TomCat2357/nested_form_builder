@@ -84,6 +84,8 @@ function loadStripContext({ isAdmin = false } = {}) {
     Model_normalizeSpreadsheetId_: (v) => String(v || "").trim(),
     Nfb_isAdminFromCtx_: () => isAdmin,
     // FORMS_HANDLERS_ の run が依存する外部ヘルパをスタブ。
+    // Nfb_requireField_ は本来 gas/errors.gs 定義（forms_get/copy/import の必須検証で使用）。
+    Nfb_requireField_: (raw, key, msg) => ((raw && raw[key]) ? null : { ok: false, error: msg }),
     __forms: {},
     __list: [],
   };
@@ -105,6 +107,13 @@ test("Forms_dispatch_ forms_get: 非管理者には spreadsheetId を伏せ hasS
   assert.equal(res.ok, true);
   assert.equal("spreadsheetId" in res.form.settings, false);
   assert.equal(res.form.settings.hasSpreadsheet, true);
+});
+
+test("Forms_dispatch_ forms_get: formId 欠落時は Nfb_requireField_ 経由で必須エラーを返す", () => {
+  const ctx = loadStripContext({ isAdmin: false });
+  const res = ctx.Forms_dispatch_("forms_get", { raw: {} });
+  assert.equal(res.ok, false);
+  assert.equal(res.error, "フォームIDが指定されていません");
 });
 
 test("Forms_dispatch_ forms_get: 管理者には spreadsheetId をそのまま返す", () => {
