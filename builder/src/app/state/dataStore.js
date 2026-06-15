@@ -36,8 +36,8 @@ import {
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 import { genLocalId, isLocalId } from "../../core/ids.js";
-import { enqueueJob, enqueueOpJob, deleteJobsForLocalId, deleteOpJobsForFolderPrefix } from "./uploadQueue.js";
-import { kickUploadWorker } from "./uploadWorker.js";
+import { enqueueOpJob, deleteJobsForLocalId, deleteOpJobsForFolderPrefix } from "./uploadQueue.js";
+import { kickUploadWorker, enqueueEntitySave } from "./uploadWorker.js";
 import {
   getSheetConfig,
   getDeletedRetentionDays,
@@ -152,8 +152,9 @@ export const dataStore = {
     // 付け替える（参照も自動再リンク）。ネット未接続でも作成できる。
     const record = normalizeFormRecord(payload, { fallbackId: payload?.id || genLocalId() });
     const localRecord = { ...record, pendingUpload: true };
-    await enqueueJob({ entityType: "form", localId: localRecord.id, payload: localRecord });
-    kickUploadWorker();
+    // 保存コアは共通プリミティブへ委譲。フォームの React 状態反映は AppDataProvider が担うため
+    // upsertCache / emit は渡さない（Question/Dashboard との差異はここだけ）。
+    await enqueueEntitySave({ entityType: "form", record: localRecord });
     return ensureDisplayInfo(localRecord);
   },
   async registerImportedForm(payload) {
@@ -202,8 +203,7 @@ export const dataStore = {
       readOnly: false,
     }, { fallbackId: localId });
     const localRecord = { ...clone, pendingUpload: true };
-    await enqueueJob({ entityType: "form", localId, payload: localRecord });
-    kickUploadWorker();
+    await enqueueEntitySave({ entityType: "form", record: localRecord });
     return ensureDisplayInfo(localRecord);
   },
   async updateForm(formId, updates, saveMode = "auto") {
@@ -256,8 +256,8 @@ export const dataStore = {
     // formId が一時 ID（未アップロードのフォーム編集）の場合は enqueueJob 側で既存ジョブと
     // coalesce され、1 回だけアップロードされる。
     const localRecord = { ...next, pendingUpload: true };
-    await enqueueJob({ entityType: "form", localId: formId, payload: localRecord });
-    kickUploadWorker();
+    // localRecord.id === formId（normalizeFormRecord が id: current.id を維持）。
+    await enqueueEntitySave({ entityType: "form", record: localRecord });
     return ensureDisplayInfo(localRecord);
   },
   // 楽観的＋遅延: アーカイブ状態のフリップは AppDataProvider が即時反映。ここでは GAS 呼び出しを
