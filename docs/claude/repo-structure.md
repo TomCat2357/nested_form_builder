@@ -24,6 +24,9 @@ nested_form_builder/
 │   ├── drive*.gs          # Drive連携 (Template/PrintDocument/Folder/Output/GmailOutput/File)
 │   ├── forms*.gs          # フォームCRUD, インポート, マッピング, 解析, 公開API
 │   ├── sheets*.gs         # ヘッダー構築, 行操作, レコードCRUD, 日時変換
+│   ├── analytics*.gs      # Question/Dashboard の CRUD, API, マッピング, キャッシュ
+│   ├── standardFolders*.gs / sharedFolderStore.gs / sharedDriveFolders.gs # 標準フォルダ整合・登録簿・仮想↔物理ミラー
+│   ├── adminMigrations.gs # バックフィル等の管理者向け移行 (Admin_*)
 │   ├── code*.gs           # Code.gs / codeAuth.gs / codeHandlers.gs / codeSyncRecords.gs
 │   ├── expressionEvaluator.gs # alasql 互換式評価器
 │   ├── templateEvaluator.gs   # balanced scanner + テンプレ解決

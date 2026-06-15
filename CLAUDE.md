@@ -29,8 +29,9 @@
 | 検索クエリ構文 | [docs/claude/search-query-syntax.md](./docs/claude/search-query-syntax.md) |
 | テンプレートトークン（alasql 関数式） | [docs/claude/drive-template-tokens.md](./docs/claude/drive-template-tokens.md) |
 | スキーマ / シートレイアウト / 日時 / ソフトデリート | [docs/claude/data-model.md](./docs/claude/data-model.md) |
-| キャッシュ階層と差分同期 | [docs/claude/cache-architecture.md](./docs/claude/cache-architecture.md) |
-| Question / Dashboard（集計・可視化） | [docs/claude/analytics.md](./docs/claude/analytics.md) |
+| キャッシュ階層と差分同期・オフライン保存 | [docs/claude/cache-architecture.md](./docs/claude/cache-architecture.md) |
+| 参照（リンク）の持ち方・保存時の追従・`driveFileUrl` 非永続化 | [docs/claude/links-and-save.md](./docs/claude/links-and-save.md) |
+| Question / Dashboard（集計・可視化）のモジュール構成 | [docs/claude/feature-map.md](./docs/claude/feature-map.md) |
 | 詰まったときの確認ポイント | [docs/claude/troubleshooting.md](./docs/claude/troubleshooting.md) |
 
 ## コーディング規約（圧縮版・常時適用）
@@ -56,7 +57,8 @@
 - `NFB_HEADER_DEPTH = 11` / `NFB_DATA_START_ROW = 12` / フロント `MAX_DEPTH = 11`
 - `NFB_LOCK_WAIT_TIMEOUT_MS = 10000` ms（保存ロックタイムアウト、コード `LOCK_TIMEOUT`）
 - `NFB_DEFAULT_DELETED_RECORD_RETENTION_DAYS = 30`（ソフトデリート保持期間）
-- IndexedDB: `NestedFormBuilder` v7。SWR しきい値はキャッシュ種別で別。レコード（`RECORD_CACHE_*`）= fresh 5 分・要再取得 30 分。一覧（フォーム / Dashboard / Question、`FORM_CACHE_*` を共用）= fresh 1 時間・1〜24 時間は裏更新・24 時間超で同期再取得。`recordsCache` / `analyticsSnapshots` 系は v6 で撤去済み（メモリ常駐に移行）
+- IndexedDB: `NestedFormBuilder` v8。ストアは `formsCache` / `settingsStore` / `analyticsQuestions` / `analyticsDashboards` / `uploadQueue`。SWR しきい値はキャッシュ種別で別。レコード（`RECORD_CACHE_*`）= fresh 5 分・要再取得 30 分。一覧（フォーム / Dashboard / Question、`FORM_CACHE_*` を共用）= fresh 1 時間・1〜24 時間は裏更新・24 時間超で同期再取得。`recordsCache` / `analyticsSnapshots` 系は v6 で撤去済み（メモリ常駐に移行）
+- オフラインファースト保存（v8）: フォーム / Question / Dashboard の保存は IndexedDB へ即書き込み → `uploadQueue`（write-behind ジョブ）に積み、`uploadWorker` が逐次 Drive へ送る。仮 ID `local_…` を成功時に実 fileId へ付け替えて参照を再リンク。失敗は指数バックオフ（`UPLOAD_RETRY_BASE_MS` 2 秒〜`UPLOAD_RETRY_MAX_MS` 5 分）で自動リトライ
 - フロント `DEFAULT_SEARCH_DEBOUNCE_MS = 300`（検索バー遅延検索。設定 `searchDebounceMs` で変更、`0` で即時。IME 変換中は確定時のみコミット）
 
 ## 影響範囲の広い重要ファイル
@@ -74,6 +76,7 @@
 | [builder/src/core/constants.js](./builder/src/core/constants.js) | フロント定数（`MAX_DEPTH` / キャッシュ TTL 等） |
 | [builder/src/features/expression/templateEvaluator.js](./builder/src/features/expression/templateEvaluator.js) | フロント側 alasql テンプレ評価器 |
 | [builder/src/app/state/dataStore.js](./builder/src/app/state/dataStore.js) / [recordsMemoryStore.js](./builder/src/app/state/recordsMemoryStore.js) | データアクセスとメモリ常駐レコードストア |
+| [builder/src/app/state/uploadQueue.js](./builder/src/app/state/uploadQueue.js) / [uploadWorker.js](./builder/src/app/state/uploadWorker.js) | オフラインファースト保存の永続キューと逐次アップロードワーカー |
 | [builder/src/services/gasClient.js](./builder/src/services/gasClient.js) | GAS API クライアント（`google.script.run` の Promise ラッパー） |
 
 ## 絶対ルール
