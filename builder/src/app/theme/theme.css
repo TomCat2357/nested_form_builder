@@ -135,6 +135,24 @@
 
   --child-border: var(--border);
 
+  /* nf-* エイリアス: analytics / dashboard / childform 系コンポーネントが
+     インラインスタイルで参照する --nf-* を既存テーマトークンへマップする。
+     値を var(...) 参照にすることで、各テーマ (:root[data-theme=...]) で
+     再定義されたトークンを使用時に自動で拾い、ダークテーマでも追従する。
+     これが無いと各所のライト固定フォールバック (#f5f5f5 等) が常用され、
+     ダークモードでヘッダー背景と文字色が同系統になり見づらくなる。 */
+  --nf-bg: var(--surface);
+  --nf-surface: var(--surface);
+  --nf-bg-subtle: var(--surface-subtle);
+  --nf-border: var(--border);
+  --nf-input-bg: var(--input-bg);
+  --nf-text: var(--text);
+  --nf-text-muted: var(--text-muted);
+  --nf-text-subtle: var(--text-subtle);
+  --nf-color-text: var(--text);
+  --nf-danger: var(--danger);
+  --nf-zebra: rgba(0, 0, 0, 0.04);
+
   /* レインボーインデント: ネスト境界線(.nf-child)の階層別カラー。
      7 色を循環し、最大 11 階層をカバーする。各テーマで上書き可能。 */
   --nf-indent-1: #e5484d;

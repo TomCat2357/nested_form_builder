@@ -223,7 +223,7 @@ export function buildTableStyleTokens(tableStyle) {
       paddingX: 10,
       rowHeight: 0,
       truncateLength: DEFAULT_TRUNCATE_LENGTH,
-      zebra: { enabled: false, color: "rgba(0,0,0,0.03)" },
+      zebra: { enabled: false, color: "var(--nf-zebra, rgba(0,0,0,0.03))" },
       column: {
         minWidth: null,
         maxWidth: null,
@@ -264,7 +264,7 @@ export function buildTableStyleTokens(tableStyle) {
     truncateLength: typeof ts.cell.truncateLength === "number" ? ts.cell.truncateLength : DEFAULT_TRUNCATE_LENGTH,
     zebra: {
       enabled: !!ts.zebra.enabled,
-      color: ts.zebra.color || "rgba(0,0,0,0.03)",
+      color: ts.zebra.color || "var(--nf-zebra, rgba(0,0,0,0.03))",
     },
     column: {
       minWidth: colMinWidth,

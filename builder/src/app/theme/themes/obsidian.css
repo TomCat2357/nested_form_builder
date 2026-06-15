@@ -108,6 +108,8 @@
   --if-chip-bg: rgba(245, 158, 11, 0.12);
   --if-chip-border: rgba(245, 158, 11, 0.2);
   --if-badge-border: rgba(16, 185, 129, 0.22);
+
+  --nf-zebra: rgba(255, 255, 255, 0.05);
 }
 
 :root[data-theme="obsidian"] { color-scheme: dark; }
