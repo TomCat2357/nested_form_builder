@@ -11,7 +11,8 @@ import { useAlert } from "../../app/hooks/useAlert.js";
 import { useCancellable } from "../../app/hooks/useCancellable.js";
 import { collectDefaultNowResponses } from "../../utils/responses.js";
 import { genRecordId } from "../../core/ids.js";
-import { resolveTemplateTokens, precompileTemplateTokens, prefetchQueryTokens, resolveQueryTokensInTemplate } from "../../utils/tokenReplacer.js";
+import { resolveTemplateTokens, resolveTemplateTokensAsync, precompileTemplateTokens, prefetchQueryTokens, resolveQueryTokensInTemplate } from "../../utils/tokenReplacer.js";
+import { extractReservedRefs } from "../../features/expression/templateEvaluator.js";
 import { evaluateAllComputedFields } from "../../core/computedFields.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 import { buildLiveViewRow } from "../analytics/entriesToViewRows.js";
@@ -24,8 +25,8 @@ import {
   buildRecordItems,
 } from "./printDocument.js";
 import { normalizeWebhookAction } from "../../core/schema.js";
-import { resolveExternalActionUrl } from "../../utils/externalActionUrl.js";
-import { buildExternalActionPayload, submitExternalActionPost } from "../../utils/externalActionPost.js";
+import { isValidExternalActionUrl, buildSpreadsheetUrl, hasBlockedSensitiveRefs } from "../../utils/externalActionUrl.js";
+import { buildExternalActionPayload, submitExternalActionPost, openExternalActionWindow } from "../../utils/externalActionPost.js";
 import {
   normalizePrintTemplateAction,
   resolveEffectivePrintTemplateFileNameTemplate,
@@ -314,8 +315,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     const recordId = recordIdRef.current;
     const formUrl = buildSharedFormUrl(baseUrl, formId);
     const recordUrl = buildSharedRecordUrl(baseUrl, formId, recordId);
-    return { now: new Date(), formId, recordId, formUrl, recordUrl, fieldPaths, fileUploadMeta, childFormMeta, queryTokenValues, queryTokensReady };
-  }, [settings.formId, fieldPaths, fileUploadMeta, childFormMeta, queryTokenValues, queryTokensReady]);
+    return { now: new Date(), formId, formName: formTitle, recordId, formUrl, recordUrl, fieldPaths, fileUploadMeta, childFormMeta, queryTokenValues, queryTokensReady };
+  }, [settings.formId, formTitle, fieldPaths, fileUploadMeta, childFormMeta, queryTokenValues, queryTokensReady]);
 
   // schema 内のテンプレ式を一括 precompile して同期 resolveTemplateTokens を保証する。
   // alasql のロード + コンパイルが完了したら epoch を進めて再評価をトリガする。
@@ -677,21 +678,45 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   };
 
   // Webhook 質問カードのボタン押下時。レコード内容を外部 GAS Web アプリ等へ POST する。
-  // 送信方式・トークン解決・管理者ゲーティングはレコード外部アクションと同じ utility を流用。
-  const handleFieldWebhookAction = (field) => {
+  // URL のトークン解決は印刷様式と共通の alasql `{{...}}` エンジン（resolveTemplateTokensAsync）に統一。
+  // 機微予約トークン（_spreadsheet_id 等）は adminOnly && isAdmin のときだけ展開を許可する。
+  const handleFieldWebhookAction = async (field) => {
     const action = normalizeWebhookAction(field?.webhookAction);
     const gate = { adminOnly: !!action.adminOnly, isAdmin };
-    const ctx = {
-      id: recordIdRef.current,
-      formId: settings.formId || "",
+    // 機微予約トークンが許可なく参照されていたら送信中止（漏洩防止・URL 早期失敗を維持）。
+    if (hasBlockedSensitiveRefs(extractReservedRefs(action.url), gate)) {
+      showAlert("この URL には管理者限定のトークンが含まれています。質問カードの設定で「管理者のみ」を有効にするか、トークンを見直してください。");
+      return;
+    }
+    // ユーザージェスチャ中に空タブを先に開く（非同期解決後のポップアップブロック回避）。
+    const target = openExternalActionWindow();
+    const sensitiveAllowed = gate.adminOnly && gate.isAdmin;
+    const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
+    const sheetName = settings.sheetName || "Data";
+    const driveFileUrl = settings.driveFileUrl || "";
+    const webhookCtx = {
+      ...tokenContext,
       formName: formTitle,
-      spreadsheetId: normalizeSpreadsheetId(settings.spreadsheetId || ""),
-      sheetName: settings.sheetName || "Data",
-      driveFileUrl: settings.driveFileUrl || "",
-      userEmail: currentUserEmail,
+      dataValueMap,
+      valueTransform: encodeURIComponent,
+      ...(sensitiveAllowed ? {
+        spreadsheetId,
+        spreadsheetUrl: buildSpreadsheetUrl(spreadsheetId),
+        sheetName,
+        driveFileUrl,
+        userEmail: currentUserEmail,
+      } : {}),
     };
-    const resolvedUrl = resolveExternalActionUrl(action.url, ctx, gate);
-    if (!resolvedUrl) {
+    let resolvedUrl = "";
+    try {
+      resolvedUrl = await resolveTemplateTokensAsync(action.url, webhookCtx);
+    } catch (_e) {
+      resolvedUrl = "";
+    }
+    if (!isValidExternalActionUrl(resolvedUrl)) {
+      if (target && target.win && typeof target.win.close === "function") {
+        try { target.win.close(); } catch (_e) { /* noop */ }
+      }
       showAlert("URL が不正です (http:// または https:// で始まる必要があります)。質問カードの設定を確認してください。");
       return;
     }
@@ -707,10 +732,10 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       formId: settings.formId || "",
       formName: formTitle,
       base: { record },
-      storageFields: ctx,
+      storageFields: { spreadsheetId, sheetName, driveFileUrl, userEmail: currentUserEmail },
       gate,
     });
-    submitExternalActionPost(resolvedUrl, payload);
+    submitExternalActionPost(resolvedUrl, payload, target);
   };
 
   // 「別フォームを開く」カードのボタン押下時。選択フォームを別タブで開く。

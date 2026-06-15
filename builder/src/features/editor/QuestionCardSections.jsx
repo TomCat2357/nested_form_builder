@@ -237,11 +237,11 @@ export function FileUploadFieldSection({ field, onChange }) {
           className="nf-input"
           type="text"
           value={field.driveFolderNameTemplate ?? ""}
-          placeholder="{`_id`}_{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}_{`担当者名`}"
+          placeholder="{{`_id`}}_{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}}_{{`担当者名`}}"
           onChange={(event) => onChange({ ...field, driveFolderNameTemplate: event.target.value })}
         />
         <div className="nf-text-11 nf-text-muted nf-mt-4">
-          {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{`_id`}, {NOW()}, {`フィールド名`} を使えます。ネストされた子質問は {`親|子`} のフルパスで指定。{TIME_FORMAT(NOW(), 'YYYY-MM-DD')} のように関数で書式を指定できます。"}
+          {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{{`_id`}}, {{NOW()}}, {{`フィールド名`}} を使えます。ネストされた子質問は {{`親|子`}} のフルパスで指定。{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}} のように関数で書式を指定できます。"}
         </div>
       </div>
     </div>
@@ -310,7 +310,7 @@ export function WebhookSection({ field, onChange }) {
             className={s.input.className}
             type="text"
             style={{ borderColor: urlInvalid ? "#d93025" : undefined }}
-            placeholder="https://script.google.com/macros/.../exec"
+            placeholder="https://script.google.com/macros/.../exec?id={{`_id`}}"
             value={action.url}
             onChange={(event) => updateAction({ url: event.target.value })}
           />
@@ -327,7 +327,7 @@ export function WebhookSection({ field, onChange }) {
           管理者限定
         </label>
         <div className="nf-text-11 nf-text-muted">
-          {"ボタンを押すと新しいタブで URL を開き、同時にこのレコードの内容を POST 送信します（GAS 側は doPost(e) の e.parameter.payload を JSON.parse して受信）。管理者限定を ON にすると、管理者以外にはこのボタンが表示されません。管理者限定のときだけ保存先情報（spreadsheetId 等）も送られます。"}
+          {"ボタンを押すと新しいタブで URL を開き、同時にこのレコードの内容を POST 送信します（GAS 側は doPost(e) の e.parameter.payload を JSON.parse して受信）。URL には印刷様式と同じ {{...}} トークンが使えます（例: {{`_id`}} / {{`フィールド名`}} / {{`_form_id`}}）。値は自動で URL エンコードされます。管理者限定を ON にすると、管理者以外にはこのボタンが表示されず、そのときだけ機微トークン {{`_spreadsheet_id`}} / {{`_spreadsheet_url`}} / {{`_sheet_name`}} / {{`_drive_file_url`}} / {{`_user_email`}} と保存先情報も使えます。"}
         </div>
       </div>
     </div>

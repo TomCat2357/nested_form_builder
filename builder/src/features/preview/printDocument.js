@@ -1,91 +1,16 @@
 import { extractJstPartsFull, formatUnixMsDateTimeSec, toUnixMs, pad2 } from "../../utils/dateTime.js";
-import { resolveFileDisplayName, buildDataValueMap } from "../../core/collect.js";
+import { resolveFileDisplayName, buildDataValueMap, toChoiceOptionLabels, toSelectedChoiceLabels } from "../../core/collect.js";
 import { findFirstFileUploadField } from "../../core/schema.js";
 import { shouldShowUnconditionalChildren } from "../../core/fieldValue.js";
-import { CHOICE_TYPES, isChoiceMarkerValue } from "../../utils/responses.js";
+import { CHOICE_TYPES } from "../../utils/responses.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 import { isExcludedSearchOrPrintField } from "../search/searchTable.js";
 import { isPlainObject } from "../../utils/objectShape.js";
 import { joinFieldPath, escapeSegment, PATH_SEP } from "../../utils/pathCodec.js";
 
-export const toChoiceOptionLabels = (field) => {
-  const options = Array.isArray(field?.options) ? field.options : [];
-  const labels = [];
-  const seen = new Set();
-  options.forEach((opt) => {
-    const label = typeof opt?.label === "string" ? opt.label : "";
-    if (!label || seen.has(label)) return;
-    labels.push(label);
-    seen.add(label);
-  });
-  return labels;
-};
-
-const toRawSelectedLabels = (type, value) => {
-  const labels = [];
-  const seen = new Set();
-  const add = (candidate) => {
-    if (typeof candidate !== "string" || !candidate || seen.has(candidate)) return;
-    labels.push(candidate);
-    seen.add(candidate);
-  };
-
-  if (type === "checkboxes") {
-    if (Array.isArray(value)) {
-      value.forEach((item) => add(item));
-      return labels;
-    }
-    if (typeof value === "string") {
-      add(value);
-    } else if (value && typeof value === "object") {
-      Object.entries(value).forEach(([label, marker]) => {
-        if (isChoiceMarkerValue(marker)) add(label);
-      });
-    }
-    return labels;
-  }
-
-  if (type === "radio" || type === "select") {
-    if (typeof value === "string") {
-      add(value);
-    } else if (Array.isArray(value)) {
-      value.forEach((item) => add(item));
-    } else if (value && typeof value === "object") {
-      Object.entries(value).forEach(([label, marker]) => {
-        if (isChoiceMarkerValue(marker)) add(label);
-      });
-    }
-    return labels;
-  }
-
-  return labels;
-};
-
-export const toSelectedChoiceLabels = (field, value) => {
-  const type = field?.type;
-  if (!CHOICE_TYPES.has(type)) return [];
-
-  const rawSelected = toRawSelectedLabels(type, value);
-  if (rawSelected.length === 0) return [];
-
-  const selectedSet = new Set(rawSelected);
-  const ordered = [];
-  const seen = new Set();
-
-  toChoiceOptionLabels(field).forEach((label) => {
-    if (!selectedSet.has(label) || seen.has(label)) return;
-    ordered.push(label);
-    seen.add(label);
-  });
-
-  rawSelected.forEach((label) => {
-    if (seen.has(label)) return;
-    ordered.push(label);
-    seen.add(label);
-  });
-
-  return type === "checkboxes" ? ordered : ordered.slice(0, 1);
-};
+// 選択肢ラベルの正準実装は core/collect.js に統一（Webhook/印刷 items と template view 値で共有）。
+// 既存 import 元（FieldRenderer 等）との互換のため re-export する。
+export { toChoiceOptionLabels, toSelectedChoiceLabels };
 
 export const hasVisibleValue = (value) => {
   if (Array.isArray(value)) return value.length > 0;

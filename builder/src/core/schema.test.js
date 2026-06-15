@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeSchemaIDs, findFirstFileUploadField, supportsChildren, supportsSupplementaryComment, validateLabelCharacters } from "./schema.js";
+import { normalizeSchemaIDs, normalizeWebhookAction, findFirstFileUploadField, supportsChildren, supportsSupplementaryComment, validateLabelCharacters } from "./schema.js";
 
 test("normalizeSchemaIDs: time の includeSeconds を timePrecision へ移行する", () => {
   const schema = normalizeSchemaIDs([
@@ -227,6 +227,22 @@ test("normalizeSchemaIDs は webhook の webhookAction を正規化し required 
     adminOnly: true,
   });
   assert.equal("required" in schema[0], false);
+});
+
+test("normalizeWebhookAction は旧・単括弧固定トークンを alasql 予約参照へ自動マップする", () => {
+  const out = normalizeWebhookAction({
+    url: "https://x.com/?id={id}&form={formId}&ss={spreadsheetId}",
+    adminOnly: true,
+  });
+  assert.deepEqual(out, {
+    url: "https://x.com/?id={{`_id`}}&form={{`_form_id`}}&ss={{`_spreadsheet_id`}}",
+    adminOnly: true,
+  });
+});
+
+test("normalizeWebhookAction は既に {{...}} の URL を変えない（冪等）", () => {
+  const url = "https://x.com/?n={{`氏名`}}&id={{`_id`}}";
+  assert.equal(normalizeWebhookAction({ url }).url, url);
 });
 
 test("normalizeSchemaIDs は非 webhook 型から webhookAction を除去する", () => {

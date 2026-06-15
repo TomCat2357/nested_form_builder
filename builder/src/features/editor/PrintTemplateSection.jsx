@@ -69,7 +69,7 @@ function PrintTemplateDocFields({ field, onChange, printTemplateAction }) {
       <CustomTemplateUrlFields printTemplateAction={printTemplateAction} updateAction={updateAction} />
       <input
         className={s.input.className}
-        placeholder="出力ファイル名（例: {`_id`}_{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}）"
+        placeholder="出力ファイル名（例: {{`_id`}}_{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}}）"
         value={printTemplateAction.fileNameTemplate || ""}
         onChange={(event) => updateAction({ fileNameTemplate: event.target.value })}
       />
@@ -79,10 +79,10 @@ function PrintTemplateDocFields({ field, onChange, printTemplateAction }) {
 }
 
 const GMAIL_TEMPLATE_FIELDS = [
-  { key: "gmailTemplateTo", label: "To", placeholder: "例: {`メールアドレス`}" },
-  { key: "gmailTemplateCc", label: "Cc", placeholder: "例: {`メールアドレス`}" },
-  { key: "gmailTemplateBcc", label: "Bcc", placeholder: "例: {`メールアドレス`}" },
-  { key: "gmailTemplateSubject", label: "件名", placeholder: "例: 【申請】{`_id`}_{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}" },
+  { key: "gmailTemplateTo", label: "To", placeholder: "例: {{`メールアドレス`}}" },
+  { key: "gmailTemplateCc", label: "Cc", placeholder: "例: {{`メールアドレス`}}" },
+  { key: "gmailTemplateBcc", label: "Bcc", placeholder: "例: {{`メールアドレス`}}" },
+  { key: "gmailTemplateSubject", label: "件名", placeholder: "例: 【申請】{{`_id`}}_{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}}" },
 ];
 
 function PrintTemplateGmailFields({ field, onChange, printTemplateAction }) {
@@ -166,7 +166,7 @@ export function PrintTemplateSection({ field, onChange, printTemplateAction }) {
           ? <PrintTemplateGmailFields field={field} onChange={onChange} printTemplateAction={printTemplateAction} />
           : <PrintTemplateDocFields field={field} onChange={onChange} printTemplateAction={printTemplateAction} />
         }
-        <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {`_id`} / {NOW()} / {`フィールド名`} を使えます。{TIME_FORMAT(NOW(), 'YYYY-MM-DD')} のように関数で書式指定できます。Gmail 本文では {`_record_url`} / {`_form_url`} も使えます。{IIF(`_record_url`, `値`, '代替')} のように条件式が書けます。ファイルアップロードフィールドは {FOLDER_URL(`フィールド名`)} / {FILE_URLS(`フィールド名`)} で出せます。"}</div>
+        <div className="nf-text-11 nf-text-muted">{"出力ファイル名では {{`_id`}} / {{NOW()}} / {{`フィールド名`}} を使えます。{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}} のように関数で書式指定できます。Gmail 本文では {{`_record_url`}} / {{`_form_url`}} も使えます。{{IIF(`_record_url`, `値`, '代替')}} のように条件式が書けます。ファイルアップロードフィールドは {{FOLDER_URL(`フィールド名`)}} / {{FILE_URLS(`フィールド名`)}} で出せます。"}</div>
       </div>
     </div>
   );

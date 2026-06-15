@@ -81,9 +81,9 @@ export const SETTINGS_GROUPS = [
       {
         key: "standardPrintFileNameTemplate",
         label: "印刷様式出力ファイル名規則",
-        placeholder: "{`_id`}_{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}",
+        placeholder: "{{`_id`}}_{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}}",
         required: false,
-        description: "出力ファイルの名前を決める書式です。質問カードごとに個別指定があればそれを優先し、なければここの設定、それもなければ既定値（{`_id`}_{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}）を使います。",
+        description: "出力ファイルの名前を決める書式です。質問カードごとに個別指定があればそれを優先し、なければここの設定、それもなければ既定値（{{`_id`}}_{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}}）を使います。",
       },
       {
         key: "showPrintHeader",

@@ -107,7 +107,7 @@ function ActionRow({ idx, action, onChange, disabled, urlInvalid }) {
         <label
           className="nf-flex nf-items-center nf-gap-4 nf-text-12"
           style={{ flex: "0 0 auto", cursor: disabled ? "not-allowed" : "pointer", whiteSpace: "nowrap" }}
-          title="ON にすると管理者ロールのユーザーにだけボタンが表示されます。{spreadsheetId} 等の機微トークンも管理者限定ボタンでのみ展開されます。"
+          title="ON にすると管理者ロールのユーザーにだけボタンが表示されます。{{`_spreadsheet_id`}} 等の機微トークンも管理者限定ボタンでのみ展開されます。"
         >
           <input
             type="checkbox"
@@ -181,7 +181,8 @@ export default function ExternalActionsEditor({ value, onChange, disabled }) {
             （GAS 側は <code>doPost(e)</code> の <code>e.parameter.payload</code> を <code>JSON.parse</code> して受信）。
             <code> http:// </code> または <code> https:// </code> で始まる URL のみ登録できます。
             <br />
-            <strong>管理者限定ボタンのみ</strong>、保存先情報 <code>storage</code>（<code>spreadsheetId</code> 等）が payload と URL トークン（<code>{"{spreadsheetId}"}</code> 等）に展開されます。
+            URL には印刷様式と同じ <code>{"{{...}}"}</code> トークンが使えます（例: <code>{"{{`_form_id`}}"}</code>）。値は自動で URL エンコードされます。
+            <strong>管理者限定ボタンのみ</strong>、保存先情報 <code>storage</code>（<code>spreadsheetId</code> 等）が payload と機微 URL トークン（<code>{"{{`_spreadsheet_id`}}"}</code> 等）に展開されます。
             管理者限定でないボタンで機微トークンを URL に使うと URL が無効化されます。
             <br />
             ※ 個々のレコードからの送信は、質問カードの種別「Webhook」を使ってください。

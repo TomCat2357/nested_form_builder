@@ -6,6 +6,7 @@ import {
   resolveTemplateAsync,
   precompileTemplate,
   extractFieldRefs,
+  extractReservedRefs,
   validateTemplateSyntax,
 } from "./templateEvaluator.js";
 import {
@@ -87,6 +88,29 @@ test("resolveTemplate: 文字列連結", () => {
   _registerCompiledForTest("`姓` || `名`", (row) => String(row["姓"] || "") + String(row["名"] || ""));
   const out = resolveTemplate("{{`姓` || `名`}}", { 姓: "山田", 名: "太郎" });
   assert.equal(out, "山田太郎");
+});
+
+test("resolveTemplate: valueTransform は各トークン値に適用される（URL エンコード）", () => {
+  setup();
+  _registerCompiledForTest("`氏名`", (row) => row["氏名"]);
+  const out = resolveTemplate(
+    "https://x.com/?n={{`氏名`}}",
+    { 氏名: "山田 太郎" },
+    { valueTransform: encodeURIComponent },
+  );
+  assert.equal(out, "https://x.com/?n=" + encodeURIComponent("山田 太郎"));
+});
+
+test("resolveTemplate: valueTransform はトークン間のリテラルには適用されない", () => {
+  setup();
+  _registerCompiledForTest("`a`", (row) => row["a"]);
+  // 区切りの & や = はリテラルなのでそのまま、トークン値だけエンコードされる。
+  const out = resolveTemplate(
+    "https://x.com/?a={{`a`}}&b=1",
+    { a: "x/y" },
+    { valueTransform: encodeURIComponent },
+  );
+  assert.equal(out, "https://x.com/?a=x%2Fy&b=1");
 });
 
 test("resolveTemplate: 複数トークン", () => {
@@ -326,6 +350,27 @@ test("extractFieldRefs: トークン跨ぎでも重複除去", () => {
 test("extractFieldRefs: 文字列リテラルは識別子と区別される", () => {
   // バッククォート以外は識別子扱いされない
   assert.deepEqual(extractFieldRefs("{{IIF(`x` = 'リテラル', 1, 0)}}"), ["x"]);
+});
+
+// ---------------------------------------------------------------------------
+// extractReservedRefs（extractFieldRefs の逆：予約名だけ収集）
+// ---------------------------------------------------------------------------
+
+test("extractReservedRefs: 予約名 (_ 始まり) のみ収集する", () => {
+  assert.deepEqual(
+    extractReservedRefs("{{`_id`}} {{`氏名`}} {{`_spreadsheet_id`}}"),
+    ["_id", "_spreadsheet_id"],
+  );
+});
+
+test("extractReservedRefs: 通常フィールドのみなら空", () => {
+  assert.deepEqual(extractReservedRefs("{{`氏名`}}{{`金額`}}"), []);
+});
+
+test("extractReservedRefs: 重複除去・単一ブレースは無視", () => {
+  assert.deepEqual(extractReservedRefs("{{`_id`}}-{{`_id`}}"), ["_id"]);
+  assert.deepEqual(extractReservedRefs("{`_id`}"), []);
+  assert.deepEqual(extractReservedRefs(""), []);
 });
 
 // ---------------------------------------------------------------------------

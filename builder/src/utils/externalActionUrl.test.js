@@ -1,6 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveExternalActionUrl, isValidExternalActionUrl } from "./externalActionUrl.js";
+import {
+  isValidExternalActionUrl,
+  migrateLegacyWebhookUrlTokens,
+  hasBlockedSensitiveRefs,
+  buildSpreadsheetUrl,
+  SENSITIVE_RESERVED_REFS,
+} from "./externalActionUrl.js";
 
 test("isValidExternalActionUrl は http / https を受理する", () => {
   assert.equal(isValidExternalActionUrl("http://example.com"), true);
@@ -17,155 +23,60 @@ test("isValidExternalActionUrl は http(s) 以外と空を弾く", () => {
   assert.equal(isValidExternalActionUrl(undefined), false);
 });
 
-test("resolveExternalActionUrl はトークンを encodeURIComponent で置換する", () => {
-  const url = "https://script.google.com/exec?id={id}&form={formId}";
-  const out = resolveExternalActionUrl(url, { id: "r_01H/abc", formId: "f_001" });
-  assert.equal(out, "https://script.google.com/exec?id=r_01H%2Fabc&form=f_001");
-});
+// --- 旧・単括弧固定トークン → alasql 予約参照への自動マップ ---
 
-test("resolveExternalActionUrl は formName を URL エンコードする", () => {
-  const url = "https://example.com/run?name={formName}";
-  const out = resolveExternalActionUrl(url, { formName: "ヒグマ 講座" });
-  assert.equal(out, "https://example.com/run?name=" + encodeURIComponent("ヒグマ 講座"));
-});
-
-test("resolveExternalActionUrl は欠落トークンを空文字に置換する", () => {
-  const url = "https://example.com/x?id={id}&form={formId}";
-  const out = resolveExternalActionUrl(url, { formId: "f1" });
-  assert.equal(out, "https://example.com/x?id=&form=f1");
-});
-
-test("resolveExternalActionUrl は空/空白の URL に null を返す", () => {
-  assert.equal(resolveExternalActionUrl("", {}), null);
-  assert.equal(resolveExternalActionUrl("   ", {}), null);
-  assert.equal(resolveExternalActionUrl(null, {}), null);
-});
-
-test("resolveExternalActionUrl は http(s) で始まらない URL に null を返す", () => {
-  assert.equal(resolveExternalActionUrl("javascript:alert(1)", {}), null);
-  assert.equal(resolveExternalActionUrl("//example.com", {}), null);
-  assert.equal(resolveExternalActionUrl("ftp://example.com", {}), null);
-});
-
-test("resolveExternalActionUrl はトークン経由でも非 http スキームへの変換を許さない", () => {
-  // ベースが https なら、token 内の文字列はクエリ値として encodeURIComponent され、スキーム侵害は起きない
-  const url = "https://x.com?q={id}";
+test("migrateLegacyWebhookUrlTokens は 8 種の旧トークンを予約参照へマップする", () => {
+  const url = "https://x.com/?id={id}&fid={formId}&fn={formName}"
+    + "&ssid={spreadsheetId}&ssu={spreadsheetUrl}&sn={sheetName}&du={driveFileUrl}&ue={userEmail}";
   assert.equal(
-    resolveExternalActionUrl(url, { id: "javascript:bad" }),
-    "https://x.com?q=" + encodeURIComponent("javascript:bad"),
+    migrateLegacyWebhookUrlTokens(url),
+    "https://x.com/?id={{`_id`}}&fid={{`_form_id`}}&fn={{`_form_name`}}"
+      + "&ssid={{`_spreadsheet_id`}}&ssu={{`_spreadsheet_url`}}&sn={{`_sheet_name`}}&du={{`_drive_file_url`}}&ue={{`_user_email`}}",
   );
 });
 
-test("resolveExternalActionUrl はトークンが無ければ URL をそのまま返す", () => {
-  assert.equal(
-    resolveExternalActionUrl("https://example.com/path?a=1", {}),
-    "https://example.com/path?a=1",
-  );
+test("migrateLegacyWebhookUrlTokens は冪等（既に {{...}} のものは触らない）", () => {
+  const url = "https://x.com/?id={{`_id`}}&name={{`氏名`}}";
+  assert.equal(migrateLegacyWebhookUrlTokens(url), url);
 });
 
-// --- 機微トークン (admin only) のテスト ---
-
-test("機微トークンは adminOnly && isAdmin で展開される (spreadsheetId)", () => {
-  const url = "https://example.com/?ssid={spreadsheetId}";
-  const out = resolveExternalActionUrl(
-    url,
-    { spreadsheetId: "1abcDEF_123" },
-    { adminOnly: true, isAdmin: true },
-  );
-  assert.equal(out, "https://example.com/?ssid=1abcDEF_123");
+test("migrateLegacyWebhookUrlTokens は二重括弧内の擬似トークンを壊さない", () => {
+  // {{id}} は前後がブレースなので旧トークンとして拾わない。
+  const url = "https://x.com/?a={{id}}";
+  assert.equal(migrateLegacyWebhookUrlTokens(url), url);
 });
 
-test("機微トークンは adminOnly && isAdmin で展開される (sheetName)", () => {
-  const url = "https://example.com/?sheet={sheetName}";
-  const out = resolveExternalActionUrl(
-    url,
-    { sheetName: "Data" },
-    { adminOnly: true, isAdmin: true },
-  );
-  assert.equal(out, "https://example.com/?sheet=Data");
+test("migrateLegacyWebhookUrlTokens はトークンが無ければそのまま返す", () => {
+  assert.equal(migrateLegacyWebhookUrlTokens("https://x.com/path?a=1"), "https://x.com/path?a=1");
+  assert.equal(migrateLegacyWebhookUrlTokens(""), "");
+  assert.equal(migrateLegacyWebhookUrlTokens(null), "");
 });
 
-test("機微トークンは adminOnly && isAdmin で展開される (driveFileUrl / userEmail)", () => {
-  const url = "https://example.com/?file={driveFileUrl}&u={userEmail}";
-  const out = resolveExternalActionUrl(
-    url,
-    { driveFileUrl: "https://drive.google.com/x", userEmail: "a+b@example.com" },
-    { adminOnly: true, isAdmin: true },
-  );
-  assert.equal(
-    out,
-    "https://example.com/?file=" + encodeURIComponent("https://drive.google.com/x") + "&u=" + encodeURIComponent("a+b@example.com"),
-  );
+// --- 機微予約トークンのゲート判定 ---
+
+test("hasBlockedSensitiveRefs は許可なしで機微参照を弾く", () => {
+  assert.equal(hasBlockedSensitiveRefs(["_spreadsheet_id"], { adminOnly: false, isAdmin: false }), true);
+  assert.equal(hasBlockedSensitiveRefs(["_id", "_user_email"], { adminOnly: true, isAdmin: false }), true);
+  assert.equal(hasBlockedSensitiveRefs(["_id", "_drive_file_url"], { adminOnly: false, isAdmin: true }), true);
 });
 
-test("spreadsheetUrl は context.spreadsheetId から構築される", () => {
-  const url = "https://example.com/?u={spreadsheetUrl}";
-  const out = resolveExternalActionUrl(
-    url,
-    { spreadsheetId: "ABC_123" },
-    { adminOnly: true, isAdmin: true },
-  );
-  assert.equal(out, "https://example.com/?u=" + encodeURIComponent("https://docs.google.com/spreadsheets/d/ABC_123"));
+test("hasBlockedSensitiveRefs は adminOnly && isAdmin で許可する", () => {
+  assert.equal(hasBlockedSensitiveRefs(["_spreadsheet_id", "_user_email"], { adminOnly: true, isAdmin: true }), false);
 });
 
-test("spreadsheetUrl は spreadsheetId 空のとき空文字に置換される", () => {
-  const url = "https://example.com/?u={spreadsheetUrl}";
-  const out = resolveExternalActionUrl(
-    url,
-    { spreadsheetId: "" },
-    { adminOnly: true, isAdmin: true },
-  );
-  assert.equal(out, "https://example.com/?u=");
+test("hasBlockedSensitiveRefs は非機微トークンのみなら常に許可", () => {
+  assert.equal(hasBlockedSensitiveRefs(["_id", "_form_id", "_form_name"], { adminOnly: false, isAdmin: false }), false);
+  assert.equal(hasBlockedSensitiveRefs([], { adminOnly: false, isAdmin: false }), false);
 });
 
-test("機微トークンは adminOnly=true, isAdmin=false で URL 全体を null 化", () => {
-  const url = "https://example.com/?ssid={spreadsheetId}";
-  const out = resolveExternalActionUrl(
-    url,
-    { spreadsheetId: "ABC" },
-    { adminOnly: true, isAdmin: false },
-  );
-  assert.equal(out, null);
+test("SENSITIVE_RESERVED_REFS は機微 5 種を含む", () => {
+  ["_spreadsheet_id", "_spreadsheet_url", "_sheet_name", "_drive_file_url", "_user_email"]
+    .forEach((name) => assert.equal(SENSITIVE_RESERVED_REFS.has(name), true));
+  assert.equal(SENSITIVE_RESERVED_REFS.has("_id"), false);
+  assert.equal(SENSITIVE_RESERVED_REFS.has("_form_id"), false);
 });
 
-test("機微トークンは adminOnly=false, isAdmin=true で URL 全体を null 化", () => {
-  const url = "https://example.com/?ssid={spreadsheetId}";
-  const out = resolveExternalActionUrl(
-    url,
-    { spreadsheetId: "ABC" },
-    { adminOnly: false, isAdmin: true },
-  );
-  assert.equal(out, null);
-});
-
-test("第 3 引数省略時 (既存 API 形) は機微トークン使用で null", () => {
-  const url = "https://example.com/?ssid={spreadsheetId}";
-  const out = resolveExternalActionUrl(url, { spreadsheetId: "ABC" });
-  assert.equal(out, null);
-});
-
-test("第 3 引数省略時でも既存トークンは展開される (後方互換)", () => {
-  const url = "https://example.com/?id={id}&form={formId}";
-  const out = resolveExternalActionUrl(url, { id: "r1", formId: "f1" });
-  assert.equal(out, "https://example.com/?id=r1&form=f1");
-});
-
-test("同じ機微トークンが複数回現れても全て置換される", () => {
-  const url = "https://example.com/?a={spreadsheetId}&b={spreadsheetId}";
-  const out = resolveExternalActionUrl(
-    url,
-    { spreadsheetId: "ABC" },
-    { adminOnly: true, isAdmin: true },
-  );
-  assert.equal(out, "https://example.com/?a=ABC&b=ABC");
-});
-
-test("既存トークンと機微トークン混在 (adminOnly && isAdmin)", () => {
-  const url = "https://example.com/?id={id}&ssid={spreadsheetId}&email={userEmail}";
-  const out = resolveExternalActionUrl(
-    url,
-    { id: "r1", spreadsheetId: "ABC", userEmail: "u@example.com" },
-    { adminOnly: true, isAdmin: true },
-  );
-  assert.equal(out, "https://example.com/?id=r1&ssid=ABC&email=" + encodeURIComponent("u@example.com"));
+test("buildSpreadsheetUrl は spreadsheetId からドキュメント URL を組む", () => {
+  assert.equal(buildSpreadsheetUrl("ABC_123"), "https://docs.google.com/spreadsheets/d/ABC_123");
+  assert.equal(buildSpreadsheetUrl(""), "");
 });

@@ -148,6 +148,9 @@ export function _coerceResultToStringForTest(value) {
  *   - queryTokensReady  true のとき、未解決 full-query トークンを logError で警告する
  *                       （既定 false）。prefetch が非同期で完了する前の同期 resolve では
  *                       未解決が正常なので、prefetch 完了を呼び出し側が保証できるときだけ true。
+ *   - valueTransform    各トークンの解決値（文字列）に適用する後処理 `(str) => str`。
+ *                       トークン間のリテラル文字には適用しない。Webhook URL 解決で
+ *                       encodeURIComponent を渡し、フィールド値・予約値を自動エンコードする。
  * @returns {string}
  */
 export function resolveTemplate(template, row, opts) {
@@ -164,34 +167,36 @@ export function resolveTemplate(template, row, opts) {
   // 既定 false。full-query は非同期 prefetch なので、同期 resolve が prefetch 前に走る初回描画では
   // 未解決が正常。false の間は警告を抑止し、prefetch 完了後の欠落だけ警告する。
   const queryTokensReady = options.queryTokensReady === true;
+  const valueTransform = typeof options.valueTransform === "function" ? options.valueTransform : null;
+  const apply = (value) => (valueTransform ? valueTransform(String(value === undefined || value === null ? "" : value)) : value);
   const tokRow = row || {};
 
   const escaped = escapeBraces(text);
   const replaced = scanAndReplace(escaped, (tok) => {
     // full-query トークンは prefetch 済みの値を引くだけ（同期評価しない）。
     if (isFullQueryBody(tok.body)) {
-      if (queryTokenValues && queryTokenValues.has(tok.fullToken)) return queryTokenValues.get(tok.fullToken);
+      if (queryTokenValues && queryTokenValues.has(tok.fullToken)) return apply(queryTokenValues.get(tok.fullToken));
       if (logError && queryTokensReady) logError(new Error("full-query token not prefetched: " + tok.fullToken), tok.fullToken);
-      return fallback;
+      return apply(fallback);
     }
     const parts = splitTopLevelCommas(tok.body);
     if (parts.length <= 1) {
       const expr = normalizeBody(tok.body);
-      if (!expr) return "";
+      if (!expr) return apply("");
       const compiled = getCompiledExpressionSync(expr);
       if (!compiled) {
         if (logError) logError(new Error("expression not precompiled: " + expr), tok.fullToken);
-        return fallback;
+        return apply(fallback);
       }
       let value;
       try {
         value = compiled(tokRow);
       } catch (err) {
         if (logError) logError(err, tok.fullToken);
-        return fallback;
+        return apply(fallback);
       }
-      if (value === undefined || value === null) return "";
-      return coerceResultToString(value);
+      if (value === undefined || value === null) return apply("");
+      return apply(coerceResultToString(value));
     }
     const out = [];
     for (const raw of parts) {
@@ -203,14 +208,14 @@ export function resolveTemplate(template, row, opts) {
       const compiled = getCompiledExpressionSync(expr);
       if (!compiled) {
         if (logError) logError(new Error("expression not precompiled: " + expr), tok.fullToken);
-        return fallback;
+        return apply(fallback);
       }
       let value;
       try {
         value = compiled(tokRow);
       } catch (err) {
         if (logError) logError(err, tok.fullToken);
-        return fallback;
+        return apply(fallback);
       }
       if (value === undefined || value === null) {
         out.push("");
@@ -218,7 +223,7 @@ export function resolveTemplate(template, row, opts) {
         out.push(coerceResultToString(value));
       }
     }
-    return out.join(",");
+    return apply(out.join(","));
   });
   return unescapeBraces(replaced);
 }
@@ -237,6 +242,8 @@ export async function resolveTemplateAsync(template, row, opts) {
   const fallback = Object.prototype.hasOwnProperty.call(options, "fallback") ? options.fallback : "";
   const logError = typeof options.logError === "function" ? options.logError : null;
   const queryTokenValues = options.queryTokenValues instanceof Map ? options.queryTokenValues : null;
+  const valueTransform = typeof options.valueTransform === "function" ? options.valueTransform : null;
+  const apply = (value) => (valueTransform ? valueTransform(String(value === undefined || value === null ? "" : value)) : value);
   const tokRow = row || {};
 
   await precompileTemplate(text);
@@ -302,7 +309,7 @@ export async function resolveTemplateAsync(template, row, opts) {
   }
 
   const replaced = scanAndReplace(escaped, (tok) => {
-    return valueByToken.has(tok.fullToken) ? valueByToken.get(tok.fullToken) : fallback;
+    return apply(valueByToken.has(tok.fullToken) ? valueByToken.get(tok.fullToken) : fallback);
   });
   return unescapeBraces(replaced);
 }
@@ -328,6 +335,34 @@ export function extractFieldRefs(template) {
         const name = m[1];
         if (!name) continue;
         if (name.charAt(0) === NFB_RESERVED_PREFIX) continue;
+        if (seen.has(name)) continue;
+        seen.add(name);
+        out.push(name);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * テンプレート内のバッククォート予約識別子（`_` 始まり）を集めて重複除去して返す。
+ * extractFieldRefs の逆（予約名だけ収集）。Webhook URL の機微トークンゲートに使う。
+ */
+export function extractReservedRefs(template) {
+  if (!template || typeof template !== "string") return [];
+  const escaped = escapeBraces(template);
+  const tokens = collectBalancedBraces(escaped);
+  const seen = new Set();
+  const out = [];
+  for (const tok of tokens) {
+    const parts = splitTopLevelCommas(tok.body);
+    for (const raw of parts) {
+      BACKTICK_IDENTIFIER_RE.lastIndex = 0;
+      let m;
+      while ((m = BACKTICK_IDENTIFIER_RE.exec(raw)) !== null) {
+        const name = m[1];
+        if (!name) continue;
+        if (name.charAt(0) !== NFB_RESERVED_PREFIX) continue;
         if (seen.has(name)) continue;
         seen.add(name);
         out.push(name);

@@ -658,7 +658,7 @@ test("nfbCreateGoogleDocumentFromTemplate は同名ファイルを上書きし�
 
 test("nfbResolveRecordOutputFileNameTemplate_ は標準ファイル名未設定時に新構文の既定値へフォールバックする", () => {
   const gas = loadGasContext();
-  const expected = "{`_id`}_{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}";
+  const expected = "{{`_id`}}_{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}}";
   assert.equal(
     gas.nfbResolveRecordOutputFileNameTemplate_(
       { settings: {} },

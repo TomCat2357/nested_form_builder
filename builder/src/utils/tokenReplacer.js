@@ -65,7 +65,16 @@ function buildTemplateRow(context) {
     _id: ctx.recordId || "",
     _record_url: ctx.recordUrl || "",
     _form_url: ctx.formUrl || "",
+    _form_id: ctx.formId || "",
+    _form_name: ctx.formName || "",
   };
+  // 機微予約トークンは呼び出し側がゲート済みのときだけ context に載せる（Webhook の admin gate）。
+  // 印刷プレビュー等の通常経路では未指定 → 未注入 → 参照は空文字に解決される。
+  if (ctx.spreadsheetId !== undefined) fixed._spreadsheet_id = ctx.spreadsheetId || "";
+  if (ctx.spreadsheetUrl !== undefined) fixed._spreadsheet_url = ctx.spreadsheetUrl || "";
+  if (ctx.sheetName !== undefined) fixed._sheet_name = ctx.sheetName || "";
+  if (ctx.driveFileUrl !== undefined) fixed._drive_file_url = ctx.driveFileUrl || "";
+  if (ctx.userEmail !== undefined) fixed._user_email = ctx.userEmail || "";
   const source = { ...valueMap };
   for (const path of Object.keys(fileEntries)) {
     source[path] = fileEntries[path];
@@ -99,7 +108,8 @@ export const resolveTemplateTokens = (template, context) => {
   // prefetch 完了を呼び出し側（PreviewPage）が ctx.queryTokensReady で伝える。未指定/false の間は
   // 未解決 full-query を警告しない（非同期 prefetch 前の同期 resolve は未解決が正常なため）。
   const queryTokensReady = ctx.queryTokensReady === true;
-  return resolveTemplate(text, row, { fallback: "", logError: logTemplateError, queryTokenValues, queryTokensReady });
+  const valueTransform = typeof ctx.valueTransform === "function" ? ctx.valueTransform : undefined;
+  return resolveTemplate(text, row, { fallback: "", logError: logTemplateError, queryTokenValues, queryTokensReady, valueTransform });
 };
 
 // full-query 結果中の `{` `}` を `\{` `\}` にエスケープする。GAS 送信用テンプレに
@@ -190,8 +200,9 @@ export const resolveTemplateTokensAsync = async (template, context) => {
   const queryTokenValues = await prefetchQueryTokens(text, ctx);
   await precompileTemplate(text);
   const row = buildTemplateRow(ctx);
+  const valueTransform = typeof ctx.valueTransform === "function" ? ctx.valueTransform : undefined;
   // ここでは prefetch を await 済みなので、未解決 full-query は本物の欠落 → 警告する。
-  return resolveTemplate(text, row, { fallback: "", logError: logTemplateError, queryTokenValues, queryTokensReady: true });
+  return resolveTemplate(text, row, { fallback: "", logError: logTemplateError, queryTokenValues, queryTokensReady: true, valueTransform });
 };
 
 /**
