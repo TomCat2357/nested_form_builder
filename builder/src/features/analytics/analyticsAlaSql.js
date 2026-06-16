@@ -189,6 +189,14 @@ export async function dropTables(aliases) {
   }
 }
 
+// alasql の生結果を { ok, rows, columns } へ整形する共通ヘルパ。
+// columns は全結果行のキーの和集合（初出順）。不均質な行でも列を取りこぼさない。
+// runAlaSql / runAlaSqlOnArray が共有する（クエリの違いは呼び出し側、整形はここに一本化）。
+function shapeQueryResult_(out) {
+  const rows = Array.isArray(out) ? out : [];
+  return { ok: true, rows, columns: unionRowKeys(rows) };
+}
+
 /**
  * AlaSQL で SQL を実行して結果行配列を返す。
  * columns は全結果行のキーの和集合（初出順）。不均質な行でも列を取りこぼさない。
@@ -198,12 +206,50 @@ export async function dropTables(aliases) {
 export async function runAlaSql(sql) {
   try {
     const alasql = await getAlaSql();
-    const rows = alasql(sql);
-    const resultRows = Array.isArray(rows) ? rows : [];
-    return { ok: true, rows: resultRows, columns: unionRowKeys(resultRows) };
+    return shapeQueryResult_(alasql(sql));
   } catch (err) {
     return { ok: false, error: err.message || String(err) };
   }
+}
+
+/**
+ * 登録済みテーブルへフィルタを適用する共通エンジン（applyGlobalWhereToTables /
+ * applySourceFilterClauses の重複ループを集約）。
+ *
+ * `seen` で alias 重複を除き、非空テーブルごとに列集合 `cols` を求めて planClausesForTable(cols)
+ * を呼ぶ。プランナが返す `{ where, paramsTail }` 群を `SELECT * FROM ? WHERE <where>` として
+ * 順に適用し、`table.data` を結果で置換する（`?` には常に最新の `table.data`、続けて paramsTail）。
+ * プランナが空配列を返したテーブル/列はスキップ（フィルタ未適用＝素通し）。
+ *
+ * @param {string[]} aliases - 登録済みテーブル名
+ * @param {(cols: Set<string>) => Array<{ where: string, paramsTail?: any[] }>} planClausesForTable
+ * @returns {Promise<{ ok: boolean, error?: string }>} 構文エラーは ok:false を返す（呼び出し側でエラー表示）
+ */
+async function applyTableFilters_(aliases, planClausesForTable) {
+  if (!Array.isArray(aliases) || aliases.length === 0) return { ok: true };
+  const alasql = await getAlaSql();
+  const seen = new Set();
+  for (const alias of aliases) {
+    if (seen.has(alias)) continue;
+    seen.add(alias);
+    const table = alasql.tables[alias];
+    if (!table || !Array.isArray(table.data) || table.data.length === 0) continue;
+    const cols = new Set(Object.keys(table.data[0] || {}));
+    const clauses = planClausesForTable(cols);
+    if (!Array.isArray(clauses) || clauses.length === 0) continue;
+    for (const clause of clauses) {
+      try {
+        const filtered = alasql(
+          "SELECT * FROM ? WHERE " + clause.where,
+          [table.data, ...(clause.paramsTail || [])]
+        );
+        table.data = Array.isArray(filtered) ? filtered : [];
+      } catch (err) {
+        return { ok: false, error: err.message || String(err) };
+      }
+    }
+  }
+  return { ok: true };
 }
 
 /**
@@ -221,8 +267,6 @@ export async function runAlaSql(sql) {
  */
 export async function applyGlobalWhereToTables(aliases, whereExpr) {
   if (!whereExpr || typeof whereExpr !== "string" || whereExpr.trim() === "") return { ok: true };
-  if (!Array.isArray(aliases) || aliases.length === 0) return { ok: true };
-  const alasql = await getAlaSql();
   const identRe = /\[([^\]]+)\]/g;
   const refIdents = new Set();
   let m;
@@ -234,26 +278,13 @@ export async function applyGlobalWhereToTables(aliases, whereExpr) {
     // 「列が無いテーブルは無視」というユーザ仕様の単純化のため何もしない。
     return { ok: true };
   }
-  const seen = new Set();
-  for (const alias of aliases) {
-    if (seen.has(alias)) continue;
-    seen.add(alias);
-    const table = alasql.tables[alias];
-    if (!table || !Array.isArray(table.data) || table.data.length === 0) continue;
-    const cols = new Set(Object.keys(table.data[0] || {}));
-    let allPresent = true;
+  // 参照識別子がすべて列として存在するテーブルにだけ単一の WHERE を適用する。
+  return applyTableFilters_(aliases, (cols) => {
     for (const id of refIdents) {
-      if (!cols.has(id)) { allPresent = false; break; }
+      if (!cols.has(id)) return [];
     }
-    if (!allPresent) continue;
-    try {
-      const filtered = alasql("SELECT * FROM ? WHERE " + whereExpr, [table.data]);
-      table.data = Array.isArray(filtered) ? filtered : [];
-    } catch (err) {
-      return { ok: false, error: err.message || String(err) };
-    }
-  }
-  return { ok: true };
+    return [{ where: whereExpr }];
+  });
 }
 
 /**
@@ -269,28 +300,15 @@ export async function applyGlobalWhereToTables(aliases, whereExpr) {
  */
 export async function applySourceFilterClauses(aliases, clauses) {
   if (!Array.isArray(clauses) || clauses.length === 0) return { ok: true };
-  if (!Array.isArray(aliases) || aliases.length === 0) return { ok: true };
-  const alasql = await getAlaSql();
-  const seen = new Set();
-  for (const alias of aliases) {
-    if (seen.has(alias)) continue;
-    seen.add(alias);
-    const table = alasql.tables[alias];
-    if (!table || !Array.isArray(table.data) || table.data.length === 0) continue;
-    const cols = new Set(Object.keys(table.data[0] || {}));
-    for (const clause of clauses) {
-      if (!clause || !clause.col || !cols.has(clause.col)) continue;
-      const comparator = clause.comparator === "<=" ? "<=" : ">=";
-      try {
-        const sql = "SELECT * FROM ? WHERE " + bracketIdent(clause.col) + " " + comparator + " ?";
-        const filtered = alasql(sql, [table.data, clause.value]);
-        table.data = Array.isArray(filtered) ? filtered : [];
-      } catch (err) {
-        return { ok: false, error: err.message || String(err) };
-      }
-    }
-  }
-  return { ok: true };
+  // 列を持つ clause だけをパラメータ化 WHERE に展開する（列単位で独立適用）。
+  return applyTableFilters_(aliases, (cols) =>
+    clauses
+      .filter((clause) => clause && clause.col && cols.has(clause.col))
+      .map((clause) => ({
+        where: bracketIdent(clause.col) + " " + (clause.comparator === "<=" ? "<=" : ">=") + " ?",
+        paramsTail: [clause.value],
+      }))
+  );
 }
 
 /**
@@ -305,10 +323,7 @@ export async function runAlaSqlOnArray(rows, sql, extraParams = []) {
   try {
     const alasql = await getAlaSql();
     const params = [Array.isArray(rows) ? rows : [], ...extraParams];
-    const out = alasql(sql, params);
-    const resultRows = Array.isArray(out) ? out : [];
-    const columns = unionRowKeys(resultRows);
-    return { ok: true, rows: resultRows, columns };
+    return shapeQueryResult_(alasql(sql, params));
   } catch (err) {
     return { ok: false, error: err.message || String(err) };
   }

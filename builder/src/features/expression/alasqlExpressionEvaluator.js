@@ -82,14 +82,15 @@ export async function precompileExpressions(exprs) {
   }
 }
 
-/**
- * 非同期版。コンパイル + 評価。エラー時は fallback を返す。
- */
-export async function evalExpression(expr, row, opts) {
-  const fallback = opts && Object.prototype.hasOwnProperty.call(opts, "fallback") ? opts.fallback : null;
-  if (!expr) return fallback;
+// fallback の解決を一本化（opts に fallback プロパティがあればその値、無ければ null）。
+function resolveFallback_(opts) {
+  return opts && Object.prototype.hasOwnProperty.call(opts, "fallback") ? opts.fallback : null;
+}
+
+// コンパイル済みラッパ関数を実行し、undefined / 例外時は fallback を返す共通評価部。
+// evalExpression（async）と evalExpressionSync（sync）が共有する。
+function runCompiledWithFallback_(fn, expr, row, fallback) {
   try {
-    const fn = await compileExpression(expr);
     const v = fn(row);
     return v === undefined ? fallback : v;
   } catch (err) {
@@ -98,6 +99,24 @@ export async function evalExpression(expr, row, opts) {
     }
     return fallback;
   }
+}
+
+/**
+ * 非同期版。コンパイル + 評価。エラー時は fallback を返す。
+ */
+export async function evalExpression(expr, row, opts) {
+  const fallback = resolveFallback_(opts);
+  if (!expr) return fallback;
+  let fn;
+  try {
+    fn = await compileExpression(expr);
+  } catch (err) {
+    if (typeof console !== "undefined") {
+      console.warn("[expression] eval failed:", expr, err && err.message);
+    }
+    return fallback;
+  }
+  return runCompiledWithFallback_(fn, expr, row, fallback);
 }
 
 /**
@@ -114,7 +133,7 @@ export function getCompiledExpressionSync(expr) {
  * キャッシュにない式が来たら fallback を返す（検索/テンプレ系では precompile を必ず先行）。
  */
 export function evalExpressionSync(expr, row, opts) {
-  const fallback = opts && Object.prototype.hasOwnProperty.call(opts, "fallback") ? opts.fallback : null;
+  const fallback = resolveFallback_(opts);
   if (!expr) return fallback;
   const fn = compiledCache.get(expr);
   if (!fn) {
@@ -123,15 +142,7 @@ export function evalExpressionSync(expr, row, opts) {
     }
     return fallback;
   }
-  try {
-    const v = fn(row);
-    return v === undefined ? fallback : v;
-  } catch (err) {
-    if (typeof console !== "undefined") {
-      console.warn("[expression] sync eval failed:", expr, err && err.message);
-    }
-    return fallback;
-  }
+  return runCompiledWithFallback_(fn, expr, row, fallback);
 }
 
 /**
