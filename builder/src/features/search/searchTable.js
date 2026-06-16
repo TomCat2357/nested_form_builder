@@ -39,7 +39,7 @@ const debugLog = (...args) => {
 
 export const isExcludedSearchOrPrintField = (field) => (
   field?.type === "printTemplate"
-  || field?.type === "webhook"
+  || field?.type === "externalAction"
   || (field?.type === "message" && field?.excludeFromSearchAndPrint === true)
 );
 
@@ -393,7 +393,7 @@ export const buildSearchColumns = (form, { includeOperations = true } = {}) => {
 
 // 簡易検索の式生成でだけ補う「スキーマ全フィールド列」から除外する型。
 // 値列を生成しないアクション/表示専用フィールド（buildSearchColumns の判定と整合）。
-const SIMPLE_SEARCH_EXTRA_SKIP_TYPES = new Set(["webhook", "printTemplate", "formLink", "message"]);
+const SIMPLE_SEARCH_EXTRA_SKIP_TYPES = new Set(["externalAction", "printTemplate", "formLink", "message"]);
 
 /**
  * 簡易検索（プレフィックスなし）の式生成にだけ渡す列集合を作る。

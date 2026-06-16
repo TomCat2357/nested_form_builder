@@ -68,7 +68,7 @@ function buildTemplateRow(context) {
     _form_id: ctx.formId || "",
     _form_name: ctx.formName || "",
   };
-  // 機微予約トークンは呼び出し側がゲート済みのときだけ context に載せる（Webhook の admin gate）。
+  // 機微予約トークンは呼び出し側がゲート済みのときだけ context に載せる（外部アクション の admin gate）。
   // 印刷プレビュー等の通常経路では未指定 → 未注入 → 参照は空文字に解決される。
   if (ctx.spreadsheetId !== undefined) fixed._spreadsheet_id = ctx.spreadsheetId || "";
   if (ctx.spreadsheetUrl !== undefined) fixed._spreadsheet_url = ctx.spreadsheetUrl || "";

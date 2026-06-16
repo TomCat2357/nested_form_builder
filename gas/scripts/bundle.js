@@ -64,6 +64,7 @@ const FILE_ORDER = [
   'standardFoldersAlignRefs.gs', // 保存時の参照整合（参照グラフ収集・remap 追従・保存後フック）
   'standardFoldersCopy.gs',  // 構成コピー（システムごとコピー）— standardFolders.gs から分離
   'standardFolders.gs',  // 標準フォルダ構成（作成 / 自動整理 / マッピング I/O / 重複整理）— forms/analytics/model/driveFolder ヘルパーに依存
+  'externalAction.gs',   // 外部アクション（externalAction）の UrlFetch サーバ間リレー送信
   // --- sheets ---
   'sheetsDatetime.gs',
   'sheetsHeaders.gs',

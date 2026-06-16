@@ -12,7 +12,7 @@ import {
   isDateOrTimeType,
   isMessageType,
   isPrintTemplateType,
-  isWebhookType,
+  isExternalActionType,
   isFormLinkType,
   isBasicInputType,
   isComputedType,
@@ -36,7 +36,7 @@ import {
   FileUploadFieldSection,
   DateTimeFieldSection,
   SubstitutionFieldSection,
-  WebhookSection,
+  ExternalActionSection,
   FormLinkSection,
 } from "./QuestionCardSections.jsx";
 
@@ -53,7 +53,7 @@ const FIELD_TYPE_OPTIONS = [
   { value: "select", label: "ドロップダウン" },
   { value: "fileUpload", label: "ファイルアップロード" },
   { value: "printTemplate", label: "様式出力" },
-  { value: "webhook", label: "Webhook" },
+  { value: "externalAction", label: "外部アクション" },
   { value: "formLink", label: "別フォームを開く" },
   { value: "message", label: "メッセージ" },
   { value: "substitution", label: "置換" },
@@ -81,7 +81,7 @@ export default function QuestionCard({
   const isBasicInput = isBasicInputType(field.type);
   const isMessage = isMessageType(field.type);
   const isPrintTemplate = isPrintTemplateType(field.type);
-  const isWebhook = isWebhookType(field.type);
+  const isExternalAction = isExternalActionType(field.type);
   const isFormLink = isFormLinkType(field.type);
   const isEmail = field.type === "email";
   const isPhone = field.type === "phone";
@@ -120,7 +120,7 @@ export default function QuestionCard({
         <span className="nf-text-13 nf-fw-500 nf-text-ink nf-shrink-0">項目名</span>
         <input
           className={`${s.input.className} nf-w-auto nf-flex-1-1-200 nf-min-w-0`}
-          placeholder={isWebhook || isPrintTemplate ? "項目名を入力（ボタンの表示名になります）" : "項目名を入力"}
+          placeholder={isExternalAction || isPrintTemplate ? "項目名を入力（ボタンの表示名になります）" : "項目名を入力"}
           value={field.label || ""}
           required
           onChange={(event) => onChange({ ...field, label: event.target.value })}
@@ -142,7 +142,7 @@ export default function QuestionCard({
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-        {!isMessage && !isPrintTemplate && !isWebhook && !isFormLink && !isComputed && (
+        {!isMessage && !isPrintTemplate && !isExternalAction && !isFormLink && !isComputed && (
           <label className="nf-row nf-gap-4 nf-nowrap">
             <input
               type="checkbox"
@@ -164,7 +164,7 @@ export default function QuestionCard({
 
       {isPrintTemplate && <PrintTemplateSection field={field} onChange={onChange} printTemplateAction={printTemplateAction} />}
 
-      {isWebhook && <WebhookSection field={field} onChange={onChange} />}
+      {isExternalAction && <ExternalActionSection field={field} onChange={onChange} />}
 
       {isFormLink && <FormLinkSection field={field} onChange={onChange} />}
 

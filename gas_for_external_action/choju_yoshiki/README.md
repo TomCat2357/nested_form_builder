@@ -1,11 +1,11 @@
-# 鳥獣保護管理法様式 生成 Webhook（choju_yoshiki）
+# 鳥獣保護管理法様式 生成 外部アクション（choju_yoshiki）
 
 フォーム「**鳥獣保護管理法許可申請**」のレコードから、札幌市の様式ワークブック
 （`form_data/鳥獣保護管理法様式_1_20260611_120316.xlsx` を Google スプレッドシート化したもの）を
 **自動で埋めて出力する**スタンドアロン Google Apps Script ウェブアプリです。
 
 本体アプリ（`gas/`）には一切手を入れません。本体のレコード詳細画面にある
-**webhook ボタン**を押すと、隠しフォーム POST でこのウェブアプリに `payload`（JSON）が送られ、
+**外部アクション ボタン**を押すと、隠しフォーム POST でこのウェブアプリに `payload`（JSON）が送られ、
 テンプレートを複製して全シートに値を書き込み、生成したスプレッドシートへのリンクを返します。
 
 ---
@@ -13,7 +13,7 @@
 ## 1. 何をするものか
 
 ```
-[本体アプリ] レコード詳細の webhook ボタン
+[本体アプリ] レコード詳細の 外部アクション ボタン
       │  隠しフォーム POST (payload = レコード全項目の JSON)
       ▼
 [このウェブアプリ] doPost
@@ -82,7 +82,7 @@
 
 - 方法 A（推奨・clasp）:
   ```powershell
-  cd gas_for_webhook/choju_yoshiki
+  cd gas_for_external_action/choju_yoshiki
   npx --yes @google/clasp create --type webapp --title "鳥獣保護管理法様式 生成"
   # → .clasp.json が作られる（rootDir は "." に。これは gitignore 済みなのでコミットされない）
   npx --yes @google/clasp push
@@ -108,21 +108,27 @@ GAS エディタで以下を順に実行する。
 
 GAS エディタの **[デプロイ] > [新しいデプロイ] > [ウェブアプリ]** で:
 
-- **アクセスできるユーザー: 全員（匿名ユーザーを含む）**
+- **アクセスできるユーザー: 全員（Google アカウントが必要）**
 - **次のユーザーとして実行: 自分**
 
-> ⚠️ 「全員（匿名含む）」が**必須**です。隠しフォーム POST にログインリダイレクトが挟まると
-> POST 本文が失われ（リダイレクト後は GET になる）、別アカウント・未ログインのユーザーで壊れます。
-> 代わりに `?k=<アクセスキー>` による軽量ゲートで保護します。
+> 送信方式: 本体アプリは **サーバ間リレー（本体 GAS が `UrlFetchApp` で `?nfbRelay=1`
+> 付きで POST）** で送ります。これによりブラウザの隠しフォーム POST に伴うログイン
+> リダイレクト（POST 本文消失）を回避します。`?k=<アクセスキー>` の軽量ゲートも併用します。
+>
+> このウェブアプリは `nfbRelay=1` のとき HTML ではなく JSON（`{ ok, title, message, openUrl }`）
+> を返します（直接ブラウザ POST 用の HTML 応答も後方互換で残しています）。
+>
+> 注意: サーバ間リレーには本体アプリ側に `script.external_request` スコープ追加が必要で、
+> **本体アプリの全ユーザーが一度だけ再認証**します（受信アプリ側の追加スコープは不要）。
 
 デプロイ後に出る **`/exec` URL** を控える。
 
 ### 3-5. 本体アプリ側を設定する（コード変更なし）
 
 1. フォーム編集画面に formLink「**従事者情報**」が設定されていることを確認する（特別な設定は不要）。
-   - レコード詳細の webhook ボタンから送る payload には、**子フォームの行（従事者の子レコード）が自動で含まれます**。
+   - レコード詳細の 外部アクション ボタンから送る payload には、**子フォームの行（従事者の子レコード）が自動で含まれます**。
      formLink を持つ親フォームは常に子データを payload へ展開します（旧版にあった `includeChildData` 設定は廃止）。
-2. 申請フォームに **webhook の質問カード**を追加する。
+2. 申請フォームに **外部アクション の質問カード**を追加する。
    - ラベル例: 「Excel 様式を作成」
    - URL: `<デプロイの /exec URL>?k=<アクセスキー>`
    - 管理者限定（adminOnly）: **OFF**（職員全員が押せるように。受信側は storage を使わない）
@@ -181,7 +187,7 @@ GAS エディタで `testAll`（`Test.gs`）を実行し、実行ログを見る
 
 `TestPayload.gs` のゴールデン payload は、`builder/src/features/preview/printDocument.js` の
 出力仕様に合わせて**手組み**したものです。本番に入れる前に、本体アプリの
-**Playground（管理者 > Playground > Webhook モード）** で実レコードの payload を取得し、次を突き合わせてください。
+**Playground（管理者 > Playground > 外部アクション モード）** で実レコードの payload を取得し、次を突き合わせてください。
 
 - `record.items[].question` の実際のパス形（特に子レコード `従事者情報/#1/...`）
 - **日付値の文字列書式**（`"YYYY-MM-DD"` を想定。違えば `payload.gs` の `Cho_toDateOrText_` を調整）
@@ -199,7 +205,7 @@ GAS エディタで `testAll`（`Test.gs`）を実行し、実行ログを見る
 セル番地は xlsx の旧数式が典拠です。番地を見直したいときは:
 
 ```powershell
-cd gas_for_webhook/choju_yoshiki/scripts
+cd gas_for_external_action/choju_yoshiki/scripts
 python extract_formula_map.py
 ```
 
@@ -219,4 +225,4 @@ python extract_formula_map.py
 - `var` ＋ `function name() {}` スタイル（`let`/`const`/arrow を持ち込まない）
 - 内部ヘルパは末尾アンダースコア、関数接頭辞は `Cho_`、定数は `CHO_`
 - 公開エントリ（`doPost`/`doGet`）と payload 解析・HTML レンダラは
-  `gas_for_webhook/template/` の雛形を流用
+  `gas_for_external_action/template/` の雛形を流用

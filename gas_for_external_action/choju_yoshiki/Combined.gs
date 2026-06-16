@@ -5,7 +5,7 @@
 // =============================================================================
 // 鳥獣保護管理法様式 生成 Web App (Nested Form Builder 連携)
 //
-// フォーム「鳥獣保護管理法許可申請」のレコード詳細にある webhook ボタンから
+// フォーム「鳥獣保護管理法許可申請」のレコード詳細にある 外部アクション ボタンから
 // 隠しフォーム POST（e.parameter.payload = JSON 文字列）を受け取り、
 // Google スプレッドシート化した様式テンプレートを複製して全シートに値を書き込み、
 // 生成したスプレッドシートへのリンクを返す。
@@ -20,33 +20,50 @@
 //      ※ 隠しフォーム POST はログインリダイレクトで本文が失われるため「全員(匿名含む)」必須
 //   6. 本体アプリ側の設定:
 //      - フォームに formLink「従事者情報」があること（子データは自動で payload に載る。設定不要）
-//      - webhook 質問カードを追加し URL に「デプロイ URL + ?k=<アクセスキー>」を設定
+//      - 外部アクション 質問カードを追加し URL に「デプロイ URL + ?k=<アクセスキー>」を設定
 //
 // ■ テスト（デプロイ不要）
 //   Test.gs の testAll を GAS エディタから実行し、実行ログを確認する。
 // =============================================================================
 
+// 本体アプリは UrlFetchApp サーバ間リレーで ?nfbRelay=1 を付けて POST してくる。
+// その場合は HTML ではなく JSON ({ ok, title, message, openUrl }) で応答する。
+// nfbRelay なしの直接 POST は従来どおり HTML を返す。
 function doPost(e) {
+  var relay = e && e.parameter && String(e.parameter.nfbRelay) === "1";
   try {
     var payload = parsePayload_(e);
     if (!payload.ok) {
-      return renderHtml_("エラー", "<p>" + escapeHtml_(payload.error) + "</p>", true);
+      return Cho_render_(relay, { ok: false, title: "エラー", message: payload.error, html: "<p>" + escapeHtml_(payload.error) + "</p>" });
     }
     var keyError = Cho_checkAccessKey_(e);
     if (keyError) {
-      return renderHtml_("エラー", "<p>" + escapeHtml_(keyError) + "</p>", true);
+      return Cho_render_(relay, { ok: false, title: "エラー", message: keyError, html: "<p>" + escapeHtml_(keyError) + "</p>" });
     }
     var data = payload.data;
     if (String(data.context || "") !== "record") {
-      return renderHtml_("エラー",
-        "<p>このウェブアプリはレコード単位の webhook（context=record）専用です。受信 context: " +
-        escapeHtml_(String(data.context || "(なし)")) + "</p>", true);
+      var ctxMsg = "このウェブアプリはレコード単位の 外部アクション（context=record）専用です。受信 context: " + String(data.context || "(なし)");
+      return Cho_render_(relay, { ok: false, title: "エラー", message: ctxMsg, html: "<p>" + escapeHtml_(ctxMsg) + "</p>" });
     }
-    return Cho_handleRecord_(data);
+    return Cho_render_(relay, Cho_handleRecord_(data));
   } catch (err) {
-    return renderHtml_("予期せぬエラー",
-      "<p>" + escapeHtml_(String(err && err.message ? err.message : err)) + "</p>", true);
+    var em = String(err && err.message ? err.message : err);
+    return Cho_render_(relay, { ok: false, title: "予期せぬエラー", message: em, html: "<p>" + escapeHtml_(em) + "</p>" });
   }
+}
+
+// 結果記述子を relay 有無に応じて JSON / HTML で出力する。
+function Cho_render_(relay, result) {
+  var r = result || {};
+  if (relay) {
+    return ContentService.createTextOutput(JSON.stringify({
+      ok: r.ok !== false,
+      title: r.title || "",
+      message: r.message || "",
+      openUrl: r.openUrl || "",
+    })).setMimeType(ContentService.MimeType.JSON);
+  }
+  return renderHtml_(r.title || (r.ok === false ? "エラー" : "受信完了"), r.html || "", r.ok === false);
 }
 
 // GET はセットアップ状態の確認用。
@@ -55,7 +72,7 @@ function doGet() {
   var ready = props.getProperty(CHO_PROP_TEMPLATE_) && props.getProperty(CHO_PROP_FOLDER_);
   return renderHtml_(
     "鳥獣保護管理法様式 生成 Web App",
-    "<p>この URL は Nested Form Builder の webhook ボタンから POST 送信を受け取り、" +
+    "<p>この URL は Nested Form Builder の 外部アクション ボタンから POST 送信を受け取り、" +
     "鳥獣保護管理法の様式（スプレッドシート）を生成します。</p>" +
     "<p>セットアップ状態: " + (ready ? "テンプレート設定済み" : "<strong>未設定</strong>（Cho_registerSettings を実行してください）") + "</p>",
     false
@@ -67,10 +84,11 @@ function Cho_checkAccessKey_(e) {
   var expected = PropertiesService.getScriptProperties().getProperty(CHO_PROP_KEY_);
   if (!expected) return "";
   var actual = e && e.parameter ? String(e.parameter.k || "") : "";
-  return actual === expected ? "" : "アクセスキーが一致しません。webhook URL の ?k= パラメータを確認してください。";
+  return actual === expected ? "" : "アクセスキーが一致しません。外部アクション URL の ?k= パラメータを確認してください。";
 }
 
-// レコード payload → 様式生成 → リンク応答。
+// レコード payload → 様式生成 → 結果記述子 { ok, title, message, html, openUrl } を返す。
+// HTML / JSON 出力の振り分けは呼び出し側（Cho_render_）が行う。
 function Cho_handleRecord_(data) {
   var record = (data && data.record) || {};
   var model = Cho_buildModel_(data);
@@ -81,10 +99,16 @@ function Cho_handleRecord_(data) {
     SpreadsheetApp.flush();
   } catch (err) {
     // 部分生成ファイルは消さずにリンクを出す（原因調査をしやすくする）
-    return renderHtml_("エラー",
-      "<p>書き込み中にエラーが発生しました: " + escapeHtml_(String(err && err.message ? err.message : err)) + "</p>" +
-      "<p>部分的に生成されたファイル: <a href=\"" + escapeHtml_(ss.getUrl()) + "\" target=\"_blank\" rel=\"noopener\">" +
-      escapeHtml_(file.getName()) + "</a></p>", true);
+    var em = String(err && err.message ? err.message : err);
+    return {
+      ok: false,
+      title: "エラー",
+      message: "書き込み中にエラーが発生しました: " + em,
+      openUrl: ss.getUrl(),
+      html: "<p>書き込み中にエラーが発生しました: " + escapeHtml_(em) + "</p>" +
+        "<p>部分的に生成されたファイル: <a href=\"" + escapeHtml_(ss.getUrl()) + "\" target=\"_blank\" rel=\"noopener\">" +
+        escapeHtml_(file.getName()) + "</a></p>",
+    };
   }
 
   var html = "";
@@ -98,18 +122,26 @@ function Cho_handleRecord_(data) {
   html += "<tr><th>従事者数</th><td>" + escapeHtml_(String(model.workerCount)) + " 名（名簿 " +
     escapeHtml_(String((model.rosterEntries || []).length)) + " ブロック）</td></tr>";
   html += "</tbody></table>";
+  var warnText = "";
   if (model.warnings && model.warnings.length > 0) {
     html += '<div class="warn"><strong>警告</strong><ul>';
     for (var i = 0; i < model.warnings.length; i++) {
       html += "<li>" + escapeHtml_(model.warnings[i]) + "</li>";
     }
     html += "</ul></div>";
+    warnText = "（警告 " + model.warnings.length + " 件あり）";
   }
-  return renderHtml_("様式を作成しました", html, false);
+  return {
+    ok: true,
+    title: "様式を作成しました",
+    message: "様式を作成しました: " + file.getName() + warnText,
+    openUrl: ss.getUrl(),
+    html: html,
+  };
 }
 
 
-// ----- payload 取り出し（gas_for_webhook/template/Code.gs と同じ）---------------
+// ----- payload 取り出し（gas_for_external_action/template/Code.gs と同じ）---------------
 function parsePayload_(e) {
   var params = (e && e.parameter) || {};
   var raw = params.payload;
@@ -1258,7 +1290,7 @@ function Cho_writeRosterBlocks_(ss, model) {
 // =============================================================================
 
 // 引数を直接書き換えて GAS エディタから実行する（実行後は引数を消してよい）。
-// accessKey は webhook URL の ?k= と照合する任意の合言葉（空文字ならゲート無効）。
+// accessKey は 外部アクション URL の ?k= と照合する任意の合言葉（空文字ならゲート無効）。
 function Cho_registerSettings(templateFileId, outputFolderId, accessKey) {
   if (!templateFileId || !outputFolderId) {
     throw new Error("templateFileId と outputFolderId を指定してください。");
@@ -1547,7 +1579,7 @@ function testFill_golden() {
   return ok;
 }
 
-// ----- 異常系（gas_for_webhook/template/Test.gs と同じ） ---------------------
+// ----- 異常系（gas_for_external_action/template/Test.gs と同じ） ---------------------
 function testDoPost_missingPayload() {
   var html = doPost({ parameter: {} }).getContent();
   var ok = html.indexOf("payload パラメータがありません") !== -1;
@@ -1597,7 +1629,7 @@ function logResult_(name, ok, detail) {
 // builder/src/features/preview/printDocument.js の buildRecordItems の出力形式に
 // 合わせて手組みしたもの。
 //
-// ※ 本番投入前に Playground（管理者 > Playground > Webhook モード）で実レコードの
+// ※ 本番投入前に Playground（管理者 > Playground > 外部アクション モード）で実レコードの
 //    payload を取得し、question パスの実形（特に日付の文字列書式と
 //    子フォームの方法ラベル「…名称)」の半角閉じ括弧）と突き合わせること。
 //    差異があればこのファイルと mapping.gs のラベル定数を実測に合わせて直す。

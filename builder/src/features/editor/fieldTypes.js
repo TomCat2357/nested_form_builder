@@ -1,4 +1,4 @@
-import { deepClone, cleanUnusedFieldProperties, supportsChildren, normalizeWebhookAction, normalizeFormLinkSettings, DEFAULT_TEXT_MAX_LENGTH, DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
+import { deepClone, cleanUnusedFieldProperties, supportsChildren, normalizeExternalAction, normalizeFormLinkSettings, DEFAULT_TEXT_MAX_LENGTH, DEFAULT_MULTILINE_ROWS } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
 import { resolveIsDisplayed } from "../../core/displayModes.js";
 import { normalizePhoneSettings } from "../../core/phone.js";
@@ -13,7 +13,7 @@ export const DATE_TIME_TYPES = ["date", "time"];
 export const BASIC_INPUT_TYPES = ["number", "url"];
 export const MESSAGE_TYPE = "message";
 export const PRINT_TEMPLATE_TYPE = "printTemplate";
-export const WEBHOOK_TYPE = "webhook";
+export const EXTERNAL_ACTION_TYPE = "externalAction";
 export const FORM_LINK_TYPE = "formLink";
 export const SUBSTITUTION_TYPE = "substitution";
 export const DISPLAY_LABEL = "表示";
@@ -33,7 +33,7 @@ export const isChoiceType = (type) => CHOICE_TYPES.has(type);
 export const isDateOrTimeType = (type) => DATE_TIME_TYPES.includes(type);
 export const isMessageType = (type) => type === MESSAGE_TYPE;
 export const isPrintTemplateType = (type) => type === PRINT_TEMPLATE_TYPE;
-export const isWebhookType = (type) => type === WEBHOOK_TYPE;
+export const isExternalActionType = (type) => type === EXTERNAL_ACTION_TYPE;
 export const isFormLinkType = (type) => type === FORM_LINK_TYPE;
 export const isBasicInputType = (type) => BASIC_INPUT_TYPES.includes(type);
 export const isSubstitutionType = (type) => type === SUBSTITUTION_TYPE;
@@ -133,8 +133,8 @@ export function handleTypeChange(field, newType, { getTempState, setTempState } 
         enabled: true,
       };
     }
-    if (newType === WEBHOOK_TYPE) {
-      next.webhookAction = normalizeWebhookAction(next.webhookAction);
+    if (newType === EXTERNAL_ACTION_TYPE) {
+      next.externalAction = normalizeExternalAction(next.externalAction);
     }
     if (newType === FORM_LINK_TYPE) {
       normalizeFormLinkSettings(next);

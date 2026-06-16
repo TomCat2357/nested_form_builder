@@ -34,7 +34,7 @@ nested_form_builder/
 │   ├── appsscript.json    # GAS マニフェスト
 │   └── scripts/bundle.js  # .gs → dist/Bundle.gs 結合スクリプト
 ├── gas_for_spreadsheet/    # 保存先スプレッドシート用の補助スクリプト
-├── gas_for_webhook/        # 「外部アクションボタン」の POST(payload JSON) 受信 Web App テンプレート
+├── gas_for_external_action/        # 「外部アクションボタン」の POST(payload JSON) 受信 Web App テンプレート
 ├── dist/                   # clasp push 対象 (自動生成・コミットしない)
 ├── docs/claude/            # 開発者向け詳細ドキュメント (テーマ別 15 本)
 ├── tests/ / e2e/           # GAS ユニットテスト, Playwright E2E

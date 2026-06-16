@@ -2,15 +2,15 @@ import React, { useEffect, useState } from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
 
 // システムごと（appsscript 本体 + 標準フォルダ構成）を別のプロジェクトフォルダへコピーするダイアログ。
-// コピー先プロジェクトフォルダ URL +「データもコピー」「webhooks もコピー」「マッピング JSON を書き出す」オプションを受け取る。
+// コピー先プロジェクトフォルダ URL +「データもコピー」「外部アクション もコピー」「マッピング JSON を書き出す」オプションを受け取る。
 export default function AdminCopyStructureDialog({
   open,
   url,
   onUrlChange,
   copyData,
   onCopyDataChange,
-  copyWebhooks,
-  onCopyWebhooksChange,
+  copyExternalActions,
+  onCopyExternalActionsChange,
   rebuildMapping,
   onRebuildMappingChange,
   onConfirm,
@@ -89,14 +89,14 @@ export default function AdminCopyStructureDialog({
       <label className="nf-row nf-gap-8 nf-mt-12" style={{ alignItems: "center", cursor: "pointer" }}>
         <input
           type="checkbox"
-          checked={!!copyWebhooks}
-          onChange={(event) => onCopyWebhooksChange(event.target.checked)}
+          checked={!!copyExternalActions}
+          onChange={(event) => onCopyExternalActionsChange(event.target.checked)}
         />
-        <span className="nf-text-13">07_webhooks もコピーする</span>
+        <span className="nf-text-13">07_external_actions もコピーする</span>
       </label>
       <p className="nf-mt-2 nf-text-11 nf-text-muted">
-        Webhook は URL 埋め込み等を含む場合があります。OFF の場合 07_webhooks は複製せず、フォーム内の
-        Webhook 送信先 URL もクリアします（コピー先で再リンクしてください）。
+        外部アクション は URL 埋め込み等を含む場合があります。OFF の場合 07_external_actions は複製せず、フォーム内の
+        外部アクション 送信先 URL もクリアします（コピー先で再リンクしてください）。
       </p>
 
       <label className="nf-row nf-gap-8 nf-mt-12" style={{ alignItems: "center", cursor: "pointer" }}>

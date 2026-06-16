@@ -154,7 +154,7 @@ test("listRecordsByPids は formId が無ければエラーにする", async () 
 });
 
 // GAS の listRecords は admin にはソフトデリート行も返すため、formLink 子データ用途の
-// ラッパーはクライアント側で必ず除外する（件数バッジ・Webhook payload・コピー複製の混入防止）。
+// ラッパーはクライアント側で必ず除外する（件数バッジ・外部アクション payload・コピー複製の混入防止）。
 test("listRecordsByPids はソフトデリート済みレコードを除外する", async () => {
   const originalGoogle = globalThis.google;
   const { run } = createGoogleScriptRunStub({

@@ -1,5 +1,5 @@
 import React from "react";
-import { DEFAULT_MULTILINE_ROWS, normalizeWebhookAction } from "../../core/schema.js";
+import { DEFAULT_MULTILINE_ROWS, normalizeExternalAction } from "../../core/schema.js";
 import { isValidExternalActionUrl } from "../../utils/externalActionUrl.js";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import SearchableSelect from "../../app/components/SearchableSelect.jsx";
@@ -297,10 +297,10 @@ export function DateTimeFieldSection({ field, onChange }) {
   );
 }
 
-export function WebhookSection({ field, onChange }) {
-  const action = normalizeWebhookAction(field.webhookAction);
+export function ExternalActionSection({ field, onChange }) {
+  const action = normalizeExternalAction(field.externalAction);
   const urlInvalid = action.url.trim() !== "" && !isValidExternalActionUrl(action.url);
-  const updateAction = (patch) => onChange({ ...field, webhookAction: { ...action, ...patch } });
+  const updateAction = (patch) => onChange({ ...field, externalAction: { ...action, ...patch } });
   return (
     <div className="nf-mt-8">
       <div className="nf-col nf-gap-8">
@@ -368,7 +368,7 @@ export function FormLinkSection({ field, onChange }) {
           />
         </label>
         <div className="nf-text-11 nf-text-muted">
-          {"このフォームに紐づく子フォームの行（住所・項目など全件）は、レコードの印刷様式・Webhook payload に自動で含まれます（個別設定は不要）。"}
+          {"このフォームに紐づく子フォームの行（住所・項目など全件）は、レコードの印刷様式・外部アクション payload に自動で含まれます（個別設定は不要）。"}
         </div>
         <label className="nf-row nf-gap-6">
           <input

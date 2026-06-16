@@ -9,7 +9,7 @@
 //   ├── 04_spreadsheets/
 //   ├── 05_report_templates/
 //   ├── 06_upload_files/
-//   ├── 07_webhooks/
+//   ├── 07_external_actions/
 //   └── 08_documents/
 //
 // ルートの目印は appsscript 本体（バインドされたスクリプトプロジェクト）が置かれた親フォルダ。
@@ -32,14 +32,14 @@ var NFB_STD_FOLDER_NAMES = {
   spreadsheets: "04_spreadsheets",
   report_templates: "05_report_templates",
   upload: "06_upload_files",
-  webhooks: "07_webhooks",
+  externalActions: "07_external_actions",
   documents: "08_documents"
 };
 
 // 作成・コピー時の処理順。
 var NFB_STD_FOLDER_ORDER = [
   "forms", "questions", "dashboards", "spreadsheets",
-  "report_templates", "upload", "webhooks", "documents"
+  "report_templates", "upload", "externalActions", "documents"
 ];
 
 // ---------------------------------------------

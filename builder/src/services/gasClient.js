@@ -169,7 +169,7 @@ export const listEntries = async ({ sheetName = "Data", formId = null, lastSprea
 
 // ソフトデリート済み（deletedAt / deletedAtUnixMs が非空）レコードを除外する。
 // GAS の listRecords は admin にはソフトデリート行も返す（codeHandlers.gs ListRecords_）ため、
-// formLink 子データ用途（件数バッジ・Webhook/印刷 payload・コピー複製・CHILD_FORM_*）では
+// formLink 子データ用途（件数バッジ・外部アクション/印刷 payload・コピー複製・CHILD_FORM_*）では
 // クライアント側で必ず除外する。
 const filterNotDeleted_ = (records) =>
   (Array.isArray(records) ? records : []).filter((r) => !(r?.deletedAtUnixMs || r?.deletedAt));
@@ -315,10 +315,15 @@ export const checkAdminEmailMembership = createGasEndpoint({
 });
 export const getRestrictToFormOnly = async () => { const r = await fetchGasApi("nfbGetRestrictToFormOnly", {}, "Get restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
 export const setRestrictToFormOnly = async (value) => { const r = await fetchGasApi("nfbSetRestrictToFormOnly", value, "Set restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
+// 外部アクション（externalAction）のサーバ間リレー送信。本体 GAS が UrlFetchApp で
+// 受信 Web アプリへ POST する（ブラウザの隠しフォーム POST に伴うログインリダイレクト
+// 問題を回避）。戻り値は { ok, status, body }。body は受信側応答（JSON 文字列 or HTML）。
+export const sendExternalAction = ({ url, payload }) =>
+  fetchGasApi("nfbSendExternalAction", { url, payload }, "外部アクション送信に失敗しました");
 // 標準フォルダ構成（システムごとコピー / マッピング再構築）
-export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyWebhooks = false, rebuildMapping = true } = {}) => {
+export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyExternalActions = false, rebuildMapping = true } = {}) => {
   if (!destRootUrl) throw new Error("コピー先プロジェクトフォルダの URL を指定してください");
-  const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyWebhooks, rebuildMapping }, "システムごとコピーに失敗しました");
+  const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyExternalActions, rebuildMapping }, "システムごとコピーに失敗しました");
   return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, unresolvedQuestionLinks: r.unresolvedQuestionLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), appsScriptCopyError: r.appsScriptCopyError || "", message: r.message || "" };
 };
 // 現在のマッピングを _nfb_mapping.json 形のドキュメントで取得（ダウンロード用）。

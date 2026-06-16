@@ -4,7 +4,7 @@ import { collectResponses, sortResponses, buildDataValueMap } from "../../core/c
 import { computeSchemaHash } from "../../core/schema.js";
 import { collectValidationErrors, formatValidationErrors } from "../../core/validate.js";
 import * as gasClientModule from "../../services/gasClient.js";
-const { submitResponses, hasScriptRun, countRecordsByPid, listRecordsByPids, getUrlPid } = gasClientModule;
+const { submitResponses, hasScriptRun, countRecordsByPid, listRecordsByPids, getUrlPid, sendExternalAction } = gasClientModule;
 import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
@@ -24,9 +24,9 @@ import {
   formatRecordMetaDateTime,
   buildRecordItems,
 } from "./printDocument.js";
-import { normalizeWebhookAction } from "../../core/schema.js";
+import { normalizeExternalAction } from "../../core/schema.js";
 import { isValidExternalActionUrl, buildSpreadsheetUrl, hasBlockedSensitiveRefs } from "../../utils/externalActionUrl.js";
-import { buildExternalActionPayload, submitExternalActionPost, openExternalActionWindow } from "../../utils/externalActionPost.js";
+import { buildExternalActionPayload, interpretExternalActionResponse } from "../../utils/externalActionPost.js";
 import {
   normalizePrintTemplateAction,
   resolveEffectivePrintTemplateFileNameTemplate,
@@ -161,12 +161,12 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 
   // schema 内の formLink フィールド（childFormId あり）を収集する。各々について子フォームの
   // 子レコード件数（pid == このレコード id）をバッジ表示する。
-  // 全 formLink 項目について子レコード全件を Webhook/印刷へ渡すため常に詳細ロードする。
+  // 全 formLink 項目について子レコード全件を 外部アクション/印刷へ渡すため常に詳細ロードする。
   const formLinkFields = useMemo(() => collectFormLinkFields(schema), [schema]);
 
   const [formLinkChildCounts, setFormLinkChildCounts] = useState({});
   // 子フォームの合成オブジェクト（fieldId → { childFormId, childFormName, childFormUrl, count, records }）。
-  // 全 formLink 項目を詰める。Webhook 送信・印刷・プレビューの CHILD_FORM_* で参照。
+  // 全 formLink 項目を詰める。外部アクション 送信・印刷・プレビューの CHILD_FORM_* で参照。
   const [formLinkChildData, setFormLinkChildData] = useState({});
   // 件数取得は「既存レコード（保存済み id あり）」かつ GAS 利用可かつ子フォーム文脈でない場合のみ。
   // 子レコード / 件数は childRecordsMemoryStore に SWR キャッシュする：キャッシュがあれば即表示し、
@@ -204,7 +204,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     const fetchField = async (field) => {
       if (typeof listRecordsByPids === "function") {
         // 子レコード全件 + 子 schema を取得し、合成オブジェクトを組む（件数も records から導出）。
-        // 全 formLink で常に詳細を取得し、Webhook/印刷の items 列へ展開できるようにする。
+        // 全 formLink で常に詳細を取得し、外部アクション/印刷の items 列へ展開できるようにする。
         const [childForm, records] = await Promise.all([
           getChildFormCached_(field.childFormId),
           listRecordsByPids({ formId: field.childFormId, pids: [recordId] }),
@@ -258,7 +258,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     }
   }, [settings.recordId, settings.modifiedAtUnixMs, formLinkSignature, inChildContext]);
 
-  // 全 formLink 項目の { fieldId: 合成オブジェクト } マップ。Webhook の record.items 展開・
+  // 全 formLink 項目の { fieldId: 合成オブジェクト } マップ。外部アクション の record.items 展開・
   // 印刷 payload（items 展開 + driveSettings.childFormMeta）・プレビュー row 注入で共有する。
   const childFormMeta = useMemo(() => {
     const out = {};
@@ -677,24 +677,28 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     }
   };
 
-  // Webhook 質問カードのボタン押下時。レコード内容を外部 GAS Web アプリ等へ POST する。
+  // 外部アクション 質問カードのボタン押下時。レコード内容を外部 GAS Web アプリ等へ送る。
+  // 送信は本体 GAS のサーバ間リレー（sendExternalAction → nfbSendExternalAction → UrlFetchApp）。
+  // ブラウザの隠しフォーム POST に伴うログインリダイレクト（POST 本文消失）を避ける。
   // URL のトークン解決は印刷様式と共通の alasql `{{...}}` エンジン（resolveTemplateTokensAsync）に統一。
   // 機微予約トークン（_spreadsheet_id 等）は adminOnly && isAdmin のときだけ展開を許可する。
-  const handleFieldWebhookAction = async (field) => {
-    const action = normalizeWebhookAction(field?.webhookAction);
+  const handleFieldExternalAction = async (field) => {
+    const action = normalizeExternalAction(field?.externalAction);
     const gate = { adminOnly: !!action.adminOnly, isAdmin };
     // 機微予約トークンが許可なく参照されていたら送信中止（漏洩防止・URL 早期失敗を維持）。
     if (hasBlockedSensitiveRefs(extractReservedRefs(action.url), gate)) {
       showAlert("この URL には管理者限定のトークンが含まれています。質問カードの設定で「管理者のみ」を有効にするか、トークンを見直してください。");
       return;
     }
-    // ユーザージェスチャ中に空タブを先に開く（非同期解決後のポップアップブロック回避）。
-    const target = openExternalActionWindow();
+    if (!hasScriptRun()) {
+      showAlert("この機能はGoogle Apps Script環境でのみ利用可能です");
+      return;
+    }
     const sensitiveAllowed = gate.adminOnly && gate.isAdmin;
     const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
     const sheetName = settings.sheetName || "Data";
     const driveFileUrl = settings.driveFileUrl || "";
-    const webhookCtx = {
+    const externalActionCtx = {
       ...tokenContext,
       formName: formTitle,
       dataValueMap,
@@ -709,19 +713,16 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     };
     let resolvedUrl = "";
     try {
-      resolvedUrl = await resolveTemplateTokensAsync(action.url, webhookCtx);
+      resolvedUrl = await resolveTemplateTokensAsync(action.url, externalActionCtx);
     } catch (_e) {
       resolvedUrl = "";
     }
     if (!isValidExternalActionUrl(resolvedUrl)) {
-      if (target && target.win && typeof target.win.close === "function") {
-        try { target.win.close(); } catch (_e) { /* noop */ }
-      }
       showAlert("URL が不正です (http:// または https:// で始まる必要があります)。質問カードの設定を確認してください。");
       return;
     }
     // formLink 項目の子フォームデータを、他の質問カードと同じ record.items 列へ展開する
-    // （印刷様式と同じ childFormMeta マップを使い Webhook/印刷の渡し方を揃える）。
+    // （印刷様式と同じ childFormMeta マップを使い 外部アクション/印刷の渡し方を揃える）。
     const record = {
       id: recordIdRef.current,
       no: settings.recordNo ?? "",
@@ -735,7 +736,25 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       storageFields: { spreadsheetId, sheetName, driveFileUrl, userEmail: currentUserEmail },
       gate,
     });
-    submitExternalActionPost(resolvedUrl, payload, target);
+    try {
+      const res = await sendExternalAction({ url: resolvedUrl, payload });
+      const result = interpretExternalActionResponse(res);
+      if (!result.ok) {
+        showAlert(result.message || "外部アクションの送信先でエラーが発生しました。");
+        return;
+      }
+      if (result.openUrl) {
+        showOutputAlert({
+          message: result.message || "外部アクションを送信しました。",
+          url: result.openUrl,
+          linkLabel: "結果を開く",
+        });
+      } else {
+        showAlert(result.message || "外部アクションを送信しました。");
+      }
+    } catch (error) {
+      showAlert(`外部アクション送信に失敗しました: ${toErrorMessage(error)}`);
+    }
   };
 
   // 「別フォームを開く」カードのボタン押下時。選択フォームを別タブで開く。
@@ -947,7 +966,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         driveFolderStates={driveFolderStates}
         onFieldDriveFolderStateChange={onFieldDriveFolderStateChange}
         onTemplateAction={handleFieldTemplateAction}
-        onWebhookAction={handleFieldWebhookAction}
+        onExternalAction={handleFieldExternalAction}
         onFormLinkAction={handleFieldFormLinkAction}
         formLinkChildCounts={formLinkChildCounts}
         hideFormLink={inChildContext}

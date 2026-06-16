@@ -2,9 +2,10 @@ import {
   isValidExternalActionUrl,
   buildSpreadsheetUrl,
   hasBlockedSensitiveRefs,
-  migrateLegacyWebhookUrlTokens,
+  migrateLegacyExternalActionUrlTokens,
 } from "../../../utils/externalActionUrl.js";
-import { submitExternalActionPost, buildExternalActionPayload, openExternalActionWindow } from "../../../utils/externalActionPost.js";
+import { buildExternalActionPayload, interpretExternalActionResponse } from "../../../utils/externalActionPost.js";
+import { hasScriptRun, sendExternalAction } from "../../../services/gasClient.js";
 import { resolveTemplateTokensAsync } from "../../../utils/tokenReplacer.js";
 import { extractReservedRefs } from "../../expression/templateEvaluator.js";
 import { resolveStyleSettingsInlineStyle } from "../../../core/styleSettings.js";
@@ -29,21 +30,25 @@ const buildSearchPayloadBase = (form, outputTargetRows, childFormsByRow) => {
   return { list };
 };
 
-// 外部アクション（Webhook）送信。子データは「送信時のみ」on-demand 取得する方針のため、
-// クリック時点で結果タブを同期 open（ポップアップブロック回避）してから子データを await 取得し、
-// その既存タブへ POST する。searchChildFormsResolver(entries) は childFormsByRow を返す async 関数。
+// 外部アクション送信。送信は本体 GAS のサーバ間リレー（sendExternalAction →
+// nfbSendExternalAction → UrlFetchApp）で行い、ブラウザの隠しフォーム POST に伴う
+// ログインリダイレクト（POST 本文消失）を避ける。子データは送信時に on-demand 取得する。
+// searchChildFormsResolver(entries) は childFormsByRow を返す async 関数。
 const handleExternalActionClick = async (action, { formContext, isAdmin, form, outputTargetRows, searchChildFormsResolver }) => {
   const gate = { adminOnly: !!action.adminOnly, isAdmin };
   // URL トークン解決は印刷様式と共通の alasql `{{...}}` エンジンに統一。旧・単括弧固定トークンは
   // 自動マップ。機微予約トークンは adminOnly && isAdmin のときだけ展開を許可（早期失敗を維持）。
-  const migratedUrl = migrateLegacyWebhookUrlTokens(action.url);
+  const migratedUrl = migrateLegacyExternalActionUrlTokens(action.url);
   if (hasBlockedSensitiveRefs(extractReservedRefs(migratedUrl), gate)) {
     // eslint-disable-next-line no-alert
     window.alert("この URL には管理者限定のトークンが含まれています。フォーム設定で「管理者のみ」を有効にするか、トークンを見直してください。");
     return;
   }
-  // ユーザージェスチャ中に結果タブを確保（この後 await を挟んでも POST 先を失わない）。
-  const target = openExternalActionWindow();
+  if (!hasScriptRun()) {
+    // eslint-disable-next-line no-alert
+    window.alert("この機能はGoogle Apps Script環境でのみ利用可能です");
+    return;
+  }
   const sensitiveAllowed = gate.adminOnly && gate.isAdmin;
   const fc = formContext || {};
   const urlCtx = {
@@ -65,9 +70,6 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
     resolvedUrl = "";
   }
   if (!isValidExternalActionUrl(resolvedUrl)) {
-    if (target && target.win && typeof target.win.close === "function") {
-      try { target.win.close(); } catch (_e2) { /* noop */ }
-    }
     // eslint-disable-next-line no-alert
     window.alert("URL が不正です (http:// または https:// で始まる必要があります)。フォーム設定を確認してください。");
     return;
@@ -89,7 +91,27 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
     storageFields: formContext,
     gate,
   });
-  submitExternalActionPost(resolvedUrl, payload, target);
+  try {
+    const res = await sendExternalAction({ url: resolvedUrl, payload });
+    const result = interpretExternalActionResponse(res);
+    if (!result.ok) {
+      // eslint-disable-next-line no-alert
+      window.alert(result.message || "外部アクションの送信先でエラーが発生しました。");
+      return;
+    }
+    const msg = result.message || "外部アクションを送信しました。";
+    if (result.openUrl) {
+      // eslint-disable-next-line no-alert
+      window.alert(msg + "\n" + result.openUrl);
+      try { window.open(result.openUrl, "_blank", "noopener"); } catch (_e2) { /* noop */ }
+    } else {
+      // eslint-disable-next-line no-alert
+      window.alert(msg);
+    }
+  } catch (error) {
+    // eslint-disable-next-line no-alert
+    window.alert("外部アクション送信に失敗しました: " + (error && error.message ? error.message : String(error)));
+  }
 };
 
 const buildExternalActionButtons = (externalActions, formContext, { isAdmin = false, form = null, outputTargetRows = null, searchChildFormsResolver = null } = {}) => {

@@ -110,7 +110,7 @@ export default function SettingsAdminTab() {
   const copyDialog = useConfirmDialog();
   const [copyUrl, setCopyUrl] = useState("");
   const [copyData, setCopyData] = useState(false);
-  const [copyWebhooks, setCopyWebhooks] = useState(false);
+  const [copyExternalActions, setCopyExternalActions] = useState(false);
   const [rebuildMapping, setRebuildMapping] = useState(true);
   const [copyLoading, setCopyLoading] = useState(false);
 
@@ -315,7 +315,7 @@ export default function SettingsAdminTab() {
       const { summary, clearedLinks, unresolvedQuestionLinks, appsScriptCopied, appsScriptCopyError, message } = await copyStandardFolders({
         destRootUrl: copyUrl.trim(),
         copyData,
-        copyWebhooks,
+        copyExternalActions,
         rebuildMapping,
       });
       const lines = Object.keys(summary).map((k) => `${k}: ${summary[k]}件`);
@@ -559,8 +559,8 @@ export default function SettingsAdminTab() {
         onUrlChange={setCopyUrl}
         copyData={copyData}
         onCopyDataChange={setCopyData}
-        copyWebhooks={copyWebhooks}
-        onCopyWebhooksChange={setCopyWebhooks}
+        copyExternalActions={copyExternalActions}
+        onCopyExternalActionsChange={setCopyExternalActions}
         rebuildMapping={rebuildMapping}
         onRebuildMappingChange={setRebuildMapping}
         onConfirm={handleCopyConfirm}

@@ -34,21 +34,43 @@
 // =============================================================================
 
 // ----- Web App エントリ ----------------------------------------------------
+// 本体アプリは UrlFetchApp サーバ間リレーで ?nfbRelay=1 を付けて POST してくる。
+// その場合は HTML ではなく JSON ({ ok, title, message, openUrl }) で応答する
+// （本体側がアラート＋リンクで結果表示する）。nfbRelay なしの直接 POST は従来 HTML を返す。
 function doPost(e) {
+  var relay = e && e.parameter && String(e.parameter.nfbRelay) === "1";
   try {
     var payload = parsePayload_(e);
     if (!payload.ok) {
-      return renderHtml_("エラー", escapeHtml_(payload.error), true);
+      return relay ? renderJson_({ ok: false, message: payload.error })
+                   : renderHtml_("エラー", escapeHtml_(payload.error), true);
     }
 
     var result = dispatchPayload_(payload.data);
     if (!result.ok) {
-      return renderHtml_("エラー", "<p>" + escapeHtml_(result.error) + "</p>", true);
+      return relay ? renderJson_({ ok: false, message: result.error })
+                   : renderHtml_("エラー", "<p>" + escapeHtml_(result.error) + "</p>", true);
+    }
+    if (relay) {
+      return renderJson_({
+        ok: true,
+        title: result.title || "受信完了",
+        message: (result.title || "受信完了") + "（テンプレート受信アプリ）",
+        openUrl: result.openUrl || "",
+      });
     }
     return renderHtml_(result.title || "受信完了", result.message, false);
   } catch (err) {
-    return renderHtml_("予期せぬエラー", "<p>" + escapeHtml_(String(err && err.message ? err.message : err)) + "</p>", true);
+    var em = String(err && err.message ? err.message : err);
+    return relay ? renderJson_({ ok: false, message: em })
+                 : renderHtml_("予期せぬエラー", "<p>" + escapeHtml_(em) + "</p>", true);
   }
+}
+
+// サーバ間リレー応答用の JSON 出力。
+function renderJson_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj || {}))
+    .setMimeType(ContentService.MimeType.JSON);
 }
 
 // GET でも開けるようにしておく (URL をブラウザで直接叩いたときの動作確認用)。

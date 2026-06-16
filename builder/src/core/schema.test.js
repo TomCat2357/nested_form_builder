@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeSchemaIDs, normalizeWebhookAction, findFirstFileUploadField, supportsChildren, supportsSupplementaryComment, validateLabelCharacters } from "./schema.js";
+import { normalizeSchemaIDs, normalizeExternalAction, findFirstFileUploadField, supportsChildren, supportsSupplementaryComment, validateLabelCharacters } from "./schema.js";
 
 test("normalizeSchemaIDs: time の includeSeconds を timePrecision へ移行する", () => {
   const schema = normalizeSchemaIDs([
@@ -210,27 +210,27 @@ test("normalizeSchemaIDs は printTemplate の outputType=googleDoc を保持す
   assert.equal(schema[0].printTemplateAction.fileNameTemplate, "{`_id`}_doc");
 });
 
-test("normalizeSchemaIDs は webhook の webhookAction を正規化し required を除去する", () => {
+test("normalizeSchemaIDs は externalAction の externalAction を正規化し required を除去する", () => {
   const schema = normalizeSchemaIDs([
     {
       id: "wh_1",
-      type: "webhook",
+      type: "externalAction",
       label: "通知を送信",
       required: true,
-      webhookAction: { url: "https://script.google.com/macros/x/exec", adminOnly: "yes" },
+      externalAction: { url: "https://script.google.com/macros/x/exec", adminOnly: "yes" },
     },
   ]);
 
-  assert.equal(schema[0].type, "webhook");
-  assert.deepEqual(schema[0].webhookAction, {
+  assert.equal(schema[0].type, "externalAction");
+  assert.deepEqual(schema[0].externalAction, {
     url: "https://script.google.com/macros/x/exec",
     adminOnly: true,
   });
   assert.equal("required" in schema[0], false);
 });
 
-test("normalizeWebhookAction は旧・単括弧固定トークンを alasql 予約参照へ自動マップする", () => {
-  const out = normalizeWebhookAction({
+test("normalizeExternalAction は旧・単括弧固定トークンを alasql 予約参照へ自動マップする", () => {
+  const out = normalizeExternalAction({
     url: "https://x.com/?id={id}&form={formId}&ss={spreadsheetId}",
     adminOnly: true,
   });
@@ -240,22 +240,22 @@ test("normalizeWebhookAction は旧・単括弧固定トークンを alasql 予�
   });
 });
 
-test("normalizeWebhookAction は既に {{...}} の URL を変えない（冪等）", () => {
+test("normalizeExternalAction は既に {{...}} の URL を変えない（冪等）", () => {
   const url = "https://x.com/?n={{`氏名`}}&id={{`_id`}}";
-  assert.equal(normalizeWebhookAction({ url }).url, url);
+  assert.equal(normalizeExternalAction({ url }).url, url);
 });
 
-test("normalizeSchemaIDs は非 webhook 型から webhookAction を除去する", () => {
+test("normalizeSchemaIDs は非 externalAction 型から externalAction を除去する", () => {
   const schema = normalizeSchemaIDs([
     {
       id: "t_1",
       type: "text",
       label: "氏名",
-      webhookAction: { url: "https://example.com", adminOnly: true },
+      externalAction: { url: "https://example.com", adminOnly: true },
     },
   ]);
 
-  assert.equal("webhookAction" in schema[0], false);
+  assert.equal("externalAction" in schema[0], false);
 });
 
 test("normalizeSchemaIDs は formLink の childFormId/childFormPath を保持し required を除去する", () => {
@@ -333,13 +333,13 @@ test("supportsChildren は入力タイプと message に true を返す", () => 
   ["text", "number", "email", "phone", "url", "date", "time", "fileUpload", "message"].forEach((t) => {
     assert.equal(supportsChildren(t), true, `${t} should support children`);
   });
-  ["radio", "select", "checkboxes", "printTemplate", "substitution", "webhook", "formLink"].forEach((t) => {
+  ["radio", "select", "checkboxes", "printTemplate", "substitution", "externalAction", "formLink"].forEach((t) => {
     assert.equal(supportsChildren(t), false, `${t} should not support children`);
   });
 });
 
 test("supportsSupplementaryComment は placeholder 非対応タイプで true を返す", () => {
-  ["radio", "select", "checkboxes", "date", "time", "fileUpload", "message", "printTemplate", "webhook", "formLink", "substitution"].forEach((t) => {
+  ["radio", "select", "checkboxes", "date", "time", "fileUpload", "message", "printTemplate", "externalAction", "formLink", "substitution"].forEach((t) => {
     assert.equal(supportsSupplementaryComment(t), true, `${t} should support comment`);
   });
   ["text", "number", "email", "phone", "url", "regex", "textarea"].forEach((t) => {

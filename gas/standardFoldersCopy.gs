@@ -44,7 +44,7 @@ function StdFolders_copy_(payload) {
     var destRootUrl = payload && payload.destRootUrl ? String(payload.destRootUrl).trim() : "";
     if (!destRootUrl) throw new Error("コピー先ルートフォルダの URL を指定してください");
     var copyData = !!(payload && (payload.copyData === true || payload.copyData === "true"));
-    var copyWebhooks = !!(payload && (payload.copyWebhooks === true || payload.copyWebhooks === "true"));
+    var copyExternalActions = !!(payload && (payload.copyExternalActions === true || payload.copyExternalActions === "true"));
     // マッピング再構築は既定 ON（明示 false / "false" のときだけ OFF）。
     var rebuildMapping = !(payload && (payload.rebuildMapping === false || payload.rebuildMapping === "false"));
 
@@ -66,11 +66,11 @@ function StdFolders_copy_(payload) {
     var folderIdMap = {};   // srcSubfolderId → destSubfolderUrl
     var summary = {};
 
-    // どのキーをコピーするか（07_webhooks はオプション）
+    // どのキーをコピーするか（07_external_actions はオプション）
     var keys = [];
     for (var i = 0; i < NFB_STD_FOLDER_ORDER.length; i++) {
       var k = NFB_STD_FOLDER_ORDER[i];
-      if (k === "webhooks" && !copyWebhooks) continue;
+      if (k === "externalActions" && !copyExternalActions) continue;
       keys.push(k);
     }
 
@@ -116,10 +116,10 @@ function StdFolders_copy_(payload) {
     // id は埋め込まない（id ＝ fileId）。コピー先では新 fileId が新 id になり、リンクも新 fileId を指す。
     var clearedLinks = 0;
 
-    // forms (01_forms): spreadsheet / フォルダ / webhook URL を再マップ
+    // forms (01_forms): spreadsheet / フォルダ / 外部アクション URL を再マップ
     var formCopied = copiedFilesByKey["forms"] || [];
     for (var fi = 0; fi < formCopied.length; fi++) {
-      clearedLinks += StdFolders_rewireFormFile_(formCopied[fi].newFileId, idMap, folderIdMap, copyWebhooks);
+      clearedLinks += StdFolders_rewireFormFile_(formCopied[fi].newFileId, idMap, folderIdMap, copyExternalActions);
     }
 
     // questions (02_questions): query.gui.formId / query.formSources[].formId を新 fileId へ再マップ
@@ -149,7 +149,7 @@ function StdFolders_copy_(payload) {
       clearedLinks: clearedLinks,
       unresolvedQuestionLinks: unresolvedQuestionLinks,
       copyData: copyData,
-      copyWebhooks: copyWebhooks,
+      copyExternalActions: copyExternalActions,
       rebuildMapping: rebuildMapping,
       appsScriptCopied: appsScriptCopied,
       appsScriptCopyError: appsScriptCopied ? "" : (appsScriptCopyResult.reason || ""),
@@ -223,7 +223,7 @@ function StdFolders_remapLinkId_(id, idMap) {
 }
 
 // フォーム定義ファイルのリンク再配線（id は埋め込まない＝id ＝ fileId）。クリアしたリンク数を返す。
-function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyWebhooks) {
+function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActions) {
   var cleared = 0;
   try {
     var read = Nfb_readJsonFileById_(fileId);
@@ -251,10 +251,10 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyWebhooks) {
         field.driveRootFolderUrl = u.value;
         if (u.status === "cleared") cleared++;
       }
-      // webhook 送信先（copyWebhooks OFF のときはクリア。ON のときは外部 /exec をそのまま温存）
-      if (field.webhookAction && typeof field.webhookAction.url === "string" && field.webhookAction.url) {
-        if (!copyWebhooks) {
-          field.webhookAction.url = "";
+      // 外部アクション 送信先（copyExternalActions OFF のときはクリア。ON のときは外部 /exec をそのまま温存）
+      if (field.externalAction && typeof field.externalAction.url === "string" && field.externalAction.url) {
+        if (!copyExternalActions) {
+          field.externalAction.url = "";
           cleared++;
         }
       }

@@ -185,7 +185,7 @@ export default function ExternalActionsEditor({ value, onChange, disabled }) {
             <strong>管理者限定ボタンのみ</strong>、保存先情報 <code>storage</code>（<code>spreadsheetId</code> 等）が payload と機微 URL トークン（<code>{"{{`_spreadsheet_id`}}"}</code> 等）に展開されます。
             管理者限定でないボタンで機微トークンを URL に使うと URL が無効化されます。
             <br />
-            ※ 個々のレコードからの送信は、質問カードの種別「Webhook」を使ってください。
+            ※ 個々のレコードからの送信は、質問カードの種別「外部アクション」を使ってください。
           </p>
           <SectionEditor
             sectionKey="search"

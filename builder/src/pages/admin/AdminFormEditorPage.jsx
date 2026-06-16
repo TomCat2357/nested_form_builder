@@ -467,7 +467,7 @@ export default function AdminFormEditorPage() {
         ))}
 
         <div className="nf-card nf-mb-16">
-          <div className="nf-settings-group-title nf-mb-12">外部アクション (Webhook)</div>
+          <div className="nf-settings-group-title nf-mb-12">外部アクション</div>
           <ExternalActionsEditor
             value={normalizeExternalActions(localSettings?.externalActions)}
             onChange={(next) => setLocalSettings((prev) => ({
