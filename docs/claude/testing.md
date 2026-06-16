@@ -11,7 +11,8 @@ npm test
 # フロント側インラインテスト（builder/src/**/*.test.js）
 npm run test:builder
 # ※ exceljs / jszip を import する 2 本（excelExport.test.js / listActionsShared.test.js）は
-#   先に `npm run builder:install` が必要。それ以外は依存ゼロで実行できる。
+#   依存を動的 import し、未インストール時は失敗ではなく skip する（`npm run builder:install`
+#   後に実際に実行される）。それ以外は依存ゼロで実行できる。
 
 # GAS + フロントをまとめて
 npm run test:all
