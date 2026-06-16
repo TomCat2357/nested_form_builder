@@ -117,6 +117,17 @@ function ActionRow({ idx, action, onChange, disabled, urlInvalid }) {
           />
           管理者限定
         </label>
+        <input
+          type="password"
+          className="nf-input"
+          autoComplete="off"
+          style={{ flex: "0 0 200px" }}
+          placeholder="誤送信防止シークレット（任意）"
+          title="設定すると、データを送る前に宛先が正しい受信アプリかを確認し、一致を確認できない宛先には送信しません。受信アプリ側の Script Properties に同じ値をキー NFB_EXT_ACTION_SECRET で設定してください。"
+          value={action.handshakeSecret || ""}
+          onChange={(event) => onChange(idx, { handshakeSecret: event.target.value })}
+          disabled={disabled}
+        />
       </div>
       <ActionStyleSettings idx={idx} action={action} onChange={onChange} disabled={disabled} />
     </div>

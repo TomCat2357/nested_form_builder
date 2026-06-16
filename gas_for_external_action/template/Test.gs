@@ -24,6 +24,7 @@ function testAll() {
   results.push(testDoPost_adminStorage());
   results.push(testDoPost_missingPayload());
   results.push(testDoPost_badJson());
+  results.push(testDoPost_probe());
 
   var passed = 0;
   for (var i = 0; i < results.length; i++) if (results[i]) passed++;
@@ -118,6 +119,36 @@ function testDoPost_badJson() {
   var html = doPost(e).getContent();
   var ok = html.indexOf("JSON 解析に失敗") !== -1;
   logResult_("badJson", ok, html);
+  return ok;
+}
+
+
+// 誤送信防止ハンドシェイク（プローブ）: Script Property NFB_EXT_ACTION_SECRET を
+// 設定した状態で nfbProbe を投げると、HMAC(nonce) を含む署名 JSON が返り、
+// 業務処理（dispatchPayload_）には入らないこと。未設定なら nfbExternalAction:false。
+function testDoPost_probe() {
+  var props = PropertiesService.getScriptProperties();
+  var saved = props.getProperty("NFB_EXT_ACTION_SECRET");
+  var ok = true;
+  try {
+    // (1) シークレット設定あり: 署名が返る。
+    props.setProperty("NFB_EXT_ACTION_SECRET", "TEST_SECRET");
+    var e1 = { parameter: { nfbRelay: "1", payload: JSON.stringify({ nfbProbe: "1", nonce: "N1" }) } };
+    var d1 = JSON.parse(doPost(e1).getContent());
+    var expected = Recv_hmacHex_("N1", "TEST_SECRET");
+    var pass1 = d1.ok === true && d1.nfbExternalAction === true && d1.signature === expected;
+
+    // (2) シークレット未設定: nfbExternalAction:false。
+    props.deleteProperty("NFB_EXT_ACTION_SECRET");
+    var d2 = JSON.parse(doPost(e1).getContent());
+    var pass2 = d2.ok === true && d2.nfbExternalAction === false && !d2.signature;
+
+    ok = pass1 && pass2;
+    logResult_("probe", ok, JSON.stringify({ withSecret: d1, withoutSecret: d2 }));
+  } finally {
+    if (saved == null) props.deleteProperty("NFB_EXT_ACTION_SECRET");
+    else props.setProperty("NFB_EXT_ACTION_SECRET", saved);
+  }
   return ok;
 }
 

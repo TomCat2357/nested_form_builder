@@ -91,8 +91,9 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
     storageFields: formContext,
     gate,
   });
+  const handshakeSecret = typeof action.handshakeSecret === "string" ? action.handshakeSecret : "";
   try {
-    const res = await sendExternalAction({ url: resolvedUrl, payload });
+    const res = await sendExternalAction({ url: resolvedUrl, payload, handshakeSecret });
     const result = interpretExternalActionResponse(res);
     if (!result.ok) {
       // eslint-disable-next-line no-alert
@@ -109,6 +110,12 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
       window.alert(msg);
     }
   } catch (error) {
+    // 誤送信防止ハンドシェイクで宛先を確認できなかったときは、その理由をそのまま伝える。
+    if (error && error.code === "DEST_UNVERIFIED") {
+      // eslint-disable-next-line no-alert
+      window.alert(error.message || "宛先を確認できませんでした（誤送信防止）。");
+      return;
+    }
     // eslint-disable-next-line no-alert
     window.alert("外部アクション送信に失敗しました: " + (error && error.message ? error.message : String(error)));
   }

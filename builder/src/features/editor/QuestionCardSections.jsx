@@ -326,6 +326,20 @@ export function ExternalActionSection({ field, onChange }) {
           />
           管理者限定
         </label>
+        <label className="nf-col nf-gap-4">
+          <span className="nf-text-12 nf-fw-600">誤送信防止シークレット（任意）</span>
+          <input
+            className={s.input.className}
+            type="password"
+            autoComplete="off"
+            placeholder="設定すると送信前に宛先を確認します"
+            value={action.handshakeSecret}
+            onChange={(event) => updateAction({ handshakeSecret: event.target.value })}
+          />
+          <span className="nf-text-11 nf-text-muted">
+            {"設定すると、データを送る前に宛先が正しい受信アプリかを確認し、一致を確認できない宛先には送信しません（URL の打ち間違いによる誤送信を防止）。受信アプリ側の Script Properties に同じ値をキー NFB_EXT_ACTION_SECRET で設定してください。空のときは確認なしで送信します。"}
+          </span>
+        </label>
         <div className="nf-text-11 nf-text-muted">
           {"ボタンを押すと新しいタブで URL を開き、同時にこのレコードの内容を POST 送信します（GAS 側は doPost(e) の e.parameter.payload を JSON.parse して受信）。URL には印刷様式と同じ {{...}} トークンが使えます（例: {{`_id`}} / {{`フィールド名`}} / {{`_form_id`}}）。値は自動で URL エンコードされます。管理者限定を ON にすると、管理者以外にはこのボタンが表示されず、そのときだけ機微トークン {{`_spreadsheet_id`}} / {{`_spreadsheet_url`}} / {{`_sheet_name`}} / {{`_drive_file_url`}} / {{`_user_email`}} と保存先情報も使えます。"}
         </div>

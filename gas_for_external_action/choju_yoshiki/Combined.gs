@@ -40,6 +40,16 @@ function doPost(e) {
     if (keyError) {
       return Cho_render_(relay, { ok: false, title: "エラー", message: keyError, html: "<p>" + escapeHtml_(keyError) + "</p>" });
     }
+    // 誤送信防止ハンドシェイク（プローブ）への署名応答。アクセスキー検証を通過した後にだけ
+    // 署名するので、「キーまで正しい正規宛先」だけを送信側に検証させられる。機微処理はしない。
+    if (payload.data && String(payload.data.nfbProbe) === "1") {
+      var probeSecret = PropertiesService.getScriptProperties().getProperty("NFB_EXT_ACTION_SECRET") || "";
+      var probeNonce = String(payload.data.nonce || "");
+      var probeResp = (probeSecret === "" || probeNonce === "")
+        ? { ok: true, nfbExternalAction: false }
+        : { ok: true, nfbExternalAction: true, signature: Recv_hmacHex_(probeNonce, probeSecret) };
+      return ContentService.createTextOutput(JSON.stringify(probeResp)).setMimeType(ContentService.MimeType.JSON);
+    }
     var data = payload.data;
     if (String(data.context || "") !== "record") {
       var ctxMsg = "このウェブアプリはレコード単位の 外部アクション（context=record）専用です。受信 context: " + String(data.context || "(なし)");
@@ -64,6 +74,20 @@ function Cho_render_(relay, result) {
     })).setMimeType(ContentService.MimeType.JSON);
   }
   return renderHtml_(r.title || (r.ok === false ? "エラー" : "受信完了"), r.html || "", r.ok === false);
+}
+
+// 誤送信防止ハンドシェイク用 HMAC-SHA256(message, secret) を 16 進文字列で返す。
+// 本体側 ExtAction_hmacHex_ と同一実装にすること（署名が一致しないと送信が拒否される）。
+function Recv_hmacHex_(message, secret) {
+  var raw = Utilities.computeHmacSha256Signature(String(message == null ? "" : message), String(secret == null ? "" : secret));
+  var hex = "";
+  for (var i = 0; i < raw.length; i++) {
+    var b = (raw[i] + 256) % 256;
+    var s = b.toString(16);
+    if (s.length === 1) s = "0" + s;
+    hex += s;
+  }
+  return hex;
 }
 
 // GET はセットアップ状態の確認用。

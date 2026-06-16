@@ -737,7 +737,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       gate,
     });
     try {
-      const res = await sendExternalAction({ url: resolvedUrl, payload });
+      const res = await sendExternalAction({ url: resolvedUrl, payload, handshakeSecret: action.handshakeSecret });
       const result = interpretExternalActionResponse(res);
       if (!result.ok) {
         showAlert(result.message || "外部アクションの送信先でエラーが発生しました。");
@@ -753,6 +753,11 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         showAlert(result.message || "外部アクションを送信しました。");
       }
     } catch (error) {
+      // 誤送信防止ハンドシェイクで宛先を確認できなかったときは、その理由をそのまま伝える。
+      if (error?.code === "DEST_UNVERIFIED") {
+        showAlert(toErrorMessage(error));
+        return;
+      }
       showAlert(`外部アクション送信に失敗しました: ${toErrorMessage(error)}`);
     }
   };
