@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   isValidExternalActionUrl,
-  migrateLegacyWebhookUrlTokens,
+  migrateLegacyExternalActionUrlTokens,
   hasBlockedSensitiveRefs,
   buildSpreadsheetUrl,
   SENSITIVE_RESERVED_REFS,
@@ -25,31 +25,31 @@ test("isValidExternalActionUrl は http(s) 以外と空を弾く", () => {
 
 // --- 旧・単括弧固定トークン → alasql 予約参照への自動マップ ---
 
-test("migrateLegacyWebhookUrlTokens は 8 種の旧トークンを予約参照へマップする", () => {
+test("migrateLegacyExternalActionUrlTokens は 8 種の旧トークンを予約参照へマップする", () => {
   const url = "https://x.com/?id={id}&fid={formId}&fn={formName}"
     + "&ssid={spreadsheetId}&ssu={spreadsheetUrl}&sn={sheetName}&du={driveFileUrl}&ue={userEmail}";
   assert.equal(
-    migrateLegacyWebhookUrlTokens(url),
+    migrateLegacyExternalActionUrlTokens(url),
     "https://x.com/?id={{`_id`}}&fid={{`_form_id`}}&fn={{`_form_name`}}"
       + "&ssid={{`_spreadsheet_id`}}&ssu={{`_spreadsheet_url`}}&sn={{`_sheet_name`}}&du={{`_drive_file_url`}}&ue={{`_user_email`}}",
   );
 });
 
-test("migrateLegacyWebhookUrlTokens は冪等（既に {{...}} のものは触らない）", () => {
+test("migrateLegacyExternalActionUrlTokens は冪等（既に {{...}} のものは触らない）", () => {
   const url = "https://x.com/?id={{`_id`}}&name={{`氏名`}}";
-  assert.equal(migrateLegacyWebhookUrlTokens(url), url);
+  assert.equal(migrateLegacyExternalActionUrlTokens(url), url);
 });
 
-test("migrateLegacyWebhookUrlTokens は二重括弧内の擬似トークンを壊さない", () => {
+test("migrateLegacyExternalActionUrlTokens は二重括弧内の擬似トークンを壊さない", () => {
   // {{id}} は前後がブレースなので旧トークンとして拾わない。
   const url = "https://x.com/?a={{id}}";
-  assert.equal(migrateLegacyWebhookUrlTokens(url), url);
+  assert.equal(migrateLegacyExternalActionUrlTokens(url), url);
 });
 
-test("migrateLegacyWebhookUrlTokens はトークンが無ければそのまま返す", () => {
-  assert.equal(migrateLegacyWebhookUrlTokens("https://x.com/path?a=1"), "https://x.com/path?a=1");
-  assert.equal(migrateLegacyWebhookUrlTokens(""), "");
-  assert.equal(migrateLegacyWebhookUrlTokens(null), "");
+test("migrateLegacyExternalActionUrlTokens はトークンが無ければそのまま返す", () => {
+  assert.equal(migrateLegacyExternalActionUrlTokens("https://x.com/path?a=1"), "https://x.com/path?a=1");
+  assert.equal(migrateLegacyExternalActionUrlTokens(""), "");
+  assert.equal(migrateLegacyExternalActionUrlTokens(null), "");
 });
 
 // --- 機微予約トークンのゲート判定 ---

@@ -74,6 +74,9 @@ const ACTION_DEFINITIONS_ = {
   "std_backfill_ref_paths":   { handler: () => nfbSafeCall_(() => Admin_backfillRefPaths_()), adminOnly: true },
   // 印刷様式テンプレート一覧（05_report_templates 配下の Google ドキュメント）。論理パス選択 UI 用の読み取り専用。
   "report_templates_list":    { handler: () => StdFolders_listFiles_("report_templates", "application/vnd.google-apps.document") },
+  // 外部アクション（externalAction）のサーバ間リレー送信。送信自体は全ユーザー可
+  // （機微 storage はクライアントが adminOnly && isAdmin のときだけ payload に載せる）。
+  "ext_action_send":          { handler: (ctx) => ExtAction_send_(ctx.raw || {}) },
   // doPost HTTP 用フォームアクション（従来契約）。list/get は nfb* 経由と同じくゲートなし。
   "forms_list":      { handler: FormsApi_List_ },
   "forms_get":       { handler: FormsApi_Get_ },

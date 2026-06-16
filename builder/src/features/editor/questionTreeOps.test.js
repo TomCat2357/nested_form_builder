@@ -9,7 +9,7 @@ test("canAcceptChildren: 非選択肢で子を持てるタイプは true", () =>
 
 test("canAcceptChildren: 子を持てないタイプは false", () => {
   assert.equal(canAcceptChildren({ type: "printTemplate" }), false);
-  assert.equal(canAcceptChildren({ type: "webhook" }), false);
+  assert.equal(canAcceptChildren({ type: "externalAction" }), false);
   assert.equal(canAcceptChildren(null), false);
 });
 
@@ -58,7 +58,7 @@ test("demoteIntoPrevSibling: 先頭要素は降格できず null", () => {
 });
 
 test("demoteIntoPrevSibling: 上兄弟が子を持てないタイプなら null", () => {
-  const fields = [{ id: "a", type: "webhook" }, { id: "b", type: "text" }];
+  const fields = [{ id: "a", type: "externalAction" }, { id: "b", type: "text" }];
   assert.equal(demoteIntoPrevSibling(fields, 1), null);
 });
 

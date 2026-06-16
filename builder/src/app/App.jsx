@@ -290,7 +290,7 @@ function AppRoutes() {
         )}
       />
 
-      {/* Playground（クエリ / 置換 / Webhook を実データで試す・管理者専用） */}
+      {/* Playground（クエリ / 置換 / 外部アクション を実データで試す・管理者専用） */}
       <Route
         path="/admin/playground"
         element={(

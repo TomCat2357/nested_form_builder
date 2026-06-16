@@ -453,7 +453,7 @@ function nfbBuildTemplateRow_(context, options) {
   row._id = ctx.recordId ? String(ctx.recordId) : "";
   row._record_url = allowGmailOnly && ctx.recordUrl ? String(ctx.recordUrl) : "";
   row._form_url = allowGmailOnly && ctx.formUrl ? String(ctx.formUrl) : "";
-  // Webhook と予約メタトークン語彙を統一（非機微）。機微トークン（_spreadsheet_id 等）は
+  // 外部アクション と予約メタトークン語彙を統一（非機微）。機微トークン（_spreadsheet_id 等）は
   // 印刷経路では非公開のまま。
   row._form_id = ctx.formId ? String(ctx.formId) : "";
   row._form_name = ctx.formTitle ? String(ctx.formTitle) : "";

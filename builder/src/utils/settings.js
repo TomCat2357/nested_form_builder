@@ -73,7 +73,7 @@ export const normalizeExternalActions = (raw) => {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     return createEmptyExternalActions();
   }
-  // 旧 record（レコード画面ボタン）は Webhook 質問カードに移行したため読み捨てる。
+  // 旧 record（レコード画面ボタン）は 外部アクション 質問カードに移行したため読み捨てる。
   return {
     enabled: !!raw.enabled,
     search: sanitizeExternalActionList(raw.search),

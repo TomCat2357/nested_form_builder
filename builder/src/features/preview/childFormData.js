@@ -1,5 +1,5 @@
 /**
- * 「別フォームを開く（formLink）」の子フォームデータを Webhook / 印刷様式へ渡すための
+ * 「別フォームを開く（formLink）」の子フォームデータを 外部アクション / 印刷様式へ渡すための
  * 合成オブジェクト構築・子フォーム schema キャッシュ・pid 分配ヘルパ。
  *
  * formLink 項目（includeChildData=ON）について、このレコードに紐づく子フォーム行
@@ -24,7 +24,7 @@ import { buildChildFormUrl } from "../../utils/formShareUrl.js";
 
 /**
  * schema 内の formLink フィールド（childFormId と id がともに非空）を収集する純関数。
- * プレビュー（子レコード件数バッジ・子データ詳細）と検索結果一覧（Webhook 用プリロード）で
+ * プレビュー（子レコード件数バッジ・子データ詳細）と検索結果一覧（外部アクション 用プリロード）で
  * 共有する。includeChildData を必ず含めて全件返すので、includeChildData=ON だけ必要な
  * 呼び出し側は `.filter((f) => f.includeChildData)` する。正規化は行わない（呼び出し側責務）。
  *
@@ -169,7 +169,7 @@ export const distributeChildRecordsByPid = (records) => {
  * そこで items 整形（buildRecordItems）も子 schema 取得もせず、子フォームごとに 1 回だけ
  * listRecordsByPids で親 id 群に紐づく子レコードを取得し、pid ごとの件数のみ集計する。
  *
- * includeChildData フラグでは絞らない（クエリでは Webhook/印刷とは別目的で件数を出したいため）。
+ * includeChildData フラグでは絞らない（クエリでは 外部アクション/印刷とは別目的で件数を出したいため）。
  *
  * @param {Object} args
  * @param {Array}  args.schema      親フォーム schema

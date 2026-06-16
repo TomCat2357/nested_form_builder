@@ -175,7 +175,7 @@ const toRawSelectedLabels = (type, value) => {
 };
 
 // 選択肢フィールドの選択ラベルを options 順（＋未知ラベルは末尾）に正規化する。
-// Webhook/印刷 items（表示文字列）と template view 値（dataValueMap）で共有する正準実装。
+// 外部アクション/印刷 items（表示文字列）と template view 値（dataValueMap）で共有する正準実装。
 export const toSelectedChoiceLabels = (field, value) => {
   const type = field?.type;
   if (!DATA_CHOICE_TYPES.includes(type)) return [];

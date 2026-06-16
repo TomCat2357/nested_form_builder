@@ -247,14 +247,14 @@ export function useSearchPageState({
   const hasFullQuerySubstitution = substitutionChildRefs.hasFullQuery;
   const hasDependentSubstitutions = Object.keys(substitutionChildRefs.byFieldId).length > 0;
 
-  // Webhook payload 用 = 全 formLink。ただし一覧では eager 取得せず、外部アクション送信時に
+  // 外部アクション payload 用 = 全 formLink。ただし一覧では eager 取得せず、外部アクション送信時に
   // resolveSearchChildFormsForRows で対象行ぶんだけ on-demand バッチ取得する（下記）。
-  const webhookChildFormFields = useMemo(
+  const externalActionChildFormFields = useMemo(
     () => collectFormLinkFields(normalizedSchema),
     [normalizedSchema],
   );
   // eager バッチ取得の対象は「表示に必要な子データ」だけ＝置換参照＋full-query。
-  // （full-query があるときは参照先を静的特定できないため全 formLink）。Webhook 専用の formLink は
+  // （full-query があるときは参照先を静的特定できないため全 formLink）。外部アクション 専用の formLink は
   // 一覧表示中は取得しない（送信時に on-demand 取得するためコストを払わない）。
   const childDataTargetFields = useMemo(() => {
     const refIds = new Set(substitutionChildRefs.childFormIds);
@@ -303,20 +303,20 @@ export function useSearchPageState({
     return out;
   }, [childDataTargetFields, searchChildDataByField]);
 
-  // 外部アクション（Webhook）送信時に呼ぶ on-demand リゾルバ。対象行ぶんの子データを
+  // 外部アクション送信時に呼ぶ on-demand リゾルバ。対象行ぶんの子データを
   // 子フォームごとに 1 回の listRecordsByPids でバッチ取得し、entries と同順の childFormsByRow
   // （各行 = 子フォーム合成オブジェクト配列）を返す。一覧表示中は取得しないことでコストを払わない。
   // 表示用に既に eager 取得済み（searchChildDataByField）の子フォームはそれを再利用し、再取得しない。
   const resolveSearchChildFormsForRows = useCallback(async (entries) => {
     const rows = Array.isArray(entries) ? entries.filter(Boolean) : [];
-    if (rows.length === 0 || webhookChildFormFields.length === 0) return null;
+    if (rows.length === 0 || externalActionChildFormFields.length === 0) return null;
     const pids = Array.from(new Set(rows.map((e) => String(e && e.id != null ? e.id : "")).filter(Boolean)));
     if (pids.length === 0) return null;
     const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
     const canFetch = typeof listRecordsByPids === "function" && hasScriptRun();
     // fieldId → { [pid]: 合成オブジェクト }
     const byField = {};
-    for (const field of webhookChildFormFields) {
+    for (const field of externalActionChildFormFields) {
       // 表示用に eager 取得済みなら再利用（同じ子フォーム・同じ pid 集合を満たす範囲で）。
       const cached = searchChildDataByField[field.id];
       if (cached && cached.byPid && pids.every((pid) => cached.byPid[pid] !== undefined)) {
@@ -349,14 +349,14 @@ export function useSearchPageState({
     return rows.map((entry) => {
       const key = String(entry && entry.id != null ? entry.id : "");
       const out = [];
-      for (const field of webhookChildFormFields) {
+      for (const field of externalActionChildFormFields) {
         const byPid = byField[field.id];
         const obj = byPid ? byPid[key] : null;
         if (obj) out.push({ fieldPath: field.path, ...obj });
       }
       return out;
     });
-  }, [webhookChildFormFields, searchChildDataByField]);
+  }, [externalActionChildFormFields, searchChildDataByField]);
 
   // 「子データ / full-query 依存の置換」が出る表示列（読込中・再計算の対象判定に使う）。
   const dependentSubstColumns = useMemo(() => {
@@ -546,7 +546,7 @@ export function useSearchPageState({
     [selectedEntries, sortedEntries],
   );
 
-  // webhook / 検索結果の出力で使う対象行: チェックがあればその行だけ、なければ全行。
+  // 外部アクション / 検索結果の出力で使う対象行: チェックがあればその行だけ、なければ全行。
   // (印刷は selectedPrintableRows のまま = 選択必須で例外)
   const outputTargetRows = useMemo(
     () => (selectedEntries.size > 0 ? selectedPrintableRows : sortedEntries),

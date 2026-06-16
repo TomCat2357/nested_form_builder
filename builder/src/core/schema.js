@@ -8,16 +8,16 @@ import {
   resolvePrintTemplateFieldLabel,
 } from "../utils/printTemplateAction.js";
 import { checkNumberFieldConfig, NUMBER_MODES } from "./validate.js";
-import { migrateLegacyWebhookUrlTokens } from "../utils/externalActionUrl.js";
+import { migrateLegacyExternalActionUrlTokens } from "../utils/externalActionUrl.js";
 export { countSchemaNodes };
 
-// Webhook 質問カードの設定を正規化する。{ url, adminOnly } の形に揃える。
+// 外部アクション質問カードの設定を正規化する。{ url, adminOnly } の形に揃える。
 // URL の妥当性チェック（http(s) 始まりか）は編集 UI / 送信時に行う。
 // 旧・単括弧固定トークン（{id} 等）は読み込み時に alasql 予約参照へ自動マップ（冪等）。
-export const normalizeWebhookAction = (raw) => {
+export const normalizeExternalAction = (raw) => {
   const obj = raw && typeof raw === "object" ? raw : {};
   return {
-    url: migrateLegacyWebhookUrlTokens(typeof obj.url === "string" ? obj.url : ""),
+    url: migrateLegacyExternalActionUrlTokens(typeof obj.url === "string" ? obj.url : ""),
     adminOnly: !!obj.adminOnly,
   };
 };
@@ -118,7 +118,7 @@ const normalizeNumberFieldSettings = (field) => {
 export const normalizeFormLinkSettings = (field) => {
   field.childFormId = typeof field.childFormId === "string" ? field.childFormId : "";
   field.childFormPath = typeof field.childFormPath === "string" ? field.childFormPath : "";
-  // 子フォーム（pid==このレコード id の別フォーム行）のデータを Webhook / 印刷様式へ渡すか。
+  // 子フォーム（pid==このレコード id の別フォーム行）のデータを 外部アクション / 印刷様式へ渡すか。
   // 既定 false（既存フォームは従来どおり子データ無し）。
   field.includeChildData = normalizeBooleanSetting(field.includeChildData, false);
   return field;
@@ -175,7 +175,7 @@ export const cleanUnusedFieldProperties = (field) => {
   const supportsHideFromRecordView = type === "substitution";
   const supportsTemplateText = type === "substitution";
   const supportsPrintTemplateAction = type === "printTemplate";
-  const supportsWebhookAction = type === "webhook";
+  const supportsExternalAction = type === "externalAction";
   const supportsFormLink = type === "formLink";
 
   if (!isChoice) {
@@ -258,10 +258,10 @@ export const cleanUnusedFieldProperties = (field) => {
   } else {
     delete field.printTemplateAction;
   }
-  if (supportsWebhookAction) {
-    field.webhookAction = normalizeWebhookAction(field.webhookAction);
+  if (supportsExternalAction) {
+    field.externalAction = normalizeExternalAction(field.externalAction);
   } else {
-    delete field.webhookAction;
+    delete field.externalAction;
   }
   if (supportsFormLink) {
     normalizeFormLinkSettings(field);
@@ -286,7 +286,7 @@ export const cleanUnusedFieldProperties = (field) => {
   } else {
     delete field.hideFromRecordView;
   }
-  if (type === "message" || type === "printTemplate" || type === "substitution" || type === "webhook" || type === "formLink") delete field.required;
+  if (type === "message" || type === "printTemplate" || type === "substitution" || type === "externalAction" || type === "formLink") delete field.required;
   if (type === "fileUpload") {
     normalizeFileUploadSettings(field);
   } else {

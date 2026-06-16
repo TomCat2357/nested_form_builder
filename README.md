@@ -47,7 +47,7 @@ nested_form_builder/
 ├── builder/          # React 19 + Vite 7 SPA（実装本体）
 ├── gas/              # Apps Script 分割ソース（dist/Bundle.gs に結合される）
 ├── gas_for_spreadsheet/  # 保存先スプレッドシート用の補助スクリプト
-├── gas_for_webhook/      # 「外部アクションボタン」の POST 受信 Web アプリ雛形
+├── gas_for_external_action/      # 「外部アクションボタン」の POST 受信 Web アプリ雛形
 ├── dist/             # clasp push 対象（自動生成・コミットしない）
 ├── docs/claude/      # 開発者向け詳細ドキュメント（テーマ別 15 本）
 ├── tests/ / e2e/     # GAS 横断テスト・Playwright E2E

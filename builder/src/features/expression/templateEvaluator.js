@@ -149,7 +149,7 @@ export function _coerceResultToStringForTest(value) {
  *                       （既定 false）。prefetch が非同期で完了する前の同期 resolve では
  *                       未解決が正常なので、prefetch 完了を呼び出し側が保証できるときだけ true。
  *   - valueTransform    各トークンの解決値（文字列）に適用する後処理 `(str) => str`。
- *                       トークン間のリテラル文字には適用しない。Webhook URL 解決で
+ *                       トークン間のリテラル文字には適用しない。外部アクション URL 解決で
  *                       encodeURIComponent を渡し、フィールド値・予約値を自動エンコードする。
  * @returns {string}
  */
@@ -346,7 +346,7 @@ export function extractFieldRefs(template) {
 
 /**
  * テンプレート内のバッククォート予約識別子（`_` 始まり）を集めて重複除去して返す。
- * extractFieldRefs の逆（予約名だけ収集）。Webhook URL の機微トークンゲートに使う。
+ * extractFieldRefs の逆（予約名だけ収集）。外部アクション URL の機微トークンゲートに使う。
  */
 export function extractReservedRefs(template) {
   if (!template || typeof template !== "string") return [];

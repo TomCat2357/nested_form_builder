@@ -1,4 +1,4 @@
-// 外部アクション（Webhook）URL のユーティリティ。
+// 外部アクション URL のユーティリティ。
 // - URL のトークン解決は印刷様式と共通の alasql `{{...}}` エンジン（tokenReplacer）に統一済み。
 //   本モジュールは「http(s) 検証」「旧・単括弧固定トークンの予約参照への自動マップ」
 //   「機微予約トークンの管理者ゲート判定」のみを担う純ユーティリティ。
@@ -18,7 +18,7 @@ export const SENSITIVE_RESERVED_REFS = new Set([
 
 // 旧・単括弧固定トークン（{id} 等）→ 新・alasql 予約参照名の対応。
 // トークンは増やさない方針（統一性のための機構統合のみ）。
-export const LEGACY_WEBHOOK_TOKEN_MAP = Object.freeze({
+export const LEGACY_EXTERNAL_ACTION_TOKEN_MAP = Object.freeze({
   id: "_id",
   formId: "_form_id",
   formName: "_form_name",
@@ -41,12 +41,12 @@ export const isValidExternalActionUrl = (url) => {
   return HTTP_URL_PATTERN.test(url.trim());
 };
 
-// 旧 webhook URL（`{id}` 等の単括弧固定トークン）を alasql 予約参照 `` {{`_id`}} `` へ
+// 旧 外部アクション URL（`{id}` 等の単括弧固定トークン）を alasql 予約参照 `` {{`_id`}} `` へ
 // 自動マップする。冪等：対象は 8 個の完全一致のみ・既に `{{...}}` のものは触らない。
-export const migrateLegacyWebhookUrlTokens = (url) => {
+export const migrateLegacyExternalActionUrlTokens = (url) => {
   if (typeof url !== "string" || url.indexOf("{") < 0) return typeof url === "string" ? url : "";
   return url.replace(LEGACY_TOKEN_PATTERN, (_match, name) => {
-    const reserved = LEGACY_WEBHOOK_TOKEN_MAP[name];
+    const reserved = LEGACY_EXTERNAL_ACTION_TOKEN_MAP[name];
     return reserved ? "{{`" + reserved + "`}}" : _match;
   });
 };

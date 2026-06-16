@@ -8,7 +8,7 @@ import { isExcludedSearchOrPrintField } from "../search/searchTable.js";
 import { isPlainObject } from "../../utils/objectShape.js";
 import { joinFieldPath, escapeSegment, PATH_SEP } from "../../utils/pathCodec.js";
 
-// 選択肢ラベルの正準実装は core/collect.js に統一（Webhook/印刷 items と template view 値で共有）。
+// 選択肢ラベルの正準実装は core/collect.js に統一（外部アクション/印刷 items と template view 値で共有）。
 // 既存 import 元（FieldRenderer 等）との互換のため re-export する。
 export { toChoiceOptionLabels, toSelectedChoiceLabels };
 
@@ -41,7 +41,7 @@ export const sanitizePrintFileNamePart = (input, fallback = "record") => {
 export const formatPrintItemValue = (field, value) => {
   if (field?.type === "message") return "";
   if (field?.type === "printTemplate") return "";
-  if (field?.type === "webhook") return "";
+  if (field?.type === "externalAction") return "";
   if (field?.type === "substitution") {
     return value != null && value !== "" ? String(value) : "";
   }
@@ -83,12 +83,12 @@ export const formatRecordMetaDateTime = (value) => {
 
 const isExcludedPrintField = (field) => (
   field?.type === "printTemplate"
-  || field?.type === "webhook"
+  || field?.type === "externalAction"
   || ((field?.type === "message") && field?.excludeFromSearchAndPrint === true)
   || (field?.type === "substitution" && field?.excludeFromSearch === true)
 );
 
-// 子レコードの識別マーカー（webhook の question セグメント / 印刷のマーカー行ラベルに使う）。
+// 子レコードの識別マーカー（外部アクション の question セグメント / 印刷のマーカー行ラベルに使う）。
 // record.no（子フォーム内で一意）優先、空なら 1 始まりのインデックス。"#" 接頭辞で実フィールド
 // ラベルと衝突しないようにする。
 const resolveChildRecordMarker = (record, index) => {
@@ -98,7 +98,7 @@ const resolveChildRecordMarker = (record, index) => {
 
 // レコードの質問内容と入力情報を { question, value, type }[] に整形する。
 // question は「ヘッダー階層を "/" で連結した文字列」で、検索一覧のヘッダー
-// (= traverseSchema の pathSegments) と同じ表現に統一する。Webhook 送信や
+// (= traverseSchema の pathSegments) と同じ表現に統一する。外部アクション 送信や
 // 外部アクションの payload (record.items) で共有する。
 //
 // childDataByFieldId（{ fieldId: 子フォーム合成オブジェクト }）を渡すと、formLink 項目を

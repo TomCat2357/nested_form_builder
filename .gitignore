@@ -45,8 +45,8 @@ dist/
 .clasp.json
 .clasp.json.*
 
-# webhook 受信アプリの開発補助スクリプト出力（xlsx から再生成可能）
-gas_for_webhook/*/scripts/out/
+# 外部アクション受信アプリの開発補助スクリプト出力（xlsx から再生成可能）
+gas_for_external_action/*/scripts/out/
 
 # デプロイ情報
 .gas-deployment.json

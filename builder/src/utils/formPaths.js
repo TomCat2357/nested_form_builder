@@ -7,7 +7,7 @@ import { joinFieldPath, splitFieldPath } from "./pathCodec.js";
 export { splitFieldPath };
 
 const isExcludedDisplayField = (field) => (
-  field?.type === "webhook"
+  field?.type === "externalAction"
   || (field?.type === "message" && field?.excludeFromSearchAndPrint === true)
   || (field?.type === "substitution" && field?.excludeFromSearch === true)
 );

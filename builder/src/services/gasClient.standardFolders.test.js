@@ -33,10 +33,10 @@ test("copyStandardFolders: payload を送り結果をマッピングして返す
   });
   try {
     const r = await copyStandardFolders({
-      destRootUrl: "https://drive.google.com/drive/folders/DEST", copyData: true, copyWebhooks: false,
+      destRootUrl: "https://drive.google.com/drive/folders/DEST", copyData: true, copyExternalActions: false,
     });
     assert.deepEqual(captured.payload, {
-      destRootUrl: "https://drive.google.com/drive/folders/DEST", copyData: true, copyWebhooks: false, rebuildMapping: true,
+      destRootUrl: "https://drive.google.com/drive/folders/DEST", copyData: true, copyExternalActions: false, rebuildMapping: true,
     });
     assert.equal(r.destRootUrl, "https://drive.google.com/drive/folders/DEST");
     assert.deepEqual(r.summary, { forms: 2, spreadsheets: 2 });

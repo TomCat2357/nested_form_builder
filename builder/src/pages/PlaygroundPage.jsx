@@ -52,7 +52,7 @@ export default function PlaygroundPage() {
   const { forms } = useAppData();
   const activeForms = useMemo(() => (forms || []).filter((f) => !f.archived && !f.childOnly), [forms]);
 
-  const [mode, setMode] = useState("question"); // "question" | "template" | "webhook"
+  const [mode, setMode] = useState("question"); // "question" | "template" | "externalAction"
 
   // --- Question モード（SQL → 表）---
   const [qFormId, setQFormId] = useState("");
@@ -61,7 +61,7 @@ export default function PlaygroundPage() {
   const [qError, setQError] = useState(null);
   const [qRunning, setQRunning] = useState(false);
 
-  // --- template / webhook 共有（フォーム + レコード選択）---
+  // --- template / externalAction 共有（フォーム + レコード選択）---
   const [selectedFormId, setSelectedFormId] = useState("");
   const [fullForm, setFullForm] = useState(null); // schema を含む完全なフォーム（getForm で取得・正規化済み）
   const [entries, setEntries] = useState([]);
@@ -76,8 +76,8 @@ export default function PlaygroundPage() {
   const [tplError, setTplError] = useState(null);
   const [tplRunning, setTplRunning] = useState(false);
 
-  // --- webhook モード ---
-  const [webhookJson, setWebhookJson] = useState("");
+  // --- 外部アクション モード ---
+  const [externalActionJson, setExternalActionJson] = useState("");
   const [whWarn, setWhWarn] = useState("");
   const [whError, setWhError] = useState(null);
   const [whRunning, setWhRunning] = useState(false);
@@ -92,7 +92,7 @@ export default function PlaygroundPage() {
     setEntriesError(null);
     setTplResult("");
     setTplDone(false);
-    setWebhookJson("");
+    setExternalActionJson("");
     setWhWarn("");
     if (!selectedFormId) return;
     setEntriesLoading(true);
@@ -208,9 +208,9 @@ export default function PlaygroundPage() {
     }
   };
 
-  const handleRunWebhook = async () => {
+  const handleRunExternalAction = async () => {
     setWhError(null);
-    setWebhookJson("");
+    setExternalActionJson("");
     setWhWarn("");
     if (!fullForm || !selectedEntry) {
       setWhError("フォームとレコードを選択してください。");
@@ -222,7 +222,7 @@ export default function PlaygroundPage() {
       const entry = selectedEntry;
       const responses = restoreResponsesFromData(schema, entry.data, entry.dataUnixMs);
 
-      // 子フォーム（formLink）を実 Webhook と同じく record.items 列へ完全展開する。
+      // 子フォーム（formLink）を実外部アクション と同じく record.items 列へ完全展開する。
       const childDataByFieldId = {};
       let warn = "";
       if (hasScriptRun()) {
@@ -264,7 +264,7 @@ export default function PlaygroundPage() {
         },
         gate: { adminOnly: whAdminGate, isAdmin },
       });
-      setWebhookJson(JSON.stringify(payload, null, 2));
+      setExternalActionJson(JSON.stringify(payload, null, 2));
       setWhWarn(warn);
     } catch (err) {
       setWhError(err?.message || String(err));
@@ -273,9 +273,9 @@ export default function PlaygroundPage() {
     }
   };
 
-  const copyWebhookJson = () => {
-    if (!webhookJson) return;
-    navigator.clipboard.writeText(webhookJson).then(() => {
+  const copyExternalActionJson = () => {
+    if (!externalActionJson) return;
+    navigator.clipboard.writeText(externalActionJson).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     }).catch(() => {});
@@ -283,7 +283,7 @@ export default function PlaygroundPage() {
 
   if (!isAdmin) return null;
 
-  // template / webhook 共有のフォーム + レコードピッカー。
+  // template / externalAction 共有のフォーム + レコードピッカー。
   const sharedPickers = (
     <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
       <div>
@@ -318,7 +318,7 @@ export default function PlaygroundPage() {
     <AppLayout title="Playground" fallbackPath="/admin" backHidden={false}>
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         <p className="nf-text-11 nf-text-muted nf-mb-0">
-          Question の SQL・置換テンプレート・Webhook の POST ペイロードを、実データに対してその場で試せます（管理者専用）。
+          Question の SQL・置換テンプレート・外部アクションの POST ペイロードを、実データに対してその場で試せます（管理者専用）。
         </p>
 
         <fieldset style={{ border: "1px solid var(--nf-border)", borderRadius: "4px", padding: "8px 12px", margin: 0 }}>
@@ -326,7 +326,7 @@ export default function PlaygroundPage() {
           {[
             ["question", "Question（SQL → 表）"],
             ["template", "置換（テンプレート → 文字列）"],
-            ["webhook", "Webhook（POST ペイロード）"],
+            ["externalAction", "外部アクション（POST ペイロード）"],
           ].map(([value, label]) => (
             <label key={value} style={{ marginRight: "16px" }}>
               <input
@@ -412,8 +412,8 @@ export default function PlaygroundPage() {
           </>
         )}
 
-        {/* ===== Webhook モード ===== */}
-        {mode === "webhook" && (
+        {/* ===== 外部アクション モード ===== */}
+        {mode === "externalAction" && (
           <>
             {sharedPickers}
             <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
@@ -426,22 +426,22 @@ export default function PlaygroundPage() {
                 />
                 管理者ゲート（storage ブロックを含める）
               </label>
-              <button type="button" onClick={handleRunWebhook} disabled={whRunning} className="nf-btn-outline">
+              <button type="button" onClick={handleRunExternalAction} disabled={whRunning} className="nf-btn-outline">
                 {whRunning ? "生成中..." : "ペイロード生成"}
               </button>
             </div>
             {whWarn && <p className="nf-text-11 nf-text-muted nf-mb-0">{whWarn}</p>}
             {whError && <p className="nf-text-warning">{whError}</p>}
-            {webhookJson && (
+            {externalActionJson && (
               <div>
                 <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
                   <label className="nf-label nf-mb-0">POST ペイロード（payload フィールドの JSON）</label>
-                  <button type="button" className="nf-btn-outline" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={copyWebhookJson}>
+                  <button type="button" className="nf-btn-outline" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={copyExternalActionJson}>
                     {copied ? "コピー済" : "コピー"}
                   </button>
                 </div>
                 <div className="nf-card">
-                  <pre style={codeBlockStyle}>{webhookJson}</pre>
+                  <pre style={codeBlockStyle}>{externalActionJson}</pre>
                 </div>
               </div>
             )}

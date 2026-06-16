@@ -62,7 +62,7 @@ const FieldRenderer = ({
   driveFolderStates,
   onFieldDriveFolderStateChange,
   onTemplateAction,
-  onWebhookAction,
+  onExternalAction,
   onFormLinkAction,
   formLinkChildCounts,
   hideFormLink = false,
@@ -111,7 +111,7 @@ const FieldRenderer = ({
     ...(labelSize === "largest" ? { "--label-font-size-offset": "var(--label-size-offset-xl)" } : {}),
     ...(textColor ? { "--label-color": textColor } : {}),
   };
-  // アクションボタン（様式出力 / Webhook）はボタン自体に文字サイズ・文字色・背景色を反映する。
+  // アクションボタン（様式出力 / 外部アクション）はボタン自体に文字サイズ・文字色・背景色を反映する。
   const actionButtonStyle = resolveStyleSettingsInlineStyle(styleSettings);
   const actionButtonStyleProp = Object.keys(actionButtonStyle).length > 0 ? actionButtonStyle : undefined;
 
@@ -189,9 +189,9 @@ const FieldRenderer = ({
     );
   }
 
-  if (field.type === "webhook") {
+  if (field.type === "externalAction") {
     // 管理者限定カードは管理者以外には表示すらしない。
-    if (field.webhookAction?.adminOnly && !isAdmin) return null;
+    if (field.externalAction?.adminOnly && !isAdmin) return null;
     return (
       <div className="preview-field">
         {renderLabel({ showRequired: false })}
@@ -200,9 +200,9 @@ const FieldRenderer = ({
           type="button"
           className="nf-btn-outline nf-text-13"
           style={actionButtonStyleProp}
-          onClick={() => onWebhookAction?.(field)}
+          onClick={() => onExternalAction?.(field)}
         >
-          Webhook
+          外部アクション
         </button>
       </div>
     );
@@ -480,7 +480,7 @@ export const RendererRecursive = ({
   driveFolderStates,
   onFieldDriveFolderStateChange,
   onTemplateAction,
-  onWebhookAction,
+  onExternalAction,
   onFormLinkAction,
   formLinkChildCounts,
   hideFormLink = false,
@@ -495,7 +495,7 @@ export const RendererRecursive = ({
   const recursiveProps = {
     responses, onChange, depth: depth + 1, readOnly, entryId, onChildFormJump,
     driveSettings, gasClientRef, driveFolderStates, onFieldDriveFolderStateChange,
-    onTemplateAction, onWebhookAction, onFormLinkAction, formLinkChildCounts, hideFormLink,
+    onTemplateAction, onExternalAction, onFormLinkAction, formLinkChildCounts, hideFormLink,
     isAdmin, canDeleteDriveFolder, onDeleteDriveFolder, resolveTokens, substitutionPending,
     computedValues, computedErrors,
   };
@@ -568,7 +568,7 @@ export const RendererRecursive = ({
               driveFolderStates={driveFolderStates}
               onFieldDriveFolderStateChange={onFieldDriveFolderStateChange}
               onTemplateAction={onTemplateAction}
-              onWebhookAction={onWebhookAction}
+              onExternalAction={onExternalAction}
               onFormLinkAction={onFormLinkAction}
               formLinkChildCounts={formLinkChildCounts}
               hideFormLink={hideFormLink}
