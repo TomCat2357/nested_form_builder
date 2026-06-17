@@ -20,7 +20,7 @@ var NfbAlasqlRuntime = (() => {
   };
   var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-  // src/features/expression/gasRuntimeEntry.js
+  // builder/src/features/expression/gasRuntimeEntry.js
   var gasRuntimeEntry_exports = {};
   __export(gasRuntimeEntry_exports, {
     MULTI_VALUE_SEP: () => MULTI_VALUE_SEP,
@@ -34,7 +34,7 @@ var NfbAlasqlRuntime = (() => {
     toMsUnixTime: () => toMsUnixTime
   });
 
-  // src/features/expression/kanaTables.js
+  // builder/src/features/expression/kanaTables.js
   var HALF_TO_FULL_KANA = {
     "\uFF66": "\u30F2",
     "\uFF67": "\u30A1",
@@ -138,7 +138,7 @@ var NfbAlasqlRuntime = (() => {
     if (halfBase) HANDAKUTEN_TO_HALF[HANDAKUTEN_MAP[k]] = halfBase + "\uFF9F";
   }
 
-  // src/features/expression/eraConversion.js
+  // builder/src/features/expression/eraConversion.js
   var ERAS = [
     { name: "\u4EE4\u548C", short: "R", start: new Date(2019, 4, 1), year: 2019, month: 5, day: 1 },
     { name: "\u5E73\u6210", short: "H", start: new Date(1989, 0, 8), year: 1989, month: 1, day: 8 },
@@ -239,7 +239,7 @@ var NfbAlasqlRuntime = (() => {
     return { year, month: mo, day: da, hour: hh, minute: mi, second: ss };
   }
 
-  // src/core/constants.js
+  // builder/src/core/constants.js
   var RECORD_CACHE_MAX_AGE_MS = 30 * 60 * 1e3;
   var RECORD_CACHE_BACKGROUND_REFRESH_MS = 5 * 60 * 1e3;
   var FORM_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1e3;
@@ -252,7 +252,7 @@ var NfbAlasqlRuntime = (() => {
   var JST_OFFSET_MS = 9 * 60 * 60 * 1e3;
   var UNIX_MS_THRESHOLD = 1e11;
 
-  // src/utils/dateTime.js
+  // builder/src/utils/dateTime.js
   var TIME_ZONE = "Asia/Tokyo";
   var DEFAULT_LOCALE = "ja-JP";
   var SERIAL_EPOCH_JST_MS = SERIAL_EPOCH_UTC_MS - JST_OFFSET_MS;
@@ -455,7 +455,7 @@ var NfbAlasqlRuntime = (() => {
     return `${pad4(datedParts.year)}-${pad2(datedParts.month)}-${pad2(datedParts.day)}_${pad2(hh)}:${pad2(mi)}:${pad2(ss)}.${pad3(sss)}`;
   };
 
-  // src/utils/pathCodec.js
+  // builder/src/utils/pathCodec.js
   function escapeSegment(segment, sep) {
     const s = String(segment === null || segment === void 0 ? "" : segment);
     let out = "";
@@ -520,7 +520,7 @@ var NfbAlasqlRuntime = (() => {
     return tokens;
   }
 
-  // src/utils/multiValue.js
+  // builder/src/utils/multiValue.js
   var MULTI_VALUE_SEP = ",";
   function joinMultiValue(labels) {
     if (!Array.isArray(labels)) return "";
@@ -546,7 +546,7 @@ var NfbAlasqlRuntime = (() => {
     return out;
   }
 
-  // src/features/expression/registerNfbUdfs.js
+  // builder/src/features/expression/registerNfbUdfs.js
   var DAY_OF_WEEK_SHORT = ["\u65E5", "\u6708", "\u706B", "\u6C34", "\u6728", "\u91D1", "\u571F"];
   var DAY_OF_WEEK_LONG = ["\u65E5\u66DC\u65E5", "\u6708\u66DC\u65E5", "\u706B\u66DC\u65E5", "\u6C34\u66DC\u65E5", "\u6728\u66DC\u65E5", "\u91D1\u66DC\u65E5", "\u571F\u66DC\u65E5"];
   var TIME_ONLY_STR_RE = /^\d{1,2}:\d{2}(?::\d{2})?(?:\.\d{1,3})?$/;
@@ -1101,7 +1101,7 @@ var NfbAlasqlRuntime = (() => {
     alasql.fn[REGISTERED] = true;
   }
 
-  // src/features/analytics/utils/headerToAlaSqlKey.js
+  // builder/src/features/analytics/utils/headerToAlaSqlKey.js
   function headerKeyToAlaSqlKey(key) {
     if (!key) return "";
     const out = [];
@@ -1113,7 +1113,7 @@ var NfbAlasqlRuntime = (() => {
     return out.join("__");
   }
 
-  // src/features/analytics/utils/sqlLiteralMask.js
+  // builder/src/features/analytics/utils/sqlLiteralMask.js
   var KIND_SINGLE_QUOTE = "single-quote";
   var KIND_DOUBLE_QUOTE = "double-quote";
   var KIND_BRACKET = "bracket";
@@ -1232,10 +1232,10 @@ var NfbAlasqlRuntime = (() => {
     };
   }
 
-  // src/features/expression/sqlEmit.js
+  // builder/src/features/expression/sqlEmit.js
   var bracketIdent = (name) => "[" + String(name).replace(/]/g, "") + "]";
 
-  // src/features/expression/preprocessAlaSqlExpression.js
+  // builder/src/features/expression/preprocessAlaSqlExpression.js
   var RESERVED_FN_REWRITES = [
     [/\bLEFT\s*\(/gi, "STR_LEFT("],
     [/\bRIGHT\s*\(/gi, "STR_RIGHT("],
