@@ -5,6 +5,7 @@ import { useAuth } from "./authContext.jsx";
 import { evaluateCacheForForms } from "./cachePolicy.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 import { registerFormReconciler, registerFolderReconciler, startUploadWorker } from "./uploadWorker.js";
+import { prefetchTopOpened } from "./prefetchTopOpened.js";
 import {
   normalizeFolderPath,
   isUnderFolder,
@@ -227,6 +228,20 @@ export function AppDataProvider({ children }) {
       }
     })();
   }, []);
+
+  // 起動後アイドル時に、開いた履歴（openHistory）上位 N 件のレコードを先行プリフェッチする。
+  // 初期ロードが落ち着いた（loadingForms=false）後に 1 回だけ起動。失敗しても起動を妨げない。
+  const prefetchStartedRef = useRef(false);
+  useEffect(() => {
+    if (loadingForms || prefetchStartedRef.current) return;
+    prefetchStartedRef.current = true;
+    const run = () => { prefetchTopOpened().catch(() => {}); };
+    if (typeof requestIdleCallback === "function") {
+      requestIdleCallback(run, { timeout: 5000 });
+    } else {
+      setTimeout(run, 0);
+    }
+  }, [loadingForms]);
 
   // Helper to DRY up form state updates and cache saving
   const updateFormsAndCache = useCallback(async (updaterFn, nextFailures, logPrefix) => {

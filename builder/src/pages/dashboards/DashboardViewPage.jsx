@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useParams, useLocation } from "react-router-dom";
 import AppLayout from "../../app/components/AppLayout.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
@@ -12,6 +12,7 @@ import { clearAnalyticsSourceTableCache } from "../../features/analytics/analyti
 import DashboardGrid from "../../features/analytics/components/DashboardGrid.jsx";
 import DashboardFilterBar from "../../features/analytics/components/DashboardFilterBar.jsx";
 import SimpleFilterBar from "../../features/analytics/components/SimpleFilterBar.jsx";
+import { recordOpen } from "../../app/state/openHistoryStore.js";
 
 const buildDashboardViewPath = (id) => `/dashboards/${id}`;
 
@@ -56,6 +57,16 @@ export default function DashboardViewPage() {
   const legacyError = fetched && !isV2(fetched)
     ? "このダッシュボードは旧形式です。再作成してください。"
     : null;
+
+  // ダッシュボードを「開いた」履歴を記録する（起動時の先行プリフェッチのランキング元）。
+  // ロード成功時に id ごと 1 回だけ記録する。
+  const lastRecordedDashboardIdRef = useRef(null);
+  useEffect(() => {
+    if (!dashboard || !dashboardId) return;
+    if (lastRecordedDashboardIdRef.current === dashboardId) return;
+    lastRecordedDashboardIdRef.current = dashboardId;
+    recordOpen("dashboard", dashboardId).catch(() => {});
+  }, [dashboard, dashboardId]);
 
   useEffect(() => {
     if (!dashboard) return;

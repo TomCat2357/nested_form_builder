@@ -25,13 +25,16 @@ export const FULL_QUERY_SUBST_RE = /\{\{\s*SELECT\b/i;
 export const DB_NAME = "NestedFormBuilder";
 // v8: フォーム/クエスチョン/ダッシュボードのオフラインファースト保存用に
 // アップロードキュー (uploadQueue) ストアを追加。
-export const DB_VERSION = 8;
+// v9: 開いたフォーム/ダッシュボードの履歴 (openHistory) ストアを追加。
+//     起動時に上位 N 件のレコードを先行プリフェッチする土台。
+export const DB_VERSION = 9;
 export const STORE_NAMES = {
   forms: "formsCache",
   settings: "settingsStore",
   analyticsQuestions: "analyticsQuestions",
   analyticsDashboards: "analyticsDashboards",
   uploadQueue: "uploadQueue",
+  openHistory: "openHistory",
 };
 // v5 → v6 で削除した旧ストア (onupgradeneeded で deleteObjectStore する対象)
 export const LEGACY_STORE_NAMES_V5 = [
@@ -53,6 +56,15 @@ export const FORM_CACHE_BACKGROUND_REFRESH_MS = 60 * 60 * 1000;
 // 分析（Question / Dashboard）の元レコードテーブルを React メモリにキャッシュする TTL（1時間）。
 // フィルタの微調整ごとに dataStore.listEntries + 行変換を再実行しないための短期キャッシュ。
 export const ANALYTICS_SOURCE_TABLE_CACHE_TTL_MS = 60 * 60 * 1000;
+
+// 開いた履歴に基づく先行プリフェッチ（openHistory ストア）。
+//   - PREFETCH_TOP_N: 起動時にレコードを先読みする上位件数（フォーム / ダッシュボードそれぞれ）。
+//   - OPEN_HISTORY_MAX_ENTRIES: 履歴の保持上限。超過分は古い順に prune して肥大を防ぐ。
+//   - OPEN_HISTORY_HALF_LIFE_DAYS: ランキングスコアの recency 減衰の半減期（日）。
+//     score = openCount * 2^(-ageDays / HALF_LIFE) で「よく開く × 最近」を両立させる。
+export const PREFETCH_TOP_N = 5;
+export const OPEN_HISTORY_MAX_ENTRIES = 200;
+export const OPEN_HISTORY_HALF_LIFE_DAYS = 14;
 
 // オフラインファースト保存のバックグラウンドアップロード再試行（指数バックオフ）。
 //   待機時間 = min(BASE * 2^attempt, MAX) + ジッタ。手動「再試行」でバックオフを解除できる。
