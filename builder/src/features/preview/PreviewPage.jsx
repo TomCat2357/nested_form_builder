@@ -737,7 +737,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       gate,
     });
     try {
-      const res = await sendExternalAction({ url: resolvedUrl, payload, handshakeSecret: action.handshakeSecret });
+      const res = await sendExternalAction({ url: resolvedUrl, payload });
       const result = interpretExternalActionResponse(res);
       if (!result.ok) {
         showAlert(result.message || "外部アクションの送信先でエラーが発生しました。");

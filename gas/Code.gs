@@ -62,6 +62,8 @@ const ACTION_DEFINITIONS_ = {
   "admin_key_set":   { handler: (ctx) => SetAdminKey_(ctx.raw?.adminKey ?? ""), adminOnly: true },
   "admin_email_get": { handler: () => ({ ok: true, adminEmail: GetAdminEmail_() }), adminOnly: true },
   "admin_email_set": { handler: (ctx) => SetAdminEmail_(ctx.raw?.adminEmail ?? ""), adminOnly: true },
+  "admin_ext_action_secret_get": { handler: () => ({ ok: true, extActionSecret: GetExtActionSecret_() }), adminOnly: true },
+  "admin_ext_action_secret_set": { handler: (ctx) => SetExtActionSecret_(ctx.raw?.extActionSecret ?? ""), adminOnly: true },
   // 標準フォルダ構成（システムごとコピー / マッピングのエクスポート・インポート）
   // 注: 同期走査（std_folders_rebuild_map）と構成レポート（std_folders_link_report）は廃止。
   //     参照の再リンク / 同名重複整理は保存時のサーバ側自動リンク補完（alignReferencesOnSave_）が担う。

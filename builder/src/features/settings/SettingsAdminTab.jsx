@@ -11,6 +11,8 @@ import {
   checkAdminEmailMembership,
   getRestrictToFormOnly,
   setRestrictToFormOnly,
+  getExtActionSecret,
+  setExtActionSecret,
   copyStandardFolders,
   exportMapping,
   importMapping,
@@ -57,7 +59,7 @@ function buildMembershipFailMessage({ userEmail, reason, groupErrors, detail }) 
   return detail || `管理者リストの検証に失敗しました（${reason || "unknown"}）。`;
 }
 
-function AdminSettingRow({ title, description, label, inputValue, placeholder, onInputChange, onSave, loading, saveDisabled, statusContent }) {
+function AdminSettingRow({ title, description, label, inputValue, placeholder, onInputChange, onSave, loading, saveDisabled, statusContent, inputType = "text" }) {
   return (
     <>
       <div className="nf-settings-group-title nf-mb-6">{title}</div>
@@ -66,7 +68,8 @@ function AdminSettingRow({ title, description, label, inputValue, placeholder, o
       <div className="nf-row nf-gap-12">
         <input
           className="nf-input nf-flex-1 nf-min-w-0"
-          type="text"
+          type={inputType}
+          autoComplete={inputType === "password" ? "off" : undefined}
           value={inputValue}
           placeholder={placeholder}
           onChange={(event) => onInputChange(event.target.value)}
@@ -97,6 +100,11 @@ export default function SettingsAdminTab() {
   const [adminEmailInput, setAdminEmailInput] = useState("");
   const [adminEmailLoading, setAdminEmailLoading] = useState(false);
   const adminEmailDialog = useConfirmDialog();
+
+  const [extActionSecret, setExtActionSecretState] = useState("");
+  const [extActionSecretInput, setExtActionSecretInput] = useState("");
+  const [extActionSecretLoading, setExtActionSecretLoading] = useState(false);
+  const extActionSecretDialog = useConfirmDialog();
 
   const [restrictToFormOnly, setRestrictToFormOnlyState] = useState(false);
   const [restrictToFormOnlyLoading, setRestrictToFormOnlyLoading] = useState(false);
@@ -131,14 +139,16 @@ export default function SettingsAdminTab() {
     if (!canManageAdminSettings) return;
     (async () => {
       try {
-        const [key, email, restrict] = await Promise.all([
-          getAdminKey(), getAdminEmail(), getRestrictToFormOnly(),
+        const [key, email, restrict, extSecret] = await Promise.all([
+          getAdminKey(), getAdminEmail(), getRestrictToFormOnly(), getExtActionSecret(),
         ]);
         setAdminKeyState(key);
         setAdminKeyInput(key);
         setAdminEmailState(email);
         setAdminEmailInput(email);
         setRestrictToFormOnlyState(restrict);
+        setExtActionSecretState(extSecret);
+        setExtActionSecretInput(extSecret);
       } catch (error) {
         console.error("[SettingsAdminTab] load failed", error);
         showAlert(error?.message || "管理者設定の読み込みに失敗しました");
@@ -181,6 +191,23 @@ export default function SettingsAdminTab() {
     successMsgFilled: (val) => `管理者キーを更新しました。次回から ?adminkey=${val} でアクセスしてください。`,
     errorMsg: "管理者キーの保存に失敗しました",
   });
+
+  const handleSaveExtActionSecret = () => handleSaveSetting({
+    apiFunc: async (val) => await setExtActionSecret(val.trim()),
+    inputValue: extActionSecretInput,
+    setStateValue: setExtActionSecretState,
+    setInputValue: setExtActionSecretInput,
+    closeDialog: extActionSecretDialog.close,
+    setLoading: setExtActionSecretLoading,
+    successMsgEmpty: "送信元シークレットを解除しました。外部アクションは誤送信防止プローブなしで送信されます。",
+    successMsgFilled: () => "送信元シークレットを更新しました。受信アプリ側の Script Properties（NFB_EXT_ACTION_SECRET）に同じ値を設定してください。",
+    errorMsg: "送信元シークレットの保存に失敗しました",
+  });
+
+  const extActionSecretConfirmOptions = [
+    { value: "cancel", label: "キャンセル", onSelect: extActionSecretDialog.close },
+    { value: "save", label: "保存する", variant: "primary", onSelect: handleSaveExtActionSecret },
+  ];
 
   const handleSaveAdminEmail = async () => {
     if (!canManageAdminSettings) return;
@@ -430,6 +457,22 @@ export default function SettingsAdminTab() {
       </div>
 
       <div className="nf-section-divider">
+        <AdminSettingRow
+          title="外部アクション 送信元シークレット"
+          description={<>外部アクション（検索画面ボタン / レコードの外部アクション）の<strong>誤送信防止ハンドシェイク</strong>用シークレットです。設定すると、データ送信前に宛先が正しい受信アプリかを確認し、一致を確認できない宛先には送信しません。受信アプリ側の Script Properties にキー <code>NFB_EXT_ACTION_SECRET</code> で同じ値を設定してください。空欄にすると誤送信防止は無効になります。</>}
+          label="送信元シークレット"
+          inputType="password"
+          inputValue={extActionSecretInput}
+          placeholder="未設定（誤送信防止なし）"
+          onInputChange={setExtActionSecretInput}
+          onSave={() => extActionSecretDialog.open()}
+          loading={extActionSecretLoading}
+          saveDisabled={extActionSecretInput.trim() === extActionSecret}
+          statusContent={extActionSecret ? "送信元シークレットは設定済みです（誤送信防止が有効）。" : "現在は送信元シークレットが未設定のため、誤送信防止は行われません。"}
+        />
+      </div>
+
+      <div className="nf-section-divider">
         <div className="nf-settings-group-title nf-mb-6">アクセス制限</div>
         <p className="nf-mb-12 nf-text-12 nf-text-muted">
           管理者キーまたは管理者メールが設定されている場合に有効です。ONにすると、<code>?form=xxx</code> を指定しない一般ユーザーはアクセス拒否されます。
@@ -577,6 +620,17 @@ export default function SettingsAdminTab() {
             : "管理者キーを解除します。URLパラメータなしで管理者としてアクセスできるようになります。"
         }
         options={adminKeyConfirmOptions}
+      />
+
+      <ConfirmDialog
+        open={extActionSecretDialog.state.open}
+        title="送信元シークレットを変更しますか？"
+        message={
+          extActionSecretInput.trim()
+            ? "外部アクションの送信元シークレットを変更します。受信アプリ側の Script Properties（NFB_EXT_ACTION_SECRET）にも同じ値を設定してください。"
+            : "送信元シークレットを解除します。外部アクションは誤送信防止プローブなしで送信されるようになります。"
+        }
+        options={extActionSecretConfirmOptions}
       />
 
       <ConfirmDialog

@@ -86,18 +86,14 @@ test("normalizeExternalActions は adminOnly: true を保持する", () => {
   assert.equal(out.search[0].adminOnly, true);
 });
 
-test("normalizeExternalActions は handshakeSecret を文字列のみ保持し既定は空", () => {
+test("normalizeExternalActions は handshakeSecret を保持しない（送信元シークレットは管理者設定へ移行）", () => {
   const out = normalizeExternalActions({
     enabled: true,
     search: [
-      { label: "S1", url: "https://a" },                           // 未指定 → ""
-      { label: "S2", url: "https://b", handshakeSecret: "s3cr3t" }, // 文字列保持
-      { label: "S3", url: "https://c", handshakeSecret: 123 },      // 非文字列 → ""
+      { label: "S2", url: "https://b", handshakeSecret: "s3cr3t" }, // 旧フィールドは除去
     ],
   });
-  assert.equal(out.search[0].handshakeSecret, "");
-  assert.equal(out.search[1].handshakeSecret, "s3cr3t");
-  assert.equal(out.search[2].handshakeSecret, "");
+  assert.equal("handshakeSecret" in out.search[0], false);
 });
 
 test("normalizeExternalActions は truthy/falsy を boolean に正規化する", () => {
