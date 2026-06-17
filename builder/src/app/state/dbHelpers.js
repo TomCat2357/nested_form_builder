@@ -48,6 +48,13 @@ export function openDB() {
         queueStore.createIndex('localId', 'localId', { unique: false });
       }
 
+      // v9: 開いたフォーム/ダッシュボードの履歴。1 件 = 1 エンティティ
+      // （key = "<entityType>:<entityId>"）。件数が小さいためインデックスは作らず
+      // JS 側でスコア順にソートする（openHistoryStore.rankOpenHistory）。
+      if (!db.objectStoreNames.contains(STORE_NAMES.openHistory)) {
+        db.createObjectStore(STORE_NAMES.openHistory, { keyPath: 'key' });
+      }
+
       if (oldVersion < 6) {
         for (const legacyName of LEGACY_STORE_NAMES_V5) {
           if (db.objectStoreNames.contains(legacyName)) {

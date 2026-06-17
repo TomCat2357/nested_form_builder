@@ -15,6 +15,7 @@ import SearchDisplaySettingsDialog from "../features/search/components/SearchDis
 import { useSearchPageState } from "../features/search/useSearchPageState.js";
 import { normalizeSpreadsheetId } from "../utils/spreadsheet.js";
 import { runPurgeCheck } from "../services/gasClient.js";
+import { recordOpen } from "../app/state/openHistoryStore.js";
 
 export default function SearchPage() {
   const { getFormById, forms } = useAppData();
@@ -110,6 +111,18 @@ export default function SearchPage() {
     settings,
     childPid,
   });
+
+  // フォームを「開いた」履歴を記録する（起動時の先行プリフェッチのランキング元）。
+  // 子フォームのオーバーレイ表示（inChildContext）は実ユーザー操作の「開く」ではないため除外。
+  // id ごとに 1 回だけ記録する（再レンダーでの多重カウントを防ぐ）。
+  const lastRecordedFormIdRef = React.useRef(null);
+  React.useEffect(() => {
+    if (inChildContext) return;
+    if (!effectiveFormId) return;
+    if (lastRecordedFormIdRef.current === effectiveFormId) return;
+    lastRecordedFormIdRef.current = effectiveFormId;
+    recordOpen("form", effectiveFormId).catch(() => {});
+  }, [effectiveFormId, inChildContext]);
 
   // 更新ボタン: 通常のリフレッシュに加え、期限切れソフトデリート行の purge を付帯起動する。
   // purge は付帯処理のため、失敗してもリフレッシュ自体は妨げない（握りつぶす）。
