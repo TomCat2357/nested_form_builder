@@ -2,6 +2,10 @@ import React, { useMemo, useState } from "react";
 import { CHART_PALETTE, DEFAULT_LINE_STYLE, DEFAULT_CHART_STYLE, normalizeChartStyle } from "../utils/chartPalette.js";
 import { LABEL_STYLE, HEADER_LABEL_STYLE, RESET_BUTTON_STYLE } from "../utils/styleConstants.js";
 import { useStylePathSetter } from "./useStylePathSetter.js";
+import { getChartControlVisibility, isPieLike, dashToString, stringToDash } from "../utils/chartStyleControlsLogic.js";
+
+// 表示判定は chartStyleControlsLogic.js に集約。VisualizePanel 互換のため経路を維持して再公開する。
+export { isChartStyleSupported } from "../utils/chartStyleControlsLogic.js";
 
 // 折れ線・棒・円・散布図 共通のスタイルカスタマイズ UI。
 // 既存 TableStyleControls の minColor/maxColor パターンを踏襲（カラーピッカー + 既定リセット）。
@@ -13,17 +17,6 @@ import { useStylePathSetter } from "./useStylePathSetter.js";
 //   scatter              → ポイント形状・ポイント半径 + 系列色 + 軸ラベル
 //
 // それ以外の vizType ではこの UI 全体を非表示にする（呼び出し側 VisualizePanel 側でガード）。
-
-const LINE_LIKE = new Set(["line", "area", "combo"]);
-const BAR_LIKE = new Set(["bar", "stackedBar", "row"]);
-const PIE_LIKE = new Set(["pie", "donut"]);
-const SCATTER_LIKE = new Set(["scatter"]);
-
-// VisualizePanel が「この vizType でグラフスタイル UI を出すべきか」を判定するための公開判定。
-// LINE/BAR/PIE/SCATTER のいずれかに該当すれば true。
-export function isChartStyleSupported(vizType) {
-  return LINE_LIKE.has(vizType) || BAR_LIKE.has(vizType) || PIE_LIKE.has(vizType) || SCATTER_LIKE.has(vizType);
-}
 
 const CURVE_OPTIONS = [
   { value: "linear", label: "直線（カクカク）" },
@@ -55,19 +48,6 @@ const LEGEND_POSITION_OPTIONS = [
   { value: "hidden", label: "非表示" },
 ];
 
-// borderDash は配列で保存するが、UI ではプリセットセレクト or カスタム数値カンマ表記で扱う。
-function dashToString(dash) {
-  if (!Array.isArray(dash) || dash.length === 0) return "";
-  return dash.join(",");
-}
-function stringToDash(s) {
-  if (!s || typeof s !== "string") return [];
-  return s
-    .split(",")
-    .map((v) => Number(v.trim()))
-    .filter((n) => Number.isFinite(n) && n > 0);
-}
-
 export default function ChartStyleControls({
   vizType,
   lineStyle,
@@ -82,11 +62,13 @@ export default function ChartStyleControls({
 }) {
   const [open, setOpen] = useState(false);
 
-  const showLineControls = LINE_LIKE.has(vizType);
-  const showPointControls = LINE_LIKE.has(vizType) || SCATTER_LIKE.has(vizType);
-  const showAxisLabels = !PIE_LIKE.has(vizType); // pie/donut は軸なし
-  const showSeriesColors = LINE_LIKE.has(vizType) || BAR_LIKE.has(vizType) || PIE_LIKE.has(vizType) || SCATTER_LIKE.has(vizType);
-  const showAxisCustomization = !PIE_LIKE.has(vizType); // grid / tick / axisTitle は軸を持つチャートのみ
+  const {
+    showLineControls,
+    showPointControls,
+    showAxisLabels,
+    showSeriesColors,
+    showAxisCustomization,
+  } = getChartControlVisibility(vizType);
 
   // この vizType ではカスタマイズ項目がひとつも無い → 何も描画しない
   if (!showLineControls && !showPointControls && !showAxisLabels && !showSeriesColors) {
@@ -269,7 +251,7 @@ export default function ChartStyleControls({
             <div>
               <div style={{ marginBottom: 4 }}>
                 <span style={HEADER_LABEL_STYLE}>
-                  {PIE_LIKE.has(vizType) ? "セグメント色:" : "系列色:"}
+                  {isPieLike(vizType) ? "セグメント色:" : "系列色:"}
                 </span>
                 <span className="nf-text-subtle" style={{ fontSize: 11, marginLeft: 8 }}>
                   未指定は既定パレットから自動割当
