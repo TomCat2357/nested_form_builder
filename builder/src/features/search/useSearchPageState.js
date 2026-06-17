@@ -89,7 +89,9 @@ export function useSearchPageState({
   const fieldPaths = useMemo(() => buildFieldPathsMap(normalizedSchema), [normalizedSchema]);
   const activeSort = useMemo(() => buildInitialSort(searchParams), [searchParams]);
   const query = searchParams.get("q") || "";
-  const page = Math.max(1, Number(searchParams.get("page") || 1));
+  // URL ?page の要求値。下限のみ 1 で丸める。実際に使う page は sortedEntries 確定後に
+  // totalPages で上限クランプする（pageSize 増加などで総ページ数が減ったとき範囲外に残るのを防ぐ）。
+  const requestedPage = Math.max(1, Number(searchParams.get("page") || 1));
   const { overrides: searchOverrides, updateOverride } = useSearchDisplayOverrides(effectiveFormId);
   // pageSize の意味論:
   //   負値（典型: -1）→ 全件表示。Number.MAX_SAFE_INTEGER で表現することで
@@ -541,6 +543,12 @@ export function useSearchPageState({
     return list;
   }, [filteredEntries, searchColumns, activeSort]);
 
+  // ページ番号は要求値（URL ?page）を totalPages で上限クランプする。
+  // 表示件数を増やす等で総ページ数が減ったとき、URL に残った大きい page が範囲外
+  // （空ページ・「21 - 2 件」「2 / 1」のような表示）になる回帰を防ぐ。
+  const totalPages = Math.max(1, Math.ceil(sortedEntries.length / PAGE_SIZE));
+  const page = Math.min(requestedPage, totalPages);
+
   const selectedPrintableRows = useMemo(
     () => sortedEntries.filter((row) => selectedEntries.has(row.entry.id)),
     [selectedEntries, sortedEntries],
@@ -836,7 +844,6 @@ export function useSearchPageState({
     forceRefreshAll();
   }, [forceRefreshAll]);
 
-  const totalPages = Math.max(1, Math.ceil(sortedEntries.length / PAGE_SIZE));
   const totalEntries = sortedEntries.length;
   const startIndex = totalEntries === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const endIndex = totalEntries === 0 ? 0 : Math.min(page * PAGE_SIZE, totalEntries);

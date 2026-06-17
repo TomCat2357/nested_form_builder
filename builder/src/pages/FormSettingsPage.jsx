@@ -10,13 +10,14 @@ import { resolveSettingsFieldValue } from "../utils/settings.js";
 import { SettingsField } from "../features/settings/SettingsField.jsx";
 import { getConfigPageSaveAfterActionField, getConfigPageSearchQueryTableSourceField } from "./configPageSettings.js";
 import { useConfigPageTheme } from "./useConfigPageTheme.js";
+import { isFormUploadInFlight } from "../features/search/globalSyncState.js";
 
 export default function FormSettingsPage() {
   const { formId } = useParams();
   const requestedFormId = (formId || "").trim();
 
   const { settings, updateSetting } = useBuilderSettings({ applyGlobalTheme: false });
-  const { forms, getFormById, updateForm } = useAppData();
+  const { forms, getFormById, updateForm, loadingForms, refreshingForms } = useAppData();
   const { showAlert } = useAlert();
   const targetForm = useMemo(
     () => (requestedFormId ? getFormById(requestedFormId) : null),
@@ -131,11 +132,22 @@ export default function FormSettingsPage() {
   );
 
   if (!targetForm) {
+    // フォームの読み込み中、または自分のオフライン保存（write-behind）が反映途中だと、
+    // フォームが一時的に一覧から外れて getFormById が null を返すことがある。これを即「見つかりません」
+    // と断じると、テーマ変更直後などに誤った不在表示が出る。同期完了で forms が更新され再描画されると
+    // targetForm が戻るため、その間は「同期中…」の穏当な表示に留める。
+    const isTransientlyAbsent = loadingForms || refreshingForms || isFormUploadInFlight();
     return (
       <AppLayout title="設定" fallbackPath={fallbackPath} backHidden={false} badge="テーマ" themeOverride={formTheme}>
         <div className="nf-card">
-          <p>指定されたフォームが見つかりません。</p>
-          <p className="nf-text-muted nf-text-14 nf-mt-8">メイン画面からフォームを選択してやり直してください。</p>
+          {isTransientlyAbsent ? (
+            <p>フォームを同期中です…</p>
+          ) : (
+            <>
+              <p>指定されたフォームが見つかりません。</p>
+              <p className="nf-text-muted nf-text-14 nf-mt-8">メイン画面からフォームを選択してやり直してください。</p>
+            </>
+          )}
         </div>
       </AppLayout>
     );
