@@ -318,8 +318,8 @@ export const setRestrictToFormOnly = async (value) => { const r = await fetchGas
 // 外部アクション（externalAction）のサーバ間リレー送信。本体 GAS が UrlFetchApp で
 // 受信 Web アプリへ POST する（ブラウザの隠しフォーム POST に伴うログインリダイレクト
 // 問題を回避）。戻り値は { ok, status, body }。body は受信側応答（JSON 文字列 or HTML）。
-export const sendExternalAction = ({ url, payload }) =>
-  fetchGasApi("nfbSendExternalAction", { url, payload }, "外部アクション送信に失敗しました");
+export const sendExternalAction = ({ url, payload, handshakeSecret = "" }) =>
+  fetchGasApi("nfbSendExternalAction", { url, payload, handshakeSecret }, "外部アクション送信に失敗しました");
 // 標準フォルダ構成（システムごとコピー / マッピング再構築）
 export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyExternalActions = false, rebuildMapping = true } = {}) => {
   if (!destRootUrl) throw new Error("コピー先プロジェクトフォルダの URL を指定してください");

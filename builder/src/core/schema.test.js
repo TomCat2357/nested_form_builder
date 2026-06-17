@@ -225,6 +225,7 @@ test("normalizeSchemaIDs は externalAction の externalAction を正規化し r
   assert.deepEqual(schema[0].externalAction, {
     url: "https://script.google.com/macros/x/exec",
     adminOnly: true,
+    handshakeSecret: "",
   });
   assert.equal("required" in schema[0], false);
 });
@@ -237,7 +238,18 @@ test("normalizeExternalAction は旧・単括弧固定トークンを alasql 予
   assert.deepEqual(out, {
     url: "https://x.com/?id={{`_id`}}&form={{`_form_id`}}&ss={{`_spreadsheet_id`}}",
     adminOnly: true,
+    handshakeSecret: "",
   });
+});
+
+test("normalizeExternalAction は handshakeSecret を文字列のみ保持し既定は空", () => {
+  // 未指定は空文字（後方互換: ハンドシェイク無効）。
+  assert.equal(normalizeExternalAction({ url: "https://x.com/" }).handshakeSecret, "");
+  // 文字列はそのまま保持。
+  assert.equal(normalizeExternalAction({ url: "https://x.com/", handshakeSecret: "s3cr3t" }).handshakeSecret, "s3cr3t");
+  // 非文字列は空に正規化。
+  assert.equal(normalizeExternalAction({ url: "https://x.com/", handshakeSecret: 123 }).handshakeSecret, "");
+  assert.equal(normalizeExternalAction({ url: "https://x.com/", handshakeSecret: null }).handshakeSecret, "");
 });
 
 test("normalizeExternalAction は既に {{...}} の URL を変えない（冪等）", () => {

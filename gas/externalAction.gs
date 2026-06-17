@@ -38,7 +38,62 @@ function ExtAction_appendRelayParam_(url) {
   return base + sep + "nfbRelay=1" + hash;
 }
 
+// 誤送信防止ハンドシェイク用の使い捨て nonce を生成する。
+// 既存の ULID 生成器（constants.gs）を流用し、新規乱数実装を避ける。
+function ExtAction_makeNonce_() {
+  return Nfb_generateUlid_();
+}
+
+// HMAC-SHA256(message, secret) を 16 進文字列で返す純関数。
+// 送信側（検証）・受信側（署名）で同一実装を使う必要がある。
+function ExtAction_hmacHex_(message, secret) {
+  var raw = Utilities.computeHmacSha256Signature(String(message == null ? "" : message), String(secret == null ? "" : secret));
+  var hex = "";
+  for (var i = 0; i < raw.length; i++) {
+    var b = (raw[i] + 256) % 256;
+    var s = b.toString(16);
+    if (s.length === 1) s = "0" + s;
+    hex += s;
+  }
+  return hex;
+}
+
+// プローブ応答ボディ（JSON 文字列）を検証する純関数。
+// 受信側が共有シークレットで HMAC(nonce) を計算して返したときだけ true。
+// { ok:true, nfbExternalAction:true, signature:<hmacHex(nonce, secret)> } のみ通す。
+function ExtAction_verifyProbeResponse_(body, nonce, secret) {
+  var data;
+  try {
+    data = JSON.parse(String(body == null ? "" : body));
+  } catch (e) {
+    return false;
+  }
+  if (!data || typeof data !== "object") return false;
+  if (data.ok !== true || data.nfbExternalAction !== true) return false;
+  if (typeof data.signature !== "string" || data.signature === "") return false;
+  return data.signature === ExtAction_hmacHex_(nonce, secret);
+}
+
+// 受信 Web アプリへ ?nfbRelay=1 付きで bodyObj を form-POST する低レベルヘルパ。
+// bodyObj はそのまま payload オブジェクトとして渡す（本送信 {payload:<JSON>} / プローブ {nfbProbe,nonce}）。
+// 戻り値は { ok, status, body }。プローブ・本送信で共有する。
+function ExtAction_postRelay_(url, bodyObj) {
+  var target = ExtAction_appendRelayParam_(url);
+  var response = UrlFetchApp.fetch(target, {
+    method: "post",
+    payload: bodyObj,
+    muteHttpExceptions: true,
+    followRedirects: true,
+    headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
+  });
+  var status = response.getResponseCode();
+  var body = response.getContentText();
+  return { ok: status >= 200 && status < 400, status: status, body: body };
+}
+
 // 受信 Web アプリへ payload をサーバ間 POST する。
+// handshakeSecret が指定されたときは、本データを送る前に nonce プローブで宛先を検証し、
+// 共有シークレットの HMAC が一致した正規の受信アプリにだけ送信する（誤送信防止）。
 // 戻り値は { ok, status, body } または { ok:false, error, code }（nfbSafeCall_ 経由）。
 function ExtAction_send_(raw) {
   return nfbSafeCall_(function() {
@@ -47,16 +102,22 @@ function ExtAction_send_(raw) {
       return { ok: false, error: "URL が不正です（http:// または https:// で始まる必要があります）。", code: "BAD_URL" };
     }
     var payload = (raw && raw.payload && typeof raw.payload === "object") ? raw.payload : {};
-    var target = ExtAction_appendRelayParam_(url);
-    var response = UrlFetchApp.fetch(target, {
-      method: "post",
-      payload: { payload: JSON.stringify(payload) },
-      muteHttpExceptions: true,
-      followRedirects: true,
-      headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() },
-    });
-    var status = response.getResponseCode();
-    var body = response.getContentText();
-    return { ok: status >= 200 && status < 400, status: status, body: body };
+    var secret = (raw && typeof raw.handshakeSecret === "string") ? raw.handshakeSecret.trim() : "";
+
+    if (secret !== "") {
+      // Phase1: 機微データを含まないプローブで宛先を検証する（シークレットは送らない）。
+      var nonce = ExtAction_makeNonce_();
+      var probe = ExtAction_postRelay_(url, { nfbProbe: "1", nonce: nonce });
+      if (!ExtAction_verifyProbeResponse_(probe.body, nonce, secret)) {
+        return {
+          ok: false,
+          code: "DEST_UNVERIFIED",
+          error: "宛先を外部アクション受信アプリとして確認できませんでした（誤送信防止）。送信先 URL とシークレットの設定を確認してください。",
+        };
+      }
+    }
+
+    // Phase2（または検証なし）: 本 payload を送信する。
+    return ExtAction_postRelay_(url, { payload: JSON.stringify(payload) });
   });
 }

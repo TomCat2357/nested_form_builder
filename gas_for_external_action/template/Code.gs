@@ -29,6 +29,14 @@
 // 実際の業務処理 (シート転記・別 API 呼び出し等) は handleSearchPayload_ /
 // handleRecordPayload_ の中に追記して使う。
 //
+// ■ 誤送信防止ハンドシェイク (任意):
+//   本体アプリ側の 外部アクション 設定で「誤送信防止シークレット」を設定すると、本体は
+//   データ送信の直前に { nfbProbe:"1", nonce } の軽量プローブを投げてくる。この Web App は
+//   Script Properties の NFB_EXT_ACTION_SECRET と同じ値のときだけ HMAC(nonce) 署名を返し、
+//   本体はそれを検証して一致したときだけ本データを送る (URL 打ち間違いによる誤送信を防止)。
+//   有効化するには: この GAS プロジェクトの Script Properties に NFB_EXT_ACTION_SECRET を
+//   登録し、本体フォーム側の同設定欄に同じ値を入れる。未設定なら従来どおり検証なしで届く。
+//
 // 動作確認はデプロイ不要。Test.gs の testDoPost_search / testDoPost_record /
 // testDoPost_adminStorage を GAS エディタから実行し、実行ログ (Logger) を見る。
 // =============================================================================
@@ -44,6 +52,18 @@ function doPost(e) {
     if (!payload.ok) {
       return relay ? renderJson_({ ok: false, message: payload.error })
                    : renderHtml_("エラー", escapeHtml_(payload.error), true);
+    }
+
+    // 誤送信防止ハンドシェイク（プローブ）への署名応答。機微処理は一切せず即返す。
+    // Script Properties の NFB_EXT_ACTION_SECRET と送信側フォームのシークレットが一致する
+    // ときだけ、本体側が検証できる HMAC(nonce) を返す。未設定なら nfbExternalAction:false。
+    if (payload.data && String(payload.data.nfbProbe) === "1") {
+      var probeSecret = PropertiesService.getScriptProperties().getProperty("NFB_EXT_ACTION_SECRET") || "";
+      var probeNonce = String(payload.data.nonce || "");
+      if (probeSecret === "" || probeNonce === "") {
+        return renderJson_({ ok: true, nfbExternalAction: false });
+      }
+      return renderJson_({ ok: true, nfbExternalAction: true, signature: Recv_hmacHex_(probeNonce, probeSecret) });
     }
 
     var result = dispatchPayload_(payload.data);
@@ -71,6 +91,20 @@ function doPost(e) {
 function renderJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj || {}))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+// 誤送信防止ハンドシェイク用 HMAC-SHA256(message, secret) を 16 進文字列で返す。
+// 本体側 ExtAction_hmacHex_ と同一実装にすること（署名が一致しないと送信が拒否される）。
+function Recv_hmacHex_(message, secret) {
+  var raw = Utilities.computeHmacSha256Signature(String(message == null ? "" : message), String(secret == null ? "" : secret));
+  var hex = "";
+  for (var i = 0; i < raw.length; i++) {
+    var b = (raw[i] + 256) % 256;
+    var s = b.toString(16);
+    if (s.length === 1) s = "0" + s;
+    hex += s;
+  }
+  return hex;
 }
 
 // GET でも開けるようにしておく (URL をブラウザで直接叩いたときの動作確認用)。

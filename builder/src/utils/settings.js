@@ -40,7 +40,7 @@ export const resolveSettingsCheckboxChecked = (field, value) => (
 
 export const EXTERNAL_ACTIONS_MAX = 3;
 
-const EMPTY_EXTERNAL_ACTION = Object.freeze({ label: "", url: "", adminOnly: false });
+const EMPTY_EXTERNAL_ACTION = Object.freeze({ label: "", url: "", adminOnly: false, handshakeSecret: "" });
 
 const sanitizeExternalActionList = (raw) => {
   const list = Array.isArray(raw) ? raw.slice(0, EXTERNAL_ACTIONS_MAX) : [];
@@ -54,6 +54,7 @@ const sanitizeExternalActionList = (raw) => {
       label: typeof item?.label === "string" ? item.label : "",
       url: typeof item?.url === "string" ? item.url : "",
       adminOnly: !!item?.adminOnly,
+      handshakeSecret: typeof item?.handshakeSecret === "string" ? item.handshakeSecret : "",
       showStyleSettings,
     };
     if (showStyleSettings) {
