@@ -121,6 +121,20 @@ export const totalPendingUpload = () =>
 
 export const hasAnyPendingUpload = () => totalPendingUpload() > 0;
 
+// フォームのオフライン保存（write-behind）が今まさに進行中か。
+// uploading は種別不問のアップロード中ジョブ数、pending.form は未送信のフォーム保存件数。
+// どちらかが立っていれば、自分のフォーム保存がまだサーバへ反映されきっていない可能性がある。
+export const isFormUploadInFlight = () =>
+  uploadSyncState.uploading > 0 || (Number(uploadSyncState.pending.form) || 0) > 0;
+
+// オフライン保存の反映前に getForm が走ると、サーバが一時的にフォームを解決できず
+// "Form not found" を返すことがある（ローカルにフォームは存在し、アップロード完了後の
+// 再同期で解消する一過性の不整合）。この状況ではハードエラー扱いせずリトライ／キャッシュ維持する。
+export const isTransientFormNotFoundDuringUpload = (error) => {
+  if (!error || !isFormUploadInFlight()) return false;
+  return String(toErrorMessage(error)).toLowerCase().includes("form not found");
+};
+
 export const defaultAlert = { showAlert: (message) => console.warn("[useEntries]", message) };
 
 export const buildFetchErrorMessage = (error) =>

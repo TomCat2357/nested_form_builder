@@ -17,6 +17,7 @@ import {
   buildFetchErrorMessage,
   shouldForceSync,
   shouldRetryListReadError,
+  isTransientFormNotFoundDuringUpload,
   canRetryOperationSync,
   getUnsyncedState,
   LOCK_WAIT_RETRY_MS,
@@ -139,7 +140,9 @@ export const useEntries = ({
           });
           break;
         } catch (error) {
-          const canRetry = shouldRetryListReadError(error) && retryAttempt < READ_RETRY_MAX_ATTEMPTS;
+          const canRetry =
+            (shouldRetryListReadError(error) || isTransientFormNotFoundDuringUpload(error)) &&
+            retryAttempt < READ_RETRY_MAX_ATTEMPTS;
           if (!canRetry) throw error;
           retryAttempt += 1;
           logSearchBackground("fetch:retry", {
@@ -217,6 +220,19 @@ export const useEntries = ({
       });
       return true;
     } catch (error) {
+      // オフライン保存（write-behind）が反映途中の一過性 "Form not found" は、ローカルに
+      // フォームが存在し次回同期で解消するため、ハードエラーで利用者を驚かせずキャッシュ表示を
+      // 維持する（リトライ上限後にここへ来た場合の保険。アップロード完了後の同期で回収される）。
+      if (isTransientFormNotFoundDuringUpload(error)) {
+        logSearchBackground("fetch:transient-form-not-found", {
+          background,
+          reason,
+          forceFullSync,
+          requestToken,
+          error: error?.message || String(error),
+        });
+        return false;
+      }
       console.error("[SearchPage] Failed to fetch and cache data:", error);
       logSearchBackground("fetch:error", {
         background,
