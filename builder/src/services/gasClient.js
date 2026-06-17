@@ -313,13 +313,17 @@ export const checkAdminEmailMembership = createGasEndpoint({
   }),
   defaultError: "Admin email membership check failed",
 });
+export const getExtActionSecret = createGasEndpoint({ fnName: "nfbGetExtActionSecret", validate: () => ({}), mapResult: (r) => r.extActionSecret || "", defaultError: "Get external action secret failed" });
+export const setExtActionSecret = createGasEndpoint({ fnName: "nfbSetExtActionSecret", mapResult: (r) => r.extActionSecret || "", defaultError: "Set external action secret failed" });
 export const getRestrictToFormOnly = async () => { const r = await fetchGasApi("nfbGetRestrictToFormOnly", {}, "Get restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
 export const setRestrictToFormOnly = async (value) => { const r = await fetchGasApi("nfbSetRestrictToFormOnly", value, "Set restrict to form only failed"); return Boolean(r.restrictToFormOnly); };
 // 外部アクション（externalAction）のサーバ間リレー送信。本体 GAS が UrlFetchApp で
 // 受信 Web アプリへ POST する（ブラウザの隠しフォーム POST に伴うログインリダイレクト
 // 問題を回避）。戻り値は { ok, status, body }。body は受信側応答（JSON 文字列 or HTML）。
-export const sendExternalAction = ({ url, payload, handshakeSecret = "" }) =>
-  fetchGasApi("nfbSendExternalAction", { url, payload, handshakeSecret }, "外部アクション送信に失敗しました");
+// 送信元シークレット（誤送信防止）は管理者設定（スクリプトプロパティ）で集中管理し、
+// 送信時はバックエンドが直接読む。フロントからは渡さない。
+export const sendExternalAction = ({ url, payload }) =>
+  fetchGasApi("nfbSendExternalAction", { url, payload }, "外部アクション送信に失敗しました");
 // 標準フォルダ構成（システムごとコピー / マッピング再構築）
 export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyExternalActions = false, rebuildMapping = true } = {}) => {
   if (!destRootUrl) throw new Error("コピー先プロジェクトフォルダの URL を指定してください");

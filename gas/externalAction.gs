@@ -92,8 +92,9 @@ function ExtAction_postRelay_(url, bodyObj) {
 }
 
 // 受信 Web アプリへ payload をサーバ間 POST する。
-// handshakeSecret が指定されたときは、本データを送る前に nonce プローブで宛先を検証し、
-// 共有シークレットの HMAC が一致した正規の受信アプリにだけ送信する（誤送信防止）。
+// 送信元シークレット（管理者設定 / スクリプトプロパティ）が設定されているときは、本データを
+// 送る前に nonce プローブで宛先を検証し、共有シークレットの HMAC が一致した正規の受信アプリ
+// にだけ送信する（誤送信防止）。
 // 戻り値は { ok, status, body } または { ok:false, error, code }（nfbSafeCall_ 経由）。
 function ExtAction_send_(raw) {
   return nfbSafeCall_(function() {
@@ -102,7 +103,9 @@ function ExtAction_send_(raw) {
       return { ok: false, error: "URL が不正です（http:// または https:// で始まる必要があります）。", code: "BAD_URL" };
     }
     var payload = (raw && raw.payload && typeof raw.payload === "object") ? raw.payload : {};
-    var secret = (raw && typeof raw.handshakeSecret === "string") ? raw.handshakeSecret.trim() : "";
+    // 送信元シークレットは管理者設定（スクリプトプロパティ）から読む。フォーム定義やフロント
+    // ペイロードには持たせない。空文字なら誤送信防止プローブなしで送信（後方互換）。
+    var secret = GetExtActionSecret_();
 
     if (secret !== "") {
       // Phase1: 機微データを含まないプローブで宛先を検証する（シークレットは送らない）。

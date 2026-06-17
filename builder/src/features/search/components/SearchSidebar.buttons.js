@@ -91,9 +91,8 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
     storageFields: formContext,
     gate,
   });
-  const handshakeSecret = typeof action.handshakeSecret === "string" ? action.handshakeSecret : "";
   try {
-    const res = await sendExternalAction({ url: resolvedUrl, payload, handshakeSecret });
+    const res = await sendExternalAction({ url: resolvedUrl, payload });
     const result = interpretExternalActionResponse(res);
     if (!result.ok) {
       // eslint-disable-next-line no-alert

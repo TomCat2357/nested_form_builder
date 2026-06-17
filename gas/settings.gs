@@ -27,6 +27,30 @@ function SetRestrictToFormOnly_(value) {
 }
 
 /**
+ * 外部アクションの送信元シークレット（誤送信防止ハンドシェイク用）を取得する
+ * 送信はプレビュー / 検索の一般ユーザーも行うため、プロパティ保存モードでゲートせず
+ * スクリプトプロパティから無条件で読む。未設定なら空文字（＝プローブなし送信）。
+ * @return {string}
+ */
+function GetExtActionSecret_() {
+  var props = Nfb_getScriptProperties_();
+  return props.getProperty(NFB_EXT_ACTION_SECRET) || "";
+}
+
+/**
+ * 外部アクションの送信元シークレットを設定する（管理者専用）
+ * @param {string} newSecret - 新しいシークレット（空文字で誤送信防止を無効化）
+ * @return {Object}
+ */
+function SetExtActionSecret_(newSecret) {
+  EnsureAdminSettingsEnabled_();
+  var props = Nfb_getScriptProperties_();
+  var secret = String(newSecret || "");
+  props.setProperty(NFB_EXT_ACTION_SECRET, secret);
+  return { ok: true, extActionSecret: secret };
+}
+
+/**
  * アクセス権限を判定する
  * @param {string} formParam - formパラメータ
  * @param {string} adminkeyParam - adminkeyパラメータ
@@ -129,6 +153,27 @@ function nfbGetRestrictToFormOnly() {
 function nfbSetRestrictToFormOnly(value) {
   return nfbSafeCall_(function() {
     return SetRestrictToFormOnly_(value);
+  });
+}
+
+/**
+ * 外部アクションの送信元シークレットを取得するAPI（管理者専用）
+ * @return {Object}
+ */
+function nfbGetExtActionSecret() {
+  return nfbSafeCall_(function() {
+    return { ok: true, extActionSecret: GetExtActionSecret_() };
+  });
+}
+
+/**
+ * 外部アクションの送信元シークレットを設定するAPI（管理者専用）
+ * @param {string} newSecret - 新しいシークレット
+ * @return {Object}
+ */
+function nfbSetExtActionSecret(newSecret) {
+  return nfbSafeCall_(function() {
+    return SetExtActionSecret_(newSecret);
   });
 }
 
