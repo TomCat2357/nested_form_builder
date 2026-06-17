@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="utf-8">
+  <style>
+    body {
+      font-family: 'Helvetica Neue', Arial, 'Hiragino Sans', 'Yu Gothic', sans-serif;
+      padding: 24px;
+      font-size: 14px;
+      color: #333;
+      margin: 0;
+      background: #f8f9fa;
+    }
+    .card {
+      max-width: 520px;
+      margin: 0 auto;
+      background: #fff;
+      border-radius: 8px;
+      padding: 20px 24px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+    h2 {
+      font-size: 16px;
+      margin: 0 0 12px;
+      color: #1A73E8;
+    }
+    .target {
+      background: #f1f3f4;
+      border-radius: 4px;
+      padding: 8px 10px;
+      font-size: 13px;
+      color: #444;
+      word-break: break-all;
+    }
+    .target .label {
+      font-weight: bold;
+      color: #5f6368;
+      margin-right: 6px;
+    }
+    .op {
+      margin-top: 18px;
+      padding-top: 16px;
+      border-top: 1px solid #eee;
+    }
+    .op h3 {
+      font-size: 14px;
+      margin: 0 0 4px;
+      color: #202124;
+    }
+    .op .desc {
+      font-size: 12px;
+      color: #666;
+      margin: 0 0 10px;
+      line-height: 1.5;
+    }
+    label {
+      display: block;
+      margin: 8px 0 4px;
+      font-weight: bold;
+      font-size: 13px;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 6px;
+      box-sizing: border-box;
+      font-size: 13px;
+    }
+    button {
+      padding: 8px 16px;
+      background: #1A73E8;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    button:disabled {
+      background: #ccc;
+      cursor: not-allowed;
+    }
+    #status {
+      margin-top: 16px;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 13px;
+      min-height: 18px;
+    }
+    .status-info { background: #e3f2fd; }
+    .status-success { background: #e8f5e9; }
+    .status-error { background: #ffebee; color: #c62828; white-space: pre-wrap; }
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid #ccc;
+      border-top-color: #1A73E8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>NFB シートユーティリティ</h2>
+
+    <input type="hidden" id="ssid" value="<?= ssid ?>">
+    <div class="target">
+      <span class="label">操作先</span><?= ssName ? ssName : ssid ?>
+      <span class="label" style="margin-left:8px;">シート</span><?= sheetName ?>
+    </div>
+
+    <div class="op">
+      <h3>1. createdAt 順にソート</h3>
+      <p class="desc">データ行（12 行目以降）を createdAt 列の昇順で並べ替えます。modifiedAt は更新しません。</p>
+      <button class="opBtn" onclick="runSort()">createdAt 順にソート</button>
+    </div>
+
+    <div class="op">
+      <h3>2. No. リナンバー</h3>
+      <p class="desc">No. 列を上から連番で振り直します（削除済み行は空欄）。modifiedAt は更新しません。</p>
+      <button class="opBtn" onclick="runRenumber()">No. リナンバー</button>
+    </div>
+
+    <div class="op">
+      <h3>3. フォーム順で列を並べ替え</h3>
+      <p class="desc">フォーム JSON の順序に合わせて動的列（9 列目以降）を並べ替えます。固定列はそのまま、フォームに無い列は末尾へ。modifiedAt は更新しません。</p>
+      <label for="formUrl">フォーム JSON の Google Drive URL / 共有リンク / ファイル ID</label>
+      <input type="text" id="formUrl" placeholder="https://drive.google.com/file/d/.../view">
+      <div style="margin-top:10px;">
+        <button class="opBtn" onclick="runReorder()">フォーム順で列を並べ替え</button>
+      </div>
+    </div>
+
+    <div id="status"></div>
+  </div>
+
+  <script>
+    function setBusy(message) {
+      var btns = document.getElementsByClassName("opBtn");
+      for (var i = 0; i < btns.length; i++) btns[i].disabled = true;
+      var status = document.getElementById("status");
+      status.className = "status-info";
+      status.innerHTML = '<span class="spinner"></span>' + message;
+    }
+
+    function clearBusy() {
+      var btns = document.getElementsByClassName("opBtn");
+      for (var i = 0; i < btns.length; i++) btns[i].disabled = false;
+    }
+
+    function showSuccess(text) {
+      clearBusy();
+      var status = document.getElementById("status");
+      status.className = "status-success";
+      status.textContent = text;
+    }
+
+    function showError(text) {
+      clearBusy();
+      var status = document.getElementById("status");
+      status.className = "status-error";
+      status.textContent = text;
+    }
+
+    function ssid() {
+      return document.getElementById("ssid").value;
+    }
+
+    function runSort() {
+      if (!confirm("データ行を createdAt 順にソートします。よろしいですか？")) return;
+      setBusy("ソート中…");
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.ok) {
+            showSuccess("createdAt 順にソートしました（" + result.sortedRows + " 行）。");
+          } else {
+            showError("エラー：" + (result && result.error ? result.error : "不明なエラー"));
+          }
+        })
+        .withFailureHandler(function(err) {
+          showError("実行エラー：" + (err && err.message ? err.message : err));
+        })
+        .runSortByCreatedAt({ ssid: ssid() });
+    }
+
+    function runRenumber() {
+      if (!confirm("No. 列を連番で振り直します。よろしいですか？")) return;
+      setBusy("リナンバー中…");
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.ok) {
+            showSuccess("No. をリナンバーしました（" + result.numbered + " 件に番号付与、削除済みは空欄）。");
+          } else {
+            showError("エラー：" + (result && result.error ? result.error : "不明なエラー"));
+          }
+        })
+        .withFailureHandler(function(err) {
+          showError("実行エラー：" + (err && err.message ? err.message : err));
+        })
+        .runRenumber({ ssid: ssid() });
+    }
+
+    function runReorder() {
+      var formUrl = document.getElementById("formUrl").value;
+      if (!formUrl || !formUrl.replace(/^\s+|\s+$/g, "")) {
+        showError("フォーム JSON の URL を入力してください。");
+        return;
+      }
+      if (!confirm("シートの列をフォーム順に並べ替えます。よろしいですか？")) return;
+      setBusy("列を並べ替え中…");
+      google.script.run
+        .withSuccessHandler(function(result) {
+          if (result && result.ok) {
+            if (result.changed === false) {
+              showSuccess(result.message || "列の順序は既にフォーム順です。変更の必要はありません。");
+            } else {
+              showSuccess(
+                "列をフォーム順に並べ替えました。\n" +
+                "動的列: " + result.dynamicCols + " 列\n" +
+                "（フォーム由来: " + result.formCols + " 列）"
+              );
+            }
+          } else {
+            showError("エラー：" + (result && result.error ? result.error : "不明なエラー"));
+          }
+        })
+        .withFailureHandler(function(err) {
+          showError("実行エラー：" + (err && err.message ? err.message : err));
+        })
+        .runReorderColumns({ ssid: ssid(), formUrl: formUrl });
+    }
+  </script>
+</body>
+</html>
