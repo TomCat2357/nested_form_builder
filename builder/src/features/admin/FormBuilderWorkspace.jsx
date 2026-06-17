@@ -3,7 +3,7 @@ import EditorPage from "../editor/EditorPage.jsx";
 import PreviewPage from "../preview/PreviewPage.jsx";
 import SearchPreviewPanel from "./SearchPreviewPanel.jsx";
 import { DEFAULT_SETTINGS } from "../../core/storage.js";
-import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, validateLabelCharacters, validateNumberFieldConfigs, MAX_DEPTH, countSchemaNodes } from "../../core/schema.js";
+import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, validateLabelCharacters, validateNumberFieldConfigs, MAX_DEPTH } from "../../core/schema.js";
 import { detectCircularReferences, validateSubstitutionTemplates } from "../../core/computedFields.js";
 import { runSelfTests } from "../../core/selfTests.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
@@ -62,18 +62,10 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
       const schemaDirty = !deepEqual(initialSchemaRef.current, schema);
       const settingsDirty = !deepEqual(omitThemeSetting(initialSettingsRef.current), omitThemeSetting(settings));
       if (schemaDirty || settingsDirty) {
-        console.log("[FormBuilderWorkspace] keep working copy; skip reset during dirty edit", {
-          cachedSchemaNodeCount: countSchemaNodes(schema),
-          incomingSchemaNodeCount: countSchemaNodes(normalized),
-        });
         return;
       }
     }
 
-    console.log("[FormBuilderWorkspace] reset from incoming props", {
-      previousSchemaNodeCount: countSchemaNodes(initialSchemaRef.current),
-      nextSchemaNodeCount: countSchemaNodes(normalized),
-    });
     setSchema(normalized);
     setSettings((prev) => (deepEqual(prev, mergedSettings) ? prev : mergedSettings));
 

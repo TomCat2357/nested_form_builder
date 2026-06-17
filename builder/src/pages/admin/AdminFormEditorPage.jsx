@@ -21,7 +21,6 @@ import { SettingsGroupFields } from "../../features/settings/SettingsField.jsx";
 import ExternalActionsEditor from "../../features/settings/ExternalActionsEditor.jsx";
 import { DEFAULT_THEME } from "../../app/theme/theme.js";
 import SchemaMapNav from "../../features/nav/SchemaMapNav.jsx";
-import { countSchemaNodes } from "../../core/schema.js";
 import { buildFormIndex } from "../../features/analytics/utils/formIdentifierResolver.js";
 import {
   schemaTemplateFormRefsToIds,
@@ -97,12 +96,6 @@ export default function AdminFormEditorPage() {
     }
     if (!currentForm) return;
     if (isSavingRef.current) {
-      console.log("[AdminFormEditorPage] defer applying refreshed form during save", {
-        formId,
-        cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
-        incomingSchemaNodeCount: countSchemaNodes(currentForm?.schema),
-        incomingModifiedAt: currentForm?.modifiedAt ?? null,
-      });
       return;
     }
 
@@ -110,24 +103,11 @@ export default function AdminFormEditorPage() {
     // ビルダーの同期 isDirty()（builder 同期）を併用し、「編集開始直後でフラグ未伝播」の
     // 窓でも作業コピーを取り込みで潰さない。
     if (isDirty || builderRef.current?.isDirty?.()) {
-      console.log("[AdminFormEditorPage] defer applying refreshed form during dirty edit", {
-        formId,
-        cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
-        incomingSchemaNodeCount: countSchemaNodes(currentForm?.schema),
-        incomingModifiedAt: currentForm?.modifiedAt ?? null,
-      });
       return;
     }
 
     setCachedForm((prevForm) => {
       if (prevForm === currentForm) return prevForm;
-      console.log("[AdminFormEditorPage] apply refreshed form", {
-        formId,
-        previousSchemaNodeCount: countSchemaNodes(prevForm?.schema),
-        incomingSchemaNodeCount: countSchemaNodes(currentForm?.schema),
-        previousModifiedAt: prevForm?.modifiedAt ?? null,
-        incomingModifiedAt: currentForm?.modifiedAt ?? null,
-      });
       return currentForm;
     });
   }, [currentForm, formId, isDirty, isDirtyRef, isEdit, cachedFormRef, isSavingRef]);
@@ -135,19 +115,9 @@ export default function AdminFormEditorPage() {
   useEffect(() => {
     if (!form) return;
     if (isSavingRef.current) {
-      console.log("[AdminFormEditorPage] defer applying form meta during save", {
-        formId,
-        cachedSchemaNodeCount: countSchemaNodes(form?.schema),
-        modifiedAt: form?.modifiedAt ?? null,
-      });
       return;
     }
     if (isDirty || builderRef.current?.isDirty?.()) {
-      console.log("[AdminFormEditorPage] defer applying form meta during dirty edit", {
-        formId,
-        cachedSchemaNodeCount: countSchemaNodes(form?.schema),
-        modifiedAt: form?.modifiedAt ?? null,
-      });
       return;
     }
     const formTitle = form.settings?.formTitle || "";
@@ -168,16 +138,8 @@ export default function AdminFormEditorPage() {
     refreshForms,
     label: "admin-form-editor",
     shouldSkip: () => isSavingRef.current || isReadLockedRef.current || isDirtyRef.current || !!builderRef.current?.isDirty?.(),
-    onRefresh: async (source, cacheDecision) => {
+    onRefresh: async (source) => {
       await withReadLock(async () => {
-        console.log("[AdminFormEditorPage] run refreshForms from operation trigger", {
-          formId,
-          source,
-          cacheAgeMs: cacheDecision.age,
-          shouldSync: cacheDecision.shouldSync,
-          shouldBackground: cacheDecision.shouldBackground,
-          cachedSchemaNodeCount: countSchemaNodes(cachedFormRef.current?.schema),
-        });
         await dataStore.getForm(formId);
         await refreshForms({ reason: `operation:${source}:admin-form-editor`, background: false });
       });

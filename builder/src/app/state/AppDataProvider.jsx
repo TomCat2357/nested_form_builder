@@ -23,7 +23,6 @@ const AppDataContext = createContext(null);
 const saveCacheWithErrorHandling = async (forms, loadFailures, setCacheDisabled, propertyStoreMode, logPrefix = "saveCache") => {
   try {
     await saveFormsToCache(forms, loadFailures, propertyStoreMode);
-    console.log(`[${logPrefix}] Cache updated`);
   } catch (err) {
     console.warn(`[${logPrefix}] Failed to update cache:`, err);
     setCacheDisabled(true);
@@ -147,8 +146,6 @@ export function AppDataProvider({ children }) {
   useEffect(() => {
     // 起動時の読み込みロジック
     (async () => {
-      const startedAt = Date.now();
-      console.log("[AppDataProvider] Startup - checking cache...");
       let cacheApplied = false;
       let cachedForms = [];
       let cachedFailures = [];
@@ -167,17 +164,12 @@ export function AppDataProvider({ children }) {
 
         // プロパティ保存モードが変わった場合はキャッシュを無効化して強制再同期
         if (hasCachedData && cachedPropertyStoreMode !== propertyStoreModeRef.current) {
-          console.log("[AppDataProvider] Property store mode changed; forcing fresh sync", {
-            cachedMode: cachedPropertyStoreMode,
-            currentMode: propertyStoreModeRef.current,
-          });
           await refreshForms({ reason: "mode-changed", background: false });
           setLoadingForms(false);
           return;
         }
 
         if (hasCachedData) {
-          console.log("[AppDataProvider] Loaded from cache:", cachedForms.length, "forms (age:", cacheAge, "ms)");
           perfLogger.logFormCacheHit(cacheAge || 0, cachedForms.length);
           setForms(cachedForms);
           setLoadFailures(cachedFailures);
@@ -198,7 +190,6 @@ export function AppDataProvider({ children }) {
         });
 
         if (shouldSync) {
-          console.log("[AppDataProvider] Cache stale or missing; fetching synchronously", { cacheAgeMs, cacheLastSyncedAt, hasCachedData });
           await refreshForms({ reason: "startup-sync", background: false });
           setLoadingForms(false);
           return;
@@ -208,15 +199,11 @@ export function AppDataProvider({ children }) {
         setLoadingForms(false);
 
         if (shouldBackground) {
-          console.log("[AppDataProvider] Cache is fresh enough; background refresh scheduled");
           refreshForms({ reason: "startup-background", background: true }).catch((err) => {
             console.error("[AppDataProvider] Background refresh error:", err);
             setError(err.message || "フォームの取得に失敗しました");
           });
         }
-
-        const finishedAt = Date.now();
-        console.log("[AppDataProvider] Startup complete in", finishedAt - startedAt, "ms");
       } catch (err) {
         console.error("[AppDataProvider] Startup error:", err);
         setError(err.message || "フォームの取得に失敗しました");
