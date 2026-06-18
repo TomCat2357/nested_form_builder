@@ -17,7 +17,7 @@ import { FULL_QUERY_SUBST_RE } from "../../core/constants.js";
 import { prefetchQueryTokens } from "../../utils/tokenReplacer.js";
 import { subscribeChildFormChange } from "../../app/state/childRecordsMemoryStore.js";
 import { evaluateCacheForRecords } from "../../app/state/cachePolicy.js";
-import { buildBackfilledRecord } from "./backfillComputedValues.js";
+import { buildBackfilledRecord, selectFreshComputedWritePaths, rememberComputedWrites } from "./backfillComputedValues.js";
 import { buildSearchTableLayout, buildHeaderRowsLayout, createHitExcerptColumn, createBaseColumns, buildSimpleSearchColumns, DEFAULT_HIT_COLUMN_MIN_WIDTH } from "./searchTable.js";
 import { buildExportTableData } from "./searchExport.js";
 import { hasScriptRun, listRecordsByPids } from "../../services/gasClient.js";
@@ -291,6 +291,9 @@ export function useSearchPageState({
   const [recomputePending, setRecomputePending] = useState(false);
   // full-query を行ごとに 1 回だけ prefetch するための解決済み id 集合（再 prefetch を避ける）。
   const resolvedQueryIdsRef = useRef(new Set());
+  // 置換再計算の書き戻し冪等化メモ: `${recordId} ${path}` → 直近に書き戻した計算値。
+  // 同じ計算値を毎サイクル打ち直して「未アップロード」警告が永久に再武装するのを防ぐ（churn 対策）。
+  const writtenComputedValuesRef = useRef(new Map());
 
   // pid → { [fieldId]: 子フォーム合成オブジェクト }（tokenContext.childFormMeta 形）。
   const getChildFormMetaForPid = useCallback((pid) => {
@@ -740,6 +743,7 @@ export function useSearchPageState({
   // 破棄後は recompute 側が再解決トークンで full-query 値を上書きする（可視行から順次）。
   useEffect(() => {
     resolvedQueryIdsRef.current = new Set();
+    writtenComputedValuesRef.current = new Map();
     setQueryTokensByEntry((prev) => (prev.size === 0 ? prev : new Map()));
   }, [fullQueryTemplates, effectiveFormId]);
 
@@ -820,9 +824,15 @@ export function useSearchPageState({
         };
         const result = recomputeComputedFieldValues(normalizedSchema, entry.data, tokenContext, writeFieldIds);
         if (!result.changed) continue;
+        // 冪等ガード: 既に同じ計算値を書き戻した path しか無ければ再打刻しない（churn 防止）。
+        // 往復後の保存値が一致しないケースでも、同じ値の再打刻＝「未アップロード」再武装を抑止する。
+        const memo = writtenComputedValuesRef.current;
+        const freshPaths = selectFreshComputedWritePaths(id, result.changedPaths, result.data, memo);
+        if (freshPaths.length === 0) continue;
         const next = buildBackfilledRecord(entry, result, { now, userEmail });
         if (!next) continue;
         await upsertRecordInCache(effectiveFormId, next, { headerMatrix, schemaHash });
+        rememberComputedWrites(id, result.changedPaths, result.data, memo);
         wroteAny = true;
       }
       if (!isCancelled() && wroteAny) await reloadFromCache();
