@@ -70,11 +70,6 @@ export default function ChartStyleControls({
     showAxisCustomization,
   } = getChartControlVisibility(vizType);
 
-  // この vizType ではカスタマイズ項目がひとつも無い → 何も描画しない
-  if (!showLineControls && !showPointControls && !showAxisLabels && !showSeriesColors) {
-    return null;
-  }
-
   const cs = useMemo(() => normalizeChartStyle(chartStyle), [chartStyle]);
   const setCs = (patch) => onChartStyleChange?.({ ...cs, ...patch });
   const { setPath: setCsPath } = useStylePathSetter(cs, onChartStyleChange);
@@ -120,6 +115,12 @@ export default function ChartStyleControls({
 
   const dashStr = dashToString(ls.borderDash);
   const isDashPreset = DASH_PRESETS.some((p) => p.value === dashStr);
+
+  // この vizType ではカスタマイズ項目がひとつも無い → 何も描画しない。
+  // フック規則を満たすため、全フック呼び出しの後で early return する。
+  if (!showLineControls && !showPointControls && !showAxisLabels && !showSeriesColors) {
+    return null;
+  }
 
   return (
     <div style={{ marginBottom: "10px", padding: "8px 10px", border: "1px solid var(--nf-border)", borderRadius: 4 }}>
