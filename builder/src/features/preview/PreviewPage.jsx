@@ -14,7 +14,6 @@ import { genRecordId } from "../../core/ids.js";
 import { resolveTemplateTokens, resolveTemplateTokensAsync, precompileTemplateTokens, prefetchQueryTokens, resolveQueryTokensInTemplate } from "../../utils/tokenReplacer.js";
 import { extractReservedRefs } from "../../features/expression/templateEvaluator.js";
 import { evaluateAllComputedFields } from "../../core/computedFields.js";
-import { traverseSchema } from "../../core/schemaUtils.js";
 import { buildLiveViewRow } from "../analytics/entriesToViewRows.js";
 import {
   buildPrintDocumentPayload,
@@ -54,10 +53,8 @@ import { dataStore } from "../../app/state/dataStore.js";
 import { getRecordsFromCache } from "../../app/state/recordsMemoryStore.js";
 import { useFormContext, useChildForm } from "../../app/state/formContext.jsx";
 import { RendererRecursive } from "./FieldRenderer.jsx";
+import { collectTemplateTexts, detectFullQuerySubstitution } from "./previewTemplates.js";
 
-// 置換フィールドの templateText が full-query トークン（`{{SELECT ...}}`）を含むかの判定。
-// 含むときだけ、入力中のライブ値で `_form` を再解決する（デバウンス再評価・保存時 await）。
-const FULL_QUERY_SUBST_RE = /\{\{\s*SELECT\b/i;
 // 入力中の full-query 置換を再解決するデバウンス（ms）。検索バーと同じ既定値。
 const LIVE_QUERY_DEBOUNCE_MS = 300;
 
@@ -117,22 +114,13 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       const current = prev || {};
       let changed = false;
       const next = { ...current };
-      const appliedKeys = [];
       Object.keys(defaultNowMap).forEach((key) => {
         const currentValue = next[key];
         if (currentValue === undefined || currentValue === null || currentValue === "") {
           next[key] = defaultNowMap[key];
           changed = true;
-          appliedKeys.push(key);
         }
       });
-      if (changed) {
-        console.log("[PreviewPage] defaultNow values applied", {
-          recordId: settings.recordId || null,
-          appliedCount: appliedKeys.length,
-          appliedKeys: appliedKeys.slice(0, 8),
-        });
-      }
       return changed ? next : current;
     });
   }, [defaultNowMap, setResponses, settings.recordId]);
@@ -322,17 +310,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   // alasql のロード + コンパイルが完了したら epoch を進めて再評価をトリガする。
   const [precompileEpoch, setPrecompileEpoch] = useState(0);
   useCancellable(async (isCancelled) => {
-    const templates = [];
-    traverseSchema(schema, (field) => {
-      if (typeof field?.templateText === "string" && field.templateText.indexOf("{") >= 0) {
-        templates.push(field.templateText);
-      }
-      const action = field?.printTemplateAction;
-      if (action && typeof action === "object") {
-        const fn = action.fileNameTemplate;
-        if (typeof fn === "string" && fn.indexOf("{") >= 0) templates.push(fn);
-      }
-    });
+    const templates = collectTemplateTexts(schema, { includePrintFileName: true });
     if (templates.length === 0) return;
     try {
       await Promise.all(templates.map((t) => precompileTemplateTokens(t)));
@@ -346,14 +324,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
 
   // 置換 full-query を「入力中のライブ値」で解決するための補助。full-query 置換が無ければ
   // 何もしない（高速パス）。
-  const hasFullQuerySubstitution = useMemo(() => {
-    let found = false;
-    traverseSchema(schema, (field) => {
-      if (found || field?.type !== "substitution") return;
-      if (typeof field?.templateText === "string" && FULL_QUERY_SUBST_RE.test(field.templateText)) found = true;
-    });
-    return found;
-  }, [schema]);
+  const hasFullQuerySubstitution = useMemo(() => detectFullQuerySubstitution(schema), [schema]);
 
   // full-query 解決へ渡すフォーム群。現フォーム（プレビュー中のライブ schema）に加え、
   // 「別フォームを開く（formLink）」で紐づく子フォーム定義を含める。これにより full-query で
@@ -505,12 +476,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   useCancellable(async (isCancelled) => {
     // schema/formId/entryId が変わるたびに「未完了」へ戻す（初回は同値で React がバイパス）。
     setQueryTokensReady(false);
-    const templates = [];
-    traverseSchema(schema, (field) => {
-      if (typeof field?.templateText === "string" && field.templateText.indexOf("{") >= 0) {
-        templates.push(field.templateText);
-      }
-    });
+    const templates = collectTemplateTexts(schema);
     if (templates.length === 0) {
       // prefetch すべき full-query が無い＝完了扱い（万一の欠落トークンは警告対象にする）。
       if (!isCancelled()) setQueryTokensReady(true);
@@ -842,12 +808,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       let saveOrder = sortedKeys;
       if (hasFullQuerySubstitution) {
         try {
-          const fqTemplates = [];
-          traverseSchema(schema, (field) => {
-            if (field?.type === "substitution" && typeof field?.templateText === "string" && field.templateText.indexOf("{") >= 0) {
-              fqTemplates.push(field.templateText);
-            }
-          });
+          const fqTemplates = collectTemplateTexts(schema, { substitutionOnly: true });
           const freshMap = await prefetchQueryTokens(fqTemplates.join("\n"), {
             recordId: recordIdRef.current,
             formId: settings.formId || "",

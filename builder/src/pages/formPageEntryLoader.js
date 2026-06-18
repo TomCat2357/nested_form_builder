@@ -72,13 +72,6 @@ export async function performFormPageEntryLoad(runtime, ctx) {
     const responseCount = Object.keys(currentResponses).length;
 
     if (newEntryInitKeyRef.current === newEntryKey) {
-      if (responseCount > 0) {
-        console.log("[FormPage] skip new-entry reinitialize", {
-          formId,
-          responseCount,
-          isDirty: isDirtyRef.current,
-        });
-      }
       setLoading(false);
       return;
     }
@@ -92,12 +85,6 @@ export async function performFormPageEntryLoad(runtime, ctx) {
     } catch (_e) { /* ignore */ }
 
     if (responseCount > 0 || hasDraft) {
-      console.log("[FormPage] keep existing responses or draft in new-entry mode", {
-        formId,
-        responseCount,
-        hasDraft,
-        isDirty: isDirtyRef.current,
-      });
       newEntryInitKeyRef.current = newEntryKey;
       setLoading(false);
       return;

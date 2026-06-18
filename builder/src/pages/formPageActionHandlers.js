@@ -13,7 +13,6 @@ import { traverseSchema } from "../core/schemaUtils.js";
 import { GAS_ERROR_CODE_LOCK_TIMEOUT } from "../core/constants.js";
 import { restoreResponsesFromData } from "../utils/responses.js";
 import { DriveFolderFinalizeError } from "./formPageSaveHandler.js";
-import { toResponseObject } from "./formPageHelpers.js";
 import { selectFormLinkCopyTargets, copyChildRecordsForLinks } from "./childRecordCopy.js";
 
 /**
@@ -130,20 +129,9 @@ export async function performFormPageOperationCacheCheck({ source }, ctx) {
     } catch (error) {
       console.error("[FormPage] operation cache check failed:", error);
     }
-  } else if (!entryId && isDirtyRef.current) {
-    console.log("[FormPage] operation cache check during unsaved new-entry edit", {
-      formId,
-      source,
-      responseCount: Object.keys(toResponseObject(responsesRef.current)).length,
-    });
   }
 
   if (isDirtyRef.current && !isViewModeRef.current) {
-    console.log("[FormPage] defer refreshForms during dirty edit", {
-      formId,
-      entryId: entryId || "new",
-      source,
-    });
     return;
   }
 

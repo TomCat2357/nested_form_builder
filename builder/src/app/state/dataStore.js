@@ -579,7 +579,6 @@ export const dataStore = {
     // GAS側で「行がずれている（違うIDが返ってきた）」または「見つからなかった（削除された）」場合、
     // 単一取得を諦めて差分更新リスト取得にフォールバックする
     if (!result.ok || !result.record || result.record.id !== entryId) {
-      console.log("[dataStore.getEntry] row mismatch or deleted. falling back to delta listEntries.");
       const listResult = await this.listEntries(formId, buildGetEntryFallbackListEntriesOptions());
       return listResult.entries.find(e => e.id === entryId) || null;
     }

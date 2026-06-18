@@ -227,10 +227,6 @@ export default function FormPage() {
   useEffect(() => {
     if (!currentForm) return;
     if (cachedForm && isDirty && !isViewMode) {
-      console.log("[FormPage] defer applying refreshed form during dirty edit", {
-        formId,
-        entryId: entryId || "new",
-      });
       return;
     }
     setCachedForm(currentForm);
@@ -249,13 +245,6 @@ export default function FormPage() {
       return;
     }
     if (formLoadedStateRef.current !== isFormLoaded) {
-      console.log("[FormPage] isFormLoaded changed", {
-        formId,
-        entryId: entryId || "new",
-        from: formLoadedStateRef.current,
-        to: isFormLoaded,
-        loadingForms: loadingFormsRef.current,
-      });
       formLoadedStateRef.current = isFormLoaded;
     }
   }, [isFormLoaded, formId, entryId, loadingFormsRef]);

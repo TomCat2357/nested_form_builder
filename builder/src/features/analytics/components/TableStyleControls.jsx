@@ -11,6 +11,15 @@ import {
   COLUMN_OVERRIDE_EDGES,
 } from "../utils/tableStyle.js";
 import { parseRowSelector, parseColumnSelector } from "../utils/tableStyleRowSelector.js";
+import {
+  applyAddOverride,
+  applyUpdateOverride,
+  applyRemoveOverride,
+  applySetMinMaxWidth,
+  applyAddColumnWidth,
+  applyUpdateColumnWidth,
+  applyRemoveColumnWidth,
+} from "../utils/tableStyleMutations.js";
 import HeatmapStyleControls from "./HeatmapStyleControls.jsx";
 import { LABEL_STYLE, HEADER_LABEL_STYLE, RESET_BUTTON_STYLE } from "../utils/styleConstants.js";
 import { useStylePathSetter } from "./useStylePathSetter.js";
@@ -55,75 +64,28 @@ export default function TableStyleControls({
   // 罫線オーバーライド / 列幅などの多段更新は cloneBase 経由、リーフ更新は setPath 経由。
   const { cloneBase, setPath } = useStylePathSetter(isUnset ? DEFAULT_TABLE_STYLE : tableStyle, onChange);
 
-  const addOverride = (target) => {
-    const next = cloneBase();
-    if (!Array.isArray(next.border.overrides)) next.border.overrides = [];
-    next.border.overrides.push({
-      target,
-      selector: "",
-      edges: "both",
-      width: 1,
-      color: "",
-      style: "solid",
-    });
-    onChange(next);
-  };
+  // 罫線オーバーライド / 列幅の不変更新ロジックは tableStyleMutations.js（純関数）へ集約。
+  // ここでは cloneBase() を渡し、戻り値を onChange へ流すだけ（更新系で null＝対象なしは no-op）。
+  const addOverride = (target) => onChange(applyAddOverride(cloneBase(), target));
 
   const updateOverride = (idx, patch) => {
-    const next = cloneBase();
-    const list = next.border.overrides || [];
-    if (!list[idx]) return;
-    list[idx] = { ...list[idx], ...patch };
-    onChange(next);
+    const next = applyUpdateOverride(cloneBase(), idx, patch);
+    if (next) onChange(next);
   };
 
-  const removeOverride = (idx) => {
-    const next = cloneBase();
-    const list = next.border.overrides || [];
-    list.splice(idx, 1);
-    onChange(next);
-  };
-
-  // 列幅 (列ごと widths + min/max) ハンドラ。
-  // 古い質問データには column プロパティが無いことがあるので、addColumnWidth と同様に
-  // cloneBase 後にガードを噛ませて初期化する。setPath はリーフのみを更新するので
-  // 「列幅」セクション全体を扱うときはこのヘルパー経由にする。
-  const ensureColumn = (next) => {
-    if (!next.column) next.column = { minWidth: null, maxWidth: null, widths: [] };
-    if (!Array.isArray(next.column.widths)) next.column.widths = [];
-    if (!("minWidth" in next.column)) next.column.minWidth = null;
-    if (!("maxWidth" in next.column)) next.column.maxWidth = null;
-  };
+  const removeOverride = (idx) => onChange(applyRemoveOverride(cloneBase(), idx));
 
   // 空文字 → null (未設定 sentinel)、数値 → Number()。normalize で範囲外はクランプ済み。
-  const setMinMaxWidth = (key, value) => {
-    const next = cloneBase();
-    ensureColumn(next);
-    next.column[key] = value === "" || value === null ? null : Number(value);
-    onChange(next);
-  };
+  const setMinMaxWidth = (key, value) => onChange(applySetMinMaxWidth(cloneBase(), key, value));
 
-  const addColumnWidth = () => {
-    const next = cloneBase();
-    ensureColumn(next);
-    next.column.widths.push({ column: "", width: COLUMN_WIDTH_MIN });
-    onChange(next);
-  };
+  const addColumnWidth = () => onChange(applyAddColumnWidth(cloneBase(), COLUMN_WIDTH_MIN));
 
   const updateColumnWidth = (idx, patch) => {
-    const next = cloneBase();
-    ensureColumn(next);
-    if (!next.column.widths[idx]) return;
-    next.column.widths[idx] = { ...next.column.widths[idx], ...patch };
-    onChange(next);
+    const next = applyUpdateColumnWidth(cloneBase(), idx, patch);
+    if (next) onChange(next);
   };
 
-  const removeColumnWidth = (idx) => {
-    const next = cloneBase();
-    ensureColumn(next);
-    next.column.widths.splice(idx, 1);
-    onChange(next);
-  };
+  const removeColumnWidth = (idx) => onChange(applyRemoveColumnWidth(cloneBase(), idx));
 
   const reset = () => onChange(null);
 

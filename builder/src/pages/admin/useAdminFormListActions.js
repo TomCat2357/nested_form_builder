@@ -246,9 +246,6 @@ export function useAdminFormListActions({
         } else {
           showAlert(`取り込めるフォームはありませんでした${detail}${saveFailedDetail}。`);
         }
-        console.log(
-          `[DriveImport] success=${imported}, alreadyRegistered=${skipped}, parseFailed=${parseFailed}, saveFailed=${saveFailed}`,
-        );
       } catch (error) {
         console.error("[DriveImport] import workflow failed", error);
         showAlert(error?.message || "スキーマの取り込み中にエラーが発生しました");

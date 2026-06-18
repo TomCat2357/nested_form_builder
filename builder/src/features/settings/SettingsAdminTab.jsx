@@ -25,39 +25,13 @@ import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { questionCache, dashboardCache } from "../../features/analytics/analyticsCache.js";
 import { triggerBlobDownload } from "../../utils/fileDownload.js";
-
-const normalizeAdminEmailInput = (value) => String(value || "")
-  .split(";")
-  .map((item) => item.trim())
-  .filter(Boolean)
-  .join(";");
-
-// 既リンク資産のうち標準フォルダ構成外だったものを構成内へコピーした件数と、
-function buildMembershipFailMessage({ userEmail, reason, groupErrors, detail }) {
-  const safeUser = userEmail || "不明";
-  if (reason === "missing_current_user_email") {
-    return "現在ユーザーのメールアドレスを取得できませんでした。Google アカウントにログインし直してから再度お試しください。";
-  }
-  if (reason === "group_fetch_failed") {
-    const entries = Object.entries(groupErrors || {});
-    const lines = entries.length
-      ? entries.map(([group, message]) => `・${group}: ${message}`).join("\n")
-      : "（詳細不明）";
-    return (
-      `現在のアカウント（${safeUser}）が管理者メンバーであるか確認できませんでした。\n` +
-      `以下のグループのメンバー取得に失敗しました:\n${lines}\n\n` +
-      `権限不足・外部グループ・削除済みグループの可能性があります。\n` +
-      `回避策: 自分のメールアドレスを管理者リストに直接追加してから保存してください。`
-    );
-  }
-  if (reason === "not_member") {
-    return (
-      `現在のアカウント（${safeUser}）が管理者リストに含まれていません。\n` +
-      `自分自身をロックアウトしないよう、現在のメールアドレスまたは所属グループをリストに含めてください。`
-    );
-  }
-  return detail || `管理者リストの検証に失敗しました（${reason || "unknown"}）。`;
-}
+import {
+  normalizeAdminEmailInput,
+  buildMembershipFailMessage,
+  formatAlignSummary,
+  formatCopyResult,
+  formatImportResult,
+} from "./adminTabMessages.js";
 
 function AdminSettingRow({ title, description, label, inputValue, placeholder, onInputChange, onSave, loading, saveDisabled, statusContent, inputType = "text" }) {
   return (
@@ -301,22 +275,7 @@ export default function SettingsAdminTab() {
       setRootInfo(fresh);
       setRootUrlInput("");
 
-      const fmt = (label, c) => (c.skipped
-        ? `${label}: スキップ（標準フォルダが無効）`
-        : `${label}: 移動 ${c.moved}件 / 取込(コピー) ${c.copiedExternal}件 / 再リンク ${c.rekeyed}件 / 整合済 ${c.aligned}件${c.errors ? ` / エラー ${c.errors}件` : ""}`);
-
-      const lines = [
-        `「${rootName}」配下に標準フォルダ構成（01_forms〜08_documents）を作成しました。`,
-        fmt("フォーム", align.forms),
-        fmt("Question", align.questions),
-        fmt("Dashboard", align.dashboards),
-        `参照リンク再構成: ${align.relinkedFiles}件`,
-      ];
-      if (align.errors.length) {
-        lines.push(`エラー ${align.errors.length}件:`);
-        align.errors.slice(0, 3).forEach((e) => lines.push(`・[${e.kind}] ${e.name || e.id}（${e.folder}）: ${e.reason}`));
-        if (align.errors.length > 3) lines.push(`…ほか ${align.errors.length - 3}件`);
-      }
+      const message = formatAlignSummary(rootName, align);
 
       // id 変化（コピー/再採用）や参照張り替えがあれば一覧キャッシュを無効化（陳腐リンク防止）。
       const idsChanged = align.forms.copiedExternal || align.forms.rekeyed
@@ -326,7 +285,7 @@ export default function SettingsAdminTab() {
       if (idsChanged) {
         await invalidateListCaches();
       }
-      showAlert(lines.join("\n"));
+      showAlert(message);
     } catch (error) {
       console.error("[SettingsAdminTab] ensureFolders/align failed", error);
       showAlert(error?.message || "標準フォルダ構成の作成・整理に失敗しました");
@@ -339,23 +298,15 @@ export default function SettingsAdminTab() {
     if (!canManageAdminSettings) return;
     setCopyLoading(true);
     try {
-      const { summary, clearedLinks, unresolvedQuestionLinks, appsScriptCopied, appsScriptCopyError, message } = await copyStandardFolders({
+      const result = await copyStandardFolders({
         destRootUrl: copyUrl.trim(),
         copyData,
         copyExternalActions,
         rebuildMapping,
       });
-      const lines = Object.keys(summary).map((k) => `${k}: ${summary[k]}件`);
       copyDialog.close();
       setCopyUrl("");
-      const appsScriptStatus = appsScriptCopied
-        ? "コピーしました"
-        : `コピーできませんでした（${appsScriptCopyError || "権限等を確認してください"}）`;
-      showAlert(
-        `${message}\n\nappsscript 本体: ${appsScriptStatus}\n` +
-        `コピー件数:\n${lines.join("\n")}\nクリアしたリンク: ${clearedLinks}\n` +
-        `未解決の Question リンク（参照は保持・要再リンク）: ${unresolvedQuestionLinks ?? 0}`,
-      );
+      showAlert(formatCopyResult(result));
     } catch (error) {
       console.error("[SettingsAdminTab] copyStandardFolders failed", error);
       showAlert(error?.message || "システムごとコピーに失敗しました");
@@ -395,23 +346,10 @@ export default function SettingsAdminTab() {
     if (!canManageAdminSettings) return;
     setImportLoading(true);
     try {
-      const { imported, skipped, errors } = await importMapping(mappingImportUrl.trim());
-      const lines = [
-        `フォーム: ${imported.forms || 0}件`,
-        `Question: ${imported.questions || 0}件`,
-        `Dashboard: ${imported.dashboards || 0}件`,
-        `スキップ（重複）: ${skipped || 0}件`,
-      ];
-      if (errors && errors.length) {
-        lines.push(`エラー: ${errors.length}件`);
-        errors.slice(0, 3).forEach((e) => lines.push(`・[${e.section}] ${e.id}: ${e.reason}`));
-        if (errors.length > 3) lines.push(`…ほか ${errors.length - 3}件`);
-      }
-      // インポートはマッピングのマージのみ。取り込んだ資産の物理整列・リンク補完は、
-      // 各エンティティを次に保存した際のサーバ側自動リンク補完（バックグラウンドアップロード）が担う。
-      lines.push("", "取り込んだフォーム・Question・Dashboard は、次回保存時に標準フォルダへ自動整列・再リンクされます。");
+      const result = await importMapping(mappingImportUrl.trim());
+      const body = formatImportResult(result);
       await invalidateListCaches();
-      showAlert(`マッピングをインポートしました。\n${lines.join("\n")}`);
+      showAlert(`マッピングをインポートしました。\n${body}`);
     } catch (error) {
       console.error("[SettingsAdminTab] importMapping failed", error);
       showAlert(error?.message || "マッピングのインポートに失敗しました");
