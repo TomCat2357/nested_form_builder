@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import React from "react";
 import {
   normalizeDriveFolderState,
@@ -253,7 +254,7 @@ export function useDriveFileUpload({
   folderState,
   onFolderStateChange,
 }) {
-  const files = Array.isArray(value) ? value : [];
+  const files = ensureArray(value);
   const filesRef = React.useRef(files);
   const [uploading, setUploading] = React.useState(false);
   const [driveUrl, setDriveUrl] = React.useState("");

@@ -5,6 +5,7 @@
  * `ctx` 引数経由で受け取る。
  */
 
+import { ensureArray } from "../utils/arrays.js";
 import { dataStore } from "../app/state/dataStore.js";
 import { toErrorMessage } from "../utils/errorMessage.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsMemoryStore.js";
@@ -336,7 +337,7 @@ export function performFormPageConfirmRecordCopy(selectedFieldIds, ctx) {
     showToast,
   } = ctx;
 
-  const selectedIds = Array.isArray(selectedFieldIds) ? selectedFieldIds : [];
+  const selectedIds = ensureArray(selectedFieldIds);
   if (!selectedIds.length) {
     showAlert("コピーする項目を選択してください");
     return;

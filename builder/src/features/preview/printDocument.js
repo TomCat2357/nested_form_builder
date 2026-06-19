@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import { extractJstPartsFull, formatUnixMsDateTimeSec, toUnixMs, pad2 } from "../../utils/dateTime.js";
 import { resolveFileDisplayName, buildDataValueMap, toChoiceOptionLabels, toSelectedChoiceLabels } from "../../core/collect.js";
 import { findFirstFileUploadField } from "../../core/schema.js";
@@ -46,7 +47,7 @@ export const formatPrintItemValue = (field, value) => {
     return value != null && value !== "" ? String(value) : "";
   }
   if (field?.type === "fileUpload") {
-    const files = Array.isArray(value) ? value : [];
+    const files = ensureArray(value);
     return files.map((f) => resolveFileDisplayName(f?.name || "不明なファイル", field?.hideFileExtension)).join(", ");
   }
   if (CHOICE_TYPES.has(field?.type)) {
@@ -110,12 +111,12 @@ export const buildRecordItems = (schema, responses, { childDataByFieldId } = {})
     if (isExcludedSearchOrPrintField(field)) return;
     if (field?.type === "formLink") {
       const childObj = childDataByFieldId && field?.id ? childDataByFieldId[field.id] : undefined;
-      const records = childObj && Array.isArray(childObj.records) ? childObj.records : [];
+      const records = ensureArray(childObj?.records);
       if (records.length === 0) return; // 子データ無しは空の placeholder 行を出さず skip。
       const cardPathJoined = joinFieldPath(context.pathSegments || []);
       records.forEach((record, ri) => {
         const markerSeg = escapeSegment(resolveChildRecordMarker(record, ri), PATH_SEP);
-        const childItems = record && Array.isArray(record.items) ? record.items : [];
+        const childItems = ensureArray(record?.items);
         childItems.forEach((childItem) => {
           items.push({
             question: cardPathJoined + PATH_SEP + markerSeg + PATH_SEP + childItem.question,
@@ -159,7 +160,7 @@ const appendPrintItems = (fields, responses, depth, items, options = {}) => {
     if (normalizedField?.type === "formLink") {
       // 子フォームデータを印刷様式の項目表へ展開する。子データは実 field.id でキー付け。
       const childObj = options.childDataByFieldId && field?.id ? options.childDataByFieldId[field.id] : undefined;
-      const records = childObj && Array.isArray(childObj.records) ? childObj.records : [];
+      const records = ensureArray(childObj?.records);
       if (records.length === 0) return; // 子データ無しは行を出さず skip。
       const total = Number.isFinite(childObj.count) ? childObj.count : records.length;
       const countText = childObj.truncated ? `${total}件（先頭${records.length}件を表示）` : `${total}件`;
@@ -167,7 +168,7 @@ const appendPrintItems = (fields, responses, depth, items, options = {}) => {
       items.push({ label: resolveFieldLabel(normalizedField), value: countText, depth, type: "formLink" });
       records.forEach((record, ri) => {
         items.push({ label: resolveChildRecordMarker(record, ri), value: "", depth: depth + 1, type: "formLinkRecord" });
-        const childItems = record && Array.isArray(record.items) ? record.items : [];
+        const childItems = ensureArray(record?.items);
         childItems.forEach((childItem) => {
           const childRow = {
             label: childItem.question,
@@ -251,7 +252,7 @@ export const collectFileUploadMeta = (fields, options = {}) => {
       if (field.hideFileExtension) entry.hideFileExtension = true;
       if (responses) {
         const value = responses[field.id];
-        const files = Array.isArray(value) ? value : [];
+        const files = ensureArray(value);
         entry.fileNames = files
           .map((f) => resolveFileDisplayName(f?.name || "", field?.hideFileExtension))
           .filter(Boolean);

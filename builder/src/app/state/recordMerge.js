@@ -4,6 +4,7 @@
  * - Used by recordsCache.js for cache operations and by tests directly
  */
 
+import { ensureArray } from "../../utils/arrays.js";
 import { resolveStrictUnixMs, formatJstString } from "../../utils/dateTime.js";
 import { asPlainObject } from "../../utils/objectShape.js";
 
@@ -99,7 +100,7 @@ export const buildEntryIndexMap = (records) => {
 
 export const mergeRecordsByModifiedAt = (existingMap, newRecords, { syncStartedAt = 0 } = {}) => {
   const merged = { ...(existingMap || {}) };
-  const safeNewRecords = Array.isArray(newRecords) ? newRecords : [];
+  const safeNewRecords = ensureArray(newRecords);
 
   for (const record of safeNewRecords) {
     const entryId = record?.id ?? record?.entryId;

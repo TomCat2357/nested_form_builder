@@ -3,6 +3,7 @@
  * フォーム records (memory store) → AlaSQL ロード・Question/Dashboard CRUD を一元管理
  */
 
+import { ensureArray } from "../../utils/arrays.js";
 import { analyticsGasClient } from "./analyticsGasClient.js";
 import { questionCache, dashboardCache, emitAnalyticsCacheChanged } from "./analyticsCache.js";
 import { deepClone } from "../../core/schema.js";
@@ -175,7 +176,7 @@ export async function executeQuestion(question, { forms, globalWhereExpr, source
     return { ok: false, error: "SQL が入力されていません" };
   }
 
-  const rawSources = Array.isArray(question.query.formSources) ? question.query.formSources : [];
+  const rawSources = ensureArray(question.query.formSources);
   // 参照は fileId（formId）のみ。現在のフォーム一覧に存在する formSources はそのまま使い、
   // 削除済み等で存在しないものは下流で未選択扱いに落とす（[フォーム名] 直接参照は SQL 本文で解決）。
   const explicitSources = rawSources.slice();
@@ -280,7 +281,7 @@ export async function runSearchSelect(sql, { forms, defaultFormId } = {}) {
   if (!sql || !sql.trim()) return { ok: false, error: "SQL が入力されていません" };
   if (!defaultFormId) return { ok: false, error: "対象フォームが特定できません" };
 
-  const formIndex = buildFormIndex(Array.isArray(forms) ? forms : []);
+  const formIndex = buildFormIndex(ensureArray(forms));
   const columnIndexCache = new Map();
   const getColumnIndex = (formId) => {
     if (!columnIndexCache.has(formId)) {
@@ -342,7 +343,7 @@ export async function runFullQuery(sql, { forms, defaultFormId, liveRowOverride 
   if (!sql || !sql.trim()) return { ok: false, error: "SQL が入力されていません" };
   if (!defaultFormId) return { ok: false, error: "対象フォームが特定できません" };
 
-  const formIndex = buildFormIndex(Array.isArray(forms) ? forms : []);
+  const formIndex = buildFormIndex(ensureArray(forms));
   const columnIndexCache = new Map();
   const getColumnIndex = (formId) => {
     if (!columnIndexCache.has(formId)) {

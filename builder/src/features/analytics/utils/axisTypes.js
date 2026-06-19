@@ -4,6 +4,7 @@
  * VisualizePanel（管理者エディタ）と CardVizOverridePanel（閲覧者の一時上書き）で共有する。
  */
 
+import { ensureArray } from "../../../utils/arrays.js";
 import { detectColumnType } from "./columnValueInference.js";
 import { resolveColumnKey } from "./metaColumnDisplay.js";
 import { AXIS_TYPES, LEGEND_TYPES } from "./suggestChartType.js";
@@ -26,7 +27,7 @@ export function detectAxisTypes({ type, xField, yFields, columns, compiledColumn
 
   const xAxisType = detectColumnType(compiledColumns, resolveColumnKey(xField, columns, compiledColumns), fbm);
 
-  const fields = Array.isArray(yFields) ? yFields : [];
+  const fields = ensureArray(yFields);
   let yAxisType;
   if (fields.length === 0) {
     yAxisType = yTypeWhenEmpty;

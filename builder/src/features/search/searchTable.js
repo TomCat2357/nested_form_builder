@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import { splitFieldPath, collectDisplayFieldSettings } from "../../utils/formPaths.js";
 import { joinFieldPath, splitFieldKey, PATH_SEP } from "../../utils/pathCodec.js";
 import { resolveFileDisplayName, normalizeFileUploadEntries, parseFileUploadStorage } from "../../core/collect.js";
@@ -415,7 +416,7 @@ const SIMPLE_SEARCH_EXTRA_SKIP_TYPES = new Set(["externalAction", "printTemplate
  * @returns {Array<object>}
  */
 export const buildSimpleSearchColumns = (form, baseColumns = []) => {
-  const base = Array.isArray(baseColumns) ? baseColumns : [];
+  const base = ensureArray(baseColumns);
   const coveredPaths = new Set();
   base.forEach((column) => {
     if (column && column.path) coveredPaths.add(String(column.path));
@@ -448,7 +449,7 @@ export const buildHeaderRows = (columns) => {
   if (!columns || columns.length === 0) return [];
 
   const normalized = columns.map((column) => {
-    const segments = Array.isArray(column.segments) ? column.segments : [];
+    const segments = ensureArray(column.segments);
     const limited = segments
       .filter((segment) => segment !== undefined && segment !== null)
       .slice(0, MAX_HEADER_DEPTH)
@@ -529,7 +530,7 @@ export const buildColumnsFromHeaderMatrix = (multiHeaderRows, baseColumns) => {
   const result = [];
   const seenKeys = new Set();
   const resolvedBasePaths = new Set();
-  const safeBaseColumns = Array.isArray(baseColumns) ? baseColumns : [];
+  const safeBaseColumns = ensureArray(baseColumns);
 
   const pushColumn = (column) => {
     if (!column) return;

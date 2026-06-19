@@ -20,6 +20,7 @@
  *   Step 7: pick_data.source.kind === "question"
  */
 
+import { ensureArray } from "../../../utils/arrays.js";
 import { headerKeyToAlaSqlKey } from "./headerToAlaSqlKey.js";
 import { canonicalDataAlias } from "./sqlPreprocessor.js";
 import { assertAggColumnType, isAggCompatible, ALL_COLUMNS_TOKEN } from "./aggregationCompatibility.js";
@@ -188,7 +189,7 @@ function filterConditionExpression(cond, columnIndex) {
   }
 
   if (op === "in") {
-    const values = Array.isArray(cond.value) ? cond.value : [];
+    const values = ensureArray(cond.value);
     if (values.length === 0) return { ok: false, error: "in には 1 つ以上の値が必要です" };
     const literals = values.map(formatLiteral).join(", ");
     return { ok: true, expr: bracketed + " IN (" + literals + ")" };
@@ -310,7 +311,7 @@ function validateLegacyV1(gui) {
  */
 export function compileStages(query, opts) {
   const options = opts || {};
-  const formColumns = Array.isArray(options.formColumns) ? options.formColumns : [];
+  const formColumns = ensureArray(options.formColumns);
   const columnIndex = buildColumnIndex(formColumns);
 
   let normalized = query;
@@ -352,7 +353,7 @@ export function compileStages(query, opts) {
   const aggIdToAlias = new Map();
 
   if (cat.summarize) {
-    const groupBy = Array.isArray(cat.summarize.groupBy) ? cat.summarize.groupBy : [];
+    const groupBy = ensureArray(cat.summarize.groupBy);
     // alaSqlKey で正規化（新 `/` / 旧 `|` どちらの参照でも同じ列を「グループ化済み」と判定する）。
     const groupedKeys = new Set(groupBy.map((g) => g && g.column).filter(Boolean).map((c) => headerKeyToAlaSqlKey(String(c))));
     for (const g of groupBy) {
@@ -404,7 +405,7 @@ export function compileStages(query, opts) {
       return alias;
     };
 
-    const aggregations = Array.isArray(cat.summarize.aggregations) ? cat.summarize.aggregations : [];
+    const aggregations = ensureArray(cat.summarize.aggregations);
     for (const a of aggregations) {
       const typeError = assertAggColumnType(a, formColumns);
       if (typeError) {
@@ -444,7 +445,7 @@ export function compileStages(query, opts) {
   // WHERE
   const whereParts = [];
   for (const stage of cat.filtersBefore) {
-    const conditions = Array.isArray(stage.conditions) ? stage.conditions : [];
+    const conditions = ensureArray(stage.conditions);
     for (const c of conditions) {
       if (!c || !c.column || !c.operator) continue;
       const r = filterConditionExpression(c, columnIndex);
@@ -459,7 +460,7 @@ export function compileStages(query, opts) {
   // HAVING（summarize 後の filter）
   const havingParts = [];
   for (const stage of cat.filtersAfter) {
-    const conditions = Array.isArray(stage.conditions) ? stage.conditions : [];
+    const conditions = ensureArray(stage.conditions);
     for (const c of conditions) {
       if (!c || !c.column || !c.operator) continue;
       // 旧「集計結果を a_1 等の id で参照」を現在の可読別名へ解決する。
@@ -483,7 +484,7 @@ export function compileStages(query, opts) {
 
   // ORDER BY
   if (cat.sort) {
-    const entries = Array.isArray(cat.sort.entries) ? cat.sort.entries : [];
+    const entries = ensureArray(cat.sort.entries);
     const orderParts = [];
     for (const e of entries) {
       const expr = sortEntryExpression(e, dimAliases, aggAliases, columnIndex, aggIdToAlias);

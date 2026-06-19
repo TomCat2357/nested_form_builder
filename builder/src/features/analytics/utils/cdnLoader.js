@@ -8,6 +8,8 @@
  * `vite-plugin-singlefile` で bundle に inline せず、CDN から動的ロードする。
  */
 
+import { wrapArray } from "../../../utils/arrays.js";
+
 const cache = new Map();
 
 function loadFromUrl(url) {
@@ -36,7 +38,7 @@ function loadWithFallback(urls) {
  * URL を配列で渡すと、最初のものに失敗したら次へ fallback。
  */
 function loadScriptOnce(urlOrUrls) {
-  const urls = Array.isArray(urlOrUrls) ? urlOrUrls : [urlOrUrls];
+  const urls = wrapArray(urlOrUrls);
   const cacheKey = urls.join("|");
   if (cache.has(cacheKey)) return cache.get(cacheKey);
   const p = loadWithFallback(urls);

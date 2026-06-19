@@ -14,6 +14,7 @@
  * id-keyed responses へ restoreResponsesFromData で変換してから items を組む（要 子 schema）。
  */
 
+import { ensureArray } from "../../utils/arrays.js";
 import { restoreResponsesFromData } from "../../utils/responses.js";
 import { buildRecordItems } from "./printDocument.js";
 import { dataStore } from "../../app/state/dataStore.js";
@@ -127,7 +128,7 @@ const toChildRecordItem_ = (childSchema, record) => {
  * @returns {{childFormId,childFormName,childFormUrl,count,truncated?:boolean,records:Array}}
  */
 export const buildChildDataObject = ({ childFormId, childFormName, childFormUrl, childSchema, records } = {}) => {
-  const list = Array.isArray(records) ? records : [];
+  const list = ensureArray(records);
   const total = list.length;
   const truncated = total > MAX_CHILD_RECORDS_PER_FIELD;
   const sliced = truncated ? list.slice(0, MAX_CHILD_RECORDS_PER_FIELD) : list;
@@ -151,7 +152,7 @@ export const buildChildDataObject = ({ childFormId, childFormName, childFormUrl,
  */
 export const distributeChildRecordsByPid = (records) => {
   const map = new Map();
-  (Array.isArray(records) ? records : []).forEach((r) => {
+  (ensureArray(records)).forEach((r) => {
     const pid = String(r && r.pid != null ? r.pid : "").trim();
     if (!pid) return;
     if (!map.has(pid)) map.set(pid, []);
@@ -184,7 +185,7 @@ export const buildChildFormInjections = async ({ schema, parentIds, baseUrl = ""
   const fetchByPids = typeof listFn === "function" ? listFn : (hasScriptRun() ? listRecordsByPids : null);
   if (typeof fetchByPids !== "function") return [];
 
-  const pids = Array.from(new Set((Array.isArray(parentIds) ? parentIds : []).map((x) => String(x || "")).filter(Boolean)));
+  const pids = Array.from(new Set((ensureArray(parentIds)).map((x) => String(x || "")).filter(Boolean)));
   const out = [];
   for (const field of fields) {
     let grouped = new Map();

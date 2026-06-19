@@ -24,6 +24,8 @@ function loadGasContext() {
     },
     // URL→fileId（本体は gas/properties.gs）。テストでは固定 ID を返す上書きを使う。
     ExtractFileIdFromUrl_() { return null; },
+    // 文字列化＋trim（本体は gas/constants.gs）。
+    Nfb_trimStr_(value) { return value ? String(value).trim() : ""; },
   };
   // standardFolders.gs は formsParsing.gs（Forms_parseGoogleDriveUrl_）と model.gs（Model_normalizeSpreadsheetId_）に依存。
   // standardFoldersCopy.gs は driveFile.gs（Nfb_readJsonFileById_ / Nfb_writeJsonToFile_）に依存。

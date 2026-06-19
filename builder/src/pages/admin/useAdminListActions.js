@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import { useState } from "react";
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { hasScriptRun } from "../../services/gasClient.js";
@@ -215,7 +216,7 @@ export function useAdminListActions({
 
   const confirmDeleteAction = async () => {
     const targetIds = resolveDialogTargetIds(deleteDialog.state, idKey);
-    const folderPaths = Array.isArray(deleteDialog.state.folderPaths) ? deleteDialog.state.folderPaths : [];
+    const folderPaths = ensureArray(deleteDialog.state.folderPaths);
     if (!targetIds.length && !folderPaths.length) return;
     try {
       // フォルダ削除（配下アイテム＋登録簿エントリをサーバ側で除去）

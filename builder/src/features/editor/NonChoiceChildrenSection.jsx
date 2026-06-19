@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import React from "react";
 import { deepClone, normalizeSchemaIDs } from "../../core/schema.js";
 import { genId } from "../../core/ids.js";
@@ -18,7 +19,7 @@ export default function NonChoiceChildrenSection({
   const handleAddChild = () => {
     if (!canAddChild) return;
     const next = deepClone(field);
-    const existing = Array.isArray(next.children) ? next.children : [];
+    const existing = ensureArray(next.children);
     next.children = normalizeSchemaIDs([...existing, { id: genId(), type: "text", label: "" }]);
     onChange(next);
   };

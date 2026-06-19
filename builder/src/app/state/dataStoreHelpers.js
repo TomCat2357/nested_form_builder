@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import { genRecordId } from "../../core/ids.js";
 import { resolveStrictUnixMs } from "../../utils/dateTime.js";
 import { DEFAULT_DELETED_RETENTION_DAYS, DEFAULT_SHEET_NAME, MS_PER_DAY } from "../../core/constants.js";
@@ -38,12 +39,12 @@ export const isDeletedEntryExpired = (entry, retentionDays, nowMs = Date.now()) 
 };
 
 export const filterExpiredDeletedEntries = (entries, retentionDays, nowMs = Date.now()) => {
-  const safeEntries = Array.isArray(entries) ? entries : [];
+  const safeEntries = ensureArray(entries);
   return safeEntries.filter((entry) => !isDeletedEntryExpired(entry, retentionDays, nowMs));
 };
 
 export const pruneExpiredDeletedEntries = async (formId, entries, retentionDays) => {
-  const safeEntries = Array.isArray(entries) ? entries : [];
+  const safeEntries = ensureArray(entries);
   const nowMs = Date.now();
   const remainingEntries = filterExpiredDeletedEntries(safeEntries, retentionDays, nowMs);
   const remainingIdSet = new Set(remainingEntries.map((entry) => entry?.id).filter(Boolean));
@@ -96,8 +97,8 @@ export const buildListEntriesResult = ({
   fetchedCount = 0,
   sheetLastUpdatedAt = 0,
 } = {}) => ({
-  entries: Array.isArray(entries) ? entries : [],
-  headerMatrix: Array.isArray(headerMatrix) ? headerMatrix : [],
+  entries: ensureArray(entries),
+  headerMatrix: ensureArray(headerMatrix),
   lastSyncedAt,
   lastSpreadsheetReadAt,
   hasUnsynced: !!hasUnsynced,

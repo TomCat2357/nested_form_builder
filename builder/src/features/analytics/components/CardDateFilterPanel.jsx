@@ -1,3 +1,4 @@
+import { ensureArray } from "../../../utils/arrays.js";
 import React, { useMemo } from "react";
 import { detectColumnType } from "../utils/columnValueInference.js";
 import { filterDisplayColumns, getColumnDisplayLabel } from "../utils/metaColumnDisplay.js";
@@ -9,7 +10,7 @@ const TIME_PRESETS = timePresets();
 // 期間フィルタの候補にできる列を返す。表示列の日付型（date / datetime / time フィールドは
 // analytics 上ではすべて "date" に正規化される）に加え、作成日時 (createdAt) も許可する。
 export function getDateColumns(columns, compiledColumns, fallbackTypeMap) {
-  const cols = Array.isArray(columns) ? columns : [];
+  const cols = ensureArray(columns);
   const candidates = new Set(filterDisplayColumns(cols));
   if (cols.includes("createdAt")) candidates.add("createdAt");
   return cols.filter((c) => c !== "deletedAt" && candidates.has(c)

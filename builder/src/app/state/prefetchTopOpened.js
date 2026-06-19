@@ -14,6 +14,7 @@
  *   - 無駄打ちしない: 鮮度内のフォームはスキップ（= 「キャッシュに無いときだけ先行呼び出し」）。
  */
 
+import { ensureArray } from "../../utils/arrays.js";
 import { PREFETCH_TOP_N } from "../../core/constants.js";
 import { getTopOpened } from "./openHistoryStore.js";
 import { dataStore } from "./dataStore.js";
@@ -69,11 +70,11 @@ async function resolveDashboardSourceFormIds(dashboardId, dashMap, questionMap) 
     }
     const query = q?.query;
     if (!query) continue;
-    for (const src of (Array.isArray(query.formSources) ? query.formSources : [])) {
+    for (const src of (ensureArray(query.formSources))) {
       if (src?.formId) formIds.push(src.formId);
     }
     // SQL モード等で raw SQL から参照されるフォーム（保存時に再構築済み）も拾う。
-    for (const fid of (Array.isArray(query.referencedFormIds) ? query.referencedFormIds : [])) {
+    for (const fid of (ensureArray(query.referencedFormIds))) {
       if (fid) formIds.push(fid);
     }
   }

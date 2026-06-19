@@ -8,8 +8,10 @@
  *
  * @returns {"scalar"|"bar"|"line"|"pie"|"scatter"|"table"}
  */
+import { ensureArray } from "../../../utils/arrays.js";
+
 export function suggestChartType(columns, rowCount) {
-  const cols = Array.isArray(columns) ? columns : [];
+  const cols = ensureArray(columns);
   if (cols.length === 0) return "table";
 
   const dims = cols.filter((c) => c && c.role === "dimension");

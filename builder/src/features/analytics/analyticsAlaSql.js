@@ -4,6 +4,7 @@
  * alasql インスタンス自体の取得 (CDN ランタイムロード + NFB UDF 登録) は
  * features/expression/alasqlRuntime.js に集約されている。
  */
+import { ensureArray } from "../../utils/arrays.js";
 import { getAlaSql } from "../expression/alasqlRuntime.js";
 import { unionRowKeys } from "./utils/computeShared.js";
 import { dataStore } from "../../app/state/dataStore.js";
@@ -193,7 +194,7 @@ export async function dropTables(aliases) {
 // columns は全結果行のキーの和集合（初出順）。不均質な行でも列を取りこぼさない。
 // runAlaSql / runAlaSqlOnArray が共有する（クエリの違いは呼び出し側、整形はここに一本化）。
 function shapeQueryResult_(out) {
-  const rows = Array.isArray(out) ? out : [];
+  const rows = ensureArray(out);
   return { ok: true, rows, columns: unionRowKeys(rows) };
 }
 
@@ -243,7 +244,7 @@ async function applyTableFilters_(aliases, planClausesForTable) {
           "SELECT * FROM ? WHERE " + clause.where,
           [table.data, ...(clause.paramsTail || [])]
         );
-        table.data = Array.isArray(filtered) ? filtered : [];
+        table.data = ensureArray(filtered);
       } catch (err) {
         return { ok: false, error: err.message || String(err) };
       }
@@ -322,7 +323,7 @@ export async function applySourceFilterClauses(aliases, clauses) {
 export async function runAlaSqlOnArray(rows, sql, extraParams = []) {
   try {
     const alasql = await getAlaSql();
-    const params = [Array.isArray(rows) ? rows : [], ...extraParams];
+    const params = [ensureArray(rows), ...extraParams];
     return shapeQueryResult_(alasql(sql, params));
   } catch (err) {
     return { ok: false, error: err.message || String(err) };
@@ -340,7 +341,7 @@ export async function runAlaSqlOnArray(rows, sql, extraParams = []) {
  * @returns {Promise<{ ok: boolean, rows?: any[], error?: string }>}
  */
 export async function filterRowsByExpr(rows, whereExpr) {
-  const list = Array.isArray(rows) ? rows : [];
+  const list = ensureArray(rows);
   if (!whereExpr || typeof whereExpr !== "string" || whereExpr.trim() === "") {
     return { ok: true, rows: list };
   }

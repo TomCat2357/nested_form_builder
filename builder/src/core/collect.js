@@ -1,3 +1,4 @@
+import { ensureArray } from "../utils/arrays.js";
 import { traverseSchema } from "./schemaUtils.js";
 import { normalizeDateTimeFieldValue } from "../utils/dateTime.js";
 import { joinFieldPath } from "../utils/pathCodec.js";
@@ -29,7 +30,7 @@ export const parseFileUploadStorage = (rawValue) => {
     };
   }
   if (source && typeof source === "object") {
-    const filesSource = Array.isArray(source.files) ? source.files : [];
+    const filesSource = ensureArray(source.files);
     const folderUrl = typeof source.folderUrl === "string" ? source.folderUrl.trim() : "";
     return {
       files: filesSource.map(sanitizeFileUploadEntry).filter(Boolean),

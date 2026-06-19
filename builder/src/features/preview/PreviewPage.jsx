@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { toErrorMessage } from "../../utils/errorMessage.js";
 import { collectResponses, sortResponses, buildDataValueMap } from "../../core/collect.js";
@@ -420,7 +421,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
           if (field.childFormId !== changedChildFormId) continue;
           try {
             const cache = await getRecordsFromCache(field.childFormId);
-            const recs = (Array.isArray(cache.entries) ? cache.entries : [])
+            const recs = (ensureArray(cache.entries))
               .filter((e) => String(e?.pid ?? "") === recordId)
               .filter((e) => !(e?.deletedAtUnixMs || e?.deletedAt));
             // 全 formLink で常に詳細を再構築する（メイン取得 effect と同じ always-detail 方針）。

@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import { withTransaction, waitForRequest, STORE_NAMES } from './dbHelpers.js';
 
 const META_KEY = '__metadata__';
@@ -36,7 +37,7 @@ export async function getFormsFromCache() {
         loadFailures = record.failures || [];
         lastSyncedAt = record.lastSyncedAt || null;
         propertyStoreMode = record.propertyStoreMode || "";
-        folders = Array.isArray(record.folders) ? record.folders : [];
+        folders = ensureArray(record.folders);
       } else if (record.id !== undefined) {
         const { lastSyncedAt: _, ...form } = record;
         forms.push(form);

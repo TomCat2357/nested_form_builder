@@ -1,3 +1,4 @@
+import { ensureArray } from "../utils/arrays.js";
 import { getRegisteredFormPid } from "./formPidContext.js";
 
 export const hasScriptRun = () => typeof google !== "undefined" && google?.script?.run;
@@ -172,7 +173,7 @@ export const listEntries = async ({ sheetName = "Data", formId = null, lastSprea
 // formLink 子データ用途（件数バッジ・外部アクション/印刷 payload・コピー複製・CHILD_FORM_*）では
 // クライアント側で必ず除外する。
 const filterNotDeleted_ = (records) =>
-  (Array.isArray(records) ? records : []).filter((r) => !(r?.deletedAtUnixMs || r?.deletedAt));
+  (ensureArray(records)).filter((r) => !(r?.deletedAtUnixMs || r?.deletedAt));
 
 // listRecords を「明示 pid + 全件」で叩く内部ヘルパ。URL の window.__PID__ には依存せず、
 // 引数で渡した pid をそのまま payload に乗せてサーバ側フィルタさせる（withUrlPid を通さない）。
@@ -204,7 +205,7 @@ export const listRecordsByPid = async (args) => (await listRecordsByPidRaw_(args
 const listRecordsByPidsRaw_ = async ({ formId, pids, sheetName = "Data" }) => {
   validateFormId(formId);
   const normalizedPids = Array.from(
-    new Set((Array.isArray(pids) ? pids : []).map((p) => String(p || "").trim()).filter(Boolean)),
+    new Set((ensureArray(pids)).map((p) => String(p || "").trim()).filter(Boolean)),
   );
   if (normalizedPids.length === 0) return { records: [], count: 0 };
   const result = await fetchGasApi(

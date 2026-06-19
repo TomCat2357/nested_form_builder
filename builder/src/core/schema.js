@@ -1,3 +1,4 @@
+import { ensureArray } from "../utils/arrays.js";
 import { genId } from "./ids.js";
 import { DEFAULT_STYLE_SETTINGS, normalizeStyleSettings } from "./styleSettings.js";
 import { MAX_DEPTH } from "./constants.js";
@@ -439,7 +440,7 @@ export const normalizeSchemaIDs = (nodes) => {
   };
 
   const normalizeNodes = (inputNodes, pathSegments = [], depth = 1) => {
-    const sourceNodes = Array.isArray(inputNodes) ? inputNodes : [];
+    const sourceNodes = ensureArray(inputNodes);
     const normalizedNodes = [];
 
     sourceNodes.forEach((field, index) => {
