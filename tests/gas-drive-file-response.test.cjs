@@ -35,6 +35,8 @@ function loadGasContext(overrides) {
     nfbErrorToString_(error) {
       return error && error.message ? error.message : String(error);
     },
+    // 文字列化＋trim（本体は gas/constants.gs）。
+    Nfb_trimStr_(value) { return value ? String(value).trim() : ""; },
     Forms_parseGoogleDriveUrl_(url) {
       const normalized = String(url || "").trim();
       const folderMatch = normalized.match(/\/folders\/([^/?#]+)/);

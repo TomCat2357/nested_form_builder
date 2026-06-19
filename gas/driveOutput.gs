@@ -37,7 +37,7 @@ function nfbCreateRecordPrintDocument(payload) {
       var templateBaseName = normalizedPayload.fileName;
       var tplFileNameTemplate = templateDriveSettings.fileNameTemplate
         ? String(templateDriveSettings.fileNameTemplate).trim()
-        : (payload.fileNameTemplate ? String(payload.fileNameTemplate).trim() : "");
+        : (Nfb_trimStr_(payload.fileNameTemplate));
       if (tplFileNameTemplate) {
         var resolvedBaseName = nfbResolveTemplateTokens_(tplFileNameTemplate, templateContext);
         if (resolvedBaseName) {
@@ -98,7 +98,7 @@ function nfbCreateRecordPrintDocument(payload) {
       });
 
       // ファイル名テンプレートの解決
-      var fileNameTemplate = ds.fileNameTemplate ? String(ds.fileNameTemplate).trim() : "";
+      var fileNameTemplate = Nfb_trimStr_(ds.fileNameTemplate);
       if (fileNameTemplate) {
         var resolvedFileName = nfbResolveTemplateTokens_(fileNameTemplate, ctx);
         if (resolvedFileName) {
@@ -136,9 +136,7 @@ function nfbExecuteRecordOutputAction(payload) {
       throw new Error("出力ファイル名が指定されていません");
     }
 
-    var driveSettings = payload && payload.driveSettings ? payload.driveSettings : {};
-    var initialFolderUrl = driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
-    var outputContext = nfbBuildRecordOutputContext_(payload, initialFolderUrl);
+    var outputContext = nfbBuildRecordOutputContext_(payload);
     var finalBaseName = fileNameTemplate
       ? (nfbResolveTemplateTokens_(fileNameTemplate, outputContext) || ("record_" + outputContext.recordId))
       : "";
@@ -168,8 +166,7 @@ function nfbExecuteBatchGoogleDocOutput(payload) {
     // 1件目のレコードでベースDocを作成
     var firstPayload = records[0];
     var firstAction = firstPayload.action || {};
-    var firstFolderUrl = (firstPayload.driveSettings && firstPayload.driveSettings.folderUrl) || "";
-    var firstContext = nfbBuildRecordOutputContext_(firstPayload, firstFolderUrl);
+    var firstContext = nfbBuildRecordOutputContext_(firstPayload);
     var firstSourceUrl = nfbResolveRecordOutputTemplateSourceUrl_(firstPayload, firstAction);
 
     var combinedFile;
@@ -190,8 +187,7 @@ function nfbExecuteBatchGoogleDocOutput(payload) {
 
         var recPayload = records[i];
         var recAction = recPayload.action || {};
-        var recFolderUrl = (recPayload.driveSettings && recPayload.driveSettings.folderUrl) || "";
-        var recContext = nfbBuildRecordOutputContext_(recPayload, recFolderUrl);
+        var recContext = nfbBuildRecordOutputContext_(recPayload);
         var recSourceUrl = nfbResolveRecordOutputTemplateSourceUrl_(recPayload, recAction);
 
         var tempFile;
@@ -222,7 +218,7 @@ function nfbExecuteBatchGoogleDocOutput(payload) {
     };
   });
 }
-function nfbBuildRecordOutputContext_(payload, _folderUrl) {
+function nfbBuildRecordOutputContext_(payload) {
   return nfbNormalizeRecordTemplateContext_({
     driveSettings: payload && payload.driveSettings,
     recordContext: payload && payload.recordContext,
@@ -308,10 +304,8 @@ function nfbNormalizeRecordTemplateContext_(sources) {
 
 function nfbResolveRecordOutputFileNameTemplate_(payload, action, outputType) {
   var settings = payload && payload.settings ? payload.settings : {};
-  var actionTemplate = action && action.fileNameTemplate ? String(action.fileNameTemplate).trim() : "";
-  var sharedTemplate = settings && settings.standardPrintFileNameTemplate
-    ? String(settings.standardPrintFileNameTemplate).trim()
-    : "";
+  var actionTemplate = action ? Nfb_trimStr_(action.fileNameTemplate) : "";
+  var sharedTemplate = settings ? Nfb_trimStr_(settings.standardPrintFileNameTemplate) : "";
 
   if (outputType === "gmail") {
     return (action && action.gmailAttachPdf)
@@ -323,9 +317,7 @@ function nfbResolveRecordOutputFileNameTemplate_(payload, action, outputType) {
 }
 
 function nfbResolveStandardPrintFileNameTemplate_(settings) {
-  var configuredTemplate = settings && settings.standardPrintFileNameTemplate
-    ? String(settings.standardPrintFileNameTemplate).trim()
-    : "";
+  var configuredTemplate = settings ? Nfb_trimStr_(settings.standardPrintFileNameTemplate) : "";
   return configuredTemplate || "{{`_id`}}_{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}}";
 }
 
@@ -338,10 +330,8 @@ function nfbRequiresRecordOutputFileNameTemplate_(action, outputType) {
 // 未指定（または無効）ならフォーム共通の標準印刷出力様式にフォールバックする。
 function nfbResolveRecordOutputTemplateSourceUrl_(payload, action) {
   if (action && action.useCustomTemplate) {
-    var actionUrl = action.templateUrl ? String(action.templateUrl).trim() : "";
+    var actionUrl = Nfb_trimStr_(action.templateUrl);
     if (actionUrl) return actionUrl;
   }
-  return payload && payload.settings && payload.settings.standardPrintTemplateUrl
-    ? String(payload.settings.standardPrintTemplateUrl).trim()
-    : "";
+  return payload && payload.settings ? Nfb_trimStr_(payload.settings.standardPrintTemplateUrl) : "";
 }

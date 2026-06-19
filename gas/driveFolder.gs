@@ -40,7 +40,7 @@ function nfbResolveFolderFromInputIfExists_(input) {
 }
 
 function nfbResolveRootFolder_(driveSettings) {
-  var rootUrl = driveSettings && driveSettings.rootFolderUrl ? String(driveSettings.rootFolderUrl).trim() : "";
+  var rootUrl = driveSettings ? Nfb_trimStr_(driveSettings.rootFolderUrl) : "";
   if (!rootUrl) {
     return DriveApp.getRootFolder();
   }
@@ -59,7 +59,7 @@ function nfbBuildDriveTemplateContext_(driveSettings, context) {
  * @return {Folder|null} 指定がなければ null
  */
 function nfbResolveDirectFolder_(driveSettings, context) {
-  var directFolderUrl = driveSettings && driveSettings.folderUrl ? String(driveSettings.folderUrl).trim() : "";
+  var directFolderUrl = driveSettings ? Nfb_trimStr_(driveSettings.folderUrl) : "";
   if (!directFolderUrl) {
     return null;
   }
@@ -81,7 +81,7 @@ function nfbResolveOrCreateFolder_(driveSettings, context) {
 
   var rootFolder = nfbResolveRootFolder_(driveSettings);
 
-  var folderTemplate = driveSettings && driveSettings.folderNameTemplate ? String(driveSettings.folderNameTemplate).trim() : "";
+  var folderTemplate = driveSettings ? Nfb_trimStr_(driveSettings.folderNameTemplate) : "";
   if (!folderTemplate) {
     return rootFolder;
   }
@@ -101,7 +101,7 @@ function nfbResolveOrCreateFolder_(driveSettings, context) {
 }
 
 function nfbBuildRecordTempFolderName_(driveSettings) {
-  var rawRecordId = driveSettings && driveSettings.recordId ? String(driveSettings.recordId).trim() : "";
+  var rawRecordId = driveSettings ? Nfb_trimStr_(driveSettings.recordId) : "";
   var safeRecordId = rawRecordId ? rawRecordId.replace(/[^A-Za-z0-9_-]/g, "_") : "record";
   return NFB_RECORD_TEMP_FOLDER_PREFIX + safeRecordId + "_" + Utilities.getUuid().slice(0, 8);
 }
@@ -111,7 +111,7 @@ function nfbApplyFolderNameTemplateIfNeeded_(folder, driveSettings, context) {
     return folder;
   }
 
-  var folderTemplate = driveSettings && driveSettings.folderNameTemplate ? String(driveSettings.folderNameTemplate).trim() : "";
+  var folderTemplate = driveSettings ? Nfb_trimStr_(driveSettings.folderNameTemplate) : "";
   if (!folderTemplate) {
     return folder;
   }
@@ -233,9 +233,9 @@ function nfbTrashDriveFilesByIds(payload) {
 
 function nfbFinalizeRecordDriveFolder(payload) {
   return nfbSafeCall_(function() {
-    var currentDriveFolderUrl = payload && payload.currentDriveFolderUrl ? String(payload.currentDriveFolderUrl).trim() : "";
-    var inputDriveFolderUrl = payload && payload.inputDriveFolderUrl ? String(payload.inputDriveFolderUrl).trim() : "";
-    var folderUrlToTrash = payload && payload.folderUrlToTrash ? String(payload.folderUrlToTrash).trim() : "";
+    var currentDriveFolderUrl = payload ? Nfb_trimStr_(payload.currentDriveFolderUrl) : "";
+    var inputDriveFolderUrl = payload ? Nfb_trimStr_(payload.inputDriveFolderUrl) : "";
+    var folderUrlToTrash = payload ? Nfb_trimStr_(payload.folderUrlToTrash) : "";
     var currentFolder = currentDriveFolderUrl ? nfbResolveFolderFromInputIfExists_(currentDriveFolderUrl) : null;
     var inputFolder = inputDriveFolderUrl ? nfbResolveFolderFromInput_(inputDriveFolderUrl) : null;
     var targetFolder = inputFolder || currentFolder;
@@ -261,7 +261,7 @@ function nfbFinalizeRecordDriveFolder(payload) {
 
     var isCurrentTarget = currentFolder && (!inputFolder || inputFolder.getId() === currentFolder.getId());
     if (isCurrentTarget && nfbIsRecordTempFolder_(currentFolder)) {
-      var folderNameTemplate = payload && payload.folderNameTemplate ? String(payload.folderNameTemplate).trim() : "";
+      var folderNameTemplate = payload ? Nfb_trimStr_(payload.folderNameTemplate) : "";
       if (folderNameTemplate) {
         var resolvedFolderName = nfbResolveTemplateTokens_(folderNameTemplate, nfbBuildDriveTemplateContext_(payload));
         if (resolvedFolderName) {

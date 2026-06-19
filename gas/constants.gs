@@ -227,3 +227,13 @@ function Nfb_normalizeIdList_(ids) {
   }
   return normalized;
 }
+
+/**
+ * 値を文字列化して trim する。null / undefined / 空値は空文字を返す
+ * （String(null) === "null" を避けるため、falsy はそのまま "" へ畳む）。
+ * @param {*} value
+ * @return {string}
+ */
+function Nfb_trimStr_(value) {
+  return value ? String(value).trim() : "";
+}

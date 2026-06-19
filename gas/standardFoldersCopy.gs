@@ -41,7 +41,7 @@ function StdFolders_remapFolderUrl_(url, folderIdMap) {
 
 function StdFolders_copy_(payload) {
   return nfbSafeCall_(function() {
-    var destRootUrl = payload && payload.destRootUrl ? String(payload.destRootUrl).trim() : "";
+    var destRootUrl = payload ? Nfb_trimStr_(payload.destRootUrl) : "";
     if (!destRootUrl) throw new Error("コピー先ルートフォルダの URL を指定してください");
     var copyData = !!(payload && (payload.copyData === true || payload.copyData === "true"));
     var copyExternalActions = !!(payload && (payload.copyExternalActions === true || payload.copyExternalActions === "true"));

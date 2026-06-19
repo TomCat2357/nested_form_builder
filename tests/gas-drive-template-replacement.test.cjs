@@ -67,6 +67,8 @@ function loadGasContext() {
       catch (err) { return { ok: false, error: err && err.message ? err.message : String(err) }; }
     },
     nfbErrorToString_(error) { return error && error.message ? error.message : String(error); },
+    // 文字列化＋trim（本体は gas/constants.gs）。
+    Nfb_trimStr_(value) { return value ? String(value).trim() : ""; },
     Forms_parseGoogleDriveUrl_(url) {
       const match = String(url).match(/\/d\/([^/]+)/);
       return { type: "file", id: match ? match[1] : "" };

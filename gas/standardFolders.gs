@@ -69,7 +69,7 @@ function StdFolders_detectRootFromScript_() {
 function StdFolders_resolveRootFolder_(manualRootUrl) {
   var props = Nfb_getScriptProperties_();
 
-  var manual = manualRootUrl ? String(manualRootUrl).trim() : "";
+  var manual = Nfb_trimStr_(manualRootUrl);
   if (manual) {
     var picked = nfbResolveFolderFromInput_(manual); // 無効 URL は例外
     props.setProperty(NFB_STD_ROOT_MANUAL_KEY, picked.getId());
@@ -450,7 +450,7 @@ function StdFolders_importMapping_(doc) {
 //   payload.url 空   : ルート直下の非ゴミ箱 .json から getLastUpdated() が最新の 1 件を読む。
 function StdFolders_importMappingFromSource_(payload) {
   return nfbSafeCall_(function() {
-    var url = payload && payload.url ? String(payload.url).trim() : "";
+    var url = payload ? Nfb_trimStr_(payload.url) : "";
     var file;
     if (url) {
       var fileId = ExtractFileIdFromUrl_(url);
@@ -542,7 +542,7 @@ function StdFolders_getRootInfo_() {
 // 全標準サブフォルダを今すぐ作成し、作成後のルート情報を返す（任意で manual rootUrl 指定可）。
 function StdFolders_ensureFolders_(payload) {
   return nfbSafeCall_(function() {
-    var manualRootUrl = payload && payload.rootUrl ? String(payload.rootUrl).trim() : "";
+    var manualRootUrl = payload ? Nfb_trimStr_(payload.rootUrl) : "";
     var root = StdFolders_resolveRootFolder_(manualRootUrl);
     StdFolders_ensureAllSubfolders_(root);
     return { ok: true, rootId: root.getId(), rootUrl: root.getUrl(), rootName: root.getName() };

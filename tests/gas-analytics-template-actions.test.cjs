@@ -137,6 +137,7 @@ function loadAnalyticsContext() {
     Number,
     // shims (本来は gas/properties.gs / gas/constants.gs にある共通ヘルパー)
     Nfb_getActiveProperties_: () => propsService,
+    Nfb_trimStr_: (value) => (value ? String(value).trim() : ""),
     // 物理フォルダミラー（analyticsDriveFolders.gs）が使う定数・正規化ヘルパ。
     Forms_normalizeFolderPath_: (raw) => (typeof raw !== "string" ? "" :
       raw.split("/").map((s) => String(s).trim()).filter((s) => s.length > 0).join("/")),
