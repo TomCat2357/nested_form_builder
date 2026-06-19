@@ -7,6 +7,7 @@
  * 仕様（子フォーム文脈ではボタン非表示）のため孫は発生しない。
  */
 
+import { ensureArray } from "../utils/arrays.js";
 import { genRecordId } from "../core/ids.js";
 import { listRecordsByPid, submitResponses } from "../services/gasClient.js";
 import { invalidateChildForm } from "../app/state/childRecordsMemoryStore.js";
@@ -19,7 +20,7 @@ import { invalidateChildForm } from "../app/state/childRecordsMemoryStore.js";
  * @returns {{fieldId: string, childFormId: string}[]}
  */
 export function selectFormLinkCopyTargets(selectedFieldIds, topLevelFieldMap) {
-  const ids = Array.isArray(selectedFieldIds) ? selectedFieldIds : [];
+  const ids = ensureArray(selectedFieldIds);
   const map = topLevelFieldMap || {};
   const out = [];
   ids.forEach((fieldId) => {

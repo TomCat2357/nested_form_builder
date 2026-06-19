@@ -18,6 +18,7 @@
  *
  * 列名の解決は searchQueryEngine と同じ matchColumnName（key/path/aliases/segments）で行う。
  */
+import { ensureArray } from "../../utils/arrays.js";
 import { headerKeyToAlaSqlKey } from "../analytics/utils/headerToAlaSqlKey.js";
 import { quoteString } from "../expression/sqlEmit.js";
 import {
@@ -133,7 +134,7 @@ function emitLeaf(token, ctx) {
       return "(" + colExpr + " IS NOT NULL AND " + colExpr + " <> '')";
     }
     case "COLUMN_IN": {
-      const targets = Array.isArray(token.values) ? token.values : [];
+      const targets = ensureArray(token.values);
       const negate = !!token.negate;
       if (targets.length === 0) return negate ? "TRUE" : "FALSE";
       const { safeKey } = resolveColumn(ctx, token.column);

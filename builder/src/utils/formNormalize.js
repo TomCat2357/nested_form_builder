@@ -1,3 +1,4 @@
+import { ensureArray } from "./arrays.js";
 import { computeSchemaHash } from "../core/schema.js";
 import { genFormId } from "../core/ids.js";
 import { collectDisplayFieldSettings } from "./formPaths.js";
@@ -28,7 +29,7 @@ const resolveCreatedAt = (source, fallbackCreatedAt, now) => {
 export const normalizeFormRecord = (source = {}, options = {}) => {
   const { fallbackId = genFormId(), fallbackCreatedAt = undefined, nowFn = defaultNowFn, preserveUnknownFields = false } = options;
   const now = resolveNow(nowFn);
-  const schema = Array.isArray(source.schema) ? source.schema : [];
+  const schema = ensureArray(source.schema);
   const displayFieldSettings = collectDisplayFieldSettings(schema);
   const createdAt = resolveCreatedAt(source, fallbackCreatedAt, now);
   const settings = isPlainObject(source.settings) ? { ...source.settings } : {};

@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import { resolveStrictUnixMs } from "../../utils/dateTime.js";
 import { toFiniteNumberOr } from "../../utils/numbers.js";
 
@@ -15,7 +16,7 @@ const toUploadRecord = (entry) => {
 };
 
 export const buildUploadRecordsForSync = ({ entries = [], baseServerReadAt = 0, forceFullSync = false } = {}) => {
-  const safeEntries = Array.isArray(entries) ? entries : [];
+  const safeEntries = ensureArray(entries);
   const normalizedBaseServerReadAt = toFiniteNumberOr(baseServerReadAt, 0);
   const targets = forceFullSync
     ? safeEntries

@@ -1,3 +1,4 @@
+import { ensureArray, toIdList } from "../../utils/arrays.js";
 import { stripSchemaIDs, deepClone } from "../../core/schema.js";
 import { normalizeFormRecord } from "../../utils/formNormalize.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
@@ -89,9 +90,9 @@ export const dataStore = {
   async listForms({ includeArchived = false } = {}) {
 
     const result = await listFormsFromGas({ includeArchived });
-    const forms = Array.isArray(result.forms) ? result.forms : [];
-    const loadFailures = Array.isArray(result.loadFailures) ? result.loadFailures : [];
-    const folders = Array.isArray(result.folders) ? result.folders : [];
+    const forms = ensureArray(result.forms);
+    const loadFailures = ensureArray(result.loadFailures);
+    const folders = ensureArray(result.folders);
     return {
       forms: forms.map((form) => ensureDisplayInfo(form)),
       loadFailures,
@@ -263,7 +264,7 @@ export const dataStore = {
   // 楽観的＋遅延: アーカイブ状態のフリップは AppDataProvider が即時反映。ここでは GAS 呼び出しを
   // write-behind の op ジョブへ積むだけ（local_ フォームは save 完了まで依存で待つ）。
   async _enqueueArchiveOp(formIds, opType) {
-    const ids = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
+    const ids = toIdList(formIds);
     if (!ids.length) return { forms: [], updated: 0 };
     await enqueueOpJob({
       entityType: "form",
@@ -283,7 +284,7 @@ export const dataStore = {
     return null;
   },
   async _batchArchiveAction(formIds, gasFn) {
-    const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
+    const targetIds = toIdList(formIds);
     if (!targetIds.length) return { forms: [], updated: 0 };
 
     const result = await gasFn(targetIds);
@@ -332,7 +333,7 @@ export const dataStore = {
     return this._batchArchiveAction(formIds, clearFormsChildOnlyInGas);
   },
   async deleteForms(formIds) {
-    const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
+    const targetIds = toIdList(formIds);
     if (!targetIds.length) return;
 
     // 削除対象に未アップロードジョブが残っていれば取り消す（削除済みフォームの再作成を防ぐ）。
@@ -349,7 +350,7 @@ export const dataStore = {
   // deleteForms と同じだが、プロジェクト内（標準フォルダ配下）のファイルは実体も Drive ゴミ箱へ
   // 移動する。プロジェクト外はリンク解除のみで実体を残す（判定は GAS 側がファイルごとに行う）。
   async deleteFormsWithFiles(formIds) {
-    const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
+    const targetIds = toIdList(formIds);
     if (!targetIds.length) return;
 
     await Promise.all(targetIds.map((id) => deleteJobsForLocalId(id)));

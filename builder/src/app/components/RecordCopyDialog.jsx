@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import React, { useEffect, useMemo } from "react";
 import BaseDialog from "./BaseDialog.jsx";
 import { useSetSelection } from "../hooks/useSetSelection.js";
@@ -14,7 +15,7 @@ const hasBranchChildren = (field) => {
 export default function RecordCopyDialog({ open, schema, sourceResponses, onConfirm, onCancel }) {
   const items = useMemo(
     () =>
-      (Array.isArray(schema) ? schema : [])
+      (ensureArray(schema))
         .map((field, index) => {
           const id = typeof field?.id === "string" ? field.id.trim() : "";
           if (!id || field?.type === "message") return null;

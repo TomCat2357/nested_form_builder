@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
 
 const toQuestionLabel = (field, indexTrail) => {
@@ -10,7 +11,7 @@ export const buildSchemaMapItems = ({ schema, responses = {}, scope = "all" } = 
   const stack = [];
   const traversalOptions = scope === "visible" ? { responses } : {};
 
-  traverseSchema(Array.isArray(schema) ? schema : [], (field, context) => {
+  traverseSchema(ensureArray(schema), (field, context) => {
     const id = typeof field?.id === "string" ? field.id.trim() : "";
     if (!id) return;
 

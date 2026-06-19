@@ -1,3 +1,4 @@
+import { ensureArray } from "../../../utils/arrays.js";
 import React from "react";
 
 /**
@@ -57,7 +58,7 @@ function CategoryInput({ filter, value, onChange }) {
   const opts = filter.options?.values || [];
   const multi = !!filter.options?.multi;
   if (multi) {
-    const selected = Array.isArray(value) ? value : [];
+    const selected = ensureArray(value);
     return (
       <select
         className="nf-input"

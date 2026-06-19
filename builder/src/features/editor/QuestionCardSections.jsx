@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import React from "react";
 import { DEFAULT_MULTILINE_ROWS, normalizeExternalAction } from "../../core/schema.js";
 import { isValidExternalActionUrl } from "../../utils/externalActionUrl.js";
@@ -342,7 +343,7 @@ export function FormLinkSection({ field, onChange }) {
   const formOptions = React.useMemo(() => formsToOptions(forms), [forms]);
 
   const handleSelect = (selectedId) => {
-    const selectedForm = (Array.isArray(forms) ? forms : []).find((f) => f && f.id === selectedId) || null;
+    const selectedForm = (ensureArray(forms)).find((f) => f && f.id === selectedId) || null;
     onChange({
       ...field,
       childFormId: selectedId || "",

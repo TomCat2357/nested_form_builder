@@ -3,6 +3,7 @@
  * エクスポート用 DL フローとダイアログ対象 ID 解決のヘルパー。
  */
 
+import { ensureArray } from "../../utils/arrays.js";
 import JSZip from "jszip";
 import { sanitizeFileBaseName, triggerBlobDownload } from "../../utils/fileDownload.js";
 import { hasScriptRun } from "../../services/gasClient.js";
@@ -84,8 +85,8 @@ export function createMoveActions({
   };
 
   const confirmMove = () => {
-    const ids = Array.isArray(moveDialog.state[idsKey]) ? moveDialog.state[idsKey] : [];
-    const folderPaths = Array.isArray(moveDialog.state.folderPaths) ? moveDialog.state.folderPaths : [];
+    const ids = ensureArray(moveDialog.state[idsKey]);
+    const folderPaths = ensureArray(moveDialog.state.folderPaths);
     const destPath = normalizeFolderPath(moveDest);
 
     // クライアント側の存在チェック（最終判定はサーバ）。空欄=最上位は常に許可。

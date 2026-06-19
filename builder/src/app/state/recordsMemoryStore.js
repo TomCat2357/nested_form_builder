@@ -10,6 +10,7 @@
  * - No transactions; mutations are synchronous but async-wrapped to keep the IDB-shaped contract.
  */
 
+import { ensureArray } from "../../utils/arrays.js";
 import {
   withNormalizedModifiedAt,
   normalizeRecordForCache,
@@ -96,7 +97,7 @@ export async function saveRecordsToCache(formId, records, headerMatrix = [], { s
   if (!formId) return;
   const store = ensureFormStore(formId);
   const lastSyncedAt = Date.now();
-  const safeRecords = Array.isArray(records) ? records : [];
+  const safeRecords = ensureArray(records);
   const entryIndexMap = buildEntryIndexMap(safeRecords);
 
   store.records.clear();

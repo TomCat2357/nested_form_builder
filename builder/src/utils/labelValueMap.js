@@ -10,6 +10,7 @@
  * buildFileUploadRowEntries も併せて提供する。
  */
 
+import { ensureArray } from "./arrays.js";
 import { asPlainObject } from "./objectShape.js";
 
 /**
@@ -80,8 +81,8 @@ export function buildFileUploadRowEntries(fieldPaths, fileUploadMeta) {
     if (!path) continue;
     const meta = metaByFid[fid];
     if (!meta) continue;
-    const names = Array.isArray(meta.fileNames) ? meta.fileNames : [];
-    const urls = Array.isArray(meta.fileUrls) ? meta.fileUrls : [];
+    const names = ensureArray(meta.fileNames);
+    const urls = ensureArray(meta.fileUrls);
     const folderName = meta.folderName || "";
     const folderUrl = meta.folderUrl || "";
     const length = Math.max(names.length, urls.length, (folderName || folderUrl) ? 1 : 0);

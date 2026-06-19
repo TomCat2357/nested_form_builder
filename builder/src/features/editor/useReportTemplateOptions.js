@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import { useEffect, useState } from "react";
 import { listReportTemplates } from "../../services/gasClient.js";
 
@@ -8,7 +9,7 @@ let cachedPromise = null;
 export function loadReportTemplateOptions() {
   if (!cachedPromise) {
     cachedPromise = listReportTemplates()
-      .then((r) => (Array.isArray(r.files) ? r.files : []))
+      .then((r) => (ensureArray(r.files)))
       .catch((err) => {
         cachedPromise = null; // 失敗時は次回再試行できるようキャッシュを破棄
         throw err;

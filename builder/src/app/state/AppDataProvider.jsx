@@ -1,3 +1,4 @@
+import { ensureArray, toIdList } from "../../utils/arrays.js";
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { dataStore } from "./dataStore.js";
 import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
@@ -87,7 +88,7 @@ export function AppDataProvider({ children }) {
       const allForms = serverForms.map((f) => (pendingById.has(f.id) ? pendingById.get(f.id) : f));
       for (const [id, f] of pendingById) if (!serverIds.has(id)) allForms.unshift(f);
       const failures = result.loadFailures || [];
-      const folders = Array.isArray(result.folders) ? result.folders : [];
+      const folders = ensureArray(result.folders);
 
       const averagePerForm = allForms.length > 0 ? Math.round(apiCallDuration / allForms.length) : 0;
 
@@ -353,7 +354,7 @@ export function AppDataProvider({ children }) {
   }, [upsertFormsState]);
 
   const batchUpdateFormsState = useCallback(async (dataStoreFn, formIds, optimisticPatch, logPrefix) => {
-    const targetIds = Array.isArray(formIds) ? formIds.filter(Boolean) : [formIds].filter(Boolean);
+    const targetIds = toIdList(formIds);
     if (!targetIds.length) return { forms: [], updated: 0, errors: [] };
 
     const patchFn = typeof optimisticPatch === "function" ? optimisticPatch : (form) => ({ ...form, ...optimisticPatch });

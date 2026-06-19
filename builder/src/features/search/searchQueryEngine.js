@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import { splitFieldKey, splitEscaped, PATH_SEP } from "../../utils/pathCodec.js";
 import { SQL_MODE_RE, normalizeFullWidthSearchOperators } from "./searchSyntaxPreprocessor.js";
 import {
@@ -589,7 +590,7 @@ const evaluateLeafOnRow = (ast, row, columns) => {
     }
 
     case 'COLUMN_IN': {
-      const targets = Array.isArray(ast.values) ? ast.values : [];
+      const targets = ensureArray(ast.values);
       const negate = Boolean(ast.negate);
       if (targets.length === 0) return negate; // 空リスト: in→false, not in→true（恒真）
       const column = findColumnByName(columns, ast.column);

@@ -1,3 +1,4 @@
+import { ensureArray } from "./arrays.js";
 import { isPlainObject } from "./objectShape.js";
 
 const EMPTY_DRIVE_FOLDER_STATE = {
@@ -16,7 +17,7 @@ export const createEmptyDriveFolderState = () => ({
 });
 
 export const normalizeDriveFileIds = (value) => {
-  const source = Array.isArray(value) ? value : [];
+  const source = ensureArray(value);
   const seen = new Set();
   return source.reduce((ids, candidate) => {
     const normalized = typeof candidate === "string" ? candidate.trim() : "";

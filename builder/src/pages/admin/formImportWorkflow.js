@@ -3,6 +3,7 @@
  * useAdminFormListActions から分離し、React 非依存の純関数として単体テスト可能にする。
  * （取り込みワークフロー本体 startImportWorkflow / handleImportFromDrive は state 依存のため hook 側に残す。）
  */
+import { ensureArray } from "../../utils/arrays.js";
 import { toUnixMs } from "../../utils/dateTime.js";
 import { asPlainObject } from "../../utils/objectShape.js";
 
@@ -24,7 +25,7 @@ export const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredL
  */
 export const sanitizeImportedForm = (raw) => {
   if (!raw || typeof raw !== "object") return null;
-  const schema = Array.isArray(raw.schema) ? raw.schema : [];
+  const schema = ensureArray(raw.schema);
   const settings = asPlainObject(raw.settings);
   const createdAtUnixMs = toUnixMs(raw.createdAtUnixMs ?? raw.createdAt);
   const modifiedAtUnixMs = toUnixMs(raw.modifiedAtUnixMs ?? raw.modifiedAt);
@@ -56,7 +57,7 @@ export const sanitizeImportedForm = (raw) => {
 export const flattenImportedContents = (contents) => {
   const list = [];
   let invalidPayloadCount = 0;
-  (Array.isArray(contents) ? contents : []).forEach((item) => {
+  (ensureArray(contents)).forEach((item) => {
     if (item && item.form && item.fileId) {
       const sanitized = sanitizeImportedForm(item.form);
       if (sanitized) {

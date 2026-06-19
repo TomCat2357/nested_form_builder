@@ -1,3 +1,4 @@
+import { ensureArray } from "../../../utils/arrays.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { useCancellable } from "../../../app/hooks/useCancellable.js";
 import { filterDisplayColumns, getColumnDisplayLabel, shouldKeepRowFromSql } from "../utils/metaColumnDisplay.js";
@@ -51,7 +52,7 @@ export default function ResultTable({ rows, columns, heatmap, tableStyle, compil
   );
   const [sortState, setSortState] = useState(null);
 
-  const safeRows = Array.isArray(rows) ? rows : [];
+  const safeRows = ensureArray(rows);
   const sortedRows = useMemo(() => {
     if (!sortState || !sortState.column || !displayColumns.includes(sortState.column)) return safeRows;
     return sortRows(safeRows, sortState.column, sortState.dir);

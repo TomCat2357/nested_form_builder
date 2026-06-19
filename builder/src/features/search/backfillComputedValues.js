@@ -7,6 +7,8 @@
  * 書き戻し（upsertRecordInCache）や同期トリガは呼び出し側の責務。
  */
 
+import { ensureArray } from "../../utils/arrays.js";
+
 export const buildBackfilledRecord = (record, backfillResult, { now = Date.now(), userEmail = "" } = {}) => {
   if (!backfillResult || !backfillResult.changed) return null;
 
@@ -40,13 +42,13 @@ const computedMemoKey = (recordId, path) => `${recordId} ${path}`;
 
 // changedPaths のうち「まだ同じ値を書き戻していない」path だけを返す（= 今回書く価値がある path）。
 export const selectFreshComputedWritePaths = (recordId, changedPaths, data, memo) =>
-  (Array.isArray(changedPaths) ? changedPaths : []).filter(
+  (ensureArray(changedPaths)).filter(
     (path) => memo.get(computedMemoKey(recordId, path)) !== String(data?.[path]),
   );
 
 // 書き戻した計算値をメモへ記録する（次サイクル以降の再打刻抑止に使う）。
 export const rememberComputedWrites = (recordId, changedPaths, data, memo) => {
-  for (const path of (Array.isArray(changedPaths) ? changedPaths : [])) {
+  for (const path of (ensureArray(changedPaths))) {
     memo.set(computedMemoKey(recordId, path), String(data?.[path]));
   }
 };

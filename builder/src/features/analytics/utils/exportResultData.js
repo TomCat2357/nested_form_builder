@@ -3,6 +3,7 @@
  * 元の Question / Dashboard には影響しない、閲覧者向けの書き出し専用。
  */
 
+import { ensureArray } from "../../../utils/arrays.js";
 import { filterDisplayColumns, getColumnDisplayLabel, shouldKeepRowFromSql } from "./metaColumnDisplay.js";
 import { triggerBlobDownload, triggerDataUrlDownload, sanitizeFileBaseName } from "../../../utils/fileDownload.js";
 
@@ -31,7 +32,7 @@ export function rowsToCsv(rows, columns, compiledColumns, { sql } = {}) {
   const cols = filterDisplayColumns(columns, { keepRow: shouldKeepRowFromSql(sql) });
   const header = cols.map((c) => csvCell(getColumnDisplayLabel(c, compiledColumns)));
   const lines = [header.join(",")];
-  for (const row of Array.isArray(rows) ? rows : []) {
+  for (const row of ensureArray(rows)) {
     lines.push(cols.map((c) => csvCell(row ? row[c] : "")).join(","));
   }
   return UTF8_BOM + lines.join("\r\n");

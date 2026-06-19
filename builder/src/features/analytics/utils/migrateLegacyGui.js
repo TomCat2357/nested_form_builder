@@ -17,6 +17,8 @@
  * 既に v2 形式（stages を持つ）の場合は素通し。
  */
 
+import { ensureArray } from "../../../utils/arrays.js";
+
 let nextId = 0;
 function makeId(prefix) {
   nextId += 1;
@@ -122,7 +124,7 @@ export function migrateLegacyGui(gui) {
   }
   // aggregations 0 件 / raw mode の場合は summarize ステージを生成しない（compileStages の SELECT * 経路に流す）。
 
-  const orderBy = Array.isArray(gui.orderBy) ? gui.orderBy : [];
+  const orderBy = ensureArray(gui.orderBy);
   const sortEntries = migrateOrderBy(orderBy, summarizeAggIds);
   if (sortEntries.length > 0) {
     stages.push({ id: makeId("s"), type: "sort", entries: sortEntries });

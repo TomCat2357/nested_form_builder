@@ -13,6 +13,7 @@
  *   3. runAlaSql(transformedSql) → collapseQueryResult(rows, columns)
  */
 
+import { ensureArray } from "../../utils/arrays.js";
 import { maskWithPlaceholders } from "../analytics/utils/sqlLiteralMask.js";
 import { coerceResultToString } from "./coerceResultToString.js";
 
@@ -53,7 +54,7 @@ export function substituteCurrentIdLiteral(sql, recordId) {
  * @returns {string}
  */
 export function collapseQueryResult(rows, columns) {
-  const list = Array.isArray(rows) ? rows : [];
+  const list = ensureArray(rows);
   if (list.length === 0) return "";
   const cols = Array.isArray(columns) && columns.length > 0
     ? columns

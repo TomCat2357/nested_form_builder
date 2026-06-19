@@ -1,3 +1,4 @@
+import { ensureArray } from "../../utils/arrays.js";
 import { compileNameMatcher, joinFolderPath } from "../../utils/folderTree.js";
 import { compareStrings } from "../../features/search/searchTableValues.js";
 import { formQualifiedName } from "../../features/analytics/utils/formIdentifierResolver.js";
@@ -30,7 +31,7 @@ export function sortAndFilterOptions(options, query, value) {
  * null / id 欠落の要素はスキップする。
  */
 export function formsToOptions(forms) {
-  return (Array.isArray(forms) ? forms : [])
+  return (ensureArray(forms))
     .filter((f) => f && f.id)
     .map((f) => ({ value: f.id, label: formQualifiedName(f) || f.id, folder: f.folder || "" }));
 }
@@ -41,7 +42,7 @@ export function formsToOptions(forms) {
  * null / id 欠落の要素はスキップする。
  */
 export function questionsToOptions(questions) {
-  return (Array.isArray(questions) ? questions : [])
+  return (ensureArray(questions))
     .filter((q) => q && q.id)
     .map((q) => ({ value: q.id, label: joinFolderPath(q.folder, q.name) || q.id, folder: q.folder || "" }));
 }
@@ -57,7 +58,7 @@ export function questionsToOptions(questions) {
  * key 欠落の要素はスキップ、非配列入力は空配列を返す。
  */
 export function columnsToOptions(columns) {
-  return (Array.isArray(columns) ? columns : [])
+  return (ensureArray(columns))
     .filter((c) => c && c.key)
     .map((c) => ({
       value: c.key,

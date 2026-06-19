@@ -9,6 +9,7 @@
  * 両側を揃えること。等価性は tests/schema-walkers-equivalence.test.cjs で担保。
  */
 
+import { ensureArray } from "../utils/arrays.js";
 import { shouldShowUnconditionalChildren } from "./fieldValue.js";
 
 /**
@@ -64,7 +65,7 @@ export const traverseSchema = (schema, visitor, options = {}) => {
   const branchSegmentFn = typeof opts.branchSegment === "function" ? opts.branchSegment : null;
 
   const walk = (nodes, pathSegments, depth, indexTrail) => {
-    const list = Array.isArray(nodes) ? nodes : [];
+    const list = ensureArray(nodes);
     for (let i = 0; i < list.length; i++) {
       const field = list[i];
       if (field === undefined || field === null) continue;
@@ -94,7 +95,7 @@ export const traverseSchema = (schema, visitor, options = {}) => {
         let childKeys;
         if (hasGetChildKeys) {
           const custom = opts.getChildKeys(field, context);
-          childKeys = Array.isArray(custom) ? custom : [];
+          childKeys = ensureArray(custom);
         } else if (hasResponses) {
           const value = opts.responses[field.id];
           if (field.type === "checkboxes" && Array.isArray(value)) {
@@ -137,7 +138,7 @@ export const traverseSchema = (schema, visitor, options = {}) => {
     }
   };
 
-  walk(Array.isArray(schema) ? schema : [], [], 1, []);
+  walk(ensureArray(schema), [], 1, []);
 };
 
 /**
@@ -145,7 +146,7 @@ export const traverseSchema = (schema, visitor, options = {}) => {
  */
 export const mapSchema = (schema, mapper) => {
   const walk = (nodes, pathSegments, depth) => {
-    const list = Array.isArray(nodes) ? nodes : [];
+    const list = ensureArray(nodes);
     const out = [];
     for (let i = 0; i < list.length; i++) {
       const field = list[i];
@@ -176,7 +177,7 @@ export const mapSchema = (schema, mapper) => {
     }
     return out;
   };
-  return walk(Array.isArray(schema) ? schema : [], [], 1);
+  return walk(ensureArray(schema), [], 1);
 };
 
 export const countSchemaNodes = (schema) => {
