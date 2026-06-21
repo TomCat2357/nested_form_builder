@@ -176,6 +176,7 @@ test("normalizeSchemaIDs は旧 fileUpload の printTemplateAction を独立カ�
     outputType: "pdf",
     useCustomTemplate: false,
     templateUrl: "https://example.com/template",
+    templatePath: "",
     fileNameTemplate: "出力_${recordId}",
     gmailAttachPdf: false,
     gmailTemplateTo: "",

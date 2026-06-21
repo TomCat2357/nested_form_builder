@@ -108,6 +108,8 @@ export function SettingsField({ field, value, onChange, disabled }) {
       placeholder={field.placeholder}
       onChange={(event) => onChange(field.key, event.target.value)}
       disabled={disabled}
+      readOnly={!!field.readOnly}
+      style={field.readOnly ? { opacity: 0.7 } : undefined}
     />
   );
 }

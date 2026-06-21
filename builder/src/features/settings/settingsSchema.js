@@ -15,10 +15,11 @@ export const SPREADSHEET_SETTINGS_GROUP = {
     },
     {
       key: "spreadsheetId",
-      label: "Spreadsheet ID / URL（直接指定）",
-      placeholder: "1AbCdEf... / https://docs.google.com/... / https://drive.google.com/drive/folders/...",
+      label: "Spreadsheet ID / URL（参照のみ・編集不可）",
+      placeholder: "保存時に自動で入ります",
       required: false,
-      description: "論理パスを選ばない場合のみ有効（直接リンク）。空欄なら 04_spreadsheets に回答保存用スプレッドシートを自動作成します。フォルダURLを入れればそのフォルダ内に、スプレッドシートURLを入れれば既存シートにリンクします（作成後はURLが自動で入ります）。",
+      readOnly: true,
+      description: "保存時に解決された物理 URL を参照表示します（編集不可）。指定は上の論理パスで行ってください。プロジェクト外/別フォルダの既存シートは保存時に 04_spreadsheets へ取り込み（外部はコピー・内部は移動）、論理パスへ貼り直します。",
     },
     {
       key: "sheetName",

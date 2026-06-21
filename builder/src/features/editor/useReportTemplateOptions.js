@@ -26,6 +26,7 @@ const toOption = (file) => {
   return {
     value: file.fileId,
     label: path,
+    path: path,
     folder: slash >= 0 ? path.slice(0, slash) : "",
     url: file.url,
     fileId: file.fileId,

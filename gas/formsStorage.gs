@@ -74,6 +74,21 @@ function Forms_createSpreadsheetAtPath_(path) {
   return Forms_createSpreadsheet_(leaf, folder.getId());
 }
 
+// 既存スプレッドシート fileId を 04_spreadsheets へ寄せ（外部=copy/内部=move）、論理パスを正本化した
+// 断片 { path, spreadsheetId, spreadsheetUrl } を返す。取り込めない（root 未解決等）ときは null。
+function Forms_alignSpreadsheetIntoStd_(spreadsheetId) {
+  var aligned = StdFolders_alignFileRefIntoStdFolder_("spreadsheets", spreadsheetId, "");
+  if (aligned && aligned.fileId && aligned.path &&
+      aligned.status !== "unresolved" && aligned.status !== "noop") {
+    return {
+      path: aligned.path,
+      spreadsheetId: aligned.fileId,
+      spreadsheetUrl: aligned.url || ("https://docs.google.com/spreadsheets/d/" + aligned.fileId + "/edit")
+    };
+  }
+  return null;
+}
+
 /**
  * スプレッドシート設定を解決（空/フォルダ指定は新規作成）。
  * 解決優先順: settings.spreadsheetPath（04_spreadsheets 配下の論理パス）が非空ならそれを優先。
@@ -140,6 +155,18 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
 
   if (parsed.type === "folder") {
     var createdFolder = Forms_createSpreadsheet_(Forms_buildSpreadsheetName_(form), parsed.id);
+    // 指定フォルダが外部/別フォルダでも 04_spreadsheets へ寄せて論理パス化する（外部=copy/内部=move）。
+    var alignedNew = Forms_alignSpreadsheetIntoStd_(createdFolder.spreadsheetId);
+    if (alignedNew) {
+      nextSettings.spreadsheetPath = alignedNew.path;
+      nextSettings.spreadsheetId = "";
+      return {
+        settings: nextSettings,
+        created: true,
+        spreadsheetId: alignedNew.spreadsheetId,
+        spreadsheetUrl: alignedNew.spreadsheetUrl
+      };
+    }
     nextSettings.spreadsheetId = createdFolder.spreadsheetUrl;
     return {
       settings: nextSettings,
@@ -149,13 +176,26 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
     };
   }
 
-  // spreadsheet
+  // spreadsheet — 既存シートを 04_spreadsheets へ寄せて論理パス（spreadsheetPath）を正本化する（外部=copy/内部=move）。
   try {
     SpreadsheetApp.openById(parsed.id);
   } catch (err) {
     throw new Error("スプレッドシートにアクセスできません: " + nfbErrorToString_(err));
   }
 
+  var alignedSheet = Forms_alignSpreadsheetIntoStd_(parsed.id);
+  if (alignedSheet) {
+    nextSettings.spreadsheetPath = alignedSheet.path;
+    nextSettings.spreadsheetId = "";
+    return {
+      settings: nextSettings,
+      created: false,
+      spreadsheetId: alignedSheet.spreadsheetId,
+      spreadsheetUrl: alignedSheet.spreadsheetUrl
+    };
+  }
+
+  // 取り込めない（root 未解決等）→ 従来どおり直接 ID/URL でリンク（degrade）。
   nextSettings.spreadsheetId = rawInput;
   return {
     settings: nextSettings,
@@ -272,6 +312,10 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     // formLink の childFormPath を中央辞書から導出して冗長保存（stamp）する。リンク切れ時の復旧アンカー。
     try { StdFolders_stampRefPaths_(formWithTimestamp, "forms"); }
     catch (errStamp) { Logger.log("[Forms_saveForm_] stampRefPaths failed: " + nfbErrorToString_(errStamp)); }
+
+    // 印刷様式 Doc 参照を 05_report_templates へ寄せ、物理 URL と論理パスを両方更新する（外部=copy/内部=move、非致命）。
+    try { StdFolders_normalizePrintTemplateRefsOnSave_(formWithTimestamp); }
+    catch (errTpl) { Logger.log("[Forms_saveForm_] normalizePrintTemplateRefsOnSave failed: " + nfbErrorToString_(errTpl)); }
 
     var content = JSON.stringify(formWithTimestamp, null, 2);
     // ファイル名 ＝ 一意化済みタイトル（名前 ＝ Drive ファイル名 へ統一するため uniqueTitle を権威とする）。
