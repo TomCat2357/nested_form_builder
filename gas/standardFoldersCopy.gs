@@ -305,7 +305,9 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActi
     var file = read.file;
     var json = read.json;
 
-    // form → spreadsheet
+    // form → spreadsheet（直接 ID/URL リンクのみ idMap で再マップ／対象外はクリア）。
+    // 論理パス（settings.spreadsheetPath）はここでは一切触らない＝相対パスがコピー先の同構造へ
+    // そのまま追従する（コピー先 04_spreadsheets の同パスへ再解決される。除外コピーで未解決なら空）。
     if (json.settings && json.settings.spreadsheetId) {
       var ss = StdFolders_remapFileUrl_(json.settings.spreadsheetId, idMap);
       json.settings.spreadsheetId = ss.value;
@@ -381,8 +383,10 @@ function StdFolders_rewireDashboardFile_(fileId, idMap) {
   return unresolved;
 }
 
-// idMap（旧fileId→{newFileId,newUrl}）でソースの 3 マッピングをコピー先 ID に振り直し、
-// _nfb_mapping.json 形のドキュメントを組み立てる。idMap 未収載のエントリ（コピー対象外）は除外。
+// コピーされたエンティティ（idMap 収載）の _nfb_mapping.json（version 2・論理パスのみ）を組み立てる。
+// idMap は「コピー対象に含まれたか」の判定だけに使い、コピー元/コピー先いずれの fileId も書き出さない。
+// 各エントリは folder ＋ 名前（nameKey）だけを持つ。コピー先で取り込んだ際にコピー先ツリーを走査して
+// 論理パス→ローカル fileId を解決するため、fileId を引き回さない（＝コピー後にコピー元を指す事故を防ぐ）。
 function StdFolders_buildCopiedMappingDoc_(idMap, sourceRootId) {
   function remapSection(mapping, nameKey) {
     var out = {};
@@ -390,18 +394,19 @@ function StdFolders_buildCopiedMappingDoc_(idMap, sourceRootId) {
       if (!mapping.hasOwnProperty(id)) continue;
       var entry = mapping[id] || {};
       var srcFileId = Nfb_resolveFileIdFromEntry_(entry);
-      if (!srcFileId || !idMap[srcFileId]) continue;
-      var mapped = idMap[srcFileId];
-      var next = { fileId: mapped.newFileId, driveFileUrl: mapped.newUrl };
-      if (nameKey && typeof entry[nameKey] === "string") next[nameKey] = entry[nameKey];
-      if (typeof entry.folder === "string") next.folder = entry.folder; // 論理パス L を引き回す（dead-F 解決の保険）。
+      if (!srcFileId || !idMap[srcFileId]) continue;   // コピー対象に含まれたものだけ
+      var name = entry[nameKey];
+      if (typeof name !== "string" || !name) continue; // 名前無しは論理パスを作れない
+      var next = {};
+      next[nameKey] = name;
+      next.folder = (typeof entry.folder === "string") ? entry.folder : ""; // 論理パス（folder/名前）のみ
       out[id] = next;
     }
     return out;
   }
   return {
     type: "nfb-mapping",
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     sourceRootId: sourceRootId || "",
     forms: remapSection(Forms_getMapping_(), "title"),

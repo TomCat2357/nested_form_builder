@@ -38,6 +38,16 @@ export const resolveSettingsCheckboxChecked = (field, value) => (
   value !== undefined ? !!value : !!field?.defaultValue
 );
 
+// フォーム→スプレッドシートのリンクは「論理パス（spreadsheetPath）」と「直接 ID/URL（spreadsheetId）」を
+// 排他にする。一方に値が入ったらもう一方を空にする（後勝ち）。設定変更時に適用する純関数。
+// 排他対象外のキー変更はそのまま反映する。
+export const applySpreadsheetExclusiveSetting = (settings, key, value) => {
+  const next = { ...(settings || {}), [key]: value };
+  if (key === "spreadsheetPath" && value) next.spreadsheetId = "";
+  if (key === "spreadsheetId" && value) next.spreadsheetPath = "";
+  return next;
+};
+
 export const EXTERNAL_ACTIONS_MAX = 3;
 
 const EMPTY_EXTERNAL_ACTION = Object.freeze({ label: "", url: "", adminOnly: false });
