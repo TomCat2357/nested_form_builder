@@ -61,16 +61,19 @@ export function formatAlignSummary(rootName, align) {
 // システムごとコピーの結果を通知文字列へ整形する。
 // categories（正規化済みカテゴリ選択）が渡された場合、未選択カテゴリは「除外」と表示し分ける
 // （件数 0 が「元が空」か「意図的に除外」かを区別する）。未指定なら従来どおり件数のみ。
-export function formatCopyResult({ summary, categories, clearedLinks, unresolvedQuestionLinks, appsScriptCopied, appsScriptCopyError, message }) {
+export function formatCopyResult({ summary, categories, clearedLinks, unresolvedLinks, unresolvedQuestionLinks, appsScriptCopied, appsScriptCopyError, message }) {
   const lines = Object.keys(summary).map((k) =>
     (categories && categories[k] === false) ? `${k}: 除外` : `${k}: ${summary[k]}件`);
   const appsScriptStatus = appsScriptCopied
     ? "コピーしました"
     : `コピーできませんでした（${appsScriptCopyError || "権限等を確認してください"}）`;
+  // unresolvedLinks = フォーム同士 / Question→フォーム / ダッシュボード→Question 合算（旧版は
+  // ダッシュボード分のみの unresolvedQuestionLinks）。論理パスは保持し、コピー元へは繋がない。
+  const unresolved = unresolvedLinks ?? unresolvedQuestionLinks ?? 0;
   return (
     `${message}\n\nappsscript 本体: ${appsScriptStatus}\n` +
     `コピー件数:\n${lines.join("\n")}\nクリアしたリンク: ${clearedLinks}\n` +
-    `未解決の Question リンク（参照は保持・要再リンク）: ${unresolvedQuestionLinks ?? 0}`
+    `未解決のリンク（参照は論理パスを保持・要再リンク）: ${unresolved}`
   );
 }
 

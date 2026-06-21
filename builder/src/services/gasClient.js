@@ -333,7 +333,7 @@ export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyE
   const payload = { destRootUrl, copyData, copyExternalActions, rebuildMapping };
   if (categories) payload.categories = categories;
   const r = await fetchGasApi("nfbCopyStandardFolders", payload, "システムごとコピーに失敗しました");
-  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, unresolvedQuestionLinks: r.unresolvedQuestionLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), appsScriptCopyError: r.appsScriptCopyError || "", categories: r.categories || {}, message: r.message || "" };
+  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, unresolvedLinks: r.unresolvedLinks ?? r.unresolvedQuestionLinks ?? 0, unresolvedQuestionLinks: r.unresolvedQuestionLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), appsScriptCopyError: r.appsScriptCopyError || "", categories: r.categories || {}, message: r.message || "" };
 };
 // 現在のマッピングを _nfb_mapping.json 形のドキュメントで取得（ダウンロード用）。
 export const exportMapping = async () => {

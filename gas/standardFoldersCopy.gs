@@ -116,29 +116,36 @@ function StdFolders_copy_(payload) {
       summary[key] = copied.length;
     }
 
-    // --- 第2パス: コピー先ファイルのリンク（formId / questionId / 各種 URL）を idMap で再配線 ---
+    // --- 第2パス: コピー先ファイルのリンク（childFormId / formId / questionId / 各種 URL）を idMap で再配線 ---
     // id は埋め込まない（id ＝ fileId）。コピー先では新 fileId が新 id になり、リンクも新 fileId を指す。
-    var clearedLinks = 0;
+    // エンティティ間参照は保存時整合と同じ正準ビジター（StdFolders_forEachRef_ 経由）で巡回するため、
+    // フォーム同士・Q→フォーム・ダッシュボード→Q の全種別が漏れなく再配線される。コピー対象に
+    // 含まれない参照は id を空にし（コピー元へは残さない）、論理パスを保持して未解決として数える。
+    var clearedLinks = 0;     // URL 系（spreadsheet / 印刷様式 / アップロード先 / 外部アクション）でクリアした数
+    var unresolvedLinks = 0;  // エンティティ参照（3 種合算）でコピー対象外を指していたため空にした数
 
-    // forms (01_forms): spreadsheet / フォルダ / 外部アクション URL を再マップ
+    // forms (01_forms): spreadsheet / フォルダ / 外部アクション URL + 子フォームリンク（childFormId）を再マップ
     var formCopied = copiedFilesByKey["forms"] || [];
     for (var fi = 0; fi < formCopied.length; fi++) {
-      clearedLinks += StdFolders_rewireFormFile_(formCopied[fi].newFileId, idMap, folderIdMap, selectedKeys.externalActions);
+      var formRes = StdFolders_rewireFormFile_(formCopied[fi].newFileId, idMap, folderIdMap, selectedKeys.externalActions);
+      clearedLinks += formRes.cleared;
+      unresolvedLinks += formRes.unresolved;
     }
 
     // questions (02_questions): query.gui.formId / query.formSources[].formId を新 fileId へ再マップ
     var qCopied = copiedFilesByKey["questions"] || [];
     for (var qj = 0; qj < qCopied.length; qj++) {
-      StdFolders_rewireQuestionFile_(qCopied[qj].newFileId, idMap);
+      unresolvedLinks += StdFolders_rewireQuestionFile_(qCopied[qj].newFileId, idMap);
     }
 
-    // dashboards (03_dashboards): cards[].questionId を新 fileId へ再マップ。idMap に無い参照は
-    // questionName を残したまま未解決として数える（コピー先の同期で名前フォールバック復旧）。
+    // dashboards (03_dashboards): cards[].questionId を新 fileId へ再マップ。
+    // unresolvedQuestionLinks は後方互換のためダッシュボード→Question の未解決数を別途保持する。
     var unresolvedQuestionLinks = 0;
     var dCopied = copiedFilesByKey["dashboards"] || [];
     for (var dj = 0; dj < dCopied.length; dj++) {
       unresolvedQuestionLinks += StdFolders_rewireDashboardFile_(dCopied[dj].newFileId, idMap);
     }
+    unresolvedLinks += unresolvedQuestionLinks;
 
     // 再構築 ON のときはコピー先ルートへ _nfb_mapping.json を書き出す（新 fileId に振り直し済み）。
     // 復元はコピー先で手動：設定 > 管理 の「インポート」（URL 空欄でルートの最新 .json を読込）。
@@ -151,6 +158,7 @@ function StdFolders_copy_(payload) {
       destRootUrl: destRoot.getUrl(),
       summary: summary,
       clearedLinks: clearedLinks,
+      unresolvedLinks: unresolvedLinks,
       unresolvedQuestionLinks: unresolvedQuestionLinks,
       copyData: copyData,
       copyExternalActions: selectedKeys.externalActions,
@@ -162,8 +170,8 @@ function StdFolders_copy_(payload) {
       message: (rebuildMapping
         ? "コピーが完了しました。コピー先ルートに _nfb_mapping.json を保存しました。コピー先の 設定 > 管理 から「インポート」（URL 空欄でルートの最新を読込）を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
         : "コピーが完了しました。コピー先の 設定 > 管理 から「インポート」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。")
-        + (unresolvedQuestionLinks > 0
-          ? "\n※ ダッシュボードからコピー対象外の Question を参照しているカードが " + unresolvedQuestionLinks + " 件あります。参照は保持しているので、コピー先で各エンティティを保存した際に自動再リンクされるか、編集画面のリンク差し替えで復旧できます。"
+        + (unresolvedLinks > 0
+          ? "\n※ コピー対象に含まれない参照（フォーム同士 / Question→フォーム / ダッシュボード→Question）が " + unresolvedLinks + " 件あります。コピー元へは繋がず論理パス（folder/名前）を保持しているので、編集画面のリンク差し替え、またはコピー先で対象を取り込んで保存した際の再リンクで復旧してください。"
           : "")
         + (copyGuard.truncated
           ? "\n※ コピーするファイル数が上限（" + copyGuard.maxNodes + " 件）に達したため一部が未複製です。コピー先を確認し、不足分は再実行してください。"
@@ -261,19 +269,37 @@ function StdFolders_clearSpreadsheetData_(spreadsheetId) {
   }
 }
 
-// idMap（旧fileId→{newFileId,newUrl}）を使い、リンク id（旧 fileId）を新 fileId へ写像する。
-// idMap に無い（コピー対象外）の参照はそのまま返し、呼び出し側で名前フォールバックに委ねる。
-// 戻り: { value, status } status は "remapped" | "unchanged"。
-function StdFolders_remapLinkId_(id, idMap) {
-  var raw = String(id || "").trim();
-  if (!raw) return { value: "", status: "unchanged" };
-  if (idMap[raw]) return { value: idMap[raw].newFileId, status: "remapped" };
-  return { value: raw, status: "unchanged" };
+// idMap（旧fileId→{newFileId,newUrl}）を使い、エンティティ間参照（Q→Form / D→Q / Form→子Form）を
+// 保存時整合と同じ正準ビジター StdFolders_forEachRef_ で巡回して再配線する。参照種別の列挙を 1 箇所
+// （forEachRef）に集約することで、コピー側と保存時整合のドリフト（種別の取りこぼし）を防ぐ。
+//   - idMap にヒット → 直接 id（idKey）を新 fileId へ張り替え。論理パス（pathKey）は相対構造が
+//     同一なので据え置き（コピー先でもそのまま有効）。
+//   - ミス（コピー対象外） → 直接 id を空にする（コピー元へは残さない＝論理パス優先）。論理パス
+//     （pathKey）は復旧アンカーとして保持し、未解決として数える。
+// 戻り値: 未解決（コピー対象外を指していた）参照の件数。
+function StdFolders_rewireEntityRefsInJson_(json, kind, idMap) {
+  var unresolved = 0;
+  StdFolders_forEachRef_(json, kind, function(ref) {
+    var oldId = ref.holder[ref.idKey];
+    if (!oldId) return;
+    if (idMap[oldId]) {
+      ref.holder[ref.idKey] = idMap[oldId].newFileId;   // path は据え置き（相対構造が同一）
+    } else {
+      ref.holder[ref.idKey] = "";                       // 論理パス優先・コピー元へは残さない（path は保持）
+      unresolved++;
+    }
+  });
+  return unresolved;
 }
 
-// フォーム定義ファイルのリンク再配線（id は埋め込まない＝id ＝ fileId）。クリアしたリンク数を返す。
+// フォーム定義ファイルのリンク再配線（id は埋め込まない＝id ＝ fileId）。
+// URL/フォルダ系（spreadsheet / 印刷様式 / アップロード先 / 外部アクション）と、エンティティ参照
+// （formLink の childFormId）を同一の 1 回 read/write で再配線する。
+// 戻り: { cleared, unresolved }。cleared=コピー対象外で空にした URL リンク数、
+//        unresolved=コピー対象外を指していた子フォームリンク数（論理パスは保持）。
 function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActions) {
   var cleared = 0;
+  var unresolved = 0;
   try {
     var read = Nfb_readJsonFileById_(fileId);
     var file = read.file;
@@ -286,7 +312,7 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActi
       if (ss.status === "cleared") cleared++;
     }
 
-    // schema フィールド内のリンク
+    // schema フィールド内の URL/フォルダ系リンク
     StdFolders_walkFields_(json.schema, function(field) {
       // 印刷様式テンプレート
       if (field.printTemplateAction && field.printTemplateAction.templateUrl) {
@@ -309,65 +335,45 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActi
       }
     });
 
+    // エンティティ参照（formLink の childFormId）を idMap で再配線（保存時整合と同じビジターを再利用）。
+    unresolved += StdFolders_rewireEntityRefsInJson_(json, "forms", idMap);
+
     Nfb_writeJsonToFile_(file, json);
   } catch (err) {
     Logger.log("[StdFolders_rewireFormFile_] " + fileId + ": " + nfbErrorToString_(err));
   }
-  return cleared;
+  return { cleared: cleared, unresolved: unresolved };
 }
 
 // クエスチョン定義ファイルの formId 再配線（id は埋め込まない＝id ＝ fileId）。
 // query.gui.formId と query.formSources[].formId を idMap で新 fileId へ写像する。
-// idMap に無い（コピー対象外）の formId は保持し、formName による名前フォールバックに委ねる。
+// idMap に無い（コピー対象外）の formId は空にし（コピー元へは残さない＝論理パス優先）、
+// formPath を復旧アンカーとして保持して未解決として数える。戻り値: 未解決リンク数。
 function StdFolders_rewireQuestionFile_(fileId, idMap) {
+  var unresolved = 0;
   try {
     var read = Nfb_readJsonFileById_(fileId);
     var file = read.file;
     var json = read.json;
-    var query = json && json.query;
-    if (query && typeof query === "object") {
-      if (query.gui && typeof query.gui === "object" && query.gui.formId) {
-        query.gui.formId = StdFolders_remapLinkId_(query.gui.formId, idMap).value;
-      }
-      if (Array.isArray(query.formSources)) {
-        for (var i = 0; i < query.formSources.length; i++) {
-          var src = query.formSources[i];
-          if (src && src.formId) src.formId = StdFolders_remapLinkId_(src.formId, idMap).value;
-        }
-      }
-    }
+    unresolved = StdFolders_rewireEntityRefsInJson_(json, "questions", idMap);
     Nfb_writeJsonToFile_(file, json);
   } catch (err) {
     Logger.log("[StdFolders_rewireQuestionFile_] " + fileId + ": " + nfbErrorToString_(err));
   }
+  return unresolved;
 }
 
 // ダッシュボード定義ファイルの questionId 再配線（id は埋め込まない＝id ＝ fileId）。
 // cards[].questionId を idMap で新 fileId へ写像する。idMap に無い（コピー対象外）の参照は
-// questionId / questionName を保持したまま未解決として数える（コピー先の同期で名前フォールバック復旧）。
-// 戻り値: 未解決リンク数。
+// questionId を空にし（コピー元へは残さない＝論理パス優先）、questionPath を復旧アンカーとして
+// 保持したまま未解決として数える。戻り値: 未解決リンク数。
 function StdFolders_rewireDashboardFile_(fileId, idMap) {
   var unresolved = 0;
   try {
     var read = Nfb_readJsonFileById_(fileId);
     var file = read.file;
     var json = read.json;
-
-    if (Array.isArray(json.cards)) {
-      for (var i = 0; i < json.cards.length; i++) {
-        var card = json.cards[i];
-        if (card && typeof card.questionId === "string" && card.questionId) {
-          var r = StdFolders_remapLinkId_(card.questionId, idMap);
-          if (r.status === "remapped") {
-            card.questionId = r.value;
-          } else {
-            // コピー対象外 → 参照は保持し、未解決として数える。
-            unresolved++;
-          }
-        }
-      }
-    }
-
+    unresolved = StdFolders_rewireEntityRefsInJson_(json, "dashboards", idMap);
     Nfb_writeJsonToFile_(file, json);
   } catch (err) {
     Logger.log("[StdFolders_rewireDashboardFile_] " + fileId + ": " + nfbErrorToString_(err));

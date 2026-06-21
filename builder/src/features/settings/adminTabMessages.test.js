@@ -65,7 +65,7 @@ test("formatCopyResult: appsScript 失敗時は理由を含む", () => {
   assert.match(out, /appsscript 本体: コピーできませんでした（権限なし）/);
   assert.match(out, /forms: 2件/);
   assert.match(out, /クリアしたリンク: 5/);
-  assert.match(out, /未解決の Question リンク.*: 0/);
+  assert.match(out, /未解決のリンク.*: 0/);
 });
 
 test("formatCopyResult: appsScript 成功 / unresolved 未指定は 0", () => {
@@ -76,7 +76,21 @@ test("formatCopyResult: appsScript 成功 / unresolved 未指定は 0", () => {
     message: "OK",
   });
   assert.match(out, /appsscript 本体: コピーしました/);
-  assert.match(out, /未解決の Question リンク.*: 0/);
+  assert.match(out, /未解決のリンク.*: 0/);
+});
+
+test("formatCopyResult: unresolvedLinks を表示、無ければ unresolvedQuestionLinks にフォールバック", () => {
+  const withTotal = formatCopyResult({
+    summary: {}, clearedLinks: 0, unresolvedLinks: 3, unresolvedQuestionLinks: 1,
+    appsScriptCopied: true, message: "OK",
+  });
+  assert.match(withTotal, /未解決のリンク.*: 3/, "3 種合算の unresolvedLinks を優先表示");
+
+  const legacy = formatCopyResult({
+    summary: {}, clearedLinks: 0, unresolvedQuestionLinks: 2,
+    appsScriptCopied: true, message: "OK",
+  });
+  assert.match(legacy, /未解決のリンク.*: 2/, "旧版（unresolvedLinks 無し）は unresolvedQuestionLinks にフォールバック");
 });
 
 test("formatCopyResult: categories で未選択カテゴリは「除外」と表示し分ける", () => {
