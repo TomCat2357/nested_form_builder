@@ -72,8 +72,12 @@ function StdFolders_copy_(payload) {
     // id ＝ Drive fileId へ統一したため、コピー先では全ファイルが新 fileId（＝新 id）になる。
     // リンク（formId / questionId）はコピー時に idMap（旧fileId→新fileId）で再マップする。
     var idMap = {};         // oldFileId → { newFileId, newUrl }
-    var folderIdMap = {};   // srcSubfolderId → destSubfolderUrl
+    var folderIdMap = {};   // srcFolderId → destFolderUrl（標準サブフォルダ＋ネスト配下）
     var summary = {};
+    // コピー全体で共有するガード（暴走バックストップ）と訪問済み集合（多親/循環保護）。
+    // maxNodes はあくまで保険で、実際の主制約は GAS の 6 分実行制限。truncated は戻り値で通知する。
+    var copyGuard = { count: 0, maxNodes: 5000, maxDepth: 20, truncated: false };
+    var copyVisited = {};
 
     // --- 第1パス: 8 キー全件を回す。フォルダ URL（folderIdMap）は選択に関わらず登録し、
     // 未選択カテゴリはファイル複製のみスキップする（フォルダは上で作成済み）。 ---
@@ -102,22 +106,12 @@ function StdFolders_copy_(payload) {
         continue;
       }
 
+      // 直下ファイルだけでなくサブフォルダ配下（06_upload_files/<レコード>/… 等）も再帰複製する。
       var copied = [];
-      var files = srcSub.getFiles();
-      while (files.hasNext()) {
-        var srcFile = files.next();
-        if (typeof srcFile.isTrashed === "function" && srcFile.isTrashed()) continue;
-        var srcFileId = srcFile.getId();
-        var newFile = srcFile.makeCopy(srcFile.getName(), destSub);
-        var newFileId = newFile.getId();
-        idMap[srcFileId] = { newFileId: newFileId, newUrl: newFile.getUrl() };
-        copied.push({ newFileId: newFileId, srcFileId: srcFileId });
-
-        // スプレッドシートかつ「データを含めない」場合は 12 行目以降を消去
-        if (key === "spreadsheets" && !copyData) {
-          StdFolders_clearSpreadsheetData_(newFileId);
-        }
-      }
+      StdFolders_copyFolderTree_(srcSub, destSub, {
+        key: key, copyData: copyData, idMap: idMap, folderIdMap: folderIdMap,
+        copied: copied, visited: copyVisited, guard: copyGuard
+      }, 0);
       copiedFilesByKey[key] = copied;
       summary[key] = copied.length;
     }
@@ -164,14 +158,58 @@ function StdFolders_copy_(payload) {
       rebuildMapping: rebuildMapping,
       appsScriptCopied: appsScriptCopied,
       appsScriptCopyError: appsScriptCopied ? "" : (appsScriptCopyResult.reason || ""),
+      truncated: copyGuard.truncated,
       message: (rebuildMapping
         ? "コピーが完了しました。コピー先ルートに _nfb_mapping.json を保存しました。コピー先の 設定 > 管理 から「インポート」（URL 空欄でルートの最新を読込）を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。"
         : "コピーが完了しました。コピー先の 設定 > 管理 から「インポート」を実行してマッピングを復元してください。コピー先スクリプトの Web アプリは手動で再デプロイしてください。")
         + (unresolvedQuestionLinks > 0
           ? "\n※ ダッシュボードからコピー対象外の Question を参照しているカードが " + unresolvedQuestionLinks + " 件あります。参照は保持しているので、コピー先で各エンティティを保存した際に自動再リンクされるか、編集画面のリンク差し替えで復旧できます。"
           : "")
+        + (copyGuard.truncated
+          ? "\n※ コピーするファイル数が上限（" + copyGuard.maxNodes + " 件）に達したため一部が未複製です。コピー先を確認し、不足分は再実行してください。"
+          : "")
     };
   });
+}
+
+// srcFolder の中身（直下ファイル＋サブフォルダ配下）を destFolder へ再帰的に複製する。
+// - 各ファイルを makeCopy し ctx.idMap（旧fileId→{newFileId,newUrl}）/ ctx.copied に登録。
+//   key==="spreadsheets" かつ !copyData のときはコピー先スプレッドシートの 12 行目以降を消去。
+// - 各サブフォルダは destFolder 配下に get-or-create で再現し ctx.folderIdMap（srcFolderId→destFolderUrl）
+//   へ登録してから再帰（ネストした upload フォルダ等の driveRootFolderUrl 再マップに使う）。
+// ctx.guard（count/maxNodes/maxDepth/truncated）と ctx.visited で暴走・多親/循環を保護する。
+function StdFolders_copyFolderTree_(srcFolder, destFolder, ctx, depth) {
+  var guard = ctx.guard;
+  if (guard.truncated || depth > guard.maxDepth) return;
+  var files = srcFolder.getFiles();
+  while (files.hasNext()) {
+    if (guard.count >= guard.maxNodes) { guard.truncated = true; return; }
+    var srcFile = files.next();
+    if (typeof srcFile.isTrashed === "function" && srcFile.isTrashed()) continue;
+    var srcFileId = srcFile.getId();
+    var newFile = srcFile.makeCopy(srcFile.getName(), destFolder);
+    var newFileId = newFile.getId();
+    ctx.idMap[srcFileId] = { newFileId: newFileId, newUrl: newFile.getUrl() };
+    ctx.copied.push({ newFileId: newFileId, srcFileId: srcFileId });
+    guard.count++;
+
+    // スプレッドシートかつ「データを含めない」場合は 12 行目以降を消去
+    if (ctx.key === "spreadsheets" && !ctx.copyData) {
+      StdFolders_clearSpreadsheetData_(newFileId);
+    }
+  }
+  var subIt = srcFolder.getFolders();
+  while (subIt.hasNext()) {
+    if (guard.truncated) return;
+    var srcChild = subIt.next();
+    if (typeof srcChild.isTrashed === "function" && srcChild.isTrashed()) continue;
+    var cid = srcChild.getId();
+    if (ctx.visited[cid]) continue;        // 多親/循環保護
+    ctx.visited[cid] = true;
+    var destChild = StdFolders_getOrCreateChildFolder_(destFolder, srcChild.getName());
+    ctx.folderIdMap[cid] = destChild.getUrl();
+    StdFolders_copyFolderTree_(srcChild, destChild, ctx, depth + 1);
+  }
 }
 
 // appsscript 本体（スクリプトプロジェクト）を destRoot へ複製する。

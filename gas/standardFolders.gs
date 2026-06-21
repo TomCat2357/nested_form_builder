@@ -142,12 +142,18 @@ function StdFolders_resolveRootFolder_(manualRootUrl) {
   throw new Error("ルートフォルダを自動検出できませんでした。ルートフォルダの URL を手動で指定してください。");
 }
 
+// parentFolder 配下に name の子フォルダを取得（無ければ作成）。
+// 任意名版（標準キーに縛られない）。構成コピーのネスト階層再現に使う。
+function StdFolders_getOrCreateChildFolder_(parentFolder, name) {
+  var existing = parentFolder.getFoldersByName(name);
+  return existing.hasNext() ? existing.next() : parentFolder.createFolder(name);
+}
+
 // rootFolder 配下の標準サブフォルダを取得（無ければ作成）。
 function StdFolders_getOrCreateSubfolder_(rootFolder, key) {
   var name = NFB_STD_FOLDER_NAMES[key];
   if (!name) throw new Error("未知の標準フォルダキーです: " + key);
-  var existing = rootFolder.getFoldersByName(name);
-  return existing.hasNext() ? existing.next() : rootFolder.createFolder(name);
+  return StdFolders_getOrCreateChildFolder_(rootFolder, name);
 }
 
 // root 配下に標準サブフォルダを全て ensure する（既存はそのまま、無いものだけ作成）。

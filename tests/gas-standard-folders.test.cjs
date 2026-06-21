@@ -549,24 +549,66 @@ function makeCopyEnv(gas, srcSpec) {
     return f;
   }
 
-  // src サブフォルダ（物理名キー）。
-  const srcSubs = {};
-  Object.keys(srcSpec || {}).forEach((key) => {
-    const name = NAMES[key];
-    const fileObjs = (srcSpec[key] || []).map((spec) => {
+  // src フォルダ（ネスト対応）。node = { files: [{id,content}], folders: { name: node } }。
+  // 後方互換: 配列はファイルのみ（folders 無し）として正規化する。
+  function makeSrcFolder(id, name, rawNode) {
+    const node = Array.isArray(rawNode) ? { files: rawNode, folders: {} } : (rawNode || {});
+    const fileObjs = (node.files || []).map((spec) => {
       const contentStr = typeof spec.content === "string" ? spec.content : JSON.stringify(spec.content);
       return makeFile(spec.id, spec.id + ".json", contentStr);
     });
-    srcSubs[name] = {
-      _key: key, _name: name, _files: fileObjs,
-      getId: () => "SRC_FOLDER_" + key,
-      getUrl: () => "https://drive.google.com/drive/folders/SRC_FOLDER_" + key,
+    const childFolders = Object.keys(node.folders || {}).map((childName) =>
+      makeSrcFolder(id + "__" + childName, childName, node.folders[childName]));
+    return {
+      _name: name, _files: fileObjs,
+      getId: () => id,
+      getName: () => name,
+      getUrl: () => "https://drive.google.com/drive/folders/" + id,
       getFiles() {
         const live = fileObjs.slice();
         let i = 0;
         return { hasNext: () => i < live.length, next: () => live[i++] };
       },
+      getFolders() {
+        const live = childFolders.slice();
+        let i = 0;
+        return { hasNext: () => i < live.length, next: () => live[i++] };
+      },
     };
+  }
+
+  // dest フォルダ（ネスト対応）。get-or-create で子フォルダを再現し makeCopy 先になる。
+  // _key は属する標準カテゴリ（copies.toKey 用）。ネスト配下も同カテゴリとして数える。
+  function makeDestFolder(id, name, key) {
+    const children = {}; // childName -> folder
+    const sub = {
+      _key: key, _name: name, _files: [],
+      getId: () => id,
+      getUrl: () => "https://drive.google.com/drive/folders/" + id,
+      getFoldersByName(n) {
+        const matches = children[n] ? [children[n]] : [];
+        let i = 0;
+        return { hasNext: () => i < matches.length, next: () => matches[i++] };
+      },
+      createFolder(n) {
+        const child = makeDestFolder(id + "__" + n, n, key);
+        children[n] = child;
+        return child;
+      },
+      getFiles() {
+        const live = sub._files.slice();
+        let i = 0;
+        return { hasNext: () => i < live.length, next: () => live[i++] };
+      },
+    };
+    return sub;
+  }
+
+  // src サブフォルダ（物理名キー）。
+  const srcSubs = {};
+  Object.keys(srcSpec || {}).forEach((key) => {
+    const name = NAMES[key];
+    srcSubs[name] = makeSrcFolder("SRC_FOLDER_" + key, name, srcSpec[key]);
   });
 
   const srcRoot = {
@@ -591,7 +633,7 @@ function makeCopyEnv(gas, srcSpec) {
     createFolder(name) {
       let key = name;
       for (const k of gas.NFB_STD_FOLDER_ORDER) { if (NAMES[k] === name) { key = k; break; } }
-      const sub = { _key: key, _name: name, _files: [], getId: () => "DEST_FOLDER_" + key, getUrl: () => "https://drive.google.com/drive/folders/DEST_FOLDER_" + key };
+      const sub = makeDestFolder("DEST_FOLDER_" + key, name, key);
       destSubs[name] = sub;
       return sub;
     },
@@ -741,4 +783,113 @@ test("StdFolders_copy_: rebuildMapping=true は未選択カテゴリを _nfb_map
   const doc = JSON.parse(mapFile.content);
   assert.ok(doc.forms.F1, "選択した forms はマッピングに含まれる");
   assert.ok(!doc.questions.Q1, "除外した questions はマッピングから除外される");
+});
+
+// ---------------------------------------------------------------------------
+// ネスト配下（サブフォルダ）の再帰コピー（06_upload_files/<レコード>/… 等）
+// ---------------------------------------------------------------------------
+
+// upload にネストした構成（直下 1 + REC1 直下 1 + REC1/thumbs 1）を持つソース。
+function nestedUploadSrcSpec() {
+  return {
+    upload: {
+      files: [{ id: "U_TOP", content: "top" }],
+      folders: {
+        REC1: {
+          files: [{ id: "U_PHOTO", content: "photo-bytes" }],
+          folders: { thumbs: { files: [{ id: "U_THUMB", content: "thumb" }], folders: {} } },
+        },
+      },
+    },
+  };
+}
+
+test("StdFolders_copy_: サブフォルダ配下のファイルも再帰的に複製する（06_upload_files ネスト）", () => {
+  const gas = loadGasContext();
+  const env = makeCopyEnv(gas, nestedUploadSrcSpec());
+  const res = gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, rebuildMapping: false });
+  assert.equal(res.ok, true);
+  // 直下 1 + REC1 直下 1 + REC1/thumbs 1 = 3
+  assert.equal(res.summary.upload, 3, "ネスト配下を含め全ファイルが数えられる");
+  const copiedIds = env.copies.map((c) => c.srcId);
+  assert.ok(copiedIds.includes("U_TOP"), "直下ファイルが複製される");
+  assert.ok(copiedIds.includes("U_PHOTO"), "サブフォルダ配下のファイルが複製される");
+  assert.ok(copiedIds.includes("U_THUMB"), "深いネストのファイルも複製される");
+  // ネスト配下も同カテゴリ（upload）として複製される
+  assert.equal(env.copies.filter((c) => c.toKey === "upload").length, 3);
+  assert.equal(res.truncated, false, "上限未満なので truncated は false");
+});
+
+test("StdFolders_copy_: ネスト upload フォルダ URL を driveRootFolderUrl で再マップする", () => {
+  const gas = loadGasContext();
+  const spec = nestedUploadSrcSpec();
+  // フォームのアップロード先がネスト upload フォルダ（REC1）を指す。
+  spec.forms = [{ id: "F1", content: { schema: [{ label: "u", driveRootFolderUrl: "https://drive.google.com/drive/folders/SRC_FOLDER_upload__REC1" }] } }];
+  const env = makeCopyEnv(gas, spec);
+  const res = gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, rebuildMapping: false });
+  assert.equal(res.ok, true);
+  const formJson = JSON.parse(env.registry["COPY_F1"]._content);
+  assert.equal(
+    formJson.schema[0].driveRootFolderUrl,
+    "https://drive.google.com/drive/folders/DEST_FOLDER_upload__REC1",
+    "ネスト upload フォルダ URL がコピー先の同名サブフォルダ URL へ張り替わる"
+  );
+});
+
+// ---- 再帰ヘルパー単体（ガード・多親保護） ----
+
+// getFiles/getFolders/makeCopy を備えた最小 src フォルダ。makeCopy 先は dest._copied に記録。
+function tinySrcFolder(id, name, fileIds, childFolders) {
+  const files = (fileIds || []).map((fid) => ({
+    getId: () => fid,
+    getName: () => fid + ".bin",
+    getUrl: () => "https://drive.google.com/file/d/" + fid + "/view",
+    isTrashed: () => false,
+    makeCopy(n, dest) {
+      dest._copied.push(fid);
+      return { getId: () => "COPY_" + fid, getUrl: () => "https://drive.google.com/file/d/COPY_" + fid + "/view" };
+    },
+  }));
+  const subs = childFolders || [];
+  return {
+    getId: () => id,
+    getName: () => name,
+    getUrl: () => "https://drive.google.com/drive/folders/" + id,
+    getFiles() { let i = 0; return { hasNext: () => i < files.length, next: () => files[i++] }; },
+    getFolders() { let i = 0; return { hasNext: () => i < subs.length, next: () => subs[i++] }; },
+  };
+}
+
+function tinyDestFolder() {
+  const dest = {
+    _copied: [],
+    getId: () => "D",
+    getUrl: () => "https://drive.google.com/drive/folders/D",
+    getFoldersByName: () => ({ hasNext: () => false, next: () => null }),
+    createFolder: () => dest, // ネストはすべて自分へ畳む（コピー件数だけ検証）
+  };
+  return dest;
+}
+
+test("StdFolders_copyFolderTree_: maxNodes 到達で truncated=true・以降を打ち切る", () => {
+  const gas = loadGasContext();
+  const dest = tinyDestFolder();
+  const guard = { count: 0, maxNodes: 2, maxDepth: 20, truncated: false };
+  const ctx = { key: "upload", copyData: true, idMap: {}, folderIdMap: {}, copied: [], visited: {}, guard };
+  gas.StdFolders_copyFolderTree_(tinySrcFolder("S", "06_upload_files", ["A", "B", "C"]), dest, ctx, 0);
+  assert.equal(guard.truncated, true, "上限到達で truncated が立つ");
+  assert.equal(ctx.copied.length, 2, "maxNodes=2 で 2 件だけコピーして打ち切る");
+  assert.equal(dest._copied.length, 2);
+});
+
+test("StdFolders_copyFolderTree_: visited で同一サブフォルダを二重コピーしない（多親/循環保護）", () => {
+  const gas = loadGasContext();
+  const dest = tinyDestFolder();
+  // 同一 id のサブフォルダが 2 回現れる（多親）。1 回だけ辿る。
+  const shared = tinySrcFolder("SHARED", "shared", ["X"], []);
+  const root = tinySrcFolder("R", "06_upload_files", [], [shared, shared]);
+  const guard = { count: 0, maxNodes: 5000, maxDepth: 20, truncated: false };
+  const ctx = { key: "upload", copyData: true, idMap: {}, folderIdMap: {}, copied: [], visited: {}, guard };
+  gas.StdFolders_copyFolderTree_(root, dest, ctx, 0);
+  assert.equal(ctx.copied.length, 1, "共有サブフォルダ配下のファイルは 1 回だけコピー");
 });
