@@ -784,7 +784,8 @@ function StdFolders_normalizeUploadCellsInResponses_(responses) {
 // 印刷様式 Doc 参照を 05_report_templates へ寄せ、物理 URL と論理パスを両方更新する（外部=copy/内部=move）。
 // 解決不能（unresolved/noop）の参照は据え置く。form を直接 mutate する。base 未解決なら全 no-op。
 function StdFolders_normalizePrintTemplateRefsOnSave_(form) {
-  if (!form || typeof form !== "object") return;
+  var relocations = [];   // 逆方向再リンク用: 再配置した様式 Doc の {oldFileId, newUrl, newPath}
+  if (!form || typeof form !== "object") return relocations;
 
   var settings = (form.settings && typeof form.settings === "object" && !Array.isArray(form.settings)) ? form.settings : null;
   if (settings) {
@@ -793,6 +794,7 @@ function StdFolders_normalizePrintTemplateRefsOnSave_(form) {
     if (su || sp) {
       var sr = StdFolders_alignFileRefIntoStdFolder_("report_templates", su, sp);
       if (sr.status !== "unresolved" && sr.status !== "noop") {
+        StdFolders_recordTemplateRelocation_(relocations, su, sr);
         settings.standardPrintTemplateUrl = sr.url;
         settings.standardPrintTemplatePath = sr.path;
       }
@@ -808,10 +810,90 @@ function StdFolders_normalizePrintTemplateRefsOnSave_(form) {
     if (!cu && !cp) return;
     var cr = StdFolders_alignFileRefIntoStdFolder_("report_templates", cu, cp);
     if (cr.status !== "unresolved" && cr.status !== "noop") {
+      StdFolders_recordTemplateRelocation_(relocations, cu, cr);
       act.templateUrl = cr.url;
       act.templatePath = cr.path;
     }
   });
+  return relocations;
+}
+
+// 印刷様式参照の整合結果が「再配置（move/外部コピー）」のとき、旧 fileId→新 url/path を relocations に記録する。
+// 旧参照（URL/素 id）から fileId を解けないものはスキップ（path のみ指定など＝外部の旧 id を持たない）。
+function StdFolders_recordTemplateRelocation_(relocations, oldUrlOrId, result) {
+  if (!result || (result.status !== "moved" && result.status !== "copiedExternal")) return;
+  var parsed = Forms_parseGoogleDriveUrl_(oldUrlOrId);
+  var oldId = (parsed && parsed.type === "file" && parsed.id) ? parsed.id : "";
+  if (!oldId) return;
+  relocations.push({ oldFileId: oldId, newUrl: result.url, newPath: result.path });
+}
+
+// 印刷様式（05）参照の逆方向再リンク。あるフォームの保存で様式 Doc が再配置されたとき、同じ Doc を
+// 旧 fileId で指す「他フォーム」の templateUrl/templatePath を新しい位置へ張り替える。
+// forms マッピング限定の有界走査（重い全レコード走査はしない）。冪等（一致しない/既に新値なら書かない）。
+// 戻り: 書き換えたフォーム件数。
+function StdFolders_propagateTemplateRelinkToForms_(relocations, skipFileId) {
+  if (!relocations || !relocations.length) return 0;
+  var byOldId = {};
+  for (var i = 0; i < relocations.length; i++) {
+    if (relocations[i] && relocations[i].oldFileId) byOldId[relocations[i].oldFileId] = relocations[i];
+  }
+  if (!nfbHasOwnKeys_(byOldId)) return 0;
+  var adapter = StdFolders_entityAdapter_("forms");
+  if (!adapter.baseFolderOrNull()) return 0;
+  var mapping = adapter.getMapping();
+  var relinked = 0;
+  for (var id in mapping) {
+    if (!mapping.hasOwnProperty(id)) continue;
+    var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]);
+    if (!fileId || fileId === skipFileId) continue;
+    if (StdFolders_rewriteTemplateRefsInForm_(fileId, byOldId)) relinked++;
+  }
+  return relinked;
+}
+
+// byOldId（旧 fileId→{newUrl,newPath}）で、fileId のフォーム json 内の様式参照（settings + カード）を張り替える。
+function StdFolders_rewriteTemplateRefsInForm_(fileId, byOldId) {
+  try {
+    var file = DriveApp.getFileById(fileId);
+    if (typeof file.isTrashed === "function" && file.isTrashed()) return false;
+    var json = JSON.parse(file.getBlob().getDataAsString());
+    var changed = false;
+    var settings = (json.settings && typeof json.settings === "object" && !Array.isArray(json.settings)) ? json.settings : null;
+    if (settings) {
+      var hit = StdFolders_matchTemplateReloc_(byOldId, settings.standardPrintTemplateUrl);
+      if (hit && (settings.standardPrintTemplateUrl !== hit.newUrl || settings.standardPrintTemplatePath !== hit.newPath)) {
+        settings.standardPrintTemplateUrl = hit.newUrl;
+        settings.standardPrintTemplatePath = hit.newPath;
+        changed = true;
+      }
+    }
+    StdFolders_walkFields_(json.schema, function(fld) {
+      if (!fld || typeof fld !== "object") return;
+      var act = fld.printTemplateAction;
+      if (!act || typeof act !== "object") return;
+      var h = StdFolders_matchTemplateReloc_(byOldId, act.templateUrl);
+      if (h && (act.templateUrl !== h.newUrl || act.templatePath !== h.newPath)) {
+        act.templateUrl = h.newUrl;
+        act.templatePath = h.newPath;
+        changed = true;
+      }
+    });
+    if (changed) { file.setContent(JSON.stringify(json, null, 2)); return true; }
+  } catch (e) {
+    Logger.log("[StdFolders_rewriteTemplateRefsInForm_] " + fileId + ": " + nfbErrorToString_(e));
+  }
+  return false;
+}
+
+// url（様式参照）の fileId を解いて byOldId に一致する relocation を返す。一致なし/解決不能は null。
+function StdFolders_matchTemplateReloc_(byOldId, url) {
+  var u = Nfb_trimStr_(url);
+  if (!u) return null;
+  var parsed = Forms_parseGoogleDriveUrl_(u);
+  var id = (parsed && parsed.type === "file" && parsed.id) ? parsed.id : "";
+  if (!id) return null;
+  return byOldId[id] || null;
 }
 
 // ---------------------------------------------

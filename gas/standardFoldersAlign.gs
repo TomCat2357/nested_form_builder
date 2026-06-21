@@ -128,7 +128,7 @@ function StdFolders_alignEntry_(adapter, mapping, id, dryRun, ctx) {
           try { liveFile.setContent(JSON.stringify(json, null, 2)); }
           catch (eW) { Logger.log("[StdFolders_alignEntry_] json.folder 書戻し失敗 " + F + ": " + nfbErrorToString_(eW)); }
         }
-        if (entry.folder !== P) { entry.folder = P; ctx.dirty = true; }
+        if (entry.folder !== P) { entry.folder = P; ctx.dirty = true; if (ctx.pathChanged) ctx.pathChanged[F] = true; }
         var fname = liveFile ? Nfb_nameFromFile_(liveFile) : "";
         if (fname && entry[adapter.nameField] !== fname) { entry[adapter.nameField] = fname; ctx.dirty = true; }
       }
@@ -141,7 +141,7 @@ function StdFolders_alignEntry_(adapter, mapping, id, dryRun, ctx) {
       // ② プロジェクト内の別標準フォルダ（例: form が 02_questions 内）→ ホームの L へ移動（id 保持）。
       if (!dryRun) {
         adapter.moveFileToPath(F, L);
-        if (entry.folder !== L) { entry.folder = L; ctx.dirty = true; }
+        if (entry.folder !== L) { entry.folder = L; ctx.dirty = true; if (ctx.pathChanged) ctx.pathChanged[F] = true; }
       }
       return "moved";
     }
@@ -238,12 +238,38 @@ function StdFolders_sweepAlignKind_(adapter, ctx) {
   return counts;
 }
 
+// 論理パス変更時の「逆方向・完全再リンク」。再配置された（id 振替 or 論理パス変化した）ファイルを指す
+// 全参照元（登録済み forms/questions/dashboards）を追従させる。remap（旧id→新id）の振替と、
+// 中央辞書からの path 再 stamp（move で id 保持・パスのみ変化したケースのアンカー更新）を 1 パスで適用する。
+// remap も pathChanged も空なら no-op（呼び出し側でゲートし、論理パス不変の保存では呼ばない想定）。
+// skipFileId は呼び出し側で個別処理済みのファイル（保存本体）を二重走査しないため。戻り: 書き換え件数。
+function StdFolders_propagateRelinkToAllRefs_(remap, pathChangedSet, skipFileId) {
+  var hasRemap = nfbHasOwnKeys_(remap);
+  var doRefresh = nfbHasOwnKeys_(pathChangedSet);
+  if (!hasRemap && !doRefresh) return 0;
+  var relinked = 0;
+  var kinds = ["forms", "questions", "dashboards"];
+  for (var k = 0; k < kinds.length; k++) {
+    var kind = kinds[k];
+    var adapter = StdFolders_entityAdapter_(kind);
+    if (!adapter.baseFolderOrNull()) continue;   // base 未解決 kind は degrade（no-op）
+    var mapping = adapter.getMapping();
+    for (var id in mapping) {
+      if (!mapping.hasOwnProperty(id)) continue;
+      var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]);
+      if (!fileId || fileId === skipFileId) continue;
+      if (StdFolders_relinkRefsInFile_(fileId, kind, remap, doRefresh)) relinked++;
+    }
+  }
+  return relinked;
+}
+
 // 全エンティティ（forms→questions→dashboards）を共有 ctx でスイープし、最後に remap を
 // 参照グラフ全体へ伝播する。戻り: { ok, forms, questions, dashboards, relinkedFiles, errors }。
 function StdFolders_alignAllEntries_() {
   return nfbSafeCall_(function () {
     return WithScriptLock_("標準フォルダ整列（全体）", function () {
-      var ctx = { errors: [], invalidCandidates: [], remap: {}, dirty: false, guard: null };
+      var ctx = { errors: [], invalidCandidates: [], remap: {}, pathChanged: {}, dirty: false, guard: null };
       var kinds = ["forms", "questions", "dashboards"];
       var perKind = {};
 
@@ -260,29 +286,9 @@ function StdFolders_alignAllEntries_() {
         perKind[kind] = StdFolders_sweepAlignKind_(adapter, ctx);
       }
 
-      // Phase B: id 変化（コピー/再採用）を参照グラフ全体へ伝播。remap が空なら丸ごとスキップ（冪等時に軽い）。
-      var relinked = 0;
-      if (nfbHasOwnKeys_(ctx.remap)) {
-        // form→childForm（formLink）リンクを追従。
-        var fMap = StdFolders_entityAdapter_("forms").getMapping();
-        for (var fid in fMap) {
-          if (!fMap.hasOwnProperty(fid)) continue;
-          var fFileId = Nfb_resolveFileIdFromEntry_(fMap[fid]);
-          if (fFileId && StdFolders_rewriteRefsInFile_(fFileId, "forms", ctx.remap)) relinked++;
-        }
-        var qMap = StdFolders_entityAdapter_("questions").getMapping();   // Phase A 後の現行キー
-        for (var qid in qMap) {
-          if (!qMap.hasOwnProperty(qid)) continue;
-          var qFileId = Nfb_resolveFileIdFromEntry_(qMap[qid]);
-          if (qFileId && StdFolders_rewriteRefsInFile_(qFileId, "questions", ctx.remap)) relinked++;
-        }
-        var dMap = StdFolders_entityAdapter_("dashboards").getMapping();
-        for (var did in dMap) {
-          if (!dMap.hasOwnProperty(did)) continue;
-          var dFileId = Nfb_resolveFileIdFromEntry_(dMap[did]);
-          if (dFileId && StdFolders_rewriteRefsInFile_(dFileId, "dashboards", ctx.remap)) relinked++;
-        }
-      }
+      // Phase B: id 変化（コピー/再採用）・論理パス変化（move/物理追従）を参照グラフ全体へ逆方向伝播。
+      // remap も pathChanged も空なら丸ごとスキップ（冪等時に軽い）。
+      var relinked = StdFolders_propagateRelinkToAllRefs_(ctx.remap, ctx.pathChanged, null);
 
       return {
         ok: true,
