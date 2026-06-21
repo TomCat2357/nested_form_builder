@@ -20,7 +20,18 @@
 - **remap の統一**: 整合エンジンの ③再採用でも旧→新 id を `ctx.remap` に記録するようにし、全体同期の自動再リンクが ③ にも追従するよう統一した（「全体同期も同様」）。
 - **安全側 degrade**: base（標準フォルダ）が未解決の kind は no-op に落とす。
 
-実装は `StdFolders_alignReferencesOnSave_`（`gas/standardFoldersAlign.gs`）。`Analytics_saveTemplate_`（`gas/analyticsCrud.gs`）が保存後に呼び出し、結果を `result.referenceSync` として返す。テストは `tests/gas-alignment-engine.test.cjs` / `tests/gas-analytics-template-actions.test.cjs`。
+実装は `StdFolders_alignReferencesOnSave_`（`gas/standardFoldersAlignRefs.gs`）。`Forms_saveForm_`（`gas/formsStorage.gs`）/ `Analytics_saveTemplate_`（`gas/analyticsCrud.gs`）が保存後に呼び出し、結果を `result.referenceSync` として返す。テストは `tests/gas-alignment-engine.test.cjs` / `tests/gas-analytics-template-actions.test.cjs`。
+
+### 1-1. 逆方向の完全再リンク（論理パス変更時のみ・ゲート付き）
+
+§1 は「保存した本体（と中間クエスチョン）」のリンクだけを書き換えていた。**再配置されたファイルを指す他の参照元**（保存していない別クエスチョン / 別ダッシュボード / 別フォーム）は追従しなかったため、外部コピー（③）で原本が生き続けると各々の保存時に重複コピーが増え、move（②/物理追従）では参照元の論理パスアンカー（`*Path`）が陳腐化していた。
+
+これを解消するため、**論理パスが実際に変わったときだけ**走る逆方向の完全再リンクを追加した（重い全走査なので無変更の保存ではゲートでスキップ）。
+
+- **ゲート判定**: 整合の結果 `ctx.remap`（外部コピー③／再採用で **id 変化**）が非空、または `ctx.pathChanged`（move/物理追従で **`entry.folder` が実際に変化**、または保存本体自身の rename）が非空のときだけ発火。`entry.folder` が同値のまま（例: ② で論理パス不変の物理移動）なら `pathChanged` に積まず、no-op としてスキップする。
+- **完全走査**: 発火時は登録済み forms / questions / dashboards 全件を 1 パスで走査し、各参照元に remap（id 振替）と中央辞書からの `*Path` 再 stamp を適用する（`StdFolders_propagateRelinkToAllRefs_` / `StdFolders_relinkRefsInFile_`）。手動の全件整列オーケストレータ `StdFolders_alignAllEntries_`（Phase B）も同じヘルパーに統一した。
+- **保存本体の rename 伝播**: 保存層（`Forms_saveForm_` / `Analytics_saveTemplate_`）が保存前後の `folder`/名前を比較し、変化していれば `StdFolders_alignReferencesOnSave_(kind, fileId, selfChangedHint=true)` を渡して、その参照元のパスアンカーも追従させる。
+- **冪等・非致命**: 再走査は無変更ファイルを書かない（カウントしない）ので 2 回目以降は 0 件。逆方向再リンクは専用 try/catch でラップし、失敗しても保存は止めない。呼出元の `WithScriptLock_` 内で動くため自前ロックは張らない（二重ロック回避）。
 
 ## 2. 参照は fileId のみ・中央辞書に論理パス `folder` を第一級昇格（`c8b7bed`）
 
@@ -97,6 +108,13 @@ forms / questions / dashboards の**エンティティ間参照**（formLink / Q
 
 外部ファイルは事前にプロジェクト内へ配置する運用。保存時の正規化は**既存データ移行・誤配置の安全網**として働く（旧生 URL を次回保存で取り込み、論理パスを刻む）。
 
+### 4-4. 非エンティティ参照の逆方向再リンク（対象は 05 のみ）
+
+§1-1 の逆方向再リンクはエンティティグラフ（Q→Form / D→Q / Form→childForm）が対象。非エンティティ参照のうち**共有されうる印刷様式（05）だけ**逆方向再リンクの対象とする。
+
+- **印刷様式（05）**: 標準様式 Doc は複数フォームで共有されうる。あるフォームの保存で様式 Doc を再配置（move/外部コピー）したとき、同じ Doc を**旧 fileId で指す他フォーム**の `standardPrintTemplateUrl/Path` ＋ カード `printTemplateAction.templateUrl/Path` を新位置へ張り替える。`StdFolders_normalizePrintTemplateRefsOnSave_` が再配置を `relocations` として返し、`Forms_saveForm_` が `StdFolders_propagateTemplateRelinkToForms_`（**forms マッピング限定の有界走査**・冪等・非致命）を呼ぶ。
+- **スプレッドシート（04）・アップロード（06）は対象外**: いずれも **per-form / per-record 設計**で共有が稀（04 は各フォーム専用の回答シート、06 は各レコード専用のアップロードフォルダ）。06 はレコードがスプレッドシート全行に散在するため全シート走査が GAS 6 分制限に抵触する。よって自動の逆方向再リンクは行わず、各オーナーの保存時の自己正規化（`Forms_resolveSpreadsheetSetting_` / `StdFolders_normalizeUploadCellsInResponses_`）と手動の全件整列に委ねる。
+
 ## まとめ（保存時に何が起きるか）
 
 | 観点 | 振る舞い | 実装 |
@@ -104,6 +122,7 @@ forms / questions / dashboards の**エンティティ間参照**（formLink / Q
 | 参照の持ち方 | id（fileId）のみ。名前（`formName`/`questionName`）は保存時に剥がす | `c8b7bed` |
 | リンク切れ復旧 | 中央辞書（論理パス `folder` ＋ 名前 → fileId）で解決。folder＋名前のパス限定を優先 | `c8b7bed` |
 | 保存時の参照追従 | 参照先へ ①〜④ 整合を部分適用し、fileId 変化を `formId`/`questionId` へ追従（remap） | `fdb2a36` |
+| 逆方向の完全再リンク | **論理パスが変わったときだけ**（remap または move/rename でゲート）登録済み全エンティティを走査し、再配置ファイルを指す全参照元の id（remap）と `*Path`（再 stamp）を追従。05 印刷様式は forms 限定で逆張り替え。04/06 は per-form/per-record のため対象外 | 本節 §1-1 / §4-4 |
 | 永続化の最小化 | `driveFileUrl` を捨て fileId から都度復元。読取は完全なエントリ。forms / questions / dashboards の 3 ストアで対称 | `2ba9816` |
 | 旧データ救済 | `folder == null`（未バックフィル sentinel）を Drive json から冪等に埋める | `c8b7bed` |
 
@@ -112,8 +131,9 @@ forms / questions / dashboards の**エンティティ間参照**（formLink / Q
 - `gas/formsMappingStore.gs` — forms マッピングストア。normalize / minify / save / URL 復元
 - `gas/formsFolderStore.gs` / `gas/analyticsFolderStore.gs` — folder 第一級フィールドの保持。登録簿 CRUD の本体は型汎用コア `gas/sharedFolderStore.gs`（`StdFolderStore_*`）に集約し、両者は型別 adapter を渡す薄いラッパー
 - `gas/sharedDriveFolders.gs`（`SharedDrive_*`）— forms/analytics 共通の仮想↔物理フォルダミラーコア（`FormsDrive_*` / `AnalyticsDrive_*` が descriptor を渡して委譲）
-- `gas/standardFoldersAlign.gs` — 整合エンジン（①〜⑥）と保存時の参照整合 `StdFolders_alignReferencesOnSave_`
-- `gas/standardFolders.gs` — 非エンティティ参照の統一正規化（`StdFolders_alignFileRefIntoStdFolder_` / `StdFolders_alignFolderRefIntoStdFolder_` / `StdFolders_normalizePrintTemplateRefsOnSave_` / `StdFolders_normalizeUploadCellsInResponses_`）（§4）。フック元は `gas/formsStorage.gs`（フォーム保存）/ `gas/codeHandlers.gs`（レコード保存）/ `gas/driveOutput.gs`（出力時解決）
+- `gas/standardFoldersAlign.gs` — 整合エンジン（`StdFolders_alignEntry_`）と全件整列 `StdFolders_alignAllEntries_`、逆方向の完全再リンク `StdFolders_propagateRelinkToAllRefs_`（§1-1）
+- `gas/standardFoldersAlignRefs.gs` — 保存時の参照整合 `StdFolders_alignReferencesOnSave_`（`selfChangedHint` で本体 rename も伝播）、参照ビジター、`StdFolders_relinkRefsInFile_` / `StdFolders_refreshRefPathsInFile_`
+- `gas/standardFolders.gs` — 非エンティティ参照の統一正規化（`StdFolders_alignFileRefIntoStdFolder_` / `StdFolders_alignFolderRefIntoStdFolder_` / `StdFolders_normalizePrintTemplateRefsOnSave_` / `StdFolders_normalizeUploadCellsInResponses_`）と 05 逆方向再リンク `StdFolders_propagateTemplateRelinkToForms_`（§4）。フック元は `gas/formsStorage.gs`（フォーム保存）/ `gas/codeHandlers.gs`（レコード保存）/ `gas/driveOutput.gs`（出力時解決）
 - `gas/standardFoldersDiagnostics.gs` — 構成リンク診断レポート + 参照の恒久再リンク（`standardFolders.gs` から分離）
 - `gas/analyticsCrud.gs` — `Analytics_saveTemplate_`（保存後に参照整合を呼び出し `referenceSync` を返す）
 - `gas/adminMigrations.gs` — `Admin_backfillRegistryFolders_`（folder バックフィル）

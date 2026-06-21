@@ -149,6 +149,48 @@ function StdFolders_rewriteRefsInFile_(fileId, kind, remap) {
   return false;
 }
 
+// fileId の json を読み、参照の冗長保存パス（*Path）を中央辞書の現値で再 stamp して書き戻す。
+// move（id 保持・論理パスのみ変化）後に、参照元の陳腐化した復旧アンカーを更新する。書き換えたら true。
+function StdFolders_refreshRefPathsInFile_(fileId, kind) {
+  if (!fileId) return false;
+  try {
+    var file = DriveApp.getFileById(fileId);
+    if (typeof file.isTrashed === "function" && file.isTrashed()) return false;
+    var json = JSON.parse(file.getBlob().getDataAsString());
+    if (StdFolders_stampRefPaths_(json, kind)) {
+      file.setContent(JSON.stringify(json, null, 2));
+      return true;
+    }
+  } catch (e) {
+    Logger.log("[StdFolders_refreshRefPathsInFile_] " + fileId + ": " + nfbErrorToString_(e));
+  }
+  return false;
+}
+
+// fileId の json を 1 回読み、remap（id 振替）と path 再 stamp を 1 パスで適用して書き戻す。
+// 逆方向の全走査（StdFolders_propagateRelinkToAllRefs_）で二重読み書きを避けるために使う。
+// remap 振替・path 再 stamp のどちらか一方でも書き換えたら true。remap 空 & doPathRefresh 偽なら即 false。
+function StdFolders_relinkRefsInFile_(fileId, kind, remap, doPathRefresh) {
+  if (!fileId) return false;
+  var hasRemap = nfbHasOwnKeys_(remap);
+  if (!hasRemap && !doPathRefresh) return false;
+  try {
+    var file = DriveApp.getFileById(fileId);
+    if (typeof file.isTrashed === "function" && file.isTrashed()) return false;
+    var json = JSON.parse(file.getBlob().getDataAsString());
+    var changed = false;
+    if (hasRemap && StdFolders_applyRemapToRefs_(json, kind, remap)) changed = true;
+    if (doPathRefresh && StdFolders_stampRefPaths_(json, kind)) changed = true;
+    if (changed) {
+      file.setContent(JSON.stringify(json, null, 2));
+      return true;
+    }
+  } catch (e) {
+    Logger.log("[StdFolders_relinkRefsInFile_] " + fileId + ": " + nfbErrorToString_(e));
+  }
+  return false;
+}
+
 // 与えた id 集合（参照先）に ①〜④ を適用する。base 未解決は skipped:true で no-op。
 // ②外部コピー/③再採用の旧→新 id は ctx.remap に積まれる。戻り件数 { aligned, moved, copiedExternal, rekeyed, errors }。
 function StdFolders_alignIdSet_(adapter, ids, ctx) {
@@ -175,15 +217,19 @@ function StdFolders_alignIdSet_(adapter, ids, ctx) {
 // 保存後フック。kind = "questions" | "dashboards" | "forms"、savedFileId = 保存したエンティティの fileId。
 // 参照先（Q→Form / D→Q(+Form) / form→childForm）へ ⓪①②③ を適用し、id 変化を追従させる。
 // 加えて、中央辞書に無い（未登録）かつ fileId 切れの参照は冗長保存した論理パスで再探索して復旧する。
+// selfChangedHint=true（保存本体エンティティ自身の論理パス／名前が変わった）のときは、その参照元も
+// 追従させるため逆方向走査を発火させる（保存層が move/rename を検知して渡す）。
 // 戻り: { ok, kind, forms, questions, errors, remap, relinkedFiles }。
-function StdFolders_alignReferencesOnSave_(kind, savedFileId) {
+function StdFolders_alignReferencesOnSave_(kind, savedFileId, selfChangedHint) {
   var result = { ok: true, kind: kind, forms: null, questions: null, errors: [], remap: {}, relinkedFiles: 0 };
   try {
     if (kind !== "questions" && kind !== "dashboards" && kind !== "forms") return result;
     var savedJson = StdFolders_readJsonByFileId_(savedFileId);
     if (!savedJson) return result;
 
-    var ctx = { errors: [], invalidCandidates: [], remap: {}, dirty: false, guard: null };
+    var ctx = { errors: [], invalidCandidates: [], remap: {}, pathChanged: {}, dirty: false, guard: null };
+    // 保存本体自身が move/rename されたら、参照元の path アンカー更新のため逆走査を発火させる。
+    if (selfChangedHint) ctx.pathChanged[savedFileId] = true;
     var formsAdapter = StdFolders_entityAdapter_("forms");
 
     // 参照 {id, path} の収集は 1 回で済ませ、alignIdSet 用の id 配列は pairs から導出する。
@@ -235,6 +281,17 @@ function StdFolders_alignReferencesOnSave_(kind, savedFileId) {
       }
       // クエスチョン id が変わったら、保存済みダッシュボードのリンクを追従。
       if (StdFolders_rewriteRefsInFile_(savedFileId, "dashboards", ctx.remap)) result.relinkedFiles++;
+    }
+
+    // 逆方向の完全再リンク: 参照先（または保存本体）の論理パスが変わったときだけ走らせる（重い全走査をゲート）。
+    //   ・remap（外部コピー/再採用で id 変化）→ 参照元の id を全件振替
+    //   ・pathChanged（move/物理追従でフォルダ変化、または保存本体の rename）→ 参照元の *Path を全件再 stamp
+    // 保存本体（savedFileId）は上で個別に remap 追従済みなので、ここでは path 再 stamp のみ補い、全走査では除外する。
+    if (nfbHasOwnKeys_(ctx.pathChanged)) {
+      if (StdFolders_refreshRefPathsInFile_(savedFileId, kind)) result.relinkedFiles++;
+    }
+    if (nfbHasOwnKeys_(ctx.remap) || nfbHasOwnKeys_(ctx.pathChanged)) {
+      result.relinkedFiles += StdFolders_propagateRelinkToAllRefs_(ctx.remap, ctx.pathChanged, savedFileId);
     }
 
     result.errors = ctx.errors;

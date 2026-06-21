@@ -132,6 +132,10 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     var existingId = template.id || "";
     var mapping = Analytics_getMapping_(type);
     var existingEntry = existingId ? (mapping[existingId] || {}) : {};
+    // 保存本体の論理パス／名前が変わったか（rename/move）を後で逆方向再リンク発火に使うため、保存前の値を控える。
+    var selfWasRegistered = !!(existingId && mapping[existingId]);
+    var selfPrevFolder = Forms_normalizeFolderPath_(existingEntry && existingEntry.folder);
+    var selfPrevName = (existingEntry && existingEntry.name) || "";
     // 既存ファイルを「fileId → 論理パス folder + 名前アンカー」の順で解決する（Analytics_getTemplate_ と対称）。
     // cache 優先 getById が渡す stale な id（実体とずれた fileId / 旧 ULID）でも実体を引き当て、
     // リネームを「別ファイル新規作成」ではなく「実体の上書き(setName)」へ倒して重複を防ぐ。
@@ -317,7 +321,11 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     // ②外部コピー/③再採用で参照先 id が変わったらリンクを追従させる。base 未設定なら no-op。
     var referenceSync = null;
     try {
-      referenceSync = StdFolders_alignReferencesOnSave_(type, id);
+      // 保存本体（この Question/Dashboard）の論理パスまたは名前が変わったら、参照元（Dashboard→Question 等）の
+      // パスアンカーを追従させるため逆方向再リンクを発火させる。新規作成・無変更時は発火しない（ゲート）。
+      var selfChanged = selfWasRegistered &&
+        (selfPrevFolder !== Forms_normalizeFolderPath_(normalizedTemplate.folder) || selfPrevName !== uniqueName);
+      referenceSync = StdFolders_alignReferencesOnSave_(type, id, selfChanged);
       if (referenceSync && referenceSync.remap) {
         // 返却オブジェクトのリンクも追従させ、クライアント表示と Drive 実体を一致させる。
         StdFolders_applyRemapToRefs_(normalizedTemplate, type, referenceSync.remap);

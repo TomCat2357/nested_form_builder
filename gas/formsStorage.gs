@@ -230,6 +230,10 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     var originalFormId = formId;
     var mapping = Forms_getMapping_();
     var mappingEntry = formId ? (mapping[formId] || {}) : {};
+    // 保存本体の論理パス／名前が変わったか（rename/move）を後で逆方向再リンク発火に使うため、保存前の値を控える。
+    var selfWasRegistered = !!(formId && mapping[formId]);
+    var selfPrevFolder = Forms_normalizeFolderPath_(mappingEntry && mappingEntry.folder);
+    var selfPrevTitle = (mappingEntry && mappingEntry.title) || "";
     // 既存ファイルを「fileId → 実体 URL → 論理パス folder + title アンカー」の順で解決する
     // （Forms_getForm_ / Forms_resolveFormRef_ と対称）。フロントの cache 優先取得が渡す stale な
     // id（実体とずれた fileId / 旧 f_... ULID）でも実体を引き当て、リネームを「別ファイル新規作成 /
@@ -314,7 +318,9 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     catch (errStamp) { Logger.log("[Forms_saveForm_] stampRefPaths failed: " + nfbErrorToString_(errStamp)); }
 
     // 印刷様式 Doc 参照を 05_report_templates へ寄せ、物理 URL と論理パスを両方更新する（外部=copy/内部=move、非致命）。
-    try { StdFolders_normalizePrintTemplateRefsOnSave_(formWithTimestamp); }
+    // 再配置（move/外部コピー）した様式は relocations に控え、保存後に他フォームの参照を逆方向再リンクする。
+    var templateRelocations = [];
+    try { templateRelocations = StdFolders_normalizePrintTemplateRefsOnSave_(formWithTimestamp) || []; }
     catch (errTpl) { Logger.log("[Forms_saveForm_] normalizePrintTemplateRefsOnSave failed: " + nfbErrorToString_(errTpl)); }
 
     var content = JSON.stringify(formWithTimestamp, null, 2);
@@ -470,12 +476,25 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     // （Analytics_saveTemplate_ と対称）。base 未設定なら no-op。
     var referenceSync = null;
     try {
-      referenceSync = StdFolders_alignReferencesOnSave_("forms", fileId);
+      // 保存本体（このフォーム）の論理パスまたは名前が変わったら、参照元（他フォーム / クエスチョン）の
+      // パスアンカーを追従させるため逆方向再リンクを発火させる。新規作成・無変更時は発火しない（ゲート）。
+      var selfChanged = selfWasRegistered &&
+        (selfPrevFolder !== (typeof form.folder === "string" ? Forms_normalizeFolderPath_(form.folder) : "") ||
+         selfPrevTitle !== uniqueTitle);
+      referenceSync = StdFolders_alignReferencesOnSave_("forms", fileId, selfChanged);
       if (referenceSync && referenceSync.remap) {
         StdFolders_applyRemapToRefs_(formWithTimestamp, "forms", referenceSync.remap);
       }
     } catch (errRefSync) {
       Logger.log("[Forms_saveForm_] alignReferencesOnSave failed: " + nfbErrorToString_(errRefSync));
+    }
+
+    // 印刷様式（05）の逆方向再リンク: この保存で様式 Doc を再配置したとき、同じ Doc を旧 fileId で
+    // 指す他フォームの参照を新しい位置へ張り替える（forms 限定の有界走査・非致命）。
+    try {
+      if (templateRelocations.length) StdFolders_propagateTemplateRelinkToForms_(templateRelocations, fileId);
+    } catch (errTplRelink) {
+      Logger.log("[Forms_saveForm_] propagateTemplateRelinkToForms failed: " + nfbErrorToString_(errTplRelink));
     }
 
     return {

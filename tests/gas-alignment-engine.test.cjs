@@ -245,10 +245,11 @@ test("保存時参照整合: ①ホーム内移動は物理優先で論理パス
   // 論理が物理 b に追従。
   assert.equal(store.formsMapping[fForm.getId()].folder, "b", "entry.folder が物理 b へ追従");
   assert.equal(JSON.parse(drive.files[fForm.getId()]._content).folder, "b", "json.folder が物理 b へ追従");
-  // id 保持なのでリンク不変・追従ファイルなし。
-  assert.equal(r.relinkedFiles, 0);
+  // id は保持されるが論理パスが a→b へ変化したので、逆方向再リンクで参照元の formPath アンカーを更新する。
+  assert.equal(r.relinkedFiles, 1, "論理パス変化で参照元のパスアンカーを再 stamp");
   const q = JSON.parse(drive.files[qFile.getId()]._content);
-  assert.equal(q.query.formSources[0].formId, fForm.getId());
+  assert.equal(q.query.formSources[0].formId, fForm.getId(), "id 保持なので formId 不変");
+  assert.equal(q.query.formSources[0].formPath, "b/mv", "formPath が物理 b の論理パスへ追従");
 });
 
 test("保存時参照整合: ②プロジェクト内の別標準フォルダにある form はホームへ move（id 保持）", () => {
@@ -378,6 +379,152 @@ test("stampRefPaths_: 中央辞書から formPath/questionPath/childFormPath を
   const unresolved = { query: { mode: "gui", gui: { formId: "MISSING", formPath: "旧/パス" } } };
   assert.equal(context.StdFolders_stampRefPaths_(unresolved, "questions"), false);
   assert.equal(unresolved.query.gui.formPath, "旧/パス");
+});
+
+test("逆方向再リンク: 外部フォーム③コピー取り込みで、保存していない他の参照元クエスチョンも追従する", () => {
+  const env = buildContext();
+  const { context, drive, store, ext } = env;
+  const qBase = findFolderByName(drive, "02_questions");
+
+  // プロジェクト外フォーム（登録済み, folder=a）。これを参照する 2 クエスチョンのうち q1 だけ保存する。
+  const extForm = drive.makeFile("ext.json", formJson("a"), ext.getId());
+  const extId = extForm.getId();
+  store.formsMapping = { [extId]: { fileId: extId, driveFileUrl: extForm.getUrl(), title: "ext", folder: "a" } };
+
+  const q1 = drive.makeFile("q1.json",
+    JSON.stringify({ folder: "", query: { mode: "sql", formSources: [{ formId: extId, formName: "ext" }] } }),
+    qBase.getId());
+  const q2 = drive.makeFile("q2.json",
+    JSON.stringify({ folder: "", query: { mode: "sql", formSources: [{ formId: extId, formName: "ext" }] } }),
+    qBase.getId());
+  store.analyticsMapping.questions = {
+    [q1.getId()]: { fileId: q1.getId(), driveFileUrl: q1.getUrl(), name: "q1", folder: "" },
+    [q2.getId()]: { fileId: q2.getId(), driveFileUrl: q2.getUrl(), name: "q2", folder: "" },
+  };
+
+  const r = context.StdFolders_alignReferencesOnSave_("questions", q1.getId());
+  assert.equal(r.ok, true);
+  assert.equal(r.forms.copiedExternal, 1, "外部フォームを ③ コピー取り込み");
+  const newIds = Object.keys(store.formsMapping);
+  assert.equal(newIds.length, 1, "コピー先 id 1 件に振替");
+  const newId = newIds[0];
+  assert.notEqual(newId, extId);
+  // 保存した q1 だけでなく、保存していない q2 のリンクも逆方向再リンクで追従する（本機能の主目的）。
+  assert.equal(JSON.parse(drive.files[q1.getId()]._content).query.formSources[0].formId, newId, "q1 追従");
+  assert.equal(JSON.parse(drive.files[q2.getId()]._content).query.formSources[0].formId, newId, "q2（他参照元）も追従");
+  assert.ok(r.relinkedFiles >= 2, "保存本体＋他参照元の 2 件以上を再リンク");
+
+  // 冪等: 2 回目はコピー済み（① 整合）・remap/pathChanged 空でゲート不成立 → 再リンク 0。
+  const r2 = context.StdFolders_alignReferencesOnSave_("questions", q1.getId());
+  assert.equal(r2.forms.aligned, 1, "コピー済みは ① 整合");
+  assert.equal(r2.relinkedFiles, 0, "冪等: 再リンク 0");
+});
+
+test("逆方向再リンク: ②move（論理パス不変）では参照元を再リンクしない（ゲート不成立）", () => {
+  const env = buildContext();
+  const { context, drive, store, formsA } = env;
+  const qBase = findFolderByName(drive, "02_questions");
+
+  // 物理フォームが 02_questions 内（ホーム外・プロジェクト内）。json.folder=a・登録簿も a。
+  // ② で 01_forms/a へ move されるが entry.folder は a のまま（論理パス不変）。
+  const fForm = drive.makeFile("stray.json", formJson("a"), qBase.getId());
+  store.formsMapping = { [fForm.getId()]: { fileId: fForm.getId(), driveFileUrl: fForm.getUrl(), title: "stray", folder: "a" } };
+  // この form を参照する別クエスチョン（保存しない）。
+  const q2 = drive.makeFile("q2.json",
+    JSON.stringify({ folder: "", query: { mode: "sql", formSources: [{ formId: fForm.getId(), formName: "stray", formPath: "a/stray" }] } }),
+    qBase.getId());
+  store.analyticsMapping.questions = { [q2.getId()]: { fileId: q2.getId(), driveFileUrl: q2.getUrl(), name: "q2", folder: "" } };
+  const q1 = drive.makeFile("q1.json",
+    JSON.stringify({ folder: "", query: { mode: "sql", formSources: [{ formId: fForm.getId(), formName: "stray" }] } }),
+    qBase.getId());
+
+  const r = context.StdFolders_alignReferencesOnSave_("questions", q1.getId());
+  assert.equal(r.forms.moved, 1, "② move");
+  assert.equal(drive.files[fForm.getId()]._parentId, formsA.getId(), "物理は 01_forms/a へ移動");
+  // 論理パス（entry.folder=a）は不変なので逆方向再リンクは発火しない。
+  assert.equal(r.relinkedFiles, 0, "論理パス不変なら再リンクしない（重い走査をスキップ）");
+  assert.equal(JSON.parse(drive.files[q2.getId()]._content).query.formSources[0].formPath, "a/stray", "他参照元の path 据え置き");
+});
+
+test("逆方向再リンク: ルート未解決でも保存フックは ok（ゲート不成立で no-op）", () => {
+  const env = buildContext();
+  const { context, drive } = env;
+  const qBase = findFolderByName(drive, "02_questions");
+  const q1 = drive.makeFile("q.json",
+    JSON.stringify({ folder: "", query: { mode: "sql", formSources: [{ formId: "X", formName: "x" }] } }),
+    qBase.getId());
+  context.StdFolders_resolveRootFolder_ = () => { throw new Error("root unresolved"); };
+  const r = context.StdFolders_alignReferencesOnSave_("questions", q1.getId());
+  assert.equal(r.ok, true, "root 未解決でも ok（degrade）");
+  assert.equal(r.relinkedFiles, 0, "no-op");
+});
+
+test("逆方向再リンク: selfChangedHint で保存本体の rename を他参照元へ伝播する", () => {
+  const env = buildContext();
+  const { context, drive, store, formsA } = env;
+  const qBase = findFolderByName(drive, "02_questions");
+
+  // 物理フォーム a（登録済み, title=mv, folder=a）。保存層が rename を検知して selfChangedHint=true を渡す想定。
+  const fForm = drive.makeFile("mv.json", formJson("a"), formsA.getId());
+  store.formsMapping = { [fForm.getId()]: { fileId: fForm.getId(), driveFileUrl: fForm.getUrl(), title: "mv", folder: "a" } };
+  // この form を参照する別クエスチョン（古い formPath を保持）。
+  const q2 = drive.makeFile("q2.json",
+    JSON.stringify({ folder: "", query: { mode: "sql", formSources: [{ formId: fForm.getId(), formName: "mv", formPath: "旧/mv" }] } }),
+    qBase.getId());
+  store.analyticsMapping.questions = { [q2.getId()]: { fileId: q2.getId(), driveFileUrl: q2.getUrl(), name: "q2", folder: "" } };
+
+  // savedFileId は form 自身。selfChangedHint=true で発火。
+  const r = context.StdFolders_alignReferencesOnSave_("forms", fForm.getId(), true);
+  assert.equal(r.ok, true);
+  // 参照元 q2 の formPath が中央辞書の現値（a/mv）へ再 stamp される。
+  assert.equal(JSON.parse(drive.files[q2.getId()]._content).query.formSources[0].formPath, "a/mv", "他参照元の path アンカーを追従");
+  assert.ok(r.relinkedFiles >= 1, "保存本体の rename を参照元へ伝播");
+
+  // selfChangedHint なしなら発火しない（ゲート）。
+  const q2b = drive.makeFile("q2b.json",
+    JSON.stringify({ folder: "", query: { mode: "sql", formSources: [{ formId: fForm.getId(), formName: "mv", formPath: "旧/mv" }] } }),
+    qBase.getId());
+  store.analyticsMapping.questions[q2b.getId()] = { fileId: q2b.getId(), driveFileUrl: q2b.getUrl(), name: "q2b", folder: "" };
+  const r2 = context.StdFolders_alignReferencesOnSave_("forms", fForm.getId());
+  assert.equal(r2.relinkedFiles, 0, "hint なしは no-op（論理パス変化を申告しない限り走らせない）");
+  assert.equal(JSON.parse(drive.files[q2b.getId()]._content).query.formSources[0].formPath, "旧/mv", "据え置き");
+});
+
+test("逆方向再リンク(05): 様式 Doc 再配置で、同じ Doc を旧 URL で指す他フォームの参照を張り替える", () => {
+  const env = buildContext();
+  const { context, drive, store, forms } = env;
+
+  // 2 フォームが同じ外部様式 Doc（OLD_DOC）を参照。A の保存で OLD_DOC を 05 へコピー(NEW_DOC)した想定。
+  const oldUrl = "https://docs.google.com/document/d/OLD_DOC/edit";
+  const newUrl = "https://docs.google.com/document/d/NEW_DOC/edit";
+  const formA = drive.makeFile("a.json",
+    JSON.stringify({ folder: "", schema: [], settings: { standardPrintTemplateUrl: newUrl, standardPrintTemplatePath: "x/tpl" } }),
+    forms.getId());
+  const formB = drive.makeFile("b.json",
+    JSON.stringify({
+      folder: "",
+      schema: [{ id: "c1", type: "text", printTemplateAction: { useCustomTemplate: true, templateUrl: oldUrl, templatePath: "旧" } }],
+      settings: { standardPrintTemplateUrl: oldUrl, standardPrintTemplatePath: "旧/tpl" },
+    }),
+    forms.getId());
+  store.formsMapping = {
+    [formA.getId()]: { fileId: formA.getId(), driveFileUrl: formA.getUrl(), title: "a", folder: "" },
+    [formB.getId()]: { fileId: formB.getId(), driveFileUrl: formB.getUrl(), title: "b", folder: "" },
+  };
+
+  const relocations = [{ oldFileId: "OLD_DOC", newUrl: newUrl, newPath: "x/tpl" }];
+  const n = context.StdFolders_propagateTemplateRelinkToForms_(relocations, formA.getId());
+  assert.equal(n, 1, "他フォーム B を 1 件張り替え（保存本体 A は skip）");
+  const b = JSON.parse(drive.files[formB.getId()]._content);
+  assert.equal(b.settings.standardPrintTemplateUrl, newUrl, "B settings 様式 URL 追従");
+  assert.equal(b.settings.standardPrintTemplatePath, "x/tpl", "B settings 様式 path 追従");
+  assert.equal(b.schema[0].printTemplateAction.templateUrl, newUrl, "B カード様式 URL 追従");
+  assert.equal(b.schema[0].printTemplateAction.templatePath, "x/tpl", "B カード様式 path 追従");
+
+  // 冪等: 2 回目は変化なし。
+  assert.equal(context.StdFolders_propagateTemplateRelinkToForms_(relocations, formA.getId()), 0, "冪等");
+  // 無関係な Doc を指すフォームは対象外。
+  assert.equal(context.StdFolders_propagateTemplateRelinkToForms_([{ oldFileId: "ZZZ", newUrl: "u", newPath: "p" }], formA.getId()), 0, "一致なしは no-op");
 });
 
 test("formLink: childFormId 切れ・未登録でも childFormPath で物理を再探索して貼り直す", () => {
