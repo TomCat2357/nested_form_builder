@@ -38,6 +38,7 @@ export const normalizePrintTemplateAction = (value) => {
     outputType: normalizePrintTemplateOutputType(base.outputType),
     useCustomTemplate: base.useCustomTemplate === true,
     templateUrl: typeof base.templateUrl === "string" ? base.templateUrl : "",
+    templatePath: typeof base.templatePath === "string" ? base.templatePath : "",
     fileNameTemplate: typeof base.fileNameTemplate === "string" ? base.fileNameTemplate : "",
     gmailAttachPdf: base.gmailAttachPdf === true,
     gmailTemplateTo: typeof base.gmailTemplateTo === "string" ? base.gmailTemplateTo : "",

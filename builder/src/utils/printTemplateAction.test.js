@@ -42,6 +42,7 @@ test("normalizePrintTemplateAction は Gmail 設定項目を文字列で正規�
     outputType: "gmail",
     useCustomTemplate: false,
     templateUrl: "",
+    templatePath: "",
     fileNameTemplate: "",
     gmailAttachPdf: true,
     gmailTemplateTo: "{メールアドレス}",

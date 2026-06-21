@@ -379,13 +379,20 @@ function StdFolders_splitPathSegments_(path) {
   return segs;
 }
 
-// 論理パス（"フォルダ/.../シート名"）から 04_spreadsheets 配下のスプレッドシート fileId を解決する。
-// 葉（最後のセグメント）はシートのファイル名（拡張子なし）。途中フォルダ/葉が見つからなければ "" を返す。
-// 同一フォルダ内に同名が複数あるときは先頭一致（forms/questions の名前一致と同挙動）。
-function StdFolders_resolveSpreadsheetPathToFileId_(path) {
+// ---------------------------------------------
+// 汎用: 標準サブフォルダ配下の論理パス↔fileId（非エンティティ参照のプロジェクト内取り込み用）
+// 印刷様式（05）・スプレッドシート（04）・アップロード（06）など、中央辞書も .json 葉も持たない
+// 「フォーム/レコードが URL で指す素のファイル」を、保存時にプロジェクト内へ寄せて論理パスを併設する。
+// drivemap キャッシュは持たず（スプレッドシート前例に倣う）毎回 base から walk する。
+// 取り込み方針はエンティティ整合エンジン（StdFolders_alignEntry_ の ②③）と同一:
+//   ホーム（key 配下）= 据置 / プロジェクト内の別フォルダ = move（fileId 保持） / プロジェクト外 = copy（新 fileId）。
+// ---------------------------------------------
+
+// 論理パス（"フォルダ/.../葉名"）→ key サブフォルダ配下の fileId。葉は拡張子なしの完全一致。未解決は ""。
+function StdFolders_resolvePathToFileId_(key, path) {
   var segs = StdFolders_splitPathSegments_(path);
   if (!segs.length) return "";
-  var base = StdFolders_spreadsheetsBaseFolderOrNull_();
+  var base = StdFolders_autoFileFolderOrNull_(key);
   if (!base) return "";
   var leaf = segs.pop();
   var parent = base;
@@ -396,6 +403,415 @@ function StdFolders_resolveSpreadsheetPathToFileId_(path) {
   }
   var file = StdFolders_findFileByNameInFolder_(parent, leaf); // 葉は拡張子なし完全一致
   return file ? file.getId() : "";
+}
+
+// 後方互換: 04_spreadsheets 専用ラッパー（汎用版へ委譲）。
+function StdFolders_resolveSpreadsheetPathToFileId_(path) {
+  return StdFolders_resolvePathToFileId_("spreadsheets", path);
+}
+
+// node（File/Folder）の親チェーンを baseId まで遡り、base 配下の相対フォルダ名配列を返す。
+// base 直下なら []、base 配下に無ければ null。多親・循環は visited とノード上限で保護。
+function StdFolders_relFolderSegsUnderBase_(node, baseId) {
+  var stack = [];
+  var parents = node.getParents();
+  while (parents.hasNext()) {
+    var p = parents.next();
+    stack.push({ folder: p, path: [p.getName()] });
+  }
+  var seen = {};
+  var steps = 0;
+  while (stack.length && steps < 200) {
+    steps++;
+    var item = stack.pop();
+    var fid = item.folder.getId();
+    if (fid === baseId) return item.path.slice(1);  // base 名を除いた相対フォルダ列
+    if (seen[fid]) continue;
+    seen[fid] = true;
+    var ps = item.folder.getParents();
+    while (ps.hasNext()) {
+      var pp = ps.next();
+      stack.push({ folder: pp, path: [pp.getName()].concat(item.path) });
+    }
+  }
+  return null;
+}
+
+// key サブフォルダ配下にある fileId の論理パス（"フォルダ/.../葉名"、葉＝ファイル名）。配下外は null。
+function StdFolders_relativePathOfFile_(key, fileId) {
+  if (!fileId) return null;
+  var base = StdFolders_autoFileFolderOrNull_(key);
+  if (!base) return null;
+  try {
+    var file = DriveApp.getFileById(fileId);
+    var segs = StdFolders_relFolderSegsUnderBase_(file, base.getId());
+    if (segs === null) return null;
+    var name = file.getName();
+    return segs.length ? (segs.join("/") + "/" + name) : name;
+  } catch (e) {
+    Logger.log("[StdFolders_relativePathOfFile_] " + fileId + " (" + key + "): " + nfbErrorToString_(e));
+    return null;
+  }
+}
+
+// 取り込み先フォルダ（key base 配下・logicalPath の親ディレクトリ部分）を ensure。空パスなら base 直下。base 未解決は null。
+function StdFolders_ensureRefTargetFolder_(key, logicalPath) {
+  var base = StdFolders_autoFileFolderOrNull_(key);
+  if (!base) return null;
+  var segs = StdFolders_splitPathSegments_(logicalPath);
+  if (segs.length) segs.pop();  // 葉（ファイル名）を除いた親フォルダ列のみ
+  var folder = base;
+  for (var i = 0; i < segs.length; i++) {
+    folder = StdFolders_getOrCreateChildFolder_(folder, segs[i]);
+  }
+  return folder;
+}
+
+// 内部別フォルダのファイルを key base 配下（logicalPath の親）へ move（fileId 保持）。成否を返す。
+function StdFolders_moveFileIntoStdPath_(key, fileId, logicalPath) {
+  try {
+    var target = StdFolders_ensureRefTargetFolder_(key, logicalPath);
+    if (!target) return false;
+    DriveApp.getFileById(fileId).moveTo(target);
+    return true;
+  } catch (err) {
+    Logger.log("[StdFolders_moveFileIntoStdPath_] " + fileId + " -> " + key + ": " + nfbErrorToString_(err));
+    return false;
+  }
+}
+
+// プロジェクト外のファイルを key base 配下（logicalPath の親）へ copy 取り込み（新 fileId・元は残す）。新 fileId / 失敗 ""。
+function StdFolders_copyFileIntoStdPath_(key, fileId, logicalPath) {
+  try {
+    var target = StdFolders_ensureRefTargetFolder_(key, logicalPath);
+    if (!target) return "";
+    var src = DriveApp.getFileById(fileId);
+    var copied = src.makeCopy(src.getName(), target);
+    return copied.getId();
+  } catch (err) {
+    Logger.log("[StdFolders_copyFileIntoStdPath_] " + fileId + " -> " + key + ": " + nfbErrorToString_(err));
+    return "";
+  }
+}
+
+// 統一正規化器（ファイル参照）。物理優先→論理フォールバックで fileId を引き、配置を整える:
+//   ホーム（key 配下）= 据置 / プロジェクト内の別フォルダ = move / プロジェクト外 = copy。
+// 物理 URL と論理パスの両方を返す。戻り: { fileId, url, path, status }。
+//   status: "aligned" | "moved" | "copiedExternal" | "recoveredByPath" | "unresolved" | "noop"
+// unresolved/noop のとき呼出側は既存値を据え置く（throw しない・root 未解決でも安全に degrade）。
+function StdFolders_alignFileRefIntoStdFolder_(key, physicalUrlOrId, logicalPath) {
+  var lp = (typeof logicalPath === "string") ? logicalPath.trim() : "";
+  var out = { fileId: "", url: "", path: lp, status: "unresolved" };
+
+  // 1) 物理優先で解決（URL / 素の fileId 双方を受ける）。死亡/空なら論理パスで再解決。
+  var fileId = "";
+  var parsed = Forms_parseGoogleDriveUrl_(physicalUrlOrId);
+  if (parsed && parsed.type === "file" && parsed.id) fileId = parsed.id;
+  if ((!fileId || !StdFolders_isFileIdAlive_(fileId)) && lp) {
+    var byPath = StdFolders_resolvePathToFileId_(key, lp);
+    if (byPath && StdFolders_isFileIdAlive_(byPath)) {
+      fileId = byPath;
+      out.status = "recoveredByPath";
+    }
+  }
+  if (!fileId || !StdFolders_isFileIdAlive_(fileId)) return out;  // unresolved（呼出側は据え置き）
+
+  // 2) 配置（外部=copy / 内部別フォルダ=move / ホーム=据置）。
+  var resultFileId = fileId;
+  if (StdFolders_isFileInStdSubfolder_(fileId, key)) {
+    if (out.status !== "recoveredByPath") out.status = "aligned";
+  } else if (StdFolders_isFileUnderProjectRoot_(fileId)) {
+    out.status = StdFolders_moveFileIntoStdPath_(key, fileId, lp) ? "moved" : "noop";
+  } else {
+    var copiedId = StdFolders_copyFileIntoStdPath_(key, fileId, lp);
+    if (copiedId) { resultFileId = copiedId; out.status = "copiedExternal"; }
+    else out.status = "noop";
+  }
+
+  // 3) url / path を導出して両方を返す。
+  var f = null;
+  try { f = DriveApp.getFileById(resultFileId); } catch (e) { f = null; }
+  out.fileId = resultFileId;
+  out.url = f ? f.getUrl() : ("https://drive.google.com/file/d/" + resultFileId + "/view");
+  var derived = StdFolders_relativePathOfFile_(key, resultFileId);
+  out.path = (derived !== null) ? derived : lp;
+  return out;
+}
+
+// ---------------------------------------------
+// 汎用（フォルダ版）: アップロード保存先フォルダ（06_upload_files）の論理パス↔folderId。
+// 物理 folderUrl 優先 → 論理 folderPath フォールバック。外部=再帰copy（ファイル id を remap）/内部別=move。
+// ---------------------------------------------
+
+// folderId のフォルダが生存しているか（存在しゴミ箱でない）。
+function StdFolders_isFolderIdAlive_(folderId) {
+  if (!folderId) return false;
+  try {
+    var f = DriveApp.getFolderById(folderId);
+    return !(typeof f.isTrashed === "function" && f.isTrashed());
+  } catch (e) {
+    return false;
+  }
+}
+
+// folderId（フォルダ）が ancestorId フォルダの子孫（自身含む）か。親チェーンを遡って判定（多親/循環保護）。
+function StdFolders_isFolderUnderFolder_(folderId, ancestorId) {
+  if (!folderId || !ancestorId) return false;
+  if (folderId === ancestorId) return true;
+  try {
+    var seen = {};
+    var queue = [];
+    var p0 = DriveApp.getFolderById(folderId).getParents();
+    while (p0.hasNext()) queue.push(p0.next());
+    var steps = 0;
+    while (queue.length && steps < 200) {
+      steps++;
+      var f = queue.shift();
+      var id = f.getId();
+      if (id === ancestorId) return true;
+      if (seen[id]) continue;
+      seen[id] = true;
+      var ps = f.getParents();
+      while (ps.hasNext()) queue.push(ps.next());
+    }
+  } catch (err) {
+    Logger.log("[StdFolders_isFolderUnderFolder_] " + folderId + " under " + ancestorId + ": " + nfbErrorToString_(err));
+  }
+  return false;
+}
+
+function StdFolders_isFolderInStdSubfolder_(folderId, key) {
+  try {
+    var root = StdFolders_resolveRootFolder_(null);
+    var sub = StdFolders_getOrCreateSubfolder_(root, key);
+    return StdFolders_isFolderUnderFolder_(folderId, sub.getId());
+  } catch (err) {
+    Logger.log("[StdFolders_isFolderInStdSubfolder_] " + folderId + " (" + key + "): " + nfbErrorToString_(err));
+  }
+  return false;
+}
+
+function StdFolders_isFolderUnderProjectRoot_(folderId) {
+  try {
+    var root = StdFolders_resolveRootFolder_(null);
+    return StdFolders_isFolderUnderFolder_(folderId, root.getId());
+  } catch (err) {
+    Logger.log("[StdFolders_isFolderUnderProjectRoot_] " + folderId + ": " + nfbErrorToString_(err));
+  }
+  return false;
+}
+
+// 論理パス（"フォルダ/.../葉フォルダ"）→ key サブフォルダ配下の folderId。葉もフォルダ。未解決は ""。
+function StdFolders_resolveFolderPathToId_(key, path) {
+  var segs = StdFolders_splitPathSegments_(path);
+  if (!segs.length) return "";
+  var base = StdFolders_autoFileFolderOrNull_(key);
+  if (!base) return "";
+  var parent = base;
+  for (var i = 0; i < segs.length; i++) {
+    var child = FormsDrive_childFolderByName_(parent, segs[i]);
+    if (!child) return "";
+    parent = child;
+  }
+  return parent.getId();
+}
+
+// key サブフォルダ配下にある folderId の論理パス（"フォルダ/.../葉フォルダ"、葉＝フォルダ名）。配下外は null。base 自身は ""。
+function StdFolders_relativeFolderPathOf_(key, folderId) {
+  if (!folderId) return null;
+  var base = StdFolders_autoFileFolderOrNull_(key);
+  if (!base) return null;
+  try {
+    var folder = DriveApp.getFolderById(folderId);
+    if (folder.getId() === base.getId()) return "";
+    var segs = StdFolders_relFolderSegsUnderBase_(folder, base.getId());
+    if (segs === null) return null;
+    var name = folder.getName();
+    return segs.length ? (segs.join("/") + "/" + name) : name;
+  } catch (e) {
+    Logger.log("[StdFolders_relativeFolderPathOf_] " + folderId + " (" + key + "): " + nfbErrorToString_(e));
+    return null;
+  }
+}
+
+// 内部別フォルダのフォルダを key base 配下（logicalPath の親）へ move（folderId 保持）。成否を返す。
+function StdFolders_moveFolderIntoStdPath_(key, folderId, logicalPath) {
+  try {
+    var target = StdFolders_ensureRefTargetFolder_(key, logicalPath);
+    if (!target) return false;
+    DriveApp.getFolderById(folderId).moveTo(target);
+    return true;
+  } catch (err) {
+    Logger.log("[StdFolders_moveFolderIntoStdPath_] " + folderId + " -> " + key + ": " + nfbErrorToString_(err));
+    return false;
+  }
+}
+
+// src フォルダを destParent 配下へ再帰コピーし、ファイルの old→new fileId を idMap に積む。ノード/深さ上限で保護。
+function StdFolders_copyFolderTreeShallow_(srcFolder, destParent, idMap, guard) {
+  if (guard.count >= guard.max || guard.depth > guard.maxDepth) return null;
+  var dest = destParent.createFolder(srcFolder.getName());
+  var files = srcFolder.getFiles();
+  while (files.hasNext()) {
+    if (guard.count >= guard.max) break;
+    var f = files.next();
+    if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
+    var copied = f.makeCopy(f.getName(), dest);
+    idMap[f.getId()] = copied.getId();
+    guard.count++;
+  }
+  var subs = srcFolder.getFolders();
+  while (subs.hasNext()) {
+    if (guard.count >= guard.max) break;
+    var sf = subs.next();
+    if (typeof sf.isTrashed === "function" && sf.isTrashed()) continue;
+    guard.depth++;
+    StdFolders_copyFolderTreeShallow_(sf, dest, idMap, guard);
+    guard.depth--;
+  }
+  return dest;
+}
+
+// プロジェクト外のフォルダを key base 配下（logicalPath の親）へ再帰 copy 取り込み（新 folderId・元は残す）。
+// 戻り: { folderId, idMap } / 失敗 null。
+function StdFolders_copyFolderIntoStdPath_(key, folderId, logicalPath) {
+  try {
+    var targetParent = StdFolders_ensureRefTargetFolder_(key, logicalPath);
+    if (!targetParent) return null;
+    var src = DriveApp.getFolderById(folderId);
+    var idMap = {};
+    var guard = { count: 0, max: 1000, depth: 0, maxDepth: 20 };
+    var newFolder = StdFolders_copyFolderTreeShallow_(src, targetParent, idMap, guard);
+    if (!newFolder) return null;
+    return { folderId: newFolder.getId(), idMap: idMap };
+  } catch (err) {
+    Logger.log("[StdFolders_copyFolderIntoStdPath_] " + folderId + " -> " + key + ": " + nfbErrorToString_(err));
+    return null;
+  }
+}
+
+// 統一正規化器（フォルダ参照）。物理優先→論理フォールバックで folderId を引き、配置を整える:
+//   ホーム（key 配下）= 据置 / プロジェクト内の別フォルダ = move / プロジェクト外 = 再帰copy。
+// 物理 URL と論理パスの両方を返す。戻り: { folderId, url, path, status, idMap }。
+//   status: "aligned" | "moved" | "copiedExternal" | "recoveredByPath" | "unresolved" | "noop"
+function StdFolders_alignFolderRefIntoStdFolder_(key, folderUrlOrId, logicalPath) {
+  var lp = (typeof logicalPath === "string") ? logicalPath.trim() : "";
+  var out = { folderId: "", url: "", path: lp, status: "unresolved", idMap: null };
+
+  var folderId = "";
+  var parsed = Forms_parseGoogleDriveUrl_(folderUrlOrId);
+  if (parsed && parsed.type === "folder" && parsed.id) folderId = parsed.id;
+  if ((!folderId || !StdFolders_isFolderIdAlive_(folderId)) && lp) {
+    var byPath = StdFolders_resolveFolderPathToId_(key, lp);
+    if (byPath && StdFolders_isFolderIdAlive_(byPath)) {
+      folderId = byPath;
+      out.status = "recoveredByPath";
+    }
+  }
+  if (!folderId || !StdFolders_isFolderIdAlive_(folderId)) return out;
+
+  var resultFolderId = folderId;
+  if (StdFolders_isFolderInStdSubfolder_(folderId, key)) {
+    if (out.status !== "recoveredByPath") out.status = "aligned";
+  } else if (StdFolders_isFolderUnderProjectRoot_(folderId)) {
+    out.status = StdFolders_moveFolderIntoStdPath_(key, folderId, lp) ? "moved" : "noop";
+  } else {
+    var copied = StdFolders_copyFolderIntoStdPath_(key, folderId, lp);
+    if (copied && copied.folderId) {
+      resultFolderId = copied.folderId;
+      out.idMap = copied.idMap;
+      out.status = "copiedExternal";
+    } else {
+      out.status = "noop";
+    }
+  }
+
+  var fo = null;
+  try { fo = DriveApp.getFolderById(resultFolderId); } catch (e) { fo = null; }
+  out.folderId = resultFolderId;
+  out.url = fo ? fo.getUrl() : ("https://drive.google.com/drive/folders/" + resultFolderId);
+  var derived = StdFolders_relativeFolderPathOf_(key, resultFolderId);
+  out.path = (derived !== null) ? derived : lp;
+  return out;
+}
+
+// レコード保存時: fileUpload セル（{files, folderUrl, folderPath}）のフォルダを 06_upload_files へ寄せ、
+// 物理 folderUrl と論理 folderPath を両方更新する。外部コピー時は files[].driveFileId/Url を新 id へ remap。
+// 対象でない値（非 JSON / フォルダ参照なし）や解決不能はそのまま返す。
+function StdFolders_normalizeUploadCellValue_(rawValue) {
+  if (typeof rawValue !== "string" || !rawValue) return rawValue;
+  var trimmed = rawValue.trim();
+  if (trimmed.charAt(0) !== "{") return rawValue;  // object 形のみ（素配列 / マーカーは対象外）
+  var obj;
+  try { obj = JSON.parse(trimmed); } catch (e) { return rawValue; }
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return rawValue;
+  if (!Array.isArray(obj.files)) return rawValue;  // fileUpload セルは必ず files 配列を持つ（誤検出防止）
+  var folderUrl = (typeof obj.folderUrl === "string") ? obj.folderUrl : "";
+  var folderPath = (typeof obj.folderPath === "string") ? obj.folderPath : "";
+  if (!folderUrl && !folderPath) return rawValue;
+
+  var aligned = StdFolders_alignFolderRefIntoStdFolder_("upload", folderUrl, folderPath);
+  if (aligned.status === "unresolved" || aligned.status === "noop") return rawValue;
+
+  obj.folderUrl = aligned.url;
+  obj.folderPath = aligned.path;
+  if (aligned.idMap && Array.isArray(obj.files)) {
+    for (var i = 0; i < obj.files.length; i++) {
+      var fe = obj.files[i];
+      if (fe && typeof fe === "object" && fe.driveFileId && aligned.idMap[fe.driveFileId]) {
+        var newId = aligned.idMap[fe.driveFileId];
+        fe.driveFileId = newId;
+        fe.driveFileUrl = "https://drive.google.com/file/d/" + newId + "/view";
+      }
+    }
+  }
+  return JSON.stringify(obj);
+}
+
+// ctx.responses の各セルから fileUpload セルを検出し、アップロードフォルダを 06 へ正規化する。
+function StdFolders_normalizeUploadCellsInResponses_(responses) {
+  if (!responses || typeof responses !== "object") return;
+  for (var k in responses) {
+    if (!Object.prototype.hasOwnProperty.call(responses, k)) continue;
+    var v = responses[k];
+    if (typeof v !== "string") continue;
+    if (v.indexOf("folderUrl") === -1 && v.indexOf("folderPath") === -1) continue;  // 安いプリフィルタ
+    responses[k] = StdFolders_normalizeUploadCellValue_(v);
+  }
+}
+
+// 保存時: フォーム全体（settings.standardPrintTemplate*）+ カード個別（printTemplateAction）の
+// 印刷様式 Doc 参照を 05_report_templates へ寄せ、物理 URL と論理パスを両方更新する（外部=copy/内部=move）。
+// 解決不能（unresolved/noop）の参照は据え置く。form を直接 mutate する。base 未解決なら全 no-op。
+function StdFolders_normalizePrintTemplateRefsOnSave_(form) {
+  if (!form || typeof form !== "object") return;
+
+  var settings = (form.settings && typeof form.settings === "object" && !Array.isArray(form.settings)) ? form.settings : null;
+  if (settings) {
+    var su = Nfb_trimStr_(settings.standardPrintTemplateUrl);
+    var sp = Nfb_trimStr_(settings.standardPrintTemplatePath);
+    if (su || sp) {
+      var sr = StdFolders_alignFileRefIntoStdFolder_("report_templates", su, sp);
+      if (sr.status !== "unresolved" && sr.status !== "noop") {
+        settings.standardPrintTemplateUrl = sr.url;
+        settings.standardPrintTemplatePath = sr.path;
+      }
+    }
+  }
+
+  StdFolders_walkFields_(form.schema, function(fld) {
+    if (!fld || typeof fld !== "object") return;
+    var act = fld.printTemplateAction;
+    if (!act || typeof act !== "object" || !act.useCustomTemplate) return;
+    var cu = Nfb_trimStr_(act.templateUrl);
+    var cp = Nfb_trimStr_(act.templatePath);
+    if (!cu && !cp) return;
+    var cr = StdFolders_alignFileRefIntoStdFolder_("report_templates", cu, cp);
+    if (cr.status !== "unresolved" && cr.status !== "noop") {
+      act.templateUrl = cr.url;
+      act.templatePath = cr.path;
+    }
+  });
 }
 
 // ---------------------------------------------

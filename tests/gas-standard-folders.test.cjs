@@ -481,7 +481,9 @@ test("StdFolders_resolveSpreadsheetPathToFileId_: 04_spreadsheets 配下を walk
   const base = {
     getFiles() { let i = 0; const arr = [rootSheet]; return { hasNext: () => i < arr.length, next: () => arr[i++] }; },
   };
-  gas.StdFolders_spreadsheetsBaseFolderOrNull_ = () => base;
+  // 汎用版 StdFolders_resolvePathToFileId_ は base を StdFolders_autoFileFolderOrNull_(key) から得る
+  // （spreadsheetsBaseFolderOrNull_ もこれに委譲）。spreadsheets キーのときだけ base を返す。
+  gas.StdFolders_autoFileFolderOrNull_ = (key) => (key === "spreadsheets" ? base : null);
   gas.FormsDrive_childFolderByName_ = (parent, name) => (parent === base && name === "売上" ? salesFolder : null);
 
   assert.equal(gas.StdFolders_resolveSpreadsheetPathToFileId_("売上/集計2026"), "SS_RESOLVED");

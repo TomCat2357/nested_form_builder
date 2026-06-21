@@ -326,12 +326,27 @@ function nfbRequiresRecordOutputFileNameTemplate_(action, outputType) {
   return outputType !== "gmail" || !!(action && action.gmailAttachPdf);
 }
 
-// カード側でカスタムテンプレートが有効かつ URL が指定されていればそれを使い、
+// 物理 URL があればそれを使い、無ければ論理パスで 05_report_templates を引いて URL を合成する。
+// 物理優先・論理フォールバック（保存時の正規化で両方を保持しているのが前提。URL は fileId 由来で
+// 移動に強いため、存在すればそのまま使う。空のときだけ論理パスで引き当てる）。
+function nfbResolveTemplateUrlPhysicalFirst_(url, path) {
+  var u = Nfb_trimStr_(url);
+  if (u) return u;
+  var p = Nfb_trimStr_(path);
+  if (p) {
+    var fid = StdFolders_resolvePathToFileId_("report_templates", p);
+    if (fid) return "https://docs.google.com/document/d/" + fid + "/edit";
+  }
+  return "";
+}
+
+// カード側でカスタムテンプレートが有効かつ参照が解決できればそれを使い、
 // 未指定（または無効）ならフォーム共通の標準印刷出力様式にフォールバックする。
 function nfbResolveRecordOutputTemplateSourceUrl_(payload, action) {
+  var settings = payload && payload.settings ? payload.settings : {};
   if (action && action.useCustomTemplate) {
-    var actionUrl = Nfb_trimStr_(action.templateUrl);
+    var actionUrl = nfbResolveTemplateUrlPhysicalFirst_(action.templateUrl, action.templatePath);
     if (actionUrl) return actionUrl;
   }
-  return payload && payload.settings ? Nfb_trimStr_(payload.settings.standardPrintTemplateUrl) : "";
+  return nfbResolveTemplateUrlPhysicalFirst_(settings.standardPrintTemplateUrl, settings.standardPrintTemplatePath);
 }

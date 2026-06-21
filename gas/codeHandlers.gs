@@ -302,6 +302,9 @@ function SubmitResponses_(ctx) {
       const columnFormatMap = schema ? Sheets_collectColumnFormatMap_(schema) : null;
       Sheets_purgeExpiredDeletedRows_(sheet, ResolveDeletedRecordRetentionDays_(ctx));
       Nfb_updatePurgeKeyFromSheet_(ctx?.raw?.formId, sheet);
+      // アップロード保存先フォルダを 06_upload_files へ寄せ、folderUrl/folderPath を両方刻む（外部=copy/内部=move、非致命）。
+      try { StdFolders_normalizeUploadCellsInResponses_(ctx.responses); }
+      catch (eUp) { Logger.log("[SubmitResponses_] normalizeUploadCells failed: " + nfbErrorToString_(eUp)); }
       const result = Sheets_upsertRecordById_(sheet, ctx.order, ctx, temporalTypeMap, columnFormatMap);
       return {
         ok: true,

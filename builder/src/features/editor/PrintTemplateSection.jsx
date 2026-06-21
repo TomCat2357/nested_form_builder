@@ -20,7 +20,7 @@ function CustomTemplateUrlFields({ printTemplateAction, updateAction, label = "ã
 
   const handleSelect = (fileId) => {
     const opt = options.find((o) => o.value === fileId);
-    updateAction({ templateUrl: opt ? (opt.url || "") : "" });
+    updateAction({ templateUrl: opt ? (opt.url || "") : "", templatePath: opt ? (opt.path || "") : "" });
   };
 
   return (
