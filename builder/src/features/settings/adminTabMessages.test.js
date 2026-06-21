@@ -79,6 +79,20 @@ test("formatCopyResult: appsScript 成功 / unresolved 未指定は 0", () => {
   assert.match(out, /未解決の Question リンク.*: 0/);
 });
 
+test("formatCopyResult: categories で未選択カテゴリは「除外」と表示し分ける", () => {
+  const out = formatCopyResult({
+    summary: { forms: 2, documents: 0, spreadsheets: 0 },
+    categories: { forms: true, documents: false, spreadsheets: true },
+    clearedLinks: 0,
+    unresolvedQuestionLinks: 0,
+    appsScriptCopied: true,
+    message: "完了",
+  });
+  assert.match(out, /forms: 2件/);
+  assert.match(out, /documents: 除外/, "未選択カテゴリは除外と表示");
+  assert.match(out, /spreadsheets: 0件/, "選択済みで 0 件は件数表示（除外ではない）");
+});
+
 test("formatImportResult: 件数 + エラー上位3 + 末尾の自動整列案内", () => {
   const out = formatImportResult({
     imported: { forms: 2, questions: 0, dashboards: 1 },

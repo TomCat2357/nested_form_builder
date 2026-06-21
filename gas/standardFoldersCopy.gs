@@ -47,6 +47,12 @@ function StdFolders_copy_(payload) {
     var copyExternalActions = !!(payload && (payload.copyExternalActions === true || payload.copyExternalActions === "true"));
     // マッピング再構築は既定 ON（明示 false / "false" のときだけ OFF）。
     var rebuildMapping = !(payload && (payload.rebuildMapping === false || payload.rebuildMapping === "false"));
+    // カテゴリ単位の選択（payload.categories）を 8 キー全件の bool マップへ正規化する。
+    // 未指定なら全カテゴリ ON（＝従来の一括コピー）。以降は selectedKeys を唯一の真実とし、
+    // externalActions も selectedKeys.externalActions に一本化する（フォーム内の外部アクション
+    // URL クリア判定も同値で行う）。旧クライアント互換のため copyExternalActions は coerce 前の
+    // 生値を渡す（undefined と明示 false を区別する必要があるため）。
+    var selectedKeys = StdFolders_normalizeCategorySelection_(payload && payload.categories, payload && payload.copyExternalActions);
 
     var srcRoot = StdFolders_resolveRootFolder_(null);
     var destRoot = nfbResolveFolderFromInput_(destRootUrl);
@@ -60,26 +66,22 @@ function StdFolders_copy_(payload) {
     var appsScriptCopyResult = StdFolders_copyAppsScriptBody_(destRoot);
     var appsScriptCopied = appsScriptCopyResult.ok;
 
+    // フォルダ（標準 8 階層）は選択に関わらずコピー先へ常に作成する（中身は選択次第で空になる）。
+    StdFolders_ensureAllSubfolders_(destRoot);
+
     // id ＝ Drive fileId へ統一したため、コピー先では全ファイルが新 fileId（＝新 id）になる。
     // リンク（formId / questionId）はコピー時に idMap（旧fileId→新fileId）で再マップする。
     var idMap = {};         // oldFileId → { newFileId, newUrl }
     var folderIdMap = {};   // srcSubfolderId → destSubfolderUrl
     var summary = {};
 
-    // どのキーをコピーするか（07_external_actions はオプション）
-    var keys = [];
-    for (var i = 0; i < NFB_STD_FOLDER_ORDER.length; i++) {
-      var k = NFB_STD_FOLDER_ORDER[i];
-      if (k === "externalActions" && !copyExternalActions) continue;
-      keys.push(k);
-    }
-
-    // --- 第1パス: 全フォルダのファイルを複製し idMap / folderIdMap を構築 ---
+    // --- 第1パス: 8 キー全件を回す。フォルダ URL（folderIdMap）は選択に関わらず登録し、
+    // 未選択カテゴリはファイル複製のみスキップする（フォルダは上で作成済み）。 ---
     var srcSubByKey = {};
     var destSubByKey = {};
     var copiedFilesByKey = {}; // key → [{ newFileId, srcFileId }]
-    for (var ki = 0; ki < keys.length; ki++) {
-      var key = keys[ki];
+    for (var ki = 0; ki < NFB_STD_FOLDER_ORDER.length; ki++) {
+      var key = NFB_STD_FOLDER_ORDER[ki];
       var name = NFB_STD_FOLDER_NAMES[key];
       var srcSubIt = srcRoot.getFoldersByName(name);
       if (!srcSubIt.hasNext()) {
@@ -90,7 +92,15 @@ function StdFolders_copy_(payload) {
       var destSub = StdFolders_getOrCreateSubfolder_(destRoot, key);
       srcSubByKey[key] = srcSub;
       destSubByKey[key] = destSub;
+      // フォルダ URL の張替は選択に関わらず効かせる（例: upload 未選択でもフォームの
+      // driveRootFolderUrl をコピー先の同名フォルダ URL へ向け直せるようにする）。
       folderIdMap[srcSub.getId()] = destSub.getUrl();
+
+      // 未選択カテゴリはファイルを複製しない（フォルダだけ作成して空にする）。
+      if (!selectedKeys[key]) {
+        summary[key] = 0;
+        continue;
+      }
 
       var copied = [];
       var files = srcSub.getFiles();
@@ -119,7 +129,7 @@ function StdFolders_copy_(payload) {
     // forms (01_forms): spreadsheet / フォルダ / 外部アクション URL を再マップ
     var formCopied = copiedFilesByKey["forms"] || [];
     for (var fi = 0; fi < formCopied.length; fi++) {
-      clearedLinks += StdFolders_rewireFormFile_(formCopied[fi].newFileId, idMap, folderIdMap, copyExternalActions);
+      clearedLinks += StdFolders_rewireFormFile_(formCopied[fi].newFileId, idMap, folderIdMap, selectedKeys.externalActions);
     }
 
     // questions (02_questions): query.gui.formId / query.formSources[].formId を新 fileId へ再マップ
@@ -149,7 +159,8 @@ function StdFolders_copy_(payload) {
       clearedLinks: clearedLinks,
       unresolvedQuestionLinks: unresolvedQuestionLinks,
       copyData: copyData,
-      copyExternalActions: copyExternalActions,
+      copyExternalActions: selectedKeys.externalActions,
+      categories: selectedKeys,
       rebuildMapping: rebuildMapping,
       appsScriptCopied: appsScriptCopied,
       appsScriptCopyError: appsScriptCopied ? "" : (appsScriptCopyResult.reason || ""),

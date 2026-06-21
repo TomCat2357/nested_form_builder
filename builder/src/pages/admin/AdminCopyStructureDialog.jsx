@@ -1,16 +1,29 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
 
+// コピー対象として個別に選べる標準フォルダ 8 カテゴリ。key は GAS の NFB_STD_FOLDER_ORDER と一致させる。
+const COPY_CATEGORY_OPTIONS = [
+  { key: "forms", label: "01_forms（フォーム定義）" },
+  { key: "questions", label: "02_questions（Question 定義）" },
+  { key: "dashboards", label: "03_dashboards（Dashboard 定義）" },
+  { key: "spreadsheets", label: "04_spreadsheets（回答スプレッドシート）" },
+  { key: "report_templates", label: "05_report_templates（印刷様式テンプレート）" },
+  { key: "upload", label: "06_upload_files（アップロードファイル）" },
+  { key: "externalActions", label: "07_external_actions（外部アクション）" },
+  { key: "documents", label: "08_documents（ドキュメント）" },
+];
+
 // システムごと（appsscript 本体 + 標準フォルダ構成）を別のプロジェクトフォルダへコピーするダイアログ。
-// コピー先プロジェクトフォルダ URL +「データもコピー」「外部アクション もコピー」「マッピング JSON を書き出す」オプションを受け取る。
+// コピー先プロジェクトフォルダ URL + カテゴリ単位の選択（8 カテゴリ）+「データ（12 行目以降）も含める」
+// +「マッピング JSON を書き出す」オプションを受け取る。フォルダ（8 階層）は選択に関わらず常に作成される。
 export default function AdminCopyStructureDialog({
   open,
   url,
   onUrlChange,
+  categories = {},
+  onCategoryChange,
   copyData,
   onCopyDataChange,
-  copyExternalActions,
-  onCopyExternalActionsChange,
   rebuildMapping,
   onRebuildMappingChange,
   onConfirm,
@@ -22,6 +35,30 @@ export default function AdminCopyStructureDialog({
   useEffect(() => {
     if (!open) setError("");
   }, [open]);
+
+  // すべてのカテゴリが OFF なら「コピーする中身が無い」とみなして確定を抑止する。
+  const allOff = useMemo(
+    () => COPY_CATEGORY_OPTIONS.every((opt) => !categories[opt.key]),
+    [categories],
+  );
+
+  // 依存先カテゴリを外した選択への非ブロッキング警告（許可はする）。
+  const dependencyWarnings = useMemo(() => {
+    const warnings = [];
+    if (categories.dashboards && !categories.questions) {
+      warnings.push("Dashboard を含めますが Question を除外しています。Dashboard のカードは参照を保持したまま未配線になり、コピー先で再リンク（または各エンティティの保存時の自動再リンク）が必要です。");
+    }
+    if (categories.questions && !categories.forms) {
+      warnings.push("Question を含めますが Form を除外しています。Question の formId は保持されますが、コピー先で名前フォールバックによる再リンクが必要です。");
+    }
+    if (categories.forms && !categories.spreadsheets) {
+      warnings.push("Form を含めますが スプレッドシート を除外しています。フォームのスプレッドシート参照 URL はクリアされます。");
+    }
+    if (categories.forms && !categories.report_templates) {
+      warnings.push("Form を含めますが 印刷様式テンプレート を除外しています。フォームの印刷テンプレート URL はクリアされます。");
+    }
+    return warnings;
+  }, [categories]);
 
   const handleConfirm = () => {
     const trimmed = (url || "").trim();
@@ -42,7 +79,7 @@ export default function AdminCopyStructureDialog({
           <button type="button" className="dialog-btn" onClick={onCancel} disabled={loading}>
             キャンセル
           </button>
-          <button type="button" className="dialog-btn primary" onClick={handleConfirm} disabled={loading}>
+          <button type="button" className="dialog-btn primary" onClick={handleConfirm} disabled={loading || allOff}>
             {loading ? "コピー中..." : "別のプロジェクトフォルダへコピー"}
           </button>
         </>
@@ -74,30 +111,62 @@ export default function AdminCopyStructureDialog({
         {error && <p className="nf-mt-6 nf-text-danger-strong nf-text-12">{error}</p>}
       </div>
 
-      <label className="nf-row nf-gap-8 nf-mt-12" style={{ alignItems: "center", cursor: "pointer" }}>
-        <input
-          type="checkbox"
-          checked={!!copyData}
-          onChange={(event) => onCopyDataChange(event.target.checked)}
-        />
-        <span className="nf-text-13">データもコピーする（スプレッドシートの 12 行目以降）</span>
-      </label>
-      <p className="nf-mt-2 nf-text-11 nf-text-muted">
-        OFF の場合、コピー先スプレッドシートはヘッダー（1〜11 行）のみで、回答データは含めません。
-      </p>
+      <div className="nf-mt-12">
+        <div className="nf-text-13 nf-fw-600 nf-mb-6">コピーする対象（カテゴリ）</div>
+        <p className="nf-mt-2 nf-mb-6 nf-text-11 nf-text-muted">
+          チェックを外したカテゴリは中身を複製しません。フォルダ（標準 8 階層）は選択に関わらずコピー先へ常に作成されます。
+        </p>
+        {COPY_CATEGORY_OPTIONS.map((opt) => (
+          <React.Fragment key={opt.key}>
+            <label className="nf-row nf-gap-8 nf-mt-6" style={{ alignItems: "center", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={!!categories[opt.key]}
+                onChange={(event) => onCategoryChange(opt.key, event.target.checked)}
+              />
+              <span className="nf-text-13">{opt.label}</span>
+            </label>
+            {opt.key === "spreadsheets" && (
+              <>
+                <label
+                  className="nf-row nf-gap-8 nf-mt-6"
+                  style={{ alignItems: "center", cursor: categories.spreadsheets ? "pointer" : "not-allowed", marginLeft: 24 }}
+                >
+                  <input
+                    type="checkbox"
+                    checked={!!categories.spreadsheets && !!copyData}
+                    disabled={!categories.spreadsheets}
+                    onChange={(event) => onCopyDataChange(event.target.checked)}
+                  />
+                  <span className="nf-text-12">データ（12 行目以降）も含める</span>
+                </label>
+                <p className="nf-mt-2 nf-text-11 nf-text-muted" style={{ marginLeft: 24 }}>
+                  OFF の場合、コピー先スプレッドシートはヘッダー（1〜11 行）のみで、回答データは含めません。
+                </p>
+              </>
+            )}
+            {opt.key === "externalActions" && (
+              <p className="nf-mt-2 nf-text-11 nf-text-muted" style={{ marginLeft: 24 }}>
+                外部アクション は URL 埋め込み等を含む場合があります。OFF の場合 07_external_actions は複製せず、フォーム内の
+                外部アクション 送信先 URL もクリアします（コピー先で再リンクしてください）。
+              </p>
+            )}
+          </React.Fragment>
+        ))}
+        {allOff && (
+          <p className="nf-mt-6 nf-text-12 nf-text-danger-strong">
+            コピーする対象を 1 つ以上選択してください。
+          </p>
+        )}
+      </div>
 
-      <label className="nf-row nf-gap-8 nf-mt-12" style={{ alignItems: "center", cursor: "pointer" }}>
-        <input
-          type="checkbox"
-          checked={!!copyExternalActions}
-          onChange={(event) => onCopyExternalActionsChange(event.target.checked)}
-        />
-        <span className="nf-text-13">07_external_actions もコピーする</span>
-      </label>
-      <p className="nf-mt-2 nf-text-11 nf-text-muted">
-        外部アクション は URL 埋め込み等を含む場合があります。OFF の場合 07_external_actions は複製せず、フォーム内の
-        外部アクション 送信先 URL もクリアします（コピー先で再リンクしてください）。
-      </p>
+      {dependencyWarnings.length > 0 && (
+        <div className="nf-mt-12">
+          {dependencyWarnings.map((warning, index) => (
+            <p key={index} className="nf-mt-2 nf-text-12 nf-text-danger-strong">⚠ {warning}</p>
+          ))}
+        </div>
+      )}
 
       <label className="nf-row nf-gap-8 nf-mt-12" style={{ alignItems: "center", cursor: "pointer" }}>
         <input

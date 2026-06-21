@@ -92,9 +92,21 @@ export default function SettingsAdminTab() {
   const copyDialog = useConfirmDialog();
   const [copyUrl, setCopyUrl] = useState("");
   const [copyData, setCopyData] = useState(false);
-  const [copyExternalActions, setCopyExternalActions] = useState(false);
+  // コピー対象カテゴリ（標準フォルダ 8 種）。初期値は全 ON（＝従来の一括コピー）。
+  const [copyCategories, setCopyCategories] = useState({
+    forms: true,
+    questions: true,
+    dashboards: true,
+    spreadsheets: true,
+    report_templates: true,
+    upload: true,
+    externalActions: true,
+    documents: true,
+  });
   const [rebuildMapping, setRebuildMapping] = useState(true);
   const [copyLoading, setCopyLoading] = useState(false);
+  const handleCopyCategoryChange = (key, checked) =>
+    setCopyCategories((prev) => ({ ...prev, [key]: checked }));
 
   // マッピングの管理（エクスポート / インポート）
   const [mappingImportUrl, setMappingImportUrl] = useState("");
@@ -300,9 +312,10 @@ export default function SettingsAdminTab() {
     try {
       const result = await copyStandardFolders({
         destRootUrl: copyUrl.trim(),
-        copyData,
-        copyExternalActions,
+        copyData: copyCategories.spreadsheets ? copyData : false,
+        copyExternalActions: copyCategories.externalActions,
         rebuildMapping,
+        categories: copyCategories,
       });
       copyDialog.close();
       setCopyUrl("");
@@ -538,10 +551,10 @@ export default function SettingsAdminTab() {
         open={copyDialog.state.open}
         url={copyUrl}
         onUrlChange={setCopyUrl}
+        categories={copyCategories}
+        onCategoryChange={handleCopyCategoryChange}
         copyData={copyData}
         onCopyDataChange={setCopyData}
-        copyExternalActions={copyExternalActions}
-        onCopyExternalActionsChange={setCopyExternalActions}
         rebuildMapping={rebuildMapping}
         onRebuildMappingChange={setRebuildMapping}
         onConfirm={handleCopyConfirm}

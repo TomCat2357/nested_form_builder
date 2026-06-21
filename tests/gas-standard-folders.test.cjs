@@ -448,3 +448,297 @@ test("StdFolders_ensureFileInStdFolder_: 既に構成内（サブフォルダ配
   assert.equal(tree.ops.moved.length, 0, "移動しない");
   assert.equal(tree.ops.copied.length, 0, "コピーしない");
 });
+
+// ---------------------------------------------------------------------------
+// カテゴリ選択の正規化（StdFolders_normalizeCategorySelection_）
+// ---------------------------------------------------------------------------
+
+test("StdFolders_normalizeCategorySelection_: categories 未指定なら全 8 キー true（後方互換）", () => {
+  const gas = loadGasContext();
+  const sel = gas.StdFolders_normalizeCategorySelection_(undefined, undefined);
+  assert.equal(Object.keys(sel).length, 8);
+  for (const key of gas.NFB_STD_FOLDER_ORDER) assert.equal(sel[key], true, key);
+});
+
+test("StdFolders_normalizeCategorySelection_: categories 未指定 + copyExternalActions=false は externalActions のみ false（旧クライアント互換）", () => {
+  const gas = loadGasContext();
+  const sel = gas.StdFolders_normalizeCategorySelection_(undefined, false);
+  assert.equal(sel.externalActions, false);
+  assert.equal(sel.forms, true);
+  assert.equal(sel.documents, true);
+});
+
+test("StdFolders_normalizeCategorySelection_: 一部キー指定 → 指定外キーは true（後方互換）", () => {
+  const gas = loadGasContext();
+  const sel = gas.StdFolders_normalizeCategorySelection_({ forms: true, questions: false }, undefined);
+  assert.equal(sel.forms, true);
+  assert.equal(sel.questions, false);
+  assert.equal(sel.dashboards, true, "未指定キーは true");
+  assert.equal(sel.documents, true);
+});
+
+test("StdFolders_normalizeCategorySelection_: categories 明示時は copyExternalActions 引数を無視する", () => {
+  const gas = loadGasContext();
+  // categories.externalActions=false なのに copyExternalActions=true が来ても false を維持する。
+  const sel = gas.StdFolders_normalizeCategorySelection_({ externalActions: false }, true);
+  assert.equal(sel.externalActions, false);
+});
+
+test("StdFolders_normalizeCategorySelection_: 文字列 'true'/'false' も bool 化する", () => {
+  const gas = loadGasContext();
+  const sel = gas.StdFolders_normalizeCategorySelection_({ forms: "false", questions: "true" }, undefined);
+  assert.equal(sel.forms, false);
+  assert.equal(sel.questions, true);
+});
+
+// ---------------------------------------------------------------------------
+// 構成コピー本体（StdFolders_copy_）の統合テスト
+// ---------------------------------------------------------------------------
+
+const COPY_SS_ID = "SS1ID0000000001";
+const COPY_SS_URL = "https://docs.google.com/spreadsheets/d/" + COPY_SS_ID + "/edit";
+const COPY_DEST_URL = "https://drive.google.com/drive/folders/DESTROOT";
+
+// 全 8 カテゴリに 1 ファイルずつ持つソース構成。
+// フォームは spreadsheet 参照と外部アクション URL を持ち、Question→Form / Dashboard→Question の
+// リンクを張る（再配線・クリア挙動の検証用）。
+function fullSrcSpec() {
+  return {
+    forms: [{ id: "F1", content: { settings: { spreadsheetId: COPY_SS_URL }, schema: [{ label: "f", externalAction: { url: "https://script.google.com/macros/s/AAA/exec" } }] } }],
+    questions: [{ id: "Q1", content: { query: { mode: "gui", gui: { formId: "F1", formName: "F" }, formSources: [{ formId: "F1" }] } } }],
+    dashboards: [{ id: "D1", content: { cards: [{ id: "c1", questionId: "Q1", questionName: "Q" }] } }],
+    spreadsheets: [{ id: COPY_SS_ID, content: "spreadsheet-binary" }],
+    report_templates: [{ id: "T1", content: "doc" }],
+    upload: [{ id: "U1", content: "blob" }],
+    externalActions: [{ id: "E1", content: { url: "x" } }],
+    documents: [{ id: "DOC1", content: "doc" }],
+  };
+}
+
+// StdFolders_copy_ を駆動するための最小 Drive 環境を gas コンテキストへ差し込む。
+// - src ルート: 各標準フォルダに srcSpec のファイルを持つ
+// - dest ルート: getFoldersByName / createFolder / createFile を備え、ensureAllSubfolders_ で
+//   8 フォルダが lazy 作成される
+// - DriveApp.getFileById: makeCopy で複製した JSON ファイルを読み書きできる（再配線用）
+// - SpreadsheetApp.openById: 12 行目以降クリアの呼び出しを記録する
+function makeCopyEnv(gas, srcSpec) {
+  const registry = {};          // fileId -> file（DriveApp.getFileById 用）
+  const copies = [];            // makeCopy 記録: { srcId, newId, toKey }
+  const clearedSpreadsheets = []; // StdFolders_clearSpreadsheetData_ が開いた spreadsheetId
+  const clearedRanges = [];     // クリアした range（row 起点の検証用）
+  const NAMES = gas.NFB_STD_FOLDER_NAMES;
+
+  function makeFile(id, name, contentStr) {
+    const f = {
+      _id: id, _name: name, _content: contentStr, _trashed: false,
+      getId: () => id,
+      getName: () => name,
+      getUrl: () => "https://drive.google.com/file/d/" + id + "/view",
+      isTrashed: () => f._trashed,
+      getBlob: () => ({ getDataAsString: () => f._content }),
+      setContent: (c) => { f._content = c; },
+      makeCopy(newName, destFolder) {
+        const newId = "COPY_" + id;
+        const nf = makeFile(newId, newName, f._content);
+        copies.push({ srcId: id, newId: newId, toKey: destFolder._key });
+        destFolder._files.push(nf);
+        return nf;
+      },
+    };
+    registry[id] = f;
+    return f;
+  }
+
+  // src サブフォルダ（物理名キー）。
+  const srcSubs = {};
+  Object.keys(srcSpec || {}).forEach((key) => {
+    const name = NAMES[key];
+    const fileObjs = (srcSpec[key] || []).map((spec) => {
+      const contentStr = typeof spec.content === "string" ? spec.content : JSON.stringify(spec.content);
+      return makeFile(spec.id, spec.id + ".json", contentStr);
+    });
+    srcSubs[name] = {
+      _key: key, _name: name, _files: fileObjs,
+      getId: () => "SRC_FOLDER_" + key,
+      getUrl: () => "https://drive.google.com/drive/folders/SRC_FOLDER_" + key,
+      getFiles() {
+        const live = fileObjs.slice();
+        let i = 0;
+        return { hasNext: () => i < live.length, next: () => live[i++] };
+      },
+    };
+  });
+
+  const srcRoot = {
+    getId: () => "SRCROOT",
+    getFoldersByName(name) {
+      const matches = srcSubs[name] ? [srcSubs[name]] : [];
+      let i = 0;
+      return { hasNext: () => i < matches.length, next: () => matches[i++] };
+    },
+  };
+
+  const destSubs = {};          // 物理名キー
+  const destCreatedFiles = [];  // destRoot.createFile（_nfb_mapping.json）
+  const destRoot = {
+    getId: () => "DESTROOT",
+    getUrl: () => COPY_DEST_URL,
+    getFoldersByName(name) {
+      const matches = destSubs[name] ? [destSubs[name]] : [];
+      let i = 0;
+      return { hasNext: () => i < matches.length, next: () => matches[i++] };
+    },
+    createFolder(name) {
+      let key = name;
+      for (const k of gas.NFB_STD_FOLDER_ORDER) { if (NAMES[k] === name) { key = k; break; } }
+      const sub = { _key: key, _name: name, _files: [], getId: () => "DEST_FOLDER_" + key, getUrl: () => "https://drive.google.com/drive/folders/DEST_FOLDER_" + key };
+      destSubs[name] = sub;
+      return sub;
+    },
+    createFile(name, content) {
+      destCreatedFiles.push({ name: name, content: content });
+      return { getId: () => "DESTFILE_" + name, getName: () => name };
+    },
+  };
+
+  gas.DriveApp = {
+    getFileById(id) {
+      if (registry[id]) return registry[id];
+      throw new Error("not found: " + id);
+    },
+    getFolderById(id) { return { getId: () => id, isTrashed: () => false }; },
+  };
+  gas.NFB_DATA_START_ROW = 12;
+  gas.StdFolders_resolveRootFolder_ = () => srcRoot;
+  gas.nfbResolveFolderFromInput_ = () => destRoot;
+  gas.StdFolders_copyAppsScriptBody_ = () => ({ ok: true, reason: "" });
+  gas.SpreadsheetApp = {
+    openById(id) {
+      clearedSpreadsheets.push(id);
+      const sheet = {
+        getLastRow: () => 20,
+        getLastColumn: () => 5,
+        getRange: (row, col, numRows, numCols) => {
+          clearedRanges.push({ id: id, row: row, col: col, numRows: numRows, numCols: numCols });
+          return { clearContent: () => {} };
+        },
+      };
+      return { getSheets: () => [sheet] };
+    },
+  };
+
+  return { srcRoot, destRoot, registry, copies, clearedSpreadsheets, clearedRanges, destSubs, srcSubs, destCreatedFiles };
+}
+
+test("StdFolders_copy_: categories 未指定なら全カテゴリを複製しフォルダも全作成（後方互換）", () => {
+  const gas = loadGasContext();
+  const env = makeCopyEnv(gas, fullSrcSpec());
+  const res = gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, rebuildMapping: false });
+  assert.equal(res.ok, true);
+  for (const key of gas.NFB_STD_FOLDER_ORDER) {
+    assert.equal(res.summary[key], 1, key + " が複製される");
+    assert.ok(env.destSubs[gas.NFB_STD_FOLDER_NAMES[key]], key + " フォルダが作成される");
+  }
+});
+
+test("StdFolders_copy_: 旧クライアント互換（copyExternalActions=false, categories 無し）は 07 を除外、フォルダは作成", () => {
+  const gas = loadGasContext();
+  const env = makeCopyEnv(gas, fullSrcSpec());
+  const res = gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, copyExternalActions: false, rebuildMapping: false });
+  assert.equal(res.summary.externalActions, 0, "externalActions は複製されない");
+  assert.equal(res.summary.forms, 1);
+  assert.equal(env.copies.filter((c) => c.toKey === "externalActions").length, 0);
+  assert.ok(env.destSubs["07_external_actions"], "07 フォルダ自体は作成される");
+});
+
+test("StdFolders_copy_: 未選択カテゴリもフォルダは作成され中身は空（documents:false）", () => {
+  const gas = loadGasContext();
+  const env = makeCopyEnv(gas, fullSrcSpec());
+  const res = gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, categories: { documents: false }, rebuildMapping: false });
+  assert.equal(res.summary.documents, 0);
+  assert.ok(env.destSubs["08_documents"], "08_documents フォルダは作成される");
+  assert.equal(env.copies.filter((c) => c.toKey === "documents").length, 0, "documents のファイルは複製されない");
+  assert.equal(res.summary.forms, 1, "未指定キー（forms）は複製される");
+});
+
+test("StdFolders_copy_: spreadsheets 除外でファイル非複製・フォームの spreadsheet 参照はクリア", () => {
+  const gas = loadGasContext();
+  const env = makeCopyEnv(gas, fullSrcSpec());
+  const res = gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, categories: { spreadsheets: false }, rebuildMapping: false });
+  assert.equal(res.summary.spreadsheets, 0);
+  assert.equal(env.copies.filter((c) => c.toKey === "spreadsheets").length, 0);
+  const formJson = JSON.parse(env.registry["COPY_F1"]._content);
+  assert.equal(formJson.settings.spreadsheetId, "", "idMap に無い spreadsheet 参照はクリアされる");
+  assert.ok(res.clearedLinks >= 1, "クリアされたリンクが数えられる");
+});
+
+test("StdFolders_copy_: questions 除外で dashboard の questionId は保持・未解決として数える", () => {
+  const gas = loadGasContext();
+  const env = makeCopyEnv(gas, fullSrcSpec());
+  const res = gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, categories: { questions: false }, rebuildMapping: false });
+  assert.equal(res.summary.questions, 0);
+  assert.equal(res.unresolvedQuestionLinks, 1);
+  const dashJson = JSON.parse(env.registry["COPY_D1"]._content);
+  assert.equal(dashJson.cards[0].questionId, "Q1", "未配線でも参照は保持");
+  assert.equal(dashJson.cards[0].questionName, "Q");
+});
+
+test("StdFolders_copy_: categories.externalActions=false で 07 非複製＋フォーム内 URL クリア", () => {
+  const gas = loadGasContext();
+  const env = makeCopyEnv(gas, fullSrcSpec());
+  const res = gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, categories: { externalActions: false }, rebuildMapping: false });
+  assert.equal(res.summary.externalActions, 0);
+  assert.equal(env.copies.filter((c) => c.toKey === "externalActions").length, 0);
+  const formJson = JSON.parse(env.registry["COPY_F1"]._content);
+  assert.equal(formJson.schema[0].externalAction.url, "", "フォーム内の外部アクション URL がクリアされる");
+});
+
+test("StdFolders_copy_: categories.externalActions=true で 07 複製＋フォーム内 URL 温存", () => {
+  const gas = loadGasContext();
+  const env = makeCopyEnv(gas, fullSrcSpec());
+  const res = gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, categories: { externalActions: true }, rebuildMapping: false });
+  assert.equal(res.summary.externalActions, 1);
+  const formJson = JSON.parse(env.registry["COPY_F1"]._content);
+  assert.equal(formJson.schema[0].externalAction.url, "https://script.google.com/macros/s/AAA/exec");
+});
+
+test("StdFolders_copy_: copyData=false でコピー先スプレッドシートの 12 行目以降をクリア", () => {
+  const gas = loadGasContext();
+  const env = makeCopyEnv(gas, fullSrcSpec());
+  gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, categories: { spreadsheets: true }, copyData: false, rebuildMapping: false });
+  assert.deepEqual(env.clearedSpreadsheets, ["COPY_" + COPY_SS_ID]);
+  assert.equal(env.clearedRanges[0].row, 12, "12 行目を起点にクリアする");
+});
+
+test("StdFolders_copy_: copyData=true ではデータをクリアしない", () => {
+  const gas = loadGasContext();
+  const env = makeCopyEnv(gas, fullSrcSpec());
+  gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, categories: { spreadsheets: true }, copyData: true, rebuildMapping: false });
+  assert.equal(env.clearedSpreadsheets.length, 0);
+});
+
+test("StdFolders_copy_: 戻り値に正規化済み categories を含み copyExternalActions と一致", () => {
+  const gas = loadGasContext();
+  makeCopyEnv(gas, fullSrcSpec());
+  const res = gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, categories: { forms: true, questions: false }, rebuildMapping: false });
+  assert.equal(res.categories.forms, true);
+  assert.equal(res.categories.questions, false);
+  assert.equal(res.categories.dashboards, true, "未指定は true");
+  assert.equal(res.copyExternalActions, res.categories.externalActions);
+});
+
+test("StdFolders_copy_: rebuildMapping=true は未選択カテゴリを _nfb_mapping.json から除外", () => {
+  const gas = loadGasContext();
+  const env = makeCopyEnv(gas, fullSrcSpec());
+  installStores(gas, {
+    forms: { F1: { fileId: "F1", driveFileUrl: "u", title: "T" } },
+    questions: { Q1: { fileId: "Q1", driveFileUrl: "qu", name: "Q" } },
+    dashboards: {},
+  });
+  gas.StdFolders_copy_({ destRootUrl: COPY_DEST_URL, categories: { forms: true, questions: false }, rebuildMapping: true });
+  const mapFile = env.destCreatedFiles.find((f) => f.name === gas.NFB_STD_MAPPING_FILE_NAME);
+  assert.ok(mapFile, "_nfb_mapping.json が書き出される");
+  const doc = JSON.parse(mapFile.content);
+  assert.ok(doc.forms.F1, "選択した forms はマッピングに含まれる");
+  assert.ok(!doc.questions.Q1, "除外した questions はマッピングから除外される");
+});

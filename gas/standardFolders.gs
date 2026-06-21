@@ -42,6 +42,35 @@ var NFB_STD_FOLDER_ORDER = [
   "report_templates", "upload", "externalActions", "documents"
 ];
 
+// 構成コピー（StdFolders_copy_）のカテゴリ選択を 8 キー全件の bool マップへ正規化する。
+// rawCategories（payload.categories の { forms:bool, questions:bool, ... } 想定）の未指定キーは
+// true へ寄せる（後方互換 = カテゴリ未指定なら従来どおり全カテゴリをコピー）。
+// 旧クライアント互換: rawCategories を渡さず copyExternalActions だけ来た場合は、その値で
+// externalActions の選択を決める（copyExternalActions===false → externalActions のみ false）。
+// rawCategories を明示指定する新クライアントでは categories.externalActions を唯一の真実とし、
+// copyExternalActions 引数は無視する。
+function StdFolders_normalizeCategorySelection_(rawCategories, copyExternalActions) {
+  var hasObj = rawCategories && typeof rawCategories === "object";
+  var out = {};
+  for (var i = 0; i < NFB_STD_FOLDER_ORDER.length; i++) {
+    var k = NFB_STD_FOLDER_ORDER[i];
+    if (!hasObj) {
+      out[k] = true;
+      continue;
+    }
+    var v = rawCategories[k];
+    out[k] = (v === undefined || v === null) ? true : (v === true || v === "true");
+  }
+  if (!hasObj) {
+    if (copyExternalActions === false || copyExternalActions === "false") {
+      out.externalActions = false;
+    } else if (copyExternalActions === true || copyExternalActions === "true") {
+      out.externalActions = true;
+    }
+  }
+  return out;
+}
+
 // ---------------------------------------------
 // ルート解決
 // ---------------------------------------------

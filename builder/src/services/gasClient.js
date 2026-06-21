@@ -326,10 +326,14 @@ export const setRestrictToFormOnly = async (value) => { const r = await fetchGas
 export const sendExternalAction = ({ url, payload }) =>
   fetchGasApi("nfbSendExternalAction", { url, payload }, "外部アクション送信に失敗しました");
 // 標準フォルダ構成（システムごとコピー / マッピング再構築）
-export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyExternalActions = false, rebuildMapping = true } = {}) => {
+// categories は { forms, questions, dashboards, spreadsheets, report_templates, upload, externalActions, documents }
+// の bool マップ。未指定なら GAS 側で全カテゴリ ON に正規化される（＝従来の一括コピー）。
+export const copyStandardFolders = async ({ destRootUrl, copyData = false, copyExternalActions = false, rebuildMapping = true, categories = undefined } = {}) => {
   if (!destRootUrl) throw new Error("コピー先プロジェクトフォルダの URL を指定してください");
-  const r = await fetchGasApi("nfbCopyStandardFolders", { destRootUrl, copyData, copyExternalActions, rebuildMapping }, "システムごとコピーに失敗しました");
-  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, unresolvedQuestionLinks: r.unresolvedQuestionLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), appsScriptCopyError: r.appsScriptCopyError || "", message: r.message || "" };
+  const payload = { destRootUrl, copyData, copyExternalActions, rebuildMapping };
+  if (categories) payload.categories = categories;
+  const r = await fetchGasApi("nfbCopyStandardFolders", payload, "システムごとコピーに失敗しました");
+  return { destRootUrl: r.destRootUrl || "", summary: r.summary || {}, clearedLinks: r.clearedLinks || 0, unresolvedQuestionLinks: r.unresolvedQuestionLinks || 0, rebuildMapping: Boolean(r.rebuildMapping), appsScriptCopied: Boolean(r.appsScriptCopied), appsScriptCopyError: r.appsScriptCopyError || "", categories: r.categories || {}, message: r.message || "" };
 };
 // 現在のマッピングを _nfb_mapping.json 形のドキュメントで取得（ダウンロード用）。
 export const exportMapping = async () => {
