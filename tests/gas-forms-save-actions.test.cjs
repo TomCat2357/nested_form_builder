@@ -333,3 +333,84 @@ test("Forms_deleteForms_ はマッピングを除去するが Drive ファイル
   assert.equal(ctx.__test.fileStore.get(fileId).trashed, false, "Drive 実体は trash されない");
   assert.equal(liveJsonFiles(ctx).length, 1, "実体ファイルは残る");
 });
+
+// ---- フォーム→スプレッドシートの論理パス解決（spreadsheetPath） ----
+
+// model.gs を読まないので Model_normalizeSpreadsheetId_ を最小 shim（URL → /d/ の id 抽出）。
+const installSpreadsheetShims = (ctx) => {
+  ctx.NFB_DEFAULT_SHEET_NAME = "Data";
+  ctx.Model_normalizeSpreadsheetId_ = (input) => {
+    const value = String(input || "").trim();
+    if (!value) return "";
+    if (/^https?:\/\//i.test(value)) {
+      const m = value.match(/\/d\/([a-zA-Z0-9-_]+)/);
+      if (m && m[1]) return m[1];
+    }
+    return value;
+  };
+};
+
+test("Nfb_resolveFormSheetTarget_: spreadsheetPath を優先解決し、空 path は spreadsheetId にフォールバック", () => {
+  const ctx = loadFormsSaveContext();
+  installSpreadsheetShims(ctx);
+  ctx.StdFolders_resolveSpreadsheetPathToFileId_ = (p) => (p === "売上/集計" ? "SS_FROM_PATH" : "");
+
+  // path 設定あり → path 優先。
+  ctx.Nfb_resetFormRequestCache_();
+  ctx.Nfb_getFormCached_ = () => ({ settings: { spreadsheetPath: "売上/集計", spreadsheetId: "", sheetName: "Data" } });
+  let t = ctx.Nfb_resolveFormSheetTarget_("F1");
+  assert.equal(t.spreadsheetId, "SS_FROM_PATH");
+  assert.equal(t.sheetName, "Data");
+
+  // path 設定あり・未解決 → null（空リンク扱い＝コピー元へ繋がない）。
+  ctx.Nfb_resetFormRequestCache_();
+  ctx.Nfb_getFormCached_ = () => ({ settings: { spreadsheetPath: "無い/パス", spreadsheetId: "" } });
+  assert.equal(ctx.Nfb_resolveFormSheetTarget_("F2"), null);
+
+  // path 空 → 直接 spreadsheetId（URL/ID）を使う。
+  ctx.Nfb_resetFormRequestCache_();
+  ctx.Nfb_getFormCached_ = () => ({ settings: { spreadsheetPath: "", spreadsheetId: SS_URL, sheetName: "Data" } });
+  t = ctx.Nfb_resolveFormSheetTarget_("F3");
+  assert.equal(t.spreadsheetId, "SS_TEST_0001");
+});
+
+test("Forms_resolveSpreadsheetSetting_: spreadsheetPath が解決できれば既存シートにリンク（自動作成しない・直接 id はクリア）", () => {
+  const ctx = loadFormsSaveContext();
+  installSpreadsheetShims(ctx);
+  ctx.StdFolders_resolveSpreadsheetPathToFileId_ = (p) => (p === "売上/集計" ? "SS_EXIST" : "");
+  ctx.Forms_createSpreadsheetAtPath_ = () => { throw new Error("should not auto-create"); };
+
+  const r = ctx.Forms_resolveSpreadsheetSetting_(
+    { spreadsheetPath: "売上/集計", spreadsheetId: "https://docs.google.com/spreadsheets/d/OLD/edit" },
+    { settings: {} },
+  );
+  assert.equal(r.created, false);
+  assert.equal(r.spreadsheetId, "SS_EXIST");
+  assert.equal(r.settings.spreadsheetPath, "売上/集計", "論理パスは保持");
+  assert.equal(r.settings.spreadsheetId, "", "直接 id はクリア（排他）");
+});
+
+test("Forms_resolveSpreadsheetSetting_: spreadsheetPath が未解決ならそのパスに新規作成する", () => {
+  const ctx = loadFormsSaveContext();
+  installSpreadsheetShims(ctx);
+  ctx.StdFolders_resolveSpreadsheetPathToFileId_ = () => ""; // 未解決
+  let createdAt = null;
+  ctx.Forms_createSpreadsheetAtPath_ = (p) => { createdAt = p; return { spreadsheetId: "SS_NEW", spreadsheetUrl: "https://x/SS_NEW" }; };
+
+  const r = ctx.Forms_resolveSpreadsheetSetting_({ spreadsheetPath: "新規/シートA" }, { settings: {} });
+  assert.equal(createdAt, "新規/シートA", "そのパスへ作成する");
+  assert.equal(r.created, true);
+  assert.equal(r.spreadsheetId, "SS_NEW");
+  assert.equal(r.settings.spreadsheetPath, "新規/シートA");
+  assert.equal(r.settings.spreadsheetId, "");
+});
+
+test("Forms_resolveSpreadsheetSetting_: spreadsheetPath 空＋直接 URL は従来どおりリンク（spreadsheetPath を空に正規化）", () => {
+  const ctx = loadFormsSaveContext();
+  installSpreadsheetShims(ctx);
+  const r = ctx.Forms_resolveSpreadsheetSetting_({ spreadsheetPath: "", spreadsheetId: SS_URL }, { settings: {} });
+  assert.equal(r.created, false);
+  assert.equal(r.spreadsheetId, "SS_TEST_0001");
+  assert.equal(r.settings.spreadsheetPath, "", "排他のため空に正規化");
+  assert.equal(r.settings.spreadsheetId, SS_URL);
+});

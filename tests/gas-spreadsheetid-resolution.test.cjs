@@ -59,6 +59,29 @@ test("Nfb_resolveFormSheetTarget_: spreadsheetId 未設定/未解決フォーム
   assert.equal(ctx.Nfb_resolveFormSheetTarget_(""), null);
 });
 
+test("Nfb_resolveFormSheetTarget_: spreadsheetPath を優先解決（未解決は null）、空 path は spreadsheetId にフォールバック", () => {
+  const ctx = loadResolverContext();
+  // 04_spreadsheets 配下の論理パス → fileId 解決をスタブ（standardFolders.gs は未ロード）。
+  ctx.StdFolders_resolveSpreadsheetPathToFileId_ = (p) => (p === "売上/集計" ? "ss_from_path" : "");
+
+  // path 優先。
+  ctx.Nfb_resetFormRequestCache_();
+  ctx.__forms.f1 = { settings: { spreadsheetPath: "売上/集計", spreadsheetId: "ss_direct", sheetName: "回答" } };
+  let target = ctx.Nfb_resolveFormSheetTarget_("f1");
+  assert.equal(target.spreadsheetId, "ss_from_path", "spreadsheetPath を優先");
+  assert.equal(target.sheetName, "回答");
+
+  // path 設定あり・未解決 → null（空リンク扱い）。
+  ctx.Nfb_resetFormRequestCache_();
+  ctx.__forms.f2 = { settings: { spreadsheetPath: "無い/パス", spreadsheetId: "ss_direct" } };
+  assert.equal(ctx.Nfb_resolveFormSheetTarget_("f2"), null);
+
+  // path 空 → 直接 spreadsheetId。
+  ctx.Nfb_resetFormRequestCache_();
+  ctx.__forms.f3 = { settings: { spreadsheetPath: "", spreadsheetId: "ss_direct" } };
+  assert.equal(ctx.Nfb_resolveFormSheetTarget_("f3").spreadsheetId, "ss_direct");
+});
+
 test("Nfb_getFormCached_: 同一リクエスト内は 1 回だけ Forms_getForm_ を呼ぶ", () => {
   const ctx = loadResolverContext();
   ctx.Nfb_resetFormRequestCache_();
@@ -106,6 +129,17 @@ test("Forms_dispatch_ forms_get: 非管理者には spreadsheetId を伏せ hasS
   const res = ctx.Forms_dispatch_("forms_get", { raw: { formId: "f1" } });
   assert.equal(res.ok, true);
   assert.equal("spreadsheetId" in res.form.settings, false);
+  assert.equal(res.form.settings.hasSpreadsheet, true);
+});
+
+test("Forms_dispatch_ forms_get: 論理パス（spreadsheetPath）のみでも hasSpreadsheet=true・両キーを伏せる", () => {
+  const ctx = loadStripContext({ isAdmin: false });
+  ctx.__forms.f1 = { id: "f1", settings: { spreadsheetPath: "売上/集計", sheetName: "Data" } };
+
+  const res = ctx.Forms_dispatch_("forms_get", { raw: { formId: "f1" } });
+  assert.equal(res.ok, true);
+  assert.equal("spreadsheetId" in res.form.settings, false);
+  assert.equal("spreadsheetPath" in res.form.settings, false, "論理パスも伏せる");
   assert.equal(res.form.settings.hasSpreadsheet, true);
 });
 

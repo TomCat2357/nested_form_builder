@@ -7,11 +7,18 @@ export const SPREADSHEET_SETTINGS_GROUP = {
   label: "入力データ保存スプレッドシート",
   fields: [
     {
+      key: "spreadsheetPath",
+      label: "保存先スプレッドシート（04_spreadsheets から選択）",
+      type: "spreadsheetSelect",
+      required: false,
+      description: "04_spreadsheets 内のスプレッドシートを論理パスで選びます。コピー時もリンクが引き継がれます。一覧に無いパスを保存すると、そのパスへ新規作成します。直接URLを使う場合は下の欄に入力してください（どちらか一方）。",
+    },
+    {
       key: "spreadsheetId",
-      label: "Spreadsheet ID / URL",
+      label: "Spreadsheet ID / URL（直接指定）",
       placeholder: "1AbCdEf... / https://docs.google.com/... / https://drive.google.com/drive/folders/...",
       required: false,
-      description: "空欄なら標準フォルダ構成の 04_spreadsheets に回答保存用スプレッドシートを自動作成します。フォルダURLを入れればそのフォルダ内に、スプレッドシートURLを入れれば既存シートにリンクします（作成後はURLが自動で入ります）。",
+      description: "論理パスを選ばない場合のみ有効（直接リンク）。空欄なら 04_spreadsheets に回答保存用スプレッドシートを自動作成します。フォルダURLを入れればそのフォルダ内に、スプレッドシートURLを入れれば既存シートにリンクします（作成後はURLが自動で入ります）。",
     },
     {
       key: "sheetName",

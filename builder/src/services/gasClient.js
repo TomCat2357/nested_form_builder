@@ -234,6 +234,11 @@ export const listReportTemplates = async () => {
   const r = await fetchGasApi("nfbListReportTemplates", {}, "List report templates failed");
   return { files: r.files || [], truncated: !!r.truncated };
 };
+// スプレッドシート一覧（04_spreadsheets 配下の Google スプレッドシート）を取得する。フォーム→シートの論理パス選択 UI 用。
+export const listSpreadsheets = async () => {
+  const r = await fetchGasApi("nfbListSpreadsheets", {}, "List spreadsheets failed");
+  return { files: r.files || [], truncated: !!r.truncated };
+};
 export const createFolder = async (path) => {
   const r = await fetchGasApi("nfbCreateFolder", path, "Create folder failed");
   return { folders: r.folders || [] };

@@ -54,7 +54,31 @@ function Forms_createSpreadsheet_(name, folderId) {
 }
 
 /**
- * スプレッドシート設定を解決（空/フォルダ指定は新規作成）
+ * 04_spreadsheets 配下の論理パス（"フォルダ/.../シート名"）にスプレッドシートを新規作成する。
+ * 途中フォルダは get-or-create、葉（最後のセグメント）をシート名にする。ルート未解決時は
+ * base=null となりマイドライブ直下へ作成（フォールバック）。
+ * @param {string} path
+ * @return {{ spreadsheetId: string, spreadsheetUrl: string }|null} segs 空なら null
+ */
+function Forms_createSpreadsheetAtPath_(path) {
+  var segs = StdFolders_splitPathSegments_(path);
+  if (!segs.length) return null;
+  var leaf = segs.pop();
+  var folder = StdFolders_spreadsheetsBaseFolderOrNull_();
+  // ルート（04_spreadsheets）未解決時は作成しない。My Drive 直下に作ると base 配下に無く
+  // 論理パスで再解決できず、保存のたびに孤児シートが増えるため（呼び出し側は null で未リンク扱い）。
+  if (!folder) return null;
+  for (var i = 0; i < segs.length; i++) {
+    folder = StdFolders_getOrCreateChildFolder_(folder, segs[i]);
+  }
+  return Forms_createSpreadsheet_(leaf, folder.getId());
+}
+
+/**
+ * スプレッドシート設定を解決（空/フォルダ指定は新規作成）。
+ * 解決優先順: settings.spreadsheetPath（04_spreadsheets 配下の論理パス）が非空ならそれを優先。
+ * 直接 ID/URL（spreadsheetId）とは排他にし、保存形は「論理パスのみ（spreadsheetId="")」または
+ * 「直接 ID/URL のみ（spreadsheetPath="")」のどちらか一方に正規化する（実行時の取り違え防止）。
  * @param {Object} settings
  * @param {Object} form
  * @return {{ settings: Object, created: boolean, spreadsheetId: string|null, spreadsheetUrl: string|null }}
@@ -62,7 +86,39 @@ function Forms_createSpreadsheet_(name, folderId) {
 
 function Forms_resolveSpreadsheetSetting_(settings, form) {
   var nextSettings = (settings && typeof settings === "object") ? JSON.parse(JSON.stringify(settings)) : {};
+  var path = (typeof nextSettings.spreadsheetPath === "string") ? nextSettings.spreadsheetPath.trim() : "";
   var rawInput = String(nextSettings.spreadsheetId || "").trim();
+
+  // 論理パス指定（04_spreadsheets 配下）が最優先。直接 ID/URL 欄はクリアして論理パスを正にする。
+  if (path) {
+    nextSettings.spreadsheetPath = path;
+    nextSettings.spreadsheetId = "";
+    var resolvedId = StdFolders_resolveSpreadsheetPathToFileId_(path);
+    if (!resolvedId) {
+      // 解決できない論理パス（手入力 / 選択後に移動・削除）→ そのパスに新規作成する（確定方針）。
+      var createdAtPath = Forms_createSpreadsheetAtPath_(path);
+      if (createdAtPath) {
+        return {
+          settings: nextSettings,
+          created: true,
+          spreadsheetId: createdAtPath.spreadsheetId,
+          spreadsheetUrl: createdAtPath.spreadsheetUrl
+        };
+      }
+      // 作成も不可（ルート未解決等）→ パスは残すが未リンク（空）。
+      return { settings: nextSettings, created: false, spreadsheetId: null, spreadsheetUrl: null };
+    }
+    // 既存シートにリンク（自動作成しない）。
+    return {
+      settings: nextSettings,
+      created: false,
+      spreadsheetId: resolvedId,
+      spreadsheetUrl: "https://docs.google.com/spreadsheets/d/" + resolvedId + "/edit"
+    };
+  }
+
+  // ここから先は論理パス未指定。直接 ID/URL 経路（排他のため spreadsheetPath は空に正規化）。
+  nextSettings.spreadsheetPath = "";
 
   if (!rawInput) {
     // 自動整理が ON で明示指定が無い場合は 04_spreadsheets へ作成する。

@@ -164,14 +164,17 @@ var FORMS_HANDLERS_ = {
   }
 };
 
-// 非管理者クライアントへ返すフォームから機微な spreadsheetId を伏せる。
-// ID の有無だけは hasSpreadsheet 真偽で伝え、フロントのシート保存ゲートに使わせる。
-// spreadsheetId 自体は Drive 上のフォーム JSON（ソースオブトゥルース）には残る。
+// 非管理者クライアントへ返すフォームから機微な spreadsheetId / spreadsheetPath を伏せる。
+// 保存先の有無だけは hasSpreadsheet 真偽で伝え、フロントのシート保存ゲートに使わせる。
+// spreadsheetId / spreadsheetPath 自体は Drive 上のフォーム JSON（ソースオブトゥルース）には残る。
 function Forms_stripSpreadsheetForClient_(form) {
   if (!form || !form.settings || typeof form.settings !== "object") return form;
-  var hasSpreadsheet = !!Model_normalizeSpreadsheetId_(form.settings.spreadsheetId);
+  // 論理パス（spreadsheetPath）か直接 ID/URL（spreadsheetId）のどちらかが設定されていれば true。
+  var hasPath = typeof form.settings.spreadsheetPath === "string" && form.settings.spreadsheetPath.trim() !== "";
+  var hasSpreadsheet = hasPath || !!Model_normalizeSpreadsheetId_(form.settings.spreadsheetId);
   form.settings.hasSpreadsheet = hasSpreadsheet;
   delete form.settings.spreadsheetId;
+  delete form.settings.spreadsheetPath;
   return form;
 }
 

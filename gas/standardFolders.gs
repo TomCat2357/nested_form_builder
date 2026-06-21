@@ -355,6 +355,50 @@ function StdFolders_listFiles_(folderKey, mimeType) {
 }
 
 // ---------------------------------------------
+// 04_spreadsheets 配下の論理パス → fileId 解決（フォーム→スプレッドシートリンクの論理パス化用）
+// スプレッドシートはレジストリ（中央辞書）に無く、葉名に ".json" が付かない点が forms/questions と異なる。
+// 読み取り解決のみのため drivemap キャッシュ（SharedDrive descriptor）は設けず、毎回 base から walk する。
+// 解決不能はすべて "" を返す（＝論理パスを導けない/見つからない→空。コピー元へは繋がない）。
+// ---------------------------------------------
+
+// 04_spreadsheets サブフォルダ（無ければ作成）を返す。ルート未解決なら null。
+function StdFolders_spreadsheetsBaseFolderOrNull_() {
+  return StdFolders_autoFileFolderOrNull_("spreadsheets");
+}
+
+// パス文字列を空でないセグメント配列へ分解する（"/" 区切り。前後空白・空セグメントは捨てる）。
+// listFiles_ が path を素の "/" 連結で組み立てるのに合わせ、エスケープなしで分割する。
+function StdFolders_splitPathSegments_(path) {
+  var s = String(path == null ? "" : path).trim().replace(/\\/g, "/");
+  var raw = s.split("/");
+  var segs = [];
+  for (var i = 0; i < raw.length; i++) {
+    var seg = raw[i].trim();
+    if (seg) segs.push(seg);
+  }
+  return segs;
+}
+
+// 論理パス（"フォルダ/.../シート名"）から 04_spreadsheets 配下のスプレッドシート fileId を解決する。
+// 葉（最後のセグメント）はシートのファイル名（拡張子なし）。途中フォルダ/葉が見つからなければ "" を返す。
+// 同一フォルダ内に同名が複数あるときは先頭一致（forms/questions の名前一致と同挙動）。
+function StdFolders_resolveSpreadsheetPathToFileId_(path) {
+  var segs = StdFolders_splitPathSegments_(path);
+  if (!segs.length) return "";
+  var base = StdFolders_spreadsheetsBaseFolderOrNull_();
+  if (!base) return "";
+  var leaf = segs.pop();
+  var parent = base;
+  for (var i = 0; i < segs.length; i++) {
+    var child = FormsDrive_childFolderByName_(parent, segs[i]);
+    if (!child) return "";
+    parent = child;
+  }
+  var file = StdFolders_findFileByNameInFolder_(parent, leaf); // 葉は拡張子なし完全一致
+  return file ? file.getId() : "";
+}
+
+// ---------------------------------------------
 // 内部: スキーマ走査ユーティリティ（フォーム定義のリンク再配線用）
 // ---------------------------------------------
 
@@ -377,7 +421,28 @@ function StdFolders_walkFields_(schema, fn) {
 // ---------------------------------------------
 
 
-// 現在のマッピング（3 マッピング ＋ フォルダ登録簿）を _nfb_mapping.json 形で返す。
+// マッピング（id → entry）を「論理パスのみ」（fileId / driveFileUrl を含まない）の転送形へ変換する。
+// version 2 のエクスポート/コピー一覧は物理 fileId を持たせず、folder ＋ 名前（nameKey）だけを運ぶ。
+// 別プロジェクトへ取り込んだときにコピー先ツリーを走査して論理パス→ローカル fileId を解決するため、
+// コピー元の fileId を一切引き回さない（＝コピー後にコピー元ファイルを指す事故を防ぐ）。
+// 名前（nameKey）が空のエントリは論理パスを作れないため除外する。
+function StdFolders_toPathOnlySection_(mapping, nameKey) {
+  var out = {};
+  if (!mapping || typeof mapping !== "object") return out;
+  for (var id in mapping) {
+    if (!mapping.hasOwnProperty(id)) continue;
+    var entry = mapping[id] || {};
+    var name = entry[nameKey];
+    if (typeof name !== "string" || !name) continue;
+    var next = {};
+    next[nameKey] = name;
+    next.folder = (typeof entry.folder === "string") ? entry.folder : "";
+    out[id] = next;
+  }
+  return out;
+}
+
+// 現在のマッピング（3 マッピング ＋ フォルダ登録簿）を _nfb_mapping.json 形（version 2・論理パスのみ）で返す。
 // ルート未解決でも例外にせず sourceRootId を空で返す。
 function StdFolders_exportMapping_() {
   return nfbSafeCall_(function() {
@@ -389,12 +454,12 @@ function StdFolders_exportMapping_() {
     }
     var doc = {
       type: "nfb-mapping",
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       sourceRootId: sourceRootId,
-      forms: Forms_getMapping_(),
-      questions: Analytics_getMapping_("questions"),
-      dashboards: Analytics_getMapping_("dashboards"),
+      forms: StdFolders_toPathOnlySection_(Forms_getMapping_(), "title"),
+      questions: StdFolders_toPathOnlySection_(Analytics_getMapping_("questions"), "name"),
+      dashboards: StdFolders_toPathOnlySection_(Analytics_getMapping_("dashboards"), "name"),
       folders: {
         forms: Forms_getFolders_(),
         questions: Analytics_getFolders_("questions"),
@@ -405,12 +470,33 @@ function StdFolders_exportMapping_() {
   });
 }
 
+// version 2（fileId を持たない論理パスのみ）のエントリを、コピー先ツリーを走査して
+// ローカル fileId へ解決する。entry.folder ＋ 名前（nameField）で物理ファイル（"名前.json"）を探す。
+// 解決できなければ null（呼び出し側は未取込としてスキップ）。adapter は StdFolders_entityAdapter_(kind)。
+// 戻り: 見つかった Drive File（呼び出し側が getId()/getUrl() を読む）。
+function StdFolders_resolveEntryFileByPath_(adapter, entry, nameField) {
+  if (!adapter || !entry) return null;
+  var name = entry[nameField];
+  if (typeof name !== "string" || !name) return null;
+  // folder は SharedDrive 側で正規化されるためここでは生のまま渡す（null は "" 扱い）。
+  var folder = (typeof entry.folder === "string") ? entry.folder : "";
+  var folderObj = adapter.lookupFolderForPath(folder);
+  if (!folderObj) return null;
+  return StdFolders_findFileByNameInFolder_(folderObj, name + ".json");
+}
+
 // 1 セクションを既存ストアへマージする共通処理。fileId 重複はスキップ。
-//   doc       : インポート元セクション（id → entry）
-//   getMapping: () => 既存 mapping
-//   onEntry   : (id, entry) => true で imported カウント（false でスキップ扱い）。保存は呼び出し側。
+//   doc          : インポート元セクション（id → entry）
+//   existingMapping: 既存 mapping（破壊的に追記する）
+//   normalizeEntry : (rawEntry) => 正規化済み { fileId|null, driveFileUrl|null, <nameField>, folder }
+//   onNew          : (keyId, driveFileUrl) => 取り込み時の副作用（forms の URL マップ登録など）。任意。
+//   adapter        : 論理パス解決用 StdFolders_entityAdapter_(kind)。version 2（fileId 無し）で使う。任意。
+//   nameField      : "title"（forms）/ "name"（questions/dashboards）。
+// version 1（fileId/driveFileUrl 同梱）はそのまま id キーで登録。version 2（論理パスのみ）は
+// folder ＋ 名前からローカル fileId を解決し、解決後 fileId をキー兼 fileId 値として登録する
+// （id ＝ fileId 統一。コピー元 id は捨てる）。解決不能は登録せず errors に積む（未取込＝空）。
 // 戻り: { imported, skipped, errors }（errors は { section, id, reason }）。
-function StdFolders_mergeMappingSection_(section, doc, existingMapping, normalizeEntry, onNew) {
+function StdFolders_mergeMappingSection_(section, doc, existingMapping, normalizeEntry, onNew, adapter, nameField) {
   var result = { imported: 0, skipped: 0, errors: [] };
   if (!doc || typeof doc !== "object") return result;
   var mappedFileIds = StdFolders_mappedFileIdSet_(existingMapping);
@@ -419,14 +505,28 @@ function StdFolders_mergeMappingSection_(section, doc, existingMapping, normaliz
     try {
       var entry = normalizeEntry(doc[id] || {});
       var fileId = Nfb_resolveFileIdFromEntry_(entry);
+      var keyId = id;
+      var urlForMap = entry.driveFileUrl || null;
+      if (!fileId && adapter) {
+        // version 2: 論理パス（folder + 名前）からローカル fileId を解決。解決後 fileId をキーにする。
+        var file = StdFolders_resolveEntryFileByPath_(adapter, entry, nameField);
+        if (file) {
+          fileId = file.getId();
+          keyId = fileId;
+          entry.fileId = fileId;
+          try { urlForMap = file.getUrl(); } catch (eUrl) { urlForMap = urlForMap || null; }
+          if (urlForMap) entry.driveFileUrl = urlForMap;
+        }
+      }
       if (!fileId) {
-        result.errors.push({ section: section, id: id, reason: "fileId を解決できません" });
+        // version 2 で論理パスが解決できない（コピー先に該当ファイルが無い）→ 未取込（空）。
+        result.errors.push({ section: section, id: id, reason: "論理パスを解決できません（未取込）" });
         continue;
       }
       if (mappedFileIds[fileId]) { result.skipped++; continue; }
-      existingMapping[id] = entry;
+      existingMapping[keyId] = entry;
       mappedFileIds[fileId] = true;
-      if (onNew) onNew(id, entry);
+      if (onNew) onNew(keyId, urlForMap);
       result.imported++;
     } catch (err) {
       result.errors.push({ section: section, id: id, reason: nfbErrorToString_(err) });
@@ -435,10 +535,12 @@ function StdFolders_mergeMappingSection_(section, doc, existingMapping, normaliz
   return result;
 }
 
-// パース済みドキュメントを既存マッピングへマージする（純マージ。Drive 走査はしない）。
+// パース済みドキュメントを既存マッピングへマージする。
+// version 1（fileId 同梱）は純マージ。version 2（論理パスのみ）はコピー先ツリーを走査して
+// 論理パス→ローカル fileId を解決してから登録する（解決不能は未取込＝空）。
 // type/version 不一致は throw せず { ok:false, error } を返す。
 function StdFolders_importMapping_(doc) {
-  if (!doc || typeof doc !== "object" || doc.type !== "nfb-mapping" || doc.version !== 1) {
+  if (!doc || typeof doc !== "object" || doc.type !== "nfb-mapping" || (doc.version !== 1 && doc.version !== 2)) {
     return { ok: false, error: "対応していないマッピング形式です（type/version 不一致）" };
   }
 
@@ -451,7 +553,8 @@ function StdFolders_importMapping_(doc) {
   var formsRes = StdFolders_mergeMappingSection_(
     "forms", doc.forms, formsMapping,
     function(e) { return { fileId: e.fileId || null, driveFileUrl: e.driveFileUrl || null, title: e.title || null, folder: (typeof e.folder === "string") ? e.folder : null }; },
-    function(id, entry) { try { if (entry.driveFileUrl) AddFormUrl_(id, entry.driveFileUrl); } catch (e) { /* non-critical */ } }
+    function(keyId, url) { try { if (url) AddFormUrl_(keyId, url); } catch (e) { /* non-critical */ } },
+    StdFolders_entityAdapter_("forms"), "title"
   );
   Forms_saveMapping_(formsMapping);
   imported.forms = formsRes.imported; skipped += formsRes.skipped; errors = errors.concat(formsRes.errors);
@@ -462,7 +565,8 @@ function StdFolders_importMapping_(doc) {
     var res = StdFolders_mergeMappingSection_(
       type, doc[type], mapping,
       function(e) { return { fileId: e.fileId || null, driveFileUrl: e.driveFileUrl || null, name: e.name || null, folder: (typeof e.folder === "string") ? e.folder : null }; },
-      null
+      null,
+      StdFolders_entityAdapter_(type), "name"
     );
     Analytics_saveMapping_(type, mapping);
     imported[type] = res.imported; skipped += res.skipped; errors = errors.concat(res.errors);
@@ -561,6 +665,7 @@ function nfbGetStdFolderRoot(payload)        { return Nfb_runScriptAction_("std_
 function nfbEnsureStdFolders(payload)        { return Nfb_runScriptAction_("std_folders_ensure", payload || {}); }
 function nfbAlignAllStdFolders(payload)      { return Nfb_runScriptAction_("std_folders_align_all", payload || {}); }
 function nfbListReportTemplates(payload)     { return Nfb_runScriptAction_("report_templates_list", payload || {}); }
+function nfbListSpreadsheets(payload)         { return Nfb_runScriptAction_("spreadsheets_list", payload || {}); }
 
 // 現在のルートフォルダ情報を返す（診断用）。未解決でも例外にせず resolved:false を返す。
 function StdFolders_getRootInfo_() {

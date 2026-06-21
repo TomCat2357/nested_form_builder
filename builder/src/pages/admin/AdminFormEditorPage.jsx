@@ -16,7 +16,8 @@ import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
-import { omitThemeSetting, normalizeExternalActions } from "../../utils/settings.js";
+import { omitThemeSetting, normalizeExternalActions, applySpreadsheetExclusiveSetting } from "../../utils/settings.js";
+import { loadSpreadsheetOptions } from "../../features/editor/useSpreadsheetOptions.js";
 import { SettingsGroupFields } from "../../features/settings/SettingsField.jsx";
 import ExternalActionsEditor from "../../features/settings/ExternalActionsEditor.jsx";
 import { DEFAULT_THEME } from "../../app/theme/theme.js";
@@ -157,8 +158,12 @@ export default function AdminFormEditorPage() {
   };
 
   const handleSettingsChange = useCallback((key, value) => {
-    setLocalSettings((prev) => ({ ...prev, [key]: value }));
+    // 論理パス（spreadsheetPath）と直接 ID/URL（spreadsheetId）は排他（後勝ち）にする。
+    setLocalSettings((prev) => applySpreadsheetExclusiveSetting(prev, key, value));
     builderRef.current?.updateSetting?.(key, value);
+    // 排他で相手側がクリアされるケースはビルダー側プレビューにも反映する（冪等）。
+    if (key === "spreadsheetPath" && value) builderRef.current?.updateSetting?.("spreadsheetId", "");
+    if (key === "spreadsheetId" && value) builderRef.current?.updateSetting?.("spreadsheetPath", "");
   }, []);
 
   const handleSave = async () => {
@@ -227,17 +232,38 @@ export default function AdminFormEditorPage() {
     return false;
   };
 
-  const handleOpenSpreadsheet = () => {
+  const handleOpenSpreadsheet = async () => {
+    // 直接 ID/URL 指定があればそれを開く（従来動作）。
     const spreadsheetIdOrUrl = localSettings?.spreadsheetId || "";
-
-    if (!spreadsheetIdOrUrl) {
-      showAlert("スプレッドシートIDが設定されていません");
+    if (spreadsheetIdOrUrl) {
+      const spreadsheetId = normalizeSpreadsheetId(spreadsheetIdOrUrl);
+      window.open(`https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`, "_blank", "noopener,noreferrer");
       return;
     }
 
-    const spreadsheetId = normalizeSpreadsheetId(spreadsheetIdOrUrl);
-    const url = `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`;
-    window.open(url, "_blank", "noopener,noreferrer");
+    // 論理パス指定の場合は 04_spreadsheets 一覧から URL を引いて開く。
+    const path = (localSettings?.spreadsheetPath || "").trim();
+    if (!path) {
+      showAlert("スプレッドシートが設定されていません");
+      return;
+    }
+    // ユーザー操作の同期コンテキストで空タブを先に開き（ポップアップブロック回避）、
+    // 一覧解決後に location を差し替える。失敗時は空タブを閉じる。
+    const pendingTab = window.open("", "_blank", "noopener,noreferrer");
+    try {
+      const files = await loadSpreadsheetOptions();
+      const match = (files || []).find((f) => (f.path || f.name) === path);
+      if (match?.url) {
+        if (pendingTab) pendingTab.location.href = match.url;
+        else window.open(match.url, "_blank", "noopener,noreferrer");
+      } else {
+        if (pendingTab) pendingTab.close();
+        showAlert(`論理パス「${path}」のスプレッドシートが見つかりません（保存時にこのパスへ作成されます）`);
+      }
+    } catch (e) {
+      if (pendingTab) pendingTab.close();
+      showAlert("スプレッドシート一覧を取得できませんでした");
+    }
   };
 
   const confirmOptions = [

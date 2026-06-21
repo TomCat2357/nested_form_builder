@@ -66,8 +66,25 @@ function Nfb_nameFromFile_(file) {
 // spreadsheetId 解決 等）の Drive 読み取りを 1 回に集約する。
 var __NFB_FORM_REQ_CACHE__ = {};
 
+// スプレッドシート論理パス → fileId をリクエストスコープでメモ化する。同一フォームの多数レコードを
+// 1 リクエストで解決する際（list / sync）の Drive 走査を 1 回に集約する。reset で一緒にクリアする。
+var __NFB_SS_PATH_CACHE__ = {};
+
 function Nfb_resetFormRequestCache_() {
   __NFB_FORM_REQ_CACHE__ = {};
+  __NFB_SS_PATH_CACHE__ = {};
+}
+
+// 04_spreadsheets 配下の論理パス → fileId をメモ化付きで解決する。未解決は "" を返す。
+function Nfb_resolveSpreadsheetPathCached_(path) {
+  var key = (typeof path === "string") ? path : "";
+  if (!key) return "";
+  if (Object.prototype.hasOwnProperty.call(__NFB_SS_PATH_CACHE__, key)) {
+    return __NFB_SS_PATH_CACHE__[key];
+  }
+  var id = StdFolders_resolveSpreadsheetPathToFileId_(key);
+  __NFB_SS_PATH_CACHE__[key] = id;
+  return id;
 }
 
 // Forms_getForm_ の薄いラッパ。formId をキーにリクエストスコープでメモ化する。
@@ -82,12 +99,20 @@ function Nfb_getFormCached_(formId) {
 }
 
 // formId からレコード操作対象の { spreadsheetId, sheetName } を権威的に解決する。
-// spreadsheetId が未設定/フォーム未解決なら null（呼び出し側でエラー化）。
+// 解決優先順: settings.spreadsheetPath（04_spreadsheets 配下の論理パス）が非空ならそれを優先解決し
+// （コピー追従できる論理パスを正とする）、無ければ従来どおり settings.spreadsheetId（直接 URL/ID）。
+// どちらも未解決/未設定なら null（呼び出し側でエラー化＝空リンク扱い）。
 function Nfb_resolveFormSheetTarget_(formId) {
   if (!formId) return null;
   var form = Nfb_getFormCached_(formId);
   if (!form || !form.settings) return null;
-  var spreadsheetId = Model_normalizeSpreadsheetId_(form.settings.spreadsheetId);
+  var spreadsheetId;
+  var path = (typeof form.settings.spreadsheetPath === "string") ? form.settings.spreadsheetPath.trim() : "";
+  if (path) {
+    spreadsheetId = Nfb_resolveSpreadsheetPathCached_(path);
+  } else {
+    spreadsheetId = Model_normalizeSpreadsheetId_(form.settings.spreadsheetId);
+  }
   if (!spreadsheetId) return null;
   var sheetName = form.settings.sheetName || NFB_DEFAULT_SHEET_NAME;
   return { spreadsheetId: spreadsheetId, sheetName: sheetName };
