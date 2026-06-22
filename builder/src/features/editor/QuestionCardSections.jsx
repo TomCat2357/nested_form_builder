@@ -214,14 +214,6 @@ export function FileUploadFieldSection({ field, onChange }) {
       <label className="nf-row nf-gap-6 nf-mt-8">
         <input
           type="checkbox"
-          checked={!!field.allowFolderUrlEdit}
-          onChange={(event) => onChange({ ...field, allowFolderUrlEdit: event.target.checked })}
-        />
-        保存先フォルダURLを変更可能にする
-      </label>
-      <label className="nf-row nf-gap-6 nf-mt-8">
-        <input
-          type="checkbox"
           checked={!!field.hideFileExtension}
           onChange={(event) => onChange({ ...field, hideFileExtension: event.target.checked })}
         />
@@ -229,20 +221,9 @@ export function FileUploadFieldSection({ field, onChange }) {
       </label>
       <div className="nf-mt-12">
         <div className="nf-text-11 nf-text-muted">
-          アップロードされたファイルは標準フォルダ構成の <code>06_upload_files</code> に保存されます。
-        </div>
-      </div>
-      <div className="nf-mt-8">
-        <div className="nf-text-12 nf-fw-600 nf-mb-4">フォルダ命名規則</div>
-        <input
-          className="nf-input"
-          type="text"
-          value={field.driveFolderNameTemplate ?? ""}
-          placeholder="{{`_id`}}_{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}}_{{`担当者名`}}"
-          onChange={(event) => onChange({ ...field, driveFolderNameTemplate: event.target.value })}
-        />
-        <div className="nf-text-11 nf-text-muted nf-mt-4">
-          {"空白の場合は子フォルダを作らず、ルートフォルダ直下に保存します。{{`_id`}}, {{NOW()}}, {{`フィールド名`}} を使えます。ネストされた子質問は {{`親|子`}} のフルパスで指定。{{TIME_FORMAT(NOW(), 'YYYY-MM-DD')}} のように関数で書式を指定できます。"}
+          アップロードされたファイルは、標準フォルダ構成の <code>06_upload_files</code> 直下に、
+          レコードごとの一意フォルダ（ID 由来・衝突耐性あり）として自動保存されます。
+          フォルダ名・保存先はユーザーが指定できません（論理パスでの再リンクを保証するため）。
         </div>
       </div>
     </div>

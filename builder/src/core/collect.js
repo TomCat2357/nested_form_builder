@@ -16,28 +16,32 @@ export const parseFileUploadStorage = (rawValue) => {
   let source = rawValue;
   if (typeof source === "string") {
     const trimmed = source.trim();
-    if (!trimmed) return { files: [], folderUrl: "" };
+    if (!trimmed) return { files: [], folderUrl: "", folderName: "" };
     try {
       source = JSON.parse(trimmed);
     } catch (_error) {
-      return { files: [], folderUrl: "" };
+      return { files: [], folderUrl: "", folderName: "" };
     }
   }
   if (Array.isArray(source)) {
     return {
       files: source.map(sanitizeFileUploadEntry).filter(Boolean),
       folderUrl: "",
+      folderName: "",
     };
   }
   if (source && typeof source === "object") {
     const filesSource = ensureArray(source.files);
     const folderUrl = typeof source.folderUrl === "string" ? source.folderUrl.trim() : "";
+    // 論理パス（フォルダ名）。プロジェクト移動・コピー後に物理が死んでも再リンクするためのアンカー。
+    const folderName = typeof source.folderName === "string" ? source.folderName.trim() : "";
     return {
       files: filesSource.map(sanitizeFileUploadEntry).filter(Boolean),
       folderUrl,
+      folderName,
     };
   }
-  return { files: [], folderUrl: "" };
+  return { files: [], folderUrl: "", folderName: "" };
 };
 
 export const normalizeFileUploadEntries = (rawValue) => parseFileUploadStorage(rawValue).files;
@@ -48,20 +52,27 @@ export const buildFileUploadEntry = (result) => ({
   driveFileUrl: typeof result?.fileUrl === "string" ? result.fileUrl : "",
 });
 
-const serializeFileUploadValue = (value, folderUrl = "") => {
+const serializeFileUploadValue = (value, folderUrl = "", folderName = "") => {
   const files = Array.isArray(value)
     ? value.map((entry) => sanitizeFileUploadEntry(entry)).filter(Boolean)
     : [];
   const trimmedFolderUrl = typeof folderUrl === "string" ? folderUrl.trim() : "";
-  if (files.length === 0 && !trimmedFolderUrl) return "";
-  if (!trimmedFolderUrl) return JSON.stringify(files);
-  return JSON.stringify({ files, folderUrl: trimmedFolderUrl });
+  const trimmedFolderName = typeof folderName === "string" ? folderName.trim() : "";
+  if (files.length === 0 && !trimmedFolderUrl && !trimmedFolderName) return "";
+  // 物理(folderUrl)も論理(folderName)も無ければ配列のみ（後方互換）。
+  if (!trimmedFolderUrl && !trimmedFolderName) return JSON.stringify(files);
+  // 論理パス（folderName）を必ず同梱し、プロジェクト移動・コピー後の再リンクを可能にする。
+  const obj = { files };
+  if (trimmedFolderUrl) obj.folderUrl = trimmedFolderUrl;
+  if (trimmedFolderName) obj.folderName = trimmedFolderName;
+  return JSON.stringify(obj);
 };
 
 export const collectResponses = (fields, responses, options = {}) => {
   const out = {};
   const orderList = [];
   const fileUploadFolderUrls = options?.fileUploadFolderUrls || {};
+  const fileUploadFolderNames = options?.fileUploadFolderNames || {};
 
   traverseSchema(fields, (field, context) => {
     const value = responses?.[field.id];
@@ -84,7 +95,10 @@ export const collectResponses = (fields, responses, options = {}) => {
       const folderUrl = typeof fileUploadFolderUrls[field.id] === "string"
         ? fileUploadFolderUrls[field.id]
         : "";
-      const serialized = serializeFileUploadValue(value, folderUrl);
+      const folderName = typeof fileUploadFolderNames[field.id] === "string"
+        ? fileUploadFolderNames[field.id]
+        : "";
+      const serialized = serializeFileUploadValue(value, folderUrl, folderName);
       if (serialized) {
         out[base] = serialized;
         orderList.push(base);

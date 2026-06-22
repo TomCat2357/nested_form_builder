@@ -259,20 +259,14 @@ function nfbFinalizeRecordDriveFolder(payload) {
       nfbMoveFilesToFolder_(payload && payload.fileIds, inputFolder);
     }
 
-    var isCurrentTarget = currentFolder && (!inputFolder || inputFolder.getId() === currentFolder.getId());
-    if (isCurrentTarget && nfbIsRecordTempFolder_(currentFolder)) {
-      var folderNameTemplate = payload ? Nfb_trimStr_(payload.folderNameTemplate) : "";
-      if (folderNameTemplate) {
-        var resolvedFolderName = nfbResolveTemplateTokens_(folderNameTemplate, nfbBuildDriveTemplateContext_(payload));
-        if (resolvedFolderName) {
-          currentFolder.setName(resolvedFolderName);
-        }
-      }
-    }
+    // アップロードフォルダ名はユーザー指定不可・ID 由来固定（record_<id>_<uuid>）。
+    // 旧仕様の folderNameTemplate によるリネームは廃止し、論理パス解決の一意性を担保する。
 
     return {
       ok: true,
       folderUrl: targetFolder.getUrl(),
+      // 論理パス再リンク用にフォルダ名（＝論理パスのフォルダ部）を返す。
+      folderName: typeof targetFolder.getName === "function" ? targetFolder.getName() : "",
       autoCreated: nfbIsRecordTempFolder_(targetFolder)
     };
   });

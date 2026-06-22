@@ -270,3 +270,16 @@ export const collectFileUploadFolderUrls = (schema, data = {}) => {
   });
   return folderUrls;
 };
+
+// 各 fileUpload セルから論理パス（folderName）を { fieldId: folderName } で取り出す。
+// レコードオープン時にフォルダ state へ復元し、再保存でセルへ書き戻す（前進補完）アンカーにする。
+export const collectFileUploadFolderNames = (schema, data = {}) => {
+  const folderNames = {};
+  traverseSchema(schema, (field, context) => {
+    if (field?.type !== "fileUpload" || !field?.id) return;
+    const baseKey = joinFieldPath(context.pathSegments);
+    const parsed = parseFileUploadStorage(data?.[baseKey]);
+    if (parsed.folderName) folderNames[field.id] = parsed.folderName;
+  });
+  return folderNames;
+};

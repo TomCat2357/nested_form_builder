@@ -5,6 +5,9 @@ const EMPTY_DRIVE_FOLDER_STATE = {
   resolvedUrl: "",
   inputUrl: "",
   pendingDeleteUrl: "",
+  // 論理パスのフォルダ部（06_upload_files 直下の一意フォルダ名 record_<id>_<uuid>）。
+  // 物理URLが死んでも論理パスで再リンクできるよう保持し、保存時にセルへ書き出す。
+  folderName: "",
   autoCreated: false,
   sessionUploadFileIds: [],
   pendingPrintFileIds: [],
@@ -46,10 +49,12 @@ export const normalizeDriveFolderState = (value) => {
     : (typeof source.url === "string" ? source.url : "");
   const inputUrl = typeof source.inputUrl === "string" ? source.inputUrl : resolvedUrl;
   const pendingDeleteUrl = typeof source.pendingDeleteUrl === "string" ? source.pendingDeleteUrl : "";
+  const folderName = typeof source.folderName === "string" ? source.folderName : "";
   return {
     resolvedUrl,
     inputUrl,
     pendingDeleteUrl,
+    folderName,
     autoCreated: source.autoCreated === true,
     sessionUploadFileIds: normalizeDriveFileIds(source.sessionUploadFileIds),
     pendingPrintFileIds: normalizeDriveFileIds(source.pendingPrintFileIds),
@@ -72,6 +77,7 @@ export const areDriveFolderStatesEqual = (left, right) => {
   return a.resolvedUrl === b.resolvedUrl
     && a.inputUrl === b.inputUrl
     && a.pendingDeleteUrl === b.pendingDeleteUrl
+    && a.folderName === b.folderName
     && a.autoCreated === b.autoCreated
     && areDriveFileIdListsEqual(a.sessionUploadFileIds, b.sessionUploadFileIds)
     && areDriveFileIdListsEqual(a.pendingPrintFileIds, b.pendingPrintFileIds);
@@ -129,6 +135,8 @@ export const markDriveFolderForDeletion = (value) => {
     resolvedUrl: "",
     inputUrl: "",
     pendingDeleteUrl: targetUrl,
+    // フォルダごと削除するので論理パス（folderName）も落とす（再リンクのアンカーを残さない）。
+    folderName: "",
     autoCreated: false,
   });
 };

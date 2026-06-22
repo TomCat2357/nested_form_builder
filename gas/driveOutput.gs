@@ -244,6 +244,45 @@ function nfbBuildRecordOutputContext_(payload) {
  *  - 識別子系 (recordId/formId/recordNo/formTitle):
  *      recordContext > templateContext > driveSettings の順で最初の非空を採用。
  */
+/**
+ * fileUploadMeta の URL/フォルダURL が空（プロジェクト移動・コピー後）のとき、
+ * folderName ＋ 生ファイル名（rawFileNames）から論理解決して URL を補う。
+ * 既に URL がある通常ケースは Drive 呼び出しせず素通り（高速パス）。
+ * @param {Object} fileUploadMeta - { fid: { fileNames, fileUrls, rawFileNames, folderName, folderUrl } }
+ * @return {Object} 解決済み（参照渡しで同オブジェクトを返す）
+ */
+function Nfb_resolveFileUploadMetaUrls_(fileUploadMeta) {
+  var meta = nfbPlainObject_(fileUploadMeta);
+  for (var fid in meta) {
+    if (!Object.prototype.hasOwnProperty.call(meta, fid)) continue;
+    var m = meta[fid];
+    if (!m || typeof m !== "object") continue;
+    var folderName = typeof m.folderName === "string" ? m.folderName.trim() : "";
+    if (!folderName) continue;
+
+    var urls = Object.prototype.toString.call(m.fileUrls) === "[object Array]" ? m.fileUrls : [];
+    var rawNames = Object.prototype.toString.call(m.rawFileNames) === "[object Array]" ? m.rawFileNames : [];
+
+    // URL が 1 件も無いときだけ論理解決（コピー/移動後の物理クリア状態を救済）。
+    if (urls.length === 0 && rawNames.length > 0) {
+      var resolvedUrls = [];
+      for (var i = 0; i < rawNames.length; i++) {
+        var res = Nfb_resolveUploadFileEntry_(rawNames[i], "", folderName);
+        if (res.fileUrl) resolvedUrls.push(res.fileUrl);
+      }
+      if (resolvedUrls.length > 0) m.fileUrls = resolvedUrls;
+    }
+
+    // フォルダ URL も空なら自プロジェクトの 06_upload_files 配下の同名フォルダから補う。
+    if (!(typeof m.folderUrl === "string" && m.folderUrl)) {
+      var base = StdFolders_autoFileFolderOrNull_("upload");
+      var recordFolder = base ? FormsDrive_childFolderByName_(base, folderName) : null;
+      if (recordFolder) m.folderUrl = recordFolder.getUrl();
+    }
+  }
+  return meta;
+}
+
 function nfbNormalizeRecordTemplateContext_(sources) {
   sources = sources || {};
   var driveSettings = sources.driveSettings || null;
@@ -278,7 +317,9 @@ function nfbNormalizeRecordTemplateContext_(sources) {
     fieldPaths: nfbPlainObject_(dataSrc && dataSrc.fieldPaths),
     fieldValues: nfbPlainObject_(dataSrc && dataSrc.fieldValues),
     dataValues: nfbPlainObject_(dataSrc && dataSrc.dataValues),
-    fileUploadMeta: nfbPlainObject_(dataSrc && dataSrc.fileUploadMeta),
+    // 出力はテンプレ token（fileUploadMeta の URL）でレンダリングするため、コピー/移動後で
+    // URL が空のときは folderName ＋ 生ファイル名から論理解決して URL を補う（物理優先・論理フォールバック）。
+    fileUploadMeta: Nfb_resolveFileUploadMetaUrls_(nfbPlainObject_(dataSrc && dataSrc.fileUploadMeta)),
     childFormMeta: nfbPlainObject_(dataSrc && dataSrc.childFormMeta),
     recordId: pickStr("recordId") || fallbackRecordId,
     formId: pickStr("formId"),

@@ -266,9 +266,17 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     }
     return out;
   }, [driveFolderStates]);
+  const folderNamesByField = useMemo(() => {
+    const out = {};
+    for (const [fid, st] of Object.entries(driveFolderStates || {})) {
+      const folderName = (st?.folderName || "").trim();
+      if (folderName) out[fid] = folderName;
+    }
+    return out;
+  }, [driveFolderStates]);
   const fileUploadMeta = useMemo(
-    () => collectFileUploadMeta(schema, { responses: responses || {}, folderUrlsByField }),
-    [schema, responses, folderUrlsByField],
+    () => collectFileUploadMeta(schema, { responses: responses || {}, folderUrlsByField, folderNamesByField }),
+    [schema, responses, folderUrlsByField, folderNamesByField],
   );
   const driveSettings = useMemo(() => ({
     formId: settings.formId || "",

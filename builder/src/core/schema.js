@@ -131,10 +131,13 @@ export const normalizeFormLinkSettings = (field) => {
 // 不要プロパティ整理（cleanUnusedFieldProperties）の双方で共有する。
 export const normalizeFileUploadSettings = (field) => {
   field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
-  field.allowFolderUrlEdit = normalizeBooleanSetting(field.allowFolderUrlEdit, false);
   field.hideFileExtension = normalizeBooleanSetting(field.hideFileExtension, true);
-  field.driveRootFolderUrl = typeof field.driveRootFolderUrl === "string" ? field.driveRootFolderUrl : "";
-  field.driveFolderNameTemplate = typeof field.driveFolderNameTemplate === "string" ? field.driveFolderNameTemplate : "";
+  // 保存先フォルダはユーザー指定不可・ID 由来固定（常に 06_upload_files 直下の一意フォルダ）。
+  // 旧仕様の allowFolderUrlEdit / driveRootFolderUrl / driveFolderNameTemplate は廃止し、
+  // 残っていれば除去する（論理パスの一意性＝衝突耐性を担保するため）。
+  delete field.allowFolderUrlEdit;
+  delete field.driveRootFolderUrl;
+  delete field.driveFolderNameTemplate;
   return field;
 };
 

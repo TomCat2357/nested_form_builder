@@ -5,7 +5,7 @@
  * useCallback でラップするのは呼び出し側 (FormPage) の責務。
  */
 
-import { restoreResponsesFromData, collectFileUploadFolderUrls } from "../utils/responses.js";
+import { restoreResponsesFromData, collectFileUploadFolderUrls, collectFileUploadFolderNames } from "../utils/responses.js";
 import { collectFileUploadFields } from "../core/schema.js";
 import { hasScriptRun, trashDriveFilesByIds } from "../services/gasClient.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsMemoryStore.js";
@@ -84,15 +84,19 @@ export function runApplyEntryToState(nextEntry, fallbackEntryId, source, ctx) {
   const schema = normalizedSchemaRef.current;
   const restored = restoreResponsesFromData(schema, nextEntry?.data || {}, nextEntry?.dataUnixMs || {});
   const folderUrlsByField = collectFileUploadFolderUrls(schema, nextEntry?.data || {});
+  const folderNamesByField = collectFileUploadFolderNames(schema, nextEntry?.data || {});
   const uploadFields = collectFileUploadFields(schema);
   const nextDriveFolderStates = {};
   uploadFields.forEach((field) => {
     const fid = field?.id;
     if (!fid) return;
     const folderUrl = folderUrlsByField[fid] || "";
+    // 論理パス（folderName）も state へ復元し、再保存でセルへ書き戻す（前進補完）。
+    const folderName = folderNamesByField[fid] || "";
     nextDriveFolderStates[fid] = normalizeDriveFolderState({
       resolvedUrl: folderUrl,
       inputUrl: folderUrl,
+      folderName,
       autoCreated: false,
     });
   });

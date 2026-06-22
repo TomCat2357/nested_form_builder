@@ -534,9 +534,13 @@ export default function FormPage() {
     const fieldId = driveFolderDialog.state.fieldId;
     if (fieldId) {
       updateFieldDriveFolderState(fieldId, (prev) => markDriveFolderForDeletion(prev));
+      // フォルダごと削除するので、レコード上のファイルリンク（files 配列）もクリアする。
+      // これをしないとファイルはゴミ箱に行くのにセルにリンクが残り、ゴミ箱を指す死リンクが居座る。
+      // 空文字にすると保存時にセルが空になり、実ファイルは extraTrashFileIds 経由で確実に trash される。
+      commitResponses("preview:delete-drive-folder", (prev) => ({ ...(prev || {}), [fieldId]: "" }));
     }
     driveFolderDialog.close();
-  }, [driveFolderDialog, updateFieldDriveFolderState]);
+  }, [commitResponses, driveFolderDialog, updateFieldDriveFolderState]);
 
   const handleConfirmUnlinkFolder = useCallback(async () => {
     unlinkFolderDialog.close();

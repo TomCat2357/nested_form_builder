@@ -138,7 +138,7 @@ function nfbDecodeBase64ToBlob_(base64, fileName, mimeType) {
  * @param {File} file - 対象ファイル
  * @param {Folder} folder - 保存先フォルダ
  * @param {boolean} autoCreated - フォルダが自動生成されたか
- * @return {Object} { ok, fileUrl, fileName, fileId, folderUrl, autoCreated }
+ * @return {Object} { ok, fileUrl, fileName, fileId, folderUrl, folderName, autoCreated }
  */
 function nfbBuildDriveFileResponse_(file, folder, autoCreated) {
   return {
@@ -147,8 +147,73 @@ function nfbBuildDriveFileResponse_(file, folder, autoCreated) {
     fileName: file.getName(),
     fileId: file.getId(),
     folderUrl: folder.getUrl(),
+    // 論理パス（folderName）を返す。プロジェクト移動・コピー後に fileId が死んでも
+    // 06_upload_files 配下の同名フォルダ＋ファイル名で再リンクできるようにするため。
+    folderName: typeof folder.getName === "function" ? folder.getName() : "",
     autoCreated: autoCreated === true
   };
+}
+
+/**
+ * アップロードファイルを「物理ID優先・論理パスフォールバック」で解決する。
+ * 1) driveFileId が生存していればそのまま返す（高速パス）。
+ * 2) 死亡/空なら、自プロジェクトの 06_upload_files 配下で folderName のフォルダ → name の
+ *    ファイルを探し、見つかれば新 fileId/url を返す（プロジェクト移動・コピー後の再リンク）。
+ * 3) それでも不可なら空を返す。
+ * フォーム/シートの物理優先・論理フォールバック解決と同じ思想。
+ * @param {string} name - 保存時のファイル名（拡張子込みの実ファイル名）
+ * @param {string} driveFileId
+ * @param {string} folderName - 06_upload_files 直下の一意フォルダ名（record_<id>_<uuid>）
+ * @return {{ fileId: string, fileUrl: string }}
+ */
+function Nfb_resolveUploadFileEntry_(name, driveFileId, folderName) {
+  var physId = typeof driveFileId === "string" ? driveFileId.trim() : "";
+  if (physId && StdFolders_isFileIdAlive_(physId)) {
+    try {
+      var alive = DriveApp.getFileById(physId);
+      return { fileId: physId, fileUrl: alive.getUrl() };
+    } catch (e) {
+      // 続行して論理解決へフォールバック
+    }
+  }
+
+  var leafName = typeof name === "string" ? name.trim() : "";
+  var folder = typeof folderName === "string" ? folderName.trim() : "";
+  if (!leafName || !folder) return { fileId: "", fileUrl: "" };
+
+  var base = StdFolders_autoFileFolderOrNull_("upload");
+  if (!base) return { fileId: "", fileUrl: "" };
+  var recordFolder = FormsDrive_childFolderByName_(base, folder);
+  if (!recordFolder) return { fileId: "", fileUrl: "" };
+  var found = StdFolders_findFileByNameInFolder_(recordFolder, leafName);
+  if (!found) return { fileId: "", fileUrl: "" };
+  return { fileId: found.getId(), fileUrl: found.getUrl() };
+}
+
+/**
+ * 公開 API: アップロードファイルのエントリ群を物理優先・論理フォールバックで解決する。
+ * 単票オープン時に物理が欠落/死亡しているとき（プロジェクト移動・コピー後）だけ呼ぶ薄い解決。
+ * @param {Object} payload - { folderName: string, files: [{ name, driveFileId }] }
+ * @return {Object} { ok, files: [{ name, driveFileId, driveFileUrl }] }
+ */
+function nfbResolveUploadFiles(payload) {
+  return nfbSafeCall_(function() {
+    var folderName = payload ? Nfb_trimStr_(payload.folderName) : "";
+    var source = payload && Object.prototype.toString.call(payload.files) === "[object Array]" ? payload.files : [];
+    var out = [];
+    for (var i = 0; i < source.length; i++) {
+      var entry = source[i] || {};
+      var name = typeof entry.name === "string" ? entry.name : "";
+      var driveFileId = typeof entry.driveFileId === "string" ? entry.driveFileId : "";
+      var resolved = Nfb_resolveUploadFileEntry_(name, driveFileId, folderName);
+      out.push({
+        name: name,
+        driveFileId: resolved.fileId,
+        driveFileUrl: resolved.fileUrl
+      });
+    }
+    return { ok: true, files: out };
+  });
 }
 
 /**

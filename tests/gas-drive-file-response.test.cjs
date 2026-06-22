@@ -88,6 +88,9 @@ function makeFolder(id) {
     getId() {
       return id;
     },
+    getName() {
+      return "folder_" + id;
+    },
   };
 }
 
@@ -103,6 +106,8 @@ test("nfbBuildDriveFileResponse_ は File/Folder からレスポンス形状を�
     fileName: "f_1.bin",
     fileId: "f_1",
     folderUrl: "https://drive.google.com/drive/folders/fo_1",
+    // 論理パス再リンク用のフォルダ名（論理パスのフォルダ部）。
+    folderName: "folder_fo_1",
     autoCreated: true,
   });
 });

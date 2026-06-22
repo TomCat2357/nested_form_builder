@@ -50,19 +50,6 @@ const FileUploadReadOnlyView = ({ files, displayedFolderUrl, hideFileExtension }
   </div>
 );
 
-const FileUploadFolderUrlInput = ({ folderInputUrl, onFolderUrlChange }) => (
-  <div className="nf-mb-8">
-    <label className="nf-block nf-fw-600 nf-mb-6">保存先フォルダURL</label>
-    <input
-      type="text"
-      className="nf-input"
-      value={folderInputUrl}
-      onChange={onFolderUrlChange}
-      placeholder="空欄の場合は初回アップロード時に自動作成 / Google DriveフォルダURLを入力するとそのフォルダを使用"
-    />
-  </div>
-);
-
 const FileUploadFolderStatus = ({ displayedFolderUrl, canDeleteDriveFolder, onDeleteDriveFolder }) => (
   <div className="nf-text-12 nf-text-muted nf-mt-8 nf-row nf-items-center nf-gap-8">
     <span>
@@ -118,11 +105,8 @@ const FileUploadField = ({
     uploadFiles,
     copyFromDriveUrl,
     removeFile,
-    handleFolderUrlChange,
-    normalizedFolderState,
     displayedFolderUrl,
   } = upload;
-  const allowFolderUrlEdit = field?.allowFolderUrlEdit === true;
 
   if (readOnly) {
     return (
@@ -142,13 +126,6 @@ const FileUploadField = ({
 
   return (
     <div>
-      {allowFolderUrlEdit && (
-        <FileUploadFolderUrlInput
-          folderInputUrl={normalizedFolderState.inputUrl}
-          onFolderUrlChange={handleFolderUrlChange}
-        />
-      )}
-
       <div
         onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
         onDragLeave={() => setDragOver(false)}
@@ -380,19 +357,49 @@ export function useDriveFileUpload({
     });
   };
 
-  const handleFolderUrlChange = (event) => {
-    if (typeof onFolderStateChange !== "function") return;
-    const nextInputUrl = event.target.value;
-    onFolderStateChange((prevState) => {
-      const prev = normalizeDriveFolderState(prevState);
-      const normalizedNextState = normalizeDriveFolderState({
-        ...prev,
-        inputUrl: nextInputUrl,
+  // プロジェクト移動・コピー後など、物理（driveFileUrl）が欠落しているファイルを、
+  // 論理パス（folderName ＋ ファイル名）で GAS 側に解決させて自己修復する（物理優先・論理フォールバック）。
+  // 解決できた物理は onChange で in-memory 値へ反映し、次回保存で前進補完される。
+  const resolveAttemptRef = React.useRef("");
+  React.useEffect(() => {
+    if (typeof gasClient?.resolveUploadFiles !== "function") return;
+    const folderName = normalizeDriveFolderState(folderStateRef.current).folderName;
+    if (!folderName) return;
+    const currentFiles = filesRef.current;
+    const needsResolve = currentFiles.some((file) => file && file.name && !file.driveFileUrl);
+    if (!needsResolve) return;
+    const signature = folderName + "|" + currentFiles
+      .map((file) => `${file?.name || ""}:${file?.driveFileId || ""}:${file?.driveFileUrl ? 1 : 0}`)
+      .join(",");
+    if (resolveAttemptRef.current === signature) return;
+    resolveAttemptRef.current = signature;
+    let cancelled = false;
+    gasClient.resolveUploadFiles({
+      folderName,
+      files: currentFiles.map((file) => ({ name: file?.name || "", driveFileId: file?.driveFileId || "" })),
+    }).then((result) => {
+      if (cancelled || !result || !Array.isArray(result.files)) return;
+      const base = filesRef.current;
+      const merged = base.map((file, index) => {
+        const resolved = result.files[index];
+        if (!resolved) return file;
+        return {
+          ...file,
+          driveFileId: resolved.driveFileId || file.driveFileId,
+          driveFileUrl: resolved.driveFileUrl || file.driveFileUrl,
+        };
       });
-      folderStateRef.current = normalizedNextState;
-      return normalizedNextState;
+      const changed = merged.some((file, index) => (
+        file.driveFileUrl !== base[index]?.driveFileUrl || file.driveFileId !== base[index]?.driveFileId
+      ));
+      if (!changed) return;
+      filesRef.current = merged;
+      onChange(merged);
+    }).catch(() => {
+      // 解決失敗は無視（リンクはそのまま空表示）。次回オープン時に再試行される。
     });
-  };
+    return () => { cancelled = true; };
+  }, [value, gasClient, onChange]);
 
   return {
     files,
@@ -403,7 +410,6 @@ export function useDriveFileUpload({
     uploadFiles,
     copyFromDriveUrl,
     removeFile,
-    handleFolderUrlChange,
     normalizedFolderState,
     effectiveFolderUrl,
     displayedFolderUrl,

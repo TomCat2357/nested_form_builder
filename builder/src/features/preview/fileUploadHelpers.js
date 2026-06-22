@@ -29,10 +29,14 @@ export const computeFolderStateAfterUpload = ({ prev, current, result }) => {
     ? result.folderUrl.trim()
     : (currentEffectiveFolderUrl || prevState.resolvedUrl);
   const keepAutoCreated = prevState.autoCreated && prevState.resolvedUrl.trim() && prevState.resolvedUrl.trim() === nextResolvedUrl;
+  const nextFolderName = typeof result?.folderName === "string" && result.folderName.trim()
+    ? result.folderName.trim()
+    : prevState.folderName;
   return normalizeDriveFolderState({
     ...prevState,
     resolvedUrl: nextResolvedUrl,
     inputUrl: prevState.inputUrl.trim() ? prevState.inputUrl : nextResolvedUrl,
+    folderName: nextFolderName,
     autoCreated: keepAutoCreated || result?.autoCreated === true,
     sessionUploadFileIds: appendDriveFileId(prevState.sessionUploadFileIds, result?.fileId),
   });
@@ -40,20 +44,24 @@ export const computeFolderStateAfterUpload = ({ prev, current, result }) => {
 
 export const computeFolderStateAfterFinalize = ({ prev, result }) => {
   const prevState = normalizeDriveFolderState(prev);
+  const nextFolderName = typeof result?.folderName === "string" && result.folderName.trim()
+    ? result.folderName.trim()
+    : prevState.folderName;
   return normalizeDriveFolderState({
     ...prevState,
     resolvedUrl: result.folderUrl,
     inputUrl: prevState.inputUrl.trim() ? prevState.inputUrl : result.folderUrl,
+    folderName: nextFolderName,
     autoCreated: prevState.autoCreated || result.autoCreated === true,
   });
 };
 
 export const buildDriveUploadSettings = ({ folderState, field, driveSettings }) => {
   const current = normalizeDriveFolderState(folderState);
+  // アップロード先は常に標準フォルダ構成の 06_upload_files 直下（ユーザー指定不可）。
+  // 既存レコードの再アップロードでは folderUrl（自動作成済みフォルダ）だけを引き継ぐ。
   return {
     ...(driveSettings || {}),
-    rootFolderUrl: field?.driveRootFolderUrl || "",
-    folderNameTemplate: field?.driveFolderNameTemplate || "",
     folderUrl: resolveEffectiveDriveFolderUrl(current),
     autoCreated: current.autoCreated,
   };

@@ -5,7 +5,7 @@ import {
   buildFieldValuesMap,
   collectFileUploadMeta,
 } from "../preview/printDocument.js";
-import { restoreResponsesFromData, collectFileUploadFolderUrls } from "../../utils/responses.js";
+import { restoreResponsesFromData, collectFileUploadFolderUrls, collectFileUploadFolderNames } from "../../utils/responses.js";
 import { collectFileUploadFields } from "../../core/schema.js";
 import { parseFileUploadStorage } from "../../core/collect.js";
 import {
@@ -31,12 +31,14 @@ const buildRecordTemplateBase = (normalizedSchema, entry) => {
     entry?.dataUnixMs || {},
   );
   const folderUrlsByField = collectFileUploadFolderUrls(normalizedSchema, entry?.data || {});
+  const folderNamesByField = collectFileUploadFolderNames(normalizedSchema, entry?.data || {});
   const primaryFieldId = collectFileUploadFields(normalizedSchema)[0]?.id || "";
   const primaryFolderUrl = primaryFieldId ? (folderUrlsByField[primaryFieldId] || "") : "";
   const fieldValues = buildFieldValuesMap(normalizedSchema, restoredResponses);
   const fileUploadMeta = collectFileUploadMeta(normalizedSchema, {
     responses: restoredResponses,
     folderUrlsByField,
+    folderNamesByField,
   });
   return { restoredResponses, folderUrlsByField, primaryFolderUrl, fieldValues, fileUploadMeta };
 };

@@ -405,6 +405,15 @@ export const createGoogleDocumentFromTemplate = ({ sourceUrl, driveSettings, fil
 export const finalizeRecordDriveFolder = (payload) =>
   fetchGasApi("nfbFinalizeRecordDriveFolder", payload, "Driveフォルダの確定に失敗しました");
 
+// アップロードファイルを物理ID優先・論理パス（folderName ＋ ファイル名）フォールバックで解決する。
+// プロジェクト移動・コピー後に物理が死んでいても、自プロジェクトの 06_upload_files 内へ再リンクする。
+export const resolveUploadFiles = ({ folderName, files }) =>
+  fetchGasApi(
+    "nfbResolveUploadFiles",
+    { folderName, files },
+    "アップロードファイルの解決に失敗しました",
+  );
+
 export const trashDriveFilesByIds = (fileIds) =>
   fetchGasApi("nfbTrashDriveFilesByIds", fileIds, "Driveファイルの削除に失敗しました");
 

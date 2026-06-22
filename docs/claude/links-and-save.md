@@ -97,7 +97,7 @@ forms / questions / dashboards の**エンティティ間参照**（formLink / Q
 |--|--|--|--|
 | 印刷様式 Doc（`settings.standardPrintTemplateUrl` / カード `printTemplateAction.templateUrl`） | `05_report_templates` | フォーム保存 | `StdFolders_normalizePrintTemplateRefsOnSave_`（`Forms_saveForm_` から）。論理パス `standardPrintTemplatePath` / `templatePath` を併設。出力時は `nfbResolveRecordOutputTemplateSourceUrl_` が物理優先・論理フォールバック |
 | フォーム→スプレッドシート（`settings.spreadsheetId`） | `04_spreadsheets` | フォーム保存 | `Forms_resolveSpreadsheetSetting_` が `Forms_alignSpreadsheetIntoStd_` で寄せ、`spreadsheetPath` を正本化・`spreadsheetId` をクリア（path-wins） |
-| アップロードフォルダ（fileUpload セルの `folderUrl`） | `06_upload_files` | レコード保存（スプレッドシート書込） | `SubmitResponses_` の upsert 前に `StdFolders_normalizeUploadCellsInResponses_`。セルへ `folderPath` を併設、外部コピー時はファイル id も貼り替え |
+| アップロードフォルダ（fileUpload セルの `folderUrl`） | `06_upload_files` | レコード保存（スプレッドシート書込） | `SubmitResponses_` の upsert 前に `StdFolders_normalizeUploadCellsInResponses_`。セルへ `folderName` を併設（詳細は §5）、外部コピー時はファイル id も貼り替え |
 
 ### 4-3. UI（厳格運用）
 
@@ -113,7 +113,53 @@ forms / questions / dashboards の**エンティティ間参照**（formLink / Q
 §1-1 の逆方向再リンクはエンティティグラフ（Q→Form / D→Q / Form→childForm）が対象。非エンティティ参照のうち**共有されうる印刷様式（05）だけ**逆方向再リンクの対象とする。
 
 - **印刷様式（05）**: 標準様式 Doc は複数フォームで共有されうる。あるフォームの保存で様式 Doc を再配置（move/外部コピー）したとき、同じ Doc を**旧 fileId で指す他フォーム**の `standardPrintTemplateUrl/Path` ＋ カード `printTemplateAction.templateUrl/Path` を新位置へ張り替える。`StdFolders_normalizePrintTemplateRefsOnSave_` が再配置を `relocations` として返し、`Forms_saveForm_` が `StdFolders_propagateTemplateRelinkToForms_`（**forms マッピング限定の有界走査**・冪等・非致命）を呼ぶ。
-- **スプレッドシート（04）・アップロード（06）は対象外**: いずれも **per-form / per-record 設計**で共有が稀（04 は各フォーム専用の回答シート、06 は各レコード専用のアップロードフォルダ）。06 はレコードがスプレッドシート全行に散在するため全シート走査が GAS 6 分制限に抵触する。よって自動の逆方向再リンクは行わず、各オーナーの保存時の自己正規化（`Forms_resolveSpreadsheetSetting_` / `StdFolders_normalizeUploadCellsInResponses_`）と手動の全件整列に委ねる。
+- **スプレッドシート（04）・アップロード（06）は対象外**: いずれも **per-form / per-record 設計**で共有が稀（04 は各フォーム専用の回答シート、06 は各レコード専用のアップロードフォルダ）。06 はレコードがスプレッドシート全行に散在するため全シート走査が GAS 6 分制限に抵触する。よって自動の逆方向再リンクは行わず、各オーナーの保存時の自己正規化（`Forms_resolveSpreadsheetSetting_` / `StdFolders_normalizeUploadCellsInResponses_`）と手動の全件整列に委ねる（アップロードの物理優先・論理フォールバック解決の詳細は §5）。
+
+## 5. アップロードファイルも物理ID優先・論理パスフォールバックへ
+
+フォーム/シートのリンクと同様に、レコードの **アップロードファイル**（`fileUpload` フィールド）も
+「物理 fileId 優先・論理パス（フォルダ名＋ファイル名）フォールバック」で解決するようにした。
+これによりプロジェクトを移動・コピーしてもリンクを貼り直せる。
+
+### 5-1. セル JSON に論理パス `folderName` を同梱
+
+レコードの fileUpload セルは従来 `{ files:[{name, driveFileId, driveFileUrl}], folderUrl }` だったが、
+**`folderName`（論理パスのフォルダ部）を追加**して `{ files, folderUrl, folderName }` で保存する。
+各ファイルの論理パスは `06_upload_files/<folderName>/<name>`。キャッシュ（recordsMemoryStore）は
+セル値をそのまま保持するので、別途のキャッシュ改修なしに論理パスを持つ。
+
+- 直列化/復元: `serializeFileUploadValue` / `parseFileUploadStorage`（`builder/src/core/collect.js`）。
+- フォルダ状態: `driveFolderState` に `folderName` を第一級で保持（`builder/src/utils/driveFolderState.js`）。
+  オープン時に `collectFileUploadFolderNames`（`builder/src/utils/responses.js`）でセルから復元し、再保存で書き戻す（前進補完）。
+- GAS 応答: `nfbBuildDriveFileResponse_` / `nfbFinalizeRecordDriveFolder`（`gas/driveFile.gs` / `gas/driveFolder.gs`）が `folderName` を返す。
+
+### 5-2. フォルダ名はユーザー指定不可・ID 由来固定
+
+論理パスの一意性（衝突耐性）を担保するため、保存先フォルダは常に `06_upload_files` 直下の
+一意フォルダ `record_<id>_<uuid8>`（`nfbBuildRecordTempFolderName_`）に固定。旧仕様の
+`driveFolderNameTemplate`（フォルダ名テンプレ）／`allowFolderUrlEdit`・`driveRootFolderUrl`（保存先URL変更）は
+**廃止**し、`normalizeFileUploadSettings`（`builder/src/core/schema.js`）が残骸を除去する。
+
+### 5-3. 解決（リゾルバ）と配線
+
+- リゾルバ `Nfb_resolveUploadFileEntry_`（`gas/driveFile.gs`）: ① `driveFileId` 生存ならそのまま →
+  ② 死亡/空なら自プロジェクトの `06_upload_files` 配下で `folderName` のフォルダ→`name` のファイルを探索 → ③ 不可なら空。
+- 単票オープン: 物理が欠落しているとき公開 API `nfbResolveUploadFiles` を呼んで自己修復（`FileUploadField` の effect → `onChange` → 次回保存で前進補完）。
+- 出力（PDF/Doc/Gmail/印刷）: `Nfb_resolveFileUploadMetaUrls_`（`gas/driveOutput.gs`）が `nfbNormalizeRecordTemplateContext_` で
+  fileUploadMeta の URL/フォルダURL が空のとき `folderName`＋`rawFileNames` から復元する。
+
+### 5-4. システムごとコピー（copyData=true）は物理を空にして論理に任せる
+
+`makeCopy` はフォルダ名・ファイル名を保持し、リゾルバは常に自プロジェクトの `06_upload_files` を起点にするため、
+コピー時にレコードセルの物理（`driveFileId`/`driveFileUrl`/`folderUrl`）を**空にして論理パスだけ残す**だけで、
+読取/出力時にコピー先の複製へ自動バインドする（idMap 突合は不要）。実装は `StdFolders_clearUploadPhysicalInSpreadsheet_` /
+`StdFolders_clearUploadPhysicalInCell_`（`gas/standardFoldersCopy.gs`）。物理を残すとコピー元を指し続ける（クロスプロジェクト漏れ）ため、必ず空にする。
+
+### 5-5. フォルダ削除時はレコードのリンクもクリア
+
+レコードでアップロードフォルダを削除すると Drive 上はゴミ箱へ行く。これに合わせ、`handleDeleteDriveFolder`
+（`builder/src/pages/FormPage.jsx`）が当該フィールドの **レスポンス値（files 配列）もクリア**し、`markDriveFolderForDeletion`
+が `folderName` も落とす。保存時にセルが空になり、ゴミ箱を指す死リンクが残らない（実ファイルは `extraTrashFileIds` で確実に trash）。
 
 ## まとめ（保存時に何が起きるか）
 

@@ -257,6 +257,9 @@ export const collectFileUploadMeta = (fields, options = {}) => {
           .map((f) => resolveFileDisplayName(f?.name || "", field?.hideFileExtension))
           .filter(Boolean);
         entry.fileUrls = files.map((f) => f?.driveFileUrl || "").filter(Boolean);
+        // 生ファイル名（拡張子込み）。GAS 側で folderName と組んで論理解決し、コピー/移動後に
+        // URL が空でも 06_upload_files 配下の複製から URL を復元するために使う。
+        entry.rawFileNames = files.map((f) => f?.name || "").filter(Boolean);
       }
       const folderUrl = folderUrlsByField[field.id];
       if (typeof folderUrl === "string" && folderUrl) entry.folderUrl = folderUrl;

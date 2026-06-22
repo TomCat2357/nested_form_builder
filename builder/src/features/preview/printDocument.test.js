@@ -351,6 +351,7 @@ test("buildPrintDocumentPayload は印刷用 driveSettings に ID と仮フォ�
       upload: {
         fileNames: [],
         fileUrls: [],
+        rawFileNames: [],
       },
     },
   });

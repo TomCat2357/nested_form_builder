@@ -1,6 +1,36 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildFileUploadEntry, collectResponses, sortResponses, buildDataValueMap } from "./collect.js";
+import { buildFileUploadEntry, collectResponses, sortResponses, buildDataValueMap, parseFileUploadStorage } from "./collect.js";
+
+test("collectResponses は fileUpload セルに論理パス folderName を同梱し、parse で往復できる", () => {
+  const schema = [{ id: "u", type: "fileUpload", label: "添付" }];
+  const responses = { u: [{ name: "a.pdf", driveFileId: "ID1", driveFileUrl: "https://drive/ID1" }] };
+  const out = collectResponses(schema, responses, {
+    fileUploadFolderUrls: { u: "https://drive.google.com/drive/folders/F1" },
+    fileUploadFolderNames: { u: "record_01_abcd" },
+  });
+  const parsed = parseFileUploadStorage(out["添付"]);
+  assert.equal(parsed.folderName, "record_01_abcd");
+  assert.equal(parsed.folderUrl, "https://drive.google.com/drive/folders/F1");
+  assert.deepEqual(parsed.files, [{ name: "a.pdf", driveFileId: "ID1", driveFileUrl: "https://drive/ID1" }]);
+});
+
+test("collectResponses は folderUrl が空でも folderName だけでオブジェクト形を保つ（コピー後の論理パス保持）", () => {
+  const schema = [{ id: "u", type: "fileUpload", label: "添付" }];
+  const responses = { u: [{ name: "a.pdf", driveFileId: "", driveFileUrl: "" }] };
+  const out = collectResponses(schema, responses, {
+    fileUploadFolderNames: { u: "record_01_abcd" },
+  });
+  const parsed = parseFileUploadStorage(out["添付"]);
+  assert.equal(parsed.folderName, "record_01_abcd");
+  assert.equal(parsed.folderUrl, "");
+});
+
+test("parseFileUploadStorage は folderName を持たない旧セル（配列形）でも空 folderName を返す", () => {
+  const parsed = parseFileUploadStorage(JSON.stringify([{ name: "a.pdf", driveFileId: "ID1", driveFileUrl: "u" }]));
+  assert.equal(parsed.folderName, "");
+  assert.equal(parsed.files.length, 1);
+});
 
 test("buildDataValueMap: 選択肢はフィールド 1 列のラベル（複数選択は表示区切り ', '）", () => {
   const schema = [

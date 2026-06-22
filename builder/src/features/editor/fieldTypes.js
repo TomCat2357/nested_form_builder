@@ -125,7 +125,6 @@ export function handleTypeChange(field, newType, { getTempState, setTempState } 
     }
     if (newType === "fileUpload") {
       next.allowUploadByUrl = next.allowUploadByUrl ?? false;
-      next.allowFolderUrlEdit = next.allowFolderUrlEdit ?? false;
     }
     if (newType === PRINT_TEMPLATE_TYPE) {
       next.printTemplateAction = {

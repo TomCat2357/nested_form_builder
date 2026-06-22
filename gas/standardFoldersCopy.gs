@@ -205,6 +205,12 @@ function StdFolders_copyFolderTree_(srcFolder, destFolder, ctx, depth) {
     if (ctx.key === "spreadsheets" && !ctx.copyData) {
       StdFolders_clearSpreadsheetData_(newFileId);
     }
+    // データごとコピーのときは、アップロードセルの物理（fileId/url/folderUrl）を空にして
+    // 論理パス（folderName + ファイル名）だけ残す。コピー先で読取/出力時に論理解決が発火し、
+    // 自プロジェクトの 06_upload_files 内の複製ファイルへ自動バインドする（コピー元を指さない）。
+    if (ctx.key === "spreadsheets" && ctx.copyData) {
+      StdFolders_clearUploadPhysicalInSpreadsheet_(newFileId);
+    }
   }
   var subIt = srcFolder.getFolders();
   while (subIt.hasNext()) {
@@ -269,6 +275,90 @@ function StdFolders_clearSpreadsheetData_(spreadsheetId) {
   }
 }
 
+// コピー先スプレッドシートのデータ行（12 行目以降）を走査し、fileUpload 形のセル
+// （`{files:[…],folderUrl,folderName}` または `[{driveFileId…}]`）の物理（driveFileId /
+// driveFileUrl / folderUrl）だけを空にして書き戻す。name / folderName（論理パス）は保持する。
+// フォーム schema に依存せず JSON 形状で判定するため自己完結（どのシート/列でも検出可能）。
+// 物理を空にすることで、コピー先での読取/出力時に論理パス解決が発火し、自プロジェクトの
+// 06_upload_files 内の複製へ再リンクされる（コピー元への参照残留を防ぐ）。
+function StdFolders_clearUploadPhysicalInSpreadsheet_(spreadsheetId) {
+  try {
+    var ss = SpreadsheetApp.openById(spreadsheetId);
+    var sheets = ss.getSheets();
+    for (var s = 0; s < sheets.length; s++) {
+      var sheet = sheets[s];
+      var lastRow = sheet.getLastRow();
+      var lastCol = sheet.getLastColumn();
+      if (lastRow < NFB_DATA_START_ROW || lastCol < 1) continue;
+      var range = sheet.getRange(NFB_DATA_START_ROW, 1, lastRow - NFB_DATA_START_ROW + 1, lastCol);
+      var values = range.getValues();
+      var changed = false;
+      for (var r = 0; r < values.length; r++) {
+        for (var c = 0; c < values[r].length; c++) {
+          var cleared = StdFolders_clearUploadPhysicalInCell_(values[r][c]);
+          if (cleared.changed) {
+            values[r][c] = cleared.value;
+            changed = true;
+          }
+        }
+      }
+      if (changed) range.setValues(values);
+    }
+  } catch (err) {
+    Logger.log("[StdFolders_clearUploadPhysicalInSpreadsheet_] " + spreadsheetId + ": " + nfbErrorToString_(err));
+  }
+}
+
+// 1 セル分の fileUpload JSON から物理（driveFileId / driveFileUrl / folderUrl）を空にする純変換。
+// fileUpload 形でなければ { changed:false } を返す（他の列を壊さない）。
+// 戻り値: { changed: boolean, value: string }（value は変更時のみ再シリアライズした文字列）。
+function StdFolders_clearUploadPhysicalInCell_(raw) {
+  if (typeof raw !== "string") return { changed: false };
+  var trimmed = raw.trim();
+  if (!trimmed || (trimmed.charAt(0) !== "{" && trimmed.charAt(0) !== "[")) return { changed: false };
+  var parsed;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch (e) {
+    return { changed: false };
+  }
+
+  var files = null;
+  var isObjectForm = false;
+  if (Object.prototype.toString.call(parsed) === "[object Array]") {
+    files = parsed;
+  } else if (parsed && typeof parsed === "object" && Object.prototype.toString.call(parsed.files) === "[object Array]") {
+    files = parsed.files;
+    isObjectForm = true;
+  } else {
+    return { changed: false };
+  }
+
+  // fileUpload 形の確証（各エントリが driveFileId / driveFileUrl / name のいずれかを持つ）。
+  var looksLikeUpload = false;
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i];
+    if (f && typeof f === "object" && ("driveFileId" in f || "driveFileUrl" in f || "name" in f)) {
+      looksLikeUpload = true;
+      break;
+    }
+  }
+  if (!looksLikeUpload && !(isObjectForm && ("folderUrl" in parsed || "folderName" in parsed))) {
+    return { changed: false };
+  }
+
+  for (var j = 0; j < files.length; j++) {
+    var entry = files[j];
+    if (entry && typeof entry === "object") {
+      entry.driveFileId = "";
+      entry.driveFileUrl = "";
+    }
+  }
+  if (isObjectForm) parsed.folderUrl = "";
+
+  return { changed: true, value: JSON.stringify(parsed) };
+}
+
 // idMap（旧fileId→{newFileId,newUrl}）を使い、エンティティ間参照（Q→Form / D→Q / Form→子Form）を
 // 保存時整合と同じ正準ビジター StdFolders_forEachRef_ で巡回して再配線する。参照種別の列挙を 1 箇所
 // （forEachRef）に集約することで、コピー側と保存時整合のドリフト（種別の取りこぼし）を防ぐ。
@@ -322,12 +412,8 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActi
         field.printTemplateAction.templateUrl = t.value;
         if (t.status === "cleared") cleared++;
       }
-      // アップロード先ルートフォルダ
-      if (typeof field.driveRootFolderUrl === "string" && field.driveRootFolderUrl) {
-        var u = StdFolders_remapFolderUrl_(field.driveRootFolderUrl, folderIdMap);
-        field.driveRootFolderUrl = u.value;
-        if (u.status === "cleared") cleared++;
-      }
+      // アップロード先は常に自プロジェクトの 06_upload_files 直下（ユーザー指定不可）になったため、
+      // フォーム定義に driveRootFolderUrl は持たない（旧フォームに残っていても無視・次回保存で除去）。
       // 外部アクション 送信先（copyExternalActions OFF のときはクリア。ON のときは外部 /exec をそのまま温存）
       if (field.externalAction && typeof field.externalAction.url === "string" && field.externalAction.url) {
         if (!copyExternalActions) {

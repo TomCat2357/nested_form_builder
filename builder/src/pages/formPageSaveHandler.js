@@ -39,6 +39,7 @@ import {
 import {
   collectDriveFileIds,
   buildFolderUrlsByFieldFromStates,
+  buildFolderNamesByFieldFromStates,
 } from "./formPageHelpers.js";
 
 /**
@@ -185,6 +186,7 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
   const extraTrashFileIdSet = new Set(extraTrashFileIds);
 
   const finalizedFolderUrlByField = {};
+  const finalizedFolderNameByField = {};
 
   const needsAnyFinalize = uploadFields.some((field) => {
     const st = normalizeDriveFolderState(currentStates[field.id]);
@@ -209,6 +211,7 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
       const metaMap = collectFileUploadMeta(normalizedSchema, {
         responses: rawResponses || {},
         folderUrlsByField: buildFolderUrlsByFieldFromStates(currentStates),
+        folderNamesByField: buildFolderNamesByFieldFromStates(currentStates),
       });
       try {
         let remainingExtraTrash = Array.from(extraTrashFileIdSet);
@@ -243,13 +246,12 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
           );
           if (!hasSomething) {
             finalizedFolderUrlByField[fid] = "";
+            finalizedFolderNameByField[fid] = st.folderName.trim();
             continue;
           }
           const finalizeResult = await finalizeRecordDriveFolder({
             currentDriveFolderUrl: st.resolvedUrl.trim(),
             inputDriveFolderUrl: st.inputUrl.trim(),
-            rootFolderUrl: field?.driveRootFolderUrl || "",
-            folderNameTemplate: field?.driveFolderNameTemplate || "",
             responses: rawResponses || {},
             fieldPaths,
             fieldValues: fieldValuesMap,
@@ -262,6 +264,10 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
           finalizedFolderUrlByField[fid] = typeof finalizeResult?.folderUrl === "string"
             ? finalizeResult.folderUrl.trim()
             : st.resolvedUrl.trim();
+          // 論理パス（folderName）は GAS の返り値を優先し、無ければ復元済み state を維持。
+          finalizedFolderNameByField[fid] = typeof finalizeResult?.folderName === "string" && finalizeResult.folderName.trim()
+            ? finalizeResult.folderName.trim()
+            : st.folderName.trim();
         }
       } catch (folderError) {
         throw new DriveFolderFinalizeError(folderError);
@@ -274,7 +280,10 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
     const rebuilt = coreCollectResponses(
       normalizedSchema,
       rawResponses || {},
-      { fileUploadFolderUrls: finalizedFolderUrlByField },
+      {
+        fileUploadFolderUrls: finalizedFolderUrlByField,
+        fileUploadFolderNames: finalizedFolderNameByField,
+      },
     );
     const fileUploadBaseKeys = new Set();
     traverseSchema(normalizedSchema, (field, context) => {

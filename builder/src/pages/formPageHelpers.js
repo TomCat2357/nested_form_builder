@@ -55,6 +55,17 @@ export const buildFolderUrlsByFieldFromStates = (states) => {
   return out;
 };
 
+// 各 fileUpload フィールドの論理パス（folderName）を { fieldId: folderName } で集める。
+// 出力テンプレ（fileUploadMeta）やセル再構築で論理パスを運ぶために使う。
+export const buildFolderNamesByFieldFromStates = (states) => {
+  const out = {};
+  for (const [fid, st] of Object.entries(states || {})) {
+    const folderName = normalizeDriveFolderState(st).folderName.trim();
+    if (folderName) out[fid] = folderName;
+  }
+  return out;
+};
+
 export const collectDriveFileIds = (responses) => {
   const seen = new Set();
   Object.values(toResponseObject(responses)).forEach((value) => {
