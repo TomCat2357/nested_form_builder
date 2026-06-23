@@ -1048,6 +1048,15 @@ function StdFolders_importMapping_(doc) {
     return { ok: false, error: "対応していないマッピング形式です（type/version 不一致）" };
   }
 
+  // コピー先 初回解決ゲート: コピー由来のドキュメント（sourceRootId 付き）を取り込むときは、
+  // 個別リンク解決の前に registry を物理フォルダ走査で充填する（type はフォルダ位置で確定）。
+  // プロジェクトコピーは物理を全消去するため、これで論理→物理の一括再解決の土台を作る。
+  var isCopyRestore = !!(doc.sourceRootId && typeof Admin_rebuildRegistryFromLogical_ === "function");
+  if (isCopyRestore) {
+    try { Admin_rebuildRegistryFromLogical_(); }
+    catch (eRebuild) { Logger.log("[StdFolders_importMapping_] rebuild gate failed: " + nfbErrorToString_(eRebuild)); }
+  }
+
   var imported = { forms: 0, questions: 0, dashboards: 0 };
   var skipped = 0;
   var errors = [];
@@ -1082,10 +1091,21 @@ function StdFolders_importMapping_(doc) {
   if (Array.isArray(folders.questions)) Analytics_saveFoldersRegistry_("questions", Analytics_getFolders_("questions").concat(folders.questions));
   if (Array.isArray(folders.dashboards)) Analytics_saveFoldersRegistry_("dashboards", Analytics_getFolders_("dashboards").concat(folders.dashboards));
 
-  // インポートは「マッピング JSON のマージ」のみを行う純粋な操作。
-  // 取り込んだエントリの物理配置（標準フォルダへの整列）や壊れたリンクの修復は、
-  // 各エンティティを次に保存した際のサーバ側自動リンク補完（alignReferencesOnSave_）が担う。
-  return { ok: true, imported: imported, skipped: skipped, errors: errors };
+  // コピー先 初回解決ゲート（後段）: コピー由来の取り込みでは、物理を全消去された参照
+  // （エンティティ id / spreadsheet / 印刷様式）を *Path から一括再解決して物理を貼り直す。
+  // registry は上の rebuild で充填済みなので論理パスがローカル fileId へ解決できる。
+  var reresolved = null;
+  if (isCopyRestore && typeof Admin_reresolveAllRefsFromLogical_ === "function") {
+    try { reresolved = Admin_reresolveAllRefsFromLogical_(); }
+    catch (eRe) { Logger.log("[StdFolders_importMapping_] reresolve gate failed: " + nfbErrorToString_(eRe)); }
+  }
+
+  // インポートは「マッピング JSON のマージ」と、コピー復元時の論理→物理 再解決を行う。
+  // 通常インポートで取り込んだエントリの物理配置や壊れたリンクの修復は、各エンティティを次に保存した
+  // 際のサーバ側自動リンク補完（alignReferencesOnSave_）が担う。
+  var out = { ok: true, imported: imported, skipped: skipped, errors: errors };
+  if (reresolved) out.reresolved = reresolved;
+  return out;
 }
 
 // インポートのソースを解決して取り込む。

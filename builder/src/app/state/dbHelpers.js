@@ -55,6 +55,14 @@ export function openDB() {
         db.createObjectStore(STORE_NAMES.openHistory, { keyPath: 'key' });
       }
 
+      // v10: registry（フロントの作業キャッシュ）。1 件 = 1 エンティティ
+      // （key = fileId）。{ id(=fileId), kind, fileId, folder, name, driveFileUrl }。
+      // 加算のみ・既存ストア非破壊。喪失時は list API / GAS 再構成 API で再生成する。
+      if (!db.objectStoreNames.contains(STORE_NAMES.registry)) {
+        const registryStore = db.createObjectStore(STORE_NAMES.registry, { keyPath: 'id' });
+        registryStore.createIndex('kind', 'kind', { unique: false });
+      }
+
       if (oldVersion < 6) {
         for (const legacyName of LEGACY_STORE_NAMES_V5) {
           if (db.objectStoreNames.contains(legacyName)) {

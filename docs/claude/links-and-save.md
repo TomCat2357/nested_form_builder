@@ -161,12 +161,50 @@ forms / questions / dashboards の**エンティティ間参照**（formLink / Q
 （`builder/src/pages/FormPage.jsx`）が当該フィールドの **レスポンス値（files 配列）もクリア**し、`markDriveFolderForDeletion`
 が `folderName` も落とす。保存時にセルが空になり、ゴミ箱を指す死リンクが残らない（実ファイルは `extraTrashFileIds` で確実に trash）。
 
+## 6. Single Source of Truth — 論理＝正本／物理＝キャッシュ、registry の二層化
+
+§1〜5 で「参照は fileId 一本＋論理パス（`*Path`）の復旧アンカー」「`driveFileUrl` は非永続化」まで寄せた。これをさらに「**キャッシュ（IndexedDB）を除き、同じデータを 2 箇所に持たない**」方針へ整理したのが本節。
+
+### 6-1. 確定モデル
+
+- **論理パス＝耐久的な正本**。各エンティティ自身の論理パスは **Script Properties registry**（`{ 物理ID(fileId), 論理パス(folder＋ファイル名) }` のみ）に、各**リンクの宛先**は home ファイル内の `*Path` 復旧アンカー（`formPath`/`questionPath`/`spreadsheetPath`/`standardPrintTemplatePath`/`templatePath`/`folderName`/`childFormPath`）に持つ。
+- **物理 fileId ＝消去可能なキャッシュ**。解決は物理優先（速い）→死んでいれば論理で貼り直し→次回保存で物理を前進補完。**コピー時は物理を全消去して論理だけ残す**。
+- **registry の二層**: サーバ側（保存/整合/コピー）は **Script Properties registry**（最小・耐久バックストップ）。フロントの参照解決・一覧表示は **IndexedDB registry**（作業キャッシュ・派生再構成可能）。GAS は IndexedDB を読めないため両者は別物で、二重持ちではなく「耐久バックストップ＋作業キャッシュ」の関係。
+
+### 6-2. 相手の「名前」の二重持ちを完全撤去（Phase 1）
+
+§2-3 で名前の二重持ちを「廃止（保存時剥がし）」したが、**読みフォールバックも撤去**した。リンク切れ復旧は registry の `folder＋title/name` アンカーと home の `*Path` に一本化する。
+
+- `Forms_resolveFormRef_`（`gas/formsCrud.gs`）から旧 `ref.formName` 名前フォールバック（Step3）を削除。残すのは id（fileId）解決 + registry（folder+title）アンカー解決。
+- `Analytics_resolveItemFileOrNull_`（`gas/analyticsCrud.gs`）の `idFallbackName` を撤去（id 由来の名前探索をやめる）。`entry.name`（registry 内の自分のファイル名アンカー）は保持。
+- サーバ側でも保存前に `StdFolders_stripRefNames_`（`gas/standardFoldersAlignRefs.gs`）で `formName`/`questionName`/`childFormName` 残骸を確定的に剥がす（フロント剥がしの二重防御）。`Analytics_saveTemplate_` / `Forms_saveForm_` が `stampRefPaths` の前に呼ぶ。
+
+### 6-3. フロント IndexedDB registry（Phase 3）
+
+- IndexedDB（`NestedFormBuilder`）を **v9→v10** に上げ、`registry` ストア（`keyPath: "id"`・`kind` index）を**加算**（既存ストア非破壊）。値は `{ id(=fileId), kind, fileId, folder, name, driveFileUrl }` で 3 種を統合。
+- ストアは `builder/src/app/state/registryStore.js`（`upsert`/`fillFromList`/`loadAll`/`get`/`remove`/`clear`/`lastSyncedAt`/`isEmpty`）。`analyticsCache.js` の `makeListCache` パターンを流用。
+- 充填フック（非ブロッキング・fail-safe）: 一覧取得（`dataStore.listForms` / analytics の `fetchAndStore_`）でサーバ確定の一覧から `fillFromList(stampSyncTime)`、保存ジョブ完了（`uploadWorker` の `reconcileEntityCache`、local_→実 fileId 確定）で `upsert`。
+- 喪失耐性: 空でも list API / GAS 再構成 API（§6-4）から再生成できる（データ損失なし）。
+
+### 6-4. GAS registry 再構成 API（Phase 4）
+
+`Admin_rebuildRegistryFromLogical_`（`gas/adminMigrations.gs`）が標準フォルダ `01_forms`/`02_questions`/`03_dashboards` を走査し、**type はフォルダ位置で確定**（JSON に kind を埋めない）、各 `.json` を folder＋ファイル名で再登録して Script Properties registry を作り直す。registry 喪失・不整合の復旧、コピー先の初回解決ゲート（§6-5）に使う。
+
+### 6-5. プロジェクトコピー＝物理全消去→論理再解決（Phase 5）
+
+§5-4 のアップロードセルと同じ考え方を**エンティティ参照・spreadsheet・印刷様式**にも広げ、コピーは idMap remap をやめて「**物理 ID を全消去・論理（`*Path`）を温存・コピー先で再解決**」へ転換した。
+
+- **コピー時（コピー元で実行）**: `StdFolders_rewireEntityRefsInJson_` がエンティティ参照（`formId`/`questionId`/`childFormId`）を空にし `*Path` を温存。`StdFolders_rewireFormFile_` は `settings.spreadsheetId` / `standardPrintTemplateUrl` / カード `templateUrl` も物理消去し各 `*Path` を温存（いずれも `gas/standardFoldersCopy.gs`）。コピー元 fileId を残すとコピー先がコピー元（別プロジェクトの生存 fileId）を指す事故になるため必ず消す。idMap は「コピー対象に含まれたか」（再解決可能か）の判定だけに使う。
+- **コピー先 初回解決ゲート（コピー先で実行）**: `StdFolders_importMapping_`（`gas/standardFolders.gs`）がコピー由来ドキュメント（`sourceRootId` 付き）の取り込み時に、① `Admin_rebuildRegistryFromLogical_` で registry を充填 → ② `Admin_reresolveAllRefsFromLogical_` で全エンティティの空/死 id を `*Path` から `StdFolders_reresolveRefsFromLogical_`（`gas/standardFoldersAlignRefs.gs`）で貼り直す。エンティティ参照は読取時の論理フォールバックが無いためここで物理を確定する（spreadsheet/印刷様式は読取/出力時にも論理フォールバックするが、ゲートでも前進補完する）。
+- **正準ビジターの拡張**: `StdFolders_forEachRef_` のゲートを「id か `*Path` の少なくとも一方を持つ」に変更し、物理を全消去され `*Path` だけ残った参照も拾えるようにした。
+
 ## まとめ（保存時に何が起きるか）
 
 | 観点 | 振る舞い | 実装 |
 |--|--|--|
-| 参照の持ち方 | id（fileId）のみ。名前（`formName`/`questionName`）は保存時に剥がす | `c8b7bed` |
-| リンク切れ復旧 | 中央辞書（論理パス `folder` ＋ 名前 → fileId）で解決。folder＋名前のパス限定を優先 | `c8b7bed` |
+| 参照の持ち方 | id（fileId）＋論理パス（`*Path`）のみ。相手の名前（`formName`/`questionName`/`childFormName`）は保存時に剥がし、**読みフォールバックも撤去**（§6-2） | `c8b7bed` / 本節 §6 |
+| リンク切れ復旧 | registry（論理パス `folder` ＋ 名前 → fileId）と home の `*Path` で解決。folder＋名前のパス限定を優先 | `c8b7bed` |
+| 論理＝正本／物理＝キャッシュ | 物理 fileId は消去可能なキャッシュ。コピー時は物理全消去→コピー先で `*Path` から再解決（§6-5）。registry は Props 最小＋IndexedDB キャッシュの二層（§6-1/§6-3） | 本節 §6 |
 | 保存時の参照追従 | 参照先へ ①〜④ 整合を部分適用し、fileId 変化を `formId`/`questionId` へ追従（remap） | `fdb2a36` |
 | 逆方向の完全再リンク | **論理パスが変わったときだけ**（remap または move/rename でゲート）登録済み全エンティティを走査し、再配置ファイルを指す全参照元の id（remap）と `*Path`（再 stamp）を追従。05 印刷様式は forms 限定で逆張り替え。04/06 は per-form/per-record のため対象外 | 本節 §1-1 / §4-4 |
 | 永続化の最小化 | `driveFileUrl` を捨て fileId から都度復元。読取は完全なエントリ。forms / questions / dashboards の 3 ストアで対称 | `2ba9816` |
@@ -181,6 +219,8 @@ forms / questions / dashboards の**エンティティ間参照**（formLink / Q
 - `gas/standardFoldersAlignRefs.gs` — 保存時の参照整合 `StdFolders_alignReferencesOnSave_`（`selfChangedHint` で本体 rename も伝播）、参照ビジター、`StdFolders_relinkRefsInFile_` / `StdFolders_refreshRefPathsInFile_`
 - `gas/standardFolders.gs` — 非エンティティ参照の統一正規化（`StdFolders_alignFileRefIntoStdFolder_` / `StdFolders_alignFolderRefIntoStdFolder_` / `StdFolders_normalizePrintTemplateRefsOnSave_` / `StdFolders_normalizeUploadCellsInResponses_`）と 05 逆方向再リンク `StdFolders_propagateTemplateRelinkToForms_`（§4）。フック元は `gas/formsStorage.gs`（フォーム保存）/ `gas/codeHandlers.gs`（レコード保存）/ `gas/driveOutput.gs`（出力時解決）
 - `gas/standardFoldersDiagnostics.gs` — 構成リンク診断レポート + 参照の恒久再リンク（`standardFolders.gs` から分離）
-- `gas/analyticsCrud.gs` — `Analytics_saveTemplate_`（保存後に参照整合を呼び出し `referenceSync` を返す）
-- `gas/adminMigrations.gs` — `Admin_backfillRegistryFolders_`（folder バックフィル）
+- `gas/analyticsCrud.gs` — `Analytics_saveTemplate_`（保存後に参照整合を呼び出し `referenceSync` を返す。保存前に `StdFolders_stripRefNames_` で相手名を剥がす）
+- `gas/standardFoldersCopy.gs` — プロジェクトコピー本体。`StdFolders_rewireEntityRefsInJson_` / `StdFolders_rewireFormFile_` が物理全消去・論理温存（§6-5）
+- `gas/adminMigrations.gs` — `Admin_backfillRegistryFolders_`（folder バックフィル）、`Admin_rebuildRegistryFromLogical_`（registry 再構成・§6-4）、`Admin_reresolveAllRefsFromLogical_`（コピー先の論理→物理 再解決・§6-5）
+- `builder/src/app/state/registryStore.js` — フロント IndexedDB registry 作業キャッシュ（§6-3）。充填フックは `dataStore.listForms` / `analyticsStore.fetchAndStore_` / `uploadWorker.reconcileEntityCache`
 - 詳細な識別モデル・同期（①〜⑥）・リンク診断/修復は [data-model.md](data-model.md)

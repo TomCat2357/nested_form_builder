@@ -27,7 +27,9 @@ export const DB_NAME = "NestedFormBuilder";
 // アップロードキュー (uploadQueue) ストアを追加。
 // v9: 開いたフォーム/ダッシュボードの履歴 (openHistory) ストアを追加。
 //     起動時に上位 N 件のレコードを先行プリフェッチする土台。
-export const DB_VERSION = 9;
+// v10: registry ストア（フロントの作業キャッシュ）を追加。Script Properties registry
+//      （{fileId, 論理パス}）のフロント側ミラー。喪失時は list API / GAS 再構成で再生成可。
+export const DB_VERSION = 10;
 export const STORE_NAMES = {
   forms: "formsCache",
   settings: "settingsStore",
@@ -35,6 +37,7 @@ export const STORE_NAMES = {
   analyticsDashboards: "analyticsDashboards",
   uploadQueue: "uploadQueue",
   openHistory: "openHistory",
+  registry: "registry",
 };
 // v5 → v6 で削除した旧ストア (onupgradeneeded で deleteObjectStore する対象)
 export const LEGACY_STORE_NAMES_V5 = [

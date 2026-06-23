@@ -337,3 +337,120 @@ test("Admin_rewriteFormTemplateBraces_: 変更が無ければ false", () => {
   const form = { schema: [{ id: "q1", type: "substitution", templateText: "{{`氏名`}}" }] };
   assert.equal(ctx.Admin_rewriteFormTemplateBraces_(form), false);
 });
+
+// ---------------------------------------------------------------------------
+// Admin_rebuildRegistryFromLogical_（registry 再構成・Phase 4）
+// ---------------------------------------------------------------------------
+
+// 物理 .json を持つインメモリフォルダツリーを組む（getFiles/getFolders は hasNext/next イテレータ）。
+function mockFile(id, name, content, trashed) {
+  return {
+    getId: () => id,
+    getName: () => name,
+    getMimeType: () => "application/json",
+    isTrashed: () => !!trashed,
+    getBlob: () => ({ getDataAsString: () => content }),
+  };
+}
+function mockFolder(name, files, subfolders, trashed) {
+  return {
+    getName: () => name,
+    isTrashed: () => !!trashed,
+    getFiles: () => { let i = 0; const a = files || []; return { hasNext: () => i < a.length, next: () => a[i++] }; },
+    getFolders: () => { let i = 0; const a = subfolders || []; return { hasNext: () => i < a.length, next: () => a[i++] }; },
+  };
+}
+
+// rebuild に必要な GAS 依存をスタブした ctx で adminMigrations.gs をロードする。
+function loadForRebuild(adapters) {
+  const ctx = {
+    console,
+    JSON,
+    Logger: { log() {} },
+    nfbErrorToString_: (e) => String((e && e.message) || e),
+    NFB_STD_MAPPING_FILE_NAME: "_nfb_mapping.json",
+    StdFolders_isJsonFile_: (f) => String(f.getName() || "").toLowerCase().endsWith(".json"),
+    Nfb_nameFromFile_: (f) => String(f.getName() || "").replace(/\.json$/i, ""),
+    StdFolders_entityAdapter_: (kind) => adapters[kind],
+  };
+  vm.createContext(ctx);
+  const filePath = path.join(__dirname, "..", "gas", "adminMigrations.gs");
+  vm.runInContext(fs.readFileSync(filePath, "utf8"), ctx, { filename: filePath });
+  return ctx;
+}
+
+test("Admin_collectEntriesUnderFolder_: フォルダ位置から folder を確定し、ネスト・trash・登録簿を除外", () => {
+  const saved = {};
+  const adapter = { nameField: "title", isValidEntityJson: (j) => Array.isArray(j.schema), saveMapping: (m) => { saved.m = m; } };
+  const ctx = loadForRebuild({ forms: adapter });
+  const leaf = mockFile("F_leaf", "子.json", JSON.stringify({ schema: [] }));
+  const sub = mockFolder("sub", [leaf], []);
+  const base = mockFolder("01_forms", [
+    mockFile("F_root", "親.json", JSON.stringify({ schema: [] })),
+    mockFile("F_map", "_nfb_mapping.json", "{}"),       // 登録簿スナップショットは除外
+    mockFile("F_bad", "壊れ.json", "{not json"),          // parse 失敗は skipped
+    mockFile("F_nonentity", "非.json", JSON.stringify({ foo: 1 })), // schema 無し → skipped
+    mockFile("F_trashed", "ゴミ.json", JSON.stringify({ schema: [] }), true), // trashed 除外
+  ], [sub]);
+
+  const newMapping = {};
+  const counts = { registered: 0, skipped: 0, errors: 0 };
+  ctx.Admin_collectEntriesUnderFolder_(base, "", adapter, newMapping, counts);
+
+  assert.equal(counts.registered, 2);
+  assert.equal(counts.skipped, 2, "壊れ + 非エンティティ");
+  // vm realm 由来オブジェクトのため deepStrictEqual は使わずフィールド照合する。
+  assert.equal(newMapping.F_root.fileId, "F_root");
+  assert.equal(newMapping.F_root.folder, "");
+  assert.equal(newMapping.F_root.title, "親");
+  assert.equal(newMapping.F_leaf.folder, "sub", "フォルダ位置から folder=sub を確定");
+  assert.equal(newMapping.F_leaf.title, "子");
+  assert.equal("F_map" in newMapping, false);
+  assert.equal("F_trashed" in newMapping, false);
+});
+
+test("Admin_rebuildRegistryFromLogical_: type をフォルダ位置で確定し 3 kind を作り直す（base 未整備は no-op）", () => {
+  const saved = { forms: null, questions: null, dashboards: null };
+  const formsBase = mockFolder("01_forms", [mockFile("F1", "A.json", JSON.stringify({ schema: [] }))], []);
+  const questionsBase = mockFolder("02_questions", [mockFile("Q1", "集計.json", JSON.stringify({ query: {} }))], []);
+  const adapters = {
+    forms: { nameField: "title", isValidEntityJson: (j) => Array.isArray(j.schema), baseFolderOrNull: () => formsBase, saveMapping: (m) => { saved.forms = m; } },
+    questions: { nameField: "name", isValidEntityJson: (j) => !!j, baseFolderOrNull: () => questionsBase, saveMapping: (m) => { saved.questions = m; } },
+    dashboards: { nameField: "name", isValidEntityJson: (j) => !!j, baseFolderOrNull: () => null, saveMapping: (m) => { saved.dashboards = m; } },
+  };
+  const ctx = loadForRebuild(adapters);
+  const result = ctx.Admin_rebuildRegistryFromLogical_();
+
+  assert.equal(result.forms.registered, 1);
+  assert.equal(result.questions.registered, 1);
+  assert.equal(result.dashboards.noBase, true, "base 未整備は no-op");
+  assert.equal(saved.forms.F1.fileId, "F1");
+  assert.equal(saved.forms.F1.title, "A");
+  assert.equal(saved.forms.F1.folder, "");
+  assert.equal(saved.questions.Q1.name, "集計");
+  assert.equal(saved.questions.Q1.folder, "");
+  assert.equal(saved.dashboards, null, "base 未整備の kind は saveMapping を呼ばない");
+});
+
+test("Admin_reresolveAllRefsFromLogical_: registry 登録済み全エンティティを kind 別に走査して再解決する", () => {
+  const ctx = {
+    console,
+    Logger: { log() {} },
+    nfbErrorToString_: (e) => String((e && e.message) || e),
+    Forms_getMapping_: () => ({ F1: { fileId: "F1" }, F2: { fileId: "F2" } }),
+    Analytics_getMapping_: (type) => (type === "questions" ? { Q1: { fileId: "Q1" } } : { D1: { fileId: "D1" } }),
+    Nfb_resolveFileIdFromEntry_: (e) => (e && e.fileId) || null,
+  };
+  const seen = [];
+  // F2 のみ書き換えあり（true）を返すスタブ。kind/fileId の組を記録する。
+  ctx.StdFolders_reresolveRefsFromLogical_ = (fileId, kind) => { seen.push(kind + ":" + fileId); return fileId === "F2"; };
+  vm.createContext(ctx);
+  const filePath = path.join(__dirname, "..", "gas", "adminMigrations.gs");
+  vm.runInContext(fs.readFileSync(filePath, "utf8"), ctx, { filename: filePath });
+
+  const res = ctx.Admin_reresolveAllRefsFromLogical_();
+  assert.deepEqual(seen.sort(), ["dashboards:D1", "forms:F1", "forms:F2", "questions:Q1"]);
+  assert.equal(res.forms, 1, "F2 のみ書き換えありとして数える");
+  assert.equal(res.questions, 0);
+  assert.equal(res.dashboards, 0);
+});

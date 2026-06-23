@@ -218,40 +218,18 @@ function Forms_resolveFormFileOrNull_(fileId, formId, entry, driveFileUrl) {
   });
 }
 
-// フォルダ込みフォーム名（"フォルダ/サブ/葉"）を、その物理フォルダ「直下のみ」で葉名一致解決する。
-// 別フォルダの同名へ波及しないようパス厳密（非再帰）。フォルダ込みでない / 物理未解決は null。
-function Forms_findFileByQualifiedName_(qualifiedName) {
-  var norm = Forms_normalizeFolderPath_(qualifiedName);
-  if (!norm || norm.indexOf("/") === -1) return null;
-  var segs = norm.split("/");
-  var leaf = segs.pop();
-  var folder = FormsDrive_lookupFolderForPath_(segs.join("/"));
-  if (!folder) return null;
-  var targets = {};
-  targets[leaf + ".json"] = true;
-  targets[Forms_normalizeFormTitle_(leaf) + ".json"] = true;
-  var files = folder.getFiles();
-  while (files.hasNext()) {
-    var f = files.next();
-    if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
-    if (!StdFolders_isJsonFile_(f)) continue;
-    if (targets[f.getName()]) return f;
-  }
-  return null;
-}
-
 /**
- * 壊れた Form 参照（クエスチョンの formId）を解決する。ref = { formId, formName }。
+ * 壊れた Form 参照（クエスチョンの formId）を解決する。ref = { formId }（名前は持たない）。
  *   1) id（＝fileId）で解決。マッピング登録があればその fileId、無ければ formId 自体を
  *      fileId とみなして直接開く（コピー直後でマッピング未構築のケースを救済）。
- *   2) 標準フォルダ 01_forms（サブフォルダ含む）を「ファイル名（formName + ".json"）」で探す。
+ *   2) 中央辞書（registry）の論理パス folder + title アンカーで物理ファイルを引き当て直す。
+ * 旧 ref.formName による名前フォールバックは撤去（論理＝正本／物理＝キャッシュへの一本化）。
  * 戻り: { ok:true, form, formId, relinked, matchedBy }。見つからなければ form:null。
  */
 function Forms_resolveFormRef_(ref) {
   return nfbSafeCall_(function() {
     ref = ref || {};
     var wantId = ref.formId ? String(ref.formId) : "";
-    var wantName = (typeof ref.formName === "string") ? ref.formName : "";
     var mapping = Forms_getMapping_();
 
     var entry = wantId ? (mapping[wantId] || null) : null;
@@ -297,32 +275,6 @@ function Forms_resolveFormRef_(ref) {
         if (foundR) {
           var fmR = Forms_adoptFormFile_(foundR, mapping);
           if (fmR) return { ok: true, form: fmR, formId: fmR.id, relinked: true, matchedBy: "registry" };
-        }
-      }
-    }
-
-    // 3) 名前フォールバック（旧 ref.formName を渡す呼び出し・旧データ救済の後方互換）。
-    if (wantName) {
-      var base = FormsDrive_baseFolderOrNull_();
-      if (base) {
-        // 2a) フォルダ込み名（"フォルダ/サブ/葉"）→ その物理フォルダ直下で葉名一致（パス厳密）。
-        //     解けなければ再帰探索へは降りず、別フォルダ同名への誤マッチを避ける。
-        if (Forms_normalizeFolderPath_(wantName).indexOf("/") !== -1) {
-          var foundQ = Forms_findFileByQualifiedName_(wantName);
-          if (foundQ) {
-            var fmQ = Forms_adoptFormFile_(foundQ, mapping);
-            if (fmQ) return { ok: true, form: fmQ, formId: fmQ.id, relinked: true, matchedBy: "path" };
-          }
-          return { ok: true, form: null };
-        }
-        // 2b) バレ名 → ファイル名で再帰探索（従来互換）。
-        var targets = {};
-        targets[wantName + ".json"] = true;
-        targets[Forms_normalizeFormTitle_(wantName) + ".json"] = true;
-        var found = Forms_findFileByNamesRecursive_(base, targets);
-        if (found) {
-          var fm2 = Forms_adoptFormFile_(found, mapping);
-          if (fm2) return { ok: true, form: fm2, formId: fm2.id, relinked: true, matchedBy: "name" };
         }
       }
     }

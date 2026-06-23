@@ -41,6 +41,7 @@ import {
   toUploadPayload,
   applyRefRemapToPayload,
 } from "./uploadQueue.js";
+import { registryStore } from "./registryStore.js";
 import {
   setUploadUploading,
   setUploadPending,
@@ -162,9 +163,32 @@ const uploadByType = async (job) => {
   throw new Error(`unknown entityType: ${job.entityType}`);
 };
 
+// entityType（form/question/dashboard）→ registry kind（forms/questions/dashboards）。
+const REGISTRY_KIND_BY_ENTITY = { form: "forms", question: "questions", dashboard: "dashboards" };
+
+// 保存ジョブ完了（local_ → 実 fileId 確定）時に registry 作業キャッシュへ実 fileId を upsert する
+// （非ブロッキング・fail-safe）。forms のラベルは settings.formTitle、analytics は name。
+const upsertRegistryForSaved = (entityType, savedEntity) => {
+  if (!savedEntity || !savedEntity.id) return;
+  const kind = REGISTRY_KIND_BY_ENTITY[entityType];
+  if (!kind) return;
+  const name = entityType === "form"
+    ? ((savedEntity.settings && savedEntity.settings.formTitle) || "")
+    : (savedEntity.name || "");
+  registryStore
+    .upsert({
+      fileId: savedEntity.id,
+      name,
+      folder: typeof savedEntity.folder === "string" ? savedEntity.folder : "",
+      driveFileUrl: savedEntity.driveFileUrl || "",
+    }, kind)
+    .catch(() => {});
+};
+
 // 成功したエンティティ自身のキャッシュ/状態を実 ID へ確定する。
 const reconcileEntityCache = async (entityType, tempId, savedEntity) => {
   if (!savedEntity) return;
+  upsertRegistryForSaved(entityType, savedEntity);
   if (entityType === "form") {
     if (formReconciler) {
       await formReconciler(tempId, savedEntity);

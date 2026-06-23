@@ -16,36 +16,53 @@ function nfbHasOwnKeys_(obj) {
 //   kind="questions"  → Q→Form（query.gui.formId/formPath + query.formSources[].formId/formPath）
 //   kind="dashboards" → D→Q（cards[].questionId/questionPath）
 //   kind="forms"      → form→childForm（schema 内 formLink の childFormId/childFormPath）
-// visit には { holder, idKey, pathKey, targetKind } を渡す（targetKind ＝ 参照先エンティティ種別。
-// StdFolders_qualifiedPathForId_ の第 1 引数に使う）。id が truthy の参照のみ visit する。
+// visit には { holder, idKey, pathKey, nameKey, targetKind } を渡す（targetKind ＝ 参照先エンティティ種別。
+// StdFolders_qualifiedPathForId_ の第 1 引数に使う。nameKey ＝ 撤去対象の旧「相手の名前」キー）。
+// 物理 id か論理パス（*Path）の少なくとも一方を持つ参照を visit する（コピーで物理を全消去し *Path だけが
+// 残った参照も拾えるよう、id だけでなく pathKey でもゲートする）。
 function StdFolders_forEachRef_(json, kind, visit) {
   if (!json) return;
   if (kind === "questions") {
     var query = json.query;
     if (!query || typeof query !== "object") return;
-    if (query.gui && typeof query.gui === "object" && query.gui.formId) {
-      visit({ holder: query.gui, idKey: "formId", pathKey: "formPath", targetKind: "forms" });
+    if (query.gui && typeof query.gui === "object" && (query.gui.formId || query.gui.formPath)) {
+      visit({ holder: query.gui, idKey: "formId", pathKey: "formPath", nameKey: "formName", targetKind: "forms" });
     }
     if (Array.isArray(query.formSources)) {
       for (var i = 0; i < query.formSources.length; i++) {
         var src = query.formSources[i];
-        if (src && src.formId) visit({ holder: src, idKey: "formId", pathKey: "formPath", targetKind: "forms" });
+        if (src && (src.formId || src.formPath)) visit({ holder: src, idKey: "formId", pathKey: "formPath", nameKey: "formName", targetKind: "forms" });
       }
     }
   } else if (kind === "dashboards") {
     if (Array.isArray(json.cards)) {
       for (var c = 0; c < json.cards.length; c++) {
         var card = json.cards[c];
-        if (card && card.questionId) visit({ holder: card, idKey: "questionId", pathKey: "questionPath", targetKind: "questions" });
+        if (card && (card.questionId || card.questionPath)) visit({ holder: card, idKey: "questionId", pathKey: "questionPath", nameKey: "questionName", targetKind: "questions" });
       }
     }
   } else if (kind === "forms") {
     StdFolders_walkFields_(json.schema, function(field) {
-      if (field && field.type === "formLink" && field.childFormId) {
-        visit({ holder: field, idKey: "childFormId", pathKey: "childFormPath", targetKind: "forms" });
+      if (field && field.type === "formLink" && (field.childFormId || field.childFormPath)) {
+        visit({ holder: field, idKey: "childFormId", pathKey: "childFormPath", nameKey: "childFormName", targetKind: "forms" });
       }
     });
   }
+}
+
+// 参照ホルダーから旧「相手の名前」キー（formName / questionName / childFormName）を剥取する。
+// 名前の二重持ちは撤去済（復旧は registry の folder+title/name アンカーと home の *Path に一本化）だが、
+// 旧フロント／旧データが残骸を載せてくることがあるため、保存前にサーバ側でも確定的に剥がす。
+// 剥がしたら true。id を持たない（=visit されない）参照は対象外。
+function StdFolders_stripRefNames_(json, kind) {
+  var changed = false;
+  StdFolders_forEachRef_(json, kind, function(ref) {
+    if (ref.holder && Object.prototype.hasOwnProperty.call(ref.holder, ref.nameKey)) {
+      delete ref.holder[ref.nameKey];
+      changed = true;
+    }
+  });
+  return changed;
 }
 
 // 参照種別ごとに {id, path}（path＝冗長保存した論理パス、無ければ ""）の組を集める。
@@ -302,4 +319,86 @@ function StdFolders_alignReferencesOnSave_(kind, savedFileId, selfChangedHint) {
     result.error = nfbErrorToString_(err);
   }
   return result;
+}
+
+// ===========================================================================
+// コピー先 初回解決ゲート: 論理パス（*Path）から物理（fileId / URL）を再解決する。
+// プロジェクトコピーは物理を全消去するため（standardFoldersCopy.gs）、コピー先では
+// Admin_rebuildRegistryFromLogical_ で registry を充填した後、各エンティティの参照を
+// *Path から貼り直す（エンティティ参照は読取時の論理フォールバックが無いためここで確定する）。
+// 物理が生存していれば触らない（physical-first・冪等）。
+// ===========================================================================
+
+// 印刷様式 URL（urlKey）が空/死で *Path（pathKey）があれば、05_report_templates から再解決して URL を貼り直す。
+// 物理が生存していれば no-op。書き換えたら true。
+function StdFolders_reresolveTemplateUrlFromPath_(holder, urlKey, pathKey) {
+  if (!holder) return false;
+  var path = holder[pathKey];
+  if (typeof path !== "string" || !path) return false;
+  var url = holder[urlKey];
+  if (typeof url === "string" && url) {
+    var parsed = Forms_parseGoogleDriveUrl_(url);
+    var id = (parsed && parsed.type === "file") ? parsed.id : "";
+    if (id && StdFolders_isFileIdAlive_(id)) return false;   // 物理生存 → 触らない
+  }
+  var fileId = StdFolders_resolvePathToFileId_("report_templates", path);
+  if (!fileId) return false;
+  try {
+    holder[urlKey] = DriveApp.getFileById(fileId).getUrl();
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+// forms の非エンティティ物理参照（spreadsheet / 印刷様式）を *Path から再解決する。書き換えたら true。
+function StdFolders_reresolveFormPhysicalFromLogical_(json) {
+  if (!json || !json.settings) return false;
+  var changed = false;
+  var s = json.settings;
+  // spreadsheet: 物理（spreadsheetId）が空/死なら spreadsheetPath（04_spreadsheets 配下の論理）から再解決。
+  if (typeof s.spreadsheetPath === "string" && s.spreadsheetPath) {
+    var ssId = Model_normalizeSpreadsheetId_(s.spreadsheetId);
+    if (!ssId || !StdFolders_isFileIdAlive_(ssId)) {
+      var ssFileId = StdFolders_resolveSpreadsheetPathToFileId_(s.spreadsheetPath);
+      if (ssFileId && ssFileId !== ssId) { s.spreadsheetId = ssFileId; changed = true; }
+    }
+  }
+  // 標準印刷様式（フォームレベル）。
+  if (StdFolders_reresolveTemplateUrlFromPath_(s, "standardPrintTemplateUrl", "standardPrintTemplatePath")) changed = true;
+  // field 個別の印刷様式。
+  StdFolders_walkFields_(json.schema, function(field) {
+    if (field && field.printTemplateAction) {
+      if (StdFolders_reresolveTemplateUrlFromPath_(field.printTemplateAction, "templateUrl", "templatePath")) changed = true;
+    }
+  });
+  return changed;
+}
+
+// fileId の 1 エンティティについて、エンティティ参照（Q→Form / D→Q / form→childForm）の空/死 id を
+// *Path（pathKey）から再解決し、forms は spreadsheet / 印刷様式 の物理も再解決して書き戻す。書き換えたら true。
+function StdFolders_reresolveRefsFromLogical_(fileId, kind) {
+  if (!fileId) return false;
+  var changed = false;
+  try {
+    var read = Nfb_readJsonFileById_(fileId);
+    if (!read || !read.file) return false;
+    var file = read.file;
+    var json = read.json;
+    StdFolders_forEachRef_(json, kind, function(ref) {
+      var curId = ref.holder[ref.idKey];
+      if (curId && StdFolders_isFileIdAlive_(curId)) return;   // 物理生存 → 触らない
+      var path = ref.holder[ref.pathKey];
+      if (typeof path !== "string" || !path) return;
+      var adapter = StdFolders_entityAdapter_(ref.targetKind);
+      if (!adapter.baseFolderOrNull()) return;
+      var newId = StdFolders_recoverRefByPath_(adapter, curId || "", path);
+      if (newId && newId !== curId) { ref.holder[ref.idKey] = newId; changed = true; }
+    });
+    if (kind === "forms" && StdFolders_reresolveFormPhysicalFromLogical_(json)) changed = true;
+    if (changed) Nfb_writeJsonToFile_(file, json);
+  } catch (err) {
+    Logger.log("[StdFolders_reresolveRefsFromLogical_] " + fileId + " (" + kind + "): " + nfbErrorToString_(err));
+  }
+  return changed;
 }

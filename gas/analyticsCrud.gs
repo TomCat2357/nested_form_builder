@@ -57,20 +57,21 @@ function Analytics_listTemplates_(type, options) {
 // 論理側（mapping）が指す物理ファイルを解決する。
 //   1) fileId が生存（非ゴミ箱）→ そのファイル。
 //   2) fileId 不在 → 中央辞書の論理パス folder + 名前で、まず <folder>/<name>.json をパス限定で探す
-//        （同名異フォルダの誤解決を防ぐ）。見つからなければ名前でツリー全体を探す。
-//        探索名は entry.name（キャッシュ名）優先、無ければ id 自体（旧 ULID をファイル名にしていた救済）。
+//        （同名異フォルダの誤解決を防ぐ）。見つからなければ名前（entry.name＝registry の自分のファイル名
+//        アンカー）でツリー全体を探す。
 //   見つからなければ null（呼び出し側でエラー化）。
 function Analytics_resolveItemFileOrNull_(type, fileId, id, entry, mapping) {
   // 多段解決の本体は SharedCrud_resolveEntityFileOrNull_（sharedEntityCrud.gs）に集約。
   // analytics 固有の差分（name をアンカー名に使う / resolver では URL 救済しない＝save 側で別途実施 /
-  // type 別の Drive ツリー探索 / id 名フォールバックあり）を opts で注入する。
+  // type 別の Drive ツリー探索）を opts で注入する。id 由来の名前フォールバックは撤去
+  // （論理＝正本／物理＝キャッシュへの一本化。復旧は registry の folder+name アンカーに一本化）。
   return SharedCrud_resolveEntityFileOrNull_(fileId, {
     name: (entry && typeof entry.name === "string") ? entry.name : "",
     folder: (entry && typeof entry.folder === "string") ? entry.folder : null,
     driveFileUrl: "",
     lookupFolderForPath: function(path) { return AnalyticsDrive_lookupFolderForPath_(type, path); },
     findInTree: function(name) { return AnalyticsDrive_findFileByNameInTree_(type, name); },
-    idFallbackName: id ? Nfb_nameFromFileName_(id) : "",
+    idFallbackName: "",
   });
 }
 
@@ -221,6 +222,10 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     normalizedTemplate.name = uniqueName;
 
     var fileName = uniqueName + ".json";
+    // 旧「相手の名前」（formSources[].formName / cards[].questionName）残骸を保存前にサーバ側で剥取
+    // （フロント剥取の二重防御。復旧は registry の folder+name アンカーと *Path に一本化）。
+    try { StdFolders_stripRefNames_(normalizedTemplate, type); }
+    catch (errStrip) { Logger.log("[Analytics_saveTemplate_] stripRefNames failed: " + nfbErrorToString_(errStrip)); }
     // 参照（Q→Form / D→Q）に論理パスを冗長保存（stamp）する。リンク切れ時の復旧アンカー。
     // 解決は中央辞書に依存するため、try で囲み失敗しても保存は継続する。
     try { StdFolders_stampRefPaths_(normalizedTemplate, type); }

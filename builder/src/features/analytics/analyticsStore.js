@@ -10,6 +10,7 @@ import { deepClone } from "../../core/schema.js";
 import { genLocalId, isLocalId } from "../../core/ids.js";
 import { enqueueOpJob, deleteJobsForLocalId, deleteOpJobsForFolderPrefix } from "../../app/state/uploadQueue.js";
 import { kickUploadWorker, enqueueEntitySave } from "../../app/state/uploadWorker.js";
+import { registryStore } from "../../app/state/registryStore.js";
 import {
   normalizeFolderPath,
   isUnderFolder,
@@ -521,6 +522,9 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     const all = serverAll.map((s) => (pendingById.has(s.id) ? pendingById.get(s.id) : s));
     for (const [id, item] of pendingById) if (!serverIds.has(id)) all.unshift(item);
     await cache.saveAll(all, { stampSyncTime: true });
+    // registry 作業キャッシュをサーバ確定の一覧（serverAll＝実 fileId のみ）で充填／更新する
+    // （非ブロッキング・fail-safe）。kind は many（"questions" | "dashboards"）。
+    registryStore.fillFromList(many, serverAll, { stampSyncTime: true }).catch(() => {});
     return filterArchived_(all, includeArchived);
   }
 

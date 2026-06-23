@@ -14,6 +14,7 @@ import {
 } from "./recordsMemoryStore.js";
 import { buildUploadRecordsForSync } from "./syncUploadPlan.js";
 import { getFormsFromCache } from "./formsCache.js";
+import { registryStore } from "./registryStore.js";
 import { evaluateCacheForRecords } from "./cachePolicy.js";
 import {
   getEntry as getEntryFromGas,
@@ -93,6 +94,20 @@ export const dataStore = {
     const forms = ensureArray(result.forms);
     const loadFailures = ensureArray(result.loadFailures);
     const folders = ensureArray(result.folders);
+    // registry 作業キャッシュ（フロント）をサーバ確定の一覧で充填／更新する（非ブロッキング・fail-safe）。
+    // forms のラベルは settings.formTitle なので registry の name へ移す。
+    registryStore
+      .fillFromList(
+        "forms",
+        forms.map((form) => ({
+          fileId: form.id,
+          name: (form.settings && form.settings.formTitle) || "",
+          folder: typeof form.folder === "string" ? form.folder : "",
+          driveFileUrl: form.driveFileUrl || "",
+        })),
+        { stampSyncTime: true }
+      )
+      .catch(() => {});
     return {
       forms: forms.map((form) => ensureDisplayInfo(form)),
       loadFailures,

@@ -316,6 +316,9 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
       schemaVersion: form.schemaVersion || 1,
     };
 
+    // formLink の旧「相手の名前」childFormName 残骸を保存前にサーバ側で剥取（childFormPath が復旧アンカー）。
+    try { StdFolders_stripRefNames_(formWithTimestamp, "forms"); }
+    catch (errStrip) { Logger.log("[Forms_saveForm_] stripRefNames failed: " + nfbErrorToString_(errStrip)); }
     // formLink の childFormPath を中央辞書から導出して冗長保存（stamp）する。リンク切れ時の復旧アンカー。
     try { StdFolders_stampRefPaths_(formWithTimestamp, "forms"); }
     catch (errStamp) { Logger.log("[Forms_saveForm_] stampRefPaths failed: " + nfbErrorToString_(errStamp)); }

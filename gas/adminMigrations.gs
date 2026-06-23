@@ -691,6 +691,113 @@ function Admin_backfillRefPaths_() {
   return result;
 }
 
+// ============================================================================
+// § registry 再構成（論理パスから Script Properties registry を作り直す）
+//   標準フォルダ 01_forms / 02_questions / 03_dashboards を走査し、type は「フォルダ位置」で
+//   確定（JSON に kind を埋めない）。各 .json を { fileId(物理), folder＋名前(論理) } で
+//   再登録し、各 kind の Script Properties mapping を作り直す。
+//   用途: registry 喪失/不整合の復旧、プロジェクトコピー先での初回解決ゲート（Phase 5）。
+//   非エンティティ JSON（_nfb_mapping.json 等）と、kind 妥当性チェックに通らない json は除外。
+// ============================================================================
+
+// base 配下を再帰走査し、各 .json エンティティを newMapping[fileId] = { fileId, [nameField], folder } で集める。
+// relPath は base からの相対論理パス（base 直下は ""）。trashed と _nfb_mapping.json は除外。
+function Admin_collectEntriesUnderFolder_(folder, relPath, adapter, newMapping, counts) {
+  if (!folder) return;
+  var files = folder.getFiles();
+  while (files.hasNext()) {
+    var f = files.next();
+    try {
+      if (typeof f.isTrashed === "function" && f.isTrashed()) continue;
+      if (!StdFolders_isJsonFile_(f)) continue;
+      if (f.getName() === NFB_STD_MAPPING_FILE_NAME) continue; // 登録簿スナップショット自体は除外
+      var json;
+      try { json = JSON.parse(f.getBlob().getDataAsString()); }
+      catch (eParse) { counts.skipped++; continue; }
+      if (!adapter.isValidEntityJson(json)) { counts.skipped++; continue; }
+      var fileId = f.getId();
+      var entry = { fileId: fileId, folder: relPath };
+      entry[adapter.nameField] = Nfb_nameFromFile_(f);
+      newMapping[fileId] = entry;
+      counts.registered++;
+    } catch (eFile) {
+      Logger.log("[Admin_collectEntriesUnderFolder_] " + nfbErrorToString_(eFile));
+      counts.errors++;
+    }
+  }
+  var subs = folder.getFolders();
+  while (subs.hasNext()) {
+    var sub = subs.next();
+    if (typeof sub.isTrashed === "function" && sub.isTrashed()) continue;
+    var childRel = relPath ? (relPath + "/" + sub.getName()) : sub.getName();
+    Admin_collectEntriesUnderFolder_(sub, childRel, adapter, newMapping, counts);
+  }
+}
+
+// 1 kind の registry を物理フォルダ走査から作り直す。base 未整備なら skipped:true で no-op。
+function Admin_rebuildRegistryForKind_(kind) {
+  var adapter = StdFolders_entityAdapter_(kind);
+  var base = adapter.baseFolderOrNull();
+  if (!base) return { registered: 0, skipped: 0, errors: 0, noBase: true };
+  var counts = { registered: 0, skipped: 0, errors: 0 };
+  var newMapping = {};
+  Admin_collectEntriesUnderFolder_(base, "", adapter, newMapping, counts);
+  adapter.saveMapping(newMapping);
+  return counts;
+}
+
+/**
+ * forms / questions / dashboards の registry（Script Properties mapping）を、標準フォルダ配下の
+ * 物理 .json から作り直す。type はフォルダ位置（01_/02_/03_）で確定。
+ * 既存 mapping は新しい走査結果で「置き換える」（死んだ fileId エントリは落ちる）。
+ * @return {{forms:Object, questions:Object, dashboards:Object}}
+ */
+function Admin_rebuildRegistryFromLogical_() {
+  var result = {
+    forms: Admin_rebuildRegistryForKind_("forms"),
+    questions: Admin_rebuildRegistryForKind_("questions"),
+    dashboards: Admin_rebuildRegistryForKind_("dashboards"),
+  };
+  Logger.log("[rebuild-registry] forms=" + JSON.stringify(result.forms)
+    + " questions=" + JSON.stringify(result.questions)
+    + " dashboards=" + JSON.stringify(result.dashboards));
+  return result;
+}
+
+/**
+ * コピー先 初回解決ゲートの後段。registry（Script Properties mapping）に登録済みの全エンティティを走査し、
+ * 物理を全消去されたコピー直後の参照（エンティティ id / spreadsheet / 印刷様式）を *Path から再解決して
+ * 物理を貼り直す。エンティティ参照は読取時の論理フォールバックが無いためここで確定する。
+ * Admin_rebuildRegistryFromLogical_ の後に呼ぶ前提（registry が充填済み＝論理パスがローカル fileId へ解ける）。
+ * @return {{forms:number, questions:number, dashboards:number}} 書き換えた件数
+ */
+function Admin_reresolveAllRefsFromLogical_() {
+  var result = { forms: 0, questions: 0, dashboards: 0 };
+  var kinds = [
+    ["forms", Forms_getMapping_()],
+    ["questions", Analytics_getMapping_("questions")],
+    ["dashboards", Analytics_getMapping_("dashboards")]
+  ];
+  for (var ki = 0; ki < kinds.length; ki++) {
+    var kind = kinds[ki][0];
+    var mapping = kinds[ki][1];
+    var n = 0;
+    for (var id in mapping) {
+      if (!mapping.hasOwnProperty(id)) continue;
+      var fileId = Nfb_resolveFileIdFromEntry_(mapping[id]);
+      if (!fileId) continue;
+      try {
+        if (StdFolders_reresolveRefsFromLogical_(fileId, kind)) n++;
+      } catch (e) {
+        Logger.log("[reresolve-refs] " + kind + " " + fileId + ": " + nfbErrorToString_(e));
+      }
+    }
+    result[kind] = n;
+  }
+  Logger.log("[reresolve-refs] forms=" + result.forms + " questions=" + result.questions + " dashboards=" + result.dashboards);
+  return result;
+}
+
 if (typeof module !== "undefined") {
   module.exports = {
     Admin_rewriteNfbUdfsInExpressionString_: Admin_rewriteNfbUdfsInExpressionString_,
@@ -703,5 +810,9 @@ if (typeof module !== "undefined") {
     Admin_backfillFolderInMapping_: Admin_backfillFolderInMapping_,
     Admin_backfillRegistryFolders_: Admin_backfillRegistryFolders_,
     Admin_backfillRefPaths_: Admin_backfillRefPaths_,
+    Admin_collectEntriesUnderFolder_: Admin_collectEntriesUnderFolder_,
+    Admin_rebuildRegistryForKind_: Admin_rebuildRegistryForKind_,
+    Admin_rebuildRegistryFromLogical_: Admin_rebuildRegistryFromLogical_,
+    Admin_reresolveAllRefsFromLogical_: Admin_reresolveAllRefsFromLogical_,
   };
 }

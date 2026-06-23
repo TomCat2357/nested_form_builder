@@ -359,34 +359,33 @@ function StdFolders_clearUploadPhysicalInCell_(raw) {
   return { changed: true, value: JSON.stringify(parsed) };
 }
 
-// idMap（旧fileId→{newFileId,newUrl}）を使い、エンティティ間参照（Q→Form / D→Q / Form→子Form）を
-// 保存時整合と同じ正準ビジター StdFolders_forEachRef_ で巡回して再配線する。参照種別の列挙を 1 箇所
-// （forEachRef）に集約することで、コピー側と保存時整合のドリフト（種別の取りこぼし）を防ぐ。
-//   - idMap にヒット → 直接 id（idKey）を新 fileId へ張り替え。論理パス（pathKey）は相対構造が
-//     同一なので据え置き（コピー先でもそのまま有効）。
-//   - ミス（コピー対象外） → 直接 id を空にする（コピー元へは残さない＝論理パス優先）。論理パス
-//     （pathKey）は復旧アンカーとして保持し、未解決として数える。
-// 戻り値: 未解決（コピー対象外を指していた）参照の件数。
+// エンティティ間参照（Q→Form / D→Q / Form→子Form）の物理 ID を「全消去」し、論理パス（*Path）を
+// 復旧アンカーとして温存する。保存時整合と同じ正準ビジター StdFolders_forEachRef_ で巡回し、種別の
+// 取りこぼしを防ぐ。物理＝消去可能なキャッシュ／論理＝耐久的な正本、の方針に従い、コピー時は物理を
+// 一切引き継がず、コピー先で *Path から再解決させる（Admin_rebuildRegistryFromLogical_ ゲート →
+// Admin_reresolveAllRefsFromLogical_）。コピー元 fileId を残すとコピー先がコピー元を指す事故になるため
+// 必ずクリアする。idMap は「コピー対象に含まれたか」の判定だけに使う（含まれない＝コピー先で再解決
+// 不能なので未解決として数える）。戻り値: 未解決（コピー対象外を指していた）参照の件数。
 function StdFolders_rewireEntityRefsInJson_(json, kind, idMap) {
   var unresolved = 0;
   StdFolders_forEachRef_(json, kind, function(ref) {
     var oldId = ref.holder[ref.idKey];
     if (!oldId) return;
-    if (idMap[oldId]) {
-      ref.holder[ref.idKey] = idMap[oldId].newFileId;   // path は据え置き（相対構造が同一）
-    } else {
-      ref.holder[ref.idKey] = "";                       // 論理パス優先・コピー元へは残さない（path は保持）
-      unresolved++;
-    }
+    ref.holder[ref.idKey] = "";                 // 物理全消去・*Path は温存（コピー先で論理再解決）
+    if (!idMap[oldId]) unresolved++;            // コピー対象外＝コピー先に実体が無く再解決できない
   });
   return unresolved;
 }
 
 // フォーム定義ファイルのリンク再配線（id は埋め込まない＝id ＝ fileId）。
-// URL/フォルダ系（spreadsheet / 印刷様式 / アップロード先 / 外部アクション）と、エンティティ参照
-// （formLink の childFormId）を同一の 1 回 read/write で再配線する。
-// 戻り: { cleared, unresolved }。cleared=コピー対象外で空にした URL リンク数、
-//        unresolved=コピー対象外を指していた子フォームリンク数（論理パスは保持）。
+// 物理＝キャッシュ／論理＝正本の方針に従い、コピー時はエンティティ参照・spreadsheet・印刷様式の
+// 物理（id/URL）を「全消去」し、各 *Path（spreadsheetPath / standardPrintTemplatePath / templatePath /
+// childFormPath）を温存する。コピー先で Admin_rebuildRegistryFromLogical_ ゲート → 再解決で物理を貼り直す。
+// コピー元 fileId を残すとコピー先がコピー元（別プロジェクト・生存 fileId）を指す事故になるため必ずクリアする。
+// 外部アクション送信先（externalAction.url）だけは論理パスを持たない外部 /exec なので、従来どおり
+// copyExternalActions OFF のときに限りクリアする（cleared に計上）。folderIdMap は現状未使用（後方互換で受ける）。
+// 戻り: { cleared, unresolved }。cleared=外部アクション URL を空にした数（論理復旧不能で真に失われる）。
+//        unresolved=コピー対象外（idMap 未収載）を指していた子フォーム参照数（*Path は保持）。
 function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActions) {
   var cleared = 0;
   var unresolved = 0;
@@ -395,32 +394,22 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActi
     var file = read.file;
     var json = read.json;
 
-    // form → spreadsheet（直接 ID/URL リンクのみ idMap で再マップ／対象外はクリア）。
-    // 論理パス（settings.spreadsheetPath）はここでは一切触らない＝相対パスがコピー先の同構造へ
-    // そのまま追従する（コピー先 04_spreadsheets の同パスへ再解決される。除外コピーで未解決なら空）。
+    // form → spreadsheet: 物理（spreadsheetId）を消去し論理（spreadsheetPath）を温存。
+    // コピー先で spreadsheetPath が 04_spreadsheets の同構造へ再解決される（読取/保存時の物理優先→論理）。
     if (json.settings && json.settings.spreadsheetId) {
-      var ss = StdFolders_remapFileUrl_(json.settings.spreadsheetId, idMap);
-      json.settings.spreadsheetId = ss.value;
-      if (ss.status === "cleared") cleared++;
+      json.settings.spreadsheetId = "";
     }
 
-    // form → 標準印刷様式 Doc（フォームレベル settings.standardPrintTemplateUrl）。
-    // field 個別の printTemplateAction.templateUrl は下の walkFields_ で remap されるが、フォーム全体の
-    // 標準様式 URL は対象外だった（コピー元プロジェクトの Doc を指し続ける漏れ）。spreadsheetId と同型に
-    // idMap で再マップし、対象外はクリアする。論理パス（standardPrintTemplatePath）は据え置き。
+    // form → 標準印刷様式 Doc（フォームレベル）: 物理 URL を消去し論理（standardPrintTemplatePath）を温存。
     if (json.settings && json.settings.standardPrintTemplateUrl) {
-      var tplTop = StdFolders_remapFileUrl_(json.settings.standardPrintTemplateUrl, idMap);
-      json.settings.standardPrintTemplateUrl = tplTop.value;
-      if (tplTop.status === "cleared") cleared++;
+      json.settings.standardPrintTemplateUrl = "";
     }
 
     // schema フィールド内の URL/フォルダ系リンク
     StdFolders_walkFields_(json.schema, function(field) {
-      // 印刷様式テンプレート
+      // 印刷様式テンプレート（field 個別）: 物理 URL を消去し論理（templatePath）を温存。
       if (field.printTemplateAction && field.printTemplateAction.templateUrl) {
-        var t = StdFolders_remapFileUrl_(field.printTemplateAction.templateUrl, idMap);
-        field.printTemplateAction.templateUrl = t.value;
-        if (t.status === "cleared") cleared++;
+        field.printTemplateAction.templateUrl = "";
       }
       // アップロード先は常に自プロジェクトの 06_upload_files 直下（ユーザー指定不可）になったため、
       // フォーム定義に driveRootFolderUrl は持たない（旧フォームに残っていても無視・次回保存で除去）。
@@ -433,7 +422,7 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActi
       }
     });
 
-    // エンティティ参照（formLink の childFormId）を idMap で再配線（保存時整合と同じビジターを再利用）。
+    // エンティティ参照（formLink の childFormId）を物理全消去（*Path 温存・コピー先で再解決）。
     unresolved += StdFolders_rewireEntityRefsInJson_(json, "forms", idMap);
 
     Nfb_writeJsonToFile_(file, json);
