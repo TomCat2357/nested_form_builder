@@ -352,74 +352,91 @@ const installSpreadsheetShims = (ctx) => {
     }
     return value;
   };
+  // 物理優先解決の生存判定（本体は standardFolders.gs）。既定では非空 id を生存扱い。
+  ctx.StdFolders_isFileIdAlive_ = (id) => !!id;
 };
 
-test("Nfb_resolveFormSheetTarget_: spreadsheetPath を優先解決し、空 path は spreadsheetId にフォールバック", () => {
+test("Nfb_resolveFormSheetTarget_: 物理優先（spreadsheetId 生存）→ 論理（spreadsheetPath）フォールバック", () => {
   const ctx = loadFormsSaveContext();
   installSpreadsheetShims(ctx);
   ctx.StdFolders_resolveSpreadsheetPathToFileId_ = (p) => (p === "売上/集計" ? "SS_FROM_PATH" : "");
 
-  // path 設定あり → path 優先。
+  // 物理空（排他で path 編集時は spreadsheetId 空）→ 論理パスで解決。
   ctx.Nfb_resetFormRequestCache_();
   ctx.Nfb_getFormCached_ = () => ({ settings: { spreadsheetPath: "売上/集計", spreadsheetId: "", sheetName: "Data" } });
   let t = ctx.Nfb_resolveFormSheetTarget_("F1");
   assert.equal(t.spreadsheetId, "SS_FROM_PATH");
   assert.equal(t.sheetName, "Data");
 
-  // path 設定あり・未解決 → null（空リンク扱い＝コピー元へ繋がない）。
+  // 物理空・論理も未解決 → null（空リンク扱い＝コピー元へ繋がない）。
   ctx.Nfb_resetFormRequestCache_();
   ctx.Nfb_getFormCached_ = () => ({ settings: { spreadsheetPath: "無い/パス", spreadsheetId: "" } });
   assert.equal(ctx.Nfb_resolveFormSheetTarget_("F2"), null);
 
-  // path 空 → 直接 spreadsheetId（URL/ID）を使う。
+  // 物理（spreadsheetId）が生存 → 物理優先で採用。
   ctx.Nfb_resetFormRequestCache_();
   ctx.Nfb_getFormCached_ = () => ({ settings: { spreadsheetPath: "", spreadsheetId: SS_URL, sheetName: "Data" } });
   t = ctx.Nfb_resolveFormSheetTarget_("F3");
   assert.equal(t.spreadsheetId, "SS_TEST_0001");
+
+  // 物理が死亡していれば論理パスへフォールバック（二重持ち・物理優先の核心）。
+  ctx.StdFolders_isFileIdAlive_ = () => false;
+  ctx.Nfb_resetFormRequestCache_();
+  ctx.Nfb_getFormCached_ = () => ({ settings: { spreadsheetPath: "売上/集計", spreadsheetId: SS_URL, sheetName: "Data" } });
+  t = ctx.Nfb_resolveFormSheetTarget_("F4");
+  assert.equal(t.spreadsheetId, "SS_FROM_PATH", "物理死亡時は論理パスで解決");
 });
 
-test("Forms_resolveSpreadsheetSetting_: spreadsheetPath が解決できれば既存シートにリンク（自動作成しない・直接 id はクリア）", () => {
+test("Forms_resolveSpreadsheetSetting_: spreadsheetPath で既存シートに解決でき、物理URL・論理パスを両方保持（自動作成しない）", () => {
   const ctx = loadFormsSaveContext();
   installSpreadsheetShims(ctx);
-  ctx.StdFolders_resolveSpreadsheetPathToFileId_ = (p) => (p === "売上/集計" ? "SS_EXIST" : "");
+  // align が物理優先→論理フォールバックで既存シートに解決したとみなす（排他で物理は空入力）。
+  ctx.StdFolders_alignFileRefIntoStdFolder_ = (key, id, path) => {
+    assert.equal(key, "spreadsheets");
+    if (path === "売上/集計") {
+      return { fileId: "SS_EXIST", url: "https://docs.google.com/spreadsheets/d/SS_EXIST/edit", path: "売上/集計", status: "recoveredByPath" };
+    }
+    return { fileId: "", url: "", path: path, status: "unresolved" };
+  };
   ctx.Forms_createSpreadsheetAtPath_ = () => { throw new Error("should not auto-create"); };
 
   const r = ctx.Forms_resolveSpreadsheetSetting_(
-    { spreadsheetPath: "売上/集計", spreadsheetId: "https://docs.google.com/spreadsheets/d/OLD/edit" },
+    { spreadsheetPath: "売上/集計", spreadsheetId: "" },
     { settings: {} },
   );
   assert.equal(r.created, false);
   assert.equal(r.spreadsheetId, "SS_EXIST");
-  assert.equal(r.settings.spreadsheetPath, "売上/集計", "論理パスは保持");
-  assert.equal(r.settings.spreadsheetId, "", "直接 id はクリア（排他）");
+  assert.equal(r.settings.spreadsheetPath, "売上/集計", "論理パスを保持");
+  assert.equal(r.settings.spreadsheetId, "https://docs.google.com/spreadsheets/d/SS_EXIST/edit", "物理URLも保持（二重持ち）");
 });
 
-test("Forms_resolveSpreadsheetSetting_: spreadsheetPath が未解決ならそのパスに新規作成する", () => {
+test("Forms_resolveSpreadsheetSetting_: spreadsheetPath が align で未解決ならそのパスに新規作成し、物理・論理を両方保持", () => {
   const ctx = loadFormsSaveContext();
   installSpreadsheetShims(ctx);
-  ctx.StdFolders_resolveSpreadsheetPathToFileId_ = () => ""; // 未解決
+  ctx.StdFolders_alignFileRefIntoStdFolder_ = () => ({ fileId: "", url: "", path: "", status: "unresolved" });
   let createdAt = null;
   ctx.Forms_createSpreadsheetAtPath_ = (p) => { createdAt = p; return { spreadsheetId: "SS_NEW", spreadsheetUrl: "https://x/SS_NEW" }; };
 
-  const r = ctx.Forms_resolveSpreadsheetSetting_({ spreadsheetPath: "新規/シートA" }, { settings: {} });
+  const r = ctx.Forms_resolveSpreadsheetSetting_({ spreadsheetPath: "新規/シートA", spreadsheetId: "" }, { settings: {} });
   assert.equal(createdAt, "新規/シートA", "そのパスへ作成する");
   assert.equal(r.created, true);
   assert.equal(r.spreadsheetId, "SS_NEW");
   assert.equal(r.settings.spreadsheetPath, "新規/シートA");
-  assert.equal(r.settings.spreadsheetId, "");
+  assert.equal(r.settings.spreadsheetId, "https://x/SS_NEW", "作成シートの物理URLを保持（二重持ち）");
 });
 
-test("Forms_resolveSpreadsheetSetting_: spreadsheetPath 空＋直接 URL は従来どおりリンク（spreadsheetPath を空に正規化）", () => {
+test("Forms_resolveSpreadsheetSetting_: 直接 spreadsheetId は align degrade（noop）なら物理のみでリンク（論理は空）", () => {
   const ctx = loadFormsSaveContext();
   installSpreadsheetShims(ctx);
+  // 既定 align は noop（standardFolders 未ロード）。04 未解決の degrade として物理 URL でリンクする。
   const r = ctx.Forms_resolveSpreadsheetSetting_({ spreadsheetPath: "", spreadsheetId: SS_URL }, { settings: {} });
   assert.equal(r.created, false);
   assert.equal(r.spreadsheetId, "SS_TEST_0001");
-  assert.equal(r.settings.spreadsheetPath, "", "排他のため空に正規化");
-  assert.equal(r.settings.spreadsheetId, SS_URL);
+  assert.equal(r.settings.spreadsheetPath, "", "解決不能時は論理パス空");
+  assert.equal(r.settings.spreadsheetId, SS_URL, "物理 URL でリンク");
 });
 
-test("Forms_resolveSpreadsheetSetting_: 直接 spreadsheetId は 04_spreadsheets へ寄せて spreadsheetPath を正本化し直接 id をクリアする", () => {
+test("Forms_resolveSpreadsheetSetting_: 直接 spreadsheetId は align で 04_spreadsheets へ寄せ、物理URLと論理パスを両方保持（id はクリアしない）", () => {
   const ctx = loadFormsSaveContext();
   installSpreadsheetShims(ctx);
   // align が 04 配下へ寄せ（外部=copy/内部=move）論理パスを返したとみなす。
@@ -436,5 +453,5 @@ test("Forms_resolveSpreadsheetSetting_: 直接 spreadsheetId は 04_spreadsheets
   assert.equal(r.created, false);
   assert.equal(r.spreadsheetId, "SS_TEST_0001");
   assert.equal(r.settings.spreadsheetPath, "回答/見積", "論理パスを正本化");
-  assert.equal(r.settings.spreadsheetId, "", "直接 id はクリア（排他）");
+  assert.equal(r.settings.spreadsheetId, "https://docs.google.com/spreadsheets/d/SS_TEST_0001/edit", "物理URLも保持（クリアしない＝二重持ち）");
 });

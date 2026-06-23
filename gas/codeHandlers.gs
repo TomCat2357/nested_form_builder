@@ -145,10 +145,17 @@ function Nfb_purgeKey_(formId) {
 }
 
 // フォーム設定から records シートを開く。未設定/開けない場合は null。
+// 物理優先（spreadsheetId 生存）→ 論理（spreadsheetPath）フォールバック（Nfb_resolveFormSheetTarget_ と対称）。
 function Nfb_openFormSheet_(form) {
-  var spreadsheetId = Model_normalizeSpreadsheetId_(form && form.settings ? form.settings.spreadsheetId : "");
+  if (!form || !form.settings) return null;
+  var spreadsheetId = Model_normalizeSpreadsheetId_(form.settings.spreadsheetId);
+  if (spreadsheetId && !StdFolders_isFileIdAlive_(spreadsheetId)) spreadsheetId = "";
+  if (!spreadsheetId) {
+    var path = (typeof form.settings.spreadsheetPath === "string") ? form.settings.spreadsheetPath.trim() : "";
+    if (path) spreadsheetId = Nfb_resolveSpreadsheetPathCached_(path);
+  }
   if (!spreadsheetId) return null;
-  var sheetName = (form && form.settings && form.settings.sheetName) ? form.settings.sheetName : NFB_DEFAULT_SHEET_NAME;
+  var sheetName = (form.settings.sheetName) ? form.settings.sheetName : NFB_DEFAULT_SHEET_NAME;
   try {
     return SpreadsheetApp.openById(spreadsheetId).getSheetByName(sheetName);
   } catch (err) {

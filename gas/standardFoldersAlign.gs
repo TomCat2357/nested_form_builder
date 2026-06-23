@@ -130,7 +130,9 @@ function StdFolders_alignEntry_(adapter, mapping, id, dryRun, ctx) {
         }
         if (entry.folder !== P) { entry.folder = P; ctx.dirty = true; if (ctx.pathChanged) ctx.pathChanged[F] = true; }
         var fname = liveFile ? Nfb_nameFromFile_(liveFile) : "";
-        if (fname && entry[adapter.nameField] !== fname) { entry[adapter.nameField] = fname; ctx.dirty = true; }
+        // 名前（葉名）も論理パス "folder/名前" の一部。フォルダ不変でも名前変化は論理パス変化なので
+        // pathChanged に積み、参照元の *Path アンカーを逆方向再リンクで再 stamp させる。
+        if (fname && entry[adapter.nameField] !== fname) { entry[adapter.nameField] = fname; ctx.dirty = true; if (ctx.pathChanged) ctx.pathChanged[F] = true; }
       }
       return "aligned";
     }

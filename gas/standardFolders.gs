@@ -735,9 +735,11 @@ function StdFolders_alignFolderRefIntoStdFolder_(key, folderUrlOrId, logicalPath
   return out;
 }
 
-// レコード保存時: fileUpload セル（{files, folderUrl, folderPath}）のフォルダを 06_upload_files へ寄せ、
-// 物理 folderUrl と論理 folderPath を両方更新する。外部コピー時は files[].driveFileId/Url を新 id へ remap。
-// 対象でない値（非 JSON / フォルダ参照なし）や解決不能はそのまま返す。
+// レコード保存時: fileUpload セル（{files, folderUrl, folderName}）のフォルダを 06_upload_files へ寄せ、
+// 物理 folderUrl と論理 folderName を両方更新する（フォルダはフォルダの二重持ち）。外部コピー時は
+// files[].driveFileId/Url を新 id へ remap（ファイルはファイルの二重持ち・論理は name の葉のみ＝
+// フォルダ名をファイル論理パスに混ぜない）。folderPath は旧 normalize が書いた残骸で、読みフォール
+// バックのみ（新規書き込みせず再保存時に除去）。対象でない値（非 JSON / フォルダ参照なし）や解決不能はそのまま返す。
 function StdFolders_normalizeUploadCellValue_(rawValue) {
   if (typeof rawValue !== "string" || !rawValue) return rawValue;
   var trimmed = rawValue.trim();
@@ -747,14 +749,18 @@ function StdFolders_normalizeUploadCellValue_(rawValue) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return rawValue;
   if (!Array.isArray(obj.files)) return rawValue;  // fileUpload セルは必ず files 配列を持つ（誤検出防止）
   var folderUrl = (typeof obj.folderUrl === "string") ? obj.folderUrl : "";
-  var folderPath = (typeof obj.folderPath === "string") ? obj.folderPath : "";
-  if (!folderUrl && !folderPath) return rawValue;
+  // 論理パスは folderName（フロント serializeFileUploadValue / resolver / コピー時クリアと統一）。
+  // 旧 normalize が書いた folderPath があれば読みフォールバックに使う（新規には書かない）。
+  var folderName = (typeof obj.folderName === "string") ? obj.folderName : "";
+  if (!folderName && typeof obj.folderPath === "string") folderName = obj.folderPath;
+  if (!folderUrl && !folderName) return rawValue;
 
-  var aligned = StdFolders_alignFolderRefIntoStdFolder_("upload", folderUrl, folderPath);
+  var aligned = StdFolders_alignFolderRefIntoStdFolder_("upload", folderUrl, folderName);
   if (aligned.status === "unresolved" || aligned.status === "noop") return rawValue;
 
   obj.folderUrl = aligned.url;
-  obj.folderPath = aligned.path;
+  obj.folderName = aligned.path;                    // 06 直下のフラットなフォルダ名（＝folderName）
+  if ("folderPath" in obj) delete obj.folderPath;   // 旧残骸を除去し folderName へ一本化（冗長性削減）
   if (aligned.idMap && Array.isArray(obj.files)) {
     for (var i = 0; i < obj.files.length; i++) {
       var fe = obj.files[i];
@@ -775,7 +781,7 @@ function StdFolders_normalizeUploadCellsInResponses_(responses) {
     if (!Object.prototype.hasOwnProperty.call(responses, k)) continue;
     var v = responses[k];
     if (typeof v !== "string") continue;
-    if (v.indexOf("folderUrl") === -1 && v.indexOf("folderPath") === -1) continue;  // 安いプリフィルタ
+    if (v.indexOf("folderUrl") === -1 && v.indexOf("folderName") === -1 && v.indexOf("folderPath") === -1) continue;  // 安いプリフィルタ
     responses[k] = StdFolders_normalizeUploadCellValue_(v);
   }
 }

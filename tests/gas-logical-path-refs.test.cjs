@@ -164,20 +164,41 @@ test("normalizeUploadCellValue_: 非 JSON / フォルダ参照なしはそのま
   assert.equal(gas.StdFolders_normalizeUploadCellValue_('{"files":[]}'), '{"files":[]}', "folder 参照なしは対象外");
 });
 
-test("normalizeUploadCellValue_: folderUrl/folderPath を更新し、外部コピー時は files の id を remap する", () => {
+test("normalizeUploadCellValue_: folderUrl/folderName を更新し、外部コピー時は files の id を remap する", () => {
   const gas = loadCtx();
-  gas.StdFolders_alignFolderRefIntoStdFolder_ = () => ({
-    folderId: "FD2", url: "FURL_FD2", path: "rec/新", status: "copiedExternal", idMap: { OLD1: "NEW1" },
-  });
+  let seenLogical = null;
+  gas.StdFolders_alignFolderRefIntoStdFolder_ = (key, url, logical) => {
+    seenLogical = logical;
+    return { folderId: "FD2", url: "FURL_FD2", path: "rec/新", status: "copiedExternal", idMap: { OLD1: "NEW1" } };
+  };
   const cell = JSON.stringify({
     files: [{ name: "a.pdf", driveFileId: "OLD1", driveFileUrl: "https://drive.google.com/file/d/OLD1/view" }],
     folderUrl: "https://drive.google.com/drive/folders/EXT",
+    folderName: "rec/旧",
   });
   const out = JSON.parse(gas.StdFolders_normalizeUploadCellValue_(cell));
+  assert.equal(seenLogical, "rec/旧", "論理入力は folderName を渡す（フォルダはフォルダ）");
   assert.equal(out.folderUrl, "FURL_FD2");
-  assert.equal(out.folderPath, "rec/新");
+  assert.equal(out.folderName, "rec/新", "論理は folderName で更新");
+  assert.equal("folderPath" in out, false, "旧 folderPath は新規に書かない");
+  // ファイルはファイルとして id を追従（論理は name の葉のみ・フォルダ名を混ぜない）。
   assert.equal(out.files[0].driveFileId, "NEW1", "コピー先 id へ remap");
   assert.equal(out.files[0].driveFileUrl, "https://drive.google.com/file/d/NEW1/view");
+  assert.equal(out.files[0].name, "a.pdf", "ファイルの論理は名前のみ");
+});
+
+test("normalizeUploadCellValue_: 旧 folderPath だけのセルも後方互換で論理入力に使い folderName へ移行する", () => {
+  const gas = loadCtx();
+  let seenLogical = null;
+  gas.StdFolders_alignFolderRefIntoStdFolder_ = (key, url, logical) => {
+    seenLogical = logical;
+    return { folderId: "FD", url: "U", path: "rec/x", status: "aligned", idMap: null };
+  };
+  const cell = JSON.stringify({ files: [{ name: "a.pdf", driveFileId: "" }], folderUrl: "", folderPath: "rec/旧" });
+  const out = JSON.parse(gas.StdFolders_normalizeUploadCellValue_(cell));
+  assert.equal(seenLogical, "rec/旧", "folderPath を論理入力にフォールバック（後方互換）");
+  assert.equal(out.folderName, "rec/x", "folderName へ移行");
+  assert.equal("folderPath" in out, false, "旧 folderPath は除去（folderName へ一本化）");
 });
 
 test("normalizeUploadCellValue_: align が noop/unresolved ならセルを据え置く", () => {

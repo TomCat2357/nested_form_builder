@@ -121,7 +121,14 @@ function Admin_migrateAllFormsMetaDatetimesToSheetDates_() {
     try {
       var form = Forms_getForm_(formId);
       if (!form || !form.settings) continue;
-      var spreadsheetId = form.settings.spreadsheetId;
+      // 物理優先（spreadsheetId 正規化・生存）→ 論理（spreadsheetPath）フォールバック。
+      // 二重持ちでは spreadsheetId が URL 形のことがあるため必ず normalize する（openById は素 id 必須）。
+      var spreadsheetId = Model_normalizeSpreadsheetId_(form.settings.spreadsheetId);
+      if (spreadsheetId && !StdFolders_isFileIdAlive_(spreadsheetId)) spreadsheetId = "";
+      if (!spreadsheetId) {
+        var ssPath = (typeof form.settings.spreadsheetPath === "string") ? form.settings.spreadsheetPath.trim() : "";
+        if (ssPath) spreadsheetId = Nfb_resolveSpreadsheetPathCached_(ssPath);
+      }
       var sheetName = form.settings.sheetName || NFB_DEFAULT_SHEET_NAME;
       if (!spreadsheetId) continue;
 

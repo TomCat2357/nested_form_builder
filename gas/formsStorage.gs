@@ -90,10 +90,13 @@ function Forms_alignSpreadsheetIntoStd_(spreadsheetId) {
 }
 
 /**
- * スプレッドシート設定を解決（空/フォルダ指定は新規作成）。
- * 解決優先順: settings.spreadsheetPath（04_spreadsheets 配下の論理パス）が非空ならそれを優先。
- * 直接 ID/URL（spreadsheetId）とは排他にし、保存形は「論理パスのみ（spreadsheetId="")」または
- * 「直接 ID/URL のみ（spreadsheetPath="")」のどちらか一方に正規化する（実行時の取り違え防止）。
+ * スプレッドシート設定を解決（空/フォルダ指定は新規作成）。物理(spreadsheetId)＋論理(spreadsheetPath)の
+ * 二重持ち・物理優先。印刷様式(05)・エンティティ参照と同じ StdFolders_alignFileRefIntoStdFolder_
+ * ("spreadsheets", …) で物理優先→論理フォールバック→04 へ配置（外部=copy/内部=move）し、解決後は
+ * spreadsheetId（物理 URL）と spreadsheetPath（論理）の両方を永続化する。
+ * フロントはピッカー編集時に他方をクリアする（排他・後勝ち：AdminFormEditorPage）。そのためパスを
+ * 編集した保存では物理が空＝論理が勝ち（新パスへリンク/作成）、無編集の保存では物理が残るので物理優先で
+ * 自己修復（外部移動/コピーを 04 へ寄せ直し論理パスを更新）する。
  * @param {Object} settings
  * @param {Object} form
  * @return {{ settings: Object, created: boolean, spreadsheetId: string|null, spreadsheetUrl: string|null }}
@@ -104,42 +107,87 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
   var path = (typeof nextSettings.spreadsheetPath === "string") ? nextSettings.spreadsheetPath.trim() : "";
   var rawInput = String(nextSettings.spreadsheetId || "").trim();
 
-  // 論理パス指定（04_spreadsheets 配下）が最優先。直接 ID/URL 欄はクリアして論理パスを正にする。
-  if (path) {
-    nextSettings.spreadsheetPath = path;
-    nextSettings.spreadsheetId = "";
-    var resolvedId = StdFolders_resolveSpreadsheetPathToFileId_(path);
-    if (!resolvedId) {
-      // 解決できない論理パス（手入力 / 選択後に移動・削除）→ そのパスに新規作成する（確定方針）。
-      var createdAtPath = Forms_createSpreadsheetAtPath_(path);
-      if (createdAtPath) {
-        return {
-          settings: nextSettings,
-          created: true,
-          spreadsheetId: createdAtPath.spreadsheetId,
-          spreadsheetUrl: createdAtPath.spreadsheetUrl
-        };
-      }
-      // 作成も不可（ルート未解決等）→ パスは残すが未リンク（空）。
-      return { settings: nextSettings, created: false, spreadsheetId: null, spreadsheetUrl: null };
+  // 物理入力（spreadsheetId 欄）の解釈。フォルダ指定なら、そのフォルダに新規シートを作成してから物理 id
+  // として扱う（folder-input 互換）。既存シート/URL ならアクセス検証して物理 id にする。
+  var physicalId = "";
+  var createdFromInput = false;
+  if (rawInput) {
+    var parsed = Forms_parseSpreadsheetTarget_(rawInput);
+    if (!parsed.type) {
+      throw new Error("無効なスプレッドシートURL/IDです");
     }
-    // 既存シートにリンク（自動作成しない）。
+    if (parsed.type === "folder") {
+      var createdFolder = Forms_createSpreadsheet_(Forms_buildSpreadsheetName_(form), parsed.id);
+      physicalId = createdFolder.spreadsheetId;
+      createdFromInput = true;
+    } else {
+      try {
+        SpreadsheetApp.openById(parsed.id);
+      } catch (err) {
+        throw new Error("スプレッドシートにアクセスできません: " + nfbErrorToString_(err));
+      }
+      physicalId = parsed.id;
+    }
+  }
+
+  // 物理優先 → 論理（spreadsheetPath）フォールバック → 04 へ配置（外部=copy/内部=move）。物理・論理を両方返す。
+  // フロントの排他（後勝ち）により、パス編集時は physicalId が空＝論理が勝ち、無編集保存時は物理優先で自己修復。
+  var aligned = StdFolders_alignFileRefIntoStdFolder_("spreadsheets", physicalId, path);
+  if (aligned.fileId && aligned.status !== "unresolved" && aligned.status !== "noop") {
+    nextSettings.spreadsheetId = aligned.url;       // 物理（URL 形で永続化。実行時に id 抽出）
+    nextSettings.spreadsheetPath = aligned.path;    // 論理（04 配下の相対パス）
     return {
       settings: nextSettings,
-      created: false,
-      spreadsheetId: resolvedId,
-      spreadsheetUrl: "https://docs.google.com/spreadsheets/d/" + resolvedId + "/edit"
+      created: createdFromInput,
+      spreadsheetId: aligned.fileId,
+      spreadsheetUrl: aligned.url
     };
   }
 
-  // ここから先は論理パス未指定。直接 ID/URL 経路（排他のため spreadsheetPath は空に正規化）。
-  nextSettings.spreadsheetPath = "";
+  // ここから未解決（物理 dead/空 かつ 論理も解決不能）。
 
-  if (!rawInput) {
-    // 自動整理が ON で明示指定が無い場合は 04_spreadsheets へ作成する。
+  // 1) 論理パス指定あり → そのパスに新規作成（確定方針）。
+  if (path) {
+    var createdAtPath = Forms_createSpreadsheetAtPath_(path);
+    if (createdAtPath) {
+      nextSettings.spreadsheetId = createdAtPath.spreadsheetUrl;
+      nextSettings.spreadsheetPath = path;
+      return {
+        settings: nextSettings,
+        created: true,
+        spreadsheetId: createdAtPath.spreadsheetId,
+        spreadsheetUrl: createdAtPath.spreadsheetUrl
+      };
+    }
+    // 作成も不可（04 ルート未解決等）→ パスは残す。物理入力があれば degrade で残し、無ければ未リンク。
+    nextSettings.spreadsheetPath = path;
+    if (physicalId) {
+      var degradeUrl = "https://docs.google.com/spreadsheets/d/" + physicalId + "/edit";
+      nextSettings.spreadsheetId = degradeUrl;
+      return { settings: nextSettings, created: createdFromInput, spreadsheetId: physicalId, spreadsheetUrl: degradeUrl };
+    }
+    nextSettings.spreadsheetId = "";
+    return { settings: nextSettings, created: false, spreadsheetId: null, spreadsheetUrl: null };
+  }
+
+  // 2) 論理パス未指定 & 物理入力なし → 04_spreadsheets 直下へ新規作成し、align で両フィールドを正規化。
+  if (!physicalId) {
     var stdSpreadsheetFolderId = StdFolders_autoFileFolderIdOrNull_("spreadsheets");
     var createdRoot = Forms_createSpreadsheet_(Forms_buildSpreadsheetName_(form), stdSpreadsheetFolderId);
+    var alignedRoot = StdFolders_alignFileRefIntoStdFolder_("spreadsheets", createdRoot.spreadsheetId, "");
+    if (alignedRoot.fileId && alignedRoot.status !== "unresolved" && alignedRoot.status !== "noop") {
+      nextSettings.spreadsheetId = alignedRoot.url;
+      nextSettings.spreadsheetPath = alignedRoot.path;
+      return {
+        settings: nextSettings,
+        created: true,
+        spreadsheetId: alignedRoot.fileId,
+        spreadsheetUrl: alignedRoot.url
+      };
+    }
+    // 04 未解決 degrade → 物理 URL のみ。
     nextSettings.spreadsheetId = createdRoot.spreadsheetUrl;
+    nextSettings.spreadsheetPath = "";
     return {
       settings: nextSettings,
       created: true,
@@ -148,60 +196,15 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
     };
   }
 
-  var parsed = Forms_parseSpreadsheetTarget_(rawInput);
-  if (!parsed.type) {
-    throw new Error("無効なスプレッドシートURL/IDです");
-  }
-
-  if (parsed.type === "folder") {
-    var createdFolder = Forms_createSpreadsheet_(Forms_buildSpreadsheetName_(form), parsed.id);
-    // 指定フォルダが外部/別フォルダでも 04_spreadsheets へ寄せて論理パス化する（外部=copy/内部=move）。
-    var alignedNew = Forms_alignSpreadsheetIntoStd_(createdFolder.spreadsheetId);
-    if (alignedNew) {
-      nextSettings.spreadsheetPath = alignedNew.path;
-      nextSettings.spreadsheetId = "";
-      return {
-        settings: nextSettings,
-        created: true,
-        spreadsheetId: alignedNew.spreadsheetId,
-        spreadsheetUrl: alignedNew.spreadsheetUrl
-      };
-    }
-    nextSettings.spreadsheetId = createdFolder.spreadsheetUrl;
-    return {
-      settings: nextSettings,
-      created: true,
-      spreadsheetId: createdFolder.spreadsheetId,
-      spreadsheetUrl: createdFolder.spreadsheetUrl
-    };
-  }
-
-  // spreadsheet — 既存シートを 04_spreadsheets へ寄せて論理パス（spreadsheetPath）を正本化する（外部=copy/内部=move）。
-  try {
-    SpreadsheetApp.openById(parsed.id);
-  } catch (err) {
-    throw new Error("スプレッドシートにアクセスできません: " + nfbErrorToString_(err));
-  }
-
-  var alignedSheet = Forms_alignSpreadsheetIntoStd_(parsed.id);
-  if (alignedSheet) {
-    nextSettings.spreadsheetPath = alignedSheet.path;
-    nextSettings.spreadsheetId = "";
-    return {
-      settings: nextSettings,
-      created: false,
-      spreadsheetId: alignedSheet.spreadsheetId,
-      spreadsheetUrl: alignedSheet.spreadsheetUrl
-    };
-  }
-
-  // 取り込めない（root 未解決等）→ 従来どおり直接 ID/URL でリンク（degrade）。
-  nextSettings.spreadsheetId = rawInput;
+  // 3) 物理入力はあるが align も未解決（04 ルート未解決の degrade）→ 直接 ID/URL でリンク（物理のみ）。
+  var fallbackUrl = "https://docs.google.com/spreadsheets/d/" + physicalId + "/edit";
+  nextSettings.spreadsheetId = fallbackUrl;
+  nextSettings.spreadsheetPath = "";
   return {
     settings: nextSettings,
-    created: false,
-    spreadsheetId: parsed.id,
-    spreadsheetUrl: "https://docs.google.com/spreadsheets/d/" + parsed.id + "/edit"
+    created: createdFromInput,
+    spreadsheetId: physicalId,
+    spreadsheetUrl: fallbackUrl
   };
 }
 

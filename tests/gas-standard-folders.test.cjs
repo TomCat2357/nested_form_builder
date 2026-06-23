@@ -467,6 +467,37 @@ test("StdFolders_rewireFormFile_: settings.spreadsheetPath は触らず保持（
   assert.equal(after.settings.spreadsheetId, "", "空の直接 id は触らない");
 });
 
+test("StdFolders_rewireFormFile_: フォームレベル settings.standardPrintTemplateUrl を idMap で remap（未収載はクリア）", () => {
+  const gas = loadGasContext();
+  // 収載済み: 新 url へ remap。standardPrintTemplatePath は据え置き。
+  const kept = {
+    settings: {
+      standardPrintTemplateUrl: "https://docs.google.com/document/d/TPL_OLD/edit",
+      standardPrintTemplatePath: "05/標準様式",
+    },
+    schema: [{ id: "t1", type: "text", label: "名前" }],
+  };
+  const stateKept = installSingleFile(gas, "FORM_TPL_KEPT", JSON.stringify(kept));
+  const idMap = { TPL_OLD: { newFileId: "TPL_NEW", newUrl: "https://docs.google.com/document/d/TPL_NEW/edit" } };
+  const resKept = gas.StdFolders_rewireFormFile_("FORM_TPL_KEPT", idMap, {}, false);
+  assert.equal(resKept.cleared, 0, "収載済みはクリアしない");
+  const afterKept = JSON.parse(stateKept.content);
+  assert.equal(afterKept.settings.standardPrintTemplateUrl, "https://docs.google.com/document/d/TPL_NEW/edit", "新 url へ remap");
+  assert.equal(afterKept.settings.standardPrintTemplatePath, "05/標準様式", "論理パスは据え置き");
+
+  // 未収載（コピー対象外）: 空にしてコピー元の様式 Doc を指さない（cleared を数える）。
+  const missing = {
+    settings: { standardPrintTemplateUrl: "https://docs.google.com/document/d/TPL_EXT/edit", standardPrintTemplatePath: "05/外部様式" },
+    schema: [{ id: "t1", type: "text", label: "名前" }],
+  };
+  const stateMissing = installSingleFile(gas, "FORM_TPL_MISSING", JSON.stringify(missing));
+  const resMissing = gas.StdFolders_rewireFormFile_("FORM_TPL_MISSING", {}, {}, false);
+  assert.equal(resMissing.cleared, 1, "コピー対象外の様式 URL はクリアして数える");
+  const afterMissing = JSON.parse(stateMissing.content);
+  assert.equal(afterMissing.settings.standardPrintTemplateUrl, "", "コピー元の様式 Doc を指さない");
+  assert.equal(afterMissing.settings.standardPrintTemplatePath, "05/外部様式", "論理パスは復旧アンカーとして保持");
+});
+
 // ---------------------------------------------------------------------------
 // 04_spreadsheets 配下の論理パス ⇄ fileId 解決
 // ---------------------------------------------------------------------------

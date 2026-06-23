@@ -16,6 +16,9 @@ function loadResolverContext() {
       var m = s.match(/\/d\/([a-zA-Z0-9-_]+)/);
       return m ? m[1] : s;
     },
+    // 物理優先解決の生存判定（本体は standardFolders.gs）。既定では非空 id を生存扱い。
+    // 物理死亡時の論理フォールバックを試すテストは個別に差し替える。
+    StdFolders_isFileIdAlive_: (id) => !!id,
     // Forms_getForm_ は formsCrud.gs 内で再定義されるが、テストでは __forms から引く版へ載せ替える。
     __forms: {},
     __getFormCalls: {},
@@ -59,27 +62,36 @@ test("Nfb_resolveFormSheetTarget_: spreadsheetId 未設定/未解決フォーム
   assert.equal(ctx.Nfb_resolveFormSheetTarget_(""), null);
 });
 
-test("Nfb_resolveFormSheetTarget_: spreadsheetPath を優先解決（未解決は null）、空 path は spreadsheetId にフォールバック", () => {
+test("Nfb_resolveFormSheetTarget_: 物理優先（spreadsheetId 生存）→ 論理（spreadsheetPath）フォールバック", () => {
   const ctx = loadResolverContext();
   // 04_spreadsheets 配下の論理パス → fileId 解決をスタブ（standardFolders.gs は未ロード）。
   ctx.StdFolders_resolveSpreadsheetPathToFileId_ = (p) => (p === "売上/集計" ? "ss_from_path" : "");
 
-  // path 優先。
+  // A) 物理（spreadsheetId）が生存 → path より物理を優先（二重持ち・物理優先）。
+  ctx.StdFolders_isFileIdAlive_ = (id) => id === "ss_direct";
   ctx.Nfb_resetFormRequestCache_();
   ctx.__forms.f1 = { settings: { spreadsheetPath: "売上/集計", spreadsheetId: "ss_direct", sheetName: "回答" } };
   let target = ctx.Nfb_resolveFormSheetTarget_("f1");
-  assert.equal(target.spreadsheetId, "ss_from_path", "spreadsheetPath を優先");
+  assert.equal(target.spreadsheetId, "ss_direct", "物理が生存していれば物理を優先");
   assert.equal(target.sheetName, "回答");
 
-  // path 設定あり・未解決 → null（空リンク扱い）。
+  // B) 物理が死亡 → 論理パスでフォールバック解決し、物理は採用しない。
+  ctx.StdFolders_isFileIdAlive_ = () => false;
   ctx.Nfb_resetFormRequestCache_();
-  ctx.__forms.f2 = { settings: { spreadsheetPath: "無い/パス", spreadsheetId: "ss_direct" } };
-  assert.equal(ctx.Nfb_resolveFormSheetTarget_("f2"), null);
+  ctx.__forms.f2 = { settings: { spreadsheetPath: "売上/集計", spreadsheetId: "ss_dead" } };
+  assert.equal(ctx.Nfb_resolveFormSheetTarget_("f2").spreadsheetId, "ss_from_path", "物理死亡時は論理パスへフォールバック");
 
-  // path 空 → 直接 spreadsheetId。
+  // C) 物理死亡・論理も未解決 → null（空リンク扱い）。
+  ctx.StdFolders_isFileIdAlive_ = () => false;
   ctx.Nfb_resetFormRequestCache_();
-  ctx.__forms.f3 = { settings: { spreadsheetPath: "", spreadsheetId: "ss_direct" } };
-  assert.equal(ctx.Nfb_resolveFormSheetTarget_("f3").spreadsheetId, "ss_direct");
+  ctx.__forms.f3 = { settings: { spreadsheetPath: "無い/パス", spreadsheetId: "ss_dead" } };
+  assert.equal(ctx.Nfb_resolveFormSheetTarget_("f3"), null);
+
+  // D) 物理空・論理解決可能 → 論理パス。
+  ctx.StdFolders_isFileIdAlive_ = (id) => !!id;
+  ctx.Nfb_resetFormRequestCache_();
+  ctx.__forms.f4 = { settings: { spreadsheetPath: "売上/集計", spreadsheetId: "" } };
+  assert.equal(ctx.Nfb_resolveFormSheetTarget_("f4").spreadsheetId, "ss_from_path");
 });
 
 test("Nfb_getFormCached_: 同一リクエスト内は 1 回だけ Forms_getForm_ を呼ぶ", () => {

@@ -404,6 +404,16 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActi
       if (ss.status === "cleared") cleared++;
     }
 
+    // form → 標準印刷様式 Doc（フォームレベル settings.standardPrintTemplateUrl）。
+    // field 個別の printTemplateAction.templateUrl は下の walkFields_ で remap されるが、フォーム全体の
+    // 標準様式 URL は対象外だった（コピー元プロジェクトの Doc を指し続ける漏れ）。spreadsheetId と同型に
+    // idMap で再マップし、対象外はクリアする。論理パス（standardPrintTemplatePath）は据え置き。
+    if (json.settings && json.settings.standardPrintTemplateUrl) {
+      var tplTop = StdFolders_remapFileUrl_(json.settings.standardPrintTemplateUrl, idMap);
+      json.settings.standardPrintTemplateUrl = tplTop.value;
+      if (tplTop.status === "cleared") cleared++;
+    }
+
     // schema フィールド内の URL/フォルダ系リンク
     StdFolders_walkFields_(json.schema, function(field) {
       // 印刷様式テンプレート

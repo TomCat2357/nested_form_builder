@@ -99,19 +99,20 @@ function Nfb_getFormCached_(formId) {
 }
 
 // formId からレコード操作対象の { spreadsheetId, sheetName } を権威的に解決する。
-// 解決優先順: settings.spreadsheetPath（04_spreadsheets 配下の論理パス）が非空ならそれを優先解決し
-// （コピー追従できる論理パスを正とする）、無ければ従来どおり settings.spreadsheetId（直接 URL/ID）。
-// どちらも未解決/未設定なら null（呼び出し側でエラー化＝空リンク扱い）。
+// 物理優先（settings.spreadsheetId が生存していればそれ）→ 解決できなければ論理（settings.spreadsheetPath
+// ＝04_spreadsheets 配下の論理パス）でフォールバック解決する。二重持ち（Forms_resolveSpreadsheetSetting_）に
+// 対応し、物理が死んでいても（プロジェクト移動・コピー後など）論理パスで貼り直せる。論理で解決したときは
+// 次回フォーム保存で物理が更新される（前進補完）。どちらも未解決/未設定なら null（呼び出し側でエラー化）。
 function Nfb_resolveFormSheetTarget_(formId) {
   if (!formId) return null;
   var form = Nfb_getFormCached_(formId);
   if (!form || !form.settings) return null;
-  var spreadsheetId;
-  var path = (typeof form.settings.spreadsheetPath === "string") ? form.settings.spreadsheetPath.trim() : "";
-  if (path) {
-    spreadsheetId = Nfb_resolveSpreadsheetPathCached_(path);
-  } else {
-    spreadsheetId = Model_normalizeSpreadsheetId_(form.settings.spreadsheetId);
+  // 物理優先: spreadsheetId を正規化し、Drive 上で生存していれば採用。死亡/空なら論理へフォールバック。
+  var spreadsheetId = Model_normalizeSpreadsheetId_(form.settings.spreadsheetId);
+  if (spreadsheetId && !StdFolders_isFileIdAlive_(spreadsheetId)) spreadsheetId = "";
+  if (!spreadsheetId) {
+    var path = (typeof form.settings.spreadsheetPath === "string") ? form.settings.spreadsheetPath.trim() : "";
+    if (path) spreadsheetId = Nfb_resolveSpreadsheetPathCached_(path);
   }
   if (!spreadsheetId) return null;
   var sheetName = form.settings.sheetName || NFB_DEFAULT_SHEET_NAME;

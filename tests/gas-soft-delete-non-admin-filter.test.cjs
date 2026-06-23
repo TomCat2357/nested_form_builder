@@ -43,6 +43,10 @@ function loadContext({ isAdmin = false } = {}) {
     // WithScriptLock_ は codeHandlers.gs 本体が定義するため、LockService を stub する。
     NFB_DEFAULT_SHEET_NAME: "Data",
     Model_normalizeSpreadsheetId_: (v) => String(v || ""),
+    // Nfb_openFormSheet_ の物理優先解決（standardFolders.gs / formsCrud.gs は未ロードなのでスタブ）。
+    // 既定では非空 id を生存扱い＝物理 spreadsheetId をそのまま使う（従来挙動）。論理フォールバックは空。
+    StdFolders_isFileIdAlive_: (id) => !!id,
+    Nfb_resolveSpreadsheetPathCached_: () => "",
     Nfb_getDeletedRecordRetentionDays_: () => 30,
     LockService: { getScriptLock: () => ({ tryLock: () => true, releaseLock: () => {} }) },
 
