@@ -72,6 +72,54 @@ test("buildSaveQuery: 未解決 formId の formPath は空文字", () => {
   assert.deepEqual(out.query.formSources, [{ formId: "F1", alias: "data", formPath: "" }]);
 });
 
+test("buildSaveQuery: 手書き SQL（ドロップダウン未選択）でも FROM 参照から formSources を捕捉し formPath を刻む", () => {
+  const forms = [{ id: "F1", folder: "営業", settings: { formTitle: "売上" } }];
+  // selectedFormId 未選択 → sources.formSources は空。SQL 本文の FROM [売上] だけが手掛かり。
+  const out = buildSaveQuery({
+    mode: "sql",
+    sql: "SELECT * FROM [売上]",
+    sources: { formSources: [] },
+    forms,
+  });
+  assert.deepEqual(out.query.formSources, [{ formId: "F1", formPath: "営業/売上" }]);
+  assert.equal(out.query.sql, "SELECT * FROM [F1]", "保存 SQL は fileId 化される");
+});
+
+test("buildSaveQuery: 複数フォーム JOIN は全参照に formPath を付与（出現順）", () => {
+  const forms = [
+    { id: "F1", folder: "営業", settings: { formTitle: "売上" } },
+    { id: "F2", folder: "相談", settings: { formTitle: "対応一覧" } },
+  ];
+  const out = buildSaveQuery({
+    mode: "sql",
+    sql: "SELECT * FROM [売上] AS a JOIN [相談/対応一覧] AS b ON 1=1",
+    sources: { formSources: [] },
+    forms,
+  });
+  assert.deepEqual(out.query.formSources, [
+    { formId: "F1", formPath: "営業/売上" },
+    { formId: "F2", formPath: "相談/対応一覧" },
+  ]);
+});
+
+test("buildSaveQuery: 明示 source（alias:data）を温存しつつ SQL の追加参照を追記", () => {
+  const forms = [
+    { id: "F1", folder: "営業", settings: { formTitle: "売上" } },
+    { id: "F2", folder: "相談", settings: { formTitle: "対応一覧" } },
+  ];
+  // selectedFormId=F1（alias:"data"）に加え、SQL は F1 と F2 を参照。
+  const out = buildSaveQuery({
+    mode: "sql",
+    sql: "SELECT * FROM [売上] AS a JOIN [相談/対応一覧] AS b ON 1=1",
+    sources: { formSources: [{ formId: "F1", alias: "data" }] },
+    forms,
+  });
+  assert.deepEqual(out.query.formSources, [
+    { formId: "F1", alias: "data", formPath: "営業/売上" },
+    { formId: "F2", formPath: "相談/対応一覧" },
+  ]);
+});
+
 test("buildQuestionVisualization: heatmap 既定とフィールド整形", () => {
   const viz = buildQuestionVisualization({
     vizType: "bar",

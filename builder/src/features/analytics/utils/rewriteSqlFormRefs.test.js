@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   formRefsToIds,
   formRefsToNames,
+  collectFormRefIds,
   canonicalAliasToName,
   templateFormRefsToIds,
   templateFormRefsToNames,
@@ -121,6 +122,46 @@ test("往復安定: ID → 名前 → ID で元に戻る", () => {
   const names = formRefsToNames(stored, formIndex);
   const ids = formRefsToIds(names, formIndex);
   assert.equal(ids, stored);
+});
+
+// ---------------------------------------------------------------------------
+// collectFormRefIds（保存時に SQL のフォーム参照 fileId を出現順・重複なしで収集）
+// ---------------------------------------------------------------------------
+
+test("collectFormRefIds: FROM [フォーム名] の fileId を収集", () => {
+  assert.deepEqual(collectFormRefIds("SELECT * FROM [苦情データ]", formIndex), ["f_complaint"]);
+});
+
+test("collectFormRefIds: FROM/JOIN を出現順で収集", () => {
+  const out = collectFormRefIds(
+    "SELECT * FROM [苦情データ] AS a JOIN [別フォーム] AS b ON a.[x] = b.[y]",
+    formIndex,
+  );
+  assert.deepEqual(out, ["f_complaint", "f_other"]);
+});
+
+test("collectFormRefIds: 修飾付き列参照と FROM の重複は除去（1 件）", () => {
+  const out = collectFormRefIds("SELECT [苦情データ].[基本情報|区] FROM [苦情データ]", formIndex);
+  assert.deepEqual(out, ["f_complaint"]);
+});
+
+test("collectFormRefIds: フォルダ込み名・既に fileId のときも解決して収集（冪等）", () => {
+  assert.deepEqual(collectFormRefIds("SELECT * FROM [相談/対応一覧]", formIndex), ["f_in_folder"]);
+  assert.deepEqual(collectFormRefIds("SELECT * FROM [f_complaint]", formIndex), ["f_complaint"]);
+});
+
+test("collectFormRefIds: data エイリアス・未定義フォーム・リテラル/コメントは拾わない", () => {
+  const sql = [
+    "SELECT '[苦情データ]' AS lit",   // リテラル
+    "-- FROM [別フォーム]",            // 行コメント
+    "FROM [data] JOIN [存在しない] ON 1=1", // data/未定義
+  ].join("\n");
+  assert.deepEqual(collectFormRefIds(sql, formIndex), []);
+});
+
+test("collectFormRefIds: 空 / null は空配列", () => {
+  assert.deepEqual(collectFormRefIds("", formIndex), []);
+  assert.deepEqual(collectFormRefIds(null, formIndex), []);
 });
 
 test("canonicalAliasToName: GUI→SQL の FROM data_<id> が [フォーム名] になる", () => {

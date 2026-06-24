@@ -2,7 +2,7 @@
 // React state から「実行用クエリ」「保存用クエリ」「可視化定義」を組み立てる変換を
 // コンポーネントから切り出してユニットテスト可能にする。state を読まず副作用も持たない。
 
-import { formRefsToIds } from "../../features/analytics/utils/rewriteSqlFormRefs.js";
+import { formRefsToIds, collectFormRefIds } from "../../features/analytics/utils/rewriteSqlFormRefs.js";
 import { buildFormIndex, formQualifiedName } from "../../features/analytics/utils/formIdentifierResolver.js";
 import { normalizeTableStyle } from "../../features/analytics/utils/tableStyle.js";
 
@@ -55,15 +55,26 @@ export function buildSaveQuery({ mode, gui, sql, sources, forms }) {
     return { query: { mode: "gui", gui: { ...guiRest, formPath: formPathForId(gui.formId, formIndex) } } };
   }
   if (sources && sources.error) return { error: sources.error };
+  // 明示 sources（selectedFormId 由来。alias:"data" / 既定フォーム順を温存）を先頭に置き、
+  // SQL 本文に実在するフォーム参照（collectFormRefIds）で未収録の fileId を追記する。
+  // 手書き SQL（ドロップダウン未選択）でも全フォーム参照に formPath 復旧アンカーが刻まれる。
+  const explicit = ((sources && sources.formSources) || []).map(
+    ({ formName: _staleFormName, formPath: _staleFormPath, ...rest }) => rest
+  );
+  const seen = new Set(explicit.map((s) => s.formId).filter(Boolean));
+  const merged = explicit.slice();
+  for (const formId of collectFormRefIds(sql, formIndex)) {
+    if (seen.has(formId)) continue;
+    seen.add(formId);
+    merged.push({ formId });
+  }
   return {
     query: {
       mode: "sql",
-      formSources: ((sources && sources.formSources) || []).map(
-        ({ formName: _staleFormName, formPath: _staleFormPath, ...rest }) => ({
-          ...rest,
-          formPath: formPathForId(rest.formId, formIndex),
-        })
-      ),
+      formSources: merged.map((src) => ({
+        ...src,
+        formPath: formPathForId(src.formId, formIndex),
+      })),
       sql: formRefsToIds(sql, formIndex),
     },
   };

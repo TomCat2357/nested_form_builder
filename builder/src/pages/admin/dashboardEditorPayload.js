@@ -32,8 +32,10 @@ export function buildDashboardPayload({ dashboard, dashboardId, questions, now =
       folder: normalizeFolderPath(dashboard.folder),
       cards: (dashboard.cards || []).map((c) => {
         if (c.type === "message" || !c.questionId) return c;
-        const { questionName: _staleQuestionName, questionPath: _staleQuestionPath, ...rest } = c;
-        return { ...rest, questionPath: questionPathForId(c.questionId, questions) };
+        const { questionName: _staleQuestionName, questionPath: prevPath, ...rest } = c;
+        const computed = questionPathForId(c.questionId, questions);
+        // 質問が現在の一覧に無い（アーカイブ/未ロード/削除）ときは既存の論理パスを温存し、空で上書きしない。
+        return { ...rest, questionPath: computed || (typeof prevPath === "string" ? prevPath : "") };
       }),
       modifiedAt: now,
     },

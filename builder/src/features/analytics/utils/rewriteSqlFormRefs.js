@@ -93,6 +93,30 @@ export function formRefsToNames(sql, formIndex) {
 }
 
 /**
+ * 収集用: SQL 本文のテーブル参照（FROM/JOIN と `[ref].[col]` 先頭）を走査し、
+ * resolveFormRef で解決できたフォームの fileId を出現順・重複なしで返す。
+ * 置換は行わず走査だけ（mapToken は常に null を返す）。formRefsToIds と同じ
+ * 解決規則なので、保存時に SQL に実在するフォーム参照を漏れなく拾える。
+ *
+ * @param {string} sql
+ * @param {object} formIndex - buildFormIndex の戻り値
+ * @returns {string[]} 参照フォーム fileId の配列（出現順・重複なし）
+ */
+export function collectFormRefIds(sql, formIndex) {
+  const ids = [];
+  const seen = new Set();
+  rewriteRefs(sql, (ref) => {
+    const form = resolveFormRef(ref, formIndex);
+    if (form && form.id && !seen.has(form.id)) {
+      seen.add(form.id);
+      ids.push(form.id);
+    }
+    return null;
+  });
+  return ids;
+}
+
+/**
  * GUI→SQL 変換専用: compileStages が出力する canonical alias（`FROM data_<id>`）を
  * エディタ表示用の `[フォーム名]` に寄せる。手書き SQL と同じ表示規約に揃えるため、
  * まず `data_<id>` を `[<fileId>]` に正規化し、続いて formRefsToNames で名前化する。
