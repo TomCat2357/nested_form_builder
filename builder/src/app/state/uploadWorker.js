@@ -16,6 +16,7 @@ import { toErrorMessage } from "../../utils/errorMessage.js";
 import { isLocalId } from "../../core/ids.js";
 import {
   saveForm,
+  getForm,
   createFolder as createFolderInGas,
   moveItems as moveItemsInGas,
   renameFolder as renameFolderInGas,
@@ -36,6 +37,7 @@ import {
   getAllJobs,
   updateJob,
   deleteJob,
+  deleteJobsForLocalId,
   countPendingByType,
   remapLocalIdInJobs,
   toUploadPayload,
@@ -47,6 +49,7 @@ import {
   setUploadPending,
   setUploadLastError,
 } from "../../features/search/globalSyncState.js";
+import { uploadLog } from "../../utils/uploadLog.js";
 
 // ---------------------------------------------------------------------------
 // フォーム reconcile コールバック（AppDataProvider が登録）
@@ -54,6 +57,13 @@ import {
 let formReconciler = null;
 export const registerFormReconciler = (fn) => {
   formReconciler = typeof fn === "function" ? fn : null;
+};
+
+// 新規フォーム（local_…）を「破棄」したとき、React 状態と formsCache から取り除くための
+// コールバック（AppDataProvider が removeFormsState を登録）。未登録なら formsCache を直接更新。
+let formRemover = null;
+export const registerFormRemover = (fn) => {
+  formRemover = typeof fn === "function" ? fn : null;
 };
 
 // ---------------------------------------------------------------------------
@@ -93,7 +103,7 @@ let backoffTimer = null;
 
 const isOnline = () => typeof navigator === "undefined" || navigator.onLine !== false;
 
-const publishPending = async () => {
+export const publishPending = async () => {
   try {
     setUploadPending(await countPendingByType());
   } catch (_e) { /* noop */ }
@@ -107,13 +117,22 @@ const computeBackoffMs = (attempt) => {
 const TYPE_ORDER = { form: 0, question: 1, dashboard: 2 };
 
 const pickRunnableJob = async () => {
-  if (!isOnline()) return null;
+  if (!isOnline()) {
+    uploadLog.logVerbose("pick", "offline — skip", {});
+    return null;
+  }
   const all = await getAllJobs();
   const now = Date.now();
+  let blockedByDeps = 0;
+  let backoffWaiting = 0;
   const runnable = all.filter((job) => {
-    if (Array.isArray(job.dependsOnLocalIds) && job.dependsOnLocalIds.length > 0) return false;
+    if (Array.isArray(job.dependsOnLocalIds) && job.dependsOnLocalIds.length > 0) { blockedByDeps += 1; return false; }
     if (job.status === "uploading") return false;
-    if (job.status === "error") return !job.nextAttemptAt || job.nextAttemptAt <= now;
+    if (job.status === "error") {
+      const ready = !job.nextAttemptAt || job.nextAttemptAt <= now;
+      if (!ready) backoffWaiting += 1;
+      return ready;
+    }
     return job.status === "pending";
   });
   runnable.sort((a, b) => {
@@ -125,7 +144,18 @@ const pickRunnableJob = async () => {
     if (ca !== cb) return ca - cb;
     return (a.opSeq || 0) - (b.opSeq || 0);
   });
-  return runnable[0] || null;
+  const picked = runnable[0] || null;
+  if (picked) {
+    uploadLog.logVerbose("pick", "runnable", {
+      jobId: picked.jobId, entityType: picked.entityType, kind: picked.kind, status: picked.status, attempt: picked.attempt,
+    });
+  } else if (all.length > 0) {
+    // 走らせられるジョブが無いのに件数が残る＝「出続ける」状態。理由を可視化する。
+    uploadLog.logVerbose("pick", "none runnable (queue not empty)", {
+      total: all.length, blockedByDeps, backoffWaiting,
+    });
+  }
+  return picked;
 };
 
 // 操作（op）ジョブを対応する GAS 呼び出しへ振り分ける。
@@ -155,6 +185,9 @@ const uploadOp = async (job) => {
 };
 
 const uploadByType = async (job) => {
+  uploadLog.logVerbose("gas", "call", {
+    jobId: job.jobId, kind: job.kind, entityType: job.entityType, opType: job.opType, isNew: isLocalId(job.localId),
+  });
   if (job.kind === "op") return uploadOp(job);
   const payload = toUploadPayload(job);
   if (job.entityType === "form") return saveForm(payload, "auto");
@@ -285,6 +318,7 @@ const reconcile = async (job, result) => {
     referenceSync = result?.referenceSync || null;
   }
 
+  uploadLog.logVerbose("reconcile", "entity", { jobId: job.jobId, entityType: job.entityType, tempId, realId });
   if (realId !== tempId) await remapLocalIdInJobs(tempId, realId);
   await reconcileEntityCache(job.entityType, tempId, savedEntity);
   if (realId !== tempId) {
@@ -295,6 +329,7 @@ const reconcile = async (job, result) => {
 };
 
 const runJob = async (job) => {
+  uploadLog.logVerbose("run", "start", { jobId: job.jobId, entityType: job.entityType, kind: job.kind, localId: job.localId });
   await updateJob(job.jobId, { status: "uploading", lastError: null });
   setUploadUploading(1);
   try {
@@ -302,9 +337,12 @@ const runJob = async (job) => {
     await reconcile(job, result);
     await deleteJob(job.jobId);
     setUploadLastError(null);
+    uploadLog.logVerbose("run", "success", { jobId: job.jobId, entityType: job.entityType, localId: job.localId });
   } catch (err) {
     const message = String(toErrorMessage(err));
     const attempt = (job.attempt || 0) + 1;
+    // 失敗の本パスは verbose 非依存で常に出す（「なぜできなかったか」を残す）。
+    uploadLog.warn("run", "fail", { jobId: job.jobId, entityType: job.entityType, localId: job.localId, attempt, message });
     await updateJob(job.jobId, {
       status: "error",
       attempt,
@@ -391,6 +429,126 @@ export const retryNow = async () => {
   }
   setUploadLastError(null);
   void processQueue();
+};
+
+// 個別「再試行」: 指定 1 ジョブのバックオフを解除して即再開する（retryNow の単体版）。
+export const retryJob = async (jobId) => {
+  uploadLog.logVerbose("retry", "single", { jobId });
+  await updateJob(jobId, { status: "pending", attempt: 0, nextAttemptAt: null, lastError: null });
+  void processQueue();
+};
+
+// ---------------------------------------------------------------------------
+// 取り消し（リセット）
+//   - keepLocal: アップロードキューのジョブだけ削除。ローカルのデータ/キャッシュは残す。
+//   - discard:   ジョブ削除に加えてローカルの未送信内容も巻き戻す。
+//                新規(local_…) はローカルから削除、既存編集(実 fileId) はサーバ最新版へ revert。
+// uploading 中のジョブは in-flight 完了で reconcile されうるため、UI 側で操作を無効化する想定。
+// ---------------------------------------------------------------------------
+
+// 新規フォーム（local_…）をローカル状態/キャッシュから取り除く。
+const discardLocalForm = async (localId) => {
+  if (formRemover) {
+    await formRemover([localId]);
+    return;
+  }
+  // フォールバック: provider 未登録（テスト等）なら formsCache を直接更新。
+  try {
+    const { forms = [], loadFailures = [], propertyStoreMode = "", folders = [] } = await getFormsFromCache();
+    const next = forms.filter((f) => f.id !== localId);
+    await saveFormsToCache(next, loadFailures, propertyStoreMode, { folders });
+  } catch (_e) { /* noop */ }
+};
+
+// 既存編集（実 fileId）をサーバ最新版へ戻す。サーバ直フェッチで cache を上書きする
+// （analyticsStore.getById はキャッシュ優先で古い未送信版を返すため使わない）。
+const revertEntityToServer = async (entityType, realId) => {
+  if (entityType === "form") {
+    let serverForm = null;
+    try { serverForm = await getForm(realId); } catch (err) {
+      uploadLog.warn("revert", "getForm failed", { realId, message: String(toErrorMessage(err)) });
+      return;
+    }
+    if (!serverForm) return;
+    const saved = { ...serverForm, pendingUpload: false };
+    if (formReconciler) await formReconciler(realId, saved);
+    else {
+      try {
+        const { forms = [], loadFailures = [], propertyStoreMode = "", folders = [] } = await getFormsFromCache();
+        const next = forms.filter((f) => f.id !== realId);
+        next.unshift(saved);
+        await saveFormsToCache(next, loadFailures, propertyStoreMode, { folders });
+      } catch (_e) { /* noop */ }
+    }
+    return;
+  }
+  const cache = entityType === "question" ? questionCache : dashboardCache;
+  let serverEntity = null;
+  try {
+    const res = entityType === "dashboard"
+      ? await analyticsGasClient.getDashboard(realId)
+      : await analyticsGasClient.getQuestion(realId);
+    serverEntity = res?.[entityType] || null;
+  } catch (err) {
+    uploadLog.warn("revert", "getEntity failed", { entityType, realId, message: String(toErrorMessage(err)) });
+    return;
+  }
+  if (serverEntity) await cache.upsert({ ...serverEntity, pendingUpload: false });
+  else await cache.remove(realId);
+  emitAnalyticsCacheChanged(entityType);
+};
+
+// ジョブをキューから外すだけ（ローカルは残す）。
+export const cancelJobKeepLocal = async (jobId) => {
+  uploadLog.logVerbose("cancel", "keepLocal", { jobId });
+  await deleteJob(jobId);
+  await publishPending();
+};
+
+// ジョブを削除し、ローカルの未送信内容も破棄する（新規は削除 / 既存はサーバ版へ revert）。
+export const cancelJobDiscard = async (job) => {
+  if (!job) return;
+  uploadLog.logVerbose("cancel", "discard", { jobId: job.jobId, entityType: job.entityType, kind: job.kind, localId: job.localId });
+  await deleteJob(job.jobId);
+  // op ジョブはローカルへ楽観反映済みで巻き戻しが重いため、キュー除去のみ（keepLocal 相当）。
+  if (job.kind === "op") { await publishPending(); return; }
+
+  const { entityType, localId } = job;
+  await deleteJobsForLocalId(localId); // coalesce 漏れの同 localId ジョブも掃除
+  if (isLocalId(localId)) {
+    if (entityType === "form") {
+      await discardLocalForm(localId);
+    } else {
+      const cache = entityType === "question" ? questionCache : dashboardCache;
+      await cache.remove(localId);
+      emitAnalyticsCacheChanged(entityType);
+    }
+  } else if (entityType === "form") {
+    // 既存編集フォームの破棄(=schema までサーバ版へ revert)は初版スコープ外。
+    // ジョブだけ外し、ローカルの編集内容は残す（keepLocal 相当）。UI 側も 破棄 を無効化する。
+    uploadLog.logVerbose("cancel", "discard form(existing) → keepLocal", { localId });
+  } else {
+    await revertEntityToServer(entityType, localId);
+  }
+  await publishPending();
+};
+
+// 全ジョブをキューから外すだけ。
+export const cancelAllKeepLocal = async () => {
+  uploadLog.logVerbose("cancel", "all keepLocal", {});
+  const all = await getAllJobs();
+  for (const job of all) await deleteJob(job.jobId);
+  await publishPending();
+};
+
+// 全ジョブを破棄（form→question→dashboard→op 順で逐次。IndexedDB 競合を避ける）。
+export const cancelAllDiscard = async () => {
+  uploadLog.logVerbose("cancel", "all discard", {});
+  const all = await getAllJobs();
+  const order = (job) => (job.kind === "op" ? 9 : (TYPE_ORDER[job.entityType] ?? 8));
+  const sorted = all.slice().sort((a, b) => order(a) - order(b));
+  for (const job of sorted) await cancelJobDiscard(job);
+  await publishPending();
 };
 
 // アプリ起動時に 1 度だけ呼ぶ。前回セッションの残ジョブを再開し、online で再キックする。

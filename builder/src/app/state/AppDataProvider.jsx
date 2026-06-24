@@ -5,7 +5,7 @@ import { getFormsFromCache, saveFormsToCache } from "./formsCache.js";
 import { useAuth } from "./authContext.jsx";
 import { evaluateCacheForForms } from "./cachePolicy.js";
 import { perfLogger } from "../../utils/perfLogger.js";
-import { registerFormReconciler, registerFolderReconciler, startUploadWorker } from "./uploadWorker.js";
+import { registerFormReconciler, registerFolderReconciler, registerFormRemover, startUploadWorker } from "./uploadWorker.js";
 import { prefetchTopOpened } from "./prefetchTopOpened.js";
 import {
   normalizeFolderPath,
@@ -311,6 +311,14 @@ export function AppDataProvider({ children }) {
       "removeFormsState"
     );
   }, [updateFormsAndCache]);
+
+  // 未アップロードの新規フォーム（local_…）を状態パネルから「破棄」したとき、
+  // ワーカーがこのコールバックで React 状態 / formsCache から取り除く。
+  // removeFormsState 宣言後に登録するため別 useEffect にする（deps の TDZ 回避）。
+  useEffect(() => {
+    registerFormRemover(removeFormsState);
+    return () => registerFormRemover(null);
+  }, [removeFormsState]);
 
   const createForm = useCallback(async (payload, saveMode = "auto") => {
     // id ＝ Drive fileId へ統一。新規フォームはクライアントで id を採番せず、保存（ファイル作成）
