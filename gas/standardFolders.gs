@@ -690,6 +690,44 @@ function StdFolders_copyFolderIntoStdPath_(key, folderId, logicalPath) {
   }
 }
 
+// key 標準フォルダの base フォルダ fileId をリクエストスコープでメモ化して返す（未解決は ""）。
+// 1 レコード保存で複数 fileUpload セルを処理する際の base 解決を 1 回に集約する。
+// リクエストキャッシュ（formsCrud.gs で宣言）が無い文脈（限定ロードの単体テスト等）では
+// メモ化せず直接解決する（typeof ガードで未宣言参照の例外を避ける）。
+function StdFolders_baseFolderIdCached_(key) {
+  var hasCache = (typeof __NFB_STD_BASE_ID_CACHE__ !== "undefined") && __NFB_STD_BASE_ID_CACHE__;
+  if (hasCache && Object.prototype.hasOwnProperty.call(__NFB_STD_BASE_ID_CACHE__, key)) {
+    return __NFB_STD_BASE_ID_CACHE__[key];
+  }
+  var base = StdFolders_autoFileFolderOrNull_(key);
+  var id = base ? base.getId() : "";
+  if (hasCache) __NFB_STD_BASE_ID_CACHE__[key] = id;
+  return id;
+}
+
+// 物理優先 fast-path 用のプローブ。folderUrl が key 標準フォルダ base「直下」の生存フォルダを指すなら
+// その Folder を返す（＝ move/copy/祖先判定/相対パス再走査が不要な正常系）。それ以外は null（フル align へ）。
+// Drive 往復は最小（getFolderById 1 + getParents 1）。base id はリクエストキャッシュで償却する。
+// 解決過程の例外（死亡/権限喪失/環境不備）はすべて null に倒し、フル align へ安全に degrade する。
+function StdFolders_uploadCellInPlaceFolderOrNull_(folderUrl, key) {
+  try {
+    var parsed = Forms_parseGoogleDriveUrl_(folderUrl);
+    if (!parsed || parsed.type !== "folder" || !parsed.id) return null;
+    var baseId = StdFolders_baseFolderIdCached_(key);
+    if (!baseId) return null;                          // base 未解決 → フル align に degrade
+    var folder = DriveApp.getFolderById(parsed.id);    // 死亡なら throw
+    if (typeof folder.isTrashed === "function" && folder.isTrashed()) return null;
+    var parents = folder.getParents();
+    if (!parents.hasNext()) return null;
+    var first = parents.next();
+    if (parents.hasNext()) return null;                // 多親は fast-path 対象外
+    if (first.getId() !== baseId) return null;         // base 直下でない → move/copy が要る
+    return folder;
+  } catch (e) {
+    return null;
+  }
+}
+
 // 統一正規化器（フォルダ参照）。物理優先→論理フォールバックで folderId を引き、配置を整える:
 //   ホーム（key 配下）= 据置 / プロジェクト内の別フォルダ = move / プロジェクト外 = 再帰copy。
 // 物理 URL と論理パスの両方を返す。戻り: { folderId, url, path, status, idMap }。
@@ -701,14 +739,17 @@ function StdFolders_alignFolderRefIntoStdFolder_(key, folderUrlOrId, logicalPath
   var folderId = "";
   var parsed = Forms_parseGoogleDriveUrl_(folderUrlOrId);
   if (parsed && parsed.type === "folder" && parsed.id) folderId = parsed.id;
-  if ((!folderId || !StdFolders_isFolderIdAlive_(folderId)) && lp) {
+  // 物理生存判定は 1 回だけ（旧コードは同一 folderId に対し isFolderIdAlive_ を二重・三重呼びしていた）。
+  var alive = folderId ? StdFolders_isFolderIdAlive_(folderId) : false;
+  if (!alive && lp) {
     var byPath = StdFolders_resolveFolderPathToId_(key, lp);
     if (byPath && StdFolders_isFolderIdAlive_(byPath)) {
       folderId = byPath;
+      alive = true;
       out.status = "recoveredByPath";
     }
   }
-  if (!folderId || !StdFolders_isFolderIdAlive_(folderId)) return out;
+  if (!alive) return out;
 
   var resultFolderId = folderId;
   if (StdFolders_isFolderInStdSubfolder_(folderId, key)) {
@@ -750,10 +791,27 @@ function StdFolders_normalizeUploadCellValue_(rawValue) {
   if (!Array.isArray(obj.files)) return rawValue;  // fileUpload セルは必ず files 配列を持つ（誤検出防止）
   var folderUrl = (typeof obj.folderUrl === "string") ? obj.folderUrl : "";
   // 論理パスは folderName（フロント serializeFileUploadValue / resolver / コピー時クリアと統一）。
+  // folderPath フォールバック前に「元から folderName を持っていたか」を捕捉する（fast-path の gate）。
+  var hadFolderName = (typeof obj.folderName === "string" && obj.folderName.trim() !== "");
   // 旧 normalize が書いた folderPath があれば読みフォールバックに使う（新規には書かない）。
   var folderName = (typeof obj.folderName === "string") ? obj.folderName : "";
   if (!folderName && typeof obj.folderPath === "string") folderName = obj.folderPath;
   if (!folderUrl && !folderName) return rawValue;
+
+  // 物理優先 fast-path: folderUrl が 06 直下の生存フォルダを指し、folderName が既にあるなら、
+  // move/copy/祖先判定/相対パス再走査（Drive 往復 ~8-12 回）を省略して据え置く。論理パスは既にセルに
+  // あるので「スプレッドシート書込時に必ず保存」も満たす。変化があるとき（URL 正準化 / folderPath 残骸）
+  // のみ再直列化し、無変化なら元文字列を返す（冪等・書き戻し churn 回避）。
+  if (folderUrl && hadFolderName) {
+    var inPlace = StdFolders_uploadCellInPlaceFolderOrNull_(folderUrl, "upload");
+    if (inPlace) {
+      var canonicalUrl = inPlace.getUrl();
+      var changed = false;
+      if (obj.folderUrl !== canonicalUrl) { obj.folderUrl = canonicalUrl; changed = true; }
+      if ("folderPath" in obj) { delete obj.folderPath; changed = true; }
+      return changed ? JSON.stringify(obj) : rawValue;
+    }
+  }
 
   var aligned = StdFolders_alignFolderRefIntoStdFolder_("upload", folderUrl, folderName);
   if (aligned.status === "unresolved" || aligned.status === "noop") return rawValue;

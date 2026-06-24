@@ -231,6 +231,21 @@ function nfbTrashDriveFilesByIds(payload) {
   });
 }
 
+// 未保存キャンセル時の巻き戻し用: URL/ID で指したアップロードフォルダをゴミ箱へ移す。
+// セッションで新規生成されたフォルダ（中の追加ファイルごと）を捨てるために使う。無効 URL は no-op。
+function nfbTrashDriveFolderByUrl(payload) {
+  return nfbSafeCall_(function() {
+    var url = payload && typeof payload.folderUrl === "string" ? payload.folderUrl.trim() : "";
+    if (!url) return { ok: true, trashed: false };
+    var folder = nfbResolveFolderFromInputIfExists_(url);
+    if (folder && typeof folder.setTrashed === "function") {
+      folder.setTrashed(true);
+      return { ok: true, trashed: true };
+    }
+    return { ok: true, trashed: false };
+  });
+}
+
 function nfbFinalizeRecordDriveFolder(payload) {
   return nfbSafeCall_(function() {
     var currentDriveFolderUrl = payload ? Nfb_trimStr_(payload.currentDriveFolderUrl) : "";

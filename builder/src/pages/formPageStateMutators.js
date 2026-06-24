@@ -7,7 +7,7 @@
 
 import { restoreResponsesFromData, collectFileUploadFolderUrls, collectFileUploadFolderNames } from "../utils/responses.js";
 import { collectFileUploadFields } from "../core/schema.js";
-import { hasScriptRun, trashDriveFilesByIds } from "../services/gasClient.js";
+import { hasScriptRun, trashDriveFilesByIds, trashDriveFolderByUrl } from "../services/gasClient.js";
 import { getCachedEntryWithIndex } from "../app/state/recordsMemoryStore.js";
 import {
   appendDriveFileId,
@@ -221,17 +221,53 @@ export async function runCancelEditAndRestoreLatest(ctx) {
 }
 
 /**
- * 未保存セッションでアップロード済みファイルを Drive ごみ箱に移動。
+ * 未保存キャンセル時に「捨てるべき Drive 変更」を、開封時 state と現在 state から純粋に計画する。
+ *
+ * 削除（個別ファイル・フォルダ）は保存まで遅延されるため、キャンセル時に Drive 上で実体化しているのは
+ * 「このセッションで追加したもの」だけ。よって untrash は不要で、追加分のみを捨てればよい。
+ * - 開封時にフォルダが無く（initHadFolder=false）今セッションで生成されたフォルダは、中の追加ファイル
+ *   ごとフォルダを trash する（「初回でファイル＋フォルダ両方できたら両方消す」）。削除済みなら
+ *   pendingDeleteUrl に退避された URL を拾う。
+ * - 開封時に既存だったフォルダは温存し、このセッションで追加したファイル（sessionUploadFileIds）だけ
+ *   trash する（「既存フォルダにファイルだけ増えたら増えた分だけ消す」）。
+ *
+ * @returns {{ folderUrlsToTrash: string[], fileIds: string[] }}
+ */
+export function planDiscardUnsavedUploads(currentStates, initialStates) {
+  const current = currentStates || {};
+  const initial = initialStates || {};
+  const folderUrlsToTrash = [];
+  const fileIdsToTrash = [];
+  for (const [fid, state] of Object.entries(current)) {
+    const cur = normalizeDriveFolderState(state);
+    const init = normalizeDriveFolderState(initial[fid]);
+    const initHadFolder = Boolean(init.resolvedUrl.trim() || init.folderName.trim());
+    // セッション生成フォルダを削除した場合は resolvedUrl がクリアされ pendingDeleteUrl に退避されるので拾う。
+    const curFolderUrl = cur.resolvedUrl.trim() || cur.inputUrl.trim() || cur.pendingDeleteUrl.trim();
+    if (!initHadFolder && curFolderUrl) {
+      folderUrlsToTrash.push(curFolderUrl);
+    } else if (cur.sessionUploadFileIds.length) {
+      fileIdsToTrash.push(...cur.sessionUploadFileIds);
+    }
+  }
+  return { folderUrlsToTrash, fileIds: normalizeDriveFileIds(fileIdsToTrash) };
+}
+
+/**
+ * 未保存セッションで生じた Drive 変更を、開いた時点の状態へ巻き戻す（計画は planDiscardUnsavedUploads）。
  */
 export async function runDiscardUnsavedUploadedFiles(ctx) {
-  const { driveFolderStatesRef } = ctx;
+  const { driveFolderStatesRef, initialDriveFolderStatesRef } = ctx;
   const currentStates = driveFolderStatesRef.current || {};
-  const fileIds = normalizeDriveFileIds(
-    Object.values(currentStates).flatMap((state) => normalizeDriveFolderState(state).sessionUploadFileIds),
-  );
-  if (fileIds.length === 0) return;
+  const initialStates = (initialDriveFolderStatesRef && initialDriveFolderStatesRef.current) || {};
+
+  const { folderUrlsToTrash, fileIds } = planDiscardUnsavedUploads(currentStates, initialStates);
+  if (fileIds.length === 0 && folderUrlsToTrash.length === 0) return;
   if (!hasScriptRun()) {
     throw new Error("この機能はGoogle Apps Script環境でのみ利用可能です");
   }
-  await trashDriveFilesByIds(fileIds);
+  if (fileIds.length > 0) await trashDriveFilesByIds(fileIds);
+  for (const url of folderUrlsToTrash) {
+    await trashDriveFolderByUrl(url);
+  }
 }

@@ -301,8 +301,8 @@ export default function FormPage() {
   }, [draftKey, driveFolderDraftKey, entryId]);
 
   const discardUnsavedUploadedFiles = useCallback(() => (
-    runDiscardUnsavedUploadedFiles({ driveFolderStatesRef })
-  ), [driveFolderStatesRef]);
+    runDiscardUnsavedUploadedFiles({ driveFolderStatesRef, initialDriveFolderStatesRef })
+  ), [driveFolderStatesRef, initialDriveFolderStatesRef]);
 
   const navigateToEntryById = useCallback((targetEntryId) => {
     clearNewEntryDraft();

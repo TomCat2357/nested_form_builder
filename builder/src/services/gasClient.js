@@ -417,6 +417,11 @@ export const resolveUploadFiles = ({ folderName, files }) =>
 export const trashDriveFilesByIds = (fileIds) =>
   fetchGasApi("nfbTrashDriveFilesByIds", fileIds, "Driveファイルの削除に失敗しました");
 
+// 未保存キャンセル時、セッションで新規生成したアップロードフォルダ（中の追加ファイルごと）を
+// ゴミ箱へ移す。物理 URL で指定する。
+export const trashDriveFolderByUrl = (folderUrl) =>
+  fetchGasApi("nfbTrashDriveFolderByUrl", { folderUrl }, "アップロードフォルダの削除に失敗しました");
+
 export const createRecordPrintDocument = (payload) => {
   if (!isSingleRecordPrintPayload(payload) && !isMultiRecordPrintPayload(payload)) {
     throw new Error("print document payload is invalid");

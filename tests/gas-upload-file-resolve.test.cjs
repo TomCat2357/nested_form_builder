@@ -130,3 +130,25 @@ test("nfbResolveUploadFiles: エントリ配列を解決し { name, driveFileId,
     { name: "c.txt", driveFileId: "", driveFileUrl: "" },
   ]);
 });
+
+// 未保存キャンセル時のフォルダ巻き戻し（C-1）。URL→folder を解決して setTrashed(true) する。
+test("nfbTrashDriveFolderByUrl: URL を解決して setTrashed(true) する", () => {
+  const gas = loadResolver({});
+  let trashed = false;
+  gas.nfbResolveFolderFromInputIfExists_ = (url) => (
+    url === "https://drive.google.com/drive/folders/FD1"
+      ? { setTrashed: (v) => { trashed = v; } }
+      : null
+  );
+  const res = gas.nfbTrashDriveFolderByUrl({ folderUrl: "https://drive.google.com/drive/folders/FD1" });
+  assert.equal(res.ok, true);
+  assert.equal(res.trashed, true);
+  assert.equal(trashed, true, "実際に setTrashed(true) が呼ばれる");
+});
+
+test("nfbTrashDriveFolderByUrl: 空 URL / 解決不能は no-op（trashed:false）", () => {
+  const gas = loadResolver({});
+  gas.nfbResolveFolderFromInputIfExists_ = () => null;
+  assert.deepEqual(plain(gas.nfbTrashDriveFolderByUrl({ folderUrl: "" })), { ok: true, trashed: false });
+  assert.deepEqual(plain(gas.nfbTrashDriveFolderByUrl({ folderUrl: "https://x/folders/GONE" })), { ok: true, trashed: false });
+});

@@ -209,6 +209,167 @@ test("normalizeUploadCellValue_: align が noop/unresolved ならセルを据え
 });
 
 // ---------------------------------------------------------------------------
+// 物理優先 fast-path（uploadCellInPlaceFolderOrNull_ / normalizeUploadCellValue_ 高速パス）
+// 正常系（06 直下の生存フォルダ＋folderName あり）は move/copy/祖先判定/相対パス再走査を
+// 省略し Drive 往復を ~8-12 → 2 へ削減する。論理パスは既にセルにあるので「必ず保存」も満たす。
+// ---------------------------------------------------------------------------
+
+function iterOf(items) {
+  let i = 0;
+  return { hasNext: () => i < items.length, next: () => items[i++] };
+}
+function folderStub(opts) {
+  return {
+    getId: () => opts.id,
+    getUrl: () => (opts.url === undefined ? ("https://drive.google.com/drive/folders/" + opts.id) : opts.url),
+    isTrashed: () => !!opts.trashed,
+    getParents: () => iterOf((opts.parents || []).map((pid) => ({ getId: () => pid }))),
+  };
+}
+// fast-path 用に base id を固定し、getFolderById を計数するスタブを仕込む。
+function stubFastPath(gas, opts) {
+  gas.StdFolders_baseFolderIdCached_ = () => (opts.baseId === undefined ? "base06" : opts.baseId);
+  gas._getFolderByIdCalls = 0;
+  gas.DriveApp = {
+    getFolderById(id) {
+      gas._getFolderByIdCalls += 1;
+      if (opts.folderById && Object.prototype.hasOwnProperty.call(opts.folderById, id)) {
+        const f = opts.folderById[id];
+        if (f === null) throw new Error("not found: " + id);
+        return f;
+      }
+      throw new Error("unexpected getFolderById: " + id);
+    },
+  };
+}
+
+test("uploadCellInPlaceFolderOrNull_: base 直下の生存フォルダなら Folder を返す（getFolderById 1 回）", () => {
+  const gas = loadCtx();
+  stubFastPath(gas, { baseId: "base06", folderById: { FD1: folderStub({ id: "FD1", parents: ["base06"] }) } });
+  const folder = gas.StdFolders_uploadCellInPlaceFolderOrNull_("https://drive.google.com/drive/folders/FD1", "upload");
+  assert.ok(folder, "in-place なら Folder を返す");
+  assert.equal(folder.getId(), "FD1");
+  assert.equal(gas._getFolderByIdCalls, 1, "Drive 往復は最小");
+});
+
+test("uploadCellInPlaceFolderOrNull_: 親≠base / 多親 / 死亡 / 解析不可 / base 未解決 は null", () => {
+  let gas = loadCtx();
+  stubFastPath(gas, { baseId: "base06", folderById: { FD1: folderStub({ id: "FD1", parents: ["other"] }) } });
+  assert.equal(gas.StdFolders_uploadCellInPlaceFolderOrNull_("https://drive.google.com/drive/folders/FD1", "upload"), null, "親≠base");
+
+  gas = loadCtx();
+  stubFastPath(gas, { baseId: "base06", folderById: { FD1: folderStub({ id: "FD1", parents: ["base06", "extra"] }) } });
+  assert.equal(gas.StdFolders_uploadCellInPlaceFolderOrNull_("https://drive.google.com/drive/folders/FD1", "upload"), null, "多親");
+
+  gas = loadCtx();
+  stubFastPath(gas, { baseId: "base06", folderById: { FD1: folderStub({ id: "FD1", parents: ["base06"], trashed: true }) } });
+  assert.equal(gas.StdFolders_uploadCellInPlaceFolderOrNull_("https://drive.google.com/drive/folders/FD1", "upload"), null, "ゴミ箱");
+
+  gas = loadCtx();
+  stubFastPath(gas, { baseId: "base06", folderById: { FD1: null } });
+  assert.equal(gas.StdFolders_uploadCellInPlaceFolderOrNull_("https://drive.google.com/drive/folders/FD1", "upload"), null, "getFolderById throw");
+
+  gas = loadCtx();
+  stubFastPath(gas, { baseId: "base06", folderById: {} });
+  assert.equal(gas.StdFolders_uploadCellInPlaceFolderOrNull_("not-a-url", "upload"), null, "解析不可");
+
+  gas = loadCtx();
+  stubFastPath(gas, { baseId: "", folderById: { FD1: folderStub({ id: "FD1", parents: ["base06"] }) } });
+  assert.equal(gas.StdFolders_uploadCellInPlaceFolderOrNull_("https://drive.google.com/drive/folders/FD1", "upload"), null, "base 未解決");
+});
+
+test("normalizeUploadCellValue_: fast-path — 06 直下の生存フォルダ＋folderName ありは align を呼ばず据え置く", () => {
+  const gas = loadCtx();
+  gas.StdFolders_alignFolderRefIntoStdFolder_ = () => { throw new Error("fast-path では align を呼ばない"); };
+  stubFastPath(gas, {
+    baseId: "base06",
+    folderById: { FD1: folderStub({ id: "FD1", url: "https://drive.google.com/drive/folders/FD1", parents: ["base06"] }) },
+  });
+  const cell = JSON.stringify({
+    files: [{ name: "a.pdf", driveFileId: "F", driveFileUrl: "u" }],
+    folderUrl: "https://drive.google.com/drive/folders/FD1",
+    folderName: "record_x",
+  });
+  assert.equal(gas.StdFolders_normalizeUploadCellValue_(cell), cell, "正準 URL 一致・folderPath 無しなら元文字列を返す（churn 回避）");
+  assert.equal(gas._getFolderByIdCalls, 1, "Drive 往復は最小（getFolderById 1 回）");
+});
+
+test("normalizeUploadCellValue_: fast-path — folderUrl を正準化し folderName は維持（align は呼ばない）", () => {
+  const gas = loadCtx();
+  gas.StdFolders_alignFolderRefIntoStdFolder_ = () => { throw new Error("fast-path では align を呼ばない"); };
+  stubFastPath(gas, {
+    baseId: "base06",
+    folderById: { FD1: folderStub({ id: "FD1", url: "CANON_FD1", parents: ["base06"] }) },
+  });
+  const cell = JSON.stringify({
+    files: [{ name: "a.pdf", driveFileId: "F" }],
+    folderUrl: "https://drive.google.com/drive/folders/FD1",
+    folderName: "record_x",
+  });
+  const out = JSON.parse(gas.StdFolders_normalizeUploadCellValue_(cell));
+  assert.equal(out.folderUrl, "CANON_FD1", "正準 URL に更新");
+  assert.equal(out.folderName, "record_x", "論理パスは維持（必ず保存される）");
+});
+
+test("normalizeUploadCellValue_: fast-path — folderPath 残骸は除去し folderName 維持（align は呼ばない）", () => {
+  const gas = loadCtx();
+  gas.StdFolders_alignFolderRefIntoStdFolder_ = () => { throw new Error("fast-path では align を呼ばない"); };
+  stubFastPath(gas, {
+    baseId: "base06",
+    folderById: { FD1: folderStub({ id: "FD1", url: "https://drive.google.com/drive/folders/FD1", parents: ["base06"] }) },
+  });
+  const cell = JSON.stringify({
+    files: [{ name: "a.pdf", driveFileId: "F" }],
+    folderUrl: "https://drive.google.com/drive/folders/FD1",
+    folderName: "record_x",
+    folderPath: "record_x_old",
+  });
+  const out = JSON.parse(gas.StdFolders_normalizeUploadCellValue_(cell));
+  assert.equal("folderPath" in out, false, "folderPath 残骸を除去");
+  assert.equal(out.folderName, "record_x", "folderName は維持");
+  assert.equal(out.folderUrl, "https://drive.google.com/drive/folders/FD1");
+});
+
+test("normalizeUploadCellValue_: folderName が無いセルは fast-path を使わずフル align が folderName を stamp", () => {
+  const gas = loadCtx();
+  let called = false;
+  gas.StdFolders_alignFolderRefIntoStdFolder_ = (key, url, logical) => {
+    called = true;
+    return { folderId: "FD1", url: "https://drive.google.com/drive/folders/FD1", path: "record_x", status: "recoveredByPath", idMap: null };
+  };
+  gas.StdFolders_uploadCellInPlaceFolderOrNull_ = () => { throw new Error("folderName 無しでは probe しない"); };
+  const cell = JSON.stringify({ files: [{ name: "a.pdf", driveFileId: "" }], folderUrl: "https://drive.google.com/drive/folders/FD1" });
+  const out = JSON.parse(gas.StdFolders_normalizeUploadCellValue_(cell));
+  assert.equal(called, true, "folderName 無し → フル align");
+  assert.equal(out.folderName, "record_x", "論理パスを stamp（必ず保存）");
+});
+
+test("normalizeUploadCellValue_: コピー後クリア（folderUrl 空・folderName のみ）は fast-path を使わずフル align", () => {
+  const gas = loadCtx();
+  let seenLogical = null;
+  gas.StdFolders_alignFolderRefIntoStdFolder_ = (key, url, logical) => {
+    seenLogical = logical;
+    return { folderId: "FD1", url: "FURL_FD1", path: "record_x", status: "recoveredByPath", idMap: null };
+  };
+  gas.StdFolders_uploadCellInPlaceFolderOrNull_ = () => { throw new Error("folderUrl 空では probe しない"); };
+  const cell = JSON.stringify({ files: [{ name: "a.pdf", driveFileId: "" }], folderUrl: "", folderName: "record_x" });
+  const out = JSON.parse(gas.StdFolders_normalizeUploadCellValue_(cell));
+  assert.equal(seenLogical, "record_x");
+  assert.equal(out.folderName, "record_x");
+});
+
+test("alignFolderRefIntoStdFolder_: 正常系での isFolderIdAlive_ は 1 回だけ（冗長呼び出し除去）", () => {
+  const gas = loadCtx();
+  stubFolderLeaves(gas, { parsedId: "FD1", aliveIds: ["FD1"], home: true, relPath: "rec/2026" });
+  let aliveCalls = 0;
+  const realAlive = gas.StdFolders_isFolderIdAlive_;
+  gas.StdFolders_isFolderIdAlive_ = (id) => { aliveCalls += 1; return realAlive(id); };
+  const r = gas.StdFolders_alignFolderRefIntoStdFolder_("upload", "https://x/folders/FD1", "");
+  assert.equal(r.status, "aligned");
+  assert.equal(aliveCalls, 1, "正常系では folderId の生存判定は 1 回（旧コードは二重・三重呼び）");
+});
+
+// ---------------------------------------------------------------------------
 // StdFolders_normalizePrintTemplateRefsOnSave_（保存時: 様式 Doc 参照の url+path 両更新）
 // ---------------------------------------------------------------------------
 

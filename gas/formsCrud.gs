@@ -70,9 +70,15 @@ var __NFB_FORM_REQ_CACHE__ = {};
 // 1 リクエストで解決する際（list / sync）の Drive 走査を 1 回に集約する。reset で一緒にクリアする。
 var __NFB_SS_PATH_CACHE__ = {};
 
+// 標準フォルダ key（"upload" 等）→ base フォルダ fileId をリクエストスコープでメモ化する。
+// 1 レコード保存で複数 fileUpload セルを正規化する際の base 解決（Drive 走査）を 1 回に集約する。
+// "" もメモ化（base 未解決）。reset で一緒にクリアする。
+var __NFB_STD_BASE_ID_CACHE__ = {};
+
 function Nfb_resetFormRequestCache_() {
   __NFB_FORM_REQ_CACHE__ = {};
   __NFB_SS_PATH_CACHE__ = {};
+  __NFB_STD_BASE_ID_CACHE__ = {};
 }
 
 // 04_spreadsheets 配下の論理パス → fileId をメモ化付きで解決する。未解決は "" を返す。
