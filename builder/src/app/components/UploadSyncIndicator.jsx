@@ -5,6 +5,7 @@ import {
   totalPendingUpload,
 } from "../../features/search/globalSyncState.js";
 import { retryNow } from "../state/uploadWorker.js";
+import UploadSyncPanel from "./UploadSyncPanel.jsx";
 
 /**
  * グローバルなアップロード状態インジケーター（AppLayout ヘッダーに常駐）。
@@ -14,6 +15,7 @@ import { retryNow } from "../state/uploadWorker.js";
  */
 export default function UploadSyncIndicator() {
   const [, forceRender] = useState(0);
+  const [panelOpen, setPanelOpen] = useState(false);
   useEffect(() => {
     const listener = () => forceRender((n) => n + 1);
     uploadSyncListeners.add(listener);
@@ -42,9 +44,15 @@ export default function UploadSyncIndicator() {
         <span className="nf-text-primary-strong nf-fw-600 nf-ml-6">🔄 同期中</span>
       )}
       {total > 0 && (
-        <span className="nf-text-warning nf-fw-600 nf-ml-6">
+        <button
+          type="button"
+          className="nf-text-warning nf-fw-600 nf-ml-6"
+          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", font: "inherit" }}
+          onClick={() => setPanelOpen(true)}
+          title="クリックで未アップロードの内訳・取り消し"
+        >
           ⚠️ 未アップロードのフォーム（クエスチョン・ダッシュボード）あり（{total}件）
-        </span>
+        </button>
       )}
       {hasError && (
         <button
@@ -56,6 +64,7 @@ export default function UploadSyncIndicator() {
           再試行
         </button>
       )}
+      {panelOpen && <UploadSyncPanel onClose={() => setPanelOpen(false)} />}
     </span>
   );
 }

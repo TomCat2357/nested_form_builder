@@ -6,6 +6,8 @@ import {
   applyRefRemapToPayload,
   applyRefRemapToOpPayload,
   toUploadPayload,
+  getJobLabel,
+  getJobReason,
 } from "./uploadQueue.js";
 
 // これらは IndexedDB を触らない純粋関数（参照の収集・依存解決・付け替え・送信用整形）。
@@ -19,6 +21,26 @@ test("collectReferencedIds: question は gui.formId と formSources[].formId を
 test("collectReferencedIds: dashboard は cards[].questionId を集める", () => {
   const d = { cards: [{ questionId: "Q1" }, { type: "text" }, { questionId: "Q2" }] };
   assert.deepEqual(collectReferencedIds("dashboard", d).sort(), ["Q1", "Q2"]);
+});
+
+// 状態パネル用の表示ヘルパー（純関数）。
+test("getJobLabel: form は settings.formTitle、analytics は name を使う", () => {
+  assert.equal(getJobLabel({ kind: "save", entityType: "form", payload: { settings: { formTitle: "申請書" } } }), "申請書");
+  assert.equal(getJobLabel({ kind: "save", entityType: "question", payload: { name: "月次集計" } }), "月次集計");
+  assert.equal(getJobLabel({ kind: "op", entityType: "form", opType: "move", opPayload: { ids: ["a", "b"] } }), "操作: move（2件）");
+});
+
+test("getJobReason: 依存待ちは参照先名を、失敗は lastError を出す", () => {
+  const dep = { localId: "local_A", kind: "save", entityType: "form", payload: { settings: { formTitle: "親フォーム" } } };
+  const jobsById = new Map([["local_A", dep]]);
+  const waiting = { status: "pending", dependsOnLocalIds: ["local_A"] };
+  assert.equal(getJobReason(waiting, jobsById), "参照先（親フォーム）のアップロード待ち");
+
+  const failed = { status: "error", dependsOnLocalIds: [], lastError: "Form not found", nextAttemptAt: 123 };
+  assert.equal(getJobReason(failed, jobsById), "Form not found（自動再試行待ち）");
+
+  assert.equal(getJobReason({ status: "uploading", dependsOnLocalIds: [] }), "送信中…");
+  assert.equal(getJobReason({ status: "pending", dependsOnLocalIds: [] }), "待機中（順番待ち）");
 });
 
 test("collectDependsOnLocalIds: local_ 参照だけを依存として返す", () => {
