@@ -43,12 +43,16 @@ export function formatAlignSummary(rootName, align) {
     ? `${label}: スキップ（標準フォルダが無効）`
     : `${label}: 移動 ${c.moved}件 / 取込(コピー) ${c.copiedExternal}件 / 再リンク ${c.rekeyed}件 / 整合済 ${c.aligned}件${c.errors ? ` / エラー ${c.errors}件` : ""}`);
 
+  const rr = align.reresolved || {};
+  const reresolvedTotal = (rr.forms || 0) + (rr.questions || 0) + (rr.dashboards || 0);
   const lines = [
     `「${rootName}」配下に標準フォルダ構成（01_forms〜08_documents）を作成しました。`,
     fmt("フォーム", align.forms),
     fmt("Question", align.questions),
     fmt("Dashboard", align.dashboards),
     `参照リンク再構成: ${align.relinkedFiles}件`,
+    `参照リンク復旧（論理パス→物理）: ${reresolvedTotal}件`,
+    `フォーム物理参照の再配置（spreadsheet/印刷様式）: ${align.formPhysicalAligned || 0}件`,
   ];
   if (align.errors.length) {
     lines.push(`エラー ${align.errors.length}件:`);

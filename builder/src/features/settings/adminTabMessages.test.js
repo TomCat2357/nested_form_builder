@@ -34,6 +34,8 @@ test("formatAlignSummary: 件数行 + skipped + エラー上位3件 + ほか", (
     questions: { skipped: true },
     dashboards: { moved: 0, copiedExternal: 0, rekeyed: 0, aligned: 0, errors: 1 },
     relinkedFiles: 3,
+    reresolved: { forms: 2, questions: 1, dashboards: 0 },
+    formPhysicalAligned: 4,
     errors: [
       { kind: "form", name: "A", folder: "01", reason: "r1" },
       { kind: "q", id: "id2", folder: "02", reason: "r2" },
@@ -47,9 +49,24 @@ test("formatAlignSummary: 件数行 + skipped + エラー上位3件 + ほか", (
   assert.match(out, /Question: スキップ（標準フォルダが無効）/);
   assert.match(out, /Dashboard:.*エラー 1件/);
   assert.match(out, /参照リンク再構成: 3件/);
+  assert.match(out, /参照リンク復旧（論理パス→物理）: 3件/);
+  assert.match(out, /フォーム物理参照の再配置（spreadsheet\/印刷様式）: 4件/);
   assert.match(out, /エラー 4件:/);
   assert.match(out, /・\[form\] A（01）: r1/);
   assert.match(out, /…ほか 1件/);
+});
+
+test("formatAlignSummary: reresolved 未指定（旧ペイロード）でも 0件で表示", () => {
+  const align = {
+    forms: { moved: 0, copiedExternal: 0, rekeyed: 0, aligned: 0, errors: 0 },
+    questions: { moved: 0, copiedExternal: 0, rekeyed: 0, aligned: 0, errors: 0 },
+    dashboards: { moved: 0, copiedExternal: 0, rekeyed: 0, aligned: 0, errors: 0 },
+    relinkedFiles: 0,
+    errors: [],
+  };
+  const out = formatAlignSummary("ROOT", align);
+  assert.match(out, /参照リンク復旧（論理パス→物理）: 0件/);
+  assert.match(out, /フォーム物理参照の再配置（spreadsheet\/印刷様式）: 0件/);
 });
 
 test("formatCopyResult: appsScript 失敗時は理由を含む", () => {

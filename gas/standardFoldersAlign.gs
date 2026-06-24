@@ -215,7 +215,12 @@ function StdFolders_verifyEntriesAfterRelocate_(adapter, affectedIds) {
 // 設定「① 標準フォルダ構成を作成・整理」ボタンから呼ばれる。
 // 登録済みのフォーム・Question・Dashboard を全件 ①〜④ にかけ、
 //   ・物理位置が論理パスとずれていれば: プロジェクト内 move / プロジェクト外 copy（fileId 付け替え）
-//   ・コピー/再採用で id が変わったら、参照（Q→Form / D→Question）を remap で張り替え
+//   ・コピー/再採用で id が変わったら、参照（Q→Form / D→Question）を remap で張り替え（Phase B）
+//   ・さらにフォーム保存時と同じ「論理パス ↔ 物理」の参照復旧を全エンティティへ適用する:
+//       Phase C-1（case ①）: 死/空になった参照（エンティティ参照 + forms の spreadsheet / 印刷様式）を
+//                            冗長保存した *Path から再解決して貼り直す
+//       Phase C-2（case ②）: forms の spreadsheet / 印刷様式 が「生存だが設定論理パスと不一致」なら
+//                            プロジェクト内=move / 外=copy で設定論理パスへ寄せて物理URLを更新する
 // を一括で行う。base（標準フォルダ）未解決の kind は skipped で no-op に degrade する。
 // =============================================
 
@@ -266,8 +271,9 @@ function StdFolders_propagateRelinkToAllRefs_(remap, pathChangedSet, skipFileId)
   return relinked;
 }
 
-// 全エンティティ（forms→questions→dashboards）を共有 ctx でスイープし、最後に remap を
-// 参照グラフ全体へ伝播する。戻り: { ok, forms, questions, dashboards, relinkedFiles, errors }。
+// 全エンティティ（forms→questions→dashboards）を共有 ctx でスイープし、remap を参照グラフ全体へ
+// 伝播（Phase B）、続けて論理↔物理の参照復旧（Phase C-1 case①, C-2 case②）を適用する。
+// 戻り: { ok, forms, questions, dashboards, relinkedFiles, reresolved, formPhysicalAligned, errors }。
 function StdFolders_alignAllEntries_() {
   return nfbSafeCall_(function () {
     return WithScriptLock_("標準フォルダ整列（全体）", function () {
@@ -292,14 +298,101 @@ function StdFolders_alignAllEntries_() {
       // remap も pathChanged も空なら丸ごとスキップ（冪等時に軽い）。
       var relinked = StdFolders_propagateRelinkToAllRefs_(ctx.remap, ctx.pathChanged, null);
 
+      // Phase C-1: 「論理パス → 物理」の case ① 復旧（物理が空/死 → *Path から再解決）を全エンティティへ。
+      // Q→Form / D→Q / formLink のエンティティ参照、および forms の spreadsheet / 印刷様式 の物理 URL を
+      // 冗長保存した *Path から貼り直す（物理生存は据置・冪等・非致命）。Phase A で本体をホームへ寄せた
+      // 後に走らせるのでパス探索が正しい物理位置に当たる。汎用 Admin_reresolveAllRefsFromLogical_ を流用。
+      var reresolved = { forms: 0, questions: 0, dashboards: 0 };
+      try { reresolved = Admin_reresolveAllRefsFromLogical_(); }
+      catch (errRe) { Logger.log("[StdFolders_alignAllEntries_] reresolveAllRefsFromLogical failed: " + nfbErrorToString_(errRe)); }
+
+      // Phase C-2: forms の非エンティティ参照（spreadsheet / 印刷様式）に case ②（物理は生存だが設定論理
+      // パスと不一致 → プロジェクト内=move / 外=copy で設定論理パスへ寄せ、物理URLを更新）も適用する。
+      // エンティティ参照（Q→Form / D→Q）の case ② は Phase A が参照先エンティティ自身を移動/コピーして
+      // 担うが、spreadsheet / 印刷様式 は登録エンティティではないため Phase A が触れない。保存時と同じ
+      // ①② フル整合（新規作成はしない）をフォーム保存時の部品で適用する。非致命。
+      var formPhysicalAligned = 0;
+      try { formPhysicalAligned = StdFolders_alignAllFormPhysicalRefs_(); }
+      catch (errFp) { Logger.log("[StdFolders_alignAllEntries_] alignAllFormPhysicalRefs failed: " + nfbErrorToString_(errFp)); }
+
       return {
         ok: true,
         forms: perKind.forms,
         questions: perKind.questions,
         dashboards: perKind.dashboards,
         relinkedFiles: relinked,
+        reresolved: reresolved,
+        formPhysicalAligned: formPhysicalAligned,
         errors: ctx.errors
       };
     });
   });
+}
+
+// =============================================
+// (2.8) organize(①) 用: forms の非エンティティ物理参照（spreadsheet / 印刷様式）の ①② フル整合
+// フォーム保存時の resolveSpreadsheetSetting_ / normalizePrintTemplateRefsOnSave_ と同じ判定を、
+// 全登録フォームへ一括適用する（ただし新規スプレッドシート作成のような保存固有の副作用は行わない）。
+// =============================================
+
+// form.settings.spreadsheetId（物理 URL）/ spreadsheetPath（論理）に ①② 整合を適用する（新規作成なし）。
+//   ① 物理が空/死 → spreadsheetPath（04_spreadsheets 配下）から復旧
+//   ② 物理は生存だが配置が論理とずれ → プロジェクト内=move / 外=copy で寄せ、URL/path を更新
+// 参照が無ければ（path も id も空）no-op。書き換えたら true。
+function StdFolders_alignFormSpreadsheetRefInJson_(json) {
+  var s = (json && json.settings && typeof json.settings === "object" && !Array.isArray(json.settings)) ? json.settings : null;
+  if (!s) return false;
+  var path = (typeof s.spreadsheetPath === "string") ? s.spreadsheetPath.trim() : "";
+  var rawId = String(s.spreadsheetId || "").trim();
+  if (!path && !rawId) return false;   // 参照が無ければ no-op（organize では新規作成しない）
+  var aligned = StdFolders_alignFileRefIntoStdFolder_("spreadsheets", rawId, path);
+  if (!aligned.fileId || aligned.status === "unresolved" || aligned.status === "noop") return false;
+  var changed = false;
+  if (s.spreadsheetId !== aligned.url) { s.spreadsheetId = aligned.url; changed = true; }   // 物理は URL 形で永続化
+  if (s.spreadsheetPath !== aligned.path) { s.spreadsheetPath = aligned.path; changed = true; }
+  return changed;
+}
+
+// 1 フォーム json を読み、spreadsheet + 印刷様式（フォーム + カード）に ①② 整合を適用して書き戻す。
+// 戻り: { changed, relocations }（relocations ＝ 再配置した印刷様式 Doc の {oldFileId,newUrl,newPath}）。
+function StdFolders_alignFormPhysicalRefsInFile_(fileId) {
+  var out = { changed: false, relocations: [] };
+  var read = Nfb_readJsonFileById_(fileId);
+  if (!read || !read.file || !read.json || typeof read.json !== "object") return out;
+  var json = read.json;
+  var before = JSON.stringify(json);
+  StdFolders_alignFormSpreadsheetRefInJson_(json);                       // spreadsheet ①②
+  out.relocations = StdFolders_normalizePrintTemplateRefsOnSave_(json) || [];  // 印刷様式 ①②（form を mutate）
+  if (JSON.stringify(json) !== before) {
+    Nfb_writeJsonToFile_(read.file, json);
+    out.changed = true;
+  }
+  return out;
+}
+
+// 登録済み全フォームの非エンティティ物理参照（spreadsheet / 印刷様式）に ①② 整合を適用する。
+// 印刷様式の再配置（move/外部コピー）は、保存時と同じく旧 id で同じ Doc を指す他フォームへ即伝播して
+// 共有外部様式の重複コピーを防ぐ。base 未解決は no-op。戻り: 書き換えたフォーム件数。
+function StdFolders_alignAllFormPhysicalRefs_() {
+  var adapter = StdFolders_entityAdapter_("forms");
+  if (!adapter.baseFolderOrNull()) return 0;
+  var mapping = adapter.getMapping();
+  var ids = [];
+  for (var id in mapping) { if (mapping.hasOwnProperty(id)) ids.push(id); }
+  var n = 0;
+  for (var i = 0; i < ids.length; i++) {
+    var fileId = Nfb_resolveFileIdFromEntry_(mapping[ids[i]]);
+    if (!fileId) continue;
+    try {
+      var res = StdFolders_alignFormPhysicalRefsInFile_(fileId);
+      if (res.changed) n++;
+      if (res.relocations && res.relocations.length) {
+        // 自分自身は skip（既に整合済み）。他フォームの旧 id 参照を新位置へ張り替え。
+        StdFolders_propagateTemplateRelinkToForms_(res.relocations, fileId);
+      }
+    } catch (e) {
+      Logger.log("[StdFolders_alignAllFormPhysicalRefs_] " + fileId + ": " + nfbErrorToString_(e));
+    }
+  }
+  return n;
 }

@@ -445,6 +445,9 @@ export default function AdminFormEditorPage() {
         {SETTINGS_GROUPS.map((group) => (
           <div key={group.key} className="nf-card nf-mb-16">
             <div className="nf-settings-group-title nf-mb-12">{group.label}</div>
+            {group.note && (
+              <p className="nf-text-11 nf-text-muted nf-mt-0 nf-mb-12">{group.note}</p>
+            )}
             <SettingsGroupFields
               fields={group.fields}
               values={localSettings}

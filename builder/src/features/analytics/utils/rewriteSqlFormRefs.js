@@ -117,6 +117,58 @@ export function collectFormRefIds(sql, formIndex) {
 }
 
 /**
+ * 読取時 case ① 用: SQL 本文のテーブル参照 fileId を remap（旧 fileId → 新 fileId）で貼り替える。
+ * 物理 fileId が死んだ参照を、冗長保存した論理パスから引き直した現 fileId へ「実行用に」置換するのに
+ * 使う（保存はしない・in-memory）。remap に無い参照（生存 id・名前・data 等）は素通し。
+ *
+ * @param {string} sql
+ * @param {Object<string,string>} remap - 旧 fileId → 新 fileId
+ * @returns {string}
+ */
+export function remapFormRefIds(sql, remap) {
+  if (!remap) return sql || "";
+  return rewriteRefs(sql, (ref) => {
+    const next = remap[ref];
+    return (typeof next === "string" && next) ? next : null;
+  });
+}
+
+/**
+ * 読取時 case ① のまとめ（純関数・非永続）。保存済み formSources のうち、formId が現在のフォーム一覧に
+ * 無い（削除/再作成で fileId が変化）が formPath を持つものを論理パスで引き直し、
+ *   (a) SQL 本文の参照 fileId を現 id へ貼り替えた effectiveSql
+ *   (b) formId を現 id へ差し替えた formSources（フィルタは呼出側）
+ *   (c) remap（旧 id → 新 id）
+ * を返す。物理生存の formId・formPath 無し・解決不能はそのまま（remap に積まない）。
+ *
+ * @param {string} sql
+ * @param {Array<{formId:string, formPath?:string}>} formSources
+ * @param {object} formIndex - buildFormIndex の戻り値
+ * @returns {{ sql: string, formSources: Array, remap: Object<string,string> }}
+ */
+export function recoverDeadFormRefs(sql, formSources, formIndex) {
+  const sources = Array.isArray(formSources) ? formSources : [];
+  const remap = {};
+  if (formIndex && formIndex.byId) {
+    for (const s of sources) {
+      if (!s || !s.formId || formIndex.byId.has(s.formId)) continue;   // 物理生存/無効 → 触らない
+      const path = typeof s.formPath === "string" ? s.formPath : "";
+      if (!path) continue;
+      const recovered = resolveFormRef(path, formIndex);
+      if (recovered && recovered.id && recovered.id !== s.formId) remap[s.formId] = recovered.id;
+    }
+  }
+  const hasRemap = Object.keys(remap).length > 0;
+  return {
+    sql: hasRemap ? remapFormRefIds(sql, remap) : (sql || ""),
+    formSources: hasRemap
+      ? sources.map((s) => (s && remap[s.formId] ? { ...s, formId: remap[s.formId] } : s))
+      : sources.slice(),
+    remap,
+  };
+}
+
+/**
  * GUI→SQL 変換専用: compileStages が出力する canonical alias（`FROM data_<id>`）を
  * エディタ表示用の `[フォーム名]` に寄せる。手書き SQL と同じ表示規約に揃えるため、
  * まず `data_<id>` を `[<fileId>]` に正規化し、続いて formRefsToNames で名前化する。

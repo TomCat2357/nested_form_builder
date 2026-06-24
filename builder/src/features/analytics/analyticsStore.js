@@ -21,7 +21,8 @@ import {
 } from "../../utils/folderTree.js";
 import { isV2 as isDashboardV2, assertV2 as assertDashboardV2, getCardType, CARD_TYPE_QUESTION } from "./utils/dashboardSchema.js";
 import { registerFormAsTable, dropTables, runAlaSql, applyGlobalWhereToTables, applySourceFilterClauses } from "./analyticsAlaSql.js";
-import { buildFormIndex } from "./utils/formIdentifierResolver.js";
+import { buildFormIndex, resolveFormRef } from "./utils/formIdentifierResolver.js";
+import { recoverDeadFormRefs } from "./utils/rewriteSqlFormRefs.js";
 import { buildColumnIndex } from "./utils/columnIdentifierResolver.js";
 import {
   preprocessSql,
@@ -195,7 +196,14 @@ export async function executeQuestion(question, { forms, globalWhereExpr, source
 
   if (forms && Array.isArray(forms)) {
     formIndex = buildFormIndex(forms);
-    formSources = explicitSources.filter((s) => s && formIndex.byId.has(s.formId));
+
+    // 読取時 case ①: formSources の formId が現在のフォーム一覧に無い（削除/再作成で fileId 変化）でも、
+    // 冗長保存した formPath で現在のフォームを引き直し、SQL 本文の参照 fileId を実行用に貼り替える
+    // （in-memory・非永続。保存 JSON の前進補完は次回保存時の formSources 再導出が担う）。
+    const recovery = recoverDeadFormRefs(sql, explicitSources, formIndex);
+    const effectiveSql = recovery.sql;
+
+    formSources = recovery.formSources.filter((s) => s && formIndex.byId.has(s.formId));
     defaultFormId = formSources.length > 0 ? formSources[0].formId : null;
     const columnIndexCache = new Map();
     const getColumnIndex = (formId) => {
@@ -205,7 +213,7 @@ export async function executeQuestion(question, { forms, globalWhereExpr, source
       }
       return columnIndexCache.get(formId);
     };
-    const pre = preprocessSql(sql, { defaultFormId, formIndex, getColumnIndex });
+    const pre = preprocessSql(effectiveSql, { defaultFormId, formIndex, getColumnIndex });
     if (!pre.ok) {
       return { ok: false, error: pre.errors.join(" / ") };
     }
@@ -400,7 +408,11 @@ async function executeGuiQuestion(question, { forms, globalWhereExpr, sourceFilt
     return { ok: false, error: "GUI クエリの定義が不正です" };
   }
   // 参照は fileId（formId）のみ。id 一致で解決する（id 変化時の再リンクは GAS 側の整合エンジンが担う）。
-  const form = findFormByRef(forms, gui.formId);
+  let form = findFormByRef(forms, gui.formId);
+  if (!form && typeof gui.formPath === "string" && gui.formPath) {
+    // 読取時 case ①: formId が死んでいたら冗長保存した formPath で現在のフォームを引き直す（非永続）。
+    form = resolveFormRef(gui.formPath, buildFormIndex(ensureArray(forms)));
+  }
   if (!form) {
     return { ok: false, error: "GUI クエリの対象フォームが見つかりません" };
   }

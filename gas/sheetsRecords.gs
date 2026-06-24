@@ -20,6 +20,9 @@ function Sheets_purgeExpiredDeletedRows_(sheet, retentionDays) {
   var cutoffUnixMs = Date.now() - days * NFB_MS_PER_DAY;
   var deletedCount = 0;
 
+  // ハード削除する行に紐づくアップロードセル（{folderUrl, folderName, fileIds}）を回収。
+  var uploadCells = [];
+
   // Plan P4 γ: deletedAt セルは JST 文字列を canonical とする。
   // 旧データ（Unix ms 数値）も Sheets_toStrictUnixMs_ 経由で受理する。
   var newValues = [];
@@ -34,6 +37,7 @@ function Sheets_purgeExpiredDeletedRows_(sheet, retentionDays) {
     }
     if (isFinite(deletedAtUnixMs) && deletedAtUnixMs > 0 && deletedAtUnixMs <= cutoffUnixMs) {
       deletedCount++;
+      Nfb_collectUploadArtifactsFromRow_(values[i], uploadCells);
     } else {
       newValues.push(values[i]);
     }
@@ -46,9 +50,120 @@ function Sheets_purgeExpiredDeletedRows_(sheet, retentionDays) {
     // クリア対象行
     sheet.getRange(NFB_DATA_START_ROW + newValues.length, 1, deletedCount, lastColumn).clearContent();
     Sheets_touchSheetLastUpdated_(sheet, Date.now());
+    // 行を消した後にアップロード成果物を Drive から trash（非致命・個別 try/catch）。
+    Nfb_trashUploadArtifacts_(uploadCells);
   }
 
   return { deletedCount: deletedCount };
+}
+
+// 1 レコード行（生セル配列）から fileUpload セルを検出し、削除対象のアップロードセル
+// { folderUrl, folderName, fileIds } を cells 配列へ push する。検出条件は
+// StdFolders_normalizeUploadCellValue_ と同じ「object 形 ＋ files 配列」。
+function Nfb_collectUploadArtifactsFromRow_(rowValues, cells) {
+  if (!rowValues || !rowValues.length || !cells) return;
+  for (var c = 0; c < rowValues.length; c++) {
+    var cell = rowValues[c];
+    if (typeof cell !== "string" || !cell) continue;
+    var trimmed = cell.trim();
+    if (trimmed.charAt(0) !== "{") continue;            // object 形のみ
+    if (trimmed.indexOf("files") === -1) continue;      // 安いプリフィルタ
+    var obj;
+    try { obj = JSON.parse(trimmed); } catch (e) { continue; }
+    if (!obj || typeof obj !== "object" || Object.prototype.toString.call(obj) === "[object Array]") continue;
+    if (Object.prototype.toString.call(obj.files) !== "[object Array]") continue;
+
+    var folderUrl = (typeof obj.folderUrl === "string") ? obj.folderUrl.trim() : "";
+    var folderName = (typeof obj.folderName === "string") ? obj.folderName.trim() : "";
+    if (!folderName && typeof obj.folderPath === "string") folderName = obj.folderPath.trim();
+
+    var fileIds = [];
+    for (var f = 0; f < obj.files.length; f++) {
+      var fe = obj.files[f];
+      if (fe && typeof fe === "object" && typeof fe.driveFileId === "string" && fe.driveFileId) {
+        fileIds.push(fe.driveFileId);
+      }
+    }
+    if (folderUrl || folderName || fileIds.length) {
+      cells.push({ folderUrl: folderUrl, folderName: folderName, fileIds: fileIds });
+    }
+  }
+}
+
+// 回収したアップロードセルを Drive から trash する。まずレコード専用フォルダごと消し
+// （06_upload_files 配下に限定して誤爆を防ぐ）、フォルダを消せたセルはファイルが中ごと
+// 消えるので個別 trash を省く。フォルダ未解決のセルだけ driveFileId を個別 trash する
+// （カスタム保存先などの保険）。すべて非致命（個別 try/catch）。
+function Nfb_trashUploadArtifacts_(cells) {
+  if (!cells || !cells.length) return;
+  var base = null;
+  try { base = StdFolders_autoFileFolderOrNull_("upload"); } catch (eBase) { base = null; }
+  var baseId = base ? base.getId() : null;
+  var trashedFolderIds = {};   // 同一フォルダの二重 trash を避ける
+
+  for (var i = 0; i < cells.length; i++) {
+    var cell = cells[i];
+    var folderTrashed = false;
+
+    // 1) folderName: 06_upload_files 直下の同名フォルダを trash（基底スコープなので安全）。
+    if (cell.folderName && base) {
+      try {
+        var rf = FormsDrive_childFolderByName_(base, cell.folderName);
+        if (rf) {
+          var rfId = rf.getId();
+          if (trashedFolderIds[rfId]) {
+            folderTrashed = true;
+          } else {
+            rf.setTrashed(true);
+            trashedFolderIds[rfId] = true;
+            folderTrashed = true;
+          }
+        }
+      } catch (e1) { Logger.log("[Nfb_trashUploadArtifacts_] folderName " + cell.folderName + ": " + e1); }
+    }
+
+    // 2) folderUrl: 親が 06_upload_files のフォルダのみ trash（folderName で消せなかった分の補完）。
+    if (!folderTrashed && cell.folderUrl) {
+      try {
+        var parsed = Forms_parseGoogleDriveUrl_(cell.folderUrl);
+        if (parsed && parsed.type === "folder" && parsed.id) {
+          if (trashedFolderIds[parsed.id]) {
+            folderTrashed = true;
+          } else {
+            var folder = FormsDrive_folderByIdOrNull_(parsed.id);
+            if (folder && Nfb_folderIsUnderUploadBase_(folder, baseId)) {
+              folder.setTrashed(true);
+              trashedFolderIds[parsed.id] = true;
+              folderTrashed = true;
+            }
+          }
+        }
+      } catch (e2) { Logger.log("[Nfb_trashUploadArtifacts_] folderUrl " + cell.folderUrl + ": " + e2); }
+    }
+
+    // 3) フォルダを消せなかったセルだけ driveFileId を個別 trash（フォルダごと消えた分は省略）。
+    if (!folderTrashed) {
+      for (var j = 0; j < cell.fileIds.length; j++) {
+        var fid = cell.fileIds[j];
+        try {
+          var file = DriveApp.getFileById(fid);
+          if (file && !file.isTrashed()) file.setTrashed(true);
+        } catch (e3) { Logger.log("[Nfb_trashUploadArtifacts_] fileId " + fid + ": " + e3); }
+      }
+    }
+  }
+}
+
+// folder の親に baseId（06_upload_files）が含まれるか。誤って基底外のフォルダを消さないためのガード。
+function Nfb_folderIsUnderUploadBase_(folder, baseId) {
+  if (!folder || !baseId) return false;
+  try {
+    var parents = folder.getParents();
+    while (parents.hasNext()) {
+      if (parents.next().getId() === baseId) return true;
+    }
+  } catch (e) { /* アクセス不能は false 扱い */ }
+  return false;
 }
 
 // シート内のソフトデリート行のうち最も古い deletedAt を Date で返す（無ければ null）。

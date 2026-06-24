@@ -69,6 +69,13 @@ export const resolveShowPrintHeader = (settings = {}, overrideValue = undefined)
   return settings?.showPrintHeader !== false;
 };
 
+// デフォルト様式（テンプレート未選択時の自動生成 Doc）で、アップロードファイル名に
+// Drive リンクを貼るか。未設定は ON（true）。テンプレート出力には影響しない。
+export const resolveLinkUploadFilesOnPrint = (settings = {}, overrideValue = undefined) => {
+  if (overrideValue !== undefined) return !!overrideValue;
+  return settings?.linkUploadFilesOnPrint !== false;
+};
+
 export const formatRecordMetaDateTime = (value) => {
   if (value === null || value === undefined) return "";
   if (typeof value === "string" && value.trim() === "") return "";
@@ -190,6 +197,16 @@ const appendPrintItems = (fields, responses, depth, items, options = {}) => {
       depth,
       type: normalizedField?.type || "text",
     };
+    // fileUpload はファイル名（value）に加え、Drive リンク用に { name, url } を添える。
+    // GAS のデフォルト様式が linkUploadFiles ON のときファイル名へリンクを貼る。
+    // files が無い（添付なし）場合はプロパティを足さない（既存 items 比較を壊さないため）。
+    if (normalizedField?.type === "fileUpload") {
+      const fileEntries = ensureArray(value).map((f) => ({
+        name: resolveFileDisplayName(f?.name || "不明なファイル", normalizedField?.hideFileExtension),
+        url: typeof f?.driveFileUrl === "string" ? f.driveFileUrl : "",
+      }));
+      if (fileEntries.length > 0) nextItem.files = fileEntries;
+    }
     if (shouldIncludePrintItem(nextItem, options.omitEmptyRows)) {
       items.push(nextItem);
     }
@@ -327,6 +344,7 @@ export const buildPrintDocumentPayload = ({
   exportedAt = new Date(),
   omitEmptyRows,
   showHeader,
+  linkUploadFiles,
   driveFolderState = null,
   useTemporaryFolder = false,
   folderUrlsByField = {},
@@ -340,6 +358,7 @@ export const buildPrintDocumentPayload = ({
   const recordRef = recordNo || resolvedRecordId;
   const shouldOmitEmptyRows = resolveOmitEmptyRowsOnPrint(settings, omitEmptyRows);
   const shouldShowHeader = resolveShowPrintHeader(settings, showHeader);
+  const shouldLinkUploadFiles = resolveLinkUploadFilesOnPrint(settings, linkUploadFiles);
   const folderUrl = resolveDriveFolderUrl(driveFolderState);
 
   const firstUploadField = findFirstFileUploadField(schema);
@@ -377,6 +396,7 @@ export const buildPrintDocumentPayload = ({
     recordNo,
     modifiedAt,
     showHeader: shouldShowHeader,
+    linkUploadFiles: shouldLinkUploadFiles,
     exportedAtIso: safeExportedAt.toISOString(),
     items: appendPrintItems(schema, responses, 0, [], { omitEmptyRows: shouldOmitEmptyRows, childDataByFieldId }),
     ...(driveSettings ? { driveSettings } : {}),

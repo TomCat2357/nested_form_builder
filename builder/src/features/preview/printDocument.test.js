@@ -9,6 +9,7 @@ import {
   formatRecordMetaDateTime,
   resolveOmitEmptyRowsOnPrint,
   resolveShowPrintHeader,
+  resolveLinkUploadFilesOnPrint,
 } from "./printDocument.js";
 
 test("buildPrintDocumentPayload は表示順を維持しつつ非表示分岐を除外する", () => {
@@ -200,6 +201,84 @@ test("resolveShowPrintHeader は未設定時 true、false 明示時のみ false 
   assert.equal(resolveShowPrintHeader({}), true);
   assert.equal(resolveShowPrintHeader({ showPrintHeader: true }), true);
   assert.equal(resolveShowPrintHeader({ showPrintHeader: false }), false);
+});
+
+test("resolveLinkUploadFilesOnPrint は未設定時 true、false 明示時のみ false を返す", () => {
+  assert.equal(resolveLinkUploadFilesOnPrint({}), true);
+  assert.equal(resolveLinkUploadFilesOnPrint({ linkUploadFilesOnPrint: true }), true);
+  assert.equal(resolveLinkUploadFilesOnPrint({ linkUploadFilesOnPrint: false }), false);
+  // override 引数が最優先
+  assert.equal(resolveLinkUploadFilesOnPrint({ linkUploadFilesOnPrint: false }, true), true);
+});
+
+test("buildPrintDocumentPayload は fileUpload 項目に { name, url } の files を添える", () => {
+  const schema = [{ id: "files", type: "fileUpload", label: "添付資料" }];
+  const responses = {
+    files: [
+      { name: "見積書.pdf", driveFileUrl: "https://drive.google.com/file/d/AAA/view" },
+      { name: "申請書.docx", driveFileUrl: "" },
+    ],
+  };
+  const payload = buildPrintDocumentPayload({
+    schema,
+    responses,
+    settings: { formTitle: "T" },
+    recordId: "rec-files",
+    exportedAt: new Date("2026-03-09T12:34:56+09:00"),
+    omitEmptyRows: false,
+  });
+  assert.equal(payload.linkUploadFiles, true);
+  assert.deepEqual(payload.items, [
+    {
+      label: "添付資料",
+      value: "見積書.pdf, 申請書.docx",
+      depth: 0,
+      type: "fileUpload",
+      files: [
+        { name: "見積書.pdf", url: "https://drive.google.com/file/d/AAA/view" },
+        { name: "申請書.docx", url: "" },
+      ],
+    },
+  ]);
+});
+
+test("buildPrintDocumentPayload の fileUpload files は hideFileExtension を反映する", () => {
+  const schema = [{ id: "files", type: "fileUpload", label: "添付", hideFileExtension: true }];
+  const responses = {
+    files: [{ name: "見積書.pdf", driveFileUrl: "https://drive.google.com/file/d/AAA/view" }],
+  };
+  const payload = buildPrintDocumentPayload({
+    schema,
+    responses,
+    settings: { formTitle: "T" },
+    recordId: "rec-ext",
+    exportedAt: new Date("2026-03-09T12:34:56+09:00"),
+    omitEmptyRows: false,
+  });
+  assert.deepEqual(payload.items[0].files, [
+    { name: "見積書", url: "https://drive.google.com/file/d/AAA/view" },
+  ]);
+});
+
+test("buildPrintDocumentPayload は linkUploadFilesOnPrint 設定を既定値として使う", () => {
+  const schema = [{ id: "a", type: "text", label: "A" }];
+  const responses = { a: "x" };
+  const base = {
+    schema,
+    responses,
+    recordId: "r",
+    exportedAt: new Date("2026-03-09T12:34:56+09:00"),
+  };
+  assert.equal(buildPrintDocumentPayload({ ...base, settings: { formTitle: "T" } }).linkUploadFiles, true);
+  assert.equal(
+    buildPrintDocumentPayload({ ...base, settings: { formTitle: "T", linkUploadFilesOnPrint: false } }).linkUploadFiles,
+    false,
+  );
+  // override 引数が設定より優先
+  assert.equal(
+    buildPrintDocumentPayload({ ...base, settings: { formTitle: "T", linkUploadFilesOnPrint: false }, linkUploadFiles: true }).linkUploadFiles,
+    true,
+  );
 });
 
 test("formatRecordMetaDateTime は UNIX ms を最終更新日時表示へ整形する", () => {

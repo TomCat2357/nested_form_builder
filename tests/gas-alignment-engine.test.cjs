@@ -323,6 +323,91 @@ test("全件整列: プロジェクト外フォームをコピー取り込みし
   assert.equal(r2.relinkedFiles, 0);
 });
 
+test("全件整列: Phase C で論理→物理の参照復旧を実行し結果を reresolved に含める", () => {
+  const env = buildContext();
+  const { context } = env;
+  context.WithScriptLock_ = (label, fn) => fn();
+  context.Forms_collectFolders_ = () => [];
+  // Phase C は汎用の Admin_reresolveAllRefsFromLogical_ を流用する（このテスト context では
+  // adminMigrations.gs 未ロードのためスパイで差し替えて呼び出し回数と結果伝播を検証する）。
+  let called = 0;
+  context.Admin_reresolveAllRefsFromLogical_ = () => {
+    called++;
+    return { forms: 3, questions: 1, dashboards: 2 };
+  };
+
+  const r = context.StdFolders_alignAllEntries_();
+  assert.equal(r.ok, true);
+  assert.equal(called, 1, "Phase C は 1 回だけ実行");
+  // VM realm 跨ぎで deepStrictEqual はプロトタイプ差で落ちるためフィールド単位で検証。
+  assert.equal(r.reresolved.forms, 3, "復旧件数(forms)を結果に含める");
+  assert.equal(r.reresolved.questions, 1, "復旧件数(questions)を結果に含める");
+  assert.equal(r.reresolved.dashboards, 2, "復旧件数(dashboards)を結果に含める");
+});
+
+test("全件整列: Phase C が失敗しても整列結果は返す（非致命）", () => {
+  const env = buildContext();
+  const { context } = env;
+  context.WithScriptLock_ = (label, fn) => fn();
+  context.Forms_collectFolders_ = () => [];
+  context.Admin_reresolveAllRefsFromLogical_ = () => { throw new Error("boom"); };
+
+  const r = context.StdFolders_alignAllEntries_();
+  assert.equal(r.ok, true, "Phase C 失敗でも ok");
+  assert.equal(r.reresolved.forms, 0, "失敗時は forms 0 件で degrade");
+  assert.equal(r.reresolved.questions, 0, "失敗時は questions 0 件で degrade");
+  assert.equal(r.reresolved.dashboards, 0, "失敗時は dashboards 0 件で degrade");
+});
+
+test("全件整列: Phase C-2 で forms 物理参照の再配置を実行し formPhysicalAligned に件数を返す", () => {
+  const env = buildContext();
+  const { context } = env;
+  context.WithScriptLock_ = (label, fn) => fn();
+  context.Forms_collectFolders_ = () => [];
+  context.Admin_reresolveAllRefsFromLogical_ = () => ({ forms: 0, questions: 0, dashboards: 0 });
+  let called = 0;
+  context.StdFolders_alignAllFormPhysicalRefs_ = () => { called++; return 4; };
+
+  const r = context.StdFolders_alignAllEntries_();
+  assert.equal(r.ok, true);
+  assert.equal(called, 1, "Phase C-2 を 1 回実行");
+  assert.equal(r.formPhysicalAligned, 4, "再配置件数を結果に含める");
+});
+
+test("organize: spreadsheet 参照に ①② 整合を適用（生存物理の再配置で物理URLを更新）", () => {
+  const env = buildContext();
+  const { context } = env;
+  // alignFileRefIntoStdFolder_ をスタブ: ② move 相当の整合結果を返す。
+  context.StdFolders_alignFileRefIntoStdFolder_ = (key, urlOrId, path) => {
+    assert.equal(key, "spreadsheets");
+    return { fileId: "SS1", url: "https://docs.google.com/spreadsheets/d/SS1/edit", path: "経理/2025", status: "moved" };
+  };
+  const json = { settings: { spreadsheetId: "https://docs.google.com/spreadsheets/d/OLD/edit", spreadsheetPath: "経理/2025" } };
+  assert.equal(context.StdFolders_alignFormSpreadsheetRefInJson_(json), true);
+  assert.equal(json.settings.spreadsheetId, "https://docs.google.com/spreadsheets/d/SS1/edit", "物理 URL を整合先へ更新");
+  assert.equal(json.settings.spreadsheetPath, "経理/2025", "論理パスを保持");
+});
+
+test("organize: spreadsheet 参照が無いフォームは align を呼ばず no-op", () => {
+  const env = buildContext();
+  const { context } = env;
+  let called = 0;
+  context.StdFolders_alignFileRefIntoStdFolder_ = () => { called++; return { status: "unresolved" }; };
+  assert.equal(context.StdFolders_alignFormSpreadsheetRefInJson_({ settings: {} }), false);
+  assert.equal(context.StdFolders_alignFormSpreadsheetRefInJson_({}), false);
+  assert.equal(called, 0, "参照が無ければ align を呼ばない（新規作成もしない）");
+});
+
+test("organize: spreadsheet が unresolved/noop のときは据え置き（書き換えない）", () => {
+  const env = buildContext();
+  const { context } = env;
+  context.StdFolders_alignFileRefIntoStdFolder_ = () => ({ fileId: "", status: "unresolved" });
+  const json = { settings: { spreadsheetId: "x", spreadsheetPath: "p" } };
+  assert.equal(context.StdFolders_alignFormSpreadsheetRefInJson_(json), false);
+  assert.equal(json.settings.spreadsheetId, "x", "未解決は据え置き");
+  assert.equal(json.settings.spreadsheetPath, "p");
+});
+
 test("formLink: 親保存でプロジェクト外の子フォームを③コピー取り込みし childFormId/childFormPath を追従", () => {
   const env = buildContext();
   const { context, drive, store, formsA, ext, forms } = env;

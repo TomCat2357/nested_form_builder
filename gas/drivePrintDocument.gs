@@ -40,6 +40,7 @@ function nfbNormalizePrintDocumentRecord_(payload, index) {
     recordNo: payload.recordNo === undefined || payload.recordNo === null ? "" : String(payload.recordNo).trim(),
     modifiedAt: payload.modifiedAt === undefined || payload.modifiedAt === null ? "" : String(payload.modifiedAt).trim(),
     showHeader: payload.showHeader !== false,
+    linkUploadFiles: payload.linkUploadFiles !== false,
     exportedAtIso: payload.exportedAtIso,
     items: payload.items
   };
@@ -77,7 +78,7 @@ function nfbWritePrintDocument_(body, payload) {
     return;
   }
 
-  nfbAppendPrintDocumentItemsTable_(body, items);
+  nfbAppendPrintDocumentItemsTable_(body, items, payload.linkUploadFiles !== false);
 }
 
 function nfbAppendPrintDocumentMetaTable_(body, payload) {
@@ -111,7 +112,7 @@ function nfbAppendPrintDocumentMetaTable_(body, payload) {
   table.setColumnWidth(1, 348);
 }
 
-function nfbAppendPrintDocumentItemsTable_(body, items) {
+function nfbAppendPrintDocumentItemsTable_(body, items, linkUploadFiles) {
   var table = body.appendTable();
   var headerRow = table.appendTableRow();
   var labelHeaderCell = headerRow.appendTableCell("");
@@ -135,11 +136,11 @@ function nfbAppendPrintDocumentItemsTable_(body, items) {
   });
 
   for (var i = 0; i < items.length; i++) {
-    nfbAppendPrintDocumentTableRow_(table, items[i]);
+    nfbAppendPrintDocumentTableRow_(table, items[i], linkUploadFiles);
   }
 }
 
-function nfbAppendPrintDocumentTableRow_(table, item) {
+function nfbAppendPrintDocumentTableRow_(table, item, linkUploadFiles) {
   var type = item && item.type ? String(item.type) : "text";
   var label = item && item.label ? String(item.label) : (type === "message" ? "メッセージ" : "項目");
   var value = item && item.value !== undefined && item.value !== null ? String(item.value) : "";
@@ -180,12 +181,64 @@ function nfbAppendPrintDocumentTableRow_(table, item) {
     spacingAfter: 0
   });
 
-  nfbSetPrintDocumentCellText_(valueCell, value, {
-    fontFamily: "Arial",
-    fontSize: 10,
-    color: "#202124",
-    spacingAfter: 0
-  });
+  // fileUpload で linkUploadFiles ON かつ URL を持つファイルがあれば、ファイル名にリンクを貼る。
+  // リンク可能なファイルが 1 件も無いときは通常のテキスト（value）描画にフォールバック。
+  var fileLinks = (type === "fileUpload" && linkUploadFiles !== false
+    && item && Object.prototype.toString.call(item.files) === "[object Array]") ? item.files : null;
+  var hasLinkableFile = false;
+  if (fileLinks) {
+    for (var fi = 0; fi < fileLinks.length; fi++) {
+      if (fileLinks[fi] && fileLinks[fi].url) { hasLinkableFile = true; break; }
+    }
+  }
+
+  if (hasLinkableFile) {
+    nfbSetPrintDocumentCellFileLinks_(valueCell, fileLinks, {
+      fontFamily: "Arial",
+      fontSize: 10,
+      color: "#202124",
+      spacingAfter: 0
+    });
+  } else {
+    nfbSetPrintDocumentCellText_(valueCell, value, {
+      fontFamily: "Arial",
+      fontSize: 10,
+      color: "#202124",
+      spacingAfter: 0
+    });
+  }
+}
+
+// fileUpload セルの値を「ファイル名を ", " で連結」した 1 段落で描画し、URL を持つ
+// ファイル名の範囲だけにリンク（青字＋下線）を貼る。offsets は連結文字列上の包含インデックス。
+function nfbSetPrintDocumentCellFileLinks_(cell, files, options) {
+  if (!cell) return;
+  var names = [];
+  for (var i = 0; i < files.length; i++) {
+    var nm = files[i] && files[i].name !== undefined && files[i].name !== null ? String(files[i].name) : "";
+    names.push(nm);
+  }
+  var combined = names.join(", ");
+
+  var firstParagraph = cell.getChild(0).asParagraph();
+  var text = firstParagraph.editAsText();
+  text.setText(combined || " ");
+  nfbStylePrintDocumentParagraph_(firstParagraph, options || {});
+
+  var cursor = 0;
+  for (var j = 0; j < files.length; j++) {
+    var name = names[j] || "";
+    var url = files[j] && typeof files[j].url === "string" ? files[j].url : "";
+    if (name && url) {
+      var start = cursor;
+      var end = cursor + name.length - 1;
+      text.setLinkUrl(start, end, url);
+      text.setForegroundColor(start, end, "#1a73e8");
+      text.setUnderline(start, end, true);
+    }
+    cursor += name.length;
+    if (j < files.length - 1) cursor += 2; // ", " 区切り分
+  }
 }
 
 function nfbSetPrintDocumentCellText_(cell, value, options) {
