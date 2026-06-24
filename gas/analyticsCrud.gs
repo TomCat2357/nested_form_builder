@@ -480,29 +480,17 @@ function Analytics_resolveQuestionRef_(ref) {
     var wantId = ref.questionId ? String(ref.questionId) : "";
     if (!wantId) return { ok: true, question: null };
 
-    var mapping = Analytics_getMapping_("questions");
-    var entry = mapping[wantId] || null;
-
-    // 1) id（＝fileId）で解決を試みる。マッピング登録があればその fileId、無ければ wantId 自体を
-    //    fileId とみなして直接開く（コピー直後でマッピング未構築のケースを救済）。
-    var fid = (entry ? Nfb_resolveFileIdFromEntry_(entry) : null) || wantId;
-    if (fid) {
-      try {
-        var f0 = DriveApp.getFileById(fid);
-        if (!f0.isTrashed() && StdFolders_isJsonFile_(f0)) {
-          var q0 = Analytics_adoptQuestionFile_(f0, mapping);
-          if (q0) return { ok: true, question: q0, questionId: q0.id, relinked: q0.id !== wantId, matchedBy: "id" };
-        }
-      } catch (e0) { /* 壊れている / fileId でない → 中央辞書アンカーで復旧へ */ }
-    }
-
-    // 2) 中央辞書の folder + 名前で物理ファイルを引き当て直す（id 変化の復旧）。
-    var recovered = Analytics_resolveItemFileOrNull_("questions", null, wantId, entry, mapping);
-    if (recovered) {
-      var qn = Analytics_adoptQuestionFile_(recovered, mapping);
-      if (qn) return { ok: true, question: qn, questionId: qn.id, relinked: true, matchedBy: "registry" };
-    }
-
-    return { ok: true, question: null };
+    // スケルトン（id 解決 → adopt → registry アンカー再リンク → adopt）は
+    // SharedCrud_resolveEntityRef_（sharedEntityCrud.gs）に集約。analytics 固有の差分を opts で注入する。
+    return SharedCrud_resolveEntityRef_(wantId, {
+      getMapping: function() { return Analytics_getMapping_("questions"); },
+      adoptFile: Analytics_adoptQuestionFile_,
+      entityKey: "question",
+      idKey: "questionId",
+      resolveFileOrNull: function(wid, entry, mapping) {
+        // 中央辞書の folder + 名前で物理ファイルを引き当て直す（id 変化の復旧）。
+        return Analytics_resolveItemFileOrNull_("questions", null, wid, entry, mapping);
+      },
+    });
   });
 }

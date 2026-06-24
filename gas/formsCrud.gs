@@ -236,56 +236,21 @@ function Forms_resolveFormRef_(ref) {
   return nfbSafeCall_(function() {
     ref = ref || {};
     var wantId = ref.formId ? String(ref.formId) : "";
-    var mapping = Forms_getMapping_();
-
-    var entry = wantId ? (mapping[wantId] || null) : null;
-
-    // 1) id（fileId）で解決を試みる。
-    if (wantId) {
-      var fid = (entry ? Nfb_resolveFileIdFromEntry_(entry) : null) || wantId;
-      if (fid) {
-        try {
-          var f0 = DriveApp.getFileById(fid);
-          if (!(typeof f0.isTrashed === "function" && f0.isTrashed()) && StdFolders_isJsonFile_(f0)) {
-            var fm = Forms_adoptFormFile_(f0, mapping);
-            if (fm) return { ok: true, form: fm, formId: fm.id, relinked: fm.id !== wantId, matchedBy: "id" };
-          }
-        } catch (e0) { /* 壊れている / fileId でない → 中央辞書アンカーで復旧へ */ }
-      }
-    }
-
-    // 2) 中央辞書（マッピング）の論理パス folder + title アンカーで物理ファイルを引き当て直す
-    //    （id 変化＝コピー/再作成の自動再リンク）。参照に formName を持たなくても復旧できる。
-    if (entry && typeof entry.title === "string" && entry.title) {
-      var leafJson = entry.title + ".json";
-      var leafJsonNorm = (typeof Forms_normalizeFormTitle_ === "function")
-        ? Forms_normalizeFormTitle_(entry.title) + ".json" : leafJson;
-      if (typeof entry.folder === "string") {
-        var scopedFolder = FormsDrive_lookupFolderForPath_(entry.folder);
-        if (scopedFolder) {
-          var scoped = StdFolders_findFileByNameInFolder_(scopedFolder, leafJson)
-            || StdFolders_findFileByNameInFolder_(scopedFolder, leafJsonNorm);
-          if (scoped) {
-            var fmS = Forms_adoptFormFile_(scoped, mapping);
-            if (fmS) return { ok: true, form: fmS, formId: fmS.id, relinked: true, matchedBy: "registry" };
-          }
-        }
-      }
-      // folder 不明/未一致 → 名前でツリー全体を探す（degrade）。
-      var baseR = FormsDrive_baseFolderOrNull_();
-      if (baseR) {
-        var targetsR = {};
-        targetsR[leafJson] = true;
-        targetsR[leafJsonNorm] = true;
-        var foundR = Forms_findFileByNamesRecursive_(baseR, targetsR);
-        if (foundR) {
-          var fmR = Forms_adoptFormFile_(foundR, mapping);
-          if (fmR) return { ok: true, form: fmR, formId: fmR.id, relinked: true, matchedBy: "registry" };
-        }
-      }
-    }
-
-    return { ok: true, form: null };
+    // スケルトン（id 解決 → adopt → registry アンカー再リンク → adopt）は
+    // SharedCrud_resolveEntityRef_（sharedEntityCrud.gs）に集約。forms 固有の差分を opts で注入する。
+    return SharedCrud_resolveEntityRef_(wantId, {
+      getMapping: Forms_getMapping_,
+      adoptFile: Forms_adoptFormFile_,
+      entityKey: "form",
+      idKey: "formId",
+      resolveFileOrNull: function(wid, entry, mapping) {
+        // 中央辞書（registry）の論理パス folder + title アンカーだけで引き当て直す（id 経路は共通コアが済ませた）。
+        // fileId=null / driveFileUrl="" で渡すと Forms_resolveFormFileOrNull_ は fileId 生存・URL 救済段を
+        // スキップし、folder-scoped + ツリー探索（現 step2 と同じ探索順・同じ targets）だけ走る。
+        if (!(entry && typeof entry.title === "string" && entry.title)) return null;
+        return Forms_resolveFormFileOrNull_(null, wid, entry, "");
+      },
+    });
   });
 }
 

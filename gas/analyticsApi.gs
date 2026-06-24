@@ -75,12 +75,11 @@ function Analytics_saveMapping_(type, mapping) {
   var props = Nfb_getActiveProperties_();
   var key = Analytics_getPropertyKey_(type);
   Nfb_serializeVersionedMapping_(props, key, ANALYTICS_MAPPING_VERSION, mapping || {}, function(entry) {
-    // 永続化用の最小化。driveFileUrl は fileId から読取時に復元できるため捨てる
-    // （forms の Forms_normalizeMappingForStorage_ と対称。PropertiesService の容量制約に対し
-    // 保存件数の上限を伸ばす）。name / folder は fileId 消失時の復旧アンカーとして維持する。
+    // 永続化用の最小化。driveFileUrl は fileId から読取時に復元できるため捨て、
+    // { fileId, name, folder } だけ残す（forms の Forms_normalizeMappingForStorage_ と対称・共通コア
+    // Nfb_minifyMappingForStorage_ へ集約）。name / folder は fileId 消失時の復旧アンカー、
     // folder の null sentinel（未バックフィル）もそのまま残す。読取側は完全なエントリを受け取る。
-    var v = Analytics_normalizeMappingValue_(entry);
-    return { fileId: v.fileId, name: v.name, folder: v.folder };
+    return Nfb_minifyMappingForStorage_(entry, "name");
   });
 }
 

@@ -87,6 +87,66 @@ function SharedCrud_resolveSaveMode_(parsedTarget, existingFileId) {
 }
 
 // =============================================
+// 壊れた論理参照（リンク）を物理ファイルへ解決し、adopt して結果オブジェクトに包む共通コア。
+// Forms_resolveFormRef_（クエスチョン→フォーム）/ Analytics_resolveQuestionRef_（ダッシュボード→
+// クエスチョン）が同一だった「① fileId で解決 → adopt → ② registry の folder+名前アンカーで引き当て
+// 直し → adopt → ③ null」のスケルトンを集約する。nfbSafeCall_ ラップは呼び出し側に残す（位置不変）。
+//
+// 解決順（最初に adopt 成功したものを返す）:
+//   1) wantId（登録があればその fileId、無ければ wantId 自体を fileId とみなす）が生存 & JSON
+//      → adoptFile → { ..., relinked: entity.id !== wantId, matchedBy: "id" }
+//   2) resolveFileOrNull（registry の folder + 名前アンカーで物理ファイルを引き当て直す）が File を返す
+//      → adoptFile → { ..., relinked: true, matchedBy: "registry" }（id 変化＝コピー/再作成の自動再リンク）
+//   3) どちらも不可 → { ok: true, [entityKey]: null }
+//
+// opts（型ごとの差分をここ 1 箇所に閉じ込める）:
+//   getMapping() -> mapping
+//   adoptFile(file, mapping) -> entity|null            parse + adopt（型固有検証込み・id を確定）
+//   resolveFileOrNull(wantId, entry, mapping) -> File|null   ② 専用の registry アンカー解決
+//   entityKey                結果に entity を格納するキー（"form" / "question"）
+//   idKey                    結果に entity.id を格納するキー（"formId" / "questionId"）
+function SharedCrud_resolveEntityRef_(wantId, opts) {
+  var mapping = opts.getMapping();
+  var entry = wantId ? (mapping[wantId] || null) : null;
+
+  // 1) id（＝fileId）で解決を試みる。
+  if (wantId) {
+    var fid = (entry ? Nfb_resolveFileIdFromEntry_(entry) : null) || wantId;
+    if (fid) {
+      try {
+        var f0 = DriveApp.getFileById(fid);
+        if (!(typeof f0.isTrashed === "function" && f0.isTrashed()) && StdFolders_isJsonFile_(f0)) {
+          var e0 = opts.adoptFile(f0, mapping);
+          if (e0) return SharedCrud_buildRefResult_(opts, e0, e0.id !== wantId, "id");
+        }
+      } catch (e) { /* 壊れている / 非 fileId → registry アンカーで復旧へ */ }
+    }
+  }
+
+  // 2) registry の folder + 名前アンカーで物理ファイルを引き当て直す（id 変化の自動再リンク）。
+  var recovered = opts.resolveFileOrNull(wantId, entry, mapping);
+  if (recovered) {
+    var e1 = opts.adoptFile(recovered, mapping);
+    if (e1) return SharedCrud_buildRefResult_(opts, e1, true, "registry");
+  }
+
+  // 3) どちらも不可。
+  var miss = { ok: true };
+  miss[opts.entityKey] = null;
+  return miss;
+}
+
+// SharedCrud_resolveEntityRef_ の結果オブジェクトを組み立てる。entityKey/idKey は型ごとに異なる。
+function SharedCrud_buildRefResult_(opts, entity, relinked, matchedBy) {
+  var r = { ok: true };
+  r[opts.entityKey] = entity;
+  r[opts.idKey] = entity.id;
+  r.relinked = relinked;
+  r.matchedBy = matchedBy;
+  return r;
+}
+
+// =============================================
 // Shared Entity CRUD — Forms / Analytics の delete / archive / copy 系で
 // 「ほぼ行単位で同一」だった本体ロジックを adapter 注入方式で集約したコア群。
 // 各 public 関数（Forms_*_ / Analytics_*_）は空チェック・nfbSafeCall_ ラップ位置・
