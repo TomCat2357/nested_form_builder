@@ -3,6 +3,26 @@
  * ファイルのアップロード・コピー・保存・検索（公開API）
  */
 
+// 印刷様式参照値（新: 素 fileId / 旧: Doc URL）から fileId を取り出す。Drive 走査はしない（軽量）。
+// 保存・整合（standardFolders*.gs）と出力（driveOutput.gs）の両方から使う共通ヘルパー。
+function Nfb_extractTemplateFileId_(value) {
+  var v = Nfb_trimStr_(value);
+  if (!v) return "";
+  if (/^https?:\/\//i.test(v)) {
+    var m = v.match(/\/d\/([a-zA-Z0-9_-]+)/);
+    return (m && m[1]) ? m[1] : "";
+  }
+  return /^[a-zA-Z0-9_-]+$/.test(v) ? v : "";
+}
+
+// holder の新 *Id キーを優先、無ければ旧 *Url キーを素 fileId へ正規化する（後方互換読取）。Drive 走査なし。
+function Nfb_resolveTemplateRefId_(holder, idKey, urlKey) {
+  if (!holder || typeof holder !== "object") return "";
+  var id = Nfb_extractTemplateFileId_(holder[idKey]);
+  if (id) return id;
+  return Nfb_extractTemplateFileId_(holder[urlKey]);
+}
+
 /**
  * Google DriveのURLからテーマCSSを取得
  * @param {string} url - Google DriveのファイルURL

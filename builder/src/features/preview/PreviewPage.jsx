@@ -30,6 +30,7 @@ import { buildExternalActionPayload, interpretExternalActionResponse } from "../
 import {
   normalizePrintTemplateAction,
   resolveEffectivePrintTemplateFileNameTemplate,
+  resolveStandardPrintTemplateId,
 } from "../../utils/printTemplateAction.js";
 import {
   validateOutputAction,
@@ -612,7 +613,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       const result = await gasClientRef.current.executeRecordOutputAction({
         action: outAction,
         settings: {
-          standardPrintTemplateUrl: settings.standardPrintTemplateUrl || "",
+          standardPrintTemplateId: resolveStandardPrintTemplateId(settings),
           standardPrintFileNameTemplate: settings.standardPrintFileNameTemplate || "",
         },
         recordContext: {

@@ -1,4 +1,18 @@
 import { normalizeStyleSettings } from "../core/styleSettings.js";
+import { extractDriveFileId } from "./printTemplateAction.js";
+
+// 標準印刷様式の参照を素の fileId（standardPrintTemplateId）へ正規化する後方互換移行。
+// 旧 standardPrintTemplateUrl（Doc URL）しか無いデータを読み込んだとき id を立てて URL キーを落とす（前進移行）。
+// 物理は素の fileId で保持し、表示/出力では fileId から URL を復元する方針に揃える。
+export const migrateStandardPrintTemplateId = (settings) => {
+  if (!settings || typeof settings !== "object" || Array.isArray(settings)) return settings;
+  if (!("standardPrintTemplateUrl" in settings)) return settings;
+  const { standardPrintTemplateUrl, ...rest } = settings;
+  const id = (typeof rest.standardPrintTemplateId === "string" && rest.standardPrintTemplateId.trim())
+    ? rest.standardPrintTemplateId.trim()
+    : extractDriveFileId(standardPrintTemplateUrl);
+  return id ? { ...rest, standardPrintTemplateId: id } : rest;
+};
 
 export const SAVE_AFTER_ACTIONS = Object.freeze({
   RETURN_TO_LIST: "returnToList",

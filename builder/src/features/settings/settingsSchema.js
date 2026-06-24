@@ -81,7 +81,7 @@ export const SETTINGS_GROUPS = [
     note: "下の「デフォルト様式」で始まる設定は、テンプレートを選ばなかったときに自動生成される印刷様式（デフォルト様式）にのみ適用されます。テンプレートを選んだ場合はテンプレート側のレイアウトがそのまま使われます。",
     fields: [
       {
-        key: "standardPrintTemplateUrl",
+        key: "standardPrintTemplateId",
         label: "標準印刷様式テンプレート",
         type: "reportTemplateSelect",
         required: false,

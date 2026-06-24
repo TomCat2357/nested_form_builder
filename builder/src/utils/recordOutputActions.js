@@ -21,8 +21,9 @@ export const validateOutputAction = (action, settings) => {
     };
   }
   const customTemplateApplies = action.outputType === "gmail" ? !!action.gmailAttachPdf : true;
-  if (customTemplateApplies && action.useCustomTemplate && !String(action.templateUrl || "").trim()) {
-    return { valid: false, error: "カスタムテンプレートURLを設定してください" };
+  const hasTemplateRef = String(action.templateId || action.templateUrl || "").trim();
+  if (customTemplateApplies && action.useCustomTemplate && !hasTemplateRef) {
+    return { valid: false, error: "カスタムテンプレートを設定してください" };
   }
   return { valid: true };
 };

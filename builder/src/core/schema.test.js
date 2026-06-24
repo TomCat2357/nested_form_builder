@@ -159,7 +159,7 @@ test("normalizeSchemaIDs は旧 fileUpload の printTemplateAction を独立カ�
       isDisplayed: true,
       printTemplateAction: {
         enabled: true,
-        templateUrl: "https://example.com/template",
+        templateUrl: "https://docs.google.com/document/d/1AbcDEF_ghiJKLmnopQRstuvWXyz12345/edit",
         fileNameTemplate: "出力_${recordId}",
         outputType: "spreadsheet",
       },
@@ -177,7 +177,7 @@ test("normalizeSchemaIDs は旧 fileUpload の printTemplateAction を独立カ�
     enabled: true,
     outputType: "pdf",
     useCustomTemplate: false,
-    templateUrl: "https://example.com/template",
+    templateId: "1AbcDEF_ghiJKLmnopQRstuvWXyz12345",
     templatePath: "",
     fileNameTemplate: "出力_${recordId}",
     gmailAttachPdf: false,
@@ -200,7 +200,7 @@ test("normalizeSchemaIDs は printTemplate の outputType=googleDoc を保持す
         enabled: true,
         outputType: "googleDoc",
         useCustomTemplate: true,
-        templateUrl: "https://docs.google.com/document/d/abc/edit",
+        templateId: "1AbcDEF_ghiJKLmnopQRstuvWXyz12345",
         fileNameTemplate: "{`_id`}_doc",
       },
     },
@@ -209,7 +209,7 @@ test("normalizeSchemaIDs は printTemplate の outputType=googleDoc を保持す
   assert.equal(schema[0].type, "printTemplate");
   assert.equal(schema[0].printTemplateAction.outputType, "googleDoc");
   assert.equal(schema[0].printTemplateAction.useCustomTemplate, true);
-  assert.equal(schema[0].printTemplateAction.templateUrl, "https://docs.google.com/document/d/abc/edit");
+  assert.equal(schema[0].printTemplateAction.templateId, "1AbcDEF_ghiJKLmnopQRstuvWXyz12345");
   assert.equal(schema[0].printTemplateAction.fileNameTemplate, "{`_id`}_doc");
 });
 

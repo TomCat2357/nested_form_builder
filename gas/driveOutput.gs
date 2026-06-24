@@ -367,27 +367,36 @@ function nfbRequiresRecordOutputFileNameTemplate_(action, outputType) {
   return outputType !== "gmail" || !!(action && action.gmailAttachPdf);
 }
 
-// 物理 URL があればそれを使い、無ければ論理パスで 05_report_templates を引いて URL を合成する。
-// 物理優先・論理フォールバック（保存時の正規化で両方を保持しているのが前提。URL は fileId 由来で
-// 移動に強いため、存在すればそのまま使う。空のときだけ論理パスで引き当てる）。
-function nfbResolveTemplateUrlPhysicalFirst_(url, path) {
-  var u = Nfb_trimStr_(url);
-  if (u) return u;
+// 素の fileId から Google ドキュメント編集 URL を組み立てる（保存は fileId・出力で URL 復元）。空入力は ""。
+function Nfb_buildDocumentUrl_(fileId) {
+  var id = Nfb_trimStr_(fileId);
+  return id ? ("https://docs.google.com/document/d/" + id + "/edit") : "";
+}
+
+// 物理 fileId があればそれから URL を合成し、無ければ論理パスで 05_report_templates を引いて URL を合成する。
+// 物理優先・論理フォールバック（保存時の正規化で両方を保持しているのが前提。物理は素の fileId で持つため
+// 移動に強い。空のときだけ論理パスで引き当てる）。戻り値は従来どおり URL（下流の出力処理は無改修）。
+function nfbResolveTemplateUrlPhysicalFirst_(fileId, path) {
+  var id = Nfb_trimStr_(fileId);
+  if (id) return Nfb_buildDocumentUrl_(id);
   var p = Nfb_trimStr_(path);
   if (p) {
     var fid = StdFolders_resolvePathToFileId_("report_templates", p);
-    if (fid) return "https://docs.google.com/document/d/" + fid + "/edit";
+    if (fid) return Nfb_buildDocumentUrl_(fid);
   }
   return "";
 }
 
 // カード側でカスタムテンプレートが有効かつ参照が解決できればそれを使い、
 // 未指定（または無効）ならフォーム共通の標準印刷出力様式にフォールバックする。
+// 参照は新 *Id キー優先・旧 *Url キー後方互換で素 fileId へ正規化してから解決する。
 function nfbResolveRecordOutputTemplateSourceUrl_(payload, action) {
   var settings = payload && payload.settings ? payload.settings : {};
   if (action && action.useCustomTemplate) {
-    var actionUrl = nfbResolveTemplateUrlPhysicalFirst_(action.templateUrl, action.templatePath);
+    var actionId = Nfb_resolveTemplateRefId_(action, "templateId", "templateUrl");
+    var actionUrl = nfbResolveTemplateUrlPhysicalFirst_(actionId, action.templatePath);
     if (actionUrl) return actionUrl;
   }
-  return nfbResolveTemplateUrlPhysicalFirst_(settings.standardPrintTemplateUrl, settings.standardPrintTemplatePath);
+  var standardId = Nfb_resolveTemplateRefId_(settings, "standardPrintTemplateId", "standardPrintTemplateUrl");
+  return nfbResolveTemplateUrlPhysicalFirst_(standardId, settings.standardPrintTemplatePath);
 }

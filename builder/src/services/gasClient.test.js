@@ -517,7 +517,7 @@ test("executeRecordOutputAction は nfbExecuteRecordOutputAction を呼び出す
   const originalGoogle = globalThis.google;
   const payload = {
     action: { outputType: "gmail", enabled: true, fileNameTemplate: "{@_id}_mail", gmailTemplateSubject: "{@_id} のご案内" },
-    settings: { standardPrintTemplateUrl: "https://docs.google.com/document/d/template123/edit" },
+    settings: { standardPrintTemplateId: "template123" },
     recordContext: { formId: "form_1", recordId: "rec001" },
     driveSettings: { recordId: "rec001", fileNameTemplate: "{@_id}_mail" },
   };

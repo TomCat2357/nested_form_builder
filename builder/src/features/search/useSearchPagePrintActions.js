@@ -17,6 +17,7 @@ import {
   normalizePrintTemplateAction,
   resolveEffectivePrintTemplateFileNameTemplate,
   resolveSharedPrintFileNameTemplate,
+  resolveStandardPrintTemplateId,
   DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE,
 } from "../../utils/printTemplateAction.js";
 import {
@@ -107,7 +108,7 @@ const buildRecordOutputPayload = ({
   return {
     action,
     settings: {
-      standardPrintTemplateUrl: form?.settings?.standardPrintTemplateUrl || "",
+      standardPrintTemplateId: resolveStandardPrintTemplateId(form?.settings),
       standardPrintFileNameTemplate: form?.settings?.standardPrintFileNameTemplate || "",
     },
     recordContext: {
@@ -173,7 +174,7 @@ export function useSearchPagePrintActions({
     const action = {
       enabled: true,
       useCustomTemplate: false,
-      templateUrl: "",
+      templateId: "",
       fileNameTemplate: "",
     };
     const effectiveFileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {}) || DEFAULT_STANDARD_PRINT_FILE_NAME_TEMPLATE;

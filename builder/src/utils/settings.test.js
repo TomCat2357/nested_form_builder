@@ -5,11 +5,38 @@ import {
   SAVE_AFTER_ACTIONS,
   applySpreadsheetExclusiveSetting,
   buildPrimarySaveOptions,
+  migrateStandardPrintTemplateId,
   normalizeExternalActions,
   resolveSaveAfterAction,
   resolveSettingsCheckboxChecked,
   resolveSettingsFieldValue,
 } from "./settings.js";
+
+const REAL_DOC_ID = "1AbcDEF_ghiJKLmnopQRstuvWXyz12345";
+
+test("migrateStandardPrintTemplateId は旧 standardPrintTemplateUrl を素 fileId へ移行し URL キーを落とす", () => {
+  const out = migrateStandardPrintTemplateId({
+    formTitle: "申請書",
+    standardPrintTemplateUrl: `https://docs.google.com/document/d/${REAL_DOC_ID}/edit`,
+  });
+  assert.equal(out.standardPrintTemplateId, REAL_DOC_ID);
+  assert.equal("standardPrintTemplateUrl" in out, false);
+  assert.equal(out.formTitle, "申請書");
+});
+
+test("migrateStandardPrintTemplateId は既に standardPrintTemplateId があればそれを優先する", () => {
+  const out = migrateStandardPrintTemplateId({
+    standardPrintTemplateId: REAL_DOC_ID,
+    standardPrintTemplateUrl: "https://docs.google.com/document/d/OTHER_id_zzzzzzzzzzzzzzzzzzzz/edit",
+  });
+  assert.equal(out.standardPrintTemplateId, REAL_DOC_ID);
+  assert.equal("standardPrintTemplateUrl" in out, false);
+});
+
+test("migrateStandardPrintTemplateId は対象キーが無ければそのまま返す", () => {
+  const input = { formTitle: "x" };
+  assert.equal(migrateStandardPrintTemplateId(input), input);
+});
 
 test("resolveSaveAfterAction は未設定時に一覧へ戻るを返す", () => {
   assert.equal(resolveSaveAfterAction({}), SAVE_AFTER_ACTIONS.RETURN_TO_LIST);

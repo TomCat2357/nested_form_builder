@@ -5,8 +5,15 @@ import {
   migrateLegacyExternalActionUrlTokens,
   hasBlockedSensitiveRefs,
   buildSpreadsheetUrl,
+  buildDocumentUrl,
   SENSITIVE_RESERVED_REFS,
 } from "./externalActionUrl.js";
+
+test("buildDocumentUrl は素 fileId から Doc 編集 URL を組み立て、空は空文字を返す", () => {
+  assert.equal(buildDocumentUrl("doc123"), "https://docs.google.com/document/d/doc123/edit");
+  assert.equal(buildDocumentUrl(""), "");
+  assert.equal(buildDocumentUrl(null), "");
+});
 
 test("isValidExternalActionUrl は http / https を受理する", () => {
   assert.equal(isValidExternalActionUrl("http://example.com"), true);

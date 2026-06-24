@@ -581,22 +581,26 @@ test("StdFolders_reresolveFormPhysicalFromLogical_: spreadsheetId を spreadshee
   assert.equal(json.settings.spreadsheetId, "SS_LOCAL", "spreadsheetPath からローカル SS へ再解決");
 });
 
-test("StdFolders_reresolveTemplateUrlFromPath_: 空 templateUrl を templatePath から URL 再解決（物理生存は no-op）", () => {
+test("StdFolders_reresolveTemplateIdFromPath_: 空 templateId を templatePath から素 fileId 再解決（物理生存は no-op）", () => {
   const gas = loadGasContext();
   gas.StdFolders_isFileIdAlive_ = (id) => id === "ALIVE_TPL";
   gas.StdFolders_resolvePathToFileId_ = (key, p) => (p === "05/様式" ? "TPL_LOCAL" : "");
-  gas.DriveApp = { getFileById: (id) => ({ getUrl: () => "https://docs.google.com/document/d/" + id + "/edit" }) };
 
-  // 空 URL + path → 再解決。
-  const holderEmpty = { templateUrl: "", templatePath: "05/様式" };
-  assert.equal(gas.StdFolders_reresolveTemplateUrlFromPath_(holderEmpty, "templateUrl", "templatePath"), true);
-  assert.equal(holderEmpty.templateUrl, "https://docs.google.com/document/d/TPL_LOCAL/edit");
+  // 空 id + path → 再解決し素の fileId を idKey に書く。
+  const holderEmpty = { templateId: "", templatePath: "05/様式" };
+  assert.equal(gas.StdFolders_reresolveTemplateIdFromPath_(holderEmpty, "templateId", "templateUrl", "templatePath"), true);
+  assert.equal(holderEmpty.templateId, "TPL_LOCAL");
 
-  // 物理生存 URL → 触らない（physical-first）。
-  gas.Forms_parseGoogleDriveUrl_ = () => ({ type: "file", id: "ALIVE_TPL" });
-  const holderAlive = { templateUrl: "https://docs.google.com/document/d/ALIVE_TPL/edit", templatePath: "05/様式" };
-  assert.equal(gas.StdFolders_reresolveTemplateUrlFromPath_(holderAlive, "templateUrl", "templatePath"), false);
-  assert.equal(holderAlive.templateUrl, "https://docs.google.com/document/d/ALIVE_TPL/edit", "物理生存は据え置き");
+  // 旧 templateUrl のみ（死/未解決）+ path → id を解決して templateId に書き、旧 URL キーを剥がす（後方互換・前進移行）。
+  const holderLegacy = { templateUrl: "https://docs.google.com/document/d/DEAD_TPL/edit", templatePath: "05/様式" };
+  assert.equal(gas.StdFolders_reresolveTemplateIdFromPath_(holderLegacy, "templateId", "templateUrl", "templatePath"), true);
+  assert.equal(holderLegacy.templateId, "TPL_LOCAL");
+  assert.equal("templateUrl" in holderLegacy, false, "旧 URL キーを剥がす");
+
+  // 物理生存 id → 触らない（physical-first）。
+  const holderAlive = { templateId: "ALIVE_TPL", templatePath: "05/様式" };
+  assert.equal(gas.StdFolders_reresolveTemplateIdFromPath_(holderAlive, "templateId", "templateUrl", "templatePath"), false);
+  assert.equal(holderAlive.templateId, "ALIVE_TPL", "物理生存は据え置き");
 });
 
 // ---------------------------------------------------------------------------

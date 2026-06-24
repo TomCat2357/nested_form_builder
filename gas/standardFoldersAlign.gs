@@ -335,9 +335,9 @@ function StdFolders_alignAllEntries_() {
 // 全登録フォームへ一括適用する（ただし新規スプレッドシート作成のような保存固有の副作用は行わない）。
 // =============================================
 
-// form.settings.spreadsheetId（物理 URL）/ spreadsheetPath（論理）に ①② 整合を適用する（新規作成なし）。
+// form.settings.spreadsheetId（物理 fileId）/ spreadsheetPath（論理）に ①② 整合を適用する（新規作成なし）。
 //   ① 物理が空/死 → spreadsheetPath（04_spreadsheets 配下）から復旧
-//   ② 物理は生存だが配置が論理とずれ → プロジェクト内=move / 外=copy で寄せ、URL/path を更新
+//   ② 物理は生存だが配置が論理とずれ → プロジェクト内=move / 外=copy で寄せ、id/path を更新
 // 参照が無ければ（path も id も空）no-op。書き換えたら true。
 function StdFolders_alignFormSpreadsheetRefInJson_(json) {
   var s = (json && json.settings && typeof json.settings === "object" && !Array.isArray(json.settings)) ? json.settings : null;
@@ -348,13 +348,13 @@ function StdFolders_alignFormSpreadsheetRefInJson_(json) {
   var aligned = StdFolders_alignFileRefIntoStdFolder_("spreadsheets", rawId, path);
   if (!aligned.fileId || aligned.status === "unresolved" || aligned.status === "noop") return false;
   var changed = false;
-  if (s.spreadsheetId !== aligned.url) { s.spreadsheetId = aligned.url; changed = true; }   // 物理は URL 形で永続化
+  if (s.spreadsheetId !== aligned.fileId) { s.spreadsheetId = aligned.fileId; changed = true; }   // 物理は素の fileId で永続化
   if (s.spreadsheetPath !== aligned.path) { s.spreadsheetPath = aligned.path; changed = true; }
   return changed;
 }
 
 // 1 フォーム json を読み、spreadsheet + 印刷様式（フォーム + カード）に ①② 整合を適用して書き戻す。
-// 戻り: { changed, relocations }（relocations ＝ 再配置した印刷様式 Doc の {oldFileId,newUrl,newPath}）。
+// 戻り: { changed, relocations }（relocations ＝ 再配置した印刷様式 Doc の {oldFileId,newId,newPath}）。
 function StdFolders_alignFormPhysicalRefsInFile_(fileId) {
   var out = { changed: false, relocations: [] };
   var read = Nfb_readJsonFileById_(fileId);
