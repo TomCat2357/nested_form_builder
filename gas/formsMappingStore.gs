@@ -78,6 +78,23 @@ function Forms_normalizeMappingValue_(value) {
 }
 
 /**
+ * 永続化用の最小化正規化の共通コア。Forms（nameKey="title"）/ Analytics（nameKey="name"）で共有する。
+ * driveFileUrl は fileId から読取時に再構築できる（Nfb_normalizeMappingValue_）ため捨て、
+ * { fileId, <nameKey>, folder } だけ残す。PropertiesService の容量制約に対し保存件数の上限を伸ばす。
+ * <nameKey>（title/name）と論理パス folder は fileId 消失時に物理を探し直す復旧アンカーとして維持する
+ * （folder の null sentinel＝未バックフィルもそのまま残す）。
+ * @param {*} value
+ * @param {string} nameKey ラベル文字列を格納するキー名（"title" or "name"）
+ * @returns {{fileId: string|null, folder: string|null}} + [nameKey]
+ */
+function Nfb_minifyMappingForStorage_(value, nameKey) {
+  var v = Nfb_normalizeMappingValue_(value, nameKey);
+  var out = { fileId: v.fileId, folder: v.folder };
+  out[nameKey] = v[nameKey];
+  return out;
+}
+
+/**
  * 永続化用の最小化正規化。driveFileUrl は fileId から一意に導出でき（読取時に
  * Forms_normalizeMappingValue_ が再構築する）、1 エントリで最大のフィールドなので
  * 保存しない。PropertiesService の 9KB/値・500KB/合計 制約に対して件数限界を伸ばす。
@@ -87,8 +104,7 @@ function Forms_normalizeMappingValue_(value) {
  * @returns {{fileId: string|null, title: string|null, folder: string|null}}
  */
 function Forms_normalizeMappingForStorage_(value) {
-  var v = Forms_normalizeMappingValue_(value);
-  return { fileId: v.fileId, title: v.title, folder: v.folder };
+  return Nfb_minifyMappingForStorage_(value, "title");
 }
 
 /**
