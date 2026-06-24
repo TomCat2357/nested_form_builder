@@ -36,6 +36,11 @@ export const buildSpreadsheetUrl = (spreadsheetId) => (
   spreadsheetId ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}` : ""
 );
 
+// 素の fileId から Google ドキュメント編集 URL を組み立てる（印刷様式は fileId で保持・表示/出力で URL 復元）。
+export const buildDocumentUrl = (fileId) => (
+  fileId ? `https://docs.google.com/document/d/${fileId}/edit` : ""
+);
+
 export const isValidExternalActionUrl = (url) => {
   if (typeof url !== "string") return false;
   return HTTP_URL_PATTERN.test(url.trim());

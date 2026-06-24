@@ -400,14 +400,21 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActi
       json.settings.spreadsheetId = "";
     }
 
-    // form → 標準印刷様式 Doc（フォームレベル）: 物理 URL を消去し論理（standardPrintTemplatePath）を温存。
+    // form → 標準印刷様式 Doc（フォームレベル）: 物理 id を消去し論理（standardPrintTemplatePath）を温存。
+    //   新 *Id キー（素 fileId）と旧 *Url キー（後方互換データ）の両方をクリアする。
+    if (json.settings && json.settings.standardPrintTemplateId) {
+      json.settings.standardPrintTemplateId = "";
+    }
     if (json.settings && json.settings.standardPrintTemplateUrl) {
       json.settings.standardPrintTemplateUrl = "";
     }
 
     // schema フィールド内の URL/フォルダ系リンク
     StdFolders_walkFields_(json.schema, function(field) {
-      // 印刷様式テンプレート（field 個別）: 物理 URL を消去し論理（templatePath）を温存。
+      // 印刷様式テンプレート（field 個別）: 物理 id を消去し論理（templatePath）を温存（新 *Id ＋ 旧 *Url）。
+      if (field.printTemplateAction && field.printTemplateAction.templateId) {
+        field.printTemplateAction.templateId = "";
+      }
       if (field.printTemplateAction && field.printTemplateAction.templateUrl) {
         field.printTemplateAction.templateUrl = "";
       }

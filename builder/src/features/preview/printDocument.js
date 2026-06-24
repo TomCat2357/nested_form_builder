@@ -8,6 +8,8 @@ import { traverseSchema } from "../../core/schemaUtils.js";
 import { isExcludedSearchOrPrintField } from "../search/searchTable.js";
 import { isPlainObject } from "../../utils/objectShape.js";
 import { joinFieldPath, escapeSegment, PATH_SEP } from "../../utils/pathCodec.js";
+import { resolveStandardPrintTemplateId } from "../../utils/printTemplateAction.js";
+import { buildDocumentUrl } from "../../utils/externalActionUrl.js";
 
 // 選択肢ラベルの正準実装は core/collect.js に統一（外部アクション/印刷 items と template view 値で共有）。
 // 既存 import 元（FieldRenderer 等）との互換のため re-export する。
@@ -391,7 +393,7 @@ export const buildPrintDocumentPayload = ({
     fileName: `印刷様式_${sanitizePrintFileNamePart(formTitle, "form")}_${sanitizePrintFileNamePart(recordRef, "record")}_${formatFileTimestamp(safeExportedAt)}`,
     formTitle,
     formId: settings.formId || "",
-    templateSourceUrl: settings.standardPrintTemplateUrl || "",
+    templateSourceUrl: buildDocumentUrl(resolveStandardPrintTemplateId(settings)),
     recordId: resolvedRecordId,
     recordNo,
     modifiedAt,

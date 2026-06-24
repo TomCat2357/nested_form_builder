@@ -134,7 +134,7 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
   // フロントの排他（後勝ち）により、パス編集時は physicalId が空＝論理が勝ち、無編集保存時は物理優先で自己修復。
   var aligned = StdFolders_alignFileRefIntoStdFolder_("spreadsheets", physicalId, path);
   if (aligned.fileId && aligned.status !== "unresolved" && aligned.status !== "noop") {
-    nextSettings.spreadsheetId = aligned.url;       // 物理（URL 形で永続化。実行時に id 抽出）
+    nextSettings.spreadsheetId = aligned.fileId;    // 物理（素の fileId で永続化。表示/出力で URL 復元）
     nextSettings.spreadsheetPath = aligned.path;    // 論理（04 配下の相対パス）
     return {
       settings: nextSettings,
@@ -150,7 +150,7 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
   if (path) {
     var createdAtPath = Forms_createSpreadsheetAtPath_(path);
     if (createdAtPath) {
-      nextSettings.spreadsheetId = createdAtPath.spreadsheetUrl;
+      nextSettings.spreadsheetId = createdAtPath.spreadsheetId;
       nextSettings.spreadsheetPath = path;
       return {
         settings: nextSettings,
@@ -163,7 +163,7 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
     nextSettings.spreadsheetPath = path;
     if (physicalId) {
       var degradeUrl = "https://docs.google.com/spreadsheets/d/" + physicalId + "/edit";
-      nextSettings.spreadsheetId = degradeUrl;
+      nextSettings.spreadsheetId = physicalId;       // 物理は素の fileId で永続化
       return { settings: nextSettings, created: createdFromInput, spreadsheetId: physicalId, spreadsheetUrl: degradeUrl };
     }
     nextSettings.spreadsheetId = "";
@@ -176,7 +176,7 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
     var createdRoot = Forms_createSpreadsheet_(Forms_buildSpreadsheetName_(form), stdSpreadsheetFolderId);
     var alignedRoot = StdFolders_alignFileRefIntoStdFolder_("spreadsheets", createdRoot.spreadsheetId, "");
     if (alignedRoot.fileId && alignedRoot.status !== "unresolved" && alignedRoot.status !== "noop") {
-      nextSettings.spreadsheetId = alignedRoot.url;
+      nextSettings.spreadsheetId = alignedRoot.fileId;
       nextSettings.spreadsheetPath = alignedRoot.path;
       return {
         settings: nextSettings,
@@ -185,8 +185,8 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
         spreadsheetUrl: alignedRoot.url
       };
     }
-    // 04 未解決 degrade → 物理 URL のみ。
-    nextSettings.spreadsheetId = createdRoot.spreadsheetUrl;
+    // 04 未解決 degrade → 物理（素の fileId）のみ。
+    nextSettings.spreadsheetId = createdRoot.spreadsheetId;
     nextSettings.spreadsheetPath = "";
     return {
       settings: nextSettings,
@@ -196,9 +196,9 @@ function Forms_resolveSpreadsheetSetting_(settings, form) {
     };
   }
 
-  // 3) 物理入力はあるが align も未解決（04 ルート未解決の degrade）→ 直接 ID/URL でリンク（物理のみ）。
+  // 3) 物理入力はあるが align も未解決（04 ルート未解決の degrade）→ 直接 ID でリンク（物理のみ）。
   var fallbackUrl = "https://docs.google.com/spreadsheets/d/" + physicalId + "/edit";
-  nextSettings.spreadsheetId = fallbackUrl;
+  nextSettings.spreadsheetId = physicalId;          // 物理は素の fileId で永続化
   nextSettings.spreadsheetPath = "";
   return {
     settings: nextSettings,

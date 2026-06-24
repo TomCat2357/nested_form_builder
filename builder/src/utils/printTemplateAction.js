@@ -31,13 +31,29 @@ export const normalizePrintTemplateOutputType = (value) => {
   return PRINT_TEMPLATE_OUTPUT_TYPES.PDF;
 };
 
+// 印刷様式参照（カード）の物理 id を解決する。新 templateId キー優先・旧 templateUrl（URL）後方互換。
+// extractDriveFileId は素の fileId も URL も受け付けるため、両形式を素の fileId へ正規化できる。
+export const resolvePrintTemplateId = (action) => {
+  const id = typeof action?.templateId === "string" ? action.templateId.trim() : "";
+  if (id) return id;
+  return extractDriveFileId(action?.templateUrl || "");
+};
+
+// フォーム共通の標準印刷様式参照の物理 id を解決する。新 standardPrintTemplateId 優先・旧 URL 後方互換。
+export const resolveStandardPrintTemplateId = (settings) => {
+  const id = typeof settings?.standardPrintTemplateId === "string" ? settings.standardPrintTemplateId.trim() : "";
+  if (id) return id;
+  return extractDriveFileId(settings?.standardPrintTemplateUrl || "");
+};
+
 export const normalizePrintTemplateAction = (value) => {
   const base = value && typeof value === "object" ? value : {};
   return {
     enabled: base.enabled === true,
     outputType: normalizePrintTemplateOutputType(base.outputType),
     useCustomTemplate: base.useCustomTemplate === true,
-    templateUrl: typeof base.templateUrl === "string" ? base.templateUrl : "",
+    // 物理参照は素の fileId（templateId）で保持。旧 templateUrl は読取で吸収し出力からは落とす（前進移行）。
+    templateId: resolvePrintTemplateId(base),
     templatePath: typeof base.templatePath === "string" ? base.templatePath : "",
     fileNameTemplate: typeof base.fileNameTemplate === "string" ? base.fileNameTemplate : "",
     gmailAttachPdf: base.gmailAttachPdf === true,

@@ -2,11 +2,14 @@ import React from "react";
 import { resolveSettingsCheckboxChecked, resolveSettingsFieldValue } from "../../utils/settings.js";
 import SearchableSelect from "../../app/components/SearchableSelect.jsx";
 import { extractDriveFileId } from "../../utils/printTemplateAction.js";
+import { buildDocumentUrl, buildSpreadsheetUrl } from "../../utils/externalActionUrl.js";
+import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { useReportTemplateOptions } from "../editor/useReportTemplateOptions.js";
 import { useSpreadsheetOptions } from "../editor/useSpreadsheetOptions.js";
 
 // 標準印刷様式テンプレートを 05_report_templates 内の Google ドキュメントから論理パスで選ぶ。
-// 保存値は従来どおり URL 文字列。value=fileId とマッピングして既存 URL からも選択状態を復元する。
+// 保存値は素の fileId（standardPrintTemplateId）。extractDriveFileId は素 id も旧 URL も受けるため
+// value=fileId とマッピングして選択状態を復元できる。
 function ReportTemplateSelectField({ field, value, onChange, disabled }) {
   const { options, loading, error } = useReportTemplateOptions();
   const currentFileId = extractDriveFileId(value);
@@ -15,7 +18,8 @@ function ReportTemplateSelectField({ field, value, onChange, disabled }) {
 
   const handleSelect = (fileId) => {
     const opt = options.find((o) => o.value === fileId);
-    onChange(field.key, opt ? (opt.url || "") : "");
+    // 物理は素の fileId で保持（opt.value=fileId）。
+    onChange(field.key, opt ? opt.value : "");
   };
 
   return (
@@ -33,7 +37,7 @@ function ReportTemplateSelectField({ field, value, onChange, disabled }) {
       )}
       {hasUnlistedValue && (
         <span className="nf-text-11 nf-text-muted" style={{ wordBreak: "break-all" }}>
-          現在の設定: {value}（一覧に無いため未選択表示。選び直すと置き換わります）
+          現在の設定: {buildDocumentUrl(currentFileId)}（一覧に無いため未選択表示。選び直すと置き換わります）
         </span>
       )}
     </div>
@@ -100,11 +104,16 @@ export function SettingsField({ field, value, onChange, disabled }) {
     );
   }
 
+  // spreadsheetId は素の fileId で保持するため、参照のみ（readOnly）の表示では物理 URL を復元して見せる。
+  const displayValue = (field.readOnly && field.key === "spreadsheetId")
+    ? buildSpreadsheetUrl(normalizeSpreadsheetId(value || ""))
+    : (value ?? "");
+
   return (
     <input
       className="nf-input"
       type={field.type || "text"}
-      value={value ?? ""}
+      value={displayValue}
       placeholder={field.placeholder}
       onChange={(event) => onChange(field.key, event.target.value)}
       disabled={disabled}

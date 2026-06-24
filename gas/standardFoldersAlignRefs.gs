@@ -329,26 +329,20 @@ function StdFolders_alignReferencesOnSave_(kind, savedFileId, selfChangedHint) {
 // 物理が生存していれば触らない（physical-first・冪等）。
 // ===========================================================================
 
-// 印刷様式 URL（urlKey）が空/死で *Path（pathKey）があれば、05_report_templates から再解決して URL を貼り直す。
-// 物理が生存していれば no-op。書き換えたら true。
-function StdFolders_reresolveTemplateUrlFromPath_(holder, urlKey, pathKey) {
+// 印刷様式の物理 id（idKey・旧 urlKey 後方互換）が空/死で *Path（pathKey）があれば、
+// 05_report_templates から再解決して素の fileId を idKey に貼り直す。物理が生存していれば no-op。
+// 旧 *Url キーは前進移行で剥がす。書き換えたら true。
+function StdFolders_reresolveTemplateIdFromPath_(holder, idKey, urlKey, pathKey) {
   if (!holder) return false;
   var path = holder[pathKey];
   if (typeof path !== "string" || !path) return false;
-  var url = holder[urlKey];
-  if (typeof url === "string" && url) {
-    var parsed = Forms_parseGoogleDriveUrl_(url);
-    var id = (parsed && parsed.type === "file") ? parsed.id : "";
-    if (id && StdFolders_isFileIdAlive_(id)) return false;   // 物理生存 → 触らない
-  }
+  var curId = Nfb_resolveTemplateRefId_(holder, idKey, urlKey);
+  if (curId && StdFolders_isFileIdAlive_(curId)) return false;   // 物理生存 → 触らない
   var fileId = StdFolders_resolvePathToFileId_("report_templates", path);
   if (!fileId) return false;
-  try {
-    holder[urlKey] = DriveApp.getFileById(fileId).getUrl();
-    return true;
-  } catch (e) {
-    return false;
-  }
+  holder[idKey] = fileId;
+  if (typeof holder[urlKey] === "string") delete holder[urlKey];  // 旧 URL キーを剥がす
+  return true;
 }
 
 // forms の非エンティティ物理参照（spreadsheet / 印刷様式）を *Path から再解決する。書き換えたら true。
@@ -365,11 +359,11 @@ function StdFolders_reresolveFormPhysicalFromLogical_(json) {
     }
   }
   // 標準印刷様式（フォームレベル）。
-  if (StdFolders_reresolveTemplateUrlFromPath_(s, "standardPrintTemplateUrl", "standardPrintTemplatePath")) changed = true;
+  if (StdFolders_reresolveTemplateIdFromPath_(s, "standardPrintTemplateId", "standardPrintTemplateUrl", "standardPrintTemplatePath")) changed = true;
   // field 個別の印刷様式。
   StdFolders_walkFields_(json.schema, function(field) {
     if (field && field.printTemplateAction) {
-      if (StdFolders_reresolveTemplateUrlFromPath_(field.printTemplateAction, "templateUrl", "templatePath")) changed = true;
+      if (StdFolders_reresolveTemplateIdFromPath_(field.printTemplateAction, "templateId", "templateUrl", "templatePath")) changed = true;
     }
   });
   return changed;

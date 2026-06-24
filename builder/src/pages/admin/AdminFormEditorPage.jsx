@@ -16,7 +16,7 @@ import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
-import { omitThemeSetting, normalizeExternalActions, applySpreadsheetExclusiveSetting } from "../../utils/settings.js";
+import { omitThemeSetting, normalizeExternalActions, applySpreadsheetExclusiveSetting, migrateStandardPrintTemplateId } from "../../utils/settings.js";
 import { loadSpreadsheetOptions } from "../../features/editor/useSpreadsheetOptions.js";
 import { SettingsGroupFields } from "../../features/settings/SettingsField.jsx";
 import ExternalActionsEditor from "../../features/settings/ExternalActionsEditor.jsx";
@@ -59,7 +59,7 @@ export default function AdminFormEditorPage() {
     [form, formIndex],
   );
   const initialSettings = useMemo(
-    () => settingsTemplateFormRefsToNames(omitThemeSetting(form?.settings || {}), formIndex),
+    () => settingsTemplateFormRefsToNames(migrateStandardPrintTemplateId(omitThemeSetting(form?.settings || {})), formIndex),
     [form, formIndex],
   );
 
@@ -126,7 +126,7 @@ export default function AdminFormEditorPage() {
     setName(formTitle);
     setDescription(form.description || "");
     setFolder(form.folder || "");
-    setLocalSettings(settingsTemplateFormRefsToNames(omitThemeSetting(form.settings || {}), formIndex));
+    setLocalSettings(settingsTemplateFormRefsToNames(migrateStandardPrintTemplateId(omitThemeSetting(form.settings || {})), formIndex));
     setQuestionControl(null);
     setNameError("");
   }, [form, formId, isDirty, isDirtyRef, isSavingRef, formIndex]);

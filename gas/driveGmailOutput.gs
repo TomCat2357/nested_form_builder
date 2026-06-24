@@ -3,8 +3,8 @@
  * Gmail下書き出力（テンプレートフィールド解決・下書き生成）
  *
  * PDF添付が有効な場合は driveOutput.gs の nfbCreateTempPdfBlob_ を利用する。
- * 添付PDFの印刷様式は action.useCustomTemplate / action.templateUrl に従い、
- * 未指定時はフォーム共通の standardPrintTemplateUrl（さらに未設定なら自動生成）にフォールバックする。
+ * 添付PDFの印刷様式は action.useCustomTemplate / action.templateId（旧 templateUrl 後方互換）に従い、
+ * 未指定時はフォーム共通の standardPrintTemplateId（旧 standardPrintTemplateUrl 後方互換・さらに未設定なら自動生成）にフォールバックする。
  */
 
 function nfbResolveGmailTemplateFields_(action, outputContext) {
