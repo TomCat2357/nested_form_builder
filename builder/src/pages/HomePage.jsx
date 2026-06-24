@@ -50,6 +50,20 @@ export default function HomePage() {
         <>
           <button
             type="button"
+            onClick={() => handleTabClick("forms")}
+            className={activeView === "forms" ? "nf-btn nf-btn-sidebar" : "nf-btn-outline nf-btn-sidebar"}
+          >
+            フォーム一覧
+          </button>
+          <button
+            type="button"
+            onClick={() => handleTabClick("dashboards")}
+            className={activeView === "dashboards" ? "nf-btn nf-btn-sidebar" : "nf-btn-outline nf-btn-sidebar"}
+          >
+            ダッシュボード一覧
+          </button>
+          <button
+            type="button"
             onClick={() => navigate("/settings")}
             className="nf-btn-outline nf-btn-sidebar"
           >
@@ -61,28 +75,15 @@ export default function HomePage() {
               onClick={() => navigate("/admin")}
               className="nf-btn-outline nf-btn-sidebar"
             >
-              管理
+              管理者メニュー
             </button>
           )}
         </>
       }
     >
-      <div className="home-tabs nf-row nf-gap-8 nf-mb-16">
-        <button
-          type="button"
-          onClick={() => handleTabClick("forms")}
-          className={activeView === "forms" ? "nf-btn" : "nf-btn-outline"}
-        >
-          フォーム一覧
-        </button>
-        <button
-          type="button"
-          onClick={() => handleTabClick("dashboards")}
-          className={activeView === "dashboards" ? "nf-btn" : "nf-btn-outline"}
-        >
-          ダッシュボード一覧
-        </button>
-      </div>
+      <h2 className="main-title nf-mb-16">
+        {activeView === "forms" ? "フォーム一覧" : "ダッシュボード一覧"}
+      </h2>
 
       {activeView === "forms" && <HomeForms resetNonce={resetNonce} />}
       {activeView === "dashboards" && <HomeDashboards resetNonce={resetNonce} />}

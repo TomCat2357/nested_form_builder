@@ -2,12 +2,14 @@ import React, { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
+import { useAuth } from "../app/state/authContext.jsx";
 import { useCancellable } from "../app/hooks/useCancellable.js";
 import { listDashboards, listQuestions } from "../features/analytics/analyticsStore.js";
 
 export default function AdminHubPage() {
   const navigate = useNavigate();
   const { forms } = useAppData();
+  const { adminSettingsEnabled } = useAuth();
   const [dashboardsCount, setDashboardsCount] = useState(null);
   const [questionsCount, setQuestionsCount] = useState(null);
 
@@ -57,6 +59,14 @@ export default function AdminHubPage() {
           <p className="nf-m-0 nf-text-muted">クエリ / 置換 / 外部アクション を実データで試す</p>
           <div className="main-meta nf-mt-8">→ 開く</div>
         </div>
+
+        {adminSettingsEnabled && (
+          <div className="main-card admin-hub-card" onClick={() => navigate("/admin/settings")}>
+            <h2 className="main-title">管理者用設定</h2>
+            <p className="nf-m-0 nf-text-muted">運用キー・管理者メール・標準フォルダ等の管理者向け設定</p>
+            <div className="main-meta nf-mt-8">→ 開く</div>
+          </div>
+        )}
       </div>
     </AppLayout>
   );

@@ -17,6 +17,7 @@ import AdminDashboardListPage from "../pages/admin/AdminDashboardListPage.jsx";
 import AdminQuestionListPage from "../pages/admin/AdminQuestionListPage.jsx";
 import QuestionEditorPage from "../pages/admin/QuestionEditorPage.jsx";
 import PlaygroundPage from "../pages/PlaygroundPage.jsx";
+import AdminSettingsPage from "../pages/admin/AdminSettingsPage.jsx";
 import DashboardEditorPage from "../pages/admin/DashboardEditorPage.jsx";
 import DashboardViewPage from "../pages/dashboards/DashboardViewPage.jsx";
 import NotFoundPage from "../pages/NotFoundPage.jsx";
@@ -300,12 +301,22 @@ function AppRoutes() {
         )}
       />
 
+      {/* 管理者用設定（運用キー等・管理者専用） */}
+      <Route
+        path="/admin/settings"
+        element={(
+          <AdminRoute>
+            <AdminSettingsPage />
+          </AdminRoute>
+        )}
+      />
+
       {/* ダッシュボード閲覧（誰でも可） */}
       <Route path="/dashboards/:dashboardId" element={<DashboardViewPage />} />
 
       {/* 旧URL → 新URL リダイレクト */}
       <Route path="/config" element={<LegacyConfigRedirect />} />
-      <Route path="/admin-settings" element={<Navigate to="/settings?tab=admin" replace />} />
+      <Route path="/admin-settings" element={<Navigate to="/admin/settings" replace />} />
       <Route path="/forms" element={<Navigate to="/admin/forms" replace />} />
       <Route path="/forms/new" element={<Navigate to="/admin/forms/new" replace />} />
       <Route path="/forms/:formId/edit" element={<LegacyFormEditRedirect />} />
