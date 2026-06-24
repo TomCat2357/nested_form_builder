@@ -269,7 +269,7 @@ export function useDriveFileUpload({
       field,
       driveSettings,
     })
-  ), [driveSettings, field?.driveRootFolderUrl, field?.driveFolderNameTemplate]);
+  ), [driveSettings, field]);
 
   const runUploadWithGuard = async (fallbackErrorMessage, runGasAction) => {
     setError("");
@@ -344,7 +344,6 @@ export function useDriveFileUpload({
     gasClient.finalizeRecordDriveFolder({
       currentDriveFolderUrl: currentEffectiveUrl,
       inputDriveFolderUrl: currentFolderState.inputUrl.trim(),
-      folderNameTemplate: currentSettings.folderNameTemplate || "",
       responses: currentSettings.responses || {},
       fieldPaths: currentSettings.fieldPaths || {},
       fieldValues: currentSettings.fieldValues || {},

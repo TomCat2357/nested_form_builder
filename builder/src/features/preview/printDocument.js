@@ -1,7 +1,6 @@
 import { ensureArray } from "../../utils/arrays.js";
 import { extractJstPartsFull, formatUnixMsDateTimeSec, toUnixMs, pad2 } from "../../utils/dateTime.js";
 import { resolveFileDisplayName, buildDataValueMap, toChoiceOptionLabels, toSelectedChoiceLabels } from "../../core/collect.js";
-import { findFirstFileUploadField } from "../../core/schema.js";
 import { shouldShowUnconditionalChildren } from "../../core/fieldValue.js";
 import { CHOICE_TYPES } from "../../utils/responses.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
@@ -363,17 +362,11 @@ export const buildPrintDocumentPayload = ({
   const shouldLinkUploadFiles = resolveLinkUploadFilesOnPrint(settings, linkUploadFiles);
   const folderUrl = resolveDriveFolderUrl(driveFolderState);
 
-  const firstUploadField = findFirstFileUploadField(schema);
-  const fieldRootFolderUrl = firstUploadField?.driveRootFolderUrl || "";
-  const fieldFolderNameTemplate = firstUploadField?.driveFolderNameTemplate || "";
-
   const childFormMeta = collectChildFormMeta(schema, childDataByFieldId);
   const hasChildFormMeta = Object.keys(childFormMeta).length > 0;
 
-  const hasDriveSettings = fieldRootFolderUrl || fieldFolderNameTemplate || folderUrl || useTemporaryFolder || hasChildFormMeta;
+  const hasDriveSettings = folderUrl || useTemporaryFolder || hasChildFormMeta;
   const driveSettings = hasDriveSettings ? {
-    rootFolderUrl: fieldRootFolderUrl,
-    folderNameTemplate: fieldFolderNameTemplate,
     formId: settings.formId || "",
     recordId: resolvedRecordId,
     folderUrl,

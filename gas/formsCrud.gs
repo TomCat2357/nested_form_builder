@@ -75,10 +75,28 @@ var __NFB_SS_PATH_CACHE__ = {};
 // "" もメモ化（base 未解決）。reset で一緒にクリアする。
 var __NFB_STD_BASE_ID_CACHE__ = {};
 
+// fileId → 生存（Drive 上に存在しゴミ箱でない）をリクエストスコープでメモ化する。
+// 出力（印刷様式 URL の物理優先・論理フォールバック）で同一テンプレを多数レコードへ適用する際の
+// getFileById 連打を 1 回に集約する。false もメモ化。reset で一緒にクリアする。
+var __NFB_ALIVE_ID_CACHE__ = {};
+
 function Nfb_resetFormRequestCache_() {
   __NFB_FORM_REQ_CACHE__ = {};
   __NFB_SS_PATH_CACHE__ = {};
   __NFB_STD_BASE_ID_CACHE__ = {};
+  __NFB_ALIVE_ID_CACHE__ = {};
+}
+
+// StdFolders_isFileIdAlive_ のリクエストスコープ・メモ化ラッパー。生存判定は getFileById を伴うため、
+// 同一 fileId への繰り返し問い合わせ（一括出力等）を 1 回に集約する。
+function Nfb_isFileIdAliveCached_(fileId) {
+  if (!fileId) return false;
+  if (Object.prototype.hasOwnProperty.call(__NFB_ALIVE_ID_CACHE__, fileId)) {
+    return __NFB_ALIVE_ID_CACHE__[fileId];
+  }
+  var alive = StdFolders_isFileIdAlive_(fileId);
+  __NFB_ALIVE_ID_CACHE__[fileId] = alive;
+  return alive;
 }
 
 // 04_spreadsheets 配下の論理パス → fileId をメモ化付きで解決する。未解決は "" を返す。

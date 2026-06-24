@@ -78,26 +78,8 @@ function nfbResolveOrCreateFolder_(driveSettings, context) {
   if (directFolder) {
     return directFolder;
   }
-
-  var rootFolder = nfbResolveRootFolder_(driveSettings);
-
-  var folderTemplate = driveSettings ? Nfb_trimStr_(driveSettings.folderNameTemplate) : "";
-  if (!folderTemplate) {
-    return rootFolder;
-  }
-
-  var folderName = nfbResolveTemplateTokens_(folderTemplate, ctx);
-  if (!folderName) {
-    return rootFolder;
-  }
-
-  // 同名フォルダが既にあればそれを返す
-  var existingFolders = rootFolder.getFoldersByName(folderName);
-  if (existingFolders.hasNext()) {
-    return existingFolders.next();
-  }
-
-  return rootFolder.createFolder(folderName);
+  // folderNameTemplate によるテンプレ命名は廃止済み（保存先は ID 由来固定）。直接指定が無ければ root を返す。
+  return nfbResolveRootFolder_(driveSettings);
 }
 
 function nfbBuildRecordTempFolderName_(driveSettings) {
@@ -106,33 +88,10 @@ function nfbBuildRecordTempFolderName_(driveSettings) {
   return NFB_RECORD_TEMP_FOLDER_PREFIX + safeRecordId + "_" + Utilities.getUuid().slice(0, 8);
 }
 
-function nfbApplyFolderNameTemplateIfNeeded_(folder, driveSettings, context) {
-  if (!folder || !nfbIsRecordTempFolder_(folder)) {
-    return folder;
-  }
-
-  var folderTemplate = driveSettings ? Nfb_trimStr_(driveSettings.folderNameTemplate) : "";
-  if (!folderTemplate) {
-    return folder;
-  }
-
-  var resolvedName = nfbResolveTemplateTokens_(folderTemplate, nfbBuildDriveTemplateContext_(driveSettings, context));
-  if (!resolvedName) {
-    return folder;
-  }
-
-  var currentName = typeof folder.getName === "function" ? String(folder.getName() || "") : "";
-  if (currentName !== resolvedName && typeof folder.setName === "function") {
-    folder.setName(resolvedName);
-  }
-  return folder;
-}
-
 function nfbResolveUploadFolder_(driveSettings) {
   var context = nfbBuildDriveTemplateContext_(driveSettings);
   var directFolder = nfbResolveDirectFolder_(driveSettings, context);
   if (directFolder) {
-    nfbApplyFolderNameTemplateIfNeeded_(directFolder, driveSettings, context);
     return {
       folder: directFolder,
       autoCreated: false
@@ -146,7 +105,6 @@ function nfbResolveUploadFolder_(driveSettings) {
     if (stdUploadFolder) rootFolder = stdUploadFolder;
   }
   var createdFolder = rootFolder.createFolder(nfbBuildRecordTempFolderName_(driveSettings));
-  nfbApplyFolderNameTemplateIfNeeded_(createdFolder, driveSettings, context);
   return {
     folder: createdFolder,
     autoCreated: true

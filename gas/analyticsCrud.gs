@@ -24,7 +24,7 @@ function Analytics_listTemplates_(type, options) {
       }
       try {
         var file = DriveApp.getFileById(fileId);
-        if (file.isTrashed()) {
+        if (typeof file.isTrashed === "function" && file.isTrashed()) {
           loadFailures.push({ id: id, error: "ファイルがゴミ箱に移動されています" });
           continue;
         }
@@ -201,7 +201,7 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
         if (otherFileId) {
           try {
             var otherFile = DriveApp.getFileById(otherFileId);
-            if (!otherFile.isTrashed()) {
+            if (!(typeof otherFile.isTrashed === "function" && otherFile.isTrashed())) {
               otherName = Nfb_nameFromFile_(otherFile);
               if (typeof otherName === "string" && otherName) {
                 // 次回以降の高速化のため mapping にキャッシュ
@@ -262,7 +262,7 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
         file = (existingFile && overwriteFileId === existingFile.getId())
           ? existingFile
           : DriveApp.getFileById(overwriteFileId);
-        if (file.isTrashed()) {
+        if (typeof file.isTrashed === "function" && file.isTrashed()) {
           // ゴミ箱に入っていたら新規作成にフォールバック
           file = null;
         } else {

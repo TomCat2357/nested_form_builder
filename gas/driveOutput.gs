@@ -373,18 +373,25 @@ function Nfb_buildDocumentUrl_(fileId) {
   return id ? ("https://docs.google.com/document/d/" + id + "/edit") : "";
 }
 
-// 物理 fileId があればそれから URL を合成し、無ければ論理パスで 05_report_templates を引いて URL を合成する。
-// 物理優先・論理フォールバック（保存時の正規化で両方を保持しているのが前提。物理は素の fileId で持つため
-// 移動に強い。空のときだけ論理パスで引き当てる）。戻り値は従来どおり URL（下流の出力処理は無改修）。
+// 物理 fileId があればそれから URL を合成し、無いか死んでいれば論理パスで 05_report_templates を引いて URL を合成する。
+// 物理優先・論理フォールバック（保存時の正規化で両方を保持しているのが前提。物理は素の fileId で持つため移動に強い）。
+// 保存時の StdFolders_alignFileRefIntoStdFolder_ は採用前に StdFolders_isFileIdAlive_ で物理を検証するため、
+// 出力時もそれに揃える: fileId が死んでいる（削除/ゴミ箱）かつ論理フォールバック先（path）があるなら論理パスへ
+// 落として、「死んだ fileId から組んだ URL を返し出力が空 Doc / 例外で止まって論理に落ちない」不整合を防ぐ。
+// 生存判定は Drive 走査を伴うため、論理フォールバック先が無いときは検証を省いて従来どおり fileId を採用する
+// （同一テンプレを多数レコードへ適用する一括出力では Nfb_isFileIdAliveCached_ が getFileById を 1 回に集約）。
+// 戻り値は従来どおり URL（下流の出力処理は無改修）。
 function nfbResolveTemplateUrlPhysicalFirst_(fileId, path) {
   var id = Nfb_trimStr_(fileId);
-  if (id) return Nfb_buildDocumentUrl_(id);
   var p = Nfb_trimStr_(path);
+  if (id && (!p || Nfb_isFileIdAliveCached_(id))) {
+    return Nfb_buildDocumentUrl_(id);  // 物理生存（or 論理フォールバック先なし）→ fileId 由来 URL を採用
+  }
   if (p) {
     var fid = StdFolders_resolvePathToFileId_("report_templates", p);
     if (fid) return Nfb_buildDocumentUrl_(fid);
   }
-  return "";
+  return Nfb_buildDocumentUrl_(id);  // 論理でも引けなければ元の fileId（空なら ""）を best-effort で返す
 }
 
 // カード側でカスタムテンプレートが有効かつ参照が解決できればそれを使い、

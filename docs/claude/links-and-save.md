@@ -168,6 +168,7 @@ forms / questions / dashboards の**エンティティ間参照**（formLink / Q
 ### 6-1. 確定モデル
 
 - **論理パス＝耐久的な正本**。各エンティティ自身の論理パスは **Script Properties registry**（`{ 物理ID(fileId), 論理パス(folder＋ファイル名) }` のみ）に、各**リンクの宛先**は home ファイル内の `*Path` 復旧アンカー（`formPath`/`questionPath`/`spreadsheetPath`/`standardPrintTemplatePath`/`templatePath`/`folderName`/`childFormPath`）に持つ。
+  - **`*Path` の二重役割に注意**: `childFormPath` / `query.formSources[].formPath` / `gui.formPath` は「保存時に安定 ID から再計算する**表示用の論理パス**」と「物理切れ時の**復旧アンカー**」を兼ねる。フロントは編集ロード時に `refreshFormLinkPaths`（`rewriteSqlFormRefs.js`）/ `questionEditorPayload` で安定 ID から再 stamp し、GAS は保存時に `StdFolders_stampRefPaths_` で registry の現値へ再 stamp する（display と anchor は同じ文字列を共有）。
 - **物理 fileId ＝消去可能なキャッシュ**。解決は物理優先（速い）→死んでいれば論理で貼り直し→次回保存で物理を前進補完。**コピー時は物理を全消去して論理だけ残す**。
 - **registry の二層**: サーバ側（保存/整合/コピー）は **Script Properties registry**（最小・耐久バックストップ）。フロントの参照解決・一覧表示は **IndexedDB registry**（作業キャッシュ・派生再構成可能）。GAS は IndexedDB を読めないため両者は別物で、二重持ちではなく「耐久バックストップ＋作業キャッシュ」の関係。
 

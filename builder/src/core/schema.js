@@ -121,8 +121,10 @@ const normalizeNumberFieldSettings = (field) => {
 export const normalizeFormLinkSettings = (field) => {
   field.childFormId = typeof field.childFormId === "string" ? field.childFormId : "";
   field.childFormPath = typeof field.childFormPath === "string" ? field.childFormPath : "";
-  // 子フォーム（pid==このレコード id の別フォーム行）のデータを 外部アクション / 印刷様式へ渡すか。
-  // 既定 false（既存フォームは従来どおり子データ無し）。
+  // 後方互換のため残す派生フラグ。2026-06-10 以降この値は「子データを含めるか」のゲートとしては
+  // 読まれず、formLink を持つ親フォームの子データは印刷様式 / 外部アクション / Webhook へ常時含まれる
+  // （collectFormLinkFields は表示派生値として返すだけで、どの呼び出し側もこれでフィルタしない）。
+  // 正規化・永続化は旧データ互換のために維持する。
   field.includeChildData = normalizeBooleanSetting(field.includeChildData, false);
   return field;
 };

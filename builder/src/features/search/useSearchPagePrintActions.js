@@ -57,7 +57,6 @@ const buildRecordTemplateContext = ({ base, entry, form, fieldPaths }) => ({
 
 const buildRecordDriveSettings = ({ templateContext, fileNameTemplate, overrides = {} }) => ({
   rootFolderUrl: "",
-  folderNameTemplate: "",
   folderUrl: "",
   useTemporaryFolder: false,
   ...overrides,
@@ -128,7 +127,6 @@ const forceMyDriveRootOverrides = (driveSettings, fileNameTemplate) => {
   if (!driveSettings) return;
   driveSettings.rootFolderUrl = "";
   driveSettings.folderUrl = "";
-  driveSettings.folderNameTemplate = "";
   driveSettings.useTemporaryFolder = false;
   if (fileNameTemplate) {
     driveSettings.fileNameTemplate = fileNameTemplate;

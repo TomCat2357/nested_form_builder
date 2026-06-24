@@ -482,7 +482,6 @@ var ADMIN_TEMPLATE_TEXT_KEYS_ = {
   gmailTemplateBcc: true,
   gmailTemplateSubject: true,
   gmailTemplateBody: true,
-  driveFolderNameTemplate: true,  // fileUpload のフォルダ名テンプレ
   standardPrintFileNameTemplate: true, // settings 共通の出力ファイル名
 };
 

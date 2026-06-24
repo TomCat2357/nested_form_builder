@@ -42,15 +42,6 @@ function Analytics_getMapping_(type) {
   return Analytics_normalizeMapping_(mapping);
 }
 
-// fileId から Drive ファイル表示用 URL を組み立てる（forms の Forms_buildDriveFileUrlFromId_ 相当）。
-// forms ストアを読み込まないコンテキストでも動くようインラインへフォールバックする。
-function Analytics_buildDriveFileUrlFromId_(fileId) {
-  if (!fileId) return null;
-  return typeof Forms_buildDriveFileUrlFromId_ === "function"
-    ? Forms_buildDriveFileUrlFromId_(fileId)
-    : "https://drive.google.com/file/d/" + fileId + "/view";
-}
-
 // 読取側の正規化。driveFileUrl は fileId から都度復元し、読取は完全なエントリ
 // （fileId / driveFileUrl / name / folder）を返す（forms の Forms_normalizeMappingValue_ と対称）。
 // name（= Drive ファイル名）と論理パス folder は、論理側 fileId が失われたときに

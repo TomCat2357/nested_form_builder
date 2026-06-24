@@ -53,7 +53,6 @@ export async function performFormPagePrintDocument(ctx) {
     if (payload.driveSettings) {
       payload.driveSettings.rootFolderUrl = "";
       payload.driveSettings.folderUrl = "";
-      payload.driveSettings.folderNameTemplate = "";
       payload.driveSettings.useTemporaryFolder = false;
     }
     const fileNameTemplate = resolveSharedPrintFileNameTemplate(form?.settings || {});
