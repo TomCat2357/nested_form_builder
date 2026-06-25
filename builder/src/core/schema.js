@@ -22,6 +22,8 @@ export const normalizeExternalAction = (raw) => {
   return {
     url: migrateLegacyExternalActionUrlTokens(typeof obj.url === "string" ? obj.url : ""),
     adminOnly: !!obj.adminOnly,
+    // ON のとき、このレコードのアップロードファイルの実体（base64）も送信する。
+    sendFiles: !!obj.sendFiles,
   };
 };
 

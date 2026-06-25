@@ -331,8 +331,8 @@ export const setRestrictToFormOnly = async (value) => { const r = await fetchGas
 // 問題を回避）。戻り値は { ok, status, body }。body は受信側応答（JSON 文字列 or HTML）。
 // 送信元シークレット（誤送信防止）は管理者設定（スクリプトプロパティ）で集中管理し、
 // 送信時はバックエンドが直接読む。フロントからは渡さない。
-export const sendExternalAction = ({ url, payload }) =>
-  fetchGasApi("nfbSendExternalAction", { url, payload }, "外部アクション送信に失敗しました");
+export const sendExternalAction = ({ url, payload, files }) =>
+  fetchGasApi("nfbSendExternalAction", { url, payload, files }, "外部アクション送信に失敗しました");
 // 標準フォルダ構成（システムごとコピー / マッピング再構築）
 // categories は { forms, questions, dashboards, spreadsheets, report_templates, upload, externalActions, documents }
 // の bool マップ。未指定なら GAS 側で全カテゴリ ON に正規化される（＝従来の一括コピー）。

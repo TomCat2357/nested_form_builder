@@ -22,6 +22,10 @@
 //     record.id    : string
 //     record.no    : string | number
 //     record.items : { question, value, type }[]  question = ヘッダー階層を "/" 連結した質問
+//     files        : { fieldId, question, name, mimeType, base64, driveFileUrl, size }[]
+//                    （送信側で「アップロードファイルも送信する」を ON にしたときだけ付与。
+//                     ファイル実体を base64 で同梱。base64 → Utilities.newBlob で復元できる）
+//     filesTruncated / filesWarning : 合計サイズ上限超過などで一部を同梱できなかったときの警告（任意）
 //   管理者限定ボタンのときのみ付与:
 //     storage.spreadsheetId / spreadsheetUrl / sheetName / driveFileUrl / userEmail
 //
@@ -230,6 +234,22 @@ function handleRecordPayload_(data) {
     Logger.log("%s[%s] %s = %s", indent, it.type, it.question, it.value);
   }
 
+  // 「アップロードファイルも送信する」ON のときだけ付く files[] (実体を base64 で同梱)。
+  var files = Array.isArray(data.files) ? data.files : [];
+  if (files.length) {
+    Logger.log("--- files (%s 件) ---", files.length);
+    for (var fi = 0; fi < files.length; fi++) {
+      var f = files[fi] || {};
+      var b64len = typeof f.base64 === "string" ? f.base64.length : 0;
+      Logger.log("file[%s] %s (%s, %s bytes, base64 %s 文字)", fi, f.name, f.mimeType, f.size, b64len);
+      // TODO: 受信側で保存したい場合は base64 を blob へ復元してから保存する。
+      //   var bytes = Utilities.base64Decode(f.base64);
+      //   var blob = Utilities.newBlob(bytes, f.mimeType, f.name);
+      //   DriveApp.createFile(blob);  // ← 受信側の保存先フォルダに合わせて実装する
+    }
+  }
+  if (data.filesWarning) Logger.log("filesWarning = %s", data.filesWarning);
+
   // TODO: ここに業務処理を書く (例: items を別 API に送る、Doc 生成 など)。
 
   // --- 受信内容をそのまま画面表示する (テスト用) -----------------------------
@@ -262,6 +282,21 @@ function handleRecordPayload_(data) {
       html += '</tr>';
     }
     html += '</tbody></table></div>';
+  }
+  if (files.length || data.filesWarning) {
+    html += '<h2>添付ファイル (base64 同梱)</h2>';
+    if (data.filesWarning) html += '<p class="muted">' + escapeHtml_(String(data.filesWarning)) + '</p>';
+    if (files.length) {
+      html += '<div class="tableWrap"><table><thead><tr>' +
+        '<th>ファイル名</th><th>mimeType</th><th>サイズ(bytes)</th></tr></thead><tbody>';
+      for (var fj = 0; fj < files.length; fj++) {
+        var ff = files[fj] || {};
+        html += '<tr><td>' + escapeHtml_(String(ff.name || "")) + '</td>' +
+          '<td>' + escapeHtml_(String(ff.mimeType || "")) + '</td>' +
+          '<td>' + escapeHtml_(String(ff.size != null ? ff.size : "")) + '</td></tr>';
+      }
+      html += '</tbody></table></div>';
+    }
   }
   html += renderStorageBlock_(data);
 
