@@ -322,11 +322,13 @@ var CHO_L_APPLICANT_ = "申請者情報";
 var CHO_L_APPLICANT_TYPE_ = "申請者の個人・法人の別";
 var CHO_L_PERMIT_GROUP_ = "許可処分情報";
 var CHO_L_REMARKS_ = "備考";
-var CHO_L_JIYU_ = "事由書"; // 親 message。子: 被害原因の鳥獣 / 被害者 / 被害発生の時期 / 被害発生区域（場所）/ 捕獲等又は採取等を行う理由 / 備考
+// 親フォームのこの message の「ラベル」は現在 "証明書"（Excel の対応シート名は "事由書"。両者は別名前空間）。
+var CHO_L_JIYU_ = "証明書"; // 子: 被害原因の鳥獣 / 被害者 / 被害発生の時期 / 被害発生区域（場所）/ 被害の内容 / 捕獲等又は採取等を行う理由 / 備考
 var CHO_L_JIYU_CAUSE_ = "被害原因の鳥獣";
 var CHO_L_JIYU_VICTIM_ = "被害者";
 var CHO_L_JIYU_TIME_ = "被害発生の時期";
 var CHO_L_JIYU_AREA_ = "被害発生区域（場所）";
+var CHO_L_JIYU_CONTENT_ = "被害の内容";
 var CHO_L_JIYU_REASON_ = "捕獲等又は採取等を行う理由";
 // 子フォーム「従事者情報」
 var CHO_L_CHILD_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称)"; // 閉じ括弧が半角!
@@ -398,20 +400,19 @@ var CHO_VICTIM_TO_SHEET_ = { "申請者": "1.申請者自身", "申請者以外"
 var CHO_VICTIM_FROM_SHEET_ = { "1.申請者自身": "申請者", "1": "申請者", "2.申請者以外": "申請者以外", "2": "申請者以外" };
 
 // ----- 申請書 規則第7条 区分の ○ グリッド（フォーム選択肢 → ○ を打つセル）-----
-// 様式の区分ラベルとフォーム選択肢が完全一致しないため最善対応（一部ロッシー・要確認）。
+// フォーム側を様式の区分ラベルに合わせたので 1:1（ロッシーなし）。
 var CHO_AREA7_MARK_ = {
-  "道指定〔定山渓、北大一の沢、北大簾舞、羊ヶ丘白旗山〕鳥獣保護区": "G32", // 様式: 鳥獣保護区
+  "鳥獣保護区": "G32",
   "社寺境内": "J32",
   "休猟区": "G33",
   "墓地": "J33",
   "公道": "G34",
-  "特定猟具使用禁止区域（安全対策あり）": "J34", // 様式: 特定猟具使用禁止区域
-  "特定猟具使用禁止区域（安全対策なし）": "J34", // ※ あり/なし を 1 セルに集約（ロッシー）
-  "国立公園・国定公園特別保護地区": "G35",        // 様式: 自然公園法特別保護地区
-  // J35 = 特定猟具使用制限区域 はフォーム選択肢に対応無し
-  "都市計画施設（区域明示公共空地等）": "G36",
-  "猟区（両区設定者の承認あり）": "J36",
-  "原生自然環境保全地域": "G37"
+  "特定猟具使用禁止区域": "J34",
+  "自然公園法特別保護地区": "G35",
+  "特定猟具使用制限区域": "J35",
+  "都市計画法都市計画施設である公共空地等": "G36",
+  "猟区": "J36",
+  "自然環境保全法原生自然環境保全地域": "G37"
 };
 
 // ----- 7 シート（テンプレ清掃で残すべきシート）。旧 13 枚から刷新 -----
@@ -480,21 +481,8 @@ var CHO_JUJISHA_REFS_ = [
 // 空気銃の免許種類(select) → 狩猟免許の種類（名簿 Q 列）
 var CHO_GUN_LIC_ = { "第一種銃猟免許": "第一種銃猟", "第二種銃猟免許": "第二種銃猟" };
 
-// 免許/登録番号の結合と分解（"石狩" + "1235" ⇄ "石狩第1235号"）
-function Cho_joinLicNo_(prefix, number) {
-  var p = String(prefix == null ? "" : prefix).replace(/^\s+|\s+$/g, "");
-  var n = String(number == null ? "" : number).replace(/^\s+|\s+$/g, "");
-  if (!n) return p ? p : "";
-  return p + "第" + n + "号";
-}
-function Cho_splitLicNo_(value) {
-  var s = String(value == null ? "" : value).replace(/^\s+|\s+$/g, "");
-  var m = s.match(/^(.*?)第\s*([0-9]+)\s*号$/);
-  if (m) return { prefix: m[1], number: m[2] };
-  var m2 = s.match(/([0-9]{2,})/); // フォールバック: 数字列だけ拾う
-  return { prefix: s.replace(/[0-9]+/g, "").replace(/第|号/g, ""), number: m2 ? m2[1] : "" };
-}
-
+// 免許/登録番号はフォーム側を「〇〇第xxxx号」一本（番号接頭語フィールド廃止）にしたので、
+// Excel 名簿 S/V 列の値とそのまま一致する（接頭語の分解/結合は不要）。
 
 // #############################################################################
 // ## domain.gs — payload → 書き出し用モデル（新 7 シート様式）
@@ -590,6 +578,7 @@ function Cho_buildModel_(payload) {
     jiyuVictimName: idx.get(jBase + CHO_L_JIYU_VICTIM_ + "/申請者以外/氏名"),
     jiyuTime: idx.get(jBase + CHO_L_JIYU_TIME_),
     jiyuArea: idx.get(jBase + CHO_L_JIYU_AREA_),
+    jiyuContent: idx.get(jBase + CHO_L_JIYU_CONTENT_),
     jiyuReason: idx.get(jBase + CHO_L_JIYU_REASON_),
     jiyuRemarks: idx.get(jBase + CHO_L_REMARKS_)
   };
@@ -619,10 +608,10 @@ function Cho_parseWorker_(idx) {
   function reg(branchBase, type) {
     if (idx.get(branchBase + "/狩猟者登録/登録の有無") !== "あり") return null;
     var rb = branchBase + "/狩猟者登録/登録の有無/あり/";
-    return { type: type, no: Cho_joinLicNo_(idx.get(rb + "番号接頭語"), idx.get(rb + "番号")), date: Cho_toDateOrText_(idx.get(rb + "交付年月日")) };
+    return { type: type, no: idx.get(rb + "番号"), date: Cho_toDateOrText_(idx.get(rb + "交付年月日")) };
   }
   function lic(licBase, type) {
-    return { type: type, pref: idx.get(licBase + "/都道府県"), no: Cho_joinLicNo_(idx.get(licBase + "/番号接頭語"), idx.get(licBase + "/番号")), date: Cho_toDateOrText_(idx.get(licBase + "/交付年月日")) };
+    return { type: type, pref: idx.get(licBase + "/都道府県"), no: idx.get(licBase + "/番号"), date: Cho_toDateOrText_(idx.get(licBase + "/交付年月日")) };
   }
   function row(tool, l, rg, poss, gunKind) {
     return {
@@ -818,7 +807,7 @@ function Cho_writeJiyu_(ss, model) {
   Cho_setCell_(sheet, "G23", model.jiyuVictimName);
   Cho_setCell_(sheet, "E24", model.jiyuTime);
   Cho_setCell_(sheet, "E25", model.jiyuArea);
-  // E26（被害の内容）はフォームに対応項目がないため空のまま
+  Cho_setCell_(sheet, "E26", model.jiyuContent);
   Cho_setCell_(sheet, "E27", model.jiyuReason);
   Cho_setCell_(sheet, "E28", model.jiyuRemarks);
 }
@@ -986,10 +975,9 @@ function Cho_importRosterBlock_(reader, top, isRep) {
     var wl = Cho_firstWithLicense_(byKind["わな"]);
     if (wl) {
       f[wb + "/免許の必要性"] = "必要";
-      var sp1 = Cho_splitLicNo_(wl.licNo);
       var lb = wb + "/免許の必要性/必要/免許情報/";
       if (wl.licPref) f[lb + "都道府県"] = wl.licPref;
-      if (sp1.number) f[lb + "番号接頭語"] = sp1.prefix, f[lb + "番号"] = sp1.number;
+      if (wl.licNo) f[lb + "番号"] = wl.licNo;
       if (wl.licDate) f[lb + "交付年月日"] = wl.licDate;
     }
     Cho_importReg_(f, wb, byKind["わな"]); // わな直下の狩猟者登録
@@ -1001,10 +989,9 @@ function Cho_importRosterBlock_(reader, top, isRep) {
     var nl = Cho_firstWithLicense_(byKind["網"]);
     if (nl) {
       f[nb + "/免許の必要性"] = "必要";
-      var sp2 = Cho_splitLicNo_(nl.licNo);
       var nlb = nb + "/免許の必要性/必要/免許情報/";
       if (nl.licPref) f[nlb + "都道府県"] = nl.licPref;
-      if (sp2.number) f[nlb + "番号接頭語"] = sp2.prefix, f[nlb + "番号"] = sp2.number;
+      if (nl.licNo) f[nlb + "番号"] = nl.licNo;
       if (nl.licDate) f[nlb + "交付年月日"] = nl.licDate;
       Cho_importReg_(f, nb + "/免許の必要性/必要", byKind["網"]); // 網は 必要 配下に登録
     }
@@ -1018,21 +1005,20 @@ function Cho_importRosterBlock_(reader, top, isRep) {
       if (gunKinds.indexOf(gk) === -1) gunKinds.push(gk);
       if (gr.gunNo) f[gbk + "/所持許可/所持許可証番号"] = gr.gunNo;
       if (gr.gunDate) f[gbk + "/所持許可/交付年月日"] = gr.gunDate;
-      var spg = Cho_splitLicNo_(gr.licNo);
       if (gk === "空気銃") {
         var airSel = Cho_reverseGunLic_(gr.licType); // 第一種銃猟→第一種銃猟免許
         if (airSel) {
           f[gbk + "/免許種類"] = airSel;
           var ab = gbk + "/免許種類/" + airSel + "/";
           if (gr.licPref) f[ab + "都道府県"] = gr.licPref;
-          if (spg.number) f[ab + "番号接頭語"] = spg.prefix, f[ab + "番号"] = spg.number;
+          if (gr.licNo) f[ab + "番号"] = gr.licNo;
           if (gr.licDate) f[ab + "交付年月日"] = gr.licDate;
         }
         Cho_importReg_(f, gbk, [gr]);
       } else { // 散弾銃 / ライフル銃
         var fb = gbk + "/第一種銃猟免許/";
         if (gr.licPref) f[fb + "都道府県"] = gr.licPref;
-        if (spg.number) f[fb + "番号接頭語"] = spg.prefix, f[fb + "番号"] = spg.number;
+        if (gr.licNo) f[fb + "番号"] = gr.licNo;
         if (gr.licDate) f[fb + "交付年月日"] = gr.licDate;
         Cho_importReg_(f, gbk, [gr]);
       }
@@ -1058,8 +1044,7 @@ function Cho_importReg_(f, branchBase, rows) {
     if (r.regNo || r.regDate) {
       f[branchBase + "/狩猟者登録/登録の有無"] = "あり";
       var rb = branchBase + "/狩猟者登録/登録の有無/あり/";
-      var sp = Cho_splitLicNo_(r.regNo);
-      if (sp.number) f[rb + "番号接頭語"] = sp.prefix, f[rb + "番号"] = sp.number;
+      if (r.regNo) f[rb + "番号"] = r.regNo;
       if (r.regDate) f[rb + "交付年月日"] = r.regDate;
       return;
     }
@@ -1131,9 +1116,9 @@ function Cho_importParent_(reader, workers, warnings) {
   }
   f[jBase + CHO_L_JIYU_TIME_] = Cho_str_(jiyu("E24"));
   f[jBase + CHO_L_JIYU_AREA_] = Cho_str_(jiyu("E25"));
+  f[jBase + CHO_L_JIYU_CONTENT_] = Cho_str_(jiyu("E26"));
   f[jBase + CHO_L_JIYU_REASON_] = Cho_str_(jiyu("E27"));
   f[jBase + CHO_L_REMARKS_] = Cho_str_(jiyu("E28"));
-  if (Cho_str_(jiyu("E26"))) warnings.push("事由書 E26『被害の内容』はフォームに対応項目が無いため取り込めません: " + jiyu("E26"));
 
   return { type: applicantType, fields: f };
 }
@@ -1332,8 +1317,7 @@ function Cho_buildGoldenPayload_() {
       { question: c1 + M + "/わな/道具の種類", value: "くくりわな" },
       { question: c1 + M + "/わな/免許の必要性", value: "必要" },
       { question: c1 + M + "/わな/免許の必要性/必要/免許情報/都道府県", value: "北海道" },
-      { question: c1 + M + "/わな/免許の必要性/必要/免許情報/番号接頭語", value: "石狩" },
-      { question: c1 + M + "/わな/免許の必要性/必要/免許情報/番号", value: "1234" },
+      { question: c1 + M + "/わな/免許の必要性/必要/免許情報/番号", value: "石狩第1234号" },
       { question: c1 + M + "/わな/免許の必要性/必要/免許情報/交付年月日", value: "2025-04-01" },
       { question: c2 + "代表的個人", value: "いいえ" },
       { question: c2 + "氏名", value: "冬村　多才" },
@@ -1376,8 +1360,7 @@ function testRosterParse_() {
     { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類/空気銃/所持許可/所持許可証番号", value: "12345678901" },
     { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類/空気銃/免許種類", value: "第二種銃猟免許" },
     { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類/空気銃/免許種類/第二種銃猟免許/都道府県", value: "北海道" },
-    { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類/空気銃/免許種類/第二種銃猟免許/番号接頭語", value: "石狩" },
-    { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類/空気銃/免許種類/第二種銃猟免許/番号", value: "1235" }
+    { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類/空気銃/免許種類/第二種銃猟免許/番号", value: "石狩第1235号" }
   ]));
   var errs = [];
   if (w.methods.length !== 1) errs.push("methods.length=" + w.methods.length);
@@ -1407,7 +1390,6 @@ if (typeof module === "object" && module.exports) {
     Cho_kyokashoRefs_: Cho_kyokashoRefs_, Cho_tsuchiRefs_: Cho_tsuchiRefs_,
     Cho_buildImport_: Cho_buildImport_, Cho_makeReader_: Cho_makeReader_,
     Cho_buildUploadRecords_: Cho_buildUploadRecords_,
-    Cho_splitLicNo_: Cho_splitLicNo_, Cho_joinLicNo_: Cho_joinLicNo_,
     Cho_a1ToRC_: Cho_a1ToRC_, Cho_dateToCanonical_: Cho_dateToCanonical_,
     Cho_serialOrDateToDate_: Cho_serialOrDateToDate_,
     CHO_APP_SPECIES_: CHO_APP_SPECIES_, CHO_ROSTER_: CHO_ROSTER_

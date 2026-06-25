@@ -369,27 +369,16 @@
                     {
                       "type": "text",
                       "required": true,
-                      "defaultValueText": "石狩",
-                      "id": "f_mqteanca_zc15fz",
-                      "isDisplayed": false,
-                      "defaultValueMode": "custom",
-                      "multiline": false,
-                      "inputRestrictionMode": "none",
-                      "label": "番号接頭語"
-                    },
-                    {
-                      "type": "text",
-                      "required": true,
                       "defaultValueText": "",
                       "id": "f_auto_wm5x0x",
                       "showPlaceholder": true,
-                      "placeholder": "0123",
+                      "placeholder": "石狩第1234号",
                       "defaultValueMode": "none",
                       "isDisplayed": false,
                       "multiline": false,
                       "inputRestrictionMode": "pattern",
                       "label": "番号",
-                      "pattern": "^[0-9]{4}$"
+                      "pattern": "^.+第[0-9]+号$"
                     }
                   ],
                   "type": "message",
@@ -435,17 +424,6 @@
                       "required": true
                     },
                     {
-                      "id": "f_dup_21118h",
-                      "type": "text",
-                      "required": true,
-                      "label": "番号接頭語",
-                      "defaultValueMode": "custom",
-                      "defaultValueText": "石狩",
-                      "inputRestrictionMode": "none",
-                      "multiline": false,
-                      "isDisplayed": false
-                    },
-                    {
                       "type": "text",
                       "required": true,
                       "defaultValueText": "",
@@ -455,8 +433,8 @@
                       "label": "番号",
                       "inputRestrictionMode": "pattern",
                       "multiline": false,
-                      "pattern": "^[0-9]{4}$",
-                      "placeholder": "0123",
+                      "pattern": "^.+第[0-9]+号$",
+                      "placeholder": "石狩第1234号",
                       "showPlaceholder": true
                     }
                   ]
@@ -547,28 +525,17 @@
                         "isDisplayed": false
                       },
                       {
-                        "id": "f_mqte7hzl_nirgq0",
-                        "required": true,
-                        "defaultValueText": "石狩",
-                        "label": "番号接頭語",
-                        "multiline": false,
-                        "inputRestrictionMode": "none",
-                        "defaultValueMode": "custom",
-                        "isDisplayed": false,
-                        "type": "text"
-                      },
-                      {
                         "required": true,
                         "type": "text",
                         "label": "番号",
                         "multiline": false,
                         "inputRestrictionMode": "pattern",
                         "isDisplayed": false,
-                        "placeholder": "0123",
+                        "placeholder": "石狩第1234号",
                         "defaultValueMode": "none",
                         "showPlaceholder": true,
                         "id": "f_auto_foacbs",
-                        "pattern": "^[0-9]{4}$",
+                        "pattern": "^.+第[0-9]+号$",
                         "defaultValueText": ""
                       }
                     ],
@@ -592,27 +559,16 @@
                         "id": "f_auto_1kprs9u"
                       },
                       {
-                        "defaultValueText": "石狩",
-                        "type": "text",
-                        "required": true,
-                        "id": "f_mqte5pwx_a9pilh",
-                        "defaultValueMode": "custom",
-                        "isDisplayed": false,
-                        "multiline": false,
-                        "inputRestrictionMode": "none",
-                        "label": "番号接頭語"
-                      },
-                      {
                         "multiline": false,
                         "inputRestrictionMode": "pattern",
                         "label": "番号",
                         "defaultValueMode": "none",
-                        "placeholder": "0123",
+                        "placeholder": "石狩第1234号",
                         "isDisplayed": false,
                         "id": "f_auto_lrwnfo",
                         "showPlaceholder": true,
                         "defaultValueText": "",
-                        "pattern": "^[0-9]{4}$",
+                        "pattern": "^.+第[0-9]+号$",
                         "type": "text",
                         "required": true
                       }
@@ -653,26 +609,15 @@
                             "type": "date"
                           },
                           {
-                            "defaultValueText": "石狩",
-                            "type": "text",
-                            "required": true,
-                            "id": "f_mqte8p1t_upn68x",
-                            "defaultValueMode": "custom",
-                            "isDisplayed": false,
-                            "multiline": false,
-                            "inputRestrictionMode": "none",
-                            "label": "番号接頭語"
-                          },
-                          {
                             "label": "番号",
                             "multiline": false,
                             "inputRestrictionMode": "pattern",
                             "isDisplayed": false,
-                            "placeholder": "0123",
+                            "placeholder": "石狩第1234号",
                             "defaultValueMode": "none",
                             "showPlaceholder": true,
                             "id": "f_auto_1ag4fk4",
-                            "pattern": "^[0-9]{4}$",
+                            "pattern": "^.+第[0-9]+号$",
                             "defaultValueText": "",
                             "type": "text",
                             "required": true
@@ -760,29 +705,18 @@
                       "id": "f_dup_7rrkj1"
                     },
                     {
-                      "id": "f_dup_8lerbw",
-                      "type": "text",
-                      "required": true,
-                      "label": "番号接頭語",
-                      "defaultValueMode": "custom",
-                      "defaultValueText": "石狩",
-                      "inputRestrictionMode": "none",
-                      "multiline": false,
-                      "isDisplayed": false
-                    },
-                    {
                       "inputRestrictionMode": "pattern",
                       "multiline": false,
                       "label": "番号",
                       "defaultValueMode": "none",
-                      "placeholder": "0123",
+                      "placeholder": "石狩第1234号",
                       "isDisplayed": false,
                       "id": "f_dup_9irw2j",
                       "showPlaceholder": true,
                       "defaultValueText": "",
                       "type": "text",
                       "required": true,
-                      "pattern": "^[0-9]{4}$"
+                      "pattern": "^.+第[0-9]+号$"
                     }
                   ]
                 },
@@ -817,17 +751,6 @@
                             "isDisplayed": false
                           },
                           {
-                            "id": "f_dup_fvwi6q",
-                            "type": "text",
-                            "required": true,
-                            "label": "番号接頭語",
-                            "defaultValueMode": "custom",
-                            "defaultValueText": "石狩",
-                            "inputRestrictionMode": "none",
-                            "multiline": false,
-                            "isDisplayed": false
-                          },
-                          {
                             "required": true,
                             "type": "text",
                             "id": "f_dup_g4vcdg",
@@ -837,8 +760,8 @@
                             "label": "番号",
                             "defaultValueMode": "none",
                             "isDisplayed": false,
-                            "pattern": "^[0-9]{4}$",
-                            "placeholder": "0123",
+                            "pattern": "^.+第[0-9]+号$",
+                            "placeholder": "石狩第1234号",
                             "showPlaceholder": true
                           }
                         ]
@@ -911,29 +834,18 @@
                       "id": "f_dup_ji2exn"
                     },
                     {
-                      "id": "f_dup_k7bjfx",
-                      "type": "text",
-                      "required": true,
-                      "label": "番号接頭語",
-                      "defaultValueMode": "custom",
-                      "defaultValueText": "石狩",
-                      "inputRestrictionMode": "none",
-                      "multiline": false,
-                      "isDisplayed": false
-                    },
-                    {
                       "inputRestrictionMode": "pattern",
                       "multiline": false,
                       "label": "番号",
                       "defaultValueMode": "none",
-                      "placeholder": "0123",
+                      "placeholder": "石狩第1234号",
                       "isDisplayed": false,
                       "id": "f_dup_lgjv8y",
                       "showPlaceholder": true,
                       "defaultValueText": "",
                       "type": "text",
                       "required": true,
-                      "pattern": "^[0-9]{4}$"
+                      "pattern": "^.+第[0-9]+号$"
                     }
                   ]
                 },
@@ -968,17 +880,6 @@
                             "isDisplayed": false
                           },
                           {
-                            "id": "f_dup_r5719x",
-                            "type": "text",
-                            "required": true,
-                            "label": "番号接頭語",
-                            "defaultValueMode": "custom",
-                            "defaultValueText": "石狩",
-                            "inputRestrictionMode": "none",
-                            "multiline": false,
-                            "isDisplayed": false
-                          },
-                          {
                             "required": true,
                             "type": "text",
                             "id": "f_dup_srq35x",
@@ -988,8 +889,8 @@
                             "label": "番号",
                             "defaultValueMode": "none",
                             "isDisplayed": false,
-                            "pattern": "^[0-9]{4}$",
-                            "placeholder": "0123",
+                            "pattern": "^.+第[0-9]+号$",
+                            "placeholder": "石狩第1234号",
                             "showPlaceholder": true
                           }
                         ]
@@ -1067,29 +968,18 @@
                       "isDisplayed": false
                     },
                     {
-                      "id": "f_dup_1fbo4q",
-                      "type": "text",
-                      "required": true,
-                      "label": "番号接頭語",
-                      "defaultValueMode": "custom",
-                      "defaultValueText": "石狩",
-                      "inputRestrictionMode": "none",
-                      "multiline": false,
-                      "isDisplayed": false
-                    },
-                    {
                       "defaultValueText": "",
                       "showPlaceholder": true,
                       "id": "f_auto_1e1vq1i",
                       "isDisplayed": false,
                       "defaultValueMode": "none",
-                      "placeholder": "0123",
+                      "placeholder": "石狩第1234号",
                       "label": "番号",
                       "multiline": false,
                       "inputRestrictionMode": "pattern",
                       "required": true,
                       "type": "text",
-                      "pattern": "^[0-9]{4}$"
+                      "pattern": "^.+第[0-9]+号$"
                     }
                   ],
                   "type": "message",
@@ -1133,17 +1023,6 @@
                             "id": "f_auto_12oakwx"
                           },
                           {
-                            "id": "f_dup_4691ki",
-                            "type": "text",
-                            "required": true,
-                            "label": "番号接頭語",
-                            "defaultValueMode": "custom",
-                            "defaultValueText": "石狩",
-                            "inputRestrictionMode": "none",
-                            "multiline": false,
-                            "isDisplayed": false
-                          },
-                          {
                             "isDisplayed": false,
                             "defaultValueMode": "none",
                             "label": "番号",
@@ -1153,8 +1032,8 @@
                             "id": "f_auto_3d2amh",
                             "required": true,
                             "type": "text",
-                            "pattern": "^[0-9]{4}$",
-                            "placeholder": "0123",
+                            "pattern": "^.+第[0-9]+号$",
+                            "placeholder": "石狩第1234号",
                             "showPlaceholder": true
                           }
                         ]

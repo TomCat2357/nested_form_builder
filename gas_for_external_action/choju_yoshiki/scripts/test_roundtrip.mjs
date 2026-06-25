@@ -35,6 +35,13 @@ eq("個人 child0 代表的個人", impK.children[0]["代表的個人"], "はい
 eq("個人 child0 キツネ頭数", impK.children[0][SP + "/キツネ/捕獲頭数"], 7);
 eq("個人 child1 氏名", impK.children[1]["氏名"], "田中聡");
 ok("個人 child1 銃器", (impK.children[1][M] || "").includes("銃器"), impK.children[1][M]);
+// 番号は〇〇第xxxx号一本（接頭語フィールドは無い）。名簿 S 列の値そのまま。
+const c1 = impK.children[1];
+ok("個人 child1 番号接頭語なし", Object.keys(c1).every(k => !k.endsWith("番号接頭語")), "接頭語キーが残存");
+const airNoKey = Object.keys(c1).find(k => k.includes("空気銃/免許種類") && k.endsWith("/番号"));
+ok("個人 child1 空気銃 免許番号=石狩第..号", !!airNoKey && /^.+第[0-9]+号$/.test(c1[airNoKey]), airNoKey + "=" + (airNoKey && c1[airNoKey]));
+// 被害の内容 (証明書セクション) が取り込まれる
+ok("個人 被害の内容 取込", "証明書/被害の内容" in impK.parent.fields, JSON.stringify(Object.keys(impK.parent.fields).filter(k => k.startsWith("証明書"))));
 
 // ---- IMPORT 法人想定 ----
 const impH = C.Cho_buildImport_(C.Cho_makeReader_(fx["法人"]));
@@ -58,8 +65,7 @@ const golden = {
     { question: "従事者情報/#1/" + M, value: "わな" },
     { question: "従事者情報/#1/" + M + "/わな/道具の種類", value: "くくりわな" },
     { question: "従事者情報/#1/" + M + "/わな/免許の必要性", value: "必要" },
-    { question: "従事者情報/#1/" + M + "/わな/免許の必要性/必要/免許情報/番号接頭語", value: "石狩" },
-    { question: "従事者情報/#1/" + M + "/わな/免許の必要性/必要/免許情報/番号", value: "1234" },
+    { question: "従事者情報/#1/" + M + "/わな/免許の必要性/必要/免許情報/番号", value: "石狩第1234号" },
     { question: "従事者情報/#2/氏名", value: "冬村　多才" },
     { question: "従事者情報/#2/" + SP, value: "キツネ" },
     { question: "従事者情報/#2/" + SP + "/キツネ/捕獲頭数", value: "3" },
