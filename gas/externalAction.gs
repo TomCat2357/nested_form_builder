@@ -91,6 +91,64 @@ function ExtAction_postRelay_(url, bodyObj) {
   return { ok: status >= 200 && status < 400, status: status, body: body };
 }
 
+// フロントが渡すファイル参照配列（raw.files）を解決し、Drive 実体を base64 同梱して
+// payload.files[] に詰める純ヘルパ。Drive / Utilities アクセスは deps で注入してテスト可能にする。
+//   deps = {
+//     resolve(name, driveFileId, folderName) -> { fileId, fileUrl }  物理優先・論理フォールバック解決
+//     read(fileId) -> { bytes, mimeType, name }                      Drive 実体（バイト配列）取得
+//     encodeBase64(bytes) -> string                                  base64 文字列化
+//     maxTotalBytes                                                  生バイト合計の上限
+//   }
+// payload に payload.files / payload.filesTruncated / payload.filesWarning を設定して返す。
+// 機微データを宛先未検証で送らない方針のため、プローブ（誤送信防止）には絶対に呼ばない。
+function ExtAction_attachFiles_(payload, files, deps) {
+  var list = (Object.prototype.toString.call(files) === "[object Array]") ? files : [];
+  if (list.length === 0) return payload;
+  var maxTotal = (deps && typeof deps.maxTotalBytes === "number") ? deps.maxTotalBytes : NFB_EXT_ACTION_MAX_TOTAL_BYTES;
+  var out = [];
+  var totalBytes = 0;
+  var unresolved = 0;
+  var skippedTooLarge = 0;
+  for (var i = 0; i < list.length; i++) {
+    var ref = list[i] || {};
+    var name = typeof ref.name === "string" ? ref.name : "";
+    var driveFileId = typeof ref.driveFileId === "string" ? ref.driveFileId : "";
+    var folderName = typeof ref.folderName === "string" ? ref.folderName : "";
+    var resolved = deps.resolve(name, driveFileId, folderName) || {};
+    var fileId = typeof resolved.fileId === "string" ? resolved.fileId : "";
+    if (!fileId) { unresolved++; continue; }
+    var data;
+    try {
+      data = deps.read(fileId) || {};
+    } catch (e) {
+      unresolved++;
+      continue;
+    }
+    var bytes = data.bytes || [];
+    var size = bytes.length || 0;
+    if (totalBytes + size > maxTotal) { skippedTooLarge++; continue; }
+    totalBytes += size;
+    out.push({
+      fieldId: typeof ref.fieldId === "string" ? ref.fieldId : "",
+      question: typeof ref.question === "string" ? ref.question : "",
+      name: name || (typeof data.name === "string" ? data.name : ""),
+      mimeType: typeof data.mimeType === "string" && data.mimeType ? data.mimeType : "application/octet-stream",
+      driveFileUrl: typeof resolved.fileUrl === "string" ? resolved.fileUrl : "",
+      size: size,
+      base64: deps.encodeBase64(bytes),
+    });
+  }
+  payload.files = out;
+  var warnings = [];
+  if (unresolved > 0) warnings.push(unresolved + " 件のファイルを取得できませんでした（移動/削除済みの可能性）。");
+  if (skippedTooLarge > 0) {
+    payload.filesTruncated = true;
+    warnings.push(skippedTooLarge + " 件のファイルは合計サイズ上限を超えるため同梱しませんでした。");
+  }
+  if (warnings.length > 0) payload.filesWarning = warnings.join(" ");
+  return payload;
+}
+
 // 受信 Web アプリへ payload をサーバ間 POST する。
 // 送信元シークレット（管理者設定 / スクリプトプロパティ）が設定されているときは、本データを
 // 送る前に nonce プローブで宛先を検証し、共有シークレットの HMAC が一致した正規の受信アプリ
@@ -118,6 +176,21 @@ function ExtAction_send_(raw) {
           error: "宛先を外部アクション受信アプリとして確認できませんでした（誤送信防止）。送信先 URL とシークレットの設定を確認してください。",
         };
       }
+    }
+
+    // 「アップロードファイルも送信する」指定時は、宛先検証（プローブ）を通過した後にだけ
+    // Drive 実体を取得して base64 同梱する（機微データを未検証の宛先へ送らないため）。
+    var files = (raw && Object.prototype.toString.call(raw.files) === "[object Array]") ? raw.files : [];
+    if (files.length > 0) {
+      ExtAction_attachFiles_(payload, files, {
+        resolve: Nfb_resolveUploadFileEntry_,
+        read: function(fileId) {
+          var blob = DriveApp.getFileById(fileId).getBlob();
+          return { bytes: blob.getBytes(), mimeType: blob.getContentType(), name: blob.getName() };
+        },
+        encodeBase64: function(bytes) { return Utilities.base64Encode(bytes); },
+        maxTotalBytes: NFB_EXT_ACTION_MAX_TOTAL_BYTES,
+      });
     }
 
     // Phase2（または検証なし）: 本 payload を送信する。

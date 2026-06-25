@@ -40,6 +40,9 @@ var NFB_DEFAULT_DELETED_RECORD_RETENTION_DAYS = 30;
 // アップロード検証関連
 // base64 デコード前にサイズを概算チェックして GAS のメモリ枯渇を防ぐ。
 var NFB_MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
+// 外部アクションでファイル実体を base64 同梱して送る際の生バイト合計上限。
+// base64 は約 1.37 倍に膨らむため、UrlFetchApp の POST 上限（約 50MB）に収まるよう余裕を持たせる。
+var NFB_EXT_ACTION_MAX_TOTAL_BYTES = 35 * 1024 * 1024;
 // 実行可能形式の拡張子（小文字・ドットなし）。Drive に保存させない denylist。
 var NFB_BLOCKED_UPLOAD_EXTENSIONS = ["exe", "bat", "cmd", "com", "msi", "scr", "js", "vbs", "vbe", "wsf", "wsh", "ps1", "sh", "jar", "app", "cpl", "hta", "jse"];
 

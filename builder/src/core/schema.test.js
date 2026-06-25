@@ -228,6 +228,7 @@ test("normalizeSchemaIDs は externalAction の externalAction を正規化し r
   assert.deepEqual(schema[0].externalAction, {
     url: "https://script.google.com/macros/x/exec",
     adminOnly: true,
+    sendFiles: false,
   });
   assert.equal("required" in schema[0], false);
 });
@@ -240,6 +241,7 @@ test("normalizeExternalAction は旧・単括弧固定トークンを alasql 予
   assert.deepEqual(out, {
     url: "https://x.com/?id={{`_id`}}&form={{`_form_id`}}&ss={{`_spreadsheet_id`}}",
     adminOnly: true,
+    sendFiles: false,
   });
 });
 

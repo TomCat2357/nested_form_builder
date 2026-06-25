@@ -21,6 +21,7 @@ import {
   buildFieldPathsMap,
   buildFieldValuesMap,
   collectFileUploadMeta,
+  collectExternalActionFiles,
   formatRecordMetaDateTime,
   buildRecordItems,
 } from "./printDocument.js";
@@ -712,8 +713,13 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       storageFields: { spreadsheetId, sheetName, driveFileUrl, userEmail: currentUserEmail },
       gate,
     });
+    // 「アップロードファイルも送信する」が ON のときだけ、このレコードの fileUpload 参照を
+    // 渡す。実体の取得・base64 化は Drive 権限を持つ本体 GAS（ExtAction_send_）が行う。
+    const files = action.sendFiles
+      ? collectExternalActionFiles(schema, { responses, folderNamesByField })
+      : [];
     try {
-      const res = await sendExternalAction({ url: resolvedUrl, payload });
+      const res = await sendExternalAction({ url: resolvedUrl, payload, files });
       const result = interpretExternalActionResponse(res);
       if (!result.ok) {
         showAlert(result.message || "外部アクションの送信先でエラーが発生しました。");

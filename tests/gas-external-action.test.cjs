@@ -8,7 +8,7 @@ function hmacHex(message, secret) {
   return crypto.createHmac("sha256", String(secret)).update(String(message)).digest("hex");
 }
 
-function loadContext(urlFetchImpl, extActionSecret) {
+function loadContext(urlFetchImpl, extActionSecret, extra) {
   const context = {
     console,
     Logger: { log() {} },
@@ -20,15 +20,22 @@ function loadContext(urlFetchImpl, extActionSecret) {
     Nfb_runScriptAction_() { throw new Error("not used in this test"); },
     // 誤送信防止ハンドシェイク用の nonce 生成（決定的なスタブ）。
     Nfb_generateUlid_() { return "NONCE_FIXED"; },
+    // 外部アクションのファイル同梱で参照する定数（constants.gs 相当）。
+    NFB_EXT_ACTION_MAX_TOTAL_BYTES: 35 * 1024 * 1024,
     ScriptApp: { getOAuthToken() { return "TEST_TOKEN"; } },
     // GAS の computeHmacSha256Signature を node crypto で本物相当に再現（バイト配列を返す）。
     Utilities: {
       computeHmacSha256Signature(message, key) {
         return Array.from(crypto.createHmac("sha256", String(key)).update(String(message)).digest());
       },
+      // GAS の base64Encode を node Buffer で再現（バイト配列 → base64 文字列）。
+      base64Encode(bytes) { return Buffer.from(bytes).toString("base64"); },
     },
     UrlFetchApp: { fetch: urlFetchImpl || function () { throw new Error("fetch not stubbed"); } },
   };
+  if (extra && typeof extra === "object") {
+    Object.keys(extra).forEach((key) => { context[key] = extra[key]; });
+  }
   return loadGasFiles(context, ["externalAction.gs"]);
 }
 
@@ -147,6 +154,120 @@ test("ExtAction_send_ は送信元シークレット設定時に正規宛先へ 
   assert.equal(calls[0].opts.payload.payload, undefined);
   // Phase2（本送信）: 本 payload を送る。
   assert.equal(calls[1].opts.payload.payload, JSON.stringify({ context: "record", secretData: "x" }));
+});
+
+// ----- アップロードファイル同梱（base64） ------------------------------------
+
+// deps を注入する純ヘルパ用の最小スタブ群。bytes は文字列をコードポイント配列にして模擬する。
+function bytesOf(str) { return Array.from(String(str)).map((c) => c.charCodeAt(0)); }
+function makeDeps(store, maxTotalBytes) {
+  // store: { [fileId]: { bytes, mimeType, name, url } }。未登録 fileId は解決失敗扱い。
+  return {
+    resolve(name, driveFileId) {
+      const entry = store[driveFileId];
+      return entry ? { fileId: driveFileId, fileUrl: entry.url || "" } : { fileId: "", fileUrl: "" };
+    },
+    read(fileId) {
+      const entry = store[fileId];
+      return { bytes: entry.bytes, mimeType: entry.mimeType, name: entry.name };
+    },
+    encodeBase64(bytes) { return Buffer.from(bytes).toString("base64"); },
+    maxTotalBytes: maxTotalBytes,
+  };
+}
+
+test("ExtAction_attachFiles_ は files[] を解決して base64 同梱する", () => {
+  const ctx = loadContext();
+  const store = {
+    F1: { bytes: bytesOf("hello"), mimeType: "text/plain", name: "a.txt", url: "https://drive/F1" },
+  };
+  const payload = { context: "record" };
+  const out = ctx.ExtAction_attachFiles_(payload, [
+    { fieldId: "fld", question: "親/子", name: "a.txt", driveFileId: "F1", folderName: "rec_1" },
+  ], makeDeps(store, 1000));
+  assert.equal(out.files.length, 1);
+  assert.equal(out.files[0].name, "a.txt");
+  assert.equal(out.files[0].mimeType, "text/plain");
+  assert.equal(out.files[0].fieldId, "fld");
+  assert.equal(out.files[0].question, "親/子");
+  assert.equal(out.files[0].driveFileUrl, "https://drive/F1");
+  assert.equal(out.files[0].size, 5);
+  assert.equal(out.files[0].base64, Buffer.from("hello").toString("base64"));
+  assert.equal(out.filesTruncated, undefined);
+  assert.equal(out.filesWarning, undefined);
+});
+
+test("ExtAction_attachFiles_ は合計サイズ上限超過分を切り捨てて警告を付ける", () => {
+  const ctx = loadContext();
+  const store = {
+    F1: { bytes: bytesOf("aaaaaa"), mimeType: "text/plain", name: "a.txt" }, // 6 bytes
+    F2: { bytes: bytesOf("bbbbbb"), mimeType: "text/plain", name: "b.txt" }, // 6 bytes
+  };
+  const payload = {};
+  const out = ctx.ExtAction_attachFiles_(payload, [
+    { name: "a.txt", driveFileId: "F1" },
+    { name: "b.txt", driveFileId: "F2" },
+  ], makeDeps(store, 8)); // 6 は入るが 6+6=12 は上限 8 超で 2 件目を落とす
+  assert.equal(out.files.length, 1);
+  assert.equal(out.files[0].name, "a.txt");
+  assert.equal(out.filesTruncated, true);
+  assert.match(out.filesWarning, /上限/);
+});
+
+test("ExtAction_attachFiles_ は解決できないファイルをスキップして件数を警告する", () => {
+  const ctx = loadContext();
+  const store = { F1: { bytes: bytesOf("ok"), mimeType: "text/plain", name: "a.txt" } };
+  const payload = {};
+  const out = ctx.ExtAction_attachFiles_(payload, [
+    { name: "a.txt", driveFileId: "F1" },
+    { name: "gone.txt", driveFileId: "DEAD" }, // store に無い → 解決失敗
+  ], makeDeps(store, 1000));
+  assert.equal(out.files.length, 1);
+  assert.equal(out.filesTruncated, undefined);
+  assert.match(out.filesWarning, /取得できませんでした/);
+});
+
+test("ExtAction_send_ は files 指定時に Phase2 本送信へ base64 同梱する（プローブには載せない）", () => {
+  const calls = [];
+  const driveStore = {
+    F1: {
+      getBlob() {
+        return {
+          getBytes() { return bytesOf("hi"); },
+          getContentType() { return "text/plain"; },
+          getName() { return "a.txt"; },
+        };
+      },
+    },
+  };
+  const ctx = loadContext((url, opts) => {
+    calls.push({ url, opts });
+    const body = opts.payload;
+    if (body && String(body.nfbProbe) === "1") {
+      return httpResponse(200, JSON.stringify({ ok: true, nfbExternalAction: true, signature: hmacHex(String(body.nonce), "S") }));
+    }
+    return httpResponse(200, JSON.stringify({ ok: true }));
+  }, "S", {
+    DriveApp: { getFileById(id) { return driveStore[id]; } },
+    Nfb_resolveUploadFileEntry_(name, driveFileId) {
+      return driveStore[driveFileId] ? { fileId: driveFileId, fileUrl: "https://drive/" + driveFileId } : { fileId: "", fileUrl: "" };
+    },
+  });
+  const res = ctx.ExtAction_send_({
+    url: "https://x/exec",
+    payload: { context: "record" },
+    files: [{ fieldId: "fld", question: "q", name: "a.txt", driveFileId: "F1", folderName: "rec_1" }],
+  });
+  assert.equal(res.ok, true);
+  assert.equal(calls.length, 2);
+  // プローブ本文にはファイルを含めない。
+  assert.equal(calls[0].opts.payload.nfbProbe, "1");
+  assert.equal(calls[0].opts.payload.payload, undefined);
+  // Phase2 本送信の payload(JSON) に files[] が base64 で乗る。
+  const sent = JSON.parse(calls[1].opts.payload.payload);
+  assert.equal(sent.files.length, 1);
+  assert.equal(sent.files[0].name, "a.txt");
+  assert.equal(sent.files[0].base64, Buffer.from("hi").toString("base64"));
 });
 
 test("ExtAction_send_ は宛先を確認できないとき本データを送らない（DEST_UNVERIFIED）", () => {

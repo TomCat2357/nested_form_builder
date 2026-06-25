@@ -289,6 +289,29 @@ export const collectFileUploadMeta = (fields, options = {}) => {
   return meta;
 };
 
+// 外部アクション「アップロードファイルも送信する」用に、fileUpload 項目のファイル参照を
+// 平坦化して返す。各エントリは GAS（ExtAction_send_）が Drive から実体を取得・base64 化する
+// ための最小情報を持つ（物理優先 driveFileId / 論理フォールバック name+folderName）。
+//   戻り値: [{ fieldId, question(パス), name, driveFileId, folderName }]
+export const collectExternalActionFiles = (fields, options = {}) => {
+  const responses = options?.responses || {};
+  const folderNamesByField = options?.folderNamesByField || {};
+  const out = [];
+  traverseSchema(fields, (field, context) => {
+    if (field?.type !== "fileUpload" || !field?.id) return;
+    const question = joinFieldPath(context?.pathSegments || []);
+    const folderName = folderNamesByField[field.id] || "";
+    ensureArray(responses[field.id]).forEach((f) => {
+      const name = typeof f?.name === "string" ? f.name : "";
+      const driveFileId = typeof f?.driveFileId === "string" ? f.driveFileId : "";
+      // 実体解決に必要な手がかり（fileId か name）が無いものは送れないので除外。
+      if (!driveFileId && !name) return;
+      out.push({ fieldId: field.id, question, name, driveFileId, folderName });
+    });
+  });
+  return out;
+};
+
 // formLink 項目について、プリロード済みの子フォーム合成オブジェクトを { fieldId: childObj } に
 // 整形する。childDataByFieldId（PreviewPage の childFormMeta）から schema 上に実在する formLink
 // フィールドの分だけ拾う（GAS の row 注入で path へ展開し CHILD_FORM_* UDF が参照する）。
