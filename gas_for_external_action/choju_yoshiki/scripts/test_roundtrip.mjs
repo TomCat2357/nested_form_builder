@@ -83,12 +83,14 @@ const items = [];
 for (const k in impK.parent.fields) items.push({ question: k, value: impK.parent.fields[k] });
 impK.children.forEach((ch, i) => { for (const k in ch) items.push({ question: "従事者情報/#" + (i + 1) + "/" + k, value: ch[k] }); });
 const rtAp = C.Cho_appCells_(C.Cho_buildModel_({ generatedAt: "2026-06-01T00:00:00.000Z", record: { items } }));
-const grid = fx["個人"]["申請書"];
-const oc = (a1) => { const m = a1.match(/^([A-Z])(\d+)$/); return grid[+m[2] - 1][m[1].charCodeAt(0) - 65]; };
-for (const cell of ["F18", "F20", "F24", "I18"]) {
-  const got = rtAp[cell] === "" ? null : rtAp[cell], orig = oc(cell);
-  ok("roundtrip " + cell, String(got) === String(orig == null ? "" : orig), `got=${got} orig=${orig}`);
-}
+// 申請書の種数は名簿の集計式（キャッシュは Sheets/Excel 再計算なので fixture では空）。
+// よって「取り込んだ子の合算」== 再書き出しの 申請書セル を不変条件として検証する。
+const sumHead = (sp) => impK.children.reduce((a, ch) => a + (Number(ch[SP + "/" + sp + "/捕獲頭数"]) || 0), 0);
+const sumEgg = (sp) => impK.children.reduce((a, ch) => a + (Number(ch[SP + "/" + sp + "/採取卵数"]) || 0), 0);
+eq("roundtrip キジバト頭数=F18", rtAp["F18"] || 0, sumHead("キジバト"));
+eq("roundtrip スズメ頭数=F20", rtAp["F20"] || 0, sumHead("スズメ"));
+eq("roundtrip キツネ頭数=F24", rtAp["F24"] || 0, sumHead("キツネ"));
+eq("roundtrip キジバト卵数=I18", rtAp["I18"] || 0, sumEgg("キジバト"));
 
 console.log(`\n==== ${pass} PASS / ${fail} FAIL ====`);
 process.exit(fail ? 1 : 0);

@@ -11,7 +11,7 @@ import openpyxl
 warnings.filterwarnings("ignore")
 
 REPO_FORM_TEST = os.path.join(os.path.dirname(__file__), "..", "..", "..", "form_test")
-SHEETS = ["申請書", "従事者名簿", "事由書", "許可証", "振興局宛通知", "警察宛通知", "従事者証"]
+SHEETS = ["申請書", "従事者名簿", "証明書", "許可証", "振興局宛通知", "警察宛通知", "従事者証"]
 FILES = [("個人", "鳥獣保護管理法様式_個人想定.xlsx"), ("法人", "鳥獣保護管理法様式_法人想定.xlsx")]
 
 

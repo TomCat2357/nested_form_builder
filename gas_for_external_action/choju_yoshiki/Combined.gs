@@ -322,7 +322,7 @@ var CHO_L_APPLICANT_ = "申請者情報";
 var CHO_L_APPLICANT_TYPE_ = "申請者の個人・法人の別";
 var CHO_L_PERMIT_GROUP_ = "許可処分情報";
 var CHO_L_REMARKS_ = "備考";
-// 親フォームのこの message の「ラベル」は現在 "証明書"（Excel の対応シート名は "事由書"。両者は別名前空間）。
+// フォームの message ラベル・Excel シート名とも "証明書" に統一。
 var CHO_L_JIYU_ = "証明書"; // 子: 被害原因の鳥獣 / 被害者 / 被害発生の時期 / 被害発生区域（場所）/ 被害の内容 / 捕獲等又は採取等を行う理由 / 備考
 var CHO_L_JIYU_CAUSE_ = "被害原因の鳥獣";
 var CHO_L_JIYU_VICTIM_ = "被害者";
@@ -389,13 +389,13 @@ var CHO_ROSTER_ = {
   }
 };
 
-// ----- 事由書 被害原因の鳥獣（○ を打つセル）。左列=F / 右列(ノイヌ・アライグマ)=I -----
+// ----- 証明書 被害原因の鳥獣（○ を打つセル）。左列=F / 右列(ノイヌ・アライグマ)=I -----
 var CHO_JIYU_SPECIES_MARK_ = {
   "キジバト": "F13", "カワラバト": "F14", "スズメ": "F15", "ニュウナイスズメ": "F16",
   "ハシボソガラス": "F17", "ハシブトガラス": "F18", "キツネ": "F19",
   "ノイヌ": "I19", "ノネコ": "F20", "アライグマ": "I20", "トガリネズミ科・ネズミ科": "F21"
 };
-// 事由書 被害者 区分（フォーム値 ↔ 様式表記）
+// 証明書 被害者 区分（フォーム値 ↔ 様式表記）
 var CHO_VICTIM_TO_SHEET_ = { "申請者": "1.申請者自身", "申請者以外": "2.申請者以外" };
 var CHO_VICTIM_FROM_SHEET_ = { "1.申請者自身": "申請者", "1": "申請者", "2.申請者以外": "申請者以外", "2": "申請者以外" };
 
@@ -416,7 +416,7 @@ var CHO_AREA7_MARK_ = {
 };
 
 // ----- 7 シート（テンプレ清掃で残すべきシート）。旧 13 枚から刷新 -----
-var CHO_SHEETS_ = ["申請書", "従事者名簿", "事由書", "許可証", "振興局宛通知", "警察宛通知", "従事者証"];
+var CHO_SHEETS_ = ["申請書", "従事者名簿", "証明書", "許可証", "振興局宛通知", "警察宛通知", "従事者証"];
 // 旧テンプレ由来で削除すべきシート
 var CHO_SHEETS_TO_DELETE_ = ["Sheet1", "申請内容", "従事者名簿 (法人)", "許可証個人", "許可証法人",
   "証明書", "依頼書", "許可伺書", "交付通知書", "許可審査表", "報告書添付", "結果報告書", "わな"];
@@ -541,7 +541,7 @@ function Cho_buildModel_(payload) {
   var area7Path = CHO_L_AREA_ + "/" + CHO_L_AREA7_;
   var area7Selected = Cho_splitChecks_(idx.get(area7Path));
 
-  // 事由書
+  // 証明書
   var jBase = CHO_L_JIYU_ + "/";
   var jiyuVictim = idx.get(jBase + CHO_L_JIYU_VICTIM_);
 
@@ -775,7 +775,7 @@ function Cho_fillAll_(ss, model) {
   // 従事者名簿
   Cho_writeRoster_(ss, model);
 
-  // 事由書
+  // 証明書
   Cho_writeJiyu_(ss, model);
 
   // 緑シート（許可証・振興局宛通知・警察宛通知）に投影
@@ -792,8 +792,8 @@ function Cho_projectRefs_(ss, sheetName, refs, appCells, model) {
 }
 
 function Cho_writeJiyu_(ss, model) {
-  var sheet = ss.getSheetByName("事由書");
-  if (!sheet) { model.warnings.push("シート「事由書」が見つかりません。"); return; }
+  var sheet = ss.getSheetByName("証明書");
+  if (!sheet) { model.warnings.push("シート「証明書」が見つかりません。"); return; }
   Cho_setCell_(sheet, "H2", model.applicationDate);
   Cho_setCell_(sheet, "H4", model.applicantAddress);
   Cho_setCell_(sheet, "H5", model.applicantName);
@@ -1051,18 +1051,19 @@ function Cho_importReg_(f, branchBase, rows) {
   }
 }
 
-// 申請書/事由書 → 親レコードのフォームフィールド（"/"連結パス → 値）
+// 申請書/証明書 → 親レコードのフォームフィールド（"/"連結パス → 値）
 function Cho_importParent_(reader, workers, warnings) {
   var f = {};
-  var APP = "申請書", JIYU = "事由書";
+  var APP = "申請書", JIYU = "証明書";
   function app(a1) { return reader.cell(APP, a1); }
   function jiyu(a1) { return reader.cell(JIYU, a1); }
 
-  // 個人/法人 判定: 申請書 F11(生年月日) が日付なら個人。
-  var f11 = app("F11");
-  var birthDate = Cho_serialOrDateToDate_(f11);
-  var isIndividual = (birthDate instanceof Date && !isNaN(birthDate.getTime()) && Cho_str_(f11) !== "");
-  var applicantType = isIndividual ? "個人" : "法人";
+  // 個人/法人 判定: 法人は申請書 F8 が代表従事者名と異なる固有のリテラル（法人名）。
+  // 個人は F8 が名簿の代表従事者から導出される（＝代表者名と一致／式未計算で空）。
+  // 桃セル(数式)のキャッシュ有無に依存しないため、Sheets 変換前後どちらでも安定する。
+  var f8 = Cho_str_(app("F8"));
+  var repName = (workers[0] && workers[0]["氏名"]) ? Cho_str_(workers[0]["氏名"]) : "";
+  var applicantType = (f8 !== "" && f8 !== repName) ? "法人" : "個人";
   var TBASE = CHO_L_APPLICANT_ + "/" + CHO_L_APPLICANT_TYPE_;
   f[TBASE] = applicantType;
   if (applicantType === "法人") {
@@ -1099,7 +1100,7 @@ function Cho_importParent_(reader, workers, warnings) {
   var disp = Cho_str_(app("E31")).split(/[・,、]/).map(function (x) { return x.replace(/^\s+|\s+$/g, ""); }).filter(function (x) { return x; });
   if (disp.length) f[CHO_L_DISPOSAL_] = disp.join(", ");
 
-  // 事由書
+  // 証明書
   var jBase = CHO_L_JIYU_ + "/";
   var cause = [];
   for (var sp in CHO_JIYU_SPECIES_MARK_) {
