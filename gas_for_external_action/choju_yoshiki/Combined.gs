@@ -3,32 +3,22 @@
 // #############################################################################
 
 // =============================================================================
-// 鳥獣保護管理法様式 生成 Web App (Nested Form Builder 連携)
+// 鳥獣保護管理法様式 ↔ フォーム 双方向ブリッジ Web App (Nested Form Builder 連携)
 //
-// フォーム「鳥獣保護管理法許可申請」のレコード詳細にある 外部アクション ボタンから
-// 隠しフォーム POST（e.parameter.payload = JSON 文字列）を受け取り、
-// Google スプレッドシート化した様式テンプレートを複製して全シートに値を書き込み、
-// 生成したスプレッドシートへのリンクを返す。
+// 2 つの役割を 1 デプロイで担う:
+//   (1) 書き出し（フォーム→Excel）: レコード詳細の 外部アクション ボタンが
+//       payload(JSON) を POST → 新 7 シート様式を複製し全シートに値を書き込む。
+//   (2) 取り込み（Excel→フォーム）: doGet のアップロードUIで様式 xlsx を Drive に
+//       上げ、mode=import の POST で解析 → uploadRecords(JSON) を返す。
+//       ユーザーは本体アプリ側（Playground/取り込みUI）で sync_records に流す。
 //
-// ■ 初期セットアップ（一度だけ）
-//   1. form_data/鳥獣保護管理法様式_1_20260611_120316.xlsx（修正済みテンプレ）を Drive に
-//      アップロードし、「ファイル > Google スプレッドシートとして保存」で変換（書式・結合を目視確認）
-//   2. 出力先フォルダを Drive に作成
-//   3. GAS エディタで setup.gs の Cho_registerSettings(テンプレID, フォルダID, アクセスキー) を実行
-//   4. Cho_setupCleanTemplate() を実行（Sheet1・申請内容シートの削除と全数式の消去。冪等）
-//   5. ウェブアプリとしてデプロイ（アクセス: 全員(匿名含む) / 実行ユーザー: 自分）
-//      ※ 隠しフォーム POST はログインリダイレクトで本文が失われるため「全員(匿名含む)」必須
-//   6. 本体アプリ側の設定:
-//      - フォームに formLink「従事者情報」があること（子データは自動で payload に載る。設定不要）
-//      - 外部アクション 質問カードを追加し URL に「デプロイ URL + ?k=<アクセスキー>」を設定
-//
-// ■ テスト（デプロイ不要）
-//   Test.gs の testAll を GAS エディタから実行し、実行ログを確認する。
+// 設計の核（様式 申請書 L6/L7/L8 の凡例）:
+//   黄 FFFFFF00 = 正として吸い取る（取り込みで権威・書き出しでリテラル）
+//   桃 FFEAD1DC = 確認用に吸い取る（名簿の集計。取り込みは照合のみ）
+//   緑 FF00B050 = 掃き出し場所（出力専用。取り込みは無視）
+// 数式は一切使わず全部リテラル値を書く（雛形の数式は「どこへ何を書くか」の仕様書）。
 // =============================================================================
 
-// 本体アプリは UrlFetchApp サーバ間リレーで ?nfbRelay=1 を付けて POST してくる。
-// その場合は HTML ではなく JSON ({ ok, title, message, openUrl }) で応答する。
-// nfbRelay なしの直接 POST は従来どおり HTML を返す。
 function doPost(e) {
   var relay = e && e.parameter && String(e.parameter.nfbRelay) === "1";
   try {
@@ -40,8 +30,6 @@ function doPost(e) {
     if (keyError) {
       return Cho_render_(relay, { ok: false, title: "エラー", message: keyError, html: "<p>" + escapeHtml_(keyError) + "</p>" });
     }
-    // 誤送信防止ハンドシェイク（プローブ）への署名応答。アクセスキー検証を通過した後にだけ
-    // 署名するので、「キーまで正しい正規宛先」だけを送信側に検証させられる。機微処理はしない。
     if (payload.data && String(payload.data.nfbProbe) === "1") {
       var probeSecret = PropertiesService.getScriptProperties().getProperty("NFB_EXT_ACTION_SECRET") || "";
       var probeNonce = String(payload.data.nonce || "");
@@ -51,8 +39,13 @@ function doPost(e) {
       return ContentService.createTextOutput(JSON.stringify(probeResp)).setMimeType(ContentService.MimeType.JSON);
     }
     var data = payload.data;
+    // 取り込み（Excel→フォーム）: JSON で uploadRecords を返す（常に JSON）。
+    if (String(data.mode || (e && e.parameter && e.parameter.mode) || "") === "import") {
+      return Cho_renderImport_(Cho_handleImport_(data, e));
+    }
+    // 書き出し（フォーム→Excel）: レコード単位の 外部アクション 専用。
     if (String(data.context || "") !== "record") {
-      var ctxMsg = "このウェブアプリはレコード単位の 外部アクション（context=record）専用です。受信 context: " + String(data.context || "(なし)");
+      var ctxMsg = "このウェブアプリはレコード単位の 外部アクション（context=record）または mode=import 専用です。受信 context: " + String(data.context || "(なし)");
       return Cho_render_(relay, { ok: false, title: "エラー", message: ctxMsg, html: "<p>" + escapeHtml_(ctxMsg) + "</p>" });
     }
     return Cho_render_(relay, Cho_handleRecord_(data));
@@ -62,7 +55,6 @@ function doPost(e) {
   }
 }
 
-// 結果記述子を relay 有無に応じて JSON / HTML で出力する。
 function Cho_render_(relay, result) {
   var r = result || {};
   if (relay) {
@@ -76,8 +68,11 @@ function Cho_render_(relay, result) {
   return renderHtml_(r.title || (r.ok === false ? "エラー" : "受信完了"), r.html || "", r.ok === false);
 }
 
-// 誤送信防止ハンドシェイク用 HMAC-SHA256(message, secret) を 16 進文字列で返す。
-// 本体側 ExtAction_hmacHex_ と同一実装にすること（署名が一致しないと送信が拒否される）。
+// 取り込み結果は常に JSON（uploadRecords をブラウザ側 JS が拾って本体へ渡す）。
+function Cho_renderImport_(result) {
+  return ContentService.createTextOutput(JSON.stringify(result || { ok: false })).setMimeType(ContentService.MimeType.JSON);
+}
+
 function Recv_hmacHex_(message, secret) {
   var raw = Utilities.computeHmacSha256Signature(String(message == null ? "" : message), String(secret == null ? "" : secret));
   var hex = "";
@@ -90,29 +85,36 @@ function Recv_hmacHex_(message, secret) {
   return hex;
 }
 
-// GET はセットアップ状態の確認用。
-function doGet() {
+// GET: セットアップ状態の確認 ＋ 取り込み用アップロードUI。
+// 構造 HTML タグはリテラルで書くが、これは doGet の自前ページ（本体フロントの単一HTML
+// 配信経路とは別物）なので問題ない。
+function doGet(e) {
   var props = PropertiesService.getScriptProperties();
   var ready = props.getProperty(CHO_PROP_TEMPLATE_) && props.getProperty(CHO_PROP_FOLDER_);
+  var page = (e && e.parameter && e.parameter.page) || "";
+  if (page === "import") {
+    return Cho_renderUploadPage_();
+  }
   return renderHtml_(
-    "鳥獣保護管理法様式 生成 Web App",
-    "<p>この URL は Nested Form Builder の 外部アクション ボタンから POST 送信を受け取り、" +
-    "鳥獣保護管理法の様式（スプレッドシート）を生成します。</p>" +
-    "<p>セットアップ状態: " + (ready ? "テンプレート設定済み" : "<strong>未設定</strong>（Cho_registerSettings を実行してください）") + "</p>",
+    "鳥獣保護管理法様式 生成 / 取り込み",
+    "<p>この URL は Nested Form Builder と連携します。</p>" +
+    "<ul>" +
+    "<li><strong>書き出し</strong>: レコード詳細の 外部アクション ボタンから POST されると様式を生成します。</li>" +
+    "<li><strong>取り込み</strong>: <a href=\"?page=import\">様式アップロードページ</a> から xlsx を解析してフォーム用レコードに変換します。</li>" +
+    "</ul>" +
+    "<p>セットアップ状態: " + (ready ? "テンプレート設定済み" : "<strong>未設定</strong>（Cho_registerSettings を実行）") + "</p>",
     false
   );
 }
 
-// Script Property CHO_ACCESS_KEY が設定されているときだけ ?k= を照合する軽量ゲート。
 function Cho_checkAccessKey_(e) {
   var expected = PropertiesService.getScriptProperties().getProperty(CHO_PROP_KEY_);
   if (!expected) return "";
   var actual = e && e.parameter ? String(e.parameter.k || "") : "";
-  return actual === expected ? "" : "アクセスキーが一致しません。外部アクション URL の ?k= パラメータを確認してください。";
+  return actual === expected ? "" : "アクセスキーが一致しません。URL の ?k= パラメータを確認してください。";
 }
 
-// レコード payload → 様式生成 → 結果記述子 { ok, title, message, html, openUrl } を返す。
-// HTML / JSON 出力の振り分けは呼び出し側（Cho_render_）が行う。
+// ----- 書き出し（フォーム→Excel）-----
 function Cho_handleRecord_(data) {
   var record = (data && data.record) || {};
   var model = Cho_buildModel_(data);
@@ -122,11 +124,9 @@ function Cho_handleRecord_(data) {
     Cho_fillAll_(ss, model);
     SpreadsheetApp.flush();
   } catch (err) {
-    // 部分生成ファイルは消さずにリンクを出す（原因調査をしやすくする）
     var em = String(err && err.message ? err.message : err);
     return {
-      ok: false,
-      title: "エラー",
+      ok: false, title: "エラー",
       message: "書き込み中にエラーが発生しました: " + em,
       openUrl: ss.getUrl(),
       html: "<p>書き込み中にエラーが発生しました: " + escapeHtml_(em) + "</p>" +
@@ -134,7 +134,6 @@ function Cho_handleRecord_(data) {
         escapeHtml_(file.getName()) + "</a></p>",
     };
   }
-
   var html = "";
   html += '<p class="lead">レコード <strong>No.' + escapeHtml_(String(record.no != null ? record.no : "")) +
     "</strong>（" + escapeHtml_(String(data.formName || "")) + "）から様式を作成しました。</p>";
@@ -143,49 +142,29 @@ function Cho_handleRecord_(data) {
   html += '<table class="kv"><tbody>';
   html += "<tr><th>申請者</th><td>" + escapeHtml_(String(model.applicantNameComposed || "")) + "</td></tr>";
   html += "<tr><th>個人・法人</th><td>" + escapeHtml_(String(model.applicantType || "")) + "</td></tr>";
-  html += "<tr><th>従事者数</th><td>" + escapeHtml_(String(model.workerCount)) + " 名（名簿 " +
-    escapeHtml_(String((model.rosterEntries || []).length)) + " ブロック）</td></tr>";
+  html += "<tr><th>従事者数</th><td>" + escapeHtml_(String(model.workerCount)) + " 名</td></tr>";
   html += "</tbody></table>";
   var warnText = "";
   if (model.warnings && model.warnings.length > 0) {
     html += '<div class="warn"><strong>警告</strong><ul>';
-    for (var i = 0; i < model.warnings.length; i++) {
-      html += "<li>" + escapeHtml_(model.warnings[i]) + "</li>";
-    }
+    for (var i = 0; i < model.warnings.length; i++) html += "<li>" + escapeHtml_(model.warnings[i]) + "</li>";
     html += "</ul></div>";
     warnText = "（警告 " + model.warnings.length + " 件あり）";
   }
-  return {
-    ok: true,
-    title: "様式を作成しました",
-    message: "様式を作成しました: " + file.getName() + warnText,
-    openUrl: ss.getUrl(),
-    html: html,
-  };
+  return { ok: true, title: "様式を作成しました", message: "様式を作成しました: " + file.getName() + warnText, openUrl: ss.getUrl(), html: html };
 }
 
-
-// ----- payload 取り出し（gas_for_external_action/template/Code.gs と同じ）---------------
 function parsePayload_(e) {
   var params = (e && e.parameter) || {};
   var raw = params.payload;
-  if (raw == null || String(raw) === "") {
-    return { ok: false, error: "payload パラメータがありません。" };
-  }
+  if (raw == null || String(raw) === "") return { ok: false, error: "payload パラメータがありません。" };
   var data;
-  try {
-    data = JSON.parse(String(raw));
-  } catch (parseErr) {
-    return { ok: false, error: "payload の JSON 解析に失敗しました: " + (parseErr && parseErr.message ? parseErr.message : parseErr) };
-  }
-  if (!data || typeof data !== "object") {
-    return { ok: false, error: "payload がオブジェクトではありません。" };
-  }
+  try { data = JSON.parse(String(raw)); }
+  catch (parseErr) { return { ok: false, error: "payload の JSON 解析に失敗しました: " + (parseErr && parseErr.message ? parseErr.message : parseErr) }; }
+  if (!data || typeof data !== "object") return { ok: false, error: "payload がオブジェクトではありません。" };
   return { ok: true, data: data };
 }
 
-
-// ----- HTML レンダラ（template/Code.gs の体裁 + 警告ブロック）-------------------
 function renderHtml_(title, bodyHtml, isError) {
   var bg = isError ? "#FEECEC" : "#E8F0FE";
   var border = isError ? "#D93025" : "#1A73E8";
@@ -196,34 +175,22 @@ function renderHtml_(title, bodyHtml, isError) {
     'body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,"Noto Sans JP",sans-serif;background:#f8f9fa;margin:0;padding:24px;color:#202124;}' +
     '.card{max-width:960px;margin:0 auto;background:' + bg + ';border:2px solid ' + border + ';border-radius:8px;padding:20px 24px;}' +
     'h1{font-size:18px;margin:0 0 12px;color:' + border + ';}' +
-    'p{font-size:14px;line-height:1.6;margin:8px 0;}' +
-    'p.lead{font-size:15px;}' +
+    'p,li{font-size:14px;line-height:1.6;margin:8px 0;}' +
     '.small{font-size:12px;color:#5f6368;margin-top:16px;}' +
     '.warn{background:#FEF7E0;border:1px solid #F9AB00;border-radius:6px;padding:8px 12px;margin:12px 0;font-size:13px;}' +
     '.warn ul{margin:6px 0 0;padding-left:20px;}' +
-    'table{border-collapse:collapse;font-size:13px;background:#fff;}' +
-    'table.kv{margin:8px 0;}' +
+    'table{border-collapse:collapse;font-size:13px;background:#fff;}table.kv{margin:8px 0;}' +
     'th,td{border:1px solid #dadce0;padding:6px 10px;text-align:left;vertical-align:top;}' +
-    'table.kv th{background:#f1f3f4;white-space:nowrap;width:1%;}' +
-    'a{color:#1a73e8;}' +
-    '</style></head>' +
-    '<body><div class="card">' +
-    '<h1>' + escapeHtml_(title) + '</h1>' +
-    bodyHtml +
-    '<p class="small">このタブは閉じて差し支えありません。</p>' +
-    '</div></body></html>';
-  return HtmlService.createHtmlOutput(html)
-    .setTitle(title)
-    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+    'table.kv th{background:#f1f3f4;white-space:nowrap;width:1%;}a{color:#1a73e8;}' +
+    '</style></head><body><div class="card"><h1>' + escapeHtml_(title) + '</h1>' + bodyHtml +
+    '<p class="small">このタブは閉じて差し支えありません。</p></div></body></html>';
+  return HtmlService.createHtmlOutput(html).setTitle(title).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
 
 function escapeHtml_(s) {
   return String(s == null ? "" : s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 
 
@@ -231,22 +198,9 @@ function escapeHtml_(s) {
 // ## payload.gs
 // #############################################################################
 
-// =============================================================================
-// payload.gs — record.items の索引化・パス分解・子レコード（従事者情報）のグルーピング
-//
-// record.items[].question は「ヘッダー階層を "/" で連結した文字列」。
-//   - 通常項目:      "申請者情報/申請者の個人・法人の別/個人/氏名"
-//   - 子レコード行:  "従事者情報/#<レコードNo>/<子フォーム内パス>"
-// セグメント内の "/" と "\" はバックスラッシュでエスケープされる
-// （builder/src/utils/pathCodec.js の joinFieldPath / splitFieldKey と同じ規則）。
-// =============================================================================
-
-// エスケープ付き "/" 連結文字列 → セグメント配列（pathCodec.js splitFieldKey の移植）。
 function Cho_splitPath_(text) {
   var str = String(text == null ? "" : text);
-  var tokens = [];
-  var current = "";
-  var escaping = false;
+  var tokens = [], current = "", escaping = false;
   for (var i = 0; i < str.length; i++) {
     var ch = str.charAt(i);
     if (escaping) { current += ch; escaping = false; continue; }
@@ -259,10 +213,8 @@ function Cho_splitPath_(text) {
   return tokens;
 }
 
-// items 配列 → 簡易索引。get(path) は完全一致した question の値（無ければ ""）。
 function Cho_indexItems_(items) {
-  var map = {};
-  var list = [];
+  var map = {}, list = [];
   for (var i = 0; i < (items || []).length; i++) {
     var it = items[i] || {};
     var q = String(it.question == null ? "" : it.question);
@@ -271,105 +223,282 @@ function Cho_indexItems_(items) {
   }
   return {
     list: list,
-    get: function (path) {
-      var v = map[path];
-      return v == null ? "" : String(v);
-    },
+    get: function (path) { var v = map[path]; return v == null ? "" : String(v); },
     has: function (path) { return path in map; }
   };
 }
 
-// 親レコードの items を「親項目」と「従事者情報の子レコード行」に分ける。
-// 戻り値: { parentItems: [...], children: [{ marker, items }] }（children は出現順）。
 function Cho_splitParentAndChildren_(items) {
-  var parentItems = [];
-  var childMap = {};
-  var childOrder = [];
+  var parentItems = [], childMap = {}, childOrder = [];
   for (var i = 0; i < (items || []).length; i++) {
     var it = items[i] || {};
     var segs = Cho_splitPath_(it.question);
     if (segs.length >= 3 && segs[0] === CHO_L_FORMLINK_ && segs[1].charAt(0) === "#") {
       var marker = segs[1];
       if (!childMap[marker]) { childMap[marker] = []; childOrder.push(marker); }
-      // 子フォーム内パスに剥がして積む（マーカーより後ろを "/" 連結し直す）
-      childMap[marker].push({
-        question: segs.slice(2).join("/"),
-        value: it.value,
-        type: it.type
-      });
+      childMap[marker].push({ question: segs.slice(2).join("/"), value: it.value, type: it.type });
     } else {
       parentItems.push(it);
     }
   }
   var children = [];
-  for (var c = 0; c < childOrder.length; c++) {
-    children.push({ marker: childOrder[c], items: childMap[childOrder[c]] });
-  }
+  for (var c = 0; c < childOrder.length; c++) children.push({ marker: childOrder[c], items: childMap[childOrder[c]] });
   return { parentItems: parentItems, children: children };
 }
 
-// チェックボックス値（", " 連結）→ ラベル配列。空要素は捨てる。
 function Cho_splitChecks_(value) {
   var s = String(value == null ? "" : value);
   if (!s) return [];
-  var parts = s.split(", ");
-  var out = [];
-  for (var i = 0; i < parts.length; i++) {
-    var p = parts[i].replace(/^\s+|\s+$/g, "");
-    if (p) out.push(p);
-  }
+  var parts = s.split(", "), out = [];
+  for (var i = 0; i < parts.length; i++) { var p = parts[i].replace(/^\s+|\s+$/g, ""); if (p) out.push(p); }
   return out;
 }
 
-// "YYYY-MM-DD" / "YYYY/MM/DD" → Date。パースできなければ元の文字列を返す（空は ""）。
+// "YYYY-MM-DD" / "YYYY/MM/DD" → Date。パース不可なら元文字列（空は ""）。
 function Cho_toDateOrText_(value) {
+  if (value instanceof Date) return value;
   var s = String(value == null ? "" : value).replace(/^\s+|\s+$/g, "");
   if (!s) return "";
-  var m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})$/);
+  var m = s.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
   if (!m) return s;
   return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
-// 数値文字列 → Number。数値にならなければ元の文字列（空は ""）。
+// Date → "YYYY-MM-DD"（payload 用の canonical 文字列）。Date 以外は素通し。
+function Cho_dateToCanonical_(value) {
+  if (!(value instanceof Date) || isNaN(value.getTime())) return String(value == null ? "" : value);
+  var y = value.getFullYear(), mo = value.getMonth() + 1, d = value.getDate();
+  return y + "-" + (mo < 10 ? "0" + mo : mo) + "-" + (d < 10 ? "0" + d : d);
+}
+
+// Sheets のシリアル値（1899-12-30 起点）→ Date。Date はそのまま。数字でなければ ""/元値。
+function Cho_serialOrDateToDate_(value) {
+  if (value instanceof Date) return value;
+  if (typeof value === "number" && isFinite(value)) {
+    var ms = Math.round((value - 25569) * 86400000); // 25569 = 1970-01-01 のシリアル
+    return new Date(ms);
+  }
+  return Cho_toDateOrText_(value);
+}
+
 function Cho_toNumberOrText_(value) {
+  if (typeof value === "number") return value;
   var s = String(value == null ? "" : value).replace(/^\s+|\s+$/g, "");
   if (!s) return "";
   var n = Number(s);
   return isNaN(n) ? s : n;
 }
 
-// Date → 和暦表示（"令和N年M月D日"）。Date 以外は素通し。
-// Utilities.formatDate の era 書式は GAS の英語ロケールで和暦にならないため手計算する。
 function Cho_formatWareki_(value) {
-  if (!(value instanceof Date) || isNaN(value.getTime())) {
-    return String(value == null ? "" : value);
-  }
-  var y = Number(Utilities.formatDate(value, "Asia/Tokyo", "yyyy"));
-  var mo = Number(Utilities.formatDate(value, "Asia/Tokyo", "M"));
-  var d = Number(Utilities.formatDate(value, "Asia/Tokyo", "d"));
-  var era;
-  var eraYear;
+  if (!(value instanceof Date) || isNaN(value.getTime())) return String(value == null ? "" : value);
+  var y = value.getFullYear(), mo = value.getMonth() + 1, d = value.getDate();
+  var era, eraYear;
   if (y >= 2019) { era = "令和"; eraYear = y - 2018; }
   else if (y >= 1989) { era = "平成"; eraYear = y - 1988; }
   else { era = "昭和"; eraYear = y - 1925; }
-  var nen = eraYear === 1 ? "元" : String(eraYear);
-  return era + nen + "年" + mo + "月" + d + "日";
+  return era + (eraYear === 1 ? "元" : String(eraYear)) + "年" + mo + "月" + d + "日";
 }
 
 
 // #############################################################################
-// ## domain.gs
+// ## cellmap.gs — 新 7 シート様式の単一セルマップ（取り込み・書き出し両用の契約）
 // #############################################################################
-
-// =============================================================================
-// domain.gs — payload からドメインモデル（mapping.gs の get キー全部入り）を組み立てる
 //
-// Cho_buildModel_(payload) が返すモデルのうち、シート静的マップが参照するキーは
-// すべてフラットな文字列/数値/Date。加えて:
-//   speciesList   : [{ name, count, unit, eggCount }]      … 種数テーブル用
-//   rosterEntries : [{ certNo, includePersonal, worker, method }] … 名簿ブロック用
-//   warnings      : string[]                                … 応答ページに表示
-// =============================================================================
+// 典拠: form_test/鳥獣保護管理法様式_個人想定.xlsx / _法人想定.xlsx
+//       （scripts/extract_cellmap.py → scripts/out/cellmap_seed.tsv）。
+// 色は設計時の注釈。実行時は固定番地を引く。番地を直すときはこのセクションだけ編集する。
+
+// ----- フォームのラベル定数（ライブ JSON が正。半角/全角括弧の罠を 1 箇所に隔離）-----
+// 親フォーム「鳥獣保護管理法許可申請」
+var CHO_FORM_PARENT_ID_ = "1_aLScq4lAQA-TgI2rZqyzqXB6SDiENy4";
+var CHO_FORM_CHILD_ID_ = "1Eh5p3Q5IMQEfi-7TiUV8ZZ8z_4HKW0Zj";
+var CHO_L_FORMLINK_ = "従事者情報";
+var CHO_L_DISPOSAL_ = "捕獲等又は採取等をしたあとの処置";
+var CHO_L_PURPOSE_ = "捕獲等又は採取等の目的";
+var CHO_L_PERIOD_ = "捕獲等又は採取等の期間";
+var CHO_L_AREA_ = "捕獲等又は採取等の区域";
+var CHO_L_AREA7_ = "規則第７条第１項第７号に係る場所等の位置、名称及び理由";
+var CHO_L_APPLICANT_ = "申請者情報";
+var CHO_L_APPLICANT_TYPE_ = "申請者の個人・法人の別";
+var CHO_L_PERMIT_GROUP_ = "許可処分情報";
+var CHO_L_REMARKS_ = "備考";
+var CHO_L_JIYU_ = "事由書"; // 親 message。子: 被害原因の鳥獣 / 被害者 / 被害発生の時期 / 被害発生区域（場所）/ 捕獲等又は採取等を行う理由 / 備考
+var CHO_L_JIYU_CAUSE_ = "被害原因の鳥獣";
+var CHO_L_JIYU_VICTIM_ = "被害者";
+var CHO_L_JIYU_TIME_ = "被害発生の時期";
+var CHO_L_JIYU_AREA_ = "被害発生区域（場所）";
+var CHO_L_JIYU_REASON_ = "捕獲等又は採取等を行う理由";
+// 子フォーム「従事者情報」
+var CHO_L_CHILD_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称)"; // 閉じ括弧が半角!
+var CHO_L_CHILD_SPECIES_ = "捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量";
+var CHO_L_REP_ = "代表的個人";
+
+// ----- 種ごとの数量単位（鳥類=羽 / 獣類=頭）と「卵」を採る鳥 -----
+var CHO_SPECIES_UNIT_ = {
+  "キジバト": "羽", "カワラバト": "羽", "スズメ": "羽", "ニュウナイスズメ": "羽",
+  "ハシボソガラス": "羽", "ハシブトガラス": "羽",
+  "キツネ": "頭", "ノイヌ": "頭", "ノネコ": "頭", "アライグマ": "頭", "トガリネズミ科・ネズミ科": "頭"
+};
+// 申請書 種数欄の固定レイアウト（行 18〜26）。count=捕獲頭数の書込先, egg=採取卵数の書込先。
+// 鳥(bird)は count/egg 両方、獣は count のみ。キツネ/ノイヌ・ノネコ/アライグマ は左右 2 種を 1 行に置く。
+var CHO_APP_SPECIES_ = [
+  { sp: "キジバト",            nameCell: "E18", count: "F18", eggLabelCell: "H18", egg: "I18", bird: true },
+  { sp: "カワラバト",          nameCell: "E19", count: "F19", eggLabelCell: "H19", egg: "I19", bird: true },
+  { sp: "スズメ",              nameCell: "E20", count: "F20", eggLabelCell: "H20", egg: "I20", bird: true },
+  { sp: "ニュウナイスズメ",     nameCell: "E21", count: "F21", eggLabelCell: "H21", egg: "I21", bird: true },
+  { sp: "ハシボソガラス",       nameCell: "E22", count: "F22", eggLabelCell: "H22", egg: "I22", bird: true },
+  { sp: "ハシブトガラス",       nameCell: "E23", count: "F23", eggLabelCell: "H23", egg: "I23", bird: true },
+  { sp: "キツネ",              nameCell: "E24", count: "F24" },
+  { sp: "ノイヌ",              nameCell: "H24", count: "I24" },
+  { sp: "ノネコ",              nameCell: "E25", count: "F25" },
+  { sp: "アライグマ",          nameCell: "H25", count: "I25" },
+  { sp: "トガリネズミ科・ネズミ科", nameCell: "E26", count: "F26" }
+];
+// 種の表示順（フォーム選択肢順）
+var CHO_SPECIES_ORDER_ = [
+  "キジバト", "カワラバト", "スズメ", "ニュウナイスズメ", "ハシボソガラス", "ハシブトガラス",
+  "キツネ", "ノイヌ", "ノネコ", "アライグマ", "トガリネズミ科・ネズミ科"
+];
+
+// ----- 捕獲用具（名簿 P 列・申請書 E30 方法）。新様式は生ラベルをそのまま使う -----
+// （旧 "銃(空気銃)" 等の正規化は廃止。子フォーム道具/銃の種類のラベルが正）
+var CHO_TOOL_ORDER_ = [
+  "手捕り", "くくりわな", "はこわな", "はこおとし", "囲いわな",
+  "むそう網", "はり網", "つき網", "なげ網", "空気銃", "散弾銃", "ライフル銃"
+];
+
+// ----- 処置（フォーム: 焼却/廃棄/埋設、複数可）→ 申請書 E31 はリテラル結合 -----
+var CHO_DISPOSAL_JOIN_ = "・";
+
+// ----- 名簿（従事者名簿）の幾何。1 ブロック = 1 従事者。9 行 × 10 ブロック（行 5〜94）-----
+var CHO_ROSTER_ = {
+  sheetName: "従事者名簿",
+  firstRow: 5, blockHeight: 9, blockCount: 10,
+  cols: {
+    certNo: "E",                                  // 緑（許可番号。出力時は空のまま）
+    address: "F", name: "G", occupation: "H", birth: "I", // 黄（9 行結合・先頭セル）
+    speciesName: "J", speciesCount: "K", speciesUnit: "L",
+    species2Name: "M", species2Count: "N", species2Unit: "O",
+    tool: "P",                                    // 行ごとに積層（結合しない）
+    licType: "Q", licPref: "R", licNo: "S", licDate: "T",   // 狩猟免許
+    regType: "U", regNo: "V", regDate: "W",                 // 狩猟者登録
+    gunPermitNo: "X", gunPermitDate: "Y", gunKind: "Z",     // 銃器
+    remarks: "AA"
+  }
+};
+
+// ----- 事由書 被害原因の鳥獣（○ を打つセル）。左列=F / 右列(ノイヌ・アライグマ)=I -----
+var CHO_JIYU_SPECIES_MARK_ = {
+  "キジバト": "F13", "カワラバト": "F14", "スズメ": "F15", "ニュウナイスズメ": "F16",
+  "ハシボソガラス": "F17", "ハシブトガラス": "F18", "キツネ": "F19",
+  "ノイヌ": "I19", "ノネコ": "F20", "アライグマ": "I20", "トガリネズミ科・ネズミ科": "F21"
+};
+// 事由書 被害者 区分（フォーム値 ↔ 様式表記）
+var CHO_VICTIM_TO_SHEET_ = { "申請者": "1.申請者自身", "申請者以外": "2.申請者以外" };
+var CHO_VICTIM_FROM_SHEET_ = { "1.申請者自身": "申請者", "1": "申請者", "2.申請者以外": "申請者以外", "2": "申請者以外" };
+
+// ----- 申請書 規則第7条 区分の ○ グリッド（フォーム選択肢 → ○ を打つセル）-----
+// 様式の区分ラベルとフォーム選択肢が完全一致しないため最善対応（一部ロッシー・要確認）。
+var CHO_AREA7_MARK_ = {
+  "道指定〔定山渓、北大一の沢、北大簾舞、羊ヶ丘白旗山〕鳥獣保護区": "G32", // 様式: 鳥獣保護区
+  "社寺境内": "J32",
+  "休猟区": "G33",
+  "墓地": "J33",
+  "公道": "G34",
+  "特定猟具使用禁止区域（安全対策あり）": "J34", // 様式: 特定猟具使用禁止区域
+  "特定猟具使用禁止区域（安全対策なし）": "J34", // ※ あり/なし を 1 セルに集約（ロッシー）
+  "国立公園・国定公園特別保護地区": "G35",        // 様式: 自然公園法特別保護地区
+  // J35 = 特定猟具使用制限区域 はフォーム選択肢に対応無し
+  "都市計画施設（区域明示公共空地等）": "G36",
+  "猟区（両区設定者の承認あり）": "J36",
+  "原生自然環境保全地域": "G37"
+};
+
+// ----- 7 シート（テンプレ清掃で残すべきシート）。旧 13 枚から刷新 -----
+var CHO_SHEETS_ = ["申請書", "従事者名簿", "事由書", "許可証", "振興局宛通知", "警察宛通知", "従事者証"];
+// 旧テンプレ由来で削除すべきシート
+var CHO_SHEETS_TO_DELETE_ = ["Sheet1", "申請内容", "従事者名簿 (法人)", "許可証個人", "許可証法人",
+  "証明書", "依頼書", "許可伺書", "交付通知書", "許可審査表", "報告書添付", "結果報告書", "わな"];
+
+// 申請書のスカラー書込先（model キー → セル）。緑シートはこの値を投影する。
+var CHO_APP_SCALARS_ = [
+  { cell: "H2", key: "applicationDate" },
+  { cell: "F6", key: "applicantAddress" },
+  { cell: "F8", key: "applicantName" },        // 個人=氏名 / 法人=法人名
+  { cell: "F10", key: "applicantOccupation" }, // 個人=職業 / 法人=代表者名
+  { cell: "F11", key: "applicantBirth" },      // 個人=生年月日 / 法人=空
+  { cell: "J9", key: "othersCountText" },      // ほかN名 の N（個人複数時）
+  { cell: "E27", key: "purpose" },
+  { cell: "E28", key: "periodStart" },
+  { cell: "H28", key: "periodEnd" },
+  { cell: "E29", key: "areaLocation" },
+  { cell: "E30", key: "methodText" },
+  { cell: "E31", key: "disposalText" }
+];
+
+// 緑シートへの投影（申請書セル → 出力先セル）。office 割当（許可番号等）は空のまま。
+// 許可証は申請書を 1:1 参照（種数 9 行は行平行）。
+function Cho_kyokashoRefs_() {
+  var refs = [
+    { dst: "H4", src: "E28" }, { dst: "H5", src: "H28" },
+    { dst: "G12", src: "F6" }, { dst: "G13", src: "applicantNameComposed" },
+    { dst: "G14", src: "F11" },
+    { dst: "G26", src: "E27" }, { dst: "G28", src: "E29" }, { dst: "G31", src: "E30" }, { dst: "G33", src: "E31" },
+    { dst: "G35", src: "permitConditions" }
+  ];
+  for (var i = 0; i < 9; i++) { // 種数 G17:K25 ← 申請書 E18:E26
+    refs.push({ dst: "G" + (17 + i), src: "E" + (18 + i) });
+    refs.push({ dst: "H" + (17 + i), src: "F" + (18 + i) });
+    refs.push({ dst: "J" + (17 + i), src: "H" + (18 + i) });
+    refs.push({ dst: "K" + (17 + i), src: "I" + (18 + i) });
+  }
+  return refs;
+}
+// 通知（振興局・警察 共通レイアウト）への投影。
+function Cho_tsuchiRefs_() {
+  var refs = [
+    { dst: "C13", src: "F6" }, { dst: "C14", src: "applicantNameComposed" },
+    { dst: "C28", src: "E27" }, { dst: "C31", src: "E28" }, { dst: "F31", src: "H28" },
+    { dst: "C34", src: "E29" }, { dst: "C37", src: "E30" }
+  ];
+  for (var i = 0; i < 9; i++) { // 種数 C19:G27 ← 申請書 E18:E26
+    refs.push({ dst: "C" + (19 + i), src: "E" + (18 + i) });
+    refs.push({ dst: "D" + (19 + i), src: "F" + (18 + i) });
+    refs.push({ dst: "F" + (19 + i), src: "H" + (18 + i) });
+    refs.push({ dst: "G" + (19 + i), src: "I" + (18 + i) });
+  }
+  return refs;
+}
+// 従事者証（代表従事者 1 名分。雛形に数式が無いためラベルから手対応）。
+var CHO_JUJISHA_REFS_ = [
+  { dst: "F4", src: "E28" }, { dst: "F5", src: "H28" },
+  { dst: "D18", src: "F6" }, { dst: "D25", src: "applicantNameComposed" }, { dst: "D32", src: "F11" },
+  { dst: "K29", src: "E27" }, { dst: "K32", src: "E29" }, { dst: "K36", src: "E30" }, { dst: "K39", src: "permitConditions" }
+  // K14(許可証番号)/K17(法人名) は office/法人時。種数 K20:P28 は事後で空のまま。
+];
+
+// 空気銃の免許種類(select) → 狩猟免許の種類（名簿 Q 列）
+var CHO_GUN_LIC_ = { "第一種銃猟免許": "第一種銃猟", "第二種銃猟免許": "第二種銃猟" };
+
+// 免許/登録番号の結合と分解（"石狩" + "1235" ⇄ "石狩第1235号"）
+function Cho_joinLicNo_(prefix, number) {
+  var p = String(prefix == null ? "" : prefix).replace(/^\s+|\s+$/g, "");
+  var n = String(number == null ? "" : number).replace(/^\s+|\s+$/g, "");
+  if (!n) return p ? p : "";
+  return p + "第" + n + "号";
+}
+function Cho_splitLicNo_(value) {
+  var s = String(value == null ? "" : value).replace(/^\s+|\s+$/g, "");
+  var m = s.match(/^(.*?)第\s*([0-9]+)\s*号$/);
+  if (m) return { prefix: m[1], number: m[2] };
+  var m2 = s.match(/([0-9]{2,})/); // フォールバック: 数字列だけ拾う
+  return { prefix: s.replace(/[0-9]+/g, "").replace(/第|号/g, ""), number: m2 ? m2[1] : "" };
+}
+
+
+// #############################################################################
+// ## domain.gs — payload → 書き出し用モデル（新 7 シート様式）
+// #############################################################################
 
 function Cho_buildModel_(payload) {
   var record = (payload && payload.record) || {};
@@ -377,823 +506,230 @@ function Cho_buildModel_(payload) {
   var idx = Cho_indexItems_(split.parentItems);
   var warnings = [];
 
-  // ----- 従事者（子レコード） -----
   var workers = [];
   for (var i = 0; i < split.children.length; i++) {
     workers.push(Cho_parseWorker_(Cho_indexItems_(split.children[i].items)));
   }
   if (workers.length === 0) {
-    warnings.push("従事者情報の子レコードが届いていません。種数・方法・申請者情報は従事者から導出するため、ほぼ全欄が空になります。従事者を登録してから再実行してください。");
+    warnings.push("従事者情報の子レコードが届いていません。種数・方法・申請者（個人）はほぼ空になります。");
   }
   var repWorker = null;
-  for (var r = 0; r < workers.length; r++) {
-    if (workers[r].isRep) { repWorker = workers[r]; break; }
-  }
+  for (var r = 0; r < workers.length; r++) { if (workers[r].isRep) { repWorker = workers[r]; break; } }
   if (!repWorker && workers.length > 0) repWorker = workers[0];
   var workerCount = workers.length;
 
-  // ----- 申請者 -----
-  var applicantType = idx.get(CHO_L_APPLICANT_ + "/" + CHO_L_APPLICANT_TYPE_); // 個人 / 法人
+  // 申請者（個人=代表従事者から導出 / 法人=フォーム直接入力）
+  var applicantType = idx.get(CHO_L_APPLICANT_ + "/" + CHO_L_APPLICANT_TYPE_) || "個人";
   var pBase = CHO_L_APPLICANT_ + "/" + CHO_L_APPLICANT_TYPE_ + "/個人/";
   var cBase = CHO_L_APPLICANT_ + "/" + CHO_L_APPLICANT_TYPE_ + "/法人/";
-  var corporateName = idx.get(cBase + "法人名及び代表者名");
-  var applicantName;
-  var applicantAddress;
-  var applicantOccupation = "";
-  var applicantBirthDate = "";
+  var applicantName, applicantAddress, applicantOccupation = "", applicantBirth = "";
   if (applicantType === "法人") {
-    applicantName = corporateName;
-    applicantAddress = idx.get(cBase + "申請者住所");
+    applicantName = idx.get(cBase + "法人名");
+    applicantAddress = idx.get(cBase + "住所");
+    applicantOccupation = idx.get(cBase + "代表者名"); // 申請書 F10 = 代表者名
   } else {
-    // 代表従事者（代表的個人=はい）を正とし、空のときだけ親の置換 item から補完する。
-    // 親の substitution は全レコード横断で従事者を拾う不具合があったため信用しない。
     applicantName = (repWorker ? repWorker.name : "") || idx.get(pBase + "氏名");
     applicantAddress = (repWorker ? repWorker.address : "") || idx.get(pBase + "住所");
     applicantOccupation = (repWorker ? repWorker.occupation : "") || idx.get(pBase + "職業");
-    applicantBirthDate = (repWorker ? repWorker.birth : "") || Cho_toDateOrText_(idx.get(pBase + "生年月日"));
+    applicantBirth = (repWorker ? repWorker.birth : "") || Cho_toDateOrText_(idx.get(pBase + "生年月日"));
   }
-  var othersSuffix = workerCount > 1 ? "(ほか" + (workerCount - 1) + "名)" : "";
-  var applicantNameComposed = applicantType === "法人" ? corporateName : (applicantName + othersSuffix);
+  var othersCount = workerCount > 1 ? workerCount - 1 : "";
+  var applicantNameComposed = (applicantType === "法人")
+    ? applicantName
+    : (applicantName + (workerCount > 1 ? "（ほか" + (workerCount - 1) + "名）" : ""));
 
-  // ----- 種数（従事者ごとの数量を種名単位で合算。親フォームに入力欄は無い） -----
-  var speciesList = Cho_aggregateSpecies_(workers);
-  var speciesNamesJoined = [];
-  for (var sn = 0; sn < speciesList.length; sn++) speciesNamesJoined.push(speciesList[sn].name);
-  speciesNamesJoined = speciesNamesJoined.join(" ");
+  // 種数（従事者ごとを種名単位で合算）
+  var totals = Cho_aggregateSpecies_(workers);
 
-  // ----- 目的・期間・区域 -----
-  var purpose = idx.get(CHO_L_PURPOSE_);
-  var periodStart = Cho_toDateOrText_(idx.get(CHO_L_PERIOD_ + "/開始"));
-  var periodEnd = Cho_toDateOrText_(idx.get(CHO_L_PERIOD_ + "/終了"));
-  var periodDaysText = "";
-  if (periodStart instanceof Date && periodEnd instanceof Date) {
-    periodDaysText = Math.round((periodEnd.getTime() - periodStart.getTime()) / 86400000 + 1) + "日間";
-  }
+  // 方法（全従事者の用具の和集合。CHO_TOOL_ORDER_ 順、生ラベル）
+  var methodText = Cho_unionTools_(workers).join(",");
+
+  // 処置
+  var disposals = Cho_splitChecks_(idx.get(CHO_L_DISPOSAL_));
+  var disposalText = disposals.join(CHO_DISPOSAL_JOIN_);
+
+  // 区域・規則7条
   var areaLocation = idx.get(CHO_L_AREA_ + "/所在地");
   var area7Path = CHO_L_AREA_ + "/" + CHO_L_AREA7_;
   var area7Selected = Cho_splitChecks_(idx.get(area7Path));
-  var area7Flag = area7Selected.length > 0 ? "該当あり" : "該当なし";
-  var area7Parts = [];
-  for (var a = 0; a < area7Selected.length; a++) {
-    var opt = area7Selected[a];
-    var detailName = idx.get(area7Path + "/" + opt + "/具体的名称");
-    area7Parts.push(detailName ? opt + "（" + detailName + "）" : opt);
-  }
-  var area7Detail = area7Parts.join("、");
 
-  // ----- 方法（全従事者の捕獲用具の和集合。親フォームに入力欄は無い）・処置 -----
-  var methods = Cho_unionTools_(workers);
-  var hasTrapMethod = false;
-  for (var hw = 0; hw < workers.length; hw++) {
-    for (var hm = 0; hm < workers[hw].methods.length; hm++) {
-      if (workers[hw].methods[hm].kind === "わな") { hasTrapMethod = true; break; }
-    }
-  }
-  var disposalsRaw = Cho_splitChecks_(idx.get(CHO_L_DISPOSAL_));
-  var disposals = [];
-  for (var di = 0; di < disposalsRaw.length; di++) {
-    var dv = CHO_DISPOSAL_MAP_[disposalsRaw[di]] || disposalsRaw[di];
-    if (disposals.indexOf(dv) === -1) disposals.push(dv); // 廃棄+埋設 → 埋設・廃棄 の重複排除
-  }
+  // 事由書
+  var jBase = CHO_L_JIYU_ + "/";
+  var jiyuVictim = idx.get(jBase + CHO_L_JIYU_VICTIM_);
 
-  // ----- 証明書 / 依頼書 -----
-  var certOrRequest = idx.get(CHO_L_CERT_OR_REQ_); // 証明書 / 依頼書
-  var certBase = CHO_L_CERT_OR_REQ_ + "/証明書/";
-  var reqBase = CHO_L_CERT_OR_REQ_ + "/依頼書/";
-  var requesterName = idx.get(reqBase + "依頼者氏名");
-  var requestPeriodStart = Cho_toDateOrText_(idx.get(reqBase + CHO_L_PERIOD_ + "/開始"));
-  var requestPeriodEnd = Cho_toDateOrText_(idx.get(reqBase + CHO_L_PERIOD_ + "/終了"));
-  if (requestPeriodStart === "") requestPeriodStart = periodStart;
-  if (requestPeriodEnd === "") requestPeriodEnd = periodEnd;
-
-  // ----- 許可処分情報 -----
-  var permitNo = idx.get(CHO_L_PERMIT_GROUP_ + "/許可番号");
-  var permitDate = Cho_toDateOrText_(idx.get(CHO_L_PERMIT_GROUP_ + "/許可年月日"));
   var permitConditions = idx.get(CHO_L_PERMIT_GROUP_ + "/処分の種類/条件付き許可/許可条件");
-  var permitNoFull = permitNo ? "第" + permitNo + "号" : "";
-  var permitDocNo = permitNo ? "札環対許可第" + permitNo + "号" : "";
-  var workerCertNo1 = permitNo ? "第" + permitNo + "-1号" : "";
-  var permitNoTail = permitNo ? permitNo + "号" : "";
-  var certHeaderNo = applicantType === "法人" ? permitNoFull : workerCertNo1; // 許可証 C3
-
-  // ----- 合成テキスト -----
   var applicationDate = Cho_toDateOrText_(String(payload.generatedAt || "").slice(0, 10));
-  var notifyBodyText = Cho_formatWareki_(applicationDate) +
-    "付けで申請のあった鳥獣の捕獲等又は鳥類の卵の採取等（及び従事者証の交付）について、" +
-    "次のとおり許可し、別添許可証（及び従事者証）を交付します。";
-  var returnReportText = "";
-  if (permitDate !== "" && permitDocNo) {
-    returnReportText = Cho_formatWareki_(permitDate) + "付け" + permitDocNo +
-      "で許可された鳥獣の捕獲等又は鳥類の卵の採取等に係る許可証（及び従事者証）を別添のとおり返納するとともに、" +
-      "捕獲等又は採取等の結果を次のとおり報告します。";
-  }
-  var certNoRangeText = "";
-  if (permitNo && workerCount > 1) {
-    var rangePrefix = applicantType === "法人" ? "従事者証番号" : "許可証番号";
-    certNoRangeText = "(" + rangePrefix + "　第" + permitNo + "-1号～第" + permitNo + "-" + workerCount + "号)";
-  }
-  var certNoRangePersonal = applicantType === "個人" ? certNoRangeText : "";
-  var certNoRangeCorp = "";
-  if (applicantType === "法人" && permitNo) {
-    certNoRangeCorp = workerCount > 1
-      ? "(従事者証番号　第" + permitNo + "-1号～第" + permitNo + "-" + workerCount + "号)"
-      : "(従事者証番号　第" + permitNo + "-1号)";
-  }
-  var reviewClassText = certOrRequest === "依頼書"
-    ? CHO_REVIEW_CLASS_PROXY_
-    : (applicantType === "法人" ? CHO_REVIEW_CLASS_CORP_ : CHO_REVIEW_CLASS_VICTIM_);
 
-  // 別添従事者名簿のとおり（該当する従事者がいるときのみ）
-  var hasAnyLicense = false;
-  var hasAnyRegistration = false;
-  var hasAnyGunPermit = false;
-  for (var w = 0; w < workers.length; w++) {
-    for (var wm = 0; wm < workers[w].methods.length; wm++) {
-      var meth = workers[w].methods[wm];
-      if (meth.lic) hasAnyLicense = true;
-      if (meth.reg) hasAnyRegistration = true;
-      if (meth.poss) hasAnyGunPermit = true;
-    }
-  }
-
-  // ----- 名簿エントリ展開（従事者 × 捕獲方法） -----
-  var rosterEntries = Cho_expandRosterEntries_(workers, permitNo);
-
-  var model = {
+  return {
     warnings: warnings,
     workers: workers,
-    rosterEntries: rosterEntries,
-    speciesList: speciesList,
+    workerCount: workerCount,
+    totals: totals,
 
     applicationDate: applicationDate,
     applicantType: applicantType,
-    certOrRequest: certOrRequest,
     applicantAddress: applicantAddress,
     applicantName: applicantName,
+    applicantOccupation: applicantType === "法人" ? applicantOccupation : applicantOccupation,
+    applicantBirth: applicantType === "法人" ? "" : applicantBirth,
+    othersCountText: othersCount,
     applicantNameComposed: applicantNameComposed,
-    applicantNameSama: applicantName ? applicantName + "　様" : "",
-    applicantOccupation: applicantType === "法人" ? "" : applicantOccupation,
-    applicantBirthDate: applicantType === "法人" ? "" : applicantBirthDate,
-    corporateName: corporateName,
-    workerCount: workerCount,
-    othersSuffix: othersSuffix,
-    othersSuffixCorp: applicantType === "法人" ? othersSuffix : "",
 
-    repWorkerName: repWorker ? repWorker.name : "",
-    repWorkerNameCorp: applicantType === "法人" && repWorker ? repWorker.name : "",
-    repWorkerNameWithOthers: repWorker ? repWorker.name + othersSuffix : "",
-    repWorkerAddress: repWorker ? repWorker.address : "",
-    repWorkerOccupation: repWorker ? repWorker.occupation : "",
-    repWorkerBirthDate: repWorker ? repWorker.birth : "",
-
-    speciesCount: speciesList.length > 0 ? speciesList.length : "",
-    speciesNamesJoined: speciesNamesJoined,
-    speciesDamageText: speciesNamesJoined ? speciesNamesJoined + "による被害等" : "",
-
-    purpose: purpose,
-    periodStart: periodStart,
-    periodEnd: periodEnd,
-    periodDaysText: periodDaysText,
+    purpose: idx.get(CHO_L_PURPOSE_),
+    periodStart: Cho_toDateOrText_(idx.get(CHO_L_PERIOD_ + "/開始")),
+    periodEnd: Cho_toDateOrText_(idx.get(CHO_L_PERIOD_ + "/終了")),
     areaLocation: areaLocation,
-    area7Flag: area7Flag,
-    area7Detail: area7Detail,
-    area7CheckText: area7Selected.length > 0 ? CHO_AREA7_CHECKED_ : CHO_AREA7_UNCHECKED_,
-
-    method1: methods[0] || "",
-    method2: methods[1] || "",
-    method3: methods[2] || "",
-    method3Rest: methods.slice(2).join("、"),
-    method4Rest: methods.slice(3).join("、"),
-    disposal1: disposals[0] || "",
-    disposal2: disposals[1] || "",
-    disposal3: disposals[2] || "",
-    disposal3Rest: disposals.slice(2).join("、"),
-    disposal4: disposals[3] || "",
-    hasTrapMethod: hasTrapMethod,
-    trapNoticeText: hasTrapMethod ? CHO_TRAP_NOTICE_ : "",
-
-    licenseNote: hasAnyLicense ? CHO_NOTE_SEE_ROSTER_ : "",
-    registrationNote: hasAnyRegistration ? CHO_NOTE_SEE_ROSTER_ : "",
-    gunPermitNote: hasAnyGunPermit ? CHO_NOTE_SEE_ROSTER_ : "",
-
-    certDamageTime: idx.get(certBase + "被害発生の時期"),
-    certDamageArea: idx.get(certBase + "被害発生区域（場所）"),
-    certDamageContent: idx.get(certBase + "被害の内容"),
-    certCountermeasure: idx.get(certBase + "被害防除対策の実施内容及び実施効果"),
-    certPastResults: idx.get(certBase + "過去数年間の捕獲実績"),
-
-    requesterAddress: idx.get(reqBase + "依頼者住所"),
-    requesterName: requesterName,
-    requesterNameLabel: requesterName ? "依頼者氏名：" : "",
-    damageStatus: idx.get(reqBase + "被害状況"),
-    requestReason: idx.get(reqBase + "依頼した理由"),
-    requestPeriodStart: requestPeriodStart,
-    requestPeriodEnd: requestPeriodEnd,
-
-    permitNo: permitNo,
-    permitNoFull: permitNoFull,
-    permitNoTail: permitNoTail,
-    permitDocNo: permitDocNo,
-    certHeaderNo: certHeaderNo,
-    permitDate: permitDate,
+    area7Selected: area7Selected,
+    methodText: methodText,
+    disposalText: disposalText,
     permitConditions: permitConditions,
-    workerCertNo1: workerCertNo1,
-    certNoRangeText: certNoRangeText,
-    certNoRangePersonal: certNoRangePersonal,
-    certNoRangeCorp: certNoRangeCorp,
-    notifyBodyText: notifyBodyText,
-    returnReportText: returnReportText,
-    reviewClassText: reviewClassText,
 
-    remarks: idx.get(CHO_L_REMARKS_)
+    jiyuCause: Cho_splitChecks_(idx.get(jBase + CHO_L_JIYU_CAUSE_)),
+    jiyuVictim: jiyuVictim,
+    jiyuVictimAddr: idx.get(jBase + CHO_L_JIYU_VICTIM_ + "/申請者以外/住所"),
+    jiyuVictimName: idx.get(jBase + CHO_L_JIYU_VICTIM_ + "/申請者以外/氏名"),
+    jiyuTime: idx.get(jBase + CHO_L_JIYU_TIME_),
+    jiyuArea: idx.get(jBase + CHO_L_JIYU_AREA_),
+    jiyuReason: idx.get(jBase + CHO_L_JIYU_REASON_),
+    jiyuRemarks: idx.get(jBase + CHO_L_REMARKS_)
   };
-  return model;
 }
 
-// ----- 従事者 1 名のモデル化 -----
-// idx は子フォーム内パスで索引化済みの items 索引。
+// 従事者 1 名 → { name, address, occupation, birth, isRep, species[], methods[] }
+// methods[] は「名簿 1 行分」= { tool, licType, licPref, licNo, licDate, regType, regNo, regDate, gunPermitNo, gunPermitDate, gunKind }
 function Cho_parseWorker_(idx) {
   var M = CHO_L_CHILD_METHOD_;
   var worker = {
-    name: idx.get("氏名"),
-    address: idx.get("住所"),
-    occupation: idx.get("職業"),
-    birth: Cho_toDateOrText_(idx.get("生年月日")),
-    isRep: idx.get(CHO_L_REP_) === "はい",
-    species: [],
-    methods: []
+    name: idx.get("氏名"), address: idx.get("住所"), occupation: idx.get("職業"),
+    birth: Cho_toDateOrText_(idx.get("生年月日")), isRep: idx.get(CHO_L_REP_) === "はい",
+    species: [], methods: []
   };
 
-  // 従事者ごとの種数（子フォームは鳥類でも「捕獲頭数」ラベル）
   var spNames = Cho_splitChecks_(idx.get(CHO_L_CHILD_SPECIES_));
   for (var s = 0; s < spNames.length; s++) {
-    var sp = spNames[s];
-    var base = CHO_L_CHILD_SPECIES_ + "/" + sp + "/";
-    var name = CHO_SPECIES_NAME_MAP_[sp] || sp;
+    var sp = spNames[s], base = CHO_L_CHILD_SPECIES_ + "/" + sp + "/";
     worker.species.push({
-      name: name,
+      name: sp,
       count: Cho_toNumberOrText_(idx.get(base + "捕獲頭数")),
-      unit: CHO_SPECIES_UNIT_[sp] || CHO_SPECIES_UNIT_[name] || "頭",
-      eggCount: Cho_toNumberOrText_(idx.get(base + "採取卵数"))
+      eggCount: Cho_toNumberOrText_(idx.get(base + "採取卵数")),
+      unit: CHO_SPECIES_UNIT_[sp] || "頭"
     });
   }
 
-  // 狩猟者登録（各方法分岐の配下に同型で存在）
-  function parseReg(branchBase, licType) {
+  function reg(branchBase, type) {
     if (idx.get(branchBase + "/狩猟者登録/登録の有無") !== "あり") return null;
+    var rb = branchBase + "/狩猟者登録/登録の有無/あり/";
+    return { type: type, no: Cho_joinLicNo_(idx.get(rb + "番号接頭語"), idx.get(rb + "番号")), date: Cho_toDateOrText_(idx.get(rb + "交付年月日")) };
+  }
+  function lic(licBase, type) {
+    return { type: type, pref: idx.get(licBase + "/都道府県"), no: Cho_joinLicNo_(idx.get(licBase + "/番号接頭語"), idx.get(licBase + "/番号")), date: Cho_toDateOrText_(idx.get(licBase + "/交付年月日")) };
+  }
+  function row(tool, l, rg, poss, gunKind) {
     return {
-      type: licType,
-      no: idx.get(branchBase + "/狩猟者登録/登録の有無/あり/番号"),
-      date: Cho_toDateOrText_(idx.get(branchBase + "/狩猟者登録/登録の有無/あり/交付年月日"))
+      tool: tool,
+      licType: l ? l.type : "", licPref: l ? l.pref : "", licNo: l ? l.no : "", licDate: l ? l.date : "",
+      regType: rg ? rg.type : "", regNo: rg ? rg.no : "", regDate: rg ? rg.date : "",
+      gunPermitNo: poss ? poss.no : "", gunPermitDate: poss ? poss.date : "", gunKind: gunKind || ""
     };
   }
 
   var selected = Cho_splitChecks_(idx.get(M));
   for (var i = 0; i < selected.length; i++) {
-    var kind = selected[i];
-    var b = M + "/" + kind;
+    var kind = selected[i], b = M + "/" + kind;
     if (kind === "手捕り") {
-      worker.methods.push({ kind: kind, tools: ["手捕り"], lic: null, reg: null, poss: null, gunKind: "" });
+      worker.methods.push(row("手捕り", null, null, null, ""));
     } else if (kind === "わな") {
-      // 道具の種類（くくりわな/はこわな/はこおとし/囲いわな）。免許情報・狩猟者登録は わな 直下。
-      var trapTools = Cho_splitChecks_(idx.get(b + "/道具の種類"));
-      var tools = [];
-      for (var t = 0; t < trapTools.length; t++) tools.push(CHO_TOOL_NAME_[trapTools[t]] || trapTools[t]);
-      var lic = null;
-      if (idx.get(b + "/免許の必要性") === "必要") {
-        var lb = b + "/免許の必要性/必要/免許情報";
-        lic = {
-          type: "わな猟",
-          authority: idx.get(lb + "/許可権者"),
-          no: idx.get(lb + "/許可番号"),
-          date: Cho_toDateOrText_(idx.get(lb + "/交付年月日"))
-        };
-      }
-      worker.methods.push({
-        kind: kind, tools: tools.length ? tools : ["わな"],
-        lic: lic, reg: parseReg(b, "わな猟"), poss: null, gunKind: ""
-      });
+      var tools = Cho_splitChecks_(idx.get(b + "/道具の種類"));
+      var wl = (idx.get(b + "/免許の必要性") === "必要") ? lic(b + "/免許の必要性/必要/免許情報", "わな猟") : null;
+      var wr = reg(b, "わな猟");
+      if (tools.length === 0) tools = ["わな"];
+      for (var t = 0; t < tools.length; t++) worker.methods.push(row(tools[t], wl, wr, null, ""));
     } else if (kind === "網") {
-      // 道具の種類（むそう網/はり網/つき網/なげ網）。免許情報・狩猟者登録は 免許の必要性/必要 の配下。
-      var netTools = Cho_splitChecks_(idx.get(b + "/道具の種類"));
-      var ntools = [];
-      for (var nt = 0; nt < netTools.length; nt++) ntools.push(CHO_TOOL_NAME_[netTools[nt]] || netTools[nt]);
-      var netLic = null;
-      var netReg = null;
+      var ntools = Cho_splitChecks_(idx.get(b + "/道具の種類"));
+      var nl = null, nr = null;
       if (idx.get(b + "/免許の必要性") === "必要") {
         var nb = b + "/免許の必要性/必要";
-        netLic = {
-          type: "網猟",
-          authority: idx.get(nb + "/免許情報/許可権者"),
-          no: idx.get(nb + "/免許情報/許可番号"),
-          date: Cho_toDateOrText_(idx.get(nb + "/免許情報/交付年月日"))
-        };
-        netReg = parseReg(nb, "網猟");
+        nl = lic(nb + "/免許情報", "網猟"); nr = reg(nb, "網猟");
       }
-      worker.methods.push({
-        kind: kind, tools: ntools.length ? ntools : ["網"],
-        lic: netLic, reg: netReg, poss: null, gunKind: ""
-      });
+      if (ntools.length === 0) ntools = ["網"];
+      for (var n = 0; n < ntools.length; n++) worker.methods.push(row(ntools[n], nl, nr, null, ""));
     } else if (kind === "銃器") {
-      // 銃器 → 銃の種類（空気銃 / 装薬銃）。空気銃は 1 エントリ、装薬銃は 散弾銃/ライフル銃 ごとに 1 エントリ。
-      var gunTypes = Cho_splitChecks_(idx.get(b + "/銃の種類"));
-      for (var gt = 0; gt < gunTypes.length; gt++) {
-        var gtype = gunTypes[gt];
-        var gb = b + "/銃の種類/" + gtype;
-        if (gtype === "空気銃") {
-          // 免許種類（select）= 第一種銃猟免許 / 第二種銃猟免許。選ばれた方の免許情報を読む。
+      var guns = Cho_splitChecks_(idx.get(b + "/銃の種類"));
+      for (var g = 0; g < guns.length; g++) {
+        var gk = guns[g], gb = b + "/銃の種類/" + gk;
+        var poss = { no: idx.get(gb + "/所持許可/所持許可証番号"), date: Cho_toDateOrText_(idx.get(gb + "/所持許可/交付年月日")) };
+        var gl = null, gr;
+        if (gk === "空気銃") {
           var airSel = idx.get(gb + "/免許種類");
-          var airLic = null;
-          if (airSel) {
-            var ab = gb + "/免許種類/" + airSel;
-            airLic = {
-              type: CHO_GUN_LICENSE_TYPE_[airSel] || airSel,
-              authority: idx.get(ab + "/許可権者"),
-              no: idx.get(ab + "/許可番号"),
-              date: Cho_toDateOrText_(idx.get(ab + "/交付年月日"))
-            };
-          }
-          worker.methods.push({
-            kind: kind, tools: [CHO_TOOL_NAME_["空気銃"]],
-            lic: airLic,
-            reg: parseReg(gb, airLic ? airLic.type : "第二種銃猟"),
-            poss: {
-              no: idx.get(gb + "/所持許可/所持許可証番号"),
-              date: Cho_toDateOrText_(idx.get(gb + "/所持許可/交付年月日"))
-            },
-            gunKind: "空気銃"
-          });
-        } else if (gtype === "装薬銃") {
-          // 銃 1 丁 = 1 エントリ（所持許可は銃ごとに別番号）。第一種銃猟免許・狩猟者登録は装薬銃で共通。
-          var firstLic = {
-            type: "第一種銃猟",
-            authority: idx.get(gb + "/第一種銃猟免許/許可権者"),
-            no: idx.get(gb + "/第一種銃猟免許/許可番号"),
-            date: Cho_toDateOrText_(idx.get(gb + "/第一種銃猟免許/交付年月日"))
-          };
-          var firstReg = parseReg(gb, "第一種銃猟");
-          var guns = Cho_splitChecks_(idx.get(gb + "/装薬銃の種類"));
-          if (guns.length === 0) guns = [""];
-          for (var g = 0; g < guns.length; g++) {
-            var gun = guns[g];
-            var possBase = gb + "/装薬銃の種類/" + gun + "/所持許可";
-            worker.methods.push({
-              kind: kind,
-              tools: [gun ? (CHO_TOOL_NAME_[gun] || gun) : "銃"],
-              lic: firstLic,
-              reg: firstReg,
-              poss: gun ? {
-                no: idx.get(possBase + "/所持許可証番号"),
-                date: Cho_toDateOrText_(idx.get(possBase + "/交付年月日"))
-              } : null,
-              gunKind: gun
-            });
-          }
-        } else {
-          worker.methods.push({ kind: kind, tools: [gtype], lic: null, reg: null, poss: null, gunKind: gtype });
+          if (airSel) gl = lic(gb + "/免許種類/" + airSel, CHO_GUN_LIC_[airSel] || airSel);
+          gr = reg(gb, gl ? gl.type : "");
+        } else { // 散弾銃 / ライフル銃
+          gl = lic(gb + "/第一種銃猟免許", "第一種銃猟");
+          gr = reg(gb, "第一種銃猟");
         }
+        worker.methods.push(row(gk, gl, gr, poss, gk));
       }
     } else {
-      worker.methods.push({ kind: kind, tools: [kind], lic: null, reg: null, poss: null, gunKind: "" });
+      worker.methods.push(row(kind, null, null, null, ""));
     }
   }
   return worker;
 }
 
-// ----- 種数の集計（従事者ごとの種数を種名単位で合算） -----
-// 順序は CHO_SPECIES_ORDER_（フォーム選択肢順・表示名）。未知種は出現順で末尾。
-// 合計が 0 の数量は ""（fill.gs が書き込みをスキップして空欄のままにする）。
+// 種数の合算。{ species: {count, eggCount} } を CHO_SPECIES_ORDER_ 順で。
 function Cho_aggregateSpecies_(workers) {
   var totals = {};
-  var appeared = [];
   for (var w = 0; w < workers.length; w++) {
-    var species = workers[w].species || [];
-    for (var s = 0; s < species.length; s++) {
-      var sp = species[s];
-      if (!totals[sp.name]) {
-        totals[sp.name] = { name: sp.name, unit: sp.unit, count: 0, eggCount: 0 };
-        appeared.push(sp.name);
-      }
+    var sps = workers[w].species || [];
+    for (var s = 0; s < sps.length; s++) {
+      var sp = sps[s];
+      if (!totals[sp.name]) totals[sp.name] = { count: 0, eggCount: 0 };
       if (typeof sp.count === "number") totals[sp.name].count += sp.count;
       if (typeof sp.eggCount === "number") totals[sp.name].eggCount += sp.eggCount;
     }
   }
-  var ordered = [];
-  for (var o = 0; o < CHO_SPECIES_ORDER_.length; o++) {
-    if (totals[CHO_SPECIES_ORDER_[o]]) ordered.push(CHO_SPECIES_ORDER_[o]);
-  }
-  for (var a = 0; a < appeared.length; a++) {
-    if (ordered.indexOf(appeared[a]) === -1) ordered.push(appeared[a]);
-  }
-  var list = [];
-  for (var i = 0; i < ordered.length; i++) {
-    var t = totals[ordered[i]];
-    list.push({
-      name: t.name,
-      count: t.count > 0 ? t.count : "",
-      unit: t.unit,
-      eggCount: t.eggCount > 0 ? t.eggCount : ""
-    });
-  }
-  return list;
+  return totals;
 }
 
-// ----- 捕獲用具の和集合（全従事者 × 全方法の tools を重複排除） -----
-// 順序は CHO_TOOL_ORDER_。未知用具は出現順で末尾。
+// 用具の和集合（CHO_TOOL_ORDER_ 順、未知は末尾、生ラベル）
 function Cho_unionTools_(workers) {
   var seen = [];
   for (var w = 0; w < workers.length; w++) {
-    var methods = workers[w].methods || [];
-    for (var m = 0; m < methods.length; m++) {
-      var tools = methods[m].tools || [];
-      for (var t = 0; t < tools.length; t++) {
-        if (tools[t] && seen.indexOf(tools[t]) === -1) seen.push(tools[t]);
-      }
-    }
+    var ms = workers[w].methods || [];
+    for (var m = 0; m < ms.length; m++) { var tl = ms[m].tool; if (tl && seen.indexOf(tl) === -1) seen.push(tl); }
   }
   var ordered = [];
-  for (var o = 0; o < CHO_TOOL_ORDER_.length; o++) {
-    if (seen.indexOf(CHO_TOOL_ORDER_[o]) !== -1) ordered.push(CHO_TOOL_ORDER_[o]);
-  }
-  for (var s2 = 0; s2 < seen.length; s2++) {
-    if (ordered.indexOf(seen[s2]) === -1) ordered.push(seen[s2]);
-  }
+  for (var o = 0; o < CHO_TOOL_ORDER_.length; o++) if (seen.indexOf(CHO_TOOL_ORDER_[o]) !== -1) ordered.push(CHO_TOOL_ORDER_[o]);
+  for (var s2 = 0; s2 < seen.length; s2++) if (ordered.indexOf(seen[s2]) === -1) ordered.push(seen[s2]);
   return ordered;
 }
 
-// ----- 名簿エントリ展開（従事者 × 捕獲方法 → 1 エントリ = 名簿 1 ブロック） -----
-// 2 エントリ目以降は個人欄（住所/氏名/職業/生年月日/従事者証番号）と種数欄を空欄にする
-// （数量の二重計上防止。捕獲方法に関係ない欄は空白でよい、というユーザー方針）。
-function Cho_expandRosterEntries_(workers, permitNo) {
-  var entries = [];
-  for (var w = 0; w < workers.length; w++) {
-    var worker = workers[w];
-    var methods = worker.methods.length > 0
-      ? worker.methods
-      : [{ kind: "", tools: [], lic: null, reg: null, poss: null, gunKind: "" }];
-    for (var m = 0; m < methods.length; m++) {
-      entries.push({
-        includePersonal: m === 0,
-        certNo: m === 0 && permitNo ? "第" + permitNo + "-" + (w + 1) + "号" : "",
-        worker: worker,
-        method: methods[m]
-      });
-    }
-  }
-  return entries;
-}
-
-
-// #############################################################################
-// ## mapping.gs
-// #############################################################################
-
-// =============================================================================
-// mapping.gs — 様式セルマップ + 値変換テーブル（全部データ。ロジックは fill.gs / domain.gs）
-//
-// セル番地の典拠は form_data/鳥獣保護管理法様式.xlsx の旧数式
-// （scripts/extract_formula_map.py で抽出した formulas.tsv）。
-// セル番地を直したいときはこのファイルだけ編集すればよい。
-//
-// 規約:
-//   - cell は必ず結合セルの左上番地で書く（merges.tsv で検証済み）
-//   - get はドメインモデル（domain.gs の Cho_buildModel_）のフラットなキー名
-//   - 値が "" / null のセルは書き込まない（fill.gs 側でスキップ）
-// =============================================================================
-
-// ----- ラベル定数（フォーム定義の正確な文字列。半角/全角括弧の罠を 1 箇所に隔離）-----
-// 親フォーム「鳥獣保護管理法許可申請」
-// ※ 種数・方法は親フォームの入力欄を廃止（従事者の合計量・和集合から導出）したためラベル定数も無い
-var CHO_L_FORMLINK_ = "従事者情報";
-var CHO_L_DISPOSAL_ = "捕獲等又は採取等をしたあとの処置";
-var CHO_L_PURPOSE_ = "捕獲等又は採取等の目的";
-var CHO_L_PERIOD_ = "捕獲等又は採取等の期間";
-var CHO_L_AREA_ = "捕獲等又は採取等の区域";
-var CHO_L_AREA7_ = "規則第７条第１項第７号に係る場所等の位置、名称及び理由";
-var CHO_L_CERT_OR_REQ_ = "証明書又は依頼書の別";
-var CHO_L_APPLICANT_ = "申請者情報";
-var CHO_L_APPLICANT_TYPE_ = "申請者の個人・法人の別";
-var CHO_L_PERMIT_GROUP_ = "許可処分情報";
-var CHO_L_REMARKS_ = "備考";
-// 子フォーム「従事者情報」
-var CHO_L_CHILD_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称)"; // 閉じ括弧が半角!
-var CHO_L_CHILD_SPECIES_ = "捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量";
-var CHO_L_REP_ = "代表的個人";
-
-// ----- 値変換テーブル -----
-// フォームの種名 → 様式の種名（様式の入力規則: ハシブトガラス,ハシボソガラス,ドバト,スズメ,アライグマ,キツネ,キジバト）
-// ※ ニュウナイスズメ / トガリネズミ科・ネズミ科 が様式の入力規則に無ければ、様式テンプレ側の種名リストも更新が必要
-var CHO_SPECIES_NAME_MAP_ = { "カワラバト": "ドバト" }; // 他は素通し（ニュウナイスズメ/ノイヌ/ノネコ/トガリネズミ科・ネズミ科 は as-is）
-// 種ごとの数量単位（鳥類=羽 / 獣類=頭）
-var CHO_SPECIES_UNIT_ = {
-  "キジバト": "羽", "カワラバト": "羽", "ドバト": "羽", "スズメ": "羽", "ニュウナイスズメ": "羽",
-  "ハシボソガラス": "羽", "ハシブトガラス": "羽",
-  "キツネ": "頭", "ノイヌ": "頭", "ノネコ": "頭", "アライグマ": "頭", "トガリネズミ科・ネズミ科": "頭"
-};
-// 処置（様式の入力規則: 放鳥,放獣,放鳥・放獣,焼却,埋設・廃棄）
-var CHO_DISPOSAL_MAP_ = { "焼却": "焼却", "廃棄": "埋設・廃棄", "埋設": "埋設・廃棄" };
-// 捕獲用具の正規表記（子フォーム わな/網/銃器 配下の用具名 → 様式の用具表記）
-var CHO_TOOL_NAME_ = {
-  "手捕り": "手捕り",
-  "はこわな": "はこわな", "くくりわな": "くくりわな", "はこおとし": "はこおとし", "囲いわな": "囲いわな",
-  "むそう網": "網(むそう網)", "はり網": "網(はり網)", "つき網": "網(つき網)", "なげ網": "網(なげ網)",
-  "空気銃": "銃(空気銃)", "散弾銃": "銃(散弾銃)", "ライフル銃": "銃(ライフル銃)"
-};
-// 空気銃の免許種類（select）→ 狩猟免許の種類（名簿 Q 列）。わな=わな猟 / 網=網猟 / 装薬銃=第一種銃猟 は分岐内で直接付与。
-var CHO_GUN_LICENSE_TYPE_ = { "第一種銃猟免許": "第一種銃猟", "第二種銃猟免許": "第二種銃猟" };
-// 種数の表示順（CHO_SPECIES_NAME_MAP_ 適用後の表示名。フォーム選択肢順）
-var CHO_SPECIES_ORDER_ = [
-  "キジバト", "ドバト", "スズメ", "ニュウナイスズメ", "ハシボソガラス", "ハシブトガラス",
-  "キツネ", "ノイヌ", "ノネコ", "アライグマ", "トガリネズミ科・ネズミ科"
-];
-// 捕獲用具の表示順（CHO_TOOL_NAME_ 適用後の正規表記）
-var CHO_TOOL_ORDER_ = [
-  "手捕り", "はこわな", "くくりわな", "はこおとし", "囲いわな",
-  "網(むそう網)", "網(はり網)", "網(つき網)", "網(なげ網)",
-  "銃(空気銃)", "銃(散弾銃)", "銃(ライフル銃)"
+// 名簿の種数行レイアウト（申請書と同じ固定配置。off=ブロック内行オフセット、side=L(J/K)/R(M/N)）
+var CHO_ROSTER_SPECIES_ = [
+  { sp: "キジバト", off: 0, side: "L", bird: true }, { sp: "カワラバト", off: 1, side: "L", bird: true },
+  { sp: "スズメ", off: 2, side: "L", bird: true }, { sp: "ニュウナイスズメ", off: 3, side: "L", bird: true },
+  { sp: "ハシボソガラス", off: 4, side: "L", bird: true }, { sp: "ハシブトガラス", off: 5, side: "L", bird: true },
+  { sp: "キツネ", off: 6, side: "L" }, { sp: "ノイヌ", off: 6, side: "R" },
+  { sp: "ノネコ", off: 7, side: "L" }, { sp: "アライグマ", off: 7, side: "R" },
+  { sp: "トガリネズミ科・ネズミ科", off: 8, side: "L" }
 ];
 
-// ----- 静的セルマップ（シート名 → [{cell, get}]）-----
-var CHO_SHEET_MAPS_ = {
-  "申請書": [
-    { cell: "I2", get: "applicationDate" },
-    { cell: "G6", get: "applicantAddress" },
-    { cell: "G8", get: "applicantNameComposed" },
-    { cell: "G9", get: "applicantOccupation" },
-    { cell: "G10", get: "applicantBirthDate" },
-    { cell: "E23", get: "purpose" },
-    { cell: "E24", get: "periodStart" },
-    { cell: "I24", get: "periodEnd" },
-    { cell: "E25", get: "areaLocation" },
-    { cell: "E26", get: "method1" },
-    { cell: "E27", get: "method2" },
-    { cell: "E28", get: "method3Rest" }, // 4 つ以上は 3 枠目に連結
-    { cell: "E29", get: "disposal1" },
-    { cell: "E30", get: "disposal2" },
-    { cell: "E31", get: "disposal3" },
-    { cell: "E32", get: "disposal4" },
-    { cell: "E33", get: "area7Flag" },
-    { cell: "E34", get: "area7Detail" },
-    { cell: "E35", get: "licenseNote" },      // 狩猟免許あり → 別添従事者名簿のとおり
-    { cell: "E39", get: "registrationNote" }, // 狩猟者登録あり → 〃
-    { cell: "E42", get: "gunPermitNote" },    // 銃器使用あり → 〃
-    { cell: "E45", get: "remarks" }
-  ],
-  "証明書": [
-    { cell: "I2", get: "applicationDate" },
-    { cell: "H5", get: "applicantNameComposed" },
-    { cell: "E19", get: "certDamageTime" },
-    { cell: "E20", get: "certDamageArea" },
-    { cell: "E21", get: "certDamageContent" },
-    { cell: "E22", get: "certCountermeasure" },
-    { cell: "E23", get: "certPastResults" }
-    // E24（証明者氏名）はフォームから項目廃止に伴い書き込みも廃止（証明者が手書き押印する欄）
-  ],
-  "依頼書": [
-    { cell: "I2", get: "applicationDate" },
-    { cell: "H6", get: "requesterAddress" },
-    { cell: "H8", get: "requesterName" },
-    { cell: "E15", get: "repWorkerAddress" }, // 被依頼者 = 代表従事者
-    { cell: "E16", get: "repWorkerName" },
-    { cell: "E17", get: "repWorkerOccupation" },
-    { cell: "E18", get: "repWorkerBirthDate" },
-    { cell: "E25", get: "requestPeriodStart" },
-    { cell: "I25", get: "requestPeriodEnd" },
-    { cell: "E26", get: "areaLocation" },
-    { cell: "E27", get: "damageStatus" },
-    { cell: "E28", get: "requestReason" }
-  ],
-  "許可伺書": [
-    { cell: "D3", get: "applicantAddress" },
-    { cell: "D4", get: "applicantNameComposed" },
-    { cell: "D5", get: "permitNoFull" },
-    { cell: "D12", get: "purpose" },
-    { cell: "D13", get: "periodStart" },
-    { cell: "G13", get: "periodEnd" },
-    { cell: "D14", get: "areaLocation" },
-    { cell: "D15", get: "method1" },
-    { cell: "E15", get: "method2" },
-    { cell: "G15", get: "method3Rest" },
-    { cell: "D18", get: "requesterName" }
-  ],
-  "交付通知書": [
-    { cell: "B3", get: "permitDocNo" },      // 札環対許可第N号
-    { cell: "B4", get: "permitDate" },
-    { cell: "B7", get: "applicantNameSama" }, // 氏名 + 様
-    { cell: "B13", get: "notifyBodyText" },   // {申請日和暦}付けで申請のあった…交付します。
-    { cell: "C16", get: "repWorkerName" },
-    { cell: "D16", get: "othersSuffix" },     // (ほかN名)
-    { cell: "C17", get: "permitNoFull" },
-    { cell: "D17", get: "certNoRangeText" },  // (許可証番号/従事者証番号 第N-1号～第N-M号)
-    { cell: "C24", get: "purpose" },
-    { cell: "C25", get: "periodStart" },
-    { cell: "F25", get: "periodEnd" },
-    { cell: "C26", get: "areaLocation" },
-    { cell: "C27", get: "method1" },
-    { cell: "D27", get: "method2" },
-    { cell: "F27", get: "method3Rest" },
-    { cell: "C28", get: "permitConditions" },
-    { cell: "B30", get: "trapNoticeText" }    // わな使用時の標識掲示の注意書き
-  ],
-  "従事者証": [
-    { cell: "C4", get: "workerCertNo1" },     // 第N-1号
-    { cell: "F4", get: "periodStart" },
-    { cell: "F5", get: "periodEnd" },
-    { cell: "K14", get: "permitNoFull" },
-    { cell: "K17", get: "corporateName" },    // 法人の名称（法人時のみ）
-    { cell: "D18", get: "repWorkerAddress" },
-    { cell: "D23", get: "repWorkerNameWithOthers" },
-    { cell: "D29", get: "repWorkerBirthDate" },
-    { cell: "K26", get: "purpose" },
-    { cell: "K29", get: "areaLocation" },
-    { cell: "K33", get: "method1" },
-    { cell: "L33", get: "method2" },
-    { cell: "N33", get: "method3Rest" },
-    { cell: "K36", get: "permitConditions" }
-  ],
-  "許可審査表": [
-    { cell: "D5", get: "applicantAddress" },
-    { cell: "G5", get: "reviewClassText" },   // 1 被害者 / 2 法人等 / 3 依頼を受けた者
-    { cell: "D8", get: "applicantName" },
-    { cell: "G8", get: "requesterNameLabel" }, // 依頼者あり時 "依頼者氏名："
-    { cell: "I8", get: "requesterName" },
-    { cell: "D11", get: "repWorkerName" },
-    { cell: "E12", get: "othersSuffix" },
-    { cell: "D15", get: "speciesNamesJoined" },
-    { cell: "G23", get: "speciesDamageText" }, // {種名…}による被害等
-    { cell: "D26", get: "periodStart" },
-    { cell: "D28", get: "periodEnd" },
-    { cell: "E29", get: "periodDaysText" },    // N日間
-    { cell: "D30", get: "areaLocation" },
-    { cell: "G31", get: "area7CheckText" },    // ☑/□次の区域を含む。【施行規則第7条第1項第7号】
-    { cell: "D43", get: "method1" },
-    { cell: "D44", get: "method2" },
-    { cell: "D45", get: "method3" },
-    { cell: "D46", get: "method4Rest" }
-  ],
-  // 旧「許可証個人」「許可証法人」は様式がほぼ同一のため単一シート「許可証」に統一
-  // （セットアップで 許可証個人 → 許可証 にリネームし、許可証法人 を削除する）
-  "許可証": [
-    { cell: "C3", get: "certHeaderNo" },          // 個人=第N-1号 / 法人=第N号
-    { cell: "H4", get: "periodStart" },
-    { cell: "H5", get: "periodEnd" },
-    { cell: "G12", get: "applicantAddress" },
-    { cell: "G13", get: "applicantNameComposed" }, // 法人時は法人名
-    { cell: "G14", get: "applicantBirthDate" },    // 法人時は ""（空欄のまま）
-    { cell: "G23", get: "purpose" },
-    { cell: "G25", get: "areaLocation" },
-    { cell: "G28", get: "method1" },
-    { cell: "H28", get: "method2" },
-    { cell: "J28", get: "method3Rest" },
-    { cell: "G30", get: "disposal1" },
-    { cell: "H30", get: "disposal2" },
-    { cell: "J30", get: "disposal3Rest" },
-    { cell: "G32", get: "permitConditions" }
-  ],
-  "振興局宛通知": [
-    { cell: "H3", get: "permitDocNo" },
-    { cell: "H4", get: "permitDate" },
-    { cell: "C13", get: "applicantAddress" },
-    { cell: "C14", get: "applicantNameComposed" },
-    { cell: "C15", get: "permitNoFull" },
-    { cell: "D15", get: "certNoRangePersonal" }, // 個人かつ複数名のとき (許可証番号 第N-1号～…)
-    { cell: "C16", get: "repWorkerNameCorp" },   // 法人時のみ代表従事者名
-    { cell: "D17", get: "othersSuffixCorp" },
-    { cell: "D18", get: "certNoRangeCorp" },     // 法人時 (従事者証番号 第N-1号～…)
-    { cell: "C25", get: "purpose" },
-    { cell: "C28", get: "periodStart" },
-    { cell: "F28", get: "periodEnd" },
-    { cell: "C31", get: "areaLocation" },
-    { cell: "C34", get: "method1" },
-    { cell: "D34", get: "method2" },
-    { cell: "F34", get: "method3Rest" }
-  ],
-  "警察宛通知": [
-    { cell: "H3", get: "permitDocNo" },
-    { cell: "H4", get: "permitDate" },
-    { cell: "C13", get: "applicantAddress" },
-    { cell: "C14", get: "applicantNameComposed" },
-    { cell: "C15", get: "permitNoFull" },
-    { cell: "D15", get: "certNoRangePersonal" },
-    { cell: "C16", get: "repWorkerNameCorp" },
-    { cell: "D17", get: "othersSuffixCorp" },
-    { cell: "D18", get: "certNoRangeCorp" },
-    { cell: "C25", get: "purpose" },
-    { cell: "C28", get: "periodStart" },
-    { cell: "F28", get: "periodEnd" },
-    { cell: "C31", get: "areaLocation" },
-    { cell: "C34", get: "method1" },
-    { cell: "D34", get: "method2" },
-    { cell: "F34", get: "method3Rest" }
-  ],
-  "報告書添付": [
-    { cell: "A2", get: "speciesCount" },
-    { cell: "O3", get: "permitDate" },
-    { cell: "D10", get: "returnReportText" }, // {許可日和暦}付け札環対許可第N号で許可された…報告します。
-    { cell: "J16", get: "areaLocation" }
-    // G 列以降の捕獲実績は事後入力のため空欄
-  ],
-  "結果報告書": [
-    { cell: "A2", get: "speciesCount" },
-    { cell: "O3", get: "permitDate" },
-    { cell: "O4", get: "permitNoTail" },  // {許可番号}号
-    { cell: "P4", get: "permitNo" },
-    { cell: "D10", get: "returnReportText" },
-    { cell: "J16", get: "areaLocation" }
-    // K3（報告日）・捕獲実績・P 列集計は事後入力のため空欄
-  ],
-  "わな": [
-    { cell: "C2", get: "applicantNameComposed" },
-    { cell: "C3", get: "applicantAddress" },
-    { cell: "C5", get: "permitDate" },
-    { cell: "C6", get: "periodStart" },
-    { cell: "E6", get: "periodEnd" }
-  ]
-};
-
-// シートごとの記入条件（無いシートは常時記入）。m = ドメインモデル。
-var CHO_SHEET_CONDITIONS_ = {
-  "証明書": function (m) { return m.certOrRequest === "証明書"; },
-  "依頼書": function (m) { return m.certOrRequest === "依頼書"; },
-  "わな": function (m) { return m.hasTrapMethod; }
-};
-
-// ----- 種数テーブル（捕獲しようとする鳥獣の種類及び数量の繰り返し行）-----
-// cols のキー: name / count / unit / eggLabel("卵") / eggCount / eggUnit("個")
-//             name2 / quotaCount / quotaEgg（許可審査表の 1 人あたり数量）
-var CHO_SPECIES_TABLES_ = {
-  "申請書":     { startRow: 17, maxRows: 6, cols: { name: "E", count: "G", unit: "H", eggLabel: "I", eggCount: "J", eggUnit: "K" } },
-  "証明書":     { startRow: 13, maxRows: 6, cols: { name: "E", count: "G", unit: "H", eggLabel: "I", eggCount: "J", eggUnit: "K" } },
-  "依頼書":     { startRow: 19, maxRows: 6, cols: { name: "E", count: "G", unit: "H", eggLabel: "I", eggCount: "J", eggUnit: "K" } },
-  "許可伺書":   { startRow: 6,  maxRows: 6, cols: { name: "D", count: "E", unit: "F", eggLabel: "G", eggCount: "H", eggUnit: "I" } },
-  "交付通知書": { startRow: 18, maxRows: 6, cols: { name: "C", count: "D", unit: "E", eggLabel: "F", eggCount: "G", eggUnit: "H" } },
-  "振興局宛通知": { startRow: 19, maxRows: 6, cols: { name: "C", count: "D", unit: "E", eggLabel: "F", eggCount: "G", eggUnit: "H" } },
-  "警察宛通知": { startRow: 19, maxRows: 6, cols: { name: "C", count: "D", unit: "E", eggLabel: "F", eggCount: "G", eggUnit: "H" } },
-  "従事者証":   { startRow: 20, maxRows: 6, cols: { name: "K", count: "L", unit: "M", eggLabel: "N", eggCount: "O", eggUnit: "P" } },
-  "許可証":     { startRow: 17, maxRows: 6, cols: { name: "G", count: "H", unit: "I", eggLabel: "J", eggCount: "K", eggUnit: "L" } },
-  "許可審査表": { startRow: 17, maxRows: 6, cols: { name: "D", count: "E", eggCount: "F", name2: "G", quotaCount: "H", quotaEgg: "I" } }
-};
-
-// ----- 従事者名簿のブロック幾何 -----
-// 1 ブロック = 6 行 × 8 ブロック（行 5〜52）。個人・法人共通で「従事者名簿」1 シートに書く。
-// 個人情報・免許列も P 列（捕獲用具）もブロック全体の縦結合（左上 = ブロック先頭行）。
-var CHO_ROSTER_COLS_ = {
-  certNo: "E", address: "F", name: "G", occupation: "H", birth: "I",
-  speciesName: "J", speciesCount: "K", speciesUnit: "L",
-  eggLabel: "M", eggCount: "N", eggUnit: "O",
-  toolCol: "P",
-  licType: "Q", licAuthority: "R", licNo: "S", licDate: "T",
-  regType: "U", regNo: "V", regDate: "W",
-  gunPermitNo: "X", gunPermitDate: "Y", gunKind: "Z",
-  remarks: "AA"
-};
-var CHO_ROSTER_LAYOUT_ = {
-  sheetName: "従事者名簿", firstRow: 5, blockHeight: 6, blockCount: 8, cols: CHO_ROSTER_COLS_
-};
-
-// テンプレートから削除するシート（入力専用 + 統一で不要になった様式）
-var CHO_SHEETS_TO_DELETE_ = ["Sheet1", "申請内容", "従事者名簿 (法人)", "許可証法人"];
-
-// 固定文言
-var CHO_NOTE_SEE_ROSTER_ = "別添従事者名簿のとおり";
-var CHO_TRAP_NOTICE_ = "※　わなを使用する場合は、標識の掲示を必ず行ってください。";
-var CHO_AREA7_CHECKED_ = "☑次の区域を含む。【施行規則第7条第1項第7号】";
-var CHO_AREA7_UNCHECKED_ = "□次の区域を含む。【施行規則第7条第1項第7号】";
-var CHO_REVIEW_CLASS_VICTIM_ = "1　被害者（国・地方公共団体・農協以外の法人・個人）";
-var CHO_REVIEW_CLASS_CORP_ = "2　法人等(国・地方公共団体・農協)";
-var CHO_REVIEW_CLASS_PROXY_ = "3　被害者又は法人等から依頼を受けた者";
-
 
 // #############################################################################
-// ## fill.gs
+// ## fillExport.gs — 書き出し（フォーム→Excel）。リテラルのみ・空はスキップ
 // #############################################################################
 
-// =============================================================================
-// fill.gs — テンプレート複製とシート書き込み（静的マップ / 種数テーブル / 従事者名簿）
-//
-// 書き込み規約:
-//   - 値が "" / null のセルは触らない（テンプレートの空欄をそのまま残す）
-//   - 結合セルは左上番地に setValue（mapping.gs の番地は merges.tsv で左上を確認済み）
-//   - Date はそのまま setValue し、テンプレート側に残る表示形式（和暦等）に委ねる
-// =============================================================================
-
-// Script Properties のキー
 var CHO_PROP_TEMPLATE_ = "CHO_TEMPLATE_FILE_ID";
 var CHO_PROP_FOLDER_ = "CHO_OUTPUT_FOLDER_ID";
 var CHO_PROP_KEY_ = "CHO_ACCESS_KEY";
 
-// テンプレートを出力フォルダへ複製し、ファイル（DriveApp File）を返す。
 function Cho_createOutputCopy_(recordNo) {
   var props = PropertiesService.getScriptProperties();
-  var templateId = props.getProperty(CHO_PROP_TEMPLATE_);
-  var folderId = props.getProperty(CHO_PROP_FOLDER_);
-  if (!templateId || !folderId) {
-    throw new Error("テンプレート未設定です。setup.gs の Cho_registerSettings を実行してください。");
-  }
+  var templateId = props.getProperty(CHO_PROP_TEMPLATE_), folderId = props.getProperty(CHO_PROP_FOLDER_);
+  if (!templateId || !folderId) throw new Error("テンプレート未設定です。Cho_registerSettings を実行してください。");
   var stamp = Utilities.formatDate(new Date(), "Asia/Tokyo", "yyyyMMdd_HHmmss");
   var noPart = String(recordNo == null || recordNo === "" ? "record" : recordNo);
-  var name = "鳥獣保護管理法様式_" + noPart + "_" + stamp;
-  return DriveApp.getFileById(templateId).makeCopy(name, DriveApp.getFolderById(folderId));
+  return DriveApp.getFileById(templateId).makeCopy("鳥獣保護管理法様式_" + noPart + "_" + stamp, DriveApp.getFolderById(folderId));
 }
 
 function Cho_setCell_(sheet, a1, value) {
@@ -1201,640 +737,679 @@ function Cho_setCell_(sheet, a1, value) {
   sheet.getRange(a1).setValue(value);
 }
 
-// ----- 全シート書き込み -----
+// 申請書セル（番地→値）の正準グリッドを組む。緑シートはこれを投影する。
+function Cho_appCells_(model) {
+  var c = {};
+  c["H2"] = model.applicationDate;
+  c["F6"] = model.applicantAddress;
+  c["F8"] = model.applicantName;
+  c["F10"] = model.applicantOccupation;
+  c["F11"] = model.applicantBirth;
+  c["J9"] = model.othersCountText;
+  for (var i = 0; i < CHO_APP_SPECIES_.length; i++) {
+    var e = CHO_APP_SPECIES_[i], t = model.totals[e.sp] || { count: 0, eggCount: 0 };
+    c[e.nameCell] = e.sp;                       // 種名（固定ラベル）
+    if (e.bird && e.eggLabelCell) c[e.eggLabelCell] = (t.eggCount > 0 ? "卵" : "");
+    c[e.count] = (t.count > 0 ? t.count : "");
+    if (e.egg) c[e.egg] = (t.eggCount > 0 ? t.eggCount : "");
+  }
+  c["E27"] = model.purpose;
+  c["E28"] = model.periodStart;
+  c["H28"] = model.periodEnd;
+  c["E29"] = model.areaLocation;
+  c["E30"] = model.methodText;
+  c["E31"] = model.disposalText;
+  for (var a = 0; a < (model.area7Selected || []).length; a++) {
+    var cell = CHO_AREA7_MARK_[model.area7Selected[a]];
+    if (cell) c[cell] = "○";
+    else model.warnings.push("規則7条 区分「" + model.area7Selected[a] + "」は様式の区分に対応がないため○を打てませんでした。");
+  }
+  return c;
+}
+
+// 緑シート ref の src を解決（"E18" 等の申請書番地 / model キー）
+function Cho_resolveRef_(src, appCells, model) {
+  if (/^[A-Z]+[0-9]+$/.test(src)) return appCells[src];
+  if (src === "applicantNameComposed") return model.applicantNameComposed;
+  if (src === "permitConditions") return model.permitConditions;
+  return model[src];
+}
+
 function Cho_fillAll_(ss, model) {
-  var sheetNames = Object.keys(CHO_SHEET_MAPS_);
-  for (var i = 0; i < sheetNames.length; i++) {
-    var name = sheetNames[i];
-    var cond = CHO_SHEET_CONDITIONS_[name];
-    if (cond && !cond(model)) continue;
-    var sheet = ss.getSheetByName(name);
-    if (!sheet) {
-      model.warnings.push("シート「" + name + "」がテンプレートに見つかりません。");
-      continue;
-    }
-    Cho_writeStaticMap_(sheet, CHO_SHEET_MAPS_[name], model);
-    if (CHO_SPECIES_TABLES_[name]) {
-      Cho_writeSpeciesTable_(sheet, name, CHO_SPECIES_TABLES_[name], model);
-    }
-  }
-  Cho_writeRosterBlocks_(ss, model);
+  var appCells = Cho_appCells_(model);
+
+  // 申請書
+  var ap = ss.getSheetByName("申請書");
+  if (ap) { for (var k in appCells) if (appCells.hasOwnProperty(k)) Cho_setCell_(ap, k, appCells[k]); }
+  else model.warnings.push("シート「申請書」が見つかりません。");
+
+  // 従事者名簿
+  Cho_writeRoster_(ss, model);
+
+  // 事由書
+  Cho_writeJiyu_(ss, model);
+
+  // 緑シート（許可証・振興局宛通知・警察宛通知）に投影
+  Cho_projectRefs_(ss, "許可証", Cho_kyokashoRefs_(), appCells, model);
+  Cho_projectRefs_(ss, "振興局宛通知", Cho_tsuchiRefs_(), appCells, model);
+  Cho_projectRefs_(ss, "警察宛通知", Cho_tsuchiRefs_(), appCells, model);
+  Cho_projectRefs_(ss, "従事者証", CHO_JUJISHA_REFS_, appCells, model);
 }
 
-// ----- 静的セルマップ -----
-function Cho_writeStaticMap_(sheet, map, model) {
-  for (var i = 0; i < map.length; i++) {
-    Cho_setCell_(sheet, map[i].cell, model[map[i].get]);
-  }
+function Cho_projectRefs_(ss, sheetName, refs, appCells, model) {
+  var sheet = ss.getSheetByName(sheetName);
+  if (!sheet) { model.warnings.push("シート「" + sheetName + "」が見つかりません。"); return; }
+  for (var i = 0; i < refs.length; i++) Cho_setCell_(sheet, refs[i].dst, Cho_resolveRef_(refs[i].src, appCells, model));
 }
 
-// ----- 種数テーブル -----
-// cols: name / count / unit / eggLabel / eggCount / eggUnit / name2 / quotaCount / quotaEgg
-function Cho_writeSpeciesTable_(sheet, sheetName, cfg, model) {
-  var list = model.speciesList || [];
-  if (list.length > cfg.maxRows) {
-    model.warnings.push("シート「" + sheetName + "」の種数欄(" + cfg.maxRows + "行)を超えたため、" +
-      (list.length - cfg.maxRows) + " 種を出力できませんでした。");
+function Cho_writeJiyu_(ss, model) {
+  var sheet = ss.getSheetByName("事由書");
+  if (!sheet) { model.warnings.push("シート「事由書」が見つかりません。"); return; }
+  Cho_setCell_(sheet, "H2", model.applicationDate);
+  Cho_setCell_(sheet, "H4", model.applicantAddress);
+  Cho_setCell_(sheet, "H5", model.applicantName);
+  if (model.applicantType === "法人") Cho_setCell_(sheet, "H6", model.applicantOccupation); // 代表者名
+  for (var i = 0; i < (model.jiyuCause || []).length; i++) {
+    var cell = CHO_JIYU_SPECIES_MARK_[model.jiyuCause[i]];
+    if (cell) Cho_setCell_(sheet, cell, "○");
   }
-  var cols = cfg.cols;
-  var n = Math.min(list.length, cfg.maxRows);
-  for (var i = 0; i < n; i++) {
-    var sp = list[i];
-    var row = cfg.startRow + i;
-    if (cols.name) Cho_setCell_(sheet, cols.name + row, sp.name);
-    if (cols.count) Cho_setCell_(sheet, cols.count + row, sp.count);
-    if (cols.unit && sp.name) Cho_setCell_(sheet, cols.unit + row, sp.unit);
-    if (cols.eggLabel && sp.eggCount !== "") Cho_setCell_(sheet, cols.eggLabel + row, "卵");
-    if (cols.eggCount) Cho_setCell_(sheet, cols.eggCount + row, sp.eggCount);
-    if (cols.eggUnit && sp.eggCount !== "") Cho_setCell_(sheet, cols.eggUnit + row, "個");
-    if (cols.name2) Cho_setCell_(sheet, cols.name2 + row, sp.name);
-    if (cols.quotaCount) Cho_setCell_(sheet, cols.quotaCount + row, Cho_perPerson_(sp.count, model.workerCount));
-    if (cols.quotaEgg) Cho_setCell_(sheet, cols.quotaEgg + row, Cho_perPerson_(sp.eggCount, model.workerCount));
-  }
+  Cho_setCell_(sheet, "E22", CHO_VICTIM_TO_SHEET_[model.jiyuVictim] || "");
+  Cho_setCell_(sheet, "G22", model.jiyuVictimAddr);
+  Cho_setCell_(sheet, "G23", model.jiyuVictimName);
+  Cho_setCell_(sheet, "E24", model.jiyuTime);
+  Cho_setCell_(sheet, "E25", model.jiyuArea);
+  // E26（被害の内容）はフォームに対応項目がないため空のまま
+  Cho_setCell_(sheet, "E27", model.jiyuReason);
+  Cho_setCell_(sheet, "E28", model.jiyuRemarks);
 }
 
-// 1 人あたり数量（許可審査表 G-I 列。旧数式 = 数量 / 従事者数）。
-function Cho_perPerson_(total, workerCount) {
-  if (typeof total !== "number" || !workerCount) return "";
-  return total / workerCount;
-}
-
-// ----- 従事者名簿（従事者 × 捕獲方法 で 1 ブロック。個人・法人共通） -----
-function Cho_writeRosterBlocks_(ss, model) {
-  var layout = CHO_ROSTER_LAYOUT_;
-  var sheet = ss.getSheetByName(layout.sheetName);
-  if (!sheet) {
-    model.warnings.push("シート「" + layout.sheetName + "」がテンプレートに見つかりません。");
-    return;
+function Cho_writeRoster_(ss, model) {
+  var L = CHO_ROSTER_, cols = L.cols;
+  var sheet = ss.getSheetByName(L.sheetName);
+  if (!sheet) { model.warnings.push("シート「" + L.sheetName + "」が見つかりません。"); return; }
+  var workers = model.workers || [];
+  if (workers.length > L.blockCount) {
+    model.warnings.push("従事者名簿の枠(" + L.blockCount + "ブロック)を超えたため " + (workers.length - L.blockCount) + " 名を出力できませんでした。");
   }
-  var entries = model.rosterEntries || [];
-  if (entries.length > layout.blockCount) {
-    model.warnings.push("従事者名簿の枠(" + layout.blockCount + "ブロック)を超えたため、" +
-      (entries.length - layout.blockCount) + " 件を出力できませんでした。");
-  }
-  var cols = layout.cols;
-  var n = Math.min(entries.length, layout.blockCount);
-  for (var e = 0; e < n; e++) {
-    var entry = entries[e];
-    var top = layout.firstRow + e * layout.blockHeight;
-    var worker = entry.worker;
-    var method = entry.method;
-
-    Cho_setCell_(sheet, cols.certNo + top, entry.certNo);
-    if (entry.includePersonal) {
-      Cho_setCell_(sheet, cols.address + top, worker.address);
-      Cho_setCell_(sheet, cols.name + top, worker.name);
-      Cho_setCell_(sheet, cols.occupation + top, worker.occupation);
-      Cho_setCell_(sheet, cols.birth + top, worker.birth);
-      // 種数（ブロック内 6 行 = 最大 6 種。2 ブロック目以降は二重計上防止のため空欄）
-      var species = worker.species || [];
-      if (species.length > layout.blockHeight) {
-        model.warnings.push("従事者「" + worker.name + "」の種数が " + layout.blockHeight +
-          " 行を超えたため、" + (species.length - layout.blockHeight) + " 種を出力できませんでした。");
-      }
-      for (var s = 0; s < Math.min(species.length, layout.blockHeight); s++) {
-        var sp = species[s];
-        var row = top + s;
-        Cho_setCell_(sheet, cols.speciesName + row, sp.name);
-        Cho_setCell_(sheet, cols.speciesCount + row, sp.count);
-        if (sp.name) Cho_setCell_(sheet, cols.speciesUnit + row, sp.unit);
-        if (sp.eggCount !== "") {
-          Cho_setCell_(sheet, cols.eggLabel + row, "卵");
-          Cho_setCell_(sheet, cols.eggCount + row, sp.eggCount);
-          Cho_setCell_(sheet, cols.eggUnit + row, "個");
+  var n = Math.min(workers.length, L.blockCount);
+  for (var w = 0; w < n; w++) {
+    var worker = workers[w], top = L.firstRow + w * L.blockHeight;
+    // certNo(E列)=緑/office → 空のまま
+    Cho_setCell_(sheet, cols.address + top, worker.address);
+    Cho_setCell_(sheet, cols.name + top, worker.name);
+    Cho_setCell_(sheet, cols.occupation + top, worker.occupation);
+    Cho_setCell_(sheet, cols.birth + top, worker.birth);
+    // 種数（固定オフセット配置）
+    var byName = {};
+    for (var s = 0; s < worker.species.length; s++) byName[worker.species[s].name] = worker.species[s];
+    for (var r = 0; r < CHO_ROSTER_SPECIES_.length; r++) {
+      var slot = CHO_ROSTER_SPECIES_[r], sp = byName[slot.sp];
+      if (!sp) continue;
+      var row = top + slot.off;
+      if (slot.side === "L") {
+        Cho_setCell_(sheet, cols.speciesName + row, slot.sp);
+        if (typeof sp.count === "number" && sp.count > 0) Cho_setCell_(sheet, cols.speciesCount + row, sp.count);
+        if (slot.bird && typeof sp.eggCount === "number" && sp.eggCount > 0) {
+          Cho_setCell_(sheet, cols.species2Name + row, "卵");
+          Cho_setCell_(sheet, cols.species2Count + row, sp.eggCount);
         }
+      } else { // R: ノイヌ/アライグマ を M/N に
+        Cho_setCell_(sheet, cols.species2Name + row, slot.sp);
+        if (typeof sp.count === "number" && sp.count > 0) Cho_setCell_(sheet, cols.species2Count + row, sp.count);
       }
     }
-
-    // 捕獲用具（P 列はブロック全体の 1 結合セル。複数用具は改行で並べる）
-    var tools = method.tools || [];
-    if (tools.length > 0) {
-      Cho_setCell_(sheet, cols.toolCol + top, tools.join("\n"));
+    // 捕獲方法（P 列に積層）+ 免許/登録/銃器
+    var methods = worker.methods || [];
+    if (methods.length > L.blockHeight) {
+      model.warnings.push("従事者「" + worker.name + "」の方法行が " + L.blockHeight + " を超えたため一部を出力できませんでした。");
     }
-
-    if (method.lic) {
-      Cho_setCell_(sheet, cols.licType + top, method.lic.type);
-      Cho_setCell_(sheet, cols.licAuthority + top, method.lic.authority);
-      Cho_setCell_(sheet, cols.licNo + top, method.lic.no);
-      Cho_setCell_(sheet, cols.licDate + top, method.lic.date);
-    }
-    if (method.reg) {
-      Cho_setCell_(sheet, cols.regType + top, method.reg.type);
-      Cho_setCell_(sheet, cols.regNo + top, method.reg.no);
-      Cho_setCell_(sheet, cols.regDate + top, method.reg.date);
-    }
-    if (method.poss) {
-      Cho_setCell_(sheet, cols.gunPermitNo + top, method.poss.no);
-      Cho_setCell_(sheet, cols.gunPermitDate + top, method.poss.date);
-      Cho_setCell_(sheet, cols.gunKind + top, method.gunKind);
+    for (var m = 0; m < Math.min(methods.length, L.blockHeight); m++) {
+      var meth = methods[m], mrow = top + m;
+      Cho_setCell_(sheet, cols.tool + mrow, meth.tool);
+      Cho_setCell_(sheet, cols.licType + mrow, meth.licType);
+      Cho_setCell_(sheet, cols.licPref + mrow, meth.licPref);
+      Cho_setCell_(sheet, cols.licNo + mrow, meth.licNo);
+      Cho_setCell_(sheet, cols.licDate + mrow, meth.licDate);
+      Cho_setCell_(sheet, cols.regType + mrow, meth.regType);
+      Cho_setCell_(sheet, cols.regNo + mrow, meth.regNo);
+      Cho_setCell_(sheet, cols.regDate + mrow, meth.regDate);
+      Cho_setCell_(sheet, cols.gunPermitNo + mrow, meth.gunPermitNo);
+      Cho_setCell_(sheet, cols.gunPermitDate + mrow, meth.gunPermitDate);
+      Cho_setCell_(sheet, cols.gunKind + mrow, meth.gunKind);
     }
   }
 }
 
 
 // #############################################################################
-// ## setup.gs
+// ## parseImport.gs — 取り込み（Excel→フォーム）。リーダ抽象でロジックは純粋
 // #############################################################################
 
-// =============================================================================
-// setup.gs — 一次セットアップ（GAS エディタから手動実行する）
-//
-// 手順:
-//   1. form_data/鳥獣保護管理法様式_1_20260611_120316.xlsx を Drive にアップロード →
-//      「ファイル > Google スプレッドシートとして保存」で変換し、ファイル ID を控える
-//   2. 出力先フォルダを Drive に作成し、フォルダ ID を控える
-//   3. 下の Cho_registerSettings の引数を書き換えて実行（Script Properties に保存）
-//   4. Cho_setupCleanTemplate を実行（不要シート削除・許可証リネーム・数式消去・
-//      マッピング対象セルの残留値クリア・名簿 P 列の結合正規化。冪等）
-// =============================================================================
+// 用具 → 方法 kind
+var CHO_TOOL_KIND_ = {
+  "手捕り": "手捕り",
+  "くくりわな": "わな", "はこわな": "わな", "はこおとし": "わな", "囲いわな": "わな",
+  "むそう網": "網", "はり網": "網", "つき網": "網", "なげ網": "網",
+  "空気銃": "銃器", "散弾銃": "銃器", "ライフル銃": "銃器"
+};
 
-// 引数を直接書き換えて GAS エディタから実行する（実行後は引数を消してよい）。
-// accessKey は 外部アクション URL の ?k= と照合する任意の合言葉（空文字ならゲート無効）。
-function Cho_registerSettings(templateFileId, outputFolderId, accessKey) {
-  if (!templateFileId || !outputFolderId) {
-    throw new Error("templateFileId と outputFolderId を指定してください。");
+// A1 → { row, col }（1 始まり）
+function Cho_a1ToRC_(a1) {
+  var m = String(a1).match(/^([A-Z]+)([0-9]+)$/);
+  if (!m) throw new Error("不正なセル番地: " + a1);
+  var col = 0, letters = m[1];
+  for (var i = 0; i < letters.length; i++) col = col * 26 + (letters.charCodeAt(i) - 64);
+  return { row: Number(m[2]), col: col };
+}
+
+// valuesBySheet = { sheetName: 2D配列(行優先, [0]=1行目) } からセル読みリーダを作る
+function Cho_makeReader_(valuesBySheet) {
+  return {
+    cell: function (sheetName, a1) {
+      var grid = valuesBySheet[sheetName];
+      if (!grid) return "";
+      var rc = Cho_a1ToRC_(a1);
+      var row = grid[rc.row - 1];
+      if (!row) return "";
+      var v = row[rc.col - 1];
+      return v == null ? "" : v;
+    }
+  };
+}
+
+function Cho_isChecked_(v) {
+  var s = String(v == null ? "" : v).replace(/^\s+|\s+$/g, "");
+  return s !== "" && s !== "0" && s.toLowerCase() !== "false";
+}
+function Cho_str_(v) { return String(v == null ? "" : v).replace(/^\s+|\s+$/g, ""); }
+function Cho_dateCanon_(v) { var d = Cho_serialOrDateToDate_(v); return d instanceof Date ? Cho_dateToCanonical_(d) : Cho_str_(v); }
+
+// 名簿 1 ブロック → 子レコードのフォームフィールド（"/"連結パス → 値）。空ブロックは null。
+function Cho_importRosterBlock_(reader, top, isRep) {
+  var S = "従事者名簿", C = CHO_ROSTER_.cols;
+  function cell(col, off) { return reader.cell(S, col + (top + off)); }
+  var name = Cho_str_(cell(C.name, 0)), address = Cho_str_(cell(C.address, 0));
+  // 種数（固定オフセット配置を読む）
+  var species = [];
+  for (var r = 0; r < CHO_ROSTER_SPECIES_.length; r++) {
+    var slot = CHO_ROSTER_SPECIES_[r];
+    if (slot.side === "L") {
+      var nm = Cho_str_(cell(C.speciesName, slot.off));
+      var cnt = Cho_toNumberOrText_(cell(C.speciesCount, slot.off));
+      var egg = slot.bird ? Cho_toNumberOrText_(cell(C.species2Count, slot.off)) : "";
+      if (nm === slot.sp && (cnt !== "" || egg !== "")) species.push({ sp: slot.sp, count: cnt, egg: egg });
+    } else {
+      var nm2 = Cho_str_(cell(C.species2Name, slot.off));
+      var cnt2 = Cho_toNumberOrText_(cell(C.species2Count, slot.off));
+      if (nm2 === slot.sp && cnt2 !== "") species.push({ sp: slot.sp, count: cnt2, egg: "" });
+    }
   }
+  // 方法（P 列 + 免許/登録/銃器 を行ごとに読む）
+  var rows = [];
+  for (var off = 0; off < CHO_ROSTER_.blockHeight; off++) {
+    var tool = Cho_str_(cell(C.tool, off));
+    if (!tool) continue;
+    rows.push({
+      tool: tool, kind: CHO_TOOL_KIND_[tool] || "",
+      licPref: Cho_str_(cell(C.licPref, off)), licNo: Cho_str_(cell(C.licNo, off)), licDate: Cho_dateCanon_(cell(C.licDate, off)), licType: Cho_str_(cell(C.licType, off)),
+      regNo: Cho_str_(cell(C.regNo, off)), regDate: Cho_dateCanon_(cell(C.regDate, off)),
+      gunNo: Cho_str_(cell(C.gunPermitNo, off)), gunDate: Cho_dateCanon_(cell(C.gunPermitDate, off))
+    });
+  }
+  if (!name && species.length === 0 && rows.length === 0) return null; // 空ブロック
+
+  var f = {};
+  var M = CHO_L_CHILD_METHOD_, SP = CHO_L_CHILD_SPECIES_;
+  f["代表的個人"] = isRep ? "はい" : "いいえ";
+  f["氏名"] = name; f["住所"] = address;
+  f["職業"] = Cho_str_(cell(C.occupation, 0));
+  var birth = Cho_dateCanon_(cell(C.birth, 0)); if (birth) f["生年月日"] = birth;
+
+  // 種数 → チェック + 子
+  var spChecked = [];
+  for (var s = 0; s < species.length; s++) {
+    var sp = species[s]; spChecked.push(sp.sp);
+    if (sp.count !== "") f[SP + "/" + sp.sp + "/捕獲頭数"] = sp.count;
+    if (sp.egg !== "") f[SP + "/" + sp.sp + "/採取卵数"] = sp.egg;
+  }
+  if (spChecked.length) f[SP] = spChecked.join(", ");
+
+  // 方法 → kind ごとに再構成
+  var byKind = { "手捕り": [], "わな": [], "網": [], "銃器": [] };
+  for (var i = 0; i < rows.length; i++) { if (byKind[rows[i].kind]) byKind[rows[i].kind].push(rows[i]); }
+  var methodChecks = [];
+  if (byKind["手捕り"].length) methodChecks.push("手捕り");
+  if (byKind["わな"].length) {
+    methodChecks.push("わな");
+    var wb = M + "/わな";
+    f[wb + "/道具の種類"] = byKind["わな"].map(function (x) { return x.tool; }).join(", ");
+    var wl = Cho_firstWithLicense_(byKind["わな"]);
+    if (wl) {
+      f[wb + "/免許の必要性"] = "必要";
+      var sp1 = Cho_splitLicNo_(wl.licNo);
+      var lb = wb + "/免許の必要性/必要/免許情報/";
+      if (wl.licPref) f[lb + "都道府県"] = wl.licPref;
+      if (sp1.number) f[lb + "番号接頭語"] = sp1.prefix, f[lb + "番号"] = sp1.number;
+      if (wl.licDate) f[lb + "交付年月日"] = wl.licDate;
+    }
+    Cho_importReg_(f, wb, byKind["わな"]); // わな直下の狩猟者登録
+  }
+  if (byKind["網"].length) {
+    methodChecks.push("網");
+    var nb = M + "/網";
+    f[nb + "/道具の種類"] = byKind["網"].map(function (x) { return x.tool; }).join(", ");
+    var nl = Cho_firstWithLicense_(byKind["網"]);
+    if (nl) {
+      f[nb + "/免許の必要性"] = "必要";
+      var sp2 = Cho_splitLicNo_(nl.licNo);
+      var nlb = nb + "/免許の必要性/必要/免許情報/";
+      if (nl.licPref) f[nlb + "都道府県"] = nl.licPref;
+      if (sp2.number) f[nlb + "番号接頭語"] = sp2.prefix, f[nlb + "番号"] = sp2.number;
+      if (nl.licDate) f[nlb + "交付年月日"] = nl.licDate;
+      Cho_importReg_(f, nb + "/免許の必要性/必要", byKind["網"]); // 網は 必要 配下に登録
+    }
+  }
+  if (byKind["銃器"].length) {
+    methodChecks.push("銃器");
+    var gb = M + "/銃器";
+    var gunKinds = [];
+    for (var gi = 0; gi < byKind["銃器"].length; gi++) {
+      var gr = byKind["銃器"][gi], gk = gr.tool, gbk = gb + "/銃の種類/" + gk;
+      if (gunKinds.indexOf(gk) === -1) gunKinds.push(gk);
+      if (gr.gunNo) f[gbk + "/所持許可/所持許可証番号"] = gr.gunNo;
+      if (gr.gunDate) f[gbk + "/所持許可/交付年月日"] = gr.gunDate;
+      var spg = Cho_splitLicNo_(gr.licNo);
+      if (gk === "空気銃") {
+        var airSel = Cho_reverseGunLic_(gr.licType); // 第一種銃猟→第一種銃猟免許
+        if (airSel) {
+          f[gbk + "/免許種類"] = airSel;
+          var ab = gbk + "/免許種類/" + airSel + "/";
+          if (gr.licPref) f[ab + "都道府県"] = gr.licPref;
+          if (spg.number) f[ab + "番号接頭語"] = spg.prefix, f[ab + "番号"] = spg.number;
+          if (gr.licDate) f[ab + "交付年月日"] = gr.licDate;
+        }
+        Cho_importReg_(f, gbk, [gr]);
+      } else { // 散弾銃 / ライフル銃
+        var fb = gbk + "/第一種銃猟免許/";
+        if (gr.licPref) f[fb + "都道府県"] = gr.licPref;
+        if (spg.number) f[fb + "番号接頭語"] = spg.prefix, f[fb + "番号"] = spg.number;
+        if (gr.licDate) f[fb + "交付年月日"] = gr.licDate;
+        Cho_importReg_(f, gbk, [gr]);
+      }
+    }
+    f[gb + "/銃の種類"] = gunKinds.join(", ");
+  }
+  if (methodChecks.length) f[M] = methodChecks.join(", ");
+  return f;
+}
+
+function Cho_firstWithLicense_(rows) {
+  for (var i = 0; i < rows.length; i++) if (rows[i].licNo || rows[i].licPref || rows[i].licDate) return rows[i];
+  return null;
+}
+function Cho_reverseGunLic_(licType) {
+  for (var k in CHO_GUN_LIC_) if (CHO_GUN_LIC_.hasOwnProperty(k) && CHO_GUN_LIC_[k] === licType) return k;
+  return licType === "第一種銃猟免許" || licType === "第二種銃猟免許" ? licType : "";
+}
+// 狩猟者登録（branchBase 配下）を rows から復元
+function Cho_importReg_(f, branchBase, rows) {
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (r.regNo || r.regDate) {
+      f[branchBase + "/狩猟者登録/登録の有無"] = "あり";
+      var rb = branchBase + "/狩猟者登録/登録の有無/あり/";
+      var sp = Cho_splitLicNo_(r.regNo);
+      if (sp.number) f[rb + "番号接頭語"] = sp.prefix, f[rb + "番号"] = sp.number;
+      if (r.regDate) f[rb + "交付年月日"] = r.regDate;
+      return;
+    }
+  }
+}
+
+// 申請書/事由書 → 親レコードのフォームフィールド（"/"連結パス → 値）
+function Cho_importParent_(reader, workers, warnings) {
+  var f = {};
+  var APP = "申請書", JIYU = "事由書";
+  function app(a1) { return reader.cell(APP, a1); }
+  function jiyu(a1) { return reader.cell(JIYU, a1); }
+
+  // 個人/法人 判定: 申請書 F11(生年月日) が日付なら個人。
+  var f11 = app("F11");
+  var birthDate = Cho_serialOrDateToDate_(f11);
+  var isIndividual = (birthDate instanceof Date && !isNaN(birthDate.getTime()) && Cho_str_(f11) !== "");
+  var applicantType = isIndividual ? "個人" : "法人";
+  var TBASE = CHO_L_APPLICANT_ + "/" + CHO_L_APPLICANT_TYPE_;
+  f[TBASE] = applicantType;
+  if (applicantType === "法人") {
+    f[TBASE + "/法人/住所"] = Cho_str_(app("F6"));
+    f[TBASE + "/法人/法人名"] = Cho_str_(app("F8"));
+    f[TBASE + "/法人/代表者名"] = Cho_str_(app("F10"));
+  } else {
+    // 個人は名簿から導出（substitution 任せ）。申請書ピンクと代表従事者を照合。
+    var rep = workers[0];
+    if (rep) {
+      if (Cho_str_(app("F6")) && rep["住所"] && Cho_str_(app("F6")) !== rep["住所"]) warnings.push("申請書 住所(確認用)が代表従事者と不一致: " + app("F6") + " ≠ " + rep["住所"]);
+      if (Cho_str_(app("F8")) && rep["氏名"] && Cho_str_(app("F8")) !== rep["氏名"]) warnings.push("申請書 氏名(確認用)が代表従事者と不一致: " + app("F8") + " ≠ " + rep["氏名"]);
+    }
+  }
+
+  f[CHO_L_PURPOSE_] = Cho_str_(app("E27"));
+  var ps = Cho_dateCanon_(app("E28")), pe = Cho_dateCanon_(app("H28"));
+  if (ps) f[CHO_L_PERIOD_ + "/開始"] = ps;
+  if (pe) f[CHO_L_PERIOD_ + "/終了"] = pe;
+  f[CHO_L_AREA_ + "/所在地"] = Cho_str_(app("E29"));
+
+  // 規則7条 区分: ○ セルを逆引き
+  var area7 = [];
+  var seenCell = {};
+  for (var opt in CHO_AREA7_MARK_) {
+    if (!CHO_AREA7_MARK_.hasOwnProperty(opt)) continue;
+    var cell = CHO_AREA7_MARK_[opt];
+    if (seenCell[cell]) continue; // 同一セルに複数選択肢が割当（あり/なし）→ 先頭のみ採用
+    if (Cho_isChecked_(app(cell))) { area7.push(opt); seenCell[cell] = true; }
+  }
+  if (area7.length) f[CHO_L_AREA_ + "/" + CHO_L_AREA7_] = area7.join(", ");
+
+  // 処置: 申請書 E31 を ・ で分割 → フォーム選択肢
+  var disp = Cho_str_(app("E31")).split(/[・,、]/).map(function (x) { return x.replace(/^\s+|\s+$/g, ""); }).filter(function (x) { return x; });
+  if (disp.length) f[CHO_L_DISPOSAL_] = disp.join(", ");
+
+  // 事由書
+  var jBase = CHO_L_JIYU_ + "/";
+  var cause = [];
+  for (var sp in CHO_JIYU_SPECIES_MARK_) {
+    if (CHO_JIYU_SPECIES_MARK_.hasOwnProperty(sp) && Cho_isChecked_(jiyu(CHO_JIYU_SPECIES_MARK_[sp]))) cause.push(sp);
+  }
+  if (cause.length) f[jBase + CHO_L_JIYU_CAUSE_] = cause.join(", ");
+  var victim = CHO_VICTIM_FROM_SHEET_[Cho_str_(jiyu("E22"))] || "";
+  if (victim) {
+    f[jBase + CHO_L_JIYU_VICTIM_] = victim;
+    if (victim === "申請者以外") {
+      f[jBase + CHO_L_JIYU_VICTIM_ + "/申請者以外/住所"] = Cho_str_(jiyu("G22"));
+      f[jBase + CHO_L_JIYU_VICTIM_ + "/申請者以外/氏名"] = Cho_str_(jiyu("G23"));
+    }
+  }
+  f[jBase + CHO_L_JIYU_TIME_] = Cho_str_(jiyu("E24"));
+  f[jBase + CHO_L_JIYU_AREA_] = Cho_str_(jiyu("E25"));
+  f[jBase + CHO_L_JIYU_REASON_] = Cho_str_(jiyu("E27"));
+  f[jBase + CHO_L_REMARKS_] = Cho_str_(jiyu("E28"));
+  if (Cho_str_(jiyu("E26"))) warnings.push("事由書 E26『被害の内容』はフォームに対応項目が無いため取り込めません: " + jiyu("E26"));
+
+  return { type: applicantType, fields: f };
+}
+
+// リーダ → { parent:{fields}, children:[{fields}], warnings }
+function Cho_buildImport_(reader) {
+  var warnings = [];
+  var workers = [];
+  for (var b = 0; b < CHO_ROSTER_.blockCount; b++) {
+    var top = CHO_ROSTER_.firstRow + b * CHO_ROSTER_.blockHeight;
+    var f = Cho_importRosterBlock_(reader, top, b === 0);
+    if (f) workers.push(f);
+  }
+  if (workers.length === 0) warnings.push("従事者名簿に従事者が見つかりませんでした。");
+  var parent = Cho_importParent_(reader, workers, warnings);
+  return { parent: parent, children: workers, warnings: warnings };
+}
+
+// ULID 風レコード ID（本体 Nfb_generateRecordId_ と互換の "r_..." 形）
+function Cho_generateRecordId_() {
+  var ts = (new Date()).getTime().toString(36);
+  var rand = "";
+  for (var i = 0; i < 10; i++) rand += "0123456789abcdefghijklmnopqrstuvwxyz".charAt(Math.floor(Math.random() * 36));
+  return "r_" + ts + "_" + rand;
+}
+
+// import 結果 → sync_records 用 uploadRecords（親 + 子。子は pid=親 ID）
+function Cho_buildUploadRecords_(imp, parentRecordId) {
+  var now = (new Date()).getTime();
+  var parentId = parentRecordId || Cho_generateRecordId_();
+  var parentRec = { id: parentId, data: imp.parent.fields, modifiedAtUnixMs: now };
+  var children = [];
+  for (var i = 0; i < imp.children.length; i++) {
+    children.push({ id: parentId + "_c" + (i + 1), data: imp.children[i], modifiedAtUnixMs: now, pid: parentId });
+  }
+  return {
+    parentFormId: CHO_FORM_PARENT_ID_, childFormId: CHO_FORM_CHILD_ID_,
+    parentRecordId: parentId,
+    parent: { formId: CHO_FORM_PARENT_ID_, uploadRecords: [parentRec] },
+    children: { formId: CHO_FORM_CHILD_ID_, uploadRecords: children, pid: parentId }
+  };
+}
+
+// ----- GAS I/O: Drive xlsx → Google Sheet 変換 → セル読み取り -----
+function Cho_handleImport_(data, e) {
+  var fileId = data.driveFileId || (e && e.parameter && e.parameter.driveFileId);
+  if (!fileId) return { ok: false, error: "driveFileId がありません（様式 xlsx の Drive ファイル ID を渡してください）。" };
+  var convertedId = null;
+  try {
+    var converted = Drive.Files.copy({ title: "_nfb_import_tmp", mimeType: "application/vnd.google-apps.spreadsheet" }, fileId);
+    convertedId = converted.id;
+    var ss = SpreadsheetApp.openById(convertedId);
+    var valuesBySheet = Cho_readSheetValues_(ss);
+    var reader = Cho_makeReader_(valuesBySheet);
+    var imp = Cho_buildImport_(reader);
+    var out = Cho_buildUploadRecords_(imp, data.parentRecordId || "");
+    out.ok = true;
+    out.warnings = imp.warnings;
+    out.summary = { applicantType: imp.parent.type, workerCount: imp.children.length };
+    return out;
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  } finally {
+    if (convertedId) { try { Drive.Files.remove(convertedId); } catch (e2) { /* no-op */ } }
+  }
+}
+
+function Cho_readSheetValues_(ss) {
+  var out = {};
+  for (var i = 0; i < CHO_SHEETS_.length; i++) {
+    var sheet = ss.getSheetByName(CHO_SHEETS_[i]);
+    if (sheet) out[CHO_SHEETS_[i]] = sheet.getDataRange().getValues();
+  }
+  return out;
+}
+
+// アップロードページ（HtmlService）。xlsx を選び google.script.run で取り込み、
+// 返ってきた uploadRecords(JSON) をユーザーが本体アプリ（Playground/取り込みUI）へ渡す。
+function Cho_renderUploadPage_() {
+  var html =
+    '<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>様式の取り込み</title>' +
+    '<style>body{font-family:-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:#f8f9fa;margin:0;padding:24px;color:#202124;}' +
+    '.card{max-width:900px;margin:0 auto;background:#fff;border:1px solid #dadce0;border-radius:8px;padding:20px 24px;}' +
+    'h1{font-size:18px;color:#1a73e8;}label{display:block;margin:12px 0 4px;font-size:13px;}' +
+    'input[type=text]{width:100%;padding:6px;box-sizing:border-box;}button{margin-top:14px;padding:8px 16px;font-size:14px;cursor:pointer;}' +
+    '#status{margin-top:12px;font-size:13px;}#out{width:100%;height:280px;margin-top:12px;font-family:monospace;font-size:12px;}' +
+    '.warn{color:#b06000;}.err{color:#c5221f;}</style></head><body><div class="card">' +
+    '<h1>鳥獣保護管理法様式の取り込み（Excel → フォーム）</h1>' +
+    '<p>記入済みの様式（xlsx）を選んで「取り込む」を押すと、フォーム用レコード(JSON)に変換します。' +
+    '出力された JSON を本体アプリの取り込み口（管理者 &gt; Playground 等）で sync_records に渡してください。</p>' +
+    '<label>様式ファイル (.xlsx)</label><input type="file" id="file" accept=".xlsx">' +
+    '<label>更新する親レコードID（再取り込みで上書きしたいとき。空なら新規）</label><input type="text" id="pid" placeholder="r_...">' +
+    '<button id="go">取り込む</button>' +
+    '<div id="status"></div><textarea id="out" readonly placeholder="ここに uploadRecords(JSON) が出ます"></textarea>' +
+    '<button id="copy">JSON をコピー</button>' +
+    '</div><script>' +
+    'function $(i){return document.getElementById(i);}' +
+    '$("go").onclick=function(){var f=$("file").files[0];if(!f){$("status").textContent="ファイルを選んでください";return;}' +
+    '$("status").textContent="読み込み中...";var r=new FileReader();' +
+    'r.onload=function(){var b64=r.result.split(",")[1];' +
+    'google.script.run.withSuccessHandler(function(res){' +
+    'if(res&&res.ok){$("status").innerHTML="取り込み成功: "+res.summary.applicantType+" / 従事者 "+res.summary.workerCount+" 名"+((res.warnings&&res.warnings.length)?(" <span class=\\"warn\\">(警告 "+res.warnings.length+" 件)</span>"):"");}' +
+    'else{$("status").innerHTML="<span class=\\"err\\">失敗: "+(res&&res.error||"unknown")+"</span>";}' +
+    '$("out").value=JSON.stringify(res,null,2);})' +
+    '.withFailureHandler(function(e){$("status").innerHTML="<span class=\\"err\\">エラー: "+e.message+"</span>";})' +
+    '.Cho_uploadAndImport_(b64,f.name,$("pid").value);};r.readAsDataURL(f);};' +
+    '$("copy").onclick=function(){$("out").select();document.execCommand("copy");$("status").textContent="コピーしました";};' +
+    '</script></body></html>';
+  return HtmlService.createHtmlOutput(html).setTitle("様式の取り込み").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// アップロードページから呼ばれる: base64 xlsx → Drive 一時ファイル → 取り込み → 一時削除。
+function Cho_uploadAndImport_(base64, filename, parentRecordId) {
+  var tempFile = null;
+  try {
+    var bytes = Utilities.base64Decode(base64);
+    var blob = Utilities.newBlob(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename || "import.xlsx");
+    tempFile = DriveApp.createFile(blob);
+    var res = Cho_handleImport_({ driveFileId: tempFile.getId(), parentRecordId: parentRecordId || "" }, null);
+    return res;
+  } catch (err) {
+    return { ok: false, error: String(err && err.message ? err.message : err) };
+  } finally {
+    if (tempFile) { try { tempFile.setTrashed(true); } catch (e) { /* no-op */ } }
+  }
+}
+
+
+// #############################################################################
+// ## setup.gs — 一次セットアップ（GAS エディタから手動実行）
+// #############################################################################
+
+function Cho_registerSettings(templateFileId, outputFolderId, accessKey) {
+  if (!templateFileId || !outputFolderId) throw new Error("templateFileId と outputFolderId を指定してください。");
   var props = PropertiesService.getScriptProperties();
   props.setProperty(CHO_PROP_TEMPLATE_, String(templateFileId));
   props.setProperty(CHO_PROP_FOLDER_, String(outputFolderId));
   props.setProperty(CHO_PROP_KEY_, String(accessKey || ""));
-  Logger.log("登録しました: template=%s / folder=%s / accessKey=%s",
-    templateFileId, outputFolderId, accessKey ? "(設定あり)" : "(なし)");
+  Logger.log("登録: template=%s folder=%s key=%s", templateFileId, outputFolderId, accessKey ? "(あり)" : "(なし)");
 }
 
-// テンプレートの清掃。すべて冪等で、何度実行してもよい。
-//   1. 不要シートの削除（Sheet1・申請内容・従事者名簿 (法人)・許可証法人）
-//   2. 許可証個人 → 許可証 へのリネーム（個人/法人の様式統一）
-//   3. 全シートの数式セルを clearContent（書式・結合・罫線・表示形式は保持）
-//   4. マッピング対象セルの値クリア（生成済みファイルをテンプレに昇格させたときの残留値対策）
-//   5. 従事者名簿 P 列の結合をブロック単位 1 セルへ正規化
+// テンプレ清掃（冪等）: 不要シート削除 + 全数式消去 + 色付き(黄/桃/緑)セルの値クリア。
+// 黄/桃/緑＝データ/派生/出力なので機械的に空にし、無色のラベル・固定文言は残す。
 function Cho_setupCleanTemplate() {
   var templateId = PropertiesService.getScriptProperties().getProperty(CHO_PROP_TEMPLATE_);
-  if (!templateId) {
-    throw new Error("先に Cho_registerSettings を実行してください。");
-  }
+  if (!templateId) throw new Error("先に Cho_registerSettings を実行してください。");
   var ss = SpreadsheetApp.openById(templateId);
-
   for (var d = 0; d < CHO_SHEETS_TO_DELETE_.length; d++) {
     var doomed = ss.getSheetByName(CHO_SHEETS_TO_DELETE_[d]);
-    if (doomed) {
-      ss.deleteSheet(doomed);
-      Logger.log("シート削除: %s", CHO_SHEETS_TO_DELETE_[d]);
-    }
+    if (doomed) { ss.deleteSheet(doomed); Logger.log("シート削除: %s", CHO_SHEETS_TO_DELETE_[d]); }
   }
-
-  if (!ss.getSheetByName("許可証")) {
-    var oldCertSheet = ss.getSheetByName("許可証個人");
-    if (oldCertSheet) {
-      oldCertSheet.setName("許可証");
-      Logger.log("シート名変更: 許可証個人 → 許可証");
-    }
-  }
-
+  var DATA_BG_ = { "#ffff00": 1, "#ead1dc": 1, "#00b050": 1 };
   var sheets = ss.getSheets();
   for (var i = 0; i < sheets.length; i++) {
-    var sheet = sheets[i];
-    var range = sheet.getDataRange();
-    var formulas = range.getFormulas();
-    var cleared = 0;
+    var sheet = sheets[i], range = sheet.getDataRange();
+    var formulas = range.getFormulas(), bgs = range.getBackgrounds(), cleared = 0;
     for (var r = 0; r < formulas.length; r++) {
-      // 連続する数式セルをまとめて clearContent する（行ごとの run-length）
-      var c = 0;
-      while (c < formulas[r].length) {
-        if (formulas[r][c]) {
-          var start = c;
-          while (c < formulas[r].length && formulas[r][c]) c++;
-          sheet.getRange(r + 1, start + 1, 1, c - start).clearContent();
-          cleared += c - start;
-        } else {
-          c++;
-        }
+      for (var c = 0; c < formulas[r].length; c++) {
+        var isFormula = !!formulas[r][c];
+        var isData = !!DATA_BG_[String(bgs[r][c]).toLowerCase()];
+        if (isFormula || isData) { sheet.getRange(r + 1, c + 1).clearContent(); cleared++; }
       }
     }
-    Logger.log("数式消去: %s … %s セル", sheet.getName(), cleared);
+    Logger.log("清掃: %s … %s セル", sheet.getName(), cleared);
   }
-
-  Cho_clearMappedCells_(ss);
-  Cho_normalizeRosterToolMerges_(ss);
-
   SpreadsheetApp.flush();
-  Logger.log("テンプレート清掃が完了しました。");
-}
-
-// マッピング対象セル（静的マップ・種数テーブル・名簿ブロック）の値を一括クリアする。
-// 生成済みファイルを手直ししてテンプレートに昇格させたとき、レコード由来の値が
-// 残っていると以降の全出力に混入するため、書き込み先を機械的に空にする。
-// ラベル・固定文言はマッピング対象外なので残る。冪等。
-function Cho_clearMappedCells_(ss) {
-  var names = Object.keys(CHO_SHEET_MAPS_);
-  for (var i = 0; i < names.length; i++) {
-    var sheet = ss.getSheetByName(names[i]);
-    if (!sheet) {
-      Logger.log("値クリア: シート「%s」が見つかりません（スキップ）", names[i]);
-      continue;
-    }
-    var cleared = 0;
-    var map = CHO_SHEET_MAPS_[names[i]];
-    for (var c = 0; c < map.length; c++) {
-      sheet.getRange(map[c].cell).clearContent();
-      cleared++;
-    }
-    var table = CHO_SPECIES_TABLES_[names[i]];
-    if (table) {
-      var colKeys = Object.keys(table.cols);
-      for (var k = 0; k < colKeys.length; k++) {
-        var col = table.cols[colKeys[k]];
-        sheet.getRange(col + table.startRow + ":" + col + (table.startRow + table.maxRows - 1)).clearContent();
-        cleared += table.maxRows;
-      }
-    }
-    Logger.log("値クリア: %s … %s セル", names[i], cleared);
-  }
-  var roster = ss.getSheetByName(CHO_ROSTER_LAYOUT_.sheetName);
-  if (roster) {
-    var cols = CHO_ROSTER_LAYOUT_.cols;
-    var firstRow = CHO_ROSTER_LAYOUT_.firstRow;
-    var lastRow = firstRow + CHO_ROSTER_LAYOUT_.blockHeight * CHO_ROSTER_LAYOUT_.blockCount - 1;
-    roster.getRange(cols.certNo + firstRow + ":" + cols.remarks + lastRow).clearContent();
-    Logger.log("値クリア: %s … %s%s:%s%s", CHO_ROSTER_LAYOUT_.sheetName,
-      cols.certNo, firstRow, cols.remarks, lastRow);
-  }
-}
-
-// 従事者名簿 P 列（捕獲用具）の結合をブロック単位の 1 セルへ正規化する。
-// 旧テンプレは 2 行 × 3 サブスロット結合だったため、breakApart してから
-// ブロック全体（6 行）を merge し直す。冪等。
-function Cho_normalizeRosterToolMerges_(ss) {
-  var sheet = ss.getSheetByName(CHO_ROSTER_LAYOUT_.sheetName);
-  if (!sheet) return;
-  var cols = CHO_ROSTER_LAYOUT_.cols;
-  for (var b = 0; b < CHO_ROSTER_LAYOUT_.blockCount; b++) {
-    var top = CHO_ROSTER_LAYOUT_.firstRow + b * CHO_ROSTER_LAYOUT_.blockHeight;
-    var range = sheet.getRange(cols.toolCol + top + ":" + cols.toolCol + (top + CHO_ROSTER_LAYOUT_.blockHeight - 1));
-    range.breakApart();
-    range.merge();
-  }
-  Logger.log("P 列結合正規化: %s … %s ブロック", CHO_ROSTER_LAYOUT_.sheetName, CHO_ROSTER_LAYOUT_.blockCount);
+  Logger.log("テンプレート清掃 完了。");
 }
 
 
 // #############################################################################
-// ## Test.gs
+// ## Test.gs — デプロイ不要テスト（GAS エディタで testAll を実行しログ確認）
 // #############################################################################
+// 純ロジック（buildModel / appCells / parseWorker）のみ検証。Drive を使う書き出し・
+// 取り込みの結合テストは scripts/test_roundtrip.mjs（node・想定ファイル fixture）で行う。
 
-// =============================================================================
-// Test.gs — デプロイ不要の動作確認（GAS エディタから testAll を実行してログを見る）
-//
-//   testModel_golden      … ゴールデン payload のモデル組み立て（純ロジックのみ）
-//   testModel_multiMethod … 従事者×捕獲方法の展開（4 ブロック・2 番目以降個人欄空白）
-//   testFill_golden       … doPost を通して実際に様式を生成（テンプレ設定済みのときのみ）
-//   testDoPost_missingPayload / testDoPost_badJson … 異常系
-// =============================================================================
+function Cho_buildGoldenPayload_() {
+  var M = CHO_L_CHILD_METHOD_, S = CHO_L_CHILD_SPECIES_, c1 = "従事者情報/#1/", c2 = "従事者情報/#2/";
+  return {
+    generatedAt: "2026-06-01T00:00:00.000Z",
+    record: { no: 1, items: [
+      { question: CHO_L_APPLICANT_ + "/" + CHO_L_APPLICANT_TYPE_, value: "個人" },
+      { question: CHO_L_PURPOSE_, value: "管理（被害防止）" },
+      { question: CHO_L_PERIOD_ + "/開始", value: "2026-06-01" },
+      { question: CHO_L_PERIOD_ + "/終了", value: "2026-06-30" },
+      { question: CHO_L_AREA_ + "/所在地", value: "札幌市南区定山渓405" },
+      { question: CHO_L_DISPOSAL_, value: "埋設" },
+      { question: c1 + "代表的個人", value: "はい" },
+      { question: c1 + "氏名", value: "秋　はじめ" },
+      { question: c1 + "住所", value: "札幌市北区" },
+      { question: c1 + "職業", value: "会社役員" },
+      { question: c1 + "生年月日", value: "1980-01-15" },
+      { question: c1 + S, value: "キツネ" },
+      { question: c1 + S + "/キツネ/捕獲頭数", value: "5" },
+      { question: c1 + M, value: "わな" },
+      { question: c1 + M + "/わな/道具の種類", value: "くくりわな" },
+      { question: c1 + M + "/わな/免許の必要性", value: "必要" },
+      { question: c1 + M + "/わな/免許の必要性/必要/免許情報/都道府県", value: "北海道" },
+      { question: c1 + M + "/わな/免許の必要性/必要/免許情報/番号接頭語", value: "石狩" },
+      { question: c1 + M + "/わな/免許の必要性/必要/免許情報/番号", value: "1234" },
+      { question: c1 + M + "/わな/免許の必要性/必要/免許情報/交付年月日", value: "2025-04-01" },
+      { question: c2 + "代表的個人", value: "いいえ" },
+      { question: c2 + "氏名", value: "冬村　多才" },
+      { question: c2 + S, value: "キツネ" },
+      { question: c2 + S + "/キツネ/捕獲頭数", value: "3" },
+      { question: c2 + M, value: "手捕り" }
+    ] }
+  };
+}
 
 function testAll() {
-  var results = [];
-  results.push(testModel_golden());
-  results.push(testModel_multiMethod());
-  results.push(testDoPost_missingPayload());
-  results.push(testDoPost_badJson());
-  results.push(testFill_golden());
-
-  var passed = 0;
-  for (var i = 0; i < results.length; i++) if (results[i]) passed++;
+  var results = [testModel_golden(), testRosterParse_()];
+  var passed = 0; for (var i = 0; i < results.length; i++) if (results[i]) passed++;
   Logger.log("==================================================");
   Logger.log("テスト結果: %s / %s PASS", passed, results.length);
   return passed === results.length;
 }
 
-// ----- モデル組み立て（ゴールデン） -----------------------------------------
 function testModel_golden() {
   var model = Cho_buildModel_(Cho_buildGoldenPayload_());
-  var errors = [];
-  function expect(label, actual, expected) {
-    var a = actual instanceof Date ? Utilities.formatDate(actual, "Asia/Tokyo", "yyyy-MM-dd") : actual;
-    if (a !== expected) errors.push(label + ": got=" + a + " want=" + expected);
-  }
-  expect("applicantType", model.applicantType, "個人");
-  expect("certOrRequest", model.certOrRequest, "依頼書");
-  expect("workerCount", model.workerCount, 2);
-  expect("applicantNameComposed", model.applicantNameComposed, "秋　はじめ(ほか1名)");
-  expect("applicantAddress", model.applicantAddress, "札幌市北区あいの里X条X丁目X-X");
-  // 親 substitution（別人の値）より代表従事者を優先すること
-  expect("applicantOccupation", model.applicantOccupation, "会社役員");
-  expect("applicantBirthDate", model.applicantBirthDate, "1999-06-26");
-  expect("speciesList.length", model.speciesList.length, 1);
-  expect("species name", model.speciesList[0].name, "キツネ");
-  expect("species count", model.speciesList[0].count, 10);
-  expect("species unit", model.speciesList[0].unit, "頭");
-  expect("method1", model.method1, "くくりわな");
-  expect("disposal1", model.disposal1, "焼却");
-  expect("hasTrapMethod", model.hasTrapMethod, true);
-  expect("area7Flag", model.area7Flag, "該当あり");
-  expect("area7Detail", model.area7Detail, "公道");
-  expect("periodStart", model.periodStart, "2026-06-01");
-  expect("periodEnd", model.periodEnd, "2026-06-30");
-  expect("periodDaysText", model.periodDaysText, "30日間");
-  expect("requesterName", model.requesterName, "札幌市長　秋元　克広");
-  expect("damageStatus", model.damageStatus, "住民へのつきまとい等");
-  expect("permitNoFull", model.permitNoFull, "第8-81号");
-  expect("permitDocNo", model.permitDocNo, "札環対許可第8-81号");
-  expect("workerCertNo1", model.workerCertNo1, "第8-81-1号");
-  expect("certHeaderNo (個人=従事者証1号)", model.certHeaderNo, "第8-81-1号");
-  expect("certNoRangeText", model.certNoRangeText, "(許可証番号　第8-81-1号～第8-81-2号)");
-  expect("licenseNote", model.licenseNote, CHO_NOTE_SEE_ROSTER_);
-  expect("registrationNote", model.registrationNote, "");
-  expect("gunPermitNote", model.gunPermitNote, "");
-  expect("reviewClassText", model.reviewClassText, CHO_REVIEW_CLASS_PROXY_);
-
-  // 名簿展開: 2 名 × 各 1 方法 = 2 ブロック
-  expect("rosterEntries.length", model.rosterEntries.length, 2);
-  var e1 = model.rosterEntries[0];
-  expect("e1.certNo", e1.certNo, "第8-81-1号");
-  expect("e1.includePersonal", e1.includePersonal, true);
-  expect("e1.worker.name", e1.worker.name, "秋　はじめ");
-  expect("e1.method.lic.type", e1.method.lic.type, "わな猟");
-  expect("e1.method.lic.authority", e1.method.lic.authority, "北海道知事");
-  expect("e1.method.lic.no", e1.method.lic.no, "石狩第0000号");
-  expect("e1.method.tools", e1.method.tools.join(","), "くくりわな");
-  expect("e1.worker.species[0].count", e1.worker.species[0].count, 5);
-  var e2 = model.rosterEntries[1];
-  expect("e2.certNo", e2.certNo, "第8-81-2号");
-  expect("e2.method.lic.no", e2.method.lic.no, "石狩第0001号");
-
-  logResult_("model_golden", errors.length === 0, errors.join(" / "));
-  return errors.length === 0;
+  var ap = Cho_appCells_(model);
+  var errs = [];
+  function exp(l, a, e) { if (String(a) !== String(e)) errs.push(l + ": got=" + a + " want=" + e); }
+  exp("workerCount", model.workerCount, 2);
+  exp("applicantType", model.applicantType, "個人");
+  exp("キツネ合算", model.totals["キツネ"].count, 8);
+  exp("methodText", model.methodText, "手捕り,くくりわな");
+  exp("appCells.F24", ap["F24"], 8);
+  exp("appCells.E24", ap["E24"], "キツネ");
+  exp("appCells.J9", ap["J9"], 1);
+  Cho_logResult_("model_golden", errs.length === 0, errs.join(" / "));
+  return errs.length === 0;
 }
 
-// ----- 従事者 × 捕獲方法の展開 ----------------------------------------------
-function testModel_multiMethod() {
-  var payload = Cho_buildGoldenPayload_();
-  // 3 人目（わな猟 + 空気銃 + 銃 2 丁）を追加
-  var extra = Cho_buildMultiMethodWorkerItems_("従事者情報/#3/");
-  payload.record.items = payload.record.items.concat(extra);
-
-  var model = Cho_buildModel_(payload);
-  var errors = [];
-  function expect(label, actual, expected) {
-    if (actual !== expected) errors.push(label + ": got=" + actual + " want=" + expected);
+function testRosterParse_() {
+  var w = Cho_parseWorker_(Cho_indexItems_([
+    { question: "氏名", value: "田中聡" },
+    { question: CHO_L_CHILD_METHOD_, value: "銃器" },
+    { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類", value: "空気銃" },
+    { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類/空気銃/所持許可/所持許可証番号", value: "12345678901" },
+    { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類/空気銃/免許種類", value: "第二種銃猟免許" },
+    { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類/空気銃/免許種類/第二種銃猟免許/都道府県", value: "北海道" },
+    { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類/空気銃/免許種類/第二種銃猟免許/番号接頭語", value: "石狩" },
+    { question: CHO_L_CHILD_METHOD_ + "/銃器/銃の種類/空気銃/免許種類/第二種銃猟免許/番号", value: "1235" }
+  ]));
+  var errs = [];
+  if (w.methods.length !== 1) errs.push("methods.length=" + w.methods.length);
+  else {
+    if (w.methods[0].tool !== "空気銃") errs.push("tool=" + w.methods[0].tool);
+    if (w.methods[0].licType !== "第二種銃猟") errs.push("licType=" + w.methods[0].licType);
+    if (w.methods[0].licNo !== "石狩第1235号") errs.push("licNo=" + w.methods[0].licNo);
+    if (w.methods[0].gunPermitNo !== "12345678901") errs.push("gunNo=" + w.methods[0].gunPermitNo);
   }
-  expect("workerCount", model.workerCount, 3);
-  // 1 + 1 + (1 + 1 + 2) = 6 ブロック
-  expect("rosterEntries.length", model.rosterEntries.length, 6);
-
-  // 方法 = 全従事者の捕獲用具の和集合（CHO_TOOL_ORDER_ 順）
-  expect("method1 (和集合)", model.method1, "はこわな");
-  expect("method2 (和集合)", model.method2, "くくりわな");
-  expect("method3Rest (和集合)", model.method3Rest, "銃(空気銃)、銃(散弾銃)、銃(ライフル銃)");
-  expect("hasTrapMethod", model.hasTrapMethod, true);
-  // 種数 = 従事者合算（キツネ 5+5+3 / アライグマ 2。CHO_SPECIES_ORDER_ 順）
-  expect("speciesList.length", model.speciesList.length, 2);
-  expect("species[0] 合算", model.speciesList[0].name + model.speciesList[0].count, "キツネ13");
-  expect("species[1] 合算", model.speciesList[1].name + model.speciesList[1].count, "アライグマ2");
-
-  var w3entries = [];
-  for (var i = 0; i < model.rosterEntries.length; i++) {
-    if (model.rosterEntries[i].worker.name === "冬村　多才") w3entries.push(model.rosterEntries[i]);
-  }
-  expect("w3 entries", w3entries.length, 4);
-  expect("w3[0].includePersonal", w3entries[0].includePersonal, true);
-  expect("w3[1].includePersonal", w3entries[1].includePersonal, false);
-  expect("w3[1].certNo (空欄)", w3entries[1].certNo, "");
-  // わな猟ブロック: 用具 2 つ・わな猟免許・狩猟者登録あり
-  expect("w3 trap tools", w3entries[0].method.tools.join(","), "はこわな,くくりわな");
-  expect("w3 trap reg.no", w3entries[0].method.reg.no, "わ第222号");
-  // 空気銃ブロック: 第二種銃猟 + 所持許可
-  expect("w3 air lic.type", w3entries[1].method.lic.type, "第二種銃猟");
-  expect("w3 air poss.no", w3entries[1].method.poss.no, "空第333号");
-  expect("w3 air gunKind", w3entries[1].method.gunKind, "空気銃");
-  // 銃 2 丁 → 2 ブロック（所持許可が別番号、免許は同一）
-  expect("w3 gun1 poss.no", w3entries[2].method.poss.no, "散第555号");
-  expect("w3 gun2 poss.no", w3entries[3].method.poss.no, "ラ第666号");
-  expect("w3 gun1 lic.no", w3entries[2].method.lic.no, "石狩第7777号");
-  expect("w3 gun2 lic.no", w3entries[3].method.lic.no, "石狩第7777号");
-  expect("w3 gun1 tools", w3entries[2].method.tools.join(","), "銃(散弾銃)");
-  expect("w3 gun2 gunKind", w3entries[3].method.gunKind, "ライフル銃");
-  // 銃器使用ありなので申請書 E42 が立つ
-  expect("gunPermitNote", model.gunPermitNote, CHO_NOTE_SEE_ROSTER_);
-  expect("registrationNote", model.registrationNote, CHO_NOTE_SEE_ROSTER_);
-
-  logResult_("model_multiMethod", errors.length === 0, errors.join(" / "));
-  return errors.length === 0;
+  Cho_logResult_("roster_parse", errs.length === 0, errs.join(" / "));
+  return errs.length === 0;
 }
 
-// ----- 実際に様式を生成（テンプレ設定済み環境のみ。未設定なら SKIP=PASS） -----
-function testFill_golden() {
-  var props = PropertiesService.getScriptProperties();
-  if (!props.getProperty(CHO_PROP_TEMPLATE_) || !props.getProperty(CHO_PROP_FOLDER_)) {
-    Logger.log("[SKIP] fill_golden: テンプレート未設定のためスキップ（Cho_registerSettings 実行後に再実行）");
-    return true;
-  }
-  var html = doPost(buildMockPostEvent_(Cho_buildGoldenPayload_())).getContent();
-  var ok = html.indexOf("様式を作成しました") !== -1;
-  logResult_("fill_golden", ok, html);
-  if (ok) {
-    var m = html.match(/href="([^"]+)"/);
-    Logger.log("生成された様式: %s", m ? m[1].replace(/&amp;/g, "&") : "(リンク抽出失敗)");
-  }
-  return ok;
-}
-
-// ----- 異常系（gas_for_external_action/template/Test.gs と同じ） ---------------------
-function testDoPost_missingPayload() {
-  var html = doPost({ parameter: {} }).getContent();
-  var ok = html.indexOf("payload パラメータがありません") !== -1;
-  logResult_("missingPayload", ok, html);
-  return ok;
-}
-
-function testDoPost_badJson() {
-  var html = doPost({ parameter: { payload: "{ this is not json " } }).getContent();
-  var ok = html.indexOf("JSON 解析に失敗") !== -1;
-  logResult_("badJson", ok, html);
-  return ok;
-}
-
-// ----- ヘルパ（template/Test.gs より） ---------------------------------------
-function buildMockPostEvent_(payload) {
-  var json = JSON.stringify(payload);
-  return {
-    parameter: { payload: json },
-    parameters: { payload: [json] },
-    postData: {
-      type: "application/x-www-form-urlencoded",
-      length: json.length,
-      contents: "payload=" + encodeURIComponent(json)
-    },
-    contentLength: json.length
-  };
-}
-
-function logResult_(name, ok, detail) {
-  Logger.log("--------------------------------------------------");
-  Logger.log("[%s] %s", ok ? "PASS" : "FAIL", name);
-  if (!ok) {
-    Logger.log("詳細 (先頭 600 文字): %s", String(detail).substring(0, 600));
-  }
+function Cho_logResult_(name, ok, detail) {
+  Logger.log("[%s] %s%s", ok ? "PASS" : "FAIL", name, ok ? "" : " — " + detail);
 }
 
 
 // #############################################################################
-// ## TestPayload.gs
+// ## node エクスポート（GAS では module 未定義なので無視される）
 // #############################################################################
-
-// =============================================================================
-// TestPayload.gs — テスト用ゴールデン payload
-//
-// xlsx 原本の作例（秋はじめ / 春元負比呂・キツネ 10 頭・くくりわな・依頼書）を
-// builder/src/features/preview/printDocument.js の buildRecordItems の出力形式に
-// 合わせて手組みしたもの。
-//
-// ※ 本番投入前に Playground（管理者 > Playground > 外部アクション モード）で実レコードの
-//    payload を取得し、question パスの実形（特に日付の文字列書式と
-//    子フォームの方法ラベル「…名称)」の半角閉じ括弧）と突き合わせること。
-//    差異があればこのファイルと mapping.gs のラベル定数を実測に合わせて直す。
-// =============================================================================
-
-function Cho_buildGoldenPayload_() {
-  var S = CHO_L_CHILD_SPECIES_; // 捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量
-  var M = CHO_L_CHILD_METHOD_;  // 捕獲等又は採取等の方法（使用する捕獲用具の名称) ※閉じ半角
-  var child1 = "従事者情報/#1/";
-  var child2 = "従事者情報/#2/";
-  var wanaLic = M + "/わな/免許の必要性/必要/免許情報/";
-
-  return {
-    context: "record",
-    formId: "1_aLScq4lAQA-TgI2rZqyzqXB6SDiENy4",
-    formName: "鳥獣保護管理法許可申請",
-    generatedAt: "2026-06-01T01:23:45.000Z",
-    record: {
-      id: "r_01TESTTESTTESTTEST_choju001",
-      no: 1,
-      items: [
-        { question: "許可処分情報", value: "", type: "message" },
-        { question: "許可処分情報/処分の種類", value: "許可", type: "radio" },
-        { question: "許可処分情報/許可番号", value: "8-81", type: "text" },
-        { question: "許可処分情報/許可年月日", value: "2026-06-01", type: "date" },
-        { question: "申請者情報", value: "", type: "message" },
-        { question: "申請者情報/申請者の個人・法人の別", value: "個人", type: "radio" },
-        // 申請者の置換 4 項目は「わざと別人」の値にしてある。モデルは代表従事者（秋　はじめ）を
-        // 優先する仕様（親 substitution が全レコード横断で他人を拾った既知バグへの回帰テスト）。
-        { question: "申請者情報/申請者の個人・法人の別/個人/氏名", value: "鈴木新之助", type: "substitution" },
-        { question: "申請者情報/申請者の個人・法人の別/個人/住所", value: "小樽市", type: "substitution" },
-        { question: "申請者情報/申請者の個人・法人の別/個人/生年月日", value: "2026-05-31", type: "substitution" },
-        { question: "申請者情報/申請者の個人・法人の別/個人/職業", value: "無味無臭", type: "substitution" },
-        { question: "申請者情報/損害賠償能力", value: "狩猟登録者", type: "radio" },
-        // 種数・方法の親入力欄は廃止（従事者の子レコードから集計する）。
-        // 置換フィールド化した表示値が届いても無視されることを確認するため表示文字列を 1 件入れておく。
-        { question: "捕獲しようとする鳥獣の種類及び数量", value: "キツネ 10頭", type: "substitution" },
-
-        // ----- 従事者 #1（代表・わな猟） -----
-        { question: child1 + "代表的個人", value: "はい", type: "radio" },
-        { question: child1 + "氏名", value: "秋　はじめ", type: "text" },
-        { question: child1 + "住所", value: "札幌市北区あいの里X条X丁目X-X", type: "text" },
-        { question: child1 + "職業", value: "会社役員", type: "text" },
-        { question: child1 + "生年月日", value: "1999-06-26", type: "date" },
-        { question: child1 + S, value: "キツネ", type: "checkboxes" },
-        { question: child1 + S + "/キツネ/捕獲頭数", value: "5", type: "number" },
-        { question: child1 + M, value: "わな", type: "checkboxes" },
-        { question: child1 + M + "/わな/道具の種類", value: "くくりわな", type: "checkboxes" },
-        { question: child1 + M + "/わな/免許の必要性", value: "必要", type: "radio" },
-        { question: child1 + wanaLic + "許可権者", value: "北海道知事", type: "text" },
-        { question: child1 + wanaLic + "交付年月日", value: "2025-04-01", type: "date" },
-        { question: child1 + wanaLic + "許可番号", value: "石狩第0000号", type: "text" },
-        { question: child1 + M + "/わな/狩猟者登録/登録の有無", value: "なし", type: "radio" },
-
-        // ----- 従事者 #2（わな猟） -----
-        { question: child2 + "代表的個人", value: "いいえ", type: "radio" },
-        { question: child2 + "氏名", value: "春元　負比呂", type: "text" },
-        { question: child2 + "住所", value: "札幌市北区あいの里X条X丁目X-X", type: "text" },
-        { question: child2 + "職業", value: "会社員", type: "text" },
-        { question: child2 + "生年月日", value: "1999-06-27", type: "date" },
-        { question: child2 + S, value: "キツネ", type: "checkboxes" },
-        { question: child2 + S + "/キツネ/捕獲頭数", value: "5", type: "number" },
-        { question: child2 + M, value: "わな", type: "checkboxes" },
-        { question: child2 + M + "/わな/道具の種類", value: "くくりわな", type: "checkboxes" },
-        { question: child2 + M + "/わな/免許の必要性", value: "必要", type: "radio" },
-        { question: child2 + wanaLic + "許可権者", value: "北海道知事", type: "text" },
-        { question: child2 + wanaLic + "交付年月日", value: "2025-04-01", type: "date" },
-        { question: child2 + wanaLic + "許可番号", value: "石狩第0001号", type: "text" },
-        { question: child2 + M + "/わな/狩猟者登録/登録の有無", value: "なし", type: "radio" },
-
-        { question: "捕獲等又は採取等の目的", value: "管理（被害防止)", type: "text" },
-        { question: "捕獲等又は採取等の期間", value: "", type: "message" },
-        { question: "捕獲等又は採取等の期間/開始", value: "2026-06-01", type: "date" },
-        { question: "捕獲等又は採取等の期間/終了", value: "2026-06-30", type: "date" },
-        { question: "捕獲等又は採取等の区域", value: "", type: "message" },
-        { question: "捕獲等又は採取等の区域/所在地", value: "札幌市白石区小坂９丁目９番9号", type: "text" },
-        { question: "捕獲等又は採取等の区域/" + CHO_L_AREA7_, value: "公道", type: "checkboxes" },
-        { question: CHO_L_DISPOSAL_, value: "焼却", type: "checkboxes" },
-        { question: CHO_L_CERT_OR_REQ_, value: "依頼書", type: "radio" },
-        { question: CHO_L_CERT_OR_REQ_ + "/依頼書/依頼者住所", value: "札幌市中央区北１条西２丁目", type: "text" },
-        { question: CHO_L_CERT_OR_REQ_ + "/依頼書/依頼者氏名", value: "札幌市長　秋元　克広", type: "text" },
-        { question: CHO_L_CERT_OR_REQ_ + "/依頼書/" + CHO_L_PERIOD_, value: "", type: "message" },
-        { question: CHO_L_CERT_OR_REQ_ + "/依頼書/" + CHO_L_PERIOD_ + "/開始", value: "2026-06-01", type: "date" },
-        { question: CHO_L_CERT_OR_REQ_ + "/依頼書/" + CHO_L_PERIOD_ + "/終了", value: "2026-06-30", type: "date" },
-        { question: CHO_L_CERT_OR_REQ_ + "/依頼書/被害状況", value: "住民へのつきまとい等", type: "text" },
-        { question: CHO_L_CERT_OR_REQ_ + "/依頼書/依頼した理由", value: "つきまとい等の生活環境被害防止のため", type: "text" },
-        { question: CHO_L_REMARKS_, value: "", type: "text" }
-      ]
-    }
+if (typeof module === "object" && module.exports) {
+  module.exports = {
+    Cho_buildModel_: Cho_buildModel_, Cho_parseWorker_: Cho_parseWorker_,
+    Cho_aggregateSpecies_: Cho_aggregateSpecies_, Cho_unionTools_: Cho_unionTools_,
+    Cho_appCells_: Cho_appCells_, Cho_resolveRef_: Cho_resolveRef_,
+    Cho_kyokashoRefs_: Cho_kyokashoRefs_, Cho_tsuchiRefs_: Cho_tsuchiRefs_,
+    Cho_buildImport_: Cho_buildImport_, Cho_makeReader_: Cho_makeReader_,
+    Cho_buildUploadRecords_: Cho_buildUploadRecords_,
+    Cho_splitLicNo_: Cho_splitLicNo_, Cho_joinLicNo_: Cho_joinLicNo_,
+    Cho_a1ToRC_: Cho_a1ToRC_, Cho_dateToCanonical_: Cho_dateToCanonical_,
+    Cho_serialOrDateToDate_: Cho_serialOrDateToDate_,
+    CHO_APP_SPECIES_: CHO_APP_SPECIES_, CHO_ROSTER_: CHO_ROSTER_
   };
 }
-
-// 方法 3 種（わな猟 2 用具 + 空気銃 + 散弾銃・ライフル銃 2 丁）を持つ従事者の items。
-// 名簿展開（1 + 1 + 2 = 4 ブロック、2 ブロック目以降の個人欄空白）の検証用。
-function Cho_buildMultiMethodWorkerItems_(childPrefix) {
-  var S = CHO_L_CHILD_SPECIES_;
-  var M = CHO_L_CHILD_METHOD_;
-  var p = childPrefix; // 例: "従事者情報/#3/"
-  var air = p + M + "/銃器/銃の種類/空気銃";
-  var pwd = p + M + "/銃器/銃の種類/装薬銃"; // 装薬銃ブランチ
-  return [
-    { question: p + "代表的個人", value: "いいえ", type: "radio" },
-    { question: p + "氏名", value: "冬村　多才", type: "text" },
-    { question: p + "住所", value: "札幌市南区真駒内9条9丁目", type: "text" },
-    { question: p + "職業", value: "猟師", type: "text" },
-    { question: p + "生年月日", value: "1980-01-15", type: "date" },
-    { question: p + S, value: "キツネ, アライグマ", type: "checkboxes" },
-    { question: p + S + "/キツネ/捕獲頭数", value: "3", type: "number" },
-    { question: p + S + "/アライグマ/捕獲頭数", value: "2", type: "number" },
-    { question: p + M, value: "わな, 銃器", type: "checkboxes" },
-    // わな（はこわな + くくりわな = 1 ブロックに用具 2 つ）
-    { question: p + M + "/わな/道具の種類", value: "はこわな, くくりわな", type: "checkboxes" },
-    { question: p + M + "/わな/免許の必要性", value: "必要", type: "radio" },
-    { question: p + M + "/わな/免許の必要性/必要/免許情報/許可権者", value: "北海道知事", type: "text" },
-    { question: p + M + "/わな/免許の必要性/必要/免許情報/交付年月日", value: "2024-04-01", type: "date" },
-    { question: p + M + "/わな/免許の必要性/必要/免許情報/許可番号", value: "石狩第1111号", type: "text" },
-    { question: p + M + "/わな/狩猟者登録/登録の有無", value: "あり", type: "radio" },
-    { question: p + M + "/わな/狩猟者登録/登録の有無/あり/交付年月日", value: "2025-10-01", type: "date" },
-    { question: p + M + "/わな/狩猟者登録/登録の有無/あり/番号", value: "わ第222号", type: "text" },
-    // 銃器 → 銃の種類: 空気銃 + 装薬銃
-    { question: p + M + "/銃器/銃の種類", value: "空気銃, 装薬銃", type: "checkboxes" },
-    // 空気銃（免許種類 = 第二種銃猟免許）
-    { question: air + "/所持許可/所持許可証番号", value: "空第333号", type: "text" },
-    { question: air + "/所持許可/交付年月日", value: "2023-07-01", type: "date" },
-    { question: air + "/免許種類", value: "第二種銃猟免許", type: "select" },
-    { question: air + "/免許種類/第二種銃猟免許/許可権者", value: "北海道知事", type: "text" },
-    { question: air + "/免許種類/第二種銃猟免許/許可番号", value: "石狩第4444号", type: "text" },
-    { question: air + "/免許種類/第二種銃猟免許/交付年月日", value: "2023-06-01", type: "date" },
-    { question: air + "/狩猟者登録/登録の有無", value: "なし", type: "radio" },
-    // 装薬銃（散弾銃・ライフル銃 2 丁 → 所持許可が別 → 2 ブロック）
-    { question: pwd + "/装薬銃の種類", value: "散弾銃, ライフル銃", type: "checkboxes" },
-    { question: pwd + "/装薬銃の種類/散弾銃/所持許可/所持許可証番号", value: "散第555号", type: "text" },
-    { question: pwd + "/装薬銃の種類/散弾銃/所持許可/交付年月日", value: "2022-05-01", type: "date" },
-    { question: pwd + "/装薬銃の種類/ライフル銃/所持許可/所持許可証番号", value: "ラ第666号", type: "text" },
-    { question: pwd + "/装薬銃の種類/ライフル銃/所持許可/交付年月日", value: "2022-05-02", type: "date" },
-    { question: pwd + "/第一種銃猟免許/許可権者", value: "北海道知事", type: "text" },
-    { question: pwd + "/第一種銃猟免許/許可番号", value: "石狩第7777号", type: "text" },
-    { question: pwd + "/第一種銃猟免許/交付年月日", value: "2022-04-01", type: "date" },
-    { question: pwd + "/狩猟者登録/登録の有無", value: "あり", type: "radio" },
-    { question: pwd + "/狩猟者登録/登録の有無/あり/交付年月日", value: "2025-10-15", type: "date" },
-    { question: pwd + "/狩猟者登録/登録の有無/あり/番号", value: "銃第888号", type: "text" }
-  ];
-}
-//
-function Do_Settings_() {
-    Cho_registerSettings("<templateFileID>", "outputFolderId",
-  "keyward");
-  }
-

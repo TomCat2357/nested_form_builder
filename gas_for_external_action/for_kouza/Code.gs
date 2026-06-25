@@ -2,13 +2,20 @@
 // 環境共生担当課 カレンダー取込 Web App (Nested Form Builder 連携)
 //
 // for_kouza/Code.gs を Web App として再構築。
-// React (Builder) の外部アクションボタンが GET でこの URL を ?ssid=... 付きで叩くと、
-//   - 取込 UI (Index.html) を表示する。
-//     カレンダー名・取込開始日・取込終了日を選び「取込実行」ボタンを押すと、
-//     google.script.run.runImport(payload) が呼ばれる。
-//   - runImport は選択カレンダーの指定期間から件名に「講座」を含むイベントを抽出し、
-//     URL パラメータ ssid (フォームデータ由来) のスプレッドシート Data シートに upsert する。
+// 本体アプリ (Builder) の外部アクションボタンは、バックエンドのサーバ間リレー
+// (gas/externalAction.gs が UrlFetchApp で ?nfbRelay=1 付き POST) でこの URL を叩く。
+//   - nfbRelay=1 のとき: HTML ではなく JSON { ok, title, message, openUrl } を返す。
+//     取込はカレンダー・期間の選択を伴うため即実行はせず、取込 UI を開く openUrl
+//     (= この Web App の URL + ?ssid=<storage.spreadsheetId>) を返す。フロントは
+//     openUrl を自動で別タブに開く (SearchSidebar.buttons.js)。
+//   - 開いた取込 UI (Index.html / doGet) でカレンダー名・取込開始日・取込終了日を選び
+//     「取込実行」を押すと google.script.run.runImport(payload) が走り、選択カレンダーの
+//     指定期間から件名に「講座」を含むイベントを抽出し、ssid のスプレッドシート Data
+//     シートに upsert する。
+//   - nfbRelay なしの直接 POST / GET は従来どおり取込 UI(HTML) を返す (後方互換・直リンク)。
 //   access: MYSELF のため、実質的にデプロイ者 (管理者) 限定のボタンとなる。
+//   送信側シークレット (誤送信防止) を使う場合は Script Properties の
+//   NFB_EXT_ACTION_SECRET に本体側と同じ値を登録する (template/Code.gs と同方式)。
 //
 // 重要: upsert / 取得ロジック (fetchCalendarEvents_ / parseEvent_ / buildHeaderKeyMap_ /
 // readDataRows_ / upsertEvents_ / matchKeyFrom*_ / applyEventToRow_ /
@@ -43,11 +50,8 @@ var REQUIRED_COLUMNS = [
 ];
 
 
-// ----- Web App エントリ (取込 UI を表示) ----------------------------------
-// GET: 手動アクセス・直リンク用に ?ssid= を読む。
-// POST: Builder の外部アクションボタンが隠しフォーム (payload=JSON) で叩く。
-//       spreadsheetId は payload.storage.spreadsheetId に入る
-//       (adminOnly && isAdmin のときだけ storage が付与される)。
+// ----- Web App エントリ ----------------------------------------------------
+// GET: 手動アクセス・直リンク・openUrl から開くとき。?ssid= を読んで取込 UI を表示する。
 function doGet(e) {
   try {
     var params = (e && e.parameter) || {};
@@ -57,26 +61,111 @@ function doGet(e) {
   }
 }
 
+// POST: 本体アプリはサーバ間リレー (UrlFetchApp で ?nfbRelay=1 付き) で payload を送る。
+//   - nfbRelay=1 のとき: JSON で応答する。プローブ (誤送信防止) には HMAC 署名を返し、
+//     本送信には取込 UI を開く openUrl を返す (即実行しない。フロントが openUrl を自動で開く)。
+//   - nfbRelay なしの直接 POST: 従来どおり取込 UI(HTML) を返す (後方互換)。
+//   spreadsheetId は管理者限定ボタンのとき payload.storage.spreadsheetId に入る
+//   (adminOnly && isAdmin のときだけ storage が付与される)。
 function doPost(e) {
+  var relay = e && e.parameter && String(e.parameter.nfbRelay) === "1";
   try {
     var params = (e && e.parameter) || {};
-    var ssid = "";
+    var payload = null;
     if (params.payload) {
-      var payload;
       try {
         payload = JSON.parse(params.payload);
       } catch (parseErr) {
-        return renderHtml_("エラー", "受信データ (payload) を解析できませんでした。", true);
-      }
-      if (payload && payload.storage && payload.storage.spreadsheetId) {
-        ssid = payload.storage.spreadsheetId;
+        return relay ? renderJson_({ ok: false, message: "受信データ (payload) を解析できませんでした。" })
+                     : renderHtml_("エラー", "受信データ (payload) を解析できませんでした。", true);
       }
     }
-    if (!ssid && params.ssid) ssid = params.ssid;
+
+    // 誤送信防止ハンドシェイク (プローブ) への署名応答。機微処理は一切せず即返す。
+    // Script Properties の NFB_EXT_ACTION_SECRET と送信側シークレットが一致するときだけ、
+    // 本体側 (ExtAction_verifyProbeResponse_) が検証できる HMAC(nonce) を返す。
+    // 未設定なら nfbExternalAction:false (従来どおり検証なしで本データが届く)。
+    if (payload && String(payload.nfbProbe) === "1") {
+      var probeSecret = PropertiesService.getScriptProperties().getProperty("NFB_EXT_ACTION_SECRET") || "";
+      var probeNonce = String(payload.nonce || "");
+      if (probeSecret === "" || probeNonce === "") {
+        return renderJson_({ ok: true, nfbExternalAction: false });
+      }
+      return renderJson_({ ok: true, nfbExternalAction: true, signature: Recv_hmacHex_(probeNonce, probeSecret) });
+    }
+
+    // ssid は管理者限定ボタンのとき payload.storage.spreadsheetId に入る。直リンク・後方互換で ?ssid= も拾う。
+    var ssid = "";
+    if (payload && payload.storage && payload.storage.spreadsheetId) {
+      ssid = String(payload.storage.spreadsheetId);
+    }
+    if (!ssid && params.ssid) ssid = String(params.ssid);
+    ssid = ssid.replace(/^\s+|\s+$/g, "");
+
+    if (relay) {
+      // サーバ間リレー: 取込はカレンダー・期間の選択を伴うため、ここでは即実行せず
+      // 取込 UI を開く openUrl を返す (フロントが自動で別タブに開く)。
+      if (!ssid) {
+        return renderJson_({
+          ok: false,
+          message: "取込先スプレッドシートID が取得できませんでした。外部アクションボタンを管理者専用 (adminOnly) に設定し、管理者として実行しているか確認してください。",
+        });
+      }
+      var selfUrl = selfWebAppUrl_();
+      if (!selfUrl) {
+        return renderJson_({
+          ok: false,
+          message: "この受信アプリのウェブアプリ URL を取得できませんでした。ウェブアプリとしてデプロイされているか確認してください。",
+        });
+      }
+      var openUrl = selfUrl + (selfUrl.indexOf("?") >= 0 ? "&" : "?") + "ssid=" + encodeURIComponent(ssid);
+      return renderJson_({
+        ok: true,
+        title: "カレンダー取込",
+        message: "取込画面を開きます。カレンダーと期間を選んで「取込実行」を押してください。",
+        openUrl: openUrl,
+      });
+    }
+
+    // 直接 POST (後方互換): 従来どおり取込 UI を表示する。
     return renderImportUi_(ssid);
   } catch (err) {
-    return renderHtml_("予期せぬエラー", String(err && err.message ? err.message : err), true);
+    var em = String(err && err.message ? err.message : err);
+    return relay ? renderJson_({ ok: false, message: em })
+                 : renderHtml_("予期せぬエラー", em, true);
   }
+}
+
+// サーバ間リレー応答用の JSON 出力 (template / choju_yoshiki と同形式)。
+function renderJson_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj || {}))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+// このウェブアプリの公開 URL (/exec) を返す。openUrl の組み立てに使う。
+// ウェブアプリとして公開されていなければ "" を返す。
+function selfWebAppUrl_() {
+  try {
+    var svc = ScriptApp.getService();
+    var url = svc && svc.getUrl ? svc.getUrl() : "";
+    return url ? String(url) : "";
+  } catch (err) {
+    return "";
+  }
+}
+
+// 誤送信防止ハンドシェイク用 HMAC-SHA256(message, secret) を 16 進文字列で返す。
+// 本体側 ExtAction_hmacHex_ と同一実装にすること (署名が一致しないと送信が拒否される)。
+function Recv_hmacHex_(message, secret) {
+  var raw = Utilities.computeHmacSha256Signature(String(message == null ? "" : message), String(secret == null ? "" : secret));
+  var hex = "";
+  for (var i = 0; i < raw.length; i++) {
+    var b = (raw[i] + 256) % 256;
+    var s = b.toString(16);
+    if (s.length === 1) s = "0" + s;
+    hex += s;
+  }
+  return hex;
 }
 
 // 取込 UI (Index.html) をレンダリングする共通ヘルパ。doGet / doPost 双方から呼ぶ。

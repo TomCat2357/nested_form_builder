@@ -1,0 +1,23 @@
+MISSING: (none - all present)
+data rows with id: 364
+all header keys:
+  col1: id
+  col2: No.
+  col3: createdAt
+  col4: modifiedAt
+  col5: deletedAt
+  col6: createdBy
+  col7: modifiedBy
+  col8: deletedBy
+  col9: pid
+  col10: 実施年月日
+  col11: 開始時間
+  col12: 終了時間
+  col13: 種類|ヒグマ講座
+  col14: 種類|出前講座
+  col15: 場所
+  col16: 組織名等
+  col17: 人数
+  col18: （参考）
+  col19: 備考
+  col20: 重複するレコードID
