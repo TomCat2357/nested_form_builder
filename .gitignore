@@ -15,7 +15,7 @@ node_modules/
 *.png
 digest_*.txt
 #.rej
-
+form_test/*
 # ログ
 *.log
 npm-debug.log*
