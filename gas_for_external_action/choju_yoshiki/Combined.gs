@@ -443,7 +443,12 @@ function Cho_buildModel_(payload) {
 
   // ----- 方法（全従事者の捕獲用具の和集合。親フォームに入力欄は無い）・処置 -----
   var methods = Cho_unionTools_(workers);
-  var hasTrapMethod = methods.indexOf("はこわな") !== -1 || methods.indexOf("くくりわな") !== -1;
+  var hasTrapMethod = false;
+  for (var hw = 0; hw < workers.length; hw++) {
+    for (var hm = 0; hm < workers[hw].methods.length; hm++) {
+      if (workers[hw].methods[hm].kind === "わな") { hasTrapMethod = true; break; }
+    }
+  }
   var disposalsRaw = Cho_splitChecks_(idx.get(CHO_L_DISPOSAL_));
   var disposals = [];
   for (var di = 0; di < disposalsRaw.length; di++) {
@@ -649,15 +654,16 @@ function Cho_parseWorker_(idx) {
     var b = M + "/" + kind;
     if (kind === "手捕り") {
       worker.methods.push({ kind: kind, tools: ["手捕り"], lic: null, reg: null, poss: null, gunKind: "" });
-    } else if (kind === "わな猟") {
-      var trapTools = Cho_splitChecks_(idx.get(b + "/わなの種類"));
+    } else if (kind === "わな") {
+      // 道具の種類（くくりわな/はこわな/はこおとし/囲いわな）。免許情報・狩猟者登録は わな 直下。
+      var trapTools = Cho_splitChecks_(idx.get(b + "/道具の種類"));
       var tools = [];
       for (var t = 0; t < trapTools.length; t++) tools.push(CHO_TOOL_NAME_[trapTools[t]] || trapTools[t]);
       var lic = null;
       if (idx.get(b + "/免許の必要性") === "必要") {
         var lb = b + "/免許の必要性/必要/免許情報";
         lic = {
-          type: CHO_LICENSE_TYPE_[kind],
+          type: "わな猟",
           authority: idx.get(lb + "/許可権者"),
           no: idx.get(lb + "/許可番号"),
           date: Cho_toDateOrText_(idx.get(lb + "/交付年月日"))
@@ -665,61 +671,87 @@ function Cho_parseWorker_(idx) {
       }
       worker.methods.push({
         kind: kind, tools: tools.length ? tools : ["わな"],
-        lic: lic, reg: parseReg(b, CHO_LICENSE_TYPE_[kind]), poss: null, gunKind: ""
+        lic: lic, reg: parseReg(b, "わな猟"), poss: null, gunKind: ""
       });
-    } else if (kind === "網猟") {
+    } else if (kind === "網") {
+      // 道具の種類（むそう網/はり網/つき網/なげ網）。免許情報・狩猟者登録は 免許の必要性/必要 の配下。
+      var netTools = Cho_splitChecks_(idx.get(b + "/道具の種類"));
+      var ntools = [];
+      for (var nt = 0; nt < netTools.length; nt++) ntools.push(CHO_TOOL_NAME_[netTools[nt]] || netTools[nt]);
+      var netLic = null;
+      var netReg = null;
+      if (idx.get(b + "/免許の必要性") === "必要") {
+        var nb = b + "/免許の必要性/必要";
+        netLic = {
+          type: "網猟",
+          authority: idx.get(nb + "/免許情報/許可権者"),
+          no: idx.get(nb + "/免許情報/許可番号"),
+          date: Cho_toDateOrText_(idx.get(nb + "/免許情報/交付年月日"))
+        };
+        netReg = parseReg(nb, "網猟");
+      }
       worker.methods.push({
-        kind: kind, tools: [CHO_TOOL_NAME_["網猟"]],
-        lic: {
-          type: CHO_LICENSE_TYPE_[kind],
-          authority: idx.get(b + "/免許情報/許可権者"),
-          no: idx.get(b + "/免許情報/許可番号"),
-          date: Cho_toDateOrText_(idx.get(b + "/免許情報/交付年月日"))
-        },
-        reg: parseReg(b, CHO_LICENSE_TYPE_[kind]), poss: null, gunKind: ""
+        kind: kind, tools: ntools.length ? ntools : ["網"],
+        lic: netLic, reg: netReg, poss: null, gunKind: ""
       });
-    } else if (kind === "空気銃") {
-      worker.methods.push({
-        kind: kind, tools: [CHO_TOOL_NAME_["空気銃"]],
-        lic: {
-          type: CHO_LICENSE_TYPE_[kind],
-          authority: idx.get(b + "/第二種銃猟免許/許可権者"),
-          no: idx.get(b + "/第二種銃猟免許/許可番号"),
-          date: Cho_toDateOrText_(idx.get(b + "/第二種銃猟免許/交付年月日"))
-        },
-        reg: parseReg(b, CHO_LICENSE_TYPE_[kind]),
-        poss: {
-          no: idx.get(b + "/所持許可/所持許可証番号"),
-          date: Cho_toDateOrText_(idx.get(b + "/所持許可/交付年月日"))
-        },
-        gunKind: "空気銃"
-      });
-    } else if (kind === "散弾銃・ライフル銃") {
-      // 銃 1 丁 = 1 エントリ（所持許可は銃ごとに別番号・別交付年月日のため）。
-      // 第一種銃猟免許・狩猟者登録は同値を各エントリへ持たせ、Z 列（鉄砲の種類）で区別する。
-      var firstLic = {
-        type: CHO_LICENSE_TYPE_[kind],
-        authority: idx.get(b + "/第一種銃猟免許/許可権者"),
-        no: idx.get(b + "/第一種銃猟免許/許可番号"),
-        date: Cho_toDateOrText_(idx.get(b + "/第一種銃猟免許/交付年月日"))
-      };
-      var firstReg = parseReg(b, CHO_LICENSE_TYPE_[kind]);
-      var guns = Cho_splitChecks_(idx.get(b + "/鉄砲の種類"));
-      if (guns.length === 0) guns = [""];
-      for (var g = 0; g < guns.length; g++) {
-        var gun = guns[g];
-        var possBase = b + "/鉄砲の種類/" + gun + "/所持許可";
-        worker.methods.push({
-          kind: kind,
-          tools: [gun ? (CHO_TOOL_NAME_[gun] || gun) : "銃"],
-          lic: firstLic,
-          reg: firstReg,
-          poss: gun ? {
-            no: idx.get(possBase + "/所持許可証番号"),
-            date: Cho_toDateOrText_(idx.get(possBase + "/交付年月日"))
-          } : null,
-          gunKind: gun
-        });
+    } else if (kind === "銃器") {
+      // 銃器 → 銃の種類（空気銃 / 装薬銃）。空気銃は 1 エントリ、装薬銃は 散弾銃/ライフル銃 ごとに 1 エントリ。
+      var gunTypes = Cho_splitChecks_(idx.get(b + "/銃の種類"));
+      for (var gt = 0; gt < gunTypes.length; gt++) {
+        var gtype = gunTypes[gt];
+        var gb = b + "/銃の種類/" + gtype;
+        if (gtype === "空気銃") {
+          // 免許種類（select）= 第一種銃猟免許 / 第二種銃猟免許。選ばれた方の免許情報を読む。
+          var airSel = idx.get(gb + "/免許種類");
+          var airLic = null;
+          if (airSel) {
+            var ab = gb + "/免許種類/" + airSel;
+            airLic = {
+              type: CHO_GUN_LICENSE_TYPE_[airSel] || airSel,
+              authority: idx.get(ab + "/許可権者"),
+              no: idx.get(ab + "/許可番号"),
+              date: Cho_toDateOrText_(idx.get(ab + "/交付年月日"))
+            };
+          }
+          worker.methods.push({
+            kind: kind, tools: [CHO_TOOL_NAME_["空気銃"]],
+            lic: airLic,
+            reg: parseReg(gb, airLic ? airLic.type : "第二種銃猟"),
+            poss: {
+              no: idx.get(gb + "/所持許可/所持許可証番号"),
+              date: Cho_toDateOrText_(idx.get(gb + "/所持許可/交付年月日"))
+            },
+            gunKind: "空気銃"
+          });
+        } else if (gtype === "装薬銃") {
+          // 銃 1 丁 = 1 エントリ（所持許可は銃ごとに別番号）。第一種銃猟免許・狩猟者登録は装薬銃で共通。
+          var firstLic = {
+            type: "第一種銃猟",
+            authority: idx.get(gb + "/第一種銃猟免許/許可権者"),
+            no: idx.get(gb + "/第一種銃猟免許/許可番号"),
+            date: Cho_toDateOrText_(idx.get(gb + "/第一種銃猟免許/交付年月日"))
+          };
+          var firstReg = parseReg(gb, "第一種銃猟");
+          var guns = Cho_splitChecks_(idx.get(gb + "/装薬銃の種類"));
+          if (guns.length === 0) guns = [""];
+          for (var g = 0; g < guns.length; g++) {
+            var gun = guns[g];
+            var possBase = gb + "/装薬銃の種類/" + gun + "/所持許可";
+            worker.methods.push({
+              kind: kind,
+              tools: [gun ? (CHO_TOOL_NAME_[gun] || gun) : "銃"],
+              lic: firstLic,
+              reg: firstReg,
+              poss: gun ? {
+                no: idx.get(possBase + "/所持許可証番号"),
+                date: Cho_toDateOrText_(idx.get(possBase + "/交付年月日"))
+              } : null,
+              gunKind: gun
+            });
+          }
+        } else {
+          worker.methods.push({ kind: kind, tools: [gtype], lic: null, reg: null, poss: null, gunKind: gtype });
+        }
       }
     } else {
       worker.methods.push({ kind: kind, tools: [kind], lic: null, reg: null, poss: null, gunKind: "" });
@@ -850,32 +882,35 @@ var CHO_L_REP_ = "代表的個人";
 
 // ----- 値変換テーブル -----
 // フォームの種名 → 様式の種名（様式の入力規則: ハシブトガラス,ハシボソガラス,ドバト,スズメ,アライグマ,キツネ,キジバト）
-var CHO_SPECIES_NAME_MAP_ = { "カワラバト": "ドバト" }; // 他は素通し（ノイヌ/ノネコ/ねずみ は as-is）
-// 種ごとの数量単位（フォーム定義の 捕獲羽数/捕獲頭数 と一致させる）
+// ※ ニュウナイスズメ / トガリネズミ科・ネズミ科 が様式の入力規則に無ければ、様式テンプレ側の種名リストも更新が必要
+var CHO_SPECIES_NAME_MAP_ = { "カワラバト": "ドバト" }; // 他は素通し（ニュウナイスズメ/ノイヌ/ノネコ/トガリネズミ科・ネズミ科 は as-is）
+// 種ごとの数量単位（鳥類=羽 / 獣類=頭）
 var CHO_SPECIES_UNIT_ = {
-  "キジバト": "羽", "カワラバト": "羽", "ドバト": "羽", "スズメ": "羽",
+  "キジバト": "羽", "カワラバト": "羽", "ドバト": "羽", "スズメ": "羽", "ニュウナイスズメ": "羽",
   "ハシボソガラス": "羽", "ハシブトガラス": "羽",
-  "キツネ": "頭", "ノイヌ": "頭", "ノネコ": "頭", "アライグマ": "頭", "ねずみ": "頭"
+  "キツネ": "頭", "ノイヌ": "頭", "ノネコ": "頭", "アライグマ": "頭", "トガリネズミ科・ネズミ科": "頭"
 };
 // 処置（様式の入力規則: 放鳥,放獣,放鳥・放獣,焼却,埋設・廃棄）
 var CHO_DISPOSAL_MAP_ = { "焼却": "焼却", "廃棄": "埋設・廃棄", "埋設": "埋設・廃棄" };
-// 捕獲用具の正規表記（様式の入力規則: 手捕り,はこわな,くくりわな,網(つき網),銃(散弾銃),銃(空気銃),…）
+// 捕獲用具の正規表記（子フォーム わな/網/銃器 配下の用具名 → 様式の用具表記）
 var CHO_TOOL_NAME_ = {
-  "手捕り": "手捕り", "はこわな": "はこわな", "くくりわな": "くくりわな",
-  "網猟": "網(つき網)", "空気銃": "銃(空気銃)", "散弾銃": "銃(散弾銃)", "ライフル銃": "銃(ライフル銃)"
+  "手捕り": "手捕り",
+  "はこわな": "はこわな", "くくりわな": "くくりわな", "はこおとし": "はこおとし", "囲いわな": "囲いわな",
+  "むそう網": "網(むそう網)", "はり網": "網(はり網)", "つき網": "網(つき網)", "なげ網": "網(なげ網)",
+  "空気銃": "銃(空気銃)", "散弾銃": "銃(散弾銃)", "ライフル銃": "銃(ライフル銃)"
 };
-// 子フォームの方法 → 狩猟免許の種類
-var CHO_LICENSE_TYPE_ = {
-  "わな猟": "わな猟", "網猟": "網猟", "空気銃": "第二種銃猟", "散弾銃・ライフル銃": "第一種銃猟"
-};
+// 空気銃の免許種類（select）→ 狩猟免許の種類（名簿 Q 列）。わな=わな猟 / 網=網猟 / 装薬銃=第一種銃猟 は分岐内で直接付与。
+var CHO_GUN_LICENSE_TYPE_ = { "第一種銃猟免許": "第一種銃猟", "第二種銃猟免許": "第二種銃猟" };
 // 種数の表示順（CHO_SPECIES_NAME_MAP_ 適用後の表示名。フォーム選択肢順）
 var CHO_SPECIES_ORDER_ = [
-  "キジバト", "ドバト", "スズメ", "ハシボソガラス", "ハシブトガラス",
-  "キツネ", "ノイヌ", "ノネコ", "アライグマ", "ねずみ"
+  "キジバト", "ドバト", "スズメ", "ニュウナイスズメ", "ハシボソガラス", "ハシブトガラス",
+  "キツネ", "ノイヌ", "ノネコ", "アライグマ", "トガリネズミ科・ネズミ科"
 ];
 // 捕獲用具の表示順（CHO_TOOL_NAME_ 適用後の正規表記）
 var CHO_TOOL_ORDER_ = [
-  "手捕り", "はこわな", "くくりわな", "網(つき網)", "銃(空気銃)", "銃(散弾銃)", "銃(ライフル銃)"
+  "手捕り", "はこわな", "くくりわな", "はこおとし", "囲いわな",
+  "網(むそう網)", "網(はり網)", "網(つき網)", "網(なげ網)",
+  "銃(空気銃)", "銃(散弾銃)", "銃(ライフル銃)"
 ];
 
 // ----- 静的セルマップ（シート名 → [{cell, get}]）-----
@@ -1664,7 +1699,7 @@ function Cho_buildGoldenPayload_() {
   var M = CHO_L_CHILD_METHOD_;  // 捕獲等又は採取等の方法（使用する捕獲用具の名称) ※閉じ半角
   var child1 = "従事者情報/#1/";
   var child2 = "従事者情報/#2/";
-  var wanaLic = M + "/わな猟/免許の必要性/必要/免許情報/";
+  var wanaLic = M + "/わな/免許の必要性/必要/免許情報/";
 
   return {
     context: "record",
@@ -1700,15 +1735,13 @@ function Cho_buildGoldenPayload_() {
         { question: child1 + "生年月日", value: "1999-06-26", type: "date" },
         { question: child1 + S, value: "キツネ", type: "checkboxes" },
         { question: child1 + S + "/キツネ/捕獲頭数", value: "5", type: "number" },
-        { question: child1 + M, value: "わな猟", type: "checkboxes" },
-        { question: child1 + M + "/わな猟/わなの種類", value: "くくりわな", type: "checkboxes" },
-        { question: child1 + M + "/わな猟/免許の必要性", value: "必要", type: "radio" },
-        { question: child1 + wanaLic.slice(0, -1), value: "", type: "message" },
+        { question: child1 + M, value: "わな", type: "checkboxes" },
+        { question: child1 + M + "/わな/道具の種類", value: "くくりわな", type: "checkboxes" },
+        { question: child1 + M + "/わな/免許の必要性", value: "必要", type: "radio" },
         { question: child1 + wanaLic + "許可権者", value: "北海道知事", type: "text" },
         { question: child1 + wanaLic + "交付年月日", value: "2025-04-01", type: "date" },
         { question: child1 + wanaLic + "許可番号", value: "石狩第0000号", type: "text" },
-        { question: child1 + M + "/わな猟/狩猟者登録", value: "", type: "message" },
-        { question: child1 + M + "/わな猟/狩猟者登録/登録の有無", value: "なし", type: "radio" },
+        { question: child1 + M + "/わな/狩猟者登録/登録の有無", value: "なし", type: "radio" },
 
         // ----- 従事者 #2（わな猟） -----
         { question: child2 + "代表的個人", value: "いいえ", type: "radio" },
@@ -1718,15 +1751,13 @@ function Cho_buildGoldenPayload_() {
         { question: child2 + "生年月日", value: "1999-06-27", type: "date" },
         { question: child2 + S, value: "キツネ", type: "checkboxes" },
         { question: child2 + S + "/キツネ/捕獲頭数", value: "5", type: "number" },
-        { question: child2 + M, value: "わな猟", type: "checkboxes" },
-        { question: child2 + M + "/わな猟/わなの種類", value: "くくりわな", type: "checkboxes" },
-        { question: child2 + M + "/わな猟/免許の必要性", value: "必要", type: "radio" },
-        { question: child2 + wanaLic.slice(0, -1), value: "", type: "message" },
+        { question: child2 + M, value: "わな", type: "checkboxes" },
+        { question: child2 + M + "/わな/道具の種類", value: "くくりわな", type: "checkboxes" },
+        { question: child2 + M + "/わな/免許の必要性", value: "必要", type: "radio" },
         { question: child2 + wanaLic + "許可権者", value: "北海道知事", type: "text" },
         { question: child2 + wanaLic + "交付年月日", value: "2025-04-01", type: "date" },
         { question: child2 + wanaLic + "許可番号", value: "石狩第0001号", type: "text" },
-        { question: child2 + M + "/わな猟/狩猟者登録", value: "", type: "message" },
-        { question: child2 + M + "/わな猟/狩猟者登録/登録の有無", value: "なし", type: "radio" },
+        { question: child2 + M + "/わな/狩猟者登録/登録の有無", value: "なし", type: "radio" },
 
         { question: "捕獲等又は採取等の目的", value: "管理（被害防止)", type: "text" },
         { question: "捕獲等又は採取等の期間", value: "", type: "message" },
@@ -1756,7 +1787,8 @@ function Cho_buildMultiMethodWorkerItems_(childPrefix) {
   var S = CHO_L_CHILD_SPECIES_;
   var M = CHO_L_CHILD_METHOD_;
   var p = childPrefix; // 例: "従事者情報/#3/"
-  var guns = p + M + "/散弾銃・ライフル銃/";
+  var air = p + M + "/銃器/銃の種類/空気銃";
+  var pwd = p + M + "/銃器/銃の種類/装薬銃"; // 装薬銃ブランチ
   return [
     { question: p + "代表的個人", value: "いいえ", type: "radio" },
     { question: p + "氏名", value: "冬村　多才", type: "text" },
@@ -1766,35 +1798,38 @@ function Cho_buildMultiMethodWorkerItems_(childPrefix) {
     { question: p + S, value: "キツネ, アライグマ", type: "checkboxes" },
     { question: p + S + "/キツネ/捕獲頭数", value: "3", type: "number" },
     { question: p + S + "/アライグマ/捕獲頭数", value: "2", type: "number" },
-    { question: p + M, value: "わな猟, 空気銃, 散弾銃・ライフル銃", type: "checkboxes" },
-    // わな猟（はこわな + くくりわな = 1 ブロックに用具 2 つ）
-    { question: p + M + "/わな猟/わなの種類", value: "はこわな, くくりわな", type: "checkboxes" },
-    { question: p + M + "/わな猟/免許の必要性", value: "必要", type: "radio" },
-    { question: p + M + "/わな猟/免許の必要性/必要/免許情報/許可権者", value: "北海道知事", type: "text" },
-    { question: p + M + "/わな猟/免許の必要性/必要/免許情報/交付年月日", value: "2024-04-01", type: "date" },
-    { question: p + M + "/わな猟/免許の必要性/必要/免許情報/許可番号", value: "石狩第1111号", type: "text" },
-    { question: p + M + "/わな猟/狩猟者登録/登録の有無", value: "あり", type: "radio" },
-    { question: p + M + "/わな猟/狩猟者登録/登録の有無/あり/交付年月日", value: "2025-10-01", type: "date" },
-    { question: p + M + "/わな猟/狩猟者登録/登録の有無/あり/番号", value: "わ第222号", type: "text" },
-    // 空気銃
-    { question: p + M + "/空気銃/所持許可/所持許可証番号", value: "空第333号", type: "text" },
-    { question: p + M + "/空気銃/所持許可/交付年月日", value: "2023-07-01", type: "date" },
-    { question: p + M + "/空気銃/第二種銃猟免許/許可権者", value: "北海道知事", type: "text" },
-    { question: p + M + "/空気銃/第二種銃猟免許/許可番号", value: "石狩第4444号", type: "text" },
-    { question: p + M + "/空気銃/第二種銃猟免許/交付年月日", value: "2023-06-01", type: "date" },
-    { question: p + M + "/空気銃/狩猟者登録/登録の有無", value: "なし", type: "radio" },
-    // 散弾銃・ライフル銃（2 丁 → 所持許可が別 → 2 ブロック）
-    { question: guns + "鉄砲の種類", value: "散弾銃, ライフル銃", type: "checkboxes" },
-    { question: guns + "鉄砲の種類/散弾銃/所持許可/所持許可証番号", value: "散第555号", type: "text" },
-    { question: guns + "鉄砲の種類/散弾銃/所持許可/交付年月日", value: "2022-05-01", type: "date" },
-    { question: guns + "鉄砲の種類/ライフル銃/所持許可/所持許可証番号", value: "ラ第666号", type: "text" },
-    { question: guns + "鉄砲の種類/ライフル銃/所持許可/交付年月日", value: "2022-05-02", type: "date" },
-    { question: guns + "第一種銃猟免許/許可権者", value: "北海道知事", type: "text" },
-    { question: guns + "第一種銃猟免許/許可番号", value: "石狩第7777号", type: "text" },
-    { question: guns + "第一種銃猟免許/交付年月日", value: "2022-04-01", type: "date" },
-    { question: guns + "狩猟者登録/登録の有無", value: "あり", type: "radio" },
-    { question: guns + "狩猟者登録/登録の有無/あり/交付年月日", value: "2025-10-15", type: "date" },
-    { question: guns + "狩猟者登録/登録の有無/あり/番号", value: "銃第888号", type: "text" }
+    { question: p + M, value: "わな, 銃器", type: "checkboxes" },
+    // わな（はこわな + くくりわな = 1 ブロックに用具 2 つ）
+    { question: p + M + "/わな/道具の種類", value: "はこわな, くくりわな", type: "checkboxes" },
+    { question: p + M + "/わな/免許の必要性", value: "必要", type: "radio" },
+    { question: p + M + "/わな/免許の必要性/必要/免許情報/許可権者", value: "北海道知事", type: "text" },
+    { question: p + M + "/わな/免許の必要性/必要/免許情報/交付年月日", value: "2024-04-01", type: "date" },
+    { question: p + M + "/わな/免許の必要性/必要/免許情報/許可番号", value: "石狩第1111号", type: "text" },
+    { question: p + M + "/わな/狩猟者登録/登録の有無", value: "あり", type: "radio" },
+    { question: p + M + "/わな/狩猟者登録/登録の有無/あり/交付年月日", value: "2025-10-01", type: "date" },
+    { question: p + M + "/わな/狩猟者登録/登録の有無/あり/番号", value: "わ第222号", type: "text" },
+    // 銃器 → 銃の種類: 空気銃 + 装薬銃
+    { question: p + M + "/銃器/銃の種類", value: "空気銃, 装薬銃", type: "checkboxes" },
+    // 空気銃（免許種類 = 第二種銃猟免許）
+    { question: air + "/所持許可/所持許可証番号", value: "空第333号", type: "text" },
+    { question: air + "/所持許可/交付年月日", value: "2023-07-01", type: "date" },
+    { question: air + "/免許種類", value: "第二種銃猟免許", type: "select" },
+    { question: air + "/免許種類/第二種銃猟免許/許可権者", value: "北海道知事", type: "text" },
+    { question: air + "/免許種類/第二種銃猟免許/許可番号", value: "石狩第4444号", type: "text" },
+    { question: air + "/免許種類/第二種銃猟免許/交付年月日", value: "2023-06-01", type: "date" },
+    { question: air + "/狩猟者登録/登録の有無", value: "なし", type: "radio" },
+    // 装薬銃（散弾銃・ライフル銃 2 丁 → 所持許可が別 → 2 ブロック）
+    { question: pwd + "/装薬銃の種類", value: "散弾銃, ライフル銃", type: "checkboxes" },
+    { question: pwd + "/装薬銃の種類/散弾銃/所持許可/所持許可証番号", value: "散第555号", type: "text" },
+    { question: pwd + "/装薬銃の種類/散弾銃/所持許可/交付年月日", value: "2022-05-01", type: "date" },
+    { question: pwd + "/装薬銃の種類/ライフル銃/所持許可/所持許可証番号", value: "ラ第666号", type: "text" },
+    { question: pwd + "/装薬銃の種類/ライフル銃/所持許可/交付年月日", value: "2022-05-02", type: "date" },
+    { question: pwd + "/第一種銃猟免許/許可権者", value: "北海道知事", type: "text" },
+    { question: pwd + "/第一種銃猟免許/許可番号", value: "石狩第7777号", type: "text" },
+    { question: pwd + "/第一種銃猟免許/交付年月日", value: "2022-04-01", type: "date" },
+    { question: pwd + "/狩猟者登録/登録の有無", value: "あり", type: "radio" },
+    { question: pwd + "/狩猟者登録/登録の有無/あり/交付年月日", value: "2025-10-15", type: "date" },
+    { question: pwd + "/狩猟者登録/登録の有無/あり/番号", value: "銃第888号", type: "text" }
   ];
 }
 //

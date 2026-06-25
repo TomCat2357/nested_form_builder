@@ -1,0 +1,653 @@
+{
+  "description": "",
+  "folder": "鳥獣保護管理法",
+  "schema": [
+    {
+      "isDisplayed": false,
+      "label": "許可処分情報",
+      "type": "message",
+      "children": [
+        {
+          "childrenByValue": {
+            "条件付き許可": [
+              {
+                "defaultValueMode": "none",
+                "isDisplayed": false,
+                "multiline": true,
+                "inputRestrictionMode": "none",
+                "type": "text",
+                "multilineRows": 4,
+                "defaultValueText": "",
+                "label": "理由"
+              },
+              {
+                "label": "許可条件",
+                "inputRestrictionMode": "none",
+                "type": "text",
+                "multilineRows": 4,
+                "defaultValueText": "",
+                "defaultValueMode": "none",
+                "isDisplayed": false,
+                "multiline": true
+              }
+            ],
+            "不許可": [
+              {
+                "multilineRows": 4,
+                "type": "text",
+                "inputRestrictionMode": "none",
+                "defaultValueText": "",
+                "isDisplayed": false,
+                "defaultValueMode": "none",
+                "multiline": true,
+                "label": "理由"
+              }
+            ]
+          },
+          "options": [
+            {
+              "defaultSelected": false,
+              "label": "許可"
+            },
+            {
+              "label": "条件付き許可",
+              "defaultSelected": false
+            },
+            {
+              "defaultSelected": false,
+              "label": "不許可"
+            }
+          ],
+          "type": "radio",
+          "label": "処分の種類",
+          "isDisplayed": false
+        },
+        {
+          "pattern": "^[0-9]{1,2}-[0-9]{1,3}$",
+          "label": "許可番号",
+          "type": "text",
+          "inputRestrictionMode": "pattern",
+          "defaultValueText": "",
+          "isDisplayed": false,
+          "defaultValueMode": "none",
+          "placeholder": "8-19　のような <年度>-<通し番号>",
+          "showPlaceholder": true,
+          "multiline": false
+        },
+        {
+          "label": "許可年月日",
+          "isDisplayed": false,
+          "type": "date",
+          "defaultNow": false
+        }
+      ],
+      "excludeFromSearchAndPrint": false
+    },
+    {
+      "isDisplayed": false,
+      "label": "申請者情報",
+      "type": "message",
+      "excludeFromSearchAndPrint": false,
+      "children": [
+        {
+          "isDisplayed": true,
+          "type": "radio",
+          "childrenByValue": {
+            "個人": [
+              {
+                "isDisplayed": true,
+                "type": "substitution",
+                "excludeFromSearch": false,
+                "templateText": "{{ SELECT [氏名] FROM [1Eh5p3Q5IMQEfi-7TiUV8ZZ8z_4HKW0Zj] WHERE [pid] = _id ORDER BY [代表的個人] DESC LIMIT 1}}",
+                "label": "氏名",
+                "supplementaryComment": "従事者のうち、代表的な者の氏名",
+                "hideFromRecordView": false,
+                "showSupplementaryComment": true
+              },
+              {
+                "isDisplayed": true,
+                "type": "substitution",
+                "excludeFromSearch": false,
+                "templateText": "{{ SELECT [住所] FROM [1Eh5p3Q5IMQEfi-7TiUV8ZZ8z_4HKW0Zj] WHERE [pid] = _id ORDER BY [代表的個人] DESC LIMIT 1}}",
+                "label": "住所",
+                "hideFromRecordView": false,
+                "showSupplementaryComment": true,
+                "supplementaryComment": "従事者のうち、代表的な者の住所"
+              },
+              {
+                "showSupplementaryComment": true,
+                "hideFromRecordView": false,
+                "supplementaryComment": "従事者のうち、代表的な者の生年月日",
+                "label": "生年月日",
+                "templateText": "{{ SELECT [生年月日] FROM [1Eh5p3Q5IMQEfi-7TiUV8ZZ8z_4HKW0Zj] WHERE [pid] = _id ORDER BY [代表的個人] DESC LIMIT 1}}",
+                "excludeFromSearch": false,
+                "type": "substitution",
+                "isDisplayed": false
+              },
+              {
+                "isDisplayed": false,
+                "type": "substitution",
+                "excludeFromSearch": false,
+                "templateText": "{{ SELECT [職業] FROM [1Eh5p3Q5IMQEfi-7TiUV8ZZ8z_4HKW0Zj] WHERE [pid] = _id ORDER BY [代表的個人] DESC LIMIT 1}}",
+                "label": "職業",
+                "supplementaryComment": "従事者のうち、代表的な者の職業",
+                "hideFromRecordView": false,
+                "showSupplementaryComment": true
+              }
+            ],
+            "法人": [
+              {
+                "label": "法人名",
+                "defaultValueText": "",
+                "required": true,
+                "type": "text",
+                "inputRestrictionMode": "none",
+                "multiline": false,
+                "isDisplayed": true,
+                "showPlaceholder": true,
+                "placeholder": "〇〇株式会社",
+                "defaultValueMode": "none"
+              },
+              {
+                "label": "代表者名",
+                "multiline": false,
+                "isDisplayed": false,
+                "defaultValueMode": "none",
+                "placeholder": "代表取締役　秋　はじめ",
+                "showPlaceholder": true,
+                "defaultValueText": "",
+                "type": "text",
+                "inputRestrictionMode": "none"
+              },
+              {
+                "type": "text",
+                "inputRestrictionMode": "none",
+                "defaultValueText": "",
+                "required": true,
+                "isDisplayed": true,
+                "showPlaceholder": true,
+                "defaultValueMode": "none",
+                "placeholder": "法人の住所。例：札幌市中央区北1条西2丁目1番20号　",
+                "multiline": false,
+                "label": "住所"
+              }
+            ]
+          },
+          "required": true,
+          "label": "申請者の個人・法人の別",
+          "options": [
+            {
+              "label": "個人",
+              "defaultSelected": false
+            },
+            {
+              "defaultSelected": false,
+              "label": "法人"
+            }
+          ],
+          "showSupplementaryComment": true,
+          "supplementaryComment": "個人の場合は従事者一覧から抽出するので、入力の必要なし"
+        },
+        {
+          "options": [
+            {
+              "defaultSelected": false,
+              "label": "狩猟登録者"
+            },
+            {
+              "defaultSelected": false,
+              "label": "上記を除く損害賠償能力を有している者"
+            },
+            {
+              "defaultSelected": false,
+              "label": "損害賠償能力を問わない者"
+            }
+          ],
+          "type": "radio",
+          "required": true,
+          "label": "損害賠償能力",
+          "isDisplayed": false
+        }
+      ]
+    },
+    {
+      "hideFromRecordView": false,
+      "showSupplementaryComment": true,
+      "supplementaryComment": "従事者の入力から種類ごとに自動合計（入力不要）",
+      "label": "捕獲しようとする鳥獣の種類及び数量",
+      "templateText": "{{SELECT (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|キジバト|捕獲頭数]),0) + IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|キジバト|採取卵数]),0) > 0 THEN 'キジバト' || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|キジバト|捕獲頭数]),0) > 0 THEN ' ' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|キジバト|捕獲頭数]) || '羽' ELSE '' END) || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|キジバト|採取卵数]),0) > 0 THEN ' 卵' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|キジバト|採取卵数]) || '個' ELSE '' END) ELSE '' END) AS [c01], (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|カワラバト|捕獲頭数]),0) + IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|カワラバト|採取卵数]),0) > 0 THEN 'カワラバト' || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|カワラバト|捕獲頭数]),0) > 0 THEN ' ' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|カワラバト|捕獲頭数]) || '羽' ELSE '' END) || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|カワラバト|採取卵数]),0) > 0 THEN ' 卵' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|カワラバト|採取卵数]) || '個' ELSE '' END) ELSE '' END) AS [c02], (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|スズメ|捕獲頭数]),0) + IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|スズメ|採取卵数]),0) > 0 THEN 'スズメ' || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|スズメ|捕獲頭数]),0) > 0 THEN ' ' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|スズメ|捕獲頭数]) || '羽' ELSE '' END) || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|スズメ|採取卵数]),0) > 0 THEN ' 卵' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|スズメ|採取卵数]) || '個' ELSE '' END) ELSE '' END) AS [c03], (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ニュウナイスズメ|捕獲頭数]),0) + IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ニュウナイスズメ|採取卵数]),0) > 0 THEN 'ニュウナイスズメ' || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ニュウナイスズメ|捕獲頭数]),0) > 0 THEN ' ' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ニュウナイスズメ|捕獲頭数]) || '羽' ELSE '' END) || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ニュウナイスズメ|採取卵数]),0) > 0 THEN ' 卵' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ニュウナイスズメ|採取卵数]) || '個' ELSE '' END) ELSE '' END) AS [c3b], (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシボソガラス|捕獲頭数]),0) + IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシボソガラス|採取卵数]),0) > 0 THEN 'ハシボソガラス' || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシボソガラス|捕獲頭数]),0) > 0 THEN ' ' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシボソガラス|捕獲頭数]) || '羽' ELSE '' END) || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシボソガラス|採取卵数]),0) > 0 THEN ' 卵' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシボソガラス|採取卵数]) || '個' ELSE '' END) ELSE '' END) AS [c04], (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシブトガラス|捕獲頭数]),0) + IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシブトガラス|採取卵数]),0) > 0 THEN 'ハシブトガラス' || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシブトガラス|捕獲頭数]),0) > 0 THEN ' ' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシブトガラス|捕獲頭数]) || '羽' ELSE '' END) || (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシブトガラス|採取卵数]),0) > 0 THEN ' 卵' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ハシブトガラス|採取卵数]) || '個' ELSE '' END) ELSE '' END) AS [c05], (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|キツネ|捕獲頭数]),0) > 0 THEN 'キツネ ' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|キツネ|捕獲頭数]) || '頭' ELSE '' END) AS [c06], (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ノイヌ|捕獲頭数]),0) > 0 THEN 'ノイヌ ' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ノイヌ|捕獲頭数]) || '頭' ELSE '' END) AS [c07], (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ノネコ|捕獲頭数]),0) > 0 THEN 'ノネコ ' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|ノネコ|捕獲頭数]) || '頭' ELSE '' END) AS [c08], (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|アライグマ|捕獲頭数]),0) > 0 THEN 'アライグマ ' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|アライグマ|捕獲頭数]) || '頭' ELSE '' END) AS [c09], (CASE WHEN IFNULL(SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|トガリネズミ科・ネズミ科|捕獲頭数]),0) > 0 THEN 'トガリネズミ科・ネズミ科 ' || SUM([捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量|トガリネズミ科・ネズミ科|捕獲頭数]) || '頭' ELSE '' END) AS [c10] FROM [1Eh5p3Q5IMQEfi-7TiUV8ZZ8z_4HKW0Zj] WHERE [pid] = _id}}",
+      "type": "substitution",
+      "excludeFromSearch": false,
+      "isDisplayed": true
+    },
+    {
+      "childFormPath": "鳥獣保護管理法/従事者情報",
+      "type": "formLink",
+      "includeChildData": false,
+      "isDisplayed": true,
+      "label": "従事者情報",
+      "childFormId": "1Eh5p3Q5IMQEfi-7TiUV8ZZ8z_4HKW0Zj"
+    },
+    {
+      "label": "捕獲等又は採取等の目的",
+      "defaultValueMode": "none",
+      "placeholder": "管理（被害防止）など",
+      "showPlaceholder": true,
+      "isDisplayed": false,
+      "multiline": false,
+      "inputRestrictionMode": "none",
+      "type": "text",
+      "required": true,
+      "defaultValueText": ""
+    },
+    {
+      "type": "message",
+      "children": [
+        {
+          "label": "開始",
+          "isDisplayed": false,
+          "type": "date",
+          "required": true,
+          "defaultNow": false
+        },
+        {
+          "type": "date",
+          "defaultNow": false,
+          "required": true,
+          "isDisplayed": false,
+          "label": "終了"
+        }
+      ],
+      "excludeFromSearchAndPrint": false,
+      "isDisplayed": false,
+      "label": "捕獲等又は採取等の期間"
+    },
+    {
+      "isDisplayed": false,
+      "label": "捕獲等又は採取等の区域",
+      "type": "message",
+      "children": [
+        {
+          "inputRestrictionMode": "none",
+          "type": "text",
+          "required": true,
+          "defaultValueText": "",
+          "defaultValueMode": "none",
+          "placeholder": "札幌市中央区北99条西99丁目9番99号",
+          "showPlaceholder": true,
+          "isDisplayed": true,
+          "multiline": false,
+          "label": "所在地"
+        },
+        {
+          "isDisplayed": false,
+          "label": "規則第７条第１項第７号に係る場所等の位置、名称及び理由",
+          "type": "checkboxes",
+          "options": [
+            {
+              "defaultSelected": false,
+              "label": "特定猟具使用禁止区域（安全対策あり）"
+            },
+            {
+              "label": "特定猟具使用禁止区域（安全対策なし）",
+              "defaultSelected": false
+            },
+            {
+              "label": "道指定〔定山渓、北大一の沢、北大簾舞、羊ヶ丘白旗山〕鳥獣保護区",
+              "defaultSelected": false
+            },
+            {
+              "defaultSelected": false,
+              "label": "休猟区"
+            },
+            {
+              "defaultSelected": false,
+              "label": "公道"
+            },
+            {
+              "label": "国立公園・国定公園特別保護地区",
+              "defaultSelected": false
+            },
+            {
+              "label": "都市計画施設（区域明示公共空地等）",
+              "defaultSelected": false
+            },
+            {
+              "label": "原生自然環境保全地域",
+              "defaultSelected": false
+            },
+            {
+              "defaultSelected": false,
+              "label": "社寺境内"
+            },
+            {
+              "defaultSelected": false,
+              "label": "墓地"
+            },
+            {
+              "label": "猟区（両区設定者の承認あり）",
+              "defaultSelected": false
+            }
+          ],
+          "childrenByValue": {
+            "特定猟具使用禁止区域（安全対策あり）": [
+              {
+                "multiline": false,
+                "defaultValueMode": "none",
+                "label": "具体的名称",
+                "isDisplayed": false,
+                "defaultValueText": "",
+                "inputRestrictionMode": "none",
+                "type": "text"
+              }
+            ],
+            "特定猟具使用禁止区域（安全対策なし）": [
+              {
+                "defaultValueText": "",
+                "inputRestrictionMode": "none",
+                "type": "text",
+                "multiline": false,
+                "defaultValueMode": "none",
+                "label": "具体的名称",
+                "isDisplayed": false
+              }
+            ],
+            "休猟区": [
+              {
+                "multiline": false,
+                "isDisplayed": false,
+                "label": "具体的名称",
+                "defaultValueMode": "none",
+                "defaultValueText": "",
+                "type": "text",
+                "inputRestrictionMode": "none"
+              }
+            ],
+            "猟区（両区設定者の承認あり）": [
+              {
+                "defaultValueText": "",
+                "inputRestrictionMode": "none",
+                "type": "text",
+                "multiline": false,
+                "defaultValueMode": "none",
+                "label": "具体的名称",
+                "isDisplayed": false
+              }
+            ]
+          }
+        }
+      ],
+      "excludeFromSearchAndPrint": false
+    },
+    {
+      "showSupplementaryComment": true,
+      "hideFromRecordView": false,
+      "supplementaryComment": "従事者が使用する捕獲用具の和集合（入力不要）",
+      "label": "捕獲等又は採取等の方法 （使用する捕獲用具の名称）",
+      "templateText": "{{SELECT (CASE WHEN SUM(CASE WHEN MV_EQ([捕獲等又は採取等の方法（使用する捕獲用具の名称)],'手捕り') THEN 1 ELSE 0 END) > 0 THEN '手捕り' ELSE '' END) AS [m1], (CASE WHEN SUM(CASE WHEN MV_EQ([捕獲等又は採取等の方法（使用する捕獲用具の名称)|わな|道具の種類],'はこわな') THEN 1 ELSE 0 END) > 0 THEN 'はこわな' ELSE '' END) AS [m2], (CASE WHEN SUM(CASE WHEN MV_EQ([捕獲等又は採取等の方法（使用する捕獲用具の名称)|わな|道具の種類],'くくりわな') THEN 1 ELSE 0 END) > 0 THEN 'くくりわな' ELSE '' END) AS [m3], (CASE WHEN SUM(CASE WHEN MV_EQ([捕獲等又は採取等の方法（使用する捕獲用具の名称)],'網') THEN 1 ELSE 0 END) > 0 THEN '網' ELSE '' END) AS [m4], (CASE WHEN SUM(CASE WHEN MV_EQ([捕獲等又は採取等の方法（使用する捕獲用具の名称)|銃器|銃の種類],'空気銃') THEN 1 ELSE 0 END) > 0 THEN '空気銃' ELSE '' END) AS [m5], (CASE WHEN SUM(CASE WHEN MV_EQ([捕獲等又は採取等の方法（使用する捕獲用具の名称)|銃器|銃の種類],'散弾銃') THEN 1 ELSE 0 END) > 0 THEN '散弾銃' ELSE '' END) AS [m6], (CASE WHEN SUM(CASE WHEN MV_EQ([捕獲等又は採取等の方法（使用する捕獲用具の名称)|銃器|銃の種類],'ライフル銃') THEN 1 ELSE 0 END) > 0 THEN 'ライフル銃' ELSE '' END) AS [m7] FROM [1Eh5p3Q5IMQEfi-7TiUV8ZZ8z_4HKW0Zj] WHERE [pid] = _id}}",
+      "excludeFromSearch": false,
+      "type": "substitution",
+      "isDisplayed": false
+    },
+    {
+      "isDisplayed": false,
+      "label": "捕獲等又は採取等をしたあとの処置",
+      "required": true,
+      "type": "checkboxes",
+      "options": [
+        {
+          "defaultSelected": false,
+          "label": "焼却"
+        },
+        {
+          "defaultSelected": false,
+          "label": "廃棄"
+        },
+        {
+          "defaultSelected": false,
+          "label": "埋設"
+        }
+      ]
+    },
+    {
+      "isDisplayed": false,
+      "label": "事由書",
+      "type": "message",
+      "excludeFromSearchAndPrint": false,
+      "children": [
+        {
+          "isDisplayed": false,
+          "label": "被害原因の鳥獣",
+          "type": "checkboxes",
+          "options": [
+            {
+              "defaultSelected": false,
+              "label": "キジバト"
+            },
+            {
+              "defaultSelected": false,
+              "label": "カワラバト"
+            },
+            {
+              "label": "スズメ",
+              "defaultSelected": false
+            },
+            {
+              "label": "ニュウナイスズメ",
+              "defaultSelected": false
+            },
+            {
+              "defaultSelected": false,
+              "label": "ハシボソガラス"
+            },
+            {
+              "label": "ハシブトガラス",
+              "defaultSelected": false
+            },
+            {
+              "label": "キツネ",
+              "defaultSelected": false
+            },
+            {
+              "label": "ノイヌ",
+              "defaultSelected": false
+            },
+            {
+              "label": "ノネコ",
+              "defaultSelected": false
+            },
+            {
+              "defaultSelected": false,
+              "label": "アライグマ"
+            },
+            {
+              "label": "トガリネズミ科・ネズミ科",
+              "defaultSelected": false
+            }
+          ]
+        },
+        {
+          "options": [
+            {
+              "defaultSelected": false,
+              "label": "申請者"
+            },
+            {
+              "label": "申請者以外",
+              "defaultSelected": false
+            }
+          ],
+          "type": "select",
+          "childrenByValue": {
+            "申請者以外": [
+              {
+                "type": "text",
+                "inputRestrictionMode": "none",
+                "defaultValueText": "",
+                "isDisplayed": false,
+                "showPlaceholder": true,
+                "defaultValueMode": "none",
+                "placeholder": "札幌市中央区北１条西２丁目",
+                "multiline": false,
+                "label": "住所"
+              },
+              {
+                "label": "氏名",
+                "isDisplayed": false,
+                "showPlaceholder": true,
+                "defaultValueMode": "none",
+                "placeholder": "秋　はじめ　、　法人であれば　　代表取締役　春元　負比呂",
+                "multiline": false,
+                "type": "text",
+                "inputRestrictionMode": "none",
+                "defaultValueText": ""
+              }
+            ]
+          },
+          "label": "被害者",
+          "isDisplayed": false
+        },
+        {
+          "children": [],
+          "label": "被害発生の時期",
+          "defaultValueText": "",
+          "type": "text",
+          "inputRestrictionMode": "none",
+          "multiline": false,
+          "isDisplayed": false,
+          "defaultValueMode": "none"
+        },
+        {
+          "defaultValueMode": "none",
+          "label": "被害発生区域（場所）",
+          "isDisplayed": false,
+          "multiline": false,
+          "inputRestrictionMode": "none",
+          "type": "text",
+          "defaultValueText": ""
+        },
+        {
+          "multiline": false,
+          "isDisplayed": false,
+          "label": "捕獲等又は採取等を行う理由",
+          "defaultValueMode": "none",
+          "defaultValueText": "",
+          "type": "text",
+          "inputRestrictionMode": "none"
+        },
+        {
+          "inputRestrictionMode": "none",
+          "type": "text",
+          "defaultValueText": "",
+          "label": "備考",
+          "defaultValueMode": "none",
+          "isDisplayed": false,
+          "multiline": false
+        }
+      ]
+    },
+    {
+      "multiline": true,
+      "isDisplayed": false,
+      "defaultValueMode": "none",
+      "defaultValueText": "",
+      "multilineRows": 4,
+      "type": "text",
+      "inputRestrictionMode": "none",
+      "label": "備考"
+    }
+  ],
+  "settings": {
+    "showSearchId": true,
+    "showSearchCreatedAt": false,
+    "showSearchModifiedAt": true,
+    "spreadsheetId": "1Fy19IAiEs8trHL9B-355a5MLsryosXg0cpsZez1L_c4",
+    "theme": "standard",
+    "externalActions": {
+      "enabled": false,
+      "search": [
+        {
+          "label": "",
+          "showStyleSettings": false,
+          "url": "",
+          "adminOnly": false
+        },
+        {
+          "adminOnly": false,
+          "url": "",
+          "showStyleSettings": false,
+          "label": ""
+        },
+        {
+          "adminOnly": false,
+          "url": "",
+          "label": "",
+          "showStyleSettings": false
+        }
+      ]
+    },
+    "spreadsheetPath": "NFB Responses - 鳥獣保護管理法許可申請"
+  },
+  "schemaHash": "v1-32094836",
+  "importantFields": [
+    "申請者情報/申請者の個人・法人の別",
+    "申請者情報/申請者の個人・法人の別/個人/氏名",
+    "申請者情報/申請者の個人・法人の別/個人/住所",
+    "申請者情報/申請者の個人・法人の別/法人/法人名",
+    "申請者情報/申請者の個人・法人の別/法人/住所",
+    "捕獲しようとする鳥獣の種類及び数量",
+    "従事者情報",
+    "捕獲等又は採取等の区域/所在地"
+  ],
+  "displayFieldSettings": [
+    {
+      "type": "radio",
+      "fieldId": "f_auto_xl1boe",
+      "path": "申請者情報/申請者の個人・法人の別"
+    },
+    {
+      "fieldId": "f_auto_1lbt7rq",
+      "path": "申請者情報/申請者の個人・法人の別/個人/氏名",
+      "type": "substitution"
+    },
+    {
+      "type": "substitution",
+      "fieldId": "f_auto_1k5nufe",
+      "path": "申請者情報/申請者の個人・法人の別/個人/住所"
+    },
+    {
+      "type": "text",
+      "fieldId": "f_auto_5zl7z2",
+      "path": "申請者情報/申請者の個人・法人の別/法人/法人名"
+    },
+    {
+      "path": "申請者情報/申請者の個人・法人の別/法人/住所",
+      "fieldId": "f_auto_15ubco6",
+      "type": "text"
+    },
+    {
+      "fieldId": "f_auto_1l8ci5n",
+      "path": "捕獲しようとする鳥獣の種類及び数量",
+      "type": "substitution"
+    },
+    {
+      "path": "従事者情報",
+      "fieldId": "f_auto_132s742",
+      "type": "formLink"
+    },
+    {
+      "type": "text",
+      "path": "捕獲等又は採取等の区域/所在地",
+      "fieldId": "f_auto_11c0i0o"
+    }
+  ],
+  "createdAt": "2026-06-08_11:01:40.828",
+  "modifiedAt": "2026-06-25_20:37:09.549",
+  "createdAtUnixMs": 1780884100828,
+  "modifiedAtUnixMs": 1782387429549,
+  "archived": false,
+  "readOnly": false,
+  "childOnly": false,
+  "schemaVersion": 1,
+  "driveFileUrl": "https://drive.google.com/file/d/1_aLScq4lAQA-TgI2rZqyzqXB6SDiENy4/view?usp=drivesdk"
+}

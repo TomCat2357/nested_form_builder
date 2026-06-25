@@ -1,3 +1,10 @@
+// 既定スプレッドシート名の末尾に付ける短いランダム文字列（Crockford base32・6 桁）。
+// 同名フォームが別フォルダにあると既定名（"NFB Responses - <タイトル>"）が衝突して
+// 名前で区別できなくなるため、作成時に一意な接尾辞を挟んで識別可能にする。
+function Forms_spreadsheetNameRandomSuffix_() {
+  return Nfb_encodeUlidRandom_(Nfb_createRandomBytes_(5)).substring(0, 6);
+}
+
 function Forms_buildSpreadsheetName_(form) {
   var base = "";
   if (form && form.settings && form.settings.formTitle) {
@@ -11,11 +18,15 @@ function Forms_buildSpreadsheetName_(form) {
   if (!base) {
     base = "Nested Form Builder";
   }
-  var name = "NFB Responses - " + base;
-  if (name.length > 120) {
-    name = name.substring(0, 120);
+  var prefix = "NFB Responses - ";
+  var suffix = " [" + Forms_spreadsheetNameRandomSuffix_() + "]";
+  // 120 文字上限。ランダム接尾辞は必ず残したいので、超過時は base 側を先に詰める。
+  var maxBaseLen = 120 - prefix.length - suffix.length;
+  if (maxBaseLen < 1) maxBaseLen = 1;
+  if (base.length > maxBaseLen) {
+    base = base.substring(0, maxBaseLen);
   }
-  return name;
+  return prefix + base + suffix;
 }
 
 /**

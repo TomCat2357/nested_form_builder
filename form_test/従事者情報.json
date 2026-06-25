@@ -1,0 +1,1263 @@
+{
+  "id": "1Eh5p3Q5IMQEfi-7TiUV8ZZ8z_4HKW0Zj",
+  "description": "",
+  "folder": "鳥獣保護管理法",
+  "schema": [
+    {
+      "id": "f_auto_rn2hz7",
+      "showSupplementaryComment": true,
+      "supplementaryComment": "個人申請のとき、申請書に名前などをだす個人のチェックボックス",
+      "required": true,
+      "type": "radio",
+      "label": "代表的個人",
+      "isDisplayed": false,
+      "options": [
+        {
+          "defaultSelected": true,
+          "id": "o_auto_500qp3",
+          "label": "いいえ"
+        },
+        {
+          "id": "o_auto_u4gm5z",
+          "label": "はい",
+          "defaultSelected": false
+        }
+      ]
+    },
+    {
+      "type": "text",
+      "required": true,
+      "isDisplayed": true,
+      "defaultValueMode": "none",
+      "label": "氏名",
+      "multiline": false,
+      "inputRestrictionMode": "none",
+      "defaultValueText": "",
+      "id": "f_auto_v041lu"
+    },
+    {
+      "required": true,
+      "type": "text",
+      "id": "f_auto_wiesxm",
+      "defaultValueText": "",
+      "inputRestrictionMode": "none",
+      "multiline": false,
+      "label": "住所",
+      "defaultValueMode": "none",
+      "isDisplayed": false
+    },
+    {
+      "required": true,
+      "type": "text",
+      "inputRestrictionMode": "none",
+      "multiline": false,
+      "label": "職業",
+      "isDisplayed": false,
+      "defaultValueMode": "none",
+      "id": "f_auto_1j4wno",
+      "defaultValueText": ""
+    },
+    {
+      "isDisplayed": false,
+      "label": "生年月日",
+      "type": "date",
+      "required": true,
+      "defaultNow": false,
+      "id": "f_auto_7kaa9m"
+    },
+    {
+      "id": "f_auto_sr4lv5",
+      "showSupplementaryComment": true,
+      "supplementaryComment": "許可取得できる法人従業員については、一番上の人にまとめて入れてもよい",
+      "label": "捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量",
+      "isDisplayed": true,
+      "childrenByValue": {
+        "ノイヌ": [
+          {
+            "type": "number",
+            "id": "f_auto_1nxum59",
+            "numberMode": "naturalNumber",
+            "isDisplayed": false,
+            "label": "捕獲頭数",
+            "minValue": 1
+          }
+        ],
+        "キジバト": [
+          {
+            "numberMode": "naturalNumber",
+            "isDisplayed": false,
+            "label": "捕獲頭数",
+            "minValue": 1,
+            "type": "number",
+            "id": "f_auto_ntzr1m"
+          },
+          {
+            "minValue": 1,
+            "label": "採取卵数",
+            "isDisplayed": false,
+            "numberMode": "naturalNumber",
+            "id": "f_auto_1u9ncd9",
+            "type": "number"
+          }
+        ],
+        "ノネコ": [
+          {
+            "type": "number",
+            "id": "f_auto_kq15yp",
+            "numberMode": "naturalNumber",
+            "isDisplayed": false,
+            "label": "捕獲頭数",
+            "minValue": 1
+          }
+        ],
+        "スズメ": [
+          {
+            "label": "捕獲頭数",
+            "minValue": 1,
+            "isDisplayed": false,
+            "numberMode": "naturalNumber",
+            "id": "f_auto_ilmg2l",
+            "type": "number"
+          },
+          {
+            "id": "f_auto_z619vo",
+            "type": "number",
+            "minValue": 1,
+            "label": "採取卵数",
+            "isDisplayed": false,
+            "numberMode": "naturalNumber"
+          }
+        ],
+        "ハシブトガラス": [
+          {
+            "type": "number",
+            "id": "f_auto_r117ep",
+            "isDisplayed": false,
+            "numberMode": "naturalNumber",
+            "label": "捕獲頭数",
+            "minValue": 1
+          },
+          {
+            "type": "number",
+            "id": "f_auto_1fl1yh4",
+            "isDisplayed": false,
+            "numberMode": "naturalNumber",
+            "minValue": 1,
+            "label": "採取卵数"
+          }
+        ],
+        "ニュウナイスズメ": [
+          {
+            "minValue": 1,
+            "label": "捕獲頭数",
+            "numberMode": "naturalNumber",
+            "isDisplayed": false,
+            "id": "f_auto_5u3nvb",
+            "type": "number"
+          },
+          {
+            "id": "f_auto_11xglcc",
+            "type": "number",
+            "minValue": 1,
+            "label": "採取卵数",
+            "isDisplayed": false,
+            "numberMode": "naturalNumber"
+          }
+        ],
+        "カワラバト": [
+          {
+            "minValue": 1,
+            "label": "捕獲頭数",
+            "numberMode": "naturalNumber",
+            "isDisplayed": false,
+            "id": "f_auto_11lvk3o",
+            "type": "number"
+          },
+          {
+            "minValue": 1,
+            "label": "採取卵数",
+            "numberMode": "naturalNumber",
+            "isDisplayed": false,
+            "id": "f_auto_a71it5",
+            "type": "number"
+          }
+        ],
+        "アライグマ": [
+          {
+            "type": "number",
+            "id": "f_auto_1mdf2qk",
+            "numberMode": "naturalNumber",
+            "isDisplayed": false,
+            "label": "捕獲頭数",
+            "minValue": 1
+          }
+        ],
+        "ハシボソガラス": [
+          {
+            "type": "number",
+            "id": "f_auto_l3b6j0",
+            "numberMode": "naturalNumber",
+            "isDisplayed": false,
+            "label": "捕獲頭数",
+            "minValue": 1
+          },
+          {
+            "numberMode": "naturalNumber",
+            "isDisplayed": false,
+            "minValue": 1,
+            "label": "採取卵数",
+            "type": "number",
+            "id": "f_auto_t7aktl"
+          }
+        ],
+        "キツネ": [
+          {
+            "numberMode": "naturalNumber",
+            "isDisplayed": false,
+            "label": "捕獲頭数",
+            "minValue": 1,
+            "type": "number",
+            "id": "f_auto_q27jtb"
+          }
+        ],
+        "トガリネズミ科・ネズミ科": [
+          {
+            "type": "number",
+            "id": "f_auto_4rjv2e",
+            "isDisplayed": false,
+            "numberMode": "naturalNumber",
+            "label": "捕獲頭数",
+            "minValue": 1
+          }
+        ]
+      },
+      "type": "checkboxes",
+      "required": false,
+      "options": [
+        {
+          "defaultSelected": false,
+          "id": "o_auto_bg182r",
+          "label": "キジバト"
+        },
+        {
+          "defaultSelected": false,
+          "label": "カワラバト",
+          "id": "o_auto_1pfjtzc"
+        },
+        {
+          "id": "o_auto_oegrqa",
+          "label": "スズメ",
+          "defaultSelected": false
+        },
+        {
+          "id": "o_auto_4znbur",
+          "label": "ニュウナイスズメ",
+          "defaultSelected": false
+        },
+        {
+          "id": "o_auto_mr5lcv",
+          "label": "ハシボソガラス",
+          "defaultSelected": false
+        },
+        {
+          "id": "o_auto_19f5tmb",
+          "label": "ハシブトガラス",
+          "defaultSelected": false
+        },
+        {
+          "label": "キツネ",
+          "id": "o_auto_v5s2n0",
+          "defaultSelected": false
+        },
+        {
+          "id": "o_auto_1qngv6l",
+          "label": "ノイヌ",
+          "defaultSelected": false
+        },
+        {
+          "defaultSelected": false,
+          "id": "o_auto_1g8sj10",
+          "label": "ノネコ"
+        },
+        {
+          "label": "アライグマ",
+          "id": "o_auto_iv2848",
+          "defaultSelected": false
+        },
+        {
+          "label": "トガリネズミ科・ネズミ科",
+          "id": "o_auto_o0pkbo",
+          "defaultSelected": false
+        }
+      ]
+    },
+    {
+      "type": "checkboxes",
+      "required": true,
+      "id": "f_auto_16oj8qb",
+      "childrenByValue": {
+        "手捕り": [],
+        "わな": [
+          {
+            "type": "checkboxes",
+            "required": true,
+            "id": "f_auto_16whra7",
+            "isDisplayed": false,
+            "options": [
+              {
+                "defaultSelected": false,
+                "label": "くくりわな",
+                "id": "o_auto_dg9att"
+              },
+              {
+                "id": "o_auto_fhx75m",
+                "label": "はこわな",
+                "defaultSelected": false
+              },
+              {
+                "label": "はこおとし",
+                "id": "o_auto_1ycw3g3",
+                "defaultSelected": false
+              },
+              {
+                "id": "o_auto_ya14g4",
+                "label": "囲いわな",
+                "defaultSelected": false
+              }
+            ],
+            "label": "道具の種類"
+          },
+          {
+            "label": "免許の必要性",
+            "isDisplayed": false,
+            "options": [
+              {
+                "label": "不要",
+                "id": "o_auto_b9x9d1",
+                "defaultSelected": false
+              },
+              {
+                "id": "o_auto_wuoo00",
+                "label": "必要",
+                "defaultSelected": true
+              }
+            ],
+            "childrenByValue": {
+              "必要": [
+                {
+                  "children": [
+                    {
+                      "id": "f_auto_122koza",
+                      "defaultValueText": "北海道",
+                      "label": "都道府県",
+                      "inputRestrictionMode": "none",
+                      "multiline": false,
+                      "isDisplayed": false,
+                      "defaultValueMode": "custom",
+                      "required": true,
+                      "type": "text"
+                    },
+                    {
+                      "label": "交付年月日",
+                      "isDisplayed": false,
+                      "id": "f_auto_snwkmf",
+                      "type": "date",
+                      "defaultNow": false,
+                      "required": true,
+                      "children": []
+                    },
+                    {
+                      "type": "text",
+                      "defaultValueText": "石狩",
+                      "id": "f_mqteanca_zc15fz",
+                      "isDisplayed": false,
+                      "defaultValueMode": "custom",
+                      "multiline": false,
+                      "inputRestrictionMode": "none",
+                      "label": "番号接頭語"
+                    },
+                    {
+                      "type": "text",
+                      "required": true,
+                      "defaultValueText": "",
+                      "id": "f_auto_wm5x0x",
+                      "showPlaceholder": true,
+                      "placeholder": "0123",
+                      "defaultValueMode": "none",
+                      "isDisplayed": false,
+                      "multiline": false,
+                      "inputRestrictionMode": "pattern",
+                      "label": "番号",
+                      "pattern": "^[0-9]{4}$"
+                    }
+                  ],
+                  "type": "message",
+                  "id": "f_auto_i0que5",
+                  "isDisplayed": false,
+                  "excludeFromSearchAndPrint": false,
+                  "label": "免許情報"
+                }
+              ]
+            },
+            "id": "f_auto_lknlrr",
+            "type": "radio",
+            "required": true
+          },
+          {
+            "children": [
+              {
+                "options": [
+                  {
+                    "id": "o_auto_in3z10",
+                    "label": "なし",
+                    "defaultSelected": true
+                  },
+                  {
+                    "label": "あり",
+                    "id": "o_auto_13x4jv2",
+                    "defaultSelected": false
+                  }
+                ],
+                "isDisplayed": false,
+                "label": "登録の有無",
+                "type": "radio",
+                "required": true,
+                "id": "f_auto_1djmyg1",
+                "childrenByValue": {
+                  "あり": [
+                    {
+                      "label": "交付年月日",
+                      "isDisplayed": false,
+                      "id": "f_auto_1r465w4",
+                      "defaultNow": false,
+                      "type": "date",
+                      "required": true
+                    },
+                    {
+                      "id": "f_dup_21118h",
+                      "type": "text",
+                      "label": "番号接頭語",
+                      "defaultValueMode": "custom",
+                      "defaultValueText": "石狩",
+                      "inputRestrictionMode": "none",
+                      "multiline": false,
+                      "isDisplayed": false
+                    },
+                    {
+                      "type": "text",
+                      "required": true,
+                      "defaultValueText": "",
+                      "id": "f_auto_gorlrm",
+                      "defaultValueMode": "none",
+                      "isDisplayed": false,
+                      "label": "番号",
+                      "inputRestrictionMode": "pattern",
+                      "multiline": false,
+                      "pattern": "^[0-9]{4}$",
+                      "placeholder": "0123",
+                      "showPlaceholder": true
+                    }
+                  ]
+                }
+              }
+            ],
+            "type": "message",
+            "id": "f_auto_l3z14z",
+            "isDisplayed": false,
+            "excludeFromSearchAndPrint": false,
+            "label": "狩猟者登録"
+          }
+        ],
+        "銃器": [
+          {
+            "label": "銃の種類",
+            "options": [
+              {
+                "defaultSelected": false,
+                "id": "o_auto_1slyex4",
+                "label": "空気銃"
+              },
+              {
+                "id": "o_dup_tpu7dz",
+                "label": "散弾銃",
+                "defaultSelected": false
+              },
+              {
+                "id": "o_dup_ut1oou",
+                "label": "ライフル銃",
+                "defaultSelected": false
+              }
+            ],
+            "isDisplayed": false,
+            "childrenByValue": {
+              "空気銃": [
+                {
+                  "label": "所持許可",
+                  "isDisplayed": false,
+                  "excludeFromSearchAndPrint": false,
+                  "id": "f_auto_1i3ruca",
+                  "type": "message",
+                  "children": [
+                    {
+                      "type": "text",
+                      "required": true,
+                      "id": "f_auto_kb0y0f",
+                      "showPlaceholder": true,
+                      "defaultValueText": "",
+                      "pattern": "^[0-9]{11}$",
+                      "label": "所持許可証番号",
+                      "multiline": false,
+                      "inputRestrictionMode": "pattern",
+                      "placeholder": "01234567890",
+                      "defaultValueMode": "none",
+                      "isDisplayed": false
+                    },
+                    {
+                      "isDisplayed": false,
+                      "label": "交付年月日",
+                      "type": "date",
+                      "required": true,
+                      "defaultNow": false,
+                      "id": "f_auto_93wyla"
+                    }
+                  ]
+                },
+                {
+                  "childrenByValue": {
+                    "第二種銃猟免許": [
+                      {
+                        "type": "text",
+                        "required": true,
+                        "id": "f_auto_fsqu92",
+                        "defaultValueText": "北海道",
+                        "label": "都道府県",
+                        "multiline": false,
+                        "inputRestrictionMode": "none",
+                        "isDisplayed": false,
+                        "defaultValueMode": "custom"
+                      },
+                      {
+                        "id": "f_auto_xb00vq",
+                        "defaultNow": false,
+                        "type": "date",
+                        "required": true,
+                        "label": "交付年月日",
+                        "isDisplayed": false
+                      },
+                      {
+                        "id": "f_mqte7hzl_nirgq0",
+                        "defaultValueText": "石狩",
+                        "label": "番号接頭語",
+                        "multiline": false,
+                        "inputRestrictionMode": "none",
+                        "defaultValueMode": "custom",
+                        "isDisplayed": false,
+                        "type": "text"
+                      },
+                      {
+                        "required": true,
+                        "type": "text",
+                        "label": "番号",
+                        "multiline": false,
+                        "inputRestrictionMode": "pattern",
+                        "isDisplayed": false,
+                        "placeholder": "0123",
+                        "defaultValueMode": "none",
+                        "showPlaceholder": true,
+                        "id": "f_auto_foacbs",
+                        "pattern": "^[0-9]{4}$",
+                        "defaultValueText": ""
+                      }
+                    ],
+                    "第一種銃猟免許": [
+                      {
+                        "label": "都道府県",
+                        "inputRestrictionMode": "none",
+                        "multiline": false,
+                        "defaultValueMode": "custom",
+                        "isDisplayed": false,
+                        "id": "f_auto_1df9l3u",
+                        "defaultValueText": "北海道",
+                        "type": "text",
+                        "required": true
+                      },
+                      {
+                        "isDisplayed": false,
+                        "label": "交付年月日",
+                        "type": "date",
+                        "defaultNow": false,
+                        "id": "f_auto_1kprs9u"
+                      },
+                      {
+                        "defaultValueText": "石狩",
+                        "type": "text",
+                        "id": "f_mqte5pwx_a9pilh",
+                        "defaultValueMode": "custom",
+                        "isDisplayed": false,
+                        "multiline": false,
+                        "inputRestrictionMode": "none",
+                        "label": "番号接頭語"
+                      },
+                      {
+                        "multiline": false,
+                        "inputRestrictionMode": "pattern",
+                        "label": "番号",
+                        "defaultValueMode": "none",
+                        "placeholder": "0123",
+                        "isDisplayed": false,
+                        "id": "f_auto_lrwnfo",
+                        "showPlaceholder": true,
+                        "defaultValueText": "",
+                        "pattern": "^[0-9]{4}$",
+                        "type": "text",
+                        "required": true
+                      }
+                    ]
+                  },
+                  "id": "f_auto_rhio7d",
+                  "type": "select",
+                  "label": "免許種類",
+                  "isDisplayed": false,
+                  "options": [
+                    {
+                      "id": "o_auto_bbgbih",
+                      "label": "第一種銃猟免許",
+                      "defaultSelected": false
+                    },
+                    {
+                      "defaultSelected": false,
+                      "id": "o_auto_gm8cee",
+                      "label": "第二種銃猟免許"
+                    }
+                  ]
+                },
+                {
+                  "isDisplayed": false,
+                  "excludeFromSearchAndPrint": false,
+                  "label": "狩猟者登録",
+                  "type": "message",
+                  "children": [
+                    {
+                      "childrenByValue": {
+                        "あり": [
+                          {
+                            "label": "交付年月日",
+                            "isDisplayed": false,
+                            "id": "f_auto_lmkt62",
+                            "required": true,
+                            "defaultNow": false,
+                            "type": "date"
+                          },
+                          {
+                            "defaultValueText": "石狩",
+                            "type": "text",
+                            "id": "f_mqte8p1t_upn68x",
+                            "defaultValueMode": "custom",
+                            "isDisplayed": false,
+                            "multiline": false,
+                            "inputRestrictionMode": "none",
+                            "label": "番号接頭語"
+                          },
+                          {
+                            "label": "番号",
+                            "multiline": false,
+                            "inputRestrictionMode": "pattern",
+                            "isDisplayed": false,
+                            "placeholder": "0123",
+                            "defaultValueMode": "none",
+                            "showPlaceholder": true,
+                            "id": "f_auto_1ag4fk4",
+                            "pattern": "^[0-9]{4}$",
+                            "defaultValueText": "",
+                            "type": "text",
+                            "required": true
+                          }
+                        ]
+                      },
+                      "id": "f_auto_f39lop",
+                      "required": true,
+                      "type": "radio",
+                      "label": "登録の有無",
+                      "isDisplayed": false,
+                      "options": [
+                        {
+                          "label": "なし",
+                          "id": "o_auto_1a0z90y",
+                          "defaultSelected": true
+                        },
+                        {
+                          "id": "o_auto_1mgi830",
+                          "label": "あり",
+                          "defaultSelected": false
+                        }
+                      ]
+                    }
+                  ],
+                  "id": "f_auto_5w3l2z"
+                }
+              ],
+              "散弾銃": [
+                {
+                  "excludeFromSearchAndPrint": false,
+                  "isDisplayed": false,
+                  "label": "所持許可",
+                  "type": "message",
+                  "children": [
+                    {
+                      "type": "text",
+                      "required": true,
+                      "label": "所持許可証番号",
+                      "multiline": false,
+                      "inputRestrictionMode": "pattern",
+                      "isDisplayed": false,
+                      "defaultValueMode": "none",
+                      "id": "f_auto_1fqzehi",
+                      "defaultValueText": "",
+                      "pattern": "^[0-9]{11}$",
+                      "placeholder": "01234567890",
+                      "showPlaceholder": true
+                    },
+                    {
+                      "defaultNow": false,
+                      "type": "date",
+                      "required": true,
+                      "id": "f_auto_1nn6hb3",
+                      "isDisplayed": false,
+                      "label": "交付年月日"
+                    }
+                  ],
+                  "id": "f_auto_xhpq2z"
+                },
+                {
+                  "label": "第一種銃猟免許",
+                  "excludeFromSearchAndPrint": false,
+                  "isDisplayed": false,
+                  "id": "f_dup_52ixto",
+                  "type": "message",
+                  "children": [
+                    {
+                      "id": "f_dup_62cind",
+                      "defaultValueText": "北海道",
+                      "inputRestrictionMode": "none",
+                      "multiline": false,
+                      "label": "都道府県",
+                      "isDisplayed": false,
+                      "defaultValueMode": "custom",
+                      "type": "text",
+                      "required": true
+                    },
+                    {
+                      "isDisplayed": false,
+                      "label": "交付年月日",
+                      "type": "date",
+                      "defaultNow": false,
+                      "required": true,
+                      "id": "f_dup_7rrkj1"
+                    },
+                    {
+                      "id": "f_dup_8lerbw",
+                      "type": "text",
+                      "label": "番号接頭語",
+                      "defaultValueMode": "custom",
+                      "defaultValueText": "石狩",
+                      "inputRestrictionMode": "none",
+                      "multiline": false,
+                      "isDisplayed": false
+                    },
+                    {
+                      "inputRestrictionMode": "pattern",
+                      "multiline": false,
+                      "label": "番号",
+                      "defaultValueMode": "none",
+                      "placeholder": "0123",
+                      "isDisplayed": false,
+                      "id": "f_dup_9irw2j",
+                      "showPlaceholder": true,
+                      "defaultValueText": "",
+                      "type": "text",
+                      "required": true,
+                      "pattern": "^[0-9]{4}$"
+                    }
+                  ]
+                },
+                {
+                  "id": "f_dup_ajvkev",
+                  "type": "message",
+                  "children": [
+                    {
+                      "label": "登録の有無",
+                      "isDisplayed": false,
+                      "options": [
+                        {
+                          "id": "o_dup_ce0q5p",
+                          "label": "なし",
+                          "defaultSelected": true
+                        },
+                        {
+                          "id": "o_dup_dgc73f",
+                          "label": "あり",
+                          "defaultSelected": false
+                        }
+                      ],
+                      "id": "f_dup_bbp05n",
+                      "childrenByValue": {
+                        "あり": [
+                          {
+                            "id": "f_dup_e1fzgm",
+                            "required": true,
+                            "type": "date",
+                            "defaultNow": false,
+                            "label": "交付年月日",
+                            "isDisplayed": false
+                          },
+                          {
+                            "id": "f_dup_fvwi6q",
+                            "type": "text",
+                            "label": "番号接頭語",
+                            "defaultValueMode": "custom",
+                            "defaultValueText": "石狩",
+                            "inputRestrictionMode": "none",
+                            "multiline": false,
+                            "isDisplayed": false
+                          },
+                          {
+                            "required": true,
+                            "type": "text",
+                            "id": "f_dup_g4vcdg",
+                            "defaultValueText": "",
+                            "multiline": false,
+                            "inputRestrictionMode": "pattern",
+                            "label": "番号",
+                            "defaultValueMode": "none",
+                            "isDisplayed": false,
+                            "pattern": "^[0-9]{4}$",
+                            "placeholder": "0123",
+                            "showPlaceholder": true
+                          }
+                        ]
+                      },
+                      "type": "radio",
+                      "required": true
+                    }
+                  ],
+                  "label": "狩猟者登録",
+                  "isDisplayed": false,
+                  "excludeFromSearchAndPrint": false
+                }
+              ],
+              "ライフル銃": [
+                {
+                  "id": "f_auto_1qci85v",
+                  "children": [
+                    {
+                      "required": true,
+                      "type": "text",
+                      "id": "f_auto_1hvx9tq",
+                      "defaultValueText": "",
+                      "label": "所持許可証番号",
+                      "multiline": false,
+                      "inputRestrictionMode": "pattern",
+                      "isDisplayed": false,
+                      "defaultValueMode": "none",
+                      "pattern": "^[0-9]{11}$",
+                      "placeholder": "01234567890",
+                      "showPlaceholder": true
+                    },
+                    {
+                      "isDisplayed": false,
+                      "label": "交付年月日",
+                      "required": true,
+                      "type": "date",
+                      "defaultNow": false,
+                      "id": "f_auto_4pu7wn"
+                    }
+                  ],
+                  "type": "message",
+                  "label": "所持許可",
+                  "excludeFromSearchAndPrint": false,
+                  "isDisplayed": false
+                },
+                {
+                  "label": "第一種銃猟免許",
+                  "excludeFromSearchAndPrint": false,
+                  "isDisplayed": false,
+                  "id": "f_dup_htcoms",
+                  "type": "message",
+                  "children": [
+                    {
+                      "id": "f_dup_it6fzp",
+                      "defaultValueText": "北海道",
+                      "inputRestrictionMode": "none",
+                      "multiline": false,
+                      "label": "都道府県",
+                      "isDisplayed": false,
+                      "defaultValueMode": "custom",
+                      "type": "text",
+                      "required": true
+                    },
+                    {
+                      "isDisplayed": false,
+                      "label": "交付年月日",
+                      "type": "date",
+                      "defaultNow": false,
+                      "required": true,
+                      "id": "f_dup_ji2exn"
+                    },
+                    {
+                      "id": "f_dup_k7bjfx",
+                      "type": "text",
+                      "label": "番号接頭語",
+                      "defaultValueMode": "custom",
+                      "defaultValueText": "石狩",
+                      "inputRestrictionMode": "none",
+                      "multiline": false,
+                      "isDisplayed": false
+                    },
+                    {
+                      "inputRestrictionMode": "pattern",
+                      "multiline": false,
+                      "label": "番号",
+                      "defaultValueMode": "none",
+                      "placeholder": "0123",
+                      "isDisplayed": false,
+                      "id": "f_dup_lgjv8y",
+                      "showPlaceholder": true,
+                      "defaultValueText": "",
+                      "type": "text",
+                      "required": true,
+                      "pattern": "^[0-9]{4}$"
+                    }
+                  ]
+                },
+                {
+                  "id": "f_dup_mv9p36",
+                  "type": "message",
+                  "children": [
+                    {
+                      "label": "登録の有無",
+                      "isDisplayed": false,
+                      "options": [
+                        {
+                          "id": "o_dup_olvzxl",
+                          "label": "なし",
+                          "defaultSelected": true
+                        },
+                        {
+                          "id": "o_dup_pigf6s",
+                          "label": "あり",
+                          "defaultSelected": false
+                        }
+                      ],
+                      "id": "f_dup_nzipiz",
+                      "childrenByValue": {
+                        "あり": [
+                          {
+                            "id": "f_dup_q38o0q",
+                            "required": true,
+                            "type": "date",
+                            "defaultNow": false,
+                            "label": "交付年月日",
+                            "isDisplayed": false
+                          },
+                          {
+                            "id": "f_dup_r5719x",
+                            "type": "text",
+                            "label": "番号接頭語",
+                            "defaultValueMode": "custom",
+                            "defaultValueText": "石狩",
+                            "inputRestrictionMode": "none",
+                            "multiline": false,
+                            "isDisplayed": false
+                          },
+                          {
+                            "required": true,
+                            "type": "text",
+                            "id": "f_dup_srq35x",
+                            "defaultValueText": "",
+                            "multiline": false,
+                            "inputRestrictionMode": "pattern",
+                            "label": "番号",
+                            "defaultValueMode": "none",
+                            "isDisplayed": false,
+                            "pattern": "^[0-9]{4}$",
+                            "placeholder": "0123",
+                            "showPlaceholder": true
+                          }
+                        ]
+                      },
+                      "type": "radio",
+                      "required": true
+                    }
+                  ],
+                  "label": "狩猟者登録",
+                  "isDisplayed": false,
+                  "excludeFromSearchAndPrint": false
+                }
+              ]
+            },
+            "id": "f_auto_x8w20y",
+            "type": "checkboxes",
+            "required": true
+          }
+        ],
+        "網": [
+          {
+            "isDisplayed": false,
+            "options": [
+              {
+                "defaultSelected": false,
+                "label": "むそう網",
+                "id": "o_auto_1vxis7o"
+              },
+              {
+                "defaultSelected": false,
+                "label": "はり網",
+                "id": "o_auto_9uggrz"
+              },
+              {
+                "id": "o_auto_y8pp4s",
+                "label": "つき網",
+                "defaultSelected": false
+              },
+              {
+                "defaultSelected": false,
+                "label": "なげ網",
+                "id": "o_auto_1omh1gq"
+              }
+            ],
+            "label": "道具の種類",
+            "type": "checkboxes",
+            "required": true,
+            "id": "f_auto_1r3b1z8"
+          },
+          {
+            "type": "radio",
+            "required": true,
+            "id": "f_auto_vrzb1s",
+            "childrenByValue": {
+              "必要": [
+                {
+                  "children": [
+                    {
+                      "type": "text",
+                      "required": true,
+                      "isDisplayed": false,
+                      "defaultValueMode": "custom",
+                      "label": "都道府県",
+                      "inputRestrictionMode": "none",
+                      "multiline": false,
+                      "defaultValueText": "北海道",
+                      "id": "f_auto_mwm3p5"
+                    },
+                    {
+                      "id": "f_auto_onc6l6",
+                      "defaultNow": false,
+                      "required": true,
+                      "type": "date",
+                      "label": "交付年月日",
+                      "isDisplayed": false
+                    },
+                    {
+                      "id": "f_dup_1fbo4q",
+                      "type": "text",
+                      "label": "番号接頭語",
+                      "defaultValueMode": "custom",
+                      "defaultValueText": "石狩",
+                      "inputRestrictionMode": "none",
+                      "multiline": false,
+                      "isDisplayed": false
+                    },
+                    {
+                      "defaultValueText": "",
+                      "showPlaceholder": true,
+                      "id": "f_auto_1e1vq1i",
+                      "isDisplayed": false,
+                      "defaultValueMode": "none",
+                      "placeholder": "0123",
+                      "label": "番号",
+                      "multiline": false,
+                      "inputRestrictionMode": "pattern",
+                      "required": true,
+                      "type": "text",
+                      "pattern": "^[0-9]{4}$"
+                    }
+                  ],
+                  "type": "message",
+                  "id": "f_auto_x3ehgy",
+                  "isDisplayed": false,
+                  "excludeFromSearchAndPrint": false,
+                  "label": "免許情報"
+                },
+                {
+                  "label": "狩猟者登録",
+                  "isDisplayed": false,
+                  "excludeFromSearchAndPrint": false,
+                  "id": "f_auto_rz5vy9",
+                  "children": [
+                    {
+                      "isDisplayed": false,
+                      "options": [
+                        {
+                          "defaultSelected": true,
+                          "label": "なし",
+                          "id": "o_auto_7948er"
+                        },
+                        {
+                          "defaultSelected": false,
+                          "label": "あり",
+                          "id": "o_auto_gleubt"
+                        }
+                      ],
+                      "label": "登録の有無",
+                      "required": true,
+                      "type": "radio",
+                      "id": "f_auto_1habi30",
+                      "childrenByValue": {
+                        "あり": [
+                          {
+                            "isDisplayed": false,
+                            "label": "交付年月日",
+                            "type": "date",
+                            "required": true,
+                            "defaultNow": false,
+                            "id": "f_auto_12oakwx"
+                          },
+                          {
+                            "id": "f_dup_4691ki",
+                            "type": "text",
+                            "label": "番号接頭語",
+                            "defaultValueMode": "custom",
+                            "defaultValueText": "石狩",
+                            "inputRestrictionMode": "none",
+                            "multiline": false,
+                            "isDisplayed": false
+                          },
+                          {
+                            "isDisplayed": false,
+                            "defaultValueMode": "none",
+                            "label": "番号",
+                            "inputRestrictionMode": "pattern",
+                            "multiline": false,
+                            "defaultValueText": "",
+                            "id": "f_auto_3d2amh",
+                            "required": true,
+                            "type": "text",
+                            "pattern": "^[0-9]{4}$",
+                            "placeholder": "0123",
+                            "showPlaceholder": true
+                          }
+                        ]
+                      }
+                    }
+                  ],
+                  "type": "message"
+                }
+              ]
+            },
+            "options": [
+              {
+                "defaultSelected": false,
+                "label": "不要",
+                "id": "o_auto_p8xvkc"
+              },
+              {
+                "id": "o_auto_18184ox",
+                "label": "必要",
+                "defaultSelected": true
+              }
+            ],
+            "isDisplayed": false,
+            "label": "免許の必要性"
+          }
+        ]
+      },
+      "options": [
+        {
+          "label": "手捕り",
+          "id": "o_auto_nnxgsx",
+          "defaultSelected": false
+        },
+        {
+          "id": "o_auto_17cxejh",
+          "label": "わな",
+          "defaultSelected": false
+        },
+        {
+          "id": "o_auto_hipkc3",
+          "label": "網",
+          "defaultSelected": false
+        },
+        {
+          "label": "銃器",
+          "id": "o_auto_xvv7wh",
+          "defaultSelected": false
+        }
+      ],
+      "isDisplayed": true,
+      "label": "捕獲等又は採取等の方法（使用する捕獲用具の名称)"
+    }
+  ],
+  "settings": {
+    "externalActions": {
+      "search": [
+        {
+          "adminOnly": false,
+          "showStyleSettings": false,
+          "label": "",
+          "url": ""
+        },
+        {
+          "url": "",
+          "label": "",
+          "showStyleSettings": false,
+          "adminOnly": false
+        },
+        {
+          "showStyleSettings": false,
+          "url": "",
+          "label": "",
+          "adminOnly": false
+        }
+      ],
+      "enabled": false
+    },
+    "showSearchId": false,
+    "spreadsheetPath": "NFB Responses - 従事者情報",
+    "spreadsheetId": "1vGGBA4Lme1t234FWWsO7wEm4ZBT3LE7860VagRhicxU",
+    "showSearchModifiedAt": true,
+    "theme": "standard",
+    "showSearchCreatedAt": false,
+    "formTitle": "従事者情報"
+  },
+  "schemaHash": "v1-930115324",
+  "importantFields": [
+    "氏名",
+    "捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量",
+    "捕獲等又は採取等の方法（使用する捕獲用具の名称)"
+  ],
+  "displayFieldSettings": [
+    {
+      "path": "氏名",
+      "fieldId": "f_auto_v041lu",
+      "type": "text"
+    },
+    {
+      "path": "捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量",
+      "fieldId": "f_auto_sr4lv5",
+      "type": "checkboxes"
+    },
+    {
+      "type": "checkboxes",
+      "path": "捕獲等又は採取等の方法（使用する捕獲用具の名称)",
+      "fieldId": "f_auto_16oj8qb"
+    }
+  ],
+  "createdAt": "2026-06-25_20:05:04.165",
+  "modifiedAt": "2026-06-25_20:05:09.271",
+  "createdAtUnixMs": 1782385504165,
+  "modifiedAtUnixMs": 1782385509271,
+  "archived": false,
+  "readOnly": false,
+  "childOnly": false,
+  "schemaVersion": 1
+}

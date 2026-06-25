@@ -214,6 +214,14 @@ export function FileUploadFieldSection({ field, onChange }) {
       <label className="nf-row nf-gap-6 nf-mt-8">
         <input
           type="checkbox"
+          checked={!!field.allowDriveBrowse}
+          onChange={(event) => onChange({ ...field, allowDriveBrowse: event.target.checked })}
+        />
+        Driveから選択（ピッカー）を有効にする
+      </label>
+      <label className="nf-row nf-gap-6 nf-mt-8">
+        <input
+          type="checkbox"
           checked={!!field.hideFileExtension}
           onChange={(event) => onChange({ ...field, hideFileExtension: event.target.checked })}
         />

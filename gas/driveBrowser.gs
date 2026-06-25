@@ -3,24 +3,27 @@
  * ユーザー自身の Google Drive をブラウズして file/folder を選ぶピッカー用の読み取り専用 API。
  * Web アプリは executeAs=USER_ACCESSING のため、すべて「アクセス中ユーザー自身の Drive」を対象とする。
  *
+ * パフォーマンス方針:
+ * - Drive 拡張サービス（advanced service "Drive" v3）が有効なら Drive.Files.list を最優先で使う。
+ *   fields 射影（id/name/mimeType/modifiedTime/shortcutDetails のみ）を 1 リクエストで取得するため、
+ *   DriveApp の「1 件ごとの getter 往復」が無くなり、特に検索が大幅に速い。共有ドライブも横断できる。
+ * - 拡張サービスが無い環境では DriveApp にフォールバック（My ドライブのみ・低速）。
+ * - パンくず（祖先チェーン）はクライアント側で保持するため、サーバはフォルダの中身だけを返す
+ *   （フォルダを開くたびの getParents() 往復を排除）。各 API は { ok, items, truncated } のみ返す。
+ *
  * 設計方針:
- * - ブラウズは 1 クリック＝1 階層のみ（非再帰）。大量フォルダ保護のため列挙には上限を設ける。
- * - URL/ID 解析は formsParsing.gs（Forms_parseGoogleDriveUrl_）を流用。
+ * - ブラウズは 1 クリック＝1 階層のみ（非再帰）。pageSize で上限。
  * - 公開 API（nfbDriveBrowser*）はすべて nfbSafeCall_ で { ok, ... } / { ok:false, error } を返す。
- * - 共有ドライブ（Shared Drives）は Drive 拡張サービス（advanced service "Drive" v3）が有効なときのみ。
- *   未有効でも他機能（マイドライブ / 検索 / スター付き）はそのまま動く（タブはフロントで隠す）。
- * - ショートカット（application/vnd.google-apps.shortcut）は DriveApp の getTargetId/getTargetMimeType で
- *   実体へ解決し、解決できないものは列挙から除外する。
+ * - ショートカット（application/vnd.google-apps.shortcut）は実体（targetId/targetMimeType）へ解決する。
+ * - mode はファイルのみに適用（フォルダは常にナビ用に返す）。"all" | "json" | "css" | "folders"。
  */
 
-// 1 フォルダ階層あたり / 検索結果あたりの列挙上限（超過時は truncated:true）。
-var DRIVE_BROWSER_MAX_ITEMS = 800;
+var DRIVE_BROWSER_MAX_ITEMS = 1000;
 var DRIVE_BROWSER_MAX_SEARCH = 100;
-// パンくず（祖先）を辿る上限（多親・循環保護）。
-var DRIVE_BROWSER_MAX_BREADCRUMB = 50;
 
 var DRIVE_BROWSER_FOLDER_MIME = "application/vnd.google-apps.folder";
 var DRIVE_BROWSER_SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
+var DRIVE_BROWSER_FIELDS = "files(id,name,mimeType,modifiedTime,shortcutDetails)";
 
 // ---------------------------------------------
 // 公開 API
@@ -28,42 +31,41 @@ var DRIVE_BROWSER_SHORTCUT_MIME = "application/vnd.google-apps.shortcut";
 
 /**
  * 1 フォルダの直下（フォルダ＋ファイル）を列挙する。folderId が空 / "root" ならマイドライブ直下。
- * mode はファイルのみに適用（フォルダは常にナビ用に返す）。
- * @param {{ folderId?: string, mode?: string }} payload
- * @return {{ ok, folderId, folderName, parentId, breadcrumb, items, truncated }}
+ * driveId 指定時はその共有ドライブ内として列挙する（corpora=drive）。
+ * @param {{ folderId?: string, mode?: string, driveId?: string }} payload
+ * @return {{ ok, items, truncated }}
  */
 function nfbDriveBrowserList(payload) {
   return nfbSafeCall_(function() {
     payload = payload || {};
     var mode = DriveBrowser_normalizeMode_(payload.mode);
     var folderId = payload.folderId ? String(payload.folderId) : "";
+    var driveId = payload.driveId ? String(payload.driveId) : "";
+    var parentRef = (!folderId || folderId === "root") ? "root" : folderId;
 
-    // マイドライブのルート
-    if (!folderId || folderId === "root") {
-      return DriveBrowser_listFolderViaDriveApp_(DriveApp.getRootFolder(), mode, true);
-    }
-
-    // 通常フォルダ / 共有ドライブの配下フォルダ（DriveApp は共有ドライブも辿れる）
-    var folder = null;
-    try {
-      folder = DriveApp.getFolderById(folderId);
-    } catch (e) {
-      folder = null;
-    }
-    if (folder) {
-      return DriveBrowser_listFolderViaDriveApp_(folder, mode, false);
-    }
-
-    // getFolderById で取れない＝共有ドライブのルート（driveId）の可能性。拡張サービスでフォールバック。
     if (DriveBrowser_isDriveAdvancedAvailable_()) {
-      return DriveBrowser_listSharedDriveRoot_(folderId, mode);
+      var params = {
+        q: "'" + parentRef + "' in parents and trashed = false",
+        pageSize: DRIVE_BROWSER_MAX_ITEMS,
+        fields: DRIVE_BROWSER_FIELDS,
+        includeItemsFromAllDrives: true,
+        supportsAllDrives: true
+      };
+      if (driveId) {
+        params.corpora = "drive";
+        params.driveId = driveId;
+      }
+      return DriveBrowser_v3Run_(params, mode);
     }
-    throw new Error("フォルダにアクセスできません");
+
+    // フォールバック（DriveApp・My ドライブのみ）
+    var folder = (parentRef === "root") ? DriveApp.getRootFolder() : DriveApp.getFolderById(folderId);
+    return DriveBrowser_driveAppList_(folder, mode);
   });
 }
 
 /**
- * ファイル名・フォルダ名の部分一致検索（マイドライブ＋共有ドライブを横断）。
+ * 名前の部分一致検索（拡張サービスがあればマイドライブ＋共有ドライブを横断）。
  * @param {{ query?: string, mode?: string }} payload
  * @return {{ ok, items, truncated }}
  */
@@ -72,32 +74,43 @@ function nfbDriveBrowserSearch(payload) {
     payload = payload || {};
     var mode = DriveBrowser_normalizeMode_(payload.mode);
     var query = payload.query ? String(payload.query).trim() : "";
-    if (!query) {
-      return { ok: true, items: [], truncated: false };
-    }
+    if (!query) return { ok: true, items: [], truncated: false };
     var escaped = query.replace(/'/g, "\\'");
-    var items = [];
-    var truncated = false;
 
-    var folderIter = DriveApp.searchFolders("title contains '" + escaped + "' and trashed = false");
-    while (folderIter.hasNext()) {
-      if (items.length >= DRIVE_BROWSER_MAX_SEARCH) { truncated = true; break; }
-      var fo = folderIter.next();
-      if (DriveBrowser_isTrashed_(fo)) continue;
-      items.push(DriveBrowser_makeItem_(fo.getId(), fo.getName(), "folder", DRIVE_BROWSER_FOLDER_MIME, DriveBrowser_dateToMs_(fo.getLastUpdated()), false, ""));
+    if (DriveBrowser_isDriveAdvancedAvailable_()) {
+      return DriveBrowser_v3Run_({
+        q: "name contains '" + escaped + "' and trashed = false",
+        pageSize: DRIVE_BROWSER_MAX_SEARCH,
+        fields: DRIVE_BROWSER_FIELDS,
+        corpora: "allDrives",
+        includeItemsFromAllDrives: true,
+        supportsAllDrives: true
+      }, mode);
     }
+    return DriveBrowser_driveAppSearch_(escaped, mode);
+  });
+}
 
-    if (!truncated && mode !== "folders") {
-      var fileIter = DriveApp.searchFiles("title contains '" + escaped + "' and trashed = false");
-      while (fileIter.hasNext()) {
-        if (items.length >= DRIVE_BROWSER_MAX_SEARCH) { truncated = true; break; }
-        var f = fileIter.next();
-        if (DriveBrowser_isTrashed_(f)) continue;
-        var item = DriveBrowser_fileToItemOrNull_(f, mode);
-        if (item) items.push(item);
-      }
+/**
+ * スター付きの file/folder を列挙。
+ * @param {{ mode?: string }} payload
+ * @return {{ ok, items, truncated }}
+ */
+function nfbDriveBrowserListStarred(payload) {
+  return nfbSafeCall_(function() {
+    payload = payload || {};
+    var mode = DriveBrowser_normalizeMode_(payload.mode);
+    if (DriveBrowser_isDriveAdvancedAvailable_()) {
+      return DriveBrowser_v3Run_({
+        q: "starred = true and trashed = false",
+        pageSize: DRIVE_BROWSER_MAX_SEARCH,
+        fields: DRIVE_BROWSER_FIELDS,
+        corpora: "allDrives",
+        includeItemsFromAllDrives: true,
+        supportsAllDrives: true
+      }, mode);
     }
-    return { ok: true, items: DriveBrowser_sortItems_(items), truncated: truncated };
+    return DriveBrowser_driveAppStarred_(mode);
   });
 }
 
@@ -118,7 +131,6 @@ function nfbDriveBrowserListSharedDrives() {
         drives.push({ id: list[i].id, name: list[i].name });
       }
     } catch (e) {
-      // 拡張サービスは有効だが共有ドライブ未所属 / 権限不足など → 空で返す（致命扱いしない）
       Logger.log("[driveBrowser] 共有ドライブ取得失敗: " + nfbErrorToString_(e));
       return { ok: true, available: true, drives: [] };
     }
@@ -127,41 +139,7 @@ function nfbDriveBrowserListSharedDrives() {
 }
 
 /**
- * スター付きの file/folder を列挙。拡張サービス不要（DriveApp.searchFiles）。
- * @param {{ mode?: string }} payload
- * @return {{ ok, items, truncated }}
- */
-function nfbDriveBrowserListStarred(payload) {
-  return nfbSafeCall_(function() {
-    payload = payload || {};
-    var mode = DriveBrowser_normalizeMode_(payload.mode);
-    var items = [];
-    var truncated = false;
-
-    var folderIter = DriveApp.searchFolders("starred = true and trashed = false");
-    while (folderIter.hasNext()) {
-      if (items.length >= DRIVE_BROWSER_MAX_SEARCH) { truncated = true; break; }
-      var fo = folderIter.next();
-      if (DriveBrowser_isTrashed_(fo)) continue;
-      items.push(DriveBrowser_makeItem_(fo.getId(), fo.getName(), "folder", DRIVE_BROWSER_FOLDER_MIME, DriveBrowser_dateToMs_(fo.getLastUpdated()), false, ""));
-    }
-
-    if (!truncated && mode !== "folders") {
-      var fileIter = DriveApp.searchFiles("starred = true and trashed = false");
-      while (fileIter.hasNext()) {
-        if (items.length >= DRIVE_BROWSER_MAX_SEARCH) { truncated = true; break; }
-        var f = fileIter.next();
-        if (DriveBrowser_isTrashed_(f)) continue;
-        var item = DriveBrowser_fileToItemOrNull_(f, mode);
-        if (item) items.push(item);
-      }
-    }
-    return { ok: true, items: DriveBrowser_sortItems_(items), truncated: truncated };
-  });
-}
-
-/**
- * 貼り付けられた URL / 素 ID を file or folder へ解決する（プリセット / バリデーション用）。
+ * 貼り付けられた URL / 素 ID を file or folder へ解決する（URL 入力欄のプリセット用・ホットパス外）。
  * @param {{ idOrUrl?: string }} payload
  * @return {{ ok, item:{id,name,type,mimeType,url}|null }}
  */
@@ -169,45 +147,22 @@ function nfbDriveBrowserResolve(payload) {
   return nfbSafeCall_(function() {
     payload = payload || {};
     var idOrUrl = payload.idOrUrl ? String(payload.idOrUrl).trim() : "";
-    if (!idOrUrl) {
-      return { ok: true, item: null };
-    }
+    if (!idOrUrl) return { ok: true, item: null };
     var parsed = Forms_parseGoogleDriveUrl_(idOrUrl);
-    if (!parsed.type || !parsed.id) {
-      return { ok: true, item: null };
-    }
+    if (!parsed.type || !parsed.id) return { ok: true, item: null };
     if (parsed.type === "folder") {
       var folder = DriveApp.getFolderById(parsed.id);
-      return {
-        ok: true,
-        item: {
-          id: folder.getId(),
-          name: folder.getName(),
-          type: "folder",
-          mimeType: DRIVE_BROWSER_FOLDER_MIME,
-          url: folder.getUrl()
-        }
-      };
+      return { ok: true, item: { id: folder.getId(), name: folder.getName(), type: "folder", mimeType: DRIVE_BROWSER_FOLDER_MIME, url: folder.getUrl() } };
     }
     var file = DriveApp.getFileById(parsed.id);
-    return {
-      ok: true,
-      item: {
-        id: file.getId(),
-        name: file.getName(),
-        type: "file",
-        mimeType: file.getMimeType(),
-        url: file.getUrl()
-      }
-    };
+    return { ok: true, item: { id: file.getId(), name: file.getName(), type: "file", mimeType: file.getMimeType(), url: file.getUrl() } };
   });
 }
 
 // ---------------------------------------------
-// 内部ヘルパー
+// 共通ヘルパー
 // ---------------------------------------------
 
-// Drive 拡張サービス（advanced service "Drive"）が利用可能か。
 function DriveBrowser_isDriveAdvancedAvailable_() {
   return typeof Drive !== "undefined";
 }
@@ -230,23 +185,19 @@ function DriveBrowser_fileMatchesMode_(mimeType, name, mode) {
       || lower.lastIndexOf(".json") === lower.length - 5;
   }
   if (mode === "css") {
-    return mimeType === "text/css"
-      || lower.lastIndexOf(".css") === lower.length - 4;
+    return mimeType === "text/css" || lower.lastIndexOf(".css") === lower.length - 4;
   }
   return true; // "all"
 }
 
-// trashed 判定（メソッド非対応でも安全に false）。
 function DriveBrowser_isTrashed_(item) {
   try { return typeof item.isTrashed === "function" && item.isTrashed(); } catch (e) { return false; }
 }
 
-// Date → epoch ms（null セーフ）。フロントでロケール整形する前提。
 function DriveBrowser_dateToMs_(d) {
   try { return d ? d.getTime() : null; } catch (e) { return null; }
 }
 
-// 列挙アイテムの共通形。
 function DriveBrowser_makeItem_(id, name, type, mimeType, updatedMs, isShortcut, targetId) {
   return {
     id: id,
@@ -272,146 +223,24 @@ function DriveBrowser_sortItems_(items) {
   return items;
 }
 
-// DriveApp の File を mode に従って item 化（不一致は null）。ショートカットは実体へ解決。
-function DriveBrowser_fileToItemOrNull_(f, mode) {
-  var mime = f.getMimeType();
-  if (mime === DRIVE_BROWSER_SHORTCUT_MIME) {
-    var targetMime = "";
-    var targetId = "";
-    try { targetMime = f.getTargetMimeType(); } catch (e) {}
-    try { targetId = f.getTargetId(); } catch (e2) {}
-    if (!targetId) {
-      Logger.log("[driveBrowser] ショートカット解決不可（除外）: " + f.getName());
-      return null;
-    }
-    if (targetMime === DRIVE_BROWSER_FOLDER_MIME) {
-      return DriveBrowser_makeItem_(targetId, f.getName(), "folder", targetMime, DriveBrowser_dateToMs_(f.getLastUpdated()), true, targetId);
-    }
-    if (DriveBrowser_fileMatchesMode_(targetMime, f.getName(), mode)) {
-      return DriveBrowser_makeItem_(targetId, f.getName(), "file", targetMime, DriveBrowser_dateToMs_(f.getLastUpdated()), true, targetId);
-    }
-    return null;
-  }
-  if (DriveBrowser_fileMatchesMode_(mime, f.getName(), mode)) {
-    return DriveBrowser_makeItem_(f.getId(), f.getName(), "file", mime, DriveBrowser_dateToMs_(f.getLastUpdated()), false, "");
-  }
-  return null;
-}
+// ---------------------------------------------
+// Drive API v3（advanced service）パス
+// ---------------------------------------------
 
-// DriveApp の 1 フォルダを列挙して標準レスポンスを返す。
-function DriveBrowser_listFolderViaDriveApp_(folder, mode, isRoot) {
-  var items = [];
-  var truncated = false;
-
-  var folderIter = folder.getFolders();
-  while (folderIter.hasNext()) {
-    if (items.length >= DRIVE_BROWSER_MAX_ITEMS) { truncated = true; break; }
-    var sf = folderIter.next();
-    if (DriveBrowser_isTrashed_(sf)) continue;
-    items.push(DriveBrowser_makeItem_(sf.getId(), sf.getName(), "folder", DRIVE_BROWSER_FOLDER_MIME, DriveBrowser_dateToMs_(sf.getLastUpdated()), false, ""));
-  }
-
-  if (!truncated) {
-    var fileIter = folder.getFiles();
-    while (fileIter.hasNext()) {
-      if (items.length >= DRIVE_BROWSER_MAX_ITEMS) { truncated = true; break; }
-      var f = fileIter.next();
-      if (DriveBrowser_isTrashed_(f)) continue;
-      var item = DriveBrowser_fileToItemOrNull_(f, mode);
-      if (item) items.push(item);
-    }
-  }
-
-  var parentId = null;
-  if (!isRoot) {
-    try {
-      var parents = folder.getParents();
-      if (parents.hasNext()) parentId = parents.next().getId();
-    } catch (e) {
-      parentId = null;
-    }
-  }
-
-  return {
-    ok: true,
-    folderId: isRoot ? "" : folder.getId(),
-    folderName: isRoot ? "マイドライブ" : folder.getName(),
-    parentId: parentId,
-    breadcrumb: DriveBrowser_buildBreadcrumb_(folder, isRoot),
-    items: DriveBrowser_sortItems_(items),
-    truncated: truncated
-  };
-}
-
-// 祖先チェーン（root→current）を多親/循環保護付きで構築。
-function DriveBrowser_buildBreadcrumb_(folder, isRoot) {
-  if (isRoot) {
-    return [{ id: "", name: "マイドライブ" }];
-  }
-  var chain = [];
-  var current = folder;
-  var seen = {};
-  var steps = 0;
-  while (current && steps < DRIVE_BROWSER_MAX_BREADCRUMB) {
-    var cid = current.getId();
-    if (seen[cid]) break;
-    seen[cid] = true;
-    chain.push({ id: cid, name: current.getName() });
-    var parents;
-    try { parents = current.getParents(); } catch (e) { break; }
-    if (!parents || !parents.hasNext()) break; // ルート直下 or 共有ドライブ境界
-    current = parents.next();
-    steps++;
-  }
-  chain.reverse();
-  return chain;
-}
-
-// 共有ドライブのルート（driveId）を Drive 拡張サービス（v3）で列挙する。
-// DriveApp.getFolderById(driveId) が取れないケースのフォールバック。
-function DriveBrowser_listSharedDriveRoot_(driveId, mode) {
-  var driveName = "";
-  try {
-    var d = Drive.Drives.get(driveId, { fields: "id,name" });
-    if (d && d.name) driveName = d.name;
-  } catch (e) {
-    // 名前は取れなくても列挙は試みる
-  }
-
-  var clauses = ["'" + driveId + "' in parents", "trashed = false"];
-  if (mode === "folders") {
-    clauses.push("mimeType = '" + DRIVE_BROWSER_FOLDER_MIME + "'");
-  }
-  var resp = Drive.Files.list({
-    q: clauses.join(" and "),
-    pageSize: DRIVE_BROWSER_MAX_ITEMS,
-    fields: "files(id,name,mimeType,modifiedTime,shortcutDetails)",
-    corpora: "drive",
-    driveId: driveId,
-    includeItemsFromAllDrives: true,
-    supportsAllDrives: true
-  });
+// Drive.Files.list を実行し、items 化して標準レスポンスを返す。
+function DriveBrowser_v3Run_(params, mode) {
+  var resp = Drive.Files.list(params);
   var files = (resp && resp.files) ? resp.files : [];
   var items = [];
   for (var i = 0; i < files.length; i++) {
     var item = DriveBrowser_advancedFileToItemOrNull_(files[i], mode);
     if (item) items.push(item);
   }
-  return {
-    ok: true,
-    folderId: driveId,
-    folderName: driveName || "共有ドライブ",
-    parentId: "shared-root",
-    breadcrumb: [
-      { id: "shared-root", name: "共有ドライブ" },
-      { id: driveId, name: driveName || "共有ドライブ" }
-    ],
-    items: DriveBrowser_sortItems_(items),
-    truncated: files.length >= DRIVE_BROWSER_MAX_ITEMS
-  };
+  var pageSize = params.pageSize || DRIVE_BROWSER_MAX_ITEMS;
+  return { ok: true, items: DriveBrowser_sortItems_(items), truncated: files.length >= pageSize };
 }
 
-// Drive 拡張サービス（v3）の files() 要素を mode に従って item 化（不一致は null）。
+// Drive API v3 の files() 要素を mode に従って item 化（不一致は null）。
 function DriveBrowser_advancedFileToItemOrNull_(f, mode) {
   var mime = f.mimeType;
   var updatedMs = null;
@@ -435,6 +264,105 @@ function DriveBrowser_advancedFileToItemOrNull_(f, mode) {
   }
   if (DriveBrowser_fileMatchesMode_(mime, f.name, mode)) {
     return DriveBrowser_makeItem_(f.id, f.name, "file", mime, updatedMs, false, "");
+  }
+  return null;
+}
+
+// ---------------------------------------------
+// DriveApp フォールバック（拡張サービス未有効時のみ）
+// ---------------------------------------------
+
+function DriveBrowser_driveAppList_(folder, mode) {
+  var items = [];
+  var truncated = false;
+
+  var folderIter = folder.getFolders();
+  while (folderIter.hasNext()) {
+    if (items.length >= DRIVE_BROWSER_MAX_ITEMS) { truncated = true; break; }
+    var sf = folderIter.next();
+    if (DriveBrowser_isTrashed_(sf)) continue;
+    items.push(DriveBrowser_makeItem_(sf.getId(), sf.getName(), "folder", DRIVE_BROWSER_FOLDER_MIME, DriveBrowser_dateToMs_(sf.getLastUpdated()), false, ""));
+  }
+  if (!truncated) {
+    var fileIter = folder.getFiles();
+    while (fileIter.hasNext()) {
+      if (items.length >= DRIVE_BROWSER_MAX_ITEMS) { truncated = true; break; }
+      var f = fileIter.next();
+      if (DriveBrowser_isTrashed_(f)) continue;
+      var item = DriveBrowser_driveAppFileToItemOrNull_(f, mode);
+      if (item) items.push(item);
+    }
+  }
+  return { ok: true, items: DriveBrowser_sortItems_(items), truncated: truncated };
+}
+
+function DriveBrowser_driveAppSearch_(escaped, mode) {
+  var items = [];
+  var truncated = false;
+
+  var folderIter = DriveApp.searchFolders("title contains '" + escaped + "' and trashed = false");
+  while (folderIter.hasNext()) {
+    if (items.length >= DRIVE_BROWSER_MAX_SEARCH) { truncated = true; break; }
+    var fo = folderIter.next();
+    if (DriveBrowser_isTrashed_(fo)) continue;
+    items.push(DriveBrowser_makeItem_(fo.getId(), fo.getName(), "folder", DRIVE_BROWSER_FOLDER_MIME, DriveBrowser_dateToMs_(fo.getLastUpdated()), false, ""));
+  }
+  if (!truncated && mode !== "folders") {
+    var fileIter = DriveApp.searchFiles("title contains '" + escaped + "' and trashed = false");
+    while (fileIter.hasNext()) {
+      if (items.length >= DRIVE_BROWSER_MAX_SEARCH) { truncated = true; break; }
+      var f = fileIter.next();
+      if (DriveBrowser_isTrashed_(f)) continue;
+      var item = DriveBrowser_driveAppFileToItemOrNull_(f, mode);
+      if (item) items.push(item);
+    }
+  }
+  return { ok: true, items: DriveBrowser_sortItems_(items), truncated: truncated };
+}
+
+function DriveBrowser_driveAppStarred_(mode) {
+  var items = [];
+  var truncated = false;
+
+  var folderIter = DriveApp.searchFolders("starred = true and trashed = false");
+  while (folderIter.hasNext()) {
+    if (items.length >= DRIVE_BROWSER_MAX_SEARCH) { truncated = true; break; }
+    var fo = folderIter.next();
+    if (DriveBrowser_isTrashed_(fo)) continue;
+    items.push(DriveBrowser_makeItem_(fo.getId(), fo.getName(), "folder", DRIVE_BROWSER_FOLDER_MIME, DriveBrowser_dateToMs_(fo.getLastUpdated()), false, ""));
+  }
+  if (!truncated && mode !== "folders") {
+    var fileIter = DriveApp.searchFiles("starred = true and trashed = false");
+    while (fileIter.hasNext()) {
+      if (items.length >= DRIVE_BROWSER_MAX_SEARCH) { truncated = true; break; }
+      var f = fileIter.next();
+      if (DriveBrowser_isTrashed_(f)) continue;
+      var item = DriveBrowser_driveAppFileToItemOrNull_(f, mode);
+      if (item) items.push(item);
+    }
+  }
+  return { ok: true, items: DriveBrowser_sortItems_(items), truncated: truncated };
+}
+
+// DriveApp の File を mode に従って item 化（不一致は null）。ショートカットは実体へ解決。
+function DriveBrowser_driveAppFileToItemOrNull_(f, mode) {
+  var mime = f.getMimeType();
+  if (mime === DRIVE_BROWSER_SHORTCUT_MIME) {
+    var targetMime = "";
+    var targetId = "";
+    try { targetMime = f.getTargetMimeType(); } catch (e) {}
+    try { targetId = f.getTargetId(); } catch (e2) {}
+    if (!targetId) return null;
+    if (targetMime === DRIVE_BROWSER_FOLDER_MIME) {
+      return DriveBrowser_makeItem_(targetId, f.getName(), "folder", targetMime, DriveBrowser_dateToMs_(f.getLastUpdated()), true, targetId);
+    }
+    if (DriveBrowser_fileMatchesMode_(targetMime, f.getName(), mode)) {
+      return DriveBrowser_makeItem_(targetId, f.getName(), "file", targetMime, DriveBrowser_dateToMs_(f.getLastUpdated()), true, targetId);
+    }
+    return null;
+  }
+  if (DriveBrowser_fileMatchesMode_(mime, f.getName(), mode)) {
+    return DriveBrowser_makeItem_(f.getId(), f.getName(), "file", mime, DriveBrowser_dateToMs_(f.getLastUpdated()), false, "");
   }
   return null;
 }

@@ -133,6 +133,8 @@ export const normalizeFormLinkSettings = (field) => {
 // 不要プロパティ整理（cleanUnusedFieldProperties）の双方で共有する。
 export const normalizeFileUploadSettings = (field) => {
   field.allowUploadByUrl = normalizeBooleanSetting(field.allowUploadByUrl, false);
+  // URL 貼付とは独立した「Drive ブラウザ（ピッカー）から選択」の許可。
+  field.allowDriveBrowse = normalizeBooleanSetting(field.allowDriveBrowse, false);
   field.hideFileExtension = normalizeBooleanSetting(field.hideFileExtension, true);
   // 保存先フォルダはユーザー指定不可・ID 由来固定（常に 06_upload_files 直下の一意フォルダ）。
   // 旧仕様の allowFolderUrlEdit / driveRootFolderUrl / driveFolderNameTemplate は廃止し、

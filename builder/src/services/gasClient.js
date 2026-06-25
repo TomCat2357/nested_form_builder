@@ -420,8 +420,8 @@ export const trashDriveFilesByIds = (fileIds) =>
 // Drive ブラウザ（ピッカー）系。executeAs=USER_ACCESSING のため、いずれもアクセス中ユーザー自身の
 // Drive を対象とする読み取り専用 API。戻り値は { ok, ... } をそのまま返す（呼び出し側が items 等を読む）。
 // mode はファイルの絞り込み: "all"（全ファイル）/ "json" / "css" / "folders"（フォルダのみ）。
-export const driveBrowserList = ({ folderId = "", mode = "all" } = {}) =>
-  fetchGasApi("nfbDriveBrowserList", { folderId, mode }, "Driveの一覧取得に失敗しました");
+export const driveBrowserList = ({ folderId = "", mode = "all", driveId = "" } = {}) =>
+  fetchGasApi("nfbDriveBrowserList", { folderId, mode, driveId }, "Driveの一覧取得に失敗しました");
 
 export const driveBrowserSearch = ({ query, mode = "all" } = {}) =>
   fetchGasApi("nfbDriveBrowserSearch", { query, mode }, "Driveの検索に失敗しました");

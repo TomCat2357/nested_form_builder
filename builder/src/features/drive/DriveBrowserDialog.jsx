@@ -15,6 +15,10 @@ const DEFAULT_CLIENT = {
   listStarred: driveBrowserListStarred,
 };
 
+// パンくずはサーバではなくクライアントで保持する（フォルダを開くたびのサーバ祖先探索を避けて高速化）。
+const ROOT_CRUMB = { id: "", name: "マイドライブ" };
+const SHARED_LIST_CRUMB = { id: "__shared_list__", name: "共有ドライブ", virtual: true };
+
 // 選択アイテムから、下流の既存解析（Forms_parseGoogleDriveUrl_）に合う URL を生成する。
 function buildDriveUrl(item) {
   if (!item || !item.id) return "";
@@ -48,10 +52,8 @@ export default function DriveBrowserDialog({
   client = DEFAULT_CLIENT,
 }) {
   const [view, setView] = useState("browse"); // browse | search | starred | shared
-  const [folderId, setFolderId] = useState("");
-  const [folderName, setFolderName] = useState("");
-  const [breadcrumb, setBreadcrumb] = useState([]);
-  const [parentId, setParentId] = useState(null);
+  const [pathStack, setPathStack] = useState([ROOT_CRUMB]);
+  const [driveId, setDriveId] = useState(""); // 共有ドライブ内なら driveId、My ドライブなら ""
   const [items, setItems] = useState([]);
   const [selected, setSelected] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -73,6 +75,7 @@ export default function DriveBrowserDialog({
     const reqId = ++reqRef.current;
     setLoading(true);
     setError("");
+    setSelected(null);
     try {
       const result = await fn();
       if (reqRef.current !== reqId) return null;
@@ -85,33 +88,33 @@ export default function DriveBrowserDialog({
     }
   }, []);
 
-  const loadFolder = useCallback(async (targetFolderId) => {
-    setSelected(null);
-    const result = await runLoad(() => client.list({ folderId: targetFolderId || "", mode }));
+  // フォルダの中身だけを取得（パンくずは呼び出し側が pathStack で管理）。
+  const fetchItems = useCallback(async (folderId, driveIdArg) => {
+    const result = await runLoad(() => client.list({ folderId: folderId || "", mode, driveId: driveIdArg || "" }));
     if (!result) return;
-    setView("browse");
-    setFolderId(result.folderId || "");
-    setFolderName(result.folderName || "");
-    setBreadcrumb(Array.isArray(result.breadcrumb) ? result.breadcrumb : []);
-    setParentId(result.parentId === undefined ? null : result.parentId);
     setItems(Array.isArray(result.items) ? result.items : []);
     setTruncated(Boolean(result.truncated));
   }, [client, mode, runLoad]);
 
+  const openMyDrive = useCallback(() => {
+    setView("browse");
+    setDriveId("");
+    setPathStack([ROOT_CRUMB]);
+    fetchItems("", "");
+  }, [fetchItems]);
+
   const loadStarred = useCallback(async () => {
-    setSelected(null);
+    setView("starred");
     const result = await runLoad(() => client.listStarred({ mode }));
     if (!result) return;
-    setView("starred");
     setItems(Array.isArray(result.items) ? result.items : []);
     setTruncated(Boolean(result.truncated));
   }, [client, mode, runLoad]);
 
   const loadSharedList = useCallback(async () => {
-    setSelected(null);
+    setView("shared");
     const result = await runLoad(() => client.listSharedDrives());
     if (!result) return;
-    setView("shared");
     const drives = Array.isArray(result.drives) ? result.drives : [];
     setItems(drives.map((d) => ({ id: d.id, name: d.name, type: "folder", mimeType: "", isShortcut: false })));
     setTruncated(false);
@@ -120,10 +123,9 @@ export default function DriveBrowserDialog({
   const runSearch = useCallback(async () => {
     const query = searchText.trim();
     if (!query) return;
-    setSelected(null);
+    setView("search");
     const result = await runLoad(() => client.search({ query, mode }));
     if (!result) return;
-    setView("search");
     setItems(Array.isArray(result.items) ? result.items : []);
     setTruncated(Boolean(result.truncated));
   }, [client, mode, runLoad, searchText]);
@@ -132,9 +134,11 @@ export default function DriveBrowserDialog({
   useEffect(() => {
     if (!open) return;
     setSearchText("");
-    setSelected(null);
     setError("");
-    loadFolder("");
+    setView("browse");
+    setDriveId("");
+    setPathStack([ROOT_CRUMB]);
+    fetchItems("", "");
     client.listSharedDrives()
       .then((result) => setSharedAvailable(Boolean(result && result.available)))
       .catch(() => setSharedAvailable(false));
@@ -142,33 +146,53 @@ export default function DriveBrowserDialog({
 
   if (!open) return null;
 
-  // "shared-root" は実フォルダではなく共有ドライブ一覧へ戻るセンチネル。
-  const navigateTo = (id) => {
-    if (id === "shared-root") {
-      loadSharedList();
-      return;
+  // フォルダに入る（browse 中は pathStack に積む / 検索・スター結果からは起点リセット）。
+  const descend = (item) => {
+    if (view === "browse") {
+      setPathStack((prev) => [...prev, { id: item.id, name: item.name }]);
+      setView("browse");
+      fetchItems(item.id, driveId);
+    } else {
+      setDriveId("");
+      setPathStack([{ id: item.id, name: item.name }]);
+      setView("browse");
+      fetchItems(item.id, "");
     }
-    loadFolder(id || "");
+  };
+
+  const enterSharedDrive = (drive) => {
+    setView("browse");
+    setDriveId(drive.id);
+    setPathStack([SHARED_LIST_CRUMB, { id: drive.id, name: drive.name }]);
+    fetchItems(drive.id, drive.id);
+  };
+
+  const goToCrumb = (index) => {
+    const crumb = pathStack[index];
+    if (!crumb) return;
+    if (crumb.virtual) { loadSharedList(); return; }
+    setPathStack(pathStack.slice(0, index + 1));
+    fetchItems(crumb.id, driveId);
+  };
+
+  const goBack = () => {
+    if (pathStack.length <= 1) return;
+    goToCrumb(pathStack.length - 2);
   };
 
   const handleRowClick = (item) => {
-    if (view === "shared") {
-      loadFolder(item.id); // 共有ドライブはクリックで中に入る
-      return;
-    }
+    if (view === "shared") { enterSharedDrive(item); return; }
     if (item.type === "folder") {
-      if (canSelectItem(item)) {
-        setSelected(item);
-      } else {
-        loadFolder(item.id); // 選択不可フォルダはクリックで降りる
-      }
+      if (canSelectItem(item)) setSelected(item);
+      else descend(item);
     } else if (canSelectItem(item)) {
       setSelected(item);
     }
   };
 
   const handleRowDoubleClick = (item) => {
-    if (item.type === "folder") loadFolder(item.id);
+    if (view === "shared") return;
+    if (item.type === "folder") descend(item);
   };
 
   const confirmSelection = (item) => {
@@ -178,9 +202,10 @@ export default function DriveBrowserDialog({
     }
   };
 
+  const currentCrumb = pathStack[pathStack.length - 1];
   const canConfirmSelected = selected && canSelectItem(selected);
   const canConfirmCurrentFolder = (select === "folder" || select === "both")
-    && view === "browse" && Boolean(folderId);
+    && view === "browse" && currentCrumb && currentCrumb.id && !currentCrumb.virtual;
 
   const activeTab = view === "starred" ? "starred" : (view === "shared" ? "shared" : "mydrive");
 
@@ -208,7 +233,7 @@ export default function DriveBrowserDialog({
             <button
               type="button"
               className="dialog-btn"
-              onClick={() => confirmSelection({ id: folderId, name: folderName, type: "folder" })}
+              onClick={() => confirmSelection({ id: currentCrumb.id, name: currentCrumb.name, type: "folder" })}
             >
               このフォルダを選択
             </button>
@@ -226,7 +251,7 @@ export default function DriveBrowserDialog({
     >
       {/* タブ */}
       <div className="nf-row nf-gap-8">
-        <button type="button" style={tabButtonStyle("mydrive")} onClick={() => loadFolder("")}>
+        <button type="button" style={tabButtonStyle("mydrive")} onClick={openMyDrive}>
           マイドライブ
         </button>
         <button type="button" style={tabButtonStyle("starred")} onClick={loadStarred}>
@@ -257,22 +282,22 @@ export default function DriveBrowserDialog({
       {/* パンくず / 戻る（browse のみ） */}
       {view === "browse" && (
         <div className="nf-row nf-gap-8 nf-items-center" style={{ flexWrap: "wrap" }}>
-          {parentId !== null && (
-            <button type="button" className="nf-btn nf-text-11" style={{ padding: "2px 8px" }} onClick={() => navigateTo(parentId)}>
+          {pathStack.length > 1 && (
+            <button type="button" className="nf-btn nf-text-11" style={{ padding: "2px 8px" }} onClick={goBack}>
               ← 戻る
             </button>
           )}
           <div className="nf-text-12 nf-text-muted" style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
-            {breadcrumb.map((crumb, index) => (
+            {pathStack.map((crumb, index) => (
               <span key={`${crumb.id}-${index}`}>
                 <button
                   type="button"
-                  onClick={() => navigateTo(crumb.id)}
+                  onClick={() => goToCrumb(index)}
                   style={{ background: "none", border: "none", padding: 0, color: "var(--primary)", cursor: "pointer", fontSize: 12 }}
                 >
                   {crumb.name}
                 </button>
-                {index < breadcrumb.length - 1 && <span style={{ margin: "0 2px" }}>/</span>}
+                {index < pathStack.length - 1 && <span style={{ margin: "0 2px" }}>/</span>}
               </span>
             ))}
           </div>
@@ -331,7 +356,7 @@ export default function DriveBrowserDialog({
                   type="button"
                   className="nf-btn nf-text-11"
                   style={{ padding: "2px 8px" }}
-                  onClick={(event) => { event.stopPropagation(); loadFolder(item.id); }}
+                  onClick={(event) => { event.stopPropagation(); descend(item); }}
                 >
                   開く
                 </button>

@@ -179,6 +179,11 @@ const FileUploadField = ({
           >
             Driveからコピー
           </button>
+        </div>
+      )}
+
+      {field.allowDriveBrowse === true && (
+        <div className="nf-row nf-gap-8 nf-mt-8">
           <button
             type="button"
             className="nf-btn"
