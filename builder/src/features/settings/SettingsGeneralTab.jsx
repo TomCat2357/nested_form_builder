@@ -6,6 +6,7 @@ import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { DEFAULT_THEME } from "../../app/theme/theme.js";
 import { useBuilderSettings } from "./settingsStore.js";
 import { useConfigPageTheme } from "../../pages/useConfigPageTheme.js";
+import DriveBrowserDialog from "../drive/DriveBrowserDialog.jsx";
 
 export default function SettingsGeneralTab() {
   const { settings, updateSetting } = useBuilderSettings({ applyGlobalTheme: false });
@@ -18,6 +19,7 @@ export default function SettingsGeneralTab() {
   const formListSortKey = settings?.formListSortKey || "modifiedAt";
   const formListSortOrder = settings?.formListSortOrder || "desc";
   const searchDebounceMs = settings?.searchDebounceMs ?? 300;
+  const [themePickerOpen, setThemePickerOpen] = React.useState(false);
 
   const handleSearchDebounceChange = (raw) => {
     if (raw === "") {
@@ -176,12 +178,28 @@ export default function SettingsGeneralTab() {
           <button
             type="button"
             className="nf-btn nf-nowrap"
+            onClick={() => setThemePickerOpen(true)}
+            disabled={importing || applyingTheme}
+          >
+            Driveから選択
+          </button>
+          <button
+            type="button"
+            className="nf-btn nf-nowrap"
             onClick={handleImportTheme}
             disabled={importing || applyingTheme}
           >
             {importing ? "インポート中..." : "インポート"}
           </button>
         </div>
+        <DriveBrowserDialog
+          open={themePickerOpen}
+          mode="css"
+          select="file"
+          title="テーマCSSファイルを選択"
+          onCancel={() => setThemePickerOpen(false)}
+          onSelect={({ url }) => { setThemePickerOpen(false); setImportUrl(url); }}
+        />
         {customThemes.length > 0 && (
           <div className="nf-mt-12">
             <div className="nf-text-12 nf-text-muted">インポート済みテーマ</div>

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
+import DriveBrowserDialog from "../../features/drive/DriveBrowserDialog.jsx";
 
 // コピー対象として個別に選べる標準フォルダ 8 カテゴリ。key は GAS の NFB_STD_FOLDER_ORDER と一致させる。
 const COPY_CATEGORY_OPTIONS = [
@@ -31,9 +32,13 @@ export default function AdminCopyStructureDialog({
   loading,
 }) {
   const [error, setError] = useState("");
+  const [folderPickerOpen, setFolderPickerOpen] = useState(false);
 
   useEffect(() => {
-    if (!open) setError("");
+    if (!open) {
+      setError("");
+      setFolderPickerOpen(false);
+    }
   }, [open]);
 
   // すべてのカテゴリが OFF なら「コピーする中身が無い」とみなして確定を抑止する。
@@ -98,17 +103,30 @@ export default function AdminCopyStructureDialog({
 
       <div>
         <label className="nf-block nf-mb-6 nf-text-13 nf-fw-600">コピー先プロジェクトフォルダ URL</label>
-        <input
-          type="text"
-          value={url}
-          onChange={(event) => {
-            onUrlChange(event.target.value);
-            if (error) setError("");
-          }}
-          className="nf-input"
-          placeholder="https://drive.google.com/drive/folders/..."
-        />
+        <div className="nf-row nf-gap-8">
+          <input
+            type="text"
+            value={url}
+            onChange={(event) => {
+              onUrlChange(event.target.value);
+              if (error) setError("");
+            }}
+            className="nf-input nf-flex-1"
+            placeholder="https://drive.google.com/drive/folders/..."
+          />
+          <button type="button" className="nf-btn nf-nowrap" onClick={() => setFolderPickerOpen(true)}>
+            Driveから選択
+          </button>
+        </div>
         {error && <p className="nf-mt-6 nf-text-danger-strong nf-text-12">{error}</p>}
+        <DriveBrowserDialog
+          open={folderPickerOpen}
+          mode="folders"
+          select="folder"
+          title="コピー先プロジェクトフォルダを選択"
+          onCancel={() => setFolderPickerOpen(false)}
+          onSelect={({ url: pickedUrl }) => { setFolderPickerOpen(false); onUrlChange(pickedUrl); if (error) setError(""); }}
+        />
       </div>
 
       <div className="nf-mt-12">

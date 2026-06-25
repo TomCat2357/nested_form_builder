@@ -21,6 +21,7 @@ import {
   alignAllStdFolders,
 } from "../../services/gasClient.js";
 import AdminCopyStructureDialog from "../../pages/admin/AdminCopyStructureDialog.jsx";
+import DriveBrowserDialog from "../drive/DriveBrowserDialog.jsx";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { questionCache, dashboardCache } from "../../features/analytics/analyticsCache.js";
@@ -87,6 +88,8 @@ export default function SettingsAdminTab() {
   const [rootInfo, setRootInfo] = useState(null);   // { resolved, rootUrl, rootName, error }
   const [rootUrlInput, setRootUrlInput] = useState("");
   const [ensureLoading, setEnsureLoading] = useState(false);
+  const [rootFolderPickerOpen, setRootFolderPickerOpen] = useState(false);
+  const [mappingPickerOpen, setMappingPickerOpen] = useState(false);
 
   // システムごとコピー
   const copyDialog = useConfirmDialog();
@@ -478,7 +481,18 @@ export default function SettingsAdminTab() {
             placeholder="プロジェクトフォルダの URL（空欄なら自動検出。指定すると手動で固定）"
             onChange={(event) => setRootUrlInput(event.target.value)}
           />
+          <button type="button" className="nf-btn nf-nowrap" onClick={() => setRootFolderPickerOpen(true)} disabled={!canManageAdminSettings}>
+            Driveから選択
+          </button>
         </div>
+        <DriveBrowserDialog
+          open={rootFolderPickerOpen}
+          mode="folders"
+          select="folder"
+          title="プロジェクトフォルダを選択"
+          onCancel={() => setRootFolderPickerOpen(false)}
+          onSelect={({ url }) => { setRootFolderPickerOpen(false); setRootUrlInput(url); }}
+        />
 
         <div className="nf-row nf-gap-12" style={{ flexWrap: "wrap" }}>
           <button type="button" className="nf-btn nf-nowrap" onClick={handleEnsureFolders} disabled={!canManageAdminSettings || ensureLoading}>
@@ -526,10 +540,21 @@ export default function SettingsAdminTab() {
             placeholder="マッピング JSON の URL（空欄ならコピー先プロジェクトフォルダの最新 .json を読み込み）"
             onChange={(event) => setMappingImportUrl(event.target.value)}
           />
+          <button type="button" className="nf-btn nf-nowrap" onClick={() => setMappingPickerOpen(true)} disabled={!canManageAdminSettings}>
+            Driveから選択
+          </button>
           <button type="button" className="nf-btn nf-nowrap" onClick={handleImportMapping} disabled={!canManageAdminSettings || importLoading}>
             {importLoading ? "インポート中..." : "インポート"}
           </button>
         </div>
+        <DriveBrowserDialog
+          open={mappingPickerOpen}
+          mode="json"
+          select="file"
+          title="マッピング JSON ファイルを選択"
+          onCancel={() => setMappingPickerOpen(false)}
+          onSelect={({ url }) => { setMappingPickerOpen(false); setMappingImportUrl(url); }}
+        />
         <p className="nf-mt-6 nf-mb-12 nf-text-11 nf-text-muted">
           インポートは既存マッピングへマージします（同じ fileId は重複としてスキップ）。
           取り込んだフォーム・Question・Dashboard は、次回保存時にサーバ側で標準フォルダへ自動整列・再リンクされます。

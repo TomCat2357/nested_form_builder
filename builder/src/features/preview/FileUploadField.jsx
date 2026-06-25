@@ -12,6 +12,7 @@ import {
   computeFolderStateAfterUpload,
   validateUploadFile,
 } from "./fileUploadHelpers.js";
+import DriveBrowserDialog from "../drive/DriveBrowserDialog.jsx";
 
 export {
   buildDriveUploadSettings,
@@ -86,6 +87,7 @@ const FileUploadField = ({
 }) => {
   const fileInputRef = React.useRef(null);
   const [dragOver, setDragOver] = React.useState(false);
+  const [pickerOpen, setPickerOpen] = React.useState(false);
   const upload = useDriveFileUpload({
     field,
     value,
@@ -104,6 +106,7 @@ const FileUploadField = ({
     setDriveUrl,
     uploadFiles,
     copyFromDriveUrl,
+    copyFromDrivePickedFile,
     removeFile,
     displayedFolderUrl,
   } = upload;
@@ -176,8 +179,25 @@ const FileUploadField = ({
           >
             Driveからコピー
           </button>
+          <button
+            type="button"
+            className="nf-btn"
+            onClick={() => setPickerOpen(true)}
+            disabled={uploading}
+          >
+            Driveから選択
+          </button>
         </div>
       )}
+
+      <DriveBrowserDialog
+        open={pickerOpen}
+        mode="all"
+        select="file"
+        title="Google Drive からファイルを選択"
+        onCancel={() => setPickerOpen(false)}
+        onSelect={({ url }) => { setPickerOpen(false); copyFromDrivePickedFile(url); }}
+      />
 
       {displayedFolderUrl && (
         <FileUploadFolderStatus
@@ -333,6 +353,19 @@ export function useDriveFileUpload({
     if (result) setDriveUrl("");
   };
 
+  // Drive ブラウザ（ピッカー）で選んだファイルを、URL 貼付と同じコピー経路で取り込む。
+  // 引数で URL を受ける点だけが copyFromDriveUrl と異なる（driveUrl state に依存しない）。
+  const copyFromDrivePickedFile = async (url) => {
+    const trimmedUrl = (url || "").trim();
+    if (!trimmedUrl) return;
+    await runUploadWithGuard("Driveファイルのコピーに失敗しました", (settings) => (
+      gasClient.copyDriveFileToDrive({
+        sourceUrl: trimmedUrl,
+        driveSettings: settings,
+      })
+    ));
+  };
+
   const removeFile = (index) => {
     const next = files.filter((_, i) => i !== index);
     filesRef.current = next;
@@ -408,6 +441,7 @@ export function useDriveFileUpload({
     setDriveUrl,
     uploadFiles,
     copyFromDriveUrl,
+    copyFromDrivePickedFile,
     removeFile,
     normalizedFolderState,
     effectiveFolderUrl,

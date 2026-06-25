@@ -40,6 +40,7 @@ const FILE_ORDER = [
   'driveOutputDocument.gs', // 出力ドキュメント（Google Doc/PDF）生成プリミティブ + テンプレート差し込み
   'driveGmailOutput.gs',    // Gmail下書き出力
   'driveFile.gs',           // ファイル操作（公開API）
+  'driveBrowser.gs',        // Drive ブラウズ・ピッカー（読み取り専用・公開API。formsParsing.gs に依存）
   // --- forms ---
   'formsParsing.gs',
   'formsMappingStore.gs',
