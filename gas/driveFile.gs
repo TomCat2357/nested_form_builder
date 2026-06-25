@@ -330,6 +330,34 @@ function nfbUploadFileToDrive(payload) {
  * @return {Object} { ok: true, fileUrl, fileName, fileId }
  */
 /**
+ * ソースファイルを指定フォルダにコピーする（同名上書き前処理込み）。
+ * 高度な Drive サービス（advanced service "Drive" v3）があれば supportsAllDrives 付き
+ * Drive.Files.copy を使い、共有ドライブ上のソース／コピー先でも確実にコピーする。無ければ
+ * 従来の DriveApp.makeCopy にフォールバックする（ブラウズ側 driveBrowser.gs と同じ二段構え）。
+ * 戻り値は後段（nfbBuildDriveFileResponse_ / DocumentApp.openById）の都合で DriveApp File に統一する。
+ * @param {string} sourceFileId - コピー元ファイルの fileId
+ * @param {string} resolvedName - テンプレ展開済みの保存名（空ならソース名を流用）
+ * @param {Folder} folder - コピー先フォルダ（DriveApp.Folder）
+ * @return {File} コピー後の DriveApp File
+ */
+function nfbMakeDriveFileCopy_(sourceFileId, resolvedName, folder) {
+  if (DriveBrowser_isDriveAdvancedAvailable_()) {
+    var finalName = resolvedName || Drive.Files.get(sourceFileId, { supportsAllDrives: true, fields: "name" }).name;
+    nfbTrashExistingFile_(folder, finalName);
+    var copied = Drive.Files.copy(
+      { name: finalName, parents: [folder.getId()] },
+      sourceFileId,
+      { supportsAllDrives: true, fields: "id" }
+    );
+    return DriveApp.getFileById(copied.id);
+  }
+  var sourceFile = nfbGetDriveFileById_(sourceFileId, "ソースファイルへのアクセスに失敗しました: ");
+  var fallbackName = resolvedName || sourceFile.getName();
+  nfbTrashExistingFile_(folder, fallbackName);
+  return sourceFile.makeCopy(fallbackName, folder);
+}
+
+/**
  * ソースファイルを指定フォルダにコピーする共通処理
  * @param {Object} payload - { sourceUrl, driveSettings, fileNameTemplate }
  * @return {Object} { copiedFile, folder, autoCreated, ctx }
@@ -344,18 +372,13 @@ function nfbCopyFileToDriveFolder_(payload) {
     throw new Error("無効なGoogle DriveファイルURLです");
   }
 
-  var sourceFile = nfbGetDriveFileById_(parsed.id, "ソースファイルへのアクセスに失敗しました: ");
-
   var folderResult = nfbResolveUploadFolder_(payload.driveSettings);
   var folder = folderResult.folder;
   var ctx = nfbBuildDriveTemplateContext_(payload.driveSettings);
   var resolvedName = payload.fileNameTemplate
     ? nfbResolveTemplateTokens_(String(payload.fileNameTemplate), ctx)
     : "";
-  var finalName = resolvedName || sourceFile.getName();
-  nfbTrashExistingFile_(folder, finalName);
-
-  var copiedFile = sourceFile.makeCopy(finalName, folder);
+  var copiedFile = nfbMakeDriveFileCopy_(parsed.id, resolvedName, folder);
 
   return {
     copiedFile: copiedFile,
