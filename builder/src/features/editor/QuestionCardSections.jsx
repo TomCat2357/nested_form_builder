@@ -316,16 +316,8 @@ export function ExternalActionSection({ field, onChange }) {
           />
           管理者限定
         </label>
-        <label className="nf-row nf-gap-6">
-          <input
-            type="checkbox"
-            checked={!!action.sendFiles}
-            onChange={(event) => updateAction({ sendFiles: event.target.checked })}
-          />
-          アップロードファイルも送信する
-        </label>
         <div className="nf-text-11 nf-text-muted">
-          {"ボタンを押すと新しいタブで URL を開き、同時にこのレコードの内容を POST 送信します（GAS 側は doPost(e) の e.parameter.payload を JSON.parse して受信）。URL には印刷様式と同じ {{...}} トークンが使えます（例: {{`_id`}} / {{`フィールド名`}} / {{`_form_id`}}）。値は自動で URL エンコードされます。管理者限定を ON にすると、管理者以外にはこのボタンが表示されず、そのときだけ機微トークン {{`_spreadsheet_id`}} / {{`_spreadsheet_url`}} / {{`_sheet_name`}} / {{`_drive_file_url`}} / {{`_user_email`}} と保存先情報も使えます。「アップロードファイルも送信する」を ON にすると、このレコードのアップロードファイルの実体も payload.files に base64 で含めて送信します（合計サイズに上限あり）。"}
+          {"ボタンを押すと新しいタブで URL を開き、同時にこのレコードの内容を POST 送信します（GAS 側は doPost(e) の e.parameter.payload を JSON.parse して受信）。URL には印刷様式と同じ {{...}} トークンが使えます（例: {{`_id`}} / {{`フィールド名`}} / {{`_form_id`}}）。値は自動で URL エンコードされます。管理者限定を ON にすると、管理者以外にはこのボタンが表示されず、そのときだけ機微トークン {{`_spreadsheet_id`}} / {{`_spreadsheet_url`}} / {{`_sheet_name`}} / {{`_drive_file_url`}} / {{`_user_email`}} と保存先情報も使えます。このレコードにアップロードファイルがあるときは、質問項目ごとにフォルダ URL・フォルダ名・各ファイルの URL・ファイル名を payload.files に含めて常に送信します（ファイル実体は送らず Drive の URL のみ）。"}
         </div>
       </div>
     </div>

@@ -91,61 +91,62 @@ function ExtAction_postRelay_(url, bodyObj) {
   return { ok: status >= 200 && status < 400, status: status, body: body };
 }
 
-// フロントが渡すファイル参照配列（raw.files）を解決し、Drive 実体を base64 同梱して
-// payload.files[] に詰める純ヘルパ。Drive / Utilities アクセスは deps で注入してテスト可能にする。
+// フロントが渡すファイル参照配列（raw.files）を解決し、質問項目ごとに「フォルダ URL/名前・
+// ファイル URL/名前」を構造化して payload.files に詰める純ヘルパ。ファイル実体（base64）は
+// 送らず、Drive の URL とメタデータだけを送る。Drive アクセスは deps で注入してテスト可能にする。
 //   deps = {
-//     resolve(name, driveFileId, folderName) -> { fileId, fileUrl }  物理優先・論理フォールバック解決
-//     read(fileId) -> { bytes, mimeType, name }                      Drive 実体（バイト配列）取得
-//     encodeBase64(bytes) -> string                                  base64 文字列化
-//     maxTotalBytes                                                  生バイト合計の上限
+//     resolve(name, driveFileId, folderName) -> { fileId, fileUrl }      物理優先・論理フォールバック解決
+//     resolveFolder(fileId)                  -> { folderUrl, folderName }  ファイルの親フォルダ解決
 //   }
-// payload に payload.files / payload.filesTruncated / payload.filesWarning を設定して返す。
-// 機微データを宛先未検証で送らない方針のため、プローブ（誤送信防止）には絶対に呼ばない。
+// payload.files は質問パスをキーにしたオブジェクト:
+//   { [question]: { fieldId, folderName, folderUrl, files: [{ name, url }] } }
+// 質問パスは一意（フロントのスキーマ検証 validateUniquePaths で保証）なのでキー衝突しない。
+// 解決できなかったファイルは除外し、件数を payload.filesWarning に残す。
+// 機微データ（URL）を宛先未検証で送らない方針のため、プローブ（誤送信防止）には絶対に呼ばない。
 function ExtAction_attachFiles_(payload, files, deps) {
   var list = (Object.prototype.toString.call(files) === "[object Array]") ? files : [];
   if (list.length === 0) return payload;
-  var maxTotal = (deps && typeof deps.maxTotalBytes === "number") ? deps.maxTotalBytes : NFB_EXT_ACTION_MAX_TOTAL_BYTES;
-  var out = [];
-  var totalBytes = 0;
+  var grouped = {};
+  var folderCache = {};
   var unresolved = 0;
-  var skippedTooLarge = 0;
   for (var i = 0; i < list.length; i++) {
     var ref = list[i] || {};
     var name = typeof ref.name === "string" ? ref.name : "";
     var driveFileId = typeof ref.driveFileId === "string" ? ref.driveFileId : "";
     var folderName = typeof ref.folderName === "string" ? ref.folderName : "";
+    var question = typeof ref.question === "string" ? ref.question : "";
     var resolved = deps.resolve(name, driveFileId, folderName) || {};
     var fileId = typeof resolved.fileId === "string" ? resolved.fileId : "";
     if (!fileId) { unresolved++; continue; }
-    var data;
-    try {
-      data = deps.read(fileId) || {};
-    } catch (e) {
-      unresolved++;
-      continue;
+    // 親フォルダ解決は重いので fileId ごとにキャッシュ（同一質問の複数ファイルは同フォルダ）。
+    var folder = folderCache[fileId];
+    if (!folder) {
+      try {
+        folder = deps.resolveFolder(fileId) || {};
+      } catch (e) {
+        folder = {};
+      }
+      folderCache[fileId] = folder;
     }
-    var bytes = data.bytes || [];
-    var size = bytes.length || 0;
-    if (totalBytes + size > maxTotal) { skippedTooLarge++; continue; }
-    totalBytes += size;
-    out.push({
-      fieldId: typeof ref.fieldId === "string" ? ref.fieldId : "",
-      question: typeof ref.question === "string" ? ref.question : "",
-      name: name || (typeof data.name === "string" ? data.name : ""),
-      mimeType: typeof data.mimeType === "string" && data.mimeType ? data.mimeType : "application/octet-stream",
-      driveFileUrl: typeof resolved.fileUrl === "string" ? resolved.fileUrl : "",
-      size: size,
-      base64: deps.encodeBase64(bytes),
+    var group = grouped[question];
+    if (!group) {
+      group = {
+        fieldId: typeof ref.fieldId === "string" ? ref.fieldId : "",
+        folderName: folderName || (typeof folder.folderName === "string" ? folder.folderName : ""),
+        folderUrl: typeof folder.folderUrl === "string" ? folder.folderUrl : "",
+        files: [],
+      };
+      grouped[question] = group;
+    }
+    group.files.push({
+      name: name || "",
+      url: typeof resolved.fileUrl === "string" ? resolved.fileUrl : "",
     });
   }
-  payload.files = out;
-  var warnings = [];
-  if (unresolved > 0) warnings.push(unresolved + " 件のファイルを取得できませんでした（移動/削除済みの可能性）。");
-  if (skippedTooLarge > 0) {
-    payload.filesTruncated = true;
-    warnings.push(skippedTooLarge + " 件のファイルは合計サイズ上限を超えるため同梱しませんでした。");
+  payload.files = grouped;
+  if (unresolved > 0) {
+    payload.filesWarning = unresolved + " 件のファイルを取得できませんでした（移動/削除済みの可能性）。";
   }
-  if (warnings.length > 0) payload.filesWarning = warnings.join(" ");
   return payload;
 }
 
@@ -178,18 +179,20 @@ function ExtAction_send_(raw) {
       }
     }
 
-    // 「アップロードファイルも送信する」指定時は、宛先検証（プローブ）を通過した後にだけ
-    // Drive 実体を取得して base64 同梱する（機微データを未検証の宛先へ送らないため）。
+    // アップロードファイルの URL/名前は、宛先検証（プローブ）を通過した後にだけ Drive から解決して
+    // 同梱する（機微データを未検証の宛先へ送らないため）。実体（base64）は送らず URL のみ。
     var files = (raw && Object.prototype.toString.call(raw.files) === "[object Array]") ? raw.files : [];
     if (files.length > 0) {
       ExtAction_attachFiles_(payload, files, {
         resolve: Nfb_resolveUploadFileEntry_,
-        read: function(fileId) {
-          var blob = DriveApp.getFileById(fileId).getBlob();
-          return { bytes: blob.getBytes(), mimeType: blob.getContentType(), name: blob.getName() };
+        resolveFolder: function(fileId) {
+          var parents = DriveApp.getFileById(fileId).getParents();
+          if (parents.hasNext()) {
+            var folder = parents.next();
+            return { folderUrl: folder.getUrl(), folderName: folder.getName() };
+          }
+          return { folderUrl: "", folderName: "" };
         },
-        encodeBase64: function(bytes) { return Utilities.base64Encode(bytes); },
-        maxTotalBytes: NFB_EXT_ACTION_MAX_TOTAL_BYTES,
       });
     }
 

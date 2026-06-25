@@ -3,7 +3,7 @@ import EditorPage from "../editor/EditorPage.jsx";
 import PreviewPage from "../preview/PreviewPage.jsx";
 import SearchPreviewPanel from "./SearchPreviewPanel.jsx";
 import { DEFAULT_SETTINGS } from "../../core/storage.js";
-import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, validateLabelCharacters, validateNumberFieldConfigs, MAX_DEPTH } from "../../core/schema.js";
+import { normalizeSchemaIDs, validateMaxDepth, validateRequiredLabels, validateUniqueLabels, validateUniquePaths, validateLabelCharacters, validateNumberFieldConfigs, MAX_DEPTH } from "../../core/schema.js";
 import { detectCircularReferences, validateSubstitutionTemplates } from "../../core/computedFields.js";
 import { runSelfTests } from "../../core/selfTests.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
@@ -131,6 +131,15 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     const uniqueCheck = validateUniqueLabels(schema);
     if (!uniqueCheck.ok) {
       showAlert(`重複する項目名: ${uniqueCheck.dup}`);
+      return false;
+    }
+
+    const uniquePathCheck = validateUniquePaths(schema);
+    if (!uniquePathCheck.ok) {
+      const items = uniquePathCheck.duplicates
+        .map((entry, index) => `${index + 1}. ${entry.path}`)
+        .join("\n");
+      showAlert(`階層内で同じ質問項目名が重複しています。重複を解消してから保存してください:\n\n${items}`, "質問項目名の重複");
       return false;
     }
 

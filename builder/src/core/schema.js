@@ -10,6 +10,7 @@ import {
 } from "../utils/printTemplateAction.js";
 import { checkNumberFieldConfig, NUMBER_MODES } from "./validate.js";
 import { migrateLegacyExternalActionUrlTokens } from "../utils/externalActionUrl.js";
+import { joinFieldPath } from "../utils/pathCodec.js";
 export { countSchemaNodes };
 
 // 外部アクション質問カードの設定を正規化する。{ url, adminOnly } の形に揃える。
@@ -22,8 +23,6 @@ export const normalizeExternalAction = (raw) => {
   return {
     url: migrateLegacyExternalActionUrlTokens(typeof obj.url === "string" ? obj.url : ""),
     adminOnly: !!obj.adminOnly,
-    // ON のとき、このレコードのアップロードファイルの実体（base64）も送信する。
-    sendFiles: !!obj.sendFiles,
   };
 };
 
@@ -551,6 +550,28 @@ export const validateUniqueLabels = (fields) => {
     if (seen.has(label)) return { ok: false, dup: label };
     seen.add(label);
   }
+  return { ok: true };
+};
+
+// 階層を踏まえて完全に同一の質問項目パス（joinFieldPath(pathSegments)）を持つフィールドが
+// 無いことを検証する。validateUniqueLabels は最上位のみのチェックなので、ネストした兄弟の
+// 同名はこちらで弾く。質問パスは外部アクション payload.files のキーや列ヘッダーに使うため、
+// 一意でないとデータが上書き・衝突する。空ラベルは validateRequiredLabels が別途ブロックする
+// ので、ここでは非空ラベルのフィールドだけを対象にする。
+export const validateUniquePaths = (fields) => {
+  const seen = new Set();
+  const duplicates = [];
+  traverseSchema(fields, (field, context) => {
+    const label = (field?.label || "").trim();
+    if (!label) return;
+    const path = joinFieldPath(context.pathSegments || []);
+    if (seen.has(path)) {
+      duplicates.push({ path: context.pathSegments.join(" > "), label });
+      return;
+    }
+    seen.add(path);
+  });
+  if (duplicates.length > 0) return { ok: false, duplicates };
   return { ok: true };
 };
 
