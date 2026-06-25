@@ -22,10 +22,12 @@
 //     record.id    : string
 //     record.no    : string | number
 //     record.items : { question, value, type }[]  question = ヘッダー階層を "/" 連結した質問
-//     files        : { fieldId, question, name, mimeType, base64, driveFileUrl, size }[]
-//                    （送信側で「アップロードファイルも送信する」を ON にしたときだけ付与。
-//                     ファイル実体を base64 で同梱。base64 → Utilities.newBlob で復元できる）
-//     filesTruncated / filesWarning : 合計サイズ上限超過などで一部を同梱できなかったときの警告（任意）
+//     files        : 質問パスをキーにしたオブジェクト（アップロードファイルがあるレコードで常に付与）。
+//                    { [question]: { fieldId, folderName, folderUrl, files: [{ name, url }] } }
+//                    folderUrl = Drive フォルダ URL / url = Drive ファイル URL（実体ではなく URL のみ）。
+//                    ※ Excel 等の中身を読むには、対象 Drive ファイルへの閲覧権限を持つアカウントで
+//                      Drive.Files を使い Google スプレッドシートへ変換取り込みしてから読む。
+//     filesWarning : 移動/削除等で一部ファイルを解決できなかったときの警告（任意）
 //   管理者限定ボタンのときのみ付与:
 //     storage.spreadsheetId / spreadsheetUrl / sheetName / driveFileUrl / userEmail
 //
@@ -234,18 +236,23 @@ function handleRecordPayload_(data) {
     Logger.log("%s[%s] %s = %s", indent, it.type, it.question, it.value);
   }
 
-  // 「アップロードファイルも送信する」ON のときだけ付く files[] (実体を base64 で同梱)。
-  var files = Array.isArray(data.files) ? data.files : [];
-  if (files.length) {
-    Logger.log("--- files (%s 件) ---", files.length);
-    for (var fi = 0; fi < files.length; fi++) {
-      var f = files[fi] || {};
-      var b64len = typeof f.base64 === "string" ? f.base64.length : 0;
-      Logger.log("file[%s] %s (%s, %s bytes, base64 %s 文字)", fi, f.name, f.mimeType, f.size, b64len);
-      // TODO: 受信側で保存したい場合は base64 を blob へ復元してから保存する。
-      //   var bytes = Utilities.base64Decode(f.base64);
-      //   var blob = Utilities.newBlob(bytes, f.mimeType, f.name);
-      //   DriveApp.createFile(blob);  // ← 受信側の保存先フォルダに合わせて実装する
+  // アップロードファイルがあるレコードで付く files（質問パスをキーにしたオブジェクト）。
+  // 実体ではなく Drive のフォルダ/ファイル URL のみが届く。
+  var files = (data && data.files && typeof data.files === "object") ? data.files : {};
+  var fileQuestions = Object.keys(files);
+  if (fileQuestions.length) {
+    Logger.log("--- files (%s 質問) ---", fileQuestions.length);
+    for (var qi = 0; qi < fileQuestions.length; qi++) {
+      var q = fileQuestions[qi];
+      var group = files[q] || {};
+      var groupFiles = Array.isArray(group.files) ? group.files : [];
+      Logger.log("[%s] folder=%s (%s) / %s 件", q, group.folderName, group.folderUrl, groupFiles.length);
+      for (var gi = 0; gi < groupFiles.length; gi++) {
+        var gf = groupFiles[gi] || {};
+        Logger.log("  - %s : %s", gf.name, gf.url);
+      }
+      // TODO: Excel 等の中身を読むなら、gf.url（または fileId）の Drive ファイルを
+      //   Drive.Files で Google スプレッドシートへ変換取り込みしてから読む（要・閲覧権限）。
     }
   }
   if (data.filesWarning) Logger.log("filesWarning = %s", data.filesWarning);
@@ -283,17 +290,29 @@ function handleRecordPayload_(data) {
     }
     html += '</tbody></table></div>';
   }
-  if (files.length || data.filesWarning) {
-    html += '<h2>添付ファイル (base64 同梱)</h2>';
+  if (fileQuestions.length || data.filesWarning) {
+    html += '<h2>添付ファイル (Drive URL)</h2>';
     if (data.filesWarning) html += '<p class="muted">' + escapeHtml_(String(data.filesWarning)) + '</p>';
-    if (files.length) {
+    if (fileQuestions.length) {
       html += '<div class="tableWrap"><table><thead><tr>' +
-        '<th>ファイル名</th><th>mimeType</th><th>サイズ(bytes)</th></tr></thead><tbody>';
-      for (var fj = 0; fj < files.length; fj++) {
-        var ff = files[fj] || {};
-        html += '<tr><td>' + escapeHtml_(String(ff.name || "")) + '</td>' +
-          '<td>' + escapeHtml_(String(ff.mimeType || "")) + '</td>' +
-          '<td>' + escapeHtml_(String(ff.size != null ? ff.size : "")) + '</td></tr>';
+        '<th>質問</th><th>フォルダ</th><th>ファイル名</th><th>ファイル URL</th></tr></thead><tbody>';
+      for (var qj = 0; qj < fileQuestions.length; qj++) {
+        var qkey = fileQuestions[qj];
+        var grp = files[qkey] || {};
+        var grpFiles = Array.isArray(grp.files) ? grp.files : [];
+        var folderCell = grp.folderUrl
+          ? '<a href="' + escapeHtml_(String(grp.folderUrl)) + '" target="_blank">' + escapeHtml_(String(grp.folderName || "フォルダ")) + '</a>'
+          : escapeHtml_(String(grp.folderName || ""));
+        for (var gj = 0; gj < grpFiles.length; gj++) {
+          var gff = grpFiles[gj] || {};
+          var urlCell = gff.url
+            ? '<a href="' + escapeHtml_(String(gff.url)) + '" target="_blank">' + escapeHtml_(String(gff.url)) + '</a>'
+            : '';
+          html += '<tr><td>' + escapeHtml_(String(qkey)) + '</td>' +
+            '<td>' + folderCell + '</td>' +
+            '<td>' + escapeHtml_(String(gff.name || "")) + '</td>' +
+            '<td>' + urlCell + '</td></tr>';
+        }
       }
       html += '</tbody></table></div>';
     }

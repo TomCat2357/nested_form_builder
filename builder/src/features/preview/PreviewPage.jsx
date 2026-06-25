@@ -713,11 +713,9 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       storageFields: { spreadsheetId, sheetName, driveFileUrl, userEmail: currentUserEmail },
       gate,
     });
-    // 「アップロードファイルも送信する」が ON のときだけ、このレコードの fileUpload 参照を
-    // 渡す。実体の取得・base64 化は Drive 権限を持つ本体 GAS（ExtAction_send_）が行う。
-    const files = action.sendFiles
-      ? collectExternalActionFiles(schema, { responses, folderNamesByField })
-      : [];
+    // このレコードの fileUpload 参照を常に渡す。フォルダ/ファイルの URL 解決と質問項目ごとの
+    // 構造化は Drive 権限を持つ本体 GAS（ExtAction_send_）が行う（実体ではなく URL のみ送る）。
+    const files = collectExternalActionFiles(schema, { responses, folderNamesByField });
     try {
       const res = await sendExternalAction({ url: resolvedUrl, payload, files });
       const result = interpretExternalActionResponse(res);

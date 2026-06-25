@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { normalizeSchemaIDs, normalizeExternalAction, findFirstFileUploadField, supportsChildren, supportsSupplementaryComment, validateLabelCharacters } from "./schema.js";
+import { normalizeSchemaIDs, normalizeExternalAction, findFirstFileUploadField, supportsChildren, supportsSupplementaryComment, validateLabelCharacters, validateUniquePaths } from "./schema.js";
 
 test("normalizeSchemaIDs: time の includeSeconds を timePrecision へ移行する", () => {
   const schema = normalizeSchemaIDs([
@@ -228,7 +228,6 @@ test("normalizeSchemaIDs は externalAction の externalAction を正規化し r
   assert.deepEqual(schema[0].externalAction, {
     url: "https://script.google.com/macros/x/exec",
     adminOnly: true,
-    sendFiles: false,
   });
   assert.equal("required" in schema[0], false);
 });
@@ -241,7 +240,6 @@ test("normalizeExternalAction は旧・単括弧固定トークンを alasql 予
   assert.deepEqual(out, {
     url: "https://x.com/?id={{`_id`}}&form={{`_form_id`}}&ss={{`_spreadsheet_id`}}",
     adminOnly: true,
-    sendFiles: false,
   });
 });
 
@@ -502,6 +500,55 @@ test("validateLabelCharacters: 空ラベルは無視", () => {
   ];
   const result = validateLabelCharacters(fields);
   assert.equal(result.ok, true);
+});
+
+test("validateUniquePaths: 全パスが一意なら ok", () => {
+  const fields = [
+    { type: "text", label: "氏名" },
+    {
+      type: "group",
+      label: "親",
+      children: [
+        { type: "text", label: "子1" },
+        { type: "text", label: "子2" },
+      ],
+    },
+  ];
+  assert.equal(validateUniquePaths(fields).ok, true);
+});
+
+test("validateUniquePaths: ネストした兄弟の同名（パス重複）を reject", () => {
+  const fields = [
+    {
+      type: "group",
+      label: "親",
+      children: [
+        { type: "fileUpload", label: "添付" },
+        { type: "fileUpload", label: "添付" }, // 親/添付 が重複
+      ],
+    },
+  ];
+  const result = validateUniquePaths(fields);
+  assert.equal(result.ok, false);
+  assert.equal(result.duplicates.length, 1);
+  assert.equal(result.duplicates[0].label, "添付");
+  assert.ok(result.duplicates[0].path.includes("添付"));
+});
+
+test("validateUniquePaths: 親が違えば同じラベルでも別パスとして許可", () => {
+  const fields = [
+    { type: "group", label: "親A", children: [{ type: "text", label: "備考" }] },
+    { type: "group", label: "親B", children: [{ type: "text", label: "備考" }] },
+  ];
+  assert.equal(validateUniquePaths(fields).ok, true);
+});
+
+test("validateUniquePaths: 空ラベルは対象外（required 検証に委ねる）", () => {
+  const fields = [
+    { type: "text", label: "" },
+    { type: "text", label: "  " },
+  ];
+  assert.equal(validateUniquePaths(fields).ok, true);
 });
 
 test("normalizeSchemaIDs: formLink の includeChildData を永続化（既定 false）", () => {

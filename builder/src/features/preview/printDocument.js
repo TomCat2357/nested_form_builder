@@ -289,8 +289,8 @@ export const collectFileUploadMeta = (fields, options = {}) => {
   return meta;
 };
 
-// 外部アクション「アップロードファイルも送信する」用に、fileUpload 項目のファイル参照を
-// 平坦化して返す。各エントリは GAS（ExtAction_send_）が Drive から実体を取得・base64 化する
+// 外部アクション送信用に、fileUpload 項目のファイル参照を平坦化して返す。各エントリは
+// GAS（ExtAction_send_）が Drive からフォルダ/ファイルの URL を解決し、質問項目ごとに構造化する
 // ための最小情報を持つ（物理優先 driveFileId / 論理フォールバック name+folderName）。
 //   戻り値: [{ fieldId, question(パス), name, driveFileId, folderName }]
 export const collectExternalActionFiles = (fields, options = {}) => {
