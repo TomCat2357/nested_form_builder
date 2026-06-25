@@ -63,6 +63,8 @@ const ACTION_DEFINITIONS_ = {
   "admin_email_get": { handler: () => ({ ok: true, adminEmail: GetAdminEmail_() }), adminOnly: true },
   "admin_email_set": { handler: (ctx) => SetAdminEmail_(ctx.raw?.adminEmail ?? ""), adminOnly: true },
   "admin_ext_action_secret_get": { handler: () => ({ ok: true, extActionSecret: GetExtActionSecret_() }), adminOnly: true },
+  // バックエンド（Bundle.gs）のデプロイ時刻。deploy.ps1 が焼き込む。設定画面の「システム情報」表示用（ゲートなし）。
+  "deploy_info_get": { handler: () => ({ ok: true, backendDeployTime: Nfb_getBackendDeployTime_() }) },
   "admin_ext_action_secret_set": { handler: (ctx) => SetExtActionSecret_(ctx.raw?.extActionSecret ?? ""), adminOnly: true },
   // 標準フォルダ構成（システムごとコピー / マッピングのエクスポート・インポート）
   // 注: 同期走査（std_folders_rebuild_map）と構成レポート（std_folders_link_report）は廃止。
@@ -232,6 +234,18 @@ function executeAction_(action, rawPayload, options = {}) {
   } catch (err) {
     return ExecuteActionInternalError_(err, source);
   }
+}
+
+// バックエンド（Bundle.gs）のデプロイ時刻を返す。deploy.ps1 が NFB_DEPLOY_TIME_BAKED へ焼き込む。
+// 未置換（手動 bundle 等でプレースホルダのまま）の場合は空文字へ正規化する。
+function Nfb_getBackendDeployTime_() {
+  var baked = String(NFB_DEPLOY_TIME_BAKED || "").trim();
+  // 未置換ならプレースホルダ文字列のまま残るので空扱いにする。
+  // 注: deploy.ps1 は焼き込みプレースホルダを全置換するため、この比較用リテラルを
+  //     連結で組み立てて「置換対象に巻き込まれない」ようにする（直書きすると自分も置換され誤判定する）。
+  var placeholder = "__NFB_" + "DEPLOY_TIME__";
+  if (!baked || baked === placeholder) return "";
+  return baked;
 }
 
 // デプロイがテストモード(/dev)かを判定する。

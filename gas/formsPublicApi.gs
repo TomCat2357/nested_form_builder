@@ -258,3 +258,5 @@ function nfbMoveItems(payload)             { return Forms_runScriptAction_("form
 function nfbRenameFolder(payload)          { return Forms_runScriptAction_("forms_folder_rename",        payload || {}); }
 function nfbDeleteFolder(path)             { return Forms_runScriptAction_("forms_folder_delete",        { path: path }); }
 function nfbBackfillPhysicalFolders()      { return Forms_runScriptAction_("forms_folders_backfill_physical", {}); }
+// バックエンド（Bundle.gs）のデプロイ時刻を取得する（設定画面の「システム情報」用）。
+function nfbGetDeployInfo()                 { return Forms_runScriptAction_("deploy_info_get",            {}); }

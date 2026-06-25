@@ -305,6 +305,9 @@ export const importThemeFromDrive = async (url) => {
   const r = await fetchGasApi("nfbImportThemeFromDrive", url, "Theme import failed");
   return { css: r.css || "", fileName: r.fileName || "", fileUrl: r.fileUrl || url };
 };
+// バックエンド（Bundle.gs）のデプロイ時刻を取得する。フロント（index.html）の時刻は
+// <meta name="deploy-time"> から読むため、これはバックエンド分のみ。設定画面の「システム情報」用。
+export const getDeployInfo = createGasEndpoint({ fnName: "nfbGetDeployInfo", validate: () => ({}), mapResult: (r) => ({ backendDeployTime: r.backendDeployTime || "" }), defaultError: "Get deploy info failed" });
 export const getAdminKey = createGasEndpoint({ fnName: "nfbGetAdminKey", validate: () => ({}), mapResult: (r) => r.adminKey || "", defaultError: "Get admin key failed" });
 export const setAdminKey = createGasEndpoint({ fnName: "nfbSetAdminKey", mapResult: (r) => r.adminKey || "", defaultError: "Set admin key failed" });
 export const getAdminEmail = createGasEndpoint({ fnName: "nfbGetAdminEmail", validate: () => ({}), mapResult: (r) => r.adminEmail || "", defaultError: "Get admin email failed" });

@@ -171,6 +171,18 @@ if ($bundleContent.Contains($deployModePlaceholder)) {
     Write-Host "⚠️ デプロイ種別プレースホルダーが見つかりません。heuristic→prod で動作します。" -ForegroundColor Yellow
 }
 
+# デプロイ時刻（JST）。Bundle.gs（バックエンド）と Index.html（フロント）の両方に同じ値を焼き込む。
+$DeployTimestamp = (Get-Date).ToUniversalTime().AddHours(9).ToString("yyyy-MM-dd HH:mm:ss") + " JST"
+
+# デプロイ時刻プレースホルダーを置換（バックエンド = Bundle.gs）
+$deployTimePlaceholder = "__NFB_DEPLOY_TIME__"
+if ($bundleContent.Contains($deployTimePlaceholder)) {
+    $bundleContent = $bundleContent -replace [Regex]::Escape($deployTimePlaceholder), $DeployTimestamp
+    Write-Host "🕒 バックエンドのデプロイ時刻を焼き込み: $DeployTimestamp" -ForegroundColor Green
+} else {
+    Write-Host "⚠️ デプロイ時刻プレースホルダーが見つかりません。バックエンドのデプロイ時刻は空表示になります。" -ForegroundColor Yellow
+}
+
 # 保存
 Set-FileContentWithRetry -Path $BundleFile -Content $bundleContent
 Write-Host "🗂 プロパティ保存先: $PropertyStore" -ForegroundColor Green
@@ -185,10 +197,7 @@ if (-not $IndexHtmlPath) {
     exit 1
 }
 
-# デプロイ時刻を取得（JST）
-$DeployTimestamp = (Get-Date).ToUniversalTime().AddHours(9).ToString("yyyy-MM-dd HH:mm:ss") + " JST"
-
-# <base target="_top"> タグとデプロイ時刻を追加
+# <base target="_top"> タグとデプロイ時刻を追加（$DeployTimestamp は Bundle.gs と共通の値を使う）
 $fullIndexHtmlPath = (Resolve-Path $IndexHtmlPath).Path
 $indexHtml = [System.IO.File]::ReadAllText($fullIndexHtmlPath, [System.Text.Encoding]::UTF8)
 

@@ -50,6 +50,10 @@ var NFB_DEPLOY_MODE_KEY = "NFB_DEPLOY_MODE";
 // deploy.ps1 がビルド時に "test"/"prod" へ置換する焼き込みデプロイ種別。
 // 未置換（手動 bundle 等）の場合はプレースホルダのまま残り、heuristic→prod にフォールバックする。
 var NFB_DEPLOY_MODE_BAKED = "__NFB_DEPLOY_MODE__";
+// deploy.ps1 が Bundle.gs（バックエンド）をデプロイした時刻を焼き込む（"yyyy-MM-dd HH:mm:ss JST"）。
+// index.html 側の <meta name="deploy-time"> はフロントの、こちらはバックエンドのデプロイ時刻。
+// 未置換（手動 bundle 等）の場合はプレースホルダのまま残るので、API 側で空文字へ正規化する。
+var NFB_DEPLOY_TIME_BAKED = "__NFB_DEPLOY_TIME__";
 
 // スプレッドシート・ヘッダー関連
 var NFB_HEADER_DEPTH = 11;
