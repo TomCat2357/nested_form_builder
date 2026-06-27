@@ -16,8 +16,9 @@ import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
 import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
 import { omitThemeSetting, normalizeExternalActions, applySpreadsheetExclusiveSetting, migrateStandardPrintTemplateId } from "../../utils/settings.js";
-import { loadSpreadsheetOptions } from "../../features/editor/useSpreadsheetOptions.js";
+import { loadSpreadsheetOptions, invalidateSpreadsheetOptions } from "../../features/editor/useSpreadsheetOptions.js";
 import { isFormSpreadsheetLinked, applyUnlinkSpreadsheetForRecreate } from "./spreadsheetLinkState.js";
+import { isLocalId } from "../../core/ids.js";
 import { SettingsGroupFields } from "../../features/settings/SettingsField.jsx";
 import ExternalActionsEditor from "../../features/settings/ExternalActionsEditor.jsx";
 import { DEFAULT_THEME } from "../../app/theme/theme.js";
@@ -90,6 +91,8 @@ export default function AdminFormEditorPage() {
       // 新規: マウント時 1 回だけ空シード（サーバ取得なし）。
       if (loadedFormIdRef.current === "__new__") return;
       loadedFormIdRef.current = "__new__";
+      // 修正画面を開いた初回に 1 回だけ候補を取り直す（保存後に増えた新規シートを反映）。
+      invalidateSpreadsheetOptions();
       setCachedForm(null);
       setInitialSchema([]);
       setInitialSettings({});
@@ -108,11 +111,19 @@ export default function AdminFormEditorPage() {
     // formId ごとに 1 回だけロードする（背景リフレッシュで再ロードして編集を潰さないため）。
     if (loadedFormIdRef.current === formId) return;
     loadedFormIdRef.current = formId;
+    // 修正画面を開いた初回に 1 回だけ候補を取り直す（保存後に増えた新規シートを反映）。
+    invalidateSpreadsheetOptions();
     setLoading(true);
     try {
-      // 開くたびにサーバ最新(.json)から取得する（キャッシュは使わない）。オフライン等で失敗した
-      // 場合は dataStore.getForm がキャッシュへフォールバックする。
-      const fresh = await dataStore.getForm(formId, { forceRefresh: true });
+      // 通常は開くたびにサーバ最新(.json)から取得する（キャッシュは使わない）。ただし
+      // 未アップロード（pendingUpload）／local_ 仮 ID のフォームは、サーバにまだ無い・もしくは
+      // 古い版しか無いため forceRefresh を避けてキャッシュ（＝最新のローカル編集）を使う。
+      // forceRefresh すると nfbGetForm が "Form not found" を返してアップロード中の自分の
+      // 編集が開けない／無駄な往復になる。送信完了で pendingUpload が false に戻れば次回から
+      // 従来どおりサーバ最新を取得する。オフライン等の失敗時は getForm がキャッシュへフォールバック。
+      const liveForm = (forms || []).find((f) => f && f.id === formId) || null;
+      const pendingUpload = isLocalId(formId) || !!liveForm?.pendingUpload;
+      const fresh = await dataStore.getForm(formId, { forceRefresh: !pendingUpload });
       if (isCancelled()) return;
       if (!fresh) {
         setLoading(false);

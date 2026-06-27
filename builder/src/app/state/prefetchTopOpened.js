@@ -16,8 +16,11 @@
 
 import { ensureArray } from "../../utils/arrays.js";
 import { PREFETCH_TOP_N } from "../../core/constants.js";
+import { isLocalId } from "../../core/ids.js";
 import { getTopOpened } from "./openHistoryStore.js";
 import { dataStore } from "./dataStore.js";
+import { getFormsFromCache } from "./formsCache.js";
+import { formHasSpreadsheet } from "./dataStoreHelpers.js";
 import { getRecordsFromCache } from "./recordsMemoryStore.js";
 import { evaluateCacheForRecords } from "./cachePolicy.js";
 import { dashboardCache, questionCache } from "../../features/analytics/analyticsCache.js";
@@ -25,21 +28,32 @@ import { analyticsGasClient } from "../../features/analytics/analyticsGasClient.
 
 /**
  * 1 フォームのレコードを温める。鮮度内ならスキップ。失敗は握り潰す。
+ *
+ * 先読みは「確実に温められるフォーム」だけを対象にする。次は静かに除外する（無駄な GAS 往復と
+ * console エラーを避ける。本来開いたときに通常ロードされるので機能上の支障はない）:
+ *   - local_ 未アップロードフォーム（サーバに無い → nfbGetForm が "Form not found"）
+ *   - 一覧キャッシュに無いフォーム（コピー直後・削除済みが履歴に残った等）
+ *   - スプレッドシート未構成フォーム（同期しても "スプレッドシートID 未設定" になる）
  * @param {string} formId
  * @param {Set<string>} seen 既処理 formId（重複呼び出し防止）
+ * @param {Map<string, object>} formsById 一覧キャッシュの formId → フォーム定義
  */
-async function warmFormRecords(formId, seen) {
+async function warmFormRecords(formId, seen, formsById) {
   if (!formId || seen.has(formId)) return;
   seen.add(formId);
+  if (isLocalId(formId)) return;
+  const form = formsById ? formsById.get(formId) : null;
+  if (!form || !formHasSpreadsheet(form)) return;
   try {
     const cache = await getRecordsFromCache(formId);
     const hasData = (cache?.entries?.length || 0) > 0;
     const decision = evaluateCacheForRecords({ lastSyncedAt: cache?.lastSyncedAt || null, hasData });
     // 既にキャッシュ鮮度内なら何もしない（先行取得は不要）。
     if (decision.isFresh) return;
-    await dataStore.listEntries(formId);
+    // quiet=true でサーバ同期の失敗ログ（console.error）を抑える（先読みの失敗は想定内）。
+    await dataStore.listEntries(formId, { quiet: true });
   } catch (err) {
-    // 未設定フォーム（spreadsheet 未構成）や local_ 未アップロード等は静かにスキップ。
+    // ここに来るのは想定外の一過性失敗（オフライン等）。先読みは best-effort なので静かに warn のみ。
     console.warn("[prefetchTopOpened] warm form skipped", formId, err?.message || err);
   }
 }
@@ -95,12 +109,15 @@ export async function prefetchTopOpened({ topN = PREFETCH_TOP_N } = {}) {
     if (topForms.length === 0 && topDashboards.length === 0) return;
 
     // 定義は IndexedDB キャッシュから一括取得して Map 化（カード/フォーム参照解決用）。
-    const [dashAll, questionAll] = await Promise.all([
+    // フォーム一覧キャッシュも取り込み、温める前に「サーバに在る × スプレッドシート構成済み」かを判定する。
+    const [dashAll, questionAll, formsCache] = await Promise.all([
       dashboardCache.getAll().catch(() => []),
       questionCache.getAll().catch(() => []),
+      getFormsFromCache().catch(() => ({ forms: [] })),
     ]);
     const dashMap = new Map(dashAll.map((d) => [d.id, d]));
     const questionMap = new Map(questionAll.map((q) => [q.id, q]));
+    const formsById = new Map((formsCache?.forms || []).map((f) => [f.id, f]));
 
     // 温める対象フォーム id を収集（フォーム自身 ＋ ダッシュボードのソースフォーム）。
     const targetFormIds = [];
@@ -116,7 +133,7 @@ export async function prefetchTopOpened({ topN = PREFETCH_TOP_N } = {}) {
     // dedup しつつ逐次に温める（GAS 負荷を抑える）。
     const seen = new Set();
     for (const formId of targetFormIds) {
-      await warmFormRecords(formId, seen);
+      await warmFormRecords(formId, seen, formsById);
     }
   } catch (err) {
     console.warn("[prefetchTopOpened] failed", err);

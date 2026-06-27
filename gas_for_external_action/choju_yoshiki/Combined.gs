@@ -9,7 +9,7 @@
 // 起動する。本体 GAS がサーバ間リレーでこの doPost を叩き、取り込み画面の URL
 // （openUrl）を返してもらって新しいタブで開く。取り込み画面で様式 xlsx を選ぶと
 // 解析結果を「分かりやすい表＋チェックボックス」で確認でき、選んだ分だけ親フォーム
-// （証明書）と子フォーム（従事者名簿）のデータ保存用スプレッドシートへ直接書き込む。
+// （申請書）と子フォーム（従事者名簿）のデータ保存用スプレッドシートへ直接書き込む。
 // あわせて取り込んだ Excel を親レコードのアップロード欄へ添付する。
 //
 // 設計の核（様式 申請書 L6/L7/L8 の凡例）:
@@ -769,7 +769,7 @@ function Cho_readSheetValues_(ss) {
   return out;
 }
 
-// 取り込み先（親=証明書 / 子=従事者名簿）のスプレッドシートへのリンクブロック。取り込み画面の冒頭に出し、
+// 取り込み先（親=申請書 / 子=従事者名簿）のスプレッドシートへのリンクブロック。取り込み画面の冒頭に出し、
 // 書き込み先を取り込み前に確認できるようにする。id が空（リレー未受信・未登録）なら「未解決」を表示する。
 function Cho_buildSheetLinksHtml_(targets) {
   function row(label, id) {
@@ -780,7 +780,7 @@ function Cho_buildSheetLinksHtml_(targets) {
     return '<div><b>' + escapeHtml_(label) + '</b>：<span class="warn">未解決（検索画面の管理者ボタンから開くと自動設定されます）</span></div>';
   }
   return '<div class="sec" id="sheetlinks"><div class="info">書き込み先スプレッドシート</div>' +
-    row("親フォーム（証明書）", targets && targets.parentSpreadsheetId) +
+    row("親フォーム（申請書）", targets && targets.parentSpreadsheetId) +
     row("子フォーム（従事者名簿）", targets && targets.childSpreadsheetId) +
     '</div>';
 }
@@ -816,7 +816,7 @@ table.kv td{padding:2px 0;word-break:break-all;}
 </style></head><body><div class="card">
 <h1>鳥獣保護管理法様式の取り込み（Excel → スプレッドシート）</h1>
 <p>記入済みの様式（xlsx）を選んで「取り込み内容を確認」を押すと、取り込む内容を表で確認できます。
-取り込みたい申請・従事者にチェックを入れて「選択分をスプレッドシートへ取り込む」を押すと、親フォーム（証明書）と
+取り込みたい申請・従事者にチェックを入れて「選択分をスプレッドシートへ取り込む」を押すと、親フォーム（申請書）と
 子フォーム（従事者名簿）のスプレッドシートへ直接書き込み、Excel を親レコードのアップロード欄へ添付します。</p>
 ${linksHtml}
 <label class="blk">様式ファイル (.xlsx)</label><input type="file" id="file" accept=".xlsx">

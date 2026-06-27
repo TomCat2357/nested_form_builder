@@ -79,7 +79,9 @@ export const callScriptRun = (functionName, payload) =>
   });
 
 // DRY化のための共通APIラッパー
-const fetchGasApi = async (functionName, payload, errorMessage) => {
+// quiet=true の呼び出し（起動時の先行プリフェッチ等、失敗が想定内で呼び出し側が握り潰すもの）は
+// console.error を出さない。エラー自体は throw するので呼び出し側のハンドリングは変わらない。
+const fetchGasApi = async (functionName, payload, errorMessage, { quiet = false } = {}) => {
   try {
     const result = await callScriptRun(functionName, payload);
     if (!result || result.ok === false) {
@@ -90,7 +92,7 @@ const fetchGasApi = async (functionName, payload, errorMessage) => {
     }
     return result;
   } catch (error) {
-    console.error(`[gasClient] ${functionName} failed`, error);
+    if (!quiet) console.error(`[gasClient] ${functionName} failed`, error);
     throw error;
   }
 };
@@ -461,8 +463,8 @@ export const executeBatchGoogleDocOutput = (payload) =>
 export const runPurgeCheck = ({ formId } = {}) =>
   fetchGasApi("nfbRunPurgeCheck", { formId }, "期限切れレコードの整理に失敗しました");
 
-export const syncRecordsProxy = async (payload) => {
+export const syncRecordsProxy = async (payload, { quiet = false } = {}) => {
   if (!payload?.formId) throw new Error("formId is required");
-  const result = await fetchGasApi("syncRecordsProxy", withUrlPid({ ...payload }), "Sync failed");
+  const result = await fetchGasApi("syncRecordsProxy", withUrlPid({ ...payload }), "Sync failed", { quiet });
   return result;
 };

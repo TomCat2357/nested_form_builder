@@ -6,11 +6,23 @@
 import fs from "node:fs";
 import vm from "node:vm";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const code = fs.readFileSync(path.join(dir, "..", "Combined.gs"), "utf8");
-const sandbox = { module: { exports: {} }, console, Date, Math, JSON, RegExp, Number, String, Array, Object, isNaN, isFinite };
+// GAS の Utilities.computeHmacSha256Signature は符号付きバイト（Byte[]: -128..127）を返す。
+// 誤送信防止プローブの署名互換（本体 ExtAction の verifier と同形式）を node でも検証できるよう、
+// node:crypto の HMAC を符号付きバイト配列で返すスタブを供給する。
+const Utilities = {
+  computeHmacSha256Signature(message, key) {
+    const mac = crypto.createHmac("sha256", Buffer.from(String(key == null ? "" : key), "utf8"))
+      .update(Buffer.from(String(message == null ? "" : message), "utf8"))
+      .digest();
+    return Array.from(mac).map((b) => (b > 127 ? b - 256 : b));
+  },
+};
+const sandbox = { module: { exports: {} }, console, Date, Math, JSON, RegExp, Number, String, Array, Object, isNaN, isFinite, Utilities };
 vm.runInNewContext(code, sandbox);
 const C = sandbox.module.exports;
 const fix = (name) => fs.readFileSync(path.join(dir, "fixtures", name), "utf8");
@@ -235,6 +247,25 @@ ok("28 dedupKey 内容一致で同一", k1 === k2, `${k1} vs ${k2}`);
 ok("28 dedupKey 別内容で別", k1 !== k3);
 // dedupKey は preview に乗る（ブラウザ finish() がファイル横断重複排除に使う）
 ok("28 preview に dedupKey", typeof C.Kuj_buildUploadRecords_(dupParsed.candidates).preview[0].dedupKey === "string" && C.Kuj_buildUploadRecords_(dupParsed.candidates).preview[0].dedupKey.length > 0);
+
+// ===== 誤送信防止プローブ署名（外部アクションリレー doPost の互換性） =====
+// 本体 ExtAction_verifyProbeResponse_ は signature === ExtAction_hmacHex_(nonce, secret) のときだけ通す。
+// Kuj_hmacHex_ が同じ符号無し 16 進を返すこと（符号付きバイトの (b+256)%256 変換）を検証する。
+
+// 29. HMAC hex が node:crypto の HMAC-SHA256 と一致（符号変換の正しさ＝本体 verifier との互換）
+const expectHmac = (msg, key) =>
+  crypto.createHmac("sha256", Buffer.from(key, "utf8")).update(Buffer.from(msg, "utf8")).digest("hex");
+eq("29 hmacHex 一致(secret有)", C.Kuj_hmacHex_("nonce-123", "shared-secret"), expectHmac("nonce-123", "shared-secret"));
+eq("29 hmacHex 一致(secret空)", C.Kuj_hmacHex_("nonce-123", ""), expectHmac("nonce-123", ""));
+ok("29 hmacHex 64桁hex", /^[0-9a-f]{64}$/.test(C.Kuj_hmacHex_("x", "y")));
+
+// 30. プローブ応答の形（本体 verifier が要求する ok/nfbExternalAction/signature）。
+//     node では PropertiesService 不在 → シークレットは "" 扱いになる。
+const probe = C.Kuj_buildProbeResponse_("the-nonce");
+eq("30 probe ok", probe.ok, true);
+eq("30 probe nfbExternalAction", probe.nfbExternalAction, true);
+eq("30 probe signature=hmac(nonce, '')", probe.signature, expectHmac("the-nonce", ""));
+eq("30 probe nonce null 安全", C.Kuj_buildProbeResponse_(null).signature, expectHmac("", ""));
 
 console.log(`\n==== ${pass} PASS / ${fail} FAIL ====`);
 process.exit(fail ? 1 : 0);

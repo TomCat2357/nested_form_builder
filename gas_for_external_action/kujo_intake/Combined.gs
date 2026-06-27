@@ -21,10 +21,71 @@
 // 規約: 接頭辞 Kuj_ / 定数 KUJ_ / 内部ヘルパ末尾 _ / var + function（本体 gas/ に合わせる）。
 // =============================================================================
 
-// 軽量スタブ: 万一フォームの外部アクション欄に貼られても fail-safe（このアプリは parse 専用）。
+// フォームの外部アクション（検索一覧の「末端問い合わせ csv 取り込み」ボタン）から、本体 GAS の
+// サーバ間リレーで叩かれる。本アプリは Sheets へ直接書かない（CSV/PDF を JSON 化して管理者 >
+// Playground へ貼る運用）ので、リレーには「取り込み（パース）ページの URL」を openUrl で返すだけにする。
+// 本体フロント（interpretExternalActionResponse / SearchSidebar.buttons）がこの JSON を解釈し、
+// openUrl を新しいタブで開く＝ボタン押下で CSV / PDF 取り込み画面が開く導線（choju と同方式）。
+//   - nfbProbe=1: 本体にシークレット（KUJ_EXT_ACTION_SECRET = 本体 NFB_EXT_ACTION_SECRET）が
+//     設定されているとき、本送信の前に誤送信防止プローブが来る。共有シークレットで HMAC(nonce) に
+//     署名して返すと、本体が正規受信アプリと認める。シークレット未設定なら本体はプローブを送らない。
+//   - それ以外: 取り込みページ（?page=parse）の URL を openUrl で返す。検索結果 payload は使わない。
 function doPost(e) {
-  var msg = "このウェブアプリは PDF リンクのパースによる苦情振り分け専用です。フォームの外部アクションからは利用しません。?page=parse を開いてください。";
-  return ContentService.createTextOutput(JSON.stringify({ ok: false, error: msg })).setMimeType(ContentService.MimeType.JSON);
+  try {
+    var params = (e && e.parameter) || {};
+    if (String(params.nfbProbe || "") === "1") {
+      return Kuj_json_(Kuj_buildProbeResponse_(params.nonce));
+    }
+    var openUrl = Kuj_buildParseUrl_();
+    return Kuj_json_({
+      ok: true,
+      nfbExternalAction: true,
+      title: "苦情・通報の取り込み",
+      message: openUrl
+        ? "取り込みページを新しいタブで開きます。CSV ファイル（または PDF リンク）を選んで［パース］してください。"
+        : "取り込みページの URL を取得できませんでした。?page=parse を直接開いてください。",
+      openUrl: openUrl
+    });
+  } catch (err) {
+    return Kuj_json_({ ok: false, error: String(err && err.message ? err.message : err) });
+  }
+}
+
+// JSON 応答（プローブ署名・openUrl いずれも JSON で返す）。
+function Kuj_json_(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj || { ok: false })).setMimeType(ContentService.MimeType.JSON);
+}
+
+// 取り込み（パース）ページの URL（?page=parse）。デプロイ URL は ScriptApp から解決する。
+function Kuj_buildParseUrl_() {
+  var base = "";
+  try { base = ScriptApp.getService().getUrl() || ""; } catch (e) { base = ""; }
+  if (!base) return "";
+  return base + (base.indexOf("?") >= 0 ? "&" : "?") + "page=parse";
+}
+
+// HMAC-SHA256(message, secret) を 16 進文字列で返す（本体 ExtAction_hmacHex_ と同一実装）。
+// GAS の computeHmacSha256Signature は符号付きバイト（-128..127）を返すので (b+256)%256 で符号無しに直す。
+function Kuj_hmacHex_(message, secret) {
+  var raw = Utilities.computeHmacSha256Signature(String(message == null ? "" : message), String(secret == null ? "" : secret));
+  var hex = "";
+  for (var i = 0; i < raw.length; i++) {
+    var b = (raw[i] + 256) % 256;
+    var s = b.toString(16);
+    if (s.length === 1) s = "0" + s;
+    hex += s;
+  }
+  return hex;
+}
+
+// 誤送信防止プローブへの応答。本体 ExtAction_verifyProbeResponse_ が検証する形で返す。
+// シークレット未設定（KUJ_EXT_ACTION_SECRET 空）なら本体もプローブを送らない（後方互換）。
+function Kuj_buildProbeResponse_(nonce) {
+  return {
+    ok: true,
+    nfbExternalAction: true,
+    signature: Kuj_hmacHex_(String(nonce == null ? "" : nonce), Kuj_prop_(KUJ_PROP_EXT_ACTION_SECRET_))
+  };
 }
 
 // GET: セットアップ状態の確認 ＋ パースUI。
@@ -123,6 +184,9 @@ function Kuj_joinFieldPath_(segments) {
 
 var KUJ_PROP_FORM_ID_ = "KUJ_FORM_ID";
 var KUJ_PROP_ACCESS_KEY_ = "KUJ_ACCESS_KEY";
+// 誤送信防止プローブ用の共有シークレット（任意）。本体 GAS の NFB_EXT_ACTION_SECRET と同値を入れると、
+// 本体は本送信の前に nonce プローブで宛先を検証する。空（既定）ならプローブなしで直接送信（後方互換）。
+var KUJ_PROP_EXT_ACTION_SECRET_ = "KUJ_EXT_ACTION_SECRET";
 var KUJ_MAX_PDF_BYTES_ = 30 * 1024 * 1024; // 中継 PDF の上限（base64 化で UrlFetchApp/blob が扱える範囲）
 
 function Kuj_prop_(name) {
@@ -878,22 +942,31 @@ function Kuj_dateToCanonical_(value) {
 // #############################################################################
 
 // Script Property を登録する。外部 AI/API は使わないので API キー/モデルは不要。
-//   formId   : このフォームの formId（任意。出力 JSON の整合用。Playground でフォームを選ぶため必須ではない）
-//   accessKey: パースページの ?k= アクセスキー（任意。空なら無効）
-function Kuj_registerSettings(formId, accessKey) {
+//   formId       : このフォームの formId（任意。出力 JSON の整合用。Playground でフォームを選ぶため必須ではない）
+//   accessKey    : パースページの ?k= アクセスキー（任意。空なら無効）
+//   extActionSecret: 誤送信防止プローブの共有シークレット（任意。本体 NFB_EXT_ACTION_SECRET と同値。
+//                    引数を渡したときだけ更新する＝省略時は既存値を据え置く）。
+function Kuj_registerSettings(formId, accessKey, extActionSecret) {
   var props = PropertiesService.getScriptProperties();
   props.setProperty(KUJ_PROP_FORM_ID_, String(formId || ""));
   props.setProperty(KUJ_PROP_ACCESS_KEY_, String(accessKey || ""));
-  Logger.log("登録: formId=%s accessKey=%s", String(formId || "(なし)"), accessKey ? "(あり)" : "(なし)");
+  if (typeof extActionSecret !== "undefined") {
+    props.setProperty(KUJ_PROP_EXT_ACTION_SECRET_, String(extActionSecret || ""));
+  }
+  Logger.log("登録: formId=%s accessKey=%s secret=%s",
+    String(formId || "(なし)"), accessKey ? "(あり)" : "(なし)",
+    Kuj_prop_(KUJ_PROP_EXT_ACTION_SECRET_) ? "(あり)" : "(なし)");
 }
 
 // セットアップ状態をログ出力。
 function Kuj_checkSetup() {
   Logger.log("フォーム ID: %s", KUJ_FORM_ID_() || "(未設定)");
   Logger.log("アクセスキー: %s", Kuj_prop_(KUJ_PROP_ACCESS_KEY_) ? "設定済み" : "(なし)");
+  Logger.log("誤送信防止シークレット: %s", Kuj_prop_(KUJ_PROP_EXT_ACTION_SECRET_) ? "設定済み" : "(なし)");
   return {
     formId: KUJ_FORM_ID_(),
-    hasAccessKey: !!Kuj_prop_(KUJ_PROP_ACCESS_KEY_)
+    hasAccessKey: !!Kuj_prop_(KUJ_PROP_ACCESS_KEY_),
+    hasExtActionSecret: !!Kuj_prop_(KUJ_PROP_EXT_ACTION_SECRET_)
   };
 }
 
@@ -1022,6 +1095,8 @@ if (typeof module === "object" && module.exports) {
     Kuj_extractDriveId_: Kuj_extractDriveId_,
     Kuj_generateRecordId_: Kuj_generateRecordId_,
     Kuj_candHas_: Kuj_candHas_,
+    Kuj_hmacHex_: Kuj_hmacHex_,
+    Kuj_buildProbeResponse_: Kuj_buildProbeResponse_,
     KUJ_OPTIONS_: KUJ_OPTIONS_,
     KUJ_FIELDS_: KUJ_FIELDS_
   };

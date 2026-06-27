@@ -18,6 +18,13 @@ export function loadSpreadsheetOptions() {
   return cachedPromise;
 }
 
+// モジュールキャッシュを破棄し、次回 loadSpreadsheetOptions() でサーバから取り直させる。
+// 一覧は一度きりキャッシュなので、保存（コピー）で新規スプレッドシートが作られても
+// 完全リロードまで候補に出てこない。フォーム修正画面を開いた初回に呼んで取り直す。
+export function invalidateSpreadsheetOptions() {
+  cachedPromise = null;
+}
+
 // SearchableSelect 用 option へ変換。value = 論理パス（04_spreadsheets からの相対パス。
 // 葉＝シートのファイル名で拡張子なし）、label = 論理パス、url = シート URL、folder = 先頭サブフォルダ（並び替え用）。
 // フォーム側は value（論理パス）を spreadsheetPath に保存し、実行時に GAS がパス→fileId を解決する。

@@ -434,6 +434,9 @@ export const dataStore = {
    */
   async listEntries(formId, options = {}) {
     const { forceFullSync } = normalizeListEntriesOptions(options);
+    // quiet は同期オプションではなくログ抑制フラグ（先行プリフェッチ等が失敗時の console.error を
+    // 抑えるため）。normalizeListEntriesOptions の正式キーには含めず、ここで直接読む。
+    const quiet = options && options.quiet === true;
     const form = await this.getForm(formId);
     const sheetConfig = getSheetConfig(form);
     const deletedRetentionDays = getDeletedRetentionDays(form);
@@ -461,7 +464,7 @@ export const dataStore = {
     // この時点でアップロードのスナップショット（uploadRecords）は確定済み。これ以降に
     // ローカル編集されたレコードは未アップロードなので、古いサーバー応答で上書きしない。
     const syncStartedAt = Date.now();
-    const gasResult = await syncRecordsProxy(payload);
+    const gasResult = await syncRecordsProxy(payload, { quiet });
     const unchanged = gasResult?.unchanged === true;
     const syncedRecords = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
     const serverModifiedAt = Number(gasResult.serverModifiedAt ?? gasResult.serverCommitToken);
