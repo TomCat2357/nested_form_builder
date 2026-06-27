@@ -175,7 +175,7 @@ test("registryStore.remove: 1 件削除できる", async () => {
   } finally { cleanup(); }
 });
 
-test("dbHelpers v9→v10 upgrade: 既存 formsCache 等を温存し registry を加算する（非破壊）", async () => {
+test("dbHelpers v9→最新 upgrade: 既存 formsCache 等を温存し registry を加算する（非破壊）", async () => {
   const { cleanup, seedDb, databases } = installMockIndexedDB();
   try {
     const { DB_NAME, STORE_NAMES } = await import("../../core/constants.js");
@@ -187,11 +187,12 @@ test("dbHelpers v9→v10 upgrade: 既存 formsCache 等を温存し registry を
     });
 
     const { openDB } = await import("./dbHelpers.js");
+    const { DB_VERSION } = await import("../../core/constants.js");
     const db = await openDB();
     db.close();
 
     const seeded = databases.get(DB_NAME);
-    assert.equal(seeded.version, 10, "v10 へ上がる");
+    assert.equal(seeded.version, DB_VERSION, "最新バージョンへ上がる");
     assert.equal(seeded.stores.has(STORE_NAMES.registry), true, "registry を加算");
     // 既存ストア・データは温存（非破壊）。
     assert.equal(seeded.stores.get(STORE_NAMES.forms).get("F1").name, "既存フォーム");

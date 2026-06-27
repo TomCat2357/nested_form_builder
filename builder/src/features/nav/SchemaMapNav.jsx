@@ -49,12 +49,14 @@ function SchemaMapNavList({ items, expandedIds, onToggle, onScroll }) {
   );
 }
 
-export default function SchemaMapNav({ schema, responses = {}, scope = "all", leadingItems = [] }) {
+export default function SchemaMapNav({ schema, responses = {}, scope = "all", leadingItems = [], items: itemsProp }) {
   const items = useMemo(() => {
-    const built = buildSchemaMapItems({ schema, responses, scope });
+    // ビルド済み目次（items）が渡されたらそれを使う（IndexedDB キャッシュからの即表示用）。
+    // 無ければ従来通り schema をトラバースしてビルドする。
+    const built = Array.isArray(itemsProp) ? itemsProp : buildSchemaMapItems({ schema, responses, scope });
     const leading = (leadingItems || []).map((item) => ({ depth: 0, children: [], ...item }));
     return [...leading, ...built];
-  }, [schema, responses, scope, leadingItems]);
+  }, [itemsProp, schema, responses, scope, leadingItems]);
   const expandableIds = useMemo(() => collectExpandableIds(items), [items]);
   const [expandedIds, setExpandedIds] = useState(() => new Set());
 

@@ -713,6 +713,25 @@ function Cho_checkPinkConsistency_(reader, workers, applicantType, issues) {
       }
     }
   }
+
+  // 証明書(被害原因の鳥獣・○) ⇔ 許可申請(名簿で個体1以上 or 卵1以上を捕獲する種) の双方向照合。
+  // 両出典とも権威データ（○マーク・名簿集計 totals）で桃の未計算空問題が無いため、差は常に出す（empty-skip しない）。
+  // 名簿0件は別途 odd 警告済みのため、11種すべてを「申請に無い」と並べるノイズを避けて種照合はスキップ。
+  if (workers.length > 0) {
+    for (var c = 0; c < CHO_SPECIES_ORDER_.length; c++) {
+      var csp = CHO_SPECIES_ORDER_[c], markCell = CHO_JIYU_SPECIES_MARK_[csp];
+      var inCert = Cho_isChecked_(jiyu(markCell));
+      var ct = totals[csp] || { count: 0, egg: 0 };
+      var inApp = (ct.count > 0 || ct.egg > 0);
+      if (inCert && !inApp) {
+        issues.push(Cho_issue_("pink_inconsistent", "warn", JIYU, markCell, "被害原因の鳥獣 照合", csp, "",
+          JIYU + " " + markCell + " 被害原因の鳥獣 \"" + csp + "\" が許可申請(名簿)で捕獲対象になっていません"));
+      } else if (!inCert && inApp) {
+        issues.push(Cho_issue_("pink_inconsistent", "warn", JIYU, markCell, "被害原因の鳥獣 照合", "", csp,
+          "許可申請(名簿)で捕獲する \"" + csp + "\" が証明書 被害原因の鳥獣に記載されていません"));
+      }
+    }
+  }
 }
 
 // リーダ → { parent:{fields}, children:[{fields}], issues:[…], warnings:[…] }

@@ -29,7 +29,11 @@ export const DB_NAME = "NestedFormBuilder";
 //     起動時に上位 N 件のレコードを先行プリフェッチする土台。
 // v10: registry ストア（フロントの作業キャッシュ）を追加。Script Properties registry
 //      （{fileId, 論理パス}）のフロント側ミラー。喪失時は list API / GAS 再構成で再生成可。
-export const DB_VERSION = 10;
+// v11: formNavCache ストア（目次ツリーの軽量キャッシュ）を追加。formId キーで
+//      buildSchemaMapItems の出力（id/depth/indexLabel/label/children）のみ保存し、
+//      フォーム修正画面を開いた瞬間にサイドバー目次を即表示する。ナビ表示専用で
+//      編集ソースには流用しない（喪失時はフォーム本体ロード後に再生成）。
+export const DB_VERSION = 11;
 export const STORE_NAMES = {
   forms: "formsCache",
   settings: "settingsStore",
@@ -38,6 +42,7 @@ export const STORE_NAMES = {
   uploadQueue: "uploadQueue",
   openHistory: "openHistory",
   registry: "registry",
+  formNav: "formNavCache",
 };
 // v5 → v6 で削除した旧ストア (onupgradeneeded で deleteObjectStore する対象)
 export const LEGACY_STORE_NAMES_V5 = [

@@ -123,9 +123,12 @@ ok("法人 確認用種数あり", Object.keys(dfH).some((k) => k.startsWith(CON
 eq("forcedType 個人fx→法人", C.Cho_buildImport_(C.Cho_makeReader_(fx["個人"]), "法人").parent.type, "法人");
 eq("forcedType 法人fx→個人", C.Cho_buildImport_(C.Cho_makeReader_(fx["法人"]), "個人").parent.type, "個人");
 
-// ---- ISSUE 抽出: クリーン fixtures は誤検知ゼロ ----
-ok("個人 issues=0", impK.issues.length === 0, JSON.stringify(impK.issues));
-ok("法人 issues=0", impH.issues.length === 0, JSON.stringify(impH.issues));
+// ---- ISSUE 抽出: クリーン fixtures は誤検知ゼロ（種類照合は除く）----
+// 想定 fixtures は roster が全11種を網羅する kitchen-sink。証明書は キジバト(F13)/ノイヌ(I19) のみ○なので、
+// 種類照合(被害原因の鳥獣 照合)は残り9種を「申請にあるが証明書に無い」で意図的に出す。それ以外(dropped/odd/他pink)はゼロ。
+const notSpXc = (iss) => iss.filter((x) => x.label !== "被害原因の鳥獣 照合");
+ok("個人 issues=0(種類照合除く)", notSpXc(impK.issues).length === 0, JSON.stringify(notSpXc(impK.issues)));
+ok("法人 issues=0(種類照合除く)", notSpXc(impH.issues).length === 0, JSON.stringify(notSpXc(impH.issues)));
 
 // ---- 合成リーダで異常検出を確認（個人/法人 fixtures を複製して特定セルだけ壊す）----
 const clone = (o) => JSON.parse(JSON.stringify(o));
@@ -175,6 +178,26 @@ const has = (iss, c, cell) => iss.some((x) => x.category === c && x.cell === cel
 // (10) 申請書 E30 を名簿用具と食い違わせる → E30 に pink（friendly 照合行は廃止、抽出レポートで検知）
 { const v = clone(fx["個人"]); setCell(v, "申請書", "E30", "手捕り"); const iss = impOf(v).issues;
   ok("(10) E30食い違い→pink", has(iss, "pink_inconsistent", "E30"), JSON.stringify(cat(iss, "pink_inconsistent"))); }
+// ---- 証明書(被害原因の鳥獣・○) ⇔ 許可申請(名簿で個体1以上 or 卵1以上を捕獲する種) の双方向種類照合 ----
+const spXc = (iss) => cat(iss, "pink_inconsistent").filter((x) => x.label === "被害原因の鳥獣 照合");
+// (11) 想定 fixtures: 名簿が全11種を捕獲・証明書は キジバト(F13)/ノイヌ(I19) のみ○
+//   → 残り9種(例 スズメ F15)は「申請にあるが証明書に無い」で証明書セルに pink。一致する キジバト/ノイヌ は pink無し。
+{ const iss = impK.issues;
+  ok("(11) app有cert無→F15(スズメ) pink", has(iss, "pink_inconsistent", "F15"), JSON.stringify(spXc(iss)));
+  ok("(11) cert/app一致 キジバト→F13 pink無し", !has(iss, "pink_inconsistent", "F13"), "F13 誤検知");
+  ok("(11) cert/app一致 ノイヌ→I19 pink無し", !has(iss, "pink_inconsistent", "I19"), "I19 誤検知"); }
+// (12) 逆方向（証明書にあるが申請に無い）: 証明書○のままの キジバト の名簿捕獲を 0 に
+//   （worker0=行5 / worker1=行14、キジバト off0/side L → 頭数K列・卵N列）→ F13 に pink。
+{ const v = clone(fx["個人"]);
+  setCell(v, "従事者名簿", "K5", "");  setCell(v, "従事者名簿", "N5", "");
+  setCell(v, "従事者名簿", "K14", ""); setCell(v, "従事者名簿", "N14", "");
+  const iss = impOf(v).issues;
+  ok("(12) cert有app無→F13 pink", has(iss, "pink_inconsistent", "F13"), JSON.stringify(spXc(iss))); }
+// (13) 整合させれば種類照合 pink はゼロ: 証明書に全11種○を立てる（双方向とも差なし）
+{ const v = clone(fx["個人"]);
+  ["F13","F14","F15","F16","F17","F18","F19","I19","F20","I20","F21"].forEach((c) => setCell(v, "証明書", c, "○"));
+  const iss = spXc(impOf(v).issues);
+  ok("(13) 全種一致→種類照合 pink ゼロ", iss.length === 0, JSON.stringify(iss)); }
 
 // ---- 直接書き込みの純関数（Cho_resolveCell_ / Cho_buildNewRow_ / 添付 / friendly） ----
 // 日付セル: canonical 文字列 → Date + yyyy/mm/dd

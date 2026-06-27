@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toErrorMessage } from "../../utils/errorMessage.js";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../../app/components/AppLayout.jsx";
@@ -23,6 +23,8 @@ import { SettingsGroupFields } from "../../features/settings/SettingsField.jsx";
 import ExternalActionsEditor from "../../features/settings/ExternalActionsEditor.jsx";
 import { DEFAULT_THEME } from "../../app/theme/theme.js";
 import SchemaMapNav from "../../features/nav/SchemaMapNav.jsx";
+import { buildSchemaMapItems } from "../../features/nav/schemaMapNavTree.js";
+import { getFormNavFromCache, saveFormNavToCache } from "../../app/state/formNavCache.js";
 import { buildFormIndex } from "../../features/analytics/utils/formIdentifierResolver.js";
 import {
   schemaTemplateFormRefsToIds,
@@ -34,6 +36,8 @@ import {
 
 const fallbackPath = (locationState) => (locationState?.from ? locationState.from : "/admin/forms");
 const buildFormEditPath = (id) => `/admin/forms/${id}/edit`;
+// 目次の先頭に固定で出す「フォーム基本情報」。即表示用ローディング画面と通常表示で共有する。
+const META_LEADING_ITEMS = [{ id: "form-meta-info", label: "フォーム基本情報", indexLabel: "■" }];
 
 export default function AdminFormEditorPage() {
   const { formId } = useParams();
@@ -82,6 +86,25 @@ export default function AdminFormEditorPage() {
   const [questionControl, setQuestionControl] = useState(null);
   // forms 確定後に formId ごと 1 回だけロードするためのガード（新規は "__new__"）。
   const loadedFormIdRef = useRef(null);
+  // 開いた瞬間に表示する IndexedDB キャッシュの目次ツリー（フォーム本体ロードを待たない）。
+  // 本体ロード完了後はライブ schema 由来の目次へ自然に差し替わる。
+  const [cachedNavItems, setCachedNavItems] = useState(null);
+
+  // フォーム本体のロードとは独立に、目次キャッシュを即読み出してサイドバーへ出す。
+  useEffect(() => {
+    if (!isEdit || !formId) {
+      setCachedNavItems(null);
+      return;
+    }
+    let cancelled = false;
+    setCachedNavItems(null);
+    getFormNavFromCache(formId)
+      .then((cached) => {
+        if (!cancelled && cached?.items) setCachedNavItems(cached.items);
+      })
+      .catch(() => { /* キャッシュ無し/失敗は目次なしで読み込み中表示にフォールバック */ });
+    return () => { cancelled = true; };
+  }, [formId, isEdit]);
   const metaDirty = useMemo(() => name !== initialMetaRef.current.name || description !== initialMetaRef.current.description || folder !== initialMetaRef.current.folder, [name, description, folder]);
   const isDirty = builderDirty || metaDirty;
 
@@ -140,6 +163,11 @@ export default function AdminFormEditorPage() {
         idx,
       );
       const formTitle = fresh.settings?.formTitle || "";
+      // 次回開いた瞬間の即表示用に、最新スキーマの目次ツリーをキャッシュへ書き戻す
+      // （ラベル/構造は名前解決に依存しないため生スキーマから直接ビルドできる）。fire-and-forget。
+      const navItems = buildSchemaMapItems({ schema: fresh.schema || [], scope: "all" });
+      setCachedNavItems(navItems);
+      saveFormNavToCache(formId, navItems).catch(() => { /* キャッシュ書込失敗は無視 */ });
       setCachedForm(fresh);
       setInitialSchema(displaySchema);
       setInitialSettings(displaySettings);
@@ -255,6 +283,11 @@ export default function AdminFormEditorPage() {
         ? await updateForm(formId, payload, "auto")
         : await createForm(payload, "auto");
       setCachedForm(savedForm);
+      // 次回開いた瞬間の即表示用に、保存したスキーマの目次ツリーをキャッシュへ書き戻す。
+      if (savedForm?.id) {
+        saveFormNavToCache(savedForm.id, buildSchemaMapItems({ schema, scope: "all" }))
+          .catch(() => { /* キャッシュ書込失敗は無視 */ });
+      }
       builderRef.current?.commitSavedState?.();
       initialMetaRef.current = { name: trimmedName, description: payload.description || "" };
       setBuilderDirty(false);
@@ -336,10 +369,22 @@ export default function AdminFormEditorPage() {
     },
   ];
 
-  // 開くたびにサーバ最新を取得してから表示する（取得完了まで読み込み中表示）。
+  // 開くたびにサーバ最新を取得してから本体を表示する（取得完了まで読み込み中表示）。
+  // ただし目次は IndexedDB キャッシュから即サイドバーへ出し、開いた瞬間の体感を改善する
+  // （キャッシュ未保存の初回フォームは従来どおり目次なしで読み込み中）。
   if (isEdit && loading) {
     return (
-      <AppLayout title="フォーム修正" badge="管理 > フォーム" fallbackPath={fallback} onBack={handleBack}>
+      <AppLayout
+        title="フォーム修正"
+        badge="管理 > フォーム"
+        fallbackPath={fallback}
+        onBack={handleBack}
+        sidebarActions={
+          cachedNavItems ? (
+            <SchemaMapNav items={cachedNavItems} leadingItems={META_LEADING_ITEMS} />
+          ) : null
+        }
+      >
         <div className="nf-card nf-mb-24">読み込み中…</div>
       </AppLayout>
     );
@@ -408,7 +453,7 @@ export default function AdminFormEditorPage() {
           <SchemaMapNav
             schema={builderRef.current?.getSchema?.() || initialSchema}
             scope="all"
-            leadingItems={[{ id: "form-meta-info", label: "フォーム基本情報", indexLabel: "■" }]}
+            leadingItems={META_LEADING_ITEMS}
           />
         </>
       }

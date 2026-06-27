@@ -63,6 +63,13 @@ export function openDB() {
         registryStore.createIndex('kind', 'kind', { unique: false });
       }
 
+      // v11: formNavCache（目次ツリーの軽量キャッシュ）。1 件 = 1 フォーム
+      // （key = formId）。{ id(=formId), items(目次ツリー), savedAt }。
+      // 加算のみ・既存ストア非破壊。喪失時はフォーム本体ロード後に再生成する。
+      if (!db.objectStoreNames.contains(STORE_NAMES.formNav)) {
+        db.createObjectStore(STORE_NAMES.formNav, { keyPath: 'id' });
+      }
+
       if (oldVersion < 6) {
         for (const legacyName of LEGACY_STORE_NAMES_V5) {
           if (db.objectStoreNames.contains(legacyName)) {
