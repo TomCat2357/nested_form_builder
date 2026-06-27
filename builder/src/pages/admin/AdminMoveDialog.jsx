@@ -1,5 +1,6 @@
 import React, { useMemo } from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
+import DialogFooter from "../../app/components/DialogFooter.jsx";
 import SearchableSelect from "../../app/components/SearchableSelect.jsx";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
 
@@ -46,14 +47,7 @@ export default function AdminMoveDialog({
       open={open}
       title="移動"
       footer={
-        <>
-          <button type="button" className="dialog-btn" onClick={onCancel}>
-            キャンセル
-          </button>
-          <button type="button" className="dialog-btn primary" onClick={onConfirm}>
-            移動
-          </button>
-        </>
+        <DialogFooter onCancel={onCancel} onConfirm={onConfirm} confirmLabel="移動" />
       }
     >
       <p className="dialog-message">

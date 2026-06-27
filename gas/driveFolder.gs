@@ -64,7 +64,7 @@ function nfbResolveDirectFolder_(driveSettings, context) {
     return null;
   }
   if (directFolderUrl.indexOf("{") >= 0) {
-    directFolderUrl = String(nfbResolveTemplateTokens_(directFolderUrl, context) || "").trim();
+    directFolderUrl = Nfb_trimStr_(nfbResolveTemplateTokens_(directFolderUrl, context));
   }
   if (!directFolderUrl) {
     return null;

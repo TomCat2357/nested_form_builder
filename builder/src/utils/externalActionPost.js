@@ -6,9 +6,8 @@
 // - 機微情報 (spreadsheetId / spreadsheetUrl / sheetName / driveFileUrl / userEmail) は
 //   adminOnly && isAdmin のときだけ payload.storage に含める (漏洩防止をここに集約)。
 
-const buildSpreadsheetUrl = (spreadsheetId) => (
-  spreadsheetId ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}` : ""
-);
+import { asString } from "./strings.js";
+import { buildSpreadsheetUrl } from "./externalActionUrl.js";
 
 // payload を組み立てる。base は context 固有データ (一覧 list / レコード record)。
 // storageFields は機微情報の供給元。gate で管理者ゲーティングを判定する。
@@ -30,19 +29,19 @@ export const buildExternalActionPayload = ({
   };
   if (adminOnly === true && isAdmin === true) {
     const sf = storageFields && typeof storageFields === "object" ? storageFields : {};
-    const spreadsheetId = typeof sf.spreadsheetId === "string" ? sf.spreadsheetId : "";
-    const childSpreadsheetId = typeof sf.childSpreadsheetId === "string" ? sf.childSpreadsheetId : "";
+    const spreadsheetId = asString(sf.spreadsheetId);
+    const childSpreadsheetId = asString(sf.childSpreadsheetId);
     payload.storage = {
       spreadsheetId,
       spreadsheetUrl: buildSpreadsheetUrl(spreadsheetId),
-      sheetName: typeof sf.sheetName === "string" ? sf.sheetName : "",
-      driveFileUrl: typeof sf.driveFileUrl === "string" ? sf.driveFileUrl : "",
-      userEmail: typeof sf.userEmail === "string" ? sf.userEmail : "",
+      sheetName: asString(sf.sheetName),
+      driveFileUrl: asString(sf.driveFileUrl),
+      userEmail: asString(sf.userEmail),
       // 子フォーム（子テーブル）の保存先スプレッドシート ID / シート名。formLink から解決し、
       // リレー先（choju 等）が子シートへの書き込み/リンク表示に使う。
       childSpreadsheetId,
       childSpreadsheetUrl: buildSpreadsheetUrl(childSpreadsheetId),
-      childSheetName: typeof sf.childSheetName === "string" ? sf.childSheetName : "",
+      childSheetName: asString(sf.childSheetName),
     };
   }
   return payload;
@@ -61,9 +60,9 @@ export const interpretExternalActionResponse = (res) => {
     return {
       ok: data.ok !== false,
       status,
-      title: typeof data.title === "string" ? data.title : "",
-      message: typeof data.message === "string" ? data.message : "",
-      openUrl: typeof data.openUrl === "string" ? data.openUrl : "",
+      title: asString(data.title),
+      message: asString(data.message),
+      openUrl: asString(data.openUrl),
       htmlBody: false,
     };
   }

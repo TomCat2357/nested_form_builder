@@ -19,7 +19,7 @@ function nfbFail_(err) {
   var payload;
   if (safeMessage === null) {
     Logger.log("[nfbFail_] internal error: " + rawMessage);
-    payload = { ok: false, error: "処理中にエラーが発生しました", code: "INTERNAL" };
+    payload = { ok: false, error: NFB_GENERIC_INTERNAL_ERROR_MESSAGE, code: "INTERNAL" };
   } else {
     payload = { ok: false, error: safeMessage };
   }

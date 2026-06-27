@@ -343,7 +343,7 @@ function StdFolders_alignFormSpreadsheetRefInJson_(json) {
   var s = (json && json.settings && typeof json.settings === "object" && !Array.isArray(json.settings)) ? json.settings : null;
   if (!s) return false;
   var path = (typeof s.spreadsheetPath === "string") ? s.spreadsheetPath.trim() : "";
-  var rawId = String(s.spreadsheetId || "").trim();
+  var rawId = Nfb_trimStr_(s.spreadsheetId);
   if (!path && !rawId) return false;   // 参照が無ければ no-op（organize では新規作成しない）
   var aligned = StdFolders_alignFileRefIntoStdFolder_("spreadsheets", rawId, path);
   if (!aligned.fileId || aligned.status === "unresolved" || aligned.status === "noop") return false;

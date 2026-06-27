@@ -1,6 +1,7 @@
 import { ensureArray } from "../../utils/arrays.js";
 import React, { useEffect, useMemo } from "react";
 import BaseDialog from "./BaseDialog.jsx";
+import DialogFooter from "./DialogFooter.jsx";
 import { useSetSelection } from "../hooks/useSetSelection.js";
 
 const hasBranchChildren = (field) => {
@@ -48,19 +49,12 @@ export default function RecordCopyDialog({ open, schema, sourceResponses, onConf
   };
 
   const footer = (
-    <>
-      <button type="button" className="dialog-btn" onClick={onCancel}>
-        キャンセル
-      </button>
-      <button
-        type="button"
-        className="dialog-btn primary"
-        disabled={selectedFieldIds.length === 0}
-        onClick={() => onConfirm(selectedFieldIds)}
-      >
-        コピー
-      </button>
-    </>
+    <DialogFooter
+      onCancel={onCancel}
+      onConfirm={() => onConfirm(selectedFieldIds)}
+      confirmLabel="コピー"
+      confirmDisabled={selectedFieldIds.length === 0}
+    />
   );
 
   return (
