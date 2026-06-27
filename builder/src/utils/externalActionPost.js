@@ -31,12 +31,17 @@ export const buildExternalActionPayload = ({
   if (adminOnly === true && isAdmin === true) {
     const sf = storageFields && typeof storageFields === "object" ? storageFields : {};
     const spreadsheetId = typeof sf.spreadsheetId === "string" ? sf.spreadsheetId : "";
+    const childSpreadsheetId = typeof sf.childSpreadsheetId === "string" ? sf.childSpreadsheetId : "";
     payload.storage = {
       spreadsheetId,
       spreadsheetUrl: buildSpreadsheetUrl(spreadsheetId),
       sheetName: typeof sf.sheetName === "string" ? sf.sheetName : "",
       driveFileUrl: typeof sf.driveFileUrl === "string" ? sf.driveFileUrl : "",
       userEmail: typeof sf.userEmail === "string" ? sf.userEmail : "",
+      // 子フォーム（子テーブル）の保存先スプレッドシート ID。検索一覧の外部アクションで
+      // formLink から解決し、リレー先（choju 等）が子シートへの書き込み/リンク表示に使う。
+      childSpreadsheetId,
+      childSpreadsheetUrl: buildSpreadsheetUrl(childSpreadsheetId),
     };
   }
   return payload;

@@ -575,11 +575,14 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
   }
 
   // キャッシュ優先で単一取得。未ヒット時のみ GAS から個別取得。
-  async function getById(id) {
+  // forceRefresh 時はキャッシュ照合をスキップしてサーバ最新を取得する（編集画面用）。
+  async function getById(id, { forceRefresh = false } = {}) {
     if (!id) return null;
-    const cached = await cache.getAll();
-    const hit = cached.find((item) => item.id === id);
-    if (hit) return hit;
+    if (!forceRefresh) {
+      const cached = await cache.getAll();
+      const hit = cached.find((item) => item.id === id);
+      if (hit) return hit;
+    }
     const result = await gas[`get${E}`](id);
     if (result?.[one]) await cache.upsert(result[one]);
     return result?.[one] || null;

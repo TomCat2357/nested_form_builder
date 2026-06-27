@@ -9,11 +9,12 @@ import { hasScriptRun, sendExternalAction } from "../../../services/gasClient.js
 import { resolveTemplateTokensAsync } from "../../../utils/tokenReplacer.js";
 import { extractReservedRefs } from "../../expression/templateEvaluator.js";
 import { resolveStyleSettingsInlineStyle } from "../../../core/styleSettings.js";
-import { buildExportTableData } from "../searchExport.js";
+import { buildExportTableData, buildSearchFileRefs } from "../searchExport.js";
 import { joinFieldPath } from "../../../utils/pathCodec.js";
 
 // 対象行 (選択行があればその行、なければフィルタ後の全行) を表示用ビュー行に整形して payload の base を組む。
 // childFormsByRow（entries と同順・各行 = 子フォーム合成オブジェクト配列）があれば付加する。
+// fileRefsByRow（entries と同順・各行 = fileUpload 参照配列）も非空なら付加する（ファイル/フォルダ URL）。
 const buildSearchPayloadBase = (form, outputTargetRows, childFormsByRow) => {
   const entries = Array.isArray(outputTargetRows) ? outputTargetRows.map((row) => row.entry).filter(Boolean) : [];
   const table = buildExportTableData({ form, entries });
@@ -27,7 +28,25 @@ const buildSearchPayloadBase = (form, outputTargetRows, childFormsByRow) => {
   if (Array.isArray(childFormsByRow) && childFormsByRow.some((cf) => Array.isArray(cf) && cf.length > 0)) {
     list.childFormsByRow = childFormsByRow;
   }
+  const fileRefsByRow = buildSearchFileRefs({ form, entries });
+  if (Array.isArray(fileRefsByRow) && fileRefsByRow.some((fr) => Array.isArray(fr) && fr.length > 0)) {
+    list.fileRefsByRow = fileRefsByRow;
+  }
   return { list };
+};
+
+// childFormsByRow（各行 = 子フォーム合成オブジェクト配列）から最初の非空 childSpreadsheetId を拾う。
+// 親フォームの formLink は通常 1 つ（choju の従事者情報）なので単一値で足りる。
+const firstChildSpreadsheetId = (childFormsByRow) => {
+  if (!Array.isArray(childFormsByRow)) return "";
+  for (const row of childFormsByRow) {
+    if (!Array.isArray(row)) continue;
+    for (const obj of row) {
+      const id = obj && typeof obj.childSpreadsheetId === "string" ? obj.childSpreadsheetId.trim() : "";
+      if (id) return id;
+    }
+  }
+  return "";
 };
 
 // 外部アクション送信。送信は本体 GAS のサーバ間リレー（sendExternalAction →
@@ -83,12 +102,14 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
       childFormsByRow = null; // 取得失敗時は子データ無しで送信（無言）。
     }
   }
+  // 子フォームのスプレッドシート ID をリレーで動的に受け渡す（admin ゲートは buildExternalActionPayload 側）。
+  const childSpreadsheetId = firstChildSpreadsheetId(childFormsByRow);
   const payload = buildExternalActionPayload({
     context: "search",
     formId: formContext?.formId,
     formName: formContext?.formName,
     base: buildSearchPayloadBase(form, outputTargetRows, childFormsByRow),
-    storageFields: formContext,
+    storageFields: { ...(formContext || {}), childSpreadsheetId },
     gate,
   });
   try {

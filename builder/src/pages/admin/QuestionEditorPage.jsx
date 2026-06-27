@@ -121,7 +121,8 @@ export default function QuestionEditorPage() {
     setDefinitionLoaded(false);
     autoRunQuestionIdRef.current = null;
     try {
-      const q = await getQuestionById(questionId);
+      // 編集画面は開くたびにサーバ最新(.json)を取得する（キャッシュは使わない）。
+      const q = await getQuestionById(questionId, { forceRefresh: true });
       if (isCancelled()) return;
       if (!q) {
         setLoading(false);

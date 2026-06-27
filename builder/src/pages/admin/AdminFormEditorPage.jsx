@@ -1,6 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import { toErrorMessage } from "../../utils/errorMessage.js";
-import { useLatestRef } from "../../app/hooks/useLatestRef.js";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../../app/components/AppLayout.jsx";
 import ConfirmDialog from "../../app/components/ConfirmDialog.jsx";
@@ -9,7 +8,7 @@ import { SETTINGS_GROUPS, SPREADSHEET_SETTINGS_GROUP } from "../../features/sett
 import { dataStore } from "../../app/state/dataStore.js";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { useTempIdRedirect } from "../../app/hooks/useTempIdRedirect.js";
-import { useFormCacheSync } from "../../app/hooks/useFormCacheSync.js";
+import { useCancellable } from "../../app/hooks/useCancellable.js";
 import { useEditLock } from "../../app/hooks/useEditLock.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
@@ -18,6 +17,7 @@ import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
 import { omitThemeSetting, normalizeExternalActions, applySpreadsheetExclusiveSetting, migrateStandardPrintTemplateId } from "../../utils/settings.js";
 import { loadSpreadsheetOptions } from "../../features/editor/useSpreadsheetOptions.js";
+import { isFormSpreadsheetLinked, applyUnlinkSpreadsheetForRecreate } from "./spreadsheetLinkState.js";
 import { SettingsGroupFields } from "../../features/settings/SettingsField.jsx";
 import ExternalActionsEditor from "../../features/settings/ExternalActionsEditor.jsx";
 import { DEFAULT_THEME } from "../../app/theme/theme.js";
@@ -39,113 +39,115 @@ export default function AdminFormEditorPage() {
   // 一時 ID のままディープリンクで開かれた場合、アップロード完了後に実 ID の URL へ置き換える。
   useTempIdRedirect(formId, buildFormEditPath);
   const isEdit = Boolean(formId);
-  const { forms, getFormById, createForm, updateForm, refreshForms, lastSyncedAt, loadingForms } = useAppData();
-  const currentForm = isEdit ? getFormById(formId) : null;
-  const [cachedForm, setCachedForm] = useState(currentForm);
-  const form = cachedForm;
+  const { forms, createForm, updateForm, loadingForms } = useAppData();
   const navigate = useNavigate();
   const location = useLocation();
   const { showAlert } = useAlert();
   const fallback = useMemo(() => fallbackPath(location.state), [location.state]);
   const builderRef = useRef(null);
-  // 新規作成時は一覧で開いていたフォルダ (location.state.folder) を初期フォルダにする。
-  const initialFolder = isEdit ? (form?.folder || "") : normalizeFolderPath(location.state?.folder || "");
-  const initialMetaRef = useRef({ name: form?.name || "新規フォーム", description: form?.description || "", folder: initialFolder });
-  // 表示用: 保存スキーマ/設定は full-query フォーム参照を fileId で保持しているため、
-  // エディタ表示時は論理パスへ戻し、formLink の表示パスも childFormId から再計算する（リネーム追従）。
-  const formIndex = useMemo(() => buildFormIndex(forms || []), [forms]);
-  const initialSchema = useMemo(
-    () => (form?.schema ? refreshFormLinkPaths(schemaTemplateFormRefsToNames(form.schema, formIndex), formIndex) : []),
-    [form, formIndex],
-  );
-  const initialSettings = useMemo(
-    () => settingsTemplateFormRefsToNames(migrateStandardPrintTemplateId(omitThemeSetting(form?.settings || {})), formIndex),
-    [form, formIndex],
-  );
 
-  const [name, setName] = useState(initialMetaRef.current.name);
-  const [description, setDescription] = useState(initialMetaRef.current.description);
-  const [folder, setFolder] = useState(initialMetaRef.current.folder);
-  const [localSettings, setLocalSettings] = useState(initialSettings);
+  // 巻き戻り対策: 開いたとき 1 回だけサーバ最新(.json)を取り込み、その後は一切再取得・
+  // 再反映しない（フリーズ）。背景再取得で provider の forms が差し替わっても作業コピーを
+  // 上書きしないよう、ライブ forms への反応的結合をやめる。Question/Dashboard 編集画面と同方針。
+  const [cachedForm, setCachedForm] = useState(null);
+  const form = cachedForm;
+  // 新規作成時は一覧で開いていたフォルダ (location.state.folder) を初期フォルダにする。
+  const newFormInitialFolder = useMemo(
+    () => (isEdit ? "" : normalizeFolderPath(location.state?.folder || "")),
+    [isEdit, location.state],
+  );
+  const initialMetaRef = useRef({ name: isEdit ? "" : "新規フォーム", description: "", folder: isEdit ? "" : newFormInitialFolder });
+  // ビルダー初期 props は読み込み時に 1 回だけ確定させ、以後ライブ forms 変化で揺らさない
+  // （= FormBuilderWorkspace の再シードを 1 回に抑え、第 2 の巻き戻り経路を封じる）。
+  const [initialSchema, setInitialSchema] = useState([]);
+  const [initialSettings, setInitialSettings] = useState({});
+  // 保存時の name→fileId 変換用。リネーム追従のため保存時点のライブ forms から算出する。
+  const formIndex = useMemo(() => buildFormIndex(forms || []), [forms]);
+
+  const [name, setName] = useState(isEdit ? "" : "新規フォーム");
+  const [description, setDescription] = useState("");
+  const [folder, setFolder] = useState(isEdit ? "" : newFormInitialFolder);
+  const [localSettings, setLocalSettings] = useState({});
   // 保存先スプレッドシートの手動指定欄。標準フォルダ構成が既定のため初期は常に非表示（③）。
   const [showSpreadsheetSetting, setShowSpreadsheetSetting] = useState(false);
   const [builderDirty, setBuilderDirty] = useState(false);
   const unsavedDialog = useConfirmDialog();
+  // 連結済みフォームで「未選択（自動作成）」を選んだときの連結解除確認。
+  const unlinkDialog = useConfirmDialog();
   const [isSaving, setIsSaving] = useState(false);
-  const { isReadLocked, withReadLock } = useEditLock();
+  const [loading, setLoading] = useState(isEdit);
+  const { isReadLocked } = useEditLock();
   const [nameError, setNameError] = useState("");
   const [questionControl, setQuestionControl] = useState(null);
-  const isSavingRef = useLatestRef(isSaving);
-  const isReadLockedRef = useLatestRef(isReadLocked);
-  const cachedFormRef = useLatestRef(cachedForm);
+  // forms 確定後に formId ごと 1 回だけロードするためのガード（新規は "__new__"）。
+  const loadedFormIdRef = useRef(null);
   const metaDirty = useMemo(() => name !== initialMetaRef.current.name || description !== initialMetaRef.current.description || folder !== initialMetaRef.current.folder, [name, description, folder]);
   const isDirty = builderDirty || metaDirty;
-  const isDirtyRef = useLatestRef(isDirty);
 
-  useEffect(() => {
-    if (!isEdit) return;
-    setCachedForm((prevForm) => {
-      if (!prevForm) return prevForm;
-      return prevForm.id === formId ? prevForm : null;
-    });
-  }, [formId, isEdit]);
-
-  useEffect(() => {
+  // 開いたとき 1 回だけ初期化する（その後フリーズ）。Question 編集画面の確立パターンを踏襲。
+  useCancellable(async (isCancelled) => {
     if (!isEdit) {
+      // 新規: マウント時 1 回だけ空シード（サーバ取得なし）。
+      if (loadedFormIdRef.current === "__new__") return;
+      loadedFormIdRef.current = "__new__";
       setCachedForm(null);
+      setInitialSchema([]);
+      setInitialSettings({});
+      initialMetaRef.current = { name: "新規フォーム", description: "", folder: newFormInitialFolder };
+      setName("新規フォーム");
+      setDescription("");
+      setFolder(newFormInitialFolder);
+      setLocalSettings({});
+      // 新規は未連結。スプレッドシート欄は畳んだ既定（保存時に自動作成）。
+      setShowSpreadsheetSetting(false);
+      setNameError("");
       return;
     }
-    if (!currentForm) return;
-    if (isSavingRef.current) {
-      return;
+    // forms 確定まで待つ（fileId→フォーム名 解決の formIndex に forms が要る）。
+    if (loadingForms) return;
+    // formId ごとに 1 回だけロードする（背景リフレッシュで再ロードして編集を潰さないため）。
+    if (loadedFormIdRef.current === formId) return;
+    loadedFormIdRef.current = formId;
+    setLoading(true);
+    try {
+      // 開くたびにサーバ最新(.json)から取得する（キャッシュは使わない）。オフライン等で失敗した
+      // 場合は dataStore.getForm がキャッシュへフォールバックする。
+      const fresh = await dataStore.getForm(formId, { forceRefresh: true });
+      if (isCancelled()) return;
+      if (!fresh) {
+        setLoading(false);
+        return;
+      }
+      // 表示用: 保存スキーマ/設定は full-query フォーム参照を fileId で保持しているため、
+      // 論理パスへ戻し、formLink の表示パスも childFormId から再計算する（リネーム追従）。
+      const idx = buildFormIndex(forms || []);
+      const displaySchema = fresh.schema
+        ? refreshFormLinkPaths(schemaTemplateFormRefsToNames(fresh.schema, idx), idx)
+        : [];
+      const displaySettings = settingsTemplateFormRefsToNames(
+        migrateStandardPrintTemplateId(omitThemeSetting(fresh.settings || {})),
+        idx,
+      );
+      const formTitle = fresh.settings?.formTitle || "";
+      setCachedForm(fresh);
+      setInitialSchema(displaySchema);
+      setInitialSettings(displaySettings);
+      initialMetaRef.current = { name: formTitle, description: fresh.description || "", folder: fresh.folder || "" };
+      setName(formTitle);
+      setDescription(fresh.description || "");
+      setFolder(fresh.folder || "");
+      setLocalSettings(displaySettings);
+      // 連結済みなら開いた時点でスプレッドシート欄を表示する（formId ごとに 1 回だけ初期化。
+      // この後ユーザーが未選択にして両フィールドが空になっても畳まれない）。
+      setShowSpreadsheetSetting(isFormSpreadsheetLinked(displaySettings));
+      setNameError("");
+      setLoading(false);
+    } catch (error) {
+      if (isCancelled()) return;
+      setLoading(false);
+      showAlert(`フォームの取得に失敗しました: ${toErrorMessage(error)}`);
     }
-
-    // useLatestRef は 1 コミット遅れるため、同レンダーの isDirty 変数（meta 同期）と
-    // ビルダーの同期 isDirty()（builder 同期）を併用し、「編集開始直後でフラグ未伝播」の
-    // 窓でも作業コピーを取り込みで潰さない。
-    if (isDirty || builderRef.current?.isDirty?.()) {
-      return;
-    }
-
-    setCachedForm((prevForm) => {
-      if (prevForm === currentForm) return prevForm;
-      return currentForm;
-    });
-  }, [currentForm, formId, isDirty, isDirtyRef, isEdit, cachedFormRef, isSavingRef]);
-
-  useEffect(() => {
-    if (!form) return;
-    if (isSavingRef.current) {
-      return;
-    }
-    if (isDirty || builderRef.current?.isDirty?.()) {
-      return;
-    }
-    const formTitle = form.settings?.formTitle || "";
-    initialMetaRef.current = { name: formTitle, description: form.description || "", folder: form.folder || "" };
-    setName(formTitle);
-    setDescription(form.description || "");
-    setFolder(form.folder || "");
-    setLocalSettings(settingsTemplateFormRefsToNames(migrateStandardPrintTemplateId(omitThemeSetting(form.settings || {})), formIndex));
-    setQuestionControl(null);
-    setNameError("");
-  }, [form, formId, isDirty, isDirtyRef, isSavingRef, formIndex]);
-
-  useFormCacheSync({
-    enabled: isEdit && !!formId,
-    formsCount: forms.length,
-    lastSyncedAt,
-    loadingForms,
-    refreshForms,
-    label: "admin-form-editor",
-    shouldSkip: () => isSavingRef.current || isReadLockedRef.current || isDirtyRef.current || !!builderRef.current?.isDirty?.(),
-    onRefresh: async (source) => {
-      await withReadLock(async () => {
-        await dataStore.getForm(formId);
-        await refreshForms({ reason: `operation:${source}:admin-form-editor`, background: false });
-      });
-    },
-  });
+  }, [formId, isEdit, loadingForms]);
 
   useBeforeUnloadGuard(isDirty);
 
@@ -157,14 +159,46 @@ export default function AdminFormEditorPage() {
     navigate(fallback, { replace: true });
   };
 
+  // 「未選択（自動作成）」: 物理 ID と論理パスを両方空にし、保存時にバックエンドの
+  // 「両方空 → 04_spreadsheets へ新規作成」経路を発火させる。プレビューにも反映する。
+  const applyUnlinkSpreadsheet = useCallback(() => {
+    setLocalSettings((prev) => applyUnlinkSpreadsheetForRecreate(prev));
+    builderRef.current?.updateSetting?.("spreadsheetPath", "");
+    builderRef.current?.updateSetting?.("spreadsheetId", "");
+  }, []);
+
   const handleSettingsChange = useCallback((key, value) => {
+    // 保存先スプレッドシート欄で「未選択（自動作成）」を選んだ場合。連結済みなら確認してから
+    // 解除し、未連結ならそのまま適用する（解除＝両フィールド空 → 保存時に新規作成・連結し直し）。
+    if (key === "spreadsheetPath" && !value) {
+      if (isFormSpreadsheetLinked(localSettings)) unlinkDialog.open();
+      else applyUnlinkSpreadsheet();
+      return;
+    }
     // 論理パス（spreadsheetPath）と直接 ID/URL（spreadsheetId）は排他（後勝ち）にする。
     setLocalSettings((prev) => applySpreadsheetExclusiveSetting(prev, key, value));
     builderRef.current?.updateSetting?.(key, value);
     // 排他で相手側がクリアされるケースはビルダー側プレビューにも反映する（冪等）。
     if (key === "spreadsheetPath" && value) builderRef.current?.updateSetting?.("spreadsheetId", "");
     if (key === "spreadsheetId" && value) builderRef.current?.updateSetting?.("spreadsheetPath", "");
-  }, []);
+  }, [localSettings, unlinkDialog, applyUnlinkSpreadsheet]);
+
+  const unlinkConfirmOptions = [
+    {
+      label: "新規作成に切り替える",
+      value: "unlink",
+      variant: "primary",
+      onSelect: () => {
+        unlinkDialog.close();
+        applyUnlinkSpreadsheet();
+      },
+    },
+    {
+      label: "キャンセル",
+      value: "cancel",
+      onSelect: unlinkDialog.close,
+    },
+  ];
 
   const handleSave = async () => {
     if (!builderRef.current) return;
@@ -290,6 +324,15 @@ export default function AdminFormEditorPage() {
       onSelect: unsavedDialog.close,
     },
   ];
+
+  // 開くたびにサーバ最新を取得してから表示する（取得完了まで読み込み中表示）。
+  if (isEdit && loading) {
+    return (
+      <AppLayout title="フォーム修正" badge="管理 > フォーム" fallbackPath={fallback} onBack={handleBack}>
+        <div className="nf-card nf-mb-24">読み込み中…</div>
+      </AppLayout>
+    );
+  }
 
   return (
     <AppLayout
@@ -427,9 +470,15 @@ export default function AdminFormEditorPage() {
             />
             <span className="nf-text-13">保存先スプレッドシートを手動指定する</span>
           </label>
-          <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
-            指定しない場合は標準フォルダ構成の <code>04_spreadsheets</code> に回答保存用スプレッドシートを自動作成します。
-          </p>
+          {isFormSpreadsheetLinked(localSettings) ? (
+            <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+              このフォームはスプレッドシートと連結済みです。下で連結先を確認・変更できます。保存先を「未選択（自動作成）」にして保存すると、新しいスプレッドシートを作成して連結し直します（既存シートのデータは <code>Drive</code> に残りますが、このフォームからは参照されなくなります）。
+            </p>
+          ) : (
+            <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
+              指定しない場合は標準フォルダ構成の <code>04_spreadsheets</code> に回答保存用スプレッドシートを自動作成します。
+            </p>
+          )}
           {showSpreadsheetSetting && (
             <div className="nf-mt-12">
               <SettingsGroupFields
@@ -486,6 +535,12 @@ export default function AdminFormEditorPage() {
       </div>
 
       <ConfirmDialog open={unsavedDialog.state.open} title="未保存の変更があります" message="保存せずに離れますか？" options={confirmOptions} />
+      <ConfirmDialog
+        open={unlinkDialog.state.open}
+        title="連結を解除して新規作成しますか？"
+        message="現在の連結を外し、保存時に新しいスプレッドシートを作成して連結し直します。既存のシートとデータは Drive に残りますが、このフォームからは参照されなくなります。"
+        options={unlinkConfirmOptions}
+      />
     </AppLayout>
   );
 }

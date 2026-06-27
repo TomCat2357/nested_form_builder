@@ -149,18 +149,36 @@ export const dataStore = {
     kickUploadWorker();
     return { folders: [], deletedFormCount: containedIds.length };
   },
-  async getForm(formId) {
+  async getForm(formId, { forceRefresh = false } = {}) {
+    if (!forceRefresh) {
+      try {
+        const { forms = [] } = await getFormsFromCache();
+        const cachedForm = forms.find((form) => form.id === formId);
+        if (cachedForm) {
+          return ensureDisplayInfo(cachedForm);
+        }
+      } catch (error) {
+        console.warn("[dataStore.getForm] Cache lookup failed, falling back to GAS:", error);
+      }
+    }
+    // forceRefresh 時はサーバ最新を取得。失敗（オフライン等）はキャッシュへフォールバックして
+    // 編集画面が開けるようにする。
+    try {
+      const form = await getFormFromGas(formId);
+      if (form) return ensureDisplayInfo(form);
+      if (!forceRefresh) return null;
+    } catch (error) {
+      if (!forceRefresh) throw error;
+      console.warn("[dataStore.getForm] forceRefresh GAS fetch failed, falling back to cache:", error);
+    }
     try {
       const { forms = [] } = await getFormsFromCache();
       const cachedForm = forms.find((form) => form.id === formId);
-      if (cachedForm) {
-        return ensureDisplayInfo(cachedForm);
-      }
+      if (cachedForm) return ensureDisplayInfo(cachedForm);
     } catch (error) {
-      console.warn("[dataStore.getForm] Cache lookup failed, falling back to GAS:", error);
+      console.warn("[dataStore.getForm] Cache fallback lookup failed:", error);
     }
-    const form = await getFormFromGas(formId);
-    return form ? ensureDisplayInfo(form) : null;
+    return null;
   },
   async createForm(payload, saveMode = "auto") {
     // オフラインファースト: まず IndexedDB に保存し、Drive へのアップロードはバックグラウンドへ。

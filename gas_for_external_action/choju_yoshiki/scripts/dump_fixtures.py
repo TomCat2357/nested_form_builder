@@ -27,6 +27,8 @@ def main():
         wb = openpyxl.load_workbook(os.path.join(REPO_FORM_TEST, fn), data_only=True)
         book = {}
         for s in SHEETS:
+            if s not in wb.sheetnames:
+                continue  # 出力シート(許可証 等)が無い様式もある。取り込みは申請書/従事者名簿/証明書のみ使う。
             ws = wb[s]
             book[s] = [[conv(c) for c in row] for row in ws.iter_rows(values_only=True)]
         out[label] = book

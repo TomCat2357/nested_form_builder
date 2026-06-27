@@ -11,7 +11,7 @@ export const SPREADSHEET_SETTINGS_GROUP = {
       label: "保存先スプレッドシート（04_spreadsheets から選択）",
       type: "spreadsheetSelect",
       required: false,
-      description: "04_spreadsheets 内のスプレッドシートを論理パスで選びます。コピー時もリンクが引き継がれます。一覧に無いパスを保存すると、そのパスへ新規作成します。直接URLを使う場合は下の欄に入力してください（どちらか一方）。",
+      description: "04_spreadsheets 内のスプレッドシートを論理パスで選びます。コピー時もリンクが引き継がれます。一覧に無いパスを保存すると、そのパスへ新規作成します。「未選択（自動作成）」にして保存すると、新しいスプレッドシートを作成して連結し直します。直接URLを使う場合は下の欄に入力してください（どちらか一方）。",
     },
     {
       key: "spreadsheetId",

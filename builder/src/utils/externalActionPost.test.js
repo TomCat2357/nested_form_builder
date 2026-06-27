@@ -52,7 +52,27 @@ test("buildExternalActionPayload は adminOnly && isAdmin のとき storage を�
     sheetName: "Data",
     driveFileUrl: "https://drive/x",
     userEmail: "u@example.com",
+    childSpreadsheetId: "",
+    childSpreadsheetUrl: "",
   });
+});
+
+test("buildExternalActionPayload は childSpreadsheetId を admin ゲートで storage に含める", () => {
+  const storageFields = { spreadsheetId: "ABC", childSpreadsheetId: "CHILD" };
+  const adminPayload = buildExternalActionPayload({
+    context: "search",
+    storageFields,
+    gate: { adminOnly: true, isAdmin: true },
+  });
+  assert.equal(adminPayload.storage.childSpreadsheetId, "CHILD");
+  assert.equal(adminPayload.storage.childSpreadsheetUrl, "https://docs.google.com/spreadsheets/d/CHILD");
+  // 非管理者では storage 自体が出ない（子 SS も漏れない）。
+  const nonAdminPayload = buildExternalActionPayload({
+    context: "search",
+    storageFields,
+    gate: { adminOnly: true, isAdmin: false },
+  });
+  assert.equal(nonAdminPayload.storage, undefined);
 });
 
 test("buildExternalActionPayload は spreadsheetId 空のとき spreadsheetUrl を空文字にする", () => {

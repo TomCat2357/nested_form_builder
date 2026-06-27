@@ -15,7 +15,7 @@
  */
 
 import { ensureArray } from "../../utils/arrays.js";
-import { restoreResponsesFromData } from "../../utils/responses.js";
+import { restoreResponsesFromData, collectFileUploadFolderUrls, collectFileUploadFolderNames } from "../../utils/responses.js";
 import { buildRecordItems } from "./printDocument.js";
 import { dataStore } from "../../app/state/dataStore.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
@@ -107,12 +107,16 @@ const toChildRecordItem_ = (childSchema, record) => {
   const data = record && record.data && typeof record.data === "object" ? record.data : {};
   const dataUnixMs = record && record.dataUnixMs && typeof record.dataUnixMs === "object" ? record.dataUnixMs : {};
   const responses = restoreResponsesFromData(childSchema || [], data, dataUnixMs);
+  // fileUpload のフォルダ URL/名は responses（ファイル配列のみ）に含まれないので data から別途集める。
+  const folderUrlsByField = collectFileUploadFolderUrls(childSchema || [], data);
+  const folderNamesByField = collectFileUploadFolderNames(childSchema || [], data);
   return {
     id: String(record && record.id ? record.id : ""),
     no: record && record["No."] != null ? record["No."] : "",
-    // 第3引数（childDataByFieldId）は意図的に省く。子フォーム内のさらなる子 formLink は
+    // childDataByFieldId は意図的に省く。子フォーム内のさらなる子 formLink は
     // 再帰展開せず空 placeholder も出さない（無限ネストと payload 肥大を防ぐ）。
-    items: buildRecordItems(childSchema || [], responses),
+    // folderUrlsByField/folderNamesByField を渡し、fileUpload 項目へファイル/フォルダ URL を添える。
+    items: buildRecordItems(childSchema || [], responses, { folderUrlsByField, folderNamesByField }),
   };
 };
 

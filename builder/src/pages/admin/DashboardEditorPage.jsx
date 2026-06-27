@@ -107,7 +107,8 @@ export default function DashboardEditorPage() {
   // 参照解決（questionsById 経由のカード表示）が裏で揺れないようにする保護。
   useCancellable(async (isCancelled) => {
     try {
-      const qs = await listQuestions();
+      // 編集画面は開くたびにサーバ最新(.json)を取得する（キャッシュは使わない）。
+      const qs = await listQuestions({ forceRefresh: true });
       if (isCancelled()) return;
       setQuestions(qs);
     } catch (err) {

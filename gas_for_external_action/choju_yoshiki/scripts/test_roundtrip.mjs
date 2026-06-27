@@ -1,4 +1,4 @@
-// 取り込み/書き出し/往復の純ロジック検証（GAS API 不要）。
+// 取り込みの純ロジック検証（GAS API 不要）。
 //   node scripts/test_roundtrip.mjs
 // 事前に fixtures が無ければ python scripts/dump_fixtures.py を自動実行する。
 import fs from "node:fs";
@@ -15,7 +15,7 @@ if (!fs.existsSync(fixturesPath)) {
 
 // Combined.gs を vm で読み込み module.exports を取り出す（pure 関数のみ呼ぶ）。
 const code = fs.readFileSync(path.join(dir, "..", "Combined.gs"), "utf8");
-const sandbox = { module: { exports: {} }, console, Date, Math, JSON, RegExp, Number, String, Array, Object, isNaN, isFinite };
+const sandbox = { module: { exports: {} }, console, Date, Math, JSON, RegExp, Number, String, Array, Object, isNaN, isFinite, parseInt, parseFloat };
 vm.runInNewContext(code, sandbox);
 const C = sandbox.module.exports;
 const fx = JSON.parse(fs.readFileSync(fixturesPath, "utf8"));
@@ -48,49 +48,173 @@ const impH = C.Cho_buildImport_(C.Cho_makeReader_(fx["法人"]));
 eq("法人 applicantType", impH.parent.type, "法人");
 eq("法人 法人名", impH.parent.fields["申請者情報/申請者の個人・法人の別/法人/法人名"], "株式会社ハンター協会");
 
-// ---- EXPORT golden ----
-const golden = {
-  generatedAt: "2026-06-01T00:00:00.000Z",
-  record: { no: 1, items: [
-    { question: "申請者情報/申請者の個人・法人の別", value: "個人" },
-    { question: "捕獲等又は採取等の目的", value: "管理（被害防止）" },
-    { question: "捕獲等又は採取等の期間/開始", value: "2026-06-01" },
-    { question: "捕獲等又は採取等の期間/終了", value: "2026-06-30" },
-    { question: "捕獲等又は採取等の区域/所在地", value: "札幌市南区定山渓405" },
-    { question: "捕獲等又は採取等をしたあとの処置", value: "埋設" },
-    { question: "従事者情報/#1/代表的個人", value: "はい" },
-    { question: "従事者情報/#1/氏名", value: "秋　はじめ" },
-    { question: "従事者情報/#1/" + SP, value: "キツネ" },
-    { question: "従事者情報/#1/" + SP + "/キツネ/捕獲頭数", value: "5" },
-    { question: "従事者情報/#1/" + M, value: "わな" },
-    { question: "従事者情報/#1/" + M + "/わな/道具の種類", value: "くくりわな" },
-    { question: "従事者情報/#1/" + M + "/わな/免許の必要性", value: "必要" },
-    { question: "従事者情報/#1/" + M + "/わな/免許の必要性/必要/免許情報/番号", value: "石狩第1234号" },
-    { question: "従事者情報/#2/氏名", value: "冬村　多才" },
-    { question: "従事者情報/#2/" + SP, value: "キツネ" },
-    { question: "従事者情報/#2/" + SP + "/キツネ/捕獲頭数", value: "3" },
-    { question: "従事者情報/#2/" + M, value: "手捕り" }
-  ] }
-};
-const model = C.Cho_buildModel_(golden);
-const ap = C.Cho_appCells_(model);
-eq("export キツネ合算 F24", ap["F24"], 8);
-eq("export methodText", model.methodText, "手捕り,くくりわな");
-eq("export licNo join", model.workers[0].methods[0].licNo, "石狩第1234号");
+// ---- 確認用（桃セル）取り込み ----
+const CONF = "確認用", CONFSP = CONF + "/種類及び数量";
+// 個人: 同定（名簿由来）＋集計＋種数を確認用へ
+eq("個人 確認用住所", impK.parent.fields[CONF + "/住所"], "小樽市");
+eq("個人 確認用氏名", impK.parent.fields[CONF + "/氏名"], "鈴木新之助");
+eq("個人 確認用職業", impK.parent.fields[CONF + "/職業"], "無職");
+eq("個人 確認用生年月日", impK.parent.fields[CONF + "/生年月日"], "2026-06-01");
+eq("個人 確認用証明書住所", impK.parent.fields[CONF + "/証明書住所"], "小樽市");
+eq("個人 確認用証明書氏名", impK.parent.fields[CONF + "/証明書氏名"], "鈴木新之助");
+ok("個人 確認用キツネ捕獲数", impK.parent.fields[CONFSP + "/キツネ捕獲数"] === 8, JSON.stringify(impK.parent.fields[CONFSP + "/キツネ捕獲数"]));
+ok("個人 確認用キジバト採取卵数あり", typeof impK.parent.fields[CONFSP + "/キジバト採取卵数"] === "number", JSON.stringify(impK.parent.fields[CONFSP + "/キジバト採取卵数"]));
+ok("個人 確認用捕獲方法あり", typeof impK.parent.fields[CONF + "/捕獲方法"] === "string" && impK.parent.fields[CONF + "/捕獲方法"].length > 0, impK.parent.fields[CONF + "/捕獲方法"]);
+// 法人: 同定は重複させない（未設定）／集計・種数は取り込む
+ok("法人 確認用住所なし", !(CONF + "/住所" in impH.parent.fields), impH.parent.fields[CONF + "/住所"]);
+ok("法人 確認用氏名なし", !(CONF + "/氏名" in impH.parent.fields), impH.parent.fields[CONF + "/氏名"]);
+ok("法人 確認用種数あり", Object.keys(impH.parent.fields).some((k) => k.startsWith(CONFSP + "/")), "法人の確認用種数が空");
 
-// ---- ROUND-TRIP: 個人想定 import → export → 申請書セル一致 ----
-const items = [];
-for (const k in impK.parent.fields) items.push({ question: k, value: impK.parent.fields[k] });
-impK.children.forEach((ch, i) => { for (const k in ch) items.push({ question: "従事者情報/#" + (i + 1) + "/" + k, value: ch[k] }); });
-const rtAp = C.Cho_appCells_(C.Cho_buildModel_({ generatedAt: "2026-06-01T00:00:00.000Z", record: { items } }));
-// 申請書の種数は名簿の集計式（キャッシュは Sheets/Excel 再計算なので fixture では空）。
-// よって「取り込んだ子の合算」== 再書き出しの 申請書セル を不変条件として検証する。
-const sumHead = (sp) => impK.children.reduce((a, ch) => a + (Number(ch[SP + "/" + sp + "/捕獲頭数"]) || 0), 0);
-const sumEgg = (sp) => impK.children.reduce((a, ch) => a + (Number(ch[SP + "/" + sp + "/採取卵数"]) || 0), 0);
-eq("roundtrip キジバト頭数=F18", rtAp["F18"] || 0, sumHead("キジバト"));
-eq("roundtrip スズメ頭数=F20", rtAp["F20"] || 0, sumHead("スズメ"));
-eq("roundtrip キツネ頭数=F24", rtAp["F24"] || 0, sumHead("キツネ"));
-eq("roundtrip キジバト卵数=I18", rtAp["I18"] || 0, sumEgg("キジバト"));
+// ---- forcedType（取り込み画面のラジオ選択）が自動判定を上書き ----
+eq("forcedType 個人fx→法人", C.Cho_buildImport_(C.Cho_makeReader_(fx["個人"]), "法人").parent.type, "法人");
+eq("forcedType 法人fx→個人", C.Cho_buildImport_(C.Cho_makeReader_(fx["法人"]), "個人").parent.type, "個人");
+
+// ---- ISSUE 抽出: クリーン fixtures は誤検知ゼロ ----
+ok("個人 issues=0", impK.issues.length === 0, JSON.stringify(impK.issues));
+ok("法人 issues=0", impH.issues.length === 0, JSON.stringify(impH.issues));
+
+// ---- 合成リーダで異常検出を確認（個人/法人 fixtures を複製して特定セルだけ壊す）----
+const clone = (o) => JSON.parse(JSON.stringify(o));
+function setCell(vbs, sheet, a1, val) {
+  const rc = C.Cho_a1ToRC_(a1); // {row, col} 1-based
+  const grid = vbs[sheet] || (vbs[sheet] = []);
+  while (grid.length < rc.row) grid.push([]);
+  const row = grid[rc.row - 1];
+  while (row.length < rc.col) row.push("");
+  row[rc.col - 1] = val;
+}
+const impOf = (vbs) => C.Cho_buildImport_(C.Cho_makeReader_(vbs));
+const cat = (iss, c) => iss.filter((x) => x.category === c);
+const has = (iss, c, cell) => iss.some((x) => x.category === c && x.cell === cell);
+
+// (1) 申請書 種数ピンクが名簿合算(キツネ=8)と不一致
+{ const v = clone(fx["個人"]); setCell(v, "申請書", "F24", 9); const iss = impOf(v).issues;
+  ok("(1) F24不一致→pink", has(iss, "pink_inconsistent", "F24"), JSON.stringify(cat(iss, "pink_inconsistent"))); }
+// (2) 未知の種名（想定スロット キジバト と不一致）
+{ const v = clone(fx["個人"]); setCell(v, "従事者名簿", "J5", "ヌートリア"); const iss = impOf(v).issues;
+  ok("(2) 未知種→dropped@J5", has(iss, "dropped", "J5"), JSON.stringify(cat(iss, "dropped"))); }
+// (3) 未知の用具
+{ const v = clone(fx["個人"]); setCell(v, "従事者名簿", "P5", "爆竹"); const iss = impOf(v).issues;
+  ok("(3) 未知用具→dropped@P5", has(iss, "dropped", "P5"), JSON.stringify(cat(iss, "dropped"))); }
+// (4) 11 人目オーバーフロー（行95に氏名）
+{ const v = clone(fx["個人"]); setCell(v, "従事者名簿", "G95", "溢田太郎"); const iss = impOf(v).issues;
+  ok("(4) 11人目→dropped(error)", cat(iss, "dropped").some((x) => x.severity === "error"), JSON.stringify(cat(iss, "dropped"))); }
+// (5) 空 actual は不一致を出さない（空F24→誤検知ゼロの回帰ガード）
+{ const v = clone(fx["個人"]); setCell(v, "申請書", "F24", ""); const iss = impOf(v).issues;
+  ok("(5) 空F24→pink無し", !has(iss, "pink_inconsistent", "F24"), JSON.stringify(cat(iss, "pink_inconsistent"))); }
+// (6) 法人: 同定セルは照合外だが種数は照合される
+{ const v = clone(fx["法人"]); setCell(v, "申請書", "F24", 99); const iss = impOf(v).issues;
+  ok("(6法人) F24誤値→pink", has(iss, "pink_inconsistent", "F24"), JSON.stringify(cat(iss, "pink_inconsistent")));
+  ok("(6法人) 同定セルは照合外", !has(iss, "pink_inconsistent", "F6") && !has(iss, "pink_inconsistent", "F8"), "F6/F8 が誤検知"); }
+
+// ---- 直接書き込みの純関数（Cho_resolveCell_ / Cho_buildNewRow_ / 添付 / friendly） ----
+// 日付セル: canonical 文字列 → Date + yyyy/mm/dd
+{
+  const r = C.Cho_resolveCell_("2025-06-27");
+  ok("resolveCell 日付→Date", r.value instanceof Date && !isNaN(r.value.getTime()), JSON.stringify(r));
+  ok("resolveCell 日付値", r.value instanceof Date && r.value.getFullYear() === 2025 && r.value.getMonth() === 5 && r.value.getDate() === 27, String(r.value));
+  eq("resolveCell 日付書式", r.numberFormat, C.NFB_SHEETS_DATE_FORMAT);
+}
+// 数式中和: 先頭 '=' → 先頭 ' + @
+{
+  const r = C.Cho_resolveCell_("=SUM(A1)");
+  eq("resolveCell 数式中和", r.value, "'=SUM(A1)");
+  eq("resolveCell 数式書式", r.numberFormat, C.NFB_SHEETS_TEXT_FORMAT);
+}
+// 通常文字列 → テキスト + @
+{
+  const r = C.Cho_resolveCell_("株式会社ハンター協会");
+  eq("resolveCell 文字列値", r.value, "株式会社ハンター協会");
+  eq("resolveCell 文字列書式", r.numberFormat, C.NFB_SHEETS_TEXT_FORMAT);
+}
+// 数値 → テキスト("7") + @（本体同様 number 列はテキスト保存）
+{
+  const r = C.Cho_resolveCell_(7);
+  eq("resolveCell 数値→テキスト", r.value, "7");
+  eq("resolveCell 数値書式", r.numberFormat, C.NFB_SHEETS_TEXT_FORMAT);
+}
+// 空 → "" + @
+eq("resolveCell 空値", C.Cho_resolveCell_("").value, "");
+
+// 新規行組み立て: メタ列 + データ列 + pid + 未知キー破棄
+{
+  const keyToColumn = { "氏名": 10 };            // 1-based → 0-based index 9
+  const fixedColMap = { id: 0, "No.": 1, createdAt: 2, modifiedAt: 3, deletedAt: 4, createdBy: 5, modifiedBy: 6, deletedBy: 7, pid: 8 };
+  const now = 1719446400000;                      // 固定 Unix ms
+  const rec = { id: "r_test", pid: "r_parent", data: { "氏名": "田中聡", "存在しない項目": "x", "生年月日": "2000-01-02" } };
+  const built = C.Cho_buildNewRow_(keyToColumn, fixedColMap, 12, rec, 5, now, "a@example.com");
+  eq("buildNewRow id", built.rowData[0], "r_test");
+  eq("buildNewRow No.", built.rowData[1], 6);
+  ok("buildNewRow createdAt=Date", built.rowData[2] instanceof Date, String(built.rowData[2]));
+  eq("buildNewRow createdAt書式", built.rowFormats[2], C.NFB_SHEETS_DATETIME_FORMAT);
+  ok("buildNewRow modifiedAt=Date", built.rowData[3] instanceof Date, String(built.rowData[3]));
+  eq("buildNewRow createdBy", built.rowData[5], "a@example.com");
+  eq("buildNewRow modifiedBy", built.rowData[6], "a@example.com");
+  eq("buildNewRow pid", built.rowData[8], "r_parent");
+  eq("buildNewRow 氏名→列9", built.rowData[9], "田中聡");
+  ok("buildNewRow 未知キー破棄", built.rowData.indexOf("x") === -1, JSON.stringify(built.rowData));
+}
+// 列が無い非空キーは dropped として検出（空は対象外）
+{
+  const dropped = C.Cho_collectDroppedKeys_({ "氏名": "田中", "存在しない": "v", "空": "" }, { "氏名": 10 });
+  ok("collectDropped 検出", dropped.indexOf("存在しない") !== -1 && dropped.indexOf("氏名") === -1 && dropped.indexOf("空") === -1, JSON.stringify(dropped));
+}
+// 添付セル JSON（スタブ file/folder）
+{
+  const file = { getName: () => "様式.xlsx", getId: () => "fid123", getUrl: () => "https://drive/file" };
+  const folder = { getName: () => "06_upload_files", getUrl: () => "https://drive/folder" };
+  const cell = JSON.parse(C.Cho_buildUploadCell_(file, folder));
+  eq("uploadCell folderName", cell.folderName, "06_upload_files");
+  eq("uploadCell driveFileId", cell.files[0].driveFileId, "fid123");
+  eq("uploadCell name", cell.files[0].name, "様式.xlsx");
+}
+// friendly 整形（個人）
+{
+  const fr = C.Cho_buildFriendly_(impK);
+  eq("friendly type", fr.applicant.type, "個人");
+  eq("friendly name", fr.applicant.name, "鈴木新之助");
+  eq("friendly workers数", fr.workers.length, impK.children.length);
+  eq("friendly worker0 title", fr.workers[0].title, "鈴木新之助");
+  ok("friendly worker0 rows", fr.workers[0].rows.length > 0, "rows empty");
+}
+// relay context 抽出（外部アクション payload → 親 storage）
+{
+  const c = C.Cho_extractRelayContext_({ formId: "f1", storage: { spreadsheetId: "ss1", driveFileUrl: "u", sheetName: "Data" } });
+  eq("relay parentSs", c.parentSpreadsheetId, "ss1");
+  eq("relay formId", c.formId, "f1");
+}
+// 子 SS のリレー受け渡し: storage.childSpreadsheetId を抽出
+{
+  const c = C.Cho_extractRelayContext_({ formId: "f1", storage: { spreadsheetId: "ssP", childSpreadsheetId: "ssC", sheetName: "Data" } });
+  eq("relay childSs", c.childSpreadsheetId, "ssC");
+}
+// 子 SS フォールバック: storage 欠落時は list.childFormsByRow から最初の非空を拾う
+{
+  const c = C.Cho_extractRelayContext_({ storage: { spreadsheetId: "ssP" }, list: { childFormsByRow: [[], [{ childSpreadsheetId: "ssFromList" }]] } });
+  eq("relay childSs fallback", c.childSpreadsheetId, "ssFromList");
+  eq("relay childSs fallback無し", C.Cho_extractRelayContext_({ storage: { spreadsheetId: "ssP" } }).childSpreadsheetId, "");
+}
+// Cho_mergeTargets_: ctx の親/子 SS・シート名が登録値を上書き、無ければ登録値にフォールバック
+{
+  const props = { parentSpreadsheetId: "pReg", childSpreadsheetId: "cReg", sheetName: "Data", parentUploadFieldKey: "添付", uploadFolderId: "fld" };
+  const merged = C.Cho_mergeTargets_(props, { parentSpreadsheetId: "pCtx", childSpreadsheetId: "cCtx", sheetName: "Sheet2" });
+  eq("mergeTargets 親ctx優先", merged.parentSpreadsheetId, "pCtx");
+  eq("mergeTargets 子ctx優先", merged.childSpreadsheetId, "cCtx");
+  eq("mergeTargets sheetName ctx優先", merged.sheetName, "Sheet2");
+  eq("mergeTargets uploadFieldKey 維持", merged.parentUploadFieldKey, "添付");
+  const merged2 = C.Cho_mergeTargets_(props, null);
+  eq("mergeTargets ctx無し親=登録値", merged2.parentSpreadsheetId, "pReg");
+  eq("mergeTargets ctx無し子=登録値", merged2.childSpreadsheetId, "cReg");
+  eq("mergeTargets ctx無しsheet=登録値", merged2.sheetName, "Data");
+}
+// time/datetime ガード: 取り込みは "HH:mm" 形を出さない（出すと @ テキスト誤格納になるため）
+{
+  const vals = [];
+  const collect = (o) => { for (const k in o) { const v = o[k]; if (typeof v === "string") vals.push(v); } };
+  collect(impK.parent.fields); impK.children.forEach(collect);
+  collect(impH.parent.fields); impH.children.forEach(collect);
+  ok("time混入なし", vals.every((v) => !/^\d{1,2}:\d{2}/.test(v)), "時刻文字列が混入");
+}
 
 console.log(`\n==== ${pass} PASS / ${fail} FAIL ====`);
 process.exit(fail ? 1 : 0);
