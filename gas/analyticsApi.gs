@@ -39,27 +39,13 @@ function Analytics_getMapping_(type) {
   var props = Nfb_getActiveProperties_();
   var key = Analytics_getPropertyKey_(type);
   var mapping = Nfb_parseVersionedMapping_(props.getProperty(key), ANALYTICS_MAPPING_VERSION, "analytics:" + type);
-  return Analytics_normalizeMapping_(mapping);
-}
-
-// 読取側の正規化。driveFileUrl は fileId から都度復元し、読取は完全なエントリ
-// （fileId / driveFileUrl / name / folder）を返す（forms の Forms_normalizeMappingValue_ と対称）。
-// name（= Drive ファイル名）と論理パス folder は、論理側 fileId が失われたときに
-// 「論理パス（folder + 名前）で物理ファイルを探し直す」復旧アンカーになる。folder は中央辞書の
-// 第一級フィールドで、null は「未バックフィル」sentinel（"" の「ルート」と区別する）。
-// 共通コア Nfb_normalizeMappingValue_（gas/formsMappingStore.gs）への薄いラッパー。
-// Analytics（questions/dashboards）は name キーでラベルを保持する。
-function Analytics_normalizeMappingValue_(value) {
-  return Nfb_normalizeMappingValue_(value, "name");
-}
-
-function Analytics_normalizeMapping_(mapping) {
-  var normalized = {};
-  for (var id in mapping) {
-    if (!mapping.hasOwnProperty(id)) continue;
-    normalized[id] = Analytics_normalizeMappingValue_(mapping[id]);
-  }
-  return normalized;
+  // 読取側の正規化は共通コア Nfb_normalizeMapping_（gas/formsMappingStore.gs）へ集約。
+  // Analytics（questions/dashboards）は name キーでラベルを保持する。driveFileUrl は fileId から都度復元し、
+  // 読取は完全なエントリ（fileId / driveFileUrl / name / folder）を返す（forms の "title" と対称）。
+  // name（= Drive ファイル名）と論理パス folder は、論理側 fileId が失われたときに
+  // 「論理パス（folder + 名前）で物理ファイルを探し直す」復旧アンカーになる。folder は中央辞書の
+  // 第一級フィールドで、null は「未バックフィル」sentinel（"" の「ルート」と区別する）。
+  return Nfb_normalizeMapping_(mapping, "name");
 }
 
 function Analytics_saveMapping_(type, mapping) {
