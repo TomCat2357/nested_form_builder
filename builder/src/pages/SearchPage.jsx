@@ -74,6 +74,7 @@ export default function SearchPage() {
     sortedEntries,
     outputTargetRows,
     resolveSearchChildFormsForRows,
+    resolveSearchChildStorageMeta,
     filterError,
     totalPages,
     totalEntries,
@@ -184,6 +185,7 @@ export default function SearchPage() {
           form={form}
           outputTargetRows={outputTargetRows}
           searchChildFormsResolver={resolveSearchChildFormsForRows}
+          searchChildStorageMetaResolver={resolveSearchChildStorageMeta}
           isAdmin={isAdmin}
         />
         </>

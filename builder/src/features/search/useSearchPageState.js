@@ -380,6 +380,26 @@ export function useSearchPageState({
     });
   }, [externalActionChildFormFields, searchChildDataByField]);
 
+  // 外部アクション（検索リレー）の storage.childSpreadsheetId 用に、子フォームの保存先
+  // スプレッドシート ID / シート名を formLink 子フォーム定義から直接解決する。子レコードの有無や
+  // includeChildData に依存しない（取り込みは「これから子を作る」操作なので既存子が無くても解決が要る）。
+  // 単票パス（PreviewPage.jsx）と同じ「最初の非空 ID を採る」方針。
+  const resolveSearchChildStorageMeta = useCallback(async () => {
+    for (const field of externalActionChildFormFields) {
+      try {
+        const cf = await getChildFormCached_(field.childFormId);
+        const sid = cf && cf.settings && typeof cf.settings.spreadsheetId === "string"
+          ? cf.settings.spreadsheetId.trim()
+          : "";
+        if (sid) {
+          const sheet = cf.settings && cf.settings.sheetName ? String(cf.settings.sheetName) : "Data";
+          return { childSpreadsheetId: sid, childSheetName: sheet };
+        }
+      } catch (_e) { /* 取得失敗の子フォームはスキップ（無言） */ }
+    }
+    return { childSpreadsheetId: "", childSheetName: "" };
+  }, [externalActionChildFormFields]);
+
   // 「子データ / full-query 依存の置換」が出る表示列（読込中・再計算の対象判定に使う）。
   const dependentSubstColumns = useMemo(() => {
     if (!hasDependentSubstitutions) return [];
@@ -1053,6 +1073,7 @@ export function useSearchPageState({
     sortedEntries,
     outputTargetRows,
     resolveSearchChildFormsForRows,
+    resolveSearchChildStorageMeta,
     pagedEntries,
     filterError,
 

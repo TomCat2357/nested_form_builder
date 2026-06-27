@@ -71,11 +71,29 @@ const firstChildStorageMeta = (childFormsByRow) => {
   return { childSpreadsheetId: "", childSheetName: "" };
 };
 
+// storage.childSpreadsheetId / childSheetName（リレーで choju 等へ動的受け渡し）を決める。
+// 非管理者（または非 adminOnly ボタン）には子 SS を一切渡さない。
+// 通過時はまず子フォーム定義から直接解決する resolver を優先する。これは子レコードの有無に依存しない
+// ＝取り込みなど「これから子を作る」操作（既存子が 0 件）でも子 SS を解決できる（本不具合の修正点）。
+// resolver 未提供/失敗/空のときだけ、既存子データ childFormsByRow から拾う（後方互換のフォールバック）。
+export const resolveChildStorageMeta = async ({ sensitiveAllowed, searchChildStorageMetaResolver, childFormsByRow }) => {
+  if (!sensitiveAllowed) return { childSpreadsheetId: "", childSheetName: "" };
+  let meta = { childSpreadsheetId: "", childSheetName: "" };
+  if (typeof searchChildStorageMetaResolver === "function") {
+    try { meta = await searchChildStorageMetaResolver(); }
+    catch (_e) { meta = { childSpreadsheetId: "", childSheetName: "" }; }
+  }
+  if (!meta || !meta.childSpreadsheetId) meta = firstChildStorageMeta(childFormsByRow);
+  return { childSpreadsheetId: (meta && meta.childSpreadsheetId) || "", childSheetName: (meta && meta.childSheetName) || "" };
+};
+
 // 外部アクション送信。送信は本体 GAS のサーバ間リレー（sendExternalAction →
 // nfbSendExternalAction → UrlFetchApp）で行い、ブラウザの隠しフォーム POST に伴う
 // ログインリダイレクト（POST 本文消失）を避ける。子データは送信時に on-demand 取得する。
 // searchChildFormsResolver(entries) は childFormsByRow を返す async 関数。
-const handleExternalActionClick = async (action, { formContext, isAdmin, form, outputTargetRows, searchChildFormsResolver }) => {
+// searchChildStorageMetaResolver() は子フォーム定義から { childSpreadsheetId, childSheetName } を直接返す async 関数
+// （子レコードの有無に依存しない。取り込みなど既存子が無い操作でも子 SS を解決するため）。
+const handleExternalActionClick = async (action, { formContext, isAdmin, form, outputTargetRows, searchChildFormsResolver, searchChildStorageMetaResolver }) => {
   const gate = { adminOnly: !!action.adminOnly, isAdmin };
   // URL トークン解決は印刷様式と共通の alasql `{{...}}` エンジンに統一。旧・単括弧固定トークンは
   // 自動マップ。機微予約トークンは adminOnly && isAdmin のときだけ展開を許可（早期失敗を維持）。
@@ -125,11 +143,8 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
     }
   }
   // 子フォームのスプレッドシート ID をリレーで動的に受け渡す（admin ゲートは buildExternalActionPayload 側）。
-  // 非管理者（または非 adminOnly ボタン）には子 SS を一切渡さない。storage だけでなく
-  // 常時送信の list.childFormsByRow からも剥がす（base 経由の漏洩を塞ぐ）。
-  const { childSpreadsheetId, childSheetName } = sensitiveAllowed
-    ? firstChildStorageMeta(childFormsByRow)
-    : { childSpreadsheetId: "", childSheetName: "" };
+  // storage だけでなく常時送信の list.childFormsByRow からも非管理者には剥がす（base 経由の漏洩を塞ぐ）。
+  const { childSpreadsheetId, childSheetName } = await resolveChildStorageMeta({ sensitiveAllowed, searchChildStorageMetaResolver, childFormsByRow });
   const baseChildFormsByRow = sensitiveAllowed ? childFormsByRow : stripChildSpreadsheetIds(childFormsByRow);
   const payload = buildExternalActionPayload({
     context: "search",
@@ -177,7 +192,7 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
   }
 };
 
-const buildExternalActionButtons = (externalActions, formContext, { isAdmin = false, form = null, outputTargetRows = null, searchChildFormsResolver = null } = {}) => {
+const buildExternalActionButtons = (externalActions, formContext, { isAdmin = false, form = null, outputTargetRows = null, searchChildFormsResolver = null, searchChildStorageMetaResolver = null } = {}) => {
   if (!Array.isArray(externalActions) || externalActions.length === 0) return [];
   return externalActions
     .filter((action) => action && typeof action.url === "string" && action.url.trim() !== "")
@@ -189,7 +204,7 @@ const buildExternalActionButtons = (externalActions, formContext, { isAdmin = fa
       const style = enabled ? resolveStyleSettingsInlineStyle(action.styleSettings || {}) : undefined;
       return {
         label: (action.label && action.label.trim()) || "外部アクション",
-        onClick: () => { handleExternalActionClick(action, { formContext, isAdmin, form, outputTargetRows, searchChildFormsResolver }).catch(() => {}); },
+        onClick: () => { handleExternalActionClick(action, { formContext, isAdmin, form, outputTargetRows, searchChildFormsResolver, searchChildStorageMetaResolver }).catch(() => {}); },
         title: action.url,
         style: style && Object.keys(style).length > 0 ? style : undefined,
       };
@@ -221,12 +236,13 @@ export const buildSearchSidebarButtons = ({
   form = null,
   outputTargetRows = null,
   searchChildFormsResolver = null,
+  searchChildStorageMetaResolver = null,
 }) => {
   const deleteBtn = isUndoDelete
     ? { label: "削除取消し", onClick: onUndelete, disabled: selectedCount === 0 || readOnly, className: "search-sidebar-btn-warning" }
     : { label: "削除", onClick: onDelete, disabled: selectedCount === 0 || readOnly, className: "search-sidebar-btn-danger" };
 
-  const externalButtons = buildExternalActionButtons(externalActions, formContext, { isAdmin, form, outputTargetRows, searchChildFormsResolver });
+  const externalButtons = buildExternalActionButtons(externalActions, formContext, { isAdmin, form, outputTargetRows, searchChildFormsResolver, searchChildStorageMetaResolver });
 
   return [
     showBack && onBack && { label: "← 戻る", onClick: onBack },

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSearchSidebarButtons, stripChildSpreadsheetIds } from "./SearchSidebar.buttons.js";
+import { buildSearchSidebarButtons, stripChildSpreadsheetIds, resolveChildStorageMeta } from "./SearchSidebar.buttons.js";
 
 const noop = () => {};
 
@@ -81,4 +81,49 @@ test("stripChildSpreadsheetIds は childSpreadsheetId / childSheetName を各子
 test("stripChildSpreadsheetIds は配列以外・null を素通しする", () => {
   assert.equal(stripChildSpreadsheetIds(null), null);
   assert.equal(stripChildSpreadsheetIds(undefined), undefined);
+});
+
+test("resolveChildStorageMeta: 既存子レコードが無く childFormsByRow が空でも resolver で子 SS を解決する（本不具合の核心）", async () => {
+  const resolver = async () => ({ childSpreadsheetId: "CHILD_SS", childSheetName: "従事者" });
+  const meta = await resolveChildStorageMeta({
+    sensitiveAllowed: true,
+    searchChildStorageMetaResolver: resolver,
+    childFormsByRow: [[], []], // 取り込み前なので各行に子データなし
+  });
+  assert.deepEqual(meta, { childSpreadsheetId: "CHILD_SS", childSheetName: "従事者" });
+});
+
+test("resolveChildStorageMeta: 非 admin（sensitiveAllowed=false）では子 SS を一切返さない", async () => {
+  const resolver = async () => ({ childSpreadsheetId: "CHILD_SS", childSheetName: "従事者" });
+  const meta = await resolveChildStorageMeta({
+    sensitiveAllowed: false,
+    searchChildStorageMetaResolver: resolver,
+    childFormsByRow: [[{ fieldPath: "a", childSpreadsheetId: "LEAK", childSheetName: "Data" }]],
+  });
+  assert.deepEqual(meta, { childSpreadsheetId: "", childSheetName: "" });
+});
+
+test("resolveChildStorageMeta: resolver が空/失敗のときは childFormsByRow にフォールバックする", async () => {
+  const empty = await resolveChildStorageMeta({
+    sensitiveAllowed: true,
+    searchChildStorageMetaResolver: async () => ({ childSpreadsheetId: "", childSheetName: "" }),
+    childFormsByRow: [[{ fieldPath: "a", childSpreadsheetId: "FALLBACK", childSheetName: "Data" }]],
+  });
+  assert.deepEqual(empty, { childSpreadsheetId: "FALLBACK", childSheetName: "Data" });
+
+  const threw = await resolveChildStorageMeta({
+    sensitiveAllowed: true,
+    searchChildStorageMetaResolver: async () => { throw new Error("boom"); },
+    childFormsByRow: [[{ fieldPath: "a", childSpreadsheetId: "FALLBACK2", childSheetName: "Data" }]],
+  });
+  assert.deepEqual(threw, { childSpreadsheetId: "FALLBACK2", childSheetName: "Data" });
+});
+
+test("resolveChildStorageMeta: resolver 未提供かつ childFormsByRow も空なら空メタを返す", async () => {
+  const meta = await resolveChildStorageMeta({
+    sensitiveAllowed: true,
+    searchChildStorageMetaResolver: null,
+    childFormsByRow: null,
+  });
+  assert.deepEqual(meta, { childSpreadsheetId: "", childSheetName: "" });
 });
