@@ -49,9 +49,6 @@
     <div id="status"></div>
     <div id="preview"></div>
 
-    <div id="commitWrap" style="display:none">
-      <button id="commit">選択分をスプレッドシートへ取り込む</button>
-    </div>
     <div id="result"></div>
   </div>
 
@@ -119,6 +116,7 @@
       if (!rows.length) { h += "<div class='info'>取り込める行がありません。</div>"; $("preview").innerHTML = h; setStatus(""); return; }
 
       h += "<div class='selbar'><label><input type='checkbox' id='chkAll' checked> すべて選択</label></div>";
+      h += "<div id='commitWrap' style='margin:10px 0'><button id='commit'>選択分をスプレッドシートへ取り込む</button></div>";
       for (var i = 0; i < rows.length; i++) {
         var r = rows[i];
         var f = r.fields || [];
@@ -139,12 +137,12 @@
         h += "</div>";
       }
       $("preview").innerHTML = h;
+      var commitBtn = $("commit"); if (commitBtn) commitBtn.onclick = onCommit;
       var all = $("chkAll");
       if (all) all.onclick = function () {
         var cs = document.querySelectorAll(".chkRow");
         for (var i = 0; i < cs.length; i++) cs[i].checked = all.checked;
       };
-      $("commitWrap").style.display = "";
       setStatus("内容を確認し、取り込む行にチェックを入れてください。");
     }
 
@@ -154,7 +152,6 @@
       $("confirm").disabled = true;
       setStatus("読み込み中…");
       $("preview").innerHTML = "";
-      $("commitWrap").style.display = "none";
       $("result").innerHTML = "";
       readAllFiles(files).then(function (texts) {
         TEXTS = texts;
@@ -189,7 +186,7 @@
         if (res.sheetUrl) rh += "<div><a href='" + esc(res.sheetUrl) + "' target='_blank' rel='noopener'>取り込み先スプレッドシートを開く</a></div>";
         $("result").innerHTML = rh;
         setStatus("完了");
-        $("commitWrap").style.display = "none";
+        var cw = $("commitWrap"); if (cw) cw.style.display = "none";
       }).catch(function (e) {
         $("commit").disabled = false;
         $("result").innerHTML = "<div class='err'>エラー: " + esc((e && e.message) || String(e)) + "</div>";
@@ -199,7 +196,6 @@
 
     $("maxrows").textContent = String(MAX_ROWS);
     $("confirm").onclick = onConfirm;
-    $("commit").onclick = onCommit;
     gasRun("Kuj_getTargets", CTX).then(renderTargets).catch(function (e) { renderTargets({ ok: false }); });
   </script>
 </body>
