@@ -14,9 +14,9 @@
 //       取り込み画面の URL（?page=import&ctx=<token>）を openUrl で返す。本体がそれを新タブで開く。
 //   (2) doGet(?page=import&ctx=...) → Index.html を配信。画面上部に書き込み先スプレッドシート URL を表示。
 //   (3) [取り込み内容を確認] → ブラウザが CSV を読み（Shift-JIS/UTF-8 自動判定）デコード済みテキストを
-//       Kuj_previewCsv_ に渡す → GAS が列ヘッダ駆動でパース＋重複除外（時間込み）＋先頭 30 行 →
+//       Kuj_previewCsv に渡す → GAS が列ヘッダ駆動でパース＋重複除外（時間込み）＋先頭 30 行 →
 //       読みやすいプレビュー表＋行ごとチェックボックス（既定 ON）。
-//   (4) [選択分をスプレッドシートへ取り込む] → Kuj_commitImport_(csvTexts, 選択index, ctx) が
+//   (4) [選択分をスプレッドシートへ取り込む] → Kuj_commitImport(csvTexts, 選択index, ctx) が
 //       同条件で再パース（ブラウザ送信値は信用しない）→ 選択分だけ Data シート（12 行目以降）へ append。
 //       結果に「シートを開く」リンクを返す。
 //
@@ -687,9 +687,11 @@ function Kuj_renderImportPage_(e) {
 // #############################################################################
 // ## api.gs — プレビュー / コミット（google.script.run 公開関数）
 // #############################################################################
+// 注: ここの 3 関数（Kuj_getTargets / Kuj_previewCsv / Kuj_commitImport）は google.script.run から
+// 呼ぶため末尾アンダースコア不可（Apps Script が末尾 _ を private 扱いにして呼べない＝choju と同じ規約）。
 
 // 書き込み先（管理者リレーの ctx から解決）を返す。画面上部の URL 表示用。
-function Kuj_getTargets_(ctxToken) {
+function Kuj_getTargets(ctxToken) {
   try {
     var t = Kuj_resolveTargets_(ctxToken);
     return {
@@ -731,7 +733,7 @@ function Kuj_previewRowsFromCandidates_(candidates) {
 }
 
 // CSV テキスト群 → 読みやすいプレビュー（行ごと・ラベル＝値）＋警告＋書き込み先 URL。
-function Kuj_previewCsv_(csvTexts, ctxToken) {
+function Kuj_previewCsv(csvTexts, ctxToken) {
   try {
     var batch = Kuj_parseCsvBatch_(csvTexts);
     var targets = Kuj_resolveTargets_(ctxToken);
@@ -774,7 +776,7 @@ function Kuj_parseIndexes_(selectedIndexesJson, count) {
 }
 
 // 選択された行だけを Data シートへ直接書き込む。ブラウザ送信値は信用せず CSV を再パースする。
-function Kuj_commitImport_(csvTexts, selectedIndexesJson, ctxToken) {
+function Kuj_commitImport(csvTexts, selectedIndexesJson, ctxToken) {
   try {
     var targets = Kuj_resolveTargets_(ctxToken);
     if (!targets.spreadsheetId) {

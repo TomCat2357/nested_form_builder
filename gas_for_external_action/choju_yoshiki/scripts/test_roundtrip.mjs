@@ -50,17 +50,15 @@ eq("法人 法人名", impH.parent.fields["申請者情報/申請者の個人・
 
 // ---- 確認用（桃セル）取り込み ----
 const CONF = "確認用", CONFSP = CONF + "/種類及び数量";
-// 個人: 同定（名簿由来）＋集計＋種数を確認用へ
-eq("個人 確認用住所", impK.parent.fields[CONF + "/住所"], "小樽市");
-eq("個人 確認用氏名", impK.parent.fields[CONF + "/氏名"], "鈴木新之助");
-eq("個人 確認用職業", impK.parent.fields[CONF + "/職業"], "無職");
-eq("個人 確認用生年月日", impK.parent.fields[CONF + "/生年月日"], "2026-06-01");
-eq("個人 確認用証明書住所", impK.parent.fields[CONF + "/証明書住所"], "小樽市");
-eq("個人 確認用証明書氏名", impK.parent.fields[CONF + "/証明書氏名"], "鈴木新之助");
+// 集計系（種数/卵数/捕獲方法）のみ取り込む。同定系は「照合専用」化＝保存しない。
 ok("個人 確認用キツネ捕獲数", impK.parent.fields[CONFSP + "/キツネ捕獲数"] === 8, JSON.stringify(impK.parent.fields[CONFSP + "/キツネ捕獲数"]));
 ok("個人 確認用キジバト採取卵数あり", typeof impK.parent.fields[CONFSP + "/キジバト採取卵数"] === "number", JSON.stringify(impK.parent.fields[CONFSP + "/キジバト採取卵数"]));
 ok("個人 確認用捕獲方法あり", typeof impK.parent.fields[CONF + "/捕獲方法"] === "string" && impK.parent.fields[CONF + "/捕獲方法"].length > 0, impK.parent.fields[CONF + "/捕獲方法"]);
-// 法人: 同定は重複させない（未設定）／集計・種数は取り込む
+// 同定系（住所/氏名/生年月日/職業/証明書住所/証明書氏名）は保存しない（個人でも法人でも）。
+for (const sub of ["住所", "氏名", "生年月日", "職業", "証明書住所", "証明書氏名"]) {
+  ok("個人 確認用" + sub + "は非保存", !(CONF + "/" + sub in impK.parent.fields), JSON.stringify(impK.parent.fields[CONF + "/" + sub]));
+}
+// 法人: 同定は未設定／集計・種数は取り込む
 ok("法人 確認用住所なし", !(CONF + "/住所" in impH.parent.fields), impH.parent.fields[CONF + "/住所"]);
 ok("法人 確認用氏名なし", !(CONF + "/氏名" in impH.parent.fields), impH.parent.fields[CONF + "/氏名"]);
 ok("法人 確認用種数あり", Object.keys(impH.parent.fields).some((k) => k.startsWith(CONFSP + "/")), "法人の確認用種数が空");
@@ -106,6 +104,21 @@ const has = (iss, c, cell) => iss.some((x) => x.category === c && x.cell === cel
 { const v = clone(fx["法人"]); setCell(v, "申請書", "F24", 99); const iss = impOf(v).issues;
   ok("(6法人) F24誤値→pink", has(iss, "pink_inconsistent", "F24"), JSON.stringify(cat(iss, "pink_inconsistent")));
   ok("(6法人) 同定セルは照合外", !has(iss, "pink_inconsistent", "F6") && !has(iss, "pink_inconsistent", "F8"), "F6/F8 が誤検知"); }
+// (7) 既定 fixture: 申請者(鈴木新之助/2026-06-01)が名簿先頭にいる → 「一覧に見つかりません」pink は出ない
+{ const iss = impK.issues;
+  ok("(7) 申請者在籍→F8 pink無し", !has(iss, "pink_inconsistent", "F8"), JSON.stringify(cat(iss, "pink_inconsistent"))); }
+// (8) 申請者氏名を名簿にいない人へ（個人モード強制）→ 本人特定できず F8 に「一覧に見つかりません」pink
+//     ※氏名を変えると自動判定は法人へ転ぶため forcedType="個人"（取り込み画面のラジオ選択を模す）
+{ const v = clone(fx["個人"]); setCell(v, "申請書", "F8", "存在しない太郎");
+  const iss = C.Cho_buildImport_(C.Cho_makeReader_(v), "個人").issues;
+  ok("(8) 名簿外申請者→F8 pink", has(iss, "pink_inconsistent", "F8"), JSON.stringify(cat(iss, "pink_inconsistent"))); }
+// (9) 本人は在籍するが住所が食い違う → F6 に pink（本人と照合）
+{ const v = clone(fx["個人"]); setCell(v, "申請書", "F6", "札幌市"); const iss = impOf(v).issues;
+  ok("(9) 住所食い違い→F6 pink", has(iss, "pink_inconsistent", "F6"), JSON.stringify(cat(iss, "pink_inconsistent")));
+  ok("(9) 本人は特定済→F8 pink無し", !has(iss, "pink_inconsistent", "F8"), JSON.stringify(cat(iss, "pink_inconsistent"))); }
+// (10) 申請書 E30 を名簿用具と食い違わせる → E30 に pink（friendly 照合行は廃止、抽出レポートで検知）
+{ const v = clone(fx["個人"]); setCell(v, "申請書", "E30", "手捕り"); const iss = impOf(v).issues;
+  ok("(10) E30食い違い→pink", has(iss, "pink_inconsistent", "E30"), JSON.stringify(cat(iss, "pink_inconsistent"))); }
 
 // ---- 直接書き込みの純関数（Cho_resolveCell_ / Cho_buildNewRow_ / 添付 / friendly） ----
 // 日付セル: canonical 文字列 → Date + yyyy/mm/dd
@@ -196,36 +209,11 @@ eq("resolveCell 空値", C.Cho_resolveCell_("").value, "");
   const e30 = impK.parent.fields["確認用/捕獲方法"].split(/[,、・]/).map((s) => s.trim()).filter(Boolean).sort().join(",");
   eq("用具和集合==確認用捕獲方法", union, e30);
   ok("E30照合 issue無し", impK.issues.filter((x) => x.cell === "E30").length === 0, JSON.stringify(impK.issues.filter((x) => x.cell === "E30")));
-  // 申請者セクションに「従事者集計（和集合）」行が常時出て、E30 と順不同一致すること。
-  const sumRow = fr.applicant.rows.find((r) => r.label === "確認用 ＞ 捕獲方法（従事者集計）");
-  ok("friendly 従事者集計行あり", !!sumRow && sumRow.confirm === true, JSON.stringify(sumRow));
-  eq("friendly 従事者集計=和集合", sumRow.value.split(", ").slice().sort().join(","), union);
-  // 照合行が常時出て、一致ケースで「一致」になること。
-  const verdictRow = fr.applicant.rows.find((r) => r.label === "確認用 ＞ 捕獲方法 照合");
-  ok("friendly 照合行あり", !!verdictRow && verdictRow.confirm === true, JSON.stringify(verdictRow));
-  eq("friendly 照合=一致", verdictRow.value, "一致");
-}
-// friendly 照合行: 不一致ケース（E30 を壊す）と 申請書空ケース
-{
-  const cl = (o) => JSON.parse(JSON.stringify(o));
-  const setC = (vbs, sheet, a1, val) => {
-    const rc = C.Cho_a1ToRC_(a1);
-    const grid = vbs[sheet] || (vbs[sheet] = []);
-    while (grid.length < rc.row) grid.push([]);
-    const row = grid[rc.row - 1];
-    while (row.length < rc.col) row.push("");
-    row[rc.col - 1] = val;
-  };
-  // E30 に余分な用具を入れて和集合と食い違わせる → 照合=不一致
-  const vMis = cl(fx["個人"]); setC(vMis, "申請書", "E30", "手捕り,空気銃,散弾銃,はこわな,くくりわな");
-  const frMis = C.Cho_buildFriendly_(C.Cho_buildImport_(C.Cho_makeReader_(vMis)));
-  const vr = frMis.applicant.rows.find((r) => r.label === "確認用 ＞ 捕獲方法 照合");
-  ok("friendly 不一致→照合=不一致", !!vr && vr.value.indexOf("不一致") === 0, JSON.stringify(vr));
-  // E30 を空に → 照合スキップ
-  const vEmp = cl(fx["個人"]); setC(vEmp, "申請書", "E30", "");
-  const frEmp = C.Cho_buildFriendly_(C.Cho_buildImport_(C.Cho_makeReader_(vEmp)));
-  const vr2 = frEmp.applicant.rows.find((r) => r.label === "確認用 ＞ 捕獲方法 照合");
-  ok("friendly 申請書空→照合スキップ", !!vr2 && vr2.value.indexOf("照合スキップ") === 0, JSON.stringify(vr2));
+  // 表示専用の「捕獲方法（従事者集計）」「捕獲方法 照合」行は廃止された（E30 不一致は pink で出る）。
+  ok("friendly 従事者集計行なし", !fr.applicant.rows.some((r) => r.label === "確認用 ＞ 捕獲方法（従事者集計）"), "集計行が残存");
+  ok("friendly 照合行なし", !fr.applicant.rows.some((r) => r.label === "確認用 ＞ 捕獲方法 照合"), "照合行が残存");
+  // 同定の確認用行（住所/氏名/…）も表示されない（保存しないので fieldsToRows に出ない）。
+  ok("friendly 同定確認用行なし", !fr.applicant.rows.some((r) => /^確認用 ＞ (住所|氏名|生年月日|職業|証明書)/.test(r.label)), JSON.stringify(fr.applicant.rows.map((r) => r.label)));
 }
 // relay context 抽出（外部アクション payload → 親 storage）
 {

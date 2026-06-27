@@ -158,7 +158,7 @@
       $("result").innerHTML = "";
       readAllFiles(files).then(function (texts) {
         TEXTS = texts;
-        return gasRun("Kuj_previewCsv_", texts, CTX);
+        return gasRun("Kuj_previewCsv", texts, CTX);
       }).then(function (res) {
         $("confirm").disabled = false;
         if (!res || !res.ok) { setStatus(""); $("preview").innerHTML = "<div class='err'>エラー: " + esc(res && res.error || "unknown") + "</div>"; return; }
@@ -177,7 +177,7 @@
       if (!idx.length) { setStatus("取り込む行が選択されていません"); return; }
       $("commit").disabled = true;
       setStatus("取り込み中…");
-      gasRun("Kuj_commitImport_", TEXTS, JSON.stringify(idx), CTX).then(function (res) {
+      gasRun("Kuj_commitImport", TEXTS, JSON.stringify(idx), CTX).then(function (res) {
         $("commit").disabled = false;
         if (!res || !res.ok) { $("result").innerHTML = "<div class='err'>失敗: " + esc(res && res.error || "unknown") + "</div>"; setStatus(""); return; }
         var rh = "<div class='ok'>取り込み完了: " + (res.written || 0) + " 件</div>";
@@ -200,7 +200,7 @@
     $("maxrows").textContent = String(MAX_ROWS);
     $("confirm").onclick = onConfirm;
     $("commit").onclick = onCommit;
-    gasRun("Kuj_getTargets_", CTX).then(renderTargets).catch(function (e) { renderTargets({ ok: false }); });
+    gasRun("Kuj_getTargets", CTX).then(renderTargets).catch(function (e) { renderTargets({ ok: false }); });
   </script>
 </body>
 </html>

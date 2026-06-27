@@ -588,9 +588,9 @@ function Cho_importParent_(reader, workers, issues, forcedType) {
   return { type: applicantType, fields: f };
 }
 
-// 桃（確認用）セルの値を f["確認用/..."] へ取り込む（非空のみ）。
-// 集計系（ほか名数・捕獲方法・種ごと数量）は両モード。同定系（住所/氏名/職業/生年月日/証明書住所・氏名）は
-// 個人モードのみ（法人は申請書 F6/F8/F10 を正として取り込み済みのため重複させない）。
+// 桃（確認用）セルの値を f["確認用/..."] へ取り込む（非空のみ）。集計系（ほか名数・捕獲方法・
+// 種ごと数量）のみ両モードで取り込む。同定系（住所/氏名/職業/生年月日/証明書住所・氏名）は
+// 取り込まず、Cho_checkPinkConsistency_ で名簿と照合するだけ（不一致は pink_inconsistent）。
 function Cho_importConfirm_(app, jiyu, applicantType, f) {
   var CONF = CHO_L_CONFIRM_, CONFSP = CHO_L_CONFIRM_ + "/" + CHO_L_CONFIRM_SPECIES_;
   function setStr(path, v) { var s = Cho_str_(v); if (s !== "") f[path] = s; }
@@ -603,16 +603,6 @@ function Cho_importConfirm_(app, jiyu, applicantType, f) {
     var e = CHO_APP_SPECIES_[i];
     setNum(CONFSP + "/" + e.sp + "捕獲数", app(e.count));
     if (e.bird && e.egg) setNum(CONFSP + "/" + e.sp + "採取卵数", app(e.egg));
-  }
-
-  // 同定系（個人モードのみ）
-  if (applicantType !== "法人") {
-    setStr(CONF + "/住所", app("F6"));
-    setStr(CONF + "/氏名", app("F8"));
-    var birth = Cho_dateCanon_(app("F10")); if (birth) f[CONF + "/生年月日"] = birth;
-    setStr(CONF + "/職業", app("F11"));
-    setStr(CONF + "/証明書住所", jiyu("H4"));
-    setStr(CONF + "/証明書氏名", jiyu("H5"));
   }
 }
 
@@ -678,15 +668,27 @@ function Cho_checkPinkConsistency_(reader, workers, applicantType, issues) {
   // 方法 E30 = 名簿用具の和集合（順不同で照合）
   Cho_comparePinkSet_(issues, APP, "E30", "捕獲方法", app("E30"), Cho_unionToolsFromImport_(workers));
 
-  // 申請者同定セル（個人モードのみ rep と照合。法人は独立リテラルなので照合しない）
+  // 申請者同定（個人モードのみ。法人は独立リテラルなので照合しない）。
+  // 氏名＋生年月日で従事者一覧から本人を特定し、不在なら pink。見つかれば住所等をその本人と照合。
+  // appName/appBirth が空なら丸ごと skip（個人様式の桃セルは数式で未再計算時に空＝誤検知回避の要）。
   if (applicantType !== "法人" && workers.length > 0) {
-    var rep = workers[0];
-    Cho_comparePinkText_(issues, APP, "F6", "住所(確認用)", app("F6"), Cho_str_(rep["住所"]));
-    Cho_comparePinkText_(issues, APP, "F8", "氏名(確認用)", app("F8"), Cho_str_(rep["氏名"]));
-    Cho_comparePinkDate_(issues, APP, "F10", "生年月日(確認用)", app("F10"), Cho_str_(rep["生年月日"]));
-    Cho_comparePinkText_(issues, APP, "F11", "職業(確認用)", app("F11"), Cho_str_(rep["職業"]));
-    Cho_comparePinkText_(issues, JIYU, "H4", "住所(証明書)", jiyu("H4"), Cho_str_(rep["住所"]));
-    Cho_comparePinkText_(issues, JIYU, "H5", "氏名(証明書)", jiyu("H5"), Cho_str_(rep["氏名"]));
+    var appName = Cho_str_(app("F8")), appBirth = Cho_dateCanon_(app("F10"));
+    if (appName !== "" && appBirth !== "") {
+      var rep = null;
+      for (var m = 0; m < workers.length; m++) {
+        if (Cho_str_(workers[m]["氏名"]) === appName && Cho_dateCanon_(workers[m]["生年月日"]) === appBirth) { rep = workers[m]; break; }
+      }
+      if (!rep) {
+        issues.push(Cho_issue_("pink_inconsistent", "warn", APP, "F8", "申請者(確認用)", appName + "(" + appBirth + ")", "",
+          APP + " F8 申請者 \"" + appName + "(" + appBirth + ")\" が従事者一覧に見つかりません"));
+      } else {
+        // 氏名(F8)・生年月日(F10) はマッチ条件で一致確認済み。残りの同定項目を本人と照合。
+        Cho_comparePinkText_(issues, APP, "F6", "住所(確認用)", app("F6"), Cho_str_(rep["住所"]));
+        Cho_comparePinkText_(issues, APP, "F11", "職業(確認用)", app("F11"), Cho_str_(rep["職業"]));
+        Cho_comparePinkText_(issues, JIYU, "H4", "住所(証明書)", jiyu("H4"), Cho_str_(rep["住所"]));
+        Cho_comparePinkText_(issues, JIYU, "H5", "氏名(証明書)", jiyu("H5"), Cho_str_(rep["氏名"]));
+      }
+    }
   }
 }
 
@@ -1363,24 +1365,9 @@ function Cho_buildFriendly_(imp) {
       rows: wrows
     });
   }
-  // 申請者セクションに「全従事者の具体的用具の和集合 ＝ 申請書の捕獲方法(E30)」の照合を常時表示する。
-  // 判定は新規に計算せず、権威ある既存照合（Cho_comparePinkSet_ が出す E30 の pink_inconsistent）を流用。
+  // 申請者セクションは保存フィールドのみを表示する。捕獲方法の名簿照合は表示行を出さず、
+  // 食い違いは Cho_comparePinkSet_ が出す E30 の pink_inconsistent（抽出レポート）に委ねる。
   var appRows = Cho_fieldsToRows_(pf);
-  var union = Cho_unionToolsFromImport_(kids);
-  if (union.length) appRows.push({ label: "確認用 ＞ 捕獲方法（従事者集計）", value: union.join(", "), confirm: true });
-  var e30 = pf[CHO_L_CONFIRM_ + "/捕獲方法"];
-  var verdict;
-  if (e30 === undefined || e30 === null || String(e30) === "") {
-    verdict = "照合スキップ（申請書側が空）";
-  } else {
-    var issues = (imp && imp.issues) ? imp.issues : [];
-    var mismatch = false;
-    for (var ii = 0; ii < issues.length; ii++) {
-      if (issues[ii].cell === "E30" && issues[ii].category === "pink_inconsistent") { mismatch = true; break; }
-    }
-    verdict = mismatch ? ("不一致（申請書: " + String(e30) + "）") : "一致";
-  }
-  appRows.push({ label: "確認用 ＞ 捕獲方法 照合", value: verdict, confirm: true });
   return {
     applicant: { type: type, name: String(name || ""), rows: appRows },
     workers: workers
