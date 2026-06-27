@@ -9,7 +9,7 @@ const { loadGasFiles } = require("./helpers/gasVmLoader.cjs");
 //   - SerializeRecord_ / Sheets_buildRecordFromRow_ が pid 列を素通しする
 
 // --- ListRecords_ / SyncRecords_ のフィルタ検証用ハーネス（Sheets_getAllRecords_ をスタブ） ---
-function loadFilterContext({ isAdmin = false } = {}) {
+function loadFilterContext({ isAdmin = false, sheetLastUpdatedAt = 0 } = {}) {
   const fakeSheet = { __id: "sheet" };
   const context = {
     console,
@@ -32,7 +32,7 @@ function loadFilterContext({ isAdmin = false } = {}) {
 
     Sheets_getOrCreateSheet_: () => fakeSheet,
     Sheets_translateOpenError_: (err) => String(err),
-    Sheets_readSheetLastUpdated_: () => 0,
+    Sheets_readSheetLastUpdated_: () => sheetLastUpdatedAt,
     Sheets_readHeaderMatrix_: () => [],
     Sheets_collectTemporalPathMap_: () => null,
     Sheets_normalizeNumericToUnixMs_: (n) => n,
@@ -172,6 +172,34 @@ test("SyncRecords_: pid 指定でデルタ経路もフィルタする", () => {
   assert.equal(result.ok, true);
   assert.equal(result.isDelta, true);
   assert.deepEqual(Array.from(result.records, (r) => r.id).sort(), ["r1", "r3"]);
+});
+
+// staleness 短絡（sheetLastUpdatedAt <= lastServerReadAt）の forceFullSync バイパス回帰。
+// 外部アクション等の別プロジェクト直書きは本体の sheetLastUpdatedAt を更新できないため、
+// 手動「更新」(forceFullSync) は短絡せず必ず全件再読込しなければならない。
+test("SyncRecords_: forceFullSync は stale な短絡を無視して全件返す", () => {
+  const ctx = loadFilterContext({ isAdmin: true, sheetLastUpdatedAt: READ_THRESHOLD_MS });
+  ctx.__testRecords = [recA, recB, recC];
+  const result = ctx.SyncRecords_({
+    spreadsheetId: "ss1", sheetName: "Data",
+    raw: { authKey: "ADMIN_KEY", forceFullSync: true, uploadRecords: [], lastServerReadAt: READ_THRESHOLD_MS },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.unchanged, false);
+  assert.equal(result.isDelta, false);
+  assert.deepEqual(Array.from(result.records, (r) => r.id).sort(), ["r1", "r2", "r3"]);
+});
+
+test("SyncRecords_: 非 forceFullSync は stale 時に従来どおり unchanged 短絡する", () => {
+  const ctx = loadFilterContext({ isAdmin: true, sheetLastUpdatedAt: READ_THRESHOLD_MS });
+  ctx.__testRecords = [recA, recB, recC];
+  const result = ctx.SyncRecords_({
+    spreadsheetId: "ss1", sheetName: "Data",
+    raw: { authKey: "ADMIN_KEY", forceFullSync: false, uploadRecords: [], lastServerReadAt: READ_THRESHOLD_MS },
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.unchanged, true);
+  assert.equal(result.records.length, 0);
 });
 
 test("SerializeRecord_: pid を文字列で素通しする", () => {

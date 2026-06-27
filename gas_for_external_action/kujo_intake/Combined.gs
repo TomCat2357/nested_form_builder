@@ -225,7 +225,7 @@ var KUJ_OPTIONS_ = {
 
 // フィールド仕様: 抽出候補プロパティ ↔ フォーム data キー（セグメント配列）。
 //   prop    : 抽出候補のプロパティ名（ascii・一意。Kuj_csvRowToCandidate_ が埋める）
-//   kind    : "scalar"（単一）/ "multi"（複数→", "連結）/ "date"（→"YYYY-MM-DD"）
+//   kind    : "scalar"（単一・素の値）/ "check"（単一選択→`親/選択肢`列へ"●"）/ "multi"（複数→", "連結）/ "date"（→"YYYY-MM-DD"）
 //   enumKey : KUJ_OPTIONS_ のキー（無ければ自由テキスト）
 //   segs    : data キーのセグメント配列（Kuj_joinFieldPath_ に通す）
 //   gate    : [{prop, needs}, ...] すべて満たすときだけ出力（子キーのゲーティング）
@@ -236,8 +236,8 @@ var KUJ_FIELDS_ = [
     desc: "受付日（市政相談対応票の受付年月日や Web 問い合わせ日）。西暦/和暦どちらでも可。" },
   { prop: "keizokuKanketsu", kind: "scalar", enumKey: "keizoku", segs: ["継続/完結"],
     desc: "対応が継続中か完結か。intake 時点では通常「継続中」（自動では入れない＝人手）" },
-  { prop: "toiawaseHoho", kind: "scalar", enumKey: "hoho", segs: ["問合せ方法"],
-    desc: "問い合わせの経路。市政相談対応票で届いたものは「市政相談対応票」、札幌市 CMS の Web 問い合わせは「ホームページ」" },
+  { prop: "toiawaseHoho", kind: "check", enumKey: "hoho", segs: ["問合せ方法"],
+    desc: "問い合わせの経路（単一選択＝`問合せ方法/選択肢` 列へ「●」）。札幌市 CMS の Web 問い合わせは「ホームページ」" },
   { prop: "toiawaseHohoOther", kind: "scalar", segs: ["問合せ方法", "その他", "具体的に"],
     gate: [{ prop: "toiawaseHoho", needs: "その他" }],
     desc: "問合せ方法が「その他」のときの具体的な方法（手紙・FAX 等）" },
@@ -602,6 +602,20 @@ function Kuj_candidateToData_(cand) {
         if (kept.indexOf(label) === -1) kept.push(label);
       }
       if (kept.length) Kuj_setIf_(data, spec.segs, Kuj_joinChecks_(kept));
+
+    } else if (spec.kind === "check") {
+      // 単一選択（radio/select）: 元データ方式で `親/選択肢` 列へマーカー "●" を立てる
+      // （collect.js の radio/select と同じ表現）。素の `親` 列は存在しないため値直書きは捨てられる。
+      var cv = String(raw == null ? "" : raw).replace(/^\s+|\s+$/g, "");
+      if (!cv) continue;
+      if (spec.enumKey) {
+        var co = KUJ_OPTIONS_[spec.enumKey];
+        if (co && co.indexOf(cv) === -1) {
+          warnings.push(Kuj_specLabel_(spec) + ": 未知の選択肢「" + cv + "」を破棄しました。");
+          continue;
+        }
+      }
+      Kuj_setIf_(data, spec.segs.concat(cv), "●");
 
     } else if (spec.kind === "date") {
       var canon = Kuj_toCanonicalDate_(raw);

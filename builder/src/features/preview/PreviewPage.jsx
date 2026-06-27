@@ -743,7 +743,17 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       const res = await sendExternalAction({ url: resolvedUrl, payload, files });
       const result = interpretExternalActionResponse(res);
       if (!result.ok) {
-        showAlert(result.message || "外部アクションの送信先でエラーが発生しました。");
+        // ok:false でも openUrl があれば新タブで開く（受信側の権限付与誘導に対応）。
+        const errUrl = result.openUrl || resolvedUrl;
+        const errLinkLabel = result.openUrl ? "送信先を開く" : "送信先ページを開く";
+        showOutputAlert({
+          message: result.message || "外部アクションの送信先でエラーが発生しました。",
+          url: errUrl,
+          linkLabel: errLinkLabel,
+        });
+        if (result.openUrl) {
+          try { window.open(result.openUrl, "_blank", "noopener"); } catch (_e2) { /* noop */ }
+        }
         return;
       }
       if (result.openUrl) {
@@ -752,16 +762,28 @@ const PreviewPage = React.forwardRef(function PreviewPage(
           url: result.openUrl,
           linkLabel: "結果を開く",
         });
+      } else if (result.htmlBody) {
+        // HTML 応答は権限付与ページへのリダイレクト等の可能性がある。
+        showOutputAlert({
+          message: result.message,
+          url: resolvedUrl,
+          linkLabel: "送信先ページを開く",
+        });
       } else {
         showAlert(result.message || "外部アクションを送信しました。");
       }
     } catch (error) {
       // 誤送信防止ハンドシェイクで宛先を確認できなかったときは、その理由をそのまま伝える。
+      const catchUrl = resolvedUrl;
       if (error?.code === "DEST_UNVERIFIED") {
-        showAlert(toErrorMessage(error));
+        showOutputAlert({ message: toErrorMessage(error), url: catchUrl, linkLabel: "送信先ページを開く" });
         return;
       }
-      showAlert(`外部アクション送信に失敗しました: ${toErrorMessage(error)}`);
+      showOutputAlert({
+        message: `外部アクション送信に失敗しました: ${toErrorMessage(error)}`,
+        url: catchUrl,
+        linkLabel: "送信先ページを開く",
+      });
     }
   };
 

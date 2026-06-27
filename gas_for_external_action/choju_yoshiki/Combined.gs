@@ -533,6 +533,15 @@ function Cho_importParent_(reader, workers, issues, forcedType) {
     f[TBASE + "/法人/住所"] = Cho_str_(app("F6"));
     f[TBASE + "/法人/法人名"] = Cho_str_(app("F8"));
     f[TBASE + "/法人/代表者名"] = Cho_str_(app("F10"));
+  } else {
+    if (workers.length > 0) {
+      var rep0 = workers[0];
+      var iBase = TBASE + "/個人";
+      if (rep0["氏名"])     f[iBase + "/氏名"]     = rep0["氏名"];
+      if (rep0["住所"])     f[iBase + "/住所"]     = rep0["住所"];
+      if (rep0["生年月日"]) f[iBase + "/生年月日"] = rep0["生年月日"];
+      if (rep0["職業"])     f[iBase + "/職業"]     = rep0["職業"];
+    }
   }
 
   f[CHO_L_PURPOSE_] = Cho_str_(app("E27"));
@@ -557,35 +566,36 @@ function Cho_importParent_(reader, workers, issues, forcedType) {
   var disp = Cho_str_(app("E31")).split(/[・,、]/).map(function (x) { return x.replace(/^\s+|\s+$/g, ""); }).filter(function (x) { return x; });
   if (disp.length) f[CHO_L_DISPOSAL_] = disp.join(", ");
 
-  // 証明書
+  // 証明書（取り込み画面でのみ表示。スプレッドシートには書き込まない）
+  var displayFields = {};
   var jBase = CHO_L_JIYU_ + "/";
   var cause = [];
   for (var sp in CHO_JIYU_SPECIES_MARK_) {
     if (CHO_JIYU_SPECIES_MARK_.hasOwnProperty(sp) && Cho_isChecked_(jiyu(CHO_JIYU_SPECIES_MARK_[sp]))) cause.push(sp);
   }
-  if (cause.length) f[jBase + CHO_L_JIYU_CAUSE_] = cause.join(", ");
+  if (cause.length) displayFields[jBase + CHO_L_JIYU_CAUSE_] = cause.join(", ");
   var victimRaw = Cho_str_(jiyu("E22"));
   var victim = CHO_VICTIM_FROM_SHEET_[victimRaw] || "";
   if (victim) {
-    f[jBase + CHO_L_JIYU_VICTIM_] = victim;
+    displayFields[jBase + CHO_L_JIYU_VICTIM_] = victim;
     if (victim === "申請者以外") {
-      f[jBase + CHO_L_JIYU_VICTIM_ + "/申請者以外/住所"] = Cho_str_(jiyu("G22"));
-      f[jBase + CHO_L_JIYU_VICTIM_ + "/申請者以外/氏名"] = Cho_str_(jiyu("G23"));
+      displayFields[jBase + CHO_L_JIYU_VICTIM_ + "/申請者以外/住所"] = Cho_str_(jiyu("G22"));
+      displayFields[jBase + CHO_L_JIYU_VICTIM_ + "/申請者以外/氏名"] = Cho_str_(jiyu("G23"));
     }
   } else if (victimRaw !== "") {
     issues.push(Cho_issue_("odd", "warn", JIYU, "E22", "被害者区分", victimRaw, "",
       "証明書 E22 被害者区分「" + victimRaw + "」は様式の区分に対応がありません。"));
   }
-  f[jBase + CHO_L_JIYU_TIME_] = Cho_str_(jiyu("E24"));
-  f[jBase + CHO_L_JIYU_AREA_] = Cho_str_(jiyu("E25"));
-  f[jBase + CHO_L_JIYU_CONTENT_] = Cho_str_(jiyu("E26"));
-  f[jBase + CHO_L_JIYU_REASON_] = Cho_str_(jiyu("E27"));
-  f[jBase + CHO_L_REMARKS_] = Cho_str_(jiyu("E28"));
+  displayFields[jBase + CHO_L_JIYU_TIME_]    = Cho_str_(jiyu("E24"));
+  displayFields[jBase + CHO_L_JIYU_AREA_]    = Cho_str_(jiyu("E25"));
+  displayFields[jBase + CHO_L_JIYU_CONTENT_] = Cho_str_(jiyu("E26"));
+  displayFields[jBase + CHO_L_JIYU_REASON_]  = Cho_str_(jiyu("E27"));
+  displayFields[jBase + CHO_L_REMARKS_]       = Cho_str_(jiyu("E28"));
 
   // 確認用（桃セル）: 照合に加えて値そのものを「確認用」メッセージの子質問へ取り込む。
   Cho_importConfirm_(app, jiyu, applicantType, f);
 
-  return { type: applicantType, fields: f };
+  return { type: applicantType, fields: f, displayFields: displayFields };
 }
 
 // 桃（確認用）セルの値を f["確認用/..."] へ取り込む（非空のみ）。集計系（ほか名数・捕獲方法・
@@ -1368,6 +1378,14 @@ function Cho_buildFriendly_(imp) {
   // 申請者セクションは保存フィールドのみを表示する。捕獲方法の名簿照合は表示行を出さず、
   // 食い違いは Cho_comparePinkSet_ が出す E30 の pink_inconsistent（抽出レポート）に委ねる。
   var appRows = Cho_fieldsToRows_(pf);
+  // 証明書（displayFields）はプレビュー画面でのみ confirm=true 行として表示する。
+  var df = (imp && imp.parent && imp.parent.displayFields) ? imp.parent.displayFields : {};
+  for (var dfk in df) {
+    if (!Object.prototype.hasOwnProperty.call(df, dfk)) continue;
+    var dfv = df[dfk];
+    if (dfv === "" || dfv === null || dfv === undefined) continue;
+    appRows.push({ label: Cho_prettyLabel_(dfk), value: String(dfv), confirm: true });
+  }
   return {
     applicant: { type: type, name: String(name || ""), rows: appRows },
     workers: workers

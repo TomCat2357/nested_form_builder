@@ -167,7 +167,8 @@ eq("26 filename", upCsv.filename, "toiawase.csv");
 eq("26 records 件数", upCsv.parent.uploadRecords.length, 3);
 eq("26 受付日 canonical r0", upCsv.parent.uploadRecords[0].data["受付日"], "2026-06-27");
 eq("26 受付日 canonical r1", upCsv.parent.uploadRecords[1].data["受付日"], "2026-06-26");
-eq("26 問合せ方法 data", upCsv.parent.uploadRecords[0].data["問合せ方法"], "ホームページ");
+eq("26 問合せ方法 ●マーカー data", upCsv.parent.uploadRecords[0].data["問合せ方法/ホームページ"], "●");
+ok("26 問合せ方法 素の列は出さない", !("問合せ方法" in upCsv.parent.uploadRecords[0].data));
 eq("26 連絡先 data", upCsv.parent.uploadRecords[0].data["問合せ元　連絡先"], "hanako@example.com, 011-200-0000, 060-0001, 札幌市中央区北1条西2丁目");
 ok("26 備考 data あり", !!upCsv.parent.uploadRecords[0].data["備考"], JSON.stringify(upCsv.parent.uploadRecords[0].data));
 ok("26 相談大分類は自動で入らない", !("相談大分類" in upCsv.parent.uploadRecords[0].data));
@@ -285,7 +286,7 @@ eq("36 prettyLabel escaped", C.Kuj_prettyLabel_("継続\\/完結"), "継続/完�
 const pr = C.Kuj_previewRowsFromCandidates_([{ toiawaseHoho: "ホームページ", ukeotsukeDate: "2026/6/27 12:46", soudanShosai: "本文", _layout: "ホームページ（CSV）" }]);
 eq("37 preview 行数", pr.length, 1);
 ok("37 preview 受付日 canonical", pr[0].fields.some(f => f.label === "受付日" && f.value === "2026-06-27"), JSON.stringify(pr[0].fields));
-ok("37 preview 問合せ方法", pr[0].fields.some(f => f.label === "問合せ方法" && f.value === "ホームページ"));
+ok("37 preview 問合せ方法 ●マーカー", pr[0].fields.some(f => f.label === "問合せ方法 ＞ ホームページ" && f.value === "●"), JSON.stringify(pr[0].fields));
 
 // 38. 自己完結 ctx トークン（キャッシュ非依存）: encode→decode 往復で保存先が保たれる
 const ctx38 = C.Kuj_extractRelayContext_({ storage: { spreadsheetId: "SS_ROUNDTRIP", sheetName: "回答" }, formId: "f38" });

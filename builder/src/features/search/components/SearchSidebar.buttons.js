@@ -143,8 +143,11 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
     const res = await sendExternalAction({ url: resolvedUrl, payload });
     const result = interpretExternalActionResponse(res);
     if (!result.ok) {
+      // ok:false でも openUrl があれば新タブで開く（受信側の権限付与誘導に対応）。
+      const openTarget = result.openUrl || resolvedUrl;
       // eslint-disable-next-line no-alert
       window.alert(result.message || "外部アクションの送信先でエラーが発生しました。");
+      try { window.open(openTarget, "_blank", "noopener"); } catch (_e2) { /* noop */ }
       return;
     }
     const msg = result.message || "外部アクションを送信しました。";
@@ -152,6 +155,11 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
       // eslint-disable-next-line no-alert
       window.alert(msg + "\n" + result.openUrl);
       try { window.open(result.openUrl, "_blank", "noopener"); } catch (_e2) { /* noop */ }
+    } else if (result.htmlBody) {
+      // HTML 応答は権限付与ページへのリダイレクト等の可能性がある。
+      // eslint-disable-next-line no-alert
+      window.alert(msg);
+      try { window.open(resolvedUrl, "_blank", "noopener"); } catch (_e2) { /* noop */ }
     } else {
       // eslint-disable-next-line no-alert
       window.alert(msg);
@@ -161,10 +169,11 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
     if (error && error.code === "DEST_UNVERIFIED") {
       // eslint-disable-next-line no-alert
       window.alert(error.message || "宛先を確認できませんでした（誤送信防止）。");
-      return;
+    } else {
+      // eslint-disable-next-line no-alert
+      window.alert("外部アクション送信に失敗しました: " + (error && error.message ? error.message : String(error)));
     }
-    // eslint-disable-next-line no-alert
-    window.alert("外部アクション送信に失敗しました: " + (error && error.message ? error.message : String(error)));
+    try { window.open(resolvedUrl, "_blank", "noopener"); } catch (_e2) { /* noop */ }
   }
 };
 

@@ -51,6 +51,7 @@ export const buildExternalActionPayload = ({
 // サーバ間リレー（sendExternalAction）の戻り値 { status, body } を画面表示用に解釈する。
 // 受信側が nfbRelay=1 で JSON ({ ok, title, message, openUrl }) を返せばそれを使い、
 // JSON でない（旧受信アプリの HTML 等）ときは汎用の成功メッセージにフォールバックする。
+// htmlBody: true は応答が HTML（権限付与ページへのリダイレクト等）の可能性を示す。
 export const interpretExternalActionResponse = (res) => {
   const status = res && typeof res.status === "number" ? res.status : 0;
   const body = res && typeof res.body === "string" ? res.body : "";
@@ -59,10 +60,22 @@ export const interpretExternalActionResponse = (res) => {
   if (data && typeof data === "object") {
     return {
       ok: data.ok !== false,
+      status,
       title: typeof data.title === "string" ? data.title : "",
       message: typeof data.message === "string" ? data.message : "",
       openUrl: typeof data.openUrl === "string" ? data.openUrl : "",
+      htmlBody: false,
     };
   }
-  return { ok: true, title: "", message: `外部アクションを送信しました（HTTP ${status}）。`, openUrl: "" };
+  const htmlBody = body.trimStart().startsWith("<");
+  return {
+    ok: true,
+    status,
+    title: "",
+    message: htmlBody
+      ? "送信先から HTML 応答が返りました。送信先ページで権限の付与が必要な可能性があります。"
+      : `外部アクションを送信しました（HTTP ${status}）。`,
+    openUrl: "",
+    htmlBody,
+  };
 };

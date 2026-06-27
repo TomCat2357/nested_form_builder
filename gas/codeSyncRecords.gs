@@ -77,7 +77,10 @@ function SyncRecords_(ctx) {
     };
 
     if (uploadRecords.length === 0) {
-      if (sheetLastUpdatedAt > 0 && lastServerReadAt > 0 && sheetLastUpdatedAt <= lastServerReadAt) {
+      // forceFullSync（手動「更新」）は staleness 短絡を必ずバイパスして全件再読込する。
+      // 外部アクション等の別プロジェクト直書きは本体の sheetLastUpdatedAt を更新できず、
+      // 短絡したままだと「更新」ボタンで新規行が反映されない（フルリロードまで見えない）。
+      if (!forceFullSync && sheetLastUpdatedAt > 0 && lastServerReadAt > 0 && sheetLastUpdatedAt <= lastServerReadAt) {
         return {
           ok: true,
           serverModifiedAt: serverModifiedAt,
