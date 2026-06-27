@@ -144,7 +144,8 @@ function loadFormsSaveContext() {
       try { return fn(); } catch (err) { return { ok: false, error: err && err.message ? err.message : String(err) }; }
     },
     WithScriptLock_: (label, fn) => fn(),
-    // constants.gs を読まないので shim（重複除去した文字列 id 配列）。
+    // constants.gs を読まないので shim（文字列 trim・重複除去した文字列 id 配列）。
+    Nfb_trimStr_: (value) => (value ? String(value).trim() : ""),
     Nfb_normalizeIdList_: (ids) => {
       const source = Array.isArray(ids) ? ids : [ids];
       const seen = new Set();

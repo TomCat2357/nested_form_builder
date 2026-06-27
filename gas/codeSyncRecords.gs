@@ -126,7 +126,7 @@ function SyncRecords_(ctx) {
       var existingRowMap = {};
       var maxNo = 0;
       for (var i = 0; i < existingData.length; i++) {
-        var id = String(existingData[i][0] || "").trim();
+        var id = Nfb_trimStr_(existingData[i][0]);
         if (id) existingRowMap[id] = i;
         var noVal = Number(existingData[i][1]);
         if (isFinite(noVal) && noVal > maxNo) maxNo = noVal;

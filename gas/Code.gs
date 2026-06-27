@@ -239,7 +239,7 @@ function executeAction_(action, rawPayload, options = {}) {
 // バックエンド（Bundle.gs）のデプロイ時刻を返す。deploy.ps1 が NFB_DEPLOY_TIME_BAKED へ焼き込む。
 // 未置換（手動 bundle 等でプレースホルダのまま）の場合は空文字へ正規化する。
 function Nfb_getBackendDeployTime_() {
-  var baked = String(NFB_DEPLOY_TIME_BAKED || "").trim();
+  var baked = Nfb_trimStr_(NFB_DEPLOY_TIME_BAKED);
   // 未置換ならプレースホルダ文字列のまま残るので空扱いにする。
   // 注: deploy.ps1 は焼き込みプレースホルダを全置換するため、この比較用リテラルを
   //     連結で組み立てて「置換対象に巻き込まれない」ようにする（直書きすると自分も置換され誤判定する）。
@@ -261,7 +261,7 @@ function Nfb_isTestModeDeploy_() {
     if (mode === "prod") return false;
   } catch (e) { /* fallthrough */ }
   // deploy.ps1 がビルド時に焼き込んだデプロイ種別（-TestMode で "test"）。
-  var baked = String(NFB_DEPLOY_MODE_BAKED || "").trim().toLowerCase();
+  var baked = Nfb_trimStr_(NFB_DEPLOY_MODE_BAKED).toLowerCase();
   if (baked === "test") return true;
   if (baked === "prod") return false;
   try {

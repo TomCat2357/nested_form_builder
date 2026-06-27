@@ -8,7 +8,7 @@ function nfbNormalizePrintDocumentPayload_(payload) {
     throw new Error("印刷様式のデータが不足しています");
   }
 
-  var fileName = String(payload.fileName || "").trim();
+  var fileName = Nfb_trimStr_(payload.fileName);
   if (!fileName) {
     throw new Error("fileName is required");
   }
@@ -35,8 +35,8 @@ function nfbNormalizePrintDocumentRecord_(payload, index) {
   }
 
   return {
-    formTitle: String(payload.formTitle || "").trim() || "受付フォーム",
-    recordId: String(payload.recordId || "").trim() || ("record-" + (index + 1)),
+    formTitle: Nfb_trimStr_(payload.formTitle) || "受付フォーム",
+    recordId: Nfb_trimStr_(payload.recordId) || ("record-" + (index + 1)),
     recordNo: payload.recordNo === undefined || payload.recordNo === null ? "" : String(payload.recordNo).trim(),
     modifiedAt: payload.modifiedAt === undefined || payload.modifiedAt === null ? "" : String(payload.modifiedAt).trim(),
     showHeader: payload.showHeader !== false,

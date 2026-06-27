@@ -7,7 +7,7 @@
 // Drive ファイル URL/ID を idMap（oldFileId → { newFileId, newUrl }）で置換する。
 // 戻り値: { value, status } status は "remapped" | "cleared" | "unchanged"。
 function StdFolders_remapFileUrl_(url, idMap) {
-  var raw = String(url || "").trim();
+  var raw = Nfb_trimStr_(url);
   if (!raw) return { value: "", status: "unchanged" };
   var parsed = Forms_parseGoogleDriveUrl_(raw);
   var oldId = parsed && parsed.type === "file" ? parsed.id : null;
@@ -25,7 +25,7 @@ function StdFolders_remapFileUrl_(url, idMap) {
 
 // フォルダ URL を folderIdMap（srcFolderId → destFolderUrl）で置換。対象外はクリア。
 function StdFolders_remapFolderUrl_(url, folderIdMap) {
-  var raw = String(url || "").trim();
+  var raw = Nfb_trimStr_(url);
   if (!raw) return { value: "", status: "unchanged" };
   var parsed = Forms_parseGoogleDriveUrl_(raw);
   var oldId = parsed && parsed.type === "folder" ? parsed.id : null;

@@ -11,7 +11,7 @@
  * @return {string}
  */
 function NormalizeEmail_(value) {
-  return String(value || "").trim().toLowerCase();
+  return Nfb_trimStr_(value).toLowerCase();
 }
 
 // nfbHasOwnKeys_ は standardFoldersAlignRefs.gs に定義（バンドル連結でグローバル）。

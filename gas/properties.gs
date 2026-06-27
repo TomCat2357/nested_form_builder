@@ -1,5 +1,5 @@
 function Nfb_getPropertyStoreMode_() {
-  var rawMode = String(NFB_PROPERTY_STORE_MODE || "").trim().toLowerCase();
+  var rawMode = Nfb_trimStr_(NFB_PROPERTY_STORE_MODE).toLowerCase();
   return rawMode === NFB_PROPERTY_STORE_MODE_SCRIPT ? NFB_PROPERTY_STORE_MODE_SCRIPT : NFB_PROPERTY_STORE_MODE_USER;
 }
 
@@ -61,7 +61,7 @@ function Nfb_serializeVersionedMapping_(props, key, version, mapping, normalizeF
 }
 
 function Nfb_buildSheetLastUpdatedKey_(spreadsheetId, sheetName) {
-  var sid = String(spreadsheetId || "").trim();
+  var sid = Nfb_trimStr_(spreadsheetId);
   var sn = String(sheetName || NFB_DEFAULT_SHEET_NAME).trim() || NFB_DEFAULT_SHEET_NAME;
   return NFB_SHEET_LAST_UPDATED_AT_PREFIX + "::" + sid + "::" + sn;
 }

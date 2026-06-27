@@ -1,5 +1,5 @@
 function Model_normalizeSpreadsheetId_(input) {
-  var value = String(input || "").trim();
+  var value = Nfb_trimStr_(input);
   if (!value) return "";
 
   if (/^https?:\/\//i.test(value)) {

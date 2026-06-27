@@ -116,7 +116,7 @@ function Forms_alignSpreadsheetIntoStd_(spreadsheetId) {
 function Forms_resolveSpreadsheetSetting_(settings, form) {
   var nextSettings = (settings && typeof settings === "object") ? JSON.parse(JSON.stringify(settings)) : {};
   var path = (typeof nextSettings.spreadsheetPath === "string") ? nextSettings.spreadsheetPath.trim() : "";
-  var rawInput = String(nextSettings.spreadsheetId || "").trim();
+  var rawInput = Nfb_trimStr_(nextSettings.spreadsheetId);
 
   // 物理入力（spreadsheetId 欄）の解釈。フォルダ指定なら、そのフォルダに新規シートを作成してから物理 id
   // として扱う（folder-input 互換）。既存シート/URL ならアクセス検証して物理 id にする。

@@ -20,7 +20,7 @@ function ResolvePrimaryPersonField_(items) {
 }
 
 function NormalizeProfilePhone_(value) {
-  const raw = String(value || "").trim();
+  const raw = Nfb_trimStr_(value);
   if (!raw) return "";
 
   let digits = raw.replace(/\D/g, "");
