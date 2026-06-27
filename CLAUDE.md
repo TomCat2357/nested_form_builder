@@ -21,6 +21,7 @@
 | フロント / バックの機能モジュールを俯瞰したい | [docs/claude/feature-map.md](./docs/claude/feature-map.md) |
 | ファイルがどこにあるか当たりをつけたい | [docs/claude/repo-structure.md](./docs/claude/repo-structure.md) |
 | `doGet` / `doPost` / `ACTION_DEFINITIONS_` / `nfb*` 公開 API | [docs/claude/apps-script-backend.md](./docs/claude/apps-script-backend.md) |
+| 外部アクションボタンの payload 契約（検索一覧/単票・子フォーム有無） | [docs/claude/apps-script-backend.md](./docs/claude/apps-script-backend.md) |
 | ルート定義・対応フィールドタイプ | [docs/claude/routing.md](./docs/claude/routing.md) |
 | 初回セットアップ | [docs/claude/setup.md](./docs/claude/setup.md) |
 | 日常の dev / build / GAS 同期コマンド | [docs/claude/development-workflow.md](./docs/claude/development-workflow.md) |

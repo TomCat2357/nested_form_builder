@@ -14,12 +14,27 @@ const code = fs.readFileSync(path.join(dir, "..", "Combined.gs"), "utf8");
 // GAS の Utilities.computeHmacSha256Signature は符号付きバイト（Byte[]: -128..127）を返す。
 // 誤送信防止プローブの署名互換（本体 ExtAction の verifier と同形式）を node でも検証できるよう、
 // node:crypto の HMAC を符号付きバイト配列で返すスタブを供給する。
+// GAS の Utilities.base64EncodeWebSafe / base64DecodeWebSafe / newBlob を node で再現する
+// （自己完結 ctx トークンのエンコード/デコードを検証する。GAS は decode で符号付きバイトを返すので、
+// newBlob 側で符号無しへ戻して文字列化する＝Combined.gs の実装と同じ往復経路にする）。
 const Utilities = {
   computeHmacSha256Signature(message, key) {
     const mac = crypto.createHmac("sha256", Buffer.from(String(key == null ? "" : key), "utf8"))
       .update(Buffer.from(String(message == null ? "" : message), "utf8"))
       .digest();
     return Array.from(mac).map((b) => (b > 127 ? b - 256 : b));
+  },
+  Charset: { UTF_8: "UTF-8" },
+  base64EncodeWebSafe(input /*, charset */) {
+    return Buffer.from(String(input), "utf8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_");
+  },
+  base64DecodeWebSafe(s) {
+    const t = String(s).replace(/-/g, "+").replace(/_/g, "/");
+    return Array.from(Buffer.from(t, "base64")).map((b) => (b > 127 ? b - 256 : b)); // GAS 同様の符号付き Byte[]
+  },
+  newBlob(bytes) {
+    const buf = Buffer.from((bytes || []).map((b) => (b < 0 ? b + 256 : b)));
+    return { getDataAsString: () => buf.toString("utf8") };
   },
 };
 const sandbox = { module: { exports: {} }, console, Date, Math, JSON, RegExp, Number, String, Array, Object, isNaN, isFinite, parseInt, Utilities };
@@ -237,16 +252,16 @@ eq("33 相談詳細 配置", built.rowData[11], "本文");
 const dropped = C.Kuj_collectDroppedKeys_(rec.data, keyToColumn);
 ok("33 未知列を drop 検出", dropped.indexOf("存在しない列") >= 0, JSON.stringify(dropped));
 
-// 34. mergeTargets / extractRelayContext（リレー文脈・props フォールバック）
+// 34. targetsFromCtx / extractRelayContext（リレー文脈・ctx 一本化）
 const ctx = C.Kuj_extractRelayContext_({ storage: { spreadsheetId: "SS_X", sheetName: "Data2" }, formId: "f1" });
 eq("34 relay spreadsheetId", ctx.spreadsheetId, "SS_X");
 eq("34 relay sheetName", ctx.sheetName, "Data2");
-const merged = C.Kuj_mergeTargets_({ spreadsheetId: "PROP", sheetName: "Data" }, ctx);
-eq("34 ctx が props を上書き", merged.spreadsheetId, "SS_X");
-eq("34 ctx sheetName 優先", merged.sheetName, "Data2");
-const mergedNoCtx = C.Kuj_mergeTargets_({ spreadsheetId: "PROP", sheetName: "" }, null);
-eq("34 ctx 無→props", mergedNoCtx.spreadsheetId, "PROP");
-eq("34 sheetName 既定 Data", mergedNoCtx.sheetName, "Data");
+const tgt = C.Kuj_targetsFromCtx_(ctx);
+eq("34 ctx spreadsheetId 解決", tgt.spreadsheetId, "SS_X");
+eq("34 ctx sheetName 解決", tgt.sheetName, "Data2");
+const tgtNoCtx = C.Kuj_targetsFromCtx_(null);
+eq("34 ctx 無→未解決", tgtNoCtx.spreadsheetId, "");
+eq("34 sheetName 既定 Data", tgtNoCtx.sheetName, "Data");
 
 // 35. parseCsvBatch: ファイル横断 dedup（時間込み）＋ 30 行制限
 const HB = "ステータス,問い合わせ日,返信者,現在の振分先,問い合わせ件名,メールアドレス,氏名,ふりがな,年齢,職業,住所,郵便番号,電話番号,件名,内容\n";
@@ -271,6 +286,28 @@ const pr = C.Kuj_previewRowsFromCandidates_([{ toiawaseHoho: "ホームページ
 eq("37 preview 行数", pr.length, 1);
 ok("37 preview 受付日 canonical", pr[0].fields.some(f => f.label === "受付日" && f.value === "2026-06-27"), JSON.stringify(pr[0].fields));
 ok("37 preview 問合せ方法", pr[0].fields.some(f => f.label === "問合せ方法" && f.value === "ホームページ"));
+
+// 38. 自己完結 ctx トークン（キャッシュ非依存）: encode→decode 往復で保存先が保たれる
+const ctx38 = C.Kuj_extractRelayContext_({ storage: { spreadsheetId: "SS_ROUNDTRIP", sheetName: "回答" }, formId: "f38" });
+const tok38 = C.Kuj_encodeCtx_(ctx38);
+ok("38 トークン接頭辞 c1.", tok38.indexOf("c1.") === 0, tok38);
+ok("38 トークンは URL-safe(base64url)", /^c1\.[A-Za-z0-9_-]+$/.test(tok38), tok38);
+const dec38 = C.Kuj_decodeCtx_(tok38);
+eq("38 decode spreadsheetId", dec38.spreadsheetId, "SS_ROUNDTRIP");
+eq("38 decode sheetName", dec38.sheetName, "回答");
+eq("38 decode formId", dec38.formId, "f38");
+// targetsFromCtx と合わせて「ボタン押下で渡った保存先がそのまま書き込み先になる」ことを確認（ctx 一本化）
+const tgt38 = C.Kuj_targetsFromCtx_(dec38);
+eq("38 ctx spreadsheetId 解決", tgt38.spreadsheetId, "SS_ROUNDTRIP");
+eq("38 ctx sheetName 解決", tgt38.sheetName, "回答");
+// ctx が無ければ未解決（""）＋既定シート "Data"（フォールバックは無い）
+const tgtNull38 = C.Kuj_targetsFromCtx_(null);
+eq("38 ctx 無し spreadsheetId 未解決", tgtNull38.spreadsheetId, "");
+eq("38 ctx 無し sheetName 既定", tgtNull38.sheetName, "Data");
+// 旧キャッシュ方式トークン（"r_..."）/ 不正文字列は decode 対象外 → null（resolveTargets が readCtx へフォールバック）
+ok("38 旧トークンは decode 対象外", C.Kuj_decodeCtx_("r_abc_def") === null);
+ok("38 不正トークンは null", C.Kuj_decodeCtx_("c1.@@notbase64@@") === null || typeof C.Kuj_decodeCtx_("c1.@@notbase64@@") === "object");
+ok("38 空トークンは null", C.Kuj_decodeCtx_("") === null);
 
 console.log(`\n==== ${pass} PASS / ${fail} FAIL ====`);
 process.exit(fail ? 1 : 0);

@@ -31,8 +31,10 @@
 //   - nfbProbe=1: 本体にシークレット（KUJ_EXT_ACTION_SECRET = 本体 NFB_EXT_ACTION_SECRET）が
 //     設定されているとき、本送信の前に誤送信防止プローブが来る。共有シークレットで HMAC(nonce) に
 //     署名して返すと、本体が正規受信アプリと認める。シークレット未設定なら本体はプローブを送らない。
-//   - それ以外: 親フォームの保存先（payload.data.storage）を ctx に退避し、取り込み画面（?page=import&ctx=）
-//     の URL を openUrl で返す。書き込み先スプレッドシートはこの ctx から解決する（Script Property はフォールバック）。
+//   - それ以外: 親フォームの保存先（payload.data.storage）を自己完結トークン（ctx）に載せ、取り込み画面
+//     （?page=import&ctx=）の URL を openUrl で返す。トークン自体に spreadsheetId/sheetName を埋め込むので
+//     CacheService に依存せず（TTL 切れ/エビクションで「未解決」になる事故を防ぐ）、ボタン押下で押し出された
+//     保存先がそのままトークンとして引き渡る。書き込み先はこのトークンからのみ解決する（管理者リレー一本化）。
 function doPost(e) {
   try {
     var params = (e && e.parameter) || {};
@@ -41,7 +43,7 @@ function doPost(e) {
     }
     var payload = parsePayload_(e);
     var data = payload.ok ? payload.data : {};
-    var ctxToken = Kuj_putCtx_(Kuj_extractRelayContext_(data));
+    var ctxToken = Kuj_encodeCtx_(Kuj_extractRelayContext_(data));
     var openUrl = Kuj_buildImportUrl_(ctxToken);
     return Kuj_json_({
       ok: true,
@@ -109,7 +111,6 @@ function doGet(e) {
     return Kuj_renderImportPage_(e);
   }
   var formId = KUJ_FORM_ID_();
-  var ssId = Kuj_prop_(KUJ_PROP_SPREADSHEET_ID_);
   var body = ""
     + "<p>お問い合わせフォームの CSV を取り込み、フォームの Data シートへ直接書き込むスタンドアロン連携です。"
     + "CSV のデコードはブラウザ（TextDecoder）で行うため、外部 AI / API は使いません。</p>"
@@ -120,7 +121,7 @@ function doGet(e) {
     + "</ul>"
     + "<table class=\"kv\"><tbody>"
     + "<tr><th>フォーム ID</th><td>" + (formId ? escapeHtml_(formId) : "(未設定・任意)") + "</td></tr>"
-    + "<tr><th>書き込み先(props)</th><td>" + (ssId ? escapeHtml_(ssId) : "(未設定・リレーで自動取得)") + "</td></tr>"
+    + "<tr><th>書き込み先</th><td>検索画面の『管理者のみ』外部アクションボタンのリレーで自動取得</td></tr>"
     + "<tr><th>取り込み方式</th><td>CSV 列ヘッダ駆動 → Data シートへ直接書き込み（外部 API 不使用）</td></tr>"
     + "</tbody></table>";
   return renderHtml_("苦情・通報の取り込み（CSV）", body, false);
@@ -199,9 +200,6 @@ var KUJ_PROP_ACCESS_KEY_ = "KUJ_ACCESS_KEY";
 // 誤送信防止プローブ用の共有シークレット（任意）。本体 GAS の NFB_EXT_ACTION_SECRET と同値を入れると、
 // 本体は本送信の前に nonce プローブで宛先を検証する。空（既定）ならプローブなしで直接送信（後方互換）。
 var KUJ_PROP_EXT_ACTION_SECRET_ = "KUJ_EXT_ACTION_SECRET";
-// 書き込み先スプレッドシート（フォールバック。通常はリレーの ctx で受け取る）。
-var KUJ_PROP_SPREADSHEET_ID_ = "KUJ_SPREADSHEET_ID";
-var KUJ_PROP_SHEET_NAME_ = "KUJ_SHEET_NAME";
 var KUJ_MAX_ROWS_ = 30; // 1 回の取り込みで扱う最大行数（重複・空行除外後）
 
 function Kuj_prop_(name) {
@@ -690,7 +688,7 @@ function Kuj_renderImportPage_(e) {
 // ## api.gs — プレビュー / コミット（google.script.run 公開関数）
 // #############################################################################
 
-// 書き込み先（ctx 優先・props フォールバック）を返す。画面上部の URL 表示用。
+// 書き込み先（管理者リレーの ctx から解決）を返す。画面上部の URL 表示用。
 function Kuj_getTargets_(ctxToken) {
   try {
     var t = Kuj_resolveTargets_(ctxToken);
@@ -780,7 +778,7 @@ function Kuj_commitImport_(csvTexts, selectedIndexesJson, ctxToken) {
   try {
     var targets = Kuj_resolveTargets_(ctxToken);
     if (!targets.spreadsheetId) {
-      return { ok: false, error: "書き込み先スプレッドシートが未解決です。検索画面の外部アクションボタンから開くか、Kuj_registerSettings でスプレッドシート ID を登録してください。" };
+      return { ok: false, error: "書き込み先スプレッドシートが未解決です。検索画面の『管理者のみ』外部アクションボタンを管理者で押して取り込み画面を開いてください。" };
     }
     var batch = Kuj_parseCsvBatch_(csvTexts);
     var selected = Kuj_parseIndexes_(selectedIndexesJson, batch.candidates.length);
@@ -1134,12 +1132,33 @@ function Kuj_extractRelayContext_(data) {
     formId: (data && typeof data.formId === "string") ? data.formId : ""
   };
 }
-// ctx をスクリプトキャッシュへ（doPost と doGet は別リクエストなので橋渡し。TTL 10 分）。
-function Kuj_putCtx_(ctx) {
-  var token = Kuj_generateRecordId_();
-  try { CacheService.getScriptCache().put("kujctx_" + token, JSON.stringify(ctx || {}), 600); } catch (e) { /* no-op */ }
-  return token;
+// ── ctx トークン（自己完結方式）─────────────────────────────────────────────
+// 書き込み先（親フォームの storage）を URL-safe base64 の JSON にしてトークンへ載せる。doPost と doGet
+// は別リクエストなので橋渡しが要るが、CacheService に退避する旧方式は TTL 切れ/エビクションで「未解決」に
+// なる事故があった。トークン自体が保存先を持てば、ボタン押下で押し出された storage が確実に引き渡る。
+// 旧キャッシュ方式トークン（"r_..."）も Kuj_readCtx_ でフォールバック解決する（後方互換）。
+var KUJ_CTX_PREFIX_ = "c1."; // 自己完結トークンの目印（base64url・"r_..." キャッシュキーと衝突しない）
+
+function Kuj_encodeCtx_(ctx) {
+  try {
+    if (typeof Utilities !== "undefined" && Utilities.base64EncodeWebSafe) {
+      // 末尾の "=" パディングは URL で %3D に化けるので落とす（base64DecodeWebSafe はパディング無しを許容）。
+      return KUJ_CTX_PREFIX_ + Utilities.base64EncodeWebSafe(JSON.stringify(ctx || {}), Utilities.Charset.UTF_8).replace(/=+$/, "");
+    }
+  } catch (e) { /* fall through */ }
+  return "";
 }
+function Kuj_decodeCtx_(token) {
+  var t = String(token == null ? "" : token);
+  if (t.indexOf(KUJ_CTX_PREFIX_) !== 0) return null; // 自己完結トークンでなければ旧方式へ委譲
+  try {
+    if (typeof Utilities === "undefined" || !Utilities.base64DecodeWebSafe) return null;
+    var json = Utilities.newBlob(Utilities.base64DecodeWebSafe(t.slice(KUJ_CTX_PREFIX_.length))).getDataAsString("UTF-8");
+    var obj = JSON.parse(json);
+    return (obj && typeof obj === "object") ? obj : null;
+  } catch (e) { return null; }
+}
+// 旧方式: ctx をスクリプトキャッシュから読む（自己完結トークンでないとき＝過去に発行された "r_..." 用の後方互換）。
 function Kuj_readCtx_(token) {
   try { var s = CacheService.getScriptCache().get("kujctx_" + String(token)); return s ? JSON.parse(s) : null; }
   catch (e) { return null; }
@@ -1152,22 +1171,23 @@ function Kuj_buildImportUrl_(token) {
   var sep = base.indexOf("?") >= 0 ? "&" : "?";
   return base + sep + "page=import" + (token ? "&ctx=" + encodeURIComponent(token) : "");
 }
-// 書き込み先を解決する。ctx（リレーで受けた現在フォームの保存先）優先、Script Property はフォールバック。
+// 書き込み先を解決する。管理者リレーの ctx（自己完結トークン）からのみ解決する（Script Property フォールバックは廃止）。
+// ctx は自己完結トークン（新・キャッシュ非依存）を最優先で解き、駄目なら旧キャッシュ方式を試す。
 function Kuj_resolveTargets_(ctxToken) {
-  var propsTargets = {
-    spreadsheetId: Kuj_prop_(KUJ_PROP_SPREADSHEET_ID_),
-    sheetName: Kuj_prop_(KUJ_PROP_SHEET_NAME_) || NFB_DEFAULT_SHEET_NAME
-  };
-  var ctx = ctxToken ? Kuj_readCtx_(ctxToken) : null;
-  return Kuj_mergeTargets_(propsTargets, ctx);
+  var ctx = null;
+  if (ctxToken) {
+    ctx = Kuj_decodeCtx_(ctxToken);          // 自己完結トークン（新）
+    if (!ctx) ctx = Kuj_readCtx_(ctxToken);  // 旧キャッシュ方式トークン（後方互換）
+  }
+  return Kuj_targetsFromCtx_(ctx);
 }
-// 登録値（propsTargets）に ctx を上書きする純関数（GAS 非依存・node テスト可能）。
-function Kuj_mergeTargets_(propsTargets, ctx) {
-  var p = propsTargets || {};
-  var t = { spreadsheetId: p.spreadsheetId || "", sheetName: p.sheetName || NFB_DEFAULT_SHEET_NAME };
-  if (ctx && ctx.spreadsheetId) t.spreadsheetId = ctx.spreadsheetId;
-  if (ctx && ctx.sheetName) t.sheetName = ctx.sheetName;
-  return t;
+// ctx（リレーで受けた現在フォームの保存先）から書き込み先を組む純関数（GAS 非依存・node テスト可能）。
+// spreadsheetId が無ければ未解決（""）、sheetName 既定は "Data"。
+function Kuj_targetsFromCtx_(ctx) {
+  return {
+    spreadsheetId: (ctx && ctx.spreadsheetId) ? ctx.spreadsheetId : "",
+    sheetName: (ctx && ctx.sheetName) ? ctx.sheetName : NFB_DEFAULT_SHEET_NAME
+  };
 }
 
 // #############################################################################
@@ -1209,48 +1229,6 @@ function Kuj_toCanonicalDate_(value) {
 function Kuj_dateToCanonical_(value) {
   if (!(value instanceof Date) || isNaN(value.getTime())) return String(value == null ? "" : value);
   return Kuj_dateParts_(value.getFullYear(), value.getMonth() + 1, value.getDate());
-}
-
-
-// #############################################################################
-// ## setup.gs — 一次セットアップ（GAS エディタから手動実行）
-// #############################################################################
-
-// Script Property を登録する。外部 AI/API は使わないので API キー/モデルは不要。
-//   formId       : このフォームの formId（任意。整合用。Playground でフォームを選ぶため必須ではない）
-//   spreadsheetId: 書き込み先スプレッドシート ID（フォールバック。通常はリレーの ctx で受け取るので省略可）
-//   sheetName    : 書き込み先シート名（省略時 "Data"）
-//   accessKey    : 取り込み画面の ?k= アクセスキー（任意。空なら無効）
-//   extActionSecret: 誤送信防止プローブの共有シークレット（任意。本体 NFB_EXT_ACTION_SECRET と同値。
-//                    引数を渡したときだけ更新する＝省略時は既存値を据え置く）。
-function Kuj_registerSettings(formId, spreadsheetId, sheetName, accessKey, extActionSecret) {
-  var props = PropertiesService.getScriptProperties();
-  props.setProperty(KUJ_PROP_FORM_ID_, String(formId || ""));
-  props.setProperty(KUJ_PROP_SPREADSHEET_ID_, String(spreadsheetId || ""));
-  props.setProperty(KUJ_PROP_SHEET_NAME_, String(sheetName || ""));
-  props.setProperty(KUJ_PROP_ACCESS_KEY_, String(accessKey || ""));
-  if (typeof extActionSecret !== "undefined") {
-    props.setProperty(KUJ_PROP_EXT_ACTION_SECRET_, String(extActionSecret || ""));
-  }
-  Logger.log("登録: formId=%s spreadsheetId=%s sheet=%s accessKey=%s secret=%s",
-    String(formId || "(なし)"), String(spreadsheetId || "(なし)"), String(sheetName || "Data"),
-    accessKey ? "(あり)" : "(なし)", Kuj_prop_(KUJ_PROP_EXT_ACTION_SECRET_) ? "(あり)" : "(なし)");
-}
-
-// セットアップ状態をログ出力。
-function Kuj_checkSetup() {
-  Logger.log("フォーム ID: %s", KUJ_FORM_ID_() || "(未設定)");
-  Logger.log("書き込み先 SS: %s", Kuj_prop_(KUJ_PROP_SPREADSHEET_ID_) || "(未設定・リレーで自動取得)");
-  Logger.log("書き込み先シート: %s", Kuj_prop_(KUJ_PROP_SHEET_NAME_) || "Data");
-  Logger.log("アクセスキー: %s", Kuj_prop_(KUJ_PROP_ACCESS_KEY_) ? "設定済み" : "(なし)");
-  Logger.log("誤送信防止シークレット: %s", Kuj_prop_(KUJ_PROP_EXT_ACTION_SECRET_) ? "設定済み" : "(なし)");
-  return {
-    formId: KUJ_FORM_ID_(),
-    spreadsheetId: Kuj_prop_(KUJ_PROP_SPREADSHEET_ID_),
-    sheetName: Kuj_prop_(KUJ_PROP_SHEET_NAME_) || "Data",
-    hasAccessKey: !!Kuj_prop_(KUJ_PROP_ACCESS_KEY_),
-    hasExtActionSecret: !!Kuj_prop_(KUJ_PROP_EXT_ACTION_SECRET_)
-  };
 }
 
 
@@ -1375,7 +1353,9 @@ if (typeof module === "object" && module.exports) {
     Kuj_hmacHex_: Kuj_hmacHex_,
     Kuj_buildProbeResponse_: Kuj_buildProbeResponse_,
     Kuj_extractRelayContext_: Kuj_extractRelayContext_,
-    Kuj_mergeTargets_: Kuj_mergeTargets_,
+    Kuj_encodeCtx_: Kuj_encodeCtx_,
+    Kuj_decodeCtx_: Kuj_decodeCtx_,
+    Kuj_targetsFromCtx_: Kuj_targetsFromCtx_,
     Kuj_buildNewRow_: Kuj_buildNewRow_,
     Kuj_resolveCell_: Kuj_resolveCell_,
     Kuj_canonicalToSheetDate_: Kuj_canonicalToSheetDate_,

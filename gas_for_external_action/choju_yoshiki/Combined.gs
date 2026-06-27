@@ -609,30 +609,42 @@ function Cho_importConfirm_(app, jiyu, applicantType, f) {
   if (applicantType !== "法人") {
     setStr(CONF + "/住所", app("F6"));
     setStr(CONF + "/氏名", app("F8"));
-    setStr(CONF + "/職業", app("F10"));
-    var birth = Cho_dateCanon_(app("F11")); if (birth) f[CONF + "/生年月日"] = birth;
+    var birth = Cho_dateCanon_(app("F10")); if (birth) f[CONF + "/生年月日"] = birth;
+    setStr(CONF + "/職業", app("F11"));
     setStr(CONF + "/証明書住所", jiyu("H4"));
     setStr(CONF + "/証明書氏名", jiyu("H5"));
   }
 }
 
-// 取り込んだ子（名簿）から用具の和集合（CHO_TOOL_ORDER_ 順、未知は末尾）。E30 照合用。
-function Cho_unionToolsFromImport_(workers) {
-  var M = CHO_L_CHILD_METHOD_, seen = [];
-  function push(t) { if (t && seen.indexOf(t) === -1) seen.push(t); }
-  for (var w = 0; w < workers.length; w++) {
-    var f = workers[w];
-    if (Cho_splitChecks_(f[M]).indexOf("手捕り") !== -1) push("手捕り");
-    var keys = ["わな/道具の種類", "網/道具の種類", "銃器/銃の種類"];
-    for (var k = 0; k < keys.length; k++) {
-      var parts = Cho_splitChecks_(f[M + "/" + keys[k]]);
-      for (var p = 0; p < parts.length; p++) push(parts[p]);
-    }
-  }
+// 用具リストを CHO_TOOL_ORDER_ 順に並べ替える（未知は末尾。重複は除去済み前提）。
+function Cho_orderTools_(seen) {
   var ordered = [];
   for (var o = 0; o < CHO_TOOL_ORDER_.length; o++) if (seen.indexOf(CHO_TOOL_ORDER_[o]) !== -1) ordered.push(CHO_TOOL_ORDER_[o]);
   for (var s = 0; s < seen.length; s++) if (ordered.indexOf(seen[s]) === -1) ordered.push(seen[s]);
   return ordered;
+}
+// 取り込んだ子 1 人の方法フィールド（カテゴリ＋わな/網/銃器の各葉）から実際の捕獲用具を平坦化。
+// 様式 P 列（名簿）に積層された用具と 1:1 で対応する。確認表示・E30 照合の両方で使う。
+function Cho_workerTools_(f) {
+  var M = CHO_L_CHILD_METHOD_, seen = [];
+  function push(t) { if (t && seen.indexOf(t) === -1) seen.push(t); }
+  if (Cho_splitChecks_(f[M]).indexOf("手捕り") !== -1) push("手捕り");
+  var keys = ["わな/道具の種類", "網/道具の種類", "銃器/銃の種類"];
+  for (var k = 0; k < keys.length; k++) {
+    var parts = Cho_splitChecks_(f[M + "/" + keys[k]]);
+    for (var p = 0; p < parts.length; p++) push(parts[p]);
+  }
+  return Cho_orderTools_(seen);
+}
+// 取り込んだ子（名簿）から用具の和集合（CHO_TOOL_ORDER_ 順、未知は末尾）。E30 照合用。
+function Cho_unionToolsFromImport_(workers) {
+  var seen = [];
+  function push(t) { if (t && seen.indexOf(t) === -1) seen.push(t); }
+  for (var w = 0; w < workers.length; w++) {
+    var ts = Cho_workerTools_(workers[w]);
+    for (var i = 0; i < ts.length; i++) push(ts[i]);
+  }
+  return Cho_orderTools_(seen);
 }
 
 // 桃（確認）セルを名簿（=正）から再計算して照合。actual が空なら必ず skip（誤検知回避）。
@@ -671,8 +683,8 @@ function Cho_checkPinkConsistency_(reader, workers, applicantType, issues) {
     var rep = workers[0];
     Cho_comparePinkText_(issues, APP, "F6", "住所(確認用)", app("F6"), Cho_str_(rep["住所"]));
     Cho_comparePinkText_(issues, APP, "F8", "氏名(確認用)", app("F8"), Cho_str_(rep["氏名"]));
-    Cho_comparePinkText_(issues, APP, "F10", "職業(確認用)", app("F10"), Cho_str_(rep["職業"]));
-    Cho_comparePinkDate_(issues, APP, "F11", "生年月日(確認用)", app("F11"), Cho_str_(rep["生年月日"]));
+    Cho_comparePinkDate_(issues, APP, "F10", "生年月日(確認用)", app("F10"), Cho_str_(rep["生年月日"]));
+    Cho_comparePinkText_(issues, APP, "F11", "職業(確認用)", app("F11"), Cho_str_(rep["職業"]));
     Cho_comparePinkText_(issues, JIYU, "H4", "住所(証明書)", jiyu("H4"), Cho_str_(rep["住所"]));
     Cho_comparePinkText_(issues, JIYU, "H5", "氏名(証明書)", jiyu("H5"), Cho_str_(rep["氏名"]));
   }
@@ -810,6 +822,7 @@ button#commit{background:#1a73e8;color:#fff;border:none;border-radius:4px;}
 table.kv{border-collapse:collapse;width:100%;font-size:12px;}
 table.kv th{text-align:left;color:#5f6368;font-weight:normal;padding:2px 8px 2px 0;vertical-align:top;white-space:nowrap;}
 table.kv td{padding:2px 0;word-break:break-all;}
+table.kv tr.confirm th,table.kv tr.confirm td{color:#c2185b;}
 #issues h3{font-size:13px;margin:12px 0 4px;}#issues ul{margin:0 0 8px;padding-left:18px;font-size:12px;}
 #issues li{margin:2px 0;}#issues .none{color:#188038;font-size:12px;}
 #commitWrap{display:none;margin-top:16px;border-top:1px solid #dadce0;padding-top:8px;}
@@ -836,7 +849,7 @@ var EXCEL="";
 function $(i){return document.getElementById(i);}
 function atype(){var r=document.querySelector('input[name="atype"]:checked');return r?r.value:"個人";}
 function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
-function tbl(rows){if(!rows||!rows.length)return "<div class='info'>（項目なし）</div>";var h="<table class='kv'>";for(var i=0;i<rows.length;i++){h+="<tr><th>"+esc(rows[i].label)+"</th><td>"+esc(rows[i].value)+"</td></tr>";}return h+"</table>";}
+function tbl(rows){if(!rows||!rows.length)return "<div class='info'>（項目なし）</div>";var h="<table class='kv'>";for(var i=0;i<rows.length;i++){var c=rows[i].confirm?" class='confirm'":"";h+="<tr"+c+"><th>"+esc(rows[i].label)+"</th><td>"+esc(rows[i].value)+"</td></tr>";}return h+"</table>";}
 function renderIssues(list){var groups={dropped:{t:"取り込めなかったもの",items:[]},pink_inconsistent:{t:"ピンクのセルで整合性がとれないもの",items:[]},odd:{t:"おかしいもの",items:[]}};for(var i=0;i<list.length;i++){var g=groups[list[i].category];if(g)g.items.push(list[i]);}var order=["dropped","pink_inconsistent","odd"],html="";for(var k=0;k<order.length;k++){var g=groups[order[k]];html+="<h3>"+g.t+" ("+g.items.length+")</h3>";if(!g.items.length){html+="<div class='none'>なし</div>";continue;}html+="<ul>";for(var j=0;j<g.items.length;j++){var it=g.items[j],loc=(it.sheet||"")+(it.cell?("!"+it.cell):""),sev=it.severity==="error"?"err":(it.severity==="info"?"info":"warn");html+="<li class='"+sev+"'>"+(loc?("["+esc(loc)+"] "):"")+esc(it.message)+"</li>";}html+="</ul>";}$("issues").innerHTML=html;}
 function renderPreview(res){EXCEL=res.excelFileId||"";var f=res.friendly||{};var ap=f.applicant||{};var html="";html+="<div class='sec'><label class='chk'><input type='checkbox' id='chkParent' checked> <b>この申請を取り込む</b>（"+esc(ap.type||"")+(ap.name?(" / "+esc(ap.name)):"")+"）</label>"+tbl(ap.rows||[])+"</div>";var ws=f.workers||[];html+="<h2>従事者（"+ws.length+" 名）</h2>";for(var i=0;i<ws.length;i++){var w=ws[i];html+="<div class='sec'><label class='chk'><input type='checkbox' class='chkChild' data-idx='"+w.index+"' checked> <b>"+esc(w.title)+"</b></label>"+tbl(w.rows||[])+"</div>";}$("preview").innerHTML=html;$("commitWrap").style.display="block";}
 $("go").onclick=function(){var f=$("file").files[0];if(!f){$("status").textContent="ファイルを選んでください";return;}$("status").textContent="読み込み中...";$("issues").innerHTML="";$("preview").innerHTML="";$("result").innerHTML="";$("commitWrap").style.display="none";var r=new FileReader();r.onload=function(){var b64=r.result.split(",")[1];google.script.run.withSuccessHandler(function(res){if(res&&res.ok){var ic=(res.summary&&res.summary.issueCounts)||{};$("status").innerHTML="取り込み確認: "+esc(res.summary.applicantType)+" / 従事者 "+res.summary.workerCount+" 名 　<span class='err'>取込不可 "+(ic.dropped||0)+"</span> / <span class='warn'>要確認 "+(ic.odd||0)+"</span> / <span class='warn'>ピンク不整合 "+(ic.pink_inconsistent||0)+"</span>";renderIssues(res.issues||[]);renderPreview(res);}else{$("status").innerHTML="<span class='err'>失敗: "+esc(res&&res.error||"unknown")+"</span>";renderIssues([]);}}).withFailureHandler(function(e){$("status").innerHTML="<span class='err'>エラー: "+esc(e.message)+"</span>";}).Cho_uploadAndImport(b64,f.name,CTX,atype());};r.readAsDataURL(f);};
@@ -1282,7 +1295,7 @@ function Cho_writeRecordsDirect_(imp, excelFileId, selection, targets) {
     for (var i = 0; i < imp.children.length; i++) {
       if (childIndexes && childIndexes.indexOf(i) === -1) continue;
       var childId = parentId + "_c" + (i + 1);
-      var cres = Cho_appendRow_(targets.childSpreadsheetId, targets.sheetName, { id: childId, data: imp.children[i], pid: parentId });
+      var cres = Cho_appendRow_(targets.childSpreadsheetId, targets.childSheetName, { id: childId, data: imp.children[i], pid: parentId });
       if (cres && cres.warnings && cres.warnings.length) {
         warnings.push("従事者" + (i + 1) + ": 列が見つからず取り込まれなかった項目: " + cres.warnings.join(" / "));
       }
@@ -1314,11 +1327,14 @@ function Cho_prettyLabel_(key) {
 function Cho_fieldsToRows_(fields) {
   var rows = [];
   if (!fields || typeof fields !== "object") return rows;
+  var confirmPrefix = CHO_L_CONFIRM_ + "/";
   for (var k in fields) {
     if (!Object.prototype.hasOwnProperty.call(fields, k)) continue;
     var v = fields[k];
     if (v === "" || v === null || v === undefined) continue;
-    rows.push({ label: Cho_prettyLabel_(k), value: String(v) });
+    // 確認用（桃セル由来）は表示色を変えて「正データではない」ことを明示する。
+    var isConfirm = (k === CHO_L_CONFIRM_ || k.indexOf(confirmPrefix) === 0);
+    rows.push({ label: Cho_prettyLabel_(k), value: String(v), confirm: isConfirm });
   }
   return rows;
 }
@@ -1335,14 +1351,38 @@ function Cho_buildFriendly_(imp) {
   var kids = (imp && imp.children) ? imp.children : [];
   for (var i = 0; i < kids.length; i++) {
     var w = kids[i] || {};
+    var wrows = Cho_fieldsToRows_(w);
+    // 確認用: カテゴリ（手捕り/わな/銃器…）ではなく、実際の捕獲用具を平坦化して表示する。
+    // 様式の名簿 P 列・申請書 E30（確認用 ＞ 捕獲方法）と直接見比べられるようにするための表示専用行
+    // （保存される子フィールドには加えない＝w を変更しない）。
+    var wtools = Cho_workerTools_(w);
+    if (wtools.length) wrows.push({ label: "捕獲用具一覧（確認用）", value: wtools.join(", "), confirm: true });
     workers.push({
       index: i,
       title: w["氏名"] ? String(w["氏名"]) : ("従事者 " + (i + 1)),
-      rows: Cho_fieldsToRows_(w)
+      rows: wrows
     });
   }
+  // 申請者セクションに「全従事者の具体的用具の和集合 ＝ 申請書の捕獲方法(E30)」の照合を常時表示する。
+  // 判定は新規に計算せず、権威ある既存照合（Cho_comparePinkSet_ が出す E30 の pink_inconsistent）を流用。
+  var appRows = Cho_fieldsToRows_(pf);
+  var union = Cho_unionToolsFromImport_(kids);
+  if (union.length) appRows.push({ label: "確認用 ＞ 捕獲方法（従事者集計）", value: union.join(", "), confirm: true });
+  var e30 = pf[CHO_L_CONFIRM_ + "/捕獲方法"];
+  var verdict;
+  if (e30 === undefined || e30 === null || String(e30) === "") {
+    verdict = "照合スキップ（申請書側が空）";
+  } else {
+    var issues = (imp && imp.issues) ? imp.issues : [];
+    var mismatch = false;
+    for (var ii = 0; ii < issues.length; ii++) {
+      if (issues[ii].cell === "E30" && issues[ii].category === "pink_inconsistent") { mismatch = true; break; }
+    }
+    verdict = mismatch ? ("不一致（申請書: " + String(e30) + "）") : "一致";
+  }
+  appRows.push({ label: "確認用 ＞ 捕獲方法 照合", value: verdict, confirm: true });
   return {
-    applicant: { type: type, name: String(name || ""), rows: Cho_fieldsToRows_(pf) },
+    applicant: { type: type, name: String(name || ""), rows: appRows },
     workers: workers
   };
 }
@@ -1364,13 +1404,14 @@ function Cho_getProp_(key, def) {
 //   uploadFolderId: 取り込んだ Excel を残す Drive フォルダ（空なら My Drive ルート）
 //   sheetName: データシート名（既定 "Data"）
 //   extActionSecret: 本体管理者設定 NFB_EXT_ACTION_SECRET と同じ共有シークレット（本体で設定時のみ必須）
-function Cho_registerWriteTargets(parentSsId, childSsId, parentUploadFieldKey, uploadFolderId, sheetName, extActionSecret) {
+function Cho_registerWriteTargets(parentSsId, childSsId, parentUploadFieldKey, uploadFolderId, sheetName, extActionSecret, childSheetName) {
   var p = Cho_props_();
   if (parentSsId != null && parentSsId !== "") p.setProperty("CHO_PARENT_SS_ID", String(parentSsId));
   if (childSsId != null && childSsId !== "") p.setProperty("CHO_CHILD_SS_ID", String(childSsId));
   if (parentUploadFieldKey != null) p.setProperty("CHO_PARENT_UPLOAD_FIELD_KEY", String(parentUploadFieldKey));
   if (uploadFolderId != null) p.setProperty("CHO_UPLOAD_FOLDER_ID", String(uploadFolderId));
   if (sheetName != null && sheetName !== "") p.setProperty("CHO_SHEET_NAME", String(sheetName));
+  if (childSheetName != null && childSheetName !== "") p.setProperty("CHO_CHILD_SHEET_NAME", String(childSheetName));
   if (extActionSecret != null) p.setProperty("CHO_EXT_ACTION_SECRET", String(extActionSecret));
   return Cho_getWriteTargets();
 }
@@ -1379,6 +1420,7 @@ function Cho_getWriteTargets() {
     parentSpreadsheetId: Cho_getProp_("CHO_PARENT_SS_ID", ""),
     childSpreadsheetId: Cho_getProp_("CHO_CHILD_SS_ID", ""),
     sheetName: Cho_getProp_("CHO_SHEET_NAME", "Data") || "Data",
+    childSheetName: Cho_getProp_("CHO_CHILD_SHEET_NAME", ""),
     parentUploadFieldKey: Cho_getProp_("CHO_PARENT_UPLOAD_FIELD_KEY", ""),
     uploadFolderId: Cho_getProp_("CHO_UPLOAD_FOLDER_ID", ""),
     extActionSecretSet: Cho_getProp_("CHO_EXT_ACTION_SECRET", "") !== ""
@@ -1392,6 +1434,7 @@ function Cho_resolveTargets_(ctxToken) {
     parentSpreadsheetId: Cho_getProp_("CHO_PARENT_SS_ID", ""),
     childSpreadsheetId: Cho_getProp_("CHO_CHILD_SS_ID", ""),
     sheetName: Cho_getProp_("CHO_SHEET_NAME", "Data") || "Data",
+    childSheetName: Cho_getProp_("CHO_CHILD_SHEET_NAME", ""),
     parentUploadFieldKey: Cho_getProp_("CHO_PARENT_UPLOAD_FIELD_KEY", ""),
     uploadFolderId: Cho_getProp_("CHO_UPLOAD_FOLDER_ID", "")
   };
@@ -1406,12 +1449,16 @@ function Cho_mergeTargets_(propsTargets, ctx) {
     parentSpreadsheetId: p.parentSpreadsheetId || "",
     childSpreadsheetId: p.childSpreadsheetId || "",
     sheetName: p.sheetName || "Data",
+    childSheetName: p.childSheetName || "",
     parentUploadFieldKey: p.parentUploadFieldKey || "",
     uploadFolderId: p.uploadFolderId || ""
   };
   if (ctx && ctx.parentSpreadsheetId) t.parentSpreadsheetId = ctx.parentSpreadsheetId;
   if (ctx && ctx.childSpreadsheetId) t.childSpreadsheetId = ctx.childSpreadsheetId;
   if (ctx && ctx.sheetName) t.sheetName = ctx.sheetName;
+  if (ctx && ctx.childSheetName) t.childSheetName = ctx.childSheetName;
+  // 子シート名が無ければ親シート名にフォールバック（子 SS でも従来は親と同じ名を使っていた互換）。
+  if (!t.childSheetName) t.childSheetName = t.sheetName;
   return t;
 }
 
@@ -1454,11 +1501,14 @@ function Cho_extractRelayContext_(data) {
   var storage = (data && data.storage && typeof data.storage === "object") ? data.storage : {};
   var childSpreadsheetId = typeof storage.childSpreadsheetId === "string" ? storage.childSpreadsheetId : "";
   if (!childSpreadsheetId) childSpreadsheetId = Cho_firstChildSpreadsheetIdFromList_(data);
+  var childSheetName = typeof storage.childSheetName === "string" ? storage.childSheetName : "";
+  if (!childSheetName) childSheetName = Cho_firstChildSheetNameFromList_(data);
   return {
     parentSpreadsheetId: typeof storage.spreadsheetId === "string" ? storage.spreadsheetId : "",
     childSpreadsheetId: childSpreadsheetId,
     driveFileUrl: typeof storage.driveFileUrl === "string" ? storage.driveFileUrl : "",
     sheetName: typeof storage.sheetName === "string" ? storage.sheetName : "",
+    childSheetName: childSheetName,
     formId: (data && typeof data.formId === "string") ? data.formId : ""
   };
 }
@@ -1473,6 +1523,24 @@ function Cho_firstChildSpreadsheetIdFromList_(data) {
     for (var j = 0; j < row.length; j++) {
       var obj = row[j];
       if (obj && typeof obj.childSpreadsheetId === "string" && obj.childSpreadsheetId) return obj.childSpreadsheetId;
+    }
+  }
+  return "";
+}
+// childFormsByRow から、最初の非空 childSpreadsheetId を持つ子フォームの childSheetName を拾う。
+// childSpreadsheetId の選択（Cho_firstChildSpreadsheetIdFromList_）と同じオブジェクトを採り、SS とシート名を揃える。
+function Cho_firstChildSheetNameFromList_(data) {
+  var list = (data && data.list && typeof data.list === "object") ? data.list : null;
+  var rows = (list && Object.prototype.toString.call(list.childFormsByRow) === "[object Array]") ? list.childFormsByRow : null;
+  if (!rows) return "";
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    if (Object.prototype.toString.call(row) !== "[object Array]") continue;
+    for (var j = 0; j < row.length; j++) {
+      var obj = row[j];
+      if (obj && typeof obj.childSpreadsheetId === "string" && obj.childSpreadsheetId) {
+        return (typeof obj.childSheetName === "string") ? obj.childSheetName : "";
+      }
     }
   }
   return "";
@@ -1504,6 +1572,7 @@ if (typeof module === "object" && module.exports) {
     Cho_buildImport_: Cho_buildImport_, Cho_makeReader_: Cho_makeReader_,
     Cho_buildUploadRecords_: Cho_buildUploadRecords_,
     Cho_checkPinkConsistency_: Cho_checkPinkConsistency_, Cho_unionToolsFromImport_: Cho_unionToolsFromImport_,
+    Cho_workerTools_: Cho_workerTools_,
     Cho_issue_: Cho_issue_, Cho_countIssues_: Cho_countIssues_, Cho_issuesToWarnings_: Cho_issuesToWarnings_,
     Cho_a1ToRC_: Cho_a1ToRC_, Cho_dateToCanonical_: Cho_dateToCanonical_,
     Cho_serialOrDateToDate_: Cho_serialOrDateToDate_,
@@ -1516,6 +1585,7 @@ if (typeof module === "object" && module.exports) {
     Cho_buildNewRow_: Cho_buildNewRow_, Cho_collectDroppedKeys_: Cho_collectDroppedKeys_,
     Cho_buildUploadCell_: Cho_buildUploadCell_, Cho_buildFriendly_: Cho_buildFriendly_,
     Cho_extractRelayContext_: Cho_extractRelayContext_, Cho_firstChildSpreadsheetIdFromList_: Cho_firstChildSpreadsheetIdFromList_,
+    Cho_firstChildSheetNameFromList_: Cho_firstChildSheetNameFromList_,
     Cho_mergeTargets_: Cho_mergeTargets_, Cho_hmacHex_: Cho_hmacHex_,
     Sheets_normalizeRecordDataKeys_: Sheets_normalizeRecordDataKeys_,
     Sheets_neutralizeFormulaPrefix_: Sheets_neutralizeFormulaPrefix_,

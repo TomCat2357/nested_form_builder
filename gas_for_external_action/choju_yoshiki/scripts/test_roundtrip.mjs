@@ -176,6 +176,56 @@ eq("resolveCell 空値", C.Cho_resolveCell_("").value, "");
   eq("friendly workers数", fr.workers.length, impK.children.length);
   eq("friendly worker0 title", fr.workers[0].title, "鈴木新之助");
   ok("friendly worker0 rows", fr.workers[0].rows.length > 0, "rows empty");
+  // 確認用（桃セル由来）の行は confirm:true で色分け対象、それ以外は confirm:false
+  const confRows = fr.applicant.rows.filter((r) => r.confirm);
+  ok("friendly 確認用行あり", confRows.length > 0, "確認用行が無い");
+  ok("friendly 確認用行は確認用プレフィックス", confRows.every((r) => r.label.startsWith("確認用")), JSON.stringify(confRows.map((r) => r.label)));
+  ok("friendly 非確認用は confirm=false", fr.applicant.rows.filter((r) => !r.label.startsWith("確認用")).every((r) => r.confirm === false), "非確認用に confirm=true 混入");
+  // 各従事者に「捕獲用具一覧（確認用）」= 実際の葉用具（カテゴリではない）の平坦化行が出る。
+  // 田中聡(worker1) の用具は 手捕り/はこわな/空気銃/散弾銃（順不同OK）。
+  const tanaka = fr.workers.find((w) => w.title === "田中聡");
+  ok("friendly 田中聡あり", !!tanaka, "田中聡 worker が無い");
+  const toolRow = tanaka.rows.find((r) => r.label === "捕獲用具一覧（確認用）");
+  ok("friendly 田中聡 用具一覧行あり", !!toolRow && toolRow.confirm === true, JSON.stringify(toolRow));
+  ok("friendly 田中聡 用具一覧=葉用具", new Set(toolRow.value.split(", ")).size === 4 &&
+    ["手捕り", "はこわな", "空気銃", "散弾銃"].every((t) => toolRow.value.split(", ").indexOf(t) !== -1), toolRow.value);
+  // 用具一覧行は表示専用: 保存される子フィールドには「捕獲用具一覧（確認用）」キーを足さない。
+  ok("用具一覧は子フィールドに非混入", !("捕獲用具一覧（確認用）" in impK.children[1]), "保存フィールドに混入");
+  // 全従事者の用具和集合 == 確認用 ＞ 捕獲方法（E30、順不同）。message2 の確認事項。
+  const union = C.Cho_unionToolsFromImport_(impK.children).slice().sort().join(",");
+  const e30 = impK.parent.fields["確認用/捕獲方法"].split(/[,、・]/).map((s) => s.trim()).filter(Boolean).sort().join(",");
+  eq("用具和集合==確認用捕獲方法", union, e30);
+  ok("E30照合 issue無し", impK.issues.filter((x) => x.cell === "E30").length === 0, JSON.stringify(impK.issues.filter((x) => x.cell === "E30")));
+  // 申請者セクションに「従事者集計（和集合）」行が常時出て、E30 と順不同一致すること。
+  const sumRow = fr.applicant.rows.find((r) => r.label === "確認用 ＞ 捕獲方法（従事者集計）");
+  ok("friendly 従事者集計行あり", !!sumRow && sumRow.confirm === true, JSON.stringify(sumRow));
+  eq("friendly 従事者集計=和集合", sumRow.value.split(", ").slice().sort().join(","), union);
+  // 照合行が常時出て、一致ケースで「一致」になること。
+  const verdictRow = fr.applicant.rows.find((r) => r.label === "確認用 ＞ 捕獲方法 照合");
+  ok("friendly 照合行あり", !!verdictRow && verdictRow.confirm === true, JSON.stringify(verdictRow));
+  eq("friendly 照合=一致", verdictRow.value, "一致");
+}
+// friendly 照合行: 不一致ケース（E30 を壊す）と 申請書空ケース
+{
+  const cl = (o) => JSON.parse(JSON.stringify(o));
+  const setC = (vbs, sheet, a1, val) => {
+    const rc = C.Cho_a1ToRC_(a1);
+    const grid = vbs[sheet] || (vbs[sheet] = []);
+    while (grid.length < rc.row) grid.push([]);
+    const row = grid[rc.row - 1];
+    while (row.length < rc.col) row.push("");
+    row[rc.col - 1] = val;
+  };
+  // E30 に余分な用具を入れて和集合と食い違わせる → 照合=不一致
+  const vMis = cl(fx["個人"]); setC(vMis, "申請書", "E30", "手捕り,空気銃,散弾銃,はこわな,くくりわな");
+  const frMis = C.Cho_buildFriendly_(C.Cho_buildImport_(C.Cho_makeReader_(vMis)));
+  const vr = frMis.applicant.rows.find((r) => r.label === "確認用 ＞ 捕獲方法 照合");
+  ok("friendly 不一致→照合=不一致", !!vr && vr.value.indexOf("不一致") === 0, JSON.stringify(vr));
+  // E30 を空に → 照合スキップ
+  const vEmp = cl(fx["個人"]); setC(vEmp, "申請書", "E30", "");
+  const frEmp = C.Cho_buildFriendly_(C.Cho_buildImport_(C.Cho_makeReader_(vEmp)));
+  const vr2 = frEmp.applicant.rows.find((r) => r.label === "確認用 ＞ 捕獲方法 照合");
+  ok("friendly 申請書空→照合スキップ", !!vr2 && vr2.value.indexOf("照合スキップ") === 0, JSON.stringify(vr2));
 }
 // relay context 抽出（外部アクション payload → 親 storage）
 {
@@ -183,29 +233,38 @@ eq("resolveCell 空値", C.Cho_resolveCell_("").value, "");
   eq("relay parentSs", c.parentSpreadsheetId, "ss1");
   eq("relay formId", c.formId, "f1");
 }
-// 子 SS のリレー受け渡し: storage.childSpreadsheetId を抽出
+// 子 SS / 子シート名のリレー受け渡し: storage.childSpreadsheetId / childSheetName を抽出
 {
-  const c = C.Cho_extractRelayContext_({ formId: "f1", storage: { spreadsheetId: "ssP", childSpreadsheetId: "ssC", sheetName: "Data" } });
+  const c = C.Cho_extractRelayContext_({ formId: "f1", storage: { spreadsheetId: "ssP", childSpreadsheetId: "ssC", sheetName: "Data", childSheetName: "従事者" } });
   eq("relay childSs", c.childSpreadsheetId, "ssC");
+  eq("relay childSheet", c.childSheetName, "従事者");
 }
-// 子 SS フォールバック: storage 欠落時は list.childFormsByRow から最初の非空を拾う
+// 子 SS / 子シート名フォールバック: storage 欠落時は list.childFormsByRow から最初の非空を拾う（同一オブジェクト）
 {
-  const c = C.Cho_extractRelayContext_({ storage: { spreadsheetId: "ssP" }, list: { childFormsByRow: [[], [{ childSpreadsheetId: "ssFromList" }]] } });
+  const c = C.Cho_extractRelayContext_({ storage: { spreadsheetId: "ssP" }, list: { childFormsByRow: [[], [{ childSpreadsheetId: "ssFromList", childSheetName: "shtFromList" }]] } });
   eq("relay childSs fallback", c.childSpreadsheetId, "ssFromList");
+  eq("relay childSheet fallback", c.childSheetName, "shtFromList");
   eq("relay childSs fallback無し", C.Cho_extractRelayContext_({ storage: { spreadsheetId: "ssP" } }).childSpreadsheetId, "");
+  eq("relay childSheet fallback無し", C.Cho_extractRelayContext_({ storage: { spreadsheetId: "ssP" } }).childSheetName, "");
 }
 // Cho_mergeTargets_: ctx の親/子 SS・シート名が登録値を上書き、無ければ登録値にフォールバック
 {
   const props = { parentSpreadsheetId: "pReg", childSpreadsheetId: "cReg", sheetName: "Data", parentUploadFieldKey: "添付", uploadFolderId: "fld" };
-  const merged = C.Cho_mergeTargets_(props, { parentSpreadsheetId: "pCtx", childSpreadsheetId: "cCtx", sheetName: "Sheet2" });
+  const merged = C.Cho_mergeTargets_(props, { parentSpreadsheetId: "pCtx", childSpreadsheetId: "cCtx", sheetName: "Sheet2", childSheetName: "従事者シート" });
   eq("mergeTargets 親ctx優先", merged.parentSpreadsheetId, "pCtx");
   eq("mergeTargets 子ctx優先", merged.childSpreadsheetId, "cCtx");
   eq("mergeTargets sheetName ctx優先", merged.sheetName, "Sheet2");
+  eq("mergeTargets childSheetName ctx優先", merged.childSheetName, "従事者シート");
   eq("mergeTargets uploadFieldKey 維持", merged.parentUploadFieldKey, "添付");
   const merged2 = C.Cho_mergeTargets_(props, null);
   eq("mergeTargets ctx無し親=登録値", merged2.parentSpreadsheetId, "pReg");
   eq("mergeTargets ctx無し子=登録値", merged2.childSpreadsheetId, "cReg");
   eq("mergeTargets ctx無しsheet=登録値", merged2.sheetName, "Data");
+  // childSheetName は ctx も登録値も無ければ親 sheetName にフォールバック（従来挙動の互換）。
+  eq("mergeTargets childSheet 親フォールバック", merged2.childSheetName, "Data");
+  // ctx に childSheetName だけある場合は ctx を採る。
+  const merged3 = C.Cho_mergeTargets_(props, { childSheetName: "C" });
+  eq("mergeTargets childSheet ctxのみ", merged3.childSheetName, "C");
 }
 // time/datetime ガード: 取り込みは "HH:mm" 形を出さない（出すと @ テキスト誤格納になるため）
 {

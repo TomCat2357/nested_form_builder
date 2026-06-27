@@ -35,34 +35,40 @@ const buildSearchPayloadBase = (form, outputTargetRows, childFormsByRow) => {
   return { list };
 };
 
-// 子フォームの保存先 spreadsheetId は機微情報。storage と異なり list.childFormsByRow は
-// 常時送信されるため、admin ゲート未通過のときはここで明示的に剥がす（漏洩防止）。
+// 子フォームの保存先 spreadsheetId / sheetName は機微情報。storage と異なり list.childFormsByRow
+// は常時送信されるため、admin ゲート未通過のときはここで明示的に剥がす（漏洩防止）。
 export const stripChildSpreadsheetIds = (childFormsByRow) => {
   if (!Array.isArray(childFormsByRow)) return childFormsByRow;
   return childFormsByRow.map((row) => (
     Array.isArray(row)
       ? row.map((obj) => {
-        if (!obj || typeof obj !== "object" || !("childSpreadsheetId" in obj)) return obj;
+        if (!obj || typeof obj !== "object") return obj;
+        if (!("childSpreadsheetId" in obj) && !("childSheetName" in obj)) return obj;
         const copy = { ...obj };
         delete copy.childSpreadsheetId;
+        delete copy.childSheetName;
         return copy;
       })
       : row
   ));
 };
 
-// childFormsByRow（各行 = 子フォーム合成オブジェクト配列）から最初の非空 childSpreadsheetId を拾う。
-// 親フォームの formLink は通常 1 つ（choju の従事者情報）なので単一値で足りる。
-const firstChildSpreadsheetId = (childFormsByRow) => {
-  if (!Array.isArray(childFormsByRow)) return "";
+// childFormsByRow（各行 = 子フォーム合成オブジェクト配列）から最初の非空 childSpreadsheetId を持つ
+// 子フォームの { childSpreadsheetId, childSheetName } を拾う。親フォームの formLink は通常 1 つ
+// （choju の従事者情報）なので単一値で足りる。
+const firstChildStorageMeta = (childFormsByRow) => {
+  if (!Array.isArray(childFormsByRow)) return { childSpreadsheetId: "", childSheetName: "" };
   for (const row of childFormsByRow) {
     if (!Array.isArray(row)) continue;
     for (const obj of row) {
       const id = obj && typeof obj.childSpreadsheetId === "string" ? obj.childSpreadsheetId.trim() : "";
-      if (id) return id;
+      if (id) {
+        const sheet = obj && typeof obj.childSheetName === "string" ? obj.childSheetName : "";
+        return { childSpreadsheetId: id, childSheetName: sheet };
+      }
     }
   }
-  return "";
+  return { childSpreadsheetId: "", childSheetName: "" };
 };
 
 // 外部アクション送信。送信は本体 GAS のサーバ間リレー（sendExternalAction →
@@ -121,14 +127,16 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
   // 子フォームのスプレッドシート ID をリレーで動的に受け渡す（admin ゲートは buildExternalActionPayload 側）。
   // 非管理者（または非 adminOnly ボタン）には子 SS を一切渡さない。storage だけでなく
   // 常時送信の list.childFormsByRow からも剥がす（base 経由の漏洩を塞ぐ）。
-  const childSpreadsheetId = sensitiveAllowed ? firstChildSpreadsheetId(childFormsByRow) : "";
+  const { childSpreadsheetId, childSheetName } = sensitiveAllowed
+    ? firstChildStorageMeta(childFormsByRow)
+    : { childSpreadsheetId: "", childSheetName: "" };
   const baseChildFormsByRow = sensitiveAllowed ? childFormsByRow : stripChildSpreadsheetIds(childFormsByRow);
   const payload = buildExternalActionPayload({
     context: "search",
     formId: formContext?.formId,
     formName: formContext?.formName,
     base: buildSearchPayloadBase(form, outputTargetRows, baseChildFormsByRow),
-    storageFields: { ...(formContext || {}), childSpreadsheetId },
+    storageFields: { ...(formContext || {}), childSpreadsheetId, childSheetName },
     gate,
   });
   try {

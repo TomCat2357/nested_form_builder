@@ -321,19 +321,26 @@ export function useSearchPageState({
     const canFetch = typeof listRecordsByPids === "function" && hasScriptRun();
     // fieldId → { [pid]: 合成オブジェクト }
     const byField = {};
-    // fieldId → 子フォームの保存先スプレッドシート ID（リレーで choju へ動的受け渡し）。
+    // fieldId → 子フォームの保存先スプレッドシート ID / シート名（リレーで choju へ動的受け渡し）。
     const ssByField = {};
+    const shtByField = {};
     const childSpreadsheetIdOf = (cf) => (
       cf && cf.settings && typeof cf.settings.spreadsheetId === "string" ? cf.settings.spreadsheetId : ""
+    );
+    const childSheetNameOf = (cf) => (
+      cf && cf.settings && cf.settings.sheetName ? String(cf.settings.sheetName) : "Data"
     );
     for (const field of externalActionChildFormFields) {
       // 表示用に eager 取得済みなら再利用（同じ子フォーム・同じ pid 集合を満たす範囲で）。
       const cached = searchChildDataByField[field.id];
       if (cached && cached.byPid && pids.every((pid) => cached.byPid[pid] !== undefined)) {
         byField[field.id] = cached.byPid;
-        // 子 SS は form 定義から（getChildFormCached_ は promise キャッシュで安価）。
-        try { ssByField[field.id] = childSpreadsheetIdOf(await getChildFormCached_(field.childFormId)); }
-        catch (_e) { ssByField[field.id] = ""; }
+        // 子 SS / シート名は form 定義から（getChildFormCached_ は promise キャッシュで安価）。
+        try {
+          const cf = await getChildFormCached_(field.childFormId);
+          ssByField[field.id] = childSpreadsheetIdOf(cf);
+          shtByField[field.id] = childSheetNameOf(cf);
+        } catch (_e) { ssByField[field.id] = ""; shtByField[field.id] = ""; }
         continue;
       }
       if (!canFetch) continue;
@@ -343,6 +350,7 @@ export function useSearchPageState({
           listRecordsByPids({ formId: field.childFormId, pids }),
         ]);
         ssByField[field.id] = childSpreadsheetIdOf(childForm);
+        shtByField[field.id] = childSheetNameOf(childForm);
         const childSchema = childForm && childForm.schema ? childForm.schema : [];
         const grouped = distributeChildRecordsByPid(records);
         const byPid = {};
@@ -366,7 +374,7 @@ export function useSearchPageState({
       for (const field of externalActionChildFormFields) {
         const byPid = byField[field.id];
         const obj = byPid ? byPid[key] : null;
-        if (obj) out.push({ fieldPath: field.path, ...obj, childSpreadsheetId: ssByField[field.id] || "" });
+        if (obj) out.push({ fieldPath: field.path, ...obj, childSpreadsheetId: ssByField[field.id] || "", childSheetName: shtByField[field.id] || "" });
       }
       return out;
     });

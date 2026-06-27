@@ -54,11 +54,12 @@ test("buildExternalActionPayload は adminOnly && isAdmin のとき storage を�
     userEmail: "u@example.com",
     childSpreadsheetId: "",
     childSpreadsheetUrl: "",
+    childSheetName: "",
   });
 });
 
-test("buildExternalActionPayload は childSpreadsheetId を admin ゲートで storage に含める", () => {
-  const storageFields = { spreadsheetId: "ABC", childSpreadsheetId: "CHILD" };
+test("buildExternalActionPayload は childSpreadsheetId / childSheetName を admin ゲートで storage に含める", () => {
+  const storageFields = { spreadsheetId: "ABC", childSpreadsheetId: "CHILD", childSheetName: "従事者" };
   const adminPayload = buildExternalActionPayload({
     context: "search",
     storageFields,
@@ -66,6 +67,7 @@ test("buildExternalActionPayload は childSpreadsheetId を admin ゲートで s
   });
   assert.equal(adminPayload.storage.childSpreadsheetId, "CHILD");
   assert.equal(adminPayload.storage.childSpreadsheetUrl, "https://docs.google.com/spreadsheets/d/CHILD");
+  assert.equal(adminPayload.storage.childSheetName, "従事者");
   // 非管理者では storage 自体が出ない（子 SS も漏れない）。
   const nonAdminPayload = buildExternalActionPayload({
     context: "search",

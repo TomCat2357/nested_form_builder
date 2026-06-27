@@ -675,6 +675,29 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     const spreadsheetId = normalizeSpreadsheetId(settings.spreadsheetId || "");
     const sheetName = settings.sheetName || "Data";
     const driveFileUrl = settings.driveFileUrl || "";
+    // 子フォーム（formLink）の保存先スプレッドシート ID / シート名を解決する。管理者限定ボタン＋
+    // 管理者のときだけ。親フォームの formLink は通常 1 つなので最初の非空 ID を採る（検索一覧の
+    // firstChildSpreadsheetId と同じ単一値方針）。buildExternalActionPayload 側で
+    // childSpreadsheetUrl に展開され、リレー先が子シートへの書き込み/リンク表示に使う。
+    let childSpreadsheetId = "";
+    let childSheetName = "";
+    if (sensitiveAllowed) {
+      for (const field of formLinkFields) {
+        try {
+          const childForm = await getChildFormCached_(field.childFormId);
+          const sid = childForm && childForm.settings && typeof childForm.settings.spreadsheetId === "string"
+            ? normalizeSpreadsheetId(childForm.settings.spreadsheetId)
+            : "";
+          if (sid) {
+            childSpreadsheetId = sid;
+            childSheetName = childForm.settings && childForm.settings.sheetName
+              ? String(childForm.settings.sheetName)
+              : "Data";
+            break;
+          }
+        } catch (_e) { /* 取得失敗の子フォームはスキップ（無言） */ }
+      }
+    }
     const externalActionCtx = {
       ...tokenContext,
       formName: formTitle,
@@ -710,7 +733,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       formId: settings.formId || "",
       formName: formTitle,
       base: { record },
-      storageFields: { spreadsheetId, sheetName, driveFileUrl, userEmail: currentUserEmail },
+      storageFields: { spreadsheetId, sheetName, driveFileUrl, userEmail: currentUserEmail, childSpreadsheetId, childSheetName },
       gate,
     });
     // このレコードの fileUpload 参照を常に渡す。フォルダ/ファイルの URL 解決と質問項目ごとの

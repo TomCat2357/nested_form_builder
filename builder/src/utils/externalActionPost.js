@@ -38,10 +38,11 @@ export const buildExternalActionPayload = ({
       sheetName: typeof sf.sheetName === "string" ? sf.sheetName : "",
       driveFileUrl: typeof sf.driveFileUrl === "string" ? sf.driveFileUrl : "",
       userEmail: typeof sf.userEmail === "string" ? sf.userEmail : "",
-      // 子フォーム（子テーブル）の保存先スプレッドシート ID。検索一覧の外部アクションで
-      // formLink から解決し、リレー先（choju 等）が子シートへの書き込み/リンク表示に使う。
+      // 子フォーム（子テーブル）の保存先スプレッドシート ID / シート名。formLink から解決し、
+      // リレー先（choju 等）が子シートへの書き込み/リンク表示に使う。
       childSpreadsheetId,
       childSpreadsheetUrl: buildSpreadsheetUrl(childSpreadsheetId),
+      childSheetName: typeof sf.childSheetName === "string" ? sf.childSheetName : "",
     };
   }
   return payload;

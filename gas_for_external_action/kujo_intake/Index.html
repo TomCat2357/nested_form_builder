@@ -94,7 +94,7 @@
         el.innerHTML = "<b>書き込み先</b>：<a href='" + esc(t.url) + "' target='_blank' rel='noopener'>スプレッドシートを開く</a>" +
           (t.sheetName ? ("　（シート: " + esc(t.sheetName) + "）") : "");
       } else {
-        el.innerHTML = "<b>書き込み先</b>：<span class='warn-inline'>未解決（検索画面の外部アクションボタンから開くか、Kuj_registerSettings でスプレッドシート ID を登録してください）</span>";
+        el.innerHTML = "<b>書き込み先</b>：<span class='warn-inline'>未解決（検索画面の『管理者のみ』外部アクションボタンを管理者で押して開いてください）</span>";
       }
     }
 

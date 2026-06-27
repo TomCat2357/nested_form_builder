@@ -57,6 +57,83 @@ CLAUDE.md から分離した、GAS 側のエントリポイント・アクショ
 
 設定系: `nfbGetAdminKey` / `nfbSetAdminKey` / `nfbGetAdminEmail` / `nfbSetAdminEmail` / `nfbGetRestrictToFormOnly` / `nfbSetRestrictToFormOnly`
 
+外部アクション系: `nfbSendExternalAction`（外部アクション URL へのサーバ間リレー送信。`UrlFetchApp` で POST し、`{ status, body }` を返す）
+
+## 外部アクション送信（外部アクション URL に渡る payload 契約）
+
+「外部アクション」ボタンは、レコード/検索結果を外部の GAS Web アプリ等へ送る機能。**ボタンを押したときに外部アクション URL へ渡る情報**の契約をここにまとめる（実体はフロント側 `builder/src/utils/externalActionPost.js` ほか。受信例は `gas_for_external_action/`）。
+
+### 送信の仕組み（2 パターン共通）
+
+- ブラウザの隠しフォーム POST ではなく、**本体 GAS のサーバ間リレー**で送る（`sendExternalAction` → `nfbSendExternalAction` → `UrlFetchApp`）。隠しフォーム POST はログインリダイレクトで POST 本文を失う弱点があったため廃止。
+- 送信先 URL に `?nfbRelay=1` を付け、POST ボディ `payload`(form-encoded) に **JSON 文字列**を入れる。受信側は `e.parameter.payload` を `JSON.parse` で全データを受け取る。
+- **誤送信防止プローブ**: 本送信の前に `nfbProbe=1` + `nonce` を投げ、受信側が `HMAC-SHA256(nonce, 共有秘密)` の署名を返せれば宛先を確認して本送信する（確認できないと `DEST_UNVERIFIED`）。
+- URL 内トークンは印刷様式と共通の alasql `{{...}}` エンジンで解決（`externalActionUrl.js`）。機微トークン（`_spreadsheet_id` / `_spreadsheet_url` / `_sheet_name` / `_drive_file_url` / `_user_email`）は **adminOnly && isAdmin のときだけ**展開を許可し、違反時は URL を null 化して送信中止。
+
+### payload 共通の外枠（`buildExternalActionPayload`）
+
+```
+{ context: "record" | "search", formId, formName, generatedAt(ISO8601),
+  ...(record か list),     // base は top-level 展開 → record / list はトップレベルキー（base ラッパは無い）
+  storage? }               // adminOnly && isAdmin のときだけ付く
+```
+
+`storage`（管理者限定ボタン＋管理者のみ）= `{ spreadsheetId, spreadsheetUrl, sheetName, driveFileUrl, userEmail, childSpreadsheetId, childSpreadsheetUrl, childSheetName }`
+
+- 子フォーム系（`childSpreadsheetId` / `childSpreadsheetUrl` / `childSheetName`）は**単票・検索一覧の両方**で付く。formLink の子フォーム定義（`settings.spreadsheetId` / `settings.sheetName`）から解決し、親フォームの formLink は通常 1 つなので**最初の非空 `childSpreadsheetId` を持つ子フォームの単一値**を採る（単票=`PreviewPage.jsx` のループ / 一覧=`SearchSidebar.buttons.js` の `firstChildStorageMeta`）。`childSheetName` は空なら `"Data"` 既定。リレー先（choju 等）が子シートへの書き込み/リンク表示に使う。
+
+### パターン① 各レコード（単票）`context:"record"`
+
+`PreviewPage.jsx` の外部アクションカードから送信。
+
+```
+record: { id, no, items: [ { question, value, type, files?, folderUrl?, folderName? }, ... ] }
+```
+
+- `items` は全フィールドをフラットに並べた配列。`question` は階層を `/` 連結したパス文字列。
+- ファイルは payload には入れず、**別引数 `files`** で渡す。フォルダ/ファイル URL の解決と質問項目ごとの構造化は Drive 権限を持つ本体 GAS（`ExtAction_send_`）が行う（実体ではなく URL のみ送る）。
+- **子レコードの紐づけは pid 一致**: 送られる子は **pid == そのレコードの ID** のものに限る（`listRecordsByPids({ formId: childFormId, pids: [recordId] })`、`recordId = recordIdRef.current`）。子レコードは保存時に pid=親 ID が刻まれ、それで紐づく。
+- **子が付く前提**: 子を取得・送信するのは **保存済みレコード（id あり）かつ GAS 環境かつ子フォーム文脈でない**ときだけ。未保存の新規レコード・非 GAS 環境・子フォーム内表示（`inChildContext`）・formLink 項目なしでは子は付かない（`PreviewPage.jsx:187-190`）。
+- 子は **1 階層のみ**。子レコード内のさらなる孫 formLink は再帰展開しない（`childFormData.js:116-117`）。1 項目あたり最大 200 件（超過は先頭 200 件、`MAX_CHILD_RECORDS_PER_FIELD`）。
+
+### パターン② 検索結果一覧 `context:"search"`
+
+`SearchSidebar.buttons.js` の外部アクションボタンから送信。
+
+```
+list: { headers, rows, rowCount, childFormsByRow?, fileRefsByRow? }
+```
+
+- `headers` は階層を `/` 連結した「1 列 = 1 文字列」、`rows` は 2 次元配列。
+- 対象行: **選択行があればその行、無ければ絞り込み後の全行**。
+- `fileRefsByRow` は行と同順・各行 `[{ question, folderUrl, folderName, files:[{name, driveFileId, driveFileUrl}] }]`。単票と違い payload に直接埋め込む。
+
+### 子フォーム（formLink）の有無による違い
+
+- **単票**: 子データは**常時 ON** で `record.items` にインライン展開（`buildRecordItems(..., { childDataByFieldId })`）。子の行は「親カード/#記号子フォーム名/子フィールド」の `question` パスで items に並ぶ。子フォームが無ければ items は親項目のみ。対象は schema の**全** formLink 項目で、**`includeChildData` フラグに非依存で常時 ON**（`buildRecordItems` 自体も `includeChildData` を見ず、渡された子データをそのまま展開する）。← 検索一覧が `includeChildData=true` 限定なのと**非対称**。
+- **検索一覧**: 子データは**送信時に on-demand 取得**（一覧表示中は取らずコストを払わない）。`includeChildData=true` の formLink のみ対象で、クリック時に子フォームごと 1 回 `listRecordsByPids` でバッチ取得（`useSearchPageState.js:315-373`）。`list.childFormsByRow` は行と同順、各行 = 子フォーム合成オブジェクト配列:
+
+  ```
+  { fieldPath, childFormId, childFormName, childFormUrl,
+    count, truncated?,            // 1 項目あたり最大 200 件（childFormData.js MAX_CHILD_RECORDS_PER_FIELD）
+    records: [ { id, no, items:[{question,value,type,...}] }, ... ],
+    childSpreadsheetId?, childSheetName? }  // 機微: 非管理者には両方剥がす（stripChildSpreadsheetIds）
+  ```
+
+  子フォームが無い（formLink 無し or `includeChildData=false`）なら `childFormsByRow` キー自体が付かず、on-demand 取得も走らない。
+- **機微の二重ガード**: `childSpreadsheetId` は `storage` と違い `childFormsByRow` が常時送信されるため、非管理者には `stripChildSpreadsheetIds` で別途剥がす。
+
+| | 子フォームなし | 子フォームあり |
+| --- | --- | --- |
+| **各レコード** | `record.items` = 親項目のみ | `record.items` に子を**常時**インライン展開（pid==recordId・全 formLink・`includeChildData` 非依存） |
+| **検索一覧** | `list` に `childFormsByRow` なし | 送信時 on-demand → `list.childFormsByRow`（行同順・`records[{id,no,items}]`・最大 200/`truncated`・`includeChildData=true` のみ） |
+
+> 単票で子が付くのは保存済みレコード（pid=自身の id）かつ GAS 環境かつ子フォーム文脈でないときだけ。未保存の新規レコード・非 GAS・`inChildContext` では子を取得・送信しない。
+
+### 受信側レスポンス契約
+
+受信側が `nfbRelay=1` で `{ ok, title, message, openUrl }`（JSON）を返せばそれを使う（`interpretExternalActionResponse`）。`openUrl` があれば新規タブで開く。JSON でない（旧受信アプリの HTML 等）ときは汎用の成功メッセージにフォールバックする。
+
 ## dist/ との関係
 
 `clasp` の push 対象は `dist/` です。以下の 3 ファイルが反映されます。
