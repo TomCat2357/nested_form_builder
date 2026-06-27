@@ -2,34 +2,26 @@ import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { useSetSelection } from "../../app/hooks/useSetSelection.js";
 import { useCancellable } from "../../app/hooks/useCancellable.js";
 import { useMemo, useState, useCallback, useEffect, useRef } from "react";
-import { pad2 } from "../../utils/dateTime.js";
 import { dataStore } from "../../app/state/dataStore.js";
 import { getRecordsFromCache, upsertRecordInCache } from "../../app/state/recordsMemoryStore.js";
 import { normalizeSchemaIDs } from "../../core/schema.js";
 import {
-  backfillComputedFieldValues,
   recomputeComputedFieldValues,
   buildComputedFieldPathsById,
   collectSubstitutionChildFormRefs,
 } from "../../core/computedFields.js";
-import { traverseSchema } from "../../core/schemaUtils.js";
-import { FULL_QUERY_SUBST_RE } from "../../core/constants.js";
 import { prefetchQueryTokens } from "../../utils/tokenReplacer.js";
 import { subscribeChildFormChange } from "../../app/state/childRecordsMemoryStore.js";
 import { evaluateCacheForRecords } from "../../app/state/cachePolicy.js";
 import { buildBackfilledRecord, selectFreshComputedWritePaths, rememberComputedWrites } from "./backfillComputedValues.js";
-import { buildSearchTableLayout, buildHeaderRowsLayout, createHitExcerptColumn, createBaseColumns, buildSimpleSearchColumns, DEFAULT_HIT_COLUMN_MIN_WIDTH } from "./searchTable.js";
+import { buildSearchTableLayout, buildHeaderRowsLayout, buildSimpleSearchColumns } from "./searchTable.js";
 import { buildExportTableData } from "./searchExport.js";
 import { hasScriptRun, listRecordsByPids } from "../../services/gasClient.js";
 import { buildChildFormUrl, buildSharedFormUrl, buildSharedRecordUrl } from "../../utils/formShareUrl.js";
-import { childFormSpreadsheetId, childFormSheetName } from "../../utils/spreadsheet.js";
 import { buildChildDataObject, distributeChildRecordsByPid, getChildFormCached_, collectFormLinkFields } from "../preview/childFormData.js";
 import {
-  computeRowValues,
   compareByColumn,
-  parseSearchCellDisplayLimit,
 } from "./searchTableValues.js";
-import { buildRowHitExcerpts } from "./searchQueryEngine.js";
 import { buildSearchExpression } from "./searchExpressionBuilder.js";
 import { entriesToViewTableRows } from "../analytics/entriesToViewRows.js";
 import { filterRowsByExpr } from "../analytics/analyticsAlaSql.js";
@@ -45,18 +37,40 @@ import { useEntries } from "./useEntries.js";
 import { saveExcelToDrive } from "../../services/gasClient.js";
 import { useSearchDisplayOverrides } from "./useSearchDisplayOverrides.js";
 import { DEFAULT_THEME, applyThemeWithFallback } from "../../app/theme/theme.js";
-import { DEFAULT_PAGE_SIZE } from "../../core/constants.js";
 import { useSearchPagePrintActions } from "./useSearchPagePrintActions.js";
+import {
+  buildInitialSort,
+  resolvePageSize,
+  resolveTableMaxWidth,
+  resolveCellDisplayLimit,
+  resolveHitColumnMinWidth,
+  resolveRequestedPage,
+  computePagination,
+} from "./searchPageSettings.js";
+import {
+  buildSearchChangeParams,
+  buildSortToggleParams,
+  buildPageChangeParams,
+} from "./searchPageUrlParams.js";
+import {
+  buildSearchScopeColumns,
+  isHitColumnActive,
+  buildDisplayColumns,
+  buildDependentSubstColumns,
+  buildSameRecordBackfillFieldIds,
+  buildFullQueryTemplates,
+} from "./searchPageColumns.js";
+import {
+  buildProcessedEntries,
+  buildDisplayPagedEntries,
+  buildExportFilename,
+} from "./searchPageRows.js";
+import {
+  resolveSearchChildFormsForRows as resolveSearchChildFormsForRowsImpl,
+  resolveSearchChildStorageMeta as resolveSearchChildStorageMetaImpl,
+} from "./searchChildFormResolvers.js";
 
-export const buildInitialSort = (params) => {
-  const raw = params.get("sort");
-  if (!raw) return { key: "No.", order: "desc" };
-  const lastColonIndex = raw.lastIndexOf(":");
-  if (lastColonIndex === -1) return { key: raw, order: "desc" };
-  const key = raw.slice(0, lastColonIndex);
-  const order = raw.slice(lastColonIndex + 1);
-  return { key: key || "No.", order: order === "asc" ? "asc" : "desc" };
-};
+export { buildInitialSort };
 
 export function useSearchPageState({
   searchParams,
@@ -92,38 +106,12 @@ export function useSearchPageState({
   const query = searchParams.get("q") || "";
   // URL ?page の要求値。下限のみ 1 で丸める。実際に使う page は sortedEntries 確定後に
   // totalPages で上限クランプする（pageSize 増加などで総ページ数が減ったとき範囲外に残るのを防ぐ）。
-  const requestedPage = Math.max(1, Number(searchParams.get("page") || 1));
+  const requestedPage = resolveRequestedPage(searchParams.get("page"));
   const { overrides: searchOverrides, updateOverride } = useSearchDisplayOverrides(effectiveFormId);
-  // pageSize の意味論:
-  //   負値（典型: -1）→ 全件表示。Number.MAX_SAFE_INTEGER で表現することで
-  //     pagedEntries の slice(0, +N) が全件返却、totalPages も 1 に収束する。
-  //     Infinity は Math.ceil(N / Infinity) = 0 を踏むので避ける。
-  //   0 / NaN / 未設定 → DEFAULT_PAGE_SIZE にフォールバック（従来挙動）。
-  //   正の有限数 → そのまま採用。
-  const rawPageSize = Number(searchOverrides?.pageSize ?? form?.settings?.pageSize ?? settings?.pageSize);
-  const PAGE_SIZE = rawPageSize < 0
-    ? Number.MAX_SAFE_INTEGER
-    : (rawPageSize > 0 ? rawPageSize : DEFAULT_PAGE_SIZE);
-  const TABLE_MAX_WIDTH = Number(searchOverrides?.searchTableMaxWidth) || Number(form?.settings?.searchTableMaxWidth) || Number(settings?.searchTableMaxWidth) || null;
-  const cellDisplayLimit =
-    parseSearchCellDisplayLimit(searchOverrides?.searchCellMaxChars) ||
-    parseSearchCellDisplayLimit(form?.settings?.searchCellMaxChars) ||
-    parseSearchCellDisplayLimit(settings?.searchCellMaxChars) ||
-    null;
-  // 検索ヒット箇所列の最小幅。override → フォーム設定 → グローバル設定 の順に解決し、
-  // いずれも未設定なら既定値を使う。0 / 負値 / NaN は既定値にフォールバック。
-  const HIT_COLUMN_MIN_WIDTH = (() => {
-    const candidates = [
-      searchOverrides?.searchHitColumnMinWidth,
-      form?.settings?.searchHitColumnMinWidth,
-      settings?.searchHitColumnMinWidth,
-    ];
-    for (const candidate of candidates) {
-      const value = Number(candidate);
-      if (Number.isFinite(value) && value > 0) return value;
-    }
-    return DEFAULT_HIT_COLUMN_MIN_WIDTH;
-  })();
+  const PAGE_SIZE = resolvePageSize(searchOverrides?.pageSize ?? form?.settings?.pageSize ?? settings?.pageSize);
+  const TABLE_MAX_WIDTH = resolveTableMaxWidth(searchOverrides?.searchTableMaxWidth, form?.settings?.searchTableMaxWidth, settings?.searchTableMaxWidth);
+  const cellDisplayLimit = resolveCellDisplayLimit(searchOverrides?.searchCellMaxChars, form?.settings?.searchCellMaxChars, settings?.searchCellMaxChars);
+  const HIT_COLUMN_MIN_WIDTH = resolveHitColumnMinWidth(searchOverrides?.searchHitColumnMinWidth, form?.settings?.searchHitColumnMinWidth, settings?.searchHitColumnMinWidth);
 
   const {
     entries: allEntries,
@@ -165,11 +153,7 @@ export function useSearchPageState({
   // 関わらず常に検索対象とするため、表示列に含まれていない非表示メタ列を補って superset を作る。
   // 値計算 / 簡易検索 / ヒット抜粋 / ソートにはこちらを使い、表示は素の columns（show 設定で
   // フィルタ済み）を使う。
-  const searchColumns = useMemo(() => {
-    const presentKeys = new Set(columns.map((column) => column.key));
-    const hiddenMeta = createBaseColumns().filter((column) => !presentKeys.has(column.key));
-    return hiddenMeta.length ? [...columns, ...hiddenMeta] : columns;
-  }, [columns]);
+  const searchColumns = useMemo(() => buildSearchScopeColumns(columns), [columns]);
 
   // 簡易検索（プレフィックスなし）の式生成専用の列集合。表示列に設定していない
   // 深いネストフィールドにも裸単語 / `列名:値`（リーフ名）が届くよう、スキーマ全
@@ -183,15 +167,12 @@ export function useSearchPageState({
 
   // 簡易検索モード（キーワード入力あり かつ SQL モードでない）のときだけ
   // 「検索ヒット箇所」列を最左に挿入する。
-  const hitColumnActive = useMemo(() => {
-    const keyword = (query || "").trim();
-    return Boolean(keyword) && !SQL_MODE_RE.test(keyword);
-  }, [query]);
+  const hitColumnActive = useMemo(() => isHitColumnActive(query), [query]);
 
   // 表示専用の列構成。値計算 / 検索 / ソートには素の columns を使い続け、
   // ヒット列はレンダリング用のこちらにのみ含める。
   const displayColumns = useMemo(
-    () => (hitColumnActive ? [createHitExcerptColumn(), ...columns] : columns),
+    () => buildDisplayColumns(hitColumnActive, columns),
     [hitColumnActive, columns],
   );
   const displayHeaderRows = useMemo(
@@ -200,25 +181,15 @@ export function useSearchPageState({
   );
 
   const handleSearchChange = (value) => {
-    const next = new URLSearchParams(searchParams);
-    if (value) next.set("q", value);
-    else next.delete("q");
-    next.set("page", "1");
-    setSearchParams(next);
+    setSearchParams(buildSearchChangeParams(searchParams, value));
   };
 
   const handleSortToggle = (key) => {
-    const next = new URLSearchParams(searchParams);
-    const current = buildInitialSort(next);
-    const order = current.key === key ? (current.order === "desc" ? "asc" : "desc") : "desc";
-    next.set("sort", `${key}:${order}`);
-    setSearchParams(next);
+    setSearchParams(buildSortToggleParams(searchParams, key));
   };
 
   const handlePageChange = (nextPage) => {
-    const next = new URLSearchParams(searchParams);
-    next.set("page", String(nextPage));
-    setSearchParams(next);
+    setSearchParams(buildPageChangeParams(searchParams, nextPage));
   };
 
   useEffect(() => {
@@ -313,139 +284,55 @@ export function useSearchPageState({
   // 子フォームごとに 1 回の listRecordsByPids でバッチ取得し、entries と同順の childFormsByRow
   // （各行 = 子フォーム合成オブジェクト配列）を返す。一覧表示中は取得しないことでコストを払わない。
   // 表示用に既に eager 取得済み（searchChildDataByField）の子フォームはそれを再利用し、再取得しない。
-  const resolveSearchChildFormsForRows = useCallback(async (entries) => {
-    const rows = Array.isArray(entries) ? entries.filter(Boolean) : [];
-    if (rows.length === 0 || externalActionChildFormFields.length === 0) return null;
-    const pids = Array.from(new Set(rows.map((e) => String(e && e.id != null ? e.id : "")).filter(Boolean)));
-    if (pids.length === 0) return null;
-    const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
-    const canFetch = typeof listRecordsByPids === "function" && hasScriptRun();
-    // fieldId → { [pid]: 合成オブジェクト }
-    const byField = {};
-    // fieldId → 子フォームの保存先スプレッドシート ID / シート名（リレーで choju へ動的受け渡し）。
-    const ssByField = {};
-    const shtByField = {};
-    for (const field of externalActionChildFormFields) {
-      // 表示用に eager 取得済みなら再利用（同じ子フォーム・同じ pid 集合を満たす範囲で）。
-      const cached = searchChildDataByField[field.id];
-      if (cached && cached.byPid && pids.every((pid) => cached.byPid[pid] !== undefined)) {
-        byField[field.id] = cached.byPid;
-        // 子 SS / シート名は form 定義から（getChildFormCached_ は promise キャッシュで安価）。
-        try {
-          const cf = await getChildFormCached_(field.childFormId);
-          ssByField[field.id] = childFormSpreadsheetId(cf);
-          shtByField[field.id] = childFormSheetName(cf);
-        } catch (_e) { ssByField[field.id] = ""; shtByField[field.id] = ""; }
-        continue;
-      }
-      if (!canFetch) continue;
-      try {
-        const [childForm, records] = await Promise.all([
-          getChildFormCached_(field.childFormId),
-          listRecordsByPids({ formId: field.childFormId, pids }),
-        ]);
-        ssByField[field.id] = childFormSpreadsheetId(childForm);
-        shtByField[field.id] = childFormSheetName(childForm);
-        const childSchema = childForm && childForm.schema ? childForm.schema : [];
-        const grouped = distributeChildRecordsByPid(records);
-        const byPid = {};
-        grouped.forEach((recs, pid) => {
-          byPid[pid] = buildChildDataObject({
-            childFormId: field.childFormId,
-            childFormName: field.childFormName,
-            childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, pid),
-            childSchema,
-            records: recs,
-          });
-        });
-        byField[field.id] = byPid;
-      } catch (_e) {
-        // 取得失敗時はその子フォームを欠落させる（無言）。
-      }
-    }
-    return rows.map((entry) => {
-      const key = String(entry && entry.id != null ? entry.id : "");
-      const out = [];
-      for (const field of externalActionChildFormFields) {
-        const byPid = byField[field.id];
-        const obj = byPid ? byPid[key] : null;
-        if (obj) out.push({ fieldPath: field.path, ...obj, childSpreadsheetId: ssByField[field.id] || "", childSheetName: shtByField[field.id] || "" });
-      }
-      return out;
-    });
-  }, [externalActionChildFormFields, searchChildDataByField]);
+  const resolveSearchChildFormsForRows = useCallback(
+    (entries) => resolveSearchChildFormsForRowsImpl(entries, {
+      externalActionChildFormFields,
+      searchChildDataByField,
+    }),
+    [externalActionChildFormFields, searchChildDataByField],
+  );
 
   // 外部アクション（検索リレー）の storage.childSpreadsheetId 用に、子フォームの保存先
   // スプレッドシート ID / シート名を formLink 子フォーム定義から直接解決する。子レコードの有無や
   // includeChildData に依存しない（取り込みは「これから子を作る」操作なので既存子が無くても解決が要る）。
   // 単票パス（PreviewPage.jsx）と同じ「最初の非空 ID を採る」方針。
-  const resolveSearchChildStorageMeta = useCallback(async () => {
-    for (const field of externalActionChildFormFields) {
-      try {
-        const cf = await getChildFormCached_(field.childFormId);
-        const sid = childFormSpreadsheetId(cf);
-        if (sid) {
-          return { childSpreadsheetId: sid, childSheetName: childFormSheetName(cf) };
-        }
-      } catch (_e) { /* 取得失敗の子フォームはスキップ（無言） */ }
-    }
-    return { childSpreadsheetId: "", childSheetName: "" };
-  }, [externalActionChildFormFields]);
+  const resolveSearchChildStorageMeta = useCallback(
+    () => resolveSearchChildStorageMetaImpl({ externalActionChildFormFields }),
+    [externalActionChildFormFields],
+  );
 
   // 「子データ / full-query 依存の置換」が出る表示列（読込中・再計算の対象判定に使う）。
-  const dependentSubstColumns = useMemo(() => {
-    if (!hasDependentSubstitutions) return [];
-    const byFieldId = substitutionChildRefs.byFieldId;
-    const pathsById = buildComputedFieldPathsById(normalizedSchema);
-    const out = [];
-    for (const col of displayColumns) {
-      if (!col || !col.path) continue;
-      let info = col.fieldId && byFieldId[col.fieldId] ? byFieldId[col.fieldId] : null;
-      if (!info) {
-        for (const fid of Object.keys(byFieldId)) {
-          if (pathsById[fid] === col.path) { info = byFieldId[fid]; break; }
-        }
-      }
-      if (!info) continue;
-      out.push({
-        columnKey: col.key,
-        path: col.path,
-        needsChild: info.childFormIds.length > 0,
-        needsFullQuery: info.hasFullQuery === true,
-      });
-    }
-    return out;
-  }, [hasDependentSubstitutions, substitutionChildRefs, normalizedSchema, displayColumns]);
+  const dependentSubstColumns = useMemo(
+    () => buildDependentSubstColumns({
+      hasDependentSubstitutions,
+      substitutionChildRefs,
+      normalizedSchema,
+      displayColumns,
+    }),
+    [hasDependentSubstitutions, substitutionChildRefs, normalizedSchema, displayColumns],
+  );
 
   // 同期バックフィル（processedEntries）が補完してよい置換 fieldId。子データ/full-query 依存の
   // 置換は子データ無しで誤った値（例: 件数 0）を書かないよう除外し、recompute effect に任せる。
-  const sameRecordBackfillFieldIds = useMemo(() => {
-    if (!hasDependentSubstitutions) return null; // 除外対象なし = 全置換（従来挙動）
-    const all = Object.keys(buildComputedFieldPathsById(normalizedSchema));
-    const dependent = new Set(Object.keys(substitutionChildRefs.byFieldId));
-    return all.filter((fid) => !dependent.has(fid));
-  }, [hasDependentSubstitutions, normalizedSchema, substitutionChildRefs]);
+  const sameRecordBackfillFieldIds = useMemo(
+    () => buildSameRecordBackfillFieldIds({
+      hasDependentSubstitutions,
+      normalizedSchema,
+      substitutionChildRefs,
+    }),
+    [hasDependentSubstitutions, normalizedSchema, substitutionChildRefs],
+  );
 
-  const processedEntries = useMemo(() => {
-    return entries.map((entry) => {
-      if (!hasComputedFields) {
-        return {
-          entry,
-          values: computeRowValues(entry, searchColumns),
-          backfillResult: null,
-          originalEntry: entry,
-        };
-      }
-      const backfillResult = backfillComputedFieldValues(normalizedSchema, entry?.data, undefined, sameRecordBackfillFieldIds);
-      const effectiveEntry = backfillResult.changed ? { ...entry, data: backfillResult.data } : entry;
-      return {
-        entry: effectiveEntry,
-        values: computeRowValues(effectiveEntry, searchColumns),
-        backfillResult,
-        originalEntry: entry,
-      };
-    });
-  }, [entries, searchColumns, normalizedSchema, hasComputedFields, sameRecordBackfillFieldIds]);
+  const processedEntries = useMemo(
+    () => buildProcessedEntries({
+      entries,
+      searchColumns,
+      normalizedSchema,
+      hasComputedFields,
+      sameRecordBackfillFieldIds,
+    }),
+    [entries, searchColumns, normalizedSchema, hasComputedFields, sameRecordBackfillFieldIds],
+  );
 
   const recordsNeedingBackfill = useMemo(
     () => processedEntries.filter((row) => row.backfillResult?.changed),
@@ -578,8 +465,8 @@ export function useSearchPageState({
   // ページ番号は要求値（URL ?page）を totalPages で上限クランプする。
   // 表示件数を増やす等で総ページ数が減ったとき、URL に残った大きい page が範囲外
   // （空ページ・「21 - 2 件」「2 / 1」のような表示）になる回帰を防ぐ。
-  const totalPages = Math.max(1, Math.ceil(sortedEntries.length / PAGE_SIZE));
-  const page = Math.min(requestedPage, totalPages);
+  const totalEntries = sortedEntries.length;
+  const { totalPages, page, startIndex, endIndex } = computePagination(totalEntries, requestedPage, PAGE_SIZE);
 
   const selectedPrintableRows = useMemo(
     () => sortedEntries.filter((row) => selectedEntries.has(row.entry.id)),
@@ -605,30 +492,21 @@ export function useSearchPageState({
   // 表示中ページの各行にヒット抜粋を付与（最大 PAGE_SIZE 件のみ計算）。
   // さらに「子データ / full-query 依存の置換セルが 空 かつ 未解決」の列キーを pendingCellKeys に
   // 集めて行へ付与する（SearchTable が該当セルに「読込中…」を出す）。
-  const displayPagedEntries = useMemo(() => {
-    const withHits = hitColumnActive
-      ? pagedEntries.map((row) => ({
-          ...row,
-          hitExcerpts: buildRowHitExcerpts(row, searchColumns, query, { cellDisplayLimit }),
-        }))
-      : pagedEntries;
-    if (dependentSubstColumns.length === 0) return withHits;
-    return withHits.map((row) => {
-      const data = row.entry?.data || {};
-      const id = String(row.entry?.id || "");
-      const pending = new Set();
-      for (const c of dependentSubstColumns) {
-        const stored = data[c.path];
-        if (!(stored === undefined || stored === null || stored === "")) continue;
-        let ready = true;
-        if (c.needsChild && !childDataReady) ready = false;
-        if (c.needsFullQuery && !(fullQueryReady && queryTokensByEntry.has(id))) ready = false;
-        if (recomputePending && (c.needsChild || c.needsFullQuery)) ready = false;
-        if (!ready) pending.add(c.columnKey);
-      }
-      return pending.size > 0 ? { ...row, pendingCellKeys: pending } : row;
-    });
-  }, [hitColumnActive, pagedEntries, searchColumns, query, cellDisplayLimit, dependentSubstColumns, childDataReady, fullQueryReady, queryTokensByEntry, recomputePending]);
+  const displayPagedEntries = useMemo(
+    () => buildDisplayPagedEntries({
+      pagedEntries,
+      hitColumnActive,
+      searchColumns,
+      query,
+      cellDisplayLimit,
+      dependentSubstColumns,
+      childDataReady,
+      fullQueryReady,
+      queryTokensByEntry,
+      recomputePending,
+    }),
+    [hitColumnActive, pagedEntries, searchColumns, query, cellDisplayLimit, dependentSubstColumns, childDataReady, fullQueryReady, queryTokensByEntry, recomputePending],
+  );
 
   // ---- 子データ取得 / full-query 解決 / 置換値の再計算・書き戻し（state は上部で宣言済み）----
   // 取得対象 pid（表示・非表示問わず読み込み済みの全レコード）。順序非依存の安定シグネチャ。
@@ -757,16 +635,10 @@ export function useSearchPageState({
     [effectiveFormId, form?.settings?.formTitle, normalizedSchema, searchChildForms],
   );
 
-  const fullQueryTemplates = useMemo(() => {
-    if (!hasFullQuerySubstitution) return "";
-    const tpls = [];
-    traverseSchema(normalizedSchema, (field) => {
-      if (field?.type === "substitution" && typeof field?.templateText === "string" && FULL_QUERY_SUBST_RE.test(field.templateText)) {
-        tpls.push(field.templateText);
-      }
-    });
-    return tpls.join("\n");
-  }, [normalizedSchema, hasFullQuerySubstitution]);
+  const fullQueryTemplates = useMemo(
+    () => buildFullQueryTemplates(normalizedSchema, hasFullQuerySubstitution),
+    [normalizedSchema, hasFullQuerySubstitution],
+  );
 
   // T3: テンプレ（=スキーマ）/ フォームが変わったら full-query 解決値を破棄して取り直す。
   // 破棄後は recompute 側が再解決トークンで full-query 値を上書きする（可視行から順次）。
@@ -883,10 +755,6 @@ export function useSearchPageState({
     forceRefreshAll();
   }, [forceRefreshAll]);
 
-  const totalEntries = sortedEntries.length;
-  const startIndex = totalEntries === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
-  const endIndex = totalEntries === 0 ? 0 : Math.min(page * PAGE_SIZE, totalEntries);
-
   const badge = useMemo(() => {
     if (loading || backgroundLoading || waitingForLock) return { label: "読み取り中...", variant: "loading" };
     return { label: "検索画面", variant: "view" };
@@ -971,9 +839,7 @@ export function useSearchPageState({
       const exportTable = buildExportTableData({ form, entries: exportingEntries });
       const themeColors = getThemeColors();
 
-      const now = new Date();
-      const timestamp = `${now.getFullYear()}${pad2(now.getMonth() + 1)}${pad2(now.getDate())}_${pad2(now.getHours())}${pad2(now.getMinutes())}${pad2(now.getSeconds())}`;
-      const filename = `検索結果_${form?.settings?.formTitle || form?.id || "form"}_${timestamp}.xlsx`;
+      const filename = buildExportFilename(form);
 
       const blob = await createExcelBlob(exportTable, themeColors);
       const base64data = await blobToBase64(blob);

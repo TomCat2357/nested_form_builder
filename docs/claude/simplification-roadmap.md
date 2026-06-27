@@ -116,17 +116,40 @@ coerce-to-string）は既存の等価性テストで担保済み。これを**CI
 - 残す価値のある作業があるとすれば、小粒な単一用途 util の局所的な同居程度（効果小）。着手する
   場合は「本当に同一の重複だけを畳む」方針を厳守すること。
 
-### Phase 4 残り — 巨大ページの JSX サブコンポーネント分離（中効果・中リスク）
-純ロジック抽出（上記）で各ファイルは数十行減ったが、当初目標「~300 行」には未達。残りは
-JSX のサブコンポーネント分離・状態のフック化が中心で、描画の回帰リスクがあるため独立タスク化。
-- 対象: `pages/FormPage.jsx`(755・既に `formPage*` 系へ部分分割済み) /
-  `pages/admin/DashboardEditorPage.jsx`(689) / `pages/admin/QuestionEditorPage.jsx`(619) /
-  `features/search/useSearchPageState.js`(664) / `features/preview/PreviewPage.jsx`(610)。
-- approach: カード/フィルタ等の繰り返し JSX を子コンポーネントへ、フォーム状態をカスタムフックへ。
-- 検証: `npm run test:builder` + `npm run test:playwright`（または verify スキル）でフォーム読込・
-  保存・検索・ダッシュボード表示を確認。
+### Phase 4 残り — 局所的な util 同居（効果小・任意）
+JSX サブコンポーネント分離は完了（下記✅）。Phase 3 で言及した「小粒な単一用途 util の
+局所的な同居」のみが任意の残作業として残る。着手する場合は「本当に同一の重複だけを畳む」
+方針を厳守すること（効果小・優先度低）。
 
 ---
+
+## ✅ 完了済み（続き）
+
+### Phase 4 完了 — 巨大ページの JSX サブコンポーネント / カスタムフック分離（振る舞い不変）
+当初目標「~300 行」に向けて、各巨大ページ/フックを**振る舞い不変の純粋な再配置**で分離。
+副作用のない純ロジックは co-located `*.test.js` 付きで別モジュール化、繰り返し JSX は
+プレゼンテーショナル子コンポーネントへ、凝集した state/effect はカスタムフックへ抽出。
+DOM 構造・props・className・条件分岐・フック呼び出し順序・依存配列を厳密に維持。
+- `pages/QuestionEditorPage.jsx`: **620 → 167 行**。`useQuestionEditor.js`（state/effect/handler）/
+  `questionEditorComponents.jsx`（メタ入力・モード fieldset・GUI/SQL パネル）/ `questionEditorState.js`
+  （可視化 state 変換・viz プレビュー組み立ての純関数 +12 tests）。
+- `pages/admin/DashboardEditorPage.jsx`: **690 → 537 行**。`useDashboardEditorData.js`（2 本の
+  `useCancellable` ロードと関連 state）/ `dashboardEditorFilterCards.jsx`（共通/簡易フィルタ行）/
+  `dashboardEditorColumns.js`（列メタ集約の純関数 +6 tests）。
+- `features/preview/PreviewPage.jsx`: **1024 → 847 行**。`useFormLinkChildData.js`（formLink 子データの
+  fetch/subscribe effect と memo）/ `PreviewRecordMeta.jsx`（レコードメタ入力）/ `previewDriveFolder.js`
+  ・`previewLiveRow.js`（純関数 +8 tests）。※ full-query/precompile/childForms-warming の effect
+  クラスタは `previewForms`/`tokenContext`/`buildLiveRow` への強結合のため**安全側で保留**。
+- `features/search/useSearchPageState.js`: **1101 → 967 行**。純ロジックのみ抽出（フック分割なし）:
+  `searchPageSettings.js`（表示設定/ページネーション）/ `searchPageUrlParams.js`（?q/?sort/?page）/
+  `searchPageColumns.js`（列集合/置換依存列/テンプレ）/ `searchPageRows.js`（行整形/出力名）/
+  `searchChildFormResolvers.js`（外部アクション子データの async リゾルバ）+39 tests。
+  ※ 子データ/full-query/置換再計算の state クラスタは effect 宣言順依存のため**保留**。
+- `pages/FormPage.jsx`: **766 → 755 行**（小幅）。既に `formPage*` 群へ大半委譲済みのため、
+  `FormPageContent.jsx`（ツールバー+プレビュー表示）と `formPageViewState.js`（バッジ/確認文言/
+  settings 構築の純関数 +10 tests）のみ安全分離。残りはコンポーネント不可分なボイラープレート。
+- 検証: `npm run test:builder`(1765 / +75 新規) / `npm run builder:build`(364 modules) / `npm test`(GAS 499)
+  すべて緑。純減 928 行（5 ファイル合算 1226 削除 / 298 追加。抽出先の新規モジュールは別途）。
 
 ## 運用ルール
 

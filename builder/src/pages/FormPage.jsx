@@ -3,7 +3,7 @@ import { toErrorMessage } from "../utils/errorMessage.js";
 import { useLatestRef } from "../app/hooks/useLatestRef.js";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
-import PreviewPage from "../features/preview/PreviewPage.jsx";
+import FormPageContent from "./FormPageContent.jsx";
 import FormPageDialogs from "./FormPageDialogs.jsx";
 import FormPageSidebar from "./FormPageSidebar.jsx";
 import { useAppData } from "../app/state/AppDataProvider.jsx";
@@ -18,7 +18,6 @@ import { useRefreshFormsIfNeeded } from "../app/hooks/useRefreshFormsIfNeeded.js
 import { useAuth } from "../app/state/authContext.jsx";
 import { useFormContext } from "../app/state/formContext.jsx";
 import { useApplyTheme } from "../app/hooks/useApplyTheme.js";
-import SearchToolbar from "../features/search/components/SearchToolbar.jsx";
 import { useEntries } from "../features/search/useEntries.js";
 import {
   buildFieldPathsMap,
@@ -35,6 +34,11 @@ import {
   setDriveFolderStateForField,
 } from "../utils/driveFolderState.js";
 import { fallbackForForm } from "./formPageHelpers.js";
+import {
+  resolveFormPageBadge,
+  resolveUnsavedConfirmMessage,
+  buildPreviewSettings,
+} from "./formPageViewState.js";
 import { performFormPageSave, DriveFolderFinalizeError } from "./formPageSaveHandler.js";
 import { performFormPageEntryLoad } from "./formPageEntryLoader.js";
 import { performFormPagePrintDocument } from "./formPagePrintHandler.js";
@@ -644,22 +648,27 @@ export default function FormPage() {
     },
   ];
 
-  const confirmMessage = unsavedDialog.state.intent === "cancel-edit"
-    ? "保存せずに編集内容を破棄しますか？"
-    : (unsavedDialog.state.intent && unsavedDialog.state.intent.startsWith("navigate:")
-      ? "保存せずに移動しますか？"
-      : "保存せずに前の画面へ戻りますか？");
+  const confirmMessage = resolveUnsavedConfirmMessage(unsavedDialog.state.intent);
   const editDisabled = loading || isReadLocked || isFormReadOnly;
+  const badge = resolveFormPageBadge({ loading, isReloading, isFormReadOnly, isViewMode });
+  const previewSettings = buildPreviewSettings({
+    form,
+    currentRecordId,
+    recordNoInput,
+    entry,
+    userName,
+    userEmail,
+    userAffiliation,
+    userTitle,
+    userPhone,
+  });
 
   return (
       <AppLayout themeOverride={form?.settings?.theme}       title={`${form.settings?.formTitle || "(無題)"} - フォーム入力`}
       fallbackPath={fallbackPath}
       onBack={handleBack}
       backHidden={true}
-      badge={{
-        label: (loading || isReloading) ? "読み取り中..." : (isFormReadOnly ? "参照のみ" : (isViewMode ? "閲覧モード" : "編集モード")),
-        variant: (loading || isReloading) ? "loading" : (isFormReadOnly ? "view" : (isViewMode ? "view" : "edit"))
-      }}
+      badge={badge}
       sidebarActions={
         <FormPageSidebar
           isViewMode={isViewMode}
@@ -696,53 +705,33 @@ export default function FormPage() {
         />
       }
     >
-      <SearchToolbar
-        showSearch={false}
+      <FormPageContent
+        ref={previewRef}
         lastSyncedAt={lastSyncedAt}
         useCache={useCache}
         cacheDisabled={cacheDisabled}
-        backgroundLoading={listBackgroundLoading}
-        lockWaiting={waitingForLock}
+        listBackgroundLoading={listBackgroundLoading}
+        waitingForLock={waitingForLock}
         hasUnsynced={hasUnsynced}
         unsyncedCount={unsyncedCount}
-        syncInProgress={listLoading || listBackgroundLoading || waitingForLock}
+        listLoading={listLoading}
+        loading={loading}
+        normalizedSchema={normalizedSchema}
+        responses={responses}
+        handleResponsesChange={handleResponsesChange}
+        isAdmin={isAdmin}
+        previewSettings={previewSettings}
+        setRecordNoInput={setRecordNoInput}
+        handleSaveToStore={handleSaveToStore}
+        isViewMode={isViewMode}
+        isReadLocked={isReadLocked}
+        isFormReadOnly={isFormReadOnly}
+        currentRecordId={currentRecordId}
+        driveFolderStates={driveFolderStates}
+        updateFieldDriveFolderState={updateFieldDriveFolderState}
+        canDeleteDriveFolder={canDeleteDriveFolder}
+        onDeleteDriveFolder={(fieldId) => driveFolderDialog.open({ fieldId: fieldId || "" })}
       />
-      {loading ? (
-        <p className="nf-text-subtle">読み込み中...</p>
-      ) : (
-        <PreviewPage
-          ref={previewRef}
-          schema={normalizedSchema}
-          responses={responses}
-          setResponses={handleResponsesChange}
-          isAdmin={isAdmin}
-          settings={{
-            ...(form.settings || {}),
-            formId: form.id,
-            recordId: currentRecordId,
-            recordNo: recordNoInput,
-            pid: entry?.pid || "",
-            modifiedAt: entry?.modifiedAt,
-            modifiedAtUnixMs: entry?.modifiedAtUnixMs,
-            driveFileUrl: form?.driveFileUrl || "",
-            userName,
-            userEmail,
-            userAffiliation,
-            userTitle,
-            userPhone,
-          }}
-          onRecordNoChange={setRecordNoInput}
-          onSave={handleSaveToStore}
-          showOutputJson={false}
-          showSaveButton={false}
-          readOnly={isViewMode || isReadLocked || isFormReadOnly}
-          entryId={currentRecordId}
-          driveFolderStates={driveFolderStates}
-          onFieldDriveFolderStateChange={updateFieldDriveFolderState}
-          canDeleteDriveFolder={!isViewMode && canDeleteDriveFolder}
-          onDeleteDriveFolder={(fieldId) => driveFolderDialog.open({ fieldId: fieldId || "" })}
-        />
-      )}
 
       <FormPageDialogs
         unsavedDialog={unsavedDialog}
