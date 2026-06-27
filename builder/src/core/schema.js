@@ -10,6 +10,7 @@ import {
 } from "../utils/printTemplateAction.js";
 import { checkNumberFieldConfig, NUMBER_MODES } from "./validate.js";
 import { migrateLegacyExternalActionUrlTokens } from "../utils/externalActionUrl.js";
+import { CHOICE_TYPES } from "./fieldTypeSets.js";
 import { joinFieldPath } from "../utils/pathCodec.js";
 export { countSchemaNodes };
 
@@ -173,7 +174,7 @@ const buildMigratedPrintTemplateField = (sourceField, sourceFieldId) => {
 
 export const cleanUnusedFieldProperties = (field) => {
   const type = field.type;
-  const isChoice = ["radio", "select", "checkboxes"].includes(type);
+  const isChoice = CHOICE_TYPES.has(type);
   const supportsPattern = ["text", "regex"].includes(type);
   const supportsTextDefaults = ["text", "userName"].includes(type);
   const supportsEmailAutoFill = type === "email";
@@ -329,7 +330,7 @@ export const normalizeSchemaIDs = (nodes) => {
       base.defaultValueMode = "userName";
     }
 
-    if (["radio", "select", "checkboxes"].includes(base.type)) {
+    if (CHOICE_TYPES.has(base.type)) {
       base.options = (base.options || []).map((opt, optionIndex) => {
         const optionLabel = sanitizeOptionLabel(opt?.label);
         return {

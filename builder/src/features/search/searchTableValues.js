@@ -4,6 +4,7 @@ import {
   toUnixMs,
 } from "../../utils/dateTime.js";
 import { isChoiceMarkerValue } from "../../utils/responses.js";
+import { CHOICE_TYPES } from "../../core/fieldTypeSets.js";
 import { normalizeFileUploadEntries } from "../../core/collect.js";
 import { splitMultiValue as splitMultiValueShared } from "../../utils/multiValue.js";
 import { joinFieldPath, splitFieldKey, PATH_SEP } from "../../utils/pathCodec.js";
@@ -24,10 +25,7 @@ export const toBooleanLike = (value) => {
 };
 
 export const columnType = (column) => column?.sourceType || column?.type || "";
-export const isChoiceColumn = (column) => {
-  const type = columnType(column);
-  return type === "checkboxes" || type === "radio" || type === "select";
-};
+export const isChoiceColumn = (column) => CHOICE_TYPES.has(columnType(column));
 export const isBooleanSortColumn = (column) => columnType(column) === "checkboxes";
 export const isNumericColumn = (column) => {
   const type = columnType(column);

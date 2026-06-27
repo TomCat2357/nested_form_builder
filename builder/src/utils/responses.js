@@ -5,6 +5,10 @@ import { formatPhoneValueForField } from "../core/phone.js";
 import { sanitizeFileUploadEntry, normalizeFileUploadEntries, parseFileUploadStorage } from "../core/collect.js";
 import { splitMultiValue } from "./multiValue.js";
 import { joinFieldPath, splitFieldKey, escapeSegment, PATH_SEP } from "./pathCodec.js";
+// CHOICE_TYPES の単一ソースは core/fieldTypeSets.js。従来 responses.js から import している
+// 箇所（FieldRenderer / editor/fieldTypes 等）の経路を保つためローカル取り込み＋再エクスポートする。
+import { CHOICE_TYPES } from "../core/fieldTypeSets.js";
+export { CHOICE_TYPES };
 
 // date / time フィールドの保存値を JST 壁時計で正規化する。
 // 入力は dataUnixMs[fieldId] があればそれを優先（unixMs）、無ければ rawValue
@@ -19,7 +23,6 @@ const normalizeTemporalValue = (field, rawValue, unixMsValue) => {
   return normalized ? normalized : rawValue;
 };
 
-export const CHOICE_TYPES = new Set(["checkboxes", "radio", "select"]);
 export const isChoiceMarkerValue = (value) => value === true || value === 1 || value === "1" || value === "●";
 
 const collectOptionLabels = (field) => {
