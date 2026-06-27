@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildSearchSidebarButtons } from "./SearchSidebar.buttons.js";
+import { buildSearchSidebarButtons, stripChildSpreadsheetIds } from "./SearchSidebar.buttons.js";
 
 const noop = () => {};
 
@@ -56,4 +56,26 @@ test("buildSearchSidebarButtons は削除取消しでも並び位置を維持し
     buttons.map((button) => button.label),
     ["新規入力", "削除取消し", "🔄 更新", "検索結果を出力", "印刷様式を出力"],
   );
+});
+
+test("stripChildSpreadsheetIds は childSpreadsheetId だけを各子オブジェクトから除去する", () => {
+  const childFormsByRow = [
+    [{ fieldPath: "a", childFormName: "従事者情報", childSpreadsheetId: "CHILD1", values: { x: 1 } }],
+    [],
+    [{ fieldPath: "b", childSpreadsheetId: "CHILD2" }, { fieldPath: "c" }],
+  ];
+  const stripped = stripChildSpreadsheetIds(childFormsByRow);
+  // childSpreadsheetId は消えるが他のフィールドは保持される。
+  assert.equal("childSpreadsheetId" in stripped[0][0], false);
+  assert.equal(stripped[0][0].childFormName, "従事者情報");
+  assert.deepEqual(stripped[0][0].values, { x: 1 });
+  assert.equal("childSpreadsheetId" in stripped[2][0], false);
+  assert.equal(stripped[2][0].fieldPath, "b");
+  // 元データは破壊しない（非変異）。
+  assert.equal(childFormsByRow[0][0].childSpreadsheetId, "CHILD1");
+});
+
+test("stripChildSpreadsheetIds は配列以外・null を素通しする", () => {
+  assert.equal(stripChildSpreadsheetIds(null), null);
+  assert.equal(stripChildSpreadsheetIds(undefined), undefined);
 });
