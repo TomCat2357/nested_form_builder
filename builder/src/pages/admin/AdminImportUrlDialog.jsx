@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
+import DialogFooter from "../../app/components/DialogFooter.jsx";
 import DriveBrowserDialog from "../../features/drive/DriveBrowserDialog.jsx";
 
 export default function ImportUrlDialog({
@@ -48,18 +49,7 @@ export default function ImportUrlDialog({
         open={open}
         title={title}
         footer={
-          <>
-            <button type="button" className="dialog-btn" onClick={onCancel}>
-              キャンセル
-            </button>
-            <button
-              type="button"
-              className="dialog-btn primary"
-              onClick={handleImport}
-            >
-              インポート
-            </button>
-          </>
+          <DialogFooter onCancel={onCancel} onConfirm={handleImport} confirmLabel="インポート" />
         }
       >
         <p className="dialog-message">{description}</p>

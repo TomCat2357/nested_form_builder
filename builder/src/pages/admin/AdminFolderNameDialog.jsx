@@ -1,5 +1,6 @@
 import React from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
+import DialogFooter from "../../app/components/DialogFooter.jsx";
 
 /**
  * テキスト 1 行を入力させる汎用ダイアログ。新規フォルダ作成・フォルダ/アイテム名変更を
@@ -41,14 +42,7 @@ export default function AdminFolderNameDialog({
       open={open}
       title={title}
       footer={
-        <>
-          <button type="button" className="dialog-btn" onClick={onCancel}>
-            キャンセル
-          </button>
-          <button type="button" className="dialog-btn primary" onClick={handleConfirm}>
-            {confirmLabel}
-          </button>
-        </>
+        <DialogFooter onCancel={onCancel} onConfirm={handleConfirm} confirmLabel={confirmLabel} />
       }
     >
       {resolvedMessage && <p className="dialog-message">{resolvedMessage}</p>}

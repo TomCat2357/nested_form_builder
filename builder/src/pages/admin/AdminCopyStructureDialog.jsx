@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
+import DialogFooter from "../../app/components/DialogFooter.jsx";
 import DriveBrowserDialog from "../../features/drive/DriveBrowserDialog.jsx";
 
 // コピー対象として個別に選べる標準フォルダ 8 カテゴリ。key は GAS の NFB_STD_FOLDER_ORDER と一致させる。
@@ -80,14 +81,13 @@ export default function AdminCopyStructureDialog({
       open={open}
       title="システムごとコピー"
       footer={
-        <>
-          <button type="button" className="dialog-btn" onClick={onCancel} disabled={loading}>
-            キャンセル
-          </button>
-          <button type="button" className="dialog-btn primary" onClick={handleConfirm} disabled={loading || allOff}>
-            {loading ? "コピー中..." : "別のプロジェクトフォルダへコピー"}
-          </button>
-        </>
+        <DialogFooter
+          onCancel={onCancel}
+          onConfirm={handleConfirm}
+          confirmLabel={loading ? "コピー中..." : "別のプロジェクトフォルダへコピー"}
+          cancelDisabled={loading}
+          confirmDisabled={loading || allOff}
+        />
       }
     >
       <p className="dialog-message">
