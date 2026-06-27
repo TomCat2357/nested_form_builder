@@ -4,7 +4,7 @@ import AppLayout from "../../app/components/AppLayout.jsx";
 import ConfirmDialog from "../../app/components/ConfirmDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { useSetSelection } from "../../app/hooks/useSetSelection.js";
-import { toComparableUnixMs, formatUnixMsValue } from "../../utils/dateTime.js";
+import { sortByModifiedDesc, formatUnixMsValue } from "../../utils/dateTime.js";
 import ImportUrlDialog from "./AdminImportUrlDialog.jsx";
 import { AdminListSidebarActions, AdminListFolderDialogs } from "./AdminListShared.jsx";
 import { useAdminAnalyticsListActions } from "./useAdminAnalyticsListActions.js";
@@ -89,13 +89,11 @@ export default function AdminAnalyticsListPage({
     return showArchived ? items : items.filter((item) => !item.archived);
   }, [items, showArchived]);
 
-  const sortedItems = useMemo(() => {
-    const list = filteredItems.slice();
-    list.sort(
-      (a, b) => toComparableUnixMs(b.modifiedAt) - toComparableUnixMs(a.modifiedAt)
-    );
-    return list;
-  }, [filteredItems]);
+  // Question / Dashboard は modifiedAtUnixMs を持たないため modifiedAt のみで比較する。
+  const sortedItems = useMemo(
+    () => sortByModifiedDesc(filteredItems, (item) => item.modifiedAt),
+    [filteredItems],
+  );
 
   const browser = useFolderBrowser(sortedItems, {
     getFolder: (item) => item.folder,

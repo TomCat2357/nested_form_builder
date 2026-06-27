@@ -197,6 +197,18 @@ export const toComparableUnixMs = (value) => {
   return Number.isFinite(ms) ? ms : 0;
 };
 
+// 一覧を modifiedAt 降順（新しい順）に並べ替えた新配列を返す。
+// 比較は toComparableUnixMs に集約（不正値は 0 に落として末尾へ）。
+// getRawTime で時刻の取り出し方を差し替えられる（既定は modifiedAtUnixMs ?? modifiedAt）。
+export const sortByModifiedDesc = (
+  items,
+  getRawTime = (item) => item?.modifiedAtUnixMs ?? item?.modifiedAt,
+) => {
+  const list = Array.isArray(items) ? items.slice() : [];
+  list.sort((a, b) => toComparableUnixMs(getRawTime(b)) - toComparableUnixMs(getRawTime(a)));
+  return list;
+};
+
 // 一覧の日時列の表示用文字列。値が無ければ "---"。
 export const formatUnixMsValue = (value) => {
   const ms = toComparableUnixMs(value);

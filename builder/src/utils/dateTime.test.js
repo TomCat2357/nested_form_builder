@@ -14,6 +14,7 @@ import {
   extractJstPartsFull,
   toMsUnixTime,
   formatCanonical,
+  sortByModifiedDesc,
 } from "./dateTime.js";
 
 test("toUnixMs は13桁UNIX msをそのまま返す", () => {
@@ -368,4 +369,34 @@ test("formatCanonical: 空 / 不正値は null", () => {
   assert.equal(formatCanonical(null, "datetime"), null);
   assert.equal(formatCanonical(undefined, "time"), null);
   assert.equal(formatCanonical("not a date", "date"), null);
+});
+
+test("sortByModifiedDesc: 新しい順に並べ替え、元配列は不変", () => {
+  const items = [
+    { id: "a", modifiedAt: "2026-01-01_00:00:00.000" },
+    { id: "b", modifiedAt: "2026-03-01_00:00:00.000" },
+    { id: "c", modifiedAt: "2026-02-01_00:00:00.000" },
+  ];
+  const sorted = sortByModifiedDesc(items, (it) => it.modifiedAt);
+  assert.deepEqual(sorted.map((x) => x.id), ["b", "c", "a"]);
+  assert.deepEqual(items.map((x) => x.id), ["a", "b", "c"]);
+});
+
+test("sortByModifiedDesc: 既定 getter は modifiedAtUnixMs ?? modifiedAt", () => {
+  const items = [
+    { id: "x", modifiedAtUnixMs: 100 },
+    { id: "y", modifiedAt: "2026-06-01_00:00:00.000" },
+    { id: "z", modifiedAtUnixMs: 300 },
+  ];
+  const sorted = sortByModifiedDesc(items);
+  assert.equal(sorted[0].id, "y");
+  assert.equal(sorted[1].id, "z");
+  assert.equal(sorted[2].id, "x");
+});
+
+test("sortByModifiedDesc: 非配列・不正値でも落ちない", () => {
+  assert.deepEqual(sortByModifiedDesc(null), []);
+  assert.deepEqual(sortByModifiedDesc(undefined), []);
+  const out = sortByModifiedDesc([{ id: "a" }, { id: "b", modifiedAt: "2026-01-01_00:00:00.000" }]);
+  assert.equal(out[0].id, "b");
 });
