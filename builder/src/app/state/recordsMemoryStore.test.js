@@ -6,6 +6,7 @@ import {
   upsertRecordInCache,
   deleteRecordFromCache,
   deleteRecordsFromCache,
+  clearFormRecordsCache,
   getCachedEntryWithIndex,
   getMaxRecordNo,
   applySyncResultToCache,
@@ -159,6 +160,37 @@ test("deleteRecordsFromCache removes multiple records at once", async () => {
 
   const { entries } = await getRecordsFromCache(FORM_ID);
   assert.deepEqual(entries.map((e) => e.id), ["rec_2"]);
+});
+
+test("clearFormRecordsCache drops records and meta so the next read is a clean full refetch", async () => {
+  __resetMemoryStoreForTests();
+  await saveRecordsToCache(FORM_ID, [sampleRecord("rec_1"), sampleRecord("rec_2")], [["a"]], {
+    serverCommitToken: 9,
+    serverModifiedAt: 8,
+    lastServerReadAt: 7,
+  });
+
+  await clearFormRecordsCache(FORM_ID);
+
+  const result = await getRecordsFromCache(FORM_ID);
+  // entries / headerMatrix が空で、メタ（lastServerReadAt / serverCommitToken）も 0 にリセットされる。
+  // → 次回 listEntries は baseServerReadAt=0 でアップロード対象ゼロのクリーンな全件再取得になる。
+  assert.deepEqual(result.entries, []);
+  assert.deepEqual(result.headerMatrix, []);
+  assert.equal(result.lastServerReadAt, 0);
+  assert.equal(result.serverCommitToken, 0);
+  assert.equal(result.lastSyncedAt, null);
+});
+
+test("clearFormRecordsCache only clears the target form, leaving other forms intact", async () => {
+  __resetMemoryStoreForTests();
+  await saveRecordsToCache(FORM_ID, [sampleRecord("rec_1")]);
+  await saveRecordsToCache(OTHER_FORM_ID, [sampleRecord("rec_99")]);
+
+  await clearFormRecordsCache(FORM_ID);
+
+  assert.deepEqual((await getRecordsFromCache(FORM_ID)).entries, []);
+  assert.deepEqual((await getRecordsFromCache(OTHER_FORM_ID)).entries.map((e) => e.id), ["rec_99"]);
 });
 
 test("getCachedEntryWithIndex finds a record by id", async () => {

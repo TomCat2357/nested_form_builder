@@ -699,6 +699,88 @@ function Kuj_renderImportPage_(e) {
 
 
 // #############################################################################
+// ## crossDedup.gs — シート既存行との cross-sheet 重複チェック
+// #############################################################################
+// 照合キー: 受付日（YYYY-MM-DD）+ 問合せ元 + 問合せ元　連絡先 + 相談詳細 を \x1F 連結。
+// ソフトデリート済み（deletedAt != ""）の行は "存在しない" として扱い、再取り込みを許容する。
+
+// 候補オブジェクト → cross-sheet 照合キー文字列。
+// 全フィールドが空の場合は "\x1F\x1F\x1F"（呼び出し側でスキップ判定）。
+function Kuj_candidateCrossKey_(cand) {
+  var c = cand || {};
+  var dateStr = String(Kuj_toCanonicalDate_(c.ukeotsukeDate) || "");
+  var nameStr = String(c.toiawaseMoto == null ? "" : c.toiawaseMoto).replace(/^\s+|\s+$/g, "");
+  var contactStr = String(c.toiawaseMotoRenraku == null ? "" : c.toiawaseMotoRenraku).replace(/^\s+|\s+$/g, "");
+  var detailStr = String(c.soudanShosai == null ? "" : c.soudanShosai).replace(/^\s+|\s+$/g, "");
+  return dateStr + "\x1F" + nameStr + "\x1F" + contactStr + "\x1F" + detailStr;
+}
+
+// シートを読んで、ソフトデリートされていない行の cross-sheet キーを集合 {} として返す（GAS 専用）。
+// シート読み取り失敗時は空 {} を返す（graceful fallback）。
+function Kuj_buildSheetCrossKeySet_(spreadsheetId, sheetName) {
+  var set = {};
+  if (!spreadsheetId) return set;
+  var sheet;
+  try { sheet = Kuj_getDataSheet_(spreadsheetId, sheetName); } catch (e) { return set; }
+  var lastRow = sheet.getLastRow();
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  if (lastRow < NFB_DATA_START_ROW) return set;
+
+  var keyToColumn = Sheets_buildHeaderKeyMap_(sheet);
+  var fixedColMap = Sheets_buildFixedColMapFromSheet_(sheet);
+
+  // 0-based 列インデックス（存在しなければ -1）
+  var uIdx = (keyToColumn["受付日"] || 0) - 1;
+  var mIdx = (keyToColumn["問合せ元"] || 0) - 1;
+  var rIdx = (keyToColumn["問合せ元　連絡先"] || 0) - 1; // 全角スペースあり
+  var sIdx = (keyToColumn["相談詳細"] || 0) - 1;
+  var dIdx = Object.prototype.hasOwnProperty.call(fixedColMap, "deletedAt") ? fixedColMap["deletedAt"] : -1;
+
+  var numRows = lastRow - NFB_DATA_START_ROW + 1;
+  var values;
+  try { values = sheet.getRange(NFB_DATA_START_ROW, 1, numRows, lastCol).getValues(); }
+  catch (e) { return set; }
+
+  var EMPTY_KEY = "\x1F\x1F\x1F";
+  for (var r = 0; r < values.length; r++) {
+    var row = values[r];
+    // ソフトデリート済みの行はスキップ（re-import 可能にする）
+    if (dIdx >= 0 && row[dIdx] !== "") continue;
+
+    var dateStr = Kuj_dateToCanonical_(uIdx >= 0 ? row[uIdx] : "");
+    var nameStr = String(mIdx >= 0 && row[mIdx] != null ? row[mIdx] : "").replace(/^\s+|\s+$/g, "");
+    var contactStr = String(rIdx >= 0 && row[rIdx] != null ? row[rIdx] : "").replace(/^\s+|\s+$/g, "");
+    var detailStr = String(sIdx >= 0 && row[sIdx] != null ? row[sIdx] : "").replace(/^\s+|\s+$/g, "");
+
+    var key = dateStr + "\x1F" + nameStr + "\x1F" + contactStr + "\x1F" + detailStr;
+    if (key !== EMPTY_KEY) set[key] = true;
+  }
+  return set;
+}
+
+// 候補配列をシート既存行で絞り込む。{ candidates: [], sheetDuplicates: <count> } を返す。
+function Kuj_filterBySheetDedup_(candidates, spreadsheetId, sheetName) {
+  var existingKeys = {};
+  if (spreadsheetId) {
+    try { existingKeys = Kuj_buildSheetCrossKeySet_(spreadsheetId, sheetName); }
+    catch (e) { /* fallback: dedup なしで続行 */ }
+  }
+  var out = [];
+  var dupCount = 0;
+  var EMPTY_KEY = "\x1F\x1F\x1F";
+  for (var i = 0; i < (candidates || []).length; i++) {
+    var key = Kuj_candidateCrossKey_(candidates[i]);
+    if (key !== EMPTY_KEY && Object.prototype.hasOwnProperty.call(existingKeys, key)) {
+      dupCount++;
+    } else {
+      out.push(candidates[i]);
+    }
+  }
+  return { candidates: out, sheetDuplicates: dupCount };
+}
+
+
+// #############################################################################
 // ## api.gs — プレビュー / コミット（google.script.run 公開関数）
 // #############################################################################
 // 注: ここの 3 関数（Kuj_getTargets / Kuj_previewCsv / Kuj_commitImport）は google.script.run から
@@ -751,12 +833,18 @@ function Kuj_previewCsv(csvTexts, ctxToken) {
   try {
     var batch = Kuj_parseCsvBatch_(csvTexts);
     var targets = Kuj_resolveTargets_(ctxToken);
+    // cross-sheet dedup: シートの既存行（ソフトデリート除く）と照合してプレビューから除外
+    var crossFiltered = Kuj_filterBySheetDedup_(batch.candidates, targets.spreadsheetId, targets.sheetName);
+    if (crossFiltered.sheetDuplicates) {
+      batch.warnings.push("既存レコードと重複する " + crossFiltered.sheetDuplicates + " 件をスキップしました（ソフトデリート済みを除く）。");
+    }
     return {
       ok: true,
-      rows: Kuj_previewRowsFromCandidates_(batch.candidates),
+      rows: Kuj_previewRowsFromCandidates_(crossFiltered.candidates),
       warnings: batch.warnings,
-      count: batch.candidates.length,
+      count: crossFiltered.candidates.length,
       duplicates: batch.duplicates,
+      sheetDuplicates: crossFiltered.sheetDuplicates,
       skipped: batch.skipped,
       overflow: batch.overflow,
       headerOk: batch.headerOk,
@@ -797,13 +885,19 @@ function Kuj_commitImport(csvTexts, selectedIndexesJson, ctxToken) {
       return { ok: false, error: "書き込み先スプレッドシートが未解決です。検索画面の『管理者のみ』外部アクションボタンを管理者で押して取り込み画面を開いてください。" };
     }
     var batch = Kuj_parseCsvBatch_(csvTexts);
-    var selected = Kuj_parseIndexes_(selectedIndexesJson, batch.candidates.length);
+    // cross-sheet dedup: プレビューと同じ絞り込みをコミット時にも適用（インデックス空間を一致させる）
+    var crossFiltered = Kuj_filterBySheetDedup_(batch.candidates, targets.spreadsheetId, targets.sheetName);
+    var candidates = crossFiltered.candidates;
+    var selected = Kuj_parseIndexes_(selectedIndexesJson, candidates.length);
     if (!selected.length) return { ok: false, error: "取り込む行が選択されていません。" };
     var result = Kuj_withLock_("取り込み", function () {
       var written = 0;
       var warnings = [];
+      if (crossFiltered.sheetDuplicates) {
+        warnings.push("既存レコードと重複する " + crossFiltered.sheetDuplicates + " 件をスキップしました（ソフトデリート済みを除く）。");
+      }
       for (var s = 0; s < selected.length; s++) {
-        var cand = batch.candidates[selected[s]];
+        var cand = candidates[selected[s]];
         if (!cand) continue;
         var conv = Kuj_candidateToData_(cand);
         for (var w = 0; w < conv.warnings.length; w++) warnings.push("[行" + (selected[s] + 1) + "] " + conv.warnings[w]);
@@ -1337,6 +1431,16 @@ function testMapping() {
   exp("30 行制限後の候補数", batch31.candidates.length, KUJ_MAX_ROWS_);
   exp("30 行 overflow", batch31.overflow, 1);
 
+  // 14. Kuj_candidateCrossKey_（cross-sheet dedup キー生成）
+  var ck1 = Kuj_candidateCrossKey_({ ukeotsukeDate: "2026/06/27", toiawaseMoto: "山田太郎", toiawaseMotoRenraku: "a@b.c", soudanShosai: "カラス被害\n内容" });
+  truthy("crossKey 非空", ck1 && ck1.length > 0);
+  var ck2 = Kuj_candidateCrossKey_({ ukeotsukeDate: "2026/06/27", toiawaseMoto: "山田太郎", toiawaseMotoRenraku: "a@b.c", soudanShosai: "カラス被害\n内容" });
+  exp("crossKey 同一入力で同一キー", ck1, ck2);
+  var ckDiffDate = Kuj_candidateCrossKey_({ ukeotsukeDate: "2026/06/28", toiawaseMoto: "山田太郎", toiawaseMotoRenraku: "a@b.c", soudanShosai: "カラス被害\n内容" });
+  truthy("crossKey 日付違いは別キー", ck1 !== ckDiffDate);
+  var ckEmpty = Kuj_candidateCrossKey_({});
+  exp("crossKey 全空は EMPTY_KEY", ckEmpty, "\x1F\x1F\x1F");
+
   Logger.log(errs.length === 0 ? "[PASS] testMapping 全項目 PASS" : "[FAIL] testMapping — " + errs.join(" / "));
   return errs.length === 0;
 }
@@ -1386,6 +1490,9 @@ if (typeof module === "object" && module.exports) {
     Sheets_neutralizeFormulaPrefix_: Sheets_neutralizeFormulaPrefix_,
     KUJ_MAX_ROWS_: KUJ_MAX_ROWS_,
     KUJ_OPTIONS_: KUJ_OPTIONS_,
-    KUJ_FIELDS_: KUJ_FIELDS_
+    KUJ_FIELDS_: KUJ_FIELDS_,
+    Kuj_candidateCrossKey_: Kuj_candidateCrossKey_,
+    Kuj_buildSheetCrossKeySet_: Kuj_buildSheetCrossKeySet_,
+    Kuj_filterBySheetDedup_: Kuj_filterBySheetDedup_
   };
 }

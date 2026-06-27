@@ -47,9 +47,9 @@
     <button id="confirm">取り込み内容を確認</button>
 
     <div id="status"></div>
-    <div id="preview"></div>
-
     <div id="result"></div>
+
+    <div id="preview"></div>
   </div>
 
   <script>
@@ -105,6 +105,7 @@
       var rows = res.rows || [];
       var h = "<p>確認: 取り込み対象 " + rows.length + " 件";
       if (res.duplicates) h += " ／ 重複除外 " + res.duplicates;
+      if (res.sheetDuplicates) h += " ／ 既存重複 " + res.sheetDuplicates;
       if (res.skipped) h += " ／ 空行 " + res.skipped;
       if (res.overflow) h += " ／ 上限超過 " + res.overflow;
       h += "</p>";
@@ -183,7 +184,6 @@
           for (var w = 0; w < res.warnings.length; w++) rh += "<li>" + esc(res.warnings[w]) + "</li>";
           rh += "</ul></div>";
         }
-        if (res.sheetUrl) rh += "<div><a href='" + esc(res.sheetUrl) + "' target='_blank' rel='noopener'>取り込み先スプレッドシートを開く</a></div>";
         $("result").innerHTML = rh;
         setStatus("完了");
         var cw = $("commitWrap"); if (cw) cw.style.display = "none";

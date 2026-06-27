@@ -271,6 +271,17 @@ export async function deleteRecordFromCache(formId, entryId) {
   return deleteRecordsFromCache(formId, [entryId]);
 }
 
+/**
+ * フォームのレコードキャッシュ（records + meta）を丸ごと破棄する。
+ * スプレッドシート再リンク時に、旧シート由来の未同期行が新シートへ push されるのを防ぐ。
+ * deleteRecordsFromCache と違い meta（lastServerReadAt / entryIndexMap / serverCommitToken …）も
+ * 消すので、次回 listEntries は baseServerReadAt=0・entries 空のクリーンな全件再取得になる。
+ */
+export async function clearFormRecordsCache(formId) {
+  if (!formId) return;
+  stores.delete(formId);
+}
+
 export async function deleteRecordsFromCache(formId, entryIds) {
   if (!formId) return;
   const targetIds = Array.isArray(entryIds) ? entryIds.filter(Boolean) : [];

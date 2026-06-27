@@ -40,9 +40,9 @@ const c1 = impK.children[1];
 ok("個人 child1 番号接頭語なし", Object.keys(c1).every(k => !k.endsWith("番号接頭語")), "接頭語キーが残存");
 const airNoKey = Object.keys(c1).find(k => k.includes("空気銃/免許種類") && k.endsWith("/番号"));
 ok("個人 child1 空気銃 免許番号=石狩第..号", !!airNoKey && /^.+第[0-9]+号$/.test(c1[airNoKey]), airNoKey + "=" + (airNoKey && c1[airNoKey]));
-// 証明書セクションは fields（保存対象）には含まれず、displayFields（表示専用）にある
-ok("個人 被害の内容 非取込", !("証明書/被害の内容" in impK.parent.fields), JSON.stringify(Object.keys(impK.parent.fields).filter(k => k.startsWith("証明書"))));
-ok("個人 被害の内容 displayFields", !!(impK.parent.displayFields && "証明書/被害の内容" in impK.parent.displayFields), JSON.stringify(impK.parent.displayFields && Object.keys(impK.parent.displayFields)));
+// 証明書セクションは fields（保存対象）に含まれ、displayFields（表示専用）には含まれない
+ok("個人 証明書 保存対象", Object.keys(impK.parent.fields).some(k => k.startsWith("証明書/")), JSON.stringify(Object.keys(impK.parent.fields).filter(k => k.startsWith("証明書"))));
+ok("個人 証明書 displayFields非含有", !Object.keys(impK.parent.displayFields || {}).some(k => k.startsWith("証明書/")), JSON.stringify(Object.keys(impK.parent.displayFields || {})));
 // 個人モード: 申請者情報/個人/{氏名,住所} が workers[0] から取り込まれる
 const IBASE = "申請者情報/申請者の個人・法人の別/個人";
 ok("個人 申請者氏名取込", impK.parent.fields[IBASE + "/氏名"] === "鈴木新之助", JSON.stringify(impK.parent.fields[IBASE + "/氏名"]));
@@ -53,20 +53,24 @@ const impH = C.Cho_buildImport_(C.Cho_makeReader_(fx["法人"]));
 eq("法人 applicantType", impH.parent.type, "法人");
 eq("法人 法人名", impH.parent.fields["申請者情報/申請者の個人・法人の別/法人/法人名"], "株式会社ハンター協会");
 
-// ---- 確認用（桃セル）取り込み ----
+// ---- 確認用（桃セル）取り込み: 集計値は displayFields（表示専用・保存しない）へ ----
 const CONF = "確認用", CONFSP = CONF + "/種類及び数量";
-// 集計系（種数/卵数/捕獲方法）のみ取り込む。同定系は「照合専用」化＝保存しない。
-ok("個人 確認用キツネ捕獲数", impK.parent.fields[CONFSP + "/キツネ捕獲数"] === 8, JSON.stringify(impK.parent.fields[CONFSP + "/キツネ捕獲数"]));
-ok("個人 確認用キジバト採取卵数あり", typeof impK.parent.fields[CONFSP + "/キジバト採取卵数"] === "number", JSON.stringify(impK.parent.fields[CONFSP + "/キジバト採取卵数"]));
-ok("個人 確認用捕獲方法あり", typeof impK.parent.fields[CONF + "/捕獲方法"] === "string" && impK.parent.fields[CONF + "/捕獲方法"].length > 0, impK.parent.fields[CONF + "/捕獲方法"]);
-// 同定系（住所/氏名/生年月日/職業/証明書住所/証明書氏名）は保存しない（個人でも法人でも）。
+const dfK = impK.parent.displayFields || {};
+// 集計系（種数/卵数/捕獲方法）のみ displayFields に入る。同定系は「照合専用」化＝どこにも保存しない。
+ok("個人 確認用キツネ捕獲数", dfK[CONFSP + "/キツネ捕獲数"] === 8, JSON.stringify(dfK[CONFSP + "/キツネ捕獲数"]));
+ok("個人 確認用キジバト採取卵数あり", typeof dfK[CONFSP + "/キジバト採取卵数"] === "number", JSON.stringify(dfK[CONFSP + "/キジバト採取卵数"]));
+ok("個人 確認用捕獲方法あり", typeof dfK[CONF + "/捕獲方法"] === "string" && dfK[CONF + "/捕獲方法"].length > 0, dfK[CONF + "/捕獲方法"]);
+// 確認用は保存対象（fields）には一切入らない。
+ok("個人 確認用は非保存(fields)", !Object.keys(impK.parent.fields).some((k) => k === CONF || k.startsWith(CONF + "/")), JSON.stringify(Object.keys(impK.parent.fields).filter((k) => k.startsWith(CONF))));
+// 同定系（住所/氏名/生年月日/職業/証明書住所/証明書氏名）は集計でないので displayFields にも fields にも出ない。
 for (const sub of ["住所", "氏名", "生年月日", "職業", "証明書住所", "証明書氏名"]) {
-  ok("個人 確認用" + sub + "は非保存", !(CONF + "/" + sub in impK.parent.fields), JSON.stringify(impK.parent.fields[CONF + "/" + sub]));
+  ok("個人 確認用" + sub + "は非取込", !((CONF + "/" + sub) in dfK) && !((CONF + "/" + sub) in impK.parent.fields), JSON.stringify(dfK[CONF + "/" + sub]));
 }
-// 法人: 同定は未設定／集計・種数は取り込む
-ok("法人 確認用住所なし", !(CONF + "/住所" in impH.parent.fields), impH.parent.fields[CONF + "/住所"]);
-ok("法人 確認用氏名なし", !(CONF + "/氏名" in impH.parent.fields), impH.parent.fields[CONF + "/氏名"]);
-ok("法人 確認用種数あり", Object.keys(impH.parent.fields).some((k) => k.startsWith(CONFSP + "/")), "法人の確認用種数が空");
+// 法人: 同定は未設定／集計・種数は取り込む（displayFields）
+const dfH = impH.parent.displayFields || {};
+ok("法人 確認用住所なし", !((CONF + "/住所") in dfH), dfH[CONF + "/住所"]);
+ok("法人 確認用氏名なし", !((CONF + "/氏名") in dfH), dfH[CONF + "/氏名"]);
+ok("法人 確認用種数あり", Object.keys(dfH).some((k) => k.startsWith(CONFSP + "/")), "法人の確認用種数が空");
 
 // ---- forcedType（取り込み画面のラジオ選択）が自動判定を上書き ----
 eq("forcedType 個人fx→法人", C.Cho_buildImport_(C.Cho_makeReader_(fx["個人"]), "法人").parent.type, "法人");
@@ -194,11 +198,11 @@ eq("resolveCell 空値", C.Cho_resolveCell_("").value, "");
   eq("friendly workers数", fr.workers.length, impK.children.length);
   eq("friendly worker0 title", fr.workers[0].title, "鈴木新之助");
   ok("friendly worker0 rows", fr.workers[0].rows.length > 0, "rows empty");
-  // 確認用（桃セル由来）と証明書（displayFields）の行は confirm:true で色分け対象、それ以外は confirm:false
+  // 確認用（displayFields・桃セル由来）の行だけ confirm:true（桃色）。証明書を含む保存データは confirm:false。
   const confRows = fr.applicant.rows.filter((r) => r.confirm);
   ok("friendly 確認用行あり", confRows.length > 0, "確認用行が無い");
-  ok("friendly confirm行は確認用か証明書", confRows.every((r) => r.label.startsWith("確認用") || r.label.startsWith("証明書")), JSON.stringify(confRows.map((r) => r.label)));
-  ok("friendly 非確認用は confirm=false", fr.applicant.rows.filter((r) => !r.label.startsWith("確認用") && !r.label.startsWith("証明書")).every((r) => r.confirm === false), "非確認用に confirm=true 混入");
+  ok("friendly confirm行は確認用のみ", confRows.every((r) => r.label.startsWith("確認用")), JSON.stringify(confRows.map((r) => r.label)));
+  ok("friendly 非確認用は confirm=false", fr.applicant.rows.filter((r) => !r.label.startsWith("確認用")).every((r) => r.confirm === false), "非確認用に confirm=true 混入");
   // 各従事者に「捕獲用具一覧（確認用）」= 実際の葉用具（カテゴリではない）の平坦化行が出る。
   // 田中聡(worker1) の用具は 手捕り/はこわな/空気銃/散弾銃（順不同OK）。
   const tanaka = fr.workers.find((w) => w.title === "田中聡");
@@ -211,7 +215,7 @@ eq("resolveCell 空値", C.Cho_resolveCell_("").value, "");
   ok("用具一覧は子フィールドに非混入", !("捕獲用具一覧（確認用）" in impK.children[1]), "保存フィールドに混入");
   // 全従事者の用具和集合 == 確認用 ＞ 捕獲方法（E30、順不同）。message2 の確認事項。
   const union = C.Cho_unionToolsFromImport_(impK.children).slice().sort().join(",");
-  const e30 = impK.parent.fields["確認用/捕獲方法"].split(/[,、・]/).map((s) => s.trim()).filter(Boolean).sort().join(",");
+  const e30 = (impK.parent.displayFields["確認用/捕獲方法"] || "").split(/[,、・]/).map((s) => s.trim()).filter(Boolean).sort().join(",");
   eq("用具和集合==確認用捕獲方法", union, e30);
   ok("E30照合 issue無し", impK.issues.filter((x) => x.cell === "E30").length === 0, JSON.stringify(impK.issues.filter((x) => x.cell === "E30")));
   // 表示専用の「捕獲方法（従事者集計）」「捕獲方法 照合」行は廃止された（E30 不一致は pink で出る）。
@@ -219,8 +223,8 @@ eq("resolveCell 空値", C.Cho_resolveCell_("").value, "");
   ok("friendly 照合行なし", !fr.applicant.rows.some((r) => r.label === "確認用 ＞ 捕獲方法 照合"), "照合行が残存");
   // 同定の確認用行（住所/氏名/生年月日/職業）は保存しないので fieldsToRows に出ない。
   ok("friendly 同定確認用行なし", !fr.applicant.rows.some((r) => /^確認用 ＞ (住所|氏名|生年月日|職業)$/.test(r.label)), JSON.stringify(fr.applicant.rows.map((r) => r.label)));
-  // 証明書データは displayFields としてプレビューに confirm=true 行で出る。
-  ok("friendly 証明書行あり confirm", fr.applicant.rows.some((r) => r.label.startsWith("証明書") && r.confirm === true), "証明書行が無い");
+  // 証明書データは保存対象（fields）なのでプレビューに confirm=false（通常）行で出る。
+  ok("friendly 証明書行あり 通常", fr.applicant.rows.some((r) => r.label.startsWith("証明書") && r.confirm === false), "証明書行が無い");
 }
 // relay context 抽出（外部アクション payload → 親 storage）
 {

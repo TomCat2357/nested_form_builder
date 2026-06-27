@@ -11,7 +11,9 @@ import {
   getMaxRecordNo,
   getRecordsFromCache,
   applySyncResultToCache,
+  clearFormRecordsCache,
 } from "./recordsMemoryStore.js";
+import { invalidateChildForm } from "./childRecordsMemoryStore.js";
 import { buildUploadRecordsForSync } from "./syncUploadPlan.js";
 import { getFormsFromCache } from "./formsCache.js";
 import { registryStore } from "./registryStore.js";
@@ -50,6 +52,7 @@ import {
   buildGetEntryFallbackListEntriesOptions,
   buildListEntriesResult,
   buildUpsertEntryRecord,
+  spreadsheetTargetKey,
 } from "./dataStoreHelpers.js";
 
 // ---------------------------------------------------------------------------
@@ -286,6 +289,18 @@ export const dataStore = {
     // 無くても実体ファイルを driveFileUrl で特定して上書き）に使うため明示的に引き継ぐ。
     // 実体 URL は保存後に GAS が確定値で上書きする。
     next.driveFileUrl = updates.driveFileUrl || current.driveFileUrl;
+    // スプレッドシート保存先が別シートへ張り替えられたら、このフォームのレコードキャッシュを破棄する。
+    // キャッシュは formId だけをキーにしており旧シートと紐付かないため、残すと旧シート由来の未同期行が
+    // 次回 listEntries で新シートへ push され上書き／汚染される。current が取れなかった場合は比較できないので
+    // 安全側で何もしない（元から cache が無い可能性も高い）。
+    const prevTargetKey = spreadsheetTargetKey(current?.settings);
+    const nextTargetKey = spreadsheetTargetKey(next?.settings);
+    if (current && prevTargetKey !== nextTargetKey) {
+      await clearFormRecordsCache(formId);
+      // このフォームが他フォームの formLink 子として使われている場合、子レコードキャッシュ
+      // （key=`formId::pid`）も旧シート由来で stale になるため一緒に破棄＋リスナ通知する。
+      await invalidateChildForm(formId);
+    }
     // オフラインファースト: まず IndexedDB に保存し、Drive への上書きはバックグラウンドへ委ねる。
     // formId が一時 ID（未アップロードのフォーム編集）の場合は enqueueJob 側で既存ジョブと
     // coalesce され、1 回だけアップロードされる。
