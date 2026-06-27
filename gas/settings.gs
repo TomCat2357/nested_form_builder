@@ -43,11 +43,7 @@ function GetExtActionSecret_() {
  * @return {Object}
  */
 function SetExtActionSecret_(newSecret) {
-  EnsureAdminSettingsEnabled_();
-  var props = Nfb_getScriptProperties_();
-  var secret = String(newSecret || "");
-  props.setProperty(NFB_EXT_ACTION_SECRET, secret);
-  return { ok: true, extActionSecret: secret };
+  return Nfb_setAdminProperty_(NFB_EXT_ACTION_SECRET, "extActionSecret", newSecret);
 }
 
 /**
