@@ -456,6 +456,23 @@ function Kuj_csvRowToCandidate_(idx, row) {
   };
 }
 
+// rows[0]=ヘッダの 1 CSV ぶんの行列から候補を集める共通ループ。seen は呼び出し側で共有する
+// （単一 CSV は局所 {}、バッチはファイル横断で共有して重複除外する）。out に候補を push し、
+// ctr.skipped / ctr.duplicates を加算する。戻り値: このCSVのヘッダが「お問い合わせフォーム」様式か。
+function Kuj_collectCandidatesFromRows_(rows, seen, ctr, out) {
+  var idx = Kuj_csvHeaderIndex_(rows[0]);
+  var headerOk = Kuj_csvHeaderLooksHomepage_(idx);
+  for (var r = 1; r < rows.length; r++) {
+    var cand = Kuj_csvRowToCandidate_(idx, rows[r]);
+    if (!cand) { ctr.skipped++; continue; }
+    var key = cand._dedupKey || "";
+    if (key && seen.hasOwnProperty(key)) { ctr.duplicates++; continue; } // 同一内容（＋同一日時）の行は最初の 1 件だけ採用
+    if (key) seen[key] = true;
+    out.push(cand);
+  }
+  return headerOk;
+}
+
 // CSV テキスト → 候補配列。1 データ行 = 1 候補。空行はスキップ。重複行（KUJ_CSV_DEDUP_COLS_ 一致）は取り込まない。
 //   { candidates, warnings, total, skipped, duplicates, headerOk }。
 function Kuj_csvToCandidates_(text) {
@@ -465,20 +482,10 @@ function Kuj_csvToCandidates_(text) {
     result.warnings.push("CSV にデータがありません。");
     return result;
   }
-  var idx = Kuj_csvHeaderIndex_(rows[0]);
-  result.headerOk = Kuj_csvHeaderLooksHomepage_(idx);
+  result.headerOk = Kuj_collectCandidatesFromRows_(rows, {}, result, result.candidates);
+  result.total = result.candidates.length;
   if (!result.headerOk) {
     result.warnings.push("CSV のヘッダが「お問い合わせフォーム」様式に一致しません（問い合わせ日/件名/内容/メールアドレス）。可能な列のみベストエフォートで取り込みます。");
-  }
-  var seen = {};
-  for (var r = 1; r < rows.length; r++) {
-    var cand = Kuj_csvRowToCandidate_(idx, rows[r]);
-    if (!cand) { result.skipped++; continue; }
-    var key = cand._dedupKey || "";
-    if (key && seen.hasOwnProperty(key)) { result.duplicates++; continue; } // 同一内容の行は最初の 1 件だけ採用
-    if (key) seen[key] = true;
-    result.total++;
-    result.candidates.push(cand);
   }
   if (result.duplicates) {
     result.warnings.push("重複 " + result.duplicates + " 行をスキップしました（問い合わせ日〜内容が一致。ステータス/返信者は判定対象外）。");
@@ -494,21 +501,14 @@ function Kuj_parseCsvBatch_(csvTexts) {
   var candidates = [];
   var warnings = [];
   var seen = {};
-  var duplicates = 0, skipped = 0, overflow = 0, headerOkAny = false, headerBad = 0;
+  var ctr = { skipped: 0, duplicates: 0 };
+  var overflow = 0, headerOkAny = false, headerBad = 0;
   for (var t = 0; t < texts.length; t++) {
     var rows = Kuj_parseCsv_(Kuj_normalizeText_(String(texts[t] == null ? "" : texts[t])));
     if (!rows.length) continue;
-    var idx = Kuj_csvHeaderIndex_(rows[0]);
-    if (Kuj_csvHeaderLooksHomepage_(idx)) headerOkAny = true; else headerBad++;
-    for (var r = 1; r < rows.length; r++) {
-      var cand = Kuj_csvRowToCandidate_(idx, rows[r]);
-      if (!cand) { skipped++; continue; }
-      var key = cand._dedupKey || "";
-      if (key && seen.hasOwnProperty(key)) { duplicates++; continue; } // 同一内容かつ同一日時の行は最初の 1 件だけ採用
-      if (key) seen[key] = true;
-      candidates.push(cand);
-    }
+    if (Kuj_collectCandidatesFromRows_(rows, seen, ctr, candidates)) headerOkAny = true; else headerBad++;
   }
+  var duplicates = ctr.duplicates, skipped = ctr.skipped;
   if (headerBad) warnings.push("CSV のヘッダが「お問い合わせフォーム」様式に一致しない行があります（問い合わせ日/件名/内容/メールアドレス）。可能な列のみベストエフォートで取り込みます。");
   if (duplicates) warnings.push("重複 " + duplicates + " 行をスキップしました（問い合わせ日〜内容が一致。ステータス/返信者は判定対象外）。");
   if (skipped) warnings.push("空行 " + skipped + " 件をスキップしました。");
