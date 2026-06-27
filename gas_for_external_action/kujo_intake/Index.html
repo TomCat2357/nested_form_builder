@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>苦情・通報の取り込み（CSV）</title>
+  <style>
+    body { font-family: -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif; background: #f8f9fa; margin: 0; padding: 24px; color: #202124; }
+    .card { max-width: 1000px; margin: 0 auto; background: #fff; border: 1px solid #dadce0; border-radius: 8px; padding: 20px 24px; }
+    h1 { font-size: 18px; color: #1a73e8; margin: 0 0 8px; }
+    p { font-size: 13px; line-height: 1.6; }
+    label.field { display: block; margin: 14px 0 4px; font-size: 13px; font-weight: bold; }
+    button { margin-top: 12px; padding: 8px 16px; font-size: 14px; cursor: pointer; border: 1px solid #1a73e8; background: #1a73e8; color: #fff; border-radius: 4px; }
+    button:disabled { opacity: 0.5; cursor: default; }
+    button.secondary { background: #fff; color: #1a73e8; }
+    #status { margin-top: 12px; font-size: 13px; color: #5f6368; }
+    #sheetlinks { background: #E8F0FE; border: 1px solid #1a73e8; border-radius: 6px; padding: 8px 12px; font-size: 13px; margin: 8px 0 4px; }
+    #sheetlinks a { color: #1a73e8; }
+    .selbar { margin: 14px 0 6px; font-size: 13px; }
+    .rec { border: 1px solid #dadce0; border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
+    .rec .chk { font-size: 13px; }
+    table.kv { border-collapse: collapse; width: 100%; margin-top: 8px; font-size: 12px; }
+    table.kv th, table.kv td { border: 1px solid #dadce0; padding: 4px 8px; text-align: left; vertical-align: top; }
+    table.kv th { background: #f1f3f4; white-space: nowrap; width: 1%; }
+    .warn { background: #FEF7E0; border: 1px solid #F9AB00; border-radius: 6px; padding: 8px 12px; margin: 8px 0; font-size: 13px; }
+    .warn ul { margin: 4px 0 0; padding-left: 20px; }
+    .warn-inline { color: #b06000; }
+    .info { color: #5f6368; font-size: 13px; }
+    .err { color: #c5221f; font-size: 13px; }
+    .ok { color: #188038; font-weight: bold; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>苦情・通報の取り込み（CSV → スプレッドシート）</h1>
+    <p>札幌市 CMS「お問い合わせフォーム」の <b>CSV ファイル</b>（Shift-JIS / UTF-8 自動判定）を選び、
+      ［取り込み内容を確認］を押すと、列ヘッダから内容を読み取り、重複（問い合わせ日時を含めて一致するもの）と空行を
+      除いて最大 <span id="maxrows"></span> 行を一覧します。取り込む行にチェックを入れ、
+      ［選択分をスプレッドシートへ取り込む］でフォームの Data シートへ直接追加します。
+      相談大分類などネスト分類は自動では入りません（取り込み後に補完してください）。</p>
+
+    <div id="sheetlinks"><b>書き込み先</b>：<span class="info">確認中…</span></div>
+
+    <label class="field" for="csv">お問い合わせフォーム CSV（複数可）</label>
+    <input type="file" id="csv" accept=".csv,text/csv" multiple>
+    <br>
+    <button id="confirm">取り込み内容を確認</button>
+
+    <div id="status"></div>
+    <div id="preview"></div>
+
+    <div id="commitWrap" style="display:none">
+      <button id="commit">選択分をスプレッドシートへ取り込む</button>
+    </div>
+    <div id="result"></div>
+  </div>
+
+  <script>
+    var CTX = "<?= ctxToken ?>";
+    var MAX_ROWS = <?= maxRows ?>;
+    var TEXTS = []; // 確認時に読み込んだ CSV テキスト（コミットで再送し、サーバが再パースする）
+
+    function $(id) { return document.getElementById(id); }
+    function esc(s) { return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+    function setStatus(s) { $("status").textContent = s || ""; }
+
+    // google.script.run を Promise 化（可変長引数）。
+    function gasRun(fn) {
+      var args = Array.prototype.slice.call(arguments, 1);
+      return new Promise(function (res, rej) {
+        var runner = google.script.run.withSuccessHandler(res).withFailureHandler(rej);
+        runner[fn].apply(runner, args);
+      });
+    }
+
+    // 文字コード自動判定: ①UTF-8 BOM → UTF-8、②fatal:true の UTF-8 が通れば UTF-8、③通らなければ Shift-JIS。
+    function decodeCsv(buf) {
+      var u = new Uint8Array(buf);
+      if (u.length >= 3 && u[0] === 0xEF && u[1] === 0xBB && u[2] === 0xBF) return new TextDecoder("utf-8").decode(buf);
+      try { return new TextDecoder("utf-8", { fatal: true }).decode(buf); }
+      catch (e) { return new TextDecoder("shift_jis").decode(buf); }
+    }
+
+    function readAllFiles(files) {
+      return Promise.all(files.map(function (f) {
+        return f.arrayBuffer().then(function (buf) { return decodeCsv(buf); });
+      }));
+    }
+
+    function renderTargets(t) {
+      var el = $("sheetlinks");
+      if (!el) return;
+      if (t && t.url) {
+        el.innerHTML = "<b>書き込み先</b>：<a href='" + esc(t.url) + "' target='_blank' rel='noopener'>スプレッドシートを開く</a>" +
+          (t.sheetName ? ("　（シート: " + esc(t.sheetName) + "）") : "");
+      } else {
+        el.innerHTML = "<b>書き込み先</b>：<span class='warn-inline'>未解決（検索画面の外部アクションボタンから開くか、Kuj_registerSettings でスプレッドシート ID を登録してください）</span>";
+      }
+    }
+
+    function fieldVal(fields, label) {
+      for (var i = 0; i < (fields || []).length; i++) if (fields[i].label === label) return fields[i].value;
+      return "";
+    }
+
+    function renderPreview(res) {
+      renderTargets(res);
+      var rows = res.rows || [];
+      var h = "<p>確認: 取り込み対象 " + rows.length + " 件";
+      if (res.duplicates) h += " ／ 重複除外 " + res.duplicates;
+      if (res.skipped) h += " ／ 空行 " + res.skipped;
+      if (res.overflow) h += " ／ 上限超過 " + res.overflow;
+      h += "</p>";
+      if (res.warnings && res.warnings.length) {
+        h += "<div class='warn'><strong>注意 " + res.warnings.length + " 件</strong><ul>";
+        for (var w = 0; w < res.warnings.length; w++) h += "<li>" + esc(res.warnings[w]) + "</li>";
+        h += "</ul></div>";
+      }
+      if (!rows.length) { h += "<div class='info'>取り込める行がありません。</div>"; $("preview").innerHTML = h; setStatus(""); return; }
+
+      h += "<div class='selbar'><label><input type='checkbox' id='chkAll' checked> すべて選択</label></div>";
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        var f = r.fields || [];
+        var dt = fieldVal(f, "受付日");
+        var who = fieldVal(f, "問合せ元");
+        var detail = fieldVal(f, "相談詳細");
+        if (detail.length > 50) detail = detail.slice(0, 50) + "…";
+        var title = [dt, who, detail].filter(Boolean).join(" / ") || ("行 " + (r.index + 1));
+        h += "<div class='rec'><label class='chk'><input type='checkbox' class='chkRow' data-idx='" + r.index + "' checked> <b>#" + (r.index + 1) + "</b> " + esc(title) + "</label>";
+        h += "<table class='kv'>";
+        for (var k = 0; k < f.length; k++) h += "<tr><th>" + esc(f[k].label) + "</th><td>" + esc(f[k].value) + "</td></tr>";
+        h += "</table>";
+        if (r.warnings && r.warnings.length) {
+          h += "<div class='warn'><ul>";
+          for (var x = 0; x < r.warnings.length; x++) h += "<li>" + esc(r.warnings[x]) + "</li>";
+          h += "</ul></div>";
+        }
+        h += "</div>";
+      }
+      $("preview").innerHTML = h;
+      var all = $("chkAll");
+      if (all) all.onclick = function () {
+        var cs = document.querySelectorAll(".chkRow");
+        for (var i = 0; i < cs.length; i++) cs[i].checked = all.checked;
+      };
+      $("commitWrap").style.display = "";
+      setStatus("内容を確認し、取り込む行にチェックを入れてください。");
+    }
+
+    function onConfirm() {
+      var files = $("csv").files ? Array.prototype.slice.call($("csv").files) : [];
+      if (!files.length) { setStatus("CSV ファイルを選んでください"); return; }
+      $("confirm").disabled = true;
+      setStatus("読み込み中…");
+      $("preview").innerHTML = "";
+      $("commitWrap").style.display = "none";
+      $("result").innerHTML = "";
+      readAllFiles(files).then(function (texts) {
+        TEXTS = texts;
+        return gasRun("Kuj_previewCsv_", texts, CTX);
+      }).then(function (res) {
+        $("confirm").disabled = false;
+        if (!res || !res.ok) { setStatus(""); $("preview").innerHTML = "<div class='err'>エラー: " + esc(res && res.error || "unknown") + "</div>"; return; }
+        renderPreview(res);
+      }).catch(function (e) {
+        $("confirm").disabled = false;
+        setStatus("");
+        $("preview").innerHTML = "<div class='err'>エラー: " + esc((e && e.message) || String(e)) + "</div>";
+      });
+    }
+
+    function onCommit() {
+      var cs = document.querySelectorAll(".chkRow");
+      var idx = [];
+      for (var i = 0; i < cs.length; i++) if (cs[i].checked) idx.push(Number(cs[i].getAttribute("data-idx")));
+      if (!idx.length) { setStatus("取り込む行が選択されていません"); return; }
+      $("commit").disabled = true;
+      setStatus("取り込み中…");
+      gasRun("Kuj_commitImport_", TEXTS, JSON.stringify(idx), CTX).then(function (res) {
+        $("commit").disabled = false;
+        if (!res || !res.ok) { $("result").innerHTML = "<div class='err'>失敗: " + esc(res && res.error || "unknown") + "</div>"; setStatus(""); return; }
+        var rh = "<div class='ok'>取り込み完了: " + (res.written || 0) + " 件</div>";
+        if (res.warnings && res.warnings.length) {
+          rh += "<div class='warn'><ul>";
+          for (var w = 0; w < res.warnings.length; w++) rh += "<li>" + esc(res.warnings[w]) + "</li>";
+          rh += "</ul></div>";
+        }
+        if (res.sheetUrl) rh += "<div><a href='" + esc(res.sheetUrl) + "' target='_blank' rel='noopener'>取り込み先スプレッドシートを開く</a></div>";
+        $("result").innerHTML = rh;
+        setStatus("完了");
+        $("commitWrap").style.display = "none";
+      }).catch(function (e) {
+        $("commit").disabled = false;
+        $("result").innerHTML = "<div class='err'>エラー: " + esc((e && e.message) || String(e)) + "</div>";
+        setStatus("");
+      });
+    }
+
+    $("maxrows").textContent = String(MAX_ROWS);
+    $("confirm").onclick = onConfirm;
+    $("commit").onclick = onCommit;
+    gasRun("Kuj_getTargets_", CTX).then(renderTargets).catch(function (e) { renderTargets({ ok: false }); });
+  </script>
+</body>
+</html>
