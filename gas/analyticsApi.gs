@@ -152,45 +152,8 @@ function Analytics_dispatch_(action, ctx) {
   throw new Error("Unknown analytics action: " + action);
 }
 
-// ACTION_DEFINITIONS_ から呼ばれる handler は単一行で dispatch するだけ。
-
-function AnalyticsApi_ListQuestions_(ctx)             { return Analytics_dispatch_("analytics_questions_list", ctx); }
-function AnalyticsApi_GetQuestion_(ctx)               { return Analytics_dispatch_("analytics_questions_get", ctx); }
-function AnalyticsApi_SaveQuestion_(ctx)              { return Analytics_dispatch_("analytics_questions_save", ctx); }
-function AnalyticsApi_DeleteQuestion_(ctx)            { return Analytics_dispatch_("analytics_questions_delete", ctx); }
-function AnalyticsApi_DeleteQuestions_(ctx)           { return Analytics_dispatch_("analytics_questions_delete_batch", ctx); }
-function AnalyticsApi_DeleteQuestionsWithFiles_(ctx)  { return Analytics_dispatch_("analytics_questions_delete_with_files_batch", ctx); }
-function AnalyticsApi_ArchiveQuestion_(ctx)           { return Analytics_dispatch_("analytics_questions_archive", ctx); }
-function AnalyticsApi_UnarchiveQuestion_(ctx)         { return Analytics_dispatch_("analytics_questions_unarchive", ctx); }
-function AnalyticsApi_ArchiveQuestions_(ctx)          { return Analytics_dispatch_("analytics_questions_archive_batch", ctx); }
-function AnalyticsApi_UnarchiveQuestions_(ctx)        { return Analytics_dispatch_("analytics_questions_unarchive_batch", ctx); }
-function AnalyticsApi_CopyQuestion_(ctx)              { return Analytics_dispatch_("analytics_questions_copy", ctx); }
-function AnalyticsApi_ImportQuestions_(ctx)           { return Analytics_dispatch_("analytics_questions_import", ctx); }
-function AnalyticsApi_RegisterImportedQuestion_(ctx)  { return Analytics_dispatch_("analytics_questions_register_import", ctx); }
-function AnalyticsApi_ResolveQuestionRef_(ctx)        { return Analytics_dispatch_("analytics_questions_resolve_ref", ctx); }
-function AnalyticsApi_ListDashboards_(ctx)            { return Analytics_dispatch_("analytics_dashboards_list", ctx); }
-function AnalyticsApi_GetDashboard_(ctx)              { return Analytics_dispatch_("analytics_dashboards_get", ctx); }
-function AnalyticsApi_SaveDashboard_(ctx)             { return Analytics_dispatch_("analytics_dashboards_save", ctx); }
-function AnalyticsApi_DeleteDashboard_(ctx)           { return Analytics_dispatch_("analytics_dashboards_delete", ctx); }
-function AnalyticsApi_DeleteDashboards_(ctx)          { return Analytics_dispatch_("analytics_dashboards_delete_batch", ctx); }
-function AnalyticsApi_DeleteDashboardsWithFiles_(ctx) { return Analytics_dispatch_("analytics_dashboards_delete_with_files_batch", ctx); }
-function AnalyticsApi_ArchiveDashboard_(ctx)          { return Analytics_dispatch_("analytics_dashboards_archive", ctx); }
-function AnalyticsApi_UnarchiveDashboard_(ctx)        { return Analytics_dispatch_("analytics_dashboards_unarchive", ctx); }
-function AnalyticsApi_ArchiveDashboards_(ctx)         { return Analytics_dispatch_("analytics_dashboards_archive_batch", ctx); }
-function AnalyticsApi_UnarchiveDashboards_(ctx)       { return Analytics_dispatch_("analytics_dashboards_unarchive_batch", ctx); }
-function AnalyticsApi_CopyDashboard_(ctx)             { return Analytics_dispatch_("analytics_dashboards_copy", ctx); }
-function AnalyticsApi_ImportDashboards_(ctx)          { return Analytics_dispatch_("analytics_dashboards_import", ctx); }
-function AnalyticsApi_RegisterImportedDashboard_(ctx) { return Analytics_dispatch_("analytics_dashboards_register_import", ctx); }
-function AnalyticsApi_ListQuestionFolders_(ctx)        { return Analytics_dispatch_("analytics_questions_folders_list",    ctx); }
-function AnalyticsApi_CreateQuestionFolder_(ctx)       { return Analytics_dispatch_("analytics_questions_folder_create",   ctx); }
-function AnalyticsApi_MoveQuestions_(ctx)              { return Analytics_dispatch_("analytics_questions_move",            ctx); }
-function AnalyticsApi_RenameQuestionFolder_(ctx)       { return Analytics_dispatch_("analytics_questions_folder_rename",   ctx); }
-function AnalyticsApi_DeleteQuestionFolder_(ctx)       { return Analytics_dispatch_("analytics_questions_folder_delete",   ctx); }
-function AnalyticsApi_ListDashboardFolders_(ctx)       { return Analytics_dispatch_("analytics_dashboards_folders_list",   ctx); }
-function AnalyticsApi_CreateDashboardFolder_(ctx)      { return Analytics_dispatch_("analytics_dashboards_folder_create",  ctx); }
-function AnalyticsApi_MoveDashboards_(ctx)             { return Analytics_dispatch_("analytics_dashboards_move",           ctx); }
-function AnalyticsApi_RenameDashboardFolder_(ctx)      { return Analytics_dispatch_("analytics_dashboards_folder_rename",  ctx); }
-function AnalyticsApi_DeleteDashboardFolder_(ctx)      { return Analytics_dispatch_("analytics_dashboards_folder_delete",  ctx); }
+// ACTION_DEFINITIONS_（Code.gs）からは action 名で Analytics_dispatch_ を直接呼ぶため、
+// かつての AnalyticsApi_*_ 1 行委譲ラッパー群は撤去した（純粋な中継のみで冗長だった）。
 
 // ---- single-id archive 結果のラップ ----
 

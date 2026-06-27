@@ -200,15 +200,9 @@ function Forms_dispatch_(action, ctx) {
 }
 
 // ---- doPost (ACTION_DEFINITIONS_) から呼ばれる handler ----
-// AnalyticsApi_*_ と同じく Forms_dispatch_ への 1 行転送。
-
-function FormsApi_List_(ctx)   { return Forms_dispatch_("forms_list", ctx); }
-function FormsApi_Get_(ctx)    { return Forms_dispatch_("forms_get", ctx); }
-function FormsApi_Create_(ctx) { return Forms_dispatch_("forms_save", ctx); }
-function FormsApi_Import_(ctx) { return Forms_dispatch_("forms_import", ctx); }
-function FormsApi_Update_(ctx) { return Forms_dispatch_("forms_update", ctx); }
-function FormsApi_Delete_(ctx) { return Forms_dispatch_("forms_delete_one", ctx); }
-function FormsApi_ResolveFormRef_(ctx) { return Forms_dispatch_("forms_resolve_ref", ctx); }
+// 純粋な 1 行転送だった FormsApi_*_ は撤去し、ACTION_DEFINITIONS_（Code.gs）から
+// action 名で Forms_dispatch_ を直接呼ぶ（forms_* の他エントリと同じ書き味）。
+// archived / readOnly のフラグ正規化を伴う 2 つだけは専用ハンドラとして残す。
 
 function FormsApi_SetArchived_(ctx) {
   var raw = (ctx && ctx.raw) || {};
