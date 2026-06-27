@@ -1,5 +1,6 @@
 import { ensureArray } from "./arrays.js";
 import { isPlainObject } from "./objectShape.js";
+import { asString, asTrimmedString } from "./strings.js";
 
 const EMPTY_DRIVE_FOLDER_STATE = {
   resolvedUrl: "",
@@ -23,7 +24,7 @@ export const normalizeDriveFileIds = (value) => {
   const source = ensureArray(value);
   const seen = new Set();
   return source.reduce((ids, candidate) => {
-    const normalized = typeof candidate === "string" ? candidate.trim() : "";
+    const normalized = asTrimmedString(candidate);
     if (!normalized || seen.has(normalized)) return ids;
     seen.add(normalized);
     ids.push(normalized);
@@ -32,7 +33,7 @@ export const normalizeDriveFileIds = (value) => {
 };
 
 export const appendDriveFileId = (ids, candidate) => {
-  const normalized = typeof candidate === "string" ? candidate.trim() : "";
+  const normalized = asTrimmedString(candidate);
   if (!normalized) return ids;
   return ids.includes(normalized) ? ids : [...ids, normalized];
 };
@@ -46,10 +47,10 @@ export const normalizeDriveFolderState = (value) => {
   const source = value && typeof value === "object" ? value : EMPTY_DRIVE_FOLDER_STATE;
   const resolvedUrl = typeof source.resolvedUrl === "string"
     ? source.resolvedUrl
-    : (typeof source.url === "string" ? source.url : "");
+    : asString(source.url);
   const inputUrl = typeof source.inputUrl === "string" ? source.inputUrl : resolvedUrl;
-  const pendingDeleteUrl = typeof source.pendingDeleteUrl === "string" ? source.pendingDeleteUrl : "";
-  const folderName = typeof source.folderName === "string" ? source.folderName : "";
+  const pendingDeleteUrl = asString(source.pendingDeleteUrl);
+  const folderName = asString(source.folderName);
   return {
     resolvedUrl,
     inputUrl,

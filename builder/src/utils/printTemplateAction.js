@@ -1,3 +1,5 @@
+import { asString, asTrimmedString } from "./strings.js";
+
 export const PRINT_TEMPLATE_OUTPUT_TYPES = Object.freeze({
   PDF: "pdf",
   GOOGLE_DOC: "googleDoc",
@@ -15,7 +17,7 @@ export const PRINT_TEMPLATE_OUTPUT_OPTIONS = [
 // Google Drive / Docs の URL からファイル ID を取り出す（GAS ExtractFileIdFromUrl_ 相当）。
 // .../d/<id>/... 形式を優先し、無ければ URL 中の最初の 25 文字以上の ID 様トークンを拾う。
 export const extractDriveFileId = (url) => {
-  const text = typeof url === "string" ? url.trim() : "";
+  const text = asTrimmedString(url);
   if (!text) return "";
   const byPath = text.match(/\/d\/([-\w]{10,})/);
   if (byPath) return byPath[1];
@@ -34,14 +36,14 @@ export const normalizePrintTemplateOutputType = (value) => {
 // 印刷様式参照（カード）の物理 id を解決する。新 templateId キー優先・旧 templateUrl（URL）後方互換。
 // extractDriveFileId は素の fileId も URL も受け付けるため、両形式を素の fileId へ正規化できる。
 export const resolvePrintTemplateId = (action) => {
-  const id = typeof action?.templateId === "string" ? action.templateId.trim() : "";
+  const id = asTrimmedString(action?.templateId);
   if (id) return id;
   return extractDriveFileId(action?.templateUrl || "");
 };
 
 // フォーム共通の標準印刷様式参照の物理 id を解決する。新 standardPrintTemplateId 優先・旧 URL 後方互換。
 export const resolveStandardPrintTemplateId = (settings) => {
-  const id = typeof settings?.standardPrintTemplateId === "string" ? settings.standardPrintTemplateId.trim() : "";
+  const id = asTrimmedString(settings?.standardPrintTemplateId);
   if (id) return id;
   return extractDriveFileId(settings?.standardPrintTemplateUrl || "");
 };
@@ -54,21 +56,19 @@ export const normalizePrintTemplateAction = (value) => {
     useCustomTemplate: base.useCustomTemplate === true,
     // 物理参照は素の fileId（templateId）で保持。旧 templateUrl は読取で吸収し出力からは落とす（前進移行）。
     templateId: resolvePrintTemplateId(base),
-    templatePath: typeof base.templatePath === "string" ? base.templatePath : "",
-    fileNameTemplate: typeof base.fileNameTemplate === "string" ? base.fileNameTemplate : "",
+    templatePath: asString(base.templatePath),
+    fileNameTemplate: asString(base.fileNameTemplate),
     gmailAttachPdf: base.gmailAttachPdf === true,
-    gmailTemplateTo: typeof base.gmailTemplateTo === "string" ? base.gmailTemplateTo : "",
-    gmailTemplateCc: typeof base.gmailTemplateCc === "string" ? base.gmailTemplateCc : "",
-    gmailTemplateBcc: typeof base.gmailTemplateBcc === "string" ? base.gmailTemplateBcc : "",
-    gmailTemplateSubject: typeof base.gmailTemplateSubject === "string" ? base.gmailTemplateSubject : "",
-    gmailTemplateBody: typeof base.gmailTemplateBody === "string" ? base.gmailTemplateBody : "",
+    gmailTemplateTo: asString(base.gmailTemplateTo),
+    gmailTemplateCc: asString(base.gmailTemplateCc),
+    gmailTemplateBcc: asString(base.gmailTemplateBcc),
+    gmailTemplateSubject: asString(base.gmailTemplateSubject),
+    gmailTemplateBody: asString(base.gmailTemplateBody),
   };
 };
 
-const normalizeTemplateString = (value) => (typeof value === "string" ? value.trim() : "");
-
 export const resolveSharedPrintFileNameTemplate = (settings) => (
-  normalizeTemplateString(settings?.standardPrintFileNameTemplate)
+  asTrimmedString(settings?.standardPrintFileNameTemplate)
 );
 
 export const requiresPrintTemplateFileName = (value) => {
@@ -79,7 +79,7 @@ export const requiresPrintTemplateFileName = (value) => {
 export const resolveEffectivePrintTemplateFileNameTemplate = (value, settings = {}) => {
   const action = normalizePrintTemplateAction(value);
   const sharedTemplate = resolveSharedPrintFileNameTemplate(settings);
-  const actionTemplate = normalizeTemplateString(action.fileNameTemplate);
+  const actionTemplate = asTrimmedString(action.fileNameTemplate);
 
   if (action.outputType === PRINT_TEMPLATE_OUTPUT_TYPES.GMAIL) {
     return action.gmailAttachPdf
@@ -98,7 +98,7 @@ export const getPrintTemplateOutputLabel = (actionOrType) => {
 };
 
 export const resolvePrintTemplateFieldLabel = (field) => {
-  const explicitLabel = typeof field?.label === "string" ? field.label.trim() : "";
+  const explicitLabel = asTrimmedString(field?.label);
   if (explicitLabel) return explicitLabel;
   return getPrintTemplateOutputLabel(field?.printTemplateAction);
 };

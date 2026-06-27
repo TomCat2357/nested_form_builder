@@ -5,6 +5,8 @@
 // - 機微トークン（_spreadsheet_id / _spreadsheet_url / _sheet_name / _drive_file_url / _user_email）
 //   は adminOnly && isAdmin のときだけ展開を許可。違反時は送信側で URL を null 化して早期失敗させる。
 
+import { asString } from "./strings.js";
+
 const HTTP_URL_PATTERN = /^https?:\/\//i;
 
 // 機微予約参照（バッククォート無しの素の名前）。これらが許可なく参照されたら送信を止める。
@@ -55,7 +57,7 @@ export const isValidExternalActionUrl = (url) => {
 // 旧 外部アクション URL（`{id}` 等の単括弧固定トークン）を alasql 予約参照 `` {{`_id`}} `` へ
 // 自動マップする。冪等：対象は 8 個の完全一致のみ・既に `{{...}}` のものは触らない。
 export const migrateLegacyExternalActionUrlTokens = (url) => {
-  if (typeof url !== "string" || url.indexOf("{") < 0) return typeof url === "string" ? url : "";
+  if (typeof url !== "string" || url.indexOf("{") < 0) return asString(url);
   return url.replace(LEGACY_TOKEN_PATTERN, (_match, name) => {
     const reserved = LEGACY_EXTERNAL_ACTION_TOKEN_MAP[name];
     return reserved ? "{{`" + reserved + "`}}" : _match;

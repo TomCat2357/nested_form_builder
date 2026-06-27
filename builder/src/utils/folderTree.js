@@ -3,6 +3,8 @@
  * folder は "a/b/c" 形式の正規化済みパス、未指定は ""。
  */
 
+import { asTrimmedString } from "./strings.js";
+
 /** 生のフォルダ入力を正規化する。"/a//b/ " → "a/b"、未指定や非文字列は ""。 */
 export function normalizeFolderPath(raw) {
   if (typeof raw !== "string") return "";
@@ -46,7 +48,7 @@ export function escapeRegExp(str) {
  * - 不正な正規表現はリテラル部分一致にフォールバック（入力途中で壊れない）。
  */
 export function compileNameMatcher(query) {
-  const q = typeof query === "string" ? query.trim() : "";
+  const q = asTrimmedString(query);
   if (!q) return () => true;
   let re;
   try {
