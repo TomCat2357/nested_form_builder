@@ -33,6 +33,18 @@ function nfbSafeCall_(fn) {
   try { return fn(); } catch (err) { return nfbFail_(err); }
 }
 
+// 保存/削除系で頻出する「nfbSafeCall_（外＝例外を構造化）→ WithScriptLock_（内＝排他）」の
+// 入れ子を 1 呼び出しに畳む共通ヘルパ。順序・セマンティクスは従来と同一:
+//   - lock 取得失敗時は WithScriptLock_ が { ok:false, code:"LOCK_TIMEOUT" } を return し、
+//     nfbSafeCall_ はそれをそのまま透過する（throw でないため catch されない）。
+//   - actionFn 内の throw は WithScriptLock_ の finally で lock 解放後、nfbSafeCall_ が catch して
+//     nfbFail_ で構造化する。
+function Nfb_withLockedSafeCall_(actionLabel, actionFn) {
+  return nfbSafeCall_(function() {
+    return WithScriptLock_(actionLabel, actionFn);
+  });
+}
+
 // google.script.run 公開関数の共通転送ヘルパ。各ドメイン (Forms / Analytics) の
 // nfb* ラッパが action 名 + payload を渡してくる。実体は executeAction_（Code.gs、
 // バンドル後段だが GAS は関数宣言を全体ホイストするので呼び出し時には解決済み）。

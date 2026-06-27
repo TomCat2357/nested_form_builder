@@ -171,6 +171,9 @@ function loadFormsSaveContext() {
     "formsStorage.gs",       // Forms_saveForm_（テスト対象）
   ]);
 
+  // Nfb_withLockedSafeCall_（errors.gs）は本テストではロードしないため、shim 済みプリミティブの合成で代替。
+  context.Nfb_withLockedSafeCall_ = (label, fn) => context.nfbSafeCall_(() => context.WithScriptLock_(label, fn));
+
   context.__test = { fileStore, folderStore, propsStore };
   return context;
 }

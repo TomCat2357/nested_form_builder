@@ -224,6 +224,9 @@ function loadAnalyticsContext() {
 
   vm.createContext(ctx);
 
+  // Nfb_withLockedSafeCall_（errors.gs）は本テストではロードしないため、shim 済みプリミティブの合成で代替。
+  ctx.Nfb_withLockedSafeCall_ = (label, fn) => ctx.nfbSafeCall_(() => ctx.WithScriptLock_(label, fn));
+
   const projectRoot = path.join(__dirname, "..");
   const filesToLoad = [
     "gas/formsParsing.gs",

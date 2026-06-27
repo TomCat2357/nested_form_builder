@@ -275,8 +275,7 @@ function StdFolders_propagateRelinkToAllRefs_(remap, pathChangedSet, skipFileId)
 // 伝播（Phase B）、続けて論理↔物理の参照復旧（Phase C-1 case①, C-2 case②）を適用する。
 // 戻り: { ok, forms, questions, dashboards, relinkedFiles, reresolved, formPhysicalAligned, errors }。
 function StdFolders_alignAllEntries_() {
-  return nfbSafeCall_(function () {
-    return WithScriptLock_("標準フォルダ整列（全体）", function () {
+  return Nfb_withLockedSafeCall_("標準フォルダ整列（全体）", function () {
       var ctx = { errors: [], invalidCandidates: [], remap: {}, pathChanged: {}, dirty: false, guard: null };
       var kinds = ["forms", "questions", "dashboards"];
       var perKind = {};
@@ -325,7 +324,6 @@ function StdFolders_alignAllEntries_() {
         formPhysicalAligned: formPhysicalAligned,
         errors: ctx.errors
       };
-    });
   });
 }
 
