@@ -294,6 +294,13 @@ function Cho_isChecked_(v) {
 function Cho_str_(v) { return String(v == null ? "" : v).replace(/^\s+|\s+$/g, ""); }
 function Cho_dateCanon_(v) { var d = Cho_serialOrDateToDate_(v); return d instanceof Date ? Cho_dateToCanonical_(d) : Cho_str_(v); }
 
+// 選択肢（radio/checkboxes/select）の選択は、応答シートで「親パス/選択肢ラベル」葉列に
+// マーカー "●" を立てる契約（本体 sheetsHeaders.gs / collect.js と一致）。取り込みは選択肢を
+// 連結文字列で親パスに書いていたが、その列は存在せず破棄されていた。各選択肢葉に "●" を立てる。
+var CHO_MARK_ = "●";
+function Cho_mark_(f, base, label) { var s = Cho_str_(label); if (s !== "") f[base + "/" + s] = CHO_MARK_; }
+function Cho_isMark_(v) { return Cho_str_(v) === CHO_MARK_; }
+
 // ----- 取り込み異常の構造化 issue（抽出レポート用）-----
 // category: "dropped"(取り込めなかった) | "odd"(おかしい) | "pink_inconsistent"(ピンク不整合)
 // severity: "error" | "warn" | "info"
@@ -420,7 +427,7 @@ function Cho_importRosterBlock_(reader, top, isRep, issues) {
     if (sp.count !== "") f[SP + "/" + sp.sp + "/捕獲頭数"] = sp.count;
     if (sp.egg !== "") f[SP + "/" + sp.sp + "/採取卵数"] = sp.egg;
   }
-  if (spChecked.length) f[SP] = spChecked.join(", ");
+  for (var sc = 0; sc < spChecked.length; sc++) Cho_mark_(f, SP, spChecked[sc]); // checkboxes
 
   // 方法 → kind ごとに再構成
   var byKind = { "手捕り": [], "わな": [], "網": [], "銃器": [] };
@@ -430,10 +437,10 @@ function Cho_importRosterBlock_(reader, top, isRep, issues) {
   if (byKind["わな"].length) {
     methodChecks.push("わな");
     var wb = M + "/わな";
-    f[wb + "/道具の種類"] = byKind["わな"].map(function (x) { return x.tool; }).join(", ");
+    for (var wt = 0; wt < byKind["わな"].length; wt++) Cho_mark_(f, wb + "/道具の種類", byKind["わな"][wt].tool); // checkboxes
     var wl = Cho_firstWithLicense_(byKind["わな"]);
     if (wl) {
-      f[wb + "/免許の必要性"] = "必要";
+      Cho_mark_(f, wb + "/免許の必要性", "必要"); // radio
       var lb = wb + "/免許の必要性/必要/免許情報/";
       if (wl.licPref) f[lb + "都道府県"] = wl.licPref;
       if (wl.licNo) f[lb + "番号"] = wl.licNo;
@@ -444,10 +451,10 @@ function Cho_importRosterBlock_(reader, top, isRep, issues) {
   if (byKind["網"].length) {
     methodChecks.push("網");
     var nb = M + "/網";
-    f[nb + "/道具の種類"] = byKind["網"].map(function (x) { return x.tool; }).join(", ");
+    for (var nt = 0; nt < byKind["網"].length; nt++) Cho_mark_(f, nb + "/道具の種類", byKind["網"][nt].tool); // checkboxes
     var nl = Cho_firstWithLicense_(byKind["網"]);
     if (nl) {
-      f[nb + "/免許の必要性"] = "必要";
+      Cho_mark_(f, nb + "/免許の必要性", "必要"); // radio
       var nlb = nb + "/免許の必要性/必要/免許情報/";
       if (nl.licPref) f[nlb + "都道府県"] = nl.licPref;
       if (nl.licNo) f[nlb + "番号"] = nl.licNo;
@@ -467,7 +474,7 @@ function Cho_importRosterBlock_(reader, top, isRep, issues) {
       if (gk === "空気銃") {
         var airSel = Cho_reverseGunLic_(gr.licType);
         if (airSel) {
-          f[gbk + "/免許種類"] = airSel;
+          Cho_mark_(f, gbk + "/免許種類", airSel); // select
           var ab = gbk + "/免許種類/" + airSel + "/";
           if (gr.licPref) f[ab + "都道府県"] = gr.licPref;
           if (gr.licNo) f[ab + "番号"] = gr.licNo;
@@ -482,9 +489,9 @@ function Cho_importRosterBlock_(reader, top, isRep, issues) {
         Cho_importReg_(f, gbk, [gr]);
       }
     }
-    f[gb + "/銃の種類"] = gunKinds.join(", ");
+    for (var gj = 0; gj < gunKinds.length; gj++) Cho_mark_(f, gb + "/銃の種類", gunKinds[gj]); // checkboxes
   }
-  if (methodChecks.length) f[M] = methodChecks.join(", ");
+  for (var mc = 0; mc < methodChecks.length; mc++) Cho_mark_(f, M, methodChecks[mc]); // checkboxes: 手捕り/わな/網/銃器
   return f;
 }
 
@@ -501,7 +508,7 @@ function Cho_importReg_(f, branchBase, rows) {
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i];
     if (r.regNo || r.regDate) {
-      f[branchBase + "/狩猟者登録/登録の有無"] = "あり";
+      Cho_mark_(f, branchBase + "/狩猟者登録/登録の有無", "あり"); // radio
       var rb = branchBase + "/狩猟者登録/登録の有無/あり/";
       if (r.regNo) f[rb + "番号"] = r.regNo;
       if (r.regDate) f[rb + "交付年月日"] = r.regDate;
@@ -528,7 +535,7 @@ function Cho_importParent_(reader, workers, issues, forcedType) {
     ? forcedType
     : ((f8 !== "" && f8 !== repName) ? "法人" : "個人");
   var TBASE = CHO_L_APPLICANT_ + "/" + CHO_L_APPLICANT_TYPE_;
-  f[TBASE] = applicantType;
+  Cho_mark_(f, TBASE, applicantType); // radio: 親パス/個人 or /法人 に ●
   if (applicantType === "法人") {
     f[TBASE + "/法人/住所"] = Cho_str_(app("F6"));
     f[TBASE + "/法人/法人名"] = Cho_str_(app("F8"));
@@ -560,11 +567,11 @@ function Cho_importParent_(reader, workers, issues, forcedType) {
     if (seenCell[cell]) continue;
     if (Cho_isChecked_(app(cell))) { area7.push(opt); seenCell[cell] = true; }
   }
-  if (area7.length) f[CHO_L_AREA_ + "/" + CHO_L_AREA7_] = area7.join(", ");
+  for (var a = 0; a < area7.length; a++) Cho_mark_(f, CHO_L_AREA_ + "/" + CHO_L_AREA7_, area7[a]); // checkboxes
 
   // 処置: 申請書 E31 を ・ で分割 → フォーム選択肢
   var disp = Cho_str_(app("E31")).split(/[・,、]/).map(function (x) { return x.replace(/^\s+|\s+$/g, ""); }).filter(function (x) { return x; });
-  if (disp.length) f[CHO_L_DISPOSAL_] = disp.join(", ");
+  for (var dp = 0; dp < disp.length; dp++) Cho_mark_(f, CHO_L_DISPOSAL_, disp[dp]); // checkboxes
 
   // 証明書 → 親フォームへ保存（f）。フォームに証明書 message と全子項目があり、列が存在する。
   var jBase = CHO_L_JIYU_ + "/";
@@ -573,11 +580,11 @@ function Cho_importParent_(reader, workers, issues, forcedType) {
   for (var sp in CHO_JIYU_SPECIES_MARK_) {
     if (CHO_JIYU_SPECIES_MARK_.hasOwnProperty(sp) && Cho_isChecked_(jiyu(CHO_JIYU_SPECIES_MARK_[sp]))) cause.push(sp);
   }
-  if (cause.length) f[jBase + CHO_L_JIYU_CAUSE_] = cause.join(", ");
+  for (var ca = 0; ca < cause.length; ca++) Cho_mark_(f, jBase + CHO_L_JIYU_CAUSE_, cause[ca]); // checkboxes
   var victimRaw = Cho_str_(jiyu("E22"));
   var victim = CHO_VICTIM_FROM_SHEET_[victimRaw] || "";
   if (victim) {
-    f[jBase + CHO_L_JIYU_VICTIM_] = victim;
+    Cho_mark_(f, jBase + CHO_L_JIYU_VICTIM_, victim); // select
     if (victim === "申請者以外") {
       setJ(jBase + CHO_L_JIYU_VICTIM_ + "/申請者以外/住所", jiyu("G22"));
       setJ(jBase + CHO_L_JIYU_VICTIM_ + "/申請者以外/氏名", jiyu("G23"));
@@ -631,11 +638,14 @@ function Cho_orderTools_(seen) {
 function Cho_workerTools_(f) {
   var M = CHO_L_CHILD_METHOD_, seen = [];
   function push(t) { if (t && seen.indexOf(t) === -1) seen.push(t); }
-  if (Cho_splitChecks_(f[M]).indexOf("手捕り") !== -1) push("手捕り");
-  var keys = ["わな/道具の種類", "網/道具の種類", "銃器/銃の種類"];
-  for (var k = 0; k < keys.length; k++) {
-    var parts = Cho_splitChecks_(f[M + "/" + keys[k]]);
-    for (var p = 0; p < parts.length; p++) push(parts[p]);
+  if (Cho_isMark_(f[M + "/手捕り"])) push("手捕り");
+  // 各用具（道具の種類/銃の種類）のマーカーを CHO_TOOL_ORDER_ から逆引きして平坦化。
+  for (var i = 0; i < CHO_TOOL_ORDER_.length; i++) {
+    var tool = CHO_TOOL_ORDER_[i];
+    if (tool === "手捕り") continue;
+    var kind = CHO_TOOL_KIND_[tool];
+    var leaf = (kind === "銃器") ? "銃の種類" : "道具の種類";
+    if (Cho_isMark_(f[M + "/" + kind + "/" + leaf + "/" + tool])) push(tool);
   }
   return Cho_orderTools_(seen);
 }
@@ -1343,12 +1353,27 @@ function Cho_fieldsToRows_(fields) {
   var rows = [];
   if (!fields || typeof fields !== "object") return rows;
   var confirmPrefix = CHO_L_CONFIRM_ + "/";
+  var markerGroup = {}; // 親パス → rows のインデックス（選択肢マーカーを 1 行へ集約する）
   for (var k in fields) {
     if (!Object.prototype.hasOwnProperty.call(fields, k)) continue;
     var v = fields[k];
     if (v === "" || v === null || v === undefined) continue;
     // 確認用（桃セル由来）は表示色を変えて「正データではない」ことを明示する。
     var isConfirm = (k === CHO_L_CONFIRM_ || k.indexOf(confirmPrefix) === 0);
+    // 選択肢マーカー（●）は「親パス ＞ 選択肢, 選択肢…」へ集約して読みやすくする。
+    if (Cho_isMark_(v)) {
+      var cut = k.lastIndexOf("/");
+      var base = cut >= 0 ? k.substring(0, cut) : k;
+      var opt = cut >= 0 ? k.substring(cut + 1) : k;
+      if (Object.prototype.hasOwnProperty.call(markerGroup, base)) {
+        var ri = markerGroup[base];
+        rows[ri].value = rows[ri].value ? (rows[ri].value + ", " + opt) : opt;
+      } else {
+        markerGroup[base] = rows.length;
+        rows.push({ label: Cho_prettyLabel_(base), value: opt, confirm: isConfirm });
+      }
+      continue;
+    }
     rows.push({ label: Cho_prettyLabel_(k), value: String(v), confirm: isConfirm });
   }
   return rows;

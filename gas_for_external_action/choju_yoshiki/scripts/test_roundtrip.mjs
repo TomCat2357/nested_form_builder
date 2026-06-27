@@ -34,7 +34,7 @@ eq("個人 child0 氏名", impK.children[0]["氏名"], "鈴木新之助");
 eq("個人 child0 代表的個人", impK.children[0]["代表的個人"], "はい");
 eq("個人 child0 キツネ頭数", impK.children[0][SP + "/キツネ/捕獲頭数"], 7);
 eq("個人 child1 氏名", impK.children[1]["氏名"], "田中聡");
-ok("個人 child1 銃器", (impK.children[1][M] || "").includes("銃器"), impK.children[1][M]);
+ok("個人 child1 銃器マーカー", impK.children[1][M + "/銃器"] === "●", JSON.stringify(impK.children[1][M + "/銃器"]));
 // 番号は〇〇第xxxx号一本（接頭語フィールドは無い）。名簿 S 列の値そのまま。
 const c1 = impK.children[1];
 ok("個人 child1 番号接頭語なし", Object.keys(c1).every(k => !k.endsWith("番号接頭語")), "接頭語キーが残存");
@@ -52,6 +52,53 @@ ok("個人 申請者住所取込", typeof impK.parent.fields[IBASE + "/住所"] 
 const impH = C.Cho_buildImport_(C.Cho_makeReader_(fx["法人"]));
 eq("法人 applicantType", impH.parent.type, "法人");
 eq("法人 法人名", impH.parent.fields["申請者情報/申請者の個人・法人の別/法人/法人名"], "株式会社ハンター協会");
+
+// ---- 選択肢（radio/checkboxes/select）は「親パス/選択肢」葉へ ● マーカー（NFB 契約。連結→親パス書きは列なしで全滅していた）----
+const MK = "●";
+const PF_K = impK.parent.fields, PF_H = impH.parent.fields;
+// 親: 個人/法人 ラジオ（bare 親パス連結は出さない）
+eq("親 個人別=個人marker", PF_K["申請者情報/申請者の個人・法人の別/個人"], MK);
+eq("親 個人別=法人marker", PF_H["申請者情報/申請者の個人・法人の別/法人"], MK);
+ok("親 個人別 連結bare無し", !("申請者情報/申請者の個人・法人の別" in PF_K), JSON.stringify(PF_K["申請者情報/申請者の個人・法人の別"]));
+// 親: 証明書 被害原因の鳥獣 checkboxes（F13=○キジバト, I19=○ノイヌ）
+eq("親 証明書キジバトmarker", PF_K["証明書/被害原因の鳥獣/キジバト"], MK);
+eq("親 証明書ノイヌmarker", PF_K["証明書/被害原因の鳥獣/ノイヌ"], MK);
+ok("親 被害原因 連結bare無し", !("証明書/被害原因の鳥獣" in PF_K), JSON.stringify(PF_K["証明書/被害原因の鳥獣"]));
+// 親: 証明書 被害者 select（個人fx=申請者自身→申請者, 法人fx=申請者以外）+ 申請者以外の子は従来どおり
+eq("親 被害者=申請者marker", PF_K["証明書/被害者/申請者"], MK);
+eq("親 被害者=申請者以外marker", PF_H["証明書/被害者/申請者以外"], MK);
+ok("親 被害者以外 子住所健在", typeof PF_H["証明書/被害者/申請者以外/住所"] === "string" && PF_H["証明書/被害者/申請者以外/住所"].length > 0, JSON.stringify(PF_H["証明書/被害者/申請者以外/住所"]));
+// 親: 処置 checkboxes（個人fx E31=埋設）
+eq("親 処置埋設marker", PF_K["捕獲等又は採取等をしたあとの処置/埋設"], MK);
+ok("親 処置 連結bare無し", !("捕獲等又は採取等をしたあとの処置" in PF_K), JSON.stringify(PF_K["捕獲等又は採取等をしたあとの処置"]));
+// 子: 種類 checkboxes（child0=鈴木新之助はキツネ頭数7を含む）+ bare 連結無し
+eq("子 種類キツネmarker", impK.children[0][SP + "/キツネ"], MK);
+ok("子 種類 連結bare無し", !(SP in impK.children[0]), JSON.stringify(impK.children[0][SP]));
+// 子: 方法/道具/銃の種類/免許種類 checkboxes・select（child1=田中聡。用具=手捕り/はこわな/空気銃/散弾銃）
+{
+  const w1 = impK.children[1];
+  eq("子 方法手捕りmarker", w1[M + "/手捕り"], MK);
+  eq("子 方法わなmarker", w1[M + "/わな"], MK);
+  eq("子 方法銃器marker", w1[M + "/銃器"], MK);
+  ok("子 方法 連結bare無し", !(M in w1), JSON.stringify(w1[M]));
+  eq("子 わな道具はこわなmarker", w1[M + "/わな/道具の種類/はこわな"], MK);
+  ok("子 わな道具 連結bare無し", !((M + "/わな/道具の種類") in w1), JSON.stringify(w1[M + "/わな/道具の種類"]));
+  eq("子 銃の種類空気銃marker", w1[M + "/銃器/銃の種類/空気銃"], MK);
+  eq("子 銃の種類散弾銃marker", w1[M + "/銃器/銃の種類/散弾銃"], MK);
+  ok("子 銃の種類 連結bare無し", !((M + "/銃器/銃の種類") in w1), JSON.stringify(w1[M + "/銃器/銃の種類"]));
+  const air1 = w1[M + "/銃器/銃の種類/空気銃/免許種類/第一種銃猟免許"] === MK;
+  const air2 = w1[M + "/銃器/銃の種類/空気銃/免許種類/第二種銃猟免許"] === MK;
+  ok("子 空気銃免許種類markerどちらか一方", air1 !== air2, "第一種=" + air1 + " 第二種=" + air2);
+}
+// 子: 葉が立つ選択肢は必ず対応マーカーも立つ（免許の必要性 radio / 登録の有無 radio。fixtures 差異に頑健）
+for (const w of impK.children) {
+  for (const key of Object.keys(w)) {
+    let m = key.match(/^(.*)\/免許の必要性\/必要\/免許情報\/(番号|交付年月日|都道府県)$/);
+    if (m && w[key]) eq("子 免許必要葉→必要marker", w[m[1] + "/免許の必要性/必要"], MK);
+    m = key.match(/^(.*)\/狩猟者登録\/登録の有無\/あり\/(番号|交付年月日)$/);
+    if (m && w[key]) eq("子 登録あり葉→ありmarker", w[m[1] + "/狩猟者登録/登録の有無/あり"], MK);
+  }
+}
 
 // ---- 確認用（桃セル）取り込み: 集計値は displayFields（表示専用・保存しない）へ ----
 const CONF = "確認用", CONFSP = CONF + "/種類及び数量";
