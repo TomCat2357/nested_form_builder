@@ -1,4 +1,5 @@
 import { ensureArray } from "../../utils/arrays.js";
+import { openInNewTab } from "../../utils/openWindow.js";
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { toErrorMessage } from "../../utils/errorMessage.js";
 import { collectResponses, sortResponses, buildDataValueMap } from "../../core/collect.js";
@@ -6,7 +7,7 @@ import { computeSchemaHash } from "../../core/schema.js";
 import { collectValidationErrors, formatValidationErrors } from "../../core/validate.js";
 import * as gasClientModule from "../../services/gasClient.js";
 const { submitResponses, hasScriptRun, countRecordsByPid, listRecordsByPids, getUrlPid, sendExternalAction } = gasClientModule;
-import { normalizeSpreadsheetId } from "../../utils/spreadsheet.js";
+import { normalizeSpreadsheetId, childFormSpreadsheetId, childFormSheetName } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { useCancellable } from "../../app/hooks/useCancellable.js";
@@ -685,14 +686,10 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       for (const field of formLinkFields) {
         try {
           const childForm = await getChildFormCached_(field.childFormId);
-          const sid = childForm && childForm.settings && typeof childForm.settings.spreadsheetId === "string"
-            ? normalizeSpreadsheetId(childForm.settings.spreadsheetId)
-            : "";
+          const sid = childFormSpreadsheetId(childForm);
           if (sid) {
             childSpreadsheetId = sid;
-            childSheetName = childForm.settings && childForm.settings.sheetName
-              ? String(childForm.settings.sheetName)
-              : "Data";
+            childSheetName = childFormSheetName(childForm);
             break;
           }
         } catch (_e) { /* 取得失敗の子フォームはスキップ（無言） */ }
@@ -752,7 +749,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
           linkLabel: errLinkLabel,
         });
         if (result.openUrl) {
-          try { window.open(result.openUrl, "_blank", "noopener"); } catch (_e2) { /* noop */ }
+          openInNewTab(result.openUrl);
         }
         return;
       }
@@ -813,7 +810,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       showAlert("フォームの URL を組み立てられませんでした。");
       return;
     }
-    window.open(url, "_blank", "noopener,noreferrer");
+    openInNewTab(url);
   };
 
   const getPrintDocumentPayload = (options = {}) => buildPrintDocumentPayload({

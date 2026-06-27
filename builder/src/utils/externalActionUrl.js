@@ -41,6 +41,12 @@ export const buildDocumentUrl = (fileId) => (
   fileId ? `https://docs.google.com/document/d/${fileId}/edit` : ""
 );
 
+// driveFileId から Drive ファイルを開く URL を決定的に構成する。driveFileUrl は非永続なので
+// 取得済みレコードでは空のことが多いが、driveFileId は永続化されているため再構成できる。
+export const buildDriveFileViewUrl = (driveFileId) => (
+  driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : ""
+);
+
 export const isValidExternalActionUrl = (url) => {
   if (typeof url !== "string") return false;
   return HTTP_URL_PATTERN.test(url.trim());

@@ -22,6 +22,7 @@ import { buildSearchTableLayout, buildHeaderRowsLayout, createHitExcerptColumn, 
 import { buildExportTableData } from "./searchExport.js";
 import { hasScriptRun, listRecordsByPids } from "../../services/gasClient.js";
 import { buildChildFormUrl, buildSharedFormUrl, buildSharedRecordUrl } from "../../utils/formShareUrl.js";
+import { childFormSpreadsheetId, childFormSheetName } from "../../utils/spreadsheet.js";
 import { buildChildDataObject, distributeChildRecordsByPid, getChildFormCached_, collectFormLinkFields } from "../preview/childFormData.js";
 import {
   computeRowValues,
@@ -324,12 +325,6 @@ export function useSearchPageState({
     // fieldId → 子フォームの保存先スプレッドシート ID / シート名（リレーで choju へ動的受け渡し）。
     const ssByField = {};
     const shtByField = {};
-    const childSpreadsheetIdOf = (cf) => (
-      cf && cf.settings && typeof cf.settings.spreadsheetId === "string" ? cf.settings.spreadsheetId : ""
-    );
-    const childSheetNameOf = (cf) => (
-      cf && cf.settings && cf.settings.sheetName ? String(cf.settings.sheetName) : "Data"
-    );
     for (const field of externalActionChildFormFields) {
       // 表示用に eager 取得済みなら再利用（同じ子フォーム・同じ pid 集合を満たす範囲で）。
       const cached = searchChildDataByField[field.id];
@@ -338,8 +333,8 @@ export function useSearchPageState({
         // 子 SS / シート名は form 定義から（getChildFormCached_ は promise キャッシュで安価）。
         try {
           const cf = await getChildFormCached_(field.childFormId);
-          ssByField[field.id] = childSpreadsheetIdOf(cf);
-          shtByField[field.id] = childSheetNameOf(cf);
+          ssByField[field.id] = childFormSpreadsheetId(cf);
+          shtByField[field.id] = childFormSheetName(cf);
         } catch (_e) { ssByField[field.id] = ""; shtByField[field.id] = ""; }
         continue;
       }
@@ -349,8 +344,8 @@ export function useSearchPageState({
           getChildFormCached_(field.childFormId),
           listRecordsByPids({ formId: field.childFormId, pids }),
         ]);
-        ssByField[field.id] = childSpreadsheetIdOf(childForm);
-        shtByField[field.id] = childSheetNameOf(childForm);
+        ssByField[field.id] = childFormSpreadsheetId(childForm);
+        shtByField[field.id] = childFormSheetName(childForm);
         const childSchema = childForm && childForm.schema ? childForm.schema : [];
         const grouped = distributeChildRecordsByPid(records);
         const byPid = {};
@@ -388,12 +383,9 @@ export function useSearchPageState({
     for (const field of externalActionChildFormFields) {
       try {
         const cf = await getChildFormCached_(field.childFormId);
-        const sid = cf && cf.settings && typeof cf.settings.spreadsheetId === "string"
-          ? cf.settings.spreadsheetId.trim()
-          : "";
+        const sid = childFormSpreadsheetId(cf);
         if (sid) {
-          const sheet = cf.settings && cf.settings.sheetName ? String(cf.settings.sheetName) : "Data";
-          return { childSpreadsheetId: sid, childSheetName: sheet };
+          return { childSpreadsheetId: sid, childSheetName: childFormSheetName(cf) };
         }
       } catch (_e) { /* 取得失敗の子フォームはスキップ（無言） */ }
     }

@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import BaseDialog from "../../app/components/BaseDialog.jsx";
+import { buildDriveFileViewUrl } from "../../utils/externalActionUrl.js";
 import {
   driveBrowserList,
   driveBrowserSearch,
@@ -23,7 +24,7 @@ const SHARED_LIST_CRUMB = { id: "__shared_list__", name: "共有ドライブ", v
 function buildDriveUrl(item) {
   if (!item || !item.id) return "";
   if (item.type === "folder") return `https://drive.google.com/drive/folders/${item.id}`;
-  return `https://drive.google.com/file/d/${item.id}/view`;
+  return buildDriveFileViewUrl(item.id);
 }
 
 function formatUpdated(ms) {

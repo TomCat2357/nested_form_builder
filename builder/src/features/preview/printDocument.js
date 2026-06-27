@@ -8,7 +8,7 @@ import { isExcludedSearchOrPrintField } from "../search/searchTable.js";
 import { isPlainObject } from "../../utils/objectShape.js";
 import { joinFieldPath, escapeSegment, PATH_SEP } from "../../utils/pathCodec.js";
 import { resolveStandardPrintTemplateId } from "../../utils/printTemplateAction.js";
-import { buildDocumentUrl } from "../../utils/externalActionUrl.js";
+import { buildDocumentUrl, buildDriveFileViewUrl } from "../../utils/externalActionUrl.js";
 
 // 選択肢ラベルの正準実装は core/collect.js に統一（外部アクション/印刷 items と template view 値で共有）。
 // 既存 import 元（FieldRenderer 等）との互換のため re-export する。
@@ -113,10 +113,7 @@ const resolveChildRecordMarker = (record, index) => {
 // childDataByFieldId（{ fieldId: 子フォーム合成オブジェクト }）を渡すと、formLink 項目を
 // 他の質問カードと同じ items 列へ展開する。question は「親カードパス / #レコードNo / 子質問パス」で、
 // 通常のネスト質問と同じ "/" 連結（マーカーのみ escapeSegment、既連結のカードパス/子質問は verbatim）。
-// driveFileId から Drive ファイルを開く URL を決定的に構成する（driveFileUrl は非永続のフォールバック）。
-const buildDriveFileViewUrl_ = (driveFileId) => (driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : "");
-
-export const buildRecordItems = (schema, responses, { childDataByFieldId, folderUrlsByField = {}, folderNamesByField = {} } = {}) => {
+export const buildRecordItems =(schema, responses, { childDataByFieldId, folderUrlsByField = {}, folderNamesByField = {} } = {}) => {
   const items = [];
   traverseSchema(schema || [], (field, context) => {
     if (isExcludedSearchOrPrintField(field)) return;
@@ -150,7 +147,7 @@ export const buildRecordItems = (schema, responses, { childDataByFieldId, folder
         const driveFileId = typeof f?.driveFileId === "string" ? f.driveFileId : "";
         const entry = {
           name: resolveFileDisplayName(f?.name || "不明なファイル", field?.hideFileExtension),
-          url: (typeof f?.driveFileUrl === "string" && f.driveFileUrl) ? f.driveFileUrl : buildDriveFileViewUrl_(driveFileId),
+          url: (typeof f?.driveFileUrl === "string" && f.driveFileUrl) ? f.driveFileUrl : buildDriveFileViewUrl(driveFileId),
         };
         if (driveFileId) entry.driveFileId = driveFileId;
         return entry;

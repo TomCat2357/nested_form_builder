@@ -11,6 +11,7 @@ import { extractReservedRefs } from "../../expression/templateEvaluator.js";
 import { resolveStyleSettingsInlineStyle } from "../../../core/styleSettings.js";
 import { buildExportTableData, buildSearchFileRefs } from "../searchExport.js";
 import { joinFieldPath } from "../../../utils/pathCodec.js";
+import { openInNewTab } from "../../../utils/openWindow.js";
 
 // 対象行 (選択行があればその行、なければフィルタ後の全行) を表示用ビュー行に整形して payload の base を組む。
 // childFormsByRow（entries と同順・各行 = 子フォーム合成オブジェクト配列）があれば付加する。
@@ -162,19 +163,19 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
       const openTarget = result.openUrl || resolvedUrl;
       // eslint-disable-next-line no-alert
       window.alert(result.message || "外部アクションの送信先でエラーが発生しました。");
-      try { window.open(openTarget, "_blank", "noopener"); } catch (_e2) { /* noop */ }
+      openInNewTab(openTarget);
       return;
     }
     const msg = result.message || "外部アクションを送信しました。";
     if (result.openUrl) {
       // eslint-disable-next-line no-alert
       window.alert(msg + "\n" + result.openUrl);
-      try { window.open(result.openUrl, "_blank", "noopener"); } catch (_e2) { /* noop */ }
+      openInNewTab(result.openUrl);
     } else if (result.htmlBody) {
       // HTML 応答は権限付与ページへのリダイレクト等の可能性がある。
       // eslint-disable-next-line no-alert
       window.alert(msg);
-      try { window.open(resolvedUrl, "_blank", "noopener"); } catch (_e2) { /* noop */ }
+      openInNewTab(resolvedUrl);
     } else {
       // eslint-disable-next-line no-alert
       window.alert(msg);
@@ -188,7 +189,7 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, form, o
       // eslint-disable-next-line no-alert
       window.alert("外部アクション送信に失敗しました: " + (error && error.message ? error.message : String(error)));
     }
-    try { window.open(resolvedUrl, "_blank", "noopener"); } catch (_e2) { /* noop */ }
+    openInNewTab(resolvedUrl);
   }
 };
 

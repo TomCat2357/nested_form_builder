@@ -2,6 +2,7 @@ import { traverseSchema } from "../../core/schemaUtils.js";
 import { computeRowValues } from "./searchTableValues.js";
 import { parseFileUploadStorage } from "../../core/collect.js";
 import { joinFieldPath } from "../../utils/pathCodec.js";
+import { buildDriveFileViewUrl } from "../../utils/externalActionUrl.js";
 import {
   createBaseColumns,
   createDisplayColumn,
@@ -82,12 +83,6 @@ export const buildExportTableData = ({ form, entries }) => {
   };
 };
 
-// driveFileId から Drive ファイルを開く URL を決定的に構成する。driveFileUrl は非永続なので
-// 取得済みレコードでは空のことが多いが、driveFileId は永続化されているため再構成できる。
-const buildDriveFileUrl = (driveFileId) => (
-  driveFileId ? `https://drive.google.com/file/d/${driveFileId}/view` : ""
-);
-
 // 外部アクション payload 用に、対象行ごとの fileUpload 参照（ファイル URL + フォルダ URL）を組む。
 // buildExportTableData（出力共有・表示文字列）には手を入れず、別構造として返す。
 // entries と同順の配列で、各行 = [{ question(連結パス), folderUrl, folderName, files:[{name,driveFileId,driveFileUrl}] }]。
@@ -104,7 +99,7 @@ export const buildSearchFileRefs = ({ form, entries } = {}) => {
         .map((f) => ({
           name: f?.name || "",
           driveFileId: f?.driveFileId || "",
-          driveFileUrl: f?.driveFileUrl || buildDriveFileUrl(f?.driveFileId || ""),
+          driveFileUrl: f?.driveFileUrl || buildDriveFileViewUrl(f?.driveFileId || ""),
         }))
         .filter((f) => f.name || f.driveFileId || f.driveFileUrl);
       if (files.length === 0 && !parsed.folderUrl && !parsed.folderName) return;
