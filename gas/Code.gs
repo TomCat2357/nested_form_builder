@@ -292,7 +292,7 @@ function Nfb_checkRateLimit_() {
     return null;
   } catch (e) {
     Logger.log("[Nfb_checkRateLimit_] cache error: " + e);
-    return { ok: false, error: "処理中にエラーが発生しました", code: "INTERNAL" };
+    return { ok: false, error: NFB_GENERIC_INTERNAL_ERROR_MESSAGE, code: "INTERNAL" };
   }
 }
 
