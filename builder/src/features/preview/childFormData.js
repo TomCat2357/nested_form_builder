@@ -102,23 +102,27 @@ export const getChildFormCached_ = (childFormId) => {
 // テスト用 — キャッシュをクリアする。
 export const _clearChildFormCacheForTest = () => childFormPromiseCache.clear();
 
-// 1 レコード（listRecords が返す { id, "No.", data, dataUnixMs }）を { id, no, items } に整形する。
-const toChildRecordItem_ = (childSchema, record) => {
-  const data = record && record.data && typeof record.data === "object" ? record.data : {};
-  const dataUnixMs = record && record.dataUnixMs && typeof record.dataUnixMs === "object" ? record.dataUnixMs : {};
-  const responses = restoreResponsesFromData(childSchema || [], data, dataUnixMs);
-  // fileUpload のフォルダ URL/名は responses（ファイル配列のみ）に含まれないので data から別途集める。
-  const folderUrlsByField = collectFileUploadFolderUrls(childSchema || [], data);
-  const folderNamesByField = collectFileUploadFolderNames(childSchema || [], data);
+// 1 レコード（listRecords が返す { id, "No.", data, dataUnixMs }）を { id, no, items } に整形する
+// 共有ヘルパ。単票（編集画面）/ 検索一覧の外部アクション payload・子フォーム展開で共有する。
+// childDataByFieldId（{ fieldId: 子フォーム合成オブジェクト }）を渡すと、formLink 項目を他の質問
+// カードと同じ items 列へインライン展開する（編集画面と同じ #No マーカー・traverse 順）。
+// fileUpload のフォルダ URL/名は responses（ファイル配列のみ）に含まれないので data から別途集める。
+export const buildRecordFromEntry = (schema, entry, { childDataByFieldId } = {}) => {
+  const data = entry && entry.data && typeof entry.data === "object" ? entry.data : {};
+  const dataUnixMs = entry && entry.dataUnixMs && typeof entry.dataUnixMs === "object" ? entry.dataUnixMs : {};
+  const responses = restoreResponsesFromData(schema || [], data, dataUnixMs);
+  const folderUrlsByField = collectFileUploadFolderUrls(schema || [], data);
+  const folderNamesByField = collectFileUploadFolderNames(schema || [], data);
   return {
-    id: String(record && record.id ? record.id : ""),
-    no: record && record["No."] != null ? record["No."] : "",
-    // childDataByFieldId は意図的に省く。子フォーム内のさらなる子 formLink は
-    // 再帰展開せず空 placeholder も出さない（無限ネストと payload 肥大を防ぐ）。
-    // folderUrlsByField/folderNamesByField を渡し、fileUpload 項目へファイル/フォルダ URL を添える。
-    items: buildRecordItems(childSchema || [], responses, { folderUrlsByField, folderNamesByField }),
+    id: String(entry && entry.id ? entry.id : ""),
+    no: entry && entry["No."] != null ? entry["No."] : "",
+    items: buildRecordItems(schema || [], responses, { childDataByFieldId, folderUrlsByField, folderNamesByField }),
   };
 };
+
+// 子フォーム合成オブジェクトの records 用。childDataByFieldId は意図的に省く（子フォーム内の
+// さらなる子 formLink を再帰展開せず空 placeholder も出さない＝無限ネストと payload 肥大を防ぐ）。
+const toChildRecordItem_ = (childSchema, record) => buildRecordFromEntry(childSchema, record);
 
 /**
  * 子フォームの合成オブジェクトを組む。

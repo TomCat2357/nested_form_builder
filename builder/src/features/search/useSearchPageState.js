@@ -266,6 +266,10 @@ export function useSearchPageState({
   // 置換再計算の書き戻し冪等化メモ: `${recordId} ${path}` → 直近に書き戻した計算値。
   // 同じ計算値を毎サイクル打ち直して「未アップロード」警告が永久に再武装するのを防ぐ（churn 対策）。
   const writtenComputedValuesRef = useRef(new Map());
+  // 「更新」ボタン押下時だけ子フォームレコードを強制フル同期するためのワンショットフラグ。
+  // 外部アクション等の別プロジェクト直書きは本体の sheetLastUpdatedAt を更新できないため、
+  // 手動更新では子（formLink 先）も forceFullSync して full-query 集計を一回で確定させる。
+  const manualChildForceRef = useRef(false);
 
   // pid → { [fieldId]: 子フォーム合成オブジェクト }（tokenContext.childFormMeta 形）。
   const getChildFormMetaForPid = useCallback((pid) => {
@@ -280,10 +284,10 @@ export function useSearchPageState({
     return out;
   }, [childDataTargetFields, searchChildDataByField]);
 
-  // 外部アクション送信時に呼ぶ on-demand リゾルバ。対象行ぶんの子データを
-  // 子フォームごとに 1 回の listRecordsByPids でバッチ取得し、entries と同順の childFormsByRow
-  // （各行 = 子フォーム合成オブジェクト配列）を返す。一覧表示中は取得しないことでコストを払わない。
-  // 表示用に既に eager 取得済み（searchChildDataByField）の子フォームはそれを再利用し、再取得しない。
+  // 外部アクション送信時に呼ぶ on-demand リゾルバ。対象行ぶんの子データを子フォームごとに 1 回の
+  // listRecordsByPids でバッチ取得し、entries と同順で「各行 = { fieldId: 子フォーム合成オブジェクト }」
+  // を返す（buildRecordFromEntry が items へインライン展開する）。一覧表示中は取得しないことで
+  // コストを払わない。表示用に既に eager 取得済み（searchChildDataByField）の子はそれを再利用する。
   const resolveSearchChildFormsForRows = useCallback(
     (entries) => resolveSearchChildFormsForRowsImpl(entries, {
       externalActionChildFormFields,
@@ -601,10 +605,13 @@ export function useSearchPageState({
   // full-query 置換のための子フォーム定義ロード + 子レコード warm（runFullQuery が getRecordsFromCache から読む）。
   useCancellable(async (isCancelled) => {
     if (!hasFullQuerySubstitution || !effectiveFormId || !hasScriptRun()) {
+      manualChildForceRef.current = false;
       if (!isCancelled()) setFullQueryReady(true);
       return;
     }
     setFullQueryReady(false);
+    // 手動更新フラグはこの run で消費する（完了後にリセット）。非手動の再 run は false で従来挙動。
+    const forceChild = manualChildForceRef.current;
     const linkFields = collectFormLinkFields(normalizedSchema);
     const defResults = await Promise.all(
       linkFields.map((f) => getChildFormCached_(f.childFormId).catch(() => null)),
@@ -617,12 +624,14 @@ export function useSearchPageState({
         const { shouldSync } = evaluateCacheForRecords({
           lastSyncedAt: cache.lastSyncedAt,
           hasData: Array.isArray(cache.entries) && cache.entries.length > 0,
-          forceSync: false,
+          forceSync: forceChild,
         });
-        if (shouldSync) await dataStore.listEntries(f.childFormId);
+        if (shouldSync) await dataStore.listEntries(f.childFormId, forceChild ? { forceFullSync: true } : undefined);
       } catch (_e) { /* warm 失敗は無言 */ }
     }));
     if (isCancelled()) return;
+    // run 完了時にだけリセット（途中キャンセルは保持し次の完了 run が拾う）。
+    manualChildForceRef.current = false;
     setSearchChildForms(defs);
     setFullQueryReady(true);
   }, [hasFullQuerySubstitution, effectiveFormId, childTargetSignature, childFetchEpoch]);
@@ -750,6 +759,11 @@ export function useSearchPageState({
   const handleForceRefreshAll = useCallback(() => {
     resolvedQueryIdsRef.current = new Set();
     setQueryTokensByEntry((prev) => (prev.size === 0 ? prev : new Map()));
+    // 子（formLink 先）も強制フル同期し、{{SELECT}} 集計を一回で確定させる。
+    // setFullQueryReady(false) は同一コミットでバッチされ、子の最新が warm に載るまで
+    // prefetch をゲートして stale 解決（resolvedQueryIds への古い値マーク）を防ぐ。
+    manualChildForceRef.current = true;
+    setFullQueryReady(false);
     setChildFetchEpoch((n) => n + 1);
     setFullQueryAllRows(true);
     forceRefreshAll();
@@ -886,6 +900,9 @@ export function useSearchPageState({
 
     // Form data
     form,
+    // 外部アクション payload の records[].items を編集画面と同じ field.id で組むため、
+    // 正規化済み schema（field.id 付き）を公開する。
+    normalizedSchema,
 
     // State
     showDeleteConfirm: deleteDialog.state,

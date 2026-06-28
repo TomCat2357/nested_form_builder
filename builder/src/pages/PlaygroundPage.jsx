@@ -475,11 +475,11 @@ export default function PlaygroundPage() {
 
       const items = buildRecordItems(schema, responses, { childDataByFieldId });
       const record = { id: entry.id, no: entry["No."] ?? "", items };
+      // 起動元に依らない統一フォーマット（records 配列 + recordCount）。プレビューは常に 1 件。
       const payload = buildExternalActionPayload({
-        context: "record",
         formId: fullForm.id,
         formName: fullForm.settings?.formTitle || "",
-        base: { record },
+        base: { records: [record], recordCount: 1 },
         storageFields: {
           spreadsheetId: normalizeSpreadsheetId(fullForm.settings?.spreadsheetId || ""),
           sheetName: fullForm.settings?.sheetName || "Data",

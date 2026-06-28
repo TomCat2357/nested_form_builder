@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildChildDataObject,
+  buildRecordFromEntry,
   distributeChildRecordsByPid,
   collectFormLinkFields,
   collectFormLinkChildFormIds,
@@ -43,6 +44,47 @@ test("buildChildDataObject: メタ + 各子レコードの items を組む", () 
   assert.ok(nameItem, "氏名 item should exist");
   assert.equal(nameItem.value, "山田");
   assert.ok(!("truncated" in obj));
+});
+
+test("buildRecordFromEntry: entry を { id, no, items } に整形する", () => {
+  const rec = buildRecordFromEntry(childSchema, makeRecord("c1", "p1", "山田", "20"));
+  assert.equal(rec.id, "c1");
+  assert.equal(rec.no, "1");
+  const nameItem = rec.items.find((it) => it.question === "氏名");
+  assert.ok(nameItem);
+  assert.equal(nameItem.value, "山田");
+});
+
+test("buildRecordFromEntry: childDataByFieldId を渡すと formLink を items にインライン展開する", () => {
+  const parentSchema = [
+    { id: "p_name", type: "text", label: "申請者" },
+    { id: "fl1", type: "formLink", label: "従事者", childFormId: "fileChild" },
+  ];
+  const childObj = buildChildDataObject({
+    childFormId: "fileChild",
+    childFormName: "従事者",
+    childSchema,
+    records: [makeRecord("c1", "p1", "鈴木", "40")],
+  });
+  const parentEntry = { id: "p1", "No.": "7", data: { "申請者": "親太郎" }, dataUnixMs: {} };
+  const rec = buildRecordFromEntry(parentSchema, parentEntry, { childDataByFieldId: { fl1: childObj } });
+  assert.equal(rec.id, "p1");
+  assert.equal(rec.no, "7");
+  // 親項目はそのまま
+  assert.ok(rec.items.find((it) => it.question === "申請者" && it.value === "親太郎"));
+  // 子は "従事者/#1/氏名" の #No マーカーでインライン
+  const childItem = rec.items.find((it) => it.question === "従事者/#1/氏名");
+  assert.ok(childItem, `child item should be inlined: ${rec.items.map((i) => i.question).join(", ")}`);
+  assert.equal(childItem.value, "鈴木");
+});
+
+test("buildRecordFromEntry: childDataByFieldId 無しなら子は展開しない", () => {
+  const parentSchema = [
+    { id: "fl1", type: "formLink", label: "従事者", childFormId: "fileChild" },
+    { id: "p_name", type: "text", label: "申請者" },
+  ];
+  const rec = buildRecordFromEntry(parentSchema, { id: "p1", "No.": "1", data: { "申請者": "親" } });
+  assert.equal(rec.items.some((it) => String(it.question).includes("#")), false);
 });
 
 test("buildChildDataObject: 空レコードは count 0 / records 空", () => {

@@ -8,32 +8,28 @@
 // 全データを受け取る。
 //
 // payload の構造 (buildExternalActionPayload と同期):
-//   共通:
-//     context     : "search" | "record"
+//   起動元（編集・閲覧画面 / 検索一覧の単一選択 / 検索一覧の複数選択）に依らず単一フォーマット。
+//   受信側は recordCount（= records 数）だけで単一/複数を判定する（旧 context は廃止）。
 //     formId      : string
 //     formName    : string
 //     generatedAt : ISO8601 文字列 (送信時刻 UTC)
-//   context === "search" のとき:
-//     list.headers : string[]   各列の質問 = ヘッダー階層を "/" で連結した文字列
-//                    (例: "講座の種類/ヒグマ講座/実施場所")
-//     list.rows    : (string | {text, hyperlink})[][]  フィルタ後の全データ行 (列順は headers と一致)
-//     list.rowCount: number
-//   context === "record" のとき:
-//     record.id    : string
-//     record.no    : string | number
-//     record.items : { question, value, type }[]  question = ヘッダー階層を "/" 連結した質問
-//     files        : 質問パスをキーにしたオブジェクト（アップロードファイルがあるレコードで常に付与）。
-//                    { [question]: { fieldId, folderName, folderUrl, files: [{ name, url }] } }
-//                    folderUrl = Drive フォルダ URL / url = Drive ファイル URL（実体ではなく URL のみ）。
-//                    ※ Excel 等の中身を読むには、対象 Drive ファイルへの閲覧権限を持つアカウントで
-//                      Drive.Files を使い Google スプレッドシートへ変換取り込みしてから読む。
-//     filesWarning : 移動/削除等で一部ファイルを解決できなかったときの警告（任意）
+//     recordCount : number   records 配列の件数（編集画面・検索単一は 1、検索複数は N）
+//     records     : { id, no, items }[]
+//       id    : string
+//       no    : string | number
+//       items : { question, value, type, files?, folderUrl?, folderName? }[]
+//               question = ヘッダー階層を "/" 連結した質問（子フォーム formLink は "親/#No/子質問"）。
+//               fileUpload 項目は files:[{ name, url, driveFileId? }] と folderUrl/folderName を内包
+//               （ファイル実体ではなく Drive の URL のみ。driveFileId から決定的に再構成）。
+//               ※ Excel 等の中身を読むには、対象 Drive ファイルへの閲覧権限を持つアカウントで
+//                 Drive.Files を使い Google スプレッドシートへ変換取り込みしてから読む。
 //   管理者限定ボタンのときのみ付与:
 //     storage.spreadsheetId / spreadsheetUrl / sheetName / driveFileUrl / userEmail
+//                / childSpreadsheetId / childSpreadsheetUrl / childSheetName
 //
 // このファイルは「受け取って中身を確認する」ところまでを実装した雛形。
-// 実際の業務処理 (シート転記・別 API 呼び出し等) は handleSearchPayload_ /
-// handleRecordPayload_ の中に追記して使う。
+// 実際の業務処理 (シート転記・別 API 呼び出し等) は handleRecords_ の中に追記して使う。
+// 単一レコード専用のアクションは handleRecords_ 冒頭の recordCount チェック例を参照。
 //
 // ■ 誤送信防止ハンドシェイク (任意):
 //   本体アプリ側の 外部アクション 設定で「誤送信防止シークレット」を設定すると、本体は
@@ -43,7 +39,7 @@
 //   有効化するには: この GAS プロジェクトの Script Properties に NFB_EXT_ACTION_SECRET を
 //   登録し、本体フォーム側の同設定欄に同じ値を入れる。未設定なら従来どおり検証なしで届く。
 //
-// 動作確認はデプロイ不要。Test.gs の testDoPost_search / testDoPost_record /
+// 動作確認はデプロイ不要。Test.gs の testDoPost_singleRecord / testDoPost_multiRecords /
 // testDoPost_adminStorage を GAS エディタから実行し、実行ログ (Logger) を見る。
 // =============================================================================
 
@@ -72,7 +68,7 @@ function doPost(e) {
       return renderJson_({ ok: true, nfbExternalAction: true, signature: Recv_hmacHex_(probeNonce, probeSecret) });
     }
 
-    var result = dispatchPayload_(payload.data);
+    var result = handleRecords_(payload.data);
     if (!result.ok) {
       return relay ? renderJson_({ ok: false, message: result.error })
                    : renderHtml_("エラー", "<p>" + escapeHtml_(result.error) + "</p>", true);
@@ -146,22 +142,64 @@ function parsePayload_(e) {
 }
 
 
-// ----- context によるディスパッチ ------------------------------------------
-function dispatchPayload_(data) {
-  var context = String(data.context || "");
+// ----- レコード配列の処理（起動元に依らない統一フォーマット） ----------------
+// 編集画面・検索一覧（単一/複数選択）すべて payload.records[]（{id,no,items}）で届く。
+// 単一/複数は recordCount（= records 数）だけで判定する（旧 context は廃止）。
+function handleRecords_(data) {
   logCommonFields_(data);
+  var records = Array.isArray(data.records) ? data.records : [];
+  var recordCount = (typeof data.recordCount === "number") ? data.recordCount : records.length;
 
-  if (context === "search") {
-    return handleSearchPayload_(data);
+  Logger.log("=== records ===");
+  Logger.log("recordCount = %s（records=%s）", recordCount, records.length);
+
+  // 単一レコードしか受け取らない外部アクションは、ここで件数を見て弾く（例）:
+  //   if (recordCount !== 1) {
+  //     return { ok: false, error: "このアクションは単一レコード専用です（" + recordCount + " 件届きました）。" };
+  //   }
+
+  for (var ri = 0; ri < records.length; ri++) {
+    var rec = records[ri] || {};
+    var items = Array.isArray(rec.items) ? rec.items : [];
+    Logger.log("--- record[%s] id=%s no=%s 項目数=%s ---", ri, rec.id, rec.no, items.length);
+    for (var i = 0; i < items.length; i++) {
+      var it = items[i] || {};
+      // question は "親/子/#1/孫" 形式（"#No" は子フォーム formLink レコードのマーカー）。
+      // "/" の数だけインデントするとネスト構造が読みやすい。
+      var depth = String(it.question || "").split("/").length - 1;
+      Logger.log("%s[%s] %s = %s", repeat_("  ", depth > 0 ? depth : 0), it.type, it.question, it.value);
+      // ファイル参照は item.files（[{ name, url, driveFileId? }]）に内包。フォルダは item.folderUrl/folderName。
+      var itFiles = Array.isArray(it.files) ? it.files : [];
+      for (var fi = 0; fi < itFiles.length; fi++) {
+        var f = itFiles[fi] || {};
+        Logger.log("    - file: %s : %s", f.name, f.url);
+      }
+    }
   }
-  if (context === "record") {
-    return handleRecordPayload_(data);
+
+  // TODO: ここに業務処理を書く（例: records を別 API に送る / シート転記 / Doc 生成 など）。
+  //   ファイル実体を読むなら item.files[].url（または driveFileId）の Drive ファイルを、閲覧権限を
+  //   持つアカウントで Drive.Files から Google スプレッドシート等へ取り込んでから読む。
+
+  // --- 受信内容をそのまま画面表示する（テスト用） ---------------------------
+  var html = "";
+  html += '<p class="lead">レコード <strong>' + recordCount + '</strong> 件を受信しました' +
+    (recordCount === 1 ? '（単一レコード）' : '') + '。</p>';
+  html += renderCommonFields_(data);
+
+  if (!records.length) {
+    html += '<p class="muted">レコードがありません。</p>';
+  } else {
+    for (var rj = 0; rj < records.length; rj++) {
+      html += renderRecordBlock_(records[rj] || {}, rj);
+    }
   }
-  return { ok: false, error: "未知の context です: " + context };
+  html += renderStorageBlock_(data);
+
+  return { ok: true, title: "レコード受信", message: html };
 }
 
 function logCommonFields_(data) {
-  Logger.log("context     = %s", data.context);
   Logger.log("formId      = %s", data.formId);
   Logger.log("formName    = %s", data.formName);
   Logger.log("generatedAt = %s", data.generatedAt);
@@ -171,182 +209,65 @@ function logCommonFields_(data) {
 }
 
 
-// ----- context === "search": 一覧 (フィルタ後の全行) ------------------------
-function handleSearchPayload_(data) {
-  var list = (data && data.list) || {};
-  var headers = Array.isArray(list.headers) ? list.headers : [];
-  var rows = Array.isArray(list.rows) ? list.rows : [];
-  var rowCount = (typeof list.rowCount === "number") ? list.rowCount : rows.length;
-
-  Logger.log("=== search ===");
-  Logger.log("列数 = %s / データ行数 = %s (rowCount=%s)", headers.length, rows.length, rowCount);
-  if (headers.length) {
-    Logger.log("ヘッダー (質問) = %s", JSON.stringify(headers));
-  }
-  if (rows.length) {
-    Logger.log("先頭データ行 = %s", JSON.stringify(rows[0].map(cellToText_)));
-  }
-
-  // TODO: ここに業務処理を書く (例: 別シートへ転記、集計、通知 など)。
-  //   headers[i] が i 列目の質問 (ヘッダー階層を "/" 連結)、rows[r][i] がその値。
-  //   各セルは文字列、またはファイル列のとき { text, hyperlink } オブジェクト。
-  //   cellToText_(cell) で表示文字列に正規化できる。
-
-  // --- 受信内容をそのまま画面表示する (テスト用) -----------------------------
-  var html = "";
-  html += '<p class="lead">一覧データ <strong>' + rowCount + '</strong> 件を受信しました。</p>';
-  html += renderCommonFields_(data);
-
-  if (!headers.length && !rows.length) {
-    html += '<p class="muted">表示できる行・列がありません。</p>';
-  } else {
-    html += '<div class="tableWrap"><table><thead><tr>';
-    for (var h = 0; h < headers.length; h++) {
-      html += '<th>' + escapeHtml_(headers[h]) + '</th>';
-    }
-    html += '</tr></thead><tbody>';
-    for (var r = 0; r < rows.length; r++) {
-      var row = Array.isArray(rows[r]) ? rows[r] : [];
-      html += '<tr>';
-      for (var c = 0; c < headers.length; c++) {
-        html += '<td>' + cellToHtml_(row[c]) + '</td>';
-      }
-      html += '</tr>';
-    }
-    html += '</tbody></table></div>';
-  }
-  html += renderStorageBlock_(data);
-
-  return { ok: true, title: "一覧データ受信", message: html };
-}
-
-
-// ----- context === "record": 単一レコード ----------------------------------
-function handleRecordPayload_(data) {
-  var record = (data && data.record) || {};
-  var items = Array.isArray(record.items) ? record.items : [];
-
-  Logger.log("=== record ===");
-  Logger.log("record.id = %s / record.no = %s / 項目数 = %s", record.id, record.no, items.length);
-  for (var i = 0; i < items.length; i++) {
-    var it = items[i] || {};
-    // question は "親/子/孫" 形式。"/" の数だけインデントするとネスト構造が読みやすい。
-    var depth = String(it.question || "").split("/").length - 1;
-    var indent = repeat_("  ", depth > 0 ? depth : 0);
-    Logger.log("%s[%s] %s = %s", indent, it.type, it.question, it.value);
-  }
-
-  // アップロードファイルがあるレコードで付く files（質問パスをキーにしたオブジェクト）。
-  // 実体ではなく Drive のフォルダ/ファイル URL のみが届く。
-  var files = (data && data.files && typeof data.files === "object") ? data.files : {};
-  var fileQuestions = Object.keys(files);
-  if (fileQuestions.length) {
-    Logger.log("--- files (%s 質問) ---", fileQuestions.length);
-    for (var qi = 0; qi < fileQuestions.length; qi++) {
-      var q = fileQuestions[qi];
-      var group = files[q] || {};
-      var groupFiles = Array.isArray(group.files) ? group.files : [];
-      Logger.log("[%s] folder=%s (%s) / %s 件", q, group.folderName, group.folderUrl, groupFiles.length);
-      for (var gi = 0; gi < groupFiles.length; gi++) {
-        var gf = groupFiles[gi] || {};
-        Logger.log("  - %s : %s", gf.name, gf.url);
-      }
-      // TODO: Excel 等の中身を読むなら、gf.url（または fileId）の Drive ファイルを
-      //   Drive.Files で Google スプレッドシートへ変換取り込みしてから読む（要・閲覧権限）。
-    }
-  }
-  if (data.filesWarning) Logger.log("filesWarning = %s", data.filesWarning);
-
-  // TODO: ここに業務処理を書く (例: items を別 API に送る、Doc 生成 など)。
-
-  // --- 受信内容をそのまま画面表示する (テスト用) -----------------------------
-  var html = "";
-  html += '<p class="lead">レコード <strong>No.' +
-    escapeHtml_(String(record.no != null ? record.no : "")) +
-    '</strong> の ' + items.length + ' 項目を受信しました。</p>';
-  html += renderCommonFields_(data);
-  html += '<table class="kv"><tbody>';
-  html += '<tr><th>record.id</th><td><code>' + escapeHtml_(String(record.id || "")) + '</code></td></tr>';
-  html += '<tr><th>record.no</th><td>' + escapeHtml_(String(record.no != null ? record.no : "")) + '</td></tr>';
-  html += '</tbody></table>';
-
+// ----- ヘルパ --------------------------------------------------------------
+// 1 レコード（{ id, no, items }）を見出し + 項目表（質問/type/値/添付）で描画する。
+function renderRecordBlock_(rec, index) {
+  var items = Array.isArray(rec.items) ? rec.items : [];
+  var html = '<h2>record[' + index + '] No.' + escapeHtml_(String(rec.no != null ? rec.no : "")) +
+    ' <span class="muted">(<code>' + escapeHtml_(String(rec.id || "")) + '</code>)</span></h2>';
   if (!items.length) {
     html += '<p class="muted">項目がありません。</p>';
-  } else {
-    html += '<div class="tableWrap"><table><thead><tr>' +
-      '<th>質問 (ネスト)</th><th>type</th><th>値</th></tr></thead><tbody>';
-    for (var i = 0; i < items.length; i++) {
-      var it = items[i] || {};
-      // question は "親/子/孫" 形式。"/" の数だけインデントしてネスト構造を表現する。
-      var parts = String(it.question || "").split("/");
-      var depth = parts.length - 1;
-      var leaf = parts[parts.length - 1];
-      var pad = depth > 0 ? ' style="padding-left:' + (depth * 18) + 'px"' : '';
-      html += '<tr>';
-      html += '<td' + pad + '>' + (depth > 0 ? '<span class="muted">↳ </span>' : '') + escapeHtml_(leaf) + '</td>';
-      html += '<td><span class="tag">' + escapeHtml_(String(it.type || "")) + '</span></td>';
-      html += '<td>' + escapeHtml_(String(it.value == null ? "" : it.value)) + '</td>';
-      html += '</tr>';
-    }
-    html += '</tbody></table></div>';
+    return html;
   }
-  if (fileQuestions.length || data.filesWarning) {
-    html += '<h2>添付ファイル (Drive URL)</h2>';
-    if (data.filesWarning) html += '<p class="muted">' + escapeHtml_(String(data.filesWarning)) + '</p>';
-    if (fileQuestions.length) {
-      html += '<div class="tableWrap"><table><thead><tr>' +
-        '<th>質問</th><th>フォルダ</th><th>ファイル名</th><th>ファイル URL</th></tr></thead><tbody>';
-      for (var qj = 0; qj < fileQuestions.length; qj++) {
-        var qkey = fileQuestions[qj];
-        var grp = files[qkey] || {};
-        var grpFiles = Array.isArray(grp.files) ? grp.files : [];
-        var folderCell = grp.folderUrl
-          ? '<a href="' + escapeHtml_(String(grp.folderUrl)) + '" target="_blank">' + escapeHtml_(String(grp.folderName || "フォルダ")) + '</a>'
-          : escapeHtml_(String(grp.folderName || ""));
-        for (var gj = 0; gj < grpFiles.length; gj++) {
-          var gff = grpFiles[gj] || {};
-          var urlCell = gff.url
-            ? '<a href="' + escapeHtml_(String(gff.url)) + '" target="_blank">' + escapeHtml_(String(gff.url)) + '</a>'
-            : '';
-          html += '<tr><td>' + escapeHtml_(String(qkey)) + '</td>' +
-            '<td>' + folderCell + '</td>' +
-            '<td>' + escapeHtml_(String(gff.name || "")) + '</td>' +
-            '<td>' + urlCell + '</td></tr>';
-        }
-      }
-      html += '</tbody></table></div>';
-    }
+  html += '<div class="tableWrap"><table><thead><tr>' +
+    '<th>質問 (ネスト)</th><th>type</th><th>値</th><th>添付</th></tr></thead><tbody>';
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i] || {};
+    // question は "親/子/#1/孫" 形式。"/" の数だけインデントしてネスト構造を表現する。
+    var parts = String(it.question || "").split("/");
+    var depth = parts.length - 1;
+    var leaf = parts[parts.length - 1];
+    var pad = depth > 0 ? ' style="padding-left:' + (depth * 18) + 'px"' : '';
+    html += '<tr>';
+    html += '<td' + pad + '>' + (depth > 0 ? '<span class="muted">↳ </span>' : '') + escapeHtml_(leaf) + '</td>';
+    html += '<td><span class="tag">' + escapeHtml_(String(it.type || "")) + '</span></td>';
+    html += '<td>' + escapeHtml_(String(it.value == null ? "" : it.value)) + '</td>';
+    html += '<td>' + renderItemFiles_(it) + '</td>';
+    html += '</tr>';
   }
-  html += renderStorageBlock_(data);
-
-  return { ok: true, title: "レコード受信", message: html };
+  html += '</tbody></table></div>';
+  return html;
 }
 
-
-// ----- ヘルパ --------------------------------------------------------------
-// 一覧セルは文字列 or { text, hyperlink }。表示文字列に正規化する。
-function cellToText_(cell) {
-  if (cell && typeof cell === "object") {
-    return String(cell.text == null ? "" : cell.text);
+// item.files（[{ name, url }]）と item.folderUrl/folderName を表示用 HTML に変換する。
+// ファイル実体ではなく Drive のフォルダ/ファイル URL のみが届く。
+function renderItemFiles_(it) {
+  var files = Array.isArray(it.files) ? it.files : [];
+  if (!files.length && !it.folderUrl && !it.folderName) return "";
+  var html = "";
+  if (it.folderUrl || it.folderName) {
+    html += it.folderUrl
+      ? '<a href="' + escapeHtml_(String(it.folderUrl)) + '" target="_blank" rel="noopener">' + escapeHtml_(String(it.folderName || "フォルダ")) + '</a><br>'
+      : escapeHtml_(String(it.folderName || "")) + '<br>';
   }
-  return String(cell == null ? "" : cell);
+  for (var i = 0; i < files.length; i++) {
+    var f = files[i] || {};
+    html += f.url
+      ? '<a href="' + escapeHtml_(String(f.url)) + '" target="_blank" rel="noopener">' + escapeHtml_(String(f.name || f.url)) + '</a><br>'
+      : escapeHtml_(String(f.name || "")) + '<br>';
+  }
+  return html;
 }
 
-// 一覧セルを表示用 HTML に変換する。hyperlink があればリンクにする。
-function cellToHtml_(cell) {
-  if (cell && typeof cell === "object" && cell.hyperlink) {
-    return '<a href="' + escapeHtml_(String(cell.hyperlink)) + '" target="_blank" rel="noopener">' +
-      escapeHtml_(String(cell.text == null ? cell.hyperlink : cell.text)) + '</a>';
-  }
-  return escapeHtml_(cellToText_(cell));
-}
-
-// 共通フィールド (フォーム名 / formId / 送信時刻) を key-value テーブルで表示する。
+// 共通フィールド (フォーム名 / formId / 件数 / 送信時刻) を key-value テーブルで表示する。
 function renderCommonFields_(data) {
+  var recordCount = (typeof data.recordCount === "number")
+    ? data.recordCount
+    : (Array.isArray(data.records) ? data.records.length : 0);
   return '<table class="kv"><tbody>' +
     '<tr><th>フォーム名</th><td>' + escapeHtml_(String(data.formName || "")) + '</td></tr>' +
     '<tr><th>formId</th><td><code>' + escapeHtml_(String(data.formId || "")) + '</code></td></tr>' +
-    '<tr><th>context</th><td>' + escapeHtml_(String(data.context || "")) + '</td></tr>' +
+    '<tr><th>recordCount</th><td>' + escapeHtml_(String(recordCount)) + '</td></tr>' +
     '<tr><th>送信時刻</th><td>' + escapeHtml_(String(data.generatedAt || "")) + '</td></tr>' +
     '</tbody></table>';
 }

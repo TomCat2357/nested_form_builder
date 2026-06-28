@@ -389,12 +389,12 @@ export function SubstitutionFieldSection({ field, onChange }) {
           <span className="nf-text-12 nf-fw-600">置換テキスト</span>
           <textarea
             className={`${s.input.className} nf-h-64`}
-            placeholder={"例: {`氏名`}さんはいつも元気だね。"}
+            placeholder={"例: {{`氏名`}}さんはいつも元気だね。"}
             value={field.templateText || ""}
             onChange={(event) => onChange({ ...field, templateText: event.target.value })}
           />
           <span className="nf-text-11 nf-text-muted">
-            {"{`フィールド名`} で他の項目の値を埋め込めます（元データ形式）。選択肢は {`項目名|選択肢`} で選択時 true / 未選択 false の真偽値になります。選択肢ラベルを埋め込むには {{`項目名`}} のように二重ブレース（ビュー形式）を使います。ネストされた子質問は親からのフルパスで指定します（グループの子は {`設置場所|設置開始日`}、選択肢の下にぶら下がる子は選択肢ラベルも挟んで {`選択1|答1|答1補足`} のように指定。元データ形式・ビュー形式とも同じパス）。{`_id`}, {TIME_FORMAT(NOW(), 'YYYY年MM月DD日')} 等が使えます。UPPER(...), LEFT(..., 3), TIME_FORMAT(...) などの関数式が使用できます。"}
+            {"{{`フィールド名`}} で他の項目の値（選択肢は選択時のラベル）を埋め込めます。二重ブレースのみ有効で、単一ブレース {`…`} はリテラルとしてそのまま出力されます。ネストされた子質問は親からのフルパスで指定します（グループの子は {{`設置場所|設置開始日`}}、選択肢の下にぶら下がる子は選択肢ラベルも挟んで {{`選択1|答1|答1補足`}} のように指定）。{{`_id`}}, {{TIME_FORMAT(NOW(), 'YYYY年MM月DD日')}} 等が使えます。UPPER(...), LEFT(..., 3), TIME_FORMAT(...) などの関数式が使用できます。"}
           </span>
         </label>
         <label className="nf-row nf-gap-6">

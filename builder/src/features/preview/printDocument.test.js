@@ -4,7 +4,6 @@ import {
   buildFieldValuesMap,
   buildRecordItems,
   collectFileUploadMeta,
-  collectExternalActionFiles,
   collectChildFormMeta,
   buildPrintDocumentPayload,
   formatRecordMetaDateTime,
@@ -716,49 +715,6 @@ test("buildRecordItems は添付なし/フォルダなしの fileUpload に file
   const schema = [{ id: "f1", type: "fileUpload", label: "添付" }];
   const items = buildRecordItems(schema, { f1: [] });
   assert.deepEqual(items, [{ question: "添付", value: "", type: "fileUpload" }]);
-});
-
-test("collectExternalActionFiles は fileUpload の参照を平坦化する", () => {
-  const schema = [
-    { id: "t1", type: "text", label: "氏名" },
-    { id: "u1", type: "fileUpload", label: "添付" },
-    { id: "u2", type: "fileUpload", label: "写真" },
-  ];
-  const responses = {
-    t1: "山田",
-    u1: [
-      { name: "a.pdf", driveFileId: "F1", driveFileUrl: "https://drive/F1" },
-      { name: "b.png", driveFileId: "F2" },
-    ],
-    u2: [{ name: "c.jpg", driveFileId: "F3" }],
-  };
-  const out = collectExternalActionFiles(schema, {
-    responses,
-    folderNamesByField: { u1: "rec_u1", u2: "rec_u2" },
-  });
-  assert.deepEqual(out, [
-    { fieldId: "u1", question: "添付", name: "a.pdf", driveFileId: "F1", folderName: "rec_u1" },
-    { fieldId: "u1", question: "添付", name: "b.png", driveFileId: "F2", folderName: "rec_u1" },
-    { fieldId: "u2", question: "写真", name: "c.jpg", driveFileId: "F3", folderName: "rec_u2" },
-  ]);
-});
-
-test("collectExternalActionFiles は手がかりの無いエントリを除外し fileUpload 以外を無視する", () => {
-  const schema = [
-    { id: "u1", type: "fileUpload", label: "添付" },
-    { id: "n1", type: "number", label: "数量" },
-  ];
-  const responses = {
-    u1: [
-      { name: "", driveFileId: "" }, // name も id も無い → 送れないので除外
-      { name: "ok.pdf", driveFileId: "F9" },
-    ],
-    n1: 5,
-  };
-  const out = collectExternalActionFiles(schema, { responses });
-  assert.deepEqual(out, [
-    { fieldId: "u1", question: "添付", name: "ok.pdf", driveFileId: "F9", folderName: "" },
-  ]);
 });
 
 test("buildPrintDocumentPayload は子データをヘッダ/マーカー/子行として描画する", () => {

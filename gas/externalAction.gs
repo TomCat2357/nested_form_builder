@@ -91,65 +91,6 @@ function ExtAction_postRelay_(url, bodyObj) {
   return { ok: status >= 200 && status < 400, status: status, body: body };
 }
 
-// フロントが渡すファイル参照配列（raw.files）を解決し、質問項目ごとに「フォルダ URL/名前・
-// ファイル URL/名前」を構造化して payload.files に詰める純ヘルパ。ファイル実体（base64）は
-// 送らず、Drive の URL とメタデータだけを送る。Drive アクセスは deps で注入してテスト可能にする。
-//   deps = {
-//     resolve(name, driveFileId, folderName) -> { fileId, fileUrl }      物理優先・論理フォールバック解決
-//     resolveFolder(fileId)                  -> { folderUrl, folderName }  ファイルの親フォルダ解決
-//   }
-// payload.files は質問パスをキーにしたオブジェクト:
-//   { [question]: { fieldId, folderName, folderUrl, files: [{ name, url }] } }
-// 質問パスは一意（フロントのスキーマ検証 validateUniquePaths で保証）なのでキー衝突しない。
-// 解決できなかったファイルは除外し、件数を payload.filesWarning に残す。
-// 機微データ（URL）を宛先未検証で送らない方針のため、プローブ（誤送信防止）には絶対に呼ばない。
-function ExtAction_attachFiles_(payload, files, deps) {
-  var list = (Object.prototype.toString.call(files) === "[object Array]") ? files : [];
-  if (list.length === 0) return payload;
-  var grouped = {};
-  var folderCache = {};
-  var unresolved = 0;
-  for (var i = 0; i < list.length; i++) {
-    var ref = list[i] || {};
-    var name = typeof ref.name === "string" ? ref.name : "";
-    var driveFileId = typeof ref.driveFileId === "string" ? ref.driveFileId : "";
-    var folderName = typeof ref.folderName === "string" ? ref.folderName : "";
-    var question = typeof ref.question === "string" ? ref.question : "";
-    var resolved = deps.resolve(name, driveFileId, folderName) || {};
-    var fileId = typeof resolved.fileId === "string" ? resolved.fileId : "";
-    if (!fileId) { unresolved++; continue; }
-    // 親フォルダ解決は重いので fileId ごとにキャッシュ（同一質問の複数ファイルは同フォルダ）。
-    var folder = folderCache[fileId];
-    if (!folder) {
-      try {
-        folder = deps.resolveFolder(fileId) || {};
-      } catch (e) {
-        folder = {};
-      }
-      folderCache[fileId] = folder;
-    }
-    var group = grouped[question];
-    if (!group) {
-      group = {
-        fieldId: typeof ref.fieldId === "string" ? ref.fieldId : "",
-        folderName: folderName || (typeof folder.folderName === "string" ? folder.folderName : ""),
-        folderUrl: typeof folder.folderUrl === "string" ? folder.folderUrl : "",
-        files: [],
-      };
-      grouped[question] = group;
-    }
-    group.files.push({
-      name: name || "",
-      url: typeof resolved.fileUrl === "string" ? resolved.fileUrl : "",
-    });
-  }
-  payload.files = grouped;
-  if (unresolved > 0) {
-    payload.filesWarning = unresolved + " 件のファイルを取得できませんでした（移動/削除済みの可能性）。";
-  }
-  return payload;
-}
-
 // 受信 Web アプリへ payload をサーバ間 POST する。
 // 送信元シークレット（管理者設定 / スクリプトプロパティ）が設定されているときは、本データを
 // 送る前に nonce プローブで宛先を検証し、共有シークレットの HMAC が一致した正規の受信アプリ
@@ -179,22 +120,8 @@ function ExtAction_send_(raw) {
       }
     }
 
-    // アップロードファイルの URL/名前は、宛先検証（プローブ）を通過した後にだけ Drive から解決して
-    // 同梱する（機微データを未検証の宛先へ送らないため）。実体（base64）は送らず URL のみ。
-    var files = (raw && Object.prototype.toString.call(raw.files) === "[object Array]") ? raw.files : [];
-    if (files.length > 0) {
-      ExtAction_attachFiles_(payload, files, {
-        resolve: Nfb_resolveUploadFileEntry_,
-        resolveFolder: function(fileId) {
-          var parents = DriveApp.getFileById(fileId).getParents();
-          if (parents.hasNext()) {
-            var folder = parents.next();
-            return { folderUrl: folder.getUrl(), folderName: folder.getName() };
-          }
-          return { folderUrl: "", folderName: "" };
-        },
-      });
-    }
+    // ファイル参照（名前・URL・フォルダ URL）は payload.records[].items[].files にフロントが内包
+    // 済み（driveFileId から決定的に再構成）。サーバ側 Drive 解決は廃止したのでここでは何もしない。
 
     // Phase2（または検証なし）: 本 payload を送信する。
     return ExtAction_postRelay_(url, { payload: JSON.stringify(payload) });
