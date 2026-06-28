@@ -33,7 +33,10 @@ var NFB_STD_FOLDER_NAMES = {
   report_templates: "05_report_templates",
   upload: "06_upload_files",
   externalActions: "07_external_actions",
-  documents: "08_documents"
+  documents: "08_documents",
+  // 串刺しフォーム検索の保存先。NFB_STD_FOLDER_ORDER には入れない（構成コピー対象外。
+  // autoFileFolderOrNull_ は ensureAll 後にキー指定で on-demand 作成するため解決可能）。
+  crossSearches: "09_cross_searches"
 };
 
 // 作成・コピー時の処理順。

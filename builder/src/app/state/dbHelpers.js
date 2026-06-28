@@ -38,6 +38,10 @@ export function openDB() {
       if (!db.objectStoreNames.contains(STORE_NAMES.analyticsDashboards)) {
         db.createObjectStore(STORE_NAMES.analyticsDashboards, { keyPath: 'id' });
       }
+      // v12: 串刺しフォーム検索（cross-form search）定義のキャッシュ。Question/Dashboard と同形。
+      if (!db.objectStoreNames.contains(STORE_NAMES.analyticsCrossSearches)) {
+        db.createObjectStore(STORE_NAMES.analyticsCrossSearches, { keyPath: 'id' });
+      }
 
       // v8: オフラインファースト保存の永続アップロードキュー。
       // 1 件 = 1 アップロードジョブ。リロードを跨いで残り、起動時に再開する。

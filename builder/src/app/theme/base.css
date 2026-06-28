@@ -1189,6 +1189,53 @@ button:disabled {
   color: var(--text-subtle);
 }
 
+/* 串刺しフォーム検索カード（フォーム一覧で色違いに） */
+.main-card--cross-search {
+  background: var(--primary-soft);
+  border-color: var(--primary-border-soft);
+}
+.main-card--cross-search .main-title {
+  color: var(--primary-ink-strong);
+}
+.cfs-card-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--primary);
+  color: var(--surface);
+  vertical-align: middle;
+}
+
+/* 串刺し検索 編集: 対象フォームのチップ */
+.cfs-form-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--primary-soft);
+  border: 1px solid var(--primary-border-soft);
+  color: var(--primary-ink-strong);
+}
+.cfs-form-chip-x {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  color: var(--text-muted);
+  padding: 0;
+}
+
+/* 串刺し検索 編集: 列ピッカーで「列はあるが表示対象でない」セル */
+.cfs-col-gray {
+  color: var(--text-muted);
+}
+
 /* Folders (drill-down navigation + regex search) */
 .folder-search-bar {
   display: flex;

@@ -29,6 +29,8 @@ var NFB_FOLDER_DRIVE_MAP_PROPERTY_VERSION = 1;
 // forms の drivemap と同じ形・同じ version 規則で、type ごとに別キーへ保存する。
 var NFB_ANALYTICS_QUESTIONS_FOLDER_DRIVE_MAP_KEY = "nfb.analytics.questions.folders.drivemap";
 var NFB_ANALYTICS_DASHBOARDS_FOLDER_DRIVE_MAP_KEY = "nfb.analytics.dashboards.folders.drivemap";
+// 串刺しフォーム検索（cross-form search）も第 3 のメタエンティティとして同じ drivemap 形式を使う。
+var NFB_ANALYTICS_CROSSSEARCHES_FOLDER_DRIVE_MAP_KEY = "nfb.analytics.crossSearches.folders.drivemap";
 
 // API/バッチ処理関連
 var NFB_DRIVE_API_BATCH_SIZE = 100;

@@ -11,14 +11,16 @@
 
 // type → 標準フォルダキー（StdFolders_autoFileFolderOrNull_ 用）。
 function AnalyticsDrive_stdKey_(type) {
-  return type === "questions" ? "questions" : "dashboards";
+  if (type === "questions") return "questions";
+  if (type === "crossSearches") return "crossSearches";
+  return "dashboards";
 }
 
 // type → drivemap を保存する Script Property キー。
 function AnalyticsDrive_drivemapKey_(type) {
-  return type === "questions"
-    ? NFB_ANALYTICS_QUESTIONS_FOLDER_DRIVE_MAP_KEY
-    : NFB_ANALYTICS_DASHBOARDS_FOLDER_DRIVE_MAP_KEY;
+  if (type === "questions") return NFB_ANALYTICS_QUESTIONS_FOLDER_DRIVE_MAP_KEY;
+  if (type === "crossSearches") return NFB_ANALYTICS_CROSSSEARCHES_FOLDER_DRIVE_MAP_KEY;
+  return NFB_ANALYTICS_DASHBOARDS_FOLDER_DRIVE_MAP_KEY;
 }
 
 // 物理ツリーの基点 = 標準フォルダ 02_questions / 03_dashboards。標準フォルダ無効/ルート未解決なら null。

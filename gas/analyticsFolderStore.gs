@@ -11,13 +11,14 @@
 
 var ANALYTICS_QUESTIONS_FOLDERS_PROPERTY_KEY = "nfb.analytics.questions.folders";
 var ANALYTICS_DASHBOARDS_FOLDERS_PROPERTY_KEY = "nfb.analytics.dashboards.folders";
+var ANALYTICS_CROSSSEARCHES_FOLDERS_PROPERTY_KEY = "nfb.analytics.crossSearches.folders";
 
 // ---- property key ヘルパー ----
 
 function Analytics_getFoldersPropertyKey_(type) {
-  return type === "questions"
-    ? ANALYTICS_QUESTIONS_FOLDERS_PROPERTY_KEY
-    : ANALYTICS_DASHBOARDS_FOLDERS_PROPERTY_KEY;
+  if (type === "questions") return ANALYTICS_QUESTIONS_FOLDERS_PROPERTY_KEY;
+  if (type === "crossSearches") return ANALYTICS_CROSSSEARCHES_FOLDERS_PROPERTY_KEY;
+  return ANALYTICS_DASHBOARDS_FOLDERS_PROPERTY_KEY;
 }
 
 // StdFolderStore_* コアに渡す type 別 adapter（型差分をここに閉じ込める）。

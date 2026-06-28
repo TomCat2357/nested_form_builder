@@ -68,6 +68,8 @@ function makeListCache(storeName) {
 
 export const questionCache = makeListCache(STORE_NAMES.analyticsQuestions);
 export const dashboardCache = makeListCache(STORE_NAMES.analyticsDashboards);
+// 串刺しフォーム検索（cross-form search）= 第 3 のメタエンティティ。Question/Dashboard と同形のリストキャッシュ。
+export const crossSearchCache = makeListCache(STORE_NAMES.analyticsCrossSearches);
 
 // Question / Dashboard キャッシュがローカルで変化したことを一覧へ通知するための軽量イベント。
 // オフライン保存の楽観的 upsert やバックグラウンドアップロード成功後の付け替えで発火し、

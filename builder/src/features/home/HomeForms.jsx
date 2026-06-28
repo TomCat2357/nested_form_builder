@@ -5,6 +5,9 @@ import { useBuilderSettings } from "../settings/settingsStore.js";
 import { toUnixMs, formatUnixMsValue } from "../../utils/dateTime.js";
 import { evaluateCacheForForms } from "../../app/state/cachePolicy.js";
 import { useFolderBrowser } from "../folders/useFolderBrowser.js";
+import { compileNameMatcher } from "../../utils/folderTree.js";
+import { useAnalyticsList } from "../analytics/useAnalyticsList.js";
+import { listCrossSearchesSWR } from "../analytics/crossFormSearchStore.js";
 import FolderSearchBar from "../folders/FolderSearchBar.jsx";
 import FolderBreadcrumbs from "../folders/FolderBreadcrumbs.jsx";
 import FolderCard from "../folders/FolderCard.jsx";
@@ -54,11 +57,28 @@ export default function HomeForms({ resetNonce = 0 }) {
     urlParam: "folder",
   });
 
+  // 串刺しフォーム検索（CFS）も同じフォーム一覧に色違いで並べる。CFS はフォーム用フォルダ階層に
+  // 属さないため、非検索時はルートフォルダでのみ表示し、検索時は名前一致で絞り込む。
+  const { items: crossSearches } = useAnalyticsList({ listSWR: listCrossSearchesSWR });
+  const visibleCrossSearches = useMemo(() => {
+    const active = (crossSearches || []).filter((c) => !c.archived);
+    if (browser.searching) {
+      const matcher = compileNameMatcher(browser.query);
+      return active.filter((c) => matcher(c.name || ""));
+    }
+    return browser.currentPath ? [] : active;
+  }, [crossSearches, browser.searching, browser.query, browser.currentPath]);
+
   // 検索へ遷移するとき、戻り先として現在のフォルダ付きホーム URL を渡す。
   // SearchPage / FormPage の「戻る」がこの from へ復帰し、直前のフォルダが復元される。
   const handleSelect = (formId) => {
     const from = `/${browser.currentPath ? `?folder=${encodeURIComponent(browser.currentPath)}` : ""}`;
     navigate(`/search?form=${formId}`, { state: { from } });
+  };
+
+  const handleSelectCrossSearch = (cfsId) => {
+    const from = `/${browser.currentPath ? `?folder=${encodeURIComponent(browser.currentPath)}` : ""}`;
+    navigate(`/cross-search?id=${encodeURIComponent(cfsId)}`, { state: { from } });
   };
 
   // 親（HomePage）のタブ再クリックでルート（すべて）へ戻し検索も空にする。
@@ -83,12 +103,25 @@ export default function HomeForms({ resetNonce = 0 }) {
       {refreshingForms && <p className="nf-text-subtle nf-text-12 nf-m-0">更新中...</p>}
       <FolderSearchBar value={browser.query} onChange={browser.setQuery} placeholder="フォーム名で検索（例: 売上。正規表現も可）" />
       <FolderBreadcrumbs breadcrumbs={browser.breadcrumbs} onNavigate={browser.goTo} hidden={browser.searching} />
-      {browser.folders.length === 0 && browser.visibleItems.length === 0 ? (
+      {browser.folders.length === 0 && browser.visibleItems.length === 0 && visibleCrossSearches.length === 0 ? (
         <p className="nf-text-subtle">{browser.searching ? "一致するフォームがありません。" : "このフォルダにフォームはありません。"}</p>
       ) : (
         <div className="main-list">
           {browser.folders.map((f) => (
             <FolderCard key={f.path} name={f.name} count={f.count} onOpen={() => browser.openFolder(f.path)} />
+          ))}
+          {visibleCrossSearches.map((cfs) => (
+            <div
+              key={`cfs-${cfs.id}`}
+              className="main-card main-card--cross-search"
+              onClick={() => handleSelectCrossSearch(cfs.id)}
+            >
+              <h2 className="main-title">
+                {cfs.name || "(無題)"}
+                <span className="cfs-card-badge">串刺し</span>
+              </h2>
+              {cfs.description && <p className="nf-m-0 nf-text-muted nf-pre-wrap">{cfs.description}</p>}
+            </div>
           ))}
           {browser.visibleItems.map((form) => (
             <div key={form.id} className="main-card" onClick={() => handleSelect(form.id)}>

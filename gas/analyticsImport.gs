@@ -20,6 +20,11 @@ function Analytics_normalizeImportedTemplate_(type, raw) {
     if (!Array.isArray(raw.cards)) {
       return null;
     }
+  } else if (type === "crossSearches") {
+    // 串刺しフォーム検索は参照フォーム配列 formIds を必須とする。
+    if (!Array.isArray(raw.formIds)) {
+      return null;
+    }
   } else {
     return null;
   }
@@ -48,7 +53,7 @@ function Analytics_importFromDrive_(type, url) {
         entry[resultKey] = normalized;
         return entry;
       },
-      entityLabel: type === "questions" ? "Question" : "Dashboard"
+      entityLabel: type === "questions" ? "Question" : (type === "crossSearches" ? "CrossSearch" : "Dashboard")
     });
     return {
       ok: true,
@@ -83,7 +88,7 @@ function Analytics_registerImportedTemplate_(type, payload) {
     // 配置（構成内なら参照のまま / 構成外なら該当サブフォルダへコピー）+ マッピング登録は共通本体に委譲。
     // id ＝ Drive fileId / 名前 ＝ ファイル名 へ統一。名前はファイル名から導出し、空なら template.name。
     var reg = SharedEntity_registerImported_(fileId, {
-      stdKey: type === "questions" ? "questions" : "dashboards",
+      stdKey: type === "questions" ? "questions" : (type === "crossSearches" ? "crossSearches" : "dashboards"),
       getMapping: function() { return Analytics_getMapping_(type); },
       saveMapping: function(m) { return Analytics_saveMapping_(type, m); },
       labelKey: "name",

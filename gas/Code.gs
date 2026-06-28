@@ -163,6 +163,25 @@ const ACTION_DEFINITIONS_ = {
   "analytics_dashboards_move":             { handler: (ctx) => Analytics_dispatch_("analytics_dashboards_move", ctx),            adminOnly: true },
   "analytics_dashboards_folder_rename":    { handler: (ctx) => Analytics_dispatch_("analytics_dashboards_folder_rename", ctx),   adminOnly: true },
   "analytics_dashboards_folder_delete":    { handler: (ctx) => Analytics_dispatch_("analytics_dashboards_folder_delete", ctx),   adminOnly: true },
+  // 串刺しフォーム検索（cross-form search）。一覧/取得/フォルダ一覧は閲覧可、変更系は管理者のみ。
+  "analytics_cross_searches_list":            { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_list", ctx) },
+  "analytics_cross_searches_get":             { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_get", ctx) },
+  "analytics_cross_searches_save":            { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_save", ctx),            adminOnly: true },
+  "analytics_cross_searches_delete":          { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_delete", ctx),          adminOnly: true },
+  "analytics_cross_searches_delete_batch":    { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_delete_batch", ctx),    adminOnly: true },
+  "analytics_cross_searches_delete_with_files_batch": { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_delete_with_files_batch", ctx), adminOnly: true },
+  "analytics_cross_searches_archive":         { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_archive", ctx),         adminOnly: true },
+  "analytics_cross_searches_unarchive":       { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_unarchive", ctx),       adminOnly: true },
+  "analytics_cross_searches_archive_batch":   { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_archive_batch", ctx),   adminOnly: true },
+  "analytics_cross_searches_unarchive_batch": { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_unarchive_batch", ctx), adminOnly: true },
+  "analytics_cross_searches_copy":            { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_copy", ctx),            adminOnly: true },
+  "analytics_cross_searches_import":          { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_import", ctx),          adminOnly: true },
+  "analytics_cross_searches_register_import": { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_register_import", ctx), adminOnly: true },
+  "analytics_cross_searches_folders_list":    { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_folders_list", ctx) },
+  "analytics_cross_searches_folder_create":   { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_folder_create", ctx),  adminOnly: true },
+  "analytics_cross_searches_move":            { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_move", ctx),            adminOnly: true },
+  "analytics_cross_searches_folder_rename":   { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_folder_rename", ctx),   adminOnly: true },
+  "analytics_cross_searches_folder_delete":   { handler: (ctx) => Analytics_dispatch_("analytics_cross_searches_folder_delete", ctx),   adminOnly: true },
 };
 
 function ResolveActionContext_(rawPayload, source) {
