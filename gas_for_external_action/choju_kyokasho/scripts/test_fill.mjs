@@ -126,6 +126,7 @@ eq("空気銃 gunNo", lic0.gunNo, "01234567890");
 eq("空気銃 gunKind", lic0.gunKind, "空気銃");
 const lic1 = C.Cho2_toolLicense_(pPerson.workers[1], "はこわな");
 eq("はこわな kind", lic1.kind, "わな");
+eq("はこわな licType補完", lic1.licType, "わな猟免許"); // フォーム非保持の免許種類を種別から補完
 eq("はこわな licNo", lic1.licNo, "石狩第1237号");
 eq("はこわな regNo", lic1.regNo, "石狩第9999号");
 
@@ -218,6 +219,7 @@ eq("名簿 Z6 鉄砲種類", cellOf(block0, "Z6"), "空気銃");
 // 名簿 worker1（田中・わな2種）: P5=くくりわな, P6=はこわな, S列=免許番号, V列=登録番号
 const block1 = C.Cho2_rosterBlockCells_(pPerson.workers[1], 14, "1-1-2");
 eq("名簿2 P14 くくりわな", cellOf(block1, "P14"), "くくりわな");
+eq("名簿2 Q14 免許種類補完", cellOf(block1, "Q14"), "わな猟免許");
 eq("名簿2 P15 はこわな", cellOf(block1, "P15"), "はこわな");
 eq("名簿2 S14 免許番号", cellOf(block1, "S14"), "石狩第1237号");
 eq("名簿2 V14 登録番号", cellOf(block1, "V14"), "石狩第9999号");

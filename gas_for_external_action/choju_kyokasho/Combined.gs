@@ -357,6 +357,8 @@ function Cho2_toolLicense_(worker, tool) {
   var M = CHO2_L_W_METHOD_, kind = CHO2_TOOL_KIND_[tool] || "";
   var r = { tool: tool, kind: kind, licType: "", licPref: "", licNo: "", licDate: "", regNo: "", regDate: "", gunNo: "", gunDate: "", gunKind: "" };
   if (kind === "わな") {
+    // フォームに「わなの免許種類」欄が無いため、免許必要時は種別から補完（名簿 Q 列＝狩猟免許 種類）。
+    if (Cho2_str_(worker[M + "/わな/免許の必要性"]) === "必要") r.licType = "わな猟免許";
     var wb = M + "/わな/免許の必要性/必要/免許情報/";
     r.licPref = Cho2_str_(worker[wb + "都道府県"]);
     r.licNo = Cho2_str_(worker[wb + "番号"]);
@@ -365,6 +367,8 @@ function Cho2_toolLicense_(worker, tool) {
     r.regNo = Cho2_str_(worker[wr + "番号"]);
     r.regDate = Cho2_str_(worker[wr + "交付年月日"]);
   } else if (kind === "網") {
+    // 同上（網の免許種類欄が無いため補完）。
+    if (Cho2_str_(worker[M + "/網/免許の必要性"]) === "必要") r.licType = "網猟免許";
     var nb = M + "/網/免許の必要性/必要/免許情報/";
     r.licPref = Cho2_str_(worker[nb + "都道府県"]);
     r.licNo = Cho2_str_(worker[nb + "番号"]);
