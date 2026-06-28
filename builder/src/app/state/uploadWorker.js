@@ -29,6 +29,7 @@ import { saveFormsToCache, getFormsFromCache } from "./formsCache.js";
 import {
   questionCache,
   dashboardCache,
+  crossSearchCache,
   emitAnalyticsCacheChanged,
   emitAnalyticsFoldersChanged,
 } from "../../features/analytics/analyticsCache.js";
@@ -114,7 +115,20 @@ const computeBackoffMs = (attempt) => {
   return exp + Math.floor(Math.random() * 1000);
 };
 
-const TYPE_ORDER = { form: 0, question: 1, dashboard: 2 };
+const TYPE_ORDER = { form: 0, question: 1, dashboard: 2, crossSearch: 3 };
+
+// analytics 系 entityType（form 以外）→ IndexedDB キャッシュ / PascalCase 名の対応。
+// 串刺しフォーム検索（crossSearch）を含む 3 種を 1 箇所で解決する。
+const ANALYTICS_CACHE_BY_ENTITY = {
+  question: questionCache,
+  dashboard: dashboardCache,
+  crossSearch: crossSearchCache,
+};
+const ANALYTICS_PASCAL_BY_ENTITY = {
+  question: "Question",
+  dashboard: "Dashboard",
+  crossSearch: "CrossSearch",
+};
 
 const pickRunnableJob = async () => {
   if (!isOnline()) {
@@ -172,7 +186,7 @@ const uploadOp = async (job) => {
       default: throw new Error(`unknown form op: ${job.opType}`);
     }
   }
-  const E = job.entityType === "dashboard" ? "Dashboard" : "Question";
+  const E = ANALYTICS_PASCAL_BY_ENTITY[job.entityType] || "Question";
   switch (job.opType) {
     case "createFolder": return analyticsGasClient[`create${E}Folder`](p.path);
     case "move": return analyticsGasClient[`move${E}s`](p);
@@ -193,6 +207,7 @@ const uploadByType = async (job) => {
   if (job.entityType === "form") return saveForm(payload, "auto");
   if (job.entityType === "question") return analyticsGasClient.saveQuestion(payload);
   if (job.entityType === "dashboard") return analyticsGasClient.saveDashboard(payload);
+  if (job.entityType === "crossSearch") return analyticsGasClient.saveCrossSearch(payload);
   throw new Error(`unknown entityType: ${job.entityType}`);
 };
 
@@ -236,7 +251,7 @@ const reconcileEntityCache = async (entityType, tempId, savedEntity) => {
     } catch (_e) { /* noop */ }
     return;
   }
-  const cache = entityType === "question" ? questionCache : dashboardCache;
+  const cache = ANALYTICS_CACHE_BY_ENTITY[entityType] || dashboardCache;
   if (tempId !== savedEntity.id) await cache.remove(tempId);
   await cache.upsert({ ...savedEntity, pendingUpload: false });
   emitAnalyticsCacheChanged(entityType);
@@ -314,6 +329,10 @@ const reconcile = async (job, result) => {
     referenceSync = result?.referenceSync || null;
   } else if (job.entityType === "dashboard") {
     savedEntity = result?.dashboard || null;
+    realId = savedEntity?.id || tempId;
+    referenceSync = result?.referenceSync || null;
+  } else if (job.entityType === "crossSearch") {
+    savedEntity = result?.crossSearch || null;
     realId = savedEntity?.id || tempId;
     referenceSync = result?.referenceSync || null;
   }
@@ -482,12 +501,11 @@ const revertEntityToServer = async (entityType, realId) => {
     }
     return;
   }
-  const cache = entityType === "question" ? questionCache : dashboardCache;
+  const cache = ANALYTICS_CACHE_BY_ENTITY[entityType] || dashboardCache;
   let serverEntity = null;
   try {
-    const res = entityType === "dashboard"
-      ? await analyticsGasClient.getDashboard(realId)
-      : await analyticsGasClient.getQuestion(realId);
+    const E = ANALYTICS_PASCAL_BY_ENTITY[entityType] || "Question";
+    const res = await analyticsGasClient[`get${E}`](realId);
     serverEntity = res?.[entityType] || null;
   } catch (err) {
     uploadLog.warn("revert", "getEntity failed", { entityType, realId, message: String(toErrorMessage(err)) });
@@ -519,7 +537,7 @@ export const cancelJobDiscard = async (job) => {
     if (entityType === "form") {
       await discardLocalForm(localId);
     } else {
-      const cache = entityType === "question" ? questionCache : dashboardCache;
+      const cache = ANALYTICS_CACHE_BY_ENTITY[entityType] || dashboardCache;
       await cache.remove(localId);
       emitAnalyticsCacheChanged(entityType);
     }

@@ -65,6 +65,8 @@ function makeEntityClient(entity) {
 export const analyticsGasClient = {
   ...makeEntityClient("Question"),
   ...makeEntityClient("Dashboard"),
+  // 串刺しフォーム検索（cross-form search）。GAS 側 nfb<Verb>AnalyticsCrossSearch[s] と機械的に対応。
+  ...makeEntityClient("CrossSearch"),
   // 壊れたカード参照を標準フォルダ 02_questions から名前→id の順で解決する。
   resolveQuestionRef: (ref) =>
     fetchAnalyticsApi_("nfbResolveAnalyticsQuestionRef", { ref }, "Question 解決に失敗しました"),

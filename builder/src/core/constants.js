@@ -33,12 +33,15 @@ export const DB_NAME = "NestedFormBuilder";
 //      buildSchemaMapItems の出力（id/depth/indexLabel/label/children）のみ保存し、
 //      フォーム修正画面を開いた瞬間にサイドバー目次を即表示する。ナビ表示専用で
 //      編集ソースには流用しない（喪失時はフォーム本体ロード後に再生成）。
-export const DB_VERSION = 11;
+// v12: analyticsCrossSearches ストア（串刺しフォーム検索 = 第 3 のメタエンティティ定義）を追加。
+//      Question / Dashboard と同形の keyPath:"id" リストストア。加算のみ・既存ストア非破壊。
+export const DB_VERSION = 12;
 export const STORE_NAMES = {
   forms: "formsCache",
   settings: "settingsStore",
   analyticsQuestions: "analyticsQuestions",
   analyticsDashboards: "analyticsDashboards",
+  analyticsCrossSearches: "analyticsCrossSearches",
   uploadQueue: "uploadQueue",
   openHistory: "openHistory",
   registry: "registry",

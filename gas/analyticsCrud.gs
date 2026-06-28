@@ -280,8 +280,8 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
       file = folder.createFile(fileName, content, MimeType.PLAIN_TEXT);
     }
 
-    // 自動整理が ON で明示指定が無い場合は 02_questions / 03_dashboards へ作成する。
-    var stdAnalyticsKey = type === "questions" ? "questions" : "dashboards";
+    // 自動整理が ON で明示指定が無い場合は 02_questions / 03_dashboards / 09_cross_searches へ作成する。
+    var stdAnalyticsKey = type === "questions" ? "questions" : (type === "crossSearches" ? "crossSearches" : "dashboards");
 
     if (!file && saveMode === "copy_to_root") {
       var defaultFolder = StdFolders_autoFileFolderOrNull_(stdAnalyticsKey) || Analytics_getOrCreateFolder_(type);

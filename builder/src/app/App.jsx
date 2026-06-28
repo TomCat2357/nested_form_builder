@@ -15,6 +15,9 @@ import AdminFormListPage from "../pages/admin/AdminFormListPage.jsx";
 import AdminFormEditorPage from "../pages/admin/AdminFormEditorPage.jsx";
 import AdminDashboardListPage from "../pages/admin/AdminDashboardListPage.jsx";
 import AdminQuestionListPage from "../pages/admin/AdminQuestionListPage.jsx";
+import AdminCrossSearchListPage from "../pages/admin/AdminCrossSearchListPage.jsx";
+import CrossSearchEditorPage from "../pages/admin/CrossSearchEditorPage.jsx";
+import CrossFormSearchPage from "../pages/CrossFormSearchPage.jsx";
 import QuestionEditorPage from "../pages/admin/QuestionEditorPage.jsx";
 import PlaygroundPage from "../pages/PlaygroundPage.jsx";
 import AdminSettingsPage from "../pages/admin/AdminSettingsPage.jsx";
@@ -196,6 +199,8 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<UserRedirect />} />
       <Route path="/search" element={<SearchPage />} />
+      {/* 串刺しフォーム検索の検索画面（閲覧は誰でも可・/search と同様） */}
+      <Route path="/cross-search" element={<CrossFormSearchPage />} />
       <Route path="/form/:formId/new" element={<FormPage />} />
       <Route path="/form/:formId/entry/:entryId" element={<FormPage />} />
 
@@ -261,6 +266,32 @@ function AppRoutes() {
         element={(
           <AdminRoute>
             <DashboardEditorPage />
+          </AdminRoute>
+        )}
+      />
+
+      {/* 串刺しフォーム検索 管理（作成/編集は管理者のみ） */}
+      <Route
+        path="/admin/cross-searches"
+        element={(
+          <AdminRoute>
+            <AdminCrossSearchListPage />
+          </AdminRoute>
+        )}
+      />
+      <Route
+        path="/admin/cross-searches/new"
+        element={(
+          <AdminRoute>
+            <CrossSearchEditorPage />
+          </AdminRoute>
+        )}
+      />
+      <Route
+        path="/admin/cross-searches/:crossSearchId/edit"
+        element={(
+          <AdminRoute>
+            <CrossSearchEditorPage />
           </AdminRoute>
         )}
       />

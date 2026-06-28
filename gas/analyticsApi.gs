@@ -17,22 +17,31 @@
 var ANALYTICS_FOLDER_NAME = "Nested Form Builder - Analytics";
 var ANALYTICS_QUESTIONS_SUBFOLDER_NAME = "Questions";
 var ANALYTICS_DASHBOARDS_SUBFOLDER_NAME = "Dashboards";
+// 串刺しフォーム検索（cross-form search）= 第 3 のメタエンティティ（type "crossSearches"）。
+var ANALYTICS_CROSSSEARCHES_SUBFOLDER_NAME = "CrossSearches";
 var ANALYTICS_QUESTIONS_PROPERTY_KEY = "nfb.analytics.questions.mapping";
 var ANALYTICS_DASHBOARDS_PROPERTY_KEY = "nfb.analytics.dashboards.mapping";
+var ANALYTICS_CROSSSEARCHES_PROPERTY_KEY = "nfb.analytics.crossSearches.mapping";
 var ANALYTICS_MAPPING_VERSION = 2;
 
 // ---- Mapping store ----
 
 function Analytics_getPropertyKey_(type) {
-  return type === "questions" ? ANALYTICS_QUESTIONS_PROPERTY_KEY : ANALYTICS_DASHBOARDS_PROPERTY_KEY;
+  if (type === "questions") return ANALYTICS_QUESTIONS_PROPERTY_KEY;
+  if (type === "crossSearches") return ANALYTICS_CROSSSEARCHES_PROPERTY_KEY;
+  return ANALYTICS_DASHBOARDS_PROPERTY_KEY;
 }
 
 function Analytics_getResultKey_(type) {
-  return type === "questions" ? "question" : "dashboard";
+  if (type === "questions") return "question";
+  if (type === "crossSearches") return "crossSearch";
+  return "dashboard";
 }
 
 function Analytics_getResultListKey_(type) {
-  return type === "questions" ? "questions" : "dashboards";
+  if (type === "questions") return "questions";
+  if (type === "crossSearches") return "crossSearches";
+  return "dashboards";
 }
 
 function Analytics_getMapping_(type) {
@@ -63,7 +72,9 @@ function Analytics_saveMapping_(type, mapping) {
 function Analytics_getOrCreateFolder_(type) {
   var rootFolders = DriveApp.getFoldersByName(ANALYTICS_FOLDER_NAME);
   var rootFolder = rootFolders.hasNext() ? rootFolders.next() : DriveApp.createFolder(ANALYTICS_FOLDER_NAME);
-  var subName = type === "questions" ? ANALYTICS_QUESTIONS_SUBFOLDER_NAME : ANALYTICS_DASHBOARDS_SUBFOLDER_NAME;
+  var subName = ANALYTICS_DASHBOARDS_SUBFOLDER_NAME;
+  if (type === "questions") subName = ANALYTICS_QUESTIONS_SUBFOLDER_NAME;
+  else if (type === "crossSearches") subName = ANALYTICS_CROSSSEARCHES_SUBFOLDER_NAME;
   var subFolders = rootFolder.getFoldersByName(subName);
   return subFolders.hasNext() ? subFolders.next() : rootFolder.createFolder(subName);
 }
@@ -110,7 +121,26 @@ var ANALYTICS_HANDLERS_ = {
   "analytics_dashboards_folder_create":   { type: "dashboards", mode: "folder_create" },
   "analytics_dashboards_move":            { type: "dashboards", mode: "folder_move" },
   "analytics_dashboards_folder_rename":   { type: "dashboards", mode: "folder_rename" },
-  "analytics_dashboards_folder_delete":   { type: "dashboards", mode: "folder_delete" }
+  "analytics_dashboards_folder_delete":   { type: "dashboards", mode: "folder_delete" },
+  // 串刺しフォーム検索（cross-form search）。import / register / resolve_ref は v1 では非対応。
+  "analytics_cross_searches_list":            { type: "crossSearches", mode: "list" },
+  "analytics_cross_searches_get":             { type: "crossSearches", mode: "get",            idKey: "crossSearchId" },
+  "analytics_cross_searches_save":            { type: "crossSearches", mode: "save",           payloadKey: "crossSearch" },
+  "analytics_cross_searches_delete":          { type: "crossSearches", mode: "delete_one",     idKey: "crossSearchId" },
+  "analytics_cross_searches_delete_batch":    { type: "crossSearches", mode: "delete_batch",   idsKey: "crossSearchIds" },
+  "analytics_cross_searches_delete_with_files_batch": { type: "crossSearches", mode: "delete_with_files_batch", idsKey: "crossSearchIds" },
+  "analytics_cross_searches_archive":         { type: "crossSearches", mode: "archive_one",    idKey: "crossSearchId",  archived: true },
+  "analytics_cross_searches_unarchive":       { type: "crossSearches", mode: "archive_one",    idKey: "crossSearchId",  archived: false },
+  "analytics_cross_searches_archive_batch":   { type: "crossSearches", mode: "archive_batch",  idsKey: "crossSearchIds", archived: true },
+  "analytics_cross_searches_unarchive_batch": { type: "crossSearches", mode: "archive_batch",  idsKey: "crossSearchIds", archived: false },
+  "analytics_cross_searches_copy":            { type: "crossSearches", mode: "copy",           idKey: "crossSearchId" },
+  "analytics_cross_searches_import":          { type: "crossSearches", mode: "import" },
+  "analytics_cross_searches_register_import": { type: "crossSearches", mode: "register" },
+  "analytics_cross_searches_folders_list":    { type: "crossSearches", mode: "folders_list" },
+  "analytics_cross_searches_folder_create":   { type: "crossSearches", mode: "folder_create" },
+  "analytics_cross_searches_move":            { type: "crossSearches", mode: "folder_move" },
+  "analytics_cross_searches_folder_rename":   { type: "crossSearches", mode: "folder_rename" },
+  "analytics_cross_searches_folder_delete":   { type: "crossSearches", mode: "folder_delete" }
 };
 
 function Analytics_dispatch_(action, ctx) {
@@ -196,3 +226,23 @@ function nfbCreateAnalyticsDashboardFolder(path)         { return Analytics_runS
 function nfbMoveAnalyticsDashboards(payload)             { return Analytics_runScriptAction_("analytics_dashboards_move",           payload); }
 function nfbRenameAnalyticsDashboardFolder(payload)      { return Analytics_runScriptAction_("analytics_dashboards_folder_rename",  payload); }
 function nfbDeleteAnalyticsDashboardFolder(path)         { return Analytics_runScriptAction_("analytics_dashboards_folder_delete",  { path: path }); }
+// 串刺しフォーム検索（cross-form search）。関数名は makeEntityClient("CrossSearch") が導出する
+// nfb<Verb>AnalyticsCrossSearch[s] に一致させる（複数形は機械的に末尾 s を付与）。
+function nfbListAnalyticsCrossSearchs(options)           { return Analytics_runScriptAction_("analytics_cross_searches_list",       { options: options || {} }); }
+function nfbGetAnalyticsCrossSearch(crossSearchId)       { return Analytics_runScriptAction_("analytics_cross_searches_get",        { crossSearchId: crossSearchId }); }
+function nfbSaveAnalyticsCrossSearch(payload)            { return Analytics_runScriptAction_("analytics_cross_searches_save",       payload); }
+function nfbDeleteAnalyticsCrossSearch(crossSearchId)    { return Analytics_runScriptAction_("analytics_cross_searches_delete",     { crossSearchId: crossSearchId }); }
+function nfbDeleteAnalyticsCrossSearchs(crossSearchIds)  { return Analytics_runScriptAction_("analytics_cross_searches_delete_batch", { crossSearchIds: crossSearchIds }); }
+function nfbDeleteAnalyticsCrossSearchsWithFiles(crossSearchIds) { return Analytics_runScriptAction_("analytics_cross_searches_delete_with_files_batch", { crossSearchIds: crossSearchIds }); }
+function nfbArchiveAnalyticsCrossSearch(crossSearchId)   { return Analytics_runScriptAction_("analytics_cross_searches_archive",    { crossSearchId: crossSearchId }); }
+function nfbUnarchiveAnalyticsCrossSearch(crossSearchId) { return Analytics_runScriptAction_("analytics_cross_searches_unarchive",  { crossSearchId: crossSearchId }); }
+function nfbArchiveAnalyticsCrossSearchs(crossSearchIds) { return Analytics_runScriptAction_("analytics_cross_searches_archive_batch", { crossSearchIds: crossSearchIds }); }
+function nfbUnarchiveAnalyticsCrossSearchs(crossSearchIds) { return Analytics_runScriptAction_("analytics_cross_searches_unarchive_batch", { crossSearchIds: crossSearchIds }); }
+function nfbCopyAnalyticsCrossSearch(crossSearchId)      { return Analytics_runScriptAction_("analytics_cross_searches_copy",       { crossSearchId: crossSearchId }); }
+function nfbImportAnalyticsCrossSearchsFromDrive(url)    { return Analytics_runScriptAction_("analytics_cross_searches_import",      { url: url }); }
+function nfbRegisterImportedAnalyticsCrossSearch(payload) { return Analytics_runScriptAction_("analytics_cross_searches_register_import", payload); }
+function nfbListAnalyticsCrossSearchFolders()            { return Analytics_runScriptAction_("analytics_cross_searches_folders_list", {}); }
+function nfbCreateAnalyticsCrossSearchFolder(path)       { return Analytics_runScriptAction_("analytics_cross_searches_folder_create", { path: path }); }
+function nfbMoveAnalyticsCrossSearchs(payload)           { return Analytics_runScriptAction_("analytics_cross_searches_move",       payload); }
+function nfbRenameAnalyticsCrossSearchFolder(payload)    { return Analytics_runScriptAction_("analytics_cross_searches_folder_rename", payload); }
+function nfbDeleteAnalyticsCrossSearchFolder(path)       { return Analytics_runScriptAction_("analytics_cross_searches_folder_delete", { path: path }); }
