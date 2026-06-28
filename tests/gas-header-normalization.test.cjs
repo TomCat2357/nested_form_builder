@@ -148,3 +148,86 @@ test("ヘッダーマップ生成でも前後空白を無視する", () => {
   assert.equal(map["id"], 1);
   assert.equal(map["質問カード"], 2);
 });
+
+// ---------------------------------------------------------------------------
+// フロント / GAS の「列ヘッダ（列キー）セグメント正規化」等価性。
+// 双子:
+//   フロント: builder/src/core/schemaUtils.js
+//             normalizeHeaderSegment / headerFieldSegment / headerBranchSegment
+//   GAS:      gas/sheetsHeaders.gs
+//             Sheets_normalizeHeaderSegment_ / Sheets_headerFieldSegmentWithFallback_ /
+//             Sheets_headerBranchSegment_
+// 永続フォルダのオープン時 effect が作る path を GAS の col.key と一致させるため、
+// CRLF/CR 畳み込み・前後空白・空ラベル fallback の振る舞いがドリフトしないことを担保する。
+// ---------------------------------------------------------------------------
+
+async function loadFrontHeaderSegments() {
+  const mod = await import("../builder/src/core/schemaUtils.js");
+  return {
+    normalizeHeaderSegment: mod.normalizeHeaderSegment,
+    headerFieldSegment: mod.headerFieldSegment,
+    headerBranchSegment: mod.headerBranchSegment,
+  };
+}
+
+const SEGMENT_INPUTS = [
+  "  abc  ",
+  "a\r\nb",
+  "a\rb",
+  "a\nb",
+  "\r\n 前後 \r\n",
+  "親\r\n子",
+  "",
+  "   ",
+  "No.",
+  "性別/男",
+];
+
+test("normalizeHeaderSegment は GAS Sheets_normalizeHeaderSegment_ と一致する", async () => {
+  const gas = loadGasContext();
+  const front = await loadFrontHeaderSegments();
+  for (const input of SEGMENT_INPUTS) {
+    assert.equal(
+      front.normalizeHeaderSegment(input),
+      gas.Sheets_normalizeHeaderSegment_(input),
+      `normalizeHeaderSegment(${JSON.stringify(input)})`,
+    );
+  }
+  // null / undefined / 数値も同値（いずれも空 or 文字列化）
+  assert.equal(front.normalizeHeaderSegment(null), gas.Sheets_normalizeHeaderSegment_(null));
+  assert.equal(front.normalizeHeaderSegment(undefined), gas.Sheets_normalizeHeaderSegment_(undefined));
+  assert.equal(front.normalizeHeaderSegment(123), gas.Sheets_normalizeHeaderSegment_(123));
+});
+
+test("headerBranchSegment は GAS Sheets_headerBranchSegment_ と一致する（空は null）", async () => {
+  const gas = loadGasContext();
+  const front = await loadFrontHeaderSegments();
+  for (const input of SEGMENT_INPUTS) {
+    assert.equal(
+      front.headerBranchSegment(input),
+      gas.Sheets_headerBranchSegment_(input),
+      `headerBranchSegment(${JSON.stringify(input)})`,
+    );
+  }
+});
+
+test("headerFieldSegment は GAS Sheets_headerFieldSegmentWithFallback_ と一致する（fallback 含む）", async () => {
+  const gas = loadGasContext();
+  const front = await loadFrontHeaderSegments();
+  const cases = [
+    [{ label: "  名前 " }, { indexTrail: [1] }],
+    [{ label: "親\r\n子" }, { indexTrail: [1, 2] }],
+    [{ label: "", type: "text" }, { indexTrail: [2, 3] }],
+    [{ label: "   ", type: "select" }, { indexTrail: [4] }],
+    [{ label: "\r\n", type: "" }, { indexTrail: [1] }],
+    [{ type: "fileUpload" }, { indexTrail: [5, 1, 2] }],
+    [{}, { indexTrail: [9] }],
+  ];
+  for (const [field, ctx] of cases) {
+    assert.equal(
+      front.headerFieldSegment(field, ctx),
+      gas.Sheets_headerFieldSegmentWithFallback_(field, ctx),
+      `headerFieldSegment(${JSON.stringify(field)}, ${JSON.stringify(ctx)})`,
+    );
+  }
+});

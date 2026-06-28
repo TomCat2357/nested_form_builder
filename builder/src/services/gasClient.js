@@ -447,9 +447,10 @@ export const driveBrowserResolve = ({ idOrUrl } = {}) =>
   fetchGasApi("nfbDriveBrowserResolve", { idOrUrl }, "Driveアイテムの解決に失敗しました");
 
 // 未保存キャンセル時、セッションで新規生成したアップロードフォルダ（中の追加ファイルごと）を
-// ゴミ箱へ移す。物理 URL で指定する。
-export const trashDriveFolderByUrl = (folderUrl) =>
-  fetchGasApi("nfbTrashDriveFolderByUrl", { folderUrl }, "アップロードフォルダの削除に失敗しました");
+// ゴミ箱へ移す。物理 URL で指定する。force=true のときは KEEP（永続）保護をバイパスする
+// （未保存の新規レコードを破棄する場合に eager 作成した KEEP フォルダの孤児化を防ぐ用途）。
+export const trashDriveFolderByUrl = (folderUrl, { force = false } = {}) =>
+  fetchGasApi("nfbTrashDriveFolderByUrl", { folderUrl, force }, "アップロードフォルダの削除に失敗しました");
 
 export const createRecordPrintDocument = (payload) => {
   if (!isSingleRecordPrintPayload(payload) && !isMultiRecordPrintPayload(payload)) {

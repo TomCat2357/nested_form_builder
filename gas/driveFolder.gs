@@ -208,9 +208,11 @@ function nfbTrashDriveFolderByUrl(payload) {
   return nfbSafeCall_(function() {
     var url = payload && typeof payload.folderUrl === "string" ? payload.folderUrl.trim() : "";
     if (!url) return { ok: true, trashed: false };
+    var force = !!(payload && payload.force);
     var folder = nfbResolveFolderFromInputIfExists_(url);
-    // 永続（KEEP）フォルダはキャンセル/破棄でも消さない（レコード削除のパージ時のみ）。
-    if (folder && nfbIsRecordKeepFolder_(folder)) return { ok: true, trashed: false };
+    // 永続（KEEP）フォルダは通常キャンセル/破棄でも消さない（レコード削除のパージ時のみ）。
+    // ただし force 指定時（未保存の新規レコードを破棄）は eager 作成フォルダの孤児化を防ぐため消す。
+    if (folder && !force && nfbIsRecordKeepFolder_(folder)) return { ok: true, trashed: false };
     if (folder && typeof folder.setTrashed === "function") {
       folder.setTrashed(true);
       return { ok: true, trashed: true };
