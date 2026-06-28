@@ -49,8 +49,10 @@
 4. **ウェブアプリとしてデプロイ**（アクセス: 全員 / 実行: 自分）。`/exec` URL を控える。
 5. 本体アプリの対象フォーム設定 →「外部アクション」:
    - **検索一覧ボタン**: `settings.externalActions.search[]` に **URL=`<exec>`・adminOnly=OFF** で 1 つ追加（label 例「許可証等の出力」）。
-     一覧から従事者を渡すには **親フォームの formLink「従事者情報」の `includeChildData` を ON** にする（現在 OFF）。
-   - **単票ボタン**: レコード詳細の外部アクションボタンに同 URL を設定（単票は子を常時インラインするので includeChildData 不要）。
+     従事者（子）は **送信時に全 formLink を on-demand 取得してインライン展開する**ので
+     `includeChildData` の ON/OFF に依存しない（本体 `useSearchPageState.js` の `externalActionChildFormFields`
+     は includeChildData で絞らず全 formLink を対象にする）。`includeChildData` は一覧の**表示**用フラグ。
+   - **単票ボタン**: レコード詳細の外部アクションボタンに同 URL を設定（単票も子を常時インラインする）。
    - `/dev` ではサーバ間リレー不可＝**`/exec` 必須**。
    - 本体に誤送信防止シークレット（`NFB_EXT_ACTION_SECRET`）を設定している場合のみ、同じ値を `CHO2_EXT_ACTION_SECRET` に登録。
 

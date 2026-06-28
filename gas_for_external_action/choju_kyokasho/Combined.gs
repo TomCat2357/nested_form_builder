@@ -673,14 +673,39 @@ function Cho2_outputFileName_(app, plan) {
   return base.replace(/[\\/:*?"<>|]/g, "-");
 }
 
+// テンプレートを複製して Google Sheet 化した一時ファイルの id を返す。共有ドライブ上のテンプレでも
+// 確実にコピーするため supportsAllDrives:true を付ける（本体 gas/driveFile.gs nfbMakeDriveFileCopy_ と同方針）。
+// Advanced Drive が失敗（File not found 等）したら DriveApp.makeCopy にフォールバックする（テンプレは
+// 既に Google Sheet 形式の前提なので変換不要）。両方失敗時はアクセス権を案内する明確なエラーを投げる。
+function Cho2_copyTemplateToTmp_(fileId, title) {
+  try {
+    var copied = Drive.Files.copy(
+      { title: title, mimeType: "application/vnd.google-apps.spreadsheet" },
+      fileId,
+      { supportsAllDrives: true }
+    );
+    if (copied && copied.id) return copied.id;
+  } catch (e) {
+    // フォールバックへ（多くは共有ドライブ/権限による File not found か Advanced Drive 無効）。
+  }
+  try {
+    return DriveApp.getFileById(fileId).makeCopy(title).getId();
+  } catch (e2) {
+    throw new Error(
+      "テンプレート（許可証等様式）をコピーできませんでした。Web アプリのデプロイ実行アカウントが、" +
+      "このファイル（共有ドライブ上の可能性があります）にアクセスできるか確認してください。fileId: " + fileId +
+      "（詳細: " + (e2 && e2.message ? e2.message : e2) + "）"
+    );
+  }
+}
+
 // テンプレを複製 → Google Sheet 化 → シート複製・記入 → xlsx エクスポート → Drive 保存。一時 Sheet は削除。
 function Cho2_renderWorkbook_(plan, fileName) {
   var fileId = Cho2_templateFileId_();
   if (!fileId) throw new Error("テンプレート（許可証等様式）の URL が未設定です。画面の「テンプレートの保存先」で設定してください。");
   var tmpId = null;
   try {
-    var copied = Drive.Files.copy({ title: "_nfb_kyokasho_tmp", mimeType: "application/vnd.google-apps.spreadsheet" }, fileId);
-    tmpId = copied.id;
+    tmpId = Cho2_copyTemplateToTmp_(fileId, "_nfb_kyokasho_tmp");
     var ss = SpreadsheetApp.openById(tmpId);
 
     // 従事者名簿（クリア→記入）
@@ -710,7 +735,7 @@ function Cho2_renderWorkbook_(plan, fileName) {
     var file = folder.createFile(blob);
     return { url: file.getUrl(), name: file.getName() };
   } finally {
-    if (tmpId) { try { Drive.Files.remove(tmpId); } catch (e) { /* no-op */ } }
+    if (tmpId) { try { Drive.Files.remove(tmpId, { supportsAllDrives: true }); } catch (e) { /* no-op */ } }
   }
 }
 
@@ -811,11 +836,13 @@ function Cho2_resolveOutputFolder_() {
 }
 
 // スコープ再認証トリガ（エディタで一度実行して同意する）。
+// xlsx エクスポートで UrlFetchApp を使うため script.external_request も同意させる。
 function Cho2_authorize() {
   DriveApp.getRootFolder().getName();
   Drive.Files.list({ maxResults: 1 });
   SpreadsheetApp.getActiveSpreadsheet();
   Session.getActiveUser().getEmail();
+  try { UrlFetchApp.fetch("https://www.googleapis.com/drive/v3/about?fields=kind", { headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true }); } catch (e) { /* 同意取得目的なので失敗は無視 */ }
   return "authorized";
 }
 
@@ -941,6 +968,24 @@ function Cho2_buildPreview_(data) {
   return out;
 }
 
+// デバッグ表示用: 受信 payload の件数と先頭レコードの items 先頭 N 件（question/value）。
+// プレビューが想定外（氏名崩れ等）のとき、ライブ payload の実形式を画面で確認するために使う。
+function Cho2_buildDebug_(data) {
+  var out = { recordCount: 0, itemCount: 0, items: [] };
+  if (!data || typeof data !== "object") return out;
+  var recs = (Object.prototype.toString.call(data.records) === "[object Array]") ? data.records : [];
+  out.recordCount = recs.length;
+  var first = recs[0] || {};
+  var items = (Object.prototype.toString.call(first.items) === "[object Array]") ? first.items : [];
+  out.itemCount = items.length;
+  for (var i = 0; i < items.length && i < 30; i++) {
+    var it = items[i] || {}, v = it.value;
+    if (v && typeof v === "object") v = (typeof v.text === "string") ? v.text : JSON.stringify(v);
+    out.items.push({ q: String(it.question == null ? "" : it.question), v: String(v == null ? "" : v) });
+  }
+  return out;
+}
+
 function Cho2_renderGenPage_(ctxToken) {
   var token = String(ctxToken == null ? "" : ctxToken);
   var data = Cho2_readCtx_(token);
@@ -949,6 +994,7 @@ function Cho2_renderGenPage_(ctxToken) {
   var ctxJs = JSON.stringify(token);
   var prevJs = JSON.stringify(preview);
   var tplJs = JSON.stringify(tplUrl);
+  var dbgJs = JSON.stringify(Cho2_buildDebug_(data));
   var html = `<!DOCTYPE html><html lang="ja"><head><meta charset="utf-8"><title>許可証等の出力</title>
 <style>
 body{font-family:-apple-system,"Segoe UI",Roboto,"Noto Sans JP",sans-serif;background:#f8f9fa;margin:0;padding:24px;color:#202124;}
@@ -982,9 +1028,10 @@ th{background:#f1f3f4;}
 <div id="apps"></div>
 <div id="status"></div>
 <div id="result"></div>
+<details style="margin-top:16px"><summary class="muted" style="cursor:pointer">受信データの確認（デバッグ）</summary><div id="dbg" style="margin-top:8px"></div></details>
 </div>
 <script>
-var CTX=${ctxJs}; var PREVIEW=${prevJs}; var TPL=${tplJs};
+var CTX=${ctxJs}; var PREVIEW=${prevJs}; var TPL=${tplJs}; var DBG=${dbgJs};
 function $(i){return document.getElementById(i);}
 function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
 function showTpl(u){ $("curTpl").innerHTML = u ? ('<a href="'+esc(u)+'" target="_blank" rel="noopener">'+esc(u)+'</a>') : '<span class="err">未設定</span>'; }
@@ -1034,7 +1081,16 @@ function doGen(){
   }).withFailureHandler(function(e){ $("gen").disabled=false; $("status").innerHTML='<span class="err">エラー: '+esc(e.message)+'</span>'; })
     .Cho2_generate(CTX, JSON.stringify({rowIndex:idx, forcedType:forced}));
 }
-renderApps(); updateTplGate();
+function renderDebug(){
+  var d=$("dbg"); if(!d) return;
+  var h='<div class="muted">records: '+esc(DBG.recordCount)+' / 先頭レコード items: '+esc(DBG.itemCount)+'（先頭'+(DBG.items?DBG.items.length:0)+'件を表示）</div>';
+  if(DBG.items&&DBG.items.length){ h+='<table><thead><tr><th>question</th><th>value</th></tr></thead><tbody>';
+    for(var i=0;i<DBG.items.length;i++){ h+='<tr><td>'+esc(DBG.items[i].q)+'</td><td>'+esc(DBG.items[i].v)+'</td></tr>'; }
+    h+='</tbody></table>'; }
+  else h+='<div class="muted">items がありません。</div>';
+  d.innerHTML=h;
+}
+renderApps(); updateTplGate(); renderDebug();
 </script></body></html>`;
   return HtmlService.createHtmlOutput(html).setTitle("許可証等の出力").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
