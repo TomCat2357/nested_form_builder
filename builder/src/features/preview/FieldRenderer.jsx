@@ -50,6 +50,17 @@ const toDateInputValue = (value) => formatCanonical(value, "date") || "";
 
 const identityFn = (v) => v || "";
 
+// 各フィールド型に共通する外枠。ラベル → 補足コメント → 本体（children）の縦並びを統一する。
+// label / comment は呼び出し側で renderLabel()/renderComment() の結果を渡す（型ごとにラベルの
+// タグやフォールバックが異なるため）。formLink のようにラベルを持たない型は label を省略する。
+const FieldWrapper = ({ label = null, comment = null, children }) => (
+  <div className="preview-field">
+    {label}
+    {comment}
+    {children}
+  </div>
+);
+
 const FieldRenderer = ({
   field,
   value,
@@ -138,11 +149,12 @@ const FieldRenderer = ({
   // この early-return は if (readOnly) の手前なので、編集・閲覧の両モードを同時にカバーする。
   if (field.type === "message") {
     return (
-      <div className="preview-field">
-        {renderLabel({ tag: "div", fallback: "メッセージ", showRequired: false })}
-        {renderComment()}
+      <FieldWrapper
+        label={renderLabel({ tag: "div", fallback: "メッセージ", showRequired: false })}
+        comment={renderComment()}
+      >
         {renderChildrenAll ? <div className={s.child.className} data-depth={depth + 1}>{renderChildrenAll()}</div> : null}
-      </div>
+      </FieldWrapper>
     );
   }
 
@@ -157,9 +169,10 @@ const FieldRenderer = ({
     const isFullQueryTpl = typeof field.templateText === "string" && FULL_QUERY_SUBST_RE.test(field.templateText);
     const showLoading = substitutionPending && isFullQueryTpl && isEmptyValue;
     return (
-      <div className="preview-field">
-        {renderLabel({ tag: "div", showRequired: false })}
-        {renderComment()}
+      <FieldWrapper
+        label={renderLabel({ tag: "div", showRequired: false })}
+        comment={renderComment()}
+      >
         {computedError
           ? <div className="nf-text-danger-ink nf-text-12">{computedError}</div>
           : <div className="nf-input nf-input--readonly">
@@ -168,15 +181,13 @@ const FieldRenderer = ({
                 : (!isEmptyValue ? String(computedValue) : "\u00A0")}
             </div>
         }
-      </div>
+      </FieldWrapper>
     );
   }
 
   if (field.type === "printTemplate") {
     return (
-      <div className="preview-field">
-        {renderLabel({ showRequired: false })}
-        {renderComment()}
+      <FieldWrapper label={renderLabel({ showRequired: false })} comment={renderComment()}>
         <button
           type="button"
           className="nf-btn-outline nf-text-13"
@@ -185,7 +196,7 @@ const FieldRenderer = ({
         >
           {getPrintTemplateOutputLabel(field?.printTemplateAction)}
         </button>
-      </div>
+      </FieldWrapper>
     );
   }
 
@@ -193,9 +204,7 @@ const FieldRenderer = ({
     // 管理者限定カードは管理者以外には表示すらしない。
     if (field.externalAction?.adminOnly && !isAdmin) return null;
     return (
-      <div className="preview-field">
-        {renderLabel({ showRequired: false })}
-        {renderComment()}
+      <FieldWrapper label={renderLabel({ showRequired: false })} comment={renderComment()}>
         <button
           type="button"
           className="nf-btn-outline nf-text-13"
@@ -204,7 +213,7 @@ const FieldRenderer = ({
         >
           外部アクション
         </button>
-      </div>
+      </FieldWrapper>
     );
   }
 
@@ -215,8 +224,7 @@ const FieldRenderer = ({
     if (hideFormLink) return null;
     const childCount = formLinkChildCounts?.[field.id];
     return (
-      <div className="preview-field">
-        {renderComment()}
+      <FieldWrapper comment={renderComment()}>
         <span style={{ display: "inline-flex", alignItems: "center", gap: "8px" }}>
           <button
             type="button"
@@ -229,7 +237,7 @@ const FieldRenderer = ({
           </button>
           {Number.isFinite(childCount) && <span className="badge ghost">{childCount}件</span>}
         </span>
-      </div>
+      </FieldWrapper>
     );
   }
 
@@ -243,9 +251,7 @@ const FieldRenderer = ({
       ? () => onDeleteDriveFolder(field.id)
       : undefined;
     return (
-      <div className="preview-field">
-        {renderLabel()}
-        {renderComment()}
+      <FieldWrapper label={renderLabel()} comment={renderComment()}>
         <FileUploadField
           field={field}
           value={value}
@@ -258,7 +264,7 @@ const FieldRenderer = ({
           canDeleteDriveFolder={canDeleteDriveFolder}
           onDeleteDriveFolder={handleFieldDeleteDriveFolder}
         />
-      </div>
+      </FieldWrapper>
     );
   }
 
@@ -286,23 +292,18 @@ const FieldRenderer = ({
       : undefined;
 
     return (
-      <div className="preview-field">
-        {renderLabel()}
-        {renderComment()}
+      <FieldWrapper label={renderLabel()} comment={renderComment()}>
         <div className={readOnlyClassName} style={readOnlyTextareaStyle}>{renderReadOnlyValue()}</div>
         {childrenForCheckboxes}
         {childrenCommon}
-      </div>
+      </FieldWrapper>
     );
   }
 
   const rph = (fallback = "") => resolveConfiguredPlaceholder(field, fallback);
 
   return (
-    <div className="preview-field">
-      {renderLabel()}
-      {renderComment()}
-
+    <FieldWrapper label={renderLabel()} comment={renderComment()}>
       {(field.type === "text" || field.type === "userName" || field.type === "email" || field.type === "phone") && !isTextareaField(field) && (
         <input
           type={field.type === "email" ? "email" : (field.type === "phone" ? "tel" : "text")}
@@ -463,7 +464,7 @@ const FieldRenderer = ({
       )}
 
       {renderChildrenAll && field.type !== "checkboxes" && <div className={s.child.className} data-depth={depth + 1}>{renderChildrenAll()}</div>}
-    </div>
+    </FieldWrapper>
   );
 };
 

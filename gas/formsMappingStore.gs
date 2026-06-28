@@ -108,17 +108,27 @@ function Forms_normalizeMappingForStorage_(value) {
 }
 
 /**
- * マッピング全体を正規化
+ * マッピング全体を正規化する共通コア。Forms（nameKey="title"）/ Analytics（nameKey="name"）で共有する。
+ * @param {Object} mapping id -> 値
+ * @param {string} nameKey ラベル文字列を格納するキー名（"title" or "name"）
+ * @returns {Object} 正規化済みマッピング
+ */
+function Nfb_normalizeMapping_(mapping, nameKey) {
+  var normalized = {};
+  for (var id in mapping) {
+    if (!mapping.hasOwnProperty(id)) continue;
+    normalized[id] = Nfb_normalizeMappingValue_(mapping[id], nameKey);
+  }
+  return normalized;
+}
+
+/**
+ * マッピング全体を正規化。Forms 用の薄いラッパー（nameKey="title"）。
  * @param {Object} mapping
  * @returns {Object} 正規化済みマッピング
  */
 function Forms_normalizeMapping_(mapping) {
-  var normalized = {};
-  for (var formId in mapping) {
-    if (!mapping.hasOwnProperty(formId)) continue;
-    normalized[formId] = Forms_normalizeMappingValue_(mapping[formId]);
-  }
-  return normalized;
+  return Nfb_normalizeMapping_(mapping, "title");
 }
 
 /**

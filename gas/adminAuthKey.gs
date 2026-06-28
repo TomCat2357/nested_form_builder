@@ -14,15 +14,44 @@ function EnsureAdminSettingsEnabled_() {
 }
 
 /**
+ * 管理者設定ゲート付きのスクリプトプロパティ getter 共通実装。
+ * 管理者設定が無効なモードでは "" を返し、有効なら propKey の値（未設定は ""）を返す。
+ * GetAdminKey_ / GetAdminEmail_ が共有する（ExtActionSecret はゲートなしのため対象外）。
+ * @param {string} propKey
+ * @return {string}
+ */
+function Nfb_getGatedAdminProperty_(propKey) {
+  if (!Nfb_isAdminSettingsEnabled_()) {
+    return "";
+  }
+  return Nfb_getScriptProperties_().getProperty(propKey) || "";
+}
+
+/**
+ * 管理者専用のスクリプトプロパティ setter 共通実装。
+ * EnsureAdminSettingsEnabled_ で保存可否を検証し、値を文字列化して保存、
+ * { ok: true, [resultKey]: value } を返す。SetAdminKey_ / SetExtActionSecret_ が共有する
+ * （SetAdminEmail_ はロックアウト防止の独自検証があるため対象外）。
+ * @param {string} propKey
+ * @param {string} resultKey 返却オブジェクトに値を載せるキー名
+ * @param {string} newValue
+ * @return {Object}
+ */
+function Nfb_setAdminProperty_(propKey, resultKey, newValue) {
+  EnsureAdminSettingsEnabled_();
+  var value = String(newValue || "");
+  Nfb_getScriptProperties_().setProperty(propKey, value);
+  var out = { ok: true };
+  out[resultKey] = value;
+  return out;
+}
+
+/**
  * 管理者キーを取得する
  * @return {string} 管理者キー（未設定の場合は空文字）
  */
 function GetAdminKey_() {
-  if (!Nfb_isAdminSettingsEnabled_()) {
-    return "";
-  }
-  var props = Nfb_getScriptProperties_();
-  return props.getProperty(NFB_ADMIN_KEY) || "";
+  return Nfb_getGatedAdminProperty_(NFB_ADMIN_KEY);
 }
 
 /**
@@ -31,9 +60,5 @@ function GetAdminKey_() {
  * @return {Object} 結果オブジェクト
  */
 function SetAdminKey_(newKey) {
-  EnsureAdminSettingsEnabled_();
-  var props = Nfb_getScriptProperties_();
-  var key = String(newKey || "");
-  props.setProperty(NFB_ADMIN_KEY, key);
-  return { ok: true, adminKey: key };
+  return Nfb_setAdminProperty_(NFB_ADMIN_KEY, "adminKey", newKey);
 }

@@ -18,6 +18,20 @@
 // 各エントリの run(raw) は ctx.raw（リクエストペイロード）を受け取り、正規化済み
 // レスポンスを返す。引数バリデーションもここに集約する。
 
+// 状態フラグ更新（archive / readonly / childonly）の run ハンドラ生成。
+// apply(ids) は「raw から取り出した id 配列」にフラグ込みで setter を適用する薄い thunk。
+// setter 名は thunk 内で遅延参照する（FORMS_HANDLERS_ 初期化時に setter 未ロードでも
+// ReferenceError にしない＝formsPublicApi.gs を単体ロードするテストを壊さない）。
+// single=true は単一 ID 用で結果を Nfb_unwrapSingleResult_ で { form } へ畳む。
+function Forms_makeStateRun_(apply, single) {
+  return function(raw) {
+    if (single) {
+      return Nfb_unwrapSingleResult_(apply([raw && raw.formId]), "forms", "form");
+    }
+    return apply((raw && raw.formIds) || []);
+  };
+}
+
 var FORMS_HANDLERS_ = {
   "forms_list": {
     run: function(raw) {
@@ -110,42 +124,21 @@ var FORMS_HANDLERS_ = {
   "forms_delete_with_files_batch": {
     run: function(raw) { return Forms_deleteFormsWithFiles_((raw && raw.formIds) || []); }
   },
-  "forms_archive_one": {
-    run: function(raw) { return Nfb_unwrapSingleResult_(Forms_setFormsArchivedState_([raw && raw.formId], true), "forms", "form"); }
-  },
-  "forms_unarchive_one": {
-    run: function(raw) { return Nfb_unwrapSingleResult_(Forms_setFormsArchivedState_([raw && raw.formId], false), "forms", "form"); }
-  },
-  "forms_archive_batch": {
-    run: function(raw) { return Forms_setFormsArchivedState_((raw && raw.formIds) || [], true); }
-  },
-  "forms_unarchive_batch": {
-    run: function(raw) { return Forms_setFormsArchivedState_((raw && raw.formIds) || [], false); }
-  },
-  "forms_readonly_set_one": {
-    run: function(raw) { return Nfb_unwrapSingleResult_(Forms_setFormsReadOnlyState_([raw && raw.formId], true), "forms", "form"); }
-  },
-  "forms_readonly_clear_one": {
-    run: function(raw) { return Nfb_unwrapSingleResult_(Forms_setFormsReadOnlyState_([raw && raw.formId], false), "forms", "form"); }
-  },
-  "forms_readonly_set_batch": {
-    run: function(raw) { return Forms_setFormsReadOnlyState_((raw && raw.formIds) || [], true); }
-  },
-  "forms_readonly_clear_batch": {
-    run: function(raw) { return Forms_setFormsReadOnlyState_((raw && raw.formIds) || [], false); }
-  },
-  "forms_childonly_set_one": {
-    run: function(raw) { return Nfb_unwrapSingleResult_(Forms_setFormsChildOnlyState_([raw && raw.formId], true), "forms", "form"); }
-  },
-  "forms_childonly_clear_one": {
-    run: function(raw) { return Nfb_unwrapSingleResult_(Forms_setFormsChildOnlyState_([raw && raw.formId], false), "forms", "form"); }
-  },
-  "forms_childonly_set_batch": {
-    run: function(raw) { return Forms_setFormsChildOnlyState_((raw && raw.formIds) || [], true); }
-  },
-  "forms_childonly_clear_batch": {
-    run: function(raw) { return Forms_setFormsChildOnlyState_((raw && raw.formIds) || [], false); }
-  },
+  // archive / readonly / childonly × set/clear × one/batch（計12）。Forms_makeStateRun_ で
+  // 「単一/複数 ID 取り出し」「single の結果畳み込み」を一元化し、各エントリは setter ＋ フラグの
+  // 薄い thunk だけを渡す（setter は thunk 内で遅延参照）。
+  "forms_archive_one":          { run: Forms_makeStateRun_(function(ids) { return Forms_setFormsArchivedState_(ids, true); }, true) },
+  "forms_unarchive_one":        { run: Forms_makeStateRun_(function(ids) { return Forms_setFormsArchivedState_(ids, false); }, true) },
+  "forms_archive_batch":        { run: Forms_makeStateRun_(function(ids) { return Forms_setFormsArchivedState_(ids, true); }, false) },
+  "forms_unarchive_batch":      { run: Forms_makeStateRun_(function(ids) { return Forms_setFormsArchivedState_(ids, false); }, false) },
+  "forms_readonly_set_one":     { run: Forms_makeStateRun_(function(ids) { return Forms_setFormsReadOnlyState_(ids, true); }, true) },
+  "forms_readonly_clear_one":   { run: Forms_makeStateRun_(function(ids) { return Forms_setFormsReadOnlyState_(ids, false); }, true) },
+  "forms_readonly_set_batch":   { run: Forms_makeStateRun_(function(ids) { return Forms_setFormsReadOnlyState_(ids, true); }, false) },
+  "forms_readonly_clear_batch": { run: Forms_makeStateRun_(function(ids) { return Forms_setFormsReadOnlyState_(ids, false); }, false) },
+  "forms_childonly_set_one":    { run: Forms_makeStateRun_(function(ids) { return Forms_setFormsChildOnlyState_(ids, true); }, true) },
+  "forms_childonly_clear_one":  { run: Forms_makeStateRun_(function(ids) { return Forms_setFormsChildOnlyState_(ids, false); }, true) },
+  "forms_childonly_set_batch":  { run: Forms_makeStateRun_(function(ids) { return Forms_setFormsChildOnlyState_(ids, true); }, false) },
+  "forms_childonly_clear_batch":{ run: Forms_makeStateRun_(function(ids) { return Forms_setFormsChildOnlyState_(ids, false); }, false) },
   "forms_copy": {
     run: function(raw) {
       var err = Nfb_requireField_(raw, "formId", "formId is required");
@@ -200,15 +193,9 @@ function Forms_dispatch_(action, ctx) {
 }
 
 // ---- doPost (ACTION_DEFINITIONS_) から呼ばれる handler ----
-// AnalyticsApi_*_ と同じく Forms_dispatch_ への 1 行転送。
-
-function FormsApi_List_(ctx)   { return Forms_dispatch_("forms_list", ctx); }
-function FormsApi_Get_(ctx)    { return Forms_dispatch_("forms_get", ctx); }
-function FormsApi_Create_(ctx) { return Forms_dispatch_("forms_save", ctx); }
-function FormsApi_Import_(ctx) { return Forms_dispatch_("forms_import", ctx); }
-function FormsApi_Update_(ctx) { return Forms_dispatch_("forms_update", ctx); }
-function FormsApi_Delete_(ctx) { return Forms_dispatch_("forms_delete_one", ctx); }
-function FormsApi_ResolveFormRef_(ctx) { return Forms_dispatch_("forms_resolve_ref", ctx); }
+// 純粋な 1 行転送だった FormsApi_*_ は撤去し、ACTION_DEFINITIONS_（Code.gs）から
+// action 名で Forms_dispatch_ を直接呼ぶ（forms_* の他エントリと同じ書き味）。
+// archived / readOnly のフラグ正規化を伴う 2 つだけは専用ハンドラとして残す。
 
 function FormsApi_SetArchived_(ctx) {
   var raw = (ctx && ctx.raw) || {};

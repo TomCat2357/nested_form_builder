@@ -7,7 +7,7 @@ import { useFormCacheSync } from "../../app/hooks/useFormCacheSync.js";
 import { useSetSelection } from "../../app/hooks/useSetSelection.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { useBuilderSettings } from "../../features/settings/settingsStore.js";
-import { toUnixMs, toComparableUnixMs, formatUnixMsValue } from "../../utils/dateTime.js";
+import { toUnixMs, sortByModifiedDesc, formatUnixMsValue } from "../../utils/dateTime.js";
 import { buildSharedFormUrl } from "../../utils/formShareUrl.js";
 import ImportUrlDialog from "./AdminImportUrlDialog.jsx";
 import { AdminListSidebarActions, AdminListFolderDialogs } from "./AdminListShared.jsx";
@@ -38,14 +38,7 @@ export default function AdminFormListPage() {
   const { selected: selectedFolders, toggle: toggleFolder, clear: clearFolderSelection } = useSetSelection();
   const [copiedId, setCopiedId] = useState(null);
 
-  const sortedForms = useMemo(() => {
-    const list = forms.slice();
-    list.sort(
-      (a, b) => toComparableUnixMs(b.modifiedAtUnixMs ?? b.modifiedAt) -
-        toComparableUnixMs(a.modifiedAtUnixMs ?? a.modifiedAt)
-    );
-    return list;
-  }, [forms]);
+  const sortedForms = useMemo(() => sortByModifiedDesc(forms), [forms]);
 
   const loadFailureRows = useMemo(() => {
     const rows = (loadFailures || []).map((item) => ({
@@ -57,11 +50,7 @@ export default function AdminFormListPage() {
       modifiedAtUnixMs: toUnixMs(item.lastTriedAt),
       loadError: item,
     }));
-    rows.sort(
-      (a, b) => toComparableUnixMs(b.modifiedAtUnixMs ?? b.modifiedAt) -
-        toComparableUnixMs(a.modifiedAtUnixMs ?? a.modifiedAt)
-    );
-    return rows;
+    return sortByModifiedDesc(rows);
   }, [loadFailures]);
 
   const adminForms = useMemo(() => [...sortedForms, ...loadFailureRows], [sortedForms, loadFailureRows]);

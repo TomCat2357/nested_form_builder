@@ -124,6 +124,11 @@ const createCompactId = (prefix) => {
   return `${prefix}_${ulidPart}_${randomPart}`;
 };
 
+// ULID の決定的プリミティブ。GAS（gas/constants.gs の Nfb_encodeUlidTime_ /
+// Nfb_encodeUlidRandom_ / Nfb_incrementUlidRandom_）と byte 互換であることを
+// tests/ulid-equivalence.test.cjs で担保するため公開する（生成系は非決定的なので対象外）。
+export { encodeUlidTime, encodeUlidRandom, incrementBase32, ULID_ALPHABET, ULID_RANDOM_LENGTH };
+
 export const genFormId = () => createCompactId("f");
 export const genRecordId = () => createCompactId("r");
 

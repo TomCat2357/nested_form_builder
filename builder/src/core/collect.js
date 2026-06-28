@@ -2,6 +2,7 @@ import { ensureArray } from "../utils/arrays.js";
 import { traverseSchema } from "./schemaUtils.js";
 import { normalizeDateTimeFieldValue } from "../utils/dateTime.js";
 import { joinFieldPath } from "../utils/pathCodec.js";
+import { CHOICE_TYPES } from "./fieldTypeSets.js";
 
 export const sanitizeFileUploadEntry = (entry) => {
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
@@ -130,7 +131,6 @@ export const collectResponses = (fields, responses, options = {}) => {
   return out;
 };
 
-const DATA_CHOICE_TYPES = ["checkboxes", "radio", "select"];
 const DATA_VALUE_TEXT_TYPES = ["text", "textarea", "number", "regex", "date", "time", "url", "userName", "email", "phone"];
 
 const isChoiceMarker = (value) => value === true || value === 1 || value === "1" || value === "●";
@@ -193,7 +193,7 @@ const toRawSelectedLabels = (type, value) => {
 // 外部アクション/印刷 items（表示文字列）と template view 値（dataValueMap）で共有する正準実装。
 export const toSelectedChoiceLabels = (field, value) => {
   const type = field?.type;
-  if (!DATA_CHOICE_TYPES.includes(type)) return [];
+  if (!CHOICE_TYPES.has(type)) return [];
 
   const rawSelected = toRawSelectedLabels(type, value);
   if (rawSelected.length === 0) return [];
@@ -234,7 +234,7 @@ export const buildDataValueMap = (fields, responses) => {
     const base = joinFieldPath(context.pathSegments);
     const value = responses?.[field.id];
 
-    if (DATA_CHOICE_TYPES.includes(field.type)) {
+    if (CHOICE_TYPES.has(field.type)) {
       // テンプレ行は表示用途なので複数選択は表示区切り ", "（エスケープなし）で連結する。
       // ※ 保存・検索の正準区切り（codec のエスケープ付き ","）とは別経路。
       const labels = toSelectedChoiceLabels(field, value);
@@ -271,7 +271,7 @@ export const collectAllPossiblePaths = (fields) => {
   traverseSchema(fields, (field, context) => {
     const base = joinFieldPath(context.pathSegments);
 
-    if (["checkboxes", "radio", "select"].includes(field.type) && Array.isArray(field.options)) {
+    if (CHOICE_TYPES.has(field.type) && Array.isArray(field.options)) {
       // 元データ方式: 選択肢はオプションごとに `親/選択肢` 列を列挙する。
       field.options.forEach((option) => {
         const optionLabel = option?.label || "";

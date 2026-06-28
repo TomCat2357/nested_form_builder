@@ -135,6 +135,9 @@ function buildContext() {
     "sharedDriveFolders.gs", "formsDriveFolders.gs", "analyticsDriveFolders.gs",
     "standardFoldersAlign.gs", "standardFoldersAlignRefs.gs", "standardFoldersCopy.gs", "standardFolders.gs",
   ]);
+  // Nfb_withLockedSafeCall_（errors.gs）は本テストではロードしないため、shim 済みプリミティブの合成で代替。
+  // WithScriptLock_ は各テストで後付け設定されるため、呼び出し時に動的解決する。
+  context.Nfb_withLockedSafeCall_ = (label, fn) => context.nfbSafeCall_(() => context.WithScriptLock_(label, fn));
   // ルート解決をモックへ差し替え（後付け上書き。autoFileFolderOrNull_ もこれ経由で解決される）。
   context.StdFolders_resolveRootFolder_ = () => root;
 

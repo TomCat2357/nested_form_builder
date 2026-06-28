@@ -39,27 +39,13 @@ function Analytics_getMapping_(type) {
   var props = Nfb_getActiveProperties_();
   var key = Analytics_getPropertyKey_(type);
   var mapping = Nfb_parseVersionedMapping_(props.getProperty(key), ANALYTICS_MAPPING_VERSION, "analytics:" + type);
-  return Analytics_normalizeMapping_(mapping);
-}
-
-// 読取側の正規化。driveFileUrl は fileId から都度復元し、読取は完全なエントリ
-// （fileId / driveFileUrl / name / folder）を返す（forms の Forms_normalizeMappingValue_ と対称）。
-// name（= Drive ファイル名）と論理パス folder は、論理側 fileId が失われたときに
-// 「論理パス（folder + 名前）で物理ファイルを探し直す」復旧アンカーになる。folder は中央辞書の
-// 第一級フィールドで、null は「未バックフィル」sentinel（"" の「ルート」と区別する）。
-// 共通コア Nfb_normalizeMappingValue_（gas/formsMappingStore.gs）への薄いラッパー。
-// Analytics（questions/dashboards）は name キーでラベルを保持する。
-function Analytics_normalizeMappingValue_(value) {
-  return Nfb_normalizeMappingValue_(value, "name");
-}
-
-function Analytics_normalizeMapping_(mapping) {
-  var normalized = {};
-  for (var id in mapping) {
-    if (!mapping.hasOwnProperty(id)) continue;
-    normalized[id] = Analytics_normalizeMappingValue_(mapping[id]);
-  }
-  return normalized;
+  // 読取側の正規化は共通コア Nfb_normalizeMapping_（gas/formsMappingStore.gs）へ集約。
+  // Analytics（questions/dashboards）は name キーでラベルを保持する。driveFileUrl は fileId から都度復元し、
+  // 読取は完全なエントリ（fileId / driveFileUrl / name / folder）を返す（forms の "title" と対称）。
+  // name（= Drive ファイル名）と論理パス folder は、論理側 fileId が失われたときに
+  // 「論理パス（folder + 名前）で物理ファイルを探し直す」復旧アンカーになる。folder は中央辞書の
+  // 第一級フィールドで、null は「未バックフィル」sentinel（"" の「ルート」と区別する）。
+  return Nfb_normalizeMapping_(mapping, "name");
 }
 
 function Analytics_saveMapping_(type, mapping) {
@@ -152,45 +138,8 @@ function Analytics_dispatch_(action, ctx) {
   throw new Error("Unknown analytics action: " + action);
 }
 
-// ACTION_DEFINITIONS_ から呼ばれる handler は単一行で dispatch するだけ。
-
-function AnalyticsApi_ListQuestions_(ctx)             { return Analytics_dispatch_("analytics_questions_list", ctx); }
-function AnalyticsApi_GetQuestion_(ctx)               { return Analytics_dispatch_("analytics_questions_get", ctx); }
-function AnalyticsApi_SaveQuestion_(ctx)              { return Analytics_dispatch_("analytics_questions_save", ctx); }
-function AnalyticsApi_DeleteQuestion_(ctx)            { return Analytics_dispatch_("analytics_questions_delete", ctx); }
-function AnalyticsApi_DeleteQuestions_(ctx)           { return Analytics_dispatch_("analytics_questions_delete_batch", ctx); }
-function AnalyticsApi_DeleteQuestionsWithFiles_(ctx)  { return Analytics_dispatch_("analytics_questions_delete_with_files_batch", ctx); }
-function AnalyticsApi_ArchiveQuestion_(ctx)           { return Analytics_dispatch_("analytics_questions_archive", ctx); }
-function AnalyticsApi_UnarchiveQuestion_(ctx)         { return Analytics_dispatch_("analytics_questions_unarchive", ctx); }
-function AnalyticsApi_ArchiveQuestions_(ctx)          { return Analytics_dispatch_("analytics_questions_archive_batch", ctx); }
-function AnalyticsApi_UnarchiveQuestions_(ctx)        { return Analytics_dispatch_("analytics_questions_unarchive_batch", ctx); }
-function AnalyticsApi_CopyQuestion_(ctx)              { return Analytics_dispatch_("analytics_questions_copy", ctx); }
-function AnalyticsApi_ImportQuestions_(ctx)           { return Analytics_dispatch_("analytics_questions_import", ctx); }
-function AnalyticsApi_RegisterImportedQuestion_(ctx)  { return Analytics_dispatch_("analytics_questions_register_import", ctx); }
-function AnalyticsApi_ResolveQuestionRef_(ctx)        { return Analytics_dispatch_("analytics_questions_resolve_ref", ctx); }
-function AnalyticsApi_ListDashboards_(ctx)            { return Analytics_dispatch_("analytics_dashboards_list", ctx); }
-function AnalyticsApi_GetDashboard_(ctx)              { return Analytics_dispatch_("analytics_dashboards_get", ctx); }
-function AnalyticsApi_SaveDashboard_(ctx)             { return Analytics_dispatch_("analytics_dashboards_save", ctx); }
-function AnalyticsApi_DeleteDashboard_(ctx)           { return Analytics_dispatch_("analytics_dashboards_delete", ctx); }
-function AnalyticsApi_DeleteDashboards_(ctx)          { return Analytics_dispatch_("analytics_dashboards_delete_batch", ctx); }
-function AnalyticsApi_DeleteDashboardsWithFiles_(ctx) { return Analytics_dispatch_("analytics_dashboards_delete_with_files_batch", ctx); }
-function AnalyticsApi_ArchiveDashboard_(ctx)          { return Analytics_dispatch_("analytics_dashboards_archive", ctx); }
-function AnalyticsApi_UnarchiveDashboard_(ctx)        { return Analytics_dispatch_("analytics_dashboards_unarchive", ctx); }
-function AnalyticsApi_ArchiveDashboards_(ctx)         { return Analytics_dispatch_("analytics_dashboards_archive_batch", ctx); }
-function AnalyticsApi_UnarchiveDashboards_(ctx)       { return Analytics_dispatch_("analytics_dashboards_unarchive_batch", ctx); }
-function AnalyticsApi_CopyDashboard_(ctx)             { return Analytics_dispatch_("analytics_dashboards_copy", ctx); }
-function AnalyticsApi_ImportDashboards_(ctx)          { return Analytics_dispatch_("analytics_dashboards_import", ctx); }
-function AnalyticsApi_RegisterImportedDashboard_(ctx) { return Analytics_dispatch_("analytics_dashboards_register_import", ctx); }
-function AnalyticsApi_ListQuestionFolders_(ctx)        { return Analytics_dispatch_("analytics_questions_folders_list",    ctx); }
-function AnalyticsApi_CreateQuestionFolder_(ctx)       { return Analytics_dispatch_("analytics_questions_folder_create",   ctx); }
-function AnalyticsApi_MoveQuestions_(ctx)              { return Analytics_dispatch_("analytics_questions_move",            ctx); }
-function AnalyticsApi_RenameQuestionFolder_(ctx)       { return Analytics_dispatch_("analytics_questions_folder_rename",   ctx); }
-function AnalyticsApi_DeleteQuestionFolder_(ctx)       { return Analytics_dispatch_("analytics_questions_folder_delete",   ctx); }
-function AnalyticsApi_ListDashboardFolders_(ctx)       { return Analytics_dispatch_("analytics_dashboards_folders_list",   ctx); }
-function AnalyticsApi_CreateDashboardFolder_(ctx)      { return Analytics_dispatch_("analytics_dashboards_folder_create",  ctx); }
-function AnalyticsApi_MoveDashboards_(ctx)             { return Analytics_dispatch_("analytics_dashboards_move",           ctx); }
-function AnalyticsApi_RenameDashboardFolder_(ctx)      { return Analytics_dispatch_("analytics_dashboards_folder_rename",  ctx); }
-function AnalyticsApi_DeleteDashboardFolder_(ctx)      { return Analytics_dispatch_("analytics_dashboards_folder_delete",  ctx); }
+// ACTION_DEFINITIONS_（Code.gs）からは action 名で Analytics_dispatch_ を直接呼ぶため、
+// かつての AnalyticsApi_*_ 1 行委譲ラッパー群は撤去した（純粋な中継のみで冗長だった）。
 
 // ---- single-id archive 結果のラップ ----
 

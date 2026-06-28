@@ -42,11 +42,7 @@ function ParseAdminEmails_(raw) {
  * @return {string}
  */
 function GetAdminEmail_() {
-  if (!Nfb_isAdminSettingsEnabled_()) {
-    return "";
-  }
-  var props = Nfb_getScriptProperties_();
-  return props.getProperty(NFB_ADMIN_EMAIL) || "";
+  return Nfb_getGatedAdminProperty_(NFB_ADMIN_EMAIL);
 }
 
 /**
