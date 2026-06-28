@@ -28,6 +28,8 @@ export default function SearchPage() {
   const formCtx = useFormContext();
   const inChildContext = !!formCtx?.inChildContext;
   const childPid = inChildContext ? String(formCtx.pid || "") : "";
+  // 親レコードが表示専用・編集不可なら、子フォームの検索一覧も閲覧のみ（新規入力・削除を無効化）。
+  const parentReadOnly = inChildContext && !!formCtx?.parentReadOnly;
   // 子フォームをオーバーレイで開いているときの「オーバーレイを閉じる」要求（dirty チェック付き close）。
   const onRequestClose = formCtx?.onRequestClose;
   const [searchParams, setSearchParams] = useSearchParams();
@@ -173,7 +175,7 @@ export default function SearchPage() {
           printing={isCreatingPrintDocument}
           selectedCount={selectedEntries.size}
           filteredCount={sortedEntries.length}
-          readOnly={!!form?.readOnly}
+          readOnly={!!form?.readOnly || parentReadOnly}
           externalActions={form?.settings?.externalActions?.enabled ? form.settings.externalActions.search : null}
           formContext={{
             formId: form?.id,

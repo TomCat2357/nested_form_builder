@@ -51,20 +51,26 @@ function SetExtActionSecret_(newSecret) {
  * @param {string} formParam - formパラメータ
  * @param {string} adminkeyParam - adminkeyパラメータ
  * @param {string} activeUserEmail - 現在ユーザーのメール
+ * @param {string} pidParam - pid（親レコード ID）パラメータ。子フォーム専用フォームは
+ *   pid 付き（＝親フォームのリンク経由）のときだけ直接アクセスを許可する。
  * @return {{ isAdmin: boolean, formId: string, authError: string }}
  */
-function DetermineAccess_(formParam, adminkeyParam, activeUserEmail) {
+function DetermineAccess_(formParam, adminkeyParam, activeUserEmail, pidParam) {
   // formパラメータがある場合（form優先）
   if (formParam) {
     // フォームの存在確認
     var fileUrl = GetFormUrl_(formParam);
-    if (fileUrl) {
-      // フォームが存在する → ユーザーモード
-      return { isAdmin: false, formId: formParam, authError: "" };
-    } else {
+    if (!fileUrl) {
       // フォームが存在しない → エラー
       return { isAdmin: false, formId: "", authError: "form_not_found" };
     }
+    // 子フォーム専用フォームは「親フォームからのリンク（pid 付き）」経由でしか開けない。
+    // pid が無い直接 URL アクセスは遮断する（一覧からは元々隠れている）。
+    if (!pidParam && Forms_isChildOnlyForm_(formParam)) {
+      return { isAdmin: false, formId: "", authError: "forbidden" };
+    }
+    // フォームが存在する → ユーザーモード
+    return { isAdmin: false, formId: formParam, authError: "" };
   }
 
   // userモード時は管理者設定を無効化し、常に通常モードで表示

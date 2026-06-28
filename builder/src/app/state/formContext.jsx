@@ -15,12 +15,15 @@ import React, { createContext, useContext, useMemo } from "react";
  */
 const FormContext = createContext(null);
 
-export function FormContextProvider({ formId = "", pid = "", inChildContext = false, registerDirtyChecker = null, onRequestClose = null, children }) {
+export function FormContextProvider({ formId = "", pid = "", inChildContext = false, parentReadOnly = false, registerDirtyChecker = null, onRequestClose = null, children }) {
   const value = useMemo(
     () => ({
       formId: String(formId || ""),
       pid: String(pid || ""),
       inChildContext: !!inChildContext,
+      // 親フォーム（レコード）が表示専用・編集不可のとき true。配下の FormPage / SearchPage は
+      // これを見て子フォームを強制的に閲覧のみ（新規入力・編集・削除を無効）にする。
+      parentReadOnly: !!parentReadOnly,
       // 配下の FormPage が「未保存編集あり」を返す関数を登録するためのフック。オーバーレイは
       // 閉じる前にこれを呼んで dirty なら確認する（子フォームの誤クローズによる入力消失を防ぐ）。
       registerDirtyChecker: typeof registerDirtyChecker === "function" ? registerDirtyChecker : null,
@@ -28,7 +31,7 @@ export function FormContextProvider({ formId = "", pid = "", inChildContext = fa
       // 「戻る」はこれを呼んでオーバーレイごと閉じる（MemoryRouter 内を空回りさせない）。
       onRequestClose: typeof onRequestClose === "function" ? onRequestClose : null,
     }),
-    [formId, pid, inChildContext, registerDirtyChecker, onRequestClose],
+    [formId, pid, inChildContext, parentReadOnly, registerDirtyChecker, onRequestClose],
   );
   return <FormContext.Provider value={value}>{children}</FormContext.Provider>;
 }

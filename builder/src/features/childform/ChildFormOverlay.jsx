@@ -50,14 +50,14 @@ const HEADER_STYLE = {
 const BODY_STYLE = { flex: 1, minHeight: 0, overflow: "auto" };
 
 // 子フォームの検索＋入力を独立した MemoryRouter で動かす。親 URL/状態は不変。
-function ChildFormApp({ childFormId, pid, registerDirtyChecker, onRequestClose }) {
+function ChildFormApp({ childFormId, pid, parentReadOnly, registerDirtyChecker, onRequestClose }) {
   const initialEntries = useMemo(
     () => [`/search?form=${encodeURIComponent(childFormId)}`],
     [childFormId],
   );
   const fallback = `/search?form=${encodeURIComponent(childFormId)}`;
   return (
-    <FormContextProvider formId={childFormId} pid={pid} inChildContext registerDirtyChecker={registerDirtyChecker} onRequestClose={onRequestClose}>
+    <FormContextProvider formId={childFormId} pid={pid} inChildContext parentReadOnly={parentReadOnly} registerDirtyChecker={registerDirtyChecker} onRequestClose={onRequestClose}>
       <MemoryRouter initialEntries={initialEntries}>
         <Routes>
           <Route path="/search" element={<SearchPage />} />
@@ -84,7 +84,7 @@ export function ChildFormProvider({ children }) {
     dirtyCheckerRef.current = typeof fn === "function" ? fn : null;
   }, []);
 
-  const openChildForm = useCallback(({ childFormId, pid = "", childFormName = "" } = {}) => {
+  const openChildForm = useCallback(({ childFormId, pid = "", childFormName = "", parentReadOnly = false } = {}) => {
     const id = String(childFormId || "").trim();
     if (!id) return;
     prevThemeRef.current = (typeof document !== "undefined" && document.documentElement?.dataset?.theme) || "";
@@ -92,6 +92,8 @@ export function ChildFormProvider({ children }) {
       childFormId: id,
       pid: String(pid || "").trim(),
       childFormName: String(childFormName || ""),
+      // 親レコードが表示専用・編集不可なら、子フォームも閲覧のみで開く。
+      parentReadOnly: !!parentReadOnly,
     });
   }, []);
 
@@ -145,6 +147,7 @@ export function ChildFormProvider({ children }) {
             key={`${active.childFormId}:${active.pid}`}
             childFormId={active.childFormId}
             pid={active.pid}
+            parentReadOnly={active.parentReadOnly}
             registerDirtyChecker={registerDirtyChecker}
             onRequestClose={close}
           />

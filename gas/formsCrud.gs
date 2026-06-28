@@ -178,6 +178,23 @@ function Forms_getForm_(formId) {
   }
 }
 
+/**
+ * 指定フォームが「子フォーム専用（childOnly）」かどうかを返す。
+ * doGet のアクセス判定（DetermineAccess_）から、pid 無しの直接アクセスを遮断するために使う。
+ * 読み取りに失敗した場合は false（遮断しすぎないフェイルオープン。一覧除外は別途効いている）。
+ * @param {string} formId
+ * @return {boolean}
+ */
+function Forms_isChildOnlyForm_(formId) {
+  try {
+    var form = Forms_getForm_(formId);
+    return !!(form && form.childOnly);
+  } catch (err) {
+    Logger.log("[Forms_isChildOnlyForm_] Error for " + formId + ": " + err);
+    return false;
+  }
+}
+
 // 01_forms 配下の 1 ファイルを Form として確定する。id ＝ fileId / 名前 ＝ ファイル名 を採用し、
 // マッピング（fileId キー）と認証用 URL マップを最新化する。失敗時は null。
 function Forms_adoptFormFile_(file, mapping) {
