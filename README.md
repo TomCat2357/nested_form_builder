@@ -49,25 +49,27 @@ nested_form_builder/
 ├── gas_for_spreadsheet/  # 保存先スプレッドシート用の補助スクリプト
 ├── gas_for_external_action/      # 「外部アクションボタン」の POST 受信 Web アプリ雛形
 ├── dist/             # clasp push 対象（自動生成・コミットしない）
-├── docs/claude/      # 開発者向け詳細ドキュメント（テーマ別 16 本）
+├── docs/             # 読者別ドキュメント
+│   ├── developers/   #   開発者向け詳細（テーマ別 12 本）
+│   └── operations/   #   運用・デプロイ・環境構築担当向け（4 本）
 ├── tests/ / e2e/     # GAS 横断テスト・Playwright E2E
 ├── md2pdf/ / scripts/  # ユーザーマニュアル生成ツール群（manual/ は gitignore）
 ├── deploy.ps1        # Windows 用ワンショットデプロイ
-└── CLAUDE.md         # 開発者向けの入口（docs/claude/ への索引）
+└── CLAUDE.md         # AI エージェント（Claude）専用の操作契約・索引
 ```
 
-## ドキュメント
+## ドキュメント（読者別）
 
-| 用途 | 参照先 |
-| --- | --- |
-| 開発者向けナビ（テーマ別 16 ファイルへの索引） | [`CLAUDE.md`](./CLAUDE.md) |
-| 全体像・データフロー | [`docs/claude/architecture.md`](./docs/claude/architecture.md) |
-| セットアップ詳細 | [`docs/claude/setup.md`](./docs/claude/setup.md) |
-| 日常コマンド | [`docs/claude/development-workflow.md`](./docs/claude/development-workflow.md) |
-| デプロイ（`deploy.ps1`） | [`docs/claude/deployment.md`](./docs/claude/deployment.md) |
-| トラブルシュート | [`docs/claude/troubleshooting.md`](./docs/claude/troubleshooting.md) |
+ドキュメントは読者層ごとに分離しています。まず [`docs/README.md`](./docs/README.md)（ドキュメント・ハブ）から、自分に合った入口を選んでください。
 
-> 利用者向け操作マニュアル（`manual/user_manual.pdf`）は `scripts/` と `md2pdf/` で生成する成果物で、`manual/` は `.gitignore` 対象のためリポジトリには含まれません。
+| あなたは… | 入口 | 内容 |
+| --- | --- | --- |
+| 🧑‍💻 **アプリを使う人**（利用者） | 生成 PDF マニュアル（下記注記） | フォーム作成・回答・検索・出力の操作方法 |
+| 🛠 **コードを読む / 変更する人**（開発者） | [`docs/developers/README.md`](./docs/developers/README.md) | アーキ・データモデル・公開 API・検索/テンプレ仕様・テスト |
+| 🚀 **環境構築・デプロイ・運用する人** | [`docs/operations/README.md`](./docs/operations/README.md) | セットアップ・開発コマンド・`deploy.ps1`・トラブルシュート |
+| 🤖 **AI エージェント（Claude）** | [`CLAUDE.md`](./CLAUDE.md) | コーディング規約・絶対ルール・定数・タスク別ナビ |
+
+> 🧑‍💻 利用者向け操作マニュアル（`manual/user_manual.pdf`）は `scripts/` と `md2pdf/` で生成する成果物で、`manual/`（および生成元 `docs/user_manual.md`）は `.gitignore` 対象のためリポジトリには含まれません。
 
 ## ライセンス
 

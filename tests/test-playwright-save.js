@@ -4,7 +4,7 @@
 // 実 Google Drive（デプロイしたオーナーの Drive）にフォームを作成・削除するため、
 // 誤爆防止に PLAYWRIGHT_ALLOW_WRITE=1 のときだけ実行する。未設定なら理由を表示して何もしない。
 //
-// 前提（docs/claude/testing.md の「テストモードでの保存系 E2E」を参照）:
+// 前提（docs/developers/testing.md の「テストモードでの保存系 E2E」を参照）:
 //   - ./deploy.ps1 -TestMode で公開（executeAs=USER_DEPLOYING / access=ANYONE_ANONYMOUS）。
 //   - PropertyStore=script（既定）で、NFB_ADMIN_KEY / NFB_ADMIN_EMAIL は未設定（匿名を管理者にするため）。
 //   - 初回はオーナーがブラウザで一度開き OAuth スコープを承認済みであること。

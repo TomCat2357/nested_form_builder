@@ -1,7 +1,11 @@
 # CLAUDE.md
 
-このファイルは Claude Code がこのリポジトリで作業するときの **入口** です。
-詳細は `docs/claude/` 配下にテーマ別で分割しているので、タスクに応じて該当するものだけを開いてください。
+このファイルは **AI エージェント（Claude Code）専用** の操作契約です。コーディング規約・絶対ルール・定数・重要ファイル・タスク別ナビを集約しています。
+詳細ドキュメントは読者別に分割しているので、タスクに応じて該当するものだけを開いてください。
+
+- 人間の開発者向け索引: [`docs/developers/README.md`](./docs/developers/README.md)（アーキ・データモデル・API・仕様・テスト）
+- 運用・デプロイ・環境構築担当向け索引: [`docs/operations/README.md`](./docs/operations/README.md)（セットアップ・開発コマンド・デプロイ・トラブル）
+- ドキュメント全体の地図: [`docs/README.md`](./docs/README.md)
 
 ## このプロジェクト
 
@@ -17,23 +21,23 @@
 
 | やりたいこと | 参照先 |
 | --- | --- |
-| 全体像・データフロー・Provider・保存先の分担 | [docs/claude/architecture.md](./docs/claude/architecture.md) |
-| フロント / バックの機能モジュールを俯瞰したい | [docs/claude/feature-map.md](./docs/claude/feature-map.md) |
-| ファイルがどこにあるか当たりをつけたい | [docs/claude/repo-structure.md](./docs/claude/repo-structure.md) |
-| `doGet` / `doPost` / `ACTION_DEFINITIONS_` / `nfb*` 公開 API | [docs/claude/apps-script-backend.md](./docs/claude/apps-script-backend.md) |
-| 外部アクションボタンの payload 契約（検索一覧/単票・子フォーム有無） | [docs/claude/apps-script-backend.md](./docs/claude/apps-script-backend.md) |
-| ルート定義・対応フィールドタイプ | [docs/claude/routing.md](./docs/claude/routing.md) |
-| 初回セットアップ | [docs/claude/setup.md](./docs/claude/setup.md) |
-| 日常の dev / build / GAS 同期コマンド | [docs/claude/development-workflow.md](./docs/claude/development-workflow.md) |
-| `deploy.ps1` のオプションと手動デプロイ | [docs/claude/deployment.md](./docs/claude/deployment.md) |
-| テスト配置・実行コマンド | [docs/claude/testing.md](./docs/claude/testing.md) |
-| 検索クエリ構文 | [docs/claude/search-query-syntax.md](./docs/claude/search-query-syntax.md) |
-| テンプレートトークン（alasql 関数式） | [docs/claude/drive-template-tokens.md](./docs/claude/drive-template-tokens.md) |
-| スキーマ / シートレイアウト / 日時 / ソフトデリート | [docs/claude/data-model.md](./docs/claude/data-model.md) |
-| キャッシュ階層と差分同期・オフライン保存 | [docs/claude/cache-architecture.md](./docs/claude/cache-architecture.md) |
-| 参照（リンク）の持ち方・保存時の追従・`driveFileUrl` 非永続化 | [docs/claude/links-and-save.md](./docs/claude/links-and-save.md) |
-| Question / Dashboard（集計・可視化）のモジュール構成 | [docs/claude/feature-map.md](./docs/claude/feature-map.md) |
-| 詰まったときの確認ポイント | [docs/claude/troubleshooting.md](./docs/claude/troubleshooting.md) |
+| 全体像・データフロー・Provider・保存先の分担 | [docs/developers/architecture.md](./docs/developers/architecture.md) |
+| フロント / バックの機能モジュールを俯瞰したい | [docs/developers/feature-map.md](./docs/developers/feature-map.md) |
+| ファイルがどこにあるか当たりをつけたい | [docs/developers/repo-structure.md](./docs/developers/repo-structure.md) |
+| `doGet` / `doPost` / `ACTION_DEFINITIONS_` / `nfb*` 公開 API | [docs/developers/apps-script-backend.md](./docs/developers/apps-script-backend.md) |
+| 外部アクションボタンの payload 契約（検索一覧/単票・子フォーム有無） | [docs/developers/apps-script-backend.md](./docs/developers/apps-script-backend.md) |
+| ルート定義・対応フィールドタイプ | [docs/developers/routing.md](./docs/developers/routing.md) |
+| 初回セットアップ | [docs/operations/setup.md](./docs/operations/setup.md) |
+| 日常の dev / build / GAS 同期コマンド | [docs/operations/development-workflow.md](./docs/operations/development-workflow.md) |
+| `deploy.ps1` のオプションと手動デプロイ | [docs/operations/deployment.md](./docs/operations/deployment.md) |
+| テスト配置・実行コマンド | [docs/developers/testing.md](./docs/developers/testing.md) |
+| 検索クエリ構文 | [docs/developers/search-query-syntax.md](./docs/developers/search-query-syntax.md) |
+| テンプレートトークン（alasql 関数式） | [docs/developers/drive-template-tokens.md](./docs/developers/drive-template-tokens.md) |
+| スキーマ / シートレイアウト / 日時 / ソフトデリート | [docs/developers/data-model.md](./docs/developers/data-model.md) |
+| キャッシュ階層と差分同期・オフライン保存 | [docs/developers/cache-architecture.md](./docs/developers/cache-architecture.md) |
+| 参照（リンク）の持ち方・保存時の追従・`driveFileUrl` 非永続化 | [docs/developers/links-and-save.md](./docs/developers/links-and-save.md) |
+| Question / Dashboard（集計・可視化）のモジュール構成 | [docs/developers/feature-map.md](./docs/developers/feature-map.md) |
+| 詰まったときの確認ポイント | [docs/operations/troubleshooting.md](./docs/operations/troubleshooting.md) |
 
 ## コーディング規約（圧縮版・常時適用）
 
@@ -58,7 +62,7 @@
 - `NFB_HEADER_DEPTH = 11` / `NFB_DATA_START_ROW = 12` / フロント `MAX_DEPTH = 11`
 - `NFB_LOCK_WAIT_TIMEOUT_MS = 10000` ms（保存ロックタイムアウト、コード `LOCK_TIMEOUT`）
 - `NFB_DEFAULT_DELETED_RECORD_RETENTION_DAYS = 30`（ソフトデリート保持期間）
-- IndexedDB: `NestedFormBuilder` v11。ストアは `formsCache` / `settingsStore` / `analyticsQuestions` / `analyticsDashboards` / `uploadQueue` / `openHistory`（v9）/ `registry`（v10・フロントの参照解決作業キャッシュ。Script Properties registry のミラー。詳細 [links-and-save.md](./docs/claude/links-and-save.md) §6）/ `formNavCache`（v11・目次ツリーの軽量キャッシュ。`buildSchemaMapItems` の出力のみ保存しサイドバー目次を即表示。ナビ表示専用で喪失時はフォーム本体ロード後に再生成）。SWR しきい値はキャッシュ種別で別。レコード（`RECORD_CACHE_*`）= fresh 5 分・要再取得 30 分。一覧（フォーム / Dashboard / Question、`FORM_CACHE_*` を共用）= fresh 1 時間・1〜24 時間は裏更新・24 時間超で同期再取得。`recordsCache` / `analyticsSnapshots` 系は v6 で撤去済み（メモリ常駐に移行）
+- IndexedDB: `NestedFormBuilder` v11。ストアは `formsCache` / `settingsStore` / `analyticsQuestions` / `analyticsDashboards` / `uploadQueue` / `openHistory`（v9）/ `registry`（v10・フロントの参照解決作業キャッシュ。Script Properties registry のミラー。詳細 [links-and-save.md](./docs/developers/links-and-save.md) §6）/ `formNavCache`（v11・目次ツリーの軽量キャッシュ。`buildSchemaMapItems` の出力のみ保存しサイドバー目次を即表示。ナビ表示専用で喪失時はフォーム本体ロード後に再生成）。SWR しきい値はキャッシュ種別で別。レコード（`RECORD_CACHE_*`）= fresh 5 分・要再取得 30 分。一覧（フォーム / Dashboard / Question、`FORM_CACHE_*` を共用）= fresh 1 時間・1〜24 時間は裏更新・24 時間超で同期再取得。`recordsCache` / `analyticsSnapshots` 系は v6 で撤去済み（メモリ常駐に移行）
 - オフラインファースト保存（v8）: フォーム / Question / Dashboard の保存は IndexedDB へ即書き込み → `uploadQueue`（write-behind ジョブ）に積み、`uploadWorker` が逐次 Drive へ送る。仮 ID `local_…` を成功時に実 fileId へ付け替えて参照を再リンク。失敗は指数バックオフ（`UPLOAD_RETRY_BASE_MS` 2 秒〜`UPLOAD_RETRY_MAX_MS` 5 分）で自動リトライ
 - フロント `DEFAULT_SEARCH_DEBOUNCE_MS = 300`（検索バー遅延検索。設定 `searchDebounceMs` で変更、`0` で即時。IME 変換中は確定時のみコミット）
 

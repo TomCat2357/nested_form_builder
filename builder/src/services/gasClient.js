@@ -121,10 +121,10 @@ const validateFormIds = (formIds) => {
 // レコード系の GAS 関数名 (saveResponses / listRecords / getRecord / deleteRecord /
 // syncRecordsProxy) は nfb プレフィックスを持たないレガシー契約。GAS 側 (gas/Code.gs,
 // gas/codeSyncRecords.gs) の関数名と完全一致が必要で、リネームするなら GAS と本ファイルを
-// ロックステップで変えること。詳細は docs/claude/apps-script-backend.md を参照。
+// ロックステップで変えること。詳細は docs/developers/apps-script-backend.md を参照。
 //
 // spreadsheetId はクライアントから送らない。GAS が formId からサーバ側で解決する
-// （非管理者には spreadsheetId を返さないため）。詳細は docs/claude/data-model.md を参照。
+// （非管理者には spreadsheetId を返さないため）。詳細は docs/developers/data-model.md を参照。
 export const submitResponses = ({ formId, sheetName = "Data", payload }) => {
   validateFormId(formId);
   return fetchGasApi("saveResponses", withUrlPid({ ...payload, formId, sheetName }), "Apps Script call failed");

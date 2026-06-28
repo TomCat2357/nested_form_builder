@@ -36,11 +36,13 @@ nested_form_builder/
 ├── gas_for_spreadsheet/    # 保存先スプレッドシート用の補助スクリプト
 ├── gas_for_external_action/        # 「外部アクションボタン」の POST(payload JSON) 受信 Web App テンプレート
 ├── dist/                   # clasp push 対象 (自動生成・コミットしない)
-├── docs/claude/            # 開発者向け詳細ドキュメント (テーマ別 16 本)
+├── docs/                   # 読者別ドキュメント (README ハブ / developers/ / operations/)
+│   ├── developers/         #   開発者向け詳細ドキュメント (テーマ別 12 本)
+│   └── operations/         #   運用・デプロイ・環境構築担当向け (4 本)
 ├── tests/ / e2e/           # GAS ユニットテスト, Playwright E2E
 ├── md2pdf/ / scripts/      # ユーザーマニュアル生成ツール (manual/ は gitignore)
 ├── deploy.ps1              # Windows 用ビルド + deploy
 ├── package.json            # ルートの npm scripts
-├── CLAUDE.md               # 開発者向けナビ (本ファイル群への索引)
-└── README.md
+├── CLAUDE.md               # AI エージェント (Claude) 専用の操作契約・索引
+└── README.md               # 全読者の入口 (読者別に分岐)
 ```

@@ -656,7 +656,7 @@ export default function PlaygroundPage() {
                 onLoad={setSearchQuery}
               />
               <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
-                SearchPage と同じ簡易検索フィルタで評価します。SQL（<code>SELECT ...</code>）は Question モードへ。構文は <code>docs/claude/search-query-syntax.md</code> 参照。
+                SearchPage と同じ簡易検索フィルタで評価します。SQL（<code>SELECT ...</code>）は Question モードへ。構文は <code>docs/developers/search-query-syntax.md</code> 参照。
               </p>
             </div>
             {searchError && <p className="nf-text-warning">{searchError}</p>}

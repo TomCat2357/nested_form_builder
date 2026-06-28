@@ -38,7 +38,7 @@ npm run test:playwright # E2E（Phase 4 で重点）
 ### Phase 0 — 安全網の有効化（コミット `2935949`）
 重要発見: `builder/src/**/*.test.js` 105ファイル・約1,396テストは全て `node:test` で書かれ依存ゼロで動くのに、**npmスクリプトに配線されておらず実行されていなかった**。
 - `package.json` に `test:builder` / `test:all` を追加（既存 `test` は不変＝後方互換）
-- `docs/claude/testing.md` 更新
+- `docs/developers/testing.md` 更新
 - → これで Phase 2〜5（フロント中心）を回帰検知しながら進められる
 
 ### Phase 1 — GAS: 物理ファイル解決ロジックの共通コア化（コミット `bb001f8`）

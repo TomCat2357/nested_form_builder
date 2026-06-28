@@ -103,7 +103,7 @@ SELECT _form.[年齢] FROM _form WHERE _form.[年齢] >= 20
 
 ## 利用可能な関数
 
-`docs/claude/drive-template-tokens.md` の関数一覧を参照。テンプレ評価器と同じ UDF が SQL モードでも使える（`TIME` / `DATE2ERA` / `DATETIME2ERATIME` / `ERA2DATE` / `ERATIME2DATETIME` 等）。SQL モードは Question SQL と同じ実行コア（`executeSqlCore`）・同じ alasql シングルトンを共有するので、使える関数は両者で一致する。
+`docs/developers/drive-template-tokens.md` の関数一覧を参照。テンプレ評価器と同じ UDF が SQL モードでも使える（`TIME` / `DATE2ERA` / `DATETIME2ERATIME` / `ERA2DATE` / `ERATIME2DATETIME` 等）。SQL モードは Question SQL と同じ実行コア（`executeSqlCore`）・同じ alasql シングルトンを共有するので、使える関数は両者で一致する。
 
 正規表現は **判定はネイティブ** `x REGEXP p` 演算子 / `REGEXP_LIKE(x, p[, flags])` 関数、**抽出 / 置換は自前 UDF** `REGEXP_MATCH(x, p[, groupIdx=0])` / `REGEXP_REPLACE(x, p, replacement)` を使う。AlaSQL 4.17.x では `RLIKE` 演算子と `NOT REGEXP` は parse error のため使えない（代わりに `NOT (x REGEXP p)` または `NOT REGEXP_LIKE(...)` を書く）。例:
 

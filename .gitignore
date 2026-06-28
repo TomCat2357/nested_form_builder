@@ -111,7 +111,9 @@ audit.json
 .local/
 
 docs/*
-!docs/claude/
+!docs/README.md
+!docs/developers/
+!docs/operations/
 manual/
 # 一時ファイル・ディレクトリ
 tmp/
