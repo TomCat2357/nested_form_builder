@@ -43,6 +43,14 @@ export const SETTINGS_GROUPS = [
         type: "number",
       },
       {
+        key: "recordNoStart",
+        label: "No.の開始番号",
+        placeholder: "1",
+        required: false,
+        type: "number",
+        description: "検索一覧の No. を何番から始めるかを指定します。空欄なら 1 から始まります。すでにレコードがある場合は「最大の No. +1」と開始番号の大きい方を採番します（＝開始番号より小さい番号にはなりません）。",
+      },
+      {
         key: "searchTableMaxWidth",
         label: "検索結果テーブルの幅（px）",
         placeholder: "1200",

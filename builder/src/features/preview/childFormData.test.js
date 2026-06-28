@@ -46,6 +46,35 @@ test("buildChildDataObject: メタ + 各子レコードの items を組む", () 
   assert.ok(!("truncated" in obj));
 });
 
+test("buildChildDataObject: id 欠落の子 schema でもフィールドごとに正しく items を組む（GAS id ストリップ耐性）", () => {
+  // GAS は保存時に Forms_stripSchemaIds_ で field id を落とすため、getChildFormCached_
+  // （dataStore.getForm）から来る子 schema は field.id が欠落している。修正前は
+  // restoreResponsesFromData/buildRecordItems が responses[undefined] に全フィールドを集約し、
+  // traverse で最後に書かれる方法チェックボックス値（["手捕り"]）が氏名/住所/職業へ化けていた。
+  const idlessSchema = [
+    { type: "text", label: "氏名" },
+    { type: "text", label: "住所" },
+    { type: "text", label: "職業" },
+    { type: "checkboxes", label: "方法", options: [{ label: "手捕り" }, { label: "わな" }] },
+  ];
+  const record = {
+    id: "c1",
+    "No.": "1",
+    pid: "p1",
+    data: { "氏名": "鈴木新之助", "住所": "小樽市", "職業": "無職", "方法": ["手捕り"] },
+    dataUnixMs: {},
+  };
+  const obj = buildChildDataObject({ childFormId: "f", childSchema: idlessSchema, records: [record] });
+  const items = obj.records[0].items;
+  const get = (q) => (items.find((it) => it.question === q) || {}).value;
+  assert.equal(get("氏名"), "鈴木新之助");
+  assert.equal(get("住所"), "小樽市");
+  assert.equal(get("職業"), "無職");
+  assert.equal(get("方法"), "手捕り");
+  // 衝突して text 欄が方法値（手捕り）へ化けていないこと（本不具合の回帰ガード）。
+  assert.notEqual(get("氏名"), "手捕り");
+});
+
 test("buildRecordFromEntry: entry を { id, no, items } に整形する", () => {
   const rec = buildRecordFromEntry(childSchema, makeRecord("c1", "p1", "山田", "20"));
   assert.equal(rec.id, "c1");

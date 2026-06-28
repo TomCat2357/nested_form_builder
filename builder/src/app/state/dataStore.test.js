@@ -7,6 +7,8 @@ import {
   normalizeListEntriesOptions,
   filterExpiredDeletedEntries,
   spreadsheetTargetKey,
+  getRecordNoStart,
+  resolveNextRecordNo,
 } from "./dataStoreHelpers.js";
 
 test("既存レコード更新時は createdAt / createdBy / No. を保持して modifiedAt だけ更新する", () => {
@@ -81,6 +83,35 @@ test("新規レコードは createdAt / createdAtUnixMs / createdBy をフロン
   assert.equal(record.modifiedBy, "editor@example.com");
   assert.equal(record.deletedAt, null);
   assert.equal(record.deletedAtUnixMs, null);
+});
+
+test("getRecordNoStart は空欄・非数値・0以下を 1（既定の 1 始まり）に正規化する", () => {
+  assert.equal(getRecordNoStart(undefined), 1);
+  assert.equal(getRecordNoStart({}), 1);
+  assert.equal(getRecordNoStart({ settings: {} }), 1);
+  assert.equal(getRecordNoStart({ settings: { recordNoStart: "" } }), 1);
+  assert.equal(getRecordNoStart({ settings: { recordNoStart: "abc" } }), 1);
+  assert.equal(getRecordNoStart({ settings: { recordNoStart: 0 } }), 1);
+  assert.equal(getRecordNoStart({ settings: { recordNoStart: -5 } }), 1);
+  // 数値文字列（input から来る型）も数値も受ける。小数は切り捨て。
+  assert.equal(getRecordNoStart({ settings: { recordNoStart: "100" } }), 100);
+  assert.equal(getRecordNoStart({ settings: { recordNoStart: 7 } }), 7);
+  assert.equal(getRecordNoStart({ settings: { recordNoStart: "3.9" } }), 3);
+});
+
+test("resolveNextRecordNo は開始番号を下限に採番する（既定 1 では従来どおり最大+1）", () => {
+  // 開始番号が既定 1 のときは従来挙動と完全一致（maxNo+1）。
+  assert.equal(resolveNextRecordNo(0, 1), 1); // レコード無し → 1 始まり
+  assert.equal(resolveNextRecordNo(12, 1), 13); // 既存最大 12 → 13
+  // 開始番号 100・レコード無し（maxNo=0）→ 100 から。
+  assert.equal(resolveNextRecordNo(0, 100), 100);
+  // 開始番号 100 でも、既存最大がそれ以上なら最大+1 が優先（開始番号は下限）。
+  assert.equal(resolveNextRecordNo(150, 100), 151);
+  // 既存最大が開始番号未満なら開始番号まで引き上げる。
+  assert.equal(resolveNextRecordNo(50, 100), 100);
+  // maxNo が不正（NaN 等）でも 0 扱いで安全に採番。
+  assert.equal(resolveNextRecordNo(NaN, 1), 1);
+  assert.equal(resolveNextRecordNo(undefined, 100), 100);
 });
 
 test("buildListEntriesResult は unchanged 同期でも削除済みレコードを保持する", () => {

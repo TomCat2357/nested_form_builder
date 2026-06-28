@@ -16,6 +16,7 @@
 
 import { ensureArray } from "../../utils/arrays.js";
 import { restoreResponsesFromData, collectFileUploadFolderUrls, collectFileUploadFolderNames } from "../../utils/responses.js";
+import { normalizeSchemaIDs } from "../../core/schema.js";
 import { buildRecordItems } from "./printDocument.js";
 import { dataStore } from "../../app/state/dataStore.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
@@ -136,6 +137,12 @@ const toChildRecordItem_ = (childSchema, record) => buildRecordFromEntry(childSc
  * @returns {{childFormId,childFormName,childFormUrl,count,truncated?:boolean,records:Array}}
  */
 export const buildChildDataObject = ({ childFormId, childFormName, childFormUrl, childSchema, records } = {}) => {
+  // GAS は保存時に Forms_stripSchemaIds_ で field id を落とすため、getChildFormCached_
+  // （dataStore.getForm）から来る子 schema は field.id が欠落している。items 構築は
+  // restoreResponsesFromData / buildRecordItems が field.id をキーにするので、id 欠落のままだと
+  // 全フィールドが responses[undefined] に潰れ、最後の値（例: 方法「手捕り」）が氏名等に化ける。
+  // ここで一度だけ安定 id を付与する（既に id がある親由来 schema には冪等）。
+  const schema = normalizeSchemaIDs(ensureArray(childSchema));
   const list = ensureArray(records);
   const total = list.length;
   const truncated = total > MAX_CHILD_RECORDS_PER_FIELD;
@@ -145,7 +152,7 @@ export const buildChildDataObject = ({ childFormId, childFormName, childFormUrl,
     childFormName: String(childFormName || ""),
     childFormUrl: String(childFormUrl || ""),
     count: total,
-    records: sliced.map((r) => toChildRecordItem_(childSchema, r)),
+    records: sliced.map((r) => toChildRecordItem_(schema, r)),
   };
   if (truncated) out.truncated = true;
   return out;
