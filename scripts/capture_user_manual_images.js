@@ -1,9 +1,14 @@
+// ⚠️ 非推奨（旧版）。マニュアル画像の生成には scripts/capture-user-manual.js を使うこと。
+// こちらは様式出力（printTemplate）カードの撮影・サンプルフォームの後片付けに非対応で、
+// サンプル内容・ビューポート・出力枚数も新版と一致しない。互換のため当面残しているだけ。
 const fs = require("node:fs");
 const path = require("node:path");
 const { chromium } = require("playwright");
 
-const APP_URL =
+// 撮影対象の GAS Web アプリ URL。環境変数 MANUAL_APP_URL で上書き可（未指定時は既定値）。
+const DEFAULT_APP_URL =
   "https://script.google.com/macros/s/AKfycby9w6JdxWoCMp83a4THNyUBcopfDEsiDZAUbonTwf9eKsMd6IKYS3e3uq1ph2g5oYs4Qg/exec";
+const APP_URL = process.env.MANUAL_APP_URL || DEFAULT_APP_URL;
 
 const OUT_DIR = path.resolve(__dirname, "..", "manual", "user_manual_images");
 const VIEWPORT = { width: 1440, height: 2200 };

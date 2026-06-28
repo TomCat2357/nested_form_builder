@@ -16,7 +16,11 @@
     "test:builder": "node --test \"builder/src/**/*.test.js\"",
     "test:all": "npm test && npm run test:builder",
     "test:playwright": "node tests/test-playwright.js",
-    "test:playwright:save": "node tests/test-playwright-save.js"
+    "test:playwright:save": "node tests/test-playwright-save.js",
+    "manual:capture": "node scripts/capture-user-manual.js",
+    "manual:crop": "python3 scripts/crop_manual_images_bottom.py --apply",
+    "manual:pdf": "node md2pdf/md2pdf.mjs docs/user_manual.md manual/user_manual.pdf",
+    "manual": "npm run manual:capture && npm run manual:crop && npm run manual:pdf"
   },
   "devDependencies": {
     "@google/clasp": "^3.0.6-alpha",

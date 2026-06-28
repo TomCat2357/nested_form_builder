@@ -2,13 +2,26 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { chromium } = require("playwright");
 
-const APP_URL = "https://script.google.com/macros/s/AKfycbzhsCJaomWbs04VjoHRbfsn5O_Nd1OD51o5grS1By0rAWE-pbZ6jSKj6MFmC8wleTM/exec";
+// 撮影対象の GAS Web アプリ URL。デプロイし直すたびに変わるため、環境変数
+// MANUAL_APP_URL で上書きできるようにする（未指定時は最後に使った既定値）。
+const DEFAULT_APP_URL = "https://script.google.com/macros/s/AKfycbzhsCJaomWbs04VjoHRbfsn5O_Nd1OD51o5grS1By0rAWE-pbZ6jSKj6MFmC8wleTM/exec";
+const APP_URL = process.env.MANUAL_APP_URL || DEFAULT_APP_URL;
 const OUTPUT_DIR = path.resolve(__dirname, "..", "manual", "user_manual_images");
 const VIEWPORT = { width: 1600, height: 2200 };
 const SAMPLE_FORM_TITLE = "【マニュアル】相談受付フォーム";
 const SAMPLE_FORM_DESCRIPTION = "Playwright で撮影するユーザーマニュアル用のサンプルフォームです。";
 const DISPLAY_FORM_TITLE = "相談受付フォーム";
 const SAMPLE_PATTERNS = ["【マニュアル】", "Playwright撮影用フォーム"];
+
+// スクショ内に映る日時はサニタイズして固定値に差し替える（実時刻に依存させず、
+// 再撮影しても差分が出ないようにするため）。日付を更新したいときはここだけ変える。
+const SAMPLE_DATE = "2026/03/08";
+const SAMPLE_TIMES = {
+  createdAt: `${SAMPLE_DATE} 10:00:00.000`, // 一覧・管理画面の「最終更新」表示
+  recordCreated: `${SAMPLE_DATE} 10:00:00`, // 検索一覧 1 行目の作成時刻
+  recordModified: `${SAMPLE_DATE} 10:05:00`, // 検索一覧 1 行目の更新時刻
+  syncedAt: `${SAMPLE_DATE} 10:10:00`, // 検索バーの「最終更新」表示
+};
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -296,7 +309,7 @@ async function getTopLevelCardByValue(frame, value) {
 }
 
 async function sanitizeMainPage(frame) {
-  await frame.evaluate(({ title, description }) => {
+  await frame.evaluate(({ title, description, updatedAt }) => {
     const cards = Array.from(document.querySelectorAll(".main-card"));
     cards.forEach((card, index) => {
       if (index > 0) card.remove();
@@ -308,15 +321,16 @@ async function sanitizeMainPage(frame) {
     const metaEl = card.querySelector(".main-meta");
     if (titleEl) titleEl.textContent = title;
     if (descriptionEl) descriptionEl.textContent = description;
-    if (metaEl) metaEl.textContent = "最終更新: 2026/03/08 10:00:00.000";
+    if (metaEl) metaEl.textContent = `最終更新: ${updatedAt}`;
   }, {
     title: DISPLAY_FORM_TITLE,
     description: "相談受付の流れを確認するためのサンプルフォームです。",
+    updatedAt: SAMPLE_TIMES.createdAt,
   });
 }
 
 async function sanitizeFormManagement(frame) {
-  await frame.evaluate(({ title, description }) => {
+  await frame.evaluate(({ title, description, updatedAt }) => {
     const rows = Array.from(document.querySelectorAll("tbody tr"));
     rows.forEach((row, index) => {
       if (index > 0) row.remove();
@@ -334,7 +348,7 @@ async function sanitizeFormManagement(frame) {
       if (formId) formId.textContent = "f_sample_manual_001";
     }
     if (cells[3]) {
-      cells[3].textContent = "2026/03/08 10:00:00.000";
+      cells[3].textContent = updatedAt;
     }
     if (cells[4]) {
       cells[4].textContent = "相談者名, 受付番号, 連絡先電話番号, 相談方法, 受付日";
@@ -342,11 +356,12 @@ async function sanitizeFormManagement(frame) {
   }, {
     title: DISPLAY_FORM_TITLE,
     description: "相談受付の流れを確認するためのサンプルフォームです。",
+    updatedAt: SAMPLE_TIMES.createdAt,
   });
 }
 
 async function sanitizeSearchPage(frame) {
-  await frame.evaluate(() => {
+  await frame.evaluate(({ createdAt, modifiedAt }) => {
     const row = document.querySelector("tbody tr");
     if (!row) return;
 
@@ -361,12 +376,13 @@ async function sanitizeSearchPage(frame) {
         return;
       }
       if (/^\d{4}\/\d{2}\/\d{2}/.test(text)) {
-        cell.textContent = timestampIndex === 0
-          ? "2026/03/08 10:00:00"
-          : "2026/03/08 10:05:00";
+        cell.textContent = timestampIndex === 0 ? createdAt : modifiedAt;
         timestampIndex += 1;
       }
     });
+  }, {
+    createdAt: SAMPLE_TIMES.recordCreated,
+    modifiedAt: SAMPLE_TIMES.recordModified,
   });
 }
 
@@ -392,16 +408,16 @@ async function sanitizeEditorHeader(frame) {
 }
 
 async function sanitizeStatusLine(frame) {
-  await frame.evaluate(() => {
+  await frame.evaluate(({ syncedAt }) => {
     const status = document.querySelector(".search-bar .nf-text-subtle");
     const headerTitle = document.querySelector(".app-header-title");
     if (status) {
-      status.textContent = "最終更新: 2026/03/08 10:10:00";
+      status.textContent = `最終更新: ${syncedAt}`;
     }
     if (headerTitle) {
       headerTitle.textContent = headerTitle.textContent.replace("【マニュアル】", "");
     }
-  });
+  }, { syncedAt: SAMPLE_TIMES.syncedAt });
 }
 
 async function sanitizePreviewTitle(frame) {
