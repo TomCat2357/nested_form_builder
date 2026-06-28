@@ -19,6 +19,7 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
     onSave,
     onDirtyChange,
     onQuestionControlChange,
+    onSchemaChange,
     showToolbarSave = true,
   },
   ref,
@@ -102,6 +103,13 @@ const FormBuilderWorkspace = React.forwardRef(function FormBuilderWorkspace(
       onQuestionControlChange?.(questionControl);
     }
   }, [activeTab, questionControl, onQuestionControlChange]);
+
+  // 親（目次など）が schema 変化に追従できるよう、内部 schema を反応的に通知する。
+  // マウント時にシード済み schema で発火し、以後は schema 変化のたびに発火する。表示用の
+  // 読み取り通知のみで、再シード/dirty 判定や load once/freeze 方針には影響しない。
+  useEffect(() => {
+    onSchemaChange?.(schema);
+  }, [schema, onSchemaChange]);
 
   const handleSchemaChange = (nextSchema) => {
     const normalized = normalizeSchemaIDs(nextSchema);
