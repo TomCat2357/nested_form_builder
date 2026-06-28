@@ -187,3 +187,14 @@
 
 本体 `gas/` に合わせています。`var` + `function name(){}` スタイル、内部ヘルパは末尾アンダースコア、
 関数接頭辞 `Cho_`、定数 `CHO_`。`isDisplayed`/構造 HTML は doGet の自前ページのみ（本体の単一 HTML 配信とは別経路）。
+
+### 共有ドメイン定数（単一ソース）
+
+`CHO_SPECIES_ORDER_` / `CHO_TOOL_ORDER_` / `CHO_TOOL_KIND_` / `CHO_GUN_LIC_` は法令由来の語彙で、
+出力側 `choju_kyokasho` と**完全に同一値**。`Combined.gs` 内の
+`// >>> shared:chojuDomain` 〜 `// <<< shared:chojuDomain` マーカー区間は**自動生成**で、
+単一ソースは `../shared/chojuDomain.json`。値を変えるときは JSON を編集して
+`node gas_for_external_action/scripts/sync-shared-constants.mjs` を実行（マーカー間を直接編集しない）。
+各 `Combined.gs` は引き続き自己完結のまま clasp で push できる（実行時の共有ライブラリ依存は持たない）。
+`--check` 付き実行で同期漏れを検査できる。なお `CHO_ROSTER_`（名簿の幾何）は取込で読む列が
+出力側より多くモジュール固有のため共有しない。
