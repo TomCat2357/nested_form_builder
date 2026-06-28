@@ -131,6 +131,8 @@ eq("はこわな regNo", lic1.regNo, "石狩第9999号");
 
 // ---- 番号生成 ----
 eq("permitNo", C.Cho2_permitNo_("1-1", 1), "第1-1-1号");
+eq("certNoRaw", C.Cho2_certNoRaw_("1-1", 1), "1-1-1");
+eq("certNoRaw 空", C.Cho2_certNoRaw_("", 1), "");
 eq("kyokaBangoMark", C.Cho2_kyokaBangoMark_("1-1"), "第1-1号");
 eq("docNo", C.Cho2_docNo_("1-1"), "札環対許可第1-1号");
 eq("permitNoRange", C.Cho2_permitNoRange_("1-1", 2), "(許可証番号　第1-1-1号～第1-1-2号)");
@@ -157,22 +159,27 @@ eq("個人 従事者証 枚数", planP.juji.length, 0);
 eq("個人 許可証0 label", planP.kyokasho[0].label, "鈴木新之助");
 // 個人 許可証0 = その人自身の頭数（キツネ7）
 eq("個人 許可証0 キツネ count", cellOf(planP.kyokasho[0].cells, "H23"), 7);
-eq("個人 許可証0 番号C3", cellOf(planP.kyokasho[0].cells, "C3"), "第1-1-1号");
+eq("個人 許可証0 番号C3", cellOf(planP.kyokasho[0].cells, "C3"), "1-1-1");
 eq("個人 許可証0 氏名G13", cellOf(planP.kyokasho[0].cells, "G13"), "鈴木新之助");
 eq("個人 許可証0 住所G12", cellOf(planP.kyokasho[0].cells, "G12"), "小樽市");
 eq("個人 許可証0 方法G31", cellOf(planP.kyokasho[0].cells, "G31"), "手捕り,空気銃");
 // 個人 許可証1（田中）はキジバト1・スズメ3
 eq("個人 許可証1 スズメ count", cellOf(planP.kyokasho[1].cells, "H19"), 3);
+eq("個人 許可証1 番号C3", cellOf(planP.kyokasho[1].cells, "C3"), "1-1-2");
 // 通知（全員合計・個人=代表氏名ほかN名）
 eq("個人 通知 氏名C14", cellOf(planP.shinko, "C14"), "鈴木新之助(ほか1名)");
 eq("個人 通知 キツネ count D25", cellOf(planP.shinko, "D25"), 7); // 通知 grid 行25=off6（base19）
-eq("個人 通知 文書番号H3", cellOf(planP.shinko, "H3"), "札環対許可第1-1号");
+eq("個人 通知 許可番号F3", cellOf(planP.shinko, "F3"), "1-1");          // 札環対許可第○号 はセル書式が付与
+eq("個人 通知 許可日F4", cellOf(planP.shinko, "F4"), { __date: true, y: 2026, m: 6, d: 7 });
+eq("個人 名簿 E5 番号(raw)", cellOf(planP.roster, "E5"), "1-1-1");
+eq("個人 名簿 E14 番号(raw)", cellOf(planP.roster, "E14"), "1-1-2");
 
 // ---- buildPlan: 法人 = 許可証1・従事者証N（ともに全員合計）----
 const planC = C.Cho2_buildPlan_(pCorp, "");
 eq("法人 plan type", planC.type, "法人");
 eq("法人 許可証 枚数", planC.kyokasho.length, 1);
 eq("法人 従事者証 枚数", planC.juji.length, 2);
+eq("法人 許可証0 番号C3", cellOf(planC.kyokasho[0].cells, "C3"), "1-1"); // 法人は base
 eq("法人 許可証0 法人名G13", cellOf(planC.kyokasho[0].cells, "G13"), "株式会社ハンター協会");
 eq("法人 許可証0 代表者G14", cellOf(planC.kyokasho[0].cells, "G14"), "代表取締役　秋　はじめ");
 // 法人 許可証 = 全員合計（キツネ7・スズメ3・キジバト3）
@@ -181,15 +188,15 @@ eq("法人 許可証0 スズメ合計H19", cellOf(planC.kyokasho[0].cells, "H19"
 // 従事者証: 種数=全員合計、方法=その従事者分、法人名・氏名
 eq("法人 従事者証0 法人名K17", cellOf(planC.juji[0].cells, "K17"), "株式会社ハンター協会");
 eq("法人 従事者証0 氏名D25", cellOf(planC.juji[0].cells, "D25"), "鈴木新之助");
-eq("法人 従事者証0 許可証番号K14", cellOf(planC.juji[0].cells, "K14"), "第1-1号");
+eq("法人 従事者証0 許可番号K14", cellOf(planC.juji[0].cells, "K14"), "1-1");
 eq("法人 従事者証0 キツネ合計L26", cellOf(planC.juji[0].cells, "L26"), 7); // 従事者証 grid base20 off6=行26、count列L
 eq("法人 従事者証0 方法K36", cellOf(planC.juji[0].cells, "K36"), "手捕り,空気銃"); // worker0 の方法
 eq("法人 通知 氏名C14", cellOf(planC.shinko, "C14"), "株式会社ハンター協会　代表取締役　秋　はじめ");
 eq("法人 通知 住所C13", cellOf(planC.shinko, "C13"), "札幌市南区南４５条西３４丁目４－３");
 
 // ---- 従事者名簿ブロック ----
-const block0 = C.Cho2_rosterBlockCells_(pPerson.workers[0], 5, "第1-1-1号");
-eq("名簿 E5 許可証番号", cellOf(block0, "E5"), "第1-1-1号");
+const block0 = C.Cho2_rosterBlockCells_(pPerson.workers[0], 5, "1-1-1");
+eq("名簿 E5 許可証番号", cellOf(block0, "E5"), "1-1-1");
 eq("名簿 G5 氏名", cellOf(block0, "G5"), "鈴木新之助");
 eq("名簿 F5 住所", cellOf(block0, "F5"), "小樽市");
 eq("名簿 H5 職業", cellOf(block0, "H5"), "無職");
@@ -209,7 +216,7 @@ eq("名簿 X6 所持許可番号", cellOf(block0, "X6"), "01234567890");
 eq("名簿 Z6 鉄砲種類", cellOf(block0, "Z6"), "空気銃");
 
 // 名簿 worker1（田中・わな2種）: P5=くくりわな, P6=はこわな, S列=免許番号, V列=登録番号
-const block1 = C.Cho2_rosterBlockCells_(pPerson.workers[1], 14, "第1-1-2号");
+const block1 = C.Cho2_rosterBlockCells_(pPerson.workers[1], 14, "1-1-2");
 eq("名簿2 P14 くくりわな", cellOf(block1, "P14"), "くくりわな");
 eq("名簿2 P15 はこわな", cellOf(block1, "P15"), "はこわな");
 eq("名簿2 S14 免許番号", cellOf(block1, "S14"), "石狩第1237号");
