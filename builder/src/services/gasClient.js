@@ -411,6 +411,11 @@ export const createGoogleDocumentFromTemplate = ({ sourceUrl, driveSettings, fil
 export const finalizeRecordDriveFolder = (payload) =>
   fetchGasApi("nfbFinalizeRecordDriveFolder", payload, "Driveフォルダの確定に失敗しました");
 
+// 永続フォルダモードの fileUpload について、レコードを開いたときにフォルダが無ければ作成する
+// （サーバが KEEP フォルダを作成しセルへ書き戻す）。戻り: { folders: { <列キー>: {folderUrl, folderName} } }。
+export const ensureRecordPersistentFolders = ({ formId, recordId } = {}) =>
+  fetchGasApi("nfbEnsureRecordPersistentFolders", { formId, recordId }, "永続フォルダの確保に失敗しました");
+
 // アップロードファイルを物理ID優先・論理パス（folderName ＋ ファイル名）フォールバックで解決する。
 // プロジェクト移動・コピー後に物理が死んでいても、自プロジェクトの 06_upload_files 内へ再リンクする。
 export const resolveUploadFiles = ({ folderName, files }) =>

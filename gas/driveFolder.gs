@@ -269,6 +269,79 @@ function nfbFinalizeRecordDriveFolder(payload) {
   });
 }
 
+// 永続(persistentFolder)な fileUpload 列について、レコードのアップロードフォルダを確保する。
+// folderUrl が空 or 失効（手動削除/ゴミ箱）していれば KEEP フォルダを作成し、セル(JSON)へ書き戻す。
+// オープン時に呼ぶ「無ければ作る」用途。戻り: { ok, folders: { <列キー>: { folderUrl, folderName } } }。
+function nfbEnsureRecordPersistentFolders(payload) {
+  return nfbSafeCall_(function() {
+    var formId = payload ? Nfb_trimStr_(payload.formId) : "";
+    var recordId = payload ? Nfb_trimStr_(payload.recordId) : "";
+    if (!formId || !recordId) return { ok: true, folders: {} };
+
+    var form = Nfb_getFormCached_(formId);
+    if (!form || !form.schema) return { ok: true, folders: {} };
+
+    // 永続 fileUpload 列キー集合（列ビルダと同じ segment 関数＋Sheets_pathKey_ で columnPaths.key と一致）。
+    var persistentKeys = {};
+    var hasPersistent = false;
+    nfbTraverseSchema_(form.schema, function(field, ctx) {
+      if (field && field.type === "fileUpload" && field.persistentFolder === true) {
+        persistentKeys[Sheets_pathKey_(ctx.pathSegments)] = true;
+        hasPersistent = true;
+      }
+    }, {
+      fieldSegment: Sheets_headerFieldSegmentWithFallback_,
+      branchSegment: Sheets_headerBranchSegment_
+    });
+    if (!hasPersistent) return { ok: true, folders: {} };
+
+    var sheet = Nfb_openFormSheet_(form);
+    if (!sheet) return { ok: true, folders: {} };
+
+    return WithScriptLock_("永続フォルダ確保", function() {
+      var got = Sheets_getRecordById_(sheet, recordId);
+      if (!got || !got.ok) return { ok: true, folders: {} };
+      var sheetRow = NFB_DATA_START_ROW + got.rowIndex; // rowIndex は 0 始まりデータ行
+      var lastColumn = sheet.getLastColumn();
+      var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
+      var folders = {};
+      var changed = false;
+
+      for (var i = 0; i < columnPaths.length; i++) {
+        var col = columnPaths[i];
+        if (!persistentKeys[col.key]) continue;
+        var cellRange = sheet.getRange(sheetRow, col.index + 1, 1, 1);
+        var raw = cellRange.getValue();
+        var obj = null;
+        if (typeof raw === "string" && raw.replace(/^\s+/, "").charAt(0) === "{") {
+          try { obj = JSON.parse(raw); } catch (e) { obj = null; }
+        }
+        if (Object.prototype.toString.call(obj) === "[object Array]") obj = { files: obj }; // 旧 files 配列形を救済
+        else if (!obj || typeof obj !== "object") obj = { files: [] };
+        if (Object.prototype.toString.call(obj.files) !== "[object Array]") obj.files = [];
+
+        var folderUrl = (typeof obj.folderUrl === "string") ? obj.folderUrl.trim() : "";
+        var live = folderUrl ? nfbResolveFolderFromInputIfExists_(folderUrl) : null;
+        if (!live) {
+          var created = nfbResolveUploadFolder_({ recordId: recordId, persistentFolder: true });
+          obj.folderUrl = created.folder.getUrl();
+          obj.folderName = created.folder.getName();
+          cellRange.setValue(JSON.stringify(obj));
+          changed = true;
+          folders[col.key] = { folderUrl: obj.folderUrl, folderName: obj.folderName };
+        } else {
+          folders[col.key] = {
+            folderUrl: folderUrl,
+            folderName: (typeof obj.folderName === "string" && obj.folderName) ? obj.folderName : live.getName()
+          };
+        }
+      }
+      if (changed) { try { Sheets_touchSheetLastUpdated_(sheet, Date.now()); } catch (e) { /* no-op */ } }
+      return { ok: true, folders: folders };
+    });
+  });
+}
+
 /**
  * フォルダ内の同名ファイルをゴミ箱に移動する（上書き前処理）
  * @param {Folder} folder

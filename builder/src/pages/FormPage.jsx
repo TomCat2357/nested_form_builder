@@ -31,8 +31,12 @@ import {
   hasAnyConfiguredDriveFolder,
   loadDriveFolderStatesDraft,
   markDriveFolderForDeletion,
+  normalizeDriveFolderState,
   setDriveFolderStateForField,
 } from "../utils/driveFolderState.js";
+import { traverseSchema } from "../core/schemaUtils.js";
+import { joinFieldPath } from "../utils/pathCodec.js";
+import { ensureRecordPersistentFolders, hasScriptRun } from "../services/gasClient.js";
 import { fallbackForForm } from "./formPageHelpers.js";
 import {
   resolveFormPageBadge,
@@ -164,6 +168,8 @@ export default function FormPage() {
   const responseMutationSeqRef = useRef(0);
   const formLoadedStateRef = useRef(null);
   const pendingSyncedEntryRef = useRef(null);
+  // 永続フォルダのオープン時確保を「同一レコードで 1 回」に抑えるガード。
+  const ensuredPersistentFoldersRecordIdRef = useRef(null);
   const isDirectRecordMode = sharedFormId === formId && sharedRecordId !== "" && sharedRecordId === entryId;
   // URL で formid を固定して開いた（スコープ）状態。管理者如何に関わらず、戻る先はそのフォームの
   // 絞り込み一覧（/search?form=X）に限定し、メイン画面へは決して戻さない。
@@ -219,6 +225,47 @@ export default function FormPage() {
     if (!fieldId) return;
     setDriveFolderStates((prev) => setDriveFolderStateForField(prev, fieldId, updater));
   }, []);
+
+  // 永続フォルダモード: 保存済みレコードを開いたとき、persistentFolder な fileUpload 項目の
+  // フォルダが（未作成 or 外部削除で）無ければサーバ側で KEEP フォルダを作成しセルへ書き戻す。
+  // 戻ってきた folderUrl を driveFolderStates と初期参照の両方へ反映（ダーティ扱いを避ける）。
+  useEffect(() => {
+    const recordId = currentRecordId;
+    if (!recordId || !hasScriptRun()) return;
+    if (ensuredPersistentFoldersRecordIdRef.current === recordId) return; // 同一レコードで 1 回
+    const schema = normalizedSchemaRef.current;
+    const targets = [];
+    traverseSchema(schema || [], (field, ctx) => {
+      if (field?.type === "fileUpload" && field?.persistentFolder === true && field?.id) {
+        targets.push({ id: field.id, path: joinFieldPath(ctx.pathSegments || []) });
+      }
+    });
+    if (!targets.length) return;
+    ensuredPersistentFoldersRecordIdRef.current = recordId;
+    let cancelled = false;
+    ensureRecordPersistentFolders({ formId, recordId })
+      .then((res) => {
+        if (cancelled) return;
+        const folders = (res && res.folders) || {};
+        targets.forEach(({ id, path }) => {
+          const f = folders[path];
+          if (!f || !f.folderUrl) return;
+          const nextSt = normalizeDriveFolderState({
+            resolvedUrl: f.folderUrl,
+            inputUrl: f.folderUrl,
+            folderName: f.folderName || "",
+            autoCreated: true,
+          });
+          updateFieldDriveFolderState(id, () => nextSt);
+          // サーバ側で保存済みなので初期参照にも反映＝ダーティにしない。
+          initialDriveFolderStatesRef.current = setDriveFolderStateForField(
+            initialDriveFolderStatesRef.current, id, () => nextSt,
+          );
+        });
+      })
+      .catch(() => { /* 取得失敗は無言（次回オープンで再試行）。choju 側でフォルダ無しはエラー表示 */ });
+    return () => { cancelled = true; };
+  }, [currentRecordId, formId, updateFieldDriveFolderState]);
   const isDirtyRef = useLatestRef(isDirty);
   const isViewModeRef = useLatestRef(isViewMode);
   const normalizedSchemaRef = useLatestRef(normalizedSchema);
