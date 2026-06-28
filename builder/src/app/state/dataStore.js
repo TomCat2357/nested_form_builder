@@ -45,6 +45,8 @@ import { kickUploadWorker, enqueueEntitySave } from "./uploadWorker.js";
 import {
   getSheetConfig,
   getDeletedRetentionDays,
+  getRecordNoStart,
+  resolveNextRecordNo,
   isDeletedEntryExpired,
   pruneExpiredDeletedEntries,
   mapSheetRecordToEntry,
@@ -427,7 +429,10 @@ export const dataStore = {
     );
     if (needsNewRecordNo) {
       const maxNo = await getMaxRecordNo(formId);
-      nextRecordNo = maxNo + 1;
+      // フォーム修正画面で指定した No. の開始番号を下限に採番する（空欄なら 1 始まり）。
+      // フォームはほぼ常にキャッシュ命中で取れる。万一取得できなければ既定（1 始まり）へフォールバック。
+      const form = await this.getForm(formId).catch(() => null);
+      nextRecordNo = resolveNextRecordNo(maxNo, getRecordNoStart(form));
     }
 
     const record = buildUpsertEntryRecord({

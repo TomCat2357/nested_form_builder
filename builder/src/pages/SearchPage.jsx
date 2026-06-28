@@ -39,6 +39,7 @@ export default function SearchPage() {
     effectiveFormId,
     isScopedByAuth,
     form,
+    normalizedSchema,
     showDeleteConfirm,
     setShowDeleteConfirm,
     showUndeleteConfirm,
@@ -183,6 +184,7 @@ export default function SearchPage() {
             userEmail,
           }}
           form={form}
+          normalizedSchema={normalizedSchema}
           outputTargetRows={outputTargetRows}
           searchChildFormsResolver={resolveSearchChildFormsForRows}
           searchChildStorageMetaResolver={resolveSearchChildStorageMeta}

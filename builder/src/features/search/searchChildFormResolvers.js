@@ -14,8 +14,12 @@ const getBaseUrl = () =>
   (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
 
 // 外部アクション送信時に呼ぶ on-demand リゾルバ。対象行ぶんの子データを子フォームごとに
-// 1 回の listRecordsByPids でバッチ取得し、entries と同順の childFormsByRow を返す。
-// 表示用に既に eager 取得済み（searchChildDataByField）の子フォームはそれを再利用する。
+// 1 回の listRecordsByPids でバッチ取得し、entries と同順で「各行 = { fieldId: 子フォーム合成
+// オブジェクト }」を返す。これを buildRecordFromEntry が childDataByFieldId として読み、formLink
+// 項目を items にインライン展開する（編集画面と同形）。表示用に既に eager 取得済み
+// （searchChildDataByField）の子フォームはそれを再利用する。
+// 子 SS / シート名は機微情報なので、ここでは載せず storage（admin ゲート・resolveSearchChildStorageMeta）
+// 経由でのみ渡す（子データ本体 items には SS を含めない＝漏洩経路を持たない）。
 export const resolveSearchChildFormsForRows = async (entries, {
   externalActionChildFormFields,
   searchChildDataByField,
@@ -28,20 +32,11 @@ export const resolveSearchChildFormsForRows = async (entries, {
   const canFetch = typeof listRecordsByPids === "function" && hasScriptRun();
   // fieldId → { [pid]: 合成オブジェクト }
   const byField = {};
-  // fieldId → 子フォームの保存先スプレッドシート ID / シート名（リレーで choju へ動的受け渡し）。
-  const ssByField = {};
-  const shtByField = {};
   for (const field of externalActionChildFormFields) {
     // 表示用に eager 取得済みなら再利用（同じ子フォーム・同じ pid 集合を満たす範囲で）。
     const cached = searchChildDataByField[field.id];
     if (cached && cached.byPid && pids.every((pid) => cached.byPid[pid] !== undefined)) {
       byField[field.id] = cached.byPid;
-      // 子 SS / シート名は form 定義から（getChildFormCached_ は promise キャッシュで安価）。
-      try {
-        const cf = await getChildFormCached_(field.childFormId);
-        ssByField[field.id] = childFormSpreadsheetId(cf);
-        shtByField[field.id] = childFormSheetName(cf);
-      } catch (_e) { ssByField[field.id] = ""; shtByField[field.id] = ""; }
       continue;
     }
     if (!canFetch) continue;
@@ -50,8 +45,6 @@ export const resolveSearchChildFormsForRows = async (entries, {
         getChildFormCached_(field.childFormId),
         listRecordsByPids({ formId: field.childFormId, pids }),
       ]);
-      ssByField[field.id] = childFormSpreadsheetId(childForm);
-      shtByField[field.id] = childFormSheetName(childForm);
       const childSchema = childForm && childForm.schema ? childForm.schema : [];
       const grouped = distributeChildRecordsByPid(records);
       const byPid = {};
@@ -71,13 +64,13 @@ export const resolveSearchChildFormsForRows = async (entries, {
   }
   return rows.map((entry) => {
     const key = String(entry && entry.id != null ? entry.id : "");
-    const out = [];
+    const byFieldId = {};
     for (const field of externalActionChildFormFields) {
       const byPid = byField[field.id];
       const obj = byPid ? byPid[key] : null;
-      if (obj) out.push({ fieldPath: field.path, ...obj, childSpreadsheetId: ssByField[field.id] || "", childSheetName: shtByField[field.id] || "" });
+      if (obj) byFieldId[field.id] = obj;
     }
-    return out;
+    return byFieldId;
   });
 };
 

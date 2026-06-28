@@ -89,15 +89,21 @@ export default function AdminFormEditorPage() {
   // 開いた瞬間に表示する IndexedDB キャッシュの目次ツリー（フォーム本体ロードを待たない）。
   // 本体ロード完了後はライブ schema 由来の目次へ自然に差し替わる。
   const [cachedNavItems, setCachedNavItems] = useState(null);
+  // ビルダー内部 schema のライブ値（onSchemaChange で同期）。ロード完了後の目次を反応的に
+  // 組み立てる源。null の間は initialSchema をフォールバックに使う（開いた瞬間から全表示）。
+  const [liveSchema, setLiveSchema] = useState(null);
 
   // フォーム本体のロードとは独立に、目次キャッシュを即読み出してサイドバーへ出す。
   useEffect(() => {
     if (!isEdit || !formId) {
       setCachedNavItems(null);
+      setLiveSchema(null);
       return;
     }
     let cancelled = false;
     setCachedNavItems(null);
+    // フォーム切替時に前フォームの schema が目次に残らないようリセット（次の onSchemaChange で再設定）。
+    setLiveSchema(null);
     getFormNavFromCache(formId)
       .then((cached) => {
         if (!cancelled && cached?.items) setCachedNavItems(cached.items);
@@ -451,7 +457,7 @@ export default function AdminFormEditorPage() {
             📊 スプレッドシートを開く
           </button>
           <SchemaMapNav
-            schema={builderRef.current?.getSchema?.() || initialSchema}
+            schema={liveSchema != null ? liveSchema : initialSchema}
             scope="all"
             leadingItems={META_LEADING_ITEMS}
           />
@@ -583,6 +589,7 @@ export default function AdminFormEditorPage() {
               formTitle={name || "フォーム"}
               onDirtyChange={setBuilderDirty}
               onQuestionControlChange={setQuestionControl}
+              onSchemaChange={setLiveSchema}
               showToolbarSave={false}
             />
           </div>

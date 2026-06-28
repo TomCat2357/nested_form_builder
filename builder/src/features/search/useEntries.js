@@ -488,11 +488,16 @@ export const useEntries = ({
       }
 
       if (shouldSync && !hasCache) {
+        // キャッシュが空のときは差分の起点（lastSyncedAt）が entries と独立に新しくなっている
+        // ことがあり（globalSyncState 由来。例: schemaHash 変化でレコードのみ退避された直後）、
+        // 差分フェッチだとサーバが unchanged を返して setEntries がスキップされ、表が空のまま
+        // 固まる。キャッシュ未命中時は必ず全件取得して entries を確実に埋める。
         logSearchBackground("initial:sync-start", {
           reason: "initial-sync",
           shouldSync,
+          forceFullSync: true,
         });
-        await fetchAndCacheData({ background: false, reason: "initial-sync" });
+        await fetchAndCacheData({ background: false, forceFullSync: true, reason: "initial-sync" });
         return;
       }
 

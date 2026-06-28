@@ -21,7 +21,6 @@ import {
   buildFieldPathsMap,
   buildFieldValuesMap,
   collectFileUploadMeta,
-  collectExternalActionFiles,
   formatRecordMetaDateTime,
   buildRecordItems,
 } from "./printDocument.js";
@@ -563,26 +562,25 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       showAlert("URL が不正です (http:// または https:// で始まる必要があります)。質問カードの設定を確認してください。");
       return;
     }
-    // formLink 項目の子フォームデータを、他の質問カードと同じ record.items 列へ展開する
+    // formLink 項目の子フォームデータを、他の質問カードと同じ items 列へ展開する
     // （印刷様式と同じ childFormMeta マップを使い 外部アクション/印刷の渡し方を揃える）。
+    // ファイル参照（名前・URL・フォルダ URL）は folderUrlsByField/folderNamesByField を渡して
+    // items[].files / folderUrl に内包する（受信側は items から読む。サーバ側 Drive 解決は廃止）。
     const record = {
       id: recordIdRef.current,
       no: settings.recordNo ?? "",
-      items: buildRecordItems(schema, responses, { childDataByFieldId: childFormMeta }),
+      items: buildRecordItems(schema, responses, { childDataByFieldId: childFormMeta, folderUrlsByField, folderNamesByField }),
     };
+    // 起動元に依らない統一フォーマット（records 配列 + recordCount）。編集画面は常に 1 件。
     const payload = buildExternalActionPayload({
-      context: "record",
       formId: settings.formId || "",
       formName: formTitle,
-      base: { record },
+      base: { records: [record], recordCount: 1 },
       storageFields: { spreadsheetId, sheetName, driveFileUrl, userEmail: currentUserEmail, childSpreadsheetId, childSheetName },
       gate,
     });
-    // このレコードの fileUpload 参照を常に渡す。フォルダ/ファイルの URL 解決と質問項目ごとの
-    // 構造化は Drive 権限を持つ本体 GAS（ExtAction_send_）が行う（実体ではなく URL のみ送る）。
-    const files = collectExternalActionFiles(schema, { responses, folderNamesByField });
     try {
-      const res = await sendExternalAction({ url: resolvedUrl, payload, files });
+      const res = await sendExternalAction({ url: resolvedUrl, payload });
       const result = interpretExternalActionResponse(res);
       if (!result.ok) {
         // ok:false でも openUrl があれば新タブで開く（受信側の権限付与誘導に対応）。

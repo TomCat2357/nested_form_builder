@@ -76,14 +76,14 @@ test("ExtAction_send_ は payload を form フィールド payload(JSON) + Beare
     captured = { url, opts };
     return httpResponse(200, "{\"ok\":true}");
   });
-  const res = ctx.ExtAction_send_({ url: "https://x/exec?k=abc", payload: { context: "record", n: 1 } });
+  const res = ctx.ExtAction_send_({ url: "https://x/exec?k=abc", payload: { recordCount: 1, n: 1 } });
   assert.equal(res.ok, true);
   assert.equal(res.status, 200);
   assert.equal(res.body, "{\"ok\":true}");
   assert.equal(calls, 1); // シークレットなし＝プローブなし＝1 回だけ
   assert.equal(captured.url, "https://x/exec?k=abc&nfbRelay=1");
   assert.equal(captured.opts.method, "post");
-  assert.equal(captured.opts.payload.payload, JSON.stringify({ context: "record", n: 1 }));
+  assert.equal(captured.opts.payload.payload, JSON.stringify({ recordCount: 1, n: 1 }));
   assert.equal(captured.opts.headers.Authorization, "Bearer TEST_TOKEN");
   assert.equal(captured.opts.muteHttpExceptions, true);
 });
@@ -141,7 +141,7 @@ test("ExtAction_send_ は送信元シークレット設定時に正規宛先へ 
     }
     return httpResponse(200, JSON.stringify({ ok: true, title: "受信" }));
   }, "S");
-  const res = ctx.ExtAction_send_({ url: "https://x/exec", payload: { context: "record", secretData: "x" } });
+  const res = ctx.ExtAction_send_({ url: "https://x/exec", payload: { recordCount: 1, secretData: "x" } });
   assert.equal(res.ok, true);
   assert.equal(calls.length, 2);
   // Phase1（プローブ）: nfbProbe/nonce を含み、本 payload は含まない。
@@ -149,130 +149,25 @@ test("ExtAction_send_ は送信元シークレット設定時に正規宛先へ 
   assert.equal(calls[0].opts.payload.nonce, "NONCE_FIXED");
   assert.equal(calls[0].opts.payload.payload, undefined);
   // Phase2（本送信）: 本 payload を送る。
-  assert.equal(calls[1].opts.payload.payload, JSON.stringify({ context: "record", secretData: "x" }));
+  assert.equal(calls[1].opts.payload.payload, JSON.stringify({ recordCount: 1, secretData: "x" }));
 });
 
-// ----- アップロードファイル同梱（質問ごとの Drive URL/名前） ------------------
+// ----- ファイル参照は payload.records[].items[].files 内包（サーバ側 Drive 解決は廃止） --------
 
-// deps を注入する純ヘルパ。store: { [fileId]: { fileUrl, folderUrl, folderName } }。
-// 未登録 fileId は解決失敗扱い。base64 は送らないので resolve / resolveFolder のみ。
-function makeDeps(store) {
-  return {
-    resolve(name, driveFileId) {
-      const entry = store[driveFileId];
-      return entry ? { fileId: driveFileId, fileUrl: entry.fileUrl || "" } : { fileId: "", fileUrl: "" };
-    },
-    resolveFolder(fileId) {
-      const entry = store[fileId];
-      return entry
-        ? { folderUrl: entry.folderUrl || "", folderName: entry.folderName || "" }
-        : { folderUrl: "", folderName: "" };
-    },
-  };
-}
-
-test("ExtAction_attachFiles_ は files を質問ごとに構造化してフォルダ/ファイルの URL・名前を詰める", () => {
-  const ctx = loadContext();
-  const store = {
-    F1: { fileUrl: "https://drive/F1", folderUrl: "https://drive/folders/D1", folderName: "rec_1" },
-  };
-  const payload = { context: "record" };
-  const out = ctx.ExtAction_attachFiles_(payload, [
-    { fieldId: "fld", question: "親/子", name: "a.txt", driveFileId: "F1", folderName: "rec_1" },
-  ], makeDeps(store));
-  const group = out.files["親/子"];
-  assert.ok(group);
-  assert.equal(group.fieldId, "fld");
-  assert.equal(group.folderName, "rec_1");
-  assert.equal(group.folderUrl, "https://drive/folders/D1");
-  assert.equal(group.files.length, 1);
-  assert.equal(group.files[0].name, "a.txt");
-  assert.equal(group.files[0].url, "https://drive/F1");
-  assert.equal(group.files[0].base64, undefined);
-  assert.equal(out.filesWarning, undefined);
-});
-
-test("ExtAction_attachFiles_ は同一質問の複数ファイルをまとめ、別質問は別キーにする", () => {
-  const ctx = loadContext();
-  const store = {
-    F1: { fileUrl: "https://drive/F1", folderUrl: "https://drive/folders/D1", folderName: "rec_1" },
-    F2: { fileUrl: "https://drive/F2", folderUrl: "https://drive/folders/D1", folderName: "rec_1" },
-    F3: { fileUrl: "https://drive/F3", folderUrl: "https://drive/folders/D2", folderName: "rec_2" },
-  };
-  const payload = {};
-  const out = ctx.ExtAction_attachFiles_(payload, [
-    { fieldId: "u1", question: "添付", name: "a.txt", driveFileId: "F1", folderName: "rec_1" },
-    { fieldId: "u1", question: "添付", name: "b.txt", driveFileId: "F2", folderName: "rec_1" },
-    { fieldId: "u2", question: "写真", name: "c.jpg", driveFileId: "F3", folderName: "rec_2" },
-  ], makeDeps(store));
-  assert.deepEqual(Object.keys(out.files).sort(), ["写真", "添付"]);
-  assert.equal(out.files["添付"].files.length, 2);
-  assert.equal(out.files["添付"].files[0].name, "a.txt");
-  assert.equal(out.files["添付"].files[1].name, "b.txt");
-  assert.equal(out.files["写真"].files.length, 1);
-  assert.equal(out.files["写真"].folderUrl, "https://drive/folders/D2");
-});
-
-test("ExtAction_attachFiles_ は解決できないファイルをスキップして件数を警告する", () => {
-  const ctx = loadContext();
-  const store = { F1: { fileUrl: "https://drive/F1", folderUrl: "https://drive/folders/D1", folderName: "rec_1" } };
-  const payload = {};
-  const out = ctx.ExtAction_attachFiles_(payload, [
-    { question: "添付", name: "a.txt", driveFileId: "F1", folderName: "rec_1" },
-    { question: "添付", name: "gone.txt", driveFileId: "DEAD" }, // store に無い → 解決失敗
-  ], makeDeps(store));
-  assert.equal(out.files["添付"].files.length, 1);
-  assert.equal(out.filesTruncated, undefined);
-  assert.match(out.filesWarning, /取得できませんでした/);
-});
-
-test("ExtAction_send_ は files 指定時に Phase2 本送信へ質問ごとの URL/名前を同梱する（プローブには載せない）", () => {
-  const calls = [];
-  const ctx = loadContext((url, opts) => {
-    calls.push({ url, opts });
-    const body = opts.payload;
-    if (body && String(body.nfbProbe) === "1") {
-      return httpResponse(200, JSON.stringify({ ok: true, nfbExternalAction: true, signature: hmacHex(String(body.nonce), "S") }));
-    }
-    return httpResponse(200, JSON.stringify({ ok: true }));
-  }, "S", {
-    DriveApp: {
-      getFileById(id) {
-        if (id !== "F1") throw new Error("not found");
-        // getParents() は GAS の FolderIterator 互換スタブ（hasNext/next）。
-        return {
-          getParents() {
-            let done = false;
-            return {
-              hasNext() { return !done; },
-              next() { done = true; return { getUrl() { return "https://drive/folders/D1"; }, getName() { return "rec_1"; } }; },
-            };
-          },
-        };
-      },
-    },
-    Nfb_resolveUploadFileEntry_(name, driveFileId) {
-      return driveFileId === "F1" ? { fileId: "F1", fileUrl: "https://drive/F1" } : { fileId: "", fileUrl: "" };
-    },
-  });
+test("ExtAction_send_ は raw.files を無視し、payload をそのまま中継する（サーバ側 files 解決は廃止）", () => {
+  let captured = null;
+  const ctx = loadContext((url, opts) => { captured = opts; return httpResponse(200, JSON.stringify({ ok: true })); });
+  const payload = { recordCount: 1, records: [{ id: "r1", no: 1, items: [{ question: "添付", type: "fileUpload", files: [{ name: "a.txt", url: "https://drive/F1" }] }] }] };
   const res = ctx.ExtAction_send_({
     url: "https://x/exec",
-    payload: { context: "record" },
-    files: [{ fieldId: "fld", question: "親/子", name: "a.txt", driveFileId: "F1", folderName: "rec_1" }],
+    payload,
+    files: [{ question: "添付", name: "a.txt", driveFileId: "F1" }], // 旧 files param は無視される
   });
   assert.equal(res.ok, true);
-  assert.equal(calls.length, 2);
-  // プローブ本文にはファイルを含めない。
-  assert.equal(calls[0].opts.payload.nfbProbe, "1");
-  assert.equal(calls[0].opts.payload.payload, undefined);
-  // Phase2 本送信の payload(JSON) に質問ごとの URL/名前が乗る（base64 ではない）。
-  const sent = JSON.parse(calls[1].opts.payload.payload);
-  const group = sent.files["親/子"];
-  assert.equal(group.files[0].name, "a.txt");
-  assert.equal(group.files[0].url, "https://drive/F1");
-  assert.equal(group.folderUrl, "https://drive/folders/D1");
-  assert.equal(group.folderName, "rec_1");
-  assert.equal(group.files[0].base64, undefined);
+  const sent = JSON.parse(captured.payload.payload);
+  // 中継 payload は入力そのまま（ファイルは items[].files に既に内包）。サーバが files キーを生やさない。
+  assert.deepEqual(sent, payload);
+  assert.equal(sent.files, undefined);
 });
 
 test("ExtAction_send_ は宛先を確認できないとき本データを送らない（DEST_UNVERIFIED）", () => {

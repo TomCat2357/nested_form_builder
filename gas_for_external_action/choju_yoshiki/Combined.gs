@@ -144,7 +144,7 @@ var CHO_L_PERIOD_ = "捕獲等又は採取等の期間";
 var CHO_L_AREA_ = "捕獲等又は採取等の区域";
 var CHO_L_AREA7_ = "規則第７条第１項第７号に係る場所等の位置、名称及び理由";
 var CHO_L_APPLICANT_ = "申請者情報";
-var CHO_L_APPLICANT_TYPE_ = "申請者の個人・法人の別";
+var CHO_L_APPLICANT_TYPE_ = "個人・法人の別";
 var CHO_L_REMARKS_ = "備考";
 // 申請受付の日付（親フォーム先頭の date 項目）。申請日は Excel から取り込み、受付日は取り込み実行日。
 var CHO_L_APP_DATE_ = "申請日";
@@ -1562,55 +1562,19 @@ function Cho_buildProbeResponse_(nonce) {
   };
 }
 // 本体 payload から、取り込みに必要な親 storage を抜き出す。
-// 子フォームの保存先 spreadsheetId は本体（管理者送信時のみ）が storage.childSpreadsheetId に同梱する。
-// 欠落時は payload.list.childFormsByRow から拾うフォールバックを使う（手動登録 CHO_CHILD_SS_ID に依存しない）。
+// 子フォームの保存先 spreadsheetId / sheetName は本体（管理者送信時のみ）が storage に同梱する。
+// 子 SS は機微情報なので storage（admin ゲート）にのみ載り、レコード本体（records[].items）には
+// 含まれない。旧 payload.list.childFormsByRow フォールバックは廃止（統一フォーマットで list は無い）。
 function Cho_extractRelayContext_(data) {
   var storage = (data && data.storage && typeof data.storage === "object") ? data.storage : {};
-  var childSpreadsheetId = typeof storage.childSpreadsheetId === "string" ? storage.childSpreadsheetId : "";
-  if (!childSpreadsheetId) childSpreadsheetId = Cho_firstChildSpreadsheetIdFromList_(data);
-  var childSheetName = typeof storage.childSheetName === "string" ? storage.childSheetName : "";
-  if (!childSheetName) childSheetName = Cho_firstChildSheetNameFromList_(data);
   return {
     parentSpreadsheetId: typeof storage.spreadsheetId === "string" ? storage.spreadsheetId : "",
-    childSpreadsheetId: childSpreadsheetId,
+    childSpreadsheetId: typeof storage.childSpreadsheetId === "string" ? storage.childSpreadsheetId : "",
     driveFileUrl: typeof storage.driveFileUrl === "string" ? storage.driveFileUrl : "",
     sheetName: typeof storage.sheetName === "string" ? storage.sheetName : "",
-    childSheetName: childSheetName,
+    childSheetName: typeof storage.childSheetName === "string" ? storage.childSheetName : "",
     formId: (data && typeof data.formId === "string") ? data.formId : ""
   };
-}
-// payload.list.childFormsByRow（各行 = 子フォーム合成オブジェクト配列）から最初の非空 childSpreadsheetId を拾う。
-function Cho_firstChildSpreadsheetIdFromList_(data) {
-  var list = (data && data.list && typeof data.list === "object") ? data.list : null;
-  var rows = (list && Object.prototype.toString.call(list.childFormsByRow) === "[object Array]") ? list.childFormsByRow : null;
-  if (!rows) return "";
-  for (var i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    if (Object.prototype.toString.call(row) !== "[object Array]") continue;
-    for (var j = 0; j < row.length; j++) {
-      var obj = row[j];
-      if (obj && typeof obj.childSpreadsheetId === "string" && obj.childSpreadsheetId) return obj.childSpreadsheetId;
-    }
-  }
-  return "";
-}
-// childFormsByRow から、最初の非空 childSpreadsheetId を持つ子フォームの childSheetName を拾う。
-// childSpreadsheetId の選択（Cho_firstChildSpreadsheetIdFromList_）と同じオブジェクトを採り、SS とシート名を揃える。
-function Cho_firstChildSheetNameFromList_(data) {
-  var list = (data && data.list && typeof data.list === "object") ? data.list : null;
-  var rows = (list && Object.prototype.toString.call(list.childFormsByRow) === "[object Array]") ? list.childFormsByRow : null;
-  if (!rows) return "";
-  for (var i = 0; i < rows.length; i++) {
-    var row = rows[i];
-    if (Object.prototype.toString.call(row) !== "[object Array]") continue;
-    for (var j = 0; j < row.length; j++) {
-      var obj = row[j];
-      if (obj && typeof obj.childSpreadsheetId === "string" && obj.childSpreadsheetId) {
-        return (typeof obj.childSheetName === "string") ? obj.childSheetName : "";
-      }
-    }
-  }
-  return "";
 }
 // ctx をスクリプトキャッシュへ（doPost と doGet/commit は別リクエストなので橋渡し。TTL 10 分）。
 function Cho_putCtx_(ctx) {
@@ -1651,8 +1615,7 @@ if (typeof module === "object" && module.exports) {
     Cho_resolveCell_: Cho_resolveCell_, Cho_canonicalToSheetDate_: Cho_canonicalToSheetDate_,
     Cho_buildNewRow_: Cho_buildNewRow_, Cho_collectDroppedKeys_: Cho_collectDroppedKeys_,
     Cho_buildUploadCell_: Cho_buildUploadCell_, Cho_buildFriendly_: Cho_buildFriendly_,
-    Cho_extractRelayContext_: Cho_extractRelayContext_, Cho_firstChildSpreadsheetIdFromList_: Cho_firstChildSpreadsheetIdFromList_,
-    Cho_firstChildSheetNameFromList_: Cho_firstChildSheetNameFromList_,
+    Cho_extractRelayContext_: Cho_extractRelayContext_,
     Cho_mergeTargets_: Cho_mergeTargets_, Cho_hmacHex_: Cho_hmacHex_,
     Sheets_normalizeRecordDataKeys_: Sheets_normalizeRecordDataKeys_,
     Sheets_neutralizeFormulaPrefix_: Sheets_neutralizeFormulaPrefix_,

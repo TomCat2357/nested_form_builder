@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   buildChildDataObject,
+  buildRecordFromEntry,
   distributeChildRecordsByPid,
   collectFormLinkFields,
   collectFormLinkChildFormIds,
@@ -43,6 +44,76 @@ test("buildChildDataObject: メタ + 各子レコードの items を組む", () 
   assert.ok(nameItem, "氏名 item should exist");
   assert.equal(nameItem.value, "山田");
   assert.ok(!("truncated" in obj));
+});
+
+test("buildChildDataObject: id 欠落の子 schema でもフィールドごとに正しく items を組む（GAS id ストリップ耐性）", () => {
+  // GAS は保存時に Forms_stripSchemaIds_ で field id を落とすため、getChildFormCached_
+  // （dataStore.getForm）から来る子 schema は field.id が欠落している。修正前は
+  // restoreResponsesFromData/buildRecordItems が responses[undefined] に全フィールドを集約し、
+  // traverse で最後に書かれる方法チェックボックス値（["手捕り"]）が氏名/住所/職業へ化けていた。
+  const idlessSchema = [
+    { type: "text", label: "氏名" },
+    { type: "text", label: "住所" },
+    { type: "text", label: "職業" },
+    { type: "checkboxes", label: "方法", options: [{ label: "手捕り" }, { label: "わな" }] },
+  ];
+  const record = {
+    id: "c1",
+    "No.": "1",
+    pid: "p1",
+    data: { "氏名": "鈴木新之助", "住所": "小樽市", "職業": "無職", "方法": ["手捕り"] },
+    dataUnixMs: {},
+  };
+  const obj = buildChildDataObject({ childFormId: "f", childSchema: idlessSchema, records: [record] });
+  const items = obj.records[0].items;
+  const get = (q) => (items.find((it) => it.question === q) || {}).value;
+  assert.equal(get("氏名"), "鈴木新之助");
+  assert.equal(get("住所"), "小樽市");
+  assert.equal(get("職業"), "無職");
+  assert.equal(get("方法"), "手捕り");
+  // 衝突して text 欄が方法値（手捕り）へ化けていないこと（本不具合の回帰ガード）。
+  assert.notEqual(get("氏名"), "手捕り");
+});
+
+test("buildRecordFromEntry: entry を { id, no, items } に整形する", () => {
+  const rec = buildRecordFromEntry(childSchema, makeRecord("c1", "p1", "山田", "20"));
+  assert.equal(rec.id, "c1");
+  assert.equal(rec.no, "1");
+  const nameItem = rec.items.find((it) => it.question === "氏名");
+  assert.ok(nameItem);
+  assert.equal(nameItem.value, "山田");
+});
+
+test("buildRecordFromEntry: childDataByFieldId を渡すと formLink を items にインライン展開する", () => {
+  const parentSchema = [
+    { id: "p_name", type: "text", label: "申請者" },
+    { id: "fl1", type: "formLink", label: "従事者", childFormId: "fileChild" },
+  ];
+  const childObj = buildChildDataObject({
+    childFormId: "fileChild",
+    childFormName: "従事者",
+    childSchema,
+    records: [makeRecord("c1", "p1", "鈴木", "40")],
+  });
+  const parentEntry = { id: "p1", "No.": "7", data: { "申請者": "親太郎" }, dataUnixMs: {} };
+  const rec = buildRecordFromEntry(parentSchema, parentEntry, { childDataByFieldId: { fl1: childObj } });
+  assert.equal(rec.id, "p1");
+  assert.equal(rec.no, "7");
+  // 親項目はそのまま
+  assert.ok(rec.items.find((it) => it.question === "申請者" && it.value === "親太郎"));
+  // 子は "従事者/#1/氏名" の #No マーカーでインライン
+  const childItem = rec.items.find((it) => it.question === "従事者/#1/氏名");
+  assert.ok(childItem, `child item should be inlined: ${rec.items.map((i) => i.question).join(", ")}`);
+  assert.equal(childItem.value, "鈴木");
+});
+
+test("buildRecordFromEntry: childDataByFieldId 無しなら子は展開しない", () => {
+  const parentSchema = [
+    { id: "fl1", type: "formLink", label: "従事者", childFormId: "fileChild" },
+    { id: "p_name", type: "text", label: "申請者" },
+  ];
+  const rec = buildRecordFromEntry(parentSchema, { id: "p1", "No.": "1", data: { "申請者": "親" } });
+  assert.equal(rec.items.some((it) => String(it.question).includes("#")), false);
 });
 
 test("buildChildDataObject: 空レコードは count 0 / records 空", () => {

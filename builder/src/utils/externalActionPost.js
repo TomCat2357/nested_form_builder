@@ -9,10 +9,11 @@
 import { asString } from "./strings.js";
 import { buildSpreadsheetUrl } from "./externalActionUrl.js";
 
-// payload を組み立てる。base は context 固有データ (一覧 list / レコード record)。
+// payload を組み立てる。base はレコード配列データ ({ records, recordCount })。起動元（編集画面 /
+// 検索一覧・単一 / 検索一覧・複数）に依らず単一フォーマットで、受信側は recordCount（= records 数）
+// だけで単一/複数を判定する（旧 context フィールドは廃止）。
 // storageFields は機微情報の供給元。gate で管理者ゲーティングを判定する。
 export const buildExternalActionPayload = ({
-  context,
   formId,
   formName,
   base = {},
@@ -21,7 +22,6 @@ export const buildExternalActionPayload = ({
 } = {}) => {
   const { adminOnly = false, isAdmin = false } = gate && typeof gate === "object" ? gate : {};
   const payload = {
-    context,
     formId: formId || "",
     formName: formName || "",
     generatedAt: new Date().toISOString(),

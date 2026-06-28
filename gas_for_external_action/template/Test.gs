@@ -8,19 +8,19 @@
 // 使い方:
 //   1. GAS エディタで関数 testAll を選択して実行 (初回は権限承認)
 //   2. 「実行ログ」に各 payload の受信内容と PASS/FAIL が出力される
-//   3. testDoPost_search / testDoPost_record / testDoPost_adminStorage を
-//      個別に実行すれば、その context だけ確認できる
+//   3. testDoPost_singleRecord / testDoPost_multiRecords / testDoPost_adminStorage を
+//      個別に実行すれば、その起動元パターンだけ確認できる
 //
 // ダミー payload の形は builder/src/utils/externalActionPost.js の
-// buildExternalActionPayload と、list/record の base 構造に合わせてある。
+// buildExternalActionPayload と records 配列 base 構造に合わせてある（起動元に依らず統一形）。
 // フロント側を変えたらこちらのダミーも更新すること。
 // =============================================================================
 
 // ----- 一括実行 ------------------------------------------------------------
 function testAll() {
   var results = [];
-  results.push(testDoPost_search());
-  results.push(testDoPost_record());
+  results.push(testDoPost_singleRecord());
+  results.push(testDoPost_multiRecords());
   results.push(testDoPost_adminStorage());
   results.push(testDoPost_missingPayload());
   results.push(testDoPost_badJson());
@@ -35,70 +35,78 @@ function testAll() {
 
 
 // ----- 個別テスト ----------------------------------------------------------
-// context === "search": 一覧データを POST したとき成功 HTML が返ること。
-function testDoPost_search() {
+// 単一レコード（編集画面 / 検索一覧の単一選択）: recordCount=1 で成功 HTML が返ること。
+function testDoPost_singleRecord() {
   var payload = {
-    context: "search",
     formId: "form_demo_001",
     formName: "デモ受付フォーム",
     generatedAt: new Date().toISOString(),
-    list: {
-      // 各列の質問 = ヘッダー階層を "/" で連結した文字列 (列順は rows と一致)
-      headers: ["No.", "氏名", "種類/ヒグマ講座", "種類/出前講座"],
-      rows: [
-        ["1", "山田 太郎", "●", ""],
-        ["2", "佐藤 花子", "", "●"],
-        // ファイル列は { text, hyperlink } オブジェクトで届くことがある
-        ["3", "鈴木 次郎", { text: "添付 2 件", hyperlink: "https://drive.google.com/drive/folders/XXXX" }, ""]
-      ],
-      rowCount: 3
-    }
+    recordCount: 1,
+    records: [
+      {
+        id: "r_01HXXXXXXXXXXXXXXXX_abcd1234",
+        no: 12,
+        items: [
+          { question: "氏名", value: "山田 太郎", type: "text" },
+          { question: "講座の種類", value: "ヒグマ講座", type: "radio" },
+          // 選択肢配下の項目は親質問・選択肢ラベルも階層に含まれる
+          { question: "講座の種類/ヒグマ講座/実施場所", value: "市民ホール", type: "text" },
+          // fileUpload はファイル参照を items[].files に内包（folderUrl/folderName も）
+          {
+            question: "添付書類", value: "申請書.pdf", type: "fileUpload",
+            files: [{ name: "申請書.pdf", url: "https://drive.google.com/file/d/F1/view", driveFileId: "F1" }],
+            folderUrl: "https://drive.google.com/drive/folders/D1", folderName: "申請書類"
+          },
+          // 子フォーム（formLink）は "親/#No/子質問" 形式で items にインライン展開
+          { question: "従事者/#1/氏名", value: "鈴木 次郎", type: "text" },
+          { question: "備考", value: "", type: "text" }
+        ]
+      }
+    ]
   };
-  return assertDoPostOk_("search", payload);
+  return assertDoPostOk_("singleRecord", payload);
 }
 
-// context === "record": 単一レコードを POST したとき成功 HTML が返ること。
-function testDoPost_record() {
+// 複数レコード（検索一覧の複数選択）: recordCount=N で成功 HTML が返ること。
+function testDoPost_multiRecords() {
   var payload = {
-    context: "record",
     formId: "form_demo_001",
     formName: "デモ受付フォーム",
     generatedAt: new Date().toISOString(),
-    record: {
-      id: "r_01HXXXXXXXXXXXXXXXX_abcd1234",
-      no: 12,
-      items: [
-        { question: "氏名", value: "山田 太郎", type: "text" },
-        { question: "講座の種類", value: "ヒグマ講座", type: "radio" },
-        // 選択肢配下の項目は親質問・選択肢ラベルも階層に含まれる
-        { question: "講座の種類/ヒグマ講座/実施場所", value: "市民ホール", type: "text" },
-        { question: "備考", value: "", type: "textarea" }
-      ]
-    }
+    recordCount: 2,
+    records: [
+      { id: "r1", no: 1, items: [{ question: "氏名", value: "山田 太郎", type: "text" }] },
+      { id: "r2", no: 2, items: [{ question: "氏名", value: "佐藤 花子", type: "text" }] }
+    ]
   };
-  return assertDoPostOk_("record", payload);
+  return assertDoPostOk_("multiRecords", payload);
 }
 
 // 管理者限定ボタン: storage が付与されたとき、その内容がログに出ること。
 function testDoPost_adminStorage() {
   var payload = {
-    context: "record",
     formId: "form_demo_001",
     formName: "デモ受付フォーム",
     generatedAt: new Date().toISOString(),
-    record: {
-      id: "r_01HYYYYYYYYYYYYYYYY_efgh5678",
-      no: 13,
-      items: [
-        { question: "氏名", value: "佐藤 花子", type: "text" }
-      ]
-    },
+    recordCount: 1,
+    records: [
+      {
+        id: "r_01HYYYYYYYYYYYYYYYY_efgh5678",
+        no: 13,
+        items: [
+          { question: "氏名", value: "佐藤 花子", type: "text" }
+        ]
+      }
+    ],
     storage: {
       spreadsheetId: "1AbCdEfGhIjKlMnOpQrStUvWxYz",
       spreadsheetUrl: "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjKlMnOpQrStUvWxYz",
       sheetName: "Data",
       driveFileUrl: "https://drive.google.com/file/d/ZZZZ",
-      userEmail: "admin@example.com"
+      userEmail: "admin@example.com",
+      childSpreadsheetId: "1ChildSsXXXXXXXXXXXXXXXXXXXX",
+      childSpreadsheetUrl: "https://docs.google.com/spreadsheets/d/1ChildSsXXXXXXXXXXXXXXXXXXXX",
+      childSheetName: "従事者"
     }
   };
   return assertDoPostOk_("adminStorage", payload);
@@ -125,7 +133,7 @@ function testDoPost_badJson() {
 
 // 誤送信防止ハンドシェイク（プローブ）: Script Property NFB_EXT_ACTION_SECRET を
 // 設定した状態で nfbProbe を投げると、HMAC(nonce) を含む署名 JSON が返り、
-// 業務処理（dispatchPayload_）には入らないこと。未設定なら nfbExternalAction:false。
+// 業務処理（handleRecords_）には入らないこと。未設定なら nfbExternalAction:false。
 function testDoPost_probe() {
   var props = PropertiesService.getScriptProperties();
   var saved = props.getProperty("NFB_EXT_ACTION_SECRET");
