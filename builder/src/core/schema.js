@@ -138,6 +138,9 @@ export const normalizeFileUploadSettings = (field) => {
   // URL 貼付とは独立した「Drive ブラウザ（ピッカー）から選択」の許可。
   field.allowDriveBrowse = normalizeBooleanSetting(field.allowDriveBrowse, false);
   field.hideFileExtension = normalizeBooleanSetting(field.hideFileExtension, true);
+  // 永続フォルダモード: ON だとレコード作成/オープン時にアップロード用フォルダを自動作成し、
+  // システム（フィールドクリア/キャンセル）からは消さない（レコード削除のパージ時のみ消える）。
+  field.persistentFolder = normalizeBooleanSetting(field.persistentFolder, false);
   // 保存先フォルダはユーザー指定不可・ID 由来固定（常に 06_upload_files 直下の一意フォルダ）。
   // 旧仕様の allowFolderUrlEdit / driveRootFolderUrl / driveFolderNameTemplate は廃止し、
   // 残っていれば除去する（論理パスの一意性＝衝突耐性を担保するため）。

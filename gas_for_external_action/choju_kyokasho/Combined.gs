@@ -229,11 +229,13 @@ function Cho2_parseRecordItems_(items) {
   var parent = {};
   var workersByMarker = {};
   var order = [];
+  var folderUrl = ""; // 出力先＝ファイルアップロード項目の folderUrl（複数あれば先頭）
   var prefix = CHO2_FORMLINK_LABEL_ + "/#";
   for (var i = 0; i < list.length; i++) {
     var it = list[i] || {};
     var q = String(it.question || "");
     var v = it.value;
+    if (!folderUrl && it.folderUrl) folderUrl = Cho2_str_(it.folderUrl);
     if (q.indexOf(prefix) === 0) {
       var rest = q.substring(prefix.length); // "<marker>/<child path>"
       var slash = rest.indexOf("/");
@@ -248,7 +250,7 @@ function Cho2_parseRecordItems_(items) {
   }
   var workers = [];
   for (var j = 0; j < order.length; j++) workers.push(workersByMarker[order[j]]);
-  return { parent: parent, workers: workers };
+  return { parent: parent, workers: workers, folderUrl: folderUrl };
 }
 
 // payload を「申請（アプリケーション）」配列へ。起動元に依らず records[] を 1 件ずつ処理する
@@ -259,7 +261,7 @@ function Cho2_parseApplications_(data) {
   for (var i = 0; i < records.length; i++) {
     var rec = records[i] || {};
     var one = Cho2_parseRecordItems_(rec.items);
-    apps.push({ parent: one.parent, workers: one.workers, label: Cho2_applicantDisplayName_(one) });
+    apps.push({ parent: one.parent, workers: one.workers, folderUrl: one.folderUrl, label: Cho2_applicantDisplayName_(one) });
   }
   return apps;
 }
@@ -671,10 +673,11 @@ function Cho2_generate(ctxToken, optionsJson) {
     if (!app.workers || app.workers.length === 0) {
       return { ok: false, error: "従事者データがありません。一覧から起動する場合は formLink の includeChildData を ON にしてください（単票からはそのまま動きます）。" };
     }
+    var folder = Cho2_resolveRecordFolder_(app.folderUrl); // 渡されたフォルダのみ・無ければ throw
     var plan = Cho2_buildPlan_(app, options.forcedType || "");
     var fileName = Cho2_outputFileName_(app, plan);
-    var out = Cho2_renderWorkbook_(plan, fileName);
-    return { ok: true, fileUrl: out.url, fileName: out.name, type: plan.type, workerCount: plan.workerCount };
+    var out = Cho2_renderWorkbook_(plan, fileName, folder);
+    return { ok: true, fileUrl: out.url, fileName: out.name, pdfUrl: out.pdfUrl, pdfName: out.pdfName, type: plan.type, workerCount: plan.workerCount };
   } catch (err) {
     return { ok: false, error: String(err && err.message ? err.message : err) };
   }
@@ -712,7 +715,7 @@ function Cho2_copyTemplateToTmp_(fileId, title) {
 }
 
 // テンプレを複製 → Google Sheet 化 → シート複製・記入 → xlsx エクスポート → Drive 保存。一時 Sheet は削除。
-function Cho2_renderWorkbook_(plan, fileName) {
+function Cho2_renderWorkbook_(plan, fileName, folder) {
   var fileId = Cho2_templateFileId_();
   if (!fileId) throw new Error("テンプレート（許可証等様式）の URL が未設定です。画面の「テンプレートの保存先」で設定してください。");
   var tmpId = null;
@@ -745,11 +748,10 @@ function Cho2_renderWorkbook_(plan, fileName) {
     Cho2_reorderSheets_(ss);
     SpreadsheetApp.flush();
 
-    // xlsx エクスポート → 出力フォルダへ保存
-    var blob = Cho2_exportXlsx_(tmpId, fileName);
-    var folder = Cho2_resolveOutputFolder_();
-    var file = folder.createFile(blob);
-    return { url: file.getUrl(), name: file.getName() };
+    // xlsx ＋ PDF（全シート・テンプレ印刷設定）を渡されたフォルダへ保存
+    var xlsxFile = folder.createFile(Cho2_exportXlsx_(tmpId, fileName));
+    var pdfFile = folder.createFile(Cho2_exportPdf_(tmpId, fileName));
+    return { url: xlsxFile.getUrl(), name: xlsxFile.getName(), pdfUrl: pdfFile.getUrl(), pdfName: pdfFile.getName() };
   } finally {
     if (tmpId) { try { Drive.Files.remove(tmpId, { supportsAllDrives: true }); } catch (e) { /* no-op */ } }
   }
@@ -840,6 +842,15 @@ function Cho2_exportXlsx_(ssId, fileName) {
   return resp.getBlob().setName((fileName || "許可証等") + ".xlsx");
 }
 
+// Google Sheet を PDF blob へエクスポート（ワークブック全シート＝全ページ・各シートの印刷設定を尊重）。
+function Cho2_exportPdf_(ssId, fileName) {
+  var url = "https://www.googleapis.com/drive/v3/files/" + ssId +
+    "/export?mimeType=" + encodeURIComponent("application/pdf");
+  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
+  if (resp.getResponseCode() >= 400) throw new Error("PDF エクスポートに失敗しました (HTTP " + resp.getResponseCode() + ")。");
+  return resp.getBlob().setName((fileName || "許可証等") + ".pdf");
+}
+
 function Cho2_templateFileId_() { return Cho2_extractFileId_(Cho2_getProp_("CHO2_TEMPLATE_URL", "")); }
 function Cho2_extractFileId_(url) {
   var s = Cho2_str_(url);
@@ -847,10 +858,24 @@ function Cho2_extractFileId_(url) {
   var m = s.match(/\/d\/([a-zA-Z0-9_-]{20,})/) || s.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) || s.match(/^([a-zA-Z0-9_-]{20,})$/);
   return m ? m[1] : "";
 }
-function Cho2_resolveOutputFolder_() {
-  var id = Cho2_getProp_("CHO2_OUTPUT_FOLDER_ID", "");
-  if (id) { try { return DriveApp.getFolderById(id); } catch (e) { /* fall through */ } }
-  return DriveApp.getRootFolder();
+// Drive フォルダ URL（/drive/folders/<id>・?id=・裸ID）→ フォルダ ID。
+function Cho2_extractFolderId_(url) {
+  var s = Cho2_str_(url);
+  if (!s) return "";
+  var m = s.match(/\/folders\/([a-zA-Z0-9_-]{20,})/) || s.match(/[?&]id=([a-zA-Z0-9_-]{20,})/) || s.match(/^([a-zA-Z0-9_-]{20,})$/);
+  return m ? m[1] : "";
+}
+// 出力先＝レコードから渡されたフォルダのみ。未指定/解釈不可/アクセス不可は throw（フォールバックなし）。
+function Cho2_resolveRecordFolder_(folderUrl) {
+  var url = Cho2_str_(folderUrl);
+  if (!url) throw new Error("出力先フォルダが渡されていません。フォーム側のファイルアップロード項目に保存先フォルダが必要です（「フォルダを自動作成して消さない」を ON にしてください）。");
+  var id = Cho2_extractFolderId_(url);
+  if (!id) throw new Error("出力先フォルダの URL を解釈できませんでした: " + url);
+  try {
+    return DriveApp.getFolderById(id);
+  } catch (e) {
+    throw new Error("出力先フォルダにアクセスできませんでした（存在・権限を確認してください）: " + url);
+  }
 }
 
 // スコープ再認証トリガ（エディタで一度実行して同意する）。
@@ -1090,11 +1115,13 @@ function renderApps(){
 function doGen(){
   var r=document.querySelector('input[name="app"]:checked'); var idx=r?Number(r.value):0;
   var sel=document.querySelector('.atype[data-idx="'+idx+'"]'); var forced=sel?sel.value:"";
-  $("status").textContent="生成中...（テンプレート複製・記入・xlsx 変換）"; $("gen").disabled=true; $("result").innerHTML="";
+  $("status").textContent="生成中...（テンプレート複製・記入・xlsx/PDF 変換）"; $("gen").disabled=true; $("result").innerHTML="";
   google.script.run.withSuccessHandler(function(res){
     $("gen").disabled=false;
     if(res&&res.ok){ $("status").innerHTML='<span class="ok">生成しました（'+esc(res.type)+' / 従事者 '+res.workerCount+' 名）。</span>';
-      $("result").innerHTML='<a href="'+esc(res.fileUrl)+'" target="_blank" rel="noopener">'+esc(res.fileName)+' を開く（Drive）</a>'; }
+      var html='<a href="'+esc(res.fileUrl)+'" target="_blank" rel="noopener">'+esc(res.fileName)+' を開く（Drive）</a>';
+      if(res.pdfUrl){ html+=' ／ <a href="'+esc(res.pdfUrl)+'" target="_blank" rel="noopener">'+esc(res.pdfName)+'（PDF）</a>'; }
+      $("result").innerHTML=html; }
     else { $("status").innerHTML='<span class="err">失敗: '+esc(res&&res.error||"unknown")+'</span>'; }
   }).withFailureHandler(function(e){ $("gen").disabled=false; $("status").innerHTML='<span class="err">エラー: '+esc(e.message)+'</span>'; })
     .Cho2_generate(CTX, JSON.stringify({rowIndex:idx, forcedType:forced}));
@@ -1172,6 +1199,8 @@ if (typeof module === "object" && module.exports) {
     Cho2_buildPlan_: Cho2_buildPlan_,
     Cho2_buildPreview_: Cho2_buildPreview_,
     Cho2_extractFileId_: Cho2_extractFileId_,
+    Cho2_extractFolderId_: Cho2_extractFolderId_,
+    Cho2_resolveRecordFolder_: Cho2_resolveRecordFolder_,
     Cho2_hmacHex_: Cho2_hmacHex_,
     Cho2_choiceList_: Cho2_choiceList_,
     Cho2_dateParts_: Cho2_dateParts_,

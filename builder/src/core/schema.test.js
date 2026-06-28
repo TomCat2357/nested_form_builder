@@ -141,6 +141,7 @@ test("normalizeSchemaIDs は fileUpload 設定を allowUploadByUrl へ正規化�
   assert.equal("driveFolderNameTemplate" in schema[0], false);
   assert.equal(schema[1].allowUploadByUrl, false);
   assert.equal(schema[1].hideFileExtension, true);
+  assert.equal(schema[1].persistentFolder, false); // 既定 OFF
   assert.equal("allowFolderUrlEdit" in schema[1], false);
   assert.equal("driveRootFolderUrl" in schema[1], false);
   assert.equal("driveFolderNameTemplate" in schema[1], false);
@@ -148,6 +149,18 @@ test("normalizeSchemaIDs は fileUpload 設定を allowUploadByUrl へ正規化�
   assert.equal("allowFolderUrlEdit" in schema[2], false);
   assert.equal("driveRootFolderUrl" in schema[2], false);
   assert.equal("driveFolderNameTemplate" in schema[2], false);
+  // persistentFolder は文字列 "true" を真偽へ正規化（fileUpload のみ）。
+  assert.equal(schema[0].persistentFolder, false);
+  assert.equal("persistentFolder" in schema[2], false);
+});
+
+test("normalizeSchemaIDs は fileUpload の persistentFolder を真偽へ正規化する", () => {
+  const schema = normalizeSchemaIDs([
+    { type: "fileUpload", label: "永続", persistentFolder: "true" },
+    { type: "fileUpload", label: "非永続", persistentFolder: false },
+  ]);
+  assert.equal(schema[0].persistentFolder, true);
+  assert.equal(schema[1].persistentFolder, false);
 });
 
 test("normalizeSchemaIDs は旧 fileUpload の printTemplateAction を独立カードへ移行する", () => {

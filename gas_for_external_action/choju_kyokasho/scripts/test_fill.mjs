@@ -255,5 +255,23 @@ eq("dateParts 不可", C.Cho2_dateParts_("令和8年"), null);
 // ---- 日付セル差分は {__date} 形 ----
 eq("名簿 I5 生年月日(__date)", cellOf(block0, "I5"), { __date: true, y: 1996, m: 5, d: 1 });
 
+// ---- 出力先フォルダ（folderUrl）の収集・先頭採用・URL解釈・未指定エラー ----
+const FID = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345";
+const FURL = "https://drive.google.com/drive/folders/" + FID;
+const withFolder = personItems.concat([{ question: "ファイル", value: "申請書.pdf", type: "fileUpload", folderUrl: FURL }]);
+eq("folderUrl 収集", C.Cho2_parseApplications_({ records: [{ id: "r1", no: 1, items: withFolder }] })[0].folderUrl, FURL);
+eq("folderUrl 無し→空", C.Cho2_parseApplications_({ records: [{ id: "r1", no: 1, items: personItems }] })[0].folderUrl, "");
+const twoFolders = [
+  { question: "ファイルA", value: "a", type: "fileUpload", folderUrl: FURL },
+  { question: "ファイルB", value: "b", type: "fileUpload", folderUrl: "https://drive.google.com/drive/folders/2zzzzzzzzzzzzzzzzzzzzzzz" },
+];
+eq("folderUrl 複数→先頭", C.Cho2_parseApplications_({ records: [{ id: "r1", no: 1, items: twoFolders }] })[0].folderUrl, FURL);
+eq("extractFolderId /folders/", C.Cho2_extractFolderId_(FURL), FID);
+eq("extractFolderId ?id=", C.Cho2_extractFolderId_("https://drive.google.com/open?id=" + FID), FID);
+eq("extractFolderId 裸ID", C.Cho2_extractFolderId_(FID), FID);
+eq("extractFolderId 不正→空", C.Cho2_extractFolderId_("https://example.com/x"), "");
+eq("extractFolderId 空→空", C.Cho2_extractFolderId_(""), "");
+ok("resolveRecordFolder 空→throw", (function () { try { C.Cho2_resolveRecordFolder_(""); return false; } catch (e) { return true; } })(), "");
+
 console.log(`\n==== ${pass} PASS / ${fail} FAIL ====`);
 process.exit(fail ? 1 : 0);
