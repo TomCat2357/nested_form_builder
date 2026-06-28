@@ -5,16 +5,12 @@ import ConfirmDialog from "../../app/components/ConfirmDialog.jsx";
 import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
 import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
 import { useDirtyTracking } from "../../app/hooks/useDirtyTracking.js";
-import { useCancellable } from "../../app/hooks/useCancellable.js";
 import { useAuth } from "../../app/state/authContext.jsx";
 import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { useTempIdRedirect } from "../../app/hooks/useTempIdRedirect.js";
-import { listQuestions, saveDashboard, resolveDashboardLinks } from "../../features/analytics/analyticsStore.js";
-import { analyticsGasClient } from "../../features/analytics/analyticsGasClient.js";
+import { saveDashboard } from "../../features/analytics/analyticsStore.js";
 import { genCardId, genFilterId } from "../../core/ids.js";
 import {
-  createEmptyV2,
-  isV2,
   computeDefaultCardPosition,
   defaultFilterValue,
   defaultSimpleFilterValue,
@@ -22,7 +18,6 @@ import {
   FILTER_TYPES,
   MAX_SIMPLE_FILTERS,
 } from "../../features/analytics/utils/dashboardSchema.js";
-import { getFormColumns } from "../../features/analytics/analyticsSchemaColumns.js";
 import DashboardGrid from "../../features/analytics/components/DashboardGrid.jsx";
 import DashboardFilterBar from "../../features/analytics/components/DashboardFilterBar.jsx";
 import SimpleFilterBar from "../../features/analytics/components/SimpleFilterBar.jsx";
@@ -30,16 +25,11 @@ import DashboardCardFilterMappingDialog from "../../features/analytics/component
 import { buildAppUrl } from "../../utils/appUrl.js";
 import { normalizeFolderPath } from "../../utils/folderTree.js";
 import { buildDashboardPayload } from "./dashboardEditorPayload.js";
+import { columnTypeToValueType, computeAvailableColumns } from "./dashboardEditorColumns.js";
+import { useDashboardEditorData } from "./useDashboardEditorData.js";
+import { FilterDefinitionCard, SimpleFilterDefinitionCard } from "./dashboardEditorFilterCards.jsx";
 import SearchableSelect from "../../app/components/SearchableSelect.jsx";
 import { questionsToOptions } from "../../app/components/searchableSelectOptions.js";
-
-// フォーム schema の列型 ("number"|"date"|"string"|"boolean"|"unknown") を
-// 簡易フィルタの valueType ("number"|"date"|"text") へマップする。
-function columnTypeToValueType(type) {
-  if (type === "number") return "number";
-  if (type === "date") return "date";
-  return "text";
-}
 
 const buildDashboardEditPath = (id) => `/admin/dashboards/${id}/edit`;
 
@@ -55,13 +45,19 @@ export default function DashboardEditorPage() {
 
   // 新規作成時は一覧で開いていたフォルダ (location.state.folder) を初期フォルダにする。
   const initialFolder = isEdit ? "" : normalizeFolderPath(location.state?.folder || "");
-  const [dashboard, setDashboard] = useState(() => ({ ...createEmptyV2({ id: null }), folder: initialFolder }));
-  const [questions, setQuestions] = useState([]);
-  const [loading, setLoading] = useState(!!dashboardId);
+  const {
+    dashboard,
+    setDashboard,
+    questions,
+    loading,
+    error,
+    setError,
+    previewValues,
+    setPreviewValues,
+    simpleFilterPreviewValues,
+    setSimpleFilterPreviewValues,
+  } = useDashboardEditorData({ dashboardId, initialFolder });
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [previewValues, setPreviewValues] = useState({});
-  const [simpleFilterPreviewValues, setSimpleFilterPreviewValues] = useState({});
   const [mappingCardId, setMappingCardId] = useState(null);
   const [cardColumnsMap, setCardColumnsMap] = useState({}); // cardId -> columns
 
@@ -79,97 +75,10 @@ export default function DashboardEditorPage() {
 
   // 簡易フィルタの項目候補。ダッシュボードの各カード（Question）が参照する
   // フォームから列メタ（view 形式）を集約し、AlaSQL safe key で重複排除する。
-  const availableColumns = useMemo(() => {
-    const formsById = new Map((forms || []).map((f) => [f.id, f]));
-    const byKey = new Map(); // alaSqlKey -> { alaSqlKey, key, label, type }
-    const addFormColumns = (formId) => {
-      const form = formsById.get(formId);
-      if (!form) return;
-      for (const c of getFormColumns(form)) {
-        if (!byKey.has(c.alaSqlKey)) {
-          byKey.set(c.alaSqlKey, { alaSqlKey: c.alaSqlKey, key: c.key, label: c.label, type: c.type });
-        }
-      }
-    };
-    for (const card of dashboard.cards || []) {
-      const q = questionsById.get(card.questionId);
-      if (!q || !q.query) continue;
-      if (q.query.mode === "gui" && q.query.gui?.formId) {
-        addFormColumns(q.query.gui.formId);
-      } else if (q.query.mode === "sql" && Array.isArray(q.query.formSources)) {
-        for (const s of q.query.formSources) addFormColumns(s.formId);
-      }
-    }
-    return Array.from(byKey.values());
-  }, [dashboard.cards, questionsById, forms]);
-
-  // Question 一覧は初回のみロード（deps []）。背景リフレッシュで再ロードせず、編集中に
-  // 参照解決（questionsById 経由のカード表示）が裏で揺れないようにする保護。
-  useCancellable(async (isCancelled) => {
-    try {
-      // 編集画面は開くたびにサーバ最新(.json)を取得する（キャッシュは使わない）。
-      const qs = await listQuestions({ forceRefresh: true });
-      if (isCancelled()) return;
-      setQuestions(qs);
-    } catch (err) {
-      if (isCancelled()) return;
-      console.warn("[DashboardEditorPage] listQuestions failed:", err);
-    }
-  }, []);
-
-  // dashboard 本体は dashboardId ごとに 1 回だけロード（deps [dashboardId]）。遅延更新で
-  // setDashboard を再実行せず、編集中の作業コピー（dashboard ドラフト）を潰さないための保護。
-  useCancellable(async (isCancelled) => {
-    if (!dashboardId) {
-      setDashboard(createEmptyV2({ id: null }));
-      return;
-    }
-    setLoading(true);
-    try {
-      const res = await analyticsGasClient.getDashboard(dashboardId);
-      if (isCancelled()) return;
-      const d = res.dashboard;
-      if (!isV2(d)) {
-        setError("このダッシュボードは旧形式です。新規作成してください。");
-        setDashboard(createEmptyV2({ id: dashboardId }));
-      } else {
-        // リンク切れカードを標準フォルダ 02_questions から再リンクし、検出したら保存し直す。
-        let toUse = d;
-        try {
-          const { dashboard: repaired, changed } = await resolveDashboardLinks(d);
-          if (isCancelled()) return;
-          toUse = repaired;
-          if (changed) {
-            try {
-              await saveDashboard(repaired);
-            } catch (err) {
-              console.warn("[DashboardEditorPage] auto-relink save failed:", err);
-            }
-          }
-        } catch (err) {
-          console.warn("[DashboardEditorPage] resolveDashboardLinks failed:", err);
-        }
-        if (isCancelled()) return;
-        setDashboard(toUse);
-      }
-      // フィルタの初期値で previewValues を埋める
-      const initVals = {};
-      for (const f of d?.filters || []) {
-        initVals[f.id] = defaultFilterValue(f);
-      }
-      setPreviewValues(initVals);
-      const simpleInit = {};
-      for (const sf of d?.simpleFilters || []) {
-        simpleInit[sf.id] = defaultSimpleFilterValue();
-      }
-      setSimpleFilterPreviewValues(simpleInit);
-    } catch (err) {
-      if (isCancelled()) return;
-      setError(err.message || String(err));
-    } finally {
-      if (!isCancelled()) setLoading(false);
-    }
-  }, [dashboardId]);
+  const availableColumns = useMemo(
+    () => computeAvailableColumns({ cards: dashboard.cards, questionsById, forms }),
+    [dashboard.cards, questionsById, forms]
+  );
 
   // ----- Cards -----
   const handleAddCard = (questionId) => {
@@ -494,48 +403,12 @@ export default function DashboardEditorPage() {
             )}
 
             {(dashboard.filters || []).map((f) => (
-              <div key={f.id} className="nf-card" style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 8px", marginBottom: 6 }}>
-                <span className="nf-text-subtle" style={{ fontSize: 11, minWidth: 80 }}>{f.type}</span>
-                <input
-                  type="text"
-                  className="nf-input"
-                  value={f.label || ""}
-                  onChange={(e) => handleFilterChange(f.id, { label: e.target.value })}
-                  placeholder="ラベル"
-                  style={{ fontSize: 12, padding: "2px 6px", flex: 1, maxWidth: 200 }}
-                />
-                {f.type === "category" && (
-                  <input
-                    type="text"
-                    className="nf-input"
-                    value={(f.options?.values || []).join(",")}
-                    onChange={(e) => {
-                      const vals = e.target.value.split(",").map((s) => s.trim()).filter(Boolean);
-                      handleFilterChange(f.id, { options: { ...(f.options || {}), values: vals } });
-                    }}
-                    placeholder="選択肢 (カンマ区切り)"
-                    style={{ fontSize: 12, padding: "2px 6px", flex: 1 }}
-                  />
-                )}
-                {f.type === "category" && (
-                  <label style={{ fontSize: 11, display: "inline-flex", alignItems: "center", gap: 3 }}>
-                    <input
-                      type="checkbox"
-                      checked={!!f.options?.multi}
-                      onChange={(e) => handleFilterChange(f.id, { options: { ...(f.options || {}), multi: e.target.checked } })}
-                    />
-                    複数選択
-                  </label>
-                )}
-                <button
-                  type="button"
-                  className="nf-btn-outline nf-btn-danger"
-                  style={{ fontSize: 11, padding: "2px 6px" }}
-                  onClick={() => handleRemoveFilter(f.id)}
-                >
-                  削除
-                </button>
-              </div>
+              <FilterDefinitionCard
+                key={f.id}
+                filter={f}
+                onChange={handleFilterChange}
+                onRemove={handleRemoveFilter}
+              />
             ))}
           </div>
 
@@ -562,40 +435,14 @@ export default function DashboardEditorPage() {
             </p>
 
             {(dashboard.simpleFilters || []).map((f) => (
-              <div key={f.id} className="nf-card" style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 8px", marginBottom: 6, flexWrap: "wrap" }}>
-                <select
-                  className="nf-input"
-                  value={f.column || ""}
-                  onChange={(e) => handleSimpleFilterColumnSelect(f.id, e.target.value)}
-                  style={{ fontSize: 12, padding: "2px 6px", minWidth: 200 }}
-                >
-                  <option value="">項目を選択...</option>
-                  {availableColumns.map((c) => (
-                    <option key={c.alaSqlKey} value={c.alaSqlKey}>{c.key}</option>
-                  ))}
-                  {/* 既存の選択が候補一覧に無い場合（カード未描画等）も値を保持して表示する */}
-                  {f.column && !availableColumns.some((c) => c.alaSqlKey === f.column) && (
-                    <option value={f.column}>{f.column}（候補外）</option>
-                  )}
-                </select>
-                <span className="nf-text-subtle" style={{ fontSize: 11, minWidth: 48 }}>{f.valueType}</span>
-                <input
-                  type="text"
-                  className="nf-input"
-                  value={f.label || ""}
-                  onChange={(e) => handleSimpleFilterChange(f.id, { label: e.target.value })}
-                  placeholder="ラベル（任意）"
-                  style={{ fontSize: 12, padding: "2px 6px", flex: 1, maxWidth: 200 }}
-                />
-                <button
-                  type="button"
-                  className="nf-btn-outline nf-btn-danger"
-                  style={{ fontSize: 11, padding: "2px 6px" }}
-                  onClick={() => handleRemoveSimpleFilter(f.id)}
-                >
-                  削除
-                </button>
-              </div>
+              <SimpleFilterDefinitionCard
+                key={f.id}
+                filter={f}
+                availableColumns={availableColumns}
+                onColumnSelect={handleSimpleFilterColumnSelect}
+                onChange={handleSimpleFilterChange}
+                onRemove={handleRemoveSimpleFilter}
+              />
             ))}
           </div>
 

@@ -1,4 +1,3 @@
-import { ensureArray } from "../../utils/arrays.js";
 import { openInNewTab } from "../../utils/openWindow.js";
 import React, { useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { toErrorMessage } from "../../utils/errorMessage.js";
@@ -6,7 +5,7 @@ import { collectResponses, sortResponses, buildDataValueMap } from "../../core/c
 import { computeSchemaHash } from "../../core/schema.js";
 import { collectValidationErrors, formatValidationErrors } from "../../core/validate.js";
 import * as gasClientModule from "../../services/gasClient.js";
-const { submitResponses, hasScriptRun, countRecordsByPid, listRecordsByPids, getUrlPid, sendExternalAction } = gasClientModule;
+const { submitResponses, hasScriptRun, getUrlPid, sendExternalAction } = gasClientModule;
 import { normalizeSpreadsheetId, childFormSpreadsheetId, childFormSheetName } from "../../utils/spreadsheet.js";
 import { styles as s } from "../editor/styles.js";
 import { useAlert } from "../../app/hooks/useAlert.js";
@@ -16,7 +15,7 @@ import { genRecordId } from "../../core/ids.js";
 import { resolveTemplateTokens, resolveTemplateTokensAsync, precompileTemplateTokens, prefetchQueryTokens, resolveQueryTokensInTemplate } from "../../utils/tokenReplacer.js";
 import { extractReservedRefs } from "../../features/expression/templateEvaluator.js";
 import { evaluateAllComputedFields } from "../../core/computedFields.js";
-import { buildLiveViewRow } from "../analytics/entriesToViewRows.js";
+import { buildPreviewLiveRow } from "./previewLiveRow.js";
 import {
   buildPrintDocumentPayload,
   buildFieldPathsMap,
@@ -39,25 +38,21 @@ import {
   downloadPdfFromBase64,
 } from "../../utils/recordOutputActions.js";
 import {
-  appendDriveFileId,
   normalizeDriveFolderState,
   resolveEffectiveDriveFolderUrl,
 } from "../../utils/driveFolderState.js";
 import { collectFileUploadFields } from "../../core/schema.js";
 import { buildSharedFormUrl, buildSharedRecordUrl, buildChildFormUrl } from "../../utils/formShareUrl.js";
-import { buildChildDataObject, getChildFormCached_, collectFormLinkFields } from "./childFormData.js";
-import {
-  getChildRecordsFromCache,
-  saveChildDataToCache,
-  saveChildCountToCache,
-  subscribeChildFormChange,
-} from "../../app/state/childRecordsMemoryStore.js";
+import { getChildFormCached_, collectFormLinkFields } from "./childFormData.js";
 import { evaluateCacheForRecords } from "../../app/state/cachePolicy.js";
 import { dataStore } from "../../app/state/dataStore.js";
 import { getRecordsFromCache } from "../../app/state/recordsMemoryStore.js";
 import { useFormContext, useChildForm } from "../../app/state/formContext.jsx";
 import { RendererRecursive } from "./FieldRenderer.jsx";
 import { collectTemplateTexts, detectFullQuerySubstitution } from "./previewTemplates.js";
+import { computeNextDriveFolderStateFromPrintResult } from "./previewDriveFolder.js";
+import { useFormLinkChildData } from "./useFormLinkChildData.js";
+import PreviewRecordMeta from "./PreviewRecordMeta.jsx";
 
 // 入力中の full-query 置換を再解決するデバウンス（ms）。検索バーと同じ既定値。
 const LIVE_QUERY_DEBOUNCE_MS = 300;
@@ -156,10 +151,6 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   // 全 formLink 項目について子レコード全件を 外部アクション/印刷へ渡すため常に詳細ロードする。
   const formLinkFields = useMemo(() => collectFormLinkFields(schema), [schema]);
 
-  const [formLinkChildCounts, setFormLinkChildCounts] = useState({});
-  // 子フォームの合成オブジェクト（fieldId → { childFormId, childFormName, childFormUrl, count, records }）。
-  // 全 formLink 項目を詰める。外部アクション 送信・印刷・プレビューの CHILD_FORM_* で参照。
-  const [formLinkChildData, setFormLinkChildData] = useState({});
   // 件数取得は「既存レコード（保存済み id あり）」かつ GAS 利用可かつ子フォーム文脈でない場合のみ。
   // 子レコード / 件数は childRecordsMemoryStore に SWR キャッシュする：キャッシュがあれば即表示し、
   // しきい値（cachePolicy）に従って裏で再検証。新鮮なら GAS 往復しない。
@@ -167,99 +158,18 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const formLinkSignature = formLinkFields
     .map((f) => `${f.id}:${f.childFormId}`)
     .join("|");
-  // 別レコードを開いた瞬間の残像を防ぐためのリセット判定 / 親再同期の強制更新判定に使う。
-  const prevChildRecordIdRef = useRef(null);
-  const prevChildModifiedAtRef = useRef(undefined);
-  useCancellable(async (isCancelled) => {
-    const recordId = recordIdRef.current;
-    // レコードが切り替わった時だけ state をリセット（同一レコードの再評価ではキャッシュ即表示を維持）。
-    const recordChanged = prevChildRecordIdRef.current !== recordId;
-    // 同一レコードで modifiedAtUnixMs が変わった＝親が再同期された → 子データを強制再取得。
-    const parentChanged =
-      !recordChanged &&
-      prevChildModifiedAtRef.current !== undefined &&
-      prevChildModifiedAtRef.current !== settings.modifiedAtUnixMs;
-    prevChildRecordIdRef.current = recordId;
-    prevChildModifiedAtRef.current = settings.modifiedAtUnixMs;
-    if (recordChanged) {
-      setFormLinkChildCounts({});
-      setFormLinkChildData({});
-    }
-    if (inChildContext) return;
-    if (!settings.recordId || !recordId) return;
-    if (!hasScriptRun()) return;
-    if (formLinkFields.length === 0) return;
-    const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
-
-    // 1 項目ぶんの取得 → state 反映 → キャッシュ書き戻し。shouldSync は await、shouldBackground は
-    // fire-and-forget で使う。state 反映はキャンセルガードするが、キャッシュ書き戻しは常に行う。
-    const fetchField = async (field) => {
-      if (typeof listRecordsByPids === "function") {
-        // 子レコード全件 + 子 schema を取得し、合成オブジェクトを組む（件数も records から導出）。
-        // 全 formLink で常に詳細を取得し、外部アクション/印刷の items 列へ展開できるようにする。
-        const [childForm, records] = await Promise.all([
-          getChildFormCached_(field.childFormId),
-          listRecordsByPids({ formId: field.childFormId, pids: [recordId] }),
-        ]);
-        const childObj = buildChildDataObject({
-          childFormId: field.childFormId,
-          childFormName: field.childFormName,
-          childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, recordId),
-          childSchema: childForm && childForm.schema ? childForm.schema : [],
-          records,
-        });
-        await saveChildDataToCache(field.childFormId, recordId, childObj);
-        if (isCancelled()) return;
-        setFormLinkChildData((prev) => ({ ...prev, [field.id]: childObj }));
-        setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: childObj.count }));
-      } else if (typeof countRecordsByPid === "function") {
-        const count = await countRecordsByPid({ formId: field.childFormId, pid: recordId });
-        await saveChildCountToCache(field.childFormId, recordId, count);
-        if (isCancelled()) return;
-        setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: count }));
-      }
-    };
-
-    for (const field of formLinkFields) {
-      try {
-        const kind = "detail";
-        const cached = await getChildRecordsFromCache(field.childFormId, recordId, { kind });
-        if (isCancelled()) return;
-        // キャッシュ即表示（cache-first）。
-        if (cached.hasData) {
-          if (kind === "detail" && cached.childData) {
-            setFormLinkChildData((prev) => ({ ...prev, [field.id]: cached.childData }));
-          }
-          setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: cached.count }));
-        }
-        const { shouldSync, shouldBackground } = evaluateCacheForRecords({
-          lastSyncedAt: cached.lastSyncedAt,
-          hasData: cached.hasData,
-          forceSync: parentChanged,
-        });
-        if (shouldSync) {
-          await fetchField(field);
-          if (isCancelled()) return;
-        } else if (shouldBackground) {
-          // 裏で再検証（非ブロッキング）。内部で isCancelled ガード済み。
-          fetchField(field).catch(() => {});
-        }
-      } catch (_e) {
-        // 取得失敗時はバッジ / 子データを出さない（無言）。
-      }
-    }
-  }, [settings.recordId, settings.modifiedAtUnixMs, formLinkSignature, inChildContext]);
-
-  // 全 formLink 項目の { fieldId: 合成オブジェクト } マップ。外部アクション の record.items 展開・
-  // 印刷 payload（items 展開 + driveSettings.childFormMeta）・プレビュー row 注入で共有する。
-  const childFormMeta = useMemo(() => {
-    const out = {};
-    for (const field of formLinkFields) {
-      const obj = formLinkChildData[field.id];
-      if (obj) out[field.id] = obj;
-    }
-    return out;
-  }, [formLinkFields, formLinkChildData]);
+  // 子フォーム定義のロード＋レコード warming 完了を prefetch effect へ伝えるための epoch。
+  // useFormLinkChildData の subscribe 再計算からも進める（state setter は識別子安定）。
+  const [childReadyEpoch, setChildReadyEpoch] = useState(0);
+  const { formLinkChildCounts, childFormMeta } = useFormLinkChildData({
+    formLinkFields,
+    formLinkSignature,
+    inChildContext,
+    recordIdRef,
+    recordId: settings.recordId,
+    modifiedAtUnixMs: settings.modifiedAtUnixMs,
+    bumpChildReadyEpoch: () => setChildReadyEpoch((n) => n + 1),
+  });
 
   const folderUrlsByField = useMemo(() => {
     const out = {};
@@ -345,8 +255,6 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   // ライブ行が同一 schema で整形される（未保存スキーマ変更のプレビューでも行形状が一致）。
   // 子フォーム定義は下の effect が getChildFormCached_ で取得して childForms に積む（取得不可なら現フォームのみ）。
   const [childForms, setChildForms] = useState([]);
-  // 子フォーム定義のロード＋レコード warming 完了を prefetch effect へ伝えるための epoch。
-  const [childReadyEpoch, setChildReadyEpoch] = useState(0);
   // formLink 子フォームの初回ロード（定義取得＋レコード warm）が完了したか。full-query 置換が
   // 別フォームを参照していて未ロードの過渡状態（runFullQuery が「未定義のフォーム」を返す間）を、
   // substitution の「読込中…」表示に使う。完了後に空のままなら本物の欠落として空表示へ落ちる。
@@ -413,64 +321,13 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formLinkSignature, inChildContext, settings.modifiedAtUnixMs]);
 
-  // オーバーレイ等で子レコードが保存/複製されると childRecordsMemoryStore が invalidate される。
-  // その通知を受けて、親プレビューの「子件数バッジ・取り込み子データ（includeChildData）・
-  // full-query({{SELECT}}) 集計」を再計算する。再計算はローカル warm ストア（recordsMemoryStore：
-  // 楽観保存で更新済み）から行うのでサーバ往復せず、背景のスプレッドシート書き込み完了を待たずに
-  // 即座に正しい値へ反映できる（保存直後のサーバ未反映によるレースを避ける）。
-  useEffect(() => {
-    if (inChildContext) return undefined;
-    const childIds = new Set(formLinkFields.map((f) => f.childFormId));
-    if (childIds.size === 0) return undefined;
-    const unsubscribe = subscribeChildFormChange((changedChildFormId) => {
-      if (!childIds.has(changedChildFormId)) return;
-      const recordId = recordIdRef.current;
-      if (!recordId) return;
-      const baseUrl = (typeof window !== "undefined" && window.__GAS_WEBAPP_URL__) ? window.__GAS_WEBAPP_URL__ : "";
-      (async () => {
-        for (const field of formLinkFields) {
-          if (field.childFormId !== changedChildFormId) continue;
-          try {
-            const cache = await getRecordsFromCache(field.childFormId);
-            const recs = (ensureArray(cache.entries))
-              .filter((e) => String(e?.pid ?? "") === recordId)
-              .filter((e) => !(e?.deletedAtUnixMs || e?.deletedAt));
-            // 全 formLink で常に詳細を再構築する（メイン取得 effect と同じ always-detail 方針）。
-            const childForm = await getChildFormCached_(field.childFormId);
-            const childObj = buildChildDataObject({
-              childFormId: field.childFormId,
-              childFormName: field.childFormName,
-              childFormUrl: buildChildFormUrl(baseUrl, field.childFormId, recordId),
-              childSchema: childForm && childForm.schema ? childForm.schema : [],
-              records: recs,
-            });
-            setFormLinkChildData((prev) => ({ ...prev, [field.id]: childObj }));
-            setFormLinkChildCounts((prev) => ({ ...prev, [field.id]: childObj.count }));
-            await saveChildDataToCache(field.childFormId, recordId, childObj);
-          } catch (_e) { /* 再計算失敗は無言（次回の通常再取得で整合） */ }
-        }
-        // full-query（{{SELECT}}）置換も子レコード変化に追従させる（warm ストアは更新済み）。
-        setChildReadyEpoch((n) => n + 1);
-      })();
-    });
-    return unsubscribe;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formLinkSignature, inChildContext]);
-
-  // 現レコードの「入力中ライブ値」を view 行に変換する。保存と同じ collectResponses →
-  // entriesToViewTableRows 経路を使うので、キャッシュ行と同形状になり `_form` の現レコード行を
-  // 上書きできる（自己参照・新規レコードでも入力中の値で full-query が解決する）。
-  const buildLiveRow = (currentResponses) => {
-    const liveEntry = {
-      id: recordIdRef.current,
-      "No.": settings.recordNo,
-      data: collectResponses(schema, currentResponses || {}),
-      createdAt: settings.createdAt,
-      createdBy: settings.createdBy,
-      modifiedBy: settings.modifiedBy,
-    };
-    return buildLiveViewRow({ id: settings.formId || "", schema }, liveEntry);
-  };
+  // 現レコードの「入力中ライブ値」を view 行に変換する（純関数 buildPreviewLiveRow へ委譲）。
+  const buildLiveRow = (currentResponses) => buildPreviewLiveRow({
+    schema,
+    settings,
+    recordId: recordIdRef.current,
+    responses: currentResponses,
+  });
 
   // 入力に応じて full-query 置換を再解決するためのデバウンス済みトリガ。dataValueMap（=入力）が
   // 変わるたびにタイマをリセットし、一定時間アイドルで epoch を進めて下の prefetch effect を再実行する。
@@ -553,20 +410,8 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   const updateDriveFolderStateFromPrintResult = (result) => {
     if (typeof onFieldDriveFolderStateChange !== "function") return;
     if (!primaryFileUploadFieldId) return;
-    onFieldDriveFolderStateChange(primaryFileUploadFieldId, (prev) => {
-      const currentEffectiveFolderUrl = resolveEffectiveDriveFolderUrl(prev);
-      const nextResolvedUrl = typeof result?.folderUrl === "string" && result.folderUrl.trim()
-        ? result.folderUrl.trim()
-        : (currentEffectiveFolderUrl || prev.resolvedUrl);
-      const keepAutoCreated = prev.autoCreated && prev.resolvedUrl.trim() && prev.resolvedUrl.trim() === nextResolvedUrl;
-      return {
-        ...prev,
-        resolvedUrl: nextResolvedUrl,
-        inputUrl: prev.inputUrl.trim() ? prev.inputUrl : nextResolvedUrl,
-        autoCreated: keepAutoCreated || result?.autoCreated === true,
-        pendingPrintFileIds: appendDriveFileId(prev.pendingPrintFileIds, result?.fileId),
-      };
-    });
+    onFieldDriveFolderStateChange(primaryFileUploadFieldId, (prev) =>
+      computeNextDriveFolderStateFromPrintResult(prev, result));
   };
   const handleFieldTemplateAction = async (field) => {
     const action = normalizePrintTemplateAction(field?.printTemplateAction);
@@ -947,35 +792,13 @@ const PreviewPage = React.forwardRef(function PreviewPage(
   return (
     <div className="nf-card" data-depth="0">
       <h2 className="preview-title">{formTitle}</h2>
-      {settings.showRecordNo !== false && (
-        <div className="nf-mb-12">
-          <label className="preview-label">No.</label>
-          <input
-            type="text"
-            value={settings.recordNo || ""}
-            readOnly={readOnly}
-            className={`nf-input${readOnly ? " nf-input--readonly" : ""}`}
-            onChange={(event) => {
-              if (readOnly || typeof onRecordNoChange !== "function") return;
-              onRecordNoChange(event.target.value);
-            }}
-          />
-        </div>
-      )}
-      <div className="nf-mb-12">
-        <label className="preview-label">ID</label>
-        <input type="text" value={recordIdRef.current} readOnly className="nf-input nf-input--readonly" />
-      </div>
-      {settings.pid ? (
-        <div className="nf-mb-12">
-          <label className="preview-label">親レコードID（pid）</label>
-          <input type="text" value={settings.pid} readOnly disabled className="nf-input nf-input--disabled" />
-        </div>
-      ) : null}
-      <div className="nf-mb-12">
-        <label className="preview-label">最終更新日時</label>
-        <input type="text" value={modifiedAtDisplay || "-"} readOnly className="nf-input nf-input--readonly" />
-      </div>
+      <PreviewRecordMeta
+        settings={settings}
+        recordId={recordIdRef.current}
+        modifiedAtDisplay={modifiedAtDisplay}
+        readOnly={readOnly}
+        onRecordNoChange={onRecordNoChange}
+      />
       <RendererRecursive
         fields={schema}
         responses={responses}

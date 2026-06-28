@@ -1,374 +1,56 @@
-import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { useNavigate, useParams, useLocation } from "react-router-dom";
+import React from "react";
 import AppLayout from "../../app/components/AppLayout.jsx";
 import ConfirmDialog from "../../app/components/ConfirmDialog.jsx";
-import { useConfirmDialog } from "../../app/hooks/useConfirmDialog.js";
-import { useBeforeUnloadGuard } from "../../app/hooks/useBeforeUnloadGuard.js";
-import { useDirtyTracking } from "../../app/hooks/useDirtyTracking.js";
-import { useCancellable } from "../../app/hooks/useCancellable.js";
-import { useAuth } from "../../app/state/authContext.jsx";
-import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import { useTempIdRedirect } from "../../app/hooks/useTempIdRedirect.js";
-import { getSheetConfig } from "../../app/state/dataStoreHelpers.js";
-import { executeQuestion, saveQuestion, getQuestionById, getFormColumns, ERR_NO_SPREADSHEET } from "../../features/analytics/analyticsStore.js";
-import { buildColumnIndex, resolveColumnRef } from "../../features/analytics/utils/columnIdentifierResolver.js";
-import { formQualifiedName, buildFormIndex } from "../../features/analytics/utils/formIdentifierResolver.js";
-import { formRefsToNames, canonicalAliasToName } from "../../features/analytics/utils/rewriteSqlFormRefs.js";
-import { compileStages } from "../../features/analytics/utils/compileStages.js";
-import GuiQueryBuilder from "../../features/analytics/components/GuiQueryBuilder.jsx";
 import VisualizePanel from "../../features/analytics/components/VisualizePanel.jsx";
-import SearchableSelect from "../../app/components/SearchableSelect.jsx";
-import { formsToOptions, columnsToOptions } from "../../app/components/searchableSelectOptions.js";
-import { normalizeTableStyle } from "../../features/analytics/utils/tableStyle.js";
-import { DEFAULT_LINE_STYLE } from "../../features/analytics/utils/chartPalette.js";
-import { normalizeFolderPath } from "../../utils/folderTree.js";
-import { buildRunQuery, buildSaveQuery, buildQuestionVisualization } from "./questionEditorPayload.js";
-
-function emptyGui(formId) {
-  return {
-    schemaVersion: 1,
-    formId: formId || "",
-    aggregations: [{ id: "a_1", type: "count" }],
-    groupBy: [],
-    filters: [],
-    orderBy: [],
-    limit: null,
-  };
-}
-
-function emptyVizOptions() {
-  return {
-    format: { prefix: "", suffix: "", decimals: null, locale: "" },
-    goal: null,
-    pivot: { rowField: "", colField: "", valueField: "", agg: "sum" },
-    geo: { latField: "", lngField: "", valueField: "", regionField: "", gridSize: 0.1 },
-    sankey: { sourceField: "", targetField: "", valueField: "" },
-    axis: {
-      x: { auto: true, min: null, max: null, title: "" },
-      y: { auto: true, min: null, max: null, title: "" },
-    },
-    // 折れ線系のグローバル設定。
-    // curve: "linear" (カクカク) | "smooth" (曲線)
-    // borderDash: [] = 実線 / [5,5] = 破線 / [2,3] = 点線
-    // pointStyle: Chart.js の組込み形状名（circle / rect / triangle / rectRot / cross / star / none）
-    lineStyle: { ...DEFAULT_LINE_STYLE },
-    // 系列ごとの色上書き。key = 系列名（yField または x のカテゴリ値）/ value = { color }
-    series: {},
-    tableStyle: null,
-    // グラフ全般の見た目（タイトル / 凡例 / グリッド / 背景 / 余白 等）。
-    // null = 未設定（既定）/ オブジェクト = 個別カスタム。normalizeChartStyle 経由で
-    // 欠落キーを補完したものを ChartStyleControls / ChartRenderer に渡す。
-    chartStyle: null,
-  };
-}
-
-const buildQuestionEditPath = (id) => `/admin/questions/${id}`;
+import { buildQuestionEditPath } from "./questionEditorState.js";
+import { QuestionMetaFields, QueryModeFieldset, QuestionGuiPanel, QuestionSqlPanel } from "./questionEditorComponents.jsx";
+import { useQuestionEditor } from "./useQuestionEditor.js";
 
 export default function QuestionEditorPage() {
-  const navigate = useNavigate();
-  const { questionId } = useParams();
+  const editor = useQuestionEditor();
   // 一時 ID のままディープリンクで開かれた場合、アップロード完了後に実 ID の URL へ置き換える。
-  useTempIdRedirect(questionId, buildQuestionEditPath);
-  const location = useLocation();
-  const { isAdmin } = useAuth();
-  const { forms, loadingForms } = useAppData();
-  const isEdit = Boolean(questionId);
+  useTempIdRedirect(editor.questionId, buildQuestionEditPath);
 
-  const [mode, setMode] = useState("gui");
-  const [name, setName] = useState("");
-  const [driveFileUrl, setDriveFileUrl] = useState("");
-  // 新規作成時は一覧で開いていたフォルダ (location.state.folder) を初期フォルダにする。
-  const [folder, setFolder] = useState(() => isEdit ? "" : normalizeFolderPath(location.state?.folder || ""));
-  const [selectedFormId, setSelectedFormId] = useState("");
-  const [sql, setSql] = useState("");
-  const [gui, setGui] = useState(() => emptyGui(""));
-  const [vizType, setVizType] = useState("table");
-  const [xField, setXField] = useState("");
-  const [yFields, setYFields] = useState("");
-  const [heatmap, setHeatmap] = useState({ enabled: false, direction: "column", excludeRows: "", excludeColumns: "", minColor: "", maxColor: "" });
-  const [vizOptions, setVizOptions] = useState(() => emptyVizOptions());
-
-  const [queryResult, setQueryResult] = useState(null);
-  const [running, setRunning] = useState(false);
-  const [runError, setRunError] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [copiedToken, setCopiedToken] = useState("");
-  const [selectedColumnKey, setSelectedColumnKey] = useState("");
-  const [definitionLoaded, setDefinitionLoaded] = useState(false);
-  const autoRunQuestionIdRef = useRef(null);
-  // forms 確定後に questionId ごと 1 回だけロードするためのガード。
-  const loadedQuestionIdRef = useRef(null);
-
-  const unsavedDialog = useConfirmDialog();
-
-  useEffect(() => {
-    if (!isAdmin) navigate("/", { replace: true });
-  }, [isAdmin, navigate]);
-
-  const activeForms = forms.filter((f) => !f.archived && !f.childOnly);
-
-  useCancellable(async (isCancelled) => {
-    if (!questionId) return;
-    // forms 確定まで待つ（SQL の fileId → フォーム名 置換に formIndex が要る）。
-    if (loadingForms) return;
-    // questionId ごとに 1 回だけロードする（forms の背景リフレッシュで再ロードして
-    // ユーザー編集を潰さないため）。
-    if (loadedQuestionIdRef.current === questionId) return;
-    loadedQuestionIdRef.current = questionId;
-    setLoading(true);
-    setDefinitionLoaded(false);
-    autoRunQuestionIdRef.current = null;
-    try {
-      // 編集画面は開くたびにサーバ最新(.json)を取得する（キャッシュは使わない）。
-      const q = await getQuestionById(questionId, { forceRefresh: true });
-      if (isCancelled()) return;
-      if (!q) {
-        setLoading(false);
-        return;
-      }
-      setName(q.name || "");
-      setFolder(q.folder || "");
-      setDriveFileUrl(q.driveFileUrl || "");
-      const qMode = q.query?.mode === "gui" ? "gui" : "sql";
-      setMode(qMode);
-      if (qMode === "gui") {
-        const g = q.query.gui;
-        setGui(g ? { ...emptyGui(g.formId || ""), ...g } : emptyGui(""));
-        setSelectedFormId(g?.formId || "");
-      } else {
-        // 保存は fileId で持つ方針なので、表示はフォーム名に戻す。
-        setSql(formRefsToNames(q.query?.sql || "", buildFormIndex(forms)));
-        const fid = q.query?.formSources?.[0]?.formId || "";
-        setSelectedFormId(fid);
-      }
-      const v = q.visualization || {};
-      setVizType(v.type || "table");
-      setXField(v.xField || "");
-      setYFields(Array.isArray(v.yFields) ? v.yFields.join(",") : "");
-      setHeatmap({
-        enabled: !!v.heatmap?.enabled,
-        direction: v.heatmap?.direction || "column",
-        excludeRows: typeof v.heatmap?.excludeRows === "string" ? v.heatmap.excludeRows : "",
-        excludeColumns: typeof v.heatmap?.excludeColumns === "string" ? v.heatmap.excludeColumns : "",
-        minColor: typeof v.heatmap?.minColor === "string" ? v.heatmap.minColor : "",
-        maxColor: typeof v.heatmap?.maxColor === "string" ? v.heatmap.maxColor : "",
-      });
-      const baseOpts = emptyVizOptions();
-      setVizOptions({
-        format: { ...baseOpts.format, ...(v.format || {}) },
-        goal: v.goal === undefined ? null : v.goal,
-        pivot: { ...baseOpts.pivot, ...(v.pivot || {}) },
-        geo: { ...baseOpts.geo, ...(v.geo || {}) },
-        sankey: { ...baseOpts.sankey, ...(v.sankey || {}) },
-        axis: {
-          x: { ...baseOpts.axis.x, ...(v.axis?.x || {}) },
-          y: { ...baseOpts.axis.y, ...(v.axis?.y || {}) },
-        },
-        lineStyle: { ...baseOpts.lineStyle, ...(v.lineStyle || {}) },
-        series: v.series && typeof v.series === "object" ? v.series : {},
-        tableStyle: normalizeTableStyle(v.tableStyle),
-        chartStyle: v.chartStyle && typeof v.chartStyle === "object" ? v.chartStyle : null,
-      });
-      setDefinitionLoaded(true);
-      setLoading(false);
-    } catch (_e) {
-      if (!isCancelled()) setLoading(false);
-    }
-  }, [questionId, loadingForms]);
-
-  const { formColumns, columnLoadError } = useMemo(() => {
-    const fid = mode === "gui" ? gui.formId : selectedFormId;
-    if (!fid) return { formColumns: [], columnLoadError: null };
-    const targetForm = forms.find((f) => f.id === fid);
-    const sheetConfig = targetForm ? getSheetConfig(targetForm) : null;
-    if (!sheetConfig) {
-      return { formColumns: [], columnLoadError: ERR_NO_SPREADSHEET };
-    }
-    try {
-      // データ形式は view 形式に一本化。GUI / SQL いずれも列メタは getFormColumns（メタ列付き view 形式）。
-      const cols = getFormColumns(targetForm);
-      return { formColumns: cols, columnLoadError: null };
-    } catch (err) {
-      return { formColumns: [], columnLoadError: err.message || String(err) };
-    }
-  }, [mode, gui.formId, selectedFormId, forms]);
-
-  // フォーム切替・未選択・GUI 切替で選択中の列が候補から消えたら選択を解除する。
-  useEffect(() => {
-    if (selectedColumnKey && !formColumns.some((c) => c.key === selectedColumnKey)) {
-      setSelectedColumnKey("");
-    }
-  }, [formColumns, selectedColumnKey]);
-
-  // 識別子トークンをクリップボードへコピーし、一時的に「コピー済」表示にする（フォーム名 / 列名で共用）。
-  const copyToken = useCallback((token) => {
-    navigator.clipboard.writeText(token).then(() => {
-      setCopiedToken(token);
-      setTimeout(() => setCopiedToken(""), 1500);
-    }).catch(() => {});
-  }, []);
-
-  // フォーム名 / 列名のトークン表示行で共用するスタイル。
-  const tokenRowStyle = { display: "flex", alignItems: "center", gap: "6px", fontSize: "12px" };
-  const tokenCodeStyle = { fontFamily: "monospace", background: "var(--nf-input-bg, #f6f6f6)", border: "1px solid var(--nf-border)", borderRadius: "3px", padding: "2px 6px" };
-
-  const handleGuiFormChange = (newFormId) => {
-    // フォーム切替時は集計・グループ化・フィルターをリセットする。
-    setGui(emptyGui(newFormId));
-    setQueryResult(null);
-    setVizType("table");
-    setXField("");
-    setYFields("");
-    setHeatmap({ enabled: false, direction: "column" });
-    setVizOptions(emptyVizOptions());
-  };
-
-  // SQL モード用の formSources 配列を selectedFormId / forms から構築する。
-  // 未選択 / フォーム不明時は空配列で通し (SQL 内の `[フォーム名]` 直接参照を許す)、
-  // フォームは解決できたがシート未設定のときだけ error を返す。caller 側で表示先 (run/save) を切り替える。
-  const buildSqlFormSources = useCallback(() => {
-    if (!selectedFormId) return { formSources: [] };
-    const form = forms.find((f) => f.id === selectedFormId);
-    // 保存済みの formId が現在のフォーム一覧に無い (削除済み等) 場合でも、SQL モードは
-    // [フォーム名] 直接参照で実行できるため、未選択扱いにしてエラーを出さない。
-    if (!form) return { formSources: [] };
-    // レコードは formId 経由で取得するため spreadsheetId は不要。設定済みかだけ確認する。
-    if (!getSheetConfig(form)) return { error: ERR_NO_SPREADSHEET };
-    return {
-      formSources: [{
-        formId: form.id,
-        alias: "data",
-      }],
-    };
-  }, [selectedFormId, forms]);
-
-  const handleRunQuery = useCallback(async () => {
-    setRunning(true);
-    setRunError(null);
-    setQueryResult(null);
-
-    const run = buildRunQuery({ mode, gui, sql, sources: mode === "sql" ? buildSqlFormSources() : null });
-    if (run.skip) { setRunning(false); return; }
-    if (run.error) {
-      setRunError(run.error);
-      setRunning(false);
-      return;
-    }
-
-    try {
-      const result = await executeQuestion({ query: run.query }, { forms });
-      if (result.ok) {
-        setQueryResult(result);
-      } else {
-        setRunError(result.error);
-      }
-    } catch (err) {
-      setRunError(err.message || String(err));
-    } finally {
-      setRunning(false);
-    }
-  }, [mode, gui, sql, buildSqlFormSources, forms]);
-
-  useEffect(() => {
-    if (!questionId) return;
-    if (!definitionLoaded) return;
-    if (forms.length === 0) return;
-    if (autoRunQuestionIdRef.current === questionId) return;
-    autoRunQuestionIdRef.current = questionId;
-    handleRunQuery();
-  }, [questionId, definitionLoaded, forms.length, handleRunQuery]);
-
-  const handleSave = useCallback(async () => {
-    if (!name.trim()) { setSaveError("Question 名を入力してください。"); return; }
-
-    // 参照は fileId（formId）のみで保持する。id 解決失敗時の復旧は中央辞書（論理パス→fileId）に
-    // 集約したため、各参照に formName を二重持ちしない。読み込んだ旧 formName は剥がして保存する。
-    const saveQuery = buildSaveQuery({
-      mode,
-      gui,
-      sql,
-      sources: mode === "sql" ? buildSqlFormSources() : null,
-      forms,
-    });
-    if (saveQuery.error) { setSaveError(saveQuery.error); return; }
-    const query = saveQuery.query;
-
-    setSaving(true);
-    setSaveError(null);
-
-    const question = {
-      // id ＝ Drive fileId。新規はクライアントで採番せず、保存後に GAS が返す fileId を採用する。
-      id: questionId || undefined,
-      // 旧 ULID id（q_...）が mapping に無い stale ケースでも、GAS が実体ファイルを driveFileUrl から
-      // 特定して上書きできるよう実体 URL を保存ペイロードへ載せる（保存 JSON 本文からは除外される）。
-      driveFileUrl: driveFileUrl || undefined,
-      name: name.trim(),
-      folder: normalizeFolderPath(folder),
-      schemaVersion: 1,
-      query,
-      visualization: buildQuestionVisualization({ vizType, xField, yFields, heatmap, vizOptions }),
-      modifiedAt: Date.now(),
-    };
-
-    try {
-      await saveQuestion(question);
-      navigate(location.state?.from || "/admin/questions");
-    } catch (err) {
-      setSaveError(err.message || String(err));
-    } finally {
-      setSaving(false);
-    }
-  }, [mode, name, folder, gui, sql, buildSqlFormSources, vizType, xField, yFields, heatmap, vizOptions, questionId, navigate, forms]);
-
-  const handleSwitchToSql = () => {
-    if (mode === "sql") return;
-    if (!gui.formId) {
-      setMode("sql");
-      return;
-    }
-    const compiled = compileStages(gui, { formColumns });
-    if (!compiled.ok) {
-      window.alert("GUI から SQL への変換に失敗しました: " + compiled.errors.join(" / "));
-      return;
-    }
-    const ok = window.confirm("GUI 状態を SQL に変換して以後 SQL として編集します。GUI へは戻せません。続行しますか？");
-    if (!ok) return;
-    // compileStages の出力は FROM data_<id>（canonical alias）。手書き SQL と同じく
-    // エディタ表示は [フォーム名] に寄せる（保存時に formRefsToIds で fileId へ戻る）。
-    setSql(canonicalAliasToName(compiled.sql, gui.formId, buildFormIndex(forms)));
-    setSelectedFormId(gui.formId);
-    setMode("sql");
-  };
-
-  const handleSwitchToGui = () => {
-    if (mode === "gui") return;
-    if (sql.trim()) {
-      const ok = window.confirm("GUI モードに切り替えると現在の SQL は破棄されます。続行しますか？");
-      if (!ok) return;
-    }
-    setGui(emptyGui(selectedFormId));
-    setMode("gui");
-  };
-
-  const snapshot = useMemo(() => JSON.stringify({
-    name, folder, mode, sql, gui, vizType, xField, yFields, heatmap, vizOptions, selectedFormId,
-  }), [name, folder, mode, sql, gui, vizType, xField, yFields, heatmap, vizOptions, selectedFormId]);
-
-  const baselineReady = !questionId || definitionLoaded;
-  const isDirty = useDirtyTracking(snapshot, baselineReady);
-
-  useBeforeUnloadGuard(isDirty);
-
-  const goBack = useCallback(() => navigate(location.state?.from || "/admin/questions"), [navigate, location.state]);
-
-  const handleBack = () => {
-    if (isDirty) {
-      unsavedDialog.open();
-      return false;
-    }
-  };
+  const {
+    isAdmin,
+    questionId,
+    location,
+    forms,
+    activeForms,
+    name, setName,
+    folder, setFolder,
+    driveFileUrl,
+    mode,
+    sql, setSql,
+    gui, setGui,
+    selectedFormId, setSelectedFormId,
+    formColumns,
+    columnLoadError,
+    selectedColumnKey, setSelectedColumnKey,
+    copiedToken,
+    vizType, setVizType,
+    xField, setXField,
+    yFields, setYFields,
+    heatmap, setHeatmap,
+    vizOptions, setVizOptions,
+    viz,
+    queryResult,
+    running,
+    runError,
+    saving,
+    saveError,
+    loading,
+    copyToken,
+    handleGuiFormChange,
+    handleRunQuery,
+    handleSave,
+    handleSwitchToSql,
+    handleSwitchToGui,
+    handleBack,
+    goBack,
+    unsavedDialog,
+  } = editor;
 
   const confirmOptions = [
     {
@@ -395,26 +77,6 @@ export default function QuestionEditorPage() {
     },
   ];
 
-  const defaultForm = forms.find((f) => f.id === (mode === "gui" ? gui.formId : selectedFormId)) || null;
-  const defaultColumnIndex = defaultForm ? buildColumnIndex(defaultForm) : null;
-  const resolveCol = (token) => resolveColumnRef(token, defaultColumnIndex) || token;
-  const viz = {
-    type: vizType,
-    xField: resolveCol(xField.trim()),
-    yFields: yFields.split(",").map((s) => s.trim()).filter(Boolean).map(resolveCol),
-    heatmap,
-    format: vizOptions.format,
-    goal: vizOptions.goal,
-    pivot: vizOptions.pivot,
-    geo: vizOptions.geo,
-    sankey: vizOptions.sankey,
-    axis: vizOptions.axis,
-    lineStyle: vizOptions.lineStyle,
-    series: vizOptions.series,
-    tableStyle: vizOptions.tableStyle,
-    chartStyle: vizOptions.chartStyle,
-  };
-
   if (!isAdmin) return null;
 
   return (
@@ -432,163 +94,48 @@ export default function QuestionEditorPage() {
         {loading && <p className="nf-text-subtle">読み込み中...</p>}
         {saveError && <p className="nf-text-warning">{saveError}</p>}
 
-        <div>
-          <label className="nf-label">Question 名</label>
-          <input
-            className="nf-input"
-            type="text"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="例: 月別集計"
-            style={{ width: "100%", maxWidth: "400px" }}
-          />
-        </div>
+        <QuestionMetaFields
+          name={name}
+          onNameChange={setName}
+          folder={folder}
+          onFolderChange={setFolder}
+          questionId={questionId}
+          driveFileUrl={driveFileUrl}
+        />
 
-        <div>
-          <label className="nf-label">フォルダ（任意）</label>
-          <input
-            className="nf-input"
-            type="text"
-            value={folder}
-            onChange={(e) => setFolder(e.target.value)}
-            placeholder="例: 営業/月次  （空欄=フォルダなし）"
-            style={{ width: "100%", maxWidth: "400px" }}
-          />
-        </div>
-
-        {questionId && driveFileUrl && (
-          <div>
-            <label className="nf-label">実体ファイル URL（Drive 上の JSON）</label>
-            <input
-              className="nf-input nf-input--readonly"
-              type="text"
-              value={driveFileUrl}
-              readOnly
-              onFocus={(e) => e.target.select()}
-              title="この Question の実体（Drive 上の JSON ファイル）の URL。表示専用で編集できません。"
-              style={{ width: "100%", maxWidth: "640px", background: "var(--surface-subtle)", color: "var(--text-muted)" }}
-            />
-            <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
-              この Question 定義が保存されている Drive 上の場所です。どれが実体かを確認するための表示専用で、編集はできません。
-            </p>
-          </div>
-        )}
-
-        <p className="nf-text-11 nf-text-muted nf-mb-0">
-          Question 定義は標準フォルダ構成の <code>02_questions</code> に保存されます。
-        </p>
-
-        <fieldset style={{ border: "1px solid var(--nf-border)", borderRadius: "4px", padding: "8px 12px", margin: 0 }}>
-          <legend style={{ fontSize: "12px", padding: "0 6px" }}>クエリ作成方法</legend>
-          <label style={{ marginRight: "16px" }}>
-            <input
-              type="radio"
-              name="query-mode"
-              value="gui"
-              checked={mode === "gui"}
-              onChange={handleSwitchToGui}
-              style={{ marginRight: "4px" }}
-            />
-            GUI
-          </label>
-          <label>
-            <input
-              type="radio"
-              name="query-mode"
-              value="sql"
-              checked={mode === "sql"}
-              onChange={handleSwitchToSql}
-              style={{ marginRight: "4px" }}
-            />
-            SQL
-          </label>
-        </fieldset>
+        <QueryModeFieldset
+          mode={mode}
+          onSwitchToGui={handleSwitchToGui}
+          onSwitchToSql={handleSwitchToSql}
+        />
 
         {mode === "gui" ? (
-          <>
-            {columnLoadError && <p className="nf-text-warning">列情報の取得に失敗: {columnLoadError}</p>}
-            <GuiQueryBuilder
-              gui={gui}
-              onChange={setGui}
-              formColumns={formColumns}
-              activeForms={activeForms}
-              onFormChange={handleGuiFormChange}
-            />
-            <div>
-              <button type="button" onClick={handleRunQuery} disabled={running} className="nf-btn-outline">
-                {running ? "実行中..." : "クエリ実行"}
-              </button>
-            </div>
-          </>
+          <QuestionGuiPanel
+            gui={gui}
+            onGuiChange={setGui}
+            formColumns={formColumns}
+            activeForms={activeForms}
+            onFormChange={handleGuiFormChange}
+            columnLoadError={columnLoadError}
+            running={running}
+            onRun={handleRunQuery}
+          />
         ) : (
-          <>
-            <div>
-              <label className="nf-label">データソース（既定フォーム・任意）</label>
-              <div style={{ display: "flex", alignItems: "flex-start", gap: "16px", flexWrap: "wrap" }}>
-                <SearchableSelect
-                  value={selectedFormId}
-                  onChange={setSelectedFormId}
-                  placeholder="（未選択：SQL 内で [フォーム名] を直接参照）"
-                  options={formsToOptions(activeForms)}
-                  style={{ maxWidth: "400px", flex: "0 0 auto" }}
-                />
-                {selectedFormId && (() => {
-                  const f = forms.find((x) => x.id === selectedFormId);
-                  if (!f) return null;
-                  const title = formQualifiedName(f) || f.id;
-                  // 参照は常にフォーム名で行う（fileId は保存時に内部で置換される内部表現）。
-                  const formNameToken = "[" + title + "]";
-                  const selectedCol = formColumns.find((c) => c.key === selectedColumnKey);
-                  const columnToken = selectedCol ? "[" + selectedCol.key + "]" : "";
-                  return (
-                    <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                      <div style={tokenRowStyle}>
-                        <span className="nf-text-muted" style={{ minWidth: "70px" }}>フォーム名:</span>
-                        <code style={tokenCodeStyle}>{formNameToken}</code>
-                        <button type="button" className="nf-btn-outline" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={() => copyToken(formNameToken)}>
-                          {copiedToken === formNameToken ? "コピー済" : "コピー"}
-                        </button>
-                      </div>
-                      {formColumns.length > 0 && (
-                        <div style={tokenRowStyle}>
-                          <span className="nf-text-muted" style={{ minWidth: "70px" }}>列名:</span>
-                          <SearchableSelect
-                            value={selectedColumnKey}
-                            onChange={setSelectedColumnKey}
-                            placeholder="（列を選択）"
-                            searchPlaceholder="列名で絞り込み..."
-                            options={columnsToOptions(formColumns)}
-                            style={{ maxWidth: "300px", flex: "0 0 auto" }}
-                          />
-                          {columnToken && <code style={tokenCodeStyle}>{columnToken}</code>}
-                          {columnToken && (
-                            <button type="button" className="nf-btn-outline" style={{ padding: "2px 8px", fontSize: "11px" }} onClick={() => copyToken(columnToken)}>
-                              {copiedToken === columnToken ? "コピー済" : "コピー"}
-                            </button>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-              </div>
-            </div>
-            <div>
-              <label className="nf-label">SQL（AlaSQL 方言）</label>
-              <textarea
-                value={sql}
-                onChange={(e) => setSql(e.target.value)}
-                rows={8}
-                style={{ width: "100%", fontFamily: "monospace", fontSize: "13px", padding: "8px", boxSizing: "border-box", border: "1px solid var(--nf-border)", borderRadius: "4px", background: "var(--nf-input-bg, #fff)", color: "var(--nf-text)", resize: "vertical", minHeight: "160px" }}
-                placeholder={"例: SELECT [基本情報|区], COUNT(*) AS count FROM [data] GROUP BY [基本情報|区]\n他フォーム参照: SELECT * FROM [フォーム名] AS f\nバッククォートも使用可: SELECT * FROM `フォーム名`"}
-              />
-              <div style={{ marginTop: "6px" }}>
-                <button type="button" onClick={handleRunQuery} disabled={running} className="nf-btn-outline">
-                  {running ? "実行中..." : "クエリ実行"}
-                </button>
-              </div>
-            </div>
-          </>
+          <QuestionSqlPanel
+            selectedFormId={selectedFormId}
+            onSelectedFormIdChange={setSelectedFormId}
+            activeForms={activeForms}
+            forms={forms}
+            formColumns={formColumns}
+            selectedColumnKey={selectedColumnKey}
+            onSelectedColumnKeyChange={setSelectedColumnKey}
+            copiedToken={copiedToken}
+            onCopyToken={copyToken}
+            sql={sql}
+            onSqlChange={setSql}
+            running={running}
+            onRun={handleRunQuery}
+          />
         )}
 
         {runError && <p className="nf-text-warning">{runError}</p>}
