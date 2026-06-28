@@ -644,6 +644,9 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         childFormId,
         pid: recordIdRef.current,
         childFormName: field?.childFormName || field?.label || "",
+        // 親レコードが表示専用・編集不可（view/ロック/form.readOnly の合成 readOnly）なら、
+        // 子フォームも閲覧のみで開く。
+        parentReadOnly: readOnly,
       });
       return;
     }

@@ -210,16 +210,21 @@ export default function FormPage() {
   const entryRef = useLatestRef(entry);
   const driveFolderStatesRef = useLatestRef(driveFolderStates);
 
+  // 子フォームをオーバーレイで開いている文脈。親レコードが表示専用・編集不可なら
+  // parentReadOnly が立ち、この子フォームも強制的に閲覧のみにする（form.readOnly と同等に扱う）。
+  const childFormCtx = useFormContext();
+  const forcedReadOnly = !!(childFormCtx?.inChildContext && childFormCtx?.parentReadOnly);
+
   useEffect(() => {
-    if (form?.readOnly) {
+    if (form?.readOnly || forcedReadOnly) {
       setMode("view");
       return;
     }
     setMode(entryId ? "view" : "edit");
-  }, [entryId, form?.readOnly]);
+  }, [entryId, form?.readOnly, forcedReadOnly]);
 
   const isViewMode = mode === "view";
-  const isFormReadOnly = !!form?.readOnly;
+  const isFormReadOnly = !!form?.readOnly || forcedReadOnly;
   const canCopyFromExistingRecord = !entryId && !isViewMode && !isFormReadOnly;
   const isDriveFolderDirty = useMemo(
     () => !areDriveFolderStatesMapsEqual(initialDriveFolderStatesRef.current, driveFolderStates),
@@ -521,7 +526,7 @@ export default function FormPage() {
   // 子フォームをオーバーレイで開いている場合、未保存編集の有無をオーバーレイへ通知する。
   // オーバーレイは閉じる前にこれを参照し、dirty なら確認する（誤クローズによる入力消失を防ぐ）。
   // Provider 配下でない（新規タブ／通常ページ）ときは registerDirtyChecker が無く no-op。
-  const childFormCtx = useFormContext();
+  // （childFormCtx は上部でフックとして取得済み。）
   const registerDirtyChecker = childFormCtx?.registerDirtyChecker;
   // 子フォームのオーバーレイ文脈なら、保存するレコードへ刻む親レコード id（pid）。
   // サーバは withUrlPid 経由で pid を刻むが、楽観的に保存するローカルレコードには載らないため
@@ -604,6 +609,8 @@ export default function FormPage() {
 
   const handleEditMode = async () => {
     if (!formId || !entryId) return;
+    // 親レコードが表示専用・編集不可なら、子フォームも編集モードへ移行させない。
+    if (isFormReadOnly) return;
     if (loading || isReadLocked) {
       showAlert("データ読み取り中のため、読み取り完了までお待ちください。");
       return;

@@ -39,6 +39,8 @@ export const buildSharedRecordUrl = (baseUrl, formId, recordId) => (
 // 子フォームを開くための URL を組む。?form=<対象fileId>&pid=<親レコードID>。
 // 親レコードに紐づく子フォーム（pid で行を絞り込み・新規行に刻印）を別タブで開く用途で、
 // record は付けない。buildSharedFormUrl は record 用途で他所が使うためシグネチャを変えない。
+// 注: 親レコードの表示専用継承（parentReadOnly）は同一 SPA のオーバーレイ経路のみ対応。
+// 別タブ（フルロード）フォールバックでは継承されない（オーバーレイが既定の主経路）。
 export const buildChildFormUrl = (baseUrl, formId, pid = "") => (
   buildFormUrl_(baseUrl, formId, { record: "", pid })
 );

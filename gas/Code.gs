@@ -14,7 +14,7 @@ function doGet(e) {
   const routeParam = routeParamRaw ? (routeParamRaw.charAt(0) === "/" ? routeParamRaw : "/" + routeParamRaw) : "";
   const userEmail = ResolveActiveUserEmail_();
 
-  const authResult = DetermineAccess_(formParam, adminkeyParam, userEmail);
+  const authResult = DetermineAccess_(formParam, adminkeyParam, userEmail, pidParam);
   const userProfile = userEmail ? ResolveActiveUserProfile_() : { displayName: "", affiliation: "", title: "", phone: "" };
   const userName = userProfile.displayName;
   const userAffiliation = userProfile.affiliation;
