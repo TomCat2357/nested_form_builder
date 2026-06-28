@@ -94,3 +94,14 @@
 
 本体 `gas/` に合わせています。`var` + `function name(){}` スタイル、内部ヘルパは末尾アンダースコア、
 関数接頭辞 `Cho2_` / 定数 `CHO2_`。番地は `domain.gs` セクションの緑セル表・グリッド設定に集約。
+
+### 共有ドメイン定数（単一ソース）
+
+`CHO2_SPECIES_ORDER_` / `CHO2_TOOL_ORDER_` / `CHO2_TOOL_KIND_` / `CHO2_GUN_LIC_` は法令由来の語彙で、
+取込側 `choju_yoshiki` と**完全に同一値**。`Combined.gs` 内の
+`// >>> shared:chojuDomain` 〜 `// <<< shared:chojuDomain` マーカー区間は**自動生成**で、
+単一ソースは `../shared/chojuDomain.json`。値を変えるときは JSON を編集して
+`node gas_for_external_action/scripts/sync-shared-constants.mjs` を実行（マーカー間を直接編集しない）。
+各 `Combined.gs` は引き続き自己完結のまま clasp で push できる（実行時の共有ライブラリ依存は持たない）。
+`--check` 付き実行で同期漏れを検査できる。なお `CHO2_ROSTER_`（名簿の幾何）は出力に必要な列のみで
+取込側より少なく、モジュール固有のため共有しない。
