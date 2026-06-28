@@ -146,6 +146,10 @@ var CHO_L_AREA7_ = "規則第７条第１項第７号に係る場所等の位置
 var CHO_L_APPLICANT_ = "申請者情報";
 var CHO_L_APPLICANT_TYPE_ = "申請者の個人・法人の別";
 var CHO_L_REMARKS_ = "備考";
+// 申請受付の日付（親フォーム先頭の date 項目）。申請日は Excel から取り込み、受付日は取り込み実行日。
+var CHO_L_APP_DATE_ = "申請日";
+var CHO_L_RECEIPT_DATE_ = "受付日";
+var CHO_APP_DATE_CELL_ = "H2"; // 申請書シートの申請日セル（黄=権威。H2:J2 結合・日付シリアル）
 // フォームの message ラベル・Excel シート名とも "証明書" に統一。
 var CHO_L_JIYU_ = "証明書";
 var CHO_L_JIYU_CAUSE_ = "被害原因の鳥獣";
@@ -519,7 +523,7 @@ function Cho_importReg_(f, branchBase, rows) {
 
 // 申請書/証明書 → 親レコードのフォームフィールド（"/"連結パス → 値）
 // forcedType（"個人"/"法人"）が渡されたら判定を上書きする（取り込み画面のラジオ選択が正）。
-function Cho_importParent_(reader, workers, issues, forcedType) {
+function Cho_importParent_(reader, workers, issues, forcedType, nowCanonical) {
   issues = issues || [];
   var f = {};
   var APP = "申請書", JIYU = "証明書";
@@ -557,6 +561,12 @@ function Cho_importParent_(reader, workers, issues, forcedType) {
   if (ps) f[CHO_L_PERIOD_ + "/開始"] = ps;
   if (pe) f[CHO_L_PERIOD_ + "/終了"] = pe;
   f[CHO_L_AREA_ + "/所在地"] = Cho_str_(app("E29"));
+
+  // 申請日: 様式「申請書」H2（黄=権威）から取り込む。空なら入れない（期間日付と同じ流儀）。
+  var appDate = Cho_dateCanonChecked_(app(CHO_APP_DATE_CELL_), issues, APP, CHO_APP_DATE_CELL_, CHO_L_APP_DATE_);
+  if (appDate) f[CHO_L_APP_DATE_] = appDate;
+  // 受付日: 取り込み実行日（今日）。引数優先・無ければ now を canonical 化。
+  f[CHO_L_RECEIPT_DATE_] = nowCanonical || Cho_dateToCanonical_(new Date());
 
   // 規則7条 区分: ○ セルを逆引き
   var area7 = [];
@@ -736,7 +746,7 @@ function Cho_checkPinkConsistency_(reader, workers, applicantType, issues) {
 
 // リーダ → { parent:{fields}, children:[{fields}], issues:[…], warnings:[…] }
 // forcedType（"個人"/"法人"）= 取り込み画面のラジオ選択。未指定なら自動判定。
-function Cho_buildImport_(reader, forcedType) {
+function Cho_buildImport_(reader, forcedType, nowCanonical) {
   var issues = [];
   var workers = [];
   for (var b = 0; b < CHO_ROSTER_.blockCount; b++) {
@@ -752,7 +762,7 @@ function Cho_buildImport_(reader, forcedType) {
   }
   if (workers.length === 0) issues.push(Cho_issue_("odd", "warn", CHO_ROSTER_.sheetName, "", "従事者", "", "",
     "従事者名簿に従事者が見つかりませんでした。"));
-  var parent = Cho_importParent_(reader, workers, issues, forcedType);
+  var parent = Cho_importParent_(reader, workers, issues, forcedType, nowCanonical);
   Cho_checkPinkConsistency_(reader, workers, parent.type, issues);
   return { parent: parent, children: workers, issues: issues, warnings: Cho_issuesToWarnings_(issues) };
 }
