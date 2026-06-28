@@ -49,7 +49,7 @@ nested_form_builder/
 ├── gas_for_spreadsheet/  # 保存先スプレッドシート用の補助スクリプト
 ├── gas_for_external_action/      # 「外部アクションボタン」の POST 受信 Web アプリ雛形
 ├── dist/             # clasp push 対象（自動生成・コミットしない）
-├── docs/claude/      # 開発者向け詳細ドキュメント（テーマ別 15 本）
+├── docs/claude/      # 開発者向け詳細ドキュメント（テーマ別 16 本）
 ├── tests/ / e2e/     # GAS 横断テスト・Playwright E2E
 ├── md2pdf/ / scripts/  # ユーザーマニュアル生成ツール群（manual/ は gitignore）
 ├── deploy.ps1        # Windows 用ワンショットデプロイ
@@ -60,7 +60,7 @@ nested_form_builder/
 
 | 用途 | 参照先 |
 | --- | --- |
-| 開発者向けナビ（テーマ別 15 ファイルへの索引） | [`CLAUDE.md`](./CLAUDE.md) |
+| 開発者向けナビ（テーマ別 16 ファイルへの索引） | [`CLAUDE.md`](./CLAUDE.md) |
 | 全体像・データフロー | [`docs/claude/architecture.md`](./docs/claude/architecture.md) |
 | セットアップ詳細 | [`docs/claude/setup.md`](./docs/claude/setup.md) |
 | 日常コマンド | [`docs/claude/development-workflow.md`](./docs/claude/development-workflow.md) |
