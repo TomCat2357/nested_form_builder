@@ -230,7 +230,10 @@ export default function FormPage() {
 
   useEffect(() => {
     if (!currentForm) return;
-    if (cachedForm && isDirty && !isViewMode) {
+    // 編集モード中（!isViewMode）または未保存の変更がある（isDirty）間は、
+    // 起動 / F5 のバックグラウンド再検証でフォーム定義が差し替わって入力が巻き戻るのを防ぐ。
+    // 閲覧モードかつ非 dirty のときだけ最新定義を取り込む。
+    if (cachedForm && (isDirty || !isViewMode)) {
       return;
     }
     setCachedForm(currentForm);

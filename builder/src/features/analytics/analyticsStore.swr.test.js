@@ -4,7 +4,7 @@ import { makeEntityStore } from "./analyticsStore.js";
 
 const HOUR = 60 * 60 * 1000;
 
-// listSWR の鮮度判定（evaluateCacheForAnalytics: 1 時間 fresh / 24 時間で再取得）を、
+// listSWR の鮮度判定（evaluateCacheForAnalytics: 15 分 fresh / 24 時間で再取得）を、
 // IndexedDB と GAS をメモリモックに差し替えて検証する。
 function makeMockCache(initialItems, lastSyncedAt) {
   let items = (initialItems || []).slice();
@@ -39,10 +39,10 @@ function makeStore({ cacheItems = [], lastSyncedAt = null, serverItems = [] } = 
   return { store, cache, gas };
 }
 
-test("1 時間以内は fresh: キャッシュ即返し・GAS は呼ばない", async () => {
+test("15 分以内は fresh: キャッシュ即返し・GAS は呼ばない", async () => {
   const { store, gas } = makeStore({
     cacheItems: [{ id: "a" }],
-    lastSyncedAt: Date.now() - 30 * 60 * 1000,
+    lastSyncedAt: Date.now() - 5 * 60 * 1000,
   });
   const res = await store.listSWR({ includeArchived: true });
   assert.deepEqual(res.items, [{ id: "a" }]);
@@ -51,7 +51,21 @@ test("1 時間以内は fresh: キャッシュ即返し・GAS は呼ばない", 
   assert.equal(gas.listCalls, 0);
 });
 
-test("1〜24 時間は background: キャッシュ返し＋裏更新で最新化", async () => {
+test("fresh でも revalidateWhenFresh では裏で再検証する（マウント時）", async () => {
+  const { store, gas } = makeStore({
+    cacheItems: [{ id: "a" }],
+    lastSyncedAt: Date.now() - 5 * 60 * 1000,
+    serverItems: [{ id: "b" }],
+  });
+  const res = await store.listSWR({ includeArchived: true, revalidateWhenFresh: true });
+  assert.deepEqual(res.items, [{ id: "a" }]);
+  assert.equal(res.blocking, false);
+  assert.notEqual(res.sync, null);
+  assert.deepEqual(await res.sync, [{ id: "b" }]);
+  assert.equal(gas.listCalls, 1);
+});
+
+test("15 分〜24 時間は background: キャッシュ返し＋裏更新で最新化", async () => {
   const { store, gas, cache } = makeStore({
     cacheItems: [{ id: "old" }],
     lastSyncedAt: Date.now() - 3 * HOUR,

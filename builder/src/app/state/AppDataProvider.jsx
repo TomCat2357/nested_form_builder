@@ -15,6 +15,7 @@ import {
   renameFolderPaths,
   removeFolderSubtree,
 } from "../../utils/folderTree.js";
+import { isLocalId } from "../../core/ids.js";
 
 const AppDataContext = createContext(null);
 
@@ -199,12 +200,17 @@ export function AppDataProvider({ children }) {
         // cache is fresh enough for sync, stop loading spinner
         setLoadingForms(false);
 
-        if (shouldBackground) {
-          refreshForms({ reason: "startup-background", background: true }).catch((err) => {
-            console.error("[AppDataProvider] Background refresh error:", err);
-            setError(err.message || "フォームの取得に失敗しました");
-          });
-        }
+        // 起動 / F5 では鮮度に関わらず必ずバックグラウンド再検証する。
+        // キャッシュを即表示しつつ裏で GAS 再取得し、サーバ側のフォーム編集を数秒で反映する
+        // （fresh で短絡すると「F5 では更新されない」状態になる）。
+        // shouldSync（24 時間超 / キャッシュ無し）は上で既に blocking 取得して return 済み。
+        refreshForms({
+          reason: shouldBackground ? "startup-background" : "startup-revalidate",
+          background: true,
+        }).catch((err) => {
+          console.error("[AppDataProvider] Background refresh error:", err);
+          setError(err.message || "フォームの取得に失敗しました");
+        });
       } catch (err) {
         console.error("[AppDataProvider] Startup error:", err);
         setError(err.message || "フォームの取得に失敗しました");
@@ -299,6 +305,18 @@ export function AppDataProvider({ children }) {
       return next;
     }, loadFailuresRef.current, "upsertFormsState");
   }, [updateFormsAndCache]);
+
+  // 単一フォームの定義を物理ファイル（個別 .json）から読み直して formsCache / forms 配列へ反映する。
+  // 検索画面の更新ボタン（blocking 許容）から使う。未アップロード（local_ / pendingUpload）は
+  // forceRefresh しない（「Form not found」で握り潰されるのを避ける。編集画面ガードのミラー）。
+  const refreshSingleForm = useCallback(async (id) => {
+    if (!id) return null;
+    const live = formsRef.current.find((form) => form && form.id === id) || null;
+    const pendingUpload = isLocalId(id) || !!live?.pendingUpload;
+    const fresh = await dataStore.getForm(id, { forceRefresh: !pendingUpload });
+    if (fresh) await upsertFormsState(fresh);
+    return fresh;
+  }, [upsertFormsState]);
 
   const removeFormsState = useCallback(async (formIds) => {
     if (!Array.isArray(formIds) || formIds.length === 0) return;
@@ -582,6 +600,7 @@ export function AppDataProvider({ children }) {
       renameFolder,
       deleteFolder,
       refreshForms,
+      refreshSingleForm,
       createForm,
       updateForm,
       archiveForm,
@@ -603,7 +622,7 @@ export function AppDataProvider({ children }) {
       getFormById,
       registerImportedForm,
     }),
-    [forms, loadFailures, loadingForms, refreshingForms, error, lastSyncedAt, cacheDisabled, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, refreshForms, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, setFormsChildOnly, clearFormsChildOnly, deleteForms, deleteForm, deleteFormsWithFiles, importForms, exportForms, copyForm, getFormById, registerImportedForm],
+    [forms, loadFailures, loadingForms, refreshingForms, error, lastSyncedAt, cacheDisabled, registeredFolders, createFolder, moveItems, renameFolder, deleteFolder, refreshForms, refreshSingleForm, createForm, updateForm, archiveForm, unarchiveForm, archiveForms, unarchiveForms, setFormReadOnly, clearFormReadOnly, setFormsReadOnly, clearFormsReadOnly, setFormsChildOnly, clearFormsChildOnly, deleteForms, deleteForm, deleteFormsWithFiles, importForms, exportForms, copyForm, getFormById, registerImportedForm],
   );
 
   return <AppDataContext.Provider value={memoValue}>{children}</AppDataContext.Provider>;

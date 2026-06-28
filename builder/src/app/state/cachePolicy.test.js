@@ -4,7 +4,7 @@ import { evaluateCacheForForms, evaluateCacheForAnalytics } from "./cachePolicy.
 
 const HOUR = 60 * 60 * 1000;
 
-// forms / dashboards / questions は同一の SWR しきい値（1 時間 fresh / 24 時間で要再取得）を共有する。
+// forms / dashboards / questions は同一の SWR しきい値（15 分 fresh / 24 時間で要再取得）を共有する。
 for (const [label, evaluate] of [["forms", evaluateCacheForForms], ["analytics", evaluateCacheForAnalytics]]) {
   test(`${label}: キャッシュ無しは shouldSync`, () => {
     const r = evaluate({ lastSyncedAt: null, hasData: false });
@@ -12,14 +12,14 @@ for (const [label, evaluate] of [["forms", evaluateCacheForForms], ["analytics",
     assert.equal(r.shouldBackground, false);
   });
 
-  test(`${label}: 1 時間以内は fresh（取得しない）`, () => {
-    const r = evaluate({ lastSyncedAt: Date.now() - 30 * 60 * 1000, hasData: true });
+  test(`${label}: 15 分以内は fresh（取得しない）`, () => {
+    const r = evaluate({ lastSyncedAt: Date.now() - 5 * 60 * 1000, hasData: true });
     assert.equal(r.isFresh, true);
     assert.equal(r.shouldSync, false);
     assert.equal(r.shouldBackground, false);
   });
 
-  test(`${label}: 1〜24 時間は background 更新`, () => {
+  test(`${label}: 15 分〜24 時間は background 更新`, () => {
     const r = evaluate({ lastSyncedAt: Date.now() - 3 * HOUR, hasData: true });
     assert.equal(r.shouldBackground, true);
     assert.equal(r.shouldSync, false);

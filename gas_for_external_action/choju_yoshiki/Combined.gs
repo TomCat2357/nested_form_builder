@@ -158,6 +158,8 @@ var CHO_L_JIYU_TIME_ = "被害発生の時期";
 var CHO_L_JIYU_AREA_ = "被害発生区域（場所）";
 var CHO_L_JIYU_CONTENT_ = "被害の内容";
 var CHO_L_JIYU_REASON_ = "捕獲等又は採取等を行う理由";
+var CHO_L_JIYU_DATE_ = "記入日";
+var CHO_JIYU_DATE_CELL_ = "H2"; // 証明書シート右上の記入日セル（H2:J2 結合・日付シリアル）
 // 子フォーム「従事者情報」
 var CHO_L_CHILD_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称)"; // 閉じ括弧が半角!
 var CHO_L_CHILD_SPECIES_ = "捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量";
@@ -608,6 +610,9 @@ function Cho_importParent_(reader, workers, issues, forcedType, nowCanonical) {
   setJ(jBase + CHO_L_JIYU_CONTENT_, jiyu("E26"));
   setJ(jBase + CHO_L_JIYU_REASON_,  jiyu("E27"));
   setJ(jBase + CHO_L_REMARKS_,      jiyu("E28"));
+  // 記入日: 証明書シート右上 H2（日付シリアル）から取り込む。空なら入れない（申請日と同じ流儀）。
+  var jiyuDate = Cho_dateCanonChecked_(jiyu(CHO_JIYU_DATE_CELL_), issues, JIYU, CHO_JIYU_DATE_CELL_, CHO_L_JIYU_DATE_);
+  if (jiyuDate) f[jBase + CHO_L_JIYU_DATE_] = jiyuDate;
 
   // 確認用（桃セル）: 集計値は displayFields へ。プレビューに桃色行で表示するのみで保存はしない
   // （種数・捕獲方法はフォームの substitution が子から自動集計し、桃の不整合は取り込み時に検出済み）。

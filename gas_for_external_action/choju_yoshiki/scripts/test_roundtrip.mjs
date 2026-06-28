@@ -64,6 +64,10 @@ eq("法人 受付日(=now)", impHn.parent.fields["受付日"], NOW);
 // nowCanonical 省略時は本日（new Date()）を canonical 化して必ず入る
 ok("受付日 省略時も YYYY-MM-DD で必ず入る", /^\d{4}-\d{2}-\d{2}$/.test(impH.parent.fields["受付日"]), JSON.stringify(impH.parent.fields["受付日"]));
 
+// ---- 記入日（Excel 証明書 H2 右上から取込 → 証明書/記入日 葉）----
+eq("個人 証明書/記入日(H2取込)", impK.parent.fields["証明書/記入日"], "2026-06-10");
+eq("法人 証明書/記入日(H2取込)", impH.parent.fields["証明書/記入日"], "2026-06-10");
+
 // ---- 選択肢（radio/checkboxes/select）は「親パス/選択肢」葉へ ● マーカー（NFB 契約。連結→親パス書きは列なしで全滅していた）----
 const MK = "●";
 const PF_K = impK.parent.fields, PF_H = impH.parent.fields;

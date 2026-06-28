@@ -25,12 +25,12 @@ export function useAnalyticsList({ listSWR, includeArchived = false }) {
   // アンマウント / 再実行後に古い非同期結果を破棄するためのトークン。
   const runIdRef = useRef(0);
 
-  const run = useCallback(async ({ forceRefresh = false } = {}) => {
+  const run = useCallback(async ({ forceRefresh = false, revalidateWhenFresh = false } = {}) => {
     const runId = ++runIdRef.current;
     setError(null);
     let result;
     try {
-      result = await listSWR({ includeArchived, forceRefresh });
+      result = await listSWR({ includeArchived, forceRefresh, revalidateWhenFresh });
     } catch (err) {
       if (runId === runIdRef.current) {
         setError(err.message || String(err));
@@ -67,7 +67,8 @@ export function useAnalyticsList({ listSWR, includeArchived = false }) {
   }, [listSWR, includeArchived]);
 
   useEffect(() => {
-    run();
+    // マウント（一覧画面を開く / F5）時は fresh でも裏で再検証する。
+    run({ revalidateWhenFresh: true });
     return () => { runIdRef.current += 1; };
   }, [run]);
 

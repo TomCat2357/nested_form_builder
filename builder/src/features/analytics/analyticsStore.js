@@ -557,7 +557,7 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
    *   - blocking: キャッシュが古すぎて信用できず、items を表示せず取得完了を待つべきか
    *   - sync: バックグラウンド/同期の再取得 Promise（不要なら null）。解決値は最新のフィルタ済み配列
    */
-  async function listSWR({ includeArchived = false, forceRefresh = false } = {}) {
+  async function listSWR({ includeArchived = false, forceRefresh = false, revalidateWhenFresh = false } = {}) {
     const cached = await cache.getAll();
     const { lastSyncedAt } = await cache.getMeta();
     const sanitized = sanitizeList(cached);
@@ -566,7 +566,9 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     const items = filterArchived_(sanitized, includeArchived);
 
     if (decision.isFresh) {
-      return { items, blocking: false, sync: null };
+      // fresh でも、一覧画面を開いた（マウント）ときは裏で再検証する（起動 / F5 相当）。
+      // 楽観的更新のキャッシュ変更イベントでは revalidateWhenFresh を立てず、GAS 往復を避ける。
+      return { items, blocking: false, sync: revalidateWhenFresh ? fetchAndStore_(includeArchived) : null };
     }
     // shouldSync かつ手動更新でない場合のみブロックする（24 時間超 or キャッシュ無し）。
     // 手動の forceRefresh では既存表示を残したまま裏で取り直す。

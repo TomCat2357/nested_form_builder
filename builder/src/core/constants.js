@@ -56,11 +56,13 @@ export const LEGACY_STORE_NAMES_V5 = [
 export const RECORD_CACHE_MAX_AGE_MS = 30 * 60 * 1000;
 export const RECORD_CACHE_BACKGROUND_REFRESH_MS = 5 * 60 * 1000;
 // 一覧キャッシュ（フォーム / Dashboard / Question で共通）の SWR しきい値。
-//   - 1 時間以内: そのまま信用（再取得しない）
-//   - 1 時間〜24 時間: 仮に信用して即表示し、バックグラウンドで更新確認
+//   - 15 分以内: そのまま信用（画面遷移では再取得しない）
+//   - 15 分〜24 時間: 仮に信用して即表示し、バックグラウンドで更新確認
 //   - 24 時間以上: 信用せず同期的に取得し直す
+// なお起動 / F5 では鮮度に関わらず必ずバックグラウンド再検証する（AppDataProvider /
+// useAnalyticsList のマウント時）。この窓は主に画面遷移ゲートの節度として効く。
 export const FORM_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-export const FORM_CACHE_BACKGROUND_REFRESH_MS = 60 * 60 * 1000;
+export const FORM_CACHE_BACKGROUND_REFRESH_MS = 15 * 60 * 1000;
 // 分析（Question / Dashboard）の元レコードテーブルを React メモリにキャッシュする TTL（1時間）。
 // フィルタの微調整ごとに dataStore.listEntries + 行変換を再実行しないための短期キャッシュ。
 export const ANALYTICS_SOURCE_TABLE_CACHE_TTL_MS = 60 * 60 * 1000;

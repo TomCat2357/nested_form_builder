@@ -36,7 +36,7 @@ export const useEntries = ({
   locationState,
   showAlert = defaultAlert.showAlert,
 }) => {
-  const { refreshForms, loadingForms } = useAppData();
+  const { refreshForms, refreshSingleForm, loadingForms } = useAppData();
   const initialSyncSnapshot = getGlobalSyncSnapshot(formId);
   const [entries, setEntries] = useState([]);
   const [hasUnsynced, setHasUnsynced] = useState(initialSyncSnapshot.hasUnsynced);
@@ -544,7 +544,9 @@ export const useEntries = ({
             reason: "manual:search-records",
             flow: "full-upload-sheet-cache-replace",
           });
-          await refreshForms({ reason: "manual:search-forms", background: false });
+          // 更新ボタンは blocking 許容。このフォームの定義も個別 .json（物理ファイル）から
+          // 読み直して formsCache / forms 配列へ反映する（ラベル / フィールド変更を取り込む）。
+          await refreshSingleForm(formId);
           logSearchBackground("manual-refresh:done", {
             reason: "manual:search-forms",
             flow: "full-upload-sheet-cache-replace",
@@ -584,7 +586,7 @@ export const useEntries = ({
         reason: "manual:search-records",
       });
     }
-  }, [fetchAndCacheData, formId, logSearchBackground, refreshForms, showAlert]);
+  }, [fetchAndCacheData, formId, logSearchBackground, refreshSingleForm, showAlert]);
 
   const forceRefreshAll = useCallback(async () => {
     if (!formId) return;
