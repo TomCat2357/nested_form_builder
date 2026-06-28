@@ -64,5 +64,7 @@ export const buildDriveUploadSettings = ({ folderState, field, driveSettings }) 
     ...(driveSettings || {}),
     folderUrl: resolveEffectiveDriveFolderUrl(current),
     autoCreated: current.autoCreated,
+    // 永続モード: アップロード時に作るフォルダも KEEP（消えない）にする。
+    persistentFolder: !!field?.persistentFolder,
   };
 };
