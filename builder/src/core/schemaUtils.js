@@ -54,6 +54,31 @@ const defaultFieldSegment = (field, indexTrail) => {
 };
 
 /**
+ * 列ヘッダ（＝列キー）生成規則の GAS 双子。sheetsHeaders.gs の
+ * Sheets_normalizeHeaderSegment_ / Sheets_headerFieldSegmentWithFallback_ /
+ * Sheets_headerBranchSegment_ と振る舞いを一致させ、フロントで作るパスキーを
+ * GAS の col.key（Sheets_pathKey_）と突き合わせ可能にする。
+ * 等価性は tests/gas-header-normalization.test.cjs で担保。
+ *
+ * defaultFieldSegment（trim のみ）と異なり CRLF/CR を LF へ畳む点に注意。
+ * traverseSchema の fieldSegment / branchSegment オプションへ渡して使う。
+ */
+export const normalizeHeaderSegment = (segment) =>
+  String(segment === undefined || segment === null ? "" : segment).replace(/\r\n?/g, "\n").trim();
+
+export const headerFieldSegment = (field, ctx) => {
+  const label = normalizeHeaderSegment(field && field.label);
+  if (label) return label;
+  const type = field && field.type !== undefined && field.type !== null
+    ? String(field.type).trim() : "";
+  const indexTrail = ctx && Array.isArray(ctx.indexTrail) ? ctx.indexTrail : [];
+  return "質問 " + indexTrail.join(".") + " (" + (type || "unknown") + ")";
+};
+
+export const headerBranchSegment = (optionKey) =>
+  normalizeHeaderSegment(optionKey) || null;
+
+/**
  * Read-only 再帰走査。visitor(field, context) が false を返すとその subtree を
  * 打ち切る。context = { pathSegments, depth, index, indexTrail }。
  */
