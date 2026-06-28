@@ -58,7 +58,7 @@
 - `NFB_HEADER_DEPTH = 11` / `NFB_DATA_START_ROW = 12` / フロント `MAX_DEPTH = 11`
 - `NFB_LOCK_WAIT_TIMEOUT_MS = 10000` ms（保存ロックタイムアウト、コード `LOCK_TIMEOUT`）
 - `NFB_DEFAULT_DELETED_RECORD_RETENTION_DAYS = 30`（ソフトデリート保持期間）
-- IndexedDB: `NestedFormBuilder` v10。ストアは `formsCache` / `settingsStore` / `analyticsQuestions` / `analyticsDashboards` / `uploadQueue` / `openHistory`（v9）/ `registry`（v10・フロントの参照解決作業キャッシュ。Script Properties registry のミラー。詳細 [links-and-save.md](./docs/claude/links-and-save.md) §6）。SWR しきい値はキャッシュ種別で別。レコード（`RECORD_CACHE_*`）= fresh 5 分・要再取得 30 分。一覧（フォーム / Dashboard / Question、`FORM_CACHE_*` を共用）= fresh 1 時間・1〜24 時間は裏更新・24 時間超で同期再取得。`recordsCache` / `analyticsSnapshots` 系は v6 で撤去済み（メモリ常駐に移行）
+- IndexedDB: `NestedFormBuilder` v11。ストアは `formsCache` / `settingsStore` / `analyticsQuestions` / `analyticsDashboards` / `uploadQueue` / `openHistory`（v9）/ `registry`（v10・フロントの参照解決作業キャッシュ。Script Properties registry のミラー。詳細 [links-and-save.md](./docs/claude/links-and-save.md) §6）/ `formNavCache`（v11・目次ツリーの軽量キャッシュ。`buildSchemaMapItems` の出力のみ保存しサイドバー目次を即表示。ナビ表示専用で喪失時はフォーム本体ロード後に再生成）。SWR しきい値はキャッシュ種別で別。レコード（`RECORD_CACHE_*`）= fresh 5 分・要再取得 30 分。一覧（フォーム / Dashboard / Question、`FORM_CACHE_*` を共用）= fresh 1 時間・1〜24 時間は裏更新・24 時間超で同期再取得。`recordsCache` / `analyticsSnapshots` 系は v6 で撤去済み（メモリ常駐に移行）
 - オフラインファースト保存（v8）: フォーム / Question / Dashboard の保存は IndexedDB へ即書き込み → `uploadQueue`（write-behind ジョブ）に積み、`uploadWorker` が逐次 Drive へ送る。仮 ID `local_…` を成功時に実 fileId へ付け替えて参照を再リンク。失敗は指数バックオフ（`UPLOAD_RETRY_BASE_MS` 2 秒〜`UPLOAD_RETRY_MAX_MS` 5 分）で自動リトライ
 - フロント `DEFAULT_SEARCH_DEBOUNCE_MS = 300`（検索バー遅延検索。設定 `searchDebounceMs` で変更、`0` で即時。IME 変換中は確定時のみコミット）
 

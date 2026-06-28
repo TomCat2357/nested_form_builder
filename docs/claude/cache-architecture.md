@@ -1,27 +1,30 @@
 # キャッシュ・差分同期アーキテクチャ（Claude 向け詳細）
 
-CLAUDE.md から分離した、IndexedDB キャッシュと差分同期の実装詳細。`builder/src/app/state/recordsCache.js` などを触る際に参照する。
+CLAUDE.md から分離した、IndexedDB キャッシュと差分同期の実装詳細。`builder/src/app/state/recordsMemoryStore.js` などを触る際に参照する。
 
 ## IndexedDB 構成
 
 | 項目 | 値 |
 |--|--|
 | データベース名 | `NestedFormBuilder` |
-| バージョン | 8 |
+| バージョン | 11 |
 
 定数は `builder/src/core/constants.js`（`DB_NAME` / `DB_VERSION` / `STORE_NAMES`）。スキーマ移行は `builder/src/app/state/dbHelpers.js` の `openDB()` の `onupgradeneeded` に集約。
 
-### ストア（v8）
+### ストア（v11 現在）
 
-| ストア | キー | 用途 |
-|--|--|--|
-| `formsCache` | `id` | フォーム定義（スキーマ JSON）一覧キャッシュ（`archived` index 付き） |
-| `settingsStore` | `key` | UI 設定（テーマ、表示設定など） |
-| `analyticsQuestions` | `id` | Question 定義の一覧キャッシュ |
-| `analyticsDashboards` | `id` | Dashboard 定義の一覧キャッシュ |
-| `uploadQueue` | `jobId` | オフライン保存の write-behind アップロードジョブ（`status` / `entityType` / `localId` index 付き） |
+| ストア | キー | 用途 | 追加版 |
+|--|--|--|--|
+| `formsCache` | `id` | フォーム定義（スキーマ JSON）一覧キャッシュ（`archived` index 付き） | v1 |
+| `settingsStore` | `key` | UI 設定（テーマ、表示設定など） | v1 |
+| `analyticsQuestions` | `id` | Question 定義の一覧キャッシュ | v1 |
+| `analyticsDashboards` | `id` | Dashboard 定義の一覧キャッシュ | v1 |
+| `uploadQueue` | `jobId` | オフライン保存の write-behind アップロードジョブ（`status` / `entityType` / `localId` index 付き） | v8 |
+| `openHistory` | `key`（`<entityType>:<entityId>`） | 開いたフォーム / ダッシュボードの履歴。起動時の先行プリフェッチ（`PREFETCH_TOP_N`）の土台 | v9 |
+| `registry` | `id` | フロントの参照解決作業キャッシュ。Script Properties registry（`{ fileId, 論理パス }`）のミラー。喪失時は list API / GAS 再構成で再生成可（`kind` index 付き。詳細は [links-and-save.md](./links-and-save.md) §6） | v10 |
+| `formNavCache` | `id` | 目次ツリーの軽量キャッシュ。`buildSchemaMapItems` の出力（id/depth/indexLabel/label/children）のみ保存し、フォーム修正画面のサイドバー目次を即表示。ナビ表示専用で喪失時はフォーム本体ロード後に再生成 | v11 |
 
-> **回答レコードは IndexedDB に置かない**。`recordsCache` / `recordsCacheMeta` / `analyticsSnapshots` / `analyticsSnapshotsMeta` は **v5 → v6 で撤去**し、レコードは `recordsMemoryStore.js` のメモリ常駐ストア（セッション内のみ）へ移行した。旧ストアは `onupgradeneeded`（`oldVersion < 6`）で `deleteObjectStore` される。v7 では Dashboard を自由配置スキーマ（v2）へ切り替えたため `analyticsDashboards` を一度クリアする。
+> **回答レコードは IndexedDB に置かない**。`recordsCache` / `recordsCacheMeta` / `analyticsSnapshots` / `analyticsSnapshotsMeta` は **v5 → v6 で撤去**し、レコードは `recordsMemoryStore.js` のメモリ常駐ストア（セッション内のみ）へ移行した。旧ストアは `onupgradeneeded`（`oldVersion < 6`）で `deleteObjectStore` される。v7 では Dashboard を自由配置スキーマ（v2）へ切り替えたため `analyticsDashboards` を一度クリアする。v9 以降は既存ストアを破壊せず加算（v9=`openHistory` / v10=`registry` / v11=`formNavCache`）。
 
 関連ファイル:
 - `builder/src/core/constants.js` — IndexedDB 名・バージョン定数、TTL
@@ -108,6 +111,6 @@ node tests/gas-sync-records-merge.test.js
 
 ## 注意点
 
-- 複合キー `formId::entryId` を扱うときは、必ず `recordsCache` 内のヘルパー関数を使う（文字列結合を直書きしない）
+- 回答レコードのキャッシュ操作は `recordsMemoryStore.js` のヘルパー（`updateEntryIndex` / `getCachedEntryWithIndex` / `deleteRecordsFromCache` 等）を介し、`formId` と `entryId` を別引数で渡す（キー文字列を直書きしない）
 - `commitToken` が古いとサーバーが「フル同期が必要」と返す場合がある — その分岐も `syncRecordsMerge.js` で処理されている
 - IndexedDB バージョンを上げる場合は `builder/src/app/state/` 配下の `onupgradeneeded` ハンドラを忘れず更新

@@ -22,13 +22,21 @@ CLAUDE.md から分離した、GAS 側のエントリポイント・アクショ
 | `forms_readonly` | 参照のみ状態切替（doPost 旧契約、`readOnly` 真偽） | 管理者 |
 | `forms_save` | フォーム保存（`form`/`saveMode`、`nfbSaveForm` 経由。保存先は標準フォルダ構成固定） | （なし） |
 | `forms_delete_one` / `forms_delete_batch` | フォーム削除（単一 `formId` / 配列 `formIds`） | （なし） |
+| `forms_delete_with_files_batch` | フォーム削除（配列 `formIds`、関連 Drive ファイルごと削除） | （なし） |
 | `forms_archive_one` / `forms_unarchive_one` | アーカイブ/解除（単一 `formId`） | （なし） |
 | `forms_archive_batch` / `forms_unarchive_batch` | アーカイブ/解除（配列 `formIds`） | （なし） |
 | `forms_readonly_set_one` / `forms_readonly_clear_one` | 参照のみ設定/解除（単一 `formId`） | （なし） |
 | `forms_readonly_set_batch` / `forms_readonly_clear_batch` | 参照のみ設定/解除（配列 `formIds`） | （なし） |
+| `forms_childonly_set_one` / `forms_childonly_clear_one` | 子フォーム専用フラグ設定/解除（単一 `formId`） | （なし） |
+| `forms_childonly_set_batch` / `forms_childonly_clear_batch` | 子フォーム専用フラグ設定/解除（配列 `formIds`） | （なし） |
 | `forms_copy` | フォーム複製（`formId`） | （なし） |
 | `forms_import_drive` | Drive ファイル/フォルダ URL から取込（`url`） | （なし） |
 | `forms_register_import` | 取込済みフォームをマッピング登録（`form`/`fileId`） | （なし） |
+| `forms_resolve_ref` | フォーム参照（論理パス/旧 fileId）の解決 | （なし） |
+| `forms_folders_list` | フォルダ一覧取得 | （なし） |
+| `forms_folder_create` / `forms_folder_rename` / `forms_folder_delete` | フォルダ作成/改名/削除 | 管理者 |
+| `forms_move` | フォーム/フォルダの移動 | 管理者 |
+| `forms_folders_backfill_physical` | 仮想フォルダに対応する物理フォルダの復旧バックフィル | 管理者 |
 | `admin_key_get` / `admin_key_set` | 管理者キー取得/保存 | 管理者 |
 | `admin_email_get` / `admin_email_set` | 管理者メール取得/保存 | 管理者 |
 | `save` | レコード保存/更新 | `spreadsheetId` |
@@ -37,7 +45,7 @@ CLAUDE.md から分離した、GAS 側のエントリポイント・アクショ
 | `get` | 単一レコード取得 | `spreadsheetId` + `id` |
 | `delete` | レコード削除 | `spreadsheetId` + `id` |
 | `sync_records` | 差分同期 | `spreadsheetId` |
-| `analytics_*` | Question/Dashboard の CRUD/Archive/Copy/Import（`analyticsApi.gs` 参照） | list/get 以外は管理者 |
+| `analytics_*` | Question/Dashboard の CRUD/Archive/Copy/Import/参照解決/フォルダ管理（`analyticsApi.gs` 参照） | list/get/resolve_ref 以外は管理者。フォルダ操作は管理者 |
 
 > `forms_save` 等の「（なし）」アクションは `nfb*` フォーム関数（`nfbSaveForm` 等）が経由するため、従来の `nfb*` と同じくゲートなし。`forms_create`/`forms_update`/`forms_delete`/`forms_archive`/`forms_readonly` は doPost 旧契約として `adminOnly` を維持。
 
@@ -49,7 +57,11 @@ CLAUDE.md から分離した、GAS 側のエントリポイント・アクショ
 
 その他、Drive 操作系: `nfbSaveExcelToDrive` / `nfbSaveFileToDrive` / `nfbCreateRecordPrintDocument` / `nfbExecuteRecordOutputAction` / `nfbExecuteBatchGoogleDocOutput` / `nfbUploadFileToDrive` / `nfbCopyDriveFileToDrive` / `nfbCreateGoogleDocumentFromTemplate` / `nfbFindDriveFileInFolder` / `nfbFinalizeRecordDriveFolder` / `nfbTrashDriveFilesByIds` / `nfbImportThemeFromDrive`
 
-フォーム管理系: `nfbListForms` / `nfbGetForm` / `nfbSaveForm` / `nfbDeleteForm` / `nfbDeleteForms` / `nfbArchiveForm` / `nfbUnarchiveForm` / `nfbArchiveForms` / `nfbUnarchiveForms` / `nfbSetFormReadOnly` / `nfbClearFormReadOnly` / `nfbSetFormsReadOnly` / `nfbClearFormsReadOnly` / `nfbCopyForm` / `nfbImportFormsFromDrive` / `nfbRegisterImportedForm`
+フォーム管理系: `nfbListForms` / `nfbGetForm` / `nfbSaveForm` / `nfbDeleteForm` / `nfbDeleteForms` / `nfbDeleteFormsWithFiles` / `nfbArchiveForm` / `nfbUnarchiveForm` / `nfbArchiveForms` / `nfbUnarchiveForms` / `nfbSetFormReadOnly` / `nfbClearFormReadOnly` / `nfbSetFormsReadOnly` / `nfbClearFormsReadOnly` / `nfbSetFormChildOnly` / `nfbClearFormChildOnly` / `nfbSetFormsChildOnly` / `nfbClearFormsChildOnly` / `nfbCopyForm` / `nfbImportFormsFromDrive` / `nfbRegisterImportedForm` / `nfbResolveFormRef`
+
+フォルダ操作系: `nfbListFolders` / `nfbCreateFolder` / `nfbMoveItems` / `nfbRenameFolder` / `nfbDeleteFolder` / `nfbBackfillPhysicalFolders`
+
+デプロイ情報系: `nfbGetDeployInfo`（現行デプロイの URL / バージョン等を返す）
 
 > フォーム管理系のうち**単数操作**（`nfbArchiveForm` 等）は GAS 側 `Nfb_unwrapSingleResult_`（`gas/errors.gs`）でバッチ結果を `{ ok, form }` に畳んでから返し、`gasClient.js` 側で `r.form` を取り出す。**複数操作**（`nfbArchiveForms` 等）は `{ ok, forms, errors }` のまま返し、フロントは部分成功/失敗を扱う。この形状差は意図的。
 >
