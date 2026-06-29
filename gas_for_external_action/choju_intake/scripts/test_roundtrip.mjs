@@ -361,5 +361,16 @@ eq("resolveCell 空値", C.Cho_resolveCell_("").value, "");
   ok("time混入なし", vals.every((v) => !/^\d{1,2}:\d{2}/.test(v)), "時刻文字列が混入");
 }
 
+// Cho_buildRecordFolderName_: 本体アプリと同じ NFB_RECORD_TEMP_<safeRecordId>_<uuid8> 命名
+{
+  eq("folderName 通常", C.Cho_buildRecordFolderName_("r_abc", "12345678"), "NFB_RECORD_TEMP_r_abc_12345678");
+  eq("folderName 空id=record", C.Cho_buildRecordFolderName_("", "12345678"), "NFB_RECORD_TEMP_record_12345678");
+  // 非 [A-Za-z0-9_-] 文字（空白・"/"・和字など）は各 1 文字ずつ "_" 化される（本体と同じ）。
+  // 実運用の recordId は r_<base36>_<base36> で ASCII のみだが、サニタイズ自体を検証する。
+  eq("folderName 不正文字置換", C.Cho_buildRecordFolderName_("a b/c", "12345678"), "NFB_RECORD_TEMP_a_b_c_12345678");
+  // 既存の許可文字（英数・_・-）はそのまま温存。
+  eq("folderName ハイフン温存", C.Cho_buildRecordFolderName_("a-b_C9", "deadbeef"), "NFB_RECORD_TEMP_a-b_C9_deadbeef");
+}
+
 console.log(`\n==== ${pass} PASS / ${fail} FAIL ====`);
 process.exit(fail ? 1 : 0);

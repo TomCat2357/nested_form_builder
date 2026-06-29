@@ -979,6 +979,7 @@ var NFB_SHEETS_DATETIME_FORMAT = "yyyy/mm/dd hh:mm:ss";
 var NFB_SHEETS_TEXT_FORMAT = "@";
 var NFB_PATH_SEP = "/";
 var NFB_LOCK_WAIT_TIMEOUT_MS = 10000;
+var NFB_RECORD_TEMP_FOLDER_PREFIX = "NFB_RECORD_TEMP_"; // 本体 gas/constants.gs:83 と同値（アップロードフォルダ命名）
 var NFB_FIXED_HEADER_PATHS = [["id"], ["No."], ["createdAt"], ["modifiedAt"], ["deletedAt"], ["createdBy"], ["modifiedBy"], ["deletedBy"], ["pid"]];
 var NFB_RESERVED_HEADER_KEYS = {};
 (function () { for (var i = 0; i < NFB_FIXED_HEADER_PATHS.length; i++) NFB_RESERVED_HEADER_KEYS[NFB_FIXED_HEADER_PATHS[i][0]] = true; })();
@@ -1292,6 +1293,14 @@ function Cho_withLock_(label, fn) {
   }
 }
 
+// 本体アプリと同じアップロードフォルダ命名: NFB_RECORD_TEMP_<safeRecordId>_<uuid8>
+// （本体 gas/driveFolder.gs nfbBuildRecordTempFolderName_ と同等。uuid8 は呼び出し側で渡し純関数化）。
+function Cho_buildRecordFolderName_(recordId, uuid8) {
+  var raw = Cho_str_(recordId);
+  var safe = raw ? raw.replace(/[^A-Za-z0-9_-]/g, "_") : "record";
+  return NFB_RECORD_TEMP_FOLDER_PREFIX + safe + "_" + Cho_str_(uuid8);
+}
+
 // ファイルアップロード欄のセル値（本体 nfbBuildDriveFileResponse_ と同形の JSON 文字列）。
 function Cho_buildUploadCell_(file, folder) {
   return JSON.stringify({
@@ -1305,14 +1314,16 @@ function Cho_buildUploadCell_(file, folder) {
   });
 }
 
-// Excel を親レコードのアップロード欄へ添付する（parentData[fieldKey] に添付セル JSON を入れる）。
-function Cho_attachExcelToParent_(excelFileId, fieldKey, parentData, warnings) {
+// 取り込み（シート書き込み）時に新規フォルダを作成し、アップロード済み Excel をそこへ移してから
+// 親レコードのアップロード欄（parentData[fieldKey]）へ添付セル JSON を入れる。
+// フォルダ名は本体アプリと同じ NFB_RECORD_TEMP_<recordId>_<uuid8>。移動は本体 driveFolder.gs と同じ File.moveTo。
+function Cho_attachExcelToParent_(excelFileId, fieldKey, parentData, warnings, recordId) {
   if (!fieldKey) { warnings.push("親フォームのアップロード項目キー（CHO_PARENT_UPLOAD_FIELD_KEY）が未設定のため Excel は添付されませんでした。"); return; }
   try {
     var file = DriveApp.getFileById(excelFileId);
-    var folder = null;
-    var parents = file.getParents();
-    if (parents.hasNext()) folder = parents.next();
+    var parentFolder = Cho_resolveUploadFolder_();
+    var folder = parentFolder.createFolder(Cho_buildRecordFolderName_(recordId, Utilities.getUuid().slice(0, 8)));
+    file.moveTo(folder);
     parentData[fieldKey] = Cho_buildUploadCell_(file, folder);
   } catch (e) {
     warnings.push("Excel の添付に失敗しました: " + (e && e.message ? e.message : e));
@@ -1334,7 +1345,7 @@ function Cho_writeRecordsDirect_(imp, excelFileId, selection, targets) {
       var parentData = {};
       var pf = imp.parent.fields || {};
       for (var k in pf) if (Object.prototype.hasOwnProperty.call(pf, k)) parentData[k] = pf[k];
-      Cho_attachExcelToParent_(excelFileId, targets.parentUploadFieldKey, parentData, warnings);
+      Cho_attachExcelToParent_(excelFileId, targets.parentUploadFieldKey, parentData, warnings, parentId);
       var pres = Cho_appendRow_(targets.parentSpreadsheetId, targets.sheetName, { id: parentId, data: parentData, pid: "" });
       if (pres && pres.warnings && pres.warnings.length) {
         warnings.push("親: 列が見つからず取り込まれなかった項目: " + pres.warnings.join(" / "));
@@ -1606,6 +1617,7 @@ if (typeof module === "object" && module.exports) {
     Cho_resolveCell_: Cho_resolveCell_, Cho_canonicalToSheetDate_: Cho_canonicalToSheetDate_,
     Cho_buildNewRow_: Cho_buildNewRow_, Cho_collectDroppedKeys_: Cho_collectDroppedKeys_,
     Cho_buildUploadCell_: Cho_buildUploadCell_, Cho_buildFriendly_: Cho_buildFriendly_,
+    Cho_buildRecordFolderName_: Cho_buildRecordFolderName_,
     Cho_extractRelayContext_: Cho_extractRelayContext_,
     Cho_mergeTargets_: Cho_mergeTargets_, Cho_hmacHex_: Cho_hmacHex_,
     Sheets_normalizeRecordDataKeys_: Sheets_normalizeRecordDataKeys_,
