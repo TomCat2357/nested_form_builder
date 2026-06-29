@@ -31,7 +31,6 @@ const impK = C.Cho_buildImport_(C.Cho_makeReader_(fx["個人"]));
 eq("個人 applicantType", impK.parent.type, "個人");
 ok("個人 workers>=2", impK.children.length >= 2, "got " + impK.children.length);
 eq("個人 child0 氏名", impK.children[0]["氏名"], "鈴木新之助");
-eq("個人 child0 代表的個人", impK.children[0]["代表的個人"], "はい");
 eq("個人 child0 キツネ頭数", impK.children[0][SP + "/キツネ/捕獲頭数"], 7);
 eq("個人 child1 氏名", impK.children[1]["氏名"], "田中聡");
 ok("個人 child1 銃器マーカー", impK.children[1][M + "/銃器"] === "●", JSON.stringify(impK.children[1][M + "/銃器"]));

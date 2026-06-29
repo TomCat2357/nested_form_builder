@@ -153,6 +153,9 @@ var CHO_L_AREA7_ = "規則第７条第１項第７号に係る場所等の位置
 var CHO_L_APPLICANT_ = "申請者情報";
 var CHO_L_APPLICANT_TYPE_ = "個人・法人の別";
 var CHO_L_REMARKS_ = "備考";
+// 親フォームのトップレベル fileUpload ラベル＝取り込んだ Excel の添付先列キー。
+// Script Property CHO_PARENT_UPLOAD_FIELD_KEY 未設定時の既定。フォームでラベルを変えたときだけ登録で上書きする。
+var CHO_L_UPLOAD_ = "ファイル";
 // 申請受付の日付（親フォーム先頭の date 項目）。申請日は Excel から取り込み、受付日は取り込み実行日。
 var CHO_L_APP_DATE_ = "申請日";
 var CHO_L_RECEIPT_DATE_ = "受付日";
@@ -371,7 +374,7 @@ function Cho_dateCanonChecked_(v, issues, sheet, cell, label) {
 }
 
 // 名簿 1 ブロック → 子レコードのフォームフィールド（"/"連結パス → 値）。空ブロックは null。
-function Cho_importRosterBlock_(reader, top, isRep, issues) {
+function Cho_importRosterBlock_(reader, top, issues) {
   issues = issues || [];
   var S = "従事者名簿", C = CHO_ROSTER_.cols;
   function cell(col, off) { return reader.cell(S, col + (top + off)); }
@@ -422,7 +425,6 @@ function Cho_importRosterBlock_(reader, top, isRep, issues) {
 
   var f = {};
   var M = CHO_L_CHILD_METHOD_, SP = CHO_L_CHILD_SPECIES_;
-  f["代表的個人"] = isRep ? "はい" : "いいえ";
   f["氏名"] = name; f["住所"] = address;
   f["職業"] = Cho_str_(cell(C.occupation, 0));
   var birth = Cho_dateCanonChecked_(cell(C.birth, 0), issues, S, C.birth + top, "生年月日"); if (birth) f["生年月日"] = birth;
@@ -757,12 +759,12 @@ function Cho_buildImport_(reader, forcedType, nowCanonical) {
   var workers = [];
   for (var b = 0; b < CHO_ROSTER_.blockCount; b++) {
     var top = CHO_ROSTER_.firstRow + b * CHO_ROSTER_.blockHeight;
-    var f = Cho_importRosterBlock_(reader, top, b === 0, issues);
+    var f = Cho_importRosterBlock_(reader, top, issues);
     if (f) workers.push(f);
   }
   // 11 人目以降は枠を超える → 取り込めなかったものとして検出
   var overflowTop = CHO_ROSTER_.firstRow + CHO_ROSTER_.blockCount * CHO_ROSTER_.blockHeight;
-  if (Cho_importRosterBlock_(reader, overflowTop, false, [])) {
+  if (Cho_importRosterBlock_(reader, overflowTop, [])) {
     issues.push(Cho_issue_("dropped", "error", CHO_ROSTER_.sheetName, CHO_ROSTER_.cols.name + overflowTop, "従事者11人目以降", "", "",
       "従事者名簿の枠(" + CHO_ROSTER_.blockCount + "人)を超える従事者があり取り込めませんでした。"));
   }
@@ -1500,7 +1502,7 @@ function Cho_getWriteTargets() {
     childSpreadsheetId: Cho_getProp_("CHO_CHILD_SS_ID", ""),
     sheetName: Cho_getProp_("CHO_SHEET_NAME", "Data") || "Data",
     childSheetName: Cho_getProp_("CHO_CHILD_SHEET_NAME", ""),
-    parentUploadFieldKey: Cho_getProp_("CHO_PARENT_UPLOAD_FIELD_KEY", ""),
+    parentUploadFieldKey: Cho_getProp_("CHO_PARENT_UPLOAD_FIELD_KEY", CHO_L_UPLOAD_),
     uploadFolderId: Cho_getProp_("CHO_UPLOAD_FOLDER_ID", ""),
     extActionSecretSet: Cho_getProp_("CHO_EXT_ACTION_SECRET", "") !== ""
   };
@@ -1514,7 +1516,7 @@ function Cho_resolveTargets_(ctxToken) {
     childSpreadsheetId: Cho_getProp_("CHO_CHILD_SS_ID", ""),
     sheetName: Cho_getProp_("CHO_SHEET_NAME", "Data") || "Data",
     childSheetName: Cho_getProp_("CHO_CHILD_SHEET_NAME", ""),
-    parentUploadFieldKey: Cho_getProp_("CHO_PARENT_UPLOAD_FIELD_KEY", ""),
+    parentUploadFieldKey: Cho_getProp_("CHO_PARENT_UPLOAD_FIELD_KEY", CHO_L_UPLOAD_),
     uploadFolderId: Cho_getProp_("CHO_UPLOAD_FOLDER_ID", "")
   };
   var cached = ctxToken ? Cho_readCtx_(ctxToken) : null;
