@@ -176,7 +176,7 @@ eq("個人 通知 範囲E14", cellOf(planP.shinko, "E14"), "1-1-2");
 eq("個人 通知 他N名G14", cellOf(planP.shinko, "G14"), 1); // workers.length - 1（セル書式 他#名）
 eq("個人 通知 キツネ count D23", cellOf(planP.shinko, "D23"), 7); // 通知 grid base17・off6=行23
 eq("個人 通知 許可番号F2", cellOf(planP.shinko, "F2"), "1-1");          // 札環対許可第 @ 号 はセル書式が付与
-eq("個人 通知 許可年月日F3", cellOf(planP.shinko, "F3"), { __date: true, y: 2026, m: 6, d: 7 });
+eq("個人 通知 許可年月日F3", cellOf(planP.shinko, "F3"), "令和8年6月7日"); // 2026-06-07 → 和暦文字列
 eq("個人 名簿 E5 番号(raw)", cellOf(planP.roster, "E5"), "1-1-1");
 eq("個人 名簿 E14 番号(raw)", cellOf(planP.roster, "E14"), "1-1-2");
 
@@ -260,8 +260,17 @@ eq("dateParts slash", C.Cho2_dateParts_("2026/6/7"), { y: 2026, m: 6, d: 7 });
 eq("dateParts 不可", C.Cho2_dateParts_("令和8年"), null);
 // 注: Cho2_hmacHex_ は GAS Utilities 依存のため node では検証しない（本体 ExtAction_hmacHex_ と同形・コード一致で担保）。
 
-// ---- 日付セル差分は {__date} 形 ----
-eq("名簿 I5 生年月日(__date)", cellOf(block0, "I5"), { __date: true, y: 1996, m: 5, d: 1 });
+// ---- 日付セル差分は和暦文字列（元年表記・数値書式に依存しない）----
+eq("名簿 I5 生年月日(和暦)", cellOf(block0, "I5"), "平成8年5月1日"); // 1996-05-01 → 和暦文字列
+eq("和暦 令和元年", C.Cho2_warekiString_({ y: 2019, m: 5, d: 1 }), "令和元年5月1日");   // 改元日
+eq("和暦 令和(改元前日=平成)", C.Cho2_warekiString_({ y: 2019, m: 4, d: 30 }), "平成31年4月30日");
+eq("和暦 令和8年", C.Cho2_warekiString_({ y: 2026, m: 6, d: 1 }), "令和8年6月1日");
+eq("和暦 平成元年", C.Cho2_warekiString_({ y: 1989, m: 1, d: 8 }), "平成元年1月8日");   // 改元日
+eq("和暦 昭和元年", C.Cho2_warekiString_({ y: 1926, m: 12, d: 25 }), "昭和元年12月25日"); // 改元日
+eq("和暦 昭和50年", C.Cho2_warekiString_({ y: 1975, m: 1, d: 1 }), "昭和50年1月1日");
+eq("和暦 大正元年", C.Cho2_warekiString_({ y: 1912, m: 7, d: 30 }), "大正元年7月30日");   // 改元日
+eq("和暦 明治改元前→西暦", C.Cho2_warekiString_({ y: 1860, m: 1, d: 1 }), "1860年1月1日");
+eq("和暦 null→空", C.Cho2_warekiString_(null), "");
 
 // ---- 出力先フォルダ（folderUrl）の収集・先頭採用・URL解釈・未指定エラー ----
 const FID = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345";

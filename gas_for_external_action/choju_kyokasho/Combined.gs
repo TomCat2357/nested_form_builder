@@ -213,6 +213,30 @@ function Cho2_dateParts_(v) {
   return { y: y, m: mo, d: d };
 }
 
+// 元号表（改元日。降順で判定）。builder/src/features/expression/eraConversion.js と同じ境界。
+var CHO2_ERAS_ = [
+  { name: "令和", y: 2019, m: 5, d: 1 },
+  { name: "平成", y: 1989, m: 1, d: 8 },
+  { name: "昭和", y: 1926, m: 12, d: 25 },
+  { name: "大正", y: 1912, m: 7, d: 30 },
+  { name: "明治", y: 1868, m: 1, d: 25 }
+];
+// 西暦 {y,m,d} → 和暦文字列（例 "令和8年6月1日"、各元号の初年は "令和元年…"）。
+// Google スプレッドシートは和暦の数値書式（ggge）を解釈しないため、リテラル文字列で書き込む。
+// 本体正規実装 formatEraNonPadded の移植（元年表記）。明治改元前は西暦でフォールバック。
+function Cho2_warekiString_(p) {
+  if (!p) return "";
+  var serial = p.y * 10000 + p.m * 100 + p.d;
+  for (var i = 0; i < CHO2_ERAS_.length; i++) {
+    var e = CHO2_ERAS_[i];
+    if (serial >= e.y * 10000 + e.m * 100 + e.d) {
+      var yy = p.y - e.y + 1;
+      return e.name + (yy === 1 ? "元" : String(yy)) + "年" + p.m + "月" + p.d + "日";
+    }
+  }
+  return p.y + "年" + p.m + "月" + p.d + "日";
+}
+
 // レコードの items（{question,value,type}[]）→ { parent:{pathMap}, workers:[{pathMap}] }。
 // 子（従事者）は items の question 接頭辞 "従事者情報/#<marker>/" で識別し marker ごとにまとめる。
 // 起動元（編集画面・検索一覧の単一/複数選択）に依らず、子は常に items にインライン展開される。
@@ -422,10 +446,10 @@ function Cho2_push_(cells, a1, value) {
 }
 // 数値（0 は書かない＝空欄）。
 function Cho2_pushNum_(cells, a1, n) { if (typeof n === "number" && n > 0) cells.push({ a1: a1, value: n }); }
-// 日付（{y,m,d} を Date 化して書く。GAS 側で Date オブジェクトとして渡す）。
+// 日付（和暦文字列に変換してから書く。数値書式に依存せずリテラルで表示する）。
 function Cho2_pushDate_(cells, a1, raw) {
   var p = Cho2_dateParts_(raw);
-  if (p) cells.push({ a1: a1, value: { __date: true, y: p.y, m: p.m, d: p.d } });
+  if (p) cells.push({ a1: a1, value: Cho2_warekiString_(p) });
 }
 
 // 種数グリッド差分（grid 設定・種ごと {count,egg}）。
@@ -795,21 +819,18 @@ function Cho2_clearRanges_(sheet, ranges) {
   for (var i = 0; i < ranges.length; i++) { try { sheet.getRange(ranges[i]).clearContent(); } catch (e) { /* no-op */ } }
 }
 
-// セル差分を書き込む。{__date} は Date、数値は数値、その他は文字列（先頭 = は中和）。
+// セル差分を書き込む。数値は数値、その他は文字列（先頭 = / 数字ハイフン連結は中和）。
+// 日付は build 層（Cho2_pushDate_）で和暦文字列に変換済みなのでそのまま文字列として書く（{__date} は廃止）。
 // 各書き込み前に Cho2_pendingWrites_ へ記録（flush 例外時のセルアドレス照合用）。
 function Cho2_applyCells_(sheet, cells) {
   var sheetName = sheet.getName();
   for (var i = 0; i < cells.length; i++) {
     var c = cells[i], v = c.value;
-    var displayVal = (v && typeof v === "object" && v.__date) ? v.y + "/" + v.m + "/" + v.d : String(v == null ? "" : v);
+    var displayVal = String(v == null ? "" : v);
     Cho2_pendingWrites_[c.a1] = { sheet: sheetName, val: displayVal };
     var range = sheet.getRange(c.a1);
     try {
-      if (v && typeof v === "object" && v.__date) {
-        // 西暦の実 Date を書き、和暦書式で表示（テンプレ単票系セルは General のため明示設定）。
-        range.setNumberFormat('[$-411]ggge"年"m"月"d"日"');
-        range.setValue(new Date(v.y, v.m - 1, v.d));
-      } else if (typeof v === "number") {
+      if (typeof v === "number") {
         range.setValue(v);
       } else {
         var s = String(v == null ? "" : v);
@@ -858,10 +879,25 @@ function Cho2_exportXlsx_(ssId, fileName) {
   return resp.getBlob().setName((fileName || "許可証等") + ".xlsx");
 }
 
-// Google Sheet を PDF blob へエクスポート（ワークブック全シート＝全ページ・各シートの印刷設定を尊重）。
+// Google Sheet を PDF blob へエクスポート（ワークブック全シート＝全ページ）。
+// Drive API export は手動改ページを無視するため、Sheets の export エンドポイントを使い
+// scale=1（実際のサイズ）でテンプレの手動改ページ／印刷設定を踏襲する
+// （fit 系 scale=2/3/4 は改ページを無視して全体を縮小するので使わない）。
 function Cho2_exportPdf_(ssId, fileName) {
-  var url = "https://www.googleapis.com/drive/v3/files/" + ssId +
-    "/export?mimeType=" + encodeURIComponent("application/pdf");
+  var params = [
+    "format=pdf",
+    "size=A4",
+    "portrait=true",
+    "scale=1", // 1=実際のサイズ（手動改ページ踏襲）。2=幅/3=高/4=ページに合わせる は改ページ無視
+    "gridlines=false",
+    "printtitle=false",
+    "sheetnames=false",
+    "pagenum=false",
+    "fzr=false",
+    "horizontal_alignment=CENTER",
+    "vertical_alignment=TOP"
+  ].join("&");
+  var url = "https://docs.google.com/spreadsheets/d/" + ssId + "/export?" + params;
   var resp = UrlFetchApp.fetch(url, { headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
   if (resp.getResponseCode() >= 400) throw new Error("PDF エクスポートに失敗しました (HTTP " + resp.getResponseCode() + ")。");
   return resp.getBlob().setName((fileName || "許可証等") + ".pdf");
@@ -1221,6 +1257,7 @@ if (typeof module === "object" && module.exports) {
     Cho2_hmacHex_: Cho2_hmacHex_,
     Cho2_choiceList_: Cho2_choiceList_,
     Cho2_dateParts_: Cho2_dateParts_,
+    Cho2_warekiString_: Cho2_warekiString_,
     CHO2_SPECIES_ORDER_: CHO2_SPECIES_ORDER_,
     CHO2_TOOL_ORDER_: CHO2_TOOL_ORDER_,
     CHO2_GRID_KYOKASHO_: CHO2_GRID_KYOKASHO_,
