@@ -227,14 +227,6 @@ export function FileUploadFieldSection({ field, onChange }) {
         />
         ファイル名の拡張子を非表示にする
       </label>
-      <label className="nf-row nf-gap-6 nf-mt-8">
-        <input
-          type="checkbox"
-          checked={!!field.persistentFolder}
-          onChange={(event) => onChange({ ...field, persistentFolder: event.target.checked })}
-        />
-        レコードごとにアップロード用フォルダを自動作成し、システムから消さない（無ければ開く度に再作成）
-      </label>
       <div className="nf-mt-12">
         <div className="nf-text-11 nf-text-muted">
           アップロードされたファイルは、標準フォルダ構成の <code>06_upload_files</code> 直下に、

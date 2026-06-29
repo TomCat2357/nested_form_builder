@@ -242,8 +242,7 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
             || st.inputUrl.trim()
             || st.pendingDeleteUrl.trim()
             || perFieldFileIds.length
-            || trashFileIds.length
-            || field.persistentFolder, // 永続モードは未アップロードでも folder を作るため finalize する
+            || trashFileIds.length,
           );
           if (!hasSomething) {
             finalizedFolderUrlByField[fid] = "";
@@ -261,7 +260,6 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
             trashFileIds: normalizeDriveFileIds(trashFileIds),
             folderUrlToTrash: st.pendingDeleteUrl.trim(),
             recordId: payloadWithFormId.id,
-            persistentFolder: !!field.persistentFolder, // 永続モード（無ければ作成・KEEP は trash しない）
           });
           finalizedFolderUrlByField[fid] = typeof finalizeResult?.folderUrl === "string"
             ? finalizeResult.folderUrl.trim()

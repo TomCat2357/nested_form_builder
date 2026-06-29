@@ -81,10 +81,6 @@ for (var i = 0; i < NFB_FIXED_HEADER_PATHS.length; i++) {
 var NFB_DEFAULT_SHEET_NAME = "Data";
 var NFB_UI_TEMP_KEYS = ["_savedChoiceState", "_savedStyleSettings", "_savedChildrenForChoice", "_savedDisplayModeForChoice"];
 var NFB_RECORD_TEMP_FOLDER_PREFIX = "NFB_RECORD_TEMP_";
-// 永続フォルダモード（fileUpload field.persistentFolder）の自動作成フォルダ名プレフィックス。
-// この接頭辞のフォルダは「システムから消さない」＝フィールドクリア/キャンセル/finalize 置換では trash せず、
-// レコード削除のパージ時のみ消える（Nfb_trashUploadArtifacts_ は接頭辞を問わず trash する）。
-var NFB_RECORD_KEEP_FOLDER_PREFIX = "NFB_RECORD_KEEP_";
 
 // 日時処理関連
 var NFB_TZ = "Asia/Tokyo";

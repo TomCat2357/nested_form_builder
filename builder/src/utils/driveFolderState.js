@@ -128,16 +128,8 @@ export const areDriveFolderStatesMapsEqual = (left, right) => {
 export const hasAnyConfiguredDriveFolder = (statesMap) =>
   Object.values(statesMap || {}).some((value) => hasConfiguredDriveFolder(value));
 
-// 永続（KEEP）フォルダ名プレフィックス（GAS constants.gs NFB_RECORD_KEEP_FOLDER_PREFIX と一致）。
-export const RECORD_KEEP_FOLDER_PREFIX = "NFB_RECORD_KEEP_";
-export const isKeepDriveFolderName = (folderName) =>
-  String(folderName || "").indexOf(RECORD_KEEP_FOLDER_PREFIX) === 0;
-
 export const markDriveFolderForDeletion = (value) => {
   const normalized = normalizeDriveFolderState(value);
-  // 永続（KEEP）フォルダはシステムから消さない（フィールドクリア要求は no-op）。
-  // レコード削除のパージ時のみ消える（サーバ側 Nfb_trashUploadArtifacts_）。
-  if (isKeepDriveFolderName(normalized.folderName)) return normalized;
   const targetUrl = resolveEffectiveDriveFolderUrl(normalized) || normalized.pendingDeleteUrl.trim();
   return normalizeDriveFolderState({
     ...normalized,

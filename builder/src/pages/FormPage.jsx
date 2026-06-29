@@ -31,18 +31,9 @@ import {
   hasAnyConfiguredDriveFolder,
   loadDriveFolderStatesDraft,
   markDriveFolderForDeletion,
-  normalizeDriveFolderState,
   setDriveFolderStateForField,
 } from "../utils/driveFolderState.js";
-import { traverseSchema, headerFieldSegment, headerBranchSegment } from "../core/schemaUtils.js";
-import { joinFieldPath } from "../utils/pathCodec.js";
 import { genRecordId } from "../core/ids.js";
-import {
-  ensureRecordPersistentFolders,
-  finalizeRecordDriveFolder,
-  trashDriveFolderByUrl,
-  hasScriptRun,
-} from "../services/gasClient.js";
 import { fallbackForForm } from "./formPageHelpers.js";
 import {
   resolveFormPageBadge,
@@ -176,12 +167,6 @@ export default function FormPage() {
   const responseMutationSeqRef = useRef(0);
   const formLoadedStateRef = useRef(null);
   const pendingSyncedEntryRef = useRef(null);
-  // 永続フォルダのオープン時確保を「同一レコードで 1 回」に抑えるガード。
-  const ensuredPersistentFoldersRecordIdRef = useRef(null);
-  // 新規レコードの永続フォルダ作成を recordId 単位で1回だけ走らせるガード。
-  const createdNewRecordFoldersRecordIdRef = useRef(null);
-  // 新規レコードで eager 作成した KEEP フォルダ URL。未保存破棄時に force trash し、保存成功で破棄。
-  const eagerNewRecordFolderUrlsRef = useRef([]);
   const isDirectRecordMode = sharedFormId === formId && sharedRecordId !== "" && sharedRecordId === entryId;
   // URL で formid を固定して開いた（スコープ）状態。管理者如何に関わらず、戻る先はそのフォームの
   // 絞り込み一覧（/search?form=X）に限定し、メイン画面へは決して戻さない。
@@ -243,105 +228,6 @@ export default function FormPage() {
     setDriveFolderStates((prev) => setDriveFolderStateForField(prev, fieldId, updater));
   }, []);
 
-  // 永続フォルダモード（保存済みレコード）: 開いたとき persistentFolder な fileUpload 項目の
-  // フォルダが（未作成 or 外部削除で）無ければサーバ側で KEEP フォルダを作成しセルへ書き戻す。
-  // 戻ってきた folderUrl を driveFolderStates と初期参照の両方へ反映（ダーティ扱いを避ける）。
-  // ※新規レコード（シート行なし）は ensure 不可なので下の専用 effect で finalize 経由作成。
-  useEffect(() => {
-    if (!entryId) return; // 既存レコード専用（GAS ensure はシート行を要求）
-    const recordId = currentRecordId;
-    if (!recordId || !hasScriptRun()) return;
-    if (ensuredPersistentFoldersRecordIdRef.current === recordId) return; // 同一レコードで 1 回
-    const schema = normalizedSchemaRef.current;
-    const targets = [];
-    // 列キーは GAS の col.key（Sheets_pathKey_）と一致させるため header 正規化セグメントで作る。
-    traverseSchema(schema || [], (field, ctx) => {
-      if (field?.type === "fileUpload" && field?.persistentFolder === true && field?.id) {
-        targets.push({ id: field.id, path: joinFieldPath(ctx.pathSegments || []) });
-      }
-    }, { fieldSegment: headerFieldSegment, branchSegment: headerBranchSegment });
-    if (!targets.length) return;
-    ensuredPersistentFoldersRecordIdRef.current = recordId;
-    let cancelled = false;
-    ensureRecordPersistentFolders({ formId, recordId })
-      .then((res) => {
-        if (cancelled) return;
-        const folders = (res && res.folders) || {};
-        targets.forEach(({ id, path }) => {
-          const f = folders[path];
-          if (!f || !f.folderUrl) return;
-          const nextSt = normalizeDriveFolderState({
-            resolvedUrl: f.folderUrl,
-            inputUrl: f.folderUrl,
-            folderName: f.folderName || "",
-            autoCreated: true,
-          });
-          updateFieldDriveFolderState(id, () => nextSt);
-          // サーバ側で保存済みなので初期参照にも反映＝ダーティにしない。
-          initialDriveFolderStatesRef.current = setDriveFolderStateForField(
-            initialDriveFolderStatesRef.current, id, () => nextSt,
-          );
-        });
-      })
-      .catch(() => { /* 取得失敗は無言（次回オープンで再試行）。choju 側でフォルダ無しはエラー表示 */ });
-    return () => { cancelled = true; };
-  }, [entryId, currentRecordId, formId, updateFieldDriveFolderState]);
-
-  // 永続フォルダモード（新規レコード）: 開いた時点で本IDの KEEP フォルダを作る。
-  // シート行がまだ無いので ensure は使えず、行不要の finalize（{recordId, persistentFolder:true,
-  // 空URL} で KEEP 作成）を流用する。結果は driveFolderStates と初期参照へ反映（ダーティ回避）。
-  useEffect(() => {
-    if (entryId) return; // 新規レコード専用
-    if (isViewMode) return; // readOnly フォーム等では作らない
-    const recordId = currentRecordId;
-    if (!recordId || !hasScriptRun()) return;
-    if (createdNewRecordFoldersRecordIdRef.current === recordId) return; // 同一レコードで 1 回
-    const schema = normalizedSchemaRef.current;
-    const targets = [];
-    traverseSchema(schema || [], (field) => {
-      if (field?.type === "fileUpload" && field?.persistentFolder === true && field?.id) {
-        targets.push({ id: field.id });
-      }
-    }, { fieldSegment: headerFieldSegment, branchSegment: headerBranchSegment });
-    if (!targets.length) return;
-    createdNewRecordFoldersRecordIdRef.current = recordId;
-    let cancelled = false;
-    const currentStates = driveFolderStatesRef.current || {};
-    targets.forEach(({ id }) => {
-      // ドラフト復元・再マウントで既にフォルダがある列は二重作成しない。
-      const existing = normalizeDriveFolderState(currentStates[id]);
-      if (existing.resolvedUrl.trim() || existing.folderName.trim()) return;
-      finalizeRecordDriveFolder({
-        recordId,
-        persistentFolder: true,
-        currentDriveFolderUrl: "",
-        inputDriveFolderUrl: "",
-      })
-        .then((res) => {
-          if (cancelled || !res || !res.folderUrl) return;
-          const nextSt = normalizeDriveFolderState({
-            resolvedUrl: res.folderUrl,
-            inputUrl: res.folderUrl,
-            folderName: res.folderName || "",
-            autoCreated: true,
-          });
-          updateFieldDriveFolderState(id, () => nextSt);
-          // 作成済みフォルダを初期参照にも反映＝ダーティにしない。
-          initialDriveFolderStatesRef.current = setDriveFolderStateForField(
-            initialDriveFolderStatesRef.current, id, () => nextSt,
-          );
-          // 未保存破棄時に後始末（force trash）するため URL を記録。
-          eagerNewRecordFolderUrlsRef.current = [
-            ...eagerNewRecordFolderUrlsRef.current,
-            res.folderUrl,
-          ];
-        })
-        .catch(() => { /* 失敗は無言。保存時 finalize で回収される */ });
-    });
-    return () => { cancelled = true; };
-    // normalizedSchema を deps に含め、フォーム定義が遅れて読み込まれた場合も再評価する
-    // （recordId ガードは targets 検出後のみ立つので空スキーマの早期 return は再実行を妨げない）。
-  }, [entryId, isViewMode, currentRecordId, normalizedSchema, updateFieldDriveFolderState, driveFolderStatesRef]);
   const isDirtyRef = useLatestRef(isDirty);
   const isViewModeRef = useLatestRef(isViewMode);
   const normalizedSchemaRef = useLatestRef(normalizedSchema);
@@ -430,26 +316,9 @@ export default function FormPage() {
     try { sessionStorage.removeItem(driveFolderDraftKey); } catch (_e) { /* ignore */ }
   }, [draftKey, driveFolderDraftKey, entryId]);
 
-  const discardUnsavedUploadedFiles = useCallback(async () => {
-    await runDiscardUnsavedUploadedFiles({ driveFolderStatesRef, initialDriveFolderStatesRef });
-    // 新規レコードを保存せず破棄する場合、eager 作成した KEEP フォルダは保護対象のため通常の
-    // trashDriveFolderByUrl では消えない。ここで force trash して孤児フォルダ化を防ぐ。
-    // （保存済みになった eager フォルダは保存時に ref クリア済みで対象外）
-    const eagerUrls = eagerNewRecordFolderUrlsRef.current || [];
-    if (!entryId && eagerUrls.length && hasScriptRun()) {
-      for (const url of eagerUrls) {
-        try {
-          await trashDriveFolderByUrl(url, { force: true });
-        } catch (error) { /* best-effort: 失敗しても破棄フローは継続 */ }
-      }
-    }
-    eagerNewRecordFolderUrlsRef.current = [];
-  }, [driveFolderStatesRef, initialDriveFolderStatesRef, entryId]);
-
-  useEffect(() => {
-    // レコードが保存されたら eager フォルダは正規の永続フォルダ。force trash 対象から外す。
-    if (entry?.id) eagerNewRecordFolderUrlsRef.current = [];
-  }, [entry?.id]);
+  const discardUnsavedUploadedFiles = useCallback(() => (
+    runDiscardUnsavedUploadedFiles({ driveFolderStatesRef, initialDriveFolderStatesRef })
+  ), [driveFolderStatesRef, initialDriveFolderStatesRef]);
 
   const navigateToEntryById = useCallback((targetEntryId) => {
     clearNewEntryDraft();

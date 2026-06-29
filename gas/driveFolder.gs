@@ -85,9 +85,7 @@ function nfbResolveOrCreateFolder_(driveSettings, context) {
 function nfbBuildRecordTempFolderName_(driveSettings) {
   var rawRecordId = driveSettings ? Nfb_trimStr_(driveSettings.recordId) : "";
   var safeRecordId = rawRecordId ? rawRecordId.replace(/[^A-Za-z0-9_-]/g, "_") : "record";
-  // 永続モードは KEEP 接頭辞（システムから消さない印）で命名する。
-  var prefix = (driveSettings && driveSettings.persistentFolder) ? NFB_RECORD_KEEP_FOLDER_PREFIX : NFB_RECORD_TEMP_FOLDER_PREFIX;
-  return prefix + safeRecordId + "_" + Utilities.getUuid().slice(0, 8);
+  return NFB_RECORD_TEMP_FOLDER_PREFIX + safeRecordId + "_" + Utilities.getUuid().slice(0, 8);
 }
 
 function nfbResolveUploadFolder_(driveSettings) {
@@ -135,17 +133,6 @@ function nfbIsRecordTempFolder_(folder) {
   if (!folder || typeof folder.getName !== "function") return false;
   var folderName = String(folder.getName() || "");
   return folderName.indexOf(NFB_RECORD_TEMP_FOLDER_PREFIX) === 0;
-}
-
-// 永続（KEEP）フォルダ判定。システムからの trash（クリア/キャンセル/finalize 置換）から保護する印。
-function nfbIsRecordKeepFolder_(folder) {
-  if (!folder || typeof folder.getName !== "function") return false;
-  return String(folder.getName() || "").indexOf(NFB_RECORD_KEEP_FOLDER_PREFIX) === 0;
-}
-
-// レコード自動作成フォルダ（TEMP / KEEP どちらも）か。autoCreated 判定に使う。
-function nfbIsRecordManagedFolder_(folder) {
-  return nfbIsRecordTempFolder_(folder) || nfbIsRecordKeepFolder_(folder);
 }
 
 function nfbNormalizeDriveFileIds_(fileIds) {
@@ -208,11 +195,7 @@ function nfbTrashDriveFolderByUrl(payload) {
   return nfbSafeCall_(function() {
     var url = payload && typeof payload.folderUrl === "string" ? payload.folderUrl.trim() : "";
     if (!url) return { ok: true, trashed: false };
-    var force = !!(payload && payload.force);
     var folder = nfbResolveFolderFromInputIfExists_(url);
-    // 永続（KEEP）フォルダは通常キャンセル/破棄でも消さない（レコード削除のパージ時のみ）。
-    // ただし force 指定時（未保存の新規レコードを破棄）は eager 作成フォルダの孤児化を防ぐため消す。
-    if (folder && !force && nfbIsRecordKeepFolder_(folder)) return { ok: true, trashed: false };
     if (folder && typeof folder.setTrashed === "function") {
       folder.setTrashed(true);
       return { ok: true, trashed: true };
@@ -226,8 +209,6 @@ function nfbFinalizeRecordDriveFolder(payload) {
     var currentDriveFolderUrl = payload ? Nfb_trimStr_(payload.currentDriveFolderUrl) : "";
     var inputDriveFolderUrl = payload ? Nfb_trimStr_(payload.inputDriveFolderUrl) : "";
     var folderUrlToTrash = payload ? Nfb_trimStr_(payload.folderUrlToTrash) : "";
-    var persistentFolder = !!(payload && payload.persistentFolder);
-    var recordId = payload ? Nfb_trimStr_(payload.recordId) : "";
     var currentFolder = currentDriveFolderUrl ? nfbResolveFolderFromInputIfExists_(currentDriveFolderUrl) : null;
     var inputFolder = inputDriveFolderUrl ? nfbResolveFolderFromInput_(inputDriveFolderUrl) : null;
     var targetFolder = inputFolder || currentFolder;
@@ -235,16 +216,9 @@ function nfbFinalizeRecordDriveFolder(payload) {
     nfbTrashFilesByIds_(payload && payload.trashFileIds);
     if (folderUrlToTrash) {
       var folderToTrash = nfbResolveFolderFromInputIfExists_(folderUrlToTrash);
-      // 永続(KEEP)フォルダはシステムから消さない（パージのみ）。
-      if (folderToTrash && !nfbIsRecordKeepFolder_(folderToTrash) && typeof folderToTrash.setTrashed === "function") {
+      if (folderToTrash && typeof folderToTrash.setTrashed === "function") {
         folderToTrash.setTrashed(true);
       }
-    }
-
-    // 永続モードでフォルダ未存在なら作成する（レコード作成/保存時の自動作成・KEEP 接頭辞）。
-    if (!targetFolder && persistentFolder) {
-      var created = nfbResolveUploadFolder_({ recordId: recordId, persistentFolder: true });
-      targetFolder = created.folder;
     }
 
     if (!targetFolder) {
@@ -266,81 +240,8 @@ function nfbFinalizeRecordDriveFolder(payload) {
       folderUrl: targetFolder.getUrl(),
       // 論理パス再リンク用にフォルダ名（＝論理パスのフォルダ部）を返す。
       folderName: typeof targetFolder.getName === "function" ? targetFolder.getName() : "",
-      autoCreated: nfbIsRecordManagedFolder_(targetFolder)
+      autoCreated: nfbIsRecordTempFolder_(targetFolder)
     };
-  });
-}
-
-// 永続(persistentFolder)な fileUpload 列について、レコードのアップロードフォルダを確保する。
-// folderUrl が空 or 失効（手動削除/ゴミ箱）していれば KEEP フォルダを作成し、セル(JSON)へ書き戻す。
-// オープン時に呼ぶ「無ければ作る」用途。戻り: { ok, folders: { <列キー>: { folderUrl, folderName } } }。
-function nfbEnsureRecordPersistentFolders(payload) {
-  return nfbSafeCall_(function() {
-    var formId = payload ? Nfb_trimStr_(payload.formId) : "";
-    var recordId = payload ? Nfb_trimStr_(payload.recordId) : "";
-    if (!formId || !recordId) return { ok: true, folders: {} };
-
-    var form = Nfb_getFormCached_(formId);
-    if (!form || !form.schema) return { ok: true, folders: {} };
-
-    // 永続 fileUpload 列キー集合（列ビルダと同じ segment 関数＋Sheets_pathKey_ で columnPaths.key と一致）。
-    var persistentKeys = {};
-    var hasPersistent = false;
-    nfbTraverseSchema_(form.schema, function(field, ctx) {
-      if (field && field.type === "fileUpload" && field.persistentFolder === true) {
-        persistentKeys[Sheets_pathKey_(ctx.pathSegments)] = true;
-        hasPersistent = true;
-      }
-    }, {
-      fieldSegment: Sheets_headerFieldSegmentWithFallback_,
-      branchSegment: Sheets_headerBranchSegment_
-    });
-    if (!hasPersistent) return { ok: true, folders: {} };
-
-    var sheet = Nfb_openFormSheet_(form);
-    if (!sheet) return { ok: true, folders: {} };
-
-    return WithScriptLock_("永続フォルダ確保", function() {
-      var got = Sheets_getRecordById_(sheet, recordId);
-      if (!got || !got.ok) return { ok: true, folders: {} };
-      var sheetRow = NFB_DATA_START_ROW + got.rowIndex; // rowIndex は 0 始まりデータ行
-      var lastColumn = sheet.getLastColumn();
-      var columnPaths = Sheets_readColumnPaths_(sheet, lastColumn);
-      var folders = {};
-      var changed = false;
-
-      for (var i = 0; i < columnPaths.length; i++) {
-        var col = columnPaths[i];
-        if (!persistentKeys[col.key]) continue;
-        var cellRange = sheet.getRange(sheetRow, col.index + 1, 1, 1);
-        var raw = cellRange.getValue();
-        var obj = null;
-        if (typeof raw === "string" && raw.replace(/^\s+/, "").charAt(0) === "{") {
-          try { obj = JSON.parse(raw); } catch (e) { obj = null; }
-        }
-        if (Object.prototype.toString.call(obj) === "[object Array]") obj = { files: obj }; // 旧 files 配列形を救済
-        else if (!obj || typeof obj !== "object") obj = { files: [] };
-        if (Object.prototype.toString.call(obj.files) !== "[object Array]") obj.files = [];
-
-        var folderUrl = (typeof obj.folderUrl === "string") ? obj.folderUrl.trim() : "";
-        var live = folderUrl ? nfbResolveFolderFromInputIfExists_(folderUrl) : null;
-        if (!live) {
-          var created = nfbResolveUploadFolder_({ recordId: recordId, persistentFolder: true });
-          obj.folderUrl = created.folder.getUrl();
-          obj.folderName = created.folder.getName();
-          cellRange.setValue(JSON.stringify(obj));
-          changed = true;
-          folders[col.key] = { folderUrl: obj.folderUrl, folderName: obj.folderName };
-        } else {
-          folders[col.key] = {
-            folderUrl: folderUrl,
-            folderName: (typeof obj.folderName === "string" && obj.folderName) ? obj.folderName : live.getName()
-          };
-        }
-      }
-      if (changed) { try { Sheets_touchSheetLastUpdated_(sheet, Date.now()); } catch (e) { /* no-op */ } }
-      return { ok: true, folders: folders };
-    });
   });
 }
 
