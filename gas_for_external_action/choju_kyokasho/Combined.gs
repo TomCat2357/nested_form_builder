@@ -642,6 +642,10 @@ function Cho2_buildPlan_(app, forcedType) {
 // ## fill.gs — GAS I/O（テンプレ複製→記入→xlsx 保存→リンク）
 // #############################################################################
 
+// Cho2_applyCells_ が記録する「直近の書き込み」マップ（セルアドレス → {sheet, val}）。
+// flush 例外のセルアドレスと突合してエラーメッセージを補強するために使う。
+var Cho2_pendingWrites_ = {};
+
 // google.script.run から呼ぶ生成本体（末尾アンダースコア不可）。
 //   ctxToken: doPost が保存した payload のトークン。options: { rowIndex, forcedType }
 function Cho2_generate(ctxToken, optionsJson) {
@@ -662,7 +666,11 @@ function Cho2_generate(ctxToken, optionsJson) {
     var out = Cho2_renderWorkbook_(plan, fileName, folder);
     return { ok: true, fileUrl: out.url, fileName: out.name, pdfUrl: out.pdfUrl, pdfName: out.pdfName, type: plan.type, workerCount: plan.workerCount };
   } catch (err) {
-    return { ok: false, error: String(err && err.message ? err.message : err) };
+    return {
+      ok: false,
+      error: String(err && err.message ? err.message : err),
+      folderUrl: (typeof app !== "undefined" && app && app.folderUrl) ? app.folderUrl : ""
+    };
   }
 }
 
@@ -671,14 +679,13 @@ function Cho2_outputFileName_(app, plan) {
   return base.replace(/[\\/:*?"<>|]/g, "-");
 }
 
-// テンプレートを複製して Google Sheet 化した一時ファイルの id を返す。共有ドライブ上のテンプレでも
-// 確実にコピーするため supportsAllDrives:true を付ける（本体 gas/driveFile.gs nfbMakeDriveFileCopy_ と同方針）。
-// Advanced Drive が失敗（File not found 等）したら DriveApp.makeCopy にフォールバックする（テンプレは
-// 既に Google Sheet 形式の前提なので変換不要）。両方失敗時はアクセス権を案内する明確なエラーを投げる。
-function Cho2_copyTemplateToTmp_(fileId, title) {
+// テンプレートを複製して指定フォルダ内に Google Sheet として保存し、ファイル id を返す。
+// 共有ドライブ上のテンプレでも確実にコピーするため supportsAllDrives:true を付ける。
+// Advanced Drive が失敗したら DriveApp.makeCopy にフォールバックする。
+function Cho2_copyTemplateToFolder_(fileId, title, folderId) {
   try {
     var copied = Drive.Files.copy(
-      { title: title, mimeType: "application/vnd.google-apps.spreadsheet" },
+      { title: title, mimeType: "application/vnd.google-apps.spreadsheet", parents: [{ id: folderId }] },
       fileId,
       { supportsAllDrives: true }
     );
@@ -687,7 +694,7 @@ function Cho2_copyTemplateToTmp_(fileId, title) {
     // フォールバックへ（多くは共有ドライブ/権限による File not found か Advanced Drive 無効）。
   }
   try {
-    return DriveApp.getFileById(fileId).makeCopy(title).getId();
+    return DriveApp.getFileById(fileId).makeCopy(title, DriveApp.getFolderById(folderId)).getId();
   } catch (e2) {
     throw new Error(
       "テンプレート（許可証等様式）をコピーできませんでした。Web アプリのデプロイ実行アカウントが、" +
@@ -697,14 +704,16 @@ function Cho2_copyTemplateToTmp_(fileId, title) {
   }
 }
 
-// テンプレを複製 → Google Sheet 化 → シート複製・記入 → xlsx エクスポート → Drive 保存。一時 Sheet は削除。
+// テンプレを出力フォルダへ複製 → シート複製・記入 → スプレッドシートとして保存 → PDF も保存。エラー時のみ削除。
 function Cho2_renderWorkbook_(plan, fileName, folder) {
   var fileId = Cho2_templateFileId_();
   if (!fileId) throw new Error("テンプレート（許可証等様式）の URL が未設定です。画面の「テンプレートの保存先」で設定してください。");
-  var tmpId = null;
+  var ssId = null;
+  var success = false;
   try {
-    tmpId = Cho2_copyTemplateToTmp_(fileId, "_nfb_kyokasho_tmp");
-    var ss = SpreadsheetApp.openById(tmpId);
+    ssId = Cho2_copyTemplateToFolder_(fileId, fileName, folder.getId());
+    var ss = SpreadsheetApp.openById(ssId);
+    Cho2_pendingWrites_ = {}; // 書き込み前にリセット（flush 例外時の照合用）
 
     // 従事者名簿（クリア→記入）
     var roster = ss.getSheetByName(CHO2_SHEET_ROSTER_);
@@ -729,14 +738,26 @@ function Cho2_renderWorkbook_(plan, fileName, folder) {
     Cho2_fillSingle_(ss, CHO2_SHEET_KEISATSU_, plan.keisatsu);
 
     Cho2_reorderSheets_(ss);
-    SpreadsheetApp.flush();
+    try {
+      SpreadsheetApp.flush();
+    } catch (flushErr) {
+      // flush 例外にはセルアドレスが含まれるので Cho2_pendingWrites_ と突合してシート名・値を付加する
+      var flushMsg = String(flushErr.message || flushErr);
+      var mCell = /セル([A-Z]+\d+)/.exec(flushMsg);
+      if (mCell) {
+        var wInfo = Cho2_pendingWrites_[mCell[1]];
+        if (wInfo) throw new Error('シート「' + wInfo.sheet + '」セル ' + mCell[1] + ' に値「' + wInfo.val + '」を書き込めませんでした: ' + flushMsg);
+      }
+      throw flushErr;
+    }
 
-    // xlsx ＋ PDF（全シート・テンプレ印刷設定）を渡されたフォルダへ保存
-    var xlsxFile = folder.createFile(Cho2_exportXlsx_(tmpId, fileName));
-    var pdfFile = folder.createFile(Cho2_exportPdf_(tmpId, fileName));
-    return { url: xlsxFile.getUrl(), name: xlsxFile.getName(), pdfUrl: pdfFile.getUrl(), pdfName: pdfFile.getName() };
+    // PDF（全シート・テンプレ印刷設定）を出力フォルダへ保存。スプレッドシートは ssId のまま残す。
+    var pdfFile = folder.createFile(Cho2_exportPdf_(ssId, fileName));
+    var ssFile = DriveApp.getFileById(ssId);
+    success = true;
+    return { url: ssFile.getUrl(), name: ssFile.getName(), pdfUrl: pdfFile.getUrl(), pdfName: pdfFile.getName() };
   } finally {
-    if (tmpId) { try { Drive.Files.remove(tmpId, { supportsAllDrives: true }); } catch (e) { /* no-op */ } }
+    if (!success && ssId) { try { Drive.Files.remove(ssId, { supportsAllDrives: true }); } catch (e) { /* no-op */ } }
   }
 }
 
@@ -775,21 +796,31 @@ function Cho2_clearRanges_(sheet, ranges) {
 }
 
 // セル差分を書き込む。{__date} は Date、数値は数値、その他は文字列（先頭 = は中和）。
+// 各書き込み前に Cho2_pendingWrites_ へ記録（flush 例外時のセルアドレス照合用）。
 function Cho2_applyCells_(sheet, cells) {
+  var sheetName = sheet.getName();
   for (var i = 0; i < cells.length; i++) {
-    var c = cells[i], v = c.value, range = sheet.getRange(c.a1);
-    if (v && typeof v === "object" && v.__date) {
-      // 西暦の実 Date を書き、和暦書式で表示（テンプレ単票系セルは General のため明示設定）。
-      range.setNumberFormat('[$-411]ggge"年"m"月"d"日"');
-      range.setValue(new Date(v.y, v.m - 1, v.d));
-    } else if (typeof v === "number") {
-      range.setValue(v);
-    } else {
-      var s = String(v == null ? "" : v);
-      // 先頭が数式/演算子、または "1-1" / "1-1-1" 等の数字ハイフン連結（許可番号）は
-      // 日付/数値への誤変換を防ぐためテキスト化（先頭 ' は表示されずテキスト扱い・セル書式は維持）。
-      if (/^[=+\-@]/.test(s) || /^\d+([-\/]\d+)+$/.test(s)) s = "'" + s;
-      range.setValue(s);
+    var c = cells[i], v = c.value;
+    var displayVal = (v && typeof v === "object" && v.__date) ? v.y + "/" + v.m + "/" + v.d : String(v == null ? "" : v);
+    Cho2_pendingWrites_[c.a1] = { sheet: sheetName, val: displayVal };
+    var range = sheet.getRange(c.a1);
+    try {
+      if (v && typeof v === "object" && v.__date) {
+        // 西暦の実 Date を書き、和暦書式で表示（テンプレ単票系セルは General のため明示設定）。
+        range.setNumberFormat('[$-411]ggge"年"m"月"d"日"');
+        range.setValue(new Date(v.y, v.m - 1, v.d));
+      } else if (typeof v === "number") {
+        range.setValue(v);
+      } else {
+        var s = String(v == null ? "" : v);
+        // 先頭が数式/演算子、または "1-1" / "1-1-1" 等の数字ハイフン連結（許可番号）は
+        // 日付/数値への誤変換を防ぐためテキスト化（先頭 ' は表示されずテキスト扱い・セル書式は維持）。
+        if (/^[=+\-@]/.test(s) || /^\d+([-\/]\d+)+$/.test(s)) s = "'" + s;
+        range.setValue(s);
+      }
+    } catch (e) {
+      // setValue が即時例外を出す場合（レンジ不正・保護シート等）
+      throw new Error('シート「' + sheetName + '」セル ' + c.a1 + ' に値「' + displayVal + '」を書き込めませんでした: ' + (e.message || e));
     }
   }
 }
@@ -991,7 +1022,7 @@ function Cho2_buildPreview_(data) {
       ws.push({ name: Cho2_str_(wk[CHO2_L_W_NAME_]) || ("従事者" + (w + 1)), tools: Cho2_workerTools_(wk).join(", "), species: spList.join(" / ") });
     }
     out.push({ index: i, label: a.label, type: type, workerCount: ws.length, workers: ws,
-      kyokaNo: Cho2_str_(a.parent[CHO2_L_KYOKA_NO_]) });
+      kyokaNo: Cho2_str_(a.parent[CHO2_L_KYOKA_NO_]), folderUrl: a.folderUrl || "" });
   }
   return out;
 }
@@ -1041,12 +1072,12 @@ th,td{border:1px solid #e0e0e0;padding:4px 6px;text-align:left;vertical-align:to
 th{background:#f1f3f4;}
 #status{margin-top:12px;font-size:13px;}#result{margin-top:12px;font-size:13px;}
 </style></head><body><div class="card">
-<h1>許可証等様式の出力（フォーム → Excel）</h1>
+<h1>許可証等様式の出力（フォーム → スプレッドシート）</h1>
 
 <div id="tplWarn" class="warn">⚠ 許可証等様式（テンプレート）の URL が未登録です。下の入力欄に Drive URL を登録してください。登録するまで生成できません。</div>
 
 <div class="sec">
-  <label class="blk">テンプレートの保存先（許可証等様式.xlsx の Drive URL）</label>
+  <label class="blk">テンプレートの保存先（許可証等様式 の Drive URL）</label>
   <div class="muted">現在: <span id="curTpl"></span></div>
   <input type="text" id="tplUrl" placeholder="https://drive.google.com/file/d/.../view または fileId">
   <button id="saveTpl">この URL を保存</button>
@@ -1090,6 +1121,7 @@ function renderApps(){
       for(var w=0;w<a.workers.length;w++){ var x=a.workers[w]; h+='<tr><td>'+esc(x.name)+'</td><td>'+esc(x.species)+'</td><td>'+esc(x.tools)+'</td></tr>'; }
       h+='</tbody></table>'; }
     else h+='<div class="err">従事者データがありません（一覧から起動時は formLink の includeChildData を ON に）。</div>';
+    if(a.folderUrl){h+='<div class="muted" style="margin-top:4px;font-size:11px">出力先フォルダ: <a href="'+esc(a.folderUrl)+'" target="_blank" rel="noopener">開く</a></div>';}
     h+='</div>';
   }
   h+='<button id="gen">この内容で生成（Drive に保存）</button>';
@@ -1100,14 +1132,14 @@ function renderApps(){
 function doGen(){
   var r=document.querySelector('input[name="app"]:checked'); var idx=r?Number(r.value):0;
   var sel=document.querySelector('.atype[data-idx="'+idx+'"]'); var forced=sel?sel.value:"";
-  $("status").textContent="生成中...（テンプレート複製・記入・xlsx/PDF 変換）"; $("gen").disabled=true; $("result").innerHTML="";
+  $("status").textContent="生成中...（テンプレート複製・記入・スプレッドシート保存）"; $("gen").disabled=true; $("result").innerHTML="";
   google.script.run.withSuccessHandler(function(res){
     $("gen").disabled=false;
     if(res&&res.ok){ $("status").innerHTML='<span class="ok">生成しました（'+esc(res.type)+' / 従事者 '+res.workerCount+' 名）。</span>';
       var html='<a href="'+esc(res.fileUrl)+'" target="_blank" rel="noopener">'+esc(res.fileName)+' を開く（Drive）</a>';
       if(res.pdfUrl){ html+=' ／ <a href="'+esc(res.pdfUrl)+'" target="_blank" rel="noopener">'+esc(res.pdfName)+'（PDF）</a>'; }
       $("result").innerHTML=html; }
-    else { $("status").innerHTML='<span class="err">失敗: '+esc(res&&res.error||"unknown")+'</span>'; }
+    else { var errHtml='<span class="err">失敗: '+esc(res&&res.error||"unknown")+'</span>'; if(res&&res.folderUrl){errHtml+=' ／ <a href="'+esc(res.folderUrl)+'" target="_blank" rel="noopener">フォルダを開く</a>';} $("status").innerHTML=errHtml; }
   }).withFailureHandler(function(e){ $("gen").disabled=false; $("status").innerHTML='<span class="err">エラー: '+esc(e.message)+'</span>'; })
     .Cho2_generate(CTX, JSON.stringify({rowIndex:idx, forcedType:forced}));
 }
