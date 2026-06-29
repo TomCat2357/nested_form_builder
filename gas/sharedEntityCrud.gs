@@ -339,3 +339,79 @@ function SharedEntity_registerImported_(fileId, opts) {
 
   return { newId: newId, fileId: placedFileId, fileUrl: fileUrl, label: label, mapping: mapping };
 }
+
+// =============================================
+// Shared Entity CRUD — Forms_saveForm_ / Analytics_saveTemplate_ の保存本体で
+// 「ほぼ同一」だった 2 ブロックを集約したコア。各 save 関数は型固有処理（forms の
+// spreadsheet/header/JST/印刷様式・analytics の per-type schemaVersion 等）を保持したまま、
+// 下記の共通部分だけをこの 2 ヘルパへ委譲する。
+// =============================================
+
+// 名前ユニーク化の入力となる「同一論理フォルダ内の兄弟ラベル」を集める共通本体。
+// 自分自身（同一 id / 同一物理ファイルを指す別名キー）と、論理フォルダが異なるエントリは除外する。
+// Forms_saveForm_（title 収集）と Analytics_saveTemplate_（name 収集 + ファイル名フォールバック）の共通コア。
+//
+// opts:
+//   selfId             除外する自分の id（forms: formId / analytics: existingId）
+//   selfFileId         除外する自分の物理 fileId（別名キーの二重カウント防止。null 可）
+//   folderPath         衝突判定対象の論理フォルダ（正規化済み）
+//   labelKey           収集するラベルキー（"title" | "name"）
+//   readMissingFromFile  mapping にラベルが無いエントリを Drive ファイル名から補完しキャッシュするか
+//                        （analytics=true。forms=false）
+function SharedEntity_collectSiblingLabels_(mapping, opts) {
+  var selfId = opts.selfId || "";
+  var selfFileId = opts.selfFileId || null;
+  var folderPath = opts.folderPath || "";
+  var labelKey = opts.labelKey;
+  var readMissingFromFile = !!opts.readMissingFromFile;
+  var labels = [];
+  for (var otherId in mapping) {
+    if (!mapping.hasOwnProperty(otherId)) continue;
+    if (otherId === selfId) continue; // 自分自身は除外
+    var entry = mapping[otherId] || {};
+    // 二重登録が残っている場合、同一物理ファイル（fileId）を指す別名キー（旧 ULID 等）も
+    // 自分扱いで除外する。除外しないと自分の名前と衝突して誤って ` (1)` が付く。
+    if (selfFileId && Nfb_resolveFileIdFromEntry_(entry) === selfFileId) continue;
+    // 論理フォルダが異なるアイテムは衝突対象外（フォルダが違えば同名可）。
+    if (Forms_normalizeFolderPath_(entry.folder) !== folderPath) continue;
+    var label = entry[labelKey];
+    if ((typeof label !== "string" || !label) && readMissingFromFile) {
+      // mapping にキャッシュが無いケース。名前 ＝ ファイル名なので実ファイル名から導出する。
+      var otherFileId = Nfb_resolveFileIdFromEntry_(entry);
+      if (otherFileId) {
+        try {
+          var otherFile = DriveApp.getFileById(otherFileId);
+          if (!(typeof otherFile.isTrashed === "function" && otherFile.isTrashed())) {
+            label = Nfb_nameFromFile_(otherFile);
+            if (typeof label === "string" && label) {
+              // 次回以降の高速化のため mapping にキャッシュ
+              entry[labelKey] = label;
+              mapping[otherId] = entry;
+            }
+          }
+        } catch (errRead) {
+          Logger.log("[SharedEntity_collectSiblingLabels_] failed to read name for " + otherId + ": " + errRead);
+        }
+      }
+    }
+    if (typeof label === "string" && label) labels.push(label);
+  }
+  return labels;
+}
+
+// 保存後の逆方向再リンク（参照元のパスアンカー追従）を発火する共通本体。
+// 保存本体（このフォーム / Question / Dashboard）の論理パスまたは名前が変わったときだけ
+// StdFolders_alignReferencesOnSave_ を selfChanged=true で呼ぶ（新規作成・無変更時は no-op ゲート）。
+// 返り値 referenceSync.remap があれば objToRemap の参照リンクも追従させる。
+// try/catch + Logger は呼び出し側に残す（位置不変。失敗しても保存は継続）。
+//
+// opts: { selfWasRegistered, selfPrevFolder, selfPrevLabel, nextFolder, nextLabel, objToRemap }
+function SharedEntity_alignReferencesOnSave_(type, fileId, opts) {
+  var selfChanged = !!opts.selfWasRegistered &&
+    (opts.selfPrevFolder !== opts.nextFolder || opts.selfPrevLabel !== opts.nextLabel);
+  var referenceSync = StdFolders_alignReferencesOnSave_(type, fileId, selfChanged);
+  if (referenceSync && referenceSync.remap && opts.objToRemap) {
+    StdFolders_applyRemapToRefs_(opts.objToRemap, type, referenceSync.remap);
+  }
+  return referenceSync;
+}
