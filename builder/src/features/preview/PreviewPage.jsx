@@ -170,22 +170,33 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     bumpChildReadyEpoch: () => setChildReadyEpoch((n) => n + 1),
   });
 
+  // レコードのアップロードフォルダは先頭 fileUpload 質問（primary）が所有する単一フォルダ。
+  // primary の folderUrl / folderName を全 fileUpload フィールドへブロードキャストし、
+  // 印刷様式・外部アクション payload・論理パス再リンクが全カードで同一フォルダを指すようにする。
+  const primaryFileUploadFieldId = useMemo(
+    () => collectFileUploadFields(schema)[0]?.id || "",
+    [schema],
+  );
+  const primaryDriveFolderState = useMemo(
+    () => normalizeDriveFolderState((driveFolderStates || {})[primaryFileUploadFieldId]),
+    [driveFolderStates, primaryFileUploadFieldId],
+  );
+  const uploadFieldIds = useMemo(
+    () => collectFileUploadFields(schema).map((f) => f?.id).filter(Boolean),
+    [schema],
+  );
   const folderUrlsByField = useMemo(() => {
     const out = {};
-    for (const [fid, st] of Object.entries(driveFolderStates || {})) {
-      const url = (st?.resolvedUrl || st?.inputUrl || "").trim();
-      if (url) out[fid] = url;
-    }
+    const url = (primaryDriveFolderState.resolvedUrl || primaryDriveFolderState.inputUrl || "").trim();
+    if (url) uploadFieldIds.forEach((fid) => { out[fid] = url; });
     return out;
-  }, [driveFolderStates]);
+  }, [uploadFieldIds, primaryDriveFolderState]);
   const folderNamesByField = useMemo(() => {
     const out = {};
-    for (const [fid, st] of Object.entries(driveFolderStates || {})) {
-      const folderName = (st?.folderName || "").trim();
-      if (folderName) out[fid] = folderName;
-    }
+    const folderName = (primaryDriveFolderState.folderName || "").trim();
+    if (folderName) uploadFieldIds.forEach((fid) => { out[fid] = folderName; });
     return out;
-  }, [driveFolderStates]);
+  }, [uploadFieldIds, primaryDriveFolderState]);
   const fileUploadMeta = useMemo(
     () => collectFileUploadMeta(schema, { responses: responses || {}, folderUrlsByField, folderNamesByField }),
     [schema, responses, folderUrlsByField, folderNamesByField],
@@ -200,15 +211,6 @@ const PreviewPage = React.forwardRef(function PreviewPage(
     fileUploadMeta,
     childFormMeta,
   }), [settings.formId, responses, fieldPaths, fieldValues, dataValueMap, fileUploadMeta, childFormMeta]);
-
-  const primaryFileUploadFieldId = useMemo(
-    () => collectFileUploadFields(schema)[0]?.id || "",
-    [schema],
-  );
-  const primaryDriveFolderState = useMemo(
-    () => normalizeDriveFolderState((driveFolderStates || {})[primaryFileUploadFieldId]),
-    [driveFolderStates, primaryFileUploadFieldId],
-  );
 
   // full-query トークン（`{{SELECT ...}}`）の解決値 Map<fullToken, string>。
   // 非同期 prefetch（下の effect）が用意し、tokenContext 経由で同期 resolve に供給する。
@@ -810,6 +812,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
         driveSettings={driveSettings}
         gasClientRef={gasClientRef}
         driveFolderStates={driveFolderStates}
+        primaryFileUploadFieldId={primaryFileUploadFieldId}
         onFieldDriveFolderStateChange={onFieldDriveFolderStateChange}
         onTemplateAction={handleFieldTemplateAction}
         onExternalAction={handleFieldExternalAction}
