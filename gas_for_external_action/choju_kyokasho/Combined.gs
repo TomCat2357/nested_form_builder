@@ -688,7 +688,7 @@ function Cho2_generate(ctxToken, optionsJson) {
     var plan = Cho2_buildPlan_(app, options.forcedType || "");
     var fileName = Cho2_outputFileName_(app, plan);
     var out = Cho2_renderWorkbook_(plan, fileName, folder);
-    return { ok: true, fileUrl: out.url, fileName: out.name, pdfUrl: out.pdfUrl, pdfName: out.pdfName, type: plan.type, workerCount: plan.workerCount };
+    return { ok: true, fileUrl: out.url, fileName: out.name, type: plan.type, workerCount: plan.workerCount };
   } catch (err) {
     return {
       ok: false,
@@ -728,7 +728,7 @@ function Cho2_copyTemplateToFolder_(fileId, title, folderId) {
   }
 }
 
-// テンプレを出力フォルダへ複製 → シート複製・記入 → スプレッドシートとして保存 → PDF も保存。エラー時のみ削除。
+// テンプレを出力フォルダへ複製 → シート複製・記入 → スプレッドシートとして保存。エラー時のみ削除。
 function Cho2_renderWorkbook_(plan, fileName, folder) {
   var fileId = Cho2_templateFileId_();
   if (!fileId) throw new Error("テンプレート（許可証等様式）の URL が未設定です。画面の「テンプレートの保存先」で設定してください。");
@@ -775,11 +775,9 @@ function Cho2_renderWorkbook_(plan, fileName, folder) {
       throw flushErr;
     }
 
-    // PDF（全シート・テンプレ印刷設定）を出力フォルダへ保存。スプレッドシートは ssId のまま残す。
-    var pdfFile = folder.createFile(Cho2_exportPdf_(ssId, fileName));
     var ssFile = DriveApp.getFileById(ssId);
     success = true;
-    return { url: ssFile.getUrl(), name: ssFile.getName(), pdfUrl: pdfFile.getUrl(), pdfName: pdfFile.getName() };
+    return { url: ssFile.getUrl(), name: ssFile.getName() };
   } finally {
     if (!success && ssId) { try { Drive.Files.remove(ssId, { supportsAllDrives: true }); } catch (e) { /* no-op */ } }
   }
@@ -877,30 +875,6 @@ function Cho2_exportXlsx_(ssId, fileName) {
   var resp = UrlFetchApp.fetch(url, { headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
   if (resp.getResponseCode() >= 400) throw new Error("xlsx エクスポートに失敗しました (HTTP " + resp.getResponseCode() + ")。");
   return resp.getBlob().setName((fileName || "許可証等") + ".xlsx");
-}
-
-// Google Sheet を PDF blob へエクスポート（ワークブック全シート＝全ページ）。
-// Drive API export は手動改ページを無視するため、Sheets の export エンドポイントを使い
-// scale=1（実際のサイズ）でテンプレの手動改ページ／印刷設定を踏襲する
-// （fit 系 scale=2/3/4 は改ページを無視して全体を縮小するので使わない）。
-function Cho2_exportPdf_(ssId, fileName) {
-  var params = [
-    "format=pdf",
-    "size=A4",
-    "portrait=true",
-    "scale=1", // 1=実際のサイズ（手動改ページ踏襲）。2=幅/3=高/4=ページに合わせる は改ページ無視
-    "gridlines=false",
-    "printtitle=false",
-    "sheetnames=false",
-    "pagenum=false",
-    "fzr=false",
-    "horizontal_alignment=CENTER",
-    "vertical_alignment=TOP"
-  ].join("&");
-  var url = "https://docs.google.com/spreadsheets/d/" + ssId + "/export?" + params;
-  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
-  if (resp.getResponseCode() >= 400) throw new Error("PDF エクスポートに失敗しました (HTTP " + resp.getResponseCode() + ")。");
-  return resp.getBlob().setName((fileName || "許可証等") + ".pdf");
 }
 
 function Cho2_templateFileId_() { return Cho2_extractFileId_(Cho2_getProp_("CHO2_TEMPLATE_URL", "")); }
@@ -1173,7 +1147,6 @@ function doGen(){
     $("gen").disabled=false;
     if(res&&res.ok){ $("status").innerHTML='<span class="ok">生成しました（'+esc(res.type)+' / 従事者 '+res.workerCount+' 名）。</span>';
       var html='<a href="'+esc(res.fileUrl)+'" target="_blank" rel="noopener">'+esc(res.fileName)+' を開く（Drive）</a>';
-      if(res.pdfUrl){ html+=' ／ <a href="'+esc(res.pdfUrl)+'" target="_blank" rel="noopener">'+esc(res.pdfName)+'（PDF）</a>'; }
       $("result").innerHTML=html; }
     else { var errHtml='<span class="err">失敗: '+esc(res&&res.error||"unknown")+'</span>'; if(res&&res.folderUrl){errHtml+=' ／ <a href="'+esc(res.folderUrl)+'" target="_blank" rel="noopener">フォルダを開く</a>';} $("status").innerHTML=errHtml; }
   }).withFailureHandler(function(e){ $("gen").disabled=false; $("status").innerHTML='<span class="err">エラー: '+esc(e.message)+'</span>'; })
