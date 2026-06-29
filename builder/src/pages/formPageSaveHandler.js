@@ -40,6 +40,7 @@ import {
   collectDriveFileIds,
   buildFolderUrlsByFieldFromStates,
   buildFolderNamesByFieldFromStates,
+  broadcastPrimaryUploadFolder,
 } from "./formPageHelpers.js";
 
 /**
@@ -275,14 +276,22 @@ export async function performFormPageSave({ payload, rawResponses, options = {} 
     }
   }
 
-  // Embed per-field folderUrl into sheet cell JSON by rebuilding fileUpload paths
+  // Embed folderUrl into sheet cell JSON by rebuilding fileUpload paths.
+  // レコードのアップロードは先頭 fileUpload 質問（primary）が所有する単一フォルダへ集約される。
+  // primary の確定フォルダ参照を、実ファイルを持つ各 fileUpload セルへブロードキャストして書き込む。
   {
+    const { folderUrls: broadcastFolderUrls, folderNames: broadcastFolderNames } = broadcastPrimaryUploadFolder(
+      uploadFields,
+      rawResponses || {},
+      finalizedFolderUrlByField,
+      finalizedFolderNameByField,
+    );
     const rebuilt = coreCollectResponses(
       normalizedSchema,
       rawResponses || {},
       {
-        fileUploadFolderUrls: finalizedFolderUrlByField,
-        fileUploadFolderNames: finalizedFolderNameByField,
+        fileUploadFolderUrls: broadcastFolderUrls,
+        fileUploadFolderNames: broadcastFolderNames,
       },
     );
     const fileUploadBaseKeys = new Set();

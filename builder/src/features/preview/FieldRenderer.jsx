@@ -71,6 +71,7 @@ const FieldRenderer = ({
   driveSettings,
   gasClientRef,
   driveFolderStates,
+  primaryFileUploadFieldId = "",
   onFieldDriveFolderStateChange,
   onTemplateAction,
   onExternalAction,
@@ -243,12 +244,16 @@ const FieldRenderer = ({
 
 
   if (field.type === "fileUpload") {
-    const fieldFolderState = (driveFolderStates || {})[field.id];
+    // レコード内の全 fileUpload カードは、先頭 fileUpload 質問（primary）が所有する
+    // 単一フォルダを共有する。表示・アップロード先・結果書き戻し・削除をすべて owner（primary）へ向ける。
+    // primary 未算出時や単一カードでは owner=field.id となり従来挙動と不変。
+    const ownerFieldId = primaryFileUploadFieldId || field.id;
+    const fieldFolderState = (driveFolderStates || {})[ownerFieldId];
     const handleFieldFolderStateChange = typeof onFieldDriveFolderStateChange === "function"
-      ? (updater) => onFieldDriveFolderStateChange(field.id, updater)
+      ? (updater) => onFieldDriveFolderStateChange(ownerFieldId, updater)
       : undefined;
     const handleFieldDeleteDriveFolder = typeof onDeleteDriveFolder === "function"
-      ? () => onDeleteDriveFolder(field.id)
+      ? () => onDeleteDriveFolder(ownerFieldId)
       : undefined;
     return (
       <FieldWrapper label={renderLabel()} comment={renderComment()}>
@@ -479,6 +484,7 @@ export const RendererRecursive = ({
   driveSettings,
   gasClientRef,
   driveFolderStates,
+  primaryFileUploadFieldId = "",
   onFieldDriveFolderStateChange,
   onTemplateAction,
   onExternalAction,
@@ -495,7 +501,7 @@ export const RendererRecursive = ({
 }) => {
   const recursiveProps = {
     responses, onChange, depth: depth + 1, readOnly, entryId, onChildFormJump,
-    driveSettings, gasClientRef, driveFolderStates, onFieldDriveFolderStateChange,
+    driveSettings, gasClientRef, driveFolderStates, primaryFileUploadFieldId, onFieldDriveFolderStateChange,
     onTemplateAction, onExternalAction, onFormLinkAction, formLinkChildCounts, hideFormLink,
     isAdmin, canDeleteDriveFolder, onDeleteDriveFolder, resolveTokens, substitutionPending,
     computedValues, computedErrors,
@@ -567,6 +573,7 @@ export const RendererRecursive = ({
               driveSettings={driveSettings}
               gasClientRef={gasClientRef}
               driveFolderStates={driveFolderStates}
+              primaryFileUploadFieldId={primaryFileUploadFieldId}
               onFieldDriveFolderStateChange={onFieldDriveFolderStateChange}
               onTemplateAction={onTemplateAction}
               onExternalAction={onExternalAction}

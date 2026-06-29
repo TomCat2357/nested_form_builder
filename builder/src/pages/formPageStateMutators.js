@@ -16,6 +16,7 @@ import {
   resolveEffectiveDriveFolderUrl,
 } from "../utils/driveFolderState.js";
 import {
+  aggregatePrimaryUploadFolder,
   diffResponses,
   pickLatestEntry,
   sampleKeys,
@@ -87,18 +88,24 @@ export function runApplyEntryToState(nextEntry, fallbackEntryId, source, ctx) {
   const folderNamesByField = collectFileUploadFolderNames(schema, nextEntry?.data || {});
   const uploadFields = collectFileUploadFields(schema);
   const nextDriveFolderStates = {};
+  // レコードのアップロードフォルダは先頭 fileUpload 質問（primary）が所有する単一フォルダに集約される。
+  // 全カラムから最初の非空フォルダ情報を拾い primary state へ集約（primary セルが空の旧データでも他カラムから継承）。
+  const primaryFieldId = uploadFields[0]?.id || "";
+  const aggregated = aggregatePrimaryUploadFolder(uploadFields, folderUrlsByField, folderNamesByField);
   uploadFields.forEach((field) => {
     const fid = field?.id;
     if (!fid) return;
-    const folderUrl = folderUrlsByField[fid] || "";
-    // 論理パス（folderName）も state へ復元し、再保存でセルへ書き戻す（前進補完）。
-    const folderName = folderNamesByField[fid] || "";
-    nextDriveFolderStates[fid] = normalizeDriveFolderState({
-      resolvedUrl: folderUrl,
-      inputUrl: folderUrl,
-      folderName,
-      autoCreated: false,
-    });
+    if (fid === primaryFieldId) {
+      nextDriveFolderStates[fid] = normalizeDriveFolderState({
+        resolvedUrl: aggregated.url,
+        inputUrl: aggregated.url,
+        folderName: aggregated.folderName,
+        autoCreated: false,
+      });
+    } else {
+      // 非 primary は空 state を入れてキーを温存（finalize / diff の対象集合を安定させ回帰を防ぐ）。
+      nextDriveFolderStates[fid] = normalizeDriveFolderState({});
+    }
   });
   const previous = responsesRef.current;
   const diff = diffResponses(previous, restored);
