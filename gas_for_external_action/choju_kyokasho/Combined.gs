@@ -8,8 +8,8 @@
 // 出力（フォームデータ → Excel 様式）: 検索画面の一覧ボタン / レコード詳細の単票ボタン
 // （いずれも非 adminOnly＝管理者権限不要）から起動する。本体 GAS がサーバ間リレーで
 // この doPost を叩き、生成画面の URL（openUrl）を返してもらって新しいタブで開く。
-// 生成画面で内容を確認して「生成」を押すと、様式テンプレート（許可証等様式.xlsx）を複製し
-// 緑セルへリテラル値を書き込んだ xlsx を Drive に保存し、リンクを返す。
+// 生成画面で内容を確認して「生成」を押すと、様式テンプレートをスプレッドシートとして複製し
+// 緑セルへリテラル値を書き込んで Drive に保存し、リンクを返す。
 //
 // 設計の核（許可証等様式 の緑セル＝掃き出し場所 FF00B050）:
 //   緑 FF00B050 = 出力先。サンプル値は「どのセルへ何を書くか」の仕様。
@@ -663,7 +663,7 @@ function Cho2_buildPlan_(app, forcedType) {
 
 
 // #############################################################################
-// ## fill.gs — GAS I/O（テンプレ複製→記入→xlsx 保存→リンク）
+// ## fill.gs — GAS I/O（テンプレ複製→記入→スプレッドシート保存→リンク）
 // #############################################################################
 
 // Cho2_applyCells_ が記録する「直近の書き込み」マップ（セルアドレス → {sheet, val}）。
@@ -868,15 +868,6 @@ function Cho2_uniqueSheetName_(ss, name, selfSheet) {
   }
 }
 
-// Google Sheet を xlsx blob へエクスポート。
-function Cho2_exportXlsx_(ssId, fileName) {
-  var url = "https://www.googleapis.com/drive/v3/files/" + ssId +
-    "/export?mimeType=" + encodeURIComponent("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
-  var resp = UrlFetchApp.fetch(url, { headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true });
-  if (resp.getResponseCode() >= 400) throw new Error("xlsx エクスポートに失敗しました (HTTP " + resp.getResponseCode() + ")。");
-  return resp.getBlob().setName((fileName || "許可証等") + ".xlsx");
-}
-
 function Cho2_templateFileId_() { return Cho2_extractFileId_(Cho2_getProp_("CHO2_TEMPLATE_URL", "")); }
 function Cho2_extractFileId_(url) {
   var s = Cho2_str_(url);
@@ -905,13 +896,11 @@ function Cho2_resolveRecordFolder_(folderUrl) {
 }
 
 // スコープ再認証トリガ（エディタで一度実行して同意する）。
-// xlsx エクスポートで UrlFetchApp を使うため script.external_request も同意させる。
 function Cho2_authorize() {
   DriveApp.getRootFolder().getName();
   Drive.Files.list({ maxResults: 1 });
   SpreadsheetApp.getActiveSpreadsheet();
   Session.getActiveUser().getEmail();
-  try { UrlFetchApp.fetch("https://www.googleapis.com/drive/v3/about?fields=kind", { headers: { Authorization: "Bearer " + ScriptApp.getOAuthToken() }, muteHttpExceptions: true }); } catch (e) { /* 同意取得目的なので失敗は無視 */ }
   return "authorized";
 }
 
@@ -1032,7 +1021,10 @@ function Cho2_buildPreview_(data) {
       ws.push({ name: Cho2_str_(wk[CHO2_L_W_NAME_]) || ("従事者" + (w + 1)), tools: Cho2_workerTools_(wk).join(", "), species: spList.join(" / ") });
     }
     out.push({ index: i, label: a.label, type: type, workerCount: ws.length, workers: ws,
-      kyokaNo: Cho2_str_(a.parent[CHO2_L_KYOKA_NO_]), folderUrl: a.folderUrl || "" });
+      kyokaNo: Cho2_str_(a.parent[CHO2_L_KYOKA_NO_]),
+      kyokaDate: Cho2_str_(a.parent[CHO2_L_KYOKA_DATE_]),
+      shobun: Cho2_choiceList_(a.parent[CHO2_L_SHOBUN_]).join(", "),
+      folderUrl: a.folderUrl || "" });
   }
   return out;
 }
@@ -1076,6 +1068,7 @@ button#gen{background:#1a73e8;color:#fff;border:none;border-radius:4px;}
 .sec{border:1px solid #e0e0e0;border-radius:6px;padding:10px 12px;margin:10px 0;}
 .muted{color:#5f6368;font-size:12px;}.ok{color:#188038;font-weight:bold;}.err{color:#c5221f;}
 .warn{display:none;margin:0 0 14px;padding:10px 14px;border:1px solid #f1aeb5;border-radius:6px;background:#fce8e6;color:#c5221f;font-size:13px;font-weight:bold;}
+.awarn{margin:6px 0 4px;padding:8px 12px;border:1px solid #f1aeb5;border-radius:5px;background:#fce8e6;color:#c5221f;font-size:13px;font-weight:bold;}
 button:disabled{background:#dadce0;color:#80868b;cursor:not-allowed;}
 table{border-collapse:collapse;width:100%;font-size:12px;margin-top:6px;}
 th,td{border:1px solid #e0e0e0;padding:4px 6px;text-align:left;vertical-align:top;}
@@ -1118,6 +1111,8 @@ $("saveTpl").onclick=function(){
     .withFailureHandler(function(e){ $("tplStatus").innerHTML='<span class="err">失敗: '+esc(e.message)+'</span>'; })
     .Cho2_setTemplateUrl(u);
 };
+function shobunValid(s){ if(!s) return false; var v=s.split(/\s*,\s*/); for(var i=0;i<v.length;i++){ if(v[i]==="許可"||v[i]==="条件付き許可") return true; } return false; }
+function shobunFukyoka(s){ if(!s) return false; return s.split(/\s*,\s*/).indexOf("不許可")!==-1; }
 function renderApps(){
   if(!PREVIEW.length){ $("apps").innerHTML='<p class="err">送信データが見つかりません（時間切れの可能性）。検索画面のボタンから開き直してください。</p>'; return; }
   var h='<h2>出力する申請を選択</h2>';
@@ -1127,6 +1122,9 @@ function renderApps(){
     h+='<label><input type="radio" name="app" value="'+a.index+'"'+(i===0?' checked':'')+'> <b>'+esc(a.label)+'</b></label> ';
     h+='<label style="margin-left:12px">区分: <select class="atype" data-idx="'+a.index+'"><option value="">自動（'+esc(a.type)+'）</option><option value="個人">個人</option><option value="法人">法人</option></select></label>';
     h+=' <span class="muted">許可番号: '+esc(a.kyokaNo||"（未入力）")+' / 従事者 '+a.workerCount+' 名</span>';
+    if(!a.kyokaDate) h+='<div class="awarn">⚠ 許可年月日が未入力です。</div>';
+    if(shobunFukyoka(a.shobun)) h+='<div class="awarn">⚠ 処分の種類が「不許可」です。</div>';
+    else if(!shobunValid(a.shobun)) h+='<div class="awarn">⚠ 処分の種類が「許可」または「条件付き許可」ではありません'+(a.shobun?'（現在: '+esc(a.shobun)+'）':'（未入力）')+'。</div>';
     if(a.workers.length){ h+='<table><thead><tr><th>従事者</th><th>種類・数量</th><th>方法</th></tr></thead><tbody>';
       for(var w=0;w<a.workers.length;w++){ var x=a.workers[w]; h+='<tr><td>'+esc(x.name)+'</td><td>'+esc(x.species)+'</td><td>'+esc(x.tools)+'</td></tr>'; }
       h+='</tbody></table>'; }
