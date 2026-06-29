@@ -27,6 +27,7 @@ import { deepClone } from "../../core/schema.js";
 import { genId, isLocalId } from "../../core/ids.js";
 import { isUnderFolder } from "../../utils/folderTree.js";
 import { uploadLog } from "../../utils/uploadLog.js";
+import { collectReferencedIds, applyRefRemapToPayload } from "../../core/entitySchema.js";
 
 const STORE = STORE_NAMES.uploadQueue;
 
@@ -49,73 +50,17 @@ export const emitUploadQueueChanged = () => {
 
 // ---------------------------------------------------------------------------
 // 参照フィールドのユーティリティ（種類別）
+//
+// 参照の収集（collectReferencedIds）と付け替え（applyRefRemapToPayload）の本体は
+// core/entitySchema.js の宣言（ENTITY_SCHEMA）駆動の汎用実装へ移譲した。ここからは
+// 後方互換のため re-export し、既存 import（uploadQueue.js 経由）をそのまま使えるようにする。
 // ---------------------------------------------------------------------------
 
-// クエスチョンが参照するフォーム ID 群（gui.formId / formSources[].formId）。
-const collectQuestionFormIds = (payload) => {
-  const ids = [];
-  const q = payload?.query || {};
-  if (q?.gui?.formId) ids.push(q.gui.formId);
-  if (Array.isArray(q?.formSources)) {
-    for (const src of q.formSources) {
-      if (src?.formId) ids.push(src.formId);
-    }
-  }
-  return ids;
-};
-
-// ダッシュボードが参照するクエスチョン ID 群（cards[].questionId）。
-const collectDashboardQuestionIds = (payload) => {
-  const ids = [];
-  if (Array.isArray(payload?.cards)) {
-    for (const card of payload.cards) {
-      if (card?.questionId) ids.push(card.questionId);
-    }
-  }
-  return ids;
-};
-
-// ペイロードが参照する ID 群（種類別）。依存解決と参照書き換えで共有する。
-export const collectReferencedIds = (entityType, payload) => {
-  if (entityType === "question") return collectQuestionFormIds(payload);
-  if (entityType === "dashboard") return collectDashboardQuestionIds(payload);
-  return [];
-};
+export { collectReferencedIds, applyRefRemapToPayload };
 
 // ペイロードが参照する「未アップロードの local_ id」だけを返す（依存ジョブ）。
 export const collectDependsOnLocalIds = (entityType, payload) =>
   collectReferencedIds(entityType, payload).filter(isLocalId);
-
-// remap = { [oldId]: newId } をペイロードの参照フィールドに適用する。変更があれば true。
-export const applyRefRemapToPayload = (entityType, payload, remap) => {
-  if (!payload || !remap || Object.keys(remap).length === 0) return false;
-  let changed = false;
-  if (entityType === "question") {
-    const q = payload.query;
-    if (q?.gui?.formId && remap[q.gui.formId]) {
-      q.gui.formId = remap[q.gui.formId];
-      changed = true;
-    }
-    if (Array.isArray(q?.formSources)) {
-      for (const src of q.formSources) {
-        if (src?.formId && remap[src.formId]) {
-          src.formId = remap[src.formId];
-          changed = true;
-        }
-      }
-    }
-  } else if (entityType === "dashboard") {
-    if (Array.isArray(payload.cards)) {
-      for (const card of payload.cards) {
-        if (card?.questionId && remap[card.questionId]) {
-          card.questionId = remap[card.questionId];
-          changed = true;
-        }
-      }
-    }
-  }
-  return changed;
-};
 
 // op ジョブの opPayload 内 id 配列（formIds / itemIds / ids）に remap を適用する。
 // 移動/アーカイブが未アップロードの local_ エンティティを参照していた場合、その save 完了で

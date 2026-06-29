@@ -13,7 +13,14 @@ export {
   RECORD_CACHE_BACKGROUND_REFRESH_MS,
 };
 
-const evaluateCache = ({
+/**
+ * SWR 鮮度判定のコア。lastSyncedAt の経過時間と maxAgeMs / backgroundAgeMs の
+ * しきい値から { age, shouldSync, shouldBackground, isFresh } を返す。
+ *
+ * forms / records / analytics の各ラッパー（下記）が定数を束ねて呼ぶのが通常経路だが、
+ * 任意のしきい値で評価したい新エンティティ（例: formStore）はこのコアを直接使ってよい。
+ */
+export const evaluateCache = ({
   lastSyncedAt,
   hasData,
   forceSync = false,
