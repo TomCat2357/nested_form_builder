@@ -502,19 +502,47 @@ function filterV2Dashboards_(items) {
 }
 
 /**
+ * Forms / Question / Dashboard / CrossSearch の同型 CRUD を生成する汎用ファクトリ。
+ *
+ * 既定値はすべて Analytics（Question/Dashboard）の現行挙動を再現する。Forms のように
+ * React 状態（AppDataProvider）が正の場合は syncUpsert / syncRemove / emitChanged を
+ * 差し替えて「キャッシュ反映と UI 通知」を別経路へ委ねる。型固有の正規化・装飾は
+ * normalize / decorate フックに閉じ込める。
+ *
  * @param {object} cfg
  * @param {string} cfg.one  結果オブジェクトのキー (例: "question")。先頭大文字版が GAS メソッド名の元になる
  * @param {string} cfg.many 結果リストのキー (例: "questions")
- * @param {{ saveAll, getAll, upsert, remove }} cfg.cache
- * @param {object} cfg.gas  analyticsGasClient（list<E>s / get<E> / save<E> / ... を持つ）
+ * @param {{ saveAll, getAll, getMeta, upsert, remove }} cfg.cache  永続キャッシュ（IndexedDB）
+ * @param {object} cfg.gas  analyticsGasClient / formsGasClient（list<E>s / get<E> / save<E> / ... を持つ）
  * @param {(items: any[]) => any[]} [cfg.sanitizeList] GAS / キャッシュから読んだ配列を整形（既定: 恒等）
  * @param {(data: any) => void} [cfg.validateBeforeSave] save 前の検証フック（既定: なし）
+ * @param {(record: any) => any} [cfg.normalize] save / copy 直前の型固有正規化（既定: 恒等。Forms は normalizeFormRecord）
+ * @param {(item: any) => any} [cfg.decorate] list / getById 返却前の型固有装飾（既定: 恒等。Forms は ensureDisplayInfo）
+ * @param {(record: any) => Promise<void>|void} [cfg.syncUpsert] 楽観的状態反映の upsert（既定: cache.upsert。Forms は Provider 経由）
+ * @param {(id: string) => Promise<void>|void} [cfg.syncRemove] 楽観的状態反映の remove（既定: cache.remove。Forms は Provider 経由）
+ * @param {(entityType: string) => void} [cfg.emitChanged] 一覧再評価通知（既定: emitAnalyticsCacheChanged。Forms は no-op）
+ * @param {(record: any, prev: any) => Promise<void>|void} [cfg.beforeEnqueue] save 時の前値比較副作用（既定: なし。Forms のレコードキャッシュ破棄等）
  */
-export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) => items, validateBeforeSave }) {
+export function makeEntityStore({
+  one,
+  many,
+  cache,
+  gas,
+  sanitizeList = (items) => items,
+  validateBeforeSave,
+  normalize = (record) => record,
+  decorate = (item) => item,
+  syncUpsert = (record) => cache.upsert(record),
+  syncRemove = (id) => cache.remove(id),
+  emitChanged = emitAnalyticsCacheChanged,
+  beforeEnqueue,
+}) {
   const E = one.charAt(0).toUpperCase() + one.slice(1);
   const upsertAll = async (items) => {
     for (const item of items || []) await cache.upsert(item);
   };
+  // 型固有装飾を配列へ適用（既定は恒等なので analytics は実質ノーオペ）。
+  const decorateList_ = (items) => (decorate === undefined ? items : items.map(decorate));
 
   // サーバから全件取得してキャッシュへ保存し、フィルタ済み配列を返す。
   // lastSyncedAt はこの経路でのみ更新する（stampSyncTime: true）。
@@ -537,13 +565,13 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     // registry 作業キャッシュをサーバ確定の一覧（serverAll＝実 fileId のみ）で充填／更新する
     // （非ブロッキング・fail-safe）。kind は many（"questions" | "dashboards"）。
     registryStore.fillFromList(many, serverAll, { stampSyncTime: true }).catch(() => {});
-    return filterArchived_(all, includeArchived);
+    return decorateList_(filterArchived_(all, includeArchived));
   }
 
   async function list({ forceRefresh = false, includeArchived = false } = {}) {
     if (!forceRefresh) {
       const cached = await cache.getAll();
-      if (cached.length > 0) return filterArchived_(sanitizeList(cached), includeArchived);
+      if (cached.length > 0) return decorateList_(filterArchived_(sanitizeList(cached), includeArchived));
     }
     return await fetchAndStore_(includeArchived);
   }
@@ -563,7 +591,7 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     const sanitized = sanitizeList(cached);
     const hasData = sanitized.length > 0;
     const decision = evaluateCacheForAnalytics({ lastSyncedAt, hasData, forceSync: forceRefresh });
-    const items = filterArchived_(sanitized, includeArchived);
+    const items = decorateList_(filterArchived_(sanitized, includeArchived));
 
     if (decision.isFresh) {
       // fresh でも、一覧画面を開いた（マウント）ときは裏で再検証する（起動 / F5 相当）。
@@ -583,11 +611,11 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     if (!forceRefresh) {
       const cached = await cache.getAll();
       const hit = cached.find((item) => item.id === id);
-      if (hit) return hit;
+      if (hit) return decorate(hit);
     }
     const result = await gas[`get${E}`](id);
     if (result?.[one]) await cache.upsert(result[one]);
-    return result?.[one] || null;
+    return result?.[one] ? decorate(result[one]) : null;
   }
 
   // オフラインファースト: まず IndexedDB に保存し、Drive へのアップロードはバックグラウンドへ。
@@ -595,21 +623,26 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
   async function save(data) {
     if (validateBeforeSave) validateBeforeSave(data);
     const localId = data.id || genLocalId();
-    const record = { ...data, id: localId, pendingUpload: true, modifiedAt: Date.now() };
+    const record = normalize({ ...data, id: localId, pendingUpload: true, modifiedAt: Date.now() });
+    if (beforeEnqueue) {
+      // 既存編集の前値（型固有副作用＝レコードキャッシュ破棄等の比較用）。
+      const prev = data.id ? await getById(data.id).catch(() => null) : null;
+      await beforeEnqueue(record, prev);
+    }
     return await enqueueEntitySave({
       entityType: one,
       record,
-      upsertCache: (r) => cache.upsert(r),
-      emit: emitAnalyticsCacheChanged,
+      upsertCache: syncUpsert,
+      emit: emitChanged,
     });
   }
 
   async function remove(id) {
     await deleteJobsForLocalId(id);
     if (!isLocalId(id)) await gas[`delete${E}`](id);
-    await cache.remove(id);
+    await syncRemove(id);
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emitChanged(one);
   }
 
   async function removeBatch(ids) {
@@ -617,9 +650,9 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     await Promise.all(ids.map((id) => deleteJobsForLocalId(id)));
     const remoteIds = ids.filter((id) => !isLocalId(id));
     if (remoteIds.length) await gas[`delete${E}s`](remoteIds);
-    for (const id of ids) await cache.remove(id);
+    for (const id of ids) await syncRemove(id);
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emitChanged(one);
   }
 
   // removeBatch と同じだが、プロジェクト内（標準フォルダ配下）のファイルは実体も Drive ゴミ箱へ
@@ -629,9 +662,9 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     await Promise.all(ids.map((id) => deleteJobsForLocalId(id)));
     const remoteIds = ids.filter((id) => !isLocalId(id));
     if (remoteIds.length) await gas[`delete${E}sWithFiles`](remoteIds);
-    for (const id of ids) await cache.remove(id);
+    for (const id of ids) await syncRemove(id);
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emitChanged(one);
   }
 
   // 楽観的＋遅延: アーカイブ状態をキャッシュ上で即時フリップし、GAS 反映は write-behind の
@@ -641,10 +674,10 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     const all = await cache.getAll();
     const item = all.find((x) => x.id === id);
     const next = item ? { ...item, archived } : null;
-    if (next) await cache.upsert(next);
+    if (next) await syncUpsert(next);
     await enqueueOpJob({ entityType: one, opType: verb, opPayload: { ids: [id] }, dependsOnLocalIds: isLocalId(id) ? [id] : [] });
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emitChanged(one);
     return { [one]: next };
   }
 
@@ -658,12 +691,12 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
       const item = byId.get(id);
       if (!item) continue;
       const next = { ...item, archived };
-      await cache.upsert(next);
+      await syncUpsert(next);
       updated.push(next);
     }
     await enqueueOpJob({ entityType: one, opType: verb, opPayload: { ids: ids.slice() }, dependsOnLocalIds: ids.filter(isLocalId) });
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emitChanged(one);
     return { ok: true, updated: updated.length, errors: [], [many]: updated };
   }
 
@@ -675,7 +708,7 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     if (!source) {
       // キャッシュ未ヒット時のみ従来のサーバコピーにフォールバック。
       const result = await gas[`copy${E}`](id);
-      if (result?.[one]) await cache.upsert(result[one]);
+      if (result?.[one]) await syncUpsert(result[one]);
       return result[one];
     }
     const localId = genLocalId();
@@ -687,26 +720,26 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
       pendingUpload: _pendingUpload,
       ...rest
     } = deepClone(source);
-    const clone = {
+    const clone = normalize({
       ...rest,
       id: localId,
       name: `${source.name || ""}（コピー）`,
       archived: false,
       pendingUpload: true,
       modifiedAt: Date.now(),
-    };
+    });
     if (validateBeforeSave) validateBeforeSave(clone);
     return await enqueueEntitySave({
       entityType: one,
       record: clone,
-      upsertCache: (r) => cache.upsert(r),
-      emit: emitAnalyticsCacheChanged,
+      upsertCache: syncUpsert,
+      emit: emitChanged,
     });
   }
 
   async function registerImported(payload) {
     const result = await gas[`registerImported${E}`](payload);
-    if (result?.[one]) await cache.upsert(result[one]);
+    if (result?.[one]) await syncUpsert(result[one]);
     return result[one];
   }
 
@@ -742,11 +775,11 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     const all = await cache.getAll();
     for (const item of all) {
       const nf = reassignEntityFolder(item.folder, "move", { itemId: item.id, itemIds, folderPaths, destPath });
-      if (nf !== normalizeFolderPath(item.folder)) await cache.upsert({ ...item, folder: nf });
+      if (nf !== normalizeFolderPath(item.folder)) await syncUpsert({ ...item, folder: nf });
     }
     await enqueueOpJob({ entityType: one, opType: "move", opPayload: payload, dependsOnLocalIds: itemIds.filter(isLocalId) });
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emitChanged(one);
     return { folders: reparentFolders(folders, folderPaths, destPath), movedIds: itemIds };
   }
 
@@ -757,11 +790,11 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     const all = await cache.getAll();
     for (const item of all) {
       const nf = reassignEntityFolder(item.folder, "rename", { path, newName });
-      if (nf !== normalizeFolderPath(item.folder)) await cache.upsert({ ...item, folder: nf });
+      if (nf !== normalizeFolderPath(item.folder)) await syncUpsert({ ...item, folder: nf });
     }
     await enqueueOpJob({ entityType: one, opType: "renameFolder", opPayload: payload });
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emitChanged(one);
     return { folders: renameFolderPaths(folders, path, newName), movedIds: [] };
   }
 
@@ -772,13 +805,13 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     for (const item of all) {
       if (!isUnderFolder(item.folder, target)) continue;
       await deleteJobsForLocalId(item.id);
-      await cache.remove(item.id);
+      await syncRemove(item.id);
       deletedCount += 1;
     }
     await deleteOpJobsForFolderPrefix(one, target);
     await enqueueOpJob({ entityType: one, opType: "deleteFolder", opPayload: { path } });
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emitChanged(one);
     return { folders: removeFolderSubtree(folders, target), deletedCount };
   }
 
