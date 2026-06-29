@@ -15,14 +15,18 @@ const META_KEY = "__metadata__";
 
 /**
  * keyPath: "id" の単純なリストストア用の CRUD ヘルパーを生成する。
+ * Question / Dashboard / CrossSearch に加え、forms 一覧キャッシュ（formsCache.js）も
+ * これを共有する。forms は META へ failures / propertyStoreMode / folders を載せたいので、
+ * saveAll は任意の extraMeta を、getMeta はその全フィールドを返す（既定利用は lastSyncedAt のみ）。
  * @param {string} storeName
- * @returns {{ saveAll, getAll, getMeta, upsert, remove }}
+ * @returns {{ saveAll, getAll, getMeta, upsert, remove, resetSyncTime }}
  */
-function makeListCache(storeName) {
+export function makeListCache(storeName) {
   return {
     // stampSyncTime=true はサーバ取得経路のみが渡す。ローカルの楽観的更新（upsert/remove）
     // では lastSyncedAt を据え置き、SWR の再同期タイマーを延長しない。
-    async saveAll(items, { stampSyncTime = false } = {}) {
+    // extraMeta は META 行へ併記する任意フィールド（forms の failures/propertyStoreMode/folders）。
+    async saveAll(items, { stampSyncTime = false, extraMeta } = {}) {
       await withTransaction(storeName, "readwrite", async (store) => {
         const existingMeta = await waitForRequest(store.get(META_KEY));
         const lastSyncedAt = stampSyncTime ? Date.now() : (existingMeta?.lastSyncedAt ?? null);
@@ -30,7 +34,7 @@ function makeListCache(storeName) {
         for (const item of items) {
           await waitForRequest(store.put(item));
         }
-        await waitForRequest(store.put({ id: META_KEY, lastSyncedAt }));
+        await waitForRequest(store.put({ ...(extraMeta || {}), id: META_KEY, lastSyncedAt }));
       });
     },
     async getAll() {
@@ -42,7 +46,9 @@ function makeListCache(storeName) {
     async getMeta() {
       return await withTransaction(storeName, "readonly", async (store) => {
         const meta = await waitForRequest(store.get(META_KEY));
-        return { lastSyncedAt: meta?.lastSyncedAt ?? null };
+        if (!meta) return { lastSyncedAt: null };
+        const { id: _id, ...rest } = meta;
+        return { ...rest, lastSyncedAt: meta.lastSyncedAt ?? null };
       });
     },
     async upsert(item) {

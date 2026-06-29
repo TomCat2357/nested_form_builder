@@ -183,40 +183,13 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     // （questions / dashboards / forms は種類ごとに mapping が別なので互いに衝突しない）。
     // mapping にキャッシュされた name を優先し、無ければ各ファイルを読みに行く。
     var targetFolderPath = Forms_normalizeFolderPath_(normalizedTemplate.folder);
-    var existingNames = [];
-    for (var otherId in mapping) {
-      if (!mapping.hasOwnProperty(otherId)) continue;
-      if (otherId === existingId) continue; // 自分自身は除外
-      var otherEntry = mapping[otherId] || {};
-      // 二重登録が残っている場合、同一物理ファイルを指す別名キー（旧 ULID 等）も
-      // 自分扱いで除外する。除外しないと自分の名前と衝突して誤って ` (1)` が付く。
-      if (existingFileId && Nfb_resolveFileIdFromEntry_(otherEntry) === existingFileId) continue;
-      // 論理フォルダが異なるアイテムは衝突対象外（フォルダが違えば同名可）。
-      if (Forms_normalizeFolderPath_(otherEntry.folder) !== targetFolderPath) continue;
-      var otherName = otherEntry.name;
-      if (typeof otherName !== "string" || !otherName) {
-        // mapping にキャッシュが無いケース。名前 ＝ ファイル名なので実ファイル名から導出する。
-        var otherFileId = Nfb_resolveFileIdFromEntry_(otherEntry);
-        if (otherFileId) {
-          try {
-            var otherFile = DriveApp.getFileById(otherFileId);
-            if (!(typeof otherFile.isTrashed === "function" && otherFile.isTrashed())) {
-              otherName = Nfb_nameFromFile_(otherFile);
-              if (typeof otherName === "string" && otherName) {
-                // 次回以降の高速化のため mapping にキャッシュ
-                otherEntry.name = otherName;
-                mapping[otherId] = otherEntry;
-              }
-            }
-          } catch (errRead) {
-            Logger.log("[Analytics_saveTemplate_] failed to read name for " + otherId + ": " + errRead);
-          }
-        }
-      }
-      if (typeof otherName === "string" && otherName) {
-        existingNames.push(otherName);
-      }
-    }
+    var existingNames = SharedEntity_collectSiblingLabels_(mapping, {
+      selfId: existingId,
+      selfFileId: existingFileId,
+      folderPath: targetFolderPath,
+      labelKey: "name",
+      readMissingFromFile: true,
+    });
     var uniqueName = Forms_makeUniqueFormTitle_(normalizedTemplate.name || "", existingNames);
     normalizedTemplate.name = uniqueName;
 
@@ -327,13 +300,15 @@ function Analytics_saveTemplate_(type, template, targetUrl) {
     try {
       // 保存本体（この Question/Dashboard）の論理パスまたは名前が変わったら、参照元（Dashboard→Question 等）の
       // パスアンカーを追従させるため逆方向再リンクを発火させる。新規作成・無変更時は発火しない（ゲート）。
-      var selfChanged = selfWasRegistered &&
-        (selfPrevFolder !== Forms_normalizeFolderPath_(normalizedTemplate.folder) || selfPrevName !== uniqueName);
-      referenceSync = StdFolders_alignReferencesOnSave_(type, id, selfChanged);
-      if (referenceSync && referenceSync.remap) {
-        // 返却オブジェクトのリンクも追従させ、クライアント表示と Drive 実体を一致させる。
-        StdFolders_applyRemapToRefs_(normalizedTemplate, type, referenceSync.remap);
-      }
+      // 返却オブジェクトのリンクも追従させ、クライアント表示と Drive 実体を一致させる。
+      referenceSync = SharedEntity_alignReferencesOnSave_(type, id, {
+        selfWasRegistered: selfWasRegistered,
+        selfPrevFolder: selfPrevFolder,
+        selfPrevLabel: selfPrevName,
+        nextFolder: Forms_normalizeFolderPath_(normalizedTemplate.folder),
+        nextLabel: uniqueName,
+        objToRemap: normalizedTemplate,
+      });
     } catch (errRefSync) {
       Logger.log("[Analytics_saveTemplate_] alignReferencesOnSave failed: " + nfbErrorToString_(errRefSync));
     }

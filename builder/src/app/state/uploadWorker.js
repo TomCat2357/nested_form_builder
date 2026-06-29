@@ -44,6 +44,7 @@ import {
   toUploadPayload,
   applyRefRemapToPayload,
 } from "./uploadQueue.js";
+import { childEntityTypesReferencing } from "../../core/entitySchema.js";
 import { registryStore } from "./registryStore.js";
 import {
   setUploadUploading,
@@ -258,20 +259,18 @@ const reconcileEntityCache = async (entityType, tempId, savedEntity) => {
 };
 
 // 子エンティティのキャッシュ内参照を tempId → realId へ書き換える。
+// どの型がこの entityType を参照するかは ENTITY_SCHEMA の逆引き（childEntityTypesReferencing）で
+// 決まる。新しい参照関係を ENTITY_SCHEMA に足せば、ここは無改修で追従する。
 const rewriteChildRefsInCaches = async (entityType, tempId, realId) => {
   const remap = { [tempId]: realId };
-  if (entityType === "form") {
-    const questions = await questionCache.getAll();
-    for (const q of questions) {
-      if (applyRefRemapToPayload("question", q, remap)) await questionCache.upsert(q);
+  for (const childType of childEntityTypesReferencing(entityType)) {
+    const cache = ANALYTICS_CACHE_BY_ENTITY[childType];
+    if (!cache) continue;
+    const items = await cache.getAll();
+    for (const item of items) {
+      if (applyRefRemapToPayload(childType, item, remap)) await cache.upsert(item);
     }
-    emitAnalyticsCacheChanged("question");
-  } else if (entityType === "question") {
-    const dashboards = await dashboardCache.getAll();
-    for (const d of dashboards) {
-      if (applyRefRemapToPayload("dashboard", d, remap)) await dashboardCache.upsert(d);
-    }
-    emitAnalyticsCacheChanged("dashboard");
+    emitAnalyticsCacheChanged(childType);
   }
 };
 

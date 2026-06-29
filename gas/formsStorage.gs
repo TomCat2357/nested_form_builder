@@ -262,17 +262,13 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     // 論理パス folder が違えば同名フォームを許容する（種類が違う Question / Dashboard とは
     // そもそも mapping が別物なので衝突しない）。
     var targetFolderPath = typeof form.folder === "string" ? Forms_normalizeFolderPath_(form.folder) : "";
-    var existingTitles = [];
-    for (var otherId in mapping) {
-      if (!mapping.hasOwnProperty(otherId) || otherId === formId) continue;
-      // 二重登録が残っている場合、同一物理ファイル（fileId）を指す別名キー（旧 ULID 等）も
-      // 自分扱いで除外する。除外しないと自分の名前と衝突して誤って ` (1)` が付く。
-      if (existingFileId && Nfb_resolveFileIdFromEntry_(mapping[otherId]) === existingFileId) continue;
-      // 論理フォルダが異なるフォームは衝突対象外（フォルダが違えば同名可）。
-      if (Forms_normalizeFolderPath_(mapping[otherId] && mapping[otherId].folder) !== targetFolderPath) continue;
-      var t = mapping[otherId] && mapping[otherId].title;
-      if (t) existingTitles.push(t);
-    }
+    var existingTitles = SharedEntity_collectSiblingLabels_(mapping, {
+      selfId: formId,
+      selfFileId: existingFileId,
+      folderPath: targetFolderPath,
+      labelKey: "title",
+      readMissingFromFile: false,
+    });
     var desiredTitle = (form.settings && form.settings.formTitle) || "";
     var uniqueTitle = Forms_makeUniqueFormTitle_(desiredTitle, existingTitles);
     form.settings = form.settings || {};
@@ -494,13 +490,14 @@ function Forms_saveForm_(form, targetUrl, saveMode) {
     try {
       // 保存本体（このフォーム）の論理パスまたは名前が変わったら、参照元（他フォーム / クエスチョン）の
       // パスアンカーを追従させるため逆方向再リンクを発火させる。新規作成・無変更時は発火しない（ゲート）。
-      var selfChanged = selfWasRegistered &&
-        (selfPrevFolder !== (typeof form.folder === "string" ? Forms_normalizeFolderPath_(form.folder) : "") ||
-         selfPrevTitle !== uniqueTitle);
-      referenceSync = StdFolders_alignReferencesOnSave_("forms", fileId, selfChanged);
-      if (referenceSync && referenceSync.remap) {
-        StdFolders_applyRemapToRefs_(formWithTimestamp, "forms", referenceSync.remap);
-      }
+      referenceSync = SharedEntity_alignReferencesOnSave_("forms", fileId, {
+        selfWasRegistered: selfWasRegistered,
+        selfPrevFolder: selfPrevFolder,
+        selfPrevLabel: selfPrevTitle,
+        nextFolder: (typeof form.folder === "string" ? Forms_normalizeFolderPath_(form.folder) : ""),
+        nextLabel: uniqueTitle,
+        objToRemap: formWithTimestamp,
+      });
     } catch (errRefSync) {
       Logger.log("[Forms_saveForm_] alignReferencesOnSave failed: " + nfbErrorToString_(errRefSync));
     }
