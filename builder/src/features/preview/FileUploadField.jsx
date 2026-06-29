@@ -108,6 +108,7 @@ const FileUploadField = ({
     copyFromDriveUrl,
     copyFromDrivePickedFile,
     removeFile,
+    createFolder,
     displayedFolderUrl,
   } = upload;
 
@@ -161,6 +162,19 @@ const FileUploadField = ({
           onChange={(event) => { uploadFiles(event.target.files); event.target.value = ""; }}
         />
       </div>
+
+      {!displayedFolderUrl && (
+        <div className="nf-row nf-gap-8 nf-mt-8">
+          <button
+            type="button"
+            className="nf-btn"
+            onClick={createFolder}
+            disabled={uploading}
+          >
+            フォルダを作成
+          </button>
+        </div>
+      )}
 
       {field.allowUploadByUrl === true && (
         <div className="nf-row nf-gap-8 nf-mt-8">
@@ -342,6 +356,26 @@ export function useDriveFileUpload({
     targets.reduce((chain, file) => chain.then(() => uploadFile(file)), Promise.resolve());
   };
 
+  // ファイルをアップロードせず、このレコード用の保存先フォルダだけを先に作成する。
+  // アップロード経路と同じ folder 解決を共有するため、後でファイルを入れても同じフォルダに入る。
+  // 既に保存先が確定済みのときは何もしない（冪等）。
+  const createFolder = React.useCallback(() => {
+    if (typeof gasClient?.createRecordDriveFolder !== "function") return Promise.resolve(null);
+    if (resolveEffectiveDriveFolderUrl(folderStateRef.current)) return Promise.resolve(null);
+    setError("");
+    setUploading(true);
+    return gasClient.createRecordDriveFolder({ driveSettings: buildUploadDriveSettings() })
+      .then((result) => {
+        updateFolderStateFromUploadResult(result);
+        return result;
+      })
+      .catch((err) => {
+        setError(err?.message || "フォルダの作成に失敗しました");
+        return null;
+      })
+      .finally(() => setUploading(false));
+  }, [gasClient, buildUploadDriveSettings, updateFolderStateFromUploadResult]);
+
   const copyFromDriveUrl = async () => {
     const trimmedUrl = driveUrl.trim();
     if (!trimmedUrl) return;
@@ -448,6 +482,7 @@ export function useDriveFileUpload({
     copyFromDriveUrl,
     copyFromDrivePickedFile,
     removeFile,
+    createFolder,
     normalizedFolderState,
     effectiveFolderUrl,
     displayedFolderUrl,

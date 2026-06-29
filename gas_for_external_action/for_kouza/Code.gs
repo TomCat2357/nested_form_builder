@@ -136,7 +136,7 @@ function doPost(e) {
   }
 }
 
-// サーバ間リレー応答用の JSON 出力 (template / choju_yoshiki と同形式)。
+// サーバ間リレー応答用の JSON 出力 (template / choju_intake と同形式)。
 function renderJson_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj || {}))
     .setMimeType(ContentService.MimeType.JSON);

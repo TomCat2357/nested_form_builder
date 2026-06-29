@@ -325,6 +325,31 @@ function nfbUploadFileToDrive(payload) {
 }
 
 /**
+ * ファイルをアップロードせずに、このレコード用の保存先フォルダだけを作成（または既存解決）する。
+ * アップロード経路（nfbUploadFileToDrive → nfbPersistBlobToDrive_ → nfbResolveUploadFolder_）と
+ * 同じ folder 解決ロジックを共有するため、ファイル投入時と全く同じ場所・命名でフォルダが作られる。
+ * 既に folderUrl が driveSettings に入っていればそれを解決して返す（冪等・autoCreated:false）。
+ * @param {Object} payload - { driveSettings }
+ * @return {Object} { ok: true, folderUrl, folderName, autoCreated }
+ */
+function nfbCreateRecordDriveFolder(payload) {
+  return nfbSafeCall_(function() {
+    var driveSettings = payload ? payload.driveSettings : null;
+    if (!driveSettings) {
+      throw new Error("出力先設定が不足しています");
+    }
+    var folderResult = nfbResolveUploadFolder_(driveSettings);
+    var folder = folderResult.folder;
+    return {
+      ok: true,
+      folderUrl: folder.getUrl(),
+      folderName: typeof folder.getName === "function" ? folder.getName() : "",
+      autoCreated: folderResult.autoCreated === true
+    };
+  });
+}
+
+/**
  * Google Driveのファイルをコピーして指定フォルダに保存する
  * @param {Object} payload - { sourceUrl, driveSettings }
  * @return {Object} { ok: true, fileUrl, fileName, fileId }

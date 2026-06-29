@@ -13,7 +13,7 @@
 //
 // 設計の核（許可証等様式 の緑セル＝掃き出し場所 FF00B050）:
 //   緑 FF00B050 = 出力先。サンプル値は「どのセルへ何を書くか」の仕様。
-//   従事者名簿 は緑なし＝マスター名簿（choju_yoshiki の名簿幾何と同一）。
+//   従事者名簿 は緑なし＝マスター名簿（choju_intake の名簿幾何と同一）。
 //
 // データ取得元（重要）: 管理者権限不要にするため storage（spreadsheetId 等）は来ない前提で、
 // payload に同梱されるフォームデータを直接消費する。起動元（編集画面・検索一覧の単一/複数選択）
@@ -132,8 +132,8 @@ var CHO2_GRID_SLOTS_ = [
 
 // 各シートの種数グリッド配置（基準行と列。j/k は鳥=卵列 / 哺乳=副種名・副数量の二役）。
 var CHO2_GRID_KYOKASHO_ = { base: 17, name: "G", count: "H", j: "J", k: "K" }; // 許可証 G17:K25
-var CHO2_GRID_TSUCHI_ = { base: 19, name: "C", count: "D", j: "F", k: "G" }; // 通知 C19:G27
-var CHO2_GRID_JUJI_ = { base: 20, name: "K", count: "L", j: "N", k: "O" }; // 従事者証 K20:O28
+var CHO2_GRID_TSUCHI_ = { base: 17, name: "C", count: "D", j: "F", k: "G" }; // 通知 C17:G25
+var CHO2_GRID_JUJI_ = { base: 18, name: "K", count: "L", j: "N", k: "O" }; // 従事者証 K18:O26
 
 // ----- 用具（名簿 P 列）と方法 kind -----
 var CHO2_TOOL_ORDER_ = [
@@ -172,10 +172,10 @@ var CHO2_SHEET_JUJI_ = "従事者証";
 
 // 出力時にクリアしてから書き込む緑セル（サンプル値の消去用）。dump 済みの緑セル番地。
 var CHO2_CLEAR_RANGES_ = {
-  "許可証": ["H4:H5", "G12:L14", "G17:L25", "G26", "G28", "G31", "G33", "G35"],
-  "振興局宛通知": ["F3:F4", "C13:H18", "C19:H27", "C28", "C31", "F31", "C34", "C37"],
-  "警察宛通知": ["F3:F4", "C13:H18", "C19:H27", "C28", "C31", "F31", "C34", "C37"],
-  "従事者証": ["F4:F5", "K14", "K17", "D18", "D25", "D32", "K20:P28", "K29", "K32", "K36", "K39"]
+  "許可証": ["H4:H5", "G12:L14", "G17:L25", "G26", "G28", "G30", "G32", "G34"],
+  "振興局宛通知": ["F2:F3", "C12:H16", "C17:G25", "C26", "C28", "F28", "C30", "C32"],
+  "警察宛通知": ["F2:F3", "C12:H16", "C17:G25", "C26", "C28", "F28", "C30", "C32"],
+  "従事者証": ["F4:F5", "K14", "K16", "D17", "D23", "D29", "K18:P26", "K27", "K29", "K31", "K33"]
 };
 
 
@@ -502,9 +502,9 @@ function Cho2_kyokashoCells_(parent, speciesTotals, tools, header, c3No) {
   for (var i = 0; i < grid.length; i++) cells.push(grid[i]);
   Cho2_push_(cells, "G26", Cho2_str_(parent[CHO2_L_PURPOSE_]));
   Cho2_push_(cells, "G28", Cho2_str_(parent[CHO2_L_AREA_]));
-  Cho2_push_(cells, "G31", tools.join(","));
-  Cho2_push_(cells, "G33", Cho2_choiceList_(parent[CHO2_L_DISPOSAL_]).join("・"));
-  Cho2_push_(cells, "G35", Cho2_str_(parent[CHO2_L_COND_]));
+  Cho2_push_(cells, "G30", tools.join(","));
+  Cho2_push_(cells, "G32", Cho2_choiceList_(parent[CHO2_L_DISPOSAL_]).join("・"));
+  Cho2_push_(cells, "G34", Cho2_str_(parent[CHO2_L_COND_]));
   // C3 許可番号（書式なしセル＝そのまま記入。applyCells が数字ハイフン連結をテキスト化）
   Cho2_push_(cells, "C3", Cho2_str_(c3No));
   return cells;
@@ -516,16 +516,16 @@ function Cho2_jujiCells_(parent, worker, aggSpecies, workerTools, hojinName, kyo
   Cho2_pushDate_(cells, "F4", parent[CHO2_L_PERIOD_START_]);
   Cho2_pushDate_(cells, "F5", parent[CHO2_L_PERIOD_END_]);
   Cho2_push_(cells, "K14", Cho2_str_(kyokaNo)); // 許可番号そのまま（例 "1-1"）
-  Cho2_push_(cells, "K17", hojinName);
-  Cho2_push_(cells, "D18", Cho2_str_(worker[CHO2_L_W_ADDRESS_]));
-  Cho2_push_(cells, "D25", Cho2_str_(worker[CHO2_L_W_NAME_]));
-  Cho2_pushDate_(cells, "D32", worker[CHO2_L_W_BIRTH_]);
+  Cho2_push_(cells, "K16", hojinName);
+  Cho2_push_(cells, "D17", Cho2_str_(worker[CHO2_L_W_ADDRESS_]));
+  Cho2_push_(cells, "D23", Cho2_str_(worker[CHO2_L_W_NAME_]));
+  Cho2_pushDate_(cells, "D29", worker[CHO2_L_W_BIRTH_]);
   var grid = Cho2_gridCells_(CHO2_GRID_JUJI_, aggSpecies);
   for (var i = 0; i < grid.length; i++) cells.push(grid[i]);
-  Cho2_push_(cells, "K29", Cho2_str_(parent[CHO2_L_PURPOSE_]));
-  Cho2_push_(cells, "K32", Cho2_str_(parent[CHO2_L_AREA_]));
-  Cho2_push_(cells, "K36", workerTools.join(","));
-  Cho2_push_(cells, "K39", Cho2_str_(parent[CHO2_L_COND_])); // テンプレの =IF 数式をリテラルで上書き
+  Cho2_push_(cells, "K27", Cho2_str_(parent[CHO2_L_PURPOSE_]));
+  Cho2_push_(cells, "K29", Cho2_str_(parent[CHO2_L_AREA_]));
+  Cho2_push_(cells, "K31", workerTools.join(","));
+  Cho2_push_(cells, "K33", Cho2_str_(parent[CHO2_L_COND_])); // テンプレの =IF 数式をリテラルで上書き
   // C4 従事者証番号（非緑）
   Cho2_push_(cells, "C4", jujiNo);
   return cells;
@@ -534,38 +534,36 @@ function Cho2_jujiCells_(parent, worker, aggSpecies, workerTools, hojinName, kyo
 // 通知 1 枚の差分（振興局/警察 共通）。種数=全員合計、住所/氏名は申請者区分で出し分け。
 function Cho2_tsuchiCells_(parent, workers, aggSpecies, unionTools, type, kyokaNo) {
   var cells = [];
-  // F3:H3 / F4:H4 は結合セル（左上 F3/F4）。F3=許可番号そのまま("1-1")で "札環対許可第○号" はセル書式が付与。
-  Cho2_push_(cells, "F3", Cho2_str_(kyokaNo));
-  Cho2_pushDate_(cells, "F4", parent[CHO2_L_KYOKA_DATE_]); // 許可日（era 書式）
-  // 住所・氏名
+  // F2:H2 / F3:H3 は結合セル（左上 F2/F3）。F2=許可番号そのまま("1-1")で "札環対許可第 @ 号" はセル書式が付与。
+  Cho2_push_(cells, "F2", Cho2_str_(kyokaNo));
+  Cho2_pushDate_(cells, "F3", parent[CHO2_L_KYOKA_DATE_]); // 許可年月日（和暦書式）
+  // 住所(C12)・氏名/法人名(C13)・許可証番号ブロック(C14…)・従事者名行(C15)
   if (type === "法人") {
-    Cho2_push_(cells, "C13", Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/住所"]));
+    Cho2_push_(cells, "C12", Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/住所"]));
     var hn = Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/法人名"]);
     var rep = Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/代表者名"]);
-    Cho2_push_(cells, "C14", hn + (rep ? "　" + rep : ""));
+    Cho2_push_(cells, "C13", hn + (rep ? "　" + rep : ""));
+    Cho2_push_(cells, "C14", Cho2_str_(kyokaNo)); // "1-1"（セル書式 第@号）。法人は単一許可証番号
+    Cho2_push_(cells, "C15", "別紙のとおり");      // 従事者は別紙（従事者名簿）参照
   } else {
     var w0 = workers[0] || {};
-    Cho2_push_(cells, "C13", Cho2_str_(w0[CHO2_L_W_ADDRESS_]) || Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/個人/住所"]));
-    var nm = Cho2_str_(w0[CHO2_L_W_NAME_]) || Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/個人/氏名"]);
-    Cho2_push_(cells, "C14", nm + (workers.length > 1 ? "(ほか" + (workers.length - 1) + "名)" : ""));
+    Cho2_push_(cells, "C12", Cho2_str_(w0[CHO2_L_W_ADDRESS_]) || Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/個人/住所"]));
+    Cho2_push_(cells, "C13", Cho2_str_(w0[CHO2_L_W_NAME_]) || Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/個人/氏名"])); // 先頭従事者名のみ（他N名は G14）
+    // 許可証番号は従事者ごと "1-1-1" …（セル書式 第@号）。複数なら範囲＋他N名。
+    Cho2_push_(cells, "C14", Cho2_certNoRaw_(kyokaNo, 1));
+    if (workers.length > 1) {
+      Cho2_push_(cells, "D14", "～");
+      Cho2_push_(cells, "E14", Cho2_certNoRaw_(kyokaNo, workers.length));
+      Cho2_pushNum_(cells, "G14", workers.length - 1); // セル書式 "他#名"（先頭1名を除く人数）
+    }
   }
-  Cho2_push_(cells, "C15", Cho2_kyokaBangoMark_(kyokaNo));
-  Cho2_push_(cells, "D15", Cho2_permitNoRange_(kyokaNo, workers.length));
-  // 従事者名及び従事者証番号（C16 にまとめて。氏名(第X-Y-n号)、… ）
-  var names = [];
-  for (var w = 0; w < workers.length; w++) {
-    var nm2 = Cho2_str_(workers[w][CHO2_L_W_NAME_]);
-    var no = Cho2_permitNo_(kyokaNo, w + 1);
-    if (nm2) names.push(nm2 + (no ? "（" + no + "）" : ""));
-  }
-  Cho2_push_(cells, "C16", names.join("、"));
   var grid = Cho2_gridCells_(CHO2_GRID_TSUCHI_, aggSpecies);
   for (var i = 0; i < grid.length; i++) cells.push(grid[i]);
-  Cho2_push_(cells, "C28", Cho2_str_(parent[CHO2_L_PURPOSE_]));
-  Cho2_pushDate_(cells, "C31", parent[CHO2_L_PERIOD_START_]);
-  Cho2_pushDate_(cells, "F31", parent[CHO2_L_PERIOD_END_]);
-  Cho2_push_(cells, "C34", Cho2_str_(parent[CHO2_L_AREA_]));
-  Cho2_push_(cells, "C37", unionTools.join(","));
+  Cho2_push_(cells, "C26", Cho2_str_(parent[CHO2_L_PURPOSE_]));
+  Cho2_pushDate_(cells, "C28", parent[CHO2_L_PERIOD_START_]);
+  Cho2_pushDate_(cells, "F28", parent[CHO2_L_PERIOD_END_]);
+  Cho2_push_(cells, "C30", Cho2_str_(parent[CHO2_L_AREA_]));
+  Cho2_push_(cells, "C32", unionTools.join(","));
   return cells;
 }
 
@@ -620,7 +618,7 @@ function Cho2_buildPlan_(app, forcedType) {
     for (var j = 0; j < workers.length; j++) {
       juji.push({
         label: Cho2_str_(workers[j][CHO2_L_W_NAME_]) || ("従事者" + (j + 1)),
-        cells: Cho2_jujiCells_(parent, workers[j], agg, Cho2_workerTools_(workers[j]), hojinName, kyokaNo, Cho2_permitNo_(kyokaNo, j + 1))
+        cells: Cho2_jujiCells_(parent, workers[j], agg, Cho2_workerTools_(workers[j]), hojinName, kyokaNo, Cho2_certNoRaw_(kyokaNo, j + 1))
       });
     }
   }
@@ -781,6 +779,8 @@ function Cho2_applyCells_(sheet, cells) {
   for (var i = 0; i < cells.length; i++) {
     var c = cells[i], v = c.value, range = sheet.getRange(c.a1);
     if (v && typeof v === "object" && v.__date) {
+      // 西暦の実 Date を書き、和暦書式で表示（テンプレ単票系セルは General のため明示設定）。
+      range.setNumberFormat('[$-411]ggge"年"m"月"d"日"');
       range.setValue(new Date(v.y, v.m - 1, v.d));
     } else if (typeof v === "number") {
       range.setValue(v);

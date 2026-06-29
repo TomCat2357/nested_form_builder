@@ -687,7 +687,7 @@ export default function PlaygroundPage() {
                 onChange={(e) => setTemplate(e.target.value)}
                 rows={5}
                 style={{ ...monoTextareaStyle, minHeight: "100px" }}
-                placeholder={"例: {{ [氏名] }} 様（{{ YEAR([受付日]) }}年度）\nフルクエリ: {{SELECT [氏名] FROM _form LIMIT 1}}"}
+                placeholder={"例: {{ [氏名] }} 様（{{ YEAR([受付日]) }}年度）\nフルクエリ: {{SELECT [氏名] FROM _form LIMIT 1}}\nこのレコードだけ: {{SELECT [氏名] FROM _form WHERE [id] = _id}}"}
               />
               <FieldInsertPicker
                 paths={sharedFieldPaths}
@@ -708,6 +708,7 @@ export default function PlaygroundPage() {
               <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
                 フルクエリトークン（{"{{SELECT ...}}"}）も解決されます。現フォームは <code>FROM _form</code>（アンダースコア付き。<code>form</code> ではありません）。
                 参照できるのは自フォームと formLink で紐づく子フォームのみです。
+                選択中のレコードだけに絞るには <code>WHERE [id] = _id</code>（<code>_id</code> = 選択レコードの id、<code>[id]</code> = id 列）。子フォームは <code>WHERE [pid] = _id</code>。
               </p>
             </div>
             {tplError && <p className="nf-text-warning">{tplError}</p>}

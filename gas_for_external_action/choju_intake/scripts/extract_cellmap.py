@@ -15,7 +15,7 @@
   merges_new.tsv   : file, sheet, range（結合の左上検証用）
 
 使い方:
-  cd gas_for_external_action/choju_yoshiki/scripts
+  cd gas_for_external_action/choju_intake/scripts
   python extract_cellmap.py            # 既定で form_test の 2 ファイルを処理
   python extract_cellmap.py <xlsx> ... # ファイルを明示指定
 """

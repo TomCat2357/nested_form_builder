@@ -6,9 +6,9 @@
 // 苦情・通報の「お問い合わせフォーム CSV」を取り込み、フォームの Data シートへ直接書き込む外部アクション
 //
 //   フォーム「R8環境共生担当課_苦情・通報等対応一覧」用のスタンドアロン GAS Web アプリ。
-//   本体アプリ（gas/）には一切手を入れない（choju_yoshiki の兄弟）。
+//   本体アプリ（gas/）には一切手を入れない（choju_intake の兄弟）。
 //
-// 流れ（choju_yoshiki と同方式の直接書き込み）:
+// 流れ（choju_intake と同方式の直接書き込み）:
 //   (1) 検索一覧の外部アクションボタン → 本体 GAS がサーバ間リレーで doPost を叩く。
 //       doPost は親フォームの保存先（storage.spreadsheetId/sheetName）を ctx トークンに退避し、
 //       取り込み画面の URL（?page=import&ctx=<token>）を openUrl で返す。本体がそれを新タブで開く。
@@ -921,7 +921,7 @@ function Kuj_commitImport(csvTexts, selectedIndexesJson, ctxToken) {
 
 
 // #############################################################################
-// ## write.gs — Data シートへ直接書き込み（本体 gas/ + choju_yoshiki から移植）
+// ## write.gs — Data シートへ直接書き込み（本体 gas/ + choju_intake から移植）
 // #############################################################################
 // NFB レイアウト: ヘッダ 1–11 行、データは 12 行目以降。列はヘッダパス（"/" 連結・可逆エスケープ）で照合。
 // kujo の data キーは Kuj_joinFieldPath_、列キーは Sheets_pathKey_(=Nfb_joinFieldPath_) で同一アルゴリズム＝一致する。
