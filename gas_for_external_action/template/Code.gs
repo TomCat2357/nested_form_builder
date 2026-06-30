@@ -1,11 +1,13 @@
 // =============================================================================
 // 外部アクション受信 Web App テンプレート (Nested Form Builder 連携)
 //
-// React (Builder) の「外部アクションボタン」は、隠しフォームを生成して
-//   method=POST / target=_blank
-// でこの Web App の URL を叩く。送信本体は 1 つの form フィールド "payload"
-// (JSON 文字列) で、GAS 側は doPost(e).parameter.payload を JSON.parse して
-// 全データを受け取る。
+// React (Builder) の「外部アクションボタン」は、本体 GAS のサーバ間リレー
+// (gas/externalAction.gs が UrlFetchApp で ?nfbRelay=1 付き POST) でこの Web App の
+// URL を叩く（ブラウザの隠しフォーム POST はログインリダイレクトで POST 本文を失う弱点が
+// あったため廃止）。送信本体は 1 つの form フィールド "payload" (JSON 文字列) で、GAS 側は
+// doPost(e).parameter.payload を JSON.parse して全データを受け取る。
+//   - nfbRelay=1 のとき: HTML ではなく JSON { ok, title, message, openUrl } を返す。
+//   - nfbRelay なしの直接 POST / GET は従来どおり HTML を返す（後方互換・直リンク）。
 //
 // payload の構造 (buildExternalActionPayload と同期):
 //   起動元（編集・閲覧画面 / 検索一覧の単一選択 / 検索一覧の複数選択）に依らず単一フォーマット。

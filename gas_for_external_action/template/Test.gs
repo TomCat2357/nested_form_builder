@@ -174,8 +174,8 @@ function assertDoPostOk_(name, payload) {
   return ok;
 }
 
-// 実際の google.script の POST と同じく e.parameter.payload に JSON 文字列を入れる。
-// (Builder の隠しフォームは name="payload" の hidden input 1 つだけを送る)
+// 本体 GAS のサーバ間リレー POST と同じく e.parameter.payload に JSON 文字列を入れる。
+// (本体は UrlFetchApp で payload=<JSON> を form-encoded POST する)
 function buildMockPostEvent_(payload) {
   var json = JSON.stringify(payload);
   return {

@@ -39,7 +39,8 @@ var NFBU_FIXED_HEADER_PATHS = [
 
 // ----- Web App エントリ (ユーティリティ UI を表示) -------------------------
 // GET: 手動アクセス・直リンク用に ?ssid= を読む。
-// POST: Builder の外部アクションボタンが隠しフォーム (payload=JSON) で叩く。
+// POST: Builder の外部アクションボタンが本体 GAS のサーバ間リレー (payload=JSON) で叩く。
+//       (隠しフォーム POST はログインリダイレクトで本文を失うため廃止済み)
 //       spreadsheetId は payload.storage.spreadsheetId に入る
 //       (adminOnly && isAdmin のときだけ storage が付与される)。
 function doGet(e) {
