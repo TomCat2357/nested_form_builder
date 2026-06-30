@@ -987,13 +987,26 @@ function StdFolders_walkFields_(schema, fn) {
 // ---------------------------------------------
 
 
+// 論理パス（folder + 名前）から、物理 fileId を含まない一意なエクスポートキーを作る。
+// 同一 folder+名前 が衝突したら連番サフィックス（#2, #3…）で一意化し、JSON 上書きによる
+// エントリ欠落を防ぐ（インポート時は値の folder+名前 で再解決するためキー自体は識別子ではない）。
+function StdFolders_logicalExportKey_(folder, name, usedKeys) {
+  var base = (folder ? folder + "/" : "") + name;
+  var key = base, n = 2;
+  while (usedKeys[key]) { key = base + "#" + n; n++; }
+  usedKeys[key] = true;
+  return key;
+}
+
 // マッピング（id → entry）を「論理パスのみ」（fileId / driveFileUrl を含まない）の転送形へ変換する。
 // version 2 のエクスポート/コピー一覧は物理 fileId を持たせず、folder ＋ 名前（nameKey）だけを運ぶ。
+// 出力のキーも論理パス（StdFolders_logicalExportKey_）にして、本番 registry の fileId キーを引き回さない。
 // 別プロジェクトへ取り込んだときにコピー先ツリーを走査して論理パス→ローカル fileId を解決するため、
 // コピー元の fileId を一切引き回さない（＝コピー後にコピー元ファイルを指す事故を防ぐ）。
 // 名前（nameKey）が空のエントリは論理パスを作れないため除外する。
 function StdFolders_toPathOnlySection_(mapping, nameKey) {
   var out = {};
+  var usedKeys = {};
   if (!mapping || typeof mapping !== "object") return out;
   for (var id in mapping) {
     if (!mapping.hasOwnProperty(id)) continue;
@@ -1003,26 +1016,20 @@ function StdFolders_toPathOnlySection_(mapping, nameKey) {
     var next = {};
     next[nameKey] = name;
     next.folder = (typeof entry.folder === "string") ? entry.folder : "";
-    out[id] = next;
+    out[StdFolders_logicalExportKey_(next.folder, name, usedKeys)] = next;
   }
   return out;
 }
 
 // 現在のマッピング（3 マッピング ＋ フォルダ登録簿）を _nfb_mapping.json 形（version 2・論理パスのみ）で返す。
-// ルート未解決でも例外にせず sourceRootId を空で返す。
+// 取り込み時にコピー復元ゲートを発火させるため isCopy:true を付すが、源の物理 ID（ルート/ fileId）は一切含めない。
 function StdFolders_exportMapping_() {
   return nfbSafeCall_(function() {
-    var sourceRootId = "";
-    try {
-      sourceRootId = StdFolders_resolveRootFolder_(null).getId();
-    } catch (err) {
-      Logger.log("[StdFolders_exportMapping_] ルート未解決: " + nfbErrorToString_(err));
-    }
     var doc = {
       type: "nfb-mapping",
       version: 2,
       exportedAt: new Date().toISOString(),
-      sourceRootId: sourceRootId,
+      isCopy: true,
       forms: StdFolders_toPathOnlySection_(Forms_getMapping_(), "title"),
       questions: StdFolders_toPathOnlySection_(Analytics_getMapping_("questions"), "name"),
       dashboards: StdFolders_toPathOnlySection_(Analytics_getMapping_("dashboards"), "name"),
@@ -1110,10 +1117,10 @@ function StdFolders_importMapping_(doc) {
     return { ok: false, error: "対応していないマッピング形式です（type/version 不一致）" };
   }
 
-  // コピー先 初回解決ゲート: コピー由来のドキュメント（sourceRootId 付き）を取り込むときは、
+  // コピー先 初回解決ゲート: コピー由来のドキュメント（isCopy フラグ／旧形式の sourceRootId）を取り込むときは、
   // 個別リンク解決の前に registry を物理フォルダ走査で充填する（type はフォルダ位置で確定）。
   // プロジェクトコピーは物理を全消去するため、これで論理→物理の一括再解決の土台を作る。
-  var isCopyRestore = !!(doc.sourceRootId && typeof Admin_rebuildRegistryFromLogical_ === "function");
+  var isCopyRestore = !!((doc.isCopy || doc.sourceRootId) && typeof Admin_rebuildRegistryFromLogical_ === "function");
   if (isCopyRestore) {
     try { Admin_rebuildRegistryFromLogical_(); }
     catch (eRebuild) { Logger.log("[StdFolders_importMapping_] rebuild gate failed: " + nfbErrorToString_(eRebuild)); }

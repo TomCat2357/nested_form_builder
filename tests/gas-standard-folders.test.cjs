@@ -218,7 +218,6 @@ test("NFB_STD_FOLDER_NAMES / ORDER: 8 種の標準フォルダ名を網羅する
 
 test("StdFolders_exportMapping_: version 2・論理パスのみ（fileId/driveFileUrl は出さない）で返す", () => {
   const gas = loadGasContext();
-  gas.StdFolders_resolveRootFolder_ = () => ({ getId: () => "ROOT1" });
   installStores(gas, {
     forms: { f1: { fileId: "FF1", driveFileUrl: "u1", title: "T1", folder: "a" } },
     questions: { q1: { fileId: "QF1", driveFileUrl: "qu1", name: "Q1", folder: "" } },
@@ -229,15 +228,17 @@ test("StdFolders_exportMapping_: version 2・論理パスのみ（fileId/driveFi
   assert.equal(res.ok, true);
   assert.equal(res.mapping.type, "nfb-mapping");
   assert.equal(res.mapping.version, 2);
-  assert.equal(res.mapping.sourceRootId, "ROOT1");
-  // 論理パスのみ: fileId / driveFileUrl は含まれず、folder + 名前だけ。
-  assert.equal(res.mapping.forms.f1.fileId, undefined, "fileId は出さない");
-  assert.equal(res.mapping.forms.f1.driveFileUrl, undefined, "driveFileUrl は出さない");
-  assert.equal(res.mapping.forms.f1.title, "T1");
-  assert.equal(res.mapping.forms.f1.folder, "a");
-  assert.equal(res.mapping.questions.q1.name, "Q1");
-  assert.equal(res.mapping.questions.q1.fileId, undefined);
-  assert.equal(res.mapping.questions.q1.folder, "");
+  // 源の物理 ID は残さない: sourceRootId は出さず、コピー復元判定は非物理マーカー isCopy:true。
+  assert.equal(res.mapping.sourceRootId, undefined, "sourceRootId は出さない");
+  assert.equal(res.mapping.isCopy, true);
+  // 論理パスのみ: fileId / driveFileUrl は含まれず、キーも論理パス（folder/名前）。
+  assert.equal(res.mapping.forms["a/T1"].fileId, undefined, "fileId は出さない");
+  assert.equal(res.mapping.forms["a/T1"].driveFileUrl, undefined, "driveFileUrl は出さない");
+  assert.equal(res.mapping.forms["a/T1"].title, "T1");
+  assert.equal(res.mapping.forms["a/T1"].folder, "a");
+  assert.equal(res.mapping.questions["Q1"].name, "Q1");
+  assert.equal(res.mapping.questions["Q1"].fileId, undefined);
+  assert.equal(res.mapping.questions["Q1"].folder, "");
   assert.deepEqual(res.mapping.folders.forms, ["a", "a/b"]);
 });
 
@@ -378,19 +379,57 @@ test("StdFolders_buildCopiedMappingDoc_: version 2・論理パスのみ（fileId
     SRC1: { newFileId: "DST1", newUrl: "https://drive.google.com/file/d/DST1/view" },
     SRCQ: { newFileId: "DSTQ", newUrl: "https://drive.google.com/file/d/DSTQ/view" },
   };
-  const doc = gas.StdFolders_buildCopiedMappingDoc_(idMap, "SRCROOT");
+  const doc = gas.StdFolders_buildCopiedMappingDoc_(idMap);
   assert.equal(doc.type, "nfb-mapping");
   assert.equal(doc.version, 2);
-  assert.equal(doc.sourceRootId, "SRCROOT");
-  // 論理パスのみ: コピー先/コピー元いずれの fileId も書き出さない。
-  assert.equal(doc.forms.keep.fileId, undefined, "fileId は出さない");
-  assert.equal(doc.forms.keep.driveFileUrl, undefined, "driveFileUrl は出さない");
-  assert.equal(doc.forms.keep.title, "K");
-  assert.equal(doc.forms.keep.folder, "営業");
-  assert.ok(!doc.forms.drop, "idMap 未収載のエントリは除外される");
-  assert.equal(doc.questions.q.name, "Q");
-  assert.equal(doc.questions.q.fileId, undefined);
-  assert.equal(doc.questions.q.folder, "");
+  // 源の物理 ID は残さない: sourceRootId は出さず、コピー復元判定は非物理マーカー isCopy:true。
+  assert.equal(doc.sourceRootId, undefined, "sourceRootId は出さない");
+  assert.equal(doc.isCopy, true);
+  // 論理パスのみ: コピー先/コピー元いずれの fileId も書き出さず、キーも論理パス（folder/名前）。
+  assert.equal(doc.forms["営業/K"].fileId, undefined, "fileId は出さない");
+  assert.equal(doc.forms["営業/K"].driveFileUrl, undefined, "driveFileUrl は出さない");
+  assert.equal(doc.forms["営業/K"].title, "K");
+  assert.equal(doc.forms["営業/K"].folder, "営業");
+  assert.ok(!doc.forms["D"], "idMap 未収載のエントリは除外される");
+  assert.equal(doc.questions["Q"].name, "Q");
+  assert.equal(doc.questions["Q"].fileId, undefined);
+  assert.equal(doc.questions["Q"].folder, "");
+});
+
+// 本番 registry は key === fileId で運用される（gas/formsCrud.gs）。その形状で源の物理 FileID が
+// キーに漏れないこと（旧 out[id]=next の回帰）を buildCopiedMappingDoc_ / exportMapping_ 双方で検証。
+test("エクスポート: registry が key===fileId でも源の物理 FileID をキーに残さない", () => {
+  const SRC = "1UAcq-vi9bj7nfcwsHPD4BWXuDOsuNsWl";
+  // (1) コピー書き出し
+  {
+    const gas = loadGasContext();
+    installStores(gas, {
+      forms: { [SRC]: { fileId: SRC, driveFileUrl: "u", title: "新規フォーム", folder: "" } },
+      questions: {},
+      dashboards: {},
+    });
+    const idMap = { [SRC]: { newFileId: "DST1", newUrl: "https://drive.google.com/file/d/DST1/view" } };
+    const doc = gas.StdFolders_buildCopiedMappingDoc_(idMap);
+    assert.deepEqual(Object.keys(doc.forms), ["新規フォーム"], "キーは論理パス（源 FileID ではない）");
+    assert.ok(!(SRC in doc.forms), "源の物理 FileID はキーに含まれない");
+    assert.equal(doc.sourceRootId, undefined);
+    assert.equal(doc.isCopy, true);
+  }
+  // (2) 手動エクスポート
+  {
+    const gas = loadGasContext();
+    installStores(gas, {
+      forms: { [SRC]: { fileId: SRC, driveFileUrl: "u", title: "新規フォーム", folder: "" } },
+      questions: {},
+      dashboards: {},
+    });
+    const res = gas.StdFolders_exportMapping_();
+    assert.equal(res.ok, true);
+    assert.deepEqual(Object.keys(res.mapping.forms), ["新規フォーム"], "キーは論理パス（源 FileID ではない）");
+    assert.ok(!(SRC in res.mapping.forms), "源の物理 FileID はキーに含まれない");
+    assert.equal(res.mapping.sourceRootId, undefined);
+    assert.equal(res.mapping.isCopy, true);
+  }
 });
 
 test("StdFolders_writeMappingFile_: destRoot に _nfb_mapping.json を 1 件作る", () => {
@@ -541,6 +580,124 @@ test("StdFolders_rewireFormFile_: フォームレベル standardPrintTemplateUrl
   assert.equal(afterKept.settings.standardPrintTemplatePath, "05/標準様式", "論理パスは温存");
   assert.equal(afterKept.schema[0].printTemplateAction.templateUrl, "", "field 個別様式 URL も物理消去");
   assert.equal(afterKept.schema[0].printTemplateAction.templatePath, "05/個別様式", "field の論理パスは温存");
+});
+
+// ---------------------------------------------------------------------------
+// 自身の物理 URL（driveFileUrl）の全消去: コピー元のファイルを指さないよう leaf json から消す。
+// 読取時にコピー先の実体の file.getUrl() から復元されるため安全（消さないと復元が発火しない）。
+// ---------------------------------------------------------------------------
+
+test("StdFolders_rewireFormFile_: トップレベル driveFileUrl を物理消去（コピー元を指さない）", () => {
+  const gas = loadGasContext();
+  const before = {
+    driveFileUrl: "https://drive.google.com/file/d/SRC_FORM_FILE/view?usp=drivesdk",
+    settings: { spreadsheetPath: "04/集計" },
+    schema: [{ id: "t1", type: "text", label: "名前" }],
+  };
+  const state = installSingleFile(gas, "FORM_URL", JSON.stringify(before));
+  const res = gas.StdFolders_rewireFormFile_("FORM_URL", {}, {}, false);
+  assert.equal(res.cleared, 0, "driveFileUrl の物理消去は cleared に数えない（読取時に復元可能）");
+  const after = JSON.parse(state.content);
+  assert.equal(after.driveFileUrl, "", "コピー元の driveFileUrl は物理消去");
+  assert.equal(after.settings.spreadsheetPath, "04/集計", "論理パスは温存");
+});
+
+test("StdFolders_rewireQuestionFile_: トップレベル driveFileUrl を物理消去（旧データ救済）", () => {
+  const gas = loadGasContext();
+  const before = {
+    driveFileUrl: "https://drive.google.com/file/d/SRC_Q_FILE/view",
+    query: { mode: "gui", gui: { formId: "", formPath: "01_forms/売上" } },
+  };
+  const state = installSingleFile(gas, "Q_URL", JSON.stringify(before));
+  gas.StdFolders_rewireQuestionFile_("Q_URL", {});
+  const after = JSON.parse(state.content);
+  assert.equal(after.driveFileUrl, "", "コピー元の driveFileUrl は物理消去");
+});
+
+test("StdFolders_rewireDashboardFile_: トップレベル driveFileUrl を物理消去（旧データ救済）", () => {
+  const gas = loadGasContext();
+  const before = {
+    driveFileUrl: "https://drive.google.com/file/d/SRC_D_FILE/view",
+    cards: [{ id: "c1", questionId: "", questionPath: "02_questions/売上" }],
+  };
+  const state = installSingleFile(gas, "D_URL", JSON.stringify(before));
+  gas.StdFolders_rewireDashboardFile_("D_URL", {});
+  const after = JSON.parse(state.content);
+  assert.equal(after.driveFileUrl, "", "コピー元の driveFileUrl は物理消去");
+});
+
+test("StdFolders_clearSelfPhysicalUrlInJson_: driveFileUrl を持たない json には空キーを足さない", () => {
+  const gas = loadGasContext();
+  const before = { cards: [{ id: "c1", questionId: "", questionPath: "02_questions/売上" }] };
+  const state = installSingleFile(gas, "D_NOURL", JSON.stringify(before));
+  gas.StdFolders_rewireDashboardFile_("D_NOURL", {});
+  const after = JSON.parse(state.content);
+  assert.equal("driveFileUrl" in after, false, "元々無いキーは生やさない");
+});
+
+// ---------------------------------------------------------------------------
+// 設定レベルの外部アクション URL: copyExternalActions OFF のとき送信先 URL をクリア
+// （フィールド個別 externalAction.url と対称。外部 /exec で論理パスを持たないため cleared 計上）。
+// ---------------------------------------------------------------------------
+
+test("StdFolders_rewireFormFile_: settings.externalActions.search[].url を copyExternalActions=false でクリア", () => {
+  const gas = loadGasContext();
+  const before = {
+    settings: {
+      externalActions: {
+        enabled: true,
+        search: [
+          { label: "外部検索", url: "https://script.google.com/macros/s/AAA/exec", adminOnly: false },
+          { label: "空欄", url: "", adminOnly: false },
+        ],
+      },
+    },
+    schema: [{ id: "t1", type: "text", label: "名前" }],
+  };
+  const state = installSingleFile(gas, "FORM_EXT_OFF", JSON.stringify(before));
+  const res = gas.StdFolders_rewireFormFile_("FORM_EXT_OFF", {}, {}, false);
+  assert.equal(res.cleared, 1, "URL を持つ 1 件だけ cleared に計上（空 URL は数えない）");
+  const after = JSON.parse(state.content);
+  assert.equal(after.settings.externalActions.search[0].url, "", "送信先 URL は物理消去");
+  assert.equal(after.settings.externalActions.search[1].url, "", "空 URL はそのまま");
+  assert.equal(after.settings.externalActions.search[0].label, "外部検索", "ラベルは温存");
+});
+
+test("StdFolders_rewireFormFile_: settings.externalActions.search[].url を copyExternalActions=true で温存", () => {
+  const gas = loadGasContext();
+  const before = {
+    settings: {
+      externalActions: {
+        enabled: true,
+        search: [{ label: "外部検索", url: "https://script.google.com/macros/s/AAA/exec", adminOnly: false }],
+      },
+    },
+    schema: [{ id: "t1", type: "text", label: "名前" }],
+  };
+  const state = installSingleFile(gas, "FORM_EXT_ON", JSON.stringify(before));
+  const res = gas.StdFolders_rewireFormFile_("FORM_EXT_ON", {}, {}, true);
+  assert.equal(res.cleared, 0, "ON のときは外部 /exec を温存しクリアしない");
+  const after = JSON.parse(state.content);
+  assert.equal(after.settings.externalActions.search[0].url, "https://script.google.com/macros/s/AAA/exec", "送信先 URL は温存");
+});
+
+test("StdFolders_rewireFormFile_: 旧 settings.externalActions.record[].url も copyExternalActions=false でクリア", () => {
+  const gas = loadGasContext();
+  const before = {
+    settings: {
+      externalActions: {
+        enabled: true,
+        search: [],
+        record: [{ label: "旧レコードボタン", url: "https://script.google.com/macros/s/BBB/exec" }],
+      },
+    },
+    schema: [{ id: "t1", type: "text", label: "名前" }],
+  };
+  const state = installSingleFile(gas, "FORM_EXT_LEGACY", JSON.stringify(before));
+  const res = gas.StdFolders_rewireFormFile_("FORM_EXT_LEGACY", {}, {}, false);
+  assert.equal(res.cleared, 1, "search 以外の配列（旧 record）も走査してクリア");
+  const after = JSON.parse(state.content);
+  assert.equal(after.settings.externalActions.record[0].url, "", "旧 record の送信先 URL も物理消去");
 });
 
 // ---------------------------------------------------------------------------
@@ -1074,8 +1231,10 @@ test("StdFolders_copy_: rebuildMapping=true は未選択カテゴリを _nfb_map
   const mapFile = env.destCreatedFiles.find((f) => f.name === gas.NFB_STD_MAPPING_FILE_NAME);
   assert.ok(mapFile, "_nfb_mapping.json が書き出される");
   const doc = JSON.parse(mapFile.content);
-  assert.ok(doc.forms.F1, "選択した forms はマッピングに含まれる");
-  assert.ok(!doc.questions.Q1, "除外した questions はマッピングから除外される");
+  // キーは論理パス（folder 空 → 名前のみ）。源の物理 FileID は含めない。
+  assert.ok(doc.forms.T, "選択した forms はマッピングに含まれる（キーは論理パス）");
+  assert.ok(!doc.forms.F1, "源の物理 FileID はキーに残さない");
+  assert.equal(Object.keys(doc.questions).length, 0, "除外した questions はマッピングから除外される");
 });
 
 // ---------------------------------------------------------------------------

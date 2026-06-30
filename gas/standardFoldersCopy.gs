@@ -147,10 +147,10 @@ function StdFolders_copy_(payload) {
     }
     unresolvedLinks += unresolvedQuestionLinks;
 
-    // 再構築 ON のときはコピー先ルートへ _nfb_mapping.json を書き出す（新 fileId に振り直し済み）。
+    // 再構築 ON のときはコピー先ルートへ _nfb_mapping.json を書き出す（論理パスのみ・源の物理 ID は残さない）。
     // 復元はコピー先で手動：設定 > 管理 の「インポート」（URL 空欄でルートの最新 .json を読込）。
     if (rebuildMapping) {
-      StdFolders_writeMappingFile_(destRoot, StdFolders_buildCopiedMappingDoc_(idMap, srcRoot.getId()));
+      StdFolders_writeMappingFile_(destRoot, StdFolders_buildCopiedMappingDoc_(idMap));
     }
 
     return {
@@ -377,6 +377,13 @@ function StdFolders_rewireEntityRefsInJson_(json, kind, idMap) {
   return unresolved;
 }
 
+// エンティティ自身の物理 URL（driveFileUrl）を消す。コピー元のファイルを指すため温存禁止。
+// 読取時にコピー先の実体の file.getUrl() から復元される（forms/questions/dashboards 共通）。
+// 既に無い json（questions/dashboards は通常 driveFileUrl 非永続）には空キーを足さない。
+function StdFolders_clearSelfPhysicalUrlInJson_(json) {
+  if (json && json.driveFileUrl) json.driveFileUrl = "";
+}
+
 // フォーム定義ファイルのリンク再配線（id は埋め込まない＝id ＝ fileId）。
 // 物理＝キャッシュ／論理＝正本の方針に従い、コピー時はエンティティ参照・spreadsheet・印刷様式の
 // 物理（id/URL）を「全消去」し、各 *Path（spreadsheetPath / standardPrintTemplatePath / templatePath /
@@ -393,6 +400,10 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActi
     var read = Nfb_readJsonFileById_(fileId);
     var file = read.file;
     var json = read.json;
+
+    // フォーム自身の物理 URL（driveFileUrl）を消去（leaf json に永続化される＝コピー元を指す）。
+    // 読取時にコピー先の実体の file.getUrl() から復元される（消さないと復元が発火せず元を指し続ける）。
+    StdFolders_clearSelfPhysicalUrlInJson_(json);
 
     // form → spreadsheet: 物理（spreadsheetId）を消去し論理（spreadsheetPath）を温存。
     // コピー先で spreadsheetPath が 04_spreadsheets の同構造へ再解決される（読取/保存時の物理優先→論理）。
@@ -429,6 +440,25 @@ function StdFolders_rewireFormFile_(fileId, idMap, folderIdMap, copyExternalActi
       }
     });
 
+    // 設定レベルの外部アクション 送信先（settings.externalActions.search[].url 等）も、フィールド個別の
+    // externalAction.url と同様 copyExternalActions OFF のときクリアする（外部 /exec で論理パスを持たない）。
+    // 旧 record[] など search 以外の配列も拾うため externalActions 配下の全 array 値プロパティを走査する。
+    if (!copyExternalActions && json.settings && json.settings.externalActions && typeof json.settings.externalActions === "object") {
+      var extActs = json.settings.externalActions;
+      for (var listKey in extActs) {
+        if (!extActs.hasOwnProperty(listKey)) continue;
+        var list = extActs[listKey];
+        if (Object.prototype.toString.call(list) !== "[object Array]") continue;
+        for (var ei = 0; ei < list.length; ei++) {
+          var act = list[ei];
+          if (act && typeof act === "object" && typeof act.url === "string" && act.url) {
+            act.url = "";
+            cleared++;
+          }
+        }
+      }
+    }
+
     // エンティティ参照（formLink の childFormId）を物理全消去（*Path 温存・コピー先で再解決）。
     unresolved += StdFolders_rewireEntityRefsInJson_(json, "forms", idMap);
 
@@ -449,6 +479,7 @@ function StdFolders_rewireQuestionFile_(fileId, idMap) {
     var read = Nfb_readJsonFileById_(fileId);
     var file = read.file;
     var json = read.json;
+    StdFolders_clearSelfPhysicalUrlInJson_(json);   // 自身の物理 URL を消去（通常 no-op・旧データ救済）
     unresolved = StdFolders_rewireEntityRefsInJson_(json, "questions", idMap);
     Nfb_writeJsonToFile_(file, json);
   } catch (err) {
@@ -467,6 +498,7 @@ function StdFolders_rewireDashboardFile_(fileId, idMap) {
     var read = Nfb_readJsonFileById_(fileId);
     var file = read.file;
     var json = read.json;
+    StdFolders_clearSelfPhysicalUrlInJson_(json);   // 自身の物理 URL を消去（通常 no-op・旧データ救済）
     unresolved = StdFolders_rewireEntityRefsInJson_(json, "dashboards", idMap);
     Nfb_writeJsonToFile_(file, json);
   } catch (err) {
@@ -477,11 +509,13 @@ function StdFolders_rewireDashboardFile_(fileId, idMap) {
 
 // コピーされたエンティティ（idMap 収載）の _nfb_mapping.json（version 2・論理パスのみ）を組み立てる。
 // idMap は「コピー対象に含まれたか」の判定だけに使い、コピー元/コピー先いずれの fileId も書き出さない。
-// 各エントリは folder ＋ 名前（nameKey）だけを持つ。コピー先で取り込んだ際にコピー先ツリーを走査して
-// 論理パス→ローカル fileId を解決するため、fileId を引き回さない（＝コピー後にコピー元を指す事故を防ぐ）。
-function StdFolders_buildCopiedMappingDoc_(idMap, sourceRootId) {
+// 各エントリは folder ＋ 名前（nameKey）だけを持ち、出力のキーも論理パス（本番 registry の fileId キーを
+// 引き回さない）。取り込み時はコピー先ツリーを走査して論理パス→ローカル fileId を解決するため、源の
+// 物理 ID は一切残さない（＝コピー後にコピー元を指す事故を防ぐ）。コピー復元ゲートは isCopy:true で発火する。
+function StdFolders_buildCopiedMappingDoc_(idMap) {
   function remapSection(mapping, nameKey) {
     var out = {};
+    var usedKeys = {};
     for (var id in mapping) {
       if (!mapping.hasOwnProperty(id)) continue;
       var entry = mapping[id] || {};
@@ -492,7 +526,7 @@ function StdFolders_buildCopiedMappingDoc_(idMap, sourceRootId) {
       var next = {};
       next[nameKey] = name;
       next.folder = (typeof entry.folder === "string") ? entry.folder : ""; // 論理パス（folder/名前）のみ
-      out[id] = next;
+      out[StdFolders_logicalExportKey_(next.folder, name, usedKeys)] = next;
     }
     return out;
   }
@@ -500,7 +534,7 @@ function StdFolders_buildCopiedMappingDoc_(idMap, sourceRootId) {
     type: "nfb-mapping",
     version: 2,
     exportedAt: new Date().toISOString(),
-    sourceRootId: sourceRootId || "",
+    isCopy: true,
     forms: remapSection(Forms_getMapping_(), "title"),
     questions: remapSection(Analytics_getMapping_("questions"), "name"),
     dashboards: remapSection(Analytics_getMapping_("dashboards"), "name"),

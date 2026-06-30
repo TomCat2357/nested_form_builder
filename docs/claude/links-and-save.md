@@ -196,7 +196,8 @@ forms / questions / dashboards の**エンティティ間参照**（formLink / Q
 §5-4 のアップロードセルと同じ考え方を**エンティティ参照・spreadsheet・印刷様式**にも広げ、コピーは idMap remap をやめて「**物理 ID を全消去・論理（`*Path`）を温存・コピー先で再解決**」へ転換した。
 
 - **コピー時（コピー元で実行）**: `StdFolders_rewireEntityRefsInJson_` がエンティティ参照（`formId`/`questionId`/`childFormId`）を空にし `*Path` を温存。`StdFolders_rewireFormFile_` は `settings.spreadsheetId` / `standardPrintTemplateUrl` / カード `templateUrl` も物理消去し各 `*Path` を温存（いずれも `gas/standardFoldersCopy.gs`）。コピー元 fileId を残すとコピー先がコピー元（別プロジェクトの生存 fileId）を指す事故になるため必ず消す。idMap は「コピー対象に含まれたか」（再解決可能か）の判定だけに使う。
-- **コピー先 初回解決ゲート（コピー先で実行）**: `StdFolders_importMapping_`（`gas/standardFolders.gs`）がコピー由来ドキュメント（`sourceRootId` 付き）の取り込み時に、① `Admin_rebuildRegistryFromLogical_` で registry を充填 → ② `Admin_reresolveAllRefsFromLogical_` で全エンティティの空/死 id を `*Path` から `StdFolders_reresolveRefsFromLogical_`（`gas/standardFoldersAlignRefs.gs`）で貼り直す。エンティティ参照は読取時の論理フォールバックが無いためここで物理を確定する（spreadsheet/印刷様式は読取/出力時にも論理フォールバックするが、ゲートでも前進補完する）。
+- **`_nfb_mapping.json` も論理パスのみ**: 書き出す `_nfb_mapping.json`（`StdFolders_buildCopiedMappingDoc_` / 手動エクスポートの `StdFolders_exportMapping_`）は値（`fileId`/`driveFileUrl`）に加え**オブジェクトのキーも論理パス**（`StdFolders_logicalExportKey_` で `folder/名前`）にし、源の物理 ID を一切含めない。コピー復元の判定は非物理マーカー `isCopy:true`（旧形式の `sourceRootId` も後方互換で受理）。
+- **コピー先 初回解決ゲート（コピー先で実行）**: `StdFolders_importMapping_`（`gas/standardFolders.gs`）がコピー由来ドキュメント（`isCopy` フラグ／旧形式の `sourceRootId`）の取り込み時に、① `Admin_rebuildRegistryFromLogical_` で registry を充填 → ② `Admin_reresolveAllRefsFromLogical_` で全エンティティの空/死 id を `*Path` から `StdFolders_reresolveRefsFromLogical_`（`gas/standardFoldersAlignRefs.gs`）で貼り直す。エンティティ参照は読取時の論理フォールバックが無いためここで物理を確定する（spreadsheet/印刷様式は読取/出力時にも論理フォールバックするが、ゲートでも前進補完する）。
 - **正準ビジターの拡張**: `StdFolders_forEachRef_` のゲートを「id か `*Path` の少なくとも一方を持つ」に変更し、物理を全消去され `*Path` だけ残った参照も拾えるようにした。
 
 ## まとめ（保存時に何が起きるか）
