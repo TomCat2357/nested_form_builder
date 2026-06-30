@@ -2,7 +2,8 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { chromium } = require("playwright");
 
-const APP_URL = "https://script.google.com/macros/s/AKfycbzhsCJaomWbs04VjoHRbfsn5O_Nd1OD51o5grS1By0rAWE-pbZ6jSKj6MFmC8wleTM/exec";
+// 撮影対象のテスト公開デプロイ URL（2026-06-30 更新）。別デプロイで撮る場合はここを差し替える。
+const APP_URL = "https://script.google.com/macros/s/AKfycbyzcMhIY4HYGZDiH3sGfBA4l8WNXFY1ttnRDtal-Md0h_8xQ9dkVhOAVyr5ia0fP7e-rw/exec";
 const OUTPUT_DIR = path.resolve(__dirname, "..", "manual", "user_manual_images");
 const VIEWPORT = { width: 1600, height: 2200 };
 const SAMPLE_FORM_TITLE = "【マニュアル】相談受付フォーム";
@@ -100,7 +101,7 @@ async function setRadioByLabel(scope, labelText) {
 }
 
 async function cleanupSampleForms(frame) {
-  await navigateHash(frame, "#/forms", "フォーム管理");
+  await navigateHash(frame, "#/admin/forms", "フォーム管理");
   const rows = frame.locator("tbody tr");
   const rowCount = await rows.count();
   let checkedCount = 0;
@@ -142,7 +143,7 @@ async function ensureQuestionCards(frame) {
 }
 
 async function buildManualForm(frame) {
-  await navigateHash(frame, "#/forms/new", "フォーム新規作成");
+  await navigateHash(frame, "#/admin/forms/new", "フォーム新規作成");
 
   await frame.getByPlaceholder("フォーム名").fill(SAMPLE_FORM_TITLE);
   await frame.locator('textarea[placeholder="説明"]').fill(SAMPLE_FORM_DESCRIPTION);
@@ -449,7 +450,7 @@ async function captureMain(context) {
 async function captureSettings(context) {
   const { page, frame, iframe } = await openApp(context);
   try {
-    await navigateHash(frame, "#/config", "テーマ設定", 30000);
+    await navigateHash(frame, "#/settings", "テーマ設定", 30000);
     await saveScreenshot(iframe, "manual_02_settings_page.png");
   } finally {
     await page.close();
@@ -459,7 +460,7 @@ async function captureSettings(context) {
 async function captureFormsAndImport(context) {
   const { page, frame, iframe } = await openApp(context);
   try {
-    await navigateHash(frame, "#/forms", "フォーム管理", 30000);
+    await navigateHash(frame, "#/admin/forms", "フォーム管理", 30000);
     await waitForText(frame, SAMPLE_FORM_TITLE, 30000);
     await sanitizeFormManagement(frame);
     await saveScreenshot(iframe, "manual_04_form_management_page.png");
@@ -478,7 +479,7 @@ async function captureFormsAndImport(context) {
 async function captureEditorScreens(context, formId) {
   const { page, frame, iframe } = await openApp(context);
   try {
-    await navigateHash(frame, `#/forms/${formId}/edit`, "フォーム修正", 60000);
+    await navigateHash(frame, `#/admin/forms/${formId}/edit`, "フォーム修正", 60000);
     await waitForCount(frame.locator('[data-question-id][data-depth="0"]'), 5, 30000);
 
     await sanitizeEditorHeader(frame);
