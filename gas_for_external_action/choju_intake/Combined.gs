@@ -107,6 +107,13 @@ function Cho_dateToCanonical_(value) {
   return y + "-" + (mo < 10 ? "0" + mo : mo) + "-" + (d < 10 ? "0" + d : d);
 }
 
+// 受付日の手入力（input type=date の YYYY-MM-DD）を検証して canonical 化。
+// 不正・空なら "" を返し、呼び出し側の `nowCanonical || …(new Date())` で本日にフォールバックさせる。
+function Cho_normalizeReceiptDate_(value) {
+  var s = String(value == null ? "" : value).replace(/^\s+|\s+$/g, "");
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : "";
+}
+
 // Sheets のシリアル値（1899-12-30 起点）→ Date。Date はそのまま。数字でなければ ""/元値。
 function Cho_serialOrDateToDate_(value) {
   if (value instanceof Date) return value;
@@ -794,7 +801,7 @@ function Cho_buildUploadRecords_(imp, parentRecordId) {
 // ----- GAS I/O: Drive xlsx → Google Sheet 変換 → セル読み取り → import モデル -----
 // 様式 xlsx（Drive ファイル ID）を Sheets へ複製して読み取り、import モデルを返す。
 // 一時 Sheets は finally で必ず削除する（元の xlsx は呼び出し側の責任）。
-function Cho_parseXlsxFile_(fileId, forcedType) {
+function Cho_parseXlsxFile_(fileId, forcedType, receiptDate) {
   if (!fileId) throw new Error("driveFileId がありません（様式 xlsx の Drive ファイル ID を渡してください）。");
   var convertedId = null;
   try {
@@ -803,7 +810,7 @@ function Cho_parseXlsxFile_(fileId, forcedType) {
     var ss = SpreadsheetApp.openById(convertedId);
     var valuesBySheet = Cho_readSheetValues_(ss);
     var reader = Cho_makeReader_(valuesBySheet);
-    return Cho_buildImport_(reader, forcedType);
+    return Cho_buildImport_(reader, forcedType, Cho_normalizeReceiptDate_(receiptDate));
   } finally {
     if (convertedId) { try { Drive.Files.remove(convertedId); } catch (e2) { /* no-op */ } }
   }
@@ -889,6 +896,7 @@ ${linksHtml}
 <label class="blk">申請者区分（様式に合わせて選択）</label>
 <label><input type="radio" name="atype" value="個人" checked> 個人</label>
 &nbsp;&nbsp;<label><input type="radio" name="atype" value="法人"> 法人</label>
+<label class="blk">受付日（既定は本日。手入力で修正できます）</label><input type="date" id="receiptDate">
 <label class="blk">親レコードID（同じ申請を上書きしたいときだけ指定。空なら新規）</label><input type="text" id="pid" placeholder="r_...">
 <button id="go">取り込み内容を確認</button>
 <div id="status"></div>
@@ -901,12 +909,14 @@ var CTX=${ctxJs};
 var EXCEL="";
 function $(i){return document.getElementById(i);}
 function atype(){var r=document.querySelector('input[name="atype"]:checked');return r?r.value:"個人";}
+function rdate(){return $("receiptDate").value||"";}
+(function(){var d=new Date(),p=function(n){return(n<10?"0":"")+n;};$("receiptDate").value=d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate());})();
 function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
 function tbl(rows){if(!rows||!rows.length)return "<div class='info'>（項目なし）</div>";var h="<table class='kv'>";for(var i=0;i<rows.length;i++){var c=rows[i].confirm?" class='confirm'":"";h+="<tr"+c+"><th>"+esc(rows[i].label)+"</th><td>"+esc(rows[i].value)+"</td></tr>";}return h+"</table>";}
 function renderIssues(list){var groups={dropped:{t:"取り込めなかったもの",items:[]},pink_inconsistent:{t:"ピンクのセルで整合性がとれないもの",items:[]},odd:{t:"おかしいもの",items:[]}};for(var i=0;i<list.length;i++){var g=groups[list[i].category];if(g)g.items.push(list[i]);}var order=["dropped","pink_inconsistent","odd"],html="";for(var k=0;k<order.length;k++){var g=groups[order[k]];html+="<h3>"+g.t+" ("+g.items.length+")</h3>";if(!g.items.length){html+="<div class='none'>なし</div>";continue;}html+="<ul>";for(var j=0;j<g.items.length;j++){var it=g.items[j],loc=(it.sheet||"")+(it.cell?("!"+it.cell):""),sev=it.severity==="error"?"err":(it.severity==="info"?"info":"warn");html+="<li class='"+sev+"'>"+(loc?("["+esc(loc)+"] "):"")+esc(it.message)+"</li>";}html+="</ul>";}$("issues").innerHTML=html;}
 function renderPreview(res){EXCEL=res.excelFileId||"";var f=res.friendly||{};var ap=f.applicant||{};var html="";html+="<div class='sec'><label class='chk'><input type='checkbox' id='chkParent' checked> <b>この申請を取り込む</b>（"+esc(ap.type||"")+(ap.name?(" / "+esc(ap.name)):"")+"）</label>"+tbl(ap.rows||[])+"</div>";var ws=f.workers||[];html+="<h2>従事者（"+ws.length+" 名）</h2>";for(var i=0;i<ws.length;i++){var w=ws[i];html+="<div class='sec'><label class='chk'><input type='checkbox' class='chkChild' data-idx='"+w.index+"' checked> <b>"+esc(w.title)+"</b></label>"+tbl(w.rows||[])+"</div>";}$("preview").innerHTML=html;$("commitWrap").style.display="block";}
-$("go").onclick=function(){var f=$("file").files[0];if(!f){$("status").textContent="ファイルを選んでください";return;}$("status").textContent="読み込み中...";$("issues").innerHTML="";$("preview").innerHTML="";$("result").innerHTML="";$("commitWrap").style.display="none";var r=new FileReader();r.onload=function(){var b64=r.result.split(",")[1];google.script.run.withSuccessHandler(function(res){if(res&&res.ok){var ic=(res.summary&&res.summary.issueCounts)||{};$("status").innerHTML="取り込み確認: "+esc(res.summary.applicantType)+" / 従事者 "+res.summary.workerCount+" 名 　<span class='err'>取込不可 "+(ic.dropped||0)+"</span> / <span class='warn'>要確認 "+(ic.odd||0)+"</span> / <span class='warn'>ピンク不整合 "+(ic.pink_inconsistent||0)+"</span>";renderIssues(res.issues||[]);renderPreview(res);}else{$("status").innerHTML="<span class='err'>失敗: "+esc(res&&res.error||"unknown")+"</span>";renderIssues([]);}}).withFailureHandler(function(e){$("status").innerHTML="<span class='err'>エラー: "+esc(e.message)+"</span>";}).Cho_uploadAndImport(b64,f.name,CTX,atype());};r.readAsDataURL(f);};
-$("commit").onclick=function(){if(!EXCEL){$("status").textContent="先に Excel を取り込んでください";return;}var sel={parent:$("chkParent")?$("chkParent").checked:true,childIndexes:[],parentRecordId:$("pid").value||""};var cc=document.querySelectorAll(".chkChild");for(var i=0;i<cc.length;i++){if(cc[i].checked)sel.childIndexes.push(Number(cc[i].getAttribute("data-idx")));}$("status").textContent="スプレッドシートへ書き込み中...";$("commit").disabled=true;google.script.run.withSuccessHandler(function(res){$("commit").disabled=false;if(res&&res.ok){var w=res.written||{};var msg="取り込み完了: 親 "+(w.parent?"1":"0")+" 件 / 従事者 "+(w.children||0)+" 件。";if(res.warnings&&res.warnings.length)msg+=" 注意: "+res.warnings.join(" / ");var su=res.sheetUrls||{};$("result").innerHTML="<span class='ok'>"+esc(msg)+"</span><br><a href='"+esc(su.parent||"")+"' target='_blank'>親シートを開く</a> ／ <a href='"+esc(su.child||"")+"' target='_blank'>子シートを開く</a>";$("commit").style.display="none";}else{$("result").innerHTML="<span class='err'>失敗: "+esc(res&&res.error||"unknown")+"</span>";}}).withFailureHandler(function(e){$("commit").disabled=false;$("result").innerHTML="<span class='err'>エラー: "+esc(e.message)+"</span>";}).Cho_commitImport(EXCEL,JSON.stringify(sel),CTX,atype());};
+$("go").onclick=function(){var f=$("file").files[0];if(!f){$("status").textContent="ファイルを選んでください";return;}$("status").textContent="読み込み中...";$("issues").innerHTML="";$("preview").innerHTML="";$("result").innerHTML="";$("commitWrap").style.display="none";var r=new FileReader();r.onload=function(){var b64=r.result.split(",")[1];google.script.run.withSuccessHandler(function(res){if(res&&res.ok){var ic=(res.summary&&res.summary.issueCounts)||{};$("status").innerHTML="取り込み確認: "+esc(res.summary.applicantType)+" / 従事者 "+res.summary.workerCount+" 名 　<span class='err'>取込不可 "+(ic.dropped||0)+"</span> / <span class='warn'>要確認 "+(ic.odd||0)+"</span> / <span class='warn'>ピンク不整合 "+(ic.pink_inconsistent||0)+"</span>";renderIssues(res.issues||[]);renderPreview(res);}else{$("status").innerHTML="<span class='err'>失敗: "+esc(res&&res.error||"unknown")+"</span>";renderIssues([]);}}).withFailureHandler(function(e){$("status").innerHTML="<span class='err'>エラー: "+esc(e.message)+"</span>";}).Cho_uploadAndImport(b64,f.name,CTX,atype(),rdate());};r.readAsDataURL(f);};
+$("commit").onclick=function(){if(!EXCEL){$("status").textContent="先に Excel を取り込んでください";return;}var sel={parent:$("chkParent")?$("chkParent").checked:true,childIndexes:[],parentRecordId:$("pid").value||""};var cc=document.querySelectorAll(".chkChild");for(var i=0;i<cc.length;i++){if(cc[i].checked)sel.childIndexes.push(Number(cc[i].getAttribute("data-idx")));}$("status").textContent="スプレッドシートへ書き込み中...";$("commit").disabled=true;google.script.run.withSuccessHandler(function(res){$("commit").disabled=false;if(res&&res.ok){var w=res.written||{};var msg="取り込み完了: 親 "+(w.parent?"1":"0")+" 件 / 従事者 "+(w.children||0)+" 件。";if(res.warnings&&res.warnings.length)msg+=" 注意: "+res.warnings.join(" / ");var su=res.sheetUrls||{};$("result").innerHTML="<span class='ok'>"+esc(msg)+"</span><br><a href='"+esc(su.parent||"")+"' target='_blank'>親シートを開く</a> ／ <a href='"+esc(su.child||"")+"' target='_blank'>子シートを開く</a>";$("commit").style.display="none";}else{$("result").innerHTML="<span class='err'>失敗: "+esc(res&&res.error||"unknown")+"</span>";}}).withFailureHandler(function(e){$("commit").disabled=false;$("result").innerHTML="<span class='err'>エラー: "+esc(e.message)+"</span>";}).Cho_commitImport(EXCEL,JSON.stringify(sel),CTX,atype(),rdate());};
 </script></body></html>`;
   return HtmlService.createHtmlOutput(html).setTitle("様式の取り込み").setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
@@ -923,13 +933,13 @@ function Cho_authorize() {
 
 // プレビュー段階: base64 xlsx → 添付用に Drive へ永続化 → 解析 → 分かりやすい表 + issues を返す。
 // 注: google.script.run から呼ぶため末尾アンダースコア不可。
-function Cho_uploadAndImport(base64, filename, ctxToken, applicantType) {
+function Cho_uploadAndImport(base64, filename, ctxToken, applicantType, receiptDate) {
   try {
     var bytes = Utilities.base64Decode(base64);
     var blob = Utilities.newBlob(bytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename || "import.xlsx");
     var folder = Cho_resolveUploadFolder_();
     var file = folder.createFile(blob);       // 添付用に残す（コミット時に親レコードへ添付）
-    var imp = Cho_parseXlsxFile_(file.getId(), applicantType || "");
+    var imp = Cho_parseXlsxFile_(file.getId(), applicantType || "", receiptDate);
     return {
       ok: true,
       excelFileId: file.getId(),
@@ -945,14 +955,14 @@ function Cho_uploadAndImport(base64, filename, ctxToken, applicantType) {
 }
 
 // コミット段階: 永続 Excel を再パース（ブラウザ送信値は信用しない）→ 選択分を親子シートへ直接書き込む。
-function Cho_commitImport(excelFileId, selectionJson, ctxToken, applicantType) {
+function Cho_commitImport(excelFileId, selectionJson, ctxToken, applicantType, receiptDate) {
   try {
     if (!excelFileId) return { ok: false, error: "Excel ファイルIDがありません。もう一度アップロードしてください。" };
     var selection = (typeof selectionJson === "string") ? JSON.parse(selectionJson || "{}") : (selectionJson || {});
     var targets = Cho_resolveTargets_(ctxToken);
     if (!targets.parentSpreadsheetId) return { ok: false, error: "親フォームのスプレッドシートIDが未設定です（エディタで Cho_registerWriteTargets を実行して登録してください）。" };
     if (!targets.childSpreadsheetId) return { ok: false, error: "子フォーム（従事者名簿）のスプレッドシートIDが未設定です。" };
-    var imp = Cho_parseXlsxFile_(excelFileId, applicantType || "");
+    var imp = Cho_parseXlsxFile_(excelFileId, applicantType || "", receiptDate);
     return Cho_writeRecordsDirect_(imp, excelFileId, selection, targets);
   } catch (err) {
     return { ok: false, error: String(err && err.message ? err.message : err) };
@@ -1608,6 +1618,7 @@ if (typeof module === "object" && module.exports) {
     Cho_workerTools_: Cho_workerTools_,
     Cho_issue_: Cho_issue_, Cho_countIssues_: Cho_countIssues_, Cho_issuesToWarnings_: Cho_issuesToWarnings_,
     Cho_a1ToRC_: Cho_a1ToRC_, Cho_dateToCanonical_: Cho_dateToCanonical_,
+    Cho_normalizeReceiptDate_: Cho_normalizeReceiptDate_,
     Cho_serialOrDateToDate_: Cho_serialOrDateToDate_,
     CHO_APP_SPECIES_: CHO_APP_SPECIES_, CHO_ROSTER_: CHO_ROSTER_,
     CHO_SPECIES_ORDER_: CHO_SPECIES_ORDER_, CHO_TOOL_KIND_: CHO_TOOL_KIND_,

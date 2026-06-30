@@ -63,6 +63,13 @@ eq("個人 受付日(=now)", impKn.parent.fields["受付日"], NOW);
 eq("法人 受付日(=now)", impHn.parent.fields["受付日"], NOW);
 // nowCanonical 省略時は本日（new Date()）を canonical 化して必ず入る
 ok("受付日 省略時も YYYY-MM-DD で必ず入る", /^\d{4}-\d{2}-\d{2}$/.test(impH.parent.fields["受付日"]), JSON.stringify(impH.parent.fields["受付日"]));
+// 受付日の手入力（UI → Cho_parseXlsxFile_）を検証・canonical 化。不正/空は "" で本日にフォールバックさせる
+eq("受付日入力 正常はそのまま", C.Cho_normalizeReceiptDate_("2026-06-30"), "2026-06-30");
+eq("受付日入力 前後空白は trim", C.Cho_normalizeReceiptDate_("  2026-06-30  "), "2026-06-30");
+eq("受付日入力 空は \"\"", C.Cho_normalizeReceiptDate_(""), "");
+eq("受付日入力 不正は \"\"（=本日フォールバック）", C.Cho_normalizeReceiptDate_("2026/6/30"), "");
+// 手入力の受付日が Cho_buildImport_ 経由で受付日フィールドへ反映される
+eq("受付日 手入力値が反映", C.Cho_buildImport_(C.Cho_makeReader_(fx["個人"]), "個人", "2026-06-15").parent.fields["受付日"], "2026-06-15");
 
 // ---- 記入日（Excel 証明書 H2 右上から取込 → 証明書/記入日 葉）----
 eq("個人 証明書/記入日(H2取込)", impK.parent.fields["証明書/記入日"], "2026-06-10");
