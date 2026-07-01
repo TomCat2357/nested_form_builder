@@ -69,6 +69,70 @@ function onOpen() {
     .addToUi();
 }
 
+// ============================================================
+// Web アプリ層（一括・全ページ PDF をダウンロード出力）
+// ------------------------------------------------------------
+// 元テンプレートにバインドされたこのスクリプトを「ウェブアプリ」として
+// デプロイ（実行=自分（USER_DEPLOYING）／アクセス=組織内）すると、URL の
+// ?ssId=<コピーID> で対象スプレッドシートを開き、一括 PDF
+// （シートごとに1PDF・複数はZIP）をダウンロード出力する。
+// 認可はこの1プロジェクトに対して一度きりで、テンプレのコピーごとに
+// 発生していた「毎回の権限承認」はなくなる。
+// 個別印刷は従来どおりメニュー（onOpen → openPrintDialog → generateSingle）を使う。
+// ============================================================
+
+function doGet(e) {
+  const ssId = (e && e.parameter && (e.parameter.ssId || e.parameter.id)) || '';
+  const t = HtmlService.createTemplateFromFile('BatchDownload');
+  t.ssId = ssId;
+  let title = '', infos = [], errorMsg = '';
+  if (ssId) {
+    try {
+      const ss = SpreadsheetApp.openById(ssId);
+      title = ss.getName();
+      infos = listBatchSheetInfos_(ss);
+    } catch (ex) {
+      errorMsg = 'スプレッドシートを開けませんでした（ID と共有権限を確認してください）: ' + ex;
+    }
+  } else {
+    errorMsg = 'URL に ?ssId=<スプレッドシートID> を付けてアクセスしてください。';
+  }
+  t.title = title;
+  t.sheetInfos = infos;
+  t.errorMsg = errorMsg;
+  return t.evaluate()
+    .setTitle('許可証 一括PDFダウンロード')
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/** 印刷対象になり得るシート（非表示を除く）の一覧を返す。 */
+function listBatchSheetInfos_(ss) {
+  return ss.getSheets()
+    .filter(function (s) { return !(SKIP_HIDDEN_SHEETS && s.isSheetHidden()); })
+    .map(function (s) {
+      const n = s.getName();
+      return { name: n, form: formNameOf_(n) };
+    });
+}
+
+/**
+ * Web アプリからの一括ダウンロード実行。
+ * @param ssId    対象スプレッドシート（テンプレのコピー）の ID
+ * @param targets 出力するシート名の配列（チェックされたもの）
+ * 戻り値は generateBatch(download) と同じ:
+ *   {ok, mode:'download', name, mime, b64, note, succeeded, failed, empty} / {ok:false, error}
+ */
+async function webGenerateBatch(ssId, targets) {
+  try {
+    if (!ssId) return { ok: false, error: 'スプレッドシートIDが指定されていません。' };
+    const ss = SpreadsheetApp.openById(ssId);
+    const token = ScriptApp.getOAuthToken();
+    return await generateBatch(targets, 'download', ss, token);
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
 /** シート名 → 様式名（最初の "_" より前。"_" が無ければシート名そのもの） */
 function formNameOf_(sheetName) {
   const i = sheetName.indexOf('_');
@@ -189,11 +253,14 @@ function fetchExportWithRetry_(url, token, label) {
  *   全滅時  : {ok:false, error, succeeded, failed, empty}
  *   succeeded = 印刷できたシート名 / failed = ダウンロード失敗 / empty = 空で未出力
  */
-async function generateBatch(targets, dest) {
+async function generateBatch(targets, dest, ssOpt, tokenOpt) {
   try {
     if (!targets || !targets.length) return { ok: false, error: 'シートが選択されていません。' };
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const token = ScriptApp.getOAuthToken();
+    // ssOpt / tokenOpt を渡せば任意のスプレッドシート（テンプレのコピー）に対して実行できる
+    // ＝ Web アプリ駆動（webGenerateBatch）で使用。省略時はバインドされたアクティブなシート
+    // ＝ メニュー（onOpen → openPrintDialog）からの実行。
+    const ss = ssOpt || SpreadsheetApp.getActiveSpreadsheet();
+    const token = tokenOpt || ScriptApp.getOAuthToken();
     const want = targets.reduce(function (o, n) { o[n] = true; return o; }, {});
 
     const pdfBlobs = [];
