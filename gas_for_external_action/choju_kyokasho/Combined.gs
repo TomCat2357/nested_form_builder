@@ -105,7 +105,7 @@ var CHO2_L_W_ADDRESS_ = "住所";
 var CHO2_L_W_OCCUPATION_ = "職業";
 var CHO2_L_W_BIRTH_ = "生年月日";
 var CHO2_L_W_SPECIES_ = "捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量";
-var CHO2_L_W_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称)"; // 閉じ括弧が半角!
+var CHO2_L_W_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称）"; // 閉じ括弧が半角!
 
 // ----- 種の表示順（フォーム選択肢順）。bird=採取卵数あり -----
 var CHO2_SPECIES_ORDER_ = [
