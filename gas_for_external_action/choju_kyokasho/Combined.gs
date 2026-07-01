@@ -88,6 +88,7 @@ function Cho2_parsePayload_(e) {
 // ----- 親フォーム「鳥獣保護管理法許可申請」のラベル（payload の question パスと一致）-----
 var CHO2_CHILD_FORM_ID_ = "1Eh5p3Q5IMQEfi-7TiUV8ZZ8z_4HKW0Zj"; // 従事者情報
 var CHO2_FORMLINK_LABEL_ = "従事者情報";                       // 親 schema の formLink ラベル（record items の親カードパス）
+var CHO2_L_RECEIPT_DATE_ = "受付日"; // 交付通知書 B9 「…に申請を受けた」の日付（{{gge年M月D日}} 置換）
 var CHO2_L_APPLICANT_TYPE_ = "申請者情報/個人・法人の別";
 var CHO2_L_PURPOSE_ = "捕獲等又は採取等の目的";
 var CHO2_L_PERIOD_START_ = "捕獲等又は採取等の期間/開始";
@@ -150,9 +151,11 @@ var CHO2_TOOL_KIND_ = {
 var CHO2_GUN_LIC_ = { "第一種銃猟免許": "第一種銃猟", "第二種銃猟免許": "第二種銃猟" };
 
 // ----- 従事者名簿の幾何（choju CHO_ROSTER_ と同一）。1 ブロック = 1 従事者 -----
+// blockCount = テンプレの物理ブロック数 = 1 シートあたりの従事者数（行 5〜76 の 8 ブロック）。
+// 9 名以上はシートを複製して 8 名ずつ載せる（Cho2_materializeRoster_）。
 var CHO2_ROSTER_ = {
   sheetName: "従事者名簿",
-  firstRow: 5, blockHeight: 9, blockCount: 10,
+  firstRow: 5, blockHeight: 9, blockCount: 8,
   cols: {
     certNo: "E", address: "F", name: "G", occupation: "H", birth: "I",
     speciesName: "J", speciesCount: "K", species2Name: "M", species2Count: "N",
@@ -166,15 +169,24 @@ var CHO2_ROSTER_ = {
 // 各シート名
 var CHO2_SHEET_ROSTER_ = "従事者名簿";
 var CHO2_SHEET_KYOKASHO_ = "許可証";
+var CHO2_SHEET_KOFU_ = "交付通知書";
 var CHO2_SHEET_SHINKO_ = "振興局宛通知";
 var CHO2_SHEET_KEISATSU_ = "警察宛通知";
 var CHO2_SHEET_JUJI_ = "従事者証";
 
+// 通知シートのレイアウト差分。交付通知書は冒頭段落(B9)ぶん記欄が全体に +1 行シフトし、宛名(B3/B4)を持つ。
+// F2/F3（許可番号・許可年月日）はどのシートも不動。
+var CHO2_TSUCHI_LAYOUT_STD_ = { shift: 0 };                  // 振興局宛通知 / 警察宛通知
+var CHO2_TSUCHI_LAYOUT_KOFU_ = { shift: 1, addressee: true }; // 交付通知書
+
 // 出力時にクリアしてから書き込む緑セル（サンプル値の消去用）。dump 済みの緑セル番地。
+// 通知3種は許可の条件欄(C34/C34/C35)を追加。交付通知書は +1 行シフト＋宛名(B3:B4)。
+// 交付の B9（段落トークン {{gge年M月D日}}）はクリア対象に含めない（トークン置換で本文を温存）。
 var CHO2_CLEAR_RANGES_ = {
   "許可証": ["H4:H5", "G12:L14", "G17:L25", "G26", "G28", "G30", "G32", "G34"],
-  "振興局宛通知": ["F2:F3", "C12:H16", "C17:G25", "C26", "C28", "F28", "C30", "C32"],
-  "警察宛通知": ["F2:F3", "C12:H16", "C17:G25", "C26", "C28", "F28", "C30", "C32"],
+  "交付通知書": ["F2:F3", "B3:B4", "C13:H17", "C18:G26", "C27", "C29", "F29", "C31", "C33", "C35"],
+  "振興局宛通知": ["F2:F3", "C12:H16", "C17:G25", "C26", "C28", "F28", "C30", "C32", "C34"],
+  "警察宛通知": ["F2:F3", "C12:H16", "C17:G25", "C26", "C28", "F28", "C30", "C32", "C34"],
   "従事者証": ["F4:F5", "K14", "K16", "D17", "D23", "D29", "K18:P26", "K27", "K29", "K31", "K33"]
 };
 
@@ -555,39 +567,58 @@ function Cho2_jujiCells_(parent, worker, aggSpecies, workerTools, hojinName, kyo
   return cells;
 }
 
-// 通知 1 枚の差分（振興局/警察 共通）。種数=全員合計、住所/氏名は申請者区分で出し分け。
-function Cho2_tsuchiCells_(parent, workers, aggSpecies, unionTools, type, kyokaNo) {
+// 通知 1 枚の差分（振興局/警察/交付 共通）。種数=全員合計、住所/氏名は申請者区分で出し分け。
+// layout: { shift, addressee }。交付通知書は shift=1（記欄が +1 行）＋ addressee（宛名 B3/B4）。
+// F2/F3（許可番号・許可年月日）はどのレイアウトでも不動。
+function Cho2_tsuchiCells_(parent, workers, aggSpecies, unionTools, type, kyokaNo, layout) {
+  var lay = layout || CHO2_TSUCHI_LAYOUT_STD_;
+  var sh = lay.shift || 0;
   var cells = [];
   // F2:H2 / F3:H3 は結合セル（左上 F2/F3）。F2=許可番号そのまま("1-1")で "札環対許可第 @ 号" はセル書式が付与。
   Cho2_push_(cells, "F2", Cho2_str_(kyokaNo));
   Cho2_pushDate_(cells, "F3", parent[CHO2_L_KYOKA_DATE_]); // 許可年月日（和暦書式）
-  // 住所(C12)・氏名/法人名(C13)・許可証番号ブロック(C14…)・従事者名行(C15)
-  if (type === "法人") {
-    Cho2_push_(cells, "C12", Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/住所"]));
-    var hn = Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/法人名"]);
-    var rep = Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/代表者名"]);
-    Cho2_push_(cells, "C13", hn + (rep ? "　" + rep : ""));
-    Cho2_push_(cells, "C14", Cho2_str_(kyokaNo)); // "1-1"（セル書式 第@号）。法人は単一許可証番号
-    Cho2_push_(cells, "C15", "別紙のとおり");      // 従事者は別紙（従事者名簿）参照
-  } else {
-    var w0 = workers[0] || {};
-    Cho2_push_(cells, "C12", Cho2_str_(w0[CHO2_L_W_ADDRESS_]) || Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/個人/住所"]));
-    Cho2_push_(cells, "C13", Cho2_str_(w0[CHO2_L_W_NAME_]) || Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/個人/氏名"])); // 先頭従事者名のみ（他N名は G14）
-    // 許可証番号は従事者ごと "1-1-1" …（セル書式 第@号）。複数なら範囲＋他N名。
-    Cho2_push_(cells, "C14", Cho2_certNoRaw_(kyokaNo, 1));
-    if (workers.length > 1) {
-      Cho2_push_(cells, "D14", "～");
-      Cho2_push_(cells, "E14", Cho2_certNoRaw_(kyokaNo, workers.length));
-      Cho2_pushNum_(cells, "G14", workers.length - 1); // セル書式 "他#名"（先頭1名を除く人数）
+  // 宛名（交付通知書のみ・被許可者宛て）。法人=B3 法人名/B4 代表者名、個人=B4 氏名。
+  if (lay.addressee) {
+    if (type === "法人") {
+      Cho2_push_(cells, "B3", Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/法人名"]));
+      Cho2_push_(cells, "B4", Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/代表者名"]));
+    } else {
+      var w0a = workers[0] || {};
+      Cho2_push_(cells, "B4", Cho2_str_(w0a[CHO2_L_W_NAME_]) || Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/個人/氏名"]));
     }
   }
-  var grid = Cho2_gridCells_(CHO2_GRID_TSUCHI_, aggSpecies);
+  // 住所(C12)・氏名/法人名(C13)・許可証番号ブロック(C14…)・従事者名行(C15)。すべて +sh 行。
+  if (type === "法人") {
+    Cho2_push_(cells, "C" + (12 + sh), Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/住所"]));
+    var hn = Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/法人名"]);
+    var rep = Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/法人/代表者名"]);
+    Cho2_push_(cells, "C" + (13 + sh), hn + (rep ? "　" + rep : ""));
+    Cho2_push_(cells, "C" + (14 + sh), Cho2_str_(kyokaNo)); // "1-1"（セル書式 第@号）。法人は単一許可証番号
+    Cho2_push_(cells, "C" + (15 + sh), "別紙のとおり");      // 従事者は別紙（従事者名簿）参照
+  } else {
+    var w0 = workers[0] || {};
+    Cho2_push_(cells, "C" + (12 + sh), Cho2_str_(w0[CHO2_L_W_ADDRESS_]) || Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/個人/住所"]));
+    Cho2_push_(cells, "C" + (13 + sh), Cho2_str_(w0[CHO2_L_W_NAME_]) || Cho2_str_(parent[CHO2_L_APPLICANT_TYPE_ + "/個人/氏名"])); // 先頭従事者名のみ（他N名は G14）
+    // 許可証番号は従事者ごと "1-1-1" …（セル書式 第@号）。複数なら範囲＋他N名。
+    Cho2_push_(cells, "C" + (14 + sh), Cho2_certNoRaw_(kyokaNo, 1));
+    if (workers.length > 1) {
+      Cho2_push_(cells, "D" + (14 + sh), "～");
+      Cho2_push_(cells, "E" + (14 + sh), Cho2_certNoRaw_(kyokaNo, workers.length));
+      Cho2_pushNum_(cells, "G" + (14 + sh), workers.length - 1); // セル書式 "他#名"（先頭1名を除く人数）
+    }
+  }
+  // 種数グリッド（base を +sh。共有定数 CHO2_GRID_TSUCHI_ は汚さずインライン）。
+  var grid = Cho2_gridCells_(
+    { base: CHO2_GRID_TSUCHI_.base + sh, name: CHO2_GRID_TSUCHI_.name, count: CHO2_GRID_TSUCHI_.count, j: CHO2_GRID_TSUCHI_.j, k: CHO2_GRID_TSUCHI_.k },
+    aggSpecies
+  );
   for (var i = 0; i < grid.length; i++) cells.push(grid[i]);
-  Cho2_push_(cells, "C26", Cho2_str_(parent[CHO2_L_PURPOSE_]));
-  Cho2_pushDate_(cells, "C28", parent[CHO2_L_PERIOD_START_]);
-  Cho2_pushDate_(cells, "F28", parent[CHO2_L_PERIOD_END_]);
-  Cho2_push_(cells, "C30", Cho2_str_(parent[CHO2_L_AREA_]));
-  Cho2_push_(cells, "C32", unionTools.join(","));
+  Cho2_push_(cells, "C" + (26 + sh), Cho2_str_(parent[CHO2_L_PURPOSE_]));
+  Cho2_pushDate_(cells, "C" + (28 + sh), parent[CHO2_L_PERIOD_START_]);
+  Cho2_pushDate_(cells, "F" + (28 + sh), parent[CHO2_L_PERIOD_END_]);
+  Cho2_push_(cells, "C" + (30 + sh), Cho2_str_(parent[CHO2_L_AREA_]));
+  Cho2_push_(cells, "C" + (32 + sh), unionTools.join(","));
+  Cho2_push_(cells, "C" + (34 + sh), Cho2_str_(parent[CHO2_L_COND_])); // 許可の条件（空ならスキップ）
   return cells;
 }
 
@@ -600,13 +631,21 @@ function Cho2_buildPlan_(app, forcedType) {
   var agg = Cho2_aggregateSpecies_(workers);
   var unionTools = Cho2_unionTools_(workers);
 
-  // 従事者名簿（マスター・常に 1 シート）
-  var rosterCells = [];
-  for (var b = 0; b < workers.length && b < CHO2_ROSTER_.blockCount; b++) {
-    var top = CHO2_ROSTER_.firstRow + b * CHO2_ROSTER_.blockHeight;
-    var blk = Cho2_rosterBlockCells_(workers[b], top, Cho2_certNoRaw_(kyokaNo, b + 1)); // E 列＝"1-1-1" 連結
-    for (var i = 0; i < blk.length; i++) rosterCells.push(blk[i]);
+  // 従事者名簿（8 名/シート・9 名以上はシートを複製）。plan.roster = [{label, cells}]（従事者証と同形）。
+  var roster = [];
+  var perSheet = CHO2_ROSTER_.blockCount; // 8
+  for (var rs = 0; rs < workers.length; rs += perSheet) {
+    var rosterCells = [];
+    var rosterN = Math.min(perSheet, workers.length - rs);
+    for (var b = 0; b < rosterN; b++) {
+      var top = CHO2_ROSTER_.firstRow + b * CHO2_ROSTER_.blockHeight; // 各シートとも行 5 から
+      var gi = rs + b;                                                // 全体通し番号（許可証番号用）
+      var blk = Cho2_rosterBlockCells_(workers[gi], top, Cho2_certNoRaw_(kyokaNo, gi + 1)); // E 列＝"1-1-1" 連結
+      for (var i = 0; i < blk.length; i++) rosterCells.push(blk[i]);
+    }
+    roster.push({ label: String((rs / perSheet) + 1), cells: rosterCells });
   }
+  if (roster.length === 0) roster.push({ label: "1", cells: [] }); // 従事者 0 名でも名簿は 1 枚残す
 
   // 許可証: 法人=1(集計) / 個人=人数分(各自)
   var kyokasho = [];
@@ -647,15 +686,23 @@ function Cho2_buildPlan_(app, forcedType) {
     }
   }
 
-  // 通知（振興局・警察 各1・全員合計）
-  var tsuchi = Cho2_tsuchiCells_(parent, workers, agg, unionTools, type, kyokaNo);
+  // 通知（振興局・警察 各1・全員合計）＝標準レイアウト。交付通知書は +1 行シフト＋宛名。
+  var tsuchi = Cho2_tsuchiCells_(parent, workers, agg, unionTools, type, kyokaNo, CHO2_TSUCHI_LAYOUT_STD_);
+  var kofu = Cho2_tsuchiCells_(parent, workers, agg, unionTools, type, kyokaNo, CHO2_TSUCHI_LAYOUT_KOFU_);
+
+  // 交付通知書 B9 段落の {{gge年M月D日}} を受付日の和暦へ置換（純関数側で値だけ確定・記入は fill 層）。
+  var kofuTokens = [];
+  var appParts = Cho2_dateParts_(parent[CHO2_L_RECEIPT_DATE_]);
+  if (appParts) kofuTokens.push({ a1: "B9", token: "{{gge年M月D日}}", value: Cho2_warekiString_(appParts) });
 
   return {
     type: type,
     workerCount: workers.length,
-    roster: rosterCells,
+    roster: roster, // [{label, cells}]（8 名/シート・9 名以上は複数エントリ）
     kyokasho: kyokasho, // [{label, cells}]
     juji: juji,         // [{label, cells}]
+    kofu: kofu,         // 交付通知書（各1・全員合計・+1行シフト）
+    kofuTokens: kofuTokens, // [{a1, token, value}]（B9 トークン置換）
     shinko: tsuchi,
     keisatsu: tsuchi
   };
@@ -739,23 +786,18 @@ function Cho2_renderWorkbook_(plan, fileName, folder) {
     var ss = SpreadsheetApp.openById(ssId);
     Cho2_pendingWrites_ = {}; // 書き込み前にリセット（flush 例外時の照合用）
 
-    // 従事者名簿（クリア→記入）
-    var roster = ss.getSheetByName(CHO2_SHEET_ROSTER_);
-    if (roster) {
-      var lastRow = CHO2_ROSTER_.firstRow + CHO2_ROSTER_.blockCount * CHO2_ROSTER_.blockHeight;
-      // テンプレの 1 人目ブロックは免許列(R..Y=都道府県/番号/交付・登録・所持許可)が縦結合済みで、
-      // 用具ごとの行（top+ti）へ書けない（非左上セルは setValue 不可）。全ブロックを per-row に
-      // 揃えるため免許列の結合を解除する（2 人目以降や未結合行は no-op）。氏名等の左列結合は維持。
-      try { roster.getRange("R" + CHO2_ROSTER_.firstRow + ":Y" + lastRow).breakApart(); } catch (e) { /* no-op */ }
-      roster.getRange("E" + CHO2_ROSTER_.firstRow + ":AA" + lastRow).clearContent();
-      Cho2_applyCells_(roster, plan.roster);
-    }
+    // 従事者名簿（8 名/シート・9 名以上はシート複製 → クリア→記入）
+    Cho2_materializeRoster_(ss, plan.roster);
 
     // 許可証（法人=1 / 個人=N）
     Cho2_materializeAndFill_(ss, CHO2_SHEET_KYOKASHO_, plan.kyokasho);
 
     // 従事者証（法人=N / 個人=0）
     Cho2_materializeAndFill_(ss, CHO2_SHEET_JUJI_, plan.juji);
+
+    // 交付通知書（各 1・クリア→記入→B9 の {{gge年M月D日}} をトークン置換）
+    Cho2_fillSingle_(ss, CHO2_SHEET_KOFU_, plan.kofu);
+    Cho2_applyTokenReplacements_(ss.getSheetByName(CHO2_SHEET_KOFU_), plan.kofuTokens);
 
     // 通知（各 1・クリア→記入）
     Cho2_fillSingle_(ss, CHO2_SHEET_SHINKO_, plan.shinko);
@@ -780,6 +822,27 @@ function Cho2_renderWorkbook_(plan, fileName, folder) {
     return { url: ssFile.getUrl(), name: ssFile.getName() };
   } finally {
     if (!success && ssId) { try { Drive.Files.remove(ssId, { supportsAllDrives: true }); } catch (e) { /* no-op */ } }
+  }
+}
+
+// 従事者名簿を entries.length 枚に複製して記入（8 名/枚）。entries=[{label,cells}]。
+// 名簿はテンプレの 1 人目ブロックが免許列(R..Y)縦結合済みで per-row に書けないため、各シートで
+// R:Y の結合を解除してから記入する（materializeAndFill との違いはこの breakApart と専用クリア範囲）。
+function Cho2_materializeRoster_(ss, entries) {
+  var base = ss.getSheetByName(CHO2_SHEET_ROSTER_);
+  if (!base || !entries || entries.length === 0) return;
+  var firstRow = CHO2_ROSTER_.firstRow;
+  var lastRow = firstRow + CHO2_ROSTER_.blockCount * CHO2_ROSTER_.blockHeight; // 5+8*9=77
+  // 記入前に空テンプレのまま必要枚数を複製（copyTo は末尾に追加。記入後に複製するとデータごと複製される）。
+  var sheets = [base];
+  for (var k = 1; k < entries.length; k++) sheets.push(base.copyTo(ss));
+  for (var s = 0; s < sheets.length; s++) {
+    var sh = sheets[s];
+    try { sh.getRange("R" + firstRow + ":Y" + lastRow).breakApart(); } catch (e) { /* no-op */ }
+    sh.getRange("E" + firstRow + ":AA" + lastRow).clearContent();
+    Cho2_applyCells_(sh, entries[s].cells);
+    // 常に <様式名>_<識別接尾語>。名簿の接尾語はページ番号（entries[s].label = "1","2",…）＝"従事者名簿_1ページ目"…
+    sh.setName(Cho2_uniqueSheetName_(ss, CHO2_SHEET_ROSTER_ + "_" + entries[s].label + "ページ目", sh));
   }
 }
 
@@ -813,6 +876,17 @@ function Cho2_fillSingle_(ss, sheetName, cells) {
   Cho2_applyCells_(sh, cells);
 }
 
+// 既存セル文字列内のトークンを置換（クリアせず段落本文を温存。交付通知書 B9 の {{gge年M月D日}} 用）。
+function Cho2_applyTokenReplacements_(sheet, list) {
+  if (!sheet || !list || !list.length) return;
+  for (var i = 0; i < list.length; i++) {
+    var t = list[i];
+    var range = sheet.getRange(t.a1);
+    var s = String(range.getValue() == null ? "" : range.getValue());
+    if (s.indexOf(t.token) >= 0) range.setValue(s.split(t.token).join(t.value));
+  }
+}
+
 function Cho2_clearRanges_(sheet, ranges) {
   for (var i = 0; i < ranges.length; i++) { try { sheet.getRange(ranges[i]).clearContent(); } catch (e) { /* no-op */ } }
 }
@@ -844,13 +918,14 @@ function Cho2_applyCells_(sheet, cells) {
   }
 }
 
-// シート順を 従事者名簿 → 許可証* → 振興局 → 警察 → 従事者証* に整える（best-effort）。
+// シート順を 従事者名簿 → 許可証* → 交付通知書 → 振興局 → 警察 → 従事者証* に整える（best-effort）。
 function Cho2_reorderSheets_(ss) {
   var order = [];
   var all = ss.getSheets();
   function pick(pred) { for (var i = 0; i < all.length; i++) { var n = all[i].getName(); if (pred(n) && order.indexOf(all[i]) === -1) order.push(all[i]); } }
-  pick(function (n) { return n === CHO2_SHEET_ROSTER_; });
+  pick(function (n) { return n.indexOf(CHO2_SHEET_ROSTER_) === 0; }); // 名簿 + 名簿(2)…（「従事者証」は不一致）
   pick(function (n) { return n.indexOf(CHO2_SHEET_KYOKASHO_) === 0; });
+  pick(function (n) { return n === CHO2_SHEET_KOFU_; });
   pick(function (n) { return n.indexOf(CHO2_SHEET_SHINKO_) === 0; });
   pick(function (n) { return n.indexOf(CHO2_SHEET_KEISATSU_) === 0; });
   pick(function (n) { return n.indexOf(CHO2_SHEET_JUJI_) === 0; });
