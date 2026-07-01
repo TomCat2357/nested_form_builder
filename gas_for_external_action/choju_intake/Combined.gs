@@ -171,7 +171,7 @@ var CHO_L_JIYU_REASON_ = "捕獲等又は採取等を行う理由";
 var CHO_L_JIYU_DATE_ = "記入日";
 var CHO_JIYU_DATE_CELL_ = "H2"; // 証明書シート右上の記入日セル（H2:J2 結合・日付シリアル）
 // 子フォーム「従事者情報」
-var CHO_L_CHILD_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称)"; // 閉じ括弧が半角!
+var CHO_L_CHILD_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称）"; // 閉じ括弧が半角!
 var CHO_L_CHILD_SPECIES_ = "捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量";
 // 確認用（桃セルの値を取り込む親フォームの message。子に種数サブ message）
 var CHO_L_CONFIRM_ = "確認用";

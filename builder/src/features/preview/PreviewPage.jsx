@@ -585,7 +585,7 @@ const PreviewPage = React.forwardRef(function PreviewPage(
       const res = await sendExternalAction({ url: resolvedUrl, payload });
       const result = interpretExternalActionResponse(res);
       if (!result.ok) {
-        // ok:false でも openUrl があれば新タブで開く（受信側の権限付与誘導に対応）。
+        // ok:false でも openUrl があれば右下通知のリンクから開けるようにする（受信側の権限付与誘導に対応）。
         const errUrl = result.openUrl || resolvedUrl;
         const errLinkLabel = result.openUrl ? "送信先を開く" : "送信先ページを開く";
         showOutputAlert({
@@ -593,9 +593,6 @@ const PreviewPage = React.forwardRef(function PreviewPage(
           url: errUrl,
           linkLabel: errLinkLabel,
         });
-        if (result.openUrl) {
-          openInNewTab(result.openUrl);
-        }
         return;
       }
       if (result.openUrl) {

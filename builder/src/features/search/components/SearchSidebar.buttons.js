@@ -10,7 +10,6 @@ import { resolveTemplateTokensAsync } from "../../../utils/tokenReplacer.js";
 import { extractReservedRefs } from "../../expression/templateEvaluator.js";
 import { resolveStyleSettingsInlineStyle } from "../../../core/styleSettings.js";
 import { buildRecordFromEntry } from "../../preview/childFormData.js";
-import { openInNewTab } from "../../../utils/openWindow.js";
 
 // 対象行 (選択行があればその行、なければフィルタ後の全行) を { id, no, items } レコード配列へ整形して
 // payload の base を組む。起動元に依らない統一フォーマット（records 配列 + recordCount）で、編集画面
@@ -50,19 +49,17 @@ export const resolveChildStorageMeta = async ({ sensitiveAllowed, searchChildSto
 // searchChildFormsResolver(entries) は entries と同順の「各行 = { fieldId: 子フォーム合成オブジェクト }」を返す async 関数。
 // searchChildStorageMetaResolver() は子フォーム定義から { childSpreadsheetId, childSheetName } を直接返す async 関数
 // （子レコードの有無に依存しない。取り込みなど既存子が無い操作でも子 SS を解決するため）。
-const handleExternalActionClick = async (action, { formContext, isAdmin, normalizedSchema, outputTargetRows, searchChildFormsResolver, searchChildStorageMetaResolver }) => {
+const handleExternalActionClick = async (action, { formContext, isAdmin, normalizedSchema, outputTargetRows, searchChildFormsResolver, searchChildStorageMetaResolver, showAlert, showOutputAlert }) => {
   const gate = { adminOnly: !!action.adminOnly, isAdmin };
   // URL トークン解決は印刷様式と共通の alasql `{{...}}` エンジンに統一。旧・単括弧固定トークンは
   // 自動マップ。機微予約トークンは adminOnly && isAdmin のときだけ展開を許可（早期失敗を維持）。
   const migratedUrl = migrateLegacyExternalActionUrlTokens(action.url);
   if (hasBlockedSensitiveRefs(extractReservedRefs(migratedUrl), gate)) {
-    // eslint-disable-next-line no-alert
-    window.alert("この URL には管理者限定のトークンが含まれています。フォーム設定で「管理者のみ」を有効にするか、トークンを見直してください。");
+    showAlert("この URL には管理者限定のトークンが含まれています。フォーム設定で「管理者のみ」を有効にするか、トークンを見直してください。");
     return;
   }
   if (!hasScriptRun()) {
-    // eslint-disable-next-line no-alert
-    window.alert("この機能はGoogle Apps Script環境でのみ利用可能です");
+    showAlert("この機能はGoogle Apps Script環境でのみ利用可能です");
     return;
   }
   const sensitiveAllowed = gate.adminOnly && gate.isAdmin;
@@ -86,8 +83,7 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, normali
     resolvedUrl = "";
   }
   if (!isValidExternalActionUrl(resolvedUrl)) {
-    // eslint-disable-next-line no-alert
-    window.alert("URL が不正です (http:// または https:// で始まる必要があります)。フォーム設定を確認してください。");
+    showAlert("URL が不正です (http:// または https:// で始まる必要があります)。フォーム設定を確認してください。");
     return;
   }
   let childDataByRow = null;
@@ -114,41 +110,38 @@ const handleExternalActionClick = async (action, { formContext, isAdmin, normali
     const res = await sendExternalAction({ url: resolvedUrl, payload });
     const result = interpretExternalActionResponse(res);
     if (!result.ok) {
-      // ok:false でも openUrl があれば新タブで開く（受信側の権限付与誘導に対応）。
-      const openTarget = result.openUrl || resolvedUrl;
-      // eslint-disable-next-line no-alert
-      window.alert(result.message || "外部アクションの送信先でエラーが発生しました。");
-      openInNewTab(openTarget);
+      // ok:false でも openUrl があれば右下通知のリンクから開けるようにする（受信側の権限付与誘導に対応）。
+      showOutputAlert({
+        message: result.message || "外部アクションの送信先でエラーが発生しました。",
+        url: result.openUrl || resolvedUrl,
+        linkLabel: result.openUrl ? "送信先を開く" : "送信先ページを開く",
+      });
       return;
     }
     const msg = result.message || "外部アクションを送信しました。";
     if (result.openUrl) {
-      // eslint-disable-next-line no-alert
-      window.alert(msg + "\n" + result.openUrl);
-      openInNewTab(result.openUrl);
+      showOutputAlert({ message: msg, url: result.openUrl, linkLabel: "結果を開く" });
     } else if (result.htmlBody) {
       // HTML 応答は権限付与ページへのリダイレクト等の可能性がある。
-      // eslint-disable-next-line no-alert
-      window.alert(msg);
-      openInNewTab(resolvedUrl);
+      showOutputAlert({ message: msg, url: resolvedUrl, linkLabel: "送信先ページを開く" });
     } else {
-      // eslint-disable-next-line no-alert
-      window.alert(msg);
+      showAlert(msg);
     }
   } catch (error) {
     // 誤送信防止ハンドシェイクで宛先を確認できなかったときは、その理由をそのまま伝える。
     if (error && error.code === "DEST_UNVERIFIED") {
-      // eslint-disable-next-line no-alert
-      window.alert(error.message || "宛先を確認できませんでした（誤送信防止）。");
+      showOutputAlert({ message: error.message || "宛先を確認できませんでした（誤送信防止）。", url: resolvedUrl, linkLabel: "送信先ページを開く" });
     } else {
-      // eslint-disable-next-line no-alert
-      window.alert("外部アクション送信に失敗しました: " + (error && error.message ? error.message : String(error)));
+      showOutputAlert({
+        message: "外部アクション送信に失敗しました: " + (error && error.message ? error.message : String(error)),
+        url: resolvedUrl,
+        linkLabel: "送信先ページを開く",
+      });
     }
-    openInNewTab(resolvedUrl);
   }
 };
 
-const buildExternalActionButtons = (externalActions, formContext, { isAdmin = false, normalizedSchema = null, outputTargetRows = null, searchChildFormsResolver = null, searchChildStorageMetaResolver = null } = {}) => {
+const buildExternalActionButtons = (externalActions, formContext, { isAdmin = false, normalizedSchema = null, outputTargetRows = null, searchChildFormsResolver = null, searchChildStorageMetaResolver = null, showAlert = () => {}, showOutputAlert = () => {} } = {}) => {
   if (!Array.isArray(externalActions) || externalActions.length === 0) return [];
   return externalActions
     .filter((action) => action && typeof action.url === "string" && action.url.trim() !== "")
@@ -160,7 +153,7 @@ const buildExternalActionButtons = (externalActions, formContext, { isAdmin = fa
       const style = enabled ? resolveStyleSettingsInlineStyle(action.styleSettings || {}) : undefined;
       return {
         label: (action.label && action.label.trim()) || "外部アクション",
-        onClick: () => { handleExternalActionClick(action, { formContext, isAdmin, normalizedSchema, outputTargetRows, searchChildFormsResolver, searchChildStorageMetaResolver }).catch(() => {}); },
+        onClick: () => { handleExternalActionClick(action, { formContext, isAdmin, normalizedSchema, outputTargetRows, searchChildFormsResolver, searchChildStorageMetaResolver, showAlert, showOutputAlert }).catch(() => {}); },
         title: action.url,
         style: style && Object.keys(style).length > 0 ? style : undefined,
       };
@@ -193,12 +186,14 @@ export const buildSearchSidebarButtons = ({
   outputTargetRows = null,
   searchChildFormsResolver = null,
   searchChildStorageMetaResolver = null,
+  showAlert = () => {},
+  showOutputAlert = () => {},
 }) => {
   const deleteBtn = isUndoDelete
     ? { label: "削除取消し", onClick: onUndelete, disabled: selectedCount === 0 || readOnly, className: "search-sidebar-btn-warning" }
     : { label: "削除", onClick: onDelete, disabled: selectedCount === 0 || readOnly, className: "search-sidebar-btn-danger" };
 
-  const externalButtons = buildExternalActionButtons(externalActions, formContext, { isAdmin, normalizedSchema, outputTargetRows, searchChildFormsResolver, searchChildStorageMetaResolver });
+  const externalButtons = buildExternalActionButtons(externalActions, formContext, { isAdmin, normalizedSchema, outputTargetRows, searchChildFormsResolver, searchChildStorageMetaResolver, showAlert, showOutputAlert });
 
   return [
     showBack && onBack && { label: "← 戻る", onClick: onBack },

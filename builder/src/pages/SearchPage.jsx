@@ -191,6 +191,8 @@ export default function SearchPage() {
           searchChildFormsResolver={resolveSearchChildFormsForRows}
           searchChildStorageMetaResolver={resolveSearchChildStorageMeta}
           isAdmin={isAdmin}
+          showAlert={showAlert}
+          showOutputAlert={showOutputAlert}
         />
         </>
       )}
