@@ -9,12 +9,18 @@ import { splitEscaped } from "../../../utils/pathCodec.js";
  * 同じ `基本情報__区` に落ちるため、保存済みダッシュボードの旧 pipePath 参照も移行なしで解決できる。
  * （`|` は新仕様では通常文字だが、旧データ互換のため区切りとしても解釈する。同名衝突は
  *  従来の `__` 連結が持つ既知の縁ケースと同じ範囲で、悪化させない。）
+ *
+ * 固定列 `No.` は画面表示どおり `No.` と書けるよう、行ビルダの実キー `No_`
+ * （entriesToViewRows.js）にここでエイリアスする（`.` は AlaSQL 上有効な識別子文字だが、
+ * JS オブジェクトキーとしては `_` に正規化して保持しているため）。
  */
 export function headerKeyToAlaSqlKey(key) {
   if (!key) return "";
+  const strKey = String(key);
+  if (strKey === "No.") return "No_";
   const out = [];
   // まず "/"（"\/" エスケープ対応）でセグメント化し、各セグメントをさらに legacy "|" で分割。
-  const parts = splitEscaped(String(key), "/", false);
+  const parts = splitEscaped(strKey, "/", false);
   for (let i = 0; i < parts.length; i++) {
     const sub = parts[i].split("|");
     for (let j = 0; j < sub.length; j++) out.push(sub[j]);

@@ -85,6 +85,14 @@ test("角括弧 — 文字列リテラル内の [a|b] は保護される", () =>
   );
 });
 
+test("固定列 No. は角括弧で書いても No_ に変換される", () => {
+  assert.equal(preprocessAlaSqlExpression("[No.] = 1"), "[No_] = 1");
+});
+
+test("固定列 No. はバッククォートで書いても No_ に変換される", () => {
+  assert.equal(preprocessAlaSqlExpression("`No.` = 1"), "`No_` = 1");
+});
+
 test("角括弧 CASE WHEN 実例を変換する", () => {
   const input = [
     "CASE",

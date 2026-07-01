@@ -9,7 +9,7 @@ export function buildColumnIndex(form) {
   const byFieldId = new Map();
 
   for (const fixed of FIXED_PATHS) {
-    byPipePath.set(fixed, fixed);
+    byPipePath.set(fixed, headerKeyToAlaSqlKey(fixed));
   }
 
   if (form && Array.isArray(form.schema)) {
