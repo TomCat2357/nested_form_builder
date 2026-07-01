@@ -28,6 +28,8 @@ import { SQL_MODE_RE } from "../features/search/searchSyntaxPreprocessor.js";
 import { triggerCsvDownload } from "../features/analytics/utils/exportResultData.js";
 import { readSettingsValue, writeSettingsValue } from "../core/storage.js";
 import { fieldInsertOptions, SEARCHABLE_META_PATHS, computeInsertion } from "./playgroundHelpers.js";
+import FunctionReferencePanel from "./FunctionReferencePanel.jsx";
+import { catalogInsertSnippet } from "../features/expression/nfbFunctionCatalog.js";
 
 // SQL / テンプレート入力の共通 monospace テキストエリア（QuestionEditorPage と同じ流儀）。
 const monoTextareaStyle = {
@@ -480,6 +482,20 @@ export default function PlaygroundPage() {
     }).catch(() => {});
   };
 
+  // 関数一覧パネルからの挿入。モードごとに挿入先テキストエリアと囲み方を切り替える
+  // （置換モードは {{ }} で囲む）。挿入先が無いモード（外部アクション）は no-op。
+  const handleInsertFunction = (item) => {
+    const targets = {
+      question: { ref: qSqlRef, value: qSql, set: setQSql, wrap: false },
+      search: { ref: searchRef, value: searchQuery, set: setSearchQuery, wrap: false },
+      template: { ref: templateRef, value: template, set: setTemplate, wrap: true },
+    };
+    const t = targets[mode];
+    if (!t) return;
+    const base = catalogInsertSnippet(item);
+    insertAtCursor(t.ref.current, t.value, t.wrap ? `{{${base}}}` : base, t.set);
+  };
+
   if (!isAdmin) return null;
 
   // template / externalAction / expression / search 共有のフォーム + レコードピッカー。
@@ -544,6 +560,12 @@ export default function PlaygroundPage() {
             </label>
           ))}
         </fieldset>
+
+        <FunctionReferencePanel
+          onInsert={handleInsertFunction}
+          insertDisabled={mode === "externalAction"}
+          insertDisabledHint="外部アクションモードには入力欄がありません。クリックで関数名をコピーします。"
+        />
 
         {/* ===== Question モード ===== */}
         {mode === "question" && (
