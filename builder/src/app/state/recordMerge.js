@@ -136,3 +136,19 @@ export const getMaxRecordNoFromEntries = (entries) => {
 
   return maxNo;
 };
+
+// 指定 pid（親レコード ID）に属する entry だけを対象に最大 No. を返す。
+// 子フォームの「親ごとに独立採番」用。pid が空なら 0（＝pid 文脈なしとして全体採番へ委ねる）。
+export const getMaxRecordNoFromEntriesForPid = (entries, pid) => {
+  const target = String(pid == null ? "" : pid).trim();
+  if (!target) return 0;
+
+  let maxNo = 0;
+  for (const entry of entries || []) {
+    if (String(entry?.pid == null ? "" : entry.pid).trim() !== target) continue;
+    const no = parseInt(entry?.["No."], 10);
+    if (!Number.isNaN(no) && no > maxNo) maxNo = no;
+  }
+
+  return maxNo;
+};

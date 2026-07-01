@@ -9,6 +9,7 @@ import {
   updateRecordsMeta,
   deleteRecordFromCache,
   getMaxRecordNo,
+  getMaxRecordNoForPid,
   getRecordsFromCache,
   applySyncResultToCache,
   clearFormRecordsCache,
@@ -37,6 +38,7 @@ import {
   registerImportedForm as registerImportedFormInGas,
   copyForm as copyFormFromGas,
   syncRecordsProxy,
+  resolveFormPid,
 } from "../../services/gasClient.js";
 import { perfLogger } from "../../utils/perfLogger.js";
 import { genLocalId, isLocalId } from "../../core/ids.js";
@@ -46,6 +48,7 @@ import {
   getSheetConfig,
   getDeletedRetentionDays,
   getRecordNoStart,
+  getRecordNoPerPid,
   resolveNextRecordNo,
   isDeletedEntryExpired,
   pruneExpiredDeletedEntries,
@@ -415,6 +418,13 @@ export const dataStore = {
     const cached = safePayload.id ? await getCachedEntryWithIndex(formId, safePayload.id) : { entry: null, rowIndex: null };
     const existingEntry = cached.entry;
 
+    // 子フォーム文脈（オーバーレイ登録 or URL 固定）で開いているときの pid を解決する。
+    // pid があれば新規/既存を問わずローカル entry にも刻む（サーバも ctx から同じ pid を刻むので値は一致）。
+    // これにより、同じ pid での連続作成でも直前の未同期レコードを親ごと採番の集計に取りこぼさない。
+    const pid = resolveFormPid(formId);
+    let workingPayload = safePayload;
+    if (pid && !workingPayload.pid) workingPayload = { ...workingPayload, pid };
+
     let nextRecordNo = null;
     const payloadRecordNo = safePayload["No."];
     const existingRecordNo = existingEntry?.["No."];
@@ -428,23 +438,27 @@ export const dataStore = {
       || existingRecordNo === ""
     );
     if (needsNewRecordNo) {
-      const maxNo = await getMaxRecordNo(formId);
-      // フォーム修正画面で指定した No. の開始番号を下限に採番する（空欄なら 1 始まり）。
-      // フォームはほぼ常にキャッシュ命中で取れる。万一取得できなければ既定（1 始まり）へフォールバック。
+      // フォームはほぼ常にキャッシュ命中で取れる。万一取得できなければ既定（親ごと採番 ON・1 始まり）へフォールバック。
       const form = await this.getForm(formId).catch(() => null);
+      // 「子フォームの No. を親ごとに 1 から振る」設定が ON かつ pid があれば同 pid 内の最大＋1、
+      // それ以外（設定 OFF・pid なし＝子フォームでない）は従来どおり全体の最大＋1。
+      const maxNo = (getRecordNoPerPid(form) && pid)
+        ? await getMaxRecordNoForPid(formId, pid)
+        : await getMaxRecordNo(formId);
+      // フォーム修正画面で指定した No. の開始番号を下限に採番する（親ごと採番時も各 pid の下限として有効。空欄なら 1 始まり）。
       nextRecordNo = resolveNextRecordNo(maxNo, getRecordNoStart(form));
     }
 
     const record = buildUpsertEntryRecord({
       formId,
-      payload: safePayload,
+      payload: workingPayload,
       existingEntry,
       now,
       nextRecordNo,
     });
     await upsertRecordInCache(formId, record, {
-      headerMatrix: safePayload.headerMatrix,
-      rowIndex: safePayload.rowIndex ?? cached.rowIndex,
+      headerMatrix: workingPayload.headerMatrix,
+      rowIndex: workingPayload.rowIndex ?? cached.rowIndex,
     });
     return record;
   },

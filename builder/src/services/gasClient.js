@@ -28,9 +28,14 @@ export const getUrlPid = (formId) => {
 // 2) 無ければ URL グローバル（__FORM_ID__ と payload.formId が一致するときの __PID__）。
 // どちらも空なら payload をそのまま返す。payload.formId をキーに解決するので、親子が同時に
 // マウントされていても呼び出し先ごとに正しい pid を引ける。
+// formId に対する現在の pid を解決する。子フォームのオーバーレイ登録（formPidContext）を最優先し、
+// 無ければ URL グローバル（__FORM_ID__ と一致するときの __PID__）へフォールバック。withUrlPid と
+// 採番（dataStore.upsertEntry の親ごと採番）で同一ロジックを共有するため公開する。
+export const resolveFormPid = (formId) => getRegisteredFormPid(formId) || getUrlPid(formId);
+
 const withUrlPid = (payload) => {
   const formId = payload && payload.formId;
-  const pid = getRegisteredFormPid(formId) || getUrlPid(formId);
+  const pid = resolveFormPid(formId);
   return pid ? { ...payload, pid } : payload;
 };
 

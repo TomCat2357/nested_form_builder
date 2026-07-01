@@ -9,11 +9,13 @@ import {
   clearFormRecordsCache,
   getCachedEntryWithIndex,
   getMaxRecordNo,
+  getMaxRecordNoForPid,
   applySyncResultToCache,
   updateRecordsMeta,
   updateEntryIndex,
   normalizeRecordForCache,
   getMaxRecordNoFromEntries,
+  getMaxRecordNoFromEntriesForPid,
   __resetMemoryStoreForTests,
 } from "./recordsMemoryStore.js";
 
@@ -222,6 +224,42 @@ test("getMaxRecordNo returns the largest No. across all records", async () => {
 test("getMaxRecordNo returns 0 for an unknown form", async () => {
   __resetMemoryStoreForTests();
   assert.equal(await getMaxRecordNo("missing_form"), 0);
+});
+
+test("getMaxRecordNoFromEntriesForPid returns the largest No. among entries with the matching pid", () => {
+  const entries = [
+    { id: "rec_1", "No.": 1, pid: "A" },
+    { id: "rec_2", "No.": 2, pid: "A" },
+    { id: "rec_3", "No.": 9, pid: "B" },
+    { id: "rec_4", "No.": "x", pid: "A" },
+    { id: "rec_5", "No.": 3 },
+  ];
+  assert.equal(getMaxRecordNoFromEntriesForPid(entries, "A"), 2);
+  assert.equal(getMaxRecordNoFromEntriesForPid(entries, "B"), 9);
+  assert.equal(getMaxRecordNoFromEntriesForPid(entries, "C"), 0);
+  assert.equal(getMaxRecordNoFromEntriesForPid(entries, ""), 0);
+  assert.equal(getMaxRecordNoFromEntriesForPid(entries, null), 0);
+  // pid はトリム込みの文字列一致（数値 pid でも一致する）
+  assert.equal(getMaxRecordNoFromEntriesForPid([{ "No.": 4, pid: 7 }], "7"), 4);
+});
+
+test("getMaxRecordNoForPid returns the largest No. scoped to the pid", async () => {
+  __resetMemoryStoreForTests();
+  await saveRecordsToCache(FORM_ID, [
+    sampleRecord("rec_1", { "No.": 3, pid: "A" }),
+    sampleRecord("rec_2", { "No.": 7, pid: "B" }),
+    sampleRecord("rec_3", { "No.": 5, pid: "A" }),
+  ]);
+
+  assert.equal(await getMaxRecordNoForPid(FORM_ID, "A"), 5);
+  assert.equal(await getMaxRecordNoForPid(FORM_ID, "B"), 7);
+  assert.equal(await getMaxRecordNoForPid(FORM_ID, "C"), 0);
+});
+
+test("getMaxRecordNoForPid returns 0 for an unknown form or empty pid", async () => {
+  __resetMemoryStoreForTests();
+  assert.equal(await getMaxRecordNoForPid("missing_form", "A"), 0);
+  assert.equal(await getMaxRecordNoForPid(FORM_ID, ""), 0);
 });
 
 test("applySyncResultToCache merges newer records by modifiedAt", async () => {

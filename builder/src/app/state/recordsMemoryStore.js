@@ -17,10 +17,11 @@ import {
   buildEntryIndexMap,
   mergeRecordsByModifiedAt,
   getMaxRecordNoFromEntries,
+  getMaxRecordNoFromEntriesForPid,
 } from "./recordMerge.js";
 
 // Re-export pure functions so existing consumers don't break
-export { normalizeRecordForCache, mergeRecordsByModifiedAt, getMaxRecordNoFromEntries } from "./recordMerge.js";
+export { normalizeRecordForCache, mergeRecordsByModifiedAt, getMaxRecordNoFromEntries, getMaxRecordNoFromEntriesForPid } from "./recordMerge.js";
 
 // Module-level state (singleton).
 const stores = new Map();
@@ -312,6 +313,16 @@ export async function getMaxRecordNo(formId) {
   const store = stores.get(formId);
   if (!store) return 0;
   return getMaxRecordNoFromEntries(Array.from(store.records.values()));
+}
+
+/**
+ * 指定 pid（親レコード ID）に属するレコードだけの最大 No. を取得（子フォームの親ごと採番用）
+ */
+export async function getMaxRecordNoForPid(formId, pid) {
+  if (!formId || !pid) return 0;
+  const store = stores.get(formId);
+  if (!store) return 0;
+  return getMaxRecordNoFromEntriesForPid(Array.from(store.records.values()), pid);
 }
 
 /**

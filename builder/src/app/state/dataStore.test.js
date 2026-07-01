@@ -8,6 +8,7 @@ import {
   filterExpiredDeletedEntries,
   spreadsheetTargetKey,
   getRecordNoStart,
+  getRecordNoPerPid,
   resolveNextRecordNo,
 } from "./dataStoreHelpers.js";
 
@@ -97,6 +98,16 @@ test("getRecordNoStart は空欄・非数値・0以下を 1（既定の 1 始ま
   assert.equal(getRecordNoStart({ settings: { recordNoStart: "100" } }), 100);
   assert.equal(getRecordNoStart({ settings: { recordNoStart: 7 } }), 7);
   assert.equal(getRecordNoStart({ settings: { recordNoStart: "3.9" } }), 3);
+});
+
+test("getRecordNoPerPid は未設定・true を既定 ON、明示 false のときだけ OFF にする", () => {
+  // 未設定（既存フォーム含む）は既定 ON。
+  assert.equal(getRecordNoPerPid(undefined), true);
+  assert.equal(getRecordNoPerPid({}), true);
+  assert.equal(getRecordNoPerPid({ settings: {} }), true);
+  assert.equal(getRecordNoPerPid({ settings: { recordNoPerPid: true } }), true);
+  // 明示的に false のときだけ OFF（従来どおり全体採番）。
+  assert.equal(getRecordNoPerPid({ settings: { recordNoPerPid: false } }), false);
 });
 
 test("resolveNextRecordNo は開始番号を下限に採番する（既定 1 では従来どおり最大+1）", () => {

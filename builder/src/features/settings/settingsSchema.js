@@ -51,6 +51,14 @@ export const SETTINGS_GROUPS = [
         description: "検索一覧の No. を何番から始めるかを指定します。空欄なら 1 から始まります。すでにレコードがある場合は「最大の No. +1」と開始番号の大きい方を採番します（＝開始番号より小さい番号にはなりません）。",
       },
       {
+        key: "recordNoPerPid",
+        label: "子フォームのNo.を親レコードごとに1から振る",
+        type: "checkbox",
+        required: false,
+        defaultValue: true,
+        description: "ONにすると、このフォームを子フォームとして開いたとき、No. は親レコード（pid）ごとに独立して採番します（親Aの子=1,2,3… 親Bの子=1,2,3…）。子フォームでない通常の入力や、No.を直接入力した場合は、これまでどおり全体の最大No.+1で採番します。上の「No.の開始番号」は子フォーム採番時も各親の下限として有効です。",
+      },
+      {
         key: "searchTableMaxWidth",
         label: "検索結果テーブルの幅（px）",
         placeholder: "1200",
