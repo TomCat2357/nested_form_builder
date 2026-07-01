@@ -196,8 +196,7 @@ function nfbTplCoerceToString_(value) {
   if (Object.prototype.toString.call(value) === "[object Array]") {
     var parts = [];
     for (var i = 0; i < value.length; i++) {
-      var s = nfbTplCoerceToString_(value[i]);
-      if (s !== "") parts.push(s);
+      parts.push(nfbTplCoerceToString_(value[i]));
     }
     return parts.join(", ");
   }

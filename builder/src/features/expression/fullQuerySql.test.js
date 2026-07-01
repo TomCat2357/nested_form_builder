@@ -83,10 +83,10 @@ test("collapseQueryResult: 複数行は行優先で連結", () => {
   );
 });
 
-test("collapseQueryResult: 空セルは除外", () => {
+test("collapseQueryResult: 空セルも位置を保ったまま連結", () => {
   assert.equal(
     collapseQueryResult([{ a: "x", b: "" }, { a: null, b: "z" }], ["a", "b"]),
-    "x, z"
+    "x, , , z"
   );
 });
 

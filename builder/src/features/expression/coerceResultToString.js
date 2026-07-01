@@ -23,7 +23,7 @@ export function coerceResultToString(value) {
     return Number.isFinite(t) ? String(t) : "";
   }
   if (Array.isArray(value)) {
-    return value.map((v) => coerceResultToString(v)).filter((s) => s !== "").join(", ");
+    return value.map((v) => coerceResultToString(v)).join(", ");
   }
   if (typeof value === "object") {
     if (typeof value.name === "string") return value.name;

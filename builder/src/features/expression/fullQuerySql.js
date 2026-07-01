@@ -5,7 +5,8 @@
  *   現レコード ID のクォート済み文字列リテラルへ置換する。文字列リテラル / コメント /
  *   `[...]` / `` `...` `` 内の `_id` は退避して触らない（sqlLiteralMask を流用）。
  *   現フォーム記号 `_form` は preprocessSql 側で解決するため本モジュールでは扱わない。
- * - `collapseQueryResult`: クエリ結果（行 × 列）を 1 つのテンプレート文字列へ畳む。
+ * - `collapseQueryResult`: クエリ結果（行 × 列）を 1 つのテンプレート文字列へ畳む
+ *   （空セルも位置を保ったまま連結する）。
  *
  * パイプライン（呼び出し側 prefetchQueryTokens）:
  *   1. substituteCurrentIdLiteral(rawBody, recordId)
@@ -47,7 +48,7 @@ export function substituteCurrentIdLiteral(sql, recordId) {
  * full-query の結果（行配列 + 列名）を 1 つのテンプレート文字列へ畳む。
  * - 0 行 → ""
  * - 1 行 × 1 列 → そのスカラ（coerceResultToString）
- * - それ以外 → 行優先で全セルを coerce し、空文字を除いて ", " 連結
+ * - それ以外 → 行優先で全セルを coerce し、空文字も含めて位置を保ったまま ", " 連結
  *
  * @param {Array<object>} rows
  * @param {string[]} columns 列名（初出順）
@@ -68,5 +69,5 @@ export function collapseQueryResult(rows, columns) {
       cells.push(coerceResultToString(row ? row[col] : undefined));
     }
   }
-  return cells.filter((s) => s !== "").join(", ");
+  return cells.join(", ");
 }
