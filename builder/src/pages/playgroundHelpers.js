@@ -1,6 +1,11 @@
 // PlaygroundPage の純関数ヘルパー（DOM / React 非依存）。
 // node:test で直接ユニットテストできるよう JSX から分離している。
 import { buildSimpleSearchColumns } from "../features/search/searchTable.js";
+import { FIXED_PATHS } from "../features/analytics/utils/columnIdentifierResolver.js";
+import { NON_SEARCHABLE_META_KEYS } from "../core/constants.js";
+
+// 検索の簡易構文（`列名:値`）で実際に効く固定メタ列のみ（NON_SEARCHABLE_META_KEYS を除く）。
+export const SEARCHABLE_META_PATHS = FIXED_PATHS.filter((k) => !NON_SEARCHABLE_META_KEYS.includes(k));
 
 /**
  * フォームスキーマから「フィールド挿入」候補のパス一覧（ラベル | 連結）を取り出す。
@@ -20,6 +25,19 @@ export function formFieldPaths(form) {
     }
   }
   return out;
+}
+
+/**
+ * 「フィールド挿入」候補の完全版（固定メタ列 + スキーマフィールド）を返す。
+ * メタ列は FIXED_PATHS（`[列名]` 記法で実際に解決できる固定列の正規リスト）が既定。
+ * @param {{ schema?: Array }} form
+ * @param {{ metaPaths?: string[] }} [options] metaPaths を絞り込みたい場合に指定（例: SEARCHABLE_META_PATHS）
+ * @returns {{ path: string, isMeta: boolean }[]}
+ */
+export function fieldInsertOptions(form, { metaPaths = FIXED_PATHS } = {}) {
+  const metaOpts = metaPaths.map((path) => ({ path, isMeta: true }));
+  const fieldOpts = formFieldPaths(form).map((path) => ({ path, isMeta: false }));
+  return [...metaOpts, ...fieldOpts];
 }
 
 /**

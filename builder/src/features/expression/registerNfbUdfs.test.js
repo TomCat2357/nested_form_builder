@@ -15,7 +15,7 @@ test("UDF が登録される / 廃止・改名された関数は無い", () => {
     "DATE2ERA", "DATETIME2ERATIME", "ERA2DATE", "ERATIME2DATETIME",
     "YEAR", "MONTH", "DAY", "HOUR", "MINUTE", "SECOND", "NENDO",
     "TO_BOOL", "TO_NUMBER", "REGEXP_MATCH", "REGEXP_REPLACE", "LIKE_ANY",
-    "MV_EQ", "MV_IN",
+    "MV_EQ", "MV_IN", "UNIQUE_CSV",
   ]) {
     assert.equal(typeof alasql.fn[name], "function", `${name} should be a function`);
   }
@@ -336,4 +336,16 @@ test("MV_IN: 複数値セルを , で分割し集合 IN 判定", () => {
   // 空 / null セル → false（NOT MV_IN で not in が true）
   assert.equal(fn("", "カラス"), false);
   assert.equal(fn(null, "カラス"), false);
+});
+
+test("UNIQUE_CSV: カンマ区切り文字列を初出順でユニーク化（空要素除外・大文字小文字区別）", () => {
+  const alasql = makeFakeAlaSql();
+  ensureNfbUdfsRegistered(alasql);
+  const fn = alasql.fn.UNIQUE_CSV;
+  assert.equal(fn("a,x,,,c,d,e,e,f,F,"), "a,x,c,d,e,f,F");
+  assert.equal(fn(","), "");
+  assert.equal(fn(""), "");
+  assert.equal(fn(null), "");
+  assert.equal(fn(undefined), "");
+  assert.equal(fn("a,b,c"), "a,b,c");
 });

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { substituteCurrentIdLiteral, collapseQueryResult } from "./fullQuerySql.js";
+import { substituteCurrentIdLiteral, collapseQueryResult, sqlStringLiteral, resolveNestedBraceTokens } from "./fullQuerySql.js";
 
 // ---------------------------------------------------------------------------
 // substituteCurrentIdLiteral
@@ -92,4 +92,59 @@ test("collapseQueryResult: 空セルも位置を保ったまま連結", () => {
 
 test("collapseQueryResult: columns 未指定は先頭行のキーから推定", () => {
   assert.equal(collapseQueryResult([{ only: "v" }]), "v");
+});
+
+// ---------------------------------------------------------------------------
+// sqlStringLiteral
+// ---------------------------------------------------------------------------
+
+test("sqlStringLiteral: シングルクォートで包み内部の ' を '' にエスケープ", () => {
+  assert.equal(sqlStringLiteral("hogehoge"), "'hogehoge'");
+  assert.equal(sqlStringLiteral("a'b"), "'a''b'");
+  assert.equal(sqlStringLiteral(""), "''");
+  assert.equal(sqlStringLiteral(null), "''");
+  assert.equal(sqlStringLiteral(undefined), "''");
+  assert.equal(sqlStringLiteral(42), "'42'");
+});
+
+// ---------------------------------------------------------------------------
+// resolveNestedBraceTokens
+// ---------------------------------------------------------------------------
+
+test("resolveNestedBraceTokens: ネストが無ければそのまま返す（resolveToken は呼ばれない）", async () => {
+  let calls = 0;
+  const out = await resolveNestedBraceTokens("SELECT [氏名] FROM `フォーム`", async () => {
+    calls++;
+    return "unused";
+  });
+  assert.equal(out, "SELECT [氏名] FROM `フォーム`");
+  assert.equal(calls, 0);
+});
+
+test("resolveNestedBraceTokens: 内側トークンを評価し SQL 文字列リテラルとして埋め込む", async () => {
+  const out = await resolveNestedBraceTokens("SELECT {{x}} FROM yyy", async (tok) => {
+    assert.equal(tok.body, "x");
+    return "hogehoge";
+  });
+  assert.equal(out, "SELECT 'hogehoge' FROM yyy");
+});
+
+test("resolveNestedBraceTokens: 同一トークンが複数回登場しても resolveToken は1回だけ呼ばれる", async () => {
+  let calls = 0;
+  const out = await resolveNestedBraceTokens("SELECT {{x}}, {{x}} FROM yyy", async () => {
+    calls++;
+    return "v";
+  });
+  assert.equal(out, "SELECT 'v', 'v' FROM yyy");
+  assert.equal(calls, 1);
+});
+
+test("resolveNestedBraceTokens: 評価結果に ' を含む場合はエスケープされる", async () => {
+  const out = await resolveNestedBraceTokens("SELECT {{x}} FROM yyy", async () => "a'b");
+  assert.equal(out, "SELECT 'a''b' FROM yyy");
+});
+
+test("resolveNestedBraceTokens: 複数の異なるネストトークンをそれぞれ解決する", async () => {
+  const out = await resolveNestedBraceTokens("SELECT {{a}} + {{b}} FROM yyy", async (tok) => (tok.body === "a" ? "1" : "2"));
+  assert.equal(out, "SELECT '1' + '2' FROM yyy");
 });

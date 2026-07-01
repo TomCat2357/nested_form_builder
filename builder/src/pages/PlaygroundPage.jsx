@@ -27,7 +27,7 @@ import { filterRowsByExpr } from "../features/analytics/analyticsAlaSql.js";
 import { SQL_MODE_RE } from "../features/search/searchSyntaxPreprocessor.js";
 import { triggerCsvDownload } from "../features/analytics/utils/exportResultData.js";
 import { readSettingsValue, writeSettingsValue } from "../core/storage.js";
-import { formFieldPaths, computeInsertion } from "./playgroundHelpers.js";
+import { fieldInsertOptions, SEARCHABLE_META_PATHS, computeInsertion } from "./playgroundHelpers.js";
 
 // SQL / テンプレート入力の共通 monospace テキストエリア（QuestionEditorPage と同じ流儀）。
 const monoTextareaStyle = {
@@ -80,8 +80,9 @@ function insertAtCursor(el, currentValue, snippet, setValue) {
 }
 
 // 全モード共通の「フィールド挿入」セレクト。選択するとパスをトークン化して挿入する。
-function FieldInsertPicker({ paths, onInsert }) {
-  if (!paths || paths.length === 0) return null;
+// options は fieldInsertOptions() の { path, isMeta }[]（メタ列は「（メタ）」を付けて識別する）。
+function FieldInsertPicker({ options, onInsert }) {
+  if (!options || options.length === 0) return null;
   return (
     <div style={{ marginTop: "6px" }}>
       <SearchableSelect
@@ -89,7 +90,7 @@ function FieldInsertPicker({ paths, onInsert }) {
         onChange={(p) => { if (p) onInsert(p); }}
         placeholder="＋ フィールド挿入"
         searchPlaceholder="フィールド名で絞り込み..."
-        options={paths.map((p) => ({ value: p, label: p, folder: "" }))}
+        options={options.map((o) => ({ value: o.path, label: o.isMeta ? o.path + "（メタ）" : o.path, folder: "" }))}
         style={{ maxWidth: "400px" }}
       />
     </div>
@@ -267,9 +268,16 @@ export default function PlaygroundPage() {
     [entries, selectedRecordId]
   );
 
-  // フィールド挿入候補（パス一覧）。
-  const sharedFieldPaths = useMemo(() => formFieldPaths(fullForm), [fullForm]);
-  const qFieldPaths = useMemo(() => formFieldPaths(qFullForm), [qFullForm]);
+  // フィールド挿入候補（メタ列 + スキーマフィールド）。
+  // 検索の簡易構文（列名:値）は createdBy/modifiedBy/deletedAt/deletedBy が対象外なので絞り込む。
+  const searchFieldOptions = useMemo(
+    () => fieldInsertOptions(fullForm, { metaPaths: SEARCHABLE_META_PATHS }),
+    [fullForm]
+  );
+  // 置換テンプレートは simple 式・full-query どちらも全メタ列を参照できる。
+  const templateFieldOptions = useMemo(() => fieldInsertOptions(fullForm), [fullForm]);
+  // Question SQL は分析用途のため除外なし（全メタ列）。
+  const qFieldOptions = useMemo(() => fieldInsertOptions(qFullForm), [qFullForm]);
 
   // SQL モード用の formSources（QuestionEditorPage.buildSqlFormSources と同等）。
   const buildSqlFormSources = () => {
@@ -561,7 +569,7 @@ export default function PlaygroundPage() {
                 placeholder={"例: SELECT [基本情報|区], COUNT(*) AS count FROM [data] GROUP BY [基本情報|区]\n他フォーム参照: SELECT * FROM [フォーム名] AS f\nバッククォートも使用可: SELECT * FROM `フォーム名`"}
               />
               <FieldInsertPicker
-                paths={qFieldPaths}
+                options={qFieldOptions}
                 onInsert={(p) => insertAtCursor(qSqlRef.current, qSql, `[${p}]`, setQSql)}
               />
               <div style={{ marginTop: "6px" }}>
@@ -606,7 +614,7 @@ export default function PlaygroundPage() {
                 placeholder={"例: 氏名:山田 and 年齢>=20\n複数値: 区 in (中央区, 北区)\n裸単語は全列横断"}
               />
               <FieldInsertPicker
-                paths={sharedFieldPaths}
+                options={searchFieldOptions}
                 onInsert={(p) => insertAtCursor(searchRef.current, searchQuery, `${p}:`, setSearchQuery)}
               />
               <div style={{ marginTop: "6px" }}>
@@ -656,7 +664,7 @@ export default function PlaygroundPage() {
                 placeholder={"例: {{ [氏名] }} 様（{{ YEAR([受付日]) }}年度）\nフルクエリ: {{SELECT [氏名] FROM _form LIMIT 1}}\nこのレコードだけ: {{SELECT [氏名] FROM _form WHERE [id] = _id}}"}
               />
               <FieldInsertPicker
-                paths={sharedFieldPaths}
+                options={templateFieldOptions}
                 onInsert={(p) => insertAtCursor(templateRef.current, template, `{{ [${p}] }}`, setTemplate)}
               />
               <div style={{ marginTop: "6px" }}>

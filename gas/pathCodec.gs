@@ -83,8 +83,11 @@ function Nfb_splitFieldKey_(key) {
 
 // 列キー（"/" 連結・"\/" エスケープ対応、legacy "|" も区切り受理）→ AlaSQL 安全列名（"__" 連結）。
 // フロント headerKeyToAlaSqlKey の双子。共通ケースでは "親/子"・"親|子" とも "親__子"。
+// 固定列 "No." は画面表示どおり "No." と書けるよう、行ビルダの実キー "No_"
+// （entriesToViewRows.js の row["No_"]）にエイリアスする（フロントと同じ特別扱い）。
 function Nfb_headerKeyToAlaSqlKey_(key) {
   if (!key) return "";
+  if (String(key) === "No.") return "No_";
   var out = [];
   var parts = Nfb_splitEscaped_(String(key), NFB_PATH_SEP, false);
   for (var i = 0; i < parts.length; i++) {

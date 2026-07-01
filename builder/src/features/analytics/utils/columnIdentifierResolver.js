@@ -2,7 +2,7 @@ import { traverseSchema } from "../../../core/schemaUtils.js";
 import { headerKeyToAlaSqlKey } from "./headerToAlaSqlKey.js";
 import { joinFieldPath } from "../../../utils/pathCodec.js";
 
-const FIXED_PATHS = ["id", "No.", "createdAt", "createdBy", "modifiedAt", "modifiedBy", "deletedAt", "deletedBy", "pid"];
+export const FIXED_PATHS = ["id", "No.", "createdAt", "createdBy", "modifiedAt", "modifiedBy", "deletedAt", "deletedBy", "pid"];
 
 export function buildColumnIndex(form) {
   const byPipePath = new Map();

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { formFieldPaths, computeInsertion } from "./playgroundHelpers.js";
+import { formFieldPaths, fieldInsertOptions, SEARCHABLE_META_PATHS, computeInsertion } from "./playgroundHelpers.js";
 
 // ────────────────────────────────────────────────────────────
 // formFieldPaths: スキーマからフィールドパス一覧を取り出す
@@ -53,6 +53,46 @@ test("formFieldPaths: 重複パスは排除される", () => {
   const paths = formFieldPaths(form);
   const count = paths.filter((p) => p === "氏名").length;
   assert.equal(count, 1, `氏名 は 1 回だけ: ${JSON.stringify(paths)}`);
+});
+
+// ────────────────────────────────────────────────────────────
+// fieldInsertOptions: 固定メタ列 + スキーマフィールドの挿入候補
+// ────────────────────────────────────────────────────────────
+
+test("fieldInsertOptions: 既定は固定メタ列 9 件が isMeta:true で先頭に来る", () => {
+  const opts = fieldInsertOptions(null);
+  const metaPaths = opts.filter((o) => o.isMeta).map((o) => o.path);
+  assert.deepEqual(metaPaths, [
+    "id", "No.", "createdAt", "createdBy", "modifiedAt", "modifiedBy", "deletedAt", "deletedBy", "pid",
+  ]);
+  assert.equal(opts.slice(0, 9).every((o) => o.isMeta === true), true);
+});
+
+test("fieldInsertOptions: スキーマフィールドは isMeta:false でメタ列の後に続く", () => {
+  const form = {
+    schema: [
+      { id: "f1", type: "text", label: "氏名" },
+    ],
+  };
+  const opts = fieldInsertOptions(form);
+  const fieldOpt = opts.find((o) => o.path === "氏名");
+  assert.ok(fieldOpt, `氏名 を含むこと: ${JSON.stringify(opts)}`);
+  assert.equal(fieldOpt.isMeta, false);
+});
+
+test("fieldInsertOptions: schema が無いフォームでもメタ列だけは返す", () => {
+  const opts = fieldInsertOptions({});
+  assert.equal(opts.length, 9);
+  assert.equal(opts.every((o) => o.isMeta), true);
+});
+
+test("fieldInsertOptions: metaPaths に SEARCHABLE_META_PATHS を渡すと検索非対象メタ列が除外される", () => {
+  const opts = fieldInsertOptions(null, { metaPaths: SEARCHABLE_META_PATHS });
+  const metaPaths = opts.filter((o) => o.isMeta).map((o) => o.path);
+  assert.deepEqual(metaPaths, ["id", "No.", "createdAt", "modifiedAt", "pid"]);
+  for (const excluded of ["createdBy", "modifiedBy", "deletedAt", "deletedBy"]) {
+    assert.ok(!metaPaths.includes(excluded), `${excluded} は含まれないこと`);
+  }
 });
 
 // ────────────────────────────────────────────────────────────

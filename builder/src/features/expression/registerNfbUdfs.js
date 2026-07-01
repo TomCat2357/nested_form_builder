@@ -511,6 +511,26 @@ export function ensureNfbUdfsRegistered(alasql) {
   };
 
   // ---------------------------------------------------------------------------
+  // UNIQUE_CSV — カンマ区切り文字列を初出順でユニーク化する（空要素は除外）。
+  //   例: 'a,x,,,c,d,e,e,f,F,' → 'a,x,c,d,e,f,F'（大文字小文字は区別）。
+  //   単純な split(",") で、多値セル codec の splitMultiValue（\-エスケープ対応）とは別物。
+  //   ラベル内にカンマを含む値（checkboxes 等）には使わないこと。
+  // ---------------------------------------------------------------------------
+  alasql.fn.UNIQUE_CSV = function (value) {
+    if (value === null || value === undefined || value === "") return "";
+    const seen = new Set();
+    const result = [];
+    String(value).split(",").forEach(function (item) {
+      if (item === "") return;
+      if (!seen.has(item)) {
+        seen.add(item);
+        result.push(item);
+      }
+    });
+    return result.join(",");
+  };
+
+  // ---------------------------------------------------------------------------
   // STR_LEFT / STR_RIGHT / STR_DEFAULT — alasql の予約語（LEFT / RIGHT JOIN・
   //   DEFAULT VALUES）と衝突するため、式中の `LEFT(...)` / `RIGHT(...)` / `DEFAULT(...)`
   //   は preprocessAlaSqlExpression がこれらの名前にリネームしてから alasql に渡す。

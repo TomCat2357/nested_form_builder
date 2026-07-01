@@ -29,7 +29,10 @@ import {
   isFullQueryBody,
   restoreEscapedBraces,
 } from "../features/expression/templateScanner.js";
-import { substituteCurrentIdLiteral, collapseQueryResult } from "../features/expression/fullQuerySql.js";
+import { substituteCurrentIdLiteral, collapseQueryResult, resolveNestedBraceTokens } from "../features/expression/fullQuerySql.js";
+import { evalExpression } from "../features/expression/alasqlExpressionEvaluator.js";
+import { preprocessAlaSqlExpression } from "../features/expression/preprocessAlaSqlExpression.js";
+import { coerceResultToString } from "../features/expression/coerceResultToString.js";
 import { buildRowForExpression } from "../features/expression/buildRowForExpression.js";
 import {
   buildFileUploadRowEntries,
@@ -166,12 +169,43 @@ export const prefetchQueryTokens = async (template, context) => {
     }
   }
 
+  const row = buildTemplateRow(ctx);
+
+  // ネストした {{...}} を評価して文字列化する再帰ヘルパー（`{{SELECT {{...}} FROM yyy}}` 対応）。
+  // body が full-query ならまず自分自身のさらに深いネストを先に潰してから実行し、
+  // 単純式なら evalExpression で評価する（resolveTemplateAsync の単純式評価パスと同じロジック）。
+  // 戻り値は resolveNestedBraceTokens 側で SQL 文字列リテラルとしてクォートされる。
+  async function evalNestedToken_(body) {
+    const flatBody = await resolveNestedBraceTokens(body, (childTok) => evalNestedToken_(childTok.body));
+    if (isFullQueryBody(flatBody)) {
+      try {
+        const sql = substituteCurrentIdLiteral(flatBody, recordId);
+        const res = await runFullQuery(sql, { forms, defaultFormId, liveRowOverride });
+        if (res && res.ok) return collapseQueryResult(res.rows, res.columns);
+        logTemplateError(new Error((res && res.error) || "full-query failed"), body);
+      } catch (err) {
+        logTemplateError(err, body);
+      }
+      return "";
+    }
+    const expr = preprocessAlaSqlExpression(String(flatBody || "").trim());
+    if (!expr) return "";
+    try {
+      const value = await evalExpression(expr, row, { fallback: undefined });
+      return value === undefined || value === null ? "" : coerceResultToString(value);
+    } catch (err) {
+      logTemplateError(err, body);
+      return "";
+    }
+  }
+
   for (const tok of tokens) {
     if (cache.has(tok.fullToken)) continue;
     const rawSql = unescapeBraces(tok.body);
+    const flatSql = await resolveNestedBraceTokens(rawSql, (childTok) => evalNestedToken_(childTok.body));
     let value = "";
     try {
-      const sql = substituteCurrentIdLiteral(rawSql, recordId);
+      const sql = substituteCurrentIdLiteral(flatSql, recordId);
       const res = await runFullQuery(sql, { forms, defaultFormId, liveRowOverride });
       if (res && res.ok) {
         value = collapseQueryResult(res.rows, res.columns);
