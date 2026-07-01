@@ -262,6 +262,7 @@ function Nfb_resolveFileUploadMetaUrls_(fileUploadMeta) {
 
     var urls = Object.prototype.toString.call(m.fileUrls) === "[object Array]" ? m.fileUrls : [];
     var rawNames = Object.prototype.toString.call(m.rawFileNames) === "[object Array]" ? m.rawFileNames : [];
+    var repaired = false;
 
     // URL が 1 件も無いときだけ論理解決（コピー/移動後の物理クリア状態を救済）。
     if (urls.length === 0 && rawNames.length > 0) {
@@ -270,15 +271,21 @@ function Nfb_resolveFileUploadMetaUrls_(fileUploadMeta) {
         var res = Nfb_resolveUploadFileEntry_(rawNames[i], "", folderName);
         if (res.fileUrl) resolvedUrls.push(res.fileUrl);
       }
-      if (resolvedUrls.length > 0) m.fileUrls = resolvedUrls;
+      if (resolvedUrls.length > 0) { m.fileUrls = resolvedUrls; repaired = true; }
     }
 
     // フォルダ URL も空なら自プロジェクトの 06_upload_files 配下の同名フォルダから補う。
     if (!(typeof m.folderUrl === "string" && m.folderUrl)) {
       var base = StdFolders_autoFileFolderOrNull_("upload");
       var recordFolder = base ? FormsDrive_childFolderByName_(base, folderName) : null;
-      if (recordFolder) m.folderUrl = recordFolder.getUrl();
+      if (recordFolder) { m.folderUrl = recordFolder.getUrl(); repaired = true; }
     }
+
+    // 統一契約: fileUpload の行値は保存 JSON 文字列（クライアント storageValue）。ここで URL を
+    // 復旧したときは storageValue が旧（空 URL）のままなので、復旧後の meta 配列から
+    // 再構築して差し替える（テンプレ token の FILE_URLS / FOLDER_URL / 素参照 JSON に反映）。
+    // driveFileId は meta に無いので復旧ケースのみ空になる（元 id は失効済みで許容）。
+    if (repaired) m.storageValue = nfbBuildFileUploadStorageFromMeta_(m);
   }
   return meta;
 }

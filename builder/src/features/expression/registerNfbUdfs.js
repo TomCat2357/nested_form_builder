@@ -603,58 +603,96 @@ export function ensureNfbUdfsRegistered(alasql) {
 
   // ---------------------------------------------------------------------------
   // FILE_NAMES / FILE_URLS / FOLDER_NAME / FOLDER_URL
-  //   fileUpload フィールドの値（[{ name, driveFileUrl, folderName, folderUrl }, ...]）
-  //   を読む UDF。値が文字列のときは「カンマ区切りファイル名」とみなして passthrough。
+  //   fileUpload フィールドの値を読む UDF。全経路（本番プレビュー/印刷・GAS 出力・
+  //   Playground・full-query・Question SQL・検索）で fileUpload セルの行表現は
+  //   「保存 JSON 文字列」に統一されている（serializeFileUploadValue の出力）。
+  //   そのため素の参照 `{{`項目名`}}` は JSON 文字列そのものを返し、パーツの取り出しは
+  //   これらの UDF が担う。normalizeFileUploadCell が保存文字列を parse して正規化する。
+  //   （旧: FILE_NAMES が文字列を丸ごと passthrough する挙動は廃止。今は parse して名前抽出。）
+  //
+  //   normalizeFileUploadCell が受理する形:
+  //     (a) 保存 JSON 文字列: 裸配列 `[{name,driveFileId,driveFileUrl},...]`
+  //         もしくはオブジェクト `{files:[...],folderUrl?,folderName?}`
+  //     (b) レガシー in-memory 配列 `[{name,driveFileUrl|fileUrl|url,folderName?,folderUrl?},...]`
+  //     (c) オブジェクト `{files,folderName,folderUrl}`
+  //     (d) null / "" / 非 JSON 文字列 → 空
+  //   → 返り値: { files: [{ name, driveFileUrl }], folderName, folderUrl }
+  //   ※ hideFileExtension は一切参照しない（view 行は保持しないためコンテキスト非依存に。
+  //     FILE_NAMES は拡張子付きの生ファイル名を返す。拡張子を落とすなら NOEXT で包む）。
   // ---------------------------------------------------------------------------
-  function pickFromList(value, picker) {
-    if (value === null || value === undefined) return "";
-    if (Array.isArray(value)) {
-      const parts = [];
-      for (let i = 0; i < value.length; i++) {
-        const item = value[i];
-        if (!item) continue;
-        const v = picker(item);
-        if (v !== null && v !== undefined && v !== "") parts.push(String(v));
-      }
-      return parts.join(", ");
-    }
-    if (typeof value === "object") {
-      const v = picker(value);
-      return v === null || v === undefined ? "" : String(v);
-    }
-    return picker.useStringFallback ? String(value) : "";
+  function fileUrlOf_(item) {
+    if (!item || typeof item !== "object") return "";
+    return item.driveFileUrl || item.fileUrl || item.url || "";
   }
-  const pickName = (item) => (item.name !== undefined ? item.name : "");
-  pickName.useStringFallback = true;
-  const pickFileUrl = (item) => item.driveFileUrl || item.fileUrl || item.url || "";
+  function normalizeFileUploadCell(value) {
+    const empty = { files: [], folderName: "", folderUrl: "" };
+    if (value === null || value === undefined || value === "") return empty;
+
+    let source = value;
+    if (typeof source === "string") {
+      const trimmed = source.replace(/^\s+|\s+$/g, "");
+      if (!trimmed || (trimmed[0] !== "[" && trimmed[0] !== "{")) return empty;
+      try {
+        source = JSON.parse(trimmed);
+      } catch (_e) {
+        return empty;
+      }
+    }
+
+    // 配列形: レガシー in-memory 配列 or 裸配列 JSON。folderName/folderUrl は
+    // 各要素に載る旧仕様も救うため先頭非空を走査する。
+    if (Array.isArray(source)) {
+      const files = [];
+      let folderName = "";
+      let folderUrl = "";
+      for (let i = 0; i < source.length; i++) {
+        const item = source[i];
+        if (!item || typeof item !== "object") continue;
+        files.push({ name: item.name !== undefined && item.name !== null ? String(item.name) : "", driveFileUrl: fileUrlOf_(item) });
+        if (!folderName && item.folderName) folderName = String(item.folderName);
+        if (!folderUrl && item.folderUrl) folderUrl = String(item.folderUrl);
+      }
+      return { files, folderName, folderUrl };
+    }
+
+    // オブジェクト形: 保存オブジェクト JSON or レガシー { files, folderName, folderUrl }。
+    if (source && typeof source === "object") {
+      const rawFiles = Array.isArray(source.files) ? source.files : [];
+      const files = [];
+      for (let i = 0; i < rawFiles.length; i++) {
+        const item = rawFiles[i];
+        if (!item || typeof item !== "object") continue;
+        files.push({ name: item.name !== undefined && item.name !== null ? String(item.name) : "", driveFileUrl: fileUrlOf_(item) });
+      }
+      return {
+        files,
+        folderName: source.folderName ? String(source.folderName) : "",
+        folderUrl: source.folderUrl ? String(source.folderUrl) : "",
+      };
+    }
+    return empty;
+  }
+
+  function joinNonEmpty_(list) {
+    const parts = [];
+    for (let i = 0; i < list.length; i++) {
+      const v = list[i];
+      if (v !== null && v !== undefined && v !== "") parts.push(String(v));
+    }
+    return parts.join(", ");
+  }
 
   alasql.fn.FILE_NAMES = function (value) {
-    return pickFromList(value, pickName);
+    return joinNonEmpty_(normalizeFileUploadCell(value).files.map((f) => f.name));
   };
   alasql.fn.FILE_URLS = function (value) {
-    return pickFromList(value, pickFileUrl);
+    return joinNonEmpty_(normalizeFileUploadCell(value).files.map((f) => f.driveFileUrl));
   };
   alasql.fn.FOLDER_NAME = function (value) {
-    if (Array.isArray(value)) {
-      for (let i = 0; i < value.length; i++) {
-        const v = value[i] && value[i].folderName;
-        if (v) return String(v);
-      }
-      return "";
-    }
-    if (value && typeof value === "object" && value.folderName) return String(value.folderName);
-    return "";
+    return normalizeFileUploadCell(value).folderName || "";
   };
   alasql.fn.FOLDER_URL = function (value) {
-    if (Array.isArray(value)) {
-      for (let i = 0; i < value.length; i++) {
-        const v = value[i] && value[i].folderUrl;
-        if (v) return String(v);
-      }
-      return "";
-    }
-    if (value && typeof value === "object" && value.folderUrl) return String(value.folderUrl);
-    return "";
+    return normalizeFileUploadCell(value).folderUrl || "";
   };
 
   // ---------------------------------------------------------------------------

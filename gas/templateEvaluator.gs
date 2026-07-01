@@ -310,10 +310,57 @@ function nfbStripFileExtension_(name) {
 }
 
 /**
- * `{ fid: path }` + `{ fid: meta }` から `{ path: [meta-shaped 行エントリ] }` を作る。
- * NFB_FILE_NAMES / NFB_FILE_URLS / NFB_FOLDER_NAME / NFB_FOLDER_URL UDF が
- * row[path] を配列として読むので、各 fileUpload meta から
- * `{ name, driveFileUrl, folderName, folderUrl }` 形の配列を組む。
+ * builder/src/core/collect.js `serializeFileUploadValue` の GAS ツイン。
+ * files（[{ name, driveFileId, driveFileUrl }]）＋ folderUrl / folderName を
+ * 保存 JSON 文字列へ。空→"" / フォルダ無し→裸配列 JSON / フォルダあり→オブジェクト JSON。
+ */
+function nfbSerializeFileUploadValue_(files, folderUrl, folderName) {
+  var list = Object.prototype.toString.call(files) === "[object Array]" ? files : [];
+  var clean = [];
+  for (var i = 0; i < list.length; i++) {
+    var e = list[i];
+    if (!e || typeof e !== "object") continue;
+    var name = typeof e.name === "string" ? e.name : "";
+    var driveFileId = typeof e.driveFileId === "string" ? e.driveFileId : "";
+    var driveFileUrl = typeof e.driveFileUrl === "string" ? e.driveFileUrl : "";
+    if (!name && !driveFileId && !driveFileUrl) continue;
+    clean.push({ name: name, driveFileId: driveFileId, driveFileUrl: driveFileUrl });
+  }
+  var trimmedFolderUrl = typeof folderUrl === "string" ? folderUrl.replace(/^\s+|\s+$/g, "") : "";
+  var trimmedFolderName = typeof folderName === "string" ? folderName.replace(/^\s+|\s+$/g, "") : "";
+  if (clean.length === 0 && !trimmedFolderUrl && !trimmedFolderName) return "";
+  if (!trimmedFolderUrl && !trimmedFolderName) return JSON.stringify(clean);
+  var obj = { files: clean };
+  if (trimmedFolderUrl) obj.folderUrl = trimmedFolderUrl;
+  if (trimmedFolderName) obj.folderName = trimmedFolderName;
+  return JSON.stringify(obj);
+}
+
+/**
+ * meta（{ rawFileNames, fileUrls, folderName, folderUrl }）から保存 JSON 文字列を組む。
+ * クライアント storageValue が無い旧 payload、または URL 復旧後の再構築用
+ * （driveFileId は meta に無いので空になる＝復旧ケースのみ許容）。
+ */
+function nfbBuildFileUploadStorageFromMeta_(meta) {
+  var m = meta || {};
+  var rawNames = Object.prototype.toString.call(m.rawFileNames) === "[object Array]" ? m.rawFileNames : [];
+  var urls = Object.prototype.toString.call(m.fileUrls) === "[object Array]" ? m.fileUrls : [];
+  var length = Math.max(rawNames.length, urls.length);
+  var files = [];
+  for (var i = 0; i < length; i++) {
+    files.push({ name: rawNames[i] || "", driveFileId: "", driveFileUrl: urls[i] || "" });
+  }
+  return nfbSerializeFileUploadValue_(files, m.folderUrl || "", m.folderName || "");
+}
+
+/**
+ * `{ fid: path }` + `{ fid: meta }` から `{ path: 保存 JSON 文字列 }` を作る。
+ * 統一契約: fileUpload の行値は全経路で「保存 JSON 文字列」に統一する。素の参照
+ * `{{`項目名`}}` はこの JSON をそのまま返し、FILE_NAMES / FILE_URLS / FOLDER_NAME /
+ * FOLDER_URL UDF が parse して各パーツを取り出す。
+ * クライアント送出 storageValue を優先（driveFileId 込みでクライアント/view とバイト一致）。
+ * 無い/空のときは meta 配列から再構築する（コピー/移動後の URL 復旧値は
+ * Nfb_resolveFileUploadMetaUrls_ が storageValue を再構築済み）。
  */
 function nfbTplBuildFileUploadRowEntries_(fieldPaths, fileUploadMeta) {
   var paths = nfbPlainObject_(fieldPaths);
@@ -325,22 +372,10 @@ function nfbTplBuildFileUploadRowEntries_(fieldPaths, fileUploadMeta) {
     if (!path || Object.prototype.hasOwnProperty.call(out, path)) continue;
     var meta = metaByFid[fid];
     if (!meta) continue;
-    var names = Object.prototype.toString.call(meta.fileNames) === "[object Array]" ? meta.fileNames : [];
-    var urls  = Object.prototype.toString.call(meta.fileUrls) === "[object Array]" ? meta.fileUrls : [];
-    var folderName = meta.folderName || "";
-    var folderUrl = meta.folderUrl || "";
-    var length = Math.max(names.length, urls.length, (folderName || folderUrl) ? 1 : 0);
-    if (length === 0) continue;
-    var entries = [];
-    for (var i = 0; i < length; i++) {
-      entries.push({
-        name: names[i] || "",
-        driveFileUrl: urls[i] || "",
-        folderName: folderName,
-        folderUrl: folderUrl
-      });
-    }
-    out[path] = entries;
+    var storageValue = typeof meta.storageValue === "string" ? meta.storageValue : "";
+    if (!storageValue) storageValue = nfbBuildFileUploadStorageFromMeta_(meta);
+    if (!storageValue) continue;
+    out[path] = storageValue;
   }
   return out;
 }
@@ -371,13 +406,16 @@ function nfbTplBuildChildFormRowEntries_(fieldPaths, childFormMeta) {
  * fieldValues に値がある fid は応答整形済み、ない fid だけが responses から来る。
  * 数値・真偽値はそのまま（式の `+` / 比較で型が保たれるように — フロント
  * buildRowForExpression と同じ方針）。それ以外（Date / 配列 / オブジェクト / null）は
- * テンプレ用文字列に整形し、hideFileExtension が立っていれば拡張子を落とす。
+ * テンプレ用文字列に整形する。
+ *
+ * ※ fileUpload パスはこの baseMap の後に nfbTplBuildFileUploadRowEntries_ の
+ *   「保存 JSON 文字列」で上書きされる（統一契約）。よって hideFileExtension による
+ *   拡張子除去はここでは行わない（拡張子を落としたいときは NOEXT UDF を使う）。
  */
 function nfbTplBuildLabelValueMap_(fieldPaths, fieldValues, responses, fileUploadMeta) {
   var paths = nfbPlainObject_(fieldPaths);
   var values = nfbPlainObject_(fieldValues);
   var resp = nfbPlainObject_(responses);
-  var metaMap = nfbPlainObject_(fileUploadMeta);
   var map = {};
   for (var fid in paths) {
     if (!Object.prototype.hasOwnProperty.call(paths, fid)) continue;
@@ -390,13 +428,6 @@ function nfbTplBuildLabelValueMap_(fieldPaths, fieldValues, responses, fileUploa
       value = raw;
     } else {
       value = nfbTplCoerceToString_(raw);
-      if (!fromFieldValues && metaMap[fid] && metaMap[fid].hideFileExtension) {
-        var parts = value.split(", ");
-        for (var i = 0; i < parts.length; i++) {
-          parts[i] = nfbStripFileExtension_(parts[i].replace(/^\s+|\s+$/g, ""));
-        }
-        value = parts.join(", ");
-      }
     }
     map[path] = value;
   }

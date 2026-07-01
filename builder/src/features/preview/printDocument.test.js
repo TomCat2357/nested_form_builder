@@ -590,6 +590,35 @@ test("collectFileUploadMeta は children 配下の fileUpload も収集する", 
   assert.deepEqual(meta, { c1: { hideFileExtension: true } });
 });
 
+test("collectFileUploadMeta は responses があると保存 JSON 文字列 storageValue を付与する", () => {
+  const schema = [{ id: "f1", type: "fileUpload", label: "添付" }];
+  const responses = {
+    f1: [
+      { name: "a.xlsx", driveFileId: "id1", driveFileUrl: "https://drive/a" },
+      { name: "b.xlsx", driveFileId: "id2", driveFileUrl: "https://drive/b" },
+    ],
+  };
+  // フォルダあり → オブジェクト JSON（files/folderUrl/folderName）
+  const metaWithFolder = collectFileUploadMeta(schema, {
+    responses,
+    folderUrlsByField: { f1: "https://drive/folder" },
+    folderNamesByField: { f1: "NFB_RECORD_TEMP_r_1" },
+  });
+  const parsed = JSON.parse(metaWithFolder.f1.storageValue);
+  assert.equal(parsed.folderUrl, "https://drive/folder");
+  assert.equal(parsed.folderName, "NFB_RECORD_TEMP_r_1");
+  assert.deepEqual(parsed.files.map((f) => f.name), ["a.xlsx", "b.xlsx"]);
+  assert.equal(parsed.files[0].driveFileId, "id1"); // driveFileId 込みで保存形と一致
+
+  // フォルダなし → 裸配列 JSON
+  const metaNoFolder = collectFileUploadMeta(schema, { responses });
+  assert.ok(Array.isArray(JSON.parse(metaNoFolder.f1.storageValue)));
+
+  // 空 fileUpload → storageValue は付かない
+  const metaEmpty = collectFileUploadMeta(schema, { responses: { f1: [] } });
+  assert.equal(metaEmpty.f1.storageValue, undefined);
+});
+
 test("collectChildFormMeta は子データのある全 formLink を拾う（includeChildData 非依存）", () => {
   const schema = [
     { id: "l1", type: "formLink", label: "子A", childFormId: "fA" },

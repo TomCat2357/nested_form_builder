@@ -1,6 +1,6 @@
 import { ensureArray } from "../../utils/arrays.js";
 import { extractJstPartsFull, formatUnixMsDateTimeSec, toUnixMs, pad2 } from "../../utils/dateTime.js";
-import { resolveFileDisplayName, buildDataValueMap, toChoiceOptionLabels, toSelectedChoiceLabels } from "../../core/collect.js";
+import { resolveFileDisplayName, buildDataValueMap, toChoiceOptionLabels, toSelectedChoiceLabels, serializeFileUploadValue } from "../../core/collect.js";
 import { shouldShowUnconditionalChildren } from "../../core/fieldValue.js";
 import { CHOICE_TYPES } from "../../utils/responses.js";
 import { traverseSchema } from "../../core/schemaUtils.js";
@@ -287,6 +287,8 @@ export const collectFileUploadMeta = (fields, options = {}) => {
     if (field?.type === "fileUpload" && field?.id) {
       const entry = {};
       if (field.hideFileExtension) entry.hideFileExtension = true;
+      const folderUrl = folderUrlsByField[field.id];
+      const folderName = folderNamesByField[field.id];
       if (responses) {
         const value = responses[field.id];
         const files = ensureArray(value);
@@ -297,10 +299,19 @@ export const collectFileUploadMeta = (fields, options = {}) => {
         // 生ファイル名（拡張子込み）。GAS 側で folderName と組んで論理解決し、コピー/移動後に
         // URL が空でも 06_upload_files 配下の複製から URL を復元するために使う。
         entry.rawFileNames = files.map((f) => f?.name || "").filter(Boolean);
+        // 統一契約: fileUpload の行値は「保存 JSON 文字列」に統一する。in-memory 配列
+        // （driveFileId 込み）＋ folder から serializeFileUploadValue で保存文字列を再現し、
+        // buildFileUploadRowEntries / GAS 双方がこれを row[path] に載せる（素参照=JSON、
+        // FILE_*/FOLDER_* はこれを parse）。空文字は付けない（行ビルダは storageValue 無しを
+        // スキップ、GAS は meta 配列から再構築 → 同じく空でスキップ）。
+        const storageValue = serializeFileUploadValue(
+          files,
+          typeof folderUrl === "string" ? folderUrl : "",
+          typeof folderName === "string" ? folderName : "",
+        );
+        if (storageValue) entry.storageValue = storageValue;
       }
-      const folderUrl = folderUrlsByField[field.id];
       if (typeof folderUrl === "string" && folderUrl) entry.folderUrl = folderUrl;
-      const folderName = folderNamesByField[field.id];
       if (typeof folderName === "string" && folderName) entry.folderName = folderName;
       if (Object.keys(entry).length > 0) meta[field.id] = entry;
     }

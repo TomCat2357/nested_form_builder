@@ -53,7 +53,7 @@ export const buildFileUploadEntry = (result) => ({
   driveFileUrl: typeof result?.fileUrl === "string" ? result.fileUrl : "",
 });
 
-const serializeFileUploadValue = (value, folderUrl = "", folderName = "") => {
+export const serializeFileUploadValue = (value, folderUrl = "", folderName = "") => {
   const files = Array.isArray(value)
     ? value.map((entry) => sanitizeFileUploadEntry(entry)).filter(Boolean)
     : [];

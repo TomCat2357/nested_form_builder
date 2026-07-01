@@ -981,54 +981,71 @@ var NfbAlasqlRuntime = (() => {
         return String(text);
       }
     };
-    function pickFromList(value, picker) {
-      if (value === null || value === void 0) return "";
-      if (Array.isArray(value)) {
-        const parts = [];
-        for (let i = 0; i < value.length; i++) {
-          const item = value[i];
-          if (!item) continue;
-          const v = picker(item);
-          if (v !== null && v !== void 0 && v !== "") parts.push(String(v));
-        }
-        return parts.join(", ");
-      }
-      if (typeof value === "object") {
-        const v = picker(value);
-        return v === null || v === void 0 ? "" : String(v);
-      }
-      return picker.useStringFallback ? String(value) : "";
+    function fileUrlOf_(item) {
+      if (!item || typeof item !== "object") return "";
+      return item.driveFileUrl || item.fileUrl || item.url || "";
     }
-    const pickName = (item) => item.name !== void 0 ? item.name : "";
-    pickName.useStringFallback = true;
-    const pickFileUrl = (item) => item.driveFileUrl || item.fileUrl || item.url || "";
+    function normalizeFileUploadCell(value) {
+      const empty = { files: [], folderName: "", folderUrl: "" };
+      if (value === null || value === void 0 || value === "") return empty;
+      let source = value;
+      if (typeof source === "string") {
+        const trimmed = source.replace(/^\s+|\s+$/g, "");
+        if (!trimmed || trimmed[0] !== "[" && trimmed[0] !== "{") return empty;
+        try {
+          source = JSON.parse(trimmed);
+        } catch (_e) {
+          return empty;
+        }
+      }
+      if (Array.isArray(source)) {
+        const files = [];
+        let folderName = "";
+        let folderUrl = "";
+        for (let i = 0; i < source.length; i++) {
+          const item = source[i];
+          if (!item || typeof item !== "object") continue;
+          files.push({ name: item.name !== void 0 && item.name !== null ? String(item.name) : "", driveFileUrl: fileUrlOf_(item) });
+          if (!folderName && item.folderName) folderName = String(item.folderName);
+          if (!folderUrl && item.folderUrl) folderUrl = String(item.folderUrl);
+        }
+        return { files, folderName, folderUrl };
+      }
+      if (source && typeof source === "object") {
+        const rawFiles = Array.isArray(source.files) ? source.files : [];
+        const files = [];
+        for (let i = 0; i < rawFiles.length; i++) {
+          const item = rawFiles[i];
+          if (!item || typeof item !== "object") continue;
+          files.push({ name: item.name !== void 0 && item.name !== null ? String(item.name) : "", driveFileUrl: fileUrlOf_(item) });
+        }
+        return {
+          files,
+          folderName: source.folderName ? String(source.folderName) : "",
+          folderUrl: source.folderUrl ? String(source.folderUrl) : ""
+        };
+      }
+      return empty;
+    }
+    function joinNonEmpty_(list) {
+      const parts = [];
+      for (let i = 0; i < list.length; i++) {
+        const v = list[i];
+        if (v !== null && v !== void 0 && v !== "") parts.push(String(v));
+      }
+      return parts.join(", ");
+    }
     alasql.fn.FILE_NAMES = function(value) {
-      return pickFromList(value, pickName);
+      return joinNonEmpty_(normalizeFileUploadCell(value).files.map((f) => f.name));
     };
     alasql.fn.FILE_URLS = function(value) {
-      return pickFromList(value, pickFileUrl);
+      return joinNonEmpty_(normalizeFileUploadCell(value).files.map((f) => f.driveFileUrl));
     };
     alasql.fn.FOLDER_NAME = function(value) {
-      if (Array.isArray(value)) {
-        for (let i = 0; i < value.length; i++) {
-          const v = value[i] && value[i].folderName;
-          if (v) return String(v);
-        }
-        return "";
-      }
-      if (value && typeof value === "object" && value.folderName) return String(value.folderName);
-      return "";
+      return normalizeFileUploadCell(value).folderName || "";
     };
     alasql.fn.FOLDER_URL = function(value) {
-      if (Array.isArray(value)) {
-        for (let i = 0; i < value.length; i++) {
-          const v = value[i] && value[i].folderUrl;
-          if (v) return String(v);
-        }
-        return "";
-      }
-      if (value && typeof value === "object" && value.folderUrl) return String(value.folderUrl);
-      return "";
+      return normalizeFileUploadCell(value).folderUrl || "";
     };
     function pickChildObject(value) {
       if (Array.isArray(value)) {

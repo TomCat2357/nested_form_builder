@@ -12,7 +12,6 @@ import ResultTable from "../features/analytics/components/ResultTable.jsx";
 import { buildLiveViewRow } from "../features/analytics/entriesToViewRows.js";
 import { entriesToViewTableRows } from "../features/analytics/entriesToViewRows.js";
 import { resolveTemplateAsync } from "../features/expression/templateEvaluator.js";
-import { compileExpression, evalExpressionSync } from "../features/expression/alasqlExpressionEvaluator.js";
 import { prefetchQueryTokens } from "../utils/tokenReplacer.js";
 import { restoreResponsesFromData } from "../utils/responses.js";
 import { buildRecordItems } from "../features/preview/printDocument.js";
@@ -58,7 +57,7 @@ const baseUrl_ = () => (typeof window !== "undefined" && window.__GAS_WEBAPP_URL
 
 // スニペット永続化（IndexedDB settings ストア）のキーと空形。
 const SNIPPET_KEY = "playground_snippets";
-const EMPTY_SNIPPETS = { sql: [], search: [], template: [], expression: [] };
+const EMPTY_SNIPPETS = { sql: [], search: [], template: [] };
 
 // textarea のカーソル位置へ snippet を差し込み、挿入後の位置にキャレットを戻す。
 // 文字列操作の純粋部分は computeInsertion（playgroundHelpers）に委譲する。
@@ -129,7 +128,7 @@ export default function PlaygroundPage() {
   const { forms } = useAppData();
   const activeForms = useMemo(() => (forms || []).filter((f) => !f.archived && !f.childOnly), [forms]);
 
-  const [mode, setMode] = useState("question"); // "question" | "search" | "template" | "expression" | "externalAction"
+  const [mode, setMode] = useState("question"); // "question" | "search" | "template" | "externalAction"
 
   // --- Question モード（SQL → 表）---
   const [qFormId, setQFormId] = useState("");
@@ -162,13 +161,6 @@ export default function PlaygroundPage() {
   const [tplError, setTplError] = useState(null);
   const [tplRunning, setTplRunning] = useState(false);
   const templateRef = useRef(null);
-
-  // --- 式評価モード ---
-  const [expr, setExpr] = useState("");
-  const [exprResult, setExprResult] = useState(null); // { value, type }
-  const [exprError, setExprError] = useState(null);
-  const [exprRunning, setExprRunning] = useState(false);
-  const exprRef = useRef(null);
 
   // --- 外部アクション モード ---
   const [externalActionJson, setExternalActionJson] = useState("");
@@ -223,8 +215,6 @@ export default function PlaygroundPage() {
     setEntriesError(null);
     setTplResult("");
     setTplDone(false);
-    setExprResult(null);
-    setExprError(null);
     setSearchResult(null);
     setSearchError(null);
     setExternalActionJson("");
@@ -409,29 +399,6 @@ export default function PlaygroundPage() {
     }
   };
 
-  // 式評価モード: 単一 alasql 式（SELECT/FROM を書かない式本体）をレコード行に対して評価する。
-  const handleRunExpression = async () => {
-    setExprError(null);
-    setExprResult(null);
-    if (!fullForm || !selectedEntry) {
-      setExprError("フォームとレコードを選択してください。");
-      return;
-    }
-    const e = expr.trim();
-    if (!e) return;
-    setExprRunning(true);
-    try {
-      await compileExpression(e); // コンパイル失敗は throw → 下の catch で表示
-      const row = buildLiveViewRow(fullForm, selectedEntry);
-      const v = evalExpressionSync(e, row, { fallback: null });
-      setExprResult({ value: v, type: v === null ? "null" : (Array.isArray(v) ? "array" : typeof v) });
-    } catch (err) {
-      setExprError(err?.message || String(err));
-    } finally {
-      setExprRunning(false);
-    }
-  };
-
   const handleRunExternalAction = async () => {
     setWhError(null);
     setExternalActionJson("");
@@ -545,7 +512,7 @@ export default function PlaygroundPage() {
     <AppLayout title="Playground" fallbackPath="/admin" backHidden={false}>
       <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
         <p className="nf-text-11 nf-text-muted nf-mb-0">
-          Question の SQL・検索クエリ・置換テンプレート・単一式・外部アクションの POST ペイロードを、実データに対してその場で試せます（管理者専用）。
+          Question の SQL・検索クエリ・置換テンプレート・外部アクションの POST ペイロードを、実データに対してその場で試せます（管理者専用）。
         </p>
 
         <fieldset style={{ border: "1px solid var(--nf-border)", borderRadius: "4px", padding: "8px 12px", margin: 0 }}>
@@ -554,7 +521,6 @@ export default function PlaygroundPage() {
             ["question", "Question（SQL → 表）"],
             ["search", "検索（クエリ → 一致レコード）"],
             ["template", "置換（テンプレート → 文字列）"],
-            ["expression", "式（単一式 → 値）"],
             ["externalAction", "外部アクション（POST ペイロード）"],
           ].map(([value, label]) => (
             <label key={value} style={{ marginRight: "16px" }}>
@@ -717,56 +683,6 @@ export default function PlaygroundPage() {
                 <label className="nf-label">置換結果</label>
                 <div className="nf-card">
                   <pre style={codeBlockStyle}>{tplResult || "（空文字）"}</pre>
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ===== 式評価モード ===== */}
-        {mode === "expression" && (
-          <>
-            {renderSharedPickers()}
-            <div>
-              <label className="nf-label">式（単一の alasql 式・SELECT/FROM は不要）</label>
-              <textarea
-                ref={exprRef}
-                value={expr}
-                onChange={(e) => setExpr(e.target.value)}
-                rows={3}
-                style={{ ...monoTextareaStyle, minHeight: "60px" }}
-                placeholder={"例: YEAR([受付日]) = 2025\n計算: [単価] * [数量]\n表示条件: [区] = '中央区' AND [年齢] >= 20"}
-              />
-              <FieldInsertPicker
-                paths={sharedFieldPaths}
-                onInsert={(p) => insertAtCursor(exprRef.current, expr, `[${p}]`, setExpr)}
-              />
-              <div style={{ marginTop: "6px" }}>
-                <button type="button" onClick={handleRunExpression} disabled={exprRunning} className="nf-btn-outline">
-                  {exprRunning ? "実行中..." : "式評価"}
-                </button>
-              </div>
-              <SnippetBar
-                category="expression"
-                snippets={snippets}
-                currentBody={expr}
-                onSave={handleSaveSnippet}
-                onLoad={setExpr}
-              />
-              <p className="nf-text-11 nf-text-muted nf-mt-4 nf-mb-0">
-                表示条件 / 計算フィールド / テーブルスタイル行セレクタで使う単一式を評価します。置換（{"{{...}}"}）と違い、式本体だけを書きます。
-              </p>
-            </div>
-            {exprError && <p className="nf-text-warning">{exprError}</p>}
-            {exprResult && !exprError && (
-              <div>
-                <label className="nf-label">評価結果（型: {exprResult.type}）</label>
-                <div className="nf-card">
-                  <pre style={codeBlockStyle}>{
-                    exprResult.type === "boolean"
-                      ? (exprResult.value ? "true（真）" : "false（偽）")
-                      : (exprResult.value === null ? "null（空）" : JSON.stringify(exprResult.value, null, 2))
-                  }</pre>
                 </div>
               </div>
             )}

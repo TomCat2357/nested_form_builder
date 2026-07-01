@@ -87,6 +87,23 @@ test("buildLiveViewRow: form / liveEntry が無ければ null", () => {
   assert.equal(buildLiveViewRow(null, { id: "x", data: {} }), null);
 });
 
+// 統一契約: fileUpload 列は view 行でも「保存 JSON 文字列」を素通しする（素参照=JSON、
+// FILE_*/FOLDER_* UDF がこれを parse）。全経路で同一値になることの土台。
+test("fileUpload 列は保存 JSON 文字列を素通しする（統一契約）", () => {
+  const uploadForm = { id: "f_u", schema: [{ id: "f_up", type: "fileUpload", label: "添付" }] };
+  const responses = { f_up: [{ name: "a.xlsx", driveFileId: "ID1", driveFileUrl: "https://drive/a" }] };
+  const data = collectResponses(uploadForm.schema, responses, {
+    fileUploadFolderUrls: { f_up: "https://drive/folder" },
+    fileUploadFolderNames: { f_up: "record_01" },
+  });
+  const row = buildLiveViewRow(uploadForm, { id: "REC", "No.": 1, data });
+  // view 行の値 === 保存セルの文字列（そのまま）
+  assert.equal(row["添付"], data["添付"]);
+  const parsed = JSON.parse(row["添付"]);
+  assert.equal(parsed.folderName, "record_01");
+  assert.equal(parsed.files[0].name, "a.xlsx");
+});
+
 test("radio: 保存ラベルを親列に素通し、option 列は出さない", () => {
   const entry = {
     ...baseEntry,

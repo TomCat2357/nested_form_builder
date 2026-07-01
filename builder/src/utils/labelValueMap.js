@@ -6,11 +6,11 @@
  * 解決される。ネストされた子質問は `親|子` フルパス必須 (葉ラベル単独参照は
  * 廃止)。
  *
- * 新エンジン (alasql 式) は `row[path] = [...]` 形式の配列値を要求するため
- * buildFileUploadRowEntries も併せて提供する。
+ * fileUpload 項目は統一契約で `row[path] = 保存 JSON 文字列` を要求するため
+ * buildFileUploadRowEntries も併せて提供する（素参照=JSON、FILE_NAMES / FOLDER_URL
+ * などの UDF がこの文字列を parse する）。
  */
 
-import { ensureArray } from "./arrays.js";
 import { asPlainObject } from "./objectShape.js";
 
 /**
@@ -60,16 +60,15 @@ export function buildLabelValueMap(fieldPaths, fieldValues, responses) {
 }
 
 /**
- * `{ fid: fullPath }` + `{ fid: meta }` から `{ fullPath: [行エントリ] }` を
- * 構築する。alasql エンジンの FILE_NAMES / FILE_URLS / FOLDER_NAME / FOLDER_URL
- * UDF が `row[fullPath]` を配列として読むので、各 fileUpload meta から
- * `{ name, driveFileUrl, folderName, folderUrl }` 形の配列を作って返す。
+ * `{ fid: fullPath }` + `{ fid: meta }` から `{ fullPath: 保存 JSON 文字列 }` を
+ * 構築する。統一契約: fileUpload の行値は全経路で「保存 JSON 文字列」
+ * （serializeFileUploadValue の出力）に統一する。素の参照 `{{`項目名`}}` はこの文字列
+ * （= JSON）をそのまま返し、FILE_NAMES / FILE_URLS / FOLDER_NAME / FOLDER_URL UDF が
+ * これを parse して各パーツを取り出す。
  *
- * meta の典型形:
- *   { fileNames: [...], fileUrls: [...], folderName, folderUrl, hideFileExtension }
- *
- * fileNames が無く `responses[fid]` から拾う必要がある場合は呼び出し側で
- * 補完する（このユーティリティは meta 単独のパスのみを担う）。
+ * meta.storageValue（collectFileUploadMeta が serializeFileUploadValue で用意）を
+ * そのまま path に載せる。空文字は載せない（`collectResponses` が空 fileUpload パスを
+ * 省くのと一致させ、view 行＝保存文字列 と完全一致させる）。
  */
 export function buildFileUploadRowEntries(fieldPaths, fileUploadMeta) {
   const paths = asPlainObject(fieldPaths);
@@ -81,22 +80,9 @@ export function buildFileUploadRowEntries(fieldPaths, fileUploadMeta) {
     if (!path) continue;
     const meta = metaByFid[fid];
     if (!meta) continue;
-    const names = ensureArray(meta.fileNames);
-    const urls = ensureArray(meta.fileUrls);
-    const folderName = meta.folderName || "";
-    const folderUrl = meta.folderUrl || "";
-    const length = Math.max(names.length, urls.length, (folderName || folderUrl) ? 1 : 0);
-    if (length === 0) continue;
-    const entries = [];
-    for (let i = 0; i < length; i++) {
-      entries.push({
-        name: names[i] || "",
-        driveFileUrl: urls[i] || "",
-        folderName,
-        folderUrl,
-      });
-    }
-    out[path] = entries;
+    const storageValue = typeof meta.storageValue === "string" ? meta.storageValue : "";
+    if (!storageValue) continue;
+    out[path] = storageValue;
   }
   return out;
 }

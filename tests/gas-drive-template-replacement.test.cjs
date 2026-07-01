@@ -757,7 +757,32 @@ test("nfbResolveRecordOutputFileNameTemplate_ は標準ファイル名未設定�
 // fileUpload UDF (FILE_NAMES / FILE_URLS / FOLDER_NAME / FOLDER_URL)
 // ---------------------------------------------------------------------------
 
-test("nfbResolveTemplateTokens_: FILE_NAMES で fileUpload 名を結合", () => {
+test("nfbResolveTemplateTokens_: 統一契約 — storageValue から素参照 JSON ＋ FILE_*/FOLDER_* 抽出", () => {
+  const gas = loadGasContext();
+  const storageValue = JSON.stringify({
+    files: [
+      { name: "a.pdf", driveFileId: "id1", driveFileUrl: "https://drive/1" },
+      { name: "b.pdf", driveFileId: "id2", driveFileUrl: "https://drive/2" },
+    ],
+    folderUrl: "https://drive/folder",
+    folderName: "案件001",
+  });
+  const ctx = {
+    fieldPaths: { f: "添付" },
+    fieldValues: {},
+    responses: {},
+    fileUploadMeta: { f: { storageValue } },
+    now: new Date(),
+  };
+  // 素の参照は保存 JSON 文字列そのもの
+  assert.equal(gas.nfbResolveTemplateTokens_("{{`添付`}}", ctx), storageValue);
+  assert.equal(gas.nfbResolveTemplateTokens_("{{FILE_NAMES(`添付`)}}", ctx), "a.pdf, b.pdf");
+  assert.equal(gas.nfbResolveTemplateTokens_("{{FILE_URLS(`添付`)}}", ctx), "https://drive/1, https://drive/2");
+  assert.equal(gas.nfbResolveTemplateTokens_("{{FOLDER_NAME(`添付`)}}", ctx), "案件001");
+  assert.equal(gas.nfbResolveTemplateTokens_("{{FOLDER_URL(`添付`)}}", ctx), "https://drive/folder");
+});
+
+test("nfbResolveTemplateTokens_: storageValue 無しは meta 配列（rawFileNames/fileUrls）から再構築", () => {
   const gas = loadGasContext();
   const ctx = {
     fieldPaths: { f: "添付" },
@@ -765,7 +790,7 @@ test("nfbResolveTemplateTokens_: FILE_NAMES で fileUpload 名を結合", () => 
     responses: {},
     fileUploadMeta: {
       f: {
-        fileNames: ["a.pdf", "b.pdf"],
+        rawFileNames: ["a.pdf", "b.pdf"],
         fileUrls: ["https://drive/1", "https://drive/2"],
         folderName: "案件001",
         folderUrl: "https://drive/folder",

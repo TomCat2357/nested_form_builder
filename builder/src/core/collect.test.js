@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildFileUploadEntry, collectResponses, sortResponses, buildDataValueMap, parseFileUploadStorage } from "./collect.js";
+import { buildFileUploadEntry, collectResponses, sortResponses, buildDataValueMap, parseFileUploadStorage, serializeFileUploadValue } from "./collect.js";
 
 test("collectResponses は fileUpload セルに論理パス folderName を同梱し、parse で往復できる", () => {
   const schema = [{ id: "u", type: "fileUpload", label: "添付" }];
@@ -30,6 +30,36 @@ test("parseFileUploadStorage は folderName を持たない旧セル（配列形
   const parsed = parseFileUploadStorage(JSON.stringify([{ name: "a.pdf", driveFileId: "ID1", driveFileUrl: "u" }]));
   assert.equal(parsed.folderName, "");
   assert.equal(parsed.files.length, 1);
+});
+
+// 統一契約のパリティ: テンプレ行が使う storageValue（serializeFileUploadValue）は
+// 保存セル（collectResponses）とバイト一致する（driveFileId 込み・3 ケース）。
+test("serializeFileUploadValue は collectResponses の保存セルとバイト一致する", () => {
+  const schema = [{ id: "u", type: "fileUpload", label: "添付" }];
+  const files = [
+    { name: "a.pdf", driveFileId: "ID1", driveFileUrl: "https://drive/ID1" },
+    { name: "b.pdf", driveFileId: "ID2", driveFileUrl: "https://drive/ID2" },
+  ];
+
+  // (1) フォルダあり（オブジェクト形）
+  const outWithFolder = collectResponses(schema, { u: files }, {
+    fileUploadFolderUrls: { u: "https://drive/F1" },
+    fileUploadFolderNames: { u: "record_01" },
+  });
+  assert.equal(
+    serializeFileUploadValue(files, "https://drive/F1", "record_01"),
+    outWithFolder["添付"],
+  );
+
+  // (2) フォルダなし（裸配列形）
+  const outNoFolder = collectResponses(schema, { u: files }, {});
+  assert.equal(serializeFileUploadValue(files, "", ""), outNoFolder["添付"]);
+
+  // (3) ファイル空＋フォルダのみ（オブジェクト形・files:[]）
+  const outEmptyWithFolder = collectResponses(schema, { u: [] }, {
+    fileUploadFolderNames: { u: "record_02" },
+  });
+  assert.equal(serializeFileUploadValue([], "", "record_02"), outEmptyWithFolder["添付"]);
 });
 
 test("buildDataValueMap: 選択肢はフィールド 1 列のラベル（複数選択は表示区切り ', '）", () => {

@@ -153,15 +153,33 @@ test("REGEXP_MATCH: 2/3 引数互換（旧 REGEX_MATCH 相当）", () => {
   assert.equal(fn("田中太郎", "[invalid"), "");
 });
 
-test("FILE_NAMES: 配列からファイル名を結合", () => {
+test("FILE_NAMES: 配列（レガシー）からファイル名を結合", () => {
   const fn = setup().FILE_NAMES;
   assert.equal(fn([{ name: "a.pdf" }, { name: "b.docx" }]), "a.pdf, b.docx");
   assert.equal(fn([]), "");
   assert.equal(fn(null), "");
-  assert.equal(fn("既に文字列"), "既に文字列"); // 文字列フォールバック
+  // 統一契約: 非 JSON 文字列は空（旧・文字列丸ごと passthrough は廃止）。
+  assert.equal(fn("既に文字列"), "");
 });
 
-test("FILE_URLS: driveFileUrl を結合", () => {
+test("FILE_NAMES: 保存 JSON 文字列（統一契約）から名前を parse して取り出す", () => {
+  const fn = setup().FILE_NAMES;
+  // オブジェクト JSON（フォルダあり）
+  const objJson = JSON.stringify({
+    files: [
+      { name: "a.xlsx", driveFileId: "id1", driveFileUrl: "https://drive/a" },
+      { name: "b.xlsx", driveFileId: "id2", driveFileUrl: "https://drive/b" },
+    ],
+    folderUrl: "https://drive/folder",
+    folderName: "NFB_RECORD_TEMP_r_1",
+  });
+  assert.equal(fn(objJson), "a.xlsx, b.xlsx");
+  // 裸配列 JSON（フォルダなし）
+  const arrJson = JSON.stringify([{ name: "c.pdf", driveFileId: "", driveFileUrl: "u" }]);
+  assert.equal(fn(arrJson), "c.pdf");
+});
+
+test("FILE_URLS: 配列（レガシー）と保存 JSON 文字列の両方から driveFileUrl を結合", () => {
   const fn = setup().FILE_URLS;
   assert.equal(
     fn([
@@ -171,11 +189,18 @@ test("FILE_URLS: driveFileUrl を結合", () => {
     "https://drive/a, https://drive/b"
   );
   assert.equal(fn([{ name: "no-url.pdf" }]), "");
+  // 保存 JSON 文字列
+  const objJson = JSON.stringify({
+    files: [{ name: "a.xlsx", driveFileId: "id1", driveFileUrl: "https://drive/a" }],
+    folderName: "f",
+  });
+  assert.equal(fn(objJson), "https://drive/a");
 });
 
-test("FOLDER_NAME / FOLDER_URL: 最初に見つかったメタを返す", () => {
+test("FOLDER_NAME / FOLDER_URL: 保存 JSON 文字列とレガシー配列/オブジェクトから取り出す", () => {
   const fnName = setup().FOLDER_NAME;
   const fnUrl = setup().FOLDER_URL;
+  // レガシー配列（各要素に folder メタ）
   const list = [
     { name: "a.pdf" }, // folderName/folderUrl なし
     { name: "b.pdf", folderName: "親フォルダ", folderUrl: "https://drive/folder" },
@@ -184,6 +209,17 @@ test("FOLDER_NAME / FOLDER_URL: 最初に見つかったメタを返す", () => 
   assert.equal(fnUrl(list), "https://drive/folder");
   assert.equal(fnName({ folderName: "single" }), "single");
   assert.equal(fnName(null), "");
+  // 保存 JSON 文字列
+  const objJson = JSON.stringify({
+    files: [{ name: "a.xlsx", driveFileId: "", driveFileUrl: "u" }],
+    folderUrl: "https://drive/x",
+    folderName: "myfolder",
+  });
+  assert.equal(fnName(objJson), "myfolder");
+  assert.equal(fnUrl(objJson), "https://drive/x");
+  // 裸配列 JSON（フォルダなし）→ folder は空
+  assert.equal(fnName(JSON.stringify([{ name: "c.pdf", driveFileUrl: "u" }])), "");
+  assert.equal(fnUrl(JSON.stringify([{ name: "c.pdf", driveFileUrl: "u" }])), "");
 });
 
 // ============================================================================

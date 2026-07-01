@@ -6,6 +6,7 @@ import {
   injectResolvedQueryTokens,
 } from "./tokenReplacer.js";
 import { buildLabelValueMap } from "./labelValueMap.js";
+import { serializeFileUploadValue } from "../core/collect.js";
 import { escapeBraces, collectBalancedBraces } from "../features/expression/templateScanner.js";
 import {
   _clearExpressionCacheForTest,
@@ -139,41 +140,55 @@ test("resolveTemplateTokens: `_record_url` / `_form_url`", () => {
 });
 
 // ---------------------------------------------------------------------------
-// fileUpload系 — fileUploadMeta から row 配列を構築して FILE_* で取り出す
+// fileUpload系 — 統一契約: 行値は「保存 JSON 文字列」(meta.storageValue)。
+// 素の参照は JSON をそのまま返し、FILE_* / FOLDER_* UDF が parse して取り出す。
 // ---------------------------------------------------------------------------
 
-test("resolveTemplateTokens: FILE_NAMES が fileUploadMeta から名前を取り出す", () => {
+// テスト用: 保存文字列を parse して各パーツを取り出す（実 UDF normalizeFileUploadCell 相当）。
+function parseCellForTest(value) {
+  if (typeof value !== "string" || !value) return { files: [], folderName: "", folderUrl: "" };
+  let src;
+  try { src = JSON.parse(value); } catch (_e) { return { files: [], folderName: "", folderUrl: "" }; }
+  if (Array.isArray(src)) return { files: src, folderName: "", folderUrl: "" };
+  return { files: src.files || [], folderName: src.folderName || "", folderUrl: src.folderUrl || "" };
+}
+
+test("resolveTemplateTokens: 素の参照は fileUpload の保存 JSON 文字列をそのまま返す", () => {
   setup();
-  _registerCompiledForTest("FILE_NAMES(`添付`)", (row) => {
-    const arr = row["添付"];
-    if (!Array.isArray(arr)) return "";
-    return arr.map((x) => x.name).join(", ");
-  });
-  const ctx = {
-    fieldPaths: { f1: "添付" },
-    fileUploadMeta: { f1: { fileNames: ["a.pdf", "b.pdf"], fileUrls: ["u1", "u2"] } },
-  };
-  assert.equal(
-    resolveTemplateTokens("{{FILE_NAMES(`添付`)}}", ctx),
-    "a.pdf, b.pdf"
+  _registerCompiledForTest("`添付`", (row) => row["添付"]);
+  const storageValue = serializeFileUploadValue(
+    [{ name: "a.pdf", driveFileId: "id1", driveFileUrl: "u1" }],
+    "https://drive/x",
+    "NFB_RECORD_TEMP_r_1",
   );
+  const ctx = { fieldPaths: { f1: "添付" }, fileUploadMeta: { f1: { storageValue } } };
+  assert.equal(resolveTemplateTokens("{{`添付`}}", ctx), storageValue);
+  // 保存 JSON であることを明示（統一契約）
+  assert.ok(storageValue.indexOf('"files"') >= 0 && storageValue.indexOf("NFB_RECORD_TEMP_r_1") >= 0);
 });
 
-test("resolveTemplateTokens: FOLDER_URL が fileUploadMeta から folderUrl を取り出す", () => {
+test("resolveTemplateTokens: FILE_NAMES が保存文字列から名前を取り出す", () => {
   setup();
-  _registerCompiledForTest("FOLDER_URL(`添付`)", (row) => {
-    const arr = row["添付"];
-    if (Array.isArray(arr) && arr[0]) return arr[0].folderUrl || "";
-    return "";
-  });
-  const ctx = {
-    fieldPaths: { f1: "添付" },
-    fileUploadMeta: { f1: { fileNames: ["a.pdf"], fileUrls: ["u"], folderUrl: "https://drive/x" } },
-  };
-  assert.equal(
-    resolveTemplateTokens("{{FOLDER_URL(`添付`)}}", ctx),
-    "https://drive/x"
+  _registerCompiledForTest("FILE_NAMES(`添付`)", (row) =>
+    parseCellForTest(row["添付"]).files.map((x) => x.name).filter(Boolean).join(", ")
   );
+  const storageValue = serializeFileUploadValue(
+    [{ name: "a.pdf", driveFileId: "", driveFileUrl: "u1" }, { name: "b.pdf", driveFileId: "", driveFileUrl: "u2" }],
+    "", "",
+  );
+  const ctx = { fieldPaths: { f1: "添付" }, fileUploadMeta: { f1: { storageValue } } };
+  assert.equal(resolveTemplateTokens("{{FILE_NAMES(`添付`)}}", ctx), "a.pdf, b.pdf");
+});
+
+test("resolveTemplateTokens: FOLDER_URL が保存文字列から folderUrl を取り出す", () => {
+  setup();
+  _registerCompiledForTest("FOLDER_URL(`添付`)", (row) => parseCellForTest(row["添付"]).folderUrl || "");
+  const storageValue = serializeFileUploadValue(
+    [{ name: "a.pdf", driveFileId: "", driveFileUrl: "u" }],
+    "https://drive/x", "folderA",
+  );
+  const ctx = { fieldPaths: { f1: "添付" }, fileUploadMeta: { f1: { storageValue } } };
+  assert.equal(resolveTemplateTokens("{{FOLDER_URL(`添付`)}}", ctx), "https://drive/x");
 });
 
 // ---------------------------------------------------------------------------
