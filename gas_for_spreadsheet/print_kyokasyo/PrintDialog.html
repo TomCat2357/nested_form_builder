@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <style>
+    body { font-family: sans-serif; font-size: 13px; color: #333; padding: 14px 16px; }
+    h4 { margin: 14px 0 6px; border-bottom: 1px solid #ddd; padding-bottom: 3px; }
+    .row { display: flex; align-items: center; margin: 6px 0; }
+    .row label.lbl { width: 96px; flex: none; }
+    select, input[type=number] { padding: 3px 5px; font-size: 13px; }
+    input[type=number] { width: 70px; }
+    .margins input { width: 56px; }
+    .margins span { margin: 0 8px 0 3px; color: #666; }
+    .sheets { max-height: 180px; overflow-y: auto; border: 1px solid #ddd;
+              border-radius: 4px; padding: 6px 8px; }
+    .sheets label { display: block; width: auto; font-weight: normal; margin: 3px 0; }
+    .sheets .form { color: #888; font-size: 11px; margin-left: 4px; }
+    .actions { margin-top: 16px; text-align: right; }
+    button { font-size: 13px; padding: 6px 16px; margin-left: 8px; cursor: pointer; }
+    #run { background: #1a73e8; color: #fff; border: none; border-radius: 4px; }
+    .toggle { font-size: 12px; padding: 3px 10px; margin: 0 0 6px; }
+    #msg { color: #666; margin-top: 10px; min-height: 16px; }
+    .hint { color: #999; font-size: 11px; margin-top: 2px; }
+    #modeRow select { font-weight: bold; }
+    .section { margin-top: 8px; }
+    .activeInfo { background: #f1f5fb; border-radius: 4px; padding: 6px 10px; margin: 4px 0 8px; }
+  </style>
+</head>
+<body>
+  <div class="row" id="modeRow">
+    <label class="lbl">モード</label>
+    <select id="mode" onchange="switchMode()">
+      <option value="batch">一括印刷</option>
+      <option value="single">個別印刷</option>
+    </select>
+  </div>
+
+  <!-- ===== 一括印刷 ===== -->
+  <div id="batchSection" class="section">
+    <h4>印刷する様式 <span class="hint">(チェックしたシートを各様式の設定で印刷)</span></h4>
+    <button type="button" class="toggle" onclick="toggleAll()">全チェック / 全解除</button>
+    <div class="sheets" id="sheets">
+      <? for (var i = 0; i < sheetInfos.length; i++) { ?>
+        <label>
+          <input type="checkbox" class="sheetChk" value="<?= sheetInfos[i].name ?>" checked>
+          <?= sheetInfos[i].name ?><span class="form">［<?= sheetInfos[i].form ?>］</span>
+        </label>
+      <? } ?>
+    </div>
+
+    <div class="row" style="margin-top:8px">
+      <label class="lbl">出力先</label>
+      <select id="dest">
+        <option value="download">ダウンロード</option>
+        <option value="drive">同じフォルダに保存</option>
+      </select>
+    </div>
+    <div class="hint" id="destHint">複数シートはZIP、1シートはPDFでダウンロードします</div>
+  </div>
+
+  <!-- ===== 個別印刷 ===== -->
+  <div id="singleSection" class="section" style="display:none">
+    <div class="activeInfo">
+      対象: <b id="activeName"><?= activeName ?></b>（様式: <?= activeForm ?>）<br>
+      <span class="hint">この設定は様式「<?= activeForm ?>」として保存され、一括印刷でも使われます</span>
+    </div>
+
+    <div class="row">
+      <label class="lbl">用紙サイズ</label>
+      <select id="size">
+        <option>A4</option><option>A3</option><option>B4</option>
+        <option>B5</option><option>LETTER</option><option>LEGAL</option>
+      </select>
+    </div>
+    <div class="row">
+      <label class="lbl">向き</label>
+      <select id="orientation">
+        <option value="portrait">縦</option>
+        <option value="landscape">横</option>
+      </select>
+    </div>
+    <div class="row">
+      <label class="lbl">スケール</label>
+      <select id="scaleMode">
+        <option value="actual">等倍(標準)</option>
+        <option value="fit">幅を1ページに収める</option>
+      </select>
+    </div>
+    <div class="hint">※ /export は%指定不可のため、縮小は「幅を収める」で近似します</div>
+
+    <h4>余白 (インチ)</h4>
+    <div class="row margins">
+      <label class="lbl">上/下</label>
+      <input type="number" id="mt" step="0.01"><span>上</span>
+      <input type="number" id="mb" step="0.01"><span>下</span>
+    </div>
+    <div class="row margins">
+      <label class="lbl">左/右</label>
+      <input type="number" id="ml" step="0.01"><span>左</span>
+      <input type="number" id="mr" step="0.01"><span>右</span>
+    </div>
+
+    <h4>オプション</h4>
+    <div class="row"><label><input type="checkbox" id="hcenter"> 水平中央寄せ</label></div>
+    <div class="row"><label><input type="checkbox" id="gridlines"> 罫線を印刷</label></div>
+  </div>
+
+  <div id="msg"></div>
+  <div class="actions">
+    <button onclick="google.script.host.close()">閉じる</button>
+    <button id="run" onclick="run()">PDF出力</button>
+  </div>
+
+  <script>
+    var ACTIVE_CFG = <?!= JSON.stringify(activeCfg) ?>;
+
+    // 個別フォームを ACTIVE_CFG で初期化
+    (function initSingle() {
+      var c = ACTIVE_CFG || {};
+      if (c.size) document.getElementById('size').value = c.size;
+      if (c.orientation) document.getElementById('orientation').value = c.orientation;
+      if (c.scaleMode) document.getElementById('scaleMode').value = c.scaleMode;
+      var m = c.margins || {};
+      document.getElementById('mt').value = (m.top    != null ? m.top    : 0.75);
+      document.getElementById('mb').value = (m.bottom != null ? m.bottom : 0.75);
+      document.getElementById('ml').value = (m.left   != null ? m.left   : 0.7);
+      document.getElementById('mr').value = (m.right  != null ? m.right  : 0.7);
+      document.getElementById('hcenter').checked   = !!c.horizontalCentered;
+      document.getElementById('gridlines').checked = !!c.gridlines;
+    })();
+
+    function switchMode() {
+      var batch = document.getElementById('mode').value === 'batch';
+      document.getElementById('batchSection').style.display  = batch ? '' : 'none';
+      document.getElementById('singleSection').style.display = batch ? 'none' : '';
+    }
+
+    function toggleAll() {
+      var chks = document.querySelectorAll('.sheetChk');
+      // 1つでも未チェックがあれば全チェック、全部チェック済みなら全解除
+      var anyOff = Array.prototype.some.call(chks, function (c) { return !c.checked; });
+      chks.forEach(function (c) { c.checked = anyOff; });
+    }
+
+    // 出力先に応じてヒント文言を切替
+    document.getElementById('dest').addEventListener('change', function () {
+      var drive = this.value === 'drive';
+      document.getElementById('destHint').textContent = drive
+        ? 'スプレッドシートと同じ場所に、日時名のフォルダを作って各PDFを保存します'
+        : '複数シートはZIP、1シートはPDFでダウンロードします';
+    });
+
+    function run() {
+      var btn = document.getElementById('run');
+      btn.disabled = true;
+      setMsg('生成中… しばらくお待ちください');
+
+      var mode = document.getElementById('mode').value;
+      var call = google.script.run
+        .withSuccessHandler(onDone)
+        .withFailureHandler(function (e) {
+          btn.disabled = false; setMsg('エラー: ' + e.message);
+        });
+
+      if (mode === 'batch') {
+        var targets = [];
+        document.querySelectorAll('.sheetChk:checked').forEach(function (c) {
+          targets.push(c.value);
+        });
+        if (!targets.length) { btn.disabled = false; setMsg('シートを選択してください。'); return; }
+        var dest = document.getElementById('dest').value;
+        call.generateBatch(targets, dest);
+      } else {
+        var cfg = {
+          size: document.getElementById('size').value,
+          orientation: document.getElementById('orientation').value,
+          scaleMode: document.getElementById('scaleMode').value,
+          fitToWidth: document.getElementById('scaleMode').value === 'fit',
+          margins: {
+            top: parseFloat(document.getElementById('mt').value),
+            bottom: parseFloat(document.getElementById('mb').value),
+            left: parseFloat(document.getElementById('ml').value),
+            right: parseFloat(document.getElementById('mr').value),
+          },
+          horizontalCentered: document.getElementById('hcenter').checked,
+          gridlines: document.getElementById('gridlines').checked,
+        };
+        call.generateSingle(cfg);
+      }
+    }
+
+    function onDone(res) {
+      var btn = document.getElementById('run');
+      if (!res || !res.ok) {
+        btn.disabled = false;
+        setMsg('エラー: ' + (res ? res.error : '不明'));
+        return;
+      }
+      btn.disabled = false;
+      var extra = res.note ? '（' + res.note + '）' : '';
+
+      // Drive 保存モード: ダウンロードせず、フォルダのリンクを表示
+      if (res.mode === 'drive') {
+        var msg = document.getElementById('msg');
+        msg.innerHTML = '';
+        msg.appendChild(document.createTextNode(
+          res.count + '件を保存しました → '));
+        var link = document.createElement('a');
+        link.href = res.folderUrl; link.target = '_blank';
+        link.textContent = res.folderName;
+        msg.appendChild(link);
+        if (extra) msg.appendChild(document.createTextNode(' ' + extra));
+        return;
+      }
+
+      // ダウンロードモード: Blob を生成して保存
+      var bin = atob(res.b64), len = bin.length, bytes = new Uint8Array(len);
+      for (var i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
+      var url = URL.createObjectURL(new Blob([bytes], { type: res.mime }));
+      var a = document.createElement('a');
+      a.href = url; a.download = res.name;
+      document.body.appendChild(a); a.click();
+      setMsg('ダウンロードしました（' + res.name + '）。' + extra + ' 続けて出力できます。');
+      setTimeout(function () {
+        URL.revokeObjectURL(url);
+        document.body.removeChild(a);
+      }, 1200);
+    }
+
+    function setMsg(t) { document.getElementById('msg').textContent = t; }
+  </script>
+</body>
+</html>
