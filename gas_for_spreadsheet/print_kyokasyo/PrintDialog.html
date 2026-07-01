@@ -189,15 +189,38 @@
       }
     }
 
+    // 印刷できたシートのチェックを外す（失敗・空はチェックを残す）。
+    // 成否にかかわらず res.succeeded があれば実行する。
+    function syncCheckboxes(res) {
+      if (!res || !res.succeeded || !res.succeeded.length) return;
+      var done = {};
+      res.succeeded.forEach(function (n) { done[n] = true; });
+      document.querySelectorAll('.sheetChk').forEach(function (c) {
+        if (done[c.value]) c.checked = false;
+      });
+    }
+
+    // ダウンロード失敗 / 空のシート名をまとめたメッセージ断片を返す。
+    function failureMsg(res) {
+      if (!res) return '';
+      var parts = [];
+      if (res.failed && res.failed.length) parts.push('ダウンロード失敗: ' + res.failed.join(', '));
+      if (res.empty && res.empty.length) parts.push('空のため未出力: ' + res.empty.join(', '));
+      return parts.join(' ／ ');
+    }
+
     function onDone(res) {
       var btn = document.getElementById('run');
+      // 一括印刷: 印刷できたものはチェックを外し、失敗・空は残す
+      syncCheckboxes(res);
       if (!res || !res.ok) {
         btn.disabled = false;
         setMsg('エラー: ' + (res ? res.error : '不明'));
         return;
       }
       btn.disabled = false;
-      var extra = res.note ? '（' + res.note + '）' : '';
+      var fail = failureMsg(res);
+      var extra = fail ? '（' + fail + '）' : (res.note ? '（' + res.note + '）' : '');
 
       // Drive 保存モード: ダウンロードせず、フォルダのリンクを表示
       if (res.mode === 'drive') {

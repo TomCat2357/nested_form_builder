@@ -124,13 +124,16 @@ function openPrintDialog() {
 }
 
 /**
- * 1枚のシートを、指定 cfg で PDF 化して Blob を返す（改ページ分割→結合）。
- * 失敗時は null。
+ * 1枚のシートを、指定 cfg で PDF 化して状態オブジェクトを返す（改ページ分割→結合）。
+ * 戻り値:
+ *   成功           : { status: 'ok', blob }
+ *   データが空      : { status: 'empty' }
+ *   ページ取得失敗  : { status: 'failed' }
  */
 async function sheetToPdfBlob_(ss, sheet, cfg, token) {
   const blobs = [];
   const pages = buildPages_(sheet);
-  if (!pages.length) return null;   // データが空
+  if (!pages.length) return { status: 'empty' };   // データが空
   for (let i = 0; i < pages.length; i++) {
     const url = buildPageExportUrl_(ss.getId(), sheet.getSheetId(), pages[i], cfg);
     const blob = fetchExportWithRetry_(url, token, sheet.getName() + ' p' + (i + 1));
@@ -138,13 +141,14 @@ async function sheetToPdfBlob_(ss, sheet, cfg, token) {
       // 1ページでも取得できなければ、このシートは不完全 → 失敗扱い
       Logger.log('シート不完全のため中止: %s（%s/%s ページ目で失敗）',
         sheet.getName(), (i + 1), pages.length);
-      return null;
+      return { status: 'failed' };
     }
     blobs.push(blob);
     Utilities.sleep(120);
   }
   const name = sanitize_(sheet.getName()) + '.pdf';
-  return await mergePdfBlobs_(blobs, name);
+  const merged = await mergePdfBlobs_(blobs, name);
+  return { status: 'ok', blob: merged };
 }
 
 /**
@@ -179,9 +183,11 @@ function fetchExportWithRetry_(url, token, label) {
  * @param targets シート名の配列（チェックされたもの）
  * @param dest    'download' = ブラウザDL（1枚:PDF / 複数:ZIP）
  *                'drive'    = スプレッドシートと同じフォルダ内に「日時フォルダ」を作り各PDFを保存
- * 戻り値:
- *   download: {ok, mode:'download', name, mime, b64, note}
- *   drive   : {ok, mode:'drive', folderName, folderUrl, count, note}
+ * 戻り値（いずれも succeeded/failed/empty を含む）:
+ *   download: {ok, mode:'download', name, mime, b64, note, succeeded, failed, empty}
+ *   drive   : {ok, mode:'drive', folderName, folderUrl, count, note, succeeded, failed, empty}
+ *   全滅時  : {ok:false, error, succeeded, failed, empty}
+ *   succeeded = 印刷できたシート名 / failed = ダウンロード失敗 / empty = 空で未出力
  */
 async function generateBatch(targets, dest) {
   try {
@@ -192,7 +198,9 @@ async function generateBatch(targets, dest) {
 
     const pdfBlobs = [];
     const usedNames = {};   // ファイル名の重複回避
-    const skipped = [];     // 空などで出力されなかったシート名
+    const succeeded = [];   // 印刷できたシート名
+    const failed = [];      // ダウンロード（生成）に失敗したシート名
+    const empty = [];       // 空で出力されなかったシート名
 
     // シート順を保ちつつ、選択されたものだけ処理
     for (const sheet of ss.getSheets()) {
@@ -201,12 +209,14 @@ async function generateBatch(targets, dest) {
 
       const sname = sheet.getName();
       const cfg = loadFormCfg_(formNameOf_(sname));  // 様式名の設定を使用
-      const blob = await sheetToPdfBlob_(ss, sheet, cfg, token);
-      if (!blob) {
-        skipped.push(sname);
-        Logger.log('一括: 出力なし（空判定/失敗）→ %s', sname);
+      const result = await sheetToPdfBlob_(ss, sheet, cfg, token);
+      if (result.status !== 'ok') {
+        if (result.status === 'empty') empty.push(sname);
+        else failed.push(sname);
+        Logger.log('一括: 出力なし（%s）→ %s', result.status, sname);
         continue;
       }
+      const blob = result.blob;
       // 同名回避（重複時は連番）
       let base = sanitize_(sname);
       let fname = base + '.pdf';
@@ -215,19 +225,27 @@ async function generateBatch(targets, dest) {
       usedNames[fname] = true;
       blob.setName(fname);
       pdfBlobs.push(blob);
+      succeeded.push(sname);
       Logger.log('一括: 追加 %s → %s', sname, fname);
     }
+
+    // 未出力の内訳をラベル付きで組み立て（後方互換のため note に格納）
+    const noteParts = [];
+    if (failed.length) noteParts.push('ダウンロード失敗: ' + failed.join(', '));
+    if (empty.length) noteParts.push('空のため未出力: ' + empty.join(', '));
+    const note = noteParts.join(' ／ ');
+
     if (!pdfBlobs.length) {
       return { ok: false,
-        error: '出力対象がありませんでした。' + (skipped.length ? '（空/失敗: ' + skipped.join(', ') + '）' : '') };
+        error: '出力対象がありませんでした。' + (note ? '（' + note + '）' : ''),
+        succeeded: succeeded, failed: failed, empty: empty };
     }
-
-    const note = skipped.length ? ('未出力: ' + skipped.join(', ')) : '';
 
     // ---- Drive 保存: 同じフォルダ内に日時フォルダを作って各PDFを入れる ----
     if (dest === 'drive') {
       const parent = getSpreadsheetParentFolder_(ss);
-      if (!parent) return { ok: false, error: 'スプレッドシートの保存先フォルダを取得できませんでした。' };
+      if (!parent) return { ok: false, error: 'スプレッドシートの保存先フォルダを取得できませんでした。',
+        succeeded: succeeded, failed: failed, empty: empty };
       const folderName = sanitize_(ss.getName()) + '_' + nowStamp_();
       const folder = parent.createFolder(folderName);
       pdfBlobs.forEach(function (b) { folder.createFile(b); });
@@ -235,6 +253,7 @@ async function generateBatch(targets, dest) {
         ok: true, mode: 'drive',
         folderName: folderName, folderUrl: folder.getUrl(),
         count: pdfBlobs.length, note: note,
+        succeeded: succeeded, failed: failed, empty: empty,
       };
     }
 
@@ -242,11 +261,13 @@ async function generateBatch(targets, dest) {
     if (pdfBlobs.length === 1) {
       const b = pdfBlobs[0];
       return { ok: true, mode: 'download', name: b.getName(), mime: MimeType.PDF,
-        b64: Utilities.base64Encode(b.getBytes()), note: note };
+        b64: Utilities.base64Encode(b.getBytes()), note: note,
+        succeeded: succeeded, failed: failed, empty: empty };
     }
     const zip = Utilities.zip(pdfBlobs, sanitize_(ss.getName()) + '.zip');
     return { ok: true, mode: 'download', name: zip.getName(), mime: 'application/zip',
-      b64: Utilities.base64Encode(zip.getBytes()), note: note };
+      b64: Utilities.base64Encode(zip.getBytes()), note: note,
+      succeeded: succeeded, failed: failed, empty: empty };
   } catch (e) {
     return { ok: false, error: String(e) };
   }
@@ -287,8 +308,13 @@ async function generateSingle(cfg) {
     saveFormCfg_(form, cfg);   // 様式名キーに保存（接尾語を除いて共通）
 
     const token = ScriptApp.getOAuthToken();
-    const blob = await sheetToPdfBlob_(ss, sheet, cfg, token);
-    if (!blob) return { ok: false, error: '出力できませんでした（データが空の可能性）。' };
+    const result = await sheetToPdfBlob_(ss, sheet, cfg, token);
+    if (result.status !== 'ok') {
+      return { ok: false, error: result.status === 'empty'
+        ? '出力できませんでした（データが空です）。'
+        : '出力できませんでした（ダウンロードに失敗しました）。' };
+    }
+    const blob = result.blob;
     return { ok: true, name: blob.getName(), mime: MimeType.PDF,
       b64: Utilities.base64Encode(blob.getBytes()) };
   } catch (e) {
