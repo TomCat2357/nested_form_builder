@@ -424,6 +424,29 @@ test("extractExpressions: full-query トークンは式抽出の対象外", () =
   );
 });
 
+test("extractExpressions: full-query を囲む式トークンも式抽出の対象外（precompile しない）", () => {
+  setup();
+  // UNIQUE_CSV({{SELECT ...}}) は内側 {{ が alasql で解釈できないため precompile 対象外。
+  // prefetchQueryTokens で完全解決するので、ここで拾うと validateTemplateSyntax が誤検知する。
+  assert.deepEqual(
+    extractExpressions("{{UNIQUE_CSV({{SELECT [m] FROM [子] WHERE [pid]=_id}})}}"),
+    []
+  );
+  // 純粋な式トークンとの混在では純粋式のみ拾う
+  assert.deepEqual(
+    extractExpressions("{{`氏名`}} と {{UNIQUE_CSV({{SELECT [m] FROM [子]}})}}"),
+    ["`氏名`"]
+  );
+});
+
+test("validateTemplateSyntax: full-query を囲む式トークンは検証をスキップし ok（保存ブロック回帰防止）", async () => {
+  setup();
+  assert.deepEqual(
+    await validateTemplateSyntax("手段: {{UNIQUE_CSV({{SELECT [m] FROM [子] WHERE [pid]=_id}})}}"),
+    { ok: true }
+  );
+});
+
 test("resolveTemplate: full-query トークンは queryTokenValues から引く", () => {
   setup();
   const tpl = "件数: {{SELECT COUNT(*) FROM [子] WHERE [pid]=_id}}";

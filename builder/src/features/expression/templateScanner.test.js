@@ -9,6 +9,7 @@ import {
   restoreEscapedBraces,
   splitTopLevelCommas,
   isFullQueryBody,
+  tokenHasFullQuery,
 } from "./templateScanner.js";
 
 // ---------------------------------------------------------------------------
@@ -28,6 +29,30 @@ test("isFullQueryBody: 式トークンは false", () => {
   assert.ok(!isFullQueryBody("SELECTED")); // 単語境界
   assert.ok(!isFullQueryBody(""));
   assert.ok(!isFullQueryBody(null));
+});
+
+// ---------------------------------------------------------------------------
+// tokenHasFullQuery
+// ---------------------------------------------------------------------------
+
+test("tokenHasFullQuery: 自身が full-query なら true", () => {
+  assert.ok(tokenHasFullQuery("SELECT [a] FROM _form"));
+  assert.ok(tokenHasFullQuery("  select 1"));
+});
+
+test("tokenHasFullQuery: 式/UDF が full-query を囲む場合も true", () => {
+  assert.ok(tokenHasFullQuery("UNIQUE_CSV({{SELECT [m] FROM [子] WHERE [pid]=_id}})"));
+  assert.ok(tokenHasFullQuery("UPPER({{SELECT [x] FROM _form}})"));
+  // ネストが深くても検出する
+  assert.ok(tokenHasFullQuery("F({{G({{SELECT 1}})}})"));
+});
+
+test("tokenHasFullQuery: full-query を含まない式は false", () => {
+  assert.ok(!tokenHasFullQuery("UPPER(`氏名`)"));
+  assert.ok(!tokenHasFullQuery("UNIQUE_CSV({{`手段`}})")); // ネストはあるが full-query でない
+  assert.ok(!tokenHasFullQuery("'SELECT in a string'"));
+  assert.ok(!tokenHasFullQuery(""));
+  assert.ok(!tokenHasFullQuery(null));
 });
 
 // ---------------------------------------------------------------------------

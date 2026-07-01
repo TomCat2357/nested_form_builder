@@ -17,7 +17,7 @@
  * なお唯一のフロント呼び出し元 utils/tokenReplacer.js は常に { fallback: "" } を明示渡し。
  */
 
-import { collectBalancedBraces, scanAndReplace, escapeBraces, unescapeBraces, splitTopLevelCommas, findBalancedCloseIndex, isFullQueryBody } from "./templateScanner.js";
+import { collectBalancedBraces, scanAndReplace, escapeBraces, unescapeBraces, splitTopLevelCommas, findBalancedCloseIndex, tokenHasFullQuery } from "./templateScanner.js";
 import {
   precompileExpressions,
   getCompiledExpressionSync,
@@ -43,9 +43,11 @@ export function extractExpressions(template) {
   const tokens = collectBalancedBraces(escaped);
   const out = [];
   for (const tok of tokens) {
-    // full-query トークン（先頭 SELECT）は単一スカラ式ではないので式コンパイル対象外。
-    // 解決は prefetchQueryTokens（tokenReplacer）で別経路。
-    if (isFullQueryBody(tok.body)) continue;
+    // full-query トークン（先頭 SELECT）、および full-query を囲む式/UDF トークン
+    // （`UNIQUE_CSV({{SELECT ...}})` 等）は単一スカラ式として同期コンパイルできない
+    // （内側 {{ が alasql で解釈不能）。解決は prefetchQueryTokens（tokenReplacer）で別経路。
+    // ここで除外しないと validateTemplateSyntax が誤って構文エラー扱いし保存をブロックする。
+    if (tokenHasFullQuery(tok.body)) continue;
     const parts = splitTopLevelCommas(tok.body);
     for (const raw of parts) {
       const expr = normalizeBody(raw);
@@ -173,10 +175,12 @@ export function resolveTemplate(template, row, opts) {
 
   const escaped = escapeBraces(text);
   const replaced = scanAndReplace(escaped, (tok) => {
-    // full-query トークンは prefetch 済みの値を引くだけ（同期評価しない）。
-    if (isFullQueryBody(tok.body)) {
-      if (queryTokenValues && queryTokenValues.has(tok.fullToken)) return apply(queryTokenValues.get(tok.fullToken));
-      if (logError && queryTokensReady) logError(new Error("full-query token not prefetched: " + tok.fullToken), tok.fullToken);
+    // prefetch 済みの値（full-query／full-query を囲む式トークン）があればそれを引く。
+    if (queryTokenValues && queryTokenValues.has(tok.fullToken)) return apply(queryTokenValues.get(tok.fullToken));
+    // prefetch されるべきトークン（full-query そのもの or ネストに full-query を含む式）
+    // なのに Map に無い → 同期評価できないので fallback（prefetch 完了後の欠落のみ警告）。
+    if (tokenHasFullQuery(tok.body)) {
+      if (logError && queryTokensReady) logError(new Error("query token not prefetched: " + tok.fullToken), tok.fullToken);
       return apply(fallback);
     }
     const parts = splitTopLevelCommas(tok.body);
@@ -252,14 +256,15 @@ export async function resolveTemplateAsync(template, row, opts) {
   const tokens = collectBalancedBraces(escaped);
   const valueByToken = new Map();
   for (const tok of tokens) {
-    // full-query トークンは prefetch 済みの値を引くだけ（このメソッドでは実行しない）。
-    if (isFullQueryBody(tok.body)) {
-      if (queryTokenValues && queryTokenValues.has(tok.fullToken)) {
-        valueByToken.set(tok.fullToken, queryTokenValues.get(tok.fullToken));
-      } else {
-        if (logError) logError(new Error("full-query token not prefetched: " + tok.fullToken), tok.fullToken);
-        valueByToken.set(tok.fullToken, fallback);
-      }
+    // prefetch 済みの値（full-query／full-query を囲む式トークン）があればそれを引く。
+    if (queryTokenValues && queryTokenValues.has(tok.fullToken)) {
+      valueByToken.set(tok.fullToken, queryTokenValues.get(tok.fullToken));
+      continue;
+    }
+    // prefetch されるべきなのに Map に無い full-query 系トークンは fallback（同期評価不可）。
+    if (tokenHasFullQuery(tok.body)) {
+      if (logError) logError(new Error("query token not prefetched: " + tok.fullToken), tok.fullToken);
+      valueByToken.set(tok.fullToken, fallback);
       continue;
     }
     const parts = splitTopLevelCommas(tok.body);

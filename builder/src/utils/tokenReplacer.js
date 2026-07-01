@@ -27,6 +27,7 @@ import {
   unescapeBraces,
   scanAndReplace,
   isFullQueryBody,
+  tokenHasFullQuery,
   restoreEscapedBraces,
 } from "../features/expression/templateScanner.js";
 import { substituteCurrentIdLiteral, collapseQueryResult, resolveNestedBraceTokens } from "../features/expression/fullQuerySql.js";
@@ -143,7 +144,10 @@ export const prefetchQueryTokens = async (template, context) => {
   if (text.indexOf("{") < 0) return cache;
   const ctx = context || {};
   const escaped = escapeBraces(text);
-  const tokens = collectBalancedBraces(escaped).filter((t) => isFullQueryBody(t.body));
+  // full-query トークン（先頭 SELECT）に加え、式/UDF が full-query を囲むトークン
+  // （`{{UNIQUE_CSV({{SELECT ...}})}}` 等）も prefetch 対象にする。後者は同期式コンパイル
+  // できない（内側 {{ が alasql で解釈不能）ため、ここで完全解決して Map に載せる。
+  const tokens = collectBalancedBraces(escaped).filter((t) => tokenHasFullQuery(t.body));
   if (tokens.length === 0) return cache;
 
   // データ層（analyticsStore / dataStore）は full-query が実在するときだけ動的 import する。
@@ -201,21 +205,10 @@ export const prefetchQueryTokens = async (template, context) => {
 
   for (const tok of tokens) {
     if (cache.has(tok.fullToken)) continue;
-    const rawSql = unescapeBraces(tok.body);
-    const flatSql = await resolveNestedBraceTokens(rawSql, (childTok) => evalNestedToken_(childTok.body));
-    let value = "";
-    try {
-      const sql = substituteCurrentIdLiteral(flatSql, recordId);
-      const res = await runFullQuery(sql, { forms, defaultFormId, liveRowOverride });
-      if (res && res.ok) {
-        value = collapseQueryResult(res.rows, res.columns);
-      } else {
-        logTemplateError(new Error((res && res.error) || "full-query failed"), tok.fullToken);
-      }
-    } catch (err) {
-      logTemplateError(err, tok.fullToken);
-    }
-    cache.set(tok.fullToken, value);
+    // full-query トークンも、式/UDF が full-query を囲むトークンも evalNestedToken_ で
+    // 統一的に解決する（前者は resolveNestedBraceTokens→substituteCurrentIdLiteral→
+    // runFullQuery→collapseQueryResult、後者はネストを潰してから式評価）。
+    cache.set(tok.fullToken, await evalNestedToken_(unescapeBraces(tok.body)));
   }
   return cache;
 };
@@ -262,10 +255,9 @@ export const injectResolvedQueryTokens = (template, queryTokenValues) => {
   if (!map || map.size === 0) return text;
   const escaped = escapeBraces(text);
   const replaced = scanAndReplace(escaped, (tok) => {
-    if (isFullQueryBody(tok.body)) {
-      const v = map.has(tok.fullToken) ? map.get(tok.fullToken) : "";
-      return escapeBraceLiteral_(v);
-    }
+    // prefetch 済み（full-query／full-query を囲む式）トークンは解決値へ差し替える。
+    // それ以外の単純式トークンは原文のまま残し、GAS が payload から解決する。
+    if (map.has(tok.fullToken)) return escapeBraceLiteral_(map.get(tok.fullToken));
     return tok.fullToken;
   });
   return restoreEscapedBraces(replaced);

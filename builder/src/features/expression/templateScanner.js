@@ -26,6 +26,24 @@ export function isFullQueryBody(body) {
 }
 
 /**
+ * トークン本文が full-query（先頭 SELECT）そのものか、または **ネストした `{{...}}`
+ * の中に full-query を含む**かを再帰的に判定する。
+ *
+ * `{{SELECT ...}}`（自身が full-query）だけでなく `{{UNIQUE_CSV({{SELECT ...}})}}` の
+ * ように式/UDF が full-query を囲む形も true になる。これらは同期式コンパイルではなく
+ * prefetchQueryTokens（非同期・クエリエンジン経由）で解決する対象。
+ *
+ * @param {string} body escape 済み本文でも可（`\{`/`\}` はマーカに退避済み・実 `{{` は残る）
+ * @returns {boolean}
+ */
+export function tokenHasFullQuery(body) {
+  const text = String(body == null ? "" : body);
+  if (isFullQueryBody(text)) return true;
+  if (text.indexOf("{{") < 0) return false;
+  return collectBalancedBraces(text).some((t) => tokenHasFullQuery(t.body));
+}
+
+/**
  * `{` の位置 openIndex から対応する `}` の位置を返す。
  * 見つからなければ -1。
  */

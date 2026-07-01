@@ -512,19 +512,25 @@ export function ensureNfbUdfsRegistered(alasql) {
 
   // ---------------------------------------------------------------------------
   // UNIQUE_CSV — カンマ区切り文字列を初出順でユニーク化する（空要素は除外）。
-  //   例: 'a,x,,,c,d,e,e,f,F,' → 'a,x,c,d,e,f,F'（大文字小文字は区別）。
-  //   単純な split(",") で、多値セル codec の splitMultiValue（\-エスケープ対応）とは別物。
-  //   ラベル内にカンマを含む値（checkboxes 等）には使わないこと。
+  //   各要素の先頭・末尾の空白のみ除去し（内部空白は保持）、trim 後に空なら除外する。
+  //   例: 'a,x,,,c,d,e,e,f,F,'   → 'a,x,c,d,e,f,F'（大文字小文字は区別）
+  //       'a, b,c'               → 'a,b,c'（前後空白除去）
+  //       'a,b c,d'              → 'a,b c,d'（内部空白は保持）
+  //   collapseQueryResult の ", " 連結（カンマ＋空白）で畳んだ full-query 結果を
+  //   囲んでもクリーンに揃うよう trim する。単純な split(",") で、多値セル codec の
+  //   splitMultiValue（\-エスケープ対応）とは別物。ラベル内にカンマを含む値
+  //   （checkboxes 等）には使わないこと。
   // ---------------------------------------------------------------------------
   alasql.fn.UNIQUE_CSV = function (value) {
     if (value === null || value === undefined || value === "") return "";
     const seen = new Set();
     const result = [];
     String(value).split(",").forEach(function (item) {
-      if (item === "") return;
-      if (!seen.has(item)) {
-        seen.add(item);
-        result.push(item);
+      const t = item.trim();
+      if (t === "") return;
+      if (!seen.has(t)) {
+        seen.add(t);
+        result.push(t);
       }
     });
     return result.join(",");
