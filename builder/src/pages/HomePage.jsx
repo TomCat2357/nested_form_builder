@@ -2,13 +2,31 @@ import React, { useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import AppLayout from "../app/components/AppLayout.jsx";
 import { useAuth } from "../app/state/authContext.jsx";
+import { useAppData } from "../app/state/AppDataProvider.jsx";
+import { listDashboardsSWR, listQuestionsSWR } from "../features/analytics/analyticsStore.js";
 import HomeForms from "../features/home/HomeForms.jsx";
 import HomeDashboards from "../features/home/HomeDashboards.jsx";
 
 export default function HomePage() {
   const { isAdmin, propertyStoreMode } = useAuth();
+  const { refreshForms } = useAppData();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const [refreshingAll, setRefreshingAll] = useState(false);
+
+  // フォーム・ダッシュボード・クエスチョンの3カタログをまとめて再取得する（各管理画面の更新と同じ軽さ）。
+  const handleRefreshAll = async () => {
+    setRefreshingAll(true);
+    try {
+      await Promise.all([
+        refreshForms({ reason: "manual:home", background: false }),
+        listDashboardsSWR({ forceRefresh: true }),
+        listQuestionsSWR({ forceRefresh: true }),
+      ]);
+    } finally {
+      setRefreshingAll(false);
+    }
+  };
 
   const requestedView = (searchParams.get("view") || "").trim();
   const activeView = useMemo(() => {
@@ -61,6 +79,14 @@ export default function HomePage() {
             className={activeView === "dashboards" ? "nf-btn nf-btn-sidebar" : "nf-btn-outline nf-btn-sidebar"}
           >
             ダッシュボード一覧
+          </button>
+          <button
+            type="button"
+            onClick={handleRefreshAll}
+            disabled={refreshingAll}
+            className="nf-btn-outline nf-btn-sidebar"
+          >
+            {refreshingAll ? "🔄 更新中..." : "🔄 更新"}
           </button>
           <button
             type="button"

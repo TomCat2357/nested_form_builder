@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import {
   listDashboards,
   listDashboardsSWR,
@@ -16,7 +16,9 @@ import {
   moveDashboards,
   renameDashboardFolder,
   deleteDashboardFolder,
+  listQuestionsSWR,
 } from "../../features/analytics/analyticsStore.js";
+import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import AdminAnalyticsListPage from "./AdminAnalyticsListPage.jsx";
 
 const store = {
@@ -51,6 +53,16 @@ const renderNameCell = (d) => (
 );
 
 export default function AdminDashboardListPage() {
+  const { refreshForms } = useAppData();
+
+  // Dashboard は Question に、Question は Form に依存するため、更新はその下流も丸ごと再取得する。
+  const cascadeRefresh = useCallback(async () => {
+    await Promise.all([
+      listQuestionsSWR({ forceRefresh: true }),
+      refreshForms({ reason: "cascade:admin-dashboard-list", background: true }),
+    ]);
+  }, [refreshForms]);
+
   return (
     <AdminAnalyticsListPage
       kind="dashboards"
@@ -64,6 +76,7 @@ export default function AdminDashboardListPage() {
       renderNameCell={renderNameCell}
       enableUrlCopy
       copyUrlPathPrefix="/dashboards/"
+      cascadeRefresh={cascadeRefresh}
     />
   );
 }

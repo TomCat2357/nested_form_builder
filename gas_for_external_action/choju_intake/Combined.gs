@@ -1267,6 +1267,8 @@ function Cho_getDataSheet_(spreadsheetId, sheetName) {
 }
 
 // 1 レコードを末尾へ append（新規行のみ）。戻り値 { ok, row, id, warnings }。
+// No. の採番: 子レコード（rec.pid が非空）は同一 pid 内の最大値+1（本体の recordNoPerPid=ON 相当）。
+// 親レコード（pid 空）は従来どおりシート全体の最大値+1。
 function Cho_appendRow_(spreadsheetId, sheetName, rec) {
   var sheet = Cho_getDataSheet_(spreadsheetId, sheetName);
   var lastColumn = Math.max(sheet.getLastColumn(), 10);
@@ -1274,11 +1276,20 @@ function Cho_appendRow_(spreadsheetId, sheetName, rec) {
   var fixedColMap = Sheets_buildFixedColMapFromSheet_(sheet);
 
   var noIdx0 = Object.prototype.hasOwnProperty.call(fixedColMap, "No.") ? fixedColMap["No."] : 1;
+  var pidIdx0 = Object.prototype.hasOwnProperty.call(fixedColMap, "pid") ? fixedColMap["pid"] : -1;
+  var targetPid = (rec && rec.pid) ? String(rec.pid) : "";
   var maxNo = 0;
   var lastRow = sheet.getLastRow();
   if (lastRow >= NFB_DATA_START_ROW) {
-    var noVals = sheet.getRange(NFB_DATA_START_ROW, noIdx0 + 1, lastRow - NFB_DATA_START_ROW + 1, 1).getValues();
-    for (var i = 0; i < noVals.length; i++) { var v = Number(noVals[i][0]); if (isFinite(v) && v > maxNo) maxNo = v; }
+    var rowCount = lastRow - NFB_DATA_START_ROW + 1;
+    var noVals = sheet.getRange(NFB_DATA_START_ROW, noIdx0 + 1, rowCount, 1).getValues();
+    var pidVals = (targetPid && pidIdx0 >= 0)
+      ? sheet.getRange(NFB_DATA_START_ROW, pidIdx0 + 1, rowCount, 1).getValues()
+      : null;
+    for (var i = 0; i < noVals.length; i++) {
+      if (pidVals && String(pidVals[i][0]) !== targetPid) continue;
+      var v = Number(noVals[i][0]); if (isFinite(v) && v > maxNo) maxNo = v;
+    }
   }
 
   var built = Cho_buildNewRow_(keyToColumn, fixedColMap, lastColumn, rec, maxNo, Date.now(), Cho_activeEmail_());

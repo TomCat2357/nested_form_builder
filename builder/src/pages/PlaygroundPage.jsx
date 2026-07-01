@@ -665,7 +665,7 @@ export default function PlaygroundPage() {
               />
               <FieldInsertPicker
                 options={templateFieldOptions}
-                onInsert={(p) => insertAtCursor(templateRef.current, template, `{{ [${p}] }}`, setTemplate)}
+                onInsert={(p) => insertAtCursor(templateRef.current, template, `[${p}]`, setTemplate)}
               />
               <div style={{ marginTop: "6px" }}>
                 <button type="button" onClick={handleRunTemplate} disabled={tplRunning} className="nf-btn-outline">

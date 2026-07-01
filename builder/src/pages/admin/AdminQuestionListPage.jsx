@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback } from "react";
 import {
   listQuestions,
   listQuestionsSWR,
@@ -17,6 +17,7 @@ import {
   renameQuestionFolder,
   deleteQuestionFolder,
 } from "../../features/analytics/analyticsStore.js";
+import { useAppData } from "../../app/state/AppDataProvider.jsx";
 import AdminAnalyticsListPage from "./AdminAnalyticsListPage.jsx";
 
 const store = {
@@ -44,6 +45,14 @@ const extraColumn = {
 };
 
 export default function AdminQuestionListPage() {
+  const { refreshForms } = useAppData();
+
+  // Question は Form に依存するため、更新は Form 一覧も丸ごと再取得する。
+  const cascadeRefresh = useCallback(
+    () => refreshForms({ reason: "cascade:admin-question-list", background: true }),
+    [refreshForms],
+  );
+
   return (
     <AdminAnalyticsListPage
       kind="questions"
@@ -54,6 +63,7 @@ export default function AdminQuestionListPage() {
       buildEditPath={(id) => `/admin/questions/${id}`}
       store={store}
       extraColumn={extraColumn}
+      cascadeRefresh={cascadeRefresh}
     />
   );
 }

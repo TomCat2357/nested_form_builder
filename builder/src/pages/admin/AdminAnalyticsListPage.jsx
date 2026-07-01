@@ -32,6 +32,7 @@ import FolderRow from "../../features/folders/FolderRow.jsx";
  * @param {(item: object, ctx: {copiedId: string|null, onCopy: (id: string, e: Event) => void}) => React.ReactNode} [props.renderIdCell] ID セルの描画。未指定なら ID 文字列のみ
  * @param {boolean} [props.enableUrlCopy] true で ID セルクリック→URL コピー機能を有効化
  * @param {string} [props.copyUrlPathPrefix] URL コピー時の SPA パスプレフィックス（例 "/dashboards/"）。buildAppUrl で GAS は ?route= 形式に変換される
+ * @param {() => Promise<void>} [props.cascadeRefresh] 「更新」クリック時、自分の一覧に加えてリンク先（Question/Form 等）も再取得する追加処理
  */
 export default function AdminAnalyticsListPage({
   kind,
@@ -46,6 +47,7 @@ export default function AdminAnalyticsListPage({
   renderIdCell,
   enableUrlCopy = false,
   copyUrlPathPrefix = "",
+  cascadeRefresh,
 }) {
   const navigate = useNavigate();
   const { showAlert } = useAlert();
@@ -53,12 +55,25 @@ export default function AdminAnalyticsListPage({
   const [showArchived, setShowArchived] = useState(false);
   const [copiedId, setCopiedId] = useState(null);
   const [registeredFolders, setRegisteredFolders] = useState([]);
+  const [cascading, setCascading] = useState(false);
 
   // 一覧本体は SWR フックで管理（キャッシュ即表示＋鮮度に応じた裏更新）。
   const { items, loading, refreshing, error, refresh } = useAnalyticsList({
     listSWR: store.listSWR,
     includeArchived: true,
   });
+
+  // 自分の一覧の再取得に加え、依存関係の下流（Question→Form 等）もカスケード再取得する。
+  const handleRefresh = useCallback(async () => {
+    await refresh();
+    if (!cascadeRefresh) return;
+    setCascading(true);
+    try {
+      await cascadeRefresh();
+    } finally {
+      setCascading(false);
+    }
+  }, [refresh, cascadeRefresh]);
 
   const {
     selected,
@@ -317,8 +332,8 @@ export default function AdminAnalyticsListPage({
               </label>
             </>
           }
-          onRefresh={refresh}
-          refreshing={loading || refreshing}
+          onRefresh={handleRefresh}
+          refreshing={loading || refreshing || cascading}
           selectedCount={selected.size}
           selectedFolderCount={selectedFolders.size}
         />
