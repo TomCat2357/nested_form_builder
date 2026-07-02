@@ -106,7 +106,14 @@ var CHO2_L_W_ADDRESS_ = "住所";
 var CHO2_L_W_OCCUPATION_ = "職業";
 var CHO2_L_W_BIRTH_ = "生年月日";
 var CHO2_L_W_SPECIES_ = "捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量";
-var CHO2_L_W_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称）"; // 閉じ括弧が半角!
+var CHO2_L_W_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称）"; // 閉じ括弧は全角（実フォームと一致）
+
+// 免許欄（2026-07-02 再構成。choju_intake が同構造の権威）。旧「免許の必要性(不要/必要)」→「狩猟免許(なし/あり)」、
+// 空気銃も select ラベルが「免許種類」→「狩猟免許」。免許なし分岐に「免許不要の理由」radio が新設された。
+var CHO2_L_LICENSE_ = "狩猟免許";                                // わな/網 radio・空気銃 select 共通ラベル
+var CHO2_REASON_TRAP_ = "免許不要の理由（小型のはこわな限定）";   // わな 免許なしの理由 radio
+var CHO2_REASON_NET_ = "免許不要の理由（小型のつき網限定）";      // 網  免許なしの理由 radio
+var CHO2_CERT_LICENSE_ = "従事（補助）適任者証明書";            // 名簿 Q 列に出す短縮値／なし理由の判定キー（部分一致）
 
 // ----- 種の表示順（フォーム選択肢順）。bird=採取卵数あり -----
 var CHO2_SPECIES_ORDER_ = [
@@ -165,6 +172,10 @@ var CHO2_ROSTER_ = {
     gunPermitNo: "X", gunPermitDate: "Y", gunKind: "Z"
   }
 };
+
+// 従事者名簿（法人）: 種数を各従事者に書かず先頭ブロックへ全員合計だけを記入し、その旨を注記する
+// （記載例_法人。注記は species2Name 列・先頭ブロック最終行＝M13）。
+var CHO2_ROSTER_AGG_NOTE_ = "※法人全体の数量";
 
 // 各シート名
 var CHO2_SHEET_ROSTER_ = "従事者名簿";
@@ -376,47 +387,55 @@ function Cho2_unionTools_(workers) {
 }
 
 // 1 従事者・1 用具の免許/登録/銃器情報を pathMap から取り出す（名簿 Q-Z 用）。choju 取込の逆。
+// 免許欄は 2026-07-02 再構成後の構造（狩猟免許 なし/あり）を読む。choju_intake が同構造の権威。
 function Cho2_toolLicense_(worker, tool) {
   var M = CHO2_L_W_METHOD_, kind = CHO2_TOOL_KIND_[tool] || "";
   var r = { tool: tool, kind: kind, licType: "", licPref: "", licNo: "", licDate: "", regNo: "", regDate: "", gunNo: "", gunDate: "", gunKind: "" };
   if (kind === "わな") {
-    // フォームに「わなの免許種類」欄が無いため、免許必要時は種別から補完（名簿 Q 列＝狩猟免許 種類）。
-    if (Cho2_str_(worker[M + "/わな/免許の必要性"]) === "必要") r.licType = "わな猟免許";
-    var wb = M + "/わな/免許の必要性/必要/免許情報/";
-    r.licPref = Cho2_str_(worker[wb + "都道府県"]);
-    r.licNo = Cho2_str_(worker[wb + "番号"]);
-    r.licDate = Cho2_str_(worker[wb + "交付年月日"]);
-    var wr = M + "/わな/狩猟者登録/登録の有無/あり/";
+    var wLic = M + "/わな/" + CHO2_L_LICENSE_; // 狩猟免許（なし/あり）
+    if (Cho2_str_(worker[wLic]) === "あり") {
+      var wb = wLic + "/あり/免許情報/";
+      r.licPref = Cho2_str_(worker[wb + "都道府県"]);
+      r.licNo = Cho2_str_(worker[wb + "番号"]);
+      r.licDate = Cho2_str_(worker[wb + "交付年月日"]);
+      // 免許ありのとき名簿 Q 列（種類）は空欄（記載例に合わせる。旧「わな猟免許」自動補完は撤去）。
+    } else if (Cho2_str_(worker[wLic + "/なし/" + CHO2_REASON_TRAP_]).indexOf(CHO2_CERT_LICENSE_) >= 0) {
+      r.licType = CHO2_CERT_LICENSE_; // 免許なし＋従事（補助）適任者証明書 → Q 列に短縮値
+    }
+    var wr = M + "/わな/狩猟者登録/登録の有無/あり/"; // 登録は免許と兄弟＝分岐外（不変）
     r.regNo = Cho2_str_(worker[wr + "番号"]);
     r.regDate = Cho2_str_(worker[wr + "交付年月日"]);
   } else if (kind === "網") {
-    // 同上（網の免許種類欄が無いため補完）。
-    if (Cho2_str_(worker[M + "/網/免許の必要性"]) === "必要") r.licType = "網猟免許";
-    var nb = M + "/網/免許の必要性/必要/免許情報/";
-    r.licPref = Cho2_str_(worker[nb + "都道府県"]);
-    r.licNo = Cho2_str_(worker[nb + "番号"]);
-    r.licDate = Cho2_str_(worker[nb + "交付年月日"]);
-    var nr = M + "/網/免許の必要性/必要/狩猟者登録/登録の有無/あり/";
-    r.regNo = Cho2_str_(worker[nr + "番号"]);
-    r.regDate = Cho2_str_(worker[nr + "交付年月日"]);
+    var nLic = M + "/網/" + CHO2_L_LICENSE_;
+    if (Cho2_str_(worker[nLic]) === "あり") {
+      var nb = nLic + "/あり/免許情報/";
+      r.licPref = Cho2_str_(worker[nb + "都道府県"]);
+      r.licNo = Cho2_str_(worker[nb + "番号"]);
+      r.licDate = Cho2_str_(worker[nb + "交付年月日"]);
+      var nr = nLic + "/あり/狩猟者登録/登録の有無/あり/"; // 網の登録は免許あり配下
+      r.regNo = Cho2_str_(worker[nr + "番号"]);
+      r.regDate = Cho2_str_(worker[nr + "交付年月日"]);
+    } else if (Cho2_str_(worker[nLic + "/なし/" + CHO2_REASON_NET_]).indexOf(CHO2_CERT_LICENSE_) >= 0) {
+      r.licType = CHO2_CERT_LICENSE_;
+    }
   } else if (kind === "銃器") {
     var gb = M + "/銃器/銃の種類/" + tool;
     r.gunKind = tool;
     r.gunNo = Cho2_str_(worker[gb + "/所持許可/所持許可証番号"]);
     r.gunDate = Cho2_str_(worker[gb + "/所持許可/交付年月日"]);
     if (tool === "空気銃") {
-      var sel = Cho2_choiceList_(worker[gb + "/免許種類"])[0] || "";
+      var sel = Cho2_choiceList_(worker[gb + "/" + CHO2_L_LICENSE_])[0] || ""; // 旧「免許種類」→「狩猟免許」
       if (sel) {
         r.licType = CHO2_GUN_LIC_[sel] || sel;
-        var ab = gb + "/免許種類/" + sel + "/";
+        var ab = gb + "/" + CHO2_L_LICENSE_ + "/" + sel + "/";
         r.licPref = Cho2_str_(worker[ab + "都道府県"]);
         r.licNo = Cho2_str_(worker[ab + "番号"]);
         r.licDate = Cho2_str_(worker[ab + "交付年月日"]);
       }
-      var ar = gb + "/狩猟者登録/登録の有無/あり/";
+      var ar = gb + "/狩猟者登録/登録の有無/あり/"; // 不変
       r.regNo = Cho2_str_(worker[ar + "番号"]);
       r.regDate = Cho2_str_(worker[ar + "交付年月日"]);
-    } else { // 散弾銃 / ライフル銃
+    } else { // 散弾銃 / ライフル銃（第一種銃猟免許・所持許可・登録は不変）
       r.licType = "第一種銃猟";
       var fb = gb + "/第一種銃猟免許/";
       r.licPref = Cho2_str_(worker[fb + "都道府県"]);
@@ -484,7 +503,10 @@ function Cho2_gridCells_(grid, totals) {
 }
 
 // 従事者名簿 1 ブロック分の差分（top=ブロック先頭行）。
-function Cho2_rosterBlockCells_(worker, top, certNo) {
+//   speciesTotals: この行に書く種数（未指定＝その従事者自身＝後方互換／個人）。法人は先頭ブロックに
+//     全員合計を、2 人目以降は空 {} を渡す（種数欄を出さない）。
+//   note: 集計注記（法人先頭のみ "※法人全体の数量"）。species2Name 列・ブロック最終行に記入。
+function Cho2_rosterBlockCells_(worker, top, certNo, speciesTotals, note) {
   var C = CHO2_ROSTER_.cols, cells = [];
   Cho2_push_(cells, C.certNo + top, certNo);
   Cho2_push_(cells, C.address + top, Cho2_str_(worker[CHO2_L_W_ADDRESS_]));
@@ -492,9 +514,9 @@ function Cho2_rosterBlockCells_(worker, top, certNo) {
   Cho2_push_(cells, C.occupation + top, Cho2_str_(worker[CHO2_L_W_OCCUPATION_]));
   Cho2_pushDate_(cells, C.birth + top, worker[CHO2_L_W_BIRTH_]);
   // 種数（固定オフセット配置）
-  var sp = Cho2_workerSpecies_(worker);
+  var sp = speciesTotals || Cho2_workerSpecies_(worker);
   for (var i = 0; i < CHO2_GRID_SLOTS_.length; i++) {
-    var slot = CHO2_GRID_SLOTS_[i], t = sp[slot.sp];
+    var slot = CHO2_GRID_SLOTS_[i], t = sp[slot.sp] || { count: 0, egg: 0 };
     if (!(t.count > 0 || t.egg > 0)) continue;
     var row = top + slot.off;
     if (slot.side === "L") {
@@ -506,6 +528,8 @@ function Cho2_rosterBlockCells_(worker, top, certNo) {
       Cho2_pushNum_(cells, C.species2Count + row, t.count);
     }
   }
+  // 集計注記（法人先頭ブロックのみ）。species2Name 列・ブロック最終行＝先頭 top=5 → M13。
+  if (note) Cho2_push_(cells, C.species2Name + (top + CHO2_ROSTER_.blockHeight - 1), note);
   // 方法（用具を P 列に積層・免許/登録/銃器を行ごとに）
   var tools = Cho2_workerTools_(worker);
   for (var ti = 0; ti < tools.length && ti < CHO2_ROSTER_.blockHeight; ti++) {
@@ -640,7 +664,13 @@ function Cho2_buildPlan_(app, forcedType) {
     for (var b = 0; b < rosterN; b++) {
       var top = CHO2_ROSTER_.firstRow + b * CHO2_ROSTER_.blockHeight; // 各シートとも行 5 から
       var gi = rs + b;                                                // 全体通し番号（許可証番号用）
-      var blk = Cho2_rosterBlockCells_(workers[gi], top, Cho2_certNoRaw_(kyokaNo, gi + 1)); // E 列＝"1-1-1" 連結
+      // 法人は種数を先頭ブロックに全員合計＋注記でまとめ、2 人目以降は種数欄なし。個人は各自の種数。
+      var spTotals, note = "";
+      if (type === "法人") {
+        if (gi === 0) { spTotals = agg; note = CHO2_ROSTER_AGG_NOTE_; }
+        else { spTotals = {}; }
+      }
+      var blk = Cho2_rosterBlockCells_(workers[gi], top, Cho2_certNoRaw_(kyokaNo, gi + 1), spTotals, note); // E 列＝"1-1-1" 連結
       for (var i = 0; i < blk.length; i++) rosterCells.push(blk[i]);
     }
     roster.push({ label: String((rs / perSheet) + 1), cells: rosterCells });
