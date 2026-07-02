@@ -279,7 +279,8 @@ function renderStorageBlock_(data) {
   var st = data && data.storage;
   if (!st || typeof st !== "object") return "";
   var rows = "";
-  var keys = ["spreadsheetId", "spreadsheetUrl", "sheetName", "driveFileUrl", "userEmail"];
+  var keys = ["spreadsheetId", "spreadsheetUrl", "sheetName", "driveFileUrl", "userEmail",
+    "childSpreadsheetId", "childSpreadsheetUrl", "childSheetName"];
   for (var i = 0; i < keys.length; i++) {
     var k = keys[i];
     if (st[k] == null || st[k] === "") continue;
