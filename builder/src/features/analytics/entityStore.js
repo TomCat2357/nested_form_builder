@@ -357,7 +357,7 @@ export function makeEntityStore({
     return { folders: removeFolderSubtree(folders, target), deletedCount };
   }
 
-  return {
+  const store = {
     list,
     listSWR,
     getById,
@@ -379,4 +379,14 @@ export function makeEntityStore({
     renameFolder,
     deleteFolder,
   };
+  if (!hasCache) {
+    // 一覧キャッシュ前提のメソッドは external モードでは未対応（cache が undefined のまま
+    // getAll/upsert に触れて壊れる）。誤配線を実行時に即・明示的に検出する。
+    for (const name of ["list", "listSWR", "getById", "exportItems", "registerImported"]) {
+      store[name] = () => {
+        throw new Error(`makeEntityStore(${one}): ${name} は listCacheMode "external" では未対応です`);
+      };
+    }
+  }
+  return store;
 }
