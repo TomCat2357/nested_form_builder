@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AppLayout from "../../app/components/AppLayout.jsx";
-import ConfirmDialog from "../../app/components/ConfirmDialog.jsx";
 import { useAlert } from "../../app/hooks/useAlert.js";
 import { useSetSelection } from "../../app/hooks/useSetSelection.js";
 import { sortByModifiedDesc, formatUnixMsValue } from "../../utils/dateTime.js";
 import ImportUrlDialog from "./AdminImportUrlDialog.jsx";
 import { AdminListSidebarActions, AdminListFolderDialogs } from "./AdminListShared.jsx";
+import AdminListConfirmDialogs from "./AdminListConfirmDialogs.jsx";
+import { buildAnalyticsConfirmTexts } from "./adminListConfirmTexts.js";
 import { useAdminAnalyticsListActions } from "./useAdminAnalyticsListActions.js";
 import { useAnalyticsList } from "../../features/analytics/useAnalyticsList.js";
 import { subscribeAnalyticsFolders } from "../../features/analytics/analyticsCache.js";
@@ -56,6 +57,7 @@ export default function AdminAnalyticsListPage({
   const [copiedId, setCopiedId] = useState(null);
   const [registeredFolders, setRegisteredFolders] = useState([]);
   const [cascading, setCascading] = useState(false);
+  const confirmTexts = useMemo(() => buildAnalyticsConfirmTexts(itemLabel), [itemLabel]);
 
   // 一覧本体は SWR フックで管理（キャッシュ即表示＋鮮度に応じた裏更新）。
   const { items, loading, refreshing, error, refresh } = useAnalyticsList({
@@ -420,96 +422,28 @@ export default function AdminAnalyticsListPage({
         </>
       )}
 
-      <ConfirmDialog
-        open={confirmArchive.open}
-        title={confirmArchive.allArchived ? "アーカイブを解除" : `${itemLabel} をアーカイブ`}
-        message={
-          confirmArchive.allArchived
-            ? `選択した ${itemLabel} のアーカイブを解除して公開中に戻します。よろしいですか？`
-            : `選択した ${itemLabel} をアーカイブします。一覧に表示されなくなります。よろしいですか？`
-        }
-        options={[
-          {
-            label: "キャンセル",
-            value: "cancel",
-            onSelect: () => setConfirmArchive({ open: false, id: null, targetIds: [], multiple: false, allArchived: false }),
-          },
-          {
-            label: confirmArchive.allArchived ? "解除" : "アーカイブ",
-            value: "archive",
-            variant: "primary",
-            onSelect: confirmArchiveAction,
-          },
-        ]}
-      />
-
-      <ConfirmDialog
-        open={confirmDelete.open}
-        title={confirmDelete.folderPaths?.length ? "フォルダをリンク解除" : `${itemLabel} をリンク解除`}
-        message={
-          confirmDelete.folderPaths?.length
-            ? `選択したフォルダのリンクを解除します。中の ${confirmDelete.folderItemCount} 個の ${itemLabel} のリンクも併せて解除します。Drive 上のファイル本体は削除されません。よろしいですか？`
-            : confirmDelete.multiple
-              ? `選択した ${itemLabel} のリンク（登録）を解除します。Drive 上のファイル本体は削除されません。よろしいですか？`
-              : `この ${itemLabel} のリンク（登録）を解除します。Drive 上のファイル本体は削除されません。よろしいですか？`
-        }
-        options={[
-          {
-            label: "キャンセル",
-            value: "cancel",
-            onSelect: () => setConfirmDelete({ open: false, id: null, targetIds: [], folderPaths: [], multiple: false, folderItemCount: 0 }),
-          },
-          {
-            label: "リンク解除",
-            value: "delete",
-            variant: "danger",
-            onSelect: confirmDeleteAction,
-          },
-        ]}
-      />
-
-      <ConfirmDialog
-        open={confirmHardDelete.open}
-        title={`${itemLabel} を削除`}
-        message={
-          (confirmHardDelete.multiple
-            ? `選択した ${itemLabel} を削除します。`
-            : `この ${itemLabel} を削除します。`) +
-          "プロジェクト内（標準フォルダ配下）のファイルは Drive のゴミ箱へ移動します。" +
-          "プロジェクト外のファイルはリンク（登録）解除のみで実体は残します。よろしいですか？"
-        }
-        options={[
-          {
-            label: "キャンセル",
-            value: "cancel",
-            onSelect: () => setConfirmHardDelete({ open: false, id: null, targetIds: [], multiple: false }),
-          },
-          {
-            label: "削除",
-            value: "delete",
-            variant: "danger",
-            onSelect: confirmHardDeleteAction,
-          },
-        ]}
-      />
-
-      <ConfirmDialog
-        open={confirmCopy.open}
-        title={`${itemLabel} をコピー`}
-        message={`同じフォルダに「（コピー）」を付けて新しい ${itemLabel} を作成します。コピー後に名前を変更してください。`}
-        options={[
-          {
-            label: "キャンセル",
-            value: "cancel",
-            onSelect: () => setConfirmCopy({ open: false, id: null }),
-          },
-          {
-            label: "コピー",
-            value: "copy",
-            variant: "primary",
-            onSelect: confirmCopyAction,
-          },
-        ]}
+      <AdminListConfirmDialogs
+        texts={confirmTexts}
+        archive={{
+          state: confirmArchive,
+          onCancel: () => setConfirmArchive({ open: false, id: null, targetIds: [], multiple: false, allArchived: false }),
+          onConfirm: confirmArchiveAction,
+        }}
+        remove={{
+          state: confirmDelete,
+          onCancel: () => setConfirmDelete({ open: false, id: null, targetIds: [], folderPaths: [], multiple: false, folderItemCount: 0 }),
+          onConfirm: confirmDeleteAction,
+        }}
+        hardRemove={{
+          state: confirmHardDelete,
+          onCancel: () => setConfirmHardDelete({ open: false, id: null, targetIds: [], multiple: false }),
+          onConfirm: confirmHardDeleteAction,
+        }}
+        copy={{
+          state: confirmCopy,
+          onCancel: () => setConfirmCopy({ open: false, id: null }),
+          onConfirm: confirmCopyAction,
+        }}
       />
 
       <ImportUrlDialog

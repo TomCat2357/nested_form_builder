@@ -11,6 +11,8 @@ import { toUnixMs, sortByModifiedDesc, formatUnixMsValue } from "../../utils/dat
 import { buildSharedFormUrl } from "../../utils/formShareUrl.js";
 import ImportUrlDialog from "./AdminImportUrlDialog.jsx";
 import { AdminListSidebarActions, AdminListFolderDialogs } from "./AdminListShared.jsx";
+import AdminListConfirmDialogs from "./AdminListConfirmDialogs.jsx";
+import { formConfirmTexts } from "./adminListConfirmTexts.js";
 import { useAdminFormListActions } from "./useAdminFormListActions.js";
 import { useFolderBrowser } from "../../features/folders/useFolderBrowser.js";
 import FolderSearchBar from "../../features/folders/FolderSearchBar.jsx";
@@ -381,27 +383,28 @@ export default function AdminFormListPage() {
         </>
       )}
 
-      <ConfirmDialog
-        open={confirmArchive.open}
-        title={confirmArchive.allArchived ? "アーカイブを解除" : "フォームをアーカイブ"}
-        message={
-          confirmArchive.allArchived
-            ? "このフォームのアーカイブを解除して公開中に戻します。よろしいですか？"
-            : "このフォームをアーカイブします。検索画面には表示されなくなります。よろしいですか？"
-        }
-        options={[
-          {
-            label: "キャンセル",
-            value: "cancel",
-            onSelect: () => setConfirmArchive({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false }),
-          },
-          {
-            label: confirmArchive.allArchived ? "解除" : "アーカイブ",
-            value: "archive",
-            variant: "primary",
-            onSelect: confirmArchiveAction,
-          },
-        ]}
+      <AdminListConfirmDialogs
+        texts={formConfirmTexts}
+        archive={{
+          state: confirmArchive,
+          onCancel: () => setConfirmArchive({ open: false, formId: null, targetIds: [], multiple: false, allArchived: false, hasPublished: false }),
+          onConfirm: confirmArchiveAction,
+        }}
+        remove={{
+          state: confirmDelete,
+          onCancel: () => setConfirmDelete({ open: false, formId: null, targetIds: [], folderPaths: [], multiple: false, folderFormCount: 0 }),
+          onConfirm: confirmDeleteAction,
+        }}
+        hardRemove={{
+          state: confirmHardDelete,
+          onCancel: () => setConfirmHardDelete({ open: false, formId: null, targetIds: [], multiple: false }),
+          onConfirm: confirmHardDeleteAction,
+        }}
+        copy={{
+          state: confirmCopy,
+          onCancel: () => setConfirmCopy({ open: false, formId: null }),
+          onConfirm: confirmCopyAction,
+        }}
       />
 
       <ConfirmDialog
@@ -446,78 +449,6 @@ export default function AdminFormListPage() {
             value: "childOnly",
             variant: "primary",
             onSelect: confirmChildOnlyAction,
-          },
-        ]}
-      />
-
-      <ConfirmDialog
-        open={confirmDelete.open}
-        title={confirmDelete.folderPaths?.length ? "フォルダをリンク解除" : "フォームをリンク解除"}
-        message={
-          confirmDelete.folderPaths?.length
-            ? `選択したフォルダのリンクを解除します。中の ${confirmDelete.folderFormCount} 個のフォームのリンクも併せて解除します。Drive 上のファイル本体は削除されません。よろしいですか？`
-            : confirmDelete.multiple
-              ? "選択したフォームのリンク（登録）を解除します。Drive 上のファイル本体は削除されません。よろしいですか？"
-              : "このフォームのリンク（登録）を解除します。Drive 上のファイル本体は削除されません。よろしいですか？"
-        }
-        options={[
-          {
-            label: "キャンセル",
-            value: "cancel",
-            onSelect: () => setConfirmDelete({ open: false, formId: null, targetIds: [], folderPaths: [], multiple: false, folderFormCount: 0 }),
-          },
-          {
-            label: "リンク解除",
-            value: "delete",
-            variant: "danger",
-            onSelect: confirmDeleteAction,
-          },
-        ]}
-      />
-
-      <ConfirmDialog
-        open={confirmHardDelete.open}
-        title={confirmHardDelete.multiple ? "フォームを削除" : "フォームを削除"}
-        message={
-          (confirmHardDelete.multiple
-            ? "選択したフォームを削除します。"
-            : "このフォームを削除します。") +
-          "プロジェクト内（標準フォルダ配下）のファイルは Drive のゴミ箱へ移動します。" +
-          "プロジェクト外のファイルはリンク（登録）解除のみで実体は残します。よろしいですか？"
-        }
-        options={[
-          {
-            label: "キャンセル",
-            value: "cancel",
-            onSelect: () => setConfirmHardDelete({ open: false, formId: null, targetIds: [], multiple: false }),
-          },
-          {
-            label: "削除",
-            value: "delete",
-            variant: "danger",
-            onSelect: confirmHardDeleteAction,
-          },
-        ]}
-      />
-
-      <ConfirmDialog
-        open={confirmCopy.open}
-        title="フォームをコピー"
-        message={
-          "コピーしたフォームは、コピー元と同じスプレッドシートにデータが保存されます。" +
-          "そのままではデータが混在するため、コピー後にフォーム設定画面から新しいスプレッドシートのURLに変更してください。"
-        }
-        options={[
-          {
-            label: "キャンセル",
-            value: "cancel",
-            onSelect: () => setConfirmCopy({ open: false, formId: null }),
-          },
-          {
-            label: "コピー",
-            value: "copy",
-            variant: "primary",
-            onSelect: confirmCopyAction,
           },
         ]}
       />
