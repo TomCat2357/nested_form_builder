@@ -8,6 +8,11 @@ test("buildImportDetail: スキップ/読込失敗の件数を「（…）」に
   assert.equal(buildImportDetail(2, 0, { useRegisteredLabel: true }), "（登録済み（リンク済み）スキップ 2 件）");
   assert.equal(buildImportDetail(0, 3), "（読込失敗 3 件）");
   assert.equal(buildImportDetail(2, 3), "（スキップ 2 件、読込失敗 3 件）");
+  assert.equal(buildImportDetail(0, 0, { saveFailed: 1 }), "（保存失敗 1 件）");
+  assert.equal(
+    buildImportDetail(2, 3, { useRegisteredLabel: true, saveFailed: 1 }),
+    "（登録済み（リンク済み）スキップ 2 件、読込失敗 3 件、保存失敗 1 件）"
+  );
 });
 
 test("sanitizeImportedForm: 不正入力は null", () => {
