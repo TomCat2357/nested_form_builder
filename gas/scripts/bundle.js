@@ -18,6 +18,10 @@ const OUTPUT_FILE = path.join(DIST_DIR, 'Bundle.gs');
 
 // 結合順序（依存関係順）
 const FILE_ORDER = [
+  // 共有ランタイム（builder ESM ソースから esbuild 生成、グローバル `NfbAlasqlRuntime`）。
+  // 自己完結 IIFE なので最初に読み込み、以降の全 .gs デリゲート（pathCodec / ULID /
+  // schema walkers / テンプレートスキャナ等）がどのファイルからでも参照できるようにする。
+  'generated/nfbAlasqlUdfs.gs',
   'constants.gs',
   'errors.gs',           // エラーハンドリング・レスポンス共通
   'adminAuthKey.gs',         // 管理者キーの取得/設定・設定有効判定
@@ -27,9 +31,8 @@ const FILE_ORDER = [
   'properties.gs',       // プロパティサービス管理
   'schemaUtils.gs',      // pure schema walkers (nfbTraverseSchema_ など)
   'pathCodec.gs',        // フィールド/フォルダ階層パスの可逆エスケープ共有コーデック（Nfb_* / フロント pathCodec.js 双子）
-  // --- alasql ランタイム + UDF + 式評価器・テンプレート（driveTemplate より前） ---
+  // --- alasql ランタイム + 式評価器・テンプレート（driveTemplate より前） ---
   'vendor/alasql.min.js',       // alasql 本体（グローバル alasql）
-  'generated/nfbAlasqlUdfs.gs', // builder ESM ソースから esbuild 生成（UDF / 日付ユーティリティ）
   'expressionEvaluator.gs', // alasql ラッパー（単行式評価 + nfbDt_* 委譲）
   'templateEvaluator.gs',   // {expr} テンプレートのスキャナ + 評価
   // --- drive分割 ---

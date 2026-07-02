@@ -14,17 +14,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
-const vm = require("node:vm");
+const { loadGasFiles } = require("./helpers/gasVmLoader.cjs");
 
 function loadGas() {
-  const ctx = { console, Logger: { log() {} } };
-  vm.createContext(ctx);
-  const gasDir = path.join(__dirname, "..", "gas");
-  for (const file of ["vendor/alasql.min.js", "generated/nfbAlasqlUdfs.gs", "pathCodec.gs", "expressionEvaluator.gs", "templateEvaluator.gs"]) {
-    const p = path.join(gasDir, file);
-    vm.runInContext(fs.readFileSync(p, "utf8"), ctx, { filename: p });
-  }
-  return ctx;
+  return loadGasFiles(
+    { console, Logger: { log() {} } },
+    ["vendor/alasql.min.js", "generated/nfbAlasqlUdfs.gs", "pathCodec.gs", "expressionEvaluator.gs", "templateEvaluator.gs"]
+  );
 }
 
 const cases = [

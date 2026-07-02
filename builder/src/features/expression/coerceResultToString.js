@@ -18,7 +18,9 @@ export function coerceResultToString(value) {
     return String(value);
   }
   if (typeof value === "boolean") return value ? "true" : "false";
-  if (value instanceof Date) {
+  // instanceof Date は realm を跨ぐと偽になる（GAS バンドル/vm テストに焼き込まれて
+  // ホスト側の Date を受けるケース）ため、realm 安全な判定を使う。
+  if (Object.prototype.toString.call(value) === "[object Date]") {
     const t = value.getTime();
     return Number.isFinite(t) ? String(t) : "";
   }

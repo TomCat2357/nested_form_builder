@@ -11,17 +11,11 @@
  */
 
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const test = require("node:test");
-const vm = require("node:vm");
+const { loadGasFiles } = require("./helpers/gasVmLoader.cjs");
 
 function loadGasTemplateEvaluator() {
-  const context = { console };
-  vm.createContext(context);
-  const gasFile = path.join(__dirname, "..", "gas", "templateEvaluator.gs");
-  vm.runInContext(fs.readFileSync(gasFile, "utf8"), context, { filename: gasFile });
-  return context;
+  return loadGasFiles({ console }, ["templateEvaluator.gs"]);
 }
 
 const gas = loadGasTemplateEvaluator();

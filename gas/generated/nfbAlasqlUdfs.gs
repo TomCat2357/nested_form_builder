@@ -24,14 +24,39 @@ var NfbAlasqlRuntime = (() => {
   var gasRuntimeEntry_exports = {};
   __export(gasRuntimeEntry_exports, {
     MULTI_VALUE_SEP: () => MULTI_VALUE_SEP,
+    ULID_ALPHABET: () => ULID_ALPHABET,
+    ULID_RANDOM_LENGTH: () => ULID_RANDOM_LENGTH,
+    coerceResultToString: () => coerceResultToString,
+    collectBalancedBraces: () => collectBalancedBraces,
+    createUlid: () => createUlid,
+    encodeUlidRandom: () => encodeUlidRandom,
+    encodeUlidTime: () => encodeUlidTime,
     ensureNfbUdfsRegistered: () => ensureNfbUdfsRegistered,
+    escapeBraces: () => escapeBraces,
+    escapeSegment: () => escapeSegment,
+    fieldHasValue: () => fieldHasValue,
     formatCanonical: () => formatCanonical,
     formatJstString: () => formatJstString,
+    headerKeyToAlaSqlKey: () => headerKeyToAlaSqlKey,
+    incrementBase32: () => incrementBase32,
+    isFullQueryBody: () => isFullQueryBody,
+    joinEscaped: () => joinEscaped,
+    joinFieldPath: () => joinFieldPath,
     joinMultiValue: () => joinMultiValue,
+    mapSchema: () => mapSchema,
     parseJstString: () => parseJstString,
     preprocessAlaSqlExpression: () => preprocessAlaSqlExpression,
+    resolveOrderedChildKeys: () => resolveOrderedChildKeys,
+    scanAndReplace: () => scanAndReplace,
+    shouldShowUnconditionalChildren: () => shouldShowUnconditionalChildren,
+    splitEscaped: () => splitEscaped,
+    splitFieldKey: () => splitFieldKey,
+    splitFieldPath: () => splitFieldPath,
     splitMultiValue: () => splitMultiValue,
-    toMsUnixTime: () => toMsUnixTime
+    splitTopLevelCommas: () => splitTopLevelCommas,
+    toMsUnixTime: () => toMsUnixTime,
+    traverseSchema: () => traverseSchema,
+    unescapeBraces: () => unescapeBraces
   });
 
   // builder/src/features/expression/kanaTables.js
@@ -456,6 +481,7 @@ var NfbAlasqlRuntime = (() => {
   };
 
   // builder/src/utils/pathCodec.js
+  var PATH_SEP = "/";
   function escapeSegment(segment, sep) {
     const s = String(segment === null || segment === void 0 ? "" : segment);
     let out = "";
@@ -465,6 +491,12 @@ var NfbAlasqlRuntime = (() => {
       out += ch;
     }
     return out;
+  }
+  function joinEscaped(segments, sep) {
+    if (!Array.isArray(segments)) return "";
+    const out = [];
+    for (let i = 0; i < segments.length; i++) out.push(escapeSegment(segments[i], sep));
+    return out.join(sep);
   }
   function splitEscaped(text, sep, allowQuotes) {
     const str = String(text === null || text === void 0 ? "" : text);
@@ -518,6 +550,23 @@ var NfbAlasqlRuntime = (() => {
     if (escaping) current += "\\";
     tokens.push(current);
     return tokens;
+  }
+  function joinFieldPath(segments) {
+    return joinEscaped(segments, PATH_SEP);
+  }
+  function splitFieldPath(path) {
+    if (path === null || path === void 0 || path === "") return [];
+    const raw = splitEscaped(path, PATH_SEP, true);
+    const out = [];
+    for (let i = 0; i < raw.length; i++) {
+      const seg = raw[i].trim();
+      if (seg) out.push(seg);
+    }
+    return out;
+  }
+  function splitFieldKey(key) {
+    if (key === null || key === void 0 || key === "") return [];
+    return splitEscaped(key, PATH_SEP, false);
   }
 
   // builder/src/utils/multiValue.js
@@ -1288,5 +1337,428 @@ var NfbAlasqlRuntime = (() => {
     }
     return unmask(rewritten);
   }
+
+  // builder/src/features/expression/templateScanner.js
+  var FULL_QUERY_RE = /^\s*SELECT\b/i;
+  function isFullQueryBody(body) {
+    return FULL_QUERY_RE.test(String(body == null ? "" : body));
+  }
+  function findBalancedCloseIndex(text, openIndex) {
+    if (text.charAt(openIndex) !== "{") return -1;
+    const n = text.length;
+    let depth = 1;
+    let j = openIndex + 1;
+    while (j < n) {
+      const c = text.charAt(j);
+      if (c === "{") depth++;
+      else if (c === "}") {
+        depth--;
+        if (depth === 0) return j;
+      }
+      j++;
+    }
+    return -1;
+  }
+  function describeToken(text, i) {
+    if (text.charAt(i) !== "{" || text.charAt(i + 1) !== "{") return null;
+    const close = findBalancedCloseIndex(text, i);
+    if (close < 0) return null;
+    if (!(close - 1 > i + 1 && text.charAt(close - 1) === "}")) return null;
+    return {
+      mode: "view",
+      body: text.substring(i + 2, close - 1),
+      fullToken: text.substring(i, close + 1),
+      start: i,
+      end: close + 1
+    };
+  }
+  function scanAndReplace(text, replacer) {
+    if (!text) return "";
+    let out = "";
+    let i = 0;
+    const n = text.length;
+    while (i < n) {
+      const ch = text.charAt(i);
+      if (ch !== "{") {
+        out += ch;
+        i++;
+        continue;
+      }
+      const tok = describeToken(text, i);
+      if (!tok) {
+        out += ch;
+        i++;
+        continue;
+      }
+      out += replacer(tok);
+      i = tok.end;
+    }
+    return out;
+  }
+  function collectBalancedBraces(text) {
+    const results = [];
+    if (!text) return results;
+    const n = text.length;
+    let i = 0;
+    while (i < n) {
+      if (text.charAt(i) !== "{") {
+        i++;
+        continue;
+      }
+      const tok = describeToken(text, i);
+      if (!tok) {
+        i++;
+        continue;
+      }
+      results.push(tok);
+      i = tok.end;
+    }
+    return results;
+  }
+  function splitTopLevelCommas(body) {
+    const text = String(body == null ? "" : body);
+    const n = text.length;
+    const parts = [];
+    let buf = "";
+    let depth = 0;
+    let i = 0;
+    let hasComma = false;
+    while (i < n) {
+      const c = text.charAt(i);
+      if (c === "'") {
+        buf += c;
+        i++;
+        while (i < n) {
+          const cc = text.charAt(i);
+          buf += cc;
+          if (cc === "'") {
+            if (i + 1 < n && text.charAt(i + 1) === "'") {
+              buf += text.charAt(i + 1);
+              i += 2;
+              continue;
+            }
+            i++;
+            break;
+          }
+          i++;
+        }
+        continue;
+      }
+      if (c === "(" || c === "[" || c === "{") {
+        depth++;
+        buf += c;
+        i++;
+        continue;
+      }
+      if (c === ")" || c === "]" || c === "}") {
+        if (depth > 0) depth--;
+        buf += c;
+        i++;
+        continue;
+      }
+      if (c === "," && depth === 0) {
+        hasComma = true;
+        parts.push(buf.trim());
+        buf = "";
+        i++;
+        continue;
+      }
+      buf += c;
+      i++;
+    }
+    if (!hasComma) return [buf.trim()];
+    parts.push(buf.trim());
+    return parts;
+  }
+  var ESCAPE_OPEN = "NFB_LBRACE";
+  var ESCAPE_CLOSE = "NFB_RBRACE";
+  function escapeBraces(text) {
+    if (!text) return "";
+    return String(text).split("\\{").join(ESCAPE_OPEN).split("\\}").join(ESCAPE_CLOSE);
+  }
+  function unescapeBraces(text) {
+    if (!text) return "";
+    return String(text).split(ESCAPE_OPEN).join("{").split(ESCAPE_CLOSE).join("}");
+  }
+
+  // builder/src/features/expression/coerceResultToString.js
+  function coerceResultToString(value) {
+    if (value === null || value === void 0) return "";
+    if (typeof value === "string") return value;
+    if (typeof value === "number") {
+      if (!Number.isFinite(value)) return "";
+      return String(value);
+    }
+    if (typeof value === "boolean") return value ? "true" : "false";
+    if (Object.prototype.toString.call(value) === "[object Date]") {
+      const t = value.getTime();
+      return Number.isFinite(t) ? String(t) : "";
+    }
+    if (Array.isArray(value)) {
+      return value.map((v) => coerceResultToString(v)).join(", ");
+    }
+    if (typeof value === "object") {
+      if (typeof value.name === "string") return value.name;
+      try {
+        return JSON.stringify(value);
+      } catch (_e) {
+        return "";
+      }
+    }
+    return String(value);
+  }
+
+  // builder/src/core/ids.js
+  var ULID_ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+  var ULID_RANDOM_LENGTH = 16;
+  var lastUlidTimeMs = -1;
+  var lastUlidRandomPart = "";
+  var createRandomBytes = (length) => {
+    var _a;
+    const bytes = new Uint8Array(length);
+    if ((_a = globalThis == null ? void 0 : globalThis.crypto) == null ? void 0 : _a.getRandomValues) {
+      globalThis.crypto.getRandomValues(bytes);
+      return bytes;
+    }
+    for (let i = 0; i < bytes.length; i += 1) {
+      bytes[i] = Math.floor(Math.random() * 256);
+    }
+    return bytes;
+  };
+  var encodeUlidTime = (unixMs) => {
+    let value = Math.floor(Number(unixMs));
+    if (!Number.isFinite(value) || value < 0) value = 0;
+    let encoded = "";
+    for (let i = 0; i < 10; i += 1) {
+      encoded = ULID_ALPHABET[value % 32] + encoded;
+      value = Math.floor(value / 32);
+    }
+    return encoded;
+  };
+  var encodeUlidRandom = (bytes) => {
+    let encoded = "";
+    let buffer = 0;
+    let bits = 0;
+    for (let i = 0; i < bytes.length; i += 1) {
+      buffer = buffer << 8 | bytes[i];
+      bits += 8;
+      while (bits >= 5) {
+        encoded += ULID_ALPHABET[buffer >> bits - 5 & 31];
+        bits -= 5;
+        if (bits === 0) {
+          buffer = 0;
+        } else {
+          buffer &= (1 << bits) - 1;
+        }
+      }
+    }
+    if (bits > 0) {
+      encoded += ULID_ALPHABET[buffer << 5 - bits & 31];
+    }
+    return encoded;
+  };
+  var createUlidRandomPart = () => encodeUlidRandom(createRandomBytes(10)).slice(0, ULID_RANDOM_LENGTH);
+  var incrementBase32 = (value) => {
+    const chars = String(value || "").padEnd(ULID_RANDOM_LENGTH, ULID_ALPHABET[0]).slice(0, ULID_RANDOM_LENGTH).split("");
+    for (let i = chars.length - 1; i >= 0; i -= 1) {
+      const currentIndex = ULID_ALPHABET.indexOf(chars[i]);
+      const safeIndex = currentIndex >= 0 ? currentIndex : 0;
+      if (safeIndex < ULID_ALPHABET.length - 1) {
+        chars[i] = ULID_ALPHABET[safeIndex + 1];
+        for (let j = i + 1; j < chars.length; j += 1) chars[j] = ULID_ALPHABET[0];
+        return { value: chars.join(""), overflow: false };
+      }
+      chars[i] = ULID_ALPHABET[0];
+    }
+    return { value: chars.join(""), overflow: true };
+  };
+  var createUlid = () => {
+    let nowMs = Math.floor(Number(Date.now()));
+    if (!Number.isFinite(nowMs) || nowMs < 0) nowMs = 0;
+    if (lastUlidTimeMs < 0 || nowMs > lastUlidTimeMs) {
+      lastUlidTimeMs = nowMs;
+      lastUlidRandomPart = createUlidRandomPart();
+      return `${encodeUlidTime(lastUlidTimeMs)}${lastUlidRandomPart}`;
+    }
+    if (!lastUlidRandomPart || lastUlidRandomPart.length !== ULID_RANDOM_LENGTH) {
+      lastUlidRandomPart = createUlidRandomPart();
+    }
+    const next = incrementBase32(lastUlidRandomPart);
+    if (next.overflow) {
+      lastUlidTimeMs += 1;
+      lastUlidRandomPart = createUlidRandomPart();
+    } else {
+      lastUlidRandomPart = next.value;
+    }
+    return `${encodeUlidTime(lastUlidTimeMs)}${lastUlidRandomPart}`;
+  };
+
+  // builder/src/utils/arrays.js
+  var ensureArray = (value) => Array.isArray(value) ? value : [];
+
+  // builder/src/core/fieldValue.js
+  var fieldHasValue = (field, value) => {
+    if (!field || typeof field !== "object") return false;
+    const type = field.type;
+    if (type === "text" || type === "email" || type === "url") {
+      return typeof value === "string" && value.replace(/^\s+|\s+$/g, "") !== "";
+    }
+    if (type === "phone") {
+      if (typeof value !== "string") return false;
+      return value.replace(/[\s\-()]/g, "") !== "";
+    }
+    if (type === "number") {
+      if (value === "" || value === null || value === void 0) return false;
+      return !isNaN(Number(value));
+    }
+    if (type === "date" || type === "time") {
+      return typeof value === "string" && value !== "";
+    }
+    if (type === "fileUpload") {
+      return Array.isArray(value) && value.length > 0;
+    }
+    return false;
+  };
+  var shouldShowUnconditionalChildren = (field, value) => field && field.type === "message" || fieldHasValue(field, value);
+
+  // builder/src/core/schemaUtils.js
+  var resolveOrderedChildKeys = (field) => {
+    const branches = field && field.childrenByValue;
+    if (!branches || typeof branches !== "object" || Array.isArray(branches)) return [];
+    const keys = [];
+    for (const k in branches) {
+      if (Object.prototype.hasOwnProperty.call(branches, k)) keys.push(k);
+    }
+    if (!keys.length) return [];
+    const ordered = [];
+    const seen = {};
+    const options = field && Array.isArray(field.options) ? field.options : [];
+    for (let i = 0; i < options.length; i++) {
+      const opt = options[i];
+      const label = opt && typeof opt.label === "string" ? opt.label : "";
+      if (!label || seen[label] || !Object.prototype.hasOwnProperty.call(branches, label)) continue;
+      ordered.push(label);
+      seen[label] = true;
+    }
+    for (let j = 0; j < keys.length; j++) {
+      if (seen[keys[j]]) continue;
+      ordered.push(keys[j]);
+      seen[keys[j]] = true;
+    }
+    return ordered;
+  };
+  var defaultFieldSegment = (field, indexTrail) => {
+    const rawLabel = field && field.label !== void 0 && field.label !== null ? String(field.label) : "";
+    const trimmed = rawLabel.replace(/^\s+|\s+$/g, "");
+    if (trimmed) return trimmed;
+    const type = field && field.type !== void 0 && field.type !== null ? String(field.type) : "unknown";
+    return "\u8CEA\u554F " + indexTrail.join(".") + " (" + type + ")";
+  };
+  var traverseSchema = (schema, visitor, options = {}) => {
+    const opts = options || {};
+    const hasGetChildKeys = typeof opts.getChildKeys === "function";
+    const hasResponses = !!opts.responses;
+    const fieldSegmentFn = typeof opts.fieldSegment === "function" ? opts.fieldSegment : null;
+    const branchSegmentFn = typeof opts.branchSegment === "function" ? opts.branchSegment : null;
+    const walk = (nodes, pathSegments, depth, indexTrail) => {
+      const list = ensureArray(nodes);
+      for (let i = 0; i < list.length; i++) {
+        const field = list[i];
+        if (field === void 0 || field === null) continue;
+        const currentIndexTrail = indexTrail.concat(i + 1);
+        const segmentCtx = {
+          pathSegments,
+          index: i,
+          depth,
+          indexTrail: currentIndexTrail
+        };
+        const segment = fieldSegmentFn ? fieldSegmentFn(field, segmentCtx) : defaultFieldSegment(field, currentIndexTrail);
+        if (segment === null || segment === void 0) continue;
+        const currentPath = pathSegments.concat(segment);
+        const context = {
+          pathSegments: currentPath,
+          index: i,
+          depth,
+          indexTrail: currentIndexTrail
+        };
+        const shouldContinue = visitor(field, context);
+        if (shouldContinue === false) continue;
+        if (field.childrenByValue && typeof field.childrenByValue === "object" && !Array.isArray(field.childrenByValue)) {
+          let childKeys;
+          if (hasGetChildKeys) {
+            const custom = opts.getChildKeys(field, context);
+            childKeys = ensureArray(custom);
+          } else if (hasResponses) {
+            const value = opts.responses[field.id];
+            if (field.type === "checkboxes" && Array.isArray(value)) {
+              const selected = {};
+              for (let s = 0; s < value.length; s++) selected[value[s]] = true;
+              const all = resolveOrderedChildKeys(field);
+              childKeys = [];
+              for (let a = 0; a < all.length; a++) {
+                if (selected[all[a]]) childKeys.push(all[a]);
+              }
+            } else if ((field.type === "radio" || field.type === "select") && typeof value === "string" && value) {
+              childKeys = field.childrenByValue[value] ? [value] : [];
+            } else {
+              childKeys = [];
+            }
+          } else {
+            childKeys = resolveOrderedChildKeys(field);
+          }
+          for (let ci = 0; ci < childKeys.length; ci++) {
+            const key = childKeys[ci];
+            const branchSegment = branchSegmentFn ? branchSegmentFn(key, field, context) : key;
+            const childPath = branchSegment === null || branchSegment === void 0 ? currentPath : currentPath.concat(branchSegment);
+            walk(field.childrenByValue[key], childPath, depth + 1, currentIndexTrail);
+          }
+        }
+        if (Array.isArray(field.children) && field.children.length > 0) {
+          let traverseChildren = true;
+          if (hasResponses) {
+            const inputValue = opts.responses[field.id];
+            traverseChildren = shouldShowUnconditionalChildren(field, inputValue);
+          }
+          if (traverseChildren) {
+            walk(field.children, currentPath, depth + 1, currentIndexTrail);
+          }
+        }
+      }
+    };
+    walk(ensureArray(schema), [], 1, []);
+  };
+  var mapSchema = (schema, mapper) => {
+    const walk = (nodes, pathSegments, depth) => {
+      const list = ensureArray(nodes);
+      const out = [];
+      for (let i = 0; i < list.length; i++) {
+        const field = list[i];
+        const rawLabel = field && field.label !== void 0 && field.label !== null ? String(field.label) : "";
+        const trimmed = rawLabel.replace(/^\s+|\s+$/g, "");
+        const currentPath = pathSegments.concat(trimmed);
+        const context = { pathSegments: currentPath, index: i, depth };
+        const newField = mapper(field, context);
+        if (newField && newField.childrenByValue && typeof newField.childrenByValue === "object" && !Array.isArray(newField.childrenByValue)) {
+          const newChildren = {};
+          const orderedKeys = resolveOrderedChildKeys(newField);
+          for (let k = 0; k < orderedKeys.length; k++) {
+            const optLabel = orderedKeys[k];
+            newChildren[optLabel] = walk(
+              newField.childrenByValue[optLabel],
+              currentPath.concat(optLabel),
+              depth + 1
+            );
+          }
+          newField.childrenByValue = newChildren;
+        }
+        if (newField && Array.isArray(newField.children)) {
+          newField.children = walk(newField.children, currentPath, depth + 1);
+        }
+        out.push(newField);
+      }
+      return out;
+    };
+    return walk(ensureArray(schema), [], 1);
+  };
   return __toCommonJS(gasRuntimeEntry_exports);
 })();
