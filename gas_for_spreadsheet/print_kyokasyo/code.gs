@@ -69,70 +69,6 @@ function onOpen() {
     .addToUi();
 }
 
-// ============================================================
-// Web アプリ層（一括・全ページ PDF をダウンロード出力）
-// ------------------------------------------------------------
-// 元テンプレートにバインドされたこのスクリプトを「ウェブアプリ」として
-// デプロイ（実行=自分（USER_DEPLOYING）／アクセス=組織内）すると、URL の
-// ?ssId=<コピーID> で対象スプレッドシートを開き、一括 PDF
-// （シートごとに1PDF・複数はZIP）をダウンロード出力する。
-// 認可はこの1プロジェクトに対して一度きりで、テンプレのコピーごとに
-// 発生していた「毎回の権限承認」はなくなる。
-// 個別印刷は従来どおりメニュー（onOpen → openPrintDialog → generateSingle）を使う。
-// ============================================================
-
-function doGet(e) {
-  const ssId = (e && e.parameter && (e.parameter.ssId || e.parameter.id)) || '';
-  const t = HtmlService.createTemplateFromFile('BatchDownload');
-  t.ssId = ssId;
-  let title = '', infos = [], errorMsg = '';
-  if (ssId) {
-    try {
-      const ss = SpreadsheetApp.openById(ssId);
-      title = ss.getName();
-      infos = listBatchSheetInfos_(ss);
-    } catch (ex) {
-      errorMsg = 'スプレッドシートを開けませんでした（ID と共有権限を確認してください）: ' + ex;
-    }
-  } else {
-    errorMsg = 'URL に ?ssId=<スプレッドシートID> を付けてアクセスしてください。';
-  }
-  t.title = title;
-  t.sheetInfos = infos;
-  t.errorMsg = errorMsg;
-  return t.evaluate()
-    .setTitle('許可証 一括PDFダウンロード')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
-}
-
-/** 印刷対象になり得るシート（非表示を除く）の一覧を返す。 */
-function listBatchSheetInfos_(ss) {
-  return ss.getSheets()
-    .filter(function (s) { return !(SKIP_HIDDEN_SHEETS && s.isSheetHidden()); })
-    .map(function (s) {
-      const n = s.getName();
-      return { name: n, form: formNameOf_(n) };
-    });
-}
-
-/**
- * Web アプリからの一括ダウンロード実行。
- * @param ssId    対象スプレッドシート（テンプレのコピー）の ID
- * @param targets 出力するシート名の配列（チェックされたもの）
- * 戻り値は generateBatch(download) と同じ:
- *   {ok, mode:'download', name, mime, b64, note, succeeded, failed, empty} / {ok:false, error}
- */
-async function webGenerateBatch(ssId, targets) {
-  try {
-    if (!ssId) return { ok: false, error: 'スプレッドシートIDが指定されていません。' };
-    const ss = SpreadsheetApp.openById(ssId);
-    const token = ScriptApp.getOAuthToken();
-    return await generateBatch(targets, 'download', ss, token);
-  } catch (e) {
-    return { ok: false, error: String(e) };
-  }
-}
-
 /** シート名 → 様式名（最初の "_" より前。"_" が無ければシート名そのもの） */
 function formNameOf_(sheetName) {
   const i = sheetName.indexOf('_');
@@ -243,6 +179,55 @@ function fetchExportWithRetry_(url, token, label) {
 }
 
 /**
+ * 選択シートを様式別設定で個別 PDF 化して順序付きで集める（一括DL・結合PDFの共通土台）。
+ * シート順を保ち、成功ブロブに一意なファイル名を付ける。
+ * @return {items:[{name:シート名, blob}], succeeded:[], failed:[], empty:[]}
+ */
+async function collectSheetPdfs_(ss, targets, token) {
+  const want = targets.reduce(function (o, n) { o[n] = true; return o; }, {});
+  const items = [];
+  const usedNames = {};   // ファイル名の重複回避
+  const succeeded = [];   // 印刷できたシート名
+  const failed = [];      // ダウンロード（生成）に失敗したシート名
+  const empty = [];       // 空で出力されなかったシート名
+
+  for (const sheet of ss.getSheets()) {
+    if (SKIP_HIDDEN_SHEETS && sheet.isSheetHidden()) continue;
+    if (!want[sheet.getName()]) continue;
+
+    const sname = sheet.getName();
+    const cfg = loadFormCfg_(formNameOf_(sname));  // 様式名の設定を使用
+    const result = await sheetToPdfBlob_(ss, sheet, cfg, token);
+    if (result.status !== 'ok') {
+      if (result.status === 'empty') empty.push(sname);
+      else failed.push(sname);
+      Logger.log('収集: 出力なし（%s）→ %s', result.status, sname);
+      continue;
+    }
+    const blob = result.blob;
+    // 同名回避（重複時は連番）
+    let base = sanitize_(sname);
+    let fname = base + '.pdf';
+    let k = 2;
+    while (usedNames[fname]) { fname = base + '(' + k + ').pdf'; k++; }
+    usedNames[fname] = true;
+    blob.setName(fname);
+    items.push({ name: sname, blob: blob });
+    succeeded.push(sname);
+    Logger.log('収集: 追加 %s → %s', sname, fname);
+  }
+  return { items: items, succeeded: succeeded, failed: failed, empty: empty };
+}
+
+/** 未出力の内訳ラベル（後方互換のため note に格納）を組み立てる。 */
+function buildNote_(failed, empty) {
+  const noteParts = [];
+  if (failed && failed.length) noteParts.push('ダウンロード失敗: ' + failed.join(', '));
+  if (empty && empty.length) noteParts.push('空のため未出力: ' + empty.join(', '));
+  return noteParts.join(' ／ ');
+}
+
+/**
  * ② 一括印刷。チェックされた各シートを、その様式名の保存済み設定で個別PDF化。
  * @param targets シート名の配列（チェックされたもの）
  * @param dest    'download' = ブラウザDL（1枚:PDF / 複数:ZIP）
@@ -256,51 +241,15 @@ function fetchExportWithRetry_(url, token, label) {
 async function generateBatch(targets, dest, ssOpt, tokenOpt) {
   try {
     if (!targets || !targets.length) return { ok: false, error: 'シートが選択されていません。' };
-    // ssOpt / tokenOpt を渡せば任意のスプレッドシート（テンプレのコピー）に対して実行できる
-    // ＝ Web アプリ駆動（webGenerateBatch）で使用。省略時はバインドされたアクティブなシート
-    // ＝ メニュー（onOpen → openPrintDialog）からの実行。
+    // 省略時はバインドされたアクティブなシート（メニュー onOpen → openPrintDialog からの実行）。
+    // ssOpt / tokenOpt は任意のスプレッドシートに対して実行するための予備引数（現状はダイアログのみ利用）。
     const ss = ssOpt || SpreadsheetApp.getActiveSpreadsheet();
     const token = tokenOpt || ScriptApp.getOAuthToken();
-    const want = targets.reduce(function (o, n) { o[n] = true; return o; }, {});
 
-    const pdfBlobs = [];
-    const usedNames = {};   // ファイル名の重複回避
-    const succeeded = [];   // 印刷できたシート名
-    const failed = [];      // ダウンロード（生成）に失敗したシート名
-    const empty = [];       // 空で出力されなかったシート名
-
-    // シート順を保ちつつ、選択されたものだけ処理
-    for (const sheet of ss.getSheets()) {
-      if (SKIP_HIDDEN_SHEETS && sheet.isSheetHidden()) continue;
-      if (!want[sheet.getName()]) continue;
-
-      const sname = sheet.getName();
-      const cfg = loadFormCfg_(formNameOf_(sname));  // 様式名の設定を使用
-      const result = await sheetToPdfBlob_(ss, sheet, cfg, token);
-      if (result.status !== 'ok') {
-        if (result.status === 'empty') empty.push(sname);
-        else failed.push(sname);
-        Logger.log('一括: 出力なし（%s）→ %s', result.status, sname);
-        continue;
-      }
-      const blob = result.blob;
-      // 同名回避（重複時は連番）
-      let base = sanitize_(sname);
-      let fname = base + '.pdf';
-      let k = 2;
-      while (usedNames[fname]) { fname = base + '(' + k + ').pdf'; k++; }
-      usedNames[fname] = true;
-      blob.setName(fname);
-      pdfBlobs.push(blob);
-      succeeded.push(sname);
-      Logger.log('一括: 追加 %s → %s', sname, fname);
-    }
-
-    // 未出力の内訳をラベル付きで組み立て（後方互換のため note に格納）
-    const noteParts = [];
-    if (failed.length) noteParts.push('ダウンロード失敗: ' + failed.join(', '));
-    if (empty.length) noteParts.push('空のため未出力: ' + empty.join(', '));
-    const note = noteParts.join(' ／ ');
+    const col = await collectSheetPdfs_(ss, targets, token);
+    const pdfBlobs = col.items.map(function (it) { return it.blob; });
+    const succeeded = col.succeeded, failed = col.failed, empty = col.empty;
+    const note = buildNote_(failed, empty);
 
     if (!pdfBlobs.length) {
       return { ok: false,

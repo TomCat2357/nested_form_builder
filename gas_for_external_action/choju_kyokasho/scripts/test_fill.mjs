@@ -343,5 +343,31 @@ eq("extractFolderId 不正→空", C.Cho2_extractFolderId_("https://example.com/
 eq("extractFolderId 空→空", C.Cho2_extractFolderId_(""), "");
 ok("resolveRecordFolder 空→throw", (function () { try { C.Cho2_resolveRecordFolder_(""); return false; } catch (e) { return true; } })(), "");
 
+// ---- 一括PDF 出力エンジンの純関数（print_kyokasyo から移植） ----
+eq("printFormNameOf 様式_接尾→様式", C.Cho2_printFormNameOf_("許可証_1"), "許可証");
+eq("printFormNameOf _なし→そのまま", C.Cho2_printFormNameOf_("従事者名簿"), "従事者名簿");
+eq("printFormNameOf 先頭_のみ切る", C.Cho2_printFormNameOf_("従事者証_2_控"), "従事者証");
+eq("printSanitize 禁止文字→_", C.Cho2_printSanitize_('a/b:c*?"<>|d'), "a_b_c______d");
+eq("toBands 改ページ無し→全域", C.Cho2_toBands_([], 10), [[1, 10]]);
+eq("toBands 改ページ2本", C.Cho2_toBands_([3, 7], 10), [[1, 3], [4, 7], [8, 10]]);
+eq("toBands last 超は無視", C.Cho2_toBands_([3, 15], 10), [[1, 3], [4, 10]]);
+eq("buildNote 失敗+空", C.Cho2_buildNote_(["A"], ["B", "C"]), "ダウンロード失敗: A ／ 空のため未出力: B, C");
+eq("buildNote 空配列→空文字", C.Cho2_buildNote_([], []), "");
+const _pu = C.Cho2_buildPageExportUrl_("SSX", 123, { r1: 0, c1: 0, r2: 10, c2: 5 },
+  { size: "A4", orientation: "landscape", scaleMode: "fit", fitToWidth: true,
+    margins: { top: 0.4, bottom: 0.4, left: 0.7, right: 0.7 }, horizontalCentered: true, gridlines: false });
+ok("exportUrl ベース", _pu.indexOf("https://docs.google.com/spreadsheets/d/SSX/export?") === 0, _pu);
+ok("exportUrl format=pdf", _pu.indexOf("format=pdf") >= 0, _pu);
+ok("exportUrl gid", _pu.indexOf("gid=123") >= 0, _pu);
+ok("exportUrl landscape→portrait=false", _pu.indexOf("portrait=false") >= 0, _pu);
+ok("exportUrl fit+fitToWidth→fitw=true", _pu.indexOf("fitw=true") >= 0, _pu);
+ok("exportUrl 中央寄せ", _pu.indexOf("horizontal_alignment=CENTER") >= 0, _pu);
+ok("exportUrl 余白", _pu.indexOf("top_margin=0.4") >= 0, _pu);
+ok("exportUrl 範囲", _pu.indexOf("r1=0") >= 0 && _pu.indexOf("c2=5") >= 0, _pu);
+const _pu2 = C.Cho2_buildPageExportUrl_("SSX", 5, { r1: 0, c1: 0, r2: 3, c2: 3 },
+  { size: "A4", orientation: "portrait", scaleMode: "actual", fitToWidth: false, margins: {}, horizontalCentered: false, gridlines: false });
+ok("exportUrl portrait→portrait=true", _pu2.indexOf("portrait=true") >= 0, _pu2);
+ok("exportUrl 等倍は fitw 無し", _pu2.indexOf("fitw=") < 0, _pu2);
+
 console.log(`\n==== ${pass} PASS / ${fail} FAIL ====`);
 process.exit(fail ? 1 : 0);
