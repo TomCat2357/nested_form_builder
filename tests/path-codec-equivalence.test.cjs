@@ -12,17 +12,13 @@
  */
 
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
 const test = require("node:test");
-const vm = require("node:vm");
+const { loadGasFiles } = require("./helpers/gasVmLoader.cjs");
 
+// Nfb_* コーデックは NfbAlasqlRuntime（共有ランタイム）へのデリゲート。
+// 本テストは「GAS 側デリゲート配線＝フロント実装」の等価性スモークとして維持する。
 function loadGas() {
-  const context = { console };
-  vm.createContext(context);
-  const gasFile = path.join(__dirname, "..", "gas", "pathCodec.gs");
-  vm.runInContext(fs.readFileSync(gasFile, "utf8"), context, { filename: gasFile });
-  return context;
+  return loadGasFiles({ console }, ["pathCodec.gs"]);
 }
 
 async function loadFront() {

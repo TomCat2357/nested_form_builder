@@ -2,29 +2,16 @@ import { ensureArray, toIdList } from "../../utils/arrays.js";
 import { stripSchemaIDs, deepClone } from "../../core/schema.js";
 import { normalizeFormRecord } from "../../utils/formNormalize.js";
 import { collectDisplayFieldSettings } from "../../utils/formPaths.js";
-import {
-  getCachedEntryWithIndex,
-  saveRecordsToCache,
-  upsertRecordInCache,
-  updateRecordsMeta,
-  deleteRecordFromCache,
-  getMaxRecordNo,
-  getMaxRecordNoForPid,
-  getRecordsFromCache,
-  applySyncResultToCache,
-  clearFormRecordsCache,
-} from "./recordsMemoryStore.js";
+import { clearFormRecordsCache } from "./recordsMemoryStore.js";
 import { invalidateChildForm } from "./childRecordsMemoryStore.js";
-import { buildUploadRecordsForSync } from "./syncUploadPlan.js";
 import { getFormsFromCache } from "./formsCache.js";
 import { registryStore } from "./registryStore.js";
-import { evaluateCacheForRecords } from "./cachePolicy.js";
+import { createRecordOps } from "./dataStoreRecords.js";
+import { makeEntityStore } from "../../features/analytics/entityStore.js";
 import {
-  getEntry as getEntryFromGas,
   listForms as listFormsFromGas,
   getForm as getFormFromGas,
   saveForm as saveFormToGas,
-  deleteFormFromDrive as deleteFormFromGas,
   deleteFormsFromDrive as deleteFormsFromGas,
   deleteFormsWithFiles as deleteFormsWithFilesInGas,
   setFormReadOnly as setFormReadOnlyInGas,
@@ -37,28 +24,10 @@ import {
   clearFormsChildOnly as clearFormsChildOnlyInGas,
   registerImportedForm as registerImportedFormInGas,
   copyForm as copyFormFromGas,
-  syncRecordsProxy,
-  resolveFormPid,
 } from "../../services/gasClient.js";
-import { perfLogger } from "../../utils/perfLogger.js";
-import { genLocalId, isLocalId } from "../../core/ids.js";
-import { enqueueOpJob, deleteJobsForLocalId, deleteOpJobsForFolderPrefix } from "./uploadQueue.js";
-import { kickUploadWorker, enqueueEntitySave } from "./uploadWorker.js";
-import {
-  getSheetConfig,
-  getDeletedRetentionDays,
-  getRecordNoStart,
-  getRecordNoPerPid,
-  resolveNextRecordNo,
-  isDeletedEntryExpired,
-  pruneExpiredDeletedEntries,
-  mapSheetRecordToEntry,
-  normalizeListEntriesOptions,
-  buildGetEntryFallbackListEntriesOptions,
-  buildListEntriesResult,
-  buildUpsertEntryRecord,
-  spreadsheetTargetKey,
-} from "./dataStoreHelpers.js";
+import { genLocalId } from "../../core/ids.js";
+import { enqueueEntitySave } from "./uploadWorker.js";
+import { spreadsheetTargetKey } from "./dataStoreHelpers.js";
 
 // ---------------------------------------------------------------------------
 // dataStore-local helpers (moved from dataStoreHelpers.js)
@@ -95,7 +64,58 @@ const ensureDisplayInfo = (form) => {
   };
 };
 
+// レコード同期オペレーション（dataStoreRecords.js に分離）。getForm は dataStore の
+// キャッシュ／フォールバック実装を共有するため遅延参照で注入する。
+const recordOps = createRecordOps({
+  getForm: (formId, options) => dataStore.getForm(formId, options),
+});
+
+// フォーム用 entity ops。analytics と同一の makeEntityStore（オフラインファースト
+// write-behind CRUD ファクトリ）を listCacheMode "external" で共用する:
+// フォーム一覧の React 状態 / キャッシュは AppDataProvider が管理するため、
+// factory 側の一覧キャッシュ upsert / emitAnalyticsCacheChanged は行わない。
+const formEntityOps = makeEntityStore({
+  one: "form",
+  many: "forms",
+  gas: {
+    deleteForms: (ids) => deleteFormsFromGas(ids),
+    deleteFormsWithFiles: (ids) => deleteFormsWithFilesInGas(ids),
+  },
+  listCacheMode: "external",
+  idsKey: "formIds",
+  copySource: async () => {
+    try {
+      const { forms = [] } = await getFormsFromCache();
+      return forms;
+    } catch (error) {
+      console.warn("[dataStore.copyForm] Cache lookup failed, falling back to GAS:", error);
+      return [];
+    }
+  },
+  // GAS の Forms_copyForm_ と同様に spreadsheetId 等の設定はそのまま引き継ぐ（コピー同士で
+  // 同じスプレッドシートを共有する既存挙動と一致）。
+  copyTransform: ({ rest, localId }) => {
+    const { createdAtUnixMs: _createdAtUnixMs, modifiedAtUnixMs: _modifiedAtUnixMs, ...core } = rest;
+    const baseTitle = core?.settings?.formTitle || core?.name || "無題のフォーム";
+    const clone = normalizeFormRecord({
+      ...core,
+      name: undefined,
+      settings: { ...(core.settings || {}), formTitle: `${baseTitle}（コピー）` },
+      archived: false,
+      readOnly: false,
+    }, { fallbackId: localId });
+    return { ...clone, pendingUpload: true };
+  },
+  copyRemoteFallback: async (formId) => {
+    const result = await copyFormFromGas(formId);
+    const savedForm = result?.form || result;
+    const fileUrl = result?.fileUrl;
+    return savedForm ? { ...savedForm, driveFileUrl: fileUrl } : null;
+  },
+});
+
 export const dataStore = {
+  ...recordOps,
   async listForms({ includeArchived = false } = {}) {
 
     const result = await listFormsFromGas({ includeArchived });
@@ -123,39 +143,28 @@ export const dataStore = {
       source: "gas",
     };
   },
+  // フォルダ操作は formEntityOps（write-behind op ジョブ enqueue）へ委譲する。
+  // 楽観的＋遅延: React 状態 / キャッシュ / folders 登録簿の即時更新は AppDataProvider が担う
+  // ため、folders は常に空配列を返す（従来の公開サーフェス維持）。
   async createFolder(path) {
-    // 楽観的＋遅延: folders 登録簿の即時更新は AppDataProvider が担う。GAS 実体作成は op ジョブへ。
-    await enqueueOpJob({ entityType: "form", opType: "createFolder", opPayload: { path } });
-    kickUploadWorker();
+    await formEntityOps.createFolder(path);
     return { folders: [] };
   },
   async moveItems(payload) {
-    // 楽観的＋遅延: React 状態 / キャッシュ / folders の即時更新は AppDataProvider が担う。
-    // ここでは GAS 移動を write-behind ジョブとしてキューへ積むだけ。未アップロードの
-    // local_ フォームを移動する場合は、その save 完了まで依存（dependsOnLocalIds）で待つ。
-    const formIds = Array.isArray(payload?.formIds) ? payload.formIds : [];
-    await enqueueOpJob({
-      entityType: "form",
-      opType: "move",
-      opPayload: payload,
-      dependsOnLocalIds: formIds.filter(isLocalId),
-    });
-    kickUploadWorker();
-    return { folders: [], movedFormIds: formIds };
+    // 未アップロードの local_ フォームを移動する場合は、その save 完了まで依存
+    // （dependsOnLocalIds）で待つ（factory 側が処理）。
+    const result = await formEntityOps.moveItems(payload);
+    return { folders: [], movedFormIds: result.movedIds };
   },
   async renameFolder(payload) {
-    await enqueueOpJob({ entityType: "form", opType: "renameFolder", opPayload: payload });
-    kickUploadWorker();
+    await formEntityOps.renameFolder(payload);
     return { folders: [], movedFormIds: [] };
   },
   async deleteFolder(path, { containedIds = [] } = {}) {
-    // 配下エンティティの保留 save/move ジョブを取り消す（削除済みフォームの再作成・再移動を防ぐ）。
-    await Promise.all(containedIds.map((id) => deleteJobsForLocalId(id)));
-    await deleteOpJobsForFolderPrefix("form", path);
-    // createFolder は GAS 実体を作るため、サーバのフォルダ削除は deleteFolder op で行う。
-    await enqueueOpJob({ entityType: "form", opType: "deleteFolder", opPayload: { path } });
-    kickUploadWorker();
-    return { folders: [], deletedFormCount: containedIds.length };
+    // 配下エンティティの保留 save/move ジョブ取り消し（削除済みフォームの再作成・再移動防止）と
+    // サーバの deleteFolder op enqueue は factory 側が行う。
+    const result = await formEntityOps.deleteFolder(path, { containedIds });
+    return { folders: [], deletedFormCount: result.deletedCount };
   },
   async getForm(formId, { forceRefresh = false } = {}) {
     if (!forceRefresh) {
@@ -208,45 +217,11 @@ export const dataStore = {
   },
   async copyForm(formId) {
     // オフラインファースト: キャッシュ上の元フォームを複製し、新規 save ジョブとしてキューへ。
-    // GAS の Forms_copyForm_ と同様に spreadsheetId 等の設定はそのまま引き継ぐ（コピー同士で
-    // 同じスプレッドシートを共有する既存挙動と一致）。アップロード完了で local_ → 実 fileId へ付け替え。
-    let source = null;
-    try {
-      const { forms = [] } = await getFormsFromCache();
-      source = forms.find((form) => form.id === formId) || null;
-    } catch (error) {
-      console.warn("[dataStore.copyForm] Cache lookup failed, falling back to GAS:", error);
-    }
-    if (!source) {
-      // キャッシュ未ヒット時のみ従来のサーバコピーにフォールバック。
-      const result = await copyFormFromGas(formId);
-      const savedForm = result?.form || result;
-      const fileUrl = result?.fileUrl;
-      const formWithUrl = { ...savedForm, driveFileUrl: fileUrl };
-      return formWithUrl ? ensureDisplayInfo(formWithUrl) : null;
-    }
-    const localId = genLocalId();
-    const {
-      id: _id,
-      createdAt: _createdAt,
-      createdAtUnixMs: _createdAtUnixMs,
-      modifiedAt: _modifiedAt,
-      modifiedAtUnixMs: _modifiedAtUnixMs,
-      driveFileUrl: _driveFileUrl,
-      pendingUpload: _pendingUpload,
-      ...rest
-    } = deepClone(source);
-    const baseTitle = rest?.settings?.formTitle || rest?.name || "無題のフォーム";
-    const clone = normalizeFormRecord({
-      ...rest,
-      name: undefined,
-      settings: { ...(rest.settings || {}), formTitle: `${baseTitle}（コピー）` },
-      archived: false,
-      readOnly: false,
-    }, { fallbackId: localId });
-    const localRecord = { ...clone, pendingUpload: true };
-    await enqueueEntitySave({ entityType: "form", record: localRecord });
-    return ensureDisplayInfo(localRecord);
+    // 複製の骨格（一覧照合 → サーバコピーへのフォールバック → strip → enqueueEntitySave）は
+    // formEntityOps.copy が担い、フォーム固有の整形は copyTransform / copyRemoteFallback で注入。
+    // アップロード完了で local_ → 実 fileId へ付け替え。
+    const record = await formEntityOps.copy(formId);
+    return record ? ensureDisplayInfo(record) : null;
   },
   async updateForm(formId, updates, saveMode = "auto") {
     // First get the current form. If GAS fetch fails, fallback to provided updates.
@@ -314,19 +289,15 @@ export const dataStore = {
     await enqueueEntitySave({ entityType: "form", record: localRecord });
     return ensureDisplayInfo(localRecord);
   },
-  // 楽観的＋遅延: アーカイブ状態のフリップは AppDataProvider が即時反映。ここでは GAS 呼び出しを
-  // write-behind の op ジョブへ積むだけ（local_ フォームは save 完了まで依存で待つ）。
+  // 楽観的＋遅延: アーカイブ状態のフリップは AppDataProvider が即時反映。GAS 呼び出しの
+  // write-behind op ジョブ enqueue（local_ フォームは save 完了まで依存で待つ）は factory へ委譲。
   async _enqueueArchiveOp(formIds, opType) {
     const ids = toIdList(formIds);
     if (!ids.length) return { forms: [], updated: 0 };
-    await enqueueOpJob({
-      entityType: "form",
-      opType,
-      opPayload: { ids },
-      dependsOnLocalIds: ids.filter(isLocalId),
-    });
-    kickUploadWorker();
-    return { forms: [], updated: ids.length };
+    const result = opType === "archive"
+      ? await formEntityOps.archiveBatch(ids)
+      : await formEntityOps.unarchiveBatch(ids);
+    return { forms: result.forms, updated: result.updated };
   },
   async archiveForm(formId) {
     await this._enqueueArchiveOp([formId], "archive");
@@ -385,17 +356,12 @@ export const dataStore = {
   async clearFormsChildOnly(formIds) {
     return this._batchArchiveAction(formIds, clearFormsChildOnlyInGas);
   },
+  // 削除は factory へ委譲: 未アップロードジョブの取り消し（削除済みフォームの再作成防止）→
+  // 一時 ID（local_）を除いた実 fileId のみ GAS 削除、まで factory 側が行う。
   async deleteForms(formIds) {
     const targetIds = toIdList(formIds);
     if (!targetIds.length) return;
-
-    // 削除対象に未アップロードジョブが残っていれば取り消す（削除済みフォームの再作成を防ぐ）。
-    await Promise.all(targetIds.map((id) => deleteJobsForLocalId(id)));
-    kickUploadWorker();
-
-    // 一時 ID（まだ Drive に存在しない）のフォームは GAS 削除を呼ばない。
-    const remoteIds = targetIds.filter((id) => !isLocalId(id));
-    if (remoteIds.length) await deleteFormsFromGas(remoteIds);
+    await formEntityOps.removeBatch(targetIds);
   },
   async deleteForm(formId) {
     await this.deleteForms([formId]);
@@ -405,333 +371,7 @@ export const dataStore = {
   async deleteFormsWithFiles(formIds) {
     const targetIds = toIdList(formIds);
     if (!targetIds.length) return;
-
-    await Promise.all(targetIds.map((id) => deleteJobsForLocalId(id)));
-    kickUploadWorker();
-
-    const remoteIds = targetIds.filter((id) => !isLocalId(id));
-    if (remoteIds.length) await deleteFormsWithFilesInGas(remoteIds);
-  },
-  async upsertEntry(formId, payload) {
-    const safePayload = payload && typeof payload === "object" ? payload : {};
-    const now = Date.now();
-    const cached = safePayload.id ? await getCachedEntryWithIndex(formId, safePayload.id) : { entry: null, rowIndex: null };
-    const existingEntry = cached.entry;
-
-    // 子フォーム文脈（オーバーレイ登録 or URL 固定）で開いているときの pid を解決する。
-    // pid があれば新規/既存を問わずローカル entry にも刻む（サーバも ctx から同じ pid を刻むので値は一致）。
-    // これにより、同じ pid での連続作成でも直前の未同期レコードを親ごと採番の集計に取りこぼさない。
-    const pid = resolveFormPid(formId);
-    let workingPayload = safePayload;
-    if (pid && !workingPayload.pid) workingPayload = { ...workingPayload, pid };
-
-    let nextRecordNo = null;
-    const payloadRecordNo = safePayload["No."];
-    const existingRecordNo = existingEntry?.["No."];
-    const needsNewRecordNo = (
-      payloadRecordNo === undefined
-      || payloadRecordNo === null
-      || payloadRecordNo === ""
-    ) && (
-      existingRecordNo === undefined
-      || existingRecordNo === null
-      || existingRecordNo === ""
-    );
-    if (needsNewRecordNo) {
-      // フォームはほぼ常にキャッシュ命中で取れる。万一取得できなければ既定（親ごと採番 ON・1 始まり）へフォールバック。
-      const form = await this.getForm(formId).catch(() => null);
-      // 「子フォームの No. を親ごとに 1 から振る」設定が ON かつ pid があれば同 pid 内の最大＋1、
-      // それ以外（設定 OFF・pid なし＝子フォームでない）は従来どおり全体の最大＋1。
-      const maxNo = (getRecordNoPerPid(form) && pid)
-        ? await getMaxRecordNoForPid(formId, pid)
-        : await getMaxRecordNo(formId);
-      // フォーム修正画面で指定した No. の開始番号を下限に採番する（親ごと採番時も各 pid の下限として有効。空欄なら 1 始まり）。
-      nextRecordNo = resolveNextRecordNo(maxNo, getRecordNoStart(form));
-    }
-
-    const record = buildUpsertEntryRecord({
-      formId,
-      payload: workingPayload,
-      existingEntry,
-      now,
-      nextRecordNo,
-    });
-    await upsertRecordInCache(formId, record, {
-      headerMatrix: workingPayload.headerMatrix,
-      rowIndex: workingPayload.rowIndex ?? cached.rowIndex,
-    });
-    return record;
-  },
-  /**
-   * @param {string} formId
-   * @param {ListEntriesOptions} [options]
-   */
-  async listEntries(formId, options = {}) {
-    const { forceFullSync } = normalizeListEntriesOptions(options);
-    // quiet は同期オプションではなくログ抑制フラグ（先行プリフェッチ等が失敗時の console.error を
-    // 抑えるため）。normalizeListEntriesOptions の正式キーには含めず、ここで直接読む。
-    const quiet = options && options.quiet === true;
-    const form = await this.getForm(formId);
-    const sheetConfig = getSheetConfig(form);
-    const deletedRetentionDays = getDeletedRetentionDays(form);
-    if (!sheetConfig) throw new Error("Spreadsheet not configured for this form");
-
-    const cacheMeta = await getRecordsFromCache(formId);
-    const prunedCachedEntries = await pruneExpiredDeletedEntries(formId, cacheMeta.entries, deletedRetentionDays);
-    const baseServerReadAt = cacheMeta.lastServerReadAt || 0;
-    const uploadRecords = buildUploadRecordsForSync({
-      entries: prunedCachedEntries,
-      baseServerReadAt,
-      forceFullSync,
-    });
-
-    const payload = {
-      ...sheetConfig,
-      formId,
-      formSchema: form.schema,
-      lastServerReadAt: baseServerReadAt,
-      uploadRecords,
-      forceFullSync,
-      deletedRetentionDays
-    };
-
-    // この時点でアップロードのスナップショット（uploadRecords）は確定済み。これ以降に
-    // ローカル編集されたレコードは未アップロードなので、古いサーバー応答で上書きしない。
-    const syncStartedAt = Date.now();
-    const gasResult = await syncRecordsProxy(payload, { quiet });
-    const unchanged = gasResult?.unchanged === true;
-    const syncedRecords = (gasResult.records || []).map((record) => mapSheetRecordToEntry(record, formId));
-    const serverModifiedAt = Number(gasResult.serverModifiedAt ?? gasResult.serverCommitToken);
-    const sheetLastUpdatedAt = Number(gasResult.sheetLastUpdatedAt);
-    const nextLastServerReadAt = Date.now();
-    const postSyncHeaderMatrix = Array.isArray(gasResult.headerMatrix)
-      ? gasResult.headerMatrix
-      : (cacheMeta.headerMatrix || []);
-    const normalizedSheetLastUpdatedAt = Number.isFinite(sheetLastUpdatedAt) && sheetLastUpdatedAt > 0
-      ? sheetLastUpdatedAt
-      : (cacheMeta.lastSpreadsheetReadAt || 0);
-
-    if (unchanged) {
-      await updateRecordsMeta(formId, {
-        lastReloadedAt: nextLastServerReadAt,
-        lastSpreadsheetReadAt: nextLastServerReadAt,
-        lastServerReadAt: nextLastServerReadAt,
-        serverCommitToken: gasResult.serverCommitToken,
-        serverModifiedAt: serverModifiedAt > 0 ? serverModifiedAt : 0,
-        schemaHash: form.schemaHash,
-        headerMatrix: postSyncHeaderMatrix,
-      });
-
-      return buildListEntriesResult({
-        entries: prunedCachedEntries,
-        headerMatrix: postSyncHeaderMatrix,
-        lastSyncedAt: nextLastServerReadAt,
-        lastSpreadsheetReadAt: nextLastServerReadAt,
-        hasUnsynced: false,
-        unsyncedCount: 0,
-        isDelta: true,
-        unchanged: true,
-        fetchedCount: 0,
-        sheetLastUpdatedAt: normalizedSheetLastUpdatedAt,
-      });
-    }
-
-    if (forceFullSync) {
-      await saveRecordsToCache(formId, syncedRecords, postSyncHeaderMatrix, {
-        sheetLastUpdatedAt: normalizedSheetLastUpdatedAt,
-        serverCommitToken: gasResult.serverCommitToken,
-        serverModifiedAt: serverModifiedAt > 0 ? serverModifiedAt : 0,
-        lastServerReadAt: nextLastServerReadAt,
-        schemaHash: form.schemaHash,
-      });
-    } else {
-      await applySyncResultToCache(formId, syncedRecords, postSyncHeaderMatrix, {
-        serverCommitToken: gasResult.serverCommitToken,
-        serverModifiedAt: serverModifiedAt > 0 ? serverModifiedAt : 0,
-        lastServerReadAt: nextLastServerReadAt,
-        syncStartedAt,
-      });
-    }
-
-    // シンク後の状態を取得する。差分マージは applySyncResultToCache が syncStartedAt 保護つきで
-    // ストアへ反映済みなので、保護結果を正しく返すためストア（メモリ）から読み戻す。
-    let postSyncEntries;
-    if (forceFullSync) {
-      postSyncEntries = syncedRecords;
-    } else {
-      postSyncEntries = (await getRecordsFromCache(formId)).entries;
-    }
-
-    // 期限切れ tombstone だけをキャッシュから物理除去し、削除済み表示の制御は UI 側に委ねる
-    const prunedEntries = await pruneExpiredDeletedEntries(formId, postSyncEntries, deletedRetentionDays);
-    const unsyncedCount = prunedEntries.filter((e) => (e.modifiedAtUnixMs || 0) > nextLastServerReadAt).length;
-    const hasUnsynced = unsyncedCount > 0;
-
-    return buildListEntriesResult({
-      entries: prunedEntries,
-      headerMatrix: postSyncHeaderMatrix,
-      lastSyncedAt: Date.now(),
-      lastSpreadsheetReadAt: nextLastServerReadAt,
-      hasUnsynced,
-      unsyncedCount,
-      isDelta: gasResult?.isDelta === true,
-      unchanged: false,
-      fetchedCount: syncedRecords.length,
-      sheetLastUpdatedAt: normalizedSheetLastUpdatedAt,
-    });
-  },
-  async getEntry(formId, entryId, { forceSync = false, rowIndexHint = undefined } = {}) {
-    const form = await this.getForm(formId);
-    const sheetConfig = getSheetConfig(form);
-    if (!sheetConfig) {
-      throw new Error("Spreadsheet not configured for this form");
-    }
-
-    const startedAt = Date.now();
-    const tGetCacheStart = performance.now();
-    const {
-      entry: cachedEntry,
-      rowIndex: cachedRowIndex,
-      lastSyncedAt,
-    } = await getCachedEntryWithIndex(formId, entryId);
-    const deletedRetentionDays = getDeletedRetentionDays(form);
-    const cacheEntryExpired = isDeletedEntryExpired(cachedEntry, deletedRetentionDays);
-    if (cacheEntryExpired && cachedEntry?.id) {
-      await deleteRecordFromCache(formId, cachedEntry.id);
-    }
-    const usableCachedEntry = cacheEntryExpired ? null : cachedEntry;
-    const tGetCacheEnd = performance.now();
-    perfLogger.logVerbose("records", "getEntry cache lookup", {
-      durationMs: Number((tGetCacheEnd - tGetCacheStart).toFixed(2)),
-      formId,
-      entryId,
-    });
-
-    // rowIndexHintが明示的に渡された場合はそれを優先、なければキャッシュから取得したものを使用
-    const effectiveRowIndex = rowIndexHint !== undefined ? rowIndexHint : cachedRowIndex;
-
-    const { age: cacheAge, shouldSync, shouldBackground } = evaluateCacheForRecords({
-      lastSyncedAt,
-      hasData: !!usableCachedEntry,
-      forceSync,
-    });
-
-    // 1分(60,000ms)以内であれば強制同期(forceSync: true)でもキャッシュを優先して通信を避ける
-    const isVeryFresh = cacheAge < 60000;
-    
-    if (usableCachedEntry && (isVeryFresh || (!shouldSync && !forceSync))) {
-      if (shouldBackground) {
-        const bgStartedAt = Date.now();
-        getEntryFromGas({ formId, sheetName: sheetConfig.sheetName, entryId, rowIndexHint: effectiveRowIndex })
-          .then((result) => {
-            const mappedRecord = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
-            const mapped = isDeletedEntryExpired(mappedRecord, deletedRetentionDays) ? null : mappedRecord;
-            if (mapped) upsertRecordInCache(formId, mapped, { rowIndex: result.rowIndex ?? effectiveRowIndex, syncStartedAt: bgStartedAt });
-          }).catch(() => {});
-      }
-      return usableCachedEntry;
-    }
-
-    const tBeforeGas = performance.now();
-    const result = await getEntryFromGas({
-      formId,
-      sheetName: sheetConfig.sheetName,
-      entryId,
-      rowIndexHint: effectiveRowIndex,
-    });
-    const tAfterGas = performance.now();
-    perfLogger.logVerbose("records", "getEntry GAS fetch", {
-      durationMs: Number((tAfterGas - tBeforeGas).toFixed(2)),
-      formId,
-      entryId,
-    });
-
-    
-    // GAS側で「行がずれている（違うIDが返ってきた）」または「見つからなかった（削除された）」場合、
-    // 単一取得を諦めて差分更新リスト取得にフォールバックする
-    if (!result.ok || !result.record || result.record.id !== entryId) {
-      const listResult = await this.listEntries(formId, buildGetEntryFallbackListEntriesOptions());
-      return listResult.entries.find(e => e.id === entryId) || null;
-    }
-
-    const tBeforeMap = performance.now();
-    const mappedRecord = result.record ? mapSheetRecordToEntry(result.record, formId) : null;
-    const mapped = isDeletedEntryExpired(mappedRecord, deletedRetentionDays) ? null : mappedRecord;
-    const tAfterMap = performance.now();
-    perfLogger.logVerbose("records", "getEntry map record", {
-      durationMs: Number((tAfterMap - tBeforeMap).toFixed(2)),
-      formId,
-      entryId,
-    });
-
-    if (mapped) {
-      const nextRowIndex = typeof result.rowIndex === "number" ? result.rowIndex : effectiveRowIndex;
-      const tBeforeUpsert = performance.now();
-      await upsertRecordInCache(formId, mapped, { rowIndex: nextRowIndex });
-      const tAfterUpsert = performance.now();
-      perfLogger.logVerbose("records", "getEntry cache upsert", {
-        durationMs: Number((tAfterUpsert - tBeforeUpsert).toFixed(2)),
-        formId,
-        entryId,
-        rowIndex: nextRowIndex,
-      });
-
-      const finishedAt = Date.now();
-      const durationMs = finishedAt - startedAt;
-      perfLogger.logVerbose("records", "getEntry done", {
-        formId,
-        entryId,
-        fromCache: false,
-        durationMs,
-        rowIndex: nextRowIndex,
-      });
-      perfLogger.logRecordGasRead(tAfterGas - tBeforeGas, entryId, "single-sync");
-      perfLogger.logRecordCacheUpdate(tAfterUpsert - tBeforeUpsert, entryId);
-      return mapped;
-    }
-
-    const finishedAt = Date.now();
-    perfLogger.logVerbose("records", "getEntry done", {
-      formId,
-      entryId,
-      fromCache: !!usableCachedEntry,
-      durationMs: finishedAt - startedAt,
-      fallbackCache: true,
-    });
-    if (usableCachedEntry) {
-      perfLogger.logRecordCacheHit(tGetCacheEnd - tGetCacheStart, entryId);
-    }
-    return usableCachedEntry;
-  },
-  async deleteEntry(formId, entryId, { deletedBy = "" } = {}) {
-    const { entry, rowIndex } = await getCachedEntryWithIndex(formId, entryId);
-    if (!entry) return;
-    const now = Date.now();
-    const deleted = {
-      ...entry,
-      deletedAt: now,
-      deletedAtUnixMs: now,
-      deletedBy: deletedBy || entry.deletedBy || "",
-      modifiedAtUnixMs: now,
-      modifiedAt: now,
-      modifiedBy: deletedBy || entry.modifiedBy || "",
-    };
-    await upsertRecordInCache(formId, deleted, { rowIndex });
-  },
-  async undeleteEntry(formId, entryId, { modifiedBy = "" } = {}) {
-    const { entry, rowIndex } = await getCachedEntryWithIndex(formId, entryId);
-    if (!entry) return;
-    const now = Date.now();
-    const undeleted = {
-      ...entry,
-      deletedAt: null,
-      deletedAtUnixMs: null,
-      deletedBy: "",
-      modifiedAt: now,
-      modifiedAtUnixMs: now,
-      modifiedBy: modifiedBy || entry.modifiedBy || "",
-    };
-    await upsertRecordInCache(formId, undeleted, { rowIndex });
+    await formEntityOps.removeBatchWithFiles(targetIds);
   },
   async importForms(jsonList) {
     const created = [];

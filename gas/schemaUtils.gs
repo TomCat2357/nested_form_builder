@@ -4,8 +4,11 @@
  * sheetsHeaders.gs / formsMappingStore.gs から共通的に呼ばれる
  * pure・platform-agnostic なスキーマ走査ヘルパ群。
  *
- * フロント側の双子実装は builder/src/core/schemaUtils.js。
- * 振る舞いを変える場合は両側を揃えること。
+ * 実装は builder/src/core/schemaUtils.js + fieldValue.js が単一ソース（esbuild で
+ * NfbAlasqlRuntime に焼き込み）。以下の nfb* は薄いデリゲートのみ（関数名・呼び出し側は
+ * 不変）。配線の等価性は tests/schema-walkers-equivalence.test.cjs が担保。
+ * nfbStripSchemaIDs_ のみ GAS 側実装（フロントの stripSchemaIDs は schema.js 側にあり、
+ * 正規化器全体をバンドルへ引き込まないためここでは nfbMapSchema_ の上に再実装している）。
  */
 
 /**
@@ -13,40 +16,7 @@
  * ラベル (後付け編集でズレた等) は後続に残す。空/非オブジェクトは [] を返す。
  */
 function nfbResolveOrderedChildKeys_(field) {
-  var branches = field && field.childrenByValue;
-  if (!branches || typeof branches !== "object" || Array.isArray(branches)) return [];
-  var keys = [];
-  for (var k in branches) {
-    if (Object.prototype.hasOwnProperty.call(branches, k)) keys.push(k);
-  }
-  if (!keys.length) return [];
-
-  var ordered = [];
-  var seen = {};
-  var options = (field && Array.isArray(field.options)) ? field.options : [];
-  for (var i = 0; i < options.length; i++) {
-    var opt = options[i];
-    var label = (opt && typeof opt.label === "string") ? opt.label : "";
-    if (!label || seen[label] || !Object.prototype.hasOwnProperty.call(branches, label)) continue;
-    ordered.push(label);
-    seen[label] = true;
-  }
-  for (var j = 0; j < keys.length; j++) {
-    if (seen[keys[j]]) continue;
-    ordered.push(keys[j]);
-    seen[keys[j]] = true;
-  }
-  return ordered;
-}
-
-function nfbDefaultFieldSegment_(field, indexTrail) {
-  var rawLabel = field && field.label !== undefined && field.label !== null
-    ? String(field.label) : "";
-  var trimmed = rawLabel.replace(/^\s+|\s+$/g, "");
-  if (trimmed) return trimmed;
-  var type = field && field.type !== undefined && field.type !== null
-    ? String(field.type) : "unknown";
-  return "質問 " + indexTrail.join(".") + " (" + type + ")";
+  return NfbAlasqlRuntime.resolveOrderedChildKeys(field);
 }
 
 /**
@@ -54,37 +24,15 @@ function nfbDefaultFieldSegment_(field, indexTrail) {
  * `children` 配列を表示するかの判断に使う (空のとき子質問は非表示)。
  */
 function nfbFieldHasValue_(field, value) {
-  if (!field || typeof field !== "object") return false;
-  var type = field.type;
-  if (type === "text" || type === "email" || type === "url") {
-    return typeof value === "string" && value.replace(/^\s+|\s+$/g, "") !== "";
-  }
-  if (type === "phone") {
-    if (typeof value !== "string") return false;
-    return value.replace(/[\s\-()]/g, "") !== "";
-  }
-  if (type === "number") {
-    if (value === "" || value === null || value === undefined) return false;
-    return !isNaN(Number(value));
-  }
-  if (type === "date" || type === "time") {
-    return typeof value === "string" && value !== "";
-  }
-  if (type === "fileUpload") {
-    return Array.isArray(value) && value.length > 0;
-  }
-  return false;
+  return NfbAlasqlRuntime.fieldHasValue(field, value);
 }
 
 /**
  * 無条件子質問 (field.children) を表示・走査すべきかを判定する。
  * message は「回答」概念を持たず値が入らないため、子質問は常に表示する (無条件)。
- * それ以外の入力タイプは値が入っているとき (nfbFieldHasValue_) に表示する。
- * フロント双子は shouldShowUnconditionalChildren (builder/src/core/fieldValue.js)。
- * 振る舞いを変える場合は両側を揃えること (tests/schema-walkers-equivalence.test.cjs)。
  */
 function nfbShouldShowUnconditionalChildren_(field, value) {
-  return (field && field.type === "message") || nfbFieldHasValue_(field, value);
+  return NfbAlasqlRuntime.shouldShowUnconditionalChildren(field, value);
 }
 
 /**
@@ -103,87 +51,7 @@ function nfbShouldShowUnconditionalChildren_(field, value) {
  *                    既定は optionKey そのまま。
  */
 function nfbTraverseSchema_(schema, visitor, options) {
-  var opts = options || {};
-  var hasGetChildKeys = typeof opts.getChildKeys === "function";
-  var hasResponses = !!opts.responses;
-  var fieldSegmentFn = typeof opts.fieldSegment === "function" ? opts.fieldSegment : null;
-  var branchSegmentFn = typeof opts.branchSegment === "function" ? opts.branchSegment : null;
-
-  function walk(nodes, pathSegments, depth, indexTrail) {
-    var list = Array.isArray(nodes) ? nodes : [];
-    for (var i = 0; i < list.length; i++) {
-      var field = list[i];
-      if (field === undefined || field === null) continue;
-      var currentIndexTrail = indexTrail.concat(i + 1);
-      var segmentCtx = {
-        pathSegments: pathSegments,
-        index: i,
-        depth: depth,
-        indexTrail: currentIndexTrail
-      };
-      var segment = fieldSegmentFn
-        ? fieldSegmentFn(field, segmentCtx)
-        : nfbDefaultFieldSegment_(field, currentIndexTrail);
-      if (segment === null || segment === undefined) continue;
-      var currentPath = pathSegments.concat(segment);
-      var context = {
-        pathSegments: currentPath,
-        index: i,
-        depth: depth,
-        indexTrail: currentIndexTrail
-      };
-      var shouldContinue = visitor(field, context);
-      if (shouldContinue === false) continue;
-
-      if (field.childrenByValue && typeof field.childrenByValue === "object"
-          && !Array.isArray(field.childrenByValue)) {
-        var childKeys;
-        if (hasGetChildKeys) {
-          var custom = opts.getChildKeys(field, context);
-          childKeys = Array.isArray(custom) ? custom : [];
-        } else if (hasResponses) {
-          var value = opts.responses[field.id];
-          if (field.type === "checkboxes" && Array.isArray(value)) {
-            var selected = {};
-            for (var s = 0; s < value.length; s++) selected[value[s]] = true;
-            var all = nfbResolveOrderedChildKeys_(field);
-            childKeys = [];
-            for (var a = 0; a < all.length; a++) {
-              if (selected[all[a]]) childKeys.push(all[a]);
-            }
-          } else if ((field.type === "radio" || field.type === "select")
-                     && typeof value === "string" && value) {
-            childKeys = field.childrenByValue[value] ? [value] : [];
-          } else {
-            childKeys = [];
-          }
-        } else {
-          childKeys = nfbResolveOrderedChildKeys_(field);
-        }
-
-        for (var ci = 0; ci < childKeys.length; ci++) {
-          var key = childKeys[ci];
-          var branchSegment = branchSegmentFn ? branchSegmentFn(key, field, context) : key;
-          var childPath = (branchSegment === null || branchSegment === undefined)
-            ? currentPath : currentPath.concat(branchSegment);
-          walk(field.childrenByValue[key], childPath, depth + 1, currentIndexTrail);
-        }
-      }
-
-      if (Array.isArray(field.children) && field.children.length > 0) {
-        var traverseChildren = true;
-        if (hasResponses) {
-          var inputValue = opts.responses[field.id];
-          traverseChildren = nfbShouldShowUnconditionalChildren_(field, inputValue);
-        }
-        if (traverseChildren) {
-          walk(field.children, currentPath, depth + 1, currentIndexTrail);
-        }
-      }
-    }
-  }
-
-  walk(Array.isArray(schema) ? schema : [], [], 1, []);
+  return NfbAlasqlRuntime.traverseSchema(schema, visitor, options || {});
 }
 
 /**
@@ -194,39 +62,7 @@ function nfbTraverseSchema_(schema, visitor, options) {
  * 注意: traverse とは異なり fallback ラベルは使わず、素の label をパスに用いる。
  */
 function nfbMapSchema_(schema, mapper) {
-  function walk(nodes, pathSegments, depth) {
-    var list = Array.isArray(nodes) ? nodes : [];
-    var out = [];
-    for (var i = 0; i < list.length; i++) {
-      var field = list[i];
-      var rawLabel = field && field.label !== undefined && field.label !== null
-        ? String(field.label) : "";
-      var trimmed = rawLabel.replace(/^\s+|\s+$/g, "");
-      var currentPath = pathSegments.concat(trimmed);
-      var context = { pathSegments: currentPath, index: i, depth: depth };
-      var newField = mapper(field, context);
-      if (newField && newField.childrenByValue && typeof newField.childrenByValue === "object"
-          && !Array.isArray(newField.childrenByValue)) {
-        var newChildren = {};
-        var orderedKeys = nfbResolveOrderedChildKeys_(newField);
-        for (var k = 0; k < orderedKeys.length; k++) {
-          var optLabel = orderedKeys[k];
-          newChildren[optLabel] = walk(
-            newField.childrenByValue[optLabel],
-            currentPath.concat(optLabel),
-            depth + 1
-          );
-        }
-        newField.childrenByValue = newChildren;
-      }
-      if (newField && Array.isArray(newField.children)) {
-        newField.children = walk(newField.children, currentPath, depth + 1);
-      }
-      out.push(newField);
-    }
-    return out;
-  }
-  return walk(Array.isArray(schema) ? schema : [], [], 1);
+  return NfbAlasqlRuntime.mapSchema(schema, mapper);
 }
 
 /**

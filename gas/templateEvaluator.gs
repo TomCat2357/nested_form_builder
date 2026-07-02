@@ -25,67 +25,27 @@
  */
 
 // ============================================================================
-// § Balanced brace scanner
+// § Balanced brace scanner — NfbAlasqlRuntime（builder/src/features/expression/
+//   templateScanner.js を esbuild で焼き込んだ共有ランタイム）への薄いデリゲート。
+//   スキャナの実装・エスケープ sentinel はフロントと単一ソース。
 // ============================================================================
-
-var NFB_TPL_ESC_OPEN_  = "__NFB_TPL_ESC_OB__";
-var NFB_TPL_ESC_CLOSE_ = "__NFB_TPL_ESC_CB__";
 
 function nfbTplEscape_(text) {
   if (text === undefined || text === null) return "";
-  return String(text)
-    .split("\\{").join(NFB_TPL_ESC_OPEN_)
-    .split("\\}").join(NFB_TPL_ESC_CLOSE_);
+  return NfbAlasqlRuntime.escapeBraces(String(text));
 }
 
 function nfbTplUnescape_(text) {
   if (text === undefined || text === null) return "";
-  return String(text)
-    .split(NFB_TPL_ESC_OPEN_).join("{")
-    .split(NFB_TPL_ESC_CLOSE_).join("}");
+  return NfbAlasqlRuntime.unescapeBraces(String(text));
 }
 
-// full-query モード判定（フロント templateScanner.js isFullQueryBody の双子）。
+// full-query モード判定（フロント templateScanner.js isFullQueryBody と同一実装）。
 // 本文が先頭 SELECT のトークンはフル SQL クエリ。GAS にはクエリエンジンが無いため、
 // nfbEvaluateTemplate_ はこれを評価せずリテラル/フォールバックで残す（クライアント
 // が出力前に事前解決する前提。Google Doc 本文など事前解決できない経路では原文が残る）。
-var NFB_TPL_FULL_QUERY_RE_ = /^\s*SELECT\b/i;
 function nfbTplIsFullQueryBody_(body) {
-  return NFB_TPL_FULL_QUERY_RE_.test(String(body === undefined || body === null ? "" : body));
-}
-
-function nfbTplFindBalancedClose_(text, openIndex) {
-  if (text.charAt(openIndex) !== "{") return -1;
-  var n = text.length;
-  var depth = 1;
-  var j = openIndex + 1;
-  while (j < n) {
-    var c = text.charAt(j);
-    if (c === "{") depth++;
-    else if (c === "}") { depth--; if (depth === 0) return j; }
-    j++;
-  }
-  return -1;
-}
-
-/**
- * 開き位置 i が連続二重ブレース `{{ ... }}`（ビュー形式トークン）かを判定する。
- * 単一ブレース `{ ... }`（旧・元データ形式）は廃止され、トークンと認識せず null を返す
- * （呼び出し側でリテラル `{` 扱い）。`}}` で閉じない / 未閉じも null。
- * フロント側 templateScanner.js describeToken と等価。
- */
-function nfbTplDescribeToken_(text, i) {
-  if (text.charAt(i) !== "{" || text.charAt(i + 1) !== "{") return null;
-  var close = nfbTplFindBalancedClose_(text, i);
-  if (close < 0) return null;
-  if (!(close - 1 > i + 1 && text.charAt(close - 1) === "}")) return null;
-  return {
-    mode: "view",
-    body: text.substring(i + 2, close - 1),
-    fullToken: text.substring(i, close + 1),
-    start: i,
-    end: close + 1
-  };
+  return NfbAlasqlRuntime.isFullQueryBody(body);
 }
 
 /**
@@ -94,117 +54,26 @@ function nfbTplDescribeToken_(text, i) {
  * 単一ブレース `{...}`（旧・元データ形式）は廃止＝リテラル。
  */
 function nfbTplScanAndReplace_(text, replacer) {
-  if (!text) return "";
-  var out = "";
-  var i = 0;
-  var n = text.length;
-  while (i < n) {
-    var ch = text.charAt(i);
-    if (ch !== "{") { out += ch; i++; continue; }
-    var tok = nfbTplDescribeToken_(text, i);
-    if (!tok) { out += ch; i++; continue; }
-    out += replacer(tok);
-    i = tok.end;
-  }
-  return out;
+  return NfbAlasqlRuntime.scanAndReplace(text, replacer);
 }
 
 function nfbTplCollect_(text) {
-  var results = [];
-  if (!text) return results;
-  // nfbTplScanAndReplace_ と同じ scan ループをそのまま再利用し、各トークンを
-  // results に push する。replacer の戻り値（連結後の文字列）は捨てる。
-  // 未閉じ `{` で scan が打ち切られる挙動も自動的に揃う。
-  nfbTplScanAndReplace_(text, function(tok) {
-    results.push({ body: tok.body, fullToken: tok.fullToken });
-    return tok.fullToken;
-  });
-  return results;
+  return NfbAlasqlRuntime.collectBalancedBraces(text);
 }
 
-/**
- * トークン body をトップレベルのカンマで分割する。
- * - 文字列リテラル `'...'` 内のカンマは無視（`''` でエスケープされた quote も保護）。
- * - `(` `[` `{` のネスト深度を数え、深度 > 0 のカンマは無視（関数引数内のカンマを保護）。
- * - 各要素は前後の空白を trim する。
- * - 末尾カンマ・連続カンマで空要素を保持する（`{`A`,}` → `["`A`", ""]`）。
- * - カンマが 1 つも無ければ `[trim(body)]` を返す（既存単一式パスと整合）。
- * フロント側 builder/src/features/expression/templateScanner.js splitTopLevelCommas と等価。
- */
+// トークン body をトップレベルのカンマで分割する（'...' 内・(...)/[...]/{...} 内の
+// カンマは保護、各要素 trim、空要素保持）。
 function nfbTplSplitTopLevelCommas_(body) {
-  var text = String(body === undefined || body === null ? "" : body);
-  var n = text.length;
-  var parts = [];
-  var buf = "";
-  var depth = 0;
-  var i = 0;
-  var hasComma = false;
-  while (i < n) {
-    var c = text.charAt(i);
-    if (c === "'") {
-      buf += c;
-      i++;
-      while (i < n) {
-        var cc = text.charAt(i);
-        buf += cc;
-        if (cc === "'") {
-          if (i + 1 < n && text.charAt(i + 1) === "'") {
-            buf += text.charAt(i + 1);
-            i += 2;
-            continue;
-          }
-          i++;
-          break;
-        }
-        i++;
-      }
-      continue;
-    }
-    if (c === "(" || c === "[" || c === "{") { depth++; buf += c; i++; continue; }
-    if (c === ")" || c === "]" || c === "}") { if (depth > 0) depth--; buf += c; i++; continue; }
-    if (c === "," && depth === 0) {
-      hasComma = true;
-      parts.push(buf.replace(/^\s+|\s+$/g, ""));
-      buf = "";
-      i++;
-      continue;
-    }
-    buf += c;
-    i++;
-  }
-  if (!hasComma) return [buf.replace(/^\s+|\s+$/g, "")];
-  parts.push(buf.replace(/^\s+|\s+$/g, ""));
-  return parts;
+  return NfbAlasqlRuntime.splitTopLevelCommas(body);
 }
 
 // ============================================================================
 // § Value coercion (式の戻り値 → テンプレート用文字列)
 // ============================================================================
 
-// フロント側の双子は builder/src/features/expression/templateEvaluator.js の
-// coerceResultToString。振る舞いを変える場合は両側を揃えること。等価性は
-// tests/coerce-to-string-equivalence.test.cjs で担保。
+// builder/src/features/expression/coerceResultToString.js と単一ソース。
 function nfbTplCoerceToString_(value) {
-  if (value === null || value === undefined) return "";
-  if (typeof value === "string") return value;
-  if (typeof value === "number") return isFinite(value) ? String(value) : "";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (Object.prototype.toString.call(value) === "[object Date]") {
-    var t = value.getTime();
-    return isFinite(t) ? String(t) : "";
-  }
-  if (Object.prototype.toString.call(value) === "[object Array]") {
-    var parts = [];
-    for (var i = 0; i < value.length; i++) {
-      parts.push(nfbTplCoerceToString_(value[i]));
-    }
-    return parts.join(", ");
-  }
-  if (typeof value === "object") {
-    if (typeof value.name === "string") return value.name;
-    try { return JSON.stringify(value); } catch (_e) { return ""; }
-  }
-  return String(value);
+  return NfbAlasqlRuntime.coerceResultToString(value);
 }
 
 // ============================================================================

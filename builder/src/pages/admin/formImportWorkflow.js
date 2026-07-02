@@ -8,15 +8,17 @@ import { toUnixMs } from "../../utils/dateTime.js";
 import { asPlainObject } from "../../utils/objectShape.js";
 
 /**
- * スキップ / 読込失敗の件数から「（…）」形式の補足文言を組み立てる。空なら "" を返す。
+ * スキップ / 読込失敗 / 保存失敗の件数から「（…）」形式の補足文言を組み立てる。空なら "" を返す。
+ * Analytics 一覧（useAdminAnalyticsListActions）のインポートサマリとも共用する。
  */
-export const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false } = {}) => {
+export const buildImportDetail = (skipped = 0, parseFailed = 0, { useRegisteredLabel = false, saveFailed = 0 } = {}) => {
   const parts = [];
   if (skipped > 0) {
     const label = useRegisteredLabel ? "登録済み（リンク済み）スキップ" : "スキップ";
     parts.push(`${label} ${skipped} 件`);
   }
   if (parseFailed > 0) parts.push(`読込失敗 ${parseFailed} 件`);
+  if (saveFailed > 0) parts.push(`保存失敗 ${saveFailed} 件`);
   return parts.length > 0 ? `（${parts.join("、")}）` : "";
 };
 

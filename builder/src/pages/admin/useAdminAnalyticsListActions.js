@@ -1,5 +1,6 @@
 import { useCallback } from "react";
 import { sanitizeFileBaseName } from "./listActionsShared.js";
+import { buildImportDetail } from "./formImportWorkflow.js";
 import { useAdminListActions } from "./useAdminListActions.js";
 
 /**
@@ -124,10 +125,7 @@ export function useAdminAnalyticsListActions({
         if (skipped > 0 && parseFailed === 0) {
           showAlert(`すべて登録済み（リンク済み）のためスキップしました（${skipped} 件）。`);
         } else {
-          const detail = [];
-          if (skipped > 0) detail.push(`登録済み（リンク済み）スキップ ${skipped} 件`);
-          if (parseFailed > 0) detail.push(`読込失敗 ${parseFailed} 件`);
-          showAlert(`取り込める ${itemLabel} はありませんでした${detail.length ? `（${detail.join("、")}）` : ""}。`);
+          showAlert(`取り込める ${itemLabel} はありませんでした${buildImportDetail(skipped, parseFailed, { useRegisteredLabel: true })}。`);
         }
         setImporting(false);
         return;
@@ -146,11 +144,7 @@ export function useAdminAnalyticsListActions({
       }
 
       clearSelection();
-      const summary = [];
-      if (skipped > 0) summary.push(`登録済み（リンク済み）スキップ ${skipped} 件`);
-      if (parseFailed > 0) summary.push(`読込失敗 ${parseFailed} 件`);
-      if (saveFailed > 0) summary.push(`保存失敗 ${saveFailed} 件`);
-      const detailText = summary.length ? `（${summary.join("、")}）` : "";
+      const detailText = buildImportDetail(skipped, parseFailed, { useRegisteredLabel: true, saveFailed });
 
       if (imported > 0) {
         showAlert(`${imported} 件の ${itemLabel} を取り込みました${detailText}。`);
