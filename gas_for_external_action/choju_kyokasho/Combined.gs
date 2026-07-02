@@ -106,7 +106,14 @@ var CHO2_L_W_ADDRESS_ = "住所";
 var CHO2_L_W_OCCUPATION_ = "職業";
 var CHO2_L_W_BIRTH_ = "生年月日";
 var CHO2_L_W_SPECIES_ = "捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量";
-var CHO2_L_W_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称）"; // 閉じ括弧が半角!
+var CHO2_L_W_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称）"; // 閉じ括弧は全角（実フォームと一致）
+
+// 免許欄（2026-07-02 再構成。choju_intake が同構造の権威）。旧「免許の必要性(不要/必要)」→「狩猟免許(なし/あり)」、
+// 空気銃も select ラベルが「免許種類」→「狩猟免許」。免許なし分岐に「免許不要の理由」radio が新設された。
+var CHO2_L_LICENSE_ = "狩猟免許";                                // わな/網 radio・空気銃 select 共通ラベル
+var CHO2_REASON_TRAP_ = "免許不要の理由（小型のはこわな限定）";   // わな 免許なしの理由 radio
+var CHO2_REASON_NET_ = "免許不要の理由（小型のつき網限定）";      // 網  免許なしの理由 radio
+var CHO2_CERT_LICENSE_ = "従事（補助）適任者証明書";            // 名簿 Q 列に出す短縮値／なし理由の判定キー（部分一致）
 
 // ----- 種の表示順（フォーム選択肢順）。bird=採取卵数あり -----
 var CHO2_SPECIES_ORDER_ = [
@@ -165,6 +172,10 @@ var CHO2_ROSTER_ = {
     gunPermitNo: "X", gunPermitDate: "Y", gunKind: "Z"
   }
 };
+
+// 従事者名簿（法人）: 種数を各従事者に書かず先頭ブロックへ全員合計だけを記入し、その旨を注記する
+// （記載例_法人。注記は species2Name 列・先頭ブロック最終行＝M13）。
+var CHO2_ROSTER_AGG_NOTE_ = "※法人全体の数量";
 
 // 各シート名
 var CHO2_SHEET_ROSTER_ = "従事者名簿";
@@ -376,47 +387,55 @@ function Cho2_unionTools_(workers) {
 }
 
 // 1 従事者・1 用具の免許/登録/銃器情報を pathMap から取り出す（名簿 Q-Z 用）。choju 取込の逆。
+// 免許欄は 2026-07-02 再構成後の構造（狩猟免許 なし/あり）を読む。choju_intake が同構造の権威。
 function Cho2_toolLicense_(worker, tool) {
   var M = CHO2_L_W_METHOD_, kind = CHO2_TOOL_KIND_[tool] || "";
   var r = { tool: tool, kind: kind, licType: "", licPref: "", licNo: "", licDate: "", regNo: "", regDate: "", gunNo: "", gunDate: "", gunKind: "" };
   if (kind === "わな") {
-    // フォームに「わなの免許種類」欄が無いため、免許必要時は種別から補完（名簿 Q 列＝狩猟免許 種類）。
-    if (Cho2_str_(worker[M + "/わな/免許の必要性"]) === "必要") r.licType = "わな猟免許";
-    var wb = M + "/わな/免許の必要性/必要/免許情報/";
-    r.licPref = Cho2_str_(worker[wb + "都道府県"]);
-    r.licNo = Cho2_str_(worker[wb + "番号"]);
-    r.licDate = Cho2_str_(worker[wb + "交付年月日"]);
-    var wr = M + "/わな/狩猟者登録/登録の有無/あり/";
+    var wLic = M + "/わな/" + CHO2_L_LICENSE_; // 狩猟免許（なし/あり）
+    if (Cho2_str_(worker[wLic]) === "あり") {
+      var wb = wLic + "/あり/免許情報/";
+      r.licPref = Cho2_str_(worker[wb + "都道府県"]);
+      r.licNo = Cho2_str_(worker[wb + "番号"]);
+      r.licDate = Cho2_str_(worker[wb + "交付年月日"]);
+      // 免許ありのとき名簿 Q 列（種類）は空欄（記載例に合わせる。旧「わな猟免許」自動補完は撤去）。
+    } else if (Cho2_str_(worker[wLic + "/なし/" + CHO2_REASON_TRAP_]).indexOf(CHO2_CERT_LICENSE_) >= 0) {
+      r.licType = CHO2_CERT_LICENSE_; // 免許なし＋従事（補助）適任者証明書 → Q 列に短縮値
+    }
+    var wr = M + "/わな/狩猟者登録/登録の有無/あり/"; // 登録は免許と兄弟＝分岐外（不変）
     r.regNo = Cho2_str_(worker[wr + "番号"]);
     r.regDate = Cho2_str_(worker[wr + "交付年月日"]);
   } else if (kind === "網") {
-    // 同上（網の免許種類欄が無いため補完）。
-    if (Cho2_str_(worker[M + "/網/免許の必要性"]) === "必要") r.licType = "網猟免許";
-    var nb = M + "/網/免許の必要性/必要/免許情報/";
-    r.licPref = Cho2_str_(worker[nb + "都道府県"]);
-    r.licNo = Cho2_str_(worker[nb + "番号"]);
-    r.licDate = Cho2_str_(worker[nb + "交付年月日"]);
-    var nr = M + "/網/免許の必要性/必要/狩猟者登録/登録の有無/あり/";
-    r.regNo = Cho2_str_(worker[nr + "番号"]);
-    r.regDate = Cho2_str_(worker[nr + "交付年月日"]);
+    var nLic = M + "/網/" + CHO2_L_LICENSE_;
+    if (Cho2_str_(worker[nLic]) === "あり") {
+      var nb = nLic + "/あり/免許情報/";
+      r.licPref = Cho2_str_(worker[nb + "都道府県"]);
+      r.licNo = Cho2_str_(worker[nb + "番号"]);
+      r.licDate = Cho2_str_(worker[nb + "交付年月日"]);
+      var nr = nLic + "/あり/狩猟者登録/登録の有無/あり/"; // 網の登録は免許あり配下
+      r.regNo = Cho2_str_(worker[nr + "番号"]);
+      r.regDate = Cho2_str_(worker[nr + "交付年月日"]);
+    } else if (Cho2_str_(worker[nLic + "/なし/" + CHO2_REASON_NET_]).indexOf(CHO2_CERT_LICENSE_) >= 0) {
+      r.licType = CHO2_CERT_LICENSE_;
+    }
   } else if (kind === "銃器") {
     var gb = M + "/銃器/銃の種類/" + tool;
     r.gunKind = tool;
     r.gunNo = Cho2_str_(worker[gb + "/所持許可/所持許可証番号"]);
     r.gunDate = Cho2_str_(worker[gb + "/所持許可/交付年月日"]);
     if (tool === "空気銃") {
-      var sel = Cho2_choiceList_(worker[gb + "/免許種類"])[0] || "";
+      var sel = Cho2_choiceList_(worker[gb + "/" + CHO2_L_LICENSE_])[0] || ""; // 旧「免許種類」→「狩猟免許」
       if (sel) {
         r.licType = CHO2_GUN_LIC_[sel] || sel;
-        var ab = gb + "/免許種類/" + sel + "/";
+        var ab = gb + "/" + CHO2_L_LICENSE_ + "/" + sel + "/";
         r.licPref = Cho2_str_(worker[ab + "都道府県"]);
         r.licNo = Cho2_str_(worker[ab + "番号"]);
         r.licDate = Cho2_str_(worker[ab + "交付年月日"]);
       }
-      var ar = gb + "/狩猟者登録/登録の有無/あり/";
+      var ar = gb + "/狩猟者登録/登録の有無/あり/"; // 不変
       r.regNo = Cho2_str_(worker[ar + "番号"]);
       r.regDate = Cho2_str_(worker[ar + "交付年月日"]);
-    } else { // 散弾銃 / ライフル銃
+    } else { // 散弾銃 / ライフル銃（第一種銃猟免許・所持許可・登録は不変）
       r.licType = "第一種銃猟";
       var fb = gb + "/第一種銃猟免許/";
       r.licPref = Cho2_str_(worker[fb + "都道府県"]);
@@ -484,7 +503,10 @@ function Cho2_gridCells_(grid, totals) {
 }
 
 // 従事者名簿 1 ブロック分の差分（top=ブロック先頭行）。
-function Cho2_rosterBlockCells_(worker, top, certNo) {
+//   speciesTotals: この行に書く種数（未指定＝その従事者自身＝後方互換／個人）。法人は先頭ブロックに
+//     全員合計を、2 人目以降は空 {} を渡す（種数欄を出さない）。
+//   note: 集計注記（法人先頭のみ "※法人全体の数量"）。species2Name 列・ブロック最終行に記入。
+function Cho2_rosterBlockCells_(worker, top, certNo, speciesTotals, note) {
   var C = CHO2_ROSTER_.cols, cells = [];
   Cho2_push_(cells, C.certNo + top, certNo);
   Cho2_push_(cells, C.address + top, Cho2_str_(worker[CHO2_L_W_ADDRESS_]));
@@ -492,9 +514,9 @@ function Cho2_rosterBlockCells_(worker, top, certNo) {
   Cho2_push_(cells, C.occupation + top, Cho2_str_(worker[CHO2_L_W_OCCUPATION_]));
   Cho2_pushDate_(cells, C.birth + top, worker[CHO2_L_W_BIRTH_]);
   // 種数（固定オフセット配置）
-  var sp = Cho2_workerSpecies_(worker);
+  var sp = speciesTotals || Cho2_workerSpecies_(worker);
   for (var i = 0; i < CHO2_GRID_SLOTS_.length; i++) {
-    var slot = CHO2_GRID_SLOTS_[i], t = sp[slot.sp];
+    var slot = CHO2_GRID_SLOTS_[i], t = sp[slot.sp] || { count: 0, egg: 0 };
     if (!(t.count > 0 || t.egg > 0)) continue;
     var row = top + slot.off;
     if (slot.side === "L") {
@@ -506,6 +528,8 @@ function Cho2_rosterBlockCells_(worker, top, certNo) {
       Cho2_pushNum_(cells, C.species2Count + row, t.count);
     }
   }
+  // 集計注記（法人先頭ブロックのみ）。species2Name 列・ブロック最終行＝先頭 top=5 → M13。
+  if (note) Cho2_push_(cells, C.species2Name + (top + CHO2_ROSTER_.blockHeight - 1), note);
   // 方法（用具を P 列に積層・免許/登録/銃器を行ごとに）
   var tools = Cho2_workerTools_(worker);
   for (var ti = 0; ti < tools.length && ti < CHO2_ROSTER_.blockHeight; ti++) {
@@ -640,7 +664,13 @@ function Cho2_buildPlan_(app, forcedType) {
     for (var b = 0; b < rosterN; b++) {
       var top = CHO2_ROSTER_.firstRow + b * CHO2_ROSTER_.blockHeight; // 各シートとも行 5 から
       var gi = rs + b;                                                // 全体通し番号（許可証番号用）
-      var blk = Cho2_rosterBlockCells_(workers[gi], top, Cho2_certNoRaw_(kyokaNo, gi + 1)); // E 列＝"1-1-1" 連結
+      // 法人は種数を先頭ブロックに全員合計＋注記でまとめ、2 人目以降は種数欄なし。個人は各自の種数。
+      var spTotals, note = "";
+      if (type === "法人") {
+        if (gi === 0) { spTotals = agg; note = CHO2_ROSTER_AGG_NOTE_; }
+        else { spTotals = {}; }
+      }
+      var blk = Cho2_rosterBlockCells_(workers[gi], top, Cho2_certNoRaw_(kyokaNo, gi + 1), spTotals, note); // E 列＝"1-1-1" 連結
       for (var i = 0; i < blk.length; i++) rosterCells.push(blk[i]);
     }
     roster.push({ label: String((rs / perSheet) + 1), cells: rosterCells });
@@ -735,7 +765,7 @@ function Cho2_generate(ctxToken, optionsJson) {
     var plan = Cho2_buildPlan_(app, options.forcedType || "");
     var fileName = Cho2_outputFileName_(app, plan);
     var out = Cho2_renderWorkbook_(plan, fileName, folder);
-    return { ok: true, fileUrl: out.url, fileName: out.name, type: plan.type, workerCount: plan.workerCount };
+    return { ok: true, fileUrl: out.url, fileName: out.name, type: plan.type, workerCount: plan.workerCount, ssId: out.ssId };
   } catch (err) {
     return {
       ok: false,
@@ -819,7 +849,7 @@ function Cho2_renderWorkbook_(plan, fileName, folder) {
 
     var ssFile = DriveApp.getFileById(ssId);
     success = true;
-    return { url: ssFile.getUrl(), name: ssFile.getName() };
+    return { url: ssFile.getUrl(), name: ssFile.getName(), ssId: ssId };
   } finally {
     if (!success && ssId) { try { Drive.Files.remove(ssId, { supportsAllDrives: true }); } catch (e) { /* no-op */ } }
   }
@@ -976,7 +1006,298 @@ function Cho2_authorize() {
   Drive.Files.list({ maxResults: 1 });
   SpreadsheetApp.getActiveSpreadsheet();
   Session.getActiveUser().getEmail();
+  // 一括PDF出力で /export フェッチと pdf-lib CDN 取得を行うため external_request を消費して同意させる。
+  try { UrlFetchApp.fetch("https://www.gstatic.com/generate_204", { muteHttpExceptions: true }); } catch (e) { /* no-op */ }
   return "authorized";
+}
+
+
+// #############################################################################
+// ## pdf.gs — 一括PDF出力エンジン（print_kyokasyo からの移植）
+// -----------------------------------------------------------------------------
+// 生成した許可証等スプレッドシートの全シートを様式別の印刷設定で /export → PDF 化し、
+// 1 つの「しおり付き結合 PDF」にまとめる。生成画面がこれを呼び、ブラウザ DL＋Drive 保存する。
+// print_kyokasyo（②）は個別印刷メニュー専用に戻し、この一括ロジックは ① 自己完結のため移植した。
+// pdf-lib が必須の箇所のみ async/await（スタイルは本体準拠で var + function 宣言・arrow 不使用）。
+// #############################################################################
+
+var CHO2_PRINT_SKIP_HIDDEN_ = true;
+
+// 様式名（シート名の最初の "_" より前）ごとの印刷設定プリセット。margins はインチ。
+// scaleMode:'fit'+fitToWidth:true = 横幅を 1 ページに合わせる。等倍は fit 指定なし。
+var CHO2_PRINT_GENERIC_DEFAULT_ = {
+  size: "A4", orientation: "portrait", scaleMode: "actual", fitToWidth: false,
+  margins: { top: 0.75, bottom: 0.75, left: 0.7, right: 0.7 },
+  horizontalCentered: true, gridlines: false
+};
+var CHO2_PRINT_FORM_DEFAULTS_ = {
+  "許可証": { size: "A4", orientation: "landscape", scaleMode: "fit", fitToWidth: true,
+    margins: { top: 0.4, bottom: 0.4, left: 0.7, right: 0.7 }, horizontalCentered: true, gridlines: false },
+  "従事者名簿": { size: "A4", orientation: "landscape", scaleMode: "fit", fitToWidth: true,
+    margins: { top: 0.4, bottom: 0.4, left: 0.7, right: 0.7 }, horizontalCentered: true, gridlines: false },
+  "交付通知書": { size: "A4", orientation: "portrait", scaleMode: "fit", fitToWidth: true,
+    margins: { top: 0.8, bottom: 0.4, left: 1.0, right: 1.0 }, horizontalCentered: true, gridlines: false },
+  "振興局宛通知": { size: "A4", orientation: "portrait", scaleMode: "fit", fitToWidth: true,
+    margins: { top: 0.8, bottom: 0.4, left: 1.0, right: 1.0 }, horizontalCentered: true, gridlines: false },
+  "警察宛通知": { size: "A4", orientation: "portrait", scaleMode: "fit", fitToWidth: true,
+    margins: { top: 0.8, bottom: 0.4, left: 1.0, right: 1.0 }, horizontalCentered: true, gridlines: false },
+  "従事者証": { size: "A4", orientation: "landscape", scaleMode: "fit", fitToWidth: true,
+    margins: { top: 0.7, bottom: 0.4, left: 0.7, right: 0.7 }, horizontalCentered: true, gridlines: false }
+};
+
+// シート名 → 様式名（最初の "_" より前。無ければシート名そのもの）。
+function Cho2_printFormNameOf_(sheetName) {
+  var s = Cho2_str_(sheetName);
+  var i = s.indexOf("_");
+  return i >= 0 ? s.slice(0, i) : s;
+}
+// 様式名の印刷設定。生成物は毎回テンプレの新規コピーで DocumentProperties が空なのでプリセットのみ使う。
+function Cho2_loadPrintCfg_(formName) {
+  return CHO2_PRINT_FORM_DEFAULTS_[formName] || CHO2_PRINT_GENERIC_DEFAULT_;
+}
+// ファイル名に使えない文字を "_" に。
+function Cho2_printSanitize_(name) { return Cho2_str_(name).replace(/[\\\/:*?"<>|]/g, "_"); }
+
+// ---- ページ構築（そのシートの実改ページを使用。API に改ページ取得は無く常に 1 帯=データ全域）----
+function Cho2_buildPages_(sheet) {
+  var lastRow = sheet.getLastRow(), lastCol = sheet.getLastColumn();
+  if (lastRow < 1 || lastCol < 1) return [];
+  var rowBands = Cho2_toBands_(Cho2_getRowBreaks_(sheet), lastRow);
+  var colBands = Cho2_toBands_(Cho2_getColBreaks_(sheet), lastCol);
+  var pages = [];
+  for (var c = 0; c < colBands.length; c++) {
+    for (var r = 0; r < rowBands.length; r++) {
+      pages.push({ r1: rowBands[r][0] - 1, r2: rowBands[r][1], c1: colBands[c][0] - 1, c2: colBands[c][1] });
+    }
+  }
+  return pages;
+}
+function Cho2_getRowBreaks_(sheet) {
+  try { return sheet.getRowBreaks ? sheet.getRowBreaks() : []; } catch (e) { return []; }
+}
+function Cho2_getColBreaks_(sheet) {
+  try { return sheet.getColumnBreaks ? sheet.getColumnBreaks() : []; } catch (e) { return []; }
+}
+function Cho2_toBands_(breaks, last) {
+  var bands = [], prev = 0;
+  var arr = (breaks || []).slice().sort(function (a, b) { return a - b; });
+  for (var i = 0; i < arr.length; i++) {
+    var b = arr[i];
+    if (b > prev && b <= last) { bands.push([prev + 1, b]); prev = b; }
+  }
+  if (prev < last) bands.push([prev + 1, last]);
+  if (!bands.length) bands.push([1, last]);
+  return bands;
+}
+
+// ---- エクスポート URL ----
+function Cho2_buildPageExportUrl_(ssId, gid, p, cfg) {
+  var params = {
+    format: "pdf", gid: gid,
+    size: cfg.size || "A4",
+    portrait: (cfg.orientation || "portrait") !== "landscape",
+    gridlines: !!cfg.gridlines,
+    printtitle: false, sheetnames: false, pagenumbers: false, fzr: false,
+    r1: p.r1, c1: p.c1, r2: p.r2, c2: p.c2
+  };
+  // スケール: /export は % 不可のため fitTo で近似。等倍は指定しない。
+  if (cfg.scaleMode === "fit") {
+    if (cfg.fitToWidth) params.fitw = true;
+  }
+  if (cfg.horizontalCentered) params.horizontal_alignment = "CENTER";
+  var m = cfg.margins || {};
+  if (m.top != null) {
+    params.top_margin = m.top; params.bottom_margin = m.bottom;
+    params.left_margin = m.left; params.right_margin = m.right;
+  }
+  var keys = Object.keys(params), pairs = [];
+  for (var k = 0; k < keys.length; k++) pairs.push(keys[k] + "=" + encodeURIComponent(params[keys[k]]));
+  return "https://docs.google.com/spreadsheets/d/" + ssId + "/export?" + pairs.join("&");
+}
+
+// /export を取得。429/5xx/例外は指数バックオフでリトライ。成功→Blob / 最終失敗→null。
+function Cho2_fetchExportWithRetry_(url, token, label) {
+  var maxTry = 4, wait = 800;
+  for (var t = 1; t <= maxTry; t++) {
+    var code = 0;
+    try {
+      var res = UrlFetchApp.fetch(url, { headers: { Authorization: "Bearer " + token }, muteHttpExceptions: true });
+      code = res.getResponseCode();
+      if (code === 200) return res.getBlob();
+    } catch (e) {
+      Logger.log("fetch例外 %s (try %s): %s", label, t, e);
+    }
+    var retryable = (code === 0 || code === 429 || (code >= 500 && code <= 504));
+    Logger.log("export失敗 %s: HTTP %s (try %s/%s)%s", label, code, t, maxTry, (retryable && t < maxTry) ? " → リトライ" : "");
+    if (!retryable || t === maxTry) break;
+    Utilities.sleep(wait);
+    wait *= 2;
+  }
+  return null;
+}
+
+// 1 シートを PDF 化。{status:'ok',blob} / {status:'empty'} / {status:'failed'}。
+async function Cho2_sheetToPdfBlob_(ss, sheet, cfg, token) {
+  var pages = Cho2_buildPages_(sheet);
+  if (!pages.length) return { status: "empty" };
+  var blobs = [];
+  for (var i = 0; i < pages.length; i++) {
+    var url = Cho2_buildPageExportUrl_(ss.getId(), sheet.getSheetId(), pages[i], cfg);
+    var blob = Cho2_fetchExportWithRetry_(url, token, sheet.getName() + " p" + (i + 1));
+    if (!blob) return { status: "failed" }; // 1 ページでも欠ければシート不完全＝失敗扱い
+    blobs.push(blob);
+    Utilities.sleep(120);
+  }
+  var name = Cho2_printSanitize_(sheet.getName()) + ".pdf";
+  var merged = await Cho2_mergePdfBlobs_(blobs, name);
+  return { status: "ok", blob: merged };
+}
+
+// 選択シートを様式別設定で個別 PDF 化して順序付きで集める。{items,succeeded,failed,empty}。
+async function Cho2_collectSheetPdfs_(ss, targets, token) {
+  var want = {};
+  for (var i = 0; i < targets.length; i++) want[targets[i]] = true;
+  var items = [], usedNames = {}, succeeded = [], failed = [], empty = [];
+  var sheets = ss.getSheets();
+  for (var s = 0; s < sheets.length; s++) {
+    var sheet = sheets[s];
+    if (CHO2_PRINT_SKIP_HIDDEN_ && sheet.isSheetHidden()) continue;
+    if (!want[sheet.getName()]) continue;
+    var sname = sheet.getName();
+    var cfg = Cho2_loadPrintCfg_(Cho2_printFormNameOf_(sname));
+    var result = await Cho2_sheetToPdfBlob_(ss, sheet, cfg, token);
+    if (result.status !== "ok") {
+      if (result.status === "empty") empty.push(sname); else failed.push(sname);
+      continue;
+    }
+    var blob = result.blob;
+    var base = Cho2_printSanitize_(sname), fname = base + ".pdf", n = 2;
+    while (usedNames[fname]) { fname = base + "(" + n + ").pdf"; n++; }
+    usedNames[fname] = true;
+    blob.setName(fname);
+    items.push({ name: sname, blob: blob });
+    succeeded.push(sname);
+  }
+  return { items: items, succeeded: succeeded, failed: failed, empty: empty };
+}
+
+// 未出力の内訳ラベルを組み立てる。
+function Cho2_buildNote_(failed, empty) {
+  var parts = [];
+  if (failed && failed.length) parts.push("ダウンロード失敗: " + failed.join(", "));
+  if (empty && empty.length) parts.push("空のため未出力: " + empty.join(", "));
+  return parts.join(" ／ ");
+}
+
+// ---- PDF 結合（pdf-lib を CDN から eval ロード） ----
+var Cho2_pdfLibLoaded_ = false;
+function Cho2_ensurePdfLib_() {
+  if (Cho2_pdfLibLoaded_ && typeof globalThis.PDFLib !== "undefined") return;
+  var cdn = "https://cdn.jsdelivr.net/npm/pdf-lib/dist/pdf-lib.min.js";
+  var src = UrlFetchApp.fetch(cdn).getContentText().replace(/setTimeout\(.*?,.*?(\d*?)\)/g, "Utilities.sleep($1);return t();");
+  eval(src);
+  if (typeof PDFLib !== "undefined") globalThis.PDFLib = PDFLib;
+  Cho2_pdfLibLoaded_ = true;
+}
+
+async function Cho2_mergePdfBlobs_(pdfBlobs, fileName) {
+  Cho2_ensurePdfLib_();
+  var PDFLib = globalThis.PDFLib;
+  var merged = await PDFLib.PDFDocument.create();
+  for (var i = 0; i < pdfBlobs.length; i++) {
+    var doc = await PDFLib.PDFDocument.load(new Uint8Array(pdfBlobs[i].getBytes()));
+    var pages = await merged.copyPages(doc, doc.getPageIndices());
+    for (var p = 0; p < pages.length; p++) merged.addPage(pages[p]);
+  }
+  var bytes = await merged.save();
+  return Utilities.newBlob([].slice.call(new Int8Array(bytes)), MimeType.PDF, fileName);
+}
+
+// items=[{name:シート名, blob}] を 1 PDF に結合し、各物理ページに元シート名のしおり（PDF アウトライン）を付ける。
+// タイトルは PDFHexString.fromText で UTF-16BE 化され CJK も欠けない。
+async function Cho2_mergeWithBookmarks_(items, fileName) {
+  Cho2_ensurePdfLib_();
+  var PDFLib = globalThis.PDFLib;
+  var PDFDocument = PDFLib.PDFDocument, PDFDict = PDFLib.PDFDict, PDFArray = PDFLib.PDFArray;
+  var PDFName = PDFLib.PDFName, PDFNumber = PDFLib.PDFNumber, PDFHexString = PDFLib.PDFHexString;
+  var merged = await PDFDocument.create();
+  var entries = []; // {title, pageIndex}（1 物理ページ = 1 しおり）
+  for (var i = 0; i < items.length; i++) {
+    var doc = await PDFDocument.load(new Uint8Array(items[i].blob.getBytes()));
+    var startIndex = merged.getPageCount();
+    var pages = await merged.copyPages(doc, doc.getPageIndices());
+    for (var pp = 0; pp < pages.length; pp++) merged.addPage(pages[pp]);
+    var cnt = pages.length;
+    for (var p = 0; p < cnt; p++) {
+      var title = cnt > 1 ? (items[i].name + "（p" + (p + 1) + "）") : items[i].name;
+      entries.push({ title: title, pageIndex: startIndex + p });
+    }
+  }
+  if (entries.length) {
+    var context = merged.context;
+    var outlinesDict = PDFDict.withContext(context);
+    var outlinesRef = context.register(outlinesDict);
+    var itemRefs = [];
+    for (var q = 0; q < entries.length; q++) itemRefs.push(context.nextRef());
+    for (var idx = 0; idx < entries.length; idx++) {
+      var en = entries[idx];
+      var page = merged.getPage(en.pageIndex);
+      var dest = PDFArray.withContext(context);
+      dest.push(page.ref);
+      dest.push(PDFName.of("Fit"));
+      var dict = PDFDict.withContext(context);
+      dict.set(PDFName.of("Title"), PDFHexString.fromText(en.title));
+      dict.set(PDFName.of("Parent"), outlinesRef);
+      dict.set(PDFName.of("Dest"), dest);
+      if (idx > 0) dict.set(PDFName.of("Prev"), itemRefs[idx - 1]);
+      if (idx < entries.length - 1) dict.set(PDFName.of("Next"), itemRefs[idx + 1]);
+      context.assign(itemRefs[idx], dict);
+    }
+    outlinesDict.set(PDFName.of("Type"), PDFName.of("Outlines"));
+    outlinesDict.set(PDFName.of("First"), itemRefs[0]);
+    outlinesDict.set(PDFName.of("Last"), itemRefs[itemRefs.length - 1]);
+    outlinesDict.set(PDFName.of("Count"), PDFNumber.of(entries.length));
+    merged.catalog.set(PDFName.of("Outlines"), outlinesRef);
+    merged.catalog.set(PDFName.of("PageMode"), PDFName.of("UseOutlines"));
+  }
+  var bytes = await merged.save();
+  return Utilities.newBlob([].slice.call(new Int8Array(bytes)), MimeType.PDF, fileName);
+}
+
+// google.script.run から呼ぶ（末尾アンダースコア不可）: 生成済みスプレッドシート(ssId)の全シートを
+// しおり付き結合 PDF にし、同じ（＝記録）フォルダへ保存しつつ base64 を返す。
+async function Cho2_generatePdf(ssId) {
+  try {
+    var id = Cho2_str_(ssId);
+    if (!id) return { ok: false, error: "スプレッドシートIDが指定されていません。" };
+    var ss = SpreadsheetApp.openById(id);
+    var token = ScriptApp.getOAuthToken();
+    var targets = [], sheets = ss.getSheets();
+    for (var i = 0; i < sheets.length; i++) {
+      if (CHO2_PRINT_SKIP_HIDDEN_ && sheets[i].isSheetHidden()) continue;
+      targets.push(sheets[i].getName());
+    }
+    var col = await Cho2_collectSheetPdfs_(ss, targets, token);
+    var note = Cho2_buildNote_(col.failed, col.empty);
+    if (!col.items.length) {
+      return { ok: false, error: "PDF 出力対象がありませんでした。" + (note ? "（" + note + "）" : ""),
+        succeeded: col.succeeded, failed: col.failed, empty: col.empty };
+    }
+    var fileName = Cho2_printSanitize_(ss.getName()) + ".pdf";
+    var merged = await Cho2_mergeWithBookmarks_(col.items, fileName);
+    // Drive 保存: スプレッドシートと同じ（＝記録）フォルダへ。保存失敗は致命的でなく DL は続行する。
+    var pdfUrl = "";
+    try {
+      var parents = DriveApp.getFileById(id).getParents();
+      var saved = parents.hasNext() ? parents.next().createFile(merged) : DriveApp.createFile(merged);
+      pdfUrl = saved.getUrl();
+    } catch (e) { /* no-op */ }
+    return { ok: true, name: merged.getName(), mime: MimeType.PDF,
+      b64: Utilities.base64Encode(merged.getBytes()), pdfUrl: pdfUrl, note: note,
+      succeeded: col.succeeded, failed: col.failed, empty: col.empty };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message ? e.message : e) };
+  }
 }
 
 
@@ -1212,18 +1533,46 @@ function renderApps(){
   $("gen").onclick=doGen;
   updateTplGate();
 }
+var lastPdfUrl=null, lastPdfName=null;
+function b64ToBlobUrl(b64,mime){ var bin=atob(b64),len=bin.length,bytes=new Uint8Array(len); for(var i=0;i<len;i++)bytes[i]=bin.charCodeAt(i); return URL.createObjectURL(new Blob([bytes],{type:mime||"application/pdf"})); }
+function triggerDownload(url,name){ var a=document.createElement("a"); a.href=url; a.download=name||"print.pdf"; document.body.appendChild(a); a.click(); setTimeout(function(){ try{document.body.removeChild(a);}catch(e){} },800); }
 function doGen(){
   var r=document.querySelector('input[name="app"]:checked'); var idx=r?Number(r.value):0;
   var sel=document.querySelector('.atype[data-idx="'+idx+'"]'); var forced=sel?sel.value:"";
   $("status").textContent="生成中...（テンプレート複製・記入・スプレッドシート保存）"; $("gen").disabled=true; $("result").innerHTML="";
   google.script.run.withSuccessHandler(function(res){
-    $("gen").disabled=false;
-    if(res&&res.ok){ $("status").innerHTML='<span class="ok">生成しました（'+esc(res.type)+' / 従事者 '+res.workerCount+' 名）。</span>';
-      var html='<a href="'+esc(res.fileUrl)+'" target="_blank" rel="noopener">'+esc(res.fileName)+' を開く（Drive）</a>';
-      $("result").innerHTML=html; }
-    else { var errHtml='<span class="err">失敗: '+esc(res&&res.error||"unknown")+'</span>'; if(res&&res.folderUrl){errHtml+=' ／ <a href="'+esc(res.folderUrl)+'" target="_blank" rel="noopener">フォルダを開く</a>';} $("status").innerHTML=errHtml; }
+    if(res&&res.ok){
+      $("status").innerHTML='<span class="ok">様式を生成しました（'+esc(res.type)+' / 従事者 '+res.workerCount+' 名）。</span> 続けて一括PDFを作成します…';
+      $("result").innerHTML='<a href="'+esc(res.fileUrl)+'" target="_blank" rel="noopener">'+esc(res.fileName)+' を開く（Drive）</a>';
+      genPdf(res.ssId);
+    } else {
+      $("gen").disabled=false;
+      var errHtml='<span class="err">失敗: '+esc(res&&res.error||"unknown")+'</span>'; if(res&&res.folderUrl){errHtml+=' ／ <a href="'+esc(res.folderUrl)+'" target="_blank" rel="noopener">フォルダを開く</a>';} $("status").innerHTML=errHtml;
+    }
   }).withFailureHandler(function(e){ $("gen").disabled=false; $("status").innerHTML='<span class="err">エラー: '+esc(e.message)+'</span>'; })
     .Cho2_generate(CTX, JSON.stringify({rowIndex:idx, forcedType:forced}));
+}
+function genPdf(ssId){
+  if(!ssId){ $("gen").disabled=false; return; }
+  $("status").innerHTML='<span class="ok">様式を生成しました。</span> 一括PDFを作成中…（ページ数が多いと時間がかかります）';
+  google.script.run.withSuccessHandler(function(res){
+    $("gen").disabled=false;
+    if(res&&res.ok){
+      var note=res.note?(' <span class="muted">（'+esc(res.note)+'）</span>'):'';
+      $("status").innerHTML='<span class="ok">一括PDFを作成しました（'+esc(res.name)+'）。ダウンロードを開始します。</span>'+note;
+      if(lastPdfUrl){ try{URL.revokeObjectURL(lastPdfUrl);}catch(e){} }
+      lastPdfUrl=b64ToBlobUrl(res.b64,res.mime); lastPdfName=res.name;
+      triggerDownload(lastPdfUrl,lastPdfName);
+      var h='<button id="dlPdf" style="background:#1a73e8;color:#fff;border:none;border-radius:4px;padding:8px 18px;font-weight:bold;margin-right:14px;cursor:pointer">PDFをダウンロード</button>';
+      if(res.pdfUrl) h+='<a href="'+esc(res.pdfUrl)+'" target="_blank" rel="noopener" style="margin-right:14px">PDF を Drive で開く</a>';
+      $("result").innerHTML=h+$("result").innerHTML;
+      var b=$("dlPdf"); if(b) b.onclick=function(){ if(lastPdfUrl) triggerDownload(lastPdfUrl,lastPdfName); };
+    } else {
+      var note2=res&&res.note?(' <span class="muted">（'+esc(res.note)+'）</span>'):'';
+      $("status").innerHTML='<span class="err">一括PDFの作成に失敗しました: '+esc(res&&res.error||"unknown")+'</span>'+note2+' <span class="muted">（スプレッドシートは保存済みです。下のリンクから開けます）</span>';
+    }
+  }).withFailureHandler(function(e){ $("gen").disabled=false; $("status").innerHTML='<span class="err">一括PDF作成エラー: '+esc(e.message)+'</span> <span class="muted">（スプレッドシートは保存済みです）</span>'; })
+    .Cho2_generatePdf(ssId);
 }
 function renderDebug(){
   var d=$("dbg"); if(!d) return;
@@ -1251,7 +1600,7 @@ input[type=text]{width:100%;padding:6px;box-sizing:border-box;}button{margin-top
 .muted{color:#5f6368;font-size:12px;}.ok{color:#188038;font-weight:bold;}.err{color:#c5221f;}
 </style></head><body><div class="card">
 <h1>許可証等の出力 — 設定</h1>
-<p class="muted">この URL は本体フォームの外部アクションボタンから起動されます。ここではテンプレート（許可証等様式.xlsx）の保存先のみ設定できます。</p>
+<p class="muted">この URL は本体フォームの外部アクションボタンから起動されます。ここではテンプレート（許可証等様式.xlsx）の保存先を設定します。生成画面で「生成」すると、様式作成に続けて一括PDFのダウンロードまで自動で行います。</p>
 <label class="blk">テンプレートの保存先（Drive URL または fileId）</label>
 <div class="muted">現在: <span id="curTpl"></span></div>
 <input type="text" id="tplUrl" placeholder="https://drive.google.com/file/d/.../view">
@@ -1304,6 +1653,11 @@ if (typeof module === "object" && module.exports) {
     Cho2_choiceList_: Cho2_choiceList_,
     Cho2_dateParts_: Cho2_dateParts_,
     Cho2_warekiString_: Cho2_warekiString_,
+    Cho2_printFormNameOf_: Cho2_printFormNameOf_,
+    Cho2_printSanitize_: Cho2_printSanitize_,
+    Cho2_toBands_: Cho2_toBands_,
+    Cho2_buildPageExportUrl_: Cho2_buildPageExportUrl_,
+    Cho2_buildNote_: Cho2_buildNote_,
     CHO2_SPECIES_ORDER_: CHO2_SPECIES_ORDER_,
     CHO2_TOOL_ORDER_: CHO2_TOOL_ORDER_,
     CHO2_GRID_KYOKASHO_: CHO2_GRID_KYOKASHO_,

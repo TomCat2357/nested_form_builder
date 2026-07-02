@@ -137,7 +137,7 @@ function Cho_toNumberOrText_(value) {
 // ## cellmap.gs — 新 7 シート様式の単一セルマップ（取り込み用の契約）
 // #############################################################################
 //
-// 典拠: form_test/鳥獣保護管理法様式_個人想定.xlsx / _法人想定.xlsx
+// 典拠: form_test/鳥獣保護管理法申請様式_個人想定.xlsx / _法人想定.xlsx
 //       （scripts/extract_cellmap.py → scripts/out/cellmap_seed.tsv）。
 // 色は設計時の注釈。実行時は固定番地を引く。番地を直すときはこのセクションだけ編集する。
 
@@ -171,8 +171,15 @@ var CHO_L_JIYU_REASON_ = "捕獲等又は採取等を行う理由";
 var CHO_L_JIYU_DATE_ = "記入日";
 var CHO_JIYU_DATE_CELL_ = "H2"; // 証明書シート右上の記入日セル（H2:J2 結合・日付シリアル）
 // 子フォーム「従事者情報」
-var CHO_L_CHILD_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称）"; // 閉じ括弧が半角!
+var CHO_L_CHILD_METHOD_ = "捕獲等又は採取等の方法（使用する捕獲用具の名称）"; // 閉じ括弧は全角（ライブ JSON と一致）
 var CHO_L_CHILD_SPECIES_ = "捕獲等をする鳥獣又は採取等をする鳥類の卵の種類及び数量";
+// 狩猟免許（旧「免許の必要性(不要/必要)」→ 新「狩猟免許(なし/あり)」。わな/網の radio・空気銃の select 共通ラベル）
+var CHO_L_LICENSE_ = "狩猟免許";
+// 免許なし時の理由 radio（わな/網で見出し文言が異なる）。名簿 Q=「従事（補助）適任者証明書」→ 証明書選択肢へ。
+var CHO_REASON_TRAP_ = "免許不要の理由（小型のはこわな限定）"; // わな
+var CHO_REASON_NET_ = "免許不要の理由（小型のつき網限定）";   // 網
+// 免許なし時の証明書選択肢（わな/網 共通、フォーム JSON と一致）
+var CHO_REASON_CERT_OPT_ = "従事（補助）適任者証明書（法人かつ他に免許者がいる場合に限る。）";
 // 確認用（桃セルの値を取り込む親フォームの message。子に種数サブ message）
 var CHO_L_CONFIRM_ = "確認用";
 var CHO_L_CONFIRM_SPECIES_ = "種類及び数量";
@@ -248,7 +255,7 @@ var CHO_APP_SPECIES_ = [
   { sp: "トガリネズミ科・ネズミ科", nameCell: "E26", count: "F26" }
 ];
 
-// 空気銃の免許種類(select) → 狩猟免許の種類（名簿 Q 列）
+// 空気銃 狩猟免許(select)の選択肢 → 名簿 Q 列(狩猟免許/種類)の値
 var CHO_GUN_LIC_ = { "第一種銃猟免許": "第一種銃猟", "第二種銃猟免許": "第二種銃猟" };
 
 // 名簿の種数行レイアウト（off=ブロック内行オフセット、side=L(J/K)/R(M/N)）
@@ -449,13 +456,17 @@ function Cho_importRosterBlock_(reader, top, issues) {
     for (var wt = 0; wt < byKind["わな"].length; wt++) Cho_mark_(f, wb + "/道具の種類", byKind["わな"][wt].tool); // checkboxes
     var wl = Cho_firstWithLicense_(byKind["わな"]);
     if (wl) {
-      Cho_mark_(f, wb + "/免許の必要性", "必要"); // radio
-      var lb = wb + "/免許の必要性/必要/免許情報/";
+      Cho_mark_(f, wb + "/" + CHO_L_LICENSE_, "あり"); // radio
+      var lb = wb + "/" + CHO_L_LICENSE_ + "/あり/免許情報/";
       if (wl.licPref) f[lb + "都道府県"] = wl.licPref;
       if (wl.licNo) f[lb + "番号"] = wl.licNo;
       if (wl.licDate) f[lb + "交付年月日"] = wl.licDate;
+    } else {
+      Cho_mark_(f, wb + "/" + CHO_L_LICENSE_, "なし"); // 免許なしを明示
+      if (Cho_firstCertNoLicense_(byKind["わな"])) // 名簿 Q=証明書 → 免許不要の理由
+        Cho_mark_(f, wb + "/" + CHO_L_LICENSE_ + "/なし/" + CHO_REASON_TRAP_, CHO_REASON_CERT_OPT_);
     }
-    Cho_importReg_(f, wb, byKind["わな"]);
+    Cho_importReg_(f, wb, byKind["わな"]); // 登録は免許と兄弟＝分岐外
   }
   if (byKind["網"].length) {
     methodChecks.push("網");
@@ -463,12 +474,16 @@ function Cho_importRosterBlock_(reader, top, issues) {
     for (var nt = 0; nt < byKind["網"].length; nt++) Cho_mark_(f, nb + "/道具の種類", byKind["網"][nt].tool); // checkboxes
     var nl = Cho_firstWithLicense_(byKind["網"]);
     if (nl) {
-      Cho_mark_(f, nb + "/免許の必要性", "必要"); // radio
-      var nlb = nb + "/免許の必要性/必要/免許情報/";
+      Cho_mark_(f, nb + "/" + CHO_L_LICENSE_, "あり"); // radio
+      var nlb = nb + "/" + CHO_L_LICENSE_ + "/あり/免許情報/";
       if (nl.licPref) f[nlb + "都道府県"] = nl.licPref;
       if (nl.licNo) f[nlb + "番号"] = nl.licNo;
       if (nl.licDate) f[nlb + "交付年月日"] = nl.licDate;
-      Cho_importReg_(f, nb + "/免許の必要性/必要", byKind["網"]);
+      Cho_importReg_(f, nb + "/" + CHO_L_LICENSE_ + "/あり", byKind["網"]); // 登録は免許あり配下
+    } else {
+      Cho_mark_(f, nb + "/" + CHO_L_LICENSE_, "なし"); // 免許なしを明示
+      if (Cho_firstCertNoLicense_(byKind["網"])) // 名簿 Q=証明書 → 免許不要の理由
+        Cho_mark_(f, nb + "/" + CHO_L_LICENSE_ + "/なし/" + CHO_REASON_NET_, CHO_REASON_CERT_OPT_);
     }
   }
   if (byKind["銃器"].length) {
@@ -483,8 +498,8 @@ function Cho_importRosterBlock_(reader, top, issues) {
       if (gk === "空気銃") {
         var airSel = Cho_reverseGunLic_(gr.licType);
         if (airSel) {
-          Cho_mark_(f, gbk + "/免許種類", airSel); // select
-          var ab = gbk + "/免許種類/" + airSel + "/";
+          Cho_mark_(f, gbk + "/" + CHO_L_LICENSE_, airSel); // select
+          var ab = gbk + "/" + CHO_L_LICENSE_ + "/" + airSel + "/";
           if (gr.licPref) f[ab + "都道府県"] = gr.licPref;
           if (gr.licNo) f[ab + "番号"] = gr.licNo;
           if (gr.licDate) f[ab + "交付年月日"] = gr.licDate;
@@ -508,6 +523,12 @@ function Cho_firstWithLicense_(rows) {
   for (var i = 0; i < rows.length; i++) if (rows[i].licNo || rows[i].licPref || rows[i].licDate) return rows[i];
   return null;
 }
+// 名簿 Q(狩猟免許/種類) が「従事（補助）適任者証明書」= 免許なし・免許不要の理由に充てる行（わな/網のみ）
+function Cho_firstCertNoLicense_(rows) {
+  for (var i = 0; i < rows.length; i++)
+    if (Cho_str_(rows[i].licType).indexOf("従事（補助）適任者証明書") >= 0) return rows[i];
+  return null;
+}
 function Cho_reverseGunLic_(licType) {
   for (var k in CHO_GUN_LIC_) if (CHO_GUN_LIC_.hasOwnProperty(k) && CHO_GUN_LIC_[k] === licType) return k;
   return licType === "第一種銃猟免許" || licType === "第二種銃猟免許" ? licType : "";
@@ -524,6 +545,7 @@ function Cho_importReg_(f, branchBase, rows) {
       return;
     }
   }
+  Cho_mark_(f, branchBase + "/狩猟者登録/登録の有無", "なし"); // 登録なしを明示
 }
 
 // 申請書/証明書 → 親レコードのフォームフィールド（"/"連結パス → 値）

@@ -179,6 +179,55 @@ function fetchExportWithRetry_(url, token, label) {
 }
 
 /**
+ * 選択シートを様式別設定で個別 PDF 化して順序付きで集める（一括DL・結合PDFの共通土台）。
+ * シート順を保ち、成功ブロブに一意なファイル名を付ける。
+ * @return {items:[{name:シート名, blob}], succeeded:[], failed:[], empty:[]}
+ */
+async function collectSheetPdfs_(ss, targets, token) {
+  const want = targets.reduce(function (o, n) { o[n] = true; return o; }, {});
+  const items = [];
+  const usedNames = {};   // ファイル名の重複回避
+  const succeeded = [];   // 印刷できたシート名
+  const failed = [];      // ダウンロード（生成）に失敗したシート名
+  const empty = [];       // 空で出力されなかったシート名
+
+  for (const sheet of ss.getSheets()) {
+    if (SKIP_HIDDEN_SHEETS && sheet.isSheetHidden()) continue;
+    if (!want[sheet.getName()]) continue;
+
+    const sname = sheet.getName();
+    const cfg = loadFormCfg_(formNameOf_(sname));  // 様式名の設定を使用
+    const result = await sheetToPdfBlob_(ss, sheet, cfg, token);
+    if (result.status !== 'ok') {
+      if (result.status === 'empty') empty.push(sname);
+      else failed.push(sname);
+      Logger.log('収集: 出力なし（%s）→ %s', result.status, sname);
+      continue;
+    }
+    const blob = result.blob;
+    // 同名回避（重複時は連番）
+    let base = sanitize_(sname);
+    let fname = base + '.pdf';
+    let k = 2;
+    while (usedNames[fname]) { fname = base + '(' + k + ').pdf'; k++; }
+    usedNames[fname] = true;
+    blob.setName(fname);
+    items.push({ name: sname, blob: blob });
+    succeeded.push(sname);
+    Logger.log('収集: 追加 %s → %s', sname, fname);
+  }
+  return { items: items, succeeded: succeeded, failed: failed, empty: empty };
+}
+
+/** 未出力の内訳ラベル（後方互換のため note に格納）を組み立てる。 */
+function buildNote_(failed, empty) {
+  const noteParts = [];
+  if (failed && failed.length) noteParts.push('ダウンロード失敗: ' + failed.join(', '));
+  if (empty && empty.length) noteParts.push('空のため未出力: ' + empty.join(', '));
+  return noteParts.join(' ／ ');
+}
+
+/**
  * ② 一括印刷。チェックされた各シートを、その様式名の保存済み設定で個別PDF化。
  * @param targets シート名の配列（チェックされたもの）
  * @param dest    'download' = ブラウザDL（1枚:PDF / 複数:ZIP）
@@ -189,51 +238,18 @@ function fetchExportWithRetry_(url, token, label) {
  *   全滅時  : {ok:false, error, succeeded, failed, empty}
  *   succeeded = 印刷できたシート名 / failed = ダウンロード失敗 / empty = 空で未出力
  */
-async function generateBatch(targets, dest) {
+async function generateBatch(targets, dest, ssOpt, tokenOpt) {
   try {
     if (!targets || !targets.length) return { ok: false, error: 'シートが選択されていません。' };
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const token = ScriptApp.getOAuthToken();
-    const want = targets.reduce(function (o, n) { o[n] = true; return o; }, {});
+    // 省略時はバインドされたアクティブなシート（メニュー onOpen → openPrintDialog からの実行）。
+    // ssOpt / tokenOpt は任意のスプレッドシートに対して実行するための予備引数（現状はダイアログのみ利用）。
+    const ss = ssOpt || SpreadsheetApp.getActiveSpreadsheet();
+    const token = tokenOpt || ScriptApp.getOAuthToken();
 
-    const pdfBlobs = [];
-    const usedNames = {};   // ファイル名の重複回避
-    const succeeded = [];   // 印刷できたシート名
-    const failed = [];      // ダウンロード（生成）に失敗したシート名
-    const empty = [];       // 空で出力されなかったシート名
-
-    // シート順を保ちつつ、選択されたものだけ処理
-    for (const sheet of ss.getSheets()) {
-      if (SKIP_HIDDEN_SHEETS && sheet.isSheetHidden()) continue;
-      if (!want[sheet.getName()]) continue;
-
-      const sname = sheet.getName();
-      const cfg = loadFormCfg_(formNameOf_(sname));  // 様式名の設定を使用
-      const result = await sheetToPdfBlob_(ss, sheet, cfg, token);
-      if (result.status !== 'ok') {
-        if (result.status === 'empty') empty.push(sname);
-        else failed.push(sname);
-        Logger.log('一括: 出力なし（%s）→ %s', result.status, sname);
-        continue;
-      }
-      const blob = result.blob;
-      // 同名回避（重複時は連番）
-      let base = sanitize_(sname);
-      let fname = base + '.pdf';
-      let k = 2;
-      while (usedNames[fname]) { fname = base + '(' + k + ').pdf'; k++; }
-      usedNames[fname] = true;
-      blob.setName(fname);
-      pdfBlobs.push(blob);
-      succeeded.push(sname);
-      Logger.log('一括: 追加 %s → %s', sname, fname);
-    }
-
-    // 未出力の内訳をラベル付きで組み立て（後方互換のため note に格納）
-    const noteParts = [];
-    if (failed.length) noteParts.push('ダウンロード失敗: ' + failed.join(', '));
-    if (empty.length) noteParts.push('空のため未出力: ' + empty.join(', '));
-    const note = noteParts.join(' ／ ');
+    const col = await collectSheetPdfs_(ss, targets, token);
+    const pdfBlobs = col.items.map(function (it) { return it.blob; });
+    const succeeded = col.succeeded, failed = col.failed, empty = col.empty;
+    const note = buildNote_(failed, empty);
 
     if (!pdfBlobs.length) {
       return { ok: false,
