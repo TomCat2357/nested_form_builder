@@ -96,8 +96,12 @@ var NFB_SHEETS_DATETIME_FORMAT = "yyyy/mm/dd hh:mm:ss";
 // "1-1" を日付に、"007" を数値に勝手に変換させないため、値書き込み前にこの書式を割り当てる。
 var NFB_SHEETS_TEXT_FORMAT = "@";
 var NFB_ULID_RANDOM_LENGTH = 16;
-var NFB_LAST_ULID_TS_MS = -1;
-var NFB_LAST_ULID_RANDOM = "";
+
+// ULID の実装は builder/src/core/ids.js が単一ソース（esbuild で NfbAlasqlRuntime に
+// 焼き込み）。以下の Nfb_* は薄いデリゲートのみ（関数名・呼び出し側は不変）。
+// 配線の等価性は tests/ulid-equivalence.test.cjs が担保。
+// Nfb_createRandomBytes_ / Nfb_toBase64Url_ は GAS 固有（Utilities.base64EncodeWebSafe
+// 依存・formsStorage.gs から利用）のためここに残す。
 
 function Nfb_createRandomBytes_(size) {
   var bytes = [];
@@ -112,97 +116,25 @@ function Nfb_toBase64Url_(bytes) {
 }
 
 function Nfb_ulidAlphabet_() {
-  return "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+  return NfbAlasqlRuntime.ULID_ALPHABET;
 }
 
 function Nfb_encodeUlidTime_(unixMs) {
-  var alphabet = Nfb_ulidAlphabet_();
-  var value = Math.floor(Number(unixMs));
-  if (!isFinite(value) || value < 0) value = 0;
-
-  var chars = [];
-  for (var i = 0; i < 10; i++) {
-    chars.unshift(alphabet.charAt(value % 32));
-    value = Math.floor(value / 32);
-  }
-  return chars.join("");
+  return NfbAlasqlRuntime.encodeUlidTime(unixMs);
 }
 
 function Nfb_encodeUlidRandom_(bytes) {
-  var alphabet = Nfb_ulidAlphabet_();
-  var encoded = "";
-  var buffer = 0;
-  var bits = 0;
-
-  for (var i = 0; i < bytes.length; i++) {
-    buffer = (buffer << 8) | bytes[i];
-    bits += 8;
-
-    while (bits >= 5) {
-      encoded += alphabet.charAt((buffer >> (bits - 5)) & 31);
-      bits -= 5;
-      if (bits === 0) {
-        buffer = 0;
-      } else {
-        buffer = buffer & ((1 << bits) - 1);
-      }
-    }
-  }
-
-  if (bits > 0) {
-    encoded += alphabet.charAt((buffer << (5 - bits)) & 31);
-  }
-
-  return encoded;
-}
-
-function Nfb_createUlidRandomPart_() {
-  return Nfb_encodeUlidRandom_(Nfb_createRandomBytes_(10)).substring(0, NFB_ULID_RANDOM_LENGTH);
+  return NfbAlasqlRuntime.encodeUlidRandom(bytes);
 }
 
 function Nfb_incrementUlidRandom_(value) {
-  var alphabet = Nfb_ulidAlphabet_();
-  var chars = String(value || "").split("");
-  while (chars.length < NFB_ULID_RANDOM_LENGTH) chars.push(alphabet.charAt(0));
-  if (chars.length > NFB_ULID_RANDOM_LENGTH) chars = chars.slice(0, NFB_ULID_RANDOM_LENGTH);
-
-  for (var i = chars.length - 1; i >= 0; i--) {
-    var idx = alphabet.indexOf(chars[i]);
-    var safeIdx = idx >= 0 ? idx : 0;
-    if (safeIdx < alphabet.length - 1) {
-      chars[i] = alphabet.charAt(safeIdx + 1);
-      for (var j = i + 1; j < chars.length; j++) chars[j] = alphabet.charAt(0);
-      return { value: chars.join(""), overflow: false };
-    }
-    chars[i] = alphabet.charAt(0);
-  }
-
-  return { value: chars.join(""), overflow: true };
+  return NfbAlasqlRuntime.incrementBase32(value);
 }
 
+// monotonic 状態（同一ミリ秒内のランダム部インクリメント）は共有ランタイムの
+// モジュールクロージャに閉じる（GAS の実行単位ごとに初期化される点は従来と同じ）。
 function Nfb_generateUlid_() {
-  var nowMs = Math.floor(Number(new Date().getTime()));
-  if (!isFinite(nowMs) || nowMs < 0) nowMs = 0;
-
-  if (NFB_LAST_ULID_TS_MS < 0 || nowMs > NFB_LAST_ULID_TS_MS) {
-    NFB_LAST_ULID_TS_MS = nowMs;
-    NFB_LAST_ULID_RANDOM = Nfb_createUlidRandomPart_();
-    return Nfb_encodeUlidTime_(NFB_LAST_ULID_TS_MS) + NFB_LAST_ULID_RANDOM;
-  }
-
-  if (!NFB_LAST_ULID_RANDOM || NFB_LAST_ULID_RANDOM.length !== NFB_ULID_RANDOM_LENGTH) {
-    NFB_LAST_ULID_RANDOM = Nfb_createUlidRandomPart_();
-  }
-
-  var incremented = Nfb_incrementUlidRandom_(NFB_LAST_ULID_RANDOM);
-  if (incremented.overflow) {
-    NFB_LAST_ULID_TS_MS += 1;
-    NFB_LAST_ULID_RANDOM = Nfb_createUlidRandomPart_();
-  } else {
-    NFB_LAST_ULID_RANDOM = incremented.value;
-  }
-
-  return Nfb_encodeUlidTime_(NFB_LAST_ULID_TS_MS) + NFB_LAST_ULID_RANDOM;
+  return NfbAlasqlRuntime.createUlid();
 }
 
 function Nfb_generateCompactId_(prefix) {
