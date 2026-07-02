@@ -42,13 +42,35 @@ function stripExportFields_(item) {
  * @param {object} cfg
  * @param {string} cfg.one  結果オブジェクトのキー (例: "question")。先頭大文字版が GAS メソッド名の元になる
  * @param {string} cfg.many 結果リストのキー (例: "questions")
- * @param {{ saveAll, getAll, upsert, remove }} cfg.cache
- * @param {object} cfg.gas  analyticsGasClient（list<E>s / get<E> / save<E> / ... を持つ）
+ * @param {{ saveAll, getAll, upsert, remove }} [cfg.cache] 一覧キャッシュ（listCacheMode "external" では不要）
+ * @param {object} cfg.gas  gasClient アダプタ（list<E>s / get<E> / delete<E>s / copy<E> ... を持つ）
  * @param {(items: any[]) => any[]} [cfg.sanitizeList] GAS / キャッシュから読んだ配列を整形（既定: 恒等）
  * @param {(data: any) => void} [cfg.validateBeforeSave] save 前の検証フック（既定: なし）
+ * @param {"internal"|"external"} [cfg.listCacheMode] "external" = 一覧状態を外部（AppDataProvider 等）が
+ *        管理するため、cache への upsert/remove・emitAnalyticsCacheChanged を一切行わない（forms 用）
+ * @param {string} [cfg.idsKey] moveItems ペイロードの ID 配列キー（analytics "itemIds" / forms "formIds"）
+ * @param {() => Promise<any[]>} [cfg.copySource] copy のコピー元一覧の取得（既定: cache.getAll）
+ * @param {(args: { rest: object, source: object, localId: string }) => object} [cfg.copyTransform]
+ *        コピー用クローンの生成（既定: name に「（コピー）」付与の analytics 形）。pendingUpload まで含めて返す
+ * @param {(id: string) => Promise<object|null>} [cfg.copyRemoteFallback]
+ *        コピー元がローカル一覧に無いときのサーバコピー（既定: gas.copy<E> + cache.upsert）
  */
-export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) => items, validateBeforeSave }) {
+export function makeEntityStore({
+  one,
+  many,
+  cache,
+  gas,
+  sanitizeList = (items) => items,
+  validateBeforeSave,
+  listCacheMode = "internal",
+  idsKey = "itemIds",
+  copySource,
+  copyTransform,
+  copyRemoteFallback,
+}) {
   const E = one.charAt(0).toUpperCase() + one.slice(1);
+  const hasCache = listCacheMode !== "external";
+  const emit = hasCache ? emitAnalyticsCacheChanged : () => {};
 
   // サーバから全件取得してキャッシュへ保存し、フィルタ済み配列を返す。
   // lastSyncedAt はこの経路でのみ更新する（stampSyncTime: true）。
@@ -133,17 +155,16 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     return await enqueueEntitySave({
       entityType: one,
       record,
-      upsertCache: (r) => cache.upsert(r),
-      emit: emitAnalyticsCacheChanged,
+      ...(hasCache ? { upsertCache: (r) => cache.upsert(r), emit: emitAnalyticsCacheChanged } : {}),
     });
   }
 
   async function remove(id) {
     await deleteJobsForLocalId(id);
     if (!isLocalId(id)) await gas[`delete${E}`](id);
-    await cache.remove(id);
+    if (hasCache) await cache.remove(id);
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emit(one);
   }
 
   async function removeBatch(ids) {
@@ -151,9 +172,9 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     await Promise.all(ids.map((id) => deleteJobsForLocalId(id)));
     const remoteIds = ids.filter((id) => !isLocalId(id));
     if (remoteIds.length) await gas[`delete${E}s`](remoteIds);
-    for (const id of ids) await cache.remove(id);
+    if (hasCache) for (const id of ids) await cache.remove(id);
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emit(one);
   }
 
   // removeBatch と同じだが、プロジェクト内（標準フォルダ配下）のファイルは実体も Drive ゴミ箱へ
@@ -163,51 +184,58 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     await Promise.all(ids.map((id) => deleteJobsForLocalId(id)));
     const remoteIds = ids.filter((id) => !isLocalId(id));
     if (remoteIds.length) await gas[`delete${E}sWithFiles`](remoteIds);
-    for (const id of ids) await cache.remove(id);
+    if (hasCache) for (const id of ids) await cache.remove(id);
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emit(one);
   }
 
   // 楽観的＋遅延: アーカイブ状態をキャッシュ上で即時フリップし、GAS 反映は write-behind の
   // op ジョブへ積む（local_ エンティティは save 完了まで依存で待つ）。verb は "archive" / "unarchive"。
   async function setArchivedOne(verb, id) {
     const archived = verb === "archive";
-    const all = await cache.getAll();
-    const item = all.find((x) => x.id === id);
-    const next = item ? { ...item, archived } : null;
-    if (next) await cache.upsert(next);
+    let next = null;
+    if (hasCache) {
+      const all = await cache.getAll();
+      const item = all.find((x) => x.id === id);
+      next = item ? { ...item, archived } : null;
+      if (next) await cache.upsert(next);
+    }
     await enqueueOpJob({ entityType: one, opType: verb, opPayload: { ids: [id] }, dependsOnLocalIds: isLocalId(id) ? [id] : [] });
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emit(one);
     return { [one]: next };
   }
 
   async function setArchivedBatch(verb, ids) {
     if (!ids?.length) return { ok: true, updated: 0, errors: [], [many]: [] };
     const archived = verb === "archive";
-    const all = await cache.getAll();
-    const byId = new Map(all.map((x) => [x.id, x]));
     const updated = [];
-    for (const id of ids) {
-      const item = byId.get(id);
-      if (!item) continue;
-      const next = { ...item, archived };
-      await cache.upsert(next);
-      updated.push(next);
+    if (hasCache) {
+      const all = await cache.getAll();
+      const byId = new Map(all.map((x) => [x.id, x]));
+      for (const id of ids) {
+        const item = byId.get(id);
+        if (!item) continue;
+        const next = { ...item, archived };
+        await cache.upsert(next);
+        updated.push(next);
+      }
     }
     await enqueueOpJob({ entityType: one, opType: verb, opPayload: { ids: ids.slice() }, dependsOnLocalIds: ids.filter(isLocalId) });
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
-    return { ok: true, updated: updated.length, errors: [], [many]: updated };
+    emit(one);
+    // external モードはキャッシュを持たず更新件数を数えられないため、指示件数をそのまま返す（forms 従来挙動）。
+    return { ok: true, updated: hasCache ? updated.length : ids.length, errors: [], [many]: updated };
   }
 
   // 楽観的＋遅延: キャッシュ上の元エンティティを複製し、新規 save ジョブとしてキューへ積む。
   // 名前に「（コピー）」を付与し、アップロード完了で local_ → 実 fileId へ付け替える。
   async function copy(id) {
-    const all = await cache.getAll();
+    const all = await (copySource ? copySource() : cache.getAll());
     const source = all.find((x) => x.id === id);
     if (!source) {
-      // キャッシュ未ヒット時のみ従来のサーバコピーにフォールバック。
+      // ローカル一覧未ヒット時のみ従来のサーバコピーにフォールバック。
+      if (copyRemoteFallback) return await copyRemoteFallback(id);
       const result = await gas[`copy${E}`](id);
       if (result?.[one]) await cache.upsert(result[one]);
       return result[one];
@@ -221,20 +249,21 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
       pendingUpload: _pendingUpload,
       ...rest
     } = deepClone(source);
-    const clone = {
-      ...rest,
-      id: localId,
-      name: `${source.name || ""}（コピー）`,
-      archived: false,
-      pendingUpload: true,
-      modifiedAt: Date.now(),
-    };
+    const clone = copyTransform
+      ? copyTransform({ rest, source, localId })
+      : {
+        ...rest,
+        id: localId,
+        name: `${source.name || ""}（コピー）`,
+        archived: false,
+        pendingUpload: true,
+        modifiedAt: Date.now(),
+      };
     if (validateBeforeSave) validateBeforeSave(clone);
     return await enqueueEntitySave({
       entityType: one,
       record: clone,
-      upsertCache: (r) => cache.upsert(r),
-      emit: emitAnalyticsCacheChanged,
+      ...(hasCache ? { upsertCache: (r) => cache.upsert(r), emit: emitAnalyticsCacheChanged } : {}),
     });
   }
 
@@ -269,18 +298,20 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
   // 楽観的＋遅延: エンティティの folder をキャッシュ上で即時書換え、GAS 移動は write-behind の
   // op ジョブへ。folders 登録簿は一覧ページが保持するため引数で受け取り、再親付け後の配列を返す。
   async function moveItems(payload, { folders = [] } = {}) {
-    const itemIds = Array.isArray(payload?.itemIds) ? payload.itemIds : [];
+    const itemIds = Array.isArray(payload?.[idsKey]) ? payload[idsKey] : [];
     const folderPaths = Array.isArray(payload?.folderPaths) ? payload.folderPaths : [];
     const destPath = payload?.destPath || "";
 
-    const all = await cache.getAll();
-    for (const item of all) {
-      const nf = reassignEntityFolder(item.folder, "move", { itemId: item.id, itemIds, folderPaths, destPath });
-      if (nf !== normalizeFolderPath(item.folder)) await cache.upsert({ ...item, folder: nf });
+    if (hasCache) {
+      const all = await cache.getAll();
+      for (const item of all) {
+        const nf = reassignEntityFolder(item.folder, "move", { itemId: item.id, itemIds, folderPaths, destPath });
+        if (nf !== normalizeFolderPath(item.folder)) await cache.upsert({ ...item, folder: nf });
+      }
     }
     await enqueueOpJob({ entityType: one, opType: "move", opPayload: payload, dependsOnLocalIds: itemIds.filter(isLocalId) });
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emit(one);
     return { folders: reparentFolders(folders, folderPaths, destPath), movedIds: itemIds };
   }
 
@@ -288,31 +319,41 @@ export function makeEntityStore({ one, many, cache, gas, sanitizeList = (items) 
     const path = payload?.path || "";
     const newName = payload?.newName || "";
 
-    const all = await cache.getAll();
-    for (const item of all) {
-      const nf = reassignEntityFolder(item.folder, "rename", { path, newName });
-      if (nf !== normalizeFolderPath(item.folder)) await cache.upsert({ ...item, folder: nf });
+    if (hasCache) {
+      const all = await cache.getAll();
+      for (const item of all) {
+        const nf = reassignEntityFolder(item.folder, "rename", { path, newName });
+        if (nf !== normalizeFolderPath(item.folder)) await cache.upsert({ ...item, folder: nf });
+      }
     }
     await enqueueOpJob({ entityType: one, opType: "renameFolder", opPayload: payload });
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emit(one);
     return { folders: renameFolderPaths(folders, path, newName), movedIds: [] };
   }
 
-  async function deleteFolder(path, { folders = [] } = {}) {
+  // external モードは一覧キャッシュを持たないため、配下エンティティは呼び出し側が
+  // containedIds で渡す（forms は AppDataProvider が一覧状態を持つ）。
+  async function deleteFolder(path, { folders = [], containedIds = [] } = {}) {
     const target = normalizeFolderPath(path);
-    const all = await cache.getAll();
     let deletedCount = 0;
-    for (const item of all) {
-      if (!isUnderFolder(item.folder, target)) continue;
-      await deleteJobsForLocalId(item.id);
-      await cache.remove(item.id);
-      deletedCount += 1;
+    if (hasCache) {
+      const all = await cache.getAll();
+      for (const item of all) {
+        if (!isUnderFolder(item.folder, target)) continue;
+        await deleteJobsForLocalId(item.id);
+        await cache.remove(item.id);
+        deletedCount += 1;
+      }
+      await deleteOpJobsForFolderPrefix(one, target);
+    } else {
+      await Promise.all(containedIds.map((id) => deleteJobsForLocalId(id)));
+      await deleteOpJobsForFolderPrefix(one, path);
+      deletedCount = containedIds.length;
     }
-    await deleteOpJobsForFolderPrefix(one, target);
     await enqueueOpJob({ entityType: one, opType: "deleteFolder", opPayload: { path } });
     kickUploadWorker();
-    emitAnalyticsCacheChanged(one);
+    emit(one);
     return { folders: removeFolderSubtree(folders, target), deletedCount };
   }
 
