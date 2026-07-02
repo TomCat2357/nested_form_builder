@@ -170,58 +170,96 @@ function StdFolders_ensureAllSubfolders_(rootFolder) {
 // import 用: 構成内判定 + 構成外なら移動（不可ならコピー）
 // ---------------------------------------------
 
-// fileId が folderId フォルダの「子孫」かどうか（親チェーンを遡って判定）。
+// ---------------------------------------------
+// File / Folder 共通の述語コア。
+// DriveApp の File と Folder は取得 API（getFileById / getFolderById）だけが異なり、
+// 親チェーン走査・生存判定・構成内判定のロジックは同一なので kind ∈ {"file","folder"} で
+// 一本化する。公開名（StdFolders_isFileUnderFolder_ 等）は従来どおりの薄いデリゲート。
+// 読み取り専用の述語のみ統合し、move / copy / align 系は File と Folder で
+// セマンティクスが異なるため統合しない。
+// ---------------------------------------------
+
+function StdFolders_getNodeById_(kind, id) {
+  return kind === "folder" ? DriveApp.getFolderById(id) : DriveApp.getFileById(id);
+}
+
+// id のノードが ancestorId フォルダの「子孫」かどうか（親チェーンを遡って判定）。
 // 01_forms/ヒグマ/ のようなサブフォルダ配下も構成内とみなすため再帰的に判定する。
 // 親チェーンは多親・循環があり得るので visited と深さ上限で保護する。
-function StdFolders_isFileUnderFolder_(fileId, folderId) {
-  if (!fileId || !folderId) return false;
+// kind === "folder" のときのみ自身一致（id === ancestorId）も子孫扱いにする（従来挙動）。
+function StdFolders_isNodeUnderFolder_(kind, id, ancestorId) {
+  if (!id || !ancestorId) return false;
+  if (kind === "folder" && id === ancestorId) return true;
   try {
     var seen = {};
     var queue = [];
-    var p0 = DriveApp.getFileById(fileId).getParents();
+    var p0 = StdFolders_getNodeById_(kind, id).getParents();
     while (p0.hasNext()) queue.push(p0.next());
     var steps = 0;
     while (queue.length && steps < 200) {
       steps++;
       var f = queue.shift();
-      var id = f.getId();
-      if (id === folderId) return true;
-      if (seen[id]) continue;
-      seen[id] = true;
+      var fid = f.getId();
+      if (fid === ancestorId) return true;
+      if (seen[fid]) continue;
+      seen[fid] = true;
       var ps = f.getParents();
       while (ps.hasNext()) queue.push(ps.next());
     }
   } catch (err) {
-    Logger.log("[StdFolders_isFileUnderFolder_] " + fileId + " under " + folderId + ": " + nfbErrorToString_(err));
+    Logger.log("[StdFolders_isNodeUnderFolder_:" + kind + "] " + id + " under " + ancestorId + ": " + nfbErrorToString_(err));
   }
   return false;
 }
 
-// fileId のファイルが、解決済みプロジェクトルート配下（どの標準サブフォルダでもよい）に在るか判定する。
+// id のノードが、解決済みプロジェクトルート配下（どの標準サブフォルダでもよい）に在るか判定する。
 // 整合エンジンの ②（プロジェクト内・別標準フォルダ → move）/ ③（プロジェクト外 → copy）分離に使う。
 // relativeFolderOfFile は「自分のホーム標準フォルダ配下か」しか分からないため、これで補う。ルート未解決時は false。
-function StdFolders_isFileUnderProjectRoot_(fileId) {
-  if (!fileId) return false;
+function StdFolders_isNodeUnderProjectRoot_(kind, id) {
+  if (!id) return false;
   try {
     var root = StdFolders_resolveRootFolder_(null);
-    return StdFolders_isFileUnderFolder_(fileId, root.getId());
+    return StdFolders_isNodeUnderFolder_(kind, id, root.getId());
   } catch (err) {
-    Logger.log("[StdFolders_isFileUnderProjectRoot_] " + fileId + ": " + nfbErrorToString_(err));
+    Logger.log("[StdFolders_isNodeUnderProjectRoot_:" + kind + "] " + id + ": " + nfbErrorToString_(err));
   }
   return false;
 }
 
-// fileId のファイルが、解決済みルートの key サブフォルダ配下（直下・ネスト問わず）に在るか判定する。
+// id のノードが、解決済みルートの key サブフォルダ配下（直下・ネスト問わず）に在るか判定する。
 // ルート未解決時は false（= 構成外扱い）。
-function StdFolders_isFileInStdSubfolder_(fileId, key) {
+function StdFolders_isNodeInStdSubfolder_(kind, id, key) {
   try {
     var root = StdFolders_resolveRootFolder_(null);
     var sub = StdFolders_getOrCreateSubfolder_(root, key);
-    return StdFolders_isFileUnderFolder_(fileId, sub.getId());
+    return StdFolders_isNodeUnderFolder_(kind, id, sub.getId());
   } catch (err) {
-    Logger.log("[StdFolders_isFileInStdSubfolder_] " + fileId + " (" + key + "): " + nfbErrorToString_(err));
+    Logger.log("[StdFolders_isNodeInStdSubfolder_:" + kind + "] " + id + " (" + key + "): " + nfbErrorToString_(err));
   }
   return false;
+}
+
+// id のノードが生存しているか（存在しゴミ箱でない）。取得不能（削除済み・権限喪失など）は false。
+function StdFolders_isNodeIdAlive_(kind, id) {
+  if (!id) return false;
+  try {
+    var f = StdFolders_getNodeById_(kind, id);
+    return !(typeof f.isTrashed === "function" && f.isTrashed());
+  } catch (e) {
+    return false;
+  }
+}
+
+function StdFolders_isFileUnderFolder_(fileId, folderId) {
+  return StdFolders_isNodeUnderFolder_("file", fileId, folderId);
+}
+
+function StdFolders_isFileUnderProjectRoot_(fileId) {
+  return StdFolders_isNodeUnderProjectRoot_("file", fileId);
+}
+
+function StdFolders_isFileInStdSubfolder_(fileId, key) {
+  return StdFolders_isNodeInStdSubfolder_("file", fileId, key);
 }
 
 // import / 正規化時に、構成内ファイルはそのまま、構成外ファイルは key サブフォルダへ取り込む。
@@ -267,15 +305,9 @@ function StdFolders_ensureFileInStdFolder_(fileId, key) {
 }
 
 // fileId の Drive ファイルが生存しているか（存在しゴミ箱でない）を返す。
-// 取得不能（削除済み・権限喪失など）は false。マッピングの壊れたリンク判定に使う。
+// マッピングの壊れたリンク判定に使う。
 function StdFolders_isFileIdAlive_(fileId) {
-  if (!fileId) return false;
-  try {
-    var f = DriveApp.getFileById(fileId);
-    return !(typeof f.isTrashed === "function" && f.isTrashed());
-  } catch (e) {
-    return false;
-  }
+  return StdFolders_isNodeIdAlive_("file", fileId);
 }
 
 // ---------------------------------------------
@@ -548,60 +580,20 @@ function StdFolders_alignFileRefIntoStdFolder_(key, physicalUrlOrId, logicalPath
 
 // folderId のフォルダが生存しているか（存在しゴミ箱でない）。
 function StdFolders_isFolderIdAlive_(folderId) {
-  if (!folderId) return false;
-  try {
-    var f = DriveApp.getFolderById(folderId);
-    return !(typeof f.isTrashed === "function" && f.isTrashed());
-  } catch (e) {
-    return false;
-  }
+  return StdFolders_isNodeIdAlive_("folder", folderId);
 }
 
 // folderId（フォルダ）が ancestorId フォルダの子孫（自身含む）か。親チェーンを遡って判定（多親/循環保護）。
 function StdFolders_isFolderUnderFolder_(folderId, ancestorId) {
-  if (!folderId || !ancestorId) return false;
-  if (folderId === ancestorId) return true;
-  try {
-    var seen = {};
-    var queue = [];
-    var p0 = DriveApp.getFolderById(folderId).getParents();
-    while (p0.hasNext()) queue.push(p0.next());
-    var steps = 0;
-    while (queue.length && steps < 200) {
-      steps++;
-      var f = queue.shift();
-      var id = f.getId();
-      if (id === ancestorId) return true;
-      if (seen[id]) continue;
-      seen[id] = true;
-      var ps = f.getParents();
-      while (ps.hasNext()) queue.push(ps.next());
-    }
-  } catch (err) {
-    Logger.log("[StdFolders_isFolderUnderFolder_] " + folderId + " under " + ancestorId + ": " + nfbErrorToString_(err));
-  }
-  return false;
+  return StdFolders_isNodeUnderFolder_("folder", folderId, ancestorId);
 }
 
 function StdFolders_isFolderInStdSubfolder_(folderId, key) {
-  try {
-    var root = StdFolders_resolveRootFolder_(null);
-    var sub = StdFolders_getOrCreateSubfolder_(root, key);
-    return StdFolders_isFolderUnderFolder_(folderId, sub.getId());
-  } catch (err) {
-    Logger.log("[StdFolders_isFolderInStdSubfolder_] " + folderId + " (" + key + "): " + nfbErrorToString_(err));
-  }
-  return false;
+  return StdFolders_isNodeInStdSubfolder_("folder", folderId, key);
 }
 
 function StdFolders_isFolderUnderProjectRoot_(folderId) {
-  try {
-    var root = StdFolders_resolveRootFolder_(null);
-    return StdFolders_isFolderUnderFolder_(folderId, root.getId());
-  } catch (err) {
-    Logger.log("[StdFolders_isFolderUnderProjectRoot_] " + folderId + ": " + nfbErrorToString_(err));
-  }
-  return false;
+  return StdFolders_isNodeUnderProjectRoot_("folder", folderId);
 }
 
 // 論理パス（"フォルダ/.../葉フォルダ"）→ key サブフォルダ配下の folderId。葉もフォルダ。未解決は ""。
